@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hoodie Suite</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EEEDE8;--panel:#E6E4DD;--panel-2:#DEDBD2;
+    --ink:#1B1A17;--ink-soft:#5A564E;--hair:#C9C5BA;
+    --amber:#B07012;--amber-bright:#DCA138;--amber-deep:#6E450A;
+    --slate:#2F4D49;--slate-tint:#DEE6E3;--oxblood:#8A382C;
+    --bar:46px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;}
+  body{background:var(--paper);color:var(--ink);font-family:"Source Serif 4",Georgia,serif;-webkit-font-smoothing:antialiased;overflow:hidden;}
+  a{color:inherit;text-decoration:none;}
+  .mono{font-family:"IBM Plex Mono",monospace;}
+
+  /* top bar */
+  header.bar{position:fixed;top:0;left:0;right:0;height:var(--bar);z-index:40;background:var(--ink);color:var(--paper);display:flex;align-items:center;gap:14px;padding:0 16px;}
+  header.bar .menu{display:none;background:transparent;border:0;color:var(--paper);font-size:18px;cursor:pointer;padding:4px 6px;}
+  header.bar .brand{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:15px;letter-spacing:-0.01em;cursor:pointer;}
+  header.bar .brand .dot{color:var(--amber-bright);}
+  header.bar .ctx{font-family:"IBM Plex Mono",monospace;font-size:11px;color:#C9C2B4;letter-spacing:0.04em;border-left:1px solid #3a3833;padding-left:14px;}
+  header.bar .ctx b{color:var(--paper);font-weight:600;}
+  header.bar .spacer{margin-left:auto;}
+  header.bar .ext{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;color:var(--amber-bright);border:1px solid #3a3833;padding:6px 11px;letter-spacing:0.04em;display:none;}
+  header.bar .ext:hover{background:#2a2823;}
+  header.bar .ext.show{display:inline-block;}
+
+  /* layout below bar */
+  .body{position:fixed;top:var(--bar);left:0;right:0;bottom:0;display:grid;grid-template-columns:236px 1fr;}
+
+  /* sidebar */
+  aside.nav{border-right:1px solid var(--hair);background:var(--panel);overflow:auto;padding:14px 0 28px;}
+  aside.nav .home-link{display:flex;align-items:center;gap:9px;margin:2px 12px 10px;padding:9px 12px;border:1px solid var(--hair);background:var(--paper);cursor:pointer;font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;color:var(--ink);}
+  aside.nav .home-link:hover{border-color:var(--amber);}
+  aside.nav .home-link.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  aside.nav .grp{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--amber);padding:14px 24px 6px;font-weight:600;}
+  aside.nav .item{display:grid;grid-template-columns:26px 1fr;gap:10px;align-items:center;padding:8px 18px;cursor:pointer;border-left:2px solid transparent;}
+  aside.nav .item:hover{background:var(--panel-2);}
+  aside.nav .item.active{border-left-color:var(--amber);background:var(--panel-2);}
+  aside.nav .item .ic{width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:var(--ink);color:var(--paper);font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:12px;}
+  aside.nav .item.live .ic{background:var(--slate);}
+  aside.nav .item .nm{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;color:var(--ink);line-height:1.1;}
+  aside.nav .item .ds{font-size:11px;color:var(--ink-soft);line-height:1.1;margin-top:1px;display:block;}
+
+  /* content area */
+  main.stage{position:relative;overflow:hidden;background:var(--paper);}
+  iframe#frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff;display:none;}
+  iframe#frame.show{display:block;}
+
+  /* home launcher */
+  #home{position:absolute;inset:0;overflow:auto;padding:30px 36px 60px;display:block;}
+  #home .hwrap{max-width:920px;margin:0 auto;}
+  #home .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:var(--amber);font-weight:600;}
+  #home h1{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:clamp(26px,4vw,36px);letter-spacing:-0.02em;margin:10px 0 0;}
+  #home h1 .thin{font-weight:400;color:var(--ink-soft);}
+  #home .sub{font-size:15.5px;color:var(--ink-soft);margin:12px 0 0;max-width:56ch;}
+  #home .ggrp{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--amber);font-weight:600;margin:34px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--hair);}
+  #home .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:12px;}
+  #home .app{display:flex;flex-direction:column;border:1px solid var(--hair);border-top:3px solid var(--amber);background:var(--panel);padding:16px 17px;cursor:pointer;transition:transform .12s,box-shadow .12s;min-height:118px;}
+  #home .app:hover{transform:translateY(-2px);box-shadow:0 8px 22px -14px rgba(27,26,23,.5);}
+  #home .app.live{border-top-color:var(--slate);}
+  #home .app .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  #home .app .ic{width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:var(--ink);color:var(--paper);font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;}
+  #home .app.live .ic{background:var(--slate);}
+  #home .app .pill{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:0.1em;text-transform:uppercase;font-weight:600;padding:3px 7px;border:1px solid;}
+  #home .app.live .pill{color:var(--slate);border-color:var(--slate);}
+  #home .app.beta .pill{color:var(--amber-deep);border-color:var(--amber);}
+  #home .app.internal .pill{color:var(--ink-soft);border-color:var(--hair);}
+  #home .app .nm{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:16px;letter-spacing:-0.01em;color:var(--ink);margin-bottom:4px;}
+  #home .app .ds{font-size:13px;color:var(--ink-soft);line-height:1.4;}
+  #home .app .open{margin-top:auto;padding-top:12px;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--amber);font-weight:600;}
+
+  /* mobile */
+  .scrim{position:fixed;inset:var(--bar) 0 0 0;background:rgba(27,26,23,.4);z-index:35;display:none;}
+  @media (max-width:760px){
+    header.bar .menu{display:block;}
+    header.bar .ctx{display:none;}
+    .body{grid-template-columns:1fr;}
+    aside.nav{position:fixed;top:var(--bar);left:0;bottom:0;width:248px;z-index:38;transform:translateX(-100%);transition:transform .2s;}
+    aside.nav.open{transform:none;}
+    .scrim.show{display:block;}
+    #home{padding:24px 18px 50px;}
+  }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <button class="menu" id="menu" aria-label="Menu">☰</button>
+  <span class="brand" id="brand">Hoodie<span class="dot"> ·</span> Suite</span>
+  <span class="ctx" id="ctx"></span>
+  <span class="spacer"></span>
+  <a class="ext" id="ext" target="_blank" rel="noopener">Open full ↗</a>
+</header>
+
+<div class="body">
+  <aside class="nav" id="nav">
+    <div class="home-link" id="homeLink">⌂ &nbsp;All apps</div>
+    <div id="navlist"></div>
+  </aside>
+  <main class="stage">
+    <div id="home">
+      <div class="hwrap">
+        <div class="eyebrow">Hoodie · Prism · Unifyd</div>
+        <h1>The Suite. <span class="thin">Everything in one place.</span></h1>
+        <p class="sub">Every app, one front door. Pick one to open it here, or use “Open full ↗” to launch it in its own tab.</p>
+        <div id="homegrid"></div>
+      </div>
+    </div>
+    <iframe id="frame" title="App"></iframe>
+  </main>
+</div>
+<div class="scrim" id="scrim"></div>
+
+<script>
+  const APPS=[
+    {id:'dashboard',name:'Hoodie Intelligence',desc:'Market intelligence & QBR briefs',group:'Product',status:'live',file:'apps/dashboard.html',mark:'HI'},
+    {id:'crm',name:'Hoodie Relations',desc:'Industry-associations CRM',group:'Commercial',status:'beta',file:'apps/crm.html',mark:'HR'},
+    {id:'ttb',name:'TTB Ingestion',desc:'COLA label pipeline · Unifyd',group:'Data Operations',status:'beta',file:'apps/ttb-ingestion.html',mark:'TT'},
+    {id:'mdm',name:'Item Master',desc:'145-field MDM console · Unifyd',group:'Data Operations',status:'beta',file:'apps/item-mdm.html',mark:'IM'},
+    {id:'roadmap',name:'Product Roadmap',desc:'What is shipping & when',group:'Internal',status:'internal',file:'apps/roadmap.html',mark:'RM'},
+    {id:'kb',name:'Principles & Architecture',desc:'The thinking behind the platform',group:'Internal',status:'internal',file:'apps/principles-hub.html',mark:'PA'}
+  ];
+  const GROUPS=['Product','Commercial','Data Operations','Internal'];
+  const byId=Object.fromEntries(APPS.map(a=>[a.id,a]));
+
+  // build sidebar
+  const navlist=document.getElementById('navlist');
+  GROUPS.forEach(g=>{
+    const apps=APPS.filter(a=>a.group===g);if(!apps.length)return;
+    const lab=document.createElement('div');lab.className='grp';lab.textContent=g;navlist.appendChild(lab);
+    apps.forEach(a=>{
+      const el=document.createElement('div');el.className='item '+a.status;el.dataset.id=a.id;
+      el.innerHTML='<span class="ic">'+a.mark+'</span><span><span class="nm">'+a.name+'</span><span class="ds">'+a.desc+'</span></span>';
+      el.addEventListener('click',()=>{location.hash='#'+a.id;closeNav();});
+      navlist.appendChild(el);
+    });
+  });
+
+  // build home grid
+  const homegrid=document.getElementById('homegrid');
+  GROUPS.forEach(g=>{
+    const apps=APPS.filter(a=>a.group===g);if(!apps.length)return;
+    const lab=document.createElement('div');lab.className='ggrp';lab.textContent=g;homegrid.appendChild(lab);
+    const grid=document.createElement('div');grid.className='grid';
+    apps.forEach(a=>{
+      const c=document.createElement('div');c.className='app '+a.status;
+      c.innerHTML='<div class="top"><span class="ic">'+a.mark+'</span><span class="pill">'+a.status+'</span></div><div class="nm">'+a.name+'</div><div class="ds">'+a.desc+'</div><div class="open">Open →</div>';
+      c.addEventListener('click',()=>{location.hash='#'+a.id;});
+      grid.appendChild(c);
+    });
+    homegrid.appendChild(grid);
+  });
+
+  const frame=document.getElementById('frame'),home=document.getElementById('home');
+  const ctx=document.getElementById('ctx'),ext=document.getElementById('ext');
+  function route(){
+    const id=(location.hash||'').replace('#','');
+    const app=byId[id];
+    document.querySelectorAll('.item').forEach(x=>x.classList.toggle('active',x.dataset.id===id));
+    document.getElementById('homeLink').classList.toggle('active',!app);
+    if(app){
+      if(frame.getAttribute('src')!==app.file)frame.setAttribute('src',app.file);
+      frame.classList.add('show');home.style.display='none';
+      ctx.innerHTML='<b>'+app.name+'</b>';
+      ext.href=app.file;ext.classList.add('show');
+    }else{
+      frame.classList.remove('show');frame.removeAttribute('src');home.style.display='block';
+      ctx.textContent='';ext.classList.remove('show');
+    }
+  }
+  document.getElementById('homeLink').addEventListener('click',()=>{location.hash='';});
+  document.getElementById('brand').addEventListener('click',()=>{location.hash='';});
+  window.addEventListener('hashchange',route);
+  window.addEventListener('load',route);
+
+  // mobile nav
+  const nav=document.getElementById('nav'),scrim=document.getElementById('scrim');
+  function closeNav(){nav.classList.remove('open');scrim.classList.remove('show');}
+  document.getElementById('menu').addEventListener('click',()=>{nav.classList.toggle('open');scrim.classList.toggle('show');});
+  scrim.addEventListener('click',closeNav);
+</script>
+</body>
+</html>

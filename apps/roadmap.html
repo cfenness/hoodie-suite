@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoodie · Product Roadmap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f4f5f8; --panel:#ffffff; --ink:#171a21; --muted:#6b7280; --faint:#9aa1ad;
+  --line:#e6e8ee; --line2:#eff1f5; --accent:#3f3df2; --accent-ink:#2a28c4;
+  --p0:#4f46e5; --p1:#0891b2; --p2:#ca8a04; --p3:#9333ea; --p4:#16a34a;
+  --pri0:#dc2626; --pri1:#ea7317; --pri2:#caa204; --pri3:#94a3b8;
+  --shadow:0 1px 2px rgba(20,24,33,.05),0 6px 20px rgba(20,24,33,.06);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-size:14px;-webkit-font-smoothing:antialiased}
+.mono{font-family:'IBM Plex Mono',monospace}
+.wrap{max-width:1280px;margin:0 auto;padding:0 22px}
+
+/* top bar */
+.top{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.topin{display:flex;align-items:center;gap:18px;padding:13px 22px;max-width:1280px;margin:0 auto;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand .logo{font-weight:800;font-size:20px;letter-spacing:-.02em}
+.brand .logo b{color:var(--accent)}
+.brand .sub{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+.seg{display:flex;background:#eceef3;border-radius:10px;padding:3px}
+.seg button{border:0;background:transparent;font-family:inherit;font-weight:600;font-size:13px;color:var(--muted);padding:6px 15px;border-radius:8px;cursor:pointer;transition:.15s}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.search{margin-left:auto;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:7px 12px;min-width:220px}
+.search input{border:0;outline:0;font-family:inherit;font-size:13.5px;width:100%;background:transparent;color:var(--ink)}
+.search svg{flex:none;opacity:.5}
+
+/* stats */
+.stats{display:flex;align-items:center;gap:22px;padding:18px 0 6px;flex-wrap:wrap}
+.stat{display:flex;flex-direction:column}
+.stat b{font-size:24px;font-weight:800;line-height:1;letter-spacing:-.02em}
+.stat span{font-size:11.5px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.07em;margin-top:4px}
+.prbar{flex:1;min-width:220px;margin-left:auto}
+.prbar-track{display:flex;height:12px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+.prbar-track span{display:block;height:100%}
+.prbar-legend{display:flex;gap:14px;margin-top:7px;font-size:11.5px;color:var(--muted);flex-wrap:wrap}
+.prbar-legend i{width:9px;height:9px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
+
+/* filters */
+.filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:14px 0 6px;border-top:1px solid var(--line2);margin-top:12px}
+.flabel{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-right:2px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:600;color:var(--muted);cursor:pointer;transition:.14s;display:inline-flex;align-items:center;gap:6px}
+.chip:hover{border-color:#cdd2db}
+.chip .dot{width:9px;height:9px;border-radius:3px}
+.chip.on{color:#fff;border-color:transparent}
+.chip.lay.on{background:#2b2f3a}
+.chip.pri.on{color:#fff}
+.clearbtn{margin-left:auto;border:0;background:transparent;color:var(--accent);font-family:inherit;font-weight:600;font-size:12.5px;cursor:pointer}
+
+/* roadmap */
+main{padding:14px 0 60px}
+.phase{margin:26px 0 8px}
+.phase-h{display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:2px solid var(--ph);margin-bottom:16px}
+.phase-tag{font-family:'IBM Plex Mono',monospace;font-weight:600;color:#fff;background:var(--ph);border-radius:6px;padding:4px 10px;font-size:12px;letter-spacing:.04em}
+.phase-name{font-weight:800;font-size:18px;letter-spacing:-.01em}
+.phase-desc{font-size:12.5px;color:var(--muted);flex:1;min-width:160px}
+.phase-meta{font-size:12px;color:var(--muted);font-weight:600;white-space:nowrap}
+.epics{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:13px}
+.epic{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:0;box-shadow:var(--shadow);cursor:pointer;transition:transform .14s,box-shadow .14s,border-color .14s;overflow:hidden;display:flex;flex-direction:column}
+.epic:hover{transform:translateY(-2px);box-shadow:0 6px 24px rgba(20,24,33,.1);border-color:#d7dbe3}
+.epic .bar{height:4px;background:var(--cc)}
+.epic .body{padding:14px 15px 12px;flex:1;display:flex;flex-direction:column}
+.epic .eid{font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:600;color:var(--faint);letter-spacing:.03em}
+.epic .ename{font-weight:700;font-size:15px;margin:3px 0 6px;letter-spacing:-.01em;line-height:1.25}
+.epic .eobj{font-size:12.5px;color:var(--muted);line-height:1.5;flex:1}
+.epic .efoot{display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:11px;border-top:1px solid var(--line2)}
+.cchip{font-size:11px;font-weight:700;border-radius:6px;padding:3px 8px}
+.epic .cnt{font-size:12px;color:var(--muted);font-weight:600}
+.epic .pdots{display:flex;gap:3px;margin-left:auto}
+.epic .pdots i{width:8px;height:8px;border-radius:2.5px}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+
+/* backlog */
+.backlog .grp{margin-bottom:14px;background:var(--panel);border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow);overflow:hidden}
+.grp-h{display:flex;align-items:center;gap:11px;padding:13px 16px;cursor:pointer;user-select:none}
+.grp-h:hover{background:#fafbfc}
+.grp-h .caret{transition:transform .18s;color:var(--faint);font-size:12px}
+.grp.open .caret{transform:rotate(90deg)}
+.grp-h .geid{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:var(--faint)}
+.grp-h .gname{font-weight:700;font-size:14.5px}
+.grp-h .gmeta{margin-left:auto;font-size:12px;color:var(--muted);font-weight:600;display:flex;gap:10px;align-items:center}
+.grp-body{display:none;border-top:1px solid var(--line2)}
+.grp.open .grp-body{display:block}
+.trow{padding:11px 16px 11px 40px;border-top:1px solid var(--line2);cursor:pointer}
+.trow:first-child{border-top:0}
+.trow:hover{background:#fafbfc}
+.trow-main{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+.tid{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:var(--accent-ink)}
+.ttitle{font-weight:600;font-size:13.5px;flex:1;min-width:160px}
+.pri{font-size:10.5px;font-weight:800;color:#fff;border-radius:5px;padding:2px 7px;letter-spacing:.02em}
+.lay{font-size:10.5px;font-weight:700;border-radius:5px;padding:2px 7px;background:#eef0f4;color:#475063}
+.pts{font-size:11px;font-weight:700;color:var(--muted);background:#f1f2f6;border-radius:999px;padding:2px 9px}
+.tdetail{display:none;margin-top:9px;font-size:12.5px;color:#444b57;line-height:1.55}
+.trow.open .tdetail{display:block}
+.tdetail .lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-right:7px}
+.tdetail .ac{background:#f8f9fb;border-left:3px solid var(--cc);border-radius:0 7px 7px 0;padding:8px 11px;margin-top:7px}
+
+/* rank (priority list) */
+.rank-bar{display:flex;align-items:center;gap:10px;padding:4px 2px 12px;flex-wrap:wrap}
+.rank-bar button,.rank-bar .imp{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 13px;font-family:inherit;font-weight:600;font-size:12.5px;color:var(--ink);cursor:pointer;transition:.14s}
+.rank-bar button:hover,.rank-bar .imp:hover{border-color:#cdd2db}
+.rank-bar .hint{font-size:12px;color:var(--muted);margin-left:auto;max-width:560px;text-align:right}
+.epiclist{display:flex;flex-direction:column;gap:11px;padding-bottom:30px}
+.erow{background:#eceef3;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.erow.edragging{opacity:.4}
+.ehead{display:flex;align-items:center;gap:11px;padding:11px 13px;cursor:grab;user-select:none;border-left:4px solid var(--cc);background:#eceef3}
+.ehead:active{cursor:grabbing}
+.grip{color:var(--faint);font-size:15px;line-height:1;letter-spacing:-2px;flex:none;cursor:grab}
+.erank{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;color:#fff;background:var(--cc);border-radius:6px;min-width:26px;text-align:center;padding:3px 0}
+.ename2{font-weight:700;font-size:14px}
+.egrip-meta{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:11.5px;color:var(--muted);font-weight:600}
+.caret2{transition:transform .18s;color:var(--faint);font-size:11px}
+.erow.collapsed .caret2{transform:rotate(-90deg)}
+.erow.collapsed .ebody{display:none}
+.ebody{background:#fff;border-top:1px solid var(--line)}
+.tdrow{display:flex;align-items:center;gap:10px;padding:9px 13px 9px 14px;border-top:1px solid var(--line2);cursor:grab;background:#fff}
+.tdrow:first-child{border-top:0}
+.tdrow:active{cursor:grabbing}
+.tdrow.tdragging{opacity:.4}
+.seq{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:11.5px;color:var(--accent-ink);min-width:30px;text-align:right}
+.tdrow .tid{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--faint);min-width:96px}
+.tdrow .ttl{font-weight:600;font-size:13px;flex:1;min-width:140px}
+.crit{font-size:10px;font-weight:800;color:#fff;border-radius:5px;padding:2px 7px;letter-spacing:.02em}
+.ph{height:3px;background:var(--accent);border-radius:3px;margin:1px 2px;box-shadow:0 0 0 3px rgba(63,61,242,.12)}
+.eph{height:5px;background:var(--accent);border-radius:4px;margin:3px 0;box-shadow:0 0 0 3px rgba(63,61,242,.13)}
+
+/* current build status */
+.statuswrap{margin:20px 0 4px}
+.status-h{display:flex;align-items:baseline;gap:12px;margin-bottom:13px;flex-wrap:wrap}
+.status-h .t{font-weight:800;font-size:16px;letter-spacing:-.01em}
+.status-h .s{font-size:12.5px;color:var(--muted)}
+.statgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(284px,1fr));gap:12px}
+.statcard{background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--cc);border-radius:12px;padding:13px 14px;box-shadow:var(--shadow)}
+.statcard.unfinished{border:1px dashed #e0a23c;border-top:3px solid #e08a1e;background:#fffdf5}
+.statcard .row1{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.statcard .nm{font-weight:700;font-size:14.5px}
+.statpill{margin-left:auto;font-size:10px;font-weight:800;letter-spacing:.04em;border-radius:6px;padding:3px 8px;text-transform:uppercase}
+.meter{display:flex;gap:4px;margin-bottom:9px}
+.meter i{height:6px;flex:1;border-radius:3px;background:#e7e9ef}
+.meter i.on{background:var(--mc)}
+.statcard .note{font-size:12px;color:var(--muted);line-height:1.5}
+/* sprints */
+.sprint-cfg{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;padding:4px 2px 14px}
+.cfg-field{display:flex;flex-direction:column;gap:5px}
+.cfg-field label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--faint)}
+.cfg-field input{border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-family:inherit;font-size:13.5px;width:150px;background:#fffefb;color:var(--ink)}
+.cfg-field input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(63,61,242,.14)}
+.sprint-sum{margin-left:auto;font-size:12.5px;color:var(--muted);font-weight:600;text-align:right;line-height:1.55}
+.sprint-sum b{color:var(--ink)}
+.sprintlist{display:flex;flex-direction:column;gap:13px;padding-bottom:30px}
+.sprint{background:var(--panel);border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow);overflow:hidden}
+.sprint-h{display:flex;align-items:center;gap:12px;padding:13px 16px 10px}
+.sprint-n{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;color:#fff;background:var(--accent);border-radius:7px;padding:4px 10px}
+.sprint-mon{font-weight:800;font-size:15px;letter-spacing:-.01em}
+.sprint-meta{margin-left:auto;font-size:12px;color:var(--muted);font-weight:600}
+.cap-wrap{padding:0 16px 12px}
+.cap-track{height:8px;border-radius:5px;background:#eceef3;overflow:hidden}
+.cap-fill{height:100%;background:var(--accent);border-radius:5px;transition:width .3s}
+.cap-fill.over{background:var(--pri0)}
+.sprint-body{border-top:1px solid var(--line2)}
+.srow{display:flex;align-items:center;gap:11px;padding:9px 16px;border-top:1px solid var(--line2);cursor:pointer}
+.srow:first-child{border-top:0}
+.srow:hover{background:#fafbfc}
+.srow .tid{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--faint);min-width:96px}
+.srow .ttl{font-weight:600;font-size:13px;flex:1;min-width:140px}
+.sprint-empty{padding:24px;text-align:center;color:var(--muted)}
+.lanebar{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.lanebar:last-child{margin-bottom:0}
+.lane-lbl{font-size:10.5px;font-weight:700;color:var(--muted);width:56px;flex:none}
+.cap-fill.be{background:#0d9488}
+.lanetag{font-size:10px;font-weight:800;border-radius:5px;padding:2px 7px;letter-spacing:.02em}
+.lt-app{background:#dfeaf7;color:#2563a8}.lt-be{background:#d8ecec;color:#2c7d7d}.lt-fs{background:#f4e6d4;color:#a66a2c}
+
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(20,24,33,.34);opacity:0;pointer-events:none;transition:.2s;z-index:40}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;height:100%;width:min(480px,94vw);background:#fff;box-shadow:-10px 0 40px rgba(20,24,33,.18);transform:translateX(100%);transition:transform .24s cubic-bezier(.4,0,.2,1);z-index:50;display:flex;flex-direction:column}
+.drawer.on{transform:none}
+.dh{padding:20px 22px 16px;border-bottom:1px solid var(--line)}
+.dh .deid{font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:600;color:var(--faint)}
+.dh .dname{font-weight:800;font-size:20px;letter-spacing:-.02em;margin:4px 0 8px;line-height:1.2}
+.dh .drow{display:flex;gap:9px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.dclose{position:absolute;top:16px;right:18px;border:0;background:#f1f2f6;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:16px;color:var(--muted)}
+.dbody{overflow:auto;padding:16px 22px 40px}
+.dsec{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:14px 0 8px}
+.dobj{font-size:13.5px;color:#3a4150;line-height:1.6}
+.dexit{font-size:13px;color:#3a4150;line-height:1.55;background:#f8f9fb;border-radius:9px;padding:11px 13px;border-left:3px solid var(--cc)}
+.dtix{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+.dtix .dt{border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+.dtix .dt .dtt{font-weight:700;font-size:13.5px;margin-bottom:5px}
+.dtix .dt .dtm{display:flex;gap:7px;align-items:center;margin-bottom:7px;flex-wrap:wrap}
+.dtix .dt .dac{font-size:12px;color:#5a616d;line-height:1.5}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media(max-width:640px){.stat b{font-size:20px}.search{min-width:140px;margin-left:0;order:5;width:100%}}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="topin">
+    <div class="brand"><span class="logo">Hoodie<b>.</b></span><span class="sub">Product Roadmap</span></div>
+    <div class="seg" id="viewseg">
+      <button data-view="roadmap" class="on">Roadmap</button>
+      <button data-view="backlog">Backlog</button>
+      <button data-view="board">Rank</button>
+      <button data-view="sprints">Sprints</button>
+    </div>
+    <div class="search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="search" type="text" placeholder="Search tickets…">
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="stats" id="stats"></div>
+  <div class="filters" id="filters"></div>
+</div>
+
+<div class="wrap"><main id="main"></main></div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer"></aside>
+
+<script>
+const DATA = {"phases": [{"id": "P0", "name": "Foundation & Decomposition", "desc": "Modularize the monolith and build the shell, design system, charting, and state foundations every tool sits on."}, {"id": "P1", "name": "Backend & Data Platform", "desc": "Stand up the backend the prototype implies: API, auth, semantic layer, ingestion, caching."}, {"id": "P2", "name": "Tool Productionization", "desc": "Build out Builder, Studio, Prism, Workbook, and dashboards from prototype/greenfield onto live services."}, {"id": "P3", "name": "Collaboration, Distribution & Security", "desc": "Sharing, scheduling and delivery, exports, the data-fiduciary security layer, and admin."}, {"id": "P4", "name": "Commercialization & Hardening", "desc": "Billing, onboarding, observability, QA automation, and accessibility."}], "epics": [{"phase": "P0", "id": "PLAT-DECOMP", "comp": "Platform", "name": "Monolith Decomposition (ARC)", "obj": "Break the ~40k-line single-file app into a Vite/ES-module workspace with clean tool boundaries.", "exit": "All four tools build from separate modules; no single file >2k lines; parity proof vs legacy."}, {"phase": "P0", "id": "PLAT-BUILD", "comp": "Platform", "name": "Build & Release Infrastructure", "obj": "Repo, package boundaries, CI/CD, environment promotion, bundle budgets.", "exit": "Green CI on PR; dev/stage/prod automated; preview builds per branch; bundle budget enforced."}, {"phase": "P0", "id": "PLAT-SHELL", "comp": "Platform", "name": "App Shell & Navigation", "obj": "The frame every tool lives in: nav, routing, command palette, global search, notifications.", "exit": "Shell routes to all tools; deep links; command palette + global search live."}, {"phase": "P0", "id": "PLAT-DS", "comp": "Platform", "name": "Design System & Component Library", "obj": "Extract tokens and build the shared component library all tools consume.", "exit": "Tokens + full primitive set documented; tools consume the library, not bespoke CSS."}, {"phase": "P0", "id": "PLAT-CHART", "comp": "Platform", "name": "Unified Charting Engine", "obj": "Replace hand-rolled SVG + scattered d3/Chart.js with one charting layer covering every chart type.", "exit": "One chart API renders all existing types with visual parity; interactions + theming + export."}, {"phase": "P0", "id": "PLAT-STATE", "comp": "Platform", "name": "Client State & Data-Access Layer", "obj": "Typed data-access + state store to replace direct localStorage/mock reads.", "exit": "All persistence flows through repositories; localStorage swappable for API with no UI change."}, {"phase": "P1", "id": "BE-API", "comp": "Data", "name": "API Gateway & Services", "obj": "Stand up the backend the prototype implies, starting with the unbuilt share/email hook.", "exit": "Versioned gateway; object CRUD; assets; webhooks; first endpoints behind auth."}, {"phase": "P1", "id": "BE-AUTH", "comp": "Data", "name": "Auth, Tenancy & RBAC", "obj": "Identity, multi-tenant isolation, and role-based access (distributor VP, analyst, admin).", "exit": "SSO login; tenant-scoped data; roles enforced server-side; audit log."}, {"phase": "P1", "id": "BE-SEM", "comp": "Data", "name": "Semantic / Query Layer", "obj": "Encode the time / measures / dimensions model as a governed query layer.", "exit": "Measures+dimensions defined once; tools query the layer; numbers consistent across tools."}, {"phase": "P1", "id": "BE-INGEST", "comp": "Data", "name": "Data Ingestion & Warehouse", "obj": "Pipelines for SipSource depletions, Hoodie scan/inventory, and Unifyd MDM/COLA.", "exit": "Three sources land on schedule; conformed keys; freshness SLAs; lineage + QA."}, {"phase": "P1", "id": "BE-CACHE", "comp": "Data", "name": "Query Caching & Performance", "obj": "Result caching and pre-aggregation so the BI surfaces stay sub-second.", "exit": "P95 query <1s on core dashboards; cache invalidation on data refresh."}, {"phase": "P2", "id": "TOOL-BUILDER", "comp": "Builder", "name": "Builder Productionization", "obj": "Decompose and productionize the Report Builder (rb*): shelves, pivot, filters, calc fields, on live data.", "exit": "Builder runs on governed live data; reports saved server-side; all interactions match legacy."}, {"phase": "P2", "id": "TOOL-STUDIO", "comp": "Studio", "name": "Studio Productionization", "obj": "Productionize the deck editor and its PPTX export: canvas, element types, themes, presenter, live data.", "exit": "Decks saved server-side; PPTX pixel-faithful; live-data elements; presenter mode."}, {"phase": "P2", "id": "TOOL-PRISM", "comp": "Prism", "name": "Prism Productionization", "obj": "Finish the rename and build the AI/live-answer hub: NL->query, narrative, handoffs.", "exit": "NL ask returns governed result + narrative; qrSeries on live data; answer-to-artifact."}, {"phase": "P2", "id": "TOOL-WORKBOOK", "comp": "Workbook", "name": "Workbook Build-out", "obj": "Build the near-greenfield Excel-style workbook: pivot grid, formula engine, cross-filtering.", "exit": "Create/edit/save multi-block analyses; pivot grid; formulas; cross-filter; share + export."}, {"phase": "P2", "id": "TOOL-DASH", "comp": "My Dashboard", "name": "My Dashboard & Market Intelligence", "obj": "Productionize personal/team dashboards and Market Intelligence on live data.", "exit": "Tiles persist server-side; MI on the warehouse; pin-from-anywhere; insight callouts."}, {"phase": "P3", "id": "XC-COLLAB", "comp": "Cross-cutting", "name": "Collaboration & Sharing", "obj": "Sharing, permissions, comments, presence, and revision history across objects.", "exit": "Share by link/role; per-object permissions; comments; presence; revision restore."}, {"phase": "P3", "id": "XC-DIST", "comp": "Cross-cutting", "name": "Scheduling & Distribution", "obj": "Scheduled refresh and email/Slack distribution of reports and decks.", "exit": "Schedule builder; recurring delivery; the legacy share/email hook fully implemented."}, {"phase": "P3", "id": "XC-EXPORT", "comp": "Cross-cutting", "name": "Export Pipeline (PPTX/PDF/XLSX)", "obj": "Server-side export service + download center consolidating all export types.", "exit": "One async export service; PDF/XLSX/PPTX; consistent branding; download center."}, {"phase": "P3", "id": "XC-SEC", "comp": "Cross-cutting", "name": "Data Security & Fiduciary", "obj": "Implement the data-fiduciary standard and distributor-facing security posture.", "exit": "Encryption; row-level tenant security; pen-tested; SOC2-ready; retention; data-handling doc."}, {"phase": "P3", "id": "XC-ADMIN", "comp": "Cross-cutting", "name": "Admin & Settings", "obj": "Tenant admin: users, roles, data connections, branding, usage, audit.", "exit": "Admins manage tenant end-to-end; white-label branding; usage + audit views."}, {"phase": "P4", "id": "COM-BILL", "comp": "Commercial", "name": "Billing & Entitlements", "obj": "Plans, seats, and feature entitlements gating tools and data scope.", "exit": "Entitlement checks gate features; seat management; usage metering; billing portal."}, {"phase": "P4", "id": "COM-ONBOARD", "comp": "Commercial", "name": "Onboarding & Activation", "obj": "First-run onboarding that gets a distributor VP to first insight fast.", "exit": "Guided setup; sample-to-live handoff; tours; activation instrumented."}, {"phase": "P4", "id": "COM-OBS", "comp": "Commercial", "name": "Observability & Reliability", "obj": "Logging, metrics, tracing, alerting, and error reporting across FE+BE.", "exit": "Latency/error dashboards; tracing; SLO alerts; client error capture."}, {"phase": "P4", "id": "COM-QA", "comp": "Commercial", "name": "QA & Test Automation", "obj": "Unit/component/e2e/visual coverage and the parity-proof harness.", "exit": "CI gates on tests; e2e per tool; visual regression; continuous parity; load tests."}, {"phase": "P4", "id": "COM-A11Y", "comp": "Commercial", "name": "Accessibility & Responsive", "obj": "Accessibility pass and responsive/tablet behavior across the BI surfaces.", "exit": "WCAG AA on core flows; keyboard nav; screen-reader passes; usable on tablet."}], "tickets": [{"id": "PLAT-DECOMP-01", "epic": "PLAT-DECOMP", "phase": "P0", "comp": "Platform", "layer": "Infra", "title": "Stand up Vite + ES module workspace", "desc": "Stand up Vite + ES module workspace", "ac": "Legacy app boots from the new workspace unchanged; entry points defined.", "pri": "P0", "est": "L", "pts": 5, "deps": ""}, {"id": "PLAT-DECOMP-02", "epic": "PLAT-DECOMP", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Carve tool boundaries (Prism/Builder/Studio/Workbook)", "desc": "Carve tool boundaries (Prism/Builder/Studio/Workbook)", "ac": "Each tool imports only its module + shared libs; no cross-tool globals.", "pri": "P0", "est": "XL", "pts": 8, "deps": ""}, {"id": "PLAT-DECOMP-03", "epic": "PLAT-DECOMP", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Extract shared utilities and formatting helpers", "desc": "Extract shared utilities and formatting helpers", "ac": "No duplicated helpers; shared package consumed by all tools.", "pri": "P0", "est": "L", "pts": 5, "deps": ""}, {"id": "PLAT-DECOMP-04", "epic": "PLAT-DECOMP", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Define module public interfaces + contracts", "desc": "Define module public interfaces + contracts", "ac": "Tool modules expose typed public APIs; internals hidden.", "pri": "P0", "est": "M", "pts": 3, "deps": ""}, {"id": "PLAT-DECOMP-05", "epic": "PLAT-DECOMP", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Strangler migration of legacy globals off window", "desc": "Strangler migration of legacy globals off window", "ac": "No app logic on window scope; verified by lint rule.", "pri": "P0", "est": "L", "pts": 5, "deps": ""}, {"id": "PLAT-DECOMP-06", "epic": "PLAT-DECOMP", "phase": "P0", "comp": "Platform", "layer": "Infra", "title": "Parity-proof harness vs legacy single-file", "desc": "Parity-proof harness vs legacy single-file", "ac": "Automated diff passes for each tool's golden views.", "pri": "P0", "est": "M", "pts": 3, "deps": ""}, {"id": "PLAT-BUILD-01", "epic": "PLAT-BUILD", "phase": "P0", "comp": "Platform", "layer": "Infra", "title": "Monorepo + package boundaries", "desc": "Monorepo + package boundaries", "ac": "Package graph documented; boundaries enforced by lint.", "pri": "P0", "est": "M", "pts": 3, "deps": ""}, {"id": "PLAT-BUILD-02", "epic": "PLAT-BUILD", "phase": "P0", "comp": "Platform", "layer": "Infra", "title": "Lint / format / typecheck config", "desc": "Lint / format / typecheck config", "ac": "CI runs lint + typecheck on PR.", "pri": "P0", "est": "S", "pts": 1, "deps": ""}, {"id": "PLAT-BUILD-03", "epic": "PLAT-BUILD", "phase": "P0", "comp": "Platform", "layer": "Infra", "title": "CI pipeline (build / test / preview)", "desc": "CI pipeline (build / test / preview)", "ac": "Every PR gets a preview URL; main auto-deploys to stage.", "pri": "P0", "est": "M", "pts": 3, "deps": ""}, {"id": "PLAT-BUILD-04", "epic": "PLAT-BUILD", "phase": "P0", "comp": "Platform", "layer": "Infra", "title": "Environment promotion dev->stage->prod", "desc": "Environment promotion dev->stage->prod", "ac": "Prod deploy is a gated promotion; secrets not in client bundle.", "pri": "P1", "est": "M", "pts": 3, "deps": ""}, {"id": "PLAT-BUILD-05", "epic": "PLAT-BUILD", "phase": "P0", "comp": "Platform", "layer": "Infra", "title": "Bundle budget + code-splitting", "desc": "Bundle budget + code-splitting", "ac": "Per-tool lazy loading; bundle budget enforced in CI.", "pri": "P1", "est": "M", "pts": 3, "deps": ""}, {"id": "PLAT-SHELL-01", "epic": "PLAT-SHELL", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "App shell layout + responsive frame", "desc": "App shell layout + responsive frame", "ac": "Shell renders header/sidebar/content; responsive down to tablet.", "pri": "P0", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-SHELL-02", "epic": "PLAT-SHELL", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Top nav + tool switcher", "desc": "Top nav + tool switcher", "ac": "Switch between Prism/Builder/Studio/Workbook/Dashboards.", "pri": "P0", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-SHELL-03", "epic": "PLAT-SHELL", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Client routing + deep links", "desc": "Client routing + deep links", "ac": "Every view has a shareable URL; back/forward works.", "pri": "P0", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-SHELL-04", "epic": "PLAT-SHELL", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Global command palette", "desc": "Global command palette", "ac": "Cmd-K opens; jump to objects/actions; fuzzy search.", "pri": "P1", "est": "L", "pts": 5, "deps": "PLAT-DECOMP"}, {"id": "PLAT-SHELL-05", "epic": "PLAT-SHELL", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Global search across objects", "desc": "Global search across objects", "ac": "Search reports/decks/analyses/dashboards from the shell.", "pri": "P1", "est": "L", "pts": 5, "deps": "PLAT-DECOMP"}, {"id": "PLAT-SHELL-06", "epic": "PLAT-SHELL", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Notifications center", "desc": "Notifications center", "ac": "In-app notifications with read state.", "pri": "P2", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-SHELL-07", "epic": "PLAT-SHELL", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "User menu + profile entry", "desc": "User menu + profile entry", "ac": "Account menu; profile and settings reachable.", "pri": "P1", "est": "S", "pts": 1, "deps": "PLAT-DECOMP"}, {"id": "PLAT-SHELL-08", "epic": "PLAT-SHELL", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Breadcrumbs + context header", "desc": "Breadcrumbs + context header", "ac": "Context-aware header reflects current object.", "pri": "P2", "est": "S", "pts": 1, "deps": "PLAT-DECOMP"}, {"id": "PLAT-SHELL-09", "epic": "PLAT-SHELL", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Keyboard shortcut system + help", "desc": "Keyboard shortcut system + help", "ac": "Global shortcut map + discoverable help overlay.", "pri": "P2", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-01", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Design tokens", "desc": "Design tokens", "ac": "Color/type/spacing tokens drive theming; Hoodie identity preserved.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-02", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Typography + icon system", "desc": "Typography + icon system", "ac": "Type scale + icon set published.", "pri": "P1", "est": "S", "pts": 1, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-03", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Theming engine + tenant theming hook", "desc": "Theming engine + tenant theming hook", "ac": "Theme switch restyles app; tenant overrides supported.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-04", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Buttons + button group", "desc": "Buttons + button group", "ac": "All button variants/states; loading state.", "pri": "P1", "est": "S", "pts": 1, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-05", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Inputs / textarea / number", "desc": "Inputs / textarea / number", "ac": "Text inputs with validation + states.", "pri": "P1", "est": "S", "pts": 1, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-06", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Select + multiselect + combobox", "desc": "Select + multiselect + combobox", "ac": "Async + searchable selects.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-07", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Dropdown + context menu", "desc": "Dropdown + context menu", "ac": "Keyboard-navigable menus.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-08", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Data table primitive", "desc": "Data table primitive", "ac": "Sort, resize, sticky header, row select.", "pri": "P1", "est": "L", "pts": 5, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-09", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Tabs + segmented control", "desc": "Tabs + segmented control", "ac": "Accessible tabs.", "pri": "P1", "est": "S", "pts": 1, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-10", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Modal / dialog + drawer", "desc": "Modal / dialog + drawer", "ac": "Focus-trapped overlays.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-11", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Toast + inline alerts", "desc": "Toast + inline alerts", "ac": "Toasts queue; inline alert variants.", "pri": "P1", "est": "S", "pts": 1, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-12", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Tooltip + popover", "desc": "Tooltip + popover", "ac": "Positioned, accessible overlays.", "pri": "P1", "est": "S", "pts": 1, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-13", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Date + range picker", "desc": "Date + range picker", "ac": "Absolute + relative date ranges.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-14", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Checkbox / radio / switch / slider", "desc": "Checkbox / radio / switch / slider", "ac": "Form controls with states.", "pri": "P1", "est": "S", "pts": 1, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-15", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Empty / loading-skeleton / error primitives", "desc": "Empty / loading-skeleton / error primitives", "ac": "Standard states reused across tools.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-16", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Form layout + validation patterns", "desc": "Form layout + validation patterns", "ac": "Consistent form scaffolding + errors.", "pri": "P2", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-DS-17", "epic": "PLAT-DS", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Component docs / catalog", "desc": "Component docs / catalog", "ac": "Catalog with usage examples.", "pri": "P2", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-01", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Chart API + spec schema", "desc": "Chart API + spec schema", "ac": "One spec renders all chart types.", "pri": "P1", "est": "L", "pts": 5, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-02", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Axis / scale / grid system", "desc": "Axis / scale / grid system", "ac": "Shared axes/scales across charts.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-03", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Legend / tooltip / crosshair system", "desc": "Legend / tooltip / crosshair system", "ac": "Consistent legend + hover behavior.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-04", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Line chart", "desc": "Line chart", "ac": "Multi-series line with parity.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-05", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Bar (grouped / stacked)", "desc": "Bar (grouped / stacked)", "ac": "Grouped + stacked bars.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-06", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Area + stacked area", "desc": "Area + stacked area", "ac": "Area variants.", "pri": "P1", "est": "S", "pts": 1, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-07", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Scatter + bubble", "desc": "Scatter + bubble", "ac": "Scatter with size encoding.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-08", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Donut / pie + KPI tile", "desc": "Donut / pie + KPI tile", "ac": "Part-to-whole + single-stat.", "pri": "P1", "est": "S", "pts": 1, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-09", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Sunburst", "desc": "Sunburst", "ac": "Hierarchical sunburst with drill.", "pri": "P1", "est": "L", "pts": 5, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-10", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Treemap", "desc": "Treemap", "ac": "Treemap with nesting.", "pri": "P2", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-11", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Histogram", "desc": "Histogram", "ac": "Binned distribution.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-12", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Hex / bin map", "desc": "Hex / bin map", "ac": "Hex-bin density map.", "pri": "P2", "est": "L", "pts": 5, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-13", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Choropleth / geo map", "desc": "Choropleth / geo map", "ac": "Region-shaded geo map.", "pri": "P2", "est": "L", "pts": 5, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-14", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Waterfall", "desc": "Waterfall", "ac": "Waterfall bridge chart.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-15", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Radar", "desc": "Radar", "ac": "Radar/spider chart.", "pri": "P2", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-16", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Sparkline + microcharts", "desc": "Sparkline + microcharts", "ac": "Inline microcharts.", "pri": "P2", "est": "S", "pts": 1, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-17", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Data grid / table viz", "desc": "Data grid / table viz", "ac": "Tabular viz with totals.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-18", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Chart interactions (drill / zoom / brush)", "desc": "Chart interactions (drill / zoom / brush)", "ac": "Drill, zoom, brush-select.", "pri": "P1", "est": "L", "pts": 5, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-19", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Chart export-to-image", "desc": "Chart export-to-image", "ac": "PNG/SVG export, export-safe colors.", "pri": "P2", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-CHART-20", "epic": "PLAT-CHART", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Responsive + resize + virtualization", "desc": "Responsive + resize + virtualization", "ac": "Charts resize; large series virtualized.", "pri": "P1", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-STATE-01", "epic": "PLAT-STATE", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Typed data-access layer", "desc": "Typed data-access layer", "ac": "Wrap the 86 localStorage calls behind typed repositories.", "pri": "P1", "est": "L", "pts": 5, "deps": "PLAT-DECOMP"}, {"id": "PLAT-STATE-02", "epic": "PLAT-STATE", "phase": "P0", "comp": "Platform", "layer": "Full-stack", "title": "API-backed repositories", "desc": "API-backed repositories", "ac": "API repos with localStorage fallback; swap is invisible to UI.", "pri": "P1", "est": "L", "pts": 5, "deps": "PLAT-DECOMP"}, {"id": "PLAT-STATE-03", "epic": "PLAT-STATE", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Central state store", "desc": "Central state store", "ac": "Observable, serializable app/session state; no window globals.", "pri": "P2", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-STATE-04", "epic": "PLAT-STATE", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Optimistic updates + rollback", "desc": "Optimistic updates + rollback", "ac": "Mutations apply optimistically; rollback on error.", "pri": "P2", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-STATE-05", "epic": "PLAT-STATE", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Offline cache + sync", "desc": "Offline cache + sync", "ac": "Read cache survives reload; syncs on reconnect.", "pri": "P2", "est": "M", "pts": 3, "deps": "PLAT-DECOMP"}, {"id": "PLAT-STATE-06", "epic": "PLAT-STATE", "phase": "P0", "comp": "Platform", "layer": "FE", "title": "Error / retry / toast integration", "desc": "Error / retry / toast integration", "ac": "Failed loads surface retry + toast.", "pri": "P2", "est": "S", "pts": 1, "deps": "PLAT-DECOMP"}, {"id": "BE-API-01", "epic": "BE-API", "phase": "P1", "comp": "Data", "layer": "BE", "title": "API gateway + versioning", "desc": "API gateway + versioning", "ac": "Versioned base path; error envelope; OpenAPI published.", "pri": "P1", "est": "L", "pts": 5, "deps": ""}, {"id": "BE-API-02", "epic": "BE-API", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Implement /api/sipsource/share/email", "desc": "Implement /api/sipsource/share/email", "ac": "Endpoint sends a shared report email; rate-limited; audited.", "pri": "P1", "est": "M", "pts": 3, "deps": ""}, {"id": "BE-API-03", "epic": "BE-API", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Object services (reports/decks/analyses/dashboards)", "desc": "Object services (reports/decks/analyses/dashboards)", "ac": "Tenant-scoped CRUD for each persisted object type.", "pri": "P1", "est": "L", "pts": 5, "deps": ""}, {"id": "BE-API-04", "epic": "BE-API", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Asset / file service", "desc": "Asset / file service", "ac": "Upload + serve images and generated exports.", "pri": "P2", "est": "M", "pts": 3, "deps": ""}, {"id": "BE-API-05", "epic": "BE-API", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Webhooks / events", "desc": "Webhooks / events", "ac": "Domain events emitted; subscribable.", "pri": "P2", "est": "M", "pts": 3, "deps": ""}, {"id": "BE-API-06", "epic": "BE-API", "phase": "P1", "comp": "Data", "layer": "Infra", "title": "Service observability baseline", "desc": "Service observability baseline", "ac": "Structured logs, request IDs, latency/error metrics.", "pri": "P2", "est": "M", "pts": 3, "deps": ""}, {"id": "BE-AUTH-01", "epic": "BE-AUTH", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Identity + SSO login", "desc": "Identity + SSO login", "ac": "SSO login; sessions secure + revocable.", "pri": "P1", "est": "L", "pts": 5, "deps": "BE-API, BE-AUTH"}, {"id": "BE-AUTH-02", "epic": "BE-AUTH", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Multi-tenant data isolation", "desc": "Multi-tenant data isolation", "ac": "No cross-tenant read possible; verified by tests.", "pri": "P1", "est": "L", "pts": 5, "deps": "BE-API, BE-AUTH"}, {"id": "BE-AUTH-03", "epic": "BE-AUTH", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Role-based access control", "desc": "Role-based access control", "ac": "Server enforces roles on every mutation.", "pri": "P1", "est": "M", "pts": 3, "deps": "BE-API, BE-AUTH"}, {"id": "BE-AUTH-04", "epic": "BE-AUTH", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Access audit log", "desc": "Access audit log", "ac": "Immutable audit entries queryable by admin.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-API, BE-AUTH"}, {"id": "BE-AUTH-05", "epic": "BE-AUTH", "phase": "P1", "comp": "Data", "layer": "BE", "title": "API tokens / service accounts", "desc": "API tokens / service accounts", "ac": "Scoped tokens for integrations.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-API, BE-AUTH"}, {"id": "BE-AUTH-06", "epic": "BE-AUTH", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Session + security hardening", "desc": "Session + security hardening", "ac": "CSRF, rate limits, session policy.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-API, BE-AUTH"}, {"id": "BE-SEM-01", "epic": "BE-SEM", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Define semantic model (time/measures/dimensions)", "desc": "Define semantic model (time/measures/dimensions)", "ac": "Core measures defined once; documented; versioned.", "pri": "P1", "est": "XL", "pts": 8, "deps": "BE-API, BE-AUTH"}, {"id": "BE-SEM-02", "epic": "BE-SEM", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Query compiler to warehouse SQL", "desc": "Query compiler to warehouse SQL", "ac": "Semantic query returns correct results vs hand SQL.", "pri": "P1", "est": "XL", "pts": 8, "deps": "BE-API, BE-AUTH"}, {"id": "BE-SEM-03", "epic": "BE-SEM", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Measure / dimension registry + API", "desc": "Measure / dimension registry + API", "ac": "Tools fetch the catalog from one API.", "pri": "P1", "est": "L", "pts": 5, "deps": "BE-API, BE-AUTH"}, {"id": "BE-SEM-04", "epic": "BE-SEM", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Row / column security in semantic layer", "desc": "Row / column security in semantic layer", "ac": "Tenant + role scoping applied at query time.", "pri": "P1", "est": "M", "pts": 3, "deps": "BE-API, BE-AUTH"}, {"id": "BE-SEM-05", "epic": "BE-SEM", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Query API + pagination / streaming", "desc": "Query API + pagination / streaming", "ac": "Large results paginate/stream.", "pri": "P1", "est": "L", "pts": 5, "deps": "BE-API, BE-AUTH"}, {"id": "BE-SEM-06", "epic": "BE-SEM", "phase": "P1", "comp": "Data", "layer": "Full-stack", "title": "Consistency audit across tools", "desc": "Consistency audit across tools", "ac": "Same measure+filter yields identical values everywhere.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-API, BE-AUTH"}, {"id": "BE-INGEST-01", "epic": "BE-INGEST", "phase": "P1", "comp": "Data", "layer": "BE", "title": "SipSource depletion pipeline", "desc": "SipSource depletion pipeline", "ac": "Depletions land on schedule with freshness SLA + lineage.", "pri": "P1", "est": "XL", "pts": 8, "deps": "BE-API, BE-AUTH"}, {"id": "BE-INGEST-02", "epic": "BE-INGEST", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Hoodie scan / inventory pipeline", "desc": "Hoodie scan / inventory pipeline", "ac": "Scan + inventory tables refreshed; QA on volumes.", "pri": "P1", "est": "L", "pts": 5, "deps": "BE-API, BE-AUTH"}, {"id": "BE-INGEST-03", "epic": "BE-INGEST", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Unifyd MDM / COLA dimension", "desc": "Unifyd MDM / COLA dimension", "ac": "145-field item master + COLA as conformed dimensions.", "pri": "P1", "est": "L", "pts": 5, "deps": "BE-API, BE-AUTH"}, {"id": "BE-INGEST-04", "epic": "BE-INGEST", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Warehouse modeling + conformed keys", "desc": "Warehouse modeling + conformed keys", "ac": "Conformed item/geo/time keys; cross-source joins tested.", "pri": "P1", "est": "L", "pts": 5, "deps": "BE-API, BE-AUTH"}, {"id": "BE-INGEST-05", "epic": "BE-INGEST", "phase": "P1", "comp": "Data", "layer": "Infra", "title": "Ingestion orchestration / scheduling", "desc": "Ingestion orchestration / scheduling", "ac": "Scheduled DAGs; retries; backfill.", "pri": "P1", "est": "M", "pts": 3, "deps": "BE-API, BE-AUTH"}, {"id": "BE-INGEST-06", "epic": "BE-INGEST", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Data quality / QA checks", "desc": "Data quality / QA checks", "ac": "Per-feed volume + schema checks gate publish.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-API, BE-AUTH"}, {"id": "BE-INGEST-07", "epic": "BE-INGEST", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Freshness + lineage tracking", "desc": "Freshness + lineage tracking", "ac": "Freshness surfaced; lineage queryable.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-API, BE-AUTH"}, {"id": "BE-INGEST-08", "epic": "BE-INGEST", "phase": "P1", "comp": "Data", "layer": "Infra", "title": "Ingestion monitoring + alerts", "desc": "Ingestion monitoring + alerts", "ac": "On-call alerted on SLA breach / anomaly.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-API, BE-AUTH"}, {"id": "BE-CACHE-01", "epic": "BE-CACHE", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Result cache + pre-aggregation", "desc": "Result cache + pre-aggregation", "ac": "P95 <1s on core dashboards; hit-rate tracked.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-API, BE-AUTH"}, {"id": "BE-CACHE-02", "epic": "BE-CACHE", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Cache invalidation on refresh", "desc": "Cache invalidation on refresh", "ac": "No stale numbers after a data refresh.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-API, BE-AUTH"}, {"id": "BE-CACHE-03", "epic": "BE-CACHE", "phase": "P1", "comp": "Data", "layer": "BE", "title": "Query profiling + tuning", "desc": "Query profiling + tuning", "ac": "Slow queries profiled and tuned.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-API, BE-AUTH"}, {"id": "TOOL-BUILDER-01", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "Full-stack", "title": "Point Builder at semantic layer", "desc": "Point Builder at semantic layer", "ac": "rb* reads governed semantic queries, not mock/seed.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-02", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "Full-stack", "title": "Server-side report save / load", "desc": "Server-side report save / load", "ac": "Reports (sipsourceRBState) persisted per user+tenant.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-03", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Field tray + measure/dimension browser", "desc": "Field tray + measure/dimension browser", "ac": "Browse + search the semantic catalog.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-04", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Drag-drop to shelves (rows/cols/values/filters)", "desc": "Drag-drop to shelves (rows/cols/values/filters)", "ac": "Drag fields onto shelves; reorder; remove.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-05", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Shelf config (aggregation / format / alias)", "desc": "Shelf config (aggregation / format / alias)", "ac": "Per-field aggregation, number format, alias.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-06", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Filter builder (incl. relative dates)", "desc": "Filter builder (incl. relative dates)", "ac": "Build filters incl. relative date ranges.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-07", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Index mode", "desc": "Index mode", "ac": "Index/benchmark mode parity with legacy.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-08", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Pivot / crosstab rendering", "desc": "Pivot / crosstab rendering", "ac": "Multi-level pivot with nesting.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-09", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Sorting + top-N + ranking", "desc": "Sorting + top-N + ranking", "ac": "Sort, top-N, rank within group.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-10", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Subtotals + grand totals", "desc": "Subtotals + grand totals", "ac": "Subtotals at each level.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-11", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Conditional formatting rules", "desc": "Conditional formatting rules", "ac": "Rule-based cell formatting.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-12", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Calculated fields / measures editor", "desc": "Calculated fields / measures editor", "ac": "Author derived measures.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-13", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Drill down / through", "desc": "Drill down / through", "ac": "Drill into hierarchy + to detail.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-14", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Viz switcher (table <-> charts)", "desc": "Viz switcher (table <-> charts)", "ac": "Swap a report between table and charts.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-15", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Report layout + sections", "desc": "Report layout + sections", "ac": "Arrange multiple blocks in a report.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-16", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Bookmarks persistence", "desc": "Bookmarks persistence", "ac": "sipsourceBookmarks server-side.", "pri": "P3", "est": "S", "pts": 1, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-17", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Action queue persistence", "desc": "Action queue persistence", "ac": "sipsourceActionQueue server-side.", "pri": "P3", "est": "S", "pts": 1, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-18", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Save / version / duplicate UI", "desc": "Save / version / duplicate UI", "ac": "Version, duplicate, rename reports.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-19", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Share UI", "desc": "Share UI", "ac": "Share a report by link/role.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-20", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Empty / loading / error states", "desc": "Empty / loading / error states", "ac": "Standard states across Builder.", "pri": "P2", "est": "S", "pts": 1, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-21", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Keyboard + a11y pass", "desc": "Keyboard + a11y pass", "ac": "Keyboard-operable; labelled.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-BUILDER-22", "epic": "TOOL-BUILDER", "phase": "P2", "comp": "Builder", "layer": "FE", "title": "Field/shelf regression vs legacy", "desc": "Field/shelf regression vs legacy", "ac": "All interactions match legacy on live data.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-01", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "Full-stack", "title": "Server-side deck persistence", "desc": "Server-side deck persistence", "ac": "Decks saved/loaded per user+tenant; autosave.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-02", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Canvas + slide model", "desc": "Canvas + slide model", "ac": "Slide canvas with coordinate model.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-03", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Slide CRUD + reorder + thumbnails", "desc": "Slide CRUD + reorder + thumbnails", "ac": "Add/delete/reorder slides; thumbnail rail.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-04", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Text element + rich text", "desc": "Text element + rich text", "ac": "Editable rich-text boxes.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-05", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Chart element (bound to semantic query)", "desc": "Chart element (bound to semantic query)", "ac": "Charts on slides query the semantic layer.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-06", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Table element", "desc": "Table element", "ac": "Tables on slides.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-07", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Image element + asset upload", "desc": "Image element + asset upload", "ac": "Insert/upload images.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-08", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Shape / line element", "desc": "Shape / line element", "ac": "Shapes, connectors, lines.", "pri": "P2", "est": "S", "pts": 1, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-09", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "SmartArt / diagram elements", "desc": "SmartArt / diagram elements", "ac": "SmartArt-style diagrams.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-10", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "KPI / stat element", "desc": "KPI / stat element", "ac": "Single-stat slide element.", "pri": "P2", "est": "S", "pts": 1, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-11", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Drag / resize / rotate + snapping", "desc": "Drag / resize / rotate + snapping", "ac": "Manipulate elements with snap guides.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-12", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Alignment / distribute + layering", "desc": "Alignment / distribute + layering", "ac": "Align, distribute, z-order.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-13", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Grouping + lock", "desc": "Grouping + lock", "ac": "Group and lock elements.", "pri": "P2", "est": "S", "pts": 1, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-14", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Themes + master slides", "desc": "Themes + master slides", "ac": "Deck themes + masters.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-15", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Slide templates gallery", "desc": "Slide templates gallery", "ac": "Start from templates.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-16", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Undo / redo history", "desc": "Undo / redo history", "ac": "Full undo/redo stack.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-17", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Speaker notes", "desc": "Speaker notes", "ac": "Per-slide notes.", "pri": "P3", "est": "S", "pts": 1, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-18", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Presenter mode", "desc": "Presenter mode", "ac": "Presenter console with notes + timer.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-19", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "PPTX export engine core", "desc": "PPTX export engine core", "ac": "Render deck to .pptx.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-20", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "PPTX export per-element fidelity audit", "desc": "PPTX export per-element fidelity audit", "ac": "Audit the 320 export paths for faithfulness.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-21", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Live-data refresh in decks", "desc": "Live-data refresh in decks", "ac": "Decks re-render with new data on refresh.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-22", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "Full-stack", "title": "Comments on slides", "desc": "Comments on slides", "ac": "Comment threads per slide.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-23", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Empty / loading / error states", "desc": "Empty / loading / error states", "ac": "Standard states across Studio.", "pri": "P2", "est": "S", "pts": 1, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-STUDIO-24", "epic": "TOOL-STUDIO", "phase": "P2", "comp": "Studio", "layer": "FE", "title": "Keyboard + a11y pass", "desc": "Keyboard + a11y pass", "ac": "Keyboard-operable; labelled.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-01", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "FE", "title": "Complete Prism rename + IA", "desc": "Complete Prism rename + IA", "ac": "No user-facing 'quick reports'; Prism is the AI entry.", "pri": "P2", "est": "S", "pts": 1, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-02", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "FE", "title": "Ask input + composer", "desc": "Ask input + composer", "ac": "Prompt composer with scope chips.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-03", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "Full-stack", "title": "NL -> semantic query", "desc": "NL -> semantic query", "ac": "Common asks map to governed queries.", "pri": "P2", "est": "XL", "pts": 8, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-04", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "Full-stack", "title": "Query guardrails / scope", "desc": "Query guardrails / scope", "ac": "Out-of-scope asks handled safely.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-05", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "Full-stack", "title": "qrSeries engine on live data", "desc": "qrSeries engine on live data", "ac": "qrSeries answers run on the warehouse with caching.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-06", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "FE", "title": "Result rendering (auto-viz)", "desc": "Result rendering (auto-viz)", "ac": "Answers pick an appropriate viz.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-07", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "Full-stack", "title": "Insight narrative generation", "desc": "Insight narrative generation", "ac": "Each answer ships a short narrative.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-08", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "FE", "title": "Suggested follow-ups", "desc": "Suggested follow-ups", "ac": "Relevant next questions offered.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-09", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "FE", "title": "Clarify / disambiguation flow", "desc": "Clarify / disambiguation flow", "ac": "Ambiguous asks prompt a clarifier.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-10", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "FE", "title": "Streaming responses", "desc": "Streaming responses", "ac": "Narrative streams as it generates.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-11", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "FE", "title": "Answer history + pinning", "desc": "Answer history + pinning", "ac": "History saved; pin answers.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-12", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "FE", "title": "Answer-to-artifact (Builder / Studio)", "desc": "Answer-to-artifact (Builder / Studio)", "ac": "Turn an answer into a report or slide.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-13", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "FE", "title": "Citations / provenance on answers", "desc": "Citations / provenance on answers", "ac": "Answers show measures + filters used.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-14", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "FE", "title": "Error / empty / no-data states", "desc": "Error / empty / no-data states", "ac": "Standard states across Prism.", "pri": "P2", "est": "S", "pts": 1, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-15", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "Full-stack", "title": "Feedback loop (thumbs) + eval", "desc": "Feedback loop (thumbs) + eval", "ac": "Capture feedback; eval harness.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-PRISM-16", "epic": "TOOL-PRISM", "phase": "P2", "comp": "Prism", "layer": "FE", "title": "Keyboard + a11y pass", "desc": "Keyboard + a11y pass", "ac": "Keyboard-operable; labelled.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-01", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Workbook shell + block model", "desc": "Workbook shell + block model", "ac": "Container holding multiple analysis blocks.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-02", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Block CRUD + reorder", "desc": "Block CRUD + reorder", "ac": "Add/remove/reorder blocks.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-03", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Pivot grid engine", "desc": "Pivot grid engine", "ac": "Pivot by measures/dimensions; nesting.", "pri": "P2", "est": "XL", "pts": 8, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-04", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Cell selection / range", "desc": "Cell selection / range", "ac": "Range select with shift/ctrl.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-05", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Cell editing + types", "desc": "Cell editing + types", "ac": "Edit cells; typed values.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-06", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Formula engine (cross-cell)", "desc": "Formula engine (cross-cell)", "ac": "Cross-cell references recompute.", "pri": "P2", "est": "XL", "pts": 8, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-07", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Formula bar + function library", "desc": "Formula bar + function library", "ac": "Formula bar; core function set.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-08", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Cross-filtering between blocks", "desc": "Cross-filtering between blocks", "ac": "Selection in one block filters others.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-09", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Sort / filter per block", "desc": "Sort / filter per block", "ac": "Per-block sort and filter.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-10", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Conditional formatting", "desc": "Conditional formatting", "ac": "Rule-based cell formatting.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-11", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Charts from a block", "desc": "Charts from a block", "ac": "Chart a block's data.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-12", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Frozen rows/cols + virtualization", "desc": "Frozen rows/cols + virtualization", "ac": "Freeze panes; virtualize large grids.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-13", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Copy / paste + fill", "desc": "Copy / paste + fill", "ac": "Clipboard + fill-down.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-14", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "Full-stack", "title": "Import range from semantic query", "desc": "Import range from semantic query", "ac": "Pull a governed query into a block.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-15", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "Full-stack", "title": "Workbook persistence", "desc": "Workbook persistence", "ac": "Save/load workbooks per tenant.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-16", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Sharing + permissions UI", "desc": "Sharing + permissions UI", "ac": "Share workbooks by role.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-17", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Export to XLSX", "desc": "Export to XLSX", "ac": "Export a workbook to .xlsx.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-18", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Export block to Studio", "desc": "Export block to Studio", "ac": "Push a block into a deck.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-19", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Undo / redo", "desc": "Undo / redo", "ac": "Full undo/redo.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-20", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Empty / loading / error states", "desc": "Empty / loading / error states", "ac": "Standard states across Workbook.", "pri": "P2", "est": "S", "pts": 1, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-21", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "Keyboard nav (Excel-like)", "desc": "Keyboard nav (Excel-like)", "ac": "Arrow/tab/enter navigation + shortcuts.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-WORKBOOK-22", "epic": "TOOL-WORKBOOK", "phase": "P2", "comp": "Workbook", "layer": "FE", "title": "a11y pass", "desc": "a11y pass", "ac": "Grid is screen-reader navigable.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-DASH-01", "epic": "TOOL-DASH", "phase": "P2", "comp": "My Dashboard", "layer": "Full-stack", "title": "Server-side pinned tiles", "desc": "Server-side pinned tiles", "ac": "mydash tiles + team dashboards persisted.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-DASH-02", "epic": "TOOL-DASH", "phase": "P2", "comp": "My Dashboard", "layer": "FE", "title": "Dashboard grid layout + resize", "desc": "Dashboard grid layout + resize", "ac": "Drag/resize tiles on a grid.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-DASH-03", "epic": "TOOL-DASH", "phase": "P2", "comp": "My Dashboard", "layer": "FE", "title": "Tile types (chart/kpi/table/text)", "desc": "Tile types (chart/kpi/table/text)", "ac": "Core tile set.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-DASH-04", "epic": "TOOL-DASH", "phase": "P2", "comp": "My Dashboard", "layer": "FE", "title": "Pin-from-anywhere flow", "desc": "Pin-from-anywhere flow", "ac": "Pin a view from any tool.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-DASH-05", "epic": "TOOL-DASH", "phase": "P2", "comp": "My Dashboard", "layer": "FE", "title": "Filters / parameters bar", "desc": "Filters / parameters bar", "ac": "Dashboard-level filters.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-DASH-06", "epic": "TOOL-DASH", "phase": "P2", "comp": "My Dashboard", "layer": "Full-stack", "title": "Team dashboards", "desc": "Team dashboards", "ac": "Shared team dashboards.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-DASH-07", "epic": "TOOL-DASH", "phase": "P2", "comp": "My Dashboard", "layer": "Full-stack", "title": "Market Intelligence on warehouse", "desc": "Market Intelligence on warehouse", "ac": "MI views render on conformed warehouse data.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-DASH-08", "epic": "TOOL-DASH", "phase": "P2", "comp": "My Dashboard", "layer": "FE", "title": "MI insight callout layer", "desc": "MI insight callout layer", "ac": "Auto-surface notable moves.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-DASH-09", "epic": "TOOL-DASH", "phase": "P2", "comp": "My Dashboard", "layer": "FE", "title": "Drill from tile to Builder", "desc": "Drill from tile to Builder", "ac": "Tile opens the underlying report.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-DASH-10", "epic": "TOOL-DASH", "phase": "P2", "comp": "My Dashboard", "layer": "Full-stack", "title": "Dashboard share / embed", "desc": "Dashboard share / embed", "ac": "Share or embed a dashboard.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-DASH-11", "epic": "TOOL-DASH", "phase": "P2", "comp": "My Dashboard", "layer": "FE", "title": "Empty / loading / error states", "desc": "Empty / loading / error states", "ac": "Standard states across dashboards.", "pri": "P2", "est": "S", "pts": 1, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "TOOL-DASH-12", "epic": "TOOL-DASH", "phase": "P2", "comp": "My Dashboard", "layer": "FE", "title": "a11y + responsive", "desc": "a11y + responsive", "ac": "Dashboards usable on tablet.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-SEM, PLAT-STATE, PLAT-CHART, PLAT-DS"}, {"id": "XC-COLLAB-01", "epic": "XC-COLLAB", "phase": "P3", "comp": "Cross-cutting", "layer": "Full-stack", "title": "Sharing + per-object permissions", "desc": "Sharing + per-object permissions", "ac": "Objects shareable; permissions enforced server-side.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-AUTH, BE-API"}, {"id": "XC-COLLAB-02", "epic": "XC-COLLAB", "phase": "P3", "comp": "Cross-cutting", "layer": "FE", "title": "Share modal / link UI", "desc": "Share modal / link UI", "ac": "Share dialog with role picker.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "XC-COLLAB-03", "epic": "XC-COLLAB", "phase": "P3", "comp": "Cross-cutting", "layer": "Full-stack", "title": "Comments + threads", "desc": "Comments + threads", "ac": "Threaded comments on objects.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "XC-COLLAB-04", "epic": "XC-COLLAB", "phase": "P3", "comp": "Cross-cutting", "layer": "Full-stack", "title": "Mentions + notifications", "desc": "Mentions + notifications", "ac": "@-mentions notify users.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "XC-COLLAB-05", "epic": "XC-COLLAB", "phase": "P3", "comp": "Cross-cutting", "layer": "Full-stack", "title": "Revision history + restore", "desc": "Revision history + restore", "ac": "View/restore prior versions.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "XC-COLLAB-06", "epic": "XC-COLLAB", "phase": "P3", "comp": "Cross-cutting", "layer": "Full-stack", "title": "Presence / last-edited", "desc": "Presence / last-edited", "ac": "Show who's viewing/edited.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "XC-COLLAB-07", "epic": "XC-COLLAB", "phase": "P3", "comp": "Cross-cutting", "layer": "FE", "title": "Activity feed", "desc": "Activity feed", "ac": "Per-object activity stream.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "XC-COLLAB-08", "epic": "XC-COLLAB", "phase": "P3", "comp": "Cross-cutting", "layer": "FE", "title": "Permission management UI", "desc": "Permission management UI", "ac": "Manage object permissions.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "XC-DIST-01", "epic": "XC-DIST", "phase": "P3", "comp": "Cross-cutting", "layer": "BE", "title": "Scheduled refresh + delivery", "desc": "Scheduled refresh + delivery", "ac": "Recurring report runs delivered.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-API"}, {"id": "XC-DIST-02", "epic": "XC-DIST", "phase": "P3", "comp": "Cross-cutting", "layer": "FE", "title": "Schedule builder UI", "desc": "Schedule builder UI", "ac": "Build a recurring schedule.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-API"}, {"id": "XC-DIST-03", "epic": "XC-DIST", "phase": "P3", "comp": "Cross-cutting", "layer": "Full-stack", "title": "Email / Slack delivery templates", "desc": "Email / Slack delivery templates", "ac": "Branded delivery templates.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-API"}, {"id": "XC-DIST-04", "epic": "XC-DIST", "phase": "P3", "comp": "Cross-cutting", "layer": "BE", "title": "Distribution audit + bounce handling", "desc": "Distribution audit + bounce handling", "ac": "Delivery status; bounces retried.", "pri": "P3", "est": "S", "pts": 1, "deps": "BE-API"}, {"id": "XC-EXPORT-01", "epic": "XC-EXPORT", "phase": "P3", "comp": "Cross-cutting", "layer": "BE", "title": "Async export service", "desc": "Async export service", "ac": "Export jobs queue + return links.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-API"}, {"id": "XC-EXPORT-02", "epic": "XC-EXPORT", "phase": "P3", "comp": "Cross-cutting", "layer": "FE", "title": "Export job UI + download center", "desc": "Export job UI + download center", "ac": "Track jobs; download outputs.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-API"}, {"id": "XC-EXPORT-03", "epic": "XC-EXPORT", "phase": "P3", "comp": "Cross-cutting", "layer": "Full-stack", "title": "PDF export (reports / dashboards)", "desc": "PDF export (reports / dashboards)", "ac": "Faithful PDF export.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-API"}, {"id": "XC-EXPORT-04", "epic": "XC-EXPORT", "phase": "P3", "comp": "Cross-cutting", "layer": "Full-stack", "title": "XLSX export", "desc": "XLSX export", "ac": "Tabular export to .xlsx.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-API"}, {"id": "XC-EXPORT-05", "epic": "XC-EXPORT", "phase": "P3", "comp": "Cross-cutting", "layer": "Full-stack", "title": "PPTX export consolidation", "desc": "PPTX export consolidation", "ac": "Studio PPTX runs through the service.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-API"}, {"id": "XC-EXPORT-06", "epic": "XC-EXPORT", "phase": "P3", "comp": "Cross-cutting", "layer": "Full-stack", "title": "Branding in exports", "desc": "Branding in exports", "ac": "Tenant branding on all exports.", "pri": "P3", "est": "S", "pts": 1, "deps": "BE-API"}, {"id": "XC-SEC-01", "epic": "XC-SEC", "phase": "P3", "comp": "Cross-cutting", "layer": "BE", "title": "Encryption at rest + in transit", "desc": "Encryption at rest + in transit", "ac": "All data encrypted in transit and at rest.", "pri": "P1", "est": "M", "pts": 3, "deps": ""}, {"id": "XC-SEC-02", "epic": "XC-SEC", "phase": "P3", "comp": "Cross-cutting", "layer": "BE", "title": "Row-level tenant security review", "desc": "Row-level tenant security review", "ac": "No cross-tenant leakage in review.", "pri": "P1", "est": "M", "pts": 3, "deps": ""}, {"id": "XC-SEC-03", "epic": "XC-SEC", "phase": "P3", "comp": "Cross-cutting", "layer": "Full-stack", "title": "Data-fiduciary controls + handling policy", "desc": "Data-fiduciary controls + handling policy", "ac": "Controls implemented; data-handling doc published.", "pri": "P2", "est": "L", "pts": 5, "deps": ""}, {"id": "XC-SEC-04", "epic": "XC-SEC", "phase": "P3", "comp": "Cross-cutting", "layer": "Infra", "title": "SOC2-readiness controls", "desc": "SOC2-readiness controls", "ac": "Control set mapped; evidence automated.", "pri": "P3", "est": "L", "pts": 5, "deps": ""}, {"id": "XC-SEC-05", "epic": "XC-SEC", "phase": "P3", "comp": "Cross-cutting", "layer": "BE", "title": "Penetration test + remediation", "desc": "Penetration test + remediation", "ac": "Findings triaged and fixed.", "pri": "P2", "est": "M", "pts": 3, "deps": ""}, {"id": "XC-SEC-06", "epic": "XC-SEC", "phase": "P3", "comp": "Cross-cutting", "layer": "BE", "title": "Data retention / deletion", "desc": "Data retention / deletion", "ac": "Retention policy + delete on request.", "pri": "P3", "est": "M", "pts": 3, "deps": ""}, {"id": "XC-ADMIN-01", "epic": "XC-ADMIN", "phase": "P3", "comp": "Cross-cutting", "layer": "Full-stack", "title": "Tenant admin console", "desc": "Tenant admin console", "ac": "Admins manage tenant end-to-end.", "pri": "P2", "est": "L", "pts": 5, "deps": "BE-AUTH, BE-API"}, {"id": "XC-ADMIN-02", "epic": "XC-ADMIN", "phase": "P3", "comp": "Cross-cutting", "layer": "FE", "title": "User + role management UI", "desc": "User + role management UI", "ac": "Invite users; assign roles.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "XC-ADMIN-03", "epic": "XC-ADMIN", "phase": "P3", "comp": "Cross-cutting", "layer": "Full-stack", "title": "Data connection management", "desc": "Data connection management", "ac": "Connect/manage data sources.", "pri": "P2", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "XC-ADMIN-04", "epic": "XC-ADMIN", "phase": "P3", "comp": "Cross-cutting", "layer": "FE", "title": "White-label branding", "desc": "White-label branding", "ac": "Per-tenant logo/palette/subdomain.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "XC-ADMIN-05", "epic": "XC-ADMIN", "phase": "P3", "comp": "Cross-cutting", "layer": "FE", "title": "Usage / seat dashboard", "desc": "Usage / seat dashboard", "ac": "Tenant usage + seats.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "XC-ADMIN-06", "epic": "XC-ADMIN", "phase": "P3", "comp": "Cross-cutting", "layer": "FE", "title": "Audit log viewer", "desc": "Audit log viewer", "ac": "Browse the access audit log.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "COM-BILL-01", "epic": "COM-BILL", "phase": "P4", "comp": "Commercial", "layer": "Full-stack", "title": "Plans + entitlement gating", "desc": "Plans + entitlement gating", "ac": "Entitlement checks gate features server-side.", "pri": "P3", "est": "L", "pts": 5, "deps": "BE-AUTH, BE-API"}, {"id": "COM-BILL-02", "epic": "COM-BILL", "phase": "P4", "comp": "Commercial", "layer": "FE", "title": "Entitlement checks in UI", "desc": "Entitlement checks in UI", "ac": "UI hides/locks ungated features.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "COM-BILL-03", "epic": "COM-BILL", "phase": "P4", "comp": "Commercial", "layer": "BE", "title": "Usage metering", "desc": "Usage metering", "ac": "Usage captured per tenant; limits enforced.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "COM-BILL-04", "epic": "COM-BILL", "phase": "P4", "comp": "Commercial", "layer": "Full-stack", "title": "Billing portal integration", "desc": "Billing portal integration", "ac": "Self-serve plan + seat management.", "pri": "P3", "est": "M", "pts": 3, "deps": "BE-AUTH, BE-API"}, {"id": "COM-ONBOARD-01", "epic": "COM-ONBOARD", "phase": "P4", "comp": "Commercial", "layer": "FE", "title": "First-run onboarding flow", "desc": "First-run onboarding flow", "ac": "New user reaches first live insight.", "pri": "P3", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-ONBOARD-02", "epic": "COM-ONBOARD", "phase": "P4", "comp": "Commercial", "layer": "Full-stack", "title": "Sample-to-live handoff", "desc": "Sample-to-live handoff", "ac": "Demo seed cleanly replaced by tenant data.", "pri": "P3", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-ONBOARD-03", "epic": "COM-ONBOARD", "phase": "P4", "comp": "Commercial", "layer": "FE", "title": "Product tours / coachmarks", "desc": "Product tours / coachmarks", "ac": "Contextual tours per tool.", "pri": "P3", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-ONBOARD-04", "epic": "COM-ONBOARD", "phase": "P4", "comp": "Commercial", "layer": "Full-stack", "title": "Activation instrumentation", "desc": "Activation instrumentation", "ac": "Activation metric instrumented.", "pri": "P3", "est": "S", "pts": 1, "deps": ""}, {"id": "COM-OBS-01", "epic": "COM-OBS", "phase": "P4", "comp": "Commercial", "layer": "Infra", "title": "Metrics / logging / tracing stack", "desc": "Metrics / logging / tracing stack", "ac": "Latency/error dashboards; distributed tracing.", "pri": "P2", "est": "L", "pts": 5, "deps": ""}, {"id": "COM-OBS-02", "epic": "COM-OBS", "phase": "P4", "comp": "Commercial", "layer": "FE", "title": "Client error + performance capture", "desc": "Client error + performance capture", "ac": "Client errors + web vitals captured.", "pri": "P3", "est": "S", "pts": 1, "deps": ""}, {"id": "COM-OBS-03", "epic": "COM-OBS", "phase": "P4", "comp": "Commercial", "layer": "Infra", "title": "Alerting on SLOs", "desc": "Alerting on SLOs", "ac": "On-call paged on SLO breach.", "pri": "P3", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-OBS-04", "epic": "COM-OBS", "phase": "P4", "comp": "Commercial", "layer": "Infra", "title": "Status / health dashboard", "desc": "Status / health dashboard", "ac": "Internal health dashboard.", "pri": "P3", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-QA-01", "epic": "COM-QA", "phase": "P4", "comp": "Commercial", "layer": "Infra", "title": "Test framework + CI gates", "desc": "Test framework + CI gates", "ac": "CI blocks merge on failing tests.", "pri": "P1", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-QA-02", "epic": "COM-QA", "phase": "P4", "comp": "Commercial", "layer": "FE", "title": "Component / unit test suite", "desc": "Component / unit test suite", "ac": "Core components + logic covered.", "pri": "P2", "est": "L", "pts": 5, "deps": ""}, {"id": "COM-QA-03", "epic": "COM-QA", "phase": "P4", "comp": "Commercial", "layer": "Full-stack", "title": "E2E golden paths per tool", "desc": "E2E golden paths per tool", "ac": "E2E covers each tool's happy path.", "pri": "P2", "est": "L", "pts": 5, "deps": ""}, {"id": "COM-QA-04", "epic": "COM-QA", "phase": "P4", "comp": "Commercial", "layer": "FE", "title": "Visual regression tests", "desc": "Visual regression tests", "ac": "Key screens snapshot-tested.", "pri": "P3", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-QA-05", "epic": "COM-QA", "phase": "P4", "comp": "Commercial", "layer": "Infra", "title": "Continuous parity harness", "desc": "Continuous parity harness", "ac": "Legacy parity diff runs in CI until retired.", "pri": "P2", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-QA-06", "epic": "COM-QA", "phase": "P4", "comp": "Commercial", "layer": "BE", "title": "Load / performance testing", "desc": "Load / performance testing", "ac": "Core queries load-tested.", "pri": "P3", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-A11Y-01", "epic": "COM-A11Y", "phase": "P4", "comp": "Commercial", "layer": "FE", "title": "Accessibility audit baseline", "desc": "Accessibility audit baseline", "ac": "Baseline audit + issue backlog.", "pri": "P3", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-A11Y-02", "epic": "COM-A11Y", "phase": "P4", "comp": "Commercial", "layer": "FE", "title": "Global keyboard navigation", "desc": "Global keyboard navigation", "ac": "App fully keyboard-operable.", "pri": "P3", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-A11Y-03", "epic": "COM-A11Y", "phase": "P4", "comp": "Commercial", "layer": "FE", "title": "Screen-reader pass: Builder", "desc": "Screen-reader pass: Builder", "ac": "Builder usable with a screen reader.", "pri": "P3", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-A11Y-04", "epic": "COM-A11Y", "phase": "P4", "comp": "Commercial", "layer": "FE", "title": "Screen-reader pass: Studio", "desc": "Screen-reader pass: Studio", "ac": "Studio usable with a screen reader.", "pri": "P3", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-A11Y-05", "epic": "COM-A11Y", "phase": "P4", "comp": "Commercial", "layer": "FE", "title": "Screen-reader pass: Workbook", "desc": "Screen-reader pass: Workbook", "ac": "Workbook grid screen-reader navigable.", "pri": "P3", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-A11Y-06", "epic": "COM-A11Y", "phase": "P4", "comp": "Commercial", "layer": "FE", "title": "Contrast + focus states", "desc": "Contrast + focus states", "ac": "Meets contrast; visible focus.", "pri": "P3", "est": "S", "pts": 1, "deps": ""}, {"id": "COM-A11Y-07", "epic": "COM-A11Y", "phase": "P4", "comp": "Commercial", "layer": "FE", "title": "Responsive / tablet read + share", "desc": "Responsive / tablet read + share", "ac": "Read/share usable on tablet.", "pri": "P3", "est": "M", "pts": 3, "deps": ""}, {"id": "COM-A11Y-08", "epic": "COM-A11Y", "phase": "P4", "comp": "Commercial", "layer": "FE", "title": "Reduced-motion + preferences", "desc": "Reduced-motion + preferences", "ac": "Honors reduced-motion + prefs.", "pri": "P3", "est": "S", "pts": 1, "deps": ""}]};
+const COMP={
+ "Prism":{bg:"#efe1f6",fg:"#7b3aa6",cc:"#9333ea"},
+ "Builder":{bg:"#dfeaf7",fg:"#2563a8",cc:"#2563eb"},
+ "Studio":{bg:"#f4e6d4",fg:"#a66a2c",cc:"#d97706"},
+ "Workbook":{bg:"#dcefdc",fg:"#2f7d43",cc:"#16a34a"},
+ "My Dashboard":{bg:"#ece8db",fg:"#7a7048",cc:"#a18a3a"},
+ "Platform":{bg:"#e4e4ef",fg:"#5856a8",cc:"#6366f1"},
+ "Data":{bg:"#d8ecec",fg:"#2c7d7d",cc:"#0d9488"},
+ "Cross-cutting":{bg:"#f6e9cf",fg:"#9a7320",cc:"#ca8a04"},
+ "Commercial":{bg:"#f6dcdc",fg:"#b0454b",cc:"#dc2626"}
+};
+const PHC={"P0":"#4f46e5","P1":"#0891b2","P2":"#ca8a04","P3":"#9333ea","P4":"#16a34a"};
+const PRI={"P0":"#dc2626","P1":"#ea7317","P2":"#caa204","P3":"#94a3b8"};
+const PRILABEL={"P0":"Critical","P1":"High","P2":"Medium","P3":"Later"};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+let view="roadmap";
+const filt={comp:new Set(),layer:new Set(),pri:new Set(),q:""};
+const openGroups=new Set();
+
+function matches(t){
+  if(filt.comp.size&&!filt.comp.has(t.comp))return false;
+  if(filt.layer.size&&!filt.layer.has(t.layer))return false;
+  if(filt.pri.size&&!filt.pri.has(t.pri))return false;
+  if(filt.q){const h=(t.id+" "+t.title+" "+t.desc+" "+t.ac+" "+t.epic).toLowerCase();if(!h.includes(filt.q))return false;}
+  return true;
+}
+function ftickets(){return DATA.tickets.filter(matches);}
+function ticketsByEpic(eid,list){return (list||ftickets()).filter(t=>t.epic===eid);}
+
+/* ---- stats ---- */
+function renderStats(){
+  const list=ftickets();
+  const pts=list.reduce((a,t)=>a+t.pts,0);
+  const epset=new Set(list.map(t=>t.epic));
+  const pc={P0:0,P1:0,P2:0,P3:0};list.forEach(t=>pc[t.pri]++);
+  const tot=list.length||1;
+  const segs=["P0","P1","P2","P3"].map(p=>`<span style="width:${pc[p]/tot*100}%;background:${PRI[p]}"></span>`).join("");
+  const leg=["P0","P1","P2","P3"].map(p=>`<span><i style="background:${PRI[p]}"></i>${p} ${PRILABEL[p]} · ${pc[p]}</span>`).join("");
+  document.getElementById('stats').innerHTML=
+    `<div class="stat"><b>${list.length}</b><span>Tickets</span></div>
+     <div class="stat"><b>${epset.size}</b><span>Epics</span></div>
+     <div class="stat"><b>${pts}</b><span>Story points</span></div>
+     <div class="stat"><b>${DATA.phases.length}</b><span>Phases</span></div>
+     <div class="prbar"><div class="prbar-track">${segs}</div><div class="prbar-legend">${leg}</div></div>`;
+}
+
+/* ---- filters ---- */
+function renderFilters(){
+  const comps=[...new Set(DATA.epics.map(e=>e.comp))];
+  const layers=["FE","BE","Full-stack","Infra"];
+  const pris=["P0","P1","P2","P3"];
+  const cchips=comps.map(c=>`<button class="chip comp ${filt.comp.has(c)?'on':''}" data-comp="${c}" ${filt.comp.has(c)?`style="background:${COMP[c].cc}"`:''}><span class="dot" style="background:${COMP[c].cc}"></span>${c}</button>`).join("");
+  const lchips=layers.map(l=>`<button class="chip lay ${filt.layer.has(l)?'on':''}" data-layer="${l}">${l}</button>`).join("");
+  const pchips=pris.map(p=>`<button class="chip pri ${filt.pri.has(p)?'on':''}" data-pri="${p}" ${filt.pri.has(p)?`style="background:${PRI[p]}"`:''}>${p}</button>`).join("");
+  const active=filt.comp.size||filt.layer.size||filt.pri.size||filt.q;
+  document.getElementById('filters').innerHTML=
+    `<span class="flabel">Component</span>${cchips}<span class="flabel" style="margin-left:8px">Layer</span>${lchips}<span class="flabel" style="margin-left:8px">Priority</span>${pchips}`+
+    (active?`<button class="clearbtn" id="clear">Clear all</button>`:``);
+}
+
+/* ---- roadmap ---- */
+const STATE={
+ "Prototype":{bg:"#dfeaf7",fg:"#2563a8",mc:"#2563eb",pips:3},
+ "Partial":{bg:"#f6e9cf",fg:"#9a7320",mc:"#ca8a04",pips:2},
+ "Unfinished":{bg:"#fbe3cf",fg:"#b5611a",mc:"#e0801e",pips:1},
+ "Not started":{bg:"#e9eaef",fg:"#6b7280",mc:"#9aa1ad",pips:0}
+};
+const STATUS=[
+ {nm:"Builder",comp:"Builder",state:"Prototype",note:"Report Builder — the deepest surface (~520 functions). Built in the prototype; needs live data and server-side save/load."},
+ {nm:"Studio",comp:"Studio",state:"Prototype",note:"QBR deck editor with heavy PPTX export. Built; export fidelity and server-side deck persistence remain."},
+ {nm:"Prism",comp:"Prism",state:"Partial",note:"AI / live-answer hub — named throughout but still riding the quickreports engine mid-rename; no natural-language query yet."},
+ {nm:"Workbook",comp:"Workbook",state:"Unfinished",note:"Excel-style workbook — near-greenfield scaffold (~3 functions). Pivot grid, cross-filtering, persistence, and sharing are not built."},
+ {nm:"My Dashboard / MI",comp:"My Dashboard",state:"Partial",note:"Personal dashboards and Market Intelligence exist but run on mock + localStorage, not the live warehouse."},
+ {nm:"Backend & Data",comp:"Data",state:"Not started",note:"No backend yet: persistence is localStorage and data is seeded. API, auth, semantic layer, and ingestion are all to build."}
+];
+function renderStatusSection(){
+  const cards=STATUS.map(s=>{const c=COMP[s.comp],st=STATE[s.state];
+    const pips=[0,1,2,3].map(i=>`<i class="${i<st.pips?'on':''}"></i>`).join("");
+    return `<div class="statcard ${s.state==='Unfinished'?'unfinished':''}" style="--cc:${c.cc};--mc:${st.mc}">
+      <div class="row1"><span class="nm">${esc(s.nm)}</span><span class="statpill" style="background:${st.bg};color:${st.fg}">${s.state}</span></div>
+      <div class="meter">${pips}</div><div class="note">${esc(s.note)}</div></div>`;
+  }).join("");
+  return `<section class="statuswrap"><div class="status-h"><span class="t">Current build status</span><span class="s">Where each surface stands today — what the roadmap below takes to production.</span></div><div class="statgrid">${cards}</div></section>`;
+}
+function pdots(eid,list){
+  const ts=ticketsByEpic(eid,list);
+  return ["P0","P1","P2","P3"].flatMap(p=>ts.filter(t=>t.pri===p).map(()=>`<i style="background:${PRI[p]}"></i>`)).join("");
+}
+function renderRoadmap(){
+  const list=ftickets();
+  let html="";
+  DATA.phases.forEach(ph=>{
+    const eps=DATA.epics.filter(e=>e.phase===ph.id).filter(e=>ticketsByEpic(e.id,list).length>0);
+    if(!eps.length)return;
+    const tcount=eps.reduce((a,e)=>a+ticketsByEpic(e.id,list).length,0);
+    const pts=eps.reduce((a,e)=>a+ticketsByEpic(e.id,list).reduce((x,t)=>x+t.pts,0),0);
+    html+=`<section class="phase" style="--ph:${PHC[ph.id]}">
+      <div class="phase-h"><span class="phase-tag">${ph.id}</span><span class="phase-name">${esc(ph.name)}</span>
+        <span class="phase-desc">${esc(ph.desc)}</span><span class="phase-meta">${eps.length} epics · ${tcount} tickets · ${pts} pts</span></div>
+      <div class="epics">`;
+    eps.forEach(e=>{
+      const c=COMP[e.comp];const n=ticketsByEpic(e.id,list).length;
+      html+=`<article class="epic" data-epic="${e.id}" style="--cc:${c.cc}">
+        <div class="bar"></div>
+        <div class="body">
+          <div class="eid">${e.id}</div>
+          <div class="ename">${esc(e.name)}</div>
+          <div class="eobj">${esc(e.obj)}</div>
+          <div class="efoot">
+            <span class="cchip" style="background:${c.bg};color:${c.fg}">${e.comp}</span>
+            <span class="cnt">${n} ticket${n!==1?'s':''}</span>
+            <span class="pdots">${pdots(e.id,list)}</span>
+          </div>
+        </div></article>`;
+    });
+    html+=`</div></section>`;
+  });
+  document.getElementById('main').innerHTML=renderStatusSection()+(html||`<div class="empty">No tickets match these filters.</div>`);
+  document.querySelectorAll('.epic').forEach(el=>el.addEventListener('click',()=>openDrawer(el.dataset.epic)));
+}
+
+/* ---- backlog ---- */
+function renderBacklog(){
+  const list=ftickets();
+  let html=`<div class="backlog">`;
+  DATA.epics.forEach(e=>{
+    const ts=ticketsByEpic(e.id,list);if(!ts.length)return;
+    const c=COMP[e.comp];const pts=ts.reduce((a,t)=>a+t.pts,0);
+    const isOpen=openGroups.has(e.id)|| !!filt.q;
+    html+=`<div class="grp ${isOpen?'open':''}" data-grp="${e.id}" style="--cc:${c.cc}">
+      <div class="grp-h"><span class="caret">▶</span><span class="geid">${e.id}</span><span class="gname">${esc(e.name)}</span>
+        <span class="gmeta"><span class="cchip" style="background:${c.bg};color:${c.fg}">${e.comp}</span>${ts.length} tickets · ${pts} pts</span></div>
+      <div class="grp-body">`;
+    ts.forEach(t=>{
+      html+=`<div class="trow" data-tid="${t.id}">
+        <div class="trow-main">
+          <span class="tid">${t.id}</span><span class="ttitle">${esc(t.title)}</span>
+          <span class="pri" style="background:${PRI[t.pri]}">${t.pri}</span>
+          <span class="lay">${t.layer}</span><span class="pts">${t.pts} pts</span>
+        </div>
+        <div class="tdetail">
+          <div>${esc(t.desc)}</div>
+          <div class="ac"><span class="lbl">Acceptance</span>${esc(t.ac)}</div>
+          ${t.deps?`<div style="margin-top:7px"><span class="lbl">Depends on</span><span class="mono">${esc(t.deps)}</span></div>`:''}
+        </div></div>`;
+    });
+    html+=`</div></div>`;
+  });
+  html+=`</div>`;
+  document.getElementById('main').innerHTML=DATA.epics.some(e=>ticketsByEpic(e.id,list).length)?html:`<div class="empty">No tickets match these filters.</div>`;
+  document.querySelectorAll('.grp-h').forEach(h=>h.addEventListener('click',()=>{
+    const g=h.parentElement,id=g.dataset.grp;
+    g.classList.toggle('open');
+    if(g.classList.contains('open'))openGroups.add(id);else openGroups.delete(id);
+  }));
+  document.querySelectorAll('.trow').forEach(r=>r.addEventListener('click',e=>{r.classList.toggle('open');}));
+}
+
+/* ---- drawer ---- */
+function openDrawer(eid){
+  const e=DATA.epics.find(x=>x.id===eid);if(!e)return;
+  const c=COMP[e.comp];const ts=DATA.tickets.filter(t=>t.epic===eid);
+  const pts=ts.reduce((a,t)=>a+t.pts,0);
+  const ph=DATA.phases.find(p=>p.id===e.phase);
+  const tix=ts.map(t=>`<div class="dt">
+     <div class="dtt">${esc(t.title)}</div>
+     <div class="dtm"><span class="tid">${t.id}</span><span class="pri" style="background:${PRI[t.pri]}">${t.pri}</span><span class="lay">${t.layer}</span><span class="pts">${t.pts} pts</span></div>
+     <div class="dac"><b>Done when:</b> ${esc(t.ac)}</div></div>`).join("");
+  document.getElementById('drawer').innerHTML=
+    `<div class="dh" style="border-top:4px solid ${c.cc}">
+      <button class="dclose" id="dclose">✕</button>
+      <div class="deid">${e.id} · ${ph.id} ${esc(ph.name)}</div>
+      <div class="dname">${esc(e.name)}</div>
+      <div class="drow"><span class="cchip" style="background:${c.bg};color:${c.fg}">${e.comp}</span><span class="cnt mono" style="font-size:12px;color:var(--muted)">${ts.length} tickets · ${pts} pts</span></div>
+     </div>
+     <div class="dbody" style="--cc:${c.cc}">
+      <div class="dsec">Objective</div><div class="dobj">${esc(e.obj)}</div>
+      <div class="dsec">Exit criteria</div><div class="dexit">${esc(e.exit)}</div>
+      <div class="dsec">Tickets</div><div class="dtix">${tix}</div>
+     </div>`;
+  document.getElementById('drawer').classList.add('on');
+  document.getElementById('scrim').classList.add('on');
+  document.getElementById('dclose').addEventListener('click',closeDrawer);
+}
+function closeDrawer(){document.getElementById('drawer').classList.remove('on');document.getElementById('scrim').classList.remove('on');}
+
+/* ---- rank (layered priority list) ---- */
+const STORE_KEY="hoodie-rank-v1";
+const persists=!!(window.storage&&window.storage.get);
+const tById=Object.fromEntries(DATA.tickets.map(t=>[t.id,t]));
+const epicById=Object.fromEntries(DATA.epics.map(e=>[e.id,e]));
+const phaseRank=Object.fromEntries(DATA.phases.map((p,i)=>[p.id,i]));
+let rank=null;            // {epicOrder:[epicId], ticketOrder:{epicId:[tid]}}
+const collapsed=new Set();
+function defaultRank(){
+  const epicOrder=[...DATA.epics].sort((a,b)=>phaseRank[a.phase]-phaseRank[b.phase]).map(e=>e.id);
+  const ticketOrder={};
+  DATA.epics.forEach(e=>{ ticketOrder[e.id]=DATA.tickets.filter(t=>t.epic===e.id)
+     .sort((a,b)=>a.pri.localeCompare(b.pri)||a.id.localeCompare(b.id)).map(t=>t.id); });
+  return {epicOrder,ticketOrder};
+}
+function reconcileRank(v){
+  if(!v||typeof v!=='object')return defaultRank();
+  const epicIds=new Set(DATA.epics.map(e=>e.id));
+  let eo=Array.isArray(v.epicOrder)?v.epicOrder.filter(id=>epicIds.has(id)):[];
+  DATA.epics.forEach(e=>{if(!eo.includes(e.id))eo.push(e.id);});
+  const to={};
+  eo.forEach(eid=>{
+    const valid=new Set(DATA.tickets.filter(t=>t.epic===eid).map(t=>t.id));
+    let arr=(v.ticketOrder&&Array.isArray(v.ticketOrder[eid]))?v.ticketOrder[eid].filter(id=>valid.has(id)):[];
+    DATA.tickets.filter(t=>t.epic===eid).forEach(t=>{if(!arr.includes(t.id))arr.push(t.id);});
+    to[eid]=arr;
+  });
+  return {epicOrder:eo,ticketOrder:to};
+}
+async function loadRank(){try{if(persists){const r=await window.storage.get(STORE_KEY);if(r&&r.value)return reconcileRank(JSON.parse(r.value));}}catch(e){}return defaultRank();}
+async function saveRank(){try{if(persists)await window.storage.set(STORE_KEY,JSON.stringify(rank));}catch(e){}}
+function pmix(ids){return ["P0","P1","P2","P3"].flatMap(p=>ids.filter(id=>tById[id].pri===p).map(()=>`<i style="width:7px;height:7px;border-radius:2px;background:${PRI[p]};display:inline-block"></i>`)).join("");}
+function renderRank(){
+  if(!rank)rank=defaultRank();
+  const visible=new Set(ftickets().map(t=>t.id));
+  let seq=0;
+  let html=`<div class="rank-bar">
+     <button id="rexport">Export order</button>
+     <label class="imp">Import<input type="file" id="rimport" accept=".json,application/json" hidden></label>
+     <button id="rreset">Reset order</button>
+     <span class="hint">${persists?'Drag epic headers to rank epics, drag rows to rank tickets within — saved automatically.':'Drag epic headers to rank epics, drag rows to rank tickets within — use Export to keep the order.'} The colored P-badge is build-criticality, separate from this sequence.</span>
+   </div><div class="epiclist" id="epiclist">`;
+  rank.epicOrder.forEach((eid,ei)=>{
+    const e=epicById[eid],c=COMP[e.comp];
+    const vids=rank.ticketOrder[eid].filter(id=>visible.has(id));
+    if(!vids.length)return;
+    const pts=vids.reduce((a,id)=>a+tById[id].pts,0);
+    const isC=collapsed.has(eid);
+    html+=`<div class="erow ${isC?'collapsed':''}" data-epic="${eid}">
+      <div class="ehead" draggable="true" data-epic="${eid}" style="--cc:${c.cc}">
+        <span class="grip">⠿</span><span class="erank">${ei+1}</span>
+        <span class="ename2">${esc(e.name)}</span>
+        <span class="egrip-meta"><span class="cchip" style="background:${c.bg};color:${c.fg}">${e.comp}</span>
+          <span>${vids.length} · ${pts} pts</span><span class="pdots">${pmix(vids)}</span>
+          <span class="caret2" data-toggle="${eid}">▼</span></span>
+      </div>
+      <div class="ebody" data-epic="${eid}">`;
+    rank.ticketOrder[eid].forEach(id=>{ if(!visible.has(id))return; const t=tById[id]; seq++;
+      html+=`<div class="tdrow" draggable="true" data-id="${id}" data-epic="${eid}">
+        <span class="grip">⠿</span><span class="seq">${seq}</span>
+        <span class="tid">${id}</span><span class="ttl">${esc(t.title)}</span>
+        <span class="lay">${t.layer}</span><span class="crit" style="background:${PRI[t.pri]}" title="Build-criticality">${t.pri}</span>
+        <span class="pts">${t.pts} pts</span></div>`;
+    });
+    html+=`</div></div>`;
+  });
+  html+=`</div>`;
+  document.getElementById('main').innerHTML= seq? html : `<div class="empty">No tickets match these filters.</div>`;
+  wireRankDnD();wireRankBar();
+  document.querySelectorAll('[data-toggle]').forEach(c=>c.addEventListener('click',ev=>{ev.stopPropagation();const id=c.dataset.toggle;collapsed.has(id)?collapsed.delete(id):collapsed.add(id);renderRank();}));
+}
+let drag=null; // {kind:'epic'|'ticket', id, epic}
+function rowsIn(container,sel){return [...container.querySelectorAll(sel)].filter(el=>!el.classList.contains('edragging')&&!el.classList.contains('tdragging'));}
+function idxAt(els,y){for(let i=0;i<els.length;i++){const r=els[i].getBoundingClientRect();if(y<r.top+r.height/2)return i;}return els.length;}
+function clearPH(){document.querySelectorAll('#__ph,#__eph').forEach(p=>p.remove());}
+function wireRankDnD(){
+  const list=document.getElementById('epiclist');
+  // epic drag
+  document.querySelectorAll('.ehead').forEach(h=>{
+    h.addEventListener('dragstart',e=>{drag={kind:'epic',id:h.dataset.epic};h.closest('.erow').classList.add('edragging');e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain',h.dataset.epic);}catch(_){}});
+    h.addEventListener('dragend',()=>{document.querySelectorAll('.edragging').forEach(x=>x.classList.remove('edragging'));clearPH();drag=null;});
+  });
+  // ticket drag
+  document.querySelectorAll('.tdrow').forEach(row=>{
+    row.addEventListener('dragstart',e=>{e.stopPropagation();drag={kind:'ticket',id:row.dataset.id,epic:row.dataset.epic};row.classList.add('tdragging');e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain',row.dataset.id);}catch(_){}});
+    row.addEventListener('dragend',e=>{e.stopPropagation();document.querySelectorAll('.tdragging').forEach(x=>x.classList.remove('tdragging'));clearPH();drag=null;});
+  });
+  // epic-level dragover on the list
+  list.addEventListener('dragover',e=>{ if(!drag||drag.kind!=='epic')return; e.preventDefault();e.dataTransfer.dropEffect='move';
+    const rows=rowsIn(list,':scope > .erow'); clearPH(); const idx=idxAt(rows,e.clientY);
+    const ph=document.createElement('div');ph.className='eph';ph.id='__eph'; idx>=rows.length?list.appendChild(ph):list.insertBefore(ph,rows[idx]);
+  });
+  list.addEventListener('drop',e=>{ if(!drag||drag.kind!=='epic')return; e.preventDefault();
+    const rows=rowsIn(list,':scope > .erow'); const idx=idxAt(rows,e.clientY);
+    const order=rank.epicOrder.filter(id=>id!==drag.id);
+    const beforeId=idx<rows.length?rows[idx].dataset.epic:null;
+    const real=beforeId?order.indexOf(beforeId):order.length;
+    order.splice(real,0,drag.id); rank.epicOrder=order; saveRank();renderRank();
+  });
+  // ticket-level dragover within each ebody
+  document.querySelectorAll('.ebody').forEach(body=>{
+    body.addEventListener('dragover',e=>{ if(!drag||drag.kind!=='ticket'||drag.epic!==body.dataset.epic)return; e.preventDefault();e.dataTransfer.dropEffect='move';
+      const rows=rowsIn(body,'.tdrow'); clearPH(); const idx=idxAt(rows,e.clientY);
+      const ph=document.createElement('div');ph.className='ph';ph.id='__ph'; idx>=rows.length?body.appendChild(ph):body.insertBefore(ph,rows[idx]);
+    });
+    body.addEventListener('drop',e=>{ if(!drag||drag.kind!=='ticket'||drag.epic!==body.dataset.epic)return; e.preventDefault();
+      const eid=body.dataset.epic; const visible=new Set(ftickets().map(t=>t.id));
+      const rows=rowsIn(body,'.tdrow'); const idx=idxAt(rows,e.clientY);
+      const arr=rank.ticketOrder[eid].filter(id=>id!==drag.id);
+      const laneVisible=arr.filter(id=>visible.has(id));
+      const beforeId=idx<laneVisible.length?laneVisible[idx]:(idx<rows.length?rows[idx].dataset.id:null);
+      const real=beforeId?arr.indexOf(beforeId):arr.length;
+      arr.splice(real,0,drag.id); rank.ticketOrder[eid]=arr; saveRank();renderRank();
+    });
+  });
+}
+function download(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+function wireRankBar(){
+  const ex=document.getElementById('rexport');if(ex)ex.onclick=()=>download('hoodie-rank.json',JSON.stringify(rank,null,2));
+  const rs=document.getElementById('rreset');if(rs)rs.onclick=()=>{rank=defaultRank();saveRank();renderRank();};
+  const im=document.getElementById('rimport');if(im)im.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{rank=reconcileRank(JSON.parse(r.result));saveRank();renderRank();}catch(_){}}; r.readAsText(f);};
+}
+
+/* ---- sprints (monthly capacity plan) ---- */
+const _now=new Date();
+let team={app:12,backend:12,analyst:6,startY:_now.getFullYear(),startM:_now.getMonth()};
+const TEAM_KEY="hoodie-team-v1";
+function saveTeam(){try{if(persists)window.storage.set(TEAM_KEY,JSON.stringify(team));}catch(e){}}
+(async()=>{try{if(persists){const r=await window.storage.get(TEAM_KEY);if(r&&r.value){const v=JSON.parse(r.value);['app','backend','analyst','startY','startM'].forEach(k=>{if(typeof v[k]==='number')team[k]=v[k];});if(view==='sprints')renderSprints();}}}catch(e){}})();
+function flattenRanked(){ if(!rank)rank=defaultRank(); const vis=new Set(ftickets().map(t=>t.id));
+  const seq=[]; rank.epicOrder.forEach(eid=>rank.ticketOrder[eid].forEach(id=>{if(vis.has(id))seq.push(id);})); return seq; }
+function buildSprints(){
+  const seq=flattenRanked();
+  const rankIdx=Object.fromEntries(seq.map((id,i)=>[id,i]));
+  const laneOf=id=>{const L=tById[id].layer; return L==='FE'?'app':L==='Full-stack'?'fs':'be';}; // BE+Infra -> be
+  const appQ=seq.filter(id=>laneOf(id)==='app');
+  const beQ =seq.filter(id=>laneOf(id)==='be');
+  const fsQ =seq.filter(id=>laneOf(id)==='fs');
+  const appCap=Math.max(0,team.app), beCap=Math.max(0,team.backend+team.analyst);
+  let ai=0,bi=0,fi=0; const sprints=[]; let guard=0;
+  while((ai<appQ.length||bi<beQ.length||fi<fsQ.length) && guard++<800){
+    let appRem=appCap, beRem=beCap; const ids=[]; let lA=0,lB=0,lF=0; let moved=true;
+    while(moved){ moved=false; const cands=[];
+      if(ai<appQ.length){const p=tById[appQ[ai]].pts; if(p<=appRem)cands.push(['app',appQ[ai],p,rankIdx[appQ[ai]]]);}
+      if(bi<beQ.length){const p=tById[beQ[bi]].pts; if(p<=beRem)cands.push(['be',beQ[bi],p,rankIdx[beQ[bi]]]);}
+      if(fi<fsQ.length){const p=tById[fsQ[fi]].pts; if(p<=appRem&&p<=beRem)cands.push(['fs',fsQ[fi],p,rankIdx[fsQ[fi]]]);}
+      if(cands.length){ cands.sort((a,b)=>a[3]-b[3]); const [ln,id,p]=cands[0]; ids.push(id);
+        if(ln==='app'){appRem-=p;lA+=p;ai++;} else if(ln==='be'){beRem-=p;lB+=p;bi++;} else {appRem-=p;beRem-=p;lF+=p;fi++;}
+        moved=true; }
+    }
+    if(!ids.length){ // a head ticket exceeds its lane's monthly capacity — force the best-ranked one in alone
+      const bl=[]; if(ai<appQ.length)bl.push(['app',appQ[ai],rankIdx[appQ[ai]]]);
+      if(bi<beQ.length)bl.push(['be',beQ[bi],rankIdx[beQ[bi]]]); if(fi<fsQ.length)bl.push(['fs',fsQ[fi],rankIdx[fsQ[fi]]]);
+      if(!bl.length)break; bl.sort((a,b)=>a[2]-b[2]); const [ln,id]=bl[0]; const p=tById[id].pts; ids.push(id);
+      if(ln==='app'){lA+=p;ai++;} else if(ln==='be'){lB+=p;bi++;} else {lF+=p;fi++;}
+    }
+    sprints.push({ids,app:lA,be:lB,fs:lF});
+  }
+  return sprints;
+}
+function fmtMonthInput(){return team.startY+'-'+String(team.startM+1).padStart(2,'0');}
+function monthLabel(i){return new Date(team.startY,team.startM+i,1).toLocaleString('en-US',{month:'long',year:'numeric'});}
+function renderSprints(){
+  const sprints=buildSprints();
+  const appCap=Math.max(0,team.app), beCap=Math.max(0,team.backend+team.analyst);
+  const totalTix=sprints.reduce((a,s)=>a+s.ids.length,0);
+  const totalPts=sprints.reduce((a,s)=>a+s.ids.reduce((x,id)=>x+tById[id].pts,0),0);
+  let html=`<div class="sprint-cfg">
+     <div class="cfg-field"><label>App engineer (pts/mo)</label><input id="appIn" type="number" min="0" step="1" value="${team.app}"></div>
+     <div class="cfg-field"><label>Backend engineer (pts/mo)</label><input id="beIn" type="number" min="0" step="1" value="${team.backend}"></div>
+     <div class="cfg-field"><label>Analyst → data/backend (pts/mo)</label><input id="anIn" type="number" min="0" step="1" value="${team.analyst}"></div>
+     <div class="cfg-field"><label>Start month</label><input id="startIn" type="month" value="${fmtMonthInput()}"></div>
+     <div class="sprint-sum"><b>${totalTix}</b> tickets · <b>${totalPts}</b> pts<br>${sprints.length} month${sprints.length!==1?'s':''}${sprints.length?' · through '+monthLabel(sprints.length-1):''}</div>
+   </div>`;
+  if(!sprints.length){document.getElementById('main').innerHTML=html+`<div class="sprint-empty">No tickets match these filters.</div>`;wireSprintCfg();return;}
+  html+=`<div class="sprintlist">`;
+  sprints.forEach((s,i)=>{
+    const appUsed=s.app+s.fs, beUsed=s.be+s.fs; // full-stack occupies both engineers
+    const appPct=appCap?Math.min(100,Math.round(appUsed/appCap*100)):0, bePct=beCap?Math.min(100,Math.round(beUsed/beCap*100)):0;
+    html+=`<div class="sprint"><div class="sprint-h"><span class="sprint-n">Month ${i+1}</span><span class="sprint-mon">${monthLabel(i)}</span>
+        <span class="sprint-meta">${s.ids.length} tickets · App ${appUsed}/${appCap} · BE ${beUsed}/${beCap}${s.fs?' · FS '+s.fs:''}</span></div>
+      <div class="cap-wrap">
+        <div class="lanebar"><span class="lane-lbl">App</span><div class="cap-track"><div class="cap-fill ${appUsed>appCap?'over':''}" style="width:${appPct}%"></div></div></div>
+        <div class="lanebar"><span class="lane-lbl">Backend</span><div class="cap-track"><div class="cap-fill be ${beUsed>beCap?'over':''}" style="width:${bePct}%"></div></div></div>
+      </div>
+      <div class="sprint-body">`;
+    s.ids.forEach(id=>{const t=tById[id],c=COMP[t.comp]; const lt=t.layer==='FE'?['App','lt-app']:t.layer==='Full-stack'?['FS','lt-fs']:['Backend','lt-be'];
+      html+=`<div class="srow" data-tid="${id}"><span class="tid">${id}</span><span class="ttl">${esc(t.title)}</span>
+        <span class="lanetag ${lt[1]}">${lt[0]}</span><span class="cchip" style="background:${c.bg};color:${c.fg}">${t.comp}</span>
+        <span class="crit" style="background:${PRI[t.pri]}" title="Build-criticality">${t.pri}</span><span class="pts">${t.pts} pts</span></div>`;});
+    html+=`</div></div>`;
+  });
+  html+=`</div>`;
+  document.getElementById('main').innerHTML=html;
+  wireSprintCfg();
+  document.querySelectorAll('.srow').forEach(r=>r.addEventListener('click',()=>openTicketDrawer(r.dataset.tid)));
+}
+function wireSprintCfg(){
+  const bind=(id,key)=>{const el=document.getElementById(id);if(el)el.onchange=e=>{const n=parseInt(e.target.value,10);if(n>=0){team[key]=n;saveTeam();renderSprints();}};};
+  bind('appIn','app');bind('beIn','backend');bind('anIn','analyst');
+  const s=document.getElementById('startIn');if(s)s.onchange=e=>{const m=e.target.value.match(/^(\d{4})-(\d{2})$/);if(m){team.startY=+m[1];team.startM=+m[2]-1;saveTeam();renderSprints();}};
+}
+function openTicketDrawer(id){
+  const t=tById[id]; if(!t)return; const e=epicById[t.epic],c=COMP[t.comp],ph=DATA.phases.find(p=>p.id===t.phase);
+  document.getElementById('drawer').innerHTML=`<div class="dh" style="border-top:4px solid ${c.cc}">
+      <button class="dclose" id="dclose">✕</button>
+      <div class="deid">${t.id} · ${e.id}</div>
+      <div class="dname">${esc(t.title)}</div>
+      <div class="drow"><span class="cchip" style="background:${c.bg};color:${c.fg}">${t.comp}</span><span class="lay">${t.layer}</span><span class="pri" style="background:${PRI[t.pri]}">${t.pri}</span><span class="pts">${t.pts} pts</span></div>
+     </div>
+     <div class="dbody" style="--cc:${c.cc}">
+      <div class="dsec">Epic</div><div class="dobj">${esc(e.name)} · ${ph.id} ${esc(ph.name)}</div>
+      <div class="dsec">Acceptance criteria</div><div class="dexit">${esc(t.ac)}</div>
+      ${t.deps?`<div class="dsec">Depends on</div><div class="dobj">${esc(t.deps)}</div>`:''}
+     </div>`;
+  document.getElementById('drawer').classList.add('on'); document.getElementById('scrim').classList.add('on');
+  document.getElementById('dclose').addEventListener('click',closeDrawer);
+}
+
+/* ---- render switch ---- */
+function render(){renderStats();renderFilters();view==="roadmap"?renderRoadmap():view==="backlog"?renderBacklog():view==="sprints"?renderSprints():renderRank();bindFilters();}
+function bindFilters(){
+  document.querySelectorAll('[data-comp]').forEach(b=>b.onclick=()=>toggle(filt.comp,b.dataset.comp));
+  document.querySelectorAll('[data-layer]').forEach(b=>b.onclick=()=>toggle(filt.layer,b.dataset.layer));
+  document.querySelectorAll('[data-pri]').forEach(b=>b.onclick=()=>toggle(filt.pri,b.dataset.pri));
+  const cl=document.getElementById('clear');if(cl)cl.onclick=()=>{filt.comp.clear();filt.layer.clear();filt.pri.clear();filt.q="";document.getElementById('search').value="";render();};
+}
+function toggle(set,v){set.has(v)?set.delete(v):set.add(v);render();}
+
+document.querySelectorAll('#viewseg button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#viewseg button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');view=b.dataset.view;render();
+}));
+document.getElementById('search').addEventListener('input',e=>{filt.q=e.target.value.trim().toLowerCase();render();});
+document.getElementById('scrim').addEventListener('click',closeDrawer);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer();});
+rank=defaultRank();
+render();
+(async()=>{try{rank=await loadRank();if(view==='board')renderRank();}catch(e){}})();
+</script>
+</body>
+</html>

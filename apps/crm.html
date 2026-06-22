@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Hoodie Relations — Industry Associations</title>
+<style>
+:root{
+ --brand:#0176d3; --brand-dark:#014486; --brand-deep:#032d60; --link:#0176d3;
+ --bg:#f3f3f3; --panel:#fff; --line:#e5e5e5; --line2:#eef1f3; --ink:#181818; --label:#444;
+ --muted:#5c5c5c; --faint:#747474; --hover:#f3f9ff;
+ --green:#2e844a; --green-bg:#ebf7ee; --orange:#a86403; --orange-bg:#fef6e6;
+ --purple:#5867e8; --purple-bg:#eef0fd; --teal:#06a59a; --teal-bg:#e3f7f5; --blue-bg:#eaf5fe;
+ --radius:.25rem; --shadow:0 2px 2px rgba(0,0,0,.05);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+a{color:var(--link);text-decoration:none;cursor:pointer}a:hover{text-decoration:underline}
+button{font-family:inherit;cursor:pointer}
+/* global header */
+.gheader{display:flex;align-items:center;gap:14px;background:#fff;border-bottom:1px solid var(--line);padding:8px 14px;position:sticky;top:0;z-index:30}
+.applauncher{display:grid;grid-template-columns:repeat(3,4px);grid-auto-rows:4px;gap:2px;padding:9px;border-radius:var(--radius);cursor:pointer}
+.applauncher span{width:4px;height:4px;border-radius:1px;background:#b0adab}
+.applauncher:hover{background:#f3f2f2}
+.appname{font-weight:700;font-size:15px;color:#080707;letter-spacing:-.01em}
+.appname b{color:var(--brand)}
+.gsearch{flex:1;max-width:560px;margin:0 auto}
+.gsearch input{width:100%;border:1px solid #c9c7c5;border-radius:15px;padding:7px 14px;font-size:13px;background:#fff}
+.gsearch input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 3px var(--brand)}
+.gutils{display:flex;align-items:center;gap:6px;margin-left:auto}
+.gicon{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:#706e6b;font-size:15px}
+.gicon:hover{background:#f3f2f2}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--brand);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px}
+/* nav tabs */
+.nav{background:#fff;border-bottom:1px solid var(--line);padding:0 14px;display:flex;align-items:stretch;gap:2px;position:sticky;top:49px;z-index:29}
+.nav .tab{padding:11px 16px 9px;font-size:13px;font-weight:600;color:#3e3e3c;border-bottom:3px solid transparent;background:none;border-top:0;border-left:0;border-right:0}
+.nav .tab:hover{background:#f3f9ff;color:var(--brand)}
+.nav .tab.on{color:var(--brand);border-bottom-color:var(--brand)}
+/* page */
+.page{padding:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+/* list view header */
+.lvhead{display:flex;align-items:center;gap:12px;padding:10px 14px}
+.lvicon{width:34px;height:34px;border-radius:var(--radius);background:#f7a000;display:grid;place-items:center;color:#fff;font-size:17px;flex:none}
+.lvtitles .k{font-size:11px;color:var(--muted);font-weight:400}
+.lvtitles .v{display:flex;align-items:center;gap:6px;font-size:18px;font-weight:700;color:#080707}
+.lvtitles .v .caret{font-size:11px;color:var(--muted)}
+.lvactions{margin-left:auto;display:flex;gap:8px}
+.btn{border:1px solid #c9c7c5;background:#fff;color:#0176d3;border-radius:var(--radius);padding:6px 13px;font-weight:600;font-size:13px}
+.btn:hover{background:#f4f6f9}
+.btn.brand{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.brand:hover{background:#014486}
+.lvmeta{padding:0 14px 8px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
+/* table */
+table{width:100%;border-collapse:collapse}
+thead th{text-align:left;font-size:12px;color:#514f4d;font-weight:700;padding:8px 12px;border-bottom:1px solid var(--line);background:#fafaf9;white-space:nowrap}
+thead th:hover{background:#f3f2f2;cursor:pointer}
+tbody td{padding:9px 12px;border-bottom:1px solid var(--line2);vertical-align:middle}
+tbody tr:hover{background:var(--hover)}
+.rowname{display:flex;align-items:center;gap:9px}
+.recicon{width:24px;height:24px;border-radius:var(--radius);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;flex:none}
+.lnk{font-weight:600}
+.chk{width:14px;height:14px;accent-color:var(--brand)}
+/* badges */
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;border-radius:11px;padding:2px 9px;background:#ecebea;color:#444;white-space:nowrap}
+.badge .dot{width:7px;height:7px;border-radius:50%}
+.tier-Supplier{background:var(--blue-bg);color:#04518c}.tier-Supplier .dot{background:#0176d3}
+.tier-Wholesale{background:var(--green-bg);color:#0a6b2f}.tier-Wholesale .dot{background:#2e844a}
+.tier-Retail{background:var(--orange-bg);color:#8a5103}.tier-Retail .dot{background:#dd7a01}
+.tier-Policy{background:var(--purple-bg);color:#3a40b0}.tier-Policy .dot{background:#5867e8}
+.tier-Adjacency{background:var(--teal-bg);color:#066} .tier-Adjacency .dot{background:#06a59a}
+.stagepill{font-size:11.5px;font-weight:600;color:var(--brand)}
+/* record page */
+.crumb{font-size:12px;color:var(--muted);margin-bottom:8px}
+.crumb a{color:var(--link)}
+.highlights{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.hl-icon{width:44px;height:44px;border-radius:var(--radius);display:grid;place-items:center;color:#fff;font-size:20px;font-weight:700;flex:none}
+.hl-main .k{font-size:11px;color:var(--muted)}
+.hl-main .v{font-size:20px;font-weight:700;color:#080707;letter-spacing:-.01em}
+.hl-fields{display:flex;gap:30px;margin-left:30px;flex-wrap:wrap}
+.hl-f .k{font-size:11px;color:var(--muted)}
+.hl-f .v{font-size:13px;font-weight:600}
+.hl-actions{margin-left:auto;display:flex;gap:8px}
+/* path */
+.path{display:flex;padding:14px 18px;gap:0;overflow-x:auto;border-bottom:1px solid var(--line);background:#fbfbfb}
+.pstage{position:relative;flex:1;min-width:118px;height:34px;background:#ecebea;color:#514f4d;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%,14px 50%);margin-right:3px;cursor:pointer;white-space:nowrap;padding:0 6px}
+.pstage:first-child{clip-path:polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%)}
+.pstage.done{background:#c5d9ed;color:#04386b}
+.pstage.cur{background:var(--brand);color:#fff}
+.pstage:hover{filter:brightness(.97)}
+/* record body */
+.rbody{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;padding:14px 18px}
+@media(max-width:820px){.rbody{grid-template-columns:1fr}}
+.sect{margin-bottom:16px}
+.sect h3{font-size:13px;font-weight:700;color:#080707;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line2)}
+.frow{display:grid;grid-template-columns:140px 1fr;gap:8px;padding:6px 0;font-size:13px}
+.frow .fk{color:var(--muted);font-size:12px}
+.frow .fv{font-weight:500}
+.contact-card{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:8px}
+.contact-card .av{width:30px;height:30px;border-radius:50%;background:#5867e8;color:#fff;display:grid;place-items:center;font-weight:700;font-size:11px;flex:none}
+.contact-card .nm{font-weight:600}.contact-card .ti{font-size:12px;color:var(--muted)}
+.contact-card .meta{margin-left:auto;text-align:right;font-size:12px;color:var(--muted)}
+.placeholder{color:#a09e9c;font-style:italic}
+.notes{width:100%;min-height:90px;border:1px solid #c9c7c5;border-radius:var(--radius);padding:9px;font-family:inherit;font-size:13px;resize:vertical}
+.activity{font-size:12.5px;color:var(--muted);padding:8px 0;border-bottom:1px solid var(--line2)}
+/* kanban */
+.kanban{display:flex;gap:12px;overflow-x:auto;padding:14px}
+.kcol{flex:0 0 240px;background:#ecebea;border-radius:var(--radius)}
+.kcol-h{padding:9px 12px;font-size:12px;font-weight:700;color:#514f4d;text-transform:uppercase;letter-spacing:.03em;display:flex;justify-content:space-between}
+.kcol-h .n{color:var(--muted);font-weight:600}
+.kbody{padding:0 8px 10px;display:flex;flex-direction:column;gap:8px;min-height:40px}
+.kcard{background:#fff;border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:var(--radius);padding:9px 11px;box-shadow:var(--shadow);cursor:grab}
+.kcard:active{cursor:grabbing}.kcard.drag{opacity:.4}
+.kcard .nm{font-weight:600;font-size:13px;margin-bottom:5px}
+.kph{height:3px;background:var(--brand);border-radius:2px;margin:2px}
+/* modal */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;z-index:50}
+.scrim.on{display:block}
+.modal{position:fixed;z-index:51;top:50%;left:50%;transform:translate(-50%,-50%);width:min(540px,94vw);background:#fff;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.3);display:none;overflow:hidden}
+.modal.on{display:block}
+.modal-h{background:var(--brand);color:#fff;padding:13px 18px;font-weight:700;font-size:16px;display:flex;align-items:center;justify-content:space-between}
+.modal-h .x{cursor:pointer;font-size:18px;opacity:.9}
+.modal-b{padding:16px 18px;max-height:70vh;overflow:auto}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;color:var(--label);font-weight:600;margin-bottom:4px}
+.field input,.field select,.field textarea{width:100%;border:1px solid #c9c7c5;border-radius:var(--radius);padding:7px 10px;font-family:inherit;font-size:13px}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 3px var(--brand)}
+.modal-f{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;background:#fafaf9}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#181818;color:#fff;padding:10px 18px;border-radius:var(--radius);font-size:13px;font-weight:600;opacity:0;transition:.25s;z-index:60;pointer-events:none}
+.toast.on{opacity:1}
+.hidden{display:none}
+/* ===== Home command center ===== */
+.home-wrap{display:grid;grid-template-columns:1fr;gap:16px}
+.home-h{display:flex;align-items:baseline;gap:12px;margin:2px 2px 0}
+.home-h .t{font-size:20px;font-weight:700;color:#080707;letter-spacing:-.01em}
+.home-h .s{font-size:12.5px;color:var(--muted)}
+.rail{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.rail-h{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line);background:#fff}
+.rail-h .ti{font-weight:700;font-size:14px}
+.rail-h .ct{background:#c23934;color:#fff;font-size:11px;font-weight:800;border-radius:10px;padding:1px 8px}
+.rail-h .ct.zero{background:#2e844a}
+.rail-row{display:grid;grid-template-columns:32px 1fr auto auto;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line2);cursor:pointer}
+.rail-row:last-child{border-bottom:0}
+.rail-row:hover{background:var(--hover)}
+.rail-ic{width:30px;height:30px;border-radius:var(--radius);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700}
+.rail-main .nm{font-weight:600;font-size:13.5px}
+.rail-main .sub{font-size:12px;color:var(--muted)}
+.why{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.why .chip{font-size:11px;font-weight:700;border-radius:10px;padding:2px 9px;white-space:nowrap}
+.chip.over{background:#fce8e6;color:#b3261e}
+.chip.due{background:#fef6e6;color:#9a6700}
+.chip.wait{background:#e8eefc;color:#2c4ea8}
+.rail-act{display:flex;gap:6px}
+.mini{border:1px solid #c9c7c5;background:#fff;color:#3e3e3c;border-radius:4px;padding:4px 9px;font-size:11.5px;font-weight:600;font-family:inherit}
+.mini:hover{background:#f4f6f9}
+.mini.good:hover{background:#ebf7ee;color:#0a6b2f;border-color:#9ed3b0}
+.rail-empty{padding:22px 16px;text-align:center;color:#7a9a82;font-size:13px}
+/* board backdrop */
+.board-h{display:flex;align-items:center;gap:10px;margin:2px 2px 0}
+.board-h .t{font-weight:700;font-size:14px}
+.board-h .s{font-size:12px;color:var(--muted)}
+.miniboard{display:flex;gap:10px;overflow-x:auto;padding:2px}
+.mbcol{flex:0 0 168px;background:#ecebea;border-radius:var(--radius);padding:0 0 8px}
+.mbcol-h{padding:8px 11px;font-size:10.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#514f4d;display:flex;justify-content:space-between}
+.mbcard{background:#fff;border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:4px;margin:0 7px 7px;padding:7px 9px;cursor:pointer}
+.mbcard:hover{background:var(--hover)}
+.mbcard .nm{font-weight:600;font-size:12px;display:flex;align-items:center;gap:6px}
+.mbcard .fl{margin-top:5px;display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted)}
+.flowdot{width:8px;height:8px;border-radius:50%;flex:none}
+.flow-yes{background:#2e844a}.flow-part{background:#dd7a01}.flow-no{background:#c9c7c5}
+/* record: next-action block */
+.na-box{border:1px solid var(--line);border-radius:var(--radius);padding:11px 12px;margin-bottom:10px}
+.na-box.live{border-color:#f0c46a;background:#fffdf7}
+.na-box.wait{border-color:#b9c8ef;background:#f7f9ff}
+.na-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.na-row .lbl{font-size:12px;color:var(--muted)}
+.na-row .val{font-weight:600;font-size:13px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="gheader">
+  <div class="applauncher" title="App Launcher"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+  <div class="appname">Hoodie <b>Relations</b></div>
+  <div class="gsearch"><input id="search" placeholder="Search Accounts and Contacts..."/></div>
+  <div class="gutils">
+    <div class="gicon" title="Setup">⚙</div><div class="gicon" title="Help">?</div><div class="gicon" title="Notifications">🔔</div>
+    <div class="avatar" title="Chris Fennessey">CF</div>
+  </div>
+</div>
+<div class="nav" id="nav">
+  <button class="tab on" data-tab="home">Home</button>
+  <button class="tab" data-tab="accounts">Accounts</button>
+  <button class="tab" data-tab="pipeline">Pipeline</button>
+  <button class="tab" data-tab="contacts">Contacts</button>
+</div>
+<div class="page" id="page"></div>
+
+<div class="scrim" id="scrim"></div>
+<div class="modal" id="modal">
+  <div class="modal-h"><span id="modalTitle">New</span><span class="x" id="modalX">✕</span></div>
+  <div class="modal-b" id="modalBody"></div>
+  <div class="modal-f"><button class="btn" id="modalCancel">Cancel</button><button class="btn brand" id="modalSave">Save</button></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const STAGES=["Identified","Outreach","Intro Meeting","Data Scoping","Agreement / MOU","Data Flowing","Live in Workbook"];
+const TIER_ICON_COLOR={Supplier:"#0176d3",Wholesale:"#2e844a",Retail:"#dd7a01",Policy:"#5867e8",Adjacency:"#06a59a"};
+const persists=!!(window.storage&&window.storage.get);
+const KEY="hoodie-crm-v1";
+
+function seed(){
+ const A=(name,abbr,tier,type,focus,hq,web,stage,targetRole,notes="")=>(
+   {id:abbr.toLowerCase().replace(/[^a-z0-9]/g,''),name,abbr,tier,type,focus,hq,web,stage,owner:"Chris Fennessey",targetRole,notes,contacts:[]});
+ return {accounts:[
+  // ---- Wholesale / distribution tier (the WSWA model) ----
+  A("Wine & Spirits Wholesalers of America","WSWA","Wholesale","Distributor association","Wine & Spirits","Washington, DC","wswa.org","Data Flowing","SVP Research / SipSource data lead","Existing SipSource reseller arrangement — anchor relationship."),
+  A("National Alcohol Beverage Control Association","NABCA","Wholesale","Control-state association","Spirits","Arlington, VA","nabca.org","Data Scoping","COO / SVP Trade Relations + Data Chief","Discussing master-data + sales-data license vs. partnership. Control states ~25% of spirits."),
+  A("National Association of Wholesaler-Distributors","NAW","Wholesale","Wholesale (cross-industry)","Multi","Washington, DC","naw.org","Identified","VP, Research"),
+  A("National Conference of State Liquor Administrators","NCSLA","Policy","Regulators","Wine & Spirits","—","ncsla.org","Identified","Executive Director"),
+  // ---- Supplier / producer tier ----
+  A("Distilled Spirits Council of the U.S.","DISCUS","Supplier","Spirits supplier association","Spirits","Washington, DC","discus.org","Outreach","Chief Economist / SVP Science & Research","Annual economic briefing data — strong analytics culture."),
+  A("Wine Institute","WI","Supplier","CA winery association","Wine","San Francisco, CA","wineinstitute.org","Identified","VP, Communications & Data"),
+  A("WineAmerica","WA","Supplier","National winery association","Wine","Washington, DC","wineamerica.org","Identified","Director of Government Affairs"),
+  A("American Craft Spirits Association","ACSA","Supplier","Craft distiller association","Spirits","Washington, DC","americancraftspirits.org","Identified","Executive Director"),
+  A("American Distilling Institute","ADI","Supplier","Craft distiller association","Spirits","Hayward, CA","distilling.com","Identified","Founder / Director"),
+  A("National Association of Beverage Importers","NABI","Supplier","Importer association","Wine & Spirits","Washington, DC","—","Identified","President"),
+  // ---- Retail / on- & off-premise tier ----
+  A("American Beverage Licensees","ABL","Retail","Independent retailer association","Wine & Spirits","Bethesda, MD","ablusa.org","Identified","Executive Director","Independent package & on-premise retailers — off-premise scan angle."),
+  A("National Association of Convenience Stores","NACS","Retail","Convenience retail association","Multi","Alexandria, VA","convenience.org","Identified","VP, Research"),
+  A("FMI – The Food Industry Association","FMI","Retail","Grocery / supermarket association","Multi","Arlington, VA","fmi.org","Identified","VP, Industry Relations","Grocery channel — broader analytics expansion."),
+  A("National Grocers Association","NGA","Retail","Independent grocer association","Multi","Washington, DC","nationalgrocers.org","Identified","VP, Government Relations"),
+  A("National Restaurant Association","NRA","Retail","On-premise association","Multi","Washington, DC","restaurant.org","Identified","Chief Economist","On-premise occasion data."),
+  A("United States Bartenders' Guild","USBG","Retail","On-premise trade guild","Wine & Spirits","—","usbg.org","Identified","National Office / Data"),
+  A("National Association of Wine Retailers","NAWR","Retail","Wine retailer association","Wine","—","—","Identified","Executive Director"),
+  // ---- Policy / cross-industry ----
+  A("Center for Alcohol Policy","CAP","Policy","Policy / education","Wine & Spirits","Alexandria, VA","centerforalcoholpolicy.org","Identified","Executive Director"),
+  A("Responsible Retailing Forum","RRF","Policy","Retail compliance","Multi","—","—","Identified","Director"),
+  // ---- Hemp / THC beverage adjacency ----
+  A("Hemp Beverage Alliance","HBA","Adjacency","Hemp/THC beverage association","Hemp/THC","Denver, CO","hempbeveragealliance.org","Outreach","Executive Director","Cannabis/hemp beverage data — convergence thesis."),
+  A("Cannabis Beverage Association","CBA","Adjacency","Cannabis beverage association","Hemp/THC","—","—","Identified","President"),
+  A("U.S. Hemp Roundtable","USHR","Adjacency","Hemp advocacy","Hemp/THC","—","hempsupporter.com","Identified","General Counsel / Policy"),
+ ], contacts:[]};
+}
+function seedSignals(db){
+  const set=(id,patch)=>{const a=db.accounts.find(x=>x.id===id);if(a)Object.assign(a,patch);};
+  const d=(n)=>{const t=new Date();t.setDate(t.getDate()+n);return t.toISOString().slice(0,10);};
+  set('nabca',{waiting:{on:true,since:d(-9),note:'Sent rights/redistribution questions; awaiting their license terms'}});
+  set('discus',{nextAction:{date:d(0),note:'Follow up on intro to Chief Economist'}});
+  set('wswa',{nextAction:{date:d(-3),note:'Confirm next data drop cadence'}});
+  set('hba',{nextAction:{date:d(2),note:'Send the convergence one-pager'}});
+  set('usbg',{targetRole:'National office — partnerships / education',
+    notes:'Model: USBG as sponsor / credibility partner, not a data source. They lend on-premise authority to a curated view; bartenders get a member-first view built for them. Two audiences off one dataset (bartender-facing + distributor-facing). Independence firewall is non-negotiable — curation can\'t tilt to whoever pays. Open Qs: what exactly they sponsor (co-branded report vs view inside Hoodie), who curates, how money flows.'});
+  return db;
+}
+
+let DB=seedSignals(seed());
+async function load(){ if(persists){ try{const r=await window.storage.get(KEY); if(r&&r.value){DB=JSON.parse(r.value);}}catch(e){} } }
+async function save(){ DB.updatedAt=Date.now(); if(persists){ try{await window.storage.set(KEY,JSON.stringify(DB));}catch(e){} } }
+function acct(id){return DB.accounts.find(a=>a.id===id);}
+function allContacts(){const out=[];DB.accounts.forEach(a=>(a.contacts||[]).forEach(c=>out.push({...c,account:a.name,accountId:a.id})));return out;}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
+function initials(n){return (n||'?').split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();}
+function stageIdx(s){return Math.max(0,STAGES.indexOf(s));}
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2200);}
+
+let tab="home", recordId=null, q="";
+function go(t){tab=t;recordId=null;document.querySelectorAll('#nav .tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));render();}
+
+/* date helpers */
+function today(){return new Date().toISOString().slice(0,10);}
+function daysAgo(d){if(!d)return 0;return Math.round((Date.parse(today())-Date.parse(d))/86400000);}
+function daysUntil(d){if(!d)return null;return Math.round((Date.parse(d)-Date.parse(today()))/86400000);}
+
+/* the "needs you" rail: surfaces on (a) a follow-up that's due/overdue, or (b) waiting-on-them */
+function railItems(){
+  const items=[];
+  DB.accounts.forEach(a=>{
+    const reasons=[];
+    if(a.nextAction&&a.nextAction.date){
+      const du=daysUntil(a.nextAction.date);
+      if(du<=0) reasons.push({type:du<0?'over':'due',sort:du<0?0:1,
+        chip:du<0?`Overdue ${-du}d`:'Due today', label:a.nextAction.note||'Follow up'});
+    }
+    if(a.waiting&&a.waiting.on){
+      reasons.push({type:'wait',sort:2,chip:`Waiting ${daysAgo(a.waiting.since)}d`,label:a.waiting.note||'Ball in their court'});
+    }
+    if(reasons.length) items.push({a,reasons});
+  });
+  return items.sort((x,y)=>Math.min(...x.reasons.map(r=>r.sort))-Math.min(...y.reasons.map(r=>r.sort)));
+}
+function flowState(a){ // data-flowing status (adjacent job)
+  const i=stageIdx(a.stage);
+  if(i>=stageIdx('Live in Workbook'))return'yes';
+  if(i>=stageIdx('Data Flowing'))return'part';
+  return'no';
+}
+
+function render(){
+  const page=document.getElementById('page');
+  if(recordId){page.innerHTML=recordHTML(acct(recordId));wireRecord();return;}
+  if(tab==="home"){page.innerHTML=homeHTML();return;}
+  if(tab==="accounts")page.innerHTML=accountsHTML();
+  else if(tab==="pipeline"){page.innerHTML=pipelineHTML();wireKanban();}
+  else page.innerHTML=contactsHTML();
+}
+
+function homeHTML(){
+  const items=railItems();
+  const flowing=DB.accounts.filter(a=>flowState(a)!=='no').length;
+  // rail
+  let rail=`<div class="rail"><div class="rail-h"><span class="ti">Needs you</span><span class="ct ${items.length?'':'zero'}">${items.length}</span>
+     <span style="margin-left:auto;font-size:12px;color:var(--muted)">Due follow-ups &amp; relationships waiting on them</span></div>`;
+  if(!items.length){
+    rail+=`<div class="rail-empty">Nothing needs you right now. Set a follow-up or flag a relationship as waiting on them from any account.</div>`;
+  }else{
+    rail+=items.map(({a,reasons})=>`<div class="rail-row" onclick="openRecord('${a.id}')">
+      <span class="rail-ic" style="background:${TIER_ICON_COLOR[a.tier]}">${esc(a.abbr.slice(0,3))}</span>
+      <div class="rail-main"><div class="nm">${esc(a.name)}</div><div class="sub">${esc(reasons.map(r=>r.label).join(' · '))} — <span style="color:var(--faint)">${esc(a.stage)}</span></div></div>
+      <div class="why">${reasons.map(r=>`<span class="chip ${r.type}">${esc(r.chip)}</span>`).join("")}</div>
+      <div class="rail-act" onclick="event.stopPropagation()">
+        ${reasons.some(r=>r.type==='over'||r.type==='due')?`<button class="mini good" onclick="railDone('${a.id}')">Mark done</button>`:''}
+        ${reasons.some(r=>r.type==='wait')?`<button class="mini good" onclick="railReplied('${a.id}')">They replied</button>`:''}
+        <button class="mini" onclick="openRecord('${a.id}')">Open</button>
+      </div></div>`).join("");
+  }
+  rail+=`</div>`;
+  // board backdrop (compact, read-optimized)
+  const board=STAGES.map(s=>{const items=DB.accounts.filter(a=>a.stage===s);
+    return `<div class="mbcol"><div class="mbcol-h"><span>${esc(s)}</span><span>${items.length}</span></div>
+      ${items.map(a=>{const f=flowState(a);return `<div class="mbcard" style="border-left-color:${TIER_ICON_COLOR[a.tier]}" onclick="openRecord('${a.id}')">
+        <div class="nm">${esc(a.abbr)}</div>
+        <div class="fl"><span class="flowdot flow-${f}"></span>${f==='yes'?'In workbook':f==='part'?'Data flowing':'No data yet'}</div></div>`;}).join("")}</div>`;}).join("");
+  return `<div class="home-wrap">
+    <div><div class="home-h"><span class="t">Command center</span><span class="s">What needs you, against the whole board · ${flowing}/${DB.accounts.length} relationships with data moving</span></div></div>
+    ${rail}
+    <div><div class="board-h"><span class="t">The board</span><span class="s">Every relationship by stage — click any to open. The dot shows data status.</span></div></div>
+    <div class="miniboard">${board}</div>
+  </div>`;
+}
+
+function filteredAccounts(){
+  if(!q)return DB.accounts;
+  const s=q.toLowerCase();
+  return DB.accounts.filter(a=>(a.name+a.abbr+a.tier+a.type+a.focus).toLowerCase().includes(s));
+}
+function accountsHTML(){
+  const rows=filteredAccounts();
+  return `<div class="card">
+    <div class="lvhead">
+      <div class="lvicon">🏢</div>
+      <div class="lvtitles"><div class="k">Accounts</div><div class="v">All Association Targets <span class="caret">▾</span></div></div>
+      <div class="lvactions"><button class="btn" onclick="exportJSON()">Export</button><label class="btn" style="margin:0">Import<input type="file" id="imp" accept=".json" hidden></label><button class="btn brand" onclick="newAccount()">New</button></div>
+    </div>
+    <div class="lvmeta">${rows.length} items · Sorted by Tier · Targets are associations across all three tiers (wine &amp; spirits + hemp). Beer bodies intentionally excluded.</div>
+    <table><thead><tr><th style="width:32px"></th><th>Account Name</th><th>Tier</th><th>Type</th><th>Focus</th><th>Stage</th><th>Key Contact</th><th>HQ</th></tr></thead><tbody>
+    ${rows.map(a=>{const c=(a.contacts&&a.contacts[0]);return `<tr onclick="openRecord('${a.id}')">
+      <td><input type="checkbox" class="chk" onclick="event.stopPropagation()"></td>
+      <td><div class="rowname"><span class="recicon" style="background:${TIER_ICON_COLOR[a.tier]}">${esc(a.abbr.slice(0,3))}</span><a class="lnk">${esc(a.name)}</a></div></td>
+      <td><span class="badge tier-${a.tier}"><span class="dot"></span>${a.tier}</span></td>
+      <td>${esc(a.type)}</td><td>${esc(a.focus)}</td>
+      <td><span class="stagepill">${esc(a.stage)}</span></td>
+      <td>${c?esc(c.name||c.title):'<span class="placeholder">'+esc(a.targetRole||'add contact')+'</span>'}</td>
+      <td>${esc(a.hq)}</td></tr>`;}).join("")}
+    </tbody></table></div>`;
+}
+
+function recordHTML(a){
+  const idx=stageIdx(a.stage);
+  return `<div class="crumb"><a onclick="back()">Accounts</a> › ${esc(a.name)}</div>
+   <div class="card">
+    <div class="highlights">
+      <div class="hl-icon" style="background:${TIER_ICON_COLOR[a.tier]}">${esc(a.abbr.slice(0,3))}</div>
+      <div class="hl-main"><div class="k">Association · ${esc(a.tier)} tier</div><div class="v">${esc(a.name)}</div></div>
+      <div class="hl-fields">
+        <div class="hl-f"><div class="k">Type</div><div class="v">${esc(a.type)}</div></div>
+        <div class="hl-f"><div class="k">Focus</div><div class="v">${esc(a.focus)}</div></div>
+        <div class="hl-f"><div class="k">HQ</div><div class="v">${esc(a.hq)}</div></div>
+        <div class="hl-f"><div class="k">Website</div><div class="v">${a.web&&a.web!=='—'?`<a href="https://${esc(a.web)}" target="_blank" rel="noopener">${esc(a.web)}</a>`:'—'}</div></div>
+      </div>
+      <div class="hl-actions"><button class="btn" onclick="editAccount('${a.id}')">Edit</button><button class="btn brand" onclick="newContact('${a.id}')">New Contact</button></div>
+    </div>
+    <div class="path">${STAGES.map((s,i)=>`<div class="pstage ${i<idx?'done':''} ${i===idx?'cur':''}" onclick="setStage('${a.id}',${i})">${esc(s)}</div>`).join("")}</div>
+    <div class="rbody">
+      <div>
+        <div class="sect"><h3>Contacts (${(a.contacts||[]).length})</h3>
+          ${(a.contacts||[]).length?(a.contacts.map(c=>`<div class="contact-card"><span class="av">${esc(initials(c.name||c.title))}</span>
+             <div><div class="nm">${esc(c.name||'<span class=placeholder>[add name]</span>')}</div><div class="ti">${esc(c.title||'')}</div></div>
+             <div class="meta">${c.email?esc(c.email)+'<br>':''}${esc(c.phone||'')}</div></div>`).join("")):
+             `<div class="placeholder">No contacts yet. Target role: <b>${esc(a.targetRole||'—')}</b>. Click <b>New Contact</b> to add the real person.</div>`}
+        </div>
+        <div class="sect"><h3>Details</h3>
+          <div class="frow"><div class="fk">Tier</div><div class="fv">${esc(a.tier)}</div></div>
+          <div class="frow"><div class="fk">Type</div><div class="fv">${esc(a.type)}</div></div>
+          <div class="frow"><div class="fk">Category focus</div><div class="fv">${esc(a.focus)}</div></div>
+          <div class="frow"><div class="fk">Target role</div><div class="fv">${esc(a.targetRole||'—')}</div></div>
+          <div class="frow"><div class="fk">Onboarding stage</div><div class="fv">${esc(a.stage)}</div></div>
+          <div class="frow"><div class="fk">Account owner</div><div class="fv">${esc(a.owner)}</div></div>
+        </div>
+      </div>
+      <div>
+        <div class="sect"><h3>Next action</h3>
+          ${a.nextAction&&a.nextAction.date?`<div class="na-box live"><div class="na-row"><span class="lbl">Follow up</span><span class="val">${esc(a.nextAction.date)}</span>${(()=>{const du=daysUntil(a.nextAction.date);return du<0?`<span class="chip over">Overdue ${-du}d</span>`:du===0?`<span class="chip due">Today</span>`:`<span class="chip" style="background:#eef1f3;color:#5c5c5c">in ${du}d</span>`;})()}</div>
+             ${a.nextAction.note?`<div style="margin-top:5px;font-size:12.5px">${esc(a.nextAction.note)}</div>`:''}
+             <div class="na-row" style="margin-top:8px"><button class="mini" onclick="setFollowup('${a.id}')">Change</button><button class="mini good" onclick="clearFollowup('${a.id}')">Mark done</button></div></div>`
+            :`<div class="na-box"><div class="na-row"><span class="lbl">No follow-up set.</span><button class="mini" onclick="setFollowup('${a.id}')">Set follow-up</button></div></div>`}
+          ${a.waiting&&a.waiting.on?`<div class="na-box wait"><div class="na-row"><span class="lbl">Waiting on them</span><span class="val">${daysAgo(a.waiting.since)}d</span>${a.waiting.note?`<span style="font-size:12.5px;color:var(--muted)">· ${esc(a.waiting.note)}</span>`:''}</div>
+             <div class="na-row" style="margin-top:8px"><button class="mini good" onclick="railReplied('${a.id}')">They replied</button></div></div>`
+            :`<div class="na-box"><div class="na-row"><span class="lbl">Ball's in your court.</span><button class="mini" onclick="markWaiting('${a.id}')">Mark waiting on them</button></div></div>`}
+        </div>
+        <div class="sect"><h3>Notes</h3><textarea class="notes" id="notes" placeholder="Relationship notes, data scope, next steps...">${esc(a.notes||'')}</textarea></div>
+        <div class="sect"><h3>Activity</h3>
+          <div class="activity">Stage: <b>${esc(a.stage)}</b> — data onboarding path</div>
+          <div class="activity">Owner: ${esc(a.owner)}</div>
+        </div>
+      </div>
+    </div></div>`;
+}
+
+function pipelineHTML(){
+  return `<div class="card" style="border:0;background:transparent;box-shadow:none">
+    <div class="lvhead" style="background:#fff;border:1px solid var(--line);border-radius:var(--radius)">
+      <div class="lvicon" style="background:#0176d3">▦</div>
+      <div class="lvtitles"><div class="k">Pipeline</div><div class="v">Data Onboarding</div></div>
+      <div class="lvactions"><button class="btn brand" onclick="newAccount()">New</button></div>
+    </div>
+    <div class="kanban">${STAGES.map(s=>{const items=DB.accounts.filter(a=>a.stage===s);
+      return `<div class="kcol"><div class="kcol-h"><span>${esc(s)}</span><span class="n">${items.length}</span></div>
+        <div class="kbody" data-stage="${esc(s)}">${items.map(a=>`<div class="kcard" draggable="true" data-id="${a.id}" style="border-left-color:${TIER_ICON_COLOR[a.tier]}" onclick="openRecord('${a.id}')">
+          <div class="nm">${esc(a.name)}</div><span class="badge tier-${a.tier}"><span class="dot"></span>${a.tier}</span></div>`).join("")}</div></div>`;}).join("")}</div></div>`;
+}
+
+function contactsHTML(){
+  const cs=allContacts();
+  return `<div class="card">
+    <div class="lvhead"><div class="lvicon" style="background:#5867e8">👤</div>
+      <div class="lvtitles"><div class="k">Contacts</div><div class="v">Key Contacts</div></div></div>
+    <div class="lvmeta">${cs.length} contacts across ${DB.accounts.length} association targets. Add real people from each account's record.</div>
+    <table><thead><tr><th>Name</th><th>Title</th><th>Account</th><th>Email</th><th>Phone</th></tr></thead><tbody>
+    ${cs.length?cs.map(c=>`<tr onclick="openRecord('${c.accountId}')"><td><div class="rowname"><span class="recicon" style="background:#5867e8">${esc(initials(c.name||c.title))}</span><a class="lnk">${esc(c.name||'[add name]')}</a></div></td>
+      <td>${esc(c.title||'')}</td><td><a class="lnk">${esc(c.account)}</a></td><td>${esc(c.email||'—')}</td><td>${esc(c.phone||'—')}</td></tr>`).join(""):
+      `<tr><td colspan="5" style="padding:24px;text-align:center;color:#a09e9c">No contacts yet. Open an account and click <b>New Contact</b>.</td></tr>`}
+    </tbody></table></div>`;
+}
+
+/* ---- next-action + waiting (feed the rail) ---- */
+function setFollowup(id){
+  const a=acct(id);
+  modal("Set follow-up",
+    field("na_date","Date", a.nextAction?.date||today(),"date")+field("na_note","What's the next step?", a.nextAction?.note||""),
+    async()=>{ a.nextAction={date:document.getElementById('na_date').value||today(),note:document.getElementById('na_note').value.trim()};
+      await save();render();toast('Follow-up set'); });
+}
+async function clearFollowup(id){ acct(id).nextAction=null; await save(); render(); toast('Marked done'); }
+function markWaiting(id){
+  const a=acct(id);
+  modal("Waiting on them",
+    field("w_since","Since", today(),"date")+field("w_note","Waiting on what?",""),
+    async()=>{ a.waiting={on:true,since:document.getElementById('w_since').value||today(),note:document.getElementById('w_note').value.trim()};
+      await save();render();toast('Flagged waiting on them'); });
+}
+async function railReplied(id){ acct(id).waiting=null; await save(); render(); toast('Cleared — they replied'); }
+async function railDone(id){ acct(id).nextAction=null; await save(); render(); toast('Marked done'); }
+
+/* ---- actions ---- */
+function openRecord(id){recordId=id;render();}
+function back(){recordId=null;render();}
+async function setStage(id,i){acct(id).stage=STAGES[i];await save();render();toast('Stage → '+STAGES[i]);}
+function wireRecord(){const n=document.getElementById('notes');if(n)n.addEventListener('blur',async()=>{acct(recordId).notes=n.value;await save();});}
+
+/* drag kanban */
+let drag=null;
+function wireKanban(){
+  document.querySelectorAll('.kcard').forEach(c=>{
+    c.addEventListener('dragstart',e=>{drag=c.dataset.id;c.classList.add('drag');e.stopPropagation();});
+    c.addEventListener('dragend',()=>{document.querySelectorAll('.kcard').forEach(x=>x.classList.remove('drag'));drag=null;});
+  });
+  document.querySelectorAll('.kbody').forEach(b=>{
+    b.addEventListener('dragover',e=>e.preventDefault());
+    b.addEventListener('drop',async e=>{e.preventDefault();if(!drag)return;acct(drag).stage=b.dataset.stage;await save();render();wireKanban();toast('Moved to '+b.dataset.stage);});
+  });
+}
+
+/* modal */
+function modal(title,bodyHTML,onSave){
+  document.getElementById('modalTitle').textContent=title;
+  document.getElementById('modalBody').innerHTML=bodyHTML;
+  document.getElementById('scrim').classList.add('on');document.getElementById('modal').classList.add('on');
+  document.getElementById('modalSave').onclick=async()=>{ if(await onSave()!==false){closeModal();} };
+}
+function closeModal(){document.getElementById('scrim').classList.remove('on');document.getElementById('modal').classList.remove('on');}
+document.getElementById('modalX').onclick=closeModal;document.getElementById('modalCancel').onclick=closeModal;document.getElementById('scrim').onclick=closeModal;
+function field(id,label,val="",type="text"){return `<div class="field"><label>${label}</label><input id="${id}" value="${esc(val)}" type="${type}"></div>`;}
+function selField(id,label,opts,val){return `<div class="field"><label>${label}</label><select id="${id}">${opts.map(o=>`<option ${o===val?'selected':''}>${o}</option>`).join("")}</select></div>`;}
+
+function newAccount(){ accForm("New Account",null); }
+function editAccount(id){ accForm("Edit Account",acct(id)); }
+function accForm(title,a){
+  modal(title,
+    field("f_name","Account Name",a?.name)+field("f_abbr","Abbreviation",a?.abbr)+
+    selField("f_tier","Tier",["Supplier","Wholesale","Retail","Policy","Adjacency"],a?.tier||"Wholesale")+
+    field("f_type","Type",a?.type)+field("f_focus","Category Focus",a?.focus)+
+    field("f_hq","HQ",a?.hq)+field("f_web","Website",a?.web)+
+    selField("f_stage","Onboarding Stage",STAGES,a?.stage||"Identified")+
+    field("f_role","Target Role",a?.targetRole),
+    async()=>{
+      const name=document.getElementById('f_name').value.trim();if(!name){toast('Name required');return false;}
+      const o={name,abbr:document.getElementById('f_abbr').value.trim()||name.slice(0,4).toUpperCase(),
+        tier:document.getElementById('f_tier').value,type:document.getElementById('f_type').value.trim(),
+        focus:document.getElementById('f_focus').value.trim(),hq:document.getElementById('f_hq').value.trim()||'—',
+        web:document.getElementById('f_web').value.trim()||'—',stage:document.getElementById('f_stage').value,
+        targetRole:document.getElementById('f_role').value.trim()};
+      if(a){Object.assign(a,o);}else{o.id='a'+Date.now();o.owner="Chris Fennessey";o.notes="";o.contacts=[];DB.accounts.unshift(o);}
+      await save();render();toast(a?'Account updated':'Account created');
+    });
+}
+function newContact(accountId){
+  modal("New Contact",
+    field("c_name","Name")+field("c_title","Title")+field("c_email","Email","","email")+field("c_phone","Phone","","tel"),
+    async()=>{
+      const a=acct(accountId);a.contacts=a.contacts||[];
+      a.contacts.push({id:'c'+Date.now(),name:document.getElementById('c_name').value.trim(),
+        title:document.getElementById('c_title').value.trim(),email:document.getElementById('c_email').value.trim(),
+        phone:document.getElementById('c_phone').value.trim()});
+      await save();render();toast('Contact added');
+    });
+}
+
+/* export / import / search */
+function exportJSON(){const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});const u=URL.createObjectURL(blob);const x=document.createElement('a');x.href=u;x.download='hoodie-crm.json';x.click();setTimeout(()=>URL.revokeObjectURL(u),800);}
+document.getElementById('page').addEventListener('change',e=>{ if(e.target.id==='imp'){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=async()=>{try{DB=JSON.parse(r.result);await save();render();toast('Imported');}catch(_){toast('Bad file');}};r.readAsText(f);} });
+document.getElementById('search').addEventListener('input',e=>{q=e.target.value;if(tab==='accounts'&&!recordId)render();});
+document.querySelectorAll('#nav .tab').forEach(b=>b.addEventListener('click',()=>go(b.dataset.tab)));
+
+load().then(render);
+</script>
+</body>
+</html>
