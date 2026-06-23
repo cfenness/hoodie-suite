@@ -13,81 +13,164 @@
     --ink:#1B1A17;--ink-soft:#5A564E;--hair:#C9C5BA;
     --amber:#B07012;--amber-bright:#DCA138;--amber-deep:#6E450A;
     --slate:#2F4D49;--slate-tint:#DEE6E3;--oxblood:#8A382C;
-    --bar:46px;
+    --bar:48px;--ctx:42px;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;height:100%;}
   body{background:var(--paper);color:var(--ink);font-family:"Source Serif 4",Georgia,serif;-webkit-font-smoothing:antialiased;overflow:hidden;}
   a{color:inherit;text-decoration:none;}
+  button{font-family:inherit;}
   .mono{font-family:"IBM Plex Mono",monospace;}
 
-  /* top bar */
-  header.bar{position:fixed;top:0;left:0;right:0;height:var(--bar);z-index:40;background:var(--ink);color:var(--paper);display:flex;align-items:center;gap:14px;padding:0 16px;}
+  /* ============ TOP BAR ============ */
+  header.bar{position:fixed;top:0;left:0;right:0;height:var(--bar);z-index:40;background:var(--ink);color:var(--paper);display:flex;align-items:center;gap:12px;padding:0 14px;}
   header.bar .menu{display:none;background:transparent;border:0;color:var(--paper);font-size:18px;cursor:pointer;padding:4px 6px;}
-  header.bar .brand{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:15px;letter-spacing:-0.01em;cursor:pointer;}
-  header.bar .brand .dot{color:var(--amber-bright);}
-  header.bar .ctx{font-family:"IBM Plex Mono",monospace;font-size:11px;color:#C9C2B4;letter-spacing:0.04em;border-left:1px solid #3a3833;padding-left:14px;}
-  header.bar .ctx b{color:var(--paper);font-weight:600;}
+  header.bar .mark{width:26px;height:26px;flex-shrink:0;background:var(--amber-bright);color:var(--ink);display:flex;align-items:center;justify-content:center;font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:15px;cursor:pointer;border-radius:3px;transition:transform .14s;}
+  header.bar .mark:hover{transform:rotate(-6deg);}
+  header.bar .brand{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:14.5px;letter-spacing:-0.01em;cursor:pointer;color:var(--paper);}
+  header.bar .brand .sfx{color:#8a857b;font-weight:400;}
+  header.bar .appcrumb{display:none;align-items:center;gap:10px;font-family:"IBM Plex Mono",monospace;font-size:12px;color:#c9c2b4;}
+  header.bar .appcrumb.show{display:flex;}
+  header.bar .appcrumb .arr{color:#4a463f;}
+  header.bar .appcrumb .nm{color:var(--paper);font-weight:600;}
   header.bar .spacer{margin-left:auto;}
-  header.bar .ext{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;color:var(--amber-bright);border:1px solid #3a3833;padding:6px 11px;letter-spacing:0.04em;display:none;}
+  header.bar .ext{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;color:var(--amber-bright);border:1px solid #34322c;padding:6px 11px;letter-spacing:0.04em;display:none;border-radius:3px;transition:background .14s;}
   header.bar .ext:hover{background:#2a2823;}
   header.bar .ext.show{display:inline-block;}
 
-  /* layout below bar */
-  .body{position:fixed;top:var(--bar);left:0;right:0;bottom:0;display:grid;grid-template-columns:236px 1fr;}
+  /* ============ CONTEXT BAR ============ */
+  .ctxbar{position:fixed;top:var(--bar);left:0;right:0;height:var(--ctx);z-index:38;background:var(--panel);border-bottom:1px solid var(--hair);display:flex;align-items:center;gap:0;padding:0 14px;overflow:visible;}
+  .ctxbar .seg{display:flex;align-items:center;gap:9px;padding:0 16px;height:100%;border-right:1px solid var(--hair);}
+  .ctxbar .seg:first-child{padding-left:0;}
+  .ctxbar .seg.right{margin-left:auto;border-right:0;padding-right:0;}
+  .ctxbar .lbl{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:0.13em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;flex-shrink:0;}
 
-  /* sidebar */
+  /* unified breadcrumb-drill scope picker */
+  .scope{display:flex;align-items:center;gap:2px;}
+  .scope .cr{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--ink-soft);cursor:pointer;padding:4px 7px;border-radius:3px;white-space:nowrap;transition:background .12s,color .12s;}
+  .scope .cr:hover{background:var(--panel-2);color:var(--ink);}
+  .scope .cr.cur{color:var(--ink);font-weight:600;}
+  .scope .sep{color:var(--hair);font-size:11px;padding:0 1px;}
+  .scope .drill{display:flex;align-items:center;gap:5px;font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--ink);font-weight:600;cursor:pointer;padding:4px 8px;border:1px solid var(--hair);border-radius:3px;background:var(--paper);transition:border-color .12s;white-space:nowrap;}
+  .scope .drill:hover{border-color:var(--amber);}
+  .scope .drill .chev{font-size:9px;color:var(--amber);transition:transform .16s;}
+  .scope .drill.open .chev{transform:rotate(180deg);}
+
+  .pop{position:absolute;top:calc(var(--bar) + var(--ctx) - 2px);z-index:60;background:var(--paper);border:1px solid var(--ink);box-shadow:0 12px 30px -12px rgba(27,26,23,.45);min-width:180px;max-height:340px;overflow:auto;display:none;animation:popin .14s ease;}
+  .pop.show{display:block;}
+  @keyframes popin{from{opacity:0;transform:translateY(-5px);}to{opacity:1;transform:none;}}
+  .pop .ph{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;padding:9px 13px 6px;border-bottom:1px solid var(--hair);}
+  .pop .opt{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 13px;font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--ink);cursor:pointer;transition:background .1s;}
+  .pop .opt:hover{background:var(--panel);}
+  .pop .opt .lv{font-size:9px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.05em;}
+  .pop .opt .go{color:var(--amber);font-size:11px;}
+
+  /* account select */
+  .acct{font-family:"IBM Plex Mono",monospace;font-size:12.5px;border:1px solid var(--hair);background:var(--paper);color:var(--ink);padding:5px 8px;border-radius:3px;cursor:pointer;transition:border-color .12s;}
+  .acct:hover{border-color:var(--amber);}
+
+  /* segmented basis */
+  .basis{display:flex;border:1px solid var(--hair);border-radius:3px;overflow:hidden;}
+  .basis button{font-family:"IBM Plex Mono",monospace;font-size:11px;border:0;border-left:1px solid var(--hair);background:var(--paper);color:var(--ink-soft);padding:5px 11px;cursor:pointer;transition:all .12s;}
+  .basis button:first-child{border-left:0;}
+  .basis button:hover{background:var(--panel-2);color:var(--ink);}
+  .basis button.on{background:var(--ink);color:var(--paper);}
+
+  /* spine-live indicator + broadcast feedback */
+  .ctxbar .live{display:flex;align-items:center;gap:7px;font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--slate);font-weight:600;}
+  .ctxbar .live .d{position:relative;width:7px;height:7px;background:var(--slate);border-radius:50%;}
+  .ctxbar .live.ping .d::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--slate);animation:ping .55s ease-out;}
+  @keyframes ping{from{transform:scale(1);opacity:.55;}to{transform:scale(3.6);opacity:0;}}
+  .ctxbar .sweep{position:absolute;left:0;bottom:-1px;height:2px;width:0;background:var(--amber-bright);opacity:0;pointer-events:none;}
+  .ctxbar.pulse .sweep{animation:sweep .52s cubic-bezier(.4,0,.2,1);}
+  @keyframes sweep{0%{width:0;opacity:1;}70%{opacity:1;}100%{width:100%;opacity:0;}}
+
+  /* ============ BODY LAYOUT ============ */
+  .body{position:fixed;top:calc(var(--bar) + var(--ctx));left:0;right:0;bottom:0;display:grid;grid-template-columns:240px 1fr;}
+
   aside.nav{border-right:1px solid var(--hair);background:var(--panel);overflow:auto;padding:14px 0 28px;}
-  aside.nav .home-link{display:flex;align-items:center;gap:9px;margin:2px 12px 10px;padding:9px 12px;border:1px solid var(--hair);background:var(--paper);cursor:pointer;font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;color:var(--ink);}
+  aside.nav .home-link{display:flex;align-items:center;gap:9px;margin:2px 12px 12px;padding:9px 12px;border:1px solid var(--hair);background:var(--paper);cursor:pointer;font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;color:var(--ink);border-radius:3px;transition:border-color .12s;}
   aside.nav .home-link:hover{border-color:var(--amber);}
   aside.nav .home-link.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
-  aside.nav .grp{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--amber);padding:14px 24px 6px;font-weight:600;}
-  aside.nav .item{display:grid;grid-template-columns:26px 1fr;gap:10px;align-items:center;padding:8px 18px;cursor:pointer;border-left:2px solid transparent;}
+  aside.nav .grp{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:0.13em;text-transform:uppercase;color:var(--amber);padding:14px 24px 6px;font-weight:600;}
+  aside.nav .item{display:grid;grid-template-columns:26px 1fr;gap:10px;align-items:center;padding:8px 18px;cursor:pointer;border-left:2px solid transparent;transition:background .12s;}
   aside.nav .item:hover{background:var(--panel-2);}
   aside.nav .item.active{border-left-color:var(--amber);background:var(--panel-2);}
-  aside.nav .item .ic{width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:var(--ink);color:var(--paper);font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:12px;}
+  aside.nav .item .ic{width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:var(--ink);color:var(--paper);font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:11px;border-radius:3px;}
   aside.nav .item.live .ic{background:var(--slate);}
-  aside.nav .item .nm{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;color:var(--ink);line-height:1.1;}
-  aside.nav .item .ds{font-size:11px;color:var(--ink-soft);line-height:1.1;margin-top:1px;display:block;}
+  aside.nav .item .nm{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;color:var(--ink);line-height:1.12;}
+  aside.nav .item .ds{font-size:11px;color:var(--ink-soft);line-height:1.12;margin-top:1px;display:block;}
 
-  /* content area */
   main.stage{position:relative;overflow:hidden;background:var(--paper);}
   iframe#frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff;display:none;}
   iframe#frame.show{display:block;}
 
-  /* home launcher */
-  #home{position:absolute;inset:0;overflow:auto;padding:30px 36px 60px;display:block;}
-  #home .hwrap{max-width:920px;margin:0 auto;}
+  /* ============ LAUNCHER HOME ============ */
+  #home{position:absolute;inset:0;overflow:auto;padding:34px 38px 64px;display:block;}
+  #home .hwrap{max-width:960px;margin:0 auto;}
   #home .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:var(--amber);font-weight:600;}
-  #home h1{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:clamp(26px,4vw,36px);letter-spacing:-0.02em;margin:10px 0 0;}
+  #home h1{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:clamp(28px,4vw,38px);letter-spacing:-0.02em;margin:10px 0 0;line-height:1.04;}
   #home h1 .thin{font-weight:400;color:var(--ink-soft);}
-  #home .sub{font-size:15.5px;color:var(--ink-soft);margin:12px 0 0;max-width:56ch;}
-  #home .ggrp{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--amber);font-weight:600;margin:34px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--hair);}
-  #home .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:12px;}
-  #home .app{display:flex;flex-direction:column;border:1px solid var(--hair);border-top:3px solid var(--amber);background:var(--panel);padding:16px 17px;cursor:pointer;transition:transform .12s,box-shadow .12s;min-height:118px;}
-  #home .app:hover{transform:translateY(-2px);box-shadow:0 8px 22px -14px rgba(27,26,23,.5);}
-  #home .app.live{border-top-color:var(--slate);}
-  #home .app .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
-  #home .app .ic{width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:var(--ink);color:var(--paper);font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;}
+  #home .sub{font-size:15.5px;color:var(--ink-soft);margin:13px 0 0;max-width:60ch;line-height:1.5;}
+  #home .statline{display:flex;align-items:center;gap:14px;margin-top:18px;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-soft);letter-spacing:0.03em;}
+  #home .statline .chip{display:flex;align-items:center;gap:6px;}
+  #home .statline .chip .d{width:6px;height:6px;border-radius:50%;background:var(--slate);}
+  #home .statline b{color:var(--ink);font-weight:600;}
+
+  /* filter row */
+  #home .gridwrap{max-width:1180px;margin:0 auto;}
+  #home .filters{display:flex;flex-wrap:wrap;gap:7px;margin:30px 0 18px;align-items:center;}
+  #home .filters .fl{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:0.13em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;margin-right:4px;}
+  #home .chip{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-soft);background:var(--panel);border:1px solid var(--hair);padding:6px 11px;cursor:pointer;border-radius:3px;transition:all .12s;display:flex;align-items:center;gap:6px;}
+  #home .chip:hover{border-color:var(--amber);color:var(--ink);}
+  #home .chip.on{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  #home .chip .ct{font-size:10px;opacity:.6;}
+  #home .chip.on .ct{opacity:.7;}
+
+  #home .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(236px,1fr));gap:11px;}
+  #home .app{display:flex;flex-direction:column;border:1px solid var(--hair);border-left:3px solid var(--amber);background:var(--panel);padding:13px 15px;cursor:pointer;transition:transform .13s,box-shadow .13s,border-color .13s;min-height:104px;border-radius:3px;}
+  #home .app:hover{transform:translateY(-2px);box-shadow:0 10px 22px -16px rgba(27,26,23,.5);}
+  #home .app.live{border-left-color:var(--slate);}
+  #home .app .top{display:flex;align-items:center;gap:9px;margin-bottom:9px;}
+  #home .app .ic{width:27px;height:27px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--ink);color:var(--paper);font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:12px;border-radius:3px;}
+  #home .app .ic svg,aside.nav .item .ic svg{display:block;}
   #home .app.live .ic{background:var(--slate);}
-  #home .app .pill{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:0.1em;text-transform:uppercase;font-weight:600;padding:3px 7px;border:1px solid;}
+  #home .app .nm{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:15px;letter-spacing:-0.01em;color:var(--ink);line-height:1.15;}
+  #home .app .pill{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:8.5px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;padding:2px 6px;border:1px solid;border-radius:3px;flex-shrink:0;}
   #home .app.live .pill{color:var(--slate);border-color:var(--slate);}
   #home .app.beta .pill{color:var(--amber-deep);border-color:var(--amber);}
   #home .app.internal .pill{color:var(--ink-soft);border-color:var(--hair);}
-  #home .app .nm{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:16px;letter-spacing:-0.01em;color:var(--ink);margin-bottom:4px;}
-  #home .app .ds{font-size:13px;color:var(--ink-soft);line-height:1.4;}
-  #home .app .open{margin-top:auto;padding-top:12px;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--amber);font-weight:600;}
+  #home .app .ds{font-size:12.5px;color:var(--ink-soft);line-height:1.38;}
+  #home .app .foot{margin-top:auto;padding-top:11px;display:flex;align-items:center;justify-content:space-between;}
+  #home .app .cat{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-soft);}
+  #home .app .open{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--amber);font-weight:600;display:flex;align-items:center;gap:5px;}
+  #home .app .open .a{transition:transform .14s;}
+  #home .app:hover .open .a{transform:translateX(3px);}
+  #home .empty{grid-column:1/-1;text-align:center;color:var(--ink-soft);font-size:14px;padding:40px;font-family:"IBM Plex Mono",monospace;}
 
-  /* mobile */
-  .scrim{position:fixed;inset:var(--bar) 0 0 0;background:rgba(27,26,23,.4);z-index:35;display:none;}
+  /* load-in stagger */
+  .rise{opacity:0;animation:rise .42s cubic-bezier(.2,.7,.2,1) forwards;}
+  @keyframes rise{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+
+  .scrim{position:fixed;inset:calc(var(--bar) + var(--ctx)) 0 0 0;background:rgba(27,26,23,.4);z-index:35;display:none;}
+  .popscrim{position:fixed;inset:0;z-index:55;display:none;}
+  .popscrim.show{display:block;}
+
   @media (max-width:760px){
     header.bar .menu{display:block;}
-    header.bar .ctx{display:none;}
+    header.bar .appcrumb{display:none!important;}
+    .ctxbar{overflow-x:auto;}
+    .ctxbar .seg .lbl{display:none;}
+    .ctxbar .seg.right .live span:not(.d){display:none;}
     .body{grid-template-columns:1fr;}
-    aside.nav{position:fixed;top:var(--bar);left:0;bottom:0;width:248px;z-index:38;transform:translateX(-100%);transition:transform .2s;}
+    aside.nav{position:fixed;top:calc(var(--bar) + var(--ctx));left:0;bottom:0;width:248px;z-index:38;transform:translateX(-100%);transition:transform .2s;}
     aside.nav.open{transform:none;}
     .scrim.show{display:block;}
-    #home{padding:24px 18px 50px;}
+    #home{padding:26px 18px 50px;}
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;}
+    .rise{opacity:1;}
   }
 </style>
 </head>
@@ -95,11 +178,37 @@
 
 <header class="bar">
   <button class="menu" id="menu" aria-label="Menu">☰</button>
-  <span class="brand" id="brand">Hoodie<span class="dot"> ·</span> Suite</span>
-  <span class="ctx" id="ctx"></span>
+  <span class="mark" id="mark" title="Home">h</span>
+  <span class="brand" id="brand">Hoodie<span class="sfx"> · Suite</span></span>
+  <span class="appcrumb" id="appcrumb"><span class="arr">/</span><span class="nm" id="appnm"></span></span>
   <span class="spacer"></span>
   <a class="ext" id="ext" target="_blank" rel="noopener">Open full ↗</a>
 </header>
+
+<div class="ctxbar" id="ctxbar">
+  <div class="seg">
+    <span class="lbl">Scope</span>
+    <div class="scope" id="scope"></div>
+  </div>
+  <div class="seg">
+    <span class="lbl">Account</span>
+    <select class="acct" id="acct"></select>
+  </div>
+  <div class="seg">
+    <span class="lbl">Basis</span>
+    <div class="basis" id="basis">
+      <button data-b="YoY" class="on">YoY</button>
+      <button data-b="YTD">YTD</button>
+      <button data-b="MAT">MAT</button>
+    </div>
+  </div>
+  <div class="seg right">
+    <span class="live" id="live"><span class="d"></span><span>spine live</span></span>
+  </div>
+  <div class="sweep"></div>
+</div>
+<div class="pop" id="pop"></div>
+<div class="popscrim" id="popscrim"></div>
 
 <div class="body">
   <aside class="nav" id="nav">
@@ -109,10 +218,14 @@
   <main class="stage">
     <div id="home">
       <div class="hwrap">
-        <div class="eyebrow">Hoodie · Prism · Unifyd</div>
-        <h1>The Suite. <span class="thin">Everything in one place.</span></h1>
-        <p class="sub">Every app, one front door. Pick one to open it here, or use “Open full ↗” to launch it in its own tab.</p>
-        <div id="homegrid"></div>
+        <div class="eyebrow rise" style="animation-delay:.02s">Hoodie · Prism · Unifyd</div>
+        <h1 class="rise" style="animation-delay:.06s">The Suite. <span class="thin">One spine, every surface.</span></h1>
+        <p class="sub rise" style="animation-delay:.1s">Every app, one front door — and one shared context. Set scope, account, and date basis once in the bar above; every app on the spine reads it. Open an app here, or “Open full ↗” for its own tab.</p>
+        <div class="statline rise" id="statline" style="animation-delay:.14s"></div>
+      </div>
+      <div class="gridwrap">
+        <div class="filters rise" id="filters" style="animation-delay:.18s"><span class="fl">Filter</span></div>
+        <div class="grid" id="grid"></div>
       </div>
     </div>
     <iframe id="frame" title="App"></iframe>
@@ -120,69 +233,223 @@
 </div>
 <div class="scrim" id="scrim"></div>
 
+<script src="spine/spine.js"></script>
 <script>
   const APPS=[
     {id:'dashboard',name:'Hoodie Intelligence',desc:'Market intelligence & QBR briefs',group:'Product',status:'live',file:'apps/dashboard.html',mark:'HI'},
     {id:'crm',name:'Hoodie Relations',desc:'Industry-associations CRM',group:'Commercial',status:'beta',file:'apps/crm.html',mark:'HR'},
+    {id:'presenter',name:'Presenter',desc:"Speaker's workbench · run a demo",group:'Presentation',status:'beta',file:'apps/presenter.html',mark:'PR'},
+    {id:'estate',name:'Estate Map',desc:'Data & model layer · the whole estate',group:'Data Operations',status:'beta',file:'apps/estate-map.html',mark:'EM'},
     {id:'ttb',name:'TTB Ingestion',desc:'COLA label pipeline · Unifyd',group:'Data Operations',status:'beta',file:'apps/ttb-ingestion.html',mark:'TT'},
     {id:'mdm',name:'Item Master',desc:'145-field MDM console · Unifyd',group:'Data Operations',status:'beta',file:'apps/item-mdm.html',mark:'IM'},
+    {id:'perctut',name:'Perceptual Science',desc:'Course 00 · the foundation',group:'Learning',status:'internal',file:'apps/perceptual-science-tutorial.html',mark:'PS'},
+    {id:'tasting',name:'The Tasting Room',desc:'Wine & spirits education',group:'Learning',status:'internal',file:'apps/tasting-room.html',mark:'TR'},
     {id:'roadmap',name:'Product Roadmap',desc:'What is shipping & when',group:'Internal',status:'internal',file:'apps/roadmap.html',mark:'RM'},
-    {id:'kb',name:'Principles & Architecture',desc:'The thinking behind the platform',group:'Internal',status:'internal',file:'apps/principles-hub.html',mark:'PA'}
+    {id:'kb',name:'Principles & Architecture',desc:'The thinking behind the platform',group:'Internal',status:'internal',file:'apps/principles-hub.html',mark:'PA'},
+    {id:'spinedemo',name:'Spine Adapter',desc:'Reference · how apps join the spine',group:'Platform',status:'internal',file:'apps/spine-adapter.html',mark:'SP'}
   ];
-  const GROUPS=['Product','Commercial','Data Operations','Internal'];
+  const GROUPS=['Product','Commercial','Presentation','Data Operations','Learning','Internal','Platform'];
   const byId=Object.fromEntries(APPS.map(a=>[a.id,a]));
 
-  // build sidebar
+  /* per-app glyphs — monoline, inherit icon color via currentColor */
+  const S='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">';
+  const LOGOS={
+    // Hoodie Intelligence / Prism — a prism splitting a beam
+    dashboard:S+'<path d="M12 5 L18.5 17 L5.5 17 Z"/><path d="M2 12 H8.7"/><path d="M15 13 L21 10 M15 13 L21.5 13 M15 13 L21 16"/></svg>',
+    // Hoodie Relations — a connected network
+    crm:S+'<circle cx="6" cy="8" r="2.1"/><circle cx="18" cy="7" r="2.1"/><circle cx="12" cy="18" r="2.1"/><path d="M8 7.6 L16 7 M7 9.7 L11 16 M16.8 8.8 L13 16.2"/></svg>',
+    // Presenter — a screen with a play, on a stand
+    presenter:S+'<rect x="3" y="4" width="18" height="12" rx="1.6"/><path d="M10 8 L14.5 10 L10 12 Z" fill="currentColor" stroke="none"/><path d="M12 16 V19 M8.5 20 H15.5"/></svg>',
+    // TTB Ingestion — a funnel (label pipeline)
+    ttb:S+'<path d="M4 5 H20 L13.5 12.5 V17 L10.5 18.5 V12.5 Z"/></svg>',
+    // Item Master — stacked master records
+    mdm:S+'<rect x="4" y="5" width="16" height="4.1" rx="1"/><rect x="4" y="10.9" width="16" height="4.1" rx="1"/><rect x="4" y="16.8" width="16" height="3.2" rx="1"/><circle cx="7" cy="7.05" r="0.9" fill="currentColor" stroke="none"/></svg>',
+    // Perceptual Science — an eye
+    perctut:S+'<path d="M2 12 C5 6.5 19 6.5 22 12 C19 17.5 5 17.5 2 12 Z"/><circle cx="12" cy="12" r="3"/></svg>',
+    // The Tasting Room — a wine glass
+    tasting:S+'<path d="M7 3 H17 C17 8 14.5 11 12 11 C9.5 11 7 8 7 3 Z"/><path d="M12 11 V19 M8.5 19 H15.5"/></svg>',
+    // Product Roadmap — a path with milestones and a flag
+    roadmap:S+'<path d="M5 19 C5 14.5 11 15.5 11 11 C11 7 16 8 18.5 5"/><circle cx="5" cy="19" r="1" fill="currentColor" stroke="none"/><circle cx="11" cy="11" r="1" fill="currentColor" stroke="none"/><path d="M18.5 5 V10 M18.5 5 H21.6 L20.3 6.4 L21.6 7.8 H18.5"/></svg>',
+    // Principles & Architecture — a temple / pillars
+    kb:S+'<path d="M3.5 8 L12 4 L20.5 8"/><path d="M5.5 8 V16.5 M9.8 8 V16.5 M14.2 8 V16.5 M18.5 8 V16.5"/><path d="M3.5 16.5 H20.5"/></svg>',
+    // Spine Adapter — a backbone apps read from
+    spinedemo:S+'<path d="M12 3 V21"/><path d="M12 6 H18 M12 10 H6 M12 14 H18 M12 18 H6"/><circle cx="18" cy="6" r="1.1" fill="currentColor" stroke="none"/><circle cx="6" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="18" cy="14" r="1.1" fill="currentColor" stroke="none"/><circle cx="6" cy="18" r="1.1" fill="currentColor" stroke="none"/></svg>',
+    // Estate Map — data nodes → entity → model nodes
+    estate:S+'<circle cx="5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="5" cy="18" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="7" r="1.3" fill="currentColor" stroke="none"/><circle cx="19" cy="17" r="1.3" fill="currentColor" stroke="none"/><path d="M6.1 6.6 L10.6 11.2 M6.3 12 H10.3 M6.1 17.4 L10.6 12.8 M13.4 11.3 L17.7 7.6 M13.4 12.7 L17.7 16.4"/></svg>'
+  };
+  const logo=a=>LOGOS[a.id]||a.mark;
+
+  /* sidebar */
   const navlist=document.getElementById('navlist');
   GROUPS.forEach(g=>{
     const apps=APPS.filter(a=>a.group===g);if(!apps.length)return;
     const lab=document.createElement('div');lab.className='grp';lab.textContent=g;navlist.appendChild(lab);
     apps.forEach(a=>{
       const el=document.createElement('div');el.className='item '+a.status;el.dataset.id=a.id;
-      el.innerHTML='<span class="ic">'+a.mark+'</span><span><span class="nm">'+a.name+'</span><span class="ds">'+a.desc+'</span></span>';
+      el.innerHTML='<span class="ic">'+logo(a)+'</span><span><span class="nm">'+a.name+'</span><span class="ds">'+a.desc+'</span></span>';
       el.addEventListener('click',()=>{location.hash='#'+a.id;closeNav();});
       navlist.appendChild(el);
     });
   });
-
-  // build home grid
-  const homegrid=document.getElementById('homegrid');
-  GROUPS.forEach(g=>{
-    const apps=APPS.filter(a=>a.group===g);if(!apps.length)return;
-    const lab=document.createElement('div');lab.className='ggrp';lab.textContent=g;homegrid.appendChild(lab);
-    const grid=document.createElement('div');grid.className='grid';
-    apps.forEach(a=>{
-      const c=document.createElement('div');c.className='app '+a.status;
-      c.innerHTML='<div class="top"><span class="ic">'+a.mark+'</span><span class="pill">'+a.status+'</span></div><div class="nm">'+a.name+'</div><div class="ds">'+a.desc+'</div><div class="open">Open →</div>';
+  /* filter chips + single dense grid */
+  const grid=document.getElementById('grid'), filters=document.getElementById('filters');
+  let activeFilter='all';
+  const usedGroups=GROUPS.filter(g=>APPS.some(a=>a.group===g));
+  function chip(label,key,count){
+    const c=document.createElement('button');c.className='chip'+(key===activeFilter?' on':'');c.dataset.key=key;
+    c.innerHTML=label+' <span class="ct">'+count+'</span>';
+    c.addEventListener('click',()=>{activeFilter=key;[...filters.querySelectorAll('.chip')].forEach(x=>x.classList.toggle('on',x.dataset.key===key));renderGrid();});
+    filters.appendChild(c);
+  }
+  chip('All','all',APPS.length);
+  usedGroups.forEach(g=>chip(g,g,APPS.filter(a=>a.group===g).length));
+  function renderGrid(){
+    const list=activeFilter==='all'?APPS:APPS.filter(a=>a.group===activeFilter);
+    grid.innerHTML='';
+    if(!list.length){grid.innerHTML='<div class="empty">No surfaces in this group.</div>';return;}
+    let d=0;
+    list.forEach(a=>{
+      const c=document.createElement('div');c.className='app '+a.status+' rise';c.style.animationDelay=(d).toFixed(2)+'s';d+=0.03;
+      c.innerHTML='<div class="top"><span class="ic">'+logo(a)+'</span><span class="nm">'+a.name+'</span><span class="pill">'+a.status+'</span></div>'+
+        '<div class="ds">'+a.desc+'</div>'+
+        '<div class="foot"><span class="cat">'+a.group+'</span><span class="open">Open <span class="a">→</span></span></div>';
       c.addEventListener('click',()=>{location.hash='#'+a.id;});
       grid.appendChild(c);
     });
-    homegrid.appendChild(grid);
+  }
+  renderGrid();
+  document.getElementById('statline').innerHTML='<span class="chip" style="cursor:default;background:transparent;border:0;padding:0"><span class="d"></span>spine live</span><span>·</span><span><b>'+APPS.length+'</b> surfaces</span><span>·</span><span><b>'+usedGroups.length+'</b> groups</span>';
+
+  /* ============ spine host ============ */
+  const FALLBACK={id:'root',level:'root',name:'All Portfolios',children:[
+    {id:'pf-alpha',level:'portfolio',name:'House Alpha',children:[
+      {id:'bf-agave',level:'brandFamily',name:'Agave',children:[{id:'br-silver-tequila',level:'brand',name:'Silver Tequila',children:[
+        {id:'prf-blanco',level:'productFamily',name:'Blanco',children:[{id:'sku-blanco-750',level:'sku',name:'Blanco 750ml'},{id:'sku-blanco-1l',level:'sku',name:'Blanco 1L'}]},
+        {id:'prf-reposado',level:'productFamily',name:'Reposado',children:[{id:'sku-repo-750',level:'sku',name:'Reposado 750ml'}]}]}]},
+      {id:'bf-rum',level:'brandFamily',name:'Rum',children:[{id:'br-silver-rum',level:'brand',name:'Silver Rum',children:[
+        {id:'prf-white',level:'productFamily',name:'White',children:[{id:'sku-white-750',level:'sku',name:'White 750ml'},{id:'sku-white-175',level:'sku',name:'White 1.75L'}]}]}]}]},
+    {id:'pf-beta',level:'portfolio',name:'House Beta',children:[
+      {id:'bf-cognac',level:'brandFamily',name:'Cognac & Brandy',children:[{id:'br-vs-cognac',level:'brand',name:'VS Cognac',children:[
+        {id:'prf-vs',level:'productFamily',name:'VS',children:[{id:'sku-vs-750',level:'sku',name:'VS 750ml'}]}]}]}]}
+  ]};
+  let HIER=FALLBACK;
+  let spine=HoodieSpine.host({hierarchy:HIER});
+  fetch('spine/hierarchy.sample.json').then(r=>r.ok?r.json():null).then(h=>{ if(h){HIER=h;spine.setHierarchy(h);renderScope();} }).catch(()=>{});
+  const U=HoodieSpine.util;
+
+  /* ============ account ============ */
+  const ACCOUNTS=[{id:null,name:'All accounts'},{id:'acc-metro',name:'Metro cluster'},{id:'acc-natl',name:'National chains'},{id:'acc-indep',name:'Independents'}];
+  const acctSel=document.getElementById('acct');
+  ACCOUNTS.forEach(a=>{const o=document.createElement('option');o.value=a.id||'';o.textContent=a.name;acctSel.appendChild(o);});
+  acctSel.addEventListener('change',function(){
+    const a=ACCOUNTS.find(x=>(x.id||'')===this.value);
+    spine.setContext({account:a&&a.id?{id:a.id,name:a.name}:null});
   });
 
+  /* ============ unified scope picker ============ */
+  const scopeEl=document.getElementById('scope'), pop=document.getElementById('pop'), popscrim=document.getElementById('popscrim');
+  let popNode=null;
+  function curNode(){const s=spine.getContext().scope;return s?U.find(HIER,s.id):HIER;}
+  function setScope(node){
+    if(!node||node.id==='root'||node.level==='root'){spine.setContext({scope:null});}
+    else spine.setContext({scope:{id:node.id,level:node.level,name:node.name}});
+  }
+  function renderScope(){
+    const ctx=spine.getContext();
+    const path=ctx.scope?U.path(HIER,ctx.scope.id):[];
+    let html='<span class="cr'+(path.length?'':' cur')+'" data-id="root">All</span>';
+    path.forEach((n,idx)=>{
+      const last=idx===path.length-1;
+      html+='<span class="sep">/</span>';
+      if(last) html+='';   // current node rendered as drill button below
+      html+='<span class="cr'+(last?' cur':'')+'" data-id="'+n.id+'">'+n.name+'</span>';
+    });
+    // drill affordance on the current node (root or deepest), if it has children
+    const cn=ctx.scope?U.find(HIER,ctx.scope.id):HIER;
+    if(cn&&cn.children&&cn.children.length){
+      html+='<span class="drill" id="drillbtn"><span class="chev">▼</span></span>';
+    }
+    scopeEl.innerHTML=html;
+    scopeEl.querySelectorAll('.cr').forEach(c=>c.addEventListener('click',()=>{
+      closePop();
+      const id=c.dataset.id;
+      if(id==='root')setScope(null); else setScope(U.find(HIER,id));
+    }));
+    const db=document.getElementById('drillbtn');
+    if(db)db.addEventListener('click',e=>{e.stopPropagation();togglePop(cn,db);});
+  }
+  function togglePop(node,anchor){
+    if(pop.classList.contains('show')&&popNode===node){closePop();return;}
+    popNode=node;
+    openPop(node,anchor);
+  }
+  function openPop(node,anchor){
+    pop.innerHTML='<div class="ph">drill into '+(node.name==='All Portfolios'?'a portfolio':node.name)+'</div>'+
+      node.children.map(c=>'<div class="opt" data-id="'+c.id+'"><span>'+c.name+'</span><span class="lv">'+c.level+'</span></div>').join('');
+    const r=anchor.getBoundingClientRect();
+    pop.style.left=Math.max(8,Math.min(r.left, window.innerWidth-pop.offsetWidth-8))+'px';
+    pop.classList.add('show');popscrim.classList.add('show');
+    if(document.getElementById('drillbtn'))document.getElementById('drillbtn').classList.add('open');
+    // reposition after width known
+    requestAnimationFrame(()=>{pop.style.left=Math.max(8,Math.min(r.left, window.innerWidth-pop.offsetWidth-8))+'px';});
+    pop.querySelectorAll('.opt').forEach(o=>o.addEventListener('click',()=>{
+      const child=U.find(HIER,o.dataset.id);
+      setScope(child);
+      // chain: if the child has children, keep drilling; else close
+      if(child.children&&child.children.length){
+        renderScope();
+        const nb=document.getElementById('drillbtn');
+        popNode=child; openPop(child, nb||anchor);
+      } else { closePop(); }
+    }));
+  }
+  function closePop(){pop.classList.remove('show');popscrim.classList.remove('show');popNode=null;const db=document.getElementById('drillbtn');if(db)db.classList.remove('open');}
+  popscrim.addEventListener('click',closePop);
+
+  /* ============ basis ============ */
+  document.getElementById('basis').querySelectorAll('button').forEach(b=>b.addEventListener('click',function(){
+    document.getElementById('basis').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+    this.classList.add('on');spine.setContext({dateRange:{basis:this.dataset.b}});
+  }));
+
+  /* ============ broadcast feedback + top-bar readout ============ */
+  function broadcastPulse(){
+    const bar=document.getElementById('ctxbar');bar.classList.remove('pulse');void bar.offsetWidth;bar.classList.add('pulse');
+    const live=document.getElementById('live');live.classList.remove('ping');void live.offsetWidth;live.classList.add('ping');
+  }
+  spine.on('context',broadcastPulse);
+  spine.on('context',renderScope);
+  spine.on('nav',p=>{ if(p&&p.app&&byId[p.app]){ if(p.scope)spine.setContext({scope:p.scope}); location.hash='#'+p.app; } });
+  renderScope();
+
+  /* ============ router ============ */
   const frame=document.getElementById('frame'),home=document.getElementById('home');
-  const ctx=document.getElementById('ctx'),ext=document.getElementById('ext');
+  const ext=document.getElementById('ext'),appcrumb=document.getElementById('appcrumb'),appnm=document.getElementById('appnm');
   function route(){
     const id=(location.hash||'').replace('#','');
     const app=byId[id];
     document.querySelectorAll('.item').forEach(x=>x.classList.toggle('active',x.dataset.id===id));
     document.getElementById('homeLink').classList.toggle('active',!app);
     if(app){
-      if(frame.getAttribute('src')!==app.file)frame.setAttribute('src',app.file);
+      if(frame.getAttribute('src')!==app.file){
+        frame.setAttribute('src',app.file);
+        frame.onload=()=>{ try{ spine.pushTo(frame.contentWindow); }catch(e){} };
+      }else{ try{ spine.pushTo(frame.contentWindow); }catch(e){} }
       frame.classList.add('show');home.style.display='none';
-      ctx.innerHTML='<b>'+app.name+'</b>';
       ext.href=app.file;ext.classList.add('show');
+      appnm.textContent=app.name;appcrumb.classList.add('show');
     }else{
       frame.classList.remove('show');frame.removeAttribute('src');home.style.display='block';
-      ctx.textContent='';ext.classList.remove('show');
+      ext.classList.remove('show');appcrumb.classList.remove('show');
     }
   }
   document.getElementById('homeLink').addEventListener('click',()=>{location.hash='';});
   document.getElementById('brand').addEventListener('click',()=>{location.hash='';});
+  document.getElementById('mark').addEventListener('click',()=>{location.hash='';});
   window.addEventListener('hashchange',route);
   window.addEventListener('load',route);
 
-  // mobile nav
+  /* ============ mobile nav ============ */
   const nav=document.getElementById('nav'),scrim=document.getElementById('scrim');
   function closeNav(){nav.classList.remove('open');scrim.classList.remove('show');}
   document.getElementById('menu').addEventListener('click',()=>{nav.classList.toggle('open');scrim.classList.toggle('show');});

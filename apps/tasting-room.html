@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Tasting Room · Wine & Spirits Education</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,900&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EBE6DA; --cream:#FBF8F1; --ink:#211B14; --ink-soft:#5C5044;
+    --rule:#CFC5B2;
+    --spirit:#A85A1A; --spirit-d:#7E3F0F;
+    --wine:#7A2A43;   --wine-d:#561E30;
+    --concept:#2E5360;--concept-d:#1E3B45;
+    --sig:#7A2A43;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;}
+  body{
+    background:radial-gradient(130% 90% at 50% -10%,#F3EFE6 0%,var(--paper) 60%,#E4DECF 100%);
+    color:var(--ink);font-family:"Spectral",Georgia,serif;line-height:1.5;
+    min-height:100vh;padding:0 18px 70px;
+  }
+  .wrap{max-width:1040px;margin:0 auto;}
+
+  /* masthead */
+  header.mast{padding:44px 0 22px;border-bottom:1.5px solid var(--ink);}
+  .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.24em;
+    text-transform:uppercase;color:var(--ink-soft);}
+  h1.title{font-family:"Fraunces",serif;font-optical-sizing:auto;font-weight:900;
+    font-size:clamp(40px,7.5vw,70px);line-height:.92;letter-spacing:-.02em;margin:12px 0 0;}
+  h1.title em{font-style:italic;font-weight:500;color:var(--sig);}
+  .sub{font-size:17px;max-width:64ch;margin-top:14px;}
+  .sub b{font-weight:600;}
+
+  /* control bar */
+  .controls{display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin:24px 0 6px;
+    justify-content:space-between;}
+  .lenses{display:flex;gap:6px;flex-wrap:wrap;}
+  .lens{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.1em;
+    text-transform:uppercase;padding:8px 14px;border:1.5px solid var(--ink);background:var(--cream);
+    cursor:pointer;color:var(--ink);transition:all .12s ease;}
+  .lens:hover{background:var(--paper);}
+  .lens.active{background:var(--ink);color:var(--cream);}
+  .lens .c{opacity:.6;margin-left:6px;}
+
+  .legend{display:flex;gap:14px;font-family:"IBM Plex Mono",monospace;font-size:10.5px;
+    letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);align-items:center;flex-wrap:wrap;}
+  .legend .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle;}
+
+  .filternote{margin:14px 0 26px;min-height:22px;font-size:13.5px;color:var(--ink-soft);
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .chipfilter{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.06em;
+    background:var(--sig);color:var(--cream);padding:3px 10px;border-radius:2px;display:inline-flex;
+    align-items:center;gap:8px;}
+  .chipfilter button{background:none;border:none;color:var(--cream);cursor:pointer;font-size:13px;
+    line-height:1;padding:0;opacity:.8;}
+  .chipfilter button:hover{opacity:1;}
+
+  /* grid + cards */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;}
+  .card{background:var(--cream);border:1.5px solid var(--ink);padding:18px 18px 16px;
+    cursor:pointer;text-align:left;width:100%;font:inherit;color:inherit;display:flex;flex-direction:column;
+    transition:transform .14s ease, box-shadow .14s ease;border-left-width:5px;border-left-color:var(--accent);}
+  .card:hover,.card:focus-visible{transform:translateY(-3px);box-shadow:5px 7px 0 -2px var(--accent);outline:none;}
+  .card .top{display:flex;justify-content:space-between;align-items:center;
+    font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink-soft);margin-bottom:10px;}
+  .card .top .cat{color:var(--accent);font-weight:600;}
+  .card h3{font-family:"Fraunces",serif;font-weight:600;font-size:21px;line-height:1.05;margin-bottom:8px;}
+  .card .meta{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:11px;}
+  .badge{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+    padding:2px 7px;border:1px solid var(--rule);border-radius:2px;color:var(--ink-soft);}
+  .badge.cust{border-color:var(--concept);color:var(--concept-d);}
+  .badge.team{border-color:var(--spirit);color:var(--spirit-d);}
+  .badge.lvl{background:var(--paper);}
+  .card .summ{font-size:14px;line-height:1.45;color:var(--ink);margin-bottom:13px;flex:1;}
+  .palates{display:flex;gap:5px;flex-wrap:wrap;}
+  .pchip{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.04em;
+    padding:2px 8px;border-radius:11px;background:var(--paper);border:1px solid var(--rule);color:var(--ink-soft);}
+
+  /* detail */
+  .detail{display:none;}
+  body.detail-open .browse{display:none;}
+  body.detail-open .detail{display:block;}
+  .back{margin:30px 0 8px;font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink-soft);background:none;border:none;cursor:pointer;padding:6px 0;}
+  .back:hover{color:var(--ink);}
+  .sheet{background:var(--cream);border:1.5px solid var(--ink);border-top-width:6px;border-top-color:var(--accent);
+    padding:42px 48px 40px;box-shadow:0 18px 50px -30px rgba(33,27,20,.5);}
+  .d-top{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:10px;
+    font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink-soft);}
+  .d-top .cat{color:var(--accent);font-weight:600;}
+  .d-title{font-family:"Fraunces",serif;font-weight:900;font-size:clamp(30px,5vw,48px);
+    line-height:1;letter-spacing:-.02em;margin:14px 0 4px;}
+  .d-origin{font-style:italic;color:var(--ink-soft);font-size:15px;margin-bottom:20px;}
+  .d-meta{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:24px;}
+
+  .seg{margin-top:22px;}
+  .seg .lab{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+  .seg.cust .lab{color:var(--concept-d);}
+  .seg.team .lab{color:var(--spirit-d);}
+  .seg .lab::before{content:"";width:14px;height:2px;background:currentColor;display:inline-block;}
+  .seg p{font-size:16px;line-height:1.55;}
+  .seg p b{font-weight:600;}
+  .seg.team{background:var(--paper);border:1px solid var(--rule);padding:16px 18px;}
+
+  .d-palate{margin-top:26px;border-top:1.5px solid var(--ink);padding-top:18px;}
+  .d-palate .lab{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-soft);margin-bottom:10px;}
+  .d-palate .row{display:flex;gap:7px;flex-wrap:wrap;}
+  .d-palate .pchip{cursor:pointer;font-size:11px;padding:4px 11px;background:var(--cream);}
+  .d-palate .pchip:hover{border-color:var(--accent);color:var(--accent);}
+  .practical{margin-top:22px;border-left:3px solid var(--accent);padding:2px 0 2px 16px;font-size:15px;}
+  .practical b{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--accent);display:block;margin-bottom:4px;}
+
+  /* palate index (trends) */
+  .palate-index{display:none;}
+  body.view-palate .browse .grid,body.view-palate .browse .filternote{display:none;}
+  body.view-palate .palate-index{display:block;}
+  .pi-intro{font-size:15px;color:var(--ink-soft);margin:18px 0 24px;max-width:70ch;}
+  .pi-row{display:grid;grid-template-columns:160px 1fr 40px;gap:14px;align-items:center;
+    padding:9px 0;border-bottom:1px solid var(--rule);cursor:pointer;}
+  .pi-row:hover .pi-name{color:var(--sig);}
+  .pi-name{font-family:"Fraunces",serif;font-weight:600;font-size:16px;}
+  .pi-name .grp{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink-soft);display:block;}
+  .pi-bar-track{background:var(--paper);border:1px solid var(--rule);height:20px;position:relative;overflow:hidden;}
+  .pi-bar{height:100%;background:var(--sig);opacity:.85;}
+  .pi-bar.split{display:flex;}
+  .pi-bar .b-spirit{background:var(--spirit);height:100%;}
+  .pi-bar .b-wine{background:var(--wine);height:100%;}
+  .pi-bar .b-concept{background:var(--concept);height:100%;}
+  .pi-count{font-family:"IBM Plex Mono",monospace;font-size:13px;font-weight:600;text-align:right;color:var(--ink-soft);}
+
+  footer.foot{margin-top:40px;padding-top:16px;border-top:1.5px solid var(--ink);
+    font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ink-soft);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+
+  @media (max-width:560px){
+    .sheet{padding:28px 22px;}
+    .pi-row{grid-template-columns:110px 1fr 32px;gap:10px;}
+    .controls{flex-direction:column;align-items:flex-start;}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="mast">
+    <div class="eyebrow">Wine &amp; Spirits Education · First Pass</div>
+    <h1 class="title">The <em>Tasting Room</em></h1>
+    <p class="sub">One library, three jobs: a <b>customer</b> resource, a <b>team</b> resource, and a tagged dataset you can read for <b>trends</b>. Every entry carries a controlled-vocabulary palate profile — so the same content that teaches also aggregates.</p>
+  </header>
+
+  <div class="browse">
+    <div class="controls">
+      <div class="lenses" id="lenses"></div>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--spirit)"></span>Spirit</span>
+        <span><span class="dot" style="background:var(--wine)"></span>Wine</span>
+        <span><span class="dot" style="background:var(--concept)"></span>Concept</span>
+      </div>
+    </div>
+    <div class="filternote" id="filternote"></div>
+    <div class="grid" id="grid"></div>
+
+    <div class="palate-index" id="palateIndex"></div>
+  </div>
+
+  <section class="detail">
+    <button class="back" onclick="go('')">← Back to the library</button>
+    <div id="detailBody"></div>
+  </section>
+
+  <footer class="foot">
+    <span>The Tasting Room · v0.1</span>
+    <span>Palate vocab is controlled — keep tags on-list so trends stay clean</span>
+  </footer>
+</div>
+
+<script>
+/* ---------- controlled palate vocabulary (keep tags on this list) ---------- */
+const PALATE_GROUPS = {
+  "Sweet/Oak":["Vanilla","Caramel","Toffee","Honey","Oak","Chocolate"],
+  "Fruit":["Dark Fruit","Red Fruit","Citrus","Tropical Fruit","Orchard Fruit","Dried Fruit"],
+  "Savory/Earth":["Smoke/Peat","Brine/Saline","Nutty","Earthy","Mineral","Herbaceous"],
+  "Structure/Spice":["Spice","Pepper","Tannic","Floral","Agave","Brioche/Toast"]
+};
+const PALATE_GROUP_OF = {};
+Object.entries(PALATE_GROUPS).forEach(([g,arr])=>arr.forEach(p=>PALATE_GROUP_OF[p]=g));
+
+/* ---------- the library ---------- */
+const EDU = [
+  {
+    id:"bourbon", name:"Bourbon", type:"spirit", category:"American Whiskey",
+    origin:"Warm continental — Kentucky & beyond", level:"Foundation",
+    audience:["customer","team"],
+    palate:["Vanilla","Caramel","Oak","Spice","Toffee"],
+    customer:"Bourbon is America's sweet, round whiskey — corn-forward and matured in new charred oak, which is where the vanilla, caramel, and baking-spice notes come from. It tends to drink approachable young because the warm climate pulls flavor out of the barrel fast.",
+    team:"By law: made in the U.S., at least <b>51% corn</b>, new charred oak, distilled and barreled within proof limits — no age minimum (only 'straight' requires 2 yrs). The selling story is the climate: Kentucky's heat concentrates vanillin and caramel quickly, so a 6–8 yr bourbon is mature. Lead with the sweetness and the char.",
+    practical:"Pour neat or over a large cube; the workhorse for an Old Fashioned."
+  },
+  {
+    id:"scotch-speyside", name:"Single Malt Scotch (Speyside)", type:"spirit", category:"Scotch Whisky",
+    origin:"Cool maritime — Speyside, Scotland", level:"Foundation",
+    audience:["customer","team"],
+    palate:["Honey","Dried Fruit","Orchard Fruit","Nutty","Floral"],
+    customer:"The gentle, elegant face of Scotch — think honey, baked apple, dried fruit, and a soft nuttiness. No smoke here. It's matured slowly in a cool climate, often in casks that once held sherry, which adds the dried-fruit depth.",
+    team:"Most people wrongly assume all Scotch is smoky — Speyside is the counterexample to lead with. Long, cool maturation (often 12 yr+) builds layered complexity; refill and ex-sherry casks extract gently. Use it to teach that <b>smoke is a choice, not a region</b>.",
+    practical:"Neat, room temperature; a few drops of water opens the aromatics."
+  },
+  {
+    id:"scotch-islay", name:"Islay Scotch (Peated)", type:"spirit", category:"Scotch Whisky",
+    origin:"Cool maritime — Islay, Scotland", level:"Intermediate",
+    audience:["customer","team"],
+    palate:["Smoke/Peat","Brine/Saline","Pepper","Earthy"],
+    customer:"The bold, smoky, coastal style — campfire, sea spray, iodine, cracked pepper. Polarizing on purpose. If you love or hate 'smoky whisky,' this is the one you mean.",
+    team:"Key teaching point: the smoke is <b>not</b> from climate or age — it's phenols deposited when the malted barley is dried over burning peat, before distillation. That decouples 'smoky' from 'Scotch' in the customer's head and makes you sound like you actually know the mechanism.",
+    practical:"Neat; a classic pairing with oysters or blue cheese."
+  },
+  {
+    id:"rum-aged", name:"Aged Caribbean Rum", type:"spirit", category:"Rum",
+    origin:"Tropical — Caribbean basin", level:"Foundation",
+    audience:["customer","team"],
+    palate:["Caramel","Tropical Fruit","Spice","Toffee"],
+    customer:"Sugarcane spirit aged in the tropics — warm, soft, and sweet-leaning, with banana, baking spice, toffee, and tropical fruit. Often remarkably smooth for its stated age.",
+    team:"The headline: <b>tropical aging is fast</b>. Angel's share runs 5–10%+ a year vs ~2% in Scotland, so roughly <b>1 tropical year ≈ 3 temperate years</b>. That's why a 6–8 yr rum can drink like a much older Scotch — and why age statements don't compare across climates. Watch added-sugar dosing, which varies wildly by producer.",
+    practical:"Sipping rums neat; mid-range in a Daiquiri or rum Old Fashioned."
+  },
+  {
+    id:"tequila-reposado", name:"Reposado Tequila (Highland)", type:"spirit", category:"Agave",
+    origin:"Jalisco highlands (Los Altos), ~2,000m", level:"Intermediate",
+    audience:["customer","team"],
+    palate:["Agave","Citrus","Honey","Pepper","Floral"],
+    customer:"Tequila rested a few months in oak — softer than blanco, with cooked-agave sweetness, citrus, gentle spice, and a touch of vanilla from the barrel. Highland agave skews brighter and fruitier.",
+    team:"The reveal customers love: most of the 'aging' happened <b>in the field</b> — agave takes 6–8 years to mature before harvest. The barrel time is short (reposado 2–12 mo). Caveat to know: regulations allow up to <b>1% additives</b> undisclosed, so some 'smoothness' is dosage, not craft. Sell 100% agave and additive-free producers.",
+    practical:"Sip neat or in a mezcal/tequila Negroni; too good to bury in a sugary margarita."
+  },
+  {
+    id:"cognac", name:"Cognac / Brandy", type:"spirit", category:"Brandy",
+    origin:"Cognac, France (distilled wine)", level:"Intermediate",
+    audience:["customer","team"],
+    palate:["Dried Fruit","Floral","Honey","Oak","Nutty"],
+    customer:"Brandy is distilled wine; Cognac is its most famous form — dried fruit, flowers, honey, and oak, aged in French oak and graded VS, VSOP, XO by youngest age in the blend.",
+    team:"Great origin-story hook: brandy was effectively invented as a <b>shipping technology</b> — distilling wine concentrated the value and survived the voyage. Use it to teach that distillation itself is a distance/preservation tool. VS/VSOP/XO is a minimum-age ladder, not a quality guarantee.",
+    practical:"Neat in a tulip glass; the backbone of a Sidecar or Vieux Carré."
+  },
+  {
+    id:"cabernet", name:"Cabernet Sauvignon", type:"wine", category:"Red Wine",
+    origin:"Warm climates — Bordeaux, Napa, & beyond", level:"Foundation",
+    audience:["customer","team"],
+    palate:["Dark Fruit","Tannic","Oak","Pepper"],
+    customer:"The structured, age-worthy red — blackcurrant and dark fruit, firm grippy tannin, often cedar and spice from oak. Full-bodied and built to pair with rich, fatty food.",
+    team:"Use Cabernet to kill the 'a Cabernet is a Cabernet' myth: same grape, but a cool Bordeaux vintage (restrained, earthy, lower alcohol) and a warm Napa one (ripe, plush, high alcohol) are different animals. <b>Place and climate, not just grape</b>, set the profile — the single most useful idea to give a customer.",
+    practical:"Decant young bottles; pair with ribeye, lamb, or hard aged cheese."
+  },
+  {
+    id:"pinot-noir", name:"Pinot Noir", type:"wine", category:"Red Wine",
+    origin:"Cool climates — Burgundy, Willamette, Sonoma Coast", level:"Intermediate",
+    audience:["customer","team"],
+    palate:["Red Fruit","Floral","Earthy","Mineral"],
+    customer:"The delicate, perfumed red — red cherry, rose, forest floor, silky and light-to-medium bodied. Lower tannin than Cabernet, higher finesse, famously expressive of where it's grown.",
+    team:"Thin-skinned and <b>site-sensitive</b> — the grape that most rewards a terroir conversation. It's the bridge red for white-wine drinkers and pairs across a huge range because of its acid and low tannin. Burgundy vs New World is the teaching contrast: earth vs fruit.",
+    practical:"Lightly chill in summer; pairs with salmon, duck, mushroom, roast chicken."
+  },
+  {
+    id:"chardonnay", name:"Chardonnay", type:"wine", category:"White Wine",
+    origin:"Everywhere — Chablis to Napa", level:"Foundation",
+    audience:["customer","team"],
+    palate:["Orchard Fruit","Citrus","Oak","Brioche/Toast"],
+    customer:"The chameleon white. Unoaked and cool-grown (Chablis), it's lean, mineral, citrus and green apple. Oaked and warm-grown (Napa), it's rich, buttery, tropical, and toasty. Same grape, two worlds.",
+    team:"The single best grape for teaching <b>winemaking choices</b>: oak vs steel, malolactic (the 'buttery' note) on or off, climate. When a guest says 'I don't like Chardonnay,' they usually mean one style — diagnose which, then redirect. High-value upsell conversation.",
+    practical:"Serve not too cold or the aromatics vanish; lean styles with shellfish, rich styles with roast chicken or lobster."
+  },
+  {
+    id:"champagne", name:"Champagne & Traditional-Method Sparkling", type:"wine", category:"Sparkling",
+    origin:"Champagne, France (cool, marginal)", level:"Intermediate",
+    audience:["customer","team"],
+    palate:["Citrus","Orchard Fruit","Brioche/Toast","Mineral"],
+    customer:"True Champagne gets its fine bubble and bready, toasty depth from a second fermentation in the bottle and long aging on the spent yeast. That's where the brioche note comes from — not added flavor, but time.",
+    team:"Two trade hooks: (1) 'Champagne' is a place; the method (méthode traditionnelle) is what to sell elsewhere — Crémant, Cava, English sparkling — for value. (2) The style only exists because <b>strong English coal-fired glass</b> could finally hold the pressure — an infrastructure story. Brut vs Extra Brut vs Demi-Sec is a sweetness ladder.",
+    practical:"Serve in a white-wine glass, not a flute, to actually smell it; aperitif or with fried/salty food."
+  },
+  {
+    id:"maturation-climate", name:"Maturation & Climate", type:"concept", category:"Core Concept",
+    origin:"Applies across all aged spirits", level:"Foundation",
+    audience:["customer","team"],
+    palate:["Vanilla","Caramel","Oak","Dried Fruit"],
+    customer:"Why does a young bourbon taste richer than an older Scotch? Climate. Heat makes spirit move in and out of the wood faster, pulling vanilla and caramel quickly; cool, slow aging builds complexity over many more years.",
+    team:"The unifying mental model behind the whole spirits wall. Warm = fast extraction, big angel's share, short ideal age, vanilla/caramel forward. Cool = slow, layered, long age. Same logic places rum (months–years), bourbon (years), Scotch (decade+) on one continuum. Pair with the one-pager handout.",
+    practical:"Teach it once and every age-statement question answers itself."
+  },
+  {
+    id:"what-grows-together", name:"What Grows Together, Goes Together", type:"concept", category:"Pairing",
+    origin:"Old World wine regions", level:"Intermediate",
+    audience:["customer","team"],
+    palate:["Mineral","Herbaceous","Citrus","Earthy"],
+    customer:"The reliable shortcut to food-and-wine pairing: regional dishes and regional wines evolved together, so they tend to balance each other — high-acid Italian reds with tomato and olive oil, crisp coastal whites with the local shellfish.",
+    team:"It works because the same climate shapes the grape and the cuisine, and the wine's acid/tannin/body co-evolved to balance the local fat and cooking. Frame it as <b>structural balance</b> (acid cuts fat, tannin grips protein) so a guest can improvise beyond the region. It's a heuristic, not a law.",
+    practical:"When unsure, match the wine's origin to the dish's origin — it's right more often than not."
+  }
+];
+
+/* ---------- state ---------- */
+let viewMode = "library";      // 'library' | 'palate'
+let audience = "all";          // 'all' | 'customer' | 'team'
+let palateFilter = null;
+
+const ACCENT = {spirit:{a:"var(--spirit)"},wine:{a:"var(--wine)"},concept:{a:"var(--concept)"}};
+const accentOf = t => (t==="spirit"?"var(--spirit)":t==="wine"?"var(--wine)":"var(--concept)");
+
+/* ---------- lenses ---------- */
+function renderLenses(){
+  const defs = [
+    {k:"all",label:"All",mode:"library"},
+    {k:"customer",label:"Customer",mode:"library"},
+    {k:"team",label:"Team",mode:"library"},
+    {k:"palate",label:"Palate Index",mode:"palate"}
+  ];
+  document.getElementById("lenses").innerHTML = defs.map(d=>{
+    let count="";
+    if(d.mode==="library"){
+      const n = d.k==="all"?EDU.length:EDU.filter(e=>e.audience.includes(d.k)).length;
+      count = `<span class="c">${n}</span>`;
+    }
+    const active = (d.mode==="palate" && viewMode==="palate") ||
+                   (d.mode==="library" && viewMode==="library" && audience===d.k);
+    return `<button class="lens ${active?'active':''}" onclick="setLens('${d.k}','${d.mode}')">${d.label}${count}</button>`;
+  }).join("");
+}
+
+function setLens(k,mode){
+  if(mode==="palate"){ viewMode="palate"; document.body.classList.add("view-palate"); }
+  else { viewMode="library"; audience=k; document.body.classList.remove("view-palate"); }
+  renderAll();
+}
+
+/* ---------- library grid ---------- */
+function filteredEntries(){
+  return EDU.filter(e=>{
+    if(audience!=="all" && !e.audience.includes(audience)) return false;
+    if(palateFilter && !e.palate.includes(palateFilter)) return false;
+    return true;
+  });
+}
+
+function renderFilterNote(){
+  const host=document.getElementById("filternote");
+  if(!palateFilter){ host.innerHTML = `<span>${filteredEntries().length} entries${audience!=="all"?` · ${audience} resources`:""}</span>`; return; }
+  host.innerHTML = `<span>Filtering by palate:</span>
+    <span class="chipfilter">${palateFilter}<button onclick="clearPalate()" aria-label="clear">✕</button></span>
+    <span>${filteredEntries().length} entries share this note</span>`;
+}
+
+function renderGrid(){
+  const host=document.getElementById("grid");
+  const items=filteredEntries();
+  host.innerHTML = items.map(e=>{
+    const ac=accentOf(e.type);
+    const badges = e.audience.map(a=>`<span class="badge ${a}">${a}</span>`).join("")
+      + `<span class="badge lvl">${e.level}</span>`;
+    const chips = e.palate.map(p=>`<span class="pchip">${p}</span>`).join("");
+    return `<button class="card" style="--accent:${ac}" onclick="go('${e.id}')">
+      <div class="top"><span class="cat">${e.category}</span><span>${e.type}</span></div>
+      <h3>${e.name}</h3>
+      <div class="meta">${badges}</div>
+      <div class="summ">${e.customer}</div>
+      <div class="palates">${chips}</div>
+    </button>`;
+  }).join("") || `<p style="color:var(--ink-soft)">No entries match this filter.</p>`;
+}
+
+/* ---------- palate index (trends) ---------- */
+function renderPalateIndex(){
+  const host=document.getElementById("palateIndex");
+  // tally
+  const tally={};
+  EDU.forEach(e=>e.palate.forEach(p=>{
+    if(!tally[p]) tally[p]={total:0,spirit:0,wine:0,concept:0};
+    tally[p].total++; tally[p][e.type]++;
+  }));
+  const max=Math.max(...Object.values(tally).map(t=>t.total),1);
+  // order by group then count
+  const order=Object.keys(tally).sort((a,b)=>{
+    const ga=PALATE_GROUP_OF[a]||"zz", gb=PALATE_GROUP_OF[b]||"zz";
+    if(ga!==gb) return ga.localeCompare(gb);
+    return tally[b].total-tally[a].total;
+  });
+  const rows=order.map(p=>{
+    const t=tally[p];
+    const w=type=>`width:${(t[type]/max)*100}%`;
+    return `<div class="pi-row" onclick="setPalate('${p.replace(/'/g,"\\'")}')">
+      <div class="pi-name">${p}<span class="grp">${PALATE_GROUP_OF[p]||""}</span></div>
+      <div class="pi-bar-track"><div class="pi-bar split">
+        <div class="b-spirit" style="${w('spirit')}"></div>
+        <div class="b-wine" style="${w('wine')}"></div>
+        <div class="b-concept" style="${w('concept')}"></div>
+      </div></div>
+      <div class="pi-count">${t.total}</div>
+    </div>`;
+  }).join("");
+  host.innerHTML = `<p class="pi-intro">Every palate note across the library, tallied — bar split by <span style="color:var(--spirit-d)">spirit</span> / <span style="color:var(--wine-d)">wine</span> / <span style="color:var(--concept-d)">concept</span>. This is the trend scaffold: as you add entries, descriptor clusters and category gaps surface here. Tap any note to pull every entry that carries it.</p>
+    ${rows}`;
+}
+
+/* ---------- palate filter actions ---------- */
+function setPalate(p){
+  palateFilter=p; viewMode="library";
+  if(audience==="all"){/* keep */}
+  document.body.classList.remove("view-palate");
+  renderAll(); window.scrollTo({top:0,behavior:"smooth"});
+}
+function clearPalate(){ palateFilter=null; renderAll(); }
+
+/* ---------- detail ---------- */
+function renderDetail(e){
+  const ac=accentOf(e.type);
+  const badges = e.audience.map(a=>`<span class="badge ${a}">${a} resource</span>`).join("")
+    + `<span class="badge lvl">${e.level}</span><span class="badge">${e.type}</span>`;
+  const chips = e.palate.map(p=>`<span class="pchip" onclick="setPalate('${p.replace(/'/g,"\\'")}')">${p}</span>`).join("");
+  document.getElementById("detailBody").innerHTML = `
+    <div class="sheet" style="--accent:${ac}">
+      <div class="d-top"><span class="cat">${e.category}</span><span>The Tasting Room</span></div>
+      <div class="d-title">${e.name}</div>
+      <div class="d-origin">${e.origin}</div>
+      <div class="d-meta">${badges}</div>
+
+      <div class="seg cust"><div class="lab">For the customer</div><p>${e.customer}</p></div>
+      <div class="seg team"><div class="lab">For the team</div><p>${e.team}</p></div>
+
+      ${e.practical?`<div class="practical"><b>In practice</b>${e.practical}</div>`:""}
+
+      <div class="d-palate"><div class="lab">Expected palate · tap to find kin</div><div class="row">${chips}</div></div>
+    </div>`;
+}
+
+function go(id){
+  if(id){
+    const e=EDU.find(x=>x.id===id);
+    if(e){ renderDetail(e); document.body.classList.add("detail-open"); window.scrollTo(0,0);
+      if(location.hash!=="#/"+id) history.pushState(null,"","#/"+id); return; }
+  }
+  document.body.classList.remove("detail-open"); window.scrollTo(0,0);
+  if(location.hash) history.pushState(null,"","#");
+}
+
+/* ---------- render orchestration ---------- */
+function renderAll(){
+  renderLenses(); renderFilterNote(); renderGrid(); renderPalateIndex();
+}
+function route(){
+  const m=location.hash.match(/^#\/(.+)$/);
+  if(m){ const e=EDU.find(x=>x.id===m[1]); if(e){ renderDetail(e); document.body.classList.add("detail-open"); return; } }
+  document.body.classList.remove("detail-open");
+}
+window.addEventListener("popstate", route);
+renderAll(); route();
+</script>
+</body>
+</html>
