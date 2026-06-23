@@ -535,5 +535,46 @@ document.querySelectorAll('#nav .tab').forEach(b=>b.addEventListener('click',()=
 
 load().then(render);
 </script>
+
+<!-- ===== Hoodie Spine integration ===== -->
+<script src="../spine/spine.js"></script>
+<script>
+(function(){
+  if(typeof HoodieSpine==='undefined')return;
+  var spine=null, lastAcctId=null;
+  function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+  /* live context chip in the global header */
+  var chip=document.createElement('div');
+  chip.id='spineChip';
+  chip.title='Shared suite context — set in the suite bar';
+  chip.style.cssText='display:none;align-items:center;gap:7px;font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:11px;font-weight:600;letter-spacing:.03em;color:#5b5347;background:#eef0f2;border:1px solid #d6dadf;border-radius:999px;padding:5px 11px;margin-right:10px;white-space:nowrap;';
+  var host=document.querySelector('.gutils')||document.querySelector('.gheader');
+  if(host)host.insertBefore(chip,host.firstChild);
+  function renderChip(ctx){
+    var parts=[];
+    if(ctx&&ctx.scope)parts.push(ctx.scope.name);
+    if(ctx&&ctx.account)parts.push(ctx.account.name);
+    if(!parts.length){chip.style.display='none';return;}
+    chip.innerHTML='<span style="width:6px;height:6px;border-radius:50%;background:#c98a1a;flex:0 0 auto;display:inline-block"></span>'+
+      parts.map(function(t,i){return (i?'<span style="opacity:.4">▸</span> ':'')+'<span>'+esc(t)+'</span>';}).join(' ');
+    chip.style.display='inline-flex';
+  }
+  function applyContext(ctx){
+    /* inbound: when the shared account matches a tracked org, focus its record */
+    if(ctx&&ctx.account&&typeof DB!=='undefined'&&DB.accounts){
+      var want=ctx.account.name.toLowerCase();
+      var a=DB.accounts.find(function(x){return x.name.toLowerCase()===want;})
+          ||DB.accounts.find(function(x){return x.name.toLowerCase().indexOf(want)>=0||want.indexOf(x.name.toLowerCase())>=0;});
+      if(a&&a.id!==recordId&&a.id!==lastAcctId){lastAcctId=a.id;openRecord(a.id);}
+    }
+  }
+  spine=HoodieSpine.connect({name:'Hoodie Relations',onContext:function(ctx){try{renderChip(ctx);}catch(e){}try{applyContext(ctx);}catch(e){}}});
+  /* outbound: opening an account publishes it to the rest of the suite */
+  if(typeof openRecord==='function'){
+    var _open=openRecord;
+    window.openRecord=function(id){_open(id);try{var a=DB.accounts.find(function(x){return x.id===id;});if(a&&spine){lastAcctId=a.id;spine.setContext({account:{id:a.id,name:a.name}});}}catch(e){}};
+  }
+})();
+</script>
 </body>
 </html>
