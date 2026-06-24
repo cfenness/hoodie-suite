@@ -3131,5 +3131,8 @@ QUIZ.forEach((item,qi)=>{const d=document.createElement('div');d.className='q';l
 quizEl.addEventListener('click',e=>{const b=e.target.closest('.opt');if(!b)return;const qi=+b.dataset.q,oi=+b.dataset.o;const q=QUIZ[qi];const buttons=quizEl.querySelectorAll('.opt[data-q="'+qi+'"]');buttons.forEach(x=>x.disabled=true);buttons[q.a].classList.add('correct');if(oi!==q.a)b.classList.add('wrong');R.querySelector('#fb-'+qi).classList.add('show');});
 })();
 </script>
+
+<!-- shared suite header strip (standalone only) -->
+<script src="../suite-header.js" data-id="training" data-mark="TB" data-name="The Bench" data-status="internal"></script>
 </body>
 </html>
