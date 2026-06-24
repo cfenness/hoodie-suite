@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Presenter — Speaker's Workbench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EEEDE8;--panel:#E6E4DD;--panel-2:#DEDBD2;
+    --ink:#1B1A17;--ink-soft:#5A564E;--hair:#C9C5BA;
+    --amber:#B07012;--amber-bright:#DCA138;--amber-deep:#6E450A;
+    --slate:#2F4D49;--slate-tint:#DEE6E3;--oxblood:#8A382C;--ox-tint:#EDE0DC;
+    --say:#15212a;
+    --top:48px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;}
+  body{background:var(--ink);color:var(--paper);font-family:"Source Serif 4",Georgia,serif;-webkit-font-smoothing:antialiased;overflow:hidden;}
+  button{font-family:inherit;cursor:pointer;}
+  .mono{font-family:"IBM Plex Mono",monospace;}
+
+  /* top strip */
+  .top{position:fixed;top:0;left:0;right:0;height:var(--top);z-index:20;background:#11100e;border-bottom:1px solid #2a2823;display:flex;align-items:center;gap:16px;padding:0 18px;}
+  .top .run{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:14px;color:var(--paper);}
+  .top .run .h{color:var(--amber-bright);}
+  .top .aud{font-family:"IBM Plex Mono",monospace;font-size:11px;color:#9a9488;letter-spacing:0.04em;border-left:1px solid #2a2823;padding-left:14px;}
+  .top .spacer{margin-left:auto;}
+  .top .clock{font-family:"IBM Plex Mono",monospace;font-size:14px;font-weight:600;color:var(--paper);letter-spacing:0.03em;}
+  .top .clock .tgt{color:#6f6a60;font-size:11px;}
+  .top .clk-btn{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;color:var(--amber-bright);background:transparent;border:1px solid #2a2823;padding:6px 11px;letter-spacing:0.04em;}
+  .top .clk-btn:hover{background:#1c1a16;}
+  .top .pos{font-family:"IBM Plex Mono",monospace;font-size:12px;color:#9a9488;}
+  .top .pos b{color:var(--paper);}
+
+  /* main split */
+  .stage-grid{position:fixed;top:var(--top);left:0;right:0;bottom:54px;display:grid;grid-template-columns:46% 54%;}
+
+  /* workbench (left) */
+  .bench{background:var(--ink);overflow:auto;padding:22px 26px 30px;border-right:1px solid #2a2823;}
+  .beatkind{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+  .beatkind .num{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--ink);background:var(--amber-bright);padding:3px 8px;}
+  .beatkind .ttl{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:18px;color:var(--paper);}
+  .beatkind .time{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:11px;color:#6f6a60;}
+
+  .say{font-size:21px;line-height:1.5;color:#EDEBE4;font-weight:400;letter-spacing:-0.005em;}
+  .say .typed{color:#8aa0ad;font-style:italic;}
+
+  .cuegrid{margin-top:22px;display:grid;gap:1px;background:#2a2823;border:1px solid #2a2823;}
+  .cue{background:#161512;padding:12px 14px;}
+  .cue .lbl{display:flex;align-items:center;gap:7px;font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;font-weight:600;margin-bottom:6px;}
+  .cue .lbl .d{width:7px;height:7px;border-radius:50%;}
+  .cue.screen .lbl{color:#5fb89f;} .cue.screen .lbl .d{background:#5fb89f;}
+  .cue.emotion .lbl{color:var(--amber-bright);} .cue.emotion .lbl .d{background:var(--amber-bright);}
+  .cue .txt{font-size:13.5px;line-height:1.45;color:#bdb8ad;}
+
+  .prompt{margin-top:14px;border:1px solid #2a2823;background:#0f0e0c;}
+  .prompt .ph{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border-bottom:1px solid #2a2823;}
+  .prompt .ph .l{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--amber-bright);font-weight:600;}
+  .prompt .ph button{font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:600;color:#9a9488;background:transparent;border:1px solid #2a2823;padding:4px 9px;}
+  .prompt .ph button:hover{color:var(--paper);}
+  .prompt pre{margin:0;padding:12px;font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.55;color:#cfc9bd;white-space:pre-wrap;}
+
+  .nextup{margin-top:20px;font-family:"IBM Plex Mono",monospace;font-size:11px;color:#6f6a60;letter-spacing:0.03em;}
+  .nextup b{color:#bdb8ad;font-weight:600;}
+
+  .navrow{margin-top:18px;display:flex;gap:10px;}
+  .navrow button{flex:1;font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;letter-spacing:0.03em;padding:12px;border:1px solid #2a2823;background:#161512;color:var(--paper);}
+  .navrow button:hover:not(:disabled){background:#1f1d18;border-color:var(--amber);}
+  .navrow button.next{background:var(--amber-bright);color:var(--ink);border-color:var(--amber-bright);}
+  .navrow button.next:hover{background:var(--amber);}
+  .navrow button:disabled{opacity:.3;cursor:default;}
+
+  /* stage (right) */
+  .stage{background:#0c0b0a;position:relative;display:flex;flex-direction:column;}
+  .stage .shead{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #2a2823;flex-shrink:0;}
+  .stage .shead .l{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:#6f6a60;font-weight:600;}
+  .stage .shead .spc{margin-left:auto;}
+  .stage .shead button{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;padding:6px 11px;border:1px solid #2a2823;background:#161512;color:var(--amber-bright);letter-spacing:0.03em;}
+  .stage .shead button:hover{background:#1f1d18;}
+  .stage .shead .mirror{color:#6f6a60;}
+  .stage .shead .mirror.on{color:#5fb89f;border-color:#3a5450;}
+  .stage .body{flex:1;position:relative;overflow:hidden;}
+  .stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff;display:none;}
+  .stage iframe.show{display:block;}
+  .placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px;}
+  .placeholder .badge{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#5fb89f;border:1px solid #3a5450;padding:5px 11px;margin-bottom:18px;}
+  .placeholder .what{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:20px;color:#cfc9bd;max-width:24ch;line-height:1.3;}
+  .placeholder .sub{font-size:13px;color:#6f6a60;margin-top:14px;max-width:34ch;line-height:1.45;}
+  .placeholder.none .badge{color:#6f6a60;border-color:#2a2823;}
+
+  /* bottom bar */
+  .bottom{position:fixed;bottom:0;left:0;right:0;height:54px;z-index:20;background:#11100e;border-top:1px solid #2a2823;display:flex;align-items:center;gap:16px;padding:0 18px;}
+  .bottom .draw-btn{display:flex;align-items:center;gap:9px;font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;letter-spacing:0.03em;color:var(--paper);background:#1c1a16;border:1px solid #2a2823;padding:9px 14px;}
+  .bottom .draw-btn:hover{border-color:var(--amber);}
+  .bottom .draw-btn .ct{color:var(--amber-bright);}
+  .bottom .dots{display:flex;gap:6px;margin-left:6px;}
+  .bottom .dot{width:9px;height:9px;border:1px solid #3a3833;cursor:pointer;background:transparent;padding:0;}
+  .bottom .dot.done{background:#3a3833;}
+  .bottom .dot.cur{background:var(--amber-bright);border-color:var(--amber-bright);}
+  .bottom .hint{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:#5a564e;letter-spacing:0.03em;}
+
+  /* contingency drawer */
+  .scrim{position:fixed;inset:0;background:rgba(8,7,6,.55);z-index:30;display:none;}
+  .scrim.show{display:block;}
+  .drawer{position:fixed;left:0;right:0;bottom:0;z-index:31;background:#13120f;border-top:2px solid var(--amber);max-height:72vh;transform:translateY(100%);transition:transform .26s cubic-bezier(.2,.7,.2,1);display:flex;flex-direction:column;}
+  .drawer.open{transform:none;}
+  .drawer .dhead{display:flex;align-items:center;gap:14px;padding:16px 22px;border-bottom:1px solid #2a2823;flex-shrink:0;}
+  .drawer .dhead .t{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:16px;color:var(--paper);}
+  .drawer .dhead .t .sub{font-family:"IBM Plex Mono",monospace;font-weight:400;font-size:11px;color:#6f6a60;margin-left:10px;letter-spacing:0.03em;}
+  .drawer .dhead input{flex:1;max-width:420px;font-family:"IBM Plex Mono",monospace;font-size:13px;background:#0c0b0a;border:1px solid #2a2823;color:var(--paper);padding:9px 12px;}
+  .drawer .dhead input::placeholder{color:#5a564e;}
+  .drawer .dhead .close{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:12px;color:#9a9488;background:transparent;border:1px solid #2a2823;padding:8px 13px;}
+  .drawer .dhead .close:hover{color:var(--paper);}
+  .drawer .dlist{overflow:auto;padding:16px 22px 24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;}
+  .cont{border:1px solid #2a2823;background:#181712;padding:14px 16px;display:flex;flex-direction:column;}
+  .cont .if{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--amber-bright);font-weight:600;margin-bottom:6px;}
+  .cont .trig{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:15px;color:var(--paper);line-height:1.3;margin-bottom:9px;}
+  .cont .resp{font-size:13.5px;line-height:1.5;color:#bdb8ad;}
+  .cont .proof{margin-top:12px;align-self:flex-start;font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;color:#5fb89f;background:transparent;border:1px solid #3a5450;padding:6px 11px;letter-spacing:0.03em;}
+  .cont .proof:hover{background:#16201d;}
+  .dempty{grid-column:1/-1;text-align:center;color:#6f6a60;font-size:14px;padding:30px;}
+
+  @media (max-width:820px){
+    .stage-grid{grid-template-columns:1fr;grid-template-rows:1fr 1fr;}
+    .stage{border-top:1px solid #2a2823;}
+    .top .aud{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <span class="run" id="runttl"></span>
+  <span class="aud" id="aud"></span>
+  <span class="spacer"></span>
+  <span class="clock"><span id="elapsed">0:00</span> <span class="tgt" id="target"></span></span>
+  <button class="clk-btn" id="clk">▶ Start</button>
+  <span class="pos">beat <b id="pos">00</b> / <span id="postot">00</span></span>
+</div>
+
+<div class="stage-grid">
+  <!-- workbench -->
+  <div class="bench" id="bench">
+    <div class="beatkind">
+      <span class="num" id="bnum">00</span>
+      <span class="ttl" id="btitle">—</span>
+      <span class="time" id="btime"></span>
+    </div>
+    <div class="say" id="say"></div>
+
+    <div class="cuegrid">
+      <div class="cue screen">
+        <div class="lbl"><span class="d"></span>On screen</div>
+        <div class="txt" id="screen"></div>
+      </div>
+      <div class="cue emotion">
+        <div class="lbl"><span class="d"></span>Emotion — what to land</div>
+        <div class="txt" id="emotion"></div>
+      </div>
+    </div>
+
+    <div class="prompt" id="promptbox" style="display:none">
+      <div class="ph"><span class="l" id="promptlabel">Exact prompt to type</span><button id="copyprompt">Copy</button></div>
+      <pre id="prompt"></pre>
+    </div>
+
+    <div class="nextup" id="nextup"></div>
+
+    <div class="navrow">
+      <button class="prev" id="prev">◀ Prev</button>
+      <button class="next" id="next">Next ▶</button>
+    </div>
+  </div>
+
+  <!-- stage preview -->
+  <div class="stage">
+    <div class="shead">
+      <span class="l">Audience screen</span>
+      <span class="spc"></span>
+      <button class="mirror" id="mirror" title="Two-screen: also drive the main suite stage">⤢ mirror: off</button>
+      <button id="drive">▶ Drive live</button>
+    </div>
+    <div class="body">
+      <div class="placeholder" id="placeholder">
+        <div class="badge" id="phbadge">on screen</div>
+        <div class="what" id="phwhat">—</div>
+        <div class="sub" id="phsub">Click “Drive live” to put the real surface on the audience screen.</div>
+      </div>
+      <iframe id="stageframe" title="Audience surface"></iframe>
+    </div>
+  </div>
+</div>
+
+<div class="bottom">
+  <button class="draw-btn" id="drawbtn">⌗ Contingencies <span class="ct" id="contct">0</span></button>
+  <div class="dots" id="dots"></div>
+  <span class="hint">← → beats · space next · C drawer</span>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer">
+  <div class="dhead">
+    <div class="t">If it comes up <span class="sub">prepared answers · not part of the flow</span></div>
+    <input id="search" placeholder="search a question…" autocomplete="off">
+    <button class="close" id="closedraw">Close ✕</button>
+  </div>
+  <div class="dlist" id="dlist"></div>
+</div>
+
+<script src="../spine/spine.js"></script>
+<script>
+/* ============ THE RUN — spine (ordered beats) + drawer (unordered contingencies) ============ */
+const RUN = {
+  title: "Catching it in time",
+  audience: "Distributor VP · Sales / Commercial",
+  runtimeTarget: "~9 min",
+  beats: [
+    { num:"00", title:"Cold open — the dread", time:"0:00 – 1:10", surface:null,
+      say:`"It's 11:47, the night before the supplier QBR. My deck's basically done. Distribution's up 2.1 points year over year. Total depletions: plus 0.3 — flat, but fine. And honestly, I already know how tomorrow goes. They'll say the category's soft and they need more programming dollars. I'll say we're holding the line, distribution's up, let's talk shared investment. We'll split the difference. That's the meeting. I could close the laptop right now and not be wrong about a single thing in this deck."`,
+      screen:`The near-finished QBR deck, headline tiles: Distribution +2.1pt, Depletions +0.3%. Calm. Nothing flashing.`,
+      emotion:`Recognition. Every VP has lived this exact night. Don't sell yet — let them feel the false calm.` },
+
+    { num:"01", title:"The catch — something's off", time:"1:10 – 2:00", surface:null,
+      say:`"But I do one last scan before I close it. And that plus-0.3 — it's bugging me. Because plus-0.3 isn't really a number. It's an average. And an average is two stories that cancel out. Feature and display look healthy. Distribution's genuinely up. So what's pulling the other way hard enough to flatten all of that to zero? I can't answer it from this slide. So instead of going to bed, I open Builder."`,
+      screen:`The +0.3% tile, then click into Builder from Workspace. Empty canvas, cursor ready.`,
+      emotion:`Unease → curiosity. Reframe "average" as a thing that lies. They lean in.` },
+
+    { num:"02", title:"Builder — pull the thread", time:"2:00 – 3:50",
+      surface:{app:"dashboard", label:"Builder — channel split → on-prem → placement type. Well & by-the-drink rows at −10.8% / −11.2%, highlighted. Right-click → lineage."},
+      say:`"I take total depletions and split it by channel. Off-premise — fine, up 2.4. On-premise blends to roughly flat. So the whole story is hiding inside on-prem. Now I split on-prem by placement type — and this is the question that matters: not are we carried, but how are we being poured. Feature, up 3. Display, up. Back bar, fine. And then — well and call, down eleven. By-the-drink, down eleven. We are not losing distribution. We are losing the pour. Brand X — our silver rum — is still on every shelf, still 'carried,' and it's quietly getting bumped off the rail. One venue cluster at a time. And watch — right-click that minus-eleven, trace the lineage. It's real. It's not a reporting glitch. It's the meeting I almost slept through."`,
+      screen:`Builder table grows live: Channel split → On-prem filter → Placement-type rows. −10.8% / −11.2% rows highlight red. Right-click → lineage panel.`,
+      emotion:`The floor tilts. "Oh no" turning into "…got it." Let the −11% land in silence for a beat before you speak.` },
+
+    { num:"03", title:"Hoodie Intelligence — the so-what", time:"3:50 – 5:40",
+      surface:{app:"dashboard", label:"Hoodie Intelligence brief: WHY (rail substitution) · HOW MUCH ($2.1M, ~140 accounts) · PLAY (reclamation, pour KPI). One-sentence summary pinned at top."},
+      say:`"A chart that says minus-eleven doesn't win me a meeting. So I ask Hoodie Intelligence the three questions I'd ask an analyst if it weren't midnight." `+`<span class="typed">[Type the prompt, attach the view.]</span>`+` "Why is this happening, how much is it worth, and what do I do about it. And it doesn't hand me back a chart — it hands me a sentence I can say to a supplier's face: Brand X is being substituted at the rail in the Metro cluster; roughly $2.1 million in annual revenue at risk across about 140 accounts; recoverable with a funded menu-and-rail reclamation play, measured on pour recapture — not case volume. That's not data anymore. That's a position."`,
+      screen:`Brief streams in: WHY · HOW MUCH ($2.1M, ~140 accounts) · PLAY. The one-sentence summary pinned at top.`,
+      emotion:`Control returns. The dread converts to ammunition. Read the $2.1M sentence slowly — it's the line they'll remember.`,
+      promptLabel:`Exact prompt to type`,
+      prompt:`Brand X on-prem well & by-the-drink depletions are down 11% YoY while distribution and feature/display hold. Why is this happening, how much annual revenue is at risk across the affected accounts, and what's the recovery play?` },
+
+    { num:"04", title:"The turn — name it out loud", time:"5:40 – 6:20", surface:null,
+      say:`"Stop and notice what just happened. Twenty minutes ago this was the thing that was going to blindside me in that room. Now it's my strongest slide. I'm not walking in tomorrow to ask for programming dollars and lose the margin fight. I'm walking in with exactly where we're bleeding, what it costs, and the precise play to fix it — and I'm asking them to fund that. Same meeting. Same data I already owned. Completely different side of the table."`,
+      screen:`Stay on the brief, or cut to the deck's "the turn" slide: programming dollars → the $2.1M play, side by side.`,
+      emotion:`The flip. This is the emotional hinge of the whole demo — slow down, make eye contact, don't rush to the next click.` },
+
+    { num:"05", title:"Studio — weaponize it", time:"6:20 – 7:40",
+      surface:{app:"dashboard", label:"Studio compiles the 3-slide insert; thumbnails render on brand. Slide 1: the divergence. Slide 2: the leak + $2.1M. Slide 3: the reclamation play & ask."},
+      say:`"Now I make it presentable. I send the view and the brief to Studio and it builds the insert — three slides, on our branding. Slide one: the divergence — the flat number cracking open. Slide two: the leak and the $2.1M. Slide three: the reclamation play and the ask. I drop it straight into tomorrow's QBR deck. And here's the number that matters: total time from the moment I noticed something was off — under ten minutes. At 11pm. Without calling anyone."`,
+      screen:`Studio compiles the 3-slide insert; thumbnails render on brand. Click Add to QBR deck.`,
+      emotion:`Relief / readiness. The "under 10 minutes" line is the ROI proof — say it plainly, don't oversell.` },
+
+    { num:"06", title:"Scheduler — the closer", time:"7:40 – 9:10",
+      surface:{app:"dashboard", label:"Scheduler — conditional alert builder. Rule set; confirmation: 'Watching 14 core brands.' Optional: 9am alert email preview."},
+      say:`"One last thing — and this is the part that actually matters. I caught this tonight because I got lucky and did one more scan. I don't want to depend on luck. So before I close the laptop, I set a trigger: alert me when any core brand's by-the-drink pour drops more than five percent while distribution holds. That's it. Now next quarter, this doesn't wait for me to find it at 11pm. It finds me — 9am, coffee, inbox: 'Brand Y, well-and-call, down six, distribution flat.' The 11pm scramble becomes a standing early-warning system. That's the whole difference between getting blindsided and being early — and now it runs every quarter, automatically, whether I do one more scan or not."`,
+      screen:`Conditional alert builder; set the rule; confirmation "Watching 14 core brands." Optional: the 9am alert email preview.`,
+      emotion:`Peace of mind = retention. This is the line that sells the renewal. End here — let it sit. Don't add a feature lap.`,
+      promptLabel:`Condition to set`,
+      prompt:`alert me when [any core brand] [on-prem by-the-drink pour] declines [> 5% YoY] while [distribution holds] · check weekly · deliver 9:00 AM` },
+
+    { num:"07", title:"Closing line — say it, then stop", time:"9:10", surface:null, closing:true,
+      say:`"Tonight I caught it in time. The point of the platform is that next quarter, I won't have to catch anything. It catches it for me — and I just walk in already holding the strongest slide in the room."`,
+      screen:`Hold on the Scheduler confirmation, or the closing card. Then stop talking.`,
+      emotion:`Let it sit. Don't add a feature lap. The silence after this line is doing the work.` }
+  ],
+  contingencies: [
+    { trigger:"Is that just the Metro cluster, or all of on-prem?",
+      response:`Metro cluster specifically — about 140 accounts. On-prem overall blends to roughly flat; the −11% is concentrated in Metro well-and-call and by-the-drink. We can drill it live by cluster right now.`,
+      surface:{app:"dashboard", label:"On-prem, drilled by venue cluster — the −11% concentrated in Metro."} },
+    { trigger:"How is the $2.1M actually calculated?",
+      response:`Pour recapture, not case volume: the by-the-drink + well pour decline, across the affected accounts, valued at revenue per pour and annualized. It's recoverable revenue at the rail — not lost distribution.`,
+      surface:{app:"dashboard", label:"Hoodie Intelligence — the $2.1M methodology / lineage."} },
+    { trigger:"Isn't the category just soft right now?",
+      response:`No — feature and display hold, and distribution is +2.1. Soft demand would pull those down too. This is pour erosion on-prem specifically — a placement problem, not a demand problem.`,
+      surface:null },
+    { trigger:"Is the −11% real, or a reporting glitch?",
+      response:`Traced the lineage live — it's real, on-prem well + by-the-drink, not a data artifact. Right-click → lineage shows the source rows behind the number.`,
+      surface:{app:"dashboard", label:"Builder — lineage panel behind the −11% row."} },
+    { trigger:"We're still carried everywhere, though.",
+      response:`Exactly — carriage isn't the problem. You're carried and getting bumped off the rail. Distribution measures the shelf; pour measures the glass. We're losing the glass, not the shelf.`,
+      surface:null },
+    { trigger:"What does the recovery play cost — what's the ROI?",
+      response:`A funded menu-and-rail reclamation play, measured on a pour-recapture KPI. The ask is to fund that against $2.1M recoverable — a margin-positive position, not programming spend you split 50/50.`,
+      surface:null }
+  ]
+};
+
+/* ============ spine connect (optional two-screen mirror) ============ */
+let spine = null, mirrorOn = false;
+try { spine = HoodieSpine.connect({ name:"Presenter" }); } catch(e){}
+
+/* ============ state ============ */
+let i = 0;
+const beats = RUN.beats, tot = beats.length;
+const $ = id => document.getElementById(id);
+
+$("runttl").innerHTML = '<span class="h">▮</span> ' + RUN.title;
+$("aud").textContent = RUN.audience;
+$("target").textContent = "/ " + RUN.runtimeTarget;
+$("postot").textContent = String(tot-1).padStart(2,"0");
+$("contct").textContent = RUN.contingencies.length;
+
+/* dots */
+const dots = $("dots");
+beats.forEach((b,k)=>{ const d=document.createElement("button"); d.className="dot"; d.title=b.title; d.addEventListener("click",()=>go(k)); dots.appendChild(d); });
+
+function render(){
+  const b = beats[i];
+  $("bnum").textContent = b.num;
+  $("btitle").textContent = b.title;
+  $("btime").textContent = b.time;
+  $("say").innerHTML = b.say;
+  $("screen").textContent = b.screen || "—";
+  $("emotion").textContent = b.emotion || "—";
+  // prompt
+  if(b.prompt){ $("promptbox").style.display=""; $("prompt").textContent=b.prompt; $("promptlabel").textContent=b.promptLabel||"Exact prompt to type"; }
+  else { $("promptbox").style.display="none"; }
+  // next-up
+  $("nextup").innerHTML = (i<tot-1) ? ('next → <b>'+beats[i+1].num+' · '+beats[i+1].title+'</b>') : 'end of run';
+  // nav
+  $("prev").disabled = i===0;
+  $("next").disabled = i===tot-1;
+  $("pos").textContent = b.num;
+  // dots
+  [...dots.children].forEach((d,k)=>{ d.className = "dot" + (k<i?" done":"") + (k===i?" cur":""); });
+  // stage
+  setStage(b.surface);
+}
+
+/* ============ stage preview ============ */
+const frame = $("stageframe"), ph = $("placeholder");
+let stageLoaded = null;
+function setStage(surface){
+  // reset to placeholder on each beat; presenter must choose to "Drive live"
+  frame.classList.remove("show");
+  ph.style.display="flex";
+  if(surface){
+    ph.classList.remove("none");
+    $("phbadge").textContent = "on screen · "+surface.app;
+    $("phwhat").textContent = surface.label;
+    $("phsub").textContent = 'Click “Drive live” to load the real surface here'+(mirrorOn?' and on the main stage.':'.');
+    $("drive").style.visibility="visible";
+    $("drive").dataset.app = surface.app;
+  } else {
+    ph.classList.add("none");
+    $("phbadge").textContent = "no live surface";
+    $("phwhat").textContent = beats[i].screen || "—";
+    $("phsub").textContent = "This beat is spoken — nothing to drive. Stay on the prior surface or the deck.";
+    $("drive").style.visibility="hidden";
+  }
+}
+$("drive").addEventListener("click", ()=>{
+  const b = beats[i]; if(!b.surface) return;
+  const file = "../apps/" + b.surface.app + ".html";
+  if(stageLoaded !== file){ frame.setAttribute("src", file); stageLoaded = file; }
+  frame.classList.add("show"); ph.style.display="none";
+  if(mirrorOn && spine){ try{ spine.navigate(b.surface.app); }catch(e){} }  // two-screen: drive the suite's main stage too
+});
+$("mirror").addEventListener("click", function(){
+  mirrorOn = !mirrorOn;
+  this.classList.toggle("on", mirrorOn);
+  this.textContent = "⤢ mirror: " + (mirrorOn?"on":"off");
+});
+
+/* ============ nav ============ */
+function go(n){ i = Math.max(0, Math.min(tot-1, n)); render(); }
+$("prev").addEventListener("click", ()=>go(i-1));
+$("next").addEventListener("click", ()=>go(i+1));
+document.addEventListener("keydown", e=>{
+  if(document.getElementById("drawer").classList.contains("open")){
+    if(e.key==="Escape") closeDrawer();
+    return;
+  }
+  if(e.key==="ArrowRight"||e.key===" "){ e.preventDefault(); go(i+1); }
+  else if(e.key==="ArrowLeft"){ e.preventDefault(); go(i-1); }
+  else if(e.key.toLowerCase()==="c"){ e.preventDefault(); openDrawer(); }
+});
+
+/* ============ clock ============ */
+let secs=0, timer=null;
+$("clk").addEventListener("click", function(){
+  if(timer){ clearInterval(timer); timer=null; this.textContent="▶ Resume"; }
+  else { timer=setInterval(()=>{ secs++; $("elapsed").textContent = Math.floor(secs/60)+":"+String(secs%60).padStart(2,"0"); },1000); this.textContent="⏸ Pause"; }
+});
+
+/* ============ prompt copy ============ */
+$("copyprompt").addEventListener("click", function(){
+  const t = $("prompt").textContent;
+  navigator.clipboard && navigator.clipboard.writeText(t);
+  this.textContent="Copied ✓"; setTimeout(()=>this.textContent="Copy",1200);
+});
+
+/* ============ contingency drawer ============ */
+const dlist = $("dlist"), drawer = $("drawer"), scrim = $("scrim");
+function renderContingencies(q){
+  q = (q||"").toLowerCase().trim();
+  const items = RUN.contingencies.filter(c => !q || (c.trigger+" "+c.response).toLowerCase().includes(q));
+  dlist.innerHTML = "";
+  if(!items.length){ dlist.innerHTML = '<div class="dempty">No prepared answer for that — you’re on your own. (Worth adding one in prep.)</div>'; return; }
+  items.forEach(c=>{
+    const el = document.createElement("div"); el.className="cont";
+    let h = '<div class="if">If they ask</div><div class="trig">'+c.trigger+'</div><div class="resp">'+c.response+'</div>';
+    if(c.surface) h += '<button class="proof">▶ Show proof — '+c.surface.app+'</button>';
+    el.innerHTML = h;
+    if(c.surface){ el.querySelector(".proof").addEventListener("click", ()=>{
+      const file="../apps/"+c.surface.app+".html";
+      if(stageLoaded!==file){ frame.setAttribute("src",file); stageLoaded=file; }
+      frame.classList.add("show"); ph.style.display="none";
+      if(mirrorOn && spine){ try{ spine.navigate(c.surface.app); }catch(e){} }
+      closeDrawer();
+    }); }
+    dlist.appendChild(el);
+  });
+}
+function openDrawer(){ drawer.classList.add("open"); scrim.classList.add("show"); $("search").value=""; renderContingencies(""); setTimeout(()=>$("search").focus(),120); }
+function closeDrawer(){ drawer.classList.remove("open"); scrim.classList.remove("show"); }
+$("drawbtn").addEventListener("click", openDrawer);
+$("closedraw").addEventListener("click", closeDrawer);
+scrim.addEventListener("click", closeDrawer);
+$("search").addEventListener("input", function(){ renderContingencies(this.value); });
+
+/* ============ go ============ */
+render();
+</script>
+</body>
+</html>

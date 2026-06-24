@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Perceptual Science — A Tutorial · Hoodie Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EEEDE8;--panel:#E6E4DD;--panel-2:#DEDBD2;
+    --ink:#1B1A17;--ink-soft:#5A564E;--hair:#C9C5BA;
+    --amber:#B07012;--amber-bright:#DCA138;--amber-deep:#6E450A;
+    --amber-tint:#EAE0CC;--slate:#2F4D49;--slate-tint:#DEE6E3;
+    --oxblood:#8A382C;--ox-tint:#EDE0DC;
+  }
+  *{box-sizing:border-box;}
+  html{-webkit-text-size-adjust:100%;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:"Source Serif 4",Georgia,serif;font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+  .mono{font-family:"IBM Plex Mono",monospace;}
+  a{color:inherit;}
+
+  header.bar{position:sticky;top:0;z-index:30;background:var(--ink);color:var(--paper);display:flex;align-items:center;gap:16px;padding:11px 22px;}
+  header.bar .brand{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--amber-bright);font-weight:600;}
+  header.bar .ttl{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:14px;letter-spacing:-0.01em;}
+  header.bar .prog{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:11px;color:#C9C2B4;letter-spacing:0.04em;}
+
+  .tut{display:grid;grid-template-columns:262px 1fr;max-width:1160px;margin:0 auto;align-items:start;}
+  aside.side{position:sticky;top:46px;align-self:start;border-right:1px solid var(--hair);padding:22px 0 40px;max-height:calc(100vh - 46px);overflow:auto;}
+  aside.side .scur{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-soft);padding:0 20px 4px;font-weight:600;}
+  aside.side .ssub{font-size:11px;color:var(--amber);padding:0 20px 12px;font-family:"IBM Plex Mono",monospace;letter-spacing:0.04em;}
+  aside.side ol{list-style:none;margin:0;padding:0;counter-reset:l;}
+  aside.side li a{counter-increment:l;display:flex;gap:10px;padding:7px 20px;font-size:13px;color:var(--ink-soft);border-left:2px solid transparent;cursor:pointer;line-height:1.25;transition:color .12s,background .12s;}
+  aside.side li a:before{content:counter(l,decimal-leading-zero);font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--amber);font-weight:600;flex-shrink:0;padding-top:1px;}
+  aside.side li a:hover{color:var(--ink);background:var(--panel);}
+  aside.side li a.active{color:var(--ink);border-left-color:var(--amber);background:var(--panel);font-weight:600;}
+  aside.side .group{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--amber);padding:15px 20px 5px;font-weight:600;}
+
+  main.content{padding:34px 48px 70px;min-width:0;max-width:772px;}
+  .lesson{display:none;}
+  .lesson.active{display:block;animation:fade .35s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+  .crumb{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--amber);font-weight:600;}
+  h1{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:clamp(27px,4.4vw,37px);line-height:1.06;letter-spacing:-0.02em;margin:10px 0 0;}
+  h2{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:19px;letter-spacing:-0.01em;margin:30px 0 10px;}
+  h3{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:15px;margin:22px 0 8px;color:var(--ink);}
+  p{margin:0 0 14px;}
+  .lead{font-size:17.5px;color:var(--ink);margin-top:16px;}
+  strong{font-weight:600;}
+  em.k{font-style:normal;color:var(--amber-deep);font-weight:600;}
+  ul.plain,ol.plain{margin:0 0 14px;padding-left:22px;}
+  ul.plain li,ol.plain li{margin:5px 0;}
+  code{font-family:"IBM Plex Mono",monospace;font-size:13px;background:var(--panel-2);padding:1px 5px;color:var(--amber-deep);}
+  .ref{font-style:italic;color:var(--ink-soft);}
+  .cithn{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--slate);background:var(--slate-tint);padding:1px 6px;letter-spacing:0.02em;}
+
+  .box{border-left:4px solid;padding:14px 18px;margin:18px 0;font-size:14.5px;line-height:1.5;}
+  .box .blabel{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;font-weight:600;margin-bottom:6px;}
+  .box p:last-child{margin-bottom:0;}
+  .box.note{background:var(--slate-tint);border-color:var(--slate);}
+  .box.note .blabel{color:var(--slate);}
+  .box.trap{background:var(--ox-tint);border-color:var(--oxblood);}
+  .box.trap .blabel{color:var(--oxblood);}
+  .box.example{background:var(--amber-tint);border-color:var(--amber);}
+  .box.example .blabel{color:var(--amber-deep);}
+  .box.take{background:var(--panel);border-color:var(--ink);}
+  .box.take .blabel{color:var(--ink);}
+
+  .tryit{border:1px solid var(--ink);background:var(--panel);margin:20px 0;}
+  .tryit .tihead{display:flex;align-items:center;gap:9px;background:var(--ink);color:var(--paper);padding:8px 14px;font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;font-weight:600;}
+  .tryit .tihead .dot{width:7px;height:7px;background:var(--amber-bright);border-radius:50%;}
+  .tryit .tibody{padding:16px 18px;}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px;}
+  .chip{font-family:"IBM Plex Mono",monospace;font-size:12px;padding:6px 11px;border:1px solid var(--hair);background:var(--paper);cursor:pointer;transition:all .12s;color:var(--ink-soft);}
+  .chip:hover{border-color:var(--amber);color:var(--ink);}
+  .chip.on{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  .btn{font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:600;color:var(--amber);background:transparent;border:1px solid var(--amber);padding:6px 12px;cursor:pointer;letter-spacing:0.03em;}
+  .btn:hover{background:var(--amber);color:var(--paper);}
+
+  .matrix{width:100%;border-collapse:collapse;font-size:13px;margin-top:4px;}
+  .matrix th,.matrix td{border:1px solid var(--hair);padding:8px 10px;text-align:left;}
+  .matrix th{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:0.05em;text-transform:uppercase;background:var(--panel-2);color:var(--ink-soft);font-weight:600;}
+  .matrix td .v{font-weight:700;font-family:"IBM Plex Mono",monospace;}
+  .matrix td.ok .v{color:var(--slate);}
+  .matrix td.no .v{color:var(--oxblood);}
+  .matrix td .why{display:block;color:var(--ink-soft);font-size:12px;margin-top:2px;line-height:1.3;}
+
+  /* preattentive grid */
+  .pregrid{display:grid;grid-template-columns:repeat(12,1fr);gap:3px;font-family:"IBM Plex Mono",monospace;font-size:14px;background:var(--paper);border:1px solid var(--hair);padding:14px;user-select:none;}
+  .pcell{text-align:center;padding:4px 0;color:var(--slate);}
+  .pregrid.pop .pcell.target{color:var(--paper);background:var(--amber);font-weight:700;border-radius:2px;}
+  .pretoggle{margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+
+  /* svg panels */
+  .panels{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+  .panel{border:1px solid var(--hair);background:var(--paper);padding:8px;}
+  .panel .plab{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;text-align:center;margin-bottom:4px;}
+  .panel svg{width:100%;height:120px;}
+
+  /* power law */
+  .plaw{text-align:center;}
+  .plaw svg{background:var(--paper);border:1px solid var(--hair);max-width:100%;}
+  .plaw .ctl{display:flex;align-items:center;gap:12px;margin:14px 0;justify-content:center;flex-wrap:wrap;}
+  .plaw input[type=range]{width:220px;accent-color:var(--amber);}
+  .plaw .guess{font-family:"IBM Plex Mono",monospace;font-size:15px;font-weight:600;color:var(--amber-deep);min-width:48px;}
+  .plaw .reveal{font-size:13.5px;line-height:1.55;color:var(--ink-soft);margin-top:8px;text-align:left;display:none;}
+  .plaw .reveal.show{display:block;}
+  .plaw .reveal b{color:var(--ink);}
+  .plaw .rrow{display:grid;grid-template-columns:160px 1fr;gap:8px;padding:4px 0;border-top:1px solid var(--hair);}
+  .plaw .rrow:first-child{border-top:0;}
+  .plaw .rk{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.03em;}
+
+  /* ranked list (mackinlay) */
+  .ranklist{list-style:none;margin:4px 0 0;padding:0;counter-reset:r;}
+  .ranklist li{counter-increment:r;display:grid;grid-template-columns:30px 1fr auto;gap:10px;align-items:center;padding:7px 12px;border:1px solid var(--hair);border-top:0;font-size:13.5px;background:var(--paper);}
+  .ranklist li:first-child{border-top:1px solid var(--hair);}
+  .ranklist li:before{content:counter(r);font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-soft);font-weight:600;}
+  .ranklist li.top{background:var(--slate-tint);}
+  .ranklist li.top:before{color:var(--slate);}
+  .ranklist li .eff{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:0.04em;text-transform:uppercase;color:var(--ink-soft);}
+  .ranklist li.top .eff{color:var(--slate);font-weight:600;}
+  .ranklist li.bad .eff{color:var(--oxblood);}
+
+  /* contrast */
+  .contrastwrap{text-align:center;}
+  .contrastwrap svg{background:var(--paper);border:1px solid var(--hair);max-width:100%;}
+
+  /* lie factor */
+  .liewrap{}
+  .lierow{display:flex;align-items:center;gap:14px;margin-bottom:12px;}
+  .lierow input[type=range]{flex:1;accent-color:var(--oxblood);}
+  .lierow .lv{font-family:"IBM Plex Mono",monospace;font-size:13px;font-weight:600;color:var(--ink);min-width:120px;}
+  .liesvg{width:100%;height:170px;background:var(--paper);border:1px solid var(--hair);display:block;}
+  .liefac{margin-top:12px;font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:15px;text-align:center;padding:8px;}
+  .liefac.ok{background:var(--slate-tint);color:var(--slate);}
+  .liefac.bad{background:var(--ox-tint);color:var(--oxblood);}
+
+  /* gestalt */
+  .gestaltsvg{width:100%;height:160px;background:var(--paper);border:1px solid var(--hair);display:block;}
+  .gestaltcap{font-size:13.5px;color:var(--ink);margin-top:10px;line-height:1.45;}
+  .gestaltcap b{color:var(--amber-deep);}
+
+  /* cvd */
+  .cvdwrap{}
+  .cvdsvg{width:100%;height:150px;background:var(--paper);border:1px solid var(--hair);display:block;}
+  .cvdctl{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .cvdnote{font-size:12.5px;color:var(--ink-soft);margin-top:8px;line-height:1.45;}
+
+  /* quiz */
+  .quiz{margin:18px 0;}
+  .q{border:1px solid var(--hair);background:var(--panel);padding:16px 18px;margin-bottom:14px;}
+  .q .qq{font-weight:600;font-size:15px;margin-bottom:11px;}
+  .q .opt{display:block;width:100%;text-align:left;border:1px solid var(--hair);background:var(--paper);padding:9px 13px;margin:6px 0;font-family:inherit;font-size:14px;cursor:pointer;transition:all .12s;color:var(--ink);}
+  .q .opt:hover{border-color:var(--amber);}
+  .q .opt.correct{background:var(--slate-tint);border-color:var(--slate);color:var(--slate);font-weight:600;}
+  .q .opt.wrong{background:var(--ox-tint);border-color:var(--oxblood);color:var(--oxblood);}
+  .q .fb{font-size:13px;margin-top:9px;line-height:1.45;display:none;padding:9px 12px;background:var(--paper);border-left:3px solid var(--amber);}
+  .q .fb.show{display:block;}
+
+  .pn{display:flex;justify-content:space-between;gap:12px;margin-top:40px;padding-top:20px;border-top:1px solid var(--hair);}
+  .pn button{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;letter-spacing:0.03em;padding:11px 18px;border:1px solid var(--ink);background:var(--paper);color:var(--ink);cursor:pointer;transition:all .12s;}
+  .pn button:hover:not(:disabled){background:var(--ink);color:var(--paper);}
+  .pn button:disabled{opacity:.3;cursor:default;}
+  .pn .next{background:var(--ink);color:var(--paper);}
+  .pn .next:hover{background:var(--amber);border-color:var(--amber);}
+
+  @media (max-width:880px){
+    .tut{grid-template-columns:1fr;}
+    aside.side{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--hair);padding:14px 0;}
+    aside.side ol{display:flex;overflow-x:auto;}
+    aside.side li a{white-space:nowrap;border-left:0;border-bottom:2px solid transparent;}
+    aside.side li a.active{border-left:0;border-bottom-color:var(--amber);}
+    aside.side .group,aside.side .scur,aside.side .ssub{display:none;}
+    main.content{padding:26px 22px 60px;}
+    .panels{grid-template-columns:1fr;}
+    .pregrid{grid-template-columns:repeat(8,1fr);}
+  }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <span class="brand">Hoodie · Prism</span>
+  <span class="ttl">Perceptual Science — A Tutorial</span>
+  <span class="prog" id="prog">Lesson 01 / 12</span>
+</header>
+
+<div class="tut">
+  <aside class="side">
+    <div class="scur">Course 00 · Foundation</div>
+    <div class="ssub">prerequisite to Representation Science</div>
+    <ol id="nav">
+      <div class="group">How Seeing Works</div>
+      <li><a data-l="0">The Visual System</a></li>
+      <li><a data-l="1">Preattentive Processing</a></li>
+      <li><a data-l="2">The Visual Variables</a></li>
+      <div class="group">The Accuracy Hierarchy</div>
+      <li><a data-l="3">Elementary Perceptual Tasks</a></li>
+      <li><a data-l="4">Magnitude &amp; Psychophysics</a></li>
+      <li><a data-l="5">Effectiveness &amp; Automated Design</a></li>
+      <div class="group">Where Perception Betrays</div>
+      <li><a data-l="6">Simultaneous Contrast</a></li>
+      <li><a data-l="7">Distortion &amp; the Lie Factor</a></li>
+      <li><a data-l="8">Gestalt Grouping</a></li>
+      <div class="group">Designing for the Eye</div>
+      <li><a data-l="9">Color Vision &amp; Deficiency</a></li>
+      <li><a data-l="10">From Perception to Representation</a></li>
+      <li><a data-l="11">Check Yourself</a></li>
+    </ol>
+  </aside>
+
+  <main class="content">
+
+    <!-- L0 -->
+    <section class="lesson" data-l="0">
+      <div class="crumb">How Seeing Works · Lesson 01</div>
+      <h1>The Visual System</h1>
+      <p class="lead">Data visualization works because vision is the highest-bandwidth channel into the brain. Perceptual science is the study of <em class="k">what that channel reads accurately — and what it quietly gets wrong.</em></p>
+      <p>Roughly a third of the cortex is devoted to vision. The optic nerve carries on the order of 10⁷ bits per second — far more than hearing or touch. A chart is an attempt to load quantitative structure into that channel. The discipline exists because the channel is not neutral: it is exquisitely tuned for some judgments and systematically biased on others, and those biases are stable, measurable, and largely outside conscious control.</p>
+      <h2>Two systems, two speeds</h2>
+      <p>Vision operates in two modes. <strong>Bottom-up</strong> processing is fast, parallel, and automatic — it runs across the entire visual field in a fraction of a second before you've "looked" at anything (the next lesson). <strong>Top-down</strong> processing is slow, serial, and effortful — directed attention, reading, deliberate search. Good visual design moves work from the slow system to the fast one: it lets the eye <em>see</em> the answer rather than <em>search</em> for it.</p>
+      <h2>The fovea is tiny</h2>
+      <p>High-acuity vision exists only in the fovea — about 2° of visual angle, roughly a thumbnail at arm's length. Everything else is low-resolution periphery, good at motion and gross luminance, poor at detail and color. The eye compensates with saccades (about three jumps per second), stitching a high-res illusion from a narrow aperture. <strong>The practical consequence:</strong> a viewer never sees a whole chart at once — they sample it. Design that requires holding many precise values in view simultaneously fights the hardware.</p>
+      <div class="box note">
+        <div class="blabel">Why this course is first</div>
+        <p>Representation science (the four-classifier method) is a set of <em>rules</em>. This course is the <em>reasons</em> — the perceptual facts that make those rules true rather than arbitrary. You can apply the rules without this; you can only <em>defend and extend</em> them with it.</p>
+      </div>
+      <div class="box take">
+        <div class="blabel">Takeaway</div>
+        <p>Vision is a measurement instrument with known, stable biases. <strong>Effective visualization plays to the instrument's accurate readings and avoids its systematic errors.</strong></p>
+      </div>
+    </section>
+
+    <!-- L1 -->
+    <section class="lesson" data-l="1">
+      <div class="crumb">How Seeing Works · Lesson 02</div>
+      <h1>Preattentive Processing</h1>
+      <p class="lead">Certain visual properties are detected <em class="k">before</em> attention is deployed — in parallel, across the whole field, in roughly 200–250 ms. This is the fast system, and it is the single most exploitable fact in visualization.</p>
+      <p>Treisman &amp; Gelade's <span class="cithn">Feature Integration Theory (1980)</span> established the boundary. A target defined by a <em>single</em> primitive feature — a red dot among blue, a long line among short — "pops out": detection time is flat regardless of how many distractors surround it (parallel search). A target defined by a <em>conjunction</em> of features — the one red <em>vertical</em> among red horizontals and blue verticals — must be found by serial scan: time rises linearly with set size, ~40–50 ms per item.</p>
+      <div class="tryit">
+        <div class="tihead"><span class="dot"></span>Try it · serial search vs. pop-out</div>
+        <div class="tibody">
+          <p style="margin:0 0 10px;font-size:14px">One <strong>T</strong> hides among the Ls (a shape conjunction — serial). Find it. Then let a single feature do the work.</p>
+          <div class="pregrid" id="pregrid"></div>
+          <div class="pretoggle">
+            <button class="btn" id="pre-toggle">▸ Add a preattentive feature (color)</button>
+            <span style="font-size:12.5px;color:var(--ink-soft)" id="pre-note">Serial: search time scales with the number of items.</span>
+          </div>
+        </div>
+      </div>
+      <p>The preattentive feature set is small and well-catalogued (Healey &amp; Enns, 2012): <strong>hue, luminance, orientation, size, curvature, motion, and a few others.</strong> Encode the one thing that matters in a preattentive feature and the viewer sees it instantly; encode it in anything else and they must hunt.</p>
+      <div class="box take">
+        <div class="blabel">Takeaway</div>
+        <p>Pop-out is flat-time; conjunction search is linear-time. <strong>The signal belongs in a single preattentive feature</strong> — that is the perceptual basis for "grey the field, color the one thing."</p>
+      </div>
+    </section>
+
+    <!-- L2 -->
+    <section class="lesson" data-l="2">
+      <div class="crumb">How Seeing Works · Lesson 03</div>
+      <h1>The Visual Variables</h1>
+      <p class="lead">Jacques Bertin's <span class="cithn">Sémiologie Graphique (1967)</span> gave us the alphabet: the <em class="k">retinal variables</em> through which any mark carries meaning — and a framework for what each one can and cannot honestly express.</p>
+      <p>Bertin classified each variable by four properties. <strong>Selective:</strong> can you isolate all marks of one value preattentively? <strong>Associative:</strong> can you group them while ignoring the variable? <strong>Ordered:</strong> is a sequence perceived as ordered? <strong>Quantitative:</strong> can you read a ratio ("twice as much") directly? A variable should only encode data whose structure it can honestly carry.</p>
+      <div class="tryit">
+        <div class="tihead"><span class="dot"></span>Try it · inspect a retinal variable</div>
+        <div class="tibody">
+          <div class="chips" id="vv-chips"></div>
+          <table class="matrix"><thead><tr><th>Property</th><th>This variable</th></tr></thead><tbody id="vv-body"></tbody></table>
+        </div>
+      </div>
+      <div class="box note">
+        <div class="blabel">Note</div>
+        <p>Position is the only variable that is selective, associative, ordered, <em>and</em> quantitative — which is why it sits at the top of every effectiveness ranking. Hue is selective and associative but neither ordered nor quantitative — which is exactly why encoding a number in color is a category error.</p>
+      </div>
+      <div class="box take">
+        <div class="blabel">Takeaway</div>
+        <p>Each retinal variable has a fixed expressive range. <strong>Match the variable's properties to the data's structure</strong> — quantity to position/length, category to hue/shape.</p>
+      </div>
+    </section>
+
+    <!-- L3 -->
+    <section class="lesson" data-l="3">
+      <div class="crumb">The Accuracy Hierarchy · Lesson 04</div>
+      <h1>Elementary Perceptual Tasks</h1>
+      <p class="lead">In 1984, William Cleveland &amp; Robert McGill did something rare: they <em class="k">measured</em> how accurately people decode each encoding, and produced an empirical ranking. It is the most important single result in the field.</p>
+      <p>They ran controlled experiments asking subjects to judge magnitudes encoded different ways, then measured error. The resulting ordering, most to least accurate:</p>
+      <ol class="plain">
+        <li><strong>Position</strong> along a common scale</li>
+        <li><strong>Position</strong> on non-aligned scales</li>
+        <li><strong>Length</strong></li>
+        <li><strong>Angle / slope</strong></li>
+        <li><strong>Area</strong></li>
+        <li><strong>Volume</strong></li>
+        <li><strong>Color hue / saturation / density</strong></li>
+      </ol>
+      <p>The same five numbers, encoded three ways. Read each before revealing — notice how effortless the first is and how the last resists you:</p>
+      <div class="tryit">
+        <div class="tihead"><span class="dot"></span>Try it · same data, three rungs of the hierarchy</div>
+        <div class="tibody">
+          <div class="panels">
+            <div class="panel"><div class="plab">Position / length</div><svg id="cm-bars" viewBox="0 0 120 120"></svg></div>
+            <div class="panel"><div class="plab">Angle (pie)</div><svg id="cm-pie" viewBox="0 0 120 120"></svg></div>
+            <div class="panel"><div class="plab">Area (bubbles)</div><svg id="cm-bub" viewBox="0 0 120 120"></svg></div>
+          </div>
+          <div style="margin-top:12px"><button class="btn" id="cm-reveal">▸ Reveal the values</button></div>
+        </div>
+      </div>
+      <div class="box take">
+        <div class="blabel">Takeaway</div>
+        <p>Encoding accuracy is empirical, not aesthetic. <strong>Put the judgment that matters most in the highest-accuracy channel available</strong> — position and length first, color and area last.</p>
+      </div>
+    </section>
+
+    <!-- L4 -->
+    <section class="lesson" data-l="4">
+      <div class="crumb">The Accuracy Hierarchy · Lesson 05</div>
+      <h1>Magnitude &amp; Psychophysics</h1>
+      <p class="lead">Why is area near the bottom? Because of a law older than data viz. S. S. Stevens' <span class="cithn">power law (1957)</span> describes how perceived magnitude relates to physical magnitude — and for area, the relationship is badly compressive.</p>
+      <p>Stevens found that perceived intensity ψ scales as a power of the stimulus φ: <code>ψ = k · φⁿ</code>. The exponent <em>n</em> is the whole story. For length, <em>n</em> ≈ 1.0 — perception tracks reality almost exactly. For area, <em>n</em> ≈ 0.7 — perception <em>compresses</em>: a circle with three times the area looks only about twice as big. This is not a mistake people can train away; it is how the system encodes magnitude.</p>
+      <div class="tryit">
+        <div class="tihead"><span class="dot"></span>Try it · estimate the ratio, then meet the power law</div>
+        <div class="tibody">
+          <div class="plaw">
+            <svg id="pl-svg" viewBox="0 0 300 120"></svg>
+            <div class="ctl">
+              <span style="font-size:13px;color:var(--ink-soft)">B is this many times the area of A:</span>
+              <input type="range" id="pl-slider" min="1" max="6" step="0.1" value="2">
+              <span class="guess" id="pl-guess">2.0×</span>
+              <button class="btn" id="pl-reveal">Reveal</button>
+            </div>
+            <div class="reveal" id="pl-reveal-box"></div>
+          </div>
+        </div>
+      </div>
+      <div class="box trap">
+        <div class="blabel">Common trap · the radius error</div>
+        <p>Doubling a bubble's <em>radius</em> to show "twice as much" actually quadruples its <em>area</em> (πr²). The data says 2×; the ink says 4×; perception reads it as ≈ 2.8× (4^0.7). Two compounding errors in one chart. Always scale bubbles by area, never radius — and even then, expect underestimation.</p>
+      </div>
+      <div class="box take">
+        <div class="blabel">Takeaway</div>
+        <p>Perceived magnitude is a power function of the real one, with a channel-specific exponent. <strong>Length is honest (n≈1); area lies low (n≈0.7); volume lies lower.</strong> The hierarchy is psychophysics, not opinion.</p>
+      </div>
+    </section>
+
+    <!-- L5 -->
+    <section class="lesson" data-l="5">
+      <div class="crumb">The Accuracy Hierarchy · Lesson 06</div>
+      <h1>Effectiveness &amp; Automated Design</h1>
+      <p class="lead">Jock Mackinlay's <span class="cithn">APT (1986)</span> turned Bertin and Cleveland–McGill into an <em class="k">algorithm</em>. It is the direct ancestor of every "recommend a chart" feature in modern tools.</p>
+      <p>Mackinlay formalized two criteria. <strong>Expressiveness:</strong> an encoding must express all the facts in the data and only those facts (a bar chart of nominal data on a quantitative axis expresses a false ordering — it fails). <strong>Effectiveness:</strong> among expressive options, prefer the one the perceptual system decodes most accurately — and crucially, the effectiveness ranking <em>depends on the data type.</em> Position is best for everything; but for nominal data, hue beats length, while for quantitative data, length beats hue.</p>
+      <div class="tryit">
+        <div class="tihead"><span class="dot"></span>Try it · the effectiveness ranking shifts by data type</div>
+        <div class="tibody">
+          <div class="chips" id="mk-chips"></div>
+          <ol class="ranklist" id="mk-list"></ol>
+        </div>
+      </div>
+      <div class="box note">
+        <div class="blabel">Note · this is "Show Me"</div>
+        <p>Tableau's "Show Me" is Mackinlay's ranking productized (he was a Tableau VP). But note what it does: it <em>recommends</em> an effective encoding, then lets you override into anything. Effectiveness as <em>suggestion</em>, not <em>constraint</em>. Hoodie's move is to run the same ranking as an enforced gate — the difference between a tool that helps and a tool that refuses.</p>
+      </div>
+      <div class="box take">
+        <div class="blabel">Takeaway</div>
+        <p>Encoding choice is formalizable: <strong>expressive first, then most-effective for the data type.</strong> The ranking is not fixed — it rotates depending on whether the data is quantitative, ordinal, or nominal.</p>
+      </div>
+    </section>
+
+    <!-- L6 -->
+    <section class="lesson" data-l="6">
+      <div class="crumb">Where Perception Betrays · Lesson 07</div>
+      <h1>Simultaneous Contrast</h1>
+      <p class="lead">Lightness and color are not read in absolute terms — they are read <em class="k">relative to surroundings.</em> The same gray looks lighter on a dark field and darker on a light one. This is not an illusion to admire; it is a reason to distrust color as a quantitative channel.</p>
+      <p>The retina encodes contrast, not absolute luminance — lateral inhibition between photoreceptors amplifies edges and makes every judgment contextual (Chevreul described it in 1839; it underlies the entire study of color appearance). The two center patches below are the <strong>identical</strong> gray:</p>
+      <div class="tryit">
+        <div class="tihead"><span class="dot"></span>Try it · two identical grays that refuse to look identical</div>
+        <div class="tibody">
+          <div class="contrastwrap">
+            <svg id="ct-svg" viewBox="0 0 320 120"></svg>
+            <div style="margin-top:12px"><button class="btn" id="ct-prove">▸ Prove they're identical</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="box note">
+        <div class="blabel">Implication</div>
+        <p>Colin Ware's work (<span class="cithn">Information Visualization, 2004</span>) is blunt about the consequence: never ask a viewer to read an absolute quantity from a color whose surround varies. A choropleth where the same value sits on different neighbors will be misread. If quantity must ride on color, use a calibrated luminance ramp and a legend — and even then, treat it as approximate.</p>
+      </div>
+      <div class="box take">
+        <div class="blabel">Takeaway</div>
+        <p>Color is a <strong>relative</strong> channel, not an absolute one. Context shifts the reading. This is the deepest reason color sits at the bottom of the accuracy hierarchy.</p>
+      </div>
+    </section>
+
+    <!-- L7 -->
+    <section class="lesson" data-l="7">
+      <div class="crumb">Where Perception Betrays · Lesson 08</div>
+      <h1>Distortion &amp; the Lie Factor</h1>
+      <p class="lead">Edward Tufte gave the most cited distortion a number. The <span class="cithn">lie factor (1983)</span> = (size of effect shown in the graphic) ÷ (size of effect in the data). An honest chart has a lie factor of <em class="k">1.0</em>. Truncating a bar's baseline inflates it without touching a single number.</p>
+      <p>Two values: 100 and 110 — a real difference of 10%. Drag the baseline up from zero and watch the <em>apparent</em> difference balloon while the data stays fixed:</p>
+      <div class="tryit">
+        <div class="tihead"><span class="dot"></span>Try it · manufacture a lie without changing the data</div>
+        <div class="tibody">
+          <div class="liewrap">
+            <div class="lierow">
+              <span class="lv" id="lie-base">baseline: 0</span>
+              <input type="range" id="lie-slider" min="0" max="95" value="0">
+            </div>
+            <svg class="liesvg" id="lie-svg" viewBox="0 0 300 170" preserveAspectRatio="none"></svg>
+            <div class="liefac" id="lie-fac"></div>
+          </div>
+        </div>
+      </div>
+      <div class="box trap">
+        <div class="blabel">Common trap</div>
+        <p>"But the truncated axis shows the difference more clearly!" It shows it <em>larger</em>, which is not the same as clearer — it shows a 10% difference as if it were 200%. For bars, whose entire encoding is length from a zero baseline, truncation is never honest. (Line charts, which encode change via slope rather than length-from-zero, can sometimes start above zero — a real distinction, not a loophole.)</p>
+      </div>
+      <div class="box take">
+        <div class="blabel">Takeaway</div>
+        <p>Distortion is quantifiable. <strong>Lie factor should be ≈ 1.0.</strong> A bar chart's baseline belongs at zero because the bar's length <em>is</em> the quantity.</p>
+      </div>
+    </section>
+
+    <!-- L8 -->
+    <section class="lesson" data-l="8">
+      <div class="crumb">Where Perception Betrays · Lesson 09</div>
+      <h1>Gestalt Grouping</h1>
+      <p class="lead">The Gestalt psychologists (Wertheimer, Koffka, Köhler, <span class="cithn">1920s</span>) catalogued how the visual system <em class="k">imposes</em> structure — grouping marks into wholes automatically, by a handful of rules. These rules are a tool when used deliberately and a lie when triggered by accident.</p>
+      <p>The eye groups by <strong>proximity</strong> (near = related), <strong>similarity</strong> (alike = related), <strong>enclosure</strong> (a shared boundary = a set), <strong>connection</strong> (a line between = related), <strong>continuity</strong>, and <strong>closure</strong>. Watch the same twelve dots regroup as each cue is applied:</p>
+      <div class="tryit">
+        <div class="tihead"><span class="dot"></span>Try it · one set of dots, four groupings</div>
+        <div class="tibody">
+          <div class="chips" id="ge-chips"></div>
+          <svg class="gestaltsvg" id="ge-svg" viewBox="0 0 320 150"></svg>
+          <div class="gestaltcap" id="ge-cap"></div>
+        </div>
+      </div>
+      <div class="box trap">
+        <div class="blabel">Common trap</div>
+        <p>Accidental grouping. Inconsistent spacing in a legend implies categories that aren't related; a stray enclosure box suggests a set the data doesn't contain; similar colors across unrelated series imply a link. The eye <em>will</em> group — the only question is whether you control the cue or it controls the reader.</p>
+      </div>
+      <div class="box take">
+        <div class="blabel">Takeaway</div>
+        <p>Grouping is automatic and rule-governed. <strong>Use proximity, similarity, and enclosure on purpose to show real structure — and audit your layout for the ones you triggered by accident.</strong></p>
+      </div>
+    </section>
+
+    <!-- L9 -->
+    <section class="lesson" data-l="9">
+      <div class="crumb">Designing for the Eye · Lesson 10</div>
+      <h1>Color Vision &amp; Deficiency</h1>
+      <p class="lead">Roughly <em class="k">8% of men</em> (and ~0.5% of women) have a color-vision deficiency — most commonly red-green (deuteranopia / protanopia). A red-vs-green encoding isn't a minor accessibility miss; it is invisible to one in twelve male viewers.</p>
+      <p>The chart below uses the classic worst choice — red vs. green categories. Simulate deuteranopia and watch the two series collapse into the same muddy tone; then switch to a deficiency-safe palette and watch the distinction survive:</p>
+      <div class="tryit">
+        <div class="tihead"><span class="dot"></span>Try it · see your chart through a deuteranope's eyes</div>
+        <div class="tibody">
+          <div class="cvdwrap">
+            <svg class="cvdsvg" id="cvd-svg" viewBox="0 0 320 150"></svg>
+            <div class="cvdctl">
+              <button class="btn" id="cvd-sim">▸ Simulate deuteranopia</button>
+              <button class="btn" id="cvd-safe">▸ Switch to safe palette</button>
+            </div>
+            <div class="cvdnote" id="cvd-note">Showing: red/green palette, normal vision.</div>
+          </div>
+        </div>
+      </div>
+      <div class="box note">
+        <div class="blabel">The fix is redundant encoding</div>
+        <p>The robust principle (Brewer's <span class="cithn">ColorBrewer</span>; Ware): never let color be the <em>only</em> carrier of a distinction. Pair it with position, shape, direct labels, or a deficiency-safe palette (blue/orange survives every common CVD). Redundant encoding also helps everyone in poor light, on bad screens, and in grayscale print.</p>
+      </div>
+      <div class="box take">
+        <div class="blabel">Takeaway</div>
+        <p>Color-blindness is a design constraint, not an edge case. <strong>Encode redundantly and choose CVD-safe palettes</strong> — a distinction carried by hue alone is invisible to ~8% of men.</p>
+      </div>
+    </section>
+
+    <!-- L10 -->
+    <section class="lesson" data-l="10">
+      <div class="crumb">Designing for the Eye · Lesson 11</div>
+      <h1>From Perception to Representation</h1>
+      <p class="lead">Everything in this course converges on one claim: the representation-science method isn't a set of preferences — it is <em class="k">perceptual science, operationalized.</em> Each classifier is a perceptual fact wearing a rule's clothing.</p>
+      <p>The bridge, classifier by classifier:</p>
+      <ul class="plain">
+        <li><strong>Measurement type</strong> is Bertin and Mackinlay — a variable may only encode data whose structure it can express (Lessons 02, 05).</li>
+        <li><strong>Relationship → family</strong> is Cleveland–McGill effectiveness — the family that puts the key judgment in the highest-accuracy channel (Lessons 03, 04).</li>
+        <li><strong>Cardinality &amp; handling</strong> is preattentive processing — grey the field, let one preattentive feature carry the signal (Lesson 02).</li>
+        <li><strong>Rhetorical verb</strong> is pop-out — an <em>alert</em> encodes the divergence in a single preattentive feature so it is seen before it is sought (Lesson 02).</li>
+      </ul>
+      <p>And the faithfulness gradient is the whole second half of this course: the lie factor (Lesson 07), the radius error (Lesson 04), simultaneous contrast (Lesson 06), accidental grouping (Lesson 08), and color-only encoding (Lesson 09) are precisely the perceptual failures the gradient exists to refuse.</p>
+      <div class="box take">
+        <div class="blabel">Takeaway</div>
+        <p>You now hold the <em>why</em>. The representation-science course is the <em>what</em> and <em>how</em>, and every rule in it traces back to a result in this one. <strong>Perception is the foundation; representation is the method built on it.</strong></p>
+      </div>
+    </section>
+
+    <!-- L11 -->
+    <section class="lesson" data-l="11">
+      <div class="crumb">Designing for the Eye · Lesson 12</div>
+      <h1>Check Yourself</h1>
+      <p class="lead">Six checks across the perceptual foundations.</p>
+      <div class="quiz" id="quiz"></div>
+      <div class="box take">
+        <div class="blabel">Foundation complete</div>
+        <p>You have the visual system, preattentive processing, the visual variables, the empirical accuracy hierarchy, the psychophysics underneath it, and the major distortions. This is the bedrock the representation-science method stands on — and the reason its rules are facts, not tastes.</p>
+      </div>
+    </section>
+
+    <div class="pn">
+      <button class="prev" id="prev">← Previous</button>
+      <button class="next" id="next">Next lesson →</button>
+    </div>
+
+  </main>
+</div>
+
+<script>
+/* ---------- router ---------- */
+const LESSONS=[...document.querySelectorAll('.lesson')];
+const NAV=[...document.querySelectorAll('#nav a')];
+const TOTAL=LESSONS.length;
+let cur=0;
+function show(i){
+  cur=Math.max(0,Math.min(TOTAL-1,i));
+  LESSONS.forEach((s,k)=>s.classList.toggle('active',k===cur));
+  NAV.forEach(a=>a.classList.toggle('active',+a.dataset.l===cur));
+  document.getElementById('prog').textContent='Lesson '+String(cur+1).padStart(2,'0')+' / '+String(TOTAL).padStart(2,'0');
+  document.getElementById('prev').disabled=cur===0;
+  document.getElementById('next').disabled=cur===TOTAL-1;
+  document.getElementById('next').textContent=cur===TOTAL-1?'Done ✓':'Next lesson →';
+  if(location.hash!=='#l'+cur)history.replaceState(null,'','#l'+cur);
+  window.scrollTo(0,0);
+}
+NAV.forEach(a=>a.addEventListener('click',()=>show(+a.dataset.l)));
+document.getElementById('prev').addEventListener('click',()=>show(cur-1));
+document.getElementById('next').addEventListener('click',()=>show(cur+1));
+window.addEventListener('hashchange',()=>{const m=(location.hash.match(/^#l(\d+)$/));if(m)show(+m[1]);});
+show((location.hash.match(/^#l(\d+)$/)||[])[1]?+location.hash.slice(2):0);
+
+/* ---------- L1 preattentive ---------- */
+const PRE=document.getElementById('pregrid');
+const TARGET=Math.floor(Math.random()*60);
+let prePop=false;
+function renderPre(){PRE.innerHTML='';PRE.classList.toggle('pop',prePop);for(let i=0;i<60;i++){const c=document.createElement('div');c.className='pcell'+(i===TARGET?' target':'');c.textContent=i===TARGET?'T':'L';PRE.appendChild(c);}}
+document.getElementById('pre-toggle').addEventListener('click',function(){prePop=!prePop;renderPre();this.textContent=prePop?'▸ Remove the feature (serial again)':'▸ Add a preattentive feature (color)';document.getElementById('pre-note').textContent=prePop?'Pop-out: detected in parallel, ~200ms, flat regardless of set size.':'Serial: search time scales with the number of items.';});
+renderPre();
+
+/* ---------- L2 visual variables ---------- */
+const VV={
+  Position:{Selective:[1,'isolate by location instantly'],Associative:[1,'group by region'],Ordered:[1,'up/right reads as more'],Quantitative:[1,'read ratios directly']},
+  Length:{Selective:[1,'long stands out'],Associative:[1,'group by size'],Ordered:[1,'longer = more'],Quantitative:[1,'near-perfect ratio judgment']},
+  Size:{Selective:[1,'big pops out'],Associative:[1,'group by size'],Ordered:[1,'bigger = more'],Quantitative:[0,'area is compressed (Stevens)']},
+  Value:{Selective:[1,'light/dark separates'],Associative:[1,'group by tone'],Ordered:[1,'dark = more, weakly'],Quantitative:[0,'relative, contextual']},
+  Hue:{Selective:[1,'red pops among blue'],Associative:[1,'group by color'],Ordered:[0,'no inherent order'],Quantitative:[0,'cannot read magnitude']},
+  Orientation:{Selective:[1,'odd angle pops'],Associative:[1,'group by tilt'],Ordered:[0,'weak/ambiguous order'],Quantitative:[0,'no']},
+  Shape:{Selective:[0,'requires serial search'],Associative:[1,'group by symbol'],Ordered:[0,'no order'],Quantitative:[0,'no']},
+  Texture:{Selective:[1,'coarse vs fine pops'],Associative:[1,'group by pattern'],Ordered:[1,'density reads as order, weakly'],Quantitative:[0,'no']}
+};
+const vvChips=document.getElementById('vv-chips'),vvBody=document.getElementById('vv-body');
+Object.keys(VV).forEach((k,i)=>{const c=document.createElement('button');c.className='chip'+(i===0?' on':'');c.textContent=k;c.onclick=()=>{[...vvChips.children].forEach(x=>x.classList.remove('on'));c.classList.add('on');renderVV(k);};vvChips.appendChild(c);});
+function renderVV(k){vvBody.innerHTML='';Object.entries(VV[k]).forEach(([prop,[ok,why]])=>{const tr=document.createElement('tr');tr.innerHTML='<td>'+prop+'</td><td class="'+(ok?'ok':'no')+'"><span class="v">'+(ok?'✓ yes':'✗ no')+'</span><span class="why">'+why+'</span></td>';vvBody.appendChild(tr);});}
+renderVV('Position');
+
+/* ---------- L3 Cleveland-McGill panels ---------- */
+const CMV=[14,22,17,25,19];const cmMax=Math.max(...CMV);const cmSum=CMV.reduce((a,b)=>a+b,0);
+let cmShown=false;
+function drawCM(){
+  // bars
+  let bars='';CMV.forEach((v,i)=>{const w=v/cmMax*70;const y=8+i*22;bars+='<rect x="40" y="'+y+'" width="'+w+'" height="15" fill="'+(v===cmMax?'#B07012':'#2F4D49')+'"/>';if(cmShown)bars+='<text x="'+(43+w)+'" y="'+(y+12)+'" font-family="IBM Plex Mono" font-size="9" fill="#1B1A17">'+v+'</text>';});
+  document.getElementById('cm-bars').innerHTML=bars;
+  // pie
+  let ang=-90;let pie='';CMV.forEach((v,i)=>{const a0=ang;const sweep=v/cmSum*360;ang+=sweep;const a1=ang;const large=sweep>180?1:0;const r=46,cx=60,cy=60;const x0=cx+r*Math.cos(a0*Math.PI/180),y0=cy+r*Math.sin(a0*Math.PI/180);const x1=cx+r*Math.cos(a1*Math.PI/180),y1=cy+r*Math.sin(a1*Math.PI/180);const col=v===cmMax?'#B07012':['#2F4D49','#4a6b66','#5A564E','#8A8270','#3a5450'][i];pie+='<path d="M'+cx+','+cy+' L'+x0.toFixed(1)+','+y0.toFixed(1)+' A'+r+','+r+' 0 '+large+',1 '+x1.toFixed(1)+','+y1.toFixed(1)+' Z" fill="'+col+'"/>';});if(cmShown)pie+='<text x="60" y="114" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="#5A564E">'+CMV.join(' / ')+'</text>';
+  document.getElementById('cm-pie').innerHTML=pie;
+  // bubbles
+  let bub='';CMV.forEach((v,i)=>{const cx=18+i*21;const rr=Math.sqrt(v/cmMax)*15;bub+='<circle cx="'+cx+'" cy="58" r="'+rr.toFixed(1)+'" fill="'+(v===cmMax?'#B07012':'#2F4D49')+'" opacity="0.85"/>';if(cmShown)bub+='<text x="'+cx+'" y="100" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="#5A564E">'+v+'</text>';});
+  document.getElementById('cm-bub').innerHTML=bub;
+}
+document.getElementById('cm-reveal').addEventListener('click',function(){cmShown=!cmShown;this.textContent=cmShown?'▸ Hide the values':'▸ Reveal the values';drawCM();});
+drawCM();
+
+/* ---------- L4 power law ---------- */
+const PL_TRUE=3.0;const PL_EXP=0.7;
+function drawPL(){const a=18;const b=a*Math.sqrt(PL_TRUE);document.getElementById('pl-svg').innerHTML='<circle cx="80" cy="60" r="'+a+'" fill="#2F4D49" opacity="0.85"/><text x="80" y="105" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="#5A564E">A</text><circle cx="210" cy="60" r="'+b.toFixed(1)+'" fill="#B07012" opacity="0.85"/><text x="210" y="105" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="#5A564E">B</text>';}
+document.getElementById('pl-slider').addEventListener('input',function(){document.getElementById('pl-guess').textContent=(+this.value).toFixed(1)+'×';});
+document.getElementById('pl-reveal').addEventListener('click',function(){
+  const g=+document.getElementById('pl-slider').value;const perceived=Math.pow(PL_TRUE,PL_EXP);
+  const box=document.getElementById('pl-reveal-box');
+  box.innerHTML='<div class="rrow"><span class="rk">your estimate</span><span><b>'+g.toFixed(1)+'×</b></span></div>'+
+    '<div class="rrow"><span class="rk">true area ratio</span><span><b>'+PL_TRUE.toFixed(1)+'×</b> (B has exactly 3× the area of A)</span></div>'+
+    '<div class="rrow"><span class="rk">power-law prediction</span><span>≈ <b>'+perceived.toFixed(1)+'×</b> — perceived ≈ 3<sup>0.7</sup></span></div>'+
+    '<p style="margin-top:8px">Most people guess close to the power-law prediction (~2.2×), not the truth (3×). The eye <b>compresses area</b> — and you likely just did it yourself. That compression is why area sits low on the accuracy hierarchy.</p>';
+  box.classList.add('show');
+});
+drawPL();
+
+/* ---------- L5 Mackinlay ranking ---------- */
+const MK={
+  Quantitative:['Position','Length','Angle / slope','Area','Volume','Density (value)','Color saturation','Color hue','Shape'],
+  Ordinal:['Position','Density (value)','Color saturation','Color hue','Texture','Length','Angle / slope','Area','Shape'],
+  Nominal:['Position','Color hue','Texture','Connection','Shape','Density (value)','Length','Angle / slope','Area']
+};
+const mkChips=document.getElementById('mk-chips'),mkList=document.getElementById('mk-list');
+Object.keys(MK).forEach((k,i)=>{const c=document.createElement('button');c.className='chip'+(i===0?' on':'');c.textContent=k;c.onclick=()=>{[...mkChips.children].forEach(x=>x.classList.remove('on'));c.classList.add('on');renderMK(k);};mkChips.appendChild(c);});
+function renderMK(k){const arr=MK[k];mkList.innerHTML='';arr.forEach((enc,i)=>{const li=document.createElement('li');li.className=i<3?'top':(i>=arr.length-2?'bad':'');li.innerHTML='<span></span><span>'+enc+'</span><span class="eff">'+(i<3?'most effective':(i>=arr.length-2?'least':'ok'))+'</span>';mkList.appendChild(li);});}
+renderMK('Quantitative');
+
+/* ---------- L6 simultaneous contrast ---------- */
+let ctProved=false;
+function drawCT(){
+  const gray='#8a8a86';
+  if(!ctProved){
+    document.getElementById('ct-svg').innerHTML='<rect x="0" y="0" width="160" height="120" fill="#2a2a27"/><rect x="160" y="0" width="160" height="120" fill="#dcdcd6"/><rect x="55" y="35" width="50" height="50" fill="'+gray+'"/><rect x="215" y="35" width="50" height="50" fill="'+gray+'"/>';
+  }else{
+    document.getElementById('ct-svg').innerHTML='<rect x="0" y="0" width="320" height="120" fill="#888884"/><rect x="55" y="35" width="50" height="50" fill="'+gray+'"/><rect x="215" y="35" width="50" height="50" fill="'+gray+'"/><rect x="105" y="55" width="110" height="10" fill="'+gray+'"/><text x="160" y="106" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" fill="#1B1A17">identical gray, joined by a bridge of the same gray</text>';
+  }
+}
+document.getElementById('ct-prove').addEventListener('click',function(){ctProved=!ctProved;this.textContent=ctProved?'▸ Put them back on different fields':'▸ Prove they\'re identical';drawCT();});
+drawCT();
+
+/* ---------- L7 lie factor ---------- */
+const lieSlider=document.getElementById('lie-slider');
+function drawLie(){
+  const base=+lieSlider.value;const A=100,B=110;
+  document.getElementById('lie-base').textContent='baseline: '+base;
+  const range=Math.max(1,B-base);
+  const hA=Math.max(0,(A-base))/range*150;const hB=Math.max(0,(B-base))/range*150;
+  document.getElementById('lie-svg').innerHTML='<rect x="70" y="'+(160-hA)+'" width="60" height="'+hA+'" fill="#2F4D49"/><text x="100" y="168" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="#5A564E">100</text><rect x="180" y="'+(160-hB)+'" width="60" height="'+hB+'" fill="#B07012"/><text x="210" y="168" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="#5A564E">110</text>';
+  const apparent=(B-base)/(A-base);const trueRatio=B/A;const lf=apparent/trueRatio;
+  const el=document.getElementById('lie-fac');
+  el.textContent='Lie factor: '+lf.toFixed(1)+'×   (true difference 10% shown as '+((apparent-1)*100).toFixed(0)+'%)';
+  el.className='liefac '+(lf<=1.05?'ok':'bad');
+}
+lieSlider.addEventListener('input',drawLie);drawLie();
+
+/* ---------- L8 gestalt ---------- */
+const GE={
+  None:{cap:'No grouping cue. The dots read as <b>one undifferentiated field</b> — twelve marks, no structure.'},
+  Proximity:{cap:'Spaced into clusters. The eye sees <b>three groups</b> — proximity alone creates structure with no other change.'},
+  Similarity:{cap:'Colored in two sets. Now you see <b>two groups</b> by color, cutting across position — similarity overrides proximity.'},
+  Enclosure:{cap:'A boundary drawn around a subset. Enclosure is the <b>strongest</b> cue — it forces a group even against proximity and similarity.'}
+};
+const geChips=document.getElementById('ge-chips');
+Object.keys(GE).forEach((k,i)=>{const c=document.createElement('button');c.className='chip'+(i===1?' on':'');c.textContent=k;c.onclick=()=>{[...geChips.children].forEach(x=>x.classList.remove('on'));c.classList.add('on');drawGE(k);};geChips.appendChild(c);});
+function drawGE(mode){
+  const svg=document.getElementById('ge-svg');let s='';
+  // base 12 dot positions in a 4x3 even grid
+  let pts=[];for(let r=0;r<3;r++)for(let c=0;c<4;c++)pts.push([50+c*70,35+r*40]);
+  if(mode==='Proximity'){pts=[];const groups=[[40,55],[150,55],[260,55]];groups.forEach((g,gi)=>{for(let i=0;i<4;i++){pts.push([g[0]+(i%2)*22,g[1]+Math.floor(i/2)*40]);}});}
+  if(mode==='Enclosure'){s+='<rect x="28" y="22" width="120" height="106" fill="none" stroke="#B07012" stroke-width="2" rx="6"/>';}
+  pts.forEach((p,i)=>{let fill='#2F4D49';if(mode==='Similarity')fill=(i%2===0)?'#B07012':'#2F4D49';s+='<circle cx="'+p[0]+'" cy="'+p[1]+'" r="8" fill="'+fill+'"/>';});
+  svg.innerHTML=s;
+  document.getElementById('ge-cap').innerHTML=GE[mode].cap;
+}
+drawGE('Proximity');
+
+/* ---------- L9 CVD ---------- */
+let cvdSim=false,cvdSafe=false;
+// deuteranopia approximation matrix (Machado et al.)
+const DEUT="0.367 0.861 -0.228 0 0  0.280 0.673 0.047 0 0  -0.012 0.043 0.969 0 0  0 0 0 1 0";
+function drawCVD(){
+  const svg=document.getElementById('cvd-svg');
+  const red=cvdSafe?'#1B6CA8':'#C0392B';const grn=cvdSafe?'#E08A1E':'#27AE60';
+  const filt=cvdSim?' filter="url(#deut)"':'';
+  const vals1=[60,90,45,110];const vals2=[80,55,100,70];
+  let bars='';vals1.forEach((v,i)=>{const x=30+i*70;bars+='<rect x="'+x+'" y="'+(135-v)+'" width="26" height="'+v+'" fill="'+red+'"/>';bars+='<rect x="'+(x+28)+'" y="'+(135-vals2[i])+'" width="26" height="'+vals2[i]+'" fill="'+grn+'"/>';});
+  svg.innerHTML='<defs><filter id="deut"><feColorMatrix type="matrix" values="'+DEUT+'"/></filter></defs><g'+filt+'>'+bars+'</g>';
+  let note='Showing: '+(cvdSafe?'blue/orange (safe)':'red/green')+' palette, '+(cvdSim?'simulated deuteranopia':'normal vision')+'.';
+  if(cvdSim&&!cvdSafe)note+=' — Notice the two series have collapsed toward the same tone: the distinction is gone for ~8% of men.';
+  if(cvdSim&&cvdSafe)note+=' — The blue/orange distinction survives the simulation. That is why it is the default safe pair.';
+  document.getElementById('cvd-note').textContent=note;
+}
+document.getElementById('cvd-sim').addEventListener('click',function(){cvdSim=!cvdSim;this.textContent=cvdSim?'▸ Back to normal vision':'▸ Simulate deuteranopia';drawCVD();});
+document.getElementById('cvd-safe').addEventListener('click',function(){cvdSafe=!cvdSafe;this.textContent=cvdSafe?'▸ Back to red/green':'▸ Switch to safe palette';drawCVD();});
+drawCVD();
+
+/* ---------- L11 quiz ---------- */
+const QUIZ=[
+  {q:'A target that "pops out" regardless of how many distractors surround it differs from them by…',opts:['A conjunction of two features','A single preattentive feature','Its semantic meaning'],a:1,fb:'Treisman & Gelade (1980): single-feature targets are found in parallel (flat time); conjunction targets require serial search (time scales with set size).'},
+  {q:'Why does a circle with 3× the area look only ~2× bigger?',opts:['An optical illusion with no rule','Stevens\u2019 power law — area\u2019s exponent is ~0.7','The screen distorts it'],a:1,fb:'Perceived magnitude = k·\u03c6\u207f. For area n\u22480.7, so perception compresses: 3^0.7 \u2248 2.2. This is why area sits low on the accuracy hierarchy.'},
+  {q:'Cleveland & McGill (1984) found the MOST accurately decoded encoding is…',opts:['Color hue','Area','Position on a common scale'],a:2,fb:'Their empirical ranking puts position on a common scale first; length next; angle, area, then color last.'},
+  {q:'Two identical grays look different on different backgrounds because…',opts:['The grays are actually different','Perception encodes contrast, not absolute luminance','The monitor is miscalibrated'],a:1,fb:'Simultaneous contrast: the retina encodes relative luminance via lateral inhibition. This is the deepest reason color is a poor absolute-quantity channel.'},
+  {q:'You truncate a bar chart\u2019s baseline so a 10% difference looks like 200%. Tufte calls this…',opts:['A lie factor of ~20','Effective emphasis','A logarithmic axis'],a:0,fb:'Lie factor = effect shown / effect in data. Honest \u2248 1.0. Truncating a bar\u2019s baseline inflates it because the bar\u2019s length IS the quantity.'},
+  {q:'A red-vs-green category encoding is invisible to roughly…',opts:['Nobody with corrected vision','8% of men (red-green CVD)','Only the fully color-blind (~0.003%)'],a:1,fb:'~8% of men have red-green deficiency. The fix is redundant encoding (position/shape/label) and CVD-safe palettes like blue/orange.'}
+];
+const quizEl=document.getElementById('quiz');
+QUIZ.forEach((item,qi)=>{const d=document.createElement('div');d.className='q';let h='<div class="qq">'+(qi+1)+'. '+item.q+'</div>';item.opts.forEach((o,oi)=>{h+='<button class="opt" data-q="'+qi+'" data-o="'+oi+'">'+o+'</button>';});h+='<div class="fb" id="fb-'+qi+'">'+item.fb+'</div>';d.innerHTML=h;quizEl.appendChild(d);});
+quizEl.addEventListener('click',e=>{const b=e.target.closest('.opt');if(!b)return;const qi=+b.dataset.q,oi=+b.dataset.o;const q=QUIZ[qi];const buttons=quizEl.querySelectorAll('.opt[data-q="'+qi+'"]');buttons.forEach(x=>x.disabled=true);buttons[q.a].classList.add('correct');if(oi!==q.a)b.classList.add('wrong');document.getElementById('fb-'+qi).classList.add('show');});
+</script>
+</body>
+</html>

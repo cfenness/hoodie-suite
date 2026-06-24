@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spine Adapter — Reference</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#EEEDE8;--panel:#E6E4DD;--ink:#1B1A17;--ink-soft:#5A564E;--hair:#C9C5BA;--amber:#B07012;--slate:#2F4D49;--amber-deep:#6E450A;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:"Source Serif 4",Georgia,serif;padding:32px;}
+  .wrap{max-width:620px;margin:0 auto;}
+  .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--amber);font-weight:600;}
+  h1{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:26px;margin:8px 0 4px;letter-spacing:-0.01em;}
+  p{font-size:15px;line-height:1.5;color:var(--ink-soft);margin:0 0 16px;}
+  .status{font-family:"IBM Plex Mono",monospace;font-size:12px;padding:5px 10px;display:inline-block;border:1px solid var(--hair);}
+  .status.on{color:var(--slate);border-color:var(--slate);background:#DEE6E3;}
+  .status.off{color:var(--amber-deep);border-color:var(--amber);}
+  .ctxbox{border:1px solid var(--ink);background:#fff;margin:18px 0;}
+  .ctxbox .h{background:var(--ink);color:var(--paper);font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;padding:8px 14px;font-weight:600;}
+  .ctxbox pre{margin:0;padding:14px;font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.55;color:var(--ink);white-space:pre-wrap;}
+  .crumb{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--slate);padding:10px 14px;border-top:1px solid var(--hair);}
+  .crumb b{color:var(--ink);}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0;}
+  button{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;border:1px solid var(--ink);background:var(--paper);color:var(--ink);padding:8px 13px;cursor:pointer;}
+  button:hover{background:var(--ink);color:var(--paper);}
+  .note{font-size:13px;color:var(--ink-soft);border-left:3px solid var(--amber);padding:8px 12px;background:var(--panel);line-height:1.5;}
+  code{font-family:"IBM Plex Mono",monospace;font-size:12px;background:var(--panel);padding:1px 5px;color:var(--amber-deep);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Hoodie Spine · Reference Adapter</div>
+  <h1>This app is on the spine.</h1>
+  <p>It carries no data of its own. Everything below is <strong>received</strong> from the shell over the shared context bus. Change the context bar up top and watch it update live — that is the whole integration.</p>
+
+  <div><span class="status off" id="status">● not connected</span></div>
+
+  <div class="ctxbox">
+    <div class="h">Live shared context (received)</div>
+    <pre id="ctx">waiting for context…</pre>
+    <div class="crumb" id="crumb">scope: —</div>
+  </div>
+
+  <div class="row">
+    <button id="btn-set">setContext → basis = YTD</button>
+    <button id="btn-nav">navigate → dashboard @ this scope</button>
+  </div>
+
+  <div class="note">
+    The entire adapter is the snippet below — about ten lines. Each real app drops this in once and inherits shared scope, account, and date basis automatically:
+    <pre style="margin:10px 0 0;font-family:'IBM Plex Mono',monospace;font-size:11.5px;line-height:1.5;color:var(--ink);white-space:pre-wrap;">&lt;script src="../spine/spine.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  const spine = HoodieSpine.connect({
+    name: "My App",
+    onContext: (ctx) =&gt; applyContext(ctx)   // filter your views to ctx.scope / ctx.account / ctx.dateRange
+  });
+  // to push a change up:   spine.setContext({ dateRange:{ basis:"YTD" } });
+  // to deep-link an app:   spine.navigate("dashboard", ctx.scope);
+&lt;/script&gt;</pre>
+  </div>
+</div>
+
+<script src="../spine/spine.js"></script>
+<script>
+  function render(ctx){
+    document.getElementById('ctx').textContent = JSON.stringify(ctx, null, 2);
+    var s = ctx && ctx.scope;
+    document.getElementById('crumb').innerHTML = 'scope: ' + (s ? '<b>'+ (s.name||s.id) +'</b> ('+s.level+')' : '—');
+    var st = document.getElementById('status');
+    st.textContent = '● connected — receiving context'; st.className = 'status on';
+  }
+  var spine = HoodieSpine.connect({ name: "Spine Adapter (reference)", onContext: render });
+  document.getElementById('btn-set').addEventListener('click', function(){ spine.setContext({ dateRange:{ basis:"YTD" } }); });
+  document.getElementById('btn-nav').addEventListener('click', function(){ spine.navigate("dashboard", spine.getContext().scope); });
+</script>
+</body>
+</html>
