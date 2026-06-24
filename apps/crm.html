@@ -7,15 +7,17 @@
 <title>Hoodie Relations — Industry Associations</title>
 <style>
 :root{
- --brand:#0176d3; --brand-dark:#014486; --brand-deep:#032d60; --link:#0176d3;
- --bg:#f3f3f3; --panel:#fff; --line:#e5e5e5; --line2:#eef1f3; --ink:#181818; --label:#444;
- --muted:#5c5c5c; --faint:#747474; --hover:#f3f9ff;
+ /* chrome — remapped to the suite token contract (../suite.css); retires the Salesforce blue */
+ --brand:var(--amber); --brand-dark:var(--amber-deep); --brand-deep:var(--amber-deep); --link:var(--amber-deep);
+ --bg:var(--paper); --panel:#FBFAF7; --line:var(--hair); --line2:#E9E5DA; --ink:#1B1A17; --label:var(--ink-soft);
+ --muted:var(--ink-soft); --faint:#8A8377; --hover:#F4EFE4;
+ /* data-semantic colors — UNCHANGED (tier badges, pipeline) */
  --green:#2e844a; --green-bg:#ebf7ee; --orange:#a86403; --orange-bg:#fef6e6;
  --purple:#5867e8; --purple-bg:#eef0fd; --teal:#06a59a; --teal-bg:#e3f7f5; --blue-bg:#eaf5fe;
- --radius:.25rem; --shadow:0 2px 2px rgba(0,0,0,.05);
+ --radius:3px; --shadow:0 1px 2px rgba(40,30,20,.06);
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-display),-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
 a{color:var(--link);text-decoration:none;cursor:pointer}a:hover{text-decoration:underline}
 button{font-family:inherit;cursor:pointer}
 /* global header */
@@ -47,10 +49,10 @@ button{font-family:inherit;cursor:pointer}
 .lvtitles .v{display:flex;align-items:center;gap:6px;font-size:18px;font-weight:700;color:#080707}
 .lvtitles .v .caret{font-size:11px;color:var(--muted)}
 .lvactions{margin-left:auto;display:flex;gap:8px}
-.btn{border:1px solid #c9c7c5;background:#fff;color:#0176d3;border-radius:var(--radius);padding:6px 13px;font-weight:600;font-size:13px}
+.btn{border:1px solid var(--line);background:#fff;color:var(--brand-deep);border-radius:var(--radius);padding:6px 13px;font-weight:600;font-size:13px}
 .btn:hover{background:#f4f6f9}
 .btn.brand{background:var(--brand);border-color:var(--brand);color:#fff}
-.btn.brand:hover{background:#014486}
+.btn.brand:hover{background:var(--brand-dark)}
 .lvmeta{padding:0 14px 8px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
 /* table */
 table{width:100%;border-collapse:collapse}
@@ -422,7 +424,7 @@ function recordHTML(a){
 function pipelineHTML(){
   return `<div class="card" style="border:0;background:transparent;box-shadow:none">
     <div class="lvhead" style="background:#fff;border:1px solid var(--line);border-radius:var(--radius)">
-      <div class="lvicon" style="background:#0176d3">▦</div>
+      <div class="lvicon" style="background:var(--brand)">▦</div>
       <div class="lvtitles"><div class="k">Pipeline</div><div class="v">Data Onboarding</div></div>
       <div class="lvactions"><button class="btn brand" onclick="newAccount()">New</button></div>
     </div>
