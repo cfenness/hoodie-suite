@@ -1,0 +1,46 @@
+/* ============================================================
+   suite.css — the Hoodie Suite shared token contract.
+
+   Every surface imports this so the *chrome* reads as ONE product:
+   the same ink / paper / hair palette, one type stack, one radius
+   scale. Apps keep their own DATA-semantic colors (good / warn / bad,
+   category hues, brand accents) — but inherit the shell's chrome so a
+   user moving between apps is never told they left the suite.
+
+   Usage:
+     shell (repo root):   <link rel="stylesheet" href="suite.css">
+     app  (apps/*.html):  <link rel="stylesheet" href="../suite.css">
+   Load it BEFORE an app's own <style> so the app can still override a
+   token locally where it genuinely needs to. Reference the chrome via
+   var(--ink) etc.; never hard-code the chrome palette again.
+
+   These values are the launcher shell's tokens, lifted verbatim so the
+   shell is the single source of truth for them.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root{
+  /* ---- chrome palette (canonical) ---- */
+  --paper:#EEEDE8;   --panel:#E6E4DD;   --panel-2:#DEDBD2;
+  --ink:#1B1A17;     --ink-soft:#5A564E; --hair:#C9C5BA;
+
+  /* ---- accent + supporting ---- */
+  --amber:#B07012;   --amber-bright:#DCA138; --amber-deep:#6E450A;
+  --slate:#2F4D49;   --slate-tint:#DEE6E3;   --oxblood:#8A382C;
+  --accent:var(--amber); --accent-bright:var(--amber-bright);
+
+  /* ---- data-semantic colors (apps may reference these or override locally) ---- */
+  --good:#3E6B4C;    --warn:var(--amber);    --bad:var(--oxblood);
+
+  /* ---- type stack ---- */
+  --font-display:"Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-serif:"Source Serif 4", Georgia, serif;
+  --font-mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* ---- radius scale ---- */
+  --radius-sharp:0px; --radius:3px; --radius-soft:6px; --radius-pill:999px;
+
+  /* ---- shell layout rhythm (also used by the in-app suite header strip) ---- */
+  --bar:48px; --ctx:42px;
+}
