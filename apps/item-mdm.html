@@ -797,5 +797,36 @@ catSearch.addEventListener('input',e=>renderCatalog(e.target.value));
 
 updateGauge(0);
 </script>
+
+<!-- ===== Hoodie Spine integration ===== -->
+<script src="../spine/spine.js"></script>
+<script>
+(function(){
+  if(typeof HoodieSpine==='undefined')return;
+  function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+  /* live context chip in the header */
+  var chip=document.createElement('div');
+  chip.id='spineChip';
+  chip.title='Shared suite context — set in the suite bar';
+  chip.style.cssText='display:none;align-items:center;gap:7px;margin-right:14px;font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:11px;font-weight:600;letter-spacing:.03em;color:#5C5044;background:rgba(120,90,30,.10);border:1px solid rgba(120,90,30,.24);border-radius:999px;padding:5px 11px;white-space:nowrap;';
+  var hd=document.querySelector('header .hd');
+  if(hd){var pill=document.getElementById('hdcount');hd.insertBefore(chip,pill||null);}
+  function renderChip(ctx){
+    var parts=[];
+    if(ctx&&ctx.scope)parts.push(ctx.scope.name);
+    if(ctx&&ctx.account)parts.push(ctx.account.name);
+    if(!parts.length){chip.style.display='none';return;}
+    chip.innerHTML='<span style="width:6px;height:6px;border-radius:50%;background:#C98A1A;flex:0 0 auto;display:inline-block"></span>'+
+      parts.map(function(t,i){return (i?'<span style="opacity:.4">▸</span> ':'')+'<span>'+esc(t)+'</span>';}).join(' ');
+    chip.style.display='inline-flex';
+  }
+  function applyContext(ctx){
+    /* inbound: focus the loaded COLA catalog on the shared scope, via the app's own filter */
+    var el=document.getElementById('catSearch');
+    if(el&&!el.disabled){var v=ctx&&ctx.scope?ctx.scope.name:'';if(el.value!==v){el.value=v;el.dispatchEvent(new Event('input'));}}
+  }
+  HoodieSpine.connect({name:'Item Master',onContext:function(ctx){try{renderChip(ctx);}catch(e){}try{applyContext(ctx);}catch(e){}}});
+})();
+</script>
 </body>
 </html>
