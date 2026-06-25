@@ -572,11 +572,12 @@ load().then(render);
     }
   }
   spine=HoodieSpine.connect({name:'Hoodie Relations',onContext:function(ctx){try{renderChip(ctx);}catch(e){}try{applyContext(ctx);}catch(e){}}});
-  /* outbound: opening an account publishes it to the rest of the suite */
+  /* outbound: opening an account publishes it to the suite + shows as a shell breadcrumb */
   if(typeof openRecord==='function'){
     var _open=openRecord;
-    window.openRecord=function(id){_open(id);try{var a=DB.accounts.find(function(x){return x.id===id;});if(a&&spine){lastAcctId=a.id;spine.setContext({account:{id:a.id,name:a.name}});}}catch(e){}};
+    window.openRecord=function(id){_open(id);try{var a=DB.accounts.find(function(x){return x.id===id;});if(a&&spine){lastAcctId=a.id;spine.setContext({account:{id:a.id,name:a.name}});spine.setCrumb(a.abbr||a.name);}}catch(e){}};
   }
+  if(typeof back==='function'){ var _back=back; window.back=function(){_back();try{if(spine)spine.setCrumb('');}catch(e){}}; }
 })();
 </script>
 
