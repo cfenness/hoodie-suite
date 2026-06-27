@@ -107,3 +107,23 @@ That promotion replaced the old `apps/item-mdm.html`.
 The two surfaces share one `/api/*` contract: `apps/mdm.html` is the deployed suite view
 (offline fallback when no backend is up); `hoodie_mdm.html` here is the always-live local
 view the agent serves. Keep them in sync if you change the control-plane UI.
+
+## Deploying the agent as the `/api/*` backend
+
+The agent is packaged to run as a container behind a CloudFront `/api/*` behavior on
+the suite's own domain (chosen over Lambda so `server.py` runs as-is):
+
+- **`apprunner.yaml`** — App Runner *source* config. Connect the repo once (source
+  directory `unifyd`, auto-deploy), and it rebuilds on every push to `main`. No Docker,
+  no ECR. Lowest ceremony.
+- **`Dockerfile`** — the same agent as a portable image (gunicorn, `$PORT`) for
+  Lightsail / ECS / App Runner image mode / local `docker run`.
+- Then run the suite's `scripts/add-api-cloudfront-behavior.sh` to route `/api/*` to the
+  service. The MDM console goes live with no front-end change.
+
+Full runbook: suite `README.md` → "Stand it up (the runbook)".
+
+**Caveat — state is ephemeral in a container.** `agent_state/` (pulled datasets, run
+history) lives on the container's local disk, so it resets on redeploy. Fine to prove
+the path; the follow-on is persistence — back `load()`/`save()` in `server.py` with S3
+(or a small DB) so state survives. That's the next step after the first wire works.
