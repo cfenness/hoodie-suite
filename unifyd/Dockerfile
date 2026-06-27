@@ -21,7 +21,8 @@ COPY . .
 ENV PORT=8080
 EXPOSE 8080
 
-# NOTE: state (agent_state/) is on the container's ephemeral disk — fine to prove the
-# wire, but pulled data resets on redeploy. Persistence (S3-backed state / a DB) is the
-# follow-on once the path is proven. See unifyd/README.md.
-CMD ["sh", "-c", "gunicorn -w 2 -b 0.0.0.0:${PORT:-8080} server:app"]
+# STATE: disk (agent_state/) is ephemeral here. Set STATE_BUCKET (+ optional STATE_PREFIX)
+# to persist datasets/runs to S3 so they survive redeploys; the runtime needs s3:Get/PutObject
+# on that bucket (instance role / task role). See unifyd/README.md.
+# ONE worker on purpose — state is in-process; a single worker keeps it coherent.
+CMD ["sh", "-c", "gunicorn -w 1 -b 0.0.0.0:${PORT:-8080} server:app"]

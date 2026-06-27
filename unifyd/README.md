@@ -123,7 +123,28 @@ the suite's own domain (chosen over Lambda so `server.py` runs as-is):
 
 Full runbook: suite `README.md` → "Stand it up (the runbook)".
 
-**Caveat — state is ephemeral in a container.** `agent_state/` (pulled datasets, run
-history) lives on the container's local disk, so it resets on redeploy. Fine to prove
-the path; the follow-on is persistence — back `load()`/`save()` in `server.py` with S3
-(or a small DB) so state survives. That's the next step after the first wire works.
+### State persistence
+
+`server.py` has a pluggable state store:
+
+- **Local disk (default).** Datasets + run history live in `./agent_state/`. Perfect
+  for local dev; on a container this disk is ephemeral, so pulled data resets on redeploy.
+- **S3 (durable).** Set `STATE_BUCKET` (and optionally `STATE_PREFIX`, default
+  `unifyd-state`) and `load()`/`save()` read/write `datasets.json` + `runs.json` to S3
+  instead. State then survives redeploys — on boot the agent loads it back from the bucket.
+
+To turn it on:
+
+```bash
+STATE_BUCKET=hoodie-suite-state ./scripts/provision-state.sh
+```
+
+That creates a private state bucket (separate from the website bucket — state is never
+web-served) and prints the env vars + the least-privilege IAM policy
+(`s3:GetObject`/`s3:PutObject` on the prefix) to attach to the service's instance role.
+
+Two notes: the container runs **one** gunicorn worker because state is held in-process;
+and keep the service at **min = max = 1 instance** (state is per-instance — fine for a
+single-user control plane). `boto3` is only imported when `STATE_BUCKET` is set, so local
+disk mode pulls in no AWS deps. The raw COLA CSV the scraper writes stays on local disk;
+the parsed datasets it produces are what persist to S3.
