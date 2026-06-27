@@ -34,6 +34,36 @@ STATE_PREFIX = os.environ.get("STATE_PREFIX", "unifyd-state").strip("/")
 
 app = Flask(__name__)
 
+# ---------------- hardening: optional auth + JSON errors ----------------
+# AGENT_TOKEN gates /api/* for non-browser callers (off by default — local dev and
+# browser apps behind the CloudFront password function are unaffected). /api/health
+# stays open so load-balancer / uptime probes work.
+AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "").strip()
+
+@app.before_request
+def _auth():
+    if not AGENT_TOKEN:
+        return
+    p = request.path
+    if p == "/api/health" or not p.startswith("/api/"):
+        return
+    if request.headers.get("Authorization", "") == "Bearer " + AGENT_TOKEN \
+       or request.headers.get("X-Agent-Token", "") == AGENT_TOKEN:
+        return
+    return jsonify(ok=False, error="unauthorized"), 401
+
+@app.errorhandler(404)
+def _e404(e): return jsonify(ok=False, error="not found"), 404
+@app.errorhandler(405)
+def _e405(e): return jsonify(ok=False, error="method not allowed"), 405
+@app.errorhandler(Exception)
+def _e500(e):
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return jsonify(ok=False, error=e.description), e.code
+    app.logger.exception("unhandled error")
+    return jsonify(ok=False, error="internal error"), 500
+
 # ---------------- persisted state (disk | S3) ----------------
 def _s3():
     import boto3                      # lazy — only imported when STATE_BUCKET is set
@@ -136,7 +166,9 @@ def cola_pull(params):
 # ---------------- API ----------------
 @app.get("/api/health")
 def health():
-    return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola"])
+    return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola"],
+                   datasets=len(DATASETS), runs=len(RUNS),
+                   state=("s3:" + STATE_BUCKET) if STATE_BUCKET else "disk")
 
 @app.get("/api/datasets")
 def datasets():

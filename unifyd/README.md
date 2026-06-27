@@ -148,3 +148,15 @@ and keep the service at **min = max = 1 instance** (state is per-instance — fi
 single-user control plane). `boto3` is only imported when `STATE_BUCKET` is set, so local
 disk mode pulls in no AWS deps. The raw COLA CSV the scraper writes stays on local disk;
 the parsed datasets it produces are what persist to S3.
+
+### API hardening
+
+- **Errors are JSON.** 404 / 405 / unhandled exceptions return `{"ok":false,"error":...}`
+  with the right status, so callers never get an HTML error page.
+- **`/api/health`** reports readiness: `ok`, `sources`, dataset/run counts, and the active
+  `state` backend (`disk` or `s3:<bucket>`). The suite shell probes it and shows an **api**
+  status dot in the top bar (lit when the backend answers).
+- **Optional token gate.** Set `AGENT_TOKEN` to require `Authorization: Bearer <token>`
+  (or `X-Agent-Token`) on every `/api/*` call except `/api/health`. Off by default — local
+  dev and browser apps behind the CloudFront password function are unaffected. Use it for
+  non-browser callers, or as defense-in-depth in front of the CloudFront gate.

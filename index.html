@@ -78,6 +78,10 @@
   /* spine-live indicator + broadcast feedback */
   .ctxbar .live{display:flex;align-items:center;gap:7px;font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--slate);font-weight:600;}
   .ctxbar .live .d{position:relative;width:7px;height:7px;background:var(--slate);border-radius:50%;}
+  .ctxbar .live.api{color:var(--ink-soft);opacity:.45;}
+  .ctxbar .live.api .d{background:var(--ink-soft);}
+  body.api-live .ctxbar .live.api{color:var(--slate);opacity:1;}
+  body.api-live .ctxbar .live.api .d{background:var(--slate);}
   .ctxbar .live.ping .d::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--slate);animation:ping .55s ease-out;}
   @keyframes ping{from{transform:scale(1);opacity:.55;}to{transform:scale(3.6);opacity:0;}}
   .ctxbar .sweep{position:absolute;left:0;bottom:-1px;height:2px;width:0;background:var(--amber-bright);opacity:0;pointer-events:none;}
@@ -217,6 +221,7 @@
   </div>
   <div class="seg right">
     <span class="live" id="live"><span class="d"></span><span>spine live</span></span>
+    <span class="live api" id="apilive" title="Backend /api status"><span class="d"></span><span>api</span></span>
   </div>
   <div class="sweep"></div>
 </div>
@@ -357,6 +362,9 @@
     .catch(()=>fetch('spine/hierarchy.sample.json').then(okJson))
     .then(h=>{ if(h){HIER=h;spine.setHierarchy(h);renderScope();} })
     .catch(()=>{});
+  /* backend health → reflect /api availability in the top bar */
+  fetch('/api/health').then(r=>r.ok?r.json():null)
+    .then(h=>{ document.body.classList.toggle('api-live', !!(h&&h.ok)); }).catch(()=>{});
   const U=HoodieSpine.util;
 
   /* ============ account ============ */
