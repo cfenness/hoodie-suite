@@ -1,0 +1,73 @@
+{
+  "id": "root",
+  "level": "root",
+  "name": "All Portfolios",
+  "children": [
+    {
+      "id": "pf-alpha", "level": "portfolio", "name": "House Alpha",
+      "children": [
+        {
+          "id": "bf-agave", "level": "brandFamily", "name": "Agave",
+          "children": [
+            {
+              "id": "br-silver-tequila", "level": "brand", "name": "Silver Tequila",
+              "children": [
+                {
+                  "id": "prf-blanco", "level": "productFamily", "name": "Blanco",
+                  "children": [
+                    { "id": "sku-blanco-750", "level": "sku", "name": "Blanco 750ml", "attrs": { "size_ml": 750, "abv": 40, "gtin": "00000000000017" } },
+                    { "id": "sku-blanco-1l", "level": "sku", "name": "Blanco 1L", "attrs": { "size_ml": 1000, "abv": 40, "gtin": "00000000000024" } }
+                  ]
+                },
+                {
+                  "id": "prf-reposado", "level": "productFamily", "name": "Reposado",
+                  "children": [
+                    { "id": "sku-repo-750", "level": "sku", "name": "Reposado 750ml", "attrs": { "size_ml": 750, "abv": 40, "gtin": "00000000000031" } }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "bf-rum", "level": "brandFamily", "name": "Rum",
+          "children": [
+            {
+              "id": "br-silver-rum", "level": "brand", "name": "Silver Rum",
+              "children": [
+                {
+                  "id": "prf-white", "level": "productFamily", "name": "White",
+                  "children": [
+                    { "id": "sku-white-750", "level": "sku", "name": "White 750ml", "attrs": { "size_ml": 750, "abv": 40, "gtin": "00000000000048" } },
+                    { "id": "sku-white-175", "level": "sku", "name": "White 1.75L", "attrs": { "size_ml": 1750, "abv": 40, "gtin": "00000000000055" } }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pf-beta", "level": "portfolio", "name": "House Beta",
+      "children": [
+        {
+          "id": "bf-cognac", "level": "brandFamily", "name": "Cognac & Brandy",
+          "children": [
+            {
+              "id": "br-vs-cognac", "level": "brand", "name": "VS Cognac",
+              "children": [
+                {
+                  "id": "prf-vs", "level": "productFamily", "name": "VS",
+                  "children": [
+                    { "id": "sku-vs-750", "level": "sku", "name": "VS 750ml", "attrs": { "size_ml": 750, "abv": 40, "gtin": "00000000000062" } }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

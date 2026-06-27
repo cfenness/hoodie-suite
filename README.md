@@ -243,7 +243,7 @@ Here's the shape it grows into:
   The `unifyd/` engine lives in the same repo and grows its own deploy step.
 
 - **Add `/api/*` without a second domain.** Run the `unifyd/` agent
-  (`/api/health`, `/api/datasets`, `/api/runs`, `/api/run`) as a **container**
+  (`/api/health`, `/api/datasets`, `/api/runs`, `/api/run`, `/api/hierarchy`) as a **container**
   (App Runner or Lightsail — chosen over Lambda to run `server.py` as-is, no
   rewrite), then add a **second CloudFront behavior**: path pattern `/api/*` → the
   container origin; everything else → S3. One domain, front *and* back, one TLS
