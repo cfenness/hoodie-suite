@@ -38,11 +38,13 @@ cat <<DONE
 
 Finish wiring it to the backend:
 
-1) On the App Runner service (or your container host), set environment variables:
+1) Set the env var on the ECS Express Mode service — in .github/workflows/deploy-api.yml
+   uncomment the environment-variables line and set:
        STATE_BUCKET   $STATE_BUCKET
        STATE_PREFIX   $STATE_PREFIX     (optional; this is the default)
 
-2) Give the service's INSTANCE ROLE this IAM policy (least privilege):
+2) Give the service's TASK ROLE this IAM policy (least privilege), and pass its ARN
+   as the task-role-arn in the workflow:
 {
   "Version": "2012-10-17",
   "Statement": [

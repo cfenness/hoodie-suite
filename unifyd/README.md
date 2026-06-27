@@ -110,16 +110,19 @@ view the agent serves. Keep them in sync if you change the control-plane UI.
 
 ## Deploying the agent as the `/api/*` backend
 
-The agent is packaged to run as a container behind a CloudFront `/api/*` behavior on
-the suite's own domain (chosen over Lambda so `server.py` runs as-is):
+The agent runs as a container behind a CloudFront `/api/*` behavior on the suite's own
+domain, on **Amazon ECS Express Mode** (App Runner's successor — App Runner stopped
+accepting new accounts in 2026). Chosen over Lambda so `server.py` runs as-is.
 
-- **`apprunner.yaml`** — App Runner *source* config. Connect the repo once (source
-  directory `unifyd`, auto-deploy), and it rebuilds on every push to `main`. No Docker,
-  no ECR. Lowest ceremony.
-- **`Dockerfile`** — the same agent as a portable image (gunicorn, `$PORT`) for
-  Lightsail / ECS / App Runner image mode / local `docker run`.
-- Then run the suite's `scripts/add-api-cloudfront-behavior.sh` to route `/api/*` to the
-  service. The MDM console goes live with no front-end change.
+- **`Dockerfile`** — the agent image (gunicorn, `$PORT`). Also runnable anywhere:
+  `docker build -t hoodie-unifyd . && docker run -p 8080:8080 hoodie-unifyd`.
+- **`../scripts/provision-ecs-express.sh`** — one-time: ECR repo + the two IAM roles
+  Express Mode needs; prints the GitHub Variables to set.
+- **`../.github/workflows/deploy-api.yml`** — builds the image → ECR → deploys via the
+  official `amazon-ecs-deploy-express-service` action (creates the service, then updates
+  it on every push to `main`). Gated on the `ECS_EXEC_ROLE_ARN` repo variable.
+- Then `../scripts/add-api-cloudfront-behavior.sh` routes `/api/*` to the service URL
+  (`hoodie-unifyd.ecs.<region>.on.aws`). The MDM console goes live with no front-end change.
 
 Full runbook: suite `README.md` → "Stand it up (the runbook)".
 

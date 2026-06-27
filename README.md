@@ -244,7 +244,7 @@ Here's the shape it grows into:
 
 - **Add `/api/*` without a second domain.** Run the `unifyd/` agent
   (`/api/health`, `/api/datasets`, `/api/runs`, `/api/run`, `/api/hierarchy`) as a **container**
-  (App Runner or Lightsail — chosen over Lambda to run `server.py` as-is, no
+  (Amazon ECS Express Mode — chosen over Lambda to run `server.py` as-is, no
   rewrite), then add a **second CloudFront behavior**: path pattern `/api/*` → the
   container origin; everything else → S3. One domain, front *and* back, one TLS
   cert, one auth gate. `apps/mdm.html` already speaks this contract.
@@ -263,37 +263,46 @@ behind `/api/*` so one app (the MDM console) reads live data instead of an embed
 
 ### Stand it up (the runbook)
 
-The container artifacts live in `unifyd/` (`Dockerfile`, `apprunner.yaml`). Two
-one-time setup steps, then it auto-deploys on push and the MDM console goes live with
-**no front-end change** (it already fetches `/api/*`, with embedded data as fallback).
+The agent ships as a container (`unifyd/Dockerfile`) deployed on **Amazon ECS Express
+Mode** (App Runner's successor — App Runner is closed to new accounts). GitHub Actions
+builds the image and Express Mode runs it; then `/api/*` points at it. The MDM console
+goes live with **no front-end change** (it already fetches `/api/*`, embedded fallback).
 
-**1 — Deploy the agent as a container.** Lowest-ceremony path (no Docker, no ECR):
-
-   - App Runner console → **Create service** → Source: this GitHub repo, branch `main`,
-     **Source directory `unifyd`**, deployment trigger **Automatic**. It reads
-     `unifyd/apprunner.yaml`, builds, and **re-deploys on every push to `main`**.
-   - Note the service URL it gives you, e.g. `xxxx.us-east-1.awsapprunner.com`, and
-     check `https://<service-url>/api/health`.
-   - Prefer a real image (Lightsail/ECS, or App Runner image mode)? Build `unifyd/Dockerfile`
-     instead — `docker build -t hoodie-unifyd unifyd/ && docker run -p 8080:8080 hoodie-unifyd`.
-
-**2 — Point `/api/*` at it** (one command — backs up the distribution config first):
+**1 — Provision ECR + the IAM roles** (one command):
 
    ```bash
-   API_ORIGIN_DOMAIN=xxxx.us-east-1.awsapprunner.com \
-   S3_BUCKET=hoodie-suite ./scripts/add-api-cloudfront-behavior.sh
+   AWS_REGION=us-east-1 ./scripts/provision-ecs-express.sh
+   ```
+
+   It creates the ECR repo + the two roles Express Mode needs and prints the GitHub
+   **Variables** to set (`ECS_EXEC_ROLE_ARN`, `ECS_INFRA_ROLE_ARN`, `ECR_REPOSITORY`,
+   `ECS_SERVICE_NAME`, `AWS_REGION`) alongside the `AWS_ACCESS_KEY_ID/SECRET` secrets.
+
+**2 — Set those Variables/secrets, then push** (or run the **Deploy Unifyd API** workflow
+manually). `.github/workflows/deploy-api.yml` builds `unifyd/Dockerfile`, pushes to ECR,
+and the official `amazon-ecs-deploy-express-service` action **creates the service on the
+first run and updates it on every push**. The run log prints the URL:
+`https://hoodie-unifyd.ecs.<region>.on.aws/` — check `/api/health` there.
+
+**3 — Point `/api/*` at it** (one command — backs up the distribution config first):
+
+   ```bash
+   API_ORIGIN_DOMAIN=hoodie-unifyd.ecs.us-east-1.on.aws \
+   S3_BUCKET=hoodie-suite-<unique> ./scripts/add-api-cloudfront-behavior.sh
    ```
 
    After it propagates (~5 min), `https://<your-domain>/api/health` answers and the MDM
    console flips from "preview" to live. Verify: `curl -s https://<your-domain>/api/health`.
 
-**3 — Make state durable** (so pulled data survives redeploys). On a container, local
+**4 — Make state durable** (so pulled data survives redeploys). On a container, local
 disk is ephemeral, so back the agent's state with S3:
 
    ```bash
    STATE_BUCKET=hoodie-suite-state ./scripts/provision-state.sh
    ```
 
-   Then set `STATE_BUCKET` in the service's env vars and attach the IAM policy it prints.
+   Then set `STATE_BUCKET` (and a task role with S3 access) on the service — uncomment the
+   `task-role-arn` + `environment-variables` lines in `.github/workflows/deploy-api.yml`
+   and add the matching repo variables. The IAM policy to attach is printed by the script.
    Without this the agent still runs — it just resets pulled data on each redeploy. Details
    + the single-worker / single-instance notes are in `unifyd/README.md` → "State persistence".
