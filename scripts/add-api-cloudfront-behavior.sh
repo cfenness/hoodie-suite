@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # add-api-cloudfront-behavior.sh — wire /api/* on the existing CloudFront distribution
-# to the deployed Unifyd backend (App Runner / Lightsail / any HTTPS origin). After this,
+# to the deployed Unifyd backend (ECS Express Mode / any HTTPS origin). After this,
 # the suite and its API share ONE domain: /api/* -> backend, everything else -> S3. The
 # apps already fetch /api/* (with embedded fallback), so the MDM console goes live with
 # zero front-end changes.
 #
-#   API_ORIGIN_DOMAIN=xxxx.us-east-1.awsapprunner.com \
-#   S3_BUCKET=hoodie-suite ./scripts/add-api-cloudfront-behavior.sh
+#   API_ORIGIN_DOMAIN=hoodie-unifyd.ecs.us-east-1.on.aws \
+#   S3_BUCKET=hoodie-suite-<unique> ./scripts/add-api-cloudfront-behavior.sh
 #
 # Requires: aws CLI, jq. SAFE-ish: it writes the current distribution config to a
 # timestamped backup before changing anything, is idempotent (re-run is a no-op), and
@@ -14,14 +14,14 @@
 # account here. Read it, and keep the backup it prints until you've verified.
 set -euo pipefail
 
-API_ORIGIN_DOMAIN="${API_ORIGIN_DOMAIN:?set API_ORIGIN_DOMAIN to the backend HTTPS host (no scheme), e.g. xxxx.us-east-1.awsapprunner.com}"
+API_ORIGIN_DOMAIN="${API_ORIGIN_DOMAIN:?set API_ORIGIN_DOMAIN to the backend HTTPS host (no scheme), e.g. hoodie-unifyd.ecs.us-east-1.on.aws}"
 S3_BUCKET="${S3_BUCKET:-hoodie-suite}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 ORIGIN_ID="unifyd-api"
 command -v jq >/dev/null || { echo "jq is required"; exit 1; }
 
 # Managed policies: CachingDisabled (don't cache API), AllViewerExceptHostHeader
-# (forward everything to a custom origin EXCEPT Host — forwarding Host breaks App Runner).
+# (forward everything to a custom origin EXCEPT Host — forwarding Host breaks the ALB origin).
 CACHE_POLICY_DISABLED="4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
 ORIGIN_REQ_ALLVIEWER_NOHOST="b689b0a8-53d0-40ab-baf2-68738e2966ac"
 
