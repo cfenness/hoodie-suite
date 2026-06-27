@@ -52,6 +52,27 @@ array near the top of `index.html`. That's the whole integration.
 
 ---
 
+## Develop locally (the fast loop)
+
+One command. No build, no deploy, no file shuffling — edit any HTML and refresh.
+
+```bash
+./dev.sh                 # serve the whole suite on http://localhost:8000
+                         # (also starts the Unifyd agent so /api/* is live, if its deps are installed)
+./dev.sh --no-api        # static only — apps use their embedded preview data
+```
+
+It serves on **one origin** with `/api/*` proxied to the agent — the same routing
+model as production (CloudFront sends `/api/*` to the backend, everything else to
+S3), so apps never need a per-environment URL switch. If the agent isn't running,
+`/api/*` falls back and apps show embedded data. First time, install the agent deps:
+`pip install -r unifyd/requirements.txt`.
+
+This is the loop for visual-feel iteration — you do **not** deploy to AWS to try a
+change. Deploy (below) is only for shipping.
+
+---
+
 ## A note before you start (read this)
 
 These apps include a CRM and a master-data console — proprietary JV IP, possibly
@@ -83,6 +104,20 @@ Keep the repo **private**.
 ---
 
 ## 2 · Create a private S3 bucket
+
+**One-command path** (does steps 2 + 3 + first deploy — private bucket, OAC,
+CloudFront distribution, bucket policy, and an initial sync; idempotent, safe to
+re-run). Needs `aws configure` done first:
+
+```bash
+S3_BUCKET=hoodie-suite AWS_REGION=us-east-1 ./scripts/aws-bootstrap.sh
+```
+
+It finishes by printing the live URL and the exact GitHub secrets to set for
+auto-deploy. Prefer to do it by hand / understand each piece? The manual steps
+follow.
+
+**Manual path:**
 
 ```bash
 aws s3api create-bucket \
