@@ -258,7 +258,7 @@
     {id:'ttb',name:'Hoodie Ingestion',desc:'COLA label pipeline · Unifyd engine',group:'Data Operations',status:'beta',file:'apps/ttb-ingestion.html',mark:'HG'},
     {id:'mdm',name:'Hoodie Master',desc:'Master-data control plane · Unifyd engine (live /api · offline fallback)',group:'Data Operations',status:'beta',file:'apps/mdm.html',mark:'HM'},
     {id:'training',name:'The Bench',desc:'Training suite · tasting, catman, perceptual & representation science, and sales',group:'Learning',status:'internal',file:'apps/training-suite.html',mark:'TB'},
-    {id:'sales-tutorial',name:'The Long Game',desc:'Sales · complex & consultative — the motion behind the CRM scorecard',group:'Learning',status:'internal',file:'apps/sales-tutorial.html',mark:'LG'},
+    {id:'sales-tutorial',name:'The Long Game',desc:'Sales · complex & consultative — the motion behind the CRM scorecard',group:'Learning',status:'internal',file:'apps/sales-tutorial.html',mark:'LG',parent:'training'},
     {id:'roadmap',name:'Product Roadmap',desc:'What is shipping & when',group:'Internal',status:'internal',file:'apps/roadmap.html',mark:'RM'},
     {id:'kb',name:'Principles & Architecture',desc:'The thinking behind the platform',group:'Internal',status:'internal',file:'apps/principles-hub.html',mark:'PA'},
     {id:'spinedemo',name:'Spine Adapter',desc:'Reference · how apps join the spine',group:'Platform',status:'internal',file:'apps/spine-adapter.html',mark:'SP'}
@@ -295,7 +295,8 @@
   /* sidebar */
   const navlist=document.getElementById('navlist');
   GROUPS.forEach(g=>{
-    const apps=APPS.filter(a=>a.group===g);if(!apps.length)return;
+    /* child surfaces (e.g. The Long Game) live inside their parent app's page — not the side nav */
+    const apps=APPS.filter(a=>a.group===g&&!a.parent);if(!apps.length)return;
     const lab=document.createElement('div');lab.className='grp';lab.textContent=g;navlist.appendChild(lab);
     apps.forEach(a=>{
       const el=document.createElement('div');el.className='item '+a.status;el.dataset.id=a.id;
