@@ -4,22 +4,31 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <link rel="stylesheet" href="../suite.css">
-<title>Hoodie Relations — Industry Associations</title>
+<title>Hoodie Relations — Deal Qualification</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
- /* chrome — remapped to the suite token contract (../suite.css); retires the Salesforce blue */
+ /* self-contained fallbacks so the app renders correctly standalone AND under ../suite.css */
+ --paper:#EEEDE8; --ink:#1B1A17; --ink-soft:#5A564E; --hair:#C9C5BA;
+ --amber:#B07012; --amber-deep:#6E450A; --slate:#2F4D49;
+ /* chrome remapped onto the suite token contract */
  --brand:var(--amber); --brand-dark:var(--amber-deep); --brand-deep:var(--amber-deep); --link:var(--amber-deep);
- --bg:var(--paper); --panel:#FBFAF7; --line:var(--hair); --line2:#E9E5DA; --ink:#1B1A17; --label:var(--ink-soft);
+ --bg:var(--paper); --panel:#FBFAF7; --line:var(--hair); --line2:#E9E5DA; --label:var(--ink-soft);
  --muted:var(--ink-soft); --faint:#8A8377; --hover:#F4EFE4;
- /* data-semantic colors — UNCHANGED (tier badges, pipeline) */
+ /* tier semantics (unchanged) */
  --green:#2e844a; --green-bg:#ebf7ee; --orange:#a86403; --orange-bg:#fef6e6;
  --purple:#5867e8; --purple-bg:#eef0fd; --teal:#06a59a; --teal-bg:#e3f7f5; --blue-bg:#eaf5fe;
+ /* qualification semantics — the loud blanks */
+ --q-solid:#0a6b2f; --q-solid-bg:#e9f6ee; --q-weak:#9a6700; --q-weak-bg:#fdf3df;
+ --q-unknown:#b3261e; --q-unknown-bg:#fbe7e6;
  --radius:3px; --shadow:0 1px 2px rgba(40,30,20,.06);
+ --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-display),-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
 a{color:var(--link);text-decoration:none;cursor:pointer}a:hover{text-decoration:underline}
 button{font-family:inherit;cursor:pointer}
+.mono{font-family:var(--mono)}
 /* global header */
 .gheader{display:flex;align-items:center;gap:14px;background:#fff;border-bottom:1px solid var(--line);padding:8px 14px;position:sticky;top:0;z-index:30}
 .applauncher{display:grid;grid-template-columns:repeat(3,4px);grid-auto-rows:4px;gap:2px;padding:9px;border-radius:var(--radius);cursor:pointer}
@@ -27,41 +36,38 @@ button{font-family:inherit;cursor:pointer}
 .applauncher:hover{background:#f3f2f2}
 .appname{font-weight:700;font-size:15px;color:#080707;letter-spacing:-.01em}
 .appname b{color:var(--brand)}
-.gsearch{flex:1;max-width:560px;margin:0 auto}
+.gsearch{flex:1;max-width:520px;margin:0 auto}
 .gsearch input{width:100%;border:1px solid #c9c7c5;border-radius:15px;padding:7px 14px;font-size:13px;background:#fff}
 .gsearch input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 3px var(--brand)}
 .gutils{display:flex;align-items:center;gap:6px;margin-left:auto}
 .gicon{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:#706e6b;font-size:15px}
 .gicon:hover{background:#f3f2f2}
 .avatar{width:30px;height:30px;border-radius:50%;background:var(--brand);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px}
-/* nav tabs */
-.nav{background:#fff;border-bottom:1px solid var(--line);padding:0 14px;display:flex;align-items:stretch;gap:2px;position:sticky;top:49px;z-index:29}
-.nav .tab{padding:11px 16px 9px;font-size:13px;font-weight:600;color:#3e3e3c;border-bottom:3px solid transparent;background:none;border-top:0;border-left:0;border-right:0}
-.nav .tab:hover{background:#f3f9ff;color:var(--brand)}
+/* nav */
+.nav{background:#fff;border-bottom:1px solid var(--line);padding:0 14px;display:flex;gap:2px;position:sticky;top:49px;z-index:29}
+.nav .tab{padding:11px 16px 9px;font-size:13px;font-weight:600;color:#3e3e3c;border:0;border-bottom:3px solid transparent;background:none}
+.nav .tab:hover{background:var(--hover);color:var(--brand)}
 .nav .tab.on{color:var(--brand);border-bottom-color:var(--brand)}
-/* page */
-.page{padding:14px}
+.page{padding:14px;max-width:1180px;margin:0 auto}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
-/* list view header */
+/* list header */
 .lvhead{display:flex;align-items:center;gap:12px;padding:10px 14px}
-.lvicon{width:34px;height:34px;border-radius:var(--radius);background:#f7a000;display:grid;place-items:center;color:#fff;font-size:17px;flex:none}
-.lvtitles .k{font-size:11px;color:var(--muted);font-weight:400}
+.lvicon{width:34px;height:34px;border-radius:var(--radius);background:var(--brand);display:grid;place-items:center;color:#fff;font-size:16px;flex:none}
+.lvtitles .k{font-size:11px;color:var(--muted)}
 .lvtitles .v{display:flex;align-items:center;gap:6px;font-size:18px;font-weight:700;color:#080707}
-.lvtitles .v .caret{font-size:11px;color:var(--muted)}
 .lvactions{margin-left:auto;display:flex;gap:8px}
 .btn{border:1px solid var(--line);background:#fff;color:var(--brand-deep);border-radius:var(--radius);padding:6px 13px;font-weight:600;font-size:13px}
-.btn:hover{background:#f4f6f9}
+.btn:hover{background:var(--hover)}
 .btn.brand{background:var(--brand);border-color:var(--brand);color:#fff}
 .btn.brand:hover{background:var(--brand-dark)}
 .lvmeta{padding:0 14px 8px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
 /* table */
 table{width:100%;border-collapse:collapse}
 thead th{text-align:left;font-size:12px;color:#514f4d;font-weight:700;padding:8px 12px;border-bottom:1px solid var(--line);background:#fafaf9;white-space:nowrap}
-thead th:hover{background:#f3f2f2;cursor:pointer}
 tbody td{padding:9px 12px;border-bottom:1px solid var(--line2);vertical-align:middle}
-tbody tr:hover{background:var(--hover)}
+tbody tr:hover{background:var(--hover);cursor:pointer}
 .rowname{display:flex;align-items:center;gap:9px}
-.recicon{width:24px;height:24px;border-radius:var(--radius);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;flex:none}
+.recicon{width:24px;height:24px;border-radius:var(--radius);display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700;flex:none}
 .lnk{font-weight:600}
 .chk{width:14px;height:14px;accent-color:var(--brand)}
 /* badges */
@@ -73,111 +79,157 @@ tbody tr:hover{background:var(--hover)}
 .tier-Policy{background:var(--purple-bg);color:#3a40b0}.tier-Policy .dot{background:#5867e8}
 .tier-Adjacency{background:var(--teal-bg);color:#066} .tier-Adjacency .dot{background:#06a59a}
 .stagepill{font-size:11.5px;font-weight:600;color:var(--brand)}
+/* qual score chip (compact, for lists) */
+.qchip{font-family:var(--mono);font-size:11px;font-weight:700;border-radius:10px;padding:2px 8px;white-space:nowrap;display:inline-flex;gap:5px;align-items:center}
+.qbar{height:5px;border-radius:3px;background:#e6e2d8;overflow:hidden;width:62px;display:inline-block;vertical-align:middle}
+.qbar > i{display:block;height:100%;border-radius:3px}
+.q-strong{background:var(--q-solid-bg);color:var(--q-solid)}
+.q-mid{background:var(--q-weak-bg);color:var(--q-weak)}
+.q-thin{background:var(--q-unknown-bg);color:var(--q-unknown)}
 /* record page */
 .crumb{font-size:12px;color:var(--muted);margin-bottom:8px}
-.crumb a{color:var(--link)}
-.highlights{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line)}
-.hl-icon{width:44px;height:44px;border-radius:var(--radius);display:grid;place-items:center;color:#fff;font-size:20px;font-weight:700;flex:none}
+.highlights{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.hl-icon{width:44px;height:44px;border-radius:var(--radius);display:grid;place-items:center;color:#fff;font-size:18px;font-weight:700;flex:none}
 .hl-main .k{font-size:11px;color:var(--muted)}
 .hl-main .v{font-size:20px;font-weight:700;color:#080707;letter-spacing:-.01em}
-.hl-fields{display:flex;gap:30px;margin-left:30px;flex-wrap:wrap}
-.hl-f .k{font-size:11px;color:var(--muted)}
-.hl-f .v{font-size:13px;font-weight:600}
-.hl-actions{margin-left:auto;display:flex;gap:8px}
+.hl-spacer{flex:1}
+.hl-actions{display:flex;gap:8px}
+/* qual ring in highlight */
+.qring{display:flex;align-items:center;gap:11px;border:1px solid var(--line);border-radius:var(--radius);padding:8px 14px;background:#fff}
+.qring .num{font-family:var(--mono);font-size:24px;font-weight:700;line-height:1}
+.qring .lab{font-size:10.5px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.qring .weak{font-size:12px;font-weight:600;margin-top:2px}
 /* path */
 .path{display:flex;padding:14px 18px;gap:0;overflow-x:auto;border-bottom:1px solid var(--line);background:#fbfbfb}
-.pstage{position:relative;flex:1;min-width:118px;height:34px;background:#ecebea;color:#514f4d;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%,14px 50%);margin-right:3px;cursor:pointer;white-space:nowrap;padding:0 6px}
+.pstage{position:relative;flex:1;min-width:120px;height:34px;background:#ecebea;color:#514f4d;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%,14px 50%);margin-right:3px;cursor:pointer;white-space:nowrap;padding:0 6px}
 .pstage:first-child{clip-path:polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%)}
-.pstage.done{background:#c5d9ed;color:#04386b}
+.pstage.done{background:#cfe0d3;color:#0a5230}
 .pstage.cur{background:var(--brand);color:#fff}
 .pstage:hover{filter:brightness(.97)}
-/* record body */
-.rbody{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;padding:14px 18px}
-@media(max-width:820px){.rbody{grid-template-columns:1fr}}
+/* body grid */
+.rbody{display:grid;grid-template-columns:1.32fr 1fr;gap:14px;padding:14px 18px}
+@media(max-width:860px){.rbody{grid-template-columns:1fr}}
 .sect{margin-bottom:16px}
-.sect h3{font-size:13px;font-weight:700;color:#080707;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line2)}
-.frow{display:grid;grid-template-columns:140px 1fr;gap:8px;padding:6px 0;font-size:13px}
-.frow .fk{color:var(--muted);font-size:12px}
-.frow .fv{font-weight:500}
-.contact-card{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:8px}
-.contact-card .av{width:30px;height:30px;border-radius:50%;background:#5867e8;color:#fff;display:grid;place-items:center;font-weight:700;font-size:11px;flex:none}
+.sect h3{font-size:12px;font-weight:700;color:#080707;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line2);letter-spacing:.02em;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+.sect h3 .sub{font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11.5px}
+/* the gap (Gap Selling spine) */
+.gap{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+@media(max-width:560px){.gap{grid-template-columns:1fr}}
+.gap > div{padding:11px 13px;border-right:1px solid var(--line2)}
+.gap > div:last-child{border-right:0}
+.gap .gk{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.gap .gv{font-size:12.5px;line-height:1.4}
+.gap .cost{background:#fffaf2}
+.gap .cost .gk{color:var(--amber-deep)}
+.gap .future{background:#f3f8f4}
+.gap .empty{color:var(--q-unknown);font-style:italic;font-weight:500}
+.gap-edit{margin-top:8px}
+.gap-warn{font-size:12px;color:var(--q-unknown);background:var(--q-unknown-bg);border-left:3px solid var(--q-unknown);padding:7px 11px;margin-top:9px;border-radius:0 2px 2px 0}
+/* MEDDPICC scorecard — the signature */
+.scorehead{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.scorehead .big{font-family:var(--mono);font-weight:700;font-size:15px}
+.medd{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.medd-row{display:grid;grid-template-columns:96px 1fr;gap:0;border-bottom:1px solid var(--line2);background:#fff}
+.medd-row:last-child{border-bottom:0}
+.medd-row:hover{background:var(--hover)}
+.medd-status{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:9px 6px;border-right:1px solid var(--line2);cursor:pointer;user-select:none;text-align:center}
+.medd-status .pill{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:10px;padding:2px 8px;white-space:nowrap}
+.st-unknown{background:var(--q-unknown-bg);color:var(--q-unknown)}
+.st-weak{background:var(--q-weak-bg);color:var(--q-weak)}
+.st-solid{background:var(--q-solid-bg);color:var(--q-solid)}
+.medd-status .cyc{font-size:9px;color:var(--faint);font-family:var(--mono)}
+.medd-body{padding:8px 12px;cursor:pointer}
+.medd-body .mk{font-weight:700;font-size:12.5px;display:flex;align-items:baseline;gap:8px}
+.medd-body .mk .letter{font-family:var(--mono);color:var(--amber);font-weight:700}
+.medd-body .hint{font-size:11px;color:var(--faint);font-weight:400}
+.medd-body .note{font-size:12.5px;color:var(--ink-soft);margin-top:3px;line-height:1.4}
+.medd-body .note.blank{color:var(--q-unknown);font-style:italic}
+.medd.unknown-flag .st-unknown{box-shadow:inset 3px 0 0 var(--q-unknown)}
+/* coach line */
+.coach{font-size:12.5px;line-height:1.5;background:#fff;border:1px solid var(--line);border-left:3px solid var(--slate);border-radius:0 2px 2px 0;padding:10px 13px;margin-top:10px}
+.coach .ct{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--slate);font-weight:700;margin-bottom:5px}
+.coach ul{margin:0;padding-left:16px}
+.coach li{margin:3px 0}
+/* committee / multithread */
+.contact-card{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:8px;background:#fff;cursor:pointer}
+.contact-card:hover{background:var(--hover)}
+.contact-card .av{width:30px;height:30px;border-radius:50%;background:var(--slate);color:#fff;display:grid;place-items:center;font-weight:700;font-size:11px;flex:none}
 .contact-card .nm{font-weight:600}.contact-card .ti{font-size:12px;color:var(--muted)}
 .contact-card .meta{margin-left:auto;text-align:right;font-size:12px;color:var(--muted)}
+.rolepill{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-radius:9px;padding:2px 8px;white-space:nowrap}
+.role-Champion{background:var(--q-solid-bg);color:var(--q-solid)}
+.role-Economic{background:#eef0fd;color:#3a40b0}
+.role-Decision{background:var(--blue-bg);color:#04518c}
+.role-Influencer{background:#f0eee9;color:#5b5347}
+.role-Coach{background:var(--teal-bg);color:#066}
+.role-Blocker{background:var(--q-unknown-bg);color:var(--q-unknown)}
+.thread-warn{font-size:12px;color:var(--q-weak);background:var(--q-weak-bg);border-left:3px solid var(--q-weak);padding:7px 11px;border-radius:0 2px 2px 0;margin-bottom:9px}
 .placeholder{color:#a09e9c;font-style:italic}
-.notes{width:100%;min-height:90px;border:1px solid #c9c7c5;border-radius:var(--radius);padding:9px;font-family:inherit;font-size:13px;resize:vertical}
-.activity{font-size:12.5px;color:var(--muted);padding:8px 0;border-bottom:1px solid var(--line2)}
+.notes{width:100%;min-height:80px;border:1px solid #c9c7c5;border-radius:var(--radius);padding:9px;font-family:inherit;font-size:13px;resize:vertical}
+.frow{display:grid;grid-template-columns:130px 1fr;gap:8px;padding:5px 0;font-size:13px}
+.frow .fk{color:var(--muted);font-size:12px}.frow .fv{font-weight:500}
+.na-box{border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;margin-bottom:9px;background:#fff}
+.na-box.live{border-color:#f0c46a;background:#fffdf7}
+.na-box.wait{border-color:#b9c8ef;background:#f7f9ff}
+.na-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.na-row .lbl{font-size:12px;color:var(--muted)}.na-row .val{font-weight:600;font-size:13px}
+.mini{border:1px solid #c9c7c5;background:#fff;color:#3e3e3c;border-radius:4px;padding:4px 9px;font-size:11.5px;font-weight:600;font-family:inherit}
+.mini:hover{background:var(--hover)}
+.mini.good:hover{background:var(--q-solid-bg);color:var(--q-solid);border-color:#9ed3b0}
+.chip{font-size:11px;font-weight:700;border-radius:10px;padding:2px 9px;white-space:nowrap}
+.chip.over{background:var(--q-unknown-bg);color:var(--q-unknown)}
+.chip.due{background:var(--q-weak-bg);color:var(--q-weak)}
+.chip.wait{background:#e8eefc;color:#2c4ea8}
+/* ===== Home command center ===== */
+.home-h{display:flex;align-items:baseline;gap:12px;margin:2px 2px 8px}
+.home-h .t{font-size:20px;font-weight:700;color:#080707;letter-spacing:-.01em}
+.home-h .s{font-size:12.5px;color:var(--muted)}
+.rail{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:16px}
+.rail-h{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line);background:#fff}
+.rail-h .ti{font-weight:700;font-size:14px}
+.rail-h .ct{color:#fff;font-size:11px;font-weight:800;border-radius:10px;padding:1px 8px;background:#c23934}
+.rail-h .ct.zero{background:#2e844a}
+.rail-h .ct.risk{background:var(--amber-deep)}
+.rail-h .s{margin-left:auto;font-size:12px;color:var(--muted)}
+.rail-row{display:grid;grid-template-columns:32px 1fr auto auto;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line2);cursor:pointer}
+.rail-row:last-child{border-bottom:0}.rail-row:hover{background:var(--hover)}
+.rail-ic{width:30px;height:30px;border-radius:var(--radius);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700}
+.rail-main .nm{font-weight:600;font-size:13.5px}
+.rail-main .sub{font-size:12px;color:var(--muted)}
+.why{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.rail-act{display:flex;gap:6px}
+.rail-empty{padding:20px 16px;text-align:center;color:#7a9a82;font-size:13px}
+.miniboard{display:flex;gap:10px;overflow-x:auto;padding:2px}
+.mbcol{flex:0 0 176px;background:#ecebea;border-radius:var(--radius);padding:0 0 8px}
+.mbcol-h{padding:8px 11px;font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#514f4d;display:flex;justify-content:space-between}
+.mbcard{background:#fff;border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:4px;margin:0 7px 7px;padding:7px 9px;cursor:pointer}
+.mbcard:hover{background:var(--hover)}
+.mbcard .nm{font-weight:600;font-size:12px}
+.mbcard .fl{margin-top:5px;display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted)}
 /* kanban */
 .kanban{display:flex;gap:12px;overflow-x:auto;padding:14px}
-.kcol{flex:0 0 240px;background:#ecebea;border-radius:var(--radius)}
-.kcol-h{padding:9px 12px;font-size:12px;font-weight:700;color:#514f4d;text-transform:uppercase;letter-spacing:.03em;display:flex;justify-content:space-between}
+.kcol{flex:0 0 230px;background:#ecebea;border-radius:var(--radius)}
+.kcol-h{padding:9px 12px;font-size:11px;font-weight:700;color:#514f4d;text-transform:uppercase;letter-spacing:.03em;display:flex;justify-content:space-between}
 .kcol-h .n{color:var(--muted);font-weight:600}
 .kbody{padding:0 8px 10px;display:flex;flex-direction:column;gap:8px;min-height:40px}
 .kcard{background:#fff;border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:var(--radius);padding:9px 11px;box-shadow:var(--shadow);cursor:grab}
 .kcard:active{cursor:grabbing}.kcard.drag{opacity:.4}
-.kcard .nm{font-weight:600;font-size:13px;margin-bottom:5px}
-.kph{height:3px;background:var(--brand);border-radius:2px;margin:2px}
+.kcard .nm{font-weight:600;font-size:13px;margin-bottom:6px}
+.kcard .kq{display:flex;align-items:center;gap:6px;margin-top:6px}
 /* modal */
-.scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;z-index:50}
-.scrim.on{display:block}
-.modal{position:fixed;z-index:51;top:50%;left:50%;transform:translate(-50%,-50%);width:min(540px,94vw);background:#fff;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.3);display:none;overflow:hidden}
-.modal.on{display:block}
-.modal-h{background:var(--brand);color:#fff;padding:13px 18px;font-weight:700;font-size:16px;display:flex;align-items:center;justify-content:space-between}
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;z-index:50}.scrim.on{display:block}
+.modal{position:fixed;z-index:51;top:50%;left:50%;transform:translate(-50%,-50%);width:min(560px,94vw);background:#fff;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.3);display:none;overflow:hidden}.modal.on{display:block}
+.modal-h{background:var(--brand);color:#fff;padding:13px 18px;font-weight:700;font-size:16px;display:flex;justify-content:space-between}
 .modal-h .x{cursor:pointer;font-size:18px;opacity:.9}
 .modal-b{padding:16px 18px;max-height:70vh;overflow:auto}
 .field{margin-bottom:12px}
 .field label{display:block;font-size:12px;color:var(--label);font-weight:600;margin-bottom:4px}
 .field input,.field select,.field textarea{width:100%;border:1px solid #c9c7c5;border-radius:var(--radius);padding:7px 10px;font-family:inherit;font-size:13px}
+.field textarea{min-height:64px;resize:vertical}
 .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 3px var(--brand)}
+.field .help{font-size:11px;color:var(--faint);margin-top:3px}
 .modal-f{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;background:#fafaf9}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#181818;color:#fff;padding:10px 18px;border-radius:var(--radius);font-size:13px;font-weight:600;opacity:0;transition:.25s;z-index:60;pointer-events:none}
-.toast.on{opacity:1}
-.hidden{display:none}
-/* ===== Home command center ===== */
-.home-wrap{display:grid;grid-template-columns:1fr;gap:16px}
-.home-h{display:flex;align-items:baseline;gap:12px;margin:2px 2px 0}
-.home-h .t{font-size:20px;font-weight:700;color:#080707;letter-spacing:-.01em}
-.home-h .s{font-size:12.5px;color:var(--muted)}
-.rail{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
-.rail-h{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line);background:#fff}
-.rail-h .ti{font-weight:700;font-size:14px}
-.rail-h .ct{background:#c23934;color:#fff;font-size:11px;font-weight:800;border-radius:10px;padding:1px 8px}
-.rail-h .ct.zero{background:#2e844a}
-.rail-row{display:grid;grid-template-columns:32px 1fr auto auto;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line2);cursor:pointer}
-.rail-row:last-child{border-bottom:0}
-.rail-row:hover{background:var(--hover)}
-.rail-ic{width:30px;height:30px;border-radius:var(--radius);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700}
-.rail-main .nm{font-weight:600;font-size:13.5px}
-.rail-main .sub{font-size:12px;color:var(--muted)}
-.why{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-.why .chip{font-size:11px;font-weight:700;border-radius:10px;padding:2px 9px;white-space:nowrap}
-.chip.over{background:#fce8e6;color:#b3261e}
-.chip.due{background:#fef6e6;color:#9a6700}
-.chip.wait{background:#e8eefc;color:#2c4ea8}
-.rail-act{display:flex;gap:6px}
-.mini{border:1px solid #c9c7c5;background:#fff;color:#3e3e3c;border-radius:4px;padding:4px 9px;font-size:11.5px;font-weight:600;font-family:inherit}
-.mini:hover{background:#f4f6f9}
-.mini.good:hover{background:#ebf7ee;color:#0a6b2f;border-color:#9ed3b0}
-.rail-empty{padding:22px 16px;text-align:center;color:#7a9a82;font-size:13px}
-/* board backdrop */
-.board-h{display:flex;align-items:center;gap:10px;margin:2px 2px 0}
-.board-h .t{font-weight:700;font-size:14px}
-.board-h .s{font-size:12px;color:var(--muted)}
-.miniboard{display:flex;gap:10px;overflow-x:auto;padding:2px}
-.mbcol{flex:0 0 168px;background:#ecebea;border-radius:var(--radius);padding:0 0 8px}
-.mbcol-h{padding:8px 11px;font-size:10.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#514f4d;display:flex;justify-content:space-between}
-.mbcard{background:#fff;border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:4px;margin:0 7px 7px;padding:7px 9px;cursor:pointer}
-.mbcard:hover{background:var(--hover)}
-.mbcard .nm{font-weight:600;font-size:12px;display:flex;align-items:center;gap:6px}
-.mbcard .fl{margin-top:5px;display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted)}
-.flowdot{width:8px;height:8px;border-radius:50%;flex:none}
-.flow-yes{background:#2e844a}.flow-part{background:#dd7a01}.flow-no{background:#c9c7c5}
-/* record: next-action block */
-.na-box{border:1px solid var(--line);border-radius:var(--radius);padding:11px 12px;margin-bottom:10px}
-.na-box.live{border-color:#f0c46a;background:#fffdf7}
-.na-box.wait{border-color:#b9c8ef;background:#f7f9ff}
-.na-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.na-row .lbl{font-size:12px;color:var(--muted)}
-.na-row .val{font-weight:600;font-size:13px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#181818;color:#fff;padding:10px 18px;border-radius:var(--radius);font-size:13px;font-weight:600;opacity:0;transition:.25s;z-index:60;pointer-events:none}.toast.on{opacity:1}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -185,7 +237,7 @@ tbody tr:hover{background:var(--hover)}
 <div class="gheader">
   <div class="applauncher" title="App Launcher"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
   <div class="appname">Hoodie <b>Relations</b></div>
-  <div class="gsearch"><input id="search" placeholder="Search Accounts and Contacts..."/></div>
+  <div class="gsearch"><input id="search" placeholder="Search accounts and people..."/></div>
   <div class="gutils">
     <div class="gicon" title="Setup">⚙</div><div class="gicon" title="Help">?</div><div class="gicon" title="Notifications">🔔</div>
     <div class="avatar" title="Chris Fennessey">CF</div>
@@ -195,7 +247,7 @@ tbody tr:hover{background:var(--hover)}
   <button class="tab on" data-tab="home">Home</button>
   <button class="tab" data-tab="accounts">Accounts</button>
   <button class="tab" data-tab="pipeline">Pipeline</button>
-  <button class="tab" data-tab="contacts">Contacts</button>
+  <button class="tab" data-tab="contacts">People</button>
 </div>
 <div class="page" id="page"></div>
 
@@ -208,380 +260,508 @@ tbody tr:hover{background:var(--hover)}
 <div class="toast" id="toast"></div>
 
 <script>
-const STAGES=["Identified","Outreach","Intro Meeting","Data Scoping","Agreement / MOU","Data Flowing","Live in Workbook"];
+/* ============================================================
+   STAGES — a real complex-sale motion, not a data-onboarding
+   checklist. Each stage is a qualification gate.
+   ============================================================ */
+const STAGES=["Identified","Discovery","Pain Validated","Champion + EB","Eval / Proof","Paper Process","Closed — Data Flowing"];
+/* the qualification each stage is SUPPOSED to have cleared by now (for risk detection) */
+const STAGE_EXPECTS={
+ "Identified":[],
+ "Discovery":["pain"],
+ "Pain Validated":["pain","metrics"],
+ "Champion + EB":["pain","metrics","champion","economicBuyer"],
+ "Eval / Proof":["pain","metrics","champion","economicBuyer","decisionCriteria","competition"],
+ "Paper Process":["pain","metrics","champion","economicBuyer","decisionCriteria","competition","decisionProcess","paperProcess"],
+ "Closed — Data Flowing":["pain","metrics","champion","economicBuyer","decisionCriteria","competition","decisionProcess","paperProcess"]
+};
 const TIER_ICON_COLOR={Supplier:"#0176d3",Wholesale:"#2e844a",Retail:"#dd7a01",Policy:"#5867e8",Adjacency:"#06a59a"};
-const persists=!!(window.storage&&window.storage.get);
-const KEY="hoodie-crm-v1";
+const ROLES=["Champion","Economic Buyer","Decision-maker","Influencer","Coach","Blocker"];
+function roleClass(r){return ({"Champion":"Champion","Economic Buyer":"Economic","Decision-maker":"Decision","Influencer":"Influencer","Coach":"Coach","Blocker":"Blocker"})[r]||"Influencer";}
 
+/* The eight MEDDPICC elements: letter, key, label, "what good looks like" */
+const MEDD=[
+ {l:"M",  k:"metrics",         t:"Metrics",          h:"the quantified business outcome — in their numbers, not yours"},
+ {l:"E",  k:"economicBuyer",   t:"Economic Buyer",   h:"who controls the budget and can say yes alone — have you met them?"},
+ {l:"D",  k:"decisionCriteria",t:"Decision Criteria",h:"the checklist they'll actually score you on (and who wrote it)"},
+ {l:"D",  k:"decisionProcess", t:"Decision Process", h:"the steps, owners, and dates from now to signature"},
+ {l:"P",  k:"paperProcess",    t:"Paper Process",    h:"procurement, security review, legal, data-use terms — the path after 'yes'"},
+ {l:"I",  k:"pain",            t:"Identify Pain",    h:"the problem they've normalized, made felt and urgent"},
+ {l:"C",  k:"champion",        t:"Champion",         h:"sells for you when you're not in the room — and has power"},
+ {l:"C",  k:"competition",     t:"Competition",      h:"including 'do nothing' — usually the one that actually beats you"}
+];
+const MEDD_BY_KEY={};MEDD.forEach(m=>MEDD_BY_KEY[m.k]=m);
+const STATUS_NEXT={unknown:"weak",weak:"solid",solid:"unknown"};
+const STATUS_SCORE={unknown:0,weak:1,solid:2};
+
+const persists=!!(window.storage&&window.storage.get);
+const KEY="hoodie-crm-v2";
+
+/* ---- seed ---- */
+function blankMedd(){const o={};MEDD.forEach(m=>o[m.k]={status:"unknown",note:""});return o;}
 function seed(){
  const A=(name,abbr,tier,type,focus,hq,web,stage,targetRole,notes="")=>(
-   {id:abbr.toLowerCase().replace(/[^a-z0-9]/g,''),name,abbr,tier,type,focus,hq,web,stage,owner:"Chris Fennessey",targetRole,notes,contacts:[]});
+   {id:abbr.toLowerCase().replace(/[^a-z0-9]/g,''),name,abbr,tier,type,focus,hq,web,stage,owner:"Chris Fennessey",
+    targetRole,notes,contacts:[],meddpicc:blankMedd(),gap:{current:"",cost:"",future:""}});
  return {accounts:[
-  // ---- Wholesale / distribution tier (the WSWA model) ----
-  A("Wine & Spirits Wholesalers of America","WSWA","Wholesale","Distributor association","Wine & Spirits","Washington, DC","wswa.org","Data Flowing","SVP Research / SipSource data lead","Existing SipSource reseller arrangement — anchor relationship."),
-  A("National Alcohol Beverage Control Association","NABCA","Wholesale","Control-state association","Spirits","Arlington, VA","nabca.org","Data Scoping","COO / SVP Trade Relations + Data Chief","Discussing master-data + sales-data license vs. partnership. Control states ~25% of spirits."),
+  // ---- Wholesale / distribution tier ----
+  A("Wine & Spirits Wholesalers of America","WSWA","Wholesale","Distributor association","Wine & Spirits","Washington, DC","wswa.org","Champion + EB","SVP Research / SipSource data lead","Existing SipSource reseller arrangement — anchor relationship. Reframe deck walks Wes toward the conclusion rather than asserting it."),
+  A("Republic National Distributing Co.","RNDC","Wholesale","Distributor (No. 2 US)","Wine & Spirits","Atlanta, GA","rndc-usa.com","Pain Validated","VP Data / Master Data owner","Unifyd MDM deal (~$1.5–2M). The item master is fractured region-to-region."),
+  A("National Alcohol Beverage Control Association","NABCA","Wholesale","Control-state association","Spirits","Arlington, VA","nabca.org","Discovery","COO / SVP Trade Relations + Data Chief","Master-data + sales-data license vs. partnership. Control states ~25% of spirits."),
   A("National Association of Wholesaler-Distributors","NAW","Wholesale","Wholesale (cross-industry)","Multi","Washington, DC","naw.org","Identified","VP, Research"),
-  A("National Conference of State Liquor Administrators","NCSLA","Policy","Regulators","Wine & Spirits","—","ncsla.org","Identified","Executive Director"),
   // ---- Supplier / producer tier ----
-  A("Distilled Spirits Council of the U.S.","DISCUS","Supplier","Spirits supplier association","Spirits","Washington, DC","discus.org","Outreach","Chief Economist / SVP Science & Research","Annual economic briefing data — strong analytics culture."),
+  A("Distilled Spirits Council of the U.S.","DISCUS","Supplier","Spirits supplier association","Spirits","Washington, DC","discus.org","Discovery","Chief Economist / SVP Science & Research","Annual economic briefing data — strong analytics culture."),
   A("Wine Institute","WI","Supplier","CA winery association","Wine","San Francisco, CA","wineinstitute.org","Identified","VP, Communications & Data"),
   A("WineAmerica","WA","Supplier","National winery association","Wine","Washington, DC","wineamerica.org","Identified","Director of Government Affairs"),
   A("American Craft Spirits Association","ACSA","Supplier","Craft distiller association","Spirits","Washington, DC","americancraftspirits.org","Identified","Executive Director"),
   A("American Distilling Institute","ADI","Supplier","Craft distiller association","Spirits","Hayward, CA","distilling.com","Identified","Founder / Director"),
   A("National Association of Beverage Importers","NABI","Supplier","Importer association","Wine & Spirits","Washington, DC","—","Identified","President"),
   // ---- Retail / on- & off-premise tier ----
-  A("American Beverage Licensees","ABL","Retail","Independent retailer association","Wine & Spirits","Bethesda, MD","ablusa.org","Identified","Executive Director","Independent package & on-premise retailers — off-premise scan angle."),
+  A("American Beverage Licensees","ABL","Retail","Independent retailer association","Wine & Spirits","Bethesda, MD","ablusa.org","Discovery","Executive Director","Independent package & on-premise retailers — off-premise scan angle. Cooperative data-model target."),
   A("National Association of Convenience Stores","NACS","Retail","Convenience retail association","Multi","Alexandria, VA","convenience.org","Identified","VP, Research"),
   A("FMI – The Food Industry Association","FMI","Retail","Grocery / supermarket association","Multi","Arlington, VA","fmi.org","Identified","VP, Industry Relations","Grocery channel — broader analytics expansion."),
-  A("National Grocers Association","NGA","Retail","Independent grocer association","Multi","Washington, DC","nationalgrocers.org","Identified","VP, Government Relations"),
+  A("National Grocers Association","NGA","Retail","Independent grocer association","Multi","Washington, DC","nationalgrocers.org","Identified","VP, Government Relations","Cooperative data-model target alongside ABL."),
   A("National Restaurant Association","NRA","Retail","On-premise association","Multi","Washington, DC","restaurant.org","Identified","Chief Economist","On-premise occasion data."),
-  A("United States Bartenders' Guild","USBG","Retail","On-premise trade guild","Wine & Spirits","—","usbg.org","Identified","National Office / Data"),
+  A("United States Bartenders' Guild","USBG","Retail","On-premise trade guild","Wine & Spirits","—","usbg.org","Identified","National Office / Partnerships"),
   A("National Association of Wine Retailers","NAWR","Retail","Wine retailer association","Wine","—","—","Identified","Executive Director"),
-  // ---- Policy / cross-industry ----
+  // ---- Policy ----
+  A("National Conference of State Liquor Administrators","NCSLA","Policy","Regulators","Wine & Spirits","—","ncsla.org","Identified","Executive Director"),
   A("Center for Alcohol Policy","CAP","Policy","Policy / education","Wine & Spirits","Alexandria, VA","centerforalcoholpolicy.org","Identified","Executive Director"),
   A("Responsible Retailing Forum","RRF","Policy","Retail compliance","Multi","—","—","Identified","Director"),
   // ---- Hemp / THC beverage adjacency ----
-  A("Hemp Beverage Alliance","HBA","Adjacency","Hemp/THC beverage association","Hemp/THC","Denver, CO","hempbeveragealliance.org","Outreach","Executive Director","Cannabis/hemp beverage data — convergence thesis."),
+  A("Hemp Beverage Alliance","HBA","Adjacency","Hemp/THC beverage association","Hemp/THC","Denver, CO","hempbeveragealliance.org","Discovery","Executive Director","Cannabis/hemp beverage data — convergence thesis."),
   A("Cannabis Beverage Association","CBA","Adjacency","Cannabis beverage association","Hemp/THC","—","—","Identified","President"),
-  A("U.S. Hemp Roundtable","USHR","Adjacency","Hemp advocacy","Hemp/THC","—","hempsupporter.com","Identified","General Counsel / Policy"),
- ], contacts:[]};
+  A("U.S. Hemp Roundtable","USHR","Adjacency","Hemp advocacy","Hemp/THC","—","hempsupporter.com","Identified","General Counsel / Policy")
+ ]};
 }
+
+/* enrich the flagship deals so the scorecard, gap, and committee have real content */
 function seedSignals(db){
-  const set=(id,patch)=>{const a=db.accounts.find(x=>x.id===id);if(a)Object.assign(a,patch);};
-  const d=(n)=>{const t=new Date();t.setDate(t.getDate()+n);return t.toISOString().slice(0,10);};
-  set('nabca',{waiting:{on:true,since:d(-9),note:'Sent rights/redistribution questions; awaiting their license terms'}});
-  set('discus',{nextAction:{date:d(0),note:'Follow up on intro to Chief Economist'}});
-  set('wswa',{nextAction:{date:d(-3),note:'Confirm next data drop cadence'}});
-  set('hba',{nextAction:{date:d(2),note:'Send the convergence one-pager'}});
-  set('usbg',{targetRole:'National office — partnerships / education',
-    notes:'Model: USBG as sponsor / credibility partner, not a data source. They lend on-premise authority to a curated view; bartenders get a member-first view built for them. Two audiences off one dataset (bartender-facing + distributor-facing). Independence firewall is non-negotiable — curation can\'t tilt to whoever pays. Open Qs: what exactly they sponsor (co-branded report vs view inside Hoodie), who curates, how money flows.'});
-  return db;
+ const set=(id,fn)=>{const a=db.accounts.find(x=>x.id===id);if(a)fn(a);};
+ const d=n=>{const t=new Date();t.setDate(t.getDate()+n);return t.toISOString().slice(0,10);};
+ const m=(a,k,s,note)=>{a.meddpicc[k]={status:s,note:note||""};};
+
+ set('wswa',a=>{
+   a.gap={
+     current:"Depletion data resold as a flat syndicated feed. WSWA passes it through but captures none of the analytic margin and can't see how members use it.",
+     cost:"Six-to-seven figures of downstream analytic value left on the table each year; members increasingly buy intelligence elsewhere, eroding the feed's strategic value.",
+     future:"A WSWA-branded intelligence layer — the reseller feed becomes a living member benefit and a defensible data-fiduciary position the association owns."};
+   m(a,'pain','solid',"Validated with research lead: the pass-through feed is a depreciating asset and they know it.");
+   m(a,'metrics','solid',"Tie to member-retention value + a new non-dues revenue line. Need their CFO's actual numbers, not mine.");
+   m(a,'champion','solid',"SVP Research is selling this internally. Has credibility; power still partial — see EB.");
+   m(a,'economicBuyer','weak',"Likely President/CEO + board sign-off. Champion has access but I haven't been in the room with the budget owner.");
+   m(a,'decisionCriteria','weak',"Independence firewall + data-fiduciary governance will be scored heavily. Get the criteria in writing.");
+   m(a,'competition','weak',"Real competitor is 'keep the status quo reseller deal.' Inertia, not a rival vendor.");
+   m(a,'decisionProcess','unknown',"No mapped path to signature yet.");
+   m(a,'paperProcess','unknown',"Data Evaluation Agreement adapted w/ tracked changes — but procurement/legal path unmapped.");
+   a.contacts=[{id:'c1',name:"",title:"SVP, Research",role:"Champion",email:"",phone:""}];
+   a.nextAction={date:d(-3),note:"Confirm next data-drop cadence + ask champion to get me 30 min with the EB"};
+ });
+ set('rndc',a=>{
+   a.gap={
+     current:"Item master fractured across regions and source systems. The same product carries different identities tier-to-tier, so end-to-end reporting can't be trusted.",
+     cost:"Reconciliation labor + decisions made on numbers nobody fully trusts. Every new supplier integration re-pays the same identity tax.",
+     future:"A canonical product spine (the CPK) that resolves identity once and flows clean downstream through every system."};
+   m(a,'pain','solid',"Data team feels this daily. The pain is real and admitted — rare. This is the wedge.");
+   m(a,'metrics','weak',"Quantify reconciliation hours + cost of a bad-data decision. Don't have their figure yet.");
+   m(a,'champion','weak',"VP Data is enthusiastic but unproven as a champion — hasn't sold it upward yet.");
+   m(a,'economicBuyer','unknown',"CIO? COO? Unknown who owns this budget. Biggest single gap on the deal.");
+   m(a,'competition','unknown',"Build-in-house vs. an incumbent MDM tool? Haven't asked.");
+   a.contacts=[{id:'c2',name:"",title:"VP, Data / MDM owner",role:"Champion",email:"",phone:""}];
+   a.nextAction={date:d(1),note:"Discovery #2 — quantify the cost of the status quo with their own numbers (Metrics)"};
+ });
+ set('nabca',a=>{
+   a.gap={current:"Control-state sales data lives in licensing terms, not a usable intelligence layer.",cost:"",future:""};
+   m(a,'pain','weak',"Sense there's appetite; not yet made urgent or quantified.");
+   m(a,'competition','weak',"Their own internal reporting + status quo.");
+   a.waiting={on:true,since:d(-9),note:"Sent rights/redistribution questions; awaiting their license terms"};
+ });
+ set('discus',a=>{
+   m(a,'pain','weak',"Strong analytics culture — but I haven't surfaced a specific gap yet.");
+   a.nextAction={date:d(0),note:"Follow up on intro to Chief Economist"};
+ });
+ set('hba',a=>{
+   a.gap={current:"Hemp/THC beverage has no trusted depletion view; the category is flying blind as it scales.",cost:"",future:"First credible syndicated read on the convergence category."};
+   m(a,'pain','weak',"Convergence thesis resonates; need a named owner to feel it.");
+   a.nextAction={date:d(2),note:"Send the convergence one-pager"};
+ });
+ set('abl',a=>{ m(a,'pain','weak',"Off-premise scan angle — independents want a view the chains already have."); });
+ return db;
 }
 
 let DB=seedSignals(seed());
-async function load(){ if(persists){ try{const r=await window.storage.get(KEY); if(r&&r.value){DB=JSON.parse(r.value);}}catch(e){} } }
+async function load(){ if(persists){ try{const r=await window.storage.get(KEY); if(r&&r.value){DB=JSON.parse(r.value);migrate(DB);}}catch(e){} } }
+function migrate(db){ // tolerate older saves
+  (db.accounts||[]).forEach(a=>{ if(!a.meddpicc)a.meddpicc=blankMedd(); MEDD.forEach(m=>{if(!a.meddpicc[m.k])a.meddpicc[m.k]={status:"unknown",note:""};});
+    if(!a.gap)a.gap={current:"",cost:"",future:""}; (a.contacts||[]).forEach(c=>{if(!c.role)c.role="Influencer";});
+    if(STAGES.indexOf(a.stage)<0)a.stage="Identified"; });
+}
 async function save(){ DB.updatedAt=Date.now(); if(persists){ try{await window.storage.set(KEY,JSON.stringify(DB));}catch(e){} } }
 function acct(id){return DB.accounts.find(a=>a.id===id);}
 function allContacts(){const out=[];DB.accounts.forEach(a=>(a.contacts||[]).forEach(c=>out.push({...c,account:a.name,accountId:a.id})));return out;}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
-function initials(n){return (n||'?').split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();}
+function initials(n){return (n||'?').split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase()||'?';}
 function stageIdx(s){return Math.max(0,STAGES.indexOf(s));}
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2200);}
 
+/* ---- qualification math ---- */
+function qualScore(a){
+  let s=0;const max=MEDD.length*2;
+  MEDD.forEach(m=>{s+=STATUS_SCORE[(a.meddpicc[m.k]||{}).status||"unknown"];});
+  const pct=Math.round((s/max)*100);
+  // weakest link: first unknown in MEDD order, else first weak
+  let weakest=MEDD.find(m=>(a.meddpicc[m.k]||{}).status==="unknown")||MEDD.find(m=>(a.meddpicc[m.k]||{}).status==="weak")||null;
+  return {s,max,pct,weakest};
+}
+function qualClass(pct){return pct>=66?"q-strong":pct>=33?"q-mid":"q-thin";}
+function qualBarColor(pct){return pct>=66?"var(--q-solid)":pct>=33?"var(--q-weak)":"var(--q-unknown)";}
+function unknownCount(a){return MEDD.filter(m=>(a.meddpicc[m.k]||{}).status==="unknown").length;}
+function gapDone(a){return !!(a.gap&&a.gap.current&&a.gap.cost&&a.gap.future);}
+function isSingleThreaded(a){const cs=a.contacts||[];return cs.length<=1;}
+function hasChampion(a){return (a.contacts||[]).some(c=>c.role==="Champion")||(a.meddpicc.champion||{}).status==="solid";}
+
+/* the diagnostic coach — teaches back what the frameworks say about THIS deal */
+function riskFlags(a){
+  const f=[];const idx=stageIdx(a.stage);
+  // advanced in stage but missing the qualification that stage should have
+  const expect=STAGE_EXPECTS[a.stage]||[];
+  const missing=expect.filter(k=>(a.meddpicc[k]||{}).status==="unknown");
+  if(missing.length) f.push(`You're at <b>${esc(a.stage)}</b> but flying blind on ${missing.map(k=>MEDD_BY_KEY[k].t).join(", ")} — qualify backward before you advance.`);
+  if(idx>=1 && !gapDone(a)) f.push("The Gap isn't fully built — you haven't quantified the cost of the status quo, so the problem doesn't hurt yet.");
+  if(idx>=2 && isSingleThreaded(a)) f.push("Single-threaded. One contact = one point of failure. If they go quiet or leave, the deal dies. Find a second thread.");
+  if(idx>=2 && !hasChampion(a)) f.push("No confirmed champion. You have contacts, but nobody is selling for you when you're not in the room.");
+  if((a.meddpicc.competition||{}).status==="unknown" && idx>=2) f.push("Competition unknown — and the one that usually wins is \u201Cdo nothing.\u201D Name what they do if they don't move.");
+  if((a.meddpicc.economicBuyer||{}).status==="unknown" && idx>=2) f.push("You haven't met the economic buyer. A champion who can't reach the budget is a coach, not a champion.");
+  return f;
+}
+
 let tab="home", recordId=null, q="";
 function go(t){tab=t;recordId=null;document.querySelectorAll('#nav .tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));render();}
-
-/* date helpers */
 function today(){return new Date().toISOString().slice(0,10);}
 function daysAgo(d){if(!d)return 0;return Math.round((Date.parse(today())-Date.parse(d))/86400000);}
 function daysUntil(d){if(!d)return null;return Math.round((Date.parse(d)-Date.parse(today()))/86400000);}
 
-/* the "needs you" rail: surfaces on (a) a follow-up that's due/overdue, or (b) waiting-on-them */
-function railItems(){
-  const items=[];
-  DB.accounts.forEach(a=>{
-    const reasons=[];
-    if(a.nextAction&&a.nextAction.date){
-      const du=daysUntil(a.nextAction.date);
-      if(du<=0) reasons.push({type:du<0?'over':'due',sort:du<0?0:1,
-        chip:du<0?`Overdue ${-du}d`:'Due today', label:a.nextAction.note||'Follow up'});
-    }
-    if(a.waiting&&a.waiting.on){
-      reasons.push({type:'wait',sort:2,chip:`Waiting ${daysAgo(a.waiting.since)}d`,label:a.waiting.note||'Ball in their court'});
-    }
-    if(reasons.length) items.push({a,reasons});
-  });
-  return items.sort((x,y)=>Math.min(...x.reasons.map(r=>r.sort))-Math.min(...y.reasons.map(r=>r.sort)));
-}
-function flowState(a){ // data-flowing status (adjacent job)
-  const i=stageIdx(a.stage);
-  if(i>=stageIdx('Live in Workbook'))return'yes';
-  if(i>=stageIdx('Data Flowing'))return'part';
-  return'no';
-}
-
+/* ============================ RENDER ============================ */
 function render(){
   const page=document.getElementById('page');
-  if(recordId){page.innerHTML=recordHTML(acct(recordId));wireRecord();return;}
+  if(recordId){const a=acct(recordId);if(!a){recordId=null;return render();}page.innerHTML=recordHTML(a);wireRecord();return;}
   if(tab==="home"){page.innerHTML=homeHTML();return;}
   if(tab==="accounts")page.innerHTML=accountsHTML();
   else if(tab==="pipeline"){page.innerHTML=pipelineHTML();wireKanban();}
   else page.innerHTML=contactsHTML();
 }
 
+/* ---- home: needs-you rail + deal-risk rail + board ---- */
+function railItems(){
+  const items=[];
+  DB.accounts.forEach(a=>{const reasons=[];
+    if(a.nextAction&&a.nextAction.date){const du=daysUntil(a.nextAction.date);
+      if(du<=0)reasons.push({type:du<0?'over':'due',sort:du<0?0:1,chip:du<0?`Overdue ${-du}d`:'Due today',label:a.nextAction.note||'Follow up'});}
+    if(a.waiting&&a.waiting.on)reasons.push({type:'wait',sort:2,chip:`Waiting ${daysAgo(a.waiting.since)}d`,label:a.waiting.note||'Ball in their court'});
+    if(reasons.length)items.push({a,reasons});});
+  return items.sort((x,y)=>Math.min(...x.reasons.map(r=>r.sort))-Math.min(...y.reasons.map(r=>r.sort)));
+}
+function riskItems(){
+  // deals advanced past Identified that carry at least one structural risk flag
+  return DB.accounts.filter(a=>stageIdx(a.stage)>=1).map(a=>({a,flags:riskFlags(a)})).filter(x=>x.flags.length)
+    .sort((x,y)=>y.flags.length-x.flags.length);
+}
 function homeHTML(){
-  const items=railItems();
-  const flowing=DB.accounts.filter(a=>flowState(a)!=='no').length;
-  // rail
-  let rail=`<div class="rail"><div class="rail-h"><span class="ti">Needs you</span><span class="ct ${items.length?'':'zero'}">${items.length}</span>
-     <span style="margin-left:auto;font-size:12px;color:var(--muted)">Due follow-ups &amp; relationships waiting on them</span></div>`;
-  if(!items.length){
-    rail+=`<div class="rail-empty">Nothing needs you right now. Set a follow-up or flag a relationship as waiting on them from any account.</div>`;
-  }else{
-    rail+=items.map(({a,reasons})=>`<div class="rail-row" onclick="openRecord('${a.id}')">
+  const items=railItems(), risks=riskItems();
+  const active=DB.accounts.filter(a=>stageIdx(a.stage)>=1);
+  // needs-you rail
+  let needs=`<div class="rail"><div class="rail-h"><span class="ti">Needs you</span><span class="ct ${items.length?'':'zero'}">${items.length}</span>
+     <span class="s">Due follow-ups &amp; relationships waiting on them</span></div>`;
+  needs += items.length? items.map(({a,reasons})=>`<div class="rail-row" onclick="openRecord('${a.id}')">
       <span class="rail-ic" style="background:${TIER_ICON_COLOR[a.tier]}">${esc(a.abbr.slice(0,3))}</span>
       <div class="rail-main"><div class="nm">${esc(a.name)}</div><div class="sub">${esc(reasons.map(r=>r.label).join(' · '))} — <span style="color:var(--faint)">${esc(a.stage)}</span></div></div>
       <div class="why">${reasons.map(r=>`<span class="chip ${r.type}">${esc(r.chip)}</span>`).join("")}</div>
       <div class="rail-act" onclick="event.stopPropagation()">
         ${reasons.some(r=>r.type==='over'||r.type==='due')?`<button class="mini good" onclick="railDone('${a.id}')">Mark done</button>`:''}
         ${reasons.some(r=>r.type==='wait')?`<button class="mini good" onclick="railReplied('${a.id}')">They replied</button>`:''}
-        <button class="mini" onclick="openRecord('${a.id}')">Open</button>
-      </div></div>`).join("");
-  }
-  rail+=`</div>`;
-  // board backdrop (compact, read-optimized)
-  const board=STAGES.map(s=>{const items=DB.accounts.filter(a=>a.stage===s);
-    return `<div class="mbcol"><div class="mbcol-h"><span>${esc(s)}</span><span>${items.length}</span></div>
-      ${items.map(a=>{const f=flowState(a);return `<div class="mbcard" style="border-left-color:${TIER_ICON_COLOR[a.tier]}" onclick="openRecord('${a.id}')">
+        <button class="mini" onclick="openRecord('${a.id}')">Open</button></div></div>`).join("")
+    : `<div class="rail-empty">Nothing needs you right now. Set a follow-up or flag a relationship as waiting on them from any record.</div>`;
+  needs+=`</div>`;
+  // deal-risk rail (the framework, made operational)
+  let risk=`<div class="rail"><div class="rail-h"><span class="ti">Where you're flying blind</span><span class="ct ${risks.length?'risk':'zero'}">${risks.length}</span>
+     <span class="s">Deals advanced in stage but thin on qualification — the blanks are the risk</span></div>`;
+  risk += risks.length? risks.map(({a,flags})=>{const Q=qualScore(a);return `<div class="rail-row" onclick="openRecord('${a.id}')">
+      <span class="rail-ic" style="background:${TIER_ICON_COLOR[a.tier]}">${esc(a.abbr.slice(0,3))}</span>
+      <div class="rail-main"><div class="nm">${esc(a.name)} <span style="color:var(--faint);font-weight:500">· ${esc(a.stage)}</span></div>
+        <div class="sub">${esc(flags[0].replace(/<[^>]+>/g,''))}</div></div>
+      <div class="why"><span class="qchip ${qualClass(Q.pct)}">${Q.pct}%</span></div>
+      <div class="rail-act" onclick="event.stopPropagation()"><button class="mini" onclick="openRecord('${a.id}')">Work it</button></div></div>`;}).join("")
+    : `<div class="rail-empty">No structural gaps flagged. Every advanced deal has the qualification its stage demands.</div>`;
+  risk+=`</div>`;
+  // board
+  const board=STAGES.map(s=>{const it=DB.accounts.filter(a=>a.stage===s);
+    return `<div class="mbcol"><div class="mbcol-h"><span>${esc(s)}</span><span>${it.length}</span></div>
+      ${it.map(a=>{const Q=qualScore(a);return `<div class="mbcard" style="border-left-color:${TIER_ICON_COLOR[a.tier]}" onclick="openRecord('${a.id}')">
         <div class="nm">${esc(a.abbr)}</div>
-        <div class="fl"><span class="flowdot flow-${f}"></span>${f==='yes'?'In workbook':f==='part'?'Data flowing':'No data yet'}</div></div>`;}).join("")}</div>`;}).join("");
-  return `<div class="home-wrap">
-    <div><div class="home-h"><span class="t">Command center</span><span class="s">What needs you, against the whole board · ${flowing}/${DB.accounts.length} relationships with data moving</span></div></div>
-    ${rail}
-    <div><div class="board-h"><span class="t">The board</span><span class="s">Every relationship by stage — click any to open. The dot shows data status.</span></div></div>
-    <div class="miniboard">${board}</div>
-  </div>`;
+        <div class="fl"><span class="qbar" style="width:46px"><i style="width:${Q.pct}%;background:${qualBarColor(Q.pct)}"></i></span>${Q.pct}%</div></div>`;}).join("")}</div>`;}).join("");
+  return `<div class="home-h"><span class="t">Command center</span><span class="s">${active.length} active deals · qualification, not just activity</span></div>
+    ${needs}${risk}
+    <div class="home-h"><span class="t">The board</span><span class="s">Every relationship by stage — the bar is qualification depth. Click any to open.</span></div>
+    <div class="miniboard">${board}</div>`;
 }
 
-function filteredAccounts(){
-  if(!q)return DB.accounts;
-  const s=q.toLowerCase();
-  return DB.accounts.filter(a=>(a.name+a.abbr+a.tier+a.type+a.focus).toLowerCase().includes(s));
-}
+/* ---- accounts list ---- */
+function filteredAccounts(){ if(!q)return DB.accounts; const s=q.toLowerCase();
+  return DB.accounts.filter(a=>(a.name+a.abbr+a.tier+a.type+a.focus).toLowerCase().includes(s)); }
 function accountsHTML(){
   const rows=filteredAccounts();
   return `<div class="card">
-    <div class="lvhead">
-      <div class="lvicon">🏢</div>
-      <div class="lvtitles"><div class="k">Accounts</div><div class="v">All Association Targets <span class="caret">▾</span></div></div>
-      <div class="lvactions"><button class="btn" onclick="exportJSON()">Export</button><label class="btn" style="margin:0">Import<input type="file" id="imp" accept=".json" hidden></label><button class="btn brand" onclick="newAccount()">New</button></div>
-    </div>
-    <div class="lvmeta">${rows.length} items · Sorted by Tier · Targets are associations across all three tiers (wine &amp; spirits + hemp). Beer bodies intentionally excluded.</div>
-    <table><thead><tr><th style="width:32px"></th><th>Account Name</th><th>Tier</th><th>Type</th><th>Focus</th><th>Stage</th><th>Key Contact</th><th>HQ</th></tr></thead><tbody>
-    ${rows.map(a=>{const c=(a.contacts&&a.contacts[0]);return `<tr onclick="openRecord('${a.id}')">
+    <div class="lvhead"><div class="lvicon">▦</div>
+      <div class="lvtitles"><div class="k">Accounts</div><div class="v">All Deals</div></div>
+      <div class="lvactions"><button class="btn" onclick="exportJSON()">Export</button><label class="btn" style="margin:0">Import<input type="file" id="imp" accept=".json" hidden></label><button class="btn brand" onclick="newAccount()">New</button></div></div>
+    <div class="lvmeta">${rows.length} deals · the Qualified column is MEDDPICC depth (0–100%). Associations + flagship distributor deals.</div>
+    <table><thead><tr><th style="width:30px"></th><th>Account</th><th>Tier</th><th>Stage</th><th>Qualified</th><th>Weakest link</th><th>Threads</th></tr></thead><tbody>
+    ${rows.map(a=>{const Q=qualScore(a);const ct=(a.contacts||[]).length;return `<tr onclick="openRecord('${a.id}')">
       <td><input type="checkbox" class="chk" onclick="event.stopPropagation()"></td>
       <td><div class="rowname"><span class="recicon" style="background:${TIER_ICON_COLOR[a.tier]}">${esc(a.abbr.slice(0,3))}</span><a class="lnk">${esc(a.name)}</a></div></td>
       <td><span class="badge tier-${a.tier}"><span class="dot"></span>${a.tier}</span></td>
-      <td>${esc(a.type)}</td><td>${esc(a.focus)}</td>
       <td><span class="stagepill">${esc(a.stage)}</span></td>
-      <td>${c?esc(c.name||c.title):'<span class="placeholder">'+esc(a.targetRole||'add contact')+'</span>'}</td>
-      <td>${esc(a.hq)}</td></tr>`;}).join("")}
+      <td><span class="qbar"><i style="width:${Q.pct}%;background:${qualBarColor(Q.pct)}"></i></span> <span class="qchip ${qualClass(Q.pct)}">${Q.pct}%</span></td>
+      <td>${Q.weakest?`<span style="color:var(--q-unknown);font-weight:600">${esc(Q.weakest.t)}</span>`:'<span style="color:var(--q-solid);font-weight:600">fully qualified</span>'}</td>
+      <td>${ct?`${ct} ${ct===1?'<span style="color:var(--q-weak)">(single)</span>':''}`:'<span class="placeholder">0</span>'}</td></tr>`;}).join("")}
     </tbody></table></div>`;
 }
 
+/* ---- record page ---- */
 function recordHTML(a){
-  const idx=stageIdx(a.stage);
+  const idx=stageIdx(a.stage), Q=qualScore(a), flags=riskFlags(a);
+  const g=a.gap||{current:"",cost:"",future:""};
+  const gapCell=(cls,k,label,val,placeholder)=>`<div class="${cls}"><div class="gk">${label}</div><div class="gv ${val?'':'empty'}">${val?esc(val):placeholder}</div></div>`;
   return `<div class="crumb"><a onclick="back()">Accounts</a> › ${esc(a.name)}</div>
    <div class="card">
     <div class="highlights">
       <div class="hl-icon" style="background:${TIER_ICON_COLOR[a.tier]}">${esc(a.abbr.slice(0,3))}</div>
-      <div class="hl-main"><div class="k">Association · ${esc(a.tier)} tier</div><div class="v">${esc(a.name)}</div></div>
-      <div class="hl-fields">
-        <div class="hl-f"><div class="k">Type</div><div class="v">${esc(a.type)}</div></div>
-        <div class="hl-f"><div class="k">Focus</div><div class="v">${esc(a.focus)}</div></div>
-        <div class="hl-f"><div class="k">HQ</div><div class="v">${esc(a.hq)}</div></div>
-        <div class="hl-f"><div class="k">Website</div><div class="v">${a.web&&a.web!=='—'?`<a href="https://${esc(a.web)}" target="_blank" rel="noopener">${esc(a.web)}</a>`:'—'}</div></div>
+      <div class="hl-main"><div class="k">${esc(a.tier)} tier · ${esc(a.type)}</div><div class="v">${esc(a.name)}</div></div>
+      <div class="hl-spacer"></div>
+      <div class="qring">
+        <div><div class="num" style="color:${qualBarColor(Q.pct)}">${Q.pct}<span style="font-size:13px">%</span></div><div class="lab">Qualified</div></div>
+        <div style="border-left:1px solid var(--line);padding-left:11px">
+          <div class="lab">Weakest link</div>
+          <div class="weak" style="color:${Q.weakest?'var(--q-unknown)':'var(--q-solid)'}">${Q.weakest?esc(Q.weakest.t):'Fully qualified'}</div></div>
       </div>
-      <div class="hl-actions"><button class="btn" onclick="editAccount('${a.id}')">Edit</button><button class="btn brand" onclick="newContact('${a.id}')">New Contact</button></div>
+      <div class="hl-actions"><button class="btn" onclick="editAccount('${a.id}')">Edit</button><button class="btn brand" onclick="newContact('${a.id}')">Add person</button></div>
     </div>
     <div class="path">${STAGES.map((s,i)=>`<div class="pstage ${i<idx?'done':''} ${i===idx?'cur':''}" onclick="setStage('${a.id}',${i})">${esc(s)}</div>`).join("")}</div>
     <div class="rbody">
       <div>
-        <div class="sect"><h3>Contacts (${(a.contacts||[]).length})</h3>
-          ${(a.contacts||[]).length?(a.contacts.map(c=>`<div class="contact-card"><span class="av">${esc(initials(c.name||c.title))}</span>
-             <div><div class="nm">${esc(c.name||'<span class=placeholder>[add name]</span>')}</div><div class="ti">${esc(c.title||'')}</div></div>
-             <div class="meta">${c.email?esc(c.email)+'<br>':''}${esc(c.phone||'')}</div></div>`).join("")):
-             `<div class="placeholder">No contacts yet. Target role: <b>${esc(a.targetRole||'—')}</b>. Click <b>New Contact</b> to add the real person.</div>`}
+        <!-- THE GAP -->
+        <div class="sect"><h3>The Gap <span class="sub">— current state → cost of staying → future state</span></h3>
+          <div class="gap">
+            ${gapCell('','current','Current state',g.current,'What\u2019s true today?')}
+            ${gapCell('cost','cost','Cost of the status quo',g.cost,'Quantify it. No cost = no urgency.')}
+            ${gapCell('future','future','Future state',g.future,'What does fixed look like?')}
+          </div>
+          ${!gapDone(a)?`<div class="gap-warn">The Gap isn\u2019t finished. Until the <b>cost</b> is quantified in their numbers, the problem doesn\u2019t hurt — and a problem that doesn\u2019t hurt doesn\u2019t get budget.</div>`:''}
+          <div class="gap-edit"><button class="mini" onclick="editGap('${a.id}')">${gapDone(a)?'Edit the Gap':'Build the Gap'}</button></div>
         </div>
-        <div class="sect"><h3>Details</h3>
-          <div class="frow"><div class="fk">Tier</div><div class="fv">${esc(a.tier)}</div></div>
-          <div class="frow"><div class="fk">Type</div><div class="fv">${esc(a.type)}</div></div>
-          <div class="frow"><div class="fk">Category focus</div><div class="fv">${esc(a.focus)}</div></div>
-          <div class="frow"><div class="fk">Target role</div><div class="fv">${esc(a.targetRole||'—')}</div></div>
-          <div class="frow"><div class="fk">Onboarding stage</div><div class="fv">${esc(a.stage)}</div></div>
-          <div class="frow"><div class="fk">Account owner</div><div class="fv">${esc(a.owner)}</div></div>
+        <!-- MEDDPICC SCORECARD -->
+        <div class="sect"><h3>MEDDPICC <span class="sub">— click a status to cycle · click a row to write what you learned</span></h3>
+          <div class="scorehead">
+            <span class="big" style="color:${qualBarColor(Q.pct)}">${Q.s}/${Q.max}</span>
+            <span class="qbar" style="width:120px;height:8px"><i style="width:${Q.pct}%;background:${qualBarColor(Q.pct)}"></i></span>
+            <span style="font-size:12px;color:var(--muted)">${unknownCount(a)} of 8 still unknown — <b style="color:var(--q-unknown)">the blanks are the deal risk</b></span>
+          </div>
+          <div class="medd unknown-flag">
+            ${MEDD.map(m=>{const st=(a.meddpicc[m.k]||{}).status||"unknown";const note=(a.meddpicc[m.k]||{}).note||"";
+              return `<div class="medd-row">
+                <div class="medd-status" onclick="cycleMedd('${a.id}','${m.k}')" title="Click to cycle: unknown → weak → solid">
+                  <span class="pill st-${st}">${st}</span><span class="cyc">cycle ↻</span></div>
+                <div class="medd-body" onclick="editMedd('${a.id}','${m.k}')">
+                  <div class="mk"><span class="letter">${m.l}</span> ${esc(m.t)} <span class="hint">${esc(m.h)}</span></div>
+                  <div class="note ${note?'':'blank'}">${note?esc(note):'Nothing learned yet — click to fill.'}</div></div></div>`;}).join("")}
+          </div>
+          ${flags.length?`<div class="coach"><div class="ct">Deal coach · what the frameworks say about this one</div><ul>${flags.map(f=>`<li>${f}</li>`).join("")}</ul></div>`:`<div class="coach"><div class="ct">Deal coach</div>No structural gaps for this stage. Keep qualifying forward and protect the champion.</div>`}
         </div>
       </div>
       <div>
-        <div class="sect"><h3>Next action</h3>
+        <!-- COMMITTEE / MULTITHREAD -->
+        <div class="sect"><h3>The committee <span class="sub">— ${(a.contacts||[]).length} thread${(a.contacts||[]).length===1?'':'s'}</span></h3>
+          ${isSingleThreaded(a)&&stageIdx(a.stage)>=2?`<div class="thread-warn"><b>Single-threaded.</b> One relationship is one point of failure. Map a second person before this advances.</div>`:''}
+          ${!hasChampion(a)&&stageIdx(a.stage)>=2?`<div class="thread-warn">No <b>champion</b> tagged. Who sells for you when you\u2019re not in the room?</div>`:''}
+          ${(a.contacts||[]).length?(a.contacts.map(c=>`<div class="contact-card" onclick="editContact('${a.id}','${c.id}')">
+             <span class="av">${esc(initials(c.name||c.title))}</span>
+             <div><div class="nm">${esc(c.name||'[add name]')}</div><div class="ti">${esc(c.title||'')}</div></div>
+             <div class="meta"><span class="rolepill role-${roleClass(c.role)}">${esc(c.role||'Influencer')}</span></div></div>`).join("")):
+             `<div class="placeholder">No people yet. Target role: <b>${esc(a.targetRole||'—')}</b>. Click <b>Add person</b> and tag their role — that\u2019s how you see single-threading.</div>`}
+        </div>
+        <!-- NEXT ACTION -->
+        <div class="sect"><h3>Next move</h3>
           ${a.nextAction&&a.nextAction.date?`<div class="na-box live"><div class="na-row"><span class="lbl">Follow up</span><span class="val">${esc(a.nextAction.date)}</span>${(()=>{const du=daysUntil(a.nextAction.date);return du<0?`<span class="chip over">Overdue ${-du}d</span>`:du===0?`<span class="chip due">Today</span>`:`<span class="chip" style="background:#eef1f3;color:#5c5c5c">in ${du}d</span>`;})()}</div>
              ${a.nextAction.note?`<div style="margin-top:5px;font-size:12.5px">${esc(a.nextAction.note)}</div>`:''}
              <div class="na-row" style="margin-top:8px"><button class="mini" onclick="setFollowup('${a.id}')">Change</button><button class="mini good" onclick="clearFollowup('${a.id}')">Mark done</button></div></div>`
-            :`<div class="na-box"><div class="na-row"><span class="lbl">No follow-up set.</span><button class="mini" onclick="setFollowup('${a.id}')">Set follow-up</button></div></div>`}
+            :`<div class="na-box"><div class="na-row"><span class="lbl">No next move set.</span><button class="mini" onclick="setFollowup('${a.id}')">Set follow-up</button></div></div>`}
           ${a.waiting&&a.waiting.on?`<div class="na-box wait"><div class="na-row"><span class="lbl">Waiting on them</span><span class="val">${daysAgo(a.waiting.since)}d</span>${a.waiting.note?`<span style="font-size:12.5px;color:var(--muted)">· ${esc(a.waiting.note)}</span>`:''}</div>
              <div class="na-row" style="margin-top:8px"><button class="mini good" onclick="railReplied('${a.id}')">They replied</button></div></div>`
-            :`<div class="na-box"><div class="na-row"><span class="lbl">Ball's in your court.</span><button class="mini" onclick="markWaiting('${a.id}')">Mark waiting on them</button></div></div>`}
+            :`<div class="na-box"><div class="na-row"><span class="lbl">Ball\u2019s in your court.</span><button class="mini" onclick="markWaiting('${a.id}')">Mark waiting on them</button></div></div>`}
         </div>
-        <div class="sect"><h3>Notes</h3><textarea class="notes" id="notes" placeholder="Relationship notes, data scope, next steps...">${esc(a.notes||'')}</textarea></div>
-        <div class="sect"><h3>Activity</h3>
-          <div class="activity">Stage: <b>${esc(a.stage)}</b> — data onboarding path</div>
-          <div class="activity">Owner: ${esc(a.owner)}</div>
+        <!-- DETAILS + NOTES -->
+        <div class="sect"><h3>Details</h3>
+          <div class="frow"><div class="fk">Category focus</div><div class="fv">${esc(a.focus)}</div></div>
+          <div class="frow"><div class="fk">HQ</div><div class="fv">${esc(a.hq)}</div></div>
+          <div class="frow"><div class="fk">Website</div><div class="fv">${a.web&&a.web!=='—'?`<a href="https://${esc(a.web)}" target="_blank" rel="noopener">${esc(a.web)}</a>`:'—'}</div></div>
+          <div class="frow"><div class="fk">Target role</div><div class="fv">${esc(a.targetRole||'—')}</div></div>
+          <div class="frow"><div class="fk">Owner</div><div class="fv">${esc(a.owner)}</div></div>
         </div>
+        <div class="sect"><h3>Notes</h3><textarea class="notes" id="notes" placeholder="Relationship notes, scope, next steps...">${esc(a.notes||'')}</textarea></div>
       </div>
     </div></div>`;
 }
 
+/* ---- pipeline (kanban, qual-aware) ---- */
 function pipelineHTML(){
   return `<div class="card" style="border:0;background:transparent;box-shadow:none">
     <div class="lvhead" style="background:#fff;border:1px solid var(--line);border-radius:var(--radius)">
-      <div class="lvicon" style="background:var(--brand)">▦</div>
-      <div class="lvtitles"><div class="k">Pipeline</div><div class="v">Data Onboarding</div></div>
-      <div class="lvactions"><button class="btn brand" onclick="newAccount()">New</button></div>
-    </div>
-    <div class="kanban">${STAGES.map(s=>{const items=DB.accounts.filter(a=>a.stage===s);
-      return `<div class="kcol"><div class="kcol-h"><span>${esc(s)}</span><span class="n">${items.length}</span></div>
-        <div class="kbody" data-stage="${esc(s)}">${items.map(a=>`<div class="kcard" draggable="true" data-id="${a.id}" style="border-left-color:${TIER_ICON_COLOR[a.tier]}" onclick="openRecord('${a.id}')">
-          <div class="nm">${esc(a.name)}</div><span class="badge tier-${a.tier}"><span class="dot"></span>${a.tier}</span></div>`).join("")}</div></div>`;}).join("")}</div></div>`;
+      <div class="lvicon">▦</div><div class="lvtitles"><div class="k">Pipeline</div><div class="v">Qualification motion</div></div>
+      <div class="lvactions"><button class="btn brand" onclick="newAccount()">New</button></div></div>
+    <div class="kanban">${STAGES.map(s=>{const it=DB.accounts.filter(a=>a.stage===s);
+      return `<div class="kcol"><div class="kcol-h"><span>${esc(s)}</span><span class="n">${it.length}</span></div>
+        <div class="kbody" data-stage="${esc(s)}">${it.map(a=>{const Q=qualScore(a);return `<div class="kcard" draggable="true" data-id="${a.id}" style="border-left-color:${TIER_ICON_COLOR[a.tier]}" onclick="openRecord('${a.id}')">
+          <div class="nm">${esc(a.name)}</div><span class="badge tier-${a.tier}"><span class="dot"></span>${a.tier}</span>
+          <div class="kq"><span class="qbar"><i style="width:${Q.pct}%;background:${qualBarColor(Q.pct)}"></i></span><span class="qchip ${qualClass(Q.pct)}">${Q.pct}%</span></div></div>`;}).join("")}</div></div>`;}).join("")}</div></div>`;
 }
 
+/* ---- people / committee-wide ---- */
 function contactsHTML(){
   const cs=allContacts();
   return `<div class="card">
-    <div class="lvhead"><div class="lvicon" style="background:#5867e8">👤</div>
-      <div class="lvtitles"><div class="k">Contacts</div><div class="v">Key Contacts</div></div></div>
-    <div class="lvmeta">${cs.length} contacts across ${DB.accounts.length} association targets. Add real people from each account's record.</div>
-    <table><thead><tr><th>Name</th><th>Title</th><th>Account</th><th>Email</th><th>Phone</th></tr></thead><tbody>
-    ${cs.length?cs.map(c=>`<tr onclick="openRecord('${c.accountId}')"><td><div class="rowname"><span class="recicon" style="background:#5867e8">${esc(initials(c.name||c.title))}</span><a class="lnk">${esc(c.name||'[add name]')}</a></div></td>
-      <td>${esc(c.title||'')}</td><td><a class="lnk">${esc(c.account)}</a></td><td>${esc(c.email||'—')}</td><td>${esc(c.phone||'—')}</td></tr>`).join(""):
-      `<tr><td colspan="5" style="padding:24px;text-align:center;color:#a09e9c">No contacts yet. Open an account and click <b>New Contact</b>.</td></tr>`}
+    <div class="lvhead"><div class="lvicon" style="background:var(--slate)">👥</div>
+      <div class="lvtitles"><div class="k">People</div><div class="v">Every thread, by role</div></div></div>
+    <div class="lvmeta">${cs.length} people across ${DB.accounts.length} deals. Role tags are how you see single-threading at a glance.</div>
+    <table><thead><tr><th>Name</th><th>Title</th><th>Role</th><th>Account</th><th>Email</th></tr></thead><tbody>
+    ${cs.length?cs.map(c=>`<tr onclick="openRecord('${c.accountId}')"><td><div class="rowname"><span class="recicon" style="background:var(--slate)">${esc(initials(c.name||c.title))}</span><a class="lnk">${esc(c.name||'[add name]')}</a></div></td>
+      <td>${esc(c.title||'')}</td><td><span class="rolepill role-${roleClass(c.role)}">${esc(c.role||'Influencer')}</span></td><td><a class="lnk">${esc(c.account)}</a></td><td>${esc(c.email||'—')}</td></tr>`).join(""):
+      `<tr><td colspan="5" style="padding:24px;text-align:center;color:#a09e9c">No people yet. Open a deal and click <b>Add person</b>.</td></tr>`}
     </tbody></table></div>`;
 }
 
-/* ---- next-action + waiting (feed the rail) ---- */
-function setFollowup(id){
-  const a=acct(id);
-  modal("Set follow-up",
-    field("na_date","Date", a.nextAction?.date||today(),"date")+field("na_note","What's the next step?", a.nextAction?.note||""),
-    async()=>{ a.nextAction={date:document.getElementById('na_date').value||today(),note:document.getElementById('na_note').value.trim()};
-      await save();render();toast('Follow-up set'); });
-}
-async function clearFollowup(id){ acct(id).nextAction=null; await save(); render(); toast('Marked done'); }
-function markWaiting(id){
-  const a=acct(id);
-  modal("Waiting on them",
-    field("w_since","Since", today(),"date")+field("w_note","Waiting on what?",""),
-    async()=>{ a.waiting={on:true,since:document.getElementById('w_since').value||today(),note:document.getElementById('w_note').value.trim()};
-      await save();render();toast('Flagged waiting on them'); });
-}
-async function railReplied(id){ acct(id).waiting=null; await save(); render(); toast('Cleared — they replied'); }
-async function railDone(id){ acct(id).nextAction=null; await save(); render(); toast('Marked done'); }
-
-/* ---- actions ---- */
+/* ============================ MUTATORS ============================ */
 function openRecord(id){recordId=id;render();}
 function back(){recordId=null;render();}
 async function setStage(id,i){acct(id).stage=STAGES[i];await save();render();toast('Stage → '+STAGES[i]);}
 function wireRecord(){const n=document.getElementById('notes');if(n)n.addEventListener('blur',async()=>{acct(recordId).notes=n.value;await save();});}
+
+async function cycleMedd(id,k){const a=acct(id);const cur=(a.meddpicc[k]||{}).status||"unknown";
+  a.meddpicc[k]=a.meddpicc[k]||{};a.meddpicc[k].status=STATUS_NEXT[cur];await save();render();
+  toast(MEDD_BY_KEY[k].t+' → '+a.meddpicc[k].status);}
+function editMedd(id,k){const a=acct(id);const cell=a.meddpicc[k]||{status:"unknown",note:""};const m=MEDD_BY_KEY[k];
+  modal(m.t,
+    `<div class="field"><label>Status</label><select id="m_status">${["unknown","weak","solid"].map(s=>`<option ${s===cell.status?'selected':''}>${s}</option>`).join("")}</select><div class="help">${esc(m.h)}</div></div>
+     <div class="field"><label>What do you actually know?</label><textarea id="m_note" placeholder="Write it in their words, with their numbers. If you're guessing, it's still unknown.">${esc(cell.note||'')}</textarea></div>`,
+    async()=>{a.meddpicc[k]={status:document.getElementById('m_status').value,note:document.getElementById('m_note').value.trim()};await save();render();toast(m.t+' updated');});
+}
+function editGap(id){const a=acct(id);const g=a.gap||{current:"",cost:"",future:""};
+  modal("The Gap",
+    `<div class="field"><label>Current state</label><textarea id="g_cur" placeholder="What is true today, in their world?">${esc(g.current)}</textarea></div>
+     <div class="field"><label>Cost of the status quo</label><textarea id="g_cost" placeholder="Quantify it — hours, dollars, risk, lost revenue. This is the part that creates urgency.">${esc(g.cost)}</textarea><div class="help">No cost = no gap = no budget. This is the field that does the selling.</div></div>
+     <div class="field"><label>Future state</label><textarea id="g_fut" placeholder="What does the world look like once the gap is closed?">${esc(g.future)}</textarea></div>`,
+    async()=>{a.gap={current:document.getElementById('g_cur').value.trim(),cost:document.getElementById('g_cost').value.trim(),future:document.getElementById('g_fut').value.trim()};await save();render();toast('Gap updated');});
+}
+
+/* follow-up / waiting */
+function setFollowup(id){const a=acct(id);
+  modal("Set next move",field("na_date","Date",a.nextAction?.date||today(),"date")+field("na_note","What's the next step?",a.nextAction?.note||""),
+    async()=>{a.nextAction={date:document.getElementById('na_date').value||today(),note:document.getElementById('na_note').value.trim()};await save();render();toast('Next move set');});}
+async function clearFollowup(id){acct(id).nextAction=null;await save();render();toast('Marked done');}
+function markWaiting(id){const a=acct(id);
+  modal("Waiting on them",field("w_since","Since",today(),"date")+field("w_note","Waiting on what?",""),
+    async()=>{a.waiting={on:true,since:document.getElementById('w_since').value||today(),note:document.getElementById('w_note').value.trim()};await save();render();toast('Flagged waiting on them');});}
+async function railReplied(id){acct(id).waiting=null;await save();render();toast('Cleared — they replied');}
+async function railDone(id){acct(id).nextAction=null;await save();render();toast('Marked done');}
 
 /* drag kanban */
 let drag=null;
 function wireKanban(){
   document.querySelectorAll('.kcard').forEach(c=>{
     c.addEventListener('dragstart',e=>{drag=c.dataset.id;c.classList.add('drag');e.stopPropagation();});
-    c.addEventListener('dragend',()=>{document.querySelectorAll('.kcard').forEach(x=>x.classList.remove('drag'));drag=null;});
-  });
+    c.addEventListener('dragend',()=>{document.querySelectorAll('.kcard').forEach(x=>x.classList.remove('drag'));drag=null;});});
   document.querySelectorAll('.kbody').forEach(b=>{
     b.addEventListener('dragover',e=>e.preventDefault());
-    b.addEventListener('drop',async e=>{e.preventDefault();if(!drag)return;acct(drag).stage=b.dataset.stage;await save();render();wireKanban();toast('Moved to '+b.dataset.stage);});
-  });
+    b.addEventListener('drop',async e=>{e.preventDefault();if(!drag)return;acct(drag).stage=b.dataset.stage;await save();render();wireKanban();toast('Moved to '+b.dataset.stage);});});
 }
 
-/* modal */
+/* modal infra */
 function modal(title,bodyHTML,onSave){
   document.getElementById('modalTitle').textContent=title;
   document.getElementById('modalBody').innerHTML=bodyHTML;
   document.getElementById('scrim').classList.add('on');document.getElementById('modal').classList.add('on');
-  document.getElementById('modalSave').onclick=async()=>{ if(await onSave()!==false){closeModal();} };
-}
+  document.getElementById('modalSave').onclick=async()=>{if(await onSave()!==false)closeModal();};}
 function closeModal(){document.getElementById('scrim').classList.remove('on');document.getElementById('modal').classList.remove('on');}
 document.getElementById('modalX').onclick=closeModal;document.getElementById('modalCancel').onclick=closeModal;document.getElementById('scrim').onclick=closeModal;
 function field(id,label,val="",type="text"){return `<div class="field"><label>${label}</label><input id="${id}" value="${esc(val)}" type="${type}"></div>`;}
 function selField(id,label,opts,val){return `<div class="field"><label>${label}</label><select id="${id}">${opts.map(o=>`<option ${o===val?'selected':''}>${o}</option>`).join("")}</select></div>`;}
 
-function newAccount(){ accForm("New Account",null); }
-function editAccount(id){ accForm("Edit Account",acct(id)); }
+function newAccount(){accForm("New deal",null);}
+function editAccount(id){accForm("Edit deal",acct(id));}
 function accForm(title,a){
   modal(title,
-    field("f_name","Account Name",a?.name)+field("f_abbr","Abbreviation",a?.abbr)+
+    field("f_name","Account name",a?.name)+field("f_abbr","Abbreviation",a?.abbr)+
     selField("f_tier","Tier",["Supplier","Wholesale","Retail","Policy","Adjacency"],a?.tier||"Wholesale")+
-    field("f_type","Type",a?.type)+field("f_focus","Category Focus",a?.focus)+
+    field("f_type","Type",a?.type)+field("f_focus","Category focus",a?.focus)+
     field("f_hq","HQ",a?.hq)+field("f_web","Website",a?.web)+
-    selField("f_stage","Onboarding Stage",STAGES,a?.stage||"Identified")+
-    field("f_role","Target Role",a?.targetRole),
-    async()=>{
-      const name=document.getElementById('f_name').value.trim();if(!name){toast('Name required');return false;}
+    selField("f_stage","Stage",STAGES,a?.stage||"Identified")+
+    field("f_role","Target role",a?.targetRole),
+    async()=>{const name=document.getElementById('f_name').value.trim();if(!name){toast('Name required');return false;}
       const o={name,abbr:document.getElementById('f_abbr').value.trim()||name.slice(0,4).toUpperCase(),
         tier:document.getElementById('f_tier').value,type:document.getElementById('f_type').value.trim(),
         focus:document.getElementById('f_focus').value.trim(),hq:document.getElementById('f_hq').value.trim()||'—',
         web:document.getElementById('f_web').value.trim()||'—',stage:document.getElementById('f_stage').value,
         targetRole:document.getElementById('f_role').value.trim()};
-      if(a){Object.assign(a,o);}else{o.id='a'+Date.now();o.owner="Chris Fennessey";o.notes="";o.contacts=[];DB.accounts.unshift(o);}
-      await save();render();toast(a?'Account updated':'Account created');
-    });
+      if(a){Object.assign(a,o);}else{o.id='a'+Date.now();o.owner="Chris Fennessey";o.notes="";o.contacts=[];o.meddpicc=blankMedd();o.gap={current:"",cost:"",future:""};DB.accounts.unshift(o);}
+      await save();render();toast(a?'Deal updated':'Deal created');});
 }
 function newContact(accountId){
-  modal("New Contact",
-    field("c_name","Name")+field("c_title","Title")+field("c_email","Email","","email")+field("c_phone","Phone","","tel"),
-    async()=>{
-      const a=acct(accountId);a.contacts=a.contacts||[];
-      a.contacts.push({id:'c'+Date.now(),name:document.getElementById('c_name').value.trim(),
-        title:document.getElementById('c_title').value.trim(),email:document.getElementById('c_email').value.trim(),
-        phone:document.getElementById('c_phone').value.trim()});
-      await save();render();toast('Contact added');
-    });
+  modal("Add person",
+    field("c_name","Name")+field("c_title","Title")+selField("c_role","Role on this deal",ROLES,"Influencer")+field("c_email","Email","","email")+field("c_phone","Phone","","tel"),
+    async()=>{const a=acct(accountId);a.contacts=a.contacts||[];
+      a.contacts.push({id:'c'+Date.now(),name:document.getElementById('c_name').value.trim(),title:document.getElementById('c_title').value.trim(),
+        role:document.getElementById('c_role').value,email:document.getElementById('c_email').value.trim(),phone:document.getElementById('c_phone').value.trim()});
+      await save();render();toast('Person added');});
+}
+function editContact(accountId,cid){const a=acct(accountId);const c=(a.contacts||[]).find(x=>x.id===cid);if(!c)return;
+  modal("Edit person",
+    field("c_name","Name",c.name)+field("c_title","Title",c.title)+selField("c_role","Role on this deal",ROLES,c.role||"Influencer")+field("c_email","Email",c.email,"email")+field("c_phone","Phone",c.phone,"tel")+
+    `<div style="margin-top:4px"><button class="mini" style="color:var(--q-unknown);border-color:#e3b7b3" onclick="(function(){if(confirm('Remove this person?')){const a=acct('${accountId}');a.contacts=a.contacts.filter(x=>x.id!=='${cid}');save().then(()=>{closeModal();render();toast('Removed');});}})()">Remove person</button></div>`,
+    async()=>{Object.assign(c,{name:document.getElementById('c_name').value.trim(),title:document.getElementById('c_title').value.trim(),
+      role:document.getElementById('c_role').value,email:document.getElementById('c_email').value.trim(),phone:document.getElementById('c_phone').value.trim()});
+      await save();render();toast('Person updated');});
 }
 
-/* export / import / search */
+/* export / import / search / nav */
 function exportJSON(){const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});const u=URL.createObjectURL(blob);const x=document.createElement('a');x.href=u;x.download='hoodie-crm.json';x.click();setTimeout(()=>URL.revokeObjectURL(u),800);}
-document.getElementById('page').addEventListener('change',e=>{ if(e.target.id==='imp'){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=async()=>{try{DB=JSON.parse(r.result);await save();render();toast('Imported');}catch(_){toast('Bad file');}};r.readAsText(f);} });
+document.getElementById('page').addEventListener('change',e=>{if(e.target.id==='imp'){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=async()=>{try{DB=JSON.parse(r.result);migrate(DB);await save();render();toast('Imported');}catch(_){toast('Bad file');}};r.readAsText(f);}});
 document.getElementById('search').addEventListener('input',e=>{q=e.target.value;if(tab==='accounts'&&!recordId)render();});
 document.querySelectorAll('#nav .tab').forEach(b=>b.addEventListener('click',()=>go(b.dataset.tab)));
 
 load().then(render);
 </script>
 
-<!-- ===== Hoodie Spine integration ===== -->
+<!-- ===== Hoodie Spine integration (unchanged contract) ===== -->
 <script src="../spine/spine.js"></script>
 <script>
 (function(){
   if(typeof HoodieSpine==='undefined')return;
-  var spine=null, lastAcctId=null;
-  function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
-  /* live context chip in the global header */
-  var chip=document.createElement('div');
-  chip.id='spineChip';
-  chip.title='Shared suite context — set in the suite bar';
+  var spine=null,lastAcctId=null;
+  function esc2(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+  var chip=document.createElement('div');chip.id='spineChip';chip.title='Shared suite context';
   chip.style.cssText='display:none;align-items:center;gap:7px;font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:11px;font-weight:600;letter-spacing:.03em;color:#5b5347;background:#eef0f2;border:1px solid #d6dadf;border-radius:999px;padding:5px 11px;margin-right:10px;white-space:nowrap;';
-  var host=document.querySelector('.gutils')||document.querySelector('.gheader');
-  if(host)host.insertBefore(chip,host.firstChild);
-  function renderChip(ctx){
-    var parts=[];
-    if(ctx&&ctx.scope)parts.push(ctx.scope.name);
-    if(ctx&&ctx.account)parts.push(ctx.account.name);
+  var host=document.querySelector('.gutils')||document.querySelector('.gheader');if(host)host.insertBefore(chip,host.firstChild);
+  function renderChip(ctx){var parts=[];if(ctx&&ctx.scope)parts.push(ctx.scope.name);if(ctx&&ctx.account)parts.push(ctx.account.name);
     if(!parts.length){chip.style.display='none';return;}
-    chip.innerHTML='<span style="width:6px;height:6px;border-radius:50%;background:#c98a1a;flex:0 0 auto;display:inline-block"></span>'+
-      parts.map(function(t,i){return (i?'<span style="opacity:.4">▸</span> ':'')+'<span>'+esc(t)+'</span>';}).join(' ');
-    chip.style.display='inline-flex';
-  }
-  function applyContext(ctx){
-    /* inbound: when the shared account matches a tracked org, focus its record */
-    if(ctx&&ctx.account&&typeof DB!=='undefined'&&DB.accounts){
-      var want=ctx.account.name.toLowerCase();
-      var a=DB.accounts.find(function(x){return x.name.toLowerCase()===want;})
-          ||DB.accounts.find(function(x){return x.name.toLowerCase().indexOf(want)>=0||want.indexOf(x.name.toLowerCase())>=0;});
-      if(a&&a.id!==recordId&&a.id!==lastAcctId){lastAcctId=a.id;openRecord(a.id);}
-    }
-  }
+    chip.innerHTML='<span style="width:6px;height:6px;border-radius:50%;background:#c98a1a;flex:0 0 auto;display:inline-block"></span>'+parts.map(function(t,i){return (i?'<span style="opacity:.4">▸</span> ':'')+'<span>'+esc2(t)+'</span>';}).join(' ');
+    chip.style.display='inline-flex';}
+  function applyContext(ctx){if(ctx&&ctx.account&&typeof DB!=='undefined'&&DB.accounts){var want=ctx.account.name.toLowerCase();
+    var a=DB.accounts.find(function(x){return x.name.toLowerCase()===want;})||DB.accounts.find(function(x){return x.name.toLowerCase().indexOf(want)>=0||want.indexOf(x.name.toLowerCase())>=0;});
+    if(a&&a.id!==recordId&&a.id!==lastAcctId){lastAcctId=a.id;openRecord(a.id);}}}
   spine=HoodieSpine.connect({name:'Hoodie Relations',onContext:function(ctx){try{renderChip(ctx);}catch(e){}try{applyContext(ctx);}catch(e){}}});
-  /* outbound: opening an account publishes it to the suite + shows as a shell breadcrumb */
-  if(typeof openRecord==='function'){
-    var _open=openRecord;
-    window.openRecord=function(id){_open(id);try{var a=DB.accounts.find(function(x){return x.id===id;});if(a&&spine){lastAcctId=a.id;spine.setContext({account:{id:a.id,name:a.name}});spine.setCrumb(a.abbr||a.name);}}catch(e){}};
-  }
-  if(typeof back==='function'){ var _back=back; window.back=function(){_back();try{if(spine)spine.setCrumb('');}catch(e){}}; }
+  if(typeof openRecord==='function'){var _open=openRecord;window.openRecord=function(id){_open(id);try{var a=DB.accounts.find(function(x){return x.id===id;});if(a&&spine){lastAcctId=a.id;spine.setContext({account:{id:a.id,name:a.name}});spine.setCrumb(a.abbr||a.name);}}catch(e){}};}
+  if(typeof back==='function'){var _back=back;window.back=function(){_back();try{if(spine)spine.setCrumb('');}catch(e){}};}
 })();
 </script>
-
-<!-- shared suite header strip (standalone only) -->
 <script src="../suite-header.js" data-id="crm" data-mark="HR" data-name="Hoodie Relations" data-status="beta"></script>
 </body>
 </html>
