@@ -15,7 +15,7 @@ an "Open full ↗" escape hatch). Pushing to `main` deploys the whole thing to S
 │   ├── presenter.html         # Speaker's workbench
 │   ├── estate-map.html        # Data & model layer map
 │   ├── ttb-ingestion.html     # TTB COLA ingestion view (Unifyd)
-│   ├── item-mdm.html          # Item Master / MDM console (Unifyd)
+│   ├── mdm.html               # Hoodie Master — MDM control plane · /api + offline fallback (Unifyd)
 │   ├── training-suite.html    # The Bench — five training rooms
 │   ├── sales-tutorial.html    # The Long Game — sales room
 │   ├── roadmap.html           # Product roadmap
