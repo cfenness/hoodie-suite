@@ -16,7 +16,12 @@ aws s3 sync . "s3://$S3_BUCKET" \
   --exclude ".git/*" \
   --exclude ".github/*" \
   --exclude "cloudfront/*" \
+  --exclude "unifyd/*" \
+  --exclude "api/*" \
+  --exclude "*.py" \
   --exclude "README.md" \
+  --exclude "CLAUDE.md" \
+  --exclude "SPINE.md" \
   --exclude "deploy.sh" \
   --exclude ".gitignore" \
   --cache-control "public,max-age=300"

@@ -6,22 +6,49 @@ an "Open full ↗" escape hatch). Pushing to `main` deploys the whole thing to S
 
 ```
 .
-├── index.html              # the suite shell (launcher)
-├── apps/
-│   ├── dashboard.html      # Hoodie Intelligence (Prism)
-│   ├── crm.html            # Hoodie Relations (CRM)
-│   ├── ttb-ingestion.html  # TTB COLA ingestion (Unifyd)
-│   ├── item-mdm.html       # Item Master / MDM console (Unifyd)
-│   ├── roadmap.html        # Product roadmap
-│   └── principles-hub.html # Principles & Architecture KB
-├── cloudfront/basic-auth.js  # optional shared-password gate
+├── index.html                 # the suite shell (launcher + spine host)
+├── suite.css                  # shared chrome token contract
+├── suite-header.js            # in-app suite header strip (standalone apps)
+├── apps/                      # the static surfaces (render targets)
+│   ├── dashboard.html         # Hoodie Intelligence (Prism)
+│   ├── crm.html               # Hoodie Relations — deal-qualification CRM (MEDDPICC/Gap)
+│   ├── presenter.html         # Speaker's workbench
+│   ├── estate-map.html        # Data & model layer map
+│   ├── ttb-ingestion.html     # TTB COLA ingestion view (Unifyd)
+│   ├── item-mdm.html          # Item Master / MDM console (Unifyd)
+│   ├── training-suite.html    # The Bench — five training rooms
+│   ├── sales-tutorial.html    # The Long Game — sales room
+│   ├── roadmap.html           # Product roadmap
+│   ├── principles-hub.html    # Principles & Architecture KB
+│   ├── spine-adapter.html     # Reference: how apps join the spine
+│   ├── tasting-room.html
+│   └── perceptual-science-tutorial.html
+├── spine/
+│   ├── spine.js               # the shared backbone (host + connect)
+│   └── hierarchy.sample.json  # canonical hierarchy (sample)
+├── unifyd/                    # the ingestion ENGINE — scrapers + local agent (NOT deployed)
+│   ├── server.py              #   local agent (Flask) — serves hoodie_mdm.html + runs real pulls
+│   ├── ttb_cola_scraper.py    #   TTB COLA registry scraper
+│   ├── pull_sources.py        #   batch puller (Florida + COLA)
+│   ├── hoodie_mdm.html        #   the MDM control plane the agent serves
+│   ├── requirements.txt
+│   ├── fixtures/              #   captured TTB pages for parser confirmation
+│   └── README.md              #   engine docs (run instructions, provenance)
+├── cloudfront/basic-auth.js   # optional shared-password gate
 ├── .github/workflows/deploy.yml  # CI: push to main → deploy
-├── deploy.sh               # manual deploy from your laptop
+├── deploy.sh                  # manual deploy from your laptop
+├── CLAUDE.md · SPINE.md       # internal docs (not shipped)
 └── README.md
 ```
 
 To add an app later: drop the file in `apps/`, then add one line to the `APPS`
 array near the top of `index.html`. That's the whole integration.
+
+> **The Unifyd engine (`unifyd/`) is the owned layer, and it does not ship.** It is
+> excluded from the CloudFront deploy along with `*.py`, `cloudfront/`, and the
+> internal docs (see `deploy.sh` and `.github/workflows/deploy.yml`). The static
+> apps in `apps/` are render targets; `unifyd/` is where ingestion actually happens.
+> See `unifyd/README.md` to run the agent and the scraper.
 
 ---
 
@@ -173,29 +200,27 @@ invalidates CloudFront. Done.
 ## The backend on-ramp
 
 This repo is already the start of your backend, even though it only serves static
-files today. Here's the shape it grows into — and it lines up with the engine
-thinking:
+files today. The `unifyd/` engine is the first piece of the owned layer — today it
+runs locally (`python unifyd/server.py`) and emits `datasets.js` the apps embed.
+Here's the shape it grows into:
 
 - **The repo is the source of truth and the deploy spine.** Front-end ships on push.
-  A backend service lives in the same repo (e.g. an `api/` folder) and gets its own
-  deploy step in the same Actions workflow.
+  The `unifyd/` engine lives in the same repo and grows its own deploy step.
 
-- **Add `/api/*` without a second domain.** Stand up the data layer as **API Gateway
-  + Lambda** (serverless — cheap, scales to zero, fits a static-front world) or a
-  small container service. Then add a **second CloudFront behavior**: path pattern
-  `/api/*` → the API origin; everything else → S3. One domain, front *and* back,
-  one TLS cert, one auth gate.
+- **Add `/api/*` without a second domain.** Promote the `unifyd/` agent's endpoints
+  (`/api/health`, `/api/datasets`, `/api/runs`, `/api/run`) to **API Gateway +
+  Lambda**, then add a **second CloudFront behavior**: path pattern `/api/*` → the
+  API origin; everything else → S3. One domain, front *and* back, one TLS cert, one
+  auth gate. `hoodie_mdm.html` already speaks this contract.
 
 - **Secrets and connection strings** go in **AWS SSM Parameter Store** or **Secrets
   Manager**, never in the repo. Lambda reads them at runtime.
 
 - **Where this maps to the architecture:** the static apps in `apps/` are *render
-  targets*. The backend is where the *owned layer* lives — the declarative spec, the
-  gates, the data. The apps stay dumb and swappable; the value compounds behind
-  `/api/*`. Standing up that first endpoint (even just `/api/health`) is the moment
-  the suite stops being a folder of pages and becomes a product with a spine.
+  targets*. `unifyd/` is where the *owned layer* lives — the scrapers, the pipeline,
+  the canonical item/outlet/party model. The apps stay dumb and swappable; the value
+  compounds behind `/api/*`.
 
-Suggested first backend slice: a single read endpoint over the TTB/COLA catalog or
-the MDM items, so one app (say the dashboard or the MDM console) pulls live data
-through `/api/*` instead of carrying it inline. That one wire proves the whole
-front-to-back path before you build anything heavier on it.
+Suggested first backend slice: stand up the `unifyd/` agent's COLA + Florida pulls
+behind `/api/*` so one app (the MDM console) reads live data instead of an embedded
+`datasets.js`. That one wire proves the whole front-to-back path.
