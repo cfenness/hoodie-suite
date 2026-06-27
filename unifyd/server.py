@@ -54,6 +54,17 @@ def load(name, default):
 DATASETS = load("datasets.json", {})
 RUNS     = load("runs.json", [])
 
+# Canonical hierarchy served at /api/hierarchy. Curated copy from the state store if
+# present, else the bundled seed (unifyd/hierarchy.json). Eventually derived from the
+# owned master data; for now it mirrors spine/hierarchy.sample.json.
+HIER_SEED = os.path.join(APP_DIR, "hierarchy.json")
+def load_hierarchy():
+    h = load("hierarchy.json", None)
+    if h is not None: return h
+    try: return json.load(open(HIER_SEED))
+    except Exception: return {"id": "root", "level": "root", "name": "All Portfolios", "children": []}
+HIERARCHY = load_hierarchy()
+
 def save():
     blobs = {"datasets.json": DATASETS, "runs.json": RUNS}
     if STATE_BUCKET:
@@ -134,6 +145,10 @@ def datasets():
 @app.get("/api/runs")
 def runs():
     return jsonify(RUNS[:200])
+
+@app.get("/api/hierarchy")
+def hierarchy():
+    return jsonify(HIERARCHY)
 
 @app.post("/api/run")
 def run():

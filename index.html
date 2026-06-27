@@ -351,7 +351,12 @@
   ]};
   let HIER=FALLBACK;
   let spine=HoodieSpine.host({hierarchy:HIER});
-  fetch('spine/hierarchy.sample.json').then(r=>r.ok?r.json():null).then(h=>{ if(h){HIER=h;spine.setHierarchy(h);renderScope();} }).catch(()=>{});
+  /* Prefer the backend (/api/hierarchy); fall back to the static sample, then the inline default. */
+  const okJson=r=>r.ok?r.json():Promise.reject();
+  fetch('/api/hierarchy').then(okJson)
+    .catch(()=>fetch('spine/hierarchy.sample.json').then(okJson))
+    .then(h=>{ if(h){HIER=h;spine.setHierarchy(h);renderScope();} })
+    .catch(()=>{});
   const U=HoodieSpine.util;
 
   /* ============ account ============ */

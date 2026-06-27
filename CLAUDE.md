@@ -56,7 +56,8 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
 
 - `unifyd/server.py` — a local Flask agent (`python unifyd/server.py`, port 8765) that
   serves `hoodie_mdm.html` and runs real pulls on `/api/run`. Endpoints: `/api/health`,
-  `/api/datasets`, `/api/runs`, `/api/run`. State persists to `unifyd/agent_state/`.
+  `/api/datasets`, `/api/runs`, `/api/run`, `/api/hierarchy` (the canonical scope tree the
+  shell reads, seeded from `unifyd/hierarchy.json`). State persists to `unifyd/agent_state/`.
 - `unifyd/ttb_cola_scraper.py` — the TTB COLA registry scraper (date-chunked search,
   pagination, optional `--detail`/`--ocr`/`--resume`). The one selector-fragile spot is
   `parse_results()`'s `col(...)` index map; `unifyd/fixtures/` holds captured pages to
