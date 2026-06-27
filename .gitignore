@@ -1,7 +1,30 @@
+# OS / editor
 .DS_Store
-node_modules/
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Secrets / local env — never commit
 .env
 .env.*
+*.pem
+aws.json
+
+# Python (unifyd engine)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Unifyd engine runtime — pulled data + agent state never go in git
+unifyd/agent_state/
+unifyd/cola_out/
+unifyd/out/
+unifyd/**/*.local.json
+cola_labels.csv
 *.log
-.vscode/
-.idea/
+
+# (kept in git on purpose: unifyd/fixtures/ — parser reference pages)
