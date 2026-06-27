@@ -51,6 +51,8 @@
         broadcast(); emit("context", context);
       } else if (d.kind === "nav") {            // an app requested a cross-app jump
         emit("nav", d.payload);                 // { app, scope }
+      } else if (d.kind === "crumb") {          // an app posted an in-app breadcrumb
+        emit("crumb", d.payload);               // a string, e.g. "WSWA"
       }
     });
     return hostApi;
@@ -89,6 +91,7 @@
     getHierarchy: function () { return hierarchy; },
     setContext: function (patch) { send(parent, "setContext", patch); },     // update shared context
     navigate: function (app, scope) { send(parent, "nav", { app: app, scope: scope }); }, // jump to another app
+    setCrumb: function (text) { send(parent, "crumb", text); },  // post an in-app breadcrumb to the shell bar
     on: function (evt, fn) { (listeners[evt] = listeners[evt] || []).push(fn); }
   };
 

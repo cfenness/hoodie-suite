@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="../suite.css">
+<title>The Long Game — Sales · The Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,900&family=Spectral:ital,wght@0,400;0,500;0,600;1,400;1,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;}
+  :root{
+    --paper:#EBE6DA;--cream:#FBF8F1;--panel:#F3EFE6;--ink:#211B14;--ink-soft:#5C5044;--hair:#CFC5B2;--rule:#CFC5B2;
+    --sig:#4B2E66;--sig-d:#352049;--sig-tint:#EFEAF3;     /* the long-game grape */
+    --amber:#A85A1A;--amber-deep:#7E3F0F;--amber-tint:#F6ECDD;
+    --slate:#2E5360;--slate-tint:#E5EDEF;
+    --ox:#7A2A43;--ox-tint:#F4E6EA;
+    --good:#2E5A38;--good-tint:#E7F0E8;
+  }
+  body{background:radial-gradient(130% 90% at 50% -10%,#F3EFE6 0%,var(--paper) 60%,#E4DECF 100%);
+    color:var(--ink);font-family:"Spectral",Georgia,serif;line-height:1.5;min-height:100vh;}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important;}}
+
+  /* header bar */
+  header.bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;
+    background:rgba(251,248,241,.93);backdrop-filter:blur(6px);border-bottom:1.5px solid var(--ink);padding:13px 22px;}
+  header.bar .brand{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.2em;text-transform:uppercase;cursor:pointer;}
+  header.bar .brand b{color:var(--sig);}
+  header.bar .ttl{font-family:"Fraunces",serif;font-weight:600;font-size:15px;}
+  header.bar .prog{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.06em;color:var(--ink-soft);}
+
+  .tut{display:grid;grid-template-columns:278px 1fr;max-width:1180px;margin:0 auto;align-items:start;}
+  /* sidebar curriculum */
+  aside.side{position:sticky;top:48px;align-self:start;border-right:1px solid var(--hair);padding:24px 0 50px;max-height:calc(100vh - 48px);overflow:auto;}
+  aside.side .scur{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);padding:0 22px 2px;font-weight:600;}
+  aside.side .ssub{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--sig);padding:0 22px 14px;letter-spacing:.03em;}
+  aside.side ol{list-style:none;counter-reset:l;}
+  aside.side .group{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--sig);padding:16px 22px 5px;font-weight:600;}
+  aside.side li a{counter-increment:l;display:flex;gap:11px;padding:7px 22px;font-size:13.5px;color:var(--ink-soft);border-left:2px solid transparent;cursor:pointer;line-height:1.28;transition:color .12s,background .12s;}
+  aside.side li a:before{content:counter(l,decimal-leading-zero);font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--sig);font-weight:600;flex-shrink:0;padding-top:1px;}
+  aside.side li a:hover{color:var(--ink);background:var(--panel);}
+  aside.side li a.active{color:var(--ink);border-left-color:var(--sig);background:var(--cream);font-weight:600;}
+
+  /* content */
+  main.content{padding:38px 56px 80px;min-width:0;max-width:792px;}
+  .crumb{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:14px;}
+  .lesson{display:none;}
+  .lesson.active{display:block;animation:fade .35s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+  h1{font-family:"Fraunces",serif;font-weight:900;font-size:clamp(30px,4.6vw,44px);line-height:1.02;letter-spacing:-.02em;margin-bottom:8px;}
+  h1 em{font-style:italic;font-weight:500;color:var(--sig);}
+  h2{font-family:"Fraunces",serif;font-weight:600;font-size:22px;line-height:1.12;margin:30px 0 10px;}
+  p{font-size:15.5px;margin-bottom:14px;max-width:64ch;}
+  p.lead{font-size:18px;line-height:1.5;color:var(--ink);margin:6px 0 18px;}
+  p.lead em.k{font-style:normal;font-weight:600;color:var(--sig);border-bottom:2px solid var(--sig-tint);}
+  em.k{font-style:normal;font-weight:600;color:var(--sig);}
+  strong{font-weight:600;}
+  ul.body,ol.body{margin:0 0 16px 22px;}
+  ul.body li,ol.body li{font-size:15.5px;margin:6px 0;max-width:62ch;}
+  .pull{font-family:"Fraunces",serif;font-weight:500;font-style:italic;font-size:20px;line-height:1.3;color:var(--sig-d);
+    border-left:3px solid var(--sig);padding:4px 0 4px 18px;margin:20px 0;max-width:60ch;}
+
+  .box{border-left:4px solid;padding:14px 18px;margin:18px 0;font-size:14.5px;line-height:1.5;max-width:64ch;}
+  .box .blabel{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;margin-bottom:6px;}
+  .box p{margin-bottom:8px;font-size:14.5px;}.box p:last-child{margin-bottom:0;}
+  .box.example{background:var(--amber-tint);border-color:var(--amber);}.box.example .blabel{color:var(--amber-deep);}
+  .box.note{background:var(--slate-tint);border-color:var(--slate);}.box.note .blabel{color:var(--slate);}
+  .box.trap{background:var(--ox-tint);border-color:var(--ox);}.box.trap .blabel{color:var(--ox);}
+  .box.take{background:var(--cream);border:1.5px solid var(--ink);border-left-width:4px;}.box.take .blabel{color:var(--ink);}
+  .box.field{background:var(--good-tint);border-color:var(--good);}.box.field .blabel{color:var(--good);}
+
+  /* MEDDPICC mini grid for the spine lessons */
+  .meddgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:18px 0;}
+  @media(max-width:680px){.meddgrid{grid-template-columns:repeat(2,1fr);}}
+  .mcell{background:var(--cream);border:1.5px solid var(--ink);padding:11px 12px;}
+  .mcell .ml{font-family:"Fraunces",serif;font-weight:900;font-size:22px;color:var(--sig);line-height:1;}
+  .mcell .mt{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);margin-top:5px;font-weight:600;}
+  .mcell .mh{font-size:12px;color:var(--ink-soft);margin-top:5px;line-height:1.35;}
+
+  /* compare table */
+  .vs{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1.5px solid var(--ink);margin:18px 0;}
+  .vs>div{padding:14px 16px;}
+  .vs .vh{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;margin-bottom:9px;}
+  .vs .a{border-right:1.5px solid var(--ink);}
+  .vs .a .vh{color:var(--amber-deep);}.vs .b .vh{color:var(--sig);}
+  .vs ul{list-style:none;}.vs li{font-size:13.5px;margin:7px 0;padding-left:15px;position:relative;line-height:1.4;}
+  .vs li:before{content:"›";position:absolute;left:0;color:var(--ink-soft);}
+
+  .pn{display:flex;justify-content:space-between;gap:12px;margin-top:42px;padding-top:20px;border-top:1px solid var(--hair);}
+  .pn button{font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.04em;padding:11px 20px;border:1.5px solid var(--ink);background:var(--cream);cursor:pointer;color:var(--ink);transition:all .12s;}
+  .pn button:hover:not(:disabled){background:var(--ink);color:var(--cream);}
+  .pn button:disabled{opacity:.32;cursor:default;}
+  .pn .next{background:var(--sig);color:#fff;border-color:var(--sig);}
+  .pn .next:hover{background:var(--sig-d);}
+
+  @media (max-width:760px){
+    .tut{grid-template-columns:1fr;}
+    aside.side{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--hair);padding:14px 0;}
+    aside.side ol{display:flex;overflow-x:auto;gap:0;}
+    aside.side .group{display:none;}
+    aside.side li a{white-space:nowrap;border-left:0;border-bottom:2px solid transparent;}
+    aside.side li a.active{border-left:0;border-bottom-color:var(--sig);}
+    aside.side .scur,aside.side .ssub{padding-left:18px;}
+    main.content{padding:26px 20px 64px;}
+  }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <span class="brand" onclick="location.href='training-suite.html'">The <b>Bench</b> · Sales</span>
+  <span class="ttl">The Long Game</span>
+  <span class="prog" id="prog">Lesson 01 / 14</span>
+</header>
+
+<div class="tut">
+  <aside class="side">
+    <div class="scur">The Long Game</div>
+    <div class="ssub">North Star: MEDDPICC command</div>
+    <ol id="nav">
+      <div class="group">Foundations</div>
+      <li><a data-l="0">The two motions</a></li>
+      <li><a data-l="1">What transfers, what betrays</a></li>
+      <li><a data-l="2">The Gap is the product</a></li>
+      <div class="group">The Qualification Spine</div>
+      <li><a data-l="3">MEDDPICC is a risk checklist</a></li>
+      <li><a data-l="4">Metrics &amp; the Economic Buyer</a></li>
+      <li><a data-l="5">Decision Criteria &amp; Process</a></li>
+      <li><a data-l="6">Paper Process &amp; Pain</a></li>
+      <li><a data-l="7">Champion &amp; Competition</a></li>
+      <div class="group">The Diagnostic Motion</div>
+      <li><a data-l="8">Make the problem hurt</a></li>
+      <li><a data-l="9">The Challenger reframe</a></li>
+      <li><a data-l="10">The discovery question set</a></li>
+      <div class="group">Running the Deal</div>
+      <li><a data-l="11">Multithreading the committee</a></li>
+      <li><a data-l="12">The silent stretch</a></li>
+      <li><a data-l="13">The moat &amp; the teardown</a></li>
+    </ol>
+  </aside>
+
+  <main class="content">
+
+    <!-- L0 -->
+    <section class="lesson active" data-l="0">
+      <div class="crumb">Foundations · Lesson 01</div>
+      <h1>The two <em>motions</em></h1>
+      <p class="lead">There are two fundamentally different selling motions. You spent fifteen years mastering one. The job in front of you runs on the other — and the instincts that made you good can quietly work against you.</p>
+      <p>Beverage-alcohol field sales is a <strong>velocity game into existing demand</strong>. The buyer already knows they need the vodka. You're fighting for share, shelf, programming, and depletions <em>this month</em>. You win on relationships, presence, momentum, and the quick yes. It rewards a sprint-and-finish striker.</p>
+      <p>Selling a data platform is the opposite. It's a <strong>long cycle into demand you have to create</strong>, because the buyer hasn't yet admitted the problem exists. You're not closing someone who's already shopping — you're teaching a distributor or supplier to <em>see a mess they've normalized</em>, then de-risking a major decision across procurement, security, data ops, and legal, any one of whom can kill it.</p>
+      <div class="vs">
+        <div class="a"><div class="vh">Capturing demand · your old game</div><ul>
+          <li>Demand already exists</li><li>Short cycle, win it this month</li><li>One buyer, one yes</li>
+          <li>Relationship &amp; presence close it</li><li>Compete for share against rivals</li></ul></div>
+        <div class="b"><div class="vh">Creating demand · the new game</div><ul>
+          <li>Demand must be manufactured</li><li>Long cycle, measured in quarters</li><li>A committee, any of whom is a veto</li>
+          <li>Diagnosis &amp; proof close it</li><li>Compete mostly against "do nothing"</li></ul></div>
+      </div>
+      <div class="box take"><div class="blabel">Takeaway</div><p>Same people, same industry, different physics. The whole curriculum is about installing the second motion on top of the temperament the first one gave you — keeping what transfers, retiring what betrays.</p></div>
+      <div class="pn"><button class="prev" disabled>← Previous</button><button class="next">Next lesson →</button></div>
+    </section>
+
+    <!-- L1 -->
+    <section class="lesson" data-l="1">
+      <div class="crumb">Foundations · Lesson 02</div>
+      <h1>What transfers, what <em>betrays</em></h1>
+      <p class="lead">Your background is an asset and a liability at the same time. The trick is knowing which parts to lean on and which reflexes to put down.</p>
+      <h2>What transfers — keep these</h2>
+      <p><strong>The domain.</strong> You know these buyers' world cold — the three tiers, depletions, how a distributor actually runs. That's a moat almost no data vendor will ever have. It buys you credibility in the first ninety seconds that a generalist rep spends a year earning.</p>
+      <p><strong>The rain-game temperament.</strong> The thing you said you loved — the 1-0 dogfight where you finish on fumes and win by refusing to lose. That's the exact disposition a long cycle demands: the deal goes silent for six weeks, support is ten seconds away, and you shield the ball with your body until it arrives. That's not a vodka skill. That's a complex-selling skill you already own.</p>
+      <h2>What betrays — put these down</h2>
+      <ul class="body">
+        <li><strong>The close reflex.</strong> Pushing for the quick yes spooks a committee. In demand-creation, premature closing reads as pressure and kills trust.</li>
+        <li><strong>Single-threading.</strong> In the field, your one buyer was the deal. Here, betting everything on one relationship gets you buried the moment they go quiet or leave.</li>
+        <li><strong>The depletion cadence.</strong> The "win it this month" metabolism fights a cycle that punishes impatience. Velocity here looks like desperation.</li>
+        <li><strong>Pitching the product.</strong> In the field you led with the brand because demand was already there. Lead with product here and you answer a question the buyer hasn't asked yet.</li>
+      </ul>
+      <div class="box note"><div class="blabel">The reframe</div><p>You're not a worse salesperson in this world — you're a striker being asked to play a position you've never trained for. The athleticism transfers. The position is new.</p></div>
+      <div class="pn"><button class="prev">← Previous</button><button class="next">Next lesson →</button></div>
+    </section>
+
+    <!-- L2 -->
+    <section class="lesson" data-l="2">
+      <div class="crumb">Foundations · Lesson 03</div>
+      <h1>The Gap <em>is</em> the product</h1>
+      <p class="lead">When demand doesn't exist yet, you don't sell a product. You sell the distance between where the buyer is and where they could be — and you make that distance impossible to ignore.</p>
+      <p>This is the core of <em class="k">Gap Selling</em> (Keenan). A buyer only moves when the gap between their <strong>current state</strong> and their <strong>desired future state</strong> is large enough — and <em>felt</em> enough — that staying still becomes the riskier choice. Your product is just the bridge across the gap. If they don't see the gap, the bridge is worthless.</p>
+      <div class="meddgrid" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="mcell"><div class="mt">Current state</div><div class="mh">What is actually true today, in their world and their numbers — not your features.</div></div>
+        <div class="mcell" style="border-color:var(--amber)"><div class="mt" style="color:var(--amber-deep)">Cost of the status quo</div><div class="mh">What staying here costs them — hours, dollars, risk, lost revenue. This is the field that does the selling.</div></div>
+        <div class="mcell" style="border-color:var(--good)"><div class="mt" style="color:var(--good)">Future state</div><div class="mh">What the world looks like once the gap is closed. Concrete, theirs, believable.</div></div>
+      </div>
+      <p class="pull">No cost = no gap = no budget. The middle column is the only one that creates urgency.</p>
+      <div class="box example"><div class="blabel">Example · the RNDC item-master gap</div>
+        <p><strong>Current:</strong> the item master is fractured region to region; the same product carries different identities tier-to-tier, so end-to-end reporting can't be trusted.</p>
+        <p><strong>Cost:</strong> reconciliation labor plus decisions made on numbers nobody fully trusts — and every new supplier integration re-pays the same identity tax. (Now go get <em>their</em> number for that.)</p>
+        <p><strong>Future:</strong> a canonical product spine that resolves identity once and flows clean downstream through every system.</p></div>
+      <div class="box field"><div class="blabel">In the CRM</div><p>This is the three-column <strong>Gap</strong> panel on every record in Hoodie Relations. If the cost column is empty, the app warns you — because a problem that doesn't hurt doesn't get budget. Building the Gap <em>is</em> the work of the first two calls.</p></div>
+      <div class="pn"><button class="prev">← Previous</button><button class="next">Next lesson →</button></div>
+    </section>
+
+    <!-- L3 -->
+    <section class="lesson" data-l="3">
+      <div class="crumb">The Qualification Spine · Lesson 04</div>
+      <h1>MEDDPICC is a risk <em>checklist</em>, not a ritual</h1>
+      <p class="lead">Most people treat MEDDPICC as a sales gimmick — boxes to fill so a manager nods. It's the opposite. It's a checklist of exactly the things that kill complex deals, and the blanks are the risk.</p>
+      <p>Pick <strong>one</strong> qualification language and live inside it. For your world that's <em class="k">MEDDPICC</em> — eight things that, when you don't know them, are the precise reasons a deal stalls, slips, or dies. The discipline is simple and brutal: after every call, fill in what you actually learned, then stare at the blanks. The blanks <em>are</em> the deal.</p>
+      <div class="meddgrid">
+        <div class="mcell"><div class="ml">M</div><div class="mt">Metrics</div><div class="mh">The quantified outcome, in their numbers</div></div>
+        <div class="mcell"><div class="ml">E</div><div class="mt">Economic Buyer</div><div class="mh">Who can say yes alone</div></div>
+        <div class="mcell"><div class="ml">D</div><div class="mt">Decision Criteria</div><div class="mh">The checklist they score you on</div></div>
+        <div class="mcell"><div class="ml">D</div><div class="mt">Decision Process</div><div class="mh">Steps &amp; dates to signature</div></div>
+        <div class="mcell"><div class="ml">P</div><div class="mt">Paper Process</div><div class="mh">Procurement, security, legal</div></div>
+        <div class="mcell"><div class="ml">I</div><div class="mt">Identify Pain</div><div class="mh">The problem, made felt</div></div>
+        <div class="mcell"><div class="ml">C</div><div class="mt">Champion</div><div class="mh">Sells for you when you're out of the room</div></div>
+        <div class="mcell"><div class="ml">C</div><div class="mt">Competition</div><div class="mh">Including "do nothing"</div></div>
+      </div>
+      <div class="box note"><div class="blabel">Why it fits how you think</div><p>You run hypothesis before analysis — you form a read, then test it against the most specific fact available. MEDDPICC is that instinct turned into an operating system: each element is a hypothesis about the deal, and the note is the evidence. Empty note, untested hypothesis, live risk.</p></div>
+      <div class="box field"><div class="blabel">In the CRM</div><p>Every record carries the eight-element scorecard. Each status cycles <em>unknown → weak → solid</em>; unknowns are rendered loud on purpose. The score is just the sum, but the value is the staring — the weakest-link callout tells you the one thing to go learn next.</p></div>
+      <div class="pn"><button class="prev">← Previous</button><button class="next">Next lesson →</button></div>
+    </section>
+
+    <!-- L4 -->
+    <section class="lesson" data-l="4">
+      <div class="crumb">The Qualification Spine · Lesson 05</div>
+      <h1>Metrics &amp; the <em>Economic Buyer</em></h1>
+      <p class="lead">The first two letters are where most data deals quietly fail — not because the product is wrong, but because the value was never expressed in the buyer's own numbers and the person who controls the money was never in the room.</p>
+      <h2>M — Metrics</h2>
+      <p>A metric is the <strong>quantified business outcome, in their terms</strong>. "Cleaner data" is not a metric. "Cut reconciliation from 40 analyst-hours a week to 4, and stop re-paying the integration tax on every new supplier" is. The number must be <em>theirs</em> — pulled from their mouth, their spreadsheet, their CFO — not modeled by you. A metric you invented is a metric they'll discount.</p>
+      <div class="box trap"><div class="blabel">Trap</div><p>Bringing your own ROI deck too early. The moment the number is yours, it's marketing. The moment it's theirs, it's a business case they'll defend to their own boss. Your job is to <em>extract</em> the metric, not supply it.</p></div>
+      <h2>E — Economic Buyer</h2>
+      <p>The economic buyer is the one person who can <strong>say yes alone</strong> and release budget. Not the most enthusiastic person — the one with the authority. In a distributor that might be a CIO, a COO, or a CFO; in an association, a President plus board sign-off. The test is blunt: <em>have you been in the room with them?</em> If not, you have a champion with a sponsor problem.</p>
+      <div class="box example"><div class="blabel">Example · WSWA</div><p>Your SVP of Research is a real, powered champion and is selling this internally. But the budget likely needs President-plus-board sign-off, and you haven't been in that room. So Champion is <strong>solid</strong>, Economic Buyer is <strong>weak</strong> — and the single most valuable next move is asking the champion for thirty minutes with the EB.</p></div>
+      <div class="pn"><button class="prev">← Previous</button><button class="next">Next lesson →</button></div>
+    </section>
+
+    <!-- L5 -->
+    <section class="lesson" data-l="5">
+      <div class="crumb">The Qualification Spine · Lesson 06</div>
+      <h1>Decision Criteria &amp; <em>Process</em></h1>
+      <p class="lead">These two are the difference between hoping a deal closes and knowing the path it takes. One is <em>what</em> they'll judge you on; the other is <em>how</em>, by whom, and by when the decision actually gets made.</p>
+      <h2>D — Decision Criteria</h2>
+      <p>The <strong>explicit checklist</strong> they'll score you against — and, crucially, <em>who wrote it</em>. In data deals the criteria that decide it are rarely about features. They're about governance: the independence firewall, data-use terms, security posture, who owns the canonical record. If you can <em>shape</em> the criteria early — get your strongest differentiator written into the list — you've half-won. If a competitor wrote the list, you're answering their exam.</p>
+      <h2>D — Decision Process</h2>
+      <p>The <strong>sequence of steps, owners, and dates</strong> from today to signature. Who reviews, who approves, what triggers the next step, where it can stall. A deal without a mapped process isn't a forecast, it's a wish. The strongest question you can ask a champion: <em>"Walk me through exactly how a decision like this gets made here — who's touched it before it's real?"</em></p>
+      <div class="box note"><div class="blabel">How they pair</div><p>Criteria without process means you know the test but not the schedule. Process without criteria means you know the schedule but not the test. You need both to stop being surprised — and surprises in a long cycle are almost always bad ones.</p></div>
+      <div class="pn"><button class="prev">← Previous</button><button class="next">Next lesson →</button></div>
+    </section>
+
+    <!-- L6 -->
+    <section class="lesson" data-l="6">
+      <div class="crumb">The Qualification Spine · Lesson 07</div>
+      <h1>Paper Process &amp; <em>Pain</em></h1>
+      <p class="lead">One of these is the most-skipped letter and the most common late-stage deal-killer. The other is the engine of the entire sale. They sit at opposite ends of the cycle and both decide whether you close.</p>
+      <h2>P — Paper Process</h2>
+      <p>Everything that happens <strong>after "yes"</strong>: procurement, vendor onboarding, security review, legal redlines, and — for you specifically — <em>data-use and redistribution terms</em>. This is where data deals go to die quietly. A verbal yes that hits a six-month security review and a legal team that's never seen a data-fiduciary clause is not a closed deal. Map the paper path <em>early</em>, while you still have momentum to spend.</p>
+      <div class="box example"><div class="blabel">Example · the data-evaluation agreement</div><p>Adapting a Data Evaluation Agreement with tracked changes for WSWA <em>is</em> paper-process work done early — you're de-risking the legal step before it becomes a wall. That instinct is right. Now do the same for procurement and security before you need to.</p></div>
+      <h2>I — Identify Pain</h2>
+      <p>The whole sale rests here. Pain is the problem the buyer has <strong>normalized</strong> — learned to live with — that you make <em>felt</em> and <em>urgent</em> again. Not a pain you assert; a pain they articulate back to you. When the buyer says the cost out loud in their own words, you have pain. Until then you have a hunch. (The next lessons are entirely about manufacturing this.)</p>
+      <div class="pn"><button class="prev">← Previous</button><button class="next">Next lesson →</button></div>
+    </section>
+
+    <!-- L7 -->
+    <section class="lesson" data-l="7">
+      <div class="crumb">The Qualification Spine · Lesson 08</div>
+      <h1>Champion &amp; <em>Competition</em></h1>
+      <p class="lead">The last two letters are the ones people most often get wrong — by mistaking a friend for a champion, and by forgetting who they're really competing against.</p>
+      <h2>C — Champion</h2>
+      <p>A champion has <strong>two properties, both required</strong>: they sell for you when you're not in the room, <em>and</em> they have the power or access to make that matter. A friendly contact with no influence is a <em>coach</em> — useful, but not a champion. The most dangerous deal is one with a beloved champion who can't reach the economic buyer: it feels safe and is not. Test your champion: <em>have they put their own credibility on the line internally for this yet?</em></p>
+      <div class="box trap"><div class="blabel">Trap · the enthusiastic non-champion</div><p>The person who loves your demo, replies fast, and has no budget and no sway. They make you feel like the deal is moving while it sits still. Warmth is not power. Qualify for both.</p></div>
+      <h2>C — Competition</h2>
+      <p>List every alternative — including the one that usually wins: <strong>do nothing</strong>. In demand-creation, your real competitor is rarely another vendor; it's the buyer's inertia, the build-it-in-house instinct, and the comfort of the normalized problem. Name what they do if they <em>don't</em> move, because that's the option you're actually beating.</p>
+      <div class="box note"><div class="blabel">The "do nothing" rule</div><p>If you can't articulate why standing still hurts more than buying, you haven't built enough gap. Competition and Pain are the same fight from two sides: make the status quo the expensive choice.</p></div>
+      <div class="pn"><button class="prev">← Previous</button><button class="next">Next lesson →</button></div>
+    </section>
+
+    <!-- L8 -->
+    <section class="lesson" data-l="8">
+      <div class="crumb">The Diagnostic Motion · Lesson 09</div>
+      <h1>Make the problem <em>hurt</em></h1>
+      <p class="lead">This is the front-end skill bev-alc never asked of you, because there the demand was already there. Here you have to take a problem the buyer has stopped noticing and make it ache.</p>
+      <p>The tool is <em class="k">diagnostic, problem-first discovery</em> — the research foundation under <em>SPIN Selling</em> (Rackham). The move is a question sequence that walks a buyer from "this is fine" to "we can't keep doing this":</p>
+      <ol class="body">
+        <li><strong>Situation</strong> — establish the facts, fast and respectfully. (You can skip most of this; your domain knowledge means you already know the situation. Don't waste their time proving it.)</li>
+        <li><strong>Problem</strong> — surface the difficulty they've normalized. "How do you reconcile the same SKU across regions today?"</li>
+        <li><strong>Implication</strong> — the load-bearing move. Follow the problem downstream until it hurts. "So when that's wrong, what decision gets made on the bad number? What does that cost when it happens?"</li>
+        <li><strong>Need-payoff</strong> — let <em>them</em> articulate the value of solving it. "If identity resolved once and flowed clean, what would that free up?"</li>
+      </ol>
+      <p class="pull">Implication questions are how you make a normalized pain hurt again. They're the whole game.</p>
+      <div class="box example"><div class="blabel">Example · turning a shrug into a number</div>
+        <p>Buyer: "Yeah, the regional item codes don't match, but we manage."</p>
+        <p>You (implication): "When a supplier's volume shows up under two identities, who catches it — and what happens to the report that went out before they did?"</p>
+        <p>Now they're computing the cost out loud. That sentence is worth more than any slide you could have shown.</p></div>
+      <div class="box take"><div class="blabel">Takeaway</div><p>You are not there to present. You are there to ask the four or five questions that make the buyer say the painful thing first. When they say it, it's true. When you say it, it's a pitch.</p></div>
+      <div class="pn"><button class="prev">← Previous</button><button class="next">Next lesson →</button></div>
+    </section>
+
+    <!-- L9 -->
+    <section class="lesson" data-l="9">
+      <div class="crumb">The Diagnostic Motion · Lesson 10</div>
+      <h1>The Challenger <em>reframe</em></h1>
+      <p class="lead">Diagnosis surfaces a pain the buyer already half-knew. The reframe goes further — it teaches them something about their own business they didn't know, and reorganizes how they see the problem around your strength.</p>
+      <p>The <em class="k">Challenger</em> motion is three beats: <strong>teach, tailor, take control</strong>.</p>
+      <ul class="body">
+        <li><strong>Teach</strong> — lead with an insight, not a question. Show them a pattern in their own world they can't see from inside it. Your unfair advantage here is the data: you can show a distributor something true about their category that they don't have the vantage point to see.</li>
+        <li><strong>Tailor</strong> — bend the insight to <em>this</em> buyer's role, pressures, and metrics. The CFO and the head of data need the same truth framed at different altitudes.</li>
+        <li><strong>Take control</strong> — be willing to push, to disagree, to name the uncomfortable thing. Not aggression — <em>conviction</em>. A buyer trusts a seller who'll tell them they're wrong more than one who agrees with everything.</li>
+      </ul>
+      <div class="box note"><div class="blabel">Why this is your reframe</div><p>"Don't change the label" — stewardship over performance creativity — is itself a teaching reframe. You're not selling a tool; you're reframing what it means to be a responsible custodian of the industry's data. That's a Challenger insight dressed as a philosophy, and it's more defensible than any feature.</p></div>
+      <div class="box trap"><div class="blabel">Trap</div><p>Reframe without diagnosis is just a clever opinion. Teach <em>after</em> you've earned the right with a real pain, or the insight bounces off. Lesson 9 before Lesson 10, always.</p></div>
+      <div class="pn"><button class="prev">← Previous</button><button class="next">Next lesson →</button></div>
+    </section>
+
+    <!-- L10 -->
+    <section class="lesson" data-l="10">
+      <div class="crumb">The Diagnostic Motion · Lesson 11</div>
+      <h1>The discovery question <em>set</em></h1>
+      <p class="lead">Discovery isn't improvised. The best operators walk in with a designed sequence — a handful of questions engineered to surface pain, map the deal, and let the buyer talk themselves into the gap.</p>
+      <p>Build a reusable set, then tune it per deal. A working skeleton for your motion:</p>
+      <ol class="body">
+        <li><strong>Anchor (current state):</strong> "Walk me through how you handle ___ today, end to end." <span style="color:var(--ink-soft)">→ feeds the Gap's current column.</span></li>
+        <li><strong>Problem:</strong> "Where in that does it break, or where do you not fully trust the output?"</li>
+        <li><strong>Implication:</strong> "When it breaks, what decision rides on it — and what does a wrong one cost you?" <span style="color:var(--ink-soft)">→ feeds Metrics + the cost column.</span></li>
+        <li><strong>Process:</strong> "If you decided to fix this, walk me through how a decision like that actually gets made here." <span style="color:var(--ink-soft)">→ feeds Decision Process + Economic Buyer.</span></li>
+        <li><strong>Criteria:</strong> "What would have to be true about a partner for you to trust them with this?" <span style="color:var(--ink-soft)">→ feeds Decision Criteria, and lets you shape it.</span></li>
+        <li><strong>Competition:</strong> "What have you tried, and what happens if you just keep doing it the current way?" <span style="color:var(--ink-soft)">→ feeds Competition + the "do nothing" line.</span></li>
+        <li><strong>Need-payoff:</strong> "If this were solved, what does it free up for you?" <span style="color:var(--ink-soft)">→ lets them sell themselves; arms your champion.</span></li>
+      </ol>
+      <div class="box field"><div class="blabel">In the CRM</div><p>Notice every question maps to a MEDDPICC cell or a Gap column. That's not a coincidence — discovery exists to fill the scorecard. Run the set, then update the record from what you heard, and the blanks tell you what the <em>next</em> call is for.</p></div>
+      <div class="box take"><div class="blabel">The discipline that makes it work</div><p>Record your calls and review your own discovery. It's the fastest, most uncomfortable teacher there is — you'll hear yourself pitching when you should have been asking. Reps without a teardown just calcify bad habits.</p></div>
+      <div class="pn"><button class="prev">← Previous</button><button class="next">Next lesson →</button></div>
+    </section>
+
+    <!-- L11 -->
+    <section class="lesson" data-l="11">
+      <div class="crumb">Running the Deal · Lesson 12</div>
+      <h1>Multithreading the <em>committee</em></h1>
+      <p class="lead">In the field, your one buyer was the deal. Here, a single thread is a single point of failure — and the people who can kill your deal are rarely the people you've been talking to.</p>
+      <p>A data-platform purchase touches a committee: the <strong>champion</strong> who wants it, the <strong>economic buyer</strong> who funds it, <strong>data ops</strong> who'll run it, <strong>security</strong> who'll vet it, <strong>procurement</strong> who'll paper it, and <strong>legal</strong> who'll redline the data terms. Each is a potential veto. Your job is to have a relationship — or at least a known position — with every one before they surprise you.</p>
+      <p>Tag each person by their <strong>role on the deal</strong>, not just their title: Champion, Economic Buyer, Decision-maker, Influencer, Coach, or Blocker. The instant you do that, single-threading becomes visible — and so does the missing thread you need to go build.</p>
+      <div class="box trap"><div class="blabel">Trap · the silent veto</div><p>The security reviewer you never met who flags a data-redistribution clause in month five and freezes everything. You can't multithread your way out of it then. You multithread <em>early</em>, so the people who can say no have already met you and the objection surfaces while you can still answer it.</p></div>
+      <div class="box field"><div class="blabel">In the CRM</div><p>The committee panel warns you the moment an advancing deal is single-threaded or has no tagged champion. Those two warnings catch the most common — and most fatal — structural mistakes in complex selling.</p></div>
+      <div class="pn"><button class="prev">← Previous</button><button class="next">Next lesson →</button></div>
+    </section>
+
+    <!-- L12 -->
+    <section class="lesson" data-l="12">
+      <div class="crumb">Running the Deal · Lesson 13</div>
+      <h1>The silent <em>stretch</em></h1>
+      <p class="lead">This is the part you're already built for. The deal goes quiet. The cycle drags. Nothing is closing and nothing is dead. Most sellers panic and push — and the push is what kills it.</p>
+      <p>You called this the rain game: the 1-0 dogfight where by the end you're dead but you keep going, shielding the ball with your body because the pace is gone and stubbornness is all that's left. That is exactly the discipline a long cycle demands. The silent stretch is not a problem to solve with pressure — it's a phase to <em>survive</em> with patience and small, value-adding touches.</p>
+      <h2>How to hold without forcing</h2>
+      <ul class="body">
+        <li><strong>Stay the outlet, not the chaser.</strong> Keep showing up with something useful — a data point, a relevant read, an intro — not "just checking in." Every touch should earn its place.</li>
+        <li><strong>Work the threads you can move.</strong> When the champion is quiet, advance security, or legal, or a second relationship. Progress somewhere is progress.</li>
+        <li><strong>Let the qualification tell you whether to worry.</strong> A silent deal that's well-qualified is just slow. A silent deal full of blanks is dying. The scorecard tells you which.</li>
+        <li><strong>Don't mistake motion for closing.</strong> Forcing a yes before the committee is ready spends trust you'll need later. Hold the line.</li>
+      </ul>
+      <div class="pull">A silent deal that's well-qualified is just slow. A silent deal full of unknowns is dying. Know which one you're in.</div>
+      <div class="box note"><div class="blabel">Why this is your edge</div><p>Most sellers are sprinters who fall apart in the rain. You said the dogfight was your favorite game to play. The temperament that makes the silent stretch unbearable for them is the one you actually enjoy — lean on it.</p></div>
+      <div class="pn"><button class="prev">← Previous</button><button class="next">Next lesson →</button></div>
+    </section>
+
+    <!-- L13 -->
+    <section class="lesson" data-l="13">
+      <div class="crumb">Running the Deal · Lesson 14</div>
+      <h1>The moat &amp; the <em>teardown</em></h1>
+      <p class="lead">Two things close out the curriculum: the unfair advantage you should never stop pressing, and the ritual that turns every deal — won or lost — into the next one's edge.</p>
+      <h2>Your domain moat</h2>
+      <p>You are not a data vendor who learned beverage alcohol. You're an industry insider who happens to carry the data. That's a moat almost no competitor can cross. Press it: speak in depletions and three-tier reality, reference the actual operators, show you understand the buyer's world better than they expect a seller to. The generalist rep spends a year earning the credibility you have in the first call. <em>Never</em> sound like a vendor when you can sound like a peer.</p>
+      <div class="box note"><div class="blabel">The fiduciary frame</div><p>Your strongest differentiator isn't a feature, it's a posture: data fiduciary, stewardship over performance, "don't change the label." That frame turns a procurement decision into a trust decision — and trust decisions favor the insider with a track record of zero restatements over eight years. Sell the posture; the product comes with it.</p></div>
+      <h2>The deal teardown</h2>
+      <p>After every meaningful call, and every closed or lost deal, run the same self-review:</p>
+      <ol class="body">
+        <li>Which MEDDPICC blanks did I fill — and which did I avoid because the answer scared me?</li>
+        <li>Did I diagnose, or did I pitch? (Listen to the recording. Be honest.)</li>
+        <li>Is the Gap's cost column in <em>their</em> numbers or mine?</li>
+        <li>Where am I single-threaded, and what's the next thread?</li>
+        <li>What's the one move that most reduces risk on this deal right now?</li>
+      </ol>
+      <div class="box take"><div class="blabel">Takeaway · the whole course in one line</div><p>You already have the temperament — the insider's credibility and the rain-game grit. The curriculum just adds the front end: build the Gap, qualify the eight, diagnose before you pitch, thread the committee, and let the scorecard — not your optimism — tell you where the deal really stands.</p></div>
+      <div class="box field"><div class="blabel">Next rep</div><p>Open Hoodie Relations, pick one live cycle — WSWA or the RNDC MDM deal — and build its Gap and MEDDPICC scorecard for real. You'll learn more from instrumenting one true deal than from re-reading any of this.</p></div>
+      <div class="pn"><button class="prev">← Previous</button><button class="next" disabled>You're at the end ✓</button></div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+(function(){
+  var lessons=[].slice.call(document.querySelectorAll('.lesson'));
+  var navlinks=[].slice.call(document.querySelectorAll('#nav li a'));
+  var prog=document.getElementById('prog');
+  var cur=0, N=lessons.length;
+  function show(i){
+    cur=Math.max(0,Math.min(N-1,i));
+    lessons.forEach(function(s,k){s.classList.toggle('active',k===cur);});
+    navlinks.forEach(function(a,k){a.classList.toggle('active',k===cur);});
+    prog.textContent='Lesson '+String(cur+1).padStart(2,'0')+' / '+String(N).padStart(2,'0');
+    window.scrollTo(0,0);
+  }
+  navlinks.forEach(function(a){a.addEventListener('click',function(){show(+a.dataset.l);});});
+  document.querySelectorAll('.pn .next').forEach(function(b){b.addEventListener('click',function(){show(cur+1);});});
+  document.querySelectorAll('.pn .prev').forEach(function(b){b.addEventListener('click',function(){show(cur-1);});});
+  document.addEventListener('keydown',function(e){
+    if(e.key==='ArrowRight')show(cur+1); if(e.key==='ArrowLeft')show(cur-1);
+  });
+  show(0);
+})();
+</script>
+<script src="../spine/spine.js"></script>
+<script src="../suite-header.js" data-id="sales-tutorial" data-mark="LG" data-name="The Long Game" data-status="internal"></script>
+</body>
+</html>
