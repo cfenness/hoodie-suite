@@ -1,0 +1,11 @@
+# Unifyd MDM — local agent + scraper dependencies
+# install:  pip install -r requirements.txt
+
+flask>=3.0
+requests>=2.31
+beautifulsoup4>=4.12
+
+# Optional — only needed for COLA label UPC OCR (--ocr).
+# Wires to your existing ttb_cola_labels.extract_upc_from_label.
+# pytesseract>=0.3.10
+# pillow>=10.0

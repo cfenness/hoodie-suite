@@ -1,0 +1,13 @@
+# Keep the image lean and free of runtime/local artifacts.
+agent_state/
+cola_out/
+out/
+__pycache__/
+*.pyc
+*.local.json
+*.log
+fixtures/        # parser reference pages — not needed at runtime
+Dockerfile
+.dockerignore
+apprunner.yaml
+README.md
