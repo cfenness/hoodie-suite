@@ -4,7 +4,10 @@
 # first deploy. After this runs, shipping is just `git push` (once the GitHub secrets
 # it prints are set) or `./deploy.sh`.
 #
-#   S3_BUCKET=hoodie-suite AWS_REGION=us-east-1 ./scripts/aws-bootstrap.sh
+#   S3_BUCKET=hoodie-suite-<unique> AWS_REGION=us-east-1 ./scripts/aws-bootstrap.sh
+#
+# NOTE: S3 bucket names are GLOBALLY unique across all AWS accounts — pick a unique
+# name (e.g. suffix your account id: hoodie-suite-123456789012), not a bare "hoodie-suite".
 #
 # Requirements: AWS CLI v2 installed and `aws configure` done with an identity that can
 # create S3 buckets, CloudFront distributions/OAC, and put bucket policies.
@@ -73,12 +76,19 @@ if [ "$DIST_ID" = "None" ] || [ -z "$DIST_ID" ]; then
   "Origins": { "Quantity": 1, "Items": [ {
     "Id": "s3-$S3_BUCKET",
     "DomainName": "$ORIGIN_DOMAIN",
+    "OriginPath": "",
+    "CustomHeaders": { "Quantity": 0 },
     "OriginAccessControlId": "$OAC_ID",
-    "S3OriginConfig": { "OriginAccessIdentity": "" }
+    "S3OriginConfig": { "OriginAccessIdentity": "" },
+    "ConnectionAttempts": 3,
+    "ConnectionTimeout": 10,
+    "OriginShield": { "Enabled": false }
   } ] },
   "DefaultCacheBehavior": {
     "TargetOriginId": "s3-$S3_BUCKET",
     "ViewerProtocolPolicy": "redirect-to-https",
+    "AllowedMethods": { "Quantity": 2, "Items": ["GET","HEAD"],
+                        "CachedMethods": { "Quantity": 2, "Items": ["GET","HEAD"] } },
     "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
     "Compress": true
   }
