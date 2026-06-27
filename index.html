@@ -20,7 +20,8 @@
 
   /* ============ TOP BAR ============ */
   header.bar{position:fixed;top:0;left:0;right:0;height:var(--bar);z-index:40;background:var(--ink);color:var(--paper);display:flex;align-items:center;gap:12px;padding:0 14px;}
-  header.bar .menu{display:none;background:transparent;border:0;color:var(--paper);font-size:18px;cursor:pointer;padding:4px 6px;}
+  header.bar .menu{display:block;background:transparent;border:0;color:var(--paper);font-size:18px;cursor:pointer;padding:4px 6px;border-radius:3px;transition:background .12s;}
+  header.bar .menu:hover{background:rgba(255,255,255,.10);}
   header.bar .mark{width:26px;height:26px;flex-shrink:0;background:var(--amber-bright);color:var(--ink);display:flex;align-items:center;justify-content:center;font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:15px;cursor:pointer;border-radius:3px;transition:transform .14s;}
   header.bar .mark:hover{transform:rotate(-6deg);}
   header.bar .brand{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:14.5px;letter-spacing:-0.01em;cursor:pointer;color:var(--paper);}
@@ -84,7 +85,9 @@
   @keyframes sweep{0%{width:0;opacity:1;}70%{opacity:1;}100%{width:100%;opacity:0;}}
 
   /* ============ BODY LAYOUT ============ */
-  .body{position:fixed;top:calc(var(--bar) + var(--ctx));left:0;right:0;bottom:0;display:grid;grid-template-columns:240px 1fr;}
+  .body{position:fixed;top:calc(var(--bar) + var(--ctx));left:0;right:0;bottom:0;display:grid;grid-template-columns:240px 1fr;transition:grid-template-columns .2s ease;}
+  .body.nav-collapsed{grid-template-columns:0 1fr;}
+  .body.nav-collapsed aside.nav{overflow:hidden;border-right:0;}
 
   aside.nav{border-right:1px solid var(--hair);background:var(--panel);overflow:auto;padding:14px 0 28px;}
   aside.nav .home-link{display:flex;align-items:center;gap:9px;margin:2px 12px 12px;padding:9px 12px;border:1px solid var(--hair);background:var(--paper);cursor:pointer;font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;color:var(--ink);border-radius:3px;transition:border-color .12s;}
@@ -187,7 +190,7 @@
 <body>
 
 <header class="bar">
-  <button class="menu" id="menu" aria-label="Menu">☰</button>
+  <button class="menu" id="menu" aria-label="Toggle sidebar" title="Toggle sidebar">☰</button>
   <span class="mark" id="mark" title="Home"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.2 11.8 C6 6, 18 6, 19.8 11.8"/><circle cx="8.2" cy="15.2" r="3.6"/><circle cx="15.8" cy="15.2" r="3.6"/><path d="M11.8 15.2 H12.2"/></svg></span>
   <span class="brand" id="brand">Hoodie<span class="sfx"> · Suite</span></span>
   <span class="appcrumb" id="appcrumb"><span class="arr">/</span><span class="nm" id="appnm"></span><span class="cx" id="appcrumbx"></span></span>
@@ -469,10 +472,19 @@
   window.addEventListener('hashchange',route);
   window.addEventListener('load',route);
 
-  /* ============ mobile nav ============ */
-  const nav=document.getElementById('nav'),scrim=document.getElementById('scrim');
+  /* ============ nav toggle — off-canvas on mobile, collapse the column on desktop ============ */
+  const nav=document.getElementById('nav'),scrim=document.getElementById('scrim'),bodyEl=document.querySelector('.body');
   function closeNav(){nav.classList.remove('open');scrim.classList.remove('show');}
-  document.getElementById('menu').addEventListener('click',()=>{nav.classList.toggle('open');scrim.classList.toggle('show');});
+  const COLLAPSE_KEY='hoodie.nav.collapsed';
+  try{ if(localStorage.getItem(COLLAPSE_KEY)==='1') bodyEl.classList.add('nav-collapsed'); }catch(e){}
+  document.getElementById('menu').addEventListener('click',()=>{
+    if(getComputedStyle(nav).position==='fixed'){            // mobile: slide the off-canvas drawer
+      nav.classList.toggle('open');scrim.classList.toggle('show');
+    }else{                                                   // desktop: collapse / expand the column
+      const c=bodyEl.classList.toggle('nav-collapsed');
+      try{localStorage.setItem(COLLAPSE_KEY,c?'1':'0');}catch(e){}
+    }
+  });
   scrim.addEventListener('click',closeNav);
 </script>
 </body>
