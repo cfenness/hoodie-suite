@@ -242,14 +242,15 @@ Here's the shape it grows into:
 - **The repo is the source of truth and the deploy spine.** Front-end ships on push.
   The `unifyd/` engine lives in the same repo and grows its own deploy step.
 
-- **Add `/api/*` without a second domain.** Promote the `unifyd/` agent's endpoints
-  (`/api/health`, `/api/datasets`, `/api/runs`, `/api/run`) to **API Gateway +
-  Lambda**, then add a **second CloudFront behavior**: path pattern `/api/*` → the
-  API origin; everything else → S3. One domain, front *and* back, one TLS cert, one
-  auth gate. `hoodie_mdm.html` already speaks this contract.
+- **Add `/api/*` without a second domain.** Run the `unifyd/` agent
+  (`/api/health`, `/api/datasets`, `/api/runs`, `/api/run`) as a **container**
+  (App Runner or Lightsail — chosen over Lambda to run `server.py` as-is, no
+  rewrite), then add a **second CloudFront behavior**: path pattern `/api/*` → the
+  container origin; everything else → S3. One domain, front *and* back, one TLS
+  cert, one auth gate. `apps/mdm.html` already speaks this contract.
 
 - **Secrets and connection strings** go in **AWS SSM Parameter Store** or **Secrets
-  Manager**, never in the repo. Lambda reads them at runtime.
+  Manager**, never in the repo. The container reads them at runtime.
 
 - **Where this maps to the architecture:** the static apps in `apps/` are *render
   targets*. `unifyd/` is where the *owned layer* lives — the scrapers, the pipeline,
@@ -259,3 +260,33 @@ Here's the shape it grows into:
 Suggested first backend slice: stand up the `unifyd/` agent's COLA + Florida pulls
 behind `/api/*` so one app (the MDM console) reads live data instead of an embedded
 `datasets.js`. That one wire proves the whole front-to-back path.
+
+### Stand it up (the runbook)
+
+The container artifacts live in `unifyd/` (`Dockerfile`, `apprunner.yaml`). Two
+one-time setup steps, then it auto-deploys on push and the MDM console goes live with
+**no front-end change** (it already fetches `/api/*`, with embedded data as fallback).
+
+**1 — Deploy the agent as a container.** Lowest-ceremony path (no Docker, no ECR):
+
+   - App Runner console → **Create service** → Source: this GitHub repo, branch `main`,
+     **Source directory `unifyd`**, deployment trigger **Automatic**. It reads
+     `unifyd/apprunner.yaml`, builds, and **re-deploys on every push to `main`**.
+   - Note the service URL it gives you, e.g. `xxxx.us-east-1.awsapprunner.com`, and
+     check `https://<service-url>/api/health`.
+   - Prefer a real image (Lightsail/ECS, or App Runner image mode)? Build `unifyd/Dockerfile`
+     instead — `docker build -t hoodie-unifyd unifyd/ && docker run -p 8080:8080 hoodie-unifyd`.
+
+**2 — Point `/api/*` at it** (one command — backs up the distribution config first):
+
+   ```bash
+   API_ORIGIN_DOMAIN=xxxx.us-east-1.awsapprunner.com \
+   S3_BUCKET=hoodie-suite ./scripts/add-api-cloudfront-behavior.sh
+   ```
+
+   After it propagates (~5 min), `https://<your-domain>/api/health` answers and the MDM
+   console flips from "preview" to live. Verify: `curl -s https://<your-domain>/api/health`.
+
+> **State is ephemeral** on the container until persistence is added — pulled datasets
+> reset on redeploy. That's fine to prove the wire; the next step is S3-backed state (or
+> a small DB) so `agent_state/` survives. See `unifyd/README.md`.
