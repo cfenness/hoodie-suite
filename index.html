@@ -98,6 +98,12 @@
   aside.nav .item.live .ic{background:var(--slate);}
   aside.nav .item .nm{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;color:var(--ink);line-height:1.12;}
   aside.nav .item .ds{font-size:11px;color:var(--ink-soft);line-height:1.12;margin-top:1px;display:block;}
+  /* nested room (e.g. The Long Game under The Bench): indented, lighter, with an elbow guide */
+  aside.nav .item.sub{position:relative;padding-left:42px;}
+  aside.nav .item.sub::before{content:"";position:absolute;left:30px;top:-4px;height:20px;width:8px;border-left:1px solid var(--hair);border-bottom:1px solid var(--hair);border-bottom-left-radius:3px;}
+  aside.nav .item.sub .ic{width:20px;height:20px;font-size:9px;}
+  aside.nav .item.sub .nm{font-size:12px;}
+  aside.nav .item.sub .ds{font-size:10px;}
 
   main.stage{position:relative;overflow:hidden;background:var(--paper);}
   iframe#frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff;display:none;}
@@ -258,7 +264,7 @@
     {id:'ttb',name:'Hoodie Ingestion',desc:'COLA label pipeline · Unifyd engine',group:'Data Operations',status:'beta',file:'apps/ttb-ingestion.html',mark:'HG'},
     {id:'mdm',name:'Hoodie Master',desc:'Master-data control plane · Unifyd engine (live /api · offline fallback)',group:'Data Operations',status:'beta',file:'apps/mdm.html',mark:'HM'},
     {id:'training',name:'The Bench',desc:'Training suite · tasting, catman, perceptual & representation science, and sales',group:'Learning',status:'internal',file:'apps/training-suite.html',mark:'TB'},
-    {id:'sales-tutorial',name:'The Long Game',desc:'Sales · complex & consultative — the motion behind the CRM scorecard',group:'Learning',status:'internal',file:'apps/sales-tutorial.html',mark:'LG'},
+    {id:'sales-tutorial',name:'The Long Game',desc:'Sales · complex & consultative — the motion behind the CRM scorecard',group:'Learning',status:'internal',file:'apps/sales-tutorial.html',mark:'LG',parent:'training'},
     {id:'roadmap',name:'Product Roadmap',desc:'What is shipping & when',group:'Internal',status:'internal',file:'apps/roadmap.html',mark:'RM'},
     {id:'kb',name:'Principles & Architecture',desc:'The thinking behind the platform',group:'Internal',status:'internal',file:'apps/principles-hub.html',mark:'PA'},
     {id:'spinedemo',name:'Spine Adapter',desc:'Reference · how apps join the spine',group:'Platform',status:'internal',file:'apps/spine-adapter.html',mark:'SP'}
@@ -294,14 +300,18 @@
 
   /* sidebar */
   const navlist=document.getElementById('navlist');
+  function navItem(a,sub){
+    const el=document.createElement('div');el.className='item '+(sub?'sub ':'')+a.status;el.dataset.id=a.id;
+    el.innerHTML='<span class="ic">'+logo(a)+'</span><span><span class="nm">'+a.name+'</span><span class="ds">'+a.desc+'</span></span>';
+    el.addEventListener('click',()=>{location.hash='#'+a.id;closeNav();});
+    navlist.appendChild(el);
+  }
   GROUPS.forEach(g=>{
-    const apps=APPS.filter(a=>a.group===g);if(!apps.length)return;
+    const apps=APPS.filter(a=>a.group===g&&!a.parent);if(!apps.length)return;
     const lab=document.createElement('div');lab.className='grp';lab.textContent=g;navlist.appendChild(lab);
     apps.forEach(a=>{
-      const el=document.createElement('div');el.className='item '+a.status;el.dataset.id=a.id;
-      el.innerHTML='<span class="ic">'+logo(a)+'</span><span><span class="nm">'+a.name+'</span><span class="ds">'+a.desc+'</span></span>';
-      el.addEventListener('click',()=>{location.hash='#'+a.id;closeNav();});
-      navlist.appendChild(el);
+      navItem(a,false);
+      APPS.filter(c=>c.parent===a.id).forEach(c=>navItem(c,true));   // nested rooms (e.g. The Long Game under The Bench)
     });
   });
   /* filter chips + single dense grid */
