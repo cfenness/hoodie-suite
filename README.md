@@ -287,6 +287,13 @@ one-time setup steps, then it auto-deploys on push and the MDM console goes live
    After it propagates (~5 min), `https://<your-domain>/api/health` answers and the MDM
    console flips from "preview" to live. Verify: `curl -s https://<your-domain>/api/health`.
 
-> **State is ephemeral** on the container until persistence is added — pulled datasets
-> reset on redeploy. That's fine to prove the wire; the next step is S3-backed state (or
-> a small DB) so `agent_state/` survives. See `unifyd/README.md`.
+**3 — Make state durable** (so pulled data survives redeploys). On a container, local
+disk is ephemeral, so back the agent's state with S3:
+
+   ```bash
+   STATE_BUCKET=hoodie-suite-state ./scripts/provision-state.sh
+   ```
+
+   Then set `STATE_BUCKET` in the service's env vars and attach the IAM policy it prints.
+   Without this the agent still runs — it just resets pulled data on each redeploy. Details
+   + the single-worker / single-instance notes are in `unifyd/README.md` → "State persistence".

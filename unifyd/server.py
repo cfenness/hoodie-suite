@@ -24,21 +24,50 @@ import ttb_cola_scraper as cola   # the scraper you generated
 
 APP_DIR   = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.join(APP_DIR, "agent_state"); os.makedirs(STATE_DIR, exist_ok=True)
-DS_PATH   = os.path.join(STATE_DIR, "datasets.json")
-RUNS_PATH = os.path.join(STATE_DIR, "runs.json")
 HTML_PATH = os.path.join(APP_DIR, "hoodie_mdm.html")
+
+# State store. Local disk by default (./agent_state/). Set STATE_BUCKET (+ optional
+# STATE_PREFIX) to persist to S3 instead, so pulled data survives container redeploys.
+# The container's local disk is ephemeral; S3 is the durable store. See unifyd/README.md.
+STATE_BUCKET = os.environ.get("STATE_BUCKET", "").strip()
+STATE_PREFIX = os.environ.get("STATE_PREFIX", "unifyd-state").strip("/")
 
 app = Flask(__name__)
 
-# ---------------- persisted state ----------------
-def load(path, default):
-    try: return json.load(open(path))
+# ---------------- persisted state (disk | S3) ----------------
+def _s3():
+    import boto3                      # lazy — only imported when STATE_BUCKET is set
+    return boto3.client("s3")
+def _key(name):
+    return (STATE_PREFIX + "/" + name) if STATE_PREFIX else name
+
+def load(name, default):
+    if STATE_BUCKET:
+        try:
+            obj = _s3().get_object(Bucket=STATE_BUCKET, Key=_key(name))
+            return json.loads(obj["Body"].read())
+        except Exception:
+            return default            # missing object / first boot -> default
+    try: return json.load(open(os.path.join(STATE_DIR, name)))
     except Exception: return default
-DATASETS = load(DS_PATH, {})
-RUNS     = load(RUNS_PATH, [])
+
+DATASETS = load("datasets.json", {})
+RUNS     = load("runs.json", [])
+
 def save():
-    json.dump(DATASETS, open(DS_PATH, "w"))
-    json.dump(RUNS, open(RUNS_PATH, "w"))
+    blobs = {"datasets.json": DATASETS, "runs.json": RUNS}
+    if STATE_BUCKET:
+        c = _s3()
+        for name, data in blobs.items():
+            try:
+                c.put_object(Bucket=STATE_BUCKET, Key=_key(name),
+                             Body=json.dumps(data).encode("utf-8"),
+                             ContentType="application/json")
+            except Exception as e:
+                app.logger.warning("S3 save %s failed: %s", name, e)
+    else:
+        for name, data in blobs.items():
+            json.dump(data, open(os.path.join(STATE_DIR, name), "w"))
 
 # ---------------- Florida pull (live, no extra deps) ----------------
 FL_BASE = "https://www2.myfloridalicense.com/sto/file_download/extracts"
