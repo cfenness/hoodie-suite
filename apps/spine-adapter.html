@@ -41,6 +41,7 @@
     <div class="h">Live shared context (received)</div>
     <pre id="ctx">waiting for context…</pre>
     <div class="crumb" id="crumb">scope: —</div>
+    <div class="crumb" id="scoped">scoped records: —</div>
   </div>
 
   <div class="row">
@@ -70,6 +71,20 @@
     document.getElementById('crumb').innerHTML = 'scope: ' + (s ? '<b>'+ (s.name||s.id) +'</b> ('+s.level+')' : '—');
     var st = document.getElementById('status');
     st.textContent = '● connected — receiving context'; st.className = 'status on';
+    scopedFetch(s);   // the pattern: shared scope -> live scoped backend query
+  }
+  /* Reference pattern for live, scoped data: query /api/datasets?q=<scope> and show the
+     match count. Falls back gracefully when the backend isn't up. */
+  function scopedFetch(s){
+    var el = document.getElementById('scoped');
+    if (!s || !s.name){ el.textContent = 'scoped records: — (no scope selected)'; return; }
+    fetch('/api/datasets?q=' + encodeURIComponent(s.name))
+      .then(function(r){ return r.ok ? r.json() : Promise.reject(); })
+      .then(function(d){
+        var n = Object.keys(d).reduce(function(a,k){ return a + ((d[k].rows||[]).length); }, 0);
+        el.innerHTML = 'scoped records for <b>'+ s.name +'</b>: <b>'+ n +'</b> &middot; <code>/api/datasets?q=…</code>';
+      })
+      .catch(function(){ el.textContent = 'scoped records: — (backend offline — apps use embedded data)'; });
   }
   var spine = HoodieSpine.connect({ name: "Spine Adapter (reference)", onContext: render });
   document.getElementById('btn-set').addEventListener('click', function(){ spine.setContext({ dateRange:{ basis:"YTD" } }); });

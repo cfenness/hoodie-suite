@@ -160,3 +160,16 @@ the parsed datasets it produces are what persist to S3.
   (or `X-Agent-Token`) on every `/api/*` call except `/api/health`. Off by default — local
   dev and browser apps behind the CloudFront password function are unaffected. Use it for
   non-browser callers, or as defense-in-depth in front of the CloudFront gate.
+
+### Scoped data & a hierarchy from the real data
+
+- **`/api/hierarchy` is derived from the pulled datasets** when any are present:
+  `source → entity` (top-N registrants/applicants by row count), e.g. *Florida — Items →
+  MHW LTD*. With no data it falls back to the bundled seed. `derive_hierarchy()` is a
+  first-cut grouping (by an `Owner Name`/`Applicant`/`Brand Name` column) — refine the
+  level model as the master-data layer matures.
+- **`/api/datasets?q=<term>&dataset=<id>`** filters rows server-side (any cell contains
+  the term); no params returns everything. Because the derived scope nodes are real entity
+  names, selecting a scope in the shell now matches real rows — the MDM Explore view
+  filters to them, and `apps/spine-adapter.html` shows the live match count as the
+  copy-paste reference for the pattern.

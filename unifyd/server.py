@@ -170,9 +170,50 @@ def health():
                    datasets=len(DATASETS), runs=len(RUNS),
                    state=("s3:" + STATE_BUCKET) if STATE_BUCKET else "disk")
 
+# Source labels + a first-cut scope tree derived from the pulled data.
+_SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlets", "ttb-cola": "TTB — COLA Labels"}
+_EXTRACT_SRC = {eid: src for src, exs in FL_CONN.items() for (eid, _h, _n) in exs}
+_NAME_COLS = ("Owner Name", "Registrant Name", "Applicant", "Brand Name", "DBA")
+def _name_idx(header):
+    for n in _NAME_COLS:
+        if n in header: return header.index(n)
+    return 2 if len(header) > 2 else 0
+def derive_hierarchy(datasets, top=50):
+    """First-cut scope tree from real data: source -> entity (top-N by row count).
+    Returns None when there's nothing to derive, so the caller falls back to the seed."""
+    from collections import Counter
+    by_src = {}
+    for dsid, ds in datasets.items():
+        rows = ds.get("rows") or []
+        if not rows: continue
+        ci = _name_idx(ds.get("header") or [])
+        src = _EXTRACT_SRC.get(dsid) or ("ttb-cola" if "cola" in dsid.lower() else "other")
+        counts = by_src.setdefault(src, Counter())
+        for r in rows:
+            v = str(r[ci]).strip() if ci < len(r) else ""
+            if v: counts[v] += 1
+    if not by_src: return None
+    pfs = []
+    for src, counts in by_src.items():
+        brands = [{"id": f"sc:{src}:{i}", "level": "brand", "name": nm, "count": n, "children": []}
+                  for i, (nm, n) in enumerate(counts.most_common(top))]
+        pfs.append({"id": f"sc:{src}", "level": "portfolio", "name": _SRC_LABEL.get(src, src.title()),
+                    "children": brands})
+    pfs.sort(key=lambda p: p["name"])
+    return {"id": "root", "level": "root", "name": "All Sources", "children": pfs}
+
 @app.get("/api/datasets")
 def datasets():
-    return jsonify(DATASETS)
+    q = (request.args.get("q") or "").strip().lower()
+    only = request.args.get("dataset")
+    src = {only: DATASETS[only]} if only in DATASETS else DATASETS
+    if not q:
+        return jsonify(src)
+    out = {}
+    for k, ds in src.items():
+        rows = [r for r in (ds.get("rows") or []) if any(q in str(c).lower() for c in r)]
+        out[k] = dict(ds, rows=rows, matched=len(rows))
+    return jsonify(out)
 
 @app.get("/api/runs")
 def runs():
@@ -180,7 +221,8 @@ def runs():
 
 @app.get("/api/hierarchy")
 def hierarchy():
-    return jsonify(HIERARCHY)
+    # derived from the live data when present; else the bundled/curated seed
+    return jsonify(derive_hierarchy(DATASETS) or HIERARCHY)
 
 @app.post("/api/run")
 def run():
