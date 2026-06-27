@@ -95,16 +95,15 @@ counts, fill %, top values across every record) plus a browsable row sample.
 - **Preview vs live.** Opened standalone (no agent), the app's run status is
   simulated and labeled as such. With `server.py` running, runs are real.
 
-## Promoting the MDM console into the suite (open decision)
+## The MDM console and the suite app (decided)
 
-`hoodie_mdm.html` currently lives here, served by the local agent. There are two ways
-it can relate to the suite's existing `../apps/item-mdm.html`:
+`hoodie_mdm.html` lives here as the engine's **local, agent-backed console** (served by
+`server.py`). It has also been **promoted into the suite** as `../apps/mdm.html`, the
+canonical MDM surface — the same control plane re-served under suite wiring
+(`../suite.css`, `../spine/spine.js`, `../suite-header.js`), registered in the shell's
+`APPS` array, and reading `/api/*` with the embedded `DATASETS` as the offline fallback.
+That promotion replaced the old `apps/item-mdm.html`.
 
-1. **Keep it as the engine's live console** (status quo) — the suite's static MDM
-   surface stays `apps/item-mdm.html`; this one is the local, agent-backed view.
-2. **Promote it to the canonical MDM app** — copy into `apps/`, add the suite wiring
-   (`../suite.css`, `../spine/spine.js`, `../suite-header.js`), register it in the
-   `APPS` array, and point its data layer at `/api/*` (with the embedded `DATASETS`
-   as the offline fallback it already supports).
-
-Pick one before wiring — see the suite `CLAUDE.md`.
+The two surfaces share one `/api/*` contract: `apps/mdm.html` is the deployed suite view
+(offline fallback when no backend is up); `hoodie_mdm.html` here is the always-live local
+view the agent serves. Keep them in sync if you change the control-plane UI.
