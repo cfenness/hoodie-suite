@@ -289,12 +289,12 @@ def sample(rows, header, n):
     step = max(1, len(rows) // n)
     return [(r + [""] * len(header))[:len(header)] for r in rows[::step][:n]]
 
-def run_record(total, status="success", warnings=None):
+def run_record(total, status="success", warnings=None, healed=None):
     rid = "R-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=5))
     now = int(time.time() * 1000)
     return {"id": rid, "connId": "ttb-cola", "startedAt": now - 1, "finishedAt": now,
             "durationMs": 0, "status": status, "trigger": "manual", "total": total,
-            "degraded": status == "degraded", "warnings": warnings or [],
+            "degraded": status == "degraded", "warnings": warnings or [], "healed": healed or [],
             "extracts": [{"id": "cola_labels", "rows": total, "delta": 0, "status": status}]}
 
 # ---------------------------------------------------------------- orchestration
@@ -371,7 +371,7 @@ def scrape(args, log=print):
     if warnings:
         for w in warnings:
             log("⚠ " + w)
-    runs = [run_record(len(all_rows), status, warnings)]
+    runs = [run_record(len(all_rows), status, warnings, healed_cols)]
     json.dump(runs, open(os.path.join(args.out, "runs.json"), "w"), indent=2)
     log(f"wrote {args.out}/cola_labels.csv, datasets.js, runs.json")
     return datasets, runs, all_rows
