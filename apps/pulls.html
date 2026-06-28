@@ -76,6 +76,7 @@
       <div class="sub">Each scrape, in one place — run it, then read the engine's own verdict on the result.</div>
     </div>
     <span class="spacer"></span>
+    <button id="export-btn" title="Export this view as PDF" style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#e7ddf6;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.28);border-radius:6px;padding:7px 12px;cursor:pointer;margin-right:14px;">↓ Export PDF</button>
     <span class="agent" id="agent" title="Unifyd engine /api status"><span class="dot"></span><span id="agentTxt">checking…</span></span>
   </div>
 </header>
@@ -89,6 +90,8 @@
   <div class="foot" id="foot"></div>
 </div>
 
+<!-- shared export utility (same one My Dashboard uses) -->
+<script src="../suite-export.js"></script>
 <!-- ===== Hoodie Spine integration ===== -->
 <script src="../spine/spine.js"></script>
 <script>
@@ -200,6 +203,21 @@
     var rb=e.target.closest("[data-run]"); if(rb){ e.stopPropagation(); run(rb.getAttribute("data-run")); return; }
     var tg=e.target.closest("[data-toggle]"); if(tg){ var id=tg.getAttribute("data-toggle"); STATE.open[id]=!STATE.open[id]; render(); }
   });
+
+  // Export the current view to PDF via the shared suite utility (same one My Dashboard uses).
+  (function(){
+    var btn=document.getElementById("export-btn"); if(!btn) return;
+    btn.addEventListener("click", function(){
+      if(!window.HoodieExport){ return; }
+      var lbl=btn.textContent; btn.disabled=true; btn.textContent="Exporting…";
+      var done=function(){ btn.disabled=false; btn.textContent=lbl; };
+      HoodieExport.toPDF(document.getElementById("sources"), {
+        filename:"hoodie-pulls-"+new Date().toISOString().slice(0,10),
+        ondone:done,
+        onerror:function(){ done(); alert("Export needs internet to load the export library — check your connection and retry."); }
+      });
+    });
+  })();
 
   render();
   refresh();
