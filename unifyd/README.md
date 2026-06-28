@@ -137,6 +137,22 @@ python unifyd/schedule_pull.py abc-fws --every 24h        # loop; runs now then 
              -d '{"connId":"abc-fws","trigger":"scheduled"}' >/dev/null
 ```
 
+### Data reader — `/api/analyze` (`analyze.py`)
+
+The brain behind the dashboard's **"Overlay your data"**. POST `{header, rows, filename,
+registries, full}`; it profiles every column deterministically (type, null-rate,
+cardinality, stats, top values — stdlib), then has **Claude (opus-4-8)** read it and return
+a context-aware first pass: what the dataset is + which of the 5 verticals (bev-alc / hemp /
+cannabis / CPG / supplemental) + trust/quality flags, headline KPIs, anomalies, and findings
+in the house style — each with a **justification** for the measures/dimensions chosen. When
+the data maps onto the bev-alc Report Builder model, it also returns ready-to-materialize
+report specs (`rbOpenFromConfig`-shaped); otherwise the universal read stands alone.
+
+**OFF unless `ANTHROPIC_API_KEY` is set** (`anthropic` lazily imported). No key → `503
+llm-disabled`, model error → `502`; the front-end falls back to the deterministic overlay.
+The front-end sends the Report Builder vocabulary (dims/measures/viz) since it lives in the
+dashboard. Profiling + aggregation are deterministic; the LLM only interprets + lays out.
+
 ## Data flow
 
 ```
