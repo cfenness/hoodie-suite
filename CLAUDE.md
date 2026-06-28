@@ -65,6 +65,8 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   changes don't break it) and maps columns by header name. When it *can't* map — no table,
   0 rows from a populated table, empty fields, or unrecognized headers — the run is marked
   `degraded` with `warnings[]` (via `/api/runs`) instead of silently emitting bad data.
+  An optional **AI auto-fixer** (`unifyd/self_heal.py`, off unless `AGENT_SELF_HEAL=1` +
+  `ANTHROPIC_API_KEY`) has an LLM re-derive unrecognized column indices and retries the parse.
   `unifyd/fixtures/` holds captured pages to confirm the parser against (it currently passes
   `cola_debug.html` → 20 rows, all fields). **TTB is TLS-blocked from sandboxes — first run live.**
 - `unifyd/pull_sources.py` — agent-less batch pull (Florida is live/tested; COLA needs

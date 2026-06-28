@@ -33,6 +33,7 @@ Examples
 """
 import argparse, csv, io, json, os, random, re, string, sys, time, datetime
 from collections import Counter
+import self_heal   # Layer 2 — optional LLM column-remap (no-op unless AGENT_SELF_HEAL=1)
 
 BASE = "https://www.ttbonline.gov/colasonline"
 SEARCH_PAGE   = f"{BASE}/publicSearchColasBasic.do"
@@ -144,16 +145,28 @@ def parse_results(html):
     soup = soupify(html)
     table = find_results_table(soup)
     if not table:
-        return [], None, {"table": False, "header": False, "rows": 0, "matched": [], "fallback": EXPECTED_COLS}
+        return [], None, {"table": False, "header": False, "rows": 0, "filled": 0,
+                          "table_rows": 0, "matched": [], "fallback": EXPECTED_COLS, "healed": []}
     hm = header_map(table)
-    recs = []
+    head = table.find("tr")
+    header_cells = [c.get_text(" ", strip=True) for c in head.find_all(["th", "td"])] if head else []
     # Match on the stable identifier (ttbid=) rather than a specific page name, so a
     # URL path change (e.g. publicFormDisplay.do -> viewColaDetails.do) doesn't break us.
+    rows_raw = []
     for a in table.find_all("a", href=re.compile(r"ttbid=", re.I)):
         ttbid = a.get_text(strip=True) or re.search(r"ttbid=(\w+)", a["href"], re.I).group(1)
         tr = a.find_parent("tr")
         tds = tr.find_all("td") if tr else []
-        cells = [td.get_text(" ", strip=True) for td in tds]
+        rows_raw.append((ttbid, [td.get_text(" ", strip=True) for td in tds]))
+    # Layer 2 — AI self-heal (opt-in): if the deterministic matcher missed columns, ask
+    # an LLM to re-derive their indices from the header + a sample row, then proceed.
+    healed = {}
+    missing = [k for k in EXPECTED_COLS if k not in hm]
+    if missing and rows_raw and self_heal.enabled():
+        healed = self_heal.propose_mapping(header_cells, rows_raw[0][1], missing)
+        hm.update(healed)
+    recs = []
+    for ttbid, cells in rows_raw:
         def col(key, pos):
             i = hm.get(key, pos)
             return cells[i] if 0 <= i < len(cells) else ""
@@ -181,7 +194,8 @@ def parse_results(html):
     diag = {"table": True, "header": bool(hm), "rows": len(recs), "filled": filled,
             "table_rows": len(table.find_all("tr")),
             "matched": [k for k in EXPECTED_COLS if k in hm],
-            "fallback": [k for k in EXPECTED_COLS if k not in hm]}
+            "fallback": [k for k in EXPECTED_COLS if k not in hm],
+            "healed": sorted(healed.keys())}
     return recs, next_href, diag
 
 def search_chunk(s, frm, to, args, log, diags=None):
@@ -350,6 +364,9 @@ def scrape(args, log=print):
     if drift_cols:
         warnings.append("Header drift: column(s) " + ", ".join(drift_cols)
                         + " not recognized in the page header — used positional fallback; verify these fields.")
+    healed_cols = sorted({c for d in diags for c in d.get("healed", [])})
+    if healed_cols:
+        log("✓ self-healed column(s) via LLM: " + ", ".join(healed_cols))
     status = "degraded" if warnings else ("success" if n_new or all_rows else "failed")
     if warnings:
         for w in warnings:
