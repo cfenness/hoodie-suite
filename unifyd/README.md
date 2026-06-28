@@ -158,6 +158,29 @@ llm-disabled`, model error → `502`; the front-end falls back to the determinis
 The front-end sends the Report Builder vocabulary (dims/measures/viz) since it lives in the
 dashboard. Profiling + aggregation are deterministic; the LLM only interprets + lays out.
 
+### Other chains via Bright Data (`brightdata.py`)
+
+ABC FWS works with the polite stdlib scraper because it serves bots and renders prices
+server-side. The other chains can't be reached that way — **Total Wine / Binny's / Kroger**
+return 403 (CDN bot management) and **Spec's** renders prices client-side (Next.js). For
+those, `brightdata.py` fetches each page through **Bright Data's Web Unlocker** (one
+authenticated POST; JS executed + bot defenses cleared, returns HTML/markdown).
+
+**One-time setup** (yours — it needs your Bright Data account/key):
+
+```
+curl -fsSL https://cli.brightdata.com/install.sh | bash   # installs the `bdata` CLI
+bdata login                                               # OAuth; saves key + creates zones
+export BRIGHTDATA_API_KEY=...                             # (bdata login does this; or set manually)
+# smoke test:
+bdata scrape "https://example.com" -f markdown
+```
+
+`brightdata.py` is **inert until `BRIGHTDATA_API_KEY` is set** (stdlib-only, no new
+dependency). Per-chain parsers are built + validated live once the key is available (same
+first-run-live discipline as ABC). It's metered — ~1 credit per page (free tier = 5,000
+credits/mo).
+
 ## Data flow
 
 ```
