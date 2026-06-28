@@ -176,10 +176,17 @@ export BRIGHTDATA_API_KEY=...                             # (bdata login does th
 bdata scrape "https://example.com" -f markdown
 ```
 
-`brightdata.py` is **inert until `BRIGHTDATA_API_KEY` is set** (stdlib-only, no new
-dependency). Per-chain parsers are built + validated live once the key is available (same
-first-run-live discipline as ABC). It's metered — ~1 credit per page (free tier = 5,000
-credits/mo).
+`brightdata.py` works two ways: the **REST API** when `BRIGHTDATA_API_KEY` is set (the
+deployed container) **or** the logged-in **`bdata` CLI** (local dev after `bdata login` —
+no key export needed). Inert/raises when neither is present. stdlib-only.
+
+**Spec's (`specs_scraper.py`, connId `specs`) — validated live (2026-06-28).** ~50k
+products (slug-keyed) from the sitemap; each product page fetched through Bright Data
+(JS-rendered) and parsed from the **schema.org Product JSON-LD** (`name`, `sku`,
+`offers.price`, `availability`). Deterministic sample → snapshot → diff (price moves /
+assortment churn), same shape as ABC. Note: Spec's JSON-LD `availability` defaults to
+OutOfStock without a store context, so **in/out is best-effort — price + assortment are the
+reliable signals**. Self-reports `degraded` if the Product JSON-LD parse drifts.
 
 ## Data flow
 
