@@ -125,8 +125,13 @@ run. Read-only, stdlib-only.
 and diffs it against the previous snapshot (`abc_snapshot.json`). Run it daily for a few
 days and *when* prices/stock flip tells you the refresh cadence — without crawling
 everything each time. The "Δ" on the Hoodie Pulls row = SKUs that moved since the last run.
-If price can't be read on most pages, the run self-reports **`degraded`** (selectors need
-confirming against a live page — like TTB, capture a fixture on the first live run).
+If price can't be read on most pages, the run self-reports **`degraded`**.
+
+**Validated live (2026-06-28):** ~10k products via the product sitemap; **price** from the
+`product:price:amount` meta; **stock** from the `og:availability` meta (a naive "out of
+stock" text scan is wrong — the page embeds an `out_of_stock_message` template label that
+false-triggers). Per-store stock sits behind a robots-disallowed AJAX call, so the reliable
+directional signal is **price + assortment churn**; chain-level in/out is best-effort.
 
 **Run it on a cadence (before the backend exists):**
 

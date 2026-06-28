@@ -43,6 +43,8 @@ DELAY       = float(os.environ.get("ABC_DELAY", "10"))   # robots crawl-delay fo
 SNAP_FILE   = "abc_snapshot.json"                        # latest snapshot, for day-over-day diff
 PRICE_RE    = re.compile(r'(?:og:price:amount|product:price:amount)"[^>]*content="([\d.]+)"', re.I)
 PRICE_TXT   = re.compile(r'\$\s?(\d[\d,]*\.\d{2})')
+AVAIL_RE    = re.compile(r'og:availability"[^>]*content="([^"]+)"', re.I)   # standard, page-level
+INSTOCK_RE  = re.compile(r'"instock"\s*:\s*(true|false)', re.I)              # BCData fallback
 UPC_RE      = re.compile(r'UPC[^0-9]{0,12}(\d{8,14})', re.I)
 LOC_RE      = re.compile(r'<loc>\s*([^<]+?)\s*</loc>', re.I)
 ID_RE       = re.compile(r'/(\d+)/?$')
@@ -94,13 +96,17 @@ def parse_product(html):
     if m:
         try: price = float(m.group(1).replace(",", ""))
         except ValueError: price = None
-    low = html.lower()
-    if any(s in low for s in ("out of stock", "outofstock", "sold out", "out-of-stock")):
-        instock = False
-    elif any(s in low for s in ("add to cart", "addtocart", "add-to-cart")):
-        instock = True
+    # Availability from the explicit og:availability meta (else BCData "instock"). A naive
+    # "out of stock" text scan is WRONG here — the page embeds an out_of_stock_message
+    # template label that false-triggers. (Per-store stock is behind a robots-disallowed
+    # AJAX call, so this chain-level flag is the best signal we take.)
+    am = AVAIL_RE.search(html)
+    if am:
+        a = am.group(1).strip().lower().rsplit("/", 1)[-1]   # strip schema.org/ prefix
+        instock = True if a == "instock" else False if a == "outofstock" else None
     else:
-        instock = None
+        bm = INSTOCK_RE.search(html)
+        instock = (bm.group(1).lower() == "true") if bm else None
     um = UPC_RE.search(html)
     return {"price": price, "instock": instock, "upc": um.group(1) if um else None}, price is not None
 
