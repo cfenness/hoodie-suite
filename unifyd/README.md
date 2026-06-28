@@ -81,6 +81,20 @@ data**:
 - Confirm against `fixtures/` after any change: `cola_debug.html` should parse to 20 rows
   with every field populated and no warnings.
 
+**AI auto-fixer (`self_heal.py`, opt-in).** For structural changes the deterministic
+matcher can't resolve, an LLM re-derives the missing column indices from the live header
++ a sample row and the parse retries — healed columns are logged and listed in each run's
+diagnostics. **Off by default**; enable per run/deploy with:
+
+```
+AGENT_SELF_HEAL=1                  # turn it on
+ANTHROPIC_API_KEY=...              # read by the SDK
+AGENT_LLM_MODEL=claude-opus-4-8    # optional; this is the default
+```
+
+When off, the parser is fully deterministic and imports no Anthropic/AWS deps. In a
+container, set these on the service (the API key via a vault/secret, not in the image).
+
 ## Data flow
 
 ```
