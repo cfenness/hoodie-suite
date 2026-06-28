@@ -21,6 +21,7 @@ import csv, io, json, os, time, types, urllib.request, datetime
 from flask import Flask, request, jsonify, send_file
 
 import ttb_cola_scraper as cola   # the scraper you generated
+import abc_fws_scraper as abc      # ABC FWS directional inventory tracker (BigCommerce)
 
 APP_DIR   = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.join(APP_DIR, "agent_state"); os.makedirs(STATE_DIR, exist_ok=True)
@@ -163,15 +164,29 @@ def cola_pull(params):
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
     return run
 
+# ---------------- ABC FWS pull (directional inventory, embeds the scraper) ----------------
+def abc_pull(params):
+    started = int(time.time() * 1000)
+    ds, runs, _ = abc.pull(
+        sample=params.get("sample", 40), crawl_all=bool(params.get("all")),
+        limit=params.get("limit"), out=os.path.join(STATE_DIR, "abc"),
+        state_dir=os.path.join(STATE_DIR, "abc"),
+        log=lambda m: app.logger.info("ABC %s", m))
+    DATASETS.update(ds)
+    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
+    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
+    return run
+
 # ---------------- API ----------------
 @app.get("/api/health")
 def health():
-    return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola"],
+    return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola", "abc-fws"],
                    datasets=len(DATASETS), runs=len(RUNS),
                    state=("s3:" + STATE_BUCKET) if STATE_BUCKET else "disk")
 
 # Source labels + a first-cut scope tree derived from the pulled data.
-_SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlets", "ttb-cola": "TTB — COLA Labels"}
+_SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlets",
+              "ttb-cola": "TTB — COLA Labels", "abc-fws": "ABC FWS — Inventory"}
 _EXTRACT_SRC = {eid: src for src, exs in FL_CONN.items() for (eid, _h, _n) in exs}
 _NAME_COLS = ("Owner Name", "Registrant Name", "Applicant", "Brand Name", "DBA")
 def _name_idx(header):
@@ -229,7 +244,9 @@ def run():
     body = request.get_json(force=True, silent=True) or {}
     conn = body.get("connId")
     try:
-        rec = cola_pull(body) if conn == "ttb-cola" else fl_pull(conn) if conn in FL_CONN else None
+        rec = (cola_pull(body) if conn == "ttb-cola"
+               else abc_pull(body) if conn == "abc-fws"
+               else fl_pull(conn) if conn in FL_CONN else None)
     except Exception as e:
         app.logger.exception("run failed")
         rec = {"id": "R-ERR", "connId": conn, "startedAt": int(time.time()*1000),

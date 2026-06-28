@@ -30,7 +30,9 @@ an "Open full ↗" escape hatch). Pushing to `main` deploys the whole thing to S
 ├── unifyd/                    # the ingestion ENGINE — scrapers + local agent (NOT deployed)
 │   ├── server.py              #   local agent (Flask) — serves hoodie_mdm.html + runs real pulls
 │   ├── ttb_cola_scraper.py    #   TTB COLA registry scraper
+│   ├── abc_fws_scraper.py     #   ABC FWS directional inventory tracker (BigCommerce, polite)
 │   ├── pull_sources.py        #   batch puller (Florida + COLA)
+│   ├── schedule_pull.py       #   run any pull on a cadence locally (pre-backend)
 │   ├── hoodie_mdm.html        #   the MDM control plane the agent serves
 │   ├── requirements.txt
 │   ├── fixtures/              #   captured TTB pages for parser confirmation
