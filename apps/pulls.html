@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../suite.css">
+<title>Hoodie Pulls — Run & Evaluate Scrapes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#faf6ef; --card:#fffdf9; --ink:#241c17; --muted:#8a7c6c; --faint:#b7a994;
+    --line:#e8ddcd; --line2:#f1e9db;
+    --ok:#3f7d52; --ok-bg:#e7f1e6; --warn:#b06a14; --warn-bg:#f6ecd9;
+    --bad:#9a2f2f; --bad-bg:#f3e0dc; --idle:#9a8e7d; --idle-bg:#efe9dd;
+    --accent:#5a3d8a; --shadow:0 1px 2px rgba(60,29,26,.05),0 8px 22px rgba(60,29,26,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:"Hanken Grotesk",system-ui,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:980px;margin:0 auto;padding:0 22px;}
+  header{background:linear-gradient(115deg,#3a2c54 0%,#4a3568 50%,#5a3d8a 100%);color:#f4eefb;position:relative;overflow:hidden}
+  header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,#caa8f0,#9a6ad0,#6e3fa8,#9a6ad0,#caa8f0)}
+  .hd{display:flex;align-items:baseline;gap:14px;padding:24px 0 22px;flex-wrap:wrap}
+  .hd h1{font-family:"Fraunces",serif;font-weight:700;font-size:27px;margin:0;letter-spacing:-.01em}
+  .hd .sub{font-size:13.5px;color:#d8cdec;max-width:50ch}
+  .hd .spacer{flex:1}
+  .agent{display:flex;align-items:center;gap:8px;font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#e7ddf6;}
+  .agent .dot{width:8px;height:8px;border-radius:50%;background:var(--idle);box-shadow:0 0 0 3px rgba(255,255,255,.08)}
+  .agent.live .dot{background:#7fe0a0}
+  .agent.live{color:#dff7e6}
+
+  .banner{margin:16px 0 0;padding:11px 14px;border:1px solid var(--line);background:var(--card);border-left:3px solid var(--warn);border-radius:4px;font-size:13.5px;color:var(--ink)}
+  .banner b{color:var(--warn)}
+  .banner code{font-family:"IBM Plex Mono",monospace;font-size:12px;background:var(--line2);padding:1px 5px;border-radius:3px}
+
+  .sources{margin:20px 0 30px;display:flex;flex-direction:column;gap:12px}
+  .src{background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);overflow:hidden}
+  .src-top{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;padding:15px 16px;cursor:pointer}
+  .src-id{display:flex;align-items:center;gap:11px;min-width:0}
+  .badge{width:34px;height:34px;flex:0 0 auto;border-radius:7px;background:#efe6fb;color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:12px}
+  .src-name{font-family:"Fraunces",serif;font-weight:600;font-size:17px;line-height:1.1}
+  .src-kind{font-size:12px;color:var(--muted);margin-top:1px}
+  .pill{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;padding:4px 9px;border-radius:999px;white-space:nowrap}
+  .pill.success{color:var(--ok);background:var(--ok-bg)} .pill.degraded,.pill.partial{color:var(--warn);background:var(--warn-bg)}
+  .pill.failed{color:var(--bad);background:var(--bad-bg)} .pill.never,.pill.idle{color:var(--idle);background:var(--idle-bg)}
+  .run-btn{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;border:1px solid var(--accent);background:var(--accent);color:#fff;padding:8px 15px;border-radius:6px;cursor:pointer;transition:opacity .12s;display:inline-flex;align-items:center;gap:7px}
+  .run-btn:hover{opacity:.88} .run-btn:disabled{opacity:.4;cursor:not-allowed;background:var(--idle);border-color:var(--idle)}
+  .run-btn .spin{width:12px;height:12px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none}
+  .run-btn.running .spin{display:inline-block} .run-btn.running .lbl{opacity:.8}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .eval{border-top:1px solid var(--line2);padding:0 16px;max-height:0;overflow:hidden;transition:max-height .2s ease}
+  .src.open .eval{max-height:600px;padding:14px 16px}
+  .eval-meta{display:flex;flex-wrap:wrap;gap:18px;font-size:13px;color:var(--ink);margin-bottom:12px}
+  .eval-meta .k{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);display:block}
+  .eval-meta b{font-size:15px}
+  table.ex{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:6px}
+  table.ex th{text-align:left;font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);font-weight:600;padding:5px 8px;border-bottom:1px solid var(--line)}
+  table.ex td{padding:6px 8px;border-bottom:1px solid var(--line2);font-variant-numeric:tabular-nums}
+  table.ex td.delta.pos{color:var(--ok)} table.ex td.delta.neg{color:var(--bad)}
+  .warns{margin:10px 0 2px;display:flex;flex-direction:column;gap:6px}
+  .warn-row{font-size:13px;padding:8px 11px;border-radius:5px;border-left:3px solid var(--warn);background:var(--warn-bg);color:#6e4710}
+  .heal-row{border-left-color:var(--ok);background:var(--ok-bg);color:#2c5638}
+  .eval-empty{font-size:13px;color:var(--muted);padding:4px 0 8px}
+  .chev{color:var(--faint);font-size:13px;transition:transform .15s} .src.open .chev{transform:rotate(90deg)}
+  .foot{font-size:12px;color:var(--muted);text-align:center;padding:8px 0 40px}
+  @media(max-width:640px){.src-top{grid-template-columns:1fr;gap:10px}.src-top .pill,.src-top .run-btn{justify-self:start}}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap hd">
+    <div>
+      <h1>Hoodie Pulls</h1>
+      <div class="sub">Each scrape, in one place — run it, then read the engine's own verdict on the result.</div>
+    </div>
+    <span class="spacer"></span>
+    <span class="agent" id="agent" title="Unifyd engine /api status"><span class="dot"></span><span id="agentTxt">checking…</span></span>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="banner" id="offline" style="display:none">
+    <b>Engine offline.</b> Pulls can't run from here. Start it locally with <code>./dev.sh</code>
+    (or deploy the backend), then reload. The source list and last-known runs still show below.
+  </div>
+  <div class="sources" id="sources"></div>
+  <div class="foot" id="foot"></div>
+</div>
+
+<!-- ===== Hoodie Spine integration ===== -->
+<script src="../spine/spine.js"></script>
+<script>
+(function(){
+  "use strict";
+  // The scrapes the engine knows how to run (connId -> label). Mirrors server.py FL_CONN + ttb-cola.
+  var SOURCES = [
+    {id:"fl-items",   mark:"FI", name:"Florida — Items",   kind:"Florida DBPR/ABT · item master (live CSV)"},
+    {id:"fl-outlets", mark:"FO", name:"Florida — Outlets", kind:"Florida DBPR/ABT · outlet master (live CSV)"},
+    {id:"ttb-cola",   mark:"TC", name:"TTB — COLA Labels", kind:"TTB public registry · label certificates (scraper)"},
+  ];
+  var STATE = { live:false, runs:[], busy:{}, open:{} };
+
+  var fmt = function(n){ return (n==null?"—":Number(n).toLocaleString()); };
+  function timeAgo(ms){
+    if(!ms) return "never run";
+    var d=(window.__now||Date.now()) - ms; if(d<0) d=0;
+    var m=Math.floor(d/60000), h=Math.floor(m/60), day=Math.floor(h/24);
+    if(day>0) return day+"d ago"; if(h>0) return h+"h ago"; if(m>0) return m+"m ago"; return "just now";
+  }
+  function whenLabel(ms){ try{ window.__now=Date.now(); }catch(e){} return timeAgo(ms); }
+  function latestRun(connId){
+    var rs = STATE.runs.filter(function(r){ return r.connId===connId; });
+    rs.sort(function(a,b){ return (b.startedAt||0)-(a.startedAt||0); });
+    return rs[0] || null;
+  }
+  function statusOf(run){ if(!run) return "never"; return run.degraded ? "degraded" : (run.status||"never"); }
+
+  function esc(s){ return String(s==null?"":s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
+
+  function render(){
+    document.getElementById("offline").style.display = STATE.live ? "none" : "";
+    var root = document.getElementById("sources");
+    root.innerHTML = "";
+    SOURCES.forEach(function(s){
+      var run = latestRun(s.id), st = statusOf(run), busy = !!STATE.busy[s.id], open = !!STATE.open[s.id];
+      var el = document.createElement("div");
+      el.className = "src" + (open?" open":"");
+      el.innerHTML =
+        '<div class="src-top" data-toggle="'+s.id+'">' +
+          '<div class="src-id"><span class="badge">'+s.mark+'</span><div><div class="src-name">'+esc(s.name)+
+            ' <span class="chev">▸</span></div><div class="src-kind">'+esc(s.kind)+
+            ' · '+ (run?whenLabel(run.finishedAt||run.startedAt):"never run") +'</div></div></div>' +
+          '<span class="pill '+st+'">'+ (st==="never"?"not run":st) +'</span>' +
+          '<button class="run-btn'+(busy?" running":"")+'" data-run="'+s.id+'"'+( (!STATE.live||busy) ? " disabled":"")+'>' +
+            '<span class="spin"></span><span class="lbl">'+(busy?"Running…":"Run")+'</span></button>' +
+        '</div>' +
+        '<div class="eval">'+ evalHtml(run) +'</div>';
+      root.appendChild(el);
+    });
+    var n = STATE.runs.length;
+    document.getElementById("foot").textContent = STATE.live
+      ? (n + " run"+(n===1?"":"s")+" on record · engine live")
+      : "engine offline — showing the source catalog";
+  }
+
+  function evalHtml(run){
+    if(!run) return '<div class="eval-empty">No runs yet. Hit <b>Run</b> to execute this scrape; the engine’s verdict appears here.</div>';
+    var meta =
+      '<div class="eval-meta">' +
+        '<div><span class="k">Status</span><b>'+esc(statusOf(run))+'</b></div>' +
+        '<div><span class="k">Rows</span><b>'+fmt(run.total)+'</b></div>' +
+        '<div><span class="k">Duration</span><b>'+ (run.durationMs!=null? (Math.max(0,run.durationMs)/1000).toFixed(1)+"s":"—") +'</b></div>' +
+        '<div><span class="k">Trigger</span><b>'+esc(run.trigger||"—")+'</b></div>' +
+        '<div><span class="k">Run ID</span><b>'+esc(run.id||"—")+'</b></div>' +
+      '</div>';
+    var ex = (run.extracts||[]);
+    var tbl = ex.length ? ('<table class="ex"><thead><tr><th>Extract</th><th>Rows</th><th>Δ</th><th>Status</th></tr></thead><tbody>' +
+      ex.map(function(e){
+        var d=e.delta||0, dc = d>0?"pos":(d<0?"neg":"");
+        return '<tr><td>'+esc(e.id)+'</td><td>'+fmt(e.rows)+'</td><td class="delta '+dc+'">'+(d>0?"+":"")+fmt(d)+'</td><td>'+esc(e.status||"—")+'</td></tr>';
+      }).join("") + '</tbody></table>') : "";
+    var warns = (run.warnings||[]).map(function(w){ return '<div class="warn-row">⚠ '+esc(w)+'</div>'; }).join("");
+    var healed = (run.healed||[]).length ? '<div class="warn-row heal-row">✓ self-healed column(s): '+esc((run.healed||[]).join(", "))+'</div>' : "";
+    var block = (warns||healed) ? ('<div class="warns">'+healed+warns+'</div>') :
+      (statusOf(run)==="success" ? '<div class="eval-empty">✓ Clean run — no drift, no warnings.</div>' : "");
+    return meta + tbl + block;
+  }
+
+  // ---- data ----
+  function refresh(){
+    return fetch("/api/health",{cache:"no-store"}).then(function(r){ return r.ok?r.json():Promise.reject(); })
+      .then(function(h){
+        STATE.live = !!(h&&h.ok);
+        var ag=document.getElementById("agent");
+        ag.className = "agent"+(STATE.live?" live":"");
+        document.getElementById("agentTxt").textContent = STATE.live
+          ? ("engine live · "+(h.state||"")) : "engine offline";
+        return fetch("/api/runs",{cache:"no-store"}).then(function(r){ return r.ok?r.json():[]; });
+      })
+      .then(function(runs){ if(Array.isArray(runs)) STATE.runs = runs; render(); })
+      .catch(function(){ STATE.live=false; document.getElementById("agent").className="agent";
+        document.getElementById("agentTxt").textContent="engine offline"; render(); });
+  }
+
+  function run(connId){
+    if(STATE.busy[connId] || !STATE.live) return;
+    STATE.busy[connId]=true; STATE.open[connId]=true; render();
+    fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({connId:connId, trigger:"manual"})})
+      .then(function(r){ return r.ok?r.json():Promise.reject(); })
+      .then(function(rec){ if(rec&&rec.id){ STATE.runs.unshift(rec); } })
+      .catch(function(){ /* surfaced via refresh */ })
+      .then(function(){ STATE.busy[connId]=false; return refresh(); });
+  }
+
+  document.getElementById("sources").addEventListener("click", function(e){
+    var rb=e.target.closest("[data-run]"); if(rb){ e.stopPropagation(); run(rb.getAttribute("data-run")); return; }
+    var tg=e.target.closest("[data-toggle]"); if(tg){ var id=tg.getAttribute("data-toggle"); STATE.open[id]=!STATE.open[id]; render(); }
+  });
+
+  render();
+  refresh();
+  setInterval(function(){ if(!Object.keys(STATE.busy).some(function(k){return STATE.busy[k];})) refresh(); }, 15000);
+
+  // spine membership (context not used to filter, but keeps the app on the bus)
+  if(typeof HoodieSpine!=="undefined"){
+    try{ HoodieSpine.connect({name:"Hoodie Pulls", onContext:function(){}}); }catch(e){}
+  }
+})();
+</script>
+
+<!-- shared suite header strip (standalone only) -->
+<script src="../suite-header.js" data-id="pulls" data-mark="PL" data-name="Hoodie Pulls" data-status="beta"></script>
+</body>
+</html>
