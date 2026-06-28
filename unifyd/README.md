@@ -188,6 +188,13 @@ assortment churn), same shape as ABC. Note: Spec's JSON-LD `availability` defaul
 OutOfStock without a store context, so **in/out is best-effort — price + assortment are the
 reliable signals**. Self-reports `degraded` if the Product JSON-LD parse drifts.
 
+**Binny's (`binnys_scraper.py`, connId `binnys`) — validated live, NO Bright Data.** Binny's
+runs on Algolia and its search key is public (every Algolia storefront ships one), so we
+query the index directly — the same call the site's search box makes. Richest signal: per
+product `onlineStoreBestPrice`, `isSoldOut`, and **`inStockStores`** (how many stores carry
+it). ~31k products; default pull samples the top N, `--all` paginates. App id / index / key
+are env-overridable (`BINNYS_ALGOLIA_*`); self-reports `degraded` if the key rotates.
+
 ## Data flow
 
 ```
