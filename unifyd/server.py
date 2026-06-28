@@ -22,6 +22,7 @@ from flask import Flask, request, jsonify, send_file
 
 import ttb_cola_scraper as cola   # the scraper you generated
 import abc_fws_scraper as abc      # ABC FWS directional inventory tracker (BigCommerce)
+import analyze                      # data-reader brain behind "Overlay your data"
 
 APP_DIR   = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.join(APP_DIR, "agent_state"); os.makedirs(STATE_DIR, exist_ok=True)
@@ -256,6 +257,22 @@ def run():
         return jsonify(error="unknown connId"), 400
     RUNS.insert(0, rec); del RUNS[200:]; save()
     return jsonify(rec)
+
+@app.post("/api/analyze")
+def analyze_ep():
+    """Read an uploaded dataset → context-aware first pass + (when it fits) Report Builder
+    specs. Front-end sends the RB vocabulary (dimensions/measures/viz) since it lives in
+    the dashboard. Falls back gracefully: 503 when no API key, 502 on model error."""
+    body = request.get_json(force=True, silent=True) or {}
+    header, rows = body.get("header") or [], body.get("rows") or []
+    if not header or not rows:
+        return jsonify(error="need header + rows"), 400
+    result = analyze.analyze(header, rows, filename=body.get("filename", "dataset.csv"),
+                             registries=body.get("registries") or {},
+                             full=bool(body.get("full", True)))
+    if "error" not in result:
+        return jsonify(result)
+    return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
 
 @app.get("/")
 def index():
