@@ -66,6 +66,21 @@ Key flags: `--detail` (open each COLA for applicant / fanciful / net contents /
 status), `--ocr` (label-image UPC via `ttb_cola_labels`), `--resume` (skip TTB IDs
 already captured), `--chunk-days` (smaller = safer against the result cap).
 
+### Self-healing parse + drift detection
+
+The parser is built to survive the TTB site shifting and to **never silently emit bad
+data**:
+
+- It finds the results table and rows by the stable **`ttbid=`** identifier (the innermost
+  table holding one), not by a page name — so a URL/path change (e.g.
+  `publicFormDisplay.do` → `viewColaDetails.do`) self-heals instead of breaking. Columns
+  map by header name.
+- When it *can't* map cleanly it marks the run **`degraded`** with `warnings[]` (surfaced
+  via `/api/runs`): no results table, a populated table yielding 0 rows (row selector
+  changed), rows with empty fields (column mapping off), or unrecognized headers (drift).
+- Confirm against `fixtures/` after any change: `cola_debug.html` should parse to 20 rows
+  with every field populated and no warnings.
+
 ## Data flow
 
 ```
