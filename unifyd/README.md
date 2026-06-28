@@ -18,7 +18,9 @@ that pulls real source data behind it.
 | `hoodie_mdm.html` | The app. Open standalone for the preview, or serve it via the agent for live data. |
 | `server.py` | Local agent. Serves the app and runs real pulls when you click **Run now**. |
 | `ttb_cola_scraper.py` | TTB COLA public-registry scraper (date-chunked search, pagination, detail enrichment, OCR-UPC hook, resume). |
+| `abc_fws_scraper.py` | ABC FWS (abcfws.com) directional inventory tracker — polite, stdlib-only. See below. |
 | `pull_sources.py` | Standalone batch pull (Florida + COLA) → emits `datasets.js` + `runs.json`. Use without the agent. |
+| `schedule_pull.py` | Run any pull on a cadence locally (POSTs `/api/run` every N hours) — Layer-3-lite before the backend. |
 | `requirements.txt` | Dependencies for the agent + scraper. |
 | `fixtures/` | Captured TTB result pages (`cola_results.html`, `cola_debug.html`) — reference markup for confirming the parser's column map on a live run. |
 
@@ -94,6 +96,46 @@ AGENT_LLM_MODEL=claude-opus-4-8    # optional; this is the default
 
 When off, the parser is fully deterministic and imports no Anthropic/AWS deps. In a
 container, set these on the service (the API key via a vault/secret, not in the image).
+
+### ABC FWS — directional inventory (`abc_fws_scraper.py`)
+
+abcfws.com runs on **BigCommerce**. The connId is **`abc-fws`**; it appears in **Hoodie
+Pulls** alongside the others. Run it:
+
+```
+python abc_fws_scraper.py --sample 40 --out ./abc_out   # poll a 40-SKU spread
+python abc_fws_scraper.py --all --limit 500             # wider crawl (slow; 10s/page)
+```
+
+**What it observes — and what it can't.** The storefront exposes, per SKU, a **price**
+and a **binary in-stock / out-of-stock** status — but **no numeric quantity-on-hand**
+(per-store stock is behind an AJAX endpoint robots.txt disallows). So you can't compute
+literal "units sold" from a quantity delta. What you get, day over day, is **directional**:
+price changes, out-of-stock ↔ restock transitions, and assortment churn (SKUs
+appearing/disappearing). Imprecise, but a real read on what's moving.
+
+**How it's polite.** robots.txt gives our crawler class a **10s crawl-delay** and
+disallows cart/checkout/account/admin/search/facets + the store-stock AJAX. The scraper
+touches **only the product sitemap and product pages**, sleeps `ABC_DELAY` (default 10s)
+between requests, sends an honest identifying User-Agent (`ABC_UA`), and caps pages per
+run. Read-only, stdlib-only.
+
+**Cadence detection.** The sitemap has no `<lastmod>`, so each run snapshots a
+**deterministic sample** (same SKUs every run, spread across the ~2,100-product catalog)
+and diffs it against the previous snapshot (`abc_snapshot.json`). Run it daily for a few
+days and *when* prices/stock flip tells you the refresh cadence — without crawling
+everything each time. The "Δ" on the Hoodie Pulls row = SKUs that moved since the last run.
+If price can't be read on most pages, the run self-reports **`degraded`** (selectors need
+confirming against a live page — like TTB, capture a fixture on the first live run).
+
+**Run it on a cadence (before the backend exists):**
+
+```
+python unifyd/schedule_pull.py abc-fws --every 24h        # loop; runs now then daily
+# or hands-off via cron:
+0 6 * * *  curl -s -XPOST localhost:8765/api/run -H 'Content-Type: application/json' \
+             -d '{"connId":"abc-fws","trigger":"scheduled"}' >/dev/null
+```
 
 ## Data flow
 
