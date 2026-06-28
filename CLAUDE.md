@@ -60,9 +60,13 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   `/api/hierarchy` (scope tree — **derived from the pulled data** when present, else the
   `unifyd/hierarchy.json` seed). State persists to `unifyd/agent_state/`.
 - `unifyd/ttb_cola_scraper.py` — the TTB COLA registry scraper (date-chunked search,
-  pagination, optional `--detail`/`--ocr`/`--resume`). The one selector-fragile spot is
-  `parse_results()`'s `col(...)` index map; `unifyd/fixtures/` holds captured pages to
-  confirm it against. **TTB is TLS-blocked from sandboxes — first run live, small window.**
+  pagination, optional `--detail`/`--ocr`/`--resume`). **Self-healing parse:** it locates
+  the results table and rows by the stable `ttbid=` identifier (not a page name, so URL/path
+  changes don't break it) and maps columns by header name. When it *can't* map — no table,
+  0 rows from a populated table, empty fields, or unrecognized headers — the run is marked
+  `degraded` with `warnings[]` (via `/api/runs`) instead of silently emitting bad data.
+  `unifyd/fixtures/` holds captured pages to confirm the parser against (it currently passes
+  `cola_debug.html` → 20 rows, all fields). **TTB is TLS-blocked from sandboxes — first run live.**
 - `unifyd/pull_sources.py` — agent-less batch pull (Florida is live/tested; COLA needs
   `requests`+`bs4`). Emits `out/datasets.js` + `out/runs.json`.
 - `unifyd/hoodie_mdm.html` — the MDM control plane the agent serves. Reads `/api/*` when

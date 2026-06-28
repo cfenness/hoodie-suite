@@ -111,11 +111,11 @@ def search_payload(frm, to, args):
     return p
 
 def find_results_table(soup):
-    """Pick the table that actually holds COLA rows (has publicFormDisplay links)."""
-    for t in soup.find_all("table"):
-        if t.find("a", href=re.compile(r"publicFormDisplay\.do")):
-            return t
-    return None
+    """Pick the table that holds COLA rows — the INNERMOST table directly containing a
+    result link (carrying ttbid=). Content-based, so it survives URL/path changes, and
+    innermost so we don't grab an outer layout wrapper (which throws off the header row)."""
+    a = soup.find("a", href=re.compile(r"ttbid=", re.I))
+    return a.find_parent("table") if a else None
 
 def header_map(table):
     """Map known column names -> index, from a header row if present."""
@@ -135,14 +135,21 @@ def header_map(table):
         elif "class" in c or "type" in c:   idx["classtype"] = i
     return idx
 
+# Columns parse_results reads positionally; if the page header doesn't name one of
+# these, we fall back to a fixed position AND flag it (drift) so a layout change can't
+# silently produce wrong data. (TTB ID comes from the row link, not a column.)
+EXPECTED_COLS = ["permit", "serial", "completed", "brand", "origin", "classtype"]
+
 def parse_results(html):
     soup = soupify(html)
     table = find_results_table(soup)
     if not table:
-        return [], None
+        return [], None, {"table": False, "header": False, "rows": 0, "matched": [], "fallback": EXPECTED_COLS}
     hm = header_map(table)
     recs = []
-    for a in table.find_all("a", href=re.compile(r"publicFormDisplay\.do.*ttbid=", re.I)):
+    # Match on the stable identifier (ttbid=) rather than a specific page name, so a
+    # URL path change (e.g. publicFormDisplay.do -> viewColaDetails.do) doesn't break us.
+    for a in table.find_all("a", href=re.compile(r"ttbid=", re.I)):
         ttbid = a.get_text(strip=True) or re.search(r"ttbid=(\w+)", a["href"], re.I).group(1)
         tr = a.find_parent("tr")
         tds = tr.find_all("td") if tr else []
@@ -169,14 +176,23 @@ def parse_results(html):
         next_href = "https://www.ttbonline.gov" + next_href
     elif next_href and not next_href.startswith("http"):
         next_href = f"{BASE}/{next_href.lstrip('/')}"
-    return recs, next_href
+    filled = sum(1 for r in recs if any(str(r.get(h, "")).strip()
+                 for h in ("Brand Name", "Origin", "Class/Type", "Permit Number")))
+    diag = {"table": True, "header": bool(hm), "rows": len(recs), "filled": filled,
+            "table_rows": len(table.find_all("tr")),
+            "matched": [k for k in EXPECTED_COLS if k in hm],
+            "fallback": [k for k in EXPECTED_COLS if k not in hm]}
+    return recs, next_href, diag
 
-def search_chunk(s, frm, to, args, log):
-    """Yield records for one date chunk, paginating until exhausted."""
+def search_chunk(s, frm, to, args, log, diags=None):
+    """Yield records for one date chunk, paginating until exhausted.
+    Appends each page's parse diagnostics to `diags` (for drift / self-reporting)."""
     resp = s.post(SEARCH_PROC, data=search_payload(frm, to, args), timeout=120)
     page = 1
     while True:
-        recs, next_href = parse_results(resp.text)
+        recs, next_href, diag = parse_results(resp.text)
+        if diags is not None:
+            diags.append(diag)
         if not recs and page == 1:
             log(f"    {frm:%m/%d}-{to:%m/%d} p{page}: 0 rows "
                 f"(empty window, or confirm form params on first run)")
@@ -259,11 +275,12 @@ def sample(rows, header, n):
     step = max(1, len(rows) // n)
     return [(r + [""] * len(header))[:len(header)] for r in rows[::step][:n]]
 
-def run_record(total, status="success"):
+def run_record(total, status="success", warnings=None):
     rid = "R-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=5))
     now = int(time.time() * 1000)
     return {"id": rid, "connId": "ttb-cola", "startedAt": now - 1, "finishedAt": now,
             "durationMs": 0, "status": status, "trigger": "manual", "total": total,
+            "degraded": status == "degraded", "warnings": warnings or [],
             "extracts": [{"id": "cola_labels", "rows": total, "delta": 0, "status": status}]}
 
 # ---------------------------------------------------------------- orchestration
@@ -289,9 +306,10 @@ def scrape(args, log=print):
     d_from = datetime.datetime.strptime(args.date_from, "%m/%d/%Y").date()
     d_to   = datetime.datetime.strptime(args.date_to, "%m/%d/%Y").date()
     records, n_new = [], 0
+    diags = []   # per-page parse diagnostics, for drift / self-reporting
 
     for frm, to in daterange_chunks(d_from, d_to, args.chunk_days):
-        for rec in search_chunk(s, frm, to, args, log):
+        for rec in search_chunk(s, frm, to, args, log, diags):
             if rec["TTB ID"] in seen:
                 continue
             seen.add(rec["TTB ID"])
@@ -316,7 +334,27 @@ def scrape(args, log=print):
                                 "profile": profile(COLA_HEADER, all_rows)}}
     open(os.path.join(args.out, "datasets.js"), "w", encoding="utf-8").write(
         "const DATASETS=" + json.dumps(datasets, separators=(",", ":"), ensure_ascii=False) + ";")
-    runs = [run_record(len(all_rows), "success" if n_new or all_rows else "failed")]
+    # self-reporting: turn parse diagnostics into warnings + a degraded status so a
+    # silent layout change surfaces as "needs review" instead of bad data.
+    warnings = []
+    if diags and not any(d.get("table") for d in diags):
+        warnings.append("No results table found on any page — the search form or page layout may have changed.")
+    # populated table(s) but nothing extracted -> the row link/selector likely changed
+    extracted = sum(d.get("rows", 0) for d in diags)
+    data_rows = sum(max(0, d.get("table_rows", 0) - 1) for d in diags if d.get("table"))
+    if data_rows > 0 and extracted == 0:
+        warnings.append("Results table present but 0 records extracted — the row link/selector may have changed.")
+    if extracted > 0 and sum(d.get("filled", 0) for d in diags) == 0:
+        warnings.append("Rows extracted but their fields are empty — the column mapping may be off.")
+    drift_cols = sorted({c for d in diags if d.get("rows") for c in d.get("fallback", [])})
+    if drift_cols:
+        warnings.append("Header drift: column(s) " + ", ".join(drift_cols)
+                        + " not recognized in the page header — used positional fallback; verify these fields.")
+    status = "degraded" if warnings else ("success" if n_new or all_rows else "failed")
+    if warnings:
+        for w in warnings:
+            log("⚠ " + w)
+    runs = [run_record(len(all_rows), status, warnings)]
     json.dump(runs, open(os.path.join(args.out, "runs.json"), "w"), indent=2)
     log(f"wrote {args.out}/cola_labels.csv, datasets.js, runs.json")
     return datasets, runs, all_rows
