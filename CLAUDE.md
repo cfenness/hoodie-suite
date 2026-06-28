@@ -73,9 +73,13 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   tracker (connId `abc-fws`, in Hoodie Pulls). Polls a deterministic SKU sample for **price +
   binary in/out-of-stock** (no numeric qty is exposed) and diffs vs the prior snapshot →
   price moves / OOS-restock / assortment churn. Polite (robots 10s crawl-delay, product
-  pages only, honest UA), stdlib-only, self-reports `degraded` if price selectors drift —
-  **first run live to confirm selectors** (like TTB). `unifyd/schedule_pull.py` runs any
-  connId on a cadence locally (`python unifyd/schedule_pull.py abc-fws --every 24h`).
+  pages only, honest UA), stdlib-only, self-reports `degraded` if price selectors drift.
+  **Validated live (2026-06-28):** ~10k products via the product sitemap; price from the
+  `product:price:amount` meta; stock from `og:availability` (NOT a text scan — the page
+  embeds an `out_of_stock_message` template that false-triggers). Per-store stock is behind
+  a robots-disallowed AJAX call, so the reliable directional signal is **price + assortment**
+  (chain-level in/out is best-effort). `unifyd/schedule_pull.py` runs any connId on a cadence
+  locally (`python unifyd/schedule_pull.py abc-fws --every 24h`).
 - `unifyd/pull_sources.py` — agent-less batch pull (Florida is live/tested; COLA needs
   `requests`+`bs4`). Emits `out/datasets.js` + `out/runs.json`.
 - `unifyd/hoodie_mdm.html` — the MDM control plane the agent serves. Reads `/api/*` when
