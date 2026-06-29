@@ -212,6 +212,20 @@ the seed (BRĒZ, Cann, Cornbread Hemp, HOP WTR, Olipop — verified). These are 
 stores, so the granularity is brand/online-level (the hemp vertical is mostly DTC). Validated
 live: 5 brands → 270 products → 991 variant-cells.
 
+### Instacart — store-level via Bright Data managed dataset (`instacart_scraper.py`, connId `instacart`)
+
+Instacart forbids scraping + is DataDome-protected (the Web Unlocker **403s** it), so the
+sanctioned route is Bright Data's **managed Instacart dataset** (Web Scraper API): give it
+store/category URLs, it returns per-store product records. **Paid + ToS-gray — your informed
+call** (the vendor carries the protection/compliance). Needs `BRIGHTDATA_API_KEY` +
+`BRIGHTDATA_INSTACART_DATASET` (the dataset id from your BD dashboard) +
+`BRIGHTDATA_INSTACART_URLS`. Field names vary by BD product, so the first live run dumps
+`instacart_debug.json` to lock the mapping; snapshot is keyed `store|productId` (store-level).
+
+**Clean alternative — official partner APIs** (Instacart Developer Platform / DoorDash
+partner / Uber Eats Marketplace): durable + not ToS-gray, but gated behind merchant/partner
+approval. Everything needed to pursue them is in **`DELIVERY_PARTNER_APIS.md`**.
+
 ## Data flow
 
 ```
