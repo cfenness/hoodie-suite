@@ -211,16 +211,16 @@ SYSTEM_AIREAD = (
     "Be concise and concrete. Return ONLY the JSON object described by the schema."
 )
 SCHEMA_AIREAD = {
-    "type": "object", "additionalProperties": True,
+    "type": "object", "additionalProperties": False,
     "required": ["headline", "findings"],
     "properties": {
         "headline": {"type": "string"},
         "what_is_this": {"type": "string"},
-        "findings": {"type": "array", "items": {"type": "object", "additionalProperties": True,
+        "findings": {"type": "array", "items": {"type": "object", "additionalProperties": False,
             "properties": {"text": {"type": "string"},
                            "kind": {"type": "string",
                                     "enum": ["association", "opportunity", "caveat", "data_quality"]}}}},
-        "tables": {"type": "array", "items": {"type": "object", "additionalProperties": True,
+        "tables": {"type": "array", "items": {"type": "object", "additionalProperties": False,
             "properties": {"title": {"type": "string"}, "why": {"type": "string"},
                            "dimension": {"type": "string"}, "measure": {"type": "string"},
                            "agg": {"type": "string", "enum": ["sum", "mean", "min", "max", "count", "distinct"]},
