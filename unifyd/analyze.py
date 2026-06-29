@@ -197,6 +197,12 @@ SYSTEM_AIREAD = (
     "column PROFILE, and a set of EXACT COMPUTED AGGREGATES. "
     "For any precise figure, cite the computed aggregates (they are exact); read the rows for "
     "qualitative patterns, examples, and data-quality issues. Do not fabricate figures. "
+    "SURFACE WHAT'S WORTH SEEING UP FRONT — be selective, not exhaustive (no 10-page dump). "
+    "Besides findings, propose 2-4 TABLES that highlight something notable: each is a single "
+    "group-by — a `dimension` column to group on (prefer lower-cardinality columns from the "
+    "profile), a `measure` column, and an `agg` (sum/mean/min/max/count). Use ONLY exact column "
+    "names present in the profile. You choose the cut and say WHY it matters; the app computes "
+    "the real numbers — never put numbers in the table spec yourself. "
     "CAUSATION vs CORRELATION (strict): report associations by default; NEVER assert causation "
     "without an explicit identification strategy (experiment / quasi-experiment, or clear "
     "temporal order + mechanism). Use hedged language for observational patterns ('is associated "
@@ -214,6 +220,12 @@ SCHEMA_AIREAD = {
             "properties": {"text": {"type": "string"},
                            "kind": {"type": "string",
                                     "enum": ["association", "opportunity", "caveat", "data_quality"]}}}},
+        "tables": {"type": "array", "items": {"type": "object", "additionalProperties": True,
+            "properties": {"title": {"type": "string"}, "why": {"type": "string"},
+                           "dimension": {"type": "string"}, "measure": {"type": "string"},
+                           "agg": {"type": "string", "enum": ["sum", "mean", "min", "max", "count", "distinct"]},
+                           "sort": {"type": "string", "enum": ["desc", "asc"]},
+                           "limit": {"type": "integer"}}}},
         "caveats": {"type": "array", "items": {"type": "string"}},
         "questions": {"type": "array", "items": {"type": "string"}},
     },
