@@ -50,8 +50,19 @@
   .run-btn.running .spin{display:inline-block} .run-btn.running .lbl{opacity:.8}
   @keyframes spin{to{transform:rotate(360deg)}}
 
-  .eval{border-top:1px solid var(--line2);padding:0 16px;max-height:0;overflow:hidden;transition:max-height .2s ease}
-  .src.open .eval{max-height:600px;padding:14px 16px}
+  .eval{border-top:1px solid var(--line2);padding:0 16px;max-height:0;overflow:hidden;transition:max-height .25s ease}
+  .src.open .eval{max-height:1300px;padding:14px 16px;overflow:auto}
+  /* movement stats + record preview */
+  .stats-row{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 2px}
+  .stat{font-family:"IBM Plex Mono",monospace;font-size:11px;background:#efe6fb;color:var(--accent);border-radius:999px;padding:4px 10px}
+  .stat b{font-weight:700} .stat.base{background:var(--idle-bg);color:var(--idle)}
+  .rec-cap{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:14px 0 5px}
+  .rec-wrap{overflow:auto;max-height:300px;border:1px solid var(--line);border-radius:6px}
+  table.rec{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}
+  table.rec th{position:sticky;top:0;background:var(--line2);text-align:left;font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding:6px 9px;border-bottom:1px solid var(--line)}
+  table.rec td{padding:5px 9px;border-bottom:1px solid var(--line2);font-variant-numeric:tabular-nums;max-width:240px;overflow:hidden;text-overflow:ellipsis}
+  table.rec tr:hover td{background:#faf6ef}
+  .rec-load{font-size:12px;color:var(--muted);padding:8px 0}
   .eval-meta{display:flex;flex-wrap:wrap;gap:18px;font-size:13px;color:var(--ink);margin-bottom:12px}
   .eval-meta .k{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);display:block}
   .eval-meta b{font-size:15px}
@@ -119,7 +130,7 @@
     {id:"shopify-dtc",mark:"HP", name:"Hemp + DTC — Shopify", kind:"DTC brands on Shopify (BRĒZ, Cann, Cornbread…) · price + availability via public /products.json"},
     {id:"instacart",  mark:"IC", name:"Instacart — Store-level", kind:"per-store product + price via Bright Data managed dataset · needs API key + dataset id (see docs)"},
   ];
-  var STATE = { live:false, runs:[], busy:{}, open:{} };
+  var STATE = { live:false, runs:[], busy:{}, open:{}, datasets:{} };
 
   var fmt = function(n){ return (n==null?"—":Number(n).toLocaleString()); };
   function timeAgo(ms){
@@ -186,7 +197,50 @@
     var healed = (run.healed||[]).length ? '<div class="warn-row heal-row">✓ self-healed column(s): '+esc((run.healed||[]).join(", "))+'</div>' : "";
     var block = (warns||healed) ? ('<div class="warns">'+healed+warns+'</div>') :
       (statusOf(run)==="success" ? '<div class="eval-empty">✓ Clean run — no drift, no warnings.</div>' : "");
-    return meta + tbl + block;
+    return meta + tbl + statChips(run.movement) + block + recordsHtml(run.extracts);
+  }
+
+  // movement stats the pull already computed (units moved, price moves, OOS, new/dropped, …)
+  function statChips(mv){
+    if(!mv) return "";
+    var n=function(x){ return Array.isArray(x)?x.length : (typeof x==="number"?x:null); };
+    var order=[["changed","Δ moved"],["units_moved","units moved"],["restocked","restocked"],
+      ["price_moves","price moves"],["went_oos","went OOS"],["new","new"],["dropped","dropped"],
+      ["cells","cells"],["brands","brands"]];
+    var chips=order.map(function(p){ var v=n(mv[p[0]]); return v==null?"":'<span class="stat"><b>'+fmt(v)+'</b> '+p[1]+'</span>'; }).filter(Boolean).join("");
+    var base = (mv.had_prev===false) ? '<span class="stat base">baseline · no prior run to diff</span>' : "";
+    return (chips||base) ? '<div class="stats-row">'+base+chips+'</div>' : "";
+  }
+
+  // the actual records pulled (sampled), from /api/datasets keyed by extract id
+  function recordsHtml(extracts){
+    return (extracts||[]).map(function(e){
+      var ds=STATE.datasets[e.id];
+      if(ds===undefined) return "";                                  // not requested yet
+      if(ds===null) return '<div class="rec-load">loading '+esc(e.id)+' records…</div>';
+      var hdr=ds.header||[], rows=ds.rows||[];
+      if(!hdr.length || !rows.length) return "";
+      var cols=hdr.slice(0,8), more=hdr.length-cols.length, show=rows.slice(0,12);
+      var thead='<tr>'+cols.map(function(h){return '<th>'+esc(h)+'</th>';}).join("")+(more>0?'<th>+'+more+'</th>':"")+'</tr>';
+      var body=show.map(function(r){ return '<tr>'+cols.map(function(h,ci){return '<td>'+esc(r[ci])+'</td>';}).join("")+(more>0?'<td>…</td>':"")+'</tr>'; }).join("");
+      return '<div class="rec-cap">'+esc(e.id)+' · showing '+show.length+' of '+fmt(ds.total||rows.length)+' records</div>'+
+             '<div class="rec-wrap"><table class="rec"><thead>'+thead+'</thead><tbody>'+body+'</tbody></table></div>';
+    }).join("");
+  }
+
+  // fetch the sampled records for a source's extracts (scoped query keeps it light)
+  function loadDatasets(connId, force){
+    var run=latestRun(connId); if(!run || !STATE.live) return;
+    (run.extracts||[]).forEach(function(e){
+      if(!e.id) return;
+      if(force) delete STATE.datasets[e.id];
+      if(STATE.datasets[e.id]!==undefined) return;                   // cached / loading
+      STATE.datasets[e.id]=null;                                     // mark loading
+      fetch("/api/datasets?dataset="+encodeURIComponent(e.id),{cache:"no-store"})
+        .then(function(r){ return r.ok?r.json():{}; })
+        .then(function(d){ STATE.datasets[e.id]=(d&&d[e.id])?d[e.id]:{}; render(); })
+        .catch(function(){ STATE.datasets[e.id]={}; render(); });
+    });
   }
 
   // ---- data ----
@@ -261,7 +315,7 @@
       } else {
         toast("✗ "+labelOf(connId)+" — "+(errMsg||"run failed (check the engine logs)"), "err");
       }
-      render(); runningBanner(); refresh();
+      render(); runningBanner(); refresh(); loadDatasets(connId, true);
     }
     fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({connId:connId, trigger:"manual"})})
@@ -273,7 +327,7 @@
 
   document.getElementById("sources").addEventListener("click", function(e){
     var rb=e.target.closest("[data-run]"); if(rb){ e.stopPropagation(); run(rb.getAttribute("data-run")); return; }
-    var tg=e.target.closest("[data-toggle]"); if(tg){ var id=tg.getAttribute("data-toggle"); STATE.open[id]=!STATE.open[id]; render(); }
+    var tg=e.target.closest("[data-toggle]"); if(tg){ var id=tg.getAttribute("data-toggle"); var willOpen=!STATE.open[id]; STATE.open[id]=willOpen; if(willOpen) loadDatasets(id); render(); }
   });
 
   // Export the current view to PDF via the shared suite utility (same one My Dashboard uses).
