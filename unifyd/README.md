@@ -188,12 +188,15 @@ assortment churn), same shape as ABC. Note: Spec's JSON-LD `availability` defaul
 OutOfStock without a store context, so **in/out is best-effort — price + assortment are the
 reliable signals**. Self-reports `degraded` if the Product JSON-LD parse drifts.
 
-**Binny's (`binnys_scraper.py`, connId `binnys`) — validated live, NO Bright Data.** Binny's
-runs on Algolia and its search key is public (every Algolia storefront ships one), so we
-query the index directly — the same call the site's search box makes. Richest signal: per
-product `onlineStoreBestPrice`, `isSoldOut`, and **`inStockStores`** (how many stores carry
-it). ~31k products; default pull samples the top N, `--all` paginates. App id / index / key
-are env-overridable (`BINNYS_ALGOLIA_*`); self-reports `degraded` if the key rotates.
+**Binny's (`binnys_scraper.py`, connId `binnys`) — STORE-LEVEL, validated live, NO Bright Data.**
+Binny's runs on Algolia and its search key is public (every Algolia storefront ships one), so
+we query the index directly — the same call the site's search box makes. Each record carries
+**`storesPriceAndInventory`**: a per-store array with a **numeric `purchaseAvailability`**
+(units on hand) + per-store prices. So the snapshot is keyed by `sku|storeCode` and the
+day-over-day delta of `purchaseAvailability` per store = **directional units sold** — the run's
+headline `units_moved`. ~31k products (each expands to ~49 store cells); default samples N
+products, `--all` paginates. App id / index / key env-overridable (`BINNYS_ALGOLIA_*`);
+self-reports `degraded` if the per-store schema changes.
 
 ## Data flow
 
