@@ -75,6 +75,17 @@
   .console .cl-time{color:#6f5d86;margin-right:9px}
   .console .cl-warn{color:#e7b75f}
   .console .cl-err{color:#ef8a7a}
+  /* run-time parameter form */
+  .pform{padding:4px 0 2px}
+  .pf-label{display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+  .pf-input{display:block;width:100%;box-sizing:border-box;margin-top:5px;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink,#1c1230);background:#fbf9fe;border:1px solid #ddd0ef;border-radius:6px;padding:8px 10px}
+  .pf-input:focus{outline:none;border-color:var(--accent);background:#fff}
+  .pf-help{font-size:11px;color:var(--muted);margin:5px 0 2px;line-height:1.5}
+  .pf-bill{font-size:11px;color:#9a6b00;background:#fef6e3;border:1px solid #f0d77a;border-radius:6px;padding:7px 10px;margin:10px 0 2px}
+  .pf-actions{display:flex;gap:8px;margin-top:12px}
+  .pf-go{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#fff;background:var(--accent);border:none;border-radius:6px;padding:8px 16px;cursor:pointer}
+  .pf-go:hover{filter:brightness(1.08)}
+  .pf-cancel{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:transparent;border:1px solid #ddd0ef;border-radius:6px;padding:8px 14px;cursor:pointer}
   .rec-dl{float:right;display:inline-flex;gap:6px}
   .rec-dl button{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);background:#efe6fb;border:1px solid #e0d3f5;border-radius:5px;padding:3px 8px;cursor:pointer}
   .rec-dl button:hover{background:#e6d8fb}
@@ -143,9 +154,14 @@
     {id:"specs",      mark:"SP", name:"Spec's — Inventory", kind:"specsonline.com · STORE-LEVEL price + in/out across 100+ stores (embedded variants · direct, no Bright Data)"},
     {id:"binnys",     mark:"BY", name:"Binny's — Inventory", kind:"binnys.com · STORE-LEVEL price + unit inventory · directional units sold (Algolia feed)"},
     {id:"shopify-dtc",mark:"HP", name:"Hemp + DTC — Shopify", kind:"DTC brands on Shopify (BRĒZ, Cann, Cornbread…) · price + availability via public /products.json"},
-    {id:"instacart",  mark:"IC", name:"Instacart — Store-level", kind:"per-store product + price across the FULL store (all departments) via Bright Data managed dataset · needs API key + dataset id (see docs)"},
+    {id:"instacart",  mark:"IC", name:"Instacart — Store-level", kind:"per-store product + price via Bright Data managed dataset · pick a store/category at run", bills:true,
+      params:[{key:"urls", label:"Instacart store / category URL(s)",
+               def:"https://www.instacart.com/store/total-wine-more/collections/738-vodka",
+               placeholder:"https://www.instacart.com/store/total-wine-more/collections/738-vodka",
+               help:"Default = Total Wine vodka. Use the store root for the full store; comma-separate multiple. (Bypasses Total Wine's bot wall via Instacart.)"}]},
   ];
-  var STATE = { live:false, runs:[], busy:{}, open:{}, datasets:{}, jobs:{} };
+  var STATE = { live:false, runs:[], busy:{}, open:{}, datasets:{}, jobs:{}, paramForm:{} };
+  function srcOf(connId){ return SOURCES.filter(function(s){return s.id===connId;})[0]; }
 
   var fmt = function(n){ return (n==null?"—":Number(n).toLocaleString()); };
   function timeAgo(ms){
@@ -183,7 +199,8 @@
           '<button class="run-btn'+(busy?" running":"")+'" data-run="'+s.id+'" title="'+btnTitle+'"'+( (!STATE.live||busy) ? " disabled":"")+'>' +
             '<span class="spin"></span><span class="lbl">'+(busy?"Running…":"Run")+'</span></button>' +
         '</div>' +
-        '<div class="eval">'+ ((busy && STATE.jobs[s.id]) ? consoleHtml(s.id, STATE.jobs[s.id]) : evalHtml(run)) +'</div>';
+        '<div class="eval">'+ ((busy && STATE.jobs[s.id]) ? consoleHtml(s.id, STATE.jobs[s.id])
+                               : (STATE.paramForm[s.id] ? paramFormHtml(s) : evalHtml(run))) +'</div>';
       root.appendChild(el);
     });
     document.querySelectorAll(".console").forEach(function(c){ c.scrollTop = c.scrollHeight; });
@@ -397,13 +414,32 @@
       .catch(function(){ if(STATE.jobs[connId] && STATE.jobs[connId].jobId===jobId) setTimeout(function(){ pollProgress(connId, jobId); }, 2000); });
   }
 
-  function run(connId){
+  // run-time parameter form (e.g. Instacart store/category URL — chosen at Run, not via env)
+  function paramFormHtml(src){
+    var fields=(src.params||[]).map(function(p){
+      return '<label class="pf-label">'+esc(p.label)+
+        '<input class="pf-input" data-param="'+esc(p.key)+'" value="'+esc(p.def||"")+'" placeholder="'+esc(p.placeholder||"")+'" />'+
+        '</label>'+(p.help?'<div class="pf-help">'+esc(p.help)+'</div>':"");
+    }).join("");
+    var bill = src.bills ? '<div class="pf-bill">⚠ Runs a Bright Data managed dataset — billed per record against your BD balance.</div>' : "";
+    return '<div class="pform">'+fields+bill+
+      '<div class="pf-actions"><button class="pf-go" data-startparam="'+src.id+'">Start pull</button>'+
+      '<button class="pf-cancel" data-cancelparam="'+src.id+'">Cancel</button></div></div>';
+  }
+
+  function run(connId, providedParams){
     if(STATE.busy[connId]!==undefined || !STATE.live) return;
+    var src=srcOf(connId);
+    if(src && src.params && !providedParams){          // needs run-time params → show the form first
+      STATE.open[connId]=true; STATE.paramForm[connId]=true; render(); return;
+    }
+    STATE.paramForm[connId]=false;
     STATE.busy[connId]=Date.now(); STATE.open[connId]=true;
     STATE.jobs[connId]={ jobId:null, startedAt:Date.now(), log:[], status:"running", run:null, error:null };
     render(); runningBanner();
+    var body=Object.assign({connId:connId, trigger:"manual", stream:true}, providedParams||{});
     fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({connId:connId, trigger:"manual", stream:true})})
+        body:JSON.stringify(body)})
       .then(function(r){ return (r.ok||r.status===202) ? r.json() : Promise.reject(new Error("HTTP "+r.status)); })
       .then(function(p){
         if(p && p.jobId){                                  // async live console (current agent)
@@ -418,6 +454,15 @@
 
   document.getElementById("sources").addEventListener("click", function(e){
     var dl=e.target.closest("[data-dl]"); if(dl){ e.stopPropagation(); exportDataset(dl.getAttribute("data-ds"), dl.getAttribute("data-dl")); return; }
+    var sp=e.target.closest("[data-startparam]"); if(sp){ e.stopPropagation();
+      var id=sp.getAttribute("data-startparam"), form=sp.closest(".pform"), params={};
+      form.querySelectorAll("[data-param]").forEach(function(inp){
+        var k=inp.getAttribute("data-param"), v=inp.value.trim();
+        params[k] = (k==="urls") ? v.split(",").map(function(x){return x.trim();}).filter(Boolean) : v;
+      });
+      run(id, params); return; }
+    var cp=e.target.closest("[data-cancelparam]"); if(cp){ e.stopPropagation();
+      var cid=cp.getAttribute("data-cancelparam"); STATE.paramForm[cid]=false; render(); return; }
     var rb=e.target.closest("[data-run]"); if(rb){ e.stopPropagation(); run(rb.getAttribute("data-run")); return; }
     var tg=e.target.closest("[data-toggle]"); if(tg){ var id=tg.getAttribute("data-toggle"); var willOpen=!STATE.open[id]; STATE.open[id]=willOpen; if(willOpen) loadDatasets(id); render(); }
   });
