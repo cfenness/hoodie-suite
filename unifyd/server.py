@@ -474,7 +474,8 @@ def ai_read_ep():
     if not profile:
         return jsonify(error="need profile"), 400
     result = analyze.ai_read(profile, summary=body.get("summary"),
-                             filename=body.get("filename", "dataset.csv"))
+                             filename=body.get("filename", "dataset.csv"),
+                             header=body.get("header"), rows=body.get("rows"))
     if "error" not in result:
         return jsonify(result)
     return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
