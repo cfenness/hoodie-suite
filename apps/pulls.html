@@ -63,6 +63,18 @@
   table.rec td{padding:5px 9px;border-bottom:1px solid var(--line2);font-variant-numeric:tabular-nums;max-width:240px;overflow:hidden;text-overflow:ellipsis}
   table.rec tr:hover td{background:#faf6ef}
   .rec-load{font-size:12px;color:var(--muted);padding:8px 0}
+  /* live run console */
+  .console-head{display:flex;align-items:center;gap:8px;font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;letter-spacing:.04em;margin:2px 0 8px;color:var(--accent)}
+  .console-head.err{color:#c0392b}
+  .console-head .ch-sep{color:var(--muted);font-weight:400}
+  .console-head b{font-weight:700}
+  .console-head .live-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 0 rgba(34,197,94,.6);animation:cpulse 1.3s infinite}
+  @keyframes cpulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.6)}70%{box-shadow:0 0 0 7px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+  .console{background:#15101f;border:1px solid #2c2440;border-radius:8px;padding:10px 12px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;line-height:1.6;color:#cdbce6;max-height:248px;overflow:auto}
+  .console .cl{white-space:pre-wrap;word-break:break-word}
+  .console .cl-time{color:#6f5d86;margin-right:9px}
+  .console .cl-warn{color:#e7b75f}
+  .console .cl-err{color:#ef8a7a}
   .rec-dl{float:right;display:inline-flex;gap:6px}
   .rec-dl button{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);background:#efe6fb;border:1px solid #e0d3f5;border-radius:5px;padding:3px 8px;cursor:pointer}
   .rec-dl button:hover{background:#e6d8fb}
@@ -133,7 +145,7 @@
     {id:"shopify-dtc",mark:"HP", name:"Hemp + DTC — Shopify", kind:"DTC brands on Shopify (BRĒZ, Cann, Cornbread…) · price + availability via public /products.json"},
     {id:"instacart",  mark:"IC", name:"Instacart — Store-level", kind:"per-store product + price via Bright Data managed dataset · needs API key + dataset id (see docs)"},
   ];
-  var STATE = { live:false, runs:[], busy:{}, open:{}, datasets:{} };
+  var STATE = { live:false, runs:[], busy:{}, open:{}, datasets:{}, jobs:{} };
 
   var fmt = function(n){ return (n==null?"—":Number(n).toLocaleString()); };
   function timeAgo(ms){
@@ -171,9 +183,10 @@
           '<button class="run-btn'+(busy?" running":"")+'" data-run="'+s.id+'" title="'+btnTitle+'"'+( (!STATE.live||busy) ? " disabled":"")+'>' +
             '<span class="spin"></span><span class="lbl">'+(busy?"Running…":"Run")+'</span></button>' +
         '</div>' +
-        '<div class="eval">'+ evalHtml(run) +'</div>';
+        '<div class="eval">'+ ((busy && STATE.jobs[s.id]) ? consoleHtml(s.id, STATE.jobs[s.id]) : evalHtml(run)) +'</div>';
       root.appendChild(el);
     });
+    document.querySelectorAll(".console").forEach(function(c){ c.scrollTop = c.scrollHeight; });
     var n = STATE.runs.length;
     document.getElementById("foot").textContent = STATE.live
       ? (n + " run"+(n===1?"":"s")+" on record · engine live")
@@ -315,48 +328,92 @@
     }).join("");
   }
 
-  // Poll /api/runs until a NEW run lands for connId — so a long (or dropped) request still resolves.
-  function pollForCompletion(connId, beforeId, cb){
-    var tries=0, max=400;   // ~20 min at 3s
-    (function tick(){
-      if(STATE.busy[connId]===undefined) return;          // already finished elsewhere
-      fetch("/api/runs",{cache:"no-store"}).then(function(r){ return r.ok?r.json():[]; })
-        .then(function(runs){
-          if(Array.isArray(runs)) STATE.runs=runs;
-          var lr=latestRun(connId);
-          if(lr && lr.id!==beforeId){ cb(lr); return; }
-          if(++tries<max && STATE.busy[connId]!==undefined) setTimeout(tick, 3000);
-        })
-        .catch(function(){ if(++tries<max && STATE.busy[connId]!==undefined) setTimeout(tick, 3000); });
-    })();
+
+  // ---- the on-theme live console (real run progress, streamed from the agent) ----
+  function hms(ms){ var d=new Date(ms); function p(x){return ("0"+x).slice(-2);} return p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds()); }
+  // best-effort live metrics parsed from the REAL log lines (never invented)
+  function consoleStats(job){
+    var elapsed=Math.floor((Date.now()-job.startedAt)/1000), eta=null, count=null;
+    (job.log||[]).forEach(function(L){
+      var m=L.msg||"";
+      var e=m.match(/~\s*(\d+)\s*s\b/);            if(e) eta=Math.max(0, parseInt(e[1],10)-elapsed);
+      var pg=m.match(/page\s+(\d+)\s*\/\s*(\d+)/i); if(pg){ var fr=parseInt(pg[1],10)/Math.max(1,parseInt(pg[2],10)); if(fr>0) eta=Math.max(0, Math.round(elapsed/fr-elapsed)); }
+      var c=m.match(/([\d,]+)\s+(records|products|cells|rows)\b/i); if(c) count=parseInt(c[1].replace(/,/g,""),10);
+    });
+    if(job.run && job.run.total!=null) count=job.run.total;
+    return {elapsed:elapsed, eta:eta, count:count};
+  }
+  function consoleHtml(connId, job){
+    var s=consoleStats(job), running=(job.status==="running"), err=(job.status==="error");
+    var head='<div class="console-head '+(err?"err":(running?"live":"ok"))+'">'+
+      (running?'<span class="live-dot"></span>LIVE':(err?'✗ ERROR':'✓ DONE'))+
+      '<span class="ch-sep">·</span><span>'+mmss(s.elapsed)+'</span>'+
+      (s.count!=null?'<span class="ch-sep">·</span><span><b>'+fmt(s.count)+'</b> records</span>':'')+
+      (running&&s.eta!=null?'<span class="ch-sep">·</span><span>ETA ~'+mmss(s.eta)+'</span>':'')+
+      '</div>';
+    var L=(job.log||[]);
+    var body=L.length ? L.map(function(x){
+      var cls=x.lvl==="WARNING"?"cl-warn":((x.lvl==="ERROR"||x.lvl==="CRITICAL")?"cl-err":"");
+      return '<div class="cl"><span class="cl-time">'+hms(x.t)+'</span><span class="'+cls+'">'+esc(x.msg)+'</span></div>';
+    }).join("") : '<div class="cl"><span class="cl-time">connecting to the agent…</span></div>';
+    if(job.error) body+='<div class="cl"><span class="cl-err">'+esc(job.error)+'</span></div>';
+    return head+'<div class="console">'+body+'</div>';
+  }
+  // patch just the running source's console (cheap — avoids a full re-render each tick)
+  function updateConsole(connId){
+    var job=STATE.jobs[connId]; if(!job) return;
+    var top=document.querySelector('.src-top[data-toggle="'+connId+'"]');
+    var ev=top && top.parentNode.querySelector(".eval");
+    if(ev){ ev.innerHTML=consoleHtml(connId, job); var c=ev.querySelector(".console"); if(c) c.scrollTop=c.scrollHeight; }
+  }
+
+  function finalize(connId, rec, errMsg){
+    delete STATE.busy[connId]; delete STATE.jobs[connId];
+    if(rec && rec.id){
+      if(!STATE.runs.some(function(r){return r.id===rec.id;})) STATE.runs.unshift(rec);
+      var st=rec.degraded?"degraded":(rec.status||"done");
+      var n=rec.total!=null?(" · "+Number(rec.total).toLocaleString()+" rows"):"";
+      var d=rec.extracts&&rec.extracts[0]&&rec.extracts[0].delta!=null?(" · Δ"+rec.extracts[0].delta):"";
+      toast((st==="failed"?"✗ ":st==="success"?"✓ ":"⚠ ")+labelOf(connId)+" — "+st+n+d,
+            st==="failed"?"err":st==="success"?"ok":"warn");
+    } else {
+      toast("✗ "+labelOf(connId)+" — "+(errMsg||"run failed (check the engine logs)"), "err");
+    }
+    render(); runningBanner(); refresh(); loadDatasets(connId, true);
+  }
+
+  function pollProgress(connId, jobId){
+    var job=STATE.jobs[connId];
+    if(!job || job.jobId!==jobId) return;                              // superseded / cleared
+    if(Date.now()-job.startedAt > 30*60*1000){ finalize(connId, job.run, "timed out after 30 min"); return; }
+    fetch("/api/run/progress?id="+encodeURIComponent(jobId),{cache:"no-store"})
+      .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error("HTTP "+r.status)); })
+      .then(function(p){
+        var j=STATE.jobs[connId]; if(!j || j.jobId!==jobId) return;
+        j.log=p.log||j.log; j.status=p.status; j.run=p.run; j.error=p.error;
+        if(p.status==="running"){ updateConsole(connId); setTimeout(function(){ pollProgress(connId, jobId); }, 1000); }
+        else { updateConsole(connId); setTimeout(function(){ finalize(connId, p.run, p.error); }, 600); }  // let the final line land
+      })
+      .catch(function(){ if(STATE.jobs[connId] && STATE.jobs[connId].jobId===jobId) setTimeout(function(){ pollProgress(connId, jobId); }, 2000); });
   }
 
   function run(connId){
     if(STATE.busy[connId]!==undefined || !STATE.live) return;
-    var beforeId=(latestRun(connId)||{}).id;
-    STATE.busy[connId]=Date.now(); STATE.open[connId]=true; render(); runningBanner();
-    var settled=false;
-    function finish(rec, errMsg){
-      if(settled) return; settled=true;
-      delete STATE.busy[connId];
-      if(rec && rec.id){
-        if(STATE.runs[0]!==rec && !STATE.runs.some(function(r){return r.id===rec.id;})) STATE.runs.unshift(rec);
-        var st=rec.degraded?"degraded":(rec.status||"done");
-        var n=rec.total!=null?(" · "+Number(rec.total).toLocaleString()+" rows"):"";
-        var d=rec.extracts&&rec.extracts[0]&&rec.extracts[0].delta!=null?(" · Δ"+rec.extracts[0].delta):"";
-        toast((st==="failed"?"✗ ":st==="success"?"✓ ":"⚠ ")+labelOf(connId)+" — "+st+n+d,
-              st==="failed"?"err":st==="success"?"ok":"warn");
-      } else {
-        toast("✗ "+labelOf(connId)+" — "+(errMsg||"run failed (check the engine logs)"), "err");
-      }
-      render(); runningBanner(); refresh(); loadDatasets(connId, true);
-    }
+    STATE.busy[connId]=Date.now(); STATE.open[connId]=true;
+    STATE.jobs[connId]={ jobId:null, startedAt:Date.now(), log:[], status:"running", run:null, error:null };
+    render(); runningBanner();
     fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({connId:connId, trigger:"manual"})})
-      .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error("HTTP "+r.status)); })
-      .then(function(rec){ finish(rec && rec.id ? rec : null, rec && rec.error); })
-      .catch(function(e){ /* request dropped/long — let the poller resolve from /api/runs */ });
-    pollForCompletion(connId, beforeId, function(rec){ finish(rec, null); });
+        body:JSON.stringify({connId:connId, trigger:"manual", stream:true})})
+      .then(function(r){ return (r.ok||r.status===202) ? r.json() : Promise.reject(new Error("HTTP "+r.status)); })
+      .then(function(p){
+        if(p && p.jobId){                                  // async live console (current agent)
+          if(STATE.jobs[connId]) STATE.jobs[connId].jobId=p.jobId;
+          updateConsole(connId); pollProgress(connId, p.jobId);
+        } else {                                           // older agent answered synchronously
+          finalize(connId, (p && p.id) ? p : null, p && p.error);
+        }
+      })
+      .catch(function(e){ finalize(connId, null, e.message); });
   }
 
   document.getElementById("sources").addEventListener("click", function(e){

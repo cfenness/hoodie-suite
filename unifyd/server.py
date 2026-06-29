@@ -17,7 +17,7 @@ When the agent is absent the dashboard falls back to its built-in preview.
 
 State is persisted to ./agent_state/ (datasets.json, runs.json, cola CSV).
 """
-import csv, io, json, os, time, types, urllib.request, datetime
+import csv, io, json, os, time, types, urllib.request, datetime, threading, logging
 from flask import Flask, request, jsonify, send_file, Response
 
 import ttb_cola_scraper as cola   # the scraper you generated
@@ -40,6 +40,68 @@ STATE_BUCKET = os.environ.get("STATE_BUCKET", "").strip()
 STATE_PREFIX = os.environ.get("STATE_PREFIX", "unifyd-state").strip("/")
 
 app = Flask(__name__)
+
+# ---------------- live run jobs (the on-theme console on Run) ----------------
+# A run executes in a background thread; the front-end polls /api/run/progress to stream
+# the ACTUAL progress. We capture the pulls' existing app.logger.info(...) output per-job
+# via a logging handler keyed by the running thread — no scraper changes, real lines only.
+JOBS = {}                       # jobId -> {id,connId,status,startedAt,finishedAt,log[],run,error}
+_JOB_BY_THREAD = {}             # thread ident -> jobId  (so a log record finds its job)
+JOB_LOG_CAP = 800
+
+class _JobLogHandler(logging.Handler):
+    def emit(self, record):
+        jid = _JOB_BY_THREAD.get(threading.get_ident())
+        job = JOBS.get(jid) if jid else None
+        if job is None:
+            return
+        try: msg = record.getMessage()
+        except Exception: return
+        ln = job["log"]; ln.append({"t": int(time.time() * 1000), "lvl": record.levelname, "msg": msg})
+        if len(ln) > JOB_LOG_CAP: del ln[:len(ln) - JOB_LOG_CAP]
+
+_jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
+app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
+
+VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart"}
+
+def _dispatch_pull(conn, body):
+    return (cola_pull(body) if conn == "ttb-cola"
+            else abc_pull(body) if conn == "abc-fws"
+            else specs_pull(body) if conn == "specs"
+            else binnys_pull(body) if conn == "binnys"
+            else shopify_pull(body) if conn == "shopify-dtc"
+            else instacart_pull(body) if conn == "instacart"
+            else fl_pull(conn) if conn in FL_CONN else None)
+
+def _new_job(conn):
+    jid = "J-%d-%d" % (int(time.time()), len(JOBS) + 1)
+    JOBS[jid] = {"id": jid, "connId": conn, "status": "running",
+                 "startedAt": int(time.time() * 1000), "finishedAt": None,
+                 "log": [], "run": None, "error": None}
+    if len(JOBS) > 40:          # keep the last ~40 jobs
+        for k in sorted(JOBS, key=lambda k: JOBS[k]["startedAt"])[:len(JOBS) - 40]:
+            JOBS.pop(k, None)
+    return jid
+
+def _run_job(jid, conn, body):
+    _JOB_BY_THREAD[threading.get_ident()] = jid
+    job = JOBS[jid]
+    try:
+        app.logger.info("%s: run started", conn)
+        rec = _dispatch_pull(conn, body)
+        if rec is None:
+            job["status"] = "error"; job["error"] = "unknown connId: %s" % conn
+            app.logger.warning("%s: unknown connId", conn); return
+        RUNS.insert(0, rec); del RUNS[200:]; save()
+        job["run"] = rec; job["status"] = rec.get("status", "success")
+        app.logger.info("%s: done — %s rows, status %s", conn, rec.get("total"), rec.get("status"))
+    except Exception as e:
+        app.logger.exception("run failed")
+        job["status"] = "error"; job["error"] = str(e)
+    finally:
+        job["finishedAt"] = int(time.time() * 1000)
+        _JOB_BY_THREAD.pop(threading.get_ident(), None)
 
 # ---------------- hardening: optional auth + JSON errors ----------------
 # AGENT_TOKEN gates /api/* for non-browser callers (off by default — local dev and
@@ -153,9 +215,12 @@ FL_CONN = {
 }
 def fl_pull(conn_id):
     started = int(time.time() * 1000); exs = []
-    for eid, hashdr, n in FL_CONN[conn_id]:
+    extracts = FL_CONN[conn_id]
+    for i, (eid, hashdr, n) in enumerate(extracts):
         try:
+            app.logger.info("downloading %s (%d/%d) from Florida…", eid, i + 1, len(extracts))
             txt = urllib.request.urlopen(f"{FL_BASE}/{eid}.csv", timeout=180).read().decode("utf-8", "replace")
+            app.logger.info("%s: %s KB downloaded, parsing…", eid, len(txt) // 1024)
             rows = list(csv.reader(io.StringIO(txt)))
             header = [h.strip() for h in rows[0]] if hashdr else FL_HEADER
             data = [r for r in (rows[1:] if hashdr else rows) if any((c or "").strip() for c in r)]
@@ -164,6 +229,7 @@ def fl_pull(conn_id):
             save_full(eid, header, data)   # keep ALL rows extractable, not just the sample
             prev = next((e for r in RUNS if r["connId"] == conn_id for e in r["extracts"] if e["id"] == eid), None)
             delta = len(data) - (prev["rows"] if prev else len(data))
+            app.logger.info("%s: %s rows (%s records) ✓", eid, len(data), len(data))
             exs.append({"id": eid, "rows": len(data), "delta": delta, "status": "success"})
         except Exception as e:
             app.logger.warning("FL %s failed: %s", eid, e)
@@ -339,14 +405,17 @@ def hierarchy():
 def run():
     body = request.get_json(force=True, silent=True) or {}
     conn = body.get("connId")
+    if conn not in VALID_CONNS and conn not in FL_CONN:
+        return jsonify(error="unknown connId"), 400
+    # Async (opt-in via {"stream":true} or ?async=1): run in a thread, stream progress via
+    # /api/run/progress. This is what Hoodie Pulls' live console uses.
+    if body.get("stream") or request.args.get("async"):
+        jid = _new_job(conn)
+        threading.Thread(target=_run_job, args=(jid, conn, body), daemon=True).start()
+        return jsonify(jobId=jid, connId=conn, status="running"), 202
+    # Legacy synchronous path (blocks until the pull finishes) — kept for other callers.
     try:
-        rec = (cola_pull(body) if conn == "ttb-cola"
-               else abc_pull(body) if conn == "abc-fws"
-               else specs_pull(body) if conn == "specs"
-               else binnys_pull(body) if conn == "binnys"
-               else shopify_pull(body) if conn == "shopify-dtc"
-               else instacart_pull(body) if conn == "instacart"
-               else fl_pull(conn) if conn in FL_CONN else None)
+        rec = _dispatch_pull(conn, body)
     except Exception as e:
         app.logger.exception("run failed")
         rec = {"id": "R-ERR", "connId": conn, "startedAt": int(time.time()*1000),
@@ -356,6 +425,19 @@ def run():
         return jsonify(error="unknown connId"), 400
     RUNS.insert(0, rec); del RUNS[200:]; save()
     return jsonify(rec)
+
+@app.get("/api/run/progress")
+def run_progress():
+    """Live status of a background run job — log lines, elapsed, and the final record once done."""
+    jid = (request.args.get("id") or "").strip()
+    job = JOBS.get(jid)
+    if not job:
+        return jsonify(error="unknown job: %s" % jid), 404
+    now = int(time.time() * 1000)
+    return jsonify(id=jid, connId=job["connId"], status=job["status"],
+                   startedAt=job["startedAt"], finishedAt=job["finishedAt"],
+                   elapsedMs=(job["finishedAt"] or now) - job["startedAt"],
+                   log=job["log"], run=job["run"], error=job["error"])
 
 @app.post("/api/analyze")
 def analyze_ep():
@@ -379,4 +461,4 @@ def index():
 
 if __name__ == "__main__":
     print("Unifyd agent on http://127.0.0.1:8765  (Ctrl-C to stop)")
-    app.run(host="127.0.0.1", port=8765, debug=False)
+    app.run(host="127.0.0.1", port=8765, debug=False, threaded=True)
