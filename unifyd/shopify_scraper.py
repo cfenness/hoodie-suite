@@ -113,6 +113,7 @@ def pull(sample=None, crawl_all=False, limit=None, out=".", state_dir=None, log=
     datasets = {"shopify_variants": {"header": header, "rows": rows[:800], "total": len(rows),
                                      "products": n_products, "brands": ok_brands, "movement": movement}}
     json.dump(datasets, open(os.path.join(out, "datasets.json"), "w"), indent=2)
+    datasets["shopify_variants"]["_rows_full"] = rows   # full set for export (in-memory return only)
     run = run_record(movement, n_products, ok_brands, status, warnings)
     log(f"done: {ok_brands} brands, {n_products} products, {len(cur)} variant-cells; "
         + (f"{movement['changed']} moved since last run" if prev else "baseline"))

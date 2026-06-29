@@ -147,6 +147,7 @@ def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=p
     datasets = {"binnys_store_cells": {"header": header, "rows": rows[:800],
                                        "total": len(rows), "products": n_products, "movement": movement}}
     json.dump(datasets, open(os.path.join(out, "datasets.json"), "w"), indent=2)
+    datasets["binnys_store_cells"]["_rows_full"] = rows   # full set for export (in-memory return only)
     run = run_record(movement, n_products, status, warnings)
     log(f"done: {n_products} products × stores = {len(cur)} cells; "
         + (f"{movement['units_moved']} units moved, {movement['price_moves']} price changes since last run"

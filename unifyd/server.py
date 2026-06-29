@@ -201,6 +201,16 @@ def load_full(did):
     try: return json.load(open(os.path.join(FULL_DIR, did + ".json")))
     except Exception: return None
 
+def _absorb(ds):
+    """Lift the full rows a scraper attached as `_rows_full` out to the on-demand full store
+    (for complete CSV/JSON export), then leave the in-memory dataset capped at its UI sample
+    so DATASETS / agent_state stay small. No `_rows_full` (e.g. FL/COLA) → unchanged no-op."""
+    for did, d in (ds or {}).items():
+        full = d.pop("_rows_full", None)
+        if full is not None:
+            save_full(did, d.get("header") or [], full)
+    return ds
+
 # ---------------- Florida pull (live, no extra deps) ----------------
 FL_BASE = "https://www2.myfloridalicense.com/sto/file_download/extracts"
 FL_HEADER = ["Board","Profession","Owner Name","Series","Modifier","Mail Address 1","Mail Address 2",
@@ -254,7 +264,7 @@ def cola_pull(params):
     ] + (["--detail"] if params.get("detail") else []) + (["--ocr"] if params.get("ocr") else []))
     started = int(time.time() * 1000)
     ds, runs, _ = cola.scrape(args, log=lambda m: app.logger.info("COLA %s", m))
-    DATASETS.update(ds)
+    DATASETS.update(_absorb(ds))
     run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
     return run
@@ -267,7 +277,7 @@ def abc_pull(params):
         limit=params.get("limit"), out=os.path.join(STATE_DIR, "abc"),
         state_dir=os.path.join(STATE_DIR, "abc"),
         log=lambda m: app.logger.info("ABC %s", m))
-    DATASETS.update(ds)
+    DATASETS.update(_absorb(ds))
     run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
     return run
@@ -279,7 +289,7 @@ def specs_pull(params):
         limit=params.get("limit"), out=os.path.join(STATE_DIR, "specs"),
         state_dir=os.path.join(STATE_DIR, "specs"),
         log=lambda m: app.logger.info("SPECS %s", m))
-    DATASETS.update(ds)
+    DATASETS.update(_absorb(ds))
     run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
     return run
@@ -291,7 +301,7 @@ def binnys_pull(params):
         limit=params.get("limit"), out=os.path.join(STATE_DIR, "binnys"),
         state_dir=os.path.join(STATE_DIR, "binnys"),
         log=lambda m: app.logger.info("BINNYS %s", m))
-    DATASETS.update(ds)
+    DATASETS.update(_absorb(ds))
     run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
     return run
@@ -302,7 +312,7 @@ def shopify_pull(params):
         sample=params.get("sample"), crawl_all=bool(params.get("all")), limit=params.get("limit"),
         out=os.path.join(STATE_DIR, "shopify"), state_dir=os.path.join(STATE_DIR, "shopify"),
         domains=params.get("domains"), log=lambda m: app.logger.info("SHOPIFY %s", m))
-    DATASETS.update(ds)
+    DATASETS.update(_absorb(ds))
     run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
     return run
@@ -312,7 +322,7 @@ def instacart_pull(params):
     ds, runs, _ = instacart.pull(out=os.path.join(STATE_DIR, "instacart"),
         state_dir=os.path.join(STATE_DIR, "instacart"), urls=params.get("urls"),
         log=lambda m: app.logger.info("INSTACART %s", m))
-    DATASETS.update(ds)
+    DATASETS.update(_absorb(ds))
     run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
     return run
