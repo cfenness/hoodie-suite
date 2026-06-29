@@ -201,6 +201,17 @@ headline `units_moved`. ~31k products (each expands to ~49 store cells); default
 products, `--all` paginates. App id / index / key env-overridable (`BINNYS_ALGOLIA_*`);
 self-reports `degraded` if the per-store schema changes.
 
+### Hemp + bev-alc DTC on Shopify (`shopify_scraper.py`, connId `shopify-dtc`)
+
+Most hemp-THC-beverage / CBD brands (and many craft bev-alc DTC brands) run on **Shopify**,
+which exposes a public **`/products.json`** feed (title, variants, price, `available`, sku) —
+the same data the storefront renders. One connector covers many brands: pull each domain's
+catalog, snapshot per variant (`brand|variantId`), diff → price moves / in-out / assortment.
+Stdlib-only, no Bright Data (open endpoints). Brand domains via `SHOPIFY_DOMAINS` (comma) or
+the seed (BRĒZ, Cann, Cornbread Hemp, HOP WTR, Olipop — verified). These are single online
+stores, so the granularity is brand/online-level (the hemp vertical is mostly DTC). Validated
+live: 5 brands → 270 products → 991 variant-cells.
+
 ## Data flow
 
 ```
