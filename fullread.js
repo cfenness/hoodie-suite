@@ -193,7 +193,63 @@
     });
   }
 
-  var API = { profile: profile, ruleClassify: ruleClassify, valDtype: valDtype, VERSION: "1" };
+  // ── Scoped Report Builder layer ──────────────────────────────────────────────
+  // The RB renderers compute each cell on the fly via rbComputeWithMod(measureKey, dims).
+  // To render an ARBITRARY uploaded dataset we (a) expose its columns as RB fields scoped to
+  // this file, and (b) give RB a generic group-by aggregator over the raw rows. No bev-alc
+  // cell model involved — this is the dataset-backed compute path.
+
+  // RB-shaped field set from the upload: measures = measure-classified cols, dimensions =
+  // dimension/identifier/timeseries cols (values = the profiled top-k, capped).
+  function scopedFields(prof, classification) {
+    var cls = {};
+    (classification || ruleClassify(prof)).forEach(function (c) { cls[c.name] = c.classification; });
+    var dims = [], measures = [];
+    prof.columns.forEach(function (col) {
+      var k = cls[col.name] || "dimension";
+      if (k === "ignore") return;
+      if (k === "measure") {
+        measures.push({ key: col.name, label: col.name, agg: "sum",
+          type: col.dtype === "percent" ? "percent" : col.dtype === "currency" ? "currency" : "number",
+          unit: col.dtype === "percent" ? "%" : "" });
+      } else {
+        dims.push({ key: col.name, label: col.name,
+          type: k === "timeseries" ? "time" : "string",
+          values: (col.top_values || []).map(function (t) { return { v: t.v, n: t.v }; }) });
+      }
+    });
+    return { dimensions: dims, measures: measures };
+  }
+
+  // Generic per-cell aggregate over uploaded rows — what the RB compute hook calls.
+  // dims is {columnName: value} (the active row/col/filter selection); returns a number.
+  function cellAgg(header, rows, measureCol, agg, dims) {
+    var idx = {}; header.forEach(function (h, i) { idx[h] = i; });
+    var mi = idx[measureCol];
+    if (mi == null) return null;
+    var filt = Object.keys(dims || {}).map(function (k) { return [idx[k], dims[k]]; })
+                     .filter(function (e) { return e[0] != null; });
+    var sum = 0, count = 0, distinct = Object.create(null), nums = [];
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r], ok = true;
+      for (var f = 0; f < filt.length; f++) { if (clean(row[filt[f][0]]) !== clean(filt[f][1])) { ok = false; break; } }
+      if (!ok) continue;
+      count++;
+      var v = clean(row[mi]);
+      if (agg === "distinct") { distinct[v] = 1; continue; }
+      var num = toNum(v); if (num !== null) { sum += num; nums.push(num); }
+    }
+    if (agg === "count") return count;
+    if (agg === "distinct") return Object.keys(distinct).length;
+    if (!nums.length) return 0;
+    if (agg === "mean") return sum / nums.length;
+    if (agg === "min") return Math.min.apply(null, nums);
+    if (agg === "max") return Math.max.apply(null, nums);
+    return sum;   // sum (default)
+  }
+
+  var API = { profile: profile, ruleClassify: ruleClassify, scopedFields: scopedFields,
+              cellAgg: cellAgg, valDtype: valDtype, VERSION: "1" };
   if (typeof window !== "undefined") window.FullRead = API;
   if (typeof module !== "undefined" && module.exports) module.exports = API;   // headless tests
 })();
