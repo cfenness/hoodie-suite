@@ -22,7 +22,10 @@ import argparse, hashlib, json, os, sys, time
 import brightdata
 from abc_fws_scraper import diff_snapshots
 
-DATASET = os.environ.get("BRIGHTDATA_INSTACART_DATASET", "")
+# Default to Bright Data's managed "Instacart products unified schema" dataset (discovered
+# via the account's datasets/list). Override with BRIGHTDATA_INSTACART_DATASET if you prefer
+# the alt id gd_mljhotxi146iliaa3d or a custom one.
+DATASET = os.environ.get("BRIGHTDATA_INSTACART_DATASET", "").strip() or "gd_mju366c093ka75n46"
 URLS    = [u.strip() for u in os.environ.get("BRIGHTDATA_INSTACART_URLS", "").split(",") if u.strip()]
 SNAP    = "instacart_snapshot.json"
 
@@ -94,12 +97,14 @@ def pull(sample=None, crawl_all=False, limit=None, out=".", state_dir=None, log=
     state_dir = state_dir or out
     os.makedirs(out, exist_ok=True)
     targets = urls or URLS
-    if not (os.environ.get("BRIGHTDATA_API_KEY") and DATASET and targets):
+    if not (brightdata._key() and DATASET and targets):
+        miss = "BRIGHTDATA_INSTACART_URLS (Instacart store/product URLs)" if not targets \
+               else "a Bright Data API key (run `bdata login` or export BRIGHTDATA_API_KEY)"
         run = run_record(diff_snapshots({}, {}), 0, "failed",
-                         ["Instacart needs BRIGHTDATA_API_KEY + BRIGHTDATA_INSTACART_DATASET (dataset id "
-                          "from the BD dashboard) + BRIGHTDATA_INSTACART_URLS. For the FULL store (all "
-                          "departments, not just alcohol) point the URLs at the store root / department "
-                          "collections; tune depth with BRIGHTDATA_INSTACART_INPUT_EXTRA (JSON)."])
+                         [f"Instacart needs {miss}. Key + dataset id are auto-configured (dataset "
+                          f"{DATASET}); for the FULL store (all departments, not just alcohol) point "
+                          "the URLs at the store root / department collections, and tune depth with "
+                          "BRIGHTDATA_INSTACART_INPUT_EXTRA (JSON)."])
         return {}, [run], run["movement"]
     try:
         extra = _input_extra()                       # full-store depth/discovery knobs (dataset-specific)
