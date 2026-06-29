@@ -25,6 +25,7 @@ import abc_fws_scraper as abc      # ABC FWS directional inventory tracker (BigC
 import specs_scraper as specs      # Spec's directional tracker (Next.js, via Bright Data)
 import binnys_scraper as binnys    # Binny's directional tracker (Algolia feed, no Bright Data)
 import shopify_scraper as shopify  # DTC brands on Shopify (hemp + bev-alc) via public /products.json
+import instacart_scraper as instacart  # store-level Instacart via Bright Data managed dataset
 import analyze                      # data-reader brain behind "Overlay your data"
 
 APP_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -216,10 +217,20 @@ def shopify_pull(params):
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
     return run
 
+def instacart_pull(params):
+    started = int(time.time() * 1000)
+    ds, runs, _ = instacart.pull(out=os.path.join(STATE_DIR, "instacart"),
+        state_dir=os.path.join(STATE_DIR, "instacart"), urls=params.get("urls"),
+        log=lambda m: app.logger.info("INSTACART %s", m))
+    DATASETS.update(ds)
+    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
+    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
+    return run
+
 # ---------------- API ----------------
 @app.get("/api/health")
 def health():
-    return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc"],
+    return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart"],
                    datasets=len(DATASETS), runs=len(RUNS),
                    state=("s3:" + STATE_BUCKET) if STATE_BUCKET else "disk")
 
@@ -227,7 +238,7 @@ def health():
 _SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlets",
               "ttb-cola": "TTB — COLA Labels", "abc-fws": "ABC FWS — Inventory",
               "specs": "Spec's — Inventory", "binnys": "Binny's — Inventory",
-              "shopify-dtc": "Hemp + DTC — Shopify"}
+              "shopify-dtc": "Hemp + DTC — Shopify", "instacart": "Instacart — Store-level"}
 _EXTRACT_SRC = {eid: src for src, exs in FL_CONN.items() for (eid, _h, _n) in exs}
 _NAME_COLS = ("Owner Name", "Registrant Name", "Applicant", "Brand Name", "DBA")
 def _name_idx(header):
@@ -290,6 +301,7 @@ def run():
                else specs_pull(body) if conn == "specs"
                else binnys_pull(body) if conn == "binnys"
                else shopify_pull(body) if conn == "shopify-dtc"
+               else instacart_pull(body) if conn == "instacart"
                else fl_pull(conn) if conn in FL_CONN else None)
     except Exception as e:
         app.logger.exception("run failed")

@@ -56,3 +56,46 @@ def fetch(url, data_format="html", timeout=120):
         # strip the CLI's "Scraping <url>..." status line if it lands on stdout
         return re.sub(r"^\s*Scraping [^\n]*\.\.\.\s*\n", "", p.stdout)
     raise RuntimeError("Bright Data not configured — set BRIGHTDATA_API_KEY or run `bdata login`")
+
+
+# ---------------- Web Scraper API (managed datasets) ----------------
+# For platforms behind hard bot walls that the Unlocker can't clear (e.g. Instacart 403s),
+# Bright Data ships managed "datasets" addressed by a dataset_id (from the BD dashboard).
+# Trigger a job over input URLs, poll until ready, return the parsed records. REST + key.
+DATASETS_API = "https://api.brightdata.com/datasets/v3"
+
+
+def _ds_req(url, key, method="GET", body=None):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method, headers={
+        "Authorization": "Bearer " + key,
+        "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return json.load(r)
+
+
+def dataset_run(dataset_id, inputs, fmt="json", poll_timeout=600, poll_every=10):
+    """Run a managed dataset over `inputs` ([{"url": ...}, ...]); return the records list.
+    Needs BRIGHTDATA_API_KEY (REST). Raises on misconfig / timeout / job failure."""
+    key = os.environ.get("BRIGHTDATA_API_KEY")
+    if not key:
+        raise RuntimeError("BRIGHTDATA_API_KEY required for the Web Scraper API (managed datasets)")
+    trig = _ds_req(f"{DATASETS_API}/trigger?dataset_id={dataset_id}&format={fmt}",
+                   key, "POST", inputs)
+    snap = trig.get("snapshot_id") or trig.get("snapshotId")
+    if not snap:
+        # sync responses (<=20 urls) may return records directly
+        return trig if isinstance(trig, list) else trig.get("data", [])
+    import time as _t
+    waited = 0
+    while waited < poll_timeout:
+        st = _ds_req(f"{DATASETS_API}/progress/{snap}", key).get("status")
+        if st == "ready":
+            break
+        if st == "failed":
+            raise RuntimeError(f"dataset job {snap} failed")
+        _t.sleep(poll_every); waited += poll_every
+    else:
+        raise RuntimeError(f"dataset job {snap} timed out after {poll_timeout}s")
+    out = _ds_req(f"{DATASETS_API}/snapshot/{snap}?format={fmt}", key)
+    return out if isinstance(out, list) else out.get("data", [])
