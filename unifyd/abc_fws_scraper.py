@@ -48,6 +48,11 @@ INSTOCK_RE  = re.compile(r'"instock"\s*:\s*(true|false)', re.I)              # B
 UPC_RE      = re.compile(r'UPC[^0-9]{0,12}(\d{8,14})', re.I)
 LOC_RE      = re.compile(r'<loc>\s*([^<]+?)\s*</loc>', re.I)
 ID_RE       = re.compile(r'/(\d+)/?$')
+# STORE-LEVEL: the store is a BigCommerce product option; its radio labels carry the store
+# name, and `available_variant_values` lists the in-stock store option values. Both are in
+# the product page (no robots-disallowed AJAX needed).
+STORE_LBL   = re.compile(r'data-product-attribute-value="(\d+)"[^>]*>\s*([^<]{1,80}?)\s*<')
+AVAIL2_RE   = re.compile(r'available_variant_values"\s*:\s*\[([\d,]*)\]', re.I)
 
 
 # ---------------- fetch (stdlib, identifies itself, no gzip surprises) ----------------
@@ -88,37 +93,32 @@ def harvest_ids(max_pages=4, log=print):
 
 
 # ---------------- product page → {price, in-stock, upc} (best-effort, self-reporting) ----------------
-def parse_product(html):
-    """Pull price + availability from a BigCommerce product page. Returns
-    (record, ok) where ok=False means we couldn't find a price (selector drift)."""
+def parse_stores(html):
+    """Per-STORE price + in/out from a BigCommerce product page. The store is an option
+    attribute (radio labels = store names like 'ABC #003 - OBT' / 'Online'); the in-stock
+    subset is `available_variant_values`. Price is chain-level (one BigCommerce price).
+    Returns (rows, ok) where rows=[{store_val, store, instock, price}]; ok=False means no
+    stores/price parsed (selector drift)."""
     m = PRICE_RE.search(html) or PRICE_TXT.search(html)
     price = None
     if m:
         try: price = float(m.group(1).replace(",", ""))
         except ValueError: price = None
-    # Availability from the explicit og:availability meta (else BCData "instock"). A naive
-    # "out of stock" text scan is WRONG here — the page embeds an out_of_stock_message
-    # template label that false-triggers. (Per-store stock is behind a robots-disallowed
-    # AJAX call, so this chain-level flag is the best signal we take.)
-    am = AVAIL_RE.search(html)
-    if am:
-        a = am.group(1).strip().lower().rsplit("/", 1)[-1]   # strip schema.org/ prefix
-        instock = True if a == "instock" else False if a == "outofstock" else None
-    else:
-        bm = INSTOCK_RE.search(html)
-        instock = (bm.group(1).lower() == "true") if bm else None
-    um = UPC_RE.search(html)
-    return {"price": price, "instock": instock, "upc": um.group(1) if um else None}, price is not None
+    av = AVAIL2_RE.search(html)
+    avail = set(av.group(1).split(",")) if (av and av.group(1)) else set()
+    rows = []
+    for val, lbl in STORE_LBL.findall(html):
+        lbl = lbl.strip()
+        if not (lbl.startswith("ABC #") or lbl.lower() == "online"):
+            continue   # store options only — skip any non-store attribute values
+        rows.append({"store_val": val, "store": lbl, "instock": val in avail, "price": price})
+    return rows, bool(rows) and price is not None
 
 
 def fetch_product(sku, url, log=print):
-    body, hdr = fetch(url)
-    rec, ok = parse_product(body)
-    rec.update({"sku": sku, "url": url, "etag": hdr["etag"], "last_modified": hdr["last_modified"],
-                "ts": int(time.time() * 1000)})
-    # fingerprint of the *parsed* fields (ignores per-request CSRF/session noise in the raw HTML)
-    rec["fp"] = hashlib.sha1(f"{rec['price']}|{rec['instock']}|{rec['upc']}".encode()).hexdigest()[:12]
-    return rec, ok
+    body, _ = fetch(url)
+    rows, ok = parse_stores(body)
+    return sku, rows, ok
 
 
 # ---------------- deterministic sample: same SKUs every run, spread across catalog ----------------
@@ -150,13 +150,12 @@ def diff_snapshots(prev, cur):
 
 
 # ---------------- run record (matches the /api/runs contract used by Hoodie Pulls) ----------------
-def run_record(snapshot, movement, status, warnings):
-    rid = "R-ABC" + hashlib.sha1(str(snapshot.get("__ts__", "")).encode()).hexdigest()[:3].upper()
-    n = movement["sampled"]
+def run_record(movement, n_products, status, warnings):
+    rid = "R-ABC" + hashlib.sha1(str(movement.get("sampled", "")).encode()).hexdigest()[:3].upper()
     return {"id": rid, "connId": "abc-fws", "startedAt": 0, "finishedAt": 0, "durationMs": 0,
-            "status": status, "trigger": "manual", "total": n,
+            "status": status, "trigger": "manual", "total": n_products,
             "degraded": status == "degraded", "warnings": warnings, "healed": [],
-            "extracts": [{"id": "abc_catalog", "rows": n,
+            "extracts": [{"id": "abc_store_cells", "rows": movement["sampled"],
                           "delta": movement["changed"], "status": status}],
             "movement": movement}
 
@@ -168,51 +167,49 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
     os.makedirs(out, exist_ok=True)
     catalog = harvest_ids(log=log)
     if not catalog:
-        run = run_record({}, diff_snapshots({}, {}), "failed",
+        run = run_record(diff_snapshots({}, {}), 0, "failed",
                          ["No products found in sitemap — site structure may have changed."])
         return {}, [run], run["movement"]
 
     targets = (catalog if limit is None else catalog[:limit]) if crawl_all else pick_sample(catalog, sample)
     log(f"catalog {len(catalog)} products; pulling {len(targets)} (delay {DELAY}s) ~{int(len(targets)*DELAY)}s")
 
-    cur, ok_n = {}, 0
+    cur, ok_n = {}, 0   # cur keyed `sku|storeVal` -> per-store {price, instock, store, sku}
     for i, (sku, url) in enumerate(targets):
         try:
-            rec, ok = fetch_product(sku, url, log=log)
-            cur[sku] = rec; ok_n += ok
+            _, rows, ok = fetch_product(sku, url, log=log)
+            ok_n += ok
+            for r in rows:
+                cur[f"{sku}|{r['store_val']}"] = {"price": r["price"], "instock": r["instock"],
+                                                  "store": r["store"], "sku": sku}
         except Exception as e:
             log(f"  {sku}: {e}")
         if i < len(targets) - 1:
             time.sleep(DELAY)
 
-    # load the previous snapshot (written by the last run) and diff
     prev = {}
     snap_path = os.path.join(state_dir, SNAP_FILE)
     if os.path.exists(snap_path):
-        try: prev = json.load(open(snap_path)).get("skus", {})
+        try: prev = json.load(open(snap_path)).get("cells", {})
         except Exception: prev = {}
     movement = diff_snapshots(prev, cur)
 
-    # self-report: if we couldn't read a price on most pages, the selector drifted
     warnings = []
-    if cur and ok_n / len(cur) < 0.5:
-        warnings.append(f"Price parsed on only {ok_n}/{len(cur)} pages — confirm selectors "
-                        "against a live product page (BigCommerce theme may have changed).")
+    if not cur or ok_n / max(1, len(targets)) < 0.5:
+        warnings.append(f"Per-store options parsed on only {ok_n}/{len(targets)} pages — confirm the "
+                        "store-option / available_variant_values selectors against a live page.")
     status = "failed" if not cur else ("degraded" if warnings else "success")
 
-    # persist the new snapshot for next run's diff, and emit a browsable dataset
-    json.dump({"__ts__": int(time.time() * 1000), "skus": cur},
-              open(snap_path, "w"), indent=2)
-    header = ["SKU", "Price", "In Stock", "UPC", "URL"]
-    rows = [[s, r.get("price"), r.get("instock"), r.get("upc"), r.get("url")]
-            for s, r in sorted(cur.items(), key=lambda kv: int(kv[0]))]
-    datasets = {"abc_catalog": {"header": header, "rows": rows[:600],
-                                "total": len(rows), "movement": movement}}
+    json.dump({"__ts__": int(time.time() * 1000), "cells": cur}, open(snap_path, "w"), indent=2)
+    header = ["SKU", "Store", "Price", "In Stock"]
+    rows = [[v["sku"], v["store"], v["price"], v["instock"]] for k, v in sorted(cur.items())]
+    n_products = len({v["sku"] for v in cur.values()})
+    datasets = {"abc_store_cells": {"header": header, "rows": rows[:800],
+                                    "total": len(rows), "products": n_products, "movement": movement}}
     json.dump(datasets, open(os.path.join(out, "datasets.json"), "w"), indent=2)
-    snapshot = {"__ts__": int(time.time() * 1000), "skus": cur}
-    run = run_record(snapshot, movement, status, warnings)
-    log(f"done: {len(cur)} sampled, {movement['changed']} changed since last run"
-        + (f", {len(movement['new'])} new / {len(movement['dropped'])} dropped" if prev else " (no prior snapshot — baseline)"))
+    run = run_record(movement, n_products, status, warnings)
+    log(f"done: {n_products} products × stores = {len(cur)} cells; "
+        + (f"{movement['changed']} store-cells moved since last run" if prev else "baseline"))
     return datasets, [run], movement
 
 

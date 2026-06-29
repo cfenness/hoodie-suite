@@ -69,16 +69,15 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   `ANTHROPIC_API_KEY`) has an LLM re-derive unrecognized column indices and retries the parse.
   `unifyd/fixtures/` holds captured pages to confirm the parser against (it currently passes
   `cola_debug.html` → 20 rows, all fields). **TTB is TLS-blocked from sandboxes — first run live.**
-- `unifyd/abc_fws_scraper.py` — ABC FWS (abcfws.com, **BigCommerce**) directional inventory
-  tracker (connId `abc-fws`, in Hoodie Pulls). Polls a deterministic SKU sample for **price +
-  binary in/out-of-stock** (no numeric qty is exposed) and diffs vs the prior snapshot →
-  price moves / OOS-restock / assortment churn. Polite (robots 10s crawl-delay, product
-  pages only, honest UA), stdlib-only, self-reports `degraded` if price selectors drift.
-  **Validated live (2026-06-28):** ~10k products via the product sitemap; price from the
-  `product:price:amount` meta; stock from `og:availability` (NOT a text scan — the page
-  embeds an `out_of_stock_message` template that false-triggers). Per-store stock is behind
-  a robots-disallowed AJAX call, so the reliable directional signal is **price + assortment**
-  (chain-level in/out is best-effort). `unifyd/schedule_pull.py` runs any connId on a cadence
+- `unifyd/abc_fws_scraper.py` — ABC FWS (abcfws.com, **BigCommerce**) **STORE-LEVEL** inventory
+  tracker (connId `abc-fws`, in Hoodie Pulls). The store is a BigCommerce product option:
+  each product page lists ~133 store options (`ABC #003 - OBT` / `Online`) and
+  `available_variant_values` names the in-stock store-values — so we read **per-store in/out
+  + the chain price from the allowed product page (no robots-disallowed AJAX)**. Snapshot
+  keyed `sku|storeValue`; diff catches per-store in/out transitions + price moves. Polite
+  (robots 10s crawl-delay, product pages only, honest UA), stdlib-only, self-reports
+  `degraded` if the store-option / `available_variant_values` selectors drift. Validated
+  live (~13.9k products via sitemap). `unifyd/schedule_pull.py` runs any connId on a cadence
   locally (`python unifyd/schedule_pull.py abc-fws --every 24h`).
 - `unifyd/pull_sources.py` — agent-less batch pull (Florida is live/tested; COLA needs
   `requests`+`bs4`). Emits `out/datasets.js` + `out/runs.json`.
