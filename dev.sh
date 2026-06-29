@@ -29,14 +29,20 @@ trap cleanup EXIT INT TERM
 
 if [ "$START_AGENT" = "1" ]; then
   if python3 -c "import flask" 2>/dev/null; then
-    echo "• starting Unifyd agent (http://127.0.0.1:8765)"
-    ( cd unifyd && python3 server.py ) >/tmp/unifyd-agent.log 2>&1 &
+    echo "• starting Unifyd agent (http://127.0.0.1:8765) — its logs stream below as [agent]"
+    # live + visible: unbuffered, prefixed to this terminal, and tee'd to /tmp/unifyd-agent.log
+    ( cd unifyd && python3 -u server.py 2>&1 | tee /tmp/unifyd-agent.log | sed 's/^/  [agent] /' ) &
     AGENT_PID=$!
     sleep 1
+    if curl -fsS http://127.0.0.1:8765/api/health >/dev/null 2>&1; then
+      echo "• agent is LIVE ✓  (Hoodie Pulls will show 'engine live'; real pulls run for real)"
+    else
+      echo "• agent didn't answer /api/health yet — watch the [agent] lines above for errors"
+    fi
   else
-    echo "• Unifyd agent skipped — deps missing. Install once with:"
-    echo "    pip install -r unifyd/requirements.txt"
-    echo "  (apps will use embedded preview data until then)"
+    echo "• ⚠ Unifyd agent SKIPPED — Flask not installed, so NO real pulls will run and apps"
+    echo "    fall back to EMBEDDED PREVIEW DATA (stale sample, NOT a live pull). Install once:"
+    echo "    pip3 install -r unifyd/requirements.txt   # then re-run ./dev.sh"
   fi
 fi
 
