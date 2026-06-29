@@ -184,3 +184,65 @@ def analyze(header, rows, filename="dataset.csv", registries=None, full=True, _c
         return data
     except Exception as e:
         return {"error": "analyze-failed", "detail": str(e)[:200]}
+
+
+# ---------------- AI read (file-as-root, render-not-invent, causation-vs-correlation) ----------------
+# For data opened on its OWN terms (not the bev-alc model). The browser computes the profile
+# + the aggregates and sends ONLY those — raw rows never leave. The model interprets; it
+# never produces a number that isn't already in the provided aggregates/profile.
+SYSTEM_AIREAD = (
+    "You are a rigorous analyst reading an arbitrary uploaded table on its OWN terms — it is "
+    "the root; assume no fixed schema. You receive a deterministic column PROFILE and a set of "
+    "COMPUTED AGGREGATES already calculated from the real rows. "
+    "RENDER-NOT-INVENT: cite only figures present in the provided aggregates/profile; never "
+    "fabricate or estimate a number. "
+    "CAUSATION vs CORRELATION (strict): report associations by default; NEVER assert causation "
+    "without an explicit identification strategy (experiment / quasi-experiment, or clear "
+    "temporal order + mechanism). Use hedged language for observational patterns ('is associated "
+    "with', not 'drives'/'causes'). Explicitly flag confounders, reverse causality, and "
+    "selection / survivorship bias where relevant. "
+    "Be concise and concrete. Return ONLY the JSON object described by the schema."
+)
+SCHEMA_AIREAD = {
+    "type": "object", "additionalProperties": True,
+    "required": ["headline", "findings"],
+    "properties": {
+        "headline": {"type": "string"},
+        "what_is_this": {"type": "string"},
+        "findings": {"type": "array", "items": {"type": "object", "additionalProperties": True,
+            "properties": {"text": {"type": "string"},
+                           "kind": {"type": "string",
+                                    "enum": ["association", "opportunity", "caveat", "data_quality"]}}}},
+        "caveats": {"type": "array", "items": {"type": "string"}},
+        "questions": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+
+def ai_read(profile, summary=None, filename="dataset.csv", _client=None):
+    """Interpret a dataset from its profile + computed aggregates (NO raw rows). Returns the
+    validated analysis dict, or {"error": ...} so the caller can show a graceful state."""
+    if not enabled():
+        return {"error": "llm-disabled", "detail": "ANTHROPIC_API_KEY not set"}
+    body = {"filename": filename, "profile": profile, "computed_aggregates": summary or {}}
+    payload = ("Read this dataset on its own terms and return the JSON object in the schema.\n\n"
+               + json.dumps(body, ensure_ascii=False, default=str))
+    try:
+        client = _client
+        if client is None:
+            import anthropic  # lazy
+            client = anthropic.Anthropic()
+        with client.messages.stream(
+            model=MODEL, max_tokens=6000,
+            system=[{"type": "text", "text": SYSTEM_AIREAD, "cache_control": {"type": "ephemeral"}}],
+            thinking={"type": "adaptive"},
+            output_config={"effort": "high",
+                           "format": {"type": "json_schema", "schema": SCHEMA_AIREAD}},
+            messages=[{"role": "user", "content": payload}],
+        ) as s:
+            msg = s.get_final_message()
+        text = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
+        data = _extract_json(text)
+        return data or {"error": "parse-failed", "raw": (text or "")[:400]}
+    except Exception as e:
+        return {"error": "ai-read-failed", "detail": str(e)[:200]}

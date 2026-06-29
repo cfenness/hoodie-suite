@@ -465,6 +465,20 @@ def analyze_ep():
         return jsonify(result)
     return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
 
+@app.post("/api/ai-read")
+def ai_read_ep():
+    """AI analysis of data opened on its OWN terms (file-as-root). Privacy-preserving: the
+    browser sends the PROFILE + COMPUTED AGGREGATES only (no raw rows). 503 without a key."""
+    body = request.get_json(force=True, silent=True) or {}
+    profile = body.get("profile")
+    if not profile:
+        return jsonify(error="need profile"), 400
+    result = analyze.ai_read(profile, summary=body.get("summary"),
+                             filename=body.get("filename", "dataset.csv"))
+    if "error" not in result:
+        return jsonify(result)
+    return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
+
 @app.get("/")
 def index():
     return send_file(HTML_PATH)
