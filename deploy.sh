@@ -26,6 +26,7 @@ aws s3 sync . "s3://$S3_BUCKET" \
   --exclude "README.md" \
   --exclude "CLAUDE.md" \
   --exclude "SPINE.md" \
+  --exclude "FULLREAD.md" \
   --exclude "deploy.sh" \
   --exclude "dev.sh" \
   --exclude ".gitignore" \
