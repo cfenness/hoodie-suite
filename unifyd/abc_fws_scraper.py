@@ -69,9 +69,11 @@ def fetch(url, timeout=30):
 
 
 # ---------------- sitemap → stable (sku, url) catalog ----------------
-def harvest_ids(max_pages=4, log=print):
+def harvest_ids(max_pages=30, log=print):
     """Walk the product sitemaps, returning [(sku, url)] with sku = the trailing id.
-    Stops at the first empty/missing page."""
+    `type=products` = the WHOLE catalog, every product type (no category filter — ABC FWS
+    is a chain, not a control store; whatever it lists is captured). Stops at the first
+    empty/missing page, so max_pages is just a safety ceiling on a complete harvest."""
     out, seen = [], set()
     for page in range(1, max_pages + 1):
         try:
@@ -207,6 +209,7 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
     datasets = {"abc_store_cells": {"header": header, "rows": rows[:800],
                                     "total": len(rows), "products": n_products, "movement": movement}}
     json.dump(datasets, open(os.path.join(out, "datasets.json"), "w"), indent=2)
+    datasets["abc_store_cells"]["_rows_full"] = rows   # full set for export (in-memory return only)
     run = run_record(movement, n_products, status, warnings)
     log(f"done: {n_products} products × stores = {len(cur)} cells; "
         + (f"{movement['changed']} store-cells moved since last run" if prev else "baseline"))
