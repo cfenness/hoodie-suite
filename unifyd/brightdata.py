@@ -22,9 +22,36 @@ def _cli():
     return shutil.which("bdata") or shutil.which("brightdata")
 
 
+def _cred_paths():
+    home = os.path.expanduser("~")
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    appdata = os.environ.get("APPDATA")
+    out = [os.path.join(home, "Library", "Application Support", "brightdata-cli", "credentials.json")]  # macOS
+    if xdg:     out.append(os.path.join(xdg, "brightdata-cli", "credentials.json"))
+    out.append(os.path.join(home, ".config", "brightdata-cli", "credentials.json"))                     # linux
+    if appdata: out.append(os.path.join(appdata, "brightdata-cli", "credentials.json"))                 # windows
+    return out
+
+
+def _stored_key():
+    """The API key `bdata login` saved locally — so the REST datasets API works without a
+    manual export, the same way fetch() can use the logged-in CLI."""
+    for p in _cred_paths():
+        try:
+            k = json.load(open(p)).get("api_key")
+            if k: return k
+        except Exception:
+            continue
+    return None
+
+
+def _key():
+    return os.environ.get("BRIGHTDATA_API_KEY") or _stored_key()
+
+
 def enabled():
-    # Usable via the REST key (deploy) OR a logged-in `bdata` CLI (local, after `bdata login`).
-    return bool(os.environ.get("BRIGHTDATA_API_KEY")) or bool(_cli())
+    # Usable via the REST key (env or `bdata login` store) OR the logged-in `bdata` CLI.
+    return bool(_key()) or bool(_cli())
 
 
 def zone():
@@ -38,7 +65,7 @@ def fetch(url, data_format="html", timeout=120):
     deployed container), else the logged-in `bdata` CLI (local dev after `bdata login`, no
     key export needed). Raises RuntimeError if neither is available; lets errors propagate
     so chain scrapers can mark the extract degraded/failed like the others."""
-    key = os.environ.get("BRIGHTDATA_API_KEY")
+    key = _key()
     if key:
         payload = json.dumps({"url": url, "zone": zone(), "format": "raw",
                               "data_format": data_format}).encode()
@@ -77,9 +104,10 @@ def _ds_req(url, key, method="GET", body=None):
 def dataset_run(dataset_id, inputs, fmt="json", poll_timeout=600, poll_every=10):
     """Run a managed dataset over `inputs` ([{"url": ...}, ...]); return the records list.
     Needs BRIGHTDATA_API_KEY (REST). Raises on misconfig / timeout / job failure."""
-    key = os.environ.get("BRIGHTDATA_API_KEY")
+    key = _key()
     if not key:
-        raise RuntimeError("BRIGHTDATA_API_KEY required for the Web Scraper API (managed datasets)")
+        raise RuntimeError("BRIGHTDATA_API_KEY required for the Web Scraper API (managed datasets) — "
+                           "export it or run `bdata login`")
     trig = _ds_req(f"{DATASETS_API}/trigger?dataset_id={dataset_id}&format={fmt}",
                    key, "POST", inputs)
     snap = trig.get("snapshot_id") or trig.get("snapshotId")
