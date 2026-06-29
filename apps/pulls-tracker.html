@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<!-- Hoodie Suite · Pulls — Source Tracker -->
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoodie · Pulls Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --purple:#6d28d9;--purple-d:#4c1d95;--purple-soft:#f3eefb;
+  --ink:#1d1b22;--ink2:#3a3640;--muted:#6c6675;--muted2:#a09aa8;
+  --line:#e9e4ee;--line2:#f1edf5;--paper:#faf9fb;--surface:#fff;
+  --good:#15803d;--good-soft:#e7f3ec;--warn:#b45309;--warn-soft:#fbeede;
+  --bad:#b4232a;--bad-soft:#f8e6e7;--blue:#2563b8;--blue-soft:#e8f0fb;--gray-soft:#eeecf1;
+  --r:14px;--r-sm:9px;--display:'Fraunces',Georgia,serif;--body:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box}body{margin:0;font-family:var(--body);color:var(--ink);background:var(--paper);line-height:1.45}
+.hero{background:linear-gradient(120deg,#4c1d95,#6d28d9 58%,#5b21b6);color:#fff;padding:30px 34px 26px}
+.hero .ey{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#d6c8f5;margin-bottom:8px}
+.hero h1{font-family:var(--display);font-size:34px;font-weight:600;letter-spacing:-.01em;margin:0 0 6px}
+.hero p{font-size:14px;color:#e4dbf7;margin:0 0 20px;max-width:64ch}
+.chips{display:flex;gap:10px;flex-wrap:wrap}
+.chip{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:7px 14px;display:flex;align-items:center;gap:7px}
+.chip b{font-family:var(--display);font-size:17px;font-weight:600}.chip span{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:#d6c8f5}
+.wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+.toolbar{position:sticky;top:0;z-index:30;background:rgba(250,249,251,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:14px 0;flex-wrap:wrap;margin-bottom:8px}
+.search{flex:1;min-width:180px;max-width:300px;border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-family:var(--body);font-size:13px;background:var(--surface);outline:none}
+.search:focus{border-color:var(--purple)}
+select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 10px;background:var(--surface);cursor:pointer}
+.tb-sp{flex:1}
+.btn{font-family:var(--body);font-size:13px;font-weight:600;border-radius:var(--r-sm);padding:8px 14px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink2);white-space:nowrap}
+.btn:hover{border-color:var(--purple);color:var(--purple-d)}
+.btn.solid{background:var(--purple);color:#fff;border-color:var(--purple)}.btn.solid:hover{background:var(--purple-d);color:#fff}
+.tier{margin:26px 0 10px;display:flex;align-items:baseline;gap:10px}
+.tier h2{font-family:var(--display);font-size:19px;font-weight:600;margin:0}
+.tier .ct{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.tier .ln{flex:1;height:1px;background:var(--line)}
+.card{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:13px 16px;margin-bottom:9px;transition:.12s}
+.card:hover{border-color:#d9cef0;box-shadow:0 2px 12px rgba(76,29,149,.06)}
+.ic{width:40px;height:40px;border-radius:9px;background:var(--purple-soft);color:var(--purple-d);display:grid;place-items:center;font-family:var(--mono);font-size:12px;font-weight:600;flex-shrink:0}
+.mid{flex:1;min-width:0}
+.nm{font-family:var(--display);font-size:15.5px;font-weight:600;margin-bottom:2px}
+.meta{font-size:12px;color:var(--muted);margin-bottom:7px}
+.meta b{color:var(--ink2);font-weight:600}
+.tags{display:flex;gap:5px;flex-wrap:wrap}
+.tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.03em;padding:2px 7px;border-radius:5px;background:var(--gray-soft);color:var(--muted)}
+.tag.fld{background:var(--purple-soft);color:var(--purple-d)}
+.pill{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.pri{cursor:pointer;border:1px solid transparent}
+.p0{background:var(--bad-soft);color:var(--bad)}.p1{background:var(--warn-soft);color:var(--warn)}.p2{background:var(--blue-soft);color:var(--blue)}.p3{background:var(--gray-soft);color:var(--muted)}
+.st{cursor:pointer}
+.st-planned{background:var(--gray-soft);color:var(--muted)}.st-building{background:var(--blue-soft);color:var(--blue)}
+.st-ready{background:var(--purple-soft);color:var(--purple-d)}.st-live{background:var(--good-soft);color:var(--good)}
+.st-blocked{background:var(--bad-soft);color:var(--bad)}.st-paused{background:var(--gray-soft);color:var(--muted2)}
+.tos-clean{background:var(--good-soft);color:var(--good)}.tos-gray{background:var(--warn-soft);color:var(--warn)}.tos-hostile{background:var(--bad-soft);color:var(--bad)}
+.gran{background:#eef0fb;color:#4b3fae}
+.iconbtn{width:28px;height:28px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer;color:var(--muted);font-size:13px;display:grid;place-items:center}
+.iconbtn:hover{border-color:var(--purple);color:var(--purple-d)}
+.empty{text-align:center;color:var(--muted);padding:40px;font-size:13.5px}
+.foot{text-align:center;color:var(--muted2);font-size:11px;padding:30px 0 50px;font-family:var(--mono);letter-spacing:.04em}
+/* modal */
+.ov{position:fixed;inset:0;background:rgba(29,27,34,.45);display:flex;align-items:flex-start;justify-content:center;padding:36px 16px;z-index:80;overflow:auto}
+.ov[hidden]{display:none}
+.modal{background:var(--surface);border-radius:var(--r);width:100%;max-width:560px;padding:24px 26px;box-shadow:0 24px 60px rgba(29,27,34,.3)}
+.modal h3{font-family:var(--display);font-size:20px;font-weight:600;margin:0 0 18px}
+.fg{margin-bottom:13px}.fg>label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.fg input,.fg select,.fg textarea{width:100%;font-family:var(--body);font-size:13.5px;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#fff;outline:none}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--purple)}
+.frow{display:flex;gap:11px}.frow .fg{flex:1}
+.fldcheck{display:flex;flex-wrap:wrap;gap:6px}
+.fldcheck label{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-radius:7px;padding:5px 9px;cursor:pointer;color:var(--muted);user-select:none}
+.fldcheck label.on{background:var(--purple-soft);border-color:#cdbcf0;color:var(--purple-d)}
+.fldcheck input{display:none}
+.mact{display:flex;gap:10px;align-items:center;margin-top:8px}.mact .sp{flex:1}
+.del-link{color:var(--bad);font-size:12px;cursor:pointer;background:none;border:none;font-family:var(--body)}
+.del-link:hover{text-decoration:underline}
+</style></head><body>
+
+<div class="hero">
+  <div class="wrap" style="padding:0">
+    <div class="ey">Hoodie Suite · Pulls</div>
+    <h1>Source Tracker</h1>
+    <p>Every scrape target in one place — what it yields, how clean it is, and where it stands. The pulls are the sell-out half; reconciling them to depletion is the whole game.</p>
+    <div class="chips" id="chips"></div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="toolbar">
+    <input class="search" id="q" placeholder="Search sources…" autocomplete="off">
+    <select class="flt" id="fTier"><option value="">All tiers</option></select>
+    <select class="flt" id="fStatus"><option value="">All status</option><option>Planned</option><option>Building</option><option>Ready</option><option>Live</option><option>Blocked</option><option>Paused</option></select>
+    <select class="flt" id="fTos"><option value="">All ToS</option><option>Clean</option><option>Gray</option><option>Hostile</option></select>
+    <select class="flt" id="fPri"><option value="">All priority</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select>
+    <span class="tb-sp"></span>
+    <button class="btn solid" id="addBtn">＋ Source</button>
+    <button class="btn" id="expBtn">Export CSV</button>
+  </div>
+  <div id="list"></div>
+  <div class="foot" id="foot"></div>
+</div>
+
+<div class="ov" id="ov" hidden><div class="modal">
+  <h3 id="mTitle">New source</h3>
+  <div class="fg"><label>Source name</label><input id="mName" placeholder="e.g. Total Wine & More"></div>
+  <div class="frow">
+    <div class="fg"><label>Tier</label><select id="mTier"></select></div>
+    <div class="fg"><label>Granularity</label><select id="mGran"><option>Store</option><option>Zone</option><option>State</option><option>Chain</option></select></div>
+  </div>
+  <div class="fg"><label>Footprint / coverage</label><input id="mFoot" placeholder="e.g. National · 285 stores"></div>
+  <div class="fg"><label>Fields available</label><div class="fldcheck" id="mFields"></div></div>
+  <div class="frow">
+    <div class="fg"><label>Platform</label><input id="mPlat" placeholder="e.g. Algolia feed"></div>
+    <div class="fg"><label>Protection</label><select id="mProt"><option>None</option><option>Low</option><option>Medium</option><option>High</option></select></div>
+  </div>
+  <div class="frow">
+    <div class="fg"><label>ToS risk</label><select id="mTos"><option>Clean</option><option>Gray</option><option>Hostile</option></select></div>
+    <div class="fg"><label>Priority</label><select id="mPri"><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></div>
+    <div class="fg"><label>Status</label><select id="mStatus"><option>Planned</option><option>Building</option><option>Ready</option><option>Live</option><option>Blocked</option><option>Paused</option></select></div>
+  </div>
+  <div class="fg"><label>Notes</label><textarea id="mNotes" rows="2" placeholder="Anything worth remembering…"></textarea></div>
+  <div class="mact">
+    <button class="del-link" id="mDel" hidden>Delete source</button>
+    <span class="sp"></span>
+    <button class="btn" id="mCancel">Cancel</button>
+    <button class="btn solid" id="mSave">Save</button>
+  </div>
+</div></div>
+
+<script>
+const KEY="hoodie.pulls.tracker.v1";
+const TIERS=["Spine & Master","Control States","Specialty Bev-Alc","Grocery & Mass","Delivery & Marketplace","Long-Tail & Platform","Hemp & THC"];
+const FIELDS=["Price","Promo","Availability","Units","UPC","Ratings"];
+const STATUSES=["Planned","Building","Ready","Live"]; // click-cycle set
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const slug=s=>s.replace(/[^A-Za-z]/g,"").slice(0,2).toUpperCase();
+
+const SEED=[
+ {nm:"Florida — Items",tier:"Spine & Master",foot:"FL · DBPR/ABT registry",fields:["UPC"],gran:"State",plat:"gov CSV",prot:"None",tos:"Clean",pri:"P0",status:"Ready",notes:"Item master seed — authoritative government CSV."},
+ {nm:"Florida — Outlets",tier:"Spine & Master",foot:"FL · DBPR/ABT licensees",fields:[],gran:"State",plat:"gov CSV",prot:"None",tos:"Clean",pri:"P0",status:"Ready",notes:"Outlet master — the load-bearing spine. FL-only; must expand to TX + IL to resolve Spec's/Binny's."},
+ {nm:"TTB — COLA Labels",tier:"Spine & Master",foot:"National · TTB public registry",fields:["UPC"],gran:"Chain",plat:"Custom scraper",prot:"Low",tos:"Clean",pri:"P1",status:"Ready",notes:"Label / product-identity enrichment on top of item master."},
+
+ {nm:"PA Fine Wine & Good Spirits",tier:"Control States",foot:"PA · 568 stores",fields:["Price"],gran:"State",plat:"gov price book",prot:"None",tos:"Clean",pri:"P0",status:"Planned",notes:"Quarterly price listing, statewide-uniform. Biggest clean miss — fetch & parse, not a scrape."},
+ {nm:"Virginia ABC",tier:"Control States",foot:"VA · 395 stores",fields:["Price"],gran:"State",plat:"gov price book",prot:"None",tos:"Clean",pri:"P0",status:"Planned",notes:"Statewide-uniform pricing; published list."},
+ {nm:"North Carolina ABC",tier:"Control States",foot:"NC · statewide",fields:["Price","Promo"],gran:"State",plat:"gov price list",prot:"None",tos:"Clean",pri:"P1",status:"Planned",notes:"Quarterly list + monthly sales, uniform across all ABC stores."},
+ {nm:"Idaho State Liquor",tier:"Control States",foot:"ID · monthly files",fields:["Price"],gran:"State",plat:"gov price files",prot:"None",tos:"Clean",pri:"P1",status:"Planned",notes:"Monthly alphabetical + by-category pricing, floor prices & tiers."},
+ {nm:"Remaining control states (13)",tier:"Control States",foot:"OH, OR, MI, UT, AL, IA, ME, MS, MT, NH, VT, WV, WY",fields:["Price"],gran:"State",plat:"gov files",prot:"None",tos:"Clean",pri:"P2",status:"Planned",notes:"Same fetch-and-parse pattern; clone per state. ~23% of US spirits volume across the set."},
+
+ {nm:"ABC FWS — Inventory",tier:"Specialty Bev-Alc",foot:"FL · 133 stores",fields:["Price","Availability"],gran:"Store",plat:"BigCommerce options",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",notes:"STORE-LEVEL in/out + price. Polite 10s. Home turf."},
+ {nm:"Spec's — Inventory",tier:"Specialty Bev-Alc",foot:"TX · 100+ stores",fields:["Price","Availability"],gran:"Store",plat:"Embedded variants (direct)",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",notes:"Direct, no Bright Data. TX outlets can't resolve to the spine yet (outlet master is FL-only)."},
+ {nm:"Binny's — Inventory",tier:"Specialty Bev-Alc",foot:"IL · 45 stores",fields:["Price","Availability","Units"],gran:"Store",plat:"Algolia feed",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",notes:"CROWN JEWEL — unit inventory → directional units sold. The reservoir thesis. Run first; validate the deltas before trusting anything downstream."},
+ {nm:"Total Wine & More",tier:"Specialty Bev-Alc",foot:"National · 285 stores",fields:["Price","Promo","Availability","Ratings"],gran:"Store",plat:"Custom (Algolia-style)",prot:"High",tos:"Gray",pri:"P0",status:"Planned",notes:"Market leader, >50% of sector by store count. Biggest competitive gap. Heavily protected."},
+ {nm:"BevMo",tier:"Specialty Bev-Alc",foot:"CA/AZ · 160 stores",fields:["Price","Availability"],gran:"Store",plat:"Custom",prot:"Medium",tos:"Gray",pri:"P2",status:"Planned",notes:"Gopuff-owned; data also surfaces via the Gopuff app."},
+
+ {nm:"Kroger (+ banners)",tier:"Grocery & Mass",foot:"National · King Soopers/Ralphs/Fry's",fields:["Price","Availability","UPC"],gran:"Store",plat:"Custom",prot:"High",tos:"Gray",pri:"P1",status:"Planned",notes:"Store-level price + reliable UPC for the resolution bridge. Beer/wine volume. Heavy protection."},
+ {nm:"Publix",tier:"Grocery & Mass",foot:"FL / Southeast",fields:["Price","Availability","UPC"],gran:"Store",plat:"Custom",prot:"Medium",tos:"Gray",pri:"P1",status:"Planned",notes:"Home-region grocery; clean GTIN anchors."},
+ {nm:"H-E-B",tier:"Grocery & Mass",foot:"TX",fields:["Price","Availability","UPC"],gran:"Store",plat:"Custom",prot:"Medium",tos:"Gray",pri:"P2",status:"Planned",notes:"Pairs with Spec's for TX coverage."},
+ {nm:"Walmart",tier:"Grocery & Mass",foot:"National",fields:["Price","Availability","UPC"],gran:"Store",plat:"Custom",prot:"High",tos:"Gray",pri:"P2",status:"Planned",notes:"~23% of alcohol e-comm intent; very heavily protected."},
+ {nm:"Costco",tier:"Grocery & Mass",foot:"National",fields:["Price"],gran:"Chain",plat:"Custom",prot:"Medium",tos:"Gray",pri:"P3",status:"Planned",notes:"Membership-gated; alcohol availability varies by state law."},
+
+ {nm:"Instacart — Store-level",tier:"Delivery & Marketplace",foot:"National · 100s of banners",fields:["Price","Availability"],gran:"Store",plat:"Bright Data managed dataset",prot:"High",tos:"Hostile",pri:"P1",status:"Ready",notes:"Richest cross-retailer pipe (~40% alcohol intent). Needs API key + dataset id. ToS-hostile — deliberate, eyes-open risk."},
+ {nm:"Uber Eats",tier:"Delivery & Marketplace",foot:"National (absorbed Drizly)",fields:["Price","Availability"],gran:"Store",plat:"Bright Data / custom",prot:"High",tos:"Hostile",pri:"P3",status:"Planned",notes:"Drizly folded in here in 2024."},
+ {nm:"Vivino / Wine-Searcher",tier:"Delivery & Marketplace",foot:"Global wine reference",fields:["Price","Ratings"],gran:"Chain",plat:"Custom",prot:"Medium",tos:"Gray",pri:"P2",status:"Planned",notes:"Wine price + rating reference across many sellers."},
+
+ {nm:"Hemp + DTC — Shopify",tier:"Hemp & THC",foot:"DTC brands (BRĒZ, Cann, Cornbread…)",fields:["Price","Availability"],gran:"Chain",plat:"Shopify /products.json",prot:"None",tos:"Clean",pri:"P1",status:"Ready",notes:"Public endpoint, not a scrape. Emerging crossover, low competition."},
+ {nm:"Dispensary menus",tier:"Hemp & THC",foot:"State dispensaries",fields:["Price","Availability"],gran:"Store",plat:"Dutchie / Weedmaps / Jane",prot:"Low",tos:"Gray",pri:"P3",status:"Planned",notes:"Cannabis-adjacent menus; store-level price + availability."},
+
+ {nm:"City Hive / Bottlecapps pattern",tier:"Long-Tail & Platform",foot:"100s of independents",fields:["Price","Availability"],gran:"Store",plat:"Platform parser",prot:"Low",tos:"Gray",pri:"P2",status:"Planned",notes:"One parser per e-comm platform → many independent store catalogs at once. The scan-dark channel that makes the depletion intersection valuable."},
+ {nm:"Specialty DTC (Wine.com, K&L, Astor)",tier:"Long-Tail & Platform",foot:"National DTC",fields:["Price","Availability","Ratings"],gran:"Chain",plat:"Custom",prot:"Low",tos:"Gray",pri:"P3",status:"Planned",notes:"Long-tail breadth; wine-heavy."},
+];
+
+var SOURCES=[];
+var STATE={q:"",tier:"",status:"",tos:"",pri:""};
+var editId=null;
+
+function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)||"null"); if(r&&r.length){ SOURCES=r; return; } }catch(e){} SOURCES=SEED.map((s,i)=>Object.assign({id:"s"+i},s)); }
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify(SOURCES)); }catch(e){} }
+
+function passes(s){
+  if(STATE.tier&&s.tier!==STATE.tier)return false;
+  if(STATE.status&&s.status!==STATE.status)return false;
+  if(STATE.tos&&s.tos!==STATE.tos)return false;
+  if(STATE.pri&&s.pri!==STATE.pri)return false;
+  if(STATE.q){ const q=STATE.q.toLowerCase(); if(!(s.nm+" "+s.foot+" "+s.plat+" "+(s.notes||"")).toLowerCase().includes(q))return false; }
+  return true;
+}
+function render(){
+  const list=$("list"); const shown=SOURCES.filter(passes);
+  let html="";
+  TIERS.forEach(t=>{
+    const rows=shown.filter(s=>s.tier===t); if(!rows.length)return;
+    const live=rows.filter(s=>s.status==="Live").length;
+    html+='<div class="tier"><h2>'+esc(t)+'</h2><span class="ct">'+rows.length+' source'+(rows.length>1?'s':'')+' · '+live+' live</span><span class="ln"></span></div>';
+    rows.forEach(s=>{ html+=cardHTML(s); });
+  });
+  list.innerHTML=html||'<div class="empty">No sources match these filters.</div>';
+  list.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openModal(b.dataset.edit));
+  list.querySelectorAll("[data-cyc]").forEach(b=>b.onclick=()=>cycleStatus(b.dataset.cyc));
+  list.querySelectorAll("[data-pri]").forEach(b=>b.onclick=()=>cyclePri(b.dataset.pri));
+  renderChips();
+  $("foot").textContent=SOURCES.length+" sources tracked · "+SOURCES.filter(s=>s.status==="Live").length+" live · saved to this device";
+}
+function cardHTML(s){
+  const flds=(s.fields||[]).map(f=>'<span class="tag fld">'+esc(f)+'</span>').join('');
+  return '<div class="card">'
+    +'<div class="ic">'+esc(slug(s.nm))+'</div>'
+    +'<div class="mid"><div class="nm">'+esc(s.nm)+'</div>'
+    +'<div class="meta"><b>'+esc(s.foot||"—")+'</b> · '+esc(s.plat||"—")+'</div>'
+    +'<div class="tags">'+flds
+      +'<span class="pill gran">'+esc(s.gran)+'</span>'
+      +'<span class="pill tos-'+s.tos.toLowerCase()+'">'+esc(s.tos)+'</span>'
+      +'<span class="tag">'+esc(s.prot)+' protection</span>'
+      +(s.notes?'<span class="tag" title="'+esc(s.notes)+'">ⓘ notes</span>':'')
+    +'</div></div>'
+    +'<div class="right">'
+      +'<span class="pill pri '+s.pri.toLowerCase()+'" data-pri="'+s.id+'" title="Click to change priority">'+esc(s.pri)+'</span>'
+      +'<span class="pill st st-'+s.status.toLowerCase()+'" data-cyc="'+s.id+'" title="Click to advance status">'+esc(s.status)+'</span>'
+      +'<button class="iconbtn" data-edit="'+s.id+'" title="Edit">✎</button>'
+    +'</div></div>';
+}
+function renderChips(){
+  const c=k=>SOURCES.filter(s=>s.status===k).length;
+  const tos=k=>SOURCES.filter(s=>s.tos===k).length;
+  $("chips").innerHTML=
+    chip(SOURCES.length,"sources")+chip(c("Live"),"live")+chip(c("Ready"),"ready")+chip(c("Planned"),"planned")
+    +chip(tos("Clean"),"clean")+chip(tos("Hostile"),"hostile");
+}
+function chip(n,l){return '<div class="chip"><b>'+n+'</b><span>'+l+'</span></div>';}
+
+function cycleStatus(id){ const s=SOURCES.find(x=>x.id===id); if(!s)return; const i=STATUSES.indexOf(s.status); s.status=(i<0||i===STATUSES.length-1)?STATUSES[0]:STATUSES[i+1]; save(); render(); }
+function cyclePri(id){ const s=SOURCES.find(x=>x.id===id); if(!s)return; const P=["P0","P1","P2","P3"]; s.pri=P[(P.indexOf(s.pri)+1)%4]; save(); render(); }
+
+/* modal */
+function fillFieldChecks(sel){ $("mFields").innerHTML=FIELDS.map(f=>'<label data-f="'+f+'"'+(sel&&sel.includes(f)?' class="on"':'')+'><input type="checkbox" '+(sel&&sel.includes(f)?'checked':'')+'>'+f+'</label>').join('');
+  $("mFields").querySelectorAll("label").forEach(l=>l.onclick=e=>{ e.preventDefault(); l.classList.toggle("on"); }); }
+function openModal(id){
+  editId=id||null; const s=id?SOURCES.find(x=>x.id===id):null;
+  $("mTitle").textContent=s?"Edit source":"New source";
+  $("mName").value=s?s.nm:""; $("mFoot").value=s?s.foot:""; $("mPlat").value=s?s.plat:""; $("mNotes").value=s?s.notes:"";
+  $("mTier").value=s?s.tier:TIERS[2]; $("mGran").value=s?s.gran:"Store"; $("mProt").value=s?s.prot:"Medium";
+  $("mTos").value=s?s.tos:"Gray"; $("mPri").value=s?s.pri:"P2"; $("mStatus").value=s?s.status:"Planned";
+  fillFieldChecks(s?s.fields:["Price"]);
+  $("mDel").hidden=!s;
+  $("ov").hidden=false;
+}
+function closeModal(){ $("ov").hidden=true; editId=null; }
+function saveModal(){
+  const nm=$("mName").value.trim(); if(!nm){ $("mName").focus(); return; }
+  const fields=[...$("mFields").querySelectorAll("label.on")].map(l=>l.dataset.f);
+  const data={nm,foot:$("mFoot").value.trim(),plat:$("mPlat").value.trim(),notes:$("mNotes").value.trim(),
+    tier:$("mTier").value,gran:$("mGran").value,prot:$("mProt").value,tos:$("mTos").value,pri:$("mPri").value,status:$("mStatus").value,fields};
+  if(editId){ const s=SOURCES.find(x=>x.id===editId); Object.assign(s,data); }
+  else { data.id="s"+Date.now().toString(36); SOURCES.push(data); }
+  save(); closeModal(); render();
+}
+function delSource(){ if(!editId)return; if(!confirm("Delete this source?"))return; SOURCES=SOURCES.filter(x=>x.id!==editId); save(); closeModal(); render(); }
+
+function exportCSV(){
+  const cols=["nm","tier","foot","fields","gran","plat","prot","tos","pri","status","notes"];
+  const head=["Source","Tier","Footprint","Fields","Granularity","Platform","Protection","ToS","Priority","Status","Notes"];
+  const rows=SOURCES.map(s=>cols.map(c=>{ let v=c==="fields"?(s.fields||[]).join("; "):(s[c]||""); v=String(v).replace(/"/g,'""'); return '"'+v+'"'; }).join(","));
+  const csv=head.join(",")+"\n"+rows.join("\n");
+  const blob=new Blob([csv],{type:"text/csv"}); const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download="hoodie-pulls-sources.csv"; a.click();
+}
+
+/* wiring */
+function setup(){
+  $("fTier").innerHTML='<option value="">All tiers</option>'+TIERS.map(t=>'<option>'+t+'</option>').join('');
+  $("mTier").innerHTML=TIERS.map(t=>'<option>'+t+'</option>').join('');
+  $("q").addEventListener("input",e=>{STATE.q=e.target.value;render();});
+  $("fTier").onchange=e=>{STATE.tier=e.target.value;render();};
+  $("fStatus").onchange=e=>{STATE.status=e.target.value;render();};
+  $("fTos").onchange=e=>{STATE.tos=e.target.value;render();};
+  $("fPri").onchange=e=>{STATE.pri=e.target.value;render();};
+  $("addBtn").onclick=()=>openModal(null);
+  $("expBtn").onclick=exportCSV;
+  $("mCancel").onclick=closeModal; $("mSave").onclick=saveModal; $("mDel").onclick=delSource;
+  $("ov").addEventListener("click",e=>{ if(e.target.id==="ov") closeModal(); });
+}
+load(); setup(); render();
+</script></body></html>
