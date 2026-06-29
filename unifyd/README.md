@@ -127,11 +127,13 @@ days and *when* prices/stock flip tells you the refresh cadence — without craw
 everything each time. The "Δ" on the Hoodie Pulls row = SKUs that moved since the last run.
 If price can't be read on most pages, the run self-reports **`degraded`**.
 
-**Validated live (2026-06-28):** ~10k products via the product sitemap; **price** from the
-`product:price:amount` meta; **stock** from the `og:availability` meta (a naive "out of
-stock" text scan is wrong — the page embeds an `out_of_stock_message` template label that
-false-triggers). Per-store stock sits behind a robots-disallowed AJAX call, so the reliable
-directional signal is **price + assortment churn**; chain-level in/out is best-effort.
+**STORE-LEVEL (validated live):** the store is a BigCommerce product **option** — each
+product page lists ~133 store options (labels like `ABC #003 - OBT` / `Online`) and
+`available_variant_values` names the **in-stock** store option-values. So we read per-store
+in/out (+ the chain price) straight from the allowed product page — **no robots-disallowed
+AJAX**. Snapshot is keyed `sku|storeValue`; the day-over-day diff catches per-store in/out
+transitions + price moves. (~13.9k products via sitemap; price from `product:price:amount`.)
+Self-reports `degraded` if the store-option / `available_variant_values` selectors drift.
 
 **Run it on a cadence (before the backend exists):**
 
