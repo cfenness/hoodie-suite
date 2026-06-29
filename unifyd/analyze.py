@@ -186,16 +186,17 @@ def analyze(header, rows, filename="dataset.csv", registries=None, full=True, _c
         return {"error": "analyze-failed", "detail": str(e)[:200]}
 
 
-# ---------------- AI read (file-as-root, render-not-invent, causation-vs-correlation) ----------------
-# For data opened on its OWN terms (not the bev-alc model). The browser computes the profile
-# + the aggregates and sends ONLY those — raw rows never leave. The model interprets; it
-# never produces a number that isn't already in the provided aggregates/profile.
+# ---------------- AI read (file-as-root, causation-vs-correlation) ----------------
+# For data opened on its OWN terms (not the bev-alc model). Hoodie's pulls are PUBLIC scraped
+# data, so the actual rows go to the model (the N≥10 / rows-never-leave rule is a SipSource
+# constraint, not a Hoodie one). EXACT computed aggregates are sent alongside so precise
+# figures are cited rather than eyeballed.
 SYSTEM_AIREAD = (
-    "You are a rigorous analyst reading an arbitrary uploaded table on its OWN terms — it is "
-    "the root; assume no fixed schema. You receive a deterministic column PROFILE and a set of "
-    "COMPUTED AGGREGATES already calculated from the real rows. "
-    "RENDER-NOT-INVENT: cite only figures present in the provided aggregates/profile; never "
-    "fabricate or estimate a number. "
+    "You are a rigorous analyst reading a table on its OWN terms — it is the root; assume no "
+    "fixed schema. This is public data, so you get the actual ROWS (or a sample of them), a "
+    "column PROFILE, and a set of EXACT COMPUTED AGGREGATES. "
+    "For any precise figure, cite the computed aggregates (they are exact); read the rows for "
+    "qualitative patterns, examples, and data-quality issues. Do not fabricate figures. "
     "CAUSATION vs CORRELATION (strict): report associations by default; NEVER assert causation "
     "without an explicit identification strategy (experiment / quasi-experiment, or clear "
     "temporal order + mechanism). Use hedged language for observational patterns ('is associated "
@@ -219,12 +220,16 @@ SCHEMA_AIREAD = {
 }
 
 
-def ai_read(profile, summary=None, filename="dataset.csv", _client=None):
-    """Interpret a dataset from its profile + computed aggregates (NO raw rows). Returns the
-    validated analysis dict, or {"error": ...} so the caller can show a graceful state."""
+def ai_read(profile, summary=None, filename="dataset.csv", header=None, rows=None, _client=None):
+    """Interpret a dataset from its actual rows (public data) + profile + exact computed
+    aggregates. Returns the validated analysis dict, or {"error": ...} for a graceful state."""
     if not enabled():
         return {"error": "llm-disabled", "detail": "ANTHROPIC_API_KEY not set"}
     body = {"filename": filename, "profile": profile, "computed_aggregates": summary or {}}
+    if header and rows:
+        cap = 3000
+        body["data"] = {"header": header, "rows": rows[:cap],
+                        "rows_shown": min(len(rows), cap), "rows_total": len(rows)}
     payload = ("Read this dataset on its own terms and return the JSON object in the schema.\n\n"
                + json.dumps(body, ensure_ascii=False, default=str))
     try:
