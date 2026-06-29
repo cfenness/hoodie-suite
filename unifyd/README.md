@@ -180,13 +180,14 @@ bdata scrape "https://example.com" -f markdown
 deployed container) **or** the logged-in **`bdata` CLI** (local dev after `bdata login` —
 no key export needed). Inert/raises when neither is present. stdlib-only.
 
-**Spec's (`specs_scraper.py`, connId `specs`) — validated live (2026-06-28).** ~50k
-products (slug-keyed) from the sitemap; each product page fetched through Bright Data
-(JS-rendered) and parsed from the **schema.org Product JSON-LD** (`name`, `sku`,
-`offers.price`, `availability`). Deterministic sample → snapshot → diff (price moves /
-assortment churn), same shape as ABC. Note: Spec's JSON-LD `availability` defaults to
-OutOfStock without a store context, so **in/out is best-effort — price + assortment are the
-reliable signals**. Self-reports `degraded` if the Product JSON-LD parse drifts.
+**Spec's (`specs_scraper.py`, connId `specs`) — STORE-LEVEL, validated live, NO Bright Data.**
+Spec's serves bots and embeds a per-store **`variants`** object in each product page (~114
+stores, each with `inStock` + `unitPrice` in cents, keyed by a store code in `code` =
+"<storeCode>-<sku>"). So we fetch the product page directly and read per-store price +
+availability. Snapshot keyed `sku|storeCode`; day-over-day per-store in/out + price moves are
+the directional signal (Spec's gives binary in/out per store, not a unit count like Binny's).
+Sitemap-harvested (~50k products), deterministic sample, `--all` to widen. Self-reports
+`degraded` if the variants block can't be parsed on most pages.
 
 **Binny's (`binnys_scraper.py`, connId `binnys`) — STORE-LEVEL, validated live, NO Bright Data.**
 Binny's runs on Algolia and its search key is public (every Algolia storefront ships one), so
