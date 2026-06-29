@@ -18,7 +18,7 @@ When the agent is absent the dashboard falls back to its built-in preview.
 State is persisted to ./agent_state/ (datasets.json, runs.json, cola CSV).
 """
 import csv, io, json, os, time, types, urllib.request, datetime
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, Response
 
 import ttb_cola_scraper as cola   # the scraper you generated
 import abc_fws_scraper as abc      # ABC FWS directional inventory tracker (BigCommerce)
@@ -30,6 +30,7 @@ import analyze                      # data-reader brain behind "Overlay your dat
 
 APP_DIR   = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.join(APP_DIR, "agent_state"); os.makedirs(STATE_DIR, exist_ok=True)
+FULL_DIR  = os.path.join(STATE_DIR, "full");       os.makedirs(FULL_DIR, exist_ok=True)
 HTML_PATH = os.path.join(APP_DIR, "hoodie_mdm.html")
 
 # State store. Local disk by default (./agent_state/). Set STATE_BUCKET (+ optional
@@ -116,6 +117,28 @@ def save():
         for name, data in blobs.items():
             json.dump(data, open(os.path.join(STATE_DIR, name), "w"))
 
+# Full pulled rows live OUTSIDE the in-memory DATASETS sample (kept small for the UI):
+# written per-dataset at pull time, read on demand by /api/datasets/download. Same
+# disk-or-S3 abstraction as save()/load(), so the complete pull is always extractable.
+def save_full(did, header, rows):
+    blob = json.dumps({"header": header, "rows": rows, "total": len(rows)})
+    if STATE_BUCKET:
+        try: _s3().put_object(Bucket=STATE_BUCKET, Key=_key("full/" + did + ".json"),
+                              Body=blob.encode("utf-8"), ContentType="application/json")
+        except Exception as e: app.logger.warning("S3 full save %s failed: %s", did, e)
+    else:
+        try: open(os.path.join(FULL_DIR, did + ".json"), "w").write(blob)
+        except Exception as e: app.logger.warning("full save %s failed: %s", did, e)
+
+def load_full(did):
+    if STATE_BUCKET:
+        try:
+            obj = _s3().get_object(Bucket=STATE_BUCKET, Key=_key("full/" + did + ".json"))
+            return json.loads(obj["Body"].read())
+        except Exception: return None
+    try: return json.load(open(os.path.join(FULL_DIR, did + ".json")))
+    except Exception: return None
+
 # ---------------- Florida pull (live, no extra deps) ----------------
 FL_BASE = "https://www2.myfloridalicense.com/sto/file_download/extracts"
 FL_HEADER = ["Board","Profession","Owner Name","Series","Modifier","Mail Address 1","Mail Address 2",
@@ -138,6 +161,7 @@ def fl_pull(conn_id):
             data = [r for r in (rows[1:] if hashdr else rows) if any((c or "").strip() for c in r)]
             DATASETS[eid] = {"header": header, "rows": cola.sample(data, header, n),
                              "total": len(data), "profile": cola.profile(header, data)}
+            save_full(eid, header, data)   # keep ALL rows extractable, not just the sample
             prev = next((e for r in RUNS if r["connId"] == conn_id for e in r["extracts"] if e["id"] == eid), None)
             delta = len(data) - (prev["rows"] if prev else len(data))
             exs.append({"id": eid, "rows": len(data), "delta": delta, "status": "success"})
@@ -281,6 +305,26 @@ def datasets():
         rows = [r for r in (ds.get("rows") or []) if any(q in str(c).lower() for c in r)]
         out[k] = dict(ds, rows=rows, matched=len(rows))
     return jsonify(out)
+
+@app.get("/api/datasets/download")
+def dataset_download():
+    """Stream the COMPLETE pulled dataset (all rows, not the UI sample) as CSV or JSON."""
+    did = (request.args.get("dataset") or "").strip()
+    fmt = (request.args.get("format") or "csv").lower()
+    full = load_full(did)                                   # full rows if we kept them (FL/COLA)
+    if full:
+        header, rows = full.get("header") or [], full.get("rows") or []
+    elif did in DATASETS:                                   # else the in-memory set (chains: already complete)
+        ds = DATASETS[did]; header, rows = ds.get("header") or [], ds.get("rows") or []
+    else:
+        return jsonify(error="unknown dataset: " + did), 404
+    if fmt == "json":
+        body = json.dumps([dict(zip(header, r)) for r in rows]); mime, ext = "application/json", "json"
+    else:
+        buf = io.StringIO(); w = csv.writer(buf); w.writerow(header); w.writerows(rows)
+        body, mime, ext = buf.getvalue(), "text/csv", "csv"
+    return Response(body, mimetype=mime + "; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="%s.%s"' % (did, ext)})
 
 @app.get("/api/runs")
 def runs():
