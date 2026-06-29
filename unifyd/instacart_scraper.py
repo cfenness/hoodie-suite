@@ -9,7 +9,9 @@ vendor handles the protection + compliance; it's paid and ToS-gray (your informe
 connId: `instacart`. NEEDS, from your Bright Data dashboard / account:
     export BRIGHTDATA_API_KEY=...                  # REST key
     export BRIGHTDATA_INSTACART_DATASET=gd_...      # the Instacart products dataset id
-    export BRIGHTDATA_INSTACART_URLS="https://www.instacart.com/store/<retailer>/collections/<cat>,..."
+    # FULL store (all departments) — point at the store root / department collections, NOT one aisle:
+    export BRIGHTDATA_INSTACART_URLS="https://www.instacart.com/store/<retailer>,..."
+    export BRIGHTDATA_INSTACART_INPUT_EXTRA='{"num_of_products": 5000}'   # optional depth (dataset-specific)
 
 Because the dataset's exact field names depend on which BD Instacart product you pick, this
 self-reports `degraded` and DUMPS the first batch of raw records (instacart_debug.json) on
@@ -23,6 +25,22 @@ from abc_fws_scraper import diff_snapshots
 DATASET = os.environ.get("BRIGHTDATA_INSTACART_DATASET", "")
 URLS    = [u.strip() for u in os.environ.get("BRIGHTDATA_INSTACART_URLS", "").split(",") if u.strip()]
 SNAP    = "instacart_snapshot.json"
+
+# FULL STORE, not just the alcohol aisle: an Instacart store is a whole grocery catalog
+# (produce, pantry, dairy, … plus alcohol). Point BRIGHTDATA_INSTACART_URLS at the STORE
+# root(s) / department collections to cover everything — not a single beverage collection.
+# Depth/discovery knobs vary by BD Instacart dataset, so they're passed through verbatim via
+# BRIGHTDATA_INSTACART_INPUT_EXTRA (a JSON object merged into every input record), e.g.
+#   export BRIGHTDATA_INSTACART_INPUT_EXTRA='{"num_of_products": 5000}'
+def _input_extra():
+    raw = os.environ.get("BRIGHTDATA_INSTACART_INPUT_EXTRA", "").strip()
+    if not raw:
+        return {}
+    try:
+        v = json.loads(raw)
+        return v if isinstance(v, dict) else {}
+    except Exception:
+        return {}
 
 # candidate field names (BD Instacart schemas vary by product) — first match wins
 F_NAME  = ("name", "title", "product_name", "productName")
@@ -79,10 +97,13 @@ def pull(sample=None, crawl_all=False, limit=None, out=".", state_dir=None, log=
     if not (os.environ.get("BRIGHTDATA_API_KEY") and DATASET and targets):
         run = run_record(diff_snapshots({}, {}), 0, "failed",
                          ["Instacart needs BRIGHTDATA_API_KEY + BRIGHTDATA_INSTACART_DATASET (dataset id "
-                          "from the BD dashboard) + BRIGHTDATA_INSTACART_URLS (store/category URLs)."])
+                          "from the BD dashboard) + BRIGHTDATA_INSTACART_URLS. For the FULL store (all "
+                          "departments, not just alcohol) point the URLs at the store root / department "
+                          "collections; tune depth with BRIGHTDATA_INSTACART_INPUT_EXTRA (JSON)."])
         return {}, [run], run["movement"]
     try:
-        records = brightdata.dataset_run(DATASET, [{"url": u} for u in targets])
+        extra = _input_extra()                       # full-store depth/discovery knobs (dataset-specific)
+        records = brightdata.dataset_run(DATASET, [dict({"url": u}, **extra) for u in targets])
     except Exception as e:
         run = run_record(diff_snapshots({}, {}), 0, "failed", [f"Instacart dataset run failed: {str(e)[:140]}"])
         return {}, [run], run["movement"]
