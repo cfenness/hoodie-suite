@@ -227,8 +227,8 @@
       var thead='<tr>'+cols.map(function(h){return '<th>'+esc(h)+'</th>';}).join("")+(more>0?'<th>+'+more+'</th>':"")+'</tr>';
       var body=show.map(function(r){ return '<tr>'+cols.map(function(h,ci){return '<td>'+esc(r[ci])+'</td>';}).join("")+(more>0?'<td>…</td>':"")+'</tr>'; }).join("");
       return '<div class="rec-cap">'+esc(e.id)+' · showing '+show.length+' of '+fmt(ds.total||rows.length)+' records'+
-               '<span class="rec-dl"><button data-dl="csv" data-ds="'+esc(e.id)+'">⬇ CSV</button>'+
-               '<button data-dl="json" data-ds="'+esc(e.id)+'">⬇ JSON</button></span></div>'+
+               '<span class="rec-dl"><button data-dl="csv" data-ds="'+esc(e.id)+'" title="download all '+fmt(ds.total||rows.length)+' rows as CSV">⬇ CSV</button>'+
+               '<button data-dl="json" data-ds="'+esc(e.id)+'" title="download all '+fmt(ds.total||rows.length)+' rows as JSON">⬇ JSON</button></span></div>'+
              '<div class="rec-wrap"><table class="rec"><thead>'+thead+'</thead><tbody>'+body+'</tbody></table></div>';
     }).join("");
   }
@@ -267,6 +267,17 @@
   // export the loaded records (the agent's sampled rows) as CSV or JSON
   function csvCell(v){ v=v==null?"":String(v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
   function exportDataset(id, fmt){
+    if(!id) return;
+    fmt = (fmt==="json") ? "json" : "csv";
+    // engine live → download the COMPLETE pull from the agent (all rows, not the UI sample)
+    if(STATE.live){
+      var ax=document.createElement("a");
+      ax.href="/api/datasets/download?dataset="+encodeURIComponent(id)+"&format="+fmt;
+      ax.download=""; document.body.appendChild(ax); ax.click();
+      setTimeout(function(){ try{ ax.remove(); }catch(_){} }, 150);
+      return;
+    }
+    // offline → export whatever sample is loaded client-side
     var ds=STATE.datasets[id]; if(!ds||!ds.header) return;
     var content, ext, mime;
     if(fmt==="json"){
