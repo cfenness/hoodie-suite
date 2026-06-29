@@ -13,6 +13,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Load local secrets if present — a gitignored .env (ANTHROPIC_API_KEY, BRIGHTDATA_*, …).
+# Never commit .env; it's in .gitignore and excluded from deploy.
+if [ -f .env ]; then set -a; . ./.env; set +a; echo "• loaded .env (local secrets)"; fi
+
 PORT=8000
 START_AGENT=1
 DO_SETUP=0
