@@ -39,12 +39,27 @@ if [ "$DO_SETUP" = "1" ]; then
   echo "• setup done ✓"
 fi
 
+# free a dev port from any prior ./dev.sh instance (orphaned agent/server hold the port)
+freeport() {
+  command -v lsof >/dev/null 2>&1 || return 0
+  local pid; pid=$(lsof -ti tcp:"$1" -sTCP:LISTEN 2>/dev/null || true)
+  [ -n "$pid" ] && { echo "• freeing port $1 (stopping prior PID $pid)"; kill $pid 2>/dev/null || true; sleep 0.5; }
+  return 0
+}
+
 AGENT_PID=""
-cleanup() { [ -n "$AGENT_PID" ] && kill "$AGENT_PID" 2>/dev/null || true; }
+cleanup() {
+  [ -n "$AGENT_PID" ] && kill "$AGENT_PID" 2>/dev/null || true
+  # the agent runs under a pipe, so its python can outlive AGENT_PID — also stop whatever holds 8765
+  if command -v lsof >/dev/null 2>&1; then
+    _p=$(lsof -ti tcp:8765 -sTCP:LISTEN 2>/dev/null || true); [ -n "$_p" ] && kill $_p 2>/dev/null || true
+  fi
+}
 trap cleanup EXIT INT TERM
 
 if [ "$START_AGENT" = "1" ]; then
   if "$PYBIN" -c "import flask" 2>/dev/null; then
+    freeport 8765
     echo "• starting Unifyd agent (http://127.0.0.1:8765) — its logs stream below as [agent]"
     # live + visible: unbuffered, prefixed to this terminal, and tee'd to /tmp/unifyd-agent.log
     ( cd unifyd && "$PYBIN" -u server.py 2>&1 | tee /tmp/unifyd-agent.log | sed 's/^/  [agent] /' ) &
@@ -63,5 +78,6 @@ if [ "$START_AGENT" = "1" ]; then
   fi
 fi
 
+freeport "$PORT"
 echo "• serving the suite — open http://localhost:${PORT}"
 PORT="$PORT" "$PYBIN" scripts/dev_server.py
