@@ -63,6 +63,9 @@
   table.rec td{padding:5px 9px;border-bottom:1px solid var(--line2);font-variant-numeric:tabular-nums;max-width:240px;overflow:hidden;text-overflow:ellipsis}
   table.rec tr:hover td{background:#faf6ef}
   .rec-load{font-size:12px;color:var(--muted);padding:8px 0}
+  .rec-dl{float:right;display:inline-flex;gap:6px}
+  .rec-dl button{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);background:#efe6fb;border:1px solid #e0d3f5;border-radius:5px;padding:3px 8px;cursor:pointer}
+  .rec-dl button:hover{background:#e6d8fb}
   .eval-meta{display:flex;flex-wrap:wrap;gap:18px;font-size:13px;color:var(--ink);margin-bottom:12px}
   .eval-meta .k{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);display:block}
   .eval-meta b{font-size:15px}
@@ -98,7 +101,7 @@
       <div class="sub">Each scrape, in one place — run it, then read the engine's own verdict on the result.</div>
     </div>
     <span class="spacer"></span>
-    <button id="export-btn" title="Export this view as PDF" style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#e7ddf6;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.28);border-radius:6px;padding:7px 12px;cursor:pointer;margin-right:14px;">↓ Export PDF</button>
+    <button id="export-btn" title="Export this view as PDF" style="display:none;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#e7ddf6;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.28);border-radius:6px;padding:7px 12px;cursor:pointer;margin-right:14px;">↓ Export PDF</button>
     <span class="agent" id="agent" title="Unifyd engine /api status"><span class="dot"></span><span id="agentTxt">checking…</span></span>
   </div>
 </header>
@@ -223,7 +226,9 @@
       var cols=hdr.slice(0,8), more=hdr.length-cols.length, show=rows.slice(0,12);
       var thead='<tr>'+cols.map(function(h){return '<th>'+esc(h)+'</th>';}).join("")+(more>0?'<th>+'+more+'</th>':"")+'</tr>';
       var body=show.map(function(r){ return '<tr>'+cols.map(function(h,ci){return '<td>'+esc(r[ci])+'</td>';}).join("")+(more>0?'<td>…</td>':"")+'</tr>'; }).join("");
-      return '<div class="rec-cap">'+esc(e.id)+' · showing '+show.length+' of '+fmt(ds.total||rows.length)+' records</div>'+
+      return '<div class="rec-cap">'+esc(e.id)+' · showing '+show.length+' of '+fmt(ds.total||rows.length)+' records'+
+               '<span class="rec-dl"><button data-dl="csv" data-ds="'+esc(e.id)+'">⬇ CSV</button>'+
+               '<button data-dl="json" data-ds="'+esc(e.id)+'">⬇ JSON</button></span></div>'+
              '<div class="rec-wrap"><table class="rec"><thead>'+thead+'</thead><tbody>'+body+'</tbody></table></div>';
     }).join("");
   }
@@ -257,6 +262,24 @@
       .then(function(runs){ if(Array.isArray(runs)) STATE.runs = runs; render(); })
       .catch(function(){ STATE.live=false; document.getElementById("agent").className="agent";
         document.getElementById("agentTxt").textContent="engine offline"; render(); });
+  }
+
+  // export the loaded records (the agent's sampled rows) as CSV or JSON
+  function csvCell(v){ v=v==null?"":String(v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+  function exportDataset(id, fmt){
+    var ds=STATE.datasets[id]; if(!ds||!ds.header) return;
+    var content, ext, mime;
+    if(fmt==="json"){
+      content=JSON.stringify((ds.rows||[]).map(function(r){ var o={}; ds.header.forEach(function(h,i){o[h]=r[i];}); return o; }), null, 2);
+      ext="json"; mime="application/json";
+    } else {
+      content=[ds.header.map(csvCell).join(",")].concat((ds.rows||[]).map(function(r){
+        return ds.header.map(function(h,i){return csvCell(r[i]);}).join(","); })).join("\n");
+      ext="csv"; mime="text/csv";
+    }
+    var url=URL.createObjectURL(new Blob([content],{type:mime+";charset=utf-8"})), a=document.createElement("a");
+    a.href=url; a.download=id+"."+ext; document.body.appendChild(a); a.click();
+    setTimeout(function(){ try{ URL.revokeObjectURL(url); a.remove(); }catch(_){} }, 150);
   }
 
   function labelOf(connId){ var s=SOURCES.filter(function(x){return x.id===connId;})[0]; return s?s.name:connId; }
@@ -326,6 +349,7 @@
   }
 
   document.getElementById("sources").addEventListener("click", function(e){
+    var dl=e.target.closest("[data-dl]"); if(dl){ e.stopPropagation(); exportDataset(dl.getAttribute("data-ds"), dl.getAttribute("data-dl")); return; }
     var rb=e.target.closest("[data-run]"); if(rb){ e.stopPropagation(); run(rb.getAttribute("data-run")); return; }
     var tg=e.target.closest("[data-toggle]"); if(tg){ var id=tg.getAttribute("data-toggle"); var willOpen=!STATE.open[id]; STATE.open[id]=willOpen; if(willOpen) loadDatasets(id); render(); }
   });
