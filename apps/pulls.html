@@ -66,6 +66,17 @@
   .chev{color:var(--faint);font-size:13px;transition:transform .15s} .src.open .chev{transform:rotate(90deg)}
   .foot{font-size:12px;color:var(--muted);text-align:center;padding:8px 0 40px}
   @media(max-width:640px){.src-top{grid-template-columns:1fr;gap:10px}.src-top .pill,.src-top .run-btn{justify-self:start}}
+  /* running feedback */
+  #runbanner{position:sticky;top:0;z-index:60;background:linear-gradient(90deg,#3a2c54,#5a3d8a);color:#f4eefb;font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.03em;padding:10px 22px;display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;box-shadow:0 2px 10px rgba(60,29,26,.18)}
+  #runbanner .rb-dot{width:9px;height:9px;border-radius:50%;background:#ffd98a;display:inline-block;margin-right:8px;animation:rbpulse 1s infinite;vertical-align:middle}
+  @keyframes rbpulse{0%,100%{opacity:.3}50%{opacity:1}}
+  .src.running{box-shadow:0 0 0 2px var(--accent),var(--shadow)}
+  .src.running .src-top{background:#f6f0ff}
+  .run-btn.running{background:var(--accent);border-color:var(--accent)}
+  #toasts{position:fixed;right:18px;bottom:18px;z-index:200;display:flex;flex-direction:column;gap:8px}
+  .toast{background:var(--ink);color:#fff;font-size:13px;line-height:1.35;padding:11px 14px;border-radius:8px;box-shadow:0 8px 24px rgba(60,29,26,.25);max-width:380px;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s}
+  .toast.show{opacity:1;transform:none}
+  .toast.ok{border-left:3px solid var(--ok)} .toast.warn{border-left:3px solid var(--warn)} .toast.err{border-left:3px solid var(--bad)}
 </style>
 </head>
 <body>
@@ -134,14 +145,16 @@
     SOURCES.forEach(function(s){
       var run = latestRun(s.id), st = statusOf(run), busy = !!STATE.busy[s.id], open = !!STATE.open[s.id];
       var el = document.createElement("div");
-      el.className = "src" + (open?" open":"");
+      el.className = "src" + (open?" open":"") + (busy?" running":"");
+      var subline = busy ? "running…" : (run?whenLabel(run.finishedAt||run.startedAt):"never run");
+      var btnTitle = busy ? "Pull in progress…" : (STATE.live ? "Run this scrape now" : "Engine offline — start ./dev.sh, then reload");
       el.innerHTML =
         '<div class="src-top" data-toggle="'+s.id+'">' +
           '<div class="src-id"><span class="badge">'+s.mark+'</span><div><div class="src-name">'+esc(s.name)+
             ' <span class="chev">▸</span></div><div class="src-kind">'+esc(s.kind)+
-            ' · '+ (run?whenLabel(run.finishedAt||run.startedAt):"never run") +'</div></div></div>' +
-          '<span class="pill '+st+'">'+ (st==="never"?"not run":st) +'</span>' +
-          '<button class="run-btn'+(busy?" running":"")+'" data-run="'+s.id+'"'+( (!STATE.live||busy) ? " disabled":"")+'>' +
+            ' · '+ subline +'</div></div></div>' +
+          '<span class="pill '+(busy?"idle":st)+'">'+ (busy?"running":(st==="never"?"not run":st)) +'</span>' +
+          '<button class="run-btn'+(busy?" running":"")+'" data-run="'+s.id+'" title="'+btnTitle+'"'+( (!STATE.live||busy) ? " disabled":"")+'>' +
             '<span class="spin"></span><span class="lbl">'+(busy?"Running…":"Run")+'</span></button>' +
         '</div>' +
         '<div class="eval">'+ evalHtml(run) +'</div>';
@@ -192,15 +205,70 @@
         document.getElementById("agentTxt").textContent="engine offline"; render(); });
   }
 
+  function labelOf(connId){ var s=SOURCES.filter(function(x){return x.id===connId;})[0]; return s?s.name:connId; }
+  function mmss(sec){ var m=Math.floor(sec/60); return m+":"+("0"+(sec%60)).slice(-2); }
+
+  function toast(msg, kind){
+    var box=document.getElementById("toasts");
+    if(!box){ box=document.createElement("div"); box.id="toasts"; document.body.appendChild(box); }
+    var t=document.createElement("div"); t.className="toast "+(kind||""); t.textContent=msg; box.appendChild(t);
+    requestAnimationFrame(function(){ t.classList.add("show"); });
+    setTimeout(function(){ t.classList.remove("show"); setTimeout(function(){ t.remove(); }, 250); }, 7000);
+  }
+
+  function runningBanner(){
+    var ids=Object.keys(STATE.busy);
+    var el=document.getElementById("runbanner");
+    if(!ids.length){ if(el) el.remove(); return; }
+    if(!el){ el=document.createElement("div"); el.id="runbanner"; document.body.insertBefore(el, document.body.firstChild); }
+    el.innerHTML = ids.map(function(id){
+      var sec=Math.max(0, Math.floor((Date.now()-STATE.busy[id])/1000));
+      return '<span><span class="rb-dot"></span>Running <b>'+esc(labelOf(id))+'</b> · '+mmss(sec)+'</span>';
+    }).join("");
+  }
+
+  // Poll /api/runs until a NEW run lands for connId — so a long (or dropped) request still resolves.
+  function pollForCompletion(connId, beforeId, cb){
+    var tries=0, max=400;   // ~20 min at 3s
+    (function tick(){
+      if(STATE.busy[connId]===undefined) return;          // already finished elsewhere
+      fetch("/api/runs",{cache:"no-store"}).then(function(r){ return r.ok?r.json():[]; })
+        .then(function(runs){
+          if(Array.isArray(runs)) STATE.runs=runs;
+          var lr=latestRun(connId);
+          if(lr && lr.id!==beforeId){ cb(lr); return; }
+          if(++tries<max && STATE.busy[connId]!==undefined) setTimeout(tick, 3000);
+        })
+        .catch(function(){ if(++tries<max && STATE.busy[connId]!==undefined) setTimeout(tick, 3000); });
+    })();
+  }
+
   function run(connId){
-    if(STATE.busy[connId] || !STATE.live) return;
-    STATE.busy[connId]=true; STATE.open[connId]=true; render();
+    if(STATE.busy[connId]!==undefined || !STATE.live) return;
+    var beforeId=(latestRun(connId)||{}).id;
+    STATE.busy[connId]=Date.now(); STATE.open[connId]=true; render(); runningBanner();
+    var settled=false;
+    function finish(rec, errMsg){
+      if(settled) return; settled=true;
+      delete STATE.busy[connId];
+      if(rec && rec.id){
+        if(STATE.runs[0]!==rec && !STATE.runs.some(function(r){return r.id===rec.id;})) STATE.runs.unshift(rec);
+        var st=rec.degraded?"degraded":(rec.status||"done");
+        var n=rec.total!=null?(" · "+Number(rec.total).toLocaleString()+" rows"):"";
+        var d=rec.extracts&&rec.extracts[0]&&rec.extracts[0].delta!=null?(" · Δ"+rec.extracts[0].delta):"";
+        toast((st==="failed"?"✗ ":st==="success"?"✓ ":"⚠ ")+labelOf(connId)+" — "+st+n+d,
+              st==="failed"?"err":st==="success"?"ok":"warn");
+      } else {
+        toast("✗ "+labelOf(connId)+" — "+(errMsg||"run failed (check the engine logs)"), "err");
+      }
+      render(); runningBanner(); refresh();
+    }
     fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({connId:connId, trigger:"manual"})})
-      .then(function(r){ return r.ok?r.json():Promise.reject(); })
-      .then(function(rec){ if(rec&&rec.id){ STATE.runs.unshift(rec); } })
-      .catch(function(){ /* surfaced via refresh */ })
-      .then(function(){ STATE.busy[connId]=false; return refresh(); });
+      .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error("HTTP "+r.status)); })
+      .then(function(rec){ finish(rec && rec.id ? rec : null, rec && rec.error); })
+      .catch(function(e){ /* request dropped/long — let the poller resolve from /api/runs */ });
+    pollForCompletion(connId, beforeId, function(rec){ finish(rec, null); });
   }
 
   document.getElementById("sources").addEventListener("click", function(e){
@@ -225,7 +293,8 @@
 
   render();
   refresh();
-  setInterval(function(){ if(!Object.keys(STATE.busy).some(function(k){return STATE.busy[k];})) refresh(); }, 15000);
+  setInterval(function(){ if(!Object.keys(STATE.busy).length) refresh(); }, 15000);
+  setInterval(runningBanner, 1000);   // live elapsed timer on the running banner
 
   // spine membership (context not used to filter, but keeps the app on the bus)
   if(typeof HoodieSpine!=="undefined"){
