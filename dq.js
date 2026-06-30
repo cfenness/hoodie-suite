@@ -16,6 +16,9 @@
 
   var DETERMINISTIC = "DETERMINISTIC", INFERENCE = "INFERENCE";
   var SAMPLE_CAP = 120000;
+  var PAIR_CAP = 4000;     // rows scanned for O(cols²) pairwise checks (mirror/redundancy/collision)
+  var PAIR_COLS = 60;      // max columns entered into a pairwise check (bounds C(n,2))
+  var DQ_ROW_CAP = 20000;  // per-column profiling row sample for large files (kept responsive)
 
   function clean(v) { return v == null ? "" : String(v).trim(); }
   function toNum(v) {
@@ -241,7 +244,7 @@
   // does value-of-col uniquely identify a row, or recur with conflicting other-column values?
   function keyCollisions(rows, idx, header) {
     var seen = Object.create(null), dupedKeys = 0, example = "", col = "";
-    var probe = header.length, capRows = Math.min(rows.length, SAMPLE_CAP);
+    var probe = header.length, capRows = Math.min(rows.length, PAIR_CAP);
     for (var r = 0; r < capRows; r++) {
       var key = clean(rows[r][idx]); if (key === "") continue;
       var sig = rows[r].map(clean).join("");
@@ -259,14 +262,16 @@
 
   // ---------------- dataset-level checks ----------------
   function datasetChecks(header, rows, stats, roles, out, prov) {
-    var n = rows.length, capRows = Math.min(n, SAMPLE_CAP);
+    // Pairwise (O(cols²)) + full-row-sig checks scan a row SAMPLE so wide/large files don't
+    // freeze the page; findings are labeled "sampled" when the sample is used.
+    var n = rows.length, capRows = Math.min(n, PAIR_CAP), pairProv = n > PAIR_CAP ? "sampled" : "full";
     // Exact duplicate rows (DET)
     var seen = Object.create(null), dups = 0;
     for (var r = 0; r < capRows; r++) { var sig = rows[r].map(clean).join(""); if (seen[sig]) dups++; else seen[sig] = 1; }
     if (dups > 0)
       out.push(F("dataset.exact_duplicates", "dataset", [], DETERMINISTIC, dups > n * 0.01 ? "high" : "medium",
         dups + " exact duplicate row(s)", dups + " rows are byte-identical to an earlier row.",
-        { duplicates: dups }, null, n > SAMPLE_CAP ? "sampled" : "full"));
+        { duplicates: dups }, null, pairProv));
 
     // Should-be-unique-but-isn't: name says id/key, but values repeat. (DET)
     header.forEach(function (h, i) {
@@ -279,24 +284,24 @@
 
     // Redundancy / co-variation: two low-card dimensions that map 1:1 (summing across both double-counts).
     var dimIdx = [];   // grouping dims only — exclude near-unique keys (they co-vary 1:1 trivially)
-    roles.forEach(function (rl, i) { if (rl.role === "dimension" && stats[i].n_distinct >= 2 && stats[i].n_distinct <= 200 && stats[i].distinct_rate < 0.9) dimIdx.push(i); });
+    roles.forEach(function (rl, i) { if (rl.role === "dimension" && stats[i].n_distinct >= 2 && stats[i].n_distinct <= 200 && stats[i].distinct_rate < 0.9) dimIdx.push(i); }); dimIdx = dimIdx.slice(0, PAIR_COLS);
     for (var a = 0; a < dimIdx.length; a++) for (var b = a + 1; b < dimIdx.length; b++) {
       if (coVary1to1(rows, dimIdx[a], dimIdx[b], capRows))
         out.push(F("dataset.redundancy", "column", [header[dimIdx[a]], header[dimIdx[b]]], DETERMINISTIC, "medium",
           "\"" + header[dimIdx[a]] + "\" and \"" + header[dimIdx[b]] + "\" co-vary 1:1 (redundant)",
           "These two dimensions are perfectly aligned — treating them as separate cuts double-counts.",
-          { columns: [header[dimIdx[a]], header[dimIdx[b]]] }, null, n > SAMPLE_CAP ? "sampled" : "full"));
+          { columns: [header[dimIdx[a]], header[dimIdx[b]]] }, null, pairProv));
     }
 
     // Cross-field coherence: duplicate / mirror numeric columns (A==B, or A==-B). (DET)
-    var numIdx = []; stats.forEach(function (s, i) { if (s.numeric) numIdx.push(i); });
+    var numIdx = []; stats.forEach(function (s, i) { if (s.numeric) numIdx.push(i); }); numIdx = numIdx.slice(0, PAIR_COLS);
     for (var x = 0; x < numIdx.length; x++) for (var y = x + 1; y < numIdx.length; y++) {
       var rel = mirrorRelation(rows, numIdx[x], numIdx[y], capRows);
       if (rel) out.push(F("dataset.coherence", "column", [header[numIdx[x]], header[numIdx[y]]], DETERMINISTIC, "medium",
         "\"" + header[numIdx[x]] + "\" and \"" + header[numIdx[y]] + "\" are " + rel,
         rel === "identical" ? "Two columns hold the same values — one is redundant."
           : "Columns mirror each other — summing across both cancels or double-counts.",
-        { relation: rel }, null, n > SAMPLE_CAP ? "sampled" : "full"));
+        { relation: rel }, null, pairProv));
     }
 
     // Grain (INFERENCE) — what one row represents, from a candidate single-column key.
@@ -344,21 +349,26 @@
   function assess(header, rows, opts) {
     opts = opts || {}; header = header || []; rows = rows || [];
     var nTotal = rows.length;
-    var provenance = { n_total: nTotal, n_analyzed: Math.min(nTotal, SAMPLE_CAP), sampled: nTotal > SAMPLE_CAP };
-    var stats = header.map(function (h, i) { return colStats(h, rows, i, nTotal); });
+    // For large files, profile a row SAMPLE so the page stays responsive — labeled "sampled".
+    var cap = opts.rowCap || DQ_ROW_CAP;
+    var work = (nTotal > cap) ? rows.slice(0, cap) : rows, nWork = work.length;
+    var provenance = { n_total: nTotal, n_analyzed: nWork, sampled: nTotal > cap };
+    var stats = header.map(function (h, i) { return colStats(h, work, i, nWork); });
     var roles = header.map(function (h, i) { return assignRole(h, stats[i]); });
 
     var findings = [];
     header.forEach(function (h, i) {
       if (roles[i].role === "measure") measureChecks(stats[i], roles[i], findings);
-      else dimensionChecks(stats[i], rows, header, roles, findings);
+      else dimensionChecks(stats[i], work, header, roles, findings);
       // Role uncertainty is itself a finding — surfaced, never silently propagated.
       if (roles[i].needs_review)
         findings.push(F("role.review", "column", [h], INFERENCE, "medium",
           "Role needs confirmation: " + roles[i].role + (roles[i].disagreement ? " (name/value conflict)" : roles[i].ambiguous ? " (intent-dependent)" : ""),
           roles[i].reasons.join("; "), { role: roles[i].role }, roles[i].confidence));
     });
-    datasetChecks(header, rows, stats, roles, findings, provenance);
+    datasetChecks(header, work, stats, roles, findings, provenance);
+    // honest provenance: when the file was sampled, no finding may claim full-file exactness
+    if (provenance.sampled) findings.forEach(function (f) { if (f.provenance === "full") f.provenance = "sampled"; });
 
     return { roles: roles, findings: findings, provenance: provenance, stats: stats };
   }
