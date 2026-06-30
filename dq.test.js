@@ -127,9 +127,107 @@ assertFires("candidate key repeats", function (d) { var c = col(d, "player_id");
   var floods = r.findings.filter(function (f) { return /\.misfire$/.test(f.id); });
   ok(true, "fact-table assess produced " + r.findings.length + " findings, " + floods.length + " misfire meta-cards");
 })();
+// ---- FIX 1: dedup-before-grain — exact dups must not make a real key look "ambiguous" ----
+(function () {
+  // Reuse the player×match fact shape, then inject byte-identical duplicate rows that drag the
+  // (player_id, match_id) key below 0.99 on the RAW set. Stage 0 must dedup first and resolve.
+  var header = ["player_id", "match_id", "match_date", "team", "goals"];
+  var base = [], P = 80, M = 30;
+  for (var m = 0; m < M; m++) { var home = m % 20, away = (m + 7) % 20;
+    [home, away].forEach(function (tm) { for (var p = 0; p < P; p++) { if (p % 20 !== tm) continue;
+      base.push(["P" + pad(p, 4), "M" + pad(m, 3), "2026-06-" + pad(1 + (m % 28), 2), "T" + tm, "" + (m * p % 4)]); } }); }
+  var DUP = 40, rows = base.slice();
+  for (var i = 0; i < DUP; i++) rows.push(base[i].slice());          // 40 byte-identical dups
+  var r = DQ.assess(header, rows), p = r.profile;
+  ok(!p.ambiguous, "FIX1: grain NOT ambiguous despite dups (got ambiguous=" + p.ambiguous + ")");
+  ok(p.candidate_key && p.candidate_key.indexOf("player_id") >= 0 && p.candidate_key.indexOf("match_id") >= 0,
+     "FIX1: key resolves to (player_id, match_id) after dedup (got " + JSON.stringify(p.candidate_key) + ")");
+  ok(p.dupes_removed === DUP, "FIX1: dupes_removed = " + DUP + " (got " + p.dupes_removed + ")");
+  ok(p.grain_resolved_post_dedup === true && /resolved after removing 40 exact-duplicate rows/.test(p.grain_statement),
+     "FIX1: grain statement records the post-dedup resolution");
+  ok(p.key_distinct_rate_raw < 0.99 && p.key_distinct_rate >= 0.999,
+     "FIX1: raw distinctness <99% (" + p.key_distinct_rate_raw + "), deduped ~100% (" + p.key_distinct_rate + ")");
+  // the dups ARE reported (exact_duplicates), and the key is NOT double-flagged as non-unique
+  ok(r.findings.some(function (f) { return f.id === "dataset.exact_duplicates"; }), "FIX1: exact_duplicates still reported");
+  ok(!r.findings.some(function (f) { return f.id === "dataset.key_not_unique"; }), "FIX1: key NOT flagged non-unique (dups explain it)");
+})();
+
+// ---- FIX 1b: ONE canonical exact-dup count; key collisions are a SEPARATE labeled number ----
+(function () {
+  // base = unique-key player×match; + 40 byte-identical EXACT dups; + 2 KEY collisions (same
+  // player_id+match_id as an existing row but a DIFFERENT goals value → byte-distinct).
+  var header = ["player_id", "match_id", "match_date", "team", "goals"], base = [], P = 80, M = 30;
+  for (var m = 0; m < M; m++) { var home = m % 20, away = (m + 7) % 20;
+    [home, away].forEach(function (tm) { for (var p = 0; p < P; p++) { if (p % 20 !== tm) continue;
+      base.push(["P" + pad(p, 4), "M" + pad(m, 3), "2026-06-" + pad(1 + (m % 28), 2), "T" + tm, "" + (m * p % 4)]); } }); }
+  var rows = base.slice();
+  for (var i = 0; i < 40; i++) rows.push(base[i].slice());                 // 40 exact dups
+  var coll = base[0].slice(); coll[4] = "" + (+base[0][4] + 7);            // same key, different goals
+  var coll2 = base[1].slice(); coll2[4] = "" + (+base[1][4] + 7);
+  rows.push(coll); rows.push(coll2);                                       // 2 key collisions
+  var r = DQ.assess(header, rows), p = r.profile;
+  var dupFinding = r.findings.filter(function (f) { return f.id === "dataset.exact_duplicates"; })[0];
+  var keyFinding = r.findings.filter(function (f) { return f.id === "dataset.key_not_unique"; })[0];
+  // ONE exact-dup number, identical in the profile header and the Tier-1 finding
+  ok(p.exact_dupes === 40 && dupFinding && dupFinding.evidence.exact_duplicates === 40,
+     "FIX1b: exact dups = 40 in BOTH profile and Tier-1 finding (got profile=" + p.exact_dupes + ", finding=" + (dupFinding && dupFinding.evidence.exact_duplicates) + ")");
+  // key collisions are a DIFFERENT, separately-labeled number — never called "duplicates"
+  ok(p.key_collisions === 2 && keyFinding && keyFinding.evidence.key_collisions === 2,
+     "FIX1b: key collisions = 2, reported separately under key_not_unique (got profile=" + p.key_collisions + ")");
+  ok(p.exact_dupes !== p.key_collisions, "FIX1b: the two counts are distinct, not the same number reused");
+  // RECONCILIATION arithmetic (must hold on the table)
+  var raw_n = rows.length, distinct_n = raw_n - p.exact_dupes, keyDistinct = Math.round(p.key_distinct_rate * distinct_n);
+  ok(raw_n === 282 && distinct_n === 242, "FIX1b: raw_n 282 − exact_dupes 40 = distinct_n 242 (got " + raw_n + "/" + distinct_n + ")");
+  ok(distinct_n - keyDistinct === p.key_collisions, "FIX1b: distinct_n − distinct_key_tuples = key_collisions (" + (distinct_n - keyDistinct) + " = " + p.key_collisions + ")");
+  ok(Math.abs(p.key_distinct_rate - 240 / 242) < 1e-3, "FIX1b: key distinctness on distinct rows = 240/242 = " + (240 / 242).toFixed(4) + " (got " + p.key_distinct_rate + ")");
+  ok(dupFinding.provenance === "full" && keyFinding.provenance === "full", "FIX1b: both findings are full-table provenance, not sampled");
+})();
 assertFires("redundant covarying dim", function (d) { var c = col(d, "nationality"); d.header.push("nation_label"); d.rows.forEach(function (row) { row.push(row[c]); }); }, "dataset.redundancy", DQ.DETERMINISTIC);
 assertFires("mirror/duplicate numeric col", function (d) { var c = col(d, "goals"); d.header.push("goals_copy"); d.rows.forEach(function (row) { row.push(row[c]); }); }, "dataset.coherence", DQ.DETERMINISTIC);
 function toN(v) { return parseFloat(String(v).replace(/[$,%\s]/g, "")); }
+
+// ---- FIX 2: value-integrity findings headline ROWS-AFFECTED + the owning column ----
+(function () {
+  function injected(mut) { var d = clean(); mut(d); return DQ.assess(d.header, d.rows); }
+  function ra(res, id) { var f = res.findings.filter(function (x) { return x.id === id; })[0]; return f && f.evidence ? f.evidence.rows_affected : undefined; }
+  var r1 = injected(function (d) { var c = col(d, "goals"); for (var i = 0; i < 17; i++) d.rows[i][c] = "-3"; });
+  ok(ra(r1, "measure.range") === 17, "FIX2: range rows_affected = 17 (got " + ra(r1, "measure.range") + ")");
+  var r2 = injected(function (d) { var c = col(d, "goals"); for (var i = 0; i < 60; i++) d.rows[i][c] = "99"; });
+  ok(ra(r2, "measure.cap_sentinel") === 60, "FIX2: cap_sentinel rows_affected = 60 (got " + ra(r2, "measure.cap_sentinel") + ")");
+  var r3 = injected(function (d) { var c = col(d, "salary_eur"); for (var i = 0; i < 80; i++) d.rows[i][c] = ""; });
+  ok(ra(r3, "measure.nulls") === 80, "FIX2: nulls rows_affected = 80 (got " + ra(r3, "measure.nulls") + ")");
+  // 90 injected + 2 native zeros in rows 90–199 (goals = i%41 is 0 at i=123,164) = 92 true zeros
+  var r4 = injected(function (d) { var c = col(d, "goals"); for (var i = 0; i < 90; i++) d.rows[i][c] = "0"; });
+  ok(ra(r4, "measure.zero_inflation") === 92, "FIX2: zero_inflation rows_affected = 92 (exact full-column zero count) (got " + ra(r4, "measure.zero_inflation") + ")");
+  // mixed units — distance_covered_km: 40 of 200 rows in meters (×1000), the rest in km
+  var r5 = injected(function (d) { d.header.push("distance_covered_km"); d.rows.forEach(function (row, i) { row.push(i < 40 ? "" + (2000 + i * 50) : "" + (6 + (i % 5))); }); });
+  ok(ra(r5, "measure.scale_unit") === 40, "FIX2: scale_unit rows_affected = 40 (the minority unit cluster) (got " + ra(r5, "measure.scale_unit") + ")");
+  var r6 = injected(function (d) { var c = col(d, "nationality"); for (var i = 0; i < 10; i++) d.rows[i][c] = "Spanish "; });
+  ok(ra(r6, "dimension.whitespace") === 10, "FIX2: whitespace rows_affected = 10 (got " + ra(r6, "dimension.whitespace") + ")");
+  // no value-integrity finding is a bare tally: each carries an INTEGER rows_affected + a named column
+  var cases = [[r1, "measure.range"], [r2, "measure.cap_sentinel"], [r3, "measure.nulls"], [r4, "measure.zero_inflation"], [r5, "measure.scale_unit"], [r6, "dimension.whitespace"]];
+  cases.forEach(function (cw) { var f = cw[0].findings.filter(function (x) { return x.id === cw[1]; })[0];
+    ok(f && Number.isInteger(f.evidence.rows_affected) && f.evidence.rows_affected > 0 && f.columns.length >= 1,
+       "FIX2: " + cw[1] + " carries integer rows_affected + owning column"); });
+})();
+
+// ---- FIX 3: type violations test VALUES, not the declared datatype (deterministic, no AI) ----
+(function () {
+  // performance_score: numeric column with 12 string sentinels embedded → must be caught deterministically.
+  var d = clean();
+  d.header.push("performance_score");
+  var toks = ["error", "#REF!", "N/A", "--"];
+  d.rows.forEach(function (row, i) { row.push(i < 12 ? toks[i % toks.length] : "" + (60 + (i % 40))); });
+  var r = DQ.assess(d.header, d.rows);
+  var tv = r.findings.filter(function (f) { return f.id === "type.violation" && f.columns[0] === "performance_score"; })[0];
+  ok(tv, "FIX3: type.violation fires deterministically on performance_score");
+  ok(tv && tv.tag === DQ.DETERMINISTIC, "FIX3: type.violation is DETERMINISTIC");
+  ok(tv && tv.evidence.rows_affected === 12, "FIX3: rows_affected = 12 (the token rows) (got " + (tv && tv.evidence.rows_affected) + ")");
+  ok(tv && tv.evidence.tokens.indexOf("error") >= 0 && tv.evidence.tokens.indexOf("#REF!") >= 0, "FIX3: offending tokens captured ('error', '#REF!')");
+  // clean numeric (salary_eur) and a pure string column (nationality) must NOT produce a type violation
+  ok(!r.findings.some(function (f) { return f.id === "type.violation" && f.columns[0] === "salary_eur"; }), "FIX3: clean numeric column → no false type violation");
+  ok(!r.findings.some(function (f) { return f.id === "type.violation" && f.columns[0] === "nationality"; }), "FIX3: pure-string column → no type violation (it is not numeric-intended)");
+})();
 
 // ---- grain is an INFERENCE ----
 (function () {
