@@ -454,9 +454,12 @@
   // required, at flat confidence), suppress its instances and emit ONE meta-card. Volume is
   // never evidence — one mis-specified detector can outproduce every real finding combined.
   function misfireGuard(findings, eligibleN, grainStmt) {
+    // Only INSTANCE-grained detectors (scope "cell" — one finding per row/cell) can flood against
+    // the row count. Per-column / per-dataset SUMMARIES (cardinality, dupes, key, …) are bounded
+    // by column count and pass through untouched.
+    var out = findings.filter(function (f) { return f.scope !== "cell"; });
     var byDet = {};
-    findings.forEach(function (f) { var d = f.id || "?"; (byDet[d] = byDet[d] || []).push(f); });
-    var out = [];
+    findings.forEach(function (f) { if (f.scope !== "cell") return; var d = f.id || "?"; (byDet[d] = byDet[d] || []).push(f); });
     Object.keys(byDet).forEach(function (det) {
       var inst = byDet[det], N = inst.length;
       var frac = eligibleN ? N / eligibleN : 0;
