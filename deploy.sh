@@ -32,6 +32,7 @@ aws s3 sync . "s3://$S3_BUCKET" \
   --exclude ".gitignore" \
   --exclude ".env" \
   --exclude ".env.*" \
+  --exclude "*.test.js" \
   --cache-control "public,max-age=300"
 
 if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
