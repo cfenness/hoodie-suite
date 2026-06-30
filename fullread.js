@@ -88,7 +88,7 @@
       n_distinct: distinct, distinct_rate: nb ? +(distinct / nb).toFixed(4) : 0,
       is_unique: nb > 0 && distinct === nb && n_missing === 0,
       stats: null, top_values: null, rare_count: 0, date: null,
-      examples: nonblank.slice(0, 3),
+      examples: Object.keys(freq).slice(0, 3),   // first 3 DISTINCT values (not first 3 rows)
       role_guess: roleGuess(name, dtype, nonblank.slice(0, 20)),
     };
 
