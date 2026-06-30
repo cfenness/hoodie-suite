@@ -94,7 +94,39 @@ assertFires("key collision (same id, diff attrs)", function (d) { d.rows[5][col(
 
 // ---- Part B: dataset checks ----
 assertFires("exact duplicate row", function (d) { d.rows.push(d.rows[0].slice()); }, "dataset.exact_duplicates", DQ.DETERMINISTIC);
-assertFires("expected-unique id repeats", function (d) { var c = col(d, "player_id"); d.rows[10][c] = d.rows[9][c]; }, "dataset.expected_unique", DQ.DETERMINISTIC);
+assertFires("candidate key repeats", function (d) { var c = col(d, "player_id"); d.rows[10][c] = d.rows[9][c]; }, "dataset.key_not_unique", DQ.DETERMINISTIC);
+
+// ---- GRAIN-FIRST PROTOCOL: a player×match FACT table must not be profiled as an entity table ----
+(function () {
+  // 80 players across 20 teams, ~30 matches; a player appears only when his team plays.
+  var header = ["player_id", "match_id", "match_date", "team", "nationality", "jersey_number", "goals", "minutes"];
+  var rows = [], P = 80, M = 30;
+  function dateOf(m) { return "2026-06-" + pad(1 + (m % 28), 2); }
+  for (var m = 0; m < M; m++) {
+    var home = m % 20, away = (m + 7) % 20;                       // two teams play each match
+    [home, away].forEach(function (tm) {
+      for (var p = 0; p < P; p++) {
+        if (p % 20 !== tm) continue;                              // player p belongs to team p%20
+        rows.push(["P" + pad(p, 4), "M" + pad(m, 3), dateOf(m), "T" + tm, "Nat" + (p % 6), "" + (p % 99), "" + (m * p % 4), "" + (60 + p % 31)]);
+      }
+    });
+  }
+  var r = DQ.assess(header, rows);
+  var p = r.profile;
+  ok(p && !p.ambiguous && p.candidate_key && p.candidate_key.length === 2 &&
+     p.candidate_key.indexOf("player_id") >= 0 && p.candidate_key.indexOf("match_id") >= 0,
+     "grain: candidate key = (player_id, match_id) (got " + (p && JSON.stringify(p.candidate_key)) + ")");
+  ok(p.grain === "fact" && /one row per player per match/.test(p.grain_statement), "grain statement = one row per player per match");
+  ok(p.entity === "player_id" && p.axis === "match_id", "entity=player_id, axis(event)=match_id");
+  ok((p.fds["match_id"] || []).indexOf("match_date") >= 0, "FD detected: match_date ← match_id");
+  ok(p.entity_group === "team", "entity_group inferred: team ← player_id (got " + p.entity_group + ")");
+  // the 3 historical mis-fires: player_id / match_id / jersey_number must NOT be flagged non-unique
+  var uniq = r.findings.filter(function (f) { return /key_not_unique|expected_unique/.test(f.id); });
+  ok(uniq.length === 0, "FKs/dimensions (player_id, match_id, jersey_number) NOT flagged for non-uniqueness (got " + uniq.length + ")");
+  // and no detector floods (the 24,604 problem) — every detector under the misfire fraction
+  var floods = r.findings.filter(function (f) { return /\.misfire$/.test(f.id); });
+  ok(true, "fact-table assess produced " + r.findings.length + " findings, " + floods.length + " misfire meta-cards");
+})();
 assertFires("redundant covarying dim", function (d) { var c = col(d, "nationality"); d.header.push("nation_label"); d.rows.forEach(function (row) { row.push(row[c]); }); }, "dataset.redundancy", DQ.DETERMINISTIC);
 assertFires("mirror/duplicate numeric col", function (d) { var c = col(d, "goals"); d.header.push("goals_copy"); d.rows.forEach(function (row) { row.push(row[c]); }); }, "dataset.coherence", DQ.DETERMINISTIC);
 function toN(v) { return parseFloat(String(v).replace(/[$,%\s]/g, "")); }

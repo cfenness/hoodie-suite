@@ -78,54 +78,111 @@
   }
 
   // ---------------- Module 1 — cross-entity coverage continuity (INFERENCE) ----------------
-  // Flags an entity-period ONLY as an INTERIOR gap: entity present BOTH before and after the
-  // missing period. A missing tail (shorter active span) is NEVER flagged. Severity ∝ volume.
+  // Presence is defined against the OBSERVED cadence (Stage 0), not the calendar:
+  //  - high average coverage (entity present most of the axis) ⇒ CONTINUITY PANEL → interior gaps.
+  //  - sparse (entity appears only when its EVENT occurs) ⇒ EVENT GRAIN → group-based presence,
+  //    or suppressed when no roster signal exists. A rest day is never a gap.
   function coverageContinuity(header, rows, opts) {
     opts = opts || {};
     if (!DQ) return { applicable: false, reason: "dq.js not available", findings: [] };
-    var roles = opts.roles || DQ.assess(header, rows).roles;
-    var det = detectEntityPeriod(header, rows, roles, opts);
-    if (!det.entity || !det.period)
-      return { applicable: false, reason: det.reason, entity: det.entity, period: det.period, findings: [] };
+    var assessed = (opts.roles && opts.profile) ? null : DQ.assess(header, rows);
+    var roles = opts.roles || assessed.roles;
+    var profile = opts.profile || (assessed && assessed.profile) || null;
+    var CONT = (DQ.CONFIG && DQ.CONFIG.CONTINUITY_THRESHOLD) || 0.6;
 
-    var ei = header.indexOf(det.entity), pi = header.indexOf(det.period);
+    var entity, axis;
+    if (profile && profile.grain === "fact" && profile.entity && profile.axis) { entity = profile.entity; axis = profile.axis; }
+    else { var det = detectEntityPeriod(header, rows, roles, opts); entity = det.entity; axis = det.period; }
+    if (!entity || !axis)
+      return { applicable: false, reason: (profile && profile.ambiguous) ? "grain ambiguous" : "no entity×axis", entity: entity, period: axis, findings: [] };
+
+    var ei = header.indexOf(entity), pi = header.indexOf(axis);
     var byEntity = {}, allP = {}, vol = {};
     for (var r = 0; r < rows.length; r++) {
       var e = clean(rows[r][ei]), p = clean(rows[r][pi]); if (e === "" || p === "") continue;
       (byEntity[e] = byEntity[e] || {})[p] = 1; allP[p] = 1; vol[e] = (vol[e] || 0) + 1;
     }
+    var axisVals = uniq(allP), totalAxis = axisVals.length, ents = uniq(byEntity);
+    var sum = 0; ents.forEach(function (e) { sum += uniq(byEntity[e]).length / Math.max(1, totalAxis); });
+    var avgRatio = ents.length ? sum / ents.length : 0;
+
+    var result;
+    if (avgRatio >= CONT) {
+      result = interiorGapCoverage(header, entity, axis, byEntity, allP, vol);   // continuity panel
+    } else {
+      var group = profile && profile.entity_group;
+      if (!group) {
+        result = { applicable: true, entity: entity, period: axis, grain: "event", mode: "suppressed-no-roster", avg_coverage: +avgRatio.toFixed(3),
+          findings: [F({ id: "coverage.event_note", scope: "dataset", columns: [entity, axis], tag: INF, confidence: 0.5, severity: "info",
+            title: "Coverage not assessed — event grain, no roster",
+            detail: entity + " appears in only " + Math.round(avgRatio * 100) + "% of " + axis + " values on average. This is EVENT grain — " + entity +
+                    " reports only when its event occurs, so calendar/all-event presence is NOT expected and no gaps are emitted. Supply a group/roster signal to test expected presence per event.",
+            evidence: { avg_coverage: +avgRatio.toFixed(3) } })] };
+      } else {
+        result = eventGapCoverage(header, rows, entity, axis, group, byEntity, vol, avgRatio);
+      }
+    }
+    // self-guard: even the rewired coverage runs through the misfire meta-guard.
+    if (DQ.misfireGuard) result.findings = DQ.misfireGuard(result.findings, rows.length, (profile && profile.grain_statement) || (entity + "×" + axis));
+    result.avg_coverage = +avgRatio.toFixed(3);
+    return result;
+  }
+
+  // Continuity-panel interior gaps (team×season): present BOTH before and after the missing
+  // period; a missing tail is never flagged. Severity ∝ volume.
+  function interiorGapCoverage(header, entity, axis, byEntity, allP, vol) {
     var order = uniq(allP).sort(periodComparator(uniq(allP)));
     var posOf = {}; order.forEach(function (p, i) { posOf[p] = i; });
     var maxVol = 1; uniq(vol).forEach(function (k) { if (vol[k] > maxVol) maxVol = vol[k]; });
-
-    var gaps = [];
+    var findings = [];
     uniq(byEntity).forEach(function (e) {
       var present = uniq(byEntity[e]).map(function (p) { return posOf[p]; }).sort(function (a, b) { return a - b; });
-      if (present.length < 2) return;                          // can't bracket → no interior gap
-      var lo = present[0], hi = present[present.length - 1], have = {};
-      present.forEach(function (p) { have[p] = 1; });
-      for (var pos = lo + 1; pos < hi; pos++) {                // strictly INTERIOR positions only
-        if (!have[pos]) {
-          var b = pos - 1; while (b > lo && !have[b]) b--;
-          var a = pos + 1; while (a < hi && !have[a]) a++;
-          gaps.push({ entity: e, period: order[pos], before: order[b], after: order[a], volume: vol[e] });
-        }
+      if (present.length < 2) return;
+      var lo = present[0], hi = present[present.length - 1], have = {}; present.forEach(function (p) { have[p] = 1; });
+      for (var pos = lo + 1; pos < hi; pos++) if (!have[pos]) {
+        var b = pos - 1; while (b > lo && !have[b]) b--; var a = pos + 1; while (a < hi && !have[a]) a++;
+        var ratio = vol[e] / maxVol, sev = ratio >= 0.5 ? "high" : ratio >= 0.2 ? "medium" : "low";
+        findings.push(F({ id: "coverage.interior_gap", scope: "cell", columns: [entity, axis], tag: INF, confidence: 0.7, severity: sev,
+          title: "Suspected coverage gap: " + e + " missing " + axis + " " + order[pos],
+          detail: e + " is present in " + order[b] + " and " + order[a] + " but absent in " + order[pos] + " — a probable reporting gap. Confirm against expected reporting.",
+          evidence: { entity: e, missing_period: order[pos], present_before: order[b], present_after: order[a], entity_volume: vol[e] } }));
       }
     });
+    return { applicable: true, grain: "panel", entity: entity, period: axis, findings: findings };
+  }
 
-    var findings = gaps.map(function (g) {
-      var ratio = g.volume / maxVol;
-      var sev = ratio >= 0.5 ? "high" : ratio >= 0.2 ? "medium" : "low";
-      return F({
-        id: "coverage.interior_gap", scope: "cell", columns: [det.entity, det.period], tag: INF, confidence: 0.7, severity: sev,
-        title: "Suspected coverage gap: " + g.entity + " missing " + det.period + " " + g.period,
-        detail: g.entity + " is present in " + g.before + " and " + g.after + " but absent in " + g.period + " " + g.period +
-                " — a probable reporting gap. Confirm against expected reporting; the engine cannot know if " + g.entity +
-                " was genuinely inactive.",
-        evidence: { entity: g.entity, missing_period: g.period, present_before: g.before, present_after: g.after, entity_volume: g.volume }
+  // Event-grain coverage (player×match): per EVENT, the expected entities are those whose GROUP
+  // participates in that event (group inferred from the entity→group functional dependency).
+  // An ACTIVE entity (appears in ≥2 events) on a participating group, absent from the event, is a
+  // suspected gap. Rest days (events the group didn't play) are never expected. INFERENCE.
+  function eventGapCoverage(header, rows, entity, axis, group, byEntity, vol, avgRatio) {
+    var ei = header.indexOf(entity), pi = header.indexOf(axis), gi = header.indexOf(group);
+    var entGroup = {}, eventGroups = {}, eventEnts = {};
+    for (var r = 0; r < rows.length; r++) {
+      var e = clean(rows[r][ei]), p = clean(rows[r][pi]), g = clean(rows[r][gi]); if (e === "" || p === "") continue;
+      if (g !== "") entGroup[e] = g;
+      (eventGroups[p] = eventGroups[p] || {})[g] = 1;
+      (eventEnts[p] = eventEnts[p] || {})[e] = 1;
+    }
+    var active = {}; uniq(byEntity).forEach(function (e) { if (uniq(byEntity[e]).length >= 2) active[e] = 1; });
+    var groupEnts = {}; uniq(active).forEach(function (e) { var g = entGroup[e]; if (g == null) return; (groupEnts[g] = groupEnts[g] || []).push(e); });
+    var maxVol = 1; uniq(vol).forEach(function (k) { if (vol[k] > maxVol) maxVol = vol[k]; });
+    var findings = [];
+    uniq(eventGroups).forEach(function (ev) {
+      uniq(eventGroups[ev]).forEach(function (g) {
+        (groupEnts[g] || []).forEach(function (e) {
+          if (!eventEnts[ev][e]) {
+            var ratio = vol[e] / maxVol, sev = ratio >= 0.5 ? "high" : ratio >= 0.2 ? "medium" : "low";
+            findings.push(F({ id: "coverage.event_gap", scope: "cell", columns: [entity, axis], tag: INF, confidence: 0.6, severity: sev,
+              title: "Suspected event gap: " + e + " absent from " + axis + " " + ev,
+              detail: e + " (" + group + " “" + g + "”) did not report for " + axis + " " + ev + ", though its " + group +
+                      " participated and " + e + " is active elsewhere — a probable per-event coverage gap (could also be a rotation/bench).",
+              evidence: { entity: e, event: ev, group: g, entity_volume: vol[e] } }));
+          }
+        });
       });
     });
-    return { applicable: true, entity: det.entity, period: det.period, periods: order, gaps: gaps, findings: findings };
+    return { applicable: true, grain: "event", entity: entity, period: axis, group: group, findings: findings };
   }
 
   // ---------------- Module 2 — "is this what it claims to be?" + domain hook ----------------

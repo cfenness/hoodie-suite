@@ -20,6 +20,14 @@
   var PAIR_COLS = 60;      // max columns entered into a pairwise check (bounds C(n,2))
   var DQ_ROW_CAP = 20000;  // per-column profiling row sample for large files (kept responsive)
 
+  // ---- CONFIG (grain-first protocol; tune per source, never bury inline) ----
+  var CANDIDATE_KEY_DISTINCT_TARGET = 0.99;  // min distinctness for an inferred key
+  var MISFIRE_ROW_FRACTION          = 0.05;  // detector firing on >this share of eligible rows…
+  var MISFIRE_REQUIRES_UNIFORM_CONF = true;  // …at flat confidence ⇒ suppress + meta-card
+  var UNIT_RATIO_TOLERANCE          = 0.15;  // cluster ratio within 15% of a known factor ⇒ mixed units
+  var CONTINUITY_THRESHOLD          = 0.6;   // avg entity coverage ≥ this ⇒ continuity panel; else event grain
+  var KEY_COMBO_COLS                = 25;    // cap columns entering the 2-col candidate-key search
+
   function clean(v) { return v == null ? "" : String(v).trim(); }
   function toNum(v) {
     var s = clean(v).replace(/[$,%\s]/g, "");
@@ -261,7 +269,7 @@
   }
 
   // ---------------- dataset-level checks ----------------
-  function datasetChecks(header, rows, stats, roles, out, prov) {
+  function datasetChecks(header, rows, stats, roles, out, prov, profile) {
     // Pairwise (O(cols²)) + full-row-sig checks scan a row SAMPLE so wide/large files don't
     // freeze the page; findings are labeled "sampled" when the sample is used.
     var n = rows.length, capRows = Math.min(n, PAIR_CAP), pairProv = n > PAIR_CAP ? "sampled" : "full";
@@ -273,14 +281,13 @@
         dups + " exact duplicate row(s)", dups + " rows are byte-identical to an earlier row.",
         { duplicates: dups }, null, pairProv));
 
-    // Should-be-unique-but-isn't: name says id/key, but values repeat. (DET)
-    header.forEach(function (h, i) {
-      if ((RE_ID.test(h) || RE_NUMID.test(h)) && stats[i].nonblank > 0 && stats[i].distinct_rate < 0.999)
-        out.push(F("dataset.expected_unique", "column", [h], DETERMINISTIC, "high",
-          "Field named like a key is not unique",
-          "\"" + h + "\" looks like an identifier but only " + Math.round(stats[i].distinct_rate * 100) + "% of rows are distinct.",
-          { distinct_rate: stats[i].distinct_rate }));
-    });
+    // UNIQUENESS — test the inferred candidate KEY only (Stage 0). A foreign key or dimension
+    // repeating in a fact table is correct, not a defect — those are NEVER flagged here.
+    if (profile && profile.candidate_key && profile.key_distinct_rate != null && profile.key_distinct_rate < 0.999)
+      out.push(F("dataset.key_not_unique", "dataset", profile.candidate_key, DETERMINISTIC, "high",
+        "Candidate key (" + profile.candidate_key.join(", ") + ") is not unique",
+        "Only " + Math.round(profile.key_distinct_rate * 100) + "% of rows are distinct on the inferred key — either the true grain is finer or there are duplicate key tuples.",
+        { candidate_key: profile.candidate_key, key_distinct_rate: profile.key_distinct_rate }, null, pairProv));
 
     // Redundancy / co-variation: two low-card dimensions that map 1:1 (summing across both double-counts).
     var dimIdx = [];   // grouping dims only — exclude near-unique keys (they co-vary 1:1 trivially)
@@ -345,6 +352,129 @@
     return keys.length ? +keys[0] : null;
   }
 
+  // ---------------- STAGE 0 — grain profiler (runs before any detector) ----------------
+  var RE_EVENT = /(match|game|event|order|txn|transaction|fixture|booking|invoice|session|trip|visit)/i;
+  // A→B functional dependency over the sample: every A-value maps to exactly one B-value.
+  function detectDeps(rows, detIdx, header, n) {
+    var deps = [];
+    for (var c = 0; c < header.length; c++) {
+      if (c === detIdx) continue;
+      var map = Object.create(null), ok = true, seen = 0;
+      for (var r = 0; r < n; r++) {
+        var dv = clean(rows[r][detIdx]), cv = clean(rows[r][c]); if (dv === "" || cv === "") continue;
+        if (map[dv] === undefined) { map[dv] = cv; seen++; } else if (map[dv] !== cv) { ok = false; break; }
+      }
+      if (ok && seen > 1) deps.push(header[c]);
+    }
+    return deps;
+  }
+  function profileGrain(header, rows, roles, stats) {
+    var n = rows.length;
+    var keyish = [];   // key-eligible: not a measure (by role OR name), complete, >1 distinct
+    header.forEach(function (h, i) { if (roles[i].role !== "measure" && !RE_QTY.test(h) && !RE_MONEY.test(h) && stats[i].missing === 0 && stats[i].n_distinct > 1) keyish.push(i); });
+
+    // candidate key — smallest set reaching the distinct target. Do NOT assume a lone *_id.
+    var key = null;
+    for (var i = 0; i < keyish.length; i++) if (stats[keyish[i]].distinct_rate >= CANDIDATE_KEY_DISTINCT_TARGET) { key = [keyish[i]]; break; }
+    if (!key) {
+      var cand = keyish.filter(function (idx) { return stats[idx].distinct_rate >= 0.02; })
+                       .sort(function (a, b) { return stats[b].distinct_rate - stats[a].distinct_rate; }).slice(0, KEY_COMBO_COLS);
+      outer:
+      for (var a = 0; a < cand.length; a++) for (var b = a + 1; b < cand.length; b++) {
+        var ia = cand[a], ib = cand[b], seen = Object.create(null), d = 0;
+        for (var r = 0; r < n; r++) { var k = clean(rows[r][ia]) + "" + clean(rows[r][ib]); if (seen[k] === undefined) { seen[k] = 1; d++; } }
+        if (pct(d, n) >= CANDIDATE_KEY_DISTINCT_TARGET) { key = [ia, ib]; break outer; }
+      }
+    }
+    if (!key) return {
+      grain: "ambiguous", ambiguous: true, candidate_key: null, entity: null, axis: null, axis_is_event: false,
+      entity_group: null, fds: {}, column_roles: {},
+      grain_statement: "Grain is ambiguous — no column set of ≤2 uniquely identifies rows. Grain-dependent detectors (uniqueness, coverage) are withheld; value-integrity checks still run."
+    };
+
+    // functional dependencies for the key parts (match_date ← match_id; team ← player_id …)
+    var fds = {}; key.forEach(function (ki) { fds[header[ki]] = detectDeps(rows, ki, header, n); });
+
+    // entity vs axis for a composite key: the axis is the time/event part (period/date name, or
+    // determines a date, or event-like name); the entity is the other.
+    var entity = null, axis = null, axis_is_event = false, event_date = null, entity_group = null;
+    if (key.length >= 2) {
+      key.forEach(function (ki) {
+        var name = header[ki], deps = fds[name] || [];
+        var depDate = deps.filter(function (dn) { return /date|time/.test(dn.toLowerCase()); })[0];
+        var timeLike = /(date|year|season|period|month|quarter|week|day|time)/i.test(name);
+        var eventLike = RE_EVENT.test(name) || !!depDate;
+        if ((timeLike || eventLike) && !axis) { axis = name; axis_is_event = eventLike && !timeLike ? true : (eventLike ? true : false); if (depDate) event_date = depDate; }
+      });
+      if (!axis) { axis = header[key[1]]; }
+      entity = key.map(function (ki) { return header[ki]; }).filter(function (nm) { return nm !== axis; })[0] || header[key[0]];
+      // entity_group: the coarser dimension the entity determines that PARTITIONS events —
+      // i.e. fewest distinct values per event (team ≈ 2 per match; nationality ≈ many). Not just
+      // lowest overall cardinality.
+      var edeps = fds[entity] || [], entCard = stats[header.indexOf(entity)].n_distinct, aIdx = header.indexOf(axis), best = Infinity;
+      edeps.forEach(function (dn) {
+        var s = stats[header.indexOf(dn)];
+        if (!s || s.n_distinct <= 1 || s.n_distinct >= entCard || roleByName(roles, dn) === "measure" || /date|time/i.test(dn)) return;
+        var di = header.indexOf(dn), per = Object.create(null);
+        for (var r = 0; r < n; r++) { var ev = clean(rows[r][aIdx]), gv = clean(rows[r][di]); if (ev === "" || gv === "") continue; (per[ev] = per[ev] || Object.create(null))[gv] = 1; }
+        var ks = Object.keys(per), sum = 0; ks.forEach(function (k) { sum += Object.keys(per[k]).length; });
+        var avg = ks.length ? sum / ks.length : Infinity;
+        if (avg < best) { best = avg; entity_group = dn; }
+      });
+    }
+
+    // column roles: PK-part | foreign-key | timeseries | measure | dimension
+    var column_roles = {};
+    header.forEach(function (h, i) {
+      var inKey = key.indexOf(i) >= 0;
+      if (inKey) column_roles[h] = "PK-part";
+      else if (roles[i].role === "measure") column_roles[h] = "measure";
+      else if (RE_ID.test(h) || RE_NUMID.test(h)) column_roles[h] = "foreign-key";
+      else if (/date|time|year|season|period|month/i.test(h)) column_roles[h] = "timeseries";
+      else column_roles[h] = "dimension";
+    });
+
+    var keyNames = key.map(function (ki) { return header[ki]; });
+    var stmt = "one row per " + keyNames.map(function (k) { return k.replace(/_(id|key|code|no)$/i, ""); }).join(" per ");
+    return {
+      grain: key.length >= 2 ? "fact" : "entity", ambiguous: false, candidate_key: keyNames,
+      entity: entity, axis: axis, axis_is_event: axis_is_event, event_date: event_date, entity_group: entity_group,
+      fds: fds, column_roles: column_roles, key_distinct_rate: keyDistinct(rows, key, n), grain_statement: stmt
+    };
+  }
+  function roleByName(roles, name) { for (var i = 0; i < roles.length; i++) if (roles[i].name === name) return roles[i].role; return null; }
+  function keyDistinct(rows, key, n) {
+    var seen = Object.create(null), d = 0;
+    for (var r = 0; r < n; r++) { var k = key.map(function (i) { return clean(rows[r][i]); }).join(""); if (seen[k] === undefined) { seen[k] = 1; d++; } }
+    return +pct(d, n).toFixed(4);
+  }
+
+  // ---------------- STAGE 2 — misfire meta-guard ----------------
+  // After a detector runs: if it fired on > MISFIRE_ROW_FRACTION of eligible rows (and, when
+  // required, at flat confidence), suppress its instances and emit ONE meta-card. Volume is
+  // never evidence — one mis-specified detector can outproduce every real finding combined.
+  function misfireGuard(findings, eligibleN, grainStmt) {
+    var byDet = {};
+    findings.forEach(function (f) { var d = f.id || "?"; (byDet[d] = byDet[d] || []).push(f); });
+    var out = [];
+    Object.keys(byDet).forEach(function (det) {
+      var inst = byDet[det], N = inst.length;
+      var frac = eligibleN ? N / eligibleN : 0;
+      var confs = {}; inst.forEach(function (f) { confs[f.tag === INFERENCE ? (f.confidence || 0) : "det"] = 1; });
+      var uniform = Object.keys(confs).length === 1;
+      var misfired = N > 3 && frac > MISFIRE_ROW_FRACTION && (!MISFIRE_REQUIRES_UNIFORM_CONF || uniform);
+      if (misfired) {
+        out.push(F(det + ".misfire", "dataset", inst[0].columns || [], INFERENCE, "high",
+          "Detector ‘" + det + "’ withheld — likely mis-specified for this grain",
+          "Detector ‘" + det + "’ flagged " + N + " rows (" + Math.round(frac * 100) + "% of eligible) at " +
+          (uniform ? "flat" : "varied") + " confidence. This indicates the detector is mis-specified for this grain, not " +
+          N + " distinct defects. Review its config against grain = " + (grainStmt || "?") + ". Instances withheld.",
+          { detector: det, flagged: N, fraction: +frac.toFixed(3), instances_withheld: N }, 0.85));
+      } else { out = out.concat(inst); }
+    });
+    return out;
+  }
+
   // ---------------- main ----------------
   function assess(header, rows, opts) {
     opts = opts || {}; header = header || []; rows = rows || [];
@@ -355,6 +485,8 @@
     var provenance = { n_total: nTotal, n_analyzed: nWork, sampled: nTotal > cap };
     var stats = header.map(function (h, i) { return colStats(h, work, i, nWork); });
     var roles = header.map(function (h, i) { return assignRole(h, stats[i]); });
+    // STAGE 0: profile grain BEFORE any detector. Downstream reads this, not column names.
+    var profile = profileGrain(header, work, roles, stats);
 
     var findings = [];
     header.forEach(function (h, i) {
@@ -366,15 +498,18 @@
           "Role needs confirmation: " + roles[i].role + (roles[i].disagreement ? " (name/value conflict)" : roles[i].ambiguous ? " (intent-dependent)" : ""),
           roles[i].reasons.join("; "), { role: roles[i].role }, roles[i].confidence));
     });
-    datasetChecks(header, work, stats, roles, findings, provenance);
+    datasetChecks(header, work, stats, roles, findings, provenance, profile);
     // honest provenance: when the file was sampled, no finding may claim full-file exactness
     if (provenance.sampled) findings.forEach(function (f) { if (f.provenance === "full") f.provenance = "sampled"; });
+    // STAGE 2: misfire meta-guard — collapse any detector that over-fires for this grain.
+    findings = misfireGuard(findings, nWork, profile.grain_statement);
 
-    return { roles: roles, findings: findings, provenance: provenance, stats: stats };
+    return { roles: roles, findings: findings, provenance: provenance, stats: stats, profile: profile };
   }
 
-  var API = { assess: assess, assignRole: assignRole, colStats: colStats,
-              reconcileSampleSizes: reconcileSampleSizes, DETERMINISTIC: DETERMINISTIC, INFERENCE: INFERENCE, VERSION: "1" };
+  var API = { assess: assess, assignRole: assignRole, colStats: colStats, profileGrain: profileGrain, misfireGuard: misfireGuard,
+              reconcileSampleSizes: reconcileSampleSizes, DETERMINISTIC: DETERMINISTIC, INFERENCE: INFERENCE, VERSION: "2",
+              CONFIG: { CANDIDATE_KEY_DISTINCT_TARGET: CANDIDATE_KEY_DISTINCT_TARGET, MISFIRE_ROW_FRACTION: MISFIRE_ROW_FRACTION, MISFIRE_REQUIRES_UNIFORM_CONF: MISFIRE_REQUIRES_UNIFORM_CONF, UNIT_RATIO_TOLERANCE: UNIT_RATIO_TOLERANCE, CONTINUITY_THRESHOLD: CONTINUITY_THRESHOLD } };
   if (typeof window !== "undefined") window.DQ = API;
   if (typeof module !== "undefined" && module.exports) module.exports = API;
 })();

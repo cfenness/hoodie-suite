@@ -100,5 +100,45 @@ function claimsFile() {
   ok(!res.findings.some(function (f) { return f.id === "claims.no_ruleset"; }), "disclaimer suppressed when a ruleset is loaded");
 })();
 
+// ---- Module 1 on a FACT table (the 24,604 bug): event grain, NOT calendar gaps ----
+function pad(i, w) { var s = "" + i; while (s.length < w) s = "0" + s; return s; }
+function factTable() {
+  // 60 players over 20 teams (player p → team p%20); 24 matches, two teams each. A player
+  // appears in a match iff his team plays it — sparse fact grain, not a continuity panel.
+  var header = ["player_id", "match_id", "match_date", "team", "goals"], rows = [], P = 60, M = 24;
+  for (var m = 0; m < M; m++) { var home = m % 20, away = (m + 5) % 20; [home, away].forEach(function (tm) {
+    for (var p = 0; p < P; p++) if (p % 20 === tm) rows.push(["P" + pad(p, 3), "M" + pad(m, 2), "2026-06-" + pad(1 + m % 28, 2), "T" + tm, "" + (m * p % 4)]);
+  }); }
+  return { header: header, rows: rows };
+}
+(function () {
+  var d = factTable(), r = DQF.coverageContinuity(d.header, d.rows);
+  ok(r.grain === "event", "fact table → EVENT grain (not a continuity panel) — avg coverage " + r.avg_coverage);
+  ok(r.findings.filter(function (f) { return f.id === "coverage.interior_gap"; }).length === 0, "NO calendar/interior gaps on a fact table (rest days ≠ gaps)");
+  ok(r.findings.filter(function (f) { return f.id === "coverage.event_gap"; }).length === 0, "clean fact table → 0 event gaps (every expected player present)");
+})();
+(function () {
+  var d = factTable(), removed = false;
+  d.rows = d.rows.filter(function (row) { if (!removed && row[0] === "P000" && row[3] === "T0") { removed = true; return false; } return true; });
+  var r = DQF.coverageContinuity(d.header, d.rows);
+  var eg = r.findings.filter(function (f) { return f.id === "coverage.event_gap"; });
+  ok(eg.length >= 1 && eg.some(function (f) { return f.evidence.entity === "P000"; }), "injected event gap caught (P000 absent from a match T0 played)");
+  ok(eg.length && eg[0].tag === "INFERENCE", "event gap is INFERENCE");
+})();
+(function () {
+  // dense rosters (4 teams × 15 players × 30 matches), then remove ~half of each player's
+  // appearances while always keeping ≥3 teammates per match (so the team still participates).
+  // This SHOULD produce a flood of event gaps — which the misfire guard must collapse to one card.
+  var header = ["player_id", "match_id", "team", "goals"], rows = [], T = 4, PER = 15, M = 30;
+  for (var m = 0; m < M; m++) { var home = m % T, away = (m + 1) % T; if (home === away) away = (home + 2) % T;
+    [home, away].forEach(function (tm) { for (var j = 0; j < PER; j++) { var p = tm * PER + j;
+      if (j >= 3 && (j + m) % 2 === 0) continue;                       // drop ~half of j≥3; keep j<3
+      rows.push(["P" + pad(p, 3), "M" + pad(m, 2), "T" + tm, "" + (m * p % 4)]); } }); }
+  var r = DQF.coverageContinuity(header, rows);
+  var meta = r.findings.filter(function (f) { return /misfire/.test(f.id); });
+  var inst = r.findings.filter(function (f) { return f.id === "coverage.event_gap"; });
+  ok(meta.length === 1 && inst.length === 0, "flood → ONE misfire meta-card, instances withheld (meta=" + meta.length + ", inst=" + inst.length + ")");
+})();
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
