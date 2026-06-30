@@ -27,6 +27,8 @@
   var UNIT_RATIO_TOLERANCE          = 0.15;  // cluster ratio within 15% of a known factor ⇒ mixed units
   var CONTINUITY_THRESHOLD          = 0.6;   // avg entity coverage ≥ this ⇒ continuity panel; else event grain
   var KEY_COMBO_COLS                = 25;    // cap columns entering the 2-col candidate-key search
+  var KEY_SEARCH_CAP                = 20000; // bound the combinatorial key SEARCH; reported distinctness is recomputed full-table
+  var SEP_CHAR = String.fromCharCode(1);     // cell separator so adjacent values cannot merge in a signature
 
   function clean(v) { return v == null ? "" : String(v).trim(); }
   function toNum(v) {
@@ -44,7 +46,7 @@
   function colStats(name, rows, idx, nTotal) {
     var n = nTotal, missing = 0, zeros = 0, negatives = 0;
     var freq = Object.create(null), distinct = 0;
-    var nums = [], numericNonblank = 0, nonblank = 0, intCount = 0;
+    var nums = [], numericNonblank = 0, nonblank = 0, intCount = 0, nonNumericCount = 0, typeTokens = Object.create(null);
     var min = Infinity, max = -Infinity, fixedWidthHits = 0, firstLen = null, sameLen = true;
     var caseFold = Object.create(null), wsHits = 0;
     for (var r = 0; r < n; r++) {
@@ -63,7 +65,7 @@
         if (x === 0) zeros++; if (x < 0) negatives++;
         if (x < min) min = x; if (x > max) max = x;
         if (isIntStr(s.replace(/,/g, ""))) intCount++;
-      }
+      } else { nonNumericCount++; if (typeTokens[s] === undefined && Object.keys(typeTokens).length < 8) typeTokens[s] = 1; }   // FIX 3 — capture non-numeric tokens for type-violation testing
     }
     var numeric = nonblank > 0 && pct(numericNonblank, nonblank) >= 0.9;
     var isInt = numeric && pct(intCount, numericNonblank) >= 0.95;
@@ -76,7 +78,8 @@
       n_distinct: distinct, distinct_rate: +pct(distinct, nonblank).toFixed(4),
       numeric: numeric, isInt: isInt, zeros: zeros, negatives: negatives,
       min: numeric ? min : null, max: numeric ? max : null,
-      nums: nums, freq: freq, fixedWidth: nonblank > 1 && sameLen, caseFrag: caseFrag, wsHits: wsHits
+      nums: nums, freq: freq, fixedWidth: nonblank > 1 && sameLen, caseFrag: caseFrag, wsHits: wsHits,
+      numericFrac: +pct(numericNonblank, nonblank).toFixed(4), nonNumericCount: nonNumericCount, typeTokens: Object.keys(typeTokens).slice(0, 5)
     };
   }
 
@@ -155,6 +158,20 @@
     return f;
   }
 
+  // FIX 3 — TYPE VIOLATION: test VALUE conformance to the (de-facto) numeric type, never trust a tag.
+  // A majority-numeric column carrying non-numeric tokens ('error', '#REF!', 'N/A', '--') is a type
+  // violation — those rows are silently dropped by naive numeric parsing. Deterministic, Tier 1.
+  // Family is "type" (not "measure") so the certified-role muter never suppresses it.
+  function typeViolationCheck(st, out) {
+    if (st.numericFrac >= 0.5 && st.numericFrac < 1 && st.nonNumericCount > 0) {
+      var ex = (st.typeTokens || []).map(function (t) { return "'" + t + "'"; }).join(", ");
+      out.push(F("type.violation", "column", [st.name], DETERMINISTIC, "high",
+        "Type violation: non-numeric tokens in a numeric column",
+        st.nonNumericCount + " of " + st.nonblank + " values are non-numeric (" + ex + ") in an otherwise-numeric column — naive parsing silently drops these rows.",
+        { rows_affected: st.nonNumericCount, tokens: st.typeTokens, numeric_frac: st.numericFrac }));
+    }
+  }
+
   function measureChecks(st, role, out) {
     var c = [st.name];
     // Range plausibility — negatives in a field whose name implies a non-negative quantity.
@@ -163,11 +180,13 @@
       out.push(F("measure.range", "column", c, DETERMINISTIC, "high",
         "Negative values in a should-be-non-negative field",
         st.negatives + " of " + st.nonblank + " values are negative.",
-        { negatives: st.negatives, min: st.min, max: st.max }));
+        { rows_affected: st.negatives, negatives: st.negatives, min: st.min, max: st.max }));
     // Percent out of range
-    if (/pct|percent|rate|share|accuracy/i.test(st.name) && st.max != null && st.max > 100 && st.max <= 100000)
+    if (/pct|percent|rate|share|accuracy/i.test(st.name) && st.max != null && st.max > 100 && st.max <= 100000) {
+      var overN = st.nums.filter(function (x) { return x > 100; }).length;
       out.push(F("measure.range_pct", "column", c, DETERMINISTIC, "medium",
-        "Percent-like field exceeds 100", "max = " + st.max, { max: st.max }));
+        "Percent-like field exceeds 100", overN + " values exceed 100 (max = " + st.max + ")", { rows_affected: overN, over_100: overN, max: st.max }));
+    }
 
     // Cap / sentinel — mass piled at one exact value, or a thin band hugging the max.
     var modeVal = null, modeN = 0;
@@ -176,7 +195,7 @@
       out.push(F("measure.cap_sentinel", "column", c, DETERMINISTIC, "medium",
         "Mass piled at a single value (cap/sentinel)",
         Math.round(pct(modeN, st.nonblank) * 100) + "% of values equal " + modeVal + " — likely a cap or sentinel.",
-        { value: modeVal, count: modeN, fraction: +pct(modeN, st.nonblank).toFixed(3) }));
+        { rows_affected: modeN, value: modeVal, count: modeN, fraction: +pct(modeN, st.nonblank).toFixed(3) }));
     else if (st.nonblank >= 30 && st.max != null && st.min != null && st.max > st.min) {
       var band = st.max - (st.max - st.min) * 0.02, near = 0;
       for (var i = 0; i < st.nums.length; i++) if (st.nums[i] >= band) near++;
@@ -184,7 +203,7 @@
         out.push(F("measure.cap_band", "column", c, DETERMINISTIC, "medium",
           "Values bunch in a thin band at the maximum (likely capped)",
           Math.round(pct(near, st.nums.length) * 100) + "% of values sit within 2% of the max (" + st.max + ").",
-          { max: st.max, near: near, fraction: +pct(near, st.nums.length).toFixed(3) }));
+          { rows_affected: near, max: st.max, near: near, fraction: +pct(near, st.nums.length).toFixed(3) }));
     }
 
     // Scale / unit consistency — bimodality across a ~100x or ~1000x gap (mixed units / decimal shift).
@@ -198,7 +217,7 @@
           out.push(F("measure.scale_unit", "column", c, DETERMINISTIC, "high",
             "Two value clusters ~" + Math.round(Math.pow(10, gap)) + "× apart (mixed units / shifted decimal)",
             "Distribution is bimodal across a " + gap.toFixed(1) + "-decade gap — likely mixed units or a misplaced decimal.",
-            { gap_decades: +gap.toFixed(2), lower_n: loN, upper_n: hiN }));
+            { rows_affected: Math.min(loN, hiN), gap_decades: +gap.toFixed(2), lower_n: loN, upper_n: hiN }));
       }
     }
 
@@ -206,14 +225,14 @@
     if (st.null_rate >= 0.2)
       out.push(F("measure.nulls", "column", c, DETERMINISTIC, st.null_rate >= 0.5 ? "high" : "medium",
         Math.round(st.null_rate * 100) + "% missing",
-        st.missing + " of " + st.n + " rows are blank.", { missing: st.missing, null_rate: st.null_rate }));
+        st.missing + " of " + st.n + " rows are blank.", { rows_affected: st.missing, missing: st.missing, null_rate: st.null_rate }));
 
     // Zero-inflation (exact) — any mean is diluted.
     if (st.nonblank >= 20 && pct(st.zeros, st.nonblank) >= 0.3)
       out.push(F("measure.zero_inflation", "column", c, DETERMINISTIC, "medium",
         Math.round(pct(st.zeros, st.nonblank) * 100) + "% of values are exactly 0",
         "Most values are zero — any average of this field is diluted; report a non-zero mean separately.",
-        { zeros: st.zeros, fraction: +pct(st.zeros, st.nonblank).toFixed(3) }));
+        { rows_affected: st.zeros, zeros: st.zeros, fraction: +pct(st.zeros, st.nonblank).toFixed(3) }));
   }
 
   function dimensionChecks(st, rows, header, roles, out) {
@@ -232,11 +251,11 @@
     if (st.wsHits > 0)
       out.push(F("dimension.whitespace", "column", c, DETERMINISTIC, "medium",
         "Leading/trailing whitespace fragments values",
-        st.wsHits + " values carry surrounding whitespace (e.g. \"Spain \" ≠ \"Spain\").", { affected: st.wsHits }));
+        st.wsHits + " values carry surrounding whitespace (e.g. \"Spain \" ≠ \"Spain\").", { rows_affected: st.wsHits, affected: st.wsHits }));
     if (st.caseFrag > 0)
       out.push(F("dimension.casing", "column", c, DETERMINISTIC, "medium",
         st.caseFrag + " value(s) appear under multiple casings",
-        "The same value occurs with different capitalization — a group-by will split them.", { groups: st.caseFrag }));
+        "The same value occurs with different capitalization — a group-by will split them.", { rows_affected: st.caseFrag, groups: st.caseFrag }));
 
     // Identity / collision integrity — if it looks like a key, does it actually identify rows?
     if (st.distinct_rate >= 0.9 && st.nonblank > 20) {
@@ -245,7 +264,7 @@
         out.push(F("dimension.collision", "column", c, DETERMINISTIC, "high",
           "Key-like field has collisions with conflicting attributes",
           coll.dupedKeys + " value(s) recur with DIFFERING other-column values (e.g. " + coll.example + ") — not a clean key.",
-          { duped_keys: coll.dupedKeys, conflicting_column: coll.col }));
+          { rows_affected: coll.dupedKeys, duped_keys: coll.dupedKeys, conflicting_column: coll.col }));
     }
   }
 
@@ -269,25 +288,24 @@
   }
 
   // ---------------- dataset-level checks ----------------
-  function datasetChecks(header, rows, stats, roles, out, prov, profile) {
-    // Pairwise (O(cols²)) + full-row-sig checks scan a row SAMPLE so wide/large files don't
-    // freeze the page; findings are labeled "sampled" when the sample is used.
+  function datasetChecks(header, rows, stats, roles, out, prov, profile, dedup) {
+    // Pairwise (O(cols^2)) checks scan a row SAMPLE so wide/large files do not freeze the page.
     var n = rows.length, capRows = Math.min(n, PAIR_CAP), pairProv = n > PAIR_CAP ? "sampled" : "full";
-    // Exact duplicate rows (DET)
-    var seen = Object.create(null), dups = 0;
-    for (var r = 0; r < capRows; r++) { var sig = rows[r].map(clean).join(""); if (seen[sig]) dups++; else seen[sig] = 1; }
+    // Exact duplicate rows (DET) - canonical FULL-table count from computeDedup (FIX 1b); identical to
+    // the grain header number, never recomputed on a sample.
+    var dups = dedup ? dedup.exact_dupes : 0, rawN = dedup ? dedup.raw_n : n;
     if (dups > 0)
-      out.push(F("dataset.exact_duplicates", "dataset", [], DETERMINISTIC, dups > n * 0.01 ? "high" : "medium",
-        dups + " exact duplicate row(s)", dups + " rows are byte-identical to an earlier row.",
-        { duplicates: dups }, null, pairProv));
+      out.push(F("dataset.exact_duplicates", "dataset", [], DETERMINISTIC, dups > rawN * 0.01 ? "high" : "medium",
+        dups.toLocaleString() + " exact duplicate rows", dups.toLocaleString() + " rows are byte-identical to an earlier row (full-table count over " + rawN.toLocaleString() + " rows).",
+        { rows_affected: dups, exact_duplicates: dups, raw_n: rawN }, null, "full"));
 
     // UNIQUENESS — test the inferred candidate KEY only (Stage 0). A foreign key or dimension
     // repeating in a fact table is correct, not a defect — those are NEVER flagged here.
     if (profile && profile.candidate_key && profile.key_distinct_rate != null && profile.key_distinct_rate < 0.999)
       out.push(F("dataset.key_not_unique", "dataset", profile.candidate_key, DETERMINISTIC, "high",
-        "Candidate key (" + profile.candidate_key.join(", ") + ") is not unique",
-        "Only " + Math.round(profile.key_distinct_rate * 100) + "% of rows are distinct on the inferred key — either the true grain is finer or there are duplicate key tuples.",
-        { candidate_key: profile.candidate_key, key_distinct_rate: profile.key_distinct_rate }, null, pairProv));
+        "Candidate key (" + profile.candidate_key.join(", ") + ") has " + (profile.key_collisions || 0).toLocaleString() + " collisions",
+        (profile.key_collisions || 0).toLocaleString() + " distinct rows share a key with a differing row (same key, different values) - NOT exact duplicates. Either the true grain is finer or these are conflicting records.",
+        { rows_affected: profile.key_collisions || 0, candidate_key: profile.candidate_key, key_distinct_rate: profile.key_distinct_rate, key_collisions: profile.key_collisions || 0 }, null, "full"));
 
     // Redundancy / co-variation: two low-card dimensions that map 1:1 (summing across both double-counts).
     var dimIdx = [];   // grouping dims only — exclude near-unique keys (they co-vary 1:1 trivially)
@@ -368,27 +386,43 @@
     }
     return deps;
   }
-  function profileGrain(header, rows, roles, stats) {
-    var n = rows.length;
+  // FIX 1b - ONE canonical exact-duplicate operation on the FULL table, shared by the grain resolver
+  // and the Tier-1 dup finding so no two surfaces report different "duplicate" counts. EXACT duplicate =
+  // byte-identical row; KEY collisions (same key, differing values) are counted separately below.
+  function computeDedup(rows) {
+    var seen = Object.create(null), distinctRows = [];
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r], sig = ""; for (var c = 0; c < row.length; c++) sig += clean(row[c]) + SEP_CHAR;
+      if (seen[sig] === undefined) { seen[sig] = 1; distinctRows.push(row); }
+    }
+    return { raw_n: rows.length, distinct_n: distinctRows.length, exact_dupes: rows.length - distinctRows.length, distinctRows: distinctRows };
+  }
+  function profileGrain(header, rows, roles, stats, dedup) {
+    var n = rows.length;                  // rows == sampled work, used only for FD/entity scans
+    // FIX 1/1b - dedup computed ONCE on the FULL table (computeDedup, in assess) and shared, so the count
+    // here equals the Tier-1 exact-duplicate finding. The combinatorial key SEARCH is bounded to
+    // KEY_SEARCH_CAP rows; the REPORTED distinctness is recomputed on the full deduped set.
+    var drows = dedup.distinctRows, nd = dedup.distinct_n, dupes_removed = dedup.exact_dupes;
+    function distinctCount(idxs, src, m) { var st = Object.create(null), d = 0; for (var r = 0; r < m; r++) { var k = ""; for (var jj = 0; jj < idxs.length; jj++) k += clean(src[r][idxs[jj]]) + SEP_CHAR; if (st[k] === undefined) { st[k] = 1; d++; } } return d; }
+    function distinctRate(idxs, src, m) { return m ? distinctCount(idxs, src, m) / m : 0; }
+    var srows = (nd > KEY_SEARCH_CAP) ? drows.slice(0, KEY_SEARCH_CAP) : drows, searchN = srows.length;
     var keyish = [];   // key-eligible: not a measure (by role OR name), complete, >1 distinct
     header.forEach(function (h, i) { if (roles[i].role !== "measure" && !RE_QTY.test(h) && !RE_MONEY.test(h) && stats[i].missing === 0 && stats[i].n_distinct > 1) keyish.push(i); });
 
-    // candidate key — smallest set reaching the distinct target. Do NOT assume a lone *_id.
+    // candidate key — smallest set reaching the distinct target ON THE DEDUPED SET. No lone *_id assumption.
     var key = null;
-    for (var i = 0; i < keyish.length; i++) if (stats[keyish[i]].distinct_rate >= CANDIDATE_KEY_DISTINCT_TARGET) { key = [keyish[i]]; break; }
+    for (var i = 0; i < keyish.length; i++) if (distinctRate([keyish[i]], srows, searchN) >= CANDIDATE_KEY_DISTINCT_TARGET) { key = [keyish[i]]; break; }
     if (!key) {
       var cand = keyish.filter(function (idx) { return stats[idx].distinct_rate >= 0.02; })
                        .sort(function (a, b) { return stats[b].distinct_rate - stats[a].distinct_rate; }).slice(0, KEY_COMBO_COLS);
       outer:
       for (var a = 0; a < cand.length; a++) for (var b = a + 1; b < cand.length; b++) {
-        var ia = cand[a], ib = cand[b], seen = Object.create(null), d = 0;
-        for (var r = 0; r < n; r++) { var k = clean(rows[r][ia]) + "" + clean(rows[r][ib]); if (seen[k] === undefined) { seen[k] = 1; d++; } }
-        if (pct(d, n) >= CANDIDATE_KEY_DISTINCT_TARGET) { key = [ia, ib]; break outer; }
+        if (distinctRate([cand[a], cand[b]], srows, searchN) >= CANDIDATE_KEY_DISTINCT_TARGET) { key = [cand[a], cand[b]]; break outer; }
       }
     }
     if (!key) return {
       grain: "ambiguous", ambiguous: true, candidate_key: null, entity: null, axis: null, axis_is_event: false,
-      entity_group: null, fds: {}, column_roles: {},
+      entity_group: null, fds: {}, column_roles: {}, dupes_removed: dupes_removed, exact_dupes: dupes_removed, key_collisions: null,
       grain_statement: "Grain is ambiguous — no column set of ≤2 uniquely identifies rows. Grain-dependent detectors (uniqueness, coverage) are withheld; value-integrity checks still run."
     };
 
@@ -435,11 +469,23 @@
     });
 
     var keyNames = key.map(function (ki) { return header[ki]; });
+    // FIX 1b - distinct KEY tuples on the FULL deduped set; rawRate / dedupRate / key_collisions all
+    // derive from this ONE count, so every reported number reconciles with the dedup arithmetic.
+    var keyDistinctCount = distinctCount(key, drows, nd);
+    var dedupRate = +(nd ? keyDistinctCount / nd : 0).toFixed(4);
+    var rawRate = +(dedup.raw_n ? keyDistinctCount / dedup.raw_n : 0).toFixed(4);
+    var key_collisions = nd - keyDistinctCount;
+    var resolvedPostDedup = dupes_removed > 0 && rawRate < CANDIDATE_KEY_DISTINCT_TARGET && dedupRate >= CANDIDATE_KEY_DISTINCT_TARGET;
     var stmt = "one row per " + keyNames.map(function (k) { return k.replace(/_(id|key|code|no)$/i, ""); }).join(" per ");
+    if (dupes_removed > 0) stmt += ", resolved after removing " + dupes_removed.toLocaleString() + " exact-duplicate row" + (dupes_removed === 1 ? "" : "s");
+    if (key_collisions > 0) stmt += (dupes_removed > 0 ? ". " : ", with ") + key_collisions.toLocaleString() + " key collision" + (key_collisions === 1 ? "" : "s") + " remaining (same key, differing values) - see Tier 2";
+    if (resolvedPostDedup) stmt += " (raw distinctness " + (rawRate * 100).toFixed(1) + "% -> " + (dedupRate * 100).toFixed(1) + "% deduped)";
     return {
       grain: key.length >= 2 ? "fact" : "entity", ambiguous: false, candidate_key: keyNames,
       entity: entity, axis: axis, axis_is_event: axis_is_event, event_date: event_date, entity_group: entity_group,
-      fds: fds, column_roles: column_roles, key_distinct_rate: keyDistinct(rows, key, n), grain_statement: stmt
+      fds: fds, column_roles: column_roles, key_distinct_rate: dedupRate, key_distinct_rate_raw: rawRate,
+      dupes_removed: dupes_removed, exact_dupes: dupes_removed, key_collisions: key_collisions,
+      grain_resolved_post_dedup: resolvedPostDedup, grain_statement: stmt
     };
   }
   function roleByName(roles, name) { for (var i = 0; i < roles.length; i++) if (roles[i].name === name) return roles[i].role; return null; }
@@ -489,10 +535,12 @@
     var stats = header.map(function (h, i) { return colStats(h, work, i, nWork); });
     var roles = header.map(function (h, i) { return assignRole(h, stats[i]); });
     // STAGE 0: profile grain BEFORE any detector. Downstream reads this, not column names.
-    var profile = profileGrain(header, work, roles, stats);
+    var dedup = computeDedup(rows);   // FIX 1b - ONE canonical full-table exact-dup result, shared by grain + dataset checks
+    var profile = profileGrain(header, work, roles, stats, dedup);
 
     var findings = [];
     header.forEach(function (h, i) {
+      typeViolationCheck(stats[i], findings);                                // FIX 3 — verify values vs numeric type, before profiling
       if (roles[i].role === "measure") measureChecks(stats[i], roles[i], findings);
       else dimensionChecks(stats[i], work, header, roles, findings);
       // Role uncertainty is itself a finding — surfaced, never silently propagated.
@@ -501,9 +549,9 @@
           "Role needs confirmation: " + roles[i].role + (roles[i].disagreement ? " (name/value conflict)" : roles[i].ambiguous ? " (intent-dependent)" : ""),
           roles[i].reasons.join("; "), { role: roles[i].role }, roles[i].confidence));
     });
-    datasetChecks(header, work, stats, roles, findings, provenance, profile);
+    datasetChecks(header, work, stats, roles, findings, provenance, profile, dedup);
     // honest provenance: when the file was sampled, no finding may claim full-file exactness
-    if (provenance.sampled) findings.forEach(function (f) { if (f.provenance === "full") f.provenance = "sampled"; });
+    if (provenance.sampled) findings.forEach(function (f) { if (f.provenance === "full" && f.id !== "dataset.exact_duplicates" && f.id !== "dataset.key_not_unique") f.provenance = "sampled"; });
     // STAGE 2: misfire meta-guard — collapse any detector that over-fires for this grain.
     findings = misfireGuard(findings, nWork, profile.grain_statement);
 
