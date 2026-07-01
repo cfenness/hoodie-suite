@@ -94,7 +94,7 @@
   <header class="top">
     <div class="eyebrow">Hoodie · Beverage Icon Set</div>
     <h1>Original category icons — bottles, cans &amp; glasses</h1>
-    <p class="sub">Line-drawn from scratch (no stock source), one editable color per icon. Click any icon to copy it as an image (the SVG source comes along as a paste-as-text alternative). The grid at the bottom is a live test of the anonymous position layout.</p>
+    <p class="sub">Line-drawn from scratch (no stock source), one editable color per icon. Click any icon to download it as an SVG (vector) — insert straight into PowerPoint/Docs and it scales cleanly; ⌥-click copies the SVG source. The grid at the bottom is a live test of the anonymous position layout.</p>
   </header>
 
   <div class="controls">
@@ -230,52 +230,41 @@ function build(list, mount){
     <div class="cell" data-key="${k}">
       ${svg(I[k])}
       <span class="nm">${label}</span>
-      <span class="copied">Copied ✓</span>
+      <span class="copied">SVG saved ✓</span>
     </div>`).join('');
 }
 build(BOTTLES,'bottles');
 build(GLASSES,'glasses');
 
-// Copy the RENDERED icon as an image (PNG) so pasting gives the logo, not markup. The SVG source is
-// attached as a text/plain alternative so code targets still receive the SVG. Falls back to copying
-// the SVG text where the image clipboard isn't available.
-function resolvedSvg(k, px){
+// Click DOWNLOADS the icon as a true .svg (vector) file. Clipboard can't carry a pasteable SVG —
+// browsers only allow text/plain, text/html, image/png on the clipboard, so a "copy" yields raster
+// or source, never vector. A downloaded .svg drops straight into PowerPoint (Insert ▸ Picture) and
+// scales cleanly. Colour + stroke are baked in from the current controls. ⌥-click copies the SVG source.
+function resolvedSvg(k){
   const color=getComputedStyle(root).getPropertyValue('--icon').trim()||'#1a2332';
   const w=getComputedStyle(root).getPropertyValue('--stroke').trim()||'1.5';
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="${px}" height="${px}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${I[k]}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="128" height="128" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${I[k]}</svg>`;
 }
-function svgToPngBlob(svgStr, px){
-  return new Promise((resolve,reject)=>{
-    const url=URL.createObjectURL(new Blob([svgStr],{type:'image/svg+xml'}));
-    const img=new Image();
-    img.onload=()=>{ const cv=document.createElement('canvas'); cv.width=px; cv.height=px;
-      const ctx=cv.getContext('2d'); ctx.clearRect(0,0,px,px); ctx.drawImage(img,0,0,px,px);
-      URL.revokeObjectURL(url); cv.toBlob(b=> b?resolve(b):reject(new Error('toBlob')), 'image/png'); };
-    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('img')); };
-    img.src=url;
-  });
-}
-document.querySelectorAll('.cell').forEach(c=>{
-  c.addEventListener('click', async ()=>{
-    const k=c.dataset.key;
-    const done=()=>{c.classList.add('show');setTimeout(()=>c.classList.remove('show'),900);};
-    try{
-      if(!(navigator.clipboard && window.ClipboardItem)) throw new Error('no image clipboard');
-      const png=await svgToPngBlob(resolvedSvg(k,256), 256);
-      const code=new Blob([fullSvg(I[k])],{type:'text/plain'});
-      await navigator.clipboard.write([new ClipboardItem({'image/png':png,'text/plain':code})]);
-      done();
-    }catch(e){
-      const txt=fullSvg(I[k]);   // fallback: copy the SVG source
-      if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done).catch(()=>{fallback(txt);done();}); }
-      else { fallback(txt); done(); }
-    }
-  });
-});
 function fallback(txt){
   const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);
   ta.select();try{document.execCommand('copy');}catch(e){}document.body.removeChild(ta);
 }
+document.querySelectorAll('.cell').forEach(c=>{
+  c.addEventListener('click', (e)=>{
+    const k=c.dataset.key;
+    const done=()=>{c.classList.add('show');setTimeout(()=>c.classList.remove('show'),900);};
+    if(e.altKey){                                   // ⌥-click → copy SVG source as text
+      const txt=fullSvg(I[k]);
+      if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done).catch(()=>{fallback(txt);done();}); }
+      else { fallback(txt); done(); }
+      return;
+    }
+    const url=URL.createObjectURL(new Blob([resolvedSvg(k)],{type:'image/svg+xml'}));   // download .svg (vector)
+    const a=document.createElement('a'); a.href=url; a.download=k+'.svg'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    done();
+  });
+});
 
 // controls
 const root=document.documentElement;
