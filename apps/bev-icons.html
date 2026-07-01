@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beverage Icon Set + Position Grid</title>
+<style>
+  :root{
+    --ink:#1a2332; --paper:#ffffff; --panel:#f7f8fa; --line:#dde2e9;
+    --muted:#6b7684; --accent:#c17a2b;
+    --up:#2f8f6b; --flat:#97a1ad; --down:#c0503f;
+    --icon:#1a2332; --stroke:1.5;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--panel); color:var(--ink);
+    font-family:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+    line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 24px 80px}
+  header.top{margin-bottom:8px}
+  .eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  h1{font-size:26px;line-height:1.15;margin:6px 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:14px;max-width:60ch}
+
+  .controls{
+    display:flex;flex-wrap:wrap;gap:20px;align-items:center;
+    background:var(--paper);border:1px solid var(--line);border-radius:12px;
+    padding:14px 18px;margin:22px 0 30px;
+  }
+  .ctrl{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted)}
+  .ctrl label{font-weight:500}
+  input[type="range"]{width:120px;accent-color:var(--accent)}
+  input[type="color"]{width:34px;height:26px;border:1px solid var(--line);border-radius:6px;background:none;padding:0;cursor:pointer}
+  .swatches{display:flex;gap:6px}
+  .sw{width:22px;height:22px;border-radius:6px;border:1px solid rgba(0,0,0,.08);cursor:pointer}
+  .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{border:0;background:var(--paper);color:var(--muted);font:inherit;font-size:12px;padding:5px 11px;cursor:pointer}
+  .seg button.on{background:var(--ink);color:#fff}
+
+  h2.section{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+    margin:34px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line);font-weight:600}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px}
+  .cell{
+    background:var(--paper);border:1px solid var(--line);border-radius:10px;
+    padding:14px 8px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;
+    cursor:pointer;transition:border-color .12s, transform .12s;position:relative;
+  }
+  .cell:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .cell svg{color:var(--icon);width:44px;height:44px;display:block}
+  .cell .nm{font-size:11px;color:var(--muted);text-align:center;letter-spacing:.02em}
+  .cell .copied{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:var(--ink);color:#fff;font-size:11px;letter-spacing:.05em;border-radius:10px;opacity:0;pointer-events:none;transition:opacity .15s}
+  .cell.show .copied{opacity:1}
+  .hint{font-size:12px;color:var(--muted);margin:-4px 0 0}
+
+  /* dark test surface */
+  body.dark{--panel:#141a24;--paper:#1c2531;--line:#2b3644;--ink:#e8ecf1;--muted:#8b96a5}
+
+  /* ---- position grid ---- */
+  .board{
+    background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:22px;margin-top:14px;
+  }
+  .plane-wrap{display:flex;gap:14px}
+  .yaxis{writing-mode:vertical-rl;transform:rotate(180deg);font-size:11px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--muted);align-self:center;font-weight:600}
+  .plane-col{flex:1}
+  .plane{
+    position:relative;width:100%;aspect-ratio:16/10;border:1px solid var(--line);border-radius:8px;
+    background:
+      linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat,
+      linear-gradient(var(--line),var(--line)) center/100% 1px no-repeat,
+      var(--panel);
+    overflow:hidden;
+  }
+  .quad-label{position:absolute;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);opacity:.75}
+  .token{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;transition:opacity .2s}
+  .token svg{width:26px;height:26px;display:block}
+  .token .tlab{font-size:9px;color:var(--muted);white-space:nowrap;letter-spacing:.02em}
+  .xaxis{text-align:center;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+    margin-top:8px;font-weight:600}
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:16px;font-size:12px;color:var(--muted);align-items:center}
+  .legend .k{display:flex;align-items:center;gap:6px}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .why{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-top:16px;font-size:13px;color:var(--muted)}
+  .why b{color:var(--ink);font-weight:600}
+  code{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">Hoodie · Beverage Icon Set</div>
+    <h1>Original category icons — bottles, cans &amp; glasses</h1>
+    <p class="sub">Line-drawn from scratch (no stock source), one editable color per icon. Click any icon to copy its SVG. The grid at the bottom is a live test of the anonymous position layout.</p>
+  </header>
+
+  <div class="controls">
+    <div class="ctrl">
+      <label for="col">Icon color</label>
+      <input type="color" id="col" value="#1a2332">
+      <div class="swatches">
+        <div class="sw" style="background:#1a2332" data-c="#1a2332"></div>
+        <div class="sw" style="background:#c17a2b" data-c="#c17a2b"></div>
+        <div class="sw" style="background:#2f8f6b" data-c="#2f8f6b"></div>
+        <div class="sw" style="background:#c0503f" data-c="#c0503f"></div>
+        <div class="sw" style="background:#3a6ea5" data-c="#3a6ea5"></div>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label for="sw">Stroke</label>
+      <input type="range" id="sw" min="1" max="3" step="0.25" value="1.5">
+    </div>
+    <div class="ctrl">
+      <label>Test surface</label>
+      <div class="seg" id="surf">
+        <button class="on" data-s="light">Light</button>
+        <button data-s="dark">Dark</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="hint">Tip: color is a single property (<code>currentColor</code>), so in the builder each token's color can be bound to a measure — see the grid below.</p>
+
+  <h2 class="section">Bottles &amp; cans</h2>
+  <div class="grid" id="bottles"></div>
+
+  <h2 class="section">Glasses &amp; serves</h2>
+  <div class="grid" id="glasses"></div>
+
+  <h2 class="section">Anonymous position grid — live test</h2>
+  <div class="board">
+    <div class="controls" style="margin:0 0 18px">
+      <div class="ctrl">
+        <label>Labels</label>
+        <div class="seg" id="anon">
+          <button data-a="named">Named</button>
+          <button class="on" data-a="anon">Anonymous</button>
+        </div>
+      </div>
+      <div class="ctrl">
+        <label>Token</label>
+        <div class="seg" id="tok">
+          <button class="on" data-t="glass">Glass</button>
+          <button data-t="bottle">Bottle</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="plane-wrap">
+      <div class="yaxis">Velocity &nbsp;→</div>
+      <div class="plane-col">
+        <div class="plane" id="plane">
+          <div class="quad-label" style="left:10px;top:8px">Slow · Premium</div>
+          <div class="quad-label" style="right:10px;top:8px">Fast · Premium</div>
+          <div class="quad-label" style="left:10px;bottom:8px">Slow · Value</div>
+          <div class="quad-label" style="right:10px;bottom:8px">Fast · Value</div>
+        </div>
+        <div class="xaxis">Price index &nbsp;→</div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span style="color:var(--ink);font-weight:600">Color = trend</span>
+      <span class="k"><span class="dot" style="background:var(--up)"></span>Growing</span>
+      <span class="k"><span class="dot" style="background:var(--flat)"></span>Flat</span>
+      <span class="k"><span class="dot" style="background:var(--down)"></span>Declining</span>
+    </div>
+
+    <div class="why">
+      <b>Why this can work without confusing people:</b> the user never places anything by hand. They pick four fields from the certified table — <b>x-axis</b>, <b>y-axis</b>, <b>which icon</b> (a category dimension), and <b>color</b> (a trend measure). The grid auto-plots. Position, icon, and color each carry exactly one variable, so it reads as market structure at a glance. "Anonymous" just means the token is the category, not the brand name — toggle it above to feel the difference.
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- icon geometry (0 0 48 48, stroke=currentColor, fill=none) ----
+const I = {
+  // bottles & cans
+  spirits:`<rect x="21" y="4" width="6" height="3" rx="0.5"/><path d="M21.5 7 L21.5 15 Q21.5 17 19.5 18 Q16 19.5 16 24 L16 42 Q16 44 18 44 L30 44 Q32 44 32 42 L32 24 Q32 19.5 28.5 18 Q26.5 17 26.5 15 L26.5 7"/><rect x="19" y="27" width="10" height="9" rx="1"/>`,
+  whiskey:`<rect x="21" y="5" width="6" height="3" rx="0.5"/><path d="M21.5 8 L21.5 12.5 Q21.5 14 19.5 15 Q15 16.5 15 20.5 L15 42 Q15 44 17 44 L31 44 Q33 44 33 42 L33 20.5 Q33 16.5 28.5 15 Q26.5 14 26.5 12.5 L26.5 8"/>`,
+  vodka:`<rect x="21.5" y="4" width="5" height="3" rx="0.5"/><path d="M22 7 L22 16 Q22 18 20.5 19 Q18 20 18 24 L18 42 Q18 44 19.5 44 L28.5 44 Q30 44 30 42 L30 24 Q30 20 27.5 19 Q26 18 26 16 L26 7"/>`,
+  gin:`<rect x="21" y="5" width="6" height="3" rx="0.5"/><path d="M21.5 8 L21.5 13 Q21.5 15 19 16 Q15 18 15 23 L15 42 Q15 44 17 44 L31 44 Q33 44 33 42 L33 23 Q33 18 29 16 Q26.5 15 26.5 13 L26.5 8"/>`,
+  rum:`<rect x="21" y="5" width="6" height="3" rx="0.5"/><path d="M21.5 8 L21.5 14 Q21.5 16 19.5 17 Q16 18.5 16 23 L16 42 Q16 44 18 44 L30 44 Q32 44 32 42 L32 23 Q32 18.5 28.5 17 Q26.5 16 26.5 14 L26.5 8"/><path d="M16 30 L32 30"/>`,
+  tequila:`<rect x="21.5" y="4" width="5" height="3" rx="0.5"/><path d="M22 7 L22 15 Q22 17 21 18 Q19 20 19 24 L17 42 Q17 44 19 44 L29 44 Q31 44 31 42 L29 24 Q29 20 27 18 Q26 17 26 15 L26 7"/>`,
+  liqueur:`<rect x="21.5" y="9" width="5" height="3" rx="0.5"/><path d="M22 12 L22 16 Q22 17 21 18 Q17 20 17 25 L17 42 Q17 44 19 44 L29 44 Q31 44 31 42 L31 25 Q31 20 27 18 Q26 17 26 16 L26 12"/>`,
+  redwine:`<rect x="22" y="4" width="4" height="3" rx="0.3"/><path d="M22 7 L22 17 Q22 18 21 19 Q17.5 22 17.5 27 L17.5 43 Q17.5 44 18.5 44 L29.5 44 Q30.5 44 30.5 43 L30.5 27 Q30.5 22 27 19 Q26 18 26 17 L26 7"/>`,
+  whitewine:`<rect x="22" y="4" width="4" height="3" rx="0.3"/><path d="M22 7 L22 18 Q22 19 21.5 20 Q19 22.5 19 27 L19 43 Q19 44 20 44 L28 44 Q29 44 29 43 L29 27 Q29 22.5 26.5 20 Q26 19 26 18 L26 7"/>`,
+  champagne:`<rect x="21.5" y="4" width="5" height="3.5" rx="0.3"/><path d="M21.5 7.5 L21.5 15 Q21.5 16 20.5 17 Q15.5 20 15.5 28 L15.5 43 Q15.5 44 16.5 44 L31.5 44 Q32.5 44 32.5 43 L32.5 28 Q32.5 20 27.5 17 Q26.5 16 26.5 15 L26.5 7.5"/><path d="M21.5 11 L26.5 11"/>`,
+  beer:`<rect x="21.5" y="3" width="5" height="3" rx="0.5"/><path d="M22 6 L22 18 Q22 19.5 21 20.5 Q19.5 21.5 19.5 25 L19.5 43 Q19.5 44 20.5 44 L27.5 44 Q28.5 44 28.5 43 L28.5 25 Q28.5 21.5 27 20.5 Q26 19.5 26 18 L26 6"/>`,
+  seltzer:`<rect x="17.5" y="6" width="13" height="38" rx="2.5"/><path d="M17.8 11 Q24 12.6 30.2 11"/><path d="M20.5 8.6 L27.5 8.6"/>`,
+  // glasses & serves
+  rocks:`<path d="M15 17 L17.5 42 Q17.6 43.5 19 43.5 L29 43.5 Q30.4 43.5 30.5 42 L33 17 Z"/><path d="M15.7 22 L32.3 22"/>`,
+  highball:`<path d="M18 9 L19.5 42 Q19.6 43.5 21 43.5 L27 43.5 Q28.4 43.5 28.5 42 L30 9 Z"/>`,
+  shot:`<path d="M18 27 L19.3 42 Q19.4 43.5 20.8 43.5 L27.2 43.5 Q28.6 43.5 28.7 42 L30 27 Z"/>`,
+  pint:`<path d="M16 8 L18.5 42 Q18.6 43.5 20 43.5 L28 43.5 Q29.4 43.5 29.5 42 L32 8 Z"/>`,
+  martini:`<path d="M11 11 L24 26 L37 11 Z"/><path d="M24 26 L24 42"/><path d="M18 42 L30 42"/>`,
+  coupe:`<path d="M13 13 Q13 22 24 22 Q35 22 35 13"/><path d="M13 13 L35 13"/><path d="M24 22 L24 42"/><path d="M18 42 L30 42"/>`,
+  flute:`<path d="M20.5 8 Q20.5 24 24 27 Q27.5 24 27.5 8 Z"/><path d="M24 27 L24 42"/><path d="M19.5 42 L28.5 42"/>`,
+  redwineglass:`<path d="M16 11 Q16 27 24 28 Q32 27 32 11"/><path d="M16 11 Q16 9 24 9 Q32 9 32 11"/><path d="M24 28 L24 42"/><path d="M17 42 L31 42"/>`,
+  whitewineglass:`<path d="M18 11 Q18 25 24 26.5 Q30 25 30 11"/><path d="M18 11 Q18 9.5 24 9.5 Q30 9.5 30 11"/><path d="M24 26.5 L24 42"/><path d="M18 42 L30 42"/>`,
+  snifter:`<path d="M15 23 Q15 34 24 34 Q33 34 33 23 Q33 19 27 18.5 L21 18.5 Q15 19 15 23 Z"/><path d="M24 34 L24 41"/><path d="M19 41 L29 41"/>`,
+  margarita:`<path d="M11 10 L20 18 L16 20 Q24 22 32 20 L28 18 L37 10"/><path d="M24 20 L24 42"/><path d="M18 42 L30 42"/>`,
+};
+
+const BOTTLES = [
+  ['spirits','Spirits (generic)'],['whiskey','Whiskey'],['vodka','Vodka'],['gin','Gin'],
+  ['rum','Rum'],['tequila','Tequila'],['liqueur','Liqueur'],['redwine','Red wine'],
+  ['whitewine','White wine'],['champagne','Champagne / sparkling'],['beer','Beer'],['seltzer','Seltzer can'],
+];
+const GLASSES = [
+  ['rocks','Rocks / Old Fashioned'],['highball','Highball / Collins'],['shot','Shot'],['pint','Pint'],
+  ['martini','Martini'],['coupe','Coupe'],['flute','Flute'],['redwineglass','Red wine glass'],
+  ['whitewineglass','White wine glass'],['snifter','Snifter'],['margarita','Margarita'],
+];
+
+function svg(inner){
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="var(--stroke)" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+}
+function fullSvg(inner){
+  const w = getComputedStyle(document.documentElement).getPropertyValue('--stroke').trim()||'1.5';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+}
+
+function build(list, mount){
+  const el = document.getElementById(mount);
+  el.innerHTML = list.map(([k,label])=>`
+    <div class="cell" data-key="${k}">
+      ${svg(I[k])}
+      <span class="nm">${label}</span>
+      <span class="copied">Copied ✓</span>
+    </div>`).join('');
+}
+build(BOTTLES,'bottles');
+build(GLASSES,'glasses');
+
+// copy svg on click
+document.querySelectorAll('.cell').forEach(c=>{
+  c.addEventListener('click',()=>{
+    const k=c.dataset.key;
+    const txt=fullSvg(I[k]);
+    const done=()=>{c.classList.add('show');setTimeout(()=>c.classList.remove('show'),900);};
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(done).catch(()=>{fallback(txt);done();});
+    } else {fallback(txt);done();}
+  });
+});
+function fallback(txt){
+  const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);
+  ta.select();try{document.execCommand('copy');}catch(e){}document.body.removeChild(ta);
+}
+
+// controls
+const root=document.documentElement;
+document.getElementById('col').addEventListener('input',e=>root.style.setProperty('--icon',e.target.value));
+document.querySelectorAll('.sw').forEach(s=>s.addEventListener('click',()=>{
+  root.style.setProperty('--icon',s.dataset.c);document.getElementById('col').value=s.dataset.c;
+}));
+document.getElementById('sw').addEventListener('input',e=>root.style.setProperty('--stroke',e.target.value));
+document.getElementById('surf').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#surf button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  document.body.classList.toggle('dark',b.dataset.s==='dark');
+});
+
+// ---- position grid demo ----
+// x = price index (0-100), y = velocity (0-100), trend, category glass/bottle
+const POINTS = [
+  {name:'Añejo tequila', x:82, y:70, trend:'up',   glass:'shot',        bottle:'tequila'},
+  {name:'Craft bourbon', x:74, y:44, trend:'up',   glass:'rocks',       bottle:'whiskey'},
+  {name:'Prosecco',      x:38, y:78, trend:'up',   glass:'flute',       bottle:'champagne'},
+  {name:'Hard seltzer',  x:22, y:88, trend:'up',   glass:'highball',    bottle:'seltzer'},
+  {name:'Domestic lager',x:18, y:40, trend:'down', glass:'pint',        bottle:'beer'},
+  {name:'Value vodka',   x:24, y:55, trend:'flat', glass:'highball',    bottle:'vodka'},
+  {name:'Napa cab',      x:88, y:30, trend:'flat', glass:'redwineglass',bottle:'redwine'},
+  {name:'Pinot grigio',  x:52, y:52, trend:'flat', glass:'whitewineglass',bottle:'whitewine'},
+  {name:'London gin',    x:60, y:36, trend:'down', glass:'martini',     bottle:'gin'},
+  {name:'Cream liqueur', x:46, y:24, trend:'down', glass:'coupe',       bottle:'liqueur'},
+  {name:'Aged rum',      x:66, y:58, trend:'up',   glass:'snifter',     bottle:'rum'},
+];
+const TREND={up:'var(--up)',flat:'var(--flat)',down:'var(--down)'};
+let anon=true, tok='glass';
+
+function renderPlane(){
+  const p=document.getElementById('plane');
+  p.querySelectorAll('.token').forEach(t=>t.remove());
+  POINTS.forEach(pt=>{
+    const d=document.createElement('div');
+    d.className='token';
+    d.style.left=pt.x+'%';
+    d.style.top=(100-pt.y)+'%';
+    d.style.color=TREND[pt.trend];
+    const key = tok==='glass'?pt.glass:pt.bottle;
+    d.innerHTML = svg(I[key]) + (anon?'':`<span class="tlab">${pt.name}</span>`);
+    p.appendChild(d);
+  });
+}
+renderPlane();
+document.getElementById('anon').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#anon button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  anon = b.dataset.a==='anon'; renderPlane();
+});
+document.getElementById('tok').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#tok button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  tok = b.dataset.t; renderPlane();
+});
+</script>
+</body>
+</html>
