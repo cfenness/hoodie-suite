@@ -1,0 +1,20 @@
+# Keep the image lean + never bake secrets/runtime/dev cruft in.
+.git
+.github
+.claude
+.venv
+venv
+node_modules
+**/__pycache__
+**/*.pyc
+# engine runtime (regenerated at run time; state persists via STATE_BUCKET if set)
+unifyd/agent_state
+unifyd/cola_out
+unifyd/out
+unifyd/fixtures
+# secrets + local env
+.env
+.env.*
+*.log
+# docs / dev-only (they're in the image harmlessly, but no need to ship them)
+*.test.js
