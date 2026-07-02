@@ -49,9 +49,14 @@
   table.count td.rl{text-align:right;color:var(--muted);font-weight:500;padding-right:12px}
   table.count input{width:52px;font:inherit;font-size:14px;text-align:center;border:1px solid var(--line);border-radius:6px;padding:5px 4px}
   table.count input:focus{outline:2px solid var(--accent);border-color:var(--accent)}
-  .actions{margin-top:12px;display:flex;gap:10px;align-items:center}
+  .actions{margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   button.go{border:0;background:var(--ink);color:#fff;font:inherit;font-size:13.5px;font-weight:600;padding:9px 18px;border-radius:9px;cursor:pointer}
   button.reset{border:1px solid var(--line);background:var(--paper);color:var(--muted);font:inherit;font-size:13px;padding:9px 14px;border-radius:9px;cursor:pointer}
+  label.snap{border:1px solid var(--accent);background:var(--paper);color:var(--accent);font:inherit;font-size:13px;font-weight:600;padding:9px 14px;border-radius:9px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+  label.snap:hover{background:#fbf3e9}
+  .snapstatus{font-size:12.5px;color:var(--muted);margin-top:10px;min-height:1px;max-width:520px}
+  .snapstatus b{color:var(--ink)}
+  .benchsrc{font-size:11.5px;color:var(--muted);margin:6px 2px 0}
 
   /* shelves */
   .fixture{padding:6px 2px 2px;overflow-x:auto}
@@ -107,9 +112,11 @@
   <div class="form">
     <table class="count" id="countform"></table>
     <div class="actions">
+      <label class="snap" id="snapbtn" title="Take or upload a photo of the shelf — Claude reads the facings">📷 Snap the shelf<input type="file" id="photo" accept="image/*" capture="environment" hidden></label>
       <button class="go" id="compare">Compare to benchmark</button>
       <button class="reset" id="reset">Reset to benchmark</button>
     </div>
+    <div class="snapstatus" id="snapstatus">Count by hand, or snap a photo and let Claude vision count the facings for you.</div>
   </div>
 
   <h2>2 · Their shelf vs. the market</h2>
@@ -124,6 +131,7 @@
     <span class="k"><span class="box over"></span>Over the market norm</span>
     <span class="k"><span class="box void"></span>Void — under the norm</span>
   </div>
+  <div class="benchsrc" id="benchsrc"></div>
 
   <table class="delta" id="delta"></table>
 
@@ -197,7 +205,23 @@ let acct=null;
 function bottle(cat){const s=CAT[cat];const[x,w]=XB[s.shape];
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} 2 ${w} 45" fill="${s.color}" stroke="#2b3644" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${SHAPE[s.shape]}<text x="24" y="35" text-anchor="middle" font-size="8" font-weight="700" fill="#2b3644" stroke="none" style="font-family:Inter,system-ui,sans-serif">${s.label}</text></svg>`;}
 function splitByProfile(total,profile){const raw=profile.map(p=>total*p),fl=raw.map(Math.floor);let rem=total-fl.reduce((a,b)=>a+b,0);const ord=raw.map((r,i)=>[r-Math.floor(r),i]).sort((a,b)=>b[0]-a[0]);const out=fl.slice();for(let k=0;k<rem&&k<ord.length;k++)out[ord[k][1]]++;return out;}
-function benchmark(){const m=MARKET[acct.market];const c=TIERS.map(()=>CATS.map(()=>0));CATS.forEach((cat,ci)=>{const p=splitByProfile(m.totals[cat],TIER_PROFILE[cat]);TIERS.forEach((t,ti)=>c[ti][ci]=p[ti]);});return c;}
+let BENCH=null;
+// #2 — the market NORM comes from the backend (format-aware, groundable in SipSource depletions);
+// falls back to the embedded demo table when the agent is offline. Provenance is always shown.
+async function loadBenchmark(){
+  try{
+    const r=await fetch(`/api/benchmark?market=${encodeURIComponent(acct.market)}&format=${acct.format}`);
+    const d=await r.json();
+    if(!r.ok||d.error) throw 0;
+    BENCH={totals:d.totals, tier:d.tier_profile, provenance:d.provenance, source:'live'};
+  }catch(e){
+    const m=MARKET[acct.market]||MARKET.houston;
+    BENCH={totals:m.totals, tier:TIER_PROFILE, source:'demo',
+      provenance:`Demo benchmark — ${m.name} (agent offline; the live norm via /api/benchmark is format-aware).`};
+  }
+  const el=document.getElementById('benchsrc'); if(el) el.textContent='Benchmark · '+BENCH.provenance;
+}
+function benchmark(){const totals=BENCH.totals,prof=BENCH.tier;const c=TIERS.map(()=>CATS.map(()=>0));CATS.forEach((cat,ci)=>{const p=splitByProfile(totals[cat]||0,prof[cat]);TIERS.forEach((t,ti)=>c[ti][ci]=p[ti]);});return c;}
 
 function buildForm(prefill){
   let h=`<tr><th></th>`+CATS.map(c=>`<th class="cat"><span class="sw" style="background:${CAT[c].color}"></span>${c}</th>`).join('')+`</tr>`;
@@ -268,22 +292,17 @@ async function generatePitch(rows){
   body.innerHTML=`<span class="spin"></span> <span style="color:var(--muted)">Writing the pitch from the gaps…</span>`;
   src.textContent='';
   const deltas=rows.map(r=>({category:r.cat, their_pct:r.tp, market_norm_pct:r.bp, gap_pts:r.gap}));
-  const payload={account:acct.name, market:MARKET[acct.market].name, format:acct.format==='on'?'on-premise':'off-premise', deltas};
-  const sys=`You are a beverage-alcohol distributor sales rep. Write a 2-3 sentence pitch to a retail buyer using ONLY the figures in the JSON. Name the most over-spaced category and the biggest void (most negative gap). Confident, spoken, no preamble, no lists, no invented numbers.`;
+  // #3 — narration runs through the suite's /api/* proxy (no key in the browser), like the AI read.
   try{
-    const res=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,
-        messages:[{role:"user",content:sys+"\n\n"+JSON.stringify(payload)}]})
-    });
-    const data=await res.json();
-    const text=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join(" ").trim();
-    if(!text) throw new Error("empty");
-    body.textContent=text;
-    src.textContent="Narrated by Claude from the computed gaps · numbers are deterministic, wording is generated.";
+    const res=await fetch('/api/pitch',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({account:acct.name, market:(MARKET[acct.market]||{}).name||acct.market, format:acct.format, deltas})});
+    const data=await res.json().catch(()=>({error:'bad-response'}));
+    if(!res.ok || data.error || !data.pitch) throw new Error(data.error||('HTTP '+res.status));
+    body.textContent=data.pitch;
+    src.textContent="Narrated by Claude via the Hoodie agent from the computed gaps · numbers are deterministic, wording is generated.";
   }catch(e){
     body.textContent=templatePitch(rows);
-    src.textContent="Generated from the computed gaps (offline template — live Claude narration runs in-app).";
+    src.textContent="From the computed gaps (offline template — live Claude narration runs when the agent + API key are up).";
   }
 }
 
@@ -304,7 +323,7 @@ function runSearch(){
     node.addEventListener('click',()=>selectPlace(hits[+node.dataset.i]));
   });
 }
-function selectPlace(p){
+async function selectPlace(p){
   acct={ name:p.name, address:p.address, format:detectFormat(p.types), market:detectMarket(p.address) };
   document.getElementById('results').className='results';
   document.getElementById('q').value=p.name;
@@ -313,13 +332,40 @@ function selectPlace(p){
     `<span class="nm">${acct.name}</span>`+
     `<span class="fmt"><b>${fmtLabel}</b> · ${acct.address}</span>`+
     `<span class="enrich">${acct.format==='on'?'↳ pull <b>cocktail menu</b> by name':'↳ pull <b>website / catalog</b> by name'}</span>`;
+  await loadBenchmark();              // resolve the (format-aware) norm before building the form
   buildForm(benchmark());
   compare();
 }
+
+// #4 — SNAP THE SHELF: a photo goes to Claude vision, which returns the facings per category × tier.
+function fileToB64(f){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]||''); r.onerror=rej; r.readAsDataURL(f); }); }
+function esc(s){ return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function fillCounts(counts){ TIERS.forEach((t,ti)=>CATS.forEach((c,ci)=>{ const el=document.getElementById(`in-${ti}-${ci}`); if(el && counts[ti] && counts[ti][ci]!=null) el.value=Math.max(0,counts[ti][ci]|0); })); }
+async function snapShelf(file){
+  if(!file||!acct) return;
+  const st=document.getElementById('snapstatus');
+  st.innerHTML='<span class="spin"></span> Reading the shelf with Claude vision…';
+  try{
+    const image=await fileToB64(file);
+    const res=await fetch('/api/shelf-vision',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({image, media_type:file.type||'image/jpeg', categories:CATS, tiers:TIERS})});
+    const data=await res.json().catch(()=>({error:'bad-response'}));
+    if(!res.ok || data.error || !data.counts) throw new Error(data.error||('HTTP '+res.status));
+    fillCounts(data.counts); compare();
+    st.innerHTML=`✓ <b>Counted from your photo</b> by Claude vision${data.confidence?` · ${esc(data.confidence)} confidence`:''}${data.notes?` — ${esc(data.notes)}`:''}. Check any cell and re-compare.`;
+  }catch(err){
+    const why=/llm-disabled/.test(String(err)) ? 'the agent needs an <b>ANTHROPIC_API_KEY</b>'
+             : /HTTP 50|Failed to fetch|bad-response|NetworkError/i.test(String(err)) ? 'the local Hoodie agent isn’t running'
+             : esc(String(err.message||err));
+    st.innerHTML=`Couldn’t auto-count — ${why}. Count by hand for now.`;
+  }
+}
+
 document.getElementById('searchbtn').addEventListener('click',runSearch);
 document.getElementById('q').addEventListener('keydown',e=>{ if(e.key==='Enter') runSearch(); });
 document.getElementById('compare').addEventListener('click',()=>{ if(acct) compare(); });
 document.getElementById('reset').addEventListener('click',()=>{ if(acct){ buildForm(benchmark()); compare(); } });
+document.getElementById('photo').addEventListener('change',e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=''; snapShelf(f); });
 // start on a sensible default so the page isn't empty
 selectPlace(PLACES[0]);
 </script>
