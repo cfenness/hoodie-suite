@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planogram — rep count vs. benchmark</title>
+<style>
+  :root{
+    --ink:#1a2332; --paper:#ffffff; --panel:#f3f5f8; --line:#d9dee5; --muted:#6b7684; --accent:#c17a2b;
+    --edge:#2b3644;
+    --c-whiskey:#c3e0b5; --c-rum:#bcd6ee; --c-tequila:#f0d9c0; --c-vodka:#e0cce8;
+    --over:#c0503f; --void:#b98a2b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--panel);color:var(--ink);
+    font-family:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;line-height:1.5}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 24px 72px}
+
+  .bar{display:block;margin-bottom:6px}
+  .fl{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;display:block;margin-bottom:6px}
+  .searchrow{display:flex;gap:8px;align-items:center;max-width:560px}
+  #q{flex:1;font:inherit;font-size:14px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+  #q:focus{outline:2px solid var(--accent);border-color:var(--accent)}
+  button.search{border:0;background:var(--ink);color:#fff;font:inherit;font-size:13.5px;font-weight:600;padding:10px 16px;border-radius:10px;cursor:pointer}
+  .results{max-width:560px;margin-top:8px;display:none}
+  .results.show{display:block}
+  .res{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--paper);margin-bottom:6px;cursor:pointer;transition:border-color .12s}
+  .res:hover{border-color:var(--accent)}
+  .res .nm{font-weight:600;font-size:14px}
+  .res .ad{font-size:12px;color:var(--muted)}
+  .res .badge{margin-left:auto;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap}
+  .res .badge.off{background:#e7f0e0;color:#3f6a2b}
+  .res .badge.on{background:#e6ddf0;color:#5a3f7a}
+  .chosen{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:4px}
+  .chosen .nm{font-size:16px;font-weight:600}
+  .chosen .fmt{font-size:12.5px;color:var(--muted)}
+  .chosen .fmt b{color:var(--ink)}
+  .enrich{font-size:12px;color:var(--muted);background:var(--paper);border:1px dashed var(--line);border-radius:8px;padding:6px 11px}
+  .enrich b{color:var(--accent)}
+
+  h2{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;margin:26px 0 10px}
+
+  /* count form */
+  .form{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:inline-block}
+  table.count{border-collapse:collapse}
+  table.count th,table.count td{padding:6px 8px;font-size:13px;text-align:center}
+  table.count th.cat{font-weight:700}
+  table.count th.cat .sw{display:inline-block;width:13px;height:13px;border:2px solid var(--edge);border-radius:3px;vertical-align:-2px;margin-right:5px}
+  table.count td.rl{text-align:right;color:var(--muted);font-weight:500;padding-right:12px}
+  table.count input{width:52px;font:inherit;font-size:14px;text-align:center;border:1px solid var(--line);border-radius:6px;padding:5px 4px}
+  table.count input:focus{outline:2px solid var(--accent);border-color:var(--accent)}
+  .actions{margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  button.go{border:0;background:var(--ink);color:#fff;font:inherit;font-size:13.5px;font-weight:600;padding:9px 18px;border-radius:9px;cursor:pointer}
+  button.reset{border:1px solid var(--line);background:var(--paper);color:var(--muted);font:inherit;font-size:13px;padding:9px 14px;border-radius:9px;cursor:pointer}
+  label.snap{border:1px solid var(--accent);background:var(--paper);color:var(--accent);font:inherit;font-size:13px;font-weight:600;padding:9px 14px;border-radius:9px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+  label.snap:hover{background:#fbf3e9}
+  .snapstatus{font-size:12.5px;color:var(--muted);margin-top:10px;min-height:1px;max-width:520px}
+  .snapstatus b{color:var(--ink)}
+  .benchsrc{font-size:11.5px;color:var(--muted);margin:6px 2px 0}
+
+  /* shelves */
+  .fixture{padding:6px 2px 2px;overflow-x:auto}
+  .inner{min-width:640px}
+  .shelf{display:grid;grid-template-columns:96px 1fr;margin-bottom:26px}
+  .shelf:last-child{margin-bottom:6px}
+  .tier{grid-row:1;grid-column:1;align-self:center;font-size:15px;color:var(--ink)}
+  .run{grid-row:1;grid-column:2;display:flex;align-items:flex-end;flex-wrap:nowrap;gap:2px;padding-bottom:2px}
+  .rule{grid-row:2;grid-column:2;height:4px;background:var(--edge);border-radius:2px;margin-top:2px}
+  .facing{display:inline-flex;align-items:flex-end;position:relative;animation:pop .22s ease both}
+  .facing svg{height:66px;width:auto;display:block}
+  .facing.over::after{content:"";position:absolute;inset:1px 0 3px;border:2px dashed var(--over);border-radius:3px}
+  .facing.void svg{opacity:.4}
+  .facing.void::after{content:"";position:absolute;inset:1px 0 3px;border:2px dashed var(--void);border-radius:3px}
+  @keyframes pop{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+  .legend{display:flex;flex-wrap:wrap;gap:16px;align-items:center;font-size:12px;color:var(--muted);margin:2px 2px 8px}
+  .k{display:flex;align-items:center;gap:6px}.box{width:15px;height:15px;border-radius:3px}
+  .box.over{border:2px dashed var(--over)}.box.void{border:2px dashed var(--void)}.sw2{width:13px;height:13px;border:2px solid var(--edge);border-radius:3px}
+
+  /* pitch */
+  .pitch{background:var(--paper);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:16px 18px;margin-top:22px;max-width:760px}
+  .pitch .lead{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:7px;display:flex;align-items:center;gap:8px}
+  .pitch .body{font-size:15.5px;line-height:1.55}
+  .pitch .src{font-size:11.5px;color:var(--muted);margin-top:9px}
+  .spin{width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;display:inline-block}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  table.delta{border-collapse:collapse;max-width:760px;width:100%;margin-top:20px}
+  table.delta th,table.delta td{border:1px solid var(--line);padding:8px 13px;font-size:13px}
+  table.delta th.cat{text-align:left;font-weight:700}
+  table.delta th.cat .sw{display:inline-block;width:13px;height:13px;border:2px solid var(--edge);border-radius:3px;vertical-align:-2px;margin-right:6px}
+  table.delta td.rl{text-align:left;font-weight:600}
+  table.delta td.n{text-align:right;font-variant-numeric:tabular-nums}
+  table.delta td.d.pos{color:var(--over);font-weight:600}
+  table.delta td.d.neg{color:var(--void);font-weight:600}
+  thead th{background:var(--paper)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <span class="fl">Find the account</span>
+    <div class="searchrow">
+      <input id="q" placeholder="Search a store or bar — e.g. Spec's Houston, cocktail bar Miami">
+      <button class="search" id="searchbtn">Search</button>
+    </div>
+    <div class="results" id="results"></div>
+    <div class="chosen" id="chosen" style="margin-top:12px"></div>
+  </div>
+
+  <h2>1 · Count the shelf</h2>
+  <div class="form">
+    <table class="count" id="countform"></table>
+    <div class="actions">
+      <label class="snap" id="snapbtn" title="Take or upload a photo of the shelf — Claude reads the facings">📷 Snap the shelf<input type="file" id="photo" accept="image/*" capture="environment" hidden></label>
+      <button class="go" id="compare">Compare to benchmark</button>
+      <button class="reset" id="reset">Reset to benchmark</button>
+    </div>
+    <div class="snapstatus" id="snapstatus">Count by hand, or snap a photo and let Claude vision count the facings for you.</div>
+  </div>
+
+  <h2>2 · Their shelf vs. the market</h2>
+  <div class="fixture"><div class="inner" id="theirs"></div></div>
+  <div style="height:6px"></div>
+  <div class="fixture"><div class="inner" id="bench"></div></div>
+  <div class="legend">
+    <span class="k"><span class="sw2" style="background:var(--c-whiskey)"></span>Whiskey</span>
+    <span class="k"><span class="sw2" style="background:var(--c-rum)"></span>Rum</span>
+    <span class="k"><span class="sw2" style="background:var(--c-tequila)"></span>Tequila</span>
+    <span class="k"><span class="sw2" style="background:var(--c-vodka)"></span>Vodka</span>
+    <span class="k"><span class="box over"></span>Over the market norm</span>
+    <span class="k"><span class="box void"></span>Void — under the norm</span>
+  </div>
+  <div class="benchsrc" id="benchsrc"></div>
+
+  <table class="delta" id="delta"></table>
+
+  <div class="pitch">
+    <div class="lead" id="pitchlead">What you'd tell the buyer</div>
+    <div class="body" id="pitchbody">Enter the shelf counts and compare.</div>
+    <div class="src" id="pitchsrc"></div>
+  </div>
+</div>
+
+<script>
+const SHAPE={
+  flask:`<rect x="20" y="6" width="8" height="4" rx="1"/><path d="M21 10 L21 15 Q21 16 20 16.5 Q15 18 15 23 L15 41 Q15 43 17 43 L31 43 Q33 43 33 41 L33 23 Q33 18 28 16.5 Q27 16 27 15 L27 10 Z"/>`,
+  tall:`<rect x="20.5" y="4" width="7" height="4" rx="1"/><path d="M21 8 L21 15 Q21 17 19.5 18 Q17 19.5 17 24 L17 41 Q17 43 19 43 L29 43 Q31 43 31 41 L31 24 Q31 19.5 28.5 18 Q27 17 27 15 L27 8 Z"/><path d="M17.4 27.5 L30.6 27.5" fill="none"/>`,
+  tapered:`<rect x="21" y="5" width="6" height="4" rx="1"/><path d="M21.5 9 L21.5 16 Q21.5 18 20.5 19 Q18.5 21 18 25 L16.5 41 Q16.5 43 18.5 43 L29.5 43 Q31.5 43 31.5 41 L30 25 Q29.5 21 27.5 19 Q26.5 18 26.5 16 L26.5 9 Z"/>`,
+  wine:`<rect x="21.5" y="4" width="5" height="4" rx="0.5"/><path d="M22 8 L22 17 Q22 18 21 19 Q17.5 22 17.5 27 L17.5 42 Q17.5 43 18.5 43 L29.5 43 Q30.5 43 30.5 42 L30.5 27 Q30.5 22 27 19 Q26 18 26 17 L26 8 Z"/>`,
+};
+const XB={flask:[14,20],tall:[16,16],tapered:[15.5,17],wine:[16.5,15]};
+const CATS=['Whiskey','Rum','Tequila','Vodka'];
+const CAT={
+  Whiskey:{shape:'flask',color:'var(--c-whiskey)',label:'W'},
+  Rum:{shape:'tall',color:'var(--c-rum)',label:'R'},
+  Tequila:{shape:'tapered',color:'var(--c-tequila)',label:'T'},
+  Vodka:{shape:'wine',color:'var(--c-vodka)',label:'V'},
+};
+const TIERS=['Stretch','Eye Level','Reach'];
+const MARKET={
+  houston:{name:'Houston, TX',totals:{Whiskey:21,Rum:8,Tequila:18,Vodka:13}},
+  miami:{name:'Miami, FL',totals:{Whiskey:8,Rum:21,Tequila:13,Vodka:18}},
+  dallas:{name:'Dallas, TX',totals:{Whiskey:27,Rum:5,Tequila:16,Vodka:12}},
+};
+const TIER_PROFILE={Whiskey:[0.28,0.44,0.28],Tequila:[0.34,0.42,0.24],Vodka:[0.24,0.34,0.42],Rum:[0.24,0.30,0.46]};
+// Google Places-style results (seeded with real pulls; in-app these come from the Places API).
+// format is derived from Google's `types`; market from the address city.
+const PLACES=[
+  {name:"Spec's Wines, Spirits & Finer Foods", address:"2410 Smith St, Houston, TX 77006", types:["liquor_store","grocery_store","store"]},
+  {name:"Premier Fine Wine & Spirits", address:"174 Yale St #800, Houston, TX 77007", types:["liquor_store","store"]},
+  {name:"OST Liquor", address:"3928 Old Spanish Trl E, Houston, TX 77021", types:["liquor_store","store"]},
+  {name:"Lone Star Package Store", address:"1904 Greenville Ave, Dallas, TX 75206", types:["liquor_store","store"]},
+  {name:"The White Elephant Cocktail Bar", address:"223 NW 23rd St, Miami, FL 33127", types:["cocktail_bar","bar","restaurant"]},
+  {name:"Tipsy Flamingo Cocktail Bar", address:"40 NE 1st Ave #101, Miami, FL 33132", types:["cocktail_bar","bar"]},
+  {name:"Rosa Sky", address:"115 SW 8th St 22nd Floor, Miami, FL 33130", types:["cocktail_bar","lounge_bar","night_club","bar","restaurant"]},
+];
+const ON_TYPES=['bar','cocktail_bar','lounge_bar','night_club','restaurant','pub','brewery','wine_bar'];
+const OFF_TYPES=['liquor_store','grocery_store','convenience_store','supermarket','store','food_store'];
+function detectFormat(types){
+  // Google's own type taxonomy is the on/off-premise signal
+  if(types.some(t=>ON_TYPES.includes(t)) && !types.includes('liquor_store')) return 'on';
+  if(types.some(t=>OFF_TYPES.includes(t))) return 'off';
+  return types.some(t=>ON_TYPES.includes(t))?'on':'off';
+}
+function detectMarket(address){
+  const a=address.toLowerCase();
+  if(a.includes('houston')) return 'houston';
+  if(a.includes('miami'))   return 'miami';
+  if(a.includes('dallas'))  return 'dallas';
+  return 'houston'; // fallback for the demo's benchmark set
+}
+function fuzzy(q,list){
+  q=q.trim().toLowerCase(); if(!q) return list.slice(0,5);
+  const toks=q.split(/\s+/);
+  return list.map(p=>{
+    const hay=(p.name+' '+p.address+' '+p.types.join(' ')).toLowerCase();
+    const score=toks.reduce((s,t)=>s+(hay.includes(t)?1:0),0);
+    return {p,score};
+  }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).map(x=>x.p).slice(0,5);
+}
+
+let acct=null;
+
+function bottle(cat){const s=CAT[cat];const[x,w]=XB[s.shape];
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} 2 ${w} 45" fill="${s.color}" stroke="#2b3644" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${SHAPE[s.shape]}<text x="24" y="35" text-anchor="middle" font-size="8" font-weight="700" fill="#2b3644" stroke="none" style="font-family:Inter,system-ui,sans-serif">${s.label}</text></svg>`;}
+function splitByProfile(total,profile){const raw=profile.map(p=>total*p),fl=raw.map(Math.floor);let rem=total-fl.reduce((a,b)=>a+b,0);const ord=raw.map((r,i)=>[r-Math.floor(r),i]).sort((a,b)=>b[0]-a[0]);const out=fl.slice();for(let k=0;k<rem&&k<ord.length;k++)out[ord[k][1]]++;return out;}
+let BENCH=null;
+// #2 — the market NORM comes from the backend (format-aware, groundable in SipSource depletions);
+// falls back to the embedded demo table when the agent is offline. Provenance is always shown.
+async function loadBenchmark(){
+  try{
+    const r=await fetch(`/api/benchmark?market=${encodeURIComponent(acct.market)}&format=${acct.format}`);
+    const d=await r.json();
+    if(!r.ok||d.error) throw 0;
+    BENCH={totals:d.totals, tier:d.tier_profile, provenance:d.provenance, source:'live'};
+  }catch(e){
+    const m=MARKET[acct.market]||MARKET.houston;
+    BENCH={totals:m.totals, tier:TIER_PROFILE, source:'demo',
+      provenance:`Demo benchmark — ${m.name} (agent offline; the live norm via /api/benchmark is format-aware).`};
+  }
+  const el=document.getElementById('benchsrc'); if(el) el.textContent='Benchmark · '+BENCH.provenance;
+}
+function benchmark(){const totals=BENCH.totals,prof=BENCH.tier;const c=TIERS.map(()=>CATS.map(()=>0));CATS.forEach((cat,ci)=>{const p=splitByProfile(totals[cat]||0,prof[cat]);TIERS.forEach((t,ti)=>c[ti][ci]=p[ti]);});return c;}
+
+function buildForm(prefill){
+  let h=`<tr><th></th>`+CATS.map(c=>`<th class="cat"><span class="sw" style="background:${CAT[c].color}"></span>${c}</th>`).join('')+`</tr>`;
+  TIERS.forEach((t,ti)=>{h+=`<tr><td class="rl">${t}</td>`+CATS.map((c,ci)=>`<td><input type="number" min="0" id="in-${ti}-${ci}" value="${prefill[ti][ci]}"></td>`).join('')+`</tr>`;});
+  document.getElementById('countform').innerHTML=h;
+}
+function readForm(){return TIERS.map((t,ti)=>CATS.map((c,ci)=>{const v=parseInt(document.getElementById(`in-${ti}-${ci}`).value,10);return isNaN(v)||v<0?0:v;}));}
+
+function renderShelf(el,counts,markFn){
+  let html='';
+  TIERS.forEach((t,ti)=>{
+    let run='';
+    CATS.forEach((c,ci)=>{ markFn(ti,ci).forEach(cls=>{ run+=`<span class="facing ${cls}">${bottle(c)}</span>`; }); });
+    html+=`<div class="shelf"><div class="tier">${t}</div><div class="run">${run}</div><div class="rule"></div></div>`;
+  });
+  document.getElementById(el).innerHTML=html;
+}
+
+function compare(){
+  const their=readForm(), bench=benchmark();
+
+  // THEIR shelf: min(their,bench) plain + excess marked over
+  renderShelf('theirs',their,(ti,ci)=>{
+    const t=their[ti][ci],b=bench[ti][ci],arr=[];
+    for(let k=0;k<Math.min(t,b);k++)arr.push('');
+    for(let k=b;k<t;k++)arr.push('over');   // over the norm
+    return arr;
+  });
+  // BENCHMARK shelf: min plain + shortfall marked void (what's missing vs norm)
+  renderShelf('bench',bench,(ti,ci)=>{
+    const t=their[ti][ci],b=bench[ti][ci],arr=[];
+    for(let k=0;k<Math.min(t,b);k++)arr.push('');
+    for(let k=t;k<b;k++)arr.push('void');   // void to fill
+    return arr;
+  });
+
+  // deltas by category
+  const theirTot=CATS.map((c,ci)=>TIERS.reduce((a,_,ti)=>a+their[ti][ci],0));
+  const benchTot=CATS.map((c,ci)=>TIERS.reduce((a,_,ti)=>a+bench[ti][ci],0));
+  const tSum=theirTot.reduce((a,b)=>a+b,0)||1, bSum=benchTot.reduce((a,b)=>a+b,0)||1;
+  const rows=CATS.map((c,ci)=>({cat:c, their:theirTot[ci], bench:benchTot[ci],
+    tp:Math.round(theirTot[ci]/tSum*100), bp:Math.round(benchTot[ci]/bSum*100)}));
+  rows.forEach(r=>r.gap=r.tp-r.bp);
+
+  // delta table
+  let th=`<thead><tr><th></th>`+CATS.map(c=>`<th class="cat"><span class="sw" style="background:${CAT[c].color}"></span>${c}</th>`).join('')+`</tr></thead>`;
+  const line=(lab,f)=>`<tr><td class="rl">${lab}</td>`+rows.map(f).join('')+`</tr>`;
+  let tb='<tbody>'
+    +line('Their shelf %',r=>`<td class="n">${r.tp}%</td>`)
+    +line('Market norm %',r=>`<td class="n">${r.bp}%</td>`)
+    +line('Gap (pts)',r=>`<td class="d ${r.gap>0?'pos':(r.gap<0?'neg':'')}">${r.gap>0?'+':''}${r.gap}</td>`)
+    +'</tbody>';
+  document.getElementById('delta').innerHTML=th+tb;
+
+  // pitch
+  generatePitch(rows);
+}
+
+function templatePitch(rows){
+  const over=[...rows].sort((a,b)=>b.gap-a.gap)[0];
+  const vd=[...rows].sort((a,b)=>a.gap-b.gap)[0];
+  if(over.gap<=0 && vd.gap>=0) return `At ${acct.name}, the set tracks the ${MARKET[acct.market].name} norm closely — no glaring over- or under-space to move on today.`;
+  return `Walking your shelves at ${acct.name}, ${over.cat.toLowerCase()} is running ${over.tp}% of your set against a ${over.bp}% ${MARKET[acct.market].name} norm — and it's crowding out your ${vd.cat.toLowerCase()}, where you're at ${vd.tp}% versus a ${vd.bp}% norm. You should be buying more ${vd.cat.toLowerCase()}; let's clear some ${over.cat.toLowerCase()} facings to make the room.`;
+}
+
+async function generatePitch(rows){
+  const body=document.getElementById('pitchbody'), src=document.getElementById('pitchsrc');
+  body.innerHTML=`<span class="spin"></span> <span style="color:var(--muted)">Writing the pitch from the gaps…</span>`;
+  src.textContent='';
+  const deltas=rows.map(r=>({category:r.cat, their_pct:r.tp, market_norm_pct:r.bp, gap_pts:r.gap}));
+  // #3 — narration runs through the suite's /api/* proxy (no key in the browser), like the AI read.
+  try{
+    const res=await fetch('/api/pitch',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({account:acct.name, market:(MARKET[acct.market]||{}).name||acct.market, format:acct.format, deltas})});
+    const data=await res.json().catch(()=>({error:'bad-response'}));
+    if(!res.ok || data.error || !data.pitch) throw new Error(data.error||('HTTP '+res.status));
+    body.textContent=data.pitch;
+    src.textContent="Narrated by Claude via the Hoodie agent from the computed gaps · numbers are deterministic, wording is generated.";
+  }catch(e){
+    body.textContent=templatePitch(rows);
+    src.textContent="From the computed gaps (offline template — live Claude narration runs when the agent + API key are up).";
+  }
+}
+
+// ---- search + select ----
+function runSearch(){
+  const q=document.getElementById('q').value;
+  const hits=fuzzy(q,PLACES);
+  const el=document.getElementById('results');
+  if(!hits.length){ el.className='results show'; el.innerHTML=`<div class="res" style="cursor:default"><span class="ad">No matches — try a store or bar name, or a city.</span></div>`; return; }
+  el.className='results show';
+  el.innerHTML=hits.map((p,i)=>{
+    const fmt=detectFormat(p.types);
+    return `<div class="res" data-i="${i}">
+      <div><div class="nm">${p.name}</div><div class="ad">${p.address}</div></div>
+      <span class="badge ${fmt}">${fmt==='on'?'On-premise':'Off-premise'}</span></div>`;
+  }).join('');
+  el.querySelectorAll('.res[data-i]').forEach(node=>{
+    node.addEventListener('click',()=>selectPlace(hits[+node.dataset.i]));
+  });
+}
+async function selectPlace(p){
+  acct={ name:p.name, address:p.address, format:detectFormat(p.types), market:detectMarket(p.address) };
+  document.getElementById('results').className='results';
+  document.getElementById('q').value=p.name;
+  const fmtLabel=acct.format==='on'?'On-premise':'Off-premise';
+  document.getElementById('chosen').innerHTML=
+    `<span class="nm">${acct.name}</span>`+
+    `<span class="fmt"><b>${fmtLabel}</b> · ${acct.address}</span>`+
+    `<span class="enrich">${acct.format==='on'?'↳ pull <b>cocktail menu</b> by name':'↳ pull <b>website / catalog</b> by name'}</span>`;
+  await loadBenchmark();              // resolve the (format-aware) norm before building the form
+  buildForm(benchmark());
+  compare();
+}
+
+// #4 — SNAP THE SHELF: a photo goes to Claude vision, which returns the facings per category × tier.
+function fileToB64(f){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]||''); r.onerror=rej; r.readAsDataURL(f); }); }
+function esc(s){ return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function fillCounts(counts){ TIERS.forEach((t,ti)=>CATS.forEach((c,ci)=>{ const el=document.getElementById(`in-${ti}-${ci}`); if(el && counts[ti] && counts[ti][ci]!=null) el.value=Math.max(0,counts[ti][ci]|0); })); }
+async function snapShelf(file){
+  if(!file||!acct) return;
+  const st=document.getElementById('snapstatus');
+  st.innerHTML='<span class="spin"></span> Reading the shelf with Claude vision…';
+  try{
+    const image=await fileToB64(file);
+    const res=await fetch('/api/shelf-vision',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({image, media_type:file.type||'image/jpeg', categories:CATS, tiers:TIERS})});
+    const data=await res.json().catch(()=>({error:'bad-response'}));
+    if(!res.ok || data.error || !data.counts) throw new Error(data.error||('HTTP '+res.status));
+    fillCounts(data.counts); compare();
+    st.innerHTML=`✓ <b>Counted from your photo</b> by Claude vision${data.confidence?` · ${esc(data.confidence)} confidence`:''}${data.notes?` — ${esc(data.notes)}`:''}. Check any cell and re-compare.`;
+  }catch(err){
+    const why=/llm-disabled/.test(String(err)) ? 'the agent needs an <b>ANTHROPIC_API_KEY</b>'
+             : /HTTP 50|Failed to fetch|bad-response|NetworkError/i.test(String(err)) ? 'the local Hoodie agent isn’t running'
+             : esc(String(err.message||err));
+    st.innerHTML=`Couldn’t auto-count — ${why}. Count by hand for now.`;
+  }
+}
+
+document.getElementById('searchbtn').addEventListener('click',runSearch);
+document.getElementById('q').addEventListener('keydown',e=>{ if(e.key==='Enter') runSearch(); });
+document.getElementById('compare').addEventListener('click',()=>{ if(acct) compare(); });
+document.getElementById('reset').addEventListener('click',()=>{ if(acct){ buildForm(benchmark()); compare(); } });
+document.getElementById('photo').addEventListener('change',e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=''; snapShelf(f); });
+// start on a sensible default so the page isn't empty
+selectPlace(PLACES[0]);
+</script>
+</body>
+</html>
