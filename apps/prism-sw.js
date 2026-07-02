@@ -1,8 +1,8 @@
 /* Prism service worker — makes the app installable + usable offline.
    Shell: cache-first (instant launch). Data (/api/prism): network-first with a cache
    fallback, so you always get live numbers when online and the last-seen book when not. */
-const SHELL = 'prism-shell-v2';
-const DATA = 'prism-data-v2';
+const SHELL = 'prism-shell-v3';
+const DATA = 'prism-data-v3';
 const SHELL_ASSETS = [
   'prism.html', 'prism.webmanifest',
   'prism-icon-192.png', 'prism-icon-512.png', 'prism-icon-180.png',
@@ -36,7 +36,20 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Shell + icons: cache-first, revalidate in the background.
+  // App HTML (navigations + prism.html): NETWORK-FIRST, so a refresh always gets the
+  // latest when online; fall back to the cached shell only when offline.
+  if (e.request.mode === 'navigate' || url.pathname.endsWith('/prism.html')) {
+    e.respondWith(
+      fetch(e.request).then((res) => {
+        const copy = res.clone();
+        caches.open(SHELL).then((c) => c.put(e.request, copy));
+        return res;
+      }).catch(() => caches.match(e.request).then((hit) => hit || caches.match('prism.html')))
+    );
+    return;
+  }
+
+  // Icons + manifest: cache-first (they rarely change), revalidate in the background.
   if (SHELL_ASSETS.some((a) => url.pathname.endsWith('/' + a))) {
     e.respondWith(
       caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {

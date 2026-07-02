@@ -42,6 +42,10 @@
     color:var(--blue-ink);border:1px solid var(--line-2);border-radius:6px;
     padding:7px 11px;font-family:var(--font);font-size:12.5px;font-weight:700;cursor:pointer}
   .measbtn svg{width:11px;height:11px;color:var(--muted)}
+  .instbtn{margin-left:8px;display:flex;align-items:center;justify-content:center;width:34px;height:32px;
+    background:var(--blue);color:#fff;border:1px solid var(--blue);border-radius:6px;cursor:pointer;padding:0}
+  .instbtn svg{width:16px;height:16px}
+  .instbtn[hidden]{display:none}
 
   /* ---- views ---- */
   .views{flex:1 1 auto;position:relative;overflow:hidden}
@@ -178,6 +182,9 @@
       <span id="measlbl">Volume growth</span>
       <svg viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
+    <button class="instbtn" id="instbtn" hidden aria-label="Add to Home Screen" title="Add to Home Screen">
+      <svg viewBox="0 0 24 24" fill="none"><rect x="5" y="2.5" width="14" height="19" rx="2.4" stroke="currentColor" stroke-width="2"/><path d="M12 7.5v7M8.8 11.3 12 14.5l3.2-3.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
   </header>
 
   <div class="views">
@@ -197,7 +204,7 @@
   </nav>
 
   <div class="ihint" id="ihint">
-    <span>Install Prism — tap <b>Share</b> then <b>Add to Home Screen</b>.</span>
+    <span id="ihintopen">Install Prism — tap here for how to <b>Add to Home Screen</b>.</span>
     <span class="x" id="ihintx">×</span>
   </div>
   <div class="toast" id="toast"></div>
@@ -370,9 +377,39 @@ const PRISM_FALLBACK = {"measure":"vol_growth","measures":[{"key":"vol_growth","
       var cut = (STATE.data.cuts||[]).find(function(c){return c.dim===cr.dataset.dim;});
       if(cut){ openDrill(cut.rows[+cr.dataset.ri], cut.label); } return;
     }
+    if(t.closest('#instbtn')){ onInstall(); return; }
+    if(t.closest('#ihintopen')){ $('#ihint').classList.remove('show'); openInstallSheet(); return; }
     if(t.closest('#sheetbd')){ hideSheet(); return; }
     if(t.id==='ihintx'){ $('#ihint').classList.remove('show'); try{localStorage.setItem('prism.ihint','1');}catch(_){} }
   });
+
+  /* ---------- install / add to home screen ---------- */
+  var deferredPrompt = null, standalone = false;
+  try{ standalone = window.navigator.standalone===true || matchMedia('(display-mode: standalone)').matches; }catch(_){}
+  function onInstall(){
+    if(deferredPrompt){ deferredPrompt.prompt(); deferredPrompt.userChoice.finally(function(){ deferredPrompt=null; }); return; }
+    openInstallSheet();
+  }
+  function openInstallSheet(){
+    var ua = navigator.userAgent, iOS = /iphone|ipad|ipod/i.test(ua) || (/Macintosh/.test(ua) && 'ontouchend' in document);
+    var safari = /safari/i.test(ua) && !/crios|fxios|edgios|android/i.test(ua);
+    var steps;
+    if(iOS && safari){
+      steps = 'Tap the <b>Share</b> icon — the square with an ↑ arrow, at the bottom of Safari — then scroll down and tap <b>Add to Home Screen</b>.';
+    } else if(iOS){
+      steps = 'On iPhone, Add to Home Screen only works in <b>Safari</b>. If you opened this from another app, tap its menu and choose <b>Open in Safari</b> — then use <b>Share → Add to Home Screen</b>.';
+    } else {
+      steps = 'Open your browser menu (<b>⋮</b>) and tap <b>Install app</b> or <b>Add to Home screen</b>.';
+    }
+    $('#sheet').innerHTML = '<div class="grab"></div><h3>Add to Home Screen</h3>'
+      + '<div class="note" style="margin-top:12px">'+steps+'</div>'
+      + '<div class="cap" style="margin-top:16px">Why</div>'
+      + '<div style="font-size:13px;color:var(--text-2);line-height:1.5">Installing launches Prism full-screen with its own icon — a tap away, no browser chrome.</div>';
+    showSheet();
+  }
+  window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferredPrompt=e; if(!standalone) $('#instbtn').hidden=false; });
+  window.addEventListener('appinstalled', function(){ $('#instbtn').hidden=true; deferredPrompt=null; });
+  if(!standalone) $('#instbtn').hidden=false;   // iOS never fires beforeinstallprompt — show the button anyway
 
   function setTab(tab){
     STATE.tab = tab;
