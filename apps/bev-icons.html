@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beverage Icon Set + Position Grid</title>
+<style>
+  :root{
+    --ink:#1a2332; --paper:#ffffff; --panel:#f7f8fa; --line:#dde2e9;
+    --muted:#6b7684; --accent:#c17a2b;
+    --up:#2f8f6b; --flat:#97a1ad; --down:#c0503f;
+    --icon:#1a2332; --stroke:1.5;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--panel); color:var(--ink);
+    font-family:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+    line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 24px 80px}
+  header.top{margin-bottom:8px}
+  .eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  h1{font-size:26px;line-height:1.15;margin:6px 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:14px;max-width:60ch}
+
+  .controls{
+    display:flex;flex-wrap:wrap;gap:20px;align-items:center;
+    background:var(--paper);border:1px solid var(--line);border-radius:12px;
+    padding:14px 18px;margin:22px 0 30px;
+  }
+  .ctrl{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted)}
+  .ctrl label{font-weight:500}
+  input[type="range"]{width:120px;accent-color:var(--accent)}
+  input[type="color"]{width:34px;height:26px;border:1px solid var(--line);border-radius:6px;background:none;padding:0;cursor:pointer}
+  .swatches{display:flex;gap:6px}
+  .sw{width:22px;height:22px;border-radius:6px;border:1px solid rgba(0,0,0,.08);cursor:pointer}
+  .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{border:0;background:var(--paper);color:var(--muted);font:inherit;font-size:12px;padding:5px 11px;cursor:pointer}
+  .seg button.on{background:var(--ink);color:#fff}
+
+  h2.section{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+    margin:34px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line);font-weight:600}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px}
+  .cell{
+    background:var(--paper);border:1px solid var(--line);border-radius:10px;
+    padding:14px 8px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;
+    cursor:pointer;transition:border-color .12s, transform .12s;position:relative;
+  }
+  .cell:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .cell svg{color:var(--icon);width:44px;height:44px;display:block}
+  .cell .nm{font-size:11px;color:var(--muted);text-align:center;letter-spacing:.02em}
+  .cell .copied{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:var(--ink);color:#fff;font-size:11px;letter-spacing:.05em;border-radius:10px;opacity:0;pointer-events:none;transition:opacity .15s}
+  .cell.show .copied{opacity:1}
+  .hint{font-size:12px;color:var(--muted);margin:-4px 0 0}
+
+  /* dark test surface */
+  body.dark{--panel:#141a24;--paper:#1c2531;--line:#2b3644;--ink:#e8ecf1;--muted:#8b96a5}
+
+  /* ---- position grid ---- */
+  .board{
+    background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:22px;margin-top:14px;
+  }
+  .plane-wrap{display:flex;gap:14px}
+  .yaxis{writing-mode:vertical-rl;transform:rotate(180deg);font-size:11px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--muted);align-self:center;font-weight:600}
+  .plane-col{flex:1}
+  .plane{
+    position:relative;width:100%;aspect-ratio:16/10;border:1px solid var(--line);border-radius:8px;
+    background:
+      linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat,
+      linear-gradient(var(--line),var(--line)) center/100% 1px no-repeat,
+      var(--panel);
+    overflow:hidden;
+  }
+  .quad-label{position:absolute;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);opacity:.75}
+  .token{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;transition:opacity .2s}
+  .token svg{width:26px;height:26px;display:block}
+  .token .tlab{font-size:9px;color:var(--muted);white-space:nowrap;letter-spacing:.02em}
+  .xaxis{text-align:center;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+    margin-top:8px;font-weight:600}
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:16px;font-size:12px;color:var(--muted);align-items:center}
+  .legend .k{display:flex;align-items:center;gap:6px}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .why{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-top:16px;font-size:13px;color:var(--muted)}
+  .why b{color:var(--ink);font-weight:600}
+  code{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">Hoodie · Beverage Icon Set</div>
+    <h1>Original category icons — bottles, cans &amp; glasses</h1>
+    <p class="sub">Line-drawn from scratch (no stock source), one editable color per icon. Click any icon to download it as an SVG (vector) — insert straight into PowerPoint/Docs and it scales cleanly; ⌥-click copies the SVG source. The grid at the bottom is a live test of the anonymous position layout.</p>
+  </header>
+
+  <div class="controls">
+    <div class="ctrl">
+      <label for="col">Icon color</label>
+      <input type="color" id="col" value="#1a2332">
+      <div class="swatches">
+        <div class="sw" style="background:#1a2332" data-c="#1a2332"></div>
+        <div class="sw" style="background:#c17a2b" data-c="#c17a2b"></div>
+        <div class="sw" style="background:#2f8f6b" data-c="#2f8f6b"></div>
+        <div class="sw" style="background:#c0503f" data-c="#c0503f"></div>
+        <div class="sw" style="background:#3a6ea5" data-c="#3a6ea5"></div>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label for="sw">Stroke</label>
+      <input type="range" id="sw" min="1" max="3" step="0.25" value="1.5">
+    </div>
+    <div class="ctrl">
+      <label>Test surface</label>
+      <div class="seg" id="surf">
+        <button class="on" data-s="light">Light</button>
+        <button data-s="dark">Dark</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="hint">Tip: color is a single property (<code>currentColor</code>), so in the builder each token's color can be bound to a measure — see the grid below.</p>
+
+  <h2 class="section">Bottles &amp; cans</h2>
+  <div class="grid" id="bottles"></div>
+
+  <h2 class="section">Glasses &amp; serves</h2>
+  <div class="grid" id="glasses"></div>
+
+  <h2 class="section">Beverage — kegs, casks &amp; tools</h2>
+  <div class="grid" id="bev2"></div>
+
+  <h2 class="section">Software &amp; tech</h2>
+  <div class="grid" id="software"></div>
+
+  <h2 class="section">Hemp &amp; CBD</h2>
+  <div class="grid" id="hemp"></div>
+
+  <h2 class="section">Cannabis</h2>
+  <div class="grid" id="cannabis"></div>
+
+  <h2 class="section">CPG &amp; packaging</h2>
+  <div class="grid" id="cpg"></div>
+
+  <h2 class="section">Anonymous position grid — live test</h2>
+  <div class="board">
+    <div class="controls" style="margin:0 0 18px">
+      <div class="ctrl">
+        <label>Labels</label>
+        <div class="seg" id="anon">
+          <button data-a="named">Named</button>
+          <button class="on" data-a="anon">Anonymous</button>
+        </div>
+      </div>
+      <div class="ctrl">
+        <label>Token</label>
+        <div class="seg" id="tok">
+          <button class="on" data-t="glass">Glass</button>
+          <button data-t="bottle">Bottle</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="plane-wrap">
+      <div class="yaxis">Velocity &nbsp;→</div>
+      <div class="plane-col">
+        <div class="plane" id="plane">
+          <div class="quad-label" style="left:10px;top:8px">Slow · Premium</div>
+          <div class="quad-label" style="right:10px;top:8px">Fast · Premium</div>
+          <div class="quad-label" style="left:10px;bottom:8px">Slow · Value</div>
+          <div class="quad-label" style="right:10px;bottom:8px">Fast · Value</div>
+        </div>
+        <div class="xaxis">Price index &nbsp;→</div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span style="color:var(--ink);font-weight:600">Color = trend</span>
+      <span class="k"><span class="dot" style="background:var(--up)"></span>Growing</span>
+      <span class="k"><span class="dot" style="background:var(--flat)"></span>Flat</span>
+      <span class="k"><span class="dot" style="background:var(--down)"></span>Declining</span>
+    </div>
+
+    <div class="why">
+      <b>Why this can work without confusing people:</b> the user never places anything by hand. They pick four fields from the certified table — <b>x-axis</b>, <b>y-axis</b>, <b>which icon</b> (a category dimension), and <b>color</b> (a trend measure). The grid auto-plots. Position, icon, and color each carry exactly one variable, so it reads as market structure at a glance. "Anonymous" just means the token is the category, not the brand name — toggle it above to feel the difference.
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- icon geometry (0 0 48 48, stroke=currentColor, fill=none) ----
+const I = {
+  // bottles & cans
+  spirits:`<rect x="21" y="4" width="6" height="3" rx="0.5"/><path d="M21.5 7 L21.5 15 Q21.5 17 19.5 18 Q16 19.5 16 24 L16 42 Q16 44 18 44 L30 44 Q32 44 32 42 L32 24 Q32 19.5 28.5 18 Q26.5 17 26.5 15 L26.5 7"/><rect x="19" y="27" width="10" height="9" rx="1"/>`,
+  whiskey:`<rect x="21" y="5" width="6" height="3" rx="0.5"/><path d="M21.5 8 L21.5 12.5 Q21.5 14 19.5 15 Q15 16.5 15 20.5 L15 42 Q15 44 17 44 L31 44 Q33 44 33 42 L33 20.5 Q33 16.5 28.5 15 Q26.5 14 26.5 12.5 L26.5 8"/>`,
+  vodka:`<rect x="21.5" y="4" width="5" height="3" rx="0.5"/><path d="M22 7 L22 16 Q22 18 20.5 19 Q18 20 18 24 L18 42 Q18 44 19.5 44 L28.5 44 Q30 44 30 42 L30 24 Q30 20 27.5 19 Q26 18 26 16 L26 7"/>`,
+  gin:`<rect x="21" y="5" width="6" height="3" rx="0.5"/><path d="M21.5 8 L21.5 13 Q21.5 15 19 16 Q15 18 15 23 L15 42 Q15 44 17 44 L31 44 Q33 44 33 42 L33 23 Q33 18 29 16 Q26.5 15 26.5 13 L26.5 8"/>`,
+  rum:`<rect x="21" y="5" width="6" height="3" rx="0.5"/><path d="M21.5 8 L21.5 14 Q21.5 16 19.5 17 Q16 18.5 16 23 L16 42 Q16 44 18 44 L30 44 Q32 44 32 42 L32 23 Q32 18.5 28.5 17 Q26.5 16 26.5 14 L26.5 8"/><path d="M16 30 L32 30"/>`,
+  tequila:`<rect x="21.5" y="4" width="5" height="3" rx="0.5"/><path d="M22 7 L22 15 Q22 17 21 18 Q19 20 19 24 L17 42 Q17 44 19 44 L29 44 Q31 44 31 42 L29 24 Q29 20 27 18 Q26 17 26 15 L26 7"/>`,
+  liqueur:`<rect x="21.5" y="9" width="5" height="3" rx="0.5"/><path d="M22 12 L22 16 Q22 17 21 18 Q17 20 17 25 L17 42 Q17 44 19 44 L29 44 Q31 44 31 42 L31 25 Q31 20 27 18 Q26 17 26 16 L26 12"/>`,
+  redwine:`<rect x="22" y="4" width="4" height="3" rx="0.3"/><path d="M22 7 L22 17 Q22 18 21 19 Q17.5 22 17.5 27 L17.5 43 Q17.5 44 18.5 44 L29.5 44 Q30.5 44 30.5 43 L30.5 27 Q30.5 22 27 19 Q26 18 26 17 L26 7"/>`,
+  whitewine:`<rect x="22" y="4" width="4" height="3" rx="0.3"/><path d="M22 7 L22 18 Q22 19 21.5 20 Q19 22.5 19 27 L19 43 Q19 44 20 44 L28 44 Q29 44 29 43 L29 27 Q29 22.5 26.5 20 Q26 19 26 18 L26 7"/>`,
+  champagne:`<rect x="21.5" y="4" width="5" height="3.5" rx="0.3"/><path d="M21.5 7.5 L21.5 15 Q21.5 16 20.5 17 Q15.5 20 15.5 28 L15.5 43 Q15.5 44 16.5 44 L31.5 44 Q32.5 44 32.5 43 L32.5 28 Q32.5 20 27.5 17 Q26.5 16 26.5 15 L26.5 7.5"/><path d="M21.5 11 L26.5 11"/>`,
+  beer:`<rect x="21.5" y="3" width="5" height="3" rx="0.5"/><path d="M22 6 L22 18 Q22 19.5 21 20.5 Q19.5 21.5 19.5 25 L19.5 43 Q19.5 44 20.5 44 L27.5 44 Q28.5 44 28.5 43 L28.5 25 Q28.5 21.5 27 20.5 Q26 19.5 26 18 L26 6"/>`,
+  seltzer:`<rect x="17.5" y="6" width="13" height="38" rx="2.5"/><path d="M17.8 11 Q24 12.6 30.2 11"/><path d="M20.5 8.6 L27.5 8.6"/>`,
+  // glasses & serves
+  rocks:`<path d="M15 17 L17.5 42 Q17.6 43.5 19 43.5 L29 43.5 Q30.4 43.5 30.5 42 L33 17 Z"/><path d="M15.7 22 L32.3 22"/>`,
+  highball:`<path d="M18 9 L19.5 42 Q19.6 43.5 21 43.5 L27 43.5 Q28.4 43.5 28.5 42 L30 9 Z"/>`,
+  shot:`<path d="M18 27 L19.3 42 Q19.4 43.5 20.8 43.5 L27.2 43.5 Q28.6 43.5 28.7 42 L30 27 Z"/>`,
+  pint:`<path d="M16 8 L18.5 42 Q18.6 43.5 20 43.5 L28 43.5 Q29.4 43.5 29.5 42 L32 8 Z"/>`,
+  martini:`<path d="M11 11 L24 26 L37 11 Z"/><path d="M24 26 L24 42"/><path d="M18 42 L30 42"/>`,
+  coupe:`<path d="M13 13 Q13 22 24 22 Q35 22 35 13"/><path d="M13 13 L35 13"/><path d="M24 22 L24 42"/><path d="M18 42 L30 42"/>`,
+  flute:`<path d="M20.5 8 Q20.5 24 24 27 Q27.5 24 27.5 8 Z"/><path d="M24 27 L24 42"/><path d="M19.5 42 L28.5 42"/>`,
+  redwineglass:`<path d="M16 11 Q16 27 24 28 Q32 27 32 11"/><path d="M16 11 Q16 9 24 9 Q32 9 32 11"/><path d="M24 28 L24 42"/><path d="M17 42 L31 42"/>`,
+  whitewineglass:`<path d="M18 11 Q18 25 24 26.5 Q30 25 30 11"/><path d="M18 11 Q18 9.5 24 9.5 Q30 9.5 30 11"/><path d="M24 26.5 L24 42"/><path d="M18 42 L30 42"/>`,
+  snifter:`<path d="M15 23 Q15 34 24 34 Q33 34 33 23 Q33 19 27 18.5 L21 18.5 Q15 19 15 23 Z"/><path d="M24 34 L24 41"/><path d="M19 41 L29 41"/>`,
+  margarita:`<path d="M11 10 L20 18 L16 20 Q24 22 32 20 L28 18 L37 10"/><path d="M24 20 L24 42"/><path d="M18 42 L30 42"/>`,
+  // beverage — kegs, casks & tools
+  keg:`<rect x="14" y="8" width="20" height="32" rx="4"/><ellipse cx="24" cy="8" rx="10" ry="2.6"/><path d="M13 16 H35 M13 32 H35"/><rect x="21" y="4" width="6" height="4" rx="1"/>`,
+  growler:`<path d="M18 8 H30 V14 Q30 16 32 18 Q34 20 34 26 L34 40 Q34 42 32 42 H16 Q14 42 14 40 L14 26 Q14 20 16 18 Q18 16 18 14 Z"/><path d="M30 19 Q38 19 38 26 Q38 32 32 32"/>`,
+  barrel:`<path d="M14 12 Q10 24 14 36 H34 Q38 24 34 12 Z"/><ellipse cx="24" cy="12" rx="10" ry="2.4"/><path d="M11 20 H37 M11 28 H37"/>`,
+  shaker:`<path d="M17 16 L19 40 Q19 42 21 42 H27 Q29 42 29 40 L31 16 Z"/><path d="M16 16 H32 L30 11 H18 Z"/><rect x="20" y="6" width="8" height="5" rx="1"/>`,
+  beercan:`<rect x="16" y="8" width="16" height="32" rx="2.5"/><path d="M16 14 H32"/><ellipse cx="24" cy="8" rx="8" ry="1.8"/><circle cx="24" cy="11" r="1.4"/>`,
+  taphandle:`<rect x="20" y="6" width="8" height="15" rx="2"/><path d="M24 21 V27"/><path d="M16 27 H32 L30 33 H18 Z"/><path d="M22 33 V40 H26 V33"/>`,
+  corkscrew:`<rect x="18" y="7" width="12" height="5" rx="1"/><path d="M24 12 V17"/><path d="M24 17 Q28 19 24 21 Q20 23 24 25 Q28 27 24 29 Q20 31 24 33 Q24 37 24 40"/>`,
+  flask:`<path d="M16 14 Q16 12 18 12 H30 Q32 12 32 14 L32 20 Q32 24 30 26 L30 38 Q30 40 28 40 H20 Q18 40 18 38 L18 26 Q16 24 16 20 Z"/><rect x="21" y="7" width="6" height="5" rx="1"/>`,
+  // software & tech
+  app_window:`<rect x="6" y="9" width="36" height="30" rx="3"/><path d="M6 16 H42"/><circle cx="11" cy="12.5" r="1"/><circle cx="15" cy="12.5" r="1"/>`,
+  browser:`<rect x="6" y="9" width="36" height="30" rx="3"/><path d="M6 16 H42"/><rect x="10" y="11.6" width="16" height="2.8" rx="1.4"/>`,
+  cloud:`<path d="M16 34 Q9 34 9 27.5 Q9 21.5 15 21 Q16.5 13.5 24 13.5 Q31 13.5 32.5 20.5 Q39 21 39 27.5 Q39 34 32 34 Z"/>`,
+  database:`<ellipse cx="24" cy="11" rx="13" ry="5"/><path d="M11 11 V37 Q11 42 24 42 Q37 42 37 37 V11"/><path d="M11 24 Q11 29 24 29 Q37 29 37 24"/>`,
+  server:`<rect x="8" y="9" width="32" height="12" rx="2"/><rect x="8" y="27" width="32" height="12" rx="2"/><circle cx="14" cy="15" r="1.3"/><circle cx="14" cy="33" r="1.3"/><path d="M20 15 H32 M20 33 H32"/>`,
+  code:`<path d="M16 15 L7 24 L16 33"/><path d="M32 15 L41 24 L32 33"/><path d="M28 12 L20 36"/>`,
+  terminal:`<rect x="6" y="9" width="36" height="30" rx="3"/><path d="M12 19 L18 24 L12 29"/><path d="M22 30 H32"/>`,
+  apiplug:`<path d="M19 7 V15 M29 7 V15"/><rect x="15" y="15" width="18" height="11" rx="3"/><path d="M24 26 V34 Q24 39 19 39"/>`,
+  gear:`<circle cx="24" cy="24" r="6.5"/><path d="M24 7 V12 M24 36 V41 M7 24 H12 M36 24 H41 M12.5 12.5 L16 16 M32 32 L35.5 35.5 M35.5 12.5 L32 16 M16 32 L12.5 35.5"/>`,
+  chart:`<path d="M9 40 H41"/><path d="M9 40 V10"/><rect x="14" y="26" width="5" height="11"/><rect x="23" y="18" width="5" height="19"/><rect x="32" y="30" width="5" height="7"/>`,
+  mobile:`<rect x="15" y="6" width="18" height="36" rx="3.5"/><path d="M21 9.5 H27"/><circle cx="24" cy="37.5" r="1.3"/>`,
+  cpu:`<rect x="15" y="15" width="18" height="18" rx="2"/><rect x="21" y="21" width="6" height="6" rx="1"/><path d="M20 15 V10 M28 15 V10 M20 33 V38 M28 33 V38 M15 20 H10 M15 28 H10 M33 20 H38 M33 28 H38"/>`,
+  gitbranch:`<circle cx="15" cy="11" r="3"/><circle cx="15" cy="37" r="3"/><circle cx="33" cy="16" r="3"/><path d="M15 14 V34"/><path d="M33 19 Q33 26 24 26 Q15 26 15 26"/>`,
+  lock:`<rect x="12" y="21" width="24" height="18" rx="3"/><path d="M17 21 V15 Q17 8 24 8 Q31 8 31 15 V21"/><circle cx="24" cy="28" r="1.8"/><path d="M24 29.5 V33"/>`,
+  users:`<circle cx="17" cy="16" r="5"/><path d="M8 38 Q8 27 17 27 Q26 27 26 38"/><circle cx="32" cy="18" r="4"/><path d="M27 38 Q27 30 32 30 Q40 30 40 38"/>`,
+  rocket:`<path d="M24 6 Q31 13 31 25 L27 33 H21 L17 25 Q17 13 24 6 Z"/><circle cx="24" cy="19" r="2.5"/><path d="M21 33 L16 40 L21 36 M27 33 L32 40 L27 36"/>`,
+  aispark:`<path d="M24 7 L27 20 L40 24 L27 28 L24 41 L21 28 L8 24 L21 20 Z"/>`,
+  filedoc:`<path d="M14 6 H30 L38 14 V42 H14 Z"/><path d="M30 6 V14 H38"/><path d="M19 23 H31 M19 29 H31 M19 35 H27"/>`,
+  folder:`<path d="M7 13 H19 L23 17 H41 V39 H7 Z"/>`,
+  // hemp & CBD
+  hempleaf:`<path d="M24 42 V18"/><path d="M24 20 Q16 18 10 9 Q19 11 24 19 Q22 12 24 6 Q26 12 24 19 Q29 11 38 9 Q32 18 24 20"/><path d="M24 27 Q17 26 12 18 Q20 20 24 26 Q28 20 36 18 Q31 26 24 27"/>`,
+  hempplant:`<path d="M24 42 V15"/><path d="M24 30 Q16 28 12 20 M24 30 Q32 28 36 20 M24 22 Q18 20 15 13 M24 22 Q30 20 33 13 M24 15 Q22 11 20 8 M24 15 Q26 11 28 8"/>`,
+  cbdtincture:`<rect x="18" y="18" width="12" height="22" rx="2"/><path d="M18 24 H30"/><rect x="19.5" y="13" width="9" height="5" rx="1"/><rect x="22" y="5" width="4" height="8" rx="2"/>`,
+  hempseed:`<ellipse cx="24" cy="24" rx="8" ry="11"/><path d="M24 14 Q19 24 24 34"/>`,
+  rope:`<path d="M11 14 Q17.5 10 24 14 Q30.5 18 37 14 M11 24 Q17.5 20 24 24 Q30.5 28 37 24 M11 34 Q17.5 30 24 34 Q30.5 38 37 34"/>`,
+  hempfabric:`<rect x="9" y="14" width="30" height="20" rx="2"/><path d="M9 20 H39 M9 26 H39 M15 14 V34 M24 14 V34 M33 14 V34"/>`,
+  salvejar:`<rect x="14" y="18" width="20" height="20" rx="3"/><path d="M14 24 H34"/><rect x="16" y="12" width="16" height="6" rx="2"/>`,
+  capsule:`<rect x="11" y="19" width="26" height="10" rx="5"/><path d="M24 19 V29"/>`,
+  // cannabis
+  cannabisleaf:`<path d="M24 42 V17"/><path d="M24 19 Q17 17 11 8 Q19 10 24 18 Q22 11 24 6 Q26 11 24 18 Q29 10 37 8 Q31 17 24 19 M24 25 Q16 24 9 16 Q18 19 24 25 Q30 19 39 16 Q32 24 24 25 M24 31 Q18 30 13 24 Q20 27 24 31 Q28 27 35 24 Q30 30 24 31"/>`,
+  bud:`<circle cx="24" cy="15" r="5"/><circle cx="18" cy="23" r="5"/><circle cx="30" cy="23" r="5"/><circle cx="24" cy="29" r="5"/><path d="M24 34 V41"/>`,
+  joint:`<path d="M8 37 L11 34 L33 15 L36 18 Z"/><path d="M36 16 L40 12"/><circle cx="40.5" cy="11" r="1.6"/>`,
+  vapepen:`<rect x="20" y="6" width="8" height="30" rx="3"/><rect x="21.5" y="36" width="5" height="6" rx="1"/><path d="M22 12 H26"/>`,
+  cartridge:`<rect x="20" y="9" width="8" height="23" rx="2"/><path d="M22 5 H26 V9 H22 Z"/><path d="M20 30 L28 30 L26 39 H22 Z"/>`,
+  dab:`<path d="M12 34 H36"/><path d="M18 34 Q18 26 24 26 Q30 26 30 34"/><path d="M24 26 V16"/><path d="M20 12 Q24 8 28 12 Q26 16 24 16 Q22 16 20 12 Z"/>`,
+  gummy:`<rect x="14" y="14" width="20" height="20" rx="6"/><circle cx="20" cy="21" r="1"/><circle cx="28" cy="27" r="1"/>`,
+  bong:`<path d="M22 5 H26 V16 L30 40 Q30 42 28 42 H20 Q18 42 18 40 L22 16 Z"/><path d="M22 32 L13 27"/>`,
+  pipe:`<path d="M12 30 Q10 24 16 22 L32 22 Q38 22 38 27 Q38 32 32 32 L18 32 Q12 32 12 30 Z"/><path d="M16 22 V17 H20 V22"/>`,
+  grinder:`<circle cx="24" cy="24" r="12"/><path d="M12 24 H36"/><path d="M16 15 V20 M20 13 V18 M24 12 V18 M28 13 V18 M32 15 V20"/>`,
+  dispjar:`<rect x="14" y="16" width="20" height="24" rx="3"/><rect x="16" y="10" width="16" height="6" rx="2"/><rect x="18" y="24" width="12" height="10" rx="1"/>`,
+  papers:`<rect x="12" y="16" width="24" height="16" rx="2"/><path d="M12 22 H36"/><path d="M30 16 V32"/>`,
+  // CPG & packaging
+  box3d:`<path d="M24 6 L40 14 L24 22 L8 14 Z"/><path d="M8 14 V33 L24 41 V22"/><path d="M40 14 V33 L24 41"/>`,
+  cerealbox:`<rect x="14" y="9" width="20" height="31" rx="1"/><path d="M14 9 L18 5 H30 L34 9"/><rect x="18" y="16" width="12" height="13" rx="1"/>`,
+  foodcan:`<rect x="15" y="9" width="18" height="31" rx="1.5"/><ellipse cx="24" cy="9" rx="9" ry="2.4"/><rect x="18" y="16" width="12" height="12" rx="1"/>`,
+  masonjar:`<path d="M15 16 V38 Q15 40 17 40 H31 Q33 40 33 38 V16"/><rect x="15" y="10" width="18" height="6" rx="1"/><path d="M17 10 V7 H31 V10"/>`,
+  pouch:`<path d="M14 12 H34 V38 Q34 40 32 40 H16 Q14 40 14 38 Z"/><path d="M14 12 Q14 9 18 9 H30 Q34 9 34 12"/><path d="M18 16 H30"/>`,
+  snackbag:`<path d="M15 13 H33 L31 40 H17 Z"/><path d="M15 13 L17 8 H31 L33 13"/><path d="M19 21 H29 M19 27 H29"/>`,
+  coffeebag:`<path d="M15 14 H33 V40 H15 Z"/><path d="M15 14 V10 H33 V14"/><path d="M19 10 V7 H29 V10"/><path d="M19 24 H29"/>`,
+  stickpack:`<rect x="20" y="10" width="8" height="28"/><path d="M20 10 L22 7 L24 10 L26 7 L28 10 M20 38 L22 41 L24 38 L26 41 L28 38"/>`,
+  tube:`<rect x="18" y="12" width="12" height="28" rx="2"/><path d="M18 16 Q24 13 30 16"/><rect x="21" y="7" width="6" height="5" rx="1"/>`,
+  spraybottle:`<rect x="18" y="16" width="13" height="24" rx="2"/><path d="M18 16 V11 H24"/><path d="M24 8 H31 L31 14 H24 Z"/><path d="M31 9 L36 8 M31 11 L36 11 M31 13 L36 14"/>`,
+  pumpbottle:`<rect x="18" y="18" width="12" height="22" rx="2"/><path d="M24 18 V12"/><path d="M22 8 H30 V11 H24"/><path d="M24 12 H21"/>`,
+  petbottle:`<path d="M20 12 Q20 15 18 17 Q16 19 16 24 L16 40 Q16 42 18 42 H30 Q32 42 32 40 L32 24 Q32 19 30 17 Q28 15 28 12"/><rect x="20" y="7" width="8" height="5" rx="1"/><path d="M16 26 H32"/>`,
+  milkcarton:`<path d="M14 18 H34 V40 H14 Z"/><path d="M14 18 L18 10 H30 L34 18"/><path d="M18 10 L24 14 L30 10"/>`,
+  tub:`<path d="M14 18 L16 38 Q16 40 18 40 H30 Q32 40 32 38 L34 18 Z"/><rect x="12" y="14" width="24" height="4" rx="1"/>`,
+  blister:`<rect x="9" y="14" width="30" height="20" rx="2"/><circle cx="17" cy="21" r="2.4"/><circle cx="24" cy="21" r="2.4"/><circle cx="31" cy="21" r="2.4"/><circle cx="17" cy="28" r="2.4"/><circle cx="24" cy="28" r="2.4"/><circle cx="31" cy="28" r="2.4"/>`,
+  aerosol:`<rect x="17" y="14" width="14" height="26" rx="2"/><rect x="20" y="9" width="8" height="5" rx="1"/><rect x="21.5" y="5" width="5" height="4" rx="1"/>`,
+  soapbar:`<rect x="10" y="18" width="28" height="14" rx="5"/><path d="M15 24 H33"/>`,
+  compact:`<circle cx="24" cy="24" r="14"/><circle cx="24" cy="24" r="9"/><path d="M24 10 V15"/>`,
+};
+
+const BOTTLES = [
+  ['spirits','Spirits (generic)'],['whiskey','Whiskey'],['vodka','Vodka'],['gin','Gin'],
+  ['rum','Rum'],['tequila','Tequila'],['liqueur','Liqueur'],['redwine','Red wine'],
+  ['whitewine','White wine'],['champagne','Champagne / sparkling'],['beer','Beer'],['seltzer','Seltzer can'],
+];
+const GLASSES = [
+  ['rocks','Rocks / Old Fashioned'],['highball','Highball / Collins'],['shot','Shot'],['pint','Pint'],
+  ['martini','Martini'],['coupe','Coupe'],['flute','Flute'],['redwineglass','Red wine glass'],
+  ['whitewineglass','White wine glass'],['snifter','Snifter'],['margarita','Margarita'],
+];
+const BEV2 = [
+  ['keg','Keg'],['growler','Growler'],['barrel','Barrel'],['shaker','Cocktail shaker'],
+  ['beercan','Beer can'],['taphandle','Draft tap'],['corkscrew','Corkscrew'],['flask','Hip flask'],
+];
+const SOFTWARE = [
+  ['app_window','App'],['browser','Browser'],['mobile','Mobile app'],['cloud','Cloud'],
+  ['database','Database'],['server','Servers'],['cpu','Chip / device'],['code','Code'],
+  ['terminal','Terminal'],['apiplug','API / integration'],['gitbranch','Version control'],['gear','Settings'],
+  ['chart','Analytics'],['aispark','AI'],['lock','Security'],['users','Users / seats'],
+  ['rocket','Deploy / launch'],['filedoc','Document'],['folder','Files'],
+];
+const HEMP = [
+  ['hempleaf','Hemp leaf'],['hempplant','Hemp plant'],['cbdtincture','CBD tincture'],['hempseed','Hemp seed'],
+  ['rope','Hemp rope'],['hempfabric','Hemp textile'],['salvejar','CBD topical'],['capsule','Softgel'],
+];
+const CANNABIS = [
+  ['cannabisleaf','Cannabis leaf'],['bud','Flower / bud'],['joint','Pre-roll'],['vapepen','Vape pen'],
+  ['cartridge','Cartridge'],['dab','Concentrate'],['gummy','Edible gummy'],['bong','Water pipe'],
+  ['pipe','Pipe'],['grinder','Grinder'],['dispjar','Dispensary jar'],['papers','Rolling papers'],
+];
+const CPG = [
+  ['box3d','Box / carton'],['cerealbox','Folding carton'],['foodcan','Food can'],['masonjar','Glass jar'],
+  ['pouch','Stand-up pouch'],['snackbag','Snack bag'],['coffeebag','Coffee bag'],['stickpack','Stick pack'],
+  ['tube','Tube'],['spraybottle','Spray bottle'],['pumpbottle','Pump bottle'],['petbottle','PET bottle'],
+  ['milkcarton','Gable carton'],['tub','Tub'],['blister','Blister pack'],['aerosol','Aerosol'],
+  ['soapbar','Bar soap'],['compact','Compact'],
+];
+
+function svg(inner){
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="var(--stroke)" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+}
+function fullSvg(inner){
+  const w = getComputedStyle(document.documentElement).getPropertyValue('--stroke').trim()||'1.5';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+}
+
+function build(list, mount){
+  const el = document.getElementById(mount);
+  el.innerHTML = list.map(([k,label])=>`
+    <div class="cell" data-key="${k}">
+      ${svg(I[k])}
+      <span class="nm">${label}</span>
+      <span class="copied">SVG saved ✓</span>
+    </div>`).join('');
+}
+build(BOTTLES,'bottles');
+build(GLASSES,'glasses');
+build(BEV2,'bev2');
+build(SOFTWARE,'software');
+build(HEMP,'hemp');
+build(CANNABIS,'cannabis');
+build(CPG,'cpg');
+
+// Click DOWNLOADS the icon as a true .svg (vector) file. Clipboard can't carry a pasteable SVG —
+// browsers only allow text/plain, text/html, image/png on the clipboard, so a "copy" yields raster
+// or source, never vector. A downloaded .svg drops straight into PowerPoint (Insert ▸ Picture) and
+// scales cleanly. Colour + stroke are baked in from the current controls. ⌥-click copies the SVG source.
+function resolvedSvg(k){
+  const color=getComputedStyle(root).getPropertyValue('--icon').trim()||'#1a2332';
+  const w=getComputedStyle(root).getPropertyValue('--stroke').trim()||'1.5';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="128" height="128" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${I[k]}</svg>`;
+}
+function fallback(txt){
+  const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);
+  ta.select();try{document.execCommand('copy');}catch(e){}document.body.removeChild(ta);
+}
+document.querySelectorAll('.cell').forEach(c=>{
+  c.addEventListener('click', (e)=>{
+    const k=c.dataset.key;
+    const done=()=>{c.classList.add('show');setTimeout(()=>c.classList.remove('show'),900);};
+    if(e.altKey){                                   // ⌥-click → copy SVG source as text
+      const txt=fullSvg(I[k]);
+      if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done).catch(()=>{fallback(txt);done();}); }
+      else { fallback(txt); done(); }
+      return;
+    }
+    const url=URL.createObjectURL(new Blob([resolvedSvg(k)],{type:'image/svg+xml'}));   // download .svg (vector)
+    const a=document.createElement('a'); a.href=url; a.download=k+'.svg'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    done();
+  });
+});
+
+// controls
+const root=document.documentElement;
+document.getElementById('col').addEventListener('input',e=>root.style.setProperty('--icon',e.target.value));
+document.querySelectorAll('.sw').forEach(s=>s.addEventListener('click',()=>{
+  root.style.setProperty('--icon',s.dataset.c);document.getElementById('col').value=s.dataset.c;
+}));
+document.getElementById('sw').addEventListener('input',e=>root.style.setProperty('--stroke',e.target.value));
+document.getElementById('surf').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#surf button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  document.body.classList.toggle('dark',b.dataset.s==='dark');
+});
+
+// ---- position grid demo ----
+// x = price index (0-100), y = velocity (0-100), trend, category glass/bottle
+const POINTS = [
+  {name:'Añejo tequila', x:82, y:70, trend:'up',   glass:'shot',        bottle:'tequila'},
+  {name:'Craft bourbon', x:74, y:44, trend:'up',   glass:'rocks',       bottle:'whiskey'},
+  {name:'Prosecco',      x:38, y:78, trend:'up',   glass:'flute',       bottle:'champagne'},
+  {name:'Hard seltzer',  x:22, y:88, trend:'up',   glass:'highball',    bottle:'seltzer'},
+  {name:'Domestic lager',x:18, y:40, trend:'down', glass:'pint',        bottle:'beer'},
+  {name:'Value vodka',   x:24, y:55, trend:'flat', glass:'highball',    bottle:'vodka'},
+  {name:'Napa cab',      x:88, y:30, trend:'flat', glass:'redwineglass',bottle:'redwine'},
+  {name:'Pinot grigio',  x:52, y:52, trend:'flat', glass:'whitewineglass',bottle:'whitewine'},
+  {name:'London gin',    x:60, y:36, trend:'down', glass:'martini',     bottle:'gin'},
+  {name:'Cream liqueur', x:46, y:24, trend:'down', glass:'coupe',       bottle:'liqueur'},
+  {name:'Aged rum',      x:66, y:58, trend:'up',   glass:'snifter',     bottle:'rum'},
+];
+const TREND={up:'var(--up)',flat:'var(--flat)',down:'var(--down)'};
+let anon=true, tok='glass';
+
+function renderPlane(){
+  const p=document.getElementById('plane');
+  p.querySelectorAll('.token').forEach(t=>t.remove());
+  POINTS.forEach(pt=>{
+    const d=document.createElement('div');
+    d.className='token';
+    d.style.left=pt.x+'%';
+    d.style.top=(100-pt.y)+'%';
+    d.style.color=TREND[pt.trend];
+    const key = tok==='glass'?pt.glass:pt.bottle;
+    d.innerHTML = svg(I[key]) + (anon?'':`<span class="tlab">${pt.name}</span>`);
+    p.appendChild(d);
+  });
+}
+renderPlane();
+document.getElementById('anon').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#anon button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  anon = b.dataset.a==='anon'; renderPlane();
+});
+document.getElementById('tok').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#tok button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  tok = b.dataset.t; renderPlane();
+});
+</script>
+</body>
+</html>
