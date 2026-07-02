@@ -28,6 +28,7 @@ import shopify_scraper as shopify  # DTC brands on Shopify (hemp + bev-alc) via 
 import instacart_scraper as instacart  # store-level Instacart via Bright Data managed dataset
 import analyze                      # data-reader brain behind "Overlay your data"
 import planogram                    # benchmark + shelf-vision + pitch behind the Planogram app
+import auth_gate                    # Google OIDC login gate (active only when configured)
 
 APP_DIR   = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.join(APP_DIR, "agent_state"); os.makedirs(STATE_DIR, exist_ok=True)
@@ -41,6 +42,7 @@ STATE_BUCKET = os.environ.get("STATE_BUCKET", "").strip()
 STATE_PREFIX = os.environ.get("STATE_PREFIX", "unifyd-state").strip("/")
 
 app = Flask(__name__)
+auth_gate.init(app)                # Google OIDC gate (whole origin) — a no-op unless configured
 
 # ---------------- live run jobs (the on-theme console on Run) ----------------
 # A run executes in a background thread; the front-end polls /api/run/progress to stream
