@@ -4,154 +4,160 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Prism</title>
-<meta name="theme-color" content="#1B1A17">
+<meta name="theme-color" content="#FFFFFF">
 <link rel="manifest" href="prism.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Prism">
 <link rel="apple-touch-icon" href="prism-icon-180.png">
 <link rel="icon" href="prism-icon-192.png">
 <style>
+  /* Tableau-style theme: cool neutral chrome, restrained palette, crisp data tables. */
   :root{
-    --ink:#1B1A17; --paper:#F4F2EC; --card:#FFFFFF; --amber:#B07012; --amber-br:#DCA138;
-    --up:#1F7A4D; --up-bg:rgba(31,122,77,.10); --down:#B8402B; --down-bg:rgba(184,64,43,.10);
-    --muted:#8A857B; --line:rgba(27,26,23,.10); --bar:56px;
+    --bg:#F1F3F5; --card:#FFFFFF; --chrome:#FFFFFF;
+    --line:#E4E7EB; --line-2:#D3D8DE; --grid:#EDF0F2;
+    --text:#2B3138; --text-2:#4A525B; --muted:#7A828B;
+    --blue:#4E79A7; --blue-ink:#3B5F86;
+    --up:#4E9A5A; --up-bg:rgba(78,154,90,.10); --down:#D8544F; --down-bg:rgba(216,84,79,.10);
     --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
-    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
-    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+    --font:"Trebuchet MS","Segoe UI",system-ui,-apple-system,BlinkMacSystemFont,sans-serif;
+    --num:"Trebuchet MS","Segoe UI",system-ui,sans-serif;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{margin:0;height:100%;background:var(--ink);overscroll-behavior:none}
-  body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased}
-  .app{display:flex;flex-direction:column;height:100dvh;max-width:520px;margin:0 auto;
-    background:var(--paper);position:relative;overflow:hidden}
+  html,body{margin:0;height:100%;background:var(--bg);overscroll-behavior:none}
+  body{font-family:var(--font);color:var(--text);-webkit-font-smoothing:antialiased}
+  .num{font-family:var(--num);font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+  .app{display:flex;flex-direction:column;height:100dvh;max-width:540px;margin:0 auto;
+    background:var(--bg);position:relative;overflow:hidden}
 
   /* ---- app bar ---- */
-  .appbar{flex:0 0 auto;background:var(--ink);color:var(--paper);
-    padding:calc(var(--safe-t) + 9px) 16px 9px;display:flex;align-items:center;gap:10px}
+  .appbar{flex:0 0 auto;background:var(--chrome);color:var(--text);
+    padding:calc(var(--safe-t) + 10px) 15px 10px;display:flex;align-items:center;gap:10px;
+    border-bottom:1px solid var(--line)}
   .appbar .brand{display:flex;align-items:center;gap:9px;text-decoration:none;color:inherit}
-  .appbar .glyph{width:26px;height:26px;flex:0 0 auto}
-  .appbar .wm{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:#C9C2B4}
-  .appbar .nm{font-weight:700;font-size:16px;letter-spacing:-.01em;margin-left:-3px}
-  .measbtn{margin-left:auto;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.09);
-    color:var(--paper);border:1px solid rgba(255,255,255,.14);border-radius:999px;
-    padding:7px 12px;font-family:var(--font);font-size:12.5px;font-weight:600;cursor:pointer}
-  .measbtn .cv{color:var(--amber-br)}
-  .measbtn svg{width:12px;height:12px}
+  .appbar .glyph{width:25px;height:25px;flex:0 0 auto}
+  .appbar .wm{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .appbar .nm{font-weight:700;font-size:16px;letter-spacing:.01em;margin-left:-3px;color:var(--text)}
+  .measbtn{margin-left:auto;display:flex;align-items:center;gap:7px;background:var(--card);
+    color:var(--blue-ink);border:1px solid var(--line-2);border-radius:6px;
+    padding:7px 11px;font-family:var(--font);font-size:12.5px;font-weight:700;cursor:pointer}
+  .measbtn svg{width:11px;height:11px;color:var(--muted)}
 
   /* ---- views ---- */
   .views{flex:1 1 auto;position:relative;overflow:hidden}
   .view{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
-    padding:14px 13px calc(96px + var(--safe-b));display:none}
-  .view.active{display:block;animation:vin .24s cubic-bezier(.2,.7,.3,1)}
-  @keyframes vin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+    padding:14px 13px calc(94px + var(--safe-b));display:none}
+  .view.active{display:block;animation:vin .2s ease}
+  @keyframes vin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-  .vhead{display:flex;align-items:baseline;gap:8px;margin:4px 3px 12px}
-  .vhead h1{font-size:22px;font-weight:800;letter-spacing:-.02em;margin:0}
+  .vhead{display:flex;align-items:baseline;gap:8px;margin:2px 2px 13px}
+  .vhead h1{font-size:21px;font-weight:700;letter-spacing:.005em;margin:0}
   .vhead .sub{font-size:12.5px;color:var(--muted);font-weight:600}
-  .src{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);
-    font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .src{margin-left:auto;display:inline-flex;align-items:center;gap:5px;
+    font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:700}
   .src .dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
   .src.live .dot{background:var(--up)} .src.live{color:var(--up)}
 
   /* ---- pulse feed ---- */
-  .pcard{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 15px;
-    margin-bottom:11px;box-shadow:0 1px 2px rgba(27,26,23,.04);cursor:pointer;
-    transition:transform .12s ease}
-  .pcard:active{transform:scale(.985)}
-  .pcard .top{display:flex;align-items:center;gap:8px;margin-bottom:9px}
-  .pcard .dimtag{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
-    color:var(--muted)}
-  .pcard .arw{margin-left:auto;font-size:15px;font-weight:800}
+  .pcard{background:var(--card);border:1px solid var(--line);border-radius:7px;padding:13px 14px;
+    margin-bottom:9px;cursor:pointer;transition:border-color .12s ease}
+  .pcard:active{border-color:var(--line-2)}
+  .pcard .top{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .pcard .dimtag{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .pcard .arw{margin-left:auto;font-size:12px}
   .arw.up{color:var(--up)} .arw.down{color:var(--down)}
-  .pcard .mid{display:flex;align-items:flex-end;gap:12px}
-  .pcard .member{font-size:19px;font-weight:800;letter-spacing:-.01em;flex:1 1 auto;line-height:1.1}
-  .pcard .big{font-size:26px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-  .big.up{color:var(--up)} .big.down{color:var(--down)}
-  .pcard .spark{margin:10px 0 8px}
-  .pcard .say{font-size:13.5px;line-height:1.4;color:#3a382f}
+  .pcard .mid{display:flex;align-items:baseline;gap:12px}
+  .pcard .member{font-size:17px;font-weight:700;letter-spacing:.005em;flex:1 1 auto;line-height:1.15}
+  .pcard .big{font-size:23px;font-weight:700;letter-spacing:-.01em}
+  .big.up{color:var(--up)} .big.down{color:var(--down)} .big.neu{color:var(--text)}
+  .pcard .spark{margin:9px 0 7px}
+  .pcard .say{font-size:13px;line-height:1.42;color:var(--text-2)}
 
   /* ---- measure chips (cuts) ---- */
-  .mrow{display:flex;gap:7px;overflow-x:auto;-webkit-overflow-scrolling:touch;
-    padding:2px 3px 12px;margin:0 -3px;scrollbar-width:none}
+  .mrow{display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    padding:1px 2px 12px;margin:0 -2px;scrollbar-width:none}
   .mrow::-webkit-scrollbar{display:none}
-  .mchip{flex:0 0 auto;background:var(--card);border:1px solid var(--line);border-radius:999px;
-    padding:8px 14px;font-size:12.5px;font-weight:700;color:#57544c;cursor:pointer;white-space:nowrap}
-  .mchip.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .mchip{flex:0 0 auto;background:var(--card);border:1px solid var(--line-2);border-radius:6px;
+    padding:7px 12px;font-size:12px;font-weight:700;color:var(--text-2);cursor:pointer;white-space:nowrap}
+  .mchip.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 
-  /* ---- cut cards ---- */
-  .ccard{background:var(--card);border:1px solid var(--line);border-radius:16px;
-    margin-bottom:12px;overflow:hidden;box-shadow:0 1px 2px rgba(27,26,23,.04)}
-  .ccard .chead{display:flex;align-items:center;gap:8px;padding:13px 15px 11px;cursor:pointer}
-  .ccard .chead h2{font-size:15.5px;font-weight:800;letter-spacing:-.01em;margin:0}
-  .ccard .chead .cn{font-family:var(--mono);font-size:10px;color:var(--muted)}
-  .ccard .chead .chev{margin-left:auto;color:var(--muted);transition:transform .2s ease}
+  /* ---- cut cards = crisp data tables ---- */
+  .ccard{background:var(--card);border:1px solid var(--line);border-radius:7px;
+    margin-bottom:11px;overflow:hidden}
+  .ccard .chead{display:flex;align-items:center;gap:8px;padding:11px 14px;cursor:pointer;
+    border-bottom:1px solid var(--line)}
+  .ccard .chead h2{font-size:14px;font-weight:700;letter-spacing:.01em;margin:0}
+  .ccard .chead .cn{font-size:10px;color:var(--muted);font-weight:700;
+    background:var(--grid);padding:2px 6px;border-radius:4px}
+  .ccard .chead .chev{margin-left:auto;color:var(--muted);transition:transform .2s ease;display:flex}
   .ccard.open .chev{transform:rotate(180deg)}
-  .crow{display:flex;align-items:center;gap:11px;padding:10px 15px;border-top:1px solid var(--line);
-    cursor:pointer}
-  .crow:active{background:rgba(27,26,23,.03)}
-  .crow .rn{font-size:14px;font-weight:600;flex:1 1 auto;min-width:0;overflow:hidden;
-    text-overflow:ellipsis;white-space:nowrap}
-  .crow .rspark{flex:0 0 auto}
-  .crow .rv{font-size:14.5px;font-weight:800;font-variant-numeric:tabular-nums;
-    min-width:56px;text-align:right}
-  .rv.up{color:var(--up)} .rv.down{color:var(--down)}
+  /* aligned grid: member | sparkline | value | delta */
+  .cth,.crow{display:grid;grid-template-columns:1fr 56px 62px 46px;align-items:center;
+    column-gap:10px;padding:0 14px}
+  .cth{height:26px;border-bottom:1px solid var(--line)}
+  .cth span{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .cth .r{text-align:right}
+  .crow{min-height:40px;border-bottom:1px solid var(--grid);cursor:pointer}
+  .crow:last-of-type{border-bottom:0}
+  .crow:active{background:var(--grid)}
+  .crow .rn{font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+  .crow .rspark{display:flex;justify-content:flex-end}
+  .crow .rv{font-size:13.5px;font-weight:700;text-align:right}
+  .crow .rd{font-size:11.5px;font-weight:700;text-align:right}
+  .rv.up,.rd.up{color:var(--up)} .rv.down,.rd.down{color:var(--down)} .rv.neu{color:var(--text)}
   .crow.hidden{display:none}
-  .cmore{padding:10px 15px;border-top:1px solid var(--line);font-size:12.5px;font-weight:700;
-    color:var(--amber);cursor:pointer;text-align:center}
+  .cmore{padding:10px 14px;border-top:1px solid var(--line);font-size:12px;font-weight:700;
+    color:var(--blue);cursor:pointer;text-align:center;letter-spacing:.01em}
 
   /* ---- bottom nav ---- */
-  .tabbar{flex:0 0 auto;display:flex;background:var(--ink);
-    padding:8px 0 calc(8px + var(--safe-b));border-top:1px solid rgba(0,0,0,.3)}
-  .tab{flex:1;background:none;border:0;color:#8f887c;display:flex;flex-direction:column;
+  .tabbar{flex:0 0 auto;display:flex;background:var(--chrome);
+    padding:7px 0 calc(7px + var(--safe-b));border-top:1px solid var(--line)}
+  .tab{flex:1;background:none;border:0;color:var(--muted);display:flex;flex-direction:column;
     align-items:center;gap:3px;font-family:var(--font);font-size:10.5px;font-weight:700;cursor:pointer;
-    letter-spacing:.02em}
-  .tab svg{width:22px;height:22px}
-  .tab.on{color:var(--amber-br)}
+    letter-spacing:.01em}
+  .tab svg{width:21px;height:21px}
+  .tab.on{color:var(--blue)}
 
   /* ---- bottom sheet ---- */
-  .sheet-bd{position:absolute;inset:0;background:rgba(20,19,16,.5);opacity:0;pointer-events:none;
-    transition:opacity .22s ease;z-index:20}
+  .sheet-bd{position:absolute;inset:0;background:rgba(43,49,56,.42);opacity:0;pointer-events:none;
+    transition:opacity .2s ease;z-index:20}
   .sheet-bd.show{opacity:1;pointer-events:auto}
-  .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--paper);z-index:21;
-    border-radius:20px 20px 0 0;transform:translateY(102%);transition:transform .26s cubic-bezier(.2,.8,.2,1);
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);z-index:21;
+    border-radius:12px 12px 0 0;transform:translateY(102%);transition:transform .24s cubic-bezier(.2,.8,.2,1);
     max-height:86%;overflow-y:auto;padding:8px 18px calc(22px + var(--safe-b));
-    box-shadow:0 -8px 30px rgba(0,0,0,.22)}
+    box-shadow:0 -6px 26px rgba(43,49,56,.16);border:1px solid var(--line);border-bottom:0}
   .sheet.show{transform:none}
-  .grab{width:38px;height:4px;border-radius:2px;background:rgba(27,26,23,.18);margin:8px auto 6px}
-  .sheet h3{font-size:20px;font-weight:800;letter-spacing:-.02em;margin:6px 0 2px}
-  .sheet .sdim{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .grab{width:36px;height:4px;border-radius:2px;background:var(--line-2);margin:8px auto 8px}
+  .sheet h3{font-size:19px;font-weight:700;letter-spacing:.005em;margin:6px 0 2px}
+  .sheet .sdim{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700}
   .drillbig{display:flex;align-items:baseline;gap:10px;margin:12px 0 2px}
-  .drillbig .n{font-size:40px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-  .n.up{color:var(--up)} .n.down{color:var(--down)}
-  .drillbig .lb{font-size:12.5px;color:var(--muted);font-weight:600}
+  .drillbig .n{font-size:38px;font-weight:700;letter-spacing:-.015em}
+  .n.up{color:var(--up)} .n.down{color:var(--down)} .n.neu{color:var(--text)}
+  .drillbig .lb{font-size:12px;color:var(--muted);font-weight:600}
   .drilld{font-size:13px;font-weight:700;margin-bottom:4px}
   .drilld.up{color:var(--up)} .drilld.down{color:var(--down)}
-  .cap{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
-    color:var(--muted);margin:14px 0 6px}
-  .note{background:rgba(27,26,23,.04);border:1px solid var(--line);border-radius:12px;
-    padding:12px 13px;font-size:12.5px;line-height:1.45;color:#57544c;margin-top:16px}
-  .note a{color:var(--amber);font-weight:700;text-decoration:none}
-  /* measure sheet list */
+  .cap{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+    font-weight:700;margin:15px 0 6px}
+  .note{background:var(--grid);border:1px solid var(--line);border-radius:7px;
+    padding:11px 13px;font-size:12.5px;line-height:1.45;color:var(--text-2);margin-top:16px}
+  .note a{color:var(--blue);font-weight:700;text-decoration:none}
   .mlist{margin:8px 0 0}
-  .mopt{display:flex;align-items:center;gap:10px;padding:13px 4px;border-top:1px solid var(--line);
-    font-size:15px;font-weight:600;cursor:pointer}
-  .mopt:first-child{border-top:0}
-  .mopt .tick{margin-left:auto;color:var(--amber);font-weight:800;opacity:0}
-  .mopt.on .tick{opacity:1} .mopt.on{color:var(--ink)}
-  .mopt .k{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;
-    color:var(--muted);background:rgba(27,26,23,.05);padding:3px 7px;border-radius:6px}
+  .mopt{display:flex;align-items:center;gap:10px;padding:13px 2px;border-bottom:1px solid var(--line);
+    font-size:15px;font-weight:600;cursor:pointer;color:var(--text-2)}
+  .mopt .tick{margin-left:auto;color:var(--blue);font-weight:800;opacity:0}
+  .mopt.on .tick{opacity:1} .mopt.on{color:var(--text)}
+  .mopt .k{font-size:9px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--muted);background:var(--grid);padding:3px 7px;border-radius:4px;font-weight:700}
 
-  /* install hint (iOS) */
-  .ihint{position:absolute;left:12px;right:12px;bottom:calc(84px + var(--safe-b));z-index:15;
-    background:var(--ink);color:var(--paper);border-radius:14px;padding:12px 14px;display:none;
-    align-items:center;gap:10px;font-size:12.5px;box-shadow:0 6px 22px rgba(0,0,0,.28)}
+  .ihint{position:absolute;left:12px;right:12px;bottom:calc(82px + var(--safe-b));z-index:15;
+    background:var(--text);color:#fff;border-radius:8px;padding:11px 13px;display:none;
+    align-items:center;gap:10px;font-size:12.5px;box-shadow:0 5px 20px rgba(43,49,56,.24)}
   .ihint.show{display:flex}
-  .ihint b{color:var(--amber-br)} .ihint .x{margin-left:auto;opacity:.7;font-size:18px;padding:2px 4px}
+  .ihint b{color:#9DC3E6} .ihint .x{margin-left:auto;opacity:.7;font-size:18px;padding:2px 4px}
 
-  .toast{position:absolute;left:50%;transform:translateX(-50%) translateY(20px);
-    bottom:calc(96px + var(--safe-b));background:var(--ink);color:var(--paper);font-size:12.5px;
-    padding:9px 15px;border-radius:999px;opacity:0;transition:all .22s ease;z-index:30;pointer-events:none;white-space:nowrap}
+  .toast{position:absolute;left:50%;transform:translateX(-50%) translateY(18px);
+    bottom:calc(94px + var(--safe-b));background:var(--text);color:#fff;font-size:12.5px;
+    padding:9px 15px;border-radius:6px;opacity:0;transition:all .2s ease;z-index:30;pointer-events:none;white-space:nowrap}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
@@ -160,17 +166,16 @@
   <header class="appbar">
     <a class="brand" href="../index.html#dashboard" title="Hoodie Suite">
       <svg class="glyph" viewBox="0 0 40 40" fill="none" aria-hidden="true">
-        <rect width="40" height="40" rx="9" fill="#DCA138" opacity="0"/>
-        <path d="M6 20 h9" stroke="#EEEDE8" stroke-width="2.4" stroke-linecap="round"/>
-        <path d="M20 9 L30 29 H14 Z" stroke="#EEEDE8" stroke-width="2.2" stroke-linejoin="round"/>
-        <path d="M24 20 L34 15" stroke="#DCA138" stroke-width="2.2" stroke-linecap="round"/>
-        <path d="M24 21 L34 21" stroke="#B8402B" stroke-width="2.2" stroke-linecap="round"/>
-        <path d="M24 22 L34 27" stroke="#1F7A4D" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M6 20 h9" stroke="#4A525B" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M20 9 L30 29 H14 Z" stroke="#2B3138" stroke-width="2.2" stroke-linejoin="round"/>
+        <path d="M24 20 L34 15" stroke="#4E79A7" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M24 21 L34 21" stroke="#4E9A5A" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M24 22 L34 27" stroke="#D8544F" stroke-width="2.2" stroke-linecap="round"/>
       </svg>
       <span class="wm">Hoodie</span><span class="nm">Prism</span>
     </a>
     <button class="measbtn" id="measbtn">
-      <span class="cv" id="measlbl">Volume growth</span>
+      <span id="measlbl">Volume growth</span>
       <svg viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
   </header>
@@ -186,7 +191,7 @@
       Pulse
     </button>
     <button class="tab" data-tab="cuts">
-      <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="4.5" rx="1.4" stroke="currentColor" stroke-width="2"/><rect x="3" y="12" width="18" height="4.5" rx="1.4" stroke="currentColor" stroke-width="2"/><path d="M3 20.5h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="4.5" rx="1.2" stroke="currentColor" stroke-width="2"/><rect x="3" y="12" width="18" height="4.5" rx="1.2" stroke="currentColor" stroke-width="2"/><path d="M3 20.5h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       Cuts
     </button>
   </nav>
@@ -207,7 +212,9 @@ const PRISM_FALLBACK = {"measure":"vol_growth","measures":[{"key":"vol_growth","
 (function(){
   var STATE = { measure:'vol_growth', data:PRISM_FALLBACK, source:'offline', open:{}, tab:'pulse' };
   var $ = function(s,r){ return (r||document).querySelector(s); };
+  var CUP='#4E9A5A', CDN='#D8544F', CBLUE='#4E79A7';
   function measByKey(k){ return (STATE.data.measures||[]).find(function(m){return m.key===k;}) || {unit:'pct',kind:'growth',label:k}; }
+  function isGrowth(m){ return m.kind!=='level'; }
 
   function fmt(v, unit, signed){
     var s = signed && v>=0 ? '+' : '';
@@ -215,15 +222,15 @@ const PRISM_FALLBACK = {"measure":"vol_growth","measures":[{"key":"vol_growth","
     if(unit==='idx') return s + Math.round(v);
     return s + v.toFixed(1);
   }
-  // pulse/drill headline: growth -> the value; level -> the delta vs PY
-  function headline(item, meas){
-    if(meas.kind==='level') return { n:fmt(item.delta,'pct',true), lb:'vs PY', up:item.delta>=0 };
-    return { n:fmt(item.value,meas.unit,true), lb:meas.label.toLowerCase(), up:item.value>=0 };
+  // the headline value shown on pulse/drill/leaderboard = the measure's own value
+  function valDisp(item, meas){
+    var g = isGrowth(meas);
+    return { n: fmt(item.value, meas.unit, g), cls: g ? (item.value>=0?'up':'down') : 'neu' };
   }
 
   function spark(vals, w, h, color){
     if(!vals || !vals.length) return '';
-    var mn=Math.min.apply(null,vals), mx=Math.max.apply(null,vals), rng=(mx-mn)||1, pad=2;
+    var mn=Math.min.apply(null,vals), mx=Math.max.apply(null,vals), rng=(mx-mn)||1, pad=2.5;
     var pts = vals.map(function(v,i){
       var x = pad + i*(w-2*pad)/(vals.length-1);
       var y = pad + (h-2*pad)*(1-(v-mn)/rng);
@@ -231,10 +238,9 @@ const PRISM_FALLBACK = {"measure":"vol_growth","measures":[{"key":"vol_growth","
     }).join(' ');
     var lastY = pad + (h-2*pad)*(1-(vals[vals.length-1]-mn)/rng);
     return '<svg class="spark" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" fill="none" style="display:block">'
-      + '<polyline points="'+pts+'" stroke="'+color+'" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
-      + '<circle cx="'+(w-pad).toFixed(1)+'" cy="'+lastY.toFixed(1)+'" r="2.1" fill="'+color+'"/></svg>';
+      + '<polyline points="'+pts+'" stroke="'+color+'" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
+      + '<circle cx="'+(w-pad).toFixed(1)+'" cy="'+lastY.toFixed(1)+'" r="1.9" fill="'+color+'"/></svg>';
   }
-  var CUP='#1F7A4D', CDN='#B8402B';
 
   /* ---------- render: pulse ---------- */
   function renderPulse(){
@@ -243,26 +249,25 @@ const PRISM_FALLBACK = {"measure":"vol_growth","measures":[{"key":"vol_growth","
       + '<span class="src '+(STATE.source==='live'?'live':'')+'"><span class="dot"></span>'
       + (STATE.source==='live'?'Live':'Modeled')+'</span></div>';
     (d.pulse||[]).forEach(function(p,i){
-      var col = p.up?CUP:CDN, hd = headline(p, meas);
+      var col = p.up?CUP:CDN, vd = valDisp(p, meas);
       h += '<div class="pcard" data-kind="pulse" data-i="'+i+'">'
         + '<div class="top"><span class="dimtag">'+esc(p.dim_label)+'</span>'
         +   '<span class="arw '+(p.up?'up':'down')+'">'+(p.up?'▲':'▼')+'</span></div>'
         + '<div class="mid"><span class="member">'+esc(p.member)+'</span>'
-        +   '<span class="big '+(p.up?'up':'down')+'">'+hd.n+'</span></div>'
-        + spark(p.spark, 300, 40, col)
+        +   '<span class="big num '+(p.up?'up':'down')+'">'+vd.n+'</span></div>'
+        + spark(p.spark, 320, 38, col)
         + '<div class="say">'+esc(p.text)+'</div></div>';
     });
     h += '<div class="note">'+esc(d.provenance||'')+'</div>';
     $('#view-pulse').innerHTML = h;
   }
 
-  /* ---------- render: cuts ---------- */
+  /* ---------- render: cuts (crisp tables) ---------- */
   function renderCuts(){
-    var meas = measByKey(STATE.measure), d = STATE.data;
+    var meas = measByKey(STATE.measure), d = STATE.data, g = isGrowth(meas);
     var h = '<div class="vhead"><h1>Cuts</h1><span class="sub">'+esc(meas.label)+'</span>'
       + '<span class="src '+(STATE.source==='live'?'live':'')+'"><span class="dot"></span>'
       + (STATE.source==='live'?'Live':'Modeled')+'</span></div>';
-    // measure chip row
     h += '<div class="mrow">';
     (d.measures||[]).forEach(function(m){
       h += '<button class="mchip '+(m.key===STATE.measure?'on':'')+'" data-meas="'+m.key+'">'+esc(m.label)+'</button>';
@@ -272,17 +277,20 @@ const PRISM_FALLBACK = {"measure":"vol_growth","measures":[{"key":"vol_growth","
       var openC = !!STATE.open[c.dim];
       h += '<div class="ccard'+(openC?' open':'')+'" data-dim="'+c.dim+'">'
         + '<div class="chead" data-toggle="'+c.dim+'"><h2>'+esc(c.label)+'</h2>'
-        +   '<span class="cn">'+c.rows.length+'</span>'
-        +   '<span class="chev"><svg width="14" height="14" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>';
+        +   '<span class="cn num">'+c.rows.length+'</span>'
+        +   '<span class="chev"><svg width="13" height="13" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>'
+        + '<div class="cth"><span>'+esc(c.label)+'</span><span class="r">12&#8209;mo</span><span class="r">Value</span><span class="r">&#916;</span></div>';
       c.rows.forEach(function(r,ri){
-        var hd = headline(r, meas), col = hd.up?CUP:CDN;
-        var hide = (!openC && ri>=3) ? ' hidden' : '';
+        var vd = valDisp(r, meas), scol = g ? (r.value>=0?CUP:CDN) : CBLUE;
+        var dcls = r.delta>=0?'up':'down', dtxt = (r.delta>=0?'+':'')+r.delta.toFixed(1);
+        var hide = (!openC && ri>=4) ? ' hidden' : '';
         h += '<div class="crow'+hide+'" data-kind="cut" data-dim="'+c.dim+'" data-ri="'+ri+'">'
           + '<span class="rn">'+esc(r.name)+'</span>'
-          + '<span class="rspark">'+spark(r.spark, 54, 20, col)+'</span>'
-          + '<span class="rv '+(hd.up?'up':'down')+'">'+hd.n+'</span></div>';
+          + '<span class="rspark">'+spark(r.spark, 54, 20, scol)+'</span>'
+          + '<span class="rv num '+vd.cls+'">'+vd.n+'</span>'
+          + '<span class="rd num '+dcls+'">'+dtxt+'</span></div>';
       });
-      if(c.rows.length>3) h += '<div class="cmore" data-toggle="'+c.dim+'">'+(openC?'Show less':'Show all '+c.rows.length)+'</div>';
+      if(c.rows.length>4) h += '<div class="cmore" data-toggle="'+c.dim+'">'+(openC?'Show less':'Show all '+c.rows.length)+'</div>';
       h += '</div>';
     });
     $('#view-cuts').innerHTML = h;
@@ -293,18 +301,19 @@ const PRISM_FALLBACK = {"measure":"vol_growth","measures":[{"key":"vol_growth","
 
   /* ---------- drill sheet ---------- */
   function openDrill(item, dimLabel){
-    var meas = measByKey(STATE.measure), hd = headline(item, meas), col = hd.up?CUP:CDN;
+    var meas = measByKey(STATE.measure), vd = valDisp(item, meas);
+    var scol = isGrowth(meas) ? (item.value>=0?CUP:CDN) : CBLUE;
     var pct = Math.round((item.weight||0)*100);
     var h = '<div class="grab"></div>'
       + '<div class="sdim">'+esc(dimLabel)+'</div><h3>'+esc(item.name || item.member)+'</h3>'
-      + '<div class="drillbig"><span class="n '+(hd.up?'up':'down')+'">'+hd.n+'</span>'
+      + '<div class="drillbig"><span class="n num '+vd.cls+'">'+vd.n+'</span>'
       +   '<span class="lb">'+esc(meas.label)+'</span></div>'
       + '<div class="drilld '+(item.delta>=0?'up':'down')+'">'+(item.delta>=0?'▲':'▼')+' '
-      +   fmt(item.delta,'pct',true)+' vs prior period</div>'
+      +   fmt(item.delta,'dec',true)+' vs prior period</div>'
       + '<div class="cap">Trailing 12 months</div>'
-      + spark(item.spark, 320, 64, col)
+      + spark(item.spark, 320, 60, scol)
       + '<div class="cap">Materiality</div>'
-      + '<div style="font-size:14px;font-weight:600">'+pct+'% of the '+esc(dimLabel.toLowerCase())+' book</div>'
+      + '<div class="num" style="font-size:14px;font-weight:700">'+pct+'% of the '+esc(dimLabel.toLowerCase())+' book</div>'
       + '<div class="note">Filters, secondary break-downs and report-building live in '
       +   '<a href="../index.html#dashboard">Hoodie Intelligence</a> on the desktop.</div>';
     $('#sheet').innerHTML = h;
@@ -333,7 +342,6 @@ const PRISM_FALLBACK = {"measure":"vol_growth","measures":[{"key":"vol_growth","
       .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
       .then(function(j){ STATE.data=j; STATE.source='live'; return true; })
       .catch(function(){
-        // keep whatever we have; only mark offline if we couldn't get this measure
         if(STATE.data.measure!==measure) toast("Couldn't reach live data");
         STATE.source = (STATE.data.measure===measure) ? STATE.source : 'offline';
         return false;
@@ -347,28 +355,21 @@ const PRISM_FALLBACK = {"measure":"vol_growth","measures":[{"key":"vol_growth","
   /* ---------- interactions ---------- */
   document.addEventListener('click', function(e){
     var t = e.target;
-    // tab switch
     var tabBtn = t.closest('.tab');
     if(tabBtn){ setTab(tabBtn.dataset.tab); return; }
-    // measure button
     if(t.closest('#measbtn')){ openMeasureSheet(); return; }
-    // measure pick (sheet) or chip (cuts)
     var pick = t.closest('[data-pick]'), chip = t.closest('[data-meas]');
     var mk = pick ? pick.dataset.pick : (chip ? chip.dataset.meas : null);
     if(mk){ pickMeasure(mk); return; }
-    // toggle a cut card open/closed
     var tog = t.closest('[data-toggle]');
     if(tog){ var dk=tog.dataset.toggle; STATE.open[dk]=!STATE.open[dk]; renderCuts(); return; }
-    // open drill from a pulse card
     var pc = t.closest('.pcard[data-kind="pulse"]');
     if(pc){ var p = STATE.data.pulse[+pc.dataset.i]; openDrill(p, p.dim_label); return; }
-    // open drill from a cut row
     var cr = t.closest('.crow[data-kind="cut"]');
     if(cr){
       var cut = (STATE.data.cuts||[]).find(function(c){return c.dim===cr.dataset.dim;});
       if(cut){ openDrill(cut.rows[+cr.dataset.ri], cut.label); } return;
     }
-    // dismiss sheet / install hint
     if(t.closest('#sheetbd')){ hideSheet(); return; }
     if(t.id==='ihintx'){ $('#ihint').classList.remove('show'); try{localStorage.setItem('prism.ihint','1');}catch(_){} }
   });
@@ -389,10 +390,9 @@ const PRISM_FALLBACK = {"measure":"vol_growth","measures":[{"key":"vol_growth","
   }
 
   /* ---------- boot ---------- */
-  renderAll();                                   // paint immediately from fallback
-  load(STATE.measure).then(renderAll);           // then upgrade to live
+  renderAll();
+  load(STATE.measure).then(renderAll);
 
-  // iOS install hint (only when not already installed/standalone)
   try{
     var isStandalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
     var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -401,7 +401,6 @@ const PRISM_FALLBACK = {"measure":"vol_growth","measures":[{"key":"vol_growth","
     }
   }catch(_){}
 
-  // service worker — only at top level (not inside the desktop launcher iframe)
   if('serviceWorker' in navigator && window.self===window.top){
     window.addEventListener('load', function(){ navigator.serviceWorker.register('prism-sw.js').catch(function(){}); });
   }

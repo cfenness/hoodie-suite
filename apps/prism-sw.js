@@ -1,8 +1,8 @@
 /* Prism service worker — makes the app installable + usable offline.
    Shell: cache-first (instant launch). Data (/api/prism): network-first with a cache
    fallback, so you always get live numbers when online and the last-seen book when not. */
-const SHELL = 'prism-shell-v1';
-const DATA = 'prism-data-v1';
+const SHELL = 'prism-shell-v2';
+const DATA = 'prism-data-v2';
 const SHELL_ASSETS = [
   'prism.html', 'prism.webmanifest',
   'prism-icon-192.png', 'prism-icon-512.png', 'prism-icon-180.png',
