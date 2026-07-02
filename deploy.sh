@@ -34,6 +34,10 @@ aws s3 sync . "s3://$S3_BUCKET" \
   --exclude ".env" \
   --exclude ".env.*" \
   --exclude "*.test.js" \
+  --exclude "Dockerfile" \
+  --exclude ".dockerignore" \
+  --exclude "fly.toml" \
+  --exclude "DEPLOY-FLY.md" \
   --cache-control "public,max-age=300"
 
 if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then

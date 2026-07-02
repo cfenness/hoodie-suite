@@ -511,10 +511,42 @@ def pitch_ep():
         return jsonify(result)
     return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
 
+# ---- optional: serve the static suite from THIS app (all-in-one image, e.g. Fly.io) ----
+# When SUITE_ROOT is set, one gunicorn process serves BOTH /api/* and the public suite from a single
+# origin, so the apps' same-origin /api/* fetches work with no separate frontend host and no CORS.
+# An ALLOWLIST of public top-level entries is enforced so the engine (unifyd/, *.py, scripts/, docs,
+# dotfiles, .env) is NEVER web-served — it mirrors the deploy.sh / deploy.yml exclude lists.
+SUITE_ROOT = os.environ.get("SUITE_ROOT", "").strip()
+_SUITE_OK_TOP = {"index.html", "apps", "spine", "suite.css", "suite-header.js",
+                 "suite-export.js", "fullread.js", "dq.js", "dq_frontier.js", "favicon.ico"}
+
+def _suite_send(relpath):
+    from flask import abort
+    if not SUITE_ROOT:
+        abort(404)
+    root = os.path.abspath(SUITE_ROOT)
+    full = os.path.normpath(os.path.join(root, (relpath or "").lstrip("/")))
+    if not (full == root or full.startswith(root + os.sep)):
+        abort(403)                                   # no traversal outside the suite root
+    # Allowlist the RESOLVED top-level segment (after collapsing ..), so `/apps/../unifyd/x` can't
+    # hop from an allowed subtree into the engine. Engine + dotfiles + secrets are never web-served.
+    rel = os.path.relpath(full, root)
+    top = rel.split(os.sep, 1)[0]
+    if top in ("", ".", "..") or top not in _SUITE_OK_TOP:
+        abort(404)
+    if os.path.isfile(full):
+        return send_file(full)
+    abort(404)
 
 @app.get("/")
 def index():
+    if SUITE_ROOT:
+        return _suite_send("index.html")             # the launcher, not the MDM console
     return send_file(HTML_PATH)
+
+@app.get("/<path:relpath>")
+def suite_static(relpath):
+    return _suite_send(relpath)                       # /api/* rules are more specific and win over this
 
 if __name__ == "__main__":
     print("Unifyd agent on http://127.0.0.1:8765  (Ctrl-C to stop)")
