@@ -45,7 +45,11 @@
     '#suite-strip .ss-name{font-weight:600;font-size:14px;letter-spacing:-.01em;}' +
     '#suite-strip .ss-status{margin-left:auto;font-family:var(--font-mono,ui-monospace,monospace);font-size:9.5px;' +
       'letter-spacing:.09em;text-transform:uppercase;padding:3px 9px;border-radius:999px;' +
-      'border:1px solid rgba(201,194,180,.32);color:#C9C2B4;}';
+      'border:1px solid rgba(201,194,180,.32);color:#C9C2B4;}' +
+    '#suite-strip .ss-signout{font-family:var(--font-mono,ui-monospace,monospace);font-size:10px;' +
+      'letter-spacing:.06em;text-transform:uppercase;text-decoration:none;color:#C9C2B4;cursor:pointer;' +
+      'padding:3px 10px;border-radius:999px;border:1px solid rgba(201,194,180,.32);}' +
+    '#suite-strip .ss-signout:hover{color:var(--paper,#EEEDE8);border-color:rgba(201,194,180,.6);}';
   var style = document.createElement('style');
   style.textContent = css;
   document.head.appendChild(style);
@@ -69,4 +73,18 @@
   if (status) strip.appendChild(span('ss-status', status));
 
   document.body.insertBefore(strip, document.body.firstChild);
+
+  // Sign-out — shown only when a Google login gate is active. If there's no status pill
+  // to hold the right edge, the link claims it (margin-left:auto).
+  fetch('/auth/me').then(function (r) { return r.json(); }).then(function (m) {
+    if (!(m && m.gated && m.email)) return;
+    var out = document.createElement('a');
+    out.className = 'ss-signout';
+    out.href = '/auth/logout';
+    out.textContent = 'Sign out';
+    out.title = 'Signed in as ' + m.email + ' — sign out';
+    if (!status) out.style.marginLeft = 'auto';
+    else out.style.marginLeft = '10px';
+    strip.appendChild(out);
+  }).catch(function () {});
 })();

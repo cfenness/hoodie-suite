@@ -199,6 +199,7 @@
   <span class="brand" id="brand">Hoodie<span class="sfx"> · Suite</span></span>
   <span class="appcrumb" id="appcrumb"><span class="arr">/</span><span class="nm" id="appnm"></span><span class="cx" id="appcrumbx"></span></span>
   <span class="spacer"></span>
+  <a class="ext" id="signout" href="/auth/logout" style="display:none">Sign out</a>
   <a class="ext" id="ext" target="_blank" rel="noopener">Open full ↗</a>
 </header>
 
@@ -507,6 +508,15 @@
     }
   });
   scrim.addEventListener('click',closeNav);
+
+  /* ============ sign-out — shown only when a Google login gate is active ============ */
+  fetch('/auth/me').then(r=>r.json()).then(m=>{
+    if(m && m.gated && m.email){
+      const so=document.getElementById('signout');
+      so.style.display='';
+      so.title='Signed in as '+m.email+' — sign out';
+    }
+  }).catch(()=>{});
 </script>
 </body>
 </html>
