@@ -31,7 +31,8 @@ GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
 _GOOGLE_ISS  = {"accounts.google.com", "https://accounts.google.com"}
 
 # Paths reachable WITHOUT a session. Everything else is gated.
-_PUBLIC = {"/api/health", "/auth/login", "/auth/callback", "/auth/logout", "/favicon.ico"}
+_PUBLIC = {"/api/health", "/auth/login", "/auth/callback", "/auth/logout",
+           "/auth/me", "/favicon.ico"}
 
 
 def _cfg():
@@ -182,6 +183,12 @@ def init(app):
     def auth_logout():
         session.clear()
         return redirect("/auth/login") if enabled() else redirect("/")
+
+    @app.get("/auth/me")
+    def auth_me():
+        # Public: lets the UI decide whether to show a "Sign out" control. Reveals only
+        # the already-signed-in account's own email (or null); no info leak when gate is off.
+        return jsonify(gated=enabled(), email=session.get("email"))
 
 
 def _deny(msg):
