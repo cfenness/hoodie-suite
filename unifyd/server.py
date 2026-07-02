@@ -27,6 +27,7 @@ import binnys_scraper as binnys    # Binny's directional tracker (Algolia feed, 
 import shopify_scraper as shopify  # DTC brands on Shopify (hemp + bev-alc) via public /products.json
 import instacart_scraper as instacart  # store-level Instacart via Bright Data managed dataset
 import analyze                      # data-reader brain behind "Overlay your data"
+import planogram                    # benchmark + shelf-vision + pitch behind the Planogram app
 
 APP_DIR   = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.join(APP_DIR, "agent_state"); os.makedirs(STATE_DIR, exist_ok=True)
@@ -479,6 +480,37 @@ def ai_read_ep():
     if "error" not in result:
         return jsonify(result)
     return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
+
+@app.get("/api/benchmark")
+def benchmark_ep():
+    """Market NORM for the Planogram app — format-aware. Deterministic (no LLM), so it always
+    answers; the seam where real SipSource depletion norms plug in."""
+    result = planogram.benchmark(request.args.get("market"), request.args.get("format", "off"))
+    return jsonify(result), (404 if result.get("error") == "unknown-market" else 200)
+
+
+@app.post("/api/shelf-vision")
+def shelf_vision_ep():
+    """Photo of a shelf/back-bar -> facings per category x tier (Claude vision). 503 without a key."""
+    body = request.get_json(force=True, silent=True) or {}
+    result = planogram.shelf_count(body.get("image"), media_type=body.get("media_type", "image/jpeg"),
+                                   categories=body.get("categories"), tiers=body.get("tiers"))
+    if "error" not in result:
+        return jsonify(result)
+    code = 503 if result["error"] == "llm-disabled" else (400 if result["error"] == "need-image" else 502)
+    return jsonify(result), code
+
+
+@app.post("/api/pitch")
+def pitch_ep():
+    """Narrate the computed shelf gaps into a buyer pitch (numbers in, wording out). 503 without a key."""
+    body = request.get_json(force=True, silent=True) or {}
+    result = planogram.pitch(body.get("account"), body.get("market"), body.get("format", "off"),
+                             body.get("deltas") or [])
+    if "error" not in result:
+        return jsonify(result)
+    return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
+
 
 @app.get("/")
 def index():
