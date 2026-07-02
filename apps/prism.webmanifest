@@ -1,0 +1,16 @@
+{
+  "name": "Hoodie Prism",
+  "short_name": "Prism",
+  "description": "Every cut of your book, on one screen.",
+  "start_url": "prism.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1B1A17",
+  "theme_color": "#1B1A17",
+  "icons": [
+    { "src": "prism-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "prism-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "prism-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -28,6 +28,7 @@ import shopify_scraper as shopify  # DTC brands on Shopify (hemp + bev-alc) via 
 import instacart_scraper as instacart  # store-level Instacart via Bright Data managed dataset
 import analyze                      # data-reader brain behind "Overlay your data"
 import planogram                    # benchmark + shelf-vision + pitch behind the Planogram app
+import prism                        # data contract behind the Prism mobile app
 import auth_gate                    # Google OIDC login gate (active only when configured)
 
 APP_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -513,6 +514,13 @@ def pitch_ep():
         return jsonify(result)
     return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
 
+
+@app.get("/api/prism")
+def prism_ep():
+    """Prism mobile app's data contract — the book cut every way, plus the pulse feed.
+    Deterministic (no LLM), so it always answers and the app works offline once cached."""
+    return jsonify(prism.bundle(request.args.get("measure")))
+
 # ---- optional: serve the static suite from THIS app (all-in-one image, e.g. Fly.io) ----
 # When SUITE_ROOT is set, one gunicorn process serves BOTH /api/* and the public suite from a single
 # origin, so the apps' same-origin /api/* fetches work with no separate frontend host and no CORS.
@@ -537,6 +545,8 @@ def _suite_send(relpath):
     if top in ("", ".", "..") or top not in _SUITE_OK_TOP:
         abort(404)
     if os.path.isfile(full):
+        if full.endswith(".webmanifest"):
+            return send_file(full, mimetype="application/manifest+json")
         return send_file(full)
     abort(404)
 
