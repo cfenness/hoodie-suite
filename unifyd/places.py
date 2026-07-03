@@ -178,7 +178,34 @@ def pull(county=ORLANDO_COUNTY, extracts=None, fetch=None, store=None, pulled_at
     }
 
 
-# --------------------------------------------------------------- enrichment (scaffold) ----
+# --------------------------------------------------------------- enrichment ----
+def enrich_orlando(source="fsq", poi_loader=None, store=None, dataset="orlando_accounts"):
+    """Read the stored accounts, match them against open POI (FSQ/Overture, via poi.load),
+    fill category/geo, and re-write the enriched Parquet. Enrichment NEVER blocks the spine:
+    on any POI failure the accounts are left intact and the step self-reports. `poi_loader`
+    and `store` are injectable for offline tests."""
+    import warehouse
+    try:
+        accounts = warehouse.query(dataset)
+    except Exception as e:
+        return {"status": "no-accounts", "detail": str(e)[:140]}
+    if not accounts:
+        return {"status": "no-accounts", "detail": "0 rows in %s" % dataset}
+    try:
+        if poi_loader is not None:
+            pois, meta = poi_loader()
+        else:
+            import poi as _poi
+            pois, meta = _poi.load(source)
+    except Exception as e:
+        return {"status": "poi-failed", "accounts": len(accounts), "detail": str(e)[:160]}
+    matched = match_open_poi(accounts, pois)
+    store = store or (lambda name, recs, fields: __import__("warehouse").write_parquet(name, recs, fields))
+    written = store(dataset, accounts, FIELDS)
+    return {"status": "ok", "accounts": len(accounts), "poi": meta.get("count"),
+            "matched": matched, "source": meta.get("source"), "uri": written.get("uri")}
+
+
 def match_open_poi(records, poi_records):
     """Fill category/geo from an open POI iterable, matched by normalized name + ZIP.
     poi_records: dicts with name, zip, category, lat, lng. Returns count matched."""
