@@ -51,6 +51,7 @@ jobs:
             --exclude ".dockerignore" \
             --exclude "fly.toml" \
             --exclude "DEPLOY-FLY.md" \
+            --exclude "ENGINEERING_HANDOFF.md" \
             --cache-control "public,max-age=300"
 
       - name: Invalidate CloudFront cache
