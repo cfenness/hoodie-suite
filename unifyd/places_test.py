@@ -93,6 +93,20 @@ ok("google disabled without key", dis["status"] == "google-disabled")
 res = places.enrich_google(market, _client=lambda n, a: {"place_id": "PID_" + n[:3], "rating": 4.5})
 ok("google enrich with injected client", res["matched"] == 3 and market[0]["google_place_id"].startswith("PID_"))
 
-TOTAL = 20
+# --- _fetch_fl: direct-fail fallback to Bright Data (inert without a key) ---
+import urllib.request as _u, brightdata as _bd
+_orig_open, _orig_en, _orig_bf = _u.urlopen, _bd.enabled, _bd.fetch
+_u.urlopen = lambda *a, **k: (_ for _ in ()).throw(Exception("HTTP Error 403"))
+_bd.enabled = lambda: False
+try:
+    places._fetch_fl("x"); ok("_fetch_fl raises when direct fails + BD off", False)
+except Exception:
+    ok("_fetch_fl raises when direct fails + BD off", True)
+_bd.enabled = lambda: True
+_bd.fetch = lambda url, **k: "CSV,VIA,BRIGHTDATA"
+ok("_fetch_fl falls back to Bright Data", places._fetch_fl("x") == "CSV,VIA,BRIGHTDATA")
+_u.urlopen, _bd.enabled, _bd.fetch = _orig_open, _orig_en, _orig_bf
+
+TOTAL = 22
 print("\n%d/%d passed" % (passed, TOTAL))
 raise SystemExit(0 if passed == TOTAL else 1)
