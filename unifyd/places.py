@@ -109,8 +109,24 @@ def dedupe(records):
     return out
 
 
+_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+       "(KHTML, like Gecko) Version/17.4 Safari/605.1.15")
+
+
 def _fetch_fl(eid):
-    return urllib.request.urlopen("%s/%s.csv" % (FL_BASE, eid), timeout=180).read().decode("utf-8", "replace")
+    """Fetch a Florida DBPR extract. Direct works from a residential IP; Florida 403s
+    DATACENTER IPs (so the deployed Fly machine can't reach it directly). On any failure,
+    fall back to Bright Data's Web Unlocker (residential proxy) when configured — inert
+    without BRIGHTDATA_API_KEY, so local dev stays direct and free."""
+    url = "%s/%s.csv" % (FL_BASE, eid)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": _UA})
+        return urllib.request.urlopen(req, timeout=180).read().decode("utf-8", "replace")
+    except Exception:
+        import brightdata
+        if brightdata.enabled():
+            return brightdata.fetch(url, data_format="html", timeout=180)
+        raise
 
 
 def pull(county=ORLANDO_COUNTY, extracts=None, fetch=None, store=None, pulled_at=None):
