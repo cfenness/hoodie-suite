@@ -349,7 +349,8 @@ def instacart_pull(params):
 def health():
     return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart"],
                    datasets=len(DATASETS), runs=len(RUNS),
-                   state=("s3:" + STATE_BUCKET) if STATE_BUCKET else "disk")
+                   state=("s3:" + STATE_BUCKET) if STATE_BUCKET else "disk",
+                   warehouse=("tigris:" + os.environ.get("BUCKET_NAME", "")) if warehouse.remote() else "local")
 
 # Source labels + a first-cut scope tree derived from the pulled data.
 _SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlets",
