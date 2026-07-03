@@ -29,6 +29,8 @@ import instacart_scraper as instacart  # store-level Instacart via Bright Data m
 import analyze                      # data-reader brain behind "Overlay your data"
 import planogram                    # benchmark + shelf-vision + pitch behind the Planogram app
 import prism                        # data contract behind the Prism mobile app
+import places                       # restaurant / on-premise-accounts connector (Orlando first)
+import warehouse                    # Parquet-on-Tigris (or local) queried by DuckDB
 import auth_gate                    # Google OIDC login gate (active only when configured)
 
 APP_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -67,7 +69,7 @@ class _JobLogHandler(logging.Handler):
 _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
-VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart"}
+VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts"}
 
 def _dispatch_pull(conn, body):
     return (cola_pull(body) if conn == "ttb-cola"
@@ -76,7 +78,12 @@ def _dispatch_pull(conn, body):
             else binnys_pull(body) if conn == "binnys"
             else shopify_pull(body) if conn == "shopify-dtc"
             else instacart_pull(body) if conn == "instacart"
+            else places_pull(body) if conn == "orlando-accounts"
             else fl_pull(conn) if conn in FL_CONN else None)
+
+def places_pull(body):
+    """Run the Orlando on-premise-accounts pull (FL ABT -> normalize -> filter -> Parquet)."""
+    return places.pull(county=(body or {}).get("county", places.ORLANDO_COUNTY))
 
 def _new_job(conn):
     jid = "J-%d-%d" % (int(time.time()), len(JOBS) + 1)
@@ -526,6 +533,33 @@ def prism_ep():
     """Prism mobile app's data contract — the book cut every way, plus the pulse feed.
     Deterministic (no LLM), so it always answers and the app works offline once cached."""
     return jsonify(prism.bundle(request.args.get("measure")))
+
+
+@app.get("/api/places")
+def places_ep():
+    """Query the pulled on-premise accounts (Orlando) from the warehouse. Filters:
+    ?premise=on|off|unknown  ?q=<name substring>  ?limit=N. Graceful before the first pull."""
+    premise = request.args.get("premise")
+    q = (request.args.get("q") or "").strip()
+    try:
+        limit = max(1, min(2000, int(request.args.get("limit", 200))))
+    except ValueError:
+        limit = 200
+    sql, params = "SELECT * FROM t", []
+    where = []
+    if premise in ("on", "off", "unknown"):
+        where.append("premise = ?"); params.append(premise)
+    if q:
+        where.append("lower(name) LIKE ?"); params.append("%" + q.lower() + "%")
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY name LIMIT ?"; params.append(limit)
+    try:
+        rows = warehouse.query("orlando_accounts", sql, params)
+        return jsonify(ok=True, count=len(rows), remote=warehouse.remote(), accounts=rows)
+    except Exception as e:
+        # No parquet yet (no pull has run) or storage not reachable — answer gracefully.
+        return jsonify(ok=True, count=0, accounts=[], note="no data yet — run the orlando-accounts pull (%s)" % str(e)[:120])
 
 # ---- optional: serve the static suite from THIS app (all-in-one image, e.g. Fly.io) ----
 # When SUITE_ROOT is set, one gunicorn process serves BOTH /api/* and the public suite from a single

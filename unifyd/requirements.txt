@@ -6,6 +6,8 @@ requests>=2.31
 beautifulsoup4>=4.12
 boto3>=1.34          # only used when STATE_BUCKET is set (S3-backed state); unused in local disk mode
 anthropic>=0.69      # only used when AGENT_SELF_HEAL=1 (LLM column-remap self-heal); unused otherwise
+duckdb>=1.0          # places connector: query Parquet in place (Tigris/local warehouse); lazy-imported
+pyarrow>=15.0        # places connector: write Parquet; lazy-imported (only when a pull runs)
 
 # Optional — only needed for COLA label UPC OCR (--ocr).
 # Wires to your existing ttb_cola_labels.extract_upc_from_label.
