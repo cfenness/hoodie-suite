@@ -570,6 +570,39 @@ def places_enrich_ep():
     body = request.get_json(force=True, silent=True) or {}
     return jsonify(places.enrich_orlando(source=body.get("source", "fsq")))
 
+
+# ---- canonical book (star schema): synthetic data foundation for the production app ----
+@app.post("/api/seed/build")
+def seed_build_ep():
+    """Generate the coherent synthetic book (dim_product/account/date + fact_depletion)
+    into the warehouse. The data to build the production app against until real facts flow."""
+    import seed
+    body = request.get_json(force=True, silent=True) or {}
+    return jsonify(ok=True, **seed.build(**{k: body[k] for k in ("n_products", "n_accounts", "months", "market") if k in body}))
+
+
+@app.get("/api/book/cuts")
+def book_cuts_ep():
+    """Aggregate the book by any dimension — the one query surface every screen shares.
+    ?dim=category|channel|price_tier|brand|...  ?measure=revenue|cases|pod."""
+    import book
+    dim = request.args.get("dim", "category")
+    measure = request.args.get("measure", "revenue")
+    try:
+        return jsonify(ok=True, dim=dim, measure=measure, rows=book.cuts(dim, measure))
+    except Exception as e:
+        return jsonify(ok=True, dim=dim, measure=measure, rows=[],
+                       note="no book yet — POST /api/seed/build (%s)" % str(e)[:120])
+
+
+@app.get("/api/book/summary")
+def book_summary_ep():
+    import book
+    try:
+        return jsonify(ok=True, **book.summary())
+    except Exception as e:
+        return jsonify(ok=True, empty=True, note="no book yet — POST /api/seed/build (%s)" % str(e)[:120])
+
 # ---- optional: serve the static suite from THIS app (all-in-one image, e.g. Fly.io) ----
 # When SUITE_ROOT is set, one gunicorn process serves BOTH /api/* and the public suite from a single
 # origin, so the apps' same-origin /api/* fetches work with no separate frontend host and no CORS.
