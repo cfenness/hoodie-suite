@@ -18,7 +18,7 @@ When the agent is absent the dashboard falls back to its built-in preview.
 State is persisted to ./agent_state/ (datasets.json, runs.json, cola CSV).
 """
 import csv, io, json, os, time, types, urllib.request, datetime, threading, logging
-from flask import Flask, request, jsonify, send_file, Response
+from flask import Flask, request, jsonify, send_file, Response, redirect
 
 import ttb_cola_scraper as cola   # the scraper you generated
 import abc_fws_scraper as abc      # ABC FWS directional inventory tracker (BigCommerce)
@@ -126,7 +126,13 @@ def _auth():
     return jsonify(ok=False, error="unauthorized"), 401
 
 @app.errorhandler(404)
-def _e404(e): return jsonify(ok=False, error="not found"), 404
+def _e404(e):
+    # A browser NAVIGATION that misses (e.g. a mistyped /prism.html, or a post-login
+    # redirect to a stale path) should land on the launcher, not a raw JSON blob.
+    # API calls and asset requests (image/*, etc.) still get JSON.
+    if not request.path.startswith("/api/") and "text/html" in request.headers.get("Accept", ""):
+        return redirect("/")
+    return jsonify(ok=False, error="not found"), 404
 @app.errorhandler(405)
 def _e405(e): return jsonify(ok=False, error="method not allowed"), 405
 @app.errorhandler(Exception)
@@ -549,6 +555,11 @@ def _suite_send(relpath):
             return send_file(full, mimetype="application/manifest+json")
         return send_file(full)
     abort(404)
+
+@app.get("/prism")
+@app.get("/prism.html")
+def prism_shortcut():
+    return redirect("/apps/prism.html")              # friendly short URL for the mobile app
 
 @app.get("/")
 def index():
