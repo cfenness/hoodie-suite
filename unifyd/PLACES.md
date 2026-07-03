@@ -32,6 +32,17 @@ fly deploy                             # picks up the new env -> warehouse switc
 `warehouse.remote()` then reports true and `/api/places` shows `"remote": true`. DuckDB queries the
 Parquet directly from Tigris (`s3://<bucket>/warehouse/orlando_accounts.parquet`) — no compute to keep up.
 
+## Open-POI enrichment (free, storable — category + geo)
+`poi.py` reads **Foursquare OS Places** (default) or **Overture Maps** directly from their
+public S3 Parquet with DuckDB, bbox-filtered to Orlando, and matches to accounts by name+ZIP.
+```bash
+curl -X POST localhost:8765/api/places/enrich -d '{"source":"fsq"}'   # or "overture"
+```
+The S3 release path is env-overridable (`POI_FSQ_URI` / `POI_OVERTURE_URI`) — set it to the
+current release date on first run; a bad/stale URI self-reports `poi-failed` and leaves the
+spine untouched (enrichment never blocks authoritative data). Runs from Fly (AWS S3 is
+reachable from the datacenter IP; only Florida DBPR blocks it).
+
 ## Google enrichment (optional, ToS-safe)
 ```bash
 fly secrets set GOOGLE_MAPS_API_KEY=...   # off unless set

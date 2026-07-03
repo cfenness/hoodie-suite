@@ -562,6 +562,14 @@ def places_ep():
         # No parquet yet (no pull has run) or storage not reachable — answer gracefully.
         return jsonify(ok=True, count=0, accounts=[], note="no data yet — run the orlando-accounts pull (%s)" % str(e)[:120])
 
+
+@app.post("/api/places/enrich")
+def places_enrich_ep():
+    """Match the stored accounts against open POI (FSQ/Overture) and re-write enriched.
+    Never blocks the spine — self-reports poi-failed / no-accounts. ?source=fsq|overture."""
+    body = request.get_json(force=True, silent=True) or {}
+    return jsonify(places.enrich_orlando(source=body.get("source", "fsq")))
+
 # ---- optional: serve the static suite from THIS app (all-in-one image, e.g. Fly.io) ----
 # When SUITE_ROOT is set, one gunicorn process serves BOTH /api/* and the public suite from a single
 # origin, so the apps' same-origin /api/* fetches work with no separate frontend host and no CORS.
