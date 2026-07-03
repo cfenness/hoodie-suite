@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Device Preview</title>
+<style>
+  :root{
+    --ink:#1B1A17; --paper:#EEEDE8; --panel:#232019; --line:rgba(238,237,232,.14);
+    --amber:#DCA138; --muted:#9C958A; --bezel:#0c0c0e; --screen:#fff;
+    --font:"Space Grotesk",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#151310;color:var(--paper);font-family:var(--font);overflow:hidden}
+  .wrap{display:flex;flex-direction:column;height:100vh}
+
+  .toolbar{flex:0 0 auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:11px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .toolbar .t{font-weight:600;font-size:14px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+  .toolbar .t .dot{width:8px;height:8px;border-radius:50%;background:var(--amber)}
+  .grp{display:flex;align-items:center;gap:6px}
+  .grp label{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  select,.btn,.link{background:#15130f;color:var(--paper);border:1px solid var(--line);border-radius:7px;
+    padding:7px 10px;font-family:var(--font);font-size:12.5px;font-weight:600;cursor:pointer;outline:none}
+  select:hover,.btn:hover,.link:hover{border-color:rgba(238,237,232,.4)}
+  .btn.icon{padding:7px 9px}
+  .link{text-decoration:none}
+  .spacer{margin-left:auto}
+  .scale{font-family:var(--mono);font-size:11px;color:var(--muted)}
+
+  .stage{flex:1 1 auto;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(1200px 600px at 50% 0%, #221f18, #141210)}
+  .device-scale{transform-origin:center center;transition:transform .18s ease}
+
+  /* device chrome */
+  .device{background:var(--bezel);position:relative;box-shadow:0 30px 80px rgba(0,0,0,.55),
+    0 0 0 2px #000, inset 0 0 0 2px #2a2a2e;}
+  .device.phone{border-radius:var(--r,44px);padding:var(--bz,14px)}
+  .device.tablet{border-radius:var(--r,26px);padding:var(--bz,18px)}
+  .screen{position:relative;width:var(--w);height:var(--h);background:var(--screen);overflow:hidden;
+    border-radius:calc(var(--r) - var(--bz) + 2px)}
+  .screen iframe{position:absolute;top:var(--st,0);left:0;right:0;width:100%;
+    height:calc(100% - var(--st,0px) - var(--sb,0px));border:0;background:#fff}
+
+  /* status bar overlay (pointer-through) */
+  .statusbar{position:absolute;top:0;left:0;right:0;z-index:3;pointer-events:none;display:flex;
+    align-items:center;justify-content:space-between;padding:0 22px;font-weight:600;color:#111;
+    font-size:13px;font-family:-apple-system,system-ui,sans-serif;mix-blend-mode:normal}
+  .statusbar{height:var(--st,28px)}
+  .statusbar.ios{padding-top:7px}
+  .statusbar.ios.compact{padding-top:1px;font-size:12px}
+  .statusbar.android{font-size:12px;padding:0 14px}
+  .statusbar .r{display:flex;align-items:center;gap:5px}
+  .statusbar .bat{width:22px;height:11px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.9}
+  .statusbar .bat::after{content:"";position:absolute;right:-3px;top:3px;width:2px;height:5px;background:currentColor;border-radius:1px}
+  .statusbar .bat::before{content:"";position:absolute;left:1px;top:1px;bottom:1px;width:70%;background:currentColor;border-radius:1px}
+
+  /* notch / island / punch-hole */
+  .island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:34%;height:26px;
+    background:#000;border-radius:16px;z-index:4}
+  .punch{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:12px;height:12px;
+    background:#000;border-radius:50%;z-index:4}
+  .home{position:absolute;bottom:7px;left:50%;transform:translateX(-50%);width:36%;height:5px;
+    background:#000;opacity:.32;border-radius:3px;z-index:4}
+  .homebtn{position:absolute;bottom:calc(-1 * var(--bz) + 3px);left:50%;transform:translateX(-50%);
+    width:0;height:0}
+
+  .hint{position:absolute;bottom:12px;left:0;right:0;text-align:center;color:var(--muted);
+    font-family:var(--mono);font-size:10px;letter-spacing:.08em}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <span class="t"><span class="dot"></span>Device Preview</span>
+    <div class="grp"><label>App</label><select id="app"></select></div>
+    <div class="grp"><label>Device</label><select id="device"></select></div>
+    <button class="btn" id="rotate">⟳ Rotate</button>
+    <button class="btn icon" id="reload" title="Reload app">↻</button>
+    <span class="spacer"></span>
+    <span class="scale" id="scale"></span>
+    <a class="link" id="open" target="_blank" rel="noopener">Open ↗</a>
+  </div>
+  <div class="stage" id="stage">
+    <div class="device-scale" id="scaler">
+      <div class="device" id="device">
+        <div class="screen" id="screen">
+          <div class="statusbar" id="statusbar"></div>
+          <iframe id="frame" title="app preview" allow="camera;clipboard-write"></iframe>
+          <div class="home" id="home" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+    <div class="hint" id="hint"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var $ = function(s){ return document.querySelector(s); };
+
+  var DEVICES = [
+    {id:'iphone15', os:'ios', kind:'phone', label:'iPhone 15 Pro', w:393, h:852, r:52, bz:14, island:true, home:true},
+    {id:'iphonese', os:'ios', kind:'phone', label:'iPhone SE',      w:375, h:667, r:18, bz:14, compact:true},
+    {id:'pixel8',   os:'android', kind:'phone', label:'Pixel 8',    w:412, h:915, r:36, bz:13, punch:true},
+    {id:'galaxys23',os:'android', kind:'phone', label:'Galaxy S23', w:360, h:780, r:32, bz:12, punch:true},
+    {id:'ipadpro11',os:'ios', kind:'tablet', label:'iPad Pro 11"',  w:834, h:1194, r:26, bz:18, home:true},
+    {id:'ipad',     os:'ios', kind:'tablet', label:'iPad 10.9"',    w:820, h:1180, r:24, bz:18, compact:true},
+    {id:'galaxytab',os:'android', kind:'tablet', label:'Galaxy Tab S9', w:800, h:1280, r:20, bz:16, punch:true},
+  ];
+
+  var FALLBACK_APPS = [
+    {id:'prism', name:'Prism', file:'apps/prism.html'},
+    {id:'dashboard', name:'Hoodie Intelligence', file:'apps/dashboard.html'},
+    {id:'crm', name:'Hoodie Relations', file:'apps/crm.html'},
+    {id:'planogram', name:'Planogram', file:'apps/planogram-repcount.html'},
+  ];
+
+  var state = { app:null, device:'iphone15', landscape:false, apps:[] };
+
+  function deviceById(id){ return DEVICES.find(function(d){ return d.id===id; }); }
+
+  function safeInsets(d, landscape){
+    if(d.os==='ios'){
+      return { top: landscape ? 0 : (d.compact ? 20 : (d.kind==='tablet' ? 24 : 47)),
+               bottom: (d.home && !landscape) ? 18 : 0 };
+    }
+    return { top: landscape ? 0 : 28, bottom: 0 };   // android
+  }
+
+  function buildDeviceSelect(){
+    var sel = $('#device'), groups = {};
+    DEVICES.forEach(function(d){
+      var g = (d.os==='ios'?'Apple':'Android') + ' — ' + (d.kind==='phone'?'Phone':'Tablet');
+      (groups[g] = groups[g] || []).push(d);
+    });
+    sel.innerHTML = Object.keys(groups).map(function(g){
+      return '<optgroup label="'+g+'">' + groups[g].map(function(d){
+        return '<option value="'+d.id+'"'+(d.id===state.device?' selected':'')+'>'+d.label+' · '+d.w+'×'+d.h+'</option>';
+      }).join('') + '</optgroup>';
+    }).join('');
+  }
+
+  function buildAppSelect(){
+    var sel = $('#app');
+    sel.innerHTML = state.apps.map(function(a){
+      return '<option value="'+a.id+'"'+(a.id===state.app?' selected':'')+'>'+a.name+'</option>';
+    }).join('');
+  }
+
+  function appSrc(){
+    var a = state.apps.find(function(x){ return x.id===state.app; });
+    if(!a) return 'about:blank';
+    return '../' + a.file;               // device-preview lives in /apps, apps are sibling files
+  }
+
+  function render(){
+    var d = deviceById(state.device);
+    var w = state.landscape ? d.h : d.w, h = state.landscape ? d.w : d.h;
+    var dev = $('#device'), scr = $('#screen');
+    dev.className = 'device ' + d.kind;
+    dev.style.setProperty('--r', d.r + 'px');
+    dev.style.setProperty('--bz', d.bz + 'px');
+    scr.style.setProperty('--w', w + 'px');
+    scr.style.setProperty('--h', h + 'px');
+    scr.style.setProperty('--r', d.r + 'px');
+    scr.style.setProperty('--bz', d.bz + 'px');
+    var ins = safeInsets(d, state.landscape);
+    scr.style.setProperty('--st', ins.top + 'px');
+    scr.style.setProperty('--sb', ins.bottom + 'px');
+
+    // chrome bits
+    dev.querySelectorAll('.island,.punch').forEach(function(n){ n.remove(); });
+    if(!state.landscape){
+      if(d.island){ var i=document.createElement('div'); i.className='island'; scr.appendChild(i); }
+      if(d.punch){ var p=document.createElement('div'); p.className='punch'; scr.appendChild(p); }
+    }
+    $('#home').style.display = (d.home && !state.landscape) ? 'block' : 'none';
+
+    // status bar
+    var sb = $('#statusbar');
+    sb.className = 'statusbar ' + (d.os==='ios' ? ('ios' + (d.compact?' compact':'')) : 'android');
+    sb.style.display = state.landscape && d.kind==='phone' ? 'none' : 'flex';
+    sb.innerHTML = '<span>'+ (d.os==='ios'?'9:41':'9:41') +'</span>'
+      + '<span class="r">'+ (d.os==='ios'?'&#9679;&#9679;&#9679; ':'') +'<span class="bat"></span></span>';
+
+    // iframe
+    var f = $('#frame');
+    var want = appSrc();
+    if(f.getAttribute('src') !== want) f.setAttribute('src', want);
+    $('#open').href = want;
+
+    fit();
+    $('#hint').textContent = d.label + ' · ' + w + '×' + h + ' · ' + (d.os==='ios'?'iOS':'Android');
+  }
+
+  function fit(){
+    var d = deviceById(state.device);
+    var w = state.landscape ? d.h : d.w, h = state.landscape ? d.w : d.h;
+    var outerW = w + d.bz*2, outerH = h + d.bz*2;
+    var stage = $('#stage');
+    var availW = stage.clientWidth - 48, availH = stage.clientHeight - 64;
+    var s = Math.min(availW/outerW, availH/outerH, 1);
+    $('#scaler').style.transform = 'scale(' + s + ')';
+    $('#scale').textContent = Math.round(s*100) + '%';
+  }
+
+  function reload(){ var f=$('#frame'); var s=f.getAttribute('src'); f.setAttribute('src','about:blank'); setTimeout(function(){ f.setAttribute('src', s); }, 30); }
+
+  // load the launcher's APPS list so this stays in sync automatically
+  function loadApps(){
+    return fetch('../index.html').then(function(r){ return r.text(); }).then(function(txt){
+      var m = txt.match(/const\s+APPS\s*=\s*(\[[\s\S]*?\]);/);
+      var apps = null;
+      if(m){ try { apps = Function('"use strict";return (' + m[1] + ')')(); } catch(e){ apps = null; } }
+      if(!apps || !apps.length) apps = FALLBACK_APPS;
+      // keep anything with a file, drop this previewer itself
+      state.apps = apps.filter(function(a){ return a.file && a.id !== 'device-preview'; })
+                       .map(function(a){ return {id:a.id, name:a.name, file:a.file}; });
+    }).catch(function(){ state.apps = FALLBACK_APPS; });
+  }
+
+  // wire
+  $('#app').addEventListener('change', function(e){ state.app = e.target.value; render(); });
+  $('#device').addEventListener('change', function(e){ state.device = e.target.value; state.landscape=false; render(); });
+  $('#rotate').addEventListener('click', function(){ state.landscape = !state.landscape; render(); });
+  $('#reload').addEventListener('click', reload);
+  window.addEventListener('resize', fit);
+
+  loadApps().then(function(){
+    // default to Prism (mobile-first) if present, else first app
+    state.app = (state.apps.find(function(a){ return a.id==='prism'; }) || state.apps[0] || {}).id;
+    buildDeviceSelect(); buildAppSelect(); render();
+  });
+})();
+</script>
+</body>
+</html>
