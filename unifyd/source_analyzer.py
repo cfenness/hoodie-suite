@@ -41,13 +41,33 @@ def _raw_fetch(url):
     return None, "failed"
 
 
+_CFG_SIGNALS = ("ld+json", "siteid", "searchspring", "algolia", "__next_data__", "__initial",
+                "__preloaded", "__apollo", "window.__", "apikey", "api_key", "\"products\"",
+                "'products'", "collection", "catalog", "resultsperpage", "graphql", "/api/",
+                "bgfilter", "shopify")
+
 def _clean(html):
-    h = re.sub(r"(?is)<(script|style|noscript|svg|head)[^>]*>.*?</\1>", " ", html or "")
+    html = html or ""
+    # Keep the inline scripts that carry data/config (siteId, api keys, initial state, JSON-LD) —
+    # the API endpoint + its real params usually live here, so Claude needs them to build a
+    # callable url instead of a <siteId> placeholder. Drop analytics + giant JS bundles.
+    keep = []
+    for m in re.finditer(r"(?is)<script([^>]*)>(.*?)</script>", html):
+        attrs, body = m.group(1) or "", m.group(2) or ""
+        probe = (attrs + " " + body[:600]).lower()
+        if len(body.strip()) > 20 and any(s in probe for s in _CFG_SIGNALS) and "function(" not in body[:120].lower():
+            keep.append(body.strip()[:4500])
+        if len(keep) >= 8:
+            break
+    h = re.sub(r"(?is)<(script|style|noscript|svg|head)[^>]*>.*?</\1>", " ", html)
     h = re.sub(r"(?is)<!--.*?-->", " ", h)
-    h = re.sub(r"(?is)<[^>]+>", lambda m: m.group(0) if re.match(r"(?i)</?(table|tr|td|th|ul|ol|li|a|h[1-6]|div|span|article|section)\b", m.group(0)) else " ", h)
+    h = re.sub(r"(?is)<[^>]+>", lambda mm: mm.group(0) if re.match(r"(?i)</?(table|tr|td|th|ul|ol|li|a|h[1-6]|div|span|article|section)\b", mm.group(0)) else " ", h)
     h = re.sub(r"[ \t]+", " ", h)
     h = re.sub(r"\n\s*\n+", "\n", h)
-    return h.strip()[:45000]
+    out = h.strip()[:38000]
+    if keep:
+        out += "\n\n<<< PAGE DATA / CONFIG SCRIPTS (find the API's real siteId / keys / params here) >>>\n" + ("\n---\n".join(keep))[:16000]
+    return out
 
 
 def _json_rows(text):
@@ -166,8 +186,11 @@ def analyze(url, goal=None):
                   "CRITICAL: if the page's data is loaded client-side from a JSON/XHR endpoint rather than being in the "
                   "static HTML (e.g. SearchSpring, Algolia, a Shopify /products.json, BigCommerce, a GraphQL or /api/ "
                   "endpoint) — infer the FULL data-source API in data_api: the exact request url, method, the key query "
-                  "params (siteId, category/collection, resultsPerPage, etc.), and how to page it. Reconstruct a real, "
-                  "callable url. Set data_api to null only if the rows are genuinely in the HTML. "
+                  "params (siteId, category/collection, resultsPerPage, etc.), and how to page it. The page's real "
+                  "siteId / apiKey / collection / params are in the '<<< PAGE DATA / CONFIG SCRIPTS >>>' section — read "
+                  "them and put the ACTUAL values into a directly-callable data_api.url. NEVER return placeholder tokens "
+                  "like <siteId>, {key} or YOUR_SITE_ID — if you truly cannot find the real value, set data_api to null. "
+                  "Set data_api to null only if the rows are genuinely in the HTML. "
                   "scrape_prompt is a REUSABLE instruction to extract this source's rows on every future run: if data_api "
                   "is set it must say to fetch that API (and paginate it) and normalize its JSON to the fields; otherwise "
                   "to read the page HTML. Return a JSON array of objects; make it source-specific, not tied to this snapshot.")

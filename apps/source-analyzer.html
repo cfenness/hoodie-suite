@@ -126,6 +126,8 @@
     var a=(d&&d.analysis)||{};
     if(a.error){ out.innerHTML='<div class="card"><div class="em">'+esc(a.error)+(a.via?(' · fetch: '+esc(a.via)):'')+'</div></div>'; return; }
     var fields=a.available_fields||[], rows=a.sample_rows||[], items=a.item_fields||[];
+    // only trust a data-API url that's actually callable (not a <siteId>/{key}/… template)
+    var apiUrl=(a.data_api&&a.data_api.url&&!/[<{]|your_|site_id|example\.|\.\.\./i.test(a.data_api.url))?a.data_api.url:"";
     // sample table (clean, ordered)
     var tbl = rows.length ? tableHTML(rows,8) : '<div class="em">No sample rows extracted.</div>';
     out.innerHTML=
@@ -140,7 +142,7 @@
         +'<div class="cfg">'
         +'<div class="k">Repeating item</div><div>'+(a.list_container?('<code>'+esc(a.list_container)+'</code>'):'<span class="em" style="padding:0">—</span>')+'</div>'
         +'<div class="k">Pagination</div><div>'+(a.pagination?esc(a.pagination):'<span style="color:var(--ink-soft)">single page / none detected</span>')+'</div>'
-        +(a.data_api&&a.data_api.url?('<div class="k">Data API</div><div><span class="pill tea">client-rendered → API</span> <code>'+esc(a.data_api.method||"GET")+' '+esc(a.data_api.url)+'</code>'+(a.data_api.pagination?('<div class="hint" style="margin-top:3px">page: '+esc(a.data_api.pagination)+'</div>'):'')+(a.data_api.note?('<div class="hint">'+esc(a.data_api.note)+'</div>'):'')+'</div>'):'')
+        +(apiUrl?('<div class="k">Data API</div><div><span class="pill tea">client-rendered → API</span> <code>'+esc(a.data_api.method||"GET")+' '+esc(apiUrl)+'</code>'+(a.data_api.pagination?('<div class="hint" style="margin-top:3px">page: '+esc(a.data_api.pagination)+'</div>'):'')+(a.data_api.note?('<div class="hint">'+esc(a.data_api.note)+'</div>'):'')+'</div>'):'')
         +'<div class="k">robots / ToS</div><div>'+esc(a.robots_note||"Check robots.txt + ToS.")+'</div>'
         +'</div>'
         +(items.length?('<div class="lab">Per-field selectors</div><div class="scroll"><table><thead><tr><th>Field</th><th>Selector</th></tr></thead><tbody>'
@@ -150,12 +152,12 @@
       +'<div class="card">'
         +'<div class="exbar"><button class="runbtn" id="run-extract">▸ Run extraction — feed to Claude</button><span class="hint" id="ex-hint"></span></div>'
         +'<div class="lab">Extract from</div>'
-        +'<div class="exrow"><input id="ex-target" class="target" value="'+esc((a.data_api&&a.data_api.url)||lastUrl)+'">'
-          +(a.data_api&&a.data_api.url?'<button class="btn" id="use-page" title="Use the page URL instead of the API">use page</button>':'')+'</div>'
-        +'<div class="exrow"><span class="hint">pages</span><input id="ex-pages" class="num-in" type="number" min="1" max="25" value="'+((a.data_api&&a.data_api.url)||a.pagination?'3':'1')+'">'
+        +'<div class="exrow"><input id="ex-target" class="target" value="'+esc(apiUrl||lastUrl)+'">'
+          +(apiUrl?'<button class="btn" id="use-page" title="Use the page URL instead of the API">use page</button>':'')+'</div>'
+        +'<div class="exrow"><span class="hint">pages</span><input id="ex-pages" class="num-in" type="number" min="1" max="25" value="'+(apiUrl||a.pagination?'3':'1')+'">'
           +'<span class="hint" style="margin-left:10px">max items</span><input id="ex-limit" class="num-in" type="number" min="1" max="100000" value="100" title="cap the number of items pulled">'
           +'<span class="hint" style="margin-left:6px">— caps the run so you don’t pull the whole catalog while testing</span></div>'
-        +(a.data_api&&a.data_api.url?'<div class="hint" style="margin:2px 0 12px">This source is client-rendered — extraction runs against its <b>data API</b> so you can pull the whole catalog (up to your cap), not one page.</div>':'<div style="height:8px"></div>')
+        +(apiUrl?'<div class="hint" style="margin:2px 0 12px">This source is client-rendered — extraction runs against its <b>data API</b> so you can pull the whole catalog (up to your cap), not one page.</div>':'<div style="height:8px"></div>')
         +'<div class="promptbox">'
           +'<div class="pb-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.7L18.5 9l-4.6 1.3L12 15l-1.9-4.7L5.5 9l4.6-1.3z"/><path d="M18 15l.8 2 .8-2 .8-.8-.8-.8-.8-2-.8 2-.8.8z" fill="currentColor" stroke="none"/></svg>'
           +'<span class="pb-title">Extraction prompt</span><span class="pb-tag">reusable · fed to Claude each run · '+(d.llm?'written by Claude':'template')+'</span>'
