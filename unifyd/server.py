@@ -753,9 +753,12 @@ def scraper_extract():
     b = request.get_json(force=True, silent=True) or {}
     import source_analyzer, recipes
     url = b.get("url") or ""
-    result = source_analyzer.extract(url, (b.get("prompt") or ""), b.get("pages", 1), b.get("limit", 3000))
-    # Fold the run into the recipe book: validate vs baseline, promote/demote.
-    _, verdict = recipes.record_run(RECIPES, url, result, int(time.time() * 1000))
+    prompt = b.get("prompt") or ""
+    result = source_analyzer.extract(url, prompt, b.get("pages", 1), b.get("limit", 3000))
+    # Fold the run into the recipe book: validate vs baseline, promote/demote. Pass what
+    # was actually run so a recipe proven by extraction alone stays runnable recipe-first.
+    _, verdict = recipes.record_run(RECIPES, url, result, int(time.time() * 1000),
+                                    used={"prompt": prompt, "target": url})
     # Self-heal: on drift/broken, re-analyze and write the fresh config back into the recipe.
     if verdict.get("needs_heal") and source_analyzer.llm_enabled():
         try:
