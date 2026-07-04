@@ -367,7 +367,7 @@
     {id:'admin',name:'Admin Console',desc:'Usage reporting · app registry & flags · access · data-ops',group:'Internal',status:'internal',file:'apps/admin.html',mark:'AD'},
     {id:'spinedemo',name:'Spine Adapter',desc:'Reference · how apps join the spine',group:'Platform',status:'internal',file:'apps/spine-adapter.html',mark:'SP'}
   ];
-  const GROUPS=['Product','Commercial','Presentation','Data Operations','Learning','Internal','Platform'];
+  const GROUPS=['Product','Commercial','Presentation','Data Operations','Internal','Platform','Learning'];
   const byId=Object.fromEntries(APPS.map(a=>[a.id,a]));
 
   /* per-app glyphs — monoline, inherit icon color via currentColor */
@@ -422,6 +422,7 @@
   /* ============ admin: feature flags (app visibility) + usage beacon ============ */
   let APP_FLAGS={apps:{},features:{}};
   const appHidden=a=>!!(a&&APP_FLAGS.apps[a.id]&&APP_FLAGS.apps[a.id].hidden);
+  const appStatus=a=>((APP_FLAGS.apps[a.id]&&APP_FLAGS.apps[a.id].status)||a.status);   // admin status override
   let lastLoggedApp=null;
   function logUsage(id){
     if(!id||id===lastLoggedApp)return; lastLoggedApp=id;
@@ -518,8 +519,9 @@
     }
     let d=0;
     list.forEach(a=>{
-      const c=document.createElement('div');c.className='app '+a.status+' rise';c.style.animationDelay=(d).toFixed(2)+'s';d+=0.03;
-      c.innerHTML='<div class="top"><span class="ic">'+logo(a)+'</span><span class="nm">'+a.name+'</span><span class="pill">'+a.status+'</span>'+star(a.id)+'</div>'+
+      const st=appStatus(a);
+      const c=document.createElement('div');c.className='app '+st+' rise';c.style.animationDelay=(d).toFixed(2)+'s';d+=0.03;
+      c.innerHTML='<div class="top"><span class="ic">'+logo(a)+'</span><span class="nm">'+a.name+'</span><span class="pill">'+st+'</span>'+star(a.id)+'</div>'+
         '<div class="ds">'+a.desc+'</div>'+
         '<div class="foot"><span class="cat">'+a.group+'</span><span class="open">Open <span class="a">→</span></span></div>';
       c.addEventListener('click',ev=>{
@@ -751,7 +753,7 @@
     else{
       const hd=q.trim()?'':'<div class="shd">'+(favs.length?'Favorites & apps':'Jump to app')+'</div>';
       searchpop.innerHTML=hd+srList.map((a,i)=>
-        '<div class="sr '+a.status+(i===srSel?' sel':'')+'" data-id="'+a.id+'" data-i="'+i+'">'+
+        '<div class="sr '+appStatus(a)+(i===srSel?' sel':'')+'" data-id="'+a.id+'" data-i="'+i+'">'+
         '<span class="ic">'+logo(a)+'</span>'+
         '<span class="t">'+esc(a.name)+'<small>'+esc(a.desc)+'</small></span>'+
         '<span class="g">'+esc(a.group)+'</span></div>').join('');

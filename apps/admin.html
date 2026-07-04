@@ -161,9 +161,9 @@
 
   /* ---------- Apps (registry + flags) ---------- */
   function renderApps(){
-    page.innerHTML='<div class="card"><h2>App registry <span class="s">· toggle visibility (feature flags · no deploy)</span></h2><div id="apps-grid"></div></div>';
-    var rows=REG.map(function(a){ var hidden=!!(FLAGS.apps[a.id]&&FLAGS.apps[a.id].hidden);
-      return {id:a.id,name:a.name,group:a.group||"—",status:a.status,visibility:hidden?"Hidden":"Visible",_hidden:hidden}; });
+    page.innerHTML='<div class="card"><h2>App registry <span class="s">· edit status + visibility via the ⋯ menu (feature flags · no deploy)</span></h2><div id="apps-grid"></div></div>';
+    var rows=REG.map(function(a){ var f=FLAGS.apps[a.id]||{}; var hidden=!!f.hidden;
+      return {id:a.id,name:a.name,group:a.group||"—",status:(f.status||a.status),visibility:hidden?"Hidden":"Visible",_hidden:hidden}; });
     appsGrid=HoodieGrid.mount(document.getElementById("apps-grid"),{ idKey:"id", search:true, columnChooser:true,
       rows:rows,
       statusTones:{ live:"good", beta:"warn", internal:"muted", Visible:"good", Hidden:"crit" },
@@ -174,13 +174,16 @@
         {key:"visibility",label:"In launcher",type:"status"},
         {key:"id",label:"ID",type:"text"},
       ],
-      rowActions:[{id:"hide",label:"Hide from launcher"},{id:"show",label:"Show in launcher"}],
+      rowActions:[{id:"live",label:"Set status: Live"},{id:"beta",label:"Set status: Beta"},{id:"internal",label:"Set status: Internal"},
+                  {id:"hide",label:"Hide from launcher"},{id:"show",label:"Show in launcher"}],
       onRowAction:function(action,row){
-        FLAGS.apps[row.id]=FLAGS.apps[row.id]||{};
-        FLAGS.apps[row.id].hidden=(action==="hide");
+        var f=FLAGS.apps[row.id]=FLAGS.apps[row.id]||{};
+        var msg;
+        if(action==="hide"||action==="show"){ f.hidden=(action==="hide"); msg=row.name+(action==="hide"?" hidden":" shown"); }
+        else { f.status=action; msg=row.name+" → "+action; }
         fetch(API+"/api/admin/flags",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({apps:FLAGS.apps})})
           .then(function(r){if(!r.ok)throw 0;return r.json();})
-          .then(function(){ toast(row.name+(action==="hide"?" hidden":" shown")+" — reload the launcher to see it"); renderApps(); })
+          .then(function(){ toast(msg+" — reload the launcher to see it"); renderApps(); })
           .catch(function(){ toast("Save failed — is the engine live?"); });
       },
       emptyText:"No apps." });
