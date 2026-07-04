@@ -44,20 +44,48 @@ def _raw_fetch(url):
 _CFG_SIGNALS = ("ld+json", "siteid", "searchspring", "algolia", "__next_data__", "__initial",
                 "__preloaded", "__apollo", "window.__", "apikey", "api_key", "\"products\"",
                 "'products'", "collection", "catalog", "resultsperpage", "graphql", "/api/",
-                "bgfilter", "shopify")
+                "bgfilter", "shopify", "bigcommerce")
+
+# Known integration config values — pulled out explicitly so Claude gets the REAL siteId/keys.
+_CFG_PATTERNS = [
+    ("searchspring_siteId", r"siteId['\"\s:=]{1,5}['\"]?([a-z0-9]{4,10})\b"),
+    ("searchspring_siteId", r"snapui\.searchspring\.io/([a-z0-9]{4,10})"),
+    ("searchspring_siteId", r"cdn\.searchspring\.net/[^\"'<> ]*?/([a-z0-9]{5,10})\.js"),
+    ("algolia_appId",       r"(?:applicationID|application_id|algoliaAppId|x-algolia-application-id)['\"\s:=]{1,5}['\"]?([A-Z0-9]{8,12})"),
+    ("algolia_apiKey",      r"(?:apiKey|searchApiKey|x-algolia-api-key)['\"\s:=]{1,5}['\"]?([a-f0-9]{28,40})"),
+    ("platform",            r"(cdn\d*\.bigcommerce\.com|cdn\.shopify\.com|/_next/)"),
+]
+
+_CFG_NOISE = {"siteid", "apikey", "appid", "application", "searchapikey", "true", "false",
+              "null", "undefined", "function", "default"}
+
+def _config_hints(html):
+    out, seen = [], set()
+    for label, pat in _CFG_PATTERNS:
+        for m in re.finditer(pat, html, re.I):
+            v = (m.group(1) or "").strip()
+            key = (label, v.lower())
+            if v and v.lower() not in _CFG_NOISE and key not in seen:
+                seen.add(key); out.append(label + " = " + v)
+            if len(out) >= 14:
+                break
+    return out
 
 def _clean(html):
     html = html or ""
-    # Keep the inline scripts that carry data/config (siteId, api keys, initial state, JSON-LD) —
-    # the API endpoint + its real params usually live here, so Claude needs them to build a
-    # callable url instead of a <siteId> placeholder. Drop analytics + giant JS bundles.
+    hints = _config_hints(html)
+    # Keep inline scripts carrying data/config (siteId, keys, initial state, JSON-LD) + the loader
+    # <script src> URLs (siteId often lives in the path) so Claude can build a callable API url.
     keep = []
     for m in re.finditer(r"(?is)<script([^>]*)>(.*?)</script>", html):
         attrs, body = m.group(1) or "", m.group(2) or ""
-        probe = (attrs + " " + body[:600]).lower()
-        if len(body.strip()) > 20 and any(s in probe for s in _CFG_SIGNALS) and "function(" not in body[:120].lower():
-            keep.append(body.strip()[:4500])
-        if len(keep) >= 8:
+        probe = (attrs + " " + body[:800]).lower()
+        if any(s in probe for s in _CFG_SIGNALS):
+            src = re.search(r"""src=['"]([^'"]+)['"]""", attrs, re.I)
+            snippet = body.strip()[:4500] or (("[external] " + src.group(1)) if src else "")
+            if snippet:
+                keep.append(snippet)
+        if len(keep) >= 12:
             break
     h = re.sub(r"(?is)<(script|style|noscript|svg|head)[^>]*>.*?</\1>", " ", html)
     h = re.sub(r"(?is)<!--.*?-->", " ", h)
@@ -65,8 +93,10 @@ def _clean(html):
     h = re.sub(r"[ \t]+", " ", h)
     h = re.sub(r"\n\s*\n+", "\n", h)
     out = h.strip()[:38000]
+    if hints:
+        out += "\n\n<<< RESOLVED CONFIG (use these EXACT values in the API url) >>>\n" + "\n".join(hints)
     if keep:
-        out += "\n\n<<< PAGE DATA / CONFIG SCRIPTS (find the API's real siteId / keys / params here) >>>\n" + ("\n---\n".join(keep))[:16000]
+        out += "\n\n<<< PAGE DATA / CONFIG SCRIPTS (real siteId / keys / params here) >>>\n" + ("\n---\n".join(keep))[:14000]
     return out
 
 
@@ -188,8 +218,12 @@ def analyze(url, goal=None):
                   "endpoint) — infer the FULL data-source API in data_api: the exact request url, method, the key query "
                   "params (siteId, category/collection, resultsPerPage, etc.), and how to page it. The page's real "
                   "siteId / apiKey / collection / params are in the '<<< PAGE DATA / CONFIG SCRIPTS >>>' section — read "
-                  "them and put the ACTUAL values into a directly-callable data_api.url. NEVER return placeholder tokens "
-                  "like <siteId>, {key} or YOUR_SITE_ID — if you truly cannot find the real value, set data_api to null. "
+                  "them and put the ACTUAL values into a directly-callable data_api.url — a COMPLETE url with ALL "
+                  "required query params, not a bare endpoint. (SearchSpring example: "
+                  "https://<siteId>.a.searchspring.io/api/search/search.json?siteId=<siteId>&resultsFormat=native&"
+                  "resultsPerPage=100&page=1 plus any category filter like bgfilter.category_id=NN — substitute the real "
+                  "siteId from RESOLVED CONFIG.) NEVER return placeholder tokens like <siteId>, {key} or YOUR_SITE_ID — "
+                  "if you truly cannot find the real value, set data_api to null. "
                   "Set data_api to null only if the rows are genuinely in the HTML. "
                   "scrape_prompt is a REUSABLE instruction to extract this source's rows on every future run: if data_api "
                   "is set it must say to fetch that API (and paginate it) and normalize its JSON to the fields; otherwise "
