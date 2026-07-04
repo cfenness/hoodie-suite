@@ -16,7 +16,9 @@ split keeps the logic fully unit-testable — see recipes_test.py.
 import re
 
 # ── tuning ──────────────────────────────────────────────────────────────────
-DROP_PCT   = 0.40   # a run with >40% fewer rows than baseline is drift
+DROP_PCT   = 0.40   # a run with >40% fewer rows than the (rolling) baseline is drift
+CUM_DROP   = 0.50   # ...or >50% below the PROVEN baseline — catches slow erosion the
+                    #    single-step check misses (5% a run for 12 runs is still real drift)
 FILL_DROP  = 0.30   # a field whose fill-rate falls >30pts vs baseline is drift
 MIN_CLEAN  = 2      # clean runs needed to promote candidate -> proven
 RUN_HIST   = 20     # per-recipe run history kept
@@ -105,6 +107,10 @@ def validate(recipe, sig):
     if br > 0 and sig["rows"] < br * (1 - DROP_PCT):
         return {"status": "drift",
                 "reason": "rows %d vs baseline %d (down %d%%)" % (sig["rows"], br, round(100 * (1 - sig["rows"] / br)))}
+    pb = (recipe.get("proven_baseline") or {}).get("rows", 0)   # cumulative erosion vs the proven mark
+    if pb > 0 and sig["rows"] < pb * (1 - CUM_DROP):
+        return {"status": "drift",
+                "reason": "rows %d vs proven baseline %d (down %d%% cumulatively)" % (sig["rows"], pb, round(100 * (1 - sig["rows"] / pb)))}
     for c, fv in (base.get("fill") or {}).items():
         nv = sig["fill"].get(c)
         if nv is not None and (fv - nv) > FILL_DROP:
@@ -117,10 +123,12 @@ def validate(recipe, sig):
     return {"status": "ok", "reason": "matches baseline (%d rows)" % sig["rows"]}
 
 
-def record_run(book, url, result, ts):
+def record_run(book, url, result, ts, used=None):
     """Fold one extract() result into the book: validate, update baseline/status,
-    promote/demote. Returns (book, verdict). verdict.needs_heal signals the caller
-    to re-analyze and apply_heal()."""
+    promote/demote. `used` = {"prompt", "target"} from the call that produced this run —
+    stashed as the recipe config when we don't already have one, so a recipe proven by
+    extraction alone is still runnable recipe-first. Returns (book, verdict);
+    verdict.needs_heal signals the caller to re-analyze and apply_heal()."""
     h = host_of(url)
     rec = book.get(h) or _new(h, ts)
     book[h] = rec
@@ -129,6 +137,14 @@ def record_run(book, url, result, ts):
     rec["last_run"] = ts
     rec["runs"] = (rec.get("runs") or [])[-(RUN_HIST - 1):] + [
         {"ts": ts, "rows": sig["rows"], "engine": sig["engine"], "status": v["status"], "reason": v["reason"]}]
+    # capture what actually worked, without clobbering a richer analyze-derived config
+    if used and v["status"] in ("ok", "baseline") and not (rec.get("config") or {}).get("scrape_prompt"):
+        cfg = dict(rec.get("config") or {})
+        if used.get("prompt"):
+            cfg["scrape_prompt"] = used["prompt"]
+        if used.get("target") and not cfg.get("data_api"):
+            cfg["data_api"] = {"url": used["target"], "method": "GET"}
+        rec["config"] = cfg
     promoted = False
     if v["status"] in ("ok", "baseline"):
         rec["baseline"] = {"rows": sig["rows"], "cols": sig["cols"], "fill": sig["fill"]}
@@ -136,6 +152,7 @@ def record_run(book, url, result, ts):
         rec["clean_runs"] = rec.get("clean_runs", 0) + 1
         if rec["status"] in ("candidate", "drifting") and rec["clean_runs"] >= MIN_CLEAN:
             rec["status"] = "proven"; promoted = True
+            rec["proven_baseline"] = dict(rec["baseline"])   # the stable mark cumulative drift checks against
         elif rec["status"] == "broken":
             rec["status"] = "candidate"          # recovered — re-proving
     else:
@@ -175,6 +192,7 @@ def apply_heal(book, url, analysis, ts):
     rec["platform"] = platform_of(analysis) or rec.get("platform")
     rec["status"] = "candidate"
     rec["clean_runs"] = 0
+    rec["proven_baseline"] = None   # a healed recipe must re-earn its proven mark
     rec["healed_at"] = ts
     return book
 

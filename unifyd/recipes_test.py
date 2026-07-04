@@ -97,6 +97,26 @@ ok(R.platform_proven_on(bp, "https://otherstore.com", {"data_api": {"url": "http
 ok(R.platform_proven_on(bp, "https://abcfws.com", {"data_api": {"url": "https://a.a.searchspring.io"}}) == [],
    "platform_proven_on excludes the same host")
 
+# ── config-fill: a recipe proven by extraction alone is still runnable ────────
+cf = {}
+cf, _ = R.record_run(cf, "https://cann.com", rows(30), ts=1, used={"prompt": "extract products", "target": "https://cann.com/products.json"})
+cf, _ = R.record_run(cf, "https://cann.com", rows(30), ts=2, used={"prompt": "extract products", "target": "https://cann.com/products.json"})
+rc = R.get(cf, "https://cann.com")
+ok(rc["status"] == "proven" and rc["config"].get("scrape_prompt") == "extract products", "extraction-proven recipe carries a runnable prompt")
+ok((rc["config"].get("data_api") or {}).get("url") == "https://cann.com/products.json", "extraction-proven recipe carries a target")
+# a proven recipe's captured config must survive a later save_config (analyze on a proven host)
+cf = R.save_config(cf, "https://cann.com", {"scrape_prompt": "SHOULD_NOT_REPLACE", "data_api": {"url": "https://api"}}, ts=3)
+ok(R.get(cf, "https://cann.com")["config"]["scrape_prompt"] == "extract products", "save_config doesn't clobber a proven recipe's config")
+
+# ── cumulative erosion: slow decline below the proven baseline is caught ───────
+ce = {}
+ce, _ = R.record_run(ce, "https://e.com", rows(100), ts=1)
+ce, _ = R.record_run(ce, "https://e.com", rows(100), ts=2)   # proven, proven_baseline=100
+ce, e1 = R.record_run(ce, "https://e.com", rows(70), ts=3)   # -30% single-step: under 40%, passes rolling...
+ok(e1["run"] == "ok", "a 30% single-step dip is within the rolling threshold")
+ce, e2 = R.record_run(ce, "https://e.com", rows(45), ts=4)   # now 45 vs proven 100 = -55% cumulative
+ok(e2["run"] == "drift" and "cumulative" in e2["reason"], "slow erosion below the proven baseline is caught")
+
 # ── stats ─────────────────────────────────────────────────────────────────────
 s = R.stats(book)
 ok(s["total"] >= 1 and "by_status" in s, "stats summary")
