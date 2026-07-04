@@ -44,6 +44,23 @@
   .pill{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;padding:4px 9px;border-radius:999px;white-space:nowrap}
   .pill.success{color:var(--ok);background:var(--ok-bg)} .pill.degraded,.pill.partial{color:var(--warn);background:var(--warn-bg)}
   .pill.failed{color:var(--bad);background:var(--bad-bg)} .pill.never,.pill.idle{color:var(--idle);background:var(--idle-bg)}
+  .pill.reportable{cursor:pointer;transition:filter .12s,box-shadow .12s} .pill.reportable:hover{filter:brightness(.97);box-shadow:0 0 0 2px var(--warn-bg),0 0 0 3px var(--warn)}
+  .pill.reported{cursor:default} .pill .rep-flag{margin-left:3px;opacity:.85}
+  /* report-issue modal */
+  .rmodal{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;background:rgba(27,26,23,.42)}
+  .rmodal.show{display:flex}
+  .rmodal .box{background:#fff;border:1px solid var(--line2,#E9E5DA);border-radius:12px;width:min(520px,calc(100vw - 32px));max-height:86vh;overflow:auto;box-shadow:0 24px 60px -18px rgba(27,26,23,.45)}
+  .rmodal .bh{padding:16px 18px 6px} .rmodal .bh h3{margin:0;font-size:16px;font-weight:800;letter-spacing:-.01em}
+  .rmodal .bh .s{font-size:12.5px;color:var(--idle,#8a857b);margin-top:3px}
+  .rmodal .bb{padding:10px 18px 4px} .rmodal .lab{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--idle,#8a857b);font-weight:700;margin:12px 0 5px}
+  .rmodal .wlist{display:flex;flex-direction:column;gap:5px} .rmodal .wrow{font-size:12.5px;padding:7px 10px;border-radius:6px;border-left:3px solid var(--warn);background:var(--warn-bg);color:#6e4710}
+  .rmodal .wnone{font-size:12.5px;color:var(--idle,#8a857b);font-style:italic}
+  .rmodal textarea,.rmodal input{width:100%;border:1px solid var(--line2,#E9E5DA);border-radius:8px;font:inherit;font-size:13px;padding:8px 10px;outline:none}
+  .rmodal textarea:focus,.rmodal input:focus{border-color:var(--brand,#2C7D7D)}
+  .rmodal .bf{display:flex;gap:8px;justify-content:flex-end;padding:14px 18px 16px}
+  .rmodal .btn{padding:9px 14px;border-radius:8px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;border:1px solid var(--line2,#E9E5DA);background:#fff}
+  .rmodal .btn.send{background:var(--warn,#B8791F);color:#fff;border-color:var(--warn,#B8791F)}
+  .rmodal .btn:disabled{opacity:.55;cursor:default}
   .run-btn{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;border:1px solid var(--accent);background:var(--accent);color:#fff;padding:8px 15px;border-radius:6px;cursor:pointer;transition:opacity .12s;display:inline-flex;align-items:center;gap:7px}
   .run-btn:hover{opacity:.88} .run-btn:disabled{opacity:.4;cursor:not-allowed;background:var(--idle);border-color:var(--idle)}
   .run-btn .spin{width:12px;height:12px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none}
@@ -160,7 +177,7 @@
                placeholder:"https://www.instacart.com/store/total-wine-more/collections/738-vodka",
                help:"Default = Total Wine vodka. Use the store root for the full store; comma-separate multiple. (Bypasses Total Wine's bot wall via Instacart.)"}]},
   ];
-  var STATE = { live:false, runs:[], busy:{}, open:{}, datasets:{}, jobs:{}, paramForm:{} };
+  var STATE = { live:false, runs:[], busy:{}, open:{}, datasets:{}, jobs:{}, paramForm:{}, reported:{}, email:"" };
   function srcOf(connId){ return SOURCES.filter(function(s){return s.id===connId;})[0]; }
 
   var fmt = function(n){ return (n==null?"—":Number(n).toLocaleString()); };
@@ -177,6 +194,65 @@
     return rs[0] || null;
   }
   function statusOf(run){ if(!run) return "never"; return run.degraded ? "degraded" : (run.status||"never"); }
+
+  // A degraded/partial pull is a data-quality signal — make its pill a report affordance.
+  function pillHtml(connId, st, busy){
+    var reportable = !busy && (st==="degraded" || st==="partial");
+    var label = busy ? "running" : (st==="never" ? "not run" : st);
+    if(!reportable){ return '<span class="pill '+(busy?"idle":st)+'">'+label+'</span>'; }
+    if(STATE.reported[connId]){
+      return '<span class="pill '+st+' reported" title="Reported — logged to CRM Service">'+label+' <span class="rep-flag">✓</span></span>';
+    }
+    return '<span class="pill '+st+' reportable" data-report="'+connId+'" '+
+           'title="Report this data-quality issue → logs to CRM Service">'+label+' <span class="rep-flag">⚑</span></span>';
+  }
+
+  // ── report-issue modal ───────────────────────────────────────────────────
+  function openReportModal(connId){
+    var s = SOURCES.filter(function(x){return x.id===connId;})[0]; if(!s) return;
+    var run = latestRun(connId), st = statusOf(run);
+    var warns = (run && run.warnings) || [];
+    var wHtml = warns.length
+      ? '<div class="wlist">'+warns.map(function(w){return '<div class="wrow">⚠ '+esc(w)+'</div>';}).join("")+'</div>'
+      : '<div class="wnone">No specific warnings captured — the pull self-reported '+esc(st)+'.</div>';
+    var m = document.getElementById("rmodal");
+    m.innerHTML =
+      '<div class="box" role="dialog" aria-modal="true">'+
+        '<div class="bh"><h3>Report data-quality issue</h3>'+
+          '<div class="s">'+esc(s.name)+' · '+esc(s.kind)+' — reported to Hoodie and logged in the CRM Service desk for tracking.</div></div>'+
+        '<div class="bb">'+
+          '<div class="lab">What the pull flagged</div>'+ wHtml +
+          '<div class="lab">Add context (optional)</div>'+
+          '<textarea id="rnote" rows="3" placeholder="e.g. store-option selector looks changed; counts dropped vs last run"></textarea>'+
+          '<div class="lab">Your name / email (optional)</div>'+
+          '<input id="rby" type="text" placeholder="you@company.com" value="'+esc(STATE.email||"")+'">'+
+        '</div>'+
+        '<div class="bf">'+
+          '<button class="btn" data-rclose>Cancel</button>'+
+          '<button class="btn send" id="rsend">Send report</button>'+
+        '</div>'+
+      '</div>';
+    m.classList.add("show");
+    m.querySelector("#rsend").onclick = function(){ submitReport(connId, s, run, st); };
+    setTimeout(function(){ var t=m.querySelector("#rnote"); if(t)t.focus(); }, 30);
+  }
+  function closeReportModal(){ var m=document.getElementById("rmodal"); m.classList.remove("show"); m.innerHTML=""; }
+  function submitReport(connId, s, run, st){
+    var m=document.getElementById("rmodal");
+    var note=(m.querySelector("#rnote")||{}).value||"", by=(m.querySelector("#rby")||{}).value||"";
+    var btn=m.querySelector("#rsend"); if(btn){ btn.disabled=true; btn.textContent="Sending…"; }
+    fetch("/api/service/reports",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        connId:connId, source:s.name, kind:"data-quality", severity:st,
+        warnings:(run&&run.warnings)||[], dataset:(run&&run.extracts&&run.extracts[0]&&run.extracts[0].id)||"",
+        note:note, reporter:by
+      })})
+    .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(){ STATE.reported[connId]=true; closeReportModal(); render();
+      toast("⚑ Reported "+s.name+" — logged to CRM Service","warn"); })
+    .catch(function(){ if(btn){ btn.disabled=false; btn.textContent="Send report"; }
+      toast("Couldn't send — is the engine live? (./dev.sh)","err"); });
+  }
 
   function esc(s){ return String(s==null?"":s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
 
@@ -195,7 +271,7 @@
           '<div class="src-id"><span class="badge">'+s.mark+'</span><div><div class="src-name">'+esc(s.name)+
             ' <span class="chev">▸</span></div><div class="src-kind">'+esc(s.kind)+
             ' · '+ subline +'</div></div></div>' +
-          '<span class="pill '+(busy?"idle":st)+'">'+ (busy?"running":(st==="never"?"not run":st)) +'</span>' +
+          pillHtml(s.id, st, busy) +
           '<button class="run-btn'+(busy?" running":"")+'" data-run="'+s.id+'" title="'+btnTitle+'"'+( (!STATE.live||busy) ? " disabled":"")+'>' +
             '<span class="spin"></span><span class="lbl">'+(busy?"Running…":"Run")+'</span></button>' +
         '</div>' +
@@ -453,6 +529,7 @@
   }
 
   document.getElementById("sources").addEventListener("click", function(e){
+    var rp=e.target.closest("[data-report]"); if(rp){ e.stopPropagation(); openReportModal(rp.getAttribute("data-report")); return; }
     var dl=e.target.closest("[data-dl]"); if(dl){ e.stopPropagation(); exportDataset(dl.getAttribute("data-ds"), dl.getAttribute("data-dl")); return; }
     var sp=e.target.closest("[data-startparam]"); if(sp){ e.stopPropagation();
       var id=sp.getAttribute("data-startparam"), form=sp.closest(".pform"), params={};
@@ -481,6 +558,15 @@
       });
     });
   })();
+
+  // report modal host + dismiss (click scrim / Esc)
+  (function(){
+    var m=document.createElement("div"); m.className="rmodal"; m.id="rmodal"; document.body.appendChild(m);
+    m.addEventListener("click", function(e){ if(e.target===m || e.target.closest("[data-rclose]")) closeReportModal(); });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeReportModal(); });
+  })();
+  // prefill the reporter with the signed-in email when a login gate is active
+  fetch("/auth/me").then(function(r){return r.json();}).then(function(u){ if(u&&u.email) STATE.email=u.email; }).catch(function(){});
 
   render();
   refresh();

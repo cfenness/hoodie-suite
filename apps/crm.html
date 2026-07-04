@@ -48,6 +48,7 @@ button{font-family:inherit;cursor:pointer}
 .nav .tab{padding:11px 16px 9px;font-size:13px;font-weight:600;color:#3e3e3c;border:0;border-bottom:3px solid transparent;background:none}
 .nav .tab:hover{background:var(--hover);color:var(--brand)}
 .nav .tab.on{color:var(--brand);border-bottom-color:var(--brand)}
+.nav .tab .tabct{display:none} .nav .tab .tabct:not(:empty){display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;background:#B8791F;color:#fff;border-radius:999px;padding:1px 6px;vertical-align:1px}
 .page{padding:14px;max-width:1180px;margin:0 auto}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
 /* list header */
@@ -248,6 +249,7 @@ tbody tr:hover{background:var(--hover);cursor:pointer}
   <button class="tab" data-tab="accounts">Accounts</button>
   <button class="tab" data-tab="pipeline">Pipeline</button>
   <button class="tab" data-tab="contacts">People</button>
+  <button class="tab" data-tab="service">Service <span class="tabct" id="svc-tabct"></span></button>
 </div>
 <div class="page" id="page"></div>
 
@@ -476,6 +478,7 @@ function render(){
   if(tab==="home"){page.innerHTML=homeHTML();return;}
   if(tab==="accounts")page.innerHTML=accountsHTML();
   else if(tab==="pipeline"){page.innerHTML=pipelineHTML();wireKanban();}
+  else if(tab==="service"){page.innerHTML=serviceHTML();loadService();}
   else page.innerHTML=contactsHTML();
 }
 
@@ -667,6 +670,72 @@ function contactsHTML(){
     </tbody></table></div>`;
 }
 
+/* ============================ SERVICE DESK ============================ */
+/* Data-quality reports raised from the suite (e.g. a "degraded" pill in Hoodie
+   Pulls). Lives on the engine (/api/service/reports); tracked to resolution here. */
+const SVC_TONE={open:{bg:'#FBEED0',fg:'#8a5a0f'},acknowledged:{bg:'#E3EDF6',fg:'#33597e'},
+  reported:{bg:'#F3E4CE',fg:'#8a5a0f'},resolved:{bg:'#DDEEE2',fg:'#2E7D57'}};
+function svcPill(st){const t=SVC_TONE[st]||SVC_TONE.open;
+  return `<span class="stagepill" style="background:${t.bg};color:${t.fg};text-transform:capitalize">${esc(st||'open')}</span>`;}
+function svcWhen(ms){if(!ms)return '—';const d=new Date(ms);const D=d.toISOString().slice(0,10);
+  const t=d.toTimeString().slice(0,5);return `${D} · ${t}`;}
+function serviceHTML(){
+  return `<div class="card">
+    <div class="lvhead"><div class="lvicon" style="background:#B8791F">⚑</div>
+      <div class="lvtitles"><div class="k">Service</div><div class="v">Data-Quality Reports</div></div>
+      <div class="lvactions"><button class="btn" onclick="loadService()">Refresh</button></div></div>
+    <div class="lvmeta">Issues reported from the suite — click a <b>degraded</b> pill in Hoodie Pulls to file one. Track each to resolution.</div>
+    <div id="svc-body"><div style="padding:28px;text-align:center;color:#a09e9c">Loading reports…</div></div>
+  </div>`;
+}
+function loadService(){
+  const body=document.getElementById('svc-body'); if(!body)return;
+  fetch('/api/service/reports',{cache:'no-store'})
+    .then(r=>r.ok?r.json():Promise.reject())
+    .then(d=>{
+      const reports=(d&&d.reports)||[], counts=(d&&d.counts)||{};
+      const badge=document.getElementById('svc-tabct');
+      if(badge)badge.textContent=counts.open?counts.open:'';
+      if(!reports.length){
+        body.innerHTML=`<div style="padding:32px;text-align:center;color:#a09e9c">
+          <div style="font-size:15px;font-weight:600;color:#6b6b69">No reports yet</div>
+          <div style="margin-top:6px;font-size:13px">When a scrape self-reports <b>degraded</b>, open <b>Hoodie Pulls</b> and click the pill to report it — it lands here.</div></div>`;
+        return;
+      }
+      const cc=['open','acknowledged','reported','resolved'].filter(s=>counts[s])
+        .map(s=>`${counts[s]} ${s}`).join(' · ');
+      body.innerHTML=`<div class="lvmeta" style="border-top:1px solid var(--line);padding-top:10px">${reports.length} report${reports.length===1?'':'s'}${cc?' — '+cc:''}</div>
+      <table><thead><tr><th>Source</th><th>Severity</th><th>What flagged</th><th>Reporter</th><th>Reported</th><th>Status</th><th style="text-align:right">Action</th></tr></thead><tbody>
+      ${reports.map(r=>{
+        const warnTxt=(r.warnings&&r.warnings.length)?`${r.warnings.length} warning${r.warnings.length===1?'':'s'}${r.note?' · '+esc(r.note):''}`
+                    :(r.note?esc(r.note):'<span style="color:#a09e9c">self-reported</span>');
+        const next = r.status==='open' ? `<button class="btn" onclick="svcSet('${r.id}','acknowledged')">Acknowledge</button>`
+                   : r.status==='acknowledged' ? `<button class="btn" onclick="svcSet('${r.id}','reported')">Mark reported</button>`
+                   : r.status==='reported' ? `<button class="btn brand" onclick="svcSet('${r.id}','resolved')">Resolve</button>`
+                   : `<span style="color:var(--q-solid,#2E7D57);font-weight:600">✓ resolved</span>`;
+        return `<tr title="${esc((r.warnings||[]).join(' • '))}">
+          <td><div class="rowname"><span class="recicon" style="background:#B8791F">${esc((r.connId||r.source||'?').slice(0,2).toUpperCase())}</span><b>${esc(r.source||r.connId||'—')}</b></div></td>
+          <td><span class="stagepill" style="text-transform:capitalize">${esc(r.severity||'degraded')}</span></td>
+          <td style="max-width:280px">${warnTxt}</td>
+          <td>${esc(r.reporter||'field')}</td>
+          <td style="white-space:nowrap;color:#6b6b69">${svcWhen(r.createdAt)}</td>
+          <td>${svcPill(r.status)}</td>
+          <td style="text-align:right">${next}</td></tr>`;
+      }).join('')}
+      </tbody></table>`;
+    })
+    .catch(()=>{ body.innerHTML=`<div style="padding:30px;text-align:center;color:#a09e9c">
+      <div style="font-size:14px">Service desk is offline.</div>
+      <div style="margin-top:5px;font-size:12.5px">Reports live on the engine — start it with <code>./dev.sh</code> (or open the deployed suite), then Refresh.</div></div>`; });
+}
+function svcSet(id,status){
+  fetch('/api/service/reports/'+encodeURIComponent(id),{method:'PATCH',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status,by:'ops'})})
+   .then(r=>r.ok?r.json():Promise.reject())
+   .then(()=>{ loadService(); toast('Report → '+status); })
+   .catch(()=>toast('Update failed — is the engine live?'));
+}
+
 /* ============================ MUTATORS ============================ */
 function openRecord(id){recordId=id;render();}
 function back(){recordId=null;render();}
@@ -766,6 +835,9 @@ document.getElementById('search').addEventListener('input',e=>{q=e.target.value;
 document.querySelectorAll('#nav .tab').forEach(b=>b.addEventListener('click',()=>go(b.dataset.tab)));
 
 load().then(render);
+/* surface the open-report count on the Service tab even before it's opened */
+fetch('/api/service/reports?status=open',{cache:'no-store'}).then(r=>r.ok?r.json():null)
+  .then(d=>{const b=document.getElementById('svc-tabct');if(b&&d&&d.counts&&d.counts.open)b.textContent=d.counts.open;}).catch(()=>{});
 </script>
 
 <!-- ===== Hoodie Spine integration (unchanged contract) ===== -->
