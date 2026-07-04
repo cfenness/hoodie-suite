@@ -11,34 +11,93 @@ bot-walled / JS-rendered pages when a key is present. LLM analysis is gated on
 ANTHROPIC_API_KEY; without it we return a structural heuristic (tables / JSON-LD) so the
 tool still does something useful offline.
 """
-import os, re, json, urllib.request
+import os, re, json, urllib.request, urllib.error
 
 MODEL = os.environ.get("AGENT_LLM_MODEL", "claude-opus-4-8")
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+# A fuller browser header set — bare UA alone gets 403'd by some CDNs (Akamai/Cloudflare)
+# that pass with realistic Accept/Sec-Fetch headers. identity encoding keeps urllib simple.
+_HEADERS = {
+    "User-Agent": UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "identity",
+    "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none", "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1", "Connection": "close",
+}
+# Markers of a bot-challenge / block page served with a 200 — treat as blocked, not content.
+_BLOCK_SIGNS = ("just a moment", "cf-browser-verification", "checking your browser",
+                "attention required", "access denied", "request unsuccessful",
+                "px-captcha", "perimeterx", "/_incapsula", "incapsula", "distil",
+                "bot detection", "are you a robot", "captcha-delivery", "enable javascript to")
 
 
 def llm_enabled():
     return bool(os.environ.get("ANTHROPIC_API_KEY"))
 
 
-def _raw_fetch(url):
-    """(html, via) — direct request first, Bright Data Web Unlocker on block/failure."""
+def _looks_blocked(html):
+    if not html:
+        return False
+    head = html[:4000].lower()
+    return len(html) < 1500 and any(s in head for s in _BLOCK_SIGNS)
+
+
+def fetch_detail(url):
+    """(html_or_None, via, attempts) — try a realistic direct request, then Bright Data.
+    `attempts` is a per-step trace ({step, status, ok, note}) so a failure surfaces its REAL
+    cause (403, timeout, bot wall, Bright-Data-not-configured) instead of a bare 'failed'."""
+    attempts = []
+    # 1) direct
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "text/html"})
+        req = urllib.request.Request(url, headers=_HEADERS)
         with urllib.request.urlopen(req, timeout=25) as r:
             html = r.read().decode("utf-8", "replace")
-            if len(html) > 500:
-                return html, "direct"
-    except Exception:
-        pass
+            code = r.getcode()
+        if _looks_blocked(html):
+            attempts.append({"step": "direct", "status": code, "ok": False,
+                             "note": "bot-challenge page (%d bytes) — escalating to Bright Data" % len(html)})
+        elif len(html) > 500:
+            attempts.append({"step": "direct", "status": code, "ok": True, "note": "%d bytes" % len(html)})
+            return html, "direct", attempts
+        else:
+            attempts.append({"step": "direct", "status": code, "ok": False,
+                             "note": "thin response (%d bytes) — escalating" % len(html)})
+    except urllib.error.HTTPError as e:
+        attempts.append({"step": "direct", "status": e.code, "ok": False, "note": "HTTP %d %s" % (e.code, e.reason)})
+    except Exception as e:
+        attempts.append({"step": "direct", "status": None, "ok": False, "note": type(e).__name__ + ": " + str(e)[:140]})
+    # 2) Bright Data Web Unlocker
     try:
         import brightdata
-        if brightdata.enabled():
-            return brightdata.fetch(url, data_format="html", timeout=90), "bright-data"
-    except Exception:
-        pass
-    return None, "failed"
+        if not brightdata.enabled():
+            attempts.append({"step": "bright-data", "status": None, "ok": False,
+                             "note": "not configured — set BRIGHTDATA_API_KEY (or run `bdata login`) to unlock bot-walled chains"})
+        else:
+            html = brightdata.fetch(url, data_format="html", timeout=90)
+            if html and len(html) > 500 and not _looks_blocked(html):
+                attempts.append({"step": "bright-data", "status": 200, "ok": True,
+                                 "note": "unlocked %d bytes (zone %s)" % (len(html), brightdata.zone())})
+                return html, "bright-data", attempts
+            attempts.append({"step": "bright-data", "status": 200, "ok": False,
+                             "note": "returned %d bytes, still blocked/thin" % len(html or "")})
+    except urllib.error.HTTPError as e:
+        body = ""
+        try: body = e.read().decode("utf-8", "replace")[:160]
+        except Exception: pass
+        attempts.append({"step": "bright-data", "status": e.code, "ok": False,
+                         "note": ("HTTP %d %s " % (e.code, e.reason)) + body})
+    except Exception as e:
+        attempts.append({"step": "bright-data", "status": None, "ok": False, "note": type(e).__name__ + ": " + str(e)[:160]})
+    return None, "failed", attempts
+
+
+def _raw_fetch(url):
+    """(html, via) — back-compat shape; the detailed trace is via fetch_detail()."""
+    html, via, _ = fetch_detail(url)
+    return html, via
 
 
 _CFG_SIGNALS = ("ld+json", "siteid", "searchspring", "algolia", "__next_data__", "__initial",
@@ -207,9 +266,12 @@ def analyze(url, goal=None):
     url = (url or "").strip()
     if not re.match(r"^https?://", url):
         return {"error": "give a full http(s) URL"}
-    html, via = _raw_fetch(url)
+    html, via, attempts = fetch_detail(url)
     if not html:
-        return {"error": "couldn't fetch the page (blocked or unreachable). A Bright Data key handles bot-walled sites.", "via": via}
+        blocked = any(a["step"] == "bright-data" and not a["ok"] and a.get("status") not in (None,) for a in attempts) \
+                  or any("not configured" in a.get("note", "") for a in attempts)
+        return {"error": "couldn't fetch the page (blocked or unreachable). A Bright Data key handles bot-walled sites.",
+                "via": via, "attempts": attempts, "blocked": blocked}
     if not llm_enabled():
         out = _heuristic(html); out["via"] = via
         out.setdefault("store_level", _store_hint(html))
@@ -304,10 +366,13 @@ def extract(url, prompt, pages=1, limit=3000):
     except Exception:
         limit = 3000
 
-    json_rows, html_blobs, via = [], [], None
+    json_rows, html_blobs, via, attempts = [], [], None, []
     for n in range(1, pages + 1):
         purl = _page_url(url, n)
-        body, v = _raw_fetch(purl)
+        if n == 1:
+            body, v, attempts = fetch_detail(purl)   # keep the real trace for the first page
+        else:
+            body, v = _raw_fetch(purl)
         via = via or v
         if not body:
             break
@@ -336,7 +401,8 @@ def extract(url, prompt, pages=1, limit=3000):
 
     # HTML path
     if not html_blobs:
-        return {"error": "couldn't fetch data (blocked or unreachable). If it's a JS store, extract from its data API instead.", "via": via}
+        return {"error": "couldn't fetch data (blocked or unreachable). If it's a JS store, extract from its data API instead.",
+                "via": via, "attempts": attempts}
     if not llm_enabled():
         h = _heuristic("\n".join(html_blobs))
         return {"rows": (h.get("sample_rows") or [])[:limit], "via": via, "engine": "heuristic",
