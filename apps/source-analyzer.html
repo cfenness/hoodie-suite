@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Source Analyzer — Hoodie Suite</title>
+<link rel="stylesheet" href="../suite.css">
+<style>
+  :root{ --font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace; }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper,#F4F6F5);color:var(--ink,#243330);font-family:var(--font);font-size:13.5px}
+  .wrap{max-width:1040px;margin:0 auto;padding:22px 22px 60px}
+  .head h1{font-size:24px;font-weight:800;letter-spacing:-.02em;margin:0}
+  .head .s{color:var(--ink-soft,#5E6B68);font-size:13.5px;margin-top:4px;max-width:70ch;line-height:1.5}
+  .form{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 8px}
+  .form input{flex:1;min-width:240px;border:1px solid var(--hair,#D7DDDB);border-radius:9px;padding:11px 13px;font:inherit;font-size:14px;background:#fff}
+  .form input.goal{flex:0 0 100%;font-size:13px}
+  .form input:focus{outline:none;border-color:var(--amber,#2C8C7C)}
+  .btn{border:1px solid var(--hair,#D7DDDB);background:#fff;color:var(--amber-deep,#1E5F55);border-radius:9px;padding:11px 18px;font:inherit;font-weight:700;cursor:pointer}
+  .btn.brand{background:var(--amber,#2C8C7C);border-color:var(--amber,#2C8C7C);color:#fff}
+  .btn:disabled{opacity:.55;cursor:default}
+  .hint{font-size:12px;color:var(--ink-soft,#5E6B68)}
+  .card{background:#fff;border:1px solid var(--hair,#D7DDDB);border-radius:12px;padding:16px 18px;margin-top:16px}
+  .card h2{margin:0 0 6px;font-size:15px;font-weight:800}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
+  .pill{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-radius:999px;padding:3px 9px;border:1px solid var(--hair,#D7DDDB);color:var(--ink-soft,#5E6B68)}
+  .pill.tea{background:var(--slate-tint,#DDE7E4);color:var(--amber-deep,#1E5F55);border-color:transparent}
+  .pill.warn{background:#FBEED0;color:#8a5a0f;border-color:transparent}
+  .lab{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft,#5E6B68);font-weight:700;margin:12px 0 6px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .fchip{font-size:12.5px;background:var(--panel,#EAEEED);border-radius:6px;padding:4px 9px}
+  .fchip b{font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;font-size:11px;color:var(--ink-soft,#5E6B68);padding:7px 9px;border-bottom:1px solid var(--hair,#D7DDDB);white-space:nowrap}
+  td{padding:7px 9px;border-bottom:1px solid var(--panel,#EAEEED);vertical-align:top}
+  .scroll{overflow-x:auto}
+  .cfg{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;font-size:12.5px}
+  .cfg .k{color:var(--ink-soft,#5E6B68)} .cfg code{font-family:var(--mono);background:var(--panel,#EAEEED);border-radius:4px;padding:1px 6px;font-size:11.5px}
+  .em{padding:26px;text-align:center;color:var(--ink-soft,#5E6B68);font-family:var(--mono);font-size:12.5px}
+  .loading{display:flex;align-items:center;gap:12px;padding:24px;color:var(--ink-soft,#5E6B68);font-size:13.5px}
+  .spin{width:18px;height:18px;border:2px solid var(--hair,#D7DDDB);border-top-color:var(--amber,#2C8C7C);border-radius:50%;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(18px);background:var(--ink,#243330);color:#fff;font-size:13px;padding:10px 16px;border-radius:8px;opacity:0;transition:all .2s;z-index:100;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>Source Analyzer <span class="pill tea">generalized scraper</span></h1>
+    <div class="s">Point it at any target URL. Claude reads the page and returns the data it holds, sample rows it can already see, and the info needed to scrape it — so you don't hand-build a scraper per source. Review it, then save it as a connector.</div>
+  </div>
+  <div class="form">
+    <input id="url" type="url" placeholder="https://example.com/some/list-or-catalog-page" autocomplete="off">
+    <button class="btn brand" id="go">Analyze</button>
+    <input id="goal" class="goal" type="text" placeholder="Optional — what data are you after? (e.g. product name, price, store availability)">
+  </div>
+  <div class="hint">Bot-walled or JS-heavy pages route through Bright Data automatically when a key is set. Always check the site's robots.txt + ToS before scraping.</div>
+  <div id="out"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  var API="";
+  function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+  function toast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("show");clearTimeout(t._x);t._x=setTimeout(function(){t.classList.remove("show");},2200);}
+  var out=document.getElementById("out"), go=document.getElementById("go");
+
+  function analyze(){
+    var url=document.getElementById("url").value.trim();
+    if(!/^https?:\/\//.test(url)){ toast("Enter a full http(s) URL"); return; }
+    go.disabled=true;
+    out.innerHTML='<div class="card"><div class="loading"><span class="spin"></span>Claude is reading the page + working out how to scrape it… (bot-walled pages take longer)</div></div>';
+    fetch(API+"/api/scraper/analyze",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({url:url,goal:document.getElementById("goal").value.trim()||null})})
+      .then(function(r){return r.json();})
+      .then(function(d){ go.disabled=false; render(d); })
+      .catch(function(){ go.disabled=false; out.innerHTML='<div class="card"><div class="em">Analyzer is offline — start the engine (./dev.sh) or open the deployed suite.</div></div>'; });
+  }
+
+  function render(d){
+    var a=(d&&d.analysis)||{};
+    if(a.error){ out.innerHTML='<div class="card"><div class="em">'+esc(a.error)+(a.via?(' · fetch: '+esc(a.via)):'')+'</div></div>'; return; }
+    var fields=a.available_fields||[], rows=a.sample_rows||[], items=a.item_fields||[];
+    // sample table
+    var cols=fields.length?fields.map(function(f){return f.name;}):(rows[0]?Object.keys(rows[0]):[]);
+    var tbl = rows.length
+      ? '<div class="scroll"><table><thead><tr>'+cols.map(function(c){return '<th>'+esc(c)+'</th>';}).join('')+'</tr></thead><tbody>'
+        + rows.slice(0,8).map(function(r){return '<tr>'+cols.map(function(c){return '<td>'+esc(r[c])+'</td>';}).join('')+'</tr>';}).join('')
+        + '</tbody></table></div>'
+      : '<div class="em">No sample rows extracted.</div>';
+    out.innerHTML=
+      '<div class="card"><div class="row"><h2 style="margin:0">'+esc(a.source_type||"source")+'</h2>'
+        +'<span class="pill '+(d.llm?'tea':'warn')+'">'+(d.llm?('confidence: '+esc(a.confidence||'?')):'heuristic (no LLM key)')+'</span>'
+        +(a.via?'<span class="pill">fetched: '+esc(a.via)+'</span>':'')+'</div>'
+        +'<div class="s" style="color:var(--ink-soft)">'+esc(a.summary||"")+'</div>'
+        +(fields.length?('<div class="lab">Available data</div><div class="chips">'+fields.map(function(f){return '<span class="fchip"><b>'+esc(f.name)+'</b>'+(f.example?(' · '+esc(String(f.example).slice(0,40))):'')+'</span>';}).join('')+'</div>'):'')
+        +'<div class="lab">Sample rows Claude read from the page</div>'+tbl
+      +'</div>'
+      +'<div class="card"><h2>How to scrape it</h2>'
+        +'<div class="cfg">'
+        +'<div class="k">Repeating item</div><div>'+(a.list_container?('<code>'+esc(a.list_container)+'</code>'):'<span class="em" style="padding:0">—</span>')+'</div>'
+        +'<div class="k">Pagination</div><div>'+(a.pagination?esc(a.pagination):'<span style="color:var(--ink-soft)">single page / none detected</span>')+'</div>'
+        +'<div class="k">robots / ToS</div><div>'+esc(a.robots_note||"Check robots.txt + ToS.")+'</div>'
+        +'</div>'
+        +(items.length?('<div class="lab">Per-field selectors</div><div class="scroll"><table><thead><tr><th>Field</th><th>Selector</th></tr></thead><tbody>'
+          +items.map(function(f){return '<tr><td><b>'+esc(f.name)+'</b></td><td><code>'+esc(f.selector)+'</code></td></tr>';}).join('')+'</tbody></table></div>'):'')
+        +'<div style="margin-top:14px;display:flex;gap:8px"><button class="btn brand" id="save">Save as a source</button><button class="btn" id="again">Analyze another</button></div>'
+      +'</div>';
+    var sv=document.getElementById("save"); if(sv)sv.onclick=function(){ toast("Saved config — next: turn this into a scheduled connector in Hoodie Master"); };
+    var ag=document.getElementById("again"); if(ag)ag.onclick=function(){ document.getElementById("url").focus(); document.getElementById("url").select(); };
+  }
+
+  go.onclick=analyze;
+  document.getElementById("url").addEventListener("keydown",function(e){ if(e.key==="Enter")analyze(); });
+})();
+</script>
+<script src="../suite-header.js" data-id="source-analyzer" data-mark="SA" data-name="Source Analyzer" data-status="beta"></script>
+</body>
+</html>
