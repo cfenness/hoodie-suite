@@ -11,6 +11,7 @@ import domain
 DIMS = {
     "category": "p.category", "subcategory": "p.subcategory", "price_tier": "p.price_tier",
     "brand": "p.brand", "brand_family": "p.brand_family", "portfolio": "p.portfolio",
+    "account": "a.name",
     "channel": "a.channel", "subchannel": "a.subchannel", "chain_status": "a.chain_status",
     "city": "a.city", "market": "a.market",
 }
