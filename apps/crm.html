@@ -483,7 +483,7 @@ function render(){
   const page=document.getElementById('page');
   if(recordId){const a=acct(recordId);if(!a){recordId=null;return render();}page.innerHTML=recordHTML(a);wireRecord();return;}
   if(tab==="home"){page.innerHTML=homeHTML();return;}
-  if(tab==="accounts")page.innerHTML=accountsHTML();
+  if(tab==="accounts"){page.innerHTML=accountsHTML();loadRelSummary();}
   else if(tab==="pipeline"){page.innerHTML=pipelineHTML();wireKanban();}
   else if(tab==="inside"){page.innerHTML=insideSalesHTML();wireInside();}
   else if(tab==="planogram"){page.innerHTML=planogramHTML();initPlanogram();}
@@ -554,16 +554,26 @@ function accountsHTML(){
       <div class="lvtitles"><div class="k">Accounts</div><div class="v">All Deals</div></div>
       <div class="lvactions"><button class="btn" onclick="exportJSON()">Export</button><label class="btn" style="margin:0">Import<input type="file" id="imp" accept=".json" hidden></label><button class="btn brand" onclick="newAccount()">New</button></div></div>
     <div class="lvmeta">${rows.length} deals · the Qualified column is MEDDPICC depth (0–100%). Associations + flagship distributor deals.</div>
-    <table><thead><tr><th style="width:30px"></th><th>Account</th><th>Tier</th><th>Stage</th><th>Qualified</th><th>Weakest link</th><th>Threads</th></tr></thead><tbody>
+    <table><thead><tr><th style="width:30px"></th><th>Account</th><th>Tier</th><th>Stage</th><th>Qualified</th><th>Delivery</th><th>Goals</th><th>Threads</th></tr></thead><tbody>
     ${rows.map(a=>{const Q=qualScore(a);const ct=(a.contacts||[]).length;return `<tr onclick="openRecord('${a.id}')">
       <td><input type="checkbox" class="chk" onclick="event.stopPropagation()"></td>
       <td><div class="rowname"><span class="recicon" style="background:${TIER_ICON_COLOR[a.tier]}">${esc(a.abbr.slice(0,3))}</span><a class="lnk">${esc(a.name)}</a></div></td>
       <td><span class="badge tier-${a.tier}"><span class="dot"></span>${a.tier}</span></td>
       <td><span class="stagepill">${esc(a.stage)}</span></td>
       <td><span class="qbar"><i style="width:${Q.pct}%;background:${qualBarColor(Q.pct)}"></i></span> <span class="qchip ${qualClass(Q.pct)}">${Q.pct}%</span></td>
-      <td>${Q.weakest?`<span style="color:var(--q-unknown);font-weight:600">${esc(Q.weakest.t)}</span>`:'<span style="color:var(--q-solid);font-weight:600">fully qualified</span>'}</td>
+      <td id="reld-${a.id}"><span class="placeholder">·</span></td>
+      <td id="relg-${a.id}"><span class="placeholder">·</span></td>
       <td>${ct?`${ct} ${ct===1?'<span style="color:var(--q-weak)">(single)</span>':''}`:'<span class="placeholder">0</span>'}</td></tr>`;}).join("")}
     </tbody></table></div>`;
+}
+/* reportable roll-up: fill the Delivery + Goals columns from the backend */
+function loadRelSummary(){
+  fetch('/api/relations/accounts',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject()).then(d=>{
+    (d.accounts||[]).forEach(function(x){
+      var dc=document.getElementById('reld-'+x.accountId); if(dc&&x.deliveryDay)dc.innerHTML='<span class="badge">'+esc(x.deliveryDay)+'</span>';
+      var gc=document.getElementById('relg-'+x.accountId); if(gc&&x.goals)gc.textContent=x.goals+' goal'+(x.goals===1?'':'s');
+    });
+  }).catch(function(){});
 }
 
 /* ---- record page ---- */
@@ -645,6 +655,10 @@ function recordHTML(a){
           <div class="frow"><div class="fk">Website</div><div class="fv">${a.web&&a.web!=='—'?`<a href="https://${esc(a.web)}" target="_blank" rel="noopener">${esc(a.web)}</a>`:'—'}</div></div>
           <div class="frow"><div class="fk">Target role</div><div class="fv">${esc(a.targetRole||'—')}</div></div>
           <div class="frow"><div class="fk">Owner</div><div class="fv">${esc(a.owner)}</div></div>
+          <div class="frow"><div class="fk">Delivery day</div><div class="fv" id="rel-delivery">…</div></div>
+        </div>
+        <div class="sect"><h3>Goals <span class="sub">— Claude matches each to the master; you confirm</span></h3>
+          <div id="rel-goals"><div style="color:var(--muted);font-size:12.5px">Loading…</div></div>
         </div>
         <div class="sect"><h3>Notes</h3><textarea class="notes" id="notes" placeholder="Relationship notes, scope, next steps...">${esc(a.notes||'')}</textarea></div>
       </div>
@@ -863,7 +877,58 @@ function planoSave(){
 function openRecord(id){recordId=id;render();}
 function back(){recordId=null;render();}
 async function setStage(id,i){acct(id).stage=STAGES[i];await save();render();toast('Stage → '+STAGES[i]);}
-function wireRecord(){const n=document.getElementById('notes');if(n)n.addEventListener('blur',async()=>{acct(recordId).notes=n.value;await save();});}
+function wireRecord(){const n=document.getElementById('notes');if(n)n.addEventListener('blur',async()=>{acct(recordId).notes=n.value;await save();});loadRelations(recordId);}
+
+/* ============================ RELATIONS EXTRAS — delivery day + goals ============================ */
+/* Per-account delivery day + goals, persisted on the backend (reportable via
+   /api/relations/accounts). Goals are matched to the master by Claude, then the user confirms. */
+let relExtras={deliveryDay:null,goals:[]};
+const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+function loadRelations(id){
+  relExtras={deliveryDay:null,goals:[]};
+  fetch('/api/relations/accounts/'+encodeURIComponent(id),{cache:'no-store'})
+    .then(r=>r.ok?r.json():Promise.reject()).then(d=>{ relExtras=(d&&d.account)||relExtras; renderDelivery(id); renderGoals(id); })
+    .catch(()=>{ var dv=document.getElementById('rel-delivery'); if(dv)dv.textContent='— (engine offline)';
+      var g=document.getElementById('rel-goals'); if(g)g.innerHTML='<div style="color:#a09e9c;font-size:12.5px">Goals need the engine — start ./dev.sh (or open the deployed suite).</div>'; });
+}
+function saveRelations(id){ var a=acct(id);
+  return fetch('/api/relations/accounts/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({accountName:a?a.name:null,deliveryDay:relExtras.deliveryDay,goals:relExtras.goals})})
+    .then(r=>r.ok?r.json():Promise.reject()).catch(()=>toast('Save failed — is the engine live?')); }
+function renderDelivery(id){ var el=document.getElementById('rel-delivery'); if(!el)return;
+  el.innerHTML='<select id="rel-day" class="btn" style="padding:5px 8px"><option value="">— none —</option>'+
+    DAYS.map(d=>`<option value="${d}"${relExtras.deliveryDay===d?' selected':''}>${d}</option>`).join('')+'</select>';
+  el.querySelector('#rel-day').onchange=function(){ relExtras.deliveryDay=this.value||null; saveRelations(id); toast('Delivery day → '+(relExtras.deliveryDay||'none')); }; }
+function renderGoals(id){ var el=document.getElementById('rel-goals'); if(!el)return; var goals=relExtras.goals||[];
+  el.innerHTML=(goals.length?goals.map((g,i)=>goalCard(g,i,id)).join(''):'<div style="color:var(--muted);font-size:12.5px;margin-bottom:8px">No goals yet.</div>')+
+    `<div style="margin-top:8px"><textarea id="goal-text" class="notes" style="min-height:52px" placeholder="e.g. Get Tito's to +20% facings at WSWA by Q3"></textarea>
+     <div style="margin-top:6px"><button class="btn brand" id="goal-match">Match with Claude</button></div><div id="goal-draft"></div></div>`;
+  el.querySelector('#goal-match').onclick=function(){ matchGoal(id); }; }
+function goalCard(g,i,id){ const m=g.match||{};
+  const chips=[m.account&&('🏛 '+esc(m.account)),m.brand&&('🏷 '+esc(m.brand)),m.metric&&('📊 '+esc(m.metric)),
+    (m.target!=null&&m.target!=='')&&('🎯 '+esc(m.target)+(m.unit?esc(m.unit):'')),m.timeframe&&('🗓 '+esc(m.timeframe))].filter(Boolean).join(' · ')||'unmatched';
+  return `<div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px">
+    <div style="font-weight:600;font-size:13px">${esc(g.text)}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px">${chips} ${g.confirmed?'<span style="color:var(--q-solid);font-weight:700">✓ confirmed</span>':'<span style="color:var(--q-weak)">needs review</span>'}</div>
+    <div style="margin-top:6px;display:flex;gap:6px">${g.confirmed?'':`<button class="mini good" onclick="confirmGoal('${id}',${i})">Confirm</button>`}<button class="mini" onclick="delGoal('${id}',${i})">Remove</button></div></div>`; }
+function matchGoal(id){ var txt=(document.getElementById('goal-text')||{}).value||''; if(!txt.trim())return toast('Write a goal first');
+  var a=acct(id); var draft=document.getElementById('goal-draft'); draft.innerHTML='<div style="color:var(--muted);font-size:12.5px;padding:8px 0">Claude is matching to the master…</div>';
+  fetch('/api/relations/goals/match',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:txt,accountName:a?a.name:null})})
+    .then(r=>r.ok?r.json():Promise.reject()).then(d=>{ var m=(d&&d.match)||{};
+      draft.innerHTML=`<div style="border:1px dashed var(--brand);border-radius:8px;padding:10px 12px;margin-top:8px;background:var(--panel)">
+        <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:6px">Match (${esc(m.confidence||'?')}${d.llm?'':' · heuristic'}) — double-check before saving</div>
+        ${matchField('Account','m_account',m.account)}${matchField('Brand','m_brand',m.brand)}${matchField('Metric','m_metric',m.metric)}${matchField('Target','m_target',m.target)}${matchField('Timeframe','m_timeframe',m.timeframe)}
+        <div style="font-size:11.5px;color:var(--muted);margin:6px 0 8px">${esc(m.rationale||'')}</div>
+        <button class="btn brand" onclick="saveGoal('${id}')">Save goal</button></div>`;
+    }).catch(()=>{ draft.innerHTML='<div style="color:#a09e9c;font-size:12.5px;padding:8px 0">Match failed — is the engine live?</div>'; }); }
+function matchField(label,idf,val){ return `<div style="display:grid;grid-template-columns:82px 1fr;gap:8px;align-items:center;margin-bottom:5px"><label style="font-size:11.5px;color:var(--muted)">${label}</label><input id="${idf}" class="pl-in" value="${esc(val==null?'':val)}"></div>`; }
+function saveGoal(id){ function v(i){var e=document.getElementById(i);return e?e.value.trim():null;}
+  var txt=(document.getElementById('goal-text')||{}).value||'';
+  var m={account:v('m_account'),brand:v('m_brand'),metric:v('m_metric'),target:v('m_target'),timeframe:v('m_timeframe')};
+  relExtras.goals=relExtras.goals||[]; relExtras.goals.push({text:txt.trim(),match:m,confirmed:true,ts:Date.now()});
+  saveRelations(id).then(()=>{ toast('Goal saved'); renderGoals(id); }); }
+function confirmGoal(id,i){ relExtras.goals[i].confirmed=true; saveRelations(id).then(()=>renderGoals(id)); }
+function delGoal(id,i){ relExtras.goals.splice(i,1); saveRelations(id).then(()=>renderGoals(id)); }
 
 async function cycleMedd(id,k){const a=acct(id);const cur=(a.meddpicc[k]||{}).status||"unknown";
   a.meddpicc[k]=a.meddpicc[k]||{};a.meddpicc[k].status=STATUS_NEXT[cur];await save();render();

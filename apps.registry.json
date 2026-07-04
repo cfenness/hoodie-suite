@@ -4,7 +4,7 @@
       "id": "dashboard",
       "name": "Hoodie Intelligence",
       "desc": "Market intelligence & QBR briefs",
-      "group": "Product",
+      "group": "Commercial",
       "status": "live",
       "file": "apps/dashboard.html",
       "mark": "HI",
@@ -31,16 +31,6 @@
       "parent": null
     },
     {
-      "id": "catalog",
-      "name": "Product Catalog",
-      "desc": "Product master data · lifecycle, completeness, channels (shared data-grid)",
-      "group": "Product",
-      "status": "beta",
-      "file": "apps/catalog.html",
-      "mark": "PC",
-      "parent": null
-    },
-    {
       "id": "crm",
       "name": "Hoodie Relations",
       "desc": "Industry-associations CRM",
@@ -48,6 +38,16 @@
       "status": "beta",
       "file": "apps/crm.html",
       "mark": "HR",
+      "parent": null
+    },
+    {
+      "id": "catalog",
+      "name": "Product Catalog",
+      "desc": "Product master data · lifecycle, completeness, channels (shared data-grid)",
+      "group": "Commercial",
+      "status": "beta",
+      "file": "apps/catalog.html",
+      "mark": "PC",
       "parent": null
     },
     {

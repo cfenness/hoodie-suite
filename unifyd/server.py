@@ -194,6 +194,9 @@ PLANOGRAM = load("planograms.json", {})
 # status overrides, feature toggles). Both persisted with the rest of the agent state.
 USAGE = load("usage.json", [])
 FLAGS = load("admin_flags.json", {"apps": {}, "features": {}})
+# Hoodie Relations extras — per-account delivery day + goals (goals matched to the
+# master via relations.match_goal). Keyed by account id; persisted so it's reportable.
+RELATIONS = load("relations.json", {})
 
 # Canonical hierarchy served at /api/hierarchy. Curated copy from the state store if
 # present, else the bundled seed (unifyd/hierarchy.json). Eventually derived from the
@@ -676,6 +679,52 @@ def admin_overview():
                    runs=len(RUNS),
                    planograms=len(PLANOGRAM),
                    bookValue=book_val)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Hoodie Relations — per-account delivery day + goals (goals matched to the master)
+# ─────────────────────────────────────────────────────────────────────────────
+def _rel(aid):
+    return RELATIONS.get(aid) or {"accountId": aid, "deliveryDay": None, "goals": []}
+
+@app.get("/api/relations/accounts")
+def relations_list():
+    # reportable roll-up: every account with extras
+    out = []
+    for aid, r in RELATIONS.items():
+        out.append({"accountId": aid, "accountName": r.get("accountName"),
+                    "deliveryDay": r.get("deliveryDay"), "goals": len(r.get("goals") or [])})
+    return jsonify(ok=True, accounts=out)
+
+@app.get("/api/relations/accounts/<aid>")
+def relations_get(aid):
+    return jsonify(ok=True, account=_rel(aid))
+
+@app.put("/api/relations/accounts/<aid>")
+def relations_put(aid):
+    b = request.get_json(force=True, silent=True) or {}
+    now = int(time.time() * 1000)
+    cur = RELATIONS.get(aid) or {}
+    rec = {
+        "accountId": aid,
+        "accountName": (b.get("accountName") or cur.get("accountName")),
+        "deliveryDay": (b.get("deliveryDay") if "deliveryDay" in b else cur.get("deliveryDay")),
+        "goals": (b.get("goals") if "goals" in b else (cur.get("goals") or [])),
+        "updatedAt": now,
+    }
+    # bound the goals list a little
+    if isinstance(rec["goals"], list):
+        rec["goals"] = rec["goals"][:50]
+    RELATIONS[aid] = rec
+    _save_json("relations.json", RELATIONS)
+    return jsonify(ok=True, account=rec)
+
+@app.post("/api/relations/goals/match")
+def relations_goal_match():
+    b = request.get_json(force=True, silent=True) or {}
+    import relations
+    match = relations.match_goal((b.get("text") or ""), b.get("accountName"))
+    return jsonify(ok=True, match=match, llm=relations.llm_enabled())
 
 @app.get("/api/hierarchy")
 def hierarchy():
