@@ -743,10 +743,10 @@ def scraper_analyze():
     if "error" not in result:                       # stash the config as a candidate recipe
         recipes.save_config(RECIPES, url, result, int(time.time() * 1000))
         _save_json("recipes.json", RECIPES)
-        recipe = recipes.get(RECIPES, url)
-    return jsonify(ok=("error" not in result), analysis=result, llm=source_analyzer.llm_enabled(),
-                   recipe=({"host": recipe["host"], "platform": recipe.get("platform"),
-                            "status": recipe["status"]} if recipe else None))
+        rec = recipes.get(RECIPES, url)
+        recipe = {"host": rec["host"], "platform": rec.get("platform"), "status": rec["status"],
+                  "platform_proven_on": recipes.platform_proven_on(RECIPES, url, result)} if rec else None
+    return jsonify(ok=("error" not in result), analysis=result, llm=source_analyzer.llm_enabled(), recipe=recipe)
 
 @app.post("/api/scraper/extract")
 def scraper_extract():

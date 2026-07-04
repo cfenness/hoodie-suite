@@ -86,6 +86,17 @@ b4, _ = R.record_run(b4, "https://p.com", rows(10), ts=2)   # proven
 b4 = R.save_config(b4, "https://p.com", {"scrape_prompt": "SHOULD_NOT_REPLACE"}, ts=3)
 ok(R.get(b4, "https://p.com")["config"].get("scrape_prompt") != "SHOULD_NOT_REPLACE", "proven config not clobbered by save_config")
 
+# ── platform reuse: one proven SearchSpring store hints the next ──────────────
+bp = {}
+bp = R.save_config(bp, "https://abcfws.com/x", {"data_api": {"url": "https://a.a.searchspring.io/api"}}, ts=1)
+bp, _ = R.record_run(bp, "https://abcfws.com/x", rows(80), ts=2)
+bp, _ = R.record_run(bp, "https://abcfws.com/x", rows(80), ts=3)   # abcfws proven, platform searchspring
+ok(len(R.by_platform(bp, "searchspring")) == 1, "by_platform finds the proven searchspring recipe")
+ok(R.platform_proven_on(bp, "https://otherstore.com", {"data_api": {"url": "https://b.a.searchspring.io/api"}}) == ["abcfws.com"],
+   "platform_proven_on: new searchspring host sees abcfws as proven")
+ok(R.platform_proven_on(bp, "https://abcfws.com", {"data_api": {"url": "https://a.a.searchspring.io"}}) == [],
+   "platform_proven_on excludes the same host")
+
 # ── stats ─────────────────────────────────────────────────────────────────────
 s = R.stats(book)
 ok(s["total"] >= 1 and "by_status" in s, "stats summary")
