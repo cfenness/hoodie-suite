@@ -183,6 +183,10 @@ def load(name, default):
 
 DATASETS = load("datasets.json", {})
 RUNS     = load("runs.json", [])
+# Service desk — data-quality reports raised from the suite (e.g. clicking a "degraded"
+# pill in Hoodie Pulls). Logged here, surfaced in the CRM's Service tab, tracked to
+# resolution. Same disk-or-S3 persistence as the rest of the agent state.
+SERVICE  = load("service_reports.json", [])
 
 # Canonical hierarchy served at /api/hierarchy. Curated copy from the state store if
 # present, else the bundled seed (unifyd/hierarchy.json). Eventually derived from the
@@ -437,6 +441,74 @@ def dataset_download():
 @app.get("/api/runs")
 def runs():
     return jsonify(RUNS[:200])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Service desk — data-quality reports (raised from the suite, tracked in the CRM)
+# ─────────────────────────────────────────────────────────────────────────────
+_SERVICE_STATES = ("open", "acknowledged", "reported", "resolved")
+
+def save_service():
+    name = "service_reports.json"
+    if STATE_BUCKET:
+        try:
+            _s3().put_object(Bucket=STATE_BUCKET, Key=_key(name),
+                             Body=json.dumps(SERVICE).encode("utf-8"),
+                             ContentType="application/json")
+        except Exception as e:
+            app.logger.warning("S3 save %s failed: %s", name, e)
+    else:
+        try:
+            json.dump(SERVICE, open(os.path.join(STATE_DIR, name), "w"))
+        except Exception as e:
+            app.logger.warning("save %s failed: %s", name, e)
+
+@app.get("/api/service/reports")
+def service_list():
+    st = (request.args.get("status") or "").strip().lower()
+    items = SERVICE if st not in _SERVICE_STATES else [r for r in SERVICE if r.get("status") == st]
+    counts = {s: sum(1 for r in SERVICE if r.get("status") == s) for s in _SERVICE_STATES}
+    return jsonify(ok=True, reports=items[:500], total=len(SERVICE), counts=counts)
+
+@app.post("/api/service/reports")
+def service_create():
+    b = request.get_json(force=True, silent=True) or {}
+    now = int(time.time() * 1000)
+    by = (b.get("reporter") or "field").strip()[:120]
+    rec = {
+        "id": "SR-%d" % now,
+        "kind": (b.get("kind") or "data-quality").strip()[:40],
+        "connId": (b.get("connId") or "").strip()[:80],
+        "source": (b.get("source") or b.get("connId") or "—").strip()[:160],
+        "dataset": (b.get("dataset") or "").strip()[:160],
+        "severity": (b.get("severity") or "degraded").strip()[:40],
+        "warnings": [str(w)[:300] for w in (b.get("warnings") or [])][:20],
+        "note": (b.get("note") or "").strip()[:2000],
+        "url": (b.get("url") or "").strip()[:400],
+        "reporter": by,
+        "status": "open",
+        "createdAt": now, "updatedAt": now,
+        "history": [{"at": now, "status": "open", "by": by}],
+    }
+    SERVICE.insert(0, rec); del SERVICE[1000:]; save_service()
+    return jsonify(ok=True, report=rec)
+
+@app.patch("/api/service/reports/<rid>")
+def service_update(rid):
+    b = request.get_json(force=True, silent=True) or {}
+    rec = next((r for r in SERVICE if r.get("id") == rid), None)
+    if not rec:
+        return jsonify(ok=False, error="not found"), 404
+    now = int(time.time() * 1000)
+    st = (b.get("status") or "").strip().lower()
+    if st in _SERVICE_STATES:
+        rec["status"] = st
+        rec.setdefault("history", []).append({"at": now, "status": st, "by": (b.get("by") or "ops")})
+    if "note" in b:
+        rec["note"] = (b.get("note") or "").strip()[:2000]
+    rec["updatedAt"] = now
+    save_service()
+    return jsonify(ok=True, report=rec)
 
 @app.get("/api/hierarchy")
 def hierarchy():
