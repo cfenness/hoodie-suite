@@ -140,3 +140,14 @@ data. The deploy model is a **private S3 bucket served only through CloudFront**
 with an optional shared-password gate in `cloudfront/basic-auth.js` (a CloudFront
 Function on the viewer-request event). Do not switch to a public S3 website. Full
 setup steps are in `README.md`.
+
+**We must not be scrapeable.** On the live Fly deploy the primary defense is the
+**Google OIDC gate** (`unifyd/auth_gate.py`): a `before_request` that redirects any
+unauthenticated HTML request to `/auth/login` and 401s `/api/*`, so nothing is public
+except `_PUBLIC` (health, the `/auth/*` routes, `/favicon.ico`, `/robots.txt`). Layered
+on top (`server.py`): `/robots.txt` = `Disallow: /`; `X-Robots-Tag: noindex, nofollow,
+noarchive` + `X-Frame-Options: SAMEORIGIN` (the launcher/sources/mdm shells iframe their
+own apps) + `nosniff` + `no-referrer` on every response; and a light in-memory per-IP
+rate limit on `/api/*` (`RATE_MAX`/`RATE_WINDOW`, default 600/60s, health exempt) so an
+authenticated session can't be used to vacuum the whole book/catalog. Keep the gate
+configured (`ALLOWED_EMAILS`) — it is the load-bearing control.
