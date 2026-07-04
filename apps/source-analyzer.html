@@ -37,6 +37,8 @@
   .cfg{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;font-size:12.5px}
   .cfg .k{color:var(--ink-soft,#5E6B68)} .cfg code{font-family:var(--mono);background:var(--panel,#EAEEED);border-radius:4px;padding:1px 6px;font-size:11.5px}
   .em{padding:26px;text-align:center;color:var(--ink-soft,#5E6B68);font-family:var(--mono);font-size:12.5px}
+  textarea.prompt{width:100%;min-height:110px;border:1px solid var(--hair,#D7DDDB);border-radius:9px;padding:11px 13px;font-family:var(--mono);font-size:12.5px;line-height:1.5;background:var(--panel,#EAEEED);color:var(--ink,#243330);resize:vertical}
+  textarea.prompt:focus{outline:none;border-color:var(--amber,#2C8C7C);background:#fff}
   .loading{display:flex;align-items:center;gap:12px;padding:24px;color:var(--ink-soft,#5E6B68);font-size:13.5px}
   .spin{width:18px;height:18px;border:2px solid var(--hair,#D7DDDB);border-top-color:var(--amber,#2C8C7C);border-radius:50%;animation:sp .8s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
@@ -62,7 +64,7 @@
 
 <script>
 (function(){
-  var API="";
+  var API="", lastUrl="";
   function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
   function toast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("show");clearTimeout(t._x);t._x=setTimeout(function(){t.classList.remove("show");},2200);}
   var out=document.getElementById("out"), go=document.getElementById("go");
@@ -70,7 +72,7 @@
   function analyze(){
     var url=document.getElementById("url").value.trim();
     if(!/^https?:\/\//.test(url)){ toast("Enter a full http(s) URL"); return; }
-    go.disabled=true;
+    lastUrl=url; go.disabled=true;
     out.innerHTML='<div class="card"><div class="loading"><span class="spin"></span>Claude is reading the page + working out how to scrape it… (bot-walled pages take longer)</div></div>';
     fetch(API+"/api/scraper/analyze",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({url:url,goal:document.getElementById("goal").value.trim()||null})})
@@ -106,10 +108,34 @@
         +'</div>'
         +(items.length?('<div class="lab">Per-field selectors</div><div class="scroll"><table><thead><tr><th>Field</th><th>Selector</th></tr></thead><tbody>'
           +items.map(function(f){return '<tr><td><b>'+esc(f.name)+'</b></td><td><code>'+esc(f.selector)+'</code></td></tr>';}).join('')+'</tbody></table></div>'):'')
-        +'<div style="margin-top:14px;display:flex;gap:8px"><button class="btn brand" id="save">Save as a source</button><button class="btn" id="again">Analyze another</button></div>'
+        +'<div style="margin-top:14px;display:flex;gap:8px"><button class="btn" id="save">Save as a source</button><button class="btn" id="again">Analyze another</button></div>'
+      +'</div>'
+      +'<div class="card"><h2>Extraction prompt <span style="font-weight:500;font-size:12px;color:var(--ink-soft,#5E6B68)">— reusable · fed to Claude on every run (edit it if you like)</span></h2>'
+        +'<textarea class="prompt" id="scrape-prompt">'+esc(a.scrape_prompt||"")+'</textarea>'
+        +'<div style="margin-top:8px;display:flex;gap:8px;align-items:center"><button class="btn brand" id="run-extract">▸ Run extraction — feed to Claude</button><span class="hint" id="ex-hint"></span></div>'
+        +'<div id="extract-out"></div>'
       +'</div>';
     var sv=document.getElementById("save"); if(sv)sv.onclick=function(){ toast("Saved config — next: turn this into a scheduled connector in Hoodie Master"); };
     var ag=document.getElementById("again"); if(ag)ag.onclick=function(){ document.getElementById("url").focus(); document.getElementById("url").select(); };
+    var rx=document.getElementById("run-extract"); if(rx)rx.onclick=runExtract;
+  }
+
+  function runExtract(){
+    var prompt=(document.getElementById("scrape-prompt")||{}).value||"";
+    if(!prompt.trim()){ toast("The prompt is empty"); return; }
+    var btn=document.getElementById("run-extract"), eout=document.getElementById("extract-out");
+    btn.disabled=true; eout.innerHTML='<div class="loading"><span class="spin"></span>Feeding the prompt to Claude + extracting the rows…</div>';
+    fetch(API+"/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:lastUrl,prompt:prompt})})
+      .then(function(r){return r.json();}).then(function(d){ btn.disabled=false;
+        if(d.error){ eout.innerHTML='<div class="em">'+esc(d.error)+'</div>'; return; }
+        var rows=d.rows||[]; var cols=rows.length?Object.keys(rows[0]):[];
+        document.getElementById("ex-hint").textContent=rows.length+" rows · engine: "+esc(d.engine||"?")+(d.via?(" · fetched "+esc(d.via)):"");
+        eout.innerHTML=rows.length
+          ? '<div class="lab">Extracted rows</div><div class="scroll"><table><thead><tr>'+cols.map(function(c){return '<th>'+esc(c)+'</th>';}).join('')+'</tr></thead><tbody>'
+            + rows.slice(0,50).map(function(r){return '<tr>'+cols.map(function(c){return '<td>'+esc(typeof r[c]==="object"?JSON.stringify(r[c]):r[c])+'</td>';}).join('')+'</tr>';}).join('')
+            + '</tbody></table></div>'+(rows.length>50?('<div class="hint" style="margin-top:6px">showing 50 of '+rows.length+'</div>'):'')
+          : '<div class="em">No rows extracted — try tightening the prompt.</div>';
+      }).catch(function(){ btn.disabled=false; eout.innerHTML='<div class="em">Extraction failed — is the engine live?</div>'; });
   }
 
   go.onclick=analyze;

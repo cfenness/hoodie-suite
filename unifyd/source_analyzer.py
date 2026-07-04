@@ -50,6 +50,12 @@ def _clean(html):
     return h.strip()[:45000]
 
 
+def _default_prompt(names):
+    fl = ", ".join(names) if names else "every field in the primary dataset"
+    return ("Extract every row of the primary dataset from this page's HTML. For each row return an object with "
+            "these fields: " + fl + ". Return ONLY a JSON array of objects — no prose. Use null for a missing field.")
+
+
 def _heuristic(html):
     fields, samples = [], []
     try:
@@ -67,11 +73,13 @@ def _heuristic(html):
                     cells = [td.get_text(" ", strip=True) for td in tr.find_all(["td", "th"])]
                     if cells:
                         samples.append(dict(zip([f["name"] for f in fields], cells)))
+                names = [f["name"] for f in fields]
                 return {"source_type": "html-table", "summary": "Detected an HTML table (structural heuristic — no LLM key).",
                         "available_fields": fields, "sample_rows": samples,
                         "list_container": "table tr", "item_fields": [{"name": f["name"], "selector": "td:nth-child(?)"} for f in fields],
                         "pagination": None, "robots_note": "Check the site's robots.txt + ToS before scraping.",
-                        "confidence": "heuristic", "jsonld": bool(ld)}
+                        "confidence": "heuristic", "jsonld": bool(ld),
+                        "scrape_prompt": _default_prompt(names)}
     except Exception:
         pass
     return {"source_type": "unknown", "summary": "No obvious table/list found by the heuristic. Set ANTHROPIC_API_KEY for Claude to read the page.",
@@ -98,8 +106,12 @@ def analyze(url, goal=None):
                   '"sample_rows":[object],'   # up to 5 rows you can already read from the HTML
                   '"list_container":string|null,'   # CSS selector for the repeating item
                   '"item_fields":[{"name":string,"selector":string}],'
-                  '"pagination":string|null,"robots_note":string,"confidence":"high"|"medium"|"low"}. '
-                  "sample_rows must be real values read from THIS html. Keep it to the primary dataset on the page.")
+                  '"pagination":string|null,"robots_note":string,"confidence":"high"|"medium"|"low",'
+                  '"scrape_prompt":string}. '
+                  "sample_rows must be real values read from THIS html. Keep it to the primary dataset on the page. "
+                  "scrape_prompt is a REUSABLE instruction you would hand an LLM on every future run to extract this "
+                  "source's rows from its page HTML — name the exact fields to pull and say to return a JSON array of "
+                  "objects; make it specific to this source but not tied to values from this one snapshot.")
         usr = (("GOAL: " + goal + "\n\n") if goal else "") + "PAGE URL: " + url + "\n\nHTML:\n" + _clean(html)
         msg = client.messages.create(model=MODEL, max_tokens=2000, system=sysmsg,
                                      messages=[{"role": "user", "content": usr}])
@@ -113,3 +125,35 @@ def analyze(url, goal=None):
         out = _heuristic(html); out["via"] = via
         out["summary"] = "LLM error (" + str(e)[:90] + ") — fell back to the structural heuristic."
         return out
+
+
+def extract(url, prompt, limit=200):
+    """Run the generated scrape_prompt against a fresh fetch of the URL — feed it to Claude
+    and return the extracted rows. This is the actual scrape: prompt in, JSON rows out."""
+    url = (url or "").strip()
+    prompt = (prompt or "").strip()
+    if not re.match(r"^https?://", url):
+        return {"error": "give a full http(s) URL"}
+    if not prompt:
+        return {"error": "no scrape prompt — analyze the source first"}
+    html, via = _raw_fetch(url)
+    if not html:
+        return {"error": "couldn't fetch the page (blocked or unreachable)", "via": via}
+    if not llm_enabled():
+        h = _heuristic(html)
+        return {"rows": (h.get("sample_rows") or [])[:limit], "via": via, "engine": "heuristic",
+                "note": "No LLM key — returned the table rows the heuristic could read (set ANTHROPIC_API_KEY to run the prompt through Claude)."}
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        sysmsg = ("Extract structured data from the page HTML per the user's instructions. "
+                  "Return ONLY a JSON array of objects — no prose, no markdown fences.")
+        usr = prompt + "\n\nPAGE URL: " + url + "\n\nHTML:\n" + _clean(html)
+        msg = client.messages.create(model=MODEL, max_tokens=4000, system=sysmsg,
+                                     messages=[{"role": "user", "content": usr}])
+        raw = "".join(getattr(b, "text", "") for b in msg.content)
+        m = re.search(r"\[[\s\S]*\]", raw)
+        rows = json.loads(m.group(0)) if m else []
+        return {"rows": rows[:limit], "via": via, "engine": "claude"}
+    except Exception as e:
+        return {"error": "extraction failed: " + str(e)[:120], "via": via}

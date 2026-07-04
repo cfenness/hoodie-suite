@@ -737,6 +737,13 @@ def scraper_analyze():
     result = source_analyzer.analyze((b.get("url") or ""), b.get("goal"))
     return jsonify(ok=("error" not in result), analysis=result, llm=source_analyzer.llm_enabled())
 
+@app.post("/api/scraper/extract")
+def scraper_extract():
+    b = request.get_json(force=True, silent=True) or {}
+    import source_analyzer
+    result = source_analyzer.extract((b.get("url") or ""), (b.get("prompt") or ""))
+    return jsonify(ok=("error" not in result), **result)
+
 @app.get("/api/hierarchy")
 def hierarchy():
     # derived from the live data when present; else the bundled/curated seed
