@@ -88,6 +88,7 @@
     <span>or pull a URL from a tracked source:</span>
     <select id="from-tracker" style="font-family:inherit;font-size:12.5px;color:var(--ink,#243330);border:1px solid var(--hair,#D7DDDB);border-radius:8px;padding:6px 9px;background:#fff;cursor:pointer;max-width:340px"></select>
   </div>
+  <div id="recipe-first"></div>
   <div class="hint">Bot-walled or JS-heavy pages route through Bright Data automatically when a key is set. Always check the site's robots.txt + ToS before scraping.</div>
   <div id="out"></div>
 </div>
@@ -153,6 +154,7 @@
         +(a.via?'<span class="pill">fetched: '+esc(a.via)+'</span>':'')+'</div>'
         +'<div class="s" style="color:var(--ink-soft)">'+esc(a.summary||"")+'</div>'
         +((a.store_level&&a.store_level.scoped)?('<div class="callout"><span class="ci">🏬</span><span class="ct"><b>Per-store inventory'+(a.store_level.count?(' — ~'+esc(a.store_level.count)+' stores.'):'.')+'</b> Pull the chain-wide catalog first (what they CARRY — one cheap pass); real-time in-stock needs a separate, pricier per-store loop. Narrow it with a store filter above before running the inventory pass. '+esc(a.store_level.how||a.store_level.note||'')+'</span></div>'):'')
+        +((d.recipe&&d.recipe.platform_proven_on&&d.recipe.platform_proven_on.length)?('<div class="callout" style="background:#e7f3ec;border-color:#15734733"><span class="ci">✓</span><span class="ct"><b>Known platform ('+esc(d.recipe.platform)+').</b> Already proven on '+esc(d.recipe.platform_proven_on.slice(0,3).join(", "))+' — the same recipe shape should carry over here.</span></div>'):'')
         +(fields.length?('<div class="lab">Available data</div><div class="chips">'+fields.map(function(f){return '<span class="fchip"><b>'+esc(f.name)+'</b>'+(f.example?(' · '+esc(String(f.example).slice(0,40))):'')+'</span>';}).join('')+'</div>'):'')
         +'<div class="lab">Sample rows Claude read from the page</div>'+tbl
       +'</div>'
@@ -268,6 +270,42 @@
     populate();
     // the Catalog tab seeds localStorage on its own load — repopulate if it lands after us
     window.addEventListener("storage", function(e){ if(!e || e.key==="hoodie.pulls.tracker.v2") populate(); });
+  })();
+
+  // ── Recipe-first execution ─────────────────────────────────────────────────
+  // If the URL's host already has a PROVEN recipe, offer to run it with no LLM call.
+  (function(){
+    var box=document.getElementById("recipe-first"), urlEl=document.getElementById("url"), t;
+    if(!box||!urlEl) return;
+    function runRecipe(rec){
+      var cfg=rec.config||{}, target=(cfg.data_api&&cfg.data_api.url)||urlEl.value.trim();
+      var prompt=cfg.scrape_prompt||"products";
+      out.innerHTML='<div class="card"><div class="loading"><span class="spin"></span>Running the proven recipe for '+esc(rec.host)+' — no LLM…</div></div>';
+      fetch(API+"/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({url:target,prompt:prompt,pages:3,limit:100})})
+        .then(function(r){return r.json();}).then(function(d){
+          var rows=d.rows||[];
+          out.innerHTML='<div class="card">'+recipeBanner(d.recipe)
+            +(rows.length?('<div class="lab">Extracted rows · engine '+esc(d.engine||"?")+'</div>'+tableHTML(rows,50)
+              +(rows.length>50?('<div class="hint" style="margin-top:6px">showing 50 of '+rows.length+'</div>'):'')):'<div class="em">'+esc(d.error||"no rows")+'</div>')
+            +'<div style="margin-top:12px"><button class="btn" id="re-analyze">Re-analyze instead</button></div></div>';
+          var ra=document.getElementById("re-analyze"); if(ra)ra.onclick=analyze;
+        }).catch(function(){ out.innerHTML='<div class="card"><div class="em">Recipe run failed — is the engine live?</div></div>'; });
+    }
+    function render(rec){
+      if(!rec || rec.status!=="proven"){ box.innerHTML=""; return; }
+      box.innerHTML='<div style="display:flex;gap:10px;align-items:center;margin-top:10px;padding:10px 13px;border-radius:9px;background:#e7f3ec;border:1px solid #15734733;color:#157347;font-size:12.5px">'
+        +'<span style="font-size:14px">✓</span><span><b>Proven recipe for '+esc(rec.host)+'</b>'+(rec.platform?(" · "+esc(rec.platform)):"")+' — runs deterministically, no LLM.</span>'
+        +'<button class="btn" id="run-recipe" style="margin-left:auto">▸ Run recipe</button></div>';
+      document.getElementById("run-recipe").onclick=function(){ runRecipe(rec); };
+    }
+    function check(){
+      var u=urlEl.value.trim(); if(!/^https?:\/\//.test(u)){ box.innerHTML=""; return; }
+      fetch(API+"/api/scraper/recipe?url="+encodeURIComponent(u)).then(function(r){return r.json();})
+        .then(function(d){ render(d&&d.recipe); }).catch(function(){ box.innerHTML=""; });
+    }
+    urlEl.addEventListener("input", function(){ clearTimeout(t); t=setTimeout(check, 450); });
+    if(urlEl.value.trim()) check();
   })();
 })();
 </script>

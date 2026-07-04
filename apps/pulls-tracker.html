@@ -58,6 +58,9 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
 .own{background:#e8f0fb;color:#2563b8}
 .own.own-hoodie{background:var(--purple-soft);color:var(--purple-d)}
 .proj{background:#eaf7ea;color:#2f7d32;border:1px solid #cfe8cf}
+.rc{cursor:default}
+.rc-proven{background:var(--good-soft);color:var(--good)}.rc-candidate{background:var(--blue-soft);color:var(--blue)}
+.rc-drifting{background:var(--warn-soft);color:var(--warn)}.rc-broken{background:var(--bad-soft);color:var(--bad)}
 .tag.noscrape{background:var(--bad-soft);color:var(--bad)}
 .iconbtn{width:28px;height:28px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer;color:var(--muted);font-size:13px;display:grid;place-items:center}
 .iconbtn:hover{border-color:var(--purple);color:var(--purple-d)}
@@ -208,6 +211,15 @@ const SEED=[
 var SOURCES=[];
 var STATE={q:"",tier:"",status:"",tos:"",pri:"",owner:"",project:""};
 var editId=null;
+// Scrape-recipe status per host, from the Source Analyzer's self-reinforcing store (/api/recipes).
+var REC={};
+function recHost(u){ try{ return new URL(u).hostname.replace(/^www\./,""); }catch(e){ return ""; } }
+function recStatus(u){ var h=recHost(u); return h?REC[h]:""; }
+function fetchRecipes(){
+  fetch("/api/recipes").then(function(r){ return r.ok?r.json():null; }).then(function(d){
+    if(!d||!d.recipes) return; REC={}; d.recipes.forEach(function(x){ if(x.host) REC[x.host]=x.status; }); render();
+  }).catch(function(){});
+}
 
 function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)||"null"); if(r&&r.length){ SOURCES=r.map(s=>Object.assign({owner:"Hoodie",project:seedProject(s),url:seedUrl(s)},s)); return; } }catch(e){} SOURCES=SEED.map((s,i)=>Object.assign({id:"s"+i,owner:"Hoodie",project:seedProject(s),url:seedUrl(s)},s)); }
 function save(){ try{ localStorage.setItem(KEY,JSON.stringify(SOURCES)); }catch(e){} }
@@ -248,6 +260,7 @@ function cardHTML(s){
       +'<span class="pill gran">'+esc(s.gran)+'</span>'
       +((s.owner&&s.owner!=="Hoodie"&&s.owner!=="—")?'<span class="pill own" title="Who runs this pull">'+esc(s.owner)+'</span>':'')
       +(s.project?'<span class="pill proj" title="On the tracker via the '+esc(s.project)+' project — scope is the full store, not only '+esc(s.project)+'">'+esc(s.project)+'</span>':'')
+      +(function(){ var st=recStatus(s.url); return st?'<span class="pill rc rc-'+st+'" title="Scrape recipe (Source Analyzer) — '+st+'">recipe: '+st+'</span>':''; })()
       +'<span class="pill tos-'+s.tos.toLowerCase()+'">'+esc(s.tos)+'</span>'
       +'<span class="tag">'+esc(s.prot)+' protection</span>'
       +(s.notes?'<span class="tag" title="'+esc(s.notes)+'">ⓘ notes</span>':'')
@@ -336,4 +349,5 @@ function setup(){
   $("ov").addEventListener("click",e=>{ if(e.target.id==="ov") closeModal(); });
 }
 load(); save(); setup(); render();  // persist the owner/project/url backfill so the Analyzer (same-origin) can read URLs
+fetchRecipes();                     // overlay scrape-recipe status per source (best-effort; needs the engine)
 </script></body></html>

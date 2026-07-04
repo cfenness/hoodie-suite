@@ -183,6 +183,26 @@ def get(book, url):
     return (book or {}).get(host_of(url))
 
 
+def by_platform(book, platform, exclude_host=None, status="proven"):
+    """Every recipe on a given platform (optionally filtered to a status) —
+    the basis for reuse: one proven SearchSpring/BigCommerce store's config is a
+    strong prior for the next store on the same platform."""
+    if not platform:
+        return []
+    return [r for r in (book or {}).values()
+            if r.get("platform") == platform and r.get("host") != exclude_host
+            and (status is None or r.get("status") == status)]
+
+
+def platform_proven_on(book, url, analysis):
+    """Hosts where THIS url's platform is already proven — so the UI can say
+    'known platform, proven on X' for a brand-new store."""
+    plat = platform_of(analysis)
+    if plat in (None, "generic"):
+        return []
+    return [r["host"] for r in by_platform(book, plat, exclude_host=host_of(url))]
+
+
 def stats(book):
     vals = list((book or {}).values())
     by = {s: 0 for s in STATUSES}
