@@ -71,13 +71,13 @@
       "parent": null
     },
     {
-      "id": "source-analyzer",
-      "name": "Source Analyzer",
-      "desc": "Generalized scraper · Claude reads a target URL → the data + how to scrape it",
+      "id": "sources",
+      "name": "Sources",
+      "desc": "Two tabs — Analyze a new source (Claude reads a URL → data + how to scrape) · Catalog of every tracked source",
       "group": "Data Operations",
       "status": "beta",
-      "file": "apps/source-analyzer.html",
-      "mark": "SA",
+      "file": "apps/sources.html",
+      "mark": "SR",
       "parent": null
     },
     {
@@ -139,16 +139,6 @@
       "file": "apps/sales-tutorial.html",
       "mark": "LG",
       "parent": "training"
-    },
-    {
-      "id": "pulls-tracker",
-      "name": "Pulls Tracker",
-      "desc": "Scrape source tracker · yield · ToS · status",
-      "group": "Internal",
-      "status": "internal",
-      "file": "apps/pulls-tracker.html",
-      "mark": "PT",
-      "parent": null
     },
     {
       "id": "roadmap",

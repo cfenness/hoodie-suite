@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<!-- Hoodie Suite · Sources — Analyze + Catalog, two tabs of one surface -->
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoodie · Sources</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--teal:#2C8C7C;--teal-d:#1E5F55;--ink:#243330;--muted:#5E6B68;--line:#D7DDDB;--paper:#F4F6F5}
+  *{box-sizing:border-box} html,body{margin:0;height:100%}
+  body{display:flex;flex-direction:column;font-family:'Inter',system-ui,sans-serif;background:var(--paper);color:var(--ink)}
+  /* shared chrome — a neutral bridge: white (matches the Analyzer's code vibe) + teal accent (matches the Tracker's CRM vibe) */
+  .bar{display:flex;align-items:center;gap:16px;padding:0 16px;height:52px;background:#fff;border-bottom:1px solid var(--line);flex:0 0 auto}
+  .brand{line-height:1.05;white-space:nowrap}
+  .brand .ey{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);display:block;font-weight:500}
+  .brand .nm{font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:16px;letter-spacing:-.01em;color:var(--teal-d)}
+  .tabs{display:flex;gap:2px}
+  .tab{appearance:none;border:none;background:none;font:inherit;font-size:13.5px;font-weight:600;color:var(--muted);padding:8px 14px;border-radius:8px;cursor:pointer;position:relative}
+  .tab:hover{color:var(--ink);background:#f0f4f3}
+  .tab.on{color:var(--teal-d)}
+  .tab.on::after{content:"";position:absolute;left:14px;right:14px;bottom:-8px;height:2px;background:var(--teal);border-radius:2px}
+  .tab .k{font-family:'JetBrains Mono',monospace;font-size:9px;opacity:.55;margin-left:6px}
+  .sp{flex:1}
+  .hint{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+  @media(max-width:560px){.hint{display:none}.bar{gap:10px}}
+  .stage{flex:1;position:relative;min-height:0}
+  .stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}
+  .stage iframe[hidden]{display:none}
+</style></head><body>
+  <div class="bar">
+    <div class="brand"><span class="ey">Hoodie Suite</span><span class="nm">Sources</span></div>
+    <div class="tabs">
+      <button class="tab" data-tab="analyze">Analyze<span class="k">code</span></button>
+      <button class="tab" data-tab="catalog">Catalog<span class="k">crm</span></button>
+    </div>
+    <span class="sp"></span>
+    <span class="hint" id="tabhint"></span>
+  </div>
+  <div class="stage">
+    <iframe id="f-analyze" title="Source Analyzer" src="source-analyzer.html"></iframe>
+    <iframe id="f-catalog" title="Source Tracker" src="pulls-tracker.html?shell=1"></iframe>
+  </div>
+<script>
+(function(){
+  "use strict";
+  var TABS={
+    analyze:{f:"f-analyze",hint:"Read any URL → the data + how to scrape it"},
+    catalog:{f:"f-catalog",hint:"Every tracked source · yield · ToS · owner"}
+  };
+  function show(t){
+    if(!TABS[t]) t="analyze";
+    var btns=document.querySelectorAll(".tab");
+    for(var i=0;i<btns.length;i++) btns[i].classList.toggle("on", btns[i].getAttribute("data-tab")===t);
+    for(var k in TABS){ document.getElementById(TABS[k].f).hidden = (k!==t); }
+    document.getElementById("tabhint").textContent = TABS[t].hint;
+    if(("#"+t)!==location.hash){ try{ history.replaceState(null,"","#"+t); }catch(e){} }
+  }
+  var b=document.querySelectorAll(".tab");
+  for(var i=0;i<b.length;i++) b[i].onclick=(function(el){ return function(){ show(el.getAttribute("data-tab")); }; })(b[i]);
+  // the Catalog tab's "+ Source" asks the shell to jump to Analyze
+  window.addEventListener("message", function(e){
+    var d=e.data; if(d && d.type==="hoodie:sources:tab" && d.tab) show(d.tab);
+  });
+  show((location.hash||"#analyze").slice(1));
+})();
+</script>
+</body></html>

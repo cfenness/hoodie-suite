@@ -314,7 +314,11 @@ function setup(){
   $("fOwner").onchange=e=>{STATE.owner=e.target.value;render();};
   $("fProject").onchange=e=>{STATE.project=e.target.value;render();};
   syncProjects();
-  $("addBtn").onclick=()=>openModal(null);
+  // Inside the Sources shell, "+ Source" jumps to the Analyze tab (analyze a new source, then Save it here);
+  // standalone, it opens the manual add-source modal.
+  var inShell=/[?&]shell=1/.test(location.search);
+  $("addBtn").onclick=()=>{ if(inShell){ try{ parent.postMessage({type:"hoodie:sources:tab",tab:"analyze"},"*"); }catch(e){ openModal(null); } } else openModal(null); };
+  if(inShell){ $("addBtn").title="Analyze a new source"; }
   $("expBtn").onclick=exportCSV;
   $("mCancel").onclick=closeModal; $("mSave").onclick=saveModal; $("mDel").onclick=delSource;
   $("ov").addEventListener("click",e=>{ if(e.target.id==="ov") closeModal(); });
