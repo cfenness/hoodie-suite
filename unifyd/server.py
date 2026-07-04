@@ -132,6 +132,20 @@ def _auth():
         return
     return jsonify(ok=False, error="unauthorized"), 401
 
+# Opt-in CORS for cross-origin web clients (the production web app). Off by default;
+# set API_CORS to an allowed origin (e.g. http://localhost:8082) or "*" to enable.
+API_CORS = os.environ.get("API_CORS", "").strip()
+
+@app.after_request
+def _cors(resp):
+    if API_CORS and request.path.startswith("/api/"):
+        resp.headers["Access-Control-Allow-Origin"] = API_CORS
+        if API_CORS != "*":
+            resp.headers["Access-Control-Allow-Credentials"] = "true"
+        resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Accept"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return resp
+
 @app.errorhandler(404)
 def _e404(e):
     # A browser NAVIGATION that misses (e.g. a mistyped /prism.html, or a post-login
