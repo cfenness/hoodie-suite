@@ -19,6 +19,17 @@
   .tabs button{border:0;background:none;font:inherit;font-weight:600;font-size:13px;color:var(--ink-soft,#5E6B68);padding:10px 15px 9px;border-bottom:3px solid transparent;cursor:pointer}
   .tabs button:hover{color:var(--amber,#2C8C7C)}
   .tabs button.on{color:var(--amber,#2C8C7C);border-bottom-color:var(--amber,#2C8C7C)}
+  .tabs .tbadge{display:none} .tabs .tbadge:not(:empty){display:inline-block;margin-left:5px;font-size:10px;font-weight:800;background:var(--warn,#B8791F);color:#fff;border-radius:999px;padding:0 6px;vertical-align:1px}
+  .amodal{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;background:rgba(20,30,28,.42);padding:16px}
+  .amodal.show{display:flex}
+  .amodal .box{background:#fff;border:1px solid var(--hair,#D7DDDB);border-radius:12px;width:min(560px,100%);max-height:88vh;overflow:auto;box-shadow:0 24px 60px -18px rgba(20,30,28,.4)}
+  .amodal .bh{padding:16px 20px 4px} .amodal .bh h3{margin:0;font-size:16px;font-weight:800}
+  .amodal .bb{padding:8px 20px 4px;font-size:13.5px;line-height:1.55}
+  .amodal ol{margin:6px 0 4px;padding-left:20px} .amodal li{margin-bottom:10px}
+  .amodal code{background:var(--panel,#EAEEED);border-radius:4px;padding:1px 6px;font-family:var(--mono);font-size:12px}
+  .amodal .cmd{background:#243330;color:#EAF3F0;border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:12px;margin:6px 0;overflow-x:auto;white-space:pre}
+  .amodal .bf{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px 18px}
+  .amodal .note{background:var(--slate-tint,#DDE7E4);border-radius:8px;padding:9px 12px;font-size:12.5px;color:var(--ink,#243330);margin-top:6px}
   .page{max-width:1180px;margin:0 auto;padding:18px 20px 50px}
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:18px}
   .kpi{background:#fff;border:1px solid var(--hair,#D7DDDB);border-radius:10px;padding:13px 15px}
@@ -62,6 +73,7 @@
     <button data-t="usage">Usage</button>
     <button data-t="apps">Apps</button>
     <button data-t="access">Access</button>
+    <button data-t="service">Service <span class="tbadge" id="svc-badge"></span></button>
     <button data-t="ops">Data ops</button>
   </div>
 </div>
@@ -89,6 +101,7 @@
     if(tab==="usage")return renderUsage();
     if(tab==="apps")return renderApps();
     if(tab==="access")return renderAccess();
+    if(tab==="service")return renderService();
     if(tab==="ops")return renderOps();
   }
 
@@ -179,24 +192,80 @@
     getJSON("/api/admin/access").then(function(a){
       var allow=a.allowlist||[], seen=a.seenUsers||[];
       document.getElementById("acc").innerHTML=
-        '<h2>Access &amp; users</h2>'
+        '<h2>Access &amp; users <span style="flex:1"></span><button class="btn" id="add-user-help">＋ How to add a user</button></h2>'
         +'<div class="fld"><span class="k">Login gate</span><span class="v"><span class="pill '+(a.gated?"on":"off")+'">'+(a.gated?"active":"open (dev)")+'</span></span></div>'
         +'<div class="fld"><span class="k">You are</span><span class="v">'+esc(a.currentUser||"— (ungated)")+'</span></div>'
         +'<div class="fld" style="border:0"><span class="k">Allowlist</span><span class="v">'+(allow.length?'<span class="chips">'+allow.map(function(e){return '<span class="pill on">'+esc(e)+'</span>';}).join("")+'</span>':'<span class="muted">none set — everyone allowed. Set <code>ALLOWED_EMAILS</code> to lock it down.</span>')+'</span></div>'
         +'<h2 style="margin-top:16px">Seen users <span class="s">· from usage</span></h2>'
         +(seen.length?'<div class="chips">'+seen.map(function(u){return '<span class="pill off">'+esc(u)+'</span>';}).join("")+'</div>':'<div class="muted">No sign-ins recorded yet.</div>')
-        +'<div class="muted" style="font-size:11.5px;margin-top:14px">The allowlist is set server-side via the <code>ALLOWED_EMAILS</code> secret — edit it with <code>fly secrets set</code> (kept out of the browser by design).</div>';
+        +'<div class="muted" style="font-size:11.5px;margin-top:14px">The allowlist is set server-side via the <code>ALLOWED_EMAILS</code> secret — edit it with <code>fly secrets set</code> (kept out of the browser by design). Need the steps? Hit <b>How to add a user</b>.</div>';
+      var help=document.getElementById("add-user-help"); if(help)help.onclick=function(){ showAddUser(a); };
     }).catch(function(){ document.getElementById("acc").innerHTML='<div class="em">Access store offline — start the engine.</div>'; });
   }
+  function showAddUser(a){
+    var cur=(a&&a.allowlist&&a.allowlist.length)?a.allowlist.join(","):"you@company.com";
+    openModal(
+      '<div class="bh"><h3>Add a user to the suite</h3></div>'+
+      '<div class="bb"><p class="muted" style="margin:2px 0 10px">Access is a Google-login allowlist. Adding someone = adding their Google email to the <code>ALLOWED_EMAILS</code> secret, then they sign in with Google.</p>'+
+      '<ol>'+
+        '<li><b>Get their Google email</b> — the address they’ll sign in with (Gmail or Google Workspace).</li>'+
+        '<li><b>Add it to the allowlist secret</b> — comma-separated, no spaces:'+
+          '<div class="cmd">fly secrets set ALLOWED_EMAILS="'+esc(cur)+',newperson@company.com"</div>'+
+          'This redeploys the app with the new allowlist.</li>'+
+        '<li><b>Tell them to sign in</b> at <code>hoodie-suite.fly.dev</code> with that Google account. First visit bounces to Google; approved emails land in the suite.</li>'+
+        '<li><b>2FA is automatic</b> — it rides their Google account. Ask them to have 2-Step Verification / a passkey on in Google.</li>'+
+      '</ol>'+
+      '<div class="note">To remove someone, re-run the command without their email. Whole-domain access isn’t supported — list emails explicitly.</div>'+
+      '</div>'+
+      '<div class="bf"><button class="btn brand" data-mclose>Got it</button></div>'
+    );
+  }
 
-  /* ---------- Data ops ---------- */
+  /* ---------- Service (data-quality reports — moved here from the CRM) ---------- */
+  var SVC_TONE={open:{bg:'#FBEED0',fg:'#8a5a0f'},acknowledged:{bg:'#E3EDF6',fg:'#33597e'},reported:{bg:'#F3E4CE',fg:'#8a5a0f'},resolved:{bg:'#DDEEE2',fg:'#2E7D57'}};
+  function svcPill(st){var t=SVC_TONE[st]||SVC_TONE.open;return '<span class="pill" style="border:0;background:'+t.bg+';color:'+t.fg+';text-transform:capitalize">'+esc(st||'open')+'</span>';}
+  function svcWhen(ms){if(!ms)return '—';var d=new Date(ms);return d.toISOString().slice(0,10)+' · '+d.toTimeString().slice(0,5);}
+  function svcSet(id,status){
+    fetch(API+"/api/service/reports/"+encodeURIComponent(id),{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:status,by:"ops"})})
+      .then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(){ renderService(); toast("Report → "+status); }).catch(function(){ toast("Update failed — is the engine live?"); });
+  }
+  function renderService(){
+    page.innerHTML='<div class="card"><h2>Service · data-quality reports <span class="s">· filed from the suite (a degraded pill in Hoodie Pulls)</span><span style="flex:1"></span><button class="btn" id="svc-refresh">Refresh</button></h2><div id="svc-body"><div class="em">Loading…</div></div></div>';
+    document.getElementById("svc-refresh").onclick=renderService;
+    getJSON("/api/service/reports").then(function(d){
+      var reports=(d&&d.reports)||[], counts=(d&&d.counts)||{}, body=document.getElementById("svc-body");
+      var badge=document.getElementById("svc-badge"); if(badge)badge.textContent=counts.open?counts.open:"";
+      if(!reports.length){ body.innerHTML='<div class="em">No reports yet. When a scrape self-reports <b>degraded</b>, click the pill in Hoodie Pulls to file one — it lands here.</div>'; return; }
+      var cc=["open","acknowledged","reported","resolved"].filter(function(s){return counts[s];}).map(function(s){return counts[s]+" "+s;}).join(" · ");
+      var td='padding:8px 10px;border-bottom:1px solid var(--panel)';
+      body.innerHTML='<div class="muted" style="margin-bottom:10px">'+reports.length+" report"+(reports.length===1?"":"s")+(cc?" — "+cc:"")+'</div>'
+        +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'
+        +'<thead><tr>'+["Source","Severity","What flagged","Reporter","Reported","Status","Action"].map(function(h){return '<th style="text-align:left;font-size:11px;color:var(--ink-soft);padding:7px 10px;border-bottom:1px solid var(--hair)">'+h+'</th>';}).join("")+'</tr></thead><tbody>'
+        + reports.map(function(r){
+            var warn=(r.warnings&&r.warnings.length)?(r.warnings.length+" warning"+(r.warnings.length===1?"":"s")+(r.note?" · "+esc(r.note):"")):(r.note?esc(r.note):'<span class="muted">self-reported</span>');
+            var nx = r.status==="open"?'<button class="btn" data-svc="'+r.id+'" data-to="acknowledged">Acknowledge</button>'
+                   : r.status==="acknowledged"?'<button class="btn" data-svc="'+r.id+'" data-to="reported">Mark reported</button>'
+                   : r.status==="reported"?'<button class="btn brand" data-svc="'+r.id+'" data-to="resolved">Resolve</button>'
+                   : '<span style="color:var(--good);font-weight:700">✓ resolved</span>';
+            return '<tr><td style="'+td+'"><b>'+esc(r.source||r.connId||"—")+'</b></td>'
+              +'<td style="'+td+'"><span class="pill off" style="text-transform:capitalize">'+esc(r.severity||"degraded")+'</span></td>'
+              +'<td style="'+td+';max-width:280px">'+warn+'</td>'
+              +'<td style="'+td+'">'+esc(r.reporter||"field")+'</td>'
+              +'<td style="'+td+';white-space:nowrap;color:var(--ink-soft)">'+svcWhen(r.createdAt)+'</td>'
+              +'<td style="'+td+'">'+svcPill(r.status)+'</td>'
+              +'<td style="'+td+';text-align:right">'+nx+'</td></tr>';
+          }).join("") + '</tbody></table></div>';
+      body.querySelectorAll("[data-svc]").forEach(function(b){ b.onclick=function(){ svcSet(b.getAttribute("data-svc"), b.getAttribute("data-to")); }; });
+    }).catch(function(){ document.getElementById("svc-body").innerHTML='<div class="em">Service store offline — start the engine (./dev.sh).</div>'; });
+  }
+
   function renderOps(){
     page.innerHTML='<div class="kpis" id="ops-kpis"></div>'
       +'<div class="card"><h2>Operations</h2>'
       +'<div class="fld"><span class="k">API</span><span class="v" id="op-api">…</span></div>'
       +'<div class="fld"><span class="k">Warehouse</span><span class="v" id="op-wh">…</span></div>'
       +'<div class="fld"><span class="k">Canonical book</span><span class="v" id="op-book">…</span></div>'
-      +'<div class="fld" style="border:0"><span class="k">Quick links</span><span class="v"><a href="../index.html#pulls">Hoodie Pulls</a> · <a href="../index.html#mdm">Hoodie Master</a> · <a href="../index.html#crm">Service desk</a> · <a href="../index.html#estate">Estate Map</a></span></div>'
+      +'<div class="fld" style="border:0"><span class="k">Quick links</span><span class="v"><a id="ql-svc" style="cursor:pointer;text-decoration:underline">Service reports</a> · <a href="../index.html#pulls">Hoodie Pulls</a> · <a href="../index.html#mdm">Hoodie Master</a> · <a href="../index.html#estate">Estate Map</a></span></div>'
       +'<div style="margin-top:12px;display:flex;gap:8px"><button class="btn brand" id="op-seed">Rebuild the book</button><button class="btn" id="op-refresh">Refresh</button></div></div>';
     getJSON("/api/admin/overview").then(function(o){
       document.getElementById("ops-kpis").innerHTML=[
@@ -210,11 +279,19 @@
       document.getElementById("op-book").textContent=o.bookValue!=null?money(o.bookValue):"not built — hit Rebuild";
     }).catch(function(){ document.getElementById("op-api").innerHTML='<span class="pill off">engine offline</span>'; });
     document.getElementById("op-refresh").onclick=renderOps;
+    var qs=document.getElementById("ql-svc"); if(qs)qs.onclick=function(){ tab="service"; document.querySelectorAll("#tabs button").forEach(function(x){x.classList.toggle("on",x.dataset.t==="service");}); render(); };
     document.getElementById("op-seed").onclick=function(){ var b=this; b.disabled=true; b.textContent="Rebuilding…";
       fetch(API+"/api/seed/build",{method:"POST"}).then(function(r){return r.ok?r.json():Promise.reject();})
         .then(function(){ toast("Book rebuilt"); renderOps(); })
         .catch(function(){ toast("Rebuild failed — is the engine live?"); b.disabled=false; b.textContent="Rebuild the book"; }); };
   }
+
+  /* ---------- modal (for the "how to add a user" walkthrough) ---------- */
+  var modalHost=document.createElement("div"); modalHost.className="amodal"; document.body.appendChild(modalHost);
+  modalHost.addEventListener("click",function(e){ if(e.target===modalHost||e.target.closest("[data-mclose]")) closeModal(); });
+  document.addEventListener("keydown",function(e){ if(e.key==="Escape") closeModal(); });
+  function openModal(html){ modalHost.innerHTML='<div class="box" role="dialog" aria-modal="true">'+html+'</div>'; modalHost.classList.add("show"); }
+  function closeModal(){ modalHost.classList.remove("show"); modalHost.innerHTML=""; }
 
   /* ---------- boot: load registry + flags, then render ---------- */
   Promise.all([
@@ -225,6 +302,8 @@
     REG=(res[1]&&res[1].apps)||[]; REG.forEach(function(a){byId[a.id]=a;});
     render();
   });
+  /* surface the open service-report count on the Service tab badge */
+  getJSON("/api/service/reports?status=open").then(function(d){ var b=document.getElementById("svc-badge"); if(b&&d&&d.counts&&d.counts.open)b.textContent=d.counts.open; }).catch(function(){});
 })();
 </script>
 <script src="../suite-header.js" data-id="admin" data-mark="AD" data-name="Admin Console" data-status="internal"></script>
