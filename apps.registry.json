@@ -21,16 +21,6 @@
       "parent": "crm"
     },
     {
-      "id": "prism",
-      "name": "Prism",
-      "desc": "Mobile · every cut of your book + the pulse feed (installable)",
-      "group": "Internal",
-      "status": "beta",
-      "file": "apps/prism.html",
-      "mark": "PM",
-      "parent": null
-    },
-    {
       "id": "crm",
       "name": "Hoodie Relations",
       "desc": "Industry-associations CRM",
@@ -111,6 +101,16 @@
       "parent": null
     },
     {
+      "id": "source-analyzer",
+      "name": "Source Analyzer",
+      "desc": "Generalized scraper · Claude reads a target URL → the data + how to scrape it",
+      "group": "Data Operations",
+      "status": "beta",
+      "file": "apps/source-analyzer.html",
+      "mark": "SA",
+      "parent": null
+    },
+    {
       "id": "training",
       "name": "The Bench",
       "desc": "Training suite · tasting, catman, perceptual & representation science, and sales",
@@ -168,6 +168,16 @@
       "status": "internal",
       "file": "apps/bev-icons.html",
       "mark": "BI",
+      "parent": null
+    },
+    {
+      "id": "prism",
+      "name": "Prism",
+      "desc": "Mobile · every cut of your book + the pulse feed (installable)",
+      "group": "Internal",
+      "status": "beta",
+      "file": "apps/prism.html",
+      "mark": "PM",
       "parent": null
     },
     {
