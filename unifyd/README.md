@@ -258,13 +258,13 @@ counts, fill %, top values across every record) plus a browsable row sample.
 ## The MDM console and the suite app (decided)
 
 `hoodie_mdm.html` lives here as the engine's **local, agent-backed console** (served by
-`server.py`). It has also been **promoted into the suite** as `../apps/mdm.html`, the
-canonical MDM surface — the same control plane re-served under suite wiring
-(`../suite.css`, `../spine/spine.js`, `../suite-header.js`), registered in the shell's
-`APPS` array, and reading `/api/*` with the embedded `DATASETS` as the offline fallback.
-That promotion replaced the old `apps/item-mdm.html`.
+`server.py`). It has also been **promoted into the suite** as `../apps/mdm-master.html` —
+the same control plane re-served under suite wiring (`../suite.css`, `../spine/spine.js`,
+`../suite-header.js`), reading `/api/*` with the embedded `DATASETS` as the offline
+fallback. It is the **Master** tab of the suite's MDM console (`../apps/mdm.html`, which
+also hosts Catalog · Pulls · Ingestion). That promotion replaced the old `apps/item-mdm.html`.
 
-The two surfaces share one `/api/*` contract: `apps/mdm.html` is the deployed suite view
+The two surfaces share one `/api/*` contract: `apps/mdm-master.html` is the deployed suite view
 (offline fallback when no backend is up); `hoodie_mdm.html` here is the always-live local
 view the agent serves. Keep them in sync if you change the control-plane UI.
 

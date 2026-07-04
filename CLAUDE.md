@@ -90,11 +90,14 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
 - `unifyd/hoodie_mdm.html` — the MDM control plane the agent serves. Reads `/api/*` when
   the agent is up, falls back to an embedded `const DATASETS` preview otherwise.
 - **Runtime is git-ignored:** `agent_state/`, `cola_out/`, `out/`, `__pycache__/`.
-- **Promoted to the suite:** `apps/mdm.html` is the canonical MDM surface — the engine's
-  `hoodie_mdm.html` re-served under suite chrome + spine, reading `/api/*` when a backend
-  is up and falling back to the embedded `DATASETS` preview otherwise. It replaced the old
-  `apps/item-mdm.html`. `unifyd/hoodie_mdm.html` remains the engine's local console
-  (served by `server.py`); the two share the same `/api/*` contract.
+- **Promoted to the suite:** `apps/mdm.html` is the canonical MDM surface. It is now a
+  **composite console** (same pattern as `sources.html`) with four tabs, each an existing
+  app iframed and lazy-mounted: **Master** (`apps/mdm-master.html` — the engine's
+  `hoodie_mdm.html` re-served under suite chrome + spine, `/api/*` with an embedded
+  `DATASETS` fallback), **Catalog** (`apps/catalog.html`), **Pulls** (`apps/pulls.html`),
+  **Ingestion** (`apps/ttb-ingestion.html`). Those four are surfaced only through
+  `mdm.html`, not as their own `APPS` tiles. `unifyd/hoodie_mdm.html` remains the engine's
+  local console (served by `server.py`); it and `mdm-master.html` share the `/api/*` contract.
 
 ### Backend on-ramp (the engine is the first slice)
 The contract is designed so the message protocol does **not** change when a backend

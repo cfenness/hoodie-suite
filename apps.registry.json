@@ -41,16 +41,6 @@
       "parent": null
     },
     {
-      "id": "catalog",
-      "name": "Product Catalog",
-      "desc": "Product master data · lifecycle, completeness, channels (shared data-grid)",
-      "group": "Commercial",
-      "status": "beta",
-      "file": "apps/catalog.html",
-      "mark": "PC",
-      "parent": null
-    },
-    {
       "id": "territory",
       "name": "Territory Builder",
       "desc": "Named account groups · powers target-vs-competition comparisons",
@@ -101,33 +91,13 @@
       "parent": null
     },
     {
-      "id": "ttb",
-      "name": "Hoodie Ingestion",
-      "desc": "COLA label pipeline · Unifyd engine",
-      "group": "Data Operations",
-      "status": "beta",
-      "file": "apps/ttb-ingestion.html",
-      "mark": "HG",
-      "parent": null
-    },
-    {
       "id": "mdm",
-      "name": "Hoodie Master",
-      "desc": "Master-data control plane · Unifyd engine (live /api · offline fallback)",
+      "name": "Hoodie MDM",
+      "desc": "One console — Master · Catalog · Pulls · Ingestion",
       "group": "Data Operations",
       "status": "beta",
       "file": "apps/mdm.html",
       "mark": "HM",
-      "parent": null
-    },
-    {
-      "id": "pulls",
-      "name": "Hoodie Pulls",
-      "desc": "Run & evaluate each scrape · Unifyd engine",
-      "group": "Data Operations",
-      "status": "beta",
-      "file": "apps/pulls.html",
-      "mark": "PL",
       "parent": null
     },
     {
