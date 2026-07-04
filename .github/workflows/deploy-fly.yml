@@ -1,0 +1,40 @@
+name: Deploy Hoodie Suite (Fly.io)
+
+# Push to main -> deploy the all-in-one suite+/api to hoodie-suite.fly.dev.
+# Stays green + skips the deploy until the FLY_API_TOKEN repo secret exists, so adding
+# this file never breaks CI. Activate it with:
+#   flyctl tokens create deploy    (then add the value as the FLY_API_TOKEN GitHub secret)
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'cloudfront/**'
+      - 'deploy.sh'
+      - '.github/workflows/deploy.yml'
+
+concurrency:
+  group: deploy-fly
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - name: Gate on FLY_API_TOKEN
+        id: gate
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::notice::FLY_API_TOKEN not set — skipping deploy. Run 'flyctl tokens create deploy' and add it as a repo secret to enable auto-deploy."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.go == 'true'
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+        if: steps.gate.outputs.go == 'true'
+      - run: flyctl deploy --remote-only --ha=false
+        if: steps.gate.outputs.go == 'true'

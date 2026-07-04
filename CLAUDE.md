@@ -109,15 +109,27 @@ behavior on the same domain. See the "backend on-ramp" sections of `README.md` a
 
 ## Deploy
 
-- **Auto-deploy:** any push to `main` triggers `.github/workflows/deploy.yml`, which
-  `aws s3 sync`s the repo to S3 (with `--delete`) and invalidates CloudFront. There is
-  no staging branch — `main` is production.
-- **Manual deploy:** `./deploy.sh` (needs `aws configure` done; reads `S3_BUCKET` and
-  optional `CLOUDFRONT_DISTRIBUTION_ID` from the environment).
-- Both the workflow and `deploy.sh` exclude `.git/`, `.github/`, `cloudfront/`,
-  `README.md`, `deploy.sh`, and `.gitignore` from the upload. **If you add files that
-  should not ship (docs, scripts, configs), add them to the exclude lists in both
-  places**, or they will be served publicly via CloudFront.
+**Production is Fly.io** — `hoodie-suite.fly.dev`, one all-in-one machine serving the
+static suite **and** `/api` (see `DEPLOY-FLY.md`, `fly.toml`, `Dockerfile`). `main` is
+production; there is no staging branch.
+
+- **Auto-deploy (Fly):** push to `main` triggers `.github/workflows/deploy-fly.yml`
+  (`flyctl deploy --remote-only`). **It only runs when the `FLY_API_TOKEN` repo secret
+  is set** (`flyctl tokens create deploy` → add to GitHub → Settings → Secrets). Without
+  that secret the job skips, and deploys must be done by hand — the common gotcha:
+  merging a PR then finding the live site unchanged because nobody ran a deploy.
+- **Manual deploy (Fly):** `flyctl deploy --ha=false` from the repo root (flyctl at
+  `~/.fly/bin`). This is the fallback and how the site was updated before the workflow.
+- **What ships:** the Dockerfile copies the repo; the engine (`unifyd/`, `*.py`, secrets,
+  dotfiles) is present in the image but **never web-served** — the static file route
+  enforces a `_SUITE_OK_TOP` allowlist on the resolved path.
+- **Legacy S3/CloudFront** (`deploy.yml`, `deploy.sh`, `cloudfront/`) is **DORMANT** —
+  kept for reference only; it does not run on push. Ignore it unless deliberately
+  resuming S3 serving.
+
+**After merging suite changes, confirm they're live** (they don't ship until a Fly
+deploy runs): `curl -s https://hoodie-suite.fly.dev/robots.txt` and check the launcher
+reflects the change, or `flyctl releases -a hoodie-suite`.
 
 ## Git conventions
 
