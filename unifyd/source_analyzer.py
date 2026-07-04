@@ -212,6 +212,10 @@ def extract(url, prompt, pages=1, limit=3000):
         pages = max(1, min(int(pages or 1), 25))
     except Exception:
         pages = 1
+    try:
+        limit = max(1, min(int(limit or 3000), 100000))
+    except Exception:
+        limit = 3000
 
     json_rows, html_blobs, via = [], [], None
     for n in range(1, pages + 1):
@@ -225,6 +229,8 @@ def extract(url, prompt, pages=1, limit=3000):
             if not jr:            # empty page → end of the catalog
                 break
             json_rows.extend(jr)
+            if len(json_rows) >= limit:   # hit the cap → stop paging
+                break
         else:
             html_blobs.append(_clean(body))
             if pages == 1:
@@ -234,7 +240,7 @@ def extract(url, prompt, pages=1, limit=3000):
     if json_rows:
         if llm_enabled():
             try:
-                rows = _claude_rows(prompt, json.dumps(json_rows[:1200]),
+                rows = _claude_rows(prompt, json.dumps(json_rows[:min(limit, 1200)]),
                                     "\n\nThe DATA below is the raw JSON records; normalize each to the requested fields.")
                 return {"rows": rows[:limit], "via": via, "engine": "claude+api", "pages": pages, "raw": len(json_rows)}
             except Exception:
