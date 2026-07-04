@@ -609,6 +609,25 @@ def book_cuts_ep():
                        note="no book yet — POST /api/seed/build (%s)" % str(e)[:120])
 
 
+_OPENAPI_PATH = os.path.join(APP_DIR, "openapi.yaml")
+_openapi_cache = None
+
+@app.get("/api/openapi.json")
+def openapi_json():
+    """Serve the API contract so the app generates its typed client from the running API
+    (single source of truth). Gated like the rest of /api* — codegen runs against the
+    ungated local engine in dev."""
+    global _openapi_cache
+    if _openapi_cache is None:
+        import yaml
+        with open(_OPENAPI_PATH) as f:
+            _openapi_cache = yaml.safe_load(f)
+    return jsonify(_openapi_cache)
+
+@app.get("/api/openapi.yaml")
+def openapi_yaml():
+    return send_file(_OPENAPI_PATH, mimetype="application/yaml")
+
 @app.get("/api/book/summary")
 def book_summary_ep():
     import book
