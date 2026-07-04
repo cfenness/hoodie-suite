@@ -51,6 +51,16 @@
       "parent": null
     },
     {
+      "id": "overlay",
+      "name": "Overlay Your Data",
+      "desc": "Drop a CSV · Claude reads it on its own terms — what it is, cuts worth pulling, caveats",
+      "group": "Commercial",
+      "status": "beta",
+      "file": "apps/overlay.html",
+      "mark": "OV",
+      "parent": null
+    },
+    {
       "id": "presenter",
       "name": "Presenter",
       "desc": "Speaker's workbench · run a demo",

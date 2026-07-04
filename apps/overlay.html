@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overlay Your Data — Hoodie Suite</title>
+<link rel="stylesheet" href="../suite.css">
+<style>
+  :root{ --font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace; }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper,#F4F6F5);color:var(--ink,#243330);font-family:var(--font);font-size:13.5px}
+  .wrap{max-width:1000px;margin:0 auto;padding:22px 22px 60px}
+  .head h1{font-size:24px;font-weight:800;letter-spacing:-.02em;margin:0}
+  .head .s{color:var(--ink-soft,#5E6B68);font-size:13.5px;margin-top:4px;max-width:72ch;line-height:1.5}
+  .drop{margin-top:18px;border:2px dashed var(--hair,#D7DDDB);border-radius:14px;background:#fff;padding:40px 24px;text-align:center;cursor:pointer;transition:.15s}
+  .drop:hover,.drop.over{border-color:var(--amber,#2C8C7C);background:var(--slate-tint,#DDE7E4)}
+  .drop .ic{font-size:30px}
+  .drop .t{font-weight:700;font-size:15px;margin-top:8px}
+  .drop .sub{color:var(--ink-soft,#5E6B68);font-size:12.5px;margin-top:4px}
+  .paste{margin-top:10px;display:flex;gap:8px;align-items:flex-start}
+  .paste textarea{flex:1;min-height:44px;border:1px solid var(--hair,#D7DDDB);border-radius:9px;padding:9px 12px;font-family:var(--mono);font-size:12px;background:#fff;resize:vertical}
+  .btn{border:1px solid var(--hair,#D7DDDB);background:#fff;color:var(--amber-deep,#1E5F55);border-radius:9px;padding:10px 16px;font:inherit;font-weight:700;cursor:pointer;white-space:nowrap}
+  .btn.brand{background:var(--amber,#2C8C7C);border-color:var(--amber,#2C8C7C);color:#fff}
+  .card{background:#fff;border:1px solid var(--hair,#D7DDDB);border-radius:12px;padding:16px 18px;margin-top:16px}
+  .headline{font-size:20px;font-weight:800;letter-spacing:-.01em;line-height:1.25}
+  .whatis{color:var(--ink-soft,#5E6B68);font-size:13.5px;line-height:1.5;margin-top:6px}
+  .meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .pill{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.03em;border-radius:999px;padding:3px 9px;background:var(--panel,#EAEEED);color:var(--ink-soft,#5E6B68)}
+  .lab{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft,#5E6B68);font-weight:700;margin:16px 0 8px}
+  .finding{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:9px;margin-bottom:8px;border-left:3px solid var(--hair,#D7DDDB);background:#FAFCFB;font-size:13px;line-height:1.45}
+  .finding.opportunity{border-left-color:var(--good,#2E7D57);background:#EDF6F0}
+  .finding.caveat{border-left-color:var(--warn,#B8791F);background:#FBF4E6}
+  .finding.data_quality{border-left-color:var(--oxblood,#9A3B2E);background:#FBEDEB}
+  .finding .k{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft,#5E6B68);flex:0 0 78px;padding-top:2px}
+  .t2{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+  .tcard{border:1px solid var(--hair,#D7DDDB);border-radius:10px;overflow:hidden;background:#fff}
+  .tcard .th{padding:10px 13px;background:var(--panel,#EAEEED);border-bottom:1px solid var(--hair,#D7DDDB)}
+  .tcard .th .tt{font-weight:800;font-size:13px}
+  .tcard .th .tw{font-size:11.5px;color:var(--ink-soft,#5E6B68);margin-top:2px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  td{padding:7px 13px;border-bottom:1px solid #EEF2F1}
+  tr:last-child td{border-bottom:0}
+  td.v{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+  .bar{display:block;height:4px;border-radius:2px;background:var(--amber,#2C8C7C);margin-top:3px}
+  ul.q{margin:0;padding-left:18px} ul.q li{margin-bottom:6px;font-size:13px;line-height:1.45}
+  .em{padding:26px;text-align:center;color:var(--ink-soft,#5E6B68);font-size:13px}
+  .loading{display:flex;align-items:center;gap:12px;padding:26px;color:var(--ink-soft,#5E6B68);font-size:13.5px}
+  .spin{width:18px;height:18px;border:2px solid var(--hair,#D7DDDB);border-top-color:var(--amber,#2C8C7C);border-radius:50%;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>Overlay Your Data</h1>
+    <div class="s">Drop a CSV and Claude reads it on its own terms — what it is, what's worth seeing, a few cuts worth pulling, and the caveats. Public data only; nothing is stored.</div>
+  </div>
+  <div class="drop" id="drop">
+    <div class="ic">⬍</div>
+    <div class="t">Drop a CSV here, or click to choose a file</div>
+    <div class="sub">first row = column headers · up to a few thousand rows</div>
+    <input type="file" id="file" accept=".csv,text/csv,.tsv,text/plain" style="display:none">
+  </div>
+  <div class="paste"><textarea id="pasted" placeholder="…or paste CSV text here"></textarea><button class="btn" id="readpaste">Read</button></div>
+  <div id="out"></div>
+</div>
+
+<script src="../datagrid.js"></script>
+<script>
+(function(){
+  var API="", HEADER=[], ROWS=[];
+  function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+  var out=document.getElementById("out");
+
+  function parseCSV(text){
+    text=(text||"").replace(/\r\n/g,"\n").replace(/\r/g,"\n");
+    var sep=text.indexOf("\t")>=0&&text.indexOf(",")<0?"\t":",";
+    var rows=[],row=[],cur="",q=false;
+    for(var i=0;i<text.length;i++){var c=text[i];
+      if(q){ if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c; }
+      else { if(c==='"')q=true; else if(c===sep){row.push(cur);cur="";} else if(c==="\n"){row.push(cur);rows.push(row);row=[];cur="";} else cur+=c; }
+    }
+    if(cur.length||row.length){row.push(cur);rows.push(row);}
+    return rows.filter(function(r){return r.length>1||(r.length===1&&(r[0]||"").trim());});
+  }
+  function profileCols(header,rows){
+    var cols=header.map(function(h,ci){
+      var vals=[]; for(var i=0;i<rows.length;i++){var v=rows[i][ci]; if(v!=null&&v!=="")vals.push(v);}
+      var nums=vals.map(Number).filter(function(n){return isFinite(n);});
+      var isNum=vals.length>0&&nums.length>=vals.length*0.8;
+      var d={}; vals.forEach(function(v){d[v]=(d[v]||0)+1;});
+      var top=Object.keys(d).sort(function(a,b){return d[b]-d[a];}).slice(0,6).map(function(k){return {value:k,count:d[k]};});
+      var col={name:h,type:isNum?"number":"text",non_null:vals.length,distinct:Object.keys(d).length,top_values:top};
+      if(isNum&&nums.length){col.min=Math.min.apply(null,nums);col.max=Math.max.apply(null,nums);col.mean=nums.reduce(function(a,b){return a+b;},0)/nums.length;}
+      return col;
+    });
+    return {row_count:rows.length,column_count:header.length,columns:cols};
+  }
+  function computeTable(spec){
+    var di=HEADER.indexOf(spec.dimension), mi=HEADER.indexOf(spec.measure);
+    if(di<0)return null;
+    var g={};
+    ROWS.forEach(function(r){var k=(r[di]==null||r[di]==="")?"—":r[di]; g[k]=g[k]||{vals:[],count:0,set:{}}; g[k].count++;
+      var m=mi>=0?Number(r[mi]):1; if(isFinite(m))g[k].vals.push(m); if(mi>=0)g[k].set[r[mi]]=1;});
+    var a=(spec.agg||"sum").toLowerCase();
+    var rows=Object.keys(g).map(function(k){var x=g[k],v;
+      if(a==="count")v=x.count; else if(a==="distinct")v=Object.keys(x.set).length;
+      else if(a==="mean")v=x.vals.reduce(function(p,c){return p+c;},0)/(x.vals.length||1);
+      else if(a==="min")v=x.vals.length?Math.min.apply(null,x.vals):0;
+      else if(a==="max")v=x.vals.length?Math.max.apply(null,x.vals):0;
+      else v=x.vals.reduce(function(p,c){return p+c;},0);
+      return {key:k,value:v};});
+    rows.sort(function(p,c){return spec.sort==="asc"?p.value-c.value:c.value-p.value;});
+    return rows.slice(0,spec.limit||12);
+  }
+  function fmt(n){ if(n==null||!isFinite(n))return "—"; var abs=Math.abs(n);
+    if(abs>=1e9)return (n/1e9).toFixed(1)+"B"; if(abs>=1e6)return (n/1e6).toFixed(1)+"M"; if(abs>=1e3)return (n/1e3).toFixed(1)+"K";
+    return (n%1===0)?String(n):n.toFixed(2); }
+
+  function read(text,name){
+    var rows=parseCSV(text);
+    if(rows.length<2){ out.innerHTML='<div class="card"><div class="em">Couldn\'t find a header row + data. Paste real CSV (first line = column names).</div></div>'; return; }
+    HEADER=rows[0].map(function(h){return (h||"").trim();}); ROWS=rows.slice(1);
+    var profile=profileCols(HEADER,ROWS);
+    out.innerHTML='<div class="card"><div class="loading"><span class="spin"></span>Claude is reading <b>'+esc(name||"your data")+'</b> — '+ROWS.length.toLocaleString()+' rows × '+HEADER.length+' columns…</div></div>';
+    fetch(API+"/api/ai-read",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({profile:profile,header:HEADER,rows:ROWS.slice(0,600),filename:name||"dataset.csv"})})
+      .then(function(r){return r.json().then(function(j){return {status:r.status,j:j};});})
+      .then(function(res){ render(res.status,res.j,name,profile); })
+      .catch(function(){ out.innerHTML='<div class="card"><div class="em">Reader is offline — start the engine (./dev.sh) or open the deployed suite.</div></div>'; });
+  }
+
+  function render(status,d,name,profile){
+    if(d && d.error==="llm-disabled"){ out.innerHTML='<div class="card"><div class="em">This needs Claude — set <code>ANTHROPIC_API_KEY</code> on the engine (it\'s live on the deployed suite).</div></div>'; return; }
+    if(!d || d.error){ out.innerHTML='<div class="card"><div class="em">Couldn\'t read the data'+(d&&d.detail?(' — '+esc(d.detail)):'')+'.</div></div>'; return; }
+    var findings=d.findings||[], tables=d.tables||[], caveats=d.caveats||[], questions=d.questions||[];
+    var h='<div class="card"><div class="headline">'+esc(d.headline||"Your data")+'</div>'
+      +(d.what_is_this?'<div class="whatis">'+esc(d.what_is_this)+'</div>':'')
+      +'<div class="meta"><span class="pill">'+profile.row_count.toLocaleString()+' rows</span><span class="pill">'+profile.column_count+' columns</span><span class="pill">'+esc(name||"dataset")+'</span></div>'
+      +(findings.length?('<div class="lab">What\'s worth seeing</div>'+findings.map(function(f){var k=(f.kind||"association");
+          return '<div class="finding '+esc(k)+'"><span class="k">'+esc(k.replace("_"," "))+'</span><span>'+esc(f.text)+'</span></div>';}).join('')):'')
+      +'</div>';
+    // computed tables
+    if(tables.length){
+      h+='<div class="lab" style="margin-top:20px">Cuts worth pulling <span style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--ink-soft)">— computed from your rows</span></div><div class="t2">';
+      tables.forEach(function(sp){ var t=computeTable(sp); if(!t||!t.length)return;
+        var max=Math.max.apply(null,t.map(function(x){return Math.abs(x.value);}))||1;
+        h+='<div class="tcard"><div class="th"><div class="tt">'+esc(sp.title||(sp.agg+" "+sp.measure+" by "+sp.dimension))+'</div>'+(sp.why?'<div class="tw">'+esc(sp.why)+'</div>':'')+'</div><table><tbody>'
+          +t.map(function(x){return '<tr><td>'+esc(x.key)+'<span class="bar" style="width:'+Math.max(3,Math.round(100*Math.abs(x.value)/max))+'%"></span></td><td class="v">'+fmt(x.value)+'</td></tr>';}).join('')
+          +'</tbody></table></div>';
+      });
+      h+='</div>';
+    }
+    if(caveats.length||questions.length){
+      h+='<div class="card">';
+      if(caveats.length)h+='<div class="lab" style="margin-top:0">Caveats</div><ul class="q">'+caveats.map(function(c){return '<li>'+esc(c)+'</li>';}).join('')+'</ul>';
+      if(questions.length)h+='<div class="lab">Questions to ask next</div><ul class="q">'+questions.map(function(q){return '<li>'+esc(q)+'</li>';}).join('')+'</ul>';
+      h+='</div>';
+    }
+    h+='<div style="margin-top:14px"><button class="btn" id="another">Read another dataset</button></div>';
+    out.innerHTML=h;
+    var an=document.getElementById("another"); if(an)an.onclick=function(){ out.innerHTML=""; document.getElementById("pasted").value=""; window.scrollTo(0,0); };
+  }
+
+  var drop=document.getElementById("drop"), file=document.getElementById("file");
+  drop.onclick=function(){file.click();};
+  file.onchange=function(){ var f=file.files[0]; if(!f)return; var rd=new FileReader(); rd.onload=function(){read(rd.result,f.name);}; rd.readAsText(f); };
+  ["dragenter","dragover"].forEach(function(e){drop.addEventListener(e,function(ev){ev.preventDefault();drop.classList.add("over");});});
+  ["dragleave","drop"].forEach(function(e){drop.addEventListener(e,function(ev){ev.preventDefault();drop.classList.remove("over");});});
+  drop.addEventListener("drop",function(ev){ var f=ev.dataTransfer.files[0]; if(!f)return; var rd=new FileReader(); rd.onload=function(){read(rd.result,f.name);}; rd.readAsText(f); });
+  document.getElementById("readpaste").onclick=function(){ var t=document.getElementById("pasted").value; if(t.trim())read(t,"pasted.csv"); };
+})();
+</script>
+<script src="../suite-header.js" data-id="overlay" data-mark="OV" data-name="Overlay Your Data" data-status="beta"></script>
+</body>
+</html>
