@@ -208,6 +208,12 @@
   aside.nav .item .star:hover{opacity:1;color:var(--amber);transform:scale(1.18);}
   aside.nav .item .star.on{opacity:1;color:var(--amber);}
   aside.nav .grp.favgrp{color:var(--amber-deep);display:flex;align-items:center;gap:6px;}
+  aside.nav .item.favitem{cursor:grab;}
+  aside.nav .item.favitem:active{cursor:grabbing;}
+  aside.nav .item.dragging{opacity:.4;}
+  aside.nav .item.drop-above{box-shadow:inset 0 2px 0 var(--amber);}
+  aside.nav .item.drop-below{box-shadow:inset 0 -2px 0 var(--amber);}
+  aside.nav .grp.favgrp .draghint{margin-left:auto;font-size:8px;letter-spacing:.06em;color:var(--ink-soft);text-transform:none;font-weight:500;opacity:.7;}
   #home .app .star{color:var(--hair);cursor:pointer;font-size:15px;line-height:1;flex-shrink:0;margin-left:7px;transition:color .12s,transform .12s;}
   #home .app .star:hover{color:var(--amber);transform:scale(1.18);}
   #home .app .star.on{color:var(--amber);}
@@ -386,18 +392,19 @@
   try{ favs=JSON.parse(localStorage.getItem(FAV_KEY)||'[]'); }catch(e){ favs=[]; }
   favs=favs.filter(id=>byId[id]);           // drop stale ids
   const isFav=id=>favs.indexOf(id)>=0;
+  function persistFavs(){ try{localStorage.setItem(FAV_KEY,JSON.stringify(favs));}catch(e){} }
   function toggleFav(id){
     const i=favs.indexOf(id);
-    if(i>=0)favs.splice(i,1); else favs.unshift(id);
-    try{localStorage.setItem(FAV_KEY,JSON.stringify(favs));}catch(e){}
+    if(i>=0)favs.splice(i,1); else favs.unshift(id);   // newly starred → top of favorites
+    persistFavs();
     renderNav();renderGrid();syncFavUi();
   }
   const star=(id,cls)=>'<span class="star'+(isFav(id)?' on':'')+' '+(cls||'')+'" data-fav="'+id+'" title="'+(isFav(id)?'Unpin':'Pin to favorites')+'">'+(isFav(id)?'★':'☆')+'</span>';
 
   /* ============ sidebar — favorites section + grouped surfaces ============ */
   const navlist=document.getElementById('navlist');
-  function navItem(a){
-    return '<div class="item '+a.status+'" data-id="'+a.id+'">'+
+  function navItem(a, isFavItem){
+    return '<div class="item '+a.status+(isFavItem?' favitem':'')+'" data-id="'+a.id+'"'+(isFavItem?' draggable="true"':'')+'>'+
       '<span class="ic">'+logo(a)+'</span>'+
       '<span><span class="nm">'+a.name+'</span><span class="ds">'+a.desc+'</span></span>'+
       star(a.id)+'</div>';
@@ -405,14 +412,14 @@
   function renderNav(){
     let html='';
     if(favs.length){
-      html+='<div class="grp favgrp"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l2.3 4.7 5.2.8-3.8 3.7.9 5.2L12 16l-4.6 2.4.9-5.2L4.5 9.5l5.2-.8z"/></svg>Favorites</div>';
-      html+=favs.map(id=>navItem(byId[id])).join('');
+      html+='<div class="grp favgrp"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l2.3 4.7 5.2.8-3.8 3.7.9 5.2L12 16l-4.6 2.4.9-5.2L4.5 9.5l5.2-.8z"/></svg>Favorites'+(favs.length>1?'<span class="draghint">drag to reorder</span>':'')+'</div>';
+      html+=favs.map(id=>navItem(byId[id], true)).join('');
     }
     GROUPS.forEach(g=>{
       /* child surfaces (e.g. The Long Game) live inside their parent app's page — not the side nav */
       const apps=APPS.filter(a=>a.group===g&&!a.parent);if(!apps.length)return;
       html+='<div class="grp">'+g+'</div>';
-      html+=apps.map(navItem).join('');
+      html+=apps.map(a=>navItem(a)).join('');   // wrap: Array.map passes the index as 2nd arg (would flag as favitem)
     });
     navlist.innerHTML=html;
     navlist.querySelectorAll('.item').forEach(el=>{
@@ -421,7 +428,31 @@
         location.hash='#'+el.dataset.id;closeNav();
       });
     });
+    wireFavDrag();
     if(routerReady)route();   // re-apply active highlight after re-render (skipped on first paint)
+  }
+  /* drag-to-reorder the favorites section (persists order) */
+  let favDragId=null;
+  function wireFavDrag(){
+    navlist.querySelectorAll('.item.favitem').forEach(function(el){
+      el.addEventListener('dragstart',function(e){ favDragId=el.dataset.id; el.classList.add('dragging');
+        e.dataTransfer.effectAllowed='move'; try{e.dataTransfer.setData('text/plain',favDragId);}catch(_){} });
+      el.addEventListener('dragend',function(){ favDragId=null;
+        navlist.querySelectorAll('.item.favitem').forEach(x=>x.classList.remove('dragging','drop-above','drop-below')); });
+      el.addEventListener('dragover',function(e){ if(!favDragId)return; e.preventDefault(); e.dataTransfer.dropEffect='move';
+        var r=el.getBoundingClientRect(), below=(e.clientY-r.top)>r.height/2;
+        el.classList.toggle('drop-below',below); el.classList.toggle('drop-above',!below); });
+      el.addEventListener('dragleave',function(){ el.classList.remove('drop-above','drop-below'); });
+      el.addEventListener('drop',function(e){ if(!favDragId)return; e.preventDefault(); e.stopPropagation();
+        var targetId=el.dataset.id; var r=el.getBoundingClientRect(), below=(e.clientY-r.top)>r.height/2;
+        if(favDragId!==targetId){
+          var from=favs.indexOf(favDragId); if(from>=0){ favs.splice(from,1);
+            var to=favs.indexOf(targetId); if(below)to+=1; if(to<0)to=favs.length;
+            favs.splice(to,0,favDragId); persistFavs(); }
+        }
+        favDragId=null; renderNav(); renderGrid(); syncFavUi();
+      });
+    });
   }
   renderNav();
   /* filter chips + single dense grid */

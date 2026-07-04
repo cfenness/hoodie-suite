@@ -223,7 +223,9 @@
         (sel.size ? " · " + sel.size + " selected" : "") + "</span>";
       bar.innerHTML = h;
       var si = bar.querySelector(".hg-search input");
-      if (si) si.oninput = function () { query = si.value; renderTable(); syncBarCount(); };
+      // Re-render only the rows on each keystroke — NOT the bar (which holds this very
+      // input), so typing stays live and focus/caret are preserved.
+      if (si) si.oninput = function () { query = si.value; renderTableBody(); };
       var cc = bar.querySelector("[data-cc]");
       if (cc) cc.onclick = function (e) { e.stopPropagation(); toggleColumnChooser(cc.parentNode); };
       bar.querySelectorAll("[data-bulk]").forEach(function (b) {
@@ -252,7 +254,8 @@
       anchor.appendChild(m);
     }
 
-    function renderTable() {
+    function renderTable() { renderTableBody(); renderBar(); }
+    function renderTableBody() {
       var vis = visibleCols();
       var data = filtered();
       var allSel = cfg.selectable && data.length && data.every(function (r) { return sel.has(r[idKey]); });
@@ -281,7 +284,6 @@
         : '<div class="hg-empty">' + esc(cfg.emptyText || "Nothing here yet.") + "</div>";
       wireTable();
       syncBarCount();
-      renderBar();
     }
 
     function wireTable() {
