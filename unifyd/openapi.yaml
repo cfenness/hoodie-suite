@@ -1,0 +1,124 @@
+openapi: 3.0.3
+info:
+  title: Hoodie API
+  version: 0.1.0
+  description: >
+    The Hoodie backend /api contract — the canonical book + auth. This file is the SINGLE
+    SOURCE OF TRUTH: the backend serves it at GET /api/openapi.json and the app generates
+    its typed client from that. (A framework like FastAPI could emit this automatically later.)
+servers:
+  - url: /
+paths:
+  /api/health:
+    get:
+      operationId: health
+      responses:
+        "200":
+          description: service status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+  /api/book/summary:
+    get:
+      operationId: bookSummary
+      responses:
+        "200":
+          description: book totals (or empty before the first seed)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookSummary" }
+  /api/book/cuts:
+    get:
+      operationId: bookCuts
+      parameters:
+        - name: dim
+          in: query
+          schema: { $ref: "#/components/schemas/DimKey" }
+        - name: measure
+          in: query
+          schema: { $ref: "#/components/schemas/MeasureKey" }
+      responses:
+        "200":
+          description: the book aggregated by a dimension
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CutsResponse" }
+        "401":
+          description: unauthorized (needs a session cookie or Bearer token)
+  /api/auth/mobile:
+    post:
+      operationId: authMobile
+      description: exchange a Google ID token for a Hoodie bearer token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MobileAuthRequest" }
+      responses:
+        "200":
+          description: minted bearer token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MobileAuthResponse" }
+        "401":
+          description: token verification failed
+        "403":
+          description: email not in allowlist
+components:
+  schemas:
+    DimKey:
+      type: string
+      enum: [category, subcategory, price_tier, brand, brand_family, portfolio, channel, subchannel, chain_status, city, market]
+    MeasureKey:
+      type: string
+      enum: [revenue, cases, pod, vol_growth, rev_growth, velocity, share, premium]
+    CutRow:
+      type: object
+      required: [name, value]
+      properties:
+        name: { type: string }
+        value: { type: number }
+    CutsResponse:
+      type: object
+      required: [ok, dim, measure, rows]
+      properties:
+        ok: { type: boolean }
+        dim: { type: string }
+        measure: { type: string }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/CutRow" }
+        note: { type: string }
+    BookSummary:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        fact_rows: { type: integer }
+        revenue: { type: number }
+        cases: { type: number }
+        products: { type: integer }
+        accounts: { type: integer }
+        empty: { type: boolean }
+        note: { type: string }
+    HealthResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        agent: { type: string }
+        warehouse: { type: string }
+        state: { type: string }
+    MobileAuthRequest:
+      type: object
+      required: [id_token]
+      properties:
+        id_token: { type: string }
+    MobileAuthResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        token: { type: string }
+        email: { type: string }
+        error: { type: string }
