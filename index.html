@@ -90,11 +90,26 @@
 
   /* ============ BODY LAYOUT ============ */
   .body{position:fixed;top:calc(var(--bar) + var(--ctx));left:0;right:0;bottom:0;display:grid;grid-template-columns:240px 1fr;transition:grid-template-columns .2s ease;}
-  .body.nav-collapsed{grid-template-columns:0 1fr;}
-  .body.nav-collapsed aside.nav{overflow:hidden;border-right:0;}
+  /* collapsed → a slim ICON RAIL (icons only, tooltips on hover), not a full hide */
+  .body.nav-collapsed{grid-template-columns:56px 1fr;}
+  .body.nav-collapsed aside.nav{overflow:visible;}
+  .body.nav-collapsed aside.nav .grp{display:none;}
+  .body.nav-collapsed aside.nav .item{grid-template-columns:1fr;justify-items:center;padding:9px 0;border-left:0;}
+  .body.nav-collapsed aside.nav .item.active{border-left:0;box-shadow:inset 3px 0 0 var(--amber);}
+  .body.nav-collapsed aside.nav .item .tx,.body.nav-collapsed aside.nav .item .star{display:none;}
+  .body.nav-collapsed aside.nav .navhead{flex-direction:column;margin:2px 9px 10px;gap:5px;}
+  .body.nav-collapsed aside.nav .navhead .home-link{padding:8px 0;justify-content:center;}
+  .body.nav-collapsed aside.nav .navhead .home-link .hl-tx{display:none;}
+  /* context bar collapse — reclaim the ~42px row (see ctxBtn). 0px (not 0): calc() can't add a unitless number to a length */
+  body.ctx-collapsed{--ctx:0px;}
+  body.ctx-collapsed .ctxbar{display:none;}
 
   aside.nav{border-right:1px solid var(--hair);background:var(--panel);overflow:auto;padding:14px 0 28px;}
-  aside.nav .home-link{display:flex;align-items:center;gap:9px;margin:2px 12px 12px;padding:9px 12px;border:1px solid var(--hair);background:var(--paper);cursor:pointer;font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;color:var(--ink);border-radius:3px;transition:border-color .12s;}
+  aside.nav .navhead{display:flex;align-items:center;gap:6px;margin:2px 12px 12px;}
+  aside.nav .navhead .home-link{flex:1;margin:0;}
+  aside.nav .navcollapse{width:32px;height:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1px solid var(--hair);background:var(--paper);border-radius:3px;cursor:pointer;color:var(--ink-soft);font-size:15px;line-height:1;transition:border-color .12s,color .12s,background .12s;}
+  aside.nav .navcollapse:hover{border-color:var(--amber);color:var(--ink);background:var(--panel);}
+  aside.nav .home-link{display:flex;align-items:center;gap:9px;padding:9px 12px;border:1px solid var(--hair);background:var(--paper);cursor:pointer;font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;color:var(--ink);border-radius:3px;transition:border-color .12s;}
   aside.nav .home-link:hover{border-color:var(--amber);}
   aside.nav .home-link.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
   aside.nav .grp{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:0.13em;text-transform:uppercase;color:var(--amber);padding:14px 24px 6px;font-weight:600;}
@@ -257,6 +272,10 @@
       <input id="gsearch" type="search" placeholder="Search apps…" autocomplete="off" aria-label="Search apps">
       <kbd>/</kbd>
     </div>
+    <button class="tbtn" id="ctxBtn" title="Toggle the context bar — scope · account · date basis (shared across every app)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--bar-bg)"/><circle cx="15" cy="12" r="2" fill="var(--bar-bg)"/><circle cx="8" cy="18" r="2" fill="var(--bar-bg)"/></svg>
+      <span class="lbl">Context</span>
+    </button>
     <button class="tbtn" id="favBtn" title="Favorites">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 4.5l2.3 4.7 5.2.8-3.8 3.7.9 5.2-4.6-2.4-4.6 2.4.9-5.2L4.5 10l5.2-.8z"/></svg>
       <span class="lbl">Favorites</span><span class="n" id="favN"></span>
@@ -295,7 +314,10 @@
 
 <div class="body">
   <aside class="nav" id="nav">
-    <div class="home-link" id="homeLink">⌂ &nbsp;All apps</div>
+    <div class="navhead">
+      <div class="home-link" id="homeLink">⌂ <span class="hl-tx">&nbsp;All apps</span></div>
+      <button class="navcollapse" id="navCollapse" aria-label="Collapse sidebar" title="Collapse sidebar">«</button>
+    </div>
     <div id="navlist"></div>
   </aside>
   <main class="stage">
@@ -404,9 +426,9 @@
   /* ============ sidebar — favorites section + grouped surfaces ============ */
   const navlist=document.getElementById('navlist');
   function navItem(a, isFavItem){
-    return '<div class="item '+a.status+(isFavItem?' favitem':'')+'" data-id="'+a.id+'"'+(isFavItem?' draggable="true"':'')+'>'+
+    return '<div class="item '+a.status+(isFavItem?' favitem':'')+'" data-id="'+a.id+'" title="'+a.name+'"'+(isFavItem?' draggable="true"':'')+'>'+
       '<span class="ic">'+logo(a)+'</span>'+
-      '<span><span class="nm">'+a.name+'</span><span class="ds">'+a.desc+'</span></span>'+
+      '<span class="tx"><span class="nm">'+a.name+'</span><span class="ds">'+a.desc+'</span></span>'+
       star(a.id)+'</div>';
   }
   function renderNav(){
@@ -653,16 +675,39 @@
   const nav=document.getElementById('nav'),scrim=document.getElementById('scrim'),bodyEl=document.querySelector('.body');
   function closeNav(){nav.classList.remove('open');scrim.classList.remove('show');}
   const COLLAPSE_KEY='hoodie.nav.collapsed';
+  const navCollapseBtn=document.getElementById('navCollapse');
+  function syncNavChevron(){
+    const c=bodyEl.classList.contains('nav-collapsed');
+    if(navCollapseBtn){ navCollapseBtn.textContent=c?'»':'«'; navCollapseBtn.title=c?'Expand sidebar':'Collapse sidebar'; }
+  }
+  function setNavCollapsed(c){
+    bodyEl.classList.toggle('nav-collapsed',c);
+    try{localStorage.setItem(COLLAPSE_KEY,c?'1':'0');}catch(e){}
+    syncNavChevron();
+  }
   try{ if(localStorage.getItem(COLLAPSE_KEY)==='1') bodyEl.classList.add('nav-collapsed'); }catch(e){}
+  syncNavChevron();
+  if(navCollapseBtn) navCollapseBtn.addEventListener('click',()=>setNavCollapsed(!bodyEl.classList.contains('nav-collapsed')));
   document.getElementById('menu').addEventListener('click',()=>{
     if(getComputedStyle(nav).position==='fixed'){            // mobile: slide the off-canvas drawer
       nav.classList.toggle('open');scrim.classList.toggle('show');
-    }else{                                                   // desktop: collapse / expand the column
-      const c=bodyEl.classList.toggle('nav-collapsed');
-      try{localStorage.setItem(COLLAPSE_KEY,c?'1':'0');}catch(e){}
+    }else{                                                   // desktop: collapse / expand the icon rail
+      setNavCollapsed(!bodyEl.classList.contains('nav-collapsed'));
     }
   });
   scrim.addEventListener('click',closeNav);
+
+  /* ============ context bar toggle — reclaim the ~42px scope/account/basis row ============ */
+  const CTX_KEY='hoodie.ctx.collapsed';
+  const ctxBtn=document.getElementById('ctxBtn');
+  function syncCtxBtn(){ if(ctxBtn) ctxBtn.classList.toggle('on', !document.body.classList.contains('ctx-collapsed')); }
+  try{ if(localStorage.getItem(CTX_KEY)==='1') document.body.classList.add('ctx-collapsed'); }catch(e){}
+  syncCtxBtn();
+  if(ctxBtn) ctxBtn.addEventListener('click',function(){
+    const c=document.body.classList.toggle('ctx-collapsed');
+    try{localStorage.setItem(CTX_KEY,c?'1':'0');}catch(e){}
+    syncCtxBtn();
+  });
 
   /* ============ favorites button → home + favorites filter ============ */
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
