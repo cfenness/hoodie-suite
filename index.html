@@ -171,11 +171,58 @@
   .popscrim{position:fixed;inset:0;z-index:55;display:none;}
   .popscrim.show{display:block;}
 
+  /* ============ TOP-BAR TOOLS (module shell: search · favorites) ============ */
+  header.bar .tools{display:flex;align-items:center;gap:8px;margin-left:auto;}
+  header.bar .gsearch{position:relative;display:flex;align-items:center;}
+  header.bar .gsearch>svg{position:absolute;left:9px;width:13px;height:13px;color:#8a857b;pointer-events:none;}
+  header.bar .gsearch input{width:200px;background:rgba(255,255,255,.06);border:1px solid #34322c;color:var(--paper);font-family:"IBM Plex Mono",monospace;font-size:12px;padding:7px 30px 7px 28px;border-radius:4px;outline:none;transition:width .18s ease,border-color .12s,background .12s;}
+  header.bar .gsearch input::placeholder{color:#8a857b;}
+  header.bar .gsearch input:focus{width:290px;border-color:var(--amber);background:rgba(255,255,255,.1);}
+  header.bar .gsearch kbd{position:absolute;right:8px;font-family:"IBM Plex Mono",monospace;font-size:9px;color:#7a756c;border:1px solid #34322c;border-radius:3px;padding:1px 5px;pointer-events:none;transition:opacity .12s;}
+  header.bar .gsearch input:focus~kbd{opacity:0;}
+  header.bar .tbtn{display:flex;align-items:center;gap:6px;background:transparent;border:1px solid #34322c;color:#c9c2b4;font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;padding:6px 10px;border-radius:4px;cursor:pointer;transition:all .12s;letter-spacing:.03em;white-space:nowrap;}
+  header.bar .tbtn:hover{background:#2a2823;color:var(--paper);}
+  header.bar .tbtn.on{color:var(--amber-bright);border-color:var(--amber);}
+  header.bar .tbtn svg{width:13px;height:13px;flex-shrink:0;}
+  header.bar .tbtn .n{font-size:9px;opacity:.6;}
+
+  /* command-palette style results */
+  .searchpop{position:fixed;top:calc(var(--bar) - 3px);z-index:70;background:var(--paper);border:1px solid var(--ink);box-shadow:0 18px 44px -14px rgba(27,26,23,.5);width:340px;max-width:calc(100vw - 24px);max-height:64vh;overflow:auto;display:none;border-radius:6px;}
+  .searchpop.show{display:block;animation:popin .13s ease;}
+  .searchpop .sr{display:grid;grid-template-columns:26px 1fr auto;gap:11px;align-items:center;padding:9px 13px;cursor:pointer;border-bottom:1px solid var(--hair);}
+  .searchpop .sr:last-child{border-bottom:0;}
+  .searchpop .sr.sel{background:var(--panel);box-shadow:inset 2px 0 0 var(--amber);}
+  .searchpop .sr:hover{background:var(--panel);}
+  .searchpop .sr .ic{width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:var(--ink);color:var(--paper);border-radius:3px;}
+  .searchpop .sr.live .ic{background:var(--slate);}
+  .searchpop .sr .t{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;color:var(--ink);line-height:1.15;}
+  .searchpop .sr .t small{display:block;font-family:"Source Serif 4",serif;font-weight:400;font-size:11px;color:var(--ink-soft);margin-top:1px;}
+  .searchpop .sr .g{font-family:"IBM Plex Mono",monospace;font-size:8.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);white-space:nowrap;}
+  .searchpop .none{padding:18px 16px;text-align:center;color:var(--ink-soft);font-family:"IBM Plex Mono",monospace;font-size:12px;}
+  .searchpop .shd{font-family:"IBM Plex Mono",monospace;font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;padding:8px 13px 4px;background:var(--panel);border-bottom:1px solid var(--hair);}
+
+  /* favorites star — nav items + home cards */
+  aside.nav .item{grid-template-columns:26px 1fr 16px;}
+  aside.nav .item .star{opacity:0;color:var(--ink-soft);cursor:pointer;font-size:13px;line-height:1;justify-self:end;transition:opacity .12s,color .12s,transform .12s;}
+  aside.nav .item:hover .star{opacity:.45;}
+  aside.nav .item .star:hover{opacity:1;color:var(--amber);transform:scale(1.18);}
+  aside.nav .item .star.on{opacity:1;color:var(--amber);}
+  aside.nav .grp.favgrp{color:var(--amber-deep);display:flex;align-items:center;gap:6px;}
+  #home .app .star{color:var(--hair);cursor:pointer;font-size:15px;line-height:1;flex-shrink:0;margin-left:7px;transition:color .12s,transform .12s;}
+  #home .app .star:hover{color:var(--amber);transform:scale(1.18);}
+  #home .app .star.on{color:var(--amber);}
+  #home .filters .grow{flex:1;}
+  #home .chip.fav.on{background:var(--amber-deep);border-color:var(--amber-deep);}
+
   @media (max-width:760px){
     header.bar .menu{display:block;}
     /* keep the "you are here" app name on mobile; reclaim space from the brand suffix + breadcrumb tail */
     header.bar .brand .sfx{display:none;}
     header.bar .appcrumb .cx{display:none;}
+    header.bar .gsearch input{width:120px;padding-right:10px;}
+    header.bar .gsearch input:focus{width:150px;}
+    header.bar .gsearch kbd{display:none;}
+    header.bar .tbtn .lbl{display:none;}
     .ctxbar{overflow-x:auto;}
     .ctxbar .seg .lbl{display:none;}
     .ctxbar .seg.right .live span:not(.d){display:none;}
@@ -198,9 +245,20 @@
   <span class="mark" id="mark" title="Home"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.2 11.8 C6 6, 18 6, 19.8 11.8"/><circle cx="8.2" cy="15.2" r="3.6"/><circle cx="15.8" cy="15.2" r="3.6"/><path d="M11.8 15.2 H12.2"/></svg></span>
   <span class="brand" id="brand">Hoodie<span class="sfx"> · Suite</span></span>
   <span class="appcrumb" id="appcrumb"><span class="arr">/</span><span class="nm" id="appnm"></span><span class="cx" id="appcrumbx"></span></span>
-  <span class="spacer"></span>
-  <a class="ext" id="signout" href="/auth/logout" style="display:none">Sign out</a>
-  <a class="ext" id="ext" target="_blank" rel="noopener">Open full ↗</a>
+  <div class="tools">
+    <div class="gsearch">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2" stroke-linecap="round"/></svg>
+      <input id="gsearch" type="search" placeholder="Search apps…" autocomplete="off" aria-label="Search apps">
+      <kbd>/</kbd>
+    </div>
+    <button class="tbtn" id="favBtn" title="Favorites">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 4.5l2.3 4.7 5.2.8-3.8 3.7.9 5.2-4.6-2.4-4.6 2.4.9-5.2L4.5 10l5.2-.8z"/></svg>
+      <span class="lbl">Favorites</span><span class="n" id="favN"></span>
+    </button>
+    <a class="ext" id="signout" href="/auth/logout" style="display:none">Sign out</a>
+    <a class="ext" id="ext" target="_blank" rel="noopener">Open full ↗</a>
+  </div>
+  <div class="searchpop" id="searchpop"></div>
 </header>
 
 <div class="ctxbar" id="ctxbar">
@@ -321,19 +379,51 @@
   };
   const logo=a=>LOGOS[a.id]||a.mark;
 
-  /* sidebar */
+  /* ============ favorites — pinned apps (persist local) ============ */
+  var routerReady=false;   // hoisted: renderNav() may run before route()'s consts exist
+  const FAV_KEY='hoodie.favs';
+  let favs=[];
+  try{ favs=JSON.parse(localStorage.getItem(FAV_KEY)||'[]'); }catch(e){ favs=[]; }
+  favs=favs.filter(id=>byId[id]);           // drop stale ids
+  const isFav=id=>favs.indexOf(id)>=0;
+  function toggleFav(id){
+    const i=favs.indexOf(id);
+    if(i>=0)favs.splice(i,1); else favs.unshift(id);
+    try{localStorage.setItem(FAV_KEY,JSON.stringify(favs));}catch(e){}
+    renderNav();renderGrid();syncFavUi();
+  }
+  const star=(id,cls)=>'<span class="star'+(isFav(id)?' on':'')+' '+(cls||'')+'" data-fav="'+id+'" title="'+(isFav(id)?'Unpin':'Pin to favorites')+'">'+(isFav(id)?'★':'☆')+'</span>';
+
+  /* ============ sidebar — favorites section + grouped surfaces ============ */
   const navlist=document.getElementById('navlist');
-  GROUPS.forEach(g=>{
-    /* child surfaces (e.g. The Long Game) live inside their parent app's page — not the side nav */
-    const apps=APPS.filter(a=>a.group===g&&!a.parent);if(!apps.length)return;
-    const lab=document.createElement('div');lab.className='grp';lab.textContent=g;navlist.appendChild(lab);
-    apps.forEach(a=>{
-      const el=document.createElement('div');el.className='item '+a.status;el.dataset.id=a.id;
-      el.innerHTML='<span class="ic">'+logo(a)+'</span><span><span class="nm">'+a.name+'</span><span class="ds">'+a.desc+'</span></span>';
-      el.addEventListener('click',()=>{location.hash='#'+a.id;closeNav();});
-      navlist.appendChild(el);
+  function navItem(a){
+    return '<div class="item '+a.status+'" data-id="'+a.id+'">'+
+      '<span class="ic">'+logo(a)+'</span>'+
+      '<span><span class="nm">'+a.name+'</span><span class="ds">'+a.desc+'</span></span>'+
+      star(a.id)+'</div>';
+  }
+  function renderNav(){
+    let html='';
+    if(favs.length){
+      html+='<div class="grp favgrp"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l2.3 4.7 5.2.8-3.8 3.7.9 5.2L12 16l-4.6 2.4.9-5.2L4.5 9.5l5.2-.8z"/></svg>Favorites</div>';
+      html+=favs.map(id=>navItem(byId[id])).join('');
+    }
+    GROUPS.forEach(g=>{
+      /* child surfaces (e.g. The Long Game) live inside their parent app's page — not the side nav */
+      const apps=APPS.filter(a=>a.group===g&&!a.parent);if(!apps.length)return;
+      html+='<div class="grp">'+g+'</div>';
+      html+=apps.map(navItem).join('');
     });
-  });
+    navlist.innerHTML=html;
+    navlist.querySelectorAll('.item').forEach(el=>{
+      el.addEventListener('click',ev=>{
+        if(ev.target.classList.contains('star')){ ev.stopPropagation(); toggleFav(el.dataset.id); return; }
+        location.hash='#'+el.dataset.id;closeNav();
+      });
+    });
+    if(routerReady)route();   // re-apply active highlight after re-render (skipped on first paint)
+  }
+  renderNav();
   /* filter chips + single dense grid */
   const grid=document.getElementById('grid'), filters=document.getElementById('filters');
   let activeFilter='all';
@@ -341,26 +431,46 @@
   function chip(label,key,count){
     const c=document.createElement('button');c.className='chip'+(key===activeFilter?' on':'');c.dataset.key=key;
     c.innerHTML=label+' <span class="ct">'+count+'</span>';
-    c.addEventListener('click',()=>{activeFilter=key;[...filters.querySelectorAll('.chip')].forEach(x=>x.classList.toggle('on',x.dataset.key===key));renderGrid();});
+    c.addEventListener('click',()=>{activeFilter=key;[...filters.querySelectorAll('.chip')].forEach(x=>x.classList.toggle('on',x.dataset.key===key));renderGrid();if(typeof syncFavUi==='function')syncFavUi();});
     filters.appendChild(c);
   }
+  chip('★ Favorites','fav',favs.length);
   chip('All','all',APPS.length);
   usedGroups.forEach(g=>chip(g,g,APPS.filter(a=>a.group===g).length));
+  const favChip=()=>filters.querySelector('.chip[data-key="fav"]');
+  { const fc=favChip(); if(fc){ fc.classList.add('fav'); } }
   function renderGrid(){
-    const list=activeFilter==='all'?APPS:APPS.filter(a=>a.group===activeFilter);
+    let list;
+    if(activeFilter==='fav')list=favs.map(id=>byId[id]);
+    else if(activeFilter==='all')list=APPS;
+    else list=APPS.filter(a=>a.group===activeFilter);
     grid.innerHTML='';
-    if(!list.length){grid.innerHTML='<div class="empty">No surfaces in this group.</div>';return;}
+    if(!list.length){
+      grid.innerHTML=activeFilter==='fav'
+        ? '<div class="empty">No favorites yet — tap the ☆ on any app to pin it here.</div>'
+        : '<div class="empty">No surfaces in this group.</div>';
+      return;
+    }
     let d=0;
     list.forEach(a=>{
       const c=document.createElement('div');c.className='app '+a.status+' rise';c.style.animationDelay=(d).toFixed(2)+'s';d+=0.03;
-      c.innerHTML='<div class="top"><span class="ic">'+logo(a)+'</span><span class="nm">'+a.name+'</span><span class="pill">'+a.status+'</span></div>'+
+      c.innerHTML='<div class="top"><span class="ic">'+logo(a)+'</span><span class="nm">'+a.name+'</span><span class="pill">'+a.status+'</span>'+star(a.id)+'</div>'+
         '<div class="ds">'+a.desc+'</div>'+
         '<div class="foot"><span class="cat">'+a.group+'</span><span class="open">Open <span class="a">→</span></span></div>';
-      c.addEventListener('click',()=>{location.hash='#'+a.id;});
+      c.addEventListener('click',ev=>{
+        if(ev.target.classList.contains('star')){ ev.stopPropagation(); toggleFav(a.id); return; }
+        location.hash='#'+a.id;
+      });
       grid.appendChild(c);
     });
   }
   renderGrid();
+  /* keep favorites UI in sync after any pin/unpin */
+  function syncFavUi(){
+    const fc=favChip(); if(fc){ const ct=fc.querySelector('.ct'); if(ct)ct.textContent=favs.length; }
+    const fn=document.getElementById('favN'); if(fn)fn.textContent=favs.length?('· '+favs.length):'';
+    const fb=document.getElementById('favBtn'); if(fb)fb.classList.toggle('on',activeFilter==='fav'&&!byId[(location.hash||'').replace('#','')]);
+  }
   document.getElementById('statline').innerHTML='<span class="chip" style="cursor:default;background:transparent;border:0;padding:0"><span class="d"></span>spine live</span><span>·</span><span><b>'+APPS.length+'</b> surfaces</span><span>·</span><span><b>'+usedGroups.length+'</b> groups</span>';
 
   /* ============ spine host ============ */
@@ -497,6 +607,7 @@
       frame.classList.remove('show');frame.removeAttribute('src');home.style.display='block';
       ext.classList.remove('show');appcrumb.classList.remove('show');frameload.classList.remove('show');
     }
+    if(typeof syncFavUi==='function')syncFavUi();
   }
   /* an app can post an in-app breadcrumb (e.g. the open record) → shows as "App › crumb" */
   spine.on('crumb',t=>{ appcrumbx.textContent = t ? (' › '+t) : ''; });
@@ -505,6 +616,7 @@
   document.getElementById('mark').addEventListener('click',()=>{location.hash='';});
   window.addEventListener('hashchange',route);
   window.addEventListener('load',route);
+  routerReady=true; route();   // router live: apply initial highlight + reflect current hash
 
   /* ============ nav toggle — off-canvas on mobile, collapse the column on desktop ============ */
   const nav=document.getElementById('nav'),scrim=document.getElementById('scrim'),bodyEl=document.querySelector('.body');
@@ -520,6 +632,58 @@
     }
   });
   scrim.addEventListener('click',closeNav);
+
+  /* ============ favorites button → home + favorites filter ============ */
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
+  document.getElementById('favBtn').addEventListener('click',function(){
+    activeFilter='fav';
+    [...filters.querySelectorAll('.chip')].forEach(x=>x.classList.toggle('on',x.dataset.key==='fav'));
+    renderGrid();
+    if((location.hash||'').replace('#','')) location.hash='';   // route() shows home; grid already set to favorites
+    syncFavUi();
+  });
+
+  /* ============ global search palette (⌘-style app switcher) ============ */
+  const gsearch=document.getElementById('gsearch'), searchpop=document.getElementById('searchpop');
+  let srSel=-1, srList=[];
+  function searchMatch(q){
+    q=(q||'').trim().toLowerCase();
+    if(!q){ return favs.map(id=>byId[id]).concat(APPS.filter(a=>!isFav(a.id))).slice(0,7); }
+    return APPS.filter(a=>((a.name+' '+a.desc+' '+a.group+' '+a.id).toLowerCase().indexOf(q)>=0)).slice(0,10);
+  }
+  function renderSearch(){
+    const q=gsearch.value; srList=searchMatch(q); srSel=srList.length?0:-1;
+    const r=gsearch.getBoundingClientRect();
+    searchpop.style.left=Math.max(8,Math.min(r.left, window.innerWidth-352))+'px';
+    if(!srList.length){ searchpop.innerHTML='<div class="none">No app matches “'+esc(q)+'”.</div>'; }
+    else{
+      const hd=q.trim()?'':'<div class="shd">'+(favs.length?'Favorites & apps':'Jump to app')+'</div>';
+      searchpop.innerHTML=hd+srList.map((a,i)=>
+        '<div class="sr '+a.status+(i===srSel?' sel':'')+'" data-id="'+a.id+'" data-i="'+i+'">'+
+        '<span class="ic">'+logo(a)+'</span>'+
+        '<span class="t">'+esc(a.name)+'<small>'+esc(a.desc)+'</small></span>'+
+        '<span class="g">'+esc(a.group)+'</span></div>').join('');
+      searchpop.querySelectorAll('.sr').forEach(el=>el.addEventListener('mousedown',e=>{e.preventDefault();jumpTo(el.dataset.id);}));
+    }
+    searchpop.classList.add('show');
+  }
+  function closeSearch(){ searchpop.classList.remove('show'); }
+  function jumpTo(id){ if(!byId[id])return; gsearch.value=''; closeSearch(); gsearch.blur(); location.hash='#'+id; }
+  function markSel(){ [...searchpop.querySelectorAll('.sr')].forEach(el=>el.classList.toggle('sel',+el.dataset.i===srSel)); const s=searchpop.querySelector('.sr.sel'); if(s)s.scrollIntoView({block:'nearest'}); }
+  gsearch.addEventListener('focus',renderSearch);
+  gsearch.addEventListener('input',renderSearch);
+  gsearch.addEventListener('keydown',e=>{
+    if(e.key==='ArrowDown'){e.preventDefault();srSel=Math.min(srSel+1,srList.length-1);markSel();}
+    else if(e.key==='ArrowUp'){e.preventDefault();srSel=Math.max(srSel-1,0);markSel();}
+    else if(e.key==='Enter'){e.preventDefault();if(srSel>=0&&srList[srSel])jumpTo(srList[srSel].id);}
+    else if(e.key==='Escape'){gsearch.value='';closeSearch();gsearch.blur();}
+  });
+  gsearch.addEventListener('blur',()=>setTimeout(closeSearch,130));
+  /* "/" focuses the app search from anywhere on the shell */
+  window.addEventListener('keydown',e=>{
+    if(e.key==='/' && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName||'') && !e.metaKey && !e.ctrlKey){ e.preventDefault(); gsearch.focus(); }
+  });
+  syncFavUi();
 
   /* ============ sign-out — shown only when a Google login gate is active ============ */
   fetch('/auth/me').then(r=>r.json()).then(m=>{
