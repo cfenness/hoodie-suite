@@ -175,8 +175,12 @@
               +(vs.length?('<datalist id="fl'+i+'">'+vs.slice(0,40).map(function(v){return '<option value="'+esc(v)+'">';}).join('')+'</datalist>'):'');
             }).join('')+'</div>'):'')
         +'<div class="exrow"><span class="hint">pages</span><input id="ex-pages" class="num-in" type="number" min="1" max="400" value="'+(apiUrl||a.pagination?'3':'1')+'">'
-          +'<span class="hint" style="margin-left:10px">max items</span><input id="ex-limit" class="num-in" type="number" min="1" max="100000" value="100" title="cap the number of items pulled">'
-          +'<span class="hint" style="margin-left:6px">— caps the run so you don’t pull the whole catalog while testing (raise both to pull the full catalog)</span></div>'
+          +'<span class="hint" style="margin-left:10px">max items</span>'
+          +'<select id="ex-limit-sel" class="num-in" style="width:auto" title="cap the number of items pulled — or pick All to pull the whole catalog">'
+            +'<option value="100">100</option><option value="500">500</option><option value="1000">1,000</option><option value="5000">5,000</option><option value="10000">10,000</option>'
+            +'<option value="all">All (no cap)</option><option value="custom" hidden>custom</option></select>'
+          +'<input id="ex-limit" class="num-in" type="number" min="1" max="1000000" value="100" title="custom cap" style="width:96px">'
+          +'<span class="hint" id="ex-limit-note" style="margin-left:6px">— caps the run so you don’t pull the whole catalog while testing. Pick <b>All</b> to run until the source is exhausted.</span></div>'
         +(apiUrl?'<div class="hint" style="margin:2px 0 12px">This source is client-rendered — extraction runs against its <b>data API</b> so you can pull the whole catalog (up to your cap), not one page.</div>':'<div style="height:8px"></div>')
         +'<div class="promptbox">'
           +'<div class="pb-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.7L18.5 9l-4.6 1.3L12 15l-1.9-4.7L5.5 9l4.6-1.3z"/><path d="M18 15l.8 2 .8-2 .8-.8-.8-.8-.8-2-.8 2-.8.8z" fill="currentColor" stroke="none"/></svg>'
@@ -193,6 +197,15 @@
     var sv=document.getElementById("save"); if(sv)sv.onclick=function(){ toast("Saved config — next: turn this into a scheduled connector in Hoodie Master"); };
     var ag=document.getElementById("again"); if(ag)ag.onclick=function(){ document.getElementById("url").focus(); document.getElementById("url").select(); };
     var rx=document.getElementById("run-extract"); if(rx)rx.onclick=runExtract;
+    var lsel=document.getElementById("ex-limit-sel"), linp=document.getElementById("ex-limit");
+    if(lsel&&linp){
+      lsel.onchange=function(){
+        if(lsel.value==="all"){ linp.value=""; linp.disabled=true; linp.style.opacity=".45"; }
+        else if(lsel.value==="custom"){ linp.disabled=false; linp.style.opacity=""; linp.focus(); }
+        else { linp.disabled=false; linp.style.opacity=""; linp.value=lsel.value; }
+      };
+      linp.oninput=function(){ lsel.value="custom"; };  // manual entry → custom
+    }
   }
 
   function runExtract(){
@@ -200,9 +213,11 @@
     if(!prompt.trim()){ toast("The prompt is empty"); return; }
     var target=(document.getElementById("ex-target")||{}).value||lastUrl;
     var pages=parseInt((document.getElementById("ex-pages")||{}).value,10)||1;
-    var limit=parseInt((document.getElementById("ex-limit")||{}).value,10)||100;
+    var allMode=((document.getElementById("ex-limit-sel")||{}).value)==="all";
+    var limit=allMode?1000000:(parseInt((document.getElementById("ex-limit")||{}).value,10)||100);
+    if(allMode) pages=Math.max(pages,400);   // pull until the source is exhausted (server stops on an empty page)
     var btn=document.getElementById("run-extract"), eout=document.getElementById("extract-out");
-    btn.disabled=true; eout.innerHTML='<div class="loading"><span class="spin"></span>Fetching '+(pages>1?(pages+' pages'):'the source')+' + extracting up to '+limit+' rows…</div>';
+    btn.disabled=true; eout.innerHTML='<div class="loading"><span class="spin"></span>Fetching '+(allMode?'every page':(pages>1?(pages+' pages'):'the source'))+' + extracting '+(allMode?'all rows':('up to '+limit+' rows'))+'…</div>';
     fetch(API+"/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:target,prompt:prompt,pages:pages,limit:limit})})
       .then(function(r){return r.json();}).then(function(d){ btn.disabled=false;
         if(d.error){ eout.innerHTML='<div class="em">'+esc(d.error)+'</div>'; return; }

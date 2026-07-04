@@ -55,6 +55,9 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
 .st-blocked{background:var(--bad-soft);color:var(--bad)}.st-paused{background:var(--gray-soft);color:var(--muted2)}
 .tos-clean{background:var(--good-soft);color:var(--good)}.tos-gray{background:var(--warn-soft);color:var(--warn)}.tos-hostile{background:var(--bad-soft);color:var(--bad)}
 .gran{background:#eef0fb;color:#4b3fae}
+.own{background:#e8f0fb;color:#2563b8}
+.own.own-hoodie{background:var(--purple-soft);color:var(--purple-d)}
+.tag.noscrape{background:var(--bad-soft);color:var(--bad)}
 .iconbtn{width:28px;height:28px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer;color:var(--muted);font-size:13px;display:grid;place-items:center}
 .iconbtn:hover{border-color:var(--purple);color:var(--purple-d)}
 .empty{text-align:center;color:var(--muted);padding:40px;font-size:13.5px}
@@ -93,6 +96,7 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
     <select class="flt" id="fStatus"><option value="">All status</option><option>Planned</option><option>Building</option><option>Ready</option><option>Live</option><option>Blocked</option><option>Paused</option></select>
     <select class="flt" id="fTos"><option value="">All ToS</option><option>Clean</option><option>Gray</option><option>Hostile</option></select>
     <select class="flt" id="fPri"><option value="">All priority</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select>
+    <select class="flt" id="fOwner"><option value="">All owners</option><option>Hoodie</option><option>Grepsr</option><option>Hoodie + Grepsr</option><option>External</option></select>
     <span class="tb-sp"></span>
     <button class="btn solid" id="addBtn">＋ Source</button>
     <button class="btn" id="expBtn">Export CSV</button>
@@ -107,6 +111,7 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
   <div class="frow">
     <div class="fg"><label>Tier</label><select id="mTier"></select></div>
     <div class="fg"><label>Granularity</label><select id="mGran"><option>Store</option><option>Zone</option><option>State</option><option>Chain</option></select></div>
+    <div class="fg"><label>Pulled by</label><select id="mOwner"></select></div>
   </div>
   <div class="fg"><label>Footprint / coverage</label><input id="mFoot" placeholder="e.g. National · 285 stores"></div>
   <div class="fg"><label>Fields available</label><div class="fldcheck" id="mFields"></div></div>
@@ -129,9 +134,12 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
 </div></div>
 
 <script>
-const KEY="hoodie.pulls.tracker.v1";
+const KEY="hoodie.pulls.tracker.v2";
 const TIERS=["Spine & Master","Control States","Specialty Bev-Alc","Grocery & Mass","Delivery & Marketplace","Long-Tail & Platform","Hemp & THC"];
-const FIELDS=["Price","Promo","Availability","Units","UPC","Ratings"];
+// Availability = inventory (the single best data point); Auth type = authorization/permit type (the close second).
+const FIELDS=["Availability","Auth type","Price","Promo","Units","UPC","Ratings"];
+// Who actually runs the pull. Grepsr is an external vendor delivering a daily hemp-beverage feed to S3.
+const OWNERS=["Hoodie","Grepsr","Hoodie + Grepsr","External","—"];
 const STATUSES=["Planned","Building","Ready","Live"]; // click-cycle set
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -148,17 +156,24 @@ const SEED=[
  {nm:"Idaho State Liquor",tier:"Control States",foot:"ID · monthly files",fields:["Price"],gran:"State",plat:"gov price files",prot:"None",tos:"Clean",pri:"P1",status:"Planned",notes:"Monthly alphabetical + by-category pricing, floor prices & tiers."},
  {nm:"Remaining control states (13)",tier:"Control States",foot:"OH, OR, MI, UT, AL, IA, ME, MS, MT, NH, VT, WV, WY",fields:["Price"],gran:"State",plat:"gov files",prot:"None",tos:"Clean",pri:"P2",status:"Planned",notes:"Same fetch-and-parse pattern; clone per state. ~23% of US spirits volume across the set."},
 
- {nm:"ABC FWS — Inventory",tier:"Specialty Bev-Alc",foot:"FL · 133 stores",fields:["Price","Availability"],gran:"Store",plat:"BigCommerce options",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",notes:"STORE-LEVEL in/out + price. Polite 10s. Home turf."},
- {nm:"Spec's — Inventory",tier:"Specialty Bev-Alc",foot:"TX · 100+ stores",fields:["Price","Availability"],gran:"Store",plat:"Embedded variants (direct)",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",notes:"Direct, no Bright Data. TX outlets can't resolve to the spine yet (outlet master is FL-only)."},
- {nm:"Binny's — Inventory",tier:"Specialty Bev-Alc",foot:"IL · 45 stores",fields:["Price","Availability","Units"],gran:"Store",plat:"Algolia feed",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",notes:"CROWN JEWEL — unit inventory → directional units sold. The reservoir thesis. Run first; validate the deltas before trusting anything downstream."},
- {nm:"Total Wine & More",tier:"Specialty Bev-Alc",foot:"National · 285 stores",fields:["Price","Promo","Availability","Ratings"],gran:"Store",plat:"Custom (Algolia-style)",prot:"High",tos:"Gray",pri:"P0",status:"Planned",notes:"Market leader, >50% of sector by store count. Biggest competitive gap. Heavily protected."},
- {nm:"BevMo",tier:"Specialty Bev-Alc",foot:"CA/AZ · 160 stores",fields:["Price","Availability"],gran:"Store",plat:"Custom",prot:"Medium",tos:"Gray",pri:"P2",status:"Planned",notes:"Gopuff-owned; data also surfaces via the Gopuff app."},
+ {nm:"ABC FWS — Inventory",tier:"Specialty Bev-Alc",foot:"FL · 133 stores",fields:["Availability","Price"],gran:"Store",plat:"BigCommerce options",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",owner:"Hoodie + Grepsr",notes:"STORE-LEVEL in/out + price. Polite 10s. Home turf. Grepsr also lands a daily hemp-bev cut to S3 (count-alert restored after a low-row day)."},
+ {nm:"Spec's — Inventory",tier:"Specialty Bev-Alc",foot:"TX · 100+ stores",fields:["Availability","Price","Promo"],gran:"Store",plat:"Embedded variants (direct)",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",owner:"Hoodie + Grepsr",notes:"Direct, no Bright Data. TX outlets can't resolve to the spine yet (outlet master is FL-only). Grepsr 'Spec's Online' hemp-bev feed is daily; promo now pulled from PDP."},
+ {nm:"Binny's — Inventory",tier:"Specialty Bev-Alc",foot:"IL · 45 stores",fields:["Availability","Price","Units"],gran:"Store",plat:"Algolia feed",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",owner:"Hoodie + Grepsr",notes:"CROWN JEWEL — unit inventory → directional units sold. Grepsr hemp-bev feed is daily; store IDs 6 & 80 have blank names (80 = 'Ship to Me', 6 = deactivated store). Validate deltas before trusting downstream."},
+ {nm:"Total Wine & More",tier:"Specialty Bev-Alc",foot:"National · 285 stores",fields:["Availability","Price","Promo","Ratings"],gran:"Store",plat:"Custom (Algolia-style)",prot:"High",tos:"Gray",pri:"P0",status:"Live",owner:"Grepsr",notes:"Market leader, >50% of sector by store count. We can't scrape it directly (heavily protected) — Grepsr delivers a daily hemp-bev cut to S3; promo capture added. Our own pull is still the biggest competitive gap."},
+ {nm:"BevMo",tier:"Specialty Bev-Alc",foot:"CA/AZ · 160 stores",fields:["Availability","Price"],gran:"Store",plat:"Custom (Elasticsearch)",prot:"High",tos:"Gray",pri:"P2",status:"Building",owner:"Grepsr",notes:"Grepsr daily hemp-bev feed, but >95% alcohol bleed — no THC category page, Elasticsearch fuzzy-matches 'THC'. Filtering on 'Government Issued ID Required' attribute; anti-bot has blocked them intermittently. Gopuff-owned."},
+ {nm:"Top Ten Liquors",tier:"Specialty Bev-Alc",foot:"MN · multi-store",fields:["Availability","Price","Promo"],gran:"Store",plat:"Custom (Grepsr)",prot:"Medium",tos:"Gray",pri:"P1",status:"Live",owner:"Grepsr",notes:"Hemp-bev daily feed → S3. Promo now pulled from the PDP (was 0% off the listing page). All locations MN/US."},
+ {nm:"Liquor Barn",tier:"Specialty Bev-Alc",foot:"KY · multi-store",fields:["Availability","Price","Promo"],gran:"Store",plat:"Custom (Grepsr)",prot:"Medium",tos:"Gray",pri:"P1",status:"Live",owner:"Grepsr",notes:"Hemp-bev daily feed → S3. Promo present on select SKUs only (low but non-zero coverage is expected)."},
+ {nm:"Goody Goody",tier:"Specialty Bev-Alc",foot:"TX · 24 stores (5 → Harley, excluded)",fields:["Availability","Price"],gran:"Store",plat:"Custom (Grepsr)",prot:"Medium",tos:"Gray",pri:"P1",status:"Live",owner:"Grepsr",notes:"Hemp-bev daily feed → S3. No promo info on the site. 5 of 24 stores redirect to harleysliquor.com and are excluded by the crawler."},
+ {nm:"Haskell's",tier:"Specialty Bev-Alc",foot:"MN · ~80–100 SKUs",fields:["Availability","Price"],gran:"Store",plat:"Custom (Grepsr)",prot:"Medium",tos:"Gray",pri:"P1",status:"Live",owner:"Grepsr",notes:"Hemp-bev daily feed → S3. No store-level filter on site → keyword search across all THC/hemp SKUs; low count reflects real availability. Pagination bug fixed (was pinned at 100)."},
+ {nm:"Bottle King",tier:"Specialty Bev-Alc",foot:"NJ · ~176 SKUs",fields:["Availability","Price"],gran:"Store",plat:"Custom (Grepsr)",prot:"High",tos:"Gray",pri:"P1",status:"Live",owner:"Grepsr",notes:"Hemp-bev daily feed → S3. Only ~6/176 in stock (repeat rows = genuinely unchanged site, not stale). No THC-mg on site. CAPTCHA-walled — bypassed with premium proxies."},
 
  {nm:"Kroger (+ banners)",tier:"Grocery & Mass",foot:"National · King Soopers/Ralphs/Fry's",fields:["Price","Availability","UPC"],gran:"Store",plat:"Custom",prot:"High",tos:"Gray",pri:"P1",status:"Planned",notes:"Store-level price + reliable UPC for the resolution bridge. Beer/wine volume. Heavy protection."},
  {nm:"Publix",tier:"Grocery & Mass",foot:"FL / Southeast",fields:["Price","Availability","UPC"],gran:"Store",plat:"Custom",prot:"Medium",tos:"Gray",pri:"P1",status:"Planned",notes:"Home-region grocery; clean GTIN anchors."},
  {nm:"H-E-B",tier:"Grocery & Mass",foot:"TX",fields:["Price","Availability","UPC"],gran:"Store",plat:"Custom",prot:"Medium",tos:"Gray",pri:"P2",status:"Planned",notes:"Pairs with Spec's for TX coverage."},
  {nm:"Walmart",tier:"Grocery & Mass",foot:"National",fields:["Price","Availability","UPC"],gran:"Store",plat:"Custom",prot:"High",tos:"Gray",pri:"P2",status:"Planned",notes:"~23% of alcohol e-comm intent; very heavily protected."},
  {nm:"Costco",tier:"Grocery & Mass",foot:"National",fields:["Price"],gran:"Chain",plat:"Custom",prot:"Medium",tos:"Gray",pri:"P3",status:"Planned",notes:"Membership-gated; alcohol availability varies by state law."},
+ {nm:"Circle K",tier:"Grocery & Mass",foot:"National c-store · select markets",fields:["Availability","Price"],gran:"Store",plat:"Custom (Grepsr)",prot:"Medium",tos:"Gray",pri:"P3",status:"Paused",owner:"Grepsr",notes:"ON HOLD (Wes) — hemp-bev in select markets only; resume once customers ask. Prioritize coverage with Target when it moves."},
+ {nm:"Target",tier:"Grocery & Mass",foot:"National mass · select markets",fields:["Availability","Price","UPC"],gran:"Store",plat:"Custom (Grepsr)",prot:"High",tos:"Gray",pri:"P3",status:"Paused",owner:"Grepsr",notes:"ON HOLD — hemp-bev where stocked; paired with Circle K for the same market push. Resume on customer demand."},
 
  {nm:"Instacart — Store-level",tier:"Delivery & Marketplace",foot:"National · 100s of banners",fields:["Price","Availability"],gran:"Store",plat:"Bright Data managed dataset",prot:"High",tos:"Hostile",pri:"P1",status:"Ready",notes:"Richest cross-retailer pipe (~40% alcohol intent). Needs API key + dataset id. ToS-hostile — deliberate, eyes-open risk."},
  {nm:"Uber Eats",tier:"Delivery & Marketplace",foot:"National (absorbed Drizly)",fields:["Price","Availability"],gran:"Store",plat:"Bright Data / custom",prot:"High",tos:"Hostile",pri:"P3",status:"Planned",notes:"Drizly folded in here in 2024."},
@@ -172,10 +187,10 @@ const SEED=[
 ];
 
 var SOURCES=[];
-var STATE={q:"",tier:"",status:"",tos:"",pri:""};
+var STATE={q:"",tier:"",status:"",tos:"",pri:"",owner:""};
 var editId=null;
 
-function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)||"null"); if(r&&r.length){ SOURCES=r; return; } }catch(e){} SOURCES=SEED.map((s,i)=>Object.assign({id:"s"+i},s)); }
+function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)||"null"); if(r&&r.length){ SOURCES=r.map(s=>Object.assign({owner:"Hoodie"},s)); return; } }catch(e){} SOURCES=SEED.map((s,i)=>Object.assign({id:"s"+i,owner:"Hoodie"},s)); }
 function save(){ try{ localStorage.setItem(KEY,JSON.stringify(SOURCES)); }catch(e){} }
 
 function passes(s){
@@ -183,7 +198,8 @@ function passes(s){
   if(STATE.status&&s.status!==STATE.status)return false;
   if(STATE.tos&&s.tos!==STATE.tos)return false;
   if(STATE.pri&&s.pri!==STATE.pri)return false;
-  if(STATE.q){ const q=STATE.q.toLowerCase(); if(!(s.nm+" "+s.foot+" "+s.plat+" "+(s.notes||"")).toLowerCase().includes(q))return false; }
+  if(STATE.owner&&(s.owner||"Hoodie")!==STATE.owner)return false;
+  if(STATE.q){ const q=STATE.q.toLowerCase(); if(!(s.nm+" "+s.foot+" "+s.plat+" "+(s.owner||"")+" "+(s.notes||"")).toLowerCase().includes(q))return false; }
   return true;
 }
 function render(){
@@ -210,6 +226,7 @@ function cardHTML(s){
     +'<div class="meta"><b>'+esc(s.foot||"—")+'</b> · '+esc(s.plat||"—")+'</div>'
     +'<div class="tags">'+flds
       +'<span class="pill gran">'+esc(s.gran)+'</span>'
+      +((s.owner&&s.owner!=="Hoodie"&&s.owner!=="—")?'<span class="pill own" title="Who runs this pull">'+esc(s.owner)+'</span>':'')
       +'<span class="pill tos-'+s.tos.toLowerCase()+'">'+esc(s.tos)+'</span>'
       +'<span class="tag">'+esc(s.prot)+' protection</span>'
       +(s.notes?'<span class="tag" title="'+esc(s.notes)+'">ⓘ notes</span>':'')
@@ -223,9 +240,10 @@ function cardHTML(s){
 function renderChips(){
   const c=k=>SOURCES.filter(s=>s.status===k).length;
   const tos=k=>SOURCES.filter(s=>s.tos===k).length;
+  const vendor=SOURCES.filter(s=>(s.owner||"").indexOf("Grepsr")>=0).length;
   $("chips").innerHTML=
     chip(SOURCES.length,"sources")+chip(c("Live"),"live")+chip(c("Ready"),"ready")+chip(c("Planned"),"planned")
-    +chip(tos("Clean"),"clean")+chip(tos("Hostile"),"hostile");
+    +chip(vendor,"vendor feed")+chip(tos("Clean"),"clean")+chip(tos("Hostile"),"hostile");
 }
 function chip(n,l){return '<div class="chip"><b>'+n+'</b><span>'+l+'</span></div>';}
 
@@ -240,6 +258,7 @@ function openModal(id){
   $("mTitle").textContent=s?"Edit source":"New source";
   $("mName").value=s?s.nm:""; $("mFoot").value=s?s.foot:""; $("mPlat").value=s?s.plat:""; $("mNotes").value=s?s.notes:"";
   $("mTier").value=s?s.tier:TIERS[2]; $("mGran").value=s?s.gran:"Store"; $("mProt").value=s?s.prot:"Medium";
+  $("mOwner").value=s?(s.owner||"Hoodie"):"Hoodie";
   $("mTos").value=s?s.tos:"Gray"; $("mPri").value=s?s.pri:"P2"; $("mStatus").value=s?s.status:"Planned";
   fillFieldChecks(s?s.fields:["Price"]);
   $("mDel").hidden=!s;
@@ -250,7 +269,7 @@ function saveModal(){
   const nm=$("mName").value.trim(); if(!nm){ $("mName").focus(); return; }
   const fields=[...$("mFields").querySelectorAll("label.on")].map(l=>l.dataset.f);
   const data={nm,foot:$("mFoot").value.trim(),plat:$("mPlat").value.trim(),notes:$("mNotes").value.trim(),
-    tier:$("mTier").value,gran:$("mGran").value,prot:$("mProt").value,tos:$("mTos").value,pri:$("mPri").value,status:$("mStatus").value,fields};
+    tier:$("mTier").value,gran:$("mGran").value,prot:$("mProt").value,tos:$("mTos").value,pri:$("mPri").value,status:$("mStatus").value,owner:$("mOwner").value,fields};
   if(editId){ const s=SOURCES.find(x=>x.id===editId); Object.assign(s,data); }
   else { data.id="s"+Date.now().toString(36); SOURCES.push(data); }
   save(); closeModal(); render();
@@ -258,8 +277,8 @@ function saveModal(){
 function delSource(){ if(!editId)return; if(!confirm("Delete this source?"))return; SOURCES=SOURCES.filter(x=>x.id!==editId); save(); closeModal(); render(); }
 
 function exportCSV(){
-  const cols=["nm","tier","foot","fields","gran","plat","prot","tos","pri","status","notes"];
-  const head=["Source","Tier","Footprint","Fields","Granularity","Platform","Protection","ToS","Priority","Status","Notes"];
+  const cols=["nm","tier","foot","fields","gran","owner","plat","prot","tos","pri","status","notes"];
+  const head=["Source","Tier","Footprint","Fields","Granularity","Pulled by","Platform","Protection","ToS","Priority","Status","Notes"];
   const rows=SOURCES.map(s=>cols.map(c=>{ let v=c==="fields"?(s.fields||[]).join("; "):(s[c]||""); v=String(v).replace(/"/g,'""'); return '"'+v+'"'; }).join(","));
   const csv=head.join(",")+"\n"+rows.join("\n");
   const blob=new Blob([csv],{type:"text/csv"}); const a=document.createElement("a");
@@ -270,11 +289,13 @@ function exportCSV(){
 function setup(){
   $("fTier").innerHTML='<option value="">All tiers</option>'+TIERS.map(t=>'<option>'+t+'</option>').join('');
   $("mTier").innerHTML=TIERS.map(t=>'<option>'+t+'</option>').join('');
+  $("mOwner").innerHTML=OWNERS.map(o=>'<option>'+o+'</option>').join('');
   $("q").addEventListener("input",e=>{STATE.q=e.target.value;render();});
   $("fTier").onchange=e=>{STATE.tier=e.target.value;render();};
   $("fStatus").onchange=e=>{STATE.status=e.target.value;render();};
   $("fTos").onchange=e=>{STATE.tos=e.target.value;render();};
   $("fPri").onchange=e=>{STATE.pri=e.target.value;render();};
+  $("fOwner").onchange=e=>{STATE.owner=e.target.value;render();};
   $("addBtn").onclick=()=>openModal(null);
   $("expBtn").onclick=exportCSV;
   $("mCancel").onclick=closeModal; $("mSave").onclick=saveModal; $("mDel").onclick=delSource;

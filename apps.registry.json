@@ -84,7 +84,7 @@
       "id": "estate",
       "name": "Estate Map",
       "desc": "Data & model layer · the whole estate",
-      "group": "Data Operations",
+      "group": "Platform",
       "status": "beta",
       "file": "apps/estate-map.html",
       "mark": "EM",
