@@ -68,7 +68,7 @@ components:
   schemas:
     DimKey:
       type: string
-      enum: [category, subcategory, price_tier, brand, brand_family, portfolio, channel, subchannel, chain_status, city, market]
+      enum: [category, subcategory, price_tier, brand, brand_family, portfolio, account, channel, subchannel, chain_status, city, market]
     MeasureKey:
       type: string
       enum: [revenue, cases, pod, vol_growth, rev_growth, velocity, share, premium]
