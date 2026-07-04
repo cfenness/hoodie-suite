@@ -117,6 +117,7 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
     <div class="fg"><label>Project</label><input id="mProject" placeholder="e.g. Hemp" list="projList"><datalist id="projList"></datalist></div>
   </div>
   <div class="fg"><label>Footprint / coverage</label><input id="mFoot" placeholder="e.g. National · 285 stores"></div>
+  <div class="fg"><label>Website URL</label><input id="mUrl" placeholder="https://… (the Analyzer pulls this to scrape)"></div>
   <div class="fg"><label>Fields available</label><div class="fldcheck" id="mFields"></div></div>
   <div class="frow">
     <div class="fg"><label>Platform</label><input id="mPlat" placeholder="e.g. Algolia feed"></div>
@@ -148,6 +149,17 @@ const STATUSES=["Planned","Building","Ready","Live"]; // click-cycle set
 // The tag marks WHERE they came from — the intent is still the FULL store, not only hemp.
 const HEMP=["ABC FWS — Inventory","Spec's — Inventory","Binny's — Inventory","Total Wine & More","BevMo","Top Ten Liquors","Liquor Barn","Goody Goody","Haskell's","Bottle King","Circle K","Target"];
 function seedProject(s){ return HEMP.indexOf(s.nm)>=0?"Hemp":""; }
+// Website URLs — the Source Analyzer pulls these to point a scrape at a tracked source.
+const URLS={
+ "TTB — COLA Labels":"https://ttbonline.gov/colasonline/publicSearchColasBasic.do",
+ "ABC FWS — Inventory":"https://abcfws.com","Spec's — Inventory":"https://specsonline.com","Binny's — Inventory":"https://www.binnys.com",
+ "Total Wine & More":"https://www.totalwine.com","BevMo":"https://www.bevmo.com","Top Ten Liquors":"https://toptenliquors.com",
+ "Liquor Barn":"https://www.liquorbarn.com","Goody Goody":"https://goodygoody.com","Haskell's":"https://www.haskells.com","Bottle King":"https://www.bottleking.com",
+ "Circle K":"https://www.circlek.com","Target":"https://www.target.com","Kroger (+ banners)":"https://www.kroger.com","Publix":"https://www.publix.com",
+ "H-E-B":"https://www.heb.com","Walmart":"https://www.walmart.com","Costco":"https://www.costco.com","Instacart — Store-level":"https://www.instacart.com",
+ "Uber Eats":"https://www.ubereats.com","Vivino / Wine-Searcher":"https://www.vivino.com","PA Fine Wine & Good Spirits":"https://www.finewineandgoodspirits.com"
+};
+function seedUrl(s){ return URLS[s.nm]||""; }
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const slug=s=>s.replace(/[^A-Za-z]/g,"").slice(0,2).toUpperCase();
@@ -197,7 +209,7 @@ var SOURCES=[];
 var STATE={q:"",tier:"",status:"",tos:"",pri:"",owner:"",project:""};
 var editId=null;
 
-function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)||"null"); if(r&&r.length){ SOURCES=r.map(s=>Object.assign({owner:"Hoodie",project:seedProject(s)},s)); return; } }catch(e){} SOURCES=SEED.map((s,i)=>Object.assign({id:"s"+i,owner:"Hoodie",project:seedProject(s)},s)); }
+function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)||"null"); if(r&&r.length){ SOURCES=r.map(s=>Object.assign({owner:"Hoodie",project:seedProject(s),url:seedUrl(s)},s)); return; } }catch(e){} SOURCES=SEED.map((s,i)=>Object.assign({id:"s"+i,owner:"Hoodie",project:seedProject(s),url:seedUrl(s)},s)); }
 function save(){ try{ localStorage.setItem(KEY,JSON.stringify(SOURCES)); }catch(e){} }
 
 function passes(s){
@@ -231,7 +243,7 @@ function cardHTML(s){
   return '<div class="card">'
     +'<div class="ic">'+esc(slug(s.nm))+'</div>'
     +'<div class="mid"><div class="nm">'+esc(s.nm)+'</div>'
-    +'<div class="meta"><b>'+esc(s.foot||"—")+'</b> · '+esc(s.plat||"—")+'</div>'
+    +'<div class="meta"><b>'+esc(s.foot||"—")+'</b> · '+esc(s.plat||"—")+(s.url?(' · <a href="'+esc(s.url)+'" target="_blank" rel="noopener" style="color:var(--purple-d);text-decoration:none">site ↗</a>'):'')+'</div>'
     +'<div class="tags">'+flds
       +'<span class="pill gran">'+esc(s.gran)+'</span>'
       +((s.owner&&s.owner!=="Hoodie"&&s.owner!=="—")?'<span class="pill own" title="Who runs this pull">'+esc(s.owner)+'</span>':'')
@@ -271,7 +283,7 @@ function fillFieldChecks(sel){ $("mFields").innerHTML=FIELDS.map(f=>'<label data
 function openModal(id){
   editId=id||null; const s=id?SOURCES.find(x=>x.id===id):null;
   $("mTitle").textContent=s?"Edit source":"New source";
-  $("mName").value=s?s.nm:""; $("mFoot").value=s?s.foot:""; $("mPlat").value=s?s.plat:""; $("mNotes").value=s?s.notes:"";
+  $("mName").value=s?s.nm:""; $("mFoot").value=s?s.foot:""; $("mPlat").value=s?s.plat:""; $("mNotes").value=s?s.notes:""; $("mUrl").value=s?(s.url||""):"";
   $("mTier").value=s?s.tier:TIERS[2]; $("mGran").value=s?s.gran:"Store"; $("mProt").value=s?s.prot:"Medium";
   $("mOwner").value=s?(s.owner||"Hoodie"):"Hoodie";
   $("mProject").value=s?(s.project||""):"";
@@ -284,7 +296,7 @@ function closeModal(){ $("ov").hidden=true; editId=null; }
 function saveModal(){
   const nm=$("mName").value.trim(); if(!nm){ $("mName").focus(); return; }
   const fields=[...$("mFields").querySelectorAll("label.on")].map(l=>l.dataset.f);
-  const data={nm,foot:$("mFoot").value.trim(),plat:$("mPlat").value.trim(),notes:$("mNotes").value.trim(),
+  const data={nm,foot:$("mFoot").value.trim(),plat:$("mPlat").value.trim(),notes:$("mNotes").value.trim(),url:$("mUrl").value.trim(),
     tier:$("mTier").value,gran:$("mGran").value,prot:$("mProt").value,tos:$("mTos").value,pri:$("mPri").value,status:$("mStatus").value,owner:$("mOwner").value,project:$("mProject").value.trim(),fields};
   if(editId){ const s=SOURCES.find(x=>x.id===editId); Object.assign(s,data); }
   else { data.id="s"+Date.now().toString(36); SOURCES.push(data); }
@@ -293,8 +305,8 @@ function saveModal(){
 function delSource(){ if(!editId)return; if(!confirm("Delete this source?"))return; SOURCES=SOURCES.filter(x=>x.id!==editId); save(); closeModal(); render(); }
 
 function exportCSV(){
-  const cols=["nm","tier","foot","fields","gran","owner","plat","prot","tos","pri","status","notes"];
-  const head=["Source","Tier","Footprint","Fields","Granularity","Pulled by","Platform","Protection","ToS","Priority","Status","Notes"];
+  const cols=["nm","tier","foot","url","fields","gran","owner","plat","prot","tos","pri","status","notes"];
+  const head=["Source","Tier","Footprint","URL","Fields","Granularity","Pulled by","Platform","Protection","ToS","Priority","Status","Notes"];
   const rows=SOURCES.map(s=>cols.map(c=>{ let v=c==="fields"?(s.fields||[]).join("; "):(s[c]||""); v=String(v).replace(/"/g,'""'); return '"'+v+'"'; }).join(","));
   const csv=head.join(",")+"\n"+rows.join("\n");
   const blob=new Blob([csv],{type:"text/csv"}); const a=document.createElement("a");
@@ -323,5 +335,5 @@ function setup(){
   $("mCancel").onclick=closeModal; $("mSave").onclick=saveModal; $("mDel").onclick=delSource;
   $("ov").addEventListener("click",e=>{ if(e.target.id==="ov") closeModal(); });
 }
-load(); setup(); render();
+load(); save(); setup(); render();  // persist the owner/project/url backfill so the Analyzer (same-origin) can read URLs
 </script></body></html>

@@ -28,6 +28,12 @@ The launcher and host. Two things matter:
   Optionally add a glyph to the `LOGOS` map keyed by the same `id`.
 - `status` is one of `live | beta | internal` (drives styling/pills). `group` must be
   one of the `GROUPS` list; groups with no apps are hidden automatically.
+- **Composite surfaces:** an app can host other apps as tabs. `apps/sources.html`
+  is the reference — a shared tab bar iframing `source-analyzer.html` (Analyze) and
+  `pulls-tracker.html` (Catalog), each kept intact. Cross-tab actions go over
+  `postMessage`; shared state (e.g. tracked-source URLs) rides same-origin
+  `localStorage`. Those two apps are surfaced only through `sources.html`, not as
+  their own `APPS` tiles.
 
 ### The spine (`spine/spine.js`)
 The shared backbone every app reads instead of re-solving. Read `SPINE.md` for the

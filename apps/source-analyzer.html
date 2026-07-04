@@ -84,6 +84,10 @@
     <button class="btn brand" id="go">Analyze</button>
     <input id="goal" class="goal" type="text" placeholder="Optional — what data are you after? (e.g. product name, price, store availability)">
   </div>
+  <div class="fromrow" id="fromrow" style="display:none;align-items:center;gap:8px;margin-top:9px;font-size:12.5px;color:var(--muted,#5E6B68)">
+    <span>or pull a URL from a tracked source:</span>
+    <select id="from-tracker" style="font-family:inherit;font-size:12.5px;color:var(--ink,#243330);border:1px solid var(--hair,#D7DDDB);border-radius:8px;padding:6px 9px;background:#fff;cursor:pointer;max-width:340px"></select>
+  </div>
   <div class="hint">Bot-walled or JS-heavy pages route through Bright Data automatically when a key is set. Always check the site's robots.txt + ToS before scraping.</div>
   <div id="out"></div>
 </div>
@@ -231,6 +235,25 @@
 
   go.onclick=analyze;
   document.getElementById("url").addEventListener("keydown",function(e){ if(e.key==="Enter")analyze(); });
+
+  // Pull a URL from the Source Tracker — same-origin localStorage, no round-trip needed.
+  (function(){
+    var sel=document.getElementById("from-tracker"), row=document.getElementById("fromrow");
+    if(!sel||!row) return;
+    function populate(){
+      var srcs=[];
+      try{ srcs=(JSON.parse(localStorage.getItem("hoodie.pulls.tracker.v2")||"[]")||[]).filter(function(s){return s&&s.url&&/^https?:\/\//.test(s.url);}); }catch(e){}
+      if(!srcs.length){ row.style.display="none"; return; }
+      srcs.sort(function(a,b){ return (a.nm||"").localeCompare(b.nm||""); });
+      sel.innerHTML='<option value="">— '+srcs.length+' tracked sources —</option>'+
+        srcs.map(function(s){ return '<option value="'+esc(s.url)+'">'+esc(s.nm)+(s.foot?(' · '+esc(s.foot)):'')+'</option>'; }).join('');
+      row.style.display="flex";
+    }
+    sel.onchange=function(){ if(!sel.value) return; var u=document.getElementById("url"); u.value=sel.value; u.focus(); };
+    populate();
+    // the Catalog tab seeds localStorage on its own load — repopulate if it lands after us
+    window.addEventListener("storage", function(e){ if(!e || e.key==="hoodie.pulls.tracker.v2") populate(); });
+  })();
 })();
 </script>
 <script src="../suite-header.js" data-id="source-analyzer" data-mark="SA" data-name="Source Analyzer" data-status="beta"></script>
