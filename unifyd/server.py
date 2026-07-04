@@ -643,7 +643,7 @@ def book_summary_ep():
 # dotfiles, .env) is NEVER web-served — it mirrors the deploy.sh / deploy.yml exclude lists.
 SUITE_ROOT = os.environ.get("SUITE_ROOT", "").strip()
 _SUITE_OK_TOP = {"index.html", "apps", "spine", "suite.css", "suite-header.js",
-                 "suite-export.js", "fullread.js", "dq.js", "dq_frontier.js", "favicon.ico"}
+                 "suite-export.js", "fullread.js", "dq.js", "dq_frontier.js", "datagrid.js", "favicon.ico"}
 
 def _suite_send(relpath):
     from flask import abort

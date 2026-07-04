@@ -39,6 +39,8 @@ aws s3 sync . "s3://$S3_BUCKET" \
   --exclude "fly.toml" \
   --exclude "DEPLOY-FLY.md" \
   --exclude "ENGINEERING_HANDOFF.md" \
+  --exclude "BACKEND_DESIGN.md" \
+  --exclude "DESIGN_AUDIT.md" \
   --cache-control "public,max-age=300"
 
 if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
