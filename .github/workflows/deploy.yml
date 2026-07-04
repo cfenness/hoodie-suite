@@ -52,6 +52,8 @@ jobs:
             --exclude "fly.toml" \
             --exclude "DEPLOY-FLY.md" \
             --exclude "ENGINEERING_HANDOFF.md" \
+            --exclude "BACKEND_DESIGN.md" \
+            --exclude "DESIGN_AUDIT.md" \
             --cache-control "public,max-age=300"
 
       - name: Invalidate CloudFront cache

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product Catalog</title>
+<style>
+  :root{
+    --ink:#2B3138; --paper:#F1F3F5; --muted:#7A828B; --line:#E4E7EB; --accent:#4E79A7;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font)}
+  .page{max-width:1180px;margin:0 auto;padding:20px 22px 60px}
+  .head{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin:6px 0 4px}
+  .head h1{font-size:24px;font-weight:800;letter-spacing:-.02em;margin:0}
+  .head .sub{color:var(--muted);font-size:13.5px}
+  .head .spacer{flex:1}
+  .head .add{display:inline-flex;align-items:center;gap:7px;background:var(--accent);color:#fff;border:0;
+    border-radius:8px;padding:9px 15px;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
+  .strip{display:flex;gap:16px;flex-wrap:wrap;margin:14px 0 16px;font-size:12.5px;color:var(--muted)}
+  .strip b{color:var(--ink)}
+  .note{font-size:12px;color:var(--muted);margin-top:14px}
+  .note code{font-family:ui-monospace,Menlo,monospace;background:#E9EEF2;border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  #grid{height:auto}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);
+    color:#fff;font-size:13px;padding:10px 16px;border-radius:8px;opacity:0;transition:all .2s;z-index:100;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="head">
+    <div>
+      <h1>Product Catalog</h1>
+      <div class="sub">Own the product master data — lifecycle, completeness, channels. Backs <code style="font-family:ui-monospace,monospace">dim_product</code>.</div>
+    </div>
+    <span class="spacer"></span>
+    <button class="add" id="add">+ Add product</button>
+  </div>
+  <div class="strip" id="strip"></div>
+  <div id="grid"></div>
+  <div class="note">Built on the shared <code>HoodieGrid</code> component (<code>datagrid.js</code>) — the same
+    grid the CRM, MDM, Assortment and Pulls pages will use. Select rows for bulk actions; the <code>⋯</code> menu has per-row actions.</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="../datagrid.js"></script>
+<script>
+(function(){
+  var LIFECYCLE = {Live:"good", Staging:"warn", Planning:"info", Retired:"crit"};
+  var CATS = ["Whiskey","Tequila","Vodka","Rum","Gin","Cognac"];
+  var TIERS = ["Value","Premium","Super-Premium","Ultra"];
+  var BRANDS = ["Silver","Crown","Harbor","Ember","Vega","Odell","Marlow","Kestrel","Foxglen","Aster","Bishop","Cove"];
+  var STATES = ["Live","Live","Live","Staging","Planning","Retired"];
+
+  // deterministic sample catalog (stands in for dim_product until the real one is wired)
+  function h(s){var n=0;for(var i=0;i<s.length;i++)n=(n*31+s.charCodeAt(i))>>>0;return n;}
+  var rows=[];
+  for(var i=1;i<=22;i++){
+    var cat=CATS[h("c"+i)%CATS.length], brand=BRANDS[h("b"+i)%BRANDS.length], tier=TIERS[h("t"+i)%TIERS.length];
+    var status=STATES[h("s"+i)%STATES.length];
+    var complete = status==="Live"?85+h("k"+i)%15 : status==="Staging"?55+h("k"+i)%30 : status==="Planning"?20+h("k"+i)%40 : 100;
+    rows.push({
+      id:"P"+String(i).padStart(3,"0"),
+      name:brand+" "+cat+" "+[750,1000,1750,375][h("z"+i)%4]+"ml",
+      brand:brand, category:cat, tier:tier, status:status,
+      completeness:complete,
+      velocity:(2+ h("v"+i)%180/10).toFixed(1),
+      revenue:Math.round(40000+ h("r"+i)%960000),
+      tags:[cat, tier].concat(status==="Planning"?["new"]:[])
+    });
+  }
+
+  function toast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
+    clearTimeout(t._x);t._x=setTimeout(function(){t.classList.remove("show");},1900);}
+
+  var strip=document.getElementById("strip");
+  function stat(){
+    var live=rows.filter(function(r){return r.status==="Live";}).length;
+    var incomplete=rows.filter(function(r){return r.completeness<80;}).length;
+    strip.innerHTML="<span><b>"+rows.length+"</b> SKUs</span><span><b>"+live+"</b> live</span>"+
+      "<span><b>"+incomplete+"</b> below 80% complete</span><span><b>"+CATS.length+"</b> categories</span>";
+  }
+  stat();
+
+  var grid = HoodieGrid.mount(document.getElementById("grid"), {
+    idKey:"id",
+    rows: rows,
+    selectable:true, search:true, columnChooser:true,
+    statusTones: LIFECYCLE,
+    emptyText:"No products match. Adjust the search or add a product.",
+    columns:[
+      {key:"name", label:"Product", type:"text", sortable:true},
+      {key:"brand", label:"Brand", type:"text", sortable:true},
+      {key:"category", label:"Category", type:"text", sortable:true},
+      {key:"tier", label:"Price tier", type:"text"},
+      {key:"status", label:"Lifecycle", type:"status"},
+      {key:"completeness", label:"Complete", type:"completeness", sortable:true},
+      {key:"velocity", label:"Velocity", type:"num", format:"dec", sortable:true},
+      {key:"revenue", label:"Revenue", type:"num", format:"usd", sortable:true},
+      {key:"tags", label:"Tags", type:"tags"},
+    ],
+    rowActions:[
+      {id:"edit", label:"Edit"},
+      {id:"clone", label:"Clone"},
+      {id:"live", label:"Set Live"},
+      {id:"retire", label:"Retire", danger:true},
+    ],
+    bulkActions:[
+      {id:"publish", label:"Publish to channels"},
+      {id:"export", label:"Export CSV"},
+      {id:"status", label:"Set status"},
+      {id:"delete", label:"Delete", danger:true},
+    ],
+    onRowAction:function(id, row){
+      if(id==="clone"){ var c=Object.assign({},row); c.id="P"+String(rows.length+1).padStart(3,"0");
+        c.name=row.name+" (copy)"; c.status="Planning"; c.completeness=25; rows.push(c); grid.setRows(rows); stat(); toast("Cloned "+row.name); return; }
+      if(id==="live"){ row.status="Live"; row.completeness=Math.max(row.completeness,85); grid.setRows(rows); stat(); toast(row.name+" → Live"); return; }
+      if(id==="retire"){ row.status="Retired"; grid.setRows(rows); stat(); toast(row.name+" retired"); return; }
+      toast("Edit "+row.name+" (form coming with the real Catalog)");
+    },
+    onBulkAction:function(id, picked){
+      if(id==="delete"){ var ids=picked.map(function(r){return r.id;}); rows=rows.filter(function(r){return ids.indexOf(r.id)<0;});
+        grid.setRows(rows); grid.clearSelection(); stat(); toast("Deleted "+picked.length+" product"+(picked.length!==1?"s":"")); return; }
+      toast(({publish:"Published",export:"Exported",status:"Status set on"})[id]+" "+picked.length+" product"+(picked.length!==1?"s":""));
+    },
+  });
+
+  document.getElementById("add").onclick=function(){ toast("Add product form arrives with the real Catalog"); };
+})();
+</script>
+<script src="../suite-header.js" data-id="catalog" data-mark="PC" data-name="Product Catalog" data-status="beta"></script>
+</body>
+</html>
