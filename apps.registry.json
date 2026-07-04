@@ -1,0 +1,204 @@
+{
+  "apps": [
+    {
+      "id": "dashboard",
+      "name": "Hoodie Intelligence",
+      "desc": "Market intelligence & QBR briefs",
+      "group": "Product",
+      "status": "live",
+      "file": "apps/dashboard.html",
+      "mark": "HI",
+      "parent": null
+    },
+    {
+      "id": "planogram",
+      "name": "Planogram",
+      "desc": "Shelf rep-count vs market benchmark · voids & over-space",
+      "group": "Commercial",
+      "status": "beta",
+      "file": "apps/planogram-repcount.html",
+      "mark": "PG",
+      "parent": "crm"
+    },
+    {
+      "id": "prism",
+      "name": "Prism",
+      "desc": "Mobile · every cut of your book + the pulse feed (installable)",
+      "group": "Product",
+      "status": "beta",
+      "file": "apps/prism.html",
+      "mark": "PM",
+      "parent": null
+    },
+    {
+      "id": "catalog",
+      "name": "Product Catalog",
+      "desc": "Product master data · lifecycle, completeness, channels (shared data-grid)",
+      "group": "Product",
+      "status": "beta",
+      "file": "apps/catalog.html",
+      "mark": "PC",
+      "parent": null
+    },
+    {
+      "id": "crm",
+      "name": "Hoodie Relations",
+      "desc": "Industry-associations CRM",
+      "group": "Commercial",
+      "status": "beta",
+      "file": "apps/crm.html",
+      "mark": "HR",
+      "parent": null
+    },
+    {
+      "id": "territory",
+      "name": "Territory Builder",
+      "desc": "Named account groups · powers target-vs-competition comparisons",
+      "group": "Commercial",
+      "status": "beta",
+      "file": "apps/territory.html",
+      "mark": "TB",
+      "parent": null
+    },
+    {
+      "id": "presenter",
+      "name": "Presenter",
+      "desc": "Speaker's workbench · run a demo",
+      "group": "Presentation",
+      "status": "beta",
+      "file": "apps/presenter.html",
+      "mark": "PR",
+      "parent": null
+    },
+    {
+      "id": "estate",
+      "name": "Estate Map",
+      "desc": "Data & model layer · the whole estate",
+      "group": "Data Operations",
+      "status": "beta",
+      "file": "apps/estate-map.html",
+      "mark": "EM",
+      "parent": null
+    },
+    {
+      "id": "ttb",
+      "name": "Hoodie Ingestion",
+      "desc": "COLA label pipeline · Unifyd engine",
+      "group": "Data Operations",
+      "status": "beta",
+      "file": "apps/ttb-ingestion.html",
+      "mark": "HG",
+      "parent": null
+    },
+    {
+      "id": "mdm",
+      "name": "Hoodie Master",
+      "desc": "Master-data control plane · Unifyd engine (live /api · offline fallback)",
+      "group": "Data Operations",
+      "status": "beta",
+      "file": "apps/mdm.html",
+      "mark": "HM",
+      "parent": null
+    },
+    {
+      "id": "pulls",
+      "name": "Hoodie Pulls",
+      "desc": "Run & evaluate each scrape · Unifyd engine",
+      "group": "Data Operations",
+      "status": "beta",
+      "file": "apps/pulls.html",
+      "mark": "PL",
+      "parent": null
+    },
+    {
+      "id": "training",
+      "name": "The Bench",
+      "desc": "Training suite · tasting, catman, perceptual & representation science, and sales",
+      "group": "Learning",
+      "status": "internal",
+      "file": "apps/training-suite.html",
+      "mark": "TB",
+      "parent": null
+    },
+    {
+      "id": "sales-tutorial",
+      "name": "The Long Game",
+      "desc": "Sales · complex & consultative — the motion behind the CRM scorecard",
+      "group": "Learning",
+      "status": "internal",
+      "file": "apps/sales-tutorial.html",
+      "mark": "LG",
+      "parent": "training"
+    },
+    {
+      "id": "pulls-tracker",
+      "name": "Pulls Tracker",
+      "desc": "Scrape source tracker · yield · ToS · status",
+      "group": "Internal",
+      "status": "internal",
+      "file": "apps/pulls-tracker.html",
+      "mark": "PT",
+      "parent": null
+    },
+    {
+      "id": "roadmap",
+      "name": "Product Roadmap",
+      "desc": "What is shipping & when",
+      "group": "Internal",
+      "status": "internal",
+      "file": "apps/roadmap.html",
+      "mark": "RM",
+      "parent": null
+    },
+    {
+      "id": "kb",
+      "name": "Principles & Architecture",
+      "desc": "The thinking behind the platform",
+      "group": "Internal",
+      "status": "internal",
+      "file": "apps/principles-hub.html",
+      "mark": "PA",
+      "parent": null
+    },
+    {
+      "id": "bev-icons",
+      "name": "Beverage Icons",
+      "desc": "Original category icon set · anonymous position grid",
+      "group": "Internal",
+      "status": "internal",
+      "file": "apps/bev-icons.html",
+      "mark": "BI",
+      "parent": null
+    },
+    {
+      "id": "device-preview",
+      "name": "Device Preview",
+      "desc": "Render any app in phone/tablet frames (iOS/Android) · demo view",
+      "group": "Internal",
+      "status": "internal",
+      "file": "apps/device-preview.html",
+      "mark": "DP",
+      "parent": null
+    },
+    {
+      "id": "admin",
+      "name": "Admin Console",
+      "desc": "Usage reporting · app registry & flags · access · data-ops",
+      "group": "Internal",
+      "status": "internal",
+      "file": "apps/admin.html",
+      "mark": "AD",
+      "parent": null
+    },
+    {
+      "id": "spinedemo",
+      "name": "Spine Adapter",
+      "desc": "Reference · how apps join the spine",
+      "group": "Platform",
+      "status": "internal",
+      "file": "apps/spine-adapter.html",
+      "mark": "SP",
+      "parent": null
+    }
+  ]
+}
