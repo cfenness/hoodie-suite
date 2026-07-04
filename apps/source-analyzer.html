@@ -212,6 +212,21 @@
     }
   }
 
+  // The recipe verdict from the self-reinforcing store — the analyzer learns each run.
+  function recipeBanner(rc){
+    if(!rc) return "";
+    var reason=esc(rc.reason||""), kind, msg;
+    if(rc.run==="drift"){ kind="drifting"; msg="<b>Drift detected</b> — "+reason+(rc.healed?" · self-healed: re-analyzed the source":" · flagged (self-heal needs the LLM)"); }
+    else if(rc.run==="broken"){ kind="broken"; msg="<b>Broken</b> — "+reason+(rc.healed?" · re-analyzed":" · flagged"); }
+    else if(rc.promoted){ kind="proven"; msg="<b>Recipe proven</b> — "+esc(rc.host||"this source")+(rc.platform?(" ("+esc(rc.platform)+")"):"")+" will now run deterministically."; }
+    else if(rc.status==="proven"){ kind="proven"; msg="<b>Recipe proven</b> — "+reason; }
+    else if(rc.status==="drifting"||rc.status==="broken"){ kind="candidate"; msg="<b>Recovering</b> — clean run ("+(rc.clean_runs||0)+"/2 to re-prove). "+reason; }
+    else { kind="candidate"; msg="<b>Candidate recipe</b> — "+(rc.clean_runs||0)+"/2 clean runs to prove. "+reason; }
+    var C={proven:["#157347","#e7f3ec","✓"],candidate:["#3b5f86","#e8f0fb","◉"],
+           drifting:["#9a6b00","#fef6e3","⚠"],broken:["#b4232a","#f8e6e7","✗"]}, c=C[kind];
+    return '<div style="display:flex;gap:9px;align-items:flex-start;margin:2px 0 12px;padding:9px 12px;border-radius:9px;background:'+c[1]+';border:1px solid '+c[0]+'33;color:'+c[0]+';font-size:12.5px;line-height:1.45">'
+      +'<span style="font-size:14px;line-height:1.2">'+c[2]+'</span><span>'+msg+'</span></div>';
+  }
   function runExtract(){
     var prompt=(document.getElementById("scrape-prompt")||{}).value||"";
     if(!prompt.trim()){ toast("The prompt is empty"); return; }
@@ -227,9 +242,9 @@
         if(d.error){ eout.innerHTML='<div class="em">'+esc(d.error)+'</div>'; return; }
         var rows=d.rows||[];
         document.getElementById("ex-hint").textContent=rows.length+" rows · engine: "+esc(d.engine||"?")+(d.raw?(" · "+d.raw+" raw"):"")+(d.pages?(" · "+d.pages+"p"):"")+(d.via?(" · "+esc(d.via)):"");
-        eout.innerHTML=rows.length
+        eout.innerHTML=recipeBanner(d.recipe)+(rows.length
           ? '<div class="lab">Extracted rows</div>'+tableHTML(rows,50)+(rows.length>50?('<div class="hint" style="margin-top:6px">showing 50 of '+rows.length+'</div>'):'')
-          : '<div class="em">No rows extracted — try tightening the prompt.</div>';
+          : '<div class="em">No rows extracted — try tightening the prompt.</div>');
       }).catch(function(){ btn.disabled=false; eout.innerHTML='<div class="em">Extraction failed — is the engine live?</div>'; });
   }
 

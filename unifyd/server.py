@@ -187,6 +187,9 @@ RUNS     = load("runs.json", [])
 # pill in Hoodie Pulls). Logged here, surfaced in the CRM's Service tab, tracked to
 # resolution. Same disk-or-S3 persistence as the rest of the agent state.
 SERVICE  = load("service_reports.json", [])
+# Self-reinforcing scrape recipes — host -> proven config + validation baseline.
+# Each analyze/extract folds into this book (see recipes.py); persisted like the rest.
+RECIPES  = load("recipes.json", {})
 # Per-account planograms — shelf facings for an account (entered by hand or derived from
 # a photo in the Planogram tool). Keyed by account id; persisted so the numbers stick.
 PLANOGRAM = load("planograms.json", {})
@@ -733,16 +736,49 @@ def relations_goal_match():
 @app.post("/api/scraper/analyze")
 def scraper_analyze():
     b = request.get_json(force=True, silent=True) or {}
-    import source_analyzer
-    result = source_analyzer.analyze((b.get("url") or ""), b.get("goal"))
-    return jsonify(ok=("error" not in result), analysis=result, llm=source_analyzer.llm_enabled())
+    import source_analyzer, recipes
+    url = b.get("url") or ""
+    result = source_analyzer.analyze(url, b.get("goal"))
+    recipe = None
+    if "error" not in result:                       # stash the config as a candidate recipe
+        recipes.save_config(RECIPES, url, result, int(time.time() * 1000))
+        _save_json("recipes.json", RECIPES)
+        recipe = recipes.get(RECIPES, url)
+    return jsonify(ok=("error" not in result), analysis=result, llm=source_analyzer.llm_enabled(),
+                   recipe=({"host": recipe["host"], "platform": recipe.get("platform"),
+                            "status": recipe["status"]} if recipe else None))
 
 @app.post("/api/scraper/extract")
 def scraper_extract():
     b = request.get_json(force=True, silent=True) or {}
-    import source_analyzer
-    result = source_analyzer.extract((b.get("url") or ""), (b.get("prompt") or ""), b.get("pages", 1), b.get("limit", 3000))
-    return jsonify(ok=("error" not in result), **result)
+    import source_analyzer, recipes
+    url = b.get("url") or ""
+    result = source_analyzer.extract(url, (b.get("prompt") or ""), b.get("pages", 1), b.get("limit", 3000))
+    # Fold the run into the recipe book: validate vs baseline, promote/demote.
+    _, verdict = recipes.record_run(RECIPES, url, result, int(time.time() * 1000))
+    # Self-heal: on drift/broken, re-analyze and write the fresh config back into the recipe.
+    if verdict.get("needs_heal") and source_analyzer.llm_enabled():
+        try:
+            fresh = source_analyzer.analyze(url)
+            if "error" not in fresh:
+                recipes.apply_heal(RECIPES, url, fresh, int(time.time() * 1000))
+                verdict["healed"] = True
+        except Exception as e:
+            app.logger.warning("recipe self-heal failed for %s: %s", url, e)
+    _save_json("recipes.json", RECIPES)
+    return jsonify(ok=("error" not in result), recipe=verdict, **result)
+
+@app.get("/api/recipes")
+def recipes_list():
+    import recipes
+    items = sorted(RECIPES.values(), key=lambda r: (r.get("status") != "proven", r.get("host", "")))
+    return jsonify(recipes=items, stats=recipes.stats(RECIPES))
+
+@app.get("/api/scraper/recipe")
+def scraper_recipe():
+    import recipes
+    rec = recipes.get(RECIPES, request.args.get("url", ""))
+    return jsonify(recipe=rec)
 
 @app.get("/api/hierarchy")
 def hierarchy():
