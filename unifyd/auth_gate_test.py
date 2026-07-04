@@ -56,6 +56,36 @@ passed += expect_reject("not-allowlisted", claims(email="stranger@gmail.com"))
 passed += expect_reject("no-email", claims(email=""))
 passed += test_jwt_decode()
 
-TOTAL = 9
+# ---- mobile bearer tokens ----
+def ok(name, cond):
+    global passed
+    print(("ok   " if cond else "FAIL ") + name + ("" if cond else " (expected pass)"))
+    passed += 1 if cond else 0
+
+import os
+os.environ["SESSION_SECRET"] = "test-session-secret-0123456789abcdef"
+os.environ["ALLOWED_EMAILS"] = "chris.fennessey1@gmail.com"
+
+_tok = auth_gate.mint_mobile_token("chris.fennessey1@gmail.com")
+ok("mint/verify round-trip", auth_gate.verify_mobile_token(_tok) == "chris.fennessey1@gmail.com")
+ok("tampered token rejected", auth_gate.verify_mobile_token(_tok + "x") is None)
+ok("non-allowlisted token rejected",
+   auth_gate.verify_mobile_token(auth_gate.mint_mobile_token("stranger@gmail.com")) is None)
+
+# gate accepts a valid Bearer on /api/*
+from flask import Flask, jsonify as _fjson
+os.environ["GOOGLE_CLIENT_ID"] = "cid"
+os.environ["GOOGLE_CLIENT_SECRET"] = "sec"
+_app = Flask(__name__)
+auth_gate.init(_app)
+@_app.get("/api/x")
+def _x():
+    return _fjson(ok=True)
+_c = _app.test_client()
+ok("gate 401 without token", _c.get("/api/x").status_code == 401)
+ok("gate 200 with valid bearer",
+   _c.get("/api/x", headers={"Authorization": "Bearer " + _tok}).status_code == 200)
+
+TOTAL = 14
 print("\n%d/%d passed" % (passed, TOTAL))
 raise SystemExit(0 if passed == TOTAL else 1)
