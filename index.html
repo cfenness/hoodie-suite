@@ -347,7 +347,8 @@
 <script>
   const APPS=[
     {id:'dashboard',name:'Hoodie Intelligence',desc:'Market intelligence & QBR briefs',group:'Commercial',status:'live',file:'apps/dashboard.html',mark:'HI'},
-    {id:'planogram',name:'Planogram',desc:'Shelf rep-count vs market benchmark · voids & over-space',group:'Commercial',status:'beta',file:'apps/planogram-repcount.html',mark:'PG',parent:'crm'},
+    {id:'planogram-shelf',name:'Planogram',desc:'Shelf facings laid out by family · the original standalone visual',group:'Commercial',status:'beta',file:'apps/planogram-shelf.html',mark:'PG'},
+    {id:'planogram',name:'Planogram · Rep Count',desc:'Shelf rep-count vs market benchmark · voids & over-space',group:'Commercial',status:'beta',file:'apps/planogram-repcount.html',mark:'RC',parent:'crm'},
     {id:'crm',name:'Hoodie Relations',desc:'Industry-associations CRM',group:'Commercial',status:'beta',file:'apps/crm.html',mark:'HR'},
     {id:'catalog',name:'Product Catalog',desc:'Product master data · lifecycle, completeness, channels (shared data-grid)',group:'Commercial',status:'beta',file:'apps/catalog.html',mark:'PC'},
     {id:'territory',name:'Territory Builder',desc:'Named account groups · powers target-vs-competition comparisons',group:'Commercial',status:'beta',file:'apps/territory.html',mark:'TB'},
@@ -378,6 +379,7 @@
     dashboard:S+'<path d="M12 5 L18.5 17 L5.5 17 Z"/><path d="M2 12 H8.7"/><path d="M15 13 L21 10 M15 13 L21.5 13 M15 13 L21 16"/></svg>',
     // Planogram — shelves with facings
     planogram:S+'<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 12 H21"/><path d="M6 12 V7 M9 12 V7 M12 12 V7 M15 20 V15 M18 20 V15"/></svg>',
+    'planogram-shelf':S+'<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 12 H21"/><path d="M6 12 V7 M9 12 V7 M12 12 V7 M15 20 V15 M18 20 V15"/></svg>',
     // Prism (mobile) — a prism splitting a beam into a spectrum
     prism:S+'<path d="M12 5 L18.5 17 L5.5 17 Z"/><path d="M2 12 H8.7"/><path d="M15 13 L21 10 M15 13 L21.5 13 M15 13 L21 16"/></svg>',
     // Product Catalog — a grid of records
