@@ -42,6 +42,10 @@
   .cfg{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;font-size:12.5px}
   .cfg .k{color:var(--ink-soft,#5E6B68)} .cfg code{font-family:var(--mono);background:var(--panel,#EAEEED);border-radius:4px;padding:1px 6px;font-size:11.5px}
   .em{padding:26px;text-align:center;color:var(--ink-soft,#5E6B68);font-family:var(--mono);font-size:12.5px}
+  .callout{display:flex;gap:10px;align-items:flex-start;margin-top:12px;padding:11px 13px;border-radius:10px;background:#FBEED0;border:1px solid #E9CE8A}
+  .callout .ci{flex:0 0 auto;font-size:15px;line-height:1.3}
+  .callout .ct{font-size:12.5px;line-height:1.45;color:#6e4d12}
+  .callout .ct b{color:#5a3f0e}
   textarea.prompt{width:100%;min-height:110px;border:1px solid var(--hair,#D7DDDB);border-radius:9px;padding:11px 13px;font-family:var(--mono);font-size:12.5px;line-height:1.5;background:var(--panel,#EAEEED);color:var(--ink,#243330);resize:vertical}
   textarea.prompt:focus{outline:none;border-color:var(--amber,#2C8C7C);background:#fff}
   /* the extraction prompt — a clean white code-editor block (developer vibe, light) */
@@ -135,6 +139,7 @@
         +'<span class="pill '+(d.llm?'tea':'warn')+'">'+(d.llm?('confidence: '+esc(a.confidence||'?')):'heuristic (no LLM key)')+'</span>'
         +(a.via?'<span class="pill">fetched: '+esc(a.via)+'</span>':'')+'</div>'
         +'<div class="s" style="color:var(--ink-soft)">'+esc(a.summary||"")+'</div>'
+        +((a.store_level&&a.store_level.scoped)?('<div class="callout"><span class="ci">🏬</span><span class="ct"><b>Per-store inventory'+(a.store_level.count?(' — ~'+esc(a.store_level.count)+' stores.'):'.')+'</b> The catalog is chain-wide (what they CARRY); in-stock at a specific store needs a per-store query. '+esc(a.store_level.how||a.store_level.note||'')+'</span></div>'):'')
         +(fields.length?('<div class="lab">Available data</div><div class="chips">'+fields.map(function(f){return '<span class="fchip"><b>'+esc(f.name)+'</b>'+(f.example?(' · '+esc(String(f.example).slice(0,40))):'')+'</span>';}).join('')+'</div>'):'')
         +'<div class="lab">Sample rows Claude read from the page</div>'+tbl
       +'</div>'
@@ -154,9 +159,9 @@
         +'<div class="lab">Extract from</div>'
         +'<div class="exrow"><input id="ex-target" class="target" value="'+esc(apiUrl||lastUrl)+'">'
           +(apiUrl?'<button class="btn" id="use-page" title="Use the page URL instead of the API">use page</button>':'')+'</div>'
-        +'<div class="exrow"><span class="hint">pages</span><input id="ex-pages" class="num-in" type="number" min="1" max="25" value="'+(apiUrl||a.pagination?'3':'1')+'">'
+        +'<div class="exrow"><span class="hint">pages</span><input id="ex-pages" class="num-in" type="number" min="1" max="400" value="'+(apiUrl||a.pagination?'3':'1')+'">'
           +'<span class="hint" style="margin-left:10px">max items</span><input id="ex-limit" class="num-in" type="number" min="1" max="100000" value="100" title="cap the number of items pulled">'
-          +'<span class="hint" style="margin-left:6px">— caps the run so you don’t pull the whole catalog while testing</span></div>'
+          +'<span class="hint" style="margin-left:6px">— caps the run so you don’t pull the whole catalog while testing (raise both to pull the full catalog)</span></div>'
         +(apiUrl?'<div class="hint" style="margin:2px 0 12px">This source is client-rendered — extraction runs against its <b>data API</b> so you can pull the whole catalog (up to your cap), not one page.</div>':'<div style="height:8px"></div>')
         +'<div class="promptbox">'
           +'<div class="pb-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.7L18.5 9l-4.6 1.3L12 15l-1.9-4.7L5.5 9l4.6-1.3z"/><path d="M18 15l.8 2 .8-2 .8-.8-.8-.8-.8-2-.8 2-.8.8z" fill="currentColor" stroke="none"/></svg>'

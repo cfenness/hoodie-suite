@@ -71,6 +71,19 @@ def _config_hints(html):
                 break
     return out
 
+_STORE_SIGNALS = ("available_variant_values", "select your store", "select a store", "store-selector",
+                  "store_selector", "choose your store", "in stock at", "store_id", "storeid",
+                  "pickup at", "your local store", "find a store", "change store", "shop your store")
+
+def _store_hint(html):
+    low = (html or "").lower()
+    if not any(s in low for s in _STORE_SIGNALS):
+        return None
+    m = re.search(r"(\d{2,4})\s*(?:stores|locations)", low)
+    return {"scoped": True, "count": (int(m.group(1)) if m else None),
+            "how": "Per-store availability detected (store picker / store options). Enumerate the stores, then query stock for each.",
+            "note": "The catalog lists what the chain CARRIES; in-stock-at-a-store needs a per-store query."}
+
 def _clean(html):
     html = html or ""
     hints = _config_hints(html)
@@ -198,7 +211,9 @@ def analyze(url, goal=None):
     if not html:
         return {"error": "couldn't fetch the page (blocked or unreachable). A Bright Data key handles bot-walled sites.", "via": via}
     if not llm_enabled():
-        out = _heuristic(html); out["via"] = via; return out
+        out = _heuristic(html); out["via"] = via
+        out.setdefault("store_level", _store_hint(html))
+        return out
     try:
         import anthropic
         client = anthropic.Anthropic()
@@ -211,6 +226,7 @@ def analyze(url, goal=None):
                   '"item_fields":[{"name":string,"selector":string}],'
                   '"pagination":string|null,"robots_note":string,"confidence":"high"|"medium"|"low",'
                   '"data_api":{"url":string,"method":"GET"|"POST","params":object,"pagination":string,"note":string}|null,'
+                  '"store_level":{"scoped":boolean,"count":number|null,"how":string,"note":string}|null,'
                   '"scrape_prompt":string}. '
                   "sample_rows must be real values read from THIS html. Keep it to the primary dataset on the page. "
                   "CRITICAL: if the page's data is loaded client-side from a JSON/XHR endpoint rather than being in the "
@@ -225,6 +241,13 @@ def analyze(url, goal=None):
                   "siteId from RESOLVED CONFIG.) NEVER return placeholder tokens like <siteId>, {key} or YOUR_SITE_ID — "
                   "if you truly cannot find the real value, set data_api to null. "
                   "Set data_api to null only if the rows are genuinely in the HTML. "
+                  "STORE-LEVEL: decide whether product AVAILABILITY / INVENTORY is per physical store — signals: a store "
+                  "picker ('select your store', a store/location dropdown), a store/location query param, BigCommerce store "
+                  "options / available_variant_values, per-location stock, 'in stock at N stores'. If so, set store_level "
+                  "with scoped=true, the store count if visible, HOW to enumerate the stores (endpoint / param / list), and "
+                  "HOW to get inventory for one store — the catalog/list usually shows what the chain CARRIES chain-wide, "
+                  "while in-stock-at-a-store needs a per-store query. Set store_level.scoped=false (or null) if stock is "
+                  "single/chain-wide. "
                   "scrape_prompt is a REUSABLE instruction to extract this source's rows on every future run: if data_api "
                   "is set it must say to fetch that API (and paginate it) and normalize its JSON to the fields; otherwise "
                   "to read the page HTML. Return a JSON array of objects; make it source-specific, not tied to this snapshot.")
@@ -266,7 +289,7 @@ def extract(url, prompt, pages=1, limit=3000):
     if not prompt:
         return {"error": "no scrape prompt — analyze the source first"}
     try:
-        pages = max(1, min(int(pages or 1), 25))
+        pages = max(1, min(int(pages or 1), 400))   # high ceiling for full-catalog runs; the item cap + empty page still stop it
     except Exception:
         pages = 1
     try:
