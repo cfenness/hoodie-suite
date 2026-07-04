@@ -72,6 +72,9 @@ tbody tr:hover{background:var(--hover);cursor:pointer}
 .recicon{width:24px;height:24px;border-radius:var(--radius);display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700;flex:none}
 .lnk{font-weight:600}
 .chk{width:14px;height:14px;accent-color:var(--brand)}
+.pl-in{width:100%;border:1px solid var(--line2);border-radius:5px;padding:6px 8px;font:inherit;font-size:13px;background:#fff}
+.pl-in:focus{outline:none;border-color:var(--brand)}
+.pl-in.num{text-align:right}
 /* badges */
 .badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;border-radius:11px;padding:2px 9px;background:#ecebea;color:#444;white-space:nowrap}
 .badge .dot{width:7px;height:7px;border-radius:50%}
@@ -251,6 +254,7 @@ tbody tr:hover{background:var(--hover);cursor:pointer}
   <button class="tab" data-tab="pipeline">Pipeline</button>
   <button class="tab" data-tab="contacts">People</button>
   <button class="tab" data-tab="service">Service <span class="tabct" id="svc-tabct"></span></button>
+  <button class="tab" data-tab="planogram">Planogram</button>
 </div>
 <div class="page" id="page"></div>
 
@@ -480,6 +484,7 @@ function render(){
   if(tab==="accounts")page.innerHTML=accountsHTML();
   else if(tab==="pipeline"){page.innerHTML=pipelineHTML();wireKanban();}
   else if(tab==="service"){page.innerHTML=serviceHTML();loadService();}
+  else if(tab==="planogram"){page.innerHTML=planogramHTML();initPlanogram();}
   else page.innerHTML=contactsHTML();
 }
 
@@ -735,6 +740,84 @@ function svcSet(id,status){
    .then(r=>r.ok?r.json():Promise.reject())
    .then(()=>{ loadService(); toast('Report → '+status); })
    .catch(()=>toast('Update failed — is the engine live?'));
+}
+
+/* ============================ PLANOGRAM (per-account, persists) ============================ */
+/* Moved into Relations: record what's on the shelf for an account, by hand or from a photo
+   in the analyzer. Facings persist against the account (/api/planogram/accounts/<id>). */
+let planoActive=null, planoRows=[], planoMeta={};
+function planogramHTML(){
+  return `<div class="card">
+    <div class="lvhead"><div class="lvicon" style="background:var(--brand)">▦</div>
+      <div class="lvtitles"><div class="k">Planogram</div><div class="v">Shelf facings by account</div></div>
+      <div class="lvactions">
+        <select class="btn" id="plano-acct" style="max-width:280px"></select>
+        <a class="btn" href="../planogram-repcount.html" target="_blank" rel="noopener">Capture from photo ↗</a>
+      </div></div>
+    <div class="lvmeta">Record what's on the shelf for an account — by hand or derived from a photo in the analyzer. Numbers persist against the account.</div>
+    <div id="plano-body" style="padding:14px"><div style="color:#a09e9c;text-align:center;padding:24px">Pick an account to record its planogram.</div></div>
+  </div>`;
+}
+function initPlanogram(){
+  const sel=document.getElementById('plano-acct');
+  sel.innerHTML='<option value="">— select an account —</option>'+DB.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
+  const pre=recordId||(DB.accounts[0]&&DB.accounts[0].id);
+  sel.onchange=()=>planoSelect(sel.value);
+  if(pre){ sel.value=pre; planoSelect(pre); }
+}
+function planoSelect(id){
+  planoActive=id;
+  const body=document.getElementById('plano-body');
+  if(!id){ body.innerHTML='<div style="color:#a09e9c;text-align:center;padding:24px">Pick an account.</div>'; return; }
+  body.innerHTML='<div style="color:#a09e9c;padding:16px">Loading…</div>';
+  fetch('/api/planogram/accounts/'+encodeURIComponent(id),{cache:'no-store'})
+    .then(r=>r.ok?r.json():Promise.reject()).then(d=>{
+      const p=(d&&d.planogram)||{};
+      planoRows=(p.rows&&p.rows.length)?p.rows.slice():[{item:'',facings:0,benchmark:0}];
+      planoMeta={updatedAt:p.updatedAt,source:p.source,notes:p.notes||''};
+      renderPlano();
+    }).catch(()=>{ body.innerHTML='<div style="color:#a09e9c;text-align:center;padding:24px">Planogram store is offline — start the engine (<code>./dev.sh</code>) or open the deployed suite.</div>'; });
+}
+function planoDelta(d){const c=d>0?'var(--q-solid)':d<0?'var(--q-unknown)':'var(--muted)';return `<span style="font-weight:700;color:${c}">${d>0?'+':''}${d}</span>`;}
+function renderPlano(){
+  const body=document.getElementById('plano-body'); const a=acct(planoActive);
+  const rows=planoRows.map((r,i)=>`<tr>
+     <td><input class="pl-in" data-i="${i}" data-k="item" value="${esc(r.item||'')}" placeholder="Brand / SKU"></td>
+     <td><input class="pl-in num" data-i="${i}" data-k="facings" type="number" min="0" value="${+r.facings||0}"></td>
+     <td><input class="pl-in num" data-i="${i}" data-k="benchmark" type="number" min="0" value="${+r.benchmark||0}"></td>
+     <td class="pl-delta" style="text-align:right">${planoDelta((+r.facings||0)-(+r.benchmark||0))}</td>
+     <td><button class="mini" title="Remove" onclick="planoDel(${i})">✕</button></td></tr>`).join('');
+  const totF=planoRows.reduce((s,r)=>s+(+r.facings||0),0), totB=planoRows.reduce((s,r)=>s+(+r.benchmark||0),0);
+  body.innerHTML=`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+      <div style="font-weight:700;font-size:15px">${esc(a?a.name:'')}</div>
+      <span class="badge">${planoRows.length} SKUs</span><span class="badge">${totF} facings</span>
+      <span class="badge">${planoDelta(totF-totB)} vs benchmark</span>
+      <span style="flex:1"></span>
+      <span id="plano-saved" style="font-size:12px;color:var(--muted)">${planoMeta.updatedAt?('saved · '+svcWhen(planoMeta.updatedAt)+(planoMeta.source==='image'?' · from photo':'')):'not saved yet'}</span>
+    </div>
+    <table><thead><tr><th>Brand / SKU</th><th style="width:110px">Our facings</th><th style="width:140px">Market benchmark</th><th style="width:70px">Δ</th><th style="width:38px"></th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button class="btn" onclick="planoAdd()">+ Add row</button>
+      <button class="btn brand" onclick="planoSave()">Save planogram</button></div>
+    <div class="sect" style="margin-top:14px"><h3>Notes</h3><textarea class="notes" id="plano-notes" placeholder="Shelf notes, reset date, void reasons…">${esc(planoMeta.notes||'')}</textarea></div>`;
+  body.querySelectorAll('.pl-in').forEach(inp=>inp.addEventListener('input',()=>{
+    const i=+inp.dataset.i,k=inp.dataset.k; planoRows[i][k]=(k==='item')?inp.value:(+inp.value||0);
+    if(k!=='item'){ const cell=inp.closest('tr').querySelector('.pl-delta'); cell.innerHTML=planoDelta((+planoRows[i].facings||0)-(+planoRows[i].benchmark||0)); }
+  }));
+}
+function planoCaptureNotes(){const n=document.getElementById('plano-notes');if(n)planoMeta.notes=n.value;}
+function planoAdd(){planoCaptureNotes();planoRows.push({item:'',facings:0,benchmark:0});renderPlano();}
+function planoDel(i){planoCaptureNotes();planoRows.splice(i,1);if(!planoRows.length)planoRows.push({item:'',facings:0,benchmark:0});renderPlano();}
+function planoSave(){
+  planoCaptureNotes(); const a=acct(planoActive);
+  const rows=planoRows.filter(r=>(r.item||'').trim()||r.facings||r.benchmark);
+  fetch('/api/planogram/accounts/'+encodeURIComponent(planoActive),{method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({accountName:a?a.name:null,rows:rows,notes:planoMeta.notes||'',source:'manual'})})
+   .then(r=>r.ok?r.json():Promise.reject()).then(d=>{ planoMeta.updatedAt=(d.planogram||{}).updatedAt; toast('Planogram saved');
+     var s=document.getElementById('plano-saved'); if(s)s.textContent='saved · just now'; })
+   .catch(()=>toast('Save failed — is the engine live?'));
 }
 
 /* ============================ MUTATORS ============================ */

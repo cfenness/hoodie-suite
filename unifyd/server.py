@@ -187,6 +187,9 @@ RUNS     = load("runs.json", [])
 # pill in Hoodie Pulls). Logged here, surfaced in the CRM's Service tab, tracked to
 # resolution. Same disk-or-S3 persistence as the rest of the agent state.
 SERVICE  = load("service_reports.json", [])
+# Per-account planograms — shelf facings for an account (entered by hand or derived from
+# a photo in the Planogram tool). Keyed by account id; persisted so the numbers stick.
+PLANOGRAM = load("planograms.json", {})
 
 # Canonical hierarchy served at /api/hierarchy. Curated copy from the state store if
 # present, else the bundled seed (unifyd/hierarchy.json). Eventually derived from the
@@ -509,6 +512,65 @@ def service_update(rid):
     rec["updatedAt"] = now
     save_service()
     return jsonify(ok=True, report=rec)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-account planograms — shelf facings that persist (Planogram tab in the CRM)
+# ─────────────────────────────────────────────────────────────────────────────
+def save_planogram():
+    name = "planograms.json"
+    if STATE_BUCKET:
+        try:
+            _s3().put_object(Bucket=STATE_BUCKET, Key=_key(name),
+                             Body=json.dumps(PLANOGRAM).encode("utf-8"),
+                             ContentType="application/json")
+        except Exception as e:
+            app.logger.warning("S3 save %s failed: %s", name, e)
+    else:
+        try:
+            json.dump(PLANOGRAM, open(os.path.join(STATE_DIR, name), "w"))
+        except Exception as e:
+            app.logger.warning("save %s failed: %s", name, e)
+
+def _plano_summary(rec):
+    rows = rec.get("rows") or []
+    ours = sum((r.get("facings") or 0) for r in rows)
+    bench = sum((r.get("benchmark") or 0) for r in rows)
+    return {"accountId": rec.get("accountId"), "accountName": rec.get("accountName"),
+            "skus": len(rows), "facings": ours, "benchmark": bench, "gap": ours - bench,
+            "source": rec.get("source") or "manual", "updatedAt": rec.get("updatedAt")}
+
+@app.get("/api/planogram/accounts")
+def planogram_list():
+    return jsonify(ok=True, planograms=[_plano_summary(r) for r in PLANOGRAM.values()])
+
+@app.get("/api/planogram/accounts/<aid>")
+def planogram_get(aid):
+    rec = PLANOGRAM.get(aid) or {"accountId": aid, "accountName": None, "rows": [],
+                                  "notes": "", "source": "manual", "updatedAt": None}
+    return jsonify(ok=True, planogram=rec)
+
+@app.put("/api/planogram/accounts/<aid>")
+def planogram_put(aid):
+    b = request.get_json(force=True, silent=True) or {}
+    now = int(time.time() * 1000)
+    rows = []
+    for r in (b.get("rows") or [])[:200]:
+        rows.append({
+            "item": (r.get("item") or "").strip()[:160],
+            "facings": max(0, int(r.get("facings") or 0)),
+            "benchmark": max(0, int(r.get("benchmark") or 0)),
+        })
+    PLANOGRAM[aid] = {
+        "accountId": aid,
+        "accountName": (b.get("accountName") or (PLANOGRAM.get(aid) or {}).get("accountName")),
+        "rows": rows,
+        "notes": (b.get("notes") or "").strip()[:2000],
+        "source": (b.get("source") or "manual").strip()[:20],
+        "updatedAt": now,
+    }
+    save_planogram()
+    return jsonify(ok=True, planogram=PLANOGRAM[aid])
 
 @app.get("/api/hierarchy")
 def hierarchy():
