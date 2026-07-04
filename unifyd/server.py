@@ -726,6 +726,17 @@ def relations_goal_match():
     match = relations.match_goal((b.get("text") or ""), b.get("accountName"))
     return jsonify(ok=True, match=match, llm=relations.llm_enabled())
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Generalized scraper — Claude reads a target URL and returns the data + how to scrape it
+# ─────────────────────────────────────────────────────────────────────────────
+@app.post("/api/scraper/analyze")
+def scraper_analyze():
+    b = request.get_json(force=True, silent=True) or {}
+    import source_analyzer
+    result = source_analyzer.analyze((b.get("url") or ""), b.get("goal"))
+    return jsonify(ok=("error" not in result), analysis=result, llm=source_analyzer.llm_enabled())
+
 @app.get("/api/hierarchy")
 def hierarchy():
     # derived from the live data when present; else the bundled/curated seed
