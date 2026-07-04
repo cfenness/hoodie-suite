@@ -57,6 +57,7 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
 .gran{background:#eef0fb;color:#4b3fae}
 .own{background:#e8f0fb;color:#2563b8}
 .own.own-hoodie{background:var(--purple-soft);color:var(--purple-d)}
+.proj{background:#eaf7ea;color:#2f7d32;border:1px solid #cfe8cf}
 .tag.noscrape{background:var(--bad-soft);color:var(--bad)}
 .iconbtn{width:28px;height:28px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer;color:var(--muted);font-size:13px;display:grid;place-items:center}
 .iconbtn:hover{border-color:var(--purple);color:var(--purple-d)}
@@ -97,6 +98,7 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
     <select class="flt" id="fTos"><option value="">All ToS</option><option>Clean</option><option>Gray</option><option>Hostile</option></select>
     <select class="flt" id="fPri"><option value="">All priority</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select>
     <select class="flt" id="fOwner"><option value="">All owners</option><option>Hoodie</option><option>Grepsr</option><option>Hoodie + Grepsr</option><option>External</option></select>
+    <select class="flt" id="fProject"><option value="">All projects</option></select>
     <span class="tb-sp"></span>
     <button class="btn solid" id="addBtn">＋ Source</button>
     <button class="btn" id="expBtn">Export CSV</button>
@@ -112,6 +114,7 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
     <div class="fg"><label>Tier</label><select id="mTier"></select></div>
     <div class="fg"><label>Granularity</label><select id="mGran"><option>Store</option><option>Zone</option><option>State</option><option>Chain</option></select></div>
     <div class="fg"><label>Pulled by</label><select id="mOwner"></select></div>
+    <div class="fg"><label>Project</label><input id="mProject" placeholder="e.g. Hemp" list="projList"><datalist id="projList"></datalist></div>
   </div>
   <div class="fg"><label>Footprint / coverage</label><input id="mFoot" placeholder="e.g. National · 285 stores"></div>
   <div class="fg"><label>Fields available</label><div class="fldcheck" id="mFields"></div></div>
@@ -141,6 +144,10 @@ const FIELDS=["Availability","Auth type","Price","Promo","Units","UPC","Ratings"
 // Who actually runs the pull. Grepsr is an external vendor delivering a daily hemp-beverage feed to S3.
 const OWNERS=["Hoodie","Grepsr","Hoodie + Grepsr","External","—"];
 const STATUSES=["Planned","Building","Ready","Live"]; // click-cycle set
+// Provenance tag: these accounts landed on the tracker via the hemp-beverage project.
+// The tag marks WHERE they came from — the intent is still the FULL store, not only hemp.
+const HEMP=["ABC FWS — Inventory","Spec's — Inventory","Binny's — Inventory","Total Wine & More","BevMo","Top Ten Liquors","Liquor Barn","Goody Goody","Haskell's","Bottle King","Circle K","Target"];
+function seedProject(s){ return HEMP.indexOf(s.nm)>=0?"Hemp":""; }
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const slug=s=>s.replace(/[^A-Za-z]/g,"").slice(0,2).toUpperCase();
@@ -187,10 +194,10 @@ const SEED=[
 ];
 
 var SOURCES=[];
-var STATE={q:"",tier:"",status:"",tos:"",pri:"",owner:""};
+var STATE={q:"",tier:"",status:"",tos:"",pri:"",owner:"",project:""};
 var editId=null;
 
-function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)||"null"); if(r&&r.length){ SOURCES=r.map(s=>Object.assign({owner:"Hoodie"},s)); return; } }catch(e){} SOURCES=SEED.map((s,i)=>Object.assign({id:"s"+i,owner:"Hoodie"},s)); }
+function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)||"null"); if(r&&r.length){ SOURCES=r.map(s=>Object.assign({owner:"Hoodie",project:seedProject(s)},s)); return; } }catch(e){} SOURCES=SEED.map((s,i)=>Object.assign({id:"s"+i,owner:"Hoodie",project:seedProject(s)},s)); }
 function save(){ try{ localStorage.setItem(KEY,JSON.stringify(SOURCES)); }catch(e){} }
 
 function passes(s){
@@ -199,7 +206,8 @@ function passes(s){
   if(STATE.tos&&s.tos!==STATE.tos)return false;
   if(STATE.pri&&s.pri!==STATE.pri)return false;
   if(STATE.owner&&(s.owner||"Hoodie")!==STATE.owner)return false;
-  if(STATE.q){ const q=STATE.q.toLowerCase(); if(!(s.nm+" "+s.foot+" "+s.plat+" "+(s.owner||"")+" "+(s.notes||"")).toLowerCase().includes(q))return false; }
+  if(STATE.project&&(s.project||"")!==STATE.project)return false;
+  if(STATE.q){ const q=STATE.q.toLowerCase(); if(!(s.nm+" "+s.foot+" "+s.plat+" "+(s.owner||"")+" "+(s.project||"")+" "+(s.notes||"")).toLowerCase().includes(q))return false; }
   return true;
 }
 function render(){
@@ -215,7 +223,7 @@ function render(){
   list.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openModal(b.dataset.edit));
   list.querySelectorAll("[data-cyc]").forEach(b=>b.onclick=()=>cycleStatus(b.dataset.cyc));
   list.querySelectorAll("[data-pri]").forEach(b=>b.onclick=()=>cyclePri(b.dataset.pri));
-  renderChips();
+  renderChips(); syncProjects();
   $("foot").textContent=SOURCES.length+" sources tracked · "+SOURCES.filter(s=>s.status==="Live").length+" live · saved to this device";
 }
 function cardHTML(s){
@@ -227,6 +235,7 @@ function cardHTML(s){
     +'<div class="tags">'+flds
       +'<span class="pill gran">'+esc(s.gran)+'</span>'
       +((s.owner&&s.owner!=="Hoodie"&&s.owner!=="—")?'<span class="pill own" title="Who runs this pull">'+esc(s.owner)+'</span>':'')
+      +(s.project?'<span class="pill proj" title="On the tracker via the '+esc(s.project)+' project — scope is the full store, not only '+esc(s.project)+'">'+esc(s.project)+'</span>':'')
       +'<span class="pill tos-'+s.tos.toLowerCase()+'">'+esc(s.tos)+'</span>'
       +'<span class="tag">'+esc(s.prot)+' protection</span>'
       +(s.notes?'<span class="tag" title="'+esc(s.notes)+'">ⓘ notes</span>':'')
@@ -246,6 +255,12 @@ function renderChips(){
     +chip(vendor,"vendor feed")+chip(tos("Clean"),"clean")+chip(tos("Hostile"),"hostile");
 }
 function chip(n,l){return '<div class="chip"><b>'+n+'</b><span>'+l+'</span></div>';}
+// keep the project filter + modal datalist in sync with whatever projects exist
+function syncProjects(){
+  const projs=[...new Set(SOURCES.map(s=>s.project).filter(Boolean))].sort();
+  const f=$("fProject"); if(f){ const cur=f.value; f.innerHTML='<option value="">All projects</option>'+projs.map(p=>'<option>'+esc(p)+'</option>').join(''); f.value=cur; }
+  const dl=$("projList"); if(dl){ dl.innerHTML=projs.map(p=>'<option value="'+esc(p)+'">').join(''); }
+}
 
 function cycleStatus(id){ const s=SOURCES.find(x=>x.id===id); if(!s)return; const i=STATUSES.indexOf(s.status); s.status=(i<0||i===STATUSES.length-1)?STATUSES[0]:STATUSES[i+1]; save(); render(); }
 function cyclePri(id){ const s=SOURCES.find(x=>x.id===id); if(!s)return; const P=["P0","P1","P2","P3"]; s.pri=P[(P.indexOf(s.pri)+1)%4]; save(); render(); }
@@ -259,6 +274,7 @@ function openModal(id){
   $("mName").value=s?s.nm:""; $("mFoot").value=s?s.foot:""; $("mPlat").value=s?s.plat:""; $("mNotes").value=s?s.notes:"";
   $("mTier").value=s?s.tier:TIERS[2]; $("mGran").value=s?s.gran:"Store"; $("mProt").value=s?s.prot:"Medium";
   $("mOwner").value=s?(s.owner||"Hoodie"):"Hoodie";
+  $("mProject").value=s?(s.project||""):"";
   $("mTos").value=s?s.tos:"Gray"; $("mPri").value=s?s.pri:"P2"; $("mStatus").value=s?s.status:"Planned";
   fillFieldChecks(s?s.fields:["Price"]);
   $("mDel").hidden=!s;
@@ -269,7 +285,7 @@ function saveModal(){
   const nm=$("mName").value.trim(); if(!nm){ $("mName").focus(); return; }
   const fields=[...$("mFields").querySelectorAll("label.on")].map(l=>l.dataset.f);
   const data={nm,foot:$("mFoot").value.trim(),plat:$("mPlat").value.trim(),notes:$("mNotes").value.trim(),
-    tier:$("mTier").value,gran:$("mGran").value,prot:$("mProt").value,tos:$("mTos").value,pri:$("mPri").value,status:$("mStatus").value,owner:$("mOwner").value,fields};
+    tier:$("mTier").value,gran:$("mGran").value,prot:$("mProt").value,tos:$("mTos").value,pri:$("mPri").value,status:$("mStatus").value,owner:$("mOwner").value,project:$("mProject").value.trim(),fields};
   if(editId){ const s=SOURCES.find(x=>x.id===editId); Object.assign(s,data); }
   else { data.id="s"+Date.now().toString(36); SOURCES.push(data); }
   save(); closeModal(); render();
@@ -296,6 +312,8 @@ function setup(){
   $("fTos").onchange=e=>{STATE.tos=e.target.value;render();};
   $("fPri").onchange=e=>{STATE.pri=e.target.value;render();};
   $("fOwner").onchange=e=>{STATE.owner=e.target.value;render();};
+  $("fProject").onchange=e=>{STATE.project=e.target.value;render();};
+  syncProjects();
   $("addBtn").onclick=()=>openModal(null);
   $("expBtn").onclick=exportCSV;
   $("mCancel").onclick=closeModal; $("mSave").onclick=saveModal; $("mDel").onclick=delSource;
