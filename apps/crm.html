@@ -473,6 +473,8 @@ function riskFlags(a){
 let tab="home", recordId=null, q="";
 function go(t){tab=t;recordId=null;document.querySelectorAll('#nav .tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));render();}
 function today(){return new Date().toISOString().slice(0,10);}
+const _MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtDate(s){ if(!s)return '—'; var p=String(s).split('-'); if(p.length<3)return s; return _MON[(+p[1]||1)-1]+' '+(+p[2])+', '+p[0]; } // 2026-07-01 → Jul 1, 2026
 function daysAgo(d){if(!d)return 0;return Math.round((Date.parse(today())-Date.parse(d))/86400000);}
 function daysUntil(d){if(!d)return null;return Math.round((Date.parse(d)-Date.parse(today()))/86400000);}
 
@@ -628,7 +630,7 @@ function recordHTML(a){
         </div>
         <!-- NEXT ACTION -->
         <div class="sect"><h3>Next move</h3>
-          ${a.nextAction&&a.nextAction.date?`<div class="na-box live"><div class="na-row"><span class="lbl">Follow up</span><span class="val">${esc(a.nextAction.date)}</span>${(()=>{const du=daysUntil(a.nextAction.date);return du<0?`<span class="chip over">Overdue ${-du}d</span>`:du===0?`<span class="chip due">Today</span>`:`<span class="chip" style="background:#eef1f3;color:#5c5c5c">in ${du}d</span>`;})()}</div>
+          ${a.nextAction&&a.nextAction.date?`<div class="na-box live"><div class="na-row"><span class="lbl">Follow up</span><span class="val">${fmtDate(a.nextAction.date)}</span>${(()=>{const du=daysUntil(a.nextAction.date);return du<0?`<span class="chip over">Overdue ${-du}d</span>`:du===0?`<span class="chip due">Today</span>`:`<span class="chip" style="background:#eef1f3;color:#5c5c5c">in ${du}d</span>`;})()}</div>
              ${a.nextAction.note?`<div style="margin-top:5px;font-size:12.5px">${esc(a.nextAction.note)}</div>`:''}
              <div class="na-row" style="margin-top:8px"><button class="mini" onclick="setFollowup('${a.id}')">Change</button><button class="mini good" onclick="clearFollowup('${a.id}')">Mark done</button></div></div>`
             :`<div class="na-box"><div class="na-row"><span class="lbl">No next move set.</span><button class="mini" onclick="setFollowup('${a.id}')">Set follow-up</button></div></div>`}
@@ -746,6 +748,16 @@ function svcSet(id,status){
 /* Moved into Relations: record what's on the shelf for an account, by hand or from a photo
    in the analyzer. Facings persist against the account (/api/planogram/accounts/<id>). */
 let planoActive=null, planoRows=[], planoMeta={};
+// realistic starter set so the tool shows how it works before real data is entered
+// [item, our facings, market benchmark] — a mix of over-space, voids, and on-target
+const PLANO_SAMPLE=[
+  ["Tito's Handmade Vodka 750ml", 8, 6],
+  ["Casamigos Blanco Tequila 750ml", 3, 5],
+  ["Aperol 750ml", 2, 3],
+  ["Josh Cellars Cabernet 750ml", 5, 5],
+  ["High Noon Variety 8pk", 0, 4],
+  ["Buffalo Trace Bourbon 750ml", 4, 3]
+];
 function planogramHTML(){
   return `<div class="card">
     <div class="lvhead"><div class="lvicon" style="background:var(--brand)">▦</div>
@@ -773,8 +785,9 @@ function planoSelect(id){
   fetch('/api/planogram/accounts/'+encodeURIComponent(id),{cache:'no-store'})
     .then(r=>r.ok?r.json():Promise.reject()).then(d=>{
       const p=(d&&d.planogram)||{};
-      planoRows=(p.rows&&p.rows.length)?p.rows.slice():[{item:'',facings:0,benchmark:0}];
-      planoMeta={updatedAt:p.updatedAt,source:p.source,notes:p.notes||''};
+      const saved=(p.rows&&p.rows.length);
+      planoRows=saved?p.rows.slice():PLANO_SAMPLE.map(function(r){return {item:r[0],facings:r[1],benchmark:r[2]};});
+      planoMeta={updatedAt:p.updatedAt,source:p.source,notes:p.notes||'',sample:!saved};
       renderPlano();
     }).catch(()=>{ body.innerHTML='<div style="color:#a09e9c;text-align:center;padding:24px">Planogram store is offline — start the engine (<code>./dev.sh</code>) or open the deployed suite.</div>'; });
 }
@@ -794,7 +807,7 @@ function renderPlano(){
       <span class="badge">${planoRows.length} SKUs</span><span class="badge">${totF} facings</span>
       <span class="badge">${planoDelta(totF-totB)} vs benchmark</span>
       <span style="flex:1"></span>
-      <span id="plano-saved" style="font-size:12px;color:var(--muted)">${planoMeta.updatedAt?('saved · '+svcWhen(planoMeta.updatedAt)+(planoMeta.source==='image'?' · from photo':'')):'not saved yet'}</span>
+      <span id="plano-saved" style="font-size:12px;color:var(--muted)">${planoMeta.updatedAt?('saved · '+svcWhen(planoMeta.updatedAt)+(planoMeta.source==='image'?' · from photo':'')):(planoMeta.sample?'sample data — edit &amp; Save to make it real':'not saved yet')}</span>
     </div>
     <table><thead><tr><th>Brand / SKU</th><th style="width:110px">Our facings</th><th style="width:140px">Market benchmark</th><th style="width:70px">Δ</th><th style="width:38px"></th></tr></thead>
       <tbody>${rows}</tbody></table>
