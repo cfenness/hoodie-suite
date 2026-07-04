@@ -39,6 +39,24 @@
   .em{padding:26px;text-align:center;color:var(--ink-soft,#5E6B68);font-family:var(--mono);font-size:12.5px}
   textarea.prompt{width:100%;min-height:110px;border:1px solid var(--hair,#D7DDDB);border-radius:9px;padding:11px 13px;font-family:var(--mono);font-size:12.5px;line-height:1.5;background:var(--panel,#EAEEED);color:var(--ink,#243330);resize:vertical}
   textarea.prompt:focus{outline:none;border-color:var(--amber,#2C8C7C);background:#fff}
+  /* the extraction prompt — the hero of the page: a code-editor block with a teal header */
+  .promptbox{border-radius:13px;overflow:hidden;border:1px solid #16302A;box-shadow:0 16px 44px -22px rgba(20,80,66,.6)}
+  .promptbox .pb-head{display:flex;align-items:center;gap:9px;padding:11px 14px;background:linear-gradient(100deg,#1E5F55 0%,#2C8C7C 62%,#34A392 100%);color:#fff}
+  .promptbox .pb-head svg{width:15px;height:15px;flex:0 0 15px}
+  .promptbox .pb-title{font-weight:800;font-size:13px;letter-spacing:.01em}
+  .promptbox .pb-tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.03em;opacity:.9}
+  .promptbox .pb-copy{margin-left:auto;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.34);color:#fff;border-radius:7px;padding:4px 11px;font:inherit;font-size:11.5px;font-weight:700;cursor:pointer;transition:background .12s}
+  .promptbox .pb-copy:hover{background:rgba(255,255,255,.3)}
+  .promptbox textarea.prompt{border:0;border-radius:0;min-height:0;overflow:hidden;resize:none;background:#0E1B18;color:#CFEDE4;font-size:12.5px;line-height:1.6;padding:15px 16px;caret-color:#34A392}
+  .promptbox textarea.prompt:focus{background:#0B1512;color:#E4F6EF}
+  .promptbox textarea.prompt::selection{background:#2C8C7C;color:#fff}
+  .exrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
+  .exrow input.target{flex:1;min-width:260px;border:1px solid var(--hair,#D7DDDB);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:12px;background:#fff;color:var(--ink,#243330)}
+  .exrow input.target:focus{outline:none;border-color:var(--amber,#2C8C7C)}
+  .exrow .pages{width:60px;border:1px solid var(--hair,#D7DDDB);border-radius:8px;padding:10px 8px;font:inherit;text-align:center}
+  .runbtn{background:linear-gradient(100deg,#1E5F55,#2C8C7C);border:0;color:#fff;border-radius:9px;padding:11px 20px;font:inherit;font-weight:800;font-size:13.5px;cursor:pointer;box-shadow:0 8px 22px -10px rgba(44,140,124,.7)}
+  .runbtn:hover{filter:brightness(1.06)} .runbtn:disabled{opacity:.6;cursor:default;box-shadow:none}
+  td.num{text-align:right;font-variant-numeric:tabular-nums} td .muted{color:var(--ink-soft,#5E6B68)}
   .loading{display:flex;align-items:center;gap:12px;padding:24px;color:var(--ink-soft,#5E6B68);font-size:13.5px}
   .spin{width:18px;height:18px;border:2px solid var(--hair,#D7DDDB);border-top-color:var(--amber,#2C8C7C);border-radius:50%;animation:sp .8s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
@@ -66,6 +84,24 @@
 (function(){
   var API="", lastUrl="";
   function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+  var PREF=["title","name","product_name","product","vendor","brand","product_type","category","category_name","price","current_price","regular_price","sale_price","size","volume","sku","product_id","available","availability","in_stock","stock","rating","url","product_url","link","image_url","image"];
+  function orderCols(cols){ var pref=PREF.filter(function(c){return cols.indexOf(c)>=0;}); var rest=cols.filter(function(c){return PREF.indexOf(c)<0;}); return pref.concat(rest); }
+  function isNum(v){ return typeof v==="number" || (typeof v==="string" && /^\$?-?\d[\d,]*\.?\d*$/.test(v.trim()) && v.trim().length<12); }
+  function cell(v){
+    if(v==null||v==="") return '<span class="muted">—</span>';
+    if(Array.isArray(v)){ if(!v.length)return '<span class="muted">—</span>'; if(typeof v[0]==="object")return '<span class="muted">'+v.length+' items</span>'; return esc(v.slice(0,3).join(", "))+(v.length>3?(' <span class="muted">+'+(v.length-3)+'</span>'):''); }
+    if(typeof v==="object"){ var k=["name","title","price","value","sku","src","url"].filter(function(x){return v[x]!=null;})[0]; return k?esc(String(v[k])):'<span class="muted">'+esc(JSON.stringify(v).slice(0,50))+'…</span>'; }
+    if(typeof v==="boolean") return v?'<span style="color:var(--good,#2E7D57);font-weight:700">yes</span>':'<span class="muted">no</span>';
+    var s=String(v); return esc(s.length>90?s.slice(0,90)+"…":s);
+  }
+  function tableHTML(rows,cap){
+    if(!rows.length) return '<div class="em">No rows.</div>';
+    var cols=orderCols(Object.keys(rows[0])).slice(0,12);
+    return '<div class="scroll"><table><thead><tr>'+cols.map(function(c){return '<th class="'+(isNum(rows[0][c])?'num':'')+'">'+esc(c)+'</th>';}).join('')+'</tr></thead><tbody>'
+      + rows.slice(0,cap||50).map(function(r){return '<tr>'+cols.map(function(c){return '<td class="'+(isNum(r[c])?'num':'')+'">'+cell(r[c])+'</td>';}).join('')+'</tr>';}).join('')
+      + '</tbody></table></div>';
+  }
+  function autoGrow(el){ if(!el)return; el.style.height="auto"; el.style.height=(el.scrollHeight+2)+"px"; }
   function toast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("show");clearTimeout(t._x);t._x=setTimeout(function(){t.classList.remove("show");},2200);}
   var out=document.getElementById("out"), go=document.getElementById("go");
 
@@ -85,13 +121,8 @@
     var a=(d&&d.analysis)||{};
     if(a.error){ out.innerHTML='<div class="card"><div class="em">'+esc(a.error)+(a.via?(' · fetch: '+esc(a.via)):'')+'</div></div>'; return; }
     var fields=a.available_fields||[], rows=a.sample_rows||[], items=a.item_fields||[];
-    // sample table
-    var cols=fields.length?fields.map(function(f){return f.name;}):(rows[0]?Object.keys(rows[0]):[]);
-    var tbl = rows.length
-      ? '<div class="scroll"><table><thead><tr>'+cols.map(function(c){return '<th>'+esc(c)+'</th>';}).join('')+'</tr></thead><tbody>'
-        + rows.slice(0,8).map(function(r){return '<tr>'+cols.map(function(c){return '<td>'+esc(r[c])+'</td>';}).join('')+'</tr>';}).join('')
-        + '</tbody></table></div>'
-      : '<div class="em">No sample rows extracted.</div>';
+    // sample table (clean, ordered)
+    var tbl = rows.length ? tableHTML(rows,8) : '<div class="em">No sample rows extracted.</div>';
     out.innerHTML=
       '<div class="card"><div class="row"><h2 style="margin:0">'+esc(a.source_type||"source")+'</h2>'
         +'<span class="pill '+(d.llm?'tea':'warn')+'">'+(d.llm?('confidence: '+esc(a.confidence||'?')):'heuristic (no LLM key)')+'</span>'
@@ -111,18 +142,24 @@
           +items.map(function(f){return '<tr><td><b>'+esc(f.name)+'</b></td><td><code>'+esc(f.selector)+'</code></td></tr>';}).join('')+'</tbody></table></div>'):'')
         +'<div style="margin-top:14px;display:flex;gap:8px"><button class="btn" id="save">Save as a source</button><button class="btn" id="again">Analyze another</button></div>'
       +'</div>'
-      +'<div class="card"><h2>Extraction prompt <span style="font-weight:500;font-size:12px;color:var(--ink-soft,#5E6B68)">— reusable · fed to Claude on every run (edit it if you like)</span></h2>'
-        +'<textarea class="prompt" id="scrape-prompt">'+esc(a.scrape_prompt||"")+'</textarea>'
+      +'<div class="card"><div class="promptbox">'
+        +'<div class="pb-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.7L18.5 9l-4.6 1.3L12 15l-1.9-4.7L5.5 9l4.6-1.3z"/><path d="M18 15l.8 2 .8-2 .8-.8-.8-.8-.8-2-.8 2-.8.8z" fill="currentColor" stroke="none"/></svg>'
+        +'<span class="pb-title">Extraction prompt</span><span class="pb-tag">reusable · fed to Claude each run · '+(d.llm?'written by Claude':'template')+'</span>'
+        +'<button class="pb-copy" id="pb-copy">Copy</button></div>'
+        +'<textarea class="prompt" id="scrape-prompt" spellcheck="false">'+esc(a.scrape_prompt||"")+'</textarea>'
+      +'</div>'
         +'<div class="lab">Extract from</div>'
-        +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
-          +'<input id="ex-target" class="prompt" style="min-height:0;flex:1;min-width:260px;font-size:12px;padding:9px 11px" value="'+esc((a.data_api&&a.data_api.url)||lastUrl)+'">'
+        +'<div class="exrow">'
+          +'<input id="ex-target" class="target" value="'+esc((a.data_api&&a.data_api.url)||lastUrl)+'">'
           +(a.data_api&&a.data_api.url?'<button class="btn" id="use-page" title="Use the page URL instead of the API">use page</button>':'')
-          +'<span class="hint">pages</span><input id="ex-pages" type="number" min="1" max="25" value="'+((a.data_api&&a.data_api.url)||a.pagination?'3':'1')+'" style="width:64px;border:1px solid var(--hair,#D7DDDB);border-radius:8px;padding:9px;font:inherit">'
+          +'<span class="hint">pages</span><input id="ex-pages" class="pages" type="number" min="1" max="25" value="'+((a.data_api&&a.data_api.url)||a.pagination?'3':'1')+'">'
         +'</div>'
         +(a.data_api&&a.data_api.url?'<div class="hint" style="margin-top:5px">This source is client-rendered — extraction runs against its <b>data API</b> so you get the whole catalog, not one page.</div>':'')
-        +'<div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn brand" id="run-extract">▸ Run extraction — feed to Claude</button><span class="hint" id="ex-hint"></span></div>'
+        +'<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="runbtn" id="run-extract">▸ Run extraction — feed to Claude</button><span class="hint" id="ex-hint"></span></div>'
         +'<div id="extract-out"></div>'
       +'</div>';
+    var pt=document.getElementById("scrape-prompt"); autoGrow(pt); if(pt)pt.addEventListener("input",function(){autoGrow(pt);});
+    var cp=document.getElementById("pb-copy"); if(cp)cp.onclick=function(){ try{navigator.clipboard.writeText(pt.value);}catch(e){} toast("Prompt copied"); };
     var up=document.getElementById("use-page"); if(up)up.onclick=function(){ document.getElementById("ex-target").value=lastUrl; };
     var sv=document.getElementById("save"); if(sv)sv.onclick=function(){ toast("Saved config — next: turn this into a scheduled connector in Hoodie Master"); };
     var ag=document.getElementById("again"); if(ag)ag.onclick=function(){ document.getElementById("url").focus(); document.getElementById("url").select(); };
@@ -139,12 +176,10 @@
     fetch(API+"/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:target,prompt:prompt,pages:pages})})
       .then(function(r){return r.json();}).then(function(d){ btn.disabled=false;
         if(d.error){ eout.innerHTML='<div class="em">'+esc(d.error)+'</div>'; return; }
-        var rows=d.rows||[]; var cols=rows.length?Object.keys(rows[0]):[];
+        var rows=d.rows||[];
         document.getElementById("ex-hint").textContent=rows.length+" rows · engine: "+esc(d.engine||"?")+(d.raw?(" · "+d.raw+" raw"):"")+(d.pages?(" · "+d.pages+"p"):"")+(d.via?(" · "+esc(d.via)):"");
         eout.innerHTML=rows.length
-          ? '<div class="lab">Extracted rows</div><div class="scroll"><table><thead><tr>'+cols.map(function(c){return '<th>'+esc(c)+'</th>';}).join('')+'</tr></thead><tbody>'
-            + rows.slice(0,50).map(function(r){return '<tr>'+cols.map(function(c){return '<td>'+esc(typeof r[c]==="object"?JSON.stringify(r[c]):r[c])+'</td>';}).join('')+'</tr>';}).join('')
-            + '</tbody></table></div>'+(rows.length>50?('<div class="hint" style="margin-top:6px">showing 50 of '+rows.length+'</div>'):'')
+          ? '<div class="lab">Extracted rows</div>'+tableHTML(rows,50)+(rows.length>50?('<div class="hint" style="margin-top:6px">showing 50 of '+rows.length+'</div>'):'')
           : '<div class="em">No rows extracted — try tightening the prompt.</div>';
       }).catch(function(){ btn.disabled=false; eout.innerHTML='<div class="em">Extraction failed — is the engine live?</div>'; });
   }

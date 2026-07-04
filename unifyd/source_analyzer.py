@@ -110,7 +110,7 @@ def _heuristic(html):
                 "list_container": None, "item_fields": [], "pagination": "append &page=N (Shopify + most APIs)",
                 "robots_note": "Check robots.txt + ToS.", "confidence": "heuristic",
                 "scrape_prompt": _default_prompt(names),
-                "data_api": {"url": "(this URL is the data API)", "method": "GET", "params": {}, "pagination": "page=N", "note": "This URL already returns the JSON — extract from it and paginate."}}
+                "data_api": None}   # the URL already IS the API — extract runs against it (lastUrl) + paginates
     try:
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(html or "", "html.parser")
