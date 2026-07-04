@@ -19,22 +19,22 @@
   .mono{font-family:"IBM Plex Mono",monospace;}
 
   /* ============ TOP BAR ============ */
-  header.bar{position:fixed;top:0;left:0;right:0;height:var(--bar);z-index:40;background:var(--ink);color:var(--paper);display:flex;align-items:center;gap:12px;padding:0 14px;}
-  header.bar .menu{display:block;background:transparent;border:0;color:var(--paper);font-size:18px;cursor:pointer;padding:4px 6px;border-radius:3px;transition:background .12s;}
-  header.bar .menu:hover{background:rgba(255,255,255,.10);}
-  header.bar .mark{width:26px;height:26px;flex-shrink:0;background:var(--amber-bright);color:var(--ink);display:flex;align-items:center;justify-content:center;font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:15px;cursor:pointer;border-radius:3px;transition:transform .14s;}
+  header.bar{position:fixed;top:0;left:0;right:0;height:var(--bar);z-index:40;background:var(--bar-bg);color:var(--bar-fg);border-bottom:1px solid var(--bar-hair);display:flex;align-items:center;gap:12px;padding:0 14px;}
+  header.bar .menu{display:block;background:transparent;border:0;color:var(--ink-soft);font-size:18px;cursor:pointer;padding:4px 6px;border-radius:3px;transition:background .12s;}
+  header.bar .menu:hover{background:var(--panel);}
+  header.bar .mark{width:26px;height:26px;flex-shrink:0;background:var(--amber-bright);color:#fff;display:flex;align-items:center;justify-content:center;font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:15px;cursor:pointer;border-radius:3px;transition:transform .14s;}
   header.bar .mark:hover{transform:rotate(-6deg);}
-  header.bar .brand{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:14.5px;letter-spacing:-0.01em;cursor:pointer;color:var(--paper);}
-  header.bar .brand .sfx{color:#8a857b;font-weight:400;}
-  header.bar .appcrumb{display:none;align-items:center;gap:10px;font-family:"IBM Plex Mono",monospace;font-size:12px;color:#c9c2b4;}
+  header.bar .brand{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:14.5px;letter-spacing:-0.01em;cursor:pointer;color:var(--bar-fg);}
+  header.bar .brand .sfx{color:var(--bar-mut);font-weight:400;}
+  header.bar .appcrumb{display:none;align-items:center;gap:10px;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--bar-mut);}
   header.bar .appcrumb.show{display:flex;}
-  header.bar .appcrumb .arr{color:#4a463f;}
-  header.bar .appcrumb .nm{color:var(--paper);font-weight:600;}
-  header.bar .appcrumb .cx{color:#c9c2b4;}
+  header.bar .appcrumb .arr{color:var(--hair);}
+  header.bar .appcrumb .nm{color:var(--bar-fg);font-weight:600;}
+  header.bar .appcrumb .cx{color:var(--bar-mut);}
   header.bar .appcrumb .cx:empty{display:none;}
   header.bar .spacer{margin-left:auto;}
-  header.bar .ext{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;color:var(--amber-bright);border:1px solid #34322c;padding:6px 11px;letter-spacing:0.04em;display:none;border-radius:3px;transition:background .14s;}
-  header.bar .ext:hover{background:#2a2823;}
+  header.bar .ext{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;color:var(--amber);border:1px solid var(--bar-hair);padding:6px 11px;letter-spacing:0.04em;display:none;border-radius:3px;transition:background .14s;}
+  header.bar .ext:hover{background:var(--panel);}
   header.bar .ext.show{display:inline-block;}
 
   /* ============ CONTEXT BAR ============ */
@@ -174,15 +174,15 @@
   /* ============ TOP-BAR TOOLS (module shell: search · favorites) ============ */
   header.bar .tools{display:flex;align-items:center;gap:8px;margin-left:auto;}
   header.bar .gsearch{position:relative;display:flex;align-items:center;}
-  header.bar .gsearch>svg{position:absolute;left:9px;width:13px;height:13px;color:#8a857b;pointer-events:none;}
-  header.bar .gsearch input{width:200px;background:rgba(255,255,255,.06);border:1px solid #34322c;color:var(--paper);font-family:"IBM Plex Mono",monospace;font-size:12px;padding:7px 30px 7px 28px;border-radius:4px;outline:none;transition:width .18s ease,border-color .12s,background .12s;}
-  header.bar .gsearch input::placeholder{color:#8a857b;}
-  header.bar .gsearch input:focus{width:290px;border-color:var(--amber);background:rgba(255,255,255,.1);}
-  header.bar .gsearch kbd{position:absolute;right:8px;font-family:"IBM Plex Mono",monospace;font-size:9px;color:#7a756c;border:1px solid #34322c;border-radius:3px;padding:1px 5px;pointer-events:none;transition:opacity .12s;}
+  header.bar .gsearch>svg{position:absolute;left:9px;width:13px;height:13px;color:var(--bar-mut);pointer-events:none;}
+  header.bar .gsearch input{width:200px;background:var(--panel);border:1px solid var(--bar-hair);color:var(--ink);font-family:"IBM Plex Mono",monospace;font-size:12px;padding:7px 30px 7px 28px;border-radius:4px;outline:none;transition:width .18s ease,border-color .12s,background .12s;}
+  header.bar .gsearch input::placeholder{color:var(--bar-mut);}
+  header.bar .gsearch input:focus{width:290px;border-color:var(--amber);background:#fff;}
+  header.bar .gsearch kbd{position:absolute;right:8px;font-family:"IBM Plex Mono",monospace;font-size:9px;color:var(--bar-mut);border:1px solid var(--bar-hair);border-radius:3px;padding:1px 5px;pointer-events:none;transition:opacity .12s;}
   header.bar .gsearch input:focus~kbd{opacity:0;}
-  header.bar .tbtn{display:flex;align-items:center;gap:6px;background:transparent;border:1px solid #34322c;color:#c9c2b4;font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;padding:6px 10px;border-radius:4px;cursor:pointer;transition:all .12s;letter-spacing:.03em;white-space:nowrap;}
-  header.bar .tbtn:hover{background:#2a2823;color:var(--paper);}
-  header.bar .tbtn.on{color:var(--amber-bright);border-color:var(--amber);}
+  header.bar .tbtn{display:flex;align-items:center;gap:6px;background:transparent;border:1px solid var(--bar-hair);color:var(--ink-soft);font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;padding:6px 10px;border-radius:4px;cursor:pointer;transition:all .12s;letter-spacing:.03em;white-space:nowrap;}
+  header.bar .tbtn:hover{background:var(--panel);color:var(--ink);}
+  header.bar .tbtn.on{color:var(--amber);border-color:var(--amber);background:var(--slate-tint);}
   header.bar .tbtn svg{width:13px;height:13px;flex-shrink:0;}
   header.bar .tbtn .n{font-size:9px;opacity:.6;}
 
