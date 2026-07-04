@@ -24,7 +24,7 @@
       "id": "prism",
       "name": "Prism",
       "desc": "Mobile · every cut of your book + the pulse feed (installable)",
-      "group": "Product",
+      "group": "Internal",
       "status": "beta",
       "file": "apps/prism.html",
       "mark": "PM",

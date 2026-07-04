@@ -97,15 +97,15 @@
   .body.nav-collapsed aside.nav .item{grid-template-columns:1fr;justify-items:center;padding:9px 0;border-left:0;}
   .body.nav-collapsed aside.nav .item.active{border-left:0;box-shadow:inset 3px 0 0 var(--amber);}
   .body.nav-collapsed aside.nav .item .tx,.body.nav-collapsed aside.nav .item .star{display:none;}
-  .body.nav-collapsed aside.nav .navhead{flex-direction:column;margin:2px 9px 10px;gap:5px;}
+  .body.nav-collapsed aside.nav .navhead{flex-direction:column;padding:12px 6px 10px;margin:0 0 4px;gap:5px;}
   .body.nav-collapsed aside.nav .navhead .home-link{padding:8px 0;justify-content:center;}
   .body.nav-collapsed aside.nav .navhead .home-link .hl-tx{display:none;}
   /* context bar collapse — reclaim the ~42px row (see ctxBtn). 0px (not 0): calc() can't add a unitless number to a length */
   body.ctx-collapsed{--ctx:0px;}
   body.ctx-collapsed .ctxbar{display:none;}
 
-  aside.nav{border-right:1px solid var(--hair);background:var(--panel);overflow:auto;padding:14px 0 28px;}
-  aside.nav .navhead{display:flex;align-items:center;gap:6px;margin:2px 12px 12px;}
+  aside.nav{border-right:1px solid var(--hair);background:var(--panel);overflow:auto;padding:0 0 28px;}
+  aside.nav .navhead{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:6px;padding:12px 12px 10px;margin:0 0 4px;background:var(--panel);border-bottom:1px solid var(--hair);}
   aside.nav .navhead .home-link{flex:1;margin:0;}
   aside.nav .navcollapse{width:32px;height:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1px solid var(--hair);background:var(--paper);border-radius:3px;cursor:pointer;color:var(--ink-soft);font-size:15px;line-height:1;transition:border-color .12s,color .12s,background .12s;}
   aside.nav .navcollapse:hover{border-color:var(--amber);color:var(--ink);background:var(--panel);}
@@ -348,7 +348,7 @@
   const APPS=[
     {id:'dashboard',name:'Hoodie Intelligence',desc:'Market intelligence & QBR briefs',group:'Product',status:'live',file:'apps/dashboard.html',mark:'HI'},
     {id:'planogram',name:'Planogram',desc:'Shelf rep-count vs market benchmark · voids & over-space',group:'Commercial',status:'beta',file:'apps/planogram-repcount.html',mark:'PG',parent:'crm'},
-    {id:'prism',name:'Prism',desc:'Mobile · every cut of your book + the pulse feed (installable)',group:'Product',status:'beta',file:'apps/prism.html',mark:'PM'},
+    {id:'prism',name:'Prism',desc:'Mobile · every cut of your book + the pulse feed (installable)',group:'Internal',status:'beta',file:'apps/prism.html',mark:'PM'},
     {id:'catalog',name:'Product Catalog',desc:'Product master data · lifecycle, completeness, channels (shared data-grid)',group:'Product',status:'beta',file:'apps/catalog.html',mark:'PC'},
     {id:'crm',name:'Hoodie Relations',desc:'Industry-associations CRM',group:'Commercial',status:'beta',file:'apps/crm.html',mark:'HR'},
     {id:'territory',name:'Territory Builder',desc:'Named account groups · powers target-vs-competition comparisons',group:'Commercial',status:'beta',file:'apps/territory.html',mark:'TB'},
