@@ -227,6 +227,7 @@ def analyze(url, goal=None):
                   '"pagination":string|null,"robots_note":string,"confidence":"high"|"medium"|"low",'
                   '"data_api":{"url":string,"method":"GET"|"POST","params":object,"pagination":string,"note":string}|null,'
                   '"store_level":{"scoped":boolean,"count":number|null,"how":string,"note":string}|null,'
+                  '"filters":[{"name":string,"param":string,"values":[string],"note":string}]|null,'
                   '"scrape_prompt":string}. '
                   "sample_rows must be real values read from THIS html. Keep it to the primary dataset on the page. "
                   "CRITICAL: if the page's data is loaded client-side from a JSON/XHR endpoint rather than being in the "
@@ -248,6 +249,12 @@ def analyze(url, goal=None):
                   "HOW to get inventory for one store — the catalog/list usually shows what the chain CARRIES chain-wide, "
                   "while in-stock-at-a-store needs a per-store query. Set store_level.scoped=false (or null) if stock is "
                   "single/chain-wide. "
+                  "FILTERS: detect the query params the API supports to NARROW results so a user can pull ONE brand or ONE "
+                  "store instead of the whole catalog — brand/supplier, category, and especially store/location. For each "
+                  "give the exact param name + a few example values (from the page facets / config if visible). "
+                  "PHASING: the base catalog (product list, chain-wide) is one cheap pull; per-store INVENTORY is a "
+                  "separate, expensive pass (one query per store) — reflect that in scrape_prompt (catalog first, then "
+                  "loop stores for inventory only if asked). "
                   "scrape_prompt is a REUSABLE instruction to extract this source's rows on every future run: if data_api "
                   "is set it must say to fetch that API (and paginate it) and normalize its JSON to the fields; otherwise "
                   "to read the page HTML. Return a JSON array of objects; make it source-specific, not tied to this snapshot.")

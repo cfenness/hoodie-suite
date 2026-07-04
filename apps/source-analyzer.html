@@ -91,13 +91,20 @@
 
 <script>
 (function(){
-  var API="", lastUrl="";
+  var API="", lastUrl="", baseTarget="";
+  function applyFilters(){
+    var u; try{ u=new URL(baseTarget); }catch(e){ document.getElementById("ex-target").value=baseTarget; return; }
+    document.querySelectorAll(".fil").forEach(function(f){ var p=f.getAttribute("data-param"), v=f.value.trim();
+      if(v) u.searchParams.set(p,v); else u.searchParams.delete(p); });
+    document.getElementById("ex-target").value=u.toString();
+  }
   function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
   var PREF=["title","name","product_name","product","vendor","brand","product_type","category","category_name","price","current_price","regular_price","sale_price","size","volume","sku","product_id","available","availability","in_stock","stock","rating","url","product_url","link","image_url","image"];
   function orderCols(cols){ var pref=PREF.filter(function(c){return cols.indexOf(c)>=0;}); var rest=cols.filter(function(c){return PREF.indexOf(c)<0;}); return pref.concat(rest); }
   function isNum(v){ return typeof v==="number" || (typeof v==="string" && /^\$?-?\d[\d,]*\.?\d*$/.test(v.trim()) && v.trim().length<12); }
   function cell(v){
     if(v==null||v==="") return '<span class="muted">—</span>';
+    if(typeof v==="string"&&/^https?:\/\/\S+$/.test(v.trim())) return '<a href="'+esc(v.trim())+'" target="_blank" rel="noopener">link</a>';
     if(Array.isArray(v)){ if(!v.length)return '<span class="muted">—</span>'; if(typeof v[0]==="object")return '<span class="muted">'+v.length+' items</span>'; return esc(v.slice(0,3).join(", "))+(v.length>3?(' <span class="muted">+'+(v.length-3)+'</span>'):''); }
     if(typeof v==="object"){ var k=["name","title","price","value","sku","src","url"].filter(function(x){return v[x]!=null;})[0]; return k?esc(String(v[k])):'<span class="muted">'+esc(JSON.stringify(v).slice(0,50))+'…</span>'; }
     if(typeof v==="boolean") return v?'<span style="color:var(--good,#2E7D57);font-weight:700">yes</span>':'<span class="muted">no</span>';
@@ -132,6 +139,8 @@
     var fields=a.available_fields||[], rows=a.sample_rows||[], items=a.item_fields||[];
     // only trust a data-API url that's actually callable (not a <siteId>/{key}/… template)
     var apiUrl=(a.data_api&&a.data_api.url&&!/[<{]|your_|site_id|example\.|\.\.\./i.test(a.data_api.url))?a.data_api.url:"";
+    baseTarget=apiUrl||lastUrl;
+    var flt=a.filters||[];
     // sample table (clean, ordered)
     var tbl = rows.length ? tableHTML(rows,8) : '<div class="em">No sample rows extracted.</div>';
     out.innerHTML=
@@ -139,7 +148,7 @@
         +'<span class="pill '+(d.llm?'tea':'warn')+'">'+(d.llm?('confidence: '+esc(a.confidence||'?')):'heuristic (no LLM key)')+'</span>'
         +(a.via?'<span class="pill">fetched: '+esc(a.via)+'</span>':'')+'</div>'
         +'<div class="s" style="color:var(--ink-soft)">'+esc(a.summary||"")+'</div>'
-        +((a.store_level&&a.store_level.scoped)?('<div class="callout"><span class="ci">🏬</span><span class="ct"><b>Per-store inventory'+(a.store_level.count?(' — ~'+esc(a.store_level.count)+' stores.'):'.')+'</b> The catalog is chain-wide (what they CARRY); in-stock at a specific store needs a per-store query. '+esc(a.store_level.how||a.store_level.note||'')+'</span></div>'):'')
+        +((a.store_level&&a.store_level.scoped)?('<div class="callout"><span class="ci">🏬</span><span class="ct"><b>Per-store inventory'+(a.store_level.count?(' — ~'+esc(a.store_level.count)+' stores.'):'.')+'</b> Pull the chain-wide catalog first (what they CARRY — one cheap pass); real-time in-stock needs a separate, pricier per-store loop. Narrow it with a store filter above before running the inventory pass. '+esc(a.store_level.how||a.store_level.note||'')+'</span></div>'):'')
         +(fields.length?('<div class="lab">Available data</div><div class="chips">'+fields.map(function(f){return '<span class="fchip"><b>'+esc(f.name)+'</b>'+(f.example?(' · '+esc(String(f.example).slice(0,40))):'')+'</span>';}).join('')+'</div>'):'')
         +'<div class="lab">Sample rows Claude read from the page</div>'+tbl
       +'</div>'
@@ -159,6 +168,12 @@
         +'<div class="lab">Extract from</div>'
         +'<div class="exrow"><input id="ex-target" class="target" value="'+esc(apiUrl||lastUrl)+'">'
           +(apiUrl?'<button class="btn" id="use-page" title="Use the page URL instead of the API">use page</button>':'')+'</div>'
+        +((apiUrl&&flt.length)?('<div class="lab">Narrow the pull (optional) — limit to a brand / supplier / category / store instead of the whole catalog</div>'
+          +'<div class="exrow">'+flt.map(function(f,i){var vs=(f.values||[]).filter(Boolean);
+            return '<span class="hint" style="text-transform:capitalize"'+(f.note?(' title="'+esc(f.note)+'"'):'')+'>'+esc(f.name||f.param)+'</span>'
+              +'<input class="fil" data-param="'+esc(f.param)+'"'+(vs.length?(' list="fl'+i+'"'):'')+' placeholder="all" style="width:160px;border:1px solid var(--hair,#D7DDDB);border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:12px">'
+              +(vs.length?('<datalist id="fl'+i+'">'+vs.slice(0,40).map(function(v){return '<option value="'+esc(v)+'">';}).join('')+'</datalist>'):'');
+            }).join('')+'</div>'):'')
         +'<div class="exrow"><span class="hint">pages</span><input id="ex-pages" class="num-in" type="number" min="1" max="400" value="'+(apiUrl||a.pagination?'3':'1')+'">'
           +'<span class="hint" style="margin-left:10px">max items</span><input id="ex-limit" class="num-in" type="number" min="1" max="100000" value="100" title="cap the number of items pulled">'
           +'<span class="hint" style="margin-left:6px">— caps the run so you don’t pull the whole catalog while testing (raise both to pull the full catalog)</span></div>'
@@ -173,7 +188,8 @@
       +'</div>';
     var pt=document.getElementById("scrape-prompt"); autoGrow(pt); if(pt)pt.addEventListener("input",function(){autoGrow(pt);});
     var cp=document.getElementById("pb-copy"); if(cp)cp.onclick=function(){ try{navigator.clipboard.writeText(pt.value);}catch(e){} toast("Prompt copied"); };
-    var up=document.getElementById("use-page"); if(up)up.onclick=function(){ document.getElementById("ex-target").value=lastUrl; };
+    var up=document.getElementById("use-page"); if(up)up.onclick=function(){ baseTarget=lastUrl; applyFilters(); };
+    document.querySelectorAll(".fil").forEach(function(f){ f.addEventListener("input",applyFilters); f.addEventListener("change",applyFilters); });
     var sv=document.getElementById("save"); if(sv)sv.onclick=function(){ toast("Saved config — next: turn this into a scheduled connector in Hoodie Master"); };
     var ag=document.getElementById("again"); if(ag)ag.onclick=function(){ document.getElementById("url").focus(); document.getElementById("url").select(); };
     var rx=document.getElementById("run-extract"); if(rx)rx.onclick=runExtract;

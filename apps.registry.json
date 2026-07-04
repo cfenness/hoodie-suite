@@ -71,6 +71,16 @@
       "parent": null
     },
     {
+      "id": "source-analyzer",
+      "name": "Source Analyzer",
+      "desc": "Generalized scraper · Claude reads a target URL → the data + how to scrape it",
+      "group": "Data Operations",
+      "status": "beta",
+      "file": "apps/source-analyzer.html",
+      "mark": "SA",
+      "parent": null
+    },
+    {
       "id": "estate",
       "name": "Estate Map",
       "desc": "Data & model layer · the whole estate",
@@ -108,16 +118,6 @@
       "status": "beta",
       "file": "apps/pulls.html",
       "mark": "PL",
-      "parent": null
-    },
-    {
-      "id": "source-analyzer",
-      "name": "Source Analyzer",
-      "desc": "Generalized scraper · Claude reads a target URL → the data + how to scrape it",
-      "group": "Data Operations",
-      "status": "beta",
-      "file": "apps/source-analyzer.html",
-      "mark": "SA",
       "parent": null
     },
     {
