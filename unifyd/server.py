@@ -18,7 +18,7 @@ When the agent is absent the dashboard falls back to its built-in preview.
 State is persisted to ./agent_state/ (datasets.json, runs.json, cola CSV).
 """
 import csv, io, json, os, time, types, urllib.request, datetime, threading, logging
-from flask import Flask, request, jsonify, send_file, Response, redirect
+from flask import Flask, request, jsonify, send_file, Response, redirect, session
 
 import ttb_cola_scraper as cola   # the scraper you generated
 import abc_fws_scraper as abc      # ABC FWS directional inventory tracker (BigCommerce)
@@ -190,6 +190,10 @@ SERVICE  = load("service_reports.json", [])
 # Per-account planograms — shelf facings for an account (entered by hand or derived from
 # a photo in the Planogram tool). Keyed by account id; persisted so the numbers stick.
 PLANOGRAM = load("planograms.json", {})
+# Admin console: usage events (app opens, per user) + feature flags (app visibility /
+# status overrides, feature toggles). Both persisted with the rest of the agent state.
+USAGE = load("usage.json", [])
+FLAGS = load("admin_flags.json", {"apps": {}, "features": {}})
 
 # Canonical hierarchy served at /api/hierarchy. Curated copy from the state store if
 # present, else the bundled seed (unifyd/hierarchy.json). Eventually derived from the
@@ -572,6 +576,107 @@ def planogram_put(aid):
     save_planogram()
     return jsonify(ok=True, planogram=PLANOGRAM[aid])
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Admin console — usage reporting, feature flags, access, ops snapshot
+# ─────────────────────────────────────────────────────────────────────────────
+def _current_user():
+    try:
+        return session.get("email") or None
+    except Exception:
+        return None
+
+def _save_json(name, obj):
+    if STATE_BUCKET:
+        try:
+            _s3().put_object(Bucket=STATE_BUCKET, Key=_key(name),
+                             Body=json.dumps(obj).encode("utf-8"), ContentType="application/json")
+        except Exception as e:
+            app.logger.warning("S3 save %s failed: %s", name, e)
+    else:
+        try:
+            json.dump(obj, open(os.path.join(STATE_DIR, name), "w"))
+        except Exception as e:
+            app.logger.warning("save %s failed: %s", name, e)
+
+@app.post("/api/usage/event")
+def usage_event():
+    b = request.get_json(force=True, silent=True) or {}
+    app_id = (b.get("app") or "").strip()[:60]
+    if not app_id:
+        return jsonify(ok=False, error="app required"), 400
+    USAGE.append({"app": app_id, "user": (_current_user() or b.get("user") or "local")[:120],
+                  "ts": int(time.time() * 1000)})
+    del USAGE[:-20000]                     # keep a rolling window
+    _save_json("usage.json", USAGE)
+    return jsonify(ok=True)
+
+@app.get("/api/usage/summary")
+def usage_summary():
+    try:
+        days = max(1, min(365, int(request.args.get("days", "30"))))
+    except Exception:
+        days = 30
+    cutoff = int(time.time() * 1000) - days * 86400000
+    ev = [e for e in USAGE if (e.get("ts") or 0) >= cutoff]
+    by_app, by_user, by_day = {}, {}, {}
+    for e in ev:
+        by_app[e["app"]] = by_app.get(e["app"], 0) + 1
+        by_user[e["user"]] = by_user.get(e["user"], 0) + 1
+        day = datetime.datetime.utcfromtimestamp((e.get("ts") or 0) / 1000).strftime("%Y-%m-%d")
+        by_day[day] = by_day.get(day, 0) + 1
+    top = lambda d: sorted(([k, v] for k, v in d.items()), key=lambda x: -x[1])
+    return jsonify(ok=True, days=days, totalOpens=len(ev), totalAllTime=len(USAGE),
+                   activeUsers=len(by_user), byApp=top(by_app), byUser=top(by_user),
+                   byDay=sorted(([k, v] for k, v in by_day.items())))
+
+@app.get("/api/admin/flags")
+def admin_flags_get():
+    return jsonify(ok=True, flags=FLAGS)
+
+@app.put("/api/admin/flags")
+def admin_flags_put():
+    b = request.get_json(force=True, silent=True) or {}
+    if isinstance(b.get("apps"), dict):
+        FLAGS["apps"] = b["apps"]
+    if isinstance(b.get("features"), dict):
+        FLAGS["features"] = b["features"]
+    _save_json("admin_flags.json", FLAGS)
+    return jsonify(ok=True, flags=FLAGS)
+
+@app.get("/api/admin/access")
+def admin_access():
+    try:
+        allow = auth_gate._allowed_emails()
+    except Exception:
+        allow = []
+    users = sorted({e.get("user") for e in USAGE if e.get("user")})
+    return jsonify(ok=True, gated=auth_gate.enabled(), currentUser=_current_user(),
+                   allowlist=sorted(allow), seenUsers=users)
+
+@app.get("/api/admin/overview")
+def admin_overview():
+    # book value (best-effort) + open service reports + run count + 7d usage
+    book_val = None
+    try:
+        import book as _book
+        s = _book.summary() if hasattr(_book, "summary") else None
+        if isinstance(s, dict):
+            book_val = s.get("revenue") or s.get("total") or s.get("value")
+    except Exception:
+        pass
+    week = int(time.time() * 1000) - 7 * 86400000
+    ev7 = [e for e in USAGE if (e.get("ts") or 0) >= week]
+    return jsonify(ok=True,
+                   apiOk=True,
+                   warehouse=bool(STATE_BUCKET) or True,
+                   opens7d=len(ev7),
+                   activeUsers7d=len({e.get("user") for e in ev7}),
+                   openReports=sum(1 for r in SERVICE if r.get("status") == "open"),
+                   runs=len(RUNS),
+                   planograms=len(PLANOGRAM),
+                   bookValue=book_val)
+
 @app.get("/api/hierarchy")
 def hierarchy():
     # derived from the live data when present; else the bundled/curated seed
@@ -790,7 +895,8 @@ def book_summary_ep():
 # dotfiles, .env) is NEVER web-served — it mirrors the deploy.sh / deploy.yml exclude lists.
 SUITE_ROOT = os.environ.get("SUITE_ROOT", "").strip()
 _SUITE_OK_TOP = {"index.html", "apps", "spine", "suite.css", "suite-header.js",
-                 "suite-export.js", "fullread.js", "dq.js", "dq_frontier.js", "datagrid.js", "favicon.ico"}
+                 "suite-export.js", "fullread.js", "dq.js", "dq_frontier.js", "datagrid.js",
+                 "apps.registry.json", "favicon.ico"}
 
 def _suite_send(relpath):
     from flask import abort
