@@ -104,6 +104,7 @@
         +'<div class="cfg">'
         +'<div class="k">Repeating item</div><div>'+(a.list_container?('<code>'+esc(a.list_container)+'</code>'):'<span class="em" style="padding:0">—</span>')+'</div>'
         +'<div class="k">Pagination</div><div>'+(a.pagination?esc(a.pagination):'<span style="color:var(--ink-soft)">single page / none detected</span>')+'</div>'
+        +(a.data_api&&a.data_api.url?('<div class="k">Data API</div><div><span class="pill tea">client-rendered → API</span> <code>'+esc(a.data_api.method||"GET")+' '+esc(a.data_api.url)+'</code>'+(a.data_api.pagination?('<div class="hint" style="margin-top:3px">page: '+esc(a.data_api.pagination)+'</div>'):'')+(a.data_api.note?('<div class="hint">'+esc(a.data_api.note)+'</div>'):'')+'</div>'):'')
         +'<div class="k">robots / ToS</div><div>'+esc(a.robots_note||"Check robots.txt + ToS.")+'</div>'
         +'</div>'
         +(items.length?('<div class="lab">Per-field selectors</div><div class="scroll"><table><thead><tr><th>Field</th><th>Selector</th></tr></thead><tbody>'
@@ -112,9 +113,17 @@
       +'</div>'
       +'<div class="card"><h2>Extraction prompt <span style="font-weight:500;font-size:12px;color:var(--ink-soft,#5E6B68)">— reusable · fed to Claude on every run (edit it if you like)</span></h2>'
         +'<textarea class="prompt" id="scrape-prompt">'+esc(a.scrape_prompt||"")+'</textarea>'
-        +'<div style="margin-top:8px;display:flex;gap:8px;align-items:center"><button class="btn brand" id="run-extract">▸ Run extraction — feed to Claude</button><span class="hint" id="ex-hint"></span></div>'
+        +'<div class="lab">Extract from</div>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+          +'<input id="ex-target" class="prompt" style="min-height:0;flex:1;min-width:260px;font-size:12px;padding:9px 11px" value="'+esc((a.data_api&&a.data_api.url)||lastUrl)+'">'
+          +(a.data_api&&a.data_api.url?'<button class="btn" id="use-page" title="Use the page URL instead of the API">use page</button>':'')
+          +'<span class="hint">pages</span><input id="ex-pages" type="number" min="1" max="25" value="'+((a.data_api&&a.data_api.url)||a.pagination?'3':'1')+'" style="width:64px;border:1px solid var(--hair,#D7DDDB);border-radius:8px;padding:9px;font:inherit">'
+        +'</div>'
+        +(a.data_api&&a.data_api.url?'<div class="hint" style="margin-top:5px">This source is client-rendered — extraction runs against its <b>data API</b> so you get the whole catalog, not one page.</div>':'')
+        +'<div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn brand" id="run-extract">▸ Run extraction — feed to Claude</button><span class="hint" id="ex-hint"></span></div>'
         +'<div id="extract-out"></div>'
       +'</div>';
+    var up=document.getElementById("use-page"); if(up)up.onclick=function(){ document.getElementById("ex-target").value=lastUrl; };
     var sv=document.getElementById("save"); if(sv)sv.onclick=function(){ toast("Saved config — next: turn this into a scheduled connector in Hoodie Master"); };
     var ag=document.getElementById("again"); if(ag)ag.onclick=function(){ document.getElementById("url").focus(); document.getElementById("url").select(); };
     var rx=document.getElementById("run-extract"); if(rx)rx.onclick=runExtract;
@@ -123,13 +132,15 @@
   function runExtract(){
     var prompt=(document.getElementById("scrape-prompt")||{}).value||"";
     if(!prompt.trim()){ toast("The prompt is empty"); return; }
+    var target=(document.getElementById("ex-target")||{}).value||lastUrl;
+    var pages=parseInt((document.getElementById("ex-pages")||{}).value,10)||1;
     var btn=document.getElementById("run-extract"), eout=document.getElementById("extract-out");
-    btn.disabled=true; eout.innerHTML='<div class="loading"><span class="spin"></span>Feeding the prompt to Claude + extracting the rows…</div>';
-    fetch(API+"/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:lastUrl,prompt:prompt})})
+    btn.disabled=true; eout.innerHTML='<div class="loading"><span class="spin"></span>Fetching '+(pages>1?(pages+' pages'):'the source')+' + extracting the rows…</div>';
+    fetch(API+"/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:target,prompt:prompt,pages:pages})})
       .then(function(r){return r.json();}).then(function(d){ btn.disabled=false;
         if(d.error){ eout.innerHTML='<div class="em">'+esc(d.error)+'</div>'; return; }
         var rows=d.rows||[]; var cols=rows.length?Object.keys(rows[0]):[];
-        document.getElementById("ex-hint").textContent=rows.length+" rows · engine: "+esc(d.engine||"?")+(d.via?(" · fetched "+esc(d.via)):"");
+        document.getElementById("ex-hint").textContent=rows.length+" rows · engine: "+esc(d.engine||"?")+(d.raw?(" · "+d.raw+" raw"):"")+(d.pages?(" · "+d.pages+"p"):"")+(d.via?(" · "+esc(d.via)):"");
         eout.innerHTML=rows.length
           ? '<div class="lab">Extracted rows</div><div class="scroll"><table><thead><tr>'+cols.map(function(c){return '<th>'+esc(c)+'</th>';}).join('')+'</tr></thead><tbody>'
             + rows.slice(0,50).map(function(r){return '<tr>'+cols.map(function(c){return '<td>'+esc(typeof r[c]==="object"?JSON.stringify(r[c]):r[c])+'</td>';}).join('')+'</tr>';}).join('')

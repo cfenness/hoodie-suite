@@ -741,7 +741,7 @@ def scraper_analyze():
 def scraper_extract():
     b = request.get_json(force=True, silent=True) or {}
     import source_analyzer
-    result = source_analyzer.extract((b.get("url") or ""), (b.get("prompt") or ""))
+    result = source_analyzer.extract((b.get("url") or ""), (b.get("prompt") or ""), b.get("pages", 1))
     return jsonify(ok=("error" not in result), **result)
 
 @app.get("/api/hierarchy")
