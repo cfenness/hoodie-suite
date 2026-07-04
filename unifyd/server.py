@@ -144,7 +144,47 @@ def _cors(resp):
             resp.headers["Access-Control-Allow-Credentials"] = "true"
         resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Accept"
         resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    # Anti-scraping / no-index defense-in-depth on top of the OIDC gate. The suite iframes
+    # its own apps (launcher, sources.html, mdm.html) so framing is SAMEORIGIN, not DENY.
+    resp.headers.setdefault("X-Robots-Tag", "noindex, nofollow, noarchive")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
     return resp
+
+
+# Light per-IP rate limit — the OIDC gate already restricts to allowlisted humans; this
+# just stops an authenticated session (or the login endpoint) from being hammered to pull
+# the whole book/catalog fast. In-memory sliding window (single Fly machine). Generous for
+# a human, restrictive for a scraper. Tune with RATE_MAX / RATE_WINDOW; 0 disables.
+_RATE = {}
+RATE_MAX    = int(os.environ.get("RATE_MAX", "600"))     # requests per window per IP on /api
+RATE_WINDOW = int(os.environ.get("RATE_WINDOW", "60"))   # seconds
+
+def _client_ip():
+    return (request.headers.get("Fly-Client-IP")
+            or (request.headers.get("X-Forwarded-For", "").split(",")[0].strip())
+            or request.remote_addr or "?")
+
+@app.before_request
+def _ratelimit():
+    if RATE_MAX <= 0 or not request.path.startswith("/api/") or request.path == "/api/health":
+        return
+    now = time.time(); ip = _client_ip()
+    hits = [t for t in _RATE.get(ip, []) if now - t < RATE_WINDOW]
+    hits.append(now); _RATE[ip] = hits
+    if len(_RATE) > 5000:                                   # cap memory: drop the coldest IPs
+        for k in [k for k, v in list(_RATE.items()) if not v or now - v[-1] > RATE_WINDOW]:
+            _RATE.pop(k, None)
+    if len(hits) > RATE_MAX:
+        return jsonify(ok=False, error="rate limited — slow down"), 429
+
+
+@app.get("/robots.txt")
+def robots():
+    # Belt-and-suspenders: the OIDC gate already blocks anonymous crawlers; this tells the
+    # polite ones to stay out entirely and keeps the site out of search indexes.
+    return Response("User-agent: *\nDisallow: /\n", mimetype="text/plain")
 
 @app.errorhandler(404)
 def _e404(e):
