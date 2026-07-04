@@ -140,7 +140,7 @@
 
   function render(d){
     var a=(d&&d.analysis)||{};
-    if(a.error){ out.innerHTML='<div class="card"><div class="em">'+esc(a.error)+(a.via?(' · fetch: '+esc(a.via)):'')+'</div></div>'; return; }
+    if(a.error){ out.innerHTML='<div class="card"><div class="em">'+esc(a.error)+(a.via?(' · fetch: '+esc(a.via)):'')+'</div>'+attemptsHtml(a.attempts)+'</div>'; return; }
     var fields=a.available_fields||[], rows=a.sample_rows||[], items=a.item_fields||[];
     // only trust a data-API url that's actually callable (not a <siteId>/{key}/… template)
     var apiUrl=(a.data_api&&a.data_api.url&&!/[<{]|your_|site_id|example\.|\.\.\./i.test(a.data_api.url))?a.data_api.url:"";
@@ -229,6 +229,18 @@
     return '<div style="display:flex;gap:9px;align-items:flex-start;margin:2px 0 12px;padding:9px 12px;border-radius:9px;background:'+c[1]+';border:1px solid '+c[0]+'33;color:'+c[0]+';font-size:12.5px;line-height:1.45">'
       +'<span style="font-size:14px;line-height:1.2">'+c[2]+'</span><span>'+msg+'</span></div>';
   }
+  // Expandable trace of the actual fetch attempts (direct → Bright Data) with real errors.
+  function attemptsHtml(att){
+    if(!att||!att.length) return "";
+    var rows=att.map(function(a){
+      var ic=a.ok?"✓":"✗", c=a.ok?"#157347":"#b4232a";
+      return '<div style="display:flex;gap:8px;padding:3px 0;align-items:flex-start"><span style="color:'+c+'">'+ic+'</span>'
+        +'<span style="font-weight:700;min-width:88px">'+esc(a.step)+'</span>'
+        +'<span style="color:#6e6a62">'+(a.status!=null?('['+esc(a.status)+'] '):'')+esc(a.note||"")+'</span></div>';
+    }).join('');
+    return '<details style="margin-top:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px"><summary style="cursor:pointer;color:var(--muted,#5E6B68);font-family:inherit">▸ Show fetch details (what actually failed)</summary>'
+      +'<div style="margin-top:7px;padding:9px 11px;background:#faf9f7;border:1px solid var(--hair,#D7DDDB);border-radius:8px">'+rows+'</div></details>';
+  }
   function runExtract(){
     var prompt=(document.getElementById("scrape-prompt")||{}).value||"";
     if(!prompt.trim()){ toast("The prompt is empty"); return; }
@@ -241,7 +253,7 @@
     btn.disabled=true; eout.innerHTML='<div class="loading"><span class="spin"></span>Fetching '+(allMode?'every page':(pages>1?(pages+' pages'):'the source'))+' + extracting '+(allMode?'all rows':('up to '+limit+' rows'))+'…</div>';
     fetch(API+"/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:target,prompt:prompt,pages:pages,limit:limit})})
       .then(function(r){return r.json();}).then(function(d){ btn.disabled=false;
-        if(d.error){ eout.innerHTML='<div class="em">'+esc(d.error)+'</div>'; return; }
+        if(d.error){ eout.innerHTML='<div class="em">'+esc(d.error)+'</div>'+attemptsHtml(d.attempts); return; }
         var rows=d.rows||[];
         document.getElementById("ex-hint").textContent=rows.length+" rows · engine: "+esc(d.engine||"?")+(d.raw?(" · "+d.raw+" raw"):"")+(d.pages?(" · "+d.pages+"p"):"")+(d.via?(" · "+esc(d.via)):"");
         eout.innerHTML=recipeBanner(d.recipe)+(rows.length
@@ -287,7 +299,7 @@
           var rows=d.rows||[];
           out.innerHTML='<div class="card">'+recipeBanner(d.recipe)
             +(rows.length?('<div class="lab">Extracted rows · engine '+esc(d.engine||"?")+'</div>'+tableHTML(rows,50)
-              +(rows.length>50?('<div class="hint" style="margin-top:6px">showing 50 of '+rows.length+'</div>'):'')):'<div class="em">'+esc(d.error||"no rows")+'</div>')
+              +(rows.length>50?('<div class="hint" style="margin-top:6px">showing 50 of '+rows.length+'</div>'):'')):('<div class="em">'+esc(d.error||"no rows")+'</div>'+attemptsHtml(d.attempts)))
             +'<div style="margin-top:12px"><button class="btn" id="re-analyze">Re-analyze instead</button></div></div>';
           var ra=document.getElementById("re-analyze"); if(ra)ra.onclick=analyze;
         }).catch(function(){ out.innerHTML='<div class="card"><div class="em">Recipe run failed — is the engine live?</div></div>'; });
