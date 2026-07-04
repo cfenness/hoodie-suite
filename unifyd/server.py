@@ -628,6 +628,19 @@ def openapi_json():
 def openapi_yaml():
     return send_file(_OPENAPI_PATH, mimetype="application/yaml")
 
+@app.get("/api/territories")
+def territories_ep():
+    """Named account groups (Territory Builder). Powers target-vs-competition comparisons."""
+    import territories
+    return jsonify(ok=True, territories=territories.list_territories())
+
+
+@app.get("/api/territories/<tid>")
+def territory_members_ep(tid):
+    import territories
+    return jsonify(ok=True, **territories.members(tid))
+
+
 @app.get("/api/book/summary")
 def book_summary_ep():
     import book
