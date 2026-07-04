@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Territory Builder</title>
+<style>
+  :root{
+    --ink:#2B3138; --paper:#F1F3F5; --muted:#7A828B; --line:#E4E7EB; --line2:#D3D8DE;
+    --accent:#4E79A7; --accent-ink:#3B5F86; --teal:#2C7D7D; --good:#2E7D57;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);height:100%}
+  .page{max-width:1280px;margin:0 auto;padding:18px 22px 40px}
+  h1{font-size:23px;font-weight:800;letter-spacing:-.02em;margin:2px 0 14px}
+  .layout{display:grid;grid-template-columns:290px minmax(0,1fr);gap:20px;align-items:start}
+
+  .side .actions{display:flex;gap:8px;margin-bottom:10px}
+  .btn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;
+    border-radius:8px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;border:1px solid var(--line2)}
+  .btn.import{background:var(--teal);color:#fff;border-color:var(--teal)}
+  .btn.new{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .search{position:relative;margin-bottom:10px}
+  .search input{width:100%;padding:8px 12px 8px 32px;border:1px solid var(--line2);border-radius:8px;font:inherit;font-size:13px;outline:none}
+  .search input:focus{border-color:var(--accent)}
+  .search svg{position:absolute;left:10px;top:9px;width:14px;height:14px;color:var(--muted)}
+  .tlist{display:flex;flex-direction:column;gap:8px;max-height:72vh;overflow:auto}
+  .tcard{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 13px;cursor:pointer;position:relative;transition:border-color .12s}
+  .tcard:hover{border-color:var(--line2)}
+  .tcard.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  .tcard .nm{display:flex;align-items:center;gap:7px;font-weight:700;font-size:14px}
+  .tcard .nm .g{color:var(--muted)}
+  .tcard .cnt{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .tcard .pv{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.35;overflow:hidden;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+
+  .main{background:transparent}
+  .mhead{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .mhead h2{font-size:19px;font-weight:800;letter-spacing:-.01em;margin:0}
+  .mhead .sub{font-size:12.5px;color:var(--muted)}
+  .mhead .sp{flex:1}
+  .mhead .exp{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--line2);
+    border-radius:8px;background:#fff;font:inherit;font-size:13px;font-weight:600;color:var(--accent-ink);cursor:pointer}
+  #grid{min-height:120px}
+  .placeholder{background:#fff;border:1px dashed var(--line2);border-radius:12px;padding:60px 20px;text-align:center;color:var(--muted)}
+
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);
+    color:#fff;font-size:13px;padding:10px 16px;border-radius:8px;opacity:0;transition:all .2s;z-index:100;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Territory Builder</h1>
+  <div class="layout">
+    <aside class="side">
+      <div class="actions">
+        <button class="btn import" id="import">⭱ Import</button>
+        <button class="btn new" id="new">＋ New territory</button>
+      </div>
+      <div class="search"><svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="tsearch" type="search" placeholder="Search territories…"></div>
+      <div class="tlist" id="tlist"></div>
+    </aside>
+    <section class="main">
+      <div class="mhead">
+        <div>
+          <h2 id="mtitle">Territories</h2>
+          <div class="sub" id="msub">Select a territory to view its accounts.</div>
+        </div>
+        <span class="sp"></span>
+        <button class="exp" id="export">⭳ Export</button>
+      </div>
+      <div id="grid"><div class="placeholder">Pick a territory on the left to see the accounts it groups.</div></div>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="../datagrid.js"></script>
+<script>
+(function(){
+  var API = "";  // same-origin
+  var territories = [], active = null, grid = null;
+
+  function toast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
+    clearTimeout(t._x);t._x=setTimeout(function(){t.classList.remove("show");},1900);}
+
+  function get(p){ return fetch(API+p,{headers:{Accept:"application/json"}}).then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); }); }
+
+  function renderList(){
+    var q = (document.getElementById("tsearch").value||"").toLowerCase();
+    var list = territories.filter(function(t){ return t.name.toLowerCase().indexOf(q)>=0; });
+    document.getElementById("tlist").innerHTML = list.map(function(t){
+      return '<div class="tcard'+(active===t.id?" on":"")+'" data-id="'+t.id+'">'+
+        '<div class="nm"><svg class="g" width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3" stroke="currentColor" stroke-width="1.7"/><circle cx="16" cy="9" r="2.3" stroke="currentColor" stroke-width="1.7"/><path d="M4 18c0-2.5 2.2-4 5-4s5 1.5 5 4M14 16c.4-1.6 2-2.4 4-2.4s3.5.9 3.8 2.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>'+
+        esc(t.name)+'<span class="cnt">'+t.count+'</span></div>'+
+        '<div class="pv">'+esc(t.preview||"")+'</div></div>';
+    }).join("") || '<div style="color:var(--muted);font-size:13px;padding:8px">No territories match.</div>';
+    document.querySelectorAll(".tcard").forEach(function(el){ el.onclick=function(){ select(el.dataset.id); }; });
+  }
+
+  function select(id){
+    active = id; renderList();
+    get("/api/territories/"+id).then(function(d){
+      document.getElementById("mtitle").textContent = (d.name||"Territory")+" — accounts";
+      document.getElementById("msub").textContent = (d.members||[]).length+" accounts in this territory";
+      mountGrid(d.members||[]);
+    }).catch(function(){ toast("Couldn't load the territory"); });
+  }
+
+  function mountGrid(rows){
+    var el = document.getElementById("grid"); el.innerHTML = "";
+    grid = HoodieGrid.mount(el, {
+      idKey:"account_id", rows:rows, search:true, columnChooser:true, selectable:false,
+      statusTones:{ on:"good", off:"info" },
+      emptyText:"No accounts in this territory yet.",
+      columns:[
+        {key:"name", label:"Dispensary", type:"text", sortable:true},
+        {key:"banner", label:"Banner", type:"text", sortable:true},
+        {key:"channel", label:"Premise", type:"status"},
+        {key:"subchannel", label:"Sub-channel", type:"text"},
+        {key:"city", label:"City", type:"text", sortable:true},
+        {key:"address", label:"ZIP", type:"text"},
+        {key:"state", label:"State", type:"text"},
+        {key:"country", label:"Country", type:"text"},
+      ],
+    });
+  }
+
+  document.getElementById("tsearch").oninput = renderList;
+  document.getElementById("import").onclick = function(){ toast("Import territories from CSV — arrives with saved (user-drawn) territories"); };
+  document.getElementById("new").onclick = function(){ toast("New territory builder (pick accounts + save) — next: persist to a dim_territory bridge"); };
+  document.getElementById("export").onclick = function(){ toast(active? "Exported territory accounts":"Select a territory first"); };
+
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
+
+  get("/api/territories").then(function(d){
+    territories = d.territories||[]; renderList();
+    if(territories.length) select(territories[0].id);
+  }).catch(function(){
+    document.getElementById("tlist").innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">No accounts yet — seed the book / run the accounts connector.</div>';
+  });
+})();
+</script>
+<script src="../suite-header.js" data-id="territory" data-mark="TB" data-name="Territory Builder" data-status="beta"></script>
+</body>
+</html>

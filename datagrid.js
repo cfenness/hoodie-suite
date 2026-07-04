@@ -75,6 +75,14 @@
     ".hg-menu button:hover{background:var(--hg-grid);color:var(--hg-ink)}" +
     ".hg-menu button.danger{color:var(--hg-crit)}" +
     ".hg-empty{padding:44px 20px;text-align:center;color:var(--hg-mut);font-size:14px}" +
+    ".hg-delta{font-family:var(--hg-mono);font-size:12.5px;font-weight:700;white-space:nowrap}" +
+    ".hg-delta.up{color:var(--hg-good)} .hg-delta.down{color:var(--hg-crit)} .hg-delta.flat{color:var(--hg-mut)}" +
+    ".hg-thumb{display:inline-flex;align-items:center;gap:9px;min-width:0}" +
+    ".hg-thumb-img{width:30px;height:30px;flex:0 0 auto;border-radius:6px;background:var(--hg-grid);background-size:cover;background-position:center;" +
+      "display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--hg-mut);font-size:12px}" +
+    ".hg-thumb-txt{min-width:0;display:flex;flex-direction:column;line-height:1.25}" +
+    ".hg-thumb-txt .tt{font-weight:600;color:var(--hg-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+    ".hg-thumb-txt .ts{font-size:11.5px;color:var(--hg-mut)}" +
     ".hg-cc{position:relative}";
 
   function ensureStyle() {
@@ -138,9 +146,10 @@
       }
       if (sort) {
         var c = cols.find(function (x) { return x.key === sort.key; }) || {};
-        var numeric = c.type === "num" || c.type === "completeness";
+        var numeric = c.type === "num" || c.type === "completeness" || c.type === "delta" || c.type === "heatmap";
         out = out.slice().sort(function (a, b) {
           var av = a[sort.key], bv = b[sort.key];
+          if (av && av.value != null) av = av.value; if (bv && bv.value != null) bv = bv.value;
           if (av && av.label != null) av = av.label; if (bv && bv.label != null) bv = bv.label;
           if (numeric) { av = +av || 0; bv = +bv || 0; return sort.dir === "asc" ? av - bv : bv - av; }
           av = String(av == null ? "" : av); bv = String(bv == null ? "" : bv);
@@ -168,7 +177,33 @@
       if (c.type === "num") {
         var f = FMT[c.format] || FMT.num; return f(v);
       }
+      if (c.type === "delta") {
+        if (v == null || v === "") return "";
+        var n = (v && v.value != null) ? v.value : v, up = +n > 0, dn = +n < 0;
+        var df = FMT[c.format] || FMT.dec;
+        var arrow = up ? "▲" : dn ? "▼" : "→";
+        return '<span class="hg-delta ' + (up ? "up" : dn ? "down" : "flat") + '">' + arrow + " " + df(Math.abs(+n)) + "</span>";
+      }
+      if (c.type === "heatmap") {
+        return '<span>' + (FMT[c.format] || FMT.num)(v) + "</span>";   // shading applied on the cell
+      }
+      if (c.type === "thumbnail") {
+        var t = v || {};
+        var img = t.src ? ' style="background-image:url(' + esc(t.src) + ')"' : "";
+        return '<span class="hg-thumb"><span class="hg-thumb-img"' + img + ">" +
+          (t.src ? "" : esc(String(t.title || "?").charAt(0).toUpperCase())) + "</span>" +
+          '<span class="hg-thumb-txt"><span class="tt">' + esc(t.title || "") + "</span>" +
+          (t.sub ? '<span class="ts">' + esc(t.sub) + "</span>" : "") + "</span></span>";
+      }
       return esc(v);
+    }
+
+    function heatStyle(c, v) {
+      if (c.type !== "heatmap" || v == null) return "";
+      var n = +v || 0, mid = c.heatMid == null ? 100 : c.heatMid, max = c.heatMax || mid * 2;
+      if (n < mid || max <= mid) return "";
+      var p = Math.min(1, (n - mid) / (max - mid));
+      return ' style="background:rgba(46,125,87,' + (0.10 + 0.55 * p).toFixed(2) + ')"';
     }
 
     function renderBar() {
@@ -223,8 +258,9 @@
       var allSel = cfg.selectable && data.length && data.every(function (r) { return sel.has(r[idKey]); });
       var thead = "<tr>";
       if (cfg.selectable) thead += '<th class="hg-check"><input type="checkbox" data-all ' + (allSel ? "checked" : "") + "></th>";
+      var numish = function (c) { return c.type === "num" || c.type === "delta" || c.type === "heatmap"; };
       thead += vis.map(function (c) {
-        var cls = (c.type === "num" ? "num " : "") + (c.sortable ? "sortable" : "");
+        var cls = (numish(c) ? "num " : "") + (c.sortable ? "sortable" : "");
         var ar = sort && sort.key === c.key ? '<span class="ar">' + (sort.dir === "asc" ? "▲" : "▼") + "</span>" : "";
         return '<th class="' + cls + '"' + (c.sortable ? ' data-sort="' + esc(c.key) + '"' : "") + ">" + esc(c.label) + ar + "</th>";
       }).join("");
@@ -235,7 +271,7 @@
         var id = r[idKey], on = sel.has(id);
         var tds = "";
         if (cfg.selectable) tds += '<td class="hg-check"><input type="checkbox" data-id="' + esc(id) + '" ' + (on ? "checked" : "") + "></td>";
-        tds += vis.map(function (c) { return '<td class="' + (c.type === "num" ? "num" : "") + '">' + cell(r, c) + "</td>"; }).join("");
+        tds += vis.map(function (c) { return '<td class="' + (numish(c) ? "num" : "") + '"' + heatStyle(c, r[c.key]) + ">" + cell(r, c) + "</td>"; }).join("");
         if ((cfg.rowActions || []).length) tds += '<td style="text-align:right"><button class="hg-rowbtn" data-row="' + esc(id) + '">⋯</button></td>';
         return '<tr class="' + (on ? "sel" : "") + '">' + tds + "</tr>";
       }).join("");
