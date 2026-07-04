@@ -32,7 +32,45 @@ _GOOGLE_ISS  = {"accounts.google.com", "https://accounts.google.com"}
 
 # Paths reachable WITHOUT a session. Everything else is gated.
 _PUBLIC = {"/api/health", "/auth/login", "/auth/callback", "/auth/logout",
-           "/auth/me", "/favicon.ico"}
+           "/auth/me", "/api/auth/mobile", "/favicon.ico"}
+
+# Mobile bearer tokens: RN has no cookie jar, so native apps authenticate by exchanging a
+# Google ID token (POST /api/auth/mobile) for one of OUR signed tokens, sent as a Bearer.
+MOBILE_MAX_AGE = 30 * 24 * 3600   # 30 days
+
+
+def _serializer():
+    from itsdangerous import URLSafeTimedSerializer
+    return URLSafeTimedSerializer(os.environ.get("SESSION_SECRET", ""), salt="hoodie-mobile")
+
+
+def mint_mobile_token(email):
+    return _serializer().dumps({"email": email})
+
+
+def verify_mobile_token(token):
+    """Return the email for a valid, unexpired, allowlisted mobile token, else None."""
+    if not token:
+        return None
+    try:
+        data = _serializer().loads(token, max_age=MOBILE_MAX_AGE)
+    except Exception:
+        return None
+    email = (data.get("email") or "").lower()
+    allowed = _allowed_emails()
+    if allowed and email not in allowed:
+        return None
+    return email or None
+
+
+def _mobile_auds():
+    """Allowed Google audiences for the mobile exchange — the web client id plus any
+    platform client ids in GOOGLE_MOBILE_CLIENT_IDS (comma-separated)."""
+    ids = {os.environ.get("GOOGLE_CLIENT_ID", "").strip()}
+    for a in os.environ.get("GOOGLE_MOBILE_CLIENT_IDS", "").split(","):
+        if a.strip():
+            ids.add(a.strip())
+    return {i for i in ids if i}
 
 
 def _cfg():
@@ -114,6 +152,10 @@ def init(app):
             return
         if session.get("email"):
             return
+        # mobile bearer token (native apps have no cookie)
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer ") and verify_mobile_token(auth[7:]):
+            return
         if p.startswith("/api/"):
             return jsonify(ok=False, error="unauthorized"), 401
         # bounce browsers to Google, remembering where they were headed
@@ -189,6 +231,35 @@ def init(app):
         # Public: lets the UI decide whether to show a "Sign out" control. Reveals only
         # the already-signed-in account's own email (or null); no info leak when gate is off.
         return jsonify(gated=enabled(), email=session.get("email"))
+
+    @app.post("/api/auth/mobile")
+    def auth_mobile():
+        # Exchange a Google ID token (from the native app's Google sign-in) for one of our
+        # signed bearer tokens. Verified via Google's tokeninfo (no JWKS needed), then
+        # checked against the audience + email allowlist.
+        if not enabled():
+            abort(404)
+        import requests
+        idt = (request.get_json(force=True, silent=True) or {}).get("id_token")
+        if not idt:
+            return jsonify(ok=False, error="id_token required"), 400
+        try:
+            r = requests.get("https://oauth2.googleapis.com/tokeninfo",
+                             params={"id_token": idt}, timeout=10)
+            r.raise_for_status()
+            claims = r.json()
+        except Exception:
+            return jsonify(ok=False, error="token verification failed"), 401
+        auds = _mobile_auds()
+        if auds and claims.get("aud") not in auds:
+            return jsonify(ok=False, error="aud mismatch"), 401
+        if str(claims.get("email_verified")).lower() != "true":
+            return jsonify(ok=False, error="email not verified"), 401
+        email = (claims.get("email") or "").lower()
+        allowed = _allowed_emails()
+        if allowed and email not in allowed:
+            return jsonify(ok=False, error="not allowed"), 403
+        return jsonify(ok=True, token=mint_mobile_token(email), email=email)
 
 
 def _deny(msg):
