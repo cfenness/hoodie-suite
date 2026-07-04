@@ -30,33 +30,38 @@
   .chips{display:flex;flex-wrap:wrap;gap:6px}
   .fchip{font-size:12.5px;background:var(--panel,#EAEEED);border-radius:6px;padding:4px 9px}
   .fchip b{font-weight:700}
-  table{width:100%;border-collapse:collapse;font-size:12.5px}
-  th{text-align:left;font-size:11px;color:var(--ink-soft,#5E6B68);padding:7px 9px;border-bottom:1px solid var(--hair,#D7DDDB);white-space:nowrap}
-  td{padding:7px 9px;border-bottom:1px solid var(--panel,#EAEEED);vertical-align:top}
-  .scroll{overflow-x:auto}
+  .scroll{overflow:auto;max-height:62vh;border:1px solid var(--hair,#D7DDDB);border-radius:10px;background:#fff}
+  .scroll table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .scroll thead th{position:sticky;top:0;z-index:1;text-align:left;font-family:var(--mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-soft,#5E6B68);font-weight:600;padding:9px 12px;background:var(--panel,#EAEEED);border-bottom:1px solid var(--hair,#D7DDDB);white-space:nowrap}
+  .scroll tbody td{padding:8px 12px;border-bottom:1px solid #EEF2F1;vertical-align:top;max-width:320px}
+  .scroll tbody tr:last-child td{border-bottom:0}
+  .scroll tbody tr:nth-child(even){background:#FAFCFB}
+  .scroll tbody tr:hover{background:var(--slate-tint,#DDE7E4)}
+  .scroll td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .scroll td .muted{color:#A6AFAB}
   .cfg{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;font-size:12.5px}
   .cfg .k{color:var(--ink-soft,#5E6B68)} .cfg code{font-family:var(--mono);background:var(--panel,#EAEEED);border-radius:4px;padding:1px 6px;font-size:11.5px}
   .em{padding:26px;text-align:center;color:var(--ink-soft,#5E6B68);font-family:var(--mono);font-size:12.5px}
   textarea.prompt{width:100%;min-height:110px;border:1px solid var(--hair,#D7DDDB);border-radius:9px;padding:11px 13px;font-family:var(--mono);font-size:12.5px;line-height:1.5;background:var(--panel,#EAEEED);color:var(--ink,#243330);resize:vertical}
   textarea.prompt:focus{outline:none;border-color:var(--amber,#2C8C7C);background:#fff}
-  /* the extraction prompt — the hero of the page: a code-editor block with a teal header */
-  .promptbox{border-radius:13px;overflow:hidden;border:1px solid #16302A;box-shadow:0 16px 44px -22px rgba(20,80,66,.6)}
-  .promptbox .pb-head{display:flex;align-items:center;gap:9px;padding:11px 14px;background:linear-gradient(100deg,#1E5F55 0%,#2C8C7C 62%,#34A392 100%);color:#fff}
-  .promptbox .pb-head svg{width:15px;height:15px;flex:0 0 15px}
-  .promptbox .pb-title{font-weight:800;font-size:13px;letter-spacing:.01em}
-  .promptbox .pb-tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.03em;opacity:.9}
-  .promptbox .pb-copy{margin-left:auto;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.34);color:#fff;border-radius:7px;padding:4px 11px;font:inherit;font-size:11.5px;font-weight:700;cursor:pointer;transition:background .12s}
-  .promptbox .pb-copy:hover{background:rgba(255,255,255,.3)}
-  .promptbox textarea.prompt{border:0;border-radius:0;min-height:0;overflow:hidden;resize:none;background:#0E1B18;color:#CFEDE4;font-size:12.5px;line-height:1.6;padding:15px 16px;caret-color:#34A392}
-  .promptbox textarea.prompt:focus{background:#0B1512;color:#E4F6EF}
-  .promptbox textarea.prompt::selection{background:#2C8C7C;color:#fff}
-  .exrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
-  .exrow input.target{flex:1;min-width:260px;border:1px solid var(--hair,#D7DDDB);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:12px;background:#fff;color:var(--ink,#243330)}
+  /* the extraction prompt — a clean white code-editor block (developer vibe, light) */
+  .promptbox{border-radius:11px;overflow:hidden;border:1px solid var(--hair,#D7DDDB);background:#fff}
+  .promptbox .pb-head{display:flex;align-items:center;gap:9px;padding:9px 13px;background:var(--panel,#EAEEED);border-bottom:1px solid var(--hair,#D7DDDB);color:var(--ink,#243330)}
+  .promptbox .pb-head svg{width:15px;height:15px;flex:0 0 15px;color:var(--amber,#2C8C7C)}
+  .promptbox .pb-title{font-weight:800;font-size:12.5px}
+  .promptbox .pb-tag{font-family:var(--mono);font-size:10px;letter-spacing:.02em;color:var(--ink-soft,#5E6B68)}
+  .promptbox .pb-copy{margin-left:auto;background:#fff;border:1px solid var(--hair,#D7DDDB);color:var(--amber-deep,#1E5F55);border-radius:7px;padding:4px 11px;font:inherit;font-size:11.5px;font-weight:700;cursor:pointer;transition:.12s}
+  .promptbox .pb-copy:hover{background:var(--panel,#EAEEED);border-color:var(--amber,#2C8C7C)}
+  .promptbox textarea.prompt{border:0;border-radius:0;min-height:0;overflow:hidden;resize:none;background:#fff;color:#243330;font-size:12.5px;line-height:1.65;padding:14px 16px;caret-color:#2C8C7C}
+  .promptbox textarea.prompt:focus{background:#fff}
+  .promptbox textarea.prompt::selection{background:#CDE8E0}
+  .exbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  .exrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 4px}
+  .exrow input.target{flex:1;min-width:240px;border:1px solid var(--hair,#D7DDDB);border-radius:8px;padding:9px 12px;font-family:var(--mono);font-size:12px;background:#fff;color:var(--ink,#243330)}
   .exrow input.target:focus{outline:none;border-color:var(--amber,#2C8C7C)}
-  .exrow .pages{width:60px;border:1px solid var(--hair,#D7DDDB);border-radius:8px;padding:10px 8px;font:inherit;text-align:center}
-  .runbtn{background:linear-gradient(100deg,#1E5F55,#2C8C7C);border:0;color:#fff;border-radius:9px;padding:11px 20px;font:inherit;font-weight:800;font-size:13.5px;cursor:pointer;box-shadow:0 8px 22px -10px rgba(44,140,124,.7)}
-  .runbtn:hover{filter:brightness(1.06)} .runbtn:disabled{opacity:.6;cursor:default;box-shadow:none}
-  td.num{text-align:right;font-variant-numeric:tabular-nums} td .muted{color:var(--ink-soft,#5E6B68)}
+  .exrow .num-in{width:66px;border:1px solid var(--hair,#D7DDDB);border-radius:8px;padding:9px 8px;font:inherit;text-align:center}
+  .runbtn{background:var(--amber,#2C8C7C);border:0;color:#fff;border-radius:9px;padding:11px 18px;font:inherit;font-weight:800;font-size:13.5px;cursor:pointer;transition:background .12s}
+  .runbtn:hover{background:var(--amber-deep,#1E5F55)} .runbtn:disabled{opacity:.55;cursor:default}
   .loading{display:flex;align-items:center;gap:12px;padding:24px;color:var(--ink-soft,#5E6B68);font-size:13.5px}
   .spin{width:18px;height:18px;border:2px solid var(--hair,#D7DDDB);border-top-color:var(--amber,#2C8C7C);border-radius:50%;animation:sp .8s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
@@ -142,20 +147,21 @@
           +items.map(function(f){return '<tr><td><b>'+esc(f.name)+'</b></td><td><code>'+esc(f.selector)+'</code></td></tr>';}).join('')+'</tbody></table></div>'):'')
         +'<div style="margin-top:14px;display:flex;gap:8px"><button class="btn" id="save">Save as a source</button><button class="btn" id="again">Analyze another</button></div>'
       +'</div>'
-      +'<div class="card"><div class="promptbox">'
-        +'<div class="pb-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.7L18.5 9l-4.6 1.3L12 15l-1.9-4.7L5.5 9l4.6-1.3z"/><path d="M18 15l.8 2 .8-2 .8-.8-.8-.8-.8-2-.8 2-.8.8z" fill="currentColor" stroke="none"/></svg>'
-        +'<span class="pb-title">Extraction prompt</span><span class="pb-tag">reusable · fed to Claude each run · '+(d.llm?'written by Claude':'template')+'</span>'
-        +'<button class="pb-copy" id="pb-copy">Copy</button></div>'
-        +'<textarea class="prompt" id="scrape-prompt" spellcheck="false">'+esc(a.scrape_prompt||"")+'</textarea>'
-      +'</div>'
+      +'<div class="card">'
+        +'<div class="exbar"><button class="runbtn" id="run-extract">▸ Run extraction — feed to Claude</button><span class="hint" id="ex-hint"></span></div>'
         +'<div class="lab">Extract from</div>'
-        +'<div class="exrow">'
-          +'<input id="ex-target" class="target" value="'+esc((a.data_api&&a.data_api.url)||lastUrl)+'">'
-          +(a.data_api&&a.data_api.url?'<button class="btn" id="use-page" title="Use the page URL instead of the API">use page</button>':'')
-          +'<span class="hint">pages</span><input id="ex-pages" class="pages" type="number" min="1" max="25" value="'+((a.data_api&&a.data_api.url)||a.pagination?'3':'1')+'">'
+        +'<div class="exrow"><input id="ex-target" class="target" value="'+esc((a.data_api&&a.data_api.url)||lastUrl)+'">'
+          +(a.data_api&&a.data_api.url?'<button class="btn" id="use-page" title="Use the page URL instead of the API">use page</button>':'')+'</div>'
+        +'<div class="exrow"><span class="hint">pages</span><input id="ex-pages" class="num-in" type="number" min="1" max="25" value="'+((a.data_api&&a.data_api.url)||a.pagination?'3':'1')+'">'
+          +'<span class="hint" style="margin-left:10px">max items</span><input id="ex-limit" class="num-in" type="number" min="1" max="100000" value="100" title="cap the number of items pulled">'
+          +'<span class="hint" style="margin-left:6px">— caps the run so you don’t pull the whole catalog while testing</span></div>'
+        +(a.data_api&&a.data_api.url?'<div class="hint" style="margin:2px 0 12px">This source is client-rendered — extraction runs against its <b>data API</b> so you can pull the whole catalog (up to your cap), not one page.</div>':'<div style="height:8px"></div>')
+        +'<div class="promptbox">'
+          +'<div class="pb-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.7L18.5 9l-4.6 1.3L12 15l-1.9-4.7L5.5 9l4.6-1.3z"/><path d="M18 15l.8 2 .8-2 .8-.8-.8-.8-.8-2-.8 2-.8.8z" fill="currentColor" stroke="none"/></svg>'
+          +'<span class="pb-title">Extraction prompt</span><span class="pb-tag">reusable · fed to Claude each run · '+(d.llm?'written by Claude':'template')+'</span>'
+          +'<button class="pb-copy" id="pb-copy">Copy</button></div>'
+          +'<textarea class="prompt" id="scrape-prompt" spellcheck="false">'+esc(a.scrape_prompt||"")+'</textarea>'
         +'</div>'
-        +(a.data_api&&a.data_api.url?'<div class="hint" style="margin-top:5px">This source is client-rendered — extraction runs against its <b>data API</b> so you get the whole catalog, not one page.</div>':'')
-        +'<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="runbtn" id="run-extract">▸ Run extraction — feed to Claude</button><span class="hint" id="ex-hint"></span></div>'
         +'<div id="extract-out"></div>'
       +'</div>';
     var pt=document.getElementById("scrape-prompt"); autoGrow(pt); if(pt)pt.addEventListener("input",function(){autoGrow(pt);});
@@ -171,9 +177,10 @@
     if(!prompt.trim()){ toast("The prompt is empty"); return; }
     var target=(document.getElementById("ex-target")||{}).value||lastUrl;
     var pages=parseInt((document.getElementById("ex-pages")||{}).value,10)||1;
+    var limit=parseInt((document.getElementById("ex-limit")||{}).value,10)||100;
     var btn=document.getElementById("run-extract"), eout=document.getElementById("extract-out");
-    btn.disabled=true; eout.innerHTML='<div class="loading"><span class="spin"></span>Fetching '+(pages>1?(pages+' pages'):'the source')+' + extracting the rows…</div>';
-    fetch(API+"/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:target,prompt:prompt,pages:pages})})
+    btn.disabled=true; eout.innerHTML='<div class="loading"><span class="spin"></span>Fetching '+(pages>1?(pages+' pages'):'the source')+' + extracting up to '+limit+' rows…</div>';
+    fetch(API+"/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:target,prompt:prompt,pages:pages,limit:limit})})
       .then(function(r){return r.json();}).then(function(d){ btn.disabled=false;
         if(d.error){ eout.innerHTML='<div class="em">'+esc(d.error)+'</div>'; return; }
         var rows=d.rows||[];
