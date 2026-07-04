@@ -1,9 +1,11 @@
-name: Deploy Hoodie Suite
+name: Deploy Hoodie Suite (S3/CloudFront — DORMANT)
 
+# DORMANT: the suite deploys to Fly.io now (see DEPLOY-FLY.md / `flyctl deploy`).
+# This legacy S3/CloudFront path is kept for reference but no longer runs on push —
+# it's manual-only (workflow_dispatch). Re-enable the `push` trigger only if you
+# actually resume serving from S3/CloudFront.
 on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:   # lets you trigger a deploy manually from the Actions tab
+  workflow_dispatch:   # manual-only from the Actions tab
 
 permissions:
   contents: read
@@ -57,7 +59,7 @@ jobs:
             --cache-control "public,max-age=300"
 
       - name: Invalidate CloudFront cache
-        if: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID != '' }}
+        if: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID != '' }}   # secrets context is not allowed in if:
         run: |
           aws cloudfront create-invalidation \
             --distribution-id "${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}" \
