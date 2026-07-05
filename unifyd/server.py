@@ -239,6 +239,9 @@ SERVICE  = load("service_reports.json", [])
 # Self-reinforcing scrape recipes — host -> proven config + validation baseline.
 # Each analyze/extract folds into this book (see recipes.py); persisted like the rest.
 RECIPES  = load("recipes.json", {})
+# Scrape highlights — a rolling feed of 'what the last pulls yielded' (counts, ranges,
+# geo, top categories), surfaced as a card on completion and in Hoodie Intelligence.
+HIGHLIGHTS = load("highlights.json", [])
 # Per-account planograms — shelf facings for an account (entered by hand or derived from
 # a photo in the Planogram tool). Keyed by account id; persisted so the numbers stick.
 PLANOGRAM = load("planograms.json", {})
@@ -849,7 +852,21 @@ def scraper_extract():
         except Exception as e:
             app.logger.warning("recipe self-heal failed for %s: %s", url, e)
     _save_json("recipes.json", RECIPES)
+    # Highlights — a 'what did this scrape yield' summary for the completion card + Hoodie Intelligence.
+    try:
+        hl = source_analyzer.highlights(result.get("rows"), host=recipes.host_of(url), engine=result.get("engine"))
+        if hl:
+            hl["ts"] = int(time.time() * 1000)
+            HIGHLIGHTS.insert(0, hl); del HIGHLIGHTS[30:]
+            _save_json("highlights.json", HIGHLIGHTS)
+            result["highlights"] = hl
+    except Exception as e:
+        app.logger.warning("highlights failed for %s: %s", url, e)
     return jsonify(ok=("error" not in result), recipe=verdict, **result)
+
+@app.get("/api/highlights")
+def highlights_list():
+    return jsonify(highlights=HIGHLIGHTS[:int(request.args.get("limit", 20) or 20)])
 
 @app.get("/api/recipes")
 def recipes_list():
