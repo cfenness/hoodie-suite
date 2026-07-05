@@ -62,6 +62,18 @@
   .legend .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-left:7px;vertical-align:middle}
   .legend .di{display:inline-block;width:8px;height:8px;margin-left:7px;vertical-align:middle;transform:rotate(45deg)}
   .legend .cf{color:#9ec7bd;font-family:var(--mono)}
+  .sel .prove{margin-top:8px;width:100%;font-family:var(--mono);font-size:11px;color:#0e1613;background:var(--teal);border:none;border-radius:8px;padding:7px 11px;cursor:pointer;font-weight:700;letter-spacing:.02em}
+  .sel .prove:hover{background:#57c9b3}
+  .flat{position:fixed;inset:0;z-index:20;background:rgba(9,15,13,.9);backdrop-filter:blur(8px);display:none;flex-direction:column;align-items:center;justify-content:center;padding:26px;opacity:0;transition:opacity .2s}
+  .flat.show{display:flex;opacity:1}
+  .flat .fbar{display:flex;align-items:flex-start;gap:12px;width:min(960px,94vw);margin-bottom:8px}
+  .flat .fey{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:#6f938a}
+  .flat .fttl{font-family:var(--disp);font-weight:600;font-size:21px;color:#eafaf5;margin-top:2px}
+  .flat .fx{margin-left:auto;font-family:var(--mono);font-size:12px;color:#a9c9c0;background:none;border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+  .flat .fx:hover{border-color:var(--teal);color:#eafaf5}
+  .flat svg{max-width:min(960px,94vw);height:auto;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,rgba(18,28,25,.55),rgba(14,22,19,.55))}
+  .flat .fcap{width:min(960px,94vw);margin-top:12px;font-size:13.5px;color:#c6ddd6;line-height:1.55}
+  .flat .fcap b{color:#eafaf5;font-weight:600}
   .loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9;font-family:var(--mono);font-size:12px;color:#6f938a;background:var(--ink)}
 </style>
 <script type="importmap">
@@ -80,6 +92,7 @@
     <div class="hint"><b>drag</b> to spin · <b>scroll</b> to zoom · <b>click a node</b> to focus<br>a node lights only what it touches — the rest drops out</div>
   </div>
   <div class="sel" id="sel"></div>
+  <div class="flat" id="flat"></div>
   <div class="legend">entity ●<span class="sw" style="background:#3fb8a3"></span> · feed ◆<span class="di" style="background:#5bb86e"></span><br>live<span class="sw" style="background:#5bb86e"></span> · planned<span class="sw" style="background:#5f7a72"></span> · drifting<span class="sw" style="background:#d99a3f"></span> · broke<span class="sw" style="background:#d9584f"></span><br><span class="cf">|—&lt; one‑to‑many</span> · 🔑 key</div>
 
 <script type="module">
@@ -316,9 +329,12 @@ function showSel(n){
     +'<div class="nm">'+(n.full||n.label)+'</div>'+(n.sub?'<div class="meta">'+n.sub+'</div>':'')+km
     +'<div class="cxh">'+(n.kind==='ent'?'Relationships':'Feeds · join keys')+'</div><div class="cx">'
     +(conns.length?conns.map(c=>'<div class="cxrow"><span class="road">'+c.road+'</span><span class="to">'+c.to+'</span></div>').join(''):'<div class="none">Nothing yet — an orphan (a road worth building).</div>')
-    +'</div>'+qhtml+'<button class="reset" id="rst">✕ clear focus</button>';
+    +'</div>'+qhtml
+    +(adj[n.id].size?'<button class="prove" id="prv">⤢ Prove the lineage</button>':'')
+    +'<button class="reset" id="rst">✕ clear focus</button>';
   selEl.classList.add('show'); document.getElementById('rst').onclick=()=>setFocus(null);
   const qgo=document.getElementById('qgo'); if(qgo) qgo.onclick=()=>runQ(colMap);
+  const prv=document.getElementById('prv'); if(prv) prv.onclick=()=>flatten(n);
 }
 function runQ(colMap){
   const field=document.getElementById('qf').value, op=document.getElementById('qop').value, dataset=colMap[field];
@@ -332,6 +348,54 @@ function runQ(colMap){
       else body=(d.values||[]).map(v=>'<span class="qv">'+esc(v)+'</span>').join('')+(d.truncated?' <span class="qmeta">+more</span>':'');
       out.innerHTML=body+'<div class="qmeta">'+(d.op==='distinct'?(d.distinct+' distinct · '):'')+'from '+d.sampled+' of '+(d.total||d.sampled)+' rows</div>';
     }).catch(()=>{ out.innerHTML='<span class="qmeta">query failed — engine reachable?</span>'; });
+}
+// ── flatten / "prove it" — drop the focused node to a flat 2D lineage diagram ────────
+// the payoff of the spatial model: "ok, this connects to Brand, not SKU → change our approach"
+const flatEl=document.getElementById('flat');
+const ROADhex=r=>ROADCOL[r]||'#5f8f86';
+const cardG=c=>c==='many'?'∞':(c==='one'?'1':'');
+function closeFlat(){ flatEl.classList.remove('show'); }
+flatEl.onclick=e=>{ if(e.target===flatEl) closeFlat(); };
+addEventListener('keydown',e=>{ if(e.key==='Escape'&&flatEl.classList.contains('show')) closeFlat(); });
+function flatten(n){
+  const nbrs=[...adj[n.id]].map(id=>byId[id]).filter(Boolean);
+  const left=nbrs.filter(x=>x.kind==='src'), right=nbrs.filter(x=>x.kind==='ent');
+  const eOf=x=>edges.find(e=>(e.a===n.id&&e.b===x.id)||(e.a===x.id&&e.b===n.id));
+  const rows=Math.max(left.length,right.length,1);
+  const rowH=66, W=940, top=92, H=top+rows*rowH+24, cx=W/2, midY=top+rows*rowH/2;
+  const yAt=(i,len)=> top + rows*rowH/2 - len*rowH/2 + i*rowH + rowH/2;
+  const bw=196, bh=46, cbw=216, cbh=60, xL=64, xR=W-64-bw;
+  const box=(x,y,w,h,title,sub,accent,keyed)=>{
+    let s='<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="10" fill="#141f1c" stroke="'+accent+'" stroke-width="1.5"/>';
+    s+='<text x="'+(x+w/2)+'" y="'+(y+(keyed?21:h/2+5))+'" text-anchor="middle" fill="#eafaf5" font-family="Inter,system-ui,sans-serif" font-size="13.5" font-weight="700">'+esc(title)+'</text>';
+    if(keyed) s+='<text x="'+(x+w/2)+'" y="'+(y+39)+'" text-anchor="middle" fill="#d9b03f" font-family="monospace" font-size="10">🔑 '+esc(sub)+'</text>';
+    return s;
+  };
+  const conn=(x1,y1,x2,y2,label,color)=>{
+    const mx=(x1+x2)/2,my=(y1+y2)/2,w=(label.length*6.2)+16;
+    return '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="'+color+'" stroke-width="1.5" opacity=".55"/>'
+      +'<rect x="'+(mx-w/2)+'" y="'+(my-9)+'" width="'+w+'" height="18" rx="9" fill="#0e1613" stroke="'+color+'" stroke-width="1"/>'
+      +'<text x="'+mx+'" y="'+(my+4)+'" text-anchor="middle" fill="#cfe6df" font-family="monospace" font-size="9.5">'+esc(label)+'</text>';
+  };
+  let g='<text x="'+xL+'" y="58" fill="#6f938a" font-family="monospace" font-size="10" letter-spacing="1.5">FED BY</text>';
+  g+='<text x="'+(xR+bw)+'" y="58" text-anchor="end" fill="#6f938a" font-family="monospace" font-size="10" letter-spacing="1.5">CONNECTS TO</text>';
+  left.forEach((x,i)=>{ const y=yAt(i,left.length),e=eOf(x); g+=conn(xL+bw,y,cx-cbw/2,midY,(e&&e.road)||'',ROADhex(e&&e.road)); });
+  right.forEach((x,i)=>{ const y=yAt(i,right.length),e=eOf(x); let lab=(e&&e.road)||'';
+    if(e&&e.card&&e.ca){ const nc=e.a===n.id?e.ca:e.cb, xc=e.a===n.id?e.cb:e.ca; lab+=' '+cardG(nc)+'—'+cardG(xc); }
+    g+=conn(cx+cbw/2,midY,xR,y,lab,ROADhex(e&&e.road)); });
+  left.forEach((x,i)=>{ const y=yAt(i,left.length); g+=box(xL,y-bh/2,bw,bh,x.label,'',(STCOL[x.status]||'#5bb86e'),false); });
+  right.forEach((x,i)=>{ const y=yAt(i,right.length),m=ENTMETA[x.id]; g+=box(xR,y-bh/2,bw,bh,x.label,m?m.pk:'','#3fb8a3',!!m); });
+  const cm=n.kind==='ent'?ENTMETA[n.id]:null, cAcc=n.kind==='ent'?'#3fb8a3':(STCOL[n.status]||'#5bb86e');
+  g+=box(cx-cbw/2,midY-cbh/2,cbw,cbh,(n.full||n.label).slice(0,26),cm?cm.pk:'',cAcc,!!cm);
+  const svg='<svg viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'+g+'</svg>';
+  const rl=right.map(x=>x.label);
+  const cap=(left.length+right.length===0)
+    ? '<b>'+esc(n.label)+'</b> is an orphan right now — good news: that’s a road worth building.'
+    : (n.kind==='src'
+        ? '<b>'+esc(n.label)+'</b> lands on '+(rl.length?rl.join(', '):'no canonical entity yet')+' — proven by the join keys.'+(rl.length?'':' A road worth building.')
+        : '<b>'+esc(n.label)+'</b> is fed by '+left.length+' source'+(left.length===1?'':'s')+' and connects to '+(rl.length?rl.join(', '):'nothing yet')+'.');
+  flatEl.innerHTML='<div class="fbar"><div><div class="fey">Lineage · prove it</div><div class="fttl">'+esc(n.full||n.label)+'</div></div><button class="fx" id="fxc">✕ back to the model</button></div>'+svg+'<div class="fcap">'+cap+'</div>';
+  flatEl.classList.add('show'); document.getElementById('fxc').onclick=closeFlat;
 }
 addEventListener('pointerdown',ev=>{ down=[ev.clientX,ev.clientY]; });
 addEventListener('pointerup',ev=>{
