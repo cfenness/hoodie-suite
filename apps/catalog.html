@@ -26,7 +26,11 @@
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);
     color:#fff;font-size:13px;padding:10px 16px;border-radius:8px;opacity:0;transition:all .2s;z-index:100;pointer-events:none}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  /* embedded as an MDM section (?embed=1): hide the brand title, keep the + Add control. */
+  html.embed .head>div:first-child{display:none}
+  html.embed .head{margin-top:4px}
 </style>
+<script>if(location.search.indexOf("embed")>=0)document.documentElement.classList.add("embed");</script>
 </head>
 <body>
 <div class="page">

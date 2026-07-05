@@ -131,7 +131,12 @@
   .toast{background:var(--ink);color:#fff;font-size:13px;line-height:1.35;padding:11px 14px;border-radius:8px;box-shadow:0 8px 24px rgba(60,29,26,.25);max-width:380px;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s}
   .toast.show{opacity:1;transform:none}
   .toast.ok{border-left:3px solid var(--ok)} .toast.warn{border-left:3px solid var(--warn)} .toast.err{border-left:3px solid var(--bad)}
+  /* embedded as a section of the MDM console (?embed=1): drop the standalone brand header —
+     the MDM nav labels the section + shows engine status — so content reads as one app. */
+  html.embed header{display:none}
+  html.embed body{padding-top:10px}
 </style>
+<script>if(location.search.indexOf("embed")>=0)document.documentElement.classList.add("embed");</script>
 </head>
 <body>
 <header>
