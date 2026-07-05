@@ -96,7 +96,7 @@
 
 <script>
 (function(){
-  var API="", lastUrl="", baseTarget="";
+  var API="", lastUrl="", baseTarget="", lastApi=null;
   function applyFilters(){
     var u; try{ u=new URL(baseTarget); }catch(e){ document.getElementById("ex-target").value=baseTarget; return; }
     document.querySelectorAll(".fil").forEach(function(f){ var p=f.getAttribute("data-param"), v=f.value.trim();
@@ -153,7 +153,7 @@
     var fields=a.available_fields||[], rows=a.sample_rows||[], items=a.item_fields||[];
     // only trust a data-API url that's actually callable (not a <siteId>/{key}/… template)
     var apiUrl=(a.data_api&&a.data_api.url&&!/[<{]|your_|site_id|example\.|\.\.\./i.test(a.data_api.url))?a.data_api.url:"";
-    baseTarget=apiUrl||lastUrl;
+    baseTarget=apiUrl||lastUrl; lastApi=a.data_api||null;
     var flt=a.filters||[];
     // sample table (clean, ordered)
     var tbl = rows.length ? tableHTML(rows,8) : '<div class="em">No sample rows extracted.</div>';
@@ -261,7 +261,7 @@
     if(allMode) pages=Math.max(pages,400);   // pull until the source is exhausted (server stops on an empty page)
     var btn=document.getElementById("run-extract"), eout=document.getElementById("extract-out");
     btn.disabled=true; eout.innerHTML='<div class="loading"><span class="spin"></span>Fetching '+(allMode?'every page':(pages>1?(pages+' pages'):'the source'))+' + extracting '+(allMode?'all rows':('up to '+limit+' rows'))+'…</div>';
-    fetch(API+"/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:target,prompt:prompt,pages:pages,limit:limit})})
+    fetch(API+"/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:target,prompt:prompt,pages:pages,limit:limit,api:lastApi})})
       .then(function(r){return r.json();}).then(function(d){ btn.disabled=false;
         if(d.error){ eout.innerHTML='<div class="em">'+esc(d.error)+'</div>'+attemptsHtml(d.attempts); return; }
         var rows=d.rows||[];
@@ -304,7 +304,7 @@
       var prompt=cfg.scrape_prompt||"products";
       out.innerHTML='<div class="card"><div class="loading"><span class="spin"></span>Running the proven recipe for '+esc(rec.host)+' — no LLM…</div></div>';
       fetch(API+"/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({url:target,prompt:prompt,pages:3,limit:100})})
+        body:JSON.stringify({url:target,prompt:prompt,pages:3,limit:100,api:cfg.data_api})})
         .then(function(r){return r.json();}).then(function(d){
           var rows=d.rows||[];
           out.innerHTML='<div class="card">'+recipeBanner(d.recipe)

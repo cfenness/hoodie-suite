@@ -265,7 +265,7 @@ function runSource(id){
       // If the user narrowed the pull, constrain extraction to just those fields (plus identity).
       if(isNarrowed(s)) prompt+=" For each item capture ONLY these fields (plus the product name/identifier): "+flds.join(", ")+". Omit all other fields.";
       return fetch("/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({url:target,prompt:prompt,pages:3,limit:50,fields:flds})});
+        body:JSON.stringify({url:target,prompt:prompt,pages:3,limit:50,fields:flds,api:cfg.data_api})});
     })
     .then(function(r){return r.json();})
     .then(function(d){

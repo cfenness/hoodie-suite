@@ -800,7 +800,7 @@ def scraper_extract():
     import source_analyzer, recipes
     url = b.get("url") or ""
     prompt = b.get("prompt") or ""
-    result = source_analyzer.extract(url, prompt, b.get("pages", 1), b.get("limit", 3000))
+    result = source_analyzer.extract(url, prompt, b.get("pages", 1), b.get("limit", 3000), api=b.get("api"))
     # Fold the run into the recipe book: validate vs baseline, promote/demote. Pass what
     # was actually run so a recipe proven by extraction alone stays runnable recipe-first.
     _, verdict = recipes.record_run(RECIPES, url, result, int(time.time() * 1000),
