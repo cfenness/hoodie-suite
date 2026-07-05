@@ -857,6 +857,27 @@ def recipes_list():
     items = sorted(RECIPES.values(), key=lambda r: (r.get("status") != "proven", r.get("host", "")))
     return jsonify(recipes=items, stats=recipes.stats(RECIPES))
 
+@app.delete("/api/recipes/<host>")
+def recipes_delete(host):
+    existed = RECIPES.pop(host, None) is not None
+    if existed:
+        _save_json("recipes.json", RECIPES)
+    return jsonify(ok=existed, host=host)
+
+@app.post("/api/recipes/<host>/reset")
+def recipes_reset(host):
+    """Re-prove a recipe from scratch — keep the config/field-map, clear the proof state
+    so it must earn 'proven' again over the next clean runs."""
+    rec = RECIPES.get(host)
+    if not rec:
+        return jsonify(ok=False, error="no such recipe"), 404
+    rec["status"] = "candidate"
+    rec["clean_runs"] = 0
+    rec["baseline"] = None
+    rec["proven_baseline"] = None
+    _save_json("recipes.json", RECIPES)
+    return jsonify(ok=True, host=host, status="candidate")
+
 @app.get("/api/scraper/recipe")
 def scraper_recipe():
     import recipes

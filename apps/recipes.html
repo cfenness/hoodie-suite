@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../suite.css">
+<title>Scrape Recipes — Hoodie Sources</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --teal:#2C8C7C; --teal-d:#1E5F55; --teal-soft:#E7F1EE; --paper:#F4F6F5; --surface:#fff;
+    --ink:#243330; --muted:#5E6B68; --muted2:#8A9490; --line:#D7DDDB; --line2:#EAEEED;
+    --good:#15803d; --good-soft:#E7F3EA; --warn:#b45309; --warn-soft:#F6ECD9; --bad:#b4232a; --bad-soft:#F5E1DF; --blue:#2563b8; --blue-soft:#e8f0fb;
+    --disp:"Fraunces",Georgia,serif; --body:"Inter",system-ui,sans-serif; --mono:"JetBrains Mono",monospace;
+  }
+  *{box-sizing:border-box} body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);font-size:14.5px;line-height:1.5}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+  .hero{background:linear-gradient(120deg,#1E5F55,#2C8C7C 60%,#257A6C);color:#fff;padding:28px 34px 24px}
+  html.embed .hero{display:none} html.embed .wrap{padding-top:16px}
+  .hero .ey{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#9FD3C7;margin-bottom:7px}
+  .hero h1{font-family:var(--disp);font-weight:700;font-size:30px;margin:0 0 6px}
+  .hero p{font-size:13.5px;color:#e4efec;margin:0;max-width:70ch}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 14px}
+  .stat{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 15px;min-width:96px}
+  .stat b{font-family:var(--disp);font-weight:700;font-size:22px;display:block;line-height:1.1}
+  .stat span{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .toolbar input{flex:1;max-width:320px;border:1px solid var(--line);border-radius:9px;padding:9px 12px;font:inherit;font-size:13px;outline:none;background:#fff}
+  .toolbar input:focus{border-color:var(--teal)}
+  .toolbar .rf{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 11px}
+  .rec{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:9px;overflow:hidden}
+  .rhead{display:grid;grid-template-columns:1fr auto auto auto auto auto;gap:14px;align-items:center;padding:13px 16px;cursor:pointer}
+  @media(max-width:720px){.rhead{grid-template-columns:1fr auto auto}}
+  .rhost{font-family:var(--mono);font-weight:600;font-size:13.5px;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .rhost small{display:block;font-family:var(--body);font-weight:400;font-size:11.5px;color:var(--muted);text-transform:capitalize}
+  .col{font-size:12px;color:var(--muted);white-space:nowrap} .col b{color:var(--ink);font-variant-numeric:tabular-nums;font-family:var(--mono)}
+  @media(max-width:720px){.col.hideSm{display:none}}
+  .pill{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .proven{background:var(--good-soft);color:var(--good)} .candidate{background:var(--blue-soft);color:var(--blue)}
+  .drifting{background:var(--warn-soft);color:var(--warn)} .broken{background:var(--bad-soft);color:var(--bad)}
+  .acts{display:flex;gap:6px}
+  .ib{width:28px;height:28px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer;color:var(--muted);font-size:13px;display:grid;place-items:center}
+  .ib:hover{border-color:var(--teal);color:var(--teal-d)} .ib.del:hover{border-color:var(--bad);color:var(--bad)}
+  .rbody{border-top:1px solid var(--line2);padding:14px 16px;display:none;background:#fcfdfd}
+  .rbody.open{display:block}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}@media(max-width:640px){.grid2{grid-template-columns:1fr}}
+  .lab{font-family:var(--mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:0 0 6px;font-weight:600}
+  .runrow{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:5px 0;border-top:1px solid var(--line2)}
+  .runrow:first-of-type{border-top:0} .runrow .st{font-family:var(--mono);font-size:10px}
+  .st-ok,.st-baseline{color:var(--good)} .st-drift{color:var(--warn)} .st-broken,.st-error{color:var(--bad)} .st-empty{color:var(--muted)}
+  .fmap{font-family:var(--mono);font-size:11.5px;color:var(--ink);background:var(--teal-soft);border:1px solid #cde6df;border-radius:8px;padding:8px 10px;line-height:1.7;word-break:break-word}
+  .kv{font-size:12.5px;color:var(--muted);margin:3px 0} .kv b{color:var(--ink);font-family:var(--mono)}
+  .empty{text-align:center;color:var(--muted);padding:44px;font-size:13.5px}
+  .foot{text-align:center;color:var(--muted2);font-size:11px;padding:8px 0 44px;font-family:var(--mono)}
+</style>
+<script>if(location.search.indexOf("embed")>=0||location.search.indexOf("shell")>=0)document.documentElement.classList.add("embed");</script>
+</head>
+<body>
+  <div class="hero"><div class="wrap">
+    <div class="ey">Hoodie Sources · Reinforcing store</div>
+    <h1>Scrape Recipes</h1>
+    <p>Every source we've proven, learning as it runs. A recipe becomes <b>proven</b> after two clean runs, then re-pulls deterministically — no AI — until the site drifts. Reset one to re-prove it; delete one to forget it.</p>
+  </div></div>
+  <div class="wrap">
+    <div class="stats" id="stats"></div>
+    <div class="toolbar">
+      <input id="q" placeholder="Filter by host or platform…">
+      <button class="rf" id="refresh">↻ Refresh</button>
+    </div>
+    <div id="list"><div class="empty">Loading recipes…</div></div>
+  </div>
+  <div class="foot">Hoodie Sources · recipes persist in the engine and reinforce every run</div>
+<script>
+(function(){
+  "use strict";
+  var $=function(id){return document.getElementById(id);};
+  var RECIPES=[], STATS={}, OPEN={}, Q="";
+  function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+  function ago(ts){ if(!ts) return "—"; var s=Math.floor((Date.now()-ts)/1000); if(s<60)return s+"s ago"; var m=Math.floor(s/60); if(m<60)return m+"m ago"; var h=Math.floor(m/60); if(h<24)return h+"h ago"; return Math.floor(h/24)+"d ago"; }
+
+  function load(){
+    fetch("/api/recipes",{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){
+      if(!d){ $("list").innerHTML='<div class="empty">Engine offline — start it (./dev.sh) or open the deployed suite.</div>'; return; }
+      RECIPES=d.recipes||[]; STATS=d.stats||{}; render();
+    }).catch(function(){ $("list").innerHTML='<div class="empty">Couldn’t reach the engine.</div>'; });
+  }
+  function render(){
+    var by=(STATS.by_status)||{};
+    $("stats").innerHTML=
+      stat(STATS.total||RECIPES.length,"recipes")+stat(by.proven||0,"proven")+stat(by.candidate||0,"candidate")
+      +stat(by.drifting||0,"drifting")+stat(by.broken||0,"broken")+stat((STATS.platforms||[]).length,"platforms");
+    var q=Q.toLowerCase();
+    var shown=RECIPES.filter(function(r){ return !q || (r.host+" "+(r.platform||"")).toLowerCase().indexOf(q)>=0; });
+    if(!shown.length){ $("list").innerHTML='<div class="empty">'+(RECIPES.length?"No recipes match.":"No recipes yet — analyze or run a source to seed one.")+'</div>'; return; }
+    $("list").innerHTML=shown.map(recHTML).join("");
+    $("list").querySelectorAll("[data-open]").forEach(function(el){ el.onclick=function(e){ if(e.target.closest(".ib"))return; var h=el.getAttribute("data-open"); OPEN[h]=!OPEN[h]; render(); }; });
+    $("list").querySelectorAll("[data-reset]").forEach(function(b){ b.onclick=function(){ act(b.getAttribute("data-reset"),"reset"); }; });
+    $("list").querySelectorAll("[data-del]").forEach(function(b){ b.onclick=function(){ var h=b.getAttribute("data-del"); if(confirm("Delete the recipe for "+h+"? It will be re-learned next time it's analyzed.")) act(h,"delete"); }; });
+  }
+  function stat(n,l){ return '<div class="stat"><b>'+n+'</b><span>'+l+'</span></div>'; }
+  function recHTML(r){
+    var cfg=r.config||{}, base=r.baseline||{}, fm=cfg.field_map||{}, fmn=Object.keys(fm).length;
+    var open=!!OPEN[r.host];
+    var h='<div class="rec"><div class="rhead" data-open="'+esc(r.host)+'">'
+      +'<div class="rhost">'+esc(r.host)+'<small>'+esc(r.platform||"generic")+'</small></div>'
+      +'<span class="pill '+esc(r.status||"candidate")+'">'+esc(r.status||"candidate")+'</span>'
+      +'<span class="col hideSm">baseline <b>'+(base.rows!=null?base.rows:"—")+'</b> rows</span>'
+      +'<span class="col hideSm">clean <b>'+(r.clean_runs||0)+'</b>/2</span>'
+      +'<span class="col hideSm">'+(fmn?('map <b>'+fmn+'</b>'):'<span style="color:var(--muted2)">no map</span>')+'</span>'
+      +'<span class="col">'+ago(r.last_run)+'</span>'
+      +'<div class="acts"><button class="ib" data-reset="'+esc(r.host)+'" title="Re-prove from scratch (keep config, clear proof)">↻</button>'
+        +'<button class="ib del" data-del="'+esc(r.host)+'" title="Delete recipe">✕</button></div>'
+      +'</div>';
+    if(open){
+      var runs=(r.runs||[]).slice().reverse().slice(0,10);
+      var api=cfg.data_api||{};
+      h+='<div class="rbody open"><div class="grid2">'
+        +'<div><div class="lab">Recent runs</div>'+(runs.length?runs.map(function(x){
+            return '<div class="runrow"><span>'+ago(x.ts)+' · <b style="font-family:var(--mono)">'+(x.rows!=null?x.rows:"—")+'</b> rows'
+              +(x.engine?(' · '+esc(x.engine)):'')+'</span><span class="st st-'+esc(x.status||"")+'">'+esc(x.status||"")+'</span></div>'
+              +(x.reason?('<div class="kv" style="margin:-2px 0 4px">'+esc(x.reason)+'</div>'):'');
+          }).join(''):'<div class="kv">No runs recorded yet.</div>')+'</div>'
+        +'<div><div class="lab">Config</div>'
+          +'<div class="kv">API: <b>'+esc((api.method||"GET"))+' '+esc(api.url||"—")+'</b></div>'
+          +(cfg.pagination?('<div class="kv">Pagination: <b>'+esc(cfg.pagination)+'</b></div>'):'')
+          +(r.compliance?('<div class="kv">robots: <b>'+(r.compliance.robots_allowed===false?"disallowed":r.compliance.robots_allowed===true?"allowed":"—")+'</b></div>'):'')
+          +'<div class="lab" style="margin-top:12px">Field map '+(fmn?('· '+fmn+' fields'):'')+'</div>'
+          +(fmn?('<div class="fmap">'+Object.keys(fm).map(function(k){return esc(k)+' ← '+esc(fm[k]);}).join(' · ')+'</div>')
+              :'<div class="kv">None yet — learned on the first mapped run, then reused with no AI.</div>')
+        +'</div></div></div>';
+    }
+    return h+'</div>';
+  }
+  function act(host,kind){
+    var opts=kind==="delete"?{method:"DELETE"}:{method:"POST"};
+    var url="/api/recipes/"+encodeURIComponent(host)+(kind==="reset"?"/reset":"");
+    fetch(url,opts).then(function(r){return r.json();}).then(function(){ delete OPEN[host]; load(); })
+      .catch(function(){ alert("Couldn't reach the engine."); });
+  }
+  $("q").addEventListener("input",function(){ Q=this.value; render(); });
+  $("refresh").onclick=load;
+  load();
+})();
+</script>
+</body>
+</html>
