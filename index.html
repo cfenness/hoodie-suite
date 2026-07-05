@@ -662,9 +662,23 @@
   const ext=document.getElementById('ext'),appcrumb=document.getElementById('appcrumb'),appnm=document.getElementById('appnm');
   const appcrumbx=document.getElementById('appcrumbx');
   const frameload=document.getElementById('frameload'),flMark=document.getElementById('flMark'),flTxt=document.getElementById('flTxt');
+  // Apps that carry their OWN left nav (MDM console, Hoodie Intelligence) stack a second
+  // (and third) sidebar next to the launcher rail. Auto-collapse the launcher to its icon
+  // rail for those to reclaim ~180px — without persisting, so leaving restores the user's
+  // own collapse preference. Self-contained (no shared consts) so route() can call it early.
+  function applyNavForApp(id){
+    var b=document.querySelector('.body'); if(!b) return;
+    var heavy=(id==='mdm'||id==='dashboard');
+    var pref=false; try{ pref=localStorage.getItem('hoodie.nav.collapsed')==='1'; }catch(e){}
+    var want=heavy||pref;
+    b.classList.toggle('nav-collapsed',want);
+    var btn=document.getElementById('navCollapse');
+    if(btn){ btn.textContent=want?'»':'«'; btn.title=want?'Expand sidebar':'Collapse sidebar'; }
+  }
   function route(){
     const id=(location.hash||'').replace('#','');
     const app=byId[id];
+    applyNavForApp(id);
     document.querySelectorAll('.item').forEach(x=>x.classList.toggle('active',x.dataset.id===id));
     document.getElementById('homeLink').classList.toggle('active',!app);
     appcrumbx.textContent='';   // breadcrumb belongs to a single app; clear on every nav
