@@ -785,10 +785,17 @@ def scraper_analyze():
     import source_analyzer, recipes
     url = b.get("url") or ""
     result = source_analyzer.analyze(url, b.get("goal"))
+    # If the live page is bot-walled but we already learned this source, fall back to the
+    # saved recipe instead of dead-ending — the API + field map are already known.
+    if "error" in result and result.get("blocked"):
+        synth = recipes.analysis_from_recipe(recipes.get(RECIPES, url))
+        if synth:
+            result = synth
     recipe = None
-    if "error" not in result:                       # stash the config as a candidate recipe
-        recipes.save_config(RECIPES, url, result, int(time.time() * 1000))
-        _save_json("recipes.json", RECIPES)
+    if "error" not in result:
+        if not result.get("from_recipe"):           # stash a freshly-read config as a candidate
+            recipes.save_config(RECIPES, url, result, int(time.time() * 1000))
+            _save_json("recipes.json", RECIPES)
         rec = recipes.get(RECIPES, url)
         recipe = {"host": rec["host"], "platform": rec.get("platform"), "status": rec["status"],
                   "platform_proven_on": recipes.platform_proven_on(RECIPES, url, result)} if rec else None
