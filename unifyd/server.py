@@ -800,11 +800,25 @@ def scraper_extract():
     import source_analyzer, recipes
     url = b.get("url") or ""
     prompt = b.get("prompt") or ""
-    result = source_analyzer.extract(url, prompt, b.get("pages", 1), b.get("limit", 3000), api=b.get("api"))
+    api = dict(b.get("api") or {})
+    # Reuse a proven field map (learned on an earlier run) so this pull normalizes columns
+    # deterministically — no LLM call at all.
+    rec0 = recipes.get(RECIPES, url)
+    if not api.get("field_map") and isinstance(rec0, dict):
+        fm = (rec0.get("config") or {}).get("field_map")
+        if fm:
+            api["field_map"] = fm
+    result = source_analyzer.extract(url, prompt, b.get("pages", 1), b.get("limit", 3000), api=api)
     # Fold the run into the recipe book: validate vs baseline, promote/demote. Pass what
     # was actually run so a recipe proven by extraction alone stays runnable recipe-first.
     _, verdict = recipes.record_run(RECIPES, url, result, int(time.time() * 1000),
                                     used={"prompt": prompt, "target": url})
+    # Persist a freshly-learned field map onto the recipe so future pulls reuse it (no LLM).
+    fm = result.get("field_map") if isinstance(result, dict) else None
+    if fm:
+        rec = RECIPES.get(recipes.host_of(url))
+        if isinstance(rec, dict):
+            rec.setdefault("config", {})["field_map"] = fm
     # Self-heal: on drift/broken, re-analyze and write the fresh config back into the recipe.
     if verdict.get("needs_heal") and source_analyzer.llm_enabled():
         try:

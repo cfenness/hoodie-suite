@@ -228,15 +228,16 @@
   function recipeBanner(rc){
     if(!rc) return "";
     var reason=esc(rc.reason||""), kind, msg;
-    if(rc.run==="drift"){ kind="drifting"; msg="<b>Drift detected</b> — "+reason+(rc.healed?" · self-healed: re-analyzed the source":" · flagged (self-heal needs the LLM)"); }
-    else if(rc.run==="broken"){ kind="broken"; msg="<b>Broken</b> — "+reason+(rc.healed?" · re-analyzed":" · flagged"); }
-    else if(rc.promoted){ kind="proven"; msg="<b>Recipe proven</b> — "+esc(rc.host||"this source")+(rc.platform?(" ("+esc(rc.platform)+")"):"")+" will now run deterministically."; }
-    else if(rc.status==="proven"){ kind="proven"; msg="<b>Recipe proven</b> — "+reason; }
-    else if(rc.status==="drifting"||rc.status==="broken"){ kind="candidate"; msg="<b>Recovering</b> — clean run ("+(rc.clean_runs||0)+"/2 to re-prove). "+reason; }
-    else { kind="candidate"; msg="<b>Candidate recipe</b> — "+(rc.clean_runs||0)+"/2 clean runs to prove. "+reason; }
-    var C={proven:["#157347","#e7f3ec","✓"],candidate:["#3b5f86","#e8f0fb","◉"],
-           drifting:["#9a6b00","#fef6e3","⚠"],broken:["#b4232a","#f8e6e7","✗"]}, c=C[kind];
-    return '<div style="display:flex;gap:9px;align-items:flex-start;margin:2px 0 12px;padding:9px 12px;border-radius:9px;background:'+c[1]+';border:1px solid '+c[0]+'33;color:'+c[0]+';font-size:12.5px;line-height:1.45">'
+    var rows=(rc.rows!=null?(" · baseline "+rc.rows+" rows"):"");
+    if(rc.run==="drift"){ kind="drifting"; msg="<b>Drift detected</b> — this run looks off vs. the saved recipe ("+reason+")."+(rc.healed?" Auto-fixed: re-analyzed the source.":" Flagged for review (auto-fix needs the LLM)."); }
+    else if(rc.run==="broken"){ kind="broken"; msg="<b>Recipe broke</b> — "+reason+"."+(rc.healed?" Re-analyzed the source.":" Flagged for review."); }
+    else if(rc.promoted){ kind="proven"; msg="<b>Recipe proven ✦</b> — "+esc(rc.host||"this source")+(rc.platform?(" ("+esc(rc.platform)+")"):"")+" will now re-run <b>deterministically</b> — no AI, no re-analyzing."; }
+    else if(rc.status==="proven"){ kind="proven"; msg="<b>Proven recipe</b> — reruns deterministically (no AI). "+reason+"."; }
+    else if(rc.status==="drifting"||rc.status==="broken"){ kind="candidate"; msg="<b>Re-proving this source</b> — clean run "+(rc.clean_runs||0)+" of 2"+rows+". One more matching run restores it to a proven recipe."; }
+    else { kind="candidate"; msg="<b>Learning this source</b> — clean run "+(rc.clean_runs||0)+" of 2"+rows+". A <b>recipe</b> is the saved, reusable way to pull this source; one more matching run promotes it to <b>proven</b>, so future pulls run deterministically with no AI."; }
+    var C={proven:["#15803d","#E7F3EA","✓"],candidate:["#1E5F55","#E7F1EE","◉"],
+           drifting:["#b45309","#F6ECD9","⚠"],broken:["#b4232a","#F5E1DF","✗"]}, c=C[kind];
+    return '<div title="Recipes let a proven source re-pull deterministically instead of re-asking the AI each time. It takes 2 clean runs to trust one." style="display:flex;gap:9px;align-items:flex-start;margin:2px 0 12px;padding:9px 12px;border-radius:9px;background:'+c[1]+';border:1px solid '+c[0]+'33;color:'+c[0]+';font-size:12.5px;line-height:1.45">'
       +'<span style="font-size:14px;line-height:1.2">'+c[2]+'</span><span>'+msg+'</span></div>';
   }
   // Expandable trace of the actual fetch attempts (direct → Bright Data) with real errors.

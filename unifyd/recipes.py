@@ -177,6 +177,9 @@ def save_config(book, url, analysis, ts):
     else:
         rec["platform"] = plat or rec.get("platform")
         if rec.get("status") != "proven":
+            prev_fm = (rec.get("config") or {}).get("field_map")   # keep a learned map across re-analyze
+            if prev_fm:
+                cfg["field_map"] = prev_fm
             rec["config"] = cfg
     # Hold on to the ToS/robots read, and flag it when Claude picks up a change.
     _store_compliance(rec, analysis, ts)

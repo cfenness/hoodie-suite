@@ -458,6 +458,66 @@ def _claude_rows(prompt, content, note=""):
     return json.loads(m.group(0)) if m else []
 
 
+def _learn_field_map(prompt, sample_rows):
+    """One cheap LLM call: given sample API records + the fields the prompt wants, return
+    {output_field: dotted.path.into.record}. This lets us normalize the WHOLE result set
+    deterministically in code — clean columns without feeding every row through the model
+    (which truncates at the output-token cap and drops rows)."""
+    import anthropic
+    client = anthropic.Anthropic()
+    sysmsg = ("You map a JSON API's raw records to clean output fields. Given sample records and "
+              "the fields the user wants, return ONLY a JSON object {output_field: path}, where path "
+              "is a dotted key path into ONE record (e.g. \"productName\" or \"price.amount\"). "
+              "Include only output fields that actually exist in the records. No prose, no fences.")
+    usr = prompt + "\n\nSAMPLE RECORDS:\n" + json.dumps(sample_rows[:5])[:24000]
+    msg = client.messages.create(model=MODEL, max_tokens=1200, system=sysmsg,
+                                 messages=[{"role": "user", "content": usr}])
+    raw = "".join(getattr(b, "text", "") for b in msg.content)
+    m = re.search(r"\{[\s\S]*\}", raw)
+    fmap = json.loads(m.group(0)) if m else {}
+    return {str(k): str(v) for k, v in fmap.items() if isinstance(v, str) and v} if isinstance(fmap, dict) else {}
+
+
+def _dig(rec, path):
+    cur = rec
+    for k in str(path).split("."):
+        if isinstance(cur, dict) and k in cur:
+            cur = cur[k]
+        else:
+            return ""
+    if isinstance(cur, (dict, list)):
+        return json.dumps(cur)[:300]
+    return cur
+
+
+def _apply_map(rows, fmap):
+    out = []
+    for r in rows:
+        if isinstance(r, dict):
+            out.append({k: _dig(r, p) for k, p in fmap.items()})
+    return out
+
+
+def _normalize_json_rows(prompt, rows, fmap=None):
+    """Clean columns without losing rows. If a field map is already known (stored on the
+    recipe), apply it in code — no LLM at all. Otherwise learn it once from a sample, then
+    apply to every record. Falls back to raw rows when there's no LLM key / no usable map.
+    Returns (rows, engine, field_map)."""
+    if not rows:
+        return rows, "api-json", {}
+    if fmap:                                   # reuse the proven map → fully deterministic
+        return _apply_map(rows, fmap), "mapped-api", fmap
+    if not llm_enabled():
+        return rows, "api-json", {}
+    try:
+        fmap = _learn_field_map(prompt, rows)
+    except Exception:
+        fmap = {}
+    if not fmap:
+        return rows, "api-json", {}
+    return _apply_map(rows, fmap), "mapped-api", fmap
+
+
 _ALGOLIA_RE = re.compile(r"\.algolia\.net/1/indexes/([^/?#]+)/quer(?:y|ies)", re.I)
 
 def _algolia_app_from_host(url):
@@ -516,14 +576,10 @@ def _try_algolia(url, prompt, limit, api):
         return {"error": "Algolia API call failed: " + str(e)[:120], "via": "algolia-api"}
     if not rows:
         return {"rows": [], "via": "algolia-api", "engine": "algolia", "raw": 0}
-    if llm_enabled():
-        try:
-            nrows = _claude_rows(prompt, json.dumps(rows[:min(limit, 1200)]),
-                                 "\n\nThe DATA below is raw Algolia hit records; normalize each to the requested fields.")
-            return {"rows": nrows[:limit], "via": "algolia-api", "engine": "claude+algolia", "raw": len(rows)}
-        except Exception:
-            pass
-    return {"rows": rows[:limit], "via": "algolia-api", "engine": "algolia", "raw": len(rows)}
+    nrows, engine, fmap = _normalize_json_rows(prompt, rows, (api or {}).get("field_map"))   # complete rows, clean columns
+    return {"rows": nrows[:limit], "via": "algolia-api",
+            "engine": ("algolia+mapped" if engine == "mapped-api" else "algolia"),
+            "raw": len(rows), "field_map": fmap}
 
 
 def _enrich_data_api(out, html):
@@ -600,16 +656,12 @@ def extract(url, prompt, pages=1, limit=3000, api=None):
             if pages == 1:
                 break
 
-    # JSON-native path (APIs / Shopify) — works with or without a key
+    # JSON-native path (APIs / Shopify) — normalize deterministically so EVERY row comes
+    # back (learn the field map once, apply in code); never route the bulk through the LLM.
     if json_rows:
-        if llm_enabled():
-            try:
-                rows = _claude_rows(prompt, json.dumps(json_rows[:min(limit, 1200)]),
-                                    "\n\nThe DATA below is the raw JSON records; normalize each to the requested fields.")
-                return {"rows": rows[:limit], "via": via, "engine": "claude+api", "pages": pages, "raw": len(json_rows)}
-            except Exception:
-                pass
-        return {"rows": json_rows[:limit], "via": via, "engine": "api-json", "pages": pages, "raw": len(json_rows)}
+        nrows, engine, fmap = _normalize_json_rows(prompt, json_rows, (api or {}).get("field_map"))
+        return {"rows": nrows[:limit], "via": via, "engine": engine, "pages": pages,
+                "raw": len(json_rows), "field_map": fmap}
 
     # HTML path
     if not html_blobs:
