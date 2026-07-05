@@ -145,11 +145,11 @@ function buildModel(live){
 
   const recByHost={}; (live.recipes||[]).forEach(r=>{ recByHost[r.host]=r; });
   const seen={};   // dedupe by display name
-  function addSource(key,disp,status,sub,cols,hints,liveFlag,dataset){
+  function addSource(key,disp,status,sub,cols,hints,liveFlag,dataset,host){
     const dn=disp.toLowerCase(); if(seen[dn]) return; seen[dn]=1;
     const rs=roadsFromCols(cols,hints), ents=rs.map(r=>r[0]);
     const n={id:key,label:friendly(disp),full:disp,kind:'src',status:(status||'planned').toLowerCase(),
-             sub:sub,live:liveFlag,cols:(cols||[]),dataset:dataset||null,pos:stablePos(disp,ents)};
+             sub:sub,live:liveFlag,cols:(cols||[]),dataset:dataset||null,host:host||null,pos:stablePos(disp,ents)};
     nodes.push(n); byId[key]=n; rs.forEach(([e,road])=>edges.push({a:key,b:e,road}));
   }
 
@@ -162,7 +162,7 @@ function buildModel(live){
     const status=rec?rec.status:(s.status||'Planned');
     const liveFlag=!!rec || /live/i.test(s.status||'');
     const sub=(rec?('recipe · '+rec.status):(s.tier||'')) + (s.foot?(' · '+s.foot):'');
-    addSource('c'+i, s.nm||('source '+i), status, sub, cols, (s.tier||'')+' '+(s.nm||''), liveFlag);
+    addSource('c'+i, s.nm||('source '+i), status, sub, cols, (s.tier||'')+' '+(s.nm||''), liveFlag, null, hostOf(s.url));
   });
   // 2) owned datasets pulled by the engine — real data, real columns
   Object.entries(live.datasets||{}).forEach(([k,v])=>{
@@ -172,7 +172,7 @@ function buildModel(live){
   // 3) any proven/analyzed recipe not already shown (new backend sources appear on their own)
   (live.recipes||[]).forEach((r,i)=>{
     const cols=Object.keys((r.config&&r.config.field_map)||{}).concat((r.config&&r.config.fields)||[]);
-    addSource('r'+i, r.host, r.status, 'recipe · '+(r.platform||'')+' · '+r.status, cols, r.host, true);
+    addSource('r'+i, r.host, r.status, 'recipe · '+(r.platform||'')+' · '+r.status, cols, r.host, true, null, r.host);
   });
 
   const adj={}; nodes.forEach(n=>adj[n.id]=new Set());
@@ -196,13 +196,17 @@ scene.add(new THREE.AmbientLight(0xffffff,.78)); const dl=new THREE.DirectionalL
   g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
   scene.add(new THREE.Points(g,new THREE.PointsMaterial({color:0x2b423c,size:1.6,sizeAttenuation:false}))); })();
 const esph=new THREE.SphereGeometry(1,24,24);
+const pulseGeo=new THREE.SphereGeometry(2.6,12,12);
 const graph=new THREE.Group(); scene.add(graph);
 
 // ── graph state + (re)build ─────────────────────────────────────────────────────
-let nodes=[], edges=[], byId={}, adj={}, meshes=[], selected=null, fly=null, homeT=null, framed=false;
+let nodes=[], edges=[], byId={}, adj={}, meshes=[], selected=null, fly=null, homeT=null, framed=false, pulses=[];
 function disposeGraph(){
   nodes.forEach(n=>{ if(n.lo){ n.lo.remove(); } });
-  while(graph.children.length){ const c=graph.children.pop(); if(c.geometry)c.geometry.dispose(); if(c.material)c.material.dispose(); }
+  pulses.forEach(p=>{ if(p.mesh&&p.mesh.material)p.mesh.material.dispose(); }); pulses=[];
+  while(graph.children.length){ const c=graph.children.pop();
+    if(c.geometry && c.geometry!==esph && c.geometry!==pulseGeo) c.geometry.dispose();   // keep shared geos
+    if(c.material)c.material.dispose(); }
 }
 function buildGraph(model){
   disposeGraph();
@@ -291,14 +295,30 @@ addEventListener('pointerup',ev=>{
 });
 
 // ── refresh (live read) ─────────────────────────────────────────────────────────
+// a pull fired → send a glow travelling down each of that source's roads to the entities it feeds
+function spawnPulse(node){
+  if(!node) return;
+  node._glow=performance.now()+2600;
+  edges.filter(e=>e.a===node.id||e.b===node.id).forEach(e=>{
+    const other=byId[e.a===node.id?e.b:e.a]; if(!other) return;
+    const col=new THREE.Color(ROADCOL[e.road]||0x5bb86e);
+    const m=new THREE.Mesh(pulseGeo,new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:1}));
+    graph.add(m); pulses.push({mesh:m,from:node.pos.clone(),to:other.pos.clone(),t:0});
+    if(e._pre==null) e._pre=e.mat.opacity; e._flash=performance.now()+1600;   // light the road
+  });
+}
 const liveEl=document.getElementById('live'), liveTx=document.getElementById('livetx');
-let lastRead=0, lastSig='';
+let lastRead=0, lastSig='', seenTs=0;
 async function refresh(){
   const live=await loadLive();
   const model=buildModel(live);
   // only rebuild the scene when the estate actually changed (else the poll would flicker + reset focus)
   const sig=model.nodes.map(n=>n.id+':'+n.status).sort().join('|');
   if(sig!==lastSig){ const selId=selected&&selected.id; buildGraph(model); lastSig=sig; if(selId&&byId[selId]) setFocus(byId[selId]); }
+  // real pull activity → pulse the source that just ran (highlights carry host + ts)
+  const hs=live.highlights||[], mx=hs.reduce((m,h)=>Math.max(m,h.ts||0),0);
+  if(!seenTs){ seenTs=mx; }   // first read: adopt the backlog, don't pulse it
+  else { hs.forEach(h=>{ if((h.ts||0)>seenTs){ const nd=nodes.find(n=>n.kind==='src'&&n.host&&n.host===h.host); if(nd) spawnPulse(nd); } }); seenTs=Math.max(seenTs,mx); }
   lastRead=Date.now();
   liveEl.className='live'+(live.online?'':' off');
   liveTx.textContent=live.online?('live · '+nodes.filter(n=>n.kind==='src'&&n.live).length+' connected'):'offline · catalog view';
@@ -314,7 +334,13 @@ liveEl.onclick=refresh;
 addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); lr.setSize(innerWidth,innerHeight); });
 function tick(){ requestAnimationFrame(tick);
   if(fly){ fly.t=Math.min(1,fly.t+.045); const e=1-Math.pow(1-fly.t,3); controls.target.lerpVectors(fly.fromT,fly.toT,e); camera.position.lerpVectors(fly.fromC,fly.toC,e); if(fly.t>=1)fly=null; }
-  const t=performance.now()*0.001; nodes.forEach(n=>{ if(n.kind==='ent'&&n.mat) n.mat.emissiveIntensity=.42+Math.sin(t*1.6+n.pos.x)*.1; });
+  const t=performance.now()*0.001, now=performance.now();
+  nodes.forEach(n=>{ if(n.kind==='ent'&&n.mat) n.mat.emissiveIntensity=.42+Math.sin(t*1.6+n.pos.x)*.1;
+    if(n._glow){ if(n._glow>now){ if(n.mat){ n.mat.emissiveIntensity=.9; } if(n.lo)n.lo.style.color='#eafaf5'; } else { n._glow=0; if(n.lo)n.lo.style.color=''; } } });
+  edges.forEach(e=>{ if(e._flash){ if(e._flash>now){ e.mat.opacity=.5+0.45*Math.abs(Math.sin(now*0.006)); } else { e._flash=0; e.mat.opacity=(e._pre!=null?e._pre:.32); e._pre=null; } } });
+  for(let i=pulses.length-1;i>=0;i--){ const p=pulses[i]; p.t+=.011; p.mesh.position.lerpVectors(p.from,p.to,p.t);
+    p.mesh.material.opacity=Math.max(0,1-Math.abs(p.t-.45)*1.6); p.mesh.scale.setScalar(1+Math.sin(p.t*Math.PI)*0.8);
+    if(p.t>=1){ graph.remove(p.mesh); p.mesh.material.dispose(); pulses.splice(i,1); } }
   controls.update(); renderer.render(scene,camera); lr.render(scene,camera);
 }
 refresh(); setInterval(refresh,60000); setInterval(tickLive,5000); tick();
