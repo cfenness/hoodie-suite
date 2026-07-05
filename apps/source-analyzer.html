@@ -280,9 +280,12 @@
   (function(){
     var sel=document.getElementById("from-tracker"), row=document.getElementById("fromrow");
     if(!sel||!row) return;
+    // owned connectors have dedicated scrapers (run in Pulls) — don't offer them for analysis
+    var OWNED=["ttbonline.gov","abcfws.com","specsonline.com"];
+    function isOwned(u){ try{ var h=new URL(u).hostname.replace(/^www\./,""); return OWNED.indexOf(h)>=0; }catch(e){ return false; } }
     function populate(){
       var srcs=[];
-      try{ srcs=(JSON.parse(localStorage.getItem("hoodie.pulls.tracker.v2")||"[]")||[]).filter(function(s){return s&&s.url&&/^https?:\/\//.test(s.url);}); }catch(e){}
+      try{ srcs=(JSON.parse(localStorage.getItem("hoodie.pulls.tracker.v2")||"[]")||[]).filter(function(s){return s&&s.url&&/^https?:\/\//.test(s.url)&&!s.connId&&!isOwned(s.url);}); }catch(e){}
       if(!srcs.length){ row.style.display="none"; return; }
       srcs.sort(function(a,b){ return (a.nm||"").localeCompare(b.nm||""); });
       sel.innerHTML='<option value="">— '+srcs.length+' tracked sources —</option>'+

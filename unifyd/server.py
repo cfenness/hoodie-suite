@@ -70,6 +70,9 @@ _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
 VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts"}
+# Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
+# generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
+OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
 
 def _dispatch_pull(conn, body):
     return (cola_pull(body) if conn == "ttb-cola"
@@ -791,6 +794,16 @@ def scraper_analyze():
         synth = recipes.analysis_from_recipe(recipes.get(RECIPES, url))
         if synth:
             result = synth
+        else:
+            # Some hosts are OWNED connectors with a dedicated scraper (search-form / bespoke) —
+            # the generalized analyzer can't read them. Point to Pulls instead of a raw fetch error.
+            host = recipes.host_of(url)
+            conn = OWNED_HOSTS.get(host)
+            if conn:
+                result = {"error": "This is an owned connector (%s) with a dedicated scraper — the "
+                          "generalized analyzer can't read its page. Run it from Pulls (Hoodie MDM → "
+                          "Pulls), where it pulls through the engine pipeline." % conn,
+                          "owned_connector": conn, "blocked": True, "attempts": result.get("attempts")}
     recipe = None
     if "error" not in result:
         if not result.get("from_recipe"):           # stash a freshly-read config as a candidate
