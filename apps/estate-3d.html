@@ -12,9 +12,13 @@
   #stage{position:fixed;inset:0}
   canvas{display:block}
   .lbl{font-family:var(--mono);font-size:11px;color:#cfe6df;letter-spacing:.02em;pointer-events:none;white-space:nowrap;text-shadow:0 1px 4px rgba(0,0,0,.8);transition:opacity .3s}
-  .lbl.ent{font-family:var(--body);font-weight:700;font-size:12.5px;color:#eafaf5}
+  .lbl.ent{font-family:var(--body);font-weight:700;font-size:12.5px;color:#eafaf5;text-align:center}
+  .lbl.ent .en{display:block}
+  .lbl.ent .pk{display:block;font-family:var(--mono);font-weight:500;font-size:8.5px;letter-spacing:.02em;color:#d9b03f;margin-top:1px;opacity:.92}
   .lbl.planned{color:#6f938a}
   .lbl.dim{opacity:.1}
+  .card svg{display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.75))}
+  .card{opacity:.85;transition:opacity .3s} .card.dim{opacity:.06}
   .hud{position:fixed;pointer-events:none;z-index:5}
   .top{top:0;left:0;right:0;padding:18px 22px;display:flex;align-items:flex-start;gap:14px;background:linear-gradient(180deg,rgba(14,22,19,.85),rgba(14,22,19,0))}
   .brand .ey{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:#6f938a}
@@ -34,6 +38,9 @@
   .sel .k{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#6f938a}
   .sel .nm{font-family:var(--disp);font-weight:600;font-size:19px;margin:2px 0 2px;color:#eafaf5}
   .sel .meta{font-size:12px;color:var(--muted);margin-bottom:10px}
+  .sel .keyed{margin:2px 0 4px;display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+  .sel .keyed .pkline{font-family:var(--mono);font-size:10px;color:#d9b03f;font-weight:600;width:100%}
+  .sel .keyed .attr{font-family:var(--mono);font-size:10px;color:#a9c9c0;background:rgba(63,184,163,.1);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
   .sel .cxh{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#6f938a;margin:8px 0 6px}
   .sel .cx{display:flex;flex-direction:column;gap:5px}
   .sel .cxrow{display:flex;align-items:center;gap:8px;font-size:12.5px}
@@ -53,6 +60,8 @@
   .sel .qmeta{font-family:var(--mono);font-size:9.5px;color:#6f938a;margin-top:5px;display:block}
   .legend{position:fixed;right:22px;bottom:22px;z-index:5;font-family:var(--mono);font-size:10px;color:#6f938a;text-align:right;line-height:1.9;pointer-events:none}
   .legend .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-left:7px;vertical-align:middle}
+  .legend .di{display:inline-block;width:8px;height:8px;margin-left:7px;vertical-align:middle;transform:rotate(45deg)}
+  .legend .cf{color:#9ec7bd;font-family:var(--mono)}
   .loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9;font-family:var(--mono);font-size:12px;color:#6f938a;background:var(--ink)}
 </style>
 <script type="importmap">
@@ -71,7 +80,7 @@
     <div class="hint"><b>drag</b> to spin · <b>scroll</b> to zoom · <b>click a node</b> to focus<br>a node lights only what it touches — the rest drops out</div>
   </div>
   <div class="sel" id="sel"></div>
-  <div class="legend">canonical spine<span class="sw" style="background:#3fb8a3"></span><br>live source<span class="sw" style="background:#5bb86e"></span> · planned<span class="sw" style="background:#5f7a72"></span><br>drifting<span class="sw" style="background:#d99a3f"></span> · broke<span class="sw" style="background:#d9584f"></span></div>
+  <div class="legend">entity ●<span class="sw" style="background:#3fb8a3"></span> · feed ◆<span class="di" style="background:#5bb86e"></span><br>live<span class="sw" style="background:#5bb86e"></span> · planned<span class="sw" style="background:#5f7a72"></span> · drifting<span class="sw" style="background:#d99a3f"></span> · broke<span class="sw" style="background:#d9584f"></span><br><span class="cf">|—&lt; one‑to‑many</span> · 🔑 key</div>
 
 <script type="module">
 import * as THREE from 'three';
@@ -84,9 +93,24 @@ const ENT=[ {id:'portfolio',label:'Portfolio',p:[4,40,-14]}, {id:'brand',label:'
   {id:'item',label:'Item',p:[0,2,0]}, {id:'sku',label:'SKU',p:[-40,-14,28]},
   {id:'outlet',label:'Outlet',p:[46,-8,-16]}, {id:'account',label:'Account',p:[72,-28,-30]} ];
 const ENT_POS={}; ENT.forEach(e=>ENT_POS[e.id]=new THREE.Vector3(...e.p));
-const CANON=[['portfolio','brand'],['brand','item'],['item','sku'],['outlet','account'],['item','outlet','sell-out']];
+// canonical relationships — [a, b, verb, cardinality@a, cardinality@b] (crow's-foot: one | many)
+const CANON=[
+  ['portfolio','brand','has','one','many'],
+  ['brand','item','has','one','many'],
+  ['item','sku','has','one','many'],
+  ['outlet','account','operated-by','many','one'],
+  ['item','outlet','sell-out','many','many'] ];
+// each entity is a keyed "table": primary key + the key attributes an ERD would list
+const ENTMETA={
+  portfolio:{pk:'portfolio_id',attrs:['name','owner']},
+  brand:{pk:'brand_id',attrs:['name','portfolio_id']},
+  item:{pk:'item_id',attrs:['name','brand_id','upc']},
+  sku:{pk:'sku_id',attrs:['item_id','size','pack','gtin']},
+  outlet:{pk:'outlet_id',attrs:['license#','address','geo']},
+  account:{pk:'account_id',attrs:['licensee','dba','license#']} };
 const ROADCOL={ upc:'#3fb8a3', variant:'#57c9b3', brand:'#3fb8a3', price:'#4a90d9', availability:'#4a90d9',
-  'license#':'#d99a3f', owner:'#d9b03f', address:'#5bb86e', depletion:'#8a6fd0', name:'#7a7f9a', 'sell-out':'#8aa39d', 'is-a':'#3fb8a3' };
+  'license#':'#d99a3f', owner:'#d9b03f', address:'#5bb86e', depletion:'#8a6fd0', name:'#7a7f9a',
+  'sell-out':'#8aa39d', 'is-a':'#3fb8a3', has:'#3fb8a3', 'operated-by':'#d99a3f' };
 const STCOL={ proven:'#5bb86e', live:'#5bb86e', candidate:'#3fb8a3', ready:'#3fb8a3', drifting:'#d99a3f',
   building:'#4a90d9', broken:'#d9584f', data:'#5bb86e', planned:'#5f7a72', paused:'#6f7f7a' };
 const SEED=[
@@ -118,6 +142,14 @@ function roadsFromCols(cols, hints){
   if(!es.length) es.push(['item','name']);
   const seen=new Set(); return es.filter(e=> !seen.has(e[0]) && seen.add(e[0]));
 }
+// a self-contained crow's-foot connector for a relationship: [a-end]——[b-end], always horizontal
+// (billboarded, no per-frame rotation) — one = a single bar, many = the three-pronged foot
+function cardSVG(ca,cb){
+  const barL='<line x1="10" y1="1.5" x2="10" y2="12.5"/>', barR='<line x1="43" y1="1.5" x2="43" y2="12.5"/>';
+  const footL='<path d="M15 7 L3 1.5 M15 7 L3 7 M15 7 L3 12.5"/>', footR='<path d="M38 7 L50 1.5 M38 7 L50 7 M38 7 L50 12.5"/>';
+  return '<svg width="53" height="14" viewBox="0 0 53 14" fill="none" stroke="#9ec7bd" stroke-width="1.3" stroke-linecap="round">'
+    +'<line x1="12" y1="7" x2="41" y2="7"/>'+(ca==='many'?footL:barL)+(cb==='many'?footR:barR)+'</svg>';
+}
 function hostOf(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch(e){ return ''; } }
 function friendly(nm){ return String(nm||'source').replace(/\s*—.*$/,'').replace(/\s*\([^)]*\)\s*$/,'').slice(0,26); }
 function dsName(k){ const M={bd4008lic:'FL · Item master',bd4011lic:'FL · Registrants',abtbrands:'FL · Brand renewals',bd4006lic:'FL · Retail outlets',bd4005lic:'FL · Wholesale',bd400revok:'FL · Revoked',bd4002lic:'FL · Permits',abc_store_cells:'ABC · store cells'}; return M[k]||('dataset · '+k); }
@@ -142,7 +174,7 @@ async function loadLive(){
 function buildModel(live){
   const nodes=[], edges=[], byId={};
   ENT.forEach(e=>{ const n={id:e.id,label:e.label,kind:'ent',pos:ENT_POS[e.id].clone()}; nodes.push(n); byId[e.id]=n; });
-  CANON.forEach(([a,b,road])=>edges.push({a,b,road:road||'is-a'}));
+  CANON.forEach(([a,b,road,ca,cb])=>edges.push({a,b,road:road||'is-a',card:true,ca:ca||null,cb:cb||null}));
 
   const recByHost={}; (live.recipes||[]).forEach(r=>{ recByHost[r.host]=r; });
   const seen={};   // dedupe by display name
@@ -197,17 +229,19 @@ scene.add(new THREE.AmbientLight(0xffffff,.78)); const dl=new THREE.DirectionalL
     const th=u*6.283, ph=Math.acos(2*v-1), R=620; P.push(R*Math.sin(ph)*Math.cos(th),R*Math.sin(ph)*Math.sin(th),R*Math.cos(ph)); }
   g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
   scene.add(new THREE.Points(g,new THREE.PointsMaterial({color:0x2b423c,size:1.6,sizeAttenuation:false}))); })();
-const esph=new THREE.SphereGeometry(1,24,24);
+const esph=new THREE.SphereGeometry(1,24,24);           // canonical entity = round core
+const soct=new THREE.OctahedronGeometry(1,0);           // source/feed = faceted gem (a distinct "system" glyph)
 const pulseGeo=new THREE.SphereGeometry(2.6,12,12);
 const graph=new THREE.Group(); scene.add(graph);
 
 // ── graph state + (re)build ─────────────────────────────────────────────────────
-let nodes=[], edges=[], byId={}, adj={}, meshes=[], selected=null, fly=null, homeT=null, framed=false, pulses=[];
+let nodes=[], edges=[], byId={}, adj={}, meshes=[], selected=null, fly=null, homeT=null, framed=false, pulses=[], cardMarks=[];
 function disposeGraph(){
   nodes.forEach(n=>{ if(n.lo){ n.lo.remove(); } });
+  cardMarks.forEach(o=>{ if(o.element&&o.element.remove)o.element.remove(); }); cardMarks=[];
   pulses.forEach(p=>{ if(p.mesh&&p.mesh.material)p.mesh.material.dispose(); }); pulses=[];
   while(graph.children.length){ const c=graph.children.pop();
-    if(c.geometry && c.geometry!==esph && c.geometry!==pulseGeo) c.geometry.dispose();   // keep shared geos
+    if(c.geometry && c.geometry!==esph && c.geometry!==soct && c.geometry!==pulseGeo) c.geometry.dispose();   // keep shared geos
     if(c.material)c.material.dispose(); }
 }
 function buildGraph(model){
@@ -216,10 +250,12 @@ function buildGraph(model){
   nodes.forEach(n=>{
     const ent=n.kind==='ent';
     const col=ent?0x3fb8a3:new THREE.Color(STCOL[n.status]||(n.live?0x5bb86e:0x5f7a72)).getHex();
-    const mat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:ent?.5:(n.live?.3:.12),roughness:.5,metalness:.1,transparent:true,opacity:1});
-    const m=new THREE.Mesh(esph,mat); m.scale.setScalar(ent?7.6:(n.live?4.4:3.4)); m.position.copy(n.pos); m.userData=n; graph.add(m); n.mesh=m; n.mat=mat;
-    const d=document.createElement('div'); d.className='lbl'+(ent?' ent':(n.live?'':' planned')); d.textContent=n.label;
-    const lo=new CSS2DObject(d); lo.position.set(0,ent?11:6.5,0); m.add(lo); n.lo=d;
+    const mat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:ent?.5:(n.live?.3:.12),roughness:.5,metalness:.1,transparent:true,opacity:1,flatShading:!ent});
+    const m=new THREE.Mesh(ent?esph:soct,mat); m.scale.setScalar(ent?7.6:(n.live?4.9:3.8)); m.position.copy(n.pos); m.userData=n; graph.add(m); n.mesh=m; n.mat=mat;
+    const d=document.createElement('div'); d.className='lbl'+(ent?' ent':(n.live?'':' planned'));
+    if(ent){ const meta=ENTMETA[n.id]; d.innerHTML='<span class="en">'+n.label+'</span>'+(meta?'<span class="pk">🔑 '+meta.pk+'</span>':''); }
+    else d.textContent=n.label;
+    const lo=new CSS2DObject(d); lo.position.set(0,ent?12:6.5,0); m.add(lo); n.lo=d;
   });
   edges.forEach(e=>{
     const na=byId[e.a], nb=byId[e.b];
@@ -231,6 +267,11 @@ function buildGraph(model){
     const mat=new THREE.LineBasicMaterial({color:new THREE.Color(col),transparent:true,opacity:e._base});
     const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints([na.pos,nb.pos]),mat); graph.add(l); e.line=l; e.mat=mat;
   });
+  // crow's-foot cardinality at the midpoint of each canonical relationship — the model reads like an ERD
+  edges.forEach(e=>{ if(!e.card||!e.ca) return; const na=byId[e.a], nb=byId[e.b];
+    const d=document.createElement('div'); d.className='card'; d.innerHTML=cardSVG(e.ca,e.cb);
+    const o=new CSS2DObject(d); o.position.copy(na.pos.clone().lerp(nb.pos,0.5)); graph.add(o);
+    e.badge=d; cardMarks.push(o); });
   meshes=nodes.map(n=>n.mesh);
   // frame + pivot on the bounding-box CENTER so orbit feels centered and the cloud fills the view
   const box=new THREE.Box3(); nodes.forEach(n=>box.expandByPoint(n.pos));
@@ -247,12 +288,12 @@ const ray=new THREE.Raycaster(); const mouse=new THREE.Vector2(); let down=[0,0]
 const selEl=document.getElementById('sel');
 function setFocus(n){
   selected=n;
-  if(!n){ nodes.forEach(x=>{x.mat.opacity=1;x.lo.classList.remove('dim');x.mesh.scale.setScalar(x.kind==='ent'?7.6:(x.live?4.4:3.4));}); edges.forEach(e=>e.mat.opacity=.32); selEl.classList.remove('show');
+  if(!n){ nodes.forEach(x=>{x.mat.opacity=1;x.lo.classList.remove('dim');x.mesh.scale.setScalar(x.kind==='ent'?7.6:(x.live?4.9:3.8));}); edges.forEach(e=>{e.mat.opacity=.32; if(e.badge)e.badge.classList.remove('dim');}); selEl.classList.remove('show');
     if(homeT){ const off=camera.position.clone().sub(controls.target); fly={toT:homeT.clone(),toC:homeT.clone().add(off),t:0,fromT:controls.target.clone(),fromC:camera.position.clone()}; }  // re-center the pivot
     return; }
   const keep=new Set([n.id,...adj[n.id]]);
-  nodes.forEach(x=>{ const on=keep.has(x.id); x.mat.opacity=on?1:.05; x.lo.classList.toggle('dim',!on); x.mesh.scale.setScalar((x.kind==='ent'?7.6:(x.live?4.4:3.4))*(x.id===n.id?1.35:1)); });
-  edges.forEach(e=>{ e.mat.opacity=(e.a===n.id||e.b===n.id)?.92:.02; });
+  nodes.forEach(x=>{ const on=keep.has(x.id); x.mat.opacity=on?1:.05; x.lo.classList.toggle('dim',!on); x.mesh.scale.setScalar((x.kind==='ent'?7.6:(x.live?4.9:3.8))*(x.id===n.id?1.35:1)); });
+  edges.forEach(e=>{ const on=(e.a===n.id||e.b===n.id); e.mat.opacity=on?.92:.02; if(e.badge)e.badge.classList.toggle('dim',!on); });
   showSel(n); flyTo(n);
 }
 function flyTo(n){ const off=camera.position.clone().sub(controls.target).normalize().multiplyScalar(n.kind==='ent'?72:54);
@@ -268,9 +309,12 @@ function showSel(n){
     +'<div class="qrow"><select id="qf">'+qfields.map(f=>'<option>'+esc(f)+'</option>').join('')+'</select>'
     +'<select id="qop"><option value="distinct">distinct</option><option value="top">top 10</option><option value="count">count</option></select>'
     +'<button class="qgo" id="qgo">▸</button></div><div class="qout" id="qout"></div></div>') : '';
+  const meta=n.kind==='ent'?ENTMETA[n.id]:null;
+  const km = meta ? ('<div class="keyed"><span class="pkline">🔑 '+esc(meta.pk)+'</span>'
+    +meta.attrs.map(a=>'<span class="attr">'+esc(a)+'</span>').join('')+'</div>') : '';
   selEl.innerHTML='<div class="k">'+(n.kind==='ent'?'Canonical entity':((n.live?'Live source · ':'Planned · ')+(n.status||'')))+'</div>'
-    +'<div class="nm">'+(n.full||n.label)+'</div>'+(n.sub?'<div class="meta">'+n.sub+'</div>':'')
-    +'<div class="cxh">Connects to</div><div class="cx">'
+    +'<div class="nm">'+(n.full||n.label)+'</div>'+(n.sub?'<div class="meta">'+n.sub+'</div>':'')+km
+    +'<div class="cxh">'+(n.kind==='ent'?'Relationships':'Feeds · join keys')+'</div><div class="cx">'
     +(conns.length?conns.map(c=>'<div class="cxrow"><span class="road">'+c.road+'</span><span class="to">'+c.to+'</span></div>').join(''):'<div class="none">Nothing yet — an orphan (a road worth building).</div>')
     +'</div>'+qhtml+'<button class="reset" id="rst">✕ clear focus</button>';
   selEl.classList.add('show'); document.getElementById('rst').onclick=()=>setFocus(null);
@@ -346,6 +390,7 @@ function tick(){ requestAnimationFrame(tick);
   if(fly){ fly.t=Math.min(1,fly.t+.045); const e=1-Math.pow(1-fly.t,3); controls.target.lerpVectors(fly.fromT,fly.toT,e); camera.position.lerpVectors(fly.fromC,fly.toC,e); if(fly.t>=1)fly=null; }
   const t=performance.now()*0.001, now=performance.now();
   nodes.forEach(n=>{ if(n.kind==='ent'&&n.mat) n.mat.emissiveIntensity=.42+Math.sin(t*1.6+n.pos.x)*.1;
+    if(n.kind==='src'&&n.mesh) n.mesh.rotation.y+=0.0045;   // feed gems turn slowly — a distinct life from the still spine
     if(n.kind==='src'&&n.mat&&/broke|fail|block/.test(n.status)) n.mat.emissiveIntensity=.35+.4*Math.abs(Math.sin(now*0.004));   // failing node breathes red
     if(n._glow){ if(n._glow>now){ if(n.mat){ n.mat.emissiveIntensity=.9; } if(n.lo)n.lo.style.color='#eafaf5'; } else { n._glow=0; if(n.lo)n.lo.style.color=''; } } });
   edges.forEach(e=>{ if(e._flash){ if(e._flash>now){ e.mat.opacity=.5+0.45*Math.abs(Math.sin(now*0.006)); } else { e._flash=0; e.mat.opacity=(e._pre!=null?e._pre:(e._base||.32)); e._pre=null; } }
