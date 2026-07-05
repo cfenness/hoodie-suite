@@ -21,19 +21,19 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 :root{
-  /* ---- chrome palette (canonical) — Hoodie light + cool neutrals ---- */
-  --paper:#F4F6F5;   --panel:#EAEEED;   --panel-2:#DFE5E3;
-  --ink:#243330;     --ink-soft:#5E6B68; --hair:#D7DDDB;
+  /* ---- chrome palette (canonical) — matches hoodie-app (apps/mobile/src/ui.tsx C) ---- */
+  --paper:#F1F3F5;   --panel:#E8EBEE;   --panel-2:#DEE3E7;
+  --ink:#2B3138;     --ink-soft:#7A828B; --hair:#DDE2E6;
 
   /* ---- top-bar chrome (light) — launcher top bar + in-app header strip ---- */
-  --bar-bg:#FFFFFF;  --bar-fg:#243330;  --bar-hair:#E1E6E4; --bar-mut:#7E8B88;
+  --bar-bg:#FFFFFF;  --bar-fg:#2B3138;  --bar-hair:#E4E7EB; --bar-mut:#7A828B;
 
-  /* ---- accent + supporting — Hoodie teal (repointed from gold; token NAMES kept
-         so every accent recolors at once; --warn stays gold for semantic warnings) ---- */
-  --amber:#2C8C7C;   --amber-bright:#34A392; --amber-deep:#1E5F55;
-  --slate:#2F4D49;   --slate-tint:#DDE7E4;   --oxblood:#9A3B2E;
+  /* ---- accent + supporting — Hoodie-app slate blue (repointed from teal; token NAMES kept
+         so every accent recolors at once; --warn stays amber for semantic warnings) ---- */
+  --amber:#4E79A7;   --amber-bright:#6A93BD; --amber-deep:#3D6089;
+  --slate:#2F3D49;   --slate-tint:#DCE4EC;   --oxblood:#B8402B;
   --accent:var(--amber); --accent-bright:var(--amber-bright);
-  --blue:#3B6FA6;    /* Hoodie secondary action */
+  --blue:#3B6FA6;    /* secondary action */
 
   /* ---- data-semantic colors (apps may reference these or override locally) ---- */
   --good:#2E7D57;    --warn:#B8791F;    --bad:var(--oxblood);

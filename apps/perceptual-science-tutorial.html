@@ -11,8 +11,8 @@
   :root{
     --paper:#F4F6F5;--panel:#E6E4DD;--panel-2:#DEDBD2;
     --ink:#243330;--ink-soft:#5E6B68;--hair:#D7DDDB;
-    --amber:#2C8C7C;--amber-bright:#34A392;--amber-deep:#1E5F55;
-    --amber-tint:#EAE0CC;--slate:#2F4D49;--slate-tint:#DEE6E3;
+    --amber:#4E79A7;--amber-bright:#6A93BD;--amber-deep:#3D6089;
+    --amber-tint:#EAE0CC;--slate:#2F3D49;--slate-tint:#DEE6E3;
     --oxblood:#8A382C;--ox-tint:#EDE0DC;
   }
   *{box-sizing:border-box;}
@@ -564,13 +564,13 @@ const CMV=[14,22,17,25,19];const cmMax=Math.max(...CMV);const cmSum=CMV.reduce((
 let cmShown=false;
 function drawCM(){
   // bars
-  let bars='';CMV.forEach((v,i)=>{const w=v/cmMax*70;const y=8+i*22;bars+='<rect x="40" y="'+y+'" width="'+w+'" height="15" fill="'+(v===cmMax?'#2C8C7C':'#2F4D49')+'"/>';if(cmShown)bars+='<text x="'+(43+w)+'" y="'+(y+12)+'" font-family="IBM Plex Mono" font-size="9" fill="#243330">'+v+'</text>';});
+  let bars='';CMV.forEach((v,i)=>{const w=v/cmMax*70;const y=8+i*22;bars+='<rect x="40" y="'+y+'" width="'+w+'" height="15" fill="'+(v===cmMax?'#4E79A7':'#2F3D49')+'"/>';if(cmShown)bars+='<text x="'+(43+w)+'" y="'+(y+12)+'" font-family="IBM Plex Mono" font-size="9" fill="#243330">'+v+'</text>';});
   document.getElementById('cm-bars').innerHTML=bars;
   // pie
-  let ang=-90;let pie='';CMV.forEach((v,i)=>{const a0=ang;const sweep=v/cmSum*360;ang+=sweep;const a1=ang;const large=sweep>180?1:0;const r=46,cx=60,cy=60;const x0=cx+r*Math.cos(a0*Math.PI/180),y0=cy+r*Math.sin(a0*Math.PI/180);const x1=cx+r*Math.cos(a1*Math.PI/180),y1=cy+r*Math.sin(a1*Math.PI/180);const col=v===cmMax?'#2C8C7C':['#2F4D49','#4a6b66','#5E6B68','#8A8270','#3a5450'][i];pie+='<path d="M'+cx+','+cy+' L'+x0.toFixed(1)+','+y0.toFixed(1)+' A'+r+','+r+' 0 '+large+',1 '+x1.toFixed(1)+','+y1.toFixed(1)+' Z" fill="'+col+'"/>';});if(cmShown)pie+='<text x="60" y="114" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="#5E6B68">'+CMV.join(' / ')+'</text>';
+  let ang=-90;let pie='';CMV.forEach((v,i)=>{const a0=ang;const sweep=v/cmSum*360;ang+=sweep;const a1=ang;const large=sweep>180?1:0;const r=46,cx=60,cy=60;const x0=cx+r*Math.cos(a0*Math.PI/180),y0=cy+r*Math.sin(a0*Math.PI/180);const x1=cx+r*Math.cos(a1*Math.PI/180),y1=cy+r*Math.sin(a1*Math.PI/180);const col=v===cmMax?'#4E79A7':['#2F3D49','#4a6b66','#5E6B68','#8A8270','#3a5450'][i];pie+='<path d="M'+cx+','+cy+' L'+x0.toFixed(1)+','+y0.toFixed(1)+' A'+r+','+r+' 0 '+large+',1 '+x1.toFixed(1)+','+y1.toFixed(1)+' Z" fill="'+col+'"/>';});if(cmShown)pie+='<text x="60" y="114" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="#5E6B68">'+CMV.join(' / ')+'</text>';
   document.getElementById('cm-pie').innerHTML=pie;
   // bubbles
-  let bub='';CMV.forEach((v,i)=>{const cx=18+i*21;const rr=Math.sqrt(v/cmMax)*15;bub+='<circle cx="'+cx+'" cy="58" r="'+rr.toFixed(1)+'" fill="'+(v===cmMax?'#2C8C7C':'#2F4D49')+'" opacity="0.85"/>';if(cmShown)bub+='<text x="'+cx+'" y="100" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="#5E6B68">'+v+'</text>';});
+  let bub='';CMV.forEach((v,i)=>{const cx=18+i*21;const rr=Math.sqrt(v/cmMax)*15;bub+='<circle cx="'+cx+'" cy="58" r="'+rr.toFixed(1)+'" fill="'+(v===cmMax?'#4E79A7':'#2F3D49')+'" opacity="0.85"/>';if(cmShown)bub+='<text x="'+cx+'" y="100" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" fill="#5E6B68">'+v+'</text>';});
   document.getElementById('cm-bub').innerHTML=bub;
 }
 document.getElementById('cm-reveal').addEventListener('click',function(){cmShown=!cmShown;this.textContent=cmShown?'▸ Hide the values':'▸ Reveal the values';drawCM();});
@@ -578,7 +578,7 @@ drawCM();
 
 /* ---------- L4 power law ---------- */
 const PL_TRUE=3.0;const PL_EXP=0.7;
-function drawPL(){const a=18;const b=a*Math.sqrt(PL_TRUE);document.getElementById('pl-svg').innerHTML='<circle cx="80" cy="60" r="'+a+'" fill="#2F4D49" opacity="0.85"/><text x="80" y="105" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="#5E6B68">A</text><circle cx="210" cy="60" r="'+b.toFixed(1)+'" fill="#2C8C7C" opacity="0.85"/><text x="210" y="105" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="#5E6B68">B</text>';}
+function drawPL(){const a=18;const b=a*Math.sqrt(PL_TRUE);document.getElementById('pl-svg').innerHTML='<circle cx="80" cy="60" r="'+a+'" fill="#2F3D49" opacity="0.85"/><text x="80" y="105" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="#5E6B68">A</text><circle cx="210" cy="60" r="'+b.toFixed(1)+'" fill="#4E79A7" opacity="0.85"/><text x="210" y="105" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="#5E6B68">B</text>';}
 document.getElementById('pl-slider').addEventListener('input',function(){document.getElementById('pl-guess').textContent=(+this.value).toFixed(1)+'×';});
 document.getElementById('pl-reveal').addEventListener('click',function(){
   const g=+document.getElementById('pl-slider').value;const perceived=Math.pow(PL_TRUE,PL_EXP);
@@ -622,7 +622,7 @@ function drawLie(){
   document.getElementById('lie-base').textContent='baseline: '+base;
   const range=Math.max(1,B-base);
   const hA=Math.max(0,(A-base))/range*150;const hB=Math.max(0,(B-base))/range*150;
-  document.getElementById('lie-svg').innerHTML='<rect x="70" y="'+(160-hA)+'" width="60" height="'+hA+'" fill="#2F4D49"/><text x="100" y="168" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="#5E6B68">100</text><rect x="180" y="'+(160-hB)+'" width="60" height="'+hB+'" fill="#2C8C7C"/><text x="210" y="168" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="#5E6B68">110</text>';
+  document.getElementById('lie-svg').innerHTML='<rect x="70" y="'+(160-hA)+'" width="60" height="'+hA+'" fill="#2F3D49"/><text x="100" y="168" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="#5E6B68">100</text><rect x="180" y="'+(160-hB)+'" width="60" height="'+hB+'" fill="#4E79A7"/><text x="210" y="168" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="#5E6B68">110</text>';
   const apparent=(B-base)/(A-base);const trueRatio=B/A;const lf=apparent/trueRatio;
   const el=document.getElementById('lie-fac');
   el.textContent='Lie factor: '+lf.toFixed(1)+'×   (true difference 10% shown as '+((apparent-1)*100).toFixed(0)+'%)';
@@ -644,8 +644,8 @@ function drawGE(mode){
   // base 12 dot positions in a 4x3 even grid
   let pts=[];for(let r=0;r<3;r++)for(let c=0;c<4;c++)pts.push([50+c*70,35+r*40]);
   if(mode==='Proximity'){pts=[];const groups=[[40,55],[150,55],[260,55]];groups.forEach((g,gi)=>{for(let i=0;i<4;i++){pts.push([g[0]+(i%2)*22,g[1]+Math.floor(i/2)*40]);}});}
-  if(mode==='Enclosure'){s+='<rect x="28" y="22" width="120" height="106" fill="none" stroke="#2C8C7C" stroke-width="2" rx="6"/>';}
-  pts.forEach((p,i)=>{let fill='#2F4D49';if(mode==='Similarity')fill=(i%2===0)?'#2C8C7C':'#2F4D49';s+='<circle cx="'+p[0]+'" cy="'+p[1]+'" r="8" fill="'+fill+'"/>';});
+  if(mode==='Enclosure'){s+='<rect x="28" y="22" width="120" height="106" fill="none" stroke="#4E79A7" stroke-width="2" rx="6"/>';}
+  pts.forEach((p,i)=>{let fill='#2F3D49';if(mode==='Similarity')fill=(i%2===0)?'#4E79A7':'#2F3D49';s+='<circle cx="'+p[0]+'" cy="'+p[1]+'" r="8" fill="'+fill+'"/>';});
   svg.innerHTML=s;
   document.getElementById('ge-cap').innerHTML=GE[mode].cap;
 }
