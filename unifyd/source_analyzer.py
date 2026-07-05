@@ -215,10 +215,16 @@ def _page_url(url, n):
     return url + sep + "page=" + str(n)
 
 
+# Every extraction prompt OPENS with this compliance gate — check robots.txt + ToS first.
+COMPLIANCE = ("First, check the source's robots.txt and Terms of Service: confirm this path is not "
+              "disallowed for our user-agent and that scraping is permitted. If it is disallowed or the ToS "
+              "forbids it, STOP and report that instead of extracting. Only if it is permitted, then: ")
+
+
 def _default_prompt(names):
     fl = ", ".join(names) if names else "every field in the primary dataset"
-    return ("Extract every row of the primary dataset from this page's HTML. For each row return an object with "
-            "these fields: " + fl + ". Return ONLY a JSON array of objects — no prose. Use null for a missing field.")
+    return (COMPLIANCE + "Extract every row of the primary dataset from this page's HTML. For each row return an "
+            "object with these fields: " + fl + ". Return ONLY a JSON array of objects — no prose. Use null for a missing field.")
 
 
 def _heuristic(html):
@@ -369,9 +375,13 @@ def analyze(url, goal=None):
                   "PHASING: the base catalog (product list, chain-wide) is one cheap pull; per-store INVENTORY is a "
                   "separate, expensive pass (one query per store) — reflect that in scrape_prompt (catalog first, then "
                   "loop stores for inventory only if asked). "
-                  "scrape_prompt is a REUSABLE instruction to extract this source's rows on every future run: if data_api "
-                  "is set it must say to fetch that API (and paginate it) and normalize its JSON to the fields; otherwise "
-                  "to read the page HTML. Return a JSON array of objects; make it source-specific, not tied to this snapshot.")
+                  "scrape_prompt is a REUSABLE instruction to extract this source's rows on every future run. It MUST "
+                  "START with a compliance gate: 'First, check the source's robots.txt and Terms of Service — confirm "
+                  "this path isn't disallowed for our user-agent and that scraping is permitted; if it's disallowed or "
+                  "the ToS forbids it, STOP and report that instead of extracting. Only if permitted, then:' — and THEN "
+                  "the extraction steps: if data_api is set it must say to fetch that API (and paginate it) and normalize "
+                  "its JSON to the fields; otherwise to read the page HTML. Return a JSON array of objects; make it "
+                  "source-specific, not tied to this snapshot.")
         usr = (("GOAL: " + goal + "\n\n") if goal else "") + "PAGE URL: " + url + "\n\nHTML:\n" + _clean(html)
         msg = client.messages.create(model=MODEL, max_tokens=8000, system=sysmsg,
                                      messages=[{"role": "user", "content": usr}])

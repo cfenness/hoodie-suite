@@ -228,7 +228,7 @@ function recStatus(u){ var h=recHost(u); return h?REC[h]:""; }
 // Run a source right here — recipe-first (use the proven config) then extract. Result shows
 // inline under the card and folds back into the recipe (updates its status pill).
 var RUNSTATE={};
-var DEFAULT_PROMPT="Extract every product/item on the page as an object with its key fields — name, price, size, availability.";
+var DEFAULT_PROMPT="First, check the source's robots.txt and Terms of Service — confirm this path isn't disallowed for our user-agent and that scraping is permitted; if it's disallowed or the ToS forbids it, STOP and report that instead of extracting. Only if permitted, then: extract every product/item on the page as an object with its key fields — name, price, size, availability.";
 function runSource(id){
   var s=SOURCES.find(function(x){return x.id===id;}); if(!s||!s.url) return Promise.resolve();
   RUNSTATE[id]={state:"running"}; render();
