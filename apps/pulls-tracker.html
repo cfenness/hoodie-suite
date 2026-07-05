@@ -167,7 +167,7 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
 
 <script>
 const KEY="hoodie.pulls.tracker.v2";
-const TIERS=["Spine & Master","Control States","Specialty Bev-Alc","Grocery & Mass","Delivery & Marketplace","Long-Tail & Platform","Hemp & THC"];
+const TIERS=["Spine & Master","Control States","Specialty Bev-Alc","Grocery & Mass","Delivery & Marketplace","On-Premise Accounts","Long-Tail & Platform","Hemp & THC"];
 // Availability = inventory (the single best data point); Auth type = authorization/permit type (the close second).
 const FIELDS=["Availability","Auth type","Price","Promo","Units","UPC","Ratings"];
 // Who actually runs the pull. Grepsr is an external vendor delivering a daily hemp-beverage feed to S3.
@@ -233,6 +233,7 @@ const SEED=[
 
  {nm:"City Hive / Bottlecapps pattern",tier:"Long-Tail & Platform",foot:"100s of independents",fields:["Price","Availability"],gran:"Store",plat:"Platform parser",prot:"Low",tos:"Gray",pri:"P2",status:"Planned",notes:"One parser per e-comm platform → many independent store catalogs at once. The scan-dark channel that makes the depletion intersection valuable."},
  {nm:"Specialty DTC (Wine.com, K&L, Astor)",tier:"Long-Tail & Platform",foot:"National DTC",fields:["Price","Availability","Ratings"],gran:"Chain",plat:"Custom",prot:"Low",tos:"Gray",pri:"P3",status:"Planned",notes:"Long-tail breadth; wine-heavy."},
+ {nm:"Outback Steakhouse — Locations",tier:"On-Premise Accounts",foot:"National · ~659 restaurants",fields:["Location","Address","Phone"],gran:"Store",plat:"Yext locator (sitemap)",prot:"None",tos:"Clean",pri:"P1",status:"Ready",url:"https://locations.outback.com/sitemap.xml",notes:"On-premise account spine. Store-locator sitemap → schema.org per location (name/address/geo/phone), robots-clean. The Yext locator pattern generalizes to most national chains — one recipe covers the on-premise universe."},
 ];
 
 var SOURCES=[];
