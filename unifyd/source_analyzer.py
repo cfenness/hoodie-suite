@@ -262,6 +262,58 @@ def _heuristic(html):
             "pagination": None, "robots_note": "Check robots.txt + ToS.", "confidence": "heuristic"}
 
 
+def _balance(s):
+    """Close any open strings / brackets in a (possibly truncated) JSON string."""
+    stack, instr, esc = [], False, False
+    for ch in s:
+        if instr:
+            if esc: esc = False
+            elif ch == "\\": esc = True
+            elif ch == '"': instr = False
+        elif ch == '"': instr = True
+        elif ch in "{[": stack.append(ch)
+        elif ch in "}]":
+            if stack: stack.pop()
+    out = s + ('"' if instr else "")
+    for ch in reversed(stack):
+        out += "}" if ch == "{" else "]"
+    return out
+
+
+def _loads_lenient(raw):
+    """json.loads that salvages a truncated model response: parse the JSON object if
+    it's whole, else close the open string/brackets and, if needed, trim back to a
+    comma boundary and retry — so a slightly-too-long answer still yields usable
+    structure instead of dropping to the heuristic. Returns a dict or None."""
+    if not raw:
+        return None
+    i = raw.find("{")
+    if i < 0:
+        return None
+    s = raw[i:]
+    m = re.search(r"\{[\s\S]*\}", s)          # greedy whole object (well-formed case)
+    for cand in ([m.group(0)] if m else []) + [s]:
+        try:
+            v = json.loads(cand)
+            if isinstance(v, dict):
+                return v
+        except Exception:
+            pass
+    t = s                                      # repair a truncated tail
+    for _ in range(8):
+        try:
+            v = json.loads(_balance(t))
+            if isinstance(v, dict):
+                return v
+        except Exception:
+            pass
+        cut = t.rfind(",")
+        if cut <= 0:
+            break
+        t = t[:cut]                            # drop the incomplete trailing element
+    return None
+
+
 def analyze(url, goal=None):
     url = (url or "").strip()
     if not re.match(r"^https?://", url):
@@ -321,11 +373,12 @@ def analyze(url, goal=None):
                   "is set it must say to fetch that API (and paginate it) and normalize its JSON to the fields; otherwise "
                   "to read the page HTML. Return a JSON array of objects; make it source-specific, not tied to this snapshot.")
         usr = (("GOAL: " + goal + "\n\n") if goal else "") + "PAGE URL: " + url + "\n\nHTML:\n" + _clean(html)
-        msg = client.messages.create(model=MODEL, max_tokens=2000, system=sysmsg,
+        msg = client.messages.create(model=MODEL, max_tokens=8000, system=sysmsg,
                                      messages=[{"role": "user", "content": usr}])
         raw = "".join(getattr(b, "text", "") for b in msg.content)
-        m = re.search(r"\{[\s\S]*\}", raw)
-        out = json.loads(m.group(0)) if m else {"error": "could not parse the model response"}
+        out = _loads_lenient(raw)          # tolerant of a truncated/rough JSON tail
+        if out is None:
+            raise ValueError("could not parse the model response")
         out["via"] = via
         out.setdefault("confidence", "medium")
         return out
