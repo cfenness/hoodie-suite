@@ -315,7 +315,24 @@
      controls stay. */
   html.embed .brand{display:none}
   html.embed .clock{display:none}
-  html.embed nav.nav-grp,html.embed #nav{padding-top:14px}
+  /* Embedded in the one MDM console: Master is MASTERING only. The owned-pipeline
+     launchers (Connections / Target Sources / Jobs & Runs) live in the Pulls tab now,
+     so they're dropped here — and the vertical rail becomes a horizontal sub-nav so
+     there's no second stacked sidebar (one rail = the launcher rail). */
+  html.embed body{flex-direction:column;height:100vh}
+  /* display:flex here also beats the narrow-screen `.rail{display:none}` breakpoint —
+     embedded we always want the horizontal strip, however narrow the panel gets. */
+  html.embed .rail{display:flex;width:100%;flex:0 0 auto;height:auto;flex-direction:row;align-items:center;
+    border-right:0;border-bottom:1px solid var(--line);padding:7px 16px;overflow-x:auto}
+  html.embed .rail .foot{display:none}
+  html.embed .nav-grp{margin:0;padding:0;display:flex;align-items:center;gap:4px}
+  html.embed .nav-grp .lbl{display:none}
+  html.embed .nav-item{width:auto;padding:7px 12px;font-size:13px;white-space:nowrap}
+  html.embed .nav-item.on::before{display:none}
+  html.embed .nav-item[data-view="connections"],
+  html.embed .nav-item[data-view="sources"],
+  html.embed .nav-item[data-view="jobs"]{display:none}
+  html.embed .main{height:auto;flex:1 1 auto;min-height:0}
 </style>
 <script>if(location.search.indexOf("embed")>=0)document.documentElement.classList.add("embed");</script>
 </head>
@@ -753,7 +770,7 @@ function viewEntities(){
   const e=entityCounts();
   return `
   <div class="frame-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20 6L9 17l-5-5"/></svg>
-    <div><div class="t">Canonical model — populated from Connections</div>
+    <div><div class="t">Canonical model — populated from source pulls</div>
     <div class="d">Counts below reflect the most recent successful run of each source extract. This is the master each connector resolves into; match &amp; survivorship rules live in the next tab.</div></div></div>
   <div class="grid2">
     <div class="panel">
@@ -859,7 +876,10 @@ function closeModal(){ $("#scrim").classList.remove("on"); schTarget=null; }
 /* =================================================================
    WIRING
 ================================================================= */
+var EMBED=document.documentElement.classList.contains("embed");
 function setView(v){
+  // In the embedded MDM console the pipeline launchers moved to Pulls — keep Master on mastering.
+  if(EMBED && (v==="connections"||v==="sources"||v==="jobs")) v="entities";
   currentView=v;
   document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("on",b.dataset.view===v));
   const titles={connections:["Pipeline / Connections","Connections"],jobs:["Pipeline / Jobs & Runs","Jobs & Runs"],explore:["Pipeline / Explore","Data Explorer"],sources:["Pipeline / Target Sources","Target Sources"],
@@ -1041,7 +1061,7 @@ async function boot(){
     }
     await sSet(KEY_RUNS,RUNS);
   }
-  setView("connections");
+  setView(EMBED?"entities":"connections");
   tick(); setInterval(tick,1000);
 }
 boot();
