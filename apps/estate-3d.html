@@ -28,7 +28,7 @@
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(91,184,110,.5)}70%{box-shadow:0 0 0 7px rgba(91,184,110,0)}100%{box-shadow:0 0 0 0 rgba(91,184,110,0)}}
   .live.stale .dot{background:#d99a3f;animation:none}
   .live.off .dot{background:#6f7f7a;animation:none}
-  .sel{position:fixed;left:22px;bottom:22px;width:294px;background:rgba(18,28,25,.93);border:1px solid var(--line);border-radius:13px;padding:15px 17px;z-index:6;backdrop-filter:blur(6px);transform:translateY(14px);opacity:0;transition:.25s;pointer-events:auto}
+  .sel{position:fixed;left:22px;bottom:22px;width:294px;max-height:calc(100vh - 44px);overflow:auto;background:rgba(18,28,25,.93);border:1px solid var(--line);border-radius:13px;padding:15px 17px;z-index:6;backdrop-filter:blur(6px);transform:translateY(14px);opacity:0;transition:.25s;pointer-events:auto}
   .sel.show{transform:none;opacity:1}
   .sel .k{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#6f938a}
   .sel .nm{font-family:var(--disp);font-weight:600;font-size:19px;margin:2px 0 2px;color:#eafaf5}
@@ -41,6 +41,15 @@
   .sel .none{font-size:12px;color:#c98a4a;font-style:italic}
   .sel .reset{margin-top:12px;font-family:var(--mono);font-size:11px;color:#a9c9c0;background:none;border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer}
   .sel .reset:hover{border-color:var(--teal);color:#eafaf5}
+  .sel .qwrap{margin-top:12px;border-top:1px solid var(--line);padding-top:11px}
+  .sel .qhead{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#6f938a;margin-bottom:7px}
+  .sel .qrow{display:flex;gap:6px;align-items:center}
+  .sel select{flex:1;min-width:0;background:#0e1613;color:#dcefe9;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-family:var(--mono);font-size:11px;outline:none}
+  .sel select#qop{flex:0 0 78px}
+  .sel .qgo{flex:0 0 auto;background:var(--teal);color:#0e1613;border:none;border-radius:7px;padding:6px 11px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer}
+  .sel .qout{margin-top:9px;max-height:168px;overflow:auto}
+  .sel .qout .qv{display:inline-block;background:rgba(63,184,163,.14);border:1px solid var(--line);border-radius:5px;padding:1px 6px;margin:0 4px 4px 0;font-family:var(--mono);font-size:11px;color:#cfe6df}
+  .sel .qmeta{font-family:var(--mono);font-size:9.5px;color:#6f938a;margin-top:5px;display:block}
   .legend{position:fixed;right:22px;bottom:22px;z-index:5;font-family:var(--mono);font-size:10px;color:#6f938a;text-align:right;line-height:1.9;pointer-events:none}
   .legend .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-left:7px;vertical-align:middle}
   .loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9;font-family:var(--mono);font-size:12px;color:#6f938a;background:var(--ink)}
@@ -67,6 +76,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 // ── canonical entities (the schema spine) — fixed geography ────────────────────────
 const ENT=[ {id:'portfolio',label:'Portfolio',p:[0,66,0]}, {id:'brand',label:'Brand',p:[-36,34,4]},
@@ -135,11 +145,11 @@ function buildModel(live){
 
   const recByHost={}; (live.recipes||[]).forEach(r=>{ recByHost[r.host]=r; });
   const seen={};   // dedupe by display name
-  function addSource(key,disp,status,sub,cols,hints,liveFlag){
+  function addSource(key,disp,status,sub,cols,hints,liveFlag,dataset){
     const dn=disp.toLowerCase(); if(seen[dn]) return; seen[dn]=1;
     const rs=roadsFromCols(cols,hints), ents=rs.map(r=>r[0]);
     const n={id:key,label:friendly(disp),full:disp,kind:'src',status:(status||'planned').toLowerCase(),
-             sub:sub,live:liveFlag,pos:stablePos(disp,ents)};
+             sub:sub,live:liveFlag,cols:(cols||[]),dataset:dataset||null,pos:stablePos(disp,ents)};
     nodes.push(n); byId[key]=n; rs.forEach(([e,road])=>edges.push({a:key,b:e,road}));
   }
 
@@ -157,7 +167,7 @@ function buildModel(live){
   // 2) owned datasets pulled by the engine — real data, real columns
   Object.entries(live.datasets||{}).forEach(([k,v])=>{
     const cols=(v&&v.header)||[]; const rows=(v&&(v.total||(v.rows&&v.rows.length)))||'';
-    addSource('d:'+k, dsName(k), 'data', 'owned dataset'+(rows?(' · '+rows+' rows'):''), cols, k, true);
+    addSource('d:'+k, dsName(k), 'data', 'owned dataset'+(rows?(' · '+rows+' rows'):''), cols, k, true, k);
   });
   // 3) any proven/analyzed recipe not already shown (new backend sources appear on their own)
   (live.recipes||[]).forEach((r,i)=>{
@@ -222,12 +232,35 @@ function flyTo(n){ const off=camera.position.clone().sub(controls.target).normal
   fly={toT:n.pos.clone(),toC:n.pos.clone().add(off),t:0,fromT:controls.target.clone(),fromC:camera.position.clone()}; }
 function showSel(n){
   const conns=edges.filter(e=>e.a===n.id||e.b===n.id).map(e=>{ const o=byId[e.a===n.id?e.b:e.a]; return {to:o.label,road:e.road}; });
+  // queryable fields: a dataset node's own columns, or (for an entity) the columns of its connected datasets
+  const colMap={};
+  if(n.dataset){ (n.cols||[]).forEach(c=>{ colMap[c]=n.dataset; }); }
+  else if(n.kind==='ent'){ [...adj[n.id]].map(id=>byId[id]).filter(x=>x&&x.dataset).forEach(x=>(x.cols||[]).forEach(c=>{ if(!colMap[c]) colMap[c]=x.dataset; })); }
+  const qfields=Object.keys(colMap);
+  const qhtml = qfields.length ? ('<div class="qwrap"><div class="qhead">Ask from here</div>'
+    +'<div class="qrow"><select id="qf">'+qfields.map(f=>'<option>'+esc(f)+'</option>').join('')+'</select>'
+    +'<select id="qop"><option value="distinct">distinct</option><option value="top">top 10</option><option value="count">count</option></select>'
+    +'<button class="qgo" id="qgo">▸</button></div><div class="qout" id="qout"></div></div>') : '';
   selEl.innerHTML='<div class="k">'+(n.kind==='ent'?'Canonical entity':((n.live?'Live source · ':'Planned · ')+(n.status||'')))+'</div>'
     +'<div class="nm">'+(n.full||n.label)+'</div>'+(n.sub?'<div class="meta">'+n.sub+'</div>':'')
     +'<div class="cxh">Connects to</div><div class="cx">'
     +(conns.length?conns.map(c=>'<div class="cxrow"><span class="road">'+c.road+'</span><span class="to">'+c.to+'</span></div>').join(''):'<div class="none">Nothing yet — an orphan (a road worth building).</div>')
-    +'</div><button class="reset" id="rst">✕ clear focus</button>';
+    +'</div>'+qhtml+'<button class="reset" id="rst">✕ clear focus</button>';
   selEl.classList.add('show'); document.getElementById('rst').onclick=()=>setFocus(null);
+  const qgo=document.getElementById('qgo'); if(qgo) qgo.onclick=()=>runQ(colMap);
+}
+function runQ(colMap){
+  const field=document.getElementById('qf').value, op=document.getElementById('qop').value, dataset=colMap[field];
+  const out=document.getElementById('qout'); out.innerHTML='<span class="qmeta">running…</span>';
+  fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataset,field,op,limit:60})})
+    .then(r=>r.json()).then(d=>{
+      if(d.error){ out.innerHTML='<span class="qmeta">'+esc(d.error)+'</span>'; return; }
+      let body='';
+      if(d.op==='count') body='<b style="font-size:16px;color:#eafaf5">'+d.result+'</b> <span class="qmeta">non-empty</span>';
+      else if(d.op==='top') body=(d.items||[]).map(i=>'<span class="qv">'+esc(i.value)+' · '+i.n+'</span>').join('');
+      else body=(d.values||[]).map(v=>'<span class="qv">'+esc(v)+'</span>').join('')+(d.truncated?' <span class="qmeta">+more</span>':'');
+      out.innerHTML=body+'<div class="qmeta">'+(d.op==='distinct'?(d.distinct+' distinct · '):'')+'from '+d.sampled+' of '+(d.total||d.sampled)+' rows</div>';
+    }).catch(()=>{ out.innerHTML='<span class="qmeta">query failed — engine reachable?</span>'; });
 }
 addEventListener('pointerdown',ev=>{ down=[ev.clientX,ev.clientY]; });
 addEventListener('pointerup',ev=>{

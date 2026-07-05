@@ -868,6 +868,40 @@ def scraper_extract():
 def highlights_list():
     return jsonify(highlights=HIGHLIGHTS[:int(request.args.get("limit", 20) or 20)])
 
+@app.post("/api/query")
+def data_query():
+    """Declarative run from a node in the Estate model: given a dataset + field + op, resolve it
+    against the live data (the in-memory sample of the pulled dataset). Deterministic."""
+    b = request.get_json(force=True, silent=True) or {}
+    ds, field = b.get("dataset"), b.get("field")
+    op = (b.get("op") or "distinct").lower()
+    limit = max(1, min(int(b.get("limit", 60) or 60), 500))
+    d = DATASETS.get(ds)
+    if not isinstance(d, dict):
+        return jsonify(error="unknown dataset"), 404
+    header = d.get("header") or []
+    rows = d.get("rows") or []
+    if field not in header:
+        return jsonify(error="unknown field"), 400
+    ix = header.index(field)
+    vals = []
+    for r in rows:
+        v = (r[ix] if isinstance(r, list) and len(r) > ix else (r.get(field) if isinstance(r, dict) else None))
+        if v not in (None, ""):
+            vals.append(str(v).strip())
+    sampled, total = len(rows), (d.get("total") or len(rows))
+    counts = {}
+    for v in vals:
+        counts[v] = counts.get(v, 0) + 1
+    base = {"dataset": ds, "field": field, "op": op, "sampled": sampled, "total": total, "distinct": len(counts)}
+    if op == "count":
+        return jsonify(**base, result=len(vals))
+    if op == "top":
+        items = sorted(counts.items(), key=lambda x: -x[1])[:limit]
+        return jsonify(**base, items=[{"value": k, "n": n} for k, n in items])
+    dv = sorted(counts.keys())
+    return jsonify(**base, values=dv[:limit], truncated=len(dv) > limit)
+
 @app.post("/api/scraper/fingerprint")
 def scraper_fingerprint():
     """Discover: given a list of chains, classify each one's platform + whether we have a
