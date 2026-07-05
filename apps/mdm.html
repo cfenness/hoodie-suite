@@ -1,42 +1,77 @@
 <!DOCTYPE html>
-<!-- Hoodie Suite · MDM — one console: Master · Catalog · Pulls · Ingestion -->
+<!-- Hoodie Suite · MDM — one cohesive console. A unified app shell (left nav + native
+     Overview); Master/Catalog/Pulls/Ingestion are sections, embedded during the collapse
+     from four separate apps into one. -->
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hoodie · MDM</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root{--teal:#2C8C7C;--teal-d:#1E5F55;--ink:#243330;--muted:#5E6B68;--line:#D7DDDB;--paper:#F4F6F5}
+  :root{--teal:#2C8C7C;--teal-d:#1E5F55;--teal-soft:#E3F2EE;--ink:#243330;--ink2:#3A4A47;
+        --muted:#5E6B68;--muted2:#8A928F;--line:#D7DDDB;--line2:#E4E9E8;--paper:#F4F6F5;--surface:#fff;
+        --good:#15803d;--good-soft:#e7f3ec;--warn:#b45309;--warn-soft:#fbeede;--bad:#b4232a;--bad-soft:#f8e6e7;
+        --mono:'JetBrains Mono',ui-monospace,monospace;--disp:'Fraunces',Georgia,serif;--body:'Inter',system-ui,sans-serif;}
   *{box-sizing:border-box} html,body{margin:0;height:100%}
-  body{display:flex;flex-direction:column;font-family:'Inter',system-ui,sans-serif;background:var(--paper);color:var(--ink)}
-  .bar{display:flex;align-items:center;gap:14px;padding:0 16px;height:52px;background:#fff;border-bottom:1px solid var(--line);flex:0 0 auto}
-  .brand{line-height:1.05;white-space:nowrap}
-  .brand .ey{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);display:block;font-weight:500}
-  .brand .nm{font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:16px;letter-spacing:-.01em;color:var(--teal-d)}
-  .tabs{display:flex;gap:2px;flex-wrap:wrap}
-  .tab{appearance:none;border:none;background:none;font:inherit;font-size:13.5px;font-weight:600;color:var(--muted);padding:8px 13px;border-radius:8px;cursor:pointer;position:relative}
-  .tab:hover{color:var(--ink);background:#f0f4f3}
-  .tab.on{color:var(--teal-d)}
-  .tab.on::after{content:"";position:absolute;left:13px;right:13px;bottom:-8px;height:2px;background:var(--teal);border-radius:2px}
-  .sp{flex:1}
-  .hint{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
-  @media(max-width:620px){.hint{display:none}.bar{gap:8px;height:auto;padding:8px 12px;flex-wrap:wrap}}
-  .stage{flex:1;position:relative;min-height:0}
+  body{display:flex;font-family:var(--body);color:var(--ink);background:var(--paper)}
+  /* ── left nav (the unified app chrome) ── */
+  nav.side{width:196px;flex:0 0 auto;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:16px 12px;gap:3px}
+  .brand{padding:4px 10px 14px;line-height:1.05}
+  .brand .ey{font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);display:block;font-weight:600}
+  .brand .nm{font-family:var(--disp);font-size:22px;font-weight:700;letter-spacing:-.01em;color:var(--teal-d)}
+  .nav-lab{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2);padding:12px 10px 5px;font-weight:600}
+  .nav a{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:13.5px;font-weight:600;color:var(--ink2);cursor:pointer;text-decoration:none;transition:.12s}
+  .nav a:hover{background:var(--paper);color:var(--ink)}
+  .nav a.on{background:var(--teal-soft);color:var(--teal-d)}
+  .nav a .d{width:6px;height:6px;border-radius:2px;background:#C7CCD2;flex:0 0 auto}
+  .nav a.on .d{background:var(--teal)}
+  .side .foot{margin-top:auto;padding:10px;font-family:var(--mono);font-size:9.5px;color:var(--muted2);display:flex;align-items:center;gap:7px}
+  .side .dot{width:8px;height:8px;border-radius:50%;background:var(--muted2)} .side .dot.live{background:var(--good)}
+  /* ── stage ── */
+  .stage{flex:1;position:relative;min-height:0;overflow:auto}
   .stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}
   .stage iframe[hidden]{display:none}
+  /* ── native Overview ── */
+  .ov{padding:26px 30px;max-width:1080px}
+  .ov[hidden]{display:none}
+  .ov h1{font-family:var(--disp);font-size:27px;font-weight:700;letter-spacing:-.01em;margin:0 0 4px}
+  .ov .lede{font-size:14px;color:var(--muted);margin:0 0 22px;max-width:70ch}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:24px}
+  .kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .kpi .v{font-size:23px;font-weight:800;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+  .kpi .l{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:4px;font-weight:600}
+  .kpi .s{font-size:11.5px;color:var(--muted2);margin-top:3px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:760px){.cols{grid-template-columns:1fr}}
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .panel h2{font-family:var(--disp);font-size:15px;font-weight:600;margin:0 0 12px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line2);font-size:13px}
+  .row:first-of-type{border-top:0}
+  .row .nm{font-weight:600;color:var(--ink)} .row .mt{font-size:11.5px;color:var(--muted2)}
+  .rp{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:999px}
+  .rp.proven{background:var(--good-soft);color:var(--good)}.rp.candidate{background:#e8f0fb;color:#2563b8}
+  .rp.drifting{background:var(--warn-soft);color:var(--warn)}.rp.broken{background:var(--bad-soft);color:var(--bad)}
+  .rp.success{background:var(--good-soft);color:var(--good)}.rp.degraded,.rp.partial{background:var(--warn-soft);color:var(--warn)}
+  .rp.failed{background:var(--bad-soft);color:var(--bad)}.rp.never,.rp.idle{background:var(--line2);color:var(--muted)}
+  .empty{color:var(--muted2);font-size:12.5px;padding:6px 0}
+  .jump{display:flex;flex-wrap:wrap;gap:9px;margin-top:6px}
+  .jump a{font-size:12.5px;font-weight:600;color:var(--teal-d);background:var(--teal-soft);border:1px solid #cde6df;border-radius:8px;padding:7px 12px;cursor:pointer;text-decoration:none}
+  .jump a:hover{background:#d3ece5}
+  .off{background:var(--warn-soft);border:1px solid #f0d3a8;color:#7a4a10;border-radius:10px;padding:11px 14px;font-size:13px;margin-bottom:18px}
 </style></head><body>
-  <div class="bar">
-    <div class="brand"><span class="ey">Hoodie Suite · Master Data</span><span class="nm">MDM</span></div>
-    <div class="tabs">
-      <button class="tab" data-tab="master">Master</button>
-      <button class="tab" data-tab="catalog">Catalog</button>
-      <button class="tab" data-tab="pulls">Pulls</button>
-      <button class="tab" data-tab="ingestion">Ingestion</button>
-    </div>
-    <span class="sp"></span>
-    <span class="hint" id="tabhint"></span>
-  </div>
+  <nav class="side nav">
+    <div class="brand"><span class="ey">Hoodie Suite</span><span class="nm">MDM</span></div>
+    <a data-sec="overview"><span class="d"></span>Overview</a>
+    <div class="nav-lab">Own</div>
+    <a data-sec="master"><span class="d"></span>Master</a>
+    <a data-sec="catalog"><span class="d"></span>Catalog</a>
+    <div class="nav-lab">Feed</div>
+    <a data-sec="pulls"><span class="d"></span>Pulls</a>
+    <a data-sec="ingestion"><span class="d"></span>Ingestion</a>
+    <div class="foot"><span class="dot" id="eng-dot"></span><span id="eng-txt">checking…</span></div>
+  </nav>
   <div class="stage">
+    <div class="ov" id="ov-overview"><div id="ov-body"><div class="empty">Loading the master-data picture…</div></div></div>
     <iframe id="f-master"    title="Master-data control plane" data-src="mdm-master.html"></iframe>
     <iframe id="f-catalog"   title="Product Catalog"           data-src="catalog.html"></iframe>
     <iframe id="f-pulls"     title="Hoodie Pulls"              data-src="pulls.html"></iframe>
@@ -45,26 +80,84 @@
 <script>
 (function(){
   "use strict";
-  var TABS={
-    master:   {f:"f-master",    hint:"Master-data control plane · /api"},
-    catalog:  {f:"f-catalog",   hint:"Product master · lifecycle, completeness, channels"},
-    pulls:    {f:"f-pulls",     hint:"Run & evaluate each scrape"},
-    ingestion:{f:"f-ingestion", hint:"COLA label pipeline · Unifyd engine"}
-  };
-  function show(t){
-    if(!TABS[t]) t="master";
-    var btns=document.querySelectorAll(".tab");
-    for(var i=0;i<btns.length;i++) btns[i].classList.toggle("on", btns[i].getAttribute("data-tab")===t);
-    for(var k in TABS){ document.getElementById(TABS[k].f).hidden = (k!==t); }
-    var f=document.getElementById(TABS[t].f);
-    if(f.getAttribute("data-src") && !f.getAttribute("src")) f.setAttribute("src", f.getAttribute("data-src")); // lazy mount
-    document.getElementById("tabhint").textContent = TABS[t].hint;
-    if(("#"+t)!==location.hash){ try{ history.replaceState(null,"","#"+t); }catch(e){} }
+  var SECTIONS={overview:null,master:"f-master",catalog:"f-catalog",pulls:"f-pulls",ingestion:"f-ingestion"};
+  var esc=function(s){return String(s==null?"":s).replace(/[&<>]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;"}[c];});};
+  var fmt=function(n){return n==null?"—":Number(n).toLocaleString();};
+  var money=function(n){ if(n==null)return "—"; var a=Math.abs(n); return a>=1e6?("$"+(n/1e6).toFixed(1)+"M"):a>=1e3?("$"+(n/1e3).toFixed(0)+"K"):("$"+Math.round(n)); };
+
+  function show(sec){
+    if(!(sec in SECTIONS)) sec="overview";
+    var links=document.querySelectorAll(".nav a");
+    for(var i=0;i<links.length;i++) links[i].classList.toggle("on", links[i].getAttribute("data-sec")===sec);
+    document.getElementById("ov-overview").hidden = (sec!=="overview");
+    for(var k in SECTIONS){ if(SECTIONS[k]){ var f=document.getElementById(SECTIONS[k]); f.hidden=(k!==sec);
+      if(k===sec && f.getAttribute("data-src") && !f.getAttribute("src")) f.setAttribute("src", f.getAttribute("data-src")); } }
+    if(("#"+sec)!==location.hash){ try{ history.replaceState(null,"","#"+sec); }catch(e){} }
+    if(sec==="overview") loadOverview();
   }
-  var b=document.querySelectorAll(".tab");
-  for(var i=0;i<b.length;i++) b[i].onclick=(function(el){ return function(){ show(el.getAttribute("data-tab")); }; })(b[i]);
-  window.addEventListener("message", function(e){ var d=e.data; if(d && d.type==="hoodie:mdm:tab" && d.tab) show(d.tab); });
-  show((location.hash||"#master").slice(1));
+  var links=document.querySelectorAll(".nav a");
+  for(var i=0;i<links.length;i++) links[i].onclick=(function(el){return function(){ show(el.getAttribute("data-sec")); };})(links[i]);
+
+  var loadedOnce=false;
+  function loadOverview(){
+    if(loadedOnce) return; loadedOnce=true;   // one fetch per open; nav back is instant
+    Promise.all([
+      fetch("/api/health").then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+      fetch("/api/book/summary").then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+      fetch("/api/recipes").then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+      fetch("/api/runs").then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})
+    ]).then(function(res){ render(res[0],res[1],res[2],res[3]); })
+      .catch(function(){ render(null,null,null,null); });
+  }
+
+  function render(health, book, recipes, runs){
+    var live=!!(health&&health.ok);
+    document.getElementById("eng-dot").className="dot"+(live?" live":"");
+    document.getElementById("eng-txt").textContent=live?("engine live · "+esc(health.state||"")):"engine offline";
+    var rstats=(recipes&&recipes.stats)||{by_status:{}};
+    var proven=(rstats.by_status&&rstats.by_status.proven)||0;
+    var runsArr=Array.isArray(runs)?runs:[];
+    var kpis=[
+      {v: live?"live":"offline", l:"Engine", s: health?("state: "+esc(health.state||"?")):""},
+      {v: fmt(book&&book.products), l:"Products", s:"catalog · dim_product"},
+      {v: fmt(book&&book.accounts), l:"Accounts", s:"outlets"},
+      {v: money(book&&book.revenue), l:"Book", s:"reconciled revenue"},
+      {v: fmt(rstats.total||0), l:"Recipes", s: proven+" proven"},
+      {v: fmt(health&&health.datasets), l:"Datasets", s:"pulled"}
+    ];
+    var kpiHtml='<div class="kpis">'+kpis.map(function(k){
+      return '<div class="kpi"><div class="v">'+esc(k.v)+'</div><div class="l">'+esc(k.l)+'</div>'+(k.s?'<div class="s">'+esc(k.s)+'</div>':'')+'</div>';
+    }).join("")+'</div>';
+
+    // recent pulls
+    var rs=runsArr.slice().sort(function(a,b){return (b.startedAt||0)-(a.startedAt||0);}).slice(0,6);
+    var pulls=rs.length? rs.map(function(r){
+      var st=r.degraded?"degraded":(r.status||"never");
+      return '<div class="row"><div><div class="nm">'+esc(r.connId||"—")+'</div><div class="mt">'+fmt(r.total)+' rows'+(r.id?(' · '+esc(r.id)):'')+'</div></div><span class="rp '+esc(st)+'">'+esc(st)+'</span></div>';
+    }).join("") : '<div class="empty">No runs yet — run a scrape in Pulls.</div>';
+
+    // recipe coverage
+    var recArr=(recipes&&recipes.recipes)||[];
+    var recRows=recArr.slice(0,6).map(function(x){
+      return '<div class="row"><div><div class="nm">'+esc(x.host||"—")+'</div><div class="mt">'+esc(x.platform||"—")+' · baseline '+fmt((x.baseline||{}).rows)+'</div></div><span class="rp '+esc(x.status||"candidate")+'">'+esc(x.status||"candidate")+'</span></div>';
+    }).join("") || '<div class="empty">No recipes yet — analyze a source in Sources.</div>';
+
+    var body=''+
+      '<h1>Master Data</h1>'+
+      '<p class="lede">One console for the data the suite runs on — own it (Master, Catalog), feed it (Pulls, Ingestion). This overview is the cohesive front; the sections collapse into it over time.</p>'+
+      (live?'':'<div class="off"><b>Engine offline.</b> The live numbers and pulls need the backend — start it (<code>./dev.sh</code>) or open the deployed suite. The sections below still open.</div>')+
+      kpiHtml+
+      '<div class="cols">'+
+        '<div class="panel"><h2>Recent pulls</h2>'+pulls+'</div>'+
+        '<div class="panel"><h2>Recipe coverage</h2>'+recRows+'</div>'+
+      '</div>'+
+      '<div class="jump"><a data-sec="master">Open Master →</a><a data-sec="catalog">Open Catalog →</a><a data-sec="pulls">Open Pulls →</a><a data-sec="ingestion">Open Ingestion →</a></div>';
+    document.getElementById("ov-body").innerHTML=body;
+    var jl=document.querySelectorAll("#ov-body [data-sec]");
+    for(var i=0;i<jl.length;i++) jl[i].onclick=(function(el){return function(){ show(el.getAttribute("data-sec")); };})(jl[i]);
+  }
+
+  show((location.hash||"#overview").slice(1));
 })();
 </script>
 </body></html>
