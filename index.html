@@ -124,10 +124,8 @@
   aside.nav .item.live .ic{background:var(--slate);}
   aside.nav .item .nm{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:12px;letter-spacing:-0.3px;color:var(--ink);line-height:1.12;}
   aside.nav .item .ds{font-size:11px;color:var(--ink-soft);line-height:1.12;margin-top:1px;display:block;}
-  /* sidebar-replacement: section items (an app driving the rail) + the app-selector */
-  aside.nav .secitem .ic{background:transparent;position:relative;}
-  aside.nav .secitem .secdot::before{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:6px;height:6px;border-radius:2px;background:var(--hair);}
-  aside.nav .secitem.active .secdot::before{background:var(--amber);}
+  /* sidebar-replacement: section items now mirror the all-apps item exactly —
+     icon mark + name + quick desc — so a driven rail reads like the home rail */
   aside.nav .navhead .home-link .hl-cv{margin-left:auto;opacity:.5;font-size:11px;}
   .appselpop{background:var(--panel,#fff);border:1px solid var(--hair);border-radius:6px;box-shadow:0 14px 34px rgba(35,30,20,.22);max-height:72vh;overflow:auto;z-index:200;padding:6px;}
   .appselpop .asp-grp{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--amber);padding:9px 9px 4px;font-weight:600;}
@@ -493,8 +491,10 @@
   // rail REFILLS with that nav, and "All apps" becomes an app selector. Apps opt in.
   var appNav=null;   // {app, sections:[{id,label,group}], active} while an app drives the rail
   function secItem(s,active){
-    return '<div class="item beta secitem'+(s.id===active?' active':'')+'" data-sec="'+s.id+'">'+
-      '<span class="ic secdot"></span><span class="tx"><span class="nm">'+s.label+'</span></span></div>';
+    // mirror the all-apps item: real icon mark + name + a quick one-line explanation
+    return '<div class="item secitem'+(s.id===active?' active':'')+'" data-sec="'+s.id+'" title="'+(s.label||'')+'">'+
+      '<span class="ic">'+(s.icon||s.mark||'•')+'</span>'+
+      '<span class="tx"><span class="nm">'+s.label+'</span>'+(s.desc?'<span class="ds">'+s.desc+'</span>':'')+'</span></div>';
   }
   function renderAppNav(){
     var groups={},order=[];
