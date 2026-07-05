@@ -53,7 +53,7 @@ def fetch_detail(url):
     # 1) direct
     try:
         req = urllib.request.Request(url, headers=_HEADERS)
-        with urllib.request.urlopen(req, timeout=25) as r:
+        with urllib.request.urlopen(req, timeout=12) as r:   # fail fast to the Bright Data fallback
             html = r.read().decode("utf-8", "replace")
             code = r.getcode()
         if _looks_blocked(html):
@@ -76,7 +76,7 @@ def fetch_detail(url):
             attempts.append({"step": "bright-data", "status": None, "ok": False,
                              "note": "not configured — set BRIGHTDATA_API_KEY (or run `bdata login`) to unlock bot-walled chains"})
         else:
-            html = brightdata.fetch(url, data_format="html", timeout=90)
+            html = brightdata.fetch(url, data_format="html", timeout=60)
             if html and len(html) > 500 and not _looks_blocked(html):
                 attempts.append({"step": "bright-data", "status": 200, "ok": True,
                                  "note": "unlocked %d bytes (zone %s)" % (len(html), brightdata.zone())})
