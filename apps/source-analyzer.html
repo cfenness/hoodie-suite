@@ -193,8 +193,8 @@
           +'<span class="hint" style="margin-left:10px">max items</span>'
           +'<select id="ex-limit-sel" class="num-in" style="width:auto" title="cap the number of items pulled — or pick All to pull the whole catalog">'
             +'<option value="100">100</option><option value="500">500</option><option value="1000">1,000</option><option value="5000">5,000</option><option value="10000">10,000</option>'
-            +'<option value="all">All (no cap)</option><option value="custom" hidden>custom</option></select>'
-          +'<input id="ex-limit" class="num-in" type="number" min="1" max="1000000" value="100" title="custom cap" style="width:96px">'
+            +'<option value="all">All (no cap)</option><option value="custom">Custom…</option></select>'
+          +'<input id="ex-limit" class="num-in" type="number" min="1" max="1000000" value="100" title="custom cap" style="width:96px;display:none">'
           +'<span class="hint" id="ex-limit-note" style="margin-left:6px">— caps the run so you don’t pull the whole catalog while testing. Pick <b>All</b> to run until the source is exhausted.</span></div>'
         +(apiUrl?'<div class="hint" style="margin:2px 0 12px">This source is client-rendered — extraction runs against its <b>data API</b> so you can pull the whole catalog (up to your cap), not one page.</div>':'<div style="height:8px"></div>')
         +'<div class="promptbox">'
@@ -214,12 +214,11 @@
     var rx=document.getElementById("run-extract"); if(rx)rx.onclick=runExtract;
     var lsel=document.getElementById("ex-limit-sel"), linp=document.getElementById("ex-limit");
     if(lsel&&linp){
+      // one control by default: the number box appears only for "Custom…"
       lsel.onchange=function(){
-        if(lsel.value==="all"){ linp.value=""; linp.disabled=true; linp.style.opacity=".45"; }
-        else if(lsel.value==="custom"){ linp.disabled=false; linp.style.opacity=""; linp.focus(); }
-        else { linp.disabled=false; linp.style.opacity=""; linp.value=lsel.value; }
+        if(lsel.value==="custom"){ linp.style.display="inline-block"; linp.disabled=false; linp.focus(); }
+        else { linp.style.display="none"; linp.disabled=false; if(lsel.value!=="all") linp.value=lsel.value; }
       };
-      linp.oninput=function(){ lsel.value="custom"; };  // manual entry → custom
     }
   }
 
