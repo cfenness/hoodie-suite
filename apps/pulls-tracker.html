@@ -16,6 +16,8 @@
 }
 *{box-sizing:border-box}body{margin:0;font-family:var(--body);color:var(--ink);background:var(--paper);line-height:1.45}
 .hero{background:linear-gradient(120deg,#1E5F55,#2C8C7C 58%,#257A6C);color:#fff;padding:30px 34px 26px}
+/* embedded as the MDM Pulls tab (?embed=1): drop the brand hero, the rail already names it */
+html.embed .hero{display:none}
 .hero .ey{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#9FD3C7;margin-bottom:8px}
 .hero h1{font-family:var(--display);font-size:34px;font-weight:600;letter-spacing:-.01em;margin:0 0 6px}
 .hero p{font-size:14px;color:#e4dbf7;margin:0 0 20px;max-width:64ch}
@@ -102,7 +104,9 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
 .mact{display:flex;gap:10px;align-items:center;margin-top:8px}.mact .sp{flex:1}
 .del-link{color:var(--bad);font-size:12px;cursor:pointer;background:none;border:none;font-family:var(--body)}
 .del-link:hover{text-decoration:underline}
-</style></head><body>
+</style>
+<script>if(location.search.indexOf("embed")>=0)document.documentElement.classList.add("embed");</script>
+</head><body>
 
 <div class="hero">
   <div class="wrap" style="padding:0">
@@ -184,14 +188,16 @@ const URLS={
  "Uber Eats":"https://www.ubereats.com","Vivino / Wine-Searcher":"https://www.vivino.com","PA Fine Wine & Good Spirits":"https://www.finewineandgoodspirits.com"
 };
 function seedUrl(s){ return URLS[s.nm]||""; }
+// backfill the owned-connector id from SEED by name, so sources saved before connId existed still run
+function seedConn(s){ var m=SEED.find(function(x){return x.nm===s.nm;}); return (m&&m.connId)||""; }
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const slug=s=>s.replace(/[^A-Za-z]/g,"").slice(0,2).toUpperCase();
 
 const SEED=[
- {nm:"Florida — Items",tier:"Spine & Master",foot:"FL · DBPR/ABT registry",fields:["UPC"],gran:"State",plat:"gov CSV",prot:"None",tos:"Clean",pri:"P0",status:"Ready",notes:"Item master seed — authoritative government CSV."},
- {nm:"Florida — Outlets",tier:"Spine & Master",foot:"FL · DBPR/ABT licensees",fields:[],gran:"State",plat:"gov CSV",prot:"None",tos:"Clean",pri:"P0",status:"Ready",notes:"Outlet master — the load-bearing spine. FL-only; must expand to TX + IL to resolve Spec's/Binny's."},
- {nm:"TTB — COLA Labels",tier:"Spine & Master",foot:"National · TTB public registry",fields:["UPC"],gran:"Chain",plat:"Custom scraper",prot:"Low",tos:"Clean",pri:"P1",status:"Ready",notes:"Label / product-identity enrichment on top of item master."},
+ {nm:"Florida — Items",connId:"fl-items",tier:"Spine & Master",foot:"FL · DBPR/ABT registry",fields:["UPC"],gran:"State",plat:"gov CSV",prot:"None",tos:"Clean",pri:"P0",status:"Ready",notes:"Item master seed — authoritative government CSV."},
+ {nm:"Florida — Outlets",connId:"fl-outlets",tier:"Spine & Master",foot:"FL · DBPR/ABT licensees",fields:[],gran:"State",plat:"gov CSV",prot:"None",tos:"Clean",pri:"P0",status:"Ready",notes:"Outlet master — the load-bearing spine. FL-only; must expand to TX + IL to resolve Spec's/Binny's."},
+ {nm:"TTB — COLA Labels",connId:"ttb-cola",tier:"Spine & Master",foot:"National · TTB public registry",fields:["UPC"],gran:"Chain",plat:"Custom scraper",prot:"Low",tos:"Clean",pri:"P1",status:"Ready",notes:"Label / product-identity enrichment on top of item master."},
 
  {nm:"PA Fine Wine & Good Spirits",tier:"Control States",foot:"PA · 568 stores",fields:["Price"],gran:"State",plat:"gov price book",prot:"None",tos:"Clean",pri:"P0",status:"Planned",notes:"Quarterly price listing, statewide-uniform. Biggest clean miss — fetch & parse, not a scrape."},
  {nm:"Virginia ABC",tier:"Control States",foot:"VA · 395 stores",fields:["Price"],gran:"State",plat:"gov price book",prot:"None",tos:"Clean",pri:"P0",status:"Planned",notes:"Statewide-uniform pricing; published list."},
@@ -199,8 +205,8 @@ const SEED=[
  {nm:"Idaho State Liquor",tier:"Control States",foot:"ID · monthly files",fields:["Price"],gran:"State",plat:"gov price files",prot:"None",tos:"Clean",pri:"P1",status:"Planned",notes:"Monthly alphabetical + by-category pricing, floor prices & tiers."},
  {nm:"Remaining control states (13)",tier:"Control States",foot:"OH, OR, MI, UT, AL, IA, ME, MS, MT, NH, VT, WV, WY",fields:["Price"],gran:"State",plat:"gov files",prot:"None",tos:"Clean",pri:"P2",status:"Planned",notes:"Same fetch-and-parse pattern; clone per state. ~23% of US spirits volume across the set."},
 
- {nm:"ABC FWS — Inventory",tier:"Specialty Bev-Alc",foot:"FL · 133 stores",fields:["Availability","Price"],gran:"Store",plat:"BigCommerce options",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",owner:"Hoodie + Grepsr",notes:"STORE-LEVEL in/out + price. Polite 10s. Home turf. Grepsr also lands a daily hemp-bev cut to S3 (count-alert restored after a low-row day)."},
- {nm:"Spec's — Inventory",tier:"Specialty Bev-Alc",foot:"TX · 100+ stores",fields:["Availability","Price","Promo"],gran:"Store",plat:"Embedded variants (direct)",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",owner:"Hoodie + Grepsr",notes:"Direct, no Bright Data. TX outlets can't resolve to the spine yet (outlet master is FL-only). Grepsr 'Spec's Online' hemp-bev feed is daily; promo now pulled from PDP."},
+ {nm:"ABC FWS — Inventory",connId:"abc-fws",tier:"Specialty Bev-Alc",foot:"FL · 133 stores",fields:["Availability","Price"],gran:"Store",plat:"BigCommerce options",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",owner:"Hoodie + Grepsr",notes:"STORE-LEVEL in/out + price. Polite 10s. Home turf. Grepsr also lands a daily hemp-bev cut to S3 (count-alert restored after a low-row day)."},
+ {nm:"Spec's — Inventory",connId:"specs",tier:"Specialty Bev-Alc",foot:"TX · 100+ stores",fields:["Availability","Price","Promo"],gran:"Store",plat:"Embedded variants (direct)",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",owner:"Hoodie + Grepsr",notes:"Direct, no Bright Data. TX outlets can't resolve to the spine yet (outlet master is FL-only). Grepsr 'Spec's Online' hemp-bev feed is daily; promo now pulled from PDP."},
  {nm:"Binny's — Inventory",tier:"Specialty Bev-Alc",foot:"IL · 45 stores",fields:["Availability","Price","Units"],gran:"Store",plat:"Algolia feed",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",owner:"Hoodie + Grepsr",notes:"CROWN JEWEL — unit inventory → directional units sold. Grepsr hemp-bev feed is daily; store IDs 6 & 80 have blank names (80 = 'Ship to Me', 6 = deactivated store). Validate deltas before trusting downstream."},
  {nm:"Total Wine & More",tier:"Specialty Bev-Alc",foot:"National · 285 stores",fields:["Availability","Price","Promo","Ratings"],gran:"Store",plat:"Custom (Algolia-style)",prot:"High",tos:"Gray",pri:"P0",status:"Live",owner:"Grepsr",notes:"Market leader, >50% of sector by store count. We can't scrape it directly (heavily protected) — Grepsr delivers a daily hemp-bev cut to S3; promo capture added. Our own pull is still the biggest competitive gap."},
  {nm:"BevMo",tier:"Specialty Bev-Alc",foot:"CA/AZ · 160 stores",fields:["Availability","Price"],gran:"Store",plat:"Custom (Elasticsearch)",prot:"High",tos:"Gray",pri:"P2",status:"Building",owner:"Grepsr",notes:"Grepsr daily hemp-bev feed, but >95% alcohol bleed — no THC category page, Elasticsearch fuzzy-matches 'THC'. Filtering on 'Government Issued ID Required' attribute; anti-bot has blocked them intermittently. Gopuff-owned."},
@@ -254,7 +260,9 @@ function toggleFld(id,f){
   s.pick=(cur.length>=(s.fields||[]).length)?null:cur; save(); render();
 }
 function runSource(id){
-  var s=SOURCES.find(function(x){return x.id===id;}); if(!s||!s.url) return Promise.resolve();
+  var s=SOURCES.find(function(x){return x.id===id;}); if(!s) return Promise.resolve();
+  if(s.connId) return runConn(id);        // owned connector → the engine's pull pipeline (/api/run)
+  if(!s.url) return Promise.resolve();
   RUNSTATE[id]={state:"running"}; render();
   var flds=picked(s);
   return fetch("/api/scraper/recipe?url="+encodeURIComponent(s.url)).then(function(r){return r.ok?r.json():{};})
@@ -274,6 +282,45 @@ function runSource(id){
       render();
     })
     .catch(function(){ RUNSTATE[id]={state:"error",error:"couldn't reach the engine — start it (./dev.sh) or open the deployed suite"}; render(); });
+}
+// Owned connector → run the engine's real pull pipeline (/api/run) and show the record count.
+function runConn(id){
+  var s=SOURCES.find(function(x){return x.id===id;}); if(!s||!s.connId) return Promise.resolve();
+  RUNSTATE[id]={state:"running",conn:true}; render();
+  return fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({connId:s.connId,trigger:"manual"})})
+    .then(function(r){ return r.ok?r.json():Promise.reject(r.status); })
+    .then(function(rec){
+      var st=(rec&&rec.status)||"success", bad=(st==="degraded"||st==="partial"||st==="failed");
+      RUNSTATE[id]={state:"done",conn:true,rows:(rec&&rec.total)||0,status:st,reportable:bad};
+      render();
+    })
+    .catch(function(){ RUNSTATE[id]={state:"error",conn:true,error:"couldn't reach the engine — start it (./dev.sh) or open the deployed suite",reportable:true}; render(); });
+}
+// A failed / degraded pull is a data-quality signal — log it to the admin service desk.
+function openReport(id){
+  var s=SOURCES.find(function(x){return x.id===id;}); if(!s) return;
+  var r=RUNSTATE[id]||{}, st=r.error?"failed":(r.status||"degraded");
+  var ov=document.createElement("div"); ov.className="ingov";
+  ov.innerHTML='<div class="ingbox" style="width:min(520px,96vw);height:auto;max-height:90vh">'
+    +'<div class="inghd"><div class="t">Report pull issue <small>'+esc(s.nm)+'</small></div><button class="ingx">✕</button></div>'
+    +'<div style="padding:16px 18px">'
+    +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Logs a ticket in Admin · Service desk with the pull, status (<b>'+esc(st)+'</b>) and your note.</div>'
+    +'<textarea id="rpnote" rows="4" placeholder="What looked wrong? (optional)" style="width:100%;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:9px 11px;outline:none"></textarea>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
+    +'<button class="btn" id="rpcancel">Cancel</button><button class="btn" id="rpsend" style="background:var(--purple);color:#fff;border-color:var(--purple)">Send report</button></div></div></div>';
+  document.body.appendChild(ov);
+  function close(){ ov.remove(); }
+  ov.querySelector(".ingx").onclick=close; ov.querySelector("#rpcancel").onclick=close;
+  ov.addEventListener("click",function(e){ if(e.target===ov) close(); });
+  ov.querySelector("#rpsend").onclick=function(){
+    var btn=this; btn.disabled=true; btn.textContent="Sending…";
+    fetch("/api/service/reports",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({connId:s.connId||s.id,source:s.nm,kind:"data-quality",severity:st,
+        note:(ov.querySelector("#rpnote").value||"").trim(),reporter:"tracker"})})
+      .then(function(){ RUNSTATE[id]=Object.assign({},RUNSTATE[id],{reported:true}); close(); render(); })
+      .catch(function(){ btn.disabled=false; btn.textContent="Send report"; alert("Couldn't reach the service desk — is the engine live?"); });
+  };
 }
 // Ingest a pull — open the ingestion QA console (suite-themed) as a modal for this source.
 function openIngest(id){
@@ -295,15 +342,22 @@ function runoutHtml(id){
   else if(r.state==="error"||r.error){
     body='<span style="color:var(--bad)">✗ '+esc(r.error||"no rows extracted")+'</span>';
     if(r.attempts&&r.attempts.length){ var last=r.attempts[r.attempts.length-1]; body+=' <span style="color:var(--muted2)">· '+esc(last.step)+(last.status!=null?(" ["+last.status+"]"):"")+": "+esc(last.note||"")+'</span>'; }
+  } else if(r.conn){
+    var okc=(r.status==="success"||r.status==="ok");
+    var col=okc?"var(--good)":(r.status==="failed"?"var(--bad)":"var(--warn)");
+    body='<span style="color:'+col+'">'+(okc?"✓":(r.status==="failed"?"✗":"○"))+' <b>'+(r.rows||0)+'</b> records</span>'
+       +' · <span class="pill" style="padding:1px 8px;background:var(--gray-soft);color:var(--muted)">'+esc(r.status||"")+'</span>'
+       +' · <span style="color:var(--muted2)">owned pull</span>';
   } else {
     var v=r.recipe||{}, good=r.rows>0;
     body='<span style="color:'+(good?"var(--good)":"var(--warn)")+'">'+(good?"✓":"○")+' <b>'+r.rows+'</b> rows</span> · <span style="color:var(--muted)">'+esc(r.engine||"?")+'</span>'
        +(v.run?(' · <span class="pill rc rc-'+(v.status||"candidate")+'" style="padding:1px 7px">recipe: '+esc(v.status)+(v.promoted?" ✦":"")+'</span>'):'');
   }
+  if(r.reportable){ body+= r.reported ? ' · <span style="color:var(--good)">⚑ reported ✓</span>' : ' · <a data-report="'+id+'" style="cursor:pointer;color:var(--bad)">⚑ report issue</a>'; }
   return '<div class="runout"><div class="rr">'+body+'</div></div>';
 }
 function runAll(){
-  var ids=SOURCES.filter(passes).filter(function(s){return s.url;}).map(function(s){return s.id;});
+  var ids=SOURCES.filter(passes).filter(function(s){return s.url||s.connId;}).map(function(s){return s.id;});
   var btn=$("runAllBtn"); if(btn){ btn.disabled=true; btn.textContent="Running… 0/"+ids.length; }
   (function next(i){
     if(i>=ids.length){ if(btn){ btn.disabled=false; btn.textContent="▸ Run all"; } return; }
@@ -317,7 +371,7 @@ function fetchRecipes(){
   }).catch(function(){});
 }
 
-function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)||"null"); if(r&&r.length){ SOURCES=r.map(s=>Object.assign({owner:"Hoodie",project:seedProject(s),url:seedUrl(s)},s)); return; } }catch(e){} SOURCES=SEED.map((s,i)=>Object.assign({id:"s"+i,owner:"Hoodie",project:seedProject(s),url:seedUrl(s)},s)); }
+function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)||"null"); if(r&&r.length){ SOURCES=r.map(s=>Object.assign({owner:"Hoodie",project:seedProject(s),url:seedUrl(s),connId:seedConn(s)},s)); return; } }catch(e){} SOURCES=SEED.map((s,i)=>Object.assign({id:"s"+i,owner:"Hoodie",project:seedProject(s),url:seedUrl(s)},s)); }
 function save(){ try{ localStorage.setItem(KEY,JSON.stringify(SOURCES)); }catch(e){} }
 
 function passes(s){
@@ -346,6 +400,7 @@ function render(){
   list.querySelectorAll("[data-run]").forEach(b=>b.onclick=()=>runSource(b.dataset.run));
   list.querySelectorAll("[data-ingest]").forEach(b=>b.onclick=()=>openIngest(b.dataset.ingest));
   list.querySelectorAll("[data-fld]").forEach(b=>b.onclick=()=>{ const p=b.dataset.fld.split("::"); toggleFld(p[0],p[1]); });
+  list.querySelectorAll("[data-report]").forEach(b=>b.onclick=()=>openReport(b.dataset.report));
   renderChips(); syncProjects();
   $("foot").textContent=SOURCES.length+" sources tracked · "+SOURCES.filter(s=>s.status==="Live").length+" live · saved to this device";
 }
@@ -370,11 +425,11 @@ function cardHTML(s){
     +'<div class="right">'
       +'<span class="pill pri '+s.pri.toLowerCase()+'" data-pri="'+s.id+'" title="Click to change priority">'+esc(s.pri)+'</span>'
       +'<span class="pill st st-'+s.status.toLowerCase()+'" data-cyc="'+s.id+'" title="Click to advance status">'+esc(s.status)+'</span>'
-      +(s.url?'<button class="iconbtn run" data-run="'+s.id+'" title="Run this source now (recipe-first)"'+(RUNSTATE[s.id]&&RUNSTATE[s.id].state==="running"?" disabled":"")+'>▸</button>':'')
-      +(s.url?'<button class="iconbtn" data-ingest="'+s.id+'" title="Ingest this pull — QA + commit to master">⤓</button>':'')
+      +((s.url||s.connId)?'<button class="iconbtn run" data-run="'+s.id+'" title="'+(s.connId?'Run the owned pull now (engine pipeline)':'Run this source now (recipe-first)')+'"'+(RUNSTATE[s.id]&&RUNSTATE[s.id].state==="running"?" disabled":"")+'>▸</button>':'')
+      +((s.url||s.connId)?'<button class="iconbtn" data-ingest="'+s.id+'" title="Ingest this pull — QA + commit to master">⤓</button>':'')
       +'<button class="iconbtn" data-edit="'+s.id+'" title="Edit">✎</button>'
     +'</div></div>'
-    +(s.url?runoutHtml(s.id):'');
+    +((s.url||s.connId)?runoutHtml(s.id):'');
 }
 function renderChips(){
   const c=k=>SOURCES.filter(s=>s.status===k).length;
