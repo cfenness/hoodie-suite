@@ -12,7 +12,7 @@ ANTHROPIC_API_KEY; without it we return a structural heuristic (tables / JSON-LD
 tool still does something useful offline.
 """
 import os, re, json, urllib.request, urllib.error, urllib.robotparser
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 
 MODEL = os.environ.get("AGENT_LLM_MODEL", "claude-opus-4-8")
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -424,6 +424,7 @@ def analyze(url, goal=None):
             raise ValueError("could not parse the model response")
         out["via"] = via
         out.setdefault("confidence", "medium")
+        _enrich_data_api(out, html)   # fold real Algolia app id / search key into data_api
         out["compliance"] = dict(compliance, robots_txt_note=out.get("robots_note", ""))
         return out
     except Exception as e:
@@ -444,7 +445,100 @@ def _claude_rows(prompt, content, note=""):
     return json.loads(m.group(0)) if m else []
 
 
-def extract(url, prompt, pages=1, limit=3000):
+_ALGOLIA_RE = re.compile(r"\.algolia\.net/1/indexes/([^/?#]+)/quer(?:y|ies)", re.I)
+
+def _algolia_app_from_host(url):
+    """Algolia appId is the host subdomain (minus the -dsn DSN suffix), uppercased —
+    e.g. z25a2a928m-dsn.algolia.net → Z25A2A928M."""
+    h = urlsplit(url).netloc.split(".")[0]
+    h = re.sub(r"-dsn$", "", h, flags=re.I)
+    return h.upper() if re.fullmatch(r"[A-Za-z0-9]{8,16}", h) else None
+
+def _algolia_key_from_url(url):
+    q = parse_qs(urlsplit(url).query)
+    for k in q:
+        if k.lower() == "x-algolia-api-key":
+            return q[k][0]
+    return None
+
+def _algolia_rows(url, app_id, api_key, limit):
+    """POST-paginate an Algolia query endpoint → list of hit dicts. Uses the public,
+    read-only search key (the same one the site ships to the browser); auth is via
+    headers + a JSON body, which is why a plain GET 403s. Stops at nbPages / cap / empty."""
+    endpoint = re.sub(r"(/1/indexes/[^/?#]+/quer(?:y|ies)).*$", r"\1", url)
+    hits, page, npages = [], 0, None
+    per = 1000
+    while page < 500:
+        payload = json.dumps({"params": "hitsPerPage=%d&page=%d" % (per, page)}).encode("utf-8")
+        req = urllib.request.Request(endpoint, data=payload, method="POST", headers={
+            "X-Algolia-Application-Id": app_id, "X-Algolia-API-Key": api_key,
+            "Content-Type": "application/json", "User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=25) as r:
+            doc = json.loads(r.read().decode("utf-8", "replace"))
+        batch = doc.get("hits") or []
+        hits.extend(batch)
+        if npages is None:
+            npages = doc.get("nbPages")
+        page += 1
+        if not batch or len(hits) >= limit or (npages is not None and page >= npages):
+            break
+    return hits[:limit]
+
+
+def _try_algolia(url, prompt, limit, api):
+    """If `url` is an Algolia query endpoint and we can resolve app id + search key,
+    run it natively and return an extract() result; else None (fall through to GET)."""
+    if not _ALGOLIA_RE.search(url or ""):
+        return None
+    api = api or {}
+    app_id = (api.get("app_id") or _algolia_app_from_host(url) or "").strip()
+    api_key = (api.get("api_key") or _algolia_key_from_url(url) or "").strip()
+    if not (app_id and api_key):
+        return None   # can't execute without the search key — let the generic path try/report
+    try:
+        rows = _algolia_rows(url, app_id, api_key, limit)
+    except urllib.error.HTTPError as e:
+        return {"error": "Algolia API %d %s — check the app id / search key" % (e.code, e.reason), "via": "algolia-api"}
+    except Exception as e:
+        return {"error": "Algolia API call failed: " + str(e)[:120], "via": "algolia-api"}
+    if not rows:
+        return {"rows": [], "via": "algolia-api", "engine": "algolia", "raw": 0}
+    if llm_enabled():
+        try:
+            nrows = _claude_rows(prompt, json.dumps(rows[:min(limit, 1200)]),
+                                 "\n\nThe DATA below is raw Algolia hit records; normalize each to the requested fields.")
+            return {"rows": nrows[:limit], "via": "algolia-api", "engine": "claude+algolia", "raw": len(rows)}
+        except Exception:
+            pass
+    return {"rows": rows[:limit], "via": "algolia-api", "engine": "algolia", "raw": len(rows)}
+
+
+def _enrich_data_api(out, html):
+    """Deterministically fold the REAL Algolia app id / search key (from the page config)
+    into data_api, so the recipe stores an executable spec and recipe-first runs can POST
+    the API without another analyze pass. Public search key — safe to persist/use."""
+    da = out.get("data_api")
+    if not isinstance(da, dict):
+        return
+    u = da.get("url") or ""
+    is_alg = bool(_ALGOLIA_RE.search(u)) or "algolia" in (str(da.get("note") or "").lower())
+    if not is_alg:
+        return
+    hints = {}
+    for h in _config_hints(html):
+        if " = " in h:
+            k, v = h.split(" = ", 1)
+            hints[k] = v
+    appid = da.get("app_id") or hints.get("algolia_appId") or _algolia_app_from_host(u)
+    key = da.get("api_key") or hints.get("algolia_apiKey") or _algolia_key_from_url(u)
+    idx = _ALGOLIA_RE.search(u)
+    if appid: da["app_id"] = appid
+    if key:   da["api_key"] = key
+    if idx:   da["index"] = idx.group(1)
+    da.setdefault("method", "POST")
+
+
+def extract(url, prompt, pages=1, limit=3000, api=None):
     """Run the scrape against a target — the page OR its data API — and page through it.
     JSON endpoints (Shopify /products.json, SearchSpring, Algolia…) are parsed natively so
     a whole catalog comes back even without an LLM; HTML pages go through Claude."""
@@ -462,6 +556,13 @@ def extract(url, prompt, pages=1, limit=3000):
         limit = max(1, min(int(limit or 3000), 100000))
     except Exception:
         limit = 3000
+
+    # Native data-API execution: an Algolia store needs a POST (headers + JSON body),
+    # not a GET — so run it directly. This is why a robots-allowed JSON store (e.g. Binny's)
+    # pulls the whole catalog without needing Bright Data. Falls through if we lack the key.
+    alg = _try_algolia(url, prompt, limit, api)   # None = no creds → fall through to the GET path
+    if alg is not None:
+        return alg
 
     json_rows, html_blobs, via, attempts = [], [], None, []
     for n in range(1, pages + 1):
