@@ -675,6 +675,51 @@ def _enrich_locations(out, url, html):
         out["source_type"] = out.get("source_type") or "locations-directory"
 
 
+# Platform fingerprints — (name, regexes, native_pullable). Deterministic, no LLM: given a
+# domain, which e-comm/locator platform powers it, and do we already have a native pull path.
+_PLATFORM_SIGS = [
+    ("algolia",      [r"\.algolia\.net", r"algoliasearch", r"x-algolia-application-id", r"applicationid['\"\s:=]"], True),
+    ("shopify",      [r"cdn\.shopify\.com", r"/products\.json", r"\bshopify\.", r"myshopify\.com"], True),
+    ("searchspring", [r"searchspring\.io", r"snapui\.searchspring"], True),
+    ("yext",         [r"yextpages\.net", r"cdn\.yextapis", r"['\"]yext['\"]"], True),
+    ("bigcommerce",  [r"cdn\d*\.bigcommerce\.com", r"bigcommerce"], False),
+    ("woocommerce",  [r"woocommerce", r"wp-json/wc"], True),
+    ("cityhive",     [r"cityhive", r"data-ch-merchant-id"], False),
+    ("olo",          [r"olo\.com", r"data-olo", r"ordering\.api\.olo"], False),
+    ("toast",        [r"toasttab", r"toastweb"], False),
+    ("nextjs",       [r"__next_data__", r"/_next/"], False),
+]
+
+def fingerprint(url):
+    """One fetch → which platform powers this chain + whether we have a native pull path.
+    The Discover pass: point it at a list of chains, learn who's on Algolia/Shopify/Yext/…"""
+    url = (url or "").strip()
+    if not url:
+        return None
+    if not re.match(r"^https?://", url):
+        url = "https://" + url.lstrip("/")
+    host = re.sub(r"^www\.", "", urlsplit(url).netloc)
+    html, via, attempts = fetch_detail(url)
+    if not html:
+        note = "blocked/unreachable"
+        if any("not configured" in a.get("note", "") for a in (attempts or [])):
+            note = "bot-walled (no fetch) — set a Bright Data key to reach it"
+        return {"url": url, "host": host, "platform": None, "signals": [], "native": False, "note": note}
+    low = html.lower()
+    hits = []
+    for name, pats, native in _PLATFORM_SIGS:
+        if any(re.search(p, low) for p in pats):
+            hits.append((name, native))
+    platform = hits[0][0] if hits else "generic"
+    native = hits[0][1] if hits else False
+    # a store-locator directory (Yext etc.) is the on-premise/outlet play — flag the sitemap path
+    locator = None
+    if platform == "yext" or re.search(r"store locator|find a (store|location|restaurant)|/locations", low):
+        locator = url.split("://")[0] + "://locations." + host + "/sitemap.xml"
+    return {"url": url, "host": host, "platform": platform, "signals": [h[0] for h in hits],
+            "native": native, "via": via, "locator": locator}
+
+
 def _num(v):
     try:
         s = re.sub(r"[^0-9.\-]", "", str(v))
