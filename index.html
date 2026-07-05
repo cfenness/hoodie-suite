@@ -97,9 +97,13 @@
   .body.nav-collapsed aside.nav .item{grid-template-columns:1fr;justify-items:center;padding:9px 0;border-left:0;}
   .body.nav-collapsed aside.nav .item.active{border-left:0;box-shadow:inset 3px 0 0 var(--amber);}
   .body.nav-collapsed aside.nav .item .tx,.body.nav-collapsed aside.nav .item .star{display:none;}
-  .body.nav-collapsed aside.nav .navhead{flex-direction:column;padding:12px 6px 10px;margin:0 0 4px;gap:5px;}
-  .body.nav-collapsed aside.nav .navhead .home-link{padding:8px 0;justify-content:center;}
-  .body.nav-collapsed aside.nav .navhead .home-link .hl-tx{display:none;}
+  .body.nav-collapsed aside.nav .navhead{flex-direction:column;align-items:center;padding:12px 6px 10px;margin:0 0 4px;gap:6px;}
+  /* collapsed: the home button is a clean square that matches the app-icon footprint —
+     no floating caret, no stretched pill */
+  .body.nav-collapsed aside.nav .navhead .home-link{flex:0 0 auto;width:36px;height:36px;padding:0;justify-content:center;font-size:16px;}
+  .body.nav-collapsed aside.nav .navhead .home-link .hl-tx,
+  .body.nav-collapsed aside.nav .navhead .home-link .hl-cv{display:none;}
+  .body.nav-collapsed aside.nav .navcollapse{width:36px;height:32px;}
   /* context bar collapse — reclaim the ~42px row (see ctxBtn). 0px (not 0): calc() can't add a unitless number to a length */
   body.ctx-collapsed{--ctx:0px;}
   body.ctx-collapsed .ctxbar{display:none;}
