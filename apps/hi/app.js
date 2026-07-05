@@ -32,7 +32,7 @@ window.DOMAIN = window.DOMAIN || {
   // Data-fiduciary masking thresholds (WSWA rules for bev-alc; per-vertical later).
   compliance: { minAccounts: 10, minConsumers: 100 }
 };
-const C={dg:'#1d9e75',mg:'#5dcaa5',pg:'#9fe1cb',pp:'#f5c4b3',pk:'#d85a30',dr:'#993c1d'};
+const C={dg:'#2e7d57',mg:'#5dcaa5',pg:'#9fe1cb',pp:'#f5c4b3',pk:'#d85a30',dr:'#993c1d'};
 const TEAL='#4cb8a4',CORAL='#e07b5f',NAVY='#4E79A7',NEUTRAL='#6b7280';
 
 const BACKBAR_DATA={
@@ -328,7 +328,7 @@ function accelDetectArchetype(growth, acceleration){
 // growth = current rate (use the user-selected f1 dropdown value, default R12)
 // acceleration = R3 - R12 (positive = accelerating)
 if(growth >= 5 && acceleration >= 2){
-return { name: 'Hot streak', accent: '#1d6e52', tag: 'Hot', tagColor: '#1d6e52', tagBorder: '#9fd4be',
+return { name: 'Hot streak', accent: '#245d45', tag: 'Hot', tagColor: '#245d45', tagBorder: '#9fd4be',
 implication: 'Growing AND accelerating \u2014 the strongest momentum signal in the dataset. Activation and distribution investment compound; the trend has runway.' };
 }
 if(growth >= 5 && acceleration <= -2){
@@ -344,7 +344,7 @@ return { name: 'Early reversal', accent: '#5b3d8a', tag: 'Reversing', tagColor: 
 implication: 'Flat-to-positive but accelerating \u2014 an emerging signal. Watch the next two periods; if the slope holds, this becomes a Hot streak.' };
 }
 if(growth <= -5 && acceleration <= -2){
-return { name: 'Free fall', accent: '#a55a44', tag: 'Falling', tagColor: '#a55a44', tagBorder: '#ecddd1',
+return { name: 'Free fall', accent: '#b8402b', tag: 'Falling', tagColor: '#b8402b', tagBorder: '#ecddd1',
 implication: 'Declining AND the decline is accelerating. Structural problem, not a blip. Either intervene aggressively or accept the trajectory and reallocate.' };
 }
 if(growth <= -3 && acceleration >= 2){
@@ -352,7 +352,7 @@ return { name: 'Bottoming', accent: '#5b3d8a', tag: 'Bottoming', tagColor: '#5b3
 implication: 'Still declining but the rate of decline is slowing. Early sign of a floor. Don\'t pull investment yet \u2014 inflection may be within 1\u20132 quarters.' };
 }
 if(growth <= -3){
-return { name: 'Deteriorating', accent: '#a55a44', tag: 'Falling', tagColor: '#a55a44', tagBorder: '#ecddd1',
+return { name: 'Deteriorating', accent: '#b8402b', tag: 'Falling', tagColor: '#b8402b', tagBorder: '#ecddd1',
 implication: 'Steady decline without inflection signal. Continue to harvest distribution while it lasts; the long-term position is at risk.' };
 }
 return { name: 'Drift', accent: '#6b7280', tag: 'Flat', tagColor: '#5f6368', tagBorder: '#ececef',
@@ -463,9 +463,9 @@ svg += '<rect x="' + padL + '" y="' + padT + '" width="' + (xZero - padL) + '" h
 svg += '<rect x="' + padL + '" y="' + yZero + '" width="' + (xZero - padL) + '" height="' + (H - padB - yZero) + '" fill="#fcefe7" opacity="0.55"/>';
 svg += '<rect x="' + xZero + '" y="' + yZero + '" width="' + (W - padR - xZero) + '" height="' + (H - padB - yZero) + '" fill="#fdf3e0" opacity="0.55"/>';
 // Quadrant labels
-svg += '<text x="' + (W - padR - 8) + '" y="' + (padT + 14) + '" text-anchor="end" font-size="9.5" font-weight="700" fill="#1d6e52" letter-spacing="0.04em">HOT \u00b7 GROWING + ACCELERATING</text>';
+svg += '<text x="' + (W - padR - 8) + '" y="' + (padT + 14) + '" text-anchor="end" font-size="9.5" font-weight="700" fill="#245d45" letter-spacing="0.04em">HOT \u00b7 GROWING + ACCELERATING</text>';
 svg += '<text x="' + (padL + 8) + '" y="' + (padT + 14) + '" font-size="9.5" font-weight="700" fill="#5b3d8a" letter-spacing="0.04em">REVERSING \u00b7 DECLINING + IMPROVING</text>';
-svg += '<text x="' + (padL + 8) + '" y="' + (H - padB - 6) + '" font-size="9.5" font-weight="700" fill="#a55a44" letter-spacing="0.04em">FREE FALL \u00b7 DECLINING + ACCELERATING DOWN</text>';
+svg += '<text x="' + (padL + 8) + '" y="' + (H - padB - 6) + '" font-size="9.5" font-weight="700" fill="#b8402b" letter-spacing="0.04em">FREE FALL \u00b7 DECLINING + ACCELERATING DOWN</text>';
 svg += '<text x="' + (W - padR - 8) + '" y="' + (H - padB - 6) + '" text-anchor="end" font-size="9.5" font-weight="700" fill="#92590f" letter-spacing="0.04em">COOLING \u00b7 GROWING + DECELERATING</text>';
 // Grid lines / zero axes
 svg += '<line x1="' + xZero + '" y1="' + padT + '" x2="' + xZero + '" y2="' + (H - padB) + '" stroke="#3c4043" stroke-width="1.2" opacity="0.5"/>';
@@ -608,7 +608,7 @@ tequila:{pts:genCatPts('tequila'),note:'<span class="scatter-note-em">Above-the-
 rum:{pts:genCatPts('rum'),note:'<span class="scatter-note-em">Compressed band below zero.</span> The category falls in a tight horizontal band of decline. No outlier propping it up, no rescue from the premium tier — the shape itself is the diagnosis.'}
 };
 
-function dotColor(y){if(y>=10)return '#1d9e75';if(y>=5)return '#5dcaa5';if(y>=0)return '#9fe1cb';if(y>=-5)return '#f5c4b3';if(y>=-10)return '#d85a30';return '#993c1d';}
+function dotColor(y){if(y>=10)return '#2e7d57';if(y>=5)return '#5dcaa5';if(y>=0)return '#9fe1cb';if(y>=-5)return '#f5c4b3';if(y>=-10)return '#d85a30';return '#993c1d';}
 
 function applyJitter(pts,seed){
 return pts.map(function(p,i){
@@ -868,7 +868,7 @@ const PREM_MOMENTUM = [
 const PREM_INSIGHTS = {
 all_spirits: function(region){
 return [
-'<strong>Prestige tier is doing the heavy lifting.</strong> Across all spirits, prestige volume is up <span class="lift">+8.6%</span> while value is down <span style="color:#a55a44;font-weight:700;">\u22121.8%</span>. The total category is growing because consumers are trading up, not because more people are drinking.',
+'<strong>Prestige tier is doing the heavy lifting.</strong> Across all spirits, prestige volume is up <span class="lift">+8.6%</span> while value is down <span style="color:#b8402b;font-weight:700;">\u22121.8%</span>. The total category is growing because consumers are trading up, not because more people are drinking.',
 '<strong>Distribution lag in super-premium.</strong> Super-premium volume is up +5.2% but POD is up only +3.4%. The pull is consumer-led; retailers haven\'t caught up. <strong>Action:</strong> push for shelf expansion in super-premium where velocity is already proven.',
 '<strong>On-premise is 28pt more premium than off.</strong> On-prem premium index of 132 vs 104 off-prem. <strong>Action:</strong> the on-prem channel is the leading indicator \u2014 brands premiumize there first, then migrate to off-prem 12\u201318 months later.'
 ];
@@ -877,13 +877,13 @@ whiskey: function(region){
 const regionalNote = region === 'all' ? '' : ' Strongest pull is in the ' + ({northeast:'Northeast', midwest:'Midwest', south:'South', west:'West'}[region] || 'selected region') + '.';
 return [
 '<strong>Prestige whiskey is the trend leader.</strong> Volume up <span class="lift">+12.4%</span>, POD up +5.8%. Consumers are pulling much faster than retailers stocking.' + regionalNote,
-'<strong>Value whiskey is hollowing out.</strong> Down <span style="color:#a55a44;font-weight:700;">\u22122.4%</span> in volume, <span style="color:#a55a44;font-weight:700;">\u22121.1%</span> in POD. Shelf space is contracting where the margin isn\'t. <strong>Action:</strong> reallocate value-tier shelf footprint toward premium+ to capture trade-up.',
+'<strong>Value whiskey is hollowing out.</strong> Down <span style="color:#b8402b;font-weight:700;">\u22122.4%</span> in volume, <span style="color:#b8402b;font-weight:700;">\u22121.1%</span> in POD. Shelf space is contracting where the margin isn\'t. <strong>Action:</strong> reallocate value-tier shelf footprint toward premium+ to capture trade-up.',
 '<strong>Five-year mix shift is real.</strong> Value tier has contracted from 24% to 18% of category, super-premium has expanded from 24% to 28%. <strong>Action:</strong> portfolio reweighting toward super-premium and prestige is overdue if not already underway.'
 ];
 },
 vodka: function(region){
 return [
-'<strong>Every tier is deflating.</strong> Premium <span style="color:#a55a44;font-weight:700;">\u22121.8%</span>, super-premium <span style="color:#a55a44;font-weight:700;">\u22123.8%</span>, prestige <span style="color:#a55a44;font-weight:700;">\u22125.6%</span>. Value is the only tier growing (+1.1%) \u2014 the category is migrating <em>down</em> the ladder, not up.',
+'<strong>Every tier is deflating.</strong> Premium <span style="color:#b8402b;font-weight:700;">\u22121.8%</span>, super-premium <span style="color:#b8402b;font-weight:700;">\u22123.8%</span>, prestige <span style="color:#b8402b;font-weight:700;">\u22125.6%</span>. Value is the only tier growing (+1.1%) \u2014 the category is migrating <em>down</em> the ladder, not up.',
 '<strong>Vodka is becoming a commodity.</strong> Premium index dropped from 0.96 to 0.86 over 24 months. <strong>Action:</strong> innovation needs to come from category-adjacent plays \u2014 RTDs, flavored, ultra-premium positioning \u2014 not from pushing harder in the existing tier structure.',
 '<strong>On-prem still holds at 0.94.</strong> The on-premise channel is the only place vodka maintains pricing power. <strong>Action:</strong> protect on-prem distribution; that\'s where any future re-premiumization will start.'
 ];
@@ -1037,7 +1037,7 @@ const yOf = function(v){ return 1 + (1 - (v - minV) / range) * (H - 2); };
 const path = values.map(function(v, i){ return (i === 0 ? 'M ' : 'L ') + xOf(i).toFixed(1) + ' ' + yOf(v).toFixed(1); }).join(' ');
 const last = values[values.length - 1];
 const first = values[0];
-const color = last > first ? '#1d6e52' : (last < first ? '#a55a44' : '#6b7280');
+const color = last > first ? '#245d45' : (last < first ? '#b8402b' : '#6b7280');
 return '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" class="prem-lb-spark"><path d="' + path + '" fill="none" stroke="' + color + '" stroke-width="1.4" stroke-linecap="round"/><circle cx="' + xOf(values.length-1).toFixed(1) + '" cy="' + yOf(last).toFixed(1) + '" r="1.8" fill="' + color + '"/></svg>';
 }
 const html = '<div class="prem-leaderboard">' +
@@ -1307,7 +1307,7 @@ const el=document.getElementById('anchor-hhi');if(!el)return;
 const M=ANCHOR_DATA[metric],R=ANCHOR_RISK[metric];
 const rows=ANCHOR_CATS.map(function(c){return {c:c,hhi:anchorHHI(M[c.k]),a1:M[c.k].top10[0],g:R[c.k].anchor1Growth};});
 const maxHHI=Math.max.apply(null,rows.map(function(r){return r.hhi;}));
-const tierColor={resilient:'#1d9e75',watch:'#d97706',fragile:'#a55a44',critical:'#8f3d28'};
+const tierColor={resilient:'#2e7d57',watch:'#d97706',fragile:'#b8402b',critical:'#8f3d28'};
 el.innerHTML=rows.sort(function(a,b){return b.hhi-a.hhi;}).map(function(r){
 const t=anchorRiskTier(r.hhi,r.g);
 return '<div class="anchor-risk-row">'+
@@ -1342,7 +1342,7 @@ s+='<rect x="'+xD+'" y="'+yD+'" width="'+(W-padR-xD)+'" height="'+(H-padB-yD)+'"
 s+='<rect x="'+padL+'" y="'+yD+'" width="'+(xD-padL)+'" height="'+(H-padB-yD)+'" fill="#f5f5f7" opacity="0.6"/>';   // low conc / declining — soft
 // Quadrant labels
 s+='<text x="'+(W-padR-8)+'" y="'+(padT+15)+'" text-anchor="end" font-size="10" font-weight="700" fill="#92590f" letter-spacing="0.04em">RIDING THE ANCHOR \u00b7 fragile but working</text>';
-s+='<text x="'+(padL+8)+'" y="'+(padT+15)+'" font-size="10" font-weight="700" fill="#1d6e52" letter-spacing="0.04em">DIVERSIFIED &amp; HEALTHY</text>';
+s+='<text x="'+(padL+8)+'" y="'+(padT+15)+'" font-size="10" font-weight="700" fill="#245d45" letter-spacing="0.04em">DIVERSIFIED &amp; HEALTHY</text>';
 s+='<text x="'+(W-padR-8)+'" y="'+(H-padB-8)+'" text-anchor="end" font-size="10" font-weight="700" fill="#8f3d28" letter-spacing="0.04em">CRITICAL \u00b7 concentrated on a declining anchor</text>';
 s+='<text x="'+(padL+8)+'" y="'+(H-padB-8)+'" font-size="10" font-weight="700" fill="#6b7280" letter-spacing="0.04em">BROAD BUT SOFT</text>';
 // Dividers + axes
@@ -1609,7 +1609,7 @@ const slotW=chartW/bars.length;
 let s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block;max-height:480px;background:#fafafa;">';
 
 // Net change header
-const netColor=netChange>=0?'#2c7a64':'#a55a44';
+const netColor=netChange>=0?'#2e7d57':'#b8402b';
 s+='<text x="'+padLeft+'" y="34" font-size="13" font-weight="500" fill="#5f6368">Net revenue change</text>';
 s+='<text x="'+padLeft+'" y="56" font-size="22" font-weight="700" fill="'+netColor+'">'+fmtContrib(netChange)+'  <tspan font-size="15" font-weight="600" fill="#5f6368">('+(netChange>=0?'+':'')+netPct.toFixed(1)+'%)</tspan></text>';
 
@@ -1775,9 +1775,10 @@ r:[{x:380,y:300,w:1.0},{x:500,y:200,w:0.8}]
 };
 
 // Continuous color scale (softer than the bucketed version)
+// diverging heat scale in the hoodie-app palette: BAD terracotta → neutral grey → GOOD green → accent blue
 const COLOR_STOPS=[
-[-5,[155,100,82]],[-3,[192,133,116]],[-1.2,[224,198,184]],[-0.4,[232,234,235]],
-[0.4,[232,234,235]],[1.2,[170,205,186]],[3,[91,156,143]],[5,[26,58,92]]
+[-5,[184,64,43]],[-3,[201,120,102]],[-1.2,[228,200,190]],[-0.4,[232,234,235]],
+[0.4,[232,234,235]],[1.2,[176,208,190]],[3,[62,128,92]],[5,[78,121,167]]
 ];
 function heatColor(v){
 if(v<=COLOR_STOPS[0][0])return rgbStr(COLOR_STOPS[0][1]);
@@ -2719,7 +2720,7 @@ const AI_RUM_CHANNEL_DATA=[
 ];
 
 function aiGrowthColor(g){
-if(g>=10)return '#1d9e75';
+if(g>=10)return '#2e7d57';
 if(g>=5)return '#5dcaa5';
 if(g>=0)return '#9fe1cb';
 if(g>=-5)return '#f5c4b3';
@@ -2879,7 +2880,7 @@ html+='<div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:14px
 html+='<span style="color:#3c4043;font-weight:500;">'+d.label+'</span>';
 html+='<span style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:var(--dash-accent,#4E79A7);">'+d.onprem+'</span>';
 html+='<span style="text-align:right;font-variant-numeric:tabular-nums;color:#5f6368;">'+d.offprem+'</span>';
-html+='<span style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:#2c7a64;">'+d.delta+'</span>';
+html+='<span style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:#2e7d57;">'+d.delta+'</span>';
 html+='</div>';
 });
 document.getElementById('ai-channel-compare-chart').innerHTML=html;
@@ -2943,7 +2944,7 @@ let html='<div style="display:grid;grid-template-columns:1.6fr 0.9fr 0.9fr 0.9fr
 data.forEach(function(d){
 const primaryVal=d[valKey]!==undefined?d[valKey]:(d.whiskey!==undefined?d.whiskey:d.rum);
 const deltaCls=d.delta.indexOf('+')===0?'pos':(d.delta.indexOf('-')===0?'neg':'');
-const deltaColor=deltaCls==='pos'?'#2c7a64':(deltaCls==='neg'?'#a55a44':'#5f6368');
+const deltaColor=deltaCls==='pos'?'#2e7d57':(deltaCls==='neg'?'#b8402b':'#5f6368');
 html+='<div style="display:grid;grid-template-columns:1.6fr 0.9fr 0.9fr 0.9fr;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #f0f0f2;font-size:13px;">';
 html+='<span style="color:#3c4043;font-weight:500;">'+d.label+'</span>';
 html+='<span style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:var(--dash-accent,#4E79A7);">'+primaryVal+'</span>';
@@ -2986,7 +2987,7 @@ AI_PERSONAL_TOP_DATA.forEach(function(d){
 const pct=d.value/max*100;
 html+='<div class="ai-bar-row">';
 html+='<span class="ai-bar-label">'+d.label+' <span style="color:#6b7280;font-weight:400;font-size:11px;">'+d.pi+'</span></span>';
-html+='<div class="ai-bar-track"><div class="ai-bar-fill" style="left:0;width:'+pct+'%;background:#1d9e75;"></div></div>';
+html+='<div class="ai-bar-track"><div class="ai-bar-fill" style="left:0;width:'+pct+'%;background:#2e7d57;"></div></div>';
 html+='<span class="ai-bar-val pos">+'+d.value+'%</span>';
 html+='</div>';
 });
@@ -3028,7 +3029,7 @@ const iPct=Math.abs(d.industry)/max*100;
 const delta=d.you-d.industry;
 const deltaSign=delta>0?'+':'';
 const deltaCls=delta>=0?'pos':'neg';
-const yColor=d.you>=0?'#4E79A7':'#a55a44';
+const yColor=d.you>=0?'#4E79A7':'#b8402b';
 const iColor=d.industry>=0?'#4cb8a4':'#e07b5f';
 html+='<div style="display:grid;grid-template-columns:140px 1fr 60px;gap:10px;align-items:center;margin-bottom:7px;font-size:12px;">';
 html+='<span class="ai-bar-label">'+d.label+'</span>';
@@ -3871,8 +3872,8 @@ const ONPREM_PREMIUM_TRAJ={
 };
 
 const ONPREM_TRAJ_COLORS={
-'Country Club':'#1d9e75','Fine Dining':'#4cb8a4','Airport':'#1a73e8','Casino':'#d97706',
-'Hotel':'#4E79A7','Full-Bar':'#a55a44','Casual Dining':'#6b7280','Sports / Ent.':'#d85a30'
+'Country Club':'#2e7d57','Fine Dining':'#4cb8a4','Airport':'#1a73e8','Casino':'#d97706',
+'Hotel':'#4E79A7','Full-Bar':'#b8402b','Casual Dining':'#6b7280','Sports / Ent.':'#d85a30'
 };
 
 const ONPREM_ACCT_CLASS=[
@@ -4046,7 +4047,7 @@ const ONPREM_HEAT={
 };
 
 function onpremGrowthColor(g){
-if(g>=10)return '#1d9e75';
+if(g>=10)return '#2e7d57';
 if(g>=5)return '#5dcaa5';
 if(g>=0)return '#9fe1cb';
 if(g>=-5)return '#f5c4b3';
@@ -4396,8 +4397,8 @@ const OFFPREM_PREMIUM_TRAJ={
 };
 
 const OFFPREM_TRAJ_COLORS={
-'Online / DTC':'#1d9e75','Warehouse Club':'#4cb8a4','Liquor — Chain':'#1a73e8','Grocery':'#d97706',
-'Liquor — Indep':'#4E79A7','Mass Merchant':'#a55a44','Drug':'#6b7280','Convenience':'#d85a30'
+'Online / DTC':'#2e7d57','Warehouse Club':'#4cb8a4','Liquor — Chain':'#1a73e8','Grocery':'#d97706',
+'Liquor — Indep':'#4E79A7','Mass Merchant':'#b8402b','Drug':'#6b7280','Convenience':'#d85a30'
 };
 
 const OFFPREM_ACCT_CLASS=[
@@ -4582,7 +4583,7 @@ function buildNewitemFlipTable(elId,data){
 let html='<table><thead><tr><th>Sub-channel</th><th class="num">Days to 100 accounts</th><th>Adoption speed</th></tr></thead><tbody>';
 data.forEach(function(row){
 const speedLabel=row.speed==='fast'?'Fast':(row.speed==='mid'?'Mid':'Slow');
-const speedColor=row.speed==='fast'?'#2c7a64':(row.speed==='mid'?'#d97706':'#a55a44');
+const speedColor=row.speed==='fast'?'#2e7d57':(row.speed==='mid'?'#d97706':'#b8402b');
 html+='<tr><td>'+row.channel+'</td>';
 html+='<td class="num">'+row.days+'</td>';
 html+='<td style="color:'+speedColor+';font-weight:500;">'+speedLabel+'</td>';
@@ -5263,7 +5264,7 @@ hoodieConfirm({danger:true, title:'Remove \u201C' + RB_SHEETS.sheets[sheetIdx].n
 }
 items.forEach(function(item){
 const opt = document.createElement('div');
-opt.style.cssText = 'padding:7px 14px;cursor:pointer;color:' + (item.danger ? '#a55a44' : '#1a1a1a') + ';';
+opt.style.cssText = 'padding:7px 14px;cursor:pointer;color:' + (item.danger ? '#b8402b' : '#1a1a1a') + ';';
 opt.textContent = item.label;
 opt.addEventListener('mouseenter', function(){ opt.style.background = item.danger ? '#fef0ed' : '#f5f5f7'; });
 opt.addEventListener('mouseleave', function(){ opt.style.background = 'transparent'; });
@@ -5348,7 +5349,7 @@ const VIZ_TYPES = [
 {key:'line', label:'Line', family:'Trends', svg:'<svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5,27 12,17 19,21 26,9 31,13"/><circle cx="5" cy="27" r="1.8" fill="currentColor"/><circle cx="12" cy="17" r="1.8" fill="currentColor"/><circle cx="19" cy="21" r="1.8" fill="currentColor"/><circle cx="26" cy="9" r="1.8" fill="currentColor"/><circle cx="31" cy="13" r="1.8" fill="currentColor"/></svg>'},
 {key:'area', label:'Area', family:'Trends', svg:'<svg viewBox="0 0 36 36"><path d="M 4 30 L 4 24 L 11 18 L 18 21 L 25 10 L 32 14 L 32 30 Z" fill="currentColor" opacity="0.35"/><polyline points="4,24 11,18 18,21 25,10 32,14" fill="none" stroke="currentColor" stroke-width="2"/></svg>'},
 {key:'combo', label:'Dual-Axis', family:'Trends', svg:'<svg viewBox="0 0 36 36"><rect x="5" y="22" width="4" height="10" fill="currentColor" opacity="0.3"/><rect x="12" y="18" width="4" height="14" fill="currentColor" opacity="0.3"/><rect x="19" y="14" width="4" height="18" fill="currentColor" opacity="0.3"/><rect x="26" y="20" width="4" height="12" fill="currentColor" opacity="0.3"/><polyline points="7,12 14,8 21,14 28,6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="7" cy="12" r="1.6" fill="currentColor"/><circle cx="14" cy="8" r="1.6" fill="currentColor"/><circle cx="21" cy="14" r="1.6" fill="currentColor"/><circle cx="28" cy="6" r="1.6" fill="currentColor"/></svg>'},
-{key:'heatmap', label:'Heatmap', family:'Composition', svg:'<svg viewBox="0 0 36 36"><rect x="4" y="4" width="8" height="8" fill="#d4ebe2"/><rect x="14" y="4" width="8" height="8" fill="#74c5a8"/><rect x="24" y="4" width="8" height="8" fill="#1d9e75"/><rect x="4" y="14" width="8" height="8" fill="#74c5a8"/><rect x="14" y="14" width="8" height="8" fill="#1d9e75"/><rect x="24" y="14" width="8" height="8" fill="#0d5e44"/><rect x="4" y="24" width="8" height="8" fill="#1d9e75"/><rect x="14" y="24" width="8" height="8" fill="#d4ebe2"/><rect x="24" y="24" width="8" height="8" fill="#74c5a8"/></svg>'},
+{key:'heatmap', label:'Heatmap', family:'Composition', svg:'<svg viewBox="0 0 36 36"><rect x="4" y="4" width="8" height="8" fill="#d4ebe2"/><rect x="14" y="4" width="8" height="8" fill="#74c5a8"/><rect x="24" y="4" width="8" height="8" fill="#2e7d57"/><rect x="4" y="14" width="8" height="8" fill="#74c5a8"/><rect x="14" y="14" width="8" height="8" fill="#2e7d57"/><rect x="24" y="14" width="8" height="8" fill="#0d5e44"/><rect x="4" y="24" width="8" height="8" fill="#2e7d57"/><rect x="14" y="24" width="8" height="8" fill="#d4ebe2"/><rect x="24" y="24" width="8" height="8" fill="#74c5a8"/></svg>'},
 {key:'treemap', label:'Treemap', family:'Composition', svg:'<svg viewBox="0 0 36 36"><rect x="4" y="4" width="18" height="18" fill="currentColor"/><rect x="22" y="4" width="10" height="10" fill="currentColor" opacity="0.6"/><rect x="22" y="14" width="10" height="8" fill="currentColor" opacity="0.4"/><rect x="4" y="22" width="12" height="10" fill="currentColor" opacity="0.5"/><rect x="16" y="22" width="9" height="10" fill="currentColor" opacity="0.3"/><rect x="25" y="22" width="7" height="10" fill="currentColor" opacity="0.7"/></svg>'},
 {key:'pie', label:'Pie', family:'Composition', svg:'<svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="14" fill="currentColor" opacity="0.25"/><path d="M 18 18 L 18 4 A 14 14 0 0 1 30.12 25 Z" fill="currentColor"/><path d="M 18 18 L 30.12 25 A 14 14 0 0 1 9 28.5 Z" fill="currentColor" opacity="0.6"/></svg>'},
 {key:'donut', label:'Donut', family:'Composition', svg:'<svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="14" fill="none" stroke="currentColor" stroke-width="6" opacity="0.25"/><path d="M 18 4 A 14 14 0 0 1 30.12 25" fill="none" stroke="currentColor" stroke-width="6"/><path d="M 30.12 25 A 14 14 0 0 1 9 28.5" fill="none" stroke="currentColor" stroke-width="6" opacity="0.55"/></svg>'},
@@ -7599,7 +7600,7 @@ function rbWireParamControls(container){ container.querySelectorAll('[data-param
 var _rbParamDraft=null;
 function rbOpenParamDialog(id){ var existing = id ? rbParamFind(id) : null; _rbParamDraft = existing ? JSON.parse(JSON.stringify(existing)) : {id:rbParamUid(), name:'', type:'float', current:0, allowable:'all', list:[{value:'A',label:'A'},{value:'B',label:'B'}], range:{min:0,max:100,step:1}};
 var ov=document.getElementById('rb-param-dialog'); if(ov) ov.remove(); ov=document.createElement('div'); ov.id='rb-param-dialog'; ov.className='rb-param-dialog';
-ov.innerHTML='<div class="rb-param-card"><div class="rb-param-dhead">'+(existing?'Edit':'Create')+' parameter<button class="rb-param-dclose" id="rb-param-dclose">×</button></div><div class="rb-param-dbody" id="rb-param-dbody"></div><div class="rb-param-dfoot">'+(existing?'<button class="rb-toolbar-btn" id="rb-param-ddelete" style="color:#c0392b;margin-right:auto;">Delete</button>':'')+'<button class="rb-toolbar-btn" id="rb-param-dcancel">Cancel</button><button class="rb-toolbar-btn primary" id="rb-param-dsave">Save parameter</button></div></div>';
+ov.innerHTML='<div class="rb-param-card"><div class="rb-param-dhead">'+(existing?'Edit':'Create')+' parameter<button class="rb-param-dclose" id="rb-param-dclose">×</button></div><div class="rb-param-dbody" id="rb-param-dbody"></div><div class="rb-param-dfoot">'+(existing?'<button class="rb-toolbar-btn" id="rb-param-ddelete" style="color:#b8402b;margin-right:auto;">Delete</button>':'')+'<button class="rb-toolbar-btn" id="rb-param-dcancel">Cancel</button><button class="rb-toolbar-btn primary" id="rb-param-dsave">Save parameter</button></div></div>';
 document.body.appendChild(ov); rbRenderParamDialogBody();
 ov.addEventListener('mousedown', function(e){ if(e.target===ov) rbCloseParamDialog(); });
 document.getElementById('rb-param-dclose').addEventListener('click', rbCloseParamDialog);
@@ -9033,8 +9034,8 @@ const det = document.getElementById('rb-mfmt-cf-detail'); if(!det) return;
 if(_cf.mode === 'scale'){
 const labels = {redgreen:'Red / Green', heatmap:'Heatmap', bars:'Data bars'};
 const preview = {
-redgreen:'<span class="rb-measure-fmt-cf-cell" style="background:rgba(192,57,43,0.35);">-3.2</span><span class="rb-measure-fmt-cf-cell" style="background:rgba(192,57,43,0.15);">-0.4</span><span class="rb-measure-fmt-cf-cell" style="background:rgba(29,158,117,0.2);">+1.2</span><span class="rb-measure-fmt-cf-cell" style="background:rgba(29,158,117,0.45);">+5.8</span>',
-heatmap:'<span class="rb-measure-fmt-cf-cell" style="background:rgba(29,158,117,0.12);">low</span><span class="rb-measure-fmt-cf-cell" style="background:rgba(29,158,117,0.32);">mid</span><span class="rb-measure-fmt-cf-cell" style="background:rgba(29,158,117,0.52);">high</span><span class="rb-measure-fmt-cf-cell" style="background:rgba(29,158,117,0.67);">max</span>',
+redgreen:'<span class="rb-measure-fmt-cf-cell" style="background:rgba(184,64,43,0.35);">-3.2</span><span class="rb-measure-fmt-cf-cell" style="background:rgba(184,64,43,0.15);">-0.4</span><span class="rb-measure-fmt-cf-cell" style="background:rgba(46,125,87,0.2);">+1.2</span><span class="rb-measure-fmt-cf-cell" style="background:rgba(46,125,87,0.45);">+5.8</span>',
+heatmap:'<span class="rb-measure-fmt-cf-cell" style="background:rgba(46,125,87,0.12);">low</span><span class="rb-measure-fmt-cf-cell" style="background:rgba(46,125,87,0.32);">mid</span><span class="rb-measure-fmt-cf-cell" style="background:rgba(46,125,87,0.52);">high</span><span class="rb-measure-fmt-cf-cell" style="background:rgba(46,125,87,0.67);">max</span>',
 bars:'<span class="rb-measure-fmt-cf-cell" style="background:linear-gradient(to right,rgba(78,121,167,0.18) 30%,transparent 30%);">30</span><span class="rb-measure-fmt-cf-cell" style="background:linear-gradient(to right,rgba(78,121,167,0.18) 70%,transparent 70%);">70</span><span class="rb-measure-fmt-cf-cell" style="background:linear-gradient(to right,rgba(78,121,167,0.18) 100%,transparent 100%);">max</span>'
 };
 det.innerHTML = '<div class="rb-measure-fmt-cf-types">' + ['redgreen','heatmap','bars'].map(function(t){ return '<button class="rb-measure-fmt-cf-btn' + (_cf.type===t?' active':'') + '" data-cf-type="' + t + '">' + labels[t] + '</button>'; }).join('') + '</div>' + '<div class="rb-measure-fmt-cf-preview">' + (preview[_cf.type]||preview.redgreen) + '</div>';
@@ -9277,7 +9278,7 @@ const areaPath = path + ' L ' + xOf(values.length - 1).toFixed(1) + ' ' + (H - p
 const lastV = values[values.length - 1];
 const palKey = vfTbl.palette || 'default';
 const color = (RB_PALETTES[palKey] || RB_PALETTES.default)[0];
-const lastColor = lastV < 0 ? '#a55a44' : color;
+const lastColor = lastV < 0 ? '#b8402b' : color;
 return '<svg class="rb-sparkline" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" style="vertical-align:middle;">' +
 '<path d="' + areaPath + '" fill="' + color + '" fill-opacity="0.13" stroke="none"/>' +
 '<path d="' + path + '" fill="none" stroke="' + color + '" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>' +
@@ -9702,7 +9703,7 @@ const x = Math.min(x0, x1), w = Math.max(1, Math.abs(x1 - x0));
 // Any user-selected palette colors per bar by index (Tableau-style).
 const paletteKey = vf.palette || 'default';
 const color = (vf.seriesColors && vf.seriesColors[i] != null) ? vf.seriesColors[i] : rbMarkColor(paletteKey === 'default'
-? (p.value < 0 ? '#c0392b' : '#4E79A7')
+? (p.value < 0 ? '#b8402b' : '#4E79A7')
 : rbPaletteColor(i, paletteKey), vf);
 const lbl = p.label.length > 30 ? p.label.substring(0, 28) + '…' : p.label;
 svg += '<g>';
@@ -9757,7 +9758,7 @@ const paletteKey = vf.palette || 'default';
 let color;
 if(_cbKind === 'dim'){ color = _catMap[p.dims ? p.dims[_cb] : p.label] || '#4E79A7'; }
 else if(_cbKind === 'measure'){ color = rbColorByValue(p._cv, _cbMin, _cbMax, vf, _cbSigned); }
-else { color = rbMarkColor(paletteKey === 'default' ? (p.value < 0 ? '#c0392b' : '#4E79A7') : rbPaletteColor(i, paletteKey), vf); }
+else { color = rbMarkColor(paletteKey === 'default' ? (p.value < 0 ? '#b8402b' : '#4E79A7') : rbPaletteColor(i, paletteKey), vf); }
 if(vf.seriesColors && vf.seriesColors[i] != null) color = vf.seriesColors[i];
 const lbl = p.label.length > 14 ? p.label.substring(0, 12) + '…' : p.label;
 svg += '<g>';
@@ -10066,13 +10067,13 @@ if(useDiverging){
 if(isCustomPalette){
 leg += ' style="background:linear-gradient(to right, ' + palColors[0] + ', #fef3ec, ' + palColors[palColors.length - 1] + ');"';
 }else{
-leg += ' style="background:linear-gradient(to right, #c03a2b, #fef3ec, #1d9e75);"';
+leg += ' style="background:linear-gradient(to right, #c03a2b, #fef3ec, #2e7d57);"';
 }
 }else{
 if(isCustomPalette){
 leg += ' style="background:linear-gradient(to right, #fff, ' + palColors[palColors.length - 1] + ');"';
 }else{
-leg += ' style="background:linear-gradient(to right, #f4fbf6, #1d9e75);"';
+leg += ' style="background:linear-gradient(to right, #f4fbf6, #2e7d57);"';
 }
 }
 leg += '></span>';
@@ -10112,7 +10113,7 @@ const _cb = _vf.colorBy, _cbKind = _cb ? rbColorFieldKind(_cb) : null;
 let _catMap = null, _cbMin = 0, _cbMax = 1, _cbSigned = false;
 if(_cbKind === 'dim'){ _catMap = rbCatColorMap(pts.map(function(p){return p.dims[_cb];}), _vf.palette || 'default'); }
 else if(_cbKind === 'measure'){ pts.forEach(function(p){ p._cv = parseFloat(String(rbComputeWithMod(_cb, p.dims, 'abs')).replace(/[+%pt,$]/g,'')); }); const cvs = pts.map(function(p){return p._cv;}).filter(function(v){return !isNaN(v);}); _cbMin = Math.min.apply(null, cvs.concat([0])); _cbMax = Math.max.apply(null, cvs.concat([0])); _cbSigned = !!(rbAllMeasures().find(function(m){return m.key===_cb;})||{}).signed; }
-function _scColor(p){ if(_cbKind==='dim') return _catMap[p.dims[_cb]] || '#1d9e75'; if(_cbKind==='measure') return rbColorByValue(p._cv, _cbMin, _cbMax, _vf, _cbSigned); return rbMarkColor('#1d9e75', _vf); }
+function _scColor(p){ if(_cbKind==='dim') return _catMap[p.dims[_cb]] || '#2e7d57'; if(_cbKind==='measure') return rbColorByValue(p._cv, _cbMin, _cbMax, _vf, _cbSigned); return rbMarkColor('#2e7d57', _vf); }
 const _lblSz = _vf.labelSize || 10;
 const _drawnSc = [];
 pts.forEach(function(p){
@@ -10136,7 +10137,7 @@ return { html: svg, cellCount: pts.length };
 }
 
 function _rbNum(x){ return parseFloat(String(x).replace(/[+%pt,$ ]/g, '')); }
-function rbKpiSpark(vals, dir){ var pts=vals.filter(function(v){return !isNaN(v);}); if(pts.length<2) return ''; var min=Math.min.apply(null,pts), max=Math.max.apply(null,pts); var rng=(max-min)||1; var W=200,H=34,pad=3, n=pts.length; var col= dir==='down'?'#c0563f':(dir==='up'?'#1d9e75':'#9aa6b5'); var coords=pts.map(function(v,i){ var x=pad+(i*(W-2*pad)/(n-1)); var y=H-pad-((v-min)/rng)*(H-2*pad); return [x,y]; }); var d=coords.map(function(c,i){return (i?'L':'M')+c[0].toFixed(1)+' '+c[1].toFixed(1);}).join(' '); var area=d+' L'+coords[n-1][0].toFixed(1)+' '+H+' L'+coords[0][0].toFixed(1)+' '+H+' Z'; var gid='sk'+Math.random().toString(36).slice(2,7); return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+col+'" stop-opacity="0.20"/><stop offset="1" stop-color="'+col+'" stop-opacity="0"/></linearGradient></defs><path d="'+area+'" fill="url(#'+gid+')"/><path d="'+d+'" fill="none" stroke="'+col+'" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>'; }
+function rbKpiSpark(vals, dir){ var pts=vals.filter(function(v){return !isNaN(v);}); if(pts.length<2) return ''; var min=Math.min.apply(null,pts), max=Math.max.apply(null,pts); var rng=(max-min)||1; var W=200,H=34,pad=3, n=pts.length; var col= dir==='down'?'#c0563f':(dir==='up'?'#2e7d57':'#9aa6b5'); var coords=pts.map(function(v,i){ var x=pad+(i*(W-2*pad)/(n-1)); var y=H-pad-((v-min)/rng)*(H-2*pad); return [x,y]; }); var d=coords.map(function(c,i){return (i?'L':'M')+c[0].toFixed(1)+' '+c[1].toFixed(1);}).join(' '); var area=d+' L'+coords[n-1][0].toFixed(1)+' '+H+' L'+coords[0][0].toFixed(1)+' '+H+' Z'; var gid='sk'+Math.random().toString(36).slice(2,7); return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+col+'" stop-opacity="0.20"/><stop offset="1" stop-color="'+col+'" stop-opacity="0"/></linearGradient></defs><path d="'+area+'" fill="url(#'+gid+')"/><path d="'+d+'" fill="none" stroke="'+col+'" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>'; }
 function rbRenderKPI(model){
 const dims = rbDimsFor([], null, model);
 let html = '<div class="rb-kpi-grid">';
@@ -10176,13 +10177,13 @@ return { html: html, cellCount: model.measureDefs.length };
 const RB_PALETTES = {
 // Default: navy → deep teal → muted amber → plum → slate → muted terracotta → soft purple → forest →
 //          dusty blue → moss → graphite → cocoa. Muted, restrained, no two adjacent colors clash.
-default: ['#4E79A7','#1d6e52','#a16207','#5b3d8a','#3c4654','#a55a44','#8b6cb1','#2d6a4f','#4a6fa5','#587b51','#525d6b','#7a4a3a'],
+default: ['#4E79A7','#245d45','#a16207','#5b3d8a','#3c4654','#b8402b','#8b6cb1','#2d6a4f','#4a6fa5','#587b51','#525d6b','#7a4a3a'],
 // Sequential: light-teal → deep forest, used for value-magnitude encoding
-sequential: ['#e8f3ed','#c1ddcd','#84baa1','#3e9876','#1d6e52','#0e4a36','#062e21'],
+sequential: ['#e8f3ed','#c1ddcd','#84baa1','#3e9876','#245d45','#0e4a36','#062e21'],
 // Diverging: deep red → soft cream → deep teal, used when values cross zero
-diverging: ['#8b3a2c','#b85544','#d99584','#f3ddd2','#f5f5f0','#cfdbd4','#7eb09a','#3e9876','#1d6e52'],
+diverging: ['#8b3a2c','#b85544','#d99584','#f3ddd2','#f5f5f0','#cfdbd4','#7eb09a','#3e9876','#245d45'],
 // Brand: pulled from the corporate identity, used in branded contexts
-brand: ['#4E79A7','#1d6e52','#a16207','#5b3d8a','#a55a44','#4a6fa5'],
+brand: ['#4E79A7','#245d45','#a16207','#5b3d8a','#b8402b','#4a6fa5'],
 // Warm + cool palettes for users who specifically want them
 warm: ['#5c2018','#8b3a2c','#a16207','#c69138','#e3c180','#f3e0b8'],
 cool: ['#0f2438','#4E79A7','#3e6a95','#5e8cb3','#92b3cf','#cfdde8']
@@ -10199,14 +10200,14 @@ function _rbHexToRgb(h){ h=String(h||'').trim().replace('#',''); if(h.length===3
 function _rbRgbToHex(r,g,b){ function t(x){ x=Math.max(0,Math.min(255,Math.round(x))); return ('0'+x.toString(16)).slice(-2); } return '#'+t(r)+t(g)+t(b); }
 function _rbRgbToHsv(r,g,b){ r/=255;g/=255;b/=255; var mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn,h=0; if(d){ if(mx===r) h=((g-b)/d)%6; else if(mx===g) h=(b-r)/d+2; else h=(r-g)/d+4; h*=60; if(h<0)h+=360; } return {h:h,s:mx?d/mx:0,v:mx}; }
 function _rbHsvToRgb(h,s,v){ h=(h%360+360)%360; var c=v*s,x=c*(1-Math.abs((h/60)%2-1)),m=v-c,r=0,g=0,b=0; if(h<60){r=c;g=x;}else if(h<120){r=x;g=c;}else if(h<180){g=c;b=x;}else if(h<240){g=x;b=c;}else if(h<300){r=x;b=c;}else{r=c;b=x;} return {r:(r+m)*255,g:(g+m)*255,b:(b+m)*255}; }
-function _rbColorPickStyles(){ if(document.getElementById('rb-colorpick-css')) return; var st=document.createElement('style'); st.id='rb-colorpick-css'; st.textContent='.rb-legend-click{cursor:context-menu;border-radius:4px;padding:1px 4px;}.rb-legend-click:hover{background:rgba(0,0,0,.05);}.rb-colorpick{position:fixed;z-index:5000;background:#fff;border:1px solid #d3d9df;border-radius:12px;box-shadow:0 18px 50px rgba(15,30,50,.26);padding:12px;width:248px;font-family:inherit;-webkit-user-select:none;user-select:none;}.rb-cp-head{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#8a939e;margin-bottom:9px;}.rb-cp-sv{position:relative;width:224px;height:150px;border-radius:8px;cursor:crosshair;border:1px solid rgba(0,0,0,.12);}.rb-cp-sv-thumb{position:absolute;width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4);transform:translate(-7px,-7px);pointer-events:none;}.rb-cp-hue{position:relative;width:224px;height:14px;margin-top:11px;border-radius:7px;cursor:ew-resize;background:linear-gradient(to right,#f00 0%,#ff0 17%,#0f0 33%,#0ff 50%,#00f 67%,#f0f 83%,#f00 100%);border:1px solid rgba(0,0,0,.12);}.rb-cp-hue-thumb{position:absolute;top:50%;width:14px;height:14px;border-radius:50%;background:#fff;border:1px solid rgba(0,0,0,.3);box-shadow:0 1px 3px rgba(0,0,0,.3);transform:translate(-7px,-50%);pointer-events:none;}.rb-cp-inputs{display:flex;align-items:center;gap:6px;margin-top:11px;}.rb-cp-prev{width:26px;height:26px;border-radius:6px;border:1px solid rgba(0,0,0,.15);flex:none;}.rb-cp-hexwrap{display:flex;align-items:center;gap:2px;border:1px solid #d3d9df;border-radius:6px;padding:4px 6px;font-size:12px;color:#8a939e;font-weight:700;}.rb-cp-hexwrap input{border:none;outline:none;width:62px;font:inherit;font-weight:700;color:#1f2b38;text-transform:uppercase;padding:0;background:transparent;}.rb-cp-rgb{width:32px;border:1px solid #d3d9df;border-radius:6px;padding:4px 3px;font:inherit;font-size:11px;text-align:center;color:#1f2b38;-moz-appearance:textfield;}.rb-cp-rgb::-webkit-outer-spin-button,.rb-cp-rgb::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}.rb-cp-eyedrop{flex:none;width:30px;height:28px;border:1px solid #d3d9df;background:#f7f8fa;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;}.rb-cp-eyedrop:hover{background:#eef1f4;}.rb-cp-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin-top:12px;}.rb-cp-sw{width:100%;height:22px;border-radius:5px;border:1px solid rgba(0,0,0,.12);cursor:pointer;padding:0;transition:transform .1s;}.rb-cp-sw:hover{transform:scale(1.1);}.rb-cp-foot{display:flex;gap:8px;margin-top:12px;}.rb-cp-reset{flex:1;font-size:12px;border:1px solid #d3d9df;background:#f7f8fa;border-radius:7px;padding:7px;cursor:pointer;color:#46586a;}.rb-cp-reset:hover{background:#eef1f4;}.rb-cp-done{flex:1;font-size:12px;font-weight:600;border:1px solid #4E79A7;background:#4E79A7;color:#fff;border-radius:7px;padding:7px;cursor:pointer;}.rb-cp-done:hover{background:#142e49;}.rb-fmt-series-colors{margin-top:2px;max-height:188px;overflow:auto;}.rb-fmt-series-row{display:flex;align-items:center;gap:9px;padding:5px 6px;border-radius:6px;cursor:pointer;}.rb-fmt-series-row:hover{background:#f3f5f8;}.rb-fmt-series-sw{width:16px;height:16px;border-radius:4px;border:1px solid rgba(0,0,0,.15);flex:none;}.rb-fmt-series-name{font-size:12px;color:#33404e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}.rb-fmt-series-reset{font-size:13px;color:#8a939e;cursor:pointer;padding:0 3px;flex:none;}.rb-fmt-series-reset:hover{color:#4E79A7;}.rb-cp-nofill{display:flex;align-items:center;gap:8px;width:100%;border:1px solid #d3d9df;background:#fff;border-radius:7px;padding:7px 10px;cursor:pointer;font:inherit;font-size:12px;font-weight:600;color:#33404e;margin-bottom:11px;}.rb-cp-nofill:hover{background:#f3f5f8;}.rb-cp-sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#8a939e;margin:0 0 6px;}.rb-cp-themegrid,.rb-cp-stdrow{display:grid;gap:3px;margin-bottom:12px;}.rb-cp-cell{width:100%;height:18px;border-radius:3px;border:1px solid rgba(0,0,0,.1);cursor:pointer;padding:0;}.rb-cp-cell:hover{outline:2px solid #4E79A7;outline-offset:1px;position:relative;z-index:1;}.rb-cp-cell.on{outline:2px solid #4E79A7;outline-offset:1px;}.rb-cp-foot2{display:flex;gap:8px;align-items:center;}.rb-cp-more{flex:1;font-size:12px;font-weight:600;border:1px solid #d3d9df;background:#f7f8fa;border-radius:7px;padding:8px;cursor:pointer;color:#4E79A7;}.rb-cp-more:hover{background:#eef1f4;}.rb-cp-reset2{font-size:12px;border:1px solid #d3d9df;background:#fff;border-radius:7px;padding:8px 11px;cursor:pointer;color:#46586a;}.rb-cp-reset2:hover{background:#f3f5f8;}.rb-cp-back{font-size:12px;font-weight:600;border:none;background:none;color:#4E79A7;cursor:pointer;padding:0 0 9px;display:block;}.rb-fmt-series-chk{margin:0 2px 0 0;flex:none;cursor:pointer;}.rb-fmt-series-apply{margin:6px 0 4px;}.rb-fmt-series-apply button{width:100%;font-size:12px;font-weight:600;border:1px solid #4E79A7;background:#4E79A7;color:#fff;border-radius:7px;padding:7px;cursor:pointer;}.rb-fmt-series-apply button:hover{background:#142e49;}.rb-cp-nonebg{background:repeating-linear-gradient(45deg,#fff,#fff 3px,#e8ebef 3px,#e8ebef 5px);position:relative;}.rb-cp-nonebg::after{content:"";position:absolute;left:1px;right:1px;top:50%;height:1.5px;background:#c0392b;transform:rotate(-45deg);}.rb-mark-sel{stroke:#0b1f33 !important;stroke-width:2.5px !important;}.rb-mark-dim{opacity:.22 !important;transition:opacity .12s;}.rb-marksel-chip{position:fixed;z-index:4500;display:flex;align-items:center;gap:8px;background:#0b1f33;color:#fff;border-radius:9px;padding:7px 9px 7px 13px;box-shadow:0 8px 24px rgba(11,31,51,.3);font-size:12px;font-family:inherit;}.rb-marksel-n{font-weight:600;}.rb-marksel-color{font-size:12px;font-weight:600;border:none;background:#fff;color:#0b1f33;border-radius:6px;padding:5px 9px;cursor:pointer;}.rb-marksel-clear{font-size:12px;border:1px solid rgba(255,255,255,.4);background:transparent;color:#fff;border-radius:6px;padding:5px 9px;cursor:pointer;}'; document.head.appendChild(st); }
+function _rbColorPickStyles(){ if(document.getElementById('rb-colorpick-css')) return; var st=document.createElement('style'); st.id='rb-colorpick-css'; st.textContent='.rb-legend-click{cursor:context-menu;border-radius:4px;padding:1px 4px;}.rb-legend-click:hover{background:rgba(0,0,0,.05);}.rb-colorpick{position:fixed;z-index:5000;background:#fff;border:1px solid #d3d9df;border-radius:12px;box-shadow:0 18px 50px rgba(15,30,50,.26);padding:12px;width:248px;font-family:inherit;-webkit-user-select:none;user-select:none;}.rb-cp-head{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#8a939e;margin-bottom:9px;}.rb-cp-sv{position:relative;width:224px;height:150px;border-radius:8px;cursor:crosshair;border:1px solid rgba(0,0,0,.12);}.rb-cp-sv-thumb{position:absolute;width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4);transform:translate(-7px,-7px);pointer-events:none;}.rb-cp-hue{position:relative;width:224px;height:14px;margin-top:11px;border-radius:7px;cursor:ew-resize;background:linear-gradient(to right,#f00 0%,#ff0 17%,#0f0 33%,#0ff 50%,#00f 67%,#f0f 83%,#f00 100%);border:1px solid rgba(0,0,0,.12);}.rb-cp-hue-thumb{position:absolute;top:50%;width:14px;height:14px;border-radius:50%;background:#fff;border:1px solid rgba(0,0,0,.3);box-shadow:0 1px 3px rgba(0,0,0,.3);transform:translate(-7px,-50%);pointer-events:none;}.rb-cp-inputs{display:flex;align-items:center;gap:6px;margin-top:11px;}.rb-cp-prev{width:26px;height:26px;border-radius:6px;border:1px solid rgba(0,0,0,.15);flex:none;}.rb-cp-hexwrap{display:flex;align-items:center;gap:2px;border:1px solid #d3d9df;border-radius:6px;padding:4px 6px;font-size:12px;color:#8a939e;font-weight:700;}.rb-cp-hexwrap input{border:none;outline:none;width:62px;font:inherit;font-weight:700;color:#1f2b38;text-transform:uppercase;padding:0;background:transparent;}.rb-cp-rgb{width:32px;border:1px solid #d3d9df;border-radius:6px;padding:4px 3px;font:inherit;font-size:11px;text-align:center;color:#1f2b38;-moz-appearance:textfield;}.rb-cp-rgb::-webkit-outer-spin-button,.rb-cp-rgb::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}.rb-cp-eyedrop{flex:none;width:30px;height:28px;border:1px solid #d3d9df;background:#f7f8fa;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;}.rb-cp-eyedrop:hover{background:#eef1f4;}.rb-cp-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin-top:12px;}.rb-cp-sw{width:100%;height:22px;border-radius:5px;border:1px solid rgba(0,0,0,.12);cursor:pointer;padding:0;transition:transform .1s;}.rb-cp-sw:hover{transform:scale(1.1);}.rb-cp-foot{display:flex;gap:8px;margin-top:12px;}.rb-cp-reset{flex:1;font-size:12px;border:1px solid #d3d9df;background:#f7f8fa;border-radius:7px;padding:7px;cursor:pointer;color:#46586a;}.rb-cp-reset:hover{background:#eef1f4;}.rb-cp-done{flex:1;font-size:12px;font-weight:600;border:1px solid #4E79A7;background:#4E79A7;color:#fff;border-radius:7px;padding:7px;cursor:pointer;}.rb-cp-done:hover{background:#142e49;}.rb-fmt-series-colors{margin-top:2px;max-height:188px;overflow:auto;}.rb-fmt-series-row{display:flex;align-items:center;gap:9px;padding:5px 6px;border-radius:6px;cursor:pointer;}.rb-fmt-series-row:hover{background:#f3f5f8;}.rb-fmt-series-sw{width:16px;height:16px;border-radius:4px;border:1px solid rgba(0,0,0,.15);flex:none;}.rb-fmt-series-name{font-size:12px;color:#33404e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}.rb-fmt-series-reset{font-size:13px;color:#8a939e;cursor:pointer;padding:0 3px;flex:none;}.rb-fmt-series-reset:hover{color:#4E79A7;}.rb-cp-nofill{display:flex;align-items:center;gap:8px;width:100%;border:1px solid #d3d9df;background:#fff;border-radius:7px;padding:7px 10px;cursor:pointer;font:inherit;font-size:12px;font-weight:600;color:#33404e;margin-bottom:11px;}.rb-cp-nofill:hover{background:#f3f5f8;}.rb-cp-sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#8a939e;margin:0 0 6px;}.rb-cp-themegrid,.rb-cp-stdrow{display:grid;gap:3px;margin-bottom:12px;}.rb-cp-cell{width:100%;height:18px;border-radius:3px;border:1px solid rgba(0,0,0,.1);cursor:pointer;padding:0;}.rb-cp-cell:hover{outline:2px solid #4E79A7;outline-offset:1px;position:relative;z-index:1;}.rb-cp-cell.on{outline:2px solid #4E79A7;outline-offset:1px;}.rb-cp-foot2{display:flex;gap:8px;align-items:center;}.rb-cp-more{flex:1;font-size:12px;font-weight:600;border:1px solid #d3d9df;background:#f7f8fa;border-radius:7px;padding:8px;cursor:pointer;color:#4E79A7;}.rb-cp-more:hover{background:#eef1f4;}.rb-cp-reset2{font-size:12px;border:1px solid #d3d9df;background:#fff;border-radius:7px;padding:8px 11px;cursor:pointer;color:#46586a;}.rb-cp-reset2:hover{background:#f3f5f8;}.rb-cp-back{font-size:12px;font-weight:600;border:none;background:none;color:#4E79A7;cursor:pointer;padding:0 0 9px;display:block;}.rb-fmt-series-chk{margin:0 2px 0 0;flex:none;cursor:pointer;}.rb-fmt-series-apply{margin:6px 0 4px;}.rb-fmt-series-apply button{width:100%;font-size:12px;font-weight:600;border:1px solid #4E79A7;background:#4E79A7;color:#fff;border-radius:7px;padding:7px;cursor:pointer;}.rb-fmt-series-apply button:hover{background:#142e49;}.rb-cp-nonebg{background:repeating-linear-gradient(45deg,#fff,#fff 3px,#e8ebef 3px,#e8ebef 5px);position:relative;}.rb-cp-nonebg::after{content:"";position:absolute;left:1px;right:1px;top:50%;height:1.5px;background:#b8402b;transform:rotate(-45deg);}.rb-mark-sel{stroke:#0b1f33 !important;stroke-width:2.5px !important;}.rb-mark-dim{opacity:.22 !important;transition:opacity .12s;}.rb-marksel-chip{position:fixed;z-index:4500;display:flex;align-items:center;gap:8px;background:#0b1f33;color:#fff;border-radius:9px;padding:7px 9px 7px 13px;box-shadow:0 8px 24px rgba(11,31,51,.3);font-size:12px;font-family:inherit;}.rb-marksel-n{font-weight:600;}.rb-marksel-color{font-size:12px;font-weight:600;border:none;background:#fff;color:#0b1f33;border-radius:6px;padding:5px 9px;cursor:pointer;}.rb-marksel-clear{font-size:12px;border:1px solid rgba(255,255,255,.4);background:transparent;color:#fff;border-radius:6px;padding:5px 9px;cursor:pointer;}'; document.head.appendChild(st); }
 function rbColorPick(x, y, current, onPick, onReset){
   _rbColorPickStyles();
   var prev=document.getElementById('rb-colorpick'); if(prev) prev.remove();
   var pal = RB_PALETTES[(rbGetVizFormat().palette)||'default'] || RB_PALETTES.default;
   var curHex=(/^#?[0-9a-fA-F]{6}$/.test(current||''))?(String(current).charAt(0)==='#'?String(current):'#'+current):'#4E79A7';
   var curLow=String(current||'').toLowerCase();
-  var STD=['#c0392b','#e74c3c','#e67e22','#f1c40f','#2ecc71','#1abc9c','#3498db','#2c3e50','#8e44ad','#7f8c8d','#000000','#ffffff'];
+  var STD=['#b8402b','#e74c3c','#e67e22','#f1c40f','#2ecc71','#1abc9c','#3498db','#2c3e50','#8e44ad','#7f8c8d','#000000','#ffffff'];
   var base=pal.slice(0,10);
   function tint(hex,t){ var a=_rbHexToRgb(hex)||{r:0,g:0,b:0}; return _rbRgbToHex(a.r+(255-a.r)*t, a.g+(255-a.g)*t, a.b+(255-a.b)*t); }
   function shade(hex,t){ var a=_rbHexToRgb(hex)||{r:0,g:0,b:0}; return _rbRgbToHex(a.r*(1-t), a.g*(1-t), a.b*(1-t)); }
@@ -10221,7 +10222,7 @@ function rbColorPick(x, y, current, onPick, onReset){
     theme+='</div>';
     var std=STD.map(cell).join('');
     pop.innerHTML=''
-      +'<button class="rb-cp-nofill" data-nofill><svg width="16" height="16"><rect x="0.5" y="0.5" width="15" height="15" rx="2" fill="#fff" stroke="#c9ced4"></rect><line x1="2.5" y1="13.5" x2="13.5" y2="2.5" stroke="#c0392b" stroke-width="1.6"></line></svg>No fill</button>'
+      +'<button class="rb-cp-nofill" data-nofill><svg width="16" height="16"><rect x="0.5" y="0.5" width="15" height="15" rx="2" fill="#fff" stroke="#c9ced4"></rect><line x1="2.5" y1="13.5" x2="13.5" y2="2.5" stroke="#b8402b" stroke-width="1.6"></line></svg>No fill</button>'
       +'<div class="rb-cp-sec">Theme colors</div>'+theme
       +'<div class="rb-cp-sec">Standard colors</div><div class="rb-cp-stdrow" style="grid-template-columns:repeat('+STD.length+',1fr);">'+std+'</div>'
       +'<div class="rb-cp-foot2"><button class="rb-cp-more" data-more>More colors\u2026</button>'+(onReset?'<button class="rb-cp-reset2" data-reset>Reset</button>':'')+'</div>';
@@ -10664,7 +10665,7 @@ function rbColorFieldLabel(key){ const d = RB_FIELDS.dimensions.find(function(x)
 function rbLerpColor(a, b, t){ function h(x){return parseInt(x,16);} a=a.replace('#',''); b=b.replace('#',''); const ar=h(a.substr(0,2)),ag=h(a.substr(2,2)),ab=h(a.substr(4,2)),br=h(b.substr(0,2)),bg=h(b.substr(2,2)),bb=h(b.substr(4,2)); const r=Math.round(ar+(br-ar)*t),g=Math.round(ag+(bg-ag)*t),bl=Math.round(ab+(bb-ab)*t); return '#'+[r,g,bl].map(function(v){return ('0'+Math.max(0,Math.min(255,v)).toString(16)).slice(-2);}).join(''); }
 function rbColorRamp(t){ t=Math.max(0,Math.min(1,isFinite(t)?t:0)); return rbLerpColor('#cfe8dd', '#0e5e44', t); }
 // Diverging ramp: negative -> red, zero -> neutral, positive -> green. t in [-1,1].
-function rbColorDiverging(t){ t=Math.max(-1,Math.min(1,isFinite(t)?t:0)); return t>=0 ? rbLerpColor('#f3f6f4', '#0e5e44', t) : rbLerpColor('#f3f6f4', '#c0392b', -t); }
+function rbColorDiverging(t){ t=Math.max(-1,Math.min(1,isFinite(t)?t:0)); return t>=0 ? rbLerpColor('#f3f6f4', '#0e5e44', t) : rbLerpColor('#f3f6f4', '#b8402b', -t); }
 // Snap a position to the center of its bin (stepped color)
 function rbBinT(t, lo, hi, bins){ const span=(hi-lo)||1; let idx=Math.floor((t-lo)/span*bins); if(idx>=bins)idx=bins-1; if(idx<0)idx=0; return lo + ((idx+0.5)/bins)*span; }
 // Resolve sequential vs diverging for the current color-by settings
@@ -10798,17 +10799,17 @@ if(type === 'redgreen'){
 const intensity = Math.min(1, Math.abs(num) / Math.max(1, Math.max(Math.abs(columnMin), Math.abs(columnMax))));
 if(num < 0){
 const opacity = 0.15 + intensity * 0.45;
-return 'background:rgba(192, 57, 43, ' + opacity.toFixed(2) + ');';
+return 'background:rgba(184,64,43, ' + opacity.toFixed(2) + ');';
 }else if(num > 0){
 const opacity = 0.15 + intensity * 0.45;
-return 'background:rgba(29, 158, 117, ' + opacity.toFixed(2) + ');';
+return 'background:rgba(46,125,87, ' + opacity.toFixed(2) + ');';
 }
 }else if(type === 'heatmap'){
 // Sequential green
 const range = Math.max(columnMax - columnMin, 1);
 const t = (num - columnMin) / range;
 const opacity = 0.12 + t * 0.55;
-return 'background:rgba(29, 158, 117, ' + opacity.toFixed(2) + ');';
+return 'background:rgba(46,125,87, ' + opacity.toFixed(2) + ');';
 }else if(type === 'bars'){
 // In-cell horizontal data bar
 const range = Math.max(columnMax - columnMin, 1);
@@ -12097,7 +12098,7 @@ svg += '<circle cx="' + xTarget + '" cy="' + (y - 5) + '" r="2.5" fill="#1a1a1a"
 svg += '<text class="rb-chart-label rb-chart-label-bold" x="' + (padL - 12) + '" y="' + (y + trackH/2 + 4) + '" text-anchor="end">' + (it.label.length > 22 ? it.label.substring(0,20) + '\u2026' : it.label) + '</text>';
 // Value text (right of the actual bar)
 const pctOfTarget = it.target !== 0 ? Math.round((it.actual / it.target) * 100) : 0;
-const pctClass = hitTarget ? '#1d6e52' : (pctOfTarget >= 80 ? '#92590f' : '#a55a44');
+const pctClass = hitTarget ? '#245d45' : (pctOfTarget >= 80 ? '#92590f' : '#b8402b');
 svg += '<text class="rb-chart-label rb-chart-label-bold" x="' + (xMax + 8) + '" y="' + (y + trackH/2 + 4) + '" text-anchor="start" fill="' + pctClass + '">' + pctOfTarget + '%</text>';
 // Actual value inside or beyond the bar
 const labelX = xActual > xMax - 60 ? xActual - 6 : xActual + 6;
@@ -12170,7 +12171,7 @@ svg += '<text class="rb-chart-label" x="' + valX + '" y="' + (labelY + 8) + '" t
 if(i < stages.length - 1){
 const dropOff = stages[i].value > 0 ? Math.round((1 - (stages[i + 1].value / stages[i].value)) * 100) : 0;
 if(dropOff > 0){
-svg += '<text class="rb-chart-label" x="' + (padL + 8) + '" y="' + (yBot + (stageH - trapH) / 2 + 3) + '" font-size="9" fill="#a55a44" font-style="italic">\u2193 ' + dropOff + '% drop</text>';
+svg += '<text class="rb-chart-label" x="' + (padL + 8) + '" y="' + (yBot + (stageH - trapH) / 2 + 3) + '" font-size="9" fill="#b8402b" font-style="italic">\u2193 ' + dropOff + '% drop</text>';
 }
 }
 });
@@ -12256,7 +12257,7 @@ const CENSUS_DIV_HEX = [
 const DIVISION_COLORS = {
 new_england: '#7c3aed',
 mid_atlantic: '#0e7490',
-south_atlantic: '#1d6e52',
+south_atlantic: '#245d45',
 e_n_central: '#d97706',
 w_n_central: '#c2410c',
 e_s_central: '#5b3d8a',
@@ -15459,7 +15460,7 @@ const sample = transformed.slice(0, 3).map(function(t, i){
 return cats[i] + ': ' + (t.value === null ? '—' : (typeof t.value === 'number' ? t.value.toFixed(1) : t.value));
 }).join(' · ');
 const formula = tcDef.excelFn === 'MOVINGAVG' ? (tcDef.excelFn + '(' + srcKey + ', 3)') : (tcDef.excelFn + '(' + srcKey + ')');
-preview.innerHTML = '<div class="rb-calc-preview-formula" style="font-family:\'JetBrains Mono\',monospace;font-size:12px;">=<span style="color:#5b3d8a;font-weight:700;">' + tcDef.excelFn + '</span>(<span style="color:#1d6e52;font-weight:600;">' + srcKey + '</span>' + (tcDef.excelFn === 'MOVINGAVG' ? ', 3' : '') + ')</div><div class="rb-calc-preview-eval">Sample · first 3 of 5: ' + sample + '</div>';
+preview.innerHTML = '<div class="rb-calc-preview-formula" style="font-family:\'JetBrains Mono\',monospace;font-size:12px;">=<span style="color:#5b3d8a;font-weight:700;">' + tcDef.excelFn + '</span>(<span style="color:#245d45;font-weight:600;">' + srcKey + '</span>' + (tcDef.excelFn === 'MOVINGAVG' ? ', 3' : '') + ')</div><div class="rb-calc-preview-eval">Sample · first 3 of 5: ' + sample + '</div>';
 }else if(mode === 'advanced'){
 let formula = (document.getElementById('rb-calc-adv-formula') || {}).value || '';
 if(formula.trim().startsWith('=')) formula = formula.trim().substring(1);
@@ -15472,7 +15473,7 @@ return KNOWN_FNS.indexOf(m) >= 0 ? '<span style="color:#5b3d8a;font-weight:700;"
 });
 fmtFormula = fmtFormula.replace(/\b([a-z][a-z0-9_]+)\b/g, function(m){
 const def = rbAllMeasures().find(function(x){return x.key === m;});
-return def ? '<span style="color:#1d6e52;font-weight:600;">' + m + '</span>' : m;
+return def ? '<span style="color:#245d45;font-weight:600;">' + m + '</span>' : m;
 });
 const tc = rbDetectTableCalc(formula);
 let evalLine;
@@ -15926,9 +15927,9 @@ document.addEventListener('DOMContentLoaded', setupShareModal);
 const TEAM_MEMBERS = [
 {id:'u_chris', name:'Chris Lawson', initials:'CL', role:'VP Commercial Operations', managerId:'u_kevin', color:'#4E79A7'},
 {id:'u_kevin', name:'Kevin Lawson', initials:'KL', role:'EVP, Strategy', managerId:'u_ceo', color:'#5b3d8a'},
-{id:'u_sara',  name:'Sara Martinez', initials:'SM', role:'Director, Chain Accounts', managerId:'u_chris', color:'#1d9e75'},
+{id:'u_sara',  name:'Sara Martinez', initials:'SM', role:'Director, Chain Accounts', managerId:'u_chris', color:'#2e7d57'},
 {id:'u_mike',  name:'Mike Chen', initials:'MC', role:'Director, Field Sales', managerId:'u_chris', color:'#d97706'},
-{id:'u_ana',   name:'Ana Patel', initials:'AP', role:'Trade Marketing Lead', managerId:'u_kevin', color:'#c0392b'},
+{id:'u_ana',   name:'Ana Patel', initials:'AP', role:'Trade Marketing Lead', managerId:'u_kevin', color:'#b8402b'},
 {id:'u_jordan',name:'Jordan Reyes', initials:'JR', role:'Senior Analyst, BI', managerId:'u_sara', color:'#0891b2'}
 ];
 const CURRENT_USER_ID = 'u_chris'; // demo user — change to inhabit a different role
@@ -17136,7 +17137,7 @@ function rbCellsCFOpen(editIdx){ rbCellsCFClose(); rbCellsCFManageClose(); var h
    +'<div id="rb-cf-icon" style="display:none;flex-direction:column;gap:7px;border:1px solid #eef1f5;border-radius:7px;padding:8px;"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><select id="rb-cf-icon-style" style="padding:5px 7px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;font-size:11px;"><option value="3arrows">3 Arrows</option><option value="3lights">3 Traffic lights</option><option value="3flags">3 Flags</option><option value="5arrows">5 Arrows</option></select><label style="display:flex;gap:4px;align-items:center;font-size:11px;cursor:pointer;"><input type="checkbox" id="rb-cf-icon-rev"/>Reverse</label><label style="display:flex;gap:4px;align-items:center;font-size:11px;cursor:pointer;"><input type="checkbox" id="rb-cf-icon-showval" checked/>Show value</label></div><div style="font-size:11px;color:#5f6368;">Thresholds</div><div id="rb-cf-icon-ths-rows" style="display:flex;flex-direction:column;gap:5px;"></div></div>'
    +'<div id="rb-cf-fmt" style="display:flex;flex-direction:column;gap:8px;border:1px solid #eef1f5;border-radius:7px;padding:9px;"><div style="font-weight:600;color:#3c4043;font-size:11px;">Format</div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;">'+rbCFColorCtl('rb-cf-fill','#ffc7ce','Fill ','rb-cf-fill-none','No fill')+rbCFColorCtl('rb-cf-font','#9c0006','Font ','rb-cf-font-auto','Auto')+'</div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><button id="rb-cf-bold" data-on="0" style="width:28px;height:26px;border:1px solid #d4d4d8;background:#fff;border-radius:5px;font-weight:700;cursor:pointer;">B</button><button id="rb-cf-italic" data-on="0" style="width:28px;height:26px;border:1px solid #d4d4d8;background:#fff;border-radius:5px;font-style:italic;cursor:pointer;">I</button><select id="rb-cf-numfmt" style="padding:5px 7px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;font-size:11px;"><option value="">Number format\u2026</option><option value="number">1,234.56</option><option value="comma0">1,235</option><option value="currency">$1,234.56</option><option value="currency0">$1,235</option><option value="percent">12%</option><option value="percent2">12.34%</option></select><label style="display:flex;gap:4px;align-items:center;font-size:11px;cursor:pointer;"><input type="checkbox" id="rb-cf-border-on"/>Border</label><input type="color" id="rb-cf-border" value="#9c0006" style="width:26px;height:24px;padding:0;border:1px solid #d4d4d8;border-radius:4px;cursor:pointer;"/></div><div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;"><span style="font-size:10.5px;color:#9aa6b5;">Quick fills:</span>'+fmtSwHtml+'</div><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:10.5px;color:#9aa6b5;">Preview:</span><span id="rb-cf-prev" style="padding:4px 12px;border-radius:4px;font-family:SF Mono,Menlo,monospace;font-size:12px;">123.45</span></div></div>'
    +'<label id="rb-cf-stop-wrap" style="display:flex;gap:5px;align-items:center;font-size:11px;color:#5f6368;cursor:pointer;"><input type="checkbox" id="rb-cf-stop"/>Stop if true (skip lower-priority rules)</label>'
-   +'<div style="display:flex;gap:6px;align-items:center;"><span style="font-size:11px;color:#5f6368;white-space:nowrap;">Applies to</span><input id="rb-cf-applies" value="'+rbCFRectsLabel(rects)+'" title="Comma-separated ranges, e.g. A1:A20, C1:C20" style="flex:1;padding:5px 8px;border:1px solid #d4d4d8;border-radius:6px;font-family:SF Mono,Menlo,monospace;font-size:11px;min-width:0;"/></div>'+'<div style="display:flex;justify-content:space-between;align-items:center;"><a id="rb-cf-clear" style="font-size:11px;color:#c0392b;cursor:pointer;">Clear rules here</a><span style="display:flex;gap:6px;"><button id="rb-cf-cancel" style="padding:5px 11px;border:1px solid #d4d4d8;background:#f7f8fa;border-radius:6px;cursor:pointer;font:inherit;">Cancel</button><button id="rb-cf-apply" style="padding:5px 14px;border:none;background:#1a7f5e;color:#fff;border-radius:6px;cursor:pointer;font:inherit;">'+(editing?'Save':'Apply')+'</button></span></div>';
+   +'<div style="display:flex;gap:6px;align-items:center;"><span style="font-size:11px;color:#5f6368;white-space:nowrap;">Applies to</span><input id="rb-cf-applies" value="'+rbCFRectsLabel(rects)+'" title="Comma-separated ranges, e.g. A1:A20, C1:C20" style="flex:1;padding:5px 8px;border:1px solid #d4d4d8;border-radius:6px;font-family:SF Mono,Menlo,monospace;font-size:11px;min-width:0;"/></div>'+'<div style="display:flex;justify-content:space-between;align-items:center;"><a id="rb-cf-clear" style="font-size:11px;color:#b8402b;cursor:pointer;">Clear rules here</a><span style="display:flex;gap:6px;"><button id="rb-cf-cancel" style="padding:5px 11px;border:1px solid #d4d4d8;background:#f7f8fa;border-radius:6px;cursor:pointer;font:inherit;">Cancel</button><button id="rb-cf-apply" style="padding:5px 14px;border:none;background:#1a7f5e;color:#fff;border-radius:6px;cursor:pointer;font:inherit;">'+(editing?'Save':'Apply')+'</button></span></div>';
   document.body.appendChild(p);
   var ac=rbSheetCell(host, range.c0, range.r0)||host; var rc=ac.getBoundingClientRect(); var pw=p.offsetWidth||316, ph=p.offsetHeight||440; p.style.left=Math.max(6,Math.min(rc.left,(window.innerWidth||1200)-pw-8))+'px'; p.style.top=Math.max(6,Math.min(rc.bottom+4,(window.innerHeight||800)-ph-8))+'px';
   var kindSel=document.getElementById('rb-cf-kind'); var fontInp=document.getElementById('rb-cf-font'); fontInp.addEventListener('input',function(){ fontInp.setAttribute('data-set','1'); rbCFUpdatePreview(); });
@@ -17176,12 +17177,12 @@ cont.innerHTML=html;
 }
 function rbCFPopulate(ex){ function sv(id,v){ var e=document.getElementById(id); if(e&&v!=null) e.value=v; } function sc(id,on){ var e=document.getElementById(id); if(e) e.checked=!!on; } if(ex.kind==='cell'){ sv('rb-cf-v1', ex.v1raw); sv('rb-cf-v2', ex.v2raw); } if(ex.kind==='formula') sv('rb-cf-expr', ex.expr); if(ex.kind==='crosscol'){ sv('rb-cf-cc-col', ex.refCol); sv('rb-cf-cc-op', ex.op); sv('rb-cf-cc-v1', ex.v1raw); sv('rb-cf-cc-v2', ex.v2raw); var _ccv2=document.getElementById('rb-cf-cc-v2'); if(_ccv2 && ex.op==='between') _ccv2.style.display='block'; } if(ex.kind==='scale2'||ex.kind==='scale3'){ sv('rb-cf-lo',ex.loColor); sv('rb-cf-hi',ex.hiColor); sv('rb-cf-mid',ex.midColor); if(ex.loBasis){sv('rb-cf-lo-b',ex.loBasis.type);sv('rb-cf-lo-v',ex.loBasis.val);} if(ex.hiBasis){sv('rb-cf-hi-b',ex.hiBasis.type);sv('rb-cf-hi-v',ex.hiBasis.val);} if(ex.midBasis){sv('rb-cf-mid-b',ex.midBasis.type);sv('rb-cf-mid-v',ex.midBasis.val);} } if(ex.kind==='databar'){ sv('rb-cf-bar-color',ex.barColor); sv('rb-cf-bar-neg',ex.barNegColor); sc('rb-cf-bar-grad',ex.barGradient!==false); sc('rb-cf-bar-showval',ex.barShowValue!==false); sv('rb-cf-bar-axis',ex.barAxis||'auto'); sc('rb-cf-bar-rtl',ex.barRTL); if(ex.barMinBasis){sv('rb-cf-bar-min-b',ex.barMinBasis.type);sv('rb-cf-bar-min-v',ex.barMinBasis.val);} if(ex.barMaxBasis){sv('rb-cf-bar-max-b',ex.barMaxBasis.type);sv('rb-cf-bar-max-v',ex.barMaxBasis.val);} } if(ex.kind==='iconset'){ sv('rb-cf-icon-style',ex.iconStyle); sc('rb-cf-icon-rev',ex.iconReverse); sc('rb-cf-icon-showval',ex.iconShowValue!==false); rbCFIconRenderThs(ex.iconStyle||'3arrows', ex.iconThresholds); } var f=ex.fmt||{}; if(f.fill) sv('rb-cf-fill',f.fill); sc('rb-cf-fill-none', !f.fill); if(f.font){ var fo=document.getElementById('rb-cf-font'); if(fo){fo.value=f.font;fo.setAttribute('data-set','1');} } sc('rb-cf-font-auto', !f.font); if(f.numFmt) sv('rb-cf-numfmt',f.numFmt); if(f.border){ sc('rb-cf-border-on',true); sv('rb-cf-border',f.border); } var bb=document.getElementById('rb-cf-bold'); if(bb&&f.bold){bb.setAttribute('data-on','1');bb.style.background='#dbeafe';bb.style.borderColor='#1a73e8';} var ii=document.getElementById('rb-cf-italic'); if(ii&&f.italic){ii.setAttribute('data-on','1');ii.style.background='#dbeafe';ii.style.borderColor='#1a73e8';} sc('rb-cf-stop', ex.stop); }
 function rbCellsCFManageOpen(){ rbCellsCFClose(); rbCellsCFManageClose(); var host=document.getElementById('rb-ws-host'); if(!host) return; var p=document.createElement('div'); p.id='rb-cf-manage'; p.style.cssText='position:fixed;z-index:99998;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #cfd6dd;border-radius:11px;box-shadow:0 18px 50px rgba(0,0,0,.3);padding:15px;font:12px -apple-system,Segoe UI,Roboto,sans-serif;width:440px;max-height:80vh;overflow-y:auto;display:flex;flex-direction:column;gap:10px;'; document.body.appendChild(p); rbCFManageRender(p); }
-function rbCFManageRender(p){ var s=rbCellsLoad(); var cfs=s.condFormats||[]; var rows=cfs.map(function(cf,i){ return '<div data-cfrow="'+i+'" style="display:flex;align-items:center;gap:8px;padding:8px 9px;border:1px solid #ececf1;border-radius:7px;background:#fbfcfd;"><span style="display:flex;flex-direction:column;gap:1px;"><button data-cfup="'+i+'" '+(i===0?'disabled':'')+' style="border:none;background:none;cursor:pointer;font-size:10px;line-height:1;color:'+(i===0?'#ccc':'#5f6368')+';padding:0;">\u25B2</button><button data-cfdown="'+i+'" '+(i===cfs.length-1?'disabled':'')+' style="border:none;background:none;cursor:pointer;font-size:10px;line-height:1;color:'+(i===cfs.length-1?'#ccc':'#5f6368')+';padding:0;">\u25BC</button></span><span style="flex:1;min-width:0;"><span style="font-weight:600;color:#1f2933;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+rbCFKindLabel(cf)+'</span><span style="font-size:10.5px;color:#9aa6b5;">'+rbCFRectsLabel(rbCFRects(cf))+(cf.stop?' \u00b7 stop if true':'')+'</span></span><button data-cfedit="'+i+'" style="padding:4px 9px;border:1px solid #d4d4d8;background:#fff;border-radius:5px;cursor:pointer;font:inherit;font-size:11px;">Edit</button><button data-cfdel="'+i+'" style="padding:4px 8px;border:1px solid #f0c8c2;background:#fff;color:#c0392b;border-radius:5px;cursor:pointer;font:inherit;font-size:11px;">Delete</button></div>'; }).join(''); p.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;"><div style="font-weight:600;color:#1f2933;font-size:13px;">Manage conditional formatting rules</div><button id="rb-cfm-close" style="border:none;background:none;font-size:18px;color:#9aa6b5;cursor:pointer;line-height:1;">\u00d7</button></div><div style="font-size:10.5px;color:#9aa6b5;">Rules at the top have priority. \u201cStop if true\u201d halts lower rules for matched cells.</div><div style="display:flex;flex-direction:column;gap:6px;">'+(rows||'<div style="padding:20px;text-align:center;color:#9aa6b5;">No rules yet.</div>')+'</div><div style="display:flex;justify-content:flex-end;gap:6px;"><button id="rb-cfm-new" style="padding:6px 12px;border:1px solid #d4d4d8;background:#fff;border-radius:6px;cursor:pointer;font:inherit;">New rule\u2026</button><button id="rb-cfm-done" style="padding:6px 14px;border:none;background:#1a7f5e;color:#fff;border-radius:6px;cursor:pointer;font:inherit;">Done</button></div>'; document.getElementById('rb-cfm-close').addEventListener('click', rbCellsCFManageClose); document.getElementById('rb-cfm-done').addEventListener('click', rbCellsCFManageClose); document.getElementById('rb-cfm-new').addEventListener('click', function(){ rbCellsCFManageClose(); rbCellsCFOpen(); }); p.querySelectorAll('[data-cfedit]').forEach(function(b){ b.addEventListener('click', function(){ rbCellsCFManageClose(); rbCellsCFOpen(parseInt(b.getAttribute('data-cfedit'),10)); }); }); p.querySelectorAll('[data-cfdel]').forEach(function(b){ b.addEventListener('click', function(){ var i=parseInt(b.getAttribute('data-cfdel'),10); var st=rbCellsLoad(); st.condFormats.splice(i,1); rbCellsWrite(st); rbRenderCells(); rbCFManageRender(p); }); }); function move(i,j){ var st=rbCellsLoad(); var a=st.condFormats; if(j<0||j>=a.length) return; var t=a[i]; a[i]=a[j]; a[j]=t; rbCellsWrite(st); rbRenderCells(); rbCFManageRender(p); } p.querySelectorAll('[data-cfup]').forEach(function(b){ b.addEventListener('click', function(){ var i=parseInt(b.getAttribute('data-cfup'),10); move(i,i-1); }); }); p.querySelectorAll('[data-cfdown]').forEach(function(b){ b.addEventListener('click', function(){ var i=parseInt(b.getAttribute('data-cfdown'),10); move(i,i+1); }); }); }
+function rbCFManageRender(p){ var s=rbCellsLoad(); var cfs=s.condFormats||[]; var rows=cfs.map(function(cf,i){ return '<div data-cfrow="'+i+'" style="display:flex;align-items:center;gap:8px;padding:8px 9px;border:1px solid #ececf1;border-radius:7px;background:#fbfcfd;"><span style="display:flex;flex-direction:column;gap:1px;"><button data-cfup="'+i+'" '+(i===0?'disabled':'')+' style="border:none;background:none;cursor:pointer;font-size:10px;line-height:1;color:'+(i===0?'#ccc':'#5f6368')+';padding:0;">\u25B2</button><button data-cfdown="'+i+'" '+(i===cfs.length-1?'disabled':'')+' style="border:none;background:none;cursor:pointer;font-size:10px;line-height:1;color:'+(i===cfs.length-1?'#ccc':'#5f6368')+';padding:0;">\u25BC</button></span><span style="flex:1;min-width:0;"><span style="font-weight:600;color:#1f2933;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+rbCFKindLabel(cf)+'</span><span style="font-size:10.5px;color:#9aa6b5;">'+rbCFRectsLabel(rbCFRects(cf))+(cf.stop?' \u00b7 stop if true':'')+'</span></span><button data-cfedit="'+i+'" style="padding:4px 9px;border:1px solid #d4d4d8;background:#fff;border-radius:5px;cursor:pointer;font:inherit;font-size:11px;">Edit</button><button data-cfdel="'+i+'" style="padding:4px 8px;border:1px solid #f0c8c2;background:#fff;color:#b8402b;border-radius:5px;cursor:pointer;font:inherit;font-size:11px;">Delete</button></div>'; }).join(''); p.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;"><div style="font-weight:600;color:#1f2933;font-size:13px;">Manage conditional formatting rules</div><button id="rb-cfm-close" style="border:none;background:none;font-size:18px;color:#9aa6b5;cursor:pointer;line-height:1;">\u00d7</button></div><div style="font-size:10.5px;color:#9aa6b5;">Rules at the top have priority. \u201cStop if true\u201d halts lower rules for matched cells.</div><div style="display:flex;flex-direction:column;gap:6px;">'+(rows||'<div style="padding:20px;text-align:center;color:#9aa6b5;">No rules yet.</div>')+'</div><div style="display:flex;justify-content:flex-end;gap:6px;"><button id="rb-cfm-new" style="padding:6px 12px;border:1px solid #d4d4d8;background:#fff;border-radius:6px;cursor:pointer;font:inherit;">New rule\u2026</button><button id="rb-cfm-done" style="padding:6px 14px;border:none;background:#1a7f5e;color:#fff;border-radius:6px;cursor:pointer;font:inherit;">Done</button></div>'; document.getElementById('rb-cfm-close').addEventListener('click', rbCellsCFManageClose); document.getElementById('rb-cfm-done').addEventListener('click', rbCellsCFManageClose); document.getElementById('rb-cfm-new').addEventListener('click', function(){ rbCellsCFManageClose(); rbCellsCFOpen(); }); p.querySelectorAll('[data-cfedit]').forEach(function(b){ b.addEventListener('click', function(){ rbCellsCFManageClose(); rbCellsCFOpen(parseInt(b.getAttribute('data-cfedit'),10)); }); }); p.querySelectorAll('[data-cfdel]').forEach(function(b){ b.addEventListener('click', function(){ var i=parseInt(b.getAttribute('data-cfdel'),10); var st=rbCellsLoad(); st.condFormats.splice(i,1); rbCellsWrite(st); rbRenderCells(); rbCFManageRender(p); }); }); function move(i,j){ var st=rbCellsLoad(); var a=st.condFormats; if(j<0||j>=a.length) return; var t=a[i]; a[i]=a[j]; a[j]=t; rbCellsWrite(st); rbRenderCells(); rbCFManageRender(p); } p.querySelectorAll('[data-cfup]').forEach(function(b){ b.addEventListener('click', function(){ var i=parseInt(b.getAttribute('data-cfup'),10); move(i,i-1); }); }); p.querySelectorAll('[data-cfdown]').forEach(function(b){ b.addEventListener('click', function(){ var i=parseInt(b.getAttribute('data-cfdown'),10); move(i,i+1); }); }); }
 function rbCellsFilterClose(){ var p=document.getElementById('rb-cells-filter'); if(p) p.remove(); }
 function rbCellsFilterApply(field, allDisp, checkedSet){ var _def=RB_FIELDS.dimensions.find(function(x){return x.key===field;}); var rev=function(disp){ var m=(rbAliases().member||{})[field]; if(m){ for(var raw in m){ if(String(m[raw])===disp) return raw; } } if(_def&&_def.values){ for(var i=0;i<_def.values.length;i++){ if(String(_def.values[i].n)===disp || String(_def.values[i].v)===disp) return _def.values[i].v; } } return disp; }; var checkedRaw=[], uncheckedRaw=[]; allDisp.forEach(function(v){ if(checkedSet[v]) checkedRaw.push(rev(v)); else uncheckedRaw.push(rev(v)); }); RB_STATE.filters=(RB_STATE.filters||[]).filter(function(f){ return f.field!==field; }); if(uncheckedRaw.length===0){ /* all checked -> no filter */ } else if(uncheckedRaw.length<=checkedRaw.length){ RB_STATE.filters.push({field:field, op:'not_in', values:uncheckedRaw}); } else { RB_STATE.filters.push({field:field, op:'in', values:checkedRaw}); } if(typeof rbSaveState==='function') rbSaveState(); rbRenderAll(); try{ rbCellsFillFromReport({force:true}); }catch(_){} var lbl=(RB_FIELDS.dimensions.find(function(x){return x.key===field;})||{label:field}).label; var n=uncheckedRaw.length; if(typeof showActionToast==='function') showActionToast(n===0?('Cleared filter on '+lbl):('Filtered '+lbl+' \u2014 '+(uncheckedRaw.length<=checkedRaw.length?('excluding '+n+' value'+(n>1?'s':'')):(checkedRaw.length+' kept'))+' \u00b7 on filter shelf')); }
 function rbCellsFilterColumn(c){ rbCellsFilterClose(); var host=document.getElementById('rb-ws-host'); if(!host) return; var cmInfo=rbCellsBuildColMap(); var cm=cmInfo.map||[]; if(cmInfo.crosstab){ if(typeof showActionToast==='function') showActionToast('Filtering works on a flat table \u2014 remove the column dimension first'); return; } var entry=cm[c]; if(!entry || entry.type!=='dim'){ if(typeof showActionToast==='function') showActionToast('Filtering applies to a dimension column (e.g. State, Category) \u2014 not a measure'); return; } var field=entry.key, label=entry.label||field; var _def=RB_FIELDS.dimensions.find(function(x){return x.key===field;}); var _disp=function(rv){ var m=(rbAliases().member||{})[field]; if(m && m[rv]!=null && m[rv]!=='') return String(m[rv]); if(_def&&_def.values){ for(var i=0;i<_def.values.length;i++){ if(String(_def.values[i].v)===String(rv)) return String(_def.values[i].n); } } return String(rv); }; var s=rbCellsLoad(); var rows=s.rows||12; var vals=[]; if(_def && _def.values && _def.values.length){ _def.values.forEach(function(vd){ if(vd.v==='__all__'||vd.v==='all') return; vals.push(String(vd.n!=null&&vd.n!==''?vd.n:vd.v)); }); } else { var seen={}; for(var r=1;r<rows;r++){ var raw=(s.cells||{})[rbSheetAddr(c,r)]; if(raw==null||raw==='') continue; var disp=String(raw); if(!seen[disp]){ seen[disp]=1; vals.push(disp); } } } if(!vals.length){ if(typeof showActionToast==='function') showActionToast('No values to filter in this column'); return; } var checkedSet={}; vals.forEach(function(v){ checkedSet[v]=true; }); (RB_STATE.filters||[]).filter(function(f){ return f.field===field; }).forEach(function(f){ var fv=(f.values||[]).map(function(rv){ return _disp(rv); }); if(f.op==='not_in'){ fv.forEach(function(v){ checkedSet[v]=false; }); } else if(f.op==='in'){ var inset={}; fv.forEach(function(v){ inset[v]=true; }); vals.forEach(function(v){ checkedSet[v]=!!inset[v]; }); } }); var p=document.createElement('div'); p.id='rb-cells-filter'; p.style.cssText='position:fixed;z-index:99998;background:#fff;border:1px solid #cfd6dd;border-radius:9px;box-shadow:0 10px 32px rgba(0,0,0,.2);padding:10px;font:12px -apple-system,Segoe UI,Roboto,sans-serif;width:244px;display:flex;flex-direction:column;gap:8px;'; p.innerHTML='<div style="font-weight:600;color:#1f2933;">Filter: '+_cpEsc(label)+'</div><input id="rb-flt-search" placeholder="Search\u2026" style="padding:5px 8px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;"/><div style="display:flex;gap:12px;font-size:11px;"><a id="rb-flt-all" style="color:#1a7f5e;cursor:pointer;">Select all</a><a id="rb-flt-none" style="color:#1a7f5e;cursor:pointer;">Clear</a></div><div id="rb-flt-list" style="max-height:228px;overflow-y:auto;border:1px solid #ececef;border-radius:6px;padding:5px;display:flex;flex-direction:column;gap:1px;"></div><div style="display:flex;gap:6px;justify-content:flex-end;"><button id="rb-flt-cancel" style="padding:5px 11px;border:1px solid #d4d4d8;background:#f7f8fa;border-radius:6px;cursor:pointer;font:inherit;">Cancel</button><button id="rb-flt-apply" style="padding:5px 14px;border:none;background:#1a7f5e;color:#fff;border-radius:6px;cursor:pointer;font:inherit;">Apply</button></div>'; document.body.appendChild(p); var hc=rbSheetCell(host,c,0)||host; var rc=hc.getBoundingClientRect(); var pw=p.offsetWidth||244, ph=p.offsetHeight||340; p.style.left=Math.max(6,Math.min(rc.left,(window.innerWidth||1200)-pw-8))+'px'; p.style.top=Math.max(6,Math.min(rc.bottom+4,(window.innerHeight||800)-ph-8))+'px'; var listEl=document.getElementById('rb-flt-list'); function renderList(ft){ ft=(ft||'').toLowerCase(); listEl.innerHTML=vals.filter(function(v){ return !ft || v.toLowerCase().indexOf(ft)>=0; }).map(function(v){ return '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;padding:2px 3px;"><input type="checkbox" data-flt-v="'+_cpEsc(v)+'" '+(checkedSet[v]?'checked':'')+'/><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_cpEsc(v)+'</span></label>'; }).join(''); listEl.querySelectorAll('[data-flt-v]').forEach(function(cb){ cb.addEventListener('change', function(){ checkedSet[cb.getAttribute('data-flt-v')]=cb.checked; }); }); } renderList(''); document.getElementById('rb-flt-search').addEventListener('input', function(e){ renderList(e.target.value); }); document.getElementById('rb-flt-all').addEventListener('click', function(){ vals.forEach(function(v){ checkedSet[v]=true; }); renderList(document.getElementById('rb-flt-search').value); }); document.getElementById('rb-flt-none').addEventListener('click', function(){ vals.forEach(function(v){ checkedSet[v]=false; }); renderList(document.getElementById('rb-flt-search').value); }); document.getElementById('rb-flt-cancel').addEventListener('click', rbCellsFilterClose); document.getElementById('rb-flt-apply').addEventListener('click', function(){ rbCellsFilterApply(field, vals, checkedSet); rbCellsFilterClose(); }); var sb=document.getElementById('rb-flt-search'); if(sb) sb.focus(); }
 function rbSheetCtxClose(){ var m=document.getElementById('rb-sheet-ctx'); if(m) m.remove(); }
-function rbSheetCtxOpen(host, x, y){ rbSheetCtxClose(); var b=rbSheetSelBounds(host)||{c0:0,c1:0,r0:0,r1:0}; var nR=b.r1-b.r0+1, nC=b.c1-b.c0+1; var isWS=host.classList.contains('rb-ws-host'); var m=document.createElement('div'); m.id='rb-sheet-ctx'; m.style.cssText='position:fixed;z-index:99999;min-width:194px;background:#fff;border:1px solid #d7dbe0;border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.18);padding:5px 0;font:13px -apple-system,Segoe UI,Roboto,sans-serif;color:#1f2933;user-select:none;'; function item(label, fn, opts){ opts=opts||{}; var it=document.createElement('div'); it.textContent=label; it.style.cssText='padding:6px 15px;cursor:pointer;white-space:nowrap;'+(opts.danger?'color:#c0392b;':'')+(opts.disabled?'opacity:.38;pointer-events:none;':''); it.addEventListener('mouseenter',function(){ it.style.background=opts.danger?'#fdecea':'#eef3f8'; }); it.addEventListener('mouseleave',function(){ it.style.background=''; }); it.addEventListener('mousedown', function(ev){ ev.preventDefault(); ev.stopPropagation(); rbSheetCtxClose(); try{ fn(); }catch(_){} }); m.appendChild(it); } function sep(){ var s=document.createElement('div'); s.style.cssText='height:1px;background:#edf0f3;margin:5px 0;'; m.appendChild(s); } item('Cut', function(){ var tsv=rbSheetClipSet(host); if(tsv!=null && navigator.clipboard){ try{ navigator.clipboard.writeText(tsv); }catch(_){} } rbSheetClearSel(host); }); item('Copy', function(){ var tsv=rbSheetClipSet(host); if(tsv!=null && navigator.clipboard){ try{ navigator.clipboard.writeText(tsv); }catch(_){} } }); item('Paste', function(){ rbSheetPasteInternal(host); }, {disabled: !_rbSheetClip}); item('Paste values only', function(){ rbSheetPasteSpecial(host,'values'); }, {disabled: !_rbSheetClip}); item('Paste formats only', function(){ rbSheetPasteSpecial(host,'formats'); }, {disabled: !_rbSheetClip || !isWS}); item('Paste transpose', function(){ rbSheetPasteSpecial(host,'transpose'); }, {disabled: !_rbSheetClip}); if(isWS){ sep(); item('Insert '+(nR>1?nR+' rows':'row')+' above', function(){ for(var k=0;k<nR;k++) rbCellsInsertRow(b.r0); }); item('Insert '+(nR>1?nR+' rows':'row')+' below', function(){ for(var k=0;k<nR;k++) rbCellsInsertRow(b.r1+1); }); item('Insert '+(nC>1?nC+' columns':'column')+' left', function(){ for(var k=0;k<nC;k++) rbCellsInsertCol(b.c0); }); item('Insert '+(nC>1?nC+' columns':'column')+' right', function(){ for(var k=0;k<nC;k++) rbCellsInsertCol(b.c1+1); }); sep(); item('Delete '+(nR>1?nR+' rows':'row'), function(){ for(var k=b.r1;k>=b.r0;k--) rbCellsDeleteRow(k); }, {danger:true}); item('Delete '+(nC>1?nC+' columns':'column'), function(){ for(var k=b.c1;k>=b.c0;k--) rbCellsDeleteCol(k); }, {danger:true}); } if(isWS){ sep(); item('Format: General', function(){ rbCellsSetFormat('general'); }); item('Format: Number 1,234.56', function(){ rbCellsSetFormat('comma'); }); item('Format: Currency $', function(){ rbCellsSetFormat('currency'); }); item('Format: Percent %', function(){ rbCellsSetFormat('percent'); }); } if(isWS){ sep(); item('Filter on this column\u2026', function(){ rbCellsFilterColumn((host._sel&&host._sel.a)?host._sel.a.c:b.c0); }); item('Sort \u2191 by this column (A\u2192Z)', function(){ rbCellsSortSelection('asc'); }); item('Sort \u2193 by this column (Z\u2192A)', function(){ rbCellsSortSelection('desc'); }); item('Conditional formatting\u2026', function(){ rbCellsCFOpen(); }); item('Manage rules\u2026', function(){ rbCellsCFManageOpen(); }); } sep(); item('Clear contents', function(){ rbSheetClearSel(host); }); document.body.appendChild(m); var vw=window.innerWidth||1200, vh=window.innerHeight||800; var mw=m.offsetWidth||200, mh=m.offsetHeight||300; m.style.left=Math.max(4,Math.min(x, vw-mw-8))+'px'; m.style.top=Math.max(4,Math.min(y, vh-mh-8))+'px'; }
+function rbSheetCtxOpen(host, x, y){ rbSheetCtxClose(); var b=rbSheetSelBounds(host)||{c0:0,c1:0,r0:0,r1:0}; var nR=b.r1-b.r0+1, nC=b.c1-b.c0+1; var isWS=host.classList.contains('rb-ws-host'); var m=document.createElement('div'); m.id='rb-sheet-ctx'; m.style.cssText='position:fixed;z-index:99999;min-width:194px;background:#fff;border:1px solid #d7dbe0;border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.18);padding:5px 0;font:13px -apple-system,Segoe UI,Roboto,sans-serif;color:#1f2933;user-select:none;'; function item(label, fn, opts){ opts=opts||{}; var it=document.createElement('div'); it.textContent=label; it.style.cssText='padding:6px 15px;cursor:pointer;white-space:nowrap;'+(opts.danger?'color:#b8402b;':'')+(opts.disabled?'opacity:.38;pointer-events:none;':''); it.addEventListener('mouseenter',function(){ it.style.background=opts.danger?'#fdecea':'#eef3f8'; }); it.addEventListener('mouseleave',function(){ it.style.background=''; }); it.addEventListener('mousedown', function(ev){ ev.preventDefault(); ev.stopPropagation(); rbSheetCtxClose(); try{ fn(); }catch(_){} }); m.appendChild(it); } function sep(){ var s=document.createElement('div'); s.style.cssText='height:1px;background:#edf0f3;margin:5px 0;'; m.appendChild(s); } item('Cut', function(){ var tsv=rbSheetClipSet(host); if(tsv!=null && navigator.clipboard){ try{ navigator.clipboard.writeText(tsv); }catch(_){} } rbSheetClearSel(host); }); item('Copy', function(){ var tsv=rbSheetClipSet(host); if(tsv!=null && navigator.clipboard){ try{ navigator.clipboard.writeText(tsv); }catch(_){} } }); item('Paste', function(){ rbSheetPasteInternal(host); }, {disabled: !_rbSheetClip}); item('Paste values only', function(){ rbSheetPasteSpecial(host,'values'); }, {disabled: !_rbSheetClip}); item('Paste formats only', function(){ rbSheetPasteSpecial(host,'formats'); }, {disabled: !_rbSheetClip || !isWS}); item('Paste transpose', function(){ rbSheetPasteSpecial(host,'transpose'); }, {disabled: !_rbSheetClip}); if(isWS){ sep(); item('Insert '+(nR>1?nR+' rows':'row')+' above', function(){ for(var k=0;k<nR;k++) rbCellsInsertRow(b.r0); }); item('Insert '+(nR>1?nR+' rows':'row')+' below', function(){ for(var k=0;k<nR;k++) rbCellsInsertRow(b.r1+1); }); item('Insert '+(nC>1?nC+' columns':'column')+' left', function(){ for(var k=0;k<nC;k++) rbCellsInsertCol(b.c0); }); item('Insert '+(nC>1?nC+' columns':'column')+' right', function(){ for(var k=0;k<nC;k++) rbCellsInsertCol(b.c1+1); }); sep(); item('Delete '+(nR>1?nR+' rows':'row'), function(){ for(var k=b.r1;k>=b.r0;k--) rbCellsDeleteRow(k); }, {danger:true}); item('Delete '+(nC>1?nC+' columns':'column'), function(){ for(var k=b.c1;k>=b.c0;k--) rbCellsDeleteCol(k); }, {danger:true}); } if(isWS){ sep(); item('Format: General', function(){ rbCellsSetFormat('general'); }); item('Format: Number 1,234.56', function(){ rbCellsSetFormat('comma'); }); item('Format: Currency $', function(){ rbCellsSetFormat('currency'); }); item('Format: Percent %', function(){ rbCellsSetFormat('percent'); }); } if(isWS){ sep(); item('Filter on this column\u2026', function(){ rbCellsFilterColumn((host._sel&&host._sel.a)?host._sel.a.c:b.c0); }); item('Sort \u2191 by this column (A\u2192Z)', function(){ rbCellsSortSelection('asc'); }); item('Sort \u2193 by this column (Z\u2192A)', function(){ rbCellsSortSelection('desc'); }); item('Conditional formatting\u2026', function(){ rbCellsCFOpen(); }); item('Manage rules\u2026', function(){ rbCellsCFManageOpen(); }); } sep(); item('Clear contents', function(){ rbSheetClearSel(host); }); document.body.appendChild(m); var vw=window.innerWidth||1200, vh=window.innerHeight||800; var mw=m.offsetWidth||200, mh=m.offsetHeight||300; m.style.left=Math.max(4,Math.min(x, vw-mw-8))+'px'; m.style.top=Math.max(4,Math.min(y, vh-mh-8))+'px'; }
 document.addEventListener('contextmenu', function(e){ var cell=e.target.closest && e.target.closest('.mydash-sheet-cell'); var host=cell && (cell.closest('.rb-ws-host')||cell.closest('.mydash-card')); if(!cell||!host) return; e.preventDefault(); var ref=rbSheetParseRef(cell.dataset.addr); var _inSel=rbSheetAllSelRects(host).some(function(_rc){ return ref && ref.c>=_rc.c0&&ref.c<=_rc.c1&&ref.r>=_rc.r0&&ref.r<=_rc.r1; }); if(ref && !_inSel){ rbSheetSetAnchor(host, ref.c, ref.r); } rbSheetCtxOpen(host, e.clientX, e.clientY); });
 document.addEventListener('mousedown', function(e){ var m=document.getElementById('rb-sheet-ctx'); if(m && !m.contains(e.target)) rbSheetCtxClose(); }, true);
 document.addEventListener('keydown', function(e){ if(e.key==='Escape') rbSheetCtxClose(); }, true);
@@ -18494,7 +18495,7 @@ function mydashReseedData(){ hoodieConfirm({title:'Restore demo data?', body:'Th
 function mydashClearAllMine(){ var me=currentUser(); var allItems=mydashLoad(); hoodieConfirm({danger:true, title:'Remove all pinned cards you own?', body:'This removes every card you pinned to My dashboard.', confirmLabel:'Remove all', onConfirm:function(){ var remaining=allItems.filter(function(it){return it.owner && it.owner!==me.id;}); mydashWrite(remaining); renderMyDashboard(); }}); }
 function mydashCloseMoreMenu(){ var p=document.getElementById('mydash-morepop'); if(p) p.remove(); document.removeEventListener('mousedown', mydash_morepopOutside, true); }
 function mydash_morepopOutside(e){ var p=document.getElementById('mydash-morepop'); if(p && !p.contains(e.target) && !(e.target.closest && e.target.closest('#mydash-more-btn'))) mydashCloseMoreMenu(); }
-function mydashOpenMoreMenu(btn){ if(document.getElementById('mydash-morepop')){ mydashCloseMoreMenu(); return; } var wrap=(btn.closest && btn.closest('.mydash-more-wrap'))||btn.parentElement; if(!wrap) return; wrap.insertAdjacentHTML('beforeend', '<div class="mydash-exportpop mydash-morepop" id="mydash-morepop" style="right:0;left:auto;"><div class="mydash-exportpop-h">Dashboard data</div><button class="mydash-exportpop-item" data-more="reseed">\u21bb  Restore demo data</button><button class="mydash-exportpop-item" data-more="clear" style="color:#c0392b;">\u2715  Remove all my cards</button></div>'); var pop=document.getElementById('mydash-morepop'); pop.addEventListener('click', function(e){ var t=e.target.closest('[data-more]'); if(!t) return; e.stopPropagation(); var a=t.getAttribute('data-more'); mydashCloseMoreMenu(); if(a==='reseed') mydashReseedData(); else if(a==='clear') mydashClearAllMine(); }); setTimeout(function(){ document.addEventListener('mousedown', mydash_morepopOutside, true); }, 0); }
+function mydashOpenMoreMenu(btn){ if(document.getElementById('mydash-morepop')){ mydashCloseMoreMenu(); return; } var wrap=(btn.closest && btn.closest('.mydash-more-wrap'))||btn.parentElement; if(!wrap) return; wrap.insertAdjacentHTML('beforeend', '<div class="mydash-exportpop mydash-morepop" id="mydash-morepop" style="right:0;left:auto;"><div class="mydash-exportpop-h">Dashboard data</div><button class="mydash-exportpop-item" data-more="reseed">\u21bb  Restore demo data</button><button class="mydash-exportpop-item" data-more="clear" style="color:#b8402b;">\u2715  Remove all my cards</button></div>'); var pop=document.getElementById('mydash-morepop'); pop.addEventListener('click', function(e){ var t=e.target.closest('[data-more]'); if(!t) return; e.stopPropagation(); var a=t.getAttribute('data-more'); mydashCloseMoreMenu(); if(a==='reseed') mydashReseedData(); else if(a==='clear') mydashClearAllMine(); }); setTimeout(function(){ document.addEventListener('mousedown', mydash_morepopOutside, true); }, 0); }
 function mydashOpenAddMenu(btn){
 if(document.getElementById('mydash-addpop')){ mydashCloseAddMenu(); return; }
 var wrap=(btn.closest && btn.closest('.mydash-add-wrap')) || btn.parentElement; if(!wrap) return;
@@ -19414,7 +19415,7 @@ saveCardEl.style.display = 'none';
 // === Appendix charts — visualizations supporting the white paper narrative ==
 function renderAppendixCharts(app){
 if(!app) return '';
-const palette = {pos:'#1d9e75', neg:'#c0392b', neutral:'#4E79A7', amber:'#d97706', purple:'#5b3d8a'};
+const palette = {pos:'#2e7d57', neg:'#b8402b', neutral:'#4E79A7', amber:'#d97706', purple:'#5b3d8a'};
 let html = '';
 
 // Chart 1: Verdict distribution
@@ -20236,7 +20237,7 @@ function frBanner(name){
   b.textContent = '';
   var span = document.createElement('span'); span.textContent = 'Report Builder scoped to “' + name + '” (its own fields)';
   var x = document.createElement('button'); x.textContent = 'Exit to Hoodie data';
-  x.style.cssText = 'background:#2c7a64;color:#fff;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;font:12px system-ui,sans-serif;';
+  x.style.cssText = 'background:#2e7d57;color:#fff;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;font:12px system-ui,sans-serif;';
   x.onclick = frExitDataset; b.appendChild(span); b.appendChild(x);
 }
 function frExitDataset(){
@@ -21464,7 +21465,7 @@ st.textContent = [
 '.hoodie-dlg-btn-cancel:hover{border-color:var(--ui-ghost-bd-h,#6b7280);background:var(--ui-soft,#f1f2f5);}',
 '.hoodie-dlg-btn-confirm{background:var(--ui-accent,#4E79A7);color:#fff;}',
 '.hoodie-dlg-btn-confirm:hover{background:var(--ui-accent-h,#3d6089);}',
-'.hoodie-dlg-btn-danger{background:#c0392b;color:#fff;}',
+'.hoodie-dlg-btn-danger{background:#b8402b;color:#fff;}',
 '.hoodie-dlg-btn-danger:hover{background:#a5281b;}',
 '#hoodie-notify{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(8px);z-index:4200;display:flex;align-items:stretch;gap:10px;background:var(--ui-ink,#15202e);color:#fff;padding:11px 16px 11px 13px;border-radius:var(--ui-radius,7px);font-family:var(--ui-font),system-ui,sans-serif;font-size:12.5px;font-weight:500;line-height:1.4;box-shadow:0 8px 28px rgba(0,0,0,0.22);opacity:0;transition:opacity .18s ease,transform .18s ease;max-width:min(440px,calc(100vw - 40px));pointer-events:none;}',
 '#hoodie-notify.show{opacity:1;transform:translateX(-50%) translateY(0);}',
@@ -22101,7 +22102,7 @@ s+='<path d="'+realFillPath+'" style="fill:var(--dash-accent,#4E79A7)" fill-opac
 }
 
 // Achievable line (dashed teal)
-s+='<path d="'+achPath+'" fill="none" stroke="#1d9e75" stroke-width="2" stroke-dasharray="6,4"/>';
+s+='<path d="'+achPath+'" fill="none" stroke="#2e7d57" stroke-width="2" stroke-dasharray="6,4"/>';
 // Industry/primary realized line (solid navy)
 s+='<path d="'+realPath+'" fill="none" style="stroke:var(--dash-accent,#4E79A7)" stroke-width="2.5"/>';
 // Overlay (my book) line if present (solid amber)
@@ -22113,10 +22114,10 @@ s+='<path d="'+overlayPath+'" fill="none" stroke="#d97706" stroke-width="2.5"/>'
 const realLast=curve.realized[curve.realized.length-1];
 const achLast=curve.achievable[curve.achievable.length-1];
 s+='<circle cx="'+mx(realLast[0])+'" cy="'+my(realLast[1])+'" r="4" style="fill:var(--dash-accent,#4E79A7)"/>';
-s+='<circle cx="'+mx(achLast[0])+'" cy="'+my(achLast[1])+'" r="4" fill="#1d9e75"/>';
+s+='<circle cx="'+mx(achLast[0])+'" cy="'+my(achLast[1])+'" r="4" fill="#2e7d57"/>';
 const primaryLbl=isOverlay?'industry':(HR_STATE.scope==='mybook'?'my book':'realized');
 s+='<text x="'+(mx(realLast[0])-8)+'" y="'+(my(realLast[1])+4)+'" text-anchor="end" font-size="11" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">'+realLast[1].toFixed(0)+'% '+primaryLbl+'</text>';
-s+='<text x="'+(mx(achLast[0])-8)+'" y="'+(my(achLast[1])+4)+'" text-anchor="end" font-size="11" font-weight="700" fill="#1d6e52">'+achLast[1].toFixed(0)+' · achievable (TAM · P'+(curve.benchPct||75)+')</text>';
+s+='<text x="'+(mx(achLast[0])-8)+'" y="'+(my(achLast[1])+4)+'" text-anchor="end" font-size="11" font-weight="700" fill="#245d45">'+achLast[1].toFixed(0)+' · achievable (TAM · P'+(curve.benchPct||75)+')</text>';
 if(isOverlay){
 const overlayLast=overlayCurve.realized[overlayCurve.realized.length-1];
 s+='<circle cx="'+mx(overlayLast[0])+'" cy="'+my(overlayLast[1])+'" r="4" fill="#d97706"/>';
@@ -22130,12 +22131,12 @@ s+='<rect x="0" y="0" width="14" height="3" fill="#d97706"/>';
 s+='<text x="20" y="4" font-size="11" fill="#3c4043">my book</text>';
 s+='<rect x="78" y="0" width="14" height="3" style="fill:var(--dash-accent,#4E79A7)"/>';
 s+='<text x="98" y="4" font-size="11" fill="#3c4043">industry</text>';
-s+='<line x1="160" y1="2" x2="174" y2="2" stroke="#1d9e75" stroke-width="2" stroke-dasharray="3,2"/>';
+s+='<line x1="160" y1="2" x2="174" y2="2" stroke="#2e7d57" stroke-width="2" stroke-dasharray="3,2"/>';
 s+='<text x="180" y="4" font-size="11" fill="#3c4043">achievable (TAM)</text>';
 }else{
 s+='<rect x="0" y="0" width="14" height="3" style="fill:var(--dash-accent,#4E79A7)"/>';
 s+='<text x="20" y="4" font-size="11" fill="#3c4043">'+(HR_STATE.scope==='mybook'?'my book':'realized')+'</text>';
-s+='<line x1="80" y1="2" x2="94" y2="2" stroke="#1d9e75" stroke-width="2" stroke-dasharray="3,2"/>';
+s+='<line x1="80" y1="2" x2="94" y2="2" stroke="#2e7d57" stroke-width="2" stroke-dasharray="3,2"/>';
 s+='<text x="100" y="4" font-size="11" fill="#3c4043">achievable</text>';
 s+='<rect x="180" y="-3" width="14" height="9" fill="#4cb8a4" fill-opacity="0.14"/>';
 s+='<text x="200" y="4" font-size="11" fill="#3c4043">headroom</text>';
@@ -22226,7 +22227,7 @@ html+='<th>Leverage</th>';
 html+='</tr></thead><tbody>';
 rows.forEach(function(r){
 const lever=r.headroom>=25?'High':r.headroom>=12?'Moderate':'Low / mature';
-const leverColor=r.headroom>=25?'#1d9e75':r.headroom>=12?'#d97706':'#6b7280';
+const leverColor=r.headroom>=25?'#2e7d57':r.headroom>=12?'#d97706':'#6b7280';
 html+='<tr>';
 html+='<td class="channel-name">'+r.label+'</td>';
 html+='<td class="num">'+r.realized.toFixed(0)+'%</td>';
@@ -22470,7 +22471,7 @@ return pts;
 })();
 
 function chainGrowthColor(g){
-if(g>=10)return '#1d9e75';
+if(g>=10)return '#2e7d57';
 if(g>=5)return '#5dcaa5';
 if(g>=0)return '#9fe1cb';
 if(g>=-5)return '#f5c4b3';
@@ -22757,11 +22758,11 @@ renderCatman();
 // skuIdx = relative SKU count carried; velPerSku = velocity per SKU (efficiency).
 const CATMAN_FORMATS = [
 {name:'Warehouse Club',   abbr:'WHC', dist:95, velIdx:168, growth:14, distGrowth:4,  velGrowth:10, skuIdx:45,  velPerSku:3.7,  color:'#4E79A7'},
-{name:'Online / DTC',     abbr:'DTC', dist:38, velIdx:155, growth:28, distGrowth:22, velGrowth:6,  skuIdx:850, velPerSku:0.18, color:'#1d9e75'},
+{name:'Online / DTC',     abbr:'DTC', dist:38, velIdx:155, growth:28, distGrowth:22, velGrowth:6,  skuIdx:850, velPerSku:0.18, color:'#2e7d57'},
 {name:'Liquor — Large',   abbr:'LGL', dist:91, velIdx:132, growth:7,  distGrowth:2,  velGrowth:5,  skuIdx:340, velPerSku:0.39, color:'#4cb8a4'},
 {name:'Premium Grocery',  abbr:'PGR', dist:72, velIdx:124, growth:8,  distGrowth:3,  velGrowth:5,  skuIdx:180, velPerSku:0.69, color:'#d97706'},
 {name:'Mass Merchant',    abbr:'MAS', dist:88, velIdx:110, growth:9,  distGrowth:6,  velGrowth:3,  skuIdx:120, velPerSku:0.92, color:'#92590f'},
-{name:'Regional Grocery', abbr:'RGR', dist:78, velIdx:95,  growth:6,  distGrowth:4,  velGrowth:2,  skuIdx:165, velPerSku:0.58, color:'#a55a44'},
+{name:'Regional Grocery', abbr:'RGR', dist:78, velIdx:95,  growth:6,  distGrowth:4,  velGrowth:2,  skuIdx:165, velPerSku:0.58, color:'#b8402b'},
 {name:'Liquor — Mid',     abbr:'MDL', dist:64, velIdx:88,  growth:4,  distGrowth:3,  velGrowth:1,  skuIdx:210, velPerSku:0.42, color:'#5b3d8a'},
 {name:'Convenience',      abbr:'CNV', dist:48, velIdx:71,  growth:-2, distGrowth:-3, velGrowth:1,  skuIdx:38,  velPerSku:1.87, color:'#6b7280'},
 {name:'Drug',             abbr:'DRG', dist:55, velIdx:62,  growth:2,  distGrowth:1,  velGrowth:1,  skuIdx:65,  velPerSku:0.95, color:'#6b7280'}
@@ -22849,9 +22850,9 @@ svg += '<rect x="' + padL + '" y="' + padT + '" width="' + (xDiv - padL) + '" he
 svg += '<rect x="' + xDiv + '" y="' + yDiv + '" width="' + (W - padR - xDiv) + '" height="' + (H - padB - yDiv) + '" fill="#fcefe7" opacity="0.55"/>';  // high dist/low vel — rationalize
 svg += '<rect x="' + padL + '" y="' + yDiv + '" width="' + (xDiv - padL) + '" height="' + (H - padB - yDiv) + '" fill="#f5f5f7" opacity="0.6"/>';      // low/low — deprioritize
 // Quadrant labels
-svg += '<text x="' + (W - padR - 8) + '" y="' + (padT + 15) + '" text-anchor="end" font-size="10" font-weight="700" fill="#1d6e52" letter-spacing="0.04em">PROTECT \u00b7 strong everywhere</text>';
+svg += '<text x="' + (W - padR - 8) + '" y="' + (padT + 15) + '" text-anchor="end" font-size="10" font-weight="700" fill="#245d45" letter-spacing="0.04em">PROTECT \u00b7 strong everywhere</text>';
 svg += '<text x="' + (padL + 8) + '" y="' + (padT + 15) + '" font-size="10" font-weight="700" fill="#92590f" letter-spacing="0.04em">EXPAND DISTRIBUTION \u00b7 under-placed</text>';
-svg += '<text x="' + (W - padR - 8) + '" y="' + (H - padB - 8) + '" text-anchor="end" font-size="10" font-weight="700" fill="#a55a44" letter-spacing="0.04em">RATIONALIZE \u00b7 broad but slow</text>';
+svg += '<text x="' + (W - padR - 8) + '" y="' + (H - padB - 8) + '" text-anchor="end" font-size="10" font-weight="700" fill="#b8402b" letter-spacing="0.04em">RATIONALIZE \u00b7 broad but slow</text>';
 svg += '<text x="' + (padL + 8) + '" y="' + (H - padB - 8) + '" font-size="10" font-weight="700" fill="#6b7280" letter-spacing="0.04em">DEPRIORITIZE \u00b7 low/low</text>';
 // Divider lines
 svg += '<line x1="' + xDiv + '" y1="' + padT + '" x2="' + xDiv + '" y2="' + (H - padB) + '" stroke="#c4c4c8" stroke-width="1" stroke-dasharray="4 3"/>';
@@ -22917,7 +22918,7 @@ html += '<div class="catman-assort-row">' +
 });
 html += '<div class="catman-assort-legend">' +
 '<span class="catman-assort-legend-item"><span class="catman-assort-legend-swatch" style="background:#6b7280;"></span>SKU count (breadth)</span>' +
-'<span class="catman-assort-legend-item"><span class="catman-assort-legend-swatch" style="background:#1d9e75;"></span>velocity per SKU (efficiency)</span>' +
+'<span class="catman-assort-legend-item"><span class="catman-assort-legend-swatch" style="background:#2e7d57;"></span>velocity per SKU (efficiency)</span>' +
 '</div>';
 el.innerHTML = html;
 // Callout — only physical-shelf formats are rationalization candidates (DTC's tail is by design)
@@ -23115,7 +23116,7 @@ cm:[1.05,0.97,1.07,1.10,1.00]
 
 const RADAR_COLORS={
 Whiskey:'#d97706',Vodka:'#1a73e8',Tequila:'#4cb8a4',Rum:'#2a3654',
-'Full-Bar':'#a55a44','Casino':'#d97706','Hotel':'#4E79A7','Country Club':'#1d9e75',
+'Full-Bar':'#b8402b','Casino':'#d97706','Hotel':'#4E79A7','Country Club':'#2e7d57',
 'Prestige':'#4E79A7','Super-Premium':'#4cb8a4','Premium':'#d97706','Call':'#1a73e8','Well':'#6b7280',
 'Northeast':'#4E79A7','South':'#d97706','Midwest':'#4cb8a4','West':'#d85a30'
 };
@@ -23158,13 +23159,13 @@ const premiumAvg = (values[2] + values[3]) / 2;        // premium index + price/
 const reachAvg   = (values[0] + values[1] + values[4]) / 3; // velocity + activation + POD efficiency
 // Mass premium — high everywhere
 if(avg >= 75) return {
-name: 'Mass premium', accent: '#1d6e52',
+name: 'Mass premium', accent: '#245d45',
 sub: 'Strong on every dimension',
 implication: 'The sweet spot — broad reach combined with pricing power. This shape is rare and durable; the strategic priority is protection, not change. Watch for the one axis that\'s lowest as the first leading-indicator of erosion.'
 };
 // Underdeveloped — weak everywhere
 if(avg <= 40) return {
-name: 'Underdeveloped', accent: '#a55a44',
+name: 'Underdeveloped', accent: '#b8402b',
 sub: 'No defining strength',
 implication: 'No clear edge. Pick one axis to invest in heavily rather than trying to lift all five simultaneously. The deepest weakness usually points to the right opening — fix what\'s blocking the rest from growing.'
 };
@@ -24506,7 +24507,7 @@ function _qbrAttachColors(chart, vf){
   function pcol(i, val, isMulti){
     if(vf.seriesColors && vf.seriesColors[i]!=null) return vf.seriesColors[i];
     if(sc) return sc;
-    if(!isMulti && pal==='default') return ((val||0)<0 ? '#c0392b' : '#4E79A7');
+    if(!isMulti && pal==='default') return ((val||0)<0 ? '#b8402b' : '#4E79A7');
     return (typeof rbPaletteColor==='function') ? rbPaletteColor(i, pal) : '#4E79A7';
   }
   if(chart.series.length===1){
@@ -25506,7 +25507,7 @@ st.textContent='.qbr-ecfg-ov{position:fixed;inset:0;background:rgba(18,28,40,0.4
 +'.qbr-ecfg-body{padding:16px 18px;overflow-y:auto;}'
 +'.qbr-ecfg-foot{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid #ececef;background:#fafbfc;}'
 +'.qbr-ecfg-hint{flex:1;font-size:11.5px;color:#7a828c;}'
-+'.qbr-ecfg-hint.bad{color:#c0392b;font-weight:600;}'
++'.qbr-ecfg-hint.bad{color:#b8402b;font-weight:600;}'
 +'.qbr-ecfg-sec{margin-bottom:15px;}'
 +'.qbr-ecfg-lab{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#8a93a0;margin-bottom:7px;}'
 +'.qbr-ecfg-vizgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;}'
@@ -25518,7 +25519,7 @@ st.textContent='.qbr-ecfg-ov{position:fixed;inset:0;background:rgba(18,28,40,0.4
 +'.qbr-ecfg-viz.on span{color:#4E79A7;font-weight:600;}'
 +'.qbr-ecfg-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}'
 +'.qbr-ecfg-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 8px 5px 10px;border-radius:7px;font-size:12px;font-weight:600;border:1px solid;}'
-+'.qbr-ecfg-chip.meas{background:#f1f8f5;border-color:#bfe3d5;color:#1d6e52;}'
++'.qbr-ecfg-chip.meas{background:#f1f8f5;border-color:#bfe3d5;color:#245d45;}'
 +'.qbr-ecfg-chip.dim{background:#eef2f7;border-color:#c4d2e2;color:#4E79A7;}'
 +'.qbr-ecfg-chip button{border:none;background:none;cursor:pointer;font-size:14px;line-height:1;color:inherit;opacity:.55;padding:0;}'
 +'.qbr-ecfg-chip button:hover{opacity:1;}'
@@ -25936,7 +25937,7 @@ line:'<line x1="14" y1="34" x2="50" y2="12" fill="none"/>'
 return '<svg viewBox="0 0 64 44" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">'+(m[sh]||m.rect)+'</svg>';
 }
 function qbrElemBlockThumb(key){
-var acc='currentColor', navy='#4E79A7', red='#c0392b', green='#1d9e75', gold='#C99A3B', mute='#9aa6b2', line='#d8dee6';
+var acc='currentColor', navy='#4E79A7', red='#b8402b', green='#2e7d57', gold='#C99A3B', mute='#9aa6b2', line='#d8dee6';
 var s='<svg viewBox="0 0 80 52" font-family="Georgia,serif">';
 switch(key){
 case 'placeholder':
@@ -26515,7 +26516,7 @@ function _qbrHexToRgb(h){ h=String(h||'').replace('#',''); if(h.length===3) h=h.
 function qbrRenderCalloutEl(el){ var t=(QBR_STATE.template&&QBR_STATE.template.theme)||{}; var accent=qbrElColorCss(el.accent||'accent'); var rgb=_qbrHexToRgb(accent); var fill=(el.fill&&/^#/.test(el.fill))?el.fill:('rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',0.07)'); var hf=qbrFontStack(t.headFont); var bf=qbrFontStack(t.bodyFont); var title=_qbrEsc(el.title||''); var body=_qbrEsc(el.body||'').replace(/\n/g,'<br>'); return '<div class="qbr-el-callout" style="width:100%;height:100%;box-sizing:border-box;background:'+fill+';border-left:4px solid '+accent+';border-radius:6px;padding:12px 14px;overflow:hidden;"><div style="font-family:'+hf+';font-weight:700;color:'+accent+';font-size:'+(el.titleSize||15)+'px;line-height:1.2;margin-bottom:5px;">'+(title||'<span style="opacity:.4">Heading</span>')+'</div><div style="font-family:'+bf+';color:#'+(t.bodyColor||'333')+';font-size:'+(el.bodySize||12)+'px;line-height:1.4;">'+(body||'<span style="opacity:.4">Body</span>')+'</div></div>'; }
 function qbrCalloutSet(id,field,val){ var sl=qbrActiveSlide(); if(!sl) return; var el=(sl.elements||[]).find(function(e){return e.id===id;}); if(!el) return; qbrSnapshot(); el[field]=val; qbrRenderCanvas(); }
 function qbrCalloutInspector(el){ return '<div class="qbr-insp-section"><div class="qbr-insp-label">Callout</div><input value="'+_qbrEsc(el.title||'')+'" placeholder="Heading" oninput="qbrCalloutSet(&#39;'+el.id+'&#39;,&#39;title&#39;,this.value)" style="width:100%;box-sizing:border-box;margin-bottom:6px;padding:6px 8px;border:1px solid #d4d4d8;border-radius:6px;font:inherit;font-size:12px;"><textarea placeholder="Body" oninput="qbrCalloutSet(&#39;'+el.id+'&#39;,&#39;body&#39;,this.value)" style="width:100%;box-sizing:border-box;min-height:74px;padding:6px 8px;border:1px solid #d4d4d8;border-radius:6px;font:inherit;font-size:12px;resize:vertical;">'+_qbrEsc(el.body||'')+'</textarea></div>'; }
-function _qbrStatTone(k,t){ return k==='negative'?'#c0392b':(k==='positive'?'#1d9e75':(k==='target'?('#'+(t.gold||'C99A3B')):qbrElColorCss('accent'))); }
+function _qbrStatTone(k,t){ return k==='negative'?'#b8402b':(k==='positive'?'#2e7d57':(k==='target'?('#'+(t.gold||'C99A3B')):qbrElColorCss('accent'))); }
 function qbrDiagramItems(el){ var it=(el.items||[]); return it.length?it:[{label:'Step'}]; }
 function qbrRenderDiagram(el){
 var t=(QBR_STATE.template&&QBR_STATE.template.theme)||{};
@@ -26545,7 +26546,7 @@ function qbrDiagramSet(id,idx,field,val){ var el=qbrDiagramFind(id); if(!el||!el
 function qbrDiagramAdd(id){ var el=qbrDiagramFind(id); if(!el) return; qbrSnapshot(); el.items=el.items||[]; if(el.items.length<6) el.items.push({label:'Item',sub:''}); qbrRenderCanvas(); qbrRenderInspector(); }
 function qbrDiagramDel(id,idx){ var el=qbrDiagramFind(id); if(!el||!el.items||el.items.length<=1) return; qbrSnapshot(); el.items.splice(idx,1); qbrRenderCanvas(); qbrRenderInspector(); }
 function qbrDiagramVariant(id,v){ var el=qbrDiagramFind(id); if(!el) return; qbrSnapshot(); el.variant=v; qbrRenderCanvas(); qbrRenderInspector(); }
-function qbrDiagramInspector(el){ var vars=[['process','Process'],['cycle','Cycle'],['pyramid','Pyramid'],['hierarchy','Hierarchy']]; var cur=el.variant||'process'; var vsel=vars.map(function(v){ var on=(cur===v[0]); return '<button onclick="qbrDiagramVariant(&#39;'+el.id+'&#39;,&#39;'+v[0]+'&#39;)" style="flex:1;padding:6px 3px;border:1px solid '+(on?'#4E79A7':'#d4d4d8')+';background:'+(on?'#eef2f7':'#fff')+';color:#4E79A7;border-radius:5px;cursor:pointer;font:inherit;font-size:11px;font-weight:'+(on?'700':'400')+';">'+v[1]+'</button>'; }).join(''); var note=(cur==='hierarchy')?'<div class="qbr-rb-note" style="margin:0 0 8px;">First item is the top node; the rest become its children.</div>':''; var rows=(el.items||[]).map(function(it,idx){ return '<div style="border:1px solid #eceef1;border-radius:6px;padding:7px;margin-bottom:6px;"><input value="'+_qbrEsc(it.label||'')+'" placeholder="Label" oninput="qbrDiagramSet(&#39;'+el.id+'&#39;,'+idx+',&#39;label&#39;,this.value)" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:5px 7px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;font-size:12px;font-weight:600;"><div style="display:flex;gap:6px;align-items:center;"><input value="'+_qbrEsc(it.sub||'')+'" placeholder="Sub (optional)" oninput="qbrDiagramSet(&#39;'+el.id+'&#39;,'+idx+',&#39;sub&#39;,this.value)" style="flex:1;box-sizing:border-box;padding:5px 7px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;font-size:11px;"><button onclick="qbrDiagramDel(&#39;'+el.id+'&#39;,'+idx+')" style="border:1px solid #e0cccc;background:#fff;color:#c0392b;border-radius:5px;padding:5px 9px;cursor:pointer;font-size:13px;line-height:1;">\u00d7</button></div></div>'; }).join(''); return '<div class="qbr-insp-section"><div class="qbr-insp-label">Diagram</div><div style="display:flex;gap:5px;margin-bottom:9px;">'+vsel+'</div>'+note+rows+'<button onclick="qbrDiagramAdd(&#39;'+el.id+'&#39;)" style="width:100%;border:1px dashed #c4c8cf;background:#fafbfc;border-radius:6px;padding:7px;cursor:pointer;font:inherit;font-size:12px;color:#4E79A7;">+ Add item</button></div>'; }
+function qbrDiagramInspector(el){ var vars=[['process','Process'],['cycle','Cycle'],['pyramid','Pyramid'],['hierarchy','Hierarchy']]; var cur=el.variant||'process'; var vsel=vars.map(function(v){ var on=(cur===v[0]); return '<button onclick="qbrDiagramVariant(&#39;'+el.id+'&#39;,&#39;'+v[0]+'&#39;)" style="flex:1;padding:6px 3px;border:1px solid '+(on?'#4E79A7':'#d4d4d8')+';background:'+(on?'#eef2f7':'#fff')+';color:#4E79A7;border-radius:5px;cursor:pointer;font:inherit;font-size:11px;font-weight:'+(on?'700':'400')+';">'+v[1]+'</button>'; }).join(''); var note=(cur==='hierarchy')?'<div class="qbr-rb-note" style="margin:0 0 8px;">First item is the top node; the rest become its children.</div>':''; var rows=(el.items||[]).map(function(it,idx){ return '<div style="border:1px solid #eceef1;border-radius:6px;padding:7px;margin-bottom:6px;"><input value="'+_qbrEsc(it.label||'')+'" placeholder="Label" oninput="qbrDiagramSet(&#39;'+el.id+'&#39;,'+idx+',&#39;label&#39;,this.value)" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:5px 7px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;font-size:12px;font-weight:600;"><div style="display:flex;gap:6px;align-items:center;"><input value="'+_qbrEsc(it.sub||'')+'" placeholder="Sub (optional)" oninput="qbrDiagramSet(&#39;'+el.id+'&#39;,'+idx+',&#39;sub&#39;,this.value)" style="flex:1;box-sizing:border-box;padding:5px 7px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;font-size:11px;"><button onclick="qbrDiagramDel(&#39;'+el.id+'&#39;,'+idx+')" style="border:1px solid #e0cccc;background:#fff;color:#b8402b;border-radius:5px;padding:5px 9px;cursor:pointer;font-size:13px;line-height:1;">\u00d7</button></div></div>'; }).join(''); return '<div class="qbr-insp-section"><div class="qbr-insp-label">Diagram</div><div style="display:flex;gap:5px;margin-bottom:9px;">'+vsel+'</div>'+note+rows+'<button onclick="qbrDiagramAdd(&#39;'+el.id+'&#39;)" style="width:100%;border:1px dashed #c4c8cf;background:#fafbfc;border-radius:6px;padding:7px;cursor:pointer;font:inherit;font-size:12px;color:#4E79A7;">+ Add item</button></div>'; }
 function qbrRenderStatRow(el){ var t=(QBR_STATE.template&&QBR_STATE.template.theme)||{}; var hf=qbrFontStack(t.headFont), bf=qbrFontStack(t.bodyFont); var cards=(el.items||[]).map(function(it){ var c=_qbrStatTone(it.tone,t); return '<div style="flex:1 1 0;min-width:0;border-left:4px solid '+c+';padding:3px 14px;overflow:hidden;"><div style="font-family:'+hf+';font-weight:700;color:'+c+';font-size:'+(el.valueSize||32)+'px;line-height:1.04;white-space:nowrap;">'+_qbrEsc(it.value||'')+'</div><div style="font-family:'+bf+';color:#'+(t.bodyColor||'333')+';font-size:13px;margin-top:5px;line-height:1.25;">'+_qbrEsc(it.label||'')+'</div>'+(it.sub?('<div style="font-family:'+bf+';font-style:italic;color:#'+(t.mutedColor||'5B6770')+';font-size:11px;margin-top:4px;">'+_qbrEsc(it.sub)+'</div>'):'')+'</div>'; }).join(''); return '<div style="width:100%;height:100%;display:flex;gap:18px;align-items:flex-start;overflow:hidden;">'+cards+'</div>'; }
 function qbrRenderTitleBlock(el){ var t=(QBR_STATE.template&&QBR_STATE.template.theme)||{}; var hf=qbrFontStack(t.headFont); var kc=qbrElColorCss(el.kickerColor||'accent'); var tc='#'+(t.titleColor||'1A3A5C'); return '<div style="width:100%;height:100%;overflow:hidden;"><div style="font-family:'+hf+';text-transform:uppercase;letter-spacing:0.08em;font-weight:700;color:'+kc+';font-size:12px;margin-bottom:5px;">'+(_qbrEsc(el.kicker||'')||'<span style="opacity:.4">KICKER</span>')+'</div><div style="font-family:'+hf+';font-weight:700;color:'+tc+';font-size:'+(el.titleSize||34)+'px;line-height:1.1;">'+(_qbrEsc(el.title||'')||'<span style="opacity:.4">Slide title</span>')+'</div></div>'; }
 function qbrTbSet(id,field,val){ var sl=qbrActiveSlide(); if(!sl) return; var el=(sl.elements||[]).find(function(e){return e.id===id;}); if(!el) return; qbrSnapshot(); el[field]=val; qbrRenderCanvas(); }
@@ -26554,7 +26555,7 @@ function qbrStatFind(id){ var sl=qbrActiveSlide(); if(!sl) return null; return (
 function qbrStatSet(id,idx,field,val){ var el=qbrStatFind(id); if(!el||!el.items||!el.items[idx]) return; qbrSnapshot(); el.items[idx][field]=val; qbrRenderCanvas(); if(field==='tone') qbrRenderInspector(); }
 function qbrStatAdd(id){ var el=qbrStatFind(id); if(!el) return; qbrSnapshot(); el.items=el.items||[]; if(el.items.length<5) el.items.push({value:'0',label:'Label',sub:'',tone:'neutral'}); qbrRenderCanvas(); qbrRenderInspector(); }
 function qbrStatDel(id,idx){ var el=qbrStatFind(id); if(!el||!el.items) return; qbrSnapshot(); el.items.splice(idx,1); qbrRenderCanvas(); qbrRenderInspector(); }
-function qbrStatRowInspector(el){ var tones=[['neutral','Neutral'],['positive','Positive'],['negative','Negative'],['target','Target']]; var rows=(el.items||[]).map(function(it,idx){ var opts=tones.map(function(tt){return '<option value="'+tt[0]+'"'+((it.tone||'neutral')===tt[0]?' selected':'')+'>'+tt[1]+'</option>';}).join(''); return '<div style="border:1px solid #eceef1;border-radius:6px;padding:7px;margin-bottom:6px;"><input value="'+_qbrEsc(it.value||'')+'" placeholder="Value" oninput="qbrStatSet(&#39;'+el.id+'&#39;,'+idx+',&#39;value&#39;,this.value)" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:5px 7px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;font-size:12px;font-weight:700;"><input value="'+_qbrEsc(it.label||'')+'" placeholder="Label" oninput="qbrStatSet(&#39;'+el.id+'&#39;,'+idx+',&#39;label&#39;,this.value)" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:5px 7px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;font-size:12px;"><input value="'+_qbrEsc(it.sub||'')+'" placeholder="Sub-label (optional)" oninput="qbrStatSet(&#39;'+el.id+'&#39;,'+idx+',&#39;sub&#39;,this.value)" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:5px 7px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;font-size:11px;font-style:italic;"><div style="display:flex;gap:6px;align-items:center;"><select onchange="qbrStatSet(&#39;'+el.id+'&#39;,'+idx+',&#39;tone&#39;,this.value)" style="flex:1;padding:4px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;font-size:11px;">'+opts+'</select><button onclick="qbrStatDel(&#39;'+el.id+'&#39;,'+idx+')" style="border:1px solid #e0cccc;background:#fff;color:#c0392b;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px;">Remove</button></div></div>'; }).join(''); return '<div class="qbr-insp-section"><div class="qbr-insp-label">Stat row</div>'+rows+'<button onclick="qbrStatAdd(&#39;'+el.id+'&#39;)" style="width:100%;border:1px dashed #c4c8cf;background:#fafbfc;border-radius:6px;padding:7px;cursor:pointer;font:inherit;font-size:12px;color:#4E79A7;">+ Add stat</button></div>'; }
+function qbrStatRowInspector(el){ var tones=[['neutral','Neutral'],['positive','Positive'],['negative','Negative'],['target','Target']]; var rows=(el.items||[]).map(function(it,idx){ var opts=tones.map(function(tt){return '<option value="'+tt[0]+'"'+((it.tone||'neutral')===tt[0]?' selected':'')+'>'+tt[1]+'</option>';}).join(''); return '<div style="border:1px solid #eceef1;border-radius:6px;padding:7px;margin-bottom:6px;"><input value="'+_qbrEsc(it.value||'')+'" placeholder="Value" oninput="qbrStatSet(&#39;'+el.id+'&#39;,'+idx+',&#39;value&#39;,this.value)" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:5px 7px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;font-size:12px;font-weight:700;"><input value="'+_qbrEsc(it.label||'')+'" placeholder="Label" oninput="qbrStatSet(&#39;'+el.id+'&#39;,'+idx+',&#39;label&#39;,this.value)" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:5px 7px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;font-size:12px;"><input value="'+_qbrEsc(it.sub||'')+'" placeholder="Sub-label (optional)" oninput="qbrStatSet(&#39;'+el.id+'&#39;,'+idx+',&#39;sub&#39;,this.value)" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:5px 7px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;font-size:11px;font-style:italic;"><div style="display:flex;gap:6px;align-items:center;"><select onchange="qbrStatSet(&#39;'+el.id+'&#39;,'+idx+',&#39;tone&#39;,this.value)" style="flex:1;padding:4px;border:1px solid #d4d4d8;border-radius:5px;font:inherit;font-size:11px;">'+opts+'</select><button onclick="qbrStatDel(&#39;'+el.id+'&#39;,'+idx+')" style="border:1px solid #e0cccc;background:#fff;color:#b8402b;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px;">Remove</button></div></div>'; }).join(''); return '<div class="qbr-insp-section"><div class="qbr-insp-label">Stat row</div>'+rows+'<button onclick="qbrStatAdd(&#39;'+el.id+'&#39;)" style="width:100%;border:1px dashed #c4c8cf;background:#fafbfc;border-radius:6px;padding:7px;cursor:pointer;font:inherit;font-size:12px;color:#4E79A7;">+ Add stat</button></div>'; }
 function qbrRenderTableEl(el, sc, editing, editingThis){
 const bound=!!el.bound; let rows;
 if(bound){ try{ rows=qbrTableData(el, QBR_STATE.previewVal); }catch(e){ rows=[['(live data unavailable)']]; } }
@@ -26576,7 +26577,7 @@ if(m.fill) st+='background:'+qbrResolveShapeColor(m.fill)+';';
 if(m.align) st+='text-align:'+qbrAlignCss(m.align)+';';
 if(m.bold) st+='font-weight:700;';
 if(m.color) st+='color:'+qbrElColorCss(m.color)+';';
-if(el.style==='tight' && !editingThis){ if(ci>0) st+='text-align:right;'; var _rt=raw.trim(); if(/^[\u2212-]\s*[\$\d]/.test(_rt)||/^\(\$?\d/.test(_rt)) st+='color:#c0392b;'; else if(/^\+/.test(_rt)) st+='color:#1d9e75;'; if(el.totalRow && ri===rows.length-1) st+='font-weight:700;'; }
+if(el.style==='tight' && !editingThis){ if(ci>0) st+='text-align:right;'; var _rt=raw.trim(); if(/^[\u2212-]\s*[\$\d]/.test(_rt)||/^\(\$?\d/.test(_rt)) st+='color:#b8402b;'; else if(/^\+/.test(_rt)) st+='color:#2e7d57;'; if(el.totalRow && ri===rows.length-1) st+='font-weight:700;'; }
 const inSel = sel && ri>=sel.r0 && ri<=sel.r1 && ci>=sel.c0 && ci<=sel.c1;
 const cls=((editingThis?'qbr-tcell':'')+(inSel?' qbr-tcell-sel':'')).trim();
 html+='<'+tag+(cls?' class="'+cls+'"':'')+(editingThis?' data-cell="'+ri+'_'+ci+'"':'')+ce+span+(st?' style="'+st+'"':'')+'>'+cell+'</'+tag+'>';
@@ -26590,7 +26591,7 @@ return html;
 function qbrRenderBridge(el){
 var t=(QBR_STATE.template&&QBR_STATE.template.theme)||{};
 var _c=function(v,d){ return (typeof v==='string'&&/^#[0-9a-fA-F]{3,8}$/.test(v))?v:d; };
-var pos=_c(el.posColor,'#1E8E5A'), neg=_c(el.negColor,'#C0392B'), tot=_c(el.totalColor,'#'+String(t.accent||'13293D').replace('#','')), gold=_c(el.accent,'#C99A3B'), muted='#'+String(t.mutedColor||'67768A').replace('#','');
+var pos=_c(el.posColor,'#1E8E5A'), neg=_c(el.negColor,'#b8402b'), tot=_c(el.totalColor,'#'+String(t.accent||'13293D').replace('#','')), gold=_c(el.accent,'#C99A3B'), muted='#'+String(t.mutedColor||'67768A').replace('#','');
 var g=qbrBridgeGeo(el), steps=g.steps, n=steps.length||1;
 var W=1000, asp=(el.h*540)/((el.w*960)||1), H=Math.max(150,Math.round(W*asp));
 var padT=H*0.17, padB=H*0.18, padX=W*0.03, plotBot=H-padB, plotH=plotBot-padT;
@@ -27674,7 +27675,7 @@ h+='<div class="qbr-color-row"><label>Total label</label><input class="qbr-sel" 
 h+='<div class="qbr-color-row"><label>Unit</label><input class="qbr-sel" id="qbr-br-unit" value="'+_qbrEsc(el.unit!=null?el.unit:'pt')+'" style="flex:0 0 62px;"></div>';
 h+='</div><div class="qbr-insp-section"><div class="qbr-insp-label">Colors</div>';
 h+='<div class="qbr-color-row"><label>Gains</label><input type="color" id="qbr-br-pos" value="'+(el.posColor||'#1E8E5A')+'"></div>';
-h+='<div class="qbr-color-row"><label>Drags</label><input type="color" id="qbr-br-neg" value="'+(el.negColor||'#C0392B')+'"></div>';
+h+='<div class="qbr-color-row"><label>Drags</label><input type="color" id="qbr-br-neg" value="'+(el.negColor||'#b8402b')+'"></div>';
 h+='<div class="qbr-color-row"><label>Total bar</label><input type="color" id="qbr-br-total" value="'+(el.totalColor||_acc)+'"></div>';
 h+='<div class="qbr-color-row"><label>Cap accent</label><input type="color" id="qbr-br-accent" value="'+(el.accent||'#C99A3B')+'"></div>';
 h+='</div>'; return h;
@@ -27852,7 +27853,7 @@ function qbrPreviewChartSVG(chart, accents, useTheme){
     });
   } else {
     var groupW=plotW/cats.length; var bw=Math.min(40,(groupW*0.74)/series.length); var signColor=(series.length===1 && f0 && f0.signed);
-    cats.forEach(function(c,ci){ series.forEach(function(s,si){ var v=(s.values&&s.values[ci]!=null)?s.values[ci]:0; var x=padL+ci*groupW+(groupW-bw*series.length)/2+si*bw; var yy=yFor(v); var hgt=Math.max(1,Math.abs(yy-y0)); var col=(!useTheme && chart.pointColors && chart.pointColors[ci]!=null)?chart.pointColors[ci]:((!useTheme && chart.seriesColors && chart.seriesColors[si]!=null)?chart.seriesColors[si]:(signColor?((v>=0)?colors[0]:'#c0392b'):colors[si%colors.length])); g+='<rect x="'+x+'" y="'+Math.min(yy,y0)+'" width="'+Math.max(1,bw-3)+'" height="'+hgt+'" fill="'+col+'" rx="1.5"/>'; if(showVals){ var cx=x+(bw-3)/2, ly=(v>=0)?(yy-3):(yy+9); g+='<text x="'+cx+'" y="'+ly+'" font-size="8.5" fill="#3a4654" text-anchor="middle">'+cfmt(v,s.fmt,true)+'</text>'; } }); });
+    cats.forEach(function(c,ci){ series.forEach(function(s,si){ var v=(s.values&&s.values[ci]!=null)?s.values[ci]:0; var x=padL+ci*groupW+(groupW-bw*series.length)/2+si*bw; var yy=yFor(v); var hgt=Math.max(1,Math.abs(yy-y0)); var col=(!useTheme && chart.pointColors && chart.pointColors[ci]!=null)?chart.pointColors[ci]:((!useTheme && chart.seriesColors && chart.seriesColors[si]!=null)?chart.seriesColors[si]:(signColor?((v>=0)?colors[0]:'#b8402b'):colors[si%colors.length])); g+='<rect x="'+x+'" y="'+Math.min(yy,y0)+'" width="'+Math.max(1,bw-3)+'" height="'+hgt+'" fill="'+col+'" rx="1.5"/>'; if(showVals){ var cx=x+(bw-3)/2, ly=(v>=0)?(yy-3):(yy+9); g+='<text x="'+cx+'" y="'+ly+'" font-size="8.5" fill="#3a4654" text-anchor="middle">'+cfmt(v,s.fmt,true)+'</text>'; } }); });
   }
   (chart.refLines||[]).forEach(function(r){ if(!r||r.value==null||isNaN(r.value)) return; var ry=yFor(+r.value); var rc='#'+String(r.color||'d97706').replace('#',''); g+='<line x1="'+padL+'" y1="'+ry+'" x2="'+(W-padR)+'" y2="'+ry+'" stroke="'+rc+'" stroke-width="1.3" stroke-dasharray="4,3" opacity="0.9"/>'; g+='<text x="'+(W-padR)+'" y="'+(ry-2.5)+'" font-size="8" fill="'+rc+'" text-anchor="end" font-weight="700">'+_qbrEsc(String(r.label||''))+'</text>'; });
   var _slotW=plotW/Math.max(1,cats.length); var _maxCat=Math.max.apply(null,cats.map(function(c){return String(c).length;}).concat([1])); var _estW=Math.min(14,_maxCat)*5.2+6; var _stepN=Math.max(1,Math.ceil(_estW/_slotW));  cats.forEach(function(c,ci){ var x = chart.kind==='line' ? padL+ci*(plotW/Math.max(1,cats.length-1)) : padL+ci*(plotW/cats.length)+(plotW/cats.length)/2; if(ci % _stepN === 0){ g+='<text x="'+x+'" y="'+(H-9)+'" font-size="9" fill="#6c7682" text-anchor="middle">'+_qbrEsc(String(c).slice(0,12))+'</text>'; } });
@@ -30059,7 +30060,7 @@ items.forEach(function(d, i){
 const x = padL + i * (chartW / items.length) + gap / 2;
 const h = Math.abs(d.num) / maxAbs * (chartH * 0.55);
 const y = d.num >= 0 ? yZero - h : yZero;
-const fill = d.num >= 1 ? '#1d9e75' : (d.num <= -1 ? '#c0392b' : (d.highlight ? '#4E79A7' : '#6b7280'));
+const fill = d.num >= 1 ? '#2e7d57' : (d.num <= -1 ? '#b8402b' : (d.highlight ? '#4E79A7' : '#6b7280'));
 const opac = d.highlight ? '1' : '0.85';
 svg += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + Math.max(2, h) + '" fill="' + fill + '" opacity="' + opac + '" rx="2"/>';
 // Value label
@@ -30138,10 +30139,10 @@ function qaRenderChart(value){
 if(typeof value === 'string' && value.indexOf('<svg') === 0) return value;
 // Otherwise look up by key (canned QA_KB charts)
 const charts = {
-'whiskey-southeast': '<svg viewBox="0 0 480 110" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;"><g font-family="-apple-system,sans-serif" font-size="9.5"><text x="0" y="12" font-weight="700" fill="#5f6368">Southeast whiskey growth by sub-channel</text><line x1="0" y1="85" x2="480" y2="85" stroke="#ececef"/><line x1="0" y1="55" x2="480" y2="55" stroke="#ececef" stroke-dasharray="2,3"/><text x="476" y="58" font-size="8" fill="#6b7280" text-anchor="end">US avg +2.4%</text><g transform="translate(20,30)"><rect width="40" height="55" y="3" fill="#c0392b" opacity="0.85"/><text x="20" y="-3" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+0.4%</text><text x="20" y="78" text-anchor="middle" fill="#5f6368" font-size="8.5">Chain</text></g><g transform="translate(85,30)"><rect width="40" height="42" y="16" fill="#d97706" opacity="0.85"/><text x="20" y="13" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+1.6%</text><text x="20" y="78" text-anchor="middle" fill="#5f6368" font-size="8.5">Indep</text></g><g transform="translate(150,30)"><rect width="40" height="14" y="44" fill="#1d9e75" opacity="0.85"/><text x="20" y="41" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+4.6%</text><text x="20" y="78" text-anchor="middle" fill="#5f6368" font-size="8.5">Casual</text></g><g transform="translate(215,30)"><rect width="40" height="22" y="36" fill="#1d9e75" opacity="0.85"/><text x="20" y="33" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+3.4%</text><text x="20" y="78" text-anchor="middle" fill="#5f6368" font-size="8.5">Full-Bar</text></g><g transform="translate(280,30)"><rect width="40" height="29" y="29" style="fill:var(--dash-accent,#4E79A7)" opacity="0.7"/><text x="20" y="26" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+2.8%</text><text x="20" y="78" text-anchor="middle" fill="#5f6368" font-size="8.5">Hotel</text></g><g transform="translate(345,30)"><rect width="40" height="31" y="27" style="fill:var(--dash-accent,#4E79A7)" opacity="0.7"/><text x="20" y="24" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+3.0%</text><text x="20" y="78" text-anchor="middle" fill="#5f6368" font-size="8.5">Casino</text></g><g transform="translate(410,30)"><rect width="40" height="9" y="49" fill="#1d9e75"/><text x="20" y="46" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+5.1%</text><text x="20" y="78" text-anchor="middle" fill="#5f6368" font-size="8.5">Fine Din</text></g></g></svg>',
-'tequila-vs-vodka': '<svg viewBox="0 0 480 110" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;"><g font-family="-apple-system,sans-serif" font-size="9.5"><text x="0" y="12" font-weight="700" fill="#5f6368">R12 9L growth by sub-channel · tequila vs vodka</text><line x1="0" y1="85" x2="480" y2="85" stroke="#ececef"/><line x1="0" y1="60" x2="480" y2="60" stroke="#ececef"/><text x="0" y="92" fill="#5f6368" font-size="8.5">Chain</text><text x="120" y="92" fill="#5f6368" font-size="8.5">Indep</text><text x="240" y="92" fill="#5f6368" font-size="8.5">Casual</text><text x="360" y="92" fill="#5f6368" font-size="8.5">Full-Bar</text><g transform="translate(0,30)"><rect x="0" width="40" height="20" y="38" fill="#1d9e75"/><rect x="44" width="40" height="0" y="58" fill="#c0392b"/><rect x="44" width="40" height="11" y="58" fill="#c0392b"/></g><g transform="translate(120,30)"><rect x="0" width="40" height="32" y="26" fill="#1d9e75"/><rect x="44" width="40" height="6" y="58" fill="#c0392b"/></g><g transform="translate(240,30)"><rect x="0" width="40" height="48" y="10" fill="#1d9e75"/><rect x="44" width="40" height="9" y="55" fill="#c0392b"/></g><g transform="translate(360,30)"><rect x="0" width="40" height="38" y="20" fill="#1d9e75"/><rect x="44" width="40" height="4" y="58" fill="#c0392b"/></g><g transform="translate(360,5)" font-size="9"><rect x="0" y="0" width="9" height="9" fill="#1d9e75"/><text x="13" y="8" fill="#3c4043" font-weight="600">Tequila</text><rect x="60" y="0" width="9" height="9" fill="#c0392b"/><text x="73" y="8" fill="#3c4043" font-weight="600">Vodka</text></g></g></svg>',
+'whiskey-southeast': '<svg viewBox="0 0 480 110" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;"><g font-family="-apple-system,sans-serif" font-size="9.5"><text x="0" y="12" font-weight="700" fill="#5f6368">Southeast whiskey growth by sub-channel</text><line x1="0" y1="85" x2="480" y2="85" stroke="#ececef"/><line x1="0" y1="55" x2="480" y2="55" stroke="#ececef" stroke-dasharray="2,3"/><text x="476" y="58" font-size="8" fill="#6b7280" text-anchor="end">US avg +2.4%</text><g transform="translate(20,30)"><rect width="40" height="55" y="3" fill="#b8402b" opacity="0.85"/><text x="20" y="-3" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+0.4%</text><text x="20" y="78" text-anchor="middle" fill="#5f6368" font-size="8.5">Chain</text></g><g transform="translate(85,30)"><rect width="40" height="42" y="16" fill="#d97706" opacity="0.85"/><text x="20" y="13" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+1.6%</text><text x="20" y="78" text-anchor="middle" fill="#5f6368" font-size="8.5">Indep</text></g><g transform="translate(150,30)"><rect width="40" height="14" y="44" fill="#2e7d57" opacity="0.85"/><text x="20" y="41" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+4.6%</text><text x="20" y="78" text-anchor="middle" fill="#5f6368" font-size="8.5">Casual</text></g><g transform="translate(215,30)"><rect width="40" height="22" y="36" fill="#2e7d57" opacity="0.85"/><text x="20" y="33" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+3.4%</text><text x="20" y="78" text-anchor="middle" fill="#5f6368" font-size="8.5">Full-Bar</text></g><g transform="translate(280,30)"><rect width="40" height="29" y="29" style="fill:var(--dash-accent,#4E79A7)" opacity="0.7"/><text x="20" y="26" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+2.8%</text><text x="20" y="78" text-anchor="middle" fill="#5f6368" font-size="8.5">Hotel</text></g><g transform="translate(345,30)"><rect width="40" height="31" y="27" style="fill:var(--dash-accent,#4E79A7)" opacity="0.7"/><text x="20" y="24" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+3.0%</text><text x="20" y="78" text-anchor="middle" fill="#5f6368" font-size="8.5">Casino</text></g><g transform="translate(410,30)"><rect width="40" height="9" y="49" fill="#2e7d57"/><text x="20" y="46" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+5.1%</text><text x="20" y="78" text-anchor="middle" fill="#5f6368" font-size="8.5">Fine Din</text></g></g></svg>',
+'tequila-vs-vodka': '<svg viewBox="0 0 480 110" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;"><g font-family="-apple-system,sans-serif" font-size="9.5"><text x="0" y="12" font-weight="700" fill="#5f6368">R12 9L growth by sub-channel · tequila vs vodka</text><line x1="0" y1="85" x2="480" y2="85" stroke="#ececef"/><line x1="0" y1="60" x2="480" y2="60" stroke="#ececef"/><text x="0" y="92" fill="#5f6368" font-size="8.5">Chain</text><text x="120" y="92" fill="#5f6368" font-size="8.5">Indep</text><text x="240" y="92" fill="#5f6368" font-size="8.5">Casual</text><text x="360" y="92" fill="#5f6368" font-size="8.5">Full-Bar</text><g transform="translate(0,30)"><rect x="0" width="40" height="20" y="38" fill="#2e7d57"/><rect x="44" width="40" height="0" y="58" fill="#b8402b"/><rect x="44" width="40" height="11" y="58" fill="#b8402b"/></g><g transform="translate(120,30)"><rect x="0" width="40" height="32" y="26" fill="#2e7d57"/><rect x="44" width="40" height="6" y="58" fill="#b8402b"/></g><g transform="translate(240,30)"><rect x="0" width="40" height="48" y="10" fill="#2e7d57"/><rect x="44" width="40" height="9" y="55" fill="#b8402b"/></g><g transform="translate(360,30)"><rect x="0" width="40" height="38" y="20" fill="#2e7d57"/><rect x="44" width="40" height="4" y="58" fill="#b8402b"/></g><g transform="translate(360,5)" font-size="9"><rect x="0" y="0" width="9" height="9" fill="#2e7d57"/><text x="13" y="8" fill="#3c4043" font-weight="600">Tequila</text><rect x="60" y="0" width="9" height="9" fill="#b8402b"/><text x="73" y="8" fill="#3c4043" font-weight="600">Vodka</text></g></g></svg>',
 'rtd-headroom': '<svg viewBox="0 0 480 110" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;"><g font-family="-apple-system,sans-serif" font-size="9.5"><text x="0" y="12" font-weight="700" fill="#5f6368">RTD headroom (pt) by sub-channel</text><g transform="translate(120,22)"><text x="-5" y="11" text-anchor="end" fill="#3c4043" font-weight="600">Chain</text><rect width="290" height="14" fill="#fef0f0"/><rect width="222" height="14" fill="#d97706"/><text x="226" y="11" font-weight="700" fill="#fff">58pt</text></g><g transform="translate(120,42)"><text x="-5" y="11" text-anchor="end" fill="#3c4043" font-weight="600">Casual</text><rect width="290" height="14" fill="#fef0f0"/><rect width="170" height="14" fill="#d97706"/><text x="174" y="11" font-weight="700" fill="#fff">44pt</text></g><g transform="translate(120,62)"><text x="-5" y="11" text-anchor="end" fill="#3c4043" font-weight="600">Full-Bar</text><rect width="290" height="14" fill="#fef0f0"/><rect width="111" height="14" fill="#d97706" opacity="0.7"/><text x="115" y="11" font-weight="700" fill="#fff">28pt</text></g><g transform="translate(120,82)"><text x="-5" y="11" text-anchor="end" fill="#3c4043" font-weight="600">Indep</text><rect width="290" height="14" fill="#fef0f0"/><rect width="92" height="14" fill="#d97706" opacity="0.65"/><text x="96" y="11" font-weight="700" fill="#fff">23pt</text></g></g></svg>',
-'whiskey-premium-vs-standard': '<svg viewBox="0 0 480 110" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;"><g font-family="-apple-system,sans-serif" font-size="9.5"><text x="0" y="12" font-weight="700" fill="#5f6368">Whiskey growth by account class</text><line x1="0" y1="80" x2="480" y2="80" stroke="#ececef"/><line x1="0" y1="58" x2="480" y2="58" stroke="#ececef" stroke-dasharray="2,3"/><text x="476" y="55" font-size="8" fill="#6b7280" text-anchor="end">0%</text><g transform="translate(40,25)"><rect width="60" height="32" y="2" fill="#1d9e75"/><text x="30" y="-2" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+5.4%</text><text x="30" y="73" text-anchor="middle" fill="#5f6368">Class A</text><text x="30" y="84" text-anchor="middle" fill="#6b7280" font-size="8">premium</text></g><g transform="translate(140,25)"><rect width="60" height="14" y="19" fill="#1d9e75" opacity="0.75"/><text x="30" y="15" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+2.4%</text><text x="30" y="73" text-anchor="middle" fill="#5f6368">Class B</text></g><g transform="translate(240,25)"><rect width="60" height="4" y="29" fill="#6b7280"/><text x="30" y="25" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+0.7%</text><text x="30" y="73" text-anchor="middle" fill="#5f6368">Class C</text><text x="30" y="84" text-anchor="middle" fill="#6b7280" font-size="8">standard</text></g><g transform="translate(340,25)"><rect width="60" height="4" y="33" fill="#c0392b"/><text x="30" y="48" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">-0.6%</text><text x="30" y="73" text-anchor="middle" fill="#5f6368">Class D</text></g></g></svg>'
+'whiskey-premium-vs-standard': '<svg viewBox="0 0 480 110" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;"><g font-family="-apple-system,sans-serif" font-size="9.5"><text x="0" y="12" font-weight="700" fill="#5f6368">Whiskey growth by account class</text><line x1="0" y1="80" x2="480" y2="80" stroke="#ececef"/><line x1="0" y1="58" x2="480" y2="58" stroke="#ececef" stroke-dasharray="2,3"/><text x="476" y="55" font-size="8" fill="#6b7280" text-anchor="end">0%</text><g transform="translate(40,25)"><rect width="60" height="32" y="2" fill="#2e7d57"/><text x="30" y="-2" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+5.4%</text><text x="30" y="73" text-anchor="middle" fill="#5f6368">Class A</text><text x="30" y="84" text-anchor="middle" fill="#6b7280" font-size="8">premium</text></g><g transform="translate(140,25)"><rect width="60" height="14" y="19" fill="#2e7d57" opacity="0.75"/><text x="30" y="15" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+2.4%</text><text x="30" y="73" text-anchor="middle" fill="#5f6368">Class B</text></g><g transform="translate(240,25)"><rect width="60" height="4" y="29" fill="#6b7280"/><text x="30" y="25" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">+0.7%</text><text x="30" y="73" text-anchor="middle" fill="#5f6368">Class C</text><text x="30" y="84" text-anchor="middle" fill="#6b7280" font-size="8">standard</text></g><g transform="translate(340,25)"><rect width="60" height="4" y="33" fill="#b8402b"/><text x="30" y="48" text-anchor="middle" font-weight="700" style="fill:var(--dash-accent,#4E79A7)">-0.6%</text><text x="30" y="73" text-anchor="middle" fill="#5f6368">Class D</text></g></g></svg>'
 };
 return charts[value] || '';
 }
@@ -30529,7 +30530,7 @@ document.addEventListener('DOMContentLoaded', setupScheduleModal);
 // ============================================================
 const SCHED_FREQ_LABEL = {daily:'Daily', weekly:'Weekly', monthly:'Monthly', quarterly:'Quarterly', onrefresh:'On data refresh'};
 const SCHED_DAYS = {1:'Monday',2:'Tuesday',3:'Wednesday',4:'Thursday',5:'Friday'};
-const SCHED_FORMAT = {pdf:{label:'PDF',color:'#c0392b'}, xlsx:{label:'Excel',color:'#1d7544'}, pptx:{label:'PowerPoint',color:'#c2410c'}, csv:{label:'CSV',color:'#5f6368'}};
+const SCHED_FORMAT = {pdf:{label:'PDF',color:'#b8402b'}, xlsx:{label:'Excel',color:'#1d7544'}, pptx:{label:'PowerPoint',color:'#c2410c'}, csv:{label:'CSV',color:'#5f6368'}};
 function schedTimeLabel(h){ h=parseInt(h); const ap=h>=12?'PM':'AM'; const h12=h>12?h-12:(h===0?12:h); return h12+':00 '+ap; }
 const SCHED_WIN_LABEL = {4:'4-week',8:'8-week',12:'12-week',13:'13-week'};
 function schedConditionText(c){
