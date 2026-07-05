@@ -310,7 +310,14 @@
   .pending .ph2{font-family:var(--disp);font-weight:600;font-size:16px;color:var(--text)}
   .pending .pp{font-size:13px;color:var(--text-2);max-width:580px;line-height:1.6}
   .pending .pp b{color:var(--text);font-family:var(--mono);font-size:12px}
+  /* embedded as an MDM section (?embed=1): drop the standalone 'Unifyd' branding (sidebar
+     logo + header clock) so the sub-nav reads as a panel of the one MDM app. Sub-nav +
+     controls stay. */
+  html.embed .brand{display:none}
+  html.embed .clock{display:none}
+  html.embed nav.nav-grp,html.embed #nav{padding-top:14px}
 </style>
+<script>if(location.search.indexOf("embed")>=0)document.documentElement.classList.add("embed");</script>
 </head>
 <body>
   <!-- RAIL -->
