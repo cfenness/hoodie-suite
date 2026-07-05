@@ -113,6 +113,30 @@
     Object.keys(AF).forEach(function(p){ if(AF[p]&&AF[p].value) u.searchParams.set(p,AF[p].value); });
     t.value=u.toString();
   }
+  // Save an analyzed source into the Catalog (Source Tracker) as a runnable card. Same-origin
+  // localStorage, so it shows up in the Catalog tab; its recipe (saved server-side on analyze)
+  // is keyed by host, so the card's Run uses the resolved data_api.
+  function saveSourceFromAnalysis(a, url){
+    var host=""; try{ host=new URL(url).hostname.replace(/^www\./,""); }catch(e){ host=url; }
+    var fn=(a.available_fields||[]).map(function(f){return (f&&f.name||"").toLowerCase();}).join(" ");
+    var sig=[];
+    if(/price|amount|cost/.test(fn)) sig.push("Price");
+    if(/avail|stock|inventory/.test(fn)) sig.push("Availability");
+    if(/upc|gtin|barcode/.test(fn)) sig.push("UPC");
+    if(/promo|sale|discount|strike/.test(fn)) sig.push("Promo");
+    if(/rating|review/.test(fn)) sig.push("Ratings");
+    if(!sig.length) sig=["Price","Availability"];
+    var scoped=!!(a.store_level&&a.store_level.scoped);
+    var arr=[]; try{ arr=JSON.parse(localStorage.getItem("hoodie.pulls.tracker.v2")||"[]")||[]; }catch(e){}
+    var ex=arr.filter(function(s){return s&&s.url===url;})[0];
+    var patch={fields:sig, gran:(scoped?"Store":"Chain"), plat:(a.source_type||"Custom"),
+               notes:(a.summary||"").slice(0,240)};
+    if(ex){ Object.assign(ex, patch); }
+    else{ arr.push(Object.assign({id:"u"+(+new Date()), nm:host, tier:"Specialty Bev-Alc", foot:host,
+            prot:"Medium", tos:"Gray", pri:"P2", status:"Ready", url:url, owner:"Hoodie", project:""}, patch)); }
+    try{ localStorage.setItem("hoodie.pulls.tracker.v2", JSON.stringify(arr)); }catch(e){}
+    return ex?"updated":"added";
+  }
   function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
   var PREF=["title","name","product_name","product","vendor","brand","product_type","category","category_name","price","current_price","regular_price","sale_price","size","volume","sku","product_id","available","availability","in_stock","stock","rating","url","product_url","link","image_url","image"];
   function orderCols(cols){ var pref=PREF.filter(function(c){return cols.indexOf(c)>=0;}); var rest=cols.filter(function(c){return PREF.indexOf(c)<0;}); return pref.concat(rest); }
@@ -237,7 +261,7 @@
       document.getElementById("fval").addEventListener("keydown",function(e){ if(e.key==="Enter"){ e.preventDefault(); add(); } });
       fillDatalist(); renderAF();
     })();
-    var sv=document.getElementById("save"); if(sv)sv.onclick=function(){ toast("Saved config — next: turn this into a scheduled connector in Hoodie Master"); };
+    var sv=document.getElementById("save"); if(sv)sv.onclick=function(){ var r=saveSourceFromAnalysis(a, lastUrl); toast(r==="updated"?"Updated in Catalog ✓":"Saved to Catalog ✓ — now a runnable card"); };
     var ag=document.getElementById("again"); if(ag)ag.onclick=function(){ document.getElementById("url").focus(); document.getElementById("url").select(); };
     var rx=document.getElementById("run-extract"); if(rx)rx.onclick=runExtract;
     var lsel=document.getElementById("ex-limit-sel"), linp=document.getElementById("ex-limit");
