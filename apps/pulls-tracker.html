@@ -64,6 +64,14 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
 .tag.noscrape{background:var(--bad-soft);color:var(--bad)}
 .iconbtn{width:28px;height:28px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer;color:var(--muted);font-size:13px;display:grid;place-items:center}
 .iconbtn:hover{border-color:var(--purple);color:var(--purple-d)}
+.iconbtn.run{border-color:var(--purple);color:var(--purple-d);font-size:12px}
+.iconbtn.run:hover{background:var(--purple);color:#fff}
+.iconbtn.run:disabled{opacity:.4;cursor:default}
+.runout{margin:-3px 0 11px 56px}
+.runout .rr{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:12.5px;color:var(--ink2);display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.runout .rr b{color:var(--ink)}
+.runout .rspin{width:13px;height:13px;border:2px solid var(--line2);border-top-color:var(--purple);border-radius:50%;animation:rspin .7s linear infinite;display:inline-block;flex:0 0 auto}
+@keyframes rspin{to{transform:rotate(360deg)}}
 .empty{text-align:center;color:var(--muted);padding:40px;font-size:13.5px}
 .foot{text-align:center;color:var(--muted2);font-size:11px;padding:30px 0 50px;font-family:var(--mono);letter-spacing:.04em}
 /* modal */
@@ -104,6 +112,7 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
     <select class="flt" id="fProject"><option value="">All projects</option></select>
     <span class="tb-sp"></span>
     <button class="btn solid" id="addBtn">＋ Source</button>
+    <button class="btn" id="runAllBtn" title="Run every source in view — recipe-first, one after another">▸ Run all</button>
     <button class="btn" id="expBtn">Export CSV</button>
   </div>
   <div id="list"></div>
@@ -215,6 +224,52 @@ var editId=null;
 var REC={};
 function recHost(u){ try{ return new URL(u).hostname.replace(/^www\./,""); }catch(e){ return ""; } }
 function recStatus(u){ var h=recHost(u); return h?REC[h]:""; }
+
+// Run a source right here — recipe-first (use the proven config) then extract. Result shows
+// inline under the card and folds back into the recipe (updates its status pill).
+var RUNSTATE={};
+var DEFAULT_PROMPT="Extract every product/item on the page as an object with its key fields — name, price, size, availability.";
+function runSource(id){
+  var s=SOURCES.find(function(x){return x.id===id;}); if(!s||!s.url) return Promise.resolve();
+  RUNSTATE[id]={state:"running"}; render();
+  return fetch("/api/scraper/recipe?url="+encodeURIComponent(s.url)).then(function(r){return r.ok?r.json():{};})
+    .then(function(rd){
+      var cfg=(rd&&rd.recipe&&rd.recipe.config)||{};
+      var target=(cfg.data_api&&cfg.data_api.url)||s.url;
+      return fetch("/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({url:target,prompt:cfg.scrape_prompt||DEFAULT_PROMPT,pages:3,limit:50})});
+    })
+    .then(function(r){return r.json();})
+    .then(function(d){
+      var v=d.recipe||{}; if(v.host) REC[v.host]=v.status;
+      RUNSTATE[id]={state:"done",rows:(d.rows||[]).length,engine:d.engine,error:d.error,recipe:v,attempts:d.attempts||[]};
+      render();
+    })
+    .catch(function(){ RUNSTATE[id]={state:"error",error:"couldn't reach the engine — start it (./dev.sh) or open the deployed suite"}; render(); });
+}
+function runoutHtml(id){
+  var r=RUNSTATE[id]; if(!r) return "";
+  var body;
+  if(r.state==="running"){ body='<span class="rspin"></span> running…'; }
+  else if(r.state==="error"||r.error){
+    body='<span style="color:var(--bad)">✗ '+esc(r.error||"no rows extracted")+'</span>';
+    if(r.attempts&&r.attempts.length){ var last=r.attempts[r.attempts.length-1]; body+=' <span style="color:var(--muted2)">· '+esc(last.step)+(last.status!=null?(" ["+last.status+"]"):"")+": "+esc(last.note||"")+'</span>'; }
+  } else {
+    var v=r.recipe||{}, good=r.rows>0;
+    body='<span style="color:'+(good?"var(--good)":"var(--warn)")+'">'+(good?"✓":"○")+' <b>'+r.rows+'</b> rows</span> · <span style="color:var(--muted)">'+esc(r.engine||"?")+'</span>'
+       +(v.run?(' · <span class="pill rc rc-'+(v.status||"candidate")+'" style="padding:1px 7px">recipe: '+esc(v.status)+(v.promoted?" ✦":"")+'</span>'):'');
+  }
+  return '<div class="runout"><div class="rr">'+body+'</div></div>';
+}
+function runAll(){
+  var ids=SOURCES.filter(passes).filter(function(s){return s.url;}).map(function(s){return s.id;});
+  var btn=$("runAllBtn"); if(btn){ btn.disabled=true; btn.textContent="Running… 0/"+ids.length; }
+  (function next(i){
+    if(i>=ids.length){ if(btn){ btn.disabled=false; btn.textContent="▸ Run all"; } return; }
+    if(btn) btn.textContent="Running… "+(i+1)+"/"+ids.length;
+    runSource(ids[i]).then(function(){ setTimeout(function(){ next(i+1); }, 400); });
+  })(0);
+}
 function fetchRecipes(){
   fetch("/api/recipes").then(function(r){ return r.ok?r.json():null; }).then(function(d){
     if(!d||!d.recipes) return; REC={}; d.recipes.forEach(function(x){ if(x.host) REC[x.host]=x.status; }); render();
@@ -247,6 +302,7 @@ function render(){
   list.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openModal(b.dataset.edit));
   list.querySelectorAll("[data-cyc]").forEach(b=>b.onclick=()=>cycleStatus(b.dataset.cyc));
   list.querySelectorAll("[data-pri]").forEach(b=>b.onclick=()=>cyclePri(b.dataset.pri));
+  list.querySelectorAll("[data-run]").forEach(b=>b.onclick=()=>runSource(b.dataset.run));
   renderChips(); syncProjects();
   $("foot").textContent=SOURCES.length+" sources tracked · "+SOURCES.filter(s=>s.status==="Live").length+" live · saved to this device";
 }
@@ -268,8 +324,10 @@ function cardHTML(s){
     +'<div class="right">'
       +'<span class="pill pri '+s.pri.toLowerCase()+'" data-pri="'+s.id+'" title="Click to change priority">'+esc(s.pri)+'</span>'
       +'<span class="pill st st-'+s.status.toLowerCase()+'" data-cyc="'+s.id+'" title="Click to advance status">'+esc(s.status)+'</span>'
+      +(s.url?'<button class="iconbtn run" data-run="'+s.id+'" title="Run this source now (recipe-first)"'+(RUNSTATE[s.id]&&RUNSTATE[s.id].state==="running"?" disabled":"")+'>▸</button>':'')
       +'<button class="iconbtn" data-edit="'+s.id+'" title="Edit">✎</button>'
-    +'</div></div>';
+    +'</div></div>'
+    +(s.url?runoutHtml(s.id):'');
 }
 function renderChips(){
   const c=k=>SOURCES.filter(s=>s.status===k).length;
@@ -345,6 +403,7 @@ function setup(){
   $("addBtn").onclick=()=>{ if(inShell){ try{ parent.postMessage({type:"hoodie:sources:tab",tab:"analyze"},"*"); }catch(e){ openModal(null); } } else openModal(null); };
   if(inShell){ $("addBtn").title="Analyze a new source"; }
   $("expBtn").onclick=exportCSV;
+  $("runAllBtn").onclick=runAll;
   $("mCancel").onclick=closeModal; $("mSave").onclick=saveModal; $("mDel").onclick=delSource;
   $("ov").addEventListener("click",e=>{ if(e.target.id==="ov") closeModal(); });
 }
