@@ -438,6 +438,7 @@ def analyze(url, goal=None):
         out["via"] = via
         out.setdefault("confidence", "medium")
         _enrich_data_api(out, html)   # fold real Algolia app id / search key into data_api
+        _enrich_locations(out, url, html)   # point store-locator directories at their sitemap
         out["compliance"] = dict(compliance, robots_txt_note=out.get("robots_note", ""))
         return out
     except Exception as e:
@@ -619,6 +620,98 @@ def _enrich_data_api(out, html):
     da.setdefault("method", "POST")
 
 
+_SITEMAP_RE = re.compile(r"\.xml($|\?)", re.I)
+_LOC_BAD = re.compile(r"/(reviews|directions|menu|order|nutrition|gift-?cards?|catering|events|about)/?$", re.I)
+
+def _extract_ld(html):
+    """Pull a store's address/geo/phone from schema.org data — JSON-LD first (Yext / Rio SEO /
+    Brandify locators all emit it), then a microdata fallback. Returns a flat row or None."""
+    for m in re.finditer(r'<script[^>]+application/ld\+json[^>]*>(.*?)</script>', html or "", re.S | re.I):
+        try:
+            data = json.loads(m.group(1).strip())
+        except Exception:
+            continue
+        stack = data if isinstance(data, list) else [data]
+        for obj in stack:
+            if not isinstance(obj, dict):
+                continue
+            t = obj.get("@type", "")
+            t = " ".join(t) if isinstance(t, list) else str(t)
+            if re.search(r"Restaurant|LocalBusiness|FoodEstablishment|Store|BarOrPub", t, re.I):
+                addr = obj.get("address") or {}
+                geo = obj.get("geo") or {}
+                if isinstance(addr, list): addr = addr[0] if addr else {}
+                return {"name": obj.get("name"), "street": addr.get("streetAddress"),
+                        "city": addr.get("addressLocality"), "region": addr.get("addressRegion"),
+                        "zip": addr.get("postalCode"), "phone": obj.get("telephone"),
+                        "lat": geo.get("latitude"), "lng": geo.get("longitude")}
+    def mi(prop):
+        m = re.search(r'itemprop=["\']' + prop + r'["\'][^>]*content=["\']([^"\']+)', html or "", re.I) \
+            or re.search(r'itemprop=["\']' + prop + r'["\'][^>]*>\s*([^<]{2,70})', html or "", re.I)
+        return m.group(1).strip() if m else None
+    la = re.search(r'"latitude":"?(-?[0-9.]+)', html or ""); lo = re.search(r'"longitude":"?(-?[0-9.]+)', html or "")
+    ti = re.search(r"<title>([^<|]+)", html or "")
+    rec = {"name": (ti.group(1).strip() if ti else None), "street": mi("streetAddress"),
+           "city": mi("addressLocality"), "region": mi("addressRegion"), "zip": mi("postalCode"),
+           "phone": mi("telephone"), "lat": (la.group(1) if la else None), "lng": (lo.group(1) if lo else None)}
+    return rec if (rec["city"] or rec["lat"]) else None
+
+
+def _enrich_locations(out, url, html):
+    """If the analyzed page is a store-locator directory (Yext/Rio-SEO chains — restaurants,
+    retail), point data_api at its sitemap so extraction runs the locations pass (one row per
+    store: name, address, geo, phone). Deterministic; the on-premise account spine at scale."""
+    da = out.get("data_api")
+    if isinstance(da, dict) and da.get("url"):
+        return
+    p = urlsplit(url)
+    low = (html or "").lower()
+    looks_loc = (p.netloc.lower().startswith("locations.") or "/locations" in p.path.lower()
+                 or ("yext" in low and "sitemap" in low)
+                 or '"@type":"restaurant"' in low or '"@type":"localbusiness"' in low)
+    if looks_loc:
+        out["data_api"] = {"url": p.scheme + "://" + p.netloc + "/sitemap.xml", "method": "GET",
+                           "note": "store-locator sitemap — one row per location (name, address, geo, phone) from schema.org"}
+        out["source_type"] = out.get("source_type") or "locations-directory"
+
+
+def _try_locations(url, limit):
+    """A store-locator SITEMAP (Yext/Rio-SEO/Brandify chains) → one row per location with
+    address + geo + phone, pulled from each page's schema.org data. Fires when the target is
+    an .xml sitemap that lists location pages. None → not a sitemap (fall through)."""
+    if not _SITEMAP_RE.search(url or ""):
+        return None
+    xml, _, _ = fetch_detail(url)
+    if not xml or "<loc>" not in xml:
+        return None
+    locs = re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", xml)
+    child = [l for l in locs if l.lower().endswith(".xml")]
+    if child and len(child) == len(locs):          # sitemap index → expand a few child maps
+        locs = []
+        for cm in child[:6]:
+            cx, _, _ = fetch_detail(cm)
+            if cx:
+                locs += re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", cx)
+            if len(locs) > 4000:
+                break
+    pages = [l for l in locs if not l.lower().endswith(".xml") and not _LOC_BAD.search(l)]
+    if pages:                                        # keep the deepest paths = the store pages
+        depth = lambda u: urlsplit(u).path.rstrip("/").count("/")
+        maxd = max(depth(p) for p in pages)
+        deep = [p for p in pages if depth(p) >= min(maxd, 3)]
+        pages = deep or pages
+    rows = []
+    for pg in pages[:limit]:
+        html, _, _ = fetch_detail(pg)
+        if not html:
+            continue
+        rec = _extract_ld(html)
+        if rec:
+            rec["url"] = pg
+            rows.append(rec)
+    return {"rows": rows[:limit], "via": "sitemap", "engine": "locations", "raw": len(pages)}
+
+
 def extract(url, prompt, pages=1, limit=3000, api=None):
     """Run the scrape against a target — the page OR its data API — and page through it.
     JSON endpoints (Shopify /products.json, SearchSpring, Algolia…) are parsed natively so
@@ -637,6 +730,13 @@ def extract(url, prompt, pages=1, limit=3000, api=None):
         limit = max(1, min(int(limit or 3000), 100000))
     except Exception:
         limit = 3000
+
+    # Store-locator sitemap (Yext/Rio-SEO chains — restaurants, retail): one row per location
+    # with address + geo + phone, straight from each page's schema.org data. The on-premise
+    # account spine at scale — most national chains expose exactly this.
+    loc = _try_locations(url, limit)
+    if loc is not None:
+        return loc
 
     # Native data-API execution: an Algolia store needs a POST (headers + JSON body),
     # not a GET — so run it directly. This is why a robots-allowed JSON store (e.g. Binny's)
