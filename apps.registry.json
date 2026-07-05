@@ -13,7 +13,7 @@
     {
       "id": "planogram-shelf",
       "name": "Planogram",
-      "desc": "Shelf facings laid out by family · the original standalone visual",
+      "desc": "Shelf facings by market · stretch / eye level / reach · the original standalone visual",
       "group": "Commercial",
       "status": "beta",
       "file": "apps/planogram-shelf.html",

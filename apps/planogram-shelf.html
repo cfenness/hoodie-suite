@@ -3,170 +3,153 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Data-Driven Planogram</title>
+<title>Planogram</title>
 <style>
   :root{
-    --ink:#1a2332; --paper:#ffffff; --panel:#eef1f5; --line:#d5dae1; --muted:#6b7684; --accent:#c17a2b;
-    --edge:#2b3644; --prime:#fcf6ec;
-    --c-whiskey:#c3e0b5; --c-vodka:#bcd6ee; --c-tequila:#f0d9c0; --c-rum:#e0cce8;
-    --up:#bfe0cf; --flat:#e2e5e9; --down:#f0ccc6;
+    --ink:#1a2332; --paper:#ffffff; --panel:#f3f5f8; --line:#d9dee5; --muted:#6b7684; --accent:#c17a2b;
+    --edge:#2b3644;
+    --c-whiskey:#c3e0b5; --c-rum:#bcd6ee; --c-tequila:#f0d9c0; --c-vodka:#e0cce8;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--panel);color:var(--ink);
     font-family:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;line-height:1.5}
-  .wrap{max-width:1010px;margin:0 auto;padding:30px 24px 70px}
-  .eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
-  h1{font-size:23px;margin:6px 0 4px;letter-spacing:-.01em}
-  .sub{color:var(--muted);font-size:13.5px;margin:0;max-width:64ch}
+  .wrap{max-width:1180px;margin:0 auto;padding:30px 26px 72px}
 
-  .bar{display:flex;flex-wrap:wrap;gap:16px;align-items:center;
-    background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:12px 15px;margin:22px 0 8px}
-  .grp{display:flex;align-items:center;gap:8px}.grp>span.l{font-size:12px;color:var(--muted);font-weight:500}
-  .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
-  .seg button{border:0;background:var(--paper);color:var(--muted);font:inherit;font-size:12px;padding:6px 11px;cursor:pointer}
+  .filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:22px}
+  .fl{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-right:4px}
+  .seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--paper)}
+  .seg button{border:0;background:var(--paper);color:var(--muted);font:inherit;font-size:13px;padding:8px 15px;cursor:pointer}
   .seg button.on{background:var(--ink);color:#fff}.seg button:not(.on):hover{background:var(--panel)}
-  .readline{font-size:13px;color:var(--muted);margin:14px 2px 16px}.readline b{color:var(--ink);font-weight:600}
 
-  .fixture{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px 14px 6px;overflow-x:auto}
-  .inner{min-width:700px}
-  .heads{display:grid;grid-template-columns:92px repeat(4,1fr);padding:0 2px}
-  .heads .h{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:center;padding:4px 0}
+  /* fixture: white, airy, bottles resting on dark rules — matches the mock */
+  .fixture{padding:8px 2px 2px;overflow-x:auto}
+  .inner{min-width:860px}
+  .shelf{display:grid;grid-template-columns:110px 1fr;margin-bottom:30px}
+  .shelf:last-child{margin-bottom:8px}
+  .tier{grid-row:1;grid-column:1;align-self:center;font-size:17px;color:var(--ink);font-weight:400}
+  .run{grid-row:1;grid-column:2;display:flex;align-items:flex-end;flex-wrap:nowrap;gap:2px;padding-bottom:2px}
+  .rule{grid-row:2;grid-column:2;height:4px;background:var(--edge);border-radius:2px;margin-top:2px}
+  .facing{display:inline-flex;align-items:flex-end;animation:pop .26s ease both}
+  .facing svg{height:82px;width:auto;display:block}
+  @keyframes pop{from{opacity:0;transform:translateY(6px) scale(.95)}to{opacity:1;transform:none}}
 
-  .shelf{display:grid;grid-template-columns:92px repeat(4,1fr)}
-  .shelf.prime{background:var(--prime);border-radius:8px}
-  .tierlab{display:flex;flex-direction:column;justify-content:flex-end;padding:0 12px 12px 6px;text-align:right;gap:2px}
-  .tierlab .t{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);font-weight:600}
-  .tierlab .pill{align-self:flex-end;font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--accent);
-    border:1px solid var(--accent);border-radius:20px;padding:1px 5px;font-weight:600}
-  .segcell{display:flex;align-items:flex-end;justify-content:center;flex-wrap:wrap;align-content:flex-end;padding:8px 2px 3px;min-height:58px;gap:0}
-  .facing{width:33px;display:flex;align-items:flex-end;animation:pop .22s ease both}
-  .facing svg{width:33px;height:auto;display:block}
-  @keyframes pop{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
-  .rule{grid-column:2 / -1;height:3px;background:var(--edge);border-radius:2px;margin:0 2px}
-  .cntrow{grid-column:2 / -1;display:grid;grid-template-columns:repeat(4,1fr)}
-  .cntrow .c{text-align:center;font-size:10px;color:var(--muted);padding:4px 0 12px;font-variant-numeric:tabular-nums}
-  .cntrow .c b{color:var(--ink)}
+  /* summary table — under the shelves, like the mock */
+  .tablewrap{margin-top:34px;max-width:760px}
+  table{border-collapse:collapse;width:100%}
+  th,td{border:1px solid #cfd5dd;padding:11px 16px;font-size:14px}
+  thead th{background:var(--paper)}
+  th.corner{background:var(--paper)}
+  th.cat{text-align:left;font-weight:700;color:var(--ink)}
+  th.cat .sw{display:inline-block;width:16px;height:16px;border:2px solid var(--edge);border-radius:3px;vertical-align:-3px;margin-right:8px}
+  td.rowlab{text-align:left;font-weight:500;color:var(--ink)}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink)}
 
-  .foot{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:16px;font-size:12px;color:var(--muted)}
-  .k{display:flex;align-items:center;gap:6px}.dot{width:12px;height:12px;border-radius:3px;border:1.5px solid var(--edge)}
-  .totals{margin-left:auto;font-size:12px;color:var(--ink);font-weight:600}
-  .note{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:13px 15px;margin-top:18px;font-size:12.5px;color:var(--muted)}
-  .note b{color:var(--ink);font-weight:600}
+  .caption{font-size:12.5px;color:var(--muted);margin-top:16px;max-width:760px}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="eyebrow">Hoodie · Market Intelligence</div>
-  <h1>Data-driven planogram</h1>
-  <p class="sub">Each bottle is one facing, labeled like it would be on the shelf. Shape groups the family — whiskey, gin and rum share a bottle — and the label names the category. Count the facings to read the space each earns.</p>
-
-  <div class="bar">
-    <div class="grp"><span class="l">Facings by</span>
-      <div class="seg" id="measure">
-        <button class="on" data-m="share">Share</button><button data-m="velocity">Velocity</button>
-        <button data-m="premium">Premium</button><button data-m="composite">Composite</button>
-      </div>
-    </div>
-    <div class="grp"><span class="l">Channel</span>
-      <div class="seg" id="chan"><button class="on" data-c="off">Shelf</button><button data-c="on">Backbar</button></div>
-    </div>
-    <div class="grp"><span class="l">Fill</span>
-      <div class="seg" id="fill"><button class="on" data-f="cat">Category</button><button data-f="trend">Trend</button></div>
+  <div class="filters">
+    <span class="fl">Market</span>
+    <div class="seg" id="market">
+      <button class="on" data-k="houston">Houston, TX</button>
+      <button data-k="miami">Miami, FL</button>
+      <button data-k="dallas">Dallas, TX</button>
+      <button data-k="chicago">Chicago, IL</button>
     </div>
   </div>
 
-  <div class="readline" id="readline"></div>
   <div class="fixture"><div class="inner" id="inner"></div></div>
-  <div class="foot"><span id="legend" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"></span>
-    <span class="totals" id="totals"></span></div>
 
-  <div class="note">
-    <b>Next move — actual vs. recommended.</b> Current shelf beside this one: "you're giving premium whiskey 4 facings; velocity says 12." That gap is the reset argument. Labels + category-level abstraction = you can show it without naming a retailer's SKUs.
-  </div>
+  <div class="tablewrap"><table id="tbl"></table></div>
+  <p class="caption" id="cap"></p>
 </div>
 
 <script>
-// shape families — whiskey, gin, rum share "flask"
 const SHAPE={
   flask:`<rect x="20" y="6" width="8" height="4" rx="1"/><path d="M21 10 L21 15 Q21 16 20 16.5 Q15 18 15 23 L15 41 Q15 43 17 43 L31 43 Q33 43 33 41 L33 23 Q33 18 28 16.5 Q27 16 27 15 L27 10 Z"/>`,
   tall:`<rect x="20.5" y="4" width="7" height="4" rx="1"/><path d="M21 8 L21 15 Q21 17 19.5 18 Q17 19.5 17 24 L17 41 Q17 43 19 43 L29 43 Q31 43 31 41 L31 24 Q31 19.5 28.5 18 Q27 17 27 15 L27 8 Z"/><path d="M17.4 27.5 L30.6 27.5" fill="none"/>`,
   tapered:`<rect x="21" y="5" width="6" height="4" rx="1"/><path d="M21.5 9 L21.5 16 Q21.5 18 20.5 19 Q18.5 21 18 25 L16.5 41 Q16.5 43 18.5 43 L29.5 43 Q31.5 43 31.5 41 L30 25 Q29.5 21 27.5 19 Q26.5 18 26.5 16 L26.5 9 Z"/>`,
   wine:`<rect x="21.5" y="4" width="5" height="4" rx="0.5"/><path d="M22 8 L22 17 Q22 18 21 19 Q17.5 22 17.5 27 L17.5 42 Q17.5 43 18.5 43 L29.5 43 Q30.5 43 30.5 42 L30.5 27 Q30.5 22 27 19 Q26 18 26 17 L26 8 Z"/>`,
 };
-// category -> shape + fill + label. Whiskey & Rum both flask (shared shape).
+const CATS=['Whiskey','Rum','Tequila','Vodka'];
 const CAT={
-  Whiskey:{shape:'flask',  color:'var(--c-whiskey)', label:'WHISKEY'},
-  Vodka:  {shape:'tall',   color:'var(--c-vodka)',   label:'VODKA'},
-  Tequila:{shape:'tapered',color:'var(--c-tequila)', label:'TEQUILA'},
-  Rum:    {shape:'flask',  color:'var(--c-rum)',     label:'RUM'},
+  Whiskey:{shape:'flask',  color:'var(--c-whiskey)', label:'W'},
+  Rum:    {shape:'tall',   color:'var(--c-rum)',     label:'R'},
+  Tequila:{shape:'tapered',color:'var(--c-tequila)', label:'T'},
+  Vodka:  {shape:'wine',   color:'var(--c-vodka)',   label:'V'},
 };
-const CATS=['Whiskey','Vodka','Tequila','Rum'];
-const CHAN={
-  off:{tiers:['Stretch','Eye level','Reach','Stoop'],prime:1,unit:'facings',verb:'on the shelf'},
-  on:{tiers:['Prestige','Premium','Call','Well'],prime:1,unit:'pours',verb:'on the backbar'},
+const TIERS=['Stretch','Eye Level','Reach'];
+// Directional regional demand — encodes real bev-alc skew (illustrative, not sourced):
+// Houston/Dallas index whiskey+tequila (TX + Hispanic share); Miami indexes rum+vodka
+// (Caribbean/Latin + nightlife); Chicago indexes whiskey+vodka (Midwest base).
+// Values are category totals across the whole fixture (all three shelves).
+const MARKET={
+  houston:{name:'Houston, TX', totals:{Whiskey:21, Rum:8,  Tequila:18, Vodka:13}},
+  miami:  {name:'Miami, FL',   totals:{Whiskey:8,  Rum:21, Tequila:13, Vodka:18}},
+  dallas: {name:'Dallas, TX',  totals:{Whiskey:27, Rum:5,  Tequila:16, Vodka:12}},
+  chicago:{name:'Chicago, IL', totals:{Whiskey:21, Rum:8,  Tequila:10, Vodka:21}},
 };
-const N=60;
-const W={
-  share:[[3,1,4,1],[9,5,11,4],[7,8,6,5],[2,4,3,2]],
-  velocity:[[2,1,5,1],[6,4,9,3],[8,10,7,6],[3,5,4,3]],
-  premium:[[6,2,7,2],[10,6,9,4],[4,4,3,3],[1,1,1,1]],
-  composite:[[4,2,5,2],[8,5,10,4],[6,7,5,5],[2,3,3,2]],
+// Shelf-tier profile: how each category distributes up the fixture [Stretch, Eye Level, Reach].
+// Eye level is the strike zone (prime real estate) — premium/high-velocity categories
+// concentrate there; value/mixer categories carry more weight down at Reach.
+const TIER_PROFILE={
+  Whiskey:[0.28,0.44,0.28],  // premium bourbon strike-zone heavy, some well whiskey low
+  Tequila:[0.34,0.42,0.24],  // premium añejo/repo skews up, little value
+  Vodka:  [0.24,0.34,0.42],  // broad base, big value handles ride the bottom
+  Rum:    [0.24,0.30,0.46],  // mixer/value leaning, weighted low
 };
-const T=[['up','flat','up','flat'],['up','down','up','flat'],['flat','down','up','down'],['down','down','up','down']];
-const TC={up:'var(--up)',flat:'var(--flat)',down:'var(--down)'};
-let measure='share',chan='off',fill='cat';
+let market='houston';
 
-function bottle(cat,color){
-  const s=CAT[cat];
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="${color}" stroke="#2b3644" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">`
-    +`${SHAPE[s.shape]}`
-    +`<text x="24" y="35.5" text-anchor="middle" font-size="4.6" font-weight="700" letter-spacing="0.1" fill="#2b3644" stroke="none" style="font-family:Inter,system-ui,sans-serif">${s.label}</text>`
-    +`</svg>`;
+// per-shape horizontal crop [xmin, width] so each bottle's box hugs its silhouette
+const XB={flask:[14,20], tall:[16,16], tapered:[15.5,17], wine:[16.5,15]};
+function bottle(cat){
+  const s=CAT[cat]; const [x,w]=XB[s.shape];
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} 2 ${w} 45" fill="${s.color}" stroke="#2b3644" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${SHAPE[s.shape]}<text x="24" y="35" text-anchor="middle" font-size="8" font-weight="700" fill="#2b3644" stroke="none" style="font-family:Inter,system-ui,sans-serif">${s.label}</text></svg>`;
 }
-function allocate(ws){
-  const tot=ws.reduce((a,b)=>a+b,0); if(tot<=0)return ws.map(()=>0);
-  const raw=ws.map(w=>w/tot*N),fl=raw.map(Math.floor);
-  let rem=N-fl.reduce((a,b)=>a+b,0);
+// largest-remainder split of a category total across the 3 tiers by its profile
+function splitByProfile(total, profile){
+  const raw=profile.map(p=>total*p), fl=raw.map(Math.floor);
+  let rem=total-fl.reduce((a,b)=>a+b,0);
   const ord=raw.map((r,i)=>[r-Math.floor(r),i]).sort((a,b)=>b[0]-a[0]);
-  const out=fl.slice();for(let k=0;k<rem&&k<ord.length;k++)out[ord[k][1]]++;return out;
+  const out=fl.slice(); for(let k=0;k<rem&&k<ord.length;k++) out[ord[k][1]]++;
+  return out; // [Stretch, Eye Level, Reach]
 }
 function render(){
-  const cfg=CHAN[chan],grid=W[measure];
-  const flat=[];cfg.tiers.forEach((t,ti)=>CATS.forEach((c,ci)=>flat.push(grid[ti][ci])));
-  const counts=allocate(flat);const get=(ti,ci)=>counts[ti*4+ci];
+  const m=MARKET[market];
 
-  let html=`<div class="heads"><div></div>${CATS.map(c=>`<div class="h">${c}</div>`).join('')}</div>`;
-  cfg.tiers.forEach((t,ti)=>{
-    const prime=cfg.prime===ti;
-    html+=`<div class="shelf ${prime?'prime':''}"><div class="tierlab"><span class="t">${t}</span>${prime?'<span class="pill">Prime</span>':''}</div>`;
-    CATS.forEach((c,ci)=>{
-      const n=get(ti,ci);
-      const color= fill==='cat'?CAT[c].color:TC[T[ti][ci]];
-      let b='';for(let k=0;k<n;k++)b+=`<span class="facing" style="animation-delay:${Math.min(k*8,160)}ms">${bottle(c,color)}</span>`;
-      html+=`<div class="segcell">${b}</div>`;
-    });
-    html+=`<div class="rule"></div>`;
-    html+=`<div class="cntrow">${CATS.map((c,ci)=>{const n=get(ti,ci);return `<div class="c">${n?`<b>${n}</b> ${cfg.unit}`:'—'}</div>`;}).join('')}</div>`;
-    html+=`</div>`;
+  // SINGLE SOURCE OF TRUTH: counts[tier][cat], built from regional totals × shelf profile.
+  // Each tier now differs; columns still sum to the market total. Shelf + table both read this.
+  const counts = TIERS.map(()=>CATS.map(()=>0));
+  CATS.forEach((c,ci)=>{
+    const parts = splitByProfile(m.totals[c], TIER_PROFILE[c]);
+    TIERS.forEach((t,ti)=> counts[ti][ci]=parts[ti]);
+  });
+
+  // shelf renders from counts
+  let html='';
+  TIERS.forEach((t,ti)=>{
+    let run='';
+    CATS.forEach((c,ci)=>{ for(let k=0;k<counts[ti][ci];k++) run+=`<span class="facing" style="animation-delay:${Math.min(k*7,150)}ms">${bottle(c)}</span>`; });
+    html+=`<div class="shelf"><div class="tier">${t}</div><div class="run">${run}</div><div class="rule"></div></div>`;
   });
   document.getElementById('inner').innerHTML=html;
 
-  const ml={share:'Share',velocity:'Velocity',premium:'Premium index',composite:'Composite'}[measure];
-  document.getElementById('readline').innerHTML=
-    `The <b>${N} ${cfg.unit}</b> ${cfg.verb} are allocated across price tier × category by <b>${ml}</b>. A fuller run earns more space.`;
-  const tot=CATS.map((c,ci)=>cfg.tiers.reduce((a,_,ti)=>a+get(ti,ci),0));
-  document.getElementById('totals').textContent='Total: '+CATS.map((c,ci)=>`${c} ${tot[ci]}`).join(' · ');
-  const leg=document.getElementById('legend');
-  leg.innerHTML = fill==='cat'
-    ? CATS.map(c=>`<span class="k"><span class="dot" style="background:${CAT[c].color}"></span>${c}</span>`).join('')
-    : `<span style="color:var(--ink);font-weight:600">Trend</span><span class="k"><span class="dot" style="background:var(--up)"></span>Growing</span><span class="k"><span class="dot" style="background:var(--flat)"></span>Flat</span><span class="k"><span class="dot" style="background:var(--down)"></span>Declining</span>`;
+  // table renders from the SAME counts matrix — cannot show a number the shelf didn't draw
+  let th=`<thead><tr><th class="corner"></th>`+CATS.map(c=>`<th class="cat"><span class="sw" style="background:${CAT[c].color}"></span>${c}</th>`).join('')+`</tr></thead>`;
+  let tb='<tbody>'+TIERS.map((t,ti)=>`<tr><td class="rowlab">${t}</td>`+CATS.map((c,ci)=>`<td class="num">${counts[ti][ci]}</td>`).join('')+`</tr>`).join('')
+    +`<tr><td class="rowlab" style="font-weight:600">Total</td>`+CATS.map((c,ci)=>{const s=TIERS.reduce((a,_,ti)=>a+counts[ti][ci],0);return `<td class="num" style="font-weight:600">${s}</td>`;}).join('')+`</tr>`
+    +'</tbody>';
+  document.getElementById('tbl').innerHTML=th+tb;
+
+  document.getElementById('cap').textContent=`${m.name} · typical set for this market. Eye level is the strike zone — premium categories concentrate there; value rides the lower shelf. Reps orient to it and read the oversized categories against it. (Directional model — the real build sources these from space-to-sales by market.)`;
 }
 render();
-function wire(id,set){document.getElementById(id).addEventListener('click',e=>{
+document.getElementById('market').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
-  document.querySelectorAll('#'+id+' button').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on');set(b.dataset);render();});}
-wire('measure',d=>measure=d.m);wire('chan',d=>chan=d.c);wire('fill',d=>fill=d.f);
+  document.querySelectorAll('#market button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');market=b.dataset.k;render();
+});
 </script>
 </body>
 </html>
