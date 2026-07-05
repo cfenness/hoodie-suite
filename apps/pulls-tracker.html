@@ -44,7 +44,10 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
 .meta b{color:var(--ink2);font-weight:600}
 .tags{display:flex;gap:5px;flex-wrap:wrap}
 .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.03em;padding:2px 7px;border-radius:5px;background:var(--gray-soft);color:var(--muted)}
-.tag.fld{background:var(--purple-soft);color:var(--purple-d)}
+.tag.fld{background:var(--purple-soft);color:var(--purple-d);cursor:pointer;border:1px solid transparent}
+.tag.fld:hover{border-color:#cdbcf0}
+.tag.fld.off{background:var(--gray-soft);color:var(--muted2);text-decoration:line-through;opacity:.7}
+.tag.fldn{background:transparent;color:var(--purple-d);border:1px dashed #cdbcf0}
 .pill{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:3px 9px;border-radius:999px;white-space:nowrap}
 .right{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .pri{cursor:pointer;border:1px solid transparent}
@@ -238,15 +241,31 @@ function recStatus(u){ var h=recHost(u); return h?REC[h]:""; }
 // inline under the card and folds back into the recipe (updates its status pill).
 var RUNSTATE={};
 var DEFAULT_PROMPT="First, check the source's robots.txt and Terms of Service — confirm this path isn't disallowed for our user-agent and that scraping is permitted; if it's disallowed or the ToS forbids it, STOP and report that instead of extracting. Only if permitted, then: extract every product/item on the page as an object with its key fields — name, price, size, availability.";
+// Per-pull field selection: s.fields is what the source CAN yield; s.pick narrows it to
+// what THIS pull captures. No s.pick (or empty) means "all available fields". Never let a
+// pull go to zero fields — a narrowed-to-nothing pull is meaningless, so the last one stays.
+function picked(s){ var all=s.fields||[]; return (s.pick&&s.pick.length)?all.filter(function(f){return s.pick.indexOf(f)>=0;}):all.slice(); }
+function isNarrowed(s){ var all=(s.fields||[]).length; return all>1 && picked(s).length<all; }
+function toggleFld(id,f){
+  var s=SOURCES.find(function(x){return x.id===id;}); if(!s) return;
+  var cur=picked(s); var i=cur.indexOf(f);
+  if(i>=0){ if(cur.length<=1) return; cur.splice(i,1); } else { cur.push(f); }
+  // store the intent; drop s.pick entirely when everything's back on so default stays clean
+  s.pick=(cur.length>=(s.fields||[]).length)?null:cur; save(); render();
+}
 function runSource(id){
   var s=SOURCES.find(function(x){return x.id===id;}); if(!s||!s.url) return Promise.resolve();
   RUNSTATE[id]={state:"running"}; render();
+  var flds=picked(s);
   return fetch("/api/scraper/recipe?url="+encodeURIComponent(s.url)).then(function(r){return r.ok?r.json():{};})
     .then(function(rd){
       var cfg=(rd&&rd.recipe&&rd.recipe.config)||{};
       var target=(cfg.data_api&&cfg.data_api.url)||s.url;
+      var prompt=cfg.scrape_prompt||DEFAULT_PROMPT;
+      // If the user narrowed the pull, constrain extraction to just those fields (plus identity).
+      if(isNarrowed(s)) prompt+=" For each item capture ONLY these fields (plus the product name/identifier): "+flds.join(", ")+". Omit all other fields.";
       return fetch("/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({url:target,prompt:cfg.scrape_prompt||DEFAULT_PROMPT,pages:3,limit:50})});
+        body:JSON.stringify({url:target,prompt:prompt,pages:3,limit:50,fields:flds})});
     })
     .then(function(r){return r.json();})
     .then(function(d){
@@ -260,9 +279,10 @@ function runSource(id){
 function openIngest(id){
   var s=SOURCES.find(function(x){return x.id===id;}); if(!s) return;
   var ov=document.createElement("div"); ov.className="ingov";
-  ov.innerHTML='<div class="ingbox"><div class="inghd"><div class="t">Ingest <small>'+esc(s.nm)+'</small></div>'
+  var flds=picked(s); var q=isNarrowed(s)?("&fields="+encodeURIComponent(flds.join(","))):"";
+  ov.innerHTML='<div class="ingbox"><div class="inghd"><div class="t">Ingest <small>'+esc(s.nm)+(isNarrowed(s)?(" · "+flds.length+" fields"):"")+'</small></div>'
     +'<button class="ingx" title="Close">✕</button></div>'
-    +'<iframe class="ingfr" src="ttb-ingestion.html?embed=1" title="Ingestion QA"></iframe></div>';
+    +'<iframe class="ingfr" src="ttb-ingestion.html?embed=1'+q+'" title="Ingestion QA"></iframe></div>';
   document.body.appendChild(ov);
   ov.querySelector(".ingx").onclick=function(){ ov.remove(); };
   ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
@@ -325,11 +345,15 @@ function render(){
   list.querySelectorAll("[data-pri]").forEach(b=>b.onclick=()=>cyclePri(b.dataset.pri));
   list.querySelectorAll("[data-run]").forEach(b=>b.onclick=()=>runSource(b.dataset.run));
   list.querySelectorAll("[data-ingest]").forEach(b=>b.onclick=()=>openIngest(b.dataset.ingest));
+  list.querySelectorAll("[data-fld]").forEach(b=>b.onclick=()=>{ const p=b.dataset.fld.split("::"); toggleFld(p[0],p[1]); });
   renderChips(); syncProjects();
   $("foot").textContent=SOURCES.length+" sources tracked · "+SOURCES.filter(s=>s.status==="Live").length+" live · saved to this device";
 }
 function cardHTML(s){
-  const flds=(s.fields||[]).map(f=>'<span class="tag fld">'+esc(f)+'</span>').join('');
+  const on=picked(s);
+  const flds=(s.fields||[]).map(f=>{ const sel=on.indexOf(f)>=0;
+    return '<span class="tag fld'+(sel?'':' off')+'" data-fld="'+s.id+'::'+esc(f)+'" title="'+(sel?'Included in the pull — click to drop':'Excluded — click to include')+'">'+esc(f)+'</span>'; }).join('')
+    +(isNarrowed(s)?'<span class="tag fldn" title="This pull is narrowed to the selected fields">'+on.length+'/'+(s.fields||[]).length+' fields</span>':'');
   return '<div class="card">'
     +'<div class="ic">'+esc(slug(s.nm))+'</div>'
     +'<div class="mid"><div class="nm">'+esc(s.nm)+'</div>'
