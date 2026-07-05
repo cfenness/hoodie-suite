@@ -219,6 +219,36 @@ def apply_heal(book, url, analysis, ts):
     return book
 
 
+def analysis_from_recipe(rec):
+    """Build an analyze()-shaped result from a stored recipe — the fallback for when the
+    live page is bot-walled but we already learned this source on an earlier run. Lets the
+    UI show the resolved API and run an extraction straight from the saved config. Returns
+    None if the recipe has nothing runnable."""
+    if not isinstance(rec, dict):
+        return None
+    cfg = rec.get("config") or {}
+    if not cfg.get("data_api") and not cfg.get("scrape_prompt"):
+        return None
+    fields = list(cfg.get("fields") or [])
+    if not fields and isinstance(cfg.get("field_map"), dict):
+        fields = list(cfg["field_map"].keys())
+    return {
+        "summary": "This source's page is bot-walled right now — showing the saved recipe for "
+                   + (rec.get("host") or "this source") + " (learned on an earlier run). You can still run the extraction.",
+        "source_type": rec.get("platform") or "saved recipe",
+        "confidence": "high" if rec.get("status") == "proven" else "medium",
+        "data_api": cfg.get("data_api"),
+        "available_fields": [{"name": n, "example": ""} for n in fields],
+        "sample_rows": [],
+        "scrape_prompt": cfg.get("scrape_prompt") or "",
+        "pagination": cfg.get("pagination"),
+        "store_level": cfg.get("store_level"),
+        "filters": cfg.get("filters"),
+        "compliance": rec.get("compliance") or {},
+        "from_recipe": True,
+    }
+
+
 def get(book, url):
     return (book or {}).get(host_of(url))
 
