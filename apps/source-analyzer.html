@@ -311,6 +311,16 @@
     return '<details style="margin-top:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px"><summary style="cursor:pointer;color:var(--muted,#5E6B68);font-family:inherit">▸ Show fetch details (what actually failed)</summary>'
       +'<div style="margin-top:7px;padding:9px 11px;background:#faf9f7;border:1px solid var(--hair,#D7DDDB);border-radius:8px">'+rows+'</div></details>';
   }
+  // ✦ Highlights — a 'what this pull yielded' summary card (also fed to Hoodie Intelligence).
+  function highlightsCard(hl){
+    if(!hl) return "";
+    var num=(hl.numeric||[]).map(function(x){return '<span class="fchip"><b>'+esc(x.field)+'</b> $'+x.min+'–$'+x.max+' · avg $'+x.avg+'</span>';}).join('');
+    var cat=(hl.categorical||[]).map(function(x){return '<span class="fchip"><b>'+esc(x.field)+'</b> '+x.distinct+' · '+(x.top||[]).slice(0,3).map(function(t){return esc(t[0])+' ('+t[1]+')';}).join(', ')+'</span>';}).join('');
+    return '<div style="margin:2px 0 12px;padding:12px 14px;border:1px solid #cde6df;background:var(--amber-soft,#E7F1EE);border-radius:10px">'
+      +'<div style="font-family:ui-monospace,monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber-deep,#1E5F55);font-weight:700;margin-bottom:5px">✦ Highlights'+(hl.engine?(' · '+esc(hl.engine)):'')+'</div>'
+      +'<div style="font-size:14px;font-weight:600;color:var(--ink,#243330);margin-bottom:'+((num||cat)?'8px':'0')+'">'+esc(hl.headline||(hl.count+" rows"))+'</div>'
+      +((num||cat)?('<div class="chips">'+num+cat+'</div>'):'')+'</div>';
+  }
   function runExtract(){
     var prompt=(document.getElementById("scrape-prompt")||{}).value||"";
     if(!prompt.trim()){ toast("The prompt is empty"); return; }
@@ -326,7 +336,7 @@
         if(d.error){ eout.innerHTML='<div class="em">'+esc(d.error)+'</div>'+attemptsHtml(d.attempts); return; }
         var rows=d.rows||[];
         document.getElementById("ex-hint").textContent=rows.length+" rows · engine: "+esc(d.engine||"?")+(d.raw?(" · "+d.raw+" raw"):"")+(d.pages?(" · "+d.pages+"p"):"")+(d.via?(" · "+esc(d.via)):"");
-        eout.innerHTML=recipeBanner(d.recipe)+(rows.length
+        eout.innerHTML=recipeBanner(d.recipe)+highlightsCard(d.highlights)+(rows.length
           ? '<div class="lab">Extracted rows</div>'+tableHTML(rows,50)+(rows.length>50?('<div class="hint" style="margin-top:6px">showing 50 of '+rows.length+'</div>'):'')
           : '<div class="em">No rows extracted — try tightening the prompt.</div>');
       }).catch(function(){ btn.disabled=false; eout.innerHTML='<div class="em">Extraction failed — is the engine live?</div>'; });

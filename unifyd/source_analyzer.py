@@ -675,6 +675,59 @@ def _enrich_locations(out, url, html):
         out["source_type"] = out.get("source_type") or "locations-directory"
 
 
+def _num(v):
+    try:
+        s = re.sub(r"[^0-9.\-]", "", str(v))
+        return float(s) if s not in ("", "-", ".") else None
+    except Exception:
+        return None
+
+def highlights(rows, host=None, engine=None):
+    """A deterministic 'what did this scrape yield' summary — counts, numeric ranges,
+    top categorical breakdowns, geo coverage — for the highlights card + Hoodie Intelligence."""
+    rows = [r for r in (rows or []) if isinstance(r, dict)]
+    n = len(rows)
+    if not n:
+        return None
+    cols, seen = [], set()
+    for r in rows[:300]:
+        for k in r.keys():
+            if k not in seen:
+                seen.add(k); cols.append(k)
+    def vals(k): return [r.get(k) for r in rows if r.get(k) not in (None, "")]
+    numeric = []
+    for k in cols:
+        if re.search(r"price|amount|cost|total|rating|units|qty|mg|score", k, re.I):
+            nums = [x for x in (_num(v) for v in vals(k)) if x is not None]
+            if len(nums) >= max(3, n // 6):
+                numeric.append({"field": k, "min": round(min(nums), 2), "max": round(max(nums), 2),
+                                "avg": round(sum(nums) / len(nums), 2), "n": len(nums)})
+    categorical = []
+    for k in cols:
+        if re.search(r"region|state|category|type|brand|store|city|varietal|status|premise|_store|availability|stock", k, re.I):
+            counts = {}
+            for v in vals(k):
+                s = str(v)[:40]; counts[s] = counts.get(s, 0) + 1
+            if counts:
+                top = sorted(counts.items(), key=lambda x: -x[1])[:5]
+                categorical.append({"field": k, "distinct": len(counts), "top": top})
+    has_geo = any(re.search(r"^(lat|latitude)$", c, re.I) for c in cols) and \
+              any(re.search(r"^(lng|lon|longitude)$", c, re.I) for c in cols)
+    # headline: lead with count, then the strongest categorical spread or numeric range
+    bits = ["%d rows" % n]
+    if categorical:
+        c0 = max(categorical, key=lambda c: c["distinct"])
+        bits.append("%d %ss (top: %s)" % (c0["distinct"], c0["field"], ", ".join(t[0] for t in c0["top"][:3])))
+    if numeric:
+        n0 = numeric[0]
+        bits.append("%s $%s–$%s (avg $%s)" % (n0["field"], n0["min"], n0["max"], n0["avg"]))
+    if has_geo:
+        bits.append("geo present")
+    return {"host": host, "engine": engine, "count": n, "cols": cols[:24],
+            "numeric": numeric[:4], "categorical": categorical[:4], "geo": has_geo,
+            "headline": " · ".join(bits)}
+
+
 def _try_locations(url, limit):
     """A store-locator SITEMAP (Yext/Rio-SEO/Brandify chains) → one row per location with
     address + geo + phone, pulled from each page's schema.org data. Fires when the target is
