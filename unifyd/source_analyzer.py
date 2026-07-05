@@ -11,7 +11,8 @@ bot-walled / JS-rendered pages when a key is present. LLM analysis is gated on
 ANTHROPIC_API_KEY; without it we return a structural heuristic (tables / JSON-LD) so the
 tool still does something useful offline.
 """
-import os, re, json, urllib.request, urllib.error
+import os, re, json, urllib.request, urllib.error, urllib.robotparser
+from urllib.parse import urlsplit
 
 MODEL = os.environ.get("AGENT_LLM_MODEL", "claude-opus-4-8")
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -45,11 +46,37 @@ def _looks_blocked(html):
     return len(html) < 1500 and any(s in head for s in _BLOCK_SIGNS)
 
 
+def robots_check(url):
+    """(allowed, note) — actually fetch the site's robots.txt and check whether our UA may
+    fetch this path. Fails OPEN (allowed) when robots.txt is absent/unreachable — absence is
+    not a prohibition. This is the real pre-fetch gate that backs the prompt's ToS/robots step."""
+    try:
+        p = urlsplit(url)
+        rurl = p.scheme + "://" + p.netloc + "/robots.txt"
+        req = urllib.request.Request(rurl, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            code, body = r.getcode(), r.read().decode("utf-8", "replace")
+        if code >= 400 or not body.strip():
+            return True, "no robots.txt published — allowed"
+        rp = urllib.robotparser.RobotFileParser()
+        rp.parse(body.splitlines())
+        allowed = rp.can_fetch(UA, url)
+        return allowed, ("robots.txt allows this path" if allowed else "robots.txt DISALLOWS this path for our user-agent")
+    except Exception as e:
+        return True, "robots.txt unreachable (" + type(e).__name__ + ") — allowed"
+
+
 def fetch_detail(url):
-    """(html_or_None, via, attempts) — try a realistic direct request, then Bright Data.
-    `attempts` is a per-step trace ({step, status, ok, note}) so a failure surfaces its REAL
-    cause (403, timeout, bot wall, Bright-Data-not-configured) instead of a bare 'failed'."""
+    """(html_or_None, via, attempts) — robots.txt gate, then a realistic direct request, then
+    Bright Data. `attempts` is a per-step trace ({step, status, ok, note}) so a failure surfaces
+    its REAL cause (robots-disallowed, 403, timeout, bot wall, Bright-Data-not-configured)."""
     attempts = []
+    # 0) robots.txt gate (set AGENT_IGNORE_ROBOTS=1 only for an explicit, authorized override)
+    if os.environ.get("AGENT_IGNORE_ROBOTS") != "1":
+        allowed, rnote = robots_check(url)
+        attempts.append({"step": "robots.txt", "status": None, "ok": allowed, "note": rnote})
+        if not allowed:
+            return None, "robots-disallowed", attempts
     # 1) direct
     try:
         req = urllib.request.Request(url, headers=_HEADERS)
@@ -325,14 +352,20 @@ def analyze(url, goal=None):
     if not re.match(r"^https?://", url):
         return {"error": "give a full http(s) URL"}
     html, via, attempts = fetch_detail(url)
+    rob = next((a for a in attempts if a.get("step") == "robots.txt"), None)
+    compliance = {"robots_allowed": (rob.get("ok") if rob else None), "robots_note": (rob.get("note") if rob else "")}
     if not html:
+        if via == "robots-disallowed":
+            return {"error": "robots.txt disallows scraping this path — not fetched. Confirm the ToS/robots before overriding.",
+                    "via": via, "attempts": attempts, "blocked": True, "compliance": compliance}
         blocked = any(a["step"] == "bright-data" and not a["ok"] and a.get("status") not in (None,) for a in attempts) \
                   or any("not configured" in a.get("note", "") for a in attempts)
         return {"error": "couldn't fetch the page (blocked or unreachable). A Bright Data key handles bot-walled sites.",
-                "via": via, "attempts": attempts, "blocked": blocked}
+                "via": via, "attempts": attempts, "blocked": blocked, "compliance": compliance}
     if not llm_enabled():
         out = _heuristic(html); out["via"] = via
         out.setdefault("store_level", _store_hint(html))
+        out["compliance"] = dict(compliance, robots_txt_note=out.get("robots_note", ""))
         return out
     try:
         import anthropic
@@ -391,6 +424,7 @@ def analyze(url, goal=None):
             raise ValueError("could not parse the model response")
         out["via"] = via
         out.setdefault("confidence", "medium")
+        out["compliance"] = dict(compliance, robots_txt_note=out.get("robots_note", ""))
         return out
     except Exception as e:
         out = _heuristic(html); out["via"] = via
