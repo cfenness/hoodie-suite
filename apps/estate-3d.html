@@ -79,9 +79,9 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 // ── canonical entities (the schema spine) — fixed geography ────────────────────────
-const ENT=[ {id:'portfolio',label:'Portfolio',p:[0,66,0]}, {id:'brand',label:'Brand',p:[-36,34,4]},
-  {id:'item',label:'Item',p:[0,4,0]}, {id:'sku',label:'SKU',p:[-46,-20,26]},
-  {id:'outlet',label:'Outlet',p:[48,-22,-10]}, {id:'account',label:'Account',p:[82,-46,-28]} ];
+const ENT=[ {id:'portfolio',label:'Portfolio',p:[4,40,-14]}, {id:'brand',label:'Brand',p:[-30,22,8]},
+  {id:'item',label:'Item',p:[0,2,0]}, {id:'sku',label:'SKU',p:[-40,-14,28]},
+  {id:'outlet',label:'Outlet',p:[46,-8,-16]}, {id:'account',label:'Account',p:[72,-28,-30]} ];
 const ENT_POS={}; ENT.forEach(e=>ENT_POS[e.id]=new THREE.Vector3(...e.p));
 const CANON=[['portfolio','brand'],['brand','item'],['item','sku'],['outlet','account'],['item','outlet','sell-out']];
 const ROADCOL={ upc:'#3fb8a3', variant:'#57c9b3', brand:'#3fb8a3', price:'#4a90d9', availability:'#4a90d9',
@@ -125,10 +125,10 @@ function stablePos(name, connEnts){
   let h=2166136261; for(let i=0;i<name.length;i++){ h^=name.charCodeAt(i); h=Math.imul(h,16777619); }
   const u=((h>>>0)%100000)/100000, v=(((h>>>7)>>>0)%100000)/100000;
   const ang=u*Math.PI*2, rad=Math.acos(1-2*v);
-  const dir=new THREE.Vector3(Math.cos(ang)*Math.sin(rad), (Math.cos(rad))*0.85, Math.sin(ang)*Math.sin(rad));
+  const dir=new THREE.Vector3(Math.cos(ang)*Math.sin(rad), Math.cos(rad), Math.sin(ang)*Math.sin(rad));
   const mean=new THREE.Vector3(); (connEnts||[]).forEach(e=> ENT_POS[e]&&mean.add(ENT_POS[e]));
   if(connEnts&&connEnts.length) mean.multiplyScalar(1/connEnts.length);
-  return dir.multiplyScalar(122).lerp(mean.clone().multiplyScalar(1.7), 0.4);
+  return dir.multiplyScalar(128).lerp(mean.clone().multiplyScalar(1.6), 0.28);
 }
 
 // ── live read ──────────────────────────────────────────────────────────────────────
@@ -187,13 +187,19 @@ const camera=new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.5, 3000);
 const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight); renderer.setPixelRatio(Math.min(2,devicePixelRatio)); stage.appendChild(renderer.domElement);
 const lr=new CSS2DRenderer(); lr.setSize(innerWidth,innerHeight); lr.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:4'; document.body.appendChild(lr.domElement);
 const controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true; controls.dampingFactor=.08; controls.rotateSpeed=.7; controls.minDistance=18; controls.maxDistance=640;
-scene.add(new THREE.AmbientLight(0xffffff,.75)); const dl=new THREE.DirectionalLight(0xdff5ee,.7); dl.position.set(60,120,80); scene.add(dl);
-scene.add(new THREE.GridHelper(600,30,0x1c2b27,0x152220)).position.y=-90;
+scene.add(new THREE.AmbientLight(0xffffff,.78)); const dl=new THREE.DirectionalLight(0xdff5ee,.7); dl.position.set(60,120,80); scene.add(dl);
+// no ground grid — it reads as a floor and makes orbit feel like the scene sways; this is an
+// object you spin in space. a faint far starfield gives just enough spatial reference.
+(function(){ const g=new THREE.BufferGeometry(), P=[]; let s=99173;
+  for(let i=0;i<420;i++){ s=(s*1103515245+12345)&0x7fffffff; const u=(s%1000)/1000; s=(s*1103515245+12345)&0x7fffffff; const v=(s%1000)/1000;
+    const th=u*6.283, ph=Math.acos(2*v-1), R=620; P.push(R*Math.sin(ph)*Math.cos(th),R*Math.sin(ph)*Math.sin(th),R*Math.cos(ph)); }
+  g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
+  scene.add(new THREE.Points(g,new THREE.PointsMaterial({color:0x2b423c,size:1.6,sizeAttenuation:false}))); })();
 const esph=new THREE.SphereGeometry(1,24,24);
 const graph=new THREE.Group(); scene.add(graph);
 
 // ── graph state + (re)build ─────────────────────────────────────────────────────
-let nodes=[], edges=[], byId={}, adj={}, meshes=[], selected=null, fly=null;
+let nodes=[], edges=[], byId={}, adj={}, meshes=[], selected=null, fly=null, homeT=null, framed=false;
 function disposeGraph(){
   nodes.forEach(n=>{ if(n.lo){ n.lo.remove(); } });
   while(graph.children.length){ const c=graph.children.pop(); if(c.geometry)c.geometry.dispose(); if(c.material)c.material.dispose(); }
@@ -215,6 +221,14 @@ function buildGraph(model){
     const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints([na.pos,nb.pos]),mat); graph.add(l); e.line=l; e.mat=mat;
   });
   meshes=nodes.map(n=>n.mesh);
+  // frame + pivot on the bounding-box CENTER so orbit feels centered and the cloud fills the view
+  const box=new THREE.Box3(); nodes.forEach(n=>box.expandByPoint(n.pos));
+  const c=box.getCenter(new THREE.Vector3()), size=box.getSize(new THREE.Vector3());
+  homeT=c;
+  if(!framed){ controls.target.copy(c);
+    const radius=Math.max(size.x,size.y,size.z)*0.55, dist=radius/Math.tan(camera.fov*Math.PI/360)*1.32;
+    camera.position.set(c.x+dist*0.12, c.y+dist*0.09, c.z+dist);   // near head-on, slight lift for depth
+    framed=true; }
 }
 
 // ── interaction ─────────────────────────────────────────────────────────────────
@@ -222,7 +236,9 @@ const ray=new THREE.Raycaster(); const mouse=new THREE.Vector2(); let down=[0,0]
 const selEl=document.getElementById('sel');
 function setFocus(n){
   selected=n;
-  if(!n){ nodes.forEach(x=>{x.mat.opacity=1;x.lo.classList.remove('dim');x.mesh.scale.setScalar(x.kind==='ent'?7.6:(x.live?4.4:3.4));}); edges.forEach(e=>e.mat.opacity=.32); selEl.classList.remove('show'); return; }
+  if(!n){ nodes.forEach(x=>{x.mat.opacity=1;x.lo.classList.remove('dim');x.mesh.scale.setScalar(x.kind==='ent'?7.6:(x.live?4.4:3.4));}); edges.forEach(e=>e.mat.opacity=.32); selEl.classList.remove('show');
+    if(homeT){ const off=camera.position.clone().sub(controls.target); fly={toT:homeT.clone(),toC:homeT.clone().add(off),t:0,fromT:controls.target.clone(),fromC:camera.position.clone()}; }  // re-center the pivot
+    return; }
   const keep=new Set([n.id,...adj[n.id]]);
   nodes.forEach(x=>{ const on=keep.has(x.id); x.mat.opacity=on?1:.05; x.lo.classList.toggle('dim',!on); x.mesh.scale.setScalar((x.kind==='ent'?7.6:(x.live?4.4:3.4))*(x.id===n.id?1.35:1)); });
   edges.forEach(e=>{ e.mat.opacity=(e.a===n.id||e.b===n.id)?.92:.02; });
