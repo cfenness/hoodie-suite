@@ -231,6 +231,19 @@ def _json_rows(text):
     return None
 
 
+def _normalize_api_url(url):
+    """Nudge known JSON endpoints toward an efficient full-catalog pull by asking for a
+    big page size — so we page in ~250s, not the platform's tiny default (Shopify 30,
+    SearchSpring 24). No-op for anything else."""
+    u = url or ""
+    low = u.lower()
+    if "/products.json" in low and not re.search(r"[?&]limit=", low):
+        u += ("&" if "?" in u else "?") + "limit=250"
+    elif "searchspring.io/api/search" in low and not re.search(r"[?&]resultsperpage=", low):
+        u += ("&" if "?" in u else "?") + "resultsPerPage=100"
+    return u
+
+
 def _page_url(url, n):
     """Best-effort pagination: bump an existing page-ish param, else append page=n."""
     if n <= 1:
@@ -564,6 +577,7 @@ def extract(url, prompt, pages=1, limit=3000, api=None):
     if alg is not None:
         return alg
 
+    url = _normalize_api_url(url)   # Shopify/SearchSpring: pull in big pages, not tiny defaults
     json_rows, html_blobs, via, attempts = [], [], None, []
     for n in range(1, pages + 1):
         purl = _page_url(url, n)
