@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../suite.css">
+<title>Discover — Hoodie Sources</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --teal:#2C8C7C; --teal-d:#1E5F55; --teal-soft:#E7F1EE; --paper:#F4F6F5; --surface:#fff;
+    --ink:#243330; --muted:#5E6B68; --muted2:#8A9490; --line:#D7DDDB; --line2:#EAEEED;
+    --good:#15803d; --good-soft:#E7F3EA; --warn:#b45309; --warn-soft:#F6ECD9; --bad:#b4232a; --bad-soft:#F5E1DF; --blue:#2563b8; --blue-soft:#e8f0fb;
+    --disp:"Fraunces",Georgia,serif; --body:"Inter",system-ui,sans-serif; --mono:"JetBrains Mono",monospace;
+  }
+  *{box-sizing:border-box} body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);font-size:14.5px;line-height:1.5}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 22px}
+  .hero{background:linear-gradient(120deg,#1E5F55,#2C8C7C 60%,#257A6C);color:#fff;padding:28px 34px 24px}
+  html.embed .hero{display:none} html.embed .wrap{padding-top:16px}
+  .hero .ey{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#9FD3C7;margin-bottom:7px}
+  .hero h1{font-family:var(--disp);font-weight:700;font-size:30px;margin:0 0 6px}
+  .hero p{font-size:13.5px;color:#e4efec;margin:0;max-width:72ch}
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;margin:18px 0}
+  .panel h2{font-family:var(--disp);font-size:15px;font-weight:600;margin:0 0 4px}
+  .panel .sub{font-size:12.5px;color:var(--muted);margin:0 0 12px}
+  textarea{width:100%;min-height:110px;border:1px solid var(--line);border-radius:9px;padding:11px 12px;font-family:var(--mono);font-size:12.5px;color:var(--ink);outline:none;resize:vertical}
+  textarea:focus{border-color:var(--teal)}
+  .row{display:flex;align-items:center;gap:10px;margin-top:11px}
+  .btn{border:1px solid var(--line);background:#fff;color:var(--teal-d);border-radius:9px;padding:10px 16px;font:inherit;font-weight:700;cursor:pointer}
+  .btn.brand{background:var(--teal);border-color:var(--teal);color:#fff}
+  .btn:disabled{opacity:.55;cursor:default}
+  .hint{font-size:12px;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:4px}
+  th{text-align:left;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+  td{padding:9px 10px;border-bottom:1px solid var(--line2);vertical-align:middle}
+  td .host{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+  .pill{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .pf{background:var(--blue-soft);color:var(--blue)} .pf.generic,.pf.none{background:var(--line2);color:var(--muted)}
+  .pf.nextjs,.pf.cityhive,.pf.bigcommerce,.pf.olo,.pf.toast{background:var(--warn-soft);color:var(--warn)}
+  .native{background:var(--good-soft);color:var(--good)} .maybe{background:var(--warn-soft);color:var(--warn)} .no{background:var(--line2);color:var(--muted2)}
+  .addbtn{border:1px solid var(--line);background:#fff;border-radius:7px;padding:5px 10px;font:inherit;font-size:12px;font-weight:600;color:var(--teal-d);cursor:pointer}
+  .addbtn:hover{border-color:var(--teal)} .addbtn.done{color:var(--good);border-color:#cde6df;cursor:default}
+  .spin{width:13px;height:13px;border:2px solid var(--line);border-top-color:var(--teal);border-radius:50%;animation:sp .7s linear infinite;display:inline-block;vertical-align:middle}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .foot{text-align:center;color:var(--muted2);font-size:11px;padding:8px 0 44px;font-family:var(--mono)}
+</style>
+<script>if(location.search.indexOf("embed")>=0||location.search.indexOf("shell")>=0)document.documentElement.classList.add("embed");</script>
+</head>
+<body>
+  <div class="hero"><div class="wrap">
+    <div class="ey">Hoodie Sources · Discover</div>
+    <h1>Platform fingerprinter</h1>
+    <p>Paste a list of chains — one fetch each classifies the platform (Algolia, Shopify, SearchSpring, Yext locator, CityHive, BigCommerce…) and whether we already have a native pull. The fast way to find who's pullable at scale.</p>
+  </div></div>
+  <div class="wrap">
+    <div class="panel">
+      <h2>Chains to fingerprint</h2>
+      <p class="sub">One domain per line (or comma-separated). Up to 40 per pass.</p>
+      <textarea id="domains">outback.com
+drinkcann.com
+binnys.com
+toptenliquors.com
+totalwine.com
+specsonline.com</textarea>
+      <div class="row"><button class="btn brand" id="run">▸ Fingerprint</button><span class="hint" id="status"></span></div>
+    </div>
+    <div id="out"></div>
+  </div>
+  <div class="foot">Hoodie Sources · Discover · native = we have a pull path today · maybe = a locator/API to confirm</div>
+<script>
+(function(){
+  "use strict";
+  var $=function(id){return document.getElementById(id);};
+  function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+  function run(){
+    var raw=$("domains").value||"";
+    var urls=raw.split(/[\s,]+/).map(function(s){return s.trim();}).filter(Boolean).slice(0,40);
+    if(!urls.length){ return; }
+    var btn=$("run"); btn.disabled=true; $("status").innerHTML='<span class="spin"></span> fingerprinting '+urls.length+' domains…';
+    fetch("/api/scraper/fingerprint",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({urls:urls})})
+      .then(function(r){return r.ok?r.json():Promise.reject(r.status);})
+      .then(function(d){ btn.disabled=false; $("status").textContent=""; render(d.results||[]); })
+      .catch(function(){ btn.disabled=false; $("status").innerHTML='<span style="color:var(--bad)">couldn’t reach the engine</span>'; });
+  }
+  function pullBadge(r){
+    if(r.native) return '<span class="pill native">native</span>';
+    if(r.locator) return '<span class="pill maybe">locator?</span>';
+    if(r.platform&&r.platform!=="generic"&&r.platform!=="none") return '<span class="pill maybe">via API?</span>';
+    return '<span class="pill no">—</span>';
+  }
+  function render(rows){
+    if(!rows.length){ $("out").innerHTML='<div class="panel">No results.</div>'; return; }
+    var nat=rows.filter(function(r){return r.native;}).length, loc=rows.filter(function(r){return r.locator&&!r.native;}).length;
+    var body=rows.map(function(r,i){
+      var target=r.native?r.url:(r.locator||r.url);
+      var canAdd=r.native||r.locator;
+      return '<tr>'
+        +'<td><span class="host">'+esc(r.host||r.url)+'</span></td>'
+        +'<td><span class="pill pf '+esc(r.platform||"none")+'">'+esc(r.platform||"—")+'</span></td>'
+        +'<td>'+pullBadge(r)+'</td>'
+        +'<td class="hint">'+(r.signals&&r.signals.length?esc(r.signals.join(", ")):(r.note?esc(r.note):(r.locator?'store-locator':'—')))+'</td>'
+        +'<td>'+(canAdd?'<button class="addbtn" data-add="'+i+'">+ Catalog</button>':'')+'</td>'
+        +'</tr>';
+    }).join("");
+    $("out").innerHTML='<div class="panel"><h2>'+rows.length+' fingerprinted · '+nat+' native · '+loc+' locator</h2>'
+      +'<p class="sub">native = pulls today. locator = a Yext store directory to pull for the outlet/account spine. Add the pullable ones to the Catalog.</p>'
+      +'<div style="overflow-x:auto"><table><thead><tr><th>Chain</th><th>Platform</th><th>Pull</th><th>Signals</th><th></th></tr></thead><tbody>'+body+'</tbody></table></div></div>';
+    $("out").querySelectorAll("[data-add]").forEach(function(b){ b.onclick=function(){ addToCatalog(rows[+b.dataset.add], b); }; });
+  }
+  function addToCatalog(r, btn){
+    var host=r.host||r.url, isLoc=!!(r.locator&&!r.native);
+    var src={ id:"d"+(+new Date())+Math.floor(Math.random()*1000), nm:host+(isLoc?" — Locations":""),
+      tier:isLoc?"On-Premise Accounts":"Specialty Bev-Alc", foot:host, fields:isLoc?["Location","Address","Phone"]:["Price","Availability"],
+      gran:isLoc?"Store":"Chain", plat:(r.platform||"Custom")+(isLoc?" locator":""), prot:"None", tos:"Gray", pri:"P2", status:"Ready",
+      url:isLoc?r.locator:r.url, owner:"Hoodie", project:"", notes:"Discovered via fingerprinter — platform "+(r.platform||"?")+(isLoc?"; Yext store-locator sitemap (outlet/account spine).":"; native "+(r.native?"pull path.":"API.")) };
+    var arr=[]; try{ arr=JSON.parse(localStorage.getItem("hoodie.pulls.tracker.v2")||"[]")||[]; }catch(e){}
+    if(!arr.some(function(s){return s&&s.url===src.url;})){ arr.push(src); try{ localStorage.setItem("hoodie.pulls.tracker.v2", JSON.stringify(arr)); }catch(e){} }
+    btn.textContent="✓ Added"; btn.className="addbtn done"; btn.disabled=true;
+  }
+  $("run").onclick=run;
+})();
+</script>
+</body>
+</html>

@@ -33,6 +33,7 @@
       <button class="tab" data-tab="analyze">Analyze<span class="k">code</span></button>
       <button class="tab" data-tab="catalog">Catalog<span class="k">crm</span></button>
       <button class="tab" data-tab="recipes">Recipes<span class="k">store</span></button>
+      <button class="tab" data-tab="discover">Discover<span class="k">scan</span></button>
     </div>
     <span class="sp"></span>
     <span class="hint" id="tabhint"></span>
@@ -41,6 +42,7 @@
     <iframe id="f-analyze" title="Source Analyzer" src="source-analyzer.html"></iframe>
     <iframe id="f-catalog" title="Source Tracker" src="pulls-tracker.html?shell=1"></iframe>
     <iframe id="f-recipes" title="Scrape Recipes" src="recipes.html?embed=1" hidden></iframe>
+    <iframe id="f-discover" title="Discover" src="discover.html?embed=1" hidden></iframe>
   </div>
 <script>
 (function(){
@@ -48,7 +50,8 @@
   var TABS={
     analyze:{f:"f-analyze",hint:"Read any URL → the data + how to scrape it"},
     catalog:{f:"f-catalog",hint:"Every tracked source · yield · ToS · owner"},
-    recipes:{f:"f-recipes",hint:"Proven configs · self-reinforcing · re-prove / delete"}
+    recipes:{f:"f-recipes",hint:"Proven configs · self-reinforcing · re-prove / delete"},
+    discover:{f:"f-discover",hint:"Fingerprint chains → platform + pull path at scale"}
   };
   function show(t){
     if(!TABS[t]) t="analyze";

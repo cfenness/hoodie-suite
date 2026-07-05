@@ -868,6 +868,24 @@ def scraper_extract():
 def highlights_list():
     return jsonify(highlights=HIGHLIGHTS[:int(request.args.get("limit", 20) or 20)])
 
+@app.post("/api/scraper/fingerprint")
+def scraper_fingerprint():
+    """Discover: given a list of chains, classify each one's platform + whether we have a
+    native pull path — so we can enumerate who's on Algolia/Shopify/Yext/… at a glance."""
+    b = request.get_json(force=True, silent=True) or {}
+    import source_analyzer
+    urls = b.get("urls") or ([b["url"]] if b.get("url") else [])
+    urls = [u for u in urls if isinstance(u, str) and u.strip()][:40]   # polite cap
+    out = []
+    for u in urls:
+        try:
+            fp = source_analyzer.fingerprint(u)
+        except Exception as e:
+            fp = {"url": u, "platform": None, "signals": [], "native": False, "note": str(e)[:80]}
+        if fp:
+            out.append(fp)
+    return jsonify(results=out)
+
 @app.get("/api/recipes")
 def recipes_list():
     import recipes
