@@ -173,12 +173,31 @@ def save_config(book, url, analysis, ts):
     cfg, plat = _config(analysis), platform_of(analysis)
     rec = book.get(h)
     if not rec:
-        book[h] = _new(h, ts, plat, cfg)
+        rec = book[h] = _new(h, ts, plat, cfg)
     else:
         rec["platform"] = plat or rec.get("platform")
         if rec.get("status") != "proven":
             rec["config"] = cfg
+    # Hold on to the ToS/robots read, and flag it when Claude picks up a change.
+    _store_compliance(rec, analysis, ts)
     return book
+
+
+def _store_compliance(rec, analysis, ts):
+    a = analysis or {}
+    comp = a.get("compliance") or {}
+    new = {"robots_allowed": comp.get("robots_allowed"),
+           "robots_note": comp.get("robots_note") or "",
+           "tos_note": comp.get("robots_txt_note") or a.get("robots_note") or "",
+           "checked_at": ts}
+    prev = rec.get("compliance")
+    if prev and (prev.get("robots_allowed") != new["robots_allowed"] or prev.get("tos_note") != new["tos_note"]):
+        new["changed_at"] = ts
+        new["was"] = {"robots_allowed": prev.get("robots_allowed"), "tos_note": prev.get("tos_note")}
+    elif prev:
+        new["changed_at"] = prev.get("changed_at")
+        if prev.get("was"): new["was"] = prev["was"]
+    rec["compliance"] = new
 
 
 def apply_heal(book, url, analysis, ts):

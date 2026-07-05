@@ -150,6 +150,12 @@ def _cors(resp):
     resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    # Always revalidate the CODE (html/js/css/json) so a deploy is picked up immediately —
+    # browser heuristic caching was serving a stale launcher/app after a redeploy (a mix of
+    # old shell + new app). ETag/Last-Modified still make it a cheap 304 when unchanged.
+    ct = (resp.content_type or "")
+    if ct.startswith("text/html") or "javascript" in ct or ct.startswith("text/css") or ct.startswith("application/json"):
+        resp.headers["Cache-Control"] = "no-cache"
     return resp
 
 

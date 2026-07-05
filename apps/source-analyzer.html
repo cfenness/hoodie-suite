@@ -172,7 +172,9 @@
         +'<div class="k">Repeating item</div><div>'+(a.list_container?('<code>'+esc(a.list_container)+'</code>'):'<span class="em" style="padding:0">—</span>')+'</div>'
         +'<div class="k">Pagination</div><div>'+(a.pagination?esc(a.pagination):'<span style="color:var(--ink-soft)">single page / none detected</span>')+'</div>'
         +(apiUrl?('<div class="k">Data API</div><div><span class="pill tea">client-rendered → API</span> <code>'+esc(a.data_api.method||"GET")+' '+esc(apiUrl)+'</code>'+(a.data_api.pagination?('<div class="hint" style="margin-top:3px">page: '+esc(a.data_api.pagination)+'</div>'):'')+(a.data_api.note?('<div class="hint">'+esc(a.data_api.note)+'</div>'):'')+'</div>'):'')
-        +'<div class="k">robots / ToS</div><div>'+esc(a.robots_note||"Check robots.txt + ToS.")+'</div>'
+        +'<div class="k">robots / ToS</div><div>'
+          +((a.compliance&&a.compliance.robots_allowed!=null)?('<span class="pill '+(a.compliance.robots_allowed?'tea':'warn')+'">robots: '+(a.compliance.robots_allowed?'allowed':'DISALLOWED')+'</span> '+esc(a.compliance.robots_note||'')+' · '):'')
+          +esc(a.robots_note||"checked at fetch — see above")+'</div>'
         +'</div>'
         +(items.length?('<div class="lab">Per-field selectors</div><div class="scroll"><table><thead><tr><th>Field</th><th>Selector</th></tr></thead><tbody>'
           +items.map(function(f){return '<tr><td><b>'+esc(f.name)+'</b></td><td><code>'+esc(f.selector)+'</code></td></tr>';}).join('')+'</tbody></table></div>'):'')
