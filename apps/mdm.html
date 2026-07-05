@@ -69,7 +69,6 @@
     <a data-sec="catalog"><span class="d"></span>Catalog</a>
     <div class="nav-lab">Feed</div>
     <a data-sec="pulls"><span class="d"></span>Pulls</a>
-    <a data-sec="ingestion"><span class="d"></span>Ingestion</a>
     <div class="foot"><span class="dot" id="eng-dot"></span><span id="eng-txt">checking…</span></div>
   </nav>
   <div class="stage">
@@ -77,17 +76,15 @@
     <iframe id="f-master"    title="Master-data control plane" data-src="mdm-master.html?embed=1"></iframe>
     <iframe id="f-catalog"   title="Product Catalog"           data-src="catalog.html?embed=1"></iframe>
     <iframe id="f-pulls"     title="Hoodie Pulls"              data-src="pulls.html?embed=1"></iframe>
-    <iframe id="f-ingestion" title="Hoodie Ingestion"          data-src="ttb-ingestion.html?embed=1"></iframe>
   </div>
 <script>
 (function(){
   "use strict";
-  var SECTIONS={overview:null,master:"f-master",catalog:"f-catalog",pulls:"f-pulls",ingestion:"f-ingestion"};
+  var SECTIONS={overview:null,master:"f-master",catalog:"f-catalog",pulls:"f-pulls"};
   // In the launcher, the launcher's rail becomes THIS console's nav (one sidebar).
   var inLauncher = (window.parent !== window);
   var NAV_META=[{id:"overview",label:"Overview"},{id:"master",label:"Master",group:"Own"},
-                {id:"catalog",label:"Catalog",group:"Own"},{id:"pulls",label:"Pulls",group:"Feed"},
-                {id:"ingestion",label:"Ingestion",group:"Feed"}];
+                {id:"catalog",label:"Catalog",group:"Own"},{id:"pulls",label:"Pulls",group:"Feed"}];
   function publishNav(active){ if(inLauncher){ try{ parent.postMessage({__hoodie:"nav",app:"mdm",sections:NAV_META,active:active},"*"); }catch(e){} } }
   var esc=function(s){return String(s==null?"":s).replace(/[&<>]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;"}[c];});};
   var fmt=function(n){return n==null?"—":Number(n).toLocaleString();};
@@ -160,14 +157,14 @@
 
     var body=''+
       '<h1>Master Data</h1>'+
-      '<p class="lede">One console for the data the suite runs on — own it (Master, Catalog), feed it (Pulls, Ingestion). This overview is the cohesive front; the sections collapse into it over time.</p>'+
+      '<p class="lede">One console for the data the suite runs on — own it (Master, Catalog), feed it (Pulls). Ingestion runs per-pull from Sources. This overview is the cohesive front.</p>'+
       (live?'':'<div class="off"><b>Engine offline.</b> The live numbers and pulls need the backend — start it (<code>./dev.sh</code>) or open the deployed suite. The sections below still open.</div>')+
       kpiHtml+
       '<div class="cols">'+
         '<div class="panel"><h2>Recent pulls</h2>'+pulls+'</div>'+
         '<div class="panel"><h2>Recipe coverage</h2>'+recRows+'</div>'+
       '</div>'+
-      '<div class="jump"><a data-sec="master">Open Master →</a><a data-sec="catalog">Open Catalog →</a><a data-sec="pulls">Open Pulls →</a><a data-sec="ingestion">Open Ingestion →</a></div>';
+      '<div class="jump"><a data-sec="master">Open Master →</a><a data-sec="catalog">Open Catalog →</a><a data-sec="pulls">Open Pulls →</a></div>';
     document.getElementById("ov-body").innerHTML=body;
     var jl=document.querySelectorAll("#ov-body [data-sec]");
     for(var i=0;i<jl.length;i++) jl[i].onclick=(function(el){return function(){ show(el.getAttribute("data-sec")); };})(jl[i]);

@@ -72,6 +72,15 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
 .runout .rr b{color:var(--ink)}
 .runout .rspin{width:13px;height:13px;border:2px solid var(--line2);border-top-color:var(--purple);border-radius:50%;animation:rspin .7s linear infinite;display:inline-block;flex:0 0 auto}
 @keyframes rspin{to{transform:rotate(360deg)}}
+/* Ingest modal — the ingestion QA console opened for one pull */
+.ingov{position:fixed;inset:0;background:rgba(29,27,34,.5);display:flex;align-items:center;justify-content:center;padding:24px;z-index:120}
+.ingbox{background:var(--surface);border-radius:14px;width:min(1200px,96vw);height:min(90vh,920px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px rgba(29,27,34,.42)}
+.inghd{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);flex:0 0 auto}
+.inghd .t{font-family:var(--display);font-weight:600;font-size:16px;color:var(--ink)}
+.inghd .t small{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-left:8px}
+.ingx{margin-left:auto;border:1px solid var(--line);background:var(--surface);border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:14px;color:var(--muted)}
+.ingx:hover{border-color:var(--purple);color:var(--purple-d)}
+.ingfr{flex:1;border:0;width:100%}
 .empty{text-align:center;color:var(--muted);padding:40px;font-size:13.5px}
 .foot{text-align:center;color:var(--muted2);font-size:11px;padding:30px 0 50px;font-family:var(--mono);letter-spacing:.04em}
 /* modal */
@@ -247,6 +256,18 @@ function runSource(id){
     })
     .catch(function(){ RUNSTATE[id]={state:"error",error:"couldn't reach the engine — start it (./dev.sh) or open the deployed suite"}; render(); });
 }
+// Ingest a pull — open the ingestion QA console (suite-themed) as a modal for this source.
+function openIngest(id){
+  var s=SOURCES.find(function(x){return x.id===id;}); if(!s) return;
+  var ov=document.createElement("div"); ov.className="ingov";
+  ov.innerHTML='<div class="ingbox"><div class="inghd"><div class="t">Ingest <small>'+esc(s.nm)+'</small></div>'
+    +'<button class="ingx" title="Close">✕</button></div>'
+    +'<iframe class="ingfr" src="ttb-ingestion.html?embed=1" title="Ingestion QA"></iframe></div>';
+  document.body.appendChild(ov);
+  ov.querySelector(".ingx").onclick=function(){ ov.remove(); };
+  ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
+  document.addEventListener("keydown",function esc(e){ if(e.key==="Escape"){ ov.remove(); document.removeEventListener("keydown",esc); } });
+}
 function runoutHtml(id){
   var r=RUNSTATE[id]; if(!r) return "";
   var body;
@@ -303,6 +324,7 @@ function render(){
   list.querySelectorAll("[data-cyc]").forEach(b=>b.onclick=()=>cycleStatus(b.dataset.cyc));
   list.querySelectorAll("[data-pri]").forEach(b=>b.onclick=()=>cyclePri(b.dataset.pri));
   list.querySelectorAll("[data-run]").forEach(b=>b.onclick=()=>runSource(b.dataset.run));
+  list.querySelectorAll("[data-ingest]").forEach(b=>b.onclick=()=>openIngest(b.dataset.ingest));
   renderChips(); syncProjects();
   $("foot").textContent=SOURCES.length+" sources tracked · "+SOURCES.filter(s=>s.status==="Live").length+" live · saved to this device";
 }
@@ -325,6 +347,7 @@ function cardHTML(s){
       +'<span class="pill pri '+s.pri.toLowerCase()+'" data-pri="'+s.id+'" title="Click to change priority">'+esc(s.pri)+'</span>'
       +'<span class="pill st st-'+s.status.toLowerCase()+'" data-cyc="'+s.id+'" title="Click to advance status">'+esc(s.status)+'</span>'
       +(s.url?'<button class="iconbtn run" data-run="'+s.id+'" title="Run this source now (recipe-first)"'+(RUNSTATE[s.id]&&RUNSTATE[s.id].state==="running"?" disabled":"")+'>▸</button>':'')
+      +(s.url?'<button class="iconbtn" data-ingest="'+s.id+'" title="Ingest this pull — QA + commit to master">⤓</button>':'')
       +'<button class="iconbtn" data-edit="'+s.id+'" title="Edit">✎</button>'
     +'</div></div>'
     +(s.url?runoutHtml(s.id):'');
