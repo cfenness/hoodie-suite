@@ -30,6 +30,14 @@
   .chips{display:flex;flex-wrap:wrap;gap:6px}
   .fchip{font-size:12.5px;background:var(--panel,#EAEEED);border-radius:6px;padding:4px 9px}
   .fchip b{font-weight:700}
+  .fchip.on{background:var(--amber-soft,#E7F1EE);border:1px solid #cde6df;color:var(--amber-deep,#1E5F55);display:inline-flex;align-items:center;gap:6px}
+  .fchip.on a{color:var(--ink-soft,#5E6B68);cursor:pointer;text-decoration:none;font-weight:700;font-size:11px}
+  .fchip.on a:hover{color:var(--bad,#b4232a)}
+  .fbuild{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 8px}
+  .fbuild select,.fbuild #fval{border:1px solid var(--hair,#D7DDDB);border-radius:8px;padding:9px 11px;background:#fff;font-size:13px}
+  .fbuild select{cursor:pointer;font-family:var(--body,inherit);color:var(--ink,#243330)}
+  .fbuild #fval{font-family:var(--mono);font-size:12px;min-width:220px;flex:1;color:var(--ink,#243330)}
+  .afchips{margin:0 0 6px}
   .scroll{overflow:auto;max-height:62vh;border:1px solid var(--hair,#D7DDDB);border-radius:10px;background:#fff}
   .scroll table{width:100%;border-collapse:collapse;font-size:12.5px}
   .scroll thead th{position:sticky;top:0;z-index:1;text-align:left;font-family:var(--mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-soft,#5E6B68);font-weight:600;padding:9px 12px;background:var(--panel,#EAEEED);border-bottom:1px solid var(--hair,#D7DDDB);white-space:nowrap}
@@ -96,12 +104,14 @@
 
 <script>
 (function(){
-  var API="", lastUrl="", baseTarget="", lastApi=null;
+  var API="", lastUrl="", baseTarget="", lastApi=null, AF={}, FILTERS=[];
+  // AF = the active filters the user added ({param:{name,value}}); build the target URL from them.
   function applyFilters(){
-    var u; try{ u=new URL(baseTarget); }catch(e){ document.getElementById("ex-target").value=baseTarget; return; }
-    document.querySelectorAll(".fil").forEach(function(f){ var p=f.getAttribute("data-param"), v=f.value.trim();
-      if(v) u.searchParams.set(p,v); else u.searchParams.delete(p); });
-    document.getElementById("ex-target").value=u.toString();
+    var t=document.getElementById("ex-target"); if(!t) return;
+    var u; try{ u=new URL(baseTarget); }catch(e){ t.value=baseTarget; return; }
+    FILTERS.forEach(function(f){ if(f&&f.param) u.searchParams.delete(f.param); });
+    Object.keys(AF).forEach(function(p){ if(AF[p]&&AF[p].value) u.searchParams.set(p,AF[p].value); });
+    t.value=u.toString();
   }
   function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
   var PREF=["title","name","product_name","product","vendor","brand","product_type","category","category_name","price","current_price","regular_price","sale_price","size","volume","sku","product_id","available","availability","in_stock","stock","rating","url","product_url","link","image_url","image"];
@@ -154,7 +164,7 @@
     // only trust a data-API url that's actually callable (not a <siteId>/{key}/… template)
     var apiUrl=(a.data_api&&a.data_api.url&&!/[<{]|your_|site_id|example\.|\.\.\./i.test(a.data_api.url))?a.data_api.url:"";
     baseTarget=apiUrl||lastUrl; lastApi=a.data_api||null;
-    var flt=a.filters||[];
+    var flt=a.filters||[]; FILTERS=flt; AF={};
     // sample table (clean, ordered)
     var tbl = rows.length ? tableHTML(rows,8) : '<div class="em">No sample rows extracted.</div>';
     out.innerHTML=
@@ -185,12 +195,14 @@
         +'<div class="lab">Extract from</div>'
         +'<div class="exrow"><input id="ex-target" class="target" value="'+esc(apiUrl||lastUrl)+'">'
           +(apiUrl?'<button class="btn" id="use-page" title="Use the page URL instead of the API">use page</button>':'')+'</div>'
-        +((apiUrl&&flt.length)?('<div class="lab">Narrow the pull (optional) — limit to a brand / supplier / category / store instead of the whole catalog</div>'
-          +'<div class="exrow">'+flt.map(function(f,i){var vs=(f.values||[]).filter(Boolean);
-            return '<span class="hint" style="text-transform:capitalize"'+(f.note?(' title="'+esc(f.note)+'"'):'')+'>'+esc(f.name||f.param)+'</span>'
-              +'<input class="fil" data-param="'+esc(f.param)+'"'+(vs.length?(' list="fl'+i+'"'):'')+' placeholder="all" style="width:160px;border:1px solid var(--hair,#D7DDDB);border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:12px">'
-              +(vs.length?('<datalist id="fl'+i+'">'+vs.slice(0,40).map(function(v){return '<option value="'+esc(v)+'">';}).join('')+'</datalist>'):'');
-            }).join('')+'</div>'):'')
+        +((apiUrl&&flt.length)?('<div class="lab">Narrow the pull (optional) — add a filter to limit to a brand / category / store instead of the whole catalog</div>'
+          +'<div class="fbuild">'
+            +'<select id="fdim">'+flt.map(function(f,i){return '<option value="'+i+'">'+esc(f.name||f.param)+'</option>';}).join('')+'</select>'
+            +'<input id="fval" list="fvals" placeholder="value…">'
+            +'<datalist id="fvals"></datalist>'
+            +'<button class="btn" id="fadd" type="button">+ Add filter</button>'
+          +'</div>'
+          +'<div class="chips afchips" id="afchips"></div>'):'')
         +'<div class="exrow"><span class="hint">pages</span><input id="ex-pages" class="num-in" type="number" min="1" max="400" value="'+(apiUrl||a.pagination?'3':'1')+'">'
           +'<span class="hint" style="margin-left:10px">max items</span>'
           +'<select id="ex-limit-sel" class="num-in" style="width:auto" title="cap the number of items pulled — or pick All to pull the whole catalog">'
@@ -210,7 +222,21 @@
     var pt=document.getElementById("scrape-prompt"); autoGrow(pt); if(pt)pt.addEventListener("input",function(){autoGrow(pt);});
     var cp=document.getElementById("pb-copy"); if(cp)cp.onclick=function(){ try{navigator.clipboard.writeText(pt.value);}catch(e){} toast("Prompt copied"); };
     var up=document.getElementById("use-page"); if(up)up.onclick=function(){ baseTarget=lastUrl; applyFilters(); };
-    document.querySelectorAll(".fil").forEach(function(f){ f.addEventListener("input",applyFilters); f.addEventListener("change",applyFilters); });
+    (function(){
+      var dim=document.getElementById("fdim"); if(!dim) return;
+      function fillDatalist(){ var f=FILTERS[+dim.value]||{}, vs=(f.values||[]).filter(Boolean).slice(0,60);
+        document.getElementById("fvals").innerHTML=vs.map(function(v){return '<option value="'+esc(v)+'">';}).join('');
+        document.getElementById("fval").placeholder=vs.length?("e.g. "+vs[0]):"value…"; }
+      function renderAF(){ var box=document.getElementById("afchips"); var ks=Object.keys(AF);
+        box.innerHTML=ks.length?ks.map(function(p){return '<span class="fchip on">'+esc(AF[p].name)+': <b>'+esc(AF[p].value)+'</b> <a data-rmf="'+esc(p)+'" title="remove">✕</a></span>';}).join('')
+          :'<span class="hint">No filters — pulling the whole catalog (up to your cap).</span>';
+        box.querySelectorAll("[data-rmf]").forEach(function(x){ x.onclick=function(){ delete AF[x.getAttribute("data-rmf")]; renderAF(); applyFilters(); }; }); }
+      function add(){ var f=FILTERS[+dim.value], v=document.getElementById("fval").value.trim(); if(!f||!v) return;
+        AF[f.param]={name:(f.name||f.param),value:v}; document.getElementById("fval").value=""; renderAF(); applyFilters(); }
+      dim.onchange=fillDatalist; document.getElementById("fadd").onclick=add;
+      document.getElementById("fval").addEventListener("keydown",function(e){ if(e.key==="Enter"){ e.preventDefault(); add(); } });
+      fillDatalist(); renderAF();
+    })();
     var sv=document.getElementById("save"); if(sv)sv.onclick=function(){ toast("Saved config — next: turn this into a scheduled connector in Hoodie Master"); };
     var ag=document.getElementById("again"); if(ag)ag.onclick=function(){ document.getElementById("url").focus(); document.getElementById("url").select(); };
     var rx=document.getElementById("run-extract"); if(rx)rx.onclick=runExtract;

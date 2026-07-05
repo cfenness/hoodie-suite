@@ -538,7 +538,11 @@ def _algolia_rows(url, app_id, api_key, limit):
     """POST-paginate an Algolia query endpoint → list of hit dicts. Uses the public,
     read-only search key (the same one the site ships to the browser); auth is via
     headers + a JSON body, which is why a plain GET 403s. Stops at nbPages / cap / empty."""
-    endpoint = re.sub(r"(/1/indexes/[^/?#]+/quer(?:y|ies)).*$", r"\1", url)
+    # Rebuild the endpoint on the canonical search host — the analyzer sometimes emits the
+    # write host or an upper-cased app id (e.g. 7508DF878A.algolia.net), which won't resolve.
+    p = urlsplit(url)
+    path = re.sub(r"(/1/indexes/[^/?#]+/quer(?:y|ies)).*$", r"\1", p.path)
+    endpoint = "https://" + app_id.lower() + "-dsn.algolia.net" + path
     hits, page, npages = [], 0, None
     per = 1000
     while page < 500:
@@ -568,6 +572,14 @@ def _try_algolia(url, prompt, limit, api):
     api_key = (api.get("api_key") or _algolia_key_from_url(url) or "").strip()
     if not (app_id and api_key):
         return None   # can't execute without the search key — let the generic path try/report
+    m = _ALGOLIA_RE.search(url)
+    index = (api.get("index") or (m.group(1) if m else "") or "").strip()
+    if index in ("", "*"):
+        # multi-index endpoint (/indexes/*/queries) — needs the exact index name, which isn't
+        # in the static HTML. Say so clearly instead of failing on a bad host.
+        return {"error": "This store uses Algolia's multi-index endpoint — the exact index name "
+                "isn't in the page HTML. Capture it from one live /queries request (or point Extract "
+                "at /1/indexes/<index>/query with that index) to pull the catalog.", "via": "algolia-api"}
     try:
         rows = _algolia_rows(url, app_id, api_key, limit)
     except urllib.error.HTTPError as e:
