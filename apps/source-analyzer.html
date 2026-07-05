@@ -131,11 +131,20 @@
     if(!/^https?:\/\//.test(url)){ toast("Enter a full http(s) URL"); return; }
     lastUrl=url; go.disabled=true;
     out.innerHTML='<div class="card"><div class="loading"><span class="spin"></span>Claude is reading the page + working out how to scrape it… (bot-walled pages take longer)</div></div>';
+    var ctrl=new AbortController(), to=setTimeout(function(){ctrl.abort();},115000);
     fetch(API+"/api/scraper/analyze",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({url:url,goal:document.getElementById("goal").value.trim()||null})})
-      .then(function(r){return r.json();})
+      body:JSON.stringify({url:url,goal:document.getElementById("goal").value.trim()||null}),signal:ctrl.signal})
+      .then(function(r){ clearTimeout(to);
+        if(r.status===401) throw new Error("401");
+        return r.json().catch(function(){ throw new Error("HTTP "+r.status); }); })
       .then(function(d){ go.disabled=false; render(d); })
-      .catch(function(){ go.disabled=false; out.innerHTML='<div class="card"><div class="em">Analyzer is offline — start the engine (./dev.sh) or open the deployed suite.</div></div>'; });
+      .catch(function(e){ go.disabled=false; clearTimeout(to);
+        var m=String((e&&e.message)||e), msg;
+        if(e&&e.name==="AbortError") msg="Timed out (~2 min). <b>"+esc(url)+"</b> is likely bot-walled or very slow — set a Bright Data key to unlock it, or point at its data API (JSON endpoint).";
+        else if(m==="401") msg="Session expired — reload the page to sign back in, then retry.";
+        else if(/^HTTP 5/.test(m)) msg="The analyzer hit a server error ("+esc(m)+"). The source may be bot-walled/slow; retry, or check the engine logs.";
+        else msg="Analyzer is offline — start the engine (./dev.sh) or open the deployed suite.";
+        out.innerHTML='<div class="card"><div class="em">'+msg+'</div></div>'; });
   }
 
   function render(d){

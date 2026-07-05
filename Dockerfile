@@ -23,6 +23,10 @@ COPY . /app
 ENV PORT=8080 SUITE_ROOT=/app
 EXPOSE 8080
 
-# ONE worker on purpose — state is in-process; a single worker keeps it coherent. gunicorn runs from
-# /app/unifyd (WORKDIR) so `server:app` resolves; it serves the suite from SUITE_ROOT=/app.
-CMD ["sh", "-c", "gunicorn -w 1 -b 0.0.0.0:${PORT:-8080} server:app"]
+# ONE worker on purpose — state is in-process; a single worker keeps it coherent. But add THREADS so
+# a slow request (a bot-walled analyze routing through Bright Data can take ~1 min) doesn't freeze the
+# whole app, and raise --timeout well above the default 30s so gunicorn doesn't KILL that request
+# mid-fetch (which surfaced in the client as a bogus "Analyzer is offline"). Threads are safe here:
+# the work is I/O-bound (network) so the GIL is released during waits; shared state stays in one process.
+# gunicorn runs from /app/unifyd (WORKDIR) so `server:app` resolves; it serves the suite from SUITE_ROOT=/app.
+CMD ["sh", "-c", "gunicorn -w 1 --threads 8 --timeout 120 -b 0.0.0.0:${PORT:-8080} server:app"]
