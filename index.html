@@ -120,6 +120,17 @@
   aside.nav .item.live .ic{background:var(--slate);}
   aside.nav .item .nm{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:12px;letter-spacing:-0.3px;color:var(--ink);line-height:1.12;}
   aside.nav .item .ds{font-size:11px;color:var(--ink-soft);line-height:1.12;margin-top:1px;display:block;}
+  /* sidebar-replacement: section items (an app driving the rail) + the app-selector */
+  aside.nav .secitem .ic{background:transparent;position:relative;}
+  aside.nav .secitem .secdot::before{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:6px;height:6px;border-radius:2px;background:var(--hair);}
+  aside.nav .secitem.active .secdot::before{background:var(--amber);}
+  aside.nav .navhead .home-link .hl-cv{margin-left:auto;opacity:.5;font-size:11px;}
+  .appselpop{background:var(--panel,#fff);border:1px solid var(--hair);border-radius:6px;box-shadow:0 14px 34px rgba(35,30,20,.22);max-height:72vh;overflow:auto;z-index:200;padding:6px;}
+  .appselpop .asp-grp{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--amber);padding:9px 9px 4px;font-weight:600;}
+  .appselpop .asp-item{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:5px;font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:12.5px;color:var(--ink);cursor:pointer;}
+  .appselpop .asp-item:hover,.appselpop .asp-item.on{background:var(--panel-2);}
+  .appselpop .asp-home{border-bottom:1px solid var(--hair);border-radius:0;margin-bottom:3px;padding:8px 9px 9px;}
+  .appselpop .asp-mk{width:22px;height:20px;display:flex;align-items:center;justify-content:center;background:var(--ink);color:var(--paper);font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:10px;border-radius:3px;flex:0 0 auto;}
 
   main.stage{position:relative;overflow:hidden;background:var(--paper);}
   iframe#frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff;display:none;}
@@ -449,6 +460,8 @@
       star(a.id)+'</div>';
   }
   function renderNav(){
+    if(appNav){ renderAppNav(); return; }   // an app is driving the rail — show its nav
+    setHomeLink(false);
     let html='';
     if(favs.length){
       html+='<div class="grp favgrp"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l2.3 4.7 5.2.8-3.8 3.7.9 5.2L12 16l-4.6 2.4.9-5.2L4.5 9.5l5.2-.8z"/></svg>Favorites'+(favs.length>1?'<span class="draghint">drag to reorder</span>':'')+'</div>';
@@ -470,6 +483,60 @@
     wireFavDrag();
     if(routerReady)route();   // re-apply active highlight after re-render (skipped on first paint)
   }
+
+  // ── Sidebar replacement ────────────────────────────────────────────────────
+  // One sidebar: an app with its own nav publishes it (postMessage), the launcher
+  // rail REFILLS with that nav, and "All apps" becomes an app selector. Apps opt in.
+  var appNav=null;   // {app, sections:[{id,label,group}], active} while an app drives the rail
+  function secItem(s,active){
+    return '<div class="item beta secitem'+(s.id===active?' active':'')+'" data-sec="'+s.id+'">'+
+      '<span class="ic secdot"></span><span class="tx"><span class="nm">'+s.label+'</span></span></div>';
+  }
+  function renderAppNav(){
+    var groups={},order=[];
+    appNav.sections.forEach(s=>{ var g=s.group||''; if(!(g in groups)){groups[g]=[];order.push(g);} groups[g].push(s); });
+    navlist.innerHTML=order.map(g=>(g?'<div class="grp">'+g+'</div>':'')+groups[g].map(s=>secItem(s,appNav.active)).join('')).join('');
+    navlist.querySelectorAll('[data-sec]').forEach(el=>el.addEventListener('click',()=>{
+      appNav.active=el.dataset.sec;
+      try{ frame.contentWindow.postMessage({__hoodie:'section',id:el.dataset.sec},'*'); }catch(e){}
+      navlist.querySelectorAll('[data-sec]').forEach(x=>x.classList.toggle('active',x.dataset.sec===appNav.active));
+      closeNav();
+    }));
+    setHomeLink(true);
+  }
+  function setHomeLink(appMode){
+    var hl=document.getElementById('homeLink'); if(!hl) return;
+    if(appMode&&appNav){ var a=byId[appNav.app];
+      hl.innerHTML='⌂ <span class="hl-tx">&nbsp;'+(a?a.name:'App')+'</span><span class="hl-cv">⌄</span>';
+      hl.title='Switch app'; }
+    else { hl.innerHTML='⌂ <span class="hl-tx">&nbsp;All apps</span>'; hl.title='All apps'; }
+  }
+  function toggleAppSelector(){
+    var ex=document.getElementById('appSelPop'); if(ex){ ex.remove(); return; }
+    var pop=document.createElement('div'); pop.id='appSelPop'; pop.className='appselpop';
+    var html='<div class="asp-item asp-home" data-home="1">⌂ All apps</div>';
+    GROUPS.forEach(g=>{ var apps=APPS.filter(a=>a.group===g&&!a.parent&&!appHidden(a)); if(!apps.length)return;
+      html+='<div class="asp-grp">'+g+'</div>'+apps.map(a=>'<div class="asp-item'+(appNav&&a.id===appNav.app?' on':'')+'" data-id="'+a.id+'"><span class="asp-mk">'+(a.mark||'')+'</span>'+a.name+'</div>').join(''); });
+    pop.innerHTML=html;
+    var r=document.getElementById('homeLink').getBoundingClientRect();
+    pop.style.cssText='position:fixed;top:'+(r.bottom+5)+'px;left:'+r.left+'px;width:'+Math.max(200,r.width)+'px;';
+    document.body.appendChild(pop);
+    pop.querySelectorAll('[data-id]').forEach(el=>el.onclick=()=>{ location.hash='#'+el.dataset.id; pop.remove(); closeNav(); });
+    pop.querySelector('[data-home]').onclick=()=>{ location.hash=''; pop.remove(); closeNav(); };
+    setTimeout(()=>document.addEventListener('click',function h(ev){ if(!pop.contains(ev.target)&&ev.target.id!=='homeLink'&&!ev.target.closest('#homeLink')){ pop.remove(); document.removeEventListener('click',h); } }),0);
+  }
+  window.addEventListener('message',ev=>{
+    var d=ev.data; if(!d||(d.__hoodie!=='nav'&&d.__hoodie!=='section')) return;
+    var curId=(location.hash||'').replace('#','');
+    if(d.__hoodie==='nav'){
+      if(d.app&&d.app!==curId) return;
+      appNav={app:curId,sections:d.sections||[],active:d.active};
+      renderNav();
+    }else if(d.__hoodie==='section'&&appNav){
+      appNav.active=d.id;
+      navlist.querySelectorAll('[data-sec]').forEach(x=>x.classList.toggle('active',x.dataset.sec===appNav.active));
+    }
+  });
   /* drag-to-reorder the favorites section (persists order) */
   let favDragId=null;
   function wireFavDrag(){
@@ -668,7 +735,7 @@
   // own collapse preference. Self-contained (no shared consts) so route() can call it early.
   function applyNavForApp(id){
     var b=document.querySelector('.body'); if(!b) return;
-    var heavy=(id==='mdm'||id==='dashboard');
+    var heavy=(id==='dashboard');   // apps that publish their nav (mdm) use the shared rail instead
     var pref=false; try{ pref=localStorage.getItem('hoodie.nav.collapsed')==='1'; }catch(e){}
     var want=heavy||pref;
     b.classList.toggle('nav-collapsed',want);
@@ -678,6 +745,7 @@
   function route(){
     const id=(location.hash||'').replace('#','');
     const app=byId[id];
+    if(appNav&&appNav.app!==id){ appNav=null; renderNav(); }   // left the app → rail back to the list
     applyNavForApp(id);
     document.querySelectorAll('.item').forEach(x=>x.classList.toggle('active',x.dataset.id===id));
     document.getElementById('homeLink').classList.toggle('active',!app);
@@ -700,7 +768,7 @@
   }
   /* an app can post an in-app breadcrumb (e.g. the open record) → shows as "App › crumb" */
   spine.on('crumb',t=>{ appcrumbx.textContent = t ? (' › '+t) : ''; });
-  document.getElementById('homeLink').addEventListener('click',()=>{location.hash='';});
+  document.getElementById('homeLink').addEventListener('click',()=>{ if(appNav){ toggleAppSelector(); } else { location.hash=''; } });
   document.getElementById('brand').addEventListener('click',()=>{location.hash='';});
   document.getElementById('mark').addEventListener('click',()=>{location.hash='';});
   window.addEventListener('hashchange',route);
