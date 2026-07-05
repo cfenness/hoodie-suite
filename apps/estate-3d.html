@@ -11,19 +11,24 @@
   *{box-sizing:border-box} html,body{margin:0;height:100%;overflow:hidden;background:var(--ink);color:var(--paper);font-family:var(--body)}
   #stage{position:fixed;inset:0}
   canvas{display:block}
-  /* labels (CSS2D) */
   .lbl{font-family:var(--mono);font-size:11px;color:#cfe6df;letter-spacing:.02em;pointer-events:none;white-space:nowrap;text-shadow:0 1px 4px rgba(0,0,0,.8);transition:opacity .3s}
   .lbl.ent{font-family:var(--body);font-weight:700;font-size:12.5px;color:#eafaf5}
-  .lbl.dim{opacity:.12}
-  /* HUD */
+  .lbl.planned{color:#6f938a}
+  .lbl.dim{opacity:.1}
   .hud{position:fixed;pointer-events:none;z-index:5}
   .top{top:0;left:0;right:0;padding:18px 22px;display:flex;align-items:flex-start;gap:14px;background:linear-gradient(180deg,rgba(14,22,19,.85),rgba(14,22,19,0))}
   .brand .ey{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:#6f938a}
   .brand h1{font-family:var(--disp);font-weight:700;font-size:20px;margin:3px 0 0;color:#eafaf5}
   .hint{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:#6f938a;text-align:right;line-height:1.7}
   .hint b{color:#a9c9c0;font-weight:600}
-  /* selected panel */
-  .sel{position:fixed;left:22px;bottom:22px;width:288px;background:rgba(18,28,25,.92);border:1px solid var(--line);border-radius:13px;padding:15px 17px;z-index:6;backdrop-filter:blur(6px);transform:translateY(14px);opacity:0;transition:.25s;pointer-events:auto}
+  /* live indicator */
+  .live{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:7;display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;color:#a9c9c0;background:rgba(18,28,25,.8);border:1px solid var(--line);border-radius:20px;padding:5px 13px;cursor:pointer;transition:border-color .15s}
+  .live:hover{border-color:var(--teal)}
+  .live .dot{width:7px;height:7px;border-radius:50%;background:#5bb86e;animation:pulse 2.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(91,184,110,.5)}70%{box-shadow:0 0 0 7px rgba(91,184,110,0)}100%{box-shadow:0 0 0 0 rgba(91,184,110,0)}}
+  .live.stale .dot{background:#d99a3f;animation:none}
+  .live.off .dot{background:#6f7f7a;animation:none}
+  .sel{position:fixed;left:22px;bottom:22px;width:294px;background:rgba(18,28,25,.93);border:1px solid var(--line);border-radius:13px;padding:15px 17px;z-index:6;backdrop-filter:blur(6px);transform:translateY(14px);opacity:0;transition:.25s;pointer-events:auto}
   .sel.show{transform:none;opacity:1}
   .sel .k{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#6f938a}
   .sel .nm{font-family:var(--disp);font-weight:600;font-size:19px;margin:2px 0 2px;color:#eafaf5}
@@ -33,7 +38,7 @@
   .sel .cxrow{display:flex;align-items:center;gap:8px;font-size:12.5px}
   .sel .road{font-family:var(--mono);font-size:8.5px;color:#0e1613;background:var(--teal);padding:1px 6px;border-radius:20px;font-weight:600}
   .sel .to{color:#dcefe9}
-  .sel .none{font-size:12px;color:#a06a3a;font-style:italic}
+  .sel .none{font-size:12px;color:#c98a4a;font-style:italic}
   .sel .reset{margin-top:12px;font-family:var(--mono);font-size:11px;color:#a9c9c0;background:none;border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer}
   .sel .reset:hover{border-color:var(--teal);color:#eafaf5}
   .legend{position:fixed;right:22px;bottom:22px;z-index:5;font-family:var(--mono);font-size:10px;color:#6f938a;text-align:right;line-height:1.9;pointer-events:none}
@@ -49,169 +54,221 @@
 </head>
 <body>
   <div id="stage"></div>
-  <div class="loading" id="loading">loading the estate…</div>
+  <div class="loading" id="loading">reading the estate…</div>
+  <div class="live off" id="live" title="Live read from the engine · click to refresh"><span class="dot"></span><span id="livetx">connecting…</span></div>
   <div class="hud top">
     <div class="brand"><div class="ey">Hoodie Suite · Estate</div><h1>The Estate, as an object</h1></div>
     <div class="hint"><b>drag</b> to spin · <b>scroll</b> to zoom · <b>click a node</b> to focus<br>a node lights only what it touches — the rest drops out</div>
   </div>
   <div class="sel" id="sel"></div>
-  <div class="legend">canonical spine<span class="sw" style="background:#3fb8a3"></span><br>sources · pull status<span class="sw" style="background:#8aa39d"></span></div>
+  <div class="legend">canonical spine<span class="sw" style="background:#3fb8a3"></span><br>live source<span class="sw" style="background:#5bb86e"></span> · planned<span class="sw" style="background:#5f7a72"></span></div>
 
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
-// ── DATA: canonical entities (the spine) + real sources (from the catalog) ────────────
-const ENT = [
-  {id:'portfolio', label:'Portfolio', p:[0,64,0]},
-  {id:'brand',     label:'Brand',     p:[-34,32,4]},
-  {id:'item',      label:'Item',      p:[0,4,0]},
-  {id:'sku',       label:'SKU',       p:[-42,-20,26]},
-  {id:'outlet',    label:'Outlet',    p:[44,-22,-10]},
-  {id:'account',   label:'Account',   p:[78,-46,-28]},
+// ── canonical entities (the schema spine) — fixed geography ────────────────────────
+const ENT=[ {id:'portfolio',label:'Portfolio',p:[0,66,0]}, {id:'brand',label:'Brand',p:[-36,34,4]},
+  {id:'item',label:'Item',p:[0,4,0]}, {id:'sku',label:'SKU',p:[-46,-20,26]},
+  {id:'outlet',label:'Outlet',p:[48,-22,-10]}, {id:'account',label:'Account',p:[82,-46,-28]} ];
+const ENT_POS={}; ENT.forEach(e=>ENT_POS[e.id]=new THREE.Vector3(...e.p));
+const CANON=[['portfolio','brand'],['brand','item'],['item','sku'],['outlet','account'],['item','outlet','sell-out']];
+const ROADCOL={ upc:'#3fb8a3', variant:'#57c9b3', brand:'#3fb8a3', price:'#4a90d9', availability:'#4a90d9',
+  'license#':'#d99a3f', owner:'#d9b03f', address:'#5bb86e', depletion:'#8a6fd0', name:'#7a7f9a', 'sell-out':'#8aa39d', 'is-a':'#3fb8a3' };
+const STCOL={ proven:'#5bb86e', live:'#5bb86e', candidate:'#3fb8a3', ready:'#3fb8a3', drifting:'#d99a3f',
+  building:'#4a90d9', broken:'#d9584f', data:'#5bb86e', planned:'#5f7a72', paused:'#6f7f7a' };
+const SEED=[
+  {nm:"Florida — Outlets",foot:"FL DBPR/ABT licensees",fields:[],tier:"Spine & Master",status:"Ready"},
+  {nm:"TTB — COLA Labels",foot:"TTB registry",fields:["UPC"],tier:"Spine & Master",status:"Ready"},
+  {nm:"Binny's — Inventory",foot:"IL",fields:["Availability","Price","Units"],tier:"Specialty Bev-Alc",status:"Live"},
+  {nm:"Total Wine & More",foot:"National",fields:["Availability","Price","Promo"],tier:"Specialty Bev-Alc",status:"Live"},
+  {nm:"NABCA depletions",foot:"Control states",fields:["Units"],tier:"Control States",status:"Planned"},
+  {nm:"Outback — Locations",foot:"National",fields:["Location","Address","Phone"],tier:"On-Premise Accounts",status:"Ready",plat:"Yext locator"},
 ];
-const CANON = [['portfolio','brand'],['brand','item'],['item','sku'],['outlet','account'],['item','outlet','sell-out']];
-const ROADCOL = { 'UPC':'#3fb8a3','price/avail':'#4a90d9','license#':'#d99a3f','address/geo':'#5bb86e','name':'#7a7f9a','sell-out':'#8aa39d','is-a':'#3fb8a3' };
 
-// sources from the Source Tracker (same-origin localStorage); fall back to a seed
-function loadSources(){
-  let arr=[];
-  try{ arr=JSON.parse(localStorage.getItem("hoodie.pulls.tracker.v2")||"[]")||[]; }catch(e){}
-  if(!arr.length) arr=[
-    {nm:"Florida — Outlets",foot:"FL DBPR/ABT licensees",fields:[],tier:"Spine & Master",status:"Ready"},
-    {nm:"TTB — COLA Labels",foot:"TTB registry",fields:["UPC"],tier:"Spine & Master",status:"Ready"},
-    {nm:"Binny's — Inventory",foot:"IL",fields:["Availability","Price","Units"],tier:"Specialty Bev-Alc",status:"Live"},
-    {nm:"Total Wine & More",foot:"National",fields:["Availability","Price","Promo"],tier:"Specialty Bev-Alc",status:"Live"},
-    {nm:"NABCA depletions",foot:"Control states",fields:["Units"],tier:"Control States",status:"Planned"},
-    {nm:"Outback — Locations",foot:"National",fields:["Location","Address","Phone"],tier:"On-Premise Accounts",status:"Ready",plat:"Yext locator"},
-    {nm:"Google Places",foot:"enrich",fields:["Address","Phone"],tier:"On-Premise Accounts",status:"Ready"},
-  ];
-  return arr.slice(0,44);
-}
-// derive which entities a source connects to (+ the join-key road) from its real metadata
-function edgesFor(s){
-  const f=(s.fields||[]).join(" ").toLowerCase(), foot=(s.foot||"").toLowerCase(), tier=(s.tier||"").toLowerCase(), plat=(s.plat||"").toLowerCase(), nm=(s.nm||"").toLowerCase();
-  const es=[];
-  if(/upc|gtin/.test(f)) es.push(['item','UPC']);
-  if(/price|availability|promo|units|ratings/.test(f)) es.push(['item','price/avail']);
-  if(/dbpr|abt|licens/.test(foot)||/licens/.test(nm)) { es.push(['outlet','license#']); es.push(['account','license#']); }
-  if(tier.includes('on-premise')||/yext|locator/.test(plat)||/location|places/.test(nm)) es.push(['outlet','address/geo']);
-  if(/nabca|deplet/.test(nm+foot)) es.push(['brand','depletion']);
+// map real column / field names → (entity, road)
+function roadsFromCols(cols, hints){
+  const c=(cols||[]).map(x=>String(x).toLowerCase()), any=re=>c.some(x=>re.test(x)), es=[];
+  if(any(/(^|_| )upc($|_| )|gtin|barcode/)) es.push(['item','upc']);
+  if(any(/sku|variant|itemsize|\bsize\b|\bpack\b/)) es.push(['sku','variant']);
+  if(any(/brand/)) es.push(['brand','brand']);
+  if(any(/price|amount|\bcost\b|strike/)) es.push(['item','price']);
+  if(any(/avail|stock|inventory|instock/)) es.push(['item','availability']);
+  if(any(/licens|permit|\babt\b|dbpr/)) { es.push(['outlet','license#']); es.push(['account','license#']); }
+  if(any(/owner|\bdba\b|business|licensee/)) es.push(['account','owner']);
+  if(any(/address|\bcity\b|\bzip\b|\bstate\b|\blat\b|\blng\b|longitude|latitude|store|location|premise|phone/)) es.push(['outlet','address']);
+  if(any(/deplet|movement/)) es.push(['brand','depletion']);
+  // tier / name hints when columns are sparse
+  const h=(hints||'').toLowerCase();
+  if(!es.length && /on-premise|locator|yext|location/.test(h)) es.push(['outlet','address']);
+  if(!es.length && /dbpr|abt|licens|outlet/.test(h)) { es.push(['outlet','license#']); es.push(['account','license#']); }
+  if(!es.length && /nabca|deplet|control/.test(h)) es.push(['brand','depletion']);
   if(!es.length) es.push(['item','name']);
-  // dedupe
-  return es.filter((e,i)=>es.findIndex(x=>x[0]===e[0])===i);
+  const seen=new Set(); return es.filter(e=> !seen.has(e[0]) && seen.add(e[0]));
 }
-const STCOL = { Live:'#5bb86e', Ready:'#3fb8a3', Building:'#4a90d9', Planned:'#6f938a', Paused:'#7a7f9a', Blocked:'#d9584f' };
+function hostOf(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch(e){ return ''; } }
+function friendly(nm){ return String(nm||'source').replace(/\s*—.*$/,'').replace(/\s*\([^)]*\)\s*$/,'').slice(0,26); }
+function dsName(k){ const M={bd4008lic:'FL · Item master',bd4011lic:'FL · Registrants',abtbrands:'FL · Brand renewals',bd4006lic:'FL · Retail outlets',bd4005lic:'FL · Wholesale',bd400revok:'FL · Revoked',bd4002lic:'FL · Permits',abc_store_cells:'ABC · store cells'}; return M[k]||('dataset · '+k); }
+// deterministic position by name → stable geography across refreshes
+function stablePos(name, connEnts){
+  let h=2166136261; for(let i=0;i<name.length;i++){ h^=name.charCodeAt(i); h=Math.imul(h,16777619); }
+  const u=((h>>>0)%100000)/100000, v=(((h>>>7)>>>0)%100000)/100000;
+  const ang=u*Math.PI*2, rad=Math.acos(1-2*v);
+  const dir=new THREE.Vector3(Math.cos(ang)*Math.sin(rad), (Math.cos(rad))*0.85, Math.sin(ang)*Math.sin(rad));
+  const mean=new THREE.Vector3(); (connEnts||[]).forEach(e=> ENT_POS[e]&&mean.add(ENT_POS[e]));
+  if(connEnts&&connEnts.length) mean.multiplyScalar(1/connEnts.length);
+  return dir.multiplyScalar(122).lerp(mean.clone().multiplyScalar(1.7), 0.4);
+}
 
-// ── build node/edge model ──────────────────────────────────────────────────────────
-const nodes=[], edges=[], byId={};
-ENT.forEach(e=>{ const n={id:e.id,label:e.label,kind:'ent',pos:new THREE.Vector3(...e.p),status:null}; nodes.push(n); byId[e.id]=n; });
-CANON.forEach(([a,b,road])=>edges.push({a,b,road:road||'is-a'}));
-const srcs=loadSources();
-srcs.forEach((s,i)=>{
-  const es=edgesFor(s);
-  // place near the mean of connected entities, spread on a shell
-  const mean=new THREE.Vector3(); es.forEach(([e])=> mean.add(byId[e].pos)); mean.multiplyScalar(1/Math.max(1,es.length));
-  const ang=i*2.399963, rad=Math.acos(1-2*((i+0.5)/srcs.length));   // fibonacci sphere
-  const dir=new THREE.Vector3(Math.cos(ang)*Math.sin(rad),Math.cos(rad),Math.sin(ang)*Math.sin(rad));
-  const pos=dir.multiplyScalar(120).lerp(mean.clone().multiplyScalar(1.7),0.45);
-  const id='s'+i, n={id,label:(s.nm||'source').replace(/\s*—.*$/,''),full:s.nm,kind:'src',pos,status:s.status||'',foot:s.foot||'',tier:s.tier||''};
-  nodes.push(n); byId[id]=n;
-  es.forEach(([e,road])=>edges.push({a:id,b:e,road}));
-});
-// adjacency
-const adj={}; nodes.forEach(n=>adj[n.id]=new Set());
-edges.forEach(e=>{ adj[e.a].add(e.b); adj[e.b].add(e.a); });
+// ── live read ──────────────────────────────────────────────────────────────────────
+async function loadLive(){
+  const get=u=>fetch(u,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
+  const [recs,dsets,hls]=await Promise.all([get('/api/recipes'),get('/api/datasets'),get('/api/highlights')]);
+  return { recipes:(recs&&recs.recipes)||[], datasets:dsets||{}, highlights:(hls&&hls.highlights)||[], online:!!(recs||dsets) };
+}
+// build the graph model from the live read (+ catalog for the familiar estate)
+function buildModel(live){
+  const nodes=[], edges=[], byId={};
+  ENT.forEach(e=>{ const n={id:e.id,label:e.label,kind:'ent',pos:ENT_POS[e.id].clone()}; nodes.push(n); byId[e.id]=n; });
+  CANON.forEach(([a,b,road])=>edges.push({a,b,road:road||'is-a'}));
 
-// ── three.js scene ───────────────────────────────────────────────────────────────
+  const recByHost={}; (live.recipes||[]).forEach(r=>{ recByHost[r.host]=r; });
+  const seen={};   // dedupe by display name
+  function addSource(key,disp,status,sub,cols,hints,liveFlag){
+    const dn=disp.toLowerCase(); if(seen[dn]) return; seen[dn]=1;
+    const rs=roadsFromCols(cols,hints), ents=rs.map(r=>r[0]);
+    const n={id:key,label:friendly(disp),full:disp,kind:'src',status:(status||'planned').toLowerCase(),
+             sub:sub,live:liveFlag,pos:stablePos(disp,ents)};
+    nodes.push(n); byId[key]=n; rs.forEach(([e,road])=>edges.push({a:key,b:e,road}));
+  }
+
+  // 1) the familiar estate — catalog names, with LIVE status/cols overlaid from the backend
+  let cat=[]; try{ cat=JSON.parse(localStorage.getItem('hoodie.pulls.tracker.v2')||'[]')||[]; }catch(e){}
+  if(!cat.length && !live.online) cat=SEED;
+  cat.forEach((s,i)=>{
+    const rec=recByHost[hostOf(s.url)];
+    const cols=rec?Object.keys((rec.config&&rec.config.field_map)||{}).concat((rec.config&&rec.config.fields)||[]):(s.fields||[]);
+    const status=rec?rec.status:(s.status||'Planned');
+    const liveFlag=!!rec || /live/i.test(s.status||'');
+    const sub=(rec?('recipe · '+rec.status):(s.tier||'')) + (s.foot?(' · '+s.foot):'');
+    addSource('c'+i, s.nm||('source '+i), status, sub, cols, (s.tier||'')+' '+(s.nm||''), liveFlag);
+  });
+  // 2) owned datasets pulled by the engine — real data, real columns
+  Object.entries(live.datasets||{}).forEach(([k,v])=>{
+    const cols=(v&&v.header)||[]; const rows=(v&&(v.total||(v.rows&&v.rows.length)))||'';
+    addSource('d:'+k, dsName(k), 'data', 'owned dataset'+(rows?(' · '+rows+' rows'):''), cols, k, true);
+  });
+  // 3) any proven/analyzed recipe not already shown (new backend sources appear on their own)
+  (live.recipes||[]).forEach((r,i)=>{
+    const cols=Object.keys((r.config&&r.config.field_map)||{}).concat((r.config&&r.config.fields)||[]);
+    addSource('r'+i, r.host, r.status, 'recipe · '+(r.platform||'')+' · '+r.status, cols, r.host, true);
+  });
+
+  const adj={}; nodes.forEach(n=>adj[n.id]=new Set());
+  edges.forEach(e=>{ if(byId[e.a]&&byId[e.b]){ adj[e.a].add(e.b); adj[e.b].add(e.a); } });
+  return {nodes,edges:edges.filter(e=>byId[e.a]&&byId[e.b]),byId,adj};
+}
+
+// ── scene (built once) ───────────────────────────────────────────────────────────
 const stage=document.getElementById('stage');
-const scene=new THREE.Scene(); scene.fog=new THREE.FogExp2(0x0e1613,0.0028);
-const camera=new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.5, 3000); camera.position.set(120,70,190);
+const scene=new THREE.Scene(); scene.fog=new THREE.FogExp2(0x0e1613,0.0026);
+const camera=new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.5, 3000); camera.position.set(120,72,196);
 const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight); renderer.setPixelRatio(Math.min(2,devicePixelRatio)); stage.appendChild(renderer.domElement);
 const lr=new CSS2DRenderer(); lr.setSize(innerWidth,innerHeight); lr.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:4'; document.body.appendChild(lr.domElement);
-const controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true; controls.dampingFactor=.08; controls.rotateSpeed=.7; controls.minDistance=18; controls.maxDistance=600;
+const controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true; controls.dampingFactor=.08; controls.rotateSpeed=.7; controls.minDistance=18; controls.maxDistance=640;
 scene.add(new THREE.AmbientLight(0xffffff,.75)); const dl=new THREE.DirectionalLight(0xdff5ee,.7); dl.position.set(60,120,80); scene.add(dl);
-// faint reference grid
-const grid=new THREE.GridHelper(600,30,0x1c2b27,0x152220); grid.position.y=-90; scene.add(grid);
-
-// node meshes
+scene.add(new THREE.GridHelper(600,30,0x1c2b27,0x152220)).position.y=-90;
 const esph=new THREE.SphereGeometry(1,24,24);
-nodes.forEach(n=>{
-  const ent=n.kind==='ent';
-  const col=ent?0x3fb8a3:new THREE.Color(STCOL[n.status]||0x8aa39d).getHex();
-  const mat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:ent?.5:.28,roughness:.5,metalness:.1,transparent:true,opacity:1});
-  const m=new THREE.Mesh(esph,mat); m.scale.setScalar(ent?7.5:4.2); m.position.copy(n.pos); m.userData=n; scene.add(m); n.mesh=m; n.mat=mat;
-  const d=document.createElement('div'); d.className='lbl'+(ent?' ent':''); d.textContent=n.label;
-  const lo=new CSS2DObject(d); lo.position.set(0,ent?11:6.5,0); m.add(lo); n.lo=d;
-});
-// edge lines
-edges.forEach(e=>{
-  const na=byId[e.a], nb=byId[e.b]; if(!na||!nb) return;
-  const col=new THREE.Color(ROADCOL[e.road]||0x2a3a36);
-  const mat=new THREE.LineBasicMaterial({color:col,transparent:true,opacity:.34});
-  const g=new THREE.BufferGeometry().setFromPoints([na.pos,nb.pos]);
-  const l=new THREE.Line(g,mat); scene.add(l); e.line=l; e.mat=mat;
-});
+const graph=new THREE.Group(); scene.add(graph);
 
-// ── interaction: pick + focus (drop out the unconnected) ───────────────────────────
-const ray=new THREE.Raycaster(); const mouse=new THREE.Vector2(); let selected=null; let fly=null;
-const meshes=nodes.map(n=>n.mesh);
+// ── graph state + (re)build ─────────────────────────────────────────────────────
+let nodes=[], edges=[], byId={}, adj={}, meshes=[], selected=null, fly=null;
+function disposeGraph(){
+  nodes.forEach(n=>{ if(n.lo){ n.lo.remove(); } });
+  while(graph.children.length){ const c=graph.children.pop(); if(c.geometry)c.geometry.dispose(); if(c.material)c.material.dispose(); }
+}
+function buildGraph(model){
+  disposeGraph();
+  nodes=model.nodes; edges=model.edges; byId=model.byId; adj=model.adj; selected=null;
+  nodes.forEach(n=>{
+    const ent=n.kind==='ent';
+    const col=ent?0x3fb8a3:new THREE.Color(STCOL[n.status]||(n.live?0x5bb86e:0x5f7a72)).getHex();
+    const mat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:ent?.5:(n.live?.3:.12),roughness:.5,metalness:.1,transparent:true,opacity:1});
+    const m=new THREE.Mesh(esph,mat); m.scale.setScalar(ent?7.6:(n.live?4.4:3.4)); m.position.copy(n.pos); m.userData=n; graph.add(m); n.mesh=m; n.mat=mat;
+    const d=document.createElement('div'); d.className='lbl'+(ent?' ent':(n.live?'':' planned')); d.textContent=n.label;
+    const lo=new CSS2DObject(d); lo.position.set(0,ent?11:6.5,0); m.add(lo); n.lo=d;
+  });
+  edges.forEach(e=>{
+    const na=byId[e.a], nb=byId[e.b];
+    const mat=new THREE.LineBasicMaterial({color:new THREE.Color(ROADCOL[e.road]||0x2a3a36),transparent:true,opacity:.32});
+    const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints([na.pos,nb.pos]),mat); graph.add(l); e.line=l; e.mat=mat;
+  });
+  meshes=nodes.map(n=>n.mesh);
+}
+
+// ── interaction ─────────────────────────────────────────────────────────────────
+const ray=new THREE.Raycaster(); const mouse=new THREE.Vector2(); let down=[0,0];
+const selEl=document.getElementById('sel');
 function setFocus(n){
   selected=n;
-  if(!n){ nodes.forEach(x=>{x.mat.opacity=1;x.lo.classList.remove('dim');x.mesh.scale.setScalar(x.kind==='ent'?7.5:4.2);}); edges.forEach(e=>e.mat.opacity=.34); hideSel(); return; }
+  if(!n){ nodes.forEach(x=>{x.mat.opacity=1;x.lo.classList.remove('dim');x.mesh.scale.setScalar(x.kind==='ent'?7.6:(x.live?4.4:3.4));}); edges.forEach(e=>e.mat.opacity=.32); selEl.classList.remove('show'); return; }
   const keep=new Set([n.id,...adj[n.id]]);
-  nodes.forEach(x=>{ const on=keep.has(x.id); x.mat.opacity=on?1:.06; x.lo.classList.toggle('dim',!on); x.mesh.scale.setScalar((x.kind==='ent'?7.5:4.2)*(x.id===n.id?1.35:1)); });
-  edges.forEach(e=>{ const on=(e.a===n.id||e.b===n.id); e.mat.opacity=on?.9:.03; });
+  nodes.forEach(x=>{ const on=keep.has(x.id); x.mat.opacity=on?1:.05; x.lo.classList.toggle('dim',!on); x.mesh.scale.setScalar((x.kind==='ent'?7.6:(x.live?4.4:3.4))*(x.id===n.id?1.35:1)); });
+  edges.forEach(e=>{ e.mat.opacity=(e.a===n.id||e.b===n.id)?.92:.02; });
   showSel(n); flyTo(n);
 }
-function flyTo(n){
-  const off=camera.position.clone().sub(controls.target).normalize().multiplyScalar(n.kind==='ent'?70:52);
-  fly={toT:n.pos.clone(),toC:n.pos.clone().add(off),t:0,fromT:controls.target.clone(),fromC:camera.position.clone()};
+function flyTo(n){ const off=camera.position.clone().sub(controls.target).normalize().multiplyScalar(n.kind==='ent'?72:54);
+  fly={toT:n.pos.clone(),toC:n.pos.clone().add(off),t:0,fromT:controls.target.clone(),fromC:camera.position.clone()}; }
+function showSel(n){
+  const conns=edges.filter(e=>e.a===n.id||e.b===n.id).map(e=>{ const o=byId[e.a===n.id?e.b:e.a]; return {to:o.label,road:e.road}; });
+  selEl.innerHTML='<div class="k">'+(n.kind==='ent'?'Canonical entity':((n.live?'Live source · ':'Planned · ')+(n.status||'')))+'</div>'
+    +'<div class="nm">'+(n.full||n.label)+'</div>'+(n.sub?'<div class="meta">'+n.sub+'</div>':'')
+    +'<div class="cxh">Connects to</div><div class="cx">'
+    +(conns.length?conns.map(c=>'<div class="cxrow"><span class="road">'+c.road+'</span><span class="to">'+c.to+'</span></div>').join(''):'<div class="none">Nothing yet — an orphan (a road worth building).</div>')
+    +'</div><button class="reset" id="rst">✕ clear focus</button>';
+  selEl.classList.add('show'); document.getElementById('rst').onclick=()=>setFocus(null);
 }
 addEventListener('pointerdown',ev=>{ down=[ev.clientX,ev.clientY]; });
-let down=[0,0];
 addEventListener('pointerup',ev=>{
-  if(Math.hypot(ev.clientX-down[0],ev.clientY-down[1])>5) return;  // was a drag, not a click
+  if(Math.hypot(ev.clientX-down[0],ev.clientY-down[1])>5) return;
   mouse.x=(ev.clientX/innerWidth)*2-1; mouse.y=-(ev.clientY/innerHeight)*2+1;
   ray.setFromCamera(mouse,camera); const hit=ray.intersectObjects(meshes)[0];
   let node=hit?hit.object.userData:null;
-  if(!node){   // forgiving: nearest node in screen space (small spheres are hard to hit dead-on)
-    let best=null,bd=1e9; const v=new THREE.Vector3();
-    nodes.forEach(n=>{ v.copy(n.pos).project(camera); if(v.z>1)return;
-      const sx=(v.x*.5+.5)*innerWidth, sy=(-v.y*.5+.5)*innerHeight, d=Math.hypot(sx-ev.clientX,sy-ev.clientY);
-      if(d<bd){bd=d;best=n;} });
-    if(bd<46) node=best;   // else null → clicking empty space clears the focus
-  }
+  if(!node){ let best=null,bd=1e9; const v=new THREE.Vector3();
+    nodes.forEach(n=>{ v.copy(n.pos).project(camera); if(v.z>1)return; const d=Math.hypot((v.x*.5+.5)*innerWidth-ev.clientX,(-v.y*.5+.5)*innerHeight-ev.clientY); if(d<bd){bd=d;best=n;} });
+    if(bd<46) node=best; }
   setFocus(node);
 });
-// selected panel
-const selEl=document.getElementById('sel');
-function showSel(n){
-  const conns=edges.filter(e=>e.a===n.id||e.b===n.id).map(e=>{ const o=byId[e.a===n.id?e.b:e.a]; return {to:o.label,road:e.road,kind:o.kind}; });
-  selEl.innerHTML='<div class="k">'+(n.kind==='ent'?'Canonical entity':'Source · '+(n.status||'—'))+'</div>'
-    +'<div class="nm">'+(n.full||n.label)+'</div>'
-    +(n.foot?'<div class="meta">'+n.foot+'</div>':'')
-    +'<div class="cxh">Connects to</div><div class="cx">'
-    +(conns.length?conns.map(c=>'<div class="cxrow"><span class="road">'+c.road+'</span><span class="to">'+c.to+'</span></div>').join(''):'<div class="none">Nothing yet — an orphan.</div>')
-    +'</div><button class="reset" id="rst">✕ clear focus</button>';
-  selEl.classList.add('show');
-  document.getElementById('rst').onclick=()=>setFocus(null);
-}
-function hideSel(){ selEl.classList.remove('show'); }
 
-// ── loop ───────────────────────────────────────────────────────────────────────────
+// ── refresh (live read) ─────────────────────────────────────────────────────────
+const liveEl=document.getElementById('live'), liveTx=document.getElementById('livetx');
+let lastRead=0, lastSig='';
+async function refresh(){
+  const live=await loadLive();
+  const model=buildModel(live);
+  // only rebuild the scene when the estate actually changed (else the poll would flicker + reset focus)
+  const sig=model.nodes.map(n=>n.id+':'+n.status).sort().join('|');
+  if(sig!==lastSig){ const selId=selected&&selected.id; buildGraph(model); lastSig=sig; if(selId&&byId[selId]) setFocus(byId[selId]); }
+  lastRead=Date.now();
+  liveEl.className='live'+(live.online?'':' off');
+  liveTx.textContent=live.online?('live · '+nodes.filter(n=>n.kind==='src'&&n.live).length+' connected'):'offline · catalog view';
+  const L=document.getElementById('loading'); if(L)L.remove();
+}
+function tickLive(){ if(!lastRead)return; const age=(Date.now()-lastRead)/1000;
+  if(liveEl.classList.contains('off'))return;
+  liveEl.classList.toggle('stale',age>75);
+  liveTx.textContent = age<60 ? ('live · '+nodes.filter(n=>n.kind==='src'&&n.live).length+' connected') : ('updated '+Math.floor(age/60)+'m ago · refresh'); }
+liveEl.onclick=refresh;
+
+// ── loop ─────────────────────────────────────────────────────────────────────────
 addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); lr.setSize(innerWidth,innerHeight); });
-function tick(){
-  requestAnimationFrame(tick);
-  if(fly){ fly.t=Math.min(1,fly.t+.045); const e=1-Math.pow(1-fly.t,3);
-    controls.target.lerpVectors(fly.fromT,fly.toT,e); camera.position.lerpVectors(fly.fromC,fly.toC,e); if(fly.t>=1)fly=null; }
-  const t=performance.now()*0.001;
-  nodes.forEach(n=>{ if(n.kind==='ent') n.mat.emissiveIntensity=.42+Math.sin(t*1.6+n.pos.x)*.1; });   // gentle pulse
+function tick(){ requestAnimationFrame(tick);
+  if(fly){ fly.t=Math.min(1,fly.t+.045); const e=1-Math.pow(1-fly.t,3); controls.target.lerpVectors(fly.fromT,fly.toT,e); camera.position.lerpVectors(fly.fromC,fly.toC,e); if(fly.t>=1)fly=null; }
+  const t=performance.now()*0.001; nodes.forEach(n=>{ if(n.kind==='ent'&&n.mat) n.mat.emissiveIntensity=.42+Math.sin(t*1.6+n.pos.x)*.1; });
   controls.update(); renderer.render(scene,camera); lr.render(scene,camera);
 }
-document.getElementById('loading').remove();
-tick();
+refresh(); setInterval(refresh,60000); setInterval(tickLive,5000); tick();
 </script>
 </body>
 </html>
