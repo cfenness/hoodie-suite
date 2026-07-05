@@ -104,7 +104,7 @@
 
 <script>
 (function(){
-  var API="", lastUrl="", baseTarget="", lastApi=null, AF={}, FILTERS=[];
+  var API="", lastUrl="", baseTarget="", lastApi=null, AF={}, FILTERS=[], STOREF=null;
   // AF = the active filters the user added ({param:{name,value}}); build the target URL from them.
   function applyFilters(){
     var t=document.getElementById("ex-target"); if(!t) return;
@@ -189,6 +189,7 @@
     var apiUrl=(a.data_api&&a.data_api.url&&!/[<{]|your_|site_id|example\.|\.\.\./i.test(a.data_api.url))?a.data_api.url:"";
     baseTarget=apiUrl||lastUrl; lastApi=a.data_api||null;
     var flt=a.filters||[]; FILTERS=flt; AF={};
+    STOREF=flt.filter(function(f){return /store|location|shop|outlet|branch/i.test((f.name||"")+" "+(f.param||""));})[0]||null;
     // sample table (clean, ordered)
     var tbl = rows.length ? tableHTML(rows,8) : '<div class="em">No sample rows extracted.</div>';
     out.innerHTML=
@@ -227,6 +228,13 @@
             +'<button class="btn" id="fadd" type="button">+ Add filter</button>'
           +'</div>'
           +'<div class="chips afchips" id="afchips"></div>'):'')
+        +((apiUrl&&a.store_level&&a.store_level.scoped&&STOREF)?('<div class="lab">Per-store inventory pass — pull availability by location</div>'
+          +'<div class="fbuild">'
+            +'<input id="storelist" placeholder="store values, comma-separated" value="'+esc((STOREF.values||[]).filter(Boolean).slice(0,8).join(", "))+'" style="flex:1;min-width:240px;border:1px solid var(--hair,#D7DDDB);border-radius:8px;padding:9px 11px;font-family:var(--mono);font-size:12px;color:var(--ink,#243330)">'
+            +'<button class="btn" id="storerun" type="button">▸ Run per-store pass</button>'
+          +'</div>'
+          +'<div class="hint" style="margin:0 0 8px">Loops each store through the <b>'+esc(STOREF.name||STOREF.param)+'</b> filter; rows are tagged with <code>_store</code>. Full store enumeration uses the source’s locations endpoint'+(a.store_level.how?(' ('+esc(a.store_level.how)+')'):'')+'.</div>'
+          +'<div id="store-out"></div>'):'')
         +'<div class="exrow"><span class="hint">pages</span><input id="ex-pages" class="num-in" type="number" min="1" max="400" value="'+(apiUrl||a.pagination?'3':'1')+'">'
           +'<span class="hint" style="margin-left:10px">max items</span>'
           +'<select id="ex-limit-sel" class="num-in" style="width:auto" title="cap the number of items pulled — or pick All to pull the whole catalog">'
@@ -264,6 +272,7 @@
     var sv=document.getElementById("save"); if(sv)sv.onclick=function(){ var r=saveSourceFromAnalysis(a, lastUrl); toast(r==="updated"?"Updated in Catalog ✓":"Saved to Catalog ✓ — now a runnable card"); };
     var ag=document.getElementById("again"); if(ag)ag.onclick=function(){ document.getElementById("url").focus(); document.getElementById("url").select(); };
     var rx=document.getElementById("run-extract"); if(rx)rx.onclick=runExtract;
+    var st=document.getElementById("storerun"); if(st)st.onclick=runStorePass;
     var lsel=document.getElementById("ex-limit-sel"), linp=document.getElementById("ex-limit");
     if(lsel&&linp){
       // one control by default: the number box appears only for "Custom…"
@@ -321,6 +330,34 @@
           ? '<div class="lab">Extracted rows</div>'+tableHTML(rows,50)+(rows.length>50?('<div class="hint" style="margin-top:6px">showing 50 of '+rows.length+'</div>'):'')
           : '<div class="em">No rows extracted — try tightening the prompt.</div>');
       }).catch(function(){ btn.disabled=false; eout.innerHTML='<div class="em">Extraction failed — is the engine live?</div>'; });
+  }
+  // Per-store pass: loop each store value through the store filter, tag rows with _store, aggregate.
+  function runStorePass(){
+    if(!STOREF) return;
+    var stores=((document.getElementById("storelist")||{}).value||"").split(/[,\n]/).map(function(s){return s.trim();}).filter(Boolean);
+    var out=document.getElementById("store-out");
+    if(!stores.length){ out.innerHTML='<div class="em">Add at least one store value.</div>'; return; }
+    if(stores.length>25) stores=stores.slice(0,25);
+    var prompt=(document.getElementById("scrape-prompt")||{}).value||"";
+    var btn=document.getElementById("storerun"); if(btn)btn.disabled=true;
+    var all=[], counts=[];
+    (function next(i){
+      if(i>=stores.length){ if(btn)btn.disabled=false;
+        var chips=counts.map(function(c){return '<span class="fchip"><b>'+esc(c.store)+'</b> · '+(c.err?'<span style="color:var(--bad,#b4232a)">err</span>':(c.n+' rows'))+'</span>';}).join('');
+        out.innerHTML='<div class="hint" style="margin:8px 0 6px">'+all.length+' rows across '+counts.length+' stores</div>'
+          +'<div class="chips" style="margin-bottom:8px">'+chips+'</div>'
+          +(all.length?(tableHTML(all,50)+(all.length>50?('<div class="hint" style="margin-top:6px">showing 50 of '+all.length+'</div>'):'')):'<div class="em">No rows — check the store values or the filter param.</div>');
+        return; }
+      out.innerHTML='<div class="loading"><span class="spin"></span>'+(i+1)+'/'+stores.length+' stores · '+all.length+' rows…</div>';
+      var target=baseTarget; try{ var u=new URL(baseTarget); u.searchParams.set(STOREF.param,stores[i]); target=u.toString(); }catch(e){}
+      fetch(API+"/api/scraper/extract",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({url:target,prompt:prompt,pages:1,limit:50,api:lastApi})})
+        .then(function(r){return r.json();}).then(function(d){
+          var rs=(d.rows||[]).map(function(x){return Object.assign({_store:stores[i]},x);});
+          all=all.concat(rs); counts.push({store:stores[i],n:rs.length,err:d.error});
+          setTimeout(function(){next(i+1);},250);
+        }).catch(function(){ counts.push({store:stores[i],n:0,err:"failed"}); setTimeout(function(){next(i+1);},250); });
+    })(0);
   }
 
   go.onclick=analyze;
