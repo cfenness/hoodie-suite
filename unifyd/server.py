@@ -34,6 +34,7 @@ import places                       # restaurant / on-premise-accounts connector
 import census                       # US Census ACS demographics — reference-data connector (by county)
 import enrich                       # join reference data (census) onto the outlet master by county
 import tx_tabc                      # Texas TABC licenses (Socrata) — TX outlets + companies by county
+import master                       # unify per-state outlet pulls into one normalized outlets_master
 import warehouse                    # Parquet-on-Tigris (or local) queried by DuckDB
 import auth_gate                    # Google OIDC login gate (active only when configured)
 
@@ -1136,7 +1137,7 @@ def enrich_census_ep():
     # FL DBPR extracts all share one header, so items/brands "look" like outlets. Restrict to the
     # ACTUAL outlet tables (retail/wholesale/permits + ABC store cells + the places accounts), never
     # items/registrants/brands, then pick whichever genuinely matches census best.
-    OUTLET_IDS = {"bd4006lic", "bd4005lic", "bd4002lic", "abc_store_cells", "tx_outlets"}
+    OUTLET_IDS = {"outlets_master", "bd4006lic", "bd4005lic", "bd4002lic", "abc_store_cells", "tx_outlets"}
     NON_OUTLET = {"bd4008lic", "bd4011lic", "abtbrands", "census_acs", "outlets_census"}
     def _places(d):
         h = [str(x).lower() for x in (d.get("header") or [])]
@@ -1166,6 +1167,26 @@ def enrich_census_ep():
     return jsonify(ok=True, outlet_dataset=oid, matched=res["matched"], total=res["total"],
                    coverage=cov, counties=res["counties_indexed"], demo_cols=res["demo_cols"],
                    landed="outlets_census", header=res["header"], sample=res["rows"][:5])
+
+@app.post("/api/master/outlets/build")
+def master_outlets_ep():
+    """Unify the per-state outlet pulls (FL bd4006lic + TX tx_outlets + …) into ONE normalized
+    outlets_master — the base outlet spine the coverage map + census-join-at-scale need. Uses FULL
+    rows from the on-demand store when present. Run the state outlet pulls first."""
+    sources = {}
+    for did in master.SOURCES:
+        full = load_full(did)
+        if full and full.get("rows"):
+            sources[did] = full
+        elif isinstance(DATASETS.get(did), dict) and DATASETS[did].get("rows"):
+            sources[did] = DATASETS[did]
+    if not sources:
+        return jsonify(error="no outlet pulls yet — run FL Outlets and/or Texas TABC first"), 400
+    res = master.build(sources)
+    DATASETS.update(_absorb({"outlets_master": {"header": res["header"], "rows": res["rows"][:800],
+                             "total": res["total"], "_rows_full": res["rows"]}})); save()
+    return jsonify(ok=True, landed="outlets_master", total=res["total"], by_state=res["by_state"],
+                   sources=res["sources"], header=res["header"], sample=res["rows"][:5])
 
 @app.get("/api/benchmark")
 def benchmark_ep():
