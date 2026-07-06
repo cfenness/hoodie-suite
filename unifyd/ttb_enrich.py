@@ -31,7 +31,8 @@ DETAIL_FIELDS = ["Status", "Vendor Code", "Serial #", "Class/Type Code", "Origin
                  "Brand Name", "Fanciful Name", "Type of Application", "For Sale In",
                  "Total Bottle Capacity", "Wine Vintage", "Formula", "Approval Date",
                  "Qualifications", "Contact Information"]
-OUT_HEADER = ["TTB ID"] + DETAIL_FIELDS + ["UPC", "upc_raw", "upc_status", "label_files"]
+OUT_HEADER = ["TTB ID"] + DETAIL_FIELDS + ["UPC", "upc_raw", "upc_status",
+                                           "alcohol_content", "abv", "proof", "label_files"]
 
 
 def parse_detail_fields(html):
@@ -66,6 +67,29 @@ def label_filenames(html):
     return out
 
 
+# Field #13 "ALCOHOL CONTENT" on the publicFormDisplay page → e.g. "45% ABV", "13.5% Alc/Vol",
+# "90 Proof". Same page we fetch for labels, so ABV is ~free during enrichment.
+ALC_RE = re.compile(r'class="label"[^>]*>[^<]*ALCOHOL\s*CONTENT[^<]*</div>\s*<div\s+class="data"[^>]*>(.*?)</div>', re.I | re.S)
+SPIRIT_RE = re.compile(r'whisk|vodka|\brum\b|\bgin\b|tequila|brandy|cognac|liqueur|spirit|cordial|mezcal|bourbon|scotch|schnapps|\brye\b|absinthe|aquavit', re.I)
+def parse_alcohol(html, cls=""):
+    """Return {content, abv, proof} from the form's ALCOHOL CONTENT field. Parses whichever unit
+    is stated; derives proof=2×abv only for distilled spirits (proof is meaningless for wine/beer)."""
+    m = ALC_RE.search(html or "")
+    raw = re.sub(r"\s+", " ", (m.group(1) if m else "")).replace("&quot;", '"').replace("&amp;", "&").strip()
+    abv = proof = ""
+    if raw:
+        mp = re.search(r"([\d.]+)\s*%", raw)
+        if mp: abv = mp.group(1)
+        mpr = re.search(r"([\d.]+)\s*proof", raw, re.I)
+        if mpr: proof = mpr.group(1)
+        try:
+            if abv and not proof and SPIRIT_RE.search(cls or raw): proof = "%g" % (float(abv) * 2)
+            if proof and not abv: abv = "%g" % (float(proof) / 2)
+        except Exception:
+            pass
+    return {"content": raw[:80], "abv": abv, "proof": proof}
+
+
 def year_of(*vals):
     for s in vals:
         s = (s or "").strip()
@@ -89,6 +113,7 @@ def main():
     ap.add_argument("--labels", action="store_true", help="download + save label images")
     ap.add_argument("--labels-dir", default="", help="where to save labels (default: <out>_labels)")
     ap.add_argument("--ocr", action="store_true", help="barcode-decode labels -> UPC (implies --labels fetch; needs pyzbar)")
+    ap.add_argument("--alcohol", action="store_true", help="also capture ALCOHOL CONTENT (ABV/proof) from the form page")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--delay", type=float, default=0.3)
     ap.add_argument("--limit", type=int, default=0, help="stop after N (0 = all)")
@@ -115,6 +140,7 @@ def main():
         print("resume: %d already enriched" % len(done))
 
     want_labels = a.labels or a.ocr
+    need_form = want_labels or a.alcohol     # the form page carries labels AND the ABV/proof field
     ldir = a.labels_dir or (a.out.rsplit(".", 1)[0] + "_labels")
     if want_labels:
         os.makedirs(ldir, exist_ok=True)
@@ -147,12 +173,14 @@ def main():
                 rec[k] = f.get(k, "")
         except Exception as e:
             pass
-        # --- labels + UPC (raw barcode + deterministic status; placeholder kept, not trusted) ---
+        # --- form page (fetched once) → ABV/proof + labels + UPC ---
         saved, upc_raw, upc_status = [], "", "none"
-        if want_labels:
+        alc = {"content": "", "abv": "", "proof": ""}
+        if need_form:
             try:
                 fhtml = s.get(VIEW, params={"action": "publicFormDisplay", "ttbid": tid}, timeout=90).text
-                for fn in label_filenames(fhtml):
+                alc = parse_alcohol(fhtml, rec.get("Class/Type Code", ""))
+                for fn in (label_filenames(fhtml) if want_labels else []):
                     try:
                         img = s.get(ATTACH, params={"filename": fn, "filetype": "l"}, timeout=90).content
                     except Exception:
@@ -178,6 +206,9 @@ def main():
         rec["UPC"] = upc_raw if upc_status == "valid" else ""
         rec["upc_raw"] = upc_raw
         rec["upc_status"] = upc_status
+        rec["alcohol_content"] = alc["content"]
+        rec["abv"] = alc["abv"]
+        rec["proof"] = alc["proof"]
         rec["label_files"] = ";".join(saved)
         w.writerow([rec.get(h, "") for h in OUT_HEADER]); fout.flush()
         n += 1
