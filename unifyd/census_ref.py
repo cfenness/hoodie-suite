@@ -14,7 +14,10 @@ Suppression (cells Census withholds for confidentiality) is a flagged state, nev
 import os, json, time, urllib.request, urllib.parse
 
 NAICS = ["4248", "44531", "722"]
-CBP_YEAR, NONEMP_YEAR, SUSB_YEAR, PEP_YEAR = 2022, 2022, 2022, 2023   # validated/adjusted on Fly
+# Vintages validated LIVE on Fly (Census now requires a key for all requests):
+#   CBP 2022 ✓ · Nonemployer 2019 ✓ (var NESTAB, not ESTAB) · PEP 2019 ✓ (newer PEP vintages not in
+#   the API) · SUSB — NO API (not in data.json; bulk download only) → dropped from the live layer.
+CBP_YEAR, NONEMP_YEAR, PEP_YEAR = 2022, 2019, 2019
 REF_HEADER = ["dataset", "vintage_year", "naics_code", "geo_level", "geo_fips",
               "metric_name", "metric_value", "suppressed", "source_pulled_at"]
 
@@ -81,53 +84,35 @@ def pull_cbp(year=CBP_YEAR, naics=NAICS):
 
 
 def pull_nonemp(year=NONEMP_YEAR, naics=NAICS):
-    """Nonemployer Statistics — no-paid-employee businesses + receipts (complements CBP's employer-only)."""
+    """Nonemployer Statistics — no-paid-employee businesses (NESTAB) + receipts (NRCPTOT), by NAICS,
+    state-level. Complements CBP's employer-only counts (important for small/independent operators)."""
     out, ts = [], int(time.time())
-    metrics = ["NESTAB", "ESTAB", "NRCPTOT"]
     for n in naics:
         try:
-            rows = _rows(_get("%d/nonemp" % year, {"get": "ESTAB,NRCPTOT", "for": "state:*", "NAICS2017": n}))
+            rows = _rows(_get("%d/nonemp" % year, {"get": "NESTAB,NRCPTOT", "for": "state:*", "NAICS2017": n}))
         except Exception:
             continue
         for r in rows:
-            _emit(out, "nonemployer", year, n, "state", r.get("state", ""), ["ESTAB", "NRCPTOT"], r, False, ts)
+            _emit(out, "nonemployer", year, n, "state", r.get("state", ""), ["NESTAB", "NRCPTOT"], r, False, ts)
     return out
 
 
-def pull_susb(year=SUSB_YEAR, naics=NAICS):
-    """Statistics of U.S. Businesses — estab/firm/employment by enterprise size (chain vs independent)."""
-    out, ts = [], int(time.time())
-    metrics = ["ESTAB", "FIRM", "EMP"]
-    for n in naics:
-        try:
-            rows = _rows(_get("%d/susb" % year, {"get": "ESTAB,FIRM,EMP,EMPSZES_LABEL",
-                                                 "for": "state:*", "NAICS2017": n}))
-        except Exception:
-            continue
-        for r in rows:
-            size = (r.get("EMPSZES_LABEL") or "all").strip()
-            for m in metrics:
-                val = _num(r.get(m))
-                out.append(["susb", year, n, "state", r.get("state", ""),
-                            "%s|%s" % (m.lower(), size), (val if val is not None else ""),
-                            val is None, ts])
-    return out
+# SUSB (Statistics of U.S. Businesses, by enterprise size) has NO Census API — bulk download only.
+# Phase 2 if chain-vs-independent segmentation is needed: ingest the SUSB flat file separately.
 
 
 def pull_pep(year=PEP_YEAR):
-    """Population Estimates — county/state population (per-capita denominator). Not NAICS-scoped."""
+    """Population Estimates — county + state population (per-capita denominator). Latest API vintage is
+    2019 (newer PEP vintages aren't exposed via the API). Not NAICS-scoped."""
     out, ts = [], int(time.time())
     for level, params in (("county", {"for": "county:*", "in": "state:*"}), ("state", {"for": "state:*"})):
-        for var in ("POP_%d" % year, "POP"):        # PEP variable name moved post-2020; try both
-            try:
-                rows = _rows(_get("%d/pep/population" % year, dict(params, **{"get": var + ",NAME"})))
-            except Exception:
-                continue
-            for r in rows:
-                fips = r.get("state", "") + r.get("county", "") if level == "county" else r.get("state", "")
-                out.append(["pep", year, "", level, fips, "population", _num(r.get(var)) or "", False, ts])
-            if rows:
-                break
+        try:
+            rows = _rows(_get("%d/pep/population" % year, dict(params, **{"get": "POP,NAME"})))
+        except Exception:
+            continue
+        for r in rows:
+            fips = r.get("state", "") + r.get("county", "") if level == "county" else r.get("state", "")
+            out.append(["pep", year, "", level, fips, "population", _num(r.get("POP")) or "", False, ts])
     return out
 
 
@@ -135,7 +120,7 @@ def build(log=print):
     """Run the four datasets → long/tall census_reference; write to the warehouse. Returns stats."""
     import warehouse
     rows = []
-    for name, fn in (("cbp", pull_cbp), ("nonemployer", pull_nonemp), ("susb", pull_susb), ("pep", pull_pep)):
+    for name, fn in (("cbp", pull_cbp), ("nonemployer", pull_nonemp), ("pep", pull_pep)):
         r = fn()
         log("census %s: %d rows" % (name, len(r)))
         rows.extend(r)
