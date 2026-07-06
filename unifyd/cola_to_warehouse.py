@@ -17,10 +17,9 @@ writes to object storage rather than local disk:
 With no bucket configured it writes local Parquet under agent_state/warehouse/ (same code path,
 handy for a dry run). Needs: pyarrow, duckdb  (pip install pyarrow duckdb).
 """
-import argparse, os, sys
+import argparse, csv, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
-from ttb_cola_scraper import COLA_HEADER
 
 
 def main():
@@ -36,7 +35,9 @@ def main():
     size_mb = os.path.getsize(a.csv) / 1e6
     print("loading %s (%.1f MB) -> %s as '%s'" % (a.csv, size_mb, where, a.name))
 
-    res = warehouse.write_parquet_from_csv(a.name, a.csv, fields=COLA_HEADER)
+    with open(a.csv, newline="", encoding="utf-8") as f:
+        header = next(csv.reader(f))          # the file's own columns (index OR enriched schema)
+    res = warehouse.write_parquet_from_csv(a.name, a.csv, fields=header)
     print("wrote %s rows -> %s" % (f"{res['rows']:,}", res["uri"]))
 
     # verify by querying the Parquet back through DuckDB (in place)
