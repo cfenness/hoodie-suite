@@ -327,6 +327,38 @@ function openReport(id){
   };
 }
 // Ingest a pull — open the ingestion QA console (suite-themed) as a modal for this source.
+// Reference data ENRICHES (join to outlets by county), it doesn't ingest to master.
+function openJoin(id){
+  var s=SOURCES.find(function(x){return x.id===id;}); if(!s) return;
+  var ov=document.createElement("div"); ov.className="ingov";
+  ov.innerHTML='<div class="ingbox" style="width:min(680px,96vw);height:auto;max-height:90vh">'
+    +'<div class="inghd"><div class="t">Join to outlets <small>'+esc(s.nm)+'</small></div><button class="ingx">✕</button></div>'
+    +'<div id="joinbody" style="padding:18px 20px"><div class="empty">Matching county demographics onto the outlet master…</div></div></div>';
+  document.body.appendChild(ov);
+  function close(){ ov.remove(); }
+  ov.querySelector(".ingx").onclick=close; ov.addEventListener("click",function(e){ if(e.target===ov) close(); });
+  var chip=function(c){ return '<span style="display:inline-block;background:var(--gray-soft,#eef1f5);color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:11px;margin:0 4px 5px 0;font-family:var(--mono,monospace)">'+esc(c)+'</span>'; };
+  fetch("/api/enrich/census",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
+    .then(function(res){
+      var d=res.d||{}, body=document.getElementById("joinbody"); if(!body) return;
+      if(!res.ok||d.error){ body.innerHTML='<div style="color:var(--bad);font-size:13px">'+esc(d.error||"join failed")+'</div>'; return; }
+      var covColor=d.coverage>=70?"var(--good)":(d.coverage>=40?"var(--warn)":"var(--bad)");
+      body.innerHTML=''
+        +'<div style="display:flex;gap:26px;margin-bottom:14px">'
+        +'<div><div style="font-size:26px;font-weight:700;color:var(--ink)">'+d.matched+'<span style="font-size:15px;color:var(--muted)">/'+d.total+'</span></div><div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">outlets matched</div></div>'
+        +'<div><div style="font-size:26px;font-weight:700;color:'+covColor+'">'+d.coverage+'%</div><div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">coverage</div></div>'
+        +'<div><div style="font-size:26px;font-weight:700;color:var(--ink)">'+d.counties+'</div><div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">counties</div></div>'
+        +'</div>'
+        +'<div style="font-size:12.5px;color:var(--muted);line-height:1.5;margin-bottom:9px">Each outlet in <b>'+esc(d.outlet_dataset)+'</b> now carries its trade-area demographics — landed as <b>outlets_census</b>, ready for HI’s Demographics view.</div>'
+        +'<div>'+(d.demo_cols||[]).map(chip).join("")+'</div>';
+      RUNSTATE[id]={state:"done",conn:true,rows:d.matched,status:d.matched?"success":"degraded",
+        note:d.matched?("enriched "+d.matched+"/"+d.total+" outlets · "+d.coverage+"% county coverage"):"no county matches — pull FL Outlets first"};
+      render();
+    })
+    .catch(function(){ var body=document.getElementById("joinbody"); if(body) body.innerHTML='<div style="color:var(--bad);font-size:13px">Couldn’t reach the engine.</div>'; });
+}
+
 function openIngest(id){
   var s=SOURCES.find(function(x){return x.id===id;}); if(!s) return;
   var ov=document.createElement("div"); ov.className="ingov";
@@ -408,6 +440,7 @@ function render(){
   list.querySelectorAll("[data-pri]").forEach(b=>b.onclick=()=>cyclePri(b.dataset.pri));
   list.querySelectorAll("[data-run]").forEach(b=>b.onclick=()=>runSource(b.dataset.run));
   list.querySelectorAll("[data-ingest]").forEach(b=>b.onclick=()=>openIngest(b.dataset.ingest));
+  list.querySelectorAll("[data-join]").forEach(b=>b.onclick=()=>openJoin(b.dataset.join));
   list.querySelectorAll("[data-fld]").forEach(b=>b.onclick=()=>{ const p=b.dataset.fld.split("::"); toggleFld(p[0],p[1]); });
   list.querySelectorAll("[data-report]").forEach(b=>b.onclick=()=>openReport(b.dataset.report));
   renderChips(); syncProjects();
@@ -435,7 +468,9 @@ function cardHTML(s){
       +'<span class="pill pri '+s.pri.toLowerCase()+'" data-pri="'+s.id+'" title="Click to change priority">'+esc(s.pri)+'</span>'
       +'<span class="pill st st-'+s.status.toLowerCase()+'" data-cyc="'+s.id+'" title="Click to advance status">'+esc(s.status)+'</span>'
       +((s.url||s.connId)?'<button class="iconbtn run" data-run="'+s.id+'" title="'+(s.connId?'Run the owned pull now (engine pipeline)':'Run this source now (recipe-first)')+'"'+(RUNSTATE[s.id]&&RUNSTATE[s.id].state==="running"?" disabled":"")+'>▸</button>':'')
-      +((s.url||s.connId)?'<button class="iconbtn" data-ingest="'+s.id+'" title="Ingest this pull — QA + commit to master">⤓</button>':'')
+      +((s.tier==="Reference Data")
+          ? '<button class="iconbtn" data-join="'+s.id+'" title="Join to the outlet master by county — enrich accounts with demographics (reference data enriches, it doesn\'t ingest to master)">⊕</button>'
+          : ((s.url||s.connId)?'<button class="iconbtn" data-ingest="'+s.id+'" title="Ingest this pull — QA + commit to master">⤓</button>':''))
       +'<button class="iconbtn" data-edit="'+s.id+'" title="Edit">✎</button>'
     +'</div></div>'
     +((s.url||s.connId)?runoutHtml(s.id):'');

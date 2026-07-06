@@ -32,6 +32,7 @@ import hi_analyst                   # the real Claude analyst behind Hoodie Inte
 import prism                        # data contract behind the Prism mobile app
 import places                       # restaurant / on-premise-accounts connector (Orlando first)
 import census                       # US Census ACS demographics — reference-data connector (by county)
+import enrich                       # join reference data (census) onto the outlet master by county
 import warehouse                    # Parquet-on-Tigris (or local) queried by DuckDB
 import auth_gate                    # Google OIDC login gate (active only when configured)
 
@@ -1082,6 +1083,49 @@ def ai_ask_ep():
     if "error" not in result:
         return jsonify(result)
     return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
+
+@app.post("/api/enrich/census")
+def enrich_census_ep():
+    """Reference-data ENRICH (not master ingest): join census_acs county demographics onto the
+    outlet master by county+state → lands `outlets_census`. Auto-picks the biggest outlet dataset
+    (has county+state) unless `outlet_dataset` is given. Run the US Census pull first."""
+    census_ds = DATASETS.get("census_acs")
+    if not isinstance(census_ds, dict) or not (census_ds.get("rows")):
+        return jsonify(error="no census_acs data yet — run the US Census pull first"), 400
+    body = request.get_json(silent=True) or {}
+    # FL DBPR extracts all share one header, so items/brands "look" like outlets. Restrict to the
+    # ACTUAL outlet tables (retail/wholesale/permits + ABC store cells + the places accounts), never
+    # items/registrants/brands, then pick whichever genuinely matches census best.
+    OUTLET_IDS = {"bd4006lic", "bd4005lic", "bd4002lic", "abc_store_cells"}
+    NON_OUTLET = {"bd4008lic", "bd4011lic", "abtbrands", "census_acs", "outlets_census"}
+    def _places(d):
+        h = [str(x).lower() for x in (d.get("header") or [])]
+        return "county" in h and ("account_id" in h or "premise" in h)
+    want = body.get("outlet_dataset")
+    if want and isinstance(DATASETS.get(want), dict):
+        cands = [(want, DATASETS[want])]
+    else:
+        cands = [(k, v) for k, v in DATASETS.items()
+                 if isinstance(v, dict) and v.get("rows") and k not in NON_OUTLET
+                 and (k in OUTLET_IDS or _places(v))]
+    if not cands:
+        return jsonify(error="no outlet dataset to join — run FL Outlets (bd4006lic) or the Orlando accounts pull first"), 400
+    best = None
+    for k, v in cands:
+        r = enrich.join_census_to_outlets(census_ds, v)
+        if "error" in r:
+            continue
+        if best is None or r["matched"] > best[2]["matched"]:
+            best = (k, v, r)
+    if best is None:
+        return jsonify(error="outlet datasets present but none have a joinable county/state column"), 400
+    oid, outlets, res = best
+    DATASETS.update(_absorb({"outlets_census": {"header": res["header"], "rows": res["rows"][:800],
+                             "total": len(res["rows"]), "_rows_full": res["rows"]}})); save()
+    cov = round(100.0 * res["matched"] / res["total"], 1) if res["total"] else 0
+    return jsonify(ok=True, outlet_dataset=oid, matched=res["matched"], total=res["total"],
+                   coverage=cov, counties=res["counties_indexed"], demo_cols=res["demo_cols"],
+                   landed="outlets_census", header=res["header"], sample=res["rows"][:5])
 
 @app.get("/api/benchmark")
 def benchmark_ep():
