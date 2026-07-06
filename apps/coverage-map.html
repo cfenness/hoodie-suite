@@ -164,7 +164,7 @@
 <script>
 (function(){
   const $=s=>document.querySelector(s);
-  const map=L.map('map',{zoomControl:true,preferCanvas:true}).setView([41.87,-87.65],11);
+  const map=L.map('map',{zoomControl:true,preferCanvas:true}).setView([39.5,-98.35],4);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
     attribution:'© OpenStreetMap © CARTO', subdomains:'abcd', maxZoom:19
   }).addTo(map);
@@ -189,7 +189,8 @@
       m.on('click',()=>openDetail(p));
       return m;
     })).addTo(map);
-    $('#count').innerHTML='<b>'+pts.length.toLocaleString()+'</b> of '+ALL.length.toLocaleString()+' outlets';
+    $('#count').innerHTML='<b>'+pts.length.toLocaleString()+'</b> shown'+
+      (CAPPED?' · '+INVIEW.toLocaleString()+' in view — zoom in for all':'');
   }
 
   // ---- click a dot → everything we hold: the outlet's own record + its Census market context ----
@@ -284,18 +285,30 @@
       [...aset].sort().map(a=>'<option value="'+esc(a)+'">'+esc(a)+'</option>').join('');
   }
 
-  async function load(ds){
-    $('#load').style.display='flex'; $('#note').style.display='none';
+  // Viewport-based loading: only fetch the dots in the current map bounds (sampled if the view holds
+  // more than a screenful), and refetch as you pan/zoom — so the browser never renders more than ~40k
+  // at once, no matter how big the master gets. The table below is how you browse/search everything.
+  let CURDS='outlets_master', FIRST=true, INVIEW=0, CAPPED=false, loadSeq=0;
+  async function loadViewport(spin){
+    const my=++loadSeq;
+    if(spin){ $('#load').style.display='flex'; }
+    $('#note').style.display='none';
+    const b=map.getBounds();
+    const bbox=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(n=>n.toFixed(5)).join(',');
     try{
-      const r=await fetch('/api/outlets/geo?dataset='+encodeURIComponent(ds),{cache:'no-store'});
+      const r=await fetch('/api/outlets/geo?dataset='+encodeURIComponent(CURDS)+'&bbox='+bbox,{cache:'no-store'});
       const j=await r.json();
-      ALL=j.points||[];
-      if(!ALL.length){ $('#note').style.display='block'; $('#note').textContent=j.note||'no geocoded outlets in this dataset yet.'; }
-      buildFilters(); draw();
-      if(ALL.length){ const b=L.latLngBounds(ALL.map(p=>[p.lat,p.lng])); if(b.isValid()) map.fitBounds(b.pad(0.05)); }
-    }catch(e){ $('#note').style.display='block'; $('#note').textContent='could not load: '+e.message; }
-    $('#load').style.display='none';
+      if(my!==loadSeq) return;                 // a newer pan/zoom superseded this
+      ALL=j.points||[]; INVIEW=j.in_view||ALL.length; CAPPED=!!j.capped;
+      if(!ALL.length && !INVIEW){ $('#note').style.display='block'; $('#note').textContent=j.note||'no geocoded outlets in view.'; }
+      if(FIRST){ buildFilters(); FIRST=false; }
+      draw();
+    }catch(e){ if(my===loadSeq){ $('#note').style.display='block'; $('#note').textContent='could not load: '+e.message; } }
+    if(my===loadSeq) $('#load').style.display='none';
   }
+  function load(ds){ CURDS=ds; FIRST=true; loadViewport(true); }
+  let moveT=null;
+  map.on('moveend', ()=>{ clearTimeout(moveT); moveT=setTimeout(()=>loadViewport(false), 280); });
 
   // ---- outlet master table (the data underneath the map): server-paged + searchable ----
   let tOffset=0, tFiltered=0, tSeq=0; const tLimit=50; let tRows=[];
