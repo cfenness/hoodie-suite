@@ -1,427 +1,194 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="../suite.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Estate Map — the data & model layer</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root{
-    --paper:#F4F6F5;--panel:#E6E4DD;--panel-2:#DEDBD2;
-    --ink:#243330;--ink-soft:#5E6B68;--hair:#D7DDDB;
-    --amber:#4E79A7;--amber-bright:#6A93BD;--amber-deep:#3D6089;--amber-tint:#EAE0CC;
-    --slate:#2F3D49;--slate-tint:#DEE6E3;
-    --steel:#35617A;--steel-tint:#DBE5EC;
-    --plum:#6B4A6E;--plum-tint:#E7DEE8;
-    --oxblood:#8A382C;
-  }
-  *{box-sizing:border-box;}
-  html,body{margin:0;height:100%;}
-  body{background:var(--paper);color:var(--ink);font-family:"Source Serif 4",Georgia,serif;-webkit-font-smoothing:antialiased;overflow:hidden;}
-  button{font-family:inherit;cursor:pointer;}
-  .mono{font-family:"IBM Plex Mono",monospace;}
-
-  .head{position:fixed;top:0;left:0;right:0;z-index:20;background:var(--ink);color:var(--paper);padding:13px 22px;display:flex;align-items:center;gap:18px;height:52px;}
-  .head .ttl{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:17px;letter-spacing:-0.01em;}
-  .head .sub{font-family:"IBM Plex Mono",monospace;font-size:11px;color:#9a958a;letter-spacing:0.03em;}
-  .head .sub b{color:var(--amber-bright);font-weight:600;}
-  .head .spacer{margin-left:auto;}
-  .head .legend{display:flex;gap:6px;flex-wrap:wrap;}
-  .head .lg{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:0.04em;color:#cfc9bd;border:1px solid #34322c;padding:5px 9px;border-radius:3px;display:flex;align-items:center;gap:6px;cursor:pointer;transition:all .12s;text-transform:uppercase;}
-  .head .lg:hover{background:#26241f;}
-  .head .lg.off{opacity:.35;}
-  .head .lg .sw{width:9px;height:9px;border-radius:2px;}
-  .head .lg.planned .sw{background:transparent;border:1.5px dashed #9a958a;}
-
-  /* scenario banner */
-  .scenbar{position:fixed;top:52px;left:0;right:330px;z-index:19;background:var(--slate);color:var(--paper);height:0;overflow:hidden;display:flex;align-items:center;gap:14px;padding:0 22px;transition:height .18s;}
-  .scenbar.on{height:38px;}
-  .scenbar .l{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:0.05em;text-transform:uppercase;font-weight:600;}
-  .scenbar .what{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;}
-  .scenbar .x{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;border:1px solid rgba(238,237,232,.4);padding:5px 11px;border-radius:3px;color:var(--paper);background:transparent;}
-  .scenbar .x:hover{background:rgba(238,237,232,.12);}
-
-  .stage{position:fixed;top:52px;left:0;right:330px;bottom:0;overflow:auto;background:
-     repeating-linear-gradient(0deg,transparent,transparent 31px,rgba(201,197,186,.18) 31px,rgba(201,197,186,.18) 32px),
-     repeating-linear-gradient(90deg,transparent,transparent 31px,rgba(201,197,186,.18) 31px,rgba(201,197,186,.18) 32px),var(--paper);transition:top .18s;}
-  .stage.shifted{top:90px;}
-  svg.map{display:block;}
-  .lanelabel{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;fill:var(--amber);font-weight:600;}
-  .lanesub{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:0.05em;fill:var(--ink-soft);}
-
-  .edge{fill:none;stroke:var(--hair);stroke-width:1.4;opacity:.22;transition:opacity .16s,stroke .16s,stroke-width .16s;}
-  .edge.hot{opacity:.9;stroke-width:2;}
-  .edge.dim{opacity:.05;}
-
-  .node{cursor:pointer;}
-  .node .box{transition:opacity .16s;}
-  .node.dim{opacity:.28;}
-  .node .nm{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:12.5px;fill:var(--ink);pointer-events:none;}
-  .node.entity .nm{fill:var(--paper);}
-  .node .tag{font-family:"IBM Plex Mono",monospace;font-size:7.5px;letter-spacing:0.06em;text-transform:uppercase;font-weight:600;pointer-events:none;}
-  .node .rdtxt{font-family:"IBM Plex Mono",monospace;font-size:8px;font-weight:600;pointer-events:none;}
-  .node .delta{font-family:"IBM Plex Mono",monospace;font-size:9px;font-weight:600;fill:var(--slate);pointer-events:none;}
-
-  /* detail panel */
-  .panel{position:fixed;top:52px;right:0;bottom:0;width:330px;background:var(--panel);border-left:1px solid var(--hair);overflow:auto;padding:20px 20px 40px;}
-  .panel .pk{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;font-weight:600;margin-bottom:8px;}
-  .panel h2{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:20px;letter-spacing:-0.01em;margin:0 0 4px;line-height:1.15;}
-  .panel .meta{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 16px;}
-  .panel .chip{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:0.05em;text-transform:uppercase;font-weight:600;padding:3px 8px;border:1px solid;border-radius:3px;}
-  .panel .sec{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;margin:18px 0 7px;}
-  .panel .link{display:flex;align-items:center;gap:8px;padding:6px 9px;background:var(--paper);border:1px solid var(--hair);border-radius:3px;margin-bottom:5px;cursor:pointer;font-size:13px;transition:border-color .12s;}
-  .panel .link:hover{border-color:var(--amber);}
-  .panel .link .d{width:7px;height:7px;border-radius:2px;flex-shrink:0;}
-  .panel .link .st{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:9px;text-transform:uppercase;color:var(--ink-soft);}
-  .panel .note{font-size:13.5px;line-height:1.5;color:var(--ink);background:var(--paper);border-left:3px solid var(--amber);padding:11px 13px;margin-top:6px;}
-  .panel .note.crown{border-left-color:var(--slate);}
-  .panel .note.frag{border-left-color:var(--oxblood);}
-  .panel .empty{color:var(--ink-soft);font-size:13px;line-height:1.55;}
-  .panel .wager{font-size:14px;line-height:1.55;color:var(--ink);}
-  .panel .wager b{color:var(--amber-deep);}
-  .panel .counts{display:flex;gap:14px;margin-top:16px;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-soft);}
-  .panel .counts b{color:var(--ink);font-weight:600;font-size:15px;display:block;}
-  .panel .hintline{margin-top:18px;font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--ink-soft);line-height:1.5;}
-
-  /* readiness bar in panel */
-  .rdbar{height:8px;background:var(--panel-2);border:1px solid var(--hair);border-radius:2px;overflow:hidden;display:flex;margin:6px 0 4px;}
-  .rdbar .live{background:var(--amber);height:100%;}
-  .rdbar .scen{background:var(--slate);height:100%;}
-  .rdrow{display:flex;justify-content:space-between;align-items:baseline;}
-  .rdrow .pct{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:22px;}
-  .rdrow .pct .u{font-size:12px;color:var(--ink-soft);font-weight:600;}
-  .rdrow .lab{font-family:"IBM Plex Mono",monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-soft);}
-  .ent-line{display:flex;align-items:center;gap:7px;font-size:12.5px;padding:4px 0;}
-  .ent-line .mk{width:14px;text-align:center;font-family:"IBM Plex Mono",monospace;font-weight:600;}
-  .ent-line.ok .mk{color:var(--slate);}
-  .ent-line.no .mk{color:var(--amber-deep);}
-  .ent-line.gap .mk{color:var(--oxblood);}
-  .ent-line .gn{color:var(--ink-soft);font-size:11.5px;}
-
-  .simbtn{width:100%;margin-top:14px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:600;letter-spacing:0.04em;padding:11px;border:1px solid var(--slate);background:var(--slate-tint);color:var(--slate);border-radius:3px;}
-  .simbtn:hover{background:var(--slate);color:var(--paper);}
-  .simbtn.exit{border-color:var(--oxblood);background:var(--paper);color:var(--oxblood);}
-  .unlock{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;padding:7px 10px;background:var(--paper);border:1px solid var(--hair);border-left:3px solid var(--slate);border-radius:3px;margin-bottom:5px;}
-  .unlock .dl{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;color:var(--slate);}
-
-  /* leaderboard */
-  .lb{display:flex;align-items:center;gap:9px;padding:6px 0;cursor:pointer;}
-  .lb:hover .lbn{color:var(--amber-deep);}
-  .lb .lbn{font-size:13px;flex:1;transition:color .12s;}
-  .lb .lbbar{width:74px;height:6px;background:var(--panel-2);border:1px solid var(--hair);border-radius:2px;overflow:hidden;}
-  .lb .lbbar .f{height:100%;background:var(--amber);}
-  .lb .lbp{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-soft);width:30px;text-align:right;}
-
-  @media (max-width:900px){
-    .stage,.scenbar{right:0;}
-    .stage{bottom:46%;}
-    .panel{top:auto;left:0;right:0;bottom:0;width:auto;height:46%;border-left:0;border-top:1px solid var(--hair);}
-    .head .legend{display:none;}
-  }
+  :root{ --teal:#3fb8a3; --ink:#0e1613; --paper:#e9f2ef; --muted:#8aa39d; --line:#22322e;
+         --disp:"Fraunces",Georgia,serif; --body:"Inter",system-ui,sans-serif; --mono:"JetBrains Mono",monospace; }
+  *{box-sizing:border-box} html,body{margin:0;height:100%;overflow:hidden;background:var(--ink);color:var(--paper);font-family:var(--body)}
+  #wrap{position:fixed;inset:0}
+  svg{display:block;width:100%;height:100%}
+  .hud{position:fixed;pointer-events:none;z-index:5}
+  .top{top:0;left:0;right:0;padding:16px 20px;display:flex;align-items:flex-start;gap:14px;background:linear-gradient(180deg,rgba(14,22,19,.85),rgba(14,22,19,0))}
+  .brand .ey{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:#6f938a}
+  .brand h1{font-family:var(--disp);font-weight:700;font-size:19px;margin:3px 0 0;color:#eafaf5}
+  .hint{margin-left:auto;font-family:var(--mono);font-size:10px;color:#6f938a;text-align:right;line-height:1.7}
+  .hint b{color:#a9c9c0;font-weight:600}
+  .live{position:fixed;top:15px;left:50%;transform:translateX(-50%);z-index:7;display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;color:#a9c9c0;background:rgba(18,28,25,.8);border:1px solid var(--line);border-radius:20px;padding:5px 13px;cursor:pointer}
+  .live:hover{border-color:var(--teal)}
+  .live .dot{width:7px;height:7px;border-radius:50%;background:#5bb86e;animation:pulse 2.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(91,184,110,.5)}70%{box-shadow:0 0 0 7px rgba(91,184,110,0)}100%{box-shadow:0 0 0 0 rgba(91,184,110,0)}}
+  .live.off .dot{background:#6f7f7a;animation:none} .live.warn{border-color:#d9584f;color:#e79a92} .live.warn .dot{background:#d9584f}
+  .node{cursor:pointer}
+  .node .lbl{font-family:var(--mono);font-size:10px;fill:#cfe6df;pointer-events:none}
+  .node.ent .lbl{font-family:var(--body);font-weight:700;font-size:11.5px;fill:#eafaf5}
+  .node.dim{opacity:.12;transition:opacity .3s}
+  .edge{stroke-width:1.4;fill:none;transition:opacity .3s}
+  .legend{position:fixed;right:20px;bottom:18px;z-index:5;font-family:var(--mono);font-size:10px;color:#6f938a;text-align:right;line-height:1.9;pointer-events:none}
+  .legend .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-left:7px;vertical-align:middle}
+  .sel{position:fixed;left:20px;bottom:18px;width:280px;max-height:60vh;overflow:auto;background:rgba(18,28,25,.93);border:1px solid var(--line);border-radius:12px;padding:14px 16px;z-index:6;backdrop-filter:blur(6px);transform:translateY(12px);opacity:0;transition:.25s;pointer-events:auto}
+  .sel.show{transform:none;opacity:1}
+  .sel .k{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#6f938a}
+  .sel .nm{font-family:var(--disp);font-weight:600;font-size:18px;margin:2px 0 3px;color:#eafaf5}
+  .sel .meta{font-size:12px;color:var(--muted);margin-bottom:9px}
+  .sel .cxh{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#6f938a;margin:8px 0 6px}
+  .sel .cxrow{display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:5px}
+  .sel .road{font-family:var(--mono);font-size:8.5px;color:#0e1613;background:var(--teal);padding:1px 6px;border-radius:20px;font-weight:600}
+  .sel .reset{margin-top:11px;font-family:var(--mono);font-size:11px;color:#a9c9c0;background:none;border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer}
+  .sel .reset:hover{border-color:var(--teal)}
+  .loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9;font-family:var(--mono);font-size:12px;color:#6f938a;background:var(--ink)}
 </style>
 </head>
 <body>
+  <div id="wrap"><svg id="svg" viewBox="0 0 1000 680" preserveAspectRatio="xMidYMid meet"></svg></div>
+  <div class="loading" id="loading">reading the estate…</div>
+  <div class="live off" id="live" title="Live read from the engine · click to refresh"><span class="dot"></span><span id="livetx">connecting…</span></div>
+  <div class="hud top">
+    <div class="brand"><div class="ey">Hoodie Suite · Estate</div><h1>Estate Map — live data layer</h1></div>
+    <div class="hint"><b>click a node</b> to focus · updates as pulls land<br>the flat mirror of the 3D model</div>
+  </div>
+  <div class="sel" id="sel"></div>
+  <div class="legend">entity ●<span class="sw" style="background:#3fb8a3"></span> · feed ●<span class="sw" style="background:#5bb86e"></span><br>planned<span class="sw" style="background:#5f7a72"></span> · drifting<span class="sw" style="background:#d99a3f"></span> · broke<span class="sw" style="background:#d9584f"></span></div>
 
-<div class="head">
-  <span class="ttl">Estate Map</span>
-  <span class="sub">what we <b>own</b> · what we <b>calculate</b> · what joins them</span>
-  <span class="spacer"></span>
-  <div class="legend" id="legend"></div>
-</div>
-
-<div class="scenbar" id="scenbar">
-  <span class="l">Scenario</span>
-  <span class="what" id="scenwhat"></span>
-  <button class="x" id="scenexit">✕ exit scenario</button>
-</div>
-
-<div class="stage" id="stage">
-  <svg class="map" id="map" xmlns="http://www.w3.org/2000/svg"></svg>
-</div>
-
-<div class="panel" id="panel"></div>
-
-<script src="../spine/spine.js"></script>
 <script>
-try{ HoodieSpine.connect({name:"Estate Map"}); }catch(e){}
-
-/* ===================== THE ESTATE ===================== */
-const PROV={
-  owned:{c:'#2F3D49',tint:'#DEE6E3',label:'Owned'},
-  resold:{c:'#35617A',tint:'#DBE5EC',label:'Resold'},
-  augment:{c:'#6B4A6E',tint:'#E7DEE8',label:'Augment'},
-  model:{c:'#4E79A7',tint:'#EAE0CC',label:'Calculated'},
-  entity:{c:'#243330',tint:'#243330',label:'Entity'}
-};
-
-const ENTITIES=[
-  {id:'e-item',name:'Brand / Item'},
-  {id:'e-acct',name:'Account'},
-  {id:'e-geo',name:'Geography'},
-  {id:'e-time',name:'Time'},
-  {id:'e-cons',name:'Consumer'},
-  {id:'e-occ',name:'Occasion'}
-];
-
-const DATASETS=[
-  {id:'d-mdm',name:'Unifyd Item Master',prov:'owned',status:'live',entities:['e-item'],
-    note:'Owned. Defines the Brand/Item entity the entire estate resolves on. The backbone of the spine — everything else maps to it.',kind:'crown'},
-  {id:'d-ttb',name:'TTB / COLA Labels',prov:'owned',status:'beta',entities:['e-item'],
-    note:'Owned ingestion pipeline. Grounds Brand/Item identity from label truth — is it actually what the label says.'},
-  {id:'d-sip',name:'SipSource Depletions',prov:'resold',status:'live',entities:['e-item','e-acct','e-geo','e-time'],
-    note:'Crown-jewel input — grounds four entities and feeds most models. Third-party owned (resale): licensing constrains the rights of models built downstream of it.',kind:'crown'},
-  {id:'d-scan',name:'Off-Premise Scan',prov:'resold',status:'planned',entities:['e-item','e-geo','e-time'],
-    note:'Planned. Off-premise takeaway truth; paired with depletions it separates sell-in from sell-through.'},
-  {id:'d-onpos',name:'On-Premise POS',prov:'resold',status:'planned',entities:['e-item','e-acct','e-geo','e-time','e-occ'],
-    note:'Planned. The pour-level truth behind the substitution model. High value, hard to source — the frontier of on-premise visibility.'},
-  {id:'d-deliv',name:'Delivery Platforms',prov:'resold',status:'planned',entities:['e-item','e-acct','e-geo','e-occ'],
-    note:'Scrapers built; productizing. Occasion + velocity signal from delivery marketplaces.'},
-  {id:'d-nabca',name:'NABCA Control-State',prov:'resold',status:'planned',entities:['e-item','e-geo','e-time'],
-    note:'Planned. Control-state coverage — fills the depletion blind spot in control markets.'},
-  {id:'d-cons',name:'Consumer Data',prov:'augment',status:'planned',entities:['e-cons','e-geo'],
-    note:'Planned augmentation. The Latent-Driver model depends on it — currently a fragility: the model is designed, the input is not yet owned.',kind:'frag'},
-  {id:'d-inv',name:'Retailer Inventory',prov:'augment',status:'beta',entities:['e-item','e-acct','e-geo'],
-    note:'Customer Voice Layer (ABC scraper). Shelf-level reality check against depletions.'}
-];
-
-const MODELS=[
-  {id:'m-depl',name:'Depletion Forecast',status:'planned',inputs:['e-item','e-acct','e-geo','e-time'],gaps:[],
-    note:'SKU-level sales forecast. Well-grounded on four entities that are live today — the closest model to shippable.'},
-  {id:'m-purch',name:'Purchasing Forecast',status:'planned',inputs:['e-item','e-time'],
-    gaps:[{name:'Inventory / Aging / Lead-time',note:'Supply-side data the estate does not yet hold.'}],
-    note:'Supply-side forecast. The listed entities are live, but it needs inventory, aging and lead-time data the estate does not hold — a frontier, not a near-term ship.',kind:'frag'},
-  {id:'m-pour',name:'Pour-Recapture / Substitution',status:'planned',inputs:['e-item','e-acct','e-occ','e-geo'],gaps:[],
-    note:'The $2.1M rail-substitution engine. Strong on owned entities today; the Occasion input is blocked until On-Premise POS or Delivery lands.'},
-  {id:'m-latent',name:'Latent-Driver Model',status:'planned',inputs:['e-item','e-cons','e-time','e-geo'],gaps:[],
-    note:'Aged tequila / cognac / brandy share an urban-discretionary-cash driver. Blocked on the Consumer entity, which only Consumer Data grounds — input not yet owned.',kind:'frag'},
-  {id:'m-geo',name:'Geo Lead-Lag',status:'planned',inputs:['e-geo','e-time','e-item'],gaps:[],
-    note:'Market-to-market diffusion. Every input is live today — data-ready; the model itself is unbuilt.'},
-  {id:'m-opp',name:'Opportunity Scoring',status:'planned',inputs:['e-acct','e-item','e-geo'],gaps:[],
-    note:'Prioritization matrix over accounts × brands. Composes the outputs of the other models into a ranked play list.'}
-];
-
-/* ===================== LAYOUT ===================== */
-const W=1180, COLW={data:215,ent:168,model:225};
-const LANE={data:42, ent:498, model:912};
-const ROWH=42, GAP=58;
-const H=Math.max(DATASETS.length,ENTITIES.length,MODELS.length)*GAP + 90;
-
-function place(arr,x,w){
-  const total=(arr.length-1)*GAP, top=(H-total-ROWH)/2 + 18;
-  arr.forEach((n,i)=>{n.x=x;n.w=w;n.h=ROWH;n.y=top+i*GAP;n.cx=x+w;n.cy=n.y+ROWH/2;});
+const SVGNS="http://www.w3.org/2000/svg";
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// canonical entities — fixed 2D geography (the spine)
+const ENT=[ {id:'portfolio',label:'Portfolio',p:[500,70]}, {id:'brand',label:'Brand',p:[300,190]},
+  {id:'item',label:'Item',p:[500,340]}, {id:'sku',label:'SKU',p:[300,470]},
+  {id:'outlet',label:'Outlet',p:[720,270]}, {id:'account',label:'Account',p:[880,410]} ];
+const ENT_POS={}; ENT.forEach(e=>ENT_POS[e.id]=e.p);
+const CANON=[['portfolio','brand'],['brand','item'],['item','sku'],['outlet','account'],['item','outlet']];
+const ROADCOL={ upc:'#3fb8a3', variant:'#57c9b3', brand:'#3fb8a3', price:'#4a90d9', availability:'#4a90d9',
+  'license#':'#d99a3f', owner:'#d9b03f', address:'#5bb86e', depletion:'#8a6fd0', name:'#7a7f9a', 'is-a':'#3fb8a3' };
+const STCOL={ proven:'#5bb86e', live:'#5bb86e', candidate:'#3fb8a3', ready:'#3fb8a3', drifting:'#d99a3f',
+  building:'#4a90d9', broken:'#d9584f', data:'#5bb86e', planned:'#5f7a72', paused:'#6f7f7a' };
+function dsName(k){ const M={bd4008lic:'FL · Item master',bd4011lic:'FL · Registrants',abtbrands:'FL · Brand renewals',bd4006lic:'FL · Retail outlets',bd4005lic:'FL · Wholesale',bd400revok:'FL · Revoked',bd4002lic:'FL · Permits',abc_store_cells:'ABC · store cells',census_demographic:'Census · Demographic',census_economic:'Census · Economic',census_housing:'Census · Housing',outlets_census:'Outlets × census',tx_outlets:'TX · Retail outlets',tx_companies:'TX · Companies'}; return M[k]||('dataset · '+k); }
+function friendly(nm){ return String(nm||'source').replace(/\s*—.*$/,'').replace(/\s*\([^)]*\)\s*$/,'').slice(0,24); }
+function hostOf(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch(e){ return ''; } }
+// map real columns → (entity, road)
+function roadsFromCols(cols, hints){
+  const c=(cols||[]).map(x=>String(x).toLowerCase()), any=re=>c.some(x=>re.test(x)), es=[];
+  if(any(/(^|_| )upc($|_| )|gtin|barcode/)) es.push(['item','upc']);
+  if(any(/sku|variant|itemsize|\bsize\b|\bpack\b/)) es.push(['sku','variant']);
+  if(any(/brand/)) es.push(['brand','brand']);
+  if(any(/price|amount|\bcost\b/)) es.push(['item','price']);
+  if(any(/avail|stock|inventory|instock/)) es.push(['item','availability']);
+  if(any(/licens|permit|\babt\b|dbpr|trade_name|owner|licensee/)) { es.push(['outlet','license#']); es.push(['account','license#']); }
+  if(any(/address|\bcity\b|\bzip\b|county|\bstate\b|\blat\b|\blng\b|premise|location|store/)) es.push(['outlet','address']);
+  if(any(/deplet|movement/)) es.push(['brand','depletion']);
+  const h=(hints||'').toLowerCase();
+  if(!es.length && /census|demograph|econom|housing|population|income/.test(h)) es.push(['outlet','address']);
+  if(!es.length && /outlet|licens|account/.test(h)) { es.push(['outlet','license#']); es.push(['account','license#']); }
+  if(!es.length) es.push(['item','name']);
+  const seen=new Set(); return es.filter(e=> !seen.has(e[0]) && seen.add(e[0]));
 }
-place(DATASETS,LANE.data,COLW.data);
-place(ENTITIES,LANE.ent,COLW.ent);
-place(MODELS,LANE.model,COLW.model);
+// deterministic 2D position for a source: hash → angle, radius; pulled toward its entities
+function pos2d(name, ents){
+  let h=2166136261; for(let i=0;i<name.length;i++){ h^=name.charCodeAt(i); h=Math.imul(h,16777619); }
+  const u=((h>>>0)%1000)/1000, v=(((h>>>9)>>>0)%1000)/1000;
+  const cx=500, cy=340, R=210+v*150, a=u*Math.PI*2;
+  let x=cx+Math.cos(a)*R, y=cy+Math.sin(a)*R*0.62;
+  if(ents&&ents.length){ let mx=0,my=0; ents.forEach(e=>{mx+=ENT_POS[e][0];my+=ENT_POS[e][1];}); mx/=ents.length; my/=ents.length;
+    x=x*0.62+mx*0.38; y=y*0.62+my*0.38; }
+  return [Math.max(60,Math.min(940,x)), Math.max(110,Math.min(650,y))];
+}
 
-const NODES={}; [...DATASETS,...ENTITIES,...MODELS].forEach(n=>NODES[n.id]=n);
-
-const EDGES=[];
-DATASETS.forEach(d=>d.entities.forEach(e=>EDGES.push({s:d.id,t:e,kind:'de'})));
-MODELS.forEach(m=>m.inputs.forEach(e=>EDGES.push({s:e,t:m.id,kind:'em'})));
-
-function neighborsOf(id){
-  const nodes=new Set([id]), edges=new Set();
-  const n=NODES[id];
-  if(DATASETS.includes(n)){
-    n.entities.forEach(e=>{nodes.add(e);edges.add(n.id+'>'+e);
-      MODELS.forEach(m=>{if(m.inputs.includes(e)){nodes.add(m.id);edges.add(e+'>'+m.id);}});});
-  } else if(MODELS.includes(n)){
-    n.inputs.forEach(e=>{nodes.add(e);edges.add(e+'>'+n.id);
-      DATASETS.forEach(d=>{if(d.entities.includes(e)){nodes.add(d.id);edges.add(d.id+'>'+e);}});});
-  } else {
-    DATASETS.forEach(d=>{if(d.entities.includes(id)){nodes.add(d.id);edges.add(d.id+'>'+id);}});
-    MODELS.forEach(m=>{if(m.inputs.includes(id)){nodes.add(m.id);edges.add(id+'>'+m.id);}});
+async function loadLive(){
+  const get=u=>fetch(u,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
+  const [recs,dsets,hls]=await Promise.all([get('/api/recipes'),get('/api/datasets'),get('/api/highlights')]);
+  return { recipes:(recs&&recs.recipes)||[], datasets:dsets||{}, highlights:(hls&&hls.highlights)||[], online:!!(recs||dsets) };
+}
+function buildModel(live){
+  const nodes=[], edges=[], byId={}, seen={};
+  ENT.forEach(e=>{ const n={id:e.id,label:e.label,kind:'ent',x:e.p[0],y:e.p[1]}; nodes.push(n); byId[e.id]=n; });
+  CANON.forEach(([a,b])=>edges.push({a,b,road:'is-a'}));
+  function addSource(key,disp,status,sub,cols,hints,liveFlag,dataset,host){
+    const dn=disp.toLowerCase(); if(seen[dn]) return; seen[dn]=1;
+    const rs=roadsFromCols(cols,hints), ents=rs.map(r=>r[0]); const p=pos2d(disp,ents);
+    const n={id:key,label:friendly(disp),full:disp,kind:'src',status:(status||'planned').toLowerCase(),
+             sub:sub,live:liveFlag,dataset:dataset||null,host:host||null,x:p[0],y:p[1]};
+    nodes.push(n); byId[key]=n; rs.forEach(([e,road])=>edges.push({a:key,b:e,road}));
   }
-  return {nodes,edges};
+  let cat=[]; try{ cat=JSON.parse(localStorage.getItem('hoodie.pulls.tracker.v2')||'[]')||[]; }catch(e){}
+  const recByHost={}; (live.recipes||[]).forEach(r=>{ recByHost[r.host]=r; });
+  cat.forEach((s,i)=>{ const rec=recByHost[hostOf(s.url)];
+    const cols=rec?Object.keys((rec.config&&rec.config.field_map)||{}).concat((rec.config&&rec.config.fields)||[]):(s.fields||[]);
+    addSource('c'+i, s.nm||('source '+i), rec?rec.status:(s.status||'Planned'), (s.tier||'')+(s.foot?(' · '+s.foot):''),
+      cols, (s.tier||'')+' '+(s.nm||''), !!rec||/live/i.test(s.status||''), null, hostOf(s.url)); });
+  Object.entries(live.datasets||{}).forEach(([k,v])=>{ const cols=(v&&v.header)||[]; const rows=(v&&(v.total||(v.rows&&v.rows.length)))||'';
+    addSource('d:'+k, dsName(k), 'data', 'owned dataset'+(rows?(' · '+rows+' rows'):''), cols, k, true, k); });
+  (live.recipes||[]).forEach((r,i)=>{ const cols=Object.keys((r.config&&r.config.field_map)||{}).concat((r.config&&r.config.fields)||[]);
+    addSource('r'+i, r.host, r.status, 'recipe · '+(r.platform||'')+' · '+r.status, cols, r.host, true, null, r.host); });
+  const adj={}; nodes.forEach(n=>adj[n.id]=new Set());
+  edges.forEach(e=>{ if(byId[e.a]&&byId[e.b]){ adj[e.a].add(e.b); adj[e.b].add(e.a); } });
+  return {nodes,edges:edges.filter(e=>byId[e.a]&&byId[e.b]),byId,adj};
 }
 
-/* ===================== READINESS ===================== */
-const AVAIL_STATUS=['live','beta'];
-function baseAvail(){return new Set(DATASETS.filter(d=>AVAIL_STATUS.includes(d.status)).map(d=>d.id));}
-function availWith(scenId){const s=baseAvail(); if(scenId)s.add(scenId); return s;}
-function entGrounded(eid,avail){return DATASETS.some(d=>avail.has(d.id)&&d.entities.includes(eid));}
-function readiness(model,avail){
-  const ent=model.inputs, gaps=model.gaps||[];
-  const live=ent.filter(e=>entGrounded(e,avail));
-  const missing=ent.filter(e=>!entGrounded(e,avail));
-  const total=ent.length+gaps.length;
-  return {score: total? live.length/total : 0, live, missing, gaps, total, grounded:live.length};
-}
-function unlocksOf(dsId){
-  const b=availWith(null), s=availWith(dsId);
-  return MODELS.map(m=>({m,base:readiness(m,b).score,scen:readiness(m,s).score}))
-               .filter(x=>x.scen-x.base>0.001)
-               .sort((a,b)=>(b.scen-b.base)-(a.scen-a.base));
-}
-
-/* ===================== STATE ===================== */
-const map=document.getElementById('map');
-let sel=null, scenario=null;
-const FILTERS={owned:true,resold:true,augment:true,model:true,planned:true};
-function visible(n){
-  if(ENTITIES.includes(n))return true;
-  if(MODELS.includes(n)){ if(!FILTERS.model)return false; }
-  else { if(!FILTERS[n.prov])return false; }
-  if(n.status==='planned' && !FILTERS.planned)return false;
-  return true;
-}
-function curve(s,t){const sx=s.cx,sy=s.cy,tx=t.x,ty=t.cy;const mx=(sx+tx)/2;return `M${sx},${sy} C${mx},${sy} ${mx},${ty} ${tx},${ty}`;}
-
-/* ===================== RENDER ===================== */
-function render(){
-  const hl = sel?neighborsOf(sel):null;
-  const availBase=availWith(null), availScen=availWith(scenario);
-  let s=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">`;
-  s+=`<text class="lanelabel" x="${LANE.data}" y="30">Data layer</text><text class="lanesub" x="${LANE.data}" y="46">what we own &amp; resell</text>`;
-  s+=`<text class="lanelabel" x="${LANE.ent}" y="30">Entities</text><text class="lanesub" x="${LANE.ent}" y="46">the spine that joins</text>`;
-  s+=`<text class="lanelabel" x="${LANE.model}" y="30">Model layer</text><text class="lanesub" x="${LANE.model}" y="46">what we calculate · data-readiness</text>`;
-  EDGES.forEach(e=>{
-    const sn=NODES[e.s],tn=NODES[e.t];if(!visible(sn)||!visible(tn))return;
-    const key=e.s+'>'+e.t;let cls='edge';
-    if(hl){ cls += hl.edges.has(key)?' hot':' dim'; }
-    let stroke=(hl&&hl.edges.has(key))?(NODES[sel]&&MODELS.includes(NODES[sel])?'var(--amber)':'var(--slate)'):'var(--hair)';
-    s+=`<path class="${cls}" d="${curve(sn,tn)}" style="stroke:${stroke}"/>`;
+const svg=document.getElementById('svg'), selEl=document.getElementById('sel');
+let MODEL={nodes:[],edges:[],byId:{},adj:{}}, selected=null, elByEdge=[], elByNode={};
+function render(m){
+  MODEL=m; svg.innerHTML=''; elByEdge=[]; elByNode={};
+  m.edges.forEach(e=>{ const a=m.byId[e.a], b=m.byId[e.b];
+    const src=a.kind==='src'?a:(b.kind==='src'?b:null), st=src?src.status:'';
+    const broke=/broke|fail|block/.test(st), warn=/drift|degrad|partial/.test(st);
+    const col=broke?'#d9584f':(warn?'#d99a3f':(ROADCOL[e.road]||'#2a3a36'));
+    const ln=document.createElementNS(SVGNS,'line'); ln.setAttribute('x1',a.x);ln.setAttribute('y1',a.y);ln.setAttribute('x2',b.x);ln.setAttribute('y2',b.y);
+    ln.setAttribute('class','edge'); ln.setAttribute('stroke',col); ln.setAttribute('stroke-opacity', broke?0.72:(warn?0.5:0.3));
+    svg.appendChild(ln); e._el=ln; e._base=broke?0.72:(warn?0.5:0.3); elByEdge.push(e); });
+  m.nodes.forEach(n=>{
+    const ent=n.kind==='ent'; const col=ent?'#3fb8a3':(STCOL[n.status]||(n.live?'#5bb86e':'#5f7a72'));
+    const g=document.createElementNS(SVGNS,'g'); g.setAttribute('class','node'+(ent?' ent':'')); g.setAttribute('transform','translate('+n.x+','+n.y+')');
+    const c=document.createElementNS(SVGNS,'circle'); c.setAttribute('r',ent?12:6.5); c.setAttribute('fill',col);
+    c.setAttribute('stroke','#0e1613'); c.setAttribute('stroke-width',1.5); g.appendChild(c);
+    const t=document.createElementNS(SVGNS,'text'); t.setAttribute('class','lbl'); t.setAttribute('x',ent?0:10);
+    t.setAttribute('y',ent?-16:3.5); t.setAttribute('text-anchor',ent?'middle':'start'); t.textContent=n.label; g.appendChild(t);
+    g.addEventListener('click',ev=>{ ev.stopPropagation(); setFocus(n); });
+    svg.appendChild(g); n._el=g; n._c=c; elByNode[n.id]=g;
   });
-  [...DATASETS,...ENTITIES,...MODELS].forEach(n=>{
-    if(!visible(n))return;
-    const isEnt=ENTITIES.includes(n), isModel=MODELS.includes(n);
-    const prov=isEnt?'entity':(isModel?'model':n.prov), meta=PROV[prov];
-    let cls='node '+prov; if(isEnt)cls+=' entity';
-    if(hl && !hl.nodes.has(n.id))cls+=' dim';
-    const dash=(!isEnt && n.status==='planned')?'stroke-dasharray="5 3"':'';
-    const fill=isEnt?meta.c:meta.tint, stroke=meta.c;
-    const selStroke = sel===n.id?2.6:1.5;
-    s+=`<g class="${cls}" data-id="${n.id}">`;
-    s+=`<rect class="box" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${selStroke}" ${dash}/>`;
-    if(!isEnt) s+=`<rect x="${n.x}" y="${n.y}" width="4" height="${n.h}" rx="2" fill="${meta.c}"/>`;
-    s+=`<text class="nm" x="${n.x + (isEnt?n.w/2:12)}" y="${n.y + (isModel?16:n.h/2+4)}" ${isEnt?'text-anchor="middle"':''}>${n.name}</text>`;
-    if(!isEnt && !isModel){
-      const tagc=n.status==='live'?'var(--slate)':(n.status==='beta'?'var(--amber-deep)':'var(--ink-soft)');
-      s+=`<text class="tag" x="${n.cx-8}" y="${n.cy+4}" text-anchor="end" fill="${tagc}">${n.status}</text>`;
-    }
-    if(isModel){
-      const rb=readiness(n,availBase).score, rs=readiness(n,availScen).score;
-      const bx=n.x+12, bw=n.w-58, by=n.y+n.h-13, bh=5;
-      s+=`<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="2.5" fill="var(--panel-2)" stroke="var(--hair)" stroke-width="0.8"/>`;
-      s+=`<rect x="${bx}" y="${by}" width="${(bw*rb).toFixed(1)}" height="${bh}" rx="2.5" fill="var(--amber)"/>`;
-      if(rs>rb) s+=`<rect x="${(bx+bw*rb).toFixed(1)}" y="${by}" width="${(bw*(rs-rb)).toFixed(1)}" height="${bh}" rx="2.5" fill="var(--slate)"/>`;
-      const pct=Math.round((scenario?rs:rb)*100);
-      s+=`<text class="rdtxt" x="${n.cx-8}" y="${by+bh}" text-anchor="end" fill="${pct===100?'var(--slate)':'var(--amber-deep)'}">${pct}%</text>`;
-      if(scenario && rs>rb) s+=`<text class="delta" x="${n.cx-8}" y="${n.y+16}" text-anchor="end">+${Math.round((rs-rb)*100)}%</text>`;
-    }
-    s+=`</g>`;
-  });
-  s+=`</svg>`;
-  map.outerHTML=s; bind();
 }
-function bind(){
-  const m=document.getElementById('map');
-  m.querySelectorAll('.node').forEach(g=>g.addEventListener('click',e=>{e.stopPropagation();select(g.dataset.id);}));
+function setFocus(n){
+  selected=n;
+  if(!n){ MODEL.nodes.forEach(x=>x._el.classList.remove('dim')); MODEL.edges.forEach(e=>e._el.setAttribute('stroke-opacity',e._base)); selEl.classList.remove('show'); return; }
+  const keep=new Set([n.id,...MODEL.adj[n.id]]);
+  MODEL.nodes.forEach(x=>x._el.classList.toggle('dim',!keep.has(x.id)));
+  MODEL.edges.forEach(e=>e._el.setAttribute('stroke-opacity',(e.a===n.id||e.b===n.id)?0.95:0.04));
+  const conns=MODEL.edges.filter(e=>e.a===n.id||e.b===n.id).map(e=>{ const o=MODEL.byId[e.a===n.id?e.b:e.a]; return {to:o.label,road:e.road}; });
+  selEl.innerHTML='<div class="k">'+(n.kind==='ent'?'Canonical entity':((n.live?'Live source · ':'Planned · ')+(n.status||'')))+'</div>'
+    +'<div class="nm">'+esc(n.full||n.label)+'</div>'+(n.sub?'<div class="meta">'+esc(n.sub)+'</div>':'')
+    +'<div class="cxh">Connects to</div>'
+    +(conns.length?conns.map(c=>'<div class="cxrow"><span class="road">'+esc(c.road)+'</span><span>'+esc(c.to)+'</span></div>').join(''):'<div class="meta">an orphan — a road worth building</div>')
+    +'<button class="reset" id="rst">✕ clear focus</button>';
+  selEl.classList.add('show'); document.getElementById('rst').onclick=()=>setFocus(null);
 }
-document.getElementById('stage').addEventListener('click',e=>{ if(e.target.id==='stage') select(null); });
-function select(id){ sel=id; render(); renderPanel(); }
+svg.addEventListener('click',()=>setFocus(null));
 
-/* ===================== SCENARIO ===================== */
-const scenbar=document.getElementById('scenbar'), stage=document.getElementById('stage');
-function setScenario(id){
-  scenario=id;
-  if(id){ scenbar.classList.add('on'); stage.classList.add('shifted');
-    document.getElementById('scenwhat').textContent='+ '+NODES[id].name+' goes live';
-  } else { scenbar.classList.remove('on'); stage.classList.remove('shifted'); }
-  render(); renderPanel();
-}
-document.getElementById('scenexit').addEventListener('click',()=>setScenario(null));
-
-/* ===================== PANEL ===================== */
-const panel=document.getElementById('panel');
-function provOf(n){return ENTITIES.includes(n)?'entity':(MODELS.includes(n)?'model':n.prov);}
-function dotFor(n){return PROV[provOf(n)].c;}
-function statusOf(n){return ENTITIES.includes(n)?'':n.status;}
-function linkRow(id){const n=NODES[id];return `<div class="link" data-id="${id}"><span class="d" style="background:${dotFor(n)}"></span>${n.name}<span class="st">${statusOf(n)}</span></div>`;}
-
-function renderPanel(){
-  if(!sel){ defaultPanel(); return; }
-  const n=NODES[sel];
-  const isEnt=ENTITIES.includes(n), isModel=MODELS.includes(n);
-  const prov=provOf(n), meta=PROV[prov];
-  let h=`<div class="pk" style="color:${meta.c}">${isEnt?'Entity':(isModel?'Model':'Dataset')}</div><h2>${n.name}</h2>`;
-  h+=`<div class="meta"><span class="chip" style="color:${meta.c};border-color:${meta.c}">${isEnt?'Shared entity':(isModel?'Calculated':meta.label)}</span>`;
-  if(!isEnt) h+=`<span class="chip" style="color:var(--ink-soft);border-color:var(--hair)">${n.status}</span>`;
-  h+=`</div>`;
-
-  if(MODELS.includes(n)){
-    const rb=readiness(n,availWith(null)), rs=readiness(n,availWith(scenario));
-    const showScore=scenario?rs.score:rb.score, pct=Math.round(showScore*100);
-    h+=`<div class="rdrow"><span class="lab">Data readiness${scenario?' · scenario':''}</span><span class="pct">${pct}<span class="u">%</span></span></div>`;
-    h+=`<div class="rdbar"><div class="live" style="width:${rb.score*100}%"></div>${rs.score>rb.score?'<div class="scen" style="width:'+((rs.score-rb.score)*100)+'%"></div>':''}</div>`;
-    h+=`<div class="sec">Inputs</div>`;
-    n.inputs.forEach(e=>{const liveNow=rs.live.includes(e),liveBase=rb.live.includes(e);
-      const cls=liveBase?'ok':(liveNow?'ok':'no');const mk=liveBase?'●':(liveNow?'◑':'○');
-      h+=`<div class="ent-line ${cls}"><span class="mk">${mk}</span>${NODES[e].name}${(!liveBase&&liveNow)?' <span class="gn">— unlocked in scenario</span>':(!liveBase?' <span class="gn">— blocked (no live source)</span>':'')}</div>`;});
-    (n.gaps||[]).forEach(g=>h+=`<div class="ent-line gap"><span class="mk">✕</span>${g.name}<span class="gn"> — ${g.note}</span></div>`);
-    if(n.note){const nc=n.kind==='frag'?' frag':(n.kind==='crown'?' crown':'');h+=`<div class="sec">${n.kind==='frag'?'Fragility':'Read'}</div><div class="note${nc}">${n.note}</div>`;}
-  } else if(DATASETS.includes(n)){
-    h+=`<div class="sec">Grounds these entities</div>`;n.entities.forEach(e=>h+=linkRow(e));
-    const feeds=MODELS.filter(m=>m.inputs.some(i=>n.entities.includes(i)));
-    h+=`<div class="sec">Feeds these models · ${feeds.length}</div>`;feeds.forEach(m=>h+=linkRow(m.id));
-    if(n.note){const nc=n.kind==='crown'?' crown':(n.kind==='frag'?' frag':'');const lbl=n.kind==='crown'?'Crown jewel':(n.kind==='frag'?'Fragility':'Read');h+=`<div class="sec">${lbl}</div><div class="note${nc}">${n.note}</div>`;}
-    if(n.status==='planned'){
-      const u=unlocksOf(n.id);
-      if(scenario===n.id){
-        h+=`<div class="sec">Simulating live · unlocks</div>`;
-        u.forEach(x=>h+=`<div class="unlock">${x.m.name}<span class="dl">${Math.round(x.base*100)}→${Math.round(x.scen*100)}%</span></div>`);
-        h+=`<button class="simbtn exit" id="simbtn">✕ Exit scenario</button>`;
-      } else {
-        h+=`<button class="simbtn" id="simbtn">▶ Simulate this going live</button>`;
-        if(u.length) h+=`<div class="hintline">Would lift ${u.length} model${u.length>1?'s':''}: ${u.map(x=>x.m.name).join(', ')}.</div>`;
-      }
-    }
-  } else {
-    const gd=DATASETS.filter(d=>d.entities.includes(n.id)), um=MODELS.filter(m=>m.inputs.includes(n.id));
-    h+=`<div class="sec">Grounded by · ${gd.length}</div>`;gd.forEach(d=>h+=linkRow(d.id));
-    h+=`<div class="sec">Used by · ${um.length}</div>`;um.forEach(m=>h+=linkRow(m.id));
-  }
-  panel.innerHTML=h;
-  panel.querySelectorAll('.link').forEach(l=>l.addEventListener('click',()=>select(l.dataset.id)));
-  const sb=document.getElementById('simbtn');
-  if(sb) sb.addEventListener('click',()=>setScenario(scenario===n.id?null:n.id));
+// pulse a node (flash its ring + roads) when a pull lands
+function pulse(n){ if(!n||!n._c) return; let t=0; const base=+n._c.getAttribute('r');
+  const iv=setInterval(()=>{ t+=0.09; if(t>=1){ n._c.setAttribute('r',base); n._c.setAttribute('stroke','#0e1613'); clearInterval(iv); return; }
+    n._c.setAttribute('r', base+6*Math.sin(t*Math.PI)); n._c.setAttribute('stroke','#eafaf5'); }, 30);
+  MODEL.edges.filter(e=>e.a===n.id||e.b===n.id).forEach(e=>{ let s=0; const fl=setInterval(()=>{ s+=0.08; if(s>=1){ e._el.setAttribute('stroke-opacity',e._base); clearInterval(fl); return; } e._el.setAttribute('stroke-opacity',0.4+0.55*Math.sin(s*Math.PI)); },30); });
 }
 
-function defaultPanel(){
-  const avail=availWith(scenario);
-  const ranked=MODELS.map(m=>({m,r:readiness(m,avail).score})).sort((a,b)=>b.r-a.r);
-  const ready=ranked.filter(x=>x.r>=0.999).length;
-  let lb='';ranked.forEach(x=>{lb+=`<div class="lb" data-id="${x.m.id}"><span class="lbn">${x.m.name}</span><span class="lbbar"><span class="f" style="width:${x.r*100}%"></span></span><span class="lbp">${Math.round(x.r*100)}%</span></div>`;});
-  panel.innerHTML=`
-    <div class="pk" style="color:var(--amber)">The estate</div>
-    <h2>The Wager, mapped.</h2>
-    <p class="wager">Left: <b>what we own</b>. Right: <b>what we calculate</b>. The center spine — the shared entities — is the only thing that joins them. The bars on each model are <b>data readiness</b>: how much of what that model needs is live today.</p>
-    <div class="counts"><span><b>${ready}</b> data-ready</span><span><b>${MODELS.length-ready}</b> blocked</span><span><b>${DATASETS.filter(d=>d.status==='planned').length}</b> datasets planned</span></div>
-    <div class="sec">Model readiness — what to build</div>
-    ${lb}
-    <div class="sec">Run a scenario</div>
-    <div class="empty">Click a <b>planned</b> dataset, then <b>Simulate going live</b> — the map shows which models unlock and by how much. Try <b>On-Premise POS</b> or <b>Consumer Data</b>.</div>`;
-  panel.querySelectorAll('.lb').forEach(l=>l.addEventListener('click',()=>select(l.dataset.id)));
+const liveEl=document.getElementById('live'), liveTx=document.getElementById('livetx');
+let lastSig='', seenTs=0;
+async function refresh(){
+  const live=await loadLive();
+  const m=buildModel(live);
+  const sig=m.nodes.map(n=>n.id+':'+n.status).sort().join('|');
+  if(sig!==lastSig){ const selId=selected&&selected.id; render(m); lastSig=sig; if(selId&&m.byId[selId]) setFocus(m.byId[selId]); }
+  const hs=live.highlights||[], mx=hs.reduce((a,h)=>Math.max(a,h.ts||0),0);
+  if(!seenTs){ seenTs=mx; } else { hs.forEach(h=>{ if((h.ts||0)>seenTs){ const nd=m.nodes.find(n=>n.kind==='src'&&((h.dataset&&n.dataset===h.dataset)||(h.host&&n.host&&n.host===h.host))); if(nd) pulse(nd); } }); seenTs=Math.max(seenTs,mx); }
+  const issues=m.nodes.filter(n=>n.kind==='src'&&/broke|fail|block|drift|degrad|partial/.test(n.status)).length;
+  liveEl.className='live'+(live.online?'':' off')+(issues?' warn':'');
+  liveTx.textContent=live.online?('live · '+m.nodes.filter(n=>n.kind==='src'&&n.live).length+' connected'+(issues?(' · ⚠ '+issues):'')):'offline · catalog view';
+  const L=document.getElementById('loading'); if(L)L.remove();
 }
-
-/* ===================== LEGEND ===================== */
-const legendEl=document.getElementById('legend');
-const LG=[['owned','Owned'],['resold','Resold'],['augment','Augment'],['model','Calculated'],['planned','Planned']];
-LG.forEach(([key,label])=>{
-  const b=document.createElement('button');b.className='lg'+(key==='planned'?' planned':'');b.dataset.key=key;
-  b.innerHTML=(key==='planned'?'<span class="sw"></span>':'<span class="sw" style="background:'+PROV[key].c+'"></span>')+label;
-  b.addEventListener('click',()=>{FILTERS[key]=!FILTERS[key];b.classList.toggle('off',!FILTERS[key]);render();});
-  legendEl.appendChild(b);
-});
-
-render(); defaultPanel();
+liveEl.onclick=refresh;
+refresh(); setInterval(refresh,60000);
 </script>
-
-<!-- shared suite header strip (standalone only) -->
-<script src="../suite-header.js" data-id="estate" data-mark="EM" data-name="Estate Map" data-status="beta"></script>
 </body>
 </html>
