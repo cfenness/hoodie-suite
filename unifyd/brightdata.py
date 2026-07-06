@@ -58,6 +58,27 @@ def zone():
     return os.environ.get("BRIGHTDATA_UNLOCKER_ZONE", "cli_unlocker")
 
 
+def proxies():
+    """Bright Data PROXY for stateful scrapers (TTB: cookies + POST + pagination need a persisted
+    session, which the one-shot Unlocker fetch() can't do). Routes the whole requests.Session
+    through a clean IP and lets BD handle the target's TLS — fixing both the datacenter block and
+    the incomplete-chain CERTIFICATE_VERIFY_FAILED on gov hosts.
+
+    Set BRIGHTDATA_PROXY to the zone's proxy string (http:// optional), e.g.
+        brd-customer-<id>-zone-<zone>:<password>@brd.superproxy.io:33335
+    Returns a requests-style proxies dict, or None when unset (scraper falls back to direct)."""
+    p = os.environ.get("BRIGHTDATA_PROXY", "").strip()
+    if not p:
+        return None
+    if "://" not in p:
+        p = "http://" + p
+    return {"http": p, "https": p}
+
+
+def proxy_enabled():
+    return bool(os.environ.get("BRIGHTDATA_PROXY", "").strip())
+
+
 def fetch(url, data_format="html", timeout=120):
     """Return the unlocked page as a string (data_format: 'html' | 'markdown').
 
