@@ -5596,6 +5596,8 @@ import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0
     // the launcher's context bar already shows scope/account/BASIS — HI's spine chip (the "• YoY"
     // readout) is a redundant, inert duplicate when embedded
     +'html.in-launcher #spineChip{display:none!important}'
+    // account/identity is suite-level chrome → the launcher shows the avatar; HI's is redundant here
+    +'html.in-launcher .user-avatar{display:none!important}'
     +'html.in-launcher .hi-crumb{margin-right:auto;font:600 15px/1.1 var(--ui-font,system-ui,sans-serif);color:var(--ui-ink,#2B3138);padding:0 2px;white-space:nowrap;letter-spacing:-0.01em}';
   document.head.appendChild(st);
 
