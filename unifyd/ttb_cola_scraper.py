@@ -227,23 +227,32 @@ def search_chunk(s, frm, to, args, log, diags=None):
     Appends each page's parse diagnostics to `diags` (for drift / self-reporting)."""
     resp = s.post(SEARCH_PROC, data=search_payload(frm, to, args), timeout=120)
     page = 1
+    seen_ids, visited = set(), set()   # TTB keeps serving a "next" link that OSCILLATES between two
+                                       # pages after the last real result, so the link never "runs
+                                       # out" — terminate on a page that adds no NEW ids (or a repeated
+                                       # next-url) instead of trusting the link. Without this, every
+                                       # chunk paginates to max_pages on duplicates (10x+ wasted work).
     while True:
         recs, next_href, diag = parse_results(resp.text)
         if diags is not None:
             diags.append(diag)
+        new = [r for r in recs if r.get("TTB ID") and r["TTB ID"] not in seen_ids]
+        seen_ids.update(r["TTB ID"] for r in new)
         if not recs and page == 1:
             log(f"    {frm:%m/%d}-{to:%m/%d} p{page}: 0 rows "
                 f"(empty window, or confirm form params on first run)")
-        for r in recs:
+        for r in new:
             yield r
-        if recs:
-            log(f"    {frm:%m/%d}-{to:%m/%d} p{page}: {len(recs)} rows")
-        if not next_href or page >= args.max_pages:
+        if new:
+            log(f"    {frm:%m/%d}-{to:%m/%d} p{page}: {len(new)} rows")
+        # stop at: no next link, page cap, a page that added nothing new (loop/exhausted), or a
+        # next-url we've already fetched (the oscillation TTB serves past the last real page).
+        if not next_href or page >= args.max_pages or (recs and not new) or next_href in visited:
             break
+        visited.add(next_href)
         time.sleep(args.delay)
         resp = s.get(next_href, timeout=120)
         page += 1
-    # cap warning: if a single chunk returns a suspiciously round max, shrink chunk
     return
 
 # ---------------------------------------------------------------- detail page
