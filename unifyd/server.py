@@ -340,7 +340,7 @@ FL_CONN = {
                  ("bd400revok", False, 500), ("bd4002lic", True, 500)],
 }
 def fl_pull(conn_id):
-    started = int(time.time() * 1000); exs = []
+    started = int(time.time() * 1000); exs = []; warns = []
     extracts = FL_CONN[conn_id]
     for i, (eid, hashdr, n) in enumerate(extracts):
         try:
@@ -359,13 +359,18 @@ def fl_pull(conn_id):
             exs.append({"id": eid, "rows": len(data), "delta": delta, "status": "success"})
         except Exception as e:
             app.logger.warning("FL %s failed: %s", eid, e)
+            msg = str(e)
+            if "CERTIFICATE_VERIFY_FAILED" in msg or "local issuer" in msg:
+                msg = "TLS certificate verify failed for the FL data host (CA chain incomplete on this host)"
+            warns.append("%s: %s" % (eid, msg[:140]))
             exs.append({"id": eid, "rows": 0, "delta": 0, "status": "failed"})
     fin = int(time.time() * 1000)
     status = "failed" if all(e["status"] == "failed" for e in exs) else \
              "partial" if any(e["status"] == "failed" for e in exs) else "success"
     return {"id": "R-" + format(int(time.time()) % 100000, "05d"), "connId": conn_id,
             "startedAt": started, "finishedAt": fin, "durationMs": fin - started,
-            "status": status, "trigger": "manual", "total": sum(e["rows"] for e in exs), "extracts": exs}
+            "status": status, "trigger": "manual", "total": sum(e["rows"] for e in exs),
+            "degraded": status == "partial", "warnings": warns, "extracts": exs}
 
 # ---------------- COLA pull (embeds the scraper) ----------------
 def cola_pull(params):
