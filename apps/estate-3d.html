@@ -88,6 +88,10 @@
   .eres .er .ek{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
   .eres .er .ety{margin-left:auto;font-size:8.5px;color:#6f938a;letter-spacing:.06em}
   .eres .none{padding:7px 11px;color:#6f938a;font-size:11px;background:rgba(18,28,25,.94);border:1px solid var(--line);border-radius:8px}
+  .efilter{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:6;display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:92vw}
+  .efilter button{background:rgba(18,28,25,.82);border:1px solid var(--line);border-radius:20px;padding:5px 13px;color:#a9c9c0;font-family:var(--mono);font-size:10.5px;cursor:pointer;backdrop-filter:blur(6px);transition:border-color .15s,background .15s,color .15s}
+  .efilter button:hover{border-color:var(--teal);color:#eafaf5}
+  .efilter button.on{background:var(--teal);color:#0e1613;border-color:var(--teal);font-weight:700}
 </style>
 <script type="importmap">
 { "imports": {
@@ -108,6 +112,7 @@
     <input id="eq" placeholder="🔍 search a node — fly to it…" autocomplete="off" spellcheck="false">
     <div class="eres" id="eres"></div>
   </div>
+  <div class="efilter" id="efilter"></div>
   <div class="sel" id="sel"></div>
   <div class="flat" id="flat"></div>
   <div class="legend">entity ●<span class="sw" style="background:#3fb8a3"></span> · feed ◆<span class="di" style="background:#5bb86e"></span><br>live<span class="sw" style="background:#5bb86e"></span> · planned<span class="sw" style="background:#5f7a72"></span> · drifting<span class="sw" style="background:#d99a3f"></span> · broke<span class="sw" style="background:#d9584f"></span><br><span class="cf">|—&lt; one‑to‑many</span> · 🔑 key</div>
@@ -318,6 +323,8 @@ const ray=new THREE.Raycaster(); const mouse=new THREE.Vector2(); let down=[0,0]
 const selEl=document.getElementById('sel');
 function setFocus(n){
   selected=n;
+  if(window.__efSync) window.__efSync(n?(n.kind==='ent'?n.id:' '):'');   // sync the entity-filter chips
+
   if(!n){ nodes.forEach(x=>{x.mat.opacity=1;x.lo.classList.remove('dim');x.mesh.scale.setScalar(x.kind==='ent'?7.6:(x.live?4.9:3.8));}); edges.forEach(e=>{e.mat.opacity=.32; if(e.badge)e.badge.classList.remove('dim');}); selEl.classList.remove('show');
     if(homeT){ const off=camera.position.clone().sub(controls.target); fly={toT:homeT.clone(),toC:homeT.clone().add(off),t:0,fromT:controls.target.clone(),fromC:camera.position.clone()}; }  // re-center the pivot
     return; }
@@ -512,6 +519,14 @@ eqEl.addEventListener('keydown', e=>{
   else if(e.key==='Enter'){ e.preventDefault(); ePick(eHi<0?0:eHi); }
 });
 document.addEventListener('click', e=>{ if(!document.getElementById('esearch').contains(e.target)) eresEl.className='eres'; });
+
+// ── entity filter — pick a core entity, everything it doesn't touch drops out (setFocus does it) ──
+(function(){
+  const ef=document.getElementById('efilter');
+  ef.innerHTML='<button data-ef="" class="on">All</button>'+ENT.map(e=>'<button data-ef="'+e.id+'">'+e.label+'</button>').join('');
+  ef.querySelectorAll('button').forEach(b=>b.onclick=()=>{ const id=b.getAttribute('data-ef'); setFocus(id?byId[id]:null); });
+  window.__efSync=function(key){ ef.querySelectorAll('button').forEach(x=>x.classList.toggle('on', x.getAttribute('data-ef')===key)); };
+})();
 
 refresh(); setInterval(refresh,60000); setInterval(tickLive,5000); tick();
 </script>
