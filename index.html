@@ -65,8 +65,11 @@
   .pop .opt .go{color:var(--amber);font-size:11px;}
 
   /* account select */
-  .acct{width:30px;height:30px;padding:0;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:700;letter-spacing:.02em;border:1px solid var(--bar-hair);background:var(--accent);color:#fff;border-radius:50%;cursor:pointer;transition:transform .12s,box-shadow .12s;}
-  .acct:hover{transform:scale(1.06);box-shadow:0 2px 8px rgba(20,28,38,.18);}
+  .acct{font-family:"IBM Plex Mono",monospace;font-size:12.5px;border:1px solid var(--hair);background:var(--paper);color:var(--ink);padding:5px 8px;border-radius:3px;cursor:pointer;transition:border-color .12s;}
+  .acct:hover{border-color:var(--amber);}
+  /* account avatar (top chrome) — its own class so it never touches the account <select> */
+  .acctav{width:30px;height:30px;padding:0;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:700;letter-spacing:.02em;border:1px solid var(--bar-hair);background:var(--accent);color:#fff;border-radius:50%;cursor:pointer;transition:transform .12s,box-shadow .12s;}
+  .acctav:hover{transform:scale(1.06);box-shadow:0 2px 8px rgba(20,28,38,.18);}
   .acctmenu{position:fixed;z-index:9999;min-width:212px;background:var(--bar-bg);border:1px solid var(--hair);border-radius:11px;box-shadow:0 10px 34px rgba(20,28,38,.16);padding:8px;font-family:var(--font-display);font-size:13px;color:var(--ink);}
   .acctmenu .who{padding:6px 9px 9px;color:var(--ink-soft);font-size:11.5px;line-height:1.4;}
   .acctmenu .who b{color:var(--ink);font-weight:600;}
@@ -305,7 +308,7 @@
     </button>
     <a class="ext" id="signout" href="/auth/logout" style="display:none">Sign out</a>
     <a class="ext" id="ext" target="_blank" rel="noopener">Open full ↗</a>
-    <button class="acct" id="acctBtn" style="display:none" title="Account" aria-haspopup="menu">··</button>
+    <button class="acctav" id="acctBtn" style="display:none" title="Account" aria-haspopup="menu">··</button>
   </div>
   <div class="searchpop" id="searchpop"></div>
 </header>
