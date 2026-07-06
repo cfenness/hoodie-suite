@@ -63,6 +63,20 @@ def make_session():
                   status_forcelist=[429, 500, 502, 503, 504],
                   allowed_methods=["GET", "POST"])
     s.mount("https://", HTTPAdapter(max_retries=retry))
+    # Route through Bright Data when BRIGHTDATA_PROXY is set — a clean IP + BD terminates the TLS,
+    # fixing the datacenter block + the incomplete-chain cert error ttbonline.gov throws on Fly.
+    try:
+        prox = __import__("brightdata").proxies()
+    except Exception:
+        prox = None
+    if prox:
+        s.proxies.update(prox)
+        s.verify = False   # BD does SSL interception; the origin cert is verified BD-side
+        try:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        except Exception:
+            pass
     return s
 
 def soupify(html):
