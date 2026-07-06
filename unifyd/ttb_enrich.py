@@ -31,7 +31,7 @@ DETAIL_FIELDS = ["Status", "Vendor Code", "Serial #", "Class/Type Code", "Origin
                  "Brand Name", "Fanciful Name", "Type of Application", "For Sale In",
                  "Total Bottle Capacity", "Wine Vintage", "Formula", "Approval Date",
                  "Qualifications", "Contact Information"]
-OUT_HEADER = ["TTB ID"] + DETAIL_FIELDS + ["UPC", "label_files"]
+OUT_HEADER = ["TTB ID"] + DETAIL_FIELDS + ["UPC", "upc_raw", "upc_status", "label_files"]
 
 
 def parse_detail_fields(html):
@@ -126,12 +126,12 @@ def main():
 
     s = cola.make_session()
     s.get(cola.SEARCH_PAGE, timeout=60)          # session cookie
-    upc_fn = None
+    labels = None
     if a.ocr:
         try:
-            from ttb_cola_labels import extract_upc_from_label as upc_fn
+            import ttb_cola_labels as labels
         except Exception:
-            upc_fn = None
+            labels = None
 
     n = 0
     for r in todo:
@@ -147,8 +147,8 @@ def main():
                 rec[k] = f.get(k, "")
         except Exception as e:
             pass
-        # --- labels + UPC ---
-        upc, saved = "", []
+        # --- labels + UPC (raw barcode + deterministic status; placeholder kept, not trusted) ---
+        saved, upc_raw, upc_status = [], "", "none"
         if want_labels:
             try:
                 fhtml = s.get(VIEW, params={"action": "publicFormDisplay", "ttbid": tid}, timeout=90).text
@@ -165,15 +165,19 @@ def main():
                             open(p, "wb").write(img); saved.append(os.path.basename(p))
                         except Exception:
                             pass
-                    if upc_fn and not upc:
+                    if labels and upc_status != "valid":
                         try:
-                            upc = upc_fn(img) or ""
+                            raw, st = labels.decode_barcode(img)
+                            if raw and (upc_status == "none" or st == "valid"):
+                                upc_raw, upc_status = raw, st
                         except Exception:
                             pass
                     time.sleep(a.delay * 0.4)
             except Exception:
                 pass
-        rec["UPC"] = upc
+        rec["UPC"] = upc_raw if upc_status == "valid" else ""
+        rec["upc_raw"] = upc_raw
+        rec["upc_status"] = upc_status
         rec["label_files"] = ";".join(saved)
         w.writerow([rec.get(h, "") for h in OUT_HEADER]); fout.flush()
         n += 1
