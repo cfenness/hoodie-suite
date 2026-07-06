@@ -114,6 +114,23 @@ def _new_job(conn):
             JOBS.pop(k, None)
     return jid
 
+def _emit_pull_highlights(conn, rec):
+    """An owned pull emits a highlight per landed extract — so the estate model pulses that dataset
+    node (it matches on `dataset`) and the highlights feed shows owned pulls, not just recipe scrapes."""
+    try:
+        ts = int(time.time() * 1000)
+        for e in (rec.get("extracts") or []):
+            n = e.get("rows") or 0
+            if n <= 0 or e.get("status") == "failed":
+                continue
+            HIGHLIGHTS.insert(0, {"host": conn, "dataset": e.get("id"), "engine": "owned pull",
+                                  "count": n, "ts": ts,
+                                  "headline": "%s · %s rows" % (_SRC_LABEL.get(conn, conn), format(n, ","))})
+        del HIGHLIGHTS[30:]
+        _save_json("highlights.json", HIGHLIGHTS)
+    except Exception as ex:
+        app.logger.warning("highlight emit failed for %s: %s", conn, ex)
+
 def _run_job(jid, conn, body):
     _JOB_BY_THREAD[threading.get_ident()] = jid
     job = JOBS[jid]
@@ -124,6 +141,7 @@ def _run_job(jid, conn, body):
             job["status"] = "error"; job["error"] = "unknown connId: %s" % conn
             app.logger.warning("%s: unknown connId", conn); return
         RUNS.insert(0, rec); del RUNS[200:]; save()
+        _emit_pull_highlights(conn, rec)   # so the estate model pulses + the feed shows owned pulls
         job["run"] = rec; job["status"] = rec.get("status", "success")
         app.logger.info("%s: done — %s rows, status %s", conn, rec.get("total"), rec.get("status"))
     except Exception as e:
@@ -1003,6 +1021,7 @@ def run():
     if rec is None:
         return jsonify(error="unknown connId"), 400
     RUNS.insert(0, rec); del RUNS[200:]; save()
+    _emit_pull_highlights(conn, rec)   # estate model pulses + feed shows owned pulls (sync path too)
     return jsonify(rec)
 
 @app.get("/api/run/progress")

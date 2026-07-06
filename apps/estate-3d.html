@@ -165,7 +165,7 @@ function cardSVG(ca,cb){
 }
 function hostOf(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch(e){ return ''; } }
 function friendly(nm){ return String(nm||'source').replace(/\s*—.*$/,'').replace(/\s*\([^)]*\)\s*$/,'').slice(0,26); }
-function dsName(k){ const M={bd4008lic:'FL · Item master',bd4011lic:'FL · Registrants',abtbrands:'FL · Brand renewals',bd4006lic:'FL · Retail outlets',bd4005lic:'FL · Wholesale',bd400revok:'FL · Revoked',bd4002lic:'FL · Permits',abc_store_cells:'ABC · store cells'}; return M[k]||('dataset · '+k); }
+function dsName(k){ const M={bd4008lic:'FL · Item master',bd4011lic:'FL · Registrants',abtbrands:'FL · Brand renewals',bd4006lic:'FL · Retail outlets',bd4005lic:'FL · Wholesale',bd400revok:'FL · Revoked',bd4002lic:'FL · Permits',abc_store_cells:'ABC · store cells',census_acs:'US Census · demographics',outlets_census:'Outlets × demographics'}; return M[k]||('dataset · '+k); }
 // deterministic position by name → stable geography across refreshes
 function stablePos(name, connEnts){
   let h=2166136261; for(let i=0;i<name.length;i++){ h^=name.charCodeAt(i); h=Math.imul(h,16777619); }
@@ -434,7 +434,7 @@ async function refresh(){
   // real pull activity → pulse the source that just ran (highlights carry host + ts)
   const hs=live.highlights||[], mx=hs.reduce((m,h)=>Math.max(m,h.ts||0),0);
   if(!seenTs){ seenTs=mx; }   // first read: adopt the backlog, don't pulse it
-  else { hs.forEach(h=>{ if((h.ts||0)>seenTs){ const nd=nodes.find(n=>n.kind==='src'&&n.host&&n.host===h.host); if(nd) spawnPulse(nd); } }); seenTs=Math.max(seenTs,mx); }
+  else { hs.forEach(h=>{ if((h.ts||0)>seenTs){ const nd=nodes.find(n=>n.kind==='src'&&((h.dataset&&n.dataset===h.dataset)||(h.host&&n.host&&n.host===h.host))); if(nd) spawnPulse(nd); } }); seenTs=Math.max(seenTs,mx); }
   lastRead=Date.now();
   issuesCount=nodes.filter(n=>n.kind==='src'&&RE_ISSUE.test(n.status)).length;
   liveEl.className='live'+(live.online?'':' off')+(issuesCount?' warn':'');
