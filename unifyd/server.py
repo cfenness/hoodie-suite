@@ -36,6 +36,7 @@ import enrich                       # join reference data (census) onto the outl
 import tx_tabc                      # Texas TABC licenses (Socrata) — TX outlets + companies by county
 import master                       # unify per-state outlet pulls into one normalized outlets_master
 import warehouse                    # Parquet-on-Tigris (or local) queried by DuckDB
+import upc                          # UPC/EAN QC + owned prefix->owner crosswalk (deterministic + inference)
 import auth_gate                    # Google OIDC login gate (active only when configured)
 
 APP_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -298,6 +299,9 @@ PLANOGRAM = load("planograms.json", {})
 # status overrides, feature toggles). Both persisted with the rest of the agent state.
 USAGE = load("usage.json", [])
 FLAGS = load("admin_flags.json", {"apps": {}, "features": {}})
+# UPC prefix->owner crosswalk (built by upc_crosswalk.py from enriched COLA; empty until uploaded).
+# Deterministic UPC checks work with or without it; owner-agreement activates once it's present.
+UPC_XWALK = load("upc_crosswalk.json", {})
 # Hoodie Relations extras — per-account delivery day + goals (goals matched to the
 # master via relations.match_goal). Keyed by account id; persisted so it's reportable.
 RELATIONS = load("relations.json", {})
@@ -1228,6 +1232,21 @@ def prism_ep():
     """Prism mobile app's data contract — the book cut every way, plus the pulse feed.
     Deterministic (no LLM), so it always answers and the app works offline once cached."""
     return jsonify(prism.bundle(request.args.get("measure")))
+
+
+@app.post("/api/upc")
+def upc_ep():
+    """Assess one or many UPC/EAN codes. Deterministic QC always (check digit, placeholder,
+    restricted ranges); owner-agreement + confidence when the prefix->owner crosswalk is loaded.
+    Body: {"upc": "...", "applicant": "..."} OR {"items": [{"upc","applicant"}, ...]}."""
+    body = request.get_json(force=True, silent=True) or {}
+    items = body.get("items")
+    if items is None:
+        items = [{"upc": body.get("upc", ""), "applicant": body.get("applicant", "")}]
+    xw = UPC_XWALK or None
+    out = [upc.assess((it or {}).get("upc", ""), applicant=(it or {}).get("applicant"), crosswalk=xw)
+           for it in items[:5000]]
+    return jsonify(ok=True, crosswalk_loaded=bool(UPC_XWALK), count=len(out), results=out)
 
 
 @app.get("/api/places")
