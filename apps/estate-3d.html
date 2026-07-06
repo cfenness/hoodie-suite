@@ -17,6 +17,10 @@
   .lbl.ent .pk{display:block;font-family:var(--mono);font-weight:500;font-size:8.5px;letter-spacing:.02em;color:#d9b03f;margin-top:1px;opacity:.92}
   .lbl.planned{color:#6f938a}
   .lbl.dim{opacity:.1}
+  .clbl{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;pointer-events:auto;cursor:pointer;white-space:nowrap;text-shadow:0 1px 6px rgba(0,0,0,.92),0 0 2px rgba(0,0,0,.9);opacity:.94;transition:opacity .3s}
+  .clbl b{font-weight:700;opacity:.62;margin-left:4px}
+  .clbl:hover{opacity:1}
+  .clbl.dim{opacity:.1}
   .card svg{display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.75))}
   .card{opacity:.85;transition:opacity .3s} .card.dim{opacity:.06}
   .hud{position:fixed;pointer-events:none;z-index:5}
@@ -187,7 +191,7 @@ function cardSVG(ca,cb){
 }
 function hostOf(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch(e){ return ''; } }
 function friendly(nm){ return String(nm||'source').replace(/\s*—.*$/,'').replace(/\s*\([^)]*\)\s*$/,'').slice(0,26); }
-function dsName(k){ const M={bd4008lic:'FL · Item master',bd4011lic:'FL · Registrants',abtbrands:'FL · Brand renewals',bd4006lic:'FL · Retail outlets',bd4005lic:'FL · Wholesale',bd400revok:'FL · Revoked',bd4002lic:'FL · Permits',abc_store_cells:'ABC · store cells',census_demographic:'Census · Demographic',census_economic:'Census · Economic',census_housing:'Census · Housing',outlets_census:'Outlets × census',tx_outlets:'TX · Retail outlets',tx_companies:'TX · Companies',outlets_master:'Outlet master'}; return M[k]||('dataset · '+k); }
+function dsName(k){ const M={bd4008lic:'FL · Item master',bd4011lic:'FL · Registrants',abtbrands:'FL · Brand renewals',bd4006lic:'FL · Retail outlets',bd4005lic:'FL · Wholesale',bd400revok:'FL · Revoked',bd4002lic:'FL · Permits',abc_store_cells:'ABC · store cells',census_demographic:'Census · Demographic',census_economic:'Census · Economic',census_housing:'Census · Housing',outlets_census:'Outlets × census',tx_outlets:'TX · Retail outlets',tx_companies:'TX · Companies',il_outlets:'Chicago · Liquor outlets',il_companies:'Chicago · Companies',outlets_master:'Outlet master'}; return M[k]||('dataset · '+k); }
 // deterministic position by name → stable geography across refreshes
 function stablePos(name, connEnts){
   let h=2166136261; for(let i=0;i<name.length;i++){ h^=name.charCodeAt(i); h=Math.imul(h,16777619); }
@@ -197,6 +201,35 @@ function stablePos(name, connEnts){
   const mean=new THREE.Vector3(); (connEnts||[]).forEach(e=> ENT_POS[e]&&mean.add(ENT_POS[e]));
   if(connEnts&&connEnts.length) mean.multiplyScalar(1/connEnts.length);
   return dir.multiplyScalar(128).lerp(mean.clone().multiplyScalar(1.6), 0.28);
+}
+// ---- family clustering: sources group into labeled regions of space (not one uniform cloud) ----
+const CLUSTER_DEF=[
+  {key:'fl',    label:'Florida',      col:'#5bb86e', t:n=>/^d:(bd4|abt|abc_)/.test(n.id||'')||/(^|·\s*)FL\b|florida/i.test(n.full||'')},
+  {key:'tx',    label:'Texas',        col:'#4a90d9', t:n=>/^d:tx_/.test(n.id||'')||/\bTX\b|texas/i.test(n.full||'')},
+  {key:'il',    label:'Chicago',      col:'#3fb8a3', t:n=>/^d:il_/.test(n.id||'')||/chicago/i.test(n.full||'')},
+  {key:'census',label:'Census',       col:'#8a6fd0', t:n=>/^d:(census_|outlets_census)/.test(n.id||'')||/census|demograph|econom|housing/i.test(n.full||'')},
+  {key:'master',label:'Master',       col:'#d9b03f', t:n=>/master/i.test((n.full||'')+(n.id||''))},
+  {key:'retail',label:'Retail & DTC', col:'#57c9b3', t:n=>!!n.host||/spec|binny|instacart|shopify|kroger|total\s*wine|drizly|hemp|dtc|store|walmart|target|bevmo|abc\s*fws/i.test((n.full||'')+(n.id||''))},
+];
+const CLUSTER_FALL={key:'other',label:'Other',col:'#8aa39d',t:()=>true};
+function clusterOf(n){ for(const c of CLUSTER_DEF){ try{ if(c.t(n))return c; }catch(e){} } return CLUSTER_FALL; }
+// place each family in its own region of space; pack members inside via a fibonacci ball
+function layoutClusters3D(nodes){
+  const groups={};
+  nodes.forEach(n=>{ if(n.kind!=='src')return; const c=clusterOf(n); (groups[c.key]=groups[c.key]||{def:c,nodes:[]}).nodes.push(n); n._ck=c.key; });
+  const order=CLUSTER_DEF.concat([CLUSTER_FALL]).filter(c=>groups[c.key]);
+  const N=order.length||1, R=155, metas=[];
+  order.forEach((cdef,i)=>{
+    const yy=1-(i+0.5)/N*2, rr=Math.sqrt(Math.max(0,1-yy*yy)), th=i*2.399963;
+    const center=new THREE.Vector3(Math.cos(th)*rr, yy*0.7, Math.sin(th)*rr).multiplyScalar(R);
+    const g=groups[cdef.key], M=g.nodes.length, pr=15+Math.sqrt(M)*6.5;
+    g.nodes.forEach((n,j)=>{
+      const y2=1-(j+0.5)/M*2, r2=Math.sqrt(Math.max(0,1-y2*y2)), t2=j*2.399963;
+      n.pos=center.clone().add(new THREE.Vector3(Math.cos(t2)*r2, y2, Math.sin(t2)*r2).multiplyScalar(pr*Math.cbrt((j+0.5)/M)));
+    });
+    metas.push({key:cdef.key,label:cdef.label,col:cdef.col,center,r:pr,count:M,nodes:g.nodes});
+  });
+  return metas;
 }
 
 // ── live read ──────────────────────────────────────────────────────────────────────
@@ -245,7 +278,8 @@ function buildModel(live){
 
   const adj={}; nodes.forEach(n=>adj[n.id]=new Set());
   edges.forEach(e=>{ if(byId[e.a]&&byId[e.b]){ adj[e.a].add(e.b); adj[e.b].add(e.a); } });
-  return {nodes,edges:edges.filter(e=>byId[e.a]&&byId[e.b]),byId,adj};
+  const clusters=layoutClusters3D(nodes);   // group sources into family regions (overrides stablePos)
+  return {nodes,edges:edges.filter(e=>byId[e.a]&&byId[e.b]),byId,adj,clusters};
 }
 
 // ── scene (built once) ───────────────────────────────────────────────────────────
@@ -270,10 +304,11 @@ const pulseGeo=new THREE.SphereGeometry(2.6,12,12);
 const graph=new THREE.Group(); scene.add(graph);
 
 // ── graph state + (re)build ─────────────────────────────────────────────────────
-let nodes=[], edges=[], byId={}, adj={}, meshes=[], selected=null, fly=null, homeT=null, framed=false, pulses=[], cardMarks=[];
+let nodes=[], edges=[], byId={}, adj={}, meshes=[], selected=null, fly=null, homeT=null, framed=false, pulses=[], cardMarks=[], clusterLabels=[];
 function disposeGraph(){
   nodes.forEach(n=>{ if(n.lo){ n.lo.remove(); } });
   cardMarks.forEach(o=>{ if(o.element&&o.element.remove)o.element.remove(); }); cardMarks=[];
+  clusterLabels.forEach(o=>{ if(o.element&&o.element.remove)o.element.remove(); }); clusterLabels=[];
   pulses.forEach(p=>{ if(p.mesh&&p.mesh.material)p.mesh.material.dispose(); }); pulses=[];
   while(graph.children.length){ const c=graph.children.pop();
     if(c.geometry && c.geometry!==esph && c.geometry!==soct && c.geometry!==pulseGeo) c.geometry.dispose();   // keep shared geos
@@ -309,6 +344,14 @@ function buildGraph(model){
     const d=document.createElement('div'); d.className='card'; d.innerHTML=cardSVG(e.ca,e.cb);
     const o=new CSS2DObject(d); o.position.copy(na.pos.clone().lerp(nb.pos,0.5)); graph.add(o);
     e.badge=d; cardMarks.push(o); });
+  // family region labels — the neighborhoods; click one to focus the whole family
+  (model.clusters||[]).forEach(cl=>{
+    const d=document.createElement('div'); d.className='clbl'; d.style.color=cl.col;
+    d.innerHTML=cl.label+' <b>'+cl.count+'</b>';
+    const o=new CSS2DObject(d); o.position.copy(cl.center.clone()); o.position.y+=cl.r+11; graph.add(o);
+    o.userData={cl}; clusterLabels.push(o);
+    d.addEventListener('click',ev=>{ ev.stopPropagation(); focusCluster(cl); });
+  });
   meshes=nodes.map(n=>n.mesh);
   // frame + pivot on the bounding-box CENTER so orbit feels centered and the cloud fills the view
   const box=new THREE.Box3(); nodes.forEach(n=>box.expandByPoint(n.pos));
@@ -327,16 +370,36 @@ function setFocus(n){
   selected=n;
   if(window.__efSync) window.__efSync(n?(n.kind==='ent'?n.id:' '):'');   // sync the entity-filter chips
 
-  if(!n){ nodes.forEach(x=>{x.mat.opacity=1;x.lo.classList.remove('dim');x.mesh.scale.setScalar(x.kind==='ent'?7.6:(x.live?4.9:3.8));}); edges.forEach(e=>{e.mat.opacity=.32; if(e.badge)e.badge.classList.remove('dim');}); selEl.classList.remove('show');
+  if(!n){ nodes.forEach(x=>{x.mat.opacity=1;x.lo.classList.remove('dim');x.mesh.scale.setScalar(x.kind==='ent'?7.6:(x.live?4.9:3.8));}); edges.forEach(e=>{e.mat.opacity=.32; if(e.badge)e.badge.classList.remove('dim');}); clusterLabels.forEach(o=>o.element.classList.remove('dim')); selEl.classList.remove('show');
     if(homeT){ const off=camera.position.clone().sub(controls.target); fly={toT:homeT.clone(),toC:homeT.clone().add(off),t:0,fromT:controls.target.clone(),fromC:camera.position.clone()}; }  // re-center the pivot
     return; }
   const keep=new Set([n.id,...adj[n.id]]);
   nodes.forEach(x=>{ const on=keep.has(x.id); x.mat.opacity=on?1:.05; x.lo.classList.toggle('dim',!on); x.mesh.scale.setScalar((x.kind==='ent'?7.6:(x.live?4.9:3.8))*(x.id===n.id?1.35:1)); });
   edges.forEach(e=>{ const on=(e.a===n.id||e.b===n.id); e.mat.opacity=on?.92:.02; if(e.badge)e.badge.classList.toggle('dim',!on); });
+  clusterLabels.forEach(o=>o.element.classList.toggle('dim', o.userData.cl.key!==n._ck));
   showSel(n); flyTo(n);
 }
 function flyTo(n){ const off=camera.position.clone().sub(controls.target).normalize().multiplyScalar(n.kind==='ent'?72:54);
   fly={toT:n.pos.clone(),toC:n.pos.clone().add(off),t:0,fromT:controls.target.clone(),fromC:camera.position.clone()}; }
+function focusCluster(cl){
+  selected=null; if(window.__efSync) window.__efSync(' ');
+  const ids=new Set(cl.nodes.map(n=>n.id));
+  edges.forEach(e=>{ if(ids.has(e.a)&&byId[e.b].kind==='ent')ids.add(e.b); if(ids.has(e.b)&&byId[e.a].kind==='ent')ids.add(e.a); });
+  nodes.forEach(x=>{ const on=ids.has(x.id); x.mat.opacity=on?1:.04; x.lo.classList.toggle('dim',!on); x.mesh.scale.setScalar(x.kind==='ent'?7.6:(x.live?4.9:3.8)); });
+  edges.forEach(e=>{ const on=ids.has(e.a)&&ids.has(e.b); e.mat.opacity=on?.85:.02; if(e.badge)e.badge.classList.toggle('dim',!on); });
+  clusterLabels.forEach(o=>o.element.classList.toggle('dim', o.userData.cl.key!==cl.key));
+  const off=camera.position.clone().sub(controls.target).normalize().multiplyScalar(cl.r+95);
+  fly={toT:cl.center.clone(),toC:cl.center.clone().add(off),t:0,fromT:controls.target.clone(),fromC:camera.position.clone()};
+  const ents=[...ids].map(id=>byId[id]).filter(x=>x&&x.kind==='ent').map(x=>x.label);
+  selEl.innerHTML='<div class="k">Family · '+cl.count+' source'+(cl.count===1?'':'s')+'</div>'
+    +'<div class="nm" style="color:'+cl.col+'">'+cl.label+'</div>'
+    +'<div class="meta">feeds '+(ents.length?ents.join(' · '):'—')+'</div>'
+    +'<div class="cxh">Sources</div><div class="cx">'
+    +cl.nodes.slice(0,16).map(n=>'<div class="cxrow"><span class="road">'+(n.status||'')+'</span><span class="to">'+(n.full||n.label)+'</span></div>').join('')
+    +(cl.count>16?'<div class="meta">+'+(cl.count-16)+' more sources</div>':'')+'</div>'
+    +'<button class="reset" id="rst">✕ clear focus</button>';
+  selEl.classList.add('show'); document.getElementById('rst').onclick=()=>setFocus(null);
+}
 function showSel(n){
   const conns=edges.filter(e=>e.a===n.id||e.b===n.id).map(e=>{ const o=byId[e.a===n.id?e.b:e.a]; return {to:o.label,road:e.road}; });
   // queryable fields: a dataset node's own columns, or (for an entity) the columns of its connected datasets
