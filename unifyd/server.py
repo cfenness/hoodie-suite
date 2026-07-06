@@ -1262,6 +1262,46 @@ def upc_ep():
     return jsonify(ok=True, crosswalk_loaded=bool(UPC_XWALK), count=len(out), results=out)
 
 
+@app.get("/api/outlets/geo")
+def outlets_geo_ep():
+    """Geocoded outlet points for the coverage map. ?dataset=il_outlets (default). Returns
+    [{lat,lng,name,type,area,city,state}] from the FULL rows for any outlet dataset that carries
+    latitude/longitude (IL/Chicago ships them; FL/TX need geocoding first). Capped at 25k."""
+    did = request.args.get("dataset", "il_outlets")
+    full = load_full(did) or DATASETS.get(did)
+    if not isinstance(full, dict) or not full.get("rows"):
+        return jsonify(ok=True, dataset=did, count=0, points=[], note="no data pulled yet")
+    header = full.get("header", []); rows = full.get("rows", [])
+    idx = {str(h).lower(): i for i, h in enumerate(header)}
+    def gi(*names):
+        for n in names:
+            if n in idx: return idx[n]
+        return -1
+    la, lo = gi("latitude", "lat"), gi("longitude", "lng", "lon")
+    if la < 0 or lo < 0:
+        return jsonify(ok=True, dataset=did, count=0, points=[], note="dataset has no lat/lng — geocode first")
+    fmap = {"name": gi("dba", "name", "trade_name"), "type": gi("license_types", "license_type", "type"),
+            "area": gi("community_area", "county"), "city": gi("city"), "state": gi("state")}
+    pts = []
+    for r in rows:
+        if la >= len(r) or lo >= len(r):
+            continue
+        try:
+            lat, lng = float(r[la]), float(r[lo])
+        except (ValueError, TypeError):
+            continue
+        if not (lat and lng and -90 < lat < 90 and -180 < lng < 180):
+            continue
+        p = {"lat": round(lat, 6), "lng": round(lng, 6)}
+        for k, i in fmap.items():
+            if 0 <= i < len(r) and r[i] not in (None, ""):
+                p[k] = r[i]
+        pts.append(p)
+        if len(pts) >= 25000:
+            break
+    return jsonify(ok=True, dataset=did, count=len(pts), points=pts)
+
+
 @app.get("/api/places")
 def places_ep():
     """Query the pulled on-premise accounts (Orlando) from the warehouse. Filters:
