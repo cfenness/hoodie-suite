@@ -27,6 +27,15 @@ CATALOG = {
     "or_pricing":   ("data.oregon.gov", "vmf2-f83h", "Oregon OLCC — monthly product pricing"),
 }
 
+# CKAN portals that publish the price book as a CSV file (not a Socrata API). Canada's provinces are
+# government monopolies → same product/price axis as US control states. We resolve the LATEST CSV
+# resource at build time so it tracks the monthly refresh instead of pinning a stale file URL.
+CKAN_CSV = {
+    "bc_liquor": {"ckan": "https://catalogue.data.gov.bc.ca",
+                  "package": "bc-liquor-store-product-price-list-historical-prices",
+                  "label": "BC Liquor — product price list (SKU, UPC, ABV, price, category)"},
+}
+
 
 def _get(url):
     req = urllib.request.Request(url, headers={"User-Agent": "HoodieUnifyd/1.0 (+control-state harvest)"})
@@ -57,9 +66,37 @@ def fetch_all(domain, rid, cap=1000000, log=print):
     return out
 
 
+def build_csv(name, log=print):
+    """Land a CKAN CSV source (e.g. BC Liquor) — resolve its latest CSV resource, download, parse,
+    write Parquet. Kept schema-agnostic (columns straight from the file header)."""
+    import warehouse, csv as _csv, io as _io
+    cfg = CKAN_CSV[name]
+    meta = _get(cfg["ckan"] + "/api/3/action/package_show?id=" + cfg["package"])["result"]
+    csvs = [r for r in meta.get("resources", []) if (r.get("format") or "").upper() == "CSV"]
+    if not csvs:
+        raise RuntimeError("%s: no CSV resource on the CKAN package" % name)
+    csvs.sort(key=lambda r: (r.get("last_modified") or r.get("created") or ""), reverse=True)
+    latest = csvs[0]
+    log("%s — %s (latest: %s)" % (name, cfg["label"], latest.get("name", "?")))
+    req = urllib.request.Request(latest["url"], headers={"User-Agent": "HoodieUnifyd/1.0 (+control-state harvest)"})
+    with urllib.request.urlopen(req, timeout=240) as r:
+        txt = r.read().decode("utf-8", "replace")
+    rows = list(_csv.reader(_io.StringIO(txt)))
+    if not rows:
+        log("%s: empty CSV" % name); return {"name": name, "rows": 0}
+    header = [h.strip() for h in rows[0]]
+    data = [r for r in rows[1:] if any((c or "").strip() for c in r)]
+    recs = [{header[i]: (r[i] if i < len(r) else "") for i in range(len(header))} for r in data]
+    res = warehouse.write_parquet(name, recs, fields=header)
+    log("%s: wrote %s rows → %s" % (name, format(res["rows"], ","), res["uri"]))
+    return {"name": name, "rows": res["rows"], "uri": res["uri"], "fields": header, "label": cfg["label"]}
+
+
 def build(name, log=print):
-    """Fetch one catalog source and land it as a warehouse Parquet dataset. Returns stats."""
+    """Fetch one source and land it as a warehouse Parquet dataset. Dispatches CKAN-CSV vs Socrata."""
     import warehouse
+    if name in CKAN_CSV:
+        return build_csv(name, log=log)
     if name not in CATALOG:
         raise ValueError("unknown control-state source: %s" % name)
     domain, rid, label = CATALOG[name]
@@ -82,7 +119,7 @@ def build(name, log=print):
 
 
 def build_all(only=None, log=print):
-    names = [only] if only else list(CATALOG)
+    names = [only] if only else (list(CATALOG) + list(CKAN_CSV))
     return [build(n, log=log) for n in names]
 
 
