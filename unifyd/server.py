@@ -28,6 +28,7 @@ import shopify_scraper as shopify  # DTC brands on Shopify (hemp + bev-alc) via 
 import instacart_scraper as instacart  # store-level Instacart via Bright Data managed dataset
 import analyze                      # data-reader brain behind "Overlay your data"
 import planogram                    # benchmark + shelf-vision + pitch behind the Planogram app
+import hi_analyst                   # the real Claude analyst behind Hoodie Intelligence Q&A
 import prism                        # data contract behind the Prism mobile app
 import places                       # restaurant / on-premise-accounts connector (Orlando first)
 import warehouse                    # Parquet-on-Tigris (or local) queried by DuckDB
@@ -1023,6 +1024,46 @@ def ai_read_ep():
     result = analyze.ai_read(profile, summary=body.get("summary"),
                              filename=body.get("filename", "dataset.csv"),
                              header=body.get("header"), rows=body.get("rows"))
+    if "error" not in result:
+        return jsonify(result)
+    return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
+
+# ── Hoodie Intelligence analyst — real Claude answers + a pause switch ────────────────
+_AI_PAUSE_FILE = os.path.join(STATE_DIR, "ai_paused.json")
+
+def _ai_paused():
+    try: return bool(json.load(open(_AI_PAUSE_FILE)).get("paused"))
+    except Exception: return False
+
+def _ai_set_paused(v):
+    try: json.dump({"paused": bool(v)}, open(_AI_PAUSE_FILE, "w"))
+    except Exception: pass
+    return bool(v)
+
+@app.get("/api/ai/status")
+def ai_status_ep():
+    """Is the live Claude analyst available, and is it currently paused? Drives the toggle."""
+    return jsonify(enabled=hi_analyst.enabled(), paused=_ai_paused())
+
+@app.post("/api/ai/pause")
+def ai_pause_ep():
+    """Pause/resume the live analyst — the 'switch it off while I work on the app' control.
+    Persists so it stays put across restarts until flipped back."""
+    b = request.get_json(force=True, silent=True) or {}
+    return jsonify(paused=_ai_set_paused(b.get("paused", True)))
+
+@app.post("/api/ask")
+def ai_ask_ep():
+    """Answer a free-form Q&A question with Claude, grounded in the exact figures the front-end
+    computed (rbComputeMeasure). Returns {paused:true} when switched off → the browser falls
+    back to its deterministic synthesizer. 503 without a key."""
+    if _ai_paused():
+        return jsonify(paused=True)
+    b = request.get_json(force=True, silent=True) or {}
+    q, facts = (b.get("question") or "").strip(), b.get("facts") or []
+    if not q or not facts:
+        return jsonify(error="need question + facts"), 400
+    result = hi_analyst.ask(q, facts, vocab=b.get("vocab") or {})
     if "error" not in result:
         return jsonify(result)
     return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
