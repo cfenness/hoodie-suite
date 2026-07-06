@@ -17,7 +17,7 @@ When the agent is absent the dashboard falls back to its built-in preview.
 
 State is persisted to ./agent_state/ (datasets.json, runs.json, cola CSV).
 """
-import csv, gzip, io, json, os, time, types, urllib.request, datetime, threading, logging
+import csv, gzip, io, json, os, random, time, types, urllib.request, datetime, threading, logging
 from flask import Flask, request, jsonify, send_file, Response, redirect, session
 
 import ttb_cola_scraper as cola   # the scraper you generated
@@ -1369,7 +1369,21 @@ def outlets_geo_ep():
     ai = gi("community_area", "county")
     ci = gi("county_fips", "fips")
     il_cook = "17031" if did == "il_outlets" else None   # Chicago ships lat/lng, no FIPS col → all Cook
-    pts = []
+    # Optional viewport filter: ?bbox=west,south,east,north — the map sends its current bounds so we
+    # ship only the dots in view (a few thousand), not the whole 200k+ footprint on every pan. in_view
+    # is the true count matching the bbox (before the cap) so the client can say "zoom in for all".
+    west = south = east = north = None
+    try:
+        bb = request.args.get("bbox", "")
+        if bb:
+            west, south, east, north = (float(x) for x in bb.split(","))
+    except (ValueError, TypeError):
+        west = None
+    # With a viewport, cap at a screenful and UNIFORMLY sample (reservoir) when the view holds more —
+    # at national zoom you get an even 40k sample (dots blob at that scale anyway); zoom in and in_view
+    # drops below the cap so every local outlet is returned. No bbox → legacy first-N up to GEO_CAP.
+    cap = 40000 if west is not None else GEO_CAP
+    pts = []; in_view = 0
     for ri, r in enumerate(rows):
         if la >= len(r) or lo >= len(r):
             continue
@@ -1379,16 +1393,23 @@ def outlets_geo_ep():
             continue
         if not (lat and lng and -90 < lat < 90 and -180 < lng < 180):
             continue
+        if west is not None and not (south <= lat <= north and west <= lng <= east):
+            continue
+        in_view += 1
         p = {"i": ri, "lat": round(lat, 6), "lng": round(lng, 6)}
         if 0 <= ni < len(r) and r[ni]: p["name"] = r[ni]
         if 0 <= ti < len(r) and r[ti]: p["type"] = r[ti]
         if 0 <= ai < len(r) and r[ai]: p["area"] = r[ai]
         cf = (r[ci] if 0 <= ci < len(r) else "") or il_cook
         if cf: p["county_fips"] = cf
-        pts.append(p)
-        if len(pts) >= GEO_CAP:
-            break
-    return jsonify(ok=True, dataset=did, count=len(pts), points=pts, capped=len(pts) >= GEO_CAP)
+        if len(pts) < cap:
+            pts.append(p)
+        else:
+            j = random.randint(0, in_view - 1)      # reservoir: uniform sample across the viewport
+            if j < cap:
+                pts[j] = p
+    return jsonify(ok=True, dataset=did, count=len(pts), in_view=in_view,
+                   points=pts, capped=in_view > len(pts))
 
 
 @app.get("/api/outlets/one")
