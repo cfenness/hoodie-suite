@@ -5551,5 +5551,73 @@ import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0
 
 <!-- shared suite header strip (standalone only) -->
 <script src="../suite-header.js" data-id="dashboard" data-mark="HI" data-name="Hoodie Intelligence" data-status="live"></script>
+
+<!-- sidebar replacement: in the launcher, HI's nav drives the launcher rail (one sidebar, nested) -->
+<script>
+(function(){
+  "use strict";
+  if(window.parent===window) return;   // standalone → keep HI's own sidebar
+  document.documentElement.classList.add('in-launcher');
+  // hide our own sidebar + reflow main to full width (the launcher rail now shows this nav)
+  var st=document.createElement('style');
+  st.textContent='html.in-launcher .app{grid-template-columns:1fr!important}'
+    +'html.in-launcher .sidebar{display:none!important}';
+  document.head.appendChild(st);
+
+  // HI's IA → grouped sections. Primary surfaces are ungrouped (always shown); the deep
+  // Market-Intelligence analytics are grouped and start NESTED so we don't dump the full list.
+  var NAV_META=[
+    {id:'quickreports',label:'Prism',icon:'PR'},
+    {id:'builder',label:'Report builder',icon:'RB'},
+    {id:'qbr',label:'PPTX Studio',icon:'ST'},
+    {id:'mydashboard',label:'My dashboard',icon:'DB'},
+    {id:'ai',label:'Hoodie Intelligence',icon:'HI'},
+    {id:'actionqueue',label:'My action queue',group:'Workspace',icon:'AQ'},
+    {id:'savedreports',label:'Saved reports',group:'Workspace',icon:'SR'},
+    {id:'scheduler',label:'Report scheduler',group:'Workspace',icon:'SC'},
+    {id:'overlay',label:'Overlay your data',group:'Workspace',icon:'OV'},
+    {id:'onprem',label:'On-premise channel',group:'Channels',icon:'ON'},
+    {id:'offprem',label:'Off-premise channel',group:'Channels',icon:'OF'},
+    {id:'chains',label:'Chain accounts',group:'Channels',icon:'CH'},
+    {id:'dist',label:'Wholesaler vs industry',group:'Position & comparison',icon:'WI'},
+    {id:'headroom',label:'Distribution & velocity headroom',group:'Position & comparison',icon:'HR'},
+    {id:'dealtiming',label:'Deal timing & price',group:'Position & comparison',icon:'DT'},
+    {id:'position',label:'Anonymous position',group:'Position & comparison',icon:'AP'},
+    {id:'radar',label:'Profile shape',group:'Position & comparison',icon:'PS'},
+    {id:'demographics',label:'Demographics',group:'Position & comparison',icon:'DM'},
+    {id:'anchor',label:'Anchor SKU dependency',group:'Portfolio analysis',icon:'AN'},
+    {id:'clustering',label:'Brand clustering',group:'Portfolio analysis',icon:'BC'},
+    {id:'premium',label:'Premiumization spread',group:'Portfolio analysis',icon:'PM'},
+    {id:'quality',label:'Distribution quality',group:'Portfolio analysis',icon:'DQ'},
+    {id:'acceleration',label:'Growth + acceleration',group:'Growth dynamics',icon:'GA'},
+    {id:'waterfall',label:'Growth decomposition',group:'Growth dynamics',icon:'GD'},
+    {id:'leadlag',label:'Geographic lead-lag',group:'Growth dynamics',icon:'LL'},
+    {id:'trajectories',label:'Metric trajectories',group:'Growth dynamics',icon:'MT'},
+    {id:'teams',label:'What your teams see',group:'Platform & reference',icon:'TS'},
+    {id:'trust',label:'Data trust',group:'Platform & reference',icon:'TR'},
+    {id:'governance',label:'Governance',group:'Platform & reference',icon:'GV'},
+    {id:'metrics',label:'Derived metrics',group:'Platform & reference',icon:'DR'},
+    {id:'docs',label:'Documentation',group:'Platform & reference',icon:'DO'}
+  ];
+  var COLLAPSED=['Channels','Position & comparison','Portfolio analysis','Growth dynamics','Platform & reference'];
+  function currentView(){ var a=document.querySelector('.nav-subitem.active'); return a?a.getAttribute('data-view'):'quickreports'; }
+  function publishNav(){ try{ parent.postMessage({__hoodie:'nav',app:'dashboard',sections:NAV_META,active:currentView(),collapsedGroups:COLLAPSED},'*'); }catch(e){} }
+
+  // launcher rail → HI: switch view
+  window.addEventListener('message',function(e){ var d=e.data;
+    if(d&&d.__hoodie==='section'&&d.id){ var l=document.querySelector('.nav-subitem[data-view="'+d.id+'"]'); if(l) l.click(); } });
+
+  // HI → launcher rail: report our own view changes (toolswitch, global search, jump tiles, deep links)
+  document.addEventListener('click',function(e){
+    var it=e.target.closest&&e.target.closest('.nav-subitem[data-view],[data-toolview]'); if(!it) return;
+    var id=it.getAttribute('data-view')||it.getAttribute('data-toolview');
+    setTimeout(function(){ try{ parent.postMessage({__hoodie:'section',id:id||currentView()},'*'); }catch(_){} },30);
+  },true);
+
+  function boot(){ publishNav(); }
+  if(document.readyState==='loading') window.addEventListener('DOMContentLoaded',function(){ setTimeout(boot,250); });
+  else setTimeout(boot,250);
+})();
+</script>
 </body>
 </html>

@@ -117,6 +117,10 @@
   aside.nav .home-link:hover{border-color:var(--amber);}
   aside.nav .home-link.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
   aside.nav .grp{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:0.13em;text-transform:uppercase;color:var(--amber);padding:14px 24px 6px;font-weight:600;}
+  aside.nav .grp-toggle{display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;}
+  aside.nav .grp-toggle:hover{color:var(--accent-bright);}
+  aside.nav .grp-toggle .grp-cv{font-size:8px;transition:transform 0.15s ease;opacity:0.7;}
+  aside.nav .grp-toggle.collapsed .grp-cv{transform:rotate(-90deg);}
   aside.nav .item{display:grid;grid-template-columns:26px 1fr;gap:10px;align-items:center;padding:8px 18px;cursor:pointer;border-left:2px solid transparent;transition:background .12s;}
   aside.nav .item:hover{background:var(--panel-2);}
   aside.nav .item.active{border-left-color:var(--amber);background:var(--panel-2);}
@@ -501,12 +505,22 @@
   function renderAppNav(){
     var groups={},order=[];
     appNav.sections.forEach(s=>{ var g=s.group||''; if(!(g in groups)){groups[g]=[];order.push(g);} groups[g].push(s); });
-    navlist.innerHTML=order.map(g=>(g?'<div class="grp">'+g+'</div>':'')+groups[g].map(s=>secItem(s,appNav.active)).join('')).join('');
+    // the group holding the active section is always kept expanded so the current view is visible
+    var activeGroup=''; appNav.sections.forEach(s=>{ if(s.id===appNav.active) activeGroup=s.group||''; });
+    navlist.innerHTML=order.map(function(g){
+      if(!g) return groups[g].map(s=>secItem(s,appNav.active)).join('');   // ungrouped items (the primary surfaces) — always shown
+      var collapsed = !!appNav.collapsed[g] && g!==activeGroup;             // nest the deep groups; don't dump the full list
+      return '<div class="grp grp-toggle'+(collapsed?' collapsed':'')+'" data-grp="'+g+'">'+g+'<span class="grp-cv">▾</span></div>'+
+             '<div class="grp-body"'+(collapsed?' style="display:none"':'')+'>'+groups[g].map(s=>secItem(s,appNav.active)).join('')+'</div>';
+    }).join('');
     navlist.querySelectorAll('[data-sec]').forEach(el=>el.addEventListener('click',()=>{
       appNav.active=el.dataset.sec;
       try{ frame.contentWindow.postMessage({__hoodie:'section',id:el.dataset.sec},'*'); }catch(e){}
       navlist.querySelectorAll('[data-sec]').forEach(x=>x.classList.toggle('active',x.dataset.sec===appNav.active));
       closeNav();
+    }));
+    navlist.querySelectorAll('.grp-toggle').forEach(el=>el.addEventListener('click',()=>{   // click a group to nest/expand it
+      var g=el.getAttribute('data-grp'); appNav.collapsed[g]=!appNav.collapsed[g]; renderAppNav();
     }));
     setHomeLink(true);
   }
@@ -536,11 +550,14 @@
     var curId=(location.hash||'').replace('#','');
     if(d.__hoodie==='nav'){
       if(d.app&&d.app!==curId) return;
-      appNav={app:curId,sections:d.sections||[],active:d.active};
+      appNav={app:curId,sections:d.sections||[],active:d.active,collapsed:{}};
+      (d.collapsedGroups||[]).forEach(function(g){ appNav.collapsed[g]=true; });   // deep groups start nested
       renderNav();
     }else if(d.__hoodie==='section'&&appNav){
       appNav.active=d.id;
-      navlist.querySelectorAll('[data-sec]').forEach(x=>x.classList.toggle('active',x.dataset.sec===appNav.active));
+      var ag=''; appNav.sections.forEach(s=>{ if(s.id===d.id) ag=s.group||''; });
+      if(ag) appNav.collapsed[ag]=false;                                            // expand the group holding the now-active view
+      renderAppNav();
     }
   });
   /* drag-to-reorder the favorites section (persists order) */
