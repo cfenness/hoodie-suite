@@ -1127,9 +1127,11 @@ def enrich_census_ep():
     """Reference-data ENRICH (not master ingest): join census_acs county demographics onto the
     outlet master by county+state → lands `outlets_census`. Auto-picks the biggest outlet dataset
     (has county+state) unless `outlet_dataset` is given. Run the US Census pull first."""
-    census_ds = DATASETS.get("census_acs")
-    if not isinstance(census_ds, dict) or not (census_ds.get("rows")):
-        return jsonify(error="no census_acs data yet — run the US Census pull first"), 400
+    packs = [v for k, v in DATASETS.items()
+             if k.startswith("census_") and isinstance(v, dict) and v.get("rows")]
+    if not packs:
+        return jsonify(error="no census data yet — run the US Census pull first"), 400
+    census_ds = enrich.merge_census(packs)   # merge demographic + economic + housing → one county table
     body = request.get_json(silent=True) or {}
     # FL DBPR extracts all share one header, so items/brands "look" like outlets. Restrict to the
     # ACTUAL outlet tables (retail/wholesale/permits + ABC store cells + the places accounts), never

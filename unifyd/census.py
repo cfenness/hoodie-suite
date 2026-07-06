@@ -1,14 +1,16 @@
-"""census.py — US Census ACS5 demographics connector (connId 'census-acs').
+"""census.py — US Census ACS5 reference data by county (connId 'census-acs').
 
-A REFERENCE-DATA source, not a scrape: the Census Data API is a documented public JSON API,
-so this pulls through the same rows/dataset pipeline as the other connectors rather than the
-HTML scraper. We fetch a CURATED PACK of the demographic variables a distributor rep actually
-cares about, BY COUNTY, and land it as a dataset joinable to the outlet master via county FIPS
-(the `geoid` column). Free API key optional (CENSUS_API_KEY) — Census allows keyless pulls at
-low volume; a key just raises the rate limit.
+Reference data is a STANDALONE constellation, not something baked into outlets: this pulls the
+ACS in THREE thematic packs, each landing as its own dataset (its own node in the estate model),
+all county-keyed (name + geoid) so any of them JOINS to the outlet master on demand:
 
-Stdlib-only. Same (datasets, [run], movement) contract as abc_fws / ttb_cola. Self-reports
-`degraded` (with warnings[]) if the API shape drifts or a state fails, instead of emitting junk.
+  census_demographic — population, median age, households, race/ethnicity
+  census_economic    — household + per-capita income, poverty, labor force, unemployment
+  census_housing     — median home value + gross rent, units, owner/renter occupancy
+
+One Socrata-free Census API call per state (ACS allows many variables at once), split into the
+three datasets. Free key REQUIRED (CENSUS_API_KEY). Stdlib-only, same (datasets,[run],movement)
+contract; self-reports degraded/failed with clear warnings.
 """
 import os, json, time, hashlib, urllib.request, urllib.parse
 
@@ -16,28 +18,28 @@ YEAR    = os.environ.get("CENSUS_ACS_YEAR", "2023")
 DATASET = "acs/acs5"
 BASE    = "https://api.census.gov/data"
 
-# curated demographic pack — (ACS variable code, human column name). All single-value ACS5 estimates.
-VARS = [
-    ("B01001_001E", "population"),
-    ("B01002_001E", "median_age"),
-    ("B19013_001E", "median_household_income"),
-    ("B19301_001E", "per_capita_income"),
-    ("B11001_001E", "households"),
-    ("B25077_001E", "median_home_value"),
-    ("B25064_001E", "median_gross_rent"),
-]
+# thematic packs — (ACS variable code, human column name). All single-value ACS5 estimates.
+PACKS = {
+    "demographic": [("B01001_001E", "population"), ("B01002_001E", "median_age"),
+                    ("B11001_001E", "households"), ("B03003_003E", "hispanic_pop"),
+                    ("B02001_002E", "white_pop"), ("B02001_003E", "black_pop"), ("B02001_005E", "asian_pop")],
+    "economic":    [("B19013_001E", "median_household_income"), ("B19301_001E", "per_capita_income"),
+                    ("B17001_002E", "poverty_pop"), ("B23025_002E", "labor_force"), ("B23025_005E", "unemployed")],
+    "housing":     [("B25077_001E", "median_home_value"), ("B25064_001E", "median_gross_rent"),
+                    ("B25001_001E", "housing_units"), ("B25003_002E", "owner_occupied"), ("B25003_003E", "renter_occupied")],
+}
+DEFAULT_STATES = ["12", "48", "17"]   # FL / TX / IL — the book's footprint. state='us' → all counties.
 
-# default footprint (FIPS) — the states the book's outlets live in today (FL / TX / IL).
-# Pass state="us" for all counties nationally, or a single FIPS ("12") to scope one state.
-DEFAULT_STATES = ["12", "48", "17"]
+def _all_vars():
+    return [v for pack in PACKS.values() for v in pack]
 
 def _fetch(url, timeout=45):
     req = urllib.request.Request(url, headers={"User-Agent": "HoodieUnifyd/1.0 (+census reference connector)"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", "replace")
 
-def _build_url(state_fips=None):
-    params = {"get": "NAME," + ",".join(v[0] for v in VARS), "for": "county:*"}
+def _url(state_fips):
+    params = {"get": "NAME," + ",".join(v[0] for v in _all_vars()), "for": "county:*"}
     if state_fips and state_fips != "us":
         params["in"] = "state:" + state_fips
     q = urllib.parse.urlencode(params)
@@ -47,10 +49,9 @@ def _build_url(state_fips=None):
     return "%s/%s/%s?%s" % (BASE, YEAR, DATASET, q)
 
 def _clean(v):
-    # Census encodes "no data" as large negative jam values (-666666666, -999999999, …). Null those.
     try:
-        if v is None: return ""
-        if float(v) <= -1e8: return ""
+        if v is None or float(v) <= -1e8:   # Census jam/annotation sentinels
+            return ""
     except (TypeError, ValueError):
         pass
     return v
@@ -58,55 +59,58 @@ def _clean(v):
 def pull(state=None, log=print):
     started = int(time.time() * 1000)
     states = DEFAULT_STATES if not state else (["us"] if str(state).lower() in ("us", "all") else [str(state)])
-    header = ["name"] + [v[1] for v in VARS] + ["state_fips", "county_fips", "geoid"]
-    rows, warnings = [], []
+    # accumulate a per-county record: geoid -> {name, state, county, <var>: val}
+    counties, warnings = {}, []
     for st in states:
-        url = _build_url(st)
+        url = _url(st)
         log("census: GET %s (state=%s)" % (url.split("?")[0], st))
         try:
             raw = _fetch(url)
         except Exception as e:
             warnings.append("fetch failed for state %s: %s" % (st, str(e)[:120])); continue
-        # the Census Data API requires a (free) key; without/with a bad one it returns an HTML page
-        if raw.lstrip()[:1] == "<" or "valid" in raw.lower() and "key" in raw.lower():
-            if "missing key" in raw.lower() or "must be included" in raw.lower():
-                warnings.append("Census API key required — set CENSUS_API_KEY (free at census.gov/developers/)")
-            elif "invalid key" in raw.lower():
-                warnings.append("Census API key rejected — check CENSUS_API_KEY")
-            else:
-                warnings.append("non-JSON response for state %s" % st)
-            continue
+        if raw.lstrip()[:1] == "<" or ("valid" in raw.lower() and "key" in raw.lower()):
+            warnings.append("Census API key required — set CENSUS_API_KEY (free at census.gov/developers/)"); continue
         try:
             data = json.loads(raw)
         except Exception as e:
             warnings.append("parse failed for state %s: %s" % (st, str(e)[:120])); continue
-        if not (isinstance(data, list) and len(data) >= 2 and isinstance(data[0], list)):
-            warnings.append("unexpected response shape for state %s" % st); continue
+        if not (isinstance(data, list) and len(data) >= 2):
+            warnings.append("unexpected shape for state %s" % st); continue
         cols = data[0]
         try:
-            i_name, i_state, i_county = cols.index("NAME"), cols.index("state"), cols.index("county")
-            var_ix = [cols.index(v[0]) for v in VARS]
+            i_name, i_st, i_co = cols.index("NAME"), cols.index("state"), cols.index("county")
+            vix = {name: cols.index(code) for code, name in _all_vars()}
         except ValueError as e:
-            warnings.append("missing expected column for state %s: %s" % (st, e)); continue
+            warnings.append("missing column for state %s: %s" % (st, e)); continue
         for rec in data[1:]:
-            sfips, cfips = rec[i_state], rec[i_county]
-            rows.append([rec[i_name]] + [_clean(rec[j]) for j in var_ix] + [sfips, cfips, (sfips or "") + (cfips or "")])
-    status = "failed" if not rows else ("degraded" if warnings else "success")
-    n = len(rows)
+            geoid = (rec[i_st] or "") + (rec[i_co] or "")
+            row = {"name": rec[i_name], "state_fips": rec[i_st], "county_fips": rec[i_co], "geoid": geoid}
+            for name, j in vix.items():
+                row[name] = _clean(rec[j])
+            counties[geoid] = row
+    n = len(counties)
+    st_status = "failed" if not n else ("degraded" if warnings else "success")
+    # split into the three thematic datasets, each county-keyed
+    datasets, extracts = {}, []
+    for pack, vars_ in PACKS.items():
+        head = ["name"] + [name for _, name in vars_] + ["state_fips", "county_fips", "geoid"]
+        rows = [[c["name"]] + [c.get(name, "") for _, name in vars_] + [c["state_fips"], c["county_fips"], c["geoid"]]
+                for c in counties.values()]
+        did = "census_" + pack
+        datasets[did] = {"header": head, "rows": rows[:800], "total": len(rows), "_rows_full": rows}
+        extracts.append({"id": did, "rows": len(rows), "delta": 0, "status": st_status})
     rid = "R-CEN" + hashlib.sha1((str(n) + str(states)).encode()).hexdigest()[:3].upper()
     run = {"id": rid, "connId": "census-acs", "startedAt": started, "finishedAt": int(time.time() * 1000),
-           "durationMs": 0, "status": status, "trigger": "manual", "total": n,
-           "degraded": status == "degraded", "warnings": warnings, "healed": [],
-           "extracts": [{"id": "census_acs", "rows": n, "delta": 0, "status": status}]}
-    datasets = {"census_acs": {"header": header, "rows": rows[:800], "total": n, "_rows_full": rows}}
-    log("census: %d county rows across %s, status %s" % (n, states, status))
+           "durationMs": 0, "status": st_status, "trigger": "manual", "total": n,
+           "degraded": st_status == "degraded", "warnings": warnings, "healed": [], "extracts": extracts}
+    log("census: %d counties across %s → 3 packs, status %s" % (n, states, st_status))
     return datasets, [run], {"sampled": n}
 
 def main(argv=None):
     ds, runs, _ = pull()
     print(json.dumps({k: v for k, v in runs[0].items() if k != "extracts"}, indent=2))
-    d = ds["census_acs"]; print("header:", d["header"])
-    for r in d["rows"][:4]: print(r)
+    for did, d in ds.items():
+        print(did, "→", d["total"], "counties |", d["header"])
 
 if __name__ == "__main__":
     main()
