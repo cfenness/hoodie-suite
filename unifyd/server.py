@@ -1302,6 +1302,47 @@ def outlets_geo_ep():
     return jsonify(ok=True, dataset=did, count=len(pts), points=pts)
 
 
+GEO_JOBS = {}
+@app.post("/api/outlets/geocode/build")
+def outlets_geocode_build():
+    """Geocode an outlet dataset's addresses (free US Census batch) → append latitude/longitude/
+    county_fips, so the Coverage Map + census join work for it (county_fips also fixes the FL
+    numeric-county gap). Background job (~1 min per 10k). ?dataset=outlets_master (default);
+    poll /api/outlets/geocode/progress?id=<jobId>."""
+    body = request.get_json(silent=True) or {}
+    did = body.get("dataset") or request.args.get("dataset", "outlets_master")
+    full = load_full(did) or DATASETS.get(did)
+    if not isinstance(full, dict) or not full.get("rows"):
+        return jsonify(ok=False, error="no data pulled for %s" % did), 400
+    import random as _rnd
+    jid = "GEO-" + "".join(_rnd.choices("ABCDEFGHJKMNPQRSTUVWXYZ23456789", k=6))
+    GEO_JOBS[jid] = {"jobId": jid, "dataset": did, "status": "running",
+                     "total": full.get("total", len(full["rows"])), "matched": 0, "requested": 0, "log": []}
+    header, rows = full["header"], full["rows"]
+    def run():
+        try:
+            import geocode
+            nh, nr, stats = geocode.geocode_outlets(header, rows,
+                                                    log=lambda m: GEO_JOBS[jid]["log"].append(m))
+            DATASETS[did] = {"header": nh, "rows": nr[:800], "total": len(nr)}
+            save_full(did, nh, nr); save()
+            GEO_JOBS[jid].update(status="done", matched=stats["matched"], requested=stats["requested"])
+        except Exception as e:
+            app.logger.exception("geocode failed")
+            GEO_JOBS[jid].update(status="failed", error=str(e)[:200])
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify(ok=True, jobId=jid, dataset=did, total=GEO_JOBS[jid]["total"])
+
+
+@app.get("/api/outlets/geocode/progress")
+def outlets_geocode_progress():
+    j = GEO_JOBS.get(request.args.get("id", ""))
+    if not j:
+        return jsonify(error="unknown job"), 404
+    return jsonify(jobId=j["jobId"], dataset=j["dataset"], status=j["status"], matched=j.get("matched", 0),
+                   requested=j.get("requested", 0), total=j["total"], error=j.get("error"), log=j["log"][-6:])
+
+
 @app.get("/api/places")
 def places_ep():
     """Query the pulled on-premise accounts (Orlando) from the warehouse. Filters:
