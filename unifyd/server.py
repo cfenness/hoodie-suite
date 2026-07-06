@@ -1409,6 +1409,59 @@ def outlets_one_ep():
     return jsonify(ok=True, dataset=did, record=rec)
 
 
+@app.get("/api/outlets/table")
+def outlets_table_ep():
+    """The outlet master AS A TABLE — the data underneath the coverage map. Server-side paged +
+    filtered (the master is 255k+ rows, can't ship to the DOM whole). ?dataset=&offset=&limit=&q=
+    (name contains) &state= (exact) &type= (contains). Each row carries its index `i` + lat/lng +
+    county_fips so a table click reuses the same detail panel + map pan as a dot click."""
+    did = request.args.get("dataset", "outlets_master")
+    try:
+        offset = max(0, int(request.args.get("offset", "0")))
+    except ValueError:
+        offset = 0
+    try:
+        limit = min(500, max(1, int(request.args.get("limit", "100"))))
+    except ValueError:
+        limit = 100
+    q = (request.args.get("q", "") or "").strip().lower()
+    fstate = (request.args.get("state", "") or "").strip().lower()
+    ftype = (request.args.get("type", "") or "").strip().lower()
+    full = load_full(did) or DATASETS.get(did)
+    if not isinstance(full, dict) or not full.get("rows"):
+        return jsonify(ok=True, dataset=did, total=0, filtered=0, offset=offset, limit=limit, rows=[])
+    header = full["header"]; rows = full["rows"]
+    idx = {str(h).lower(): i for i, h in enumerate(header)}
+    def gi(*names):
+        for n in names:
+            if n in idx:
+                return idx[n]
+        return -1
+    ni = gi("name", "dba", "trade_name"); ti = gi("license_type", "license_types", "credential", "type")
+    oi = gi("owner", "backer", "owner name"); cyi = gi("city"); coi = gi("county"); si = gi("state")
+    zi = gi("zip"); li = gi("license_num", "credential", "license_id", "outlet_id"); sri = gi("source")
+    cfi = gi("county_fips", "fips"); lai = gi("latitude", "lat"); loi = gi("longitude", "lng", "lon")
+    def v(r, i):
+        return str(r[i]) if 0 <= i < len(r) and r[i] is not None else ""
+    out = []; matched = 0
+    for ri, r in enumerate(rows):
+        nm = v(r, ni); ty = v(r, ti); stt = v(r, si)
+        if q and q not in nm.lower():
+            continue
+        if fstate and fstate != stt.lower():
+            continue
+        if ftype and ftype not in ty.lower():
+            continue
+        matched += 1
+        if matched <= offset or len(out) >= limit:
+            continue
+        out.append({"i": ri, "name": nm, "type": ty, "owner": v(r, oi), "city": v(r, cyi),
+                    "county": v(r, coi), "state": stt, "zip": v(r, zi), "license_num": v(r, li),
+                    "source": v(r, sri), "county_fips": v(r, cfi), "lat": v(r, lai), "lng": v(r, loi)})
+    return jsonify(ok=True, dataset=did, total=len(rows), filtered=matched,
+                   offset=offset, limit=limit, rows=out)
+
+
 @app.get("/api/outlets/context")
 def outlets_context_ep():
     """Everything the Census reference layer knows about one outlet's geography — the market

@@ -69,6 +69,34 @@
   .mkt .big{color:var(--gold);font-weight:600}
   .dmuted{font-size:11px;color:#6f938a;font-style:italic;line-height:1.5}
   .dloading{font-family:var(--mono);font-size:11px;color:#6f938a}
+
+  /* the data underneath the map: outlet master as a paged table drawer */
+  .drawer{position:fixed;left:0;right:0;bottom:0;z-index:650;background:var(--panel);border-top:1px solid var(--line);
+    backdrop-filter:blur(8px);transform:translateY(calc(100% - 36px));transition:transform .22s cubic-bezier(.2,.7,.3,1);
+    max-height:46vh;display:flex;flex-direction:column}
+  .drawer.open{transform:none}
+  .dhandle{height:36px;flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:0 15px;cursor:pointer;
+    font-family:var(--mono);font-size:11px;color:#a9c9c0;user-select:none}
+  .drawer.open .dhandle{border-bottom:1px solid var(--line)}
+  .dhandle .chev{transition:transform .2s;color:#6f938a}
+  .drawer.open .dhandle .chev{transform:rotate(180deg)}
+  .dhandle b{color:var(--teal)}
+  .dctrls{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .dctrls input{width:190px;padding:5px 9px;font-size:11px}
+  .dpager{display:flex;align-items:center;gap:6px}
+  .dpager button{background:#0e1613;color:#cfe6df;border:1px solid var(--line);border-radius:6px;padding:3px 10px;
+    font-family:var(--mono);font-size:12px;cursor:pointer;line-height:1.2}
+  .dpager button:disabled{opacity:.35;cursor:default}
+  .dpager span{min-width:118px;text-align:center;color:#8aa39d}
+  .dscroll{overflow:auto;flex:1 1 auto}
+  table.grid{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px}
+  table.grid th{position:sticky;top:0;background:#0e1613;color:#6f938a;text-transform:uppercase;letter-spacing:.06em;
+    font-size:9px;text-align:left;padding:8px 11px;border-bottom:1px solid var(--line);z-index:1;white-space:nowrap}
+  table.grid td{padding:6px 11px;border-bottom:1px solid rgba(34,50,46,.5);color:#dcefe9;white-space:nowrap;
+    max-width:230px;overflow:hidden;text-overflow:ellipsis}
+  table.grid tbody tr{cursor:pointer}
+  table.grid tbody tr:hover td{background:rgba(63,184,163,.09)}
+  table.grid .gpin{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:7px;vertical-align:middle}
 </style>
 </head>
 <body>
@@ -112,6 +140,25 @@
   <div class="detail" id="detail" aria-hidden="true">
     <button class="x" id="dx" aria-label="Close">×</button>
     <div id="dbody"></div>
+  </div>
+  <div class="drawer" id="drawer">
+    <div class="dhandle" id="dhandle">
+      <span class="chev">▲</span>&nbsp;Outlet master&nbsp;·&nbsp;<b id="dtotal">—</b>
+      <div class="dctrls" id="dctrls">
+        <input id="dq" placeholder="search name across the master…">
+        <div class="dpager">
+          <button id="dprev" aria-label="Previous">‹</button>
+          <span id="dpageinfo">—</span>
+          <button id="dnext" aria-label="Next">›</button>
+        </div>
+      </div>
+    </div>
+    <div class="dscroll">
+      <table class="grid" id="dgrid">
+        <thead><tr><th>Name</th><th>License type</th><th>Owner</th><th>City</th><th>County</th><th>State</th><th>Source</th></tr></thead>
+        <tbody id="dgridbody"></tbody>
+      </table>
+    </div>
   </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -250,7 +297,43 @@
     $('#load').style.display='none';
   }
 
-  $('#ds').addEventListener('change',e=>{closeDetail();load(e.target.value);});
+  // ---- outlet master table (the data underneath the map): server-paged + searchable ----
+  let tOffset=0, tFiltered=0, tSeq=0; const tLimit=50; let tRows=[];
+  function tPage(){ return Math.floor(tOffset/tLimit)+1; }
+  function tPages(){ return Math.max(1, Math.ceil(tFiltered/tLimit)); }
+  async function loadTable(reset){
+    if(reset) tOffset=0;
+    const my=++tSeq, ds=$('#ds').value, q=$('#dq').value.trim();
+    $('#dgridbody').innerHTML='<tr><td colspan="7" class="dloading" style="padding:12px">reading master…</td></tr>';
+    try{
+      const r=await fetch('/api/outlets/table?dataset='+encodeURIComponent(ds)+'&offset='+tOffset+'&limit='+tLimit+'&q='+encodeURIComponent(q),{cache:'no-store'});
+      const j=await r.json();
+      if(my!==tSeq) return;
+      tFiltered=j.filtered||0; tRows=j.rows||[];
+      $('#dtotal').innerHTML=(q? tFiltered.toLocaleString()+' of '+(j.total||0).toLocaleString() : (j.total||0).toLocaleString())+' records';
+      $('#dpageinfo').textContent='page '+tPage()+' / '+tPages();
+      $('#dprev').disabled = tOffset<=0;
+      $('#dnext').disabled = tOffset+tLimit>=tFiltered;
+      $('#dgridbody').innerHTML = tRows.map(o=>
+        '<tr data-i="'+o.i+'"><td><span class="gpin" style="background:'+color(o.type)+'"></span>'+esc(o.name||'—')+'</td>'+
+        '<td>'+esc(o.type||'')+'</td><td>'+esc(o.owner||'')+'</td><td>'+esc(o.city||'')+'</td>'+
+        '<td>'+esc(o.county||'')+'</td><td>'+esc(o.state||'')+'</td><td>'+esc(o.source||'')+'</td></tr>').join('')
+        || '<tr><td colspan="7" class="dmuted" style="padding:12px">no records match.</td></tr>';
+      [...document.querySelectorAll('#dgridbody tr[data-i]')].forEach((tr,k)=>tr.addEventListener('click',()=>selectRow(tRows[k])));
+    }catch(e){ if(my===tSeq) $('#dgridbody').innerHTML='<tr><td colspan="7" style="padding:12px;color:#c98a4a">could not load: '+esc(e.message)+'</td></tr>'; }
+  }
+  function selectRow(o){
+    const la=parseFloat(o.lat), lo=parseFloat(o.lng);
+    openDetail({i:o.i, name:o.name, type:o.type, area:o.county, county_fips:o.county_fips, lat:la, lng:lo});
+    if(la && lo && Math.abs(la)<90) map.setView([la,lo], Math.max(map.getZoom(), 13));
+  }
+  $('#dhandle').addEventListener('click',()=>{ const d=$('#drawer'); d.classList.toggle('open'); if(d.classList.contains('open') && !tRows.length) loadTable(true); });
+  $('#dctrls').addEventListener('click',e=>e.stopPropagation());   // controls don't toggle the drawer
+  $('#dprev').addEventListener('click',()=>{ if(tOffset>0){ tOffset=Math.max(0,tOffset-tLimit); loadTable(false);} });
+  $('#dnext').addEventListener('click',()=>{ if(tOffset+tLimit<tFiltered){ tOffset+=tLimit; loadTable(false);} });
+  let dqt=null; $('#dq').addEventListener('input',()=>{ clearTimeout(dqt); dqt=setTimeout(()=>loadTable(true),220); });
+
+  $('#ds').addEventListener('change',e=>{closeDetail();load(e.target.value); if($('#drawer').classList.contains('open')) loadTable(true);});
   $('#dx').addEventListener('click',closeDetail);
   document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDetail(); });
   $('#area').addEventListener('change',draw);
