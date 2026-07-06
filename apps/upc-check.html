@@ -59,8 +59,8 @@
   .pill.bad_check,.pill.malformed,.pill.empty,.pill.none{background:var(--bad-soft); color:var(--bad);}
   .agree{font-weight:600;} .agree.yes{color:var(--good);} .agree.no{color:var(--bad);} .agree.na{color:var(--ink-soft);}
   .conf{font-variant-numeric:tabular-nums;}
-  .empty{padding:60px 20px; text-align:center; color:var(--ink-soft);}
-  .empty .big{font-size:40px; margin-bottom:14px;}
+  .emptystate{padding:60px 20px; text-align:center; color:var(--ink-soft);}
+  .emptystate .big{font-size:40px; margin-bottom:14px;}
   .flagrow td{background:var(--bad-soft) !important;}
 </style>
 </head>
@@ -83,7 +83,7 @@
     <div class="right">
       <div class="summary" id="summary" style="display:none"></div>
       <div class="scroll" id="scroll">
-        <div class="empty" id="empty"><div class="big">▮▮</div>Paste codes on the left and hit <b>Check</b>.<br>Deterministic QC runs always; owner-match activates when the crosswalk is loaded.</div>
+        <div class="emptystate" id="empty"><div class="big">▮▮</div>Paste codes on the left and hit <b>Check</b>.<br>Deterministic QC runs always; owner-match activates when the crosswalk is loaded.</div>
       </div>
     </div>
   </div>
@@ -113,7 +113,7 @@
       const r=await fetch("/api/upc",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items})});
       const j=await r.json();
       render(j);
-    }catch(e){ scroll.innerHTML='<div class="empty">Request failed: '+e.message+'</div>'; }
+    }catch(e){ scroll.innerHTML='<div class="emptystate">Request failed: '+e.message+'</div>'; }
     $("#run").disabled=false; $("#run").textContent="Check";
   }
 
