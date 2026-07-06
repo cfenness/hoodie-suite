@@ -67,26 +67,22 @@
     <div class="nav-lab">Own</div>
     <a data-sec="master"><span class="d"></span>Master</a>
     <a data-sec="catalog"><span class="d"></span>Catalog</a>
-    <div class="nav-lab">Feed</div>
-    <a data-sec="pulls"><span class="d"></span>Pulls</a>
     <div class="foot"><span class="dot" id="eng-dot"></span><span id="eng-txt">checking…</span></div>
   </nav>
   <div class="stage">
     <div class="ov" id="ov-overview"><div id="ov-body"><div class="empty">Loading the master-data picture…</div></div></div>
     <iframe id="f-master"    title="Master-data control plane" data-src="mdm-master.html?embed=1"></iframe>
     <iframe id="f-catalog"   title="Product Catalog"           data-src="catalog.html?embed=1"></iframe>
-    <iframe id="f-pulls"     title="Hoodie Pulls"              data-src="pulls-tracker.html?embed=1"></iframe>
   </div>
 <script>
 (function(){
   "use strict";
-  var SECTIONS={overview:null,master:"f-master",catalog:"f-catalog",pulls:"f-pulls"};
+  var SECTIONS={overview:null,master:"f-master",catalog:"f-catalog"};
   // In the launcher, the launcher's rail becomes THIS console's nav (one sidebar).
   var inLauncher = (window.parent !== window);
   var NAV_META=[{id:"overview",label:"Overview",icon:"OV",desc:"The master-data picture at a glance"},
                 {id:"master",label:"Master",group:"Own",icon:"MA",desc:"Canonical entities — brands, SKUs, outlets"},
-                {id:"catalog",label:"Catalog",group:"Own",icon:"CA",desc:"dim_product — the owned product catalog"},
-                {id:"pulls",label:"Pulls",group:"Feed",icon:"PU",desc:"Launch & track every scrape / pull"}];
+                {id:"catalog",label:"Catalog",group:"Own",icon:"CA",desc:"dim_product — the owned product catalog"}];
   function publishNav(active){ if(inLauncher){ try{ parent.postMessage({__hoodie:"nav",app:"mdm",sections:NAV_META,active:active},"*"); }catch(e){} } }
   var esc=function(s){return String(s==null?"":s).replace(/[&<>]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;"}[c];});};
   var fmt=function(n){return n==null?"—":Number(n).toLocaleString();};
@@ -149,7 +145,7 @@
     var pulls=rs.length? rs.map(function(r){
       var st=r.degraded?"degraded":(r.status||"never");
       return '<div class="row"><div><div class="nm">'+esc(r.connId||"—")+'</div><div class="mt">'+fmt(r.total)+' rows'+(r.id?(' · '+esc(r.id)):'')+'</div></div><span class="rp '+esc(st)+'">'+esc(st)+'</span></div>';
-    }).join("") : '<div class="empty">No runs yet — run a scrape in Pulls.</div>';
+    }).join("") : '<div class="empty">No runs yet — run a scrape in Sources.</div>';
 
     // recipe coverage
     var recArr=(recipes&&recipes.recipes)||[];
@@ -159,17 +155,20 @@
 
     var body=''+
       '<h1>Master Data</h1>'+
-      '<p class="lede">One console for the data the suite runs on — master it (Master, Catalog), feed it (Pulls). Every scrape/pull is launched and tracked in Pulls; ingestion runs per-pull. This overview is the cohesive front.</p>'+
+      '<p class="lede">One console for the data the suite runs on — master it (Master, Catalog). Pulls are launched and tracked in Sources; ingestion commits them to master per-pull. This overview is the cohesive front.</p>'+
       (live?'':'<div class="off"><b>Engine offline.</b> The live numbers and pulls need the backend — start it (<code>./dev.sh</code>) or open the deployed suite. The sections below still open.</div>')+
       kpiHtml+
       '<div class="cols">'+
         '<div class="panel"><h2>Recent pulls</h2>'+pulls+'</div>'+
         '<div class="panel"><h2>Recipe coverage</h2>'+recRows+'</div>'+
       '</div>'+
-      '<div class="jump"><a data-sec="master">Open Master →</a><a data-sec="catalog">Open Catalog →</a><a data-sec="pulls">Open Pulls →</a></div>';
+      '<div class="jump"><a data-sec="master">Open Master →</a><a data-sec="catalog">Open Catalog →</a><a data-app="sources">Open Sources →</a></div>';
     document.getElementById("ov-body").innerHTML=body;
     var jl=document.querySelectorAll("#ov-body [data-sec]");
     for(var i=0;i<jl.length;i++) jl[i].onclick=(function(el){return function(){ show(el.getAttribute("data-sec")); };})(jl[i]);
+    // cross-app jump: pulls live in Sources now — navigate the launcher (or this window) to that app
+    var ja=document.querySelectorAll("#ov-body [data-app]");
+    for(var a=0;a<ja.length;a++) ja[a].onclick=(function(el){return function(){ (window.top||window).location.hash="#"+el.getAttribute("data-app"); };})(ja[a]);
   }
 
   var initSec=(location.hash||"#overview").slice(1); if(!(initSec in SECTIONS)) initSec="overview";
