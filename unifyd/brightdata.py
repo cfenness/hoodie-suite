@@ -64,9 +64,25 @@ def proxies():
     through a clean IP and lets BD handle the target's TLS — fixing both the datacenter block and
     the incomplete-chain CERTIFICATE_VERIFY_FAILED on gov hosts.
 
-    Set BRIGHTDATA_PROXY to the zone's proxy string (http:// optional), e.g.
-        brd-customer-<id>-zone-<zone>:<password>@brd.superproxy.io:33335
+    Two ways to configure (checked in this order):
+      1. Separate parts (PREFERRED — the password is URL-encoded for you, so a `@ : / # %`
+         in it can't corrupt the proxy URL the way it does in the combined form):
+            BRIGHTDATA_PROXY_USER = brd-customer-<id>-zone-<zone>
+            BRIGHTDATA_PROXY_PASS = <raw password, no escaping needed>
+            BRIGHTDATA_PROXY_HOST = brd.superproxy.io   (default)
+            BRIGHTDATA_PROXY_PORT = 33335               (default)
+      2. Combined string (http:// optional) — fine when the password is alphanumeric:
+            BRIGHTDATA_PROXY = brd-customer-<id>-zone-<zone>:<password>@brd.superproxy.io:33335
     Returns a requests-style proxies dict, or None when unset (scraper falls back to direct)."""
+    import urllib.parse as _up
+    user = os.environ.get("BRIGHTDATA_PROXY_USER", "").strip()
+    pw   = os.environ.get("BRIGHTDATA_PROXY_PASS", "")
+    if user and pw:
+        host = os.environ.get("BRIGHTDATA_PROXY_HOST", "brd.superproxy.io").strip()
+        port = os.environ.get("BRIGHTDATA_PROXY_PORT", "33335").strip()
+        cred = _up.quote(user, safe="") + ":" + _up.quote(pw, safe="")
+        p = "http://%s@%s:%s" % (cred, host, port)
+        return {"http": p, "https": p}
     p = os.environ.get("BRIGHTDATA_PROXY", "").strip()
     if not p:
         return None
@@ -76,7 +92,9 @@ def proxies():
 
 
 def proxy_enabled():
-    return bool(os.environ.get("BRIGHTDATA_PROXY", "").strip())
+    return bool(os.environ.get("BRIGHTDATA_PROXY", "").strip()) or bool(
+        os.environ.get("BRIGHTDATA_PROXY_USER", "").strip()
+        and os.environ.get("BRIGHTDATA_PROXY_PASS", ""))
 
 
 def fetch(url, data_format="html", timeout=120):
