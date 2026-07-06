@@ -1321,8 +1321,18 @@ def outlets_geo_ep():
     la, lo = gi("latitude", "lat"), gi("longitude", "lng", "lon")
     if la < 0 or lo < 0:
         return jsonify(ok=True, dataset=did, count=0, points=[], note="dataset has no lat/lng — geocode first")
+    # Carry the outlet's full record on each point so a clicked dot can show everything we hold —
+    # plus county_fips, the key that joins the dot to the Census market context (/api/outlets/context).
     fmap = {"name": gi("dba", "name", "trade_name"), "type": gi("license_types", "license_type", "type"),
-            "area": gi("community_area", "county"), "city": gi("city"), "state": gi("state")}
+            "area": gi("community_area", "county"), "city": gi("city"), "state": gi("state"),
+            "address": gi("address", "location address 1", "street"),
+            "zip": gi("zip", "location zip", "zip_code"),
+            "owner": gi("owner", "backer", "owner name"), "county": gi("county"),
+            "license_num": gi("license_num", "credential", "license_id", "outlet_id"),
+            "county_fips": gi("county_fips", "fips")}
+    # Chicago Business Licenses ship lat/lng (so we never geocoded them) → no county_fips column, but
+    # every Chicago outlet is Cook County (17031). Backfill it so IL gets market context too.
+    il_cook = "17031" if did == "il_outlets" else None
     pts = []
     for r in rows:
         if la >= len(r) or lo >= len(r):
@@ -1337,10 +1347,60 @@ def outlets_geo_ep():
         for k, i in fmap.items():
             if 0 <= i < len(r) and r[i] not in (None, ""):
                 p[k] = r[i]
+        if il_cook and not p.get("county_fips"):
+            p["county_fips"] = il_cook
         pts.append(p)
         if len(pts) >= 25000:
             break
     return jsonify(ok=True, dataset=did, count=len(pts), points=pts)
+
+
+@app.get("/api/outlets/context")
+def outlets_context_ep():
+    """Everything the Census reference layer knows about one outlet's geography — the market
+    behind a single dot on the coverage map. ?county_fips=17031 (5-digit state+county). Returns the
+    county's population (PEP), beer/wine/liquor retailer + bev-alc wholesaler + drinking-place
+    establishment/employment/payroll counts (CBP), the state-level nonemployer count (the small/
+    independent operators CBP misses), and retailers-per-10k-residents density. Suppressed or
+    uncovered cells come back null — never a fabricated zero — so the panel can say 'not reported'."""
+    fips = (request.args.get("county_fips") or "").strip()
+    if not (fips.isdigit() and len(fips) == 5):
+        return jsonify(ok=False, error="county_fips must be a 5-digit FIPS"), 400
+    st = fips[:2]
+    try:
+        import census_ref
+    except Exception as e:
+        return jsonify(ok=False, error="census layer unavailable: %s" % e), 200
+
+    def cell(dataset, geo_level, gfips, naics, metric):
+        try:
+            rows = census_ref.query(dataset=dataset, geo_level=geo_level, geo_fips=gfips,
+                                    naics=naics, metric=metric, limit=5)
+        except Exception:
+            return None
+        for r in rows:
+            if r.get("suppressed"):
+                return None
+            try:
+                return int(float(r.get("metric_value")))
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    NAICS_LABELS = (("44531", "retailers"), ("4248", "wholesalers"), ("722", "onpremise"))
+    market = {}
+    for naics, label in NAICS_LABELS:
+        market[label] = {
+            "estab": cell("cbp", "county", fips, naics, "estab"),
+            "emp": cell("cbp", "county", fips, naics, "emp"),
+            "payann": cell("cbp", "county", fips, naics, "payann"),
+            "nonemployer_state": cell("nonemployer", "state", st, naics, "nestab"),
+        }
+    pop = cell("pep", "county", fips, None, "population")
+    ret = market["retailers"]["estab"]
+    dens = round(ret / pop * 10000, 2) if (pop and ret) else None
+    return jsonify(ok=True, county_fips=fips, state_fips=st, population=pop,
+                   per_10k_retailers=dens, market=market)
 
 
 GEO_JOBS = {}

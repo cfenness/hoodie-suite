@@ -41,6 +41,34 @@
   .legend .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
   .note{margin-top:9px;font-size:11px;color:#c98a4a;line-height:1.4}
   .load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:600;font-family:var(--mono);font-size:12px;color:#6f938a;background:var(--ink)}
+
+  /* click a dot → everything we hold for that outlet */
+  .detail{position:fixed;top:0;right:0;bottom:0;z-index:700;width:340px;max-width:88vw;background:var(--panel);
+    border-left:1px solid var(--line);backdrop-filter:blur(8px);transform:translateX(100%);
+    transition:transform .22s cubic-bezier(.2,.7,.3,1);overflow-y:auto;padding:16px 17px 26px}
+  .detail.open{transform:none}
+  .detail .x{position:absolute;top:12px;right:13px;width:26px;height:26px;border:1px solid var(--line);
+    border-radius:7px;background:#0e1613;color:#9db8b1;font-family:var(--mono);font-size:15px;cursor:pointer;line-height:1}
+  .detail .x:hover{color:#eafaf5;border-color:var(--accent)}
+  .dhead{padding-right:34px;margin-bottom:15px}
+  .dhead .pin{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:middle}
+  .dhead h2{font-weight:700;font-size:16px;color:#eafaf5;line-height:1.25;display:inline}
+  .dhead .sub{font-family:var(--mono);font-size:11px;color:#8aa39d;margin-top:5px}
+  .dsec{margin-bottom:16px}
+  .dsec > h3{font-family:var(--mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:#6f938a;
+    margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--line)}
+  .row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;padding:3px 0;align-items:baseline}
+  .row .k{color:#8aa39d;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;flex:0 0 auto}
+  .row .v{color:#dcefe9;text-align:right;font-variant-numeric:tabular-nums}
+  .stat{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px}
+  .stat .c{background:#0e1613;border:1px solid var(--line);border-radius:9px;padding:9px 8px;text-align:center}
+  .stat .c .n{font-family:var(--mono);font-weight:600;font-size:17px;color:var(--teal);font-variant-numeric:tabular-nums}
+  .stat .c .n.na{color:#5c6f6a;font-size:12px}
+  .stat .c .l{font-size:9.5px;color:#8aa39d;text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
+  .mkt{font-size:12px;color:#cfe6df;line-height:1.55}
+  .mkt .big{color:var(--gold);font-weight:600}
+  .dmuted{font-size:11px;color:#6f938a;font-style:italic;line-height:1.5}
+  .dloading{font-family:var(--mono);font-size:11px;color:#6f938a}
 </style>
 </head>
 <body>
@@ -78,6 +106,10 @@
     <span class="sw" style="background:#d9b03f"></span>off-premise (package goods)<br>
     <span class="sw" style="background:#3fb8a3"></span>on-premise (tavern / consumption)
   </div>
+  <div class="detail" id="detail" aria-hidden="true">
+    <button class="x" id="dx" aria-label="Close">×</button>
+    <div id="dbody"></div>
+  </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function(){
@@ -102,10 +134,72 @@
       return true;
     });
     if(layer) layer.remove();
-    layer=L.layerGroup(pts.map(p=>L.circleMarker([p.lat,p.lng],{
-      renderer, radius:3.4, weight:0, fillColor:color(p.type), fillOpacity:.72
-    }).bindPopup('<b>'+esc(p.name||'outlet')+'</b><br>'+esc(p.type||'')+'<br>'+esc(p.area||'')))).addTo(map);
+    layer=L.layerGroup(pts.map(p=>{
+      const m=L.circleMarker([p.lat,p.lng],{renderer, radius:3.4, weight:0, fillColor:color(p.type), fillOpacity:.72});
+      m.on('click',()=>openDetail(p));
+      return m;
+    })).addTo(map);
     $('#count').innerHTML='<b>'+pts.length.toLocaleString()+'</b> of '+ALL.length.toLocaleString()+' outlets';
+  }
+
+  // ---- click a dot → everything we hold: the outlet's own record + its Census market context ----
+  let ctxSeq=0;
+  function fmtNum(n){ return (n==null)?null : Number(n).toLocaleString(); }
+  function fmtUSD(n){ return (n==null)?null : '$'+(n>=1e6? (n/1e6).toFixed(1)+'M' : Number(n).toLocaleString()); }
+  function statCell(n,label,fmt){ const v=(n==null)?null:(fmt?fmt(n):fmtNum(n));
+    return '<div class="c"><div class="n'+(v==null?' na':'')+'">'+(v==null?'—':esc(v))+'</div><div class="l">'+esc(label)+'</div></div>'; }
+
+  function openDetail(p){
+    const d=$('#detail');
+    const off=isOff(p.type);
+    const addr=[p.address, p.city, p.state, p.zip].filter(Boolean).join(', ');
+    const idRows=[
+      ['License type', p.type], ['License #', p.license_num], ['Owner', p.owner],
+      ['Address', addr||null], ['County', p.county||p.area]
+    ].filter(r=>r[1]).map(r=>'<div class="row"><span class="k">'+esc(r[0])+'</span><span class="v">'+esc(r[1])+'</span></div>').join('');
+    $('#dbody').innerHTML=
+      '<div class="dhead"><span class="pin" style="background:'+color(p.type)+'"></span>'+
+        '<h2>'+esc(p.name||'Outlet')+'</h2>'+
+        '<div class="sub">'+esc(off?'off-premise · package goods':'on-premise · consumption')+'</div></div>'+
+      '<div class="dsec"><h3>Outlet record</h3>'+(idRows||'<div class="dmuted">no additional fields on this record.</div>')+'</div>'+
+      '<div class="dsec" id="ctxsec"><h3>Market context · Census</h3>'+
+        (p.county_fips
+          ? '<div class="dloading" id="ctxload">reading county '+esc(p.county_fips)+'…</div>'
+          : '<div class="dmuted">Geocode this dataset to unlock market context (no county FIPS on this record).</div>')+
+      '</div>';
+    d.classList.add('open'); d.setAttribute('aria-hidden','false');
+    if(p.county_fips) loadContext(p.county_fips);
+  }
+  function closeDetail(){ const d=$('#detail'); d.classList.remove('open'); d.setAttribute('aria-hidden','true'); ctxSeq++; }
+
+  async function loadContext(fips){
+    const my=++ctxSeq;
+    try{
+      const r=await fetch('/api/outlets/context?county_fips='+encodeURIComponent(fips),{cache:'no-store'});
+      const j=await r.json();
+      if(my!==ctxSeq) return;                        // a newer dot was clicked
+      if(!j.ok){ $('#ctxsec').innerHTML='<h3>Market context · Census</h3><div class="dmuted">'+esc(j.error||'unavailable')+'</div>'; return; }
+      renderContext(j);
+    }catch(e){ if(my===ctxSeq) $('#ctxsec').innerHTML='<h3>Market context · Census</h3><div class="dmuted">could not load: '+esc(e.message)+'</div>'; }
+  }
+  function renderContext(j){
+    const R=j.market.retailers, W=j.market.wholesalers, O=j.market.onpremise;
+    let head='';
+    if(R.estab!=null){
+      head='<div class="mkt">This county has <span class="big">'+fmtNum(R.estab)+'</span> beer/wine/liquor retailers'+
+        (j.per_10k_retailers!=null? ' — <span class="big">'+j.per_10k_retailers+'</span> per 10k residents':'')+'.';
+      if(R.nonemployer_state!=null) head+=' Statewide, <span class="big">'+fmtNum(R.nonemployer_state)+'</span> more are nonemployer (sole-proprietor) shops CBP doesn\'t count.';
+      head+='</div>';
+    }
+    $('#ctxsec').innerHTML='<h3>Market context · Census</h3>'+head+
+      '<div class="row"><span class="k">County population</span><span class="v">'+(fmtNum(j.population)||'—')+'</span></div>'+
+      '<div style="margin-top:11px"><div class="row" style="padding-bottom:6px"><span class="k">Retailers (44531)</span><span class="v"></span></div>'+
+      '<div class="stat">'+statCell(R.estab,'estab')+statCell(R.emp,'employees')+statCell(R.payann,'ann. payroll',fmtUSD)+'</div></div>'+
+      '<div><div class="row" style="padding-bottom:6px"><span class="k">Wholesalers (4248)</span><span class="v"></span></div>'+
+      '<div class="stat">'+statCell(W.estab,'estab')+statCell(W.emp,'employees')+statCell(W.payann,'ann. payroll',fmtUSD)+'</div></div>'+
+      '<div><div class="row" style="padding-bottom:6px"><span class="k">Drinking places (722)</span><span class="v"></span></div>'+
+      '<div class="stat">'+statCell(O.estab,'estab')+statCell(O.emp,'employees')+statCell(O.payann,'ann. payroll',fmtUSD)+'</div></div>'+
+      '<div class="dmuted" style="margin-top:8px">CBP '+esc(j.county_fips)+' · null = Census-suppressed or not reported, not zero.</div>';
   }
 
   function buildFilters(){
@@ -134,7 +228,9 @@
     $('#load').style.display='none';
   }
 
-  $('#ds').addEventListener('change',e=>load(e.target.value));
+  $('#ds').addEventListener('change',e=>{closeDetail();load(e.target.value);});
+  $('#dx').addEventListener('click',closeDetail);
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDetail(); });
   $('#area').addEventListener('change',draw);
   let qt=null; $('#q').addEventListener('input',()=>{clearTimeout(qt);qt=setTimeout(draw,160);});
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
