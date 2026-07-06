@@ -30,7 +30,7 @@
   .chips{display:flex;flex-wrap:wrap;gap:6px}
   .fchip{font-size:12.5px;background:var(--panel,#EAEEED);border-radius:6px;padding:4px 9px}
   .fchip b{font-weight:700}
-  .fchip.on{background:var(--amber-soft,#E7F1EE);border:1px solid #cde6df;color:var(--amber-deep,#3D6089);display:inline-flex;align-items:center;gap:6px}
+  .fchip.on{background:var(--amber-soft,#E8EEF5);border:1px solid #CDDDEC;color:var(--amber-deep,#3D6089);display:inline-flex;align-items:center;gap:6px}
   .fchip.on a{color:var(--ink-soft,#5E6B68);cursor:pointer;text-decoration:none;font-weight:700;font-size:11px}
   .fchip.on a:hover{color:var(--bad,#b4232a)}
   .fbuild{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 8px}
@@ -294,7 +294,7 @@
     else if(rc.status==="proven"){ kind="proven"; msg="<b>Proven recipe</b> — reruns deterministically (no AI). "+reason+"."; }
     else if(rc.status==="drifting"||rc.status==="broken"){ kind="candidate"; msg="<b>Re-proving this source</b> — clean run "+(rc.clean_runs||0)+" of 2"+rows+". One more matching run restores it to a proven recipe."; }
     else { kind="candidate"; msg="<b>Learning this source</b> — clean run "+(rc.clean_runs||0)+" of 2"+rows+". A <b>recipe</b> is the saved, reusable way to pull this source; one more matching run promotes it to <b>proven</b>, so future pulls run deterministically with no AI."; }
-    var C={proven:["#15803d","#E7F3EA","✓"],candidate:["#3D6089","#E7F1EE","◉"],
+    var C={proven:["#15803d","#E7F3EA","✓"],candidate:["#3D6089","#E8EEF5","◉"],
            drifting:["#b45309","#F6ECD9","⚠"],broken:["#b4232a","#F5E1DF","✗"]}, c=C[kind];
     return '<div title="Recipes let a proven source re-pull deterministically instead of re-asking the AI each time. It takes 2 clean runs to trust one." style="display:flex;gap:9px;align-items:flex-start;margin:2px 0 12px;padding:9px 12px;border-radius:9px;background:'+c[1]+';border:1px solid '+c[0]+'33;color:'+c[0]+';font-size:12.5px;line-height:1.45">'
       +'<span style="font-size:14px;line-height:1.2">'+c[2]+'</span><span>'+msg+'</span></div>';
@@ -316,7 +316,7 @@
     if(!hl) return "";
     var num=(hl.numeric||[]).map(function(x){return '<span class="fchip"><b>'+esc(x.field)+'</b> $'+x.min+'–$'+x.max+' · avg $'+x.avg+'</span>';}).join('');
     var cat=(hl.categorical||[]).map(function(x){return '<span class="fchip"><b>'+esc(x.field)+'</b> '+x.distinct+' · '+(x.top||[]).slice(0,3).map(function(t){return esc(t[0])+' ('+t[1]+')';}).join(', ')+'</span>';}).join('');
-    return '<div style="margin:2px 0 12px;padding:12px 14px;border:1px solid #cde6df;background:var(--amber-soft,#E7F1EE);border-radius:10px">'
+    return '<div style="margin:2px 0 12px;padding:12px 14px;border:1px solid #CDDDEC;background:var(--amber-soft,#E8EEF5);border-radius:10px">'
       +'<div style="font-family:ui-monospace,monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber-deep,#3D6089);font-weight:700;margin-bottom:5px">✦ Highlights'+(hl.engine?(' · '+esc(hl.engine)):'')+'</div>'
       +'<div style="font-size:14px;font-weight:600;color:var(--ink,#243330);margin-bottom:'+((num||cat)?'8px':'0')+'">'+esc(hl.headline||(hl.count+" rows"))+'</div>'
       +((num||cat)?('<div class="chips">'+num+cat+'</div>'):'')+'</div>';
