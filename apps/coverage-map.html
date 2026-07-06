@@ -82,10 +82,10 @@
     <div class="grp">
       <h2>Dataset</h2>
       <select id="ds">
+        <option value="outlets_master">All outlets — master (national)</option>
         <option value="il_outlets">Chicago — Liquor outlets</option>
         <option value="tx_outlets">Texas — TABC outlets</option>
         <option value="ct_outlets">Connecticut — premises</option>
-        <option value="outlets_master">Outlet master (national)</option>
       </select>
     </div>
     <div class="grp" id="typegrp">
@@ -235,7 +235,7 @@
   let qt=null; $('#q').addEventListener('input',()=>{clearTimeout(qt);qt=setTimeout(draw,160);});
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
   window.__loadCoverage=load;   // test hook
-  load('il_outlets');
+  load('outlets_master');
 })();
 </script>
 </body>
