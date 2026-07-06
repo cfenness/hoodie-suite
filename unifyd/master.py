@@ -38,6 +38,9 @@ SOURCES = {
     "tx_outlets": (_mapper({"name": "trade_name", "owner": "owner", "address": "address", "city": "city",
                            "county": "county", "state": "state", "zip": "zip", "license_type": "license_type",
                            "license_num": "license_id"}, "TX", "TX TABC"), "TX TABC"),
+    "il_outlets": (_mapper({"name": "dba", "owner": "owner", "address": "address", "city": "city",
+                           "county": "county", "state": "state", "zip": "zip", "license_type": "license_types",
+                           "license_num": "outlet_id"}, "IL", "Chicago"), "Chicago"),
 }
 
 def build(sources):
