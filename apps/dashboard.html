@@ -5552,6 +5552,33 @@ import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0
 <!-- shared suite header strip (standalone only) -->
 <script src="../suite-header.js" data-id="dashboard" data-mark="HI" data-name="Hoodie Intelligence" data-status="live"></script>
 
+<!-- account menu: the avatar was inert — click it for who's signed in + sign out (via the OIDC gate) -->
+<script>
+(function(){
+  var av=document.querySelector('.user-avatar'); if(!av) return;
+  av.style.cursor='pointer'; av.setAttribute('role','button'); av.setAttribute('tabindex','0'); av.title='Account';
+  var email='';
+  try{ fetch('/auth/me').then(function(r){return r.ok?r.json():null;}).then(function(d){ email=(d&&(d.email||d.user))||''; }).catch(function(){}); }catch(e){}
+  function close(){ var m=document.getElementById('hi-acct-menu'); if(m) m.remove(); document.removeEventListener('click',onDoc,true); }
+  function onDoc(e){ var m=document.getElementById('hi-acct-menu'); if(m && !m.contains(e.target) && e.target!==av) close(); }
+  function open(){
+    if(document.getElementById('hi-acct-menu')){ close(); return; }
+    var r=av.getBoundingClientRect();
+    var m=document.createElement('div'); m.id='hi-acct-menu';
+    m.style.cssText='position:fixed;top:'+(r.bottom+8)+'px;right:'+Math.max(8,(window.innerWidth-r.right))+'px;z-index:9999;min-width:210px;background:#fff;border:1px solid var(--ui-line,#E4E7EB);border-radius:11px;box-shadow:0 10px 34px rgba(20,28,38,.16);padding:8px;font:500 13px/1.4 var(--ui-font,system-ui,sans-serif);color:var(--ui-ink,#2B3138)';
+    m.innerHTML='<div style="padding:6px 9px 9px;color:#7A828B;font-size:11.5px">'+(email?('Signed in as<br><b style="color:#2B3138;font-weight:600">'+email.replace(/[<>&]/g,'')+'</b>'):'Signed in')+'</div>'
+      +'<button id="hi-signout" style="display:block;width:100%;text-align:left;padding:9px 9px;border:none;background:none;border-radius:8px;cursor:pointer;font:inherit;color:#B8402B;font-weight:600">Sign out</button>';
+    document.body.appendChild(m);
+    var so=m.querySelector('#hi-signout');
+    so.onmouseenter=function(){ so.style.background='#f6eceb'; }; so.onmouseleave=function(){ so.style.background='none'; };
+    so.onclick=function(){ (window.top||window).location.href='/auth/logout'; };
+    setTimeout(function(){ document.addEventListener('click',onDoc,true); },0);
+  }
+  av.addEventListener('click',function(e){ e.stopPropagation(); open(); });
+  av.addEventListener('keydown',function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); open(); } });
+})();
+</script>
+
 <!-- sidebar replacement: in the launcher, HI's nav drives the launcher rail (one sidebar, nested) -->
 <script>
 (function(){
@@ -5566,6 +5593,9 @@ import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0
     // are redundant (and stack into a 3rd search bar on Prism). Hide both; show a view title instead.
     +'html.in-launcher .app-toolswitch{display:none!important}'
     +'html.in-launcher #global-search-wrap{display:none!important}'
+    // the launcher's context bar already shows scope/account/BASIS — HI's spine chip (the "• YoY"
+    // readout) is a redundant, inert duplicate when embedded
+    +'html.in-launcher #spineChip{display:none!important}'
     +'html.in-launcher .hi-crumb{margin-right:auto;font:600 15px/1.1 var(--ui-font,system-ui,sans-serif);color:var(--ui-ink,#2B3138);padding:0 2px;white-space:nowrap;letter-spacing:-0.01em}';
   document.head.appendChild(st);
 
