@@ -374,7 +374,11 @@ function fetchRecipes(){
   }).catch(function(){});
 }
 
-function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)||"null"); if(r&&r.length){ SOURCES=r.map(s=>Object.assign({owner:"Hoodie",project:seedProject(s),url:seedUrl(s),connId:seedConn(s)},s)); return; } }catch(e){} SOURCES=SEED.map((s,i)=>Object.assign({id:"s"+i,owner:"Hoodie",project:seedProject(s),url:seedUrl(s)},s)); }
+function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)||"null"); if(r&&r.length){ SOURCES=r.map(s=>Object.assign({owner:"Hoodie",project:seedProject(s),url:seedUrl(s),connId:seedConn(s)},s));
+    // backfill: surface NEW seed connectors added since the user last saved (matched by connId|name)
+    var have={}; SOURCES.forEach(function(s){ have[s.connId||s.nm]=1; });
+    SEED.forEach(function(s,i){ if(!have[s.connId||s.nm]) SOURCES.push(Object.assign({id:"s"+(900+i),owner:"Hoodie",project:seedProject(s),url:seedUrl(s)},s)); });
+    return; } }catch(e){} SOURCES=SEED.map((s,i)=>Object.assign({id:"s"+i,owner:"Hoodie",project:seedProject(s),url:seedUrl(s)},s)); }
 function save(){ try{ localStorage.setItem(KEY,JSON.stringify(SOURCES)); }catch(e){} }
 
 function passes(s){
