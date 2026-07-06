@@ -46,6 +46,37 @@ def _find(header, candidates):
             return low.index(c.lower())
     return None
 
+_CENSUS_KEYS = ("name", "state_fips", "county_fips", "geoid")
+
+def merge_census(packs):
+    """Merge the thematic census datasets (demographic/economic/housing), each county-keyed, into
+    ONE {header, rows} by geoid — so a single join attaches every reference figure to an outlet."""
+    merged, demo_cols = {}, []
+    for d in packs:
+        h = d.get("header") or []
+        if "geoid" not in h:
+            continue
+        gi = h.index("geoid")
+        cols = [c for c in h if c not in _CENSUS_KEYS]
+        for c in cols:
+            if c not in demo_cols:
+                demo_cols.append(c)
+        for r in (d.get("rows") or []):
+            g = r[gi] if gi < len(r) else ""
+            if not g:
+                continue
+            rec = merged.setdefault(g, {})
+            for k in _CENSUS_KEYS:
+                if k in h:
+                    rec[k] = r[h.index(k)]
+            for c in cols:
+                rec[c] = r[h.index(c)]
+    header = ["name"] + demo_cols + ["state_fips", "county_fips", "geoid"]
+    rows = [[rec.get("name", "")] + [rec.get(c, "") for c in demo_cols]
+            + [rec.get("state_fips", ""), rec.get("county_fips", ""), rec.get("geoid", "")]
+            for rec in merged.values()]
+    return {"header": header, "rows": rows}
+
 def join_census_to_outlets(census, outlets):
     """Return an enriched outlet table + match stats. `census`/`outlets` are {header, rows}."""
     ch, crows = census.get("header") or [], census.get("rows") or []
