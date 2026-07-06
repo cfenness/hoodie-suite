@@ -227,11 +227,12 @@ def search_chunk(s, frm, to, args, log, diags=None):
     Appends each page's parse diagnostics to `diags` (for drift / self-reporting)."""
     resp = s.post(SEARCH_PROC, data=search_payload(frm, to, args), timeout=120)
     page = 1
-    seen_ids, visited = set(), set()   # TTB keeps serving a "next" link that OSCILLATES between two
-                                       # pages after the last real result, so the link never "runs
-                                       # out" — terminate on a page that adds no NEW ids (or a repeated
-                                       # next-url) instead of trusting the link. Without this, every
-                                       # chunk paginates to max_pages on duplicates (10x+ wasted work).
+    seen_ids = set()   # TTB's result paging is SESSION-STATEFUL: the "next" link is usually the SAME
+                       # url every page (the server tracks your position via the session cookie), and
+                       # past the last real page it just re-serves already-seen rows (the 20/3
+                       # oscillation). So termination can't key on the link changing or running out —
+                       # instead stop as soon as a page adds NO new TTB IDs. Without this, every chunk
+                       # paginated to max_pages on pure duplicates (10x+ wasted work).
     while True:
         recs, next_href, diag = parse_results(resp.text)
         if diags is not None:
@@ -245,11 +246,9 @@ def search_chunk(s, frm, to, args, log, diags=None):
             yield r
         if new:
             log(f"    {frm:%m/%d}-{to:%m/%d} p{page}: {len(new)} rows")
-        # stop at: no next link, page cap, a page that added nothing new (loop/exhausted), or a
-        # next-url we've already fetched (the oscillation TTB serves past the last real page).
-        if not next_href or page >= args.max_pages or (recs and not new) or next_href in visited:
+        # stop at: no next link, page cap, or a page that added nothing new (loop/exhausted).
+        if not next_href or page >= args.max_pages or (recs and not new):
             break
-        visited.add(next_href)
         time.sleep(args.delay)
         resp = s.get(next_href, timeout=120)
         page += 1
