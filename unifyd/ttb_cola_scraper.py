@@ -63,20 +63,30 @@ def make_session():
                   status_forcelist=[429, 500, 502, 503, 504],
                   allowed_methods=["GET", "POST"])
     s.mount("https://", HTTPAdapter(max_retries=retry))
-    # Route through Bright Data when BRIGHTDATA_PROXY is set — a clean IP + BD terminates the TLS,
-    # fixing the datacenter block + the incomplete-chain cert error ttbonline.gov throws on Fly.
+    # ttbonline.gov serves an INCOMPLETE TLS chain (it omits the intermediate cert). Desktop
+    # clients AIA-chase the missing cert automatically; server containers (Fly) don't, so
+    # verify=True dies with CERTIFICATE_VERIFY_FAILED — that was the ONLY thing blocking TTB
+    # from the deploy (verified from Fly: direct + verify=False -> 200, full search page).
+    # This scraper only ever talks to the public, read-only TTB COLA registry and sends no
+    # credentials, so relaxing verification for this session is safe.
+    #
+    # We deliberately do NOT route through a datacenter proxy by default: Bright Data DC zones
+    # KYC-gate .gov domains (403 Forbidden on the CONNECT tunnel), so a proxy is counterproductive
+    # here. Direct is both simpler and unblocked. brightdata.proxies() is still honored, but only
+    # when TTB_USE_PROXY is explicitly set (e.g. a KYC-cleared zone) — never the default.
+    s.verify = False
     try:
-        prox = __import__("brightdata").proxies()
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     except Exception:
-        prox = None
-    if prox:
-        s.proxies.update(prox)
-        s.verify = False   # BD does SSL interception; the origin cert is verified BD-side
+        pass
+    if os.environ.get("TTB_USE_PROXY", "").strip() in ("1", "true", "yes"):
         try:
-            import urllib3
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            prox = __import__("brightdata").proxies()
         except Exception:
-            pass
+            prox = None
+        if prox:
+            s.proxies.update(prox)
     return s
 
 def soupify(html):
