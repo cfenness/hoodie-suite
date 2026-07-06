@@ -38,10 +38,9 @@ def _mapper(colmap, default_state, label, cf_default=None):
 # dataset_id → (mapper, label). Each mapper aligns that state's columns to the master schema.
 _GEO = {"lat": "latitude", "lng": "longitude", "county_fips": "county_fips"}   # geocoder-appended cols
 SOURCES = {
-    # FL isn't geocoded yet (source behind Cloudflare) → no lat/lng; it lands but won't plot until geocoded.
     "bd4006lic": (_mapper({"name": "DBA", "owner": "Owner Name", "address": "Location Address 1",
                            "city": "Location City", "county": "Location County", "state": "Location State",
-                           "zip": "Location ZIP", "license_num": "License Number"}, "FL", "FL DBPR"), "FL DBPR"),
+                           "zip": "Location ZIP", "license_num": "License Number", **_GEO}, "FL", "FL DBPR"), "FL DBPR"),
     "tx_outlets": (_mapper({"name": "trade_name", "owner": "owner", "address": "address", "city": "city",
                            "county": "county", "state": "state", "zip": "zip", "license_type": "license_type",
                            "license_num": "license_id", **_GEO}, "TX", "TX TABC"), "TX TABC"),
