@@ -75,6 +75,19 @@
   .flat .fcap{width:min(960px,94vw);margin-top:12px;font-size:13.5px;color:#c6ddd6;line-height:1.55}
   .flat .fcap b{color:#eafaf5;font-weight:600}
   .loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9;font-family:var(--mono);font-size:12px;color:#6f938a;background:var(--ink)}
+  .esearch{position:fixed;top:68px;left:22px;z-index:7;width:264px;font-family:var(--mono)}
+  .esearch input{width:100%;background:rgba(18,28,25,.82);border:1px solid var(--line);border-radius:9px;padding:8px 12px;color:#dcefe9;font-family:var(--mono);font-size:11.5px;outline:none;backdrop-filter:blur(6px);transition:border-color .15s}
+  .esearch input:focus{border-color:var(--teal)}
+  .esearch input::placeholder{color:#6f938a}
+  .eres{margin-top:5px;max-height:280px;overflow:auto;display:none}
+  .eres.show{display:block}
+  .eres .er{padding:7px 11px;background:rgba(18,28,25,.94);border:1px solid var(--line);border-top:none;font-size:11.5px;color:#cfe6df;cursor:pointer;display:flex;align-items:center;gap:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .eres .er:first-child{border-top:1px solid var(--line);border-radius:8px 8px 0 0}
+  .eres .er:last-child{border-radius:0 0 8px 8px}
+  .eres .er:hover,.eres .er.on{background:rgba(63,184,163,.2);color:#eafaf5}
+  .eres .er .ek{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+  .eres .er .ety{margin-left:auto;font-size:8.5px;color:#6f938a;letter-spacing:.06em}
+  .eres .none{padding:7px 11px;color:#6f938a;font-size:11px;background:rgba(18,28,25,.94);border:1px solid var(--line);border-radius:8px}
 </style>
 <script type="importmap">
 { "imports": {
@@ -90,6 +103,10 @@
   <div class="hud top">
     <div class="brand"><div class="ey">Hoodie Suite · Estate</div><h1>The Estate, as an object</h1></div>
     <div class="hint"><b>drag</b> to spin · <b>scroll</b> to zoom · <b>click a node</b> to focus<br>a node lights only what it touches — the rest drops out</div>
+  </div>
+  <div class="esearch" id="esearch">
+    <input id="eq" placeholder="🔍 search a node — fly to it…" autocomplete="off" spellcheck="false">
+    <div class="eres" id="eres"></div>
   </div>
   <div class="sel" id="sel"></div>
   <div class="flat" id="flat"></div>
@@ -464,6 +481,38 @@ function tick(){ requestAnimationFrame(tick);
     if(p.t>=1){ graph.remove(p.mesh); p.mesh.material.dispose(); pulses.splice(i,1); } }
   controls.update(); renderer.render(scene,camera); lr.render(scene,camera);
 }
+// ── search-to-fly — type a node name, pick it, the model flies there (setFocus does the rest) ──
+const eqEl=document.getElementById('eq'), eresEl=document.getElementById('eres');
+let eMatches=[], eHi=-1;
+function eColor(n){ return n.kind==='ent'?'#3fb8a3':(STCOL[n.status]||(n.live?'#5bb86e':'#5f7a72')); }
+function eRender(){
+  const q=eqEl.value.trim().toLowerCase();
+  if(!q){ eresEl.className='eres'; eresEl.innerHTML=''; eMatches=[]; eHi=-1; return; }
+  eMatches=nodes.filter(n=>((n.full||n.label||'').toLowerCase().includes(q)))
+    .sort((a,b)=>{ const aa=(a.full||a.label||'').toLowerCase(), bb=(b.full||b.label||'').toLowerCase();
+      const as=aa.startsWith(q), bs=bb.startsWith(q); if(as!==bs) return as?-1:1;
+      if((a.kind==='ent')!==(b.kind==='ent')) return a.kind==='ent'?-1:1; return aa.localeCompare(bb); })
+    .slice(0,9);
+  eHi=eMatches.length?0:-1;
+  eresEl.className='eres show';
+  eresEl.innerHTML = eMatches.length ? eMatches.map((n,i)=>
+    '<div class="er'+(i===eHi?' on':'')+'" data-i="'+i+'"><span class="ek" style="background:'+eColor(n)+'"></span>'
+    +esc(n.full||n.label)+'<span class="ety">'+(n.kind==='ent'?'ENTITY':'FEED')+'</span></div>').join('')
+    : '<div class="none">no node matches</div>';
+  eresEl.querySelectorAll('.er').forEach(el=>el.onclick=()=>ePick(+el.dataset.i));
+}
+function eSyncHi(){ eresEl.querySelectorAll('.er').forEach((el,i)=>el.classList.toggle('on',i===eHi)); }
+function ePick(i){ const n=eMatches[i]; if(!n) return; eresEl.className='eres'; eqEl.blur(); setFocus(n); }
+eqEl.addEventListener('input', eRender);
+eqEl.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){ eqEl.value=''; eresEl.className='eres'; eMatches=[]; eqEl.blur(); return; }
+  if(!eMatches.length) return;
+  if(e.key==='ArrowDown'){ e.preventDefault(); eHi=(eHi+1)%eMatches.length; eSyncHi(); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); eHi=(eHi-1+eMatches.length)%eMatches.length; eSyncHi(); }
+  else if(e.key==='Enter'){ e.preventDefault(); ePick(eHi<0?0:eHi); }
+});
+document.addEventListener('click', e=>{ if(!document.getElementById('esearch').contains(e.target)) eresEl.className='eres'; });
+
 refresh(); setInterval(refresh,60000); setInterval(tickLive,5000); tick();
 </script>
 </body>
