@@ -51,6 +51,13 @@ SOURCES = {
                            "state": "state", "zip": "zip", "license_type": "credential",
                            "license_num": "credential", **_GEO}, "CT", "CT DCP"), "CT DCP"),
 }
+# Generic Socrata outlet feeds (socrata_outlets.py) all share ONE normalised schema (SO_HEAD), so
+# they map with one colmap — adding a Socrata state is a PORTALS entry there + one line here.
+_SOC = {"name": "name", "owner": "owner", "address": "address", "city": "city", "county": "county",
+        "state": "state", "zip": "zip", "license_type": "license_type", "license_num": "license_num", **_GEO}
+for _did, _st, _lbl in (("ny_outlets", "NY", "NY SLA"), ("co_outlets", "CO", "CO LED"),
+                        ("mo_outlets", "MO", "MO ATC")):
+    SOURCES[_did] = (_mapper(_SOC, _st, _lbl), _lbl)
 
 def build(sources):
     """sources: {dataset_id: {header, rows}} with FULL rows. Returns the outlet master."""
