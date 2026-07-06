@@ -10,6 +10,11 @@ duckdb>=1.0          # places connector: query Parquet in place (Tigris/local wa
 pyarrow>=15.0        # places connector: write Parquet; lazy-imported (only when a pull runs)
 PyYAML>=6.0          # serve the OpenAPI spec at /api/openapi.json; lazy-imported
 
+# Optional — only needed to land Iowa Liquor Sales from the BigQuery public mirror (iowa_bq.py).
+# Lazy-imported; uncomment + set GCP_SA_JSON / GCP_PROJECT secrets to activate. Heavy (grpc/protobuf),
+# so kept off the default image until Iowa is turned on.
+# google-cloud-bigquery>=3.20
+
 # Optional — only needed for COLA label UPC OCR (--ocr).
 # Wires to your existing ttb_cola_labels.extract_upc_from_label.
 # pytesseract>=0.3.10
