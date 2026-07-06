@@ -31,6 +31,7 @@ import planogram                    # benchmark + shelf-vision + pitch behind th
 import hi_analyst                   # the real Claude analyst behind Hoodie Intelligence Q&A
 import prism                        # data contract behind the Prism mobile app
 import places                       # restaurant / on-premise-accounts connector (Orlando first)
+import census                       # US Census ACS demographics — reference-data connector (by county)
 import warehouse                    # Parquet-on-Tigris (or local) queried by DuckDB
 import auth_gate                    # Google OIDC login gate (active only when configured)
 
@@ -70,7 +71,7 @@ class _JobLogHandler(logging.Handler):
 _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
-VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts"}
+VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs"}
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
@@ -83,11 +84,24 @@ def _dispatch_pull(conn, body):
             else shopify_pull(body) if conn == "shopify-dtc"
             else instacart_pull(body) if conn == "instacart"
             else places_pull(body) if conn == "orlando-accounts"
+            else census_pull(body) if conn == "census-acs"
             else fl_pull(conn) if conn in FL_CONN else None)
 
 def places_pull(body):
     """Run the Orlando on-premise-accounts pull (FL ABT -> normalize -> filter -> Parquet)."""
     return places.pull(county=(body or {}).get("county", places.ORLANDO_COUNTY))
+
+def census_pull(body):
+    """Pull US Census ACS demographics by county → lands as the `census_acs` dataset (joinable
+    to outlets via county FIPS). Needs the free CENSUS_API_KEY; degrades with a clear warning
+    otherwise. `state` scopes it (FIPS, or 'us' for all counties); default = FL/TX/IL."""
+    started = int(time.time() * 1000)
+    ds, runs, _ = census.pull(state=(body or {}).get("state"),
+                              log=lambda m: app.logger.info("CENSUS %s", m))
+    DATASETS.update(_absorb(ds)); save()
+    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
+    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = (body or {}).get("trigger", "manual")
+    return run
 
 def _new_job(conn):
     jid = "J-%d-%d" % (int(time.time()), len(JOBS) + 1)
@@ -431,7 +445,7 @@ def instacart_pull(params):
 # ---------------- API ----------------
 @app.get("/api/health")
 def health():
-    return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart"],
+    return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "census-acs"],
                    datasets=len(DATASETS), runs=len(RUNS),
                    state=("s3:" + STATE_BUCKET) if STATE_BUCKET else "disk",
                    warehouse=("tigris:" + os.environ.get("BUCKET_NAME", "")) if warehouse.remote() else "local")
@@ -440,7 +454,8 @@ def health():
 _SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlets",
               "ttb-cola": "TTB — COLA Labels", "abc-fws": "ABC FWS — Inventory",
               "specs": "Spec's — Inventory", "binnys": "Binny's — Inventory",
-              "shopify-dtc": "Hemp + DTC — Shopify", "instacart": "Instacart — Store-level"}
+              "shopify-dtc": "Hemp + DTC — Shopify", "instacart": "Instacart — Store-level",
+              "census-acs": "US Census — ACS demographics"}
 _EXTRACT_SRC = {eid: src for src, exs in FL_CONN.items() for (eid, _h, _n) in exs}
 _NAME_COLS = ("Owner Name", "Registrant Name", "Applicant", "Brand Name", "DBA")
 def _name_idx(header):

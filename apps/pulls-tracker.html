@@ -167,7 +167,7 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
 
 <script>
 const KEY="hoodie.pulls.tracker.v2";
-const TIERS=["Spine & Master","Control States","Specialty Bev-Alc","Grocery & Mass","Delivery & Marketplace","On-Premise Accounts","Long-Tail & Platform","Hemp & THC"];
+const TIERS=["Spine & Master","Reference Data","Control States","Specialty Bev-Alc","Grocery & Mass","Delivery & Marketplace","On-Premise Accounts","Long-Tail & Platform","Hemp & THC"];
 // Availability = inventory (the single best data point); Auth type = authorization/permit type (the close second).
 const FIELDS=["Availability","Auth type","Price","Promo","Units","UPC","Ratings"];
 // Who actually runs the pull. Grepsr is an external vendor delivering a daily hemp-beverage feed to S3.
@@ -198,6 +198,8 @@ const SEED=[
  {nm:"Florida — Items",connId:"fl-items",tier:"Spine & Master",foot:"FL · DBPR/ABT registry",fields:["UPC"],gran:"State",plat:"gov CSV",prot:"None",tos:"Clean",pri:"P0",status:"Ready",notes:"Item master seed — authoritative government CSV."},
  {nm:"Florida — Outlets",connId:"fl-outlets",tier:"Spine & Master",foot:"FL · DBPR/ABT licensees",fields:[],gran:"State",plat:"gov CSV",prot:"None",tos:"Clean",pri:"P0",status:"Ready",notes:"Outlet master — the load-bearing spine. FL-only; must expand to TX + IL to resolve Spec's/Binny's."},
  {nm:"TTB — COLA Labels",connId:"ttb-cola",tier:"Spine & Master",foot:"National · TTB public registry",fields:["UPC"],gran:"Chain",plat:"Custom scraper",prot:"Low",tos:"Clean",pri:"P1",status:"Ready",notes:"Label / product-identity enrichment on top of item master."},
+
+ {nm:"US Census — ACS demographics",connId:"census-acs",tier:"Reference Data",foot:"National · Census Bureau API",fields:["population","median_household_income","median_age","median_home_value"],gran:"County",plat:"Census Data API",prot:"None",tos:"Clean",pri:"P1",status:"Ready",owner:"Hoodie",notes:"Trade-area demographics by county (ACS5), joinable to the outlet master via county FIPS (geoid). Not a scrape — documented public JSON API. Needs the free CENSUS_API_KEY (census.gov/developers); degrades with a clear message otherwise. Default footprint FL/TX/IL; pass state:'us' for all counties. Feeds HI's Demographics view + account enrichment."},
 
  {nm:"PA Fine Wine & Good Spirits",tier:"Control States",foot:"PA · 568 stores",fields:["Price"],gran:"State",plat:"gov price book",prot:"None",tos:"Clean",pri:"P0",status:"Planned",notes:"Quarterly price listing, statewide-uniform. Biggest clean miss — fetch & parse, not a scrape."},
  {nm:"Virginia ABC",tier:"Control States",foot:"VA · 395 stores",fields:["Price"],gran:"State",plat:"gov price book",prot:"None",tos:"Clean",pri:"P0",status:"Planned",notes:"Statewide-uniform pricing; published list."},
