@@ -29761,7 +29761,8 @@ console.warn('qaSynthesize failed:', err);
 return {
 para: '<p>I would need more specifics to give you a precise answer. Try naming a category (whiskey, tequila, vodka, rum, RTD), a region (Northeast, South, Midwest, West), or a channel (on-prem, off-prem, chain, casual dining). For example: <em>"How is tequila doing in the Southeast?"</em> or <em>"Show me whiskey headroom in chain accounts."</em></p>',
 chart: null,
-followups: ['How is tequila growing nationally?','Show me RTD headroom in chains','Compare whiskey premium vs standard']
+followups: ['How is tequila growing nationally?','Show me RTD headroom in chains','Compare whiskey premium vs standard'],
+_needAnalyst: true   // the deterministic parser couldn't classify it → hand to the live Claude analyst
 };
 }
 
@@ -30147,6 +30148,85 @@ const charts = {
 return charts[value] || '';
 }
 
+// ── live Claude analyst (with a pause switch) ──────────────────────────────────────
+// The deterministic engine above answers what it can classify; anything it can't is handed
+// here to the real analyst (/api/ask), grounded in the EXACT figures rbComputeMeasure computes.
+window.__hiAnalyst = window.__hiAnalyst || {avail:false, paused:false, checked:false};
+function qaAnalystOn(){ return !!(window.__hiAnalyst.avail && !window.__hiAnalyst.paused); }
+function qaAnalystRefresh(){
+  return fetch('/api/ai/status').then(function(r){return r.ok?r.json():null;}).then(function(d){
+    window.__hiAnalyst = {avail:!!(d&&d.enabled), paused:!!(d&&d.paused), checked:true};
+    qaAnalystSyncToggle();
+  }).catch(function(){ window.__hiAnalyst={avail:false,paused:false,checked:true}; qaAnalystSyncToggle(); });
+}
+function qaAnalystTogglePause(){
+  var next = !window.__hiAnalyst.paused;
+  fetch('/api/ai/pause',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paused:next})})
+    .then(function(r){return r.ok?r.json():null;}).then(function(d){ window.__hiAnalyst.paused=!!(d&&d.paused); qaAnalystSyncToggle(); })
+    .catch(function(){});
+}
+function qaAnalystSyncToggle(){
+  var el=document.getElementById('qa-analyst-toggle'); if(!el) return;
+  var s=window.__hiAnalyst;
+  var wrap=document.getElementById('qa-analyst-toggle-wrap'); if(wrap) wrap.style.display = s.avail?'':'none';
+  el.className='qa-analyst-toggle'+(s.paused?' paused':'');
+  el.style.background = s.paused?'#f1f2f5':'#E8EEF5';
+  el.style.color      = s.paused?'#7A828B':'#3D6089';
+  el.style.borderColor= s.paused?'#e2e4e8':'#cddcec';
+  el.innerHTML=(s.paused?'⏸ Live analyst paused':'✦ Live analyst on')+' · <span style="text-decoration:underline">'+(s.paused?'resume':'pause')+'</span>';
+}
+function qaEnsureToggle(){
+  if(document.getElementById('qa-analyst-toggle')) return;
+  var host=document.getElementById('qa-landing')||document.getElementById('view-qa'); if(!host) return;
+  var wrap=document.createElement('div'); wrap.id='qa-analyst-toggle-wrap'; wrap.style.cssText='text-align:center;margin:0 0 10px';
+  var el=document.createElement('button'); el.id='qa-analyst-toggle'; el.type='button';
+  el.style.cssText='display:inline-flex;align-items:center;gap:2px;font:600 11.5px/1 var(--ui-font,system-ui);border:1px solid #cddcec;border-radius:999px;padding:6px 13px;cursor:pointer;';
+  el.onclick=qaAnalystTogglePause;
+  wrap.appendChild(el); host.insertBefore(wrap, host.firstChild);
+  qaAnalystSyncToggle();
+}
+function qaBuildVocab(){
+  var measures=[]; try{ measures=(RB_FIELDS.measures||[]).map(function(m){return {key:m.key,label:m.label,unit:m.unit||''};}); }catch(e){}
+  return {categories:['Whiskey','Vodka','Tequila','Rum','RTD','Wine'],
+          regions:['Northeast','South','Midwest','West'], channels:['on-premise','off-premise'],
+          account_classes:['A','B','C','D'], measures:measures};
+}
+function qaBuildFacts(){
+  var facts=[]; if(typeof rbComputeMeasure!=='function') return facts;
+  var cats=['Whiskey','Vodka','Tequila','Rum','RTD','Wine'];
+  var regions=['','Northeast','South','Midwest','West'];   // '' = US total
+  var channels=['','onprem','offprem'];
+  var mkeys=[]; try{ mkeys=(RB_FIELDS.measures||[]).slice(0,4).map(function(m){return m.key;}); }catch(e){}
+  if(!mkeys.length) mkeys=['volume_growth'];
+  mkeys.forEach(function(mk){ cats.forEach(function(cat){ regions.forEach(function(rg){ channels.forEach(function(ch){
+    var dims={category:cat}; if(rg)dims.region=rg; if(ch)dims.channel=ch;
+    var v; try{ v=rbComputeMeasure(mk,dims); }catch(e){ v=null; }
+    if(v!=null && v!=='—' && String(v).trim()!==''){
+      facts.push({measure:mk, category:cat, region:rg||'US',
+                  channel:(ch==='onprem'?'on-premise':(ch==='offprem'?'off-premise':'all')), value:String(v)});
+    }
+  }); }); }); });
+  return facts.slice(0,1200);
+}
+function qaShapeLLM(d){
+  var stats=(d.stats||[]).map(function(s){ return {label:s.label, value:s.value, delta:s.delta||'',
+    deltaCls:(s.dir==='pos'?'pos':(s.dir==='neg'?'neg':'')), measureKey:s.measure||'', dims:s.dims||{}}; });
+  return {para:d.narrative||'', stats:stats, followups:d.followups||[], chart:null, _llm:true};
+}
+function qaAskAnalyst(query, cb){
+  var gen=document.getElementById('qa-generating'); if(gen){ var sub=gen.querySelector('.qa-gen-sub,.gen-sub,p'); if(sub) sub.textContent='Consulting the live analyst…'; }
+  fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:query, facts:qaBuildFacts(), vocab:qaBuildVocab()})})
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
+    .then(function(res){ var d=res.d||{};
+      if(d.paused){ window.__hiAnalyst.paused=true; qaAnalystSyncToggle(); cb(null); return; }
+      if(!res.ok || d.error || !d.narrative){ cb(null); return; }
+      cb(qaShapeLLM(d));
+    }).catch(function(){ cb(null); });
+}
+(function(){ function boot(){ qaAnalystRefresh(); setTimeout(qaEnsureToggle,120); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else setTimeout(boot,300); })();
+
 function qaAsk(query){
 const landing = document.getElementById('qa-landing');
 const generating = document.getElementById('qa-generating');
@@ -30159,8 +30239,8 @@ if(report) report.style.display = 'none';
 if(generating) generating.style.display = 'block';
 // Simulate async work
 setTimeout(function(){
+function qaRenderWith(ans){
 try {
-const ans = qaFindAnswer(query) || {para:'<p>No answer available for that question.</p>', followups:[]};
 // Stat grid — mirrors Hoodie's Executive Summary stat cards. Each card is drill-through.
 let statsHtml = '';
 if(ans.stats && ans.stats.length){
@@ -30224,6 +30304,10 @@ if(generating) generating.style.display = 'none';
 if(report) report.style.display = 'block';
 (document.querySelector('.content')||window).scrollTo({top:0,behavior:'smooth'});
 }
+}
+var qaAns = qaFindAnswer(query) || {para:'<p>No answer available for that question.</p>', followups:[]};
+if(qaAns._needAnalyst && qaAnalystOn()){ qaAskAnalyst(query, function(llm){ qaRenderWith(llm||qaAns); }); return; }
+qaRenderWith(qaAns);
 }, 650);
 }
 
