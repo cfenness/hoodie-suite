@@ -17,7 +17,7 @@ When the agent is absent the dashboard falls back to its built-in preview.
 
 State is persisted to ./agent_state/ (datasets.json, runs.json, cola CSV).
 """
-import csv, io, json, os, time, types, urllib.request, datetime, threading, logging
+import csv, gzip, io, json, os, time, types, urllib.request, datetime, threading, logging
 from flask import Flask, request, jsonify, send_file, Response, redirect, session
 
 import ttb_cola_scraper as cola   # the scraper you generated
@@ -245,6 +245,32 @@ def _cors(resp):
     ct = (resp.content_type or "")
     if ct.startswith("text/html") or "javascript" in ct or ct.startswith("text/css") or ct.startswith("application/json"):
         resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.after_request
+def _gzip(resp):
+    """Gzip large text/JSON responses (stdlib, no dep). The coverage map's /api/outlets/geo ships
+    100k+ light points — very repetitive JSON that compresses ~5:1 — so the whole national footprint
+    transfers in a few MB instead of tens. Guarded so it never touches streamed/binary/already-encoded
+    responses."""
+    try:
+        if resp.direct_passthrough or resp.status_code != 200:
+            return resp
+        if "gzip" not in request.headers.get("Accept-Encoding", "") or resp.headers.get("Content-Encoding"):
+            return resp
+        ct = resp.content_type or ""
+        if not (ct.startswith("application/json") or ct.startswith("text/") or "javascript" in ct):
+            return resp
+        data = resp.get_data()
+        if len(data) < 1024:
+            return resp
+        resp.set_data(gzip.compress(data, 5))
+        resp.headers["Content-Encoding"] = "gzip"
+        resp.headers["Content-Length"] = str(len(resp.get_data()))
+        resp.headers["Vary"] = "Accept-Encoding"
+    except Exception:
+        pass
     return resp
 
 
@@ -1317,7 +1343,7 @@ def upc_ep():
     return jsonify(ok=True, crosswalk_loaded=bool(UPC_XWALK), count=len(out), results=out)
 
 
-GEO_CAP = 200000
+GEO_CAP = 500000
 @app.get("/api/outlets/geo")
 def outlets_geo_ep():
     """LIGHT geocoded points for the coverage map — enough to render, colour, filter and search the
