@@ -33,6 +33,7 @@ import prism                        # data contract behind the Prism mobile app
 import places                       # restaurant / on-premise-accounts connector (Orlando first)
 import census                       # US Census ACS demographics — reference-data connector (by county)
 import enrich                       # join reference data (census) onto the outlet master by county
+import tx_tabc                      # Texas TABC licenses (Socrata) — TX outlets + companies by county
 import warehouse                    # Parquet-on-Tigris (or local) queried by DuckDB
 import auth_gate                    # Google OIDC login gate (active only when configured)
 
@@ -72,7 +73,7 @@ class _JobLogHandler(logging.Handler):
 _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
-VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs"}
+VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc"}
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
@@ -86,7 +87,20 @@ def _dispatch_pull(conn, body):
             else instacart_pull(body) if conn == "instacart"
             else places_pull(body) if conn == "orlando-accounts"
             else census_pull(body) if conn == "census-acs"
+            else tx_pull(body) if conn == "tx-tabc"
             else fl_pull(conn) if conn in FL_CONN else None)
+
+def tx_pull(body):
+    """Texas TABC active retail licenses (Socrata) → tx_outlets + tx_companies, county-keyed for
+    the census join. Works from a datacenter (data.texas.gov, unlike the FL/TTB gov hosts)."""
+    started = int(time.time() * 1000)
+    ds, runs, _ = tx_tabc.pull(status=(body or {}).get("status", "Active"),
+                               tier=(body or {}).get("tier", "Retail"),
+                               log=lambda m: app.logger.info("TX %s", m))
+    DATASETS.update(_absorb(ds)); save()
+    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
+    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = (body or {}).get("trigger", "manual")
+    return run
 
 def places_pull(body):
     """Run the Orlando on-premise-accounts pull (FL ABT -> normalize -> filter -> Parquet)."""
@@ -479,7 +493,7 @@ _SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlet
               "ttb-cola": "TTB — COLA Labels", "abc-fws": "ABC FWS — Inventory",
               "specs": "Spec's — Inventory", "binnys": "Binny's — Inventory",
               "shopify-dtc": "Hemp + DTC — Shopify", "instacart": "Instacart — Store-level",
-              "census-acs": "US Census — ACS demographics"}
+              "census-acs": "US Census — ACS demographics", "tx-tabc": "Texas TABC — licenses"}
 _EXTRACT_SRC = {eid: src for src, exs in FL_CONN.items() for (eid, _h, _n) in exs}
 _NAME_COLS = ("Owner Name", "Registrant Name", "Applicant", "Brand Name", "DBA")
 def _name_idx(header):
@@ -1120,7 +1134,7 @@ def enrich_census_ep():
     # FL DBPR extracts all share one header, so items/brands "look" like outlets. Restrict to the
     # ACTUAL outlet tables (retail/wholesale/permits + ABC store cells + the places accounts), never
     # items/registrants/brands, then pick whichever genuinely matches census best.
-    OUTLET_IDS = {"bd4006lic", "bd4005lic", "bd4002lic", "abc_store_cells"}
+    OUTLET_IDS = {"bd4006lic", "bd4005lic", "bd4002lic", "abc_store_cells", "tx_outlets"}
     NON_OUTLET = {"bd4008lic", "bd4011lic", "abtbrands", "census_acs", "outlets_census"}
     def _places(d):
         h = [str(x).lower() for x in (d.get("header") or [])]
