@@ -758,7 +758,8 @@
   // own collapse preference. Self-contained (no shared consts) so route() can call it early.
   function applyNavForApp(id){
     var b=document.querySelector('.body'); if(!b) return;
-    var heavy=(id==='dashboard');   // apps that publish their nav (mdm) use the shared rail instead
+    var heavy=false;   // MDM + Hoodie Intelligence now PUBLISH their nav into the shared rail (one
+                       // expanded, nested sidebar) — so the stopgap auto-collapse is no longer needed
     var pref=false; try{ pref=localStorage.getItem('hoodie.nav.collapsed')==='1'; }catch(e){}
     var want=heavy||pref;
     b.classList.toggle('nav-collapsed',want);

@@ -5561,7 +5561,12 @@ import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0
   // hide our own sidebar + reflow main to full width (the launcher rail now shows this nav)
   var st=document.createElement('style');
   st.textContent='html.in-launcher .app{grid-template-columns:1fr!important}'
-    +'html.in-launcher .sidebar{display:none!important}';
+    +'html.in-launcher .sidebar{display:none!important}'
+    // the launcher rail owns navigation now, so the in-app toolswitch + the "search views" bar
+    // are redundant (and stack into a 3rd search bar on Prism). Hide both; show a view title instead.
+    +'html.in-launcher .app-toolswitch{display:none!important}'
+    +'html.in-launcher #global-search-wrap{display:none!important}'
+    +'html.in-launcher .hi-crumb{margin-right:auto;font:600 15px/1.1 var(--ui-font,system-ui,sans-serif);color:var(--ui-ink,#2B3138);padding:0 2px;white-space:nowrap;letter-spacing:-0.01em}';
   document.head.appendChild(st);
 
   // HI's IA → grouped sections. Primary surfaces are ungrouped (always shown); the deep
@@ -5602,19 +5607,24 @@ import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0
   var COLLAPSED=['Channels','Position & comparison','Portfolio analysis','Growth dynamics','Platform & reference'];
   function currentView(){ var a=document.querySelector('.nav-subitem.active'); return a?a.getAttribute('data-view'):'quickreports'; }
   function publishNav(){ try{ parent.postMessage({__hoodie:'nav',app:'dashboard',sections:NAV_META,active:currentView(),collapsedGroups:COLLAPSED},'*'); }catch(e){} }
+  // the freed top-bar space gets a plain view title (replaces the removed toolswitch/search)
+  function labelFor(id){ for(var i=0;i<NAV_META.length;i++){ if(NAV_META[i].id===id) return NAV_META[i].label; } return 'Hoodie Intelligence'; }
+  function setCrumb(){ var c=document.getElementById('hi-crumb'); if(c) c.textContent=labelFor(currentView()); }
+  function ensureCrumb(){ if(document.getElementById('hi-crumb')) return; var tb=document.querySelector('.top-bar'); if(!tb) return;
+    var c=document.createElement('div'); c.className='hi-crumb'; c.id='hi-crumb'; tb.insertBefore(c, tb.firstChild); setCrumb(); }
 
   // launcher rail → HI: switch view
   window.addEventListener('message',function(e){ var d=e.data;
-    if(d&&d.__hoodie==='section'&&d.id){ var l=document.querySelector('.nav-subitem[data-view="'+d.id+'"]'); if(l) l.click(); } });
+    if(d&&d.__hoodie==='section'&&d.id){ var l=document.querySelector('.nav-subitem[data-view="'+d.id+'"]'); if(l) l.click(); setTimeout(setCrumb,20); } });
 
   // HI → launcher rail: report our own view changes (toolswitch, global search, jump tiles, deep links)
   document.addEventListener('click',function(e){
     var it=e.target.closest&&e.target.closest('.nav-subitem[data-view],[data-toolview]'); if(!it) return;
     var id=it.getAttribute('data-view')||it.getAttribute('data-toolview');
-    setTimeout(function(){ try{ parent.postMessage({__hoodie:'section',id:id||currentView()},'*'); }catch(_){} },30);
+    setTimeout(function(){ try{ parent.postMessage({__hoodie:'section',id:id||currentView()},'*'); }catch(_){} setCrumb(); },30);
   },true);
 
-  function boot(){ publishNav(); }
+  function boot(){ publishNav(); ensureCrumb(); setCrumb(); }
   if(document.readyState==='loading') window.addEventListener('DOMContentLoaded',function(){ setTimeout(boot,250); });
   else setTimeout(boot,250);
 })();
