@@ -27,6 +27,15 @@
   .node.ent .lbl{font-family:var(--body);font-weight:700;font-size:11.5px;fill:#eafaf5}
   .node.dim{opacity:.12;transition:opacity .3s}
   .edge{stroke-width:1.4;fill:none;transition:opacity .3s}
+  .node.src .lbl{opacity:0;transition:opacity .18s}
+  .node.src:hover .lbl,.node.src.foc .lbl{opacity:1}
+  .node.src:hover circle{stroke:#eafaf5}
+  .cluster{cursor:pointer}
+  .cluster .clbl{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.05em;pointer-events:none}
+  .cluster .ccount{font-family:var(--mono);font-size:9px;pointer-events:none}
+  .cluster circle{transition:fill-opacity .2s}
+  .cluster:hover circle{fill-opacity:.13}
+  .node.dim,.cluster.dim{opacity:.12;transition:opacity .3s}
   .legend{position:fixed;right:20px;bottom:18px;z-index:5;font-family:var(--mono);font-size:10px;color:#6f938a;text-align:right;line-height:1.9;pointer-events:none}
   .legend .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-left:7px;vertical-align:middle}
   .sel{position:fixed;left:20px;bottom:18px;width:280px;max-height:60vh;overflow:auto;background:rgba(18,28,25,.93);border:1px solid var(--line);border-radius:12px;padding:14px 16px;z-index:6;backdrop-filter:blur(6px);transform:translateY(12px);opacity:0;transition:.25s;pointer-events:auto}
@@ -48,7 +57,7 @@
   <div class="live off" id="live" title="Live read from the engine · click to refresh"><span class="dot"></span><span id="livetx">connecting…</span></div>
   <div class="hud top">
     <div class="brand"><div class="ey">Hoodie Suite · Estate</div><h1>Estate Map — live data layer</h1></div>
-    <div class="hint"><b>click a node</b> to focus · updates as pulls land<br>the flat mirror of the 3D model</div>
+    <div class="hint"><b>click a family</b> to focus · <b>a node</b> for one source · hover for labels<br>grouped by source family · updates as pulls land</div>
   </div>
   <div class="sel" id="sel"></div>
   <div class="legend">entity ●<span class="sw" style="background:#3fb8a3"></span> · feed ●<span class="sw" style="background:#5bb86e"></span><br>planned<span class="sw" style="background:#5f7a72"></span> · drifting<span class="sw" style="background:#d99a3f"></span> · broke<span class="sw" style="background:#d9584f"></span></div>
@@ -86,15 +95,34 @@ function roadsFromCols(cols, hints){
   if(!es.length) es.push(['item','name']);
   const seen=new Set(); return es.filter(e=> !seen.has(e[0]) && seen.add(e[0]));
 }
-// deterministic 2D position for a source: hash → angle, radius; pulled toward its entities
-function pos2d(name, ents){
-  let h=2166136261; for(let i=0;i<name.length;i++){ h^=name.charCodeAt(i); h=Math.imul(h,16777619); }
-  const u=((h>>>0)%1000)/1000, v=(((h>>>9)>>>0)%1000)/1000;
-  const cx=500, cy=340, R=210+v*150, a=u*Math.PI*2;
-  let x=cx+Math.cos(a)*R, y=cy+Math.sin(a)*R*0.62;
-  if(ents&&ents.length){ let mx=0,my=0; ents.forEach(e=>{mx+=ENT_POS[e][0];my+=ENT_POS[e][1];}); mx/=ents.length; my/=ents.length;
-    x=x*0.62+mx*0.38; y=y*0.62+my*0.38; }
-  return [Math.max(60,Math.min(940,x)), Math.max(110,Math.min(650,y))];
+// ---- clustering: group sources into families, each gets its own zone ----
+const CLUSTER_DEF=[
+  {key:'fl',     label:'Florida',      col:'#5bb86e', t:n=>/^d:(bd4|abt|abc_)/.test(n.id)||/(^|·\s*)FL\b|florida/i.test(n.full||'')},
+  {key:'tx',     label:'Texas',        col:'#4a90d9', t:n=>/^d:tx_/.test(n.id)||/\bTX\b|texas/i.test(n.full||'')},
+  {key:'il',     label:'Chicago',      col:'#3fb8a3', t:n=>/^d:il_/.test(n.id)||/chicago/i.test(n.full||'')},
+  {key:'census', label:'Census',       col:'#8a6fd0', t:n=>/^d:(census_|outlets_census)/.test(n.id)||/census|demograph|econom|housing/i.test(n.full||'')},
+  {key:'master', label:'Master',       col:'#d9b03f', t:n=>/master/i.test((n.full||'')+n.id)},
+  {key:'retail', label:'Retail & DTC', col:'#57c9b3', t:n=>!!n.host||/spec|binny|instacart|shopify|kroger|total\s*wine|drizly|hemp|dtc|store/i.test((n.full||'')+n.id)},
+];
+const CLUSTER_FALL={key:'other',label:'Other sources',col:'#6f8a83',t:()=>true};
+function clusterOf(n){ for(const c of CLUSTER_DEF){ try{ if(c.t(n)) return c; }catch(e){} } return CLUSTER_FALL; }
+// place each non-empty cluster around the entity spine; pack members inside via golden-angle
+function layoutClusters(m){
+  const groups={};
+  m.nodes.forEach(n=>{ if(n.kind!=='src')return; const c=clusterOf(n); (groups[c.key]=groups[c.key]||{def:c,nodes:[]}).nodes.push(n); n._ck=c.key; });
+  const order=CLUSTER_DEF.concat([CLUSTER_FALL]).filter(c=>groups[c.key]);
+  const N=order.length||1, cx=500, cy=350, Rx=372, Ry=246, metas=[];
+  order.forEach((cdef,i)=>{
+    const g=groups[cdef.key], M=g.nodes.length;
+    const a=(-Math.PI/2)+(i/N)*Math.PI*2, zx=cx+Math.cos(a)*Rx, zy=cy+Math.sin(a)*Ry;
+    const rad=Math.min(118, 24+Math.sqrt(M)*11);
+    g.nodes.forEach((n,j)=>{ const rr=rad*Math.sqrt((j+0.5)/M), th=j*2.399963;
+      n.x=Math.max(74,Math.min(926, zx+Math.cos(th)*rr));
+      n.y=Math.max(150,Math.min(648, zy+Math.sin(th)*rr*0.82)); });
+    const ents=new Set(); g.nodes.forEach(n=>m.edges.forEach(e=>{ if(e.a===n.id&&(m.byId[e.b]||{}).kind==='ent')ents.add(e.b); if(e.b===n.id&&(m.byId[e.a]||{}).kind==='ent')ents.add(e.a); }));
+    metas.push({key:cdef.key,label:cdef.label,col:cdef.col,cx:zx,cy:zy,r:rad,count:M,ents:[...ents],nodes:g.nodes});
+  });
+  m.clusters=metas; return m;
 }
 
 async function loadLive(){
@@ -108,9 +136,9 @@ function buildModel(live){
   CANON.forEach(([a,b])=>edges.push({a,b,road:'is-a'}));
   function addSource(key,disp,status,sub,cols,hints,liveFlag,dataset,host){
     const dn=disp.toLowerCase(); if(seen[dn]) return; seen[dn]=1;
-    const rs=roadsFromCols(cols,hints), ents=rs.map(r=>r[0]); const p=pos2d(disp,ents);
+    const rs=roadsFromCols(cols,hints);
     const n={id:key,label:friendly(disp),full:disp,kind:'src',status:(status||'planned').toLowerCase(),
-             sub:sub,live:liveFlag,dataset:dataset||null,host:host||null,x:p[0],y:p[1]};
+             sub:sub,live:liveFlag,dataset:dataset||null,host:host||null,x:500,y:350};
     nodes.push(n); byId[key]=n; rs.forEach(([e,road])=>edges.push({a:key,b:e,road}));
   }
   let cat=[]; try{ cat=JSON.parse(localStorage.getItem('hoodie.pulls.tracker.v2')||'[]')||[]; }catch(e){}
@@ -132,30 +160,48 @@ const svg=document.getElementById('svg'), selEl=document.getElementById('sel');
 let MODEL={nodes:[],edges:[],byId:{},adj:{}}, selected=null, elByEdge=[], elByNode={};
 function render(m){
   MODEL=m; svg.innerHTML=''; elByEdge=[]; elByNode={};
-  m.edges.forEach(e=>{ const a=m.byId[e.a], b=m.byId[e.b];
+  // 1) cluster halos (behind everything) — the readable grouping
+  (m.clusters||[]).forEach(cl=>{
+    const g=document.createElementNS(SVGNS,'g'); g.setAttribute('class','cluster'); g.dataset.ck=cl.key;
+    const c=document.createElementNS(SVGNS,'circle'); c.setAttribute('cx',cl.cx);c.setAttribute('cy',cl.cy);c.setAttribute('r',cl.r+20);
+    c.setAttribute('fill',cl.col);c.setAttribute('fill-opacity',0.06);c.setAttribute('stroke',cl.col);
+    c.setAttribute('stroke-opacity',0.3);c.setAttribute('stroke-width',1.1);c.setAttribute('stroke-dasharray','2 5'); g.appendChild(c);
+    const t=document.createElementNS(SVGNS,'text');t.setAttribute('class','clbl');t.setAttribute('x',cl.cx);t.setAttribute('y',cl.cy-cl.r-25);t.setAttribute('text-anchor','middle');t.setAttribute('fill',cl.col);t.textContent=cl.label;g.appendChild(t);
+    const ct=document.createElementNS(SVGNS,'text');ct.setAttribute('class','ccount');ct.setAttribute('x',cl.cx);ct.setAttribute('y',cl.cy-cl.r-13);ct.setAttribute('text-anchor','middle');ct.setAttribute('fill',cl.col);ct.setAttribute('fill-opacity',0.7);ct.textContent=cl.count+(cl.count===1?' source':' sources');g.appendChild(ct);
+    g.addEventListener('click',ev=>{ ev.stopPropagation(); focusCluster(cl); });
+    svg.appendChild(g); cl._el=g; cl._c=c;
+  });
+  // 2) edges — 'is-a' spine + status roads stay visible; source→entity roads go quiet (declutter)
+  m.edges.forEach(e=>{ const a=m.byId[e.a], b=m.byId[e.b]; const isa=e.road==='is-a';
     const src=a.kind==='src'?a:(b.kind==='src'?b:null), st=src?src.status:'';
     const broke=/broke|fail|block/.test(st), warn=/drift|degrad|partial/.test(st);
     const col=broke?'#d9584f':(warn?'#d99a3f':(ROADCOL[e.road]||'#2a3a36'));
+    const base=isa?0.5:(broke?0.7:(warn?0.5:0.1));
     const ln=document.createElementNS(SVGNS,'line'); ln.setAttribute('x1',a.x);ln.setAttribute('y1',a.y);ln.setAttribute('x2',b.x);ln.setAttribute('y2',b.y);
-    ln.setAttribute('class','edge'); ln.setAttribute('stroke',col); ln.setAttribute('stroke-opacity', broke?0.72:(warn?0.5:0.3));
-    svg.appendChild(ln); e._el=ln; e._base=broke?0.72:(warn?0.5:0.3); elByEdge.push(e); });
+    ln.setAttribute('class','edge'); ln.setAttribute('stroke',col); ln.setAttribute('stroke-opacity',base);
+    svg.appendChild(ln); e._el=ln; e._base=base; elByEdge.push(e); });
+  // 3) nodes — entities labelled always; source dots compact, labels on hover/focus only
   m.nodes.forEach(n=>{
     const ent=n.kind==='ent'; const col=ent?'#3fb8a3':(STCOL[n.status]||(n.live?'#5bb86e':'#5f7a72'));
-    const g=document.createElementNS(SVGNS,'g'); g.setAttribute('class','node'+(ent?' ent':'')); g.setAttribute('transform','translate('+n.x+','+n.y+')');
-    const c=document.createElementNS(SVGNS,'circle'); c.setAttribute('r',ent?12:6.5); c.setAttribute('fill',col);
+    const g=document.createElementNS(SVGNS,'g'); g.setAttribute('class','node'+(ent?' ent':' src')); g.setAttribute('transform','translate('+n.x+','+n.y+')');
+    const c=document.createElementNS(SVGNS,'circle'); c.setAttribute('r',ent?12:5.5); c.setAttribute('fill',col);
     c.setAttribute('stroke','#0e1613'); c.setAttribute('stroke-width',1.5); g.appendChild(c);
-    const t=document.createElementNS(SVGNS,'text'); t.setAttribute('class','lbl'); t.setAttribute('x',ent?0:10);
+    const t=document.createElementNS(SVGNS,'text'); t.setAttribute('class','lbl'); t.setAttribute('x',ent?0:9);
     t.setAttribute('y',ent?-16:3.5); t.setAttribute('text-anchor',ent?'middle':'start'); t.textContent=n.label; g.appendChild(t);
     g.addEventListener('click',ev=>{ ev.stopPropagation(); setFocus(n); });
     svg.appendChild(g); n._el=g; n._c=c; elByNode[n.id]=g;
   });
 }
+function clearFoc(){ MODEL.nodes.forEach(x=>x._el&&x._el.classList.remove('dim','foc'));
+  (MODEL.clusters||[]).forEach(cl=>cl._el&&cl._el.classList.remove('dim'));
+  MODEL.edges.forEach(e=>e._el.setAttribute('stroke-opacity',e._base)); }
 function setFocus(n){
   selected=n;
-  if(!n){ MODEL.nodes.forEach(x=>x._el.classList.remove('dim')); MODEL.edges.forEach(e=>e._el.setAttribute('stroke-opacity',e._base)); selEl.classList.remove('show'); return; }
+  if(!n){ clearFoc(); selEl.classList.remove('show'); return; }
   const keep=new Set([n.id,...MODEL.adj[n.id]]);
-  MODEL.nodes.forEach(x=>x._el.classList.toggle('dim',!keep.has(x.id)));
-  MODEL.edges.forEach(e=>e._el.setAttribute('stroke-opacity',(e.a===n.id||e.b===n.id)?0.95:0.04));
+  MODEL.nodes.forEach(x=>{ x._el.classList.toggle('dim',!keep.has(x.id)); x._el.classList.toggle('foc',keep.has(x.id)&&x.kind==='src'); });
+  (MODEL.clusters||[]).forEach(cl=>cl._el&&cl._el.classList.add('dim'));
+  MODEL.edges.forEach(e=>e._el.setAttribute('stroke-opacity',(e.a===n.id||e.b===n.id)?0.95:0.03));
   const conns=MODEL.edges.filter(e=>e.a===n.id||e.b===n.id).map(e=>{ const o=MODEL.byId[e.a===n.id?e.b:e.a]; return {to:o.label,road:e.road}; });
   selEl.innerHTML='<div class="k">'+(n.kind==='ent'?'Canonical entity':((n.live?'Live source · ':'Planned · ')+(n.status||'')))+'</div>'
     +'<div class="nm">'+esc(n.full||n.label)+'</div>'+(n.sub?'<div class="meta">'+esc(n.sub)+'</div>':'')
@@ -163,6 +209,21 @@ function setFocus(n){
     +(conns.length?conns.map(c=>'<div class="cxrow"><span class="road">'+esc(c.road)+'</span><span>'+esc(c.to)+'</span></div>').join(''):'<div class="meta">an orphan — a road worth building</div>')
     +'<button class="reset" id="rst">✕ clear focus</button>';
   selEl.classList.add('show'); document.getElementById('rst').onclick=()=>setFocus(null);
+}
+function focusCluster(cl){
+  selected=null;
+  const ids=new Set(cl.nodes.map(n=>n.id).concat(cl.ents));
+  MODEL.nodes.forEach(x=>{ x._el.classList.toggle('dim',!ids.has(x.id)); x._el.classList.toggle('foc',x.kind==='src'&&x._ck===cl.key); });
+  (MODEL.clusters||[]).forEach(c=>c._el&&c._el.classList.toggle('dim',c.key!==cl.key));
+  MODEL.edges.forEach(e=>{ const inv=ids.has(e.a)&&ids.has(e.b); e._el.setAttribute('stroke-opacity', inv?0.6:0.03); });
+  selEl.innerHTML='<div class="k">Cluster · '+cl.count+' source'+(cl.count===1?'':'s')+'</div>'
+    +'<div class="nm">'+esc(cl.label)+'</div>'
+    +'<div class="meta">feeds '+(cl.ents.length?cl.ents.map(e=>esc((MODEL.byId[e]||{}).label||e)).join(' · '):'—')+'</div>'
+    +'<div class="cxh">Sources</div>'
+    +cl.nodes.slice(0,14).map(n=>'<div class="cxrow"><span class="road">'+esc(n.status||'')+'</span><span>'+esc(n.full||n.label)+'</span></div>').join('')
+    +(cl.count>14?'<div class="meta">+'+(cl.count-14)+' more</div>':'')
+    +'<button class="reset" id="rst">✕ clear focus</button>';
+  selEl.classList.add('show'); document.getElementById('rst').onclick=()=>{ clearFoc(); selEl.classList.remove('show'); };
 }
 svg.addEventListener('click',()=>setFocus(null));
 
@@ -177,7 +238,7 @@ const liveEl=document.getElementById('live'), liveTx=document.getElementById('li
 let lastSig='', seenTs=0;
 async function refresh(){
   const live=await loadLive();
-  const m=buildModel(live);
+  const m=layoutClusters(buildModel(live));
   const sig=m.nodes.map(n=>n.id+':'+n.status).sort().join('|');
   if(sig!==lastSig){ const selId=selected&&selected.id; render(m); lastSig=sig; if(selId&&m.byId[selId]) setFocus(m.byId[selId]); }
   const hs=live.highlights||[], mx=hs.reduce((a,h)=>Math.max(a,h.ts||0),0);
