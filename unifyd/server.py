@@ -1380,8 +1380,44 @@ def outlets_geocode_progress():
     j = GEO_JOBS.get(request.args.get("id", ""))
     if not j:
         return jsonify(error="unknown job"), 404
-    return jsonify(jobId=j["jobId"], dataset=j["dataset"], status=j["status"], matched=j.get("matched", 0),
-                   requested=j.get("requested", 0), total=j["total"], error=j.get("error"), log=j["log"][-6:])
+    return jsonify(jobId=j["jobId"], dataset=j.get("dataset", ""), status=j["status"], matched=j.get("matched", 0),
+                   requested=j.get("requested", 0), total=j.get("total", 0), error=j.get("error"), log=j["log"][-6:])
+
+
+@app.post("/api/census/build")
+def census_build_ep():
+    """Build the census_reference layer (CBP + Nonemployer + PEP → warehouse). Background; needs
+    CENSUS_API_KEY. Poll /api/outlets/geocode/progress?id=<jobId> (shared job store)."""
+    if not os.environ.get("CENSUS_API_KEY", "").strip():
+        return jsonify(ok=False, error="CENSUS_API_KEY not set"), 400
+    import random as _r
+    jid = "CEN-" + "".join(_r.choices("ABCDEFGHJKMNPQRSTUVWXYZ23456789", k=6))
+    GEO_JOBS[jid] = {"jobId": jid, "status": "running", "log": []}
+    def run():
+        try:
+            import census_ref
+            res = census_ref.build(log=lambda m: GEO_JOBS[jid]["log"].append(m))
+            GEO_JOBS[jid].update(status="done", rows=res["rows"], uri=res["uri"])
+        except Exception as e:
+            app.logger.exception("census build failed")
+            GEO_JOBS[jid].update(status="failed", error=str(e)[:200])
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify(ok=True, jobId=jid)
+
+
+@app.get("/api/census/reference")
+def census_reference_ep():
+    """Query census_reference by geo/naics/metric/vintage — the territory.html join helper. e.g.
+    ?dataset=cbp&geo_level=county&geo_fips=17031&naics=44531&metric=estab"""
+    import census_ref
+    a = request.args
+    try:
+        rows = census_ref.query(dataset=a.get("dataset"), geo_level=a.get("geo_level"),
+                                geo_fips=a.get("geo_fips"), naics=a.get("naics"), metric=a.get("metric"),
+                                vintage=a.get("vintage"), limit=int(a.get("limit", 5000)))
+        return jsonify(ok=True, count=len(rows), rows=rows)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:160]), 500
 
 
 @app.get("/api/places")
