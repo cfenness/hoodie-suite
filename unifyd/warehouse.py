@@ -74,6 +74,29 @@ def write_parquet(name, records, fields=None):
     return {"rows": len(records), "uri": uri(name)}
 
 
+def write_parquet_from_csv(name, csv_path, fields=None):
+    """Stream a (large) CSV into `<name>.parquet` (Tigris or local) WITHOUT building a Python
+    list-of-dicts — pyarrow reads it columnar, so a multi-million-row backfill (e.g. the 30-year
+    TTB COLA pull) stays cheap on memory. `fields` pins the column set + order and forces every
+    column to string, so registry IDs / UPCs keep leading zeros. Returns {rows, uri}."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    import pyarrow.csv as pacsv
+    conv = pacsv.ConvertOptions(column_types={f: pa.string() for f in fields}) if fields else None
+    table = pacsv.read_csv(csv_path, convert_options=conv)
+    if fields:
+        table = pa.table({f: (table.column(f) if f in table.column_names
+                              else pa.nulls(table.num_rows, pa.string())) for f in fields})
+    if remote():
+        from pyarrow import fs as pafs
+        s3 = pafs.S3FileSystem(endpoint_override=_endpoint(), access_key=_env("AWS_ACCESS_KEY_ID"),
+                               secret_key=_env("AWS_SECRET_ACCESS_KEY"), region=_region(), scheme="https")
+        pq.write_table(table, "%s/%s" % (_bucket(), _s3_key(name)), filesystem=s3)
+    else:
+        pq.write_table(table, _local_path(name))
+    return {"rows": table.num_rows, "uri": uri(name)}
+
+
 def connect():
     """A DuckDB connection, configured for the Tigris endpoint when in remote mode."""
     import duckdb
