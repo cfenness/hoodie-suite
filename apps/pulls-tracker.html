@@ -295,7 +295,8 @@ function runConn(id){
     .then(function(r){ return r.ok?r.json():Promise.reject(r.status); })
     .then(function(rec){
       var st=(rec&&rec.status)||"success", bad=(st==="degraded"||st==="partial"||st==="failed");
-      RUNSTATE[id]={state:"done",conn:true,rows:(rec&&rec.total)||0,status:st,reportable:bad};
+      var why=(rec&&rec.warnings&&rec.warnings.length)?rec.warnings[0]:"";
+      RUNSTATE[id]={state:"done",conn:true,rows:(rec&&rec.total)||0,status:st,reportable:bad,note:why};
       render();
     })
     .catch(function(){ RUNSTATE[id]={state:"error",conn:true,error:"couldn't reach the engine — start it (./dev.sh) or open the deployed suite",reportable:true}; render(); });
@@ -356,6 +357,7 @@ function runoutHtml(id){
     body='<span style="color:'+(good?"var(--good)":"var(--warn)")+'">'+(good?"✓":"○")+' <b>'+r.rows+'</b> rows</span> · <span style="color:var(--muted)">'+esc(r.engine||"?")+'</span>'
        +(v.run?(' · <span class="pill rc rc-'+(v.status||"candidate")+'" style="padding:1px 7px">recipe: '+esc(v.status)+(v.promoted?" ✦":"")+'</span>'):'');
   }
+  if(r.note && r.status && r.status!=="success"){ body+=' <span style="color:var(--muted2)">· '+esc(r.note)+'</span>'; }   // WHY it failed/degraded
   if(r.reportable){ body+= r.reported ? ' · <span style="color:var(--good)">⚑ reported ✓</span>' : ' · <a data-report="'+id+'" style="cursor:pointer;color:var(--bad)">⚑ report issue</a>'; }
   return '<div class="runout"><div class="rr">'+body+'</div></div>';
 }
