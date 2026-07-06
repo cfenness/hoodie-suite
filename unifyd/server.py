@@ -388,14 +388,41 @@ FL_CONN = {
   "fl-outlets": [("bd4006lic", True, 600), ("bd4005lic", True, 500),
                  ("bd400revok", False, 500), ("bd4002lic", True, 500)],
 }
+def _fl_looks_blocked(t):
+    head = (t or "")[:800].lower()
+    return ("just a moment" in head) or ("cloudflare" in head) or ("<html" in head and "cf-" in head)
+
+def _fl_fetch(url):
+    """Download an FL DBPR extract. FL's host (myfloridalicense.com) is now behind Cloudflare, so:
+    try direct first; if it 403s / returns a 'Just a moment' challenge, fall back to Bright Data
+    Web Unlocker (which solves Cloudflare — needs BRIGHTDATA_API_KEY). Returns (csv_text, via)."""
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; UnifydMDM/1.0; +data-pipeline)"})
+        txt = urllib.request.urlopen(req, timeout=180).read().decode("utf-8", "replace")
+        if txt and not _fl_looks_blocked(txt):
+            return txt, "direct"
+    except Exception:
+        pass                                     # 403 / cert / timeout → try the unlocker
+    try:
+        import brightdata
+    except Exception:
+        brightdata = None
+    if brightdata and brightdata.enabled():
+        txt = brightdata.fetch(url, data_format="html", timeout=180)
+        if txt and not _fl_looks_blocked(txt):
+            return txt, "bright-data"
+        raise RuntimeError("Bright Data returned a blocked/empty response for FL")
+    raise RuntimeError("Cloudflare-blocked — set BRIGHTDATA_API_KEY to unlock FL DBPR (Web Unlocker)")
+
 def fl_pull(conn_id):
     started = int(time.time() * 1000); exs = []; warns = []
     extracts = FL_CONN[conn_id]
     for i, (eid, hashdr, n) in enumerate(extracts):
         try:
             app.logger.info("downloading %s (%d/%d) from Florida…", eid, i + 1, len(extracts))
-            txt = urllib.request.urlopen(f"{FL_BASE}/{eid}.csv", timeout=180).read().decode("utf-8", "replace")
-            app.logger.info("%s: %s KB downloaded, parsing…", eid, len(txt) // 1024)
+            txt, via = _fl_fetch(f"{FL_BASE}/{eid}.csv")
+            app.logger.info("%s: %s KB downloaded via %s, parsing…", eid, len(txt) // 1024, via)
             rows = list(csv.reader(io.StringIO(txt)))
             header = [h.strip() for h in rows[0]] if hashdr else FL_HEADER
             data = [r for r in (rows[1:] if hashdr else rows) if any((c or "").strip() for c in r)]
@@ -411,6 +438,8 @@ def fl_pull(conn_id):
             msg = str(e)
             if "CERTIFICATE_VERIFY_FAILED" in msg or "local issuer" in msg:
                 msg = "TLS certificate verify failed for the FL data host (CA chain incomplete on this host)"
+            elif "403" in msg or "Forbidden" in msg:
+                msg = "Cloudflare-blocked — set BRIGHTDATA_API_KEY to unlock FL DBPR via Web Unlocker"
             warns.append("%s: %s" % (eid, msg[:140]))
             exs.append({"id": eid, "rows": 0, "delta": 0, "status": "failed"})
     fin = int(time.time() * 1000)
