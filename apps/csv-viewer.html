@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../suite.css">
+<title>CSV Viewer — Hoodie Suite</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F1F3F5; --surface:#FFFFFF; --panel:#E8EBEE; --panel-2:#DEE3E7;
+    --ink:#2B3138; --ink-soft:#7A828B; --hair:#DDE2E6; --hair-2:#EAEDF0;
+    --accent:#4E79A7; --accent-d:#3D6089; --accent-soft:#E5EDF5;
+    --good:#2E7D57; --warn:#B8791F; --bad:#B8402B;
+    --disp:"Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --rowh:28px; --headh:32px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{background:var(--paper); color:var(--ink); font-family:var(--disp); font-size:13px; overflow:hidden; -webkit-font-smoothing:antialiased;}
+  #app{display:flex; flex-direction:column; height:100vh;}
+
+  /* ---- toolbar ---- */
+  .tb{display:flex; align-items:center; gap:12px; padding:9px 14px; background:var(--surface); border-bottom:1px solid var(--hair); flex:0 0 auto;}
+  .brand{display:flex; align-items:center; gap:8px; font-weight:600; font-size:14px; letter-spacing:-.01em;}
+  .brand .logo{display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; background:var(--accent); color:#fff; border-radius:5px; font-size:14px;}
+  .tools{display:flex; align-items:center; gap:8px; margin-left:auto;}
+  .btn{font-family:var(--disp); font-size:12.5px; font-weight:500; color:var(--ink); background:var(--surface); border:1px solid var(--hair); border-radius:5px; padding:6px 12px; cursor:pointer; transition:border-color .12s, background .12s; white-space:nowrap;}
+  .btn:hover:not(:disabled){border-color:var(--accent); color:var(--accent-d);}
+  .btn:disabled{opacity:.45; cursor:default;}
+  .btn.primary{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .btn.primary:hover{background:var(--accent-d); border-color:var(--accent-d); color:#fff;}
+  .sep{width:1px; height:20px; background:var(--hair);}
+  .search{font-family:var(--mono); font-size:12px; color:var(--ink); background:var(--surface); border:1px solid var(--hair); border-radius:5px; padding:6px 10px; width:200px; outline:none; transition:border-color .12s;}
+  .search:focus{border-color:var(--accent);}
+  .search:disabled{opacity:.45;}
+  .auto{display:flex; align-items:center; gap:5px; font-size:12px; color:var(--ink-soft); cursor:pointer; user-select:none;}
+  .auto input{cursor:pointer;} .auto.dim{opacity:.4; cursor:default;}
+  .live{display:none; align-items:center; gap:5px; font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--good);}
+  .live.on{display:inline-flex;}
+  .live .dot{width:7px; height:7px; border-radius:50%; background:var(--good); animation:pulse 1.4s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:.35;} 50%{opacity:1;}}
+
+  /* ---- stats strip ---- */
+  .stats{display:none; align-items:center; gap:14px; padding:6px 14px; background:var(--panel); border-bottom:1px solid var(--hair); font-family:var(--mono); font-size:11px; color:var(--ink-soft); flex:0 0 auto; overflow:hidden; white-space:nowrap;}
+  .stats.show{display:flex;}
+  .stats b{color:var(--ink); font-weight:600;}
+  .stats .big{color:var(--accent-d);}
+
+  /* ---- grid ---- */
+  .gridwrap{flex:1 1 auto; position:relative; overflow:hidden;}
+  .scroll{position:absolute; inset:0; overflow:auto; background:var(--surface);}
+  .sheet{position:relative;}
+  .hrow{position:sticky; top:0; z-index:6; display:flex; height:var(--headh); background:var(--panel-2); box-shadow:0 1px 0 var(--hair);}
+  .hcell{position:relative; flex:0 0 auto; display:flex; align-items:center; padding:0 9px; font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.03em; text-transform:uppercase; color:var(--ink); border-right:1px solid var(--hair); cursor:pointer; user-select:none; overflow:hidden;}
+  .hcell:hover{background:var(--panel);}
+  .hcell .lbl{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .hcell .arw{margin-left:4px; color:var(--accent); font-size:10px; flex:0 0 auto;}
+  .hcell.corner, .cell.rn{position:sticky; left:0; z-index:2;}
+  .hcell.corner{z-index:7; justify-content:center; color:var(--ink-soft); background:var(--panel-2); cursor:default;}
+  .resizer{position:absolute; right:-3px; top:0; width:7px; height:100%; cursor:col-resize; z-index:3;}
+  .body{position:relative;}
+  .rw{position:absolute; left:0; display:flex; height:var(--rowh);}
+  .rw:hover .cell{background:var(--accent-soft);}
+  .cell{flex:0 0 auto; display:flex; align-items:center; padding:0 9px; font-family:var(--mono); font-size:11.5px; color:var(--ink); border-right:1px solid var(--hair-2); border-bottom:1px solid var(--hair-2); background:var(--surface); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .cell.num{justify-content:flex-end; font-variant-numeric:tabular-nums;}
+  .cell.rn{justify-content:center; color:var(--ink-soft); font-size:10.5px; background:var(--panel); border-right:1px solid var(--hair);}
+  .rw.alt .cell{background:#FAFBFC;} .rw.alt .cell.rn{background:var(--panel);}
+  .rw:hover .cell.rn{background:var(--panel-2);}
+
+  /* ---- empty / drop state ---- */
+  .drop{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:var(--paper); z-index:10;}
+  .drop.hide{display:none;}
+  .drop.over .dropinner{border-color:var(--accent); background:var(--accent-soft);}
+  .dropinner{width:min(560px,86%); text-align:center; padding:46px 34px; border:2px dashed var(--hair); border-radius:14px; background:var(--surface); transition:border-color .15s, background .15s;}
+  .bigicon{width:56px; height:56px; margin:0 auto 16px; display:flex; align-items:center; justify-content:center; background:var(--accent); color:#fff; border-radius:14px; font-size:30px;}
+  .dh{font-size:17px; font-weight:600; margin-bottom:10px;}
+  .dsub{font-size:13px; color:var(--ink-soft); line-height:1.55; max-width:44ch; margin:0 auto;}
+  .dsub b{color:var(--ink); font-weight:600;}
+  .link{font:inherit; color:var(--accent); background:none; border:0; padding:0; cursor:pointer; text-decoration:underline; text-underline-offset:2px;}
+  .hint{margin-top:18px; font-family:var(--mono); font-size:10.5px; color:var(--ink-soft); letter-spacing:.02em;}
+  .err{color:var(--bad); font-size:12px; margin-top:14px; font-family:var(--mono);}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="tb">
+    <div class="brand"><span class="logo">▦</span> CSV Viewer</div>
+    <div class="tools">
+      <span class="live" id="live"><span class="dot"></span> live</span>
+      <input class="search" id="search" placeholder="Filter rows…" disabled>
+      <button class="btn" id="refreshBtn" disabled title="Re-read the file from disk">↻ Refresh</button>
+      <label class="auto dim" id="autoWrap" title="Re-read the file every 4s (Chrome / Edge)"><input type="checkbox" id="autoChk" disabled> Auto</label>
+      <div class="sep"></div>
+      <button class="btn primary" id="openBtn">Open CSV…</button>
+    </div>
+  </header>
+  <div class="stats" id="stats"></div>
+  <div class="gridwrap">
+    <div class="scroll" id="scroll"><div class="sheet" id="sheet"></div></div>
+    <div class="drop hide" id="drop">
+      <div class="dropinner" id="dropinner">
+        <div class="bigicon">▦</div>
+        <div class="dh">Drop a CSV here, or <button class="link" id="openBtn2">open one</button></div>
+        <div class="dsub">A fast, Excel-style grid — <b>sort</b>, <b>filter</b>, frozen header &amp; row numbers, resizable columns. Opened in Chrome or Edge, it holds a live handle so you can <b>refresh a file as it grows</b> — ideal for watching a scrape land row by row.</div>
+        <div class="hint" id="hint"></div>
+        <div class="err" id="err"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<input type="file" id="fileInput" accept=".csv,.tsv,.txt,text/csv" style="display:none">
+
+<script>
+(function(){
+  "use strict";
+  const $ = s => document.querySelector(s);
+  const scrollEl=$("#scroll"), sheetEl=$("#sheet"), dropEl=$("#drop"),
+        statsEl=$("#stats"), searchEl=$("#search"), refreshBtn=$("#refreshBtn"),
+        autoChk=$("#autoChk"), autoWrap=$("#autoWrap"), liveEl=$("#live"),
+        fileInput=$("#fileInput"), errEl=$("#err"), hintEl=$("#hint");
+  const ROWH=28, HEADH=32, BUF=8;
+  const hasFSA = !!window.showOpenFilePicker;
+  hintEl.textContent = hasFSA ? "Live-refresh supported in this browser ✓"
+                              : "Live-refresh needs Chrome or Edge — here you'll re-open to refresh.";
+
+  let headers=[], data=[], view=[], colW=[], isNum=[], numericCol=[];
+  let sortCol=-1, sortDir=0;           // dir: 1 asc, -1 desc, 0 none
+  let fileHandle=null, fileName="", autoTimer=null, lastText="";
+
+  // ---------- CSV parse (fast path for quote-free text; state machine otherwise) ----------
+  function parseCSV(text){
+    if(text.charCodeAt(0)===0xFEFF) text=text.slice(1);   // strip BOM
+    const rows=[]; const n=text.length; let i=0, row=[];
+    const hasQuote = text.indexOf('"')!==-1;
+    if(!hasQuote){
+      const lines=text.split(/\r?\n/);
+      for(let k=0;k<lines.length;k++){ if(lines[k]==="" && k===lines.length-1) continue; rows.push(lines[k].split(",")); }
+      return rows;
+    }
+    while(i<n){
+      let field;
+      if(text[i]==='"'){
+        i++; let s="";
+        while(i<n){ const c=text[i];
+          if(c==='"'){ if(text[i+1]==='"'){s+='"';i+=2;} else {i++;break;} }
+          else {s+=c;i++;} }
+        field=s;
+      } else {
+        const start=i;
+        while(i<n){ const c=text[i]; if(c===','||c==='\n'||c==='\r') break; i++; }
+        field=text.slice(start,i);
+      }
+      row.push(field);
+      if(i<n && text[i]===','){ i++; continue; }
+      if(i<n && text[i]==='\r') i++;
+      if(i<n && text[i]==='\n') i++;
+      rows.push(row); row=[];
+    }
+    if(row.length) rows.push(row);
+    return rows;
+  }
+
+  function fmtBytes(b){ if(b<1024)return b+" B"; if(b<1048576)return (b/1024).toFixed(1)+" KB"; return (b/1048576).toFixed(1)+" MB"; }
+  const NUMRE=/^-?[\d,]*\.?\d+%?$/;
+  function looksNum(v){ return v!=="" && NUMRE.test(v.trim()); }
+  function numVal(v){ const x=parseFloat(String(v).replace(/[,%$\s]/g,"")); return isNaN(x)?null:x; }
+
+  // ---------- load ----------
+  async function loadFromHandle(silent){
+    try{
+      const f=await fileHandle.getFile();
+      const t=await f.text();
+      if(silent && t===lastText) return;    // no change since last poll
+      ingest(t, f.name, f.size, true);
+    }catch(e){ if(!silent){ showErr("Couldn't re-read the file: "+e.message); } }
+  }
+  async function loadFile(f){
+    try{ const t=await f.text(); ingest(t, f.name, f.size, false); }
+    catch(e){ showErr("Couldn't read the file: "+e.message); }
+  }
+  function ingest(text, name, size, isRefresh){
+    lastText=text; fileName=name;
+    const keepScroll = isRefresh ? scrollEl.scrollTop : 0;
+    const grid = parseCSV(text).filter(r=>r.length>1 || (r.length===1 && r[0]!==""));
+    if(!grid.length){ showErr("That file has no rows."); return; }
+    headers = grid[0];
+    data = grid.slice(1);
+    // pad/truncate ragged rows to header width
+    const W=headers.length;
+    for(let r=0;r<data.length;r++){ const row=data[r]; if(row.length<W){ while(row.length<W) row.push(""); } }
+    computeMeta();
+    rebuildView(false);
+    dropEl.classList.add("hide");
+    statsEl.classList.add("show");
+    searchEl.disabled=false; searchEl.focus();
+    refreshBtn.disabled = !fileHandle;
+    autoChk.disabled = !fileHandle; autoWrap.classList.toggle("dim", !fileHandle);
+    layout();
+    render();
+    scrollEl.scrollTop = Math.min(keepScroll, Math.max(0, view.length*ROWH - scrollEl.clientHeight + HEADH));
+    updateStats();
+  }
+  function computeMeta(){
+    const W=headers.length, sample=Math.min(data.length,120);
+    colW=new Array(W); isNum=new Array(W);
+    for(let c=0;c<W;c++){
+      let numHits=0, seen=0, maxLen=String(headers[c]||"").length;
+      for(let r=0;r<sample;r++){ const v=data[r][c]??""; if(v!==""){ seen++; if(looksNum(v)) numHits++; } if(v.length>maxLen) maxLen=v.length; }
+      isNum[c] = seen>0 && numHits/seen>0.8;
+      colW[c] = Math.max(74, Math.min(360, maxLen*7.3+22));
+    }
+  }
+
+  // ---------- view (filter + sort) ----------
+  function rebuildView(keepRender){
+    const q=searchEl.value.trim().toLowerCase();
+    if(!q){ view=data.map((_,i)=>i); }
+    else{
+      view=[];
+      for(let i=0;i<data.length;i++){ const row=data[i];
+        for(let c=0;c<row.length;c++){ if(row[c] && row[c].toLowerCase().indexOf(q)!==-1){ view.push(i); break; } } }
+    }
+    if(sortCol>=0 && sortDir!==0){
+      const c=sortCol, dir=sortDir, num=isNum[c];
+      view.sort((a,b)=>{
+        let va=data[a][c]??"", vb=data[b][c]??"";
+        if(num){ const na=numVal(va), nb=numVal(vb);
+          if(na===null&&nb===null)return 0; if(na===null)return 1; if(nb===null)return -1;
+          return (na-nb)*dir; }
+        return va.localeCompare(vb, undefined, {numeric:true})*dir;
+      });
+    }
+    if(keepRender!==false){ layout(); render(); updateStats(); }
+  }
+
+  // ---------- layout (widths → sheet size + header) ----------
+  const RNW=58;   // row-number column width
+  function layout(){
+    const totalW = RNW + colW.reduce((a,b)=>a+b,0);
+    sheetEl.style.width = totalW+"px";
+    // header
+    let h='<div class="hrow"><div class="hcell corner" style="width:'+RNW+'px">#</div>';
+    for(let c=0;c<headers.length;c++){
+      const arw = sortCol===c ? (sortDir>0?'▲':(sortDir<0?'▼':'')) : '';
+      h+='<div class="hcell" data-c="'+c+'" style="width:'+colW[c]+'px">'
+        +'<span class="lbl">'+esc(headers[c])+'</span><span class="arw">'+arw+'</span>'
+        +'<span class="resizer" data-c="'+c+'"></span></div>';
+    }
+    h+='</div><div class="body" id="body" style="height:'+(view.length*ROWH)+'px"></div>';
+    sheetEl.innerHTML=h;
+    bodyEl=$("#body");
+  }
+  let bodyEl=null;
+  function esc(s){ return String(s==null?"":s).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+
+  // ---------- virtualized render ----------
+  function render(){
+    if(!bodyEl) return;
+    const st=scrollEl.scrollTop, vh=scrollEl.clientHeight;
+    let start=Math.floor((st-HEADH)/ROWH)-BUF; if(start<0)start=0;
+    let end=Math.ceil((st-HEADH+vh)/ROWH)+BUF; if(end>view.length)end=view.length;
+    let html="";
+    for(let i=start;i<end;i++){
+      const r=view[i], row=data[r];
+      html+='<div class="rw'+(i&1?' alt':'')+'" style="top:'+(i*ROWH)+'px">'
+           +'<div class="cell rn" style="width:'+RNW+'px">'+(r+1)+'</div>';
+      for(let c=0;c<headers.length;c++){
+        const v=row[c]??"";
+        html+='<div class="cell'+(isNum[c]?' num':'')+'" style="width:'+colW[c]+'px" title="'+esc(v)+'">'+esc(v)+'</div>';
+      }
+      html+='</div>';
+    }
+    bodyEl.innerHTML=html;
+  }
+
+  function updateStats(){
+    const filtered = view.length!==data.length;
+    statsEl.innerHTML =
+      '<span><b>'+esc(fileName)+'</b></span>'
+      +'<span>·</span><span class="big">'+data.length.toLocaleString()+'</span><span>rows</span>'
+      +'<span>×</span><span class="big">'+headers.length+'</span><span>cols</span>'
+      + (filtered ? '<span>·</span><span><b>'+view.length.toLocaleString()+'</b> shown</span>' : '')
+      + (sortCol>=0&&sortDir? '<span>·</span><span>sorted by <b>'+esc(headers[sortCol])+'</b> '+(sortDir>0?'↑':'↓')+'</span>':'')
+      + '<span>·</span><span>'+nowStr()+'</span>';
+  }
+  function nowStr(){ const d=new Date(); return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+
+  // ---------- interactions ----------
+  scrollEl.addEventListener("scroll", render, {passive:true});
+
+  sheetEl.addEventListener("click", e=>{
+    const rz=e.target.closest(".resizer"); if(rz) return;   // handled by drag
+    const hc=e.target.closest(".hcell[data-c]"); if(!hc) return;
+    const c=+hc.dataset.c;
+    if(sortCol!==c){ sortCol=c; sortDir=1; }
+    else { sortDir = sortDir===1?-1: sortDir===-1?0:1; if(sortDir===0) sortCol=-1; }
+    rebuildView();
+  });
+
+  // column resize
+  let rzC=-1, rzX=0, rzStart=0;
+  sheetEl.addEventListener("mousedown", e=>{
+    const rz=e.target.closest(".resizer"); if(!rz) return;
+    e.preventDefault(); rzC=+rz.dataset.c; rzX=e.clientX; rzStart=colW[rzC];
+    document.body.style.cursor="col-resize";
+  });
+  window.addEventListener("mousemove", e=>{
+    if(rzC<0) return;
+    colW[rzC]=Math.max(48, rzStart+(e.clientX-rzX));
+    layout(); render();
+  });
+  window.addEventListener("mouseup", ()=>{ if(rzC>=0){ rzC=-1; document.body.style.cursor=""; updateStats(); } });
+
+  let searchT=null;
+  searchEl.addEventListener("input", ()=>{ clearTimeout(searchT); searchT=setTimeout(()=>rebuildView(), 140); });
+
+  // open / drop / refresh
+  async function openPicker(){
+    errEl.textContent="";
+    if(hasFSA){
+      try{
+        const [h]=await window.showOpenFilePicker({types:[{description:"CSV / text",accept:{"text/csv":[".csv",".tsv",".txt"]}}]});
+        fileHandle=h; await loadFromHandle(false);
+      }catch(e){ /* user cancelled */ }
+    } else { fileInput.click(); }
+  }
+  $("#openBtn").addEventListener("click", openPicker);
+  $("#openBtn2").addEventListener("click", openPicker);
+  fileInput.addEventListener("change", e=>{ const f=e.target.files[0]; if(f){ fileHandle=null; loadFile(f); } });
+  refreshBtn.addEventListener("click", ()=> fileHandle && loadFromHandle(false));
+  autoChk.addEventListener("change", ()=>{
+    clearInterval(autoTimer);
+    if(autoChk.checked && fileHandle){ liveEl.classList.add("on"); autoTimer=setInterval(()=>loadFromHandle(true), 4000); }
+    else { liveEl.classList.remove("on"); }
+  });
+
+  // drag & drop
+  ["dragenter","dragover"].forEach(ev=>dropEl.addEventListener(ev, e=>{ e.preventDefault(); dropEl.classList.add("over"); }));
+  ["dragleave","drop"].forEach(ev=>dropEl.addEventListener(ev, e=>{ e.preventDefault(); if(ev!=="drop") dropEl.classList.remove("over"); }));
+  window.addEventListener("dragover", e=>e.preventDefault());
+  window.addEventListener("drop", e=>e.preventDefault());
+  dropEl.addEventListener("drop", async e=>{
+    dropEl.classList.remove("over");
+    const items=e.dataTransfer.items;
+    if(hasFSA && items && items[0] && items[0].getAsFileSystemHandle){
+      try{ const h=await items[0].getAsFileSystemHandle(); if(h && h.kind==="file"){ fileHandle=h; await loadFromHandle(false); return; } }catch(_){}
+    }
+    const f=e.dataTransfer.files[0]; if(f){ fileHandle=null; loadFile(f); }
+  });
+  function showErr(m){ errEl.textContent=m; dropEl.classList.remove("hide"); statsEl.classList.remove("show"); }
+
+  window.addEventListener("resize", render);
+  // show drop state on first load
+  dropEl.classList.remove("hide");
+})();
+</script>
+</body>
+</html>
