@@ -290,7 +290,9 @@ function buildGraph(model){
     const d=document.createElement('div'); d.className='lbl'+(ent?' ent':(n.live?'':' planned'));
     if(ent){ const meta=ENTMETA[n.id]; d.innerHTML='<span class="en">'+n.label+'</span>'+(meta?'<span class="pk">🔑 '+meta.pk+'</span>':''); }
     else d.textContent=n.label;
-    const lo=new CSS2DObject(d); lo.position.set(0,ent?12:6.5,0); m.add(lo); n.lo=d;
+    // label offset is in the mesh's LOCAL space (scaled by setScalar above), so keep it just
+    // past the unit-geometry radius (1) — ~1.5 sits the label snug above the node, not floating.
+    const lo=new CSS2DObject(d); lo.position.set(0,ent?1.55:1.7,0); m.add(lo); n.lo=d;
   });
   edges.forEach(e=>{
     const na=byId[e.a], nb=byId[e.b];
