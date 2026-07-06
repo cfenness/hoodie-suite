@@ -1030,9 +1030,13 @@ def run():
         rec = _dispatch_pull(conn, body)
     except Exception as e:
         app.logger.exception("run failed")
+        msg = ("%s: %s" % (type(e).__name__, e)).replace("\n", " ").strip()[:400]
+        if "407" in msg:
+            msg = "Proxy rejected the credentials (407) — check BRIGHTDATA_PROXY_USER/PASS. · " + msg
         rec = {"id": "R-ERR", "connId": conn, "startedAt": int(time.time()*1000),
                "finishedAt": int(time.time()*1000), "durationMs": 0, "status": "failed",
-               "trigger": body.get("trigger", "manual"), "total": 0, "extracts": []}
+               "trigger": body.get("trigger", "manual"), "total": 0, "extracts": [],
+               "warnings": [msg], "error": msg}
     if rec is None:
         return jsonify(error="unknown connId"), 400
     RUNS.insert(0, rec); del RUNS[200:]; save()
