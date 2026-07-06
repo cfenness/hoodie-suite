@@ -83,8 +83,11 @@
       <h2>Dataset</h2>
       <select id="ds">
         <option value="outlets_master">All outlets — master (national)</option>
-        <option value="il_outlets">Chicago — Liquor outlets</option>
+        <option value="ny_outlets">New York — SLA licenses</option>
         <option value="tx_outlets">Texas — TABC outlets</option>
+        <option value="co_outlets">Colorado — liquor licenses</option>
+        <option value="mo_outlets">Missouri — alcohol licenses</option>
+        <option value="il_outlets">Chicago — Liquor outlets</option>
         <option value="ct_outlets">Connecticut — premises</option>
       </select>
     </div>
@@ -149,26 +152,45 @@
   function statCell(n,label,fmt){ const v=(n==null)?null:(fmt?fmt(n):fmtNum(n));
     return '<div class="c"><div class="n'+(v==null?' na':'')+'">'+(v==null?'—':esc(v))+'</div><div class="l">'+esc(label)+'</div></div>'; }
 
+  function pick(rec, keys){ for(const k of keys){ for(const rk in rec){ if(rk.toLowerCase()===k && String(rec[rk]||'').trim()) return rec[rk]; } } return ''; }
   function openDetail(p){
     const d=$('#detail');
     const off=isOff(p.type);
-    const addr=[p.address, p.city, p.state, p.zip].filter(Boolean).join(', ');
-    const idRows=[
-      ['License type', p.type], ['License #', p.license_num], ['Owner', p.owner],
-      ['Address', addr||null], ['County', p.county||p.area]
-    ].filter(r=>r[1]).map(r=>'<div class="row"><span class="k">'+esc(r[0])+'</span><span class="v">'+esc(r[1])+'</span></div>').join('');
     $('#dbody').innerHTML=
       '<div class="dhead"><span class="pin" style="background:'+color(p.type)+'"></span>'+
         '<h2>'+esc(p.name||'Outlet')+'</h2>'+
         '<div class="sub">'+esc(off?'off-premise · package goods':'on-premise · consumption')+'</div></div>'+
-      '<div class="dsec"><h3>Outlet record</h3>'+(idRows||'<div class="dmuted">no additional fields on this record.</div>')+'</div>'+
+      '<div class="dsec" id="recsec"><h3>Outlet record</h3><div class="dloading">reading record…</div></div>'+
       '<div class="dsec" id="ctxsec"><h3>Market context · Census</h3>'+
         (p.county_fips
           ? '<div class="dloading" id="ctxload">reading county '+esc(p.county_fips)+'…</div>'
           : '<div class="dmuted">Geocode this dataset to unlock market context (no county FIPS on this record).</div>')+
       '</div>';
     d.classList.add('open'); d.setAttribute('aria-hidden','false');
+    loadRecord($('#ds').value, p.i);
     if(p.county_fips) loadContext(p.county_fips);
+  }
+  async function loadRecord(did, i){
+    const my=++ctxSeq;                                // shares the click-guard sequence
+    try{
+      const r=await fetch('/api/outlets/one?dataset='+encodeURIComponent(did)+'&i='+encodeURIComponent(i),{cache:'no-store'});
+      const j=await r.json();
+      if(my!==ctxSeq || !$('#recsec')) return;
+      if(!j.ok){ $('#recsec').innerHTML='<h3>Outlet record</h3><div class="dmuted">record unavailable.</div>'; return; }
+      const rec=j.record||{};
+      const addr=[pick(rec,['address','location address 1','street']), pick(rec,['city','location city']),
+                  pick(rec,['state','location state']), pick(rec,['zip','location zip'])].filter(Boolean).join(', ');
+      const rows=[
+        ['License type', pick(rec,['license_type','license_types','credential','type'])],
+        ['License #', pick(rec,['license_num','license number','license_id','outlet_id'])],
+        ['Owner', pick(rec,['owner','owner name','backer'])],
+        ['Address', addr||null],
+        ['County', pick(rec,['county','location county'])],
+        ['Status', pick(rec,['primary status','status'])],
+        ['Source', pick(rec,['source'])]
+      ].filter(x=>x[1]).map(x=>'<div class="row"><span class="k">'+esc(x[0])+'</span><span class="v">'+esc(x[1])+'</span></div>').join('');
+      $('#recsec').innerHTML='<h3>Outlet record</h3>'+(rows||'<div class="dmuted">no additional fields.</div>');
+    }catch(e){ if(my===ctxSeq && $('#recsec')) $('#recsec').innerHTML='<h3>Outlet record</h3><div class="dmuted">could not load record.</div>'; }
   }
   function closeDetail(){ const d=$('#detail'); d.classList.remove('open'); d.setAttribute('aria-hidden','true'); ctxSeq++; }
 

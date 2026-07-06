@@ -37,6 +37,7 @@ import tx_tabc                      # Texas TABC licenses (Socrata) — TX outle
 import master                       # unify per-state outlet pulls into one normalized outlets_master
 import chicago                      # Chicago liquor-licensed outlets (Socrata) — IL outlets + companies, geocoded
 import ct_dcp                       # Connecticut liquor (Socrata) — CT premises + brand/supplier registry
+import socrata_outlets              # GENERIC Socrata outlet connector — NY/CO/MO… as config, not modules
 import warehouse                    # Parquet-on-Tigris (or local) queried by DuckDB
 import upc                          # UPC/EAN QC + owned prefix->owner crosswalk (deterministic + inference)
 import auth_gate                    # Google OIDC login gate (active only when configured)
@@ -77,7 +78,7 @@ class _JobLogHandler(logging.Handler):
 _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
-VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp"}
+VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp"} | set(socrata_outlets.VALID)
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
@@ -94,7 +95,18 @@ def _dispatch_pull(conn, body):
             else tx_pull(body) if conn == "tx-tabc"
             else il_pull(body) if conn == "il-chicago"
             else ct_pull(body) if conn == "ct-dcp"
+            else socrata_pull(conn, body) if conn in socrata_outlets.VALID
             else fl_pull(conn) if conn in FL_CONN else None)
+
+def socrata_pull(conn, body):
+    """Generic Socrata outlet pull (NY/CO/MO…) → <state>_outlets, normalised to one schema. NY/CO
+    ship a Socrata point so they land pre-geocoded; MO-style feeds geocode later like FL/TX."""
+    started = int(time.time() * 1000)
+    ds, runs, _ = socrata_outlets.pull(conn, log=lambda m: app.logger.info("SOCRATA %s", m))
+    DATASETS.update(_absorb(ds)); save()
+    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
+    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = (body or {}).get("trigger", "manual")
+    return run
 
 def tx_pull(body):
     """Texas TABC active retail licenses (Socrata) → tx_outlets + tx_companies, county-keyed for
@@ -552,7 +564,9 @@ _SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlet
               "specs": "Spec's — Inventory", "binnys": "Binny's — Inventory",
               "shopify-dtc": "Hemp + DTC — Shopify", "instacart": "Instacart — Store-level",
               "census-acs": "US Census — ACS demographics", "tx-tabc": "Texas TABC — licenses",
-              "il-chicago": "Chicago — Liquor Licenses", "ct-dcp": "Connecticut — Liquor (DCP)"}
+              "il-chicago": "Chicago — Liquor Licenses", "ct-dcp": "Connecticut — Liquor (DCP)",
+              "ny-sla": "New York — SLA licenses", "co-led": "Colorado — Liquor licenses",
+              "mo-atc": "Missouri — Alcohol licenses"}
 _EXTRACT_SRC = {eid: src for src, exs in FL_CONN.items() for (eid, _h, _n) in exs}
 _NAME_COLS = ("Owner Name", "Registrant Name", "Applicant", "Brand Name", "DBA")
 def _name_idx(header):
@@ -1199,7 +1213,7 @@ def enrich_census_ep():
     # FL DBPR extracts all share one header, so items/brands "look" like outlets. Restrict to the
     # ACTUAL outlet tables (retail/wholesale/permits + ABC store cells + the places accounts), never
     # items/registrants/brands, then pick whichever genuinely matches census best.
-    OUTLET_IDS = {"outlets_master", "bd4006lic", "bd4005lic", "bd4002lic", "abc_store_cells", "tx_outlets", "il_outlets", "ct_outlets"}
+    OUTLET_IDS = {"outlets_master", "bd4006lic", "bd4005lic", "bd4002lic", "abc_store_cells", "tx_outlets", "il_outlets", "ct_outlets", "ny_outlets", "co_outlets", "mo_outlets"}
     NON_OUTLET = {"bd4008lic", "bd4011lic", "abtbrands", "census_acs", "outlets_census"}
     def _places(d):
         h = [str(x).lower() for x in (d.get("header") or [])]
@@ -1303,12 +1317,15 @@ def upc_ep():
     return jsonify(ok=True, crosswalk_loaded=bool(UPC_XWALK), count=len(out), results=out)
 
 
+GEO_CAP = 200000
 @app.get("/api/outlets/geo")
 def outlets_geo_ep():
-    """Geocoded outlet points for the coverage map. ?dataset=il_outlets (default). Returns
-    [{lat,lng,name,type,area,city,state}] from the FULL rows for any outlet dataset that carries
-    latitude/longitude (IL/Chicago ships them; FL/TX need geocoding first). Capped at 25k."""
-    did = request.args.get("dataset", "il_outlets")
+    """LIGHT geocoded points for the coverage map — enough to render, colour, filter and search the
+    whole footprint at once, not just one state. ?dataset=outlets_master (default). Each point is
+    {i,lat,lng,name,type,area,county_fips} where i is the row index used by /api/outlets/one to
+    fetch the FULL record lazily on click (so we ship ~7 fields/point, not the whole record ×100k).
+    Any dataset carrying latitude/longitude works (IL/Chicago native; TX/CT/FL geocoded)."""
+    did = request.args.get("dataset", "outlets_master")
     full = load_full(did) or DATASETS.get(did)
     if not isinstance(full, dict) or not full.get("rows"):
         return jsonify(ok=True, dataset=did, count=0, points=[], note="no data pulled yet")
@@ -1321,20 +1338,13 @@ def outlets_geo_ep():
     la, lo = gi("latitude", "lat"), gi("longitude", "lng", "lon")
     if la < 0 or lo < 0:
         return jsonify(ok=True, dataset=did, count=0, points=[], note="dataset has no lat/lng — geocode first")
-    # Carry the outlet's full record on each point so a clicked dot can show everything we hold —
-    # plus county_fips, the key that joins the dot to the Census market context (/api/outlets/context).
-    fmap = {"name": gi("dba", "name", "trade_name"), "type": gi("license_types", "license_type", "type"),
-            "area": gi("community_area", "county"), "city": gi("city"), "state": gi("state"),
-            "address": gi("address", "location address 1", "street"),
-            "zip": gi("zip", "location zip", "zip_code"),
-            "owner": gi("owner", "backer", "owner name"), "county": gi("county"),
-            "license_num": gi("license_num", "credential", "license_id", "outlet_id"),
-            "county_fips": gi("county_fips", "fips")}
-    # Chicago Business Licenses ship lat/lng (so we never geocoded them) → no county_fips column, but
-    # every Chicago outlet is Cook County (17031). Backfill it so IL gets market context too.
-    il_cook = "17031" if did == "il_outlets" else None
+    ni = gi("dba", "name", "trade_name")
+    ti = gi("license_types", "license_type", "type", "credential")
+    ai = gi("community_area", "county")
+    ci = gi("county_fips", "fips")
+    il_cook = "17031" if did == "il_outlets" else None   # Chicago ships lat/lng, no FIPS col → all Cook
     pts = []
-    for r in rows:
+    for ri, r in enumerate(rows):
         if la >= len(r) or lo >= len(r):
             continue
         try:
@@ -1343,16 +1353,34 @@ def outlets_geo_ep():
             continue
         if not (lat and lng and -90 < lat < 90 and -180 < lng < 180):
             continue
-        p = {"lat": round(lat, 6), "lng": round(lng, 6)}
-        for k, i in fmap.items():
-            if 0 <= i < len(r) and r[i] not in (None, ""):
-                p[k] = r[i]
-        if il_cook and not p.get("county_fips"):
-            p["county_fips"] = il_cook
+        p = {"i": ri, "lat": round(lat, 6), "lng": round(lng, 6)}
+        if 0 <= ni < len(r) and r[ni]: p["name"] = r[ni]
+        if 0 <= ti < len(r) and r[ti]: p["type"] = r[ti]
+        if 0 <= ai < len(r) and r[ai]: p["area"] = r[ai]
+        cf = (r[ci] if 0 <= ci < len(r) else "") or il_cook
+        if cf: p["county_fips"] = cf
         pts.append(p)
-        if len(pts) >= 25000:
+        if len(pts) >= GEO_CAP:
             break
-    return jsonify(ok=True, dataset=did, count=len(pts), points=pts)
+    return jsonify(ok=True, dataset=did, count=len(pts), points=pts, capped=len(pts) >= GEO_CAP)
+
+
+@app.get("/api/outlets/one")
+def outlets_one_ep():
+    """The FULL record for one outlet, fetched lazily when a dot is clicked. ?dataset=&i=<row index>
+    (the index the /api/outlets/geo point carries). Returns {record: {column: value}} straight from
+    the full rows — the detail panel renders the outlet's own data from this."""
+    did = request.args.get("dataset", "outlets_master")
+    try:
+        i = int(request.args.get("i", "-1"))
+    except ValueError:
+        i = -1
+    full = load_full(did) or DATASETS.get(did)
+    if not isinstance(full, dict) or not full.get("rows") or not (0 <= i < len(full["rows"])):
+        return jsonify(ok=False, error="not found"), 404
+    header = full.get("header", []); row = full["rows"][i]
+    rec = {str(h): (row[j] if j < len(row) else "") for j, h in enumerate(header)}
+    return jsonify(ok=True, dataset=did, record=rec)
 
 
 @app.get("/api/outlets/context")
