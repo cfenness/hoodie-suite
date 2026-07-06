@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coverage Map — Hoodie Suite</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0e1613; --paper:#e9f2ef; --panel:rgba(18,28,25,.93); --line:#22322e; --muted:#8aa39d;
+    --accent:#4E79A7; --gold:#d9b03f; --teal:#3fb8a3; --good:#5bb86e;
+    --disp:"Space Grotesk", system-ui, sans-serif; --mono:"IBM Plex Mono", monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:var(--disp);background:var(--ink);color:var(--paper);overflow:hidden}
+  #map{position:fixed;inset:0;background:#0b1210;z-index:0}
+  .leaflet-container{background:#0b1210;font-family:var(--mono)}
+  .leaflet-control-zoom a{background:var(--panel);color:var(--paper);border-color:var(--line)}
+  .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel);color:var(--paper);border:1px solid var(--line)}
+  .leaflet-popup-content{font-family:var(--mono);font-size:12px;line-height:1.5}
+  .leaflet-popup-content b{color:#eafaf5}
+
+  .hud{position:fixed;z-index:500;pointer-events:none}
+  .top{top:0;left:0;right:0;padding:15px 18px;display:flex;align-items:flex-start;gap:14px;background:linear-gradient(180deg,rgba(14,22,19,.92),rgba(14,22,19,0))}
+  .brand .ey{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:#6f938a}
+  .brand h1{font-weight:700;font-size:19px;margin-top:3px;color:#eafaf5}
+  .count{margin-left:auto;text-align:right;font-family:var(--mono);font-size:11px;color:#a9c9c0;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:7px 12px;pointer-events:auto}
+  .count b{color:var(--teal);font-size:15px}
+
+  .panel{position:fixed;top:66px;left:18px;z-index:500;width:236px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 15px;backdrop-filter:blur(6px)}
+  .panel h2{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#6f938a;margin-bottom:9px}
+  .panel .grp{margin-bottom:13px}
+  select,input{width:100%;background:#0e1613;color:#dcefe9;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-family:var(--mono);font-size:12px;outline:none}
+  select:focus,input:focus{border-color:var(--accent)}
+  .chk{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:4px 0;cursor:pointer;color:#cfe6df}
+  .chk input{width:auto;cursor:pointer}
+  .chk .sw{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+  .legend{position:fixed;bottom:18px;left:18px;z-index:500;font-family:var(--mono);font-size:10.5px;color:#a9c9c0;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px 12px;line-height:1.9}
+  .legend .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .note{margin-top:9px;font-size:11px;color:#c98a4a;line-height:1.4}
+  .load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:600;font-family:var(--mono);font-size:12px;color:#6f938a;background:var(--ink)}
+</style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="load" id="load">reading outlets…</div>
+  <div class="hud top">
+    <div class="brand"><div class="ey">Hoodie Suite · Estate</div><h1>Coverage Map</h1></div>
+    <div class="count" id="count">—</div>
+  </div>
+  <div class="panel" id="panel">
+    <div class="grp">
+      <h2>Dataset</h2>
+      <select id="ds">
+        <option value="il_outlets">Chicago — Liquor outlets</option>
+        <option value="outlets_master">Outlet master (needs geocode)</option>
+        <option value="tx_outlets">Texas (needs geocode)</option>
+      </select>
+    </div>
+    <div class="grp" id="typegrp">
+      <h2>License type</h2>
+      <div id="types"></div>
+    </div>
+    <div class="grp">
+      <h2>Area</h2>
+      <select id="area"><option value="">All areas</option></select>
+    </div>
+    <div class="grp" style="margin-bottom:0">
+      <h2>Search name</h2>
+      <input id="q" placeholder="e.g. Binny's">
+    </div>
+    <div class="note" id="note" style="display:none"></div>
+  </div>
+  <div class="legend">
+    <span class="sw" style="background:#d9b03f"></span>off-premise (package goods)<br>
+    <span class="sw" style="background:#3fb8a3"></span>on-premise (tavern / consumption)
+  </div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function(){
+  const $=s=>document.querySelector(s);
+  const map=L.map('map',{zoomControl:true,preferCanvas:true}).setView([41.87,-87.65],11);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+    attribution:'© OpenStreetMap © CARTO', subdomains:'abcd', maxZoom:19
+  }).addTo(map);
+  const renderer=L.canvas({padding:0.5});
+  let ALL=[], layer=null;
+
+  function isOff(t){ return /package goods/i.test(t||''); }
+  function color(t){ return isOff(t)?'#d9b03f':'#3fb8a3'; }
+
+  function draw(){
+    const types=[...document.querySelectorAll('#types input:checked')].map(c=>c.value);
+    const area=$('#area').value, q=$('#q').value.trim().toLowerCase();
+    const pts=ALL.filter(p=>{
+      if(types.length && !types.some(t=>(p.type||'').includes(t))) return false;
+      if(area && p.area!==area) return false;
+      if(q && !((p.name||'').toLowerCase().includes(q))) return false;
+      return true;
+    });
+    if(layer) layer.remove();
+    layer=L.layerGroup(pts.map(p=>L.circleMarker([p.lat,p.lng],{
+      renderer, radius:3.4, weight:0, fillColor:color(p.type), fillOpacity:.72
+    }).bindPopup('<b>'+esc(p.name||'outlet')+'</b><br>'+esc(p.type||'')+'<br>'+esc(p.area||'')))).addTo(map);
+    $('#count').innerHTML='<b>'+pts.length.toLocaleString()+'</b> of '+ALL.length.toLocaleString()+' outlets';
+  }
+
+  function buildFilters(){
+    // license types present
+    const tset=new Set(); ALL.forEach(p=>(p.type||'').split(';').forEach(t=>t&&tset.add(t.trim())));
+    $('#types').innerHTML=[...tset].sort().map(t=>
+      '<label class="chk"><input type="checkbox" value="'+esc(t)+'"><span class="sw" style="background:'+color(t)+'"></span>'+esc(t)+'</label>').join('')
+      || '<div style="font-size:11px;color:#6f938a">no type field</div>';
+    document.querySelectorAll('#types input').forEach(c=>c.addEventListener('change',draw));
+    // areas
+    const aset=new Set(); ALL.forEach(p=>p.area&&aset.add(p.area));
+    $('#area').innerHTML='<option value="">All areas ('+aset.size+')</option>'+
+      [...aset].sort().map(a=>'<option value="'+esc(a)+'">'+esc(a)+'</option>').join('');
+  }
+
+  async function load(ds){
+    $('#load').style.display='flex'; $('#note').style.display='none';
+    try{
+      const r=await fetch('/api/outlets/geo?dataset='+encodeURIComponent(ds),{cache:'no-store'});
+      const j=await r.json();
+      ALL=j.points||[];
+      if(!ALL.length){ $('#note').style.display='block'; $('#note').textContent=j.note||'no geocoded outlets in this dataset yet.'; }
+      buildFilters(); draw();
+      if(ALL.length){ const b=L.latLngBounds(ALL.map(p=>[p.lat,p.lng])); if(b.isValid()) map.fitBounds(b.pad(0.05)); }
+    }catch(e){ $('#note').style.display='block'; $('#note').textContent='could not load: '+e.message; }
+    $('#load').style.display='none';
+  }
+
+  $('#ds').addEventListener('change',e=>load(e.target.value));
+  $('#area').addEventListener('change',draw);
+  let qt=null; $('#q').addEventListener('input',()=>{clearTimeout(qt);qt=setTimeout(draw,160);});
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+  window.__loadCoverage=load;   // test hook
+  load('il_outlets');
+})();
+</script>
+</body>
+</html>
