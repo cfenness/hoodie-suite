@@ -10,11 +10,18 @@
 #
 FROM python:3.12-slim
 
+# The gov data sources (TTB ttbonline.gov, FL DBPR myfloridalicense.com) fail TLS verification in
+# the slim image — "CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate" — even though
+# they work on a laptop. Refresh the system CA bundle (used by urllib → FL) so those roots/intermediates
+# are present; certifi (used by requests → TTB) is upgraded below.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && update-ca-certificates && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app/unifyd
 
-# deps first for layer caching
+# deps first for layer caching (+ keep certifi current so `requests`-based gov scrapers verify certs)
 COPY unifyd/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt gunicorn
+RUN pip install --no-cache-dir -r requirements.txt gunicorn && pip install --no-cache-dir --upgrade certifi
 
 # the whole repo: the engine (unifyd/) + the static suite (index.html, apps/, spine/, …)
 COPY . /app
