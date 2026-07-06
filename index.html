@@ -382,8 +382,7 @@
     {id:'overlay',name:'Overlay Your Data',desc:'Drop a CSV · Claude reads it on its own terms — what it is, cuts worth pulling, caveats',group:'Commercial',status:'beta',file:'apps/overlay.html',mark:'OV'},
     {id:'presenter',name:'Presenter',desc:"Speaker's workbench · run a demo",group:'Presentation',status:'beta',file:'apps/presenter.html',mark:'PR'},
     {id:'sources',name:'Sources',desc:'Two tabs — Analyze a new source (Claude reads a URL → data + how to scrape) · Catalog of every tracked source',group:'Data Operations',status:'beta',file:'apps/sources.html',mark:'SR'},
-    {id:'estate',name:'Estate Map',desc:'Data & model layer · the whole estate',group:'Platform',status:'beta',file:'apps/estate-map.html',mark:'EM'},
-    {id:'estate3d',name:'Estate · Model',desc:'The information estate as a 3D object — spin, fly, and focus a node to drop out everything it doesn’t touch',group:'Platform',status:'beta',file:'apps/estate-3d.html',mark:'3D'},
+    {id:'estate3d',name:'Estate',desc:'The information estate as a 3D object — spin, fly, and focus a node to drop out everything it doesn’t touch',group:'Platform',status:'beta',file:'apps/estate-3d.html',mark:'3D'},
     {id:'mdm',name:'Hoodie MDM',desc:'One console — Master · Catalog · Pulls · Ingestion',group:'Data Operations',status:'beta',file:'apps/mdm.html',mark:'HM'},
     {id:'csv',name:'CSV Viewer',desc:'Excel-style grid for any CSV — sort, filter, freeze header & row numbers · open a file live and watch it grow as a scrape lands',group:'Data Operations',status:'beta',file:'apps/csv-viewer.html',mark:'CV'},
     {id:'upc',name:'UPC Check',desc:'Validate & classify UPC/EAN codes (placeholder / bad-check / restricted) and check whether a code’s company prefix matches the brand owner who filed it',group:'Data Operations',status:'beta',file:'apps/upc-check.html',mark:'UP'},
@@ -441,7 +440,7 @@
     // Spine Adapter — a backbone apps read from
     spinedemo:S+'<path d="M12 3 V21"/><path d="M12 6 H18 M12 10 H6 M12 14 H18 M12 18 H6"/><circle cx="18" cy="6" r="1.1" fill="currentColor" stroke="none"/><circle cx="6" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="18" cy="14" r="1.1" fill="currentColor" stroke="none"/><circle cx="6" cy="18" r="1.1" fill="currentColor" stroke="none"/></svg>',
     // Estate Map — data nodes → entity → model nodes
-    estate:S+'<circle cx="5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="5" cy="18" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="7" r="1.3" fill="currentColor" stroke="none"/><circle cx="19" cy="17" r="1.3" fill="currentColor" stroke="none"/><path d="M6.1 6.6 L10.6 11.2 M6.3 12 H10.3 M6.1 17.4 L10.6 12.8 M13.4 11.3 L17.7 7.6 M13.4 12.7 L17.7 16.4"/></svg>'
+    estate3d:S+'<circle cx="5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="5" cy="18" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="7" r="1.3" fill="currentColor" stroke="none"/><circle cx="19" cy="17" r="1.3" fill="currentColor" stroke="none"/><path d="M6.1 6.6 L10.6 11.2 M6.3 12 H10.3 M6.1 17.4 L10.6 12.8 M13.4 11.3 L17.7 7.6 M13.4 12.7 L17.7 16.4"/></svg>'
   };
   const logo=a=>LOGOS[a.id]||a.mark;
 
