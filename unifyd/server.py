@@ -905,9 +905,10 @@ def _mk_user_code(email, users):
         code = base + str(i); i += 1
     return code
 
-def _current_user():
+def _user_rec():
     """The signed-in user (from the OIDC session) with a stable short code; auto-registers on first
-    sight so every created/updated stamp is attributable."""
+    sight so every created/updated stamp is attributable. (Distinct from the admin _current_user,
+    which returns just the email.)"""
     email = (session.get("email") or "").lower()
     users = load("users.json", {})
     u = users.get(email)
@@ -918,7 +919,7 @@ def _current_user():
 
 def _stamp(meta_name, key):
     """created_at/created_by (first write) + updated_at/updated_by (every write) for a config record."""
-    now = int(time.time()); who = _current_user().get("code", "SYS")
+    now = int(time.time()); who = _user_rec().get("code", "SYS")
     allmeta = load(meta_name, {})
     m = allmeta.get(key, {})
     if not m.get("created_at"):
@@ -929,7 +930,7 @@ def _stamp(meta_name, key):
 
 @app.get("/api/whoami")
 def whoami_ep():
-    return jsonify(ok=True, user=_current_user())
+    return jsonify(ok=True, user=_user_rec())
 
 @app.get("/api/users")
 def users_get():
@@ -1037,7 +1038,7 @@ def master_apply_ep():
         import master_apply
         fields = _master_schema()
         maps = load("field_mappings.json", {})
-        who = _current_user().get("code", "SYS")
+        who = _user_rec().get("code", "SYS")
         res = master_apply.build(fields, maps, built_by=who, built_at=int(time.time()),
                                  log=lambda mm: app.logger.info("APPLY %s", mm))
         return jsonify(ok=True, built_by=who, **res)
