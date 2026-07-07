@@ -132,11 +132,17 @@ const SRCLABEL={}, SRCFEEDS={};
 // ── canonical entities (the dimensional model) — fixed geography ───────────────────
 // dimensions: supplier, brand → product → item → sku (the hierarchy spine), outlet.
 // facts (◆ boxed): inventory + pricing, each keyed by sku × outlet × date.
-const ENT=[ {id:'supplier',label:'Supplier',p:[-58,34,-6]}, {id:'brand',label:'Brand',p:[-34,22,10]},
-  {id:'product',label:'Product',p:[-10,8,2]}, {id:'item',label:'Item',p:[14,-4,10]},
-  {id:'sku',label:'SKU',p:[-14,-20,30]}, {id:'outlet',label:'Outlet',p:[54,-6,-18]},
-  {id:'inventory',label:'Inventory',p:[30,-24,4],fact:true}, {id:'pricing',label:'Pricing',p:[8,-34,22],fact:true} ];
+// The spine reads left→right as a hierarchy; outlet + the two facts sit as a separate limb (offset +z),
+// so the model backbone is legible before any sources attach. Spread wide so labels don't collide.
+const ENT=[ {id:'supplier',label:'Supplier',p:[-96,52,0]}, {id:'brand',label:'Brand',p:[-58,34,0]},
+  {id:'product',label:'Product',p:[-20,16,0]}, {id:'item',label:'Item',p:[16,0,0]},
+  {id:'sku',label:'SKU',p:[52,-20,0]}, {id:'outlet',label:'Outlet',p:[64,40,52]},
+  {id:'inventory',label:'Inventory',p:[52,8,30],fact:true}, {id:'pricing',label:'Pricing',p:[34,-16,26],fact:true} ];
 const ENT_POS={}; ENT.forEach(e=>ENT_POS[e.id]=new THREE.Vector3(...e.p));
+// sources are coloured + grouped by the ENTITY they feed (not by state) — the model is the organizing spine
+const ENTCOL={supplier:'#d9b03f',brand:'#3fb8a3',product:'#57c9b3',item:'#6fbf8f',sku:'#3f9668',
+  outlet:'#4E79A7',inventory:'#4a90d9',pricing:'#6b5ca5',reference:'#8a6fd0',other:'#8aa39d'};
+const ENTLABEL={}; ENT.forEach(e=>ENTLABEL[e.id]=e.label); ENTLABEL.reference='Reference'; ENTLABEL.other='Other';
 // canonical relationships — [a, b, verb, cardinality@a, cardinality@b] (crow's-foot: one | many)
 const CANON=[
   ['supplier','brand','supplies','one','many'],
@@ -226,25 +232,25 @@ function stablePos(name, connEnts){
   return dir.multiplyScalar(128).lerp(mean.clone().multiplyScalar(1.6), 0.28);
 }
 // ---- family clustering: sources group into labeled regions of space (not one uniform cloud) ----
-const CLUSTER_DEF=[
-  {key:'fl',    label:'Florida',      col:'#5bb86e', t:n=>/^d:(bd4|abt|abc_)/.test(n.id||'')||/(^|·\s*)FL\b|florida/i.test(n.full||'')},
-  {key:'tx',    label:'Texas',        col:'#4a90d9', t:n=>/^d:tx_/.test(n.id||'')||/\bTX\b|texas/i.test(n.full||'')},
-  {key:'il',    label:'Chicago',      col:'#3fb8a3', t:n=>/^d:il_/.test(n.id||'')||/chicago/i.test(n.full||'')},
-  {key:'census',label:'Census',       col:'#8a6fd0', t:n=>/^d:(census_|outlets_census)/.test(n.id||'')||/census|demograph|econom|housing/i.test(n.full||'')},
-  {key:'master',label:'Master',       col:'#d9b03f', t:n=>/master/i.test((n.full||'')+(n.id||''))},
-  {key:'retail',label:'Retail & DTC', col:'#57c9b3', t:n=>!!n.host||/spec|binny|instacart|shopify|kroger|total\s*wine|drizly|hemp|dtc|store|walmart|target|bevmo|abc\s*fws/i.test((n.full||'')+(n.id||''))},
-];
-const CLUSTER_FALL={key:'other',label:'Other',col:'#8aa39d',t:()=>true};
-function clusterOf(n){ for(const c of CLUSTER_DEF){ try{ if(c.t(n))return c; }catch(e){} } return CLUSTER_FALL; }
+// clusters ARE the model entities — a source groups with whatever it feeds (n.primaryEnt), so the
+// groupings are meaningful ("these 3 sources feed Outlet") instead of an arbitrary state bucket.
+const CLUSTER_DEF=['supplier','brand','product','item','sku','outlet','inventory','pricing','reference']
+  .map(k=>({key:k,label:ENTLABEL[k]||k,col:ENTCOL[k]||'#8aa39d'}));
+const CLUSTER_FALL={key:'other',label:'Other',col:ENTCOL.other};
+function clusterOf(n){ const k=(n.primaryEnt&&ENTCOL[n.primaryEnt])?n.primaryEnt:'other';
+  return {key:k,label:ENTLABEL[k]||k,col:ENTCOL[k]}; }
 // place each family in its own region of space; pack members inside via a fibonacci ball
 function layoutClusters3D(nodes){
   const groups={};
   nodes.forEach(n=>{ if(n.kind!=='src')return; const c=clusterOf(n); (groups[c.key]=groups[c.key]||{def:c,nodes:[]}).nodes.push(n); n._ck=c.key; });
   const order=CLUSTER_DEF.concat([CLUSTER_FALL]).filter(c=>groups[c.key]);
-  const N=order.length||1, R=155, metas=[];
+  const metas=[];
   order.forEach((cdef,i)=>{
-    const yy=1-(i+0.5)/N*2, rr=Math.sqrt(Math.max(0,1-yy*yy)), th=i*2.399963;
-    const center=new THREE.Vector3(Math.cos(th)*rr, yy*0.7, Math.sin(th)*rr).multiplyScalar(R);
+    // anchor each source blob near the ENTITY it feeds, pushed out + behind the spine (−z) so the
+    // model reads in front and its feeds hang beneath/behind it, grouped and legible.
+    const ep=ENT_POS[cdef.key], dir=(ep&&ep.length()>1)?ep.clone().normalize():new THREE.Vector3(0,-1,0);
+    const base=ep?ep.clone():new THREE.Vector3(0,-30,0);
+    const center=base.multiplyScalar(1.35).add(dir.multiplyScalar(34)).add(new THREE.Vector3(0,-6,-64));
     const g=groups[cdef.key], M=g.nodes.length, pr=15+Math.sqrt(M)*6.5;
     g.nodes.forEach((n,j)=>{
       const y2=1-(j+0.5)/M*2, r2=Math.sqrt(Math.max(0,1-y2*y2)), t2=j*2.399963;
@@ -275,7 +281,8 @@ function buildModel(live){
     const dn=disp.toLowerCase(); if(seen[dn]) return; seen[dn]=1;
     const rs=roadsFromCols(cols,hints), ents=rs.map(r=>r[0]);
     const n={id:key,label:friendly(disp),full:disp,kind:'src',status:(status||'planned').toLowerCase(),
-             sub:sub,live:liveFlag,cols:(cols||[]),dataset:dataset||null,host:host||null,pos:stablePos(disp,ents)};
+             sub:sub,live:liveFlag,cols:(cols||[]),dataset:dataset||null,host:host||null,
+             primaryEnt:ents[0]||'other',pos:stablePos(disp,ents)};
     nodes.push(n); byId[key]=n; rs.forEach(([e,road])=>edges.push({a:key,b:e,road}));
   }
 
