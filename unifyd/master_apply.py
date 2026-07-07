@@ -156,7 +156,9 @@ def build(master_fields, mappings_by_ds, entity="product", built_by="SYS", built
     built_at = built_at or int(_t.time())
     import warehouse
     con = warehouse.connect()
-    dim = "dim_%s" % entity
+    # the wide UNION goes to a STAGING table (underscore = hidden from the catalog), NOT dim_<entity> —
+    # otherwise the product hierarchy's dim_product grain output would read+overwrite the same Parquet.
+    dim = "_stage_%s" % entity
     selects, per_source, warnings = [], [], []
     for ds, rules in mappings_by_ds.items():
         if not any(r.get("master_field") for r in (rules or [])):
