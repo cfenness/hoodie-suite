@@ -881,10 +881,20 @@ DEFAULT_MASTER_FIELDS = [
 # master value). Names only here — the apply-engine consumes them when materializing the master.
 MAP_TRANSFORMS = ["none", "trim", "upper", "lower", "title_case", "digits_only",
                   "size_to_ml", "year_from_date"]
+# Canonical normalizers keyed by master field NAME — ensured on read so the 'lowest level of
+# consistency' contract holds even for a schema saved before a normalizer was added.
+_NORMALIZE_DEFAULTS = {"upc": "upc", "gtin": "upc"}
+
+def _master_schema():
+    fields = load("master_schema.json", DEFAULT_MASTER_FIELDS)
+    for f in fields:
+        if isinstance(f, dict) and not f.get("normalize") and f.get("name") in _NORMALIZE_DEFAULTS:
+            f["normalize"] = _NORMALIZE_DEFAULTS[f["name"]]
+    return fields
 
 @app.get("/api/master/schema")
 def master_schema_get():
-    return jsonify(ok=True, fields=load("master_schema.json", DEFAULT_MASTER_FIELDS), transforms=MAP_TRANSFORMS)
+    return jsonify(ok=True, fields=_master_schema(), transforms=MAP_TRANSFORMS)
 
 @app.post("/api/master/schema")
 def master_schema_post():
@@ -933,7 +943,7 @@ def master_preview_ep():
     try:
         import master_apply
         rule = body.get("rule") or {}
-        fields = load("master_schema.json", DEFAULT_MASTER_FIELDS)
+        fields = _master_schema()
         nz = next((f.get("normalize") for f in fields if isinstance(f, dict) and f.get("name") == rule.get("master_field")), None)
         rows = master_apply.preview(ds, rule, limit=int(body.get("limit", 12)), normalize=nz)
         return jsonify(ok=True, dataset=ds, normalize=nz, rows=rows)
@@ -946,7 +956,7 @@ def master_apply_ep():
     source over Parquet → UNION → warehouse). Returns per-source counts + any skipped sources."""
     try:
         import master_apply
-        fields = load("master_schema.json", DEFAULT_MASTER_FIELDS)
+        fields = _master_schema()
         maps = load("field_mappings.json", {})
         res = master_apply.build(fields, maps, log=lambda mm: app.logger.info("APPLY %s", mm))
         return jsonify(ok=True, **res)
