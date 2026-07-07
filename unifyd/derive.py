@@ -104,9 +104,37 @@ def _apply_transform(name, inner):
     return tmpl.replace("%s", inner) if "%s" in tmpl else tmpl
 
 
+def dict_case(base, entries, dmode="contains", fallback="original"):
+    """Compile a value DICTIONARY — an ordered list of {match, value} — into a DuckDB CASE expression.
+    This is how a controlled vocabulary ('cab sauv' -> 'Cabernet Sauvignon') OR a string EXTRACTION
+    (pull the varietal out of a free-text Class/Type) becomes one scalable SQL expression.
+      dmode    : exact    — whole value equals the match (case-insensitive, trimmed)
+                 contains — the match appears anywhere in the value (substring; longer matches win)
+                 regex    — the value matches the regex
+      fallback : original — rows that match nothing keep the source value (synonym-normalize a column)
+                 null     — rows that match nothing become NULL (extract an attribute from free text)
+    `base` is a compiled column/expression. Returns a string; safe on empty entries."""
+    els = "CAST(%s AS VARCHAR)" % base if (fallback or "original") == "original" else "NULL"
+    ordered = sorted(entries, key=lambda e: -len(str(e.get("match", "")))) if dmode == "contains" else entries
+    whens = []
+    for e in ordered:
+        m, v = str(e.get("match", "")), str(e.get("value", ""))
+        if m == "":
+            continue
+        if dmode == "exact":
+            cond = "lower(trim(CAST(%s AS VARCHAR)))=%s" % (base, _sqlstr(m.strip().lower()))
+        elif dmode == "regex":
+            cond = "regexp_matches(CAST(%s AS VARCHAR), %s)" % (base, _sqlstr(m))
+        else:  # contains — case-insensitive substring (escape LIKE wildcards in the literal)
+            lit = m.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            cond = "CAST(%s AS VARCHAR) ILIKE %s ESCAPE '\\'" % (base, _sqlstr("%" + lit + "%"))
+        whens.append("WHEN %s THEN %s" % (cond, _sqlstr(v)))
+    return "CASE %s ELSE %s END" % (" ".join(whens), els) if whens else els
+
+
 def compile_rule(rule):
     """Compile a mapping/derivation rule → a DuckDB SQL expression string. Modes: copy | transform |
-    regex | map | expr. Unknown/blank → the raw column. Raises ValueError only on a missing source."""
+    regex | map | dict | expr. Unknown/blank → the raw column. Raises ValueError only on a missing source."""
     mode = (rule.get("mode") or "transform").lower()
     if mode == "expr":
         return "(" + (rule.get("expr") or "NULL") + ")"
@@ -118,6 +146,9 @@ def compile_rule(rule):
         pat = rule.get("pattern") or "(.*)"
         grp = int(rule.get("group", 1) or 1)
         return "regexp_extract(CAST(%s AS VARCHAR), %s, %d)" % (base, _sqlstr(pat), grp)
+    if mode == "dict":                                    # a named/inline value dictionary (see dict_case)
+        return dict_case(base, rule.get("dict_entries") or [],
+                         rule.get("dict_mode") or "contains", rule.get("dict_fallback") or "original")
     if mode == "map":
         pairs = rule.get("map") or {}
         if not pairs:
@@ -149,6 +180,15 @@ def _selftest():
     # map builds one WHEN per pair, falls back to the original value
     m = compile_rule({"source_field": "c", "mode": "map", "map": {"A": "a"}})
     assert "WHEN 'A' THEN 'a'" in m and "ELSE CAST(\"c\" AS VARCHAR)" in m, m
+    # dict mode: contains (extract, null fallback) orders longer match first; exact (synonym, keep original)
+    dc = compile_rule({"source_field": "ct", "mode": "dict", "dict_mode": "contains", "dict_fallback": "null",
+                       "dict_entries": [{"match": "cab", "value": "Cabernet Sauvignon"},
+                                        {"match": "cabernet sauvignon", "value": "Cabernet Sauvignon"}]})
+    assert dc.index("cabernet sauvignon") < dc.index("ILIKE '%cab%'"), dc  # specific before generic
+    assert dc.endswith("ELSE NULL END"), dc
+    de = compile_rule({"source_field": "ct", "mode": "dict", "dict_mode": "exact",
+                       "dict_entries": [{"match": "Cab Sauv", "value": "Cabernet Sauvignon"}]})
+    assert "lower(trim(CAST(\"ct\" AS VARCHAR)))='cab sauv'" in de and de.endswith("ELSE CAST(\"ct\" AS VARCHAR) END"), de
     # optional live check against DuckDB if present
     try:
         import duckdb
@@ -161,7 +201,16 @@ def _selftest():
         assert vals.get("750ML") == 750 and vals.get("1.75L") == 1750 and vals.get("") is None, vals
         omap = dict((r[1], r[0]) for r in con.execute("SELECT %s d, origin FROM t" % oc).fetchall())
         assert omap.get("FRANCE") == "France" and omap.get("USA") == "USA", omap   # mapped + passthrough
-        print("derive self-test: OK — 5 modes compile; size_to_ml 750ML→750/1.75L→1750; map FRANCE→France")
+        # dict extraction: pull the varietal from a free-text class/type, longer match wins
+        con.execute("CREATE TABLE ct(x VARCHAR)")
+        con.executemany("INSERT INTO ct VALUES (?)", [("CABERNET SAUVIGNON RESERVE",), ("CAB",), ("PINOT NOIR",)])
+        dex = dict_case(col("x"), [{"match": "cab", "value": "Cabernet Sauvignon"},
+                                   {"match": "cabernet sauvignon", "value": "Cabernet Sauvignon"},
+                                   {"match": "pinot noir", "value": "Pinot Noir"}], "contains", "null")
+        dv = dict((r[1], r[0]) for r in con.execute("SELECT %s d, x FROM ct" % dex).fetchall())
+        assert dv.get("CABERNET SAUVIGNON RESERVE") == "Cabernet Sauvignon" and dv.get("CAB") == "Cabernet Sauvignon" \
+            and dv.get("PINOT NOIR") == "Pinot Noir", dv
+        print("derive self-test: OK — 6 modes compile; size_to_ml 750ML→750; map FRANCE→France; dict cab→Cabernet Sauvignon")
     except ImportError:
         print("derive self-test: OK (compile-only; duckdb not present for eval)")
 

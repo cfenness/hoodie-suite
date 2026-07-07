@@ -32,6 +32,7 @@ import hi_analyst                   # the real Claude analyst behind Hoodie Inte
 import prism                        # data contract behind the Prism mobile app
 import places                       # restaurant / on-premise-accounts connector (Orlando first)
 import census                       # US Census ACS demographics — reference-data connector (by county)
+import derive                       # field-derivation / dictionary compiler (rule → DuckDB SQL expression)
 import enrich                       # join reference data (census) onto the outlet master by county
 import tx_tabc                      # Texas TABC licenses (Socrata) — TX outlets + companies by county
 import master                       # unify per-state outlet pulls into one normalized outlets_master
@@ -1074,6 +1075,118 @@ def item_dictionary_ep():
                        values=[{"v": v, "n": n} for v, n in c.most_common(lim)])
     return jsonify(ok=True, dataset=ds, field=field, distinct=distinct, values=rows)
 
+# ── DICTIONARY STORE — named, reusable value dictionaries (synonym-normalize or string-extract) ──
+# A dictionary = ordered [{match,value}] + mode (exact|contains|regex) + fallback (original|null). It
+# compiles (derive.dict_case) to ONE DuckDB CASE, so 'cab sauv → Cabernet Sauvignon' runs at scale. A
+# field-mapping row can reference one by id ({mode:'dict', dict:<id>}); the build resolves it inline.
+DICT_MODES = ["exact", "contains", "regex"]
+def _dicts():
+    return load("dictionaries.json", [])
+def _dict_by_id(did):
+    return next((d for d in _dicts() if d.get("id") == did), None)
+
+@app.get("/api/dict/store")
+def dict_store_list():
+    """All saved dictionaries (light): id, name, source field, mode, fallback, entry count."""
+    out = [{"id": d.get("id"), "name": d.get("name"), "source_dataset": d.get("source_dataset"),
+            "source_field": d.get("source_field"), "target_field": d.get("target_field"),
+            "mode": d.get("mode"), "fallback": d.get("fallback"), "entries": len(d.get("entries") or []),
+            "updated": d.get("updated"), "by": d.get("by")} for d in _dicts()]
+    return jsonify(ok=True, dictionaries=out, modes=DICT_MODES)
+
+@app.get("/api/dict/store/get")
+def dict_store_get():
+    d = _dict_by_id((request.args.get("id") or "").strip())
+    return jsonify(ok=bool(d), dictionary=d) if d else (jsonify(ok=False, error="not found"), 404)
+
+@app.post("/api/dict/store/save")
+def dict_store_save():
+    """Upsert a dictionary. Body: {id?, name, source_dataset, source_field, target_field, mode,
+    fallback, entries:[{match,value}]}. Returns the saved record (with a minted id if new)."""
+    b = request.get_json(silent=True) or {}
+    name = (b.get("name") or "").strip()
+    if not name:
+        return jsonify(ok=False, error="name required"), 400
+    entries = [{"match": str(e.get("match", "")).strip(), "value": str(e.get("value", "")).strip()}
+               for e in (b.get("entries") or []) if str(e.get("match", "")).strip() != ""]
+    dicts = _dicts()
+    did = (b.get("id") or "").strip()
+    rec = _dict_by_id(did) if did else None
+    if not rec:
+        did = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40] or "dict"
+        base, i = did, 2
+        while _dict_by_id(did):
+            did = "%s-%d" % (base, i); i += 1
+        rec = {"id": did}; dicts.append(rec)
+    rec.update({"name": name, "source_dataset": (b.get("source_dataset") or "").strip(),
+                "source_field": (b.get("source_field") or "").strip(),
+                "target_field": (b.get("target_field") or "").strip(),
+                "mode": (b.get("mode") if b.get("mode") in DICT_MODES else "contains"),
+                "fallback": ("null" if b.get("fallback") == "null" else "original"),
+                "entries": entries, "updated": int(time.time()), "by": _user_rec().get("code", "SYS")})
+    _save_json("dictionaries.json", dicts)
+    return jsonify(ok=True, dictionary=rec)
+
+@app.post("/api/dict/store/delete")
+def dict_store_delete():
+    did = ((request.get_json(silent=True) or {}).get("id") or "").strip()
+    dicts = [d for d in _dicts() if d.get("id") != did]
+    _save_json("dictionaries.json", dicts)
+    return jsonify(ok=True, count=len(dicts))
+
+@app.post("/api/dict/coverage")
+def dict_coverage():
+    """Score a dictionary against real source data — the feedback loop for authoring. Body: {dataset,
+    field, mode, entries}. Returns rows total/covered (+%) plus what each entry captured (by_value) and
+    the biggest still-uncovered raw values (uncovered) so you know what to add next, and raw→derived
+    samples. Coverage is computed with a NULL fallback (covered = an entry matched), independent of the
+    dictionary's own fallback choice."""
+    b = request.get_json(silent=True) or {}
+    ds = (b.get("dataset") or "ttb_cola").strip()
+    field = (b.get("field") or "").strip()
+    if field not in _ds_columns(ds):
+        return jsonify(ok=False, error="unknown field for dataset"), 400
+    mode = b.get("mode") if b.get("mode") in DICT_MODES else "contains"
+    entries = b.get("entries") or []
+    try:
+        derived = derive.dict_case(derive.col(field), entries, mode, "null")
+    except Exception as e:
+        return jsonify(ok=False, error="bad entries: %s" % str(e)[:120]), 200
+    nonempty = 'CAST("%s" AS VARCHAR)<>\'\'' % field
+    try:
+        tot = _cola_q(ds, "SELECT count(*) c FROM t WHERE %s" % nonempty)[0]["c"]
+        cov = _cola_q(ds, "SELECT count(*) c FROM t WHERE %s AND (%s) IS NOT NULL" % (nonempty, derived))[0]["c"]
+        by_value = _cola_q(ds, "SELECT (%s) v, count(*) n FROM t WHERE %s AND (%s) IS NOT NULL "
+                           "GROUP BY 1 ORDER BY n DESC LIMIT 40" % (derived, nonempty, derived))
+        uncovered = _cola_q(ds, 'SELECT CAST("%s" AS VARCHAR) v, count(*) n FROM t WHERE %s AND (%s) IS NULL '
+                            "GROUP BY 1 ORDER BY n DESC LIMIT 30" % (field, nonempty, derived))
+        samples = _cola_q(ds, 'SELECT CAST("%s" AS VARCHAR) raw, (%s) derived FROM t WHERE %s LIMIT 12'
+                          % (field, derived, nonempty))
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:160]), 200
+    return jsonify(ok=True, dataset=ds, field=field, mode=mode, total=tot, covered=cov,
+                   pct=round(100 * cov / max(1, tot), 1), by_value=by_value,
+                   uncovered=uncovered, samples=samples)
+
+def _resolve_dict_refs(maps):
+    """Expand any field-mapping row that references a saved dictionary ({mode:'dict', dict:<id>}) into
+    inline entries the compiler understands, so the master build applies it. A row that already carries
+    inline dict_entries is left as-is. Non-destructive (returns a resolved copy)."""
+    if not isinstance(maps, dict):
+        return maps
+    out = {}
+    for ds, rules in maps.items():
+        rr = []
+        for r in (rules or []):
+            if isinstance(r, dict) and r.get("mode") == "dict" and r.get("dict") and not r.get("dict_entries"):
+                d = _dict_by_id(r.get("dict"))
+                if d:
+                    r = dict(r, dict_entries=d.get("entries") or [], dict_mode=d.get("mode") or "contains",
+                             dict_fallback=d.get("fallback") or "original")
+            rr.append(r)
+        out[ds] = rr
+    return out
+
 # ── Field mapping — persist source.field → master.field crosswalks, with pre/post transforms ──
 # The PRODUCT master is the WIDE hierarchy schema — every field declares its GRAIN (brand|product|item|
 # sku|supplier). The apply engine SHREDS one mapped source into dim_brand → dim_product → dim_item →
@@ -1443,6 +1556,7 @@ def master_apply_ep():
         spec = ENTITIES[entity]
         fields = _master_schema(entity)
         maps = _outlet_maps_effective() if entity == "outlet" else load(spec["maps"], {})
+        maps = _resolve_dict_refs(maps)            # expand {mode:'dict', dict:<id>} rows to inline entries
         who = _user_rec().get("code", "SYS")
         res = master_apply.build(fields, maps, entity=entity, built_by=who, built_at=int(time.time()),
                                  log=lambda mm: app.logger.info("APPLY[%s] %s", entity, mm))
@@ -1708,7 +1822,7 @@ def fact_apply_ep():
         body = request.get_json(silent=True) or {}
         fact = _fact(body.get("fact") or request.args.get("fact", "inventory"))
         fields = _fact_schema(fact)
-        maps = _fact_maps_effective(fact)
+        maps = _resolve_dict_refs(_fact_maps_effective(fact))    # expand dict refs to inline entries
         who = _user_rec().get("code", "SYS")
         res = master_facts.build(fact, fields, maps, built_by=who, built_at=int(time.time()),
                                  log=lambda mm: app.logger.info("FACT[%s] %s", fact, mm))
