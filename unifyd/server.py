@@ -769,12 +769,9 @@ def datasets():
         out[k] = dict(ds, rows=rows, matched=len(rows))
     return jsonify(out)
 
-@app.get("/api/catalog")
-def catalog_ep():
-    """Every dataset we actually hold, across ALL THREE stores — the estate model's 'whole thing'
-    view (it polls this so new datasets appear on their own). {key: {header, total, store}}. Light:
-    header + count + store only, no row data. memory = in-RAM sample; full = save_full'd on Tigris;
-    warehouse = Parquet. Precedence memory → full → warehouse so a real count wins over a stub."""
+def _catalog_map():
+    """Every dataset we hold, across all three stores: {key: {header, total, store}}. memory = in-RAM
+    sample; full = save_full'd on Tigris; warehouse = Parquet. Precedence memory → full → warehouse."""
     out = {}
     for k, ds in DATASETS.items():
         out[k] = {"header": ds.get("header") or [],
@@ -791,7 +788,79 @@ def catalog_ep():
                                    "store": "warehouse"})
     except Exception as e:
         app.logger.warning("warehouse catalog failed: %s", e)
-    return jsonify(out)
+    return out
+
+@app.get("/api/catalog")
+def catalog_ep():
+    """The estate model's 'whole thing' view (it polls this so new datasets appear on their own)."""
+    return jsonify(_catalog_map())
+
+# ── /api/sources — the SINGLE source of truth for what we hold + what each dataset FEEDS. Driven by the
+# mappings/seeds themselves (authoritative) + name heuristics, so labels/tags stay accurate as the list
+# grows. Powers the MDM Sources view and keeps the estate tags current (no more hardcoded name map). ──
+_FEED_ORDER = ["master", "outlet", "product", "inventory", "pricing", "reference", "other"]
+_FEED_GROUP = {"master": "Owned masters", "outlet": "Outlet sources", "product": "Product & label sources",
+               "inventory": "Inventory feeds", "pricing": "Pricing feeds", "reference": "Reference data",
+               "other": "Unclassified"}
+_DS_LABELS = {"outlets_master": "Outlet master", "ab_outlets": "AB InBev · Retailer locator",
+              "total_wine_products": "Total Wine · Catalog", "ttb_cola": "TTB · COLA labels",
+              "cola_cluster": "COLA · Product clusters", "bc_liquor": "BC Liquor · Price list",
+              "or_pricing": "Oregon OLCC · Pricing", "orlando_accounts": "Orlando · On-premise accounts",
+              "census_acs": "Census · ACS demographics", "census_reference": "Census · CBP/NES/PEP",
+              "outlets_census": "Outlets × census"}
+
+def _ds_label(name):
+    if name in _DS_LABELS:
+        return _DS_LABELS[name]
+    if name.startswith("dim_"):
+        return "Master · " + name[4:].replace("_", " ").title()
+    if name.startswith("fact_"):
+        return "Fact · " + name[5:].replace("_", " ").title()
+    if name.startswith("vtinfo_"):
+        return "VTInfo · " + name[7:].replace("-", " ").title()
+    return name.replace("_", " ").replace("-", " ").title()
+
+def _ds_feeds(name, mp):
+    """Which master(s) a dataset feeds — mappings/seeds are authoritative; heuristics fill unmapped ones."""
+    if name.startswith("dim_") or name.startswith("fact_"):
+        return ["master"]
+    f = set()
+    if _seed_for(name) or name in mp["outlet"]:
+        f.add("outlet")
+    if name in mp["product"]:
+        f.add("product")
+    for fact in FACTS:
+        if _fact_seed_for(fact, name) or name in mp.get(fact, {}):
+            f.add(fact)
+    if not f:
+        n = name.lower()
+        if re.search(r"census|_census", n): f.add("reference")
+        elif re.search(r"\bcola\b|ttb", n): f.add("product")
+        elif re.search(r"outlet|licens|premise|account|_sla|tabc|dcp|\bny_|\bco_|\bmo_|\bct_|\btx_|\bil_", n): f.add("outlet")
+        elif re.search(r"pric|bc_liquor|or_pricing|total_wine|iowa_prod|catalog|mont_", n): f.add("product")
+        elif re.search(r"binny|spec|abc_|instacart|shopify|iowa_sales", n): f.add("inventory")
+    return [x for x in _FEED_ORDER if x in f] or ["other"]
+
+@app.get("/api/sources")
+def sources_ep():
+    cat = _catalog_map()
+    mp = {"outlet": load(ENTITIES["outlet"]["maps"], {}), "product": load(ENTITIES["product"]["maps"], {})}
+    for fact in FACTS:
+        mp[fact] = load(FACTS[fact]["maps"], {})
+    items = []
+    for k, v in cat.items():
+        feeds = _ds_feeds(k, mp)
+        is_master = feeds[0] == "master"
+        mapped = (any(k in mp[e] for e in mp) or bool(_seed_for(k))
+                  or any(_fact_seed_for(fc, k) for fc in FACTS))
+        items.append({"id": k, "label": _ds_label(k), "rows": v.get("total", 0),
+                      "store": v.get("store"), "cols": len(v.get("header") or []), "feeds": feeds,
+                      "group": _FEED_GROUP[feeds[0]],
+                      "status": "master" if is_master else ("mapped" if mapped else "unmapped")})
+    gi = {_FEED_GROUP[fk]: i for i, fk in enumerate(_FEED_ORDER)}
+    items.sort(key=lambda x: (gi.get(x["group"], 9), -(x["rows"] or 0)))
+    present = [_FEED_GROUP[fk] for fk in _FEED_ORDER if any(it["group"] == _FEED_GROUP[fk] for it in items)]
+    return jsonify(ok=True, count=len(items), groups=present, sources=items)
 
 # ── Product registrations (TTB COLA) — label-approval filings + distinct-product clusters ──
 def _cola_q(name, sql, params=None):

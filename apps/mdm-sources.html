@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sources — Hoodie MDM</title>
+<style>
+  :root{
+    --ink:#2B3138; --paper:#F1F3F5; --panel:#fff; --muted:#7A828B; --line:#E4E7EB;
+    --accent:#4E79A7; --accent-soft:#EAF0F6;
+    --master:#9a7100; --outlet:#4E79A7; --product:#3f9668; --inventory:#4a90d9;
+    --pricing:#6b5ca5; --reference:#8a6fd0; --other:#96a0a8;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace; --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--paper);color:var(--ink);font-family:var(--font);font-size:14px}
+  body{padding:22px 26px 60px}
+  .embed body{padding-top:14px}
+  .wrap{max-width:1120px;margin:0 auto}
+  .pagehead h1{font-size:22px;font-weight:800;letter-spacing:-.01em}
+  .pagehead .sub{color:var(--muted);font-size:13px;margin-top:3px;max-width:680px;line-height:1.5}
+  .embed .pagehead{display:none}
+
+  .chips{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 6px}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 15px;min-width:120px}
+  .chip .n{font-family:var(--mono);font-weight:700;font-size:20px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .chip .l{font-size:11px;color:var(--muted);margin-top:4px}
+
+  .bar{display:flex;align-items:center;gap:11px;margin:14px 0 10px;flex-wrap:wrap}
+  input.search{flex:1;min-width:200px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-family:var(--mono);font-size:12.5px;outline:none;color:var(--ink)}
+  input.search:focus{border-color:var(--accent)}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .legend i{width:9px;height:9px;border-radius:3px;display:inline-block}
+
+  .group{margin-top:18px}
+  .ghead{display:flex;align-items:baseline;gap:10px;margin:0 2px 8px;padding-bottom:7px;border-bottom:2px solid var(--gc,var(--line))}
+  .ghead h2{font-size:13px;font-weight:800;letter-spacing:.01em}
+  .ghead .gc{font-family:var(--mono);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .ghead .gr{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  .rows{display:flex;flex-direction:column;gap:6px}
+  .src{display:grid;grid-template-columns:1fr auto auto auto;gap:12px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 14px}
+  .src:hover{border-color:#cfd6dc}
+  .src .nm{min-width:0}
+  .src .nm .t{font-weight:700;font-size:13.5px;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .src .nm .id{font-family:var(--mono);font-size:10.5px;color:#aab2ba;margin-top:2px}
+  .feeds{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;max-width:230px}
+  .tag{font-size:9.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:2px 7px;border-radius:5px;color:#fff}
+  .cnt{font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums;text-align:right;min-width:78px}
+  .cnt .u{font-size:9.5px;color:#aab2ba;margin-left:3px}
+  .rt{display:flex;gap:6px;align-items:center;justify-content:flex-end;min-width:150px}
+  .store{font-family:var(--mono);font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:2px 6px}
+  .st{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:2px 7px;border-radius:20px}
+  .st.master{background:#f5efdc;color:var(--master)} .st.mapped{background:#e7f2ea;color:var(--product)}
+  .st.unmapped{background:#fbeee0;color:#b46a12;cursor:pointer}
+  .st.unmapped:hover{background:#f6e0c8}
+  .empty{color:var(--muted);font-size:13px;padding:30px;text-align:center}
+  @media(max-width:720px){.src{grid-template-columns:1fr auto}.feeds,.rt{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="pagehead"><h1>Sources</h1>
+    <div class="sub">Every dataset feeding the master, grouped by what it feeds. Labels and tags are
+      derived from the mappings themselves, so this stays accurate as the list grows.</div></div>
+
+  <div class="chips" id="chips"></div>
+  <div class="bar">
+    <input class="search" id="q" placeholder="filter sources…">
+    <div class="legend" id="legend"></div>
+  </div>
+  <div id="groups"><div class="empty">Loading sources…</div></div>
+</div>
+
+<script>
+if(new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
+const FEEDCOL={master:'--master',outlet:'--outlet',product:'--product',inventory:'--inventory',pricing:'--pricing',reference:'--reference',other:'--other'};
+const cvar=k=>getComputedStyle(document.documentElement).getPropertyValue(FEEDCOL[k]||'--other').trim();
+const GROUPCOL={'Owned masters':'master','Outlet sources':'outlet','Product & label sources':'product','Inventory feeds':'inventory','Pricing feeds':'pricing','Reference data':'reference','Unclassified':'other'};
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=n=>(n||0).toLocaleString();
+let ALL=[], GROUPS=[];
+
+async function load(){
+  try{
+    const j=await (await fetch('/api/sources',{cache:'no-store'})).json();
+    if(!j||!j.sources){ throw 0; }
+    ALL=j.sources; GROUPS=j.groups||[]; render();
+  }catch(e){
+    document.getElementById('groups').innerHTML='<div class="empty">Connect the engine to list sources (the master builds on Fly).</div>';
+  }
+}
+function chips(){
+  const n=ALL.length, master=ALL.filter(s=>s.status==='master').length,
+    mapped=ALL.filter(s=>s.status==='mapped').length, unmapped=ALL.filter(s=>s.status==='unmapped').length,
+    rows=ALL.reduce((a,s)=>a+(s.rows||0),0);
+  document.getElementById('chips').innerHTML=
+    chip(n,'datasets')+chip(fmt(rows),'total rows')+chip(master,'master tables')+
+    chip(mapped,'mapped sources')+chip(unmapped,'to map');
+}
+function chip(n,l){return '<div class="chip"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>';}
+function legend(){
+  document.getElementById('legend').innerHTML=Object.keys(FEEDCOL).map(k=>
+    '<span><i style="background:'+cvar(k)+'"></i>'+k+'</span>').join('');
+}
+function render(){
+  chips(); legend();
+  const q=(document.getElementById('q').value||'').toLowerCase();
+  const rows=ALL.filter(s=>!q||s.label.toLowerCase().includes(q)||s.id.toLowerCase().includes(q)||(s.feeds||[]).some(f=>f.includes(q)));
+  const host=document.getElementById('groups');
+  if(!rows.length){ host.innerHTML='<div class="empty">No sources match.</div>'; return; }
+  const order=GROUPS.length?GROUPS:[...new Set(rows.map(s=>s.group))];
+  host.innerHTML=order.map(g=>{
+    const items=rows.filter(s=>s.group===g); if(!items.length) return '';
+    const col=cvar(GROUPCOL[g]||'other'), gr=items.reduce((a,s)=>a+(s.rows||0),0);
+    return '<div class="group"><div class="ghead" style="--gc:'+col+'"><h2>'+esc(g)+'</h2>'+
+      '<span class="gc">'+items.length+'</span><span class="gr">'+fmt(gr)+' rows</span></div>'+
+      '<div class="rows">'+items.map(s=>srcRow(s)).join('')+'</div></div>';
+  }).join('');
+  host.querySelectorAll('.st.unmapped').forEach(el=>el.onclick=()=>gotoMap(el.dataset.id));
+}
+function srcRow(s){
+  const feeds=(s.feeds||[]).map(f=>'<span class="tag" style="background:'+cvar(f)+'">'+f+'</span>').join('');
+  const st='<span class="st '+s.status+'"'+(s.status==='unmapped'?' data-id="'+esc(s.id)+'" title="map this source →"':'')+'>'+s.status+'</span>';
+  return '<div class="src"><div class="nm"><div class="t">'+esc(s.label)+'</div><div class="id">'+esc(s.id)+'</div></div>'+
+    '<div class="feeds">'+feeds+'</div>'+
+    '<div class="cnt">'+fmt(s.rows)+'<span class="u">rows</span></div>'+
+    '<div class="rt"><span class="store">'+esc(s.store||'')+'</span>'+st+'</div></div>';
+}
+function gotoMap(id){ // hop to the MDM mapping tab with this dataset
+  try{ (window.top||window).location.hash='#mdm'; parent.postMessage({__hoodie:'nav',app:'mdm',active:'mapping'},'*'); }catch(e){}
+}
+document.getElementById('q').addEventListener('input',render);
+load(); setInterval(load, 20000);   // stay current as the list grows
+</script>
+</body>
+</html>

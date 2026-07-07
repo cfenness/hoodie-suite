@@ -126,6 +126,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// server-derived labels + feeds (from /api/sources) — the single source of truth, so tags don't drift
+const SRCLABEL={}, SRCFEEDS={};
 
 // ── canonical entities (the dimensional model) — fixed geography ───────────────────
 // dimensions: supplier, brand → product → item → sku (the hierarchy spine), outlet.
@@ -204,7 +206,8 @@ function cardSVG(ca,cb){
 }
 function hostOf(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch(e){ return ''; } }
 function friendly(nm){ return String(nm||'source').replace(/\s*—.*$/,'').replace(/\s*\([^)]*\)\s*$/,'').slice(0,26); }
-function dsName(k){ const M={bd4008lic:'FL · Item master',bd4011lic:'FL · Registrants',abtbrands:'FL · Brand renewals',bd4006lic:'FL · Retail outlets',bd4005lic:'FL · Wholesale',bd400revok:'FL · Revoked',bd4002lic:'FL · Permits',abc_store_cells:'ABC · store cells',census_demographic:'Census · Demographic',census_economic:'Census · Economic',census_housing:'Census · Housing',outlets_census:'Outlets × census',tx_outlets:'TX · Retail outlets',tx_companies:'TX · Companies',il_outlets:'Chicago · Liquor outlets',il_companies:'Chicago · Companies',outlets_master:'Outlet master',
+function dsName(k){ if(SRCLABEL[k]) return SRCLABEL[k];   // server label wins (stays accurate as sources grow)
+  const M={bd4008lic:'FL · Item master',bd4011lic:'FL · Registrants',abtbrands:'FL · Brand renewals',bd4006lic:'FL · Retail outlets',bd4005lic:'FL · Wholesale',bd400revok:'FL · Revoked',bd4002lic:'FL · Permits',abc_store_cells:'ABC · store cells',census_demographic:'Census · Demographic',census_economic:'Census · Economic',census_housing:'Census · Housing',outlets_census:'Outlets × census',tx_outlets:'TX · Retail outlets',tx_companies:'TX · Companies',il_outlets:'Chicago · Liquor outlets',il_companies:'Chicago · Companies',outlets_master:'Outlet master',
   ct_outlets:'CT · Premises',ct_brands:'CT · Brand registry',ct_companies:'CT · Companies',
   ny_outlets:'NY · SLA licenses',co_outlets:'CO · Liquor licenses',mo_outlets:'MO · Alcohol licenses',
   census_reference:'Census · Reference (CBP/NES/PEP)',census_acs:'Census · ACS demographics',
@@ -255,7 +258,9 @@ function layoutClusters3D(nodes){
 // ── live read ──────────────────────────────────────────────────────────────────────
 async function loadLive(){
   const get=u=>fetch(u,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
-  const [recs,dsets,hls]=await Promise.all([get('/api/recipes'),get('/api/catalog'),get('/api/highlights')]);
+  const [recs,dsets,hls,srcs]=await Promise.all([get('/api/recipes'),get('/api/catalog'),get('/api/highlights'),get('/api/sources')]);
+  // adopt the server's SINGLE source of truth for labels + which master each feeds (no hardcoded map to drift)
+  if(srcs&&srcs.sources) srcs.sources.forEach(s=>{ SRCLABEL[s.id]=s.label; SRCFEEDS[s.id]=s.feeds||[]; });
   return { recipes:(recs&&recs.recipes)||[], datasets:dsets||{}, highlights:(hls&&hls.highlights)||[], online:!!(recs||dsets) };
 }
 // build the graph model from the live read (+ catalog for the familiar estate)
