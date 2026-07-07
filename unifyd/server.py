@@ -1693,8 +1693,8 @@ def master_outlets_geo_ep():
     wsql = " WHERE " + " AND ".join(where)
     try:
         rows = warehouse.query("dim_outlet_resolved",
-            "SELECT outlet_key, try_cast(lat AS DOUBLE) lat, try_cast(lng AS DOUBLE) lng, "
-            "CAST(outlet_name AS VARCHAR) name, CAST(state AS VARCHAR) state FROM t%s LIMIT 20000" % wsql, params)
+            "SELECT outlet_key, try_cast(lat AS DOUBLE) AS lat, try_cast(lng AS DOUBLE) AS lng, "
+            "CAST(outlet_name AS VARCHAR) AS \"name\", CAST(state AS VARCHAR) AS state FROM t%s LIMIT 20000" % wsql, params)
     except Exception as e:
         return jsonify(ok=True, landed=False, error=str(e)[:140], points=[]), 200
     return jsonify(ok=True, landed=True, count=len(rows), points=rows)

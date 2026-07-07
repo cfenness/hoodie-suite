@@ -114,7 +114,16 @@ def resolve_hierarchy(master_fields, dim_uri, con, built_by="SYS", built_at=None
     keys = _keyexprs(mnames)
     audit = ("%d AS master_created_at, %d AS master_updated_at, %s AS updated_by"
              % (built_at, built_at, derive._sqlstr(built_by)))
+    # QUALITY GATE: a record needs the top identity (a brand) to be PROMOTED into the master. Brand-less
+    # source rows are NOT masters — they stay in the source (untouched) + eligible for later matching /
+    # enrichment. This keeps the master to real, identifiable products.
+    gate = (" WHERE nullif(trim(CAST(%s AS VARCHAR)),'') IS NOT NULL" % derive.col("brand")) if "brand" in mnames else ""
     out = {}
+    if gate:
+        staged = con.execute("SELECT count(*) FROM read_parquet('%s')" % dim_uri).fetchone()[0]
+        kept = con.execute("SELECT count(*) FROM read_parquet('%s')%s" % (dim_uri, gate)).fetchone()[0]
+        out["_gate"] = {"staged": staged, "qualified": kept, "excluded": staged - kept}
+        log("brand gate: %d/%d source rows qualify (%d brand-less held back)" % (kept, staged, staged - kept))
     for i, g in enumerate(HIERARCHY):
         attrs = [f for f in mnames if grain.get(f) == g]
         cols = "%s AS %s_key" % (keys[g], g)
@@ -122,10 +131,10 @@ def resolve_hierarchy(master_fields, dim_uri, con, built_by="SYS", built_at=None
             cols += ", any_value(%s) AS %s_key" % (keys[HIERARCHY[i - 1]], HIERARCHY[i - 1])
         if attrs:
             cols += ", " + ", ".join("any_value(%s) AS %s" % (derive.col(a), derive.col(a)) for a in attrs)
-        sql = ("WITH b AS (SELECT * FROM read_parquet('%s')) "
+        sql = ("WITH b AS (SELECT * FROM read_parquet('%s')%s) "
                "SELECT %s, count(*) AS source_rows, count(DISTINCT _source) AS sources, "
                "list_distinct(list(_source)) AS source_list, %s FROM b GROUP BY %s"
-               % (dim_uri, cols, audit, keys[g]))
+               % (dim_uri, gate, cols, audit, keys[g]))
         rtable = "dim_%s" % g
         rdst = warehouse.uri(rtable).replace("'", "")
         con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (sql, rdst))
