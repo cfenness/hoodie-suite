@@ -685,6 +685,77 @@ def catalog_ep():
         app.logger.warning("warehouse catalog failed: %s", e)
     return jsonify(out)
 
+# ── Product registrations (TTB COLA) — label-approval filings + distinct-product clusters ──
+def _cola_q(name, sql, params=None):
+    import warehouse
+    return warehouse.query(name, sql, params or [])
+
+@app.get("/api/cola/stats")
+def cola_stats_ep():
+    """Overview for the product-registration page: total filings, distinct product clusters, UPC
+    coverage, filings-by-year, top class/types + applicants. Reads the warehouse Parquet via DuckDB."""
+    try:
+        total = _cola_q("ttb_cola", "SELECT count(*) c FROM t")[0]["c"]
+    except Exception:
+        return jsonify(ok=True, landed=False, total=0, note="ttb_cola not landed yet")
+    def q(sql):
+        try: return _cola_q("ttb_cola", sql)
+        except Exception: return []
+    by_year = q("SELECT substr(\"Completed Date\",7,4) yr, count(*) n FROM t "
+                "WHERE length(\"Completed Date\")>=10 GROUP BY 1 ORDER BY yr")
+    top_class = q("SELECT \"Class/Type\" k, count(*) n FROM t WHERE \"Class/Type\"<>'' GROUP BY 1 ORDER BY n DESC LIMIT 12")
+    top_appl = q("SELECT \"Applicant\" k, count(*) n FROM t WHERE \"Applicant\"<>'' GROUP BY 1 ORDER BY n DESC LIMIT 12")
+    upc = q("SELECT count(*) c FROM t WHERE \"UPC\"<>''")
+    clusters = None
+    try: clusters = _cola_q("cola_cluster", "SELECT count(*) c FROM t")[0]["c"]
+    except Exception: pass
+    return jsonify(ok=True, landed=True, total=total, clusters=clusters,
+                   with_upc=(upc[0]["c"] if upc else 0), by_year=by_year,
+                   top_class=top_class, top_applicant=top_appl)
+
+@app.get("/api/cola/registrations")
+def cola_regs_ep():
+    """Paged + searchable COLA filings (brand / applicant / TTB ID / UPC), server-side over ~1M+ rows."""
+    q = (request.args.get("q") or "").strip()
+    try:
+        off = max(0, int(request.args.get("offset", "0") or 0)); lim = min(200, max(1, int(request.args.get("limit", "50") or 50)))
+    except ValueError:
+        off, lim = 0, 50
+    where, params = "1=1", []
+    if q:
+        where = "(\"Brand Name\" ILIKE ? OR \"Applicant\" ILIKE ? OR \"TTB ID\"=? OR \"UPC\"=?)"
+        params = ["%" + q + "%", "%" + q + "%", q, q]
+    cols = '"TTB ID","Brand Name","Fanciful Name","Class/Type","Origin","Applicant","Completed Date","Net Contents","UPC"'
+    try:
+        total = _cola_q("ttb_cola", "SELECT count(*) c FROM t WHERE " + where, params)[0]["c"]
+        rows = _cola_q("ttb_cola", "SELECT %s FROM t WHERE %s ORDER BY \"TTB ID\" DESC LIMIT %d OFFSET %d"
+                       % (cols, where, lim, off), params)
+    except Exception as e:
+        return jsonify(ok=False, landed=False, error=str(e)[:140], rows=[]), 200
+    return jsonify(ok=True, total=total, offset=off, limit=lim, rows=rows)
+
+@app.get("/api/cola/clusters")
+def cola_clusters_ep():
+    """Paged distinct-PRODUCT clusters (collapsed filing noise) — brand/fanciful/class/size/supplier,
+    member count, confidence, flagged. From cola_cluster (the scale dedup layer)."""
+    q = (request.args.get("q") or "").strip()
+    try:
+        off = max(0, int(request.args.get("offset", "0") or 0)); lim = min(200, max(1, int(request.args.get("limit", "50") or 50)))
+    except ValueError:
+        off, lim = 0, 50
+    where, params = "1=1", []
+    if q:
+        where = "(brand ILIKE ? OR fanciful ILIKE ? OR supplier ILIKE ?)"
+        params = ["%" + q + "%"] * 3
+    try:
+        total = _cola_q("cola_cluster", "SELECT count(*) c FROM t WHERE " + where, params)[0]["c"]
+        rows = _cola_q("cola_cluster", "SELECT cluster_id, brand, fanciful, class_type, size_ml, supplier, "
+                       "member_count, confidence, flagged FROM t WHERE %s ORDER BY member_count DESC LIMIT %d OFFSET %d"
+                       % (where, lim, off), params)
+    except Exception as e:
+        return jsonify(ok=False, landed=False, error=str(e)[:140], rows=[]), 200
+    return jsonify(ok=True, total=total, offset=off, limit=lim, rows=rows)
+
 @app.get("/api/datasets/download")
 def dataset_download():
     """Stream the COMPLETE pulled dataset (all rows, not the UI sample) as CSV or JSON."""
