@@ -279,7 +279,14 @@ function buildModel(live){
   const seen={};   // dedupe by display name
   function addSource(key,disp,status,sub,cols,hints,liveFlag,dataset,host){
     const dn=disp.toLowerCase(); if(seen[dn]) return; seen[dn]=1;
-    const rs=roadsFromCols(cols,hints), ents=rs.map(r=>r[0]);
+    let rs=roadsFromCols(cols,hints);
+    // FACT edges (inventory/pricing) must be CONFIRMED, not guessed from a column name: keep them only
+    // when the server's /api/sources feeds say this dataset actually feeds that fact (a real mapping or
+    // seed exists). So a node only attaches to Inventory when we've confirmed inventory exists for it.
+    const feeds=(dataset&&SRCFEEDS[dataset])||null;
+    rs=rs.filter(([e])=> (e!=='inventory'&&e!=='pricing') ? true : (feeds&&feeds.indexOf(e)>=0));
+    if(feeds) ['inventory','pricing'].forEach(f=>{ if(feeds.indexOf(f)>=0 && !rs.some(x=>x[0]===f)) rs.push([f, f==='pricing'?'price':'availability']); });
+    const ents=rs.map(r=>r[0]);
     const n={id:key,label:friendly(disp),full:disp,kind:'src',status:(status||'planned').toLowerCase(),
              sub:sub,live:liveFlag,cols:(cols||[]),dataset:dataset||null,host:host||null,
              primaryEnt:ents[0]||'other',pos:stablePos(disp,ents)};
@@ -346,6 +353,17 @@ function disposeGraph(){
     if(c.geometry && c.geometry!==esph && c.geometry!==soct && c.geometry!==pulseGeo) c.geometry.dispose();   // keep shared geos
     if(c.material)c.material.dispose(); }
 }
+let HIDE_PLANNED=false;
+function applyHidePlanned(){
+  if(!nodes||!nodes.length) return;
+  // "planned" = a source that isn't a confirmed live feed (the grey nodes) — hide those, keep live data
+  nodes.forEach(x=>{ const hide=HIDE_PLANNED && x.kind==='src' && !x.live;
+    x._hidden=hide; if(x.mesh) x.mesh.visible=!hide; if(x.loObj) x.loObj.visible=!hide; });
+  edges.forEach(e=>{ const h=(byId[e.a]&&byId[e.a]._hidden)||(byId[e.b]&&byId[e.b]._hidden);
+    if(e.line) e.line.visible=!h; });
+  (clusterLabels||[]).forEach(o=>{ const cl=o.userData&&o.userData.cl;   // hide a group label if all its sources went
+    if(cl&&cl.nodes) o.visible=cl.nodes.some(n=>!n._hidden); });
+}
 function buildGraph(model){
   disposeGraph();
   nodes=model.nodes; edges=model.edges; byId=model.byId; adj=model.adj; selected=null;
@@ -359,7 +377,7 @@ function buildGraph(model){
     else d.textContent=n.label;
     // label offset is in the mesh's LOCAL space (scaled by setScalar above), so keep it just
     // past the unit-geometry radius (1) — ~1.5 sits the label snug above the node, not floating.
-    const lo=new CSS2DObject(d); lo.position.set(0,ent?1.55:1.7,0); m.add(lo); n.lo=d;
+    const lo=new CSS2DObject(d); lo.position.set(0,ent?1.55:1.7,0); m.add(lo); n.lo=d; n.loObj=lo;
   });
   edges.forEach(e=>{
     const na=byId[e.a], nb=byId[e.b];
@@ -385,6 +403,7 @@ function buildGraph(model){
     d.addEventListener('click',ev=>{ ev.stopPropagation(); focusCluster(cl); });
   });
   meshes=nodes.map(n=>n.mesh);
+  applyHidePlanned();   // re-apply the hide-planned filter after a rebuild
   // frame + pivot on the bounding-box CENTER so orbit feels centered and the cloud fills the view
   const box=new THREE.Box3(); nodes.forEach(n=>box.expandByPoint(n.pos));
   const c=box.getCenter(new THREE.Vector3()), size=box.getSize(new THREE.Vector3());
@@ -620,9 +639,12 @@ document.addEventListener('click', e=>{ if(!document.getElementById('esearch').c
 // ── entity filter — pick a core entity, everything it doesn't touch drops out (setFocus does it) ──
 (function(){
   const ef=document.getElementById('efilter');
-  ef.innerHTML='<button data-ef="" class="on">All</button>'+ENT.map(e=>'<button data-ef="'+e.id+'">'+e.label+'</button>').join('');
-  ef.querySelectorAll('button').forEach(b=>b.onclick=()=>{ const id=b.getAttribute('data-ef'); setFocus(id?byId[id]:null); });
-  window.__efSync=function(key){ ef.querySelectorAll('button').forEach(x=>x.classList.toggle('on', x.getAttribute('data-ef')===key)); };
+  ef.innerHTML='<button data-ef="" class="on">All</button>'+ENT.map(e=>'<button data-ef="'+e.id+'">'+e.label+'</button>').join('')
+    +'<button data-hp="1" title="hide sources that are only planned (not yet a confirmed / live feed)">hide planned</button>';
+  ef.querySelectorAll('button[data-ef]').forEach(b=>b.onclick=()=>{ const id=b.getAttribute('data-ef'); setFocus(id?byId[id]:null); });
+  const hp=ef.querySelector('button[data-hp]');
+  hp.onclick=()=>{ HIDE_PLANNED=!HIDE_PLANNED; hp.classList.toggle('on',HIDE_PLANNED); applyHidePlanned(); };
+  window.__efSync=function(key){ ef.querySelectorAll('button[data-ef]').forEach(x=>x.classList.toggle('on', x.getAttribute('data-ef')===key)); };
 })();
 
 refresh(); setInterval(refresh,60000); setInterval(tickLive,5000); tick();
