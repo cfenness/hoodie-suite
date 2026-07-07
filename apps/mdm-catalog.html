@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catalog — Hoodie MDM</title>
+<style>
+  :root{
+    --ink:#2B3138; --paper:#F1F3F5; --panel:#fff; --muted:#7A828B; --line:#E4E7EB;
+    --accent:#4E79A7; --accent-soft:#EAF0F6; --good:#3f9668;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace; --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--paper);color:var(--ink);font-family:var(--font);font-size:14px}
+  body{padding:22px 26px 60px}
+  .embed body{padding-top:14px}
+  .wrap{max-width:1140px;margin:0 auto}
+  .pagehead h1{font-size:22px;font-weight:800;letter-spacing:-.01em}
+  .pagehead .sub{color:var(--muted);font-size:13px;margin-top:3px;max-width:680px;line-height:1.5}
+  .embed .pagehead{display:none}
+  .chips{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 8px}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 15px;min-width:104px}
+  .chip .n{font-family:var(--mono);font-weight:700;font-size:19px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .chip .n.accent{color:var(--accent)} .chip .l{font-size:11px;color:var(--muted);margin-top:4px}
+  .bar{display:flex;align-items:center;gap:10px;margin:12px 0 10px;flex-wrap:wrap}
+  input.search{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-family:var(--mono);font-size:12.5px;outline:none;color:var(--ink)}
+  input.search:focus{border-color:var(--accent)}
+  .pager{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .pager button{background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:5px 11px;cursor:pointer}
+  .pager button:disabled{opacity:.4;cursor:default}
+  .twrap{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .tscroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{position:sticky;top:0;background:#F7F9FA;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-size:9px;text-align:left;padding:9px 13px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:9px 13px;border-bottom:1px solid var(--line);vertical-align:top}
+  tbody tr{cursor:pointer} tbody tr:hover td{background:#FAFBFC} tbody tr.sel td{background:var(--accent-soft)}
+  .brand{font-weight:700;letter-spacing:-.01em}
+  .prod{font-size:12.5px}
+  .cat{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:2px}
+  .upc{font-family:var(--mono);font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .sz{font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums}
+  .src{font-family:var(--mono);font-size:11px;text-align:center;font-variant-numeric:tabular-nums}.src b{color:var(--accent)}
+  .empty{padding:34px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:360px;max-width:92vw;background:var(--panel);border-left:1px solid var(--line);box-shadow:-8px 0 24px rgba(0,0,0,.08);transform:translateX(100%);transition:transform .22s;z-index:20;overflow:auto;padding:20px 22px}
+  .drawer.show{transform:none}
+  .drawer .x{position:absolute;top:14px;right:16px;border:none;background:none;font-size:20px;color:var(--muted);cursor:pointer;line-height:1}
+  .drawer .k{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .drawer .nm{font-size:19px;font-weight:800;margin:2px 0 1px;letter-spacing:-.01em}
+  .drawer .meta{font-size:12.5px;color:var(--muted);margin-bottom:14px;line-height:1.5}
+  .drawer .sec{font-family:var(--mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:15px 0 7px;font-weight:700}
+  .drawer .kv{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;padding:5px 0;border-bottom:1px solid #EEF1F4}
+  .drawer .kv .kk{color:var(--muted)} .drawer .kv .vv{font-family:var(--mono);text-align:right;word-break:break-word}
+  .drawer .grain{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .drawer .gp{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:2px 7px;border-radius:5px;background:var(--accent-soft);color:#2E4C6D}
+  .drawer .prov{display:flex;flex-wrap:wrap;gap:5px} .drawer .prov .b{font-size:9px;font-weight:700;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:#eef3ee;color:var(--good)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="pagehead"><h1>Catalog</h1>
+    <div class="sub">Browse the product catalog — <code>dim_sku</code> resolved up the hierarchy
+      (sku → item → product → brand). Search by brand, product or UPC; open a row for the full record.</div></div>
+  <div class="chips" id="chips"></div>
+  <div class="bar">
+    <input class="search" id="q" placeholder="search brand, product, UPC…">
+    <div class="pager"><button id="prev">‹</button><span id="pg">–</span><button id="next">›</button></div>
+  </div>
+  <div class="twrap"><div class="tscroll"><table>
+    <thead><tr><th>Brand / Product</th><th>Category</th><th>Origin</th><th>Size</th><th>UPC</th><th style="text-align:center">Sources</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="6" class="empty">Loading the catalog…</td></tr></tbody>
+  </table></div></div>
+</div>
+<div class="drawer" id="drawer"></div>
+<script>
+if(new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=n=>(n==null||n==='')?'':Number(n).toLocaleString();
+let page=0, size=50, total=0;
+
+async function loadCounts(){
+  try{ const j=await (await fetch('/api/master/counts',{cache:'no-store'})).json(); const c=j.counts||{};
+    document.getElementById('chips').innerHTML=
+      chip(fmt(c.dim_sku),'SKUs',1)+chip(fmt(c.dim_product),'products')+chip(fmt(c.dim_brand),'brands')+
+      chip(fmt(c.dim_supplier),'suppliers')+chip(fmt(c.dim_item),'items');
+  }catch(e){}
+}
+function chip(n,l,a){return '<div class="chip"><div class="n'+(a?' accent':'')+'">'+(n||'–')+'</div><div class="l">'+l+'</div></div>';}
+async function load(){
+  const q=document.getElementById('q').value.trim();
+  try{
+    const j=await (await fetch('/api/master/skus?page='+page+'&size='+size+'&q='+encodeURIComponent(q),{cache:'no-store'})).json();
+    if(!j.landed){ document.getElementById('rows').innerHTML='<tr><td colspan="6" class="empty">No catalog yet — run a product Apply (COLA/bc_liquor → dim_sku) to populate it.</td></tr>'; return; }
+    total=j.total; render(j);
+  }catch(e){ document.getElementById('rows').innerHTML='<tr><td colspan="6" class="empty">Connect the engine to browse the catalog.</td></tr>'; }
+}
+function render(j){
+  document.getElementById('rows').innerHTML=(j.skus||[]).map(s=>
+    '<tr data-k="'+esc(s.sku_key)+'"><td><div class="brand">'+esc(s.brand||'—')+'</div><div class="prod">'+esc(s.product_name||'')+'</div></td>'+
+    '<td class="cat">'+esc(s.category||'')+'</td>'+
+    '<td class="cat">'+esc(s.origin||'')+'</td>'+
+    '<td class="sz">'+(s.size_ml?esc(s.size_ml)+' mL':'')+'</td>'+
+    '<td class="upc">'+esc(s.upc||'')+'</td>'+
+    '<td class="src"><b>'+(s.sources||1)+'</b></td></tr>').join('')
+    || '<tr><td colspan="6" class="empty">No products match.</td></tr>';
+  document.querySelectorAll('#rows tr[data-k]').forEach(tr=>tr.onclick=()=>openSku(tr.dataset.k,tr));
+  const pages=Math.max(1,Math.ceil(total/size));
+  document.getElementById('pg').textContent=(total?(page*size+1):0)+'–'+Math.min(total,(page+1)*size)+' of '+fmt(total);
+  document.getElementById('prev').disabled=page<=0; document.getElementById('next').disabled=(page+1)>=pages;
+}
+async function openSku(key,tr){
+  document.querySelectorAll('#rows tr').forEach(x=>x.classList.remove('sel')); if(tr) tr.classList.add('sel');
+  const d=document.getElementById('drawer'); d.classList.add('show'); d.innerHTML='<div class="empty">loading…</div>';
+  try{
+    const j=await (await fetch('/api/master/sku?key='+encodeURIComponent(key),{cache:'no-store'})).json();
+    const s=j.sku; if(!s){ d.innerHTML='<button class="x">×</button><div class="empty">not found</div>'; bindX(); return; }
+    const srcs=(s.source_list?(Array.isArray(s.source_list)?s.source_list:String(s.source_list).replace(/[\[\]']/g,'').split(',')):[]).map(x=>x.trim()).filter(Boolean);
+    const kv=(k,v)=> (v!=null&&v!=='')?('<div class="kv"><span class="kk">'+k+'</span><span class="vv">'+esc(v)+'</span></div>'):'';
+    d.innerHTML='<button class="x">×</button>'+
+      '<div class="k">brand</div><div class="nm">'+esc(s.brand||'—')+'</div>'+
+      '<div class="meta">'+esc(s.product_name||'')+'</div>'+
+      '<div class="grain"><span class="gp">brand</span><span class="gp">product</span><span class="gp">item</span><span class="gp">sku</span></div>'+
+      '<div class="sec">Brand</div>'+kv('brand',s.brand)+kv('brand_group',s.brand_group)+
+      '<div class="sec">Product</div>'+kv('product_name',s.product_name)+kv('category',s.category)+kv('origin',s.origin)+kv('abv',s.abv)+
+      '<div class="sec">Item · SKU</div>'+kv('size_ml',s.size_ml)+kv('pack',s.pack)+kv('upc',s.upc)+kv('vintage',s.vintage)+kv('edition',s.edition)+
+      '<div class="sec">Provenance — '+(s.sources||1)+' source'+((s.sources||1)===1?'':'s')+'</div><div class="prov">'+(srcs.length?srcs.map(x=>'<span class="b">'+esc(x)+'</span>').join(''):'<span class="b">'+(s.sources||1)+'</span>')+'</div>'+
+      (s.updated_by?('<div class="kv" style="margin-top:12px"><span class="kk">updated by</span><span class="vv">'+esc(s.updated_by)+'</span></div>'):'');
+    bindX();
+  }catch(e){ d.innerHTML='<button class="x">×</button><div class="empty">error</div>'; bindX(); }
+}
+function bindX(){ const b=document.querySelector('#drawer .x'); if(b) b.onclick=()=>document.getElementById('drawer').classList.remove('show'); }
+let qt; document.getElementById('q').addEventListener('input',()=>{ clearTimeout(qt); qt=setTimeout(()=>{page=0;load();},300); });
+document.getElementById('prev').onclick=()=>{ if(page>0){page--;load();} };
+document.getElementById('next').onclick=()=>{ page++; load(); };
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') document.getElementById('drawer').classList.remove('show'); });
+loadCounts(); load();
+</script>
+</body>
+</html>
