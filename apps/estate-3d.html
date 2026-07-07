@@ -127,29 +127,39 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-// ── canonical entities (the schema spine) — fixed geography ────────────────────────
-const ENT=[ {id:'portfolio',label:'Portfolio',p:[4,40,-14]}, {id:'brand',label:'Brand',p:[-30,22,8]},
-  {id:'item',label:'Item',p:[0,2,0]}, {id:'sku',label:'SKU',p:[-40,-14,28]},
-  {id:'outlet',label:'Outlet',p:[46,-8,-16]}, {id:'account',label:'Account',p:[72,-28,-30]} ];
+// ── canonical entities (the dimensional model) — fixed geography ───────────────────
+// dimensions: supplier, brand → product → item → sku (the hierarchy spine), outlet.
+// facts (◆ boxed): inventory + pricing, each keyed by sku × outlet × date.
+const ENT=[ {id:'supplier',label:'Supplier',p:[-58,34,-6]}, {id:'brand',label:'Brand',p:[-34,22,10]},
+  {id:'product',label:'Product',p:[-10,8,2]}, {id:'item',label:'Item',p:[14,-4,10]},
+  {id:'sku',label:'SKU',p:[-14,-20,30]}, {id:'outlet',label:'Outlet',p:[54,-6,-18]},
+  {id:'inventory',label:'Inventory',p:[30,-24,4],fact:true}, {id:'pricing',label:'Pricing',p:[8,-34,22],fact:true} ];
 const ENT_POS={}; ENT.forEach(e=>ENT_POS[e.id]=new THREE.Vector3(...e.p));
 // canonical relationships — [a, b, verb, cardinality@a, cardinality@b] (crow's-foot: one | many)
 const CANON=[
-  ['portfolio','brand','has','one','many'],
-  ['brand','item','has','one','many'],
+  ['supplier','brand','supplies','one','many'],
+  ['brand','product','has','one','many'],
+  ['product','item','has','one','many'],
   ['item','sku','has','one','many'],
-  ['outlet','account','operated-by','many','one'],
-  ['item','outlet','sell-out','many','many'] ];
-// each entity is a keyed "table": primary key + the key attributes an ERD would list
+  ['sku','inventory','stocked','one','many'],
+  ['outlet','inventory','holds','one','many'],
+  ['sku','pricing','priced','one','many'],
+  ['outlet','pricing','at','one','many'] ];
+// each entity is a keyed "table": primary key + the key attributes an ERD would list. Attributes live
+// at their GRAIN; vintage/edition are sku attrs but NOT part of the sku identity (releases collapse).
 const ENTMETA={
-  portfolio:{pk:'portfolio_id',attrs:['name','owner']},
-  brand:{pk:'brand_id',attrs:['name','portfolio_id']},
-  item:{pk:'item_id',attrs:['name','brand_id','upc']},
-  sku:{pk:'sku_id',attrs:['item_id','size','pack','gtin']},
-  outlet:{pk:'outlet_id',attrs:['license#','address','geo']},
-  account:{pk:'account_id',attrs:['licensee','dba','license#']} };
-const ROADCOL={ upc:'#3fb8a3', variant:'#57c9b3', brand:'#3fb8a3', price:'#4a90d9', availability:'#4a90d9',
-  'license#':'#d99a3f', owner:'#d9b03f', address:'#5bb86e', depletion:'#8a6fd0', name:'#7a7f9a',
-  'sell-out':'#8aa39d', 'is-a':'#3fb8a3', has:'#3fb8a3', 'operated-by':'#d99a3f' };
+  supplier:{pk:'supplier_id',attrs:['supplier_name','brand_id','active_date','inactive_date']},
+  brand:{pk:'brand_id',attrs:['brand','brand_group']},
+  product:{pk:'product_id',attrs:['brand_id','product_name','flavor','abv','style']},
+  item:{pk:'item_id',attrs:['product_id','size_ml','container']},
+  sku:{pk:'sku_id',attrs:['item_id','pack','upc','vintage','edition']},
+  outlet:{pk:'outlet_id',attrs:['source_ref','outlet_name','address','geo']},
+  inventory:{pk:'sku_id · outlet_id · date',attrs:['in_stock','on_hand','carriage']},
+  pricing:{pk:'sku_id · outlet_id · date',attrs:['price','promo']} };
+const ROADCOL={ upc:'#3fb8a3', variant:'#57c9b3', brand:'#3fb8a3', flavor:'#57c9b3', vintage:'#d9b03f',
+  price:'#4a90d9', availability:'#4a90d9', 'license#':'#d99a3f', owner:'#d9b03f', address:'#5bb86e',
+  depletion:'#8a6fd0', name:'#7a7f9a', supplies:'#d9b03f', priced:'#4a90d9', stocked:'#4a90d9',
+  holds:'#5bb86e', at:'#4a90d9', 'is-a':'#3fb8a3', has:'#3fb8a3' };
 const STCOL={ proven:'#5bb86e', live:'#5bb86e', candidate:'#3fb8a3', ready:'#3fb8a3', drifting:'#d99a3f',
   building:'#4a90d9', broken:'#d9584f', data:'#5bb86e', planned:'#5f7a72', paused:'#6f7f7a' };
 const SEED=[
@@ -164,21 +174,24 @@ const SEED=[
 // map real column / field names → (entity, road)
 function roadsFromCols(cols, hints){
   const c=(cols||[]).map(x=>String(x).toLowerCase()), any=re=>c.some(x=>re.test(x)), es=[];
-  if(any(/(^|_| )upc($|_| )|gtin|barcode/)) es.push(['item','upc']);
-  if(any(/sku|variant|itemsize|\bsize\b|\bpack\b/)) es.push(['sku','variant']);
+  if(any(/(^|_| )upc($|_| )|gtin|barcode/)) es.push(['sku','upc']);
+  if(any(/vintage|\byear\b|edition/)) es.push(['sku','vintage']);
+  if(any(/sku|variant|\bpack\b/)) es.push(['sku','variant']);
+  if(any(/itemsize|\bsize\b|\bml\b|container|bottle/)) es.push(['item','variant']);
+  if(any(/flavor|\bvariety\b|varietal/)) es.push(['product','flavor']);
   if(any(/brand/)) es.push(['brand','brand']);
-  if(any(/price|amount|\bcost\b|strike/)) es.push(['item','price']);
-  if(any(/avail|stock|inventory|instock/)) es.push(['item','availability']);
-  if(any(/licens|permit|\babt\b|dbpr/)) { es.push(['outlet','license#']); es.push(['account','license#']); }
-  if(any(/owner|\bdba\b|business|licensee/)) es.push(['account','owner']);
-  if(any(/address|\bcity\b|\bzip\b|\bstate\b|\blat\b|\blng\b|longitude|latitude|store|location|premise|phone/)) es.push(['outlet','address']);
-  if(any(/deplet|movement/)) es.push(['brand','depletion']);
+  if(any(/supplier|producer|importer|winery|distiller|manufactur|applicant/)) es.push(['supplier','supplies']);
+  if(any(/price|amount|\bcost\b|strike|promo/)) es.push(['pricing','price']);
+  if(any(/avail|stock|inventory|instock|units|on.?hand|depletion|movement/)) es.push(['inventory','availability']);
+  if(any(/licens|permit|\babt\b|dbpr/)) es.push(['outlet','license#']);
+  if(any(/address|\bcity\b|\bzip\b|\bstate\b|\blat\b|\blng\b|longitude|latitude|store|location|premise|phone|\bdba\b/)) es.push(['outlet','address']);
   // tier / name hints when columns are sparse
   const h=(hints||'').toLowerCase();
-  if(!es.length && /on-premise|locator|yext|location/.test(h)) es.push(['outlet','address']);
-  if(!es.length && /dbpr|abt|licens|outlet/.test(h)) { es.push(['outlet','license#']); es.push(['account','license#']); }
-  if(!es.length && /nabca|deplet|control/.test(h)) es.push(['brand','depletion']);
-  if(!es.length) es.push(['item','name']);
+  if(!es.length && /on-premise|locator|yext|location|outlet/.test(h)) es.push(['outlet','address']);
+  if(!es.length && /dbpr|abt|licens/.test(h)) es.push(['outlet','license#']);
+  if(!es.length && /nabca|deplet|control|inventory/.test(h)) es.push(['inventory','availability']);
+  if(!es.length && /price|pricing/.test(h)) es.push(['pricing','price']);
+  if(!es.length) es.push(['product','name']);
   const seen=new Set(); return es.filter(e=> !seen.has(e[0]) && seen.add(e[0]));
 }
 // a self-contained crow's-foot connector for a relationship: [a-end]——[b-end], always horizontal

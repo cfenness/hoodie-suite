@@ -53,14 +53,110 @@ def preview(dataset, rule, limit=12, normalize=None):
     return [{"raw": r.get("raw"), "derived": r.get("derived")} for r in rows]
 
 
-def build(master_fields, mappings_by_ds, built_by="SYS", built_at=None, log=print):
-    """Compile every source's mappings → UNION → dim_product Parquet in the warehouse. A broken source
-    (bad expr / missing column) is skipped with a warning rather than failing the whole build.
-    built_by/built_at stamp the resolved master rows (audit provenance)."""
+# Identity strategy per master ENTITY: a STRONG key field (a real unique id — used when present) and
+# the NATURAL key (normalized fields that identify the row when the strong key is absent). This is the
+# one place the two masters differ; everything else in the engine is entity-agnostic.
+ENTITY_IDENTITY = {
+    "product": {"strong": "upc",        "natural": ["brand", "product_name", "size_ml"]},
+    "outlet":  {"strong": "source_ref", "natural": ["outlet_name", "address", "zip5"]},
+}
+
+# ── The PRODUCT hierarchy: brand → product → item → sku. Sources map into ONE wide schema; the build
+# SHREDS it by GRAIN into a dimension table per level, each keyed at its grain + carrying its parent's
+# key (so the tables link). Supplier is derived as a time-bounded brand↔supplier association (SCD),
+# NOT a hierarchy level. This is "apply the attribute at its level" made mechanical. ──
+HIERARCHY = ["brand", "product", "item", "sku"]
+# the NATURAL-key components ADDED at each grain (cumulative — a level's key includes all ancestors').
+GRAIN_KEY = {"brand": ["brand"], "product": ["flavor", "product_name"],
+             "item": ["size_ml", "container"], "sku": ["pack"]}
+# name-ish key parts get vintage/edition stripped (derive.identity_expr) so releases collapse to one row;
+# note UPC + vintage + edition are sku ATTRIBUTES, deliberately absent from GRAIN_KEY['sku'].
+NAMEISH = {"brand", "product_name", "flavor", "container"}
+# default grain per field name when a schema field doesn't declare one
+GRAIN_DEFAULTS = {"brand": "brand", "brand_group": "brand",
+    "product_name": "product", "flavor": "product", "abv": "product", "style": "product",
+    "category": "product", "origin": "product",
+    "size_ml": "item", "packsize": "item", "container": "item",
+    "pack": "sku", "upc": "sku", "gtin": "sku", "vintage": "sku", "edition": "sku",
+    "supplier": "supplier"}
+
+def _grain_of(master_fields):
+    g = {}
+    for f in master_fields:
+        nm = f["name"] if isinstance(f, dict) else f
+        g[nm] = (f.get("grain") if isinstance(f, dict) else None) or GRAIN_DEFAULTS.get(nm)
+    return g
+
+def _keyexprs(mnames):
+    """Cumulative md5 identity key per grain — name parts vintage/edition-stripped so a sku is stable
+    across vintages/editions. Returns {grain: sql_md5_expr}."""
+    cum, keys = [], {}
+    for g in HIERARCHY:
+        for c in GRAIN_KEY.get(g, []):
+            if c in mnames:
+                cum.append(derive.identity_expr(c) if c in NAMEISH
+                           else "lower(coalesce(CAST(%s AS VARCHAR),''))" % derive.col(c))
+        keys[g] = "md5(%s)" % ("||'|'||".join(cum) if cum else "''")
+    return keys
+
+def resolve_hierarchy(master_fields, dim_uri, con, built_by="SYS", built_at=None, log=print):
+    """Shred the wide dim_product into dim_brand / dim_product / dim_item / dim_sku (each = distinct rows
+    at its grain, with a stable key + its parent's key + that grain's attributes), plus dim_supplier as a
+    brand↔supplier association with active/inactive dates. Every level's attributes are aggregated with
+    any_value; provenance (sources/source_list) carried through."""
+    import time as _t
+    built_at = built_at or int(_t.time())
+    import warehouse
+    mnames = _mnames(master_fields)
+    grain = _grain_of(master_fields)
+    keys = _keyexprs(mnames)
+    audit = ("%d AS master_created_at, %d AS master_updated_at, %s AS updated_by"
+             % (built_at, built_at, derive._sqlstr(built_by)))
+    out = {}
+    for i, g in enumerate(HIERARCHY):
+        attrs = [f for f in mnames if grain.get(f) == g]
+        cols = "%s AS %s_key" % (keys[g], g)
+        if i > 0:
+            cols += ", any_value(%s) AS %s_key" % (keys[HIERARCHY[i - 1]], HIERARCHY[i - 1])
+        if attrs:
+            cols += ", " + ", ".join("any_value(%s) AS %s" % (derive.col(a), derive.col(a)) for a in attrs)
+        sql = ("WITH b AS (SELECT * FROM read_parquet('%s')) "
+               "SELECT %s, count(*) AS source_rows, count(DISTINCT _source) AS sources, "
+               "list_distinct(list(_source)) AS source_list, %s FROM b GROUP BY %s"
+               % (dim_uri, cols, audit, keys[g]))
+        rtable = "dim_%s" % g
+        rdst = warehouse.uri(rtable).replace("'", "")
+        con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (sql, rdst))
+        n = con.execute("SELECT count(*) FROM read_parquet('%s')" % rdst).fetchone()[0]
+        out[g] = {"rows": n, "uri": warehouse.uri(rtable)}
+        log("dim_%s: %d rows" % (g, n))
+    # supplier SCD — brand↔supplier association with active/inactive dates (persists items across acquisition)
+    sup = [f for f in mnames if grain.get(f) == "supplier"]
+    if sup and "brand" in mnames:
+        scol = derive.col(sup[0])
+        sql = ("WITH b AS (SELECT * FROM read_parquet('%s')) "
+               "SELECT %s AS brand_key, %s AS supplier_name, %d AS active_date, NULL::BIGINT AS inactive_date, "
+               "count(*) AS source_rows, list_distinct(list(_source)) AS source_list "
+               "FROM b WHERE CAST(%s AS VARCHAR)<>'' GROUP BY %s, %s"
+               % (dim_uri, keys["brand"], scol, built_at, scol, keys["brand"], scol))
+        rdst = warehouse.uri("dim_supplier").replace("'", "")
+        con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (sql, rdst))
+        n = con.execute("SELECT count(*) FROM read_parquet('%s')" % rdst).fetchone()[0]
+        out["supplier"] = {"rows": n, "uri": warehouse.uri("dim_supplier")}
+        log("dim_supplier: %d brand↔supplier assocs" % n)
+    return out
+
+
+def build(master_fields, mappings_by_ds, entity="product", built_by="SYS", built_at=None, log=print):
+    """Compile every source's mappings → UNION → dim_<entity> Parquet in the warehouse, then resolve.
+    A broken source (bad expr / missing column) is skipped with a warning rather than failing the whole
+    build. built_by/built_at stamp the resolved master rows. Entity-parameterized: the SAME engine
+    builds the product master OR the outlet master — only the identity rule (resolve) differs."""
     import time as _t
     built_at = built_at or int(_t.time())
     import warehouse
     con = warehouse.connect()
+    dim = "dim_%s" % entity
     selects, per_source, warnings = [], [], []
     for ds, rules in mappings_by_ds.items():
         if not any(r.get("master_field") for r in (rules or [])):
@@ -76,44 +172,56 @@ def build(master_fields, mappings_by_ds, built_by="SYS", built_at=None, log=prin
     if not selects:
         return {"rows": 0, "sources": 0, "per_source": [], "warnings": warnings, "note": "no usable mappings"}
     union = " UNION ALL ".join(selects)
-    dst = warehouse.uri("dim_product").replace("'", "")
+    dst = warehouse.uri(dim).replace("'", "")
     con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (union, dst))
     total = con.execute("SELECT count(*) FROM read_parquet('%s')" % dst).fetchone()[0]
-    log("dim_product: %d rows from %d sources → %s" % (total, len(selects), dst))
-    resolved = resolve(master_fields, dst, con, built_by=built_by, built_at=built_at, log=log)
+    log("%s: %d rows from %d sources → %s" % (dim, total, len(selects), dst))
+    if entity == "product":                                    # SHRED the wide source into the hierarchy
+        h = resolve_hierarchy(master_fields, dst, con, built_by=built_by, built_at=built_at, log=log)
+        return {"rows": total, "sources": len(selects), "per_source": per_source, "warnings": warnings,
+                "uri": warehouse.uri(dim), "hierarchy": {k: v["rows"] for k, v in h.items()},
+                "skus": h.get("sku", {}).get("rows"), "products": h.get("product", {}).get("rows")}
+    resolved = resolve(master_fields, dst, con, entity=entity, built_by=built_by, built_at=built_at, log=log)
     return {"rows": total, "sources": len(selects), "per_source": per_source, "warnings": warnings,
-            "uri": warehouse.uri("dim_product"), "products": resolved.get("rows"),
+            "uri": warehouse.uri(dim), "resolved_rows": resolved.get("rows"),
+            "products": resolved.get("rows"),  # back-compat alias
             "resolved_uri": resolved.get("uri")}
 
 
-def resolve(master_fields, dim_uri, con, built_by="SYS", built_at=None, log=print):
-    """Collapse the per-source dim_product rows into ONE product per SKU → dim_product_resolved.
-    Identity key: the canonical UPC (GTIN-14) when present, else normalized brand+product_name+size_ml.
-    Each product keeps the first non-null value per field + which/how many sources contributed it +
-    audit columns (master_created_at first-seen, master_updated_at build time, updated_by)."""
+def resolve(master_fields, dim_uri, con, entity="product", built_by="SYS", built_at=None, log=print):
+    """Collapse the per-source dim_<entity> rows into ONE row per real thing → dim_<entity>_resolved.
+    Identity key (per ENTITY_IDENTITY): the STRONG key (canonical UPC / outlet source_ref) when present,
+    else the normalized NATURAL key (product: brand+name+size_ml; outlet: name+address+zip5). Each row
+    keeps a value per master field + which/how many sources contributed + audit columns. Fuzzy geo/name
+    refinement is a later pass on top of this deterministic key."""
     import time as _t
     built_at = built_at or int(_t.time())
     import warehouse
+    spec = ENTITY_IDENTITY.get(entity, ENTITY_IDENTITY["product"])
+    strong, natkeys = spec["strong"], spec["natural"]
     mnames = _mnames(master_fields)
-    namekeys = [c for c in ("brand", "product_name", "size_ml") if c in mnames]
-    nk = "||'|'||".join("lower(coalesce(CAST(%s AS VARCHAR),''))" % derive.col(c) for c in namekeys) or "''"
-    if "upc" in mnames:
-        keyexpr = "CASE WHEN upc IS NOT NULL AND upc<>'' THEN 'u:'||upc ELSE 'n:'||%s END" % nk
+    nk_cols = [c for c in natkeys if c in mnames]
+    nk = "||'|'||".join("lower(coalesce(CAST(%s AS VARCHAR),''))" % derive.col(c) for c in nk_cols) or "''"
+    if strong in mnames:
+        sc = derive.col(strong)
+        keyexpr = "CASE WHEN %s IS NOT NULL AND %s<>'' THEN 's:'||%s ELSE 'n:'||%s END" % (sc, sc, sc, nk)
     else:
         keyexpr = "'n:'||%s" % nk
-    aggs = ["max(upc) AS upc" if mf == "upc" else "any_value(%s) AS %s" % (derive.col(mf), derive.col(mf))
-            for mf in mnames]
-    rdst = warehouse.uri("dim_product_resolved").replace("'", "")
+    aggs = [("max(%s) AS %s" % (derive.col(mf), derive.col(mf))) if mf == strong
+            else "any_value(%s) AS %s" % (derive.col(mf), derive.col(mf)) for mf in mnames]
+    keycol = "%s_key" % entity
+    rtable = "dim_%s_resolved" % entity
+    rdst = warehouse.uri(rtable).replace("'", "")
     audit = ("%d AS master_created_at, %d AS master_updated_at, %s AS updated_by"
              % (built_at, built_at, derive._sqlstr(built_by)))
-    sql = ("WITH b AS (SELECT *, %s AS product_key FROM read_parquet('%s')) "
-           "SELECT product_key, %s, count(*) AS source_rows, count(DISTINCT _source) AS sources, "
-           "list_distinct(list(_source)) AS source_list, %s FROM b GROUP BY product_key"
-           % (keyexpr, dim_uri, ", ".join(aggs), audit))
+    sql = ("WITH b AS (SELECT *, %s AS %s FROM read_parquet('%s')) "
+           "SELECT %s, %s, count(*) AS source_rows, count(DISTINCT _source) AS sources, "
+           "list_distinct(list(_source)) AS source_list, %s FROM b GROUP BY %s"
+           % (keyexpr, keycol, dim_uri, keycol, ", ".join(aggs), audit, keycol))
     con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (sql, rdst))
     n = con.execute("SELECT count(*) FROM read_parquet('%s')" % rdst).fetchone()[0]
-    log("dim_product_resolved: %d distinct products → %s" % (n, rdst))
-    return {"rows": n, "uri": warehouse.uri("dim_product_resolved")}
+    log("%s: %d distinct %ss → %s" % (rtable, n, entity, rdst))
+    return {"rows": n, "uri": warehouse.uri(rtable)}
 
 
 if __name__ == "__main__":

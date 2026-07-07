@@ -50,13 +50,38 @@ TRANSFORMS = {
                       "'([0-9.]+)(ml|l|liter|litre|oz|floz|gal)',1) AS DOUBLE)*3785.41) AS BIGINT) "
                       "ELSE CAST(round(try_cast(regexp_extract(lower(replace(CAST(%s AS VARCHAR),' ','')),"
                       "'([0-9.]+)(ml|l|liter|litre|oz|floz|gal)',1) AS DOUBLE)) AS BIGINT) END"),
+    # ── OUTLET normalizers (the 'lowest level of consistency' for outlet fields) ──
+    # ZIP+4 comes concatenated from some sources (e.g. AB gives 327143868) — split to 5+4.
+    "zip5":       "NULLIF(substr(regexp_replace(CAST(%s AS VARCHAR),'[^0-9]','','g'),1,5),'')",
+    "zip4":       ("CASE WHEN length(regexp_replace(CAST(%s AS VARCHAR),'[^0-9]','','g'))>=9 "
+                   "THEN substr(regexp_replace(CAST(%s AS VARCHAR),'[^0-9]','','g'),6,4) ELSE NULL END"),
+    "state_abbr": "NULLIF(upper(trim(CAST(%s AS VARCHAR))),'')",              # 2-letter state (upper+trim)
+    "name_clean": "NULLIF(trim(regexp_replace(upper(CAST(%s AS VARCHAR)),' +',' ','g')),'')",  # canonical name for matching
+    # ── VINTAGE / EDITION — captured as sku ATTRIBUTES but STRIPPED from the sku identity key, so a
+    # 2017 vs 2018 vintage (or a Christmas edition) collapses onto ONE stable sku instead of forking it.
+    "vintage_year": "NULLIF(regexp_extract(CAST(%s AS VARCHAR),'(19[0-9]{2}|20[0-9]{2})'),'')",   # → the vintage attr
+    # strip 4-digit years + common edition/seasonal tokens, lower+collapse — used to build the STABLE key
+    "identity_key": ("trim(regexp_replace(regexp_replace(lower(CAST(%s AS VARCHAR)),"
+                     "'(19[0-9]{2}|20[0-9]{2}|christmas|holiday|seasonal|limited edition|limited|special edition|"
+                     "gift set|gift pack|gift|anniversary|collector|commemorative)','','g'),' +',' ','g'))"),
 }
-TRANSFORM_NAMES = [t for t in TRANSFORMS if t != "upc_normalize"]   # user-selectable (normalizers auto-apply)
+# auto-applied normalizers (declared on a master field, not user-picked in the transform dropdown)
+_NORMALIZER_ONLY = {"upc_normalize", "zip5", "zip4", "state_abbr", "name_clean", "identity_key"}
+TRANSFORM_NAMES = [t for t in TRANSFORMS if t not in _NORMALIZER_ONLY]   # user-selectable (normalizers auto-apply)
 
 # A master field can declare a canonical NORMALIZE format — applied automatically to whatever source
 # value is mapped into it (the base data is never touched). This is the master's "lowest level of
 # consistency" contract: map anything in, it comes out canonical. normalize name → transform name.
-NORMALIZERS = {"upc": "upc_normalize", "gtin": "upc_normalize"}
+NORMALIZERS = {"upc": "upc_normalize", "gtin": "upc_normalize",
+               "zip5": "zip5", "zip4": "zip4", "state": "state_abbr",
+               "phone": "digits_only", "name": "name_clean", "vintage": "vintage_year"}
+
+
+def identity_expr(col_or_expr):
+    """SQL that turns a name column into a STABLE identity token — vintage year + edition tokens stripped,
+    lower-cased, whitespace-collapsed. Used to build hierarchy keys so vintages/editions don't fork rows."""
+    inner = col(col_or_expr) if col_or_expr.replace("_", "").isalnum() else col_or_expr
+    return TRANSFORMS["identity_key"] % inner
 
 
 def apply_normalizer(normalize, inner):

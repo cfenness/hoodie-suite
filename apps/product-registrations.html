@@ -184,7 +184,9 @@
     // populate the item-dataset selector from the catalog (warehouse item/product sets + ttb_cola)
     try{
       const cat=await (await fetch('/api/catalog',{cache:'no-store'})).json();
-      const items=Object.keys(cat).filter(k=>cat[k].store==='warehouse'||k==='ttb_cola').sort();
+      // any dataset with a real header is profilable now (warehouse Parquet OR in-RAM pulls —
+      // items, registrations, AND outlets: outlets_master, ab_outlets, vtinfo_*, ny/tx/co…)
+      const items=Object.keys(cat).filter(k=>!k.startsWith('_')&&((cat[k].header&&cat[k].header.length)||cat[k].total||k==='ttb_cola')).sort();
       const sel=$('#dictds');
       sel.innerHTML=items.map(k=>'<option value="'+esc(k)+'"'+(k==='ttb_cola'?' selected':'')+'>'+esc(k)+' · '+fmt(cat[k].total)+' rows</option>').join('')
         || '<option value="ttb_cola">ttb_cola</option>';
