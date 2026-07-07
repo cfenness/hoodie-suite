@@ -1533,6 +1533,65 @@ def master_outlet_one_ep():
         return jsonify(ok=False, error=str(e)[:140]), 200
     return jsonify(ok=True, outlet=(rows[0] if rows else None))
 
+# ── MDM workbench: browse the SKU/product catalog (dim_sku joined up the hierarchy) ──
+def _sku_join():
+    import warehouse
+    u = lambda n: warehouse.uri(n).replace("'", "")
+    return ("LEFT JOIN read_parquet('%s') it ON t.item_key=it.item_key "
+            "LEFT JOIN read_parquet('%s') p ON it.product_key=p.product_key "
+            "LEFT JOIN read_parquet('%s') b ON p.brand_key=b.brand_key"
+            % (u("dim_item"), u("dim_product"), u("dim_brand")))
+_SKU_SEL = ("t.sku_key, t.upc, t.pack, t.vintage, t.edition, t.sources, t.source_list, "
+            "p.product_name, p.category, p.origin, p.abv, it.size_ml, b.brand, b.brand_group")
+@app.get("/api/master/skus")
+def master_skus_ep():
+    """Paged, filterable SKU catalog — dim_sku joined to item/product/brand. ?q= (brand/product/upc)."""
+    import warehouse
+    q = (request.args.get("q") or "").strip().lower()
+    try:
+        page = max(0, int(request.args.get("page", 0))); size = min(200, max(1, int(request.args.get("size", 50))))
+    except ValueError:
+        page, size = 0, 50
+    where, params = [], []
+    if q:
+        where.append("(lower(CAST(b.brand AS VARCHAR)) LIKE ? OR lower(CAST(p.product_name AS VARCHAR)) LIKE ? OR lower(CAST(t.upc AS VARCHAR)) LIKE ?)")
+        qq = "%" + q + "%"; params += [qq, qq, qq]
+    wsql = (" WHERE " + " AND ".join(where)) if where else ""
+    jn = _sku_join()
+    try:
+        total = warehouse.query("dim_sku", "SELECT count(*) c FROM t %s%s" % (jn, wsql), params)[0]["c"]
+        rows = warehouse.query("dim_sku", "SELECT %s FROM t %s%s ORDER BY b.brand, p.product_name LIMIT %d OFFSET %d"
+                               % (_SKU_SEL, jn, wsql, size, page * size), params)
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:140], skus=[], total=0), 200
+    return jsonify(ok=True, landed=True, total=total, page=page, size=size, skus=rows)
+
+@app.get("/api/master/sku")
+def master_sku_one_ep():
+    import warehouse
+    key = (request.args.get("key") or "").strip()
+    if not key:
+        return jsonify(ok=False, error="key required"), 400
+    try:
+        rows = warehouse.query("dim_sku", "SELECT %s, t.master_created_at, t.updated_by FROM t %s WHERE t.sku_key = ? LIMIT 1"
+                               % (_SKU_SEL, _sku_join()), [key])
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:140]), 200
+    return jsonify(ok=True, sku=(rows[0] if rows else None))
+
+@app.get("/api/master/counts")
+def master_counts_ep():
+    """Row counts of each master table — for the workbench overview + catalog header."""
+    import warehouse
+    out = {}
+    for t in ("dim_brand", "dim_product", "dim_item", "dim_sku", "dim_supplier", "dim_outlet_resolved",
+              "fact_inventory", "fact_pricing"):
+        try:
+            out[t] = warehouse.query(t, "SELECT count(*) c FROM t")[0]["c"]
+        except Exception:
+            out[t] = None
+    return jsonify(ok=True, counts=out)
+
 @app.get("/api/master/outlets/geo")
 def master_outlets_geo_ep():
     """Light geocoded points from the resolved outlet master for the workbench map. Optional ?bbox=
