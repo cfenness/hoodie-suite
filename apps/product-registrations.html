@@ -48,6 +48,8 @@
   .bar{display:flex;align-items:center;gap:11px;margin-bottom:11px;flex-wrap:wrap}
   input.search{flex:1;min-width:200px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-family:var(--mono);font-size:12.5px;outline:none}
   input.search:focus{border-color:var(--accent)}
+  .dsel{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-family:var(--mono);font-size:12.5px;outline:none;min-width:240px}
+  .dsel:focus{border-color:var(--accent)}
   .pager{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
   .pager button{background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:5px 11px;font-size:13px;cursor:pointer}
   .pager button:disabled{opacity:.4;cursor:default}
@@ -114,11 +116,16 @@
   </div>
 
   <div id="pane_dict" hidden>
+    <div class="bar">
+      <span style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em">Item dataset</span>
+      <select id="dictds" class="dsel"></select>
+      <span class="note" id="dictmeta" style="margin:0"></span>
+    </div>
     <div class="dict">
       <div class="fields" id="fields"></div>
       <div class="dictval" id="dictval"><div class="empty">Pick a field to see its value dictionary.</div></div>
     </div>
-    <div class="note">Each field's distinct values + counts are a controlled vocabulary — the seed for a data dictionary and for deriving a normalized field (e.g. <b>Net Contents</b> → <code>size_ml</code>, <b>Class/Type</b> → category). String-extraction rules build on top of this.</div>
+    <div class="note">Each field's distinct values + counts are a controlled vocabulary — the seed for a data dictionary and for deriving a normalized field (e.g. <b>Net Contents</b> → <code>size_ml</code>, <b>Class/Type</b> → category). Works on any item dataset (COLA, BC Liquor, Oregon pricing, Iowa products…); string-extraction rules build on top of this.</div>
   </div>
 
   <div class="note warn" id="note" style="display:none"></div>
@@ -170,17 +177,34 @@
   function regRow(r){ return '<tr><td>'+esc(r['TTB ID'])+'</td><td>'+esc(r['Brand Name'])+'</td><td>'+esc(r['Fanciful Name'])+'</td><td>'+esc(r['Class/Type'])+'</td><td>'+esc(r['Origin'])+'</td><td>'+esc(r['Applicant'])+'</td><td>'+esc(r['Completed Date'])+'</td><td>'+esc(r['Net Contents'])+'</td><td class="upc">'+esc(r['UPC'])+'</td></tr>'; }
   function prodRow(r){ return '<tr><td>'+esc(r.brand)+'</td><td>'+esc(r.fanciful)+'</td><td>'+esc(r.class_type)+'</td><td class="num">'+esc(r.size_ml)+'</td><td>'+esc(r.supplier)+'</td><td class="num">'+fmt(r.member_count)+'</td><td class="num">'+(r.confidence!=null?Number(r.confidence).toFixed(2):'')+'</td><td>'+(r.flagged?'<span class="pill flag">review</span>':'<span class="pill ok">·</span>')+'</td></tr>'; }
 
-  // ---- dictionary (the string-extraction basis) ----
-  let dictLoaded=false, curField=null;
+  // ---- dictionary (the string-extraction basis) — works on ANY item dataset ----
+  let dsLoaded=false, curField=null, dictDs='ttb_cola';
   async function loadDict(){
-    if(dictLoaded) return; dictLoaded=true;
+    if(dsLoaded) return; dsLoaded=true;
+    // populate the item-dataset selector from the catalog (warehouse item/product sets + ttb_cola)
     try{
-      const j=await (await fetch('/api/cola/profile',{cache:'no-store'})).json();
-      if(!j.landed){ $('#fields').innerHTML='<div class="note">ttb_cola not landed yet.</div>'; return; }
+      const cat=await (await fetch('/api/catalog',{cache:'no-store'})).json();
+      const items=Object.keys(cat).filter(k=>cat[k].store==='warehouse'||k==='ttb_cola').sort();
+      const sel=$('#dictds');
+      sel.innerHTML=items.map(k=>'<option value="'+esc(k)+'"'+(k==='ttb_cola'?' selected':'')+'>'+esc(k)+' · '+fmt(cat[k].total)+' rows</option>').join('')
+        || '<option value="ttb_cola">ttb_cola</option>';
+      dictDs = items.includes('ttb_cola') ? 'ttb_cola' : (items[0]||'ttb_cola');
+      sel.value=dictDs;
+      sel.onchange=()=>{ dictDs=sel.value; loadProfile(); };
+    }catch(e){ $('#dictds').innerHTML='<option>ttb_cola</option>'; }
+    loadProfile();
+  }
+  async function loadProfile(){
+    $('#fields').innerHTML='<div class="note">reading '+esc(dictDs)+'…</div>';
+    $('#dictval').innerHTML='<div class="empty">Pick a field.</div>'; $('#dictmeta').textContent='';
+    try{
+      const j=await (await fetch('/api/item/profile?dataset='+encodeURIComponent(dictDs),{cache:'no-store'})).json();
+      if(!j.landed){ $('#fields').innerHTML='<div class="note">'+esc(dictDs)+' not queryable yet.</div>'; return; }
+      $('#dictmeta').textContent=fmt(j.total)+' rows · '+(j.fields||[]).length+' fields';
       $('#fields').innerHTML=(j.fields||[]).map(f=>
         '<div class="fcard" data-f="'+esc(f.field)+'"><div class="fn">'+esc(f.field)+'</div>'+
         '<div class="fm"><span><b>'+fmt(f.distinct)+'</b> distinct</span><span><b>'+f.fill_pct+'%</b> filled</span></div>'+
-        '<div class="meter"><i style="width:'+f.fill_pct+'%"></i></div></div>').join('');
+        '<div class="meter"><i style="width:'+f.fill_pct+'%"></i></div></div>').join('') || '<div class="note">no fields.</div>';
       [...document.querySelectorAll('#fields .fcard')].forEach(el=>el.onclick=()=>{
         document.querySelectorAll('#fields .fcard').forEach(x=>x.classList.remove('on')); el.classList.add('on');
         loadField(el.getAttribute('data-f')); });
@@ -191,7 +215,7 @@
     curField=field;
     $('#dictval').innerHTML='<div class="empty">reading '+esc(field)+'…</div>';
     try{
-      const j=await (await fetch('/api/cola/dictionary?field='+encodeURIComponent(field)+'&limit=200',{cache:'no-store'})).json();
+      const j=await (await fetch('/api/item/dictionary?dataset='+encodeURIComponent(dictDs)+'&field='+encodeURIComponent(field)+'&limit=200',{cache:'no-store'})).json();
       if(field!==curField) return;
       if(j.ok===false){ $('#dictval').innerHTML='<div class="empty">'+esc(j.error||'unavailable')+'</div>'; return; }
       const mx=Math.max(1,...(j.values||[]).map(v=>+v.n));

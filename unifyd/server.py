@@ -804,6 +804,66 @@ def cola_dictionary_ep():
         return jsonify(ok=False, error=str(e)[:140], values=[]), 200
     return jsonify(ok=True, field=field, distinct=distinct, values=rows)
 
+# ── Generic field dictionary — profile + value vocabulary for ANY item/product dataset ──
+def _ds_columns(ds):
+    try:
+        s = _cola_q(ds, "SELECT * FROM t LIMIT 1")
+        return list(s[0].keys()) if s else []
+    except Exception:
+        return []
+
+@app.get("/api/item/profile")
+def item_profile_ep():
+    """Field-level DATA DICTIONARY for ANY warehouse item/product dataset (?dataset=bc_liquor,
+    or_pricing, iowa_products, ttb_cola…). Introspects columns, then per column: fill-rate + distinct
+    cardinality + samples — the basis for string extraction into derived fields on any dataset."""
+    ds = (request.args.get("dataset") or "ttb_cola").strip()
+    cols = _ds_columns(ds)[:24]
+    if not cols:
+        return jsonify(ok=True, landed=False, dataset=ds, fields=[])
+    try:
+        total = _cola_q(ds, "SELECT count(*) c FROM t")[0]["c"]
+    except Exception:
+        return jsonify(ok=True, landed=False, dataset=ds, fields=[])
+    out = []
+    for col in cols:
+        if col.startswith(":@") or col.startswith("_"):
+            continue
+        try:
+            r = _cola_q(ds, 'SELECT count(*) FILTER (WHERE CAST("%s" AS VARCHAR)<>\'\') filled, '
+                        'count(DISTINCT "%s") dct FROM t' % (col, col))[0]
+            samp = _cola_q(ds, 'SELECT "%s" v FROM t WHERE CAST("%s" AS VARCHAR)<>\'\' LIMIT 3' % (col, col))
+        except Exception:
+            continue
+        out.append({"field": col, "filled": r["filled"], "distinct": r["dct"],
+                    "fill_pct": round(100 * r["filled"] / max(1, total), 1),
+                    "samples": [str(s["v"]) for s in samp]})
+    return jsonify(ok=True, landed=True, dataset=ds, total=total, fields=out)
+
+@app.get("/api/item/dictionary")
+def item_dictionary_ep():
+    """Value DICTIONARY (controlled vocabulary) for one field of ANY item dataset: distinct values +
+    counts, desc. ?dataset=&field=&q=. The raw material for deriving a normalized field from text."""
+    ds = (request.args.get("dataset") or "ttb_cola").strip()
+    field = (request.args.get("field") or "").strip()
+    if field not in _ds_columns(ds):
+        return jsonify(ok=False, error="unknown field for dataset"), 400
+    try:
+        lim = min(500, max(1, int(request.args.get("limit", "150") or 150)))
+    except ValueError:
+        lim = 150
+    q = (request.args.get("q") or "").strip()
+    where, params = 'CAST("%s" AS VARCHAR)<>\'\'' % field, []
+    if q:
+        where += ' AND CAST("%s" AS VARCHAR) ILIKE ?' % field; params = ["%" + q + "%"]
+    try:
+        distinct = _cola_q(ds, 'SELECT count(DISTINCT "%s") c FROM t WHERE %s' % (field, where), params)[0]["c"]
+        rows = _cola_q(ds, 'SELECT CAST("%s" AS VARCHAR) v, count(*) n FROM t WHERE %s GROUP BY 1 ORDER BY n DESC LIMIT %d'
+                       % (field, where, lim), params)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:140], values=[]), 200
+    return jsonify(ok=True, dataset=ds, field=field, distinct=distinct, values=rows)
+
 @app.get("/api/datasets/download")
 def dataset_download():
     """Stream the COMPLETE pulled dataset (all rows, not the UI sample) as CSV or JSON."""
