@@ -756,6 +756,54 @@ def cola_clusters_ep():
         return jsonify(ok=False, landed=False, error=str(e)[:140], rows=[]), 200
     return jsonify(ok=True, total=total, offset=off, limit=lim, rows=rows)
 
+COLA_FIELDS = ["Brand Name", "Fanciful Name", "Class/Type", "Origin", "Applicant",
+               "Status", "Net Contents", "UPC"]
+
+@app.get("/api/cola/profile")
+def cola_profile_ep():
+    """Field-level DATA DICTIONARY for ttb_cola — per column: fill-rate + distinct cardinality + a few
+    samples. The basis for string extraction: which registration fields carry structured signal worth
+    parsing into controlled vocabularies + derived fields."""
+    try:
+        total = _cola_q("ttb_cola", "SELECT count(*) c FROM t")[0]["c"]
+    except Exception:
+        return jsonify(ok=True, landed=False, fields=[])
+    out = []
+    for col in COLA_FIELDS:
+        try:
+            r = _cola_q("ttb_cola", 'SELECT count(*) FILTER (WHERE "%s"<>\'\') filled, '
+                        'count(DISTINCT "%s") dct FROM t' % (col, col))[0]
+            samp = _cola_q("ttb_cola", 'SELECT "%s" v FROM t WHERE "%s"<>\'\' LIMIT 3' % (col, col))
+        except Exception:
+            continue
+        out.append({"field": col, "filled": r["filled"], "distinct": r["dct"],
+                    "fill_pct": round(100 * r["filled"] / max(1, total), 1),
+                    "samples": [s["v"] for s in samp]})
+    return jsonify(ok=True, landed=True, total=total, fields=out)
+
+@app.get("/api/cola/dictionary")
+def cola_dictionary_ep():
+    """The value DICTIONARY (controlled vocabulary) for one field: distinct values + counts, desc —
+    the raw material for a data dictionary and for deriving a normalized field from free text."""
+    field = (request.args.get("field") or "Class/Type").strip()
+    if field not in COLA_FIELDS:
+        return jsonify(ok=False, error="unknown field"), 400
+    try:
+        lim = min(500, max(1, int(request.args.get("limit", "150") or 150)))
+    except ValueError:
+        lim = 150
+    q = (request.args.get("q") or "").strip()
+    where, params = '"%s"<>\'\'' % field, []
+    if q:
+        where += ' AND "%s" ILIKE ?' % field; params = ["%" + q + "%"]
+    try:
+        distinct = _cola_q("ttb_cola", 'SELECT count(DISTINCT "%s") c FROM t WHERE %s' % (field, where), params)[0]["c"]
+        rows = _cola_q("ttb_cola", 'SELECT "%s" v, count(*) n FROM t WHERE %s GROUP BY 1 ORDER BY n DESC LIMIT %d'
+                       % (field, where, lim), params)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:140], values=[]), 200
+    return jsonify(ok=True, field=field, distinct=distinct, values=rows)
+
 @app.get("/api/datasets/download")
 def dataset_download():
     """Stream the COMPLETE pulled dataset (all rows, not the UI sample) as CSV or JSON."""
