@@ -69,6 +69,7 @@
     <a data-sec="catalog"><span class="d"></span>Catalog</a>
     <a data-sec="registrations"><span class="d"></span>Registrations</a>
     <a data-sec="mapping"><span class="d"></span>Mapping</a>
+    <a data-sec="dictionary"><span class="d"></span>Dictionary</a>
     <div class="foot"><span class="dot" id="eng-dot"></span><span id="eng-txt">checking…</span></div>
   </nav>
   <div class="stage">
@@ -80,11 +81,12 @@
     <iframe id="f-confirm"   title="Confirm / Conform"         data-src="mdm-confirm.html?embed=1"></iframe>
     <iframe id="f-registrations" title="Product Registrations"  data-src="product-registrations.html?embed=1"></iframe>
     <iframe id="f-mapping"   title="Field Mapping"              data-src="field-mapping.html?embed=1"></iframe>
+    <iframe id="f-dictionary" title="Data Dictionary"           data-src="mdm-dictionary.html?embed=1"></iframe>
   </div>
 <script>
 (function(){
   "use strict";
-  var SECTIONS={overview:null,sources:"f-sources",master:"f-master",catalog:"f-catalog",outlets:"f-outlets",confirm:"f-confirm",registrations:"f-registrations",mapping:"f-mapping"};
+  var SECTIONS={overview:null,sources:"f-sources",master:"f-master",catalog:"f-catalog",outlets:"f-outlets",confirm:"f-confirm",registrations:"f-registrations",mapping:"f-mapping",dictionary:"f-dictionary"};
   // In the launcher, the launcher's rail becomes THIS console's nav (one sidebar).
   var inLauncher = (window.parent !== window);
   var NAV_META=[{id:"overview",label:"Overview",icon:"OV",desc:"The master-data picture at a glance"},
@@ -94,7 +96,8 @@
                 {id:"outlets",label:"Outlets",group:"Own",icon:"OU",desc:"dim_outlet_resolved — browse the unified outlet master"},
                 {id:"confirm",label:"Confirm",group:"Own",icon:"CF",desc:"Reconcile the same outlet across sources → Tier-1 truth"},
                 {id:"registrations",label:"Registrations",group:"Own",icon:"PR",desc:"TTB COLA label approvals → products + field dictionary"},
-                {id:"mapping",label:"Mapping",group:"Own",icon:"MP",desc:"Map source fields → master schema, with pre/post dictionaries"}];
+                {id:"mapping",label:"Mapping",group:"Own",icon:"MP",desc:"Map source fields → master schema, with pre/post dictionaries"},
+                {id:"dictionary",label:"Dictionary",group:"Own",icon:"DC",desc:"Build value dictionaries — cab sauv → Cabernet Sauvignon — against real source values"}];
   function publishNav(active){ if(inLauncher){ try{ parent.postMessage({__hoodie:"nav",app:"mdm",sections:NAV_META,active:active},"*"); }catch(e){} } }
   var esc=function(s){return String(s==null?"":s).replace(/[&<>]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;"}[c];});};
   var fmt=function(n){return n==null?"—":Number(n).toLocaleString();};
