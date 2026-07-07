@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product Locator — Hoodie</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --ink:#2B3138; --paper:#F1F3F5; --panel:#fff; --muted:#7A828B; --line:#E4E7EB;
+    --accent:#4E79A7; --accent-deep:#2E4C6D; --accent-soft:#EAF0F6; --good:#3f9668; --gold:#9a7100;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--paper);color:var(--ink);font-family:var(--font);font-size:14px;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+
+  /* ---- hero (borrowed from the Grey Goose finder: deep band + location search) ---- */
+  .hero{background:linear-gradient(160deg,var(--accent-deep),var(--accent));color:#fff;padding:26px 30px 22px;flex:0 0 auto}
+  .hero h1{font-size:23px;font-weight:800;letter-spacing:-.02em}
+  .hero p{font-size:13px;opacity:.85;margin-top:5px;max-width:640px;line-height:1.5}
+  .finder{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center}
+  .finder select,.finder input{font-family:var(--font);font-size:14px;border:none;border-radius:9px;padding:11px 14px;outline:none;color:var(--ink)}
+  .finder select{background:#fff;font-weight:600;min-width:210px;cursor:pointer}
+  .finder .loc{background:#fff;display:flex;align-items:center;gap:8px;border-radius:9px;padding:0 6px 0 13px}
+  .finder .loc svg{width:16px;height:16px;color:var(--accent);flex:0 0 auto}
+  .finder .loc input{padding:11px 8px;min-width:180px}
+  .finder button{background:#fff;color:var(--accent-deep);font-weight:700;border:none;border-radius:9px;padding:11px 20px;cursor:pointer;font-size:14px}
+  .finder button:hover{background:var(--accent-soft)}
+  .finder .ghost{background:rgba(255,255,255,.14);color:#fff;font-weight:600}
+  .finder .ghost:hover{background:rgba(255,255,255,.24)}
+
+  /* ---- three panels: filters · results · map ---- */
+  .stage{flex:1 1 auto;display:grid;grid-template-columns:212px 380px 1fr;min-height:0}
+  .filters{border-right:1px solid var(--line);background:var(--panel);padding:20px 18px;overflow-y:auto}
+  .filters h3{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 10px}
+  .fgroup{margin-bottom:22px}
+  .opt{display:flex;align-items:center;gap:9px;padding:7px 0;cursor:pointer;font-size:13.5px}
+  .opt input{accent-color:var(--accent);width:15px;height:15px;cursor:pointer}
+  .opt .ct{margin-left:auto;font-family:var(--mono);font-size:11px;color:#aab2ba;font-variant-numeric:tabular-nums}
+  .reset{background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;padding:0}
+
+  .results{border-right:1px solid var(--line);background:var(--paper);display:flex;flex-direction:column;min-height:0}
+  .rhead{padding:15px 18px 12px;border-bottom:1px solid var(--line);background:var(--panel);flex:0 0 auto}
+  .rhead .n{font-weight:800;font-size:15px;letter-spacing:-.01em}
+  .rhead .n b{color:var(--accent)}
+  .rhead .sortrow{display:flex;align-items:center;gap:8px;margin-top:10px}
+  .rhead label{font-size:11px;color:var(--muted)}
+  .rhead select{font-family:var(--font);font-size:12.5px;border:1px solid var(--line);border-radius:7px;padding:5px 9px;color:var(--ink);background:var(--panel);cursor:pointer;outline:none}
+  .rlist{overflow-y:auto;flex:1 1 auto;padding:8px}
+  .empty{color:var(--muted);font-size:13px;text-align:center;padding:40px 20px;line-height:1.6}
+
+  /* ---- the account card WITH THUMBNAIL (the piece the design borrows) ---- */
+  .acct{display:flex;gap:12px;padding:12px;border-radius:12px;cursor:pointer;border:1px solid transparent;transition:background .12s,border-color .12s}
+  .acct:hover{background:var(--panel)}
+  .acct.sel{background:var(--panel);border-color:var(--accent)}
+  .thumb{width:62px;height:62px;border-radius:10px;flex:0 0 auto;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumb svg{width:26px;height:26px;color:#fff;opacity:.95}
+  .thumb .mono{position:absolute;right:4px;bottom:3px;font-family:var(--mono);font-size:8px;color:rgba(255,255,255,.7);font-weight:700}
+  .acct .body{min-width:0;flex:1}
+  .acct .nm{font-weight:700;font-size:13.5px;line-height:1.25;letter-spacing:-.01em}
+  .acct .meta{display:flex;align-items:center;gap:7px;margin-top:3px;flex-wrap:wrap}
+  .acct .cat{font-size:10.5px;color:var(--muted);text-transform:capitalize}
+  .acct .dist{font-family:var(--mono);font-size:10.5px;color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
+  .acct .addr{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .acct .badge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--accent-soft);color:var(--accent-deep);margin-top:6px}
+  .acct .badge.dep{background:#eaf4ee;color:var(--good)}
+
+  #map{width:100%;height:100%;background:#e8ecef}
+  .leaflet-container{font-family:var(--font)}
+  .leaflet-popup-content{font-family:var(--font);font-size:12.5px;line-height:1.5;margin:11px 13px}
+  .leaflet-popup-content b{color:var(--ink)}
+  .pin{background:var(--accent);width:16px;height:16px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+  .pin.sel{background:var(--gold);width:22px;height:22px}
+
+  .note{font-size:11px;color:var(--muted);padding:9px 18px;border-top:1px solid var(--line);background:var(--panel);flex:0 0 auto;line-height:1.5}
+  .note b{color:var(--ink)}
+  @media(max-width:900px){.stage{grid-template-columns:1fr;grid-template-rows:auto 300px 320px}.filters{display:none}}
+</style>
+</head>
+<body>
+  <div class="hero">
+    <h1 id="title">Product Locator</h1>
+    <p>Find every account carrying a brand near a location — bars, restaurants, hotels and stores — from our
+       depletion &amp; distribution feeds. Search by product and ZIP.</p>
+    <div class="finder">
+      <select id="brand" aria-label="Product / brand"></select>
+      <div class="loc">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <input id="zip" placeholder="City or ZIP code" value="Tampa, FL 33602">
+      </div>
+      <button id="go">Search</button>
+      <button id="near" class="ghost">Use my location</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <aside class="filters">
+      <div class="fgroup">
+        <h3 style="display:flex;justify-content:space-between;align-items:center">Show only <button class="reset" id="reset">Reset</button></h3>
+        <label class="opt"><input type="radio" name="venue" value="" checked>All accounts <span class="ct" id="ctAll"></span></label>
+        <label class="opt"><input type="radio" name="venue" value="on">On-premise (bars &amp; restaurants) <span class="ct" id="ctOn"></span></label>
+        <label class="opt"><input type="radio" name="venue" value="off">Off-premise (stores) <span class="ct" id="ctOff"></span></label>
+      </div>
+      <div class="fgroup">
+        <h3>Signal</h3>
+        <label class="opt"><input type="checkbox" id="depOnly">Depletion-confirmed only <span class="ct" id="ctDep"></span></label>
+      </div>
+      <div class="fgroup">
+        <h3>Radius</h3>
+        <label class="opt"><input type="radio" name="rad" value="5">Within 5 mi</label>
+        <label class="opt"><input type="radio" name="rad" value="15" checked>Within 15 mi</label>
+        <label class="opt"><input type="radio" name="rad" value="0">Any distance</label>
+      </div>
+    </aside>
+
+    <section class="results">
+      <div class="rhead">
+        <div class="n"><b id="count">0</b> <span id="unit">accounts</span> near you</div>
+        <div class="sortrow">
+          <label for="sort">Sort by</label>
+          <select id="sort"><option value="dist">Distance</option><option value="name">Name</option><option value="cat">Type</option></select>
+        </div>
+      </div>
+      <div class="rlist" id="list"></div>
+      <div class="note" id="src">Showing <b>sample</b> data — connect the engine for live pulls.</div>
+    </section>
+
+    <div id="map"></div>
+  </div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+if(new URLSearchParams(location.search).has('embed')) document.querySelector('.hero p').style.display='none';
+
+/* ---- venue classification → the thumbnail (stands in for a Google Places photo) ----
+   When we resolve an account's place_id, acct.photo carries the real image and replaces this tile. */
+const ICONS={
+  hotel:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 20h20v-2H2v2zM4 8h4v3H4V8zm0 5h16v3H4v-3zm12-5h4v3h-4V8zM4 4h16v3H4V4z"/></svg>',
+  bar:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 3l9 9v6H8v2h8v-2h-4v-6l9-9H3zm4.8 2h8.4L14 7H8.8L7.8 5z"/></svg>',
+  restaurant:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 2v7a2 2 0 01-2 2v11H4V11a2 2 0 01-2-2V2h1.5v6H5V2h1.5v6H8V2zm7 0c-1.7 0-3 2-3 5s1 4 2 4v11h2V11c1 0 2-1 2-4s-1.3-5-3-5z"/></svg>',
+  liquor:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 2h6v3l1 3v13a1 1 0 01-1 1H9a1 1 0 01-1-1V8l1-3V2zm1.5 8v3h3v-3h-3z"/></svg>',
+  store:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16l1 5a3 3 0 01-6 0 3 3 0 01-6 0 3 3 0 01-6 0l1-5zm0 8.9A4.5 4.5 0 007 12a4.5 4.5 0 005 0 4.5 4.5 0 005 0 4.5 4.5 0 003 .9V20H4v-7.1z"/></svg>',
+  place:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 00-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 00-7-7zm0 9.5A2.5 2.5 0 1112 6.5a2.5 2.5 0 010 5z"/></svg>'
+};
+const TINT={hotel:'#5b6b8c',bar:'#8c5b76',restaurant:'#a0703c',liquor:'#7a5b8c',store:'#3f7a68',place:'#4E79A7'};
+function classify(name){
+  const n=(name||'').toLowerCase();
+  if(/hotel|suites|resort|inn|marriott|hilton|meridien|hyatt|sheraton|lodge/.test(n))return 'hotel';
+  if(/bar|lounge|tavern|pub|saloon|club|joint|cantina|cocktail|brew|ale|gin/.test(n))return 'bar';
+  if(/restaurant|grill|kitchen|cuisine|cafe|bistro|steak|thai|pizza|mediterran|grille|eatery|diner|burger/.test(n))return 'restaurant';
+  if(/liquor|wine|spirit|package|abc fine|total wine|bottle|cellar/.test(n))return 'liquor';
+  if(/grocery|market|deli|food|publix|walmart|dollar|7 eleven|7-eleven|shell|walgreens|cvs|circle k|convenien/.test(n))return 'store';
+  return 'place';
+}
+const ONPREM=new Set(['bar','restaurant','hotel']);
+
+/* ---- sample fallback: real Tito's accounts near Tampa (from our VTInfo pull) ---- */
+const SAMPLE=[{"name":"Hotel Flor","street":"905 N Florida Ave","city":"Tampa","state":"FL","lat":27.952085,"lng":-82.458414,"source":"sales"},{"name":"Le Meridien Hotels","street":"601 N Florida Ave","city":"Tampa","state":"FL","lat":27.949991,"lng":-82.457428,"source":"sales"},{"name":"Siam Thaimerican Restaurant","street":"713 N Franklin St","city":"Tampa","state":"FL","lat":27.95054,"lng":-82.458888,"source":"sales"},{"name":"Lit Cigar & Martini Lounge","street":"908 N Franklin St","city":"Tampa","state":"FL","lat":27.951644,"lng":-82.459989,"source":"sales"},{"name":"Echo Downtown","street":"914 N Franklin St","city":"Tampa","state":"FL","lat":27.951872,"lng":-82.460097,"source":"sales"},{"name":"Cws Gin Joint","street":"633 N Franklin St","city":"Tampa","state":"FL","lat":27.949679,"lng":-82.458734,"source":"sales"},{"name":"Duckweed Urban Grocery","street":"803 N Tampa St","city":"Tampa","state":"FL","lat":27.950607,"lng":-82.459989,"source":"sales"},{"name":"Paddy Wagon Irish Pub","street":"813 N Tampa St","city":"Tampa","state":"FL","lat":27.950568,"lng":-82.460015,"source":"sales"},{"name":"Dio Modern Mediterranean","street":"519 N Franklin St","city":"Tampa","state":"FL","lat":27.949059,"lng":-82.458372,"source":"sales"},{"name":"Springhill Suites","street":"1105 N Tampa St","city":"Tampa","state":"FL","lat":27.953049,"lng":-82.460724,"source":"sales"},{"name":"Courtyard By Marriott","street":"102 E Cass St","city":"Tampa","state":"FL","lat":27.951193,"lng":-82.460946,"source":"sales"},{"name":"Tampa Burgers & Pirates","street":"777 N Ashley Dr Ste D1","city":"Tampa","state":"FL","lat":27.950064,"lng":-82.460318,"source":"sales"},{"name":"Anchor Bar Ii","street":"514 N Franklin St Ste 104","city":"Tampa","state":"FL","lat":27.948798,"lng":-82.458941,"source":"sales"}];
+const BRANDS_FALLBACK=[{id:'titos',name:"Tito's Handmade Vodka"},{id:'fl-distributing',name:'Florida Distributing Co. (full book)'}];
+
+let MAP, MARKERS={}, ALL=[], VIEW=[], SEL=null, CENTER=[27.9506,-82.4572], LIVE=false;
+
+function miles(a,b){ // haversine
+  const R=3959,dLat=(b[0]-a[0])*Math.PI/180,dLng=(b[1]-a[1])*Math.PI/180;
+  const s=Math.sin(dLat/2)**2+Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+function prep(rows){
+  ALL=rows.filter(r=>r.lat&&r.lng).map((r,i)=>{
+    const cat=classify(r.name);
+    return {...r,i,cat,onprem:ONPREM.has(cat),ll:[+r.lat,+r.lng],
+            dist:miles(CENTER,[+r.lat,+r.lng]),
+            dep:(r.source||'').toLowerCase()==='sales'};
+  });
+  counts(); render();
+}
+function counts(){
+  const c=s=>ALL.filter(s).length;
+  ctAll.textContent=ALL.length; ctOn.textContent=c(a=>a.onprem); ctOff.textContent=c(a=>!a.onprem);
+  ctDep.textContent=c(a=>a.dep);
+}
+function apply(){
+  const venue=document.querySelector('input[name=venue]:checked').value;
+  const rad=+document.querySelector('input[name=rad]:checked').value;
+  const dep=depOnly.checked, sort=document.getElementById('sort').value;
+  VIEW=ALL.filter(a=>{
+    if(venue==='on'&&!a.onprem)return false;
+    if(venue==='off'&&a.onprem)return false;
+    if(dep&&!a.dep)return false;
+    if(rad&&a.dist>rad)return false;
+    return true;
+  });
+  VIEW.sort((x,y)=> sort==='name'?x.name.localeCompare(y.name):sort==='cat'?x.cat.localeCompare(y.cat)||x.dist-y.dist:x.dist-y.dist);
+  render();
+}
+function thumbHTML(a){
+  if(a.photo) return '<div class="thumb"><img src="'+a.photo+'" alt="" loading="lazy"></div>';
+  return '<div class="thumb" style="background:linear-gradient(150deg,'+TINT[a.cat]+',rgba(0,0,0,.22))">'+ICONS[a.cat]+
+         '<span class="mono">'+a.name.replace(/[^A-Za-z]/g,'').slice(0,2).toUpperCase()+'</span></div>';
+}
+function render(){
+  count.textContent=VIEW.length; unit.textContent=VIEW.length===1?'account':'accounts';
+  const L=document.getElementById('list');
+  if(!VIEW.length){ L.innerHTML='<div class="empty">No accounts match these filters.<br>Widen the radius or clear the signal filter.</div>'; drawPins(); return; }
+  L.innerHTML=VIEW.map(a=>
+    '<div class="acct" data-i="'+a.i+'">'+thumbHTML(a)+
+      '<div class="body"><div class="nm">'+esc(a.name)+'</div>'+
+        '<div class="meta"><span class="cat">'+a.cat+'</span>'+
+          (a.dist?'<span class="dist">'+a.dist.toFixed(1)+' mi</span>':'')+'</div>'+
+        '<div class="addr">'+esc(a.street||'')+(a.city?', '+esc(a.city):'')+' '+esc(a.state||'')+'</div>'+
+        '<span class="badge '+(a.dep?'dep':'')+'">'+(a.dep?'Depletion-confirmed':'Distribution')+'</span>'+
+      '</div></div>').join('');
+  L.querySelectorAll('.acct').forEach(el=>{
+    el.onclick=()=>select(+el.dataset.i,true);
+    el.onmouseenter=()=>hoverPin(+el.dataset.i,true);
+    el.onmouseleave=()=>hoverPin(+el.dataset.i,false);
+  });
+  drawPins();
+}
+function drawPins(){
+  Object.values(MARKERS).forEach(m=>MAP.removeLayer(m)); MARKERS={};
+  const grp=[];
+  VIEW.forEach(a=>{
+    const icon=L.divIcon({className:'',html:'<div class="pin'+(SEL===a.i?' sel':'')+'"></div>',iconSize:[16,16],iconAnchor:[8,16]});
+    const m=L.marker(a.ll,{icon}).addTo(MAP);
+    m.bindPopup('<b>'+esc(a.name)+'</b><br>'+esc(a.street||'')+'<br>'+esc(a.city||'')+', '+esc(a.state||'')+
+                '<br><span style="color:var(--accent)">'+a.cat+' · '+(a.dep?'depletion-confirmed':'distribution')+'</span>');
+    m.on('click',()=>select(a.i,false));
+    MARKERS[a.i]=m; grp.push(a.ll);
+  });
+  if(grp.length){ try{ MAP.fitBounds(grp,{padding:[40,40],maxZoom:15}); }catch(e){} }
+}
+function select(i,fly){
+  SEL=i; const a=ALL.find(x=>x.i===i); if(!a)return;
+  document.querySelectorAll('.acct').forEach(el=>el.classList.toggle('sel',+el.dataset.i===i));
+  const el=document.querySelector('.acct[data-i="'+i+'"]'); if(el)el.scrollIntoView({block:'nearest',behavior:'smooth'});
+  drawPins();
+  if(MARKERS[i]){ if(fly)MAP.setView(a.ll,15,{animate:true}); MARKERS[i].openPopup(); }
+}
+function hoverPin(i,on){ const m=MARKERS[i]; if(m){ const el=m.getElement(); if(el)el.querySelector('.pin').style.transform=on?'rotate(-45deg) scale(1.4)':'rotate(-45deg)'; } }
+function esc(s){return (s==null?'':''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+/* ---- data: engine when up, sample otherwise ---- */
+async function loadBrands(){
+  const sel=document.getElementById('brand');
+  try{
+    const j=await (await fetch('/api/locator/brands',{cache:'no-store'})).json();
+    if(j&&j.brands&&j.brands.length){ fill(sel,j.brands); return; }
+  }catch(e){}
+  fill(sel,BRANDS_FALLBACK);
+}
+function fill(sel,brands){ sel.innerHTML=brands.map(b=>'<option value="'+b.id+'">'+esc(b.name)+'</option>').join(''); }
+async function search(){
+  const brand=document.getElementById('brand').value, zip=document.getElementById('zip').value.trim();
+  try{
+    const j=await (await fetch('/api/locator?brand='+encodeURIComponent(brand)+'&zip='+encodeURIComponent(zip),{cache:'no-store'})).json();
+    if(j&&j.accounts&&j.accounts.length){
+      LIVE=true; if(j.center)CENTER=j.center;
+      document.getElementById('src').innerHTML='Live · <b>'+j.accounts.length+'</b> accounts from <b>'+esc(j.label||brand)+'</b>';
+      document.getElementById('title').textContent=(j.label||'Product')+' — Locator';
+      prep(j.accounts); return;
+    }
+  }catch(e){}
+  // fallback
+  document.getElementById('src').innerHTML='Showing <b>sample</b> (Tito’s · Tampa) — connect the engine for live pulls.';
+  prep(SAMPLE);
+}
+
+MAP=L.map('map',{zoomControl:true,scrollWheelZoom:true}).setView(CENTER,13);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  {attribution:'© OpenStreetMap © CARTO',subdomains:'abcd',maxZoom:19}).addTo(MAP);
+
+document.getElementById('go').onclick=search;
+document.getElementById('zip').addEventListener('keydown',e=>{if(e.key==='Enter')search();});
+document.getElementById('brand').onchange=search;
+document.getElementById('sort').onchange=apply;
+document.getElementById('reset').onclick=()=>{document.querySelector('input[name=venue][value=""]').checked=true;depOnly.checked=false;document.querySelector('input[name=rad][value="15"]').checked=true;apply();};
+document.querySelectorAll('input[name=venue],input[name=rad],#depOnly').forEach(el=>el.onchange=apply);
+document.getElementById('near').onclick=()=>{
+  if(!navigator.geolocation)return;
+  navigator.geolocation.getCurrentPosition(p=>{CENTER=[p.coords.latitude,p.coords.longitude];ALL.forEach(a=>a.dist=miles(CENTER,a.ll));MAP.setView(CENTER,13);apply();});
+};
+// wire filter controls to apply (after prep counts exist)
+['depOnly'].forEach(id=>document.getElementById(id));
+document.querySelectorAll('input[name=venue],input[name=rad]').forEach(el=>el.addEventListener('change',apply));
+depOnly.addEventListener('change',apply);
+document.getElementById('sort').addEventListener('change',apply);
+
+loadBrands().then(search);
+// re-run filters after each prep
+const _prep=prep; window.prep=function(r){_prep(r);apply();};
+</script>
+</body>
+</html>

@@ -38,6 +38,8 @@ import master                       # unify per-state outlet pulls into one norm
 import chicago                      # Chicago liquor-licensed outlets (Socrata) — IL outlets + companies, geocoded
 import ct_dcp                       # Connecticut liquor (Socrata) — CT premises + brand/supplier registry
 import socrata_outlets              # GENERIC Socrata outlet connector — NY/CO/MO… as config, not modules
+import total_wine                    # Total Wine & More direct catalog (mobile-UA + sitemap + microdata)
+import vtinfo                        # brand → retailer distribution via the VTInfo/VIP "where to buy" finder
 import warehouse                    # Parquet-on-Tigris (or local) queried by DuckDB
 import upc                          # UPC/EAN QC + owned prefix->owner crosswalk (deterministic + inference)
 import auth_gate                    # Google OIDC login gate (active only when configured)
@@ -78,7 +80,7 @@ class _JobLogHandler(logging.Handler):
 _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
-VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp"} | set(socrata_outlets.VALID)
+VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo"} | set(socrata_outlets.VALID)
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
@@ -95,6 +97,8 @@ def _dispatch_pull(conn, body):
             else tx_pull(body) if conn == "tx-tabc"
             else il_pull(body) if conn == "il-chicago"
             else ct_pull(body) if conn == "ct-dcp"
+            else total_wine_pull(body) if conn == "total-wine"
+            else vtinfo_pull(body) if conn == "vtinfo"
             else socrata_pull(conn, body) if conn in socrata_outlets.VALID
             else fl_pull(conn) if conn in FL_CONN else None)
 
@@ -601,6 +605,32 @@ def instacart_pull(params):
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
     return run
 
+def total_wine_pull(params):
+    started = int(time.time() * 1000)
+    ds, runs, _ = total_wine.pull(
+        cap=int(params.get("cap", 400)), delay=float(params.get("delay", 1.0)),
+        out=os.path.join(STATE_DIR, "total_wine"), state_dir=os.path.join(STATE_DIR, "total_wine"),
+        log=lambda m: app.logger.info("TOTAL-WINE %s", m))
+    DATASETS.update(_absorb(ds))
+    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
+    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
+    return run
+
+def vtinfo_pull(params):
+    started = int(time.time() * 1000)
+    zips = params.get("zips") or ["33601"]
+    if isinstance(zips, str):
+        zips = [z.strip() for z in zips.split(",") if z.strip()]
+    ds, runs, _ = vtinfo.pull(
+        brand=params.get("brand", "titos"), zips=zips,
+        custID=params.get("custID"), uuid=params.get("uuid"), delay=float(params.get("delay", 1.0)),
+        out=os.path.join(STATE_DIR, "vtinfo"), state_dir=os.path.join(STATE_DIR, "vtinfo"),
+        log=lambda m: app.logger.info("VTINFO %s", m))
+    DATASETS.update(_absorb(ds))
+    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
+    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
+    return run
+
 # ---------------- API ----------------
 @app.get("/api/health")
 def health():
@@ -608,6 +638,43 @@ def health():
                    datasets=len(DATASETS), runs=len(RUNS),
                    state=("s3:" + STATE_BUCKET) if STATE_BUCKET else "disk",
                    warehouse=("tigris:" + os.environ.get("BUCKET_NAME", "")) if warehouse.remote() else "local")
+
+# ---- Product Locator: brand → accounts carrying it near a location (Grey-Goose-style UI) ----
+def _titlecase(s):
+    return " ".join(w if (w.isupper() and len(w) <= 3) else w.capitalize() for w in str(s).split())
+
+@app.get("/api/locator/brands")
+def locator_brands():
+    return jsonify(brands=[{"id": k, "name": v.get("name", k)} for k, v in vtinfo.BRANDS.items()])
+
+@app.get("/api/locator")
+def locator():
+    """Live account list for a brand near a ZIP, shaped for the locator UI. Bounded (max_pages)
+    so it stays responsive; the map centers on the mean of returned coordinates."""
+    brand = request.args.get("brand", "titos")
+    zc = re.sub(r"[^0-9]", "", request.args.get("zip", "")) or "33602"
+    b = vtinfo.BRANDS.get(brand)
+    if not b:
+        return jsonify(accounts=[], error="unknown brand"), 200
+    try:
+        rows = vtinfo.search_zip(b["custID"], b.get("uuid", ""), zc, delay=0.15,
+                                 max_pages=int(request.args.get("pages", 3)),
+                                 m=b.get("m", "5"), theme=b.get("theme", "1"),
+                                 log=lambda m: app.logger.info("LOCATOR %s", m))
+    except Exception as e:
+        app.logger.info("LOCATOR error %s", e)
+        return jsonify(accounts=[], error=str(e)[:120]), 200
+    accts, lats, lngs = [], [], []
+    for r in rows:
+        if not (r.get("lat") and r.get("lng")):
+            continue
+        lat, lng = float(r["lat"]), float(r["lng"])
+        lats.append(lat); lngs.append(lng)
+        accts.append({"name": _titlecase(r["account"]), "street": _titlecase(r["street"]),
+                      "city": _titlecase(r["city"]), "state": r["state"], "lat": lat, "lng": lng,
+                      "source": r.get("source", ""), "type": r.get("store_type", "")})
+    center = [sum(lats) / len(lats), sum(lngs) / len(lngs)] if lats else None
+    return jsonify(label=b.get("name", brand), accounts=accts, center=center, zip=zc)
 
 # Source labels + a first-cut scope tree derived from the pulled data.
 _SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlets",
@@ -617,7 +684,8 @@ _SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlet
               "census-acs": "US Census — ACS demographics", "tx-tabc": "Texas TABC — licenses",
               "il-chicago": "Chicago — Liquor Licenses", "ct-dcp": "Connecticut — Liquor (DCP)",
               "ny-sla": "New York — SLA licenses", "co-led": "Colorado — Liquor licenses",
-              "mo-atc": "Missouri — Alcohol licenses"}
+              "mo-atc": "Missouri — Alcohol licenses",
+              "total-wine": "Total Wine — Catalog (direct)", "vtinfo": "VTInfo — Brand distribution (VIP)"}
 _EXTRACT_SRC = {eid: src for src, exs in FL_CONN.items() for (eid, _h, _n) in exs}
 _NAME_COLS = ("Owner Name", "Registrant Name", "Applicant", "Brand Name", "DBA")
 def _name_idx(header):
