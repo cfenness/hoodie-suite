@@ -94,13 +94,16 @@ async function load(){
   }catch(e){ document.getElementById('rows').innerHTML='<tr><td colspan="6" class="empty">Connect the engine to browse the catalog.</td></tr>'; }
 }
 function render(j){
-  document.getElementById('rows').innerHTML=(j.skus||[]).map(s=>
-    '<tr data-k="'+esc(s.sku_key)+'"><td><div class="brand">'+esc(s.brand||'—')+'</div><div class="prod">'+esc(s.product_name||'')+'</div></td>'+
+  document.getElementById('rows').innerHTML=(j.skus||[]).map(s=>{
+    const hasBrand=s.brand&&String(s.brand).trim();
+    const primary=hasBrand?s.brand:(s.product_name||'—');       // brand-less filings lead with the product
+    const secondary=hasBrand?(s.product_name||''):'';
+    return '<tr data-k="'+esc(s.sku_key)+'"><td><div class="brand">'+esc(primary)+'</div><div class="prod">'+esc(secondary)+'</div></td>'+
     '<td class="cat">'+esc(s.category||'')+'</td>'+
     '<td class="cat">'+esc(s.origin||'')+'</td>'+
     '<td class="sz">'+(s.size_ml?esc(s.size_ml)+' mL':'')+'</td>'+
     '<td class="upc">'+esc(s.upc||'')+'</td>'+
-    '<td class="src"><b>'+(s.sources||1)+'</b></td></tr>').join('')
+    '<td class="src"><b>'+(s.sources||1)+'</b></td></tr>'; }).join('')
     || '<tr><td colspan="6" class="empty">No products match.</td></tr>';
   document.querySelectorAll('#rows tr[data-k]').forEach(tr=>tr.onclick=()=>openSku(tr.dataset.k,tr));
   const pages=Math.max(1,Math.ceil(total/size));
