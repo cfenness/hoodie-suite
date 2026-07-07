@@ -74,6 +74,41 @@ def write_parquet(name, records, fields=None):
     return {"rows": len(records), "uri": uri(name)}
 
 
+def list_datasets():
+    """Every <name>.parquet in the warehouse as [{name, rows, fields}] — CHEAP: reads each Parquet
+    footer (row count + schema) only, never the data. Powers the estate model's 'whole thing' view."""
+    import pyarrow.parquet as pq
+    out = []
+    try:
+        if remote():
+            from pyarrow import fs as pafs
+            s3 = pafs.S3FileSystem(endpoint_override=_endpoint(), access_key=_env("AWS_ACCESS_KEY_ID"),
+                                   secret_key=_env("AWS_SECRET_ACCESS_KEY"), region=_region(), scheme="https")
+            base = "%s/%s" % (_bucket(), _prefix())
+            infos = s3.get_file_info(pafs.FileSelector(base, recursive=False))
+            for info in infos:
+                if info.type != pafs.FileType.File or not info.path.endswith(".parquet"):
+                    continue
+                name = info.path.rsplit("/", 1)[-1][:-8]
+                try:
+                    md = pq.read_metadata(info.path, filesystem=s3)
+                    out.append({"name": name, "rows": md.num_rows, "fields": list(md.schema.names)})
+                except Exception:
+                    out.append({"name": name, "rows": 0, "fields": []})
+        else:
+            import glob
+            for p in glob.glob(os.path.join(_LOCAL_DIR, "*.parquet")):
+                name = os.path.basename(p)[:-8]
+                try:
+                    md = pq.read_metadata(p)
+                    out.append({"name": name, "rows": md.num_rows, "fields": list(md.schema.names)})
+                except Exception:
+                    out.append({"name": name, "rows": 0, "fields": []})
+    except Exception:
+        pass
+    return out
+
+
 def write_parquet_from_csv(name, csv_path, fields=None):
     """Stream a (large) CSV into `<name>.parquet` (Tigris or local) WITHOUT building a Python
     list-of-dicts — pyarrow reads it columnar, so a multi-million-row backfill (e.g. the 30-year

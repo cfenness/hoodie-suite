@@ -191,7 +191,14 @@ function cardSVG(ca,cb){
 }
 function hostOf(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch(e){ return ''; } }
 function friendly(nm){ return String(nm||'source').replace(/\s*—.*$/,'').replace(/\s*\([^)]*\)\s*$/,'').slice(0,26); }
-function dsName(k){ const M={bd4008lic:'FL · Item master',bd4011lic:'FL · Registrants',abtbrands:'FL · Brand renewals',bd4006lic:'FL · Retail outlets',bd4005lic:'FL · Wholesale',bd400revok:'FL · Revoked',bd4002lic:'FL · Permits',abc_store_cells:'ABC · store cells',census_demographic:'Census · Demographic',census_economic:'Census · Economic',census_housing:'Census · Housing',outlets_census:'Outlets × census',tx_outlets:'TX · Retail outlets',tx_companies:'TX · Companies',il_outlets:'Chicago · Liquor outlets',il_companies:'Chicago · Companies',outlets_master:'Outlet master'}; return M[k]||('dataset · '+k); }
+function dsName(k){ const M={bd4008lic:'FL · Item master',bd4011lic:'FL · Registrants',abtbrands:'FL · Brand renewals',bd4006lic:'FL · Retail outlets',bd4005lic:'FL · Wholesale',bd400revok:'FL · Revoked',bd4002lic:'FL · Permits',abc_store_cells:'ABC · store cells',census_demographic:'Census · Demographic',census_economic:'Census · Economic',census_housing:'Census · Housing',outlets_census:'Outlets × census',tx_outlets:'TX · Retail outlets',tx_companies:'TX · Companies',il_outlets:'Chicago · Liquor outlets',il_companies:'Chicago · Companies',outlets_master:'Outlet master',
+  ct_outlets:'CT · Premises',ct_brands:'CT · Brand registry',ct_companies:'CT · Companies',
+  ny_outlets:'NY · SLA licenses',co_outlets:'CO · Liquor licenses',mo_outlets:'MO · Alcohol licenses',
+  census_reference:'Census · Reference (CBP/NES/PEP)',census_acs:'Census · ACS demographics',
+  ttb_cola:'TTB · COLA labels',cola_cluster:'COLA · Product clusters',cola_cluster_membership:'COLA · Cluster membership',
+  mont_sales:'Montgomery MD · Sales',mont_catalog:'Montgomery MD · Catalog',mont_purch:'Montgomery MD · Purchases',
+  or_pricing:'Oregon OLCC · Pricing',bc_liquor:'BC Liquor · Price list',
+  iowa_stores:'Iowa · Stores',iowa_products:'Iowa · Products',iowa_sales_monthly:'Iowa · Monthly sales'}; return M[k]||('dataset · '+k); }
 // deterministic position by name → stable geography across refreshes
 function stablePos(name, connEnts){
   let h=2166136261; for(let i=0;i<name.length;i++){ h^=name.charCodeAt(i); h=Math.imul(h,16777619); }
@@ -235,7 +242,7 @@ function layoutClusters3D(nodes){
 // ── live read ──────────────────────────────────────────────────────────────────────
 async function loadLive(){
   const get=u=>fetch(u,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
-  const [recs,dsets,hls]=await Promise.all([get('/api/recipes'),get('/api/datasets'),get('/api/highlights')]);
+  const [recs,dsets,hls]=await Promise.all([get('/api/recipes'),get('/api/catalog'),get('/api/highlights')]);
   return { recipes:(recs&&recs.recipes)||[], datasets:dsets||{}, highlights:(hls&&hls.highlights)||[], online:!!(recs||dsets) };
 }
 // build the graph model from the live read (+ catalog for the familiar estate)

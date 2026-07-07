@@ -406,6 +406,31 @@ def save_full(did, header, rows):
     else:
         try: open(os.path.join(FULL_DIR, did + ".json"), "w").write(blob)
         except Exception as e: app.logger.warning("full save %s failed: %s", did, e)
+    # keep a tiny index (did → header+total) so /api/catalog can list the full store without reading
+    # every (possibly 30MB) blob — this is what lets the estate model see save_full'd datasets.
+    try:
+        idx = _full_index(); idx[did] = {"header": header, "total": len(rows)}
+        blob = json.dumps(idx)
+        if STATE_BUCKET:
+            _s3().put_object(Bucket=STATE_BUCKET, Key=_key("full/_index.json"),
+                             Body=blob.encode("utf-8"), ContentType="application/json")
+        else:
+            open(os.path.join(FULL_DIR, "_index.json"), "w").write(blob)
+    except Exception as e:
+        app.logger.warning("full index update %s failed: %s", did, e)
+
+def _full_index():
+    """did → {header, total} for everything in the full store (from full/_index.json)."""
+    if STATE_BUCKET:
+        try:
+            obj = _s3().get_object(Bucket=STATE_BUCKET, Key=_key("full/_index.json"))
+            return json.loads(obj["Body"].read())
+        except Exception:
+            return {}
+    try:
+        return json.load(open(os.path.join(FULL_DIR, "_index.json")))
+    except Exception:
+        return {}
 
 def load_full(did):
     if STATE_BUCKET:
@@ -634,6 +659,30 @@ def datasets():
     for k, ds in src.items():
         rows = [r for r in (ds.get("rows") or []) if any(q in str(c).lower() for c in r)]
         out[k] = dict(ds, rows=rows, matched=len(rows))
+    return jsonify(out)
+
+@app.get("/api/catalog")
+def catalog_ep():
+    """Every dataset we actually hold, across ALL THREE stores — the estate model's 'whole thing'
+    view (it polls this so new datasets appear on their own). {key: {header, total, store}}. Light:
+    header + count + store only, no row data. memory = in-RAM sample; full = save_full'd on Tigris;
+    warehouse = Parquet. Precedence memory → full → warehouse so a real count wins over a stub."""
+    out = {}
+    for k, ds in DATASETS.items():
+        out[k] = {"header": ds.get("header") or [],
+                  "total": ds.get("total") or len(ds.get("rows") or []), "store": "memory"}
+    for k, v in (_full_index() or {}).items():
+        if k not in out or not out[k].get("total"):
+            out[k] = {"header": v.get("header") or [], "total": v.get("total") or 0, "store": "full"}
+    try:
+        import warehouse
+        for d in warehouse.list_datasets():
+            k = d.get("name", "")
+            if k and not k.startswith("_"):
+                out.setdefault(k, {"header": d.get("fields") or [], "total": d.get("rows") or 0,
+                                   "store": "warehouse"})
+    except Exception as e:
+        app.logger.warning("warehouse catalog failed: %s", e)
     return jsonify(out)
 
 @app.get("/api/datasets/download")
@@ -1379,10 +1428,10 @@ def outlets_geo_ep():
             west, south, east, north = (float(x) for x in bb.split(","))
     except (ValueError, TypeError):
         west = None
-    # With a viewport, cap at a screenful and UNIFORMLY sample (reservoir) when the view holds more —
-    # at national zoom you get an even 40k sample (dots blob at that scale anyway); zoom in and in_view
-    # drops below the cap so every local outlet is returned. No bbox → legacy first-N up to GEO_CAP.
-    cap = 40000 if west is not None else GEO_CAP
+    # Return EVERY dot in view (up to a large safety cap) — the whole point of the map is to SEE the
+    # gaps, and a sample fills them in. The client draws all of them on a single canvas layer (fast for
+    # 100k+), so density/coverage is truthful; the reservoir only trips past GEO_CAP as a runaway guard.
+    cap = GEO_CAP
     pts = []; in_view = 0
     for ri, r in enumerate(rows):
         if la >= len(r) or lo >= len(r):
