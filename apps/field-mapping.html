@@ -216,8 +216,9 @@
     return r;
   }
   async function previewRow(tr){
-    const prow=tr.nextElementSibling, pv=prow.querySelector('.pv');
-    prow.style.display=''; pv.innerHTML='<span class="pvmeta">previewing…</span>';
+    const prow=tr.nextElementSibling, pv=prow.querySelector('.pv'), btn=tr.querySelector('.prev');
+    if(prow.style.display!=='none'){ prow.style.display='none'; btn.textContent='preview'; return; }  // toggle closed
+    prow.style.display=''; btn.textContent='hide'; pv.innerHTML='<span class="pvmeta">previewing…</span>';
     try{
       const j=await (await fetch('/api/master/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(T().prevBody(buildRule(tr)))})).json();
       if(!j.ok){ pv.innerHTML='<span class="pvmeta">'+esc(j.error||'preview failed')+'</span>'; return; }
