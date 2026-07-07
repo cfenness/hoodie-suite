@@ -76,19 +76,21 @@
     <iframe id="f-sources"   title="Sources"                   data-src="mdm-sources.html?embed=1"></iframe>
     <iframe id="f-master"    title="Master-data control plane" data-src="mdm-master.html?embed=1"></iframe>
     <iframe id="f-catalog"   title="Product Catalog"           data-src="catalog.html?embed=1"></iframe>
+    <iframe id="f-outlets"   title="Outlet Master"             data-src="mdm-outlets.html?embed=1"></iframe>
     <iframe id="f-registrations" title="Product Registrations"  data-src="product-registrations.html?embed=1"></iframe>
     <iframe id="f-mapping"   title="Field Mapping"              data-src="field-mapping.html?embed=1"></iframe>
   </div>
 <script>
 (function(){
   "use strict";
-  var SECTIONS={overview:null,sources:"f-sources",master:"f-master",catalog:"f-catalog",registrations:"f-registrations",mapping:"f-mapping"};
+  var SECTIONS={overview:null,sources:"f-sources",master:"f-master",catalog:"f-catalog",outlets:"f-outlets",registrations:"f-registrations",mapping:"f-mapping"};
   // In the launcher, the launcher's rail becomes THIS console's nav (one sidebar).
   var inLauncher = (window.parent !== window);
   var NAV_META=[{id:"overview",label:"Overview",icon:"OV",desc:"The master-data picture at a glance"},
                 {id:"sources",label:"Sources",group:"Own",icon:"SR",desc:"Every dataset feeding the master, grouped by what it feeds"},
                 {id:"master",label:"Master",group:"Own",icon:"MA",desc:"Canonical entities — brands, SKUs, outlets"},
                 {id:"catalog",label:"Catalog",group:"Own",icon:"CA",desc:"dim_product — the owned product catalog"},
+                {id:"outlets",label:"Outlets",group:"Own",icon:"OU",desc:"dim_outlet_resolved — browse the unified outlet master"},
                 {id:"registrations",label:"Registrations",group:"Own",icon:"PR",desc:"TTB COLA label approvals → products + field dictionary"},
                 {id:"mapping",label:"Mapping",group:"Own",icon:"MP",desc:"Map source fields → master schema, with pre/post dictionaries"}];
   function publishNav(active){ if(inLauncher){ try{ parent.postMessage({__hoodie:"nav",app:"mdm",sections:NAV_META,active:active},"*"); }catch(e){} } }
