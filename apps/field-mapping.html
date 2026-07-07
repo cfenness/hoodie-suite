@@ -38,6 +38,9 @@
   tbody tr:hover td{background:#FafBfC}
   .src{font-family:var(--mono);font-weight:600}
   .srcmeta{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px}
+  .samples{margin-top:4px;display:flex;flex-wrap:wrap;gap:4px}
+  .samples .ex{font-family:var(--mono);font-size:10.5px;color:var(--ink);background:#F1F4F6;border:1px solid var(--line);border-radius:4px;padding:1px 6px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .samples .ex.empty{color:#aab2ba;font-style:italic}
   .arrow{color:var(--muted);text-align:center;font-size:15px}
   td.mapped .msel{border-color:var(--accent);background:var(--accent-soft)}
   .msel,.tsel{width:100%}
@@ -116,8 +119,11 @@
   function render(){
     $('#rows').innerHTML=fields.map(f=>{
       const s=saved[f.field]||{};
+      const ex=(f.samples&&f.samples.length)
+        ? f.samples.map(v=>'<span class="ex" title="'+esc(v)+'">'+esc(v)+'</span>').join('')
+        : '<span class="ex empty">no values</span>';
       return '<tr data-f="'+esc(f.field)+'">'+
-        '<td><div class="src">'+esc(f.field)+'</div><div class="srcmeta">'+fmt(f.distinct)+' distinct · '+f.fill_pct+'% filled</div></td>'+
+        '<td><div class="src">'+esc(f.field)+'</div><div class="srcmeta">'+fmt(f.distinct)+' distinct · '+f.fill_pct+'% filled</div><div class="samples">'+ex+'</div></td>'+
         '<td><select class="tsel pre">'+tOpts(s.pre||'none')+'</select></td>'+
         '<td class="arrow">→</td>'+
         '<td class="'+(s.master_field?'mapped':'')+'"><select class="msel">'+mOpts(s.master_field||'')+'</select></td>'+
