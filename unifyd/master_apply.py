@@ -192,7 +192,8 @@ def build(master_fields, mappings_by_ds, entity="product", built_by="SYS", built
     if entity == "product":                                    # SHRED the wide source into the hierarchy
         h = resolve_hierarchy(master_fields, dst, con, built_by=built_by, built_at=built_at, log=log)
         return {"rows": total, "sources": len(selects), "per_source": per_source, "warnings": warnings,
-                "uri": warehouse.uri(dim), "hierarchy": {k: v["rows"] for k, v in h.items()},
+                "uri": warehouse.uri(dim), "gate": h.get("_gate"),
+                "hierarchy": {k: v["rows"] for k, v in h.items() if isinstance(v, dict) and "rows" in v},
                 "skus": h.get("sku", {}).get("rows"), "products": h.get("product", {}).get("rows")}
     resolved = resolve(master_fields, dst, con, entity=entity, built_by=built_by, built_at=built_at, log=log)
     return {"rows": total, "sources": len(selects), "per_source": per_source, "warnings": warnings,
