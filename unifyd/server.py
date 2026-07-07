@@ -1006,17 +1006,28 @@ def item_dictionary_ep():
     return jsonify(ok=True, dataset=ds, field=field, distinct=distinct, values=rows)
 
 # ── Field mapping — persist source.field → master.field crosswalks, with pre/post transforms ──
+# The PRODUCT master is the WIDE hierarchy schema — every field declares its GRAIN (brand|product|item|
+# sku|supplier). The apply engine SHREDS one mapped source into dim_brand → dim_product → dim_item →
+# dim_sku by grain (+ dim_supplier). Attribute lives at its level: brand_group@brand, flavor/abv@product,
+# size@item, upc@sku. Vintage/edition are sku ATTRIBUTES but excluded from the sku identity (releases
+# collapse to one sku). Price is NOT here — it's the pricing FACT, held separately.
 DEFAULT_MASTER_FIELDS = [
-    {"name": "brand", "type": "string", "desc": "Brand name"},
-    {"name": "product_name", "type": "string", "desc": "Full product / long name"},
-    {"name": "category", "type": "string", "desc": "Category / class-type"},
-    {"name": "packsize", "type": "string", "desc": "Pack / container size (as filed)"},
-    {"name": "size_ml", "type": "number", "desc": "Net contents in mL (derived)"},
-    {"name": "abv", "type": "number", "desc": "Alcohol % by volume"},
-    {"name": "upc", "type": "string", "desc": "UPC / GTIN — auto-normalized to GTIN-14", "normalize": "upc"},
-    {"name": "price", "type": "number", "desc": "Price"},
-    {"name": "supplier", "type": "string", "desc": "Supplier / vendor"},
-    {"name": "origin", "type": "string", "desc": "Country / region of origin"},
+    {"name": "brand", "grain": "brand", "type": "string", "desc": "Brand (e.g. Absolut)"},
+    {"name": "brand_group", "grain": "brand", "type": "string", "desc": "Brand-group / family section within the brand"},
+    {"name": "product_name", "grain": "product", "type": "string", "desc": "Product / variant (e.g. Absolut Blue)"},
+    {"name": "flavor", "grain": "product", "type": "string", "desc": "Flavor / variant (applied at product level)"},
+    {"name": "style", "grain": "product", "type": "string", "desc": "Style / sub-type"},
+    {"name": "category", "grain": "product", "type": "string", "desc": "Category / class-type"},
+    {"name": "abv", "grain": "product", "type": "number", "desc": "Alcohol % by volume (product level)"},
+    {"name": "origin", "grain": "product", "type": "string", "desc": "Country / region of origin"},
+    {"name": "size_ml", "grain": "item", "type": "number", "desc": "Net contents in mL (item grain)"},
+    {"name": "container", "grain": "item", "type": "string", "desc": "Container (bottle / can / keg)"},
+    {"name": "packsize", "grain": "item", "type": "string", "desc": "Pack / container size (as filed)"},
+    {"name": "pack", "grain": "sku", "type": "string", "desc": "Pack configuration (single / case / n-pack)"},
+    {"name": "upc", "grain": "sku", "type": "string", "desc": "UPC / GTIN — auto-normalized to GTIN-14", "normalize": "upc"},
+    {"name": "vintage", "grain": "sku", "type": "string", "desc": "Vintage year — attribute, NOT part of sku identity", "normalize": "vintage"},
+    {"name": "edition", "grain": "sku", "type": "string", "desc": "Special/seasonal edition — attribute, NOT part of sku identity"},
+    {"name": "supplier", "grain": "supplier", "type": "string", "desc": "Supplier / owner (brand↔supplier SCD, not a hierarchy level)"},
 ]
 # The OUTLET master schema — the canonical, atomic outlet fields every outlet source maps INTO
 # (the 'lowest level of consistency'). Same machinery as products, different entity.

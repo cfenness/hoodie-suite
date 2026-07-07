@@ -61,6 +61,91 @@ ENTITY_IDENTITY = {
     "outlet":  {"strong": "source_ref", "natural": ["outlet_name", "address", "zip5"]},
 }
 
+# ── The PRODUCT hierarchy: brand → product → item → sku. Sources map into ONE wide schema; the build
+# SHREDS it by GRAIN into a dimension table per level, each keyed at its grain + carrying its parent's
+# key (so the tables link). Supplier is derived as a time-bounded brand↔supplier association (SCD),
+# NOT a hierarchy level. This is "apply the attribute at its level" made mechanical. ──
+HIERARCHY = ["brand", "product", "item", "sku"]
+# the NATURAL-key components ADDED at each grain (cumulative — a level's key includes all ancestors').
+GRAIN_KEY = {"brand": ["brand"], "product": ["flavor", "product_name"],
+             "item": ["size_ml", "container"], "sku": ["pack"]}
+# name-ish key parts get vintage/edition stripped (derive.identity_expr) so releases collapse to one row;
+# note UPC + vintage + edition are sku ATTRIBUTES, deliberately absent from GRAIN_KEY['sku'].
+NAMEISH = {"brand", "product_name", "flavor", "container"}
+# default grain per field name when a schema field doesn't declare one
+GRAIN_DEFAULTS = {"brand": "brand", "brand_group": "brand",
+    "product_name": "product", "flavor": "product", "abv": "product", "style": "product",
+    "category": "product", "origin": "product",
+    "size_ml": "item", "packsize": "item", "container": "item",
+    "pack": "sku", "upc": "sku", "gtin": "sku", "vintage": "sku", "edition": "sku",
+    "supplier": "supplier"}
+
+def _grain_of(master_fields):
+    g = {}
+    for f in master_fields:
+        nm = f["name"] if isinstance(f, dict) else f
+        g[nm] = (f.get("grain") if isinstance(f, dict) else None) or GRAIN_DEFAULTS.get(nm)
+    return g
+
+def _keyexprs(mnames):
+    """Cumulative md5 identity key per grain — name parts vintage/edition-stripped so a sku is stable
+    across vintages/editions. Returns {grain: sql_md5_expr}."""
+    cum, keys = [], {}
+    for g in HIERARCHY:
+        for c in GRAIN_KEY.get(g, []):
+            if c in mnames:
+                cum.append(derive.identity_expr(c) if c in NAMEISH
+                           else "lower(coalesce(CAST(%s AS VARCHAR),''))" % derive.col(c))
+        keys[g] = "md5(%s)" % ("||'|'||".join(cum) if cum else "''")
+    return keys
+
+def resolve_hierarchy(master_fields, dim_uri, con, built_by="SYS", built_at=None, log=print):
+    """Shred the wide dim_product into dim_brand / dim_product / dim_item / dim_sku (each = distinct rows
+    at its grain, with a stable key + its parent's key + that grain's attributes), plus dim_supplier as a
+    brand↔supplier association with active/inactive dates. Every level's attributes are aggregated with
+    any_value; provenance (sources/source_list) carried through."""
+    import time as _t
+    built_at = built_at or int(_t.time())
+    import warehouse
+    mnames = _mnames(master_fields)
+    grain = _grain_of(master_fields)
+    keys = _keyexprs(mnames)
+    audit = ("%d AS master_created_at, %d AS master_updated_at, %s AS updated_by"
+             % (built_at, built_at, derive._sqlstr(built_by)))
+    out = {}
+    for i, g in enumerate(HIERARCHY):
+        attrs = [f for f in mnames if grain.get(f) == g]
+        cols = "%s AS %s_key" % (keys[g], g)
+        if i > 0:
+            cols += ", any_value(%s) AS %s_key" % (keys[HIERARCHY[i - 1]], HIERARCHY[i - 1])
+        if attrs:
+            cols += ", " + ", ".join("any_value(%s) AS %s" % (derive.col(a), derive.col(a)) for a in attrs)
+        sql = ("WITH b AS (SELECT * FROM read_parquet('%s')) "
+               "SELECT %s, count(*) AS source_rows, count(DISTINCT _source) AS sources, "
+               "list_distinct(list(_source)) AS source_list, %s FROM b GROUP BY %s"
+               % (dim_uri, cols, audit, keys[g]))
+        rtable = "dim_%s" % g
+        rdst = warehouse.uri(rtable).replace("'", "")
+        con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (sql, rdst))
+        n = con.execute("SELECT count(*) FROM read_parquet('%s')" % rdst).fetchone()[0]
+        out[g] = {"rows": n, "uri": warehouse.uri(rtable)}
+        log("dim_%s: %d rows" % (g, n))
+    # supplier SCD — brand↔supplier association with active/inactive dates (persists items across acquisition)
+    sup = [f for f in mnames if grain.get(f) == "supplier"]
+    if sup and "brand" in mnames:
+        scol = derive.col(sup[0])
+        sql = ("WITH b AS (SELECT * FROM read_parquet('%s')) "
+               "SELECT %s AS brand_key, %s AS supplier_name, %d AS active_date, NULL::BIGINT AS inactive_date, "
+               "count(*) AS source_rows, list_distinct(list(_source)) AS source_list "
+               "FROM b WHERE CAST(%s AS VARCHAR)<>'' GROUP BY %s, %s"
+               % (dim_uri, keys["brand"], scol, built_at, scol, keys["brand"], scol))
+        rdst = warehouse.uri("dim_supplier").replace("'", "")
+        con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (sql, rdst))
+        n = con.execute("SELECT count(*) FROM read_parquet('%s')" % rdst).fetchone()[0]
+        out["supplier"] = {"rows": n, "uri": warehouse.uri("dim_supplier")}
+        log("dim_supplier: %d brand↔supplier assocs" % n)
+    return out
+
 
 def build(master_fields, mappings_by_ds, entity="product", built_by="SYS", built_at=None, log=print):
     """Compile every source's mappings → UNION → dim_<entity> Parquet in the warehouse, then resolve.
@@ -91,6 +176,11 @@ def build(master_fields, mappings_by_ds, entity="product", built_by="SYS", built
     con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (union, dst))
     total = con.execute("SELECT count(*) FROM read_parquet('%s')" % dst).fetchone()[0]
     log("%s: %d rows from %d sources → %s" % (dim, total, len(selects), dst))
+    if entity == "product":                                    # SHRED the wide source into the hierarchy
+        h = resolve_hierarchy(master_fields, dst, con, built_by=built_by, built_at=built_at, log=log)
+        return {"rows": total, "sources": len(selects), "per_source": per_source, "warnings": warnings,
+                "uri": warehouse.uri(dim), "hierarchy": {k: v["rows"] for k, v in h.items()},
+                "skus": h.get("sku", {}).get("rows"), "products": h.get("product", {}).get("rows")}
     resolved = resolve(master_fields, dst, con, entity=entity, built_by=built_by, built_at=built_at, log=log)
     return {"rows": total, "sources": len(selects), "per_source": per_source, "warnings": warnings,
             "uri": warehouse.uri(dim), "resolved_rows": resolved.get("rows"),
