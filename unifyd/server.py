@@ -40,6 +40,7 @@ import ct_dcp                       # Connecticut liquor (Socrata) — CT premis
 import socrata_outlets              # GENERIC Socrata outlet connector — NY/CO/MO… as config, not modules
 import total_wine                    # Total Wine & More direct catalog (mobile-UA + sitemap + microdata)
 import vtinfo                        # brand → retailer distribution via the VTInfo/VIP "where to buy" finder
+import ab_locator                    # Anheuser-Busch InBev retailer locator (beertech GraphQL) — universal-outlet spine
 import warehouse                    # Parquet-on-Tigris (or local) queried by DuckDB
 import upc                          # UPC/EAN QC + owned prefix->owner crosswalk (deterministic + inference)
 import auth_gate                    # Google OIDC login gate (active only when configured)
@@ -80,7 +81,7 @@ class _JobLogHandler(logging.Handler):
 _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
-VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo"} | set(socrata_outlets.VALID)
+VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev"} | set(socrata_outlets.VALID)
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
@@ -99,6 +100,7 @@ def _dispatch_pull(conn, body):
             else ct_pull(body) if conn == "ct-dcp"
             else total_wine_pull(body) if conn == "total-wine"
             else vtinfo_pull(body) if conn == "vtinfo"
+            else ab_inbev_pull(body) if conn == "ab-inbev"
             else socrata_pull(conn, body) if conn in socrata_outlets.VALID
             else fl_pull(conn) if conn in FL_CONN else None)
 
@@ -631,6 +633,24 @@ def vtinfo_pull(params):
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
     return run
 
+def ab_inbev_pull(params):
+    started = int(time.time() * 1000)
+    zips = params.get("zips") or ["32819"]
+    if isinstance(zips, str):
+        zips = [z.strip() for z in zips.split(",") if z.strip()]
+    brands = params.get("brands")
+    if isinstance(brands, str):
+        brands = [b.strip() for b in brands.split(",") if b.strip()]
+    ds, runs, _ = ab_locator.pull(
+        zips=zips, brands=brands or None, radius=float(params.get("radius", 25.0)),
+        delay=float(params.get("delay", 0.3)),
+        out=os.path.join(STATE_DIR, "ab"), state_dir=os.path.join(STATE_DIR, "ab"),
+        log=lambda m: app.logger.info("AB-INBEV %s", m))
+    DATASETS.update(_absorb(ds))
+    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
+    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
+    return run
+
 # ---------------- API ----------------
 @app.get("/api/health")
 def health():
@@ -685,7 +705,8 @@ _SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlet
               "il-chicago": "Chicago — Liquor Licenses", "ct-dcp": "Connecticut — Liquor (DCP)",
               "ny-sla": "New York — SLA licenses", "co-led": "Colorado — Liquor licenses",
               "mo-atc": "Missouri — Alcohol licenses",
-              "total-wine": "Total Wine — Catalog (direct)", "vtinfo": "VTInfo — Brand distribution (VIP)"}
+              "total-wine": "Total Wine — Catalog (direct)", "vtinfo": "VTInfo — Brand distribution (VIP)",
+              "ab-inbev": "AB InBev — Retailer locator (universal outlets)"}
 _EXTRACT_SRC = {eid: src for src, exs in FL_CONN.items() for (eid, _h, _n) in exs}
 _NAME_COLS = ("Owner Name", "Registrant Name", "Applicant", "Brand Name", "DBA")
 def _name_idx(header):
