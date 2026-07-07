@@ -1423,11 +1423,11 @@ def master_preview_ep():
     try:
         import master_apply
         rule = body.get("rule") or {}
-        entity = _entity(body.get("entity") or request.args.get("entity", "product"))
-        fields = _master_schema(entity)
+        fct = body.get("fact")                              # fact preview uses the fact schema's normalizers
+        fields = _fact_schema(fct) if fct in FACTS else _master_schema(_entity(body.get("entity") or "product"))
         nz = next((f.get("normalize") for f in fields if isinstance(f, dict) and f.get("name") == rule.get("master_field")), None)
         rows = master_apply.preview(ds, rule, limit=int(body.get("limit", 12)), normalize=nz)
-        return jsonify(ok=True, dataset=ds, entity=entity, normalize=nz, rows=rows)
+        return jsonify(ok=True, dataset=ds, normalize=nz, rows=rows)
     except Exception as e:
         return jsonify(ok=False, error=str(e)[:180]), 200
 
@@ -1503,6 +1503,35 @@ def fact_apply_ep():
     except Exception as e:
         app.logger.exception("fact apply failed")
         return jsonify(ok=False, error=str(e)[:200]), 200
+
+# ── "needs dictionary" flags — map a field now, flag it to go back and build its dictionary later ──
+@app.get("/api/dict/needs")
+def dict_needs_get():
+    """Fields flagged as needing a data dictionary. ?dataset= for one source's flags, else all."""
+    ds = (request.args.get("dataset") or "").strip()
+    needs = load("dict_needs.json", {})
+    items = list(needs.values())
+    if ds:
+        items = [n for n in items if n.get("dataset") == ds]
+    return jsonify(ok=True, dataset=ds or None, count=len(items), needs=items)
+
+@app.post("/api/dict/needs")
+def dict_needs_post():
+    """Toggle a flag: {dataset, field, target, on}. Keyed target|dataset|field."""
+    b = request.get_json(silent=True) or {}
+    ds = (b.get("dataset") or "").strip(); field = (b.get("field") or "").strip()
+    if not (ds and field):
+        return jsonify(ok=False, error="dataset + field required"), 400
+    target = b.get("target") or "product"
+    key = "%s|%s|%s" % (target, ds, field)
+    needs = load("dict_needs.json", {})
+    if b.get("on", True) and key not in needs:
+        needs[key] = {"dataset": ds, "field": field, "target": target,
+                      "at": int(time.time()), "by": _user_rec().get("code", "SYS")}
+    elif not b.get("on", True):
+        needs.pop(key, None)
+    _save_json("dict_needs.json", needs)
+    return jsonify(ok=True, count=len(needs), on=key in needs)
 
 @app.get("/api/datasets/download")
 def dataset_download():
