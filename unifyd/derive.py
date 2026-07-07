@@ -114,11 +114,11 @@ def _selftest():
         con.executemany("INSERT INTO t VALUES (?,?)", [("750ML", "FRANCE"), ("1.75L", "USA"), ("", "SPAIN")])
         ml = compile_rule({"source_field": "size", "post": "size_to_ml"})
         oc = compile_rule({"source_field": "origin", "mode": "map", "map": {"FRANCE": "France"}})
-        rows = con.execute("SELECT %s ml, %s oc FROM t ORDER BY size" % (ml, oc)).fetchall()
-        assert rows[1] == (750, "France") or rows[0][0] in (750, 1750), rows   # 750ML->750, FRANCE->France
         vals = dict((r[1], r[0]) for r in con.execute("SELECT %s ml, size FROM t" % ml).fetchall())
-        assert vals.get("750ML") == 750 and vals.get("1.75L") == 1750, vals
-        print("derive self-test: OK — compiled 5 modes; size_to_ml 750ML→750, 1.75L→1750; map FRANCE→France")
+        assert vals.get("750ML") == 750 and vals.get("1.75L") == 1750 and vals.get("") is None, vals
+        omap = dict((r[1], r[0]) for r in con.execute("SELECT %s d, origin FROM t" % oc).fetchall())
+        assert omap.get("FRANCE") == "France" and omap.get("USA") == "USA", omap   # mapped + passthrough
+        print("derive self-test: OK — 5 modes compile; size_to_ml 750ML→750/1.75L→1750; map FRANCE→France")
     except ImportError:
         print("derive self-test: OK (compile-only; duckdb not present for eval)")
 
