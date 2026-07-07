@@ -18,24 +18,31 @@ def _mnames(master_fields):
     return [f["name"] if isinstance(f, dict) else f for f in master_fields]
 
 
-def source_select(ds, rules, mnames):
-    """The per-source SELECT projecting `ds` onto the master schema (unmapped master fields → NULL)."""
+def source_select(ds, rules, master_fields):
+    """The per-source SELECT projecting `ds` onto the master schema (unmapped master fields → NULL).
+    Each mapped field is auto-wrapped in its master field's normalizer (e.g. upc → GTIN-14)."""
     import warehouse
     by_master = {r["master_field"]: r for r in rules if r.get("master_field")}
     cols = []
-    for mf in mnames:
+    for f in master_fields:
+        mf = f["name"] if isinstance(f, dict) else f
+        nz = f.get("normalize") if isinstance(f, dict) else None
         r = by_master.get(mf)
-        cols.append("%s AS %s" % (derive.compile_rule(dict(r)), derive.col(mf)) if r else "NULL AS %s" % derive.col(mf))
+        if r:
+            e = derive.apply_normalizer(nz, derive.compile_rule(dict(r)))
+            cols.append("%s AS %s" % (e, derive.col(mf)))
+        else:
+            cols.append("NULL AS %s" % derive.col(mf))
     cols.append("%s AS %s" % (derive._sqlstr(ds), derive.col("_source")))
     uri = warehouse.uri(ds).replace("'", "")
     return "SELECT %s FROM read_parquet('%s')" % (", ".join(cols), uri)
 
 
-def preview(dataset, rule, limit=12):
-    """Apply one rule to a sample of `dataset` → [{raw, derived}] so you can SEE the derivation is
-    right before committing it. This is the 'get it right' loop."""
+def preview(dataset, rule, limit=12, normalize=None):
+    """Apply one rule (+ the target master field's normalizer) to a sample → [{raw, derived}] so you
+    SEE the derivation is right before committing it. This is the 'get it right' loop."""
     import warehouse
-    expr = derive.compile_rule(dict(rule))
+    expr = derive.apply_normalizer(normalize, derive.compile_rule(dict(rule)))
     sf = rule.get("source_field")
     if (rule.get("mode") == "expr") or not sf:
         rows = warehouse.query(dataset, "SELECT %s AS derived FROM t LIMIT %d" % (expr, int(limit)))
@@ -51,12 +58,11 @@ def build(master_fields, mappings_by_ds, log=print):
     (bad expr / missing column) is skipped with a warning rather than failing the whole build."""
     import warehouse
     con = warehouse.connect()
-    mnames = _mnames(master_fields)
     selects, per_source, warnings = [], [], []
     for ds, rules in mappings_by_ds.items():
         if not any(r.get("master_field") for r in (rules or [])):
             continue
-        sel = source_select(ds, rules, mnames)
+        sel = source_select(ds, rules, master_fields)
         try:
             n = con.execute("SELECT count(*) FROM (%s)" % sel).fetchone()[0]   # validate + count
         except Exception as e:
