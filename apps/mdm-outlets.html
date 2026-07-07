@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Outlet Master — Hoodie MDM</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root{
     --ink:#2B3138; --paper:#F1F3F5; --panel:#fff; --muted:#7A828B; --line:#E4E7EB;
@@ -48,6 +49,12 @@
   .src{font-family:var(--mono);font-size:11px;text-align:center;font-variant-numeric:tabular-nums}
   .src b{color:var(--accent)}
   .empty{padding:34px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px}
+  .seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px}
+  .seg button{background:none;border:none;font:inherit;font-size:12px;font-weight:600;color:var(--muted);padding:5px 13px;border-radius:6px;cursor:pointer}
+  .seg button.on{background:var(--accent);color:#fff}
+  #map{height:560px;border:1px solid var(--line);border-radius:12px;overflow:hidden;display:none}
+  .leaflet-container{font-family:var(--font)}
+  .odot{width:9px;height:9px;border-radius:50%;background:var(--accent);border:1.5px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.4)}
 
   /* detail drawer */
   .drawer{position:fixed;top:0;right:0;bottom:0;width:360px;max-width:92vw;background:var(--panel);border-left:1px solid var(--line);box-shadow:-8px 0 24px rgba(0,0,0,.08);transform:translateX(100%);transition:transform .22s;z-index:20;overflow:auto;padding:20px 22px}
@@ -74,15 +81,18 @@
   <div class="bar">
     <input class="search" id="q" placeholder="search name, address, city…">
     <select class="state" id="state"><option value="">All states</option></select>
+    <div class="seg" id="view"><button data-v="table" class="on">Table</button><button data-v="map">Map</button></div>
     <div class="pager"><button id="prev">‹</button><span id="pg">–</span><button id="next">›</button></div>
   </div>
-  <div class="twrap"><div class="tscroll"><table>
+  <div id="map"></div>
+  <div class="twrap" id="twrap"><div class="tscroll"><table>
     <thead><tr><th>Outlet</th><th>City / State</th><th>ZIP</th><th>Type</th><th>Carriage</th><th style="text-align:center">Sources</th></tr></thead>
     <tbody id="rows"><tr><td colspan="6" class="empty">Loading the outlet master…</td></tr></tbody>
   </table></div></div>
 </div>
 <div class="drawer" id="drawer"></div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 if(new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -145,8 +155,41 @@ async function openOutlet(key, tr){
   }catch(e){ d.innerHTML='<button class="x">×</button><div class="empty">error</div>'; bindX(); }
 }
 function bindX(){ const b=document.querySelector('#drawer .x'); if(b) b.onclick=()=>document.getElementById('drawer').classList.remove('show'); }
-let qt; document.getElementById('q').addEventListener('input',()=>{ clearTimeout(qt); qt=setTimeout(()=>{page=0;load();},300); });
-document.getElementById('state').addEventListener('change',()=>{page=0;load();});
+// ---- map view ----
+let MAP=null, LAYER=null, VIEW='table';
+function setView(v){
+  VIEW=v;
+  document.querySelectorAll('#view button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  document.getElementById('twrap').style.display=v==='table'?'':'none';
+  document.getElementById('map').style.display=v==='map'?'block':'none';
+  document.querySelector('.pager').style.visibility=v==='map'?'hidden':'visible';
+  if(v==='map'){ initMap(); loadMap(); }
+}
+function initMap(){
+  if(MAP) return;
+  MAP=L.map('map',{scrollWheelZoom:true}).setView([37.8,-96],4);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    {attribution:'© OpenStreetMap © CARTO',subdomains:'abcd',maxZoom:19}).addTo(MAP);
+}
+async function loadMap(){
+  const q=document.getElementById('q').value.trim(), st=document.getElementById('state').value;
+  try{
+    const j=await (await fetch('/api/master/outlets/geo?q='+encodeURIComponent(q)+'&state='+encodeURIComponent(st),{cache:'no-store'})).json();
+    if(LAYER) MAP.removeLayer(LAYER); LAYER=L.layerGroup().addTo(MAP);
+    const pts=(j.points||[]).filter(p=>p.lat&&p.lng);
+    const bounds=[];
+    pts.forEach(p=>{
+      const m=L.marker([p.lat,p.lng],{icon:L.divIcon({className:'',html:'<div class="odot"></div>',iconSize:[9,9]})}).addTo(LAYER);
+      m.on('click',()=>openOutlet(p.outlet_key,null));
+      m.bindTooltip(esc(p.name||''),{direction:'top'}); bounds.push([p.lat,p.lng]);
+    });
+    if(bounds.length) try{ MAP.fitBounds(bounds,{padding:[30,30],maxZoom:12}); }catch(e){}
+  }catch(e){}
+}
+document.querySelectorAll('#view button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
+
+let qt; document.getElementById('q').addEventListener('input',()=>{ clearTimeout(qt); qt=setTimeout(()=>{page=0;load(); if(VIEW==='map')loadMap();},300); });
+document.getElementById('state').addEventListener('change',()=>{page=0;load(); if(VIEW==='map')loadMap();});
 document.getElementById('prev').onclick=()=>{ if(page>0){page--;load();} };
 document.getElementById('next').onclick=()=>{ page++; load(); };
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') document.getElementById('drawer').classList.remove('show'); });
