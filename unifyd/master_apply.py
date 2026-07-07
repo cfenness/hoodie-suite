@@ -53,9 +53,12 @@ def preview(dataset, rule, limit=12, normalize=None):
     return [{"raw": r.get("raw"), "derived": r.get("derived")} for r in rows]
 
 
-def build(master_fields, mappings_by_ds, log=print):
+def build(master_fields, mappings_by_ds, built_by="SYS", built_at=None, log=print):
     """Compile every source's mappings → UNION → dim_product Parquet in the warehouse. A broken source
-    (bad expr / missing column) is skipped with a warning rather than failing the whole build."""
+    (bad expr / missing column) is skipped with a warning rather than failing the whole build.
+    built_by/built_at stamp the resolved master rows (audit provenance)."""
+    import time as _t
+    built_at = built_at or int(_t.time())
     import warehouse
     con = warehouse.connect()
     selects, per_source, warnings = [], [], []
@@ -77,16 +80,19 @@ def build(master_fields, mappings_by_ds, log=print):
     con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (union, dst))
     total = con.execute("SELECT count(*) FROM read_parquet('%s')" % dst).fetchone()[0]
     log("dim_product: %d rows from %d sources → %s" % (total, len(selects), dst))
-    resolved = resolve(master_fields, dst, con, log=log)
+    resolved = resolve(master_fields, dst, con, built_by=built_by, built_at=built_at, log=log)
     return {"rows": total, "sources": len(selects), "per_source": per_source, "warnings": warnings,
             "uri": warehouse.uri("dim_product"), "products": resolved.get("rows"),
             "resolved_uri": resolved.get("uri")}
 
 
-def resolve(master_fields, dim_uri, con, log=print):
+def resolve(master_fields, dim_uri, con, built_by="SYS", built_at=None, log=print):
     """Collapse the per-source dim_product rows into ONE product per SKU → dim_product_resolved.
     Identity key: the canonical UPC (GTIN-14) when present, else normalized brand+product_name+size_ml.
-    Each product keeps the first non-null value per field + which/how many sources contributed it."""
+    Each product keeps the first non-null value per field + which/how many sources contributed it +
+    audit columns (master_created_at first-seen, master_updated_at build time, updated_by)."""
+    import time as _t
+    built_at = built_at or int(_t.time())
     import warehouse
     mnames = _mnames(master_fields)
     namekeys = [c for c in ("brand", "product_name", "size_ml") if c in mnames]
@@ -98,10 +104,12 @@ def resolve(master_fields, dim_uri, con, log=print):
     aggs = ["max(upc) AS upc" if mf == "upc" else "any_value(%s) AS %s" % (derive.col(mf), derive.col(mf))
             for mf in mnames]
     rdst = warehouse.uri("dim_product_resolved").replace("'", "")
+    audit = ("%d AS master_created_at, %d AS master_updated_at, %s AS updated_by"
+             % (built_at, built_at, derive._sqlstr(built_by)))
     sql = ("WITH b AS (SELECT *, %s AS product_key FROM read_parquet('%s')) "
            "SELECT product_key, %s, count(*) AS source_rows, count(DISTINCT _source) AS sources, "
-           "list_distinct(list(_source)) AS source_list FROM b GROUP BY product_key"
-           % (keyexpr, dim_uri, ", ".join(aggs)))
+           "list_distinct(list(_source)) AS source_list, %s FROM b GROUP BY product_key"
+           % (keyexpr, dim_uri, ", ".join(aggs), audit))
     con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (sql, rdst))
     n = con.execute("SELECT count(*) FROM read_parquet('%s')" % rdst).fetchone()[0]
     log("dim_product_resolved: %d distinct products → %s" % (n, rdst))
