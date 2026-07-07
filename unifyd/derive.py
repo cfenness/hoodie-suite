@@ -29,6 +29,13 @@ TRANSFORMS = {
     "digits_only":   "regexp_replace(CAST(%s AS VARCHAR), '[^0-9]', '', 'g')",
     "collapse_ws":   "trim(regexp_replace(CAST(%s AS VARCHAR), ' +', ' ', 'g'))",
     "year_from_date":"regexp_extract(CAST(%s AS VARCHAR), '([0-9]{4})', 1)",
+    # UPC/EAN → canonical GTIN-14 (strip non-digits, left-pad to 14). The 'lowest level of consistency'
+    # for a structured product code: UPC-A(12)/EAN-13/GTIN-14 all collapse to one comparable key, from
+    # which any downstream format re-renders. Blank→NULL; non-standard lengths kept digits-only.
+    "upc_normalize": ("CASE WHEN regexp_replace(CAST(%s AS VARCHAR),'[^0-9]','','g')='' THEN NULL "
+                      "WHEN length(regexp_replace(CAST(%s AS VARCHAR),'[^0-9]','','g')) BETWEEN 8 AND 14 "
+                      "THEN lpad(regexp_replace(CAST(%s AS VARCHAR),'[^0-9]','','g'),14,'0') "
+                      "ELSE regexp_replace(CAST(%s AS VARCHAR),'[^0-9]','','g') END"),
     # net contents -> integer millilitres (mirrors cola_cluster._size_sql); returns NULL when unparseable
     "size_to_ml":    ("CASE WHEN try_cast(regexp_extract(lower(replace(CAST(%s AS VARCHAR),' ','')),"
                       "'([0-9.]+)(ml|l|liter|litre|oz|floz|gal)',1) AS DOUBLE) IS NULL THEN NULL "
@@ -44,7 +51,18 @@ TRANSFORMS = {
                       "ELSE CAST(round(try_cast(regexp_extract(lower(replace(CAST(%s AS VARCHAR),' ','')),"
                       "'([0-9.]+)(ml|l|liter|litre|oz|floz|gal)',1) AS DOUBLE)) AS BIGINT) END"),
 }
-TRANSFORM_NAMES = list(TRANSFORMS)
+TRANSFORM_NAMES = [t for t in TRANSFORMS if t != "upc_normalize"]   # user-selectable (normalizers auto-apply)
+
+# A master field can declare a canonical NORMALIZE format — applied automatically to whatever source
+# value is mapped into it (the base data is never touched). This is the master's "lowest level of
+# consistency" contract: map anything in, it comes out canonical. normalize name → transform name.
+NORMALIZERS = {"upc": "upc_normalize", "gtin": "upc_normalize"}
+
+
+def apply_normalizer(normalize, inner):
+    """Wrap a compiled expression in the master field's canonical normalizer (or return it unchanged)."""
+    t = NORMALIZERS.get(normalize or "")
+    return _apply_transform(t, inner) if t else inner
 
 
 def _sqlstr(s):

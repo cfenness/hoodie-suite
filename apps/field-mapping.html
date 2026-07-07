@@ -45,6 +45,7 @@
   td.mapped .msel{border-color:var(--accent);background:var(--accent-soft)}
   .msel,.tsel{width:100%}
   .tsel{max-width:150px}
+  .nz{display:inline-block;margin-top:5px;font-family:var(--mono);font-size:9.5px;color:var(--good);background:#EAF5EF;border:1px solid #cfe7db;border-radius:4px;padding:1px 6px}
   .mini{font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--accent);cursor:pointer}
   .mini.fx{color:var(--muted);font-style:italic}
   .expr{display:block;margin-top:6px;width:100%;font-family:var(--mono);font-size:11px}
@@ -109,6 +110,8 @@
 
   function tOpts(sel){ return TRANSFORMS.map(t=>'<option value="'+t+'"'+(t===sel?' selected':'')+'>'+t+'</option>').join(''); }
   function mOpts(sel){ return '<option value="">—</option>'+MASTER.map(f=>'<option value="'+esc(f.name)+'"'+(f.name===sel?' selected':'')+'>'+esc(f.name)+'</option>').join(''); }
+  function normOf(name){ const f=MASTER.find(x=>x.name===name); return f&&f.normalize; }
+  function nzBadge(name){ const nz=normOf(name); return nz?'<span class="nz" title="auto-normalized on map to the master">auto: '+(nz==='upc'?'GTIN-14':esc(nz))+'</span>':''; }
 
   async function loadDataset(){
     $('#status').textContent=''; $('#status').className='status';
@@ -136,7 +139,7 @@
         '<td><div class="src">'+esc(f.field)+'</div><div class="srcmeta">'+fmt(f.distinct)+' distinct · '+f.fill_pct+'% filled</div><div class="samples">'+ex+'</div></td>'+
         '<td><select class="tsel pre">'+tOpts(s.pre||'none')+'</select></td>'+
         '<td class="arrow">→</td>'+
-        '<td class="'+(s.master_field?'mapped':'')+'"><select class="msel">'+mOpts(s.master_field||'')+'</select></td>'+
+        '<td class="'+(s.master_field?'mapped':'')+'"><select class="msel">'+mOpts(s.master_field||'')+'</select>'+nzBadge(s.master_field)+'</td>'+
         '<td><select class="tsel post">'+tOpts(s.post||'none')+'</select></td>'+
         '<td class="rulec"><button class="mini prev">preview</button> <button class="mini fx" title="hand-coded SQL expression — overrides transforms">ƒx</button>'+
           '<input class="expr" placeholder="raw SQL expression (overrides pre/post)" value="'+esc(s.expr||'')+'" style="display:'+(hasExpr?'block':'none')+'"></td>'+
@@ -145,7 +148,9 @@
     }).join('') || '<tr><td colspan="6" class="empty">no fields.</td></tr>';
     [...document.querySelectorAll('#rows tr[data-f]')].forEach(tr=>{
       const msel=tr.querySelector('.msel');
-      msel.onchange=()=>msel.closest('td').classList.toggle('mapped', !!msel.value);
+      msel.onchange=()=>{ msel.closest('td').classList.toggle('mapped', !!msel.value);
+        const old=msel.parentNode.querySelector('.nz'); if(old) old.remove();
+        msel.insertAdjacentHTML('afterend', nzBadge(msel.value)); };
       tr.querySelector('.prev').onclick=()=>previewRow(tr);
       tr.querySelector('.fx').onclick=()=>{ const i=tr.querySelector('.expr'); const show=i.style.display==='none'; i.style.display=show?'block':'none'; if(show) i.focus(); };
     });

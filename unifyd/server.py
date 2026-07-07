@@ -872,7 +872,7 @@ DEFAULT_MASTER_FIELDS = [
     {"name": "packsize", "type": "string", "desc": "Pack / container size (as filed)"},
     {"name": "size_ml", "type": "number", "desc": "Net contents in mL (derived)"},
     {"name": "abv", "type": "number", "desc": "Alcohol % by volume"},
-    {"name": "upc", "type": "string", "desc": "UPC / GTIN"},
+    {"name": "upc", "type": "string", "desc": "UPC / GTIN — auto-normalized to GTIN-14", "normalize": "upc"},
     {"name": "price", "type": "number", "desc": "Price"},
     {"name": "supplier", "type": "string", "desc": "Supplier / vendor"},
     {"name": "origin", "type": "string", "desc": "Country / region of origin"},
@@ -932,8 +932,11 @@ def master_preview_ep():
         return jsonify(ok=False, error="dataset required"), 400
     try:
         import master_apply
-        rows = master_apply.preview(ds, body.get("rule") or {}, limit=int(body.get("limit", 12)))
-        return jsonify(ok=True, dataset=ds, rows=rows)
+        rule = body.get("rule") or {}
+        fields = load("master_schema.json", DEFAULT_MASTER_FIELDS)
+        nz = next((f.get("normalize") for f in fields if isinstance(f, dict) and f.get("name") == rule.get("master_field")), None)
+        rows = master_apply.preview(ds, rule, limit=int(body.get("limit", 12)), normalize=nz)
+        return jsonify(ok=True, dataset=ds, normalize=nz, rows=rows)
     except Exception as e:
         return jsonify(ok=False, error=str(e)[:180]), 200
 
