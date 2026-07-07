@@ -168,11 +168,41 @@
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
     attribution:'© OpenStreetMap © CARTO', subdomains:'abcd', maxZoom:19
   }).addTo(map);
-  const renderer=L.canvas({padding:0.5});
-  let ALL=[], layer=null;
-
   function isOff(t){ return /package goods/i.test(t||''); }
   function color(t){ return isOff(t)?'#d9b03f':'#3fb8a3'; }
+
+  // One canvas layer draws EVERY dot in a single pass — 200k+ points render in ~ms and show true
+  // density/gaps (200k individual Leaflet markers was the slowdown; a sample would hide the gaps).
+  const DotLayer=L.Layer.extend({
+    initialize(){ this._pts=[]; },
+    setData(pts){ this._pts=pts; if(this._map) this._reset(); return this; },
+    onAdd(map){
+      this._map=map;
+      const c=this._c=L.DomUtil.create('canvas','leaflet-zoom-hide');
+      c.style.pointerEvents='none';
+      map.getPanes().overlayPane.appendChild(c);
+      map.on('moveend', this._reset, this);
+      this._reset();
+    },
+    onRemove(map){ L.DomUtil.remove(this._c); map.off('moveend', this._reset, this); },
+    _reset(){
+      const m=this._map, size=m.getSize(), dpr=window.devicePixelRatio||1;
+      this._c.width=size.x*dpr; this._c.height=size.y*dpr;
+      this._c.style.width=size.x+'px'; this._c.style.height=size.y+'px';
+      L.DomUtil.setPosition(this._c, m.containerPointToLayerPoint([0,0]));
+      const ctx=this._c.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+      ctx.clearRect(0,0,size.x,size.y); ctx.globalAlpha=.8;
+      const w=size.x, h=size.y;
+      for(const p of this._pts){
+        const cp=m.latLngToContainerPoint([p.lat,p.lng]);
+        if(cp.x<-4||cp.y<-4||cp.x>w+4||cp.y>h+4) continue;
+        ctx.fillStyle=color(p.type);
+        ctx.fillRect(cp.x-1.5, cp.y-1.5, 3, 3);
+      }
+      ctx.globalAlpha=1;
+    }
+  });
+  let ALL=[], DRAWN=[], dots=null;
 
   function draw(){
     const types=[...document.querySelectorAll('#types input:checked')].map(c=>c.value);
@@ -183,15 +213,22 @@
       if(q && !((p.name||'').toLowerCase().includes(q))) return false;
       return true;
     });
-    if(layer) layer.remove();
-    layer=L.layerGroup(pts.map(p=>{
-      const m=L.circleMarker([p.lat,p.lng],{renderer, radius:3.4, weight:0, fillColor:color(p.type), fillOpacity:.72});
-      m.on('click',()=>openDetail(p));
-      return m;
-    })).addTo(map);
-    $('#count').innerHTML='<b>'+pts.length.toLocaleString()+'</b> shown'+
-      (CAPPED?' · '+INVIEW.toLocaleString()+' in view — zoom in for all':'');
+    DRAWN=pts;
+    if(!dots) dots=new DotLayer().addTo(map);
+    dots.setData(pts);
+    $('#count').innerHTML='<b>'+pts.length.toLocaleString()+'</b> outlets'+
+      (CAPPED?' · '+INVIEW.toLocaleString()+'+ (capped — narrow the view)':'');
   }
+  // click the map → nearest drawn dot within ~7px → its detail
+  map.on('click',e=>{
+    const cp=e.containerPoint; let best=null, bd=64;
+    for(const p of DRAWN){
+      const pp=map.latLngToContainerPoint([p.lat,p.lng]);
+      const d=(pp.x-cp.x)*(pp.x-cp.x)+(pp.y-cp.y)*(pp.y-cp.y);
+      if(d<bd){ bd=d; best=p; }
+    }
+    if(best) openDetail(best);
+  });
 
   // ---- click a dot → everything we hold: the outlet's own record + its Census market context ----
   let ctxSeq=0;
