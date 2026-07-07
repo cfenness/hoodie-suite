@@ -769,12 +769,9 @@ def datasets():
         out[k] = dict(ds, rows=rows, matched=len(rows))
     return jsonify(out)
 
-@app.get("/api/catalog")
-def catalog_ep():
-    """Every dataset we actually hold, across ALL THREE stores — the estate model's 'whole thing'
-    view (it polls this so new datasets appear on their own). {key: {header, total, store}}. Light:
-    header + count + store only, no row data. memory = in-RAM sample; full = save_full'd on Tigris;
-    warehouse = Parquet. Precedence memory → full → warehouse so a real count wins over a stub."""
+def _catalog_map():
+    """Every dataset we hold, across all three stores: {key: {header, total, store}}. memory = in-RAM
+    sample; full = save_full'd on Tigris; warehouse = Parquet. Precedence memory → full → warehouse."""
     out = {}
     for k, ds in DATASETS.items():
         out[k] = {"header": ds.get("header") or [],
@@ -791,7 +788,79 @@ def catalog_ep():
                                    "store": "warehouse"})
     except Exception as e:
         app.logger.warning("warehouse catalog failed: %s", e)
-    return jsonify(out)
+    return out
+
+@app.get("/api/catalog")
+def catalog_ep():
+    """The estate model's 'whole thing' view (it polls this so new datasets appear on their own)."""
+    return jsonify(_catalog_map())
+
+# ── /api/sources — the SINGLE source of truth for what we hold + what each dataset FEEDS. Driven by the
+# mappings/seeds themselves (authoritative) + name heuristics, so labels/tags stay accurate as the list
+# grows. Powers the MDM Sources view and keeps the estate tags current (no more hardcoded name map). ──
+_FEED_ORDER = ["master", "outlet", "product", "inventory", "pricing", "reference", "other"]
+_FEED_GROUP = {"master": "Owned masters", "outlet": "Outlet sources", "product": "Product & label sources",
+               "inventory": "Inventory feeds", "pricing": "Pricing feeds", "reference": "Reference data",
+               "other": "Unclassified"}
+_DS_LABELS = {"outlets_master": "Outlet master", "ab_outlets": "AB InBev · Retailer locator",
+              "total_wine_products": "Total Wine · Catalog", "ttb_cola": "TTB · COLA labels",
+              "cola_cluster": "COLA · Product clusters", "bc_liquor": "BC Liquor · Price list",
+              "or_pricing": "Oregon OLCC · Pricing", "orlando_accounts": "Orlando · On-premise accounts",
+              "census_acs": "Census · ACS demographics", "census_reference": "Census · CBP/NES/PEP",
+              "outlets_census": "Outlets × census"}
+
+def _ds_label(name):
+    if name in _DS_LABELS:
+        return _DS_LABELS[name]
+    if name.startswith("dim_"):
+        return "Master · " + name[4:].replace("_", " ").title()
+    if name.startswith("fact_"):
+        return "Fact · " + name[5:].replace("_", " ").title()
+    if name.startswith("vtinfo_"):
+        return "VTInfo · " + name[7:].replace("-", " ").title()
+    return name.replace("_", " ").replace("-", " ").title()
+
+def _ds_feeds(name, mp):
+    """Which master(s) a dataset feeds — mappings/seeds are authoritative; heuristics fill unmapped ones."""
+    if name.startswith("dim_") or name.startswith("fact_"):
+        return ["master"]
+    f = set()
+    if _seed_for(name) or name in mp["outlet"]:
+        f.add("outlet")
+    if name in mp["product"]:
+        f.add("product")
+    for fact in FACTS:
+        if _fact_seed_for(fact, name) or name in mp.get(fact, {}):
+            f.add(fact)
+    if not f:
+        n = name.lower()
+        if re.search(r"census|_census", n): f.add("reference")
+        elif re.search(r"\bcola\b|ttb", n): f.add("product")
+        elif re.search(r"outlet|licens|premise|account|_sla|tabc|dcp|\bny_|\bco_|\bmo_|\bct_|\btx_|\bil_", n): f.add("outlet")
+        elif re.search(r"pric|bc_liquor|or_pricing|total_wine|iowa_prod|catalog|mont_", n): f.add("product")
+        elif re.search(r"binny|spec|abc_|instacart|shopify|iowa_sales", n): f.add("inventory")
+    return [x for x in _FEED_ORDER if x in f] or ["other"]
+
+@app.get("/api/sources")
+def sources_ep():
+    cat = _catalog_map()
+    mp = {"outlet": load(ENTITIES["outlet"]["maps"], {}), "product": load(ENTITIES["product"]["maps"], {})}
+    for fact in FACTS:
+        mp[fact] = load(FACTS[fact]["maps"], {})
+    items = []
+    for k, v in cat.items():
+        feeds = _ds_feeds(k, mp)
+        is_master = feeds[0] == "master"
+        mapped = (any(k in mp[e] for e in mp) or bool(_seed_for(k))
+                  or any(_fact_seed_for(fc, k) for fc in FACTS))
+        items.append({"id": k, "label": _ds_label(k), "rows": v.get("total", 0),
+                      "store": v.get("store"), "cols": len(v.get("header") or []), "feeds": feeds,
+                      "group": _FEED_GROUP[feeds[0]],
+                      "status": "master" if is_master else ("mapped" if mapped else "unmapped")})
+    gi = {_FEED_GROUP[fk]: i for i, fk in enumerate(_FEED_ORDER)}
+    items.sort(key=lambda x: (gi.get(x["group"], 9), -(x["rows"] or 0)))
+    present = [_FEED_GROUP[fk] for fk in _FEED_ORDER if any(it["group"] == _FEED_GROUP[fk] for it in items)]
+    return jsonify(ok=True, count=len(items), groups=present, sources=items)
 
 # ── Product registrations (TTB COLA) — label-approval filings + distinct-product clusters ──
 def _cola_q(name, sql, params=None):
@@ -1108,6 +1177,89 @@ def _outlet_maps_effective():
         app.logger.warning("outlet seed merge failed: %s", e)
     return out
 
+# ── FACT tables: inventory + pricing (sku × outlet × date). A fact schema = the FK-identity fields
+# (outlet + product, to compute the keys) + measures + obs_date. Same config-driven build as dimensions.
+_FACT_IDENTITY = [
+    {"name": "source_ref", "grain": "outlet", "type": "string", "desc": "Outlet id (vpid) — outlet key"},
+    {"name": "outlet_name", "grain": "outlet", "type": "string", "desc": "Outlet name", "normalize": "name"},
+    {"name": "address", "grain": "outlet", "type": "string", "desc": "Outlet street"},
+    {"name": "city", "grain": "outlet", "type": "string", "desc": "Outlet city"},
+    {"name": "state", "grain": "outlet", "type": "string", "desc": "Outlet state", "normalize": "state"},
+    {"name": "zip5", "grain": "outlet", "type": "string", "desc": "Outlet ZIP5", "normalize": "zip5"},
+    {"name": "brand", "grain": "brand", "type": "string", "desc": "Brand (→ brand/sku key)"},
+    {"name": "product_name", "grain": "product", "type": "string", "desc": "Product / variant"},
+    {"name": "size_ml", "grain": "item", "type": "number", "desc": "Size mL (→ sku grain)"},
+    {"name": "upc", "grain": "sku", "type": "string", "desc": "UPC (→ sku key)", "normalize": "upc"},
+    {"name": "obs_date", "grain": "fact", "type": "string", "desc": "Observation date (else build date)"},
+]
+DEFAULT_INVENTORY_FIELDS = _FACT_IDENTITY + [
+    {"name": "in_stock", "grain": "fact", "type": "string", "desc": "In stock (Y/N)"},
+    {"name": "on_hand", "grain": "fact", "type": "number", "desc": "On-hand units"},
+    {"name": "units", "grain": "fact", "type": "number", "desc": "Units / movement"},
+    {"name": "carriage", "grain": "fact", "type": "string", "desc": "Brands/products carried (presence)"},
+]
+DEFAULT_PRICING_FIELDS = _FACT_IDENTITY + [
+    {"name": "price", "grain": "fact", "type": "number", "desc": "Price"},
+    {"name": "promo", "grain": "fact", "type": "string", "desc": "Promo / strike price"},
+    {"name": "currency", "grain": "fact", "type": "string", "desc": "Currency"},
+]
+FACTS = {
+    "inventory": {"defaults": DEFAULT_INVENTORY_FIELDS, "schema": "fact_schema_inventory.json",
+                  "maps": "field_mappings_inventory.json", "mapmeta": "mappings_meta_inventory.json"},
+    "pricing":   {"defaults": DEFAULT_PRICING_FIELDS, "schema": "fact_schema_pricing.json",
+                  "maps": "field_mappings_pricing.json", "mapmeta": "mappings_meta_pricing.json"},
+}
+def _fact(v):
+    return v if v in FACTS else "inventory"
+
+# Seed fact mappings for our own connectors — inventory carriage from AB (brand-list) + VTInfo (per-brand).
+SEED_FACT_MAPPINGS = {
+    "inventory": {
+        "ab_outlets": [{"source_field": "VPID", "master_field": "source_ref"},
+                       {"source_field": "Name", "master_field": "outlet_name"},
+                       {"source_field": "Address", "master_field": "address"},
+                       {"source_field": "City", "master_field": "city"},
+                       {"source_field": "State", "master_field": "state"},
+                       {"source_field": "Zip", "master_field": "zip5"},
+                       {"source_field": "AB_Brands", "master_field": "carriage"}],
+        "vtinfo_": [{"source_field": "Account", "master_field": "outlet_name"},
+                    {"source_field": "Street", "master_field": "address"},
+                    {"source_field": "City", "master_field": "city"},
+                    {"source_field": "State", "master_field": "state"},
+                    {"source_field": "Zip", "master_field": "zip5"},
+                    {"source_field": "Brand", "master_field": "brand"},
+                    {"source_field": "Brand", "master_field": "carriage"}],
+    },
+    "pricing": {},   # price lists (bc_liquor / or_pricing / Total Wine) — mapped in the UI per their headers
+}
+def _fact_seed_for(fact, ds):
+    seeds = SEED_FACT_MAPPINGS.get(fact, {})
+    if ds in seeds:
+        return seeds[ds]
+    for k, v in seeds.items():
+        if k.endswith("_") and ds.startswith(k):
+            return v
+    return None
+
+def _fact_schema(fact):
+    spec = FACTS[_fact(fact)]
+    fields = load(spec["schema"], spec["defaults"])
+    for f in fields:
+        if isinstance(f, dict) and not f.get("normalize") and f.get("name") in _NORMALIZE_DEFAULTS:
+            f["normalize"] = _NORMALIZE_DEFAULTS[f["name"]]
+    return fields
+
+def _fact_maps_effective(fact):
+    out = dict(load(FACTS[_fact(fact)]["maps"], {}))
+    try:
+        for d in warehouse.list_datasets():
+            nm = d.get("name", "")
+            if nm and nm not in out and _fact_seed_for(fact, nm):
+                out[nm] = _fact_seed_for(fact, nm)
+    except Exception as e:
+        app.logger.warning("fact seed merge failed: %s", e)
+    return out
+
 # Data-dictionary transforms that can apply BEFORE (on the source value) or AFTER (on the mapped
 # master value). Names only here — the apply-engine consumes them when materializing the master.
 MAP_TRANSFORMS = ["none", "trim", "upper", "lower", "title_case", "digits_only",
@@ -1297,6 +1449,59 @@ def master_apply_ep():
         return jsonify(ok=True, entity=entity, built_by=who, **res)
     except Exception as e:
         app.logger.exception("apply failed")
+        return jsonify(ok=False, error=str(e)[:200]), 200
+
+# ── FACT tables (inventory + pricing) — same config-driven build, keyed sku × outlet × date ──
+@app.get("/api/master/fact/schema")
+def fact_schema_get():
+    fact = _fact(request.args.get("fact", "inventory"))
+    return jsonify(ok=True, fact=fact, facts=list(FACTS),
+                   fields=_fact_schema(fact), transforms=MAP_TRANSFORMS)
+
+@app.get("/api/master/fact/mappings")
+def fact_mappings_get():
+    fact = _fact(request.args.get("fact", "inventory"))
+    spec = FACTS[fact]
+    ds = (request.args.get("dataset") or "").strip()
+    m = load(spec["maps"], {})
+    if ds:
+        rows = m.get(ds)
+        seeded = False
+        if rows is None:
+            rows = _fact_seed_for(fact, ds); seeded = rows is not None
+        return jsonify(ok=True, fact=fact, dataset=ds, mappings=rows or [], seeded=seeded)
+    return jsonify(ok=True, fact=fact, dataset=None, mappings=m)
+
+@app.post("/api/master/fact/mappings")
+def fact_mappings_post():
+    body = request.get_json(silent=True) or {}
+    fact = _fact(body.get("fact") or request.args.get("fact", "inventory"))
+    spec = FACTS[fact]
+    ds = (body.get("dataset") or "").strip()
+    if not ds:
+        return jsonify(ok=False, error="dataset required"), 400
+    m = load(spec["maps"], {})
+    m[ds] = body.get("mappings", [])
+    _save_json(spec["maps"], m)
+    return jsonify(ok=True, fact=fact, dataset=ds, count=len(m[ds]),
+                   meta=_stamp(spec["mapmeta"], ds))
+
+@app.post("/api/master/fact/apply")
+def fact_apply_ep():
+    """Materialize fact_<fact> (inventory|pricing) from its mappings — one DuckDB pass per source over
+    Parquet → compute outlet_key + sku/brand key inline → group by (outlet, product, date)."""
+    try:
+        import master_facts
+        body = request.get_json(silent=True) or {}
+        fact = _fact(body.get("fact") or request.args.get("fact", "inventory"))
+        fields = _fact_schema(fact)
+        maps = _fact_maps_effective(fact)
+        who = _user_rec().get("code", "SYS")
+        res = master_facts.build(fact, fields, maps, built_by=who, built_at=int(time.time()),
+                                 log=lambda mm: app.logger.info("FACT[%s] %s", fact, mm))
+        return jsonify(ok=True, fact=fact, built_by=who, **res)
+    except Exception as e:
+        app.logger.exception("fact apply failed")
         return jsonify(ok=False, error=str(e)[:200]), 200
 
 @app.get("/api/datasets/download")
