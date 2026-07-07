@@ -1533,6 +1533,37 @@ def master_outlet_one_ep():
         return jsonify(ok=False, error=str(e)[:140]), 200
     return jsonify(ok=True, outlet=(rows[0] if rows else None))
 
+@app.get("/api/master/outlets/geo")
+def master_outlets_geo_ep():
+    """Light geocoded points from the resolved outlet master for the workbench map. Optional ?bbox=
+    west,south,east,north (viewport) + ?q= / ?state=. Ships {outlet_key,lat,lng,name,state} only."""
+    import warehouse
+    where = ["try_cast(lat AS DOUBLE) IS NOT NULL", "try_cast(lng AS DOUBLE) IS NOT NULL"]
+    params = []
+    bb = request.args.get("bbox", "")
+    if bb:
+        try:
+            w, s, e, n = (float(x) for x in bb.split(","))
+            where.append("try_cast(lat AS DOUBLE) BETWEEN ? AND ? AND try_cast(lng AS DOUBLE) BETWEEN ? AND ?")
+            params += [s, n, w, e]
+        except (ValueError, TypeError):
+            pass
+    st = (request.args.get("state") or "").strip().upper()
+    if st:
+        where.append("upper(CAST(state AS VARCHAR)) = ?"); params.append(st)
+    q = (request.args.get("q") or "").strip().lower()
+    if q:
+        where.append("(lower(CAST(outlet_name AS VARCHAR)) LIKE ? OR lower(CAST(city AS VARCHAR)) LIKE ?)")
+        qq = "%" + q + "%"; params += [qq, qq]
+    wsql = " WHERE " + " AND ".join(where)
+    try:
+        rows = warehouse.query("dim_outlet_resolved",
+            "SELECT outlet_key, try_cast(lat AS DOUBLE) lat, try_cast(lng AS DOUBLE) lng, "
+            "CAST(outlet_name AS VARCHAR) name, CAST(state AS VARCHAR) state FROM t%s LIMIT 20000" % wsql, params)
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:140], points=[]), 200
+    return jsonify(ok=True, landed=True, count=len(rows), points=rows)
+
 @app.post("/api/master/fact/apply")
 def fact_apply_ep():
     """Materialize fact_<fact> (inventory|pricing) from its mappings — one DuckDB pass per source over
