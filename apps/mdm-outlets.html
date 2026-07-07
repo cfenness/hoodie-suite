@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outlet Master — Hoodie MDM</title>
+<style>
+  :root{
+    --ink:#2B3138; --paper:#F1F3F5; --panel:#fff; --muted:#7A828B; --line:#E4E7EB;
+    --accent:#4E79A7; --accent-soft:#EAF0F6; --good:#3f9668; --gold:#9a7100;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace; --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--paper);color:var(--ink);font-family:var(--font);font-size:14px}
+  body{padding:22px 26px 60px}
+  .embed body{padding-top:14px}
+  .wrap{max-width:1140px;margin:0 auto}
+  .pagehead h1{font-size:22px;font-weight:800;letter-spacing:-.01em}
+  .pagehead .sub{color:var(--muted);font-size:13px;margin-top:3px;max-width:680px;line-height:1.5}
+  .embed .pagehead{display:none}
+
+  .chips{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 8px}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 15px;min-width:120px}
+  .chip .n{font-family:var(--mono);font-weight:700;font-size:20px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .chip .n.accent{color:var(--accent)}
+  .chip .l{font-size:11px;color:var(--muted);margin-top:4px}
+
+  .bar{display:flex;align-items:center;gap:10px;margin:12px 0 10px;flex-wrap:wrap}
+  input.search,select.state{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-family:var(--mono);font-size:12.5px;outline:none;color:var(--ink)}
+  input.search{flex:1;min-width:220px} input.search:focus,select.state:focus{border-color:var(--accent)}
+  .pager{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .pager button{background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:5px 11px;cursor:pointer}
+  .pager button:disabled{opacity:.4;cursor:default}
+
+  .twrap{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .tscroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{position:sticky;top:0;background:#F7F9FA;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-size:9px;text-align:left;padding:9px 13px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:9px 13px;border-bottom:1px solid var(--line);vertical-align:top}
+  tbody tr{cursor:pointer} tbody tr:hover td{background:#FAFBFC}
+  tbody tr.sel td{background:var(--accent-soft)}
+  .nm{font-weight:700;letter-spacing:-.01em}
+  .addr{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:2px}
+  .loc{font-family:var(--mono);font-size:12px;white-space:nowrap}
+  .zip{font-family:var(--mono);font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .carr{display:flex;flex-wrap:wrap;gap:4px;max-width:280px}
+  .b{font-size:9px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--accent-soft);color:#2E4C6D;white-space:nowrap}
+  .src{font-family:var(--mono);font-size:11px;text-align:center;font-variant-numeric:tabular-nums}
+  .src b{color:var(--accent)}
+  .empty{padding:34px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px}
+
+  /* detail drawer */
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:360px;max-width:92vw;background:var(--panel);border-left:1px solid var(--line);box-shadow:-8px 0 24px rgba(0,0,0,.08);transform:translateX(100%);transition:transform .22s;z-index:20;overflow:auto;padding:20px 22px}
+  .drawer.show{transform:none}
+  .drawer .x{position:absolute;top:14px;right:16px;border:none;background:none;font-size:20px;color:var(--muted);cursor:pointer;line-height:1}
+  .drawer .k{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .drawer .nm{font-size:19px;font-weight:800;margin:2px 0 2px;letter-spacing:-.01em}
+  .drawer .meta{font-size:12.5px;color:var(--muted);margin-bottom:14px;line-height:1.5}
+  .drawer .sec{font-family:var(--mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:16px 0 7px;font-weight:700}
+  .drawer .kv{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;padding:5px 0;border-bottom:1px solid #EEF1F4}
+  .drawer .kv .kk{color:var(--muted)} .drawer .kv .vv{font-family:var(--mono);text-align:right;word-break:break-word}
+  .drawer .prov{display:flex;flex-wrap:wrap;gap:5px} .drawer .prov .b{background:#eef3ee;color:var(--good)}
+  .drawer a.map{display:inline-block;margin-top:12px;font-size:12px;color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:8px;padding:7px 12px}
+  .drawer a.map:hover{border-color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="pagehead"><h1>Outlet Master</h1>
+    <div class="sub">Browse <code>dim_outlet_resolved</code> — the unified outlet master. Search, filter by
+      state, and open any outlet to see its full record, brand carriage, and which sources confirm it.</div></div>
+
+  <div class="chips" id="chips"></div>
+  <div class="bar">
+    <input class="search" id="q" placeholder="search name, address, city…">
+    <select class="state" id="state"><option value="">All states</option></select>
+    <div class="pager"><button id="prev">‹</button><span id="pg">–</span><button id="next">›</button></div>
+  </div>
+  <div class="twrap"><div class="tscroll"><table>
+    <thead><tr><th>Outlet</th><th>City / State</th><th>ZIP</th><th>Type</th><th>Carriage</th><th style="text-align:center">Sources</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="6" class="empty">Loading the outlet master…</td></tr></tbody>
+  </table></div></div>
+</div>
+<div class="drawer" id="drawer"></div>
+
+<script>
+if(new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=n=>(n==null||n==='')?'':Number(n).toLocaleString();
+let page=0, size=50, total=0, statesLoaded=false;
+
+async function load(){
+  const q=document.getElementById('q').value.trim(), st=document.getElementById('state').value;
+  const url='/api/master/outlets?page='+page+'&size='+size+'&q='+encodeURIComponent(q)+'&state='+encodeURIComponent(st);
+  try{
+    const j=await (await fetch(url,{cache:'no-store'})).json();
+    if(!j.landed){ document.getElementById('rows').innerHTML='<tr><td colspan="6" class="empty">No outlet master yet — run an outlet Apply in Mapping (or a pull + build) to populate <code>dim_outlet_resolved</code>.</td></tr>'; document.getElementById('chips').innerHTML=''; return; }
+    total=j.total; render(j);
+  }catch(e){ document.getElementById('rows').innerHTML='<tr><td colspan="6" class="empty">Connect the engine to browse the master.</td></tr>'; }
+}
+function render(j){
+  const carrChips=c=>{ if(!c) return ''; return String(c).split(',').map(x=>x.trim()).filter(Boolean).slice(0,4).map(x=>'<span class="b">'+esc(x)+'</span>').join('')+(String(c).split(',').length>4?' <span class="b" style="background:#eee;color:#888">+'+(String(c).split(',').length-4)+'</span>':''); };
+  document.getElementById('rows').innerHTML=(j.outlets||[]).map(o=>
+    '<tr data-k="'+esc(o.outlet_key)+'"><td><div class="nm">'+esc(o.outlet_name||'—')+'</div><div class="addr">'+esc(o.address||'')+'</div></td>'+
+    '<td class="loc">'+esc(o.city||'')+(o.state?', '+esc(o.state):'')+'</td>'+
+    '<td class="zip">'+esc(o.zip5||'')+(o.zip4?'-'+esc(o.zip4):'')+'</td>'+
+    '<td>'+esc(o.outlet_type||'')+'</td>'+
+    '<td><div class="carr">'+carrChips(o.carriage)+'</div></td>'+
+    '<td class="src"><b>'+(o.sources||1)+'</b></td></tr>').join('')
+    || '<tr><td colspan="6" class="empty">No outlets match.</td></tr>';
+  document.querySelectorAll('#rows tr[data-k]').forEach(tr=>tr.onclick=()=>openOutlet(tr.dataset.k, tr));
+  // chips + pager + states
+  const pages=Math.max(1,Math.ceil(total/size));
+  document.getElementById('pg').textContent=(total?(page*size+1):0)+'–'+Math.min(total,(page+1)*size)+' of '+fmt(total);
+  document.getElementById('prev').disabled=page<=0; document.getElementById('next').disabled=(page+1)>=pages;
+  const nstates=(j.states||[]).length;
+  document.getElementById('chips').innerHTML=
+    '<div class="chip"><div class="n accent">'+fmt(total)+'</div><div class="l">outlets in master</div></div>'+
+    '<div class="chip"><div class="n">'+nstates+'</div><div class="l">states</div></div>';
+  if(!statesLoaded && j.states && j.states.length){ statesLoaded=true;
+    const sel=document.getElementById('state'); const cur=sel.value;
+    sel.innerHTML='<option value="">All states</option>'+j.states.map(s=>'<option value="'+esc(s.state)+'">'+esc(s.state)+' ('+fmt(s.n)+')</option>').join('');
+    sel.value=cur;
+  }
+}
+async function openOutlet(key, tr){
+  document.querySelectorAll('#rows tr').forEach(x=>x.classList.remove('sel')); if(tr) tr.classList.add('sel');
+  const d=document.getElementById('drawer'); d.classList.add('show'); d.innerHTML='<div class="empty">loading…</div>';
+  try{
+    const j=await (await fetch('/api/master/outlet?key='+encodeURIComponent(key),{cache:'no-store'})).json();
+    const o=j.outlet; if(!o){ d.innerHTML='<button class="x">×</button><div class="empty">not found</div>'; bindX(); return; }
+    const carr=(o.carriage?String(o.carriage).split(',').map(x=>x.trim()).filter(Boolean):[]);
+    const srcs=(o.source_list?(Array.isArray(o.source_list)?o.source_list:String(o.source_list).replace(/[\[\]']/g,'').split(',')):[]).map(x=>x.trim()).filter(Boolean);
+    const kv=(k,v)=> v?('<div class="kv"><span class="kk">'+k+'</span><span class="vv">'+esc(v)+'</span></div>'):'';
+    d.innerHTML='<button class="x">×</button>'+
+      '<div class="k">outlet</div><div class="nm">'+esc(o.outlet_name||'—')+'</div>'+
+      '<div class="meta">'+esc(o.address||'')+'<br>'+esc(o.city||'')+', '+esc(o.state||'')+' '+esc(o.zip5||'')+(o.zip4?'-'+esc(o.zip4):'')+'</div>'+
+      '<div class="sec">Record</div>'+kv('VPID (source_ref)',o.source_ref)+kv('Type',o.outlet_type)+kv('Phone',o.phone)+
+        kv('County FIPS',o.county_fips)+kv('License #',o.license_num)+kv('Lat, Lng',(o.lat&&o.lng)?(o.lat+', '+o.lng):'')+
+      (carr.length?('<div class="sec">Brand carriage ('+carr.length+')</div><div class="prov">'+carr.map(c=>'<span class="b" style="background:var(--accent-soft);color:#2E4C6D">'+esc(c)+'</span>').join('')+'</div>'):'')+
+      '<div class="sec">Provenance — '+(o.sources||1)+' source'+((o.sources||1)===1?'':'s')+'</div><div class="prov">'+(srcs.length?srcs.map(s=>'<span class="b">'+esc(s)+'</span>').join(''):'<span class="b">'+(o.sources||1)+'</span>')+'</div>'+
+      (o.updated_by?('<div class="kv" style="margin-top:12px"><span class="kk">updated by</span><span class="vv">'+esc(o.updated_by)+'</span></div>'):'')+
+      ((o.lat&&o.lng)?'<a class="map" href="https://maps.google.com/?q='+o.lat+','+o.lng+'" target="_blank" rel="noopener">Open in Maps →</a>':'');
+    bindX();
+  }catch(e){ d.innerHTML='<button class="x">×</button><div class="empty">error</div>'; bindX(); }
+}
+function bindX(){ const b=document.querySelector('#drawer .x'); if(b) b.onclick=()=>document.getElementById('drawer').classList.remove('show'); }
+let qt; document.getElementById('q').addEventListener('input',()=>{ clearTimeout(qt); qt=setTimeout(()=>{page=0;load();},300); });
+document.getElementById('state').addEventListener('change',()=>{page=0;load();});
+document.getElementById('prev').onclick=()=>{ if(page>0){page--;load();} };
+document.getElementById('next').onclick=()=>{ page++; load(); };
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') document.getElementById('drawer').classList.remove('show'); });
+load();
+</script>
+</body>
+</html>

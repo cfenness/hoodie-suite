@@ -1486,6 +1486,53 @@ def fact_mappings_post():
     return jsonify(ok=True, fact=fact, dataset=ds, count=len(m[ds]),
                    meta=_stamp(spec["mapmeta"], ds))
 
+# ── MDM workbench: browse the resolved OUTLET master (dim_outlet_resolved) ──
+_OUTM_COLS = "outlet_key,outlet_name,dba,address,city,state,zip5,zip4,county_fips,lat,lng,phone,outlet_type,license_num,source_ref,carriage,source_rows,sources,source_list"
+@app.get("/api/master/outlets")
+def master_outlets_ep():
+    """Paged, filterable view of the resolved outlet master. ?q= (name/addr/city), ?state=, ?page=, ?size=.
+    Returns rows + total + a state facet, so the workbench can browse + filter the real master."""
+    import warehouse
+    q = (request.args.get("q") or "").strip().lower()
+    state = (request.args.get("state") or "").strip().upper()
+    try:
+        page = max(0, int(request.args.get("page", 0))); size = min(200, max(1, int(request.args.get("size", 50))))
+    except ValueError:
+        page, size = 0, 50
+    where, params = [], []
+    if state:
+        where.append("upper(CAST(state AS VARCHAR)) = ?"); params.append(state)
+    if q:
+        where.append("(lower(CAST(outlet_name AS VARCHAR)) LIKE ? OR lower(CAST(address AS VARCHAR)) LIKE ? OR lower(CAST(city AS VARCHAR)) LIKE ?)")
+        qq = "%" + q + "%"; params += [qq, qq, qq]
+    wsql = (" WHERE " + " AND ".join(where)) if where else ""
+    try:
+        total = warehouse.query("dim_outlet_resolved", "SELECT count(*) c FROM t" + wsql, params)[0]["c"]
+        rows = warehouse.query("dim_outlet_resolved",
+            "SELECT %s FROM t%s ORDER BY state, city, outlet_name LIMIT %d OFFSET %d"
+            % (_OUTM_COLS, wsql, size, page * size), params)
+        facet = warehouse.query("dim_outlet_resolved",
+            "SELECT CAST(state AS VARCHAR) state, count(*) n FROM t%s GROUP BY 1 ORDER BY n DESC LIMIT 60" % wsql, params)
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:140], outlets=[], total=0), 200
+    return jsonify(ok=True, landed=True, total=total, page=page, size=size,
+                   outlets=rows, states=[{"state": r["state"], "n": r["n"]} for r in facet])
+
+@app.get("/api/master/outlet")
+def master_outlet_one_ep():
+    """One resolved outlet's full record (all fields + which sources contributed) for the detail panel."""
+    import warehouse
+    key = (request.args.get("key") or "").strip()
+    if not key:
+        return jsonify(ok=False, error="key required"), 400
+    try:
+        rows = warehouse.query("dim_outlet_resolved",
+            "SELECT %s, master_created_at, master_updated_at, updated_by FROM t WHERE outlet_key = ? LIMIT 1"
+            % _OUTM_COLS, [key])
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:140]), 200
+    return jsonify(ok=True, outlet=(rows[0] if rows else None))
+
 @app.post("/api/master/fact/apply")
 def fact_apply_ep():
     """Materialize fact_<fact> (inventory|pricing) from its mappings — one DuckDB pass per source over
