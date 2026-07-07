@@ -1634,7 +1634,9 @@ def master_skus_ep():
     jn = _sku_join()
     try:
         total = warehouse.query("dim_sku", "SELECT count(*) c FROM t %s%s" % (jn, wsql), params)[0]["c"]
-        rows = warehouse.query("dim_sku", "SELECT %s FROM t %s%s ORDER BY b.brand, p.product_name LIMIT %d OFFSET %d"
+        rows = warehouse.query("dim_sku", "SELECT %s FROM t %s%s "
+                               "ORDER BY (CASE WHEN b.brand IS NULL OR CAST(b.brand AS VARCHAR)='' THEN 1 ELSE 0 END), "
+                               "b.brand, p.product_name LIMIT %d OFFSET %d"   # brand-less filings sort last
                                % (_SKU_SEL, jn, wsql, size, page * size), params)
     except Exception as e:
         return jsonify(ok=True, landed=False, error=str(e)[:140], skus=[], total=0), 200
