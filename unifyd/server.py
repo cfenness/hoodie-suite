@@ -2631,7 +2631,12 @@ def _suite_send(relpath):
     if os.path.isfile(full):
         if full.endswith(".webmanifest"):
             return send_file(full, mimetype="application/manifest+json")
-        return send_file(full)
+        resp = send_file(full)
+        # HTML/JS must REVALIDATE every load (ETag conditional) so a deploy shows immediately instead of
+        # being served stale from the browser cache — the "I deployed but it looks unchanged" trap.
+        if full.endswith((".html", ".js")):
+            resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return resp
     abort(404)
 
 @app.get("/prism")
