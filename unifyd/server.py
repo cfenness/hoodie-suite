@@ -17,7 +17,7 @@ When the agent is absent the dashboard falls back to its built-in preview.
 
 State is persisted to ./agent_state/ (datasets.json, runs.json, cola CSV).
 """
-import csv, gzip, io, json, os, random, time, types, urllib.request, datetime, threading, logging
+import csv, gzip, io, json, os, random, re, time, types, urllib.request, datetime, threading, logging
 from flask import Flask, request, jsonify, send_file, Response, redirect, session
 
 import ttb_cola_scraper as cola   # the scraper you generated
@@ -896,6 +896,60 @@ def _master_schema():
 def master_schema_get():
     return jsonify(ok=True, fields=_master_schema(), transforms=MAP_TRANSFORMS)
 
+# ── users (each gets a short CODE) + created/updated audit stamps ──
+def _mk_user_code(email, users):
+    base = re.sub(r"[^a-z0-9]", "", (email.split("@")[0] if email else "usr")).upper()[:3] or "USR"
+    taken = {u.get("code") for u in users.values()}
+    code, i = base, 1
+    while code in taken:
+        code = base + str(i); i += 1
+    return code
+
+def _current_user():
+    """The signed-in user (from the OIDC session) with a stable short code; auto-registers on first
+    sight so every created/updated stamp is attributable."""
+    email = (session.get("email") or "").lower()
+    users = load("users.json", {})
+    u = users.get(email)
+    if email and not u:
+        u = {"email": email, "code": _mk_user_code(email, users), "name": email.split("@")[0]}
+        users[email] = u; _save_json("users.json", users)
+    return u or {"email": "", "code": "SYS", "name": "system"}
+
+def _stamp(meta_name, key):
+    """created_at/created_by (first write) + updated_at/updated_by (every write) for a config record."""
+    now = int(time.time()); who = _current_user().get("code", "SYS")
+    allmeta = load(meta_name, {})
+    m = allmeta.get(key, {})
+    if not m.get("created_at"):
+        m["created_at"] = now; m["created_by"] = who
+    m["updated_at"] = now; m["updated_by"] = who
+    allmeta[key] = m; _save_json(meta_name, allmeta)
+    return m
+
+@app.get("/api/whoami")
+def whoami_ep():
+    return jsonify(ok=True, user=_current_user())
+
+@app.get("/api/users")
+def users_get():
+    return jsonify(ok=True, users=load("users.json", {}))
+
+@app.post("/api/users")
+def users_post():
+    """Assign / update a user's code + name (keyed by email)."""
+    b = request.get_json(silent=True) or {}
+    email = (b.get("email") or "").lower().strip()
+    if not email:
+        return jsonify(ok=False, error="email required"), 400
+    users = load("users.json", {})
+    u = users.get(email, {"email": email})
+    if b.get("code"): u["code"] = re.sub(r"[^A-Za-z0-9]", "", b["code"]).upper()[:8]
+    if b.get("name"): u["name"] = b["name"]
+    if not u.get("code"): u["code"] = _mk_user_code(email, users)
+    users[email] = u; _save_json("users.json", users)
+    return jsonify(ok=True, user=u)
+
 @app.post("/api/master/schema")
 def master_schema_post():
     """Create a master field (start building the master schema) or replace the whole set."""
@@ -910,19 +964,21 @@ def master_schema_post():
         if not any(f.get("name") == nm for f in fields):
             fields.append({"name": nm, "type": body.get("type", "string"), "desc": body.get("desc", "")})
     _save_json("master_schema.json", fields)
-    return jsonify(ok=True, fields=fields)
+    return jsonify(ok=True, fields=fields, meta=_stamp("schema_meta.json", "schema"))
 
 @app.get("/api/mappings")
 def mappings_get():
-    """Persisted field mappings. ?dataset= for one source dataset's rows, else the whole map."""
+    """Persisted field mappings + audit meta. ?dataset= for one source dataset's rows, else the whole map."""
     ds = (request.args.get("dataset") or "").strip()
     m = load("field_mappings.json", {})
-    return jsonify(ok=True, dataset=ds or None, mappings=(m.get(ds, []) if ds else m))
+    meta = load("mappings_meta.json", {})
+    return jsonify(ok=True, dataset=ds or None, mappings=(m.get(ds, []) if ds else m),
+                   meta=(meta.get(ds) if ds else meta))
 
 @app.post("/api/mappings")
 def mappings_post():
-    """Persist a source dataset's mapping rows: [{source_field, master_field, pre, post}].
-    pre/post are data-dictionary transform names applied before/after the map."""
+    """Persist a source dataset's mapping rows: [{source_field, master_field, pre, post}]. Stamps
+    created/updated + user, and — when a row maps to master.upc — auto-drives the UPC healer."""
     body = request.get_json(silent=True) or {}
     ds = (body.get("dataset") or "").strip()
     if not ds:
@@ -930,7 +986,30 @@ def mappings_post():
     m = load("field_mappings.json", {})
     m[ds] = body.get("mappings", [])
     _save_json("field_mappings.json", m)
-    return jsonify(ok=True, dataset=ds, count=len(m[ds]))
+    meta = _stamp("mappings_meta.json", ds)
+    # auto-drive the UPC healer if a source field is mapped to master.upc (base data untouched)
+    upc_rows = [r for r in m[ds] if r.get("master_field") == "upc" and r.get("source_field")]
+    healed = False
+    if upc_rows:
+        healed = True
+        ucol = upc_rows[0]["source_field"]
+        appl = next((r["source_field"] for r in m[ds] if r.get("master_field") == "supplier"), None)
+        def _heal():
+            try:
+                import upc_heal
+                rep = upc_heal.heal(ds, ucol, appl, log=lambda x: app.logger.info("UPCHEAL %s", x))
+                reports = load("upc_reports.json", {}); reports[ds] = rep; _save_json("upc_reports.json", reports)
+            except Exception as e:
+                app.logger.warning("upc heal %s failed: %s", ds, e)
+        threading.Thread(target=_heal, daemon=True).start()
+    return jsonify(ok=True, dataset=ds, count=len(m[ds]), meta=meta, upc_heal_started=healed)
+
+@app.get("/api/upc/report")
+def upc_report_ep():
+    """The UPC health report for a dataset (auto-generated when a upc mapping is assigned)."""
+    ds = (request.args.get("dataset") or "").strip()
+    reports = load("upc_reports.json", {})
+    return jsonify(ok=True, dataset=ds or None, report=(reports.get(ds) if ds else reports))
 
 @app.post("/api/master/preview")
 def master_preview_ep():
@@ -958,8 +1037,10 @@ def master_apply_ep():
         import master_apply
         fields = _master_schema()
         maps = load("field_mappings.json", {})
-        res = master_apply.build(fields, maps, log=lambda mm: app.logger.info("APPLY %s", mm))
-        return jsonify(ok=True, **res)
+        who = _current_user().get("code", "SYS")
+        res = master_apply.build(fields, maps, built_by=who, built_at=int(time.time()),
+                                 log=lambda mm: app.logger.info("APPLY %s", mm))
+        return jsonify(ok=True, built_by=who, **res)
     except Exception as e:
         app.logger.exception("apply failed")
         return jsonify(ok=False, error=str(e)[:200]), 200
