@@ -922,6 +922,35 @@ def mappings_post():
     _save_json("field_mappings.json", m)
     return jsonify(ok=True, dataset=ds, count=len(m[ds]))
 
+@app.post("/api/master/preview")
+def master_preview_ep():
+    """Apply ONE derivation rule to a sample of the dataset → [{raw, derived}], so a rule can be
+    verified before it's committed. Body: {dataset, rule:{source_field,mode,pre,post,pattern,group,map,expr}}."""
+    body = request.get_json(silent=True) or {}
+    ds = (body.get("dataset") or "").strip()
+    if not ds:
+        return jsonify(ok=False, error="dataset required"), 400
+    try:
+        import master_apply
+        rows = master_apply.preview(ds, body.get("rule") or {}, limit=int(body.get("limit", 12)))
+        return jsonify(ok=True, dataset=ds, rows=rows)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:180]), 200
+
+@app.post("/api/master/apply")
+def master_apply_ep():
+    """Materialize dim_product from ALL persisted mappings + the master schema (one DuckDB pass per
+    source over Parquet → UNION → warehouse). Returns per-source counts + any skipped sources."""
+    try:
+        import master_apply
+        fields = load("master_schema.json", DEFAULT_MASTER_FIELDS)
+        maps = load("field_mappings.json", {})
+        res = master_apply.build(fields, maps, log=lambda mm: app.logger.info("APPLY %s", mm))
+        return jsonify(ok=True, **res)
+    except Exception as e:
+        app.logger.exception("apply failed")
+        return jsonify(ok=False, error=str(e)[:200]), 200
+
 @app.get("/api/datasets/download")
 def dataset_download():
     """Stream the COMPLETE pulled dataset (all rows, not the UI sample) as CSV or JSON."""
