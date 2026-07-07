@@ -66,11 +66,13 @@
 const SVGNS="http://www.w3.org/2000/svg";
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 // canonical entities — fixed 2D geography (the spine)
-const ENT=[ {id:'portfolio',label:'Portfolio',p:[500,70]}, {id:'brand',label:'Brand',p:[300,190]},
-  {id:'item',label:'Item',p:[500,340]}, {id:'sku',label:'SKU',p:[300,470]},
-  {id:'outlet',label:'Outlet',p:[720,270]}, {id:'account',label:'Account',p:[880,410]} ];
+const ENT=[ {id:'supplier',label:'Supplier',p:[130,90]}, {id:'brand',label:'Brand',p:[310,180]},
+  {id:'product',label:'Product',p:[490,150]}, {id:'item',label:'Item',p:[650,260]},
+  {id:'sku',label:'SKU',p:[440,410]}, {id:'outlet',label:'Outlet',p:[840,300]},
+  {id:'inventory',label:'Inventory',p:[680,440]}, {id:'pricing',label:'Pricing',p:[520,560]} ];
 const ENT_POS={}; ENT.forEach(e=>ENT_POS[e.id]=e.p);
-const CANON=[['portfolio','brand'],['brand','item'],['item','sku'],['outlet','account'],['item','outlet']];
+const CANON=[['supplier','brand'],['brand','product'],['product','item'],['item','sku'],
+  ['sku','inventory'],['outlet','inventory'],['sku','pricing'],['outlet','pricing']];
 const ROADCOL={ upc:'#3fb8a3', variant:'#57c9b3', brand:'#3fb8a3', price:'#4a90d9', availability:'#4a90d9',
   'license#':'#d99a3f', owner:'#d9b03f', address:'#5bb86e', depletion:'#8a6fd0', name:'#7a7f9a', 'is-a':'#3fb8a3' };
 const STCOL={ proven:'#5bb86e', live:'#5bb86e', candidate:'#3fb8a3', ready:'#3fb8a3', drifting:'#d99a3f',
@@ -81,18 +83,22 @@ function hostOf(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch
 // map real columns → (entity, road)
 function roadsFromCols(cols, hints){
   const c=(cols||[]).map(x=>String(x).toLowerCase()), any=re=>c.some(x=>re.test(x)), es=[];
-  if(any(/(^|_| )upc($|_| )|gtin|barcode/)) es.push(['item','upc']);
-  if(any(/sku|variant|itemsize|\bsize\b|\bpack\b/)) es.push(['sku','variant']);
+  if(any(/(^|_| )upc($|_| )|gtin|barcode/)) es.push(['sku','upc']);
+  if(any(/vintage|\byear\b|edition/)) es.push(['sku','vintage']);
+  if(any(/sku|variant|\bpack\b/)) es.push(['sku','variant']);
+  if(any(/itemsize|\bsize\b|\bml\b|container|bottle/)) es.push(['item','variant']);
+  if(any(/flavor|\bvariety\b|varietal/)) es.push(['product','flavor']);
   if(any(/brand/)) es.push(['brand','brand']);
-  if(any(/price|amount|\bcost\b/)) es.push(['item','price']);
-  if(any(/avail|stock|inventory|instock/)) es.push(['item','availability']);
-  if(any(/licens|permit|\babt\b|dbpr|trade_name|owner|licensee/)) { es.push(['outlet','license#']); es.push(['account','license#']); }
-  if(any(/address|\bcity\b|\bzip\b|county|\bstate\b|\blat\b|\blng\b|premise|location|store/)) es.push(['outlet','address']);
-  if(any(/deplet|movement/)) es.push(['brand','depletion']);
+  if(any(/supplier|producer|importer|winery|distiller|manufactur|applicant/)) es.push(['supplier','supplies']);
+  if(any(/price|amount|\bcost\b|promo/)) es.push(['pricing','price']);
+  if(any(/avail|stock|inventory|instock|units|on.?hand|deplet|movement/)) es.push(['inventory','availability']);
+  if(any(/licens|permit|\babt\b|dbpr|trade_name|owner|licensee/)) es.push(['outlet','license#']);
+  if(any(/address|\bcity\b|\bzip\b|county|\bstate\b|\blat\b|\blng\b|premise|location|store|\bdba\b/)) es.push(['outlet','address']);
   const h=(hints||'').toLowerCase();
   if(!es.length && /census|demograph|econom|housing|population|income/.test(h)) es.push(['outlet','address']);
-  if(!es.length && /outlet|licens|account/.test(h)) { es.push(['outlet','license#']); es.push(['account','license#']); }
-  if(!es.length) es.push(['item','name']);
+  if(!es.length && /outlet|licens|account/.test(h)) es.push(['outlet','license#']);
+  if(!es.length && /pric/.test(h)) es.push(['pricing','price']);
+  if(!es.length) es.push(['product','name']);
   const seen=new Set(); return es.filter(e=> !seen.has(e[0]) && seen.add(e[0]));
 }
 // ---- clustering: group sources into families, each gets its own zone ----

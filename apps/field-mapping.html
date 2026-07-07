@@ -67,17 +67,32 @@
   </div>
 
   <div class="bar">
+    <span class="lab">Map into</span>
+    <div class="seg" id="seg"></div>
+  </div>
+  <div class="bar">
     <span class="lab">Source dataset</span>
     <select id="ds" class="dsel"></select>
     <button class="primary" id="save">Save mapping</button>
-    <button id="apply" title="Materialize dim_product from all saved mappings">Apply → dim_product</button>
+    <button id="apply">Apply</button>
     <span class="status" id="status"></span>
+    <span class="status" id="needcount" style="color:#b46a12"></span>
     <div class="newf">
       <span class="lab">＋ master field</span>
       <input id="newf" placeholder="e.g. vintage">
       <button id="addf">Add</button>
     </div>
   </div>
+  <style>
+    .seg{display:inline-flex;background:#fff;border:1px solid var(--line,#E4E7EB);border-radius:9px;padding:3px;gap:2px}
+    .seg button{background:none;border:none;font:inherit;font-size:12.5px;font-weight:600;color:#7A828B;padding:6px 14px;border-radius:6px;cursor:pointer}
+    .seg button.on{background:var(--accent,#4E79A7);color:#fff}
+    .seg button .fk{font-size:9px;opacity:.7;font-weight:700;margin-left:5px;text-transform:uppercase}
+    .ndx{background:none;border:1px solid var(--line,#E4E7EB);border-radius:6px;color:#b46a12;font-size:10.5px;font-weight:600;padding:3px 8px;cursor:pointer;white-space:nowrap}
+    .ndx.on{background:#fbeee0;border-color:#e6c79a}
+    .ndx:hover{border-color:#e6c79a}
+    tr.needs td:first-child{box-shadow:inset 3px 0 0 #d99a3f}
+  </style>
 
   <div class="twrap"><div class="tscroll"><table>
     <thead><tr><th style="width:28%">Source field</th><th>Pre-dict</th><th class="arrow">→</th><th style="width:20%">Master field</th><th>Post-dict</th><th>Rule / preview</th></tr></thead>
@@ -91,13 +106,38 @@
   const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmt=n=>(n==null||n==='')?'':Number(n).toLocaleString();
   if(new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
-  let MASTER=[], TRANSFORMS=['none'], curDs='', fields=[], saved={};
+  let MASTER=[], TRANSFORMS=['none'], curDs='', fields=[], saved={}, NEEDS=new Set();
+
+  // which master this mapping targets — two dimensions + two facts, each with its own endpoints
+  const TARGETS=[{id:'product',label:'Product',kind:'entity'},{id:'outlet',label:'Outlet',kind:'entity'},
+                 {id:'inventory',label:'Inventory',kind:'fact'},{id:'pricing',label:'Pricing',kind:'fact'}];
+  let curTarget='product';
+  function T(){
+    const t=TARGETS.find(x=>x.id===curTarget)||TARGETS[0], f=t.kind==='fact';
+    return {id:t.id, isFact:f,
+      schemaUrl: f?'/api/master/fact/schema?fact='+t.id:'/api/master/schema?entity='+t.id,
+      mapsGet: ds=> (f?'/api/master/fact/mappings?fact='+t.id:'/api/mappings?entity='+t.id)+'&dataset='+encodeURIComponent(ds),
+      mapsPost: f?'/api/master/fact/mappings':'/api/mappings',
+      mapsBody: rows=> f?{fact:t.id,dataset:curDs,mappings:rows}:{entity:t.id,dataset:curDs,mappings:rows},
+      prevBody: rule=> f?{dataset:curDs,rule:rule,limit:12,fact:t.id}:{dataset:curDs,rule:rule,limit:12,entity:t.id},
+      applyUrl: f?'/api/master/fact/apply':'/api/master/apply',
+      applyBody: f?{fact:t.id}:{entity:t.id}, table:(f?'fact_':'dim_')+t.id};
+  }
+  function renderSeg(){
+    $('#seg').innerHTML=TARGETS.map(t=>'<button data-t="'+t.id+'" class="'+(t.id===curTarget?'on':'')+'">'+t.label+'<span class="fk">'+t.kind+'</span></button>').join('');
+    $('#seg').querySelectorAll('button').forEach(b=>b.onclick=()=>{ curTarget=b.dataset.t; renderSeg(); loadSchema().then(loadDataset); });
+  }
+  async function loadSchema(){
+    try{ const s=await (await fetch(T().schemaUrl,{cache:'no-store'})).json();
+      MASTER=s.fields||[]; TRANSFORMS=s.transforms||['none']; }catch(e){ MASTER=[]; }
+    $('#addf').closest('.newf').style.display=T().isFact?'none':'';   // facts have a fixed schema
+    $('#apply').textContent='Apply → '+T().table;
+    $('#apply').title='Materialize '+T().table+' from all saved mappings';
+  }
 
   async function boot(){
-    // master schema + transforms
-    try{ const s=await (await fetch('/api/master/schema',{cache:'no-store'})).json();
-      MASTER=s.fields||[]; TRANSFORMS=s.transforms||['none']; }catch(e){}
-    // source datasets from the catalog (warehouse item sets + ttb_cola)
+    renderSeg();
+    await loadSchema();
     try{
       const cat=await (await fetch('/api/catalog',{cache:'no-store'})).json();
       const items=Object.keys(cat).filter(k=>cat[k].store==='warehouse'||k==='ttb_cola').sort();
@@ -116,16 +156,18 @@
   async function loadDataset(){
     $('#status').textContent=''; $('#status').className='status';
     $('#rows').innerHTML='<tr><td colspan="5" class="empty">reading '+esc(curDs)+'…</td></tr>';
-    let prof, mp;
+    let prof, mp, nd;
     try{
-      [prof, mp]=await Promise.all([
+      [prof, mp, nd]=await Promise.all([
         (await fetch('/api/item/profile?dataset='+encodeURIComponent(curDs),{cache:'no-store'})).json(),
-        (await fetch('/api/mappings?dataset='+encodeURIComponent(curDs),{cache:'no-store'})).json()
+        (await fetch(T().mapsGet(curDs),{cache:'no-store'})).json(),
+        (await fetch('/api/dict/needs?dataset='+encodeURIComponent(curDs),{cache:'no-store'})).json().catch(()=>({}))
       ]);
     }catch(e){ $('#rows').innerHTML='<tr><td colspan="5" class="empty">could not load.</td></tr>'; return; }
     if(!prof.landed){ $('#rows').innerHTML='<tr><td colspan="5" class="empty">'+esc(curDs)+' not queryable.</td></tr>'; return; }
     fields=prof.fields||[];
     saved={}; (mp.mappings||[]).forEach(r=>{ saved[r.source_field]=r; });
+    NEEDS=new Set(((nd&&nd.needs)||[]).filter(n=>n.target===curTarget).map(n=>n.field));
     render();
   }
   function render(){
@@ -135,13 +177,14 @@
         ? f.samples.map(v=>'<span class="ex" title="'+esc(v)+'">'+esc(v)+'</span>').join('')
         : '<span class="ex empty">no values</span>';
       const hasExpr=(s.mode==='expr'&&s.expr);
-      return '<tr data-f="'+esc(f.field)+'">'+
+      return '<tr data-f="'+esc(f.field)+'" class="'+(NEEDS.has(f.field)?'needs':'')+'">'+
         '<td><div class="src">'+esc(f.field)+'</div><div class="srcmeta">'+fmt(f.distinct)+' distinct · '+f.fill_pct+'% filled</div><div class="samples">'+ex+'</div></td>'+
         '<td><select class="tsel pre">'+tOpts(s.pre||'none')+'</select></td>'+
         '<td class="arrow">→</td>'+
         '<td class="'+(s.master_field?'mapped':'')+'"><select class="msel">'+mOpts(s.master_field||'')+'</select>'+nzBadge(s.master_field)+'</td>'+
         '<td><select class="tsel post">'+tOpts(s.post||'none')+'</select></td>'+
-        '<td class="rulec"><button class="mini prev">preview</button> <button class="mini fx" title="hand-coded SQL expression — overrides transforms">ƒx</button>'+
+        '<td class="rulec"><button class="mini prev">preview</button> <button class="mini fx" title="hand-coded SQL expression — overrides transforms">ƒx</button> '+
+          '<button class="ndx'+(NEEDS.has(f.field)?' on':'')+'" title="flag: come back and build a data dictionary for this field">needs dict</button>'+
           '<input class="expr" placeholder="raw SQL expression (overrides pre/post)" value="'+esc(s.expr||'')+'" style="display:'+(hasExpr?'block':'none')+'"></td>'+
         '</tr>'+
         '<tr class="prevrow" data-for="'+esc(f.field)+'" style="display:none"><td colspan="6"><div class="pv"></div></td></tr>';
@@ -153,7 +196,17 @@
         msel.insertAdjacentHTML('afterend', nzBadge(msel.value)); };
       tr.querySelector('.prev').onclick=()=>previewRow(tr);
       tr.querySelector('.fx').onclick=()=>{ const i=tr.querySelector('.expr'); const show=i.style.display==='none'; i.style.display=show?'block':'none'; if(show) i.focus(); };
+      tr.querySelector('.ndx').onclick=()=>toggleNeeds(tr);
     });
+    const nc=NEEDS.size; $('#needcount').textContent=nc?(nc+' flagged for dictionary'):'';
+  }
+  async function toggleNeeds(tr){
+    const field=tr.getAttribute('data-f'), on=!NEEDS.has(field);
+    if(on) NEEDS.add(field); else NEEDS.delete(field);
+    tr.classList.toggle('needs',on); tr.querySelector('.ndx').classList.toggle('on',on);
+    $('#needcount').textContent=NEEDS.size?(NEEDS.size+' flagged for dictionary'):'';
+    try{ await fetch('/api/dict/needs',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({dataset:curDs,field:field,target:curTarget,on:on})}); }catch(e){}
   }
   function buildRule(tr){
     const expr=tr.querySelector('.expr').value.trim();
@@ -166,26 +219,28 @@
     const prow=tr.nextElementSibling, pv=prow.querySelector('.pv');
     prow.style.display=''; pv.innerHTML='<span class="pvmeta">previewing…</span>';
     try{
-      const j=await (await fetch('/api/master/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataset:curDs,rule:buildRule(tr),limit:12})})).json();
+      const j=await (await fetch('/api/master/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(T().prevBody(buildRule(tr)))})).json();
       if(!j.ok){ pv.innerHTML='<span class="pvmeta">'+esc(j.error||'preview failed')+'</span>'; return; }
       pv.innerHTML=(j.rows||[]).map(r=>'<span class="p"><span class="r">'+esc(r.raw||'∅')+'</span><b>→</b><span class="a">'+esc(r.derived==null?'∅':r.derived)+'</span></span>').join('')||'<span class="pvmeta">no sample values</span>';
     }catch(e){ pv.innerHTML='<span class="pvmeta">preview error</span>'; }
   }
   async function apply(){
-    $('#apply').disabled=true; $('#status').textContent='materializing dim_product…'; $('#status').className='status';
+    const t=T();
+    $('#apply').disabled=true; $('#status').textContent='materializing '+t.table+'…'; $('#status').className='status';
     try{
-      const j=await (await fetch('/api/master/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
-      if(j.ok){ $('#status').textContent='dim_product · '+fmt(j.rows)+' rows from '+j.sources+' source'+(j.sources===1?'':'s')+((j.warnings&&j.warnings.length)?(' · '+j.warnings.length+' skipped'):'')+' ✓'; $('#status').className='status ok'; }
+      const j=await (await fetch(t.applyUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t.applyBody)})).json();
+      if(j.ok){ const n=(j.skus!=null?j.skus:(j.observations!=null?j.observations:j.rows));
+        $('#status').textContent=t.table+' · '+fmt(n)+' rows from '+j.sources+' source'+(j.sources===1?'':'s')+((j.warnings&&j.warnings.length)?(' · '+j.warnings.length+' skipped'):'')+' ✓'; $('#status').className='status ok'; }
       else{ $('#status').textContent=j.error||'apply failed'; $('#status').className='status err'; }
     }catch(e){ $('#status').textContent='apply failed'; $('#status').className='status err'; }
     $('#apply').disabled=false;
   }
 
   async function save(){
-    const rows=[...document.querySelectorAll('#rows tr[data-f]')].map(buildRule).filter(r=>r.master_field);
+    const t=T(); const rows=[...document.querySelectorAll('#rows tr[data-f]')].map(buildRule).filter(r=>r.master_field);
     $('#save').disabled=true; $('#status').textContent='saving…'; $('#status').className='status';
     try{
-      const j=await (await fetch('/api/mappings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataset:curDs,mappings:rows})})).json();
+      const j=await (await fetch(t.mapsPost,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t.mapsBody(rows))})).json();
       if(j.ok){ $('#status').textContent='saved '+j.count+' mappings ✓'; $('#status').className='status ok'; }
       else{ $('#status').textContent=j.error||'save failed'; $('#status').className='status err'; }
     }catch(e){ $('#status').textContent='save failed'; $('#status').className='status err'; }
@@ -194,7 +249,7 @@
   async function addField(){
     const nm=$('#newf').value.trim(); if(!nm) return;
     try{
-      const j=await (await fetch('/api/master/schema',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm})})).json();
+      const j=await (await fetch('/api/master/schema',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm,entity:curTarget})})).json();
       if(j.ok){ MASTER=j.fields; $('#newf').value=''; render(); $('#status').textContent='added master field · '+nm; $('#status').className='status ok'; }
     }catch(e){}
   }
