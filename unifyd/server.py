@@ -1489,7 +1489,7 @@ def fact_mappings_post():
 # ── MDM workbench: browse the resolved OUTLET master (dim_outlet_resolved) ──
 _OUTM_COLS = "outlet_key,outlet_name,dba,address,city,state,zip5,zip4,county_fips,lat,lng,phone,outlet_type,license_num,source_ref,carriage,source_rows,sources,source_list"
 @app.get("/api/master/outlets")
-def master_outlets_ep():
+def master_outlets_browse_ep():
     """Paged, filterable view of the resolved outlet master. ?q= (name/addr/city), ?state=, ?page=, ?size=.
     Returns rows + total + a state facet, so the workbench can browse + filter the real master."""
     import warehouse
