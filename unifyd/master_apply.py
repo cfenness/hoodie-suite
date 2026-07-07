@@ -77,8 +77,35 @@ def build(master_fields, mappings_by_ds, log=print):
     con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (union, dst))
     total = con.execute("SELECT count(*) FROM read_parquet('%s')" % dst).fetchone()[0]
     log("dim_product: %d rows from %d sources → %s" % (total, len(selects), dst))
-    return {"rows": total, "sources": len(selects), "per_source": per_source,
-            "warnings": warnings, "uri": warehouse.uri("dim_product")}
+    resolved = resolve(master_fields, dst, con, log=log)
+    return {"rows": total, "sources": len(selects), "per_source": per_source, "warnings": warnings,
+            "uri": warehouse.uri("dim_product"), "products": resolved.get("rows"),
+            "resolved_uri": resolved.get("uri")}
+
+
+def resolve(master_fields, dim_uri, con, log=print):
+    """Collapse the per-source dim_product rows into ONE product per SKU → dim_product_resolved.
+    Identity key: the canonical UPC (GTIN-14) when present, else normalized brand+product_name+size_ml.
+    Each product keeps the first non-null value per field + which/how many sources contributed it."""
+    import warehouse
+    mnames = _mnames(master_fields)
+    namekeys = [c for c in ("brand", "product_name", "size_ml") if c in mnames]
+    nk = "||'|'||".join("lower(coalesce(CAST(%s AS VARCHAR),''))" % derive.col(c) for c in namekeys) or "''"
+    if "upc" in mnames:
+        keyexpr = "CASE WHEN upc IS NOT NULL AND upc<>'' THEN 'u:'||upc ELSE 'n:'||%s END" % nk
+    else:
+        keyexpr = "'n:'||%s" % nk
+    aggs = ["max(upc) AS upc" if mf == "upc" else "any_value(%s) AS %s" % (derive.col(mf), derive.col(mf))
+            for mf in mnames]
+    rdst = warehouse.uri("dim_product_resolved").replace("'", "")
+    sql = ("WITH b AS (SELECT *, %s AS product_key FROM read_parquet('%s')) "
+           "SELECT product_key, %s, count(*) AS source_rows, count(DISTINCT _source) AS sources, "
+           "list_distinct(list(_source)) AS source_list FROM b GROUP BY product_key"
+           % (keyexpr, dim_uri, ", ".join(aggs)))
+    con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (sql, rdst))
+    n = con.execute("SELECT count(*) FROM read_parquet('%s')" % rdst).fetchone()[0]
+    log("dim_product_resolved: %d distinct products → %s" % (n, rdst))
+    return {"rows": n, "uri": warehouse.uri("dim_product_resolved")}
 
 
 if __name__ == "__main__":
