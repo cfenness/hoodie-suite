@@ -82,6 +82,7 @@
     <input class="search" id="q" placeholder="search name, address, city…">
     <select class="state" id="state"><option value="">All states</option></select>
     <div class="seg" id="view"><button data-v="table" class="on">Table</button><button data-v="map">Map</button></div>
+    <span id="mapcount" style="font-family:var(--mono);font-size:11px;color:var(--muted)"></span>
     <div class="pager"><button id="prev">‹</button><span id="pg">–</span><button id="next">›</button></div>
   </div>
   <div id="map"></div>
@@ -167,24 +168,28 @@ function setView(v){
 }
 function initMap(){
   if(MAP) return;
-  MAP=L.map('map',{scrollWheelZoom:true}).setView([37.8,-96],4);
+  // preferCanvas → circleMarkers render on ONE canvas, so thousands of dots are fast (DOM markers aren't)
+  MAP=L.map('map',{scrollWheelZoom:true,preferCanvas:true}).setView([37.8,-96],4);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
     {attribution:'© OpenStreetMap © CARTO',subdomains:'abcd',maxZoom:19}).addTo(MAP);
+  setTimeout(()=>MAP.invalidateSize(),80);   // container was display:none → recompute size
 }
 async function loadMap(){
   const q=document.getElementById('q').value.trim(), st=document.getElementById('state').value;
+  document.getElementById('mapcount').textContent='loading…';
   try{
     const j=await (await fetch('/api/master/outlets/geo?q='+encodeURIComponent(q)+'&state='+encodeURIComponent(st),{cache:'no-store'})).json();
     if(LAYER) MAP.removeLayer(LAYER); LAYER=L.layerGroup().addTo(MAP);
     const pts=(j.points||[]).filter(p=>p.lat&&p.lng);
     const bounds=[];
     pts.forEach(p=>{
-      const m=L.marker([p.lat,p.lng],{icon:L.divIcon({className:'',html:'<div class="odot"></div>',iconSize:[9,9]})}).addTo(LAYER);
+      const m=L.circleMarker([p.lat,p.lng],{radius:4,color:'#fff',weight:1,fillColor:'#4E79A7',fillOpacity:.9}).addTo(LAYER);
       m.on('click',()=>openOutlet(p.outlet_key,null));
       m.bindTooltip(esc(p.name||''),{direction:'top'}); bounds.push([p.lat,p.lng]);
     });
+    document.getElementById('mapcount').textContent=fmt(pts.length)+' outlets';
     if(bounds.length) try{ MAP.fitBounds(bounds,{padding:[30,30],maxZoom:12}); }catch(e){}
-  }catch(e){}
+  }catch(e){ document.getElementById('mapcount').textContent='could not load points'; }
 }
 document.querySelectorAll('#view button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
 
