@@ -53,14 +53,25 @@ def preview(dataset, rule, limit=12, normalize=None):
     return [{"raw": r.get("raw"), "derived": r.get("derived")} for r in rows]
 
 
-def build(master_fields, mappings_by_ds, built_by="SYS", built_at=None, log=print):
-    """Compile every source's mappings → UNION → dim_product Parquet in the warehouse. A broken source
-    (bad expr / missing column) is skipped with a warning rather than failing the whole build.
-    built_by/built_at stamp the resolved master rows (audit provenance)."""
+# Identity strategy per master ENTITY: a STRONG key field (a real unique id — used when present) and
+# the NATURAL key (normalized fields that identify the row when the strong key is absent). This is the
+# one place the two masters differ; everything else in the engine is entity-agnostic.
+ENTITY_IDENTITY = {
+    "product": {"strong": "upc",        "natural": ["brand", "product_name", "size_ml"]},
+    "outlet":  {"strong": "source_ref", "natural": ["outlet_name", "address", "zip5"]},
+}
+
+
+def build(master_fields, mappings_by_ds, entity="product", built_by="SYS", built_at=None, log=print):
+    """Compile every source's mappings → UNION → dim_<entity> Parquet in the warehouse, then resolve.
+    A broken source (bad expr / missing column) is skipped with a warning rather than failing the whole
+    build. built_by/built_at stamp the resolved master rows. Entity-parameterized: the SAME engine
+    builds the product master OR the outlet master — only the identity rule (resolve) differs."""
     import time as _t
     built_at = built_at or int(_t.time())
     import warehouse
     con = warehouse.connect()
+    dim = "dim_%s" % entity
     selects, per_source, warnings = [], [], []
     for ds, rules in mappings_by_ds.items():
         if not any(r.get("master_field") for r in (rules or [])):
@@ -76,44 +87,51 @@ def build(master_fields, mappings_by_ds, built_by="SYS", built_at=None, log=prin
     if not selects:
         return {"rows": 0, "sources": 0, "per_source": [], "warnings": warnings, "note": "no usable mappings"}
     union = " UNION ALL ".join(selects)
-    dst = warehouse.uri("dim_product").replace("'", "")
+    dst = warehouse.uri(dim).replace("'", "")
     con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (union, dst))
     total = con.execute("SELECT count(*) FROM read_parquet('%s')" % dst).fetchone()[0]
-    log("dim_product: %d rows from %d sources → %s" % (total, len(selects), dst))
-    resolved = resolve(master_fields, dst, con, built_by=built_by, built_at=built_at, log=log)
+    log("%s: %d rows from %d sources → %s" % (dim, total, len(selects), dst))
+    resolved = resolve(master_fields, dst, con, entity=entity, built_by=built_by, built_at=built_at, log=log)
     return {"rows": total, "sources": len(selects), "per_source": per_source, "warnings": warnings,
-            "uri": warehouse.uri("dim_product"), "products": resolved.get("rows"),
+            "uri": warehouse.uri(dim), "resolved_rows": resolved.get("rows"),
+            "products": resolved.get("rows"),  # back-compat alias
             "resolved_uri": resolved.get("uri")}
 
 
-def resolve(master_fields, dim_uri, con, built_by="SYS", built_at=None, log=print):
-    """Collapse the per-source dim_product rows into ONE product per SKU → dim_product_resolved.
-    Identity key: the canonical UPC (GTIN-14) when present, else normalized brand+product_name+size_ml.
-    Each product keeps the first non-null value per field + which/how many sources contributed it +
-    audit columns (master_created_at first-seen, master_updated_at build time, updated_by)."""
+def resolve(master_fields, dim_uri, con, entity="product", built_by="SYS", built_at=None, log=print):
+    """Collapse the per-source dim_<entity> rows into ONE row per real thing → dim_<entity>_resolved.
+    Identity key (per ENTITY_IDENTITY): the STRONG key (canonical UPC / outlet source_ref) when present,
+    else the normalized NATURAL key (product: brand+name+size_ml; outlet: name+address+zip5). Each row
+    keeps a value per master field + which/how many sources contributed + audit columns. Fuzzy geo/name
+    refinement is a later pass on top of this deterministic key."""
     import time as _t
     built_at = built_at or int(_t.time())
     import warehouse
+    spec = ENTITY_IDENTITY.get(entity, ENTITY_IDENTITY["product"])
+    strong, natkeys = spec["strong"], spec["natural"]
     mnames = _mnames(master_fields)
-    namekeys = [c for c in ("brand", "product_name", "size_ml") if c in mnames]
-    nk = "||'|'||".join("lower(coalesce(CAST(%s AS VARCHAR),''))" % derive.col(c) for c in namekeys) or "''"
-    if "upc" in mnames:
-        keyexpr = "CASE WHEN upc IS NOT NULL AND upc<>'' THEN 'u:'||upc ELSE 'n:'||%s END" % nk
+    nk_cols = [c for c in natkeys if c in mnames]
+    nk = "||'|'||".join("lower(coalesce(CAST(%s AS VARCHAR),''))" % derive.col(c) for c in nk_cols) or "''"
+    if strong in mnames:
+        sc = derive.col(strong)
+        keyexpr = "CASE WHEN %s IS NOT NULL AND %s<>'' THEN 's:'||%s ELSE 'n:'||%s END" % (sc, sc, sc, nk)
     else:
         keyexpr = "'n:'||%s" % nk
-    aggs = ["max(upc) AS upc" if mf == "upc" else "any_value(%s) AS %s" % (derive.col(mf), derive.col(mf))
-            for mf in mnames]
-    rdst = warehouse.uri("dim_product_resolved").replace("'", "")
+    aggs = [("max(%s) AS %s" % (derive.col(mf), derive.col(mf))) if mf == strong
+            else "any_value(%s) AS %s" % (derive.col(mf), derive.col(mf)) for mf in mnames]
+    keycol = "%s_key" % entity
+    rtable = "dim_%s_resolved" % entity
+    rdst = warehouse.uri(rtable).replace("'", "")
     audit = ("%d AS master_created_at, %d AS master_updated_at, %s AS updated_by"
              % (built_at, built_at, derive._sqlstr(built_by)))
-    sql = ("WITH b AS (SELECT *, %s AS product_key FROM read_parquet('%s')) "
-           "SELECT product_key, %s, count(*) AS source_rows, count(DISTINCT _source) AS sources, "
-           "list_distinct(list(_source)) AS source_list, %s FROM b GROUP BY product_key"
-           % (keyexpr, dim_uri, ", ".join(aggs), audit))
+    sql = ("WITH b AS (SELECT *, %s AS %s FROM read_parquet('%s')) "
+           "SELECT %s, %s, count(*) AS source_rows, count(DISTINCT _source) AS sources, "
+           "list_distinct(list(_source)) AS source_list, %s FROM b GROUP BY %s"
+           % (keyexpr, keycol, dim_uri, keycol, ", ".join(aggs), audit, keycol))
     con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (sql, rdst))
     n = con.execute("SELECT count(*) FROM read_parquet('%s')" % rdst).fetchone()[0]
-    log("dim_product_resolved: %d distinct products → %s" % (n, rdst))
-    return {"rows": n, "uri": warehouse.uri("dim_product_resolved")}
+    log("%s: %d distinct %ss → %s" % (rtable, n, entity, rdst))
+    return {"rows": n, "uri": warehouse.uri(rtable)}
 
 
 if __name__ == "__main__":

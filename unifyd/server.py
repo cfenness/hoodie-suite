@@ -447,6 +447,22 @@ def load_full(did):
     try: return json.load(open(os.path.join(FULL_DIR, did + ".json")))
     except Exception: return None
 
+def _to_warehouse(ds):
+    """Write a pull's full rows to the warehouse as Parquet so the apply engine, the data dictionary,
+    and all DuckDB queries can reach them (memory DATASETS alone can't be read by read_parquet, and
+    won't scale to the national AB census). Call BEFORE _absorb (which pops _rows_full). Best-effort."""
+    for name, d in (ds or {}).items():
+        header = d.get("header") or []
+        rows = d.get("_rows_full") or d.get("rows") or []
+        if not (header and rows):
+            continue
+        try:
+            recs = [dict(zip(header, r)) for r in rows]
+            warehouse.write_parquet(name, recs, header)
+            app.logger.info("warehouse ← %s: %d rows", name, len(recs))
+        except Exception as e:
+            app.logger.warning("warehouse write %s failed: %s", name, e)
+
 def _absorb(ds):
     """Lift the full rows a scraper attached as `_rows_full` out to the on-demand full store
     (for complete CSV/JSON export), then leave the in-memory dataset capped at its UI sample
@@ -613,6 +629,7 @@ def total_wine_pull(params):
         cap=int(params.get("cap", 400)), delay=float(params.get("delay", 1.0)),
         out=os.path.join(STATE_DIR, "total_wine"), state_dir=os.path.join(STATE_DIR, "total_wine"),
         log=lambda m: app.logger.info("TOTAL-WINE %s", m))
+    _to_warehouse(ds)
     DATASETS.update(_absorb(ds))
     run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
@@ -628,6 +645,7 @@ def vtinfo_pull(params):
         custID=params.get("custID"), uuid=params.get("uuid"), delay=float(params.get("delay", 1.0)),
         out=os.path.join(STATE_DIR, "vtinfo"), state_dir=os.path.join(STATE_DIR, "vtinfo"),
         log=lambda m: app.logger.info("VTINFO %s", m))
+    _to_warehouse(ds)
     DATASETS.update(_absorb(ds))
     run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
@@ -646,6 +664,7 @@ def ab_inbev_pull(params):
         delay=float(params.get("delay", 0.3)),
         out=os.path.join(STATE_DIR, "ab"), state_dir=os.path.join(STATE_DIR, "ab"),
         log=lambda m: app.logger.info("AB-INBEV %s", m))
+    _to_warehouse(ds)
     DATASETS.update(_absorb(ds))
     run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
@@ -999,16 +1018,97 @@ DEFAULT_MASTER_FIELDS = [
     {"name": "supplier", "type": "string", "desc": "Supplier / vendor"},
     {"name": "origin", "type": "string", "desc": "Country / region of origin"},
 ]
+# The OUTLET master schema — the canonical, atomic outlet fields every outlet source maps INTO
+# (the 'lowest level of consistency'). Same machinery as products, different entity.
+DEFAULT_OUTLET_FIELDS = [
+    {"name": "outlet_name", "type": "string", "desc": "Outlet / account name", "normalize": "name"},
+    {"name": "dba", "type": "string", "desc": "Doing-business-as / display name", "normalize": "name"},
+    {"name": "address", "type": "string", "desc": "Street address"},
+    {"name": "city", "type": "string", "desc": "City"},
+    {"name": "state", "type": "string", "desc": "State (2-letter)", "normalize": "state"},
+    {"name": "zip5", "type": "string", "desc": "ZIP (5-digit)", "normalize": "zip5"},
+    {"name": "zip4", "type": "string", "desc": "ZIP+4 add-on", "normalize": "zip4"},
+    {"name": "county_fips", "type": "string", "desc": "County FIPS"},
+    {"name": "lat", "type": "number", "desc": "Latitude"},
+    {"name": "lng", "type": "number", "desc": "Longitude"},
+    {"name": "phone", "type": "string", "desc": "Phone (digits)", "normalize": "phone"},
+    {"name": "outlet_type", "type": "string", "desc": "On/off-premise or channel"},
+    {"name": "license_num", "type": "string", "desc": "State license / permit number"},
+    {"name": "source_ref", "type": "string", "desc": "Source outlet id (e.g. AB vpid) — strong key when present"},
+    {"name": "carriage", "type": "string", "desc": "Brands/products seen at this outlet (carriage signal)"},
+]
+# Master entities: name → (default schema, state-file basenames). product keeps the legacy filenames
+# for back-compat; outlet gets its own. Adding an entity = one row here.
+ENTITIES = {
+    "product": {"defaults": DEFAULT_MASTER_FIELDS, "schema": "master_schema.json",
+                "maps": "field_mappings.json", "mapmeta": "mappings_meta.json", "schemameta": "schema_meta.json"},
+    "outlet":  {"defaults": DEFAULT_OUTLET_FIELDS, "schema": "master_schema_outlet.json",
+                "maps": "field_mappings_outlet.json", "mapmeta": "mappings_meta_outlet.json", "schemameta": "schema_meta_outlet.json"},
+}
+def _entity(v):
+    return v if v in ENTITIES else "product"
+
+# Seed mappings for OUR OWN outlet connectors — so the outlet master builds turnkey (no hand-mapping
+# each source; a saved mapping always overrides). Key = dataset name; a trailing '_' key = name prefix.
+SEED_OUTLET_MAPPINGS = {
+    "ab_outlets": [
+        {"source_field": "VPID", "master_field": "source_ref"},
+        {"source_field": "Name", "master_field": "outlet_name"},
+        {"source_field": "Address", "master_field": "address"},
+        {"source_field": "City", "master_field": "city"},
+        {"source_field": "State", "master_field": "state"},
+        {"source_field": "Zip", "master_field": "zip5"},
+        {"source_field": "Zip", "master_field": "zip4"},
+        {"source_field": "Lat", "master_field": "lat"},
+        {"source_field": "Lng", "master_field": "lng"},
+        {"source_field": "AB_Brands", "master_field": "carriage"},
+    ],
+    "vtinfo_": [   # prefix — every vtinfo_<brand> dataset
+        {"source_field": "Account", "master_field": "outlet_name"},
+        {"source_field": "Street", "master_field": "address"},
+        {"source_field": "City", "master_field": "city"},
+        {"source_field": "State", "master_field": "state"},
+        {"source_field": "Zip", "master_field": "zip5"},
+        {"source_field": "Phone", "master_field": "phone"},
+        {"source_field": "Lat", "master_field": "lat"},
+        {"source_field": "Lng", "master_field": "lng"},
+        {"source_field": "StoreType", "master_field": "outlet_type"},
+        {"source_field": "Brand", "master_field": "carriage"},
+    ],
+}
+def _seed_for(ds):
+    if ds in SEED_OUTLET_MAPPINGS:
+        return SEED_OUTLET_MAPPINGS[ds]
+    for k, v in SEED_OUTLET_MAPPINGS.items():
+        if k.endswith("_") and ds.startswith(k):
+            return v
+    return None
+
+def _outlet_maps_effective():
+    """Persisted outlet mappings + seed mappings for any recognized warehouse dataset lacking one, so
+    the outlet master builds turnkey. A saved mapping always wins over its seed."""
+    out = dict(load(ENTITIES["outlet"]["maps"], {}))
+    try:
+        for d in warehouse.list_datasets():
+            nm = d.get("name", "")
+            if nm and nm not in out and _seed_for(nm):
+                out[nm] = _seed_for(nm)
+    except Exception as e:
+        app.logger.warning("outlet seed merge failed: %s", e)
+    return out
+
 # Data-dictionary transforms that can apply BEFORE (on the source value) or AFTER (on the mapped
 # master value). Names only here — the apply-engine consumes them when materializing the master.
 MAP_TRANSFORMS = ["none", "trim", "upper", "lower", "title_case", "digits_only",
                   "size_to_ml", "year_from_date"]
 # Canonical normalizers keyed by master field NAME — ensured on read so the 'lowest level of
 # consistency' contract holds even for a schema saved before a normalizer was added.
-_NORMALIZE_DEFAULTS = {"upc": "upc", "gtin": "upc"}
+_NORMALIZE_DEFAULTS = {"upc": "upc", "gtin": "upc", "zip5": "zip5", "zip4": "zip4",
+                       "state": "state", "phone": "phone", "outlet_name": "name", "dba": "name"}
 
-def _master_schema():
-    fields = load("master_schema.json", DEFAULT_MASTER_FIELDS)
+def _master_schema(entity="product"):
+    spec = ENTITIES[_entity(entity)]
+    fields = load(spec["schema"], spec["defaults"])
     for f in fields:
         if isinstance(f, dict) and not f.get("normalize") and f.get("name") in _NORMALIZE_DEFAULTS:
             f["normalize"] = _NORMALIZE_DEFAULTS[f["name"]]
@@ -1016,7 +1116,9 @@ def _master_schema():
 
 @app.get("/api/master/schema")
 def master_schema_get():
-    return jsonify(ok=True, fields=_master_schema(), transforms=MAP_TRANSFORMS)
+    entity = _entity(request.args.get("entity", "product"))
+    return jsonify(ok=True, entity=entity, entities=list(ENTITIES),
+                   fields=_master_schema(entity), transforms=MAP_TRANSFORMS)
 
 # ── users (each gets a short CODE) + created/updated audit stamps ──
 def _mk_user_code(email, users):
@@ -1075,9 +1177,11 @@ def users_post():
 
 @app.post("/api/master/schema")
 def master_schema_post():
-    """Create a master field (start building the master schema) or replace the whole set."""
+    """Create a master field (start building the master schema) or replace the whole set. ?entity=."""
     body = request.get_json(silent=True) or {}
-    fields = load("master_schema.json", DEFAULT_MASTER_FIELDS)
+    entity = _entity(body.get("entity") or request.args.get("entity", "product"))
+    spec = ENTITIES[entity]
+    fields = load(spec["schema"], spec["defaults"])
     if isinstance(body.get("fields"), list):
         fields = body["fields"]
     else:
@@ -1085,31 +1189,42 @@ def master_schema_post():
         if not nm:
             return jsonify(ok=False, error="name required"), 400
         if not any(f.get("name") == nm for f in fields):
-            fields.append({"name": nm, "type": body.get("type", "string"), "desc": body.get("desc", "")})
-    _save_json("master_schema.json", fields)
-    return jsonify(ok=True, fields=fields, meta=_stamp("schema_meta.json", "schema"))
+            fields.append({"name": nm, "type": body.get("type", "string"), "desc": body.get("desc", ""),
+                           **({"normalize": body["normalize"]} if body.get("normalize") else {})})
+    _save_json(spec["schema"], fields)
+    return jsonify(ok=True, entity=entity, fields=fields, meta=_stamp(spec["schemameta"], "schema"))
 
 @app.get("/api/mappings")
 def mappings_get():
-    """Persisted field mappings + audit meta. ?dataset= for one source dataset's rows, else the whole map."""
+    """Persisted field mappings + audit meta. ?entity= (product|outlet), ?dataset= for one source's rows."""
+    entity = _entity(request.args.get("entity", "product"))
+    spec = ENTITIES[entity]
     ds = (request.args.get("dataset") or "").strip()
-    m = load("field_mappings.json", {})
-    meta = load("mappings_meta.json", {})
-    return jsonify(ok=True, dataset=ds or None, mappings=(m.get(ds, []) if ds else m),
-                   meta=(meta.get(ds) if ds else meta))
+    m = load(spec["maps"], {})
+    meta = load(spec["mapmeta"], {})
+    if ds:
+        rows = m.get(ds)
+        seeded = False
+        if rows is None and entity == "outlet":                  # pre-fill our own connectors' mapping
+            rows = _seed_for(ds); seeded = rows is not None
+        return jsonify(ok=True, entity=entity, dataset=ds, mappings=rows or [],
+                       seeded=seeded, meta=meta.get(ds))
+    return jsonify(ok=True, entity=entity, dataset=None, mappings=m, meta=meta)
 
 @app.post("/api/mappings")
 def mappings_post():
     """Persist a source dataset's mapping rows: [{source_field, master_field, pre, post}]. Stamps
-    created/updated + user, and — when a row maps to master.upc — auto-drives the UPC healer."""
+    created/updated + user, and — when a row maps to master.upc — auto-drives the UPC healer. ?entity=."""
     body = request.get_json(silent=True) or {}
+    entity = _entity(body.get("entity") or request.args.get("entity", "product"))
+    spec = ENTITIES[entity]
     ds = (body.get("dataset") or "").strip()
     if not ds:
         return jsonify(ok=False, error="dataset required"), 400
-    m = load("field_mappings.json", {})
+    m = load(spec["maps"], {})
     m[ds] = body.get("mappings", [])
-    _save_json("field_mappings.json", m)
-    meta = _stamp("mappings_meta.json", ds)
+    _save_json(spec["maps"], m)
+    meta = _stamp(spec["mapmeta"], ds)
     # auto-drive the UPC healer if a source field is mapped to master.upc (base data untouched)
     upc_rows = [r for r in m[ds] if r.get("master_field") == "upc" and r.get("source_field")]
     healed = False
@@ -1145,25 +1260,30 @@ def master_preview_ep():
     try:
         import master_apply
         rule = body.get("rule") or {}
-        fields = _master_schema()
+        entity = _entity(body.get("entity") or request.args.get("entity", "product"))
+        fields = _master_schema(entity)
         nz = next((f.get("normalize") for f in fields if isinstance(f, dict) and f.get("name") == rule.get("master_field")), None)
         rows = master_apply.preview(ds, rule, limit=int(body.get("limit", 12)), normalize=nz)
-        return jsonify(ok=True, dataset=ds, normalize=nz, rows=rows)
+        return jsonify(ok=True, dataset=ds, entity=entity, normalize=nz, rows=rows)
     except Exception as e:
         return jsonify(ok=False, error=str(e)[:180]), 200
 
 @app.post("/api/master/apply")
 def master_apply_ep():
-    """Materialize dim_product from ALL persisted mappings + the master schema (one DuckDB pass per
-    source over Parquet → UNION → warehouse). Returns per-source counts + any skipped sources."""
+    """Materialize dim_<entity> + dim_<entity>_resolved from ALL persisted mappings + the master schema
+    (one DuckDB pass per source over Parquet → UNION → resolve → warehouse). ?entity=product|outlet.
+    Returns per-source counts + any skipped sources."""
     try:
         import master_apply
-        fields = _master_schema()
-        maps = load("field_mappings.json", {})
+        body = request.get_json(silent=True) or {}
+        entity = _entity(body.get("entity") or request.args.get("entity", "product"))
+        spec = ENTITIES[entity]
+        fields = _master_schema(entity)
+        maps = _outlet_maps_effective() if entity == "outlet" else load(spec["maps"], {})
         who = _user_rec().get("code", "SYS")
-        res = master_apply.build(fields, maps, built_by=who, built_at=int(time.time()),
-                                 log=lambda mm: app.logger.info("APPLY %s", mm))
-        return jsonify(ok=True, built_by=who, **res)
+        res = master_apply.build(fields, maps, entity=entity, built_by=who, built_at=int(time.time()),
+                                 log=lambda mm: app.logger.info("APPLY[%s] %s", entity, mm))
+        return jsonify(ok=True, entity=entity, built_by=who, **res)
     except Exception as e:
         app.logger.exception("apply failed")
         return jsonify(ok=False, error=str(e)[:200]), 200

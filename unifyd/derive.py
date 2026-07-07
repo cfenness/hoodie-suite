@@ -50,13 +50,24 @@ TRANSFORMS = {
                       "'([0-9.]+)(ml|l|liter|litre|oz|floz|gal)',1) AS DOUBLE)*3785.41) AS BIGINT) "
                       "ELSE CAST(round(try_cast(regexp_extract(lower(replace(CAST(%s AS VARCHAR),' ','')),"
                       "'([0-9.]+)(ml|l|liter|litre|oz|floz|gal)',1) AS DOUBLE)) AS BIGINT) END"),
+    # ── OUTLET normalizers (the 'lowest level of consistency' for outlet fields) ──
+    # ZIP+4 comes concatenated from some sources (e.g. AB gives 327143868) — split to 5+4.
+    "zip5":       "NULLIF(substr(regexp_replace(CAST(%s AS VARCHAR),'[^0-9]','','g'),1,5),'')",
+    "zip4":       ("CASE WHEN length(regexp_replace(CAST(%s AS VARCHAR),'[^0-9]','','g'))>=9 "
+                   "THEN substr(regexp_replace(CAST(%s AS VARCHAR),'[^0-9]','','g'),6,4) ELSE NULL END"),
+    "state_abbr": "NULLIF(upper(trim(CAST(%s AS VARCHAR))),'')",              # 2-letter state (upper+trim)
+    "name_clean": "NULLIF(trim(regexp_replace(upper(CAST(%s AS VARCHAR)),' +',' ','g')),'')",  # canonical name for matching
 }
-TRANSFORM_NAMES = [t for t in TRANSFORMS if t != "upc_normalize"]   # user-selectable (normalizers auto-apply)
+# auto-applied normalizers (declared on a master field, not user-picked in the transform dropdown)
+_NORMALIZER_ONLY = {"upc_normalize", "zip5", "zip4", "state_abbr", "name_clean"}
+TRANSFORM_NAMES = [t for t in TRANSFORMS if t not in _NORMALIZER_ONLY]   # user-selectable (normalizers auto-apply)
 
 # A master field can declare a canonical NORMALIZE format — applied automatically to whatever source
 # value is mapped into it (the base data is never touched). This is the master's "lowest level of
 # consistency" contract: map anything in, it comes out canonical. normalize name → transform name.
-NORMALIZERS = {"upc": "upc_normalize", "gtin": "upc_normalize"}
+NORMALIZERS = {"upc": "upc_normalize", "gtin": "upc_normalize",
+               "zip5": "zip5", "zip4": "zip4", "state": "state_abbr",
+               "phone": "digits_only", "name": "name_clean"}
 
 
 def apply_normalizer(normalize, inner):
