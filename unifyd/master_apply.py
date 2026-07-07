@@ -94,7 +94,9 @@ def _keyexprs(mnames):
     for g in HIERARCHY:
         for c in GRAIN_KEY.get(g, []):
             if c in mnames:
-                cum.append(derive.identity_expr(c) if c in NAMEISH
+                # coalesce EVERY component to '' — an unmapped name field (NULL) would otherwise make the
+                # whole `||` concatenation NULL, collapsing all keys into one group.
+                cum.append(("coalesce(%s,'')" % derive.identity_expr(c)) if c in NAMEISH
                            else "lower(coalesce(CAST(%s AS VARCHAR),''))" % derive.col(c))
         keys[g] = "md5(%s)" % ("||'|'||".join(cum) if cum else "''")
     return keys
