@@ -1533,6 +1533,80 @@ def master_outlet_one_ep():
         return jsonify(ok=False, error=str(e)[:140]), 200
     return jsonify(ok=True, outlet=(rows[0] if rows else None))
 
+# ── MDM workbench: CONFIRM / CONFORM — reconcile the same outlet across sources into Tier-1 truth ──
+# The deterministic resolve merges on exact key; cross-VENDOR duplicates (AB vpid vs VTInfo, which lacks
+# zip) slip through, so we FUZZY-match: cross-source pairs in the same ~1km cell, high name similarity,
+# within ~0.5 mi. Accepting a candidate records that the two outlet_keys are the SAME real outlet.
+_CONFIRM_SQL = (
+    "WITH o AS (SELECT outlet_key, outlet_name, address, city, state, carriage, "
+    " try_cast(lat AS DOUBLE) lat, try_cast(lng AS DOUBLE) lng, source_list "
+    " FROM t WHERE try_cast(lat AS DOUBLE) IS NOT NULL) "
+    "SELECT a.outlet_key ka, a.outlet_name na, a.address aa, a.city, a.state, CAST(a.carriage AS VARCHAR) ca, a.source_list sa, "
+    " b.outlet_key kb, b.outlet_name nb, b.address ba, CAST(b.carriage AS VARCHAR) cb, b.source_list sb, "
+    " round(jaro_winkler_similarity(lower(a.outlet_name),lower(b.outlet_name)),3) sim, "
+    " round(sqrt(power((a.lat-b.lat)*69,2)+power((a.lng-b.lng)*54.6,2)),2) dist_mi "
+    "FROM o a JOIN o b ON a.outlet_key<b.outlet_key AND round(a.lat,2)=round(b.lat,2) AND round(a.lng,2)=round(b.lng,2) "
+    "WHERE a.source_list<>b.source_list "
+    " AND jaro_winkler_similarity(lower(a.outlet_name),lower(b.outlet_name)) > ? "
+    " AND sqrt(power((a.lat-b.lat)*69,2)+power((a.lng-b.lng)*54.6,2)) < 0.5 "
+    "ORDER BY sim DESC, dist_mi ASC LIMIT ?")
+
+@app.get("/api/master/confirm/candidates")
+def master_confirm_candidates_ep():
+    """Fuzzy cross-source outlet-match candidates (same place, different source) to review + confirm.
+    ?min= name-similarity threshold (default .86), ?limit=. Already-decided pairs are dropped."""
+    import warehouse
+    try:
+        mn = float(request.args.get("min", 0.86)); lim = min(500, int(request.args.get("limit", 150)))
+    except ValueError:
+        mn, lim = 0.86, 150
+    try:
+        rows = warehouse.query("dim_outlet_resolved", _CONFIRM_SQL, [mn, lim + 60])
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:160], candidates=[]), 200
+    decided = load("outlet_confirms.json", {})
+    out = []
+    for r in rows:
+        key = "|".join(sorted([str(r["ka"]), str(r["kb"])]))
+        if key in decided:
+            continue
+        out.append(r)
+        if len(out) >= lim:
+            break
+    return jsonify(ok=True, landed=True, count=len(out), candidates=out)
+
+@app.post("/api/master/confirm")
+def master_confirm_post_ep():
+    """Record a confirm decision on a candidate pair: {a, b, decision:'same'|'different'}. 'same' = the
+    two outlet_keys are one real outlet (Tier-1 confirmed); 'different' = not a match (won't resurface)."""
+    b = request.get_json(silent=True) or {}
+    ka, kb = (b.get("a") or "").strip(), (b.get("b") or "").strip()
+    if not (ka and kb):
+        return jsonify(ok=False, error="a + b required"), 400
+    key = "|".join(sorted([ka, kb]))
+    confirms = load("outlet_confirms.json", {})
+    confirms[key] = {"a": ka, "b": kb, "decision": (b.get("decision") or "same"),
+                     "at": int(time.time()), "by": _user_rec().get("code", "SYS")}
+    _save_json("outlet_confirms.json", confirms)
+    same = sum(1 for v in confirms.values() if v.get("decision") == "same")
+    return jsonify(ok=True, decided=len(confirms), confirmed=same)
+
+@app.get("/api/master/confirm/summary")
+def master_confirm_summary_ep():
+    """The reconciliation picture: outlet count, auto-confirmed (2+ sources), fuzzy candidates, decisions."""
+    import warehouse
+    out = {"outlets": None, "auto_confirmed": None, "candidates": None}
+    try:
+        out["outlets"] = warehouse.query("dim_outlet_resolved", "SELECT count(*) c FROM t")[0]["c"]
+        out["auto_confirmed"] = warehouse.query("dim_outlet_resolved", "SELECT count(*) c FROM t WHERE sources>=2")[0]["c"]
+        out["candidates"] = warehouse.query("dim_outlet_resolved", "SELECT count(*) c FROM (%s)" % _CONFIRM_SQL, [0.86, 100000])[0]["c"]
+    except Exception as e:
+        out["error"] = str(e)[:120]
+    confirms = load("outlet_confirms.json", {})
+    out["accepted"] = sum(1 for v in confirms.values() if v.get("decision") == "same")
+    out["rejected"] = sum(1 for v in confirms.values() if v.get("decision") == "different")
+    return jsonify(ok=True, **out)
+
 # ── MDM workbench: browse the SKU/product catalog (dim_sku joined up the hierarchy) ──
 def _sku_join():
     import warehouse

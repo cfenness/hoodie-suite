@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Confirm / Conform — Hoodie MDM</title>
+<style>
+  :root{
+    --ink:#2B3138; --paper:#F1F3F5; --panel:#fff; --muted:#7A828B; --line:#E4E7EB;
+    --accent:#4E79A7; --accent-soft:#EAF0F6; --good:#3f9668; --bad:#c0563e; --gold:#9a7100;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace; --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--paper);color:var(--ink);font-family:var(--font);font-size:14px}
+  body{padding:22px 26px 60px}
+  .embed body{padding-top:14px}
+  .wrap{max-width:1040px;margin:0 auto}
+  .pagehead h1{font-size:22px;font-weight:800;letter-spacing:-.01em}
+  .pagehead .sub{color:var(--muted);font-size:13px;margin-top:3px;max-width:700px;line-height:1.5}
+  .embed .pagehead{display:none}
+  .chips{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 6px}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 15px;min-width:112px}
+  .chip .n{font-family:var(--mono);font-weight:700;font-size:20px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .chip .n.good{color:var(--good)} .chip .n.accent{color:var(--accent)} .chip .n.gold{color:var(--gold)}
+  .chip .l{font-size:11px;color:var(--muted);margin-top:4px}
+  .note{font-size:12px;color:var(--muted);margin:12px 2px 14px;line-height:1.5}
+  .note b{color:var(--ink)}
+
+  .cards{display:flex;flex-direction:column;gap:11px}
+  .cand{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;transition:opacity .2s}
+  .cand.gone{opacity:.35;pointer-events:none}
+  .chead{display:flex;align-items:center;gap:12px;margin-bottom:11px}
+  .simbar{flex:1;height:6px;background:#EEF1F4;border-radius:4px;overflow:hidden;max-width:220px}
+  .simbar i{display:block;height:100%;background:var(--good);border-radius:4px}
+  .simval{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--good);font-variant-numeric:tabular-nums}
+  .dist{font-family:var(--mono);font-size:11.5px;color:var(--accent);font-variant-numeric:tabular-nums}
+  .cbody{display:grid;grid-template-columns:1fr 34px 1fr;gap:12px;align-items:stretch}
+  .rec{border:1px solid var(--line);border-radius:9px;padding:11px 13px;background:#FAFBFC}
+  .rec .src{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);margin-bottom:5px}
+  .rec .nm{font-weight:700;font-size:14px;letter-spacing:-.01em}
+  .rec .ad{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:3px;line-height:1.4}
+  .rec .cr{margin-top:7px;display:flex;flex-wrap:wrap;gap:4px}
+  .rec .cr .b{font-size:8.5px;font-weight:700;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--accent-soft);color:#2E4C6D}
+  .eq{display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:16px;color:var(--muted)}
+  .acts{display:flex;gap:8px;margin-top:12px;justify-content:flex-end}
+  .acts button{font-family:var(--font);font-size:12.5px;font-weight:600;border:1px solid var(--line);border-radius:8px;padding:7px 15px;cursor:pointer;background:var(--panel);color:var(--ink)}
+  .acts .same{background:var(--good);color:#fff;border-color:var(--good)}
+  .acts .diff:hover{border-color:var(--bad);color:var(--bad)}
+  .empty{padding:40px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12.5px;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="pagehead"><h1>Confirm / Conform</h1>
+    <div class="sub">Reconcile the same real-world outlet seen by different sources into one Tier-1 record.
+      The exact key misses cross-vendor duplicates (VTInfo has no ZIP), so these are matched fuzzily —
+      same ~1&nbsp;km cell, high name similarity, within ½ mile. Confirm the real matches.</div></div>
+  <div class="chips" id="chips"></div>
+  <div class="note">A pair confirmed <b>same</b> means both sources see one outlet — <b>multi-source agreement = Tier-1 truth</b>. <b>Not a match</b> hides it and won't resurface.</div>
+  <div class="cards" id="cards"><div class="empty">Finding candidates…</div></div>
+</div>
+<script>
+if(new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=n=>(n==null||n==='')?'':Number(n).toLocaleString();
+const srcName=s=>{ s=Array.isArray(s)?s.join(','):String(s||''); s=s.replace(/[\[\]']/g,''); return s.replace('ab_outlets','AB InBev').replace(/vtinfo_(\w+)/,'VTInfo · $1'); };
+const carr=c=>c?String(c).split(',').map(x=>x.trim()).filter(Boolean).slice(0,4).map(x=>'<span class="b">'+esc(x)+'</span>').join(''):'';
+
+async function summary(){
+  try{ const j=await (await fetch('/api/master/confirm/summary',{cache:'no-store'})).json();
+    document.getElementById('chips').innerHTML=
+      chip(fmt(j.outlets),'outlets','accent')+chip(fmt(j.auto_confirmed),'auto-confirmed (2+ src)','good')+
+      chip(fmt(j.candidates),'fuzzy candidates','gold')+chip(fmt(j.accepted),'confirmed same','good')+
+      chip(fmt(j.rejected),'not a match');
+  }catch(e){}
+}
+function chip(n,l,c){return '<div class="chip"><div class="n '+(c||'')+'">'+(n||'0')+'</div><div class="l">'+l+'</div></div>';}
+async function load(){
+  try{
+    const j=await (await fetch('/api/master/confirm/candidates?limit=120',{cache:'no-store'})).json();
+    if(!j.landed){ document.getElementById('cards').innerHTML='<div class="empty">Build the outlet master from 2+ sources to reconcile.</div>'; return; }
+    render(j.candidates||[]);
+  }catch(e){ document.getElementById('cards').innerHTML='<div class="empty">Connect the engine.</div>'; }
+}
+function render(cands){
+  if(!cands.length){ document.getElementById('cards').innerHTML='<div class="empty">No candidates to review — everything reconcilable is decided. 🎉</div>'; return; }
+  document.getElementById('cards').innerHTML=cands.map((c,i)=>{
+    const pct=Math.round((c.sim||0)*100);
+    return '<div class="cand" data-i="'+i+'" data-a="'+esc(c.ka)+'" data-b="'+esc(c.kb)+'">'+
+      '<div class="chead"><span class="simval">'+pct+'% name</span><div class="simbar"><i style="width:'+pct+'%"></i></div>'+
+        '<span class="dist">'+(c.dist_mi!=null?c.dist_mi+' mi apart':'')+'</span></div>'+
+      '<div class="cbody">'+
+        '<div class="rec"><div class="src">'+srcName(c.sa)+'</div><div class="nm">'+esc(c.na)+'</div>'+
+          '<div class="ad">'+esc(c.aa||'')+'<br>'+esc(c.city||'')+', '+esc(c.state||'')+'</div><div class="cr">'+carr(c.ca)+'</div></div>'+
+        '<div class="eq">=?</div>'+
+        '<div class="rec"><div class="src">'+srcName(c.sb)+'</div><div class="nm">'+esc(c.nb)+'</div>'+
+          '<div class="ad">'+esc(c.ba||'')+'<br>'+esc(c.city||'')+', '+esc(c.state||'')+'</div><div class="cr">'+carr(c.cb)+'</div></div>'+
+      '</div>'+
+      '<div class="acts"><button class="diff">Not a match</button><button class="same">✓ Same outlet</button></div></div>';
+  }).join('');
+  document.querySelectorAll('.cand').forEach(el=>{
+    el.querySelector('.same').onclick=()=>decide(el,'same');
+    el.querySelector('.diff').onclick=()=>decide(el,'different');
+  });
+}
+async function decide(el,decision){
+  el.classList.add('gone');
+  try{ await fetch('/api/master/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({a:el.dataset.a,b:el.dataset.b,decision:decision})}); }catch(e){}
+  summary();
+  // when the visible batch is exhausted, pull the next
+  if([...document.querySelectorAll('.cand:not(.gone)')].length===0) load();
+}
+summary(); load();
+</script>
+</body>
+</html>
