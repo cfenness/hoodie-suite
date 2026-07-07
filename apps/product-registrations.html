@@ -3,155 +3,216 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Product Registrations — Hoodie Suite</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<title>Product Registrations — Hoodie MDM</title>
 <style>
   :root{
-    --ink:#0e1613; --panel:#121c19; --paper:#e9f2ef; --line:#22322e; --muted:#8aa39d;
-    --accent:#4E79A7; --gold:#d9b03f; --teal:#3fb8a3; --good:#5bb86e; --warn:#c98a4a;
-    --disp:"Space Grotesk",system-ui,sans-serif; --mono:"IBM Plex Mono",monospace;
+    --ink:#2B3138; --paper:#F1F3F5; --panel:#fff; --muted:#7A828B; --line:#E4E7EB;
+    --accent:#4E79A7; --accent-soft:#EAF0F6; --good:#3f9668; --gold:#9a7100; --warn:#b46a12;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:var(--disp);background:var(--ink);color:var(--paper);min-height:100vh;padding:26px 30px 60px}
-  .wrap{max-width:1180px;margin:0 auto}
-  .ey{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#6f938a}
-  h1{font-weight:700;font-size:27px;color:#eafaf5;margin:4px 0 3px;letter-spacing:-.01em}
-  .sub{color:var(--muted);font-size:13.5px;max-width:640px;line-height:1.5}
-  .chips{display:flex;flex-wrap:wrap;gap:12px;margin:22px 0 8px}
-  .chip{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 17px;min-width:150px}
-  .chip .n{font-family:var(--mono);font-weight:600;font-size:23px;color:var(--teal);font-variant-numeric:tabular-nums;line-height:1}
-  .chip .n.gold{color:var(--gold)} .chip .n.na{color:#5c6f6a;font-size:15px}
-  .chip .l{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:7px}
-  .grid2{display:grid;grid-template-columns:1.5fr 1fr;gap:16px;margin:16px 0 20px}
-  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:15px 17px}
-  .card h2{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:#6f938a;margin-bottom:12px}
-  /* by-year bars */
-  .years{display:flex;align-items:flex-end;gap:3px;height:96px}
+  html,body{background:var(--paper);color:var(--ink);font-family:var(--font);font-size:14px}
+  body{padding:22px 26px 50px}
+  .wrap{max-width:1160px;margin:0 auto}
+  .pagehead h1{font-size:22px;font-weight:800;letter-spacing:-.01em}
+  .pagehead .sub{color:var(--muted);font-size:13px;margin-top:3px;max-width:660px;line-height:1.5}
+  .embed .pagehead{display:none}
+  .embed body{padding-top:16px}
+
+  .chips{display:flex;flex-wrap:wrap;gap:11px;margin:18px 0 6px}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 16px;min-width:140px}
+  .chip .n{font-family:var(--mono);font-weight:700;font-size:21px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .chip .n.accent{color:var(--accent)} .chip .n.na{color:#aab2ba;font-size:14px;font-weight:600}
+  .chip .l{font-size:11px;color:var(--muted);margin-top:5px}
+
+  .cols{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;margin:14px 0 18px}
+  @media(max-width:800px){.cols{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .card h2{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:11px;font-weight:700}
+  .years{display:flex;align-items:flex-end;gap:3px;height:88px}
   .years .yr{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px;min-width:0}
-  .years .bar{width:100%;background:linear-gradient(180deg,var(--teal),#2c7d6e);border-radius:3px 3px 0 0;min-height:2px;transition:.2s}
-  .years .yr:hover .bar{background:var(--gold)}
-  .years .yl{font-family:var(--mono);font-size:8px;color:#6f938a;transform:rotate(-90deg);transform-origin:center;white-space:nowrap;height:20px}
-  /* class bars */
+  .years .bar{width:100%;background:var(--accent);border-radius:3px 3px 0 0;min-height:2px;opacity:.85}
+  .years .yr:hover .bar{opacity:1;background:#3c6690}
+  .years .yl{font-family:var(--mono);font-size:8px;color:#aab2ba;transform:rotate(-90deg);height:18px}
   .rowbars{display:flex;flex-direction:column;gap:7px}
-  .rb{display:grid;grid-template-columns:120px 1fr auto;gap:9px;align-items:center;font-size:12px}
-  .rb .k{color:#cfe6df;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11.5px}
-  .rb .track{height:9px;background:#0e1613;border-radius:5px;overflow:hidden}
+  .rb{display:grid;grid-template-columns:118px 1fr auto;gap:9px;align-items:center;font-size:12px}
+  .rb .k{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11.5px}
+  .rb .track{height:8px;background:#EEF1F4;border-radius:5px;overflow:hidden}
   .rb .fill{height:100%;background:var(--accent);border-radius:5px}
   .rb .v{font-family:var(--mono);font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums}
-  /* tabs + controls */
-  .bar{display:flex;align-items:center;gap:14px;margin:6px 0 12px;flex-wrap:wrap}
-  .tabs{display:flex;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:4px}
-  .tabs button{background:none;border:none;color:var(--muted);font-family:var(--mono);font-size:12px;padding:7px 15px;border-radius:7px;cursor:pointer}
-  .tabs button.on{background:var(--teal);color:#0e1613;font-weight:700}
-  input.search{flex:1;min-width:200px;background:var(--panel);color:#dcefe9;border:1px solid var(--line);border-radius:9px;padding:9px 13px;font-family:var(--mono);font-size:12.5px;outline:none}
+
+  .tabs{display:flex;gap:3px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:3px;width:fit-content;margin-bottom:12px}
+  .tabs button{background:none;border:none;color:var(--muted);font-family:var(--font);font-size:13px;font-weight:600;padding:7px 15px;border-radius:6px;cursor:pointer}
+  .tabs button.on{background:var(--accent);color:#fff}
+  .bar{display:flex;align-items:center;gap:11px;margin-bottom:11px;flex-wrap:wrap}
+  input.search{flex:1;min-width:200px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-family:var(--mono);font-size:12.5px;outline:none}
   input.search:focus{border-color:var(--accent)}
   .pager{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
-  .pager button{background:var(--panel);border:1px solid var(--line);color:#cfe6df;border-radius:7px;padding:5px 11px;font-family:var(--mono);font-size:13px;cursor:pointer}
-  .pager button:disabled{opacity:.35;cursor:default}
-  /* table */
-  .twrap{background:var(--panel);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+  .pager button{background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:5px 11px;font-size:13px;cursor:pointer}
+  .pager button:disabled{opacity:.4;cursor:default}
+
+  .twrap{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
   .tscroll{overflow-x:auto}
   table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
-  th{position:sticky;top:0;background:#0e1613;color:#6f938a;text-transform:uppercase;letter-spacing:.05em;font-size:9px;text-align:left;padding:10px 13px;border-bottom:1px solid var(--line);white-space:nowrap}
-  td{padding:8px 13px;border-bottom:1px solid rgba(34,50,46,.5);color:#dcefe9;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis}
-  tbody tr:hover td{background:rgba(63,184,163,.06)}
+  th{position:sticky;top:0;background:#F7F9FA;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-size:9px;text-align:left;padding:10px 13px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:8px 13px;border-bottom:1px solid var(--line);white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis}
+  tbody tr:hover td{background:#F7F9FA}
   td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .upc{color:var(--accent)}
   .pill{font-family:var(--mono);font-size:9.5px;padding:2px 7px;border-radius:20px;border:1px solid var(--line)}
-  .pill.flag{color:var(--warn);border-color:rgba(201,138,74,.4);background:rgba(201,138,74,.08)}
+  .pill.flag{color:var(--warn);border-color:#e8d3b6;background:#fbf3e7}
   .pill.ok{color:var(--good)}
-  .upc{color:var(--gold)}
-  .empty{padding:34px;text-align:center;color:#6f938a;font-family:var(--mono);font-size:12px}
-  .note{margin-top:9px;font-size:11.5px;color:var(--warn);font-family:var(--mono)}
+  .empty{padding:32px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px}
+
+  /* dictionary */
+  .dict{display:grid;grid-template-columns:280px 1fr;gap:14px}
+  @media(max-width:760px){.dict{grid-template-columns:1fr}}
+  .fields{display:flex;flex-direction:column;gap:8px}
+  .fcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 13px;cursor:pointer;transition:.12s}
+  .fcard:hover{border-color:var(--accent)}
+  .fcard.on{border-color:var(--accent);background:var(--accent-soft)}
+  .fcard .fn{font-weight:700;font-size:13px}
+  .fcard .fm{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:4px;display:flex;gap:12px;flex-wrap:wrap}
+  .fcard .fm b{color:var(--ink);font-weight:600}
+  .meter{height:5px;background:#EEF1F4;border-radius:3px;margin-top:7px;overflow:hidden}
+  .meter i{display:block;height:100%;background:var(--good)}
+  .dictval{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .dictval .dh{padding:12px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .dictval .dh .t{font-weight:700}
+  .dictval .dh .m{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .note{font-size:11.5px;color:var(--muted);margin-top:8px;font-family:var(--mono);line-height:1.5}
+  .warn{color:var(--warn)}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="ey">Hoodie Suite · MDM</div>
-  <h1>Product Registrations</h1>
-  <div class="sub">Every TTB Certificate of Label Approval (COLA) — the label-approval filing behind each product coming to market — collapsed into distinct product candidates. Raw filings ≠ products: suppliers file many labels per SKU.</div>
+  <div class="pagehead">
+    <h1>Product Registrations</h1>
+    <div class="sub">Every TTB Certificate of Label Approval (COLA) — the label-approval filing behind a product — with the distinct-product clusters and a field dictionary. The basis for extracting structure from registration text into controlled vocabularies + derived fields.</div>
+  </div>
 
-  <div class="chips" id="chips"><div class="chip"><div class="n na" id="c_total">…</div><div class="l">Registrations</div></div></div>
+  <div class="chips" id="chips"><div class="chip"><div class="n na" id="c0">…</div><div class="l">Registrations</div></div></div>
 
-  <div class="grid2">
+  <div class="cols">
     <div class="card"><h2>Filings by year</h2><div class="years" id="years"></div></div>
     <div class="card"><h2>Top class / type</h2><div class="rowbars" id="classes"></div></div>
   </div>
 
-  <div class="bar">
-    <div class="tabs">
-      <button id="tab_reg" class="on">Registrations</button>
-      <button id="tab_prod">Products (clusters)</button>
-    </div>
-    <input class="search" id="q" placeholder="search brand, applicant, TTB ID, or UPC…">
-    <div class="pager">
-      <button id="prev">‹</button><span id="pageinfo">—</span><button id="next">›</button>
-    </div>
+  <div class="tabs" id="tabs">
+    <button data-m="reg" class="on">Registrations</button>
+    <button data-m="prod">Products</button>
+    <button data-m="dict">Dictionary</button>
   </div>
-  <div class="twrap"><div class="tscroll"><table id="tbl"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div></div>
-  <div class="note" id="note" style="display:none"></div>
+
+  <div id="pane_table">
+    <div class="bar">
+      <input class="search" id="q" placeholder="search…">
+      <div class="pager"><button id="prev">‹</button><span id="pageinfo">—</span><button id="next">›</button></div>
+    </div>
+    <div class="twrap"><div class="tscroll"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div></div>
+  </div>
+
+  <div id="pane_dict" hidden>
+    <div class="dict">
+      <div class="fields" id="fields"></div>
+      <div class="dictval" id="dictval"><div class="empty">Pick a field to see its value dictionary.</div></div>
+    </div>
+    <div class="note">Each field's distinct values + counts are a controlled vocabulary — the seed for a data dictionary and for deriving a normalized field (e.g. <b>Net Contents</b> → <code>size_ml</code>, <b>Class/Type</b> → category). String-extraction rules build on top of this.</div>
+  </div>
+
+  <div class="note warn" id="note" style="display:none"></div>
 </div>
 <script>
 (function(){
   const $=s=>document.querySelector(s);
   const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmt=n=>(n==null||n==='')?'':Number(n).toLocaleString();
+  if(new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
   let mode='reg', offset=0, filtered=0, seq=0; const limit=50;
 
   async function loadStats(){
     try{
       const j=await (await fetch('/api/cola/stats',{cache:'no-store'})).json();
-      if(!j.landed){ $('#chips').innerHTML='<div class="chip"><div class="n na">not landed</div><div class="l">ttb_cola</div></div>'; return; }
+      if(!j.landed){ $('#chips').innerHTML=chip('not landed','ttb_cola','na'); return; }
       const yrs=j.by_year||[]; const first=yrs.length?yrs[0].yr:'—', last=yrs.length?yrs[yrs.length-1].yr:'—';
-      const pctUpc=j.total?Math.round(100*j.with_upc/j.total):0;
-      $('#chips').innerHTML=
-        chip(fmt(j.total),'Registrations')+
-        chip(j.clusters!=null?fmt(j.clusters):'—','Distinct products',j.clusters!=null?'gold':'na')+
-        chip(pctUpc+'%','Carry a UPC')+
-        chip(first+'–'+last,'Years covered');
-      // by-year bars
+      const pct=j.total?Math.round(100*j.with_upc/j.total):0;
+      $('#chips').innerHTML=chip(fmt(j.total),'Registrations','accent')+
+        chip(j.clusters!=null?fmt(j.clusters):'—','Distinct products',j.clusters!=null?'accent':'na')+
+        chip(pct+'%','Carry a UPC')+chip(first+'–'+last,'Years covered');
       const mx=Math.max(1,...yrs.map(y=>+y.n));
-      $('#years').innerHTML=yrs.map(y=>'<div class="yr" title="'+y.yr+': '+fmt(y.n)+'"><div class="bar" style="height:'+(6+92*y.n/mx)+'%"></div><div class="yl">'+esc(y.yr)+'</div></div>').join('');
-      // top classes
+      $('#years').innerHTML=yrs.map(y=>'<div class="yr" title="'+y.yr+': '+fmt(y.n)+'"><div class="bar" style="height:'+(6+82*y.n/mx)+'%"></div><div class="yl">'+esc(y.yr)+'</div></div>').join('');
       const cm=Math.max(1,...(j.top_class||[]).map(c=>+c.n));
-      $('#classes').innerHTML=(j.top_class||[]).map(c=>
-        '<div class="rb"><span class="k" title="'+esc(c.k)+'">'+esc(c.k)+'</span><div class="track"><div class="fill" style="width:'+(100*c.n/cm)+'%"></div></div><span class="v">'+fmt(c.n)+'</span></div>').join('');
-    }catch(e){ $('#chips').innerHTML='<div class="chip"><div class="n na">offline</div><div class="l">stats</div></div>'; }
+      $('#classes').innerHTML=(j.top_class||[]).map(c=>'<div class="rb"><span class="k" title="'+esc(c.k)+'">'+esc(c.k)+'</span><div class="track"><div class="fill" style="width:'+(100*c.n/cm)+'%"></div></div><span class="v">'+fmt(c.n)+'</span></div>').join('');
+    }catch(e){ $('#chips').innerHTML=chip('offline','stats','na'); }
   }
   function chip(n,l,cls){ return '<div class="chip"><div class="n '+(cls||'')+'">'+esc(n)+'</div><div class="l">'+esc(l)+'</div></div>'; }
 
-  const HEAD={
-    reg:['TTB ID','Brand','Fanciful','Class/Type','Origin','Applicant','Completed','Net contents','UPC'],
-    prod:['Brand','Fanciful','Class/Type','Size (ml)','Supplier','Filings','Confidence','Review']
-  };
-  async function load(reset){
+  const HEAD={reg:['TTB ID','Brand','Fanciful','Class/Type','Origin','Applicant','Completed','Net contents','UPC'],
+              prod:['Brand','Fanciful','Class/Type','Size (ml)','Supplier','Filings','Confidence','Review']};
+  async function loadTable(reset){
     if(reset) offset=0;
     const my=++seq, q=$('#q').value.trim();
     const url=(mode==='reg'?'/api/cola/registrations':'/api/cola/clusters')+'?offset='+offset+'&limit='+limit+'&q='+encodeURIComponent(q);
-    $('#thead').innerHTML='<tr>'+HEAD[mode==='reg'?'reg':'prod'].map(h=>'<th>'+h+'</th>').join('')+'</tr>';
+    $('#thead').innerHTML='<tr>'+HEAD[mode].map(h=>'<th>'+h+'</th>').join('')+'</tr>';
     $('#tbody').innerHTML='<tr><td class="empty" colspan="9">reading…</td></tr>';
     try{
       const j=await (await fetch(url,{cache:'no-store'})).json();
       if(my!==seq) return;
-      if(j.ok===false){ $('#note').style.display='block'; $('#note').textContent=j.error||'not landed yet'; $('#tbody').innerHTML='<tr><td class="empty" colspan="9">'+(mode==='reg'?'registrations':'clusters')+' not landed yet.</td></tr>'; $('#pageinfo').textContent='—'; return; }
-      $('#note').style.display='none';
-      filtered=j.total||0;
-      const rows=j.rows||[];
-      $('#tbody').innerHTML = rows.length ? rows.map(r=> mode==='reg'?regRow(r):prodRow(r)).join('') : '<tr><td class="empty" colspan="9">no matches.</td></tr>';
+      if(j.ok===false){ $('#tbody').innerHTML='<tr><td class="empty" colspan="9">'+(mode==='reg'?'registrations':'clusters (run clustering)')+' not landed yet.</td></tr>'; $('#pageinfo').textContent='—'; return; }
+      filtered=j.total||0; const rows=j.rows||[];
+      $('#tbody').innerHTML=rows.length?rows.map(r=>mode==='reg'?regRow(r):prodRow(r)).join(''):'<tr><td class="empty" colspan="9">no matches.</td></tr>';
       const pages=Math.max(1,Math.ceil(filtered/limit));
       $('#pageinfo').textContent=fmt(filtered)+' · pg '+(Math.floor(offset/limit)+1)+'/'+pages;
       $('#prev').disabled=offset<=0; $('#next').disabled=offset+limit>=filtered;
-    }catch(e){ if(my===seq) $('#tbody').innerHTML='<tr><td class="empty" colspan="9">could not load: '+esc(e.message)+'</td></tr>'; }
+    }catch(e){ if(my===seq) $('#tbody').innerHTML='<tr><td class="empty" colspan="9">could not load.</td></tr>'; }
   }
   function regRow(r){ return '<tr><td>'+esc(r['TTB ID'])+'</td><td>'+esc(r['Brand Name'])+'</td><td>'+esc(r['Fanciful Name'])+'</td><td>'+esc(r['Class/Type'])+'</td><td>'+esc(r['Origin'])+'</td><td>'+esc(r['Applicant'])+'</td><td>'+esc(r['Completed Date'])+'</td><td>'+esc(r['Net Contents'])+'</td><td class="upc">'+esc(r['UPC'])+'</td></tr>'; }
   function prodRow(r){ return '<tr><td>'+esc(r.brand)+'</td><td>'+esc(r.fanciful)+'</td><td>'+esc(r.class_type)+'</td><td class="num">'+esc(r.size_ml)+'</td><td>'+esc(r.supplier)+'</td><td class="num">'+fmt(r.member_count)+'</td><td class="num">'+(r.confidence!=null?Number(r.confidence).toFixed(2):'')+'</td><td>'+(r.flagged?'<span class="pill flag">review</span>':'<span class="pill ok">·</span>')+'</td></tr>'; }
 
-  $('#tab_reg').onclick=()=>{ mode='reg'; $('#tab_reg').classList.add('on'); $('#tab_prod').classList.remove('on'); load(true); };
-  $('#tab_prod').onclick=()=>{ mode='prod'; $('#tab_prod').classList.add('on'); $('#tab_reg').classList.remove('on'); load(true); };
-  $('#prev').onclick=()=>{ if(offset>0){ offset=Math.max(0,offset-limit); load(false);} };
-  $('#next').onclick=()=>{ if(offset+limit<filtered){ offset+=limit; load(false);} };
-  let qt=null; $('#q').addEventListener('input',()=>{ clearTimeout(qt); qt=setTimeout(()=>load(true),240); });
-  loadStats(); load(true);
+  // ---- dictionary (the string-extraction basis) ----
+  let dictLoaded=false, curField=null;
+  async function loadDict(){
+    if(dictLoaded) return; dictLoaded=true;
+    try{
+      const j=await (await fetch('/api/cola/profile',{cache:'no-store'})).json();
+      if(!j.landed){ $('#fields').innerHTML='<div class="note">ttb_cola not landed yet.</div>'; return; }
+      $('#fields').innerHTML=(j.fields||[]).map(f=>
+        '<div class="fcard" data-f="'+esc(f.field)+'"><div class="fn">'+esc(f.field)+'</div>'+
+        '<div class="fm"><span><b>'+fmt(f.distinct)+'</b> distinct</span><span><b>'+f.fill_pct+'%</b> filled</span></div>'+
+        '<div class="meter"><i style="width:'+f.fill_pct+'%"></i></div></div>').join('');
+      [...document.querySelectorAll('#fields .fcard')].forEach(el=>el.onclick=()=>{
+        document.querySelectorAll('#fields .fcard').forEach(x=>x.classList.remove('on')); el.classList.add('on');
+        loadField(el.getAttribute('data-f')); });
+      const first=document.querySelector('#fields .fcard'); if(first) first.click();
+    }catch(e){ $('#fields').innerHTML='<div class="note">could not load field profile.</div>'; }
+  }
+  async function loadField(field){
+    curField=field;
+    $('#dictval').innerHTML='<div class="empty">reading '+esc(field)+'…</div>';
+    try{
+      const j=await (await fetch('/api/cola/dictionary?field='+encodeURIComponent(field)+'&limit=200',{cache:'no-store'})).json();
+      if(field!==curField) return;
+      if(j.ok===false){ $('#dictval').innerHTML='<div class="empty">'+esc(j.error||'unavailable')+'</div>'; return; }
+      const mx=Math.max(1,...(j.values||[]).map(v=>+v.n));
+      $('#dictval').innerHTML='<div class="dh"><span class="t">'+esc(field)+'</span><span class="m">'+fmt(j.distinct)+' distinct values · top 200</span></div>'+
+        '<div class="tscroll"><table><thead><tr><th>Value</th><th style="text-align:right">Count</th><th>Share</th></tr></thead><tbody>'+
+        (j.values||[]).map(v=>'<tr><td>'+esc(v.v)+'</td><td class="num">'+fmt(v.n)+'</td><td><div class="track" style="width:120px"><div class="fill" style="width:'+(100*v.n/mx)+'%"></div></div></td></tr>').join('')+
+        '</tbody></table></div>';
+    }catch(e){ if(field===curField) $('#dictval').innerHTML='<div class="empty">could not load.</div>'; }
+  }
+
+  function setMode(m){
+    mode=m;
+    document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.getAttribute('data-m')===m));
+    $('#pane_table').hidden=(m==='dict'); $('#pane_dict').hidden=(m!=='dict');
+    if(m==='dict') loadDict(); else loadTable(true);
+  }
+  document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>setMode(b.getAttribute('data-m')));
+  $('#prev').onclick=()=>{ if(offset>0){ offset=Math.max(0,offset-limit); loadTable(false);} };
+  $('#next').onclick=()=>{ if(offset+limit<filtered){ offset+=limit; loadTable(false);} };
+  let qt=null; $('#q').addEventListener('input',()=>{ clearTimeout(qt); qt=setTimeout(()=>loadTable(true),240); });
+  loadStats(); loadTable(true);
 })();
 </script>
 </body>
