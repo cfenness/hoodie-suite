@@ -154,6 +154,9 @@
   function nzBadge(name){ const nz=normOf(name); return nz?'<span class="nz" title="auto-normalized on map to the master">auto: '+(nz==='upc'?'GTIN-14':esc(nz))+'</span>':''; }
 
   async function loadDataset(){
+    // the <select> is the source of truth — sync curDs to what's actually shown so the profiled fields
+    // can never drift from the selected dataset (Safari can restore the select's value without re-booting).
+    if($('#ds').value) curDs=$('#ds').value;
     $('#status').textContent=''; $('#status').className='status';
     $('#rows').innerHTML='<tr><td colspan="5" class="empty">reading '+esc(curDs)+'…</td></tr>';
     let prof, mp, nd;
@@ -258,6 +261,9 @@
   $('#apply').onclick=apply;
   $('#addf').onclick=addField;
   $('#newf').addEventListener('keydown',e=>{ if(e.key==='Enter') addField(); });
+  // on bfcache restore (Safari back/forward), the select value is restored but JS state isn't re-booted —
+  // re-profile the shown dataset so the fields match the dropdown again.
+  window.addEventListener('pageshow',e=>{ if(e.persisted && curDs) loadDataset(); });
   boot();
 })();
 </script>
