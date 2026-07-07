@@ -894,12 +894,25 @@ def cola_dictionary_ep():
     return jsonify(ok=True, field=field, distinct=distinct, values=rows)
 
 # ── Generic field dictionary — profile + value vocabulary for ANY item/product dataset ──
+def _mem_dataset(ds):
+    """In-RAM datasets (pull output: outlets, vtinfo, ab_outlets…) as (header, rows) — so the
+    data dictionary works on ANY dataset in the catalog, not only warehouse Parquet ones."""
+    d = DATASETS.get(ds)
+    if not d:
+        return None
+    header = d.get("header") or []
+    rows = d.get("_rows_full") or d.get("rows") or []
+    return (header, rows) if header else None
+
 def _ds_columns(ds):
     try:
         s = _cola_q(ds, "SELECT * FROM t LIMIT 1")
-        return list(s[0].keys()) if s else []
+        if s:
+            return list(s[0].keys())
     except Exception:
-        return []
+        pass
+    mem = _mem_dataset(ds)
+    return list(mem[0]) if mem else []
 
 @app.get("/api/item/profile")
 def item_profile_ep():
@@ -913,7 +926,18 @@ def item_profile_ep():
     try:
         total = _cola_q(ds, "SELECT count(*) c FROM t")[0]["c"]
     except Exception:
-        return jsonify(ok=True, landed=False, dataset=ds, fields=[])
+        mem = _mem_dataset(ds)                                    # in-RAM dataset (e.g. outlets): profile in Python
+        if not mem:
+            return jsonify(ok=True, landed=False, dataset=ds, fields=[])
+        header, rows = mem
+        out = []
+        for ci, col in enumerate(header[:24]):
+            if col.startswith(":@") or col.startswith("_"):
+                continue
+            vals = [str(r[ci]) for r in rows if ci < len(r) and str(r[ci]).strip() != ""]
+            out.append({"field": col, "filled": len(vals), "distinct": len(set(vals)),
+                        "fill_pct": round(100 * len(vals) / max(1, len(rows)), 1), "samples": vals[:3]})
+        return jsonify(ok=True, landed=True, dataset=ds, total=len(rows), fields=out)
     out = []
     for col in cols:
         if col.startswith(":@") or col.startswith("_"):
@@ -949,8 +973,17 @@ def item_dictionary_ep():
         distinct = _cola_q(ds, 'SELECT count(DISTINCT "%s") c FROM t WHERE %s' % (field, where), params)[0]["c"]
         rows = _cola_q(ds, 'SELECT CAST("%s" AS VARCHAR) v, count(*) n FROM t WHERE %s GROUP BY 1 ORDER BY n DESC LIMIT %d'
                        % (field, where, lim), params)
-    except Exception as e:
-        return jsonify(ok=False, error=str(e)[:140], values=[]), 200
+    except Exception:
+        mem = _mem_dataset(ds)                                    # in-RAM dataset: value counts in Python
+        if not mem:
+            return jsonify(ok=False, error="dataset not queryable", values=[]), 200
+        header, rows_all = mem
+        ci = header.index(field)
+        from collections import Counter
+        c = Counter(str(r[ci]) for r in rows_all if ci < len(r) and str(r[ci]).strip() != ""
+                    and (not q or q.lower() in str(r[ci]).lower()))
+        return jsonify(ok=True, dataset=ds, field=field, distinct=len(c),
+                       values=[{"v": v, "n": n} for v, n in c.most_common(lim)])
     return jsonify(ok=True, dataset=ds, field=field, distinct=distinct, values=rows)
 
 # ── Field mapping — persist source.field → master.field crosswalks, with pre/post transforms ──
