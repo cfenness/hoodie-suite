@@ -864,6 +864,64 @@ def item_dictionary_ep():
         return jsonify(ok=False, error=str(e)[:140], values=[]), 200
     return jsonify(ok=True, dataset=ds, field=field, distinct=distinct, values=rows)
 
+# ── Field mapping — persist source.field → master.field crosswalks, with pre/post transforms ──
+DEFAULT_MASTER_FIELDS = [
+    {"name": "brand", "type": "string", "desc": "Brand name"},
+    {"name": "product_name", "type": "string", "desc": "Full product / long name"},
+    {"name": "category", "type": "string", "desc": "Category / class-type"},
+    {"name": "packsize", "type": "string", "desc": "Pack / container size (as filed)"},
+    {"name": "size_ml", "type": "number", "desc": "Net contents in mL (derived)"},
+    {"name": "abv", "type": "number", "desc": "Alcohol % by volume"},
+    {"name": "upc", "type": "string", "desc": "UPC / GTIN"},
+    {"name": "price", "type": "number", "desc": "Price"},
+    {"name": "supplier", "type": "string", "desc": "Supplier / vendor"},
+    {"name": "origin", "type": "string", "desc": "Country / region of origin"},
+]
+# Data-dictionary transforms that can apply BEFORE (on the source value) or AFTER (on the mapped
+# master value). Names only here — the apply-engine consumes them when materializing the master.
+MAP_TRANSFORMS = ["none", "trim", "upper", "lower", "title_case", "digits_only",
+                  "size_to_ml", "year_from_date"]
+
+@app.get("/api/master/schema")
+def master_schema_get():
+    return jsonify(ok=True, fields=load("master_schema.json", DEFAULT_MASTER_FIELDS), transforms=MAP_TRANSFORMS)
+
+@app.post("/api/master/schema")
+def master_schema_post():
+    """Create a master field (start building the master schema) or replace the whole set."""
+    body = request.get_json(silent=True) or {}
+    fields = load("master_schema.json", DEFAULT_MASTER_FIELDS)
+    if isinstance(body.get("fields"), list):
+        fields = body["fields"]
+    else:
+        nm = (body.get("name") or "").strip()
+        if not nm:
+            return jsonify(ok=False, error="name required"), 400
+        if not any(f.get("name") == nm for f in fields):
+            fields.append({"name": nm, "type": body.get("type", "string"), "desc": body.get("desc", "")})
+    _save_json("master_schema.json", fields)
+    return jsonify(ok=True, fields=fields)
+
+@app.get("/api/mappings")
+def mappings_get():
+    """Persisted field mappings. ?dataset= for one source dataset's rows, else the whole map."""
+    ds = (request.args.get("dataset") or "").strip()
+    m = load("field_mappings.json", {})
+    return jsonify(ok=True, dataset=ds or None, mappings=(m.get(ds, []) if ds else m))
+
+@app.post("/api/mappings")
+def mappings_post():
+    """Persist a source dataset's mapping rows: [{source_field, master_field, pre, post}].
+    pre/post are data-dictionary transform names applied before/after the map."""
+    body = request.get_json(silent=True) or {}
+    ds = (body.get("dataset") or "").strip()
+    if not ds:
+        return jsonify(ok=False, error="dataset required"), 400
+    m = load("field_mappings.json", {})
+    m[ds] = body.get("mappings", [])
+    _save_json("field_mappings.json", m)
+    return jsonify(ok=True, dataset=ds, count=len(m[ds]))
+
 @app.get("/api/datasets/download")
 def dataset_download():
     """Stream the COMPLETE pulled dataset (all rows, not the UI sample) as CSV or JSON."""

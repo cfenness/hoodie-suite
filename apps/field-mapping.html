@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Field Mapping — Hoodie MDM</title>
+<style>
+  :root{
+    --ink:#2B3138; --paper:#F1F3F5; --panel:#fff; --muted:#7A828B; --line:#E4E7EB;
+    --accent:#4E79A7; --accent-soft:#EAF0F6; --good:#3f9668; --warn:#b46a12;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace; --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--paper);color:var(--ink);font-family:var(--font);font-size:14px}
+  body{padding:22px 26px 60px}
+  .wrap{max-width:1080px;margin:0 auto}
+  .pagehead h1{font-size:22px;font-weight:800;letter-spacing:-.01em}
+  .pagehead .sub{color:var(--muted);font-size:13px;margin-top:3px;max-width:640px;line-height:1.5}
+  .embed .pagehead{display:none}
+  .bar{display:flex;align-items:center;gap:10px;margin:18px 0 6px;flex-wrap:wrap}
+  .bar .lab{font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em}
+  select,input{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-family:var(--mono);font-size:12.5px;outline:none}
+  select:focus,input:focus{border-color:var(--accent)}
+  .dsel{min-width:230px}
+  button{font-family:var(--font);font-size:13px;font-weight:600;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:7px 13px;cursor:pointer}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button:disabled{opacity:.5;cursor:default}
+  .status{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .status.ok{color:var(--good)} .status.err{color:var(--warn)}
+  .newf{display:flex;gap:6px;align-items:center;margin-left:auto}
+  .newf input{width:150px}
+
+  .twrap{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:8px}
+  .tscroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#F7F9FA;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-size:9px;text-align:left;padding:10px 13px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tbody tr:hover td{background:#FafBfC}
+  .src{font-family:var(--mono);font-weight:600}
+  .srcmeta{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px}
+  .arrow{color:var(--muted);text-align:center;font-size:15px}
+  td.mapped .msel{border-color:var(--accent);background:var(--accent-soft)}
+  .msel,.tsel{width:100%}
+  .tsel{max-width:150px}
+  .empty{padding:30px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px}
+  .note{font-size:11.5px;color:var(--muted);margin-top:10px;font-family:var(--mono);line-height:1.5}
+  .note b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="pagehead">
+    <h1>Field Mapping</h1>
+    <div class="sub">Map any source dataset's fields to the master schema (e.g. <code>or_pricing.size → master.packsize</code>). Mappings persist. Apply a data-dictionary transform BEFORE the map (on the source value) and/or AFTER (on the mapped master value).</div>
+  </div>
+
+  <div class="bar">
+    <span class="lab">Source dataset</span>
+    <select id="ds" class="dsel"></select>
+    <button class="primary" id="save">Save mapping</button>
+    <span class="status" id="status"></span>
+    <div class="newf">
+      <span class="lab">＋ master field</span>
+      <input id="newf" placeholder="e.g. vintage">
+      <button id="addf">Add</button>
+    </div>
+  </div>
+
+  <div class="twrap"><div class="tscroll"><table>
+    <thead><tr><th style="width:32%">Source field</th><th>Pre-dict</th><th class="arrow">→</th><th style="width:24%">Master field</th><th>Post-dict</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="5" class="empty">Pick a source dataset.</td></tr></tbody>
+  </table></div></div>
+  <div class="note">Pre / Post are <b>data-dictionary transforms</b> — <code>none · trim · upper · lower · title_case · digits_only · size_to_ml · year_from_date</code> — recorded per row so the master can be materialised with the right normalisation on either side of the map. Unmapped rows (Master = —) are skipped on save.</div>
+</div>
+<script>
+(function(){
+  const $=s=>document.querySelector(s);
+  const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmt=n=>(n==null||n==='')?'':Number(n).toLocaleString();
+  if(new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
+  let MASTER=[], TRANSFORMS=['none'], curDs='', fields=[], saved={};
+
+  async function boot(){
+    // master schema + transforms
+    try{ const s=await (await fetch('/api/master/schema',{cache:'no-store'})).json();
+      MASTER=s.fields||[]; TRANSFORMS=s.transforms||['none']; }catch(e){}
+    // source datasets from the catalog (warehouse item sets + ttb_cola)
+    try{
+      const cat=await (await fetch('/api/catalog',{cache:'no-store'})).json();
+      const items=Object.keys(cat).filter(k=>cat[k].store==='warehouse'||k==='ttb_cola').sort();
+      $('#ds').innerHTML=items.map(k=>'<option value="'+esc(k)+'">'+esc(k)+' · '+fmt(cat[k].total)+' rows</option>').join('')||'<option value="ttb_cola">ttb_cola</option>';
+      curDs=items[0]||'ttb_cola'; $('#ds').value=curDs;
+    }catch(e){ $('#ds').innerHTML='<option value="ttb_cola">ttb_cola</option>'; curDs='ttb_cola'; }
+    $('#ds').onchange=()=>{ curDs=$('#ds').value; loadDataset(); };
+    loadDataset();
+  }
+
+  function tOpts(sel){ return TRANSFORMS.map(t=>'<option value="'+t+'"'+(t===sel?' selected':'')+'>'+t+'</option>').join(''); }
+  function mOpts(sel){ return '<option value="">—</option>'+MASTER.map(f=>'<option value="'+esc(f.name)+'"'+(f.name===sel?' selected':'')+'>'+esc(f.name)+'</option>').join(''); }
+
+  async function loadDataset(){
+    $('#status').textContent=''; $('#status').className='status';
+    $('#rows').innerHTML='<tr><td colspan="5" class="empty">reading '+esc(curDs)+'…</td></tr>';
+    let prof, mp;
+    try{
+      [prof, mp]=await Promise.all([
+        (await fetch('/api/item/profile?dataset='+encodeURIComponent(curDs),{cache:'no-store'})).json(),
+        (await fetch('/api/mappings?dataset='+encodeURIComponent(curDs),{cache:'no-store'})).json()
+      ]);
+    }catch(e){ $('#rows').innerHTML='<tr><td colspan="5" class="empty">could not load.</td></tr>'; return; }
+    if(!prof.landed){ $('#rows').innerHTML='<tr><td colspan="5" class="empty">'+esc(curDs)+' not queryable.</td></tr>'; return; }
+    fields=prof.fields||[];
+    saved={}; (mp.mappings||[]).forEach(r=>{ saved[r.source_field]=r; });
+    render();
+  }
+  function render(){
+    $('#rows').innerHTML=fields.map(f=>{
+      const s=saved[f.field]||{};
+      return '<tr data-f="'+esc(f.field)+'">'+
+        '<td><div class="src">'+esc(f.field)+'</div><div class="srcmeta">'+fmt(f.distinct)+' distinct · '+f.fill_pct+'% filled</div></td>'+
+        '<td><select class="tsel pre">'+tOpts(s.pre||'none')+'</select></td>'+
+        '<td class="arrow">→</td>'+
+        '<td class="'+(s.master_field?'mapped':'')+'"><select class="msel">'+mOpts(s.master_field||'')+'</select></td>'+
+        '<td><select class="tsel post">'+tOpts(s.post||'none')+'</select></td></tr>';
+    }).join('') || '<tr><td colspan="5" class="empty">no fields.</td></tr>';
+    [...document.querySelectorAll('#rows .msel')].forEach(sel=>sel.onchange=()=>{
+      sel.closest('td').classList.toggle('mapped', !!sel.value); });
+  }
+
+  async function save(){
+    const rows=[...document.querySelectorAll('#rows tr[data-f]')].map(tr=>({
+      source_field:tr.getAttribute('data-f'),
+      master_field:tr.querySelector('.msel').value,
+      pre:tr.querySelector('.pre').value, post:tr.querySelector('.post').value
+    })).filter(r=>r.master_field);
+    $('#save').disabled=true; $('#status').textContent='saving…'; $('#status').className='status';
+    try{
+      const j=await (await fetch('/api/mappings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataset:curDs,mappings:rows})})).json();
+      if(j.ok){ $('#status').textContent='saved '+j.count+' mappings ✓'; $('#status').className='status ok'; }
+      else{ $('#status').textContent=j.error||'save failed'; $('#status').className='status err'; }
+    }catch(e){ $('#status').textContent='save failed'; $('#status').className='status err'; }
+    $('#save').disabled=false;
+  }
+  async function addField(){
+    const nm=$('#newf').value.trim(); if(!nm) return;
+    try{
+      const j=await (await fetch('/api/master/schema',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm})})).json();
+      if(j.ok){ MASTER=j.fields; $('#newf').value=''; render(); $('#status').textContent='added master field · '+nm; $('#status').className='status ok'; }
+    }catch(e){}
+  }
+  $('#save').onclick=save;
+  $('#addf').onclick=addField;
+  $('#newf').addEventListener('keydown',e=>{ if(e.key==='Enter') addField(); });
+  boot();
+})();
+</script>
+</body>
+</html>
