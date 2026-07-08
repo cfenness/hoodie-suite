@@ -3059,8 +3059,15 @@ def flow_profile_ep():
         cur = con.execute(flowmod.profile_sql(sql, cols, sample=sample))
         rec = dict(zip([d[0] for d in cur.description], cur.fetchone()))
         total = rec.get("_n") or 0
-        out = [{"field": c, "filled": rec.get(c + "†fill") or 0, "distinct": rec.get(c + "†dct") or 0,
-                "fill_pct": round(100 * (rec.get(c + "†fill") or 0) / max(1, total), 1)} for c in cols]
+        out = []
+        for c in cols:
+            filled = rec.get(c + "†fill") or 0
+            other = rec.get(c + "†other") or 0
+            out.append({"field": c, "filled": filled, "distinct": rec.get(c + "†dct") or 0,
+                        "catchall": other,                          # populated-but-empty ('other', 'misc', …)
+                        "fill_pct": round(100 * filled / max(1, total), 1),
+                        # 'informative' = filled minus catch-all: the count that means the field is truly KNOWN
+                        "informative_pct": round(100 * max(0, filled - other) / max(1, total), 1)})
     except Exception as e:
         return jsonify(ok=True, landed=False, error=str(e)[:240], fields=[]), 200
     return jsonify(ok=True, landed=True, node=node, total=total, fields=out)

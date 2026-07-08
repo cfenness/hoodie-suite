@@ -178,9 +178,21 @@ def compile_sql(flow, node_id, uri_fn, _seen=None):
     raise ValueError("unknown node type: %s" % t)
 
 
+# Catch-all values are "populated-but-empty" — they masquerade as known (worse than NULL, which is
+# honestly unknown). We DON'T null them (some are legitimate) — we COUNT them, so a field that's 100%
+# 'filled' but mostly 'other' screams in the profile instead of passing completeness. Accuracy first.
+_CATCHALL = ("other", "others", "misc", "miscellaneous", "general", "generic", "unspecified",
+             "unknown", "undefined", "default", "various", "n/a", "na", "none", "tbd", "null")
+
+
+def _catchall_pred(qcol):
+    return "lower(trim(CAST(%s AS VARCHAR))) IN (%s)" % (qcol, ",".join(derive._sqlstr(v) for v in _CATCHALL))
+
+
 def profile_sql(inner_sql, columns, sample=0):
-    """Per-column fill-rate + distinct cardinality over any node's output — the profile pane.
-    `sample` (rows) caps the scan with TABLESAMPLE so profiling a huge node stays instant."""
+    """Per-column fill-rate + distinct cardinality + CATCH-ALL count over any node's output — the profile
+    pane. `sample` (rows) caps the scan with TABLESAMPLE so profiling a huge node stays instant.
+    'informative' fill is filled minus catch-all — the number that actually means the field is known."""
     src = inner_sql
     if sample and int(sample) > 0:
         src = "SELECT * FROM (%s) USING SAMPLE %d ROWS" % (inner_sql, int(sample))
@@ -189,6 +201,7 @@ def profile_sql(inner_sql, columns, sample=0):
         q = derive.col(c)
         parts.append("count(*) FILTER (WHERE CAST(%s AS VARCHAR)<>'') AS %s" % (q, derive.col(c + "†fill")))
         parts.append("count(DISTINCT %s) AS %s" % (q, derive.col(c + "†dct")))
+        parts.append("count(*) FILTER (WHERE %s) AS %s" % (_catchall_pred(q), derive.col(c + "†other")))
     return "SELECT %s FROM (%s) q" % (", ".join(parts), src)
 
 
@@ -429,8 +442,14 @@ def _selftest():
         pcols = ["brand", "size_ml", "origin"]
         prof = con.execute(profile_sql(compile_sql(fl, "r", uf2), pcols)).fetchall()
         assert prof[0][0] == 1, prof                               # _n = 1 golden record
+        # catch-all detection: 'other'/'misc' are populated-but-empty — counted, not accepted as filled
+        con.execute("CREATE TABLE ca(cat VARCHAR)")
+        con.executemany("INSERT INTO ca VALUES (?)", [("Vodka",), ("Other",), ("OTHER",), ("misc",)])
+        pcur = con.execute(profile_sql("SELECT * FROM ca", ["cat"]))
+        prec = dict(zip([d[0] for d in pcur.description], pcur.fetchone()))
+        assert prec["cat†fill"] == 4 and prec["cat†other"] == 3, prec   # 4 'filled' but only 1 informative
         print("flow self-test: OK — 3 rows→1 golden; size normalized+agrees; origin conflict A>B by authority; "
-              "conflict queue + profile land")
+              "conflict queue + profile land; catch-all: 4 filled → 3 'other' flagged (1 informative)")
     except ImportError:
         print("flow self-test: OK (compile-only; duckdb not present for eval)")
 
