@@ -1389,6 +1389,22 @@ _DOMAIN_DEFAULTS = {
     "pack": ["Single", "2-Pack", "4-Pack", "6-Pack", "8-Pack", "12-Pack", "15-Pack",
              "18-Pack", "24-Pack", "30-Pack", "Case"],
     "outlet_type": ["On-Premise", "Off-Premise"],
+    # top-level alcohol category — the clean roll-up of COLA Class/Type
+    "category": ["Wine", "Beer", "Spirits", "Cider", "Mead", "Sake", "Seltzer/RTD", "Non-Alcoholic"],
+    # sub-type within a category — a curated starter (prune per your taxonomy)
+    "style": ["Red", "White", "Rosé", "Sparkling", "Dessert/Fortified",
+              "Lager", "Ale", "IPA", "Stout", "Porter", "Pilsner", "Wheat", "Sour",
+              "Bourbon", "Rye", "Scotch", "Irish Whiskey", "Blended Whiskey",
+              "Vodka", "Gin", "Tequila", "Mezcal", "White Rum", "Dark Rum", "Spiced Rum",
+              "Brandy", "Cognac", "Liqueur"],
+    # country of origin — canonical country vocabulary (US-state origins roll up to United States
+    # via a dictionary; add states here if you want state-level origin instead). Seeded from the real
+    # COLA Origin distribution (France/Italy/Spain/Argentina/… dominate imports).
+    "origin": ["United States", "France", "Italy", "Spain", "Argentina", "Australia", "Germany",
+               "Chile", "Portugal", "New Zealand", "South Africa", "Austria", "Mexico", "Scotland",
+               "Canada", "Japan", "Greece", "Belgium", "Ireland", "Netherlands", "England", "Hungary",
+               "Israel", "Georgia", "Croatia", "Slovenia", "Lebanon", "Brazil", "Peru", "China",
+               "India", "South Korea", "Russia", "Poland", "Sweden"],
 }
 
 def _master_schema(entity="product"):
@@ -1609,6 +1625,7 @@ def master_preview_ep():
     try:
         import master_apply
         rule = body.get("rule") or {}
+        rule = _resolve_dict_refs({ds: [rule]})[ds][0]      # a {mode:'dict', dict:<id>} rule → inline entries
         fct = body.get("fact")                              # fact preview uses the fact schema's normalizers
         fields = _fact_schema(fct) if fct in FACTS else _master_schema(_entity(body.get("entity") or "product"))
         nz = next((f.get("normalize") for f in fields if isinstance(f, dict) and f.get("name") == rule.get("master_field")), None)
