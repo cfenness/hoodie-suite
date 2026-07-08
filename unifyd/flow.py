@@ -99,6 +99,16 @@ def _index(flow):
     return {n["id"]: n for n in flow.get("nodes", [])}
 
 
+def _identity_inner(node, upstream_sql):
+    """Add the resolve node's identity key as `_id` to its upstream rows — the ONE basis shared by the
+    GROUP BY, the conflict queue, and provenance, so all three compute the identical identity."""
+    ident = node.get("identity") or {}
+    strong, natural = ident.get("strong"), (ident.get("natural") or [])
+    nat = " || '␟' || ".join(_key_part(k) for k in natural) if natural else "''"
+    idx = ("COALESCE(NULLIF(CAST(%s AS VARCHAR), ''), %s)" % (derive.col(strong), nat)) if strong else nat
+    return "SELECT *, %s AS _id FROM (%s)" % (idx, upstream_sql)
+
+
 def compile_sql(flow, node_id, uri_fn, _seen=None):
     """Compile the node `node_id` to the SQL SELECT producing its OUTPUT. `uri_fn(dataset)` returns
     the Parquet URI for an input dataset. Recurses through inputs; raises on cycles / bad refs."""
@@ -146,14 +156,6 @@ def compile_sql(flow, node_id, uri_fn, _seen=None):
     if t == "resolve":
         if not ins:
             raise ValueError("resolve node %s has no input" % node_id)
-        ident = n.get("identity") or {}
-        strong = ident.get("strong")
-        natural = ident.get("natural") or []
-        nat_expr = " || '␟' || ".join(_key_part(k) for k in natural) if natural else "''"
-        if strong:
-            id_expr = "COALESCE(NULLIF(CAST(%s AS VARCHAR), ''), %s)" % (derive.col(strong), nat_expr)
-        else:
-            id_expr = nat_expr
         auth = _authority_case(n.get("authority") or [])
         rec = n.get("recency")
         survivors = n.get("survivors") or {}
@@ -165,7 +167,7 @@ def compile_sql(flow, node_id, uri_fn, _seen=None):
         out.append("count(*) AS _rows")
         out.append("count(DISTINCT _source) AS _sources")
         out.append("list(DISTINCT _source) AS _source_list")
-        inner = "SELECT *, %s AS _id FROM (%s)" % (id_expr, ins[0])
+        inner = _identity_inner(n, ins[0])
         # keep any row with at least one non-empty key component; drop only all-empty keys (the '␟'
         # separators alone don't count). Never a blanket `_id <> ''`, which would drop partial keys.
         return "SELECT %s FROM (%s) WHERE replace(_id, '␟', '') <> '' GROUP BY _id" % (", ".join(out), inner)
@@ -212,13 +214,9 @@ def conflict_sql(flow, resolve_node_id, field, uri_fn, limit=100):
     n = nodes.get(resolve_node_id)
     if not n or n.get("type") != "resolve":
         raise ValueError("conflict_sql needs a resolve node")
-    ident = n.get("identity") or {}
-    strong, natural = ident.get("strong"), (ident.get("natural") or [])
-    nat_expr = " || '␟' || ".join(_key_part(k) for k in natural) if natural else "''"
-    id_expr = ("COALESCE(NULLIF(CAST(%s AS VARCHAR),''), %s)" % (derive.col(strong), nat_expr)) if strong else nat_expr
     upstream = compile_sql(flow, n["inputs"][0], uri_fn) if n.get("inputs") else "SELECT 1"
     c = derive.col(field)
-    inner = "SELECT *, %s AS _id FROM (%s)" % (id_expr, upstream)
+    inner = _identity_inner(n, upstream)
     return ("SELECT _id, "
             "list(DISTINCT CAST(%s AS VARCHAR)) FILTER (WHERE CAST(%s AS VARCHAR)<>'') AS values, "
             "list(DISTINCT {'v': CAST(%s AS VARCHAR), 'src': _source}) FILTER (WHERE CAST(%s AS VARCHAR)<>'') AS pairs, "
@@ -226,6 +224,17 @@ def conflict_sql(flow, resolve_node_id, field, uri_fn, limit=100):
             "FROM (%s) WHERE replace(_id,'␟','')<>'' GROUP BY _id "
             "HAVING count(DISTINCT CAST(%s AS VARCHAR)) FILTER (WHERE CAST(%s AS VARCHAR)<>'') > 1 "
             "ORDER BY rows DESC LIMIT %d" % (c, c, c, c, inner, c, c, int(limit)))
+
+
+def provenance_sql(flow, resolve_node_id, uri_fn):
+    """The upstream (pre-resolve) rows with `_id` attached — filter by one _id to see a golden record's
+    constituent SOURCE rows (who supplied what). The evidence behind every mastered value: not 'trust
+    me', but 'here are the rows it came from'. Uses the SAME identity as the resolve, so ids line up."""
+    n = _index(flow).get(resolve_node_id)
+    if not n or n.get("type") != "resolve":
+        raise ValueError("provenance_sql needs a resolve node")
+    up = compile_sql(flow, n["inputs"][0], uri_fn) if n.get("inputs") else "SELECT 1"
+    return _identity_inner(n, up)
 
 
 # ── seeding: auto-build a flow for a master from the datasets already landed ──
@@ -439,6 +448,9 @@ def _selftest():
         assert rec["size_ml__conflict"] is False, rec              # 750==750 after normalize → no conflict
         assert rec["origin__conflict"] is True, rec                # A vs B → conflict flagged for stewardship
         # conflict queue surfaces the competing values
+        # provenance: the golden record's constituent source rows (who supplied what) share the id
+        prov = con.execute("SELECT _source FROM (%s) WHERE replace(_id,'␟','')<>''" % provenance_sql(fl, "r", uf2)).fetchall()
+        assert len(prov) == 3, prov                                    # 3 source rows → the 1 golden
         cq = con.execute(conflict_sql(fl, "r", "origin", uf2)).fetchall()
         assert cq and sorted(cq[0][1]) == ["A", "B"], cq                # values
         pairs = cq[0][2]                                                # (value, source) pairs — who said what

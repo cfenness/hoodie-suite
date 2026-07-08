@@ -3097,6 +3097,32 @@ def flow_conflicts_ep():
     return jsonify(ok=True, landed=True, field=field, conflicts=_flow_jsonsafe(rows))
 
 
+@app.post("/api/flow/provenance")
+def flow_provenance_ep():
+    """A golden record's constituent SOURCE rows + the current golden winner — the evidence behind a
+    mastered value ('here are the rows it came from'), not a claim. Body: {flow, node, id}."""
+    import flow as flowmod
+    import warehouse
+    b = request.get_json(silent=True) or {}
+    node, rid = b.get("node"), b.get("id")
+    if rid is None or rid == "":
+        return jsonify(ok=False, error="id required"), 200
+    try:
+        con = warehouse.connect()
+        inner = flowmod.provenance_sql(b.get("flow") or {}, node, warehouse.uri)
+        cur = con.execute("SELECT * FROM (%s) WHERE _id = ? LIMIT 80" % inner, [rid])
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+        gsql = flowmod.compile_sql(b.get("flow") or {}, node, warehouse.uri)
+        gcur = con.execute("SELECT * FROM (%s) q WHERE _id = ? LIMIT 1" % gsql, [rid])
+        grow = gcur.fetchone()
+        golden = dict(zip([d[0] for d in gcur.description], grow)) if grow else {}
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:240], rows=[]), 200
+    return jsonify(ok=True, landed=True, id=rid, columns=cols,
+                   rows=_flow_jsonsafe(rows), golden=_flow_jsonsafe(golden))
+
+
 @app.post("/api/flow/run")
 def flow_run_ep():
     """Materialize a node to a warehouse table, minting STABLE Hoodie IDs via a registry (identity →
