@@ -134,6 +134,30 @@ resolves it.
 | `#1234 · STORE 1234 · NO. 1234` | chains | extract `store_number`, strip from name |
 | `& ↔ AND`, possessives, diacritics, case/ws | names | canonical compare form |
 
+## First cascade instance: catch-all density → COLA label backfill
+
+The catch-all detector and the verification cascade compose into the first concrete Check. When an
+**identifiable product field's catch-all share crosses a threshold** (e.g. category is 40% "other"),
+that's not data to accept — it's a signal the *source is systematically unreliable for that field*.
+The `verify` node then goes to the **authority the field maps to** — for product class/type, ABV,
+origin, net contents, that's the **TTB COLA label**:
+
+1. resolve the record to its COLA product *cluster* (brand + fanciful + size, or UPC / TTB ID — a
+   filing system has many filings per product, so cluster first; `cola_cluster.py` already does this);
+2. read the authoritative value off the label;
+3. **backfill** where the source said "other"/NULL (safe, pure gain); where a source's *specific* value
+   **conflicts** with the label, the label wins as higher authority and it's flagged with evidence (the
+   vodka-vs-rum case);
+4. the value now traces to **TTB COLA + filing id** and re-materializes on every rebuild — a rule, not
+   a row fix (first law holds).
+
+Guards on the guard: match authority to field (COLA answers product facts, never outlet address —
+those route to Google/state license); backfill-empty silently before overwrite-conflict (which needs
+the evidence trail); the threshold keeps it economical (verify a systematically-failing field, not
+every one-off). The trigger is already computed — `profile_sql` reports catch-all share per field —
+so this is mostly wiring the existing COLA data/clusters as an authority, not new scraping. It is the
+**first real piece of the cascade in code**, not just the doc.
+
 ## Split-case (repack) explosion — a secondary workflow
 
 Distributors repack mixed cases in the warehouse (3 Grey Goose + 3 Bacardi in one box) that ship as
