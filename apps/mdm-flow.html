@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<!-- Hoodie Suite · MDM — Flow. A Tableau-Prep-style master-building surface: seed a flow from what's
+     landed, then get line-of-sight into every step (Data · Profile · Explain). The engine (unifyd/flow.py)
+     absorbs the complexity — compile-to-DuckDB, resolve, survivorship, catch-all detection, stable Hoodie
+     IDs — so this front end can stay calm: pick an entity, Seed, inspect, Run. -->
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoodie · MDM Flow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--teal:#4E79A7;--teal-d:#3D6089;--teal-soft:#E8EEF5;--ink:#243330;--ink2:#3A4A47;
+        --muted:#5E6B68;--muted2:#8A928F;--line:#D7DDDB;--line2:#E4E9E8;--paper:#F4F6F5;--surface:#fff;
+        --good:#15803d;--good-soft:#e7f3ec;--warn:#b45309;--warn-soft:#fbeede;--bad:#b4232a;--bad-soft:#f8e6e7;
+        --mono:'JetBrains Mono',ui-monospace,monospace;--disp:'Fraunces',Georgia,serif;--body:'Inter',system-ui,sans-serif;}
+  *{box-sizing:border-box} html,body{margin:0;height:100%}
+  body{display:flex;flex-direction:column;font-family:var(--body);color:var(--ink);background:var(--paper);height:100vh;overflow:hidden}
+  button{font-family:inherit;cursor:pointer}
+  /* ── toolbar ── */
+  .bar{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:12px 18px;background:var(--surface);border-bottom:1px solid var(--line)}
+  .bar .ttl{font-family:var(--disp);font-size:17px;font-weight:700;color:var(--teal-d);letter-spacing:-.01em}
+  .bar .ey{font-family:var(--mono);font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted2);display:block;font-weight:600;line-height:1}
+  .sp{flex:1}
+  select,.btn{font-size:13px;font-weight:600;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink2);padding:7px 12px}
+  select{padding:7px 8px}
+  .btn:hover{background:var(--paper)}
+  .btn.pri{background:var(--teal);border-color:var(--teal);color:#fff}.btn.pri:hover{background:var(--teal-d)}
+  .btn.run{background:var(--good);border-color:var(--good);color:#fff}.btn.run:hover{filter:brightness(1.06)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .eng{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--muted2);font-weight:600}
+  .eng .dot{width:8px;height:8px;border-radius:50%;background:var(--muted2)}.eng .dot.on{background:var(--good)}.eng .dot.off{background:var(--bad)}
+  /* ── layout ── */
+  .wrap{flex:1;display:flex;min-height:0}
+  .rail{flex:0 0 288px;overflow:auto;background:var(--surface);border-right:1px solid var(--line);padding:16px 14px}
+  .stage{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+  .lab{font-family:var(--mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted2);font-weight:600;margin:4px 4px 8px}
+  /* ── flow rail: nodes as cards on a spine ── */
+  .grp{position:relative;margin-bottom:8px}
+  .node{position:relative;display:flex;align-items:center;gap:10px;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface);margin-bottom:7px;cursor:pointer;transition:.12s}
+  .node:hover{border-color:#C3D2E2;background:#FBFCFD}
+  .node.on{border-color:var(--teal);background:var(--teal-soft);box-shadow:0 0 0 1px var(--teal) inset}
+  .node.sub{margin-left:20px}
+  .node .ic{flex:0 0 26px;height:26px;border-radius:7px;display:grid;place-items:center;font-family:var(--mono);font-size:10px;font-weight:700;color:#fff;background:var(--muted2)}
+  .node.t-input .ic{background:#8A928F}.node.t-clean .ic{background:var(--teal)}.node.t-union .ic{background:#7A6BA8}
+  .node.t-resolve .ic{background:#B8860B}.node.t-output .ic{background:var(--good)}
+  .node .nm{font-size:13px;font-weight:600;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .node .mt{font-family:var(--mono);font-size:9px;color:var(--muted2);text-transform:uppercase;letter-spacing:.06em;margin-top:1px}
+  .node.sub::before{content:"";position:absolute;left:-11px;top:-4px;bottom:50%;width:11px;border-left:1.5px solid var(--line);border-bottom:1.5px solid var(--line);border-bottom-left-radius:6px}
+  .spineline{margin:2px 0 8px 12px;border-left:2px dotted var(--line);height:10px}
+  /* ── inspector ── */
+  .insp-head{flex:0 0 auto;padding:16px 22px 0;border-bottom:1px solid var(--line);background:var(--surface)}
+  .insp-head h1{font-family:var(--disp);font-size:19px;font-weight:700;margin:0 0 2px;letter-spacing:-.01em}
+  .insp-head .desc{font-size:13px;color:var(--muted);margin:0 0 12px;max-width:80ch;line-height:1.5}
+  .tabs{display:flex;gap:2px}
+  .tab{font-size:12.5px;font-weight:600;color:var(--muted);background:none;border:0;border-bottom:2px solid transparent;padding:8px 13px;margin-bottom:-1px}
+  .tab:hover{color:var(--ink2)}.tab.on{color:var(--teal-d);border-bottom-color:var(--teal)}
+  .insp-body{flex:1;overflow:auto;padding:20px 22px}
+  /* profile cards */
+  .pf-sum{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:14px;font-weight:600}
+  .pf{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:11px}
+  .fld{border:1px solid var(--line);border-radius:11px;padding:12px 13px;background:var(--surface)}
+  .fld.bad{border-color:#EBC9CB;background:#FEFBFB}.fld.warnf{border-color:#F0DDBF}
+  .fld .fn{font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:6px}
+  .fld .fn .flag{font-family:var(--mono);font-size:8.5px;font-weight:700;padding:2px 6px;border-radius:999px;letter-spacing:.03em;text-transform:uppercase}
+  .flag.other{background:var(--bad-soft);color:var(--bad)}.flag.low{background:var(--warn-soft);color:var(--warn)}
+  .bar3{display:flex;height:8px;border-radius:5px;overflow:hidden;margin:9px 0 7px;background:var(--line2)}
+  .bar3 i{display:block;height:100%}.bar3 .g{background:var(--good)}.bar3 .a{background:#E0A83A}.bar3 .e{background:#D7DDDB}
+  .fld .st{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9.5px;color:var(--muted);font-weight:600}
+  .fld .st b{color:var(--ink)}
+  /* data grid */
+  .gridwrap{overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+  table.grid{border-collapse:collapse;font-family:var(--mono);font-size:11px;white-space:nowrap}
+  table.grid th{position:sticky;top:0;background:var(--paper);color:var(--muted);font-weight:600;text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);text-transform:uppercase;font-size:9px;letter-spacing:.05em}
+  table.grid td{padding:6px 10px;border-bottom:1px solid var(--line2);color:var(--ink2);max-width:280px;overflow:hidden;text-overflow:ellipsis}
+  table.grid tr:hover td{background:#FBFCFD}
+  td.nullv{color:var(--muted2);font-style:italic}td.otherv{color:var(--bad);background:var(--bad-soft)}
+  /* explain */
+  .exp p{font-size:14px;line-height:1.6;color:var(--ink2);max-width:78ch}
+  .exp .keys{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0}
+  .kp{font-family:var(--mono);font-size:10.5px;font-weight:600;background:var(--teal-soft);color:var(--teal-d);border:1px solid #CDDDEC;border-radius:7px;padding:4px 9px}
+  details.sql{margin-top:16px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  details.sql summary{cursor:pointer;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--muted);padding:10px 13px;background:var(--paper);list-style:none}
+  details.sql summary::-webkit-details-marker{display:none}
+  details.sql[open] summary{border-bottom:1px solid var(--line);color:var(--ink2)}
+  pre.sql{margin:0;padding:14px;font-family:var(--mono);font-size:11px;line-height:1.6;color:var(--ink2);white-space:pre-wrap;word-break:break-word;background:#FCFDFD}
+  /* states */
+  .empty{display:grid;place-items:center;height:100%;text-align:center;padding:30px}
+  .empty .card{max-width:440px}
+  .empty h2{font-family:var(--disp);font-size:23px;font-weight:700;margin:0 0 8px}
+  .empty p{font-size:14px;color:var(--muted);line-height:1.6;margin:0 0 20px}
+  .spin{width:22px;height:22px;border:2.5px solid var(--line);border-top-color:var(--teal);border-radius:50%;animation:sp .7s linear infinite;margin:34px auto}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .err{color:var(--bad);background:var(--bad-soft);border:1px solid #EBC9CB;border-radius:9px;padding:11px 14px;font-size:12.5px;font-weight:500}
+  .hint{color:var(--muted2);font-size:12px;padding:20px 4px}
+  /* toast */
+  #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 8px 26px rgba(0,0,0,.22);opacity:0;transition:.25s;pointer-events:none;z-index:50;max-width:90vw}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast.good{background:#14532d}#toast.bad{background:#7f1d1d}
+  @media(max-width:720px){.rail{flex-basis:200px}.wrap{flex-direction:column}}
+</style></head><body>
+  <div class="bar">
+    <div><span class="ey">Hoodie MDM</span><span class="ttl">Flow</span></div>
+    <select id="entity" title="Master to build">
+      <option value="outlet">Outlet master</option>
+      <option value="product">Product master</option>
+      <option value="party">Party master</option>
+    </select>
+    <button class="btn pri" id="seed">Seed from landed data</button>
+    <span class="sp"></span>
+    <button class="btn run" id="run" disabled>Run → materialize</button>
+    <span class="eng"><span class="dot" id="eng-dot"></span><span id="eng-txt">checking…</span></span>
+  </div>
+  <div class="wrap">
+    <div class="rail" id="rail"><div class="hint">Seed a flow to begin.</div></div>
+    <div class="stage" id="stage">
+      <div class="empty"><div class="card">
+        <h2>Build a master, and see every step</h2>
+        <p>Pick an entity and <b>Seed</b>. The engine inspects what's landed, drafts the whole flow —
+           clean → union → resolve → golden records — and you get line-of-sight into each step:
+           the data, its profile, and exactly what it does. Nothing hidden.</p>
+      </div></div>
+    </div>
+  </div>
+  <div id="toast"></div>
+<script>
+(function(){
+  "use strict";
+  var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
+  var fmt=function(n){return n==null?"—":Number(n).toLocaleString();};
+  var $=function(id){return document.getElementById(id);};
+  var ICON={input:"IN",clean:"CL",union:"∪",resolve:"◆",output:"▣"};
+  var TYPELAB={input:"source",clean:"clean",union:"union",resolve:"resolve · golden",output:"output"};
+  var CATCHALL={other:1,others:1,misc:1,miscellaneous:1,general:1,generic:1,unspecified:1,unknown:1,undefined:1,"default":1,various:1,"n/a":1,na:1,none:1,tbd:1,"null":1};
+
+  var S={flow:null, sel:null, tab:"profile", entity:"outlet", engine:false};
+
+  function toast(msg, kind){ var t=$("toast"); t.className=""; t.textContent=msg; void t.offsetWidth;
+    t.className=(kind||"")+" show"; clearTimeout(toast._t); toast._t=setTimeout(function(){t.className=(kind||"");},2600); }
+
+  function api(path, body){
+    var opt={headers:{}};
+    if(body){opt.method="POST";opt.headers["Content-Type"]="application/json";opt.body=JSON.stringify(body);}
+    return fetch(path, opt).then(function(r){return r.json();}).catch(function(e){return {ok:false,error:String(e)};});
+  }
+
+  // ── engine status ──
+  function ping(){
+    api("/api/health").then(function(h){
+      S.engine = !!(h && (h.ok!==false));
+      $("eng-dot").className = "dot "+(S.engine?"on":"off");
+      $("eng-txt").textContent = S.engine ? ("engine · "+fmt(h.datasets)+" datasets") : "engine offline";
+    });
+  }
+
+  // ── seed ──
+  function seed(){
+    S.entity = $("entity").value;
+    $("rail").innerHTML='<div class="spin"></div>';
+    $("stage").innerHTML='<div class="spin"></div>';
+    api("/api/flow/seed", {entity:S.entity}).then(function(r){
+      if(!r || !r.ok || !r.flow || !(r.flow.nodes||[]).length){
+        $("rail").innerHTML='<div class="hint">'+esc((r&&r.flow&&r.flow.note)||"No landed dataset feeds this master yet. Run a pull first.")+'</div>';
+        $("stage").innerHTML='<div class="empty"><div class="card"><h2>Nothing to build — yet</h2><p>'+
+          esc((r&&r.flow&&r.flow.note)||"No dataset scored high enough to feed this entity.")+'</p></div></div>';
+        $("run").disabled=true; return;
+      }
+      S.flow=r.flow; renderRail(); $("run").disabled=false;
+      var res=S.flow.nodes.filter(function(n){return n.type==="resolve";})[0];
+      select((res||S.flow.nodes[S.flow.nodes.length-1]).id);
+      toast("Seeded "+S.entity+" · "+r.datasets+" datasets → "+S.flow.nodes.length+" steps","good");
+    });
+  }
+
+  // ── flow rail ──
+  function renderRail(){
+    var nodes=S.flow.nodes, byId={}; nodes.forEach(function(n){byId[n.id]=n;});
+    var inputs=nodes.filter(function(n){return n.type==="input";});
+    var spine=nodes.filter(function(n){return n.type!=="input"&&n.type!=="clean";});
+    var h='<div class="lab">Sources</div>';
+    inputs.forEach(function(inp){
+      h+=nodeCard(inp);
+      var clean=nodes.filter(function(n){return n.type==="clean"&&(n.inputs||[]).indexOf(inp.id)>=0;})[0];
+      if(clean) h+=nodeCard(clean, true);
+    });
+    h+='<div class="spineline"></div><div class="lab">Master</div>';
+    spine.forEach(function(n){ h+=nodeCard(n); });
+    $("rail").innerHTML=h;
+    Array.prototype.forEach.call(document.querySelectorAll(".node"), function(el){
+      el.onclick=function(){ select(el.getAttribute("data-id")); };
+    });
+    markSel();
+  }
+  function nodeCard(n, sub){
+    var name = n.name || n.dataset || n.table || n.type;
+    return '<div class="node t-'+n.type+(sub?" sub":"")+'" data-id="'+esc(n.id)+'">'+
+      '<div class="ic">'+(ICON[n.type]||"·")+'</div>'+
+      '<div style="min-width:0"><div class="nm">'+esc(name)+'</div><div class="mt">'+TYPELAB[n.type]+'</div></div></div>';
+  }
+  function markSel(){ Array.prototype.forEach.call(document.querySelectorAll(".node"), function(el){
+    el.classList.toggle("on", el.getAttribute("data-id")===S.sel); }); }
+
+  // ── node description (plain language — complexity absorbed) ──
+  function describe(n){
+    var e=S.entity;
+    if(n.type==="input") return "Reads the source dataset <b>"+esc(n.dataset)+"</b> exactly as it landed — nothing changed yet.";
+    if(n.type==="clean"){ var m=(n.fields||[]).filter(function(f){return f.source_field;}).length;
+      return "Maps <b>"+m+"</b> source columns from <b>"+esc(n.source)+"</b> onto the canonical "+e+" schema — normalizing each value (addresses standardized, names cleaned, placeholders dropped) so every source speaks one language.";}
+    if(n.type==="union") return "Stacks the cleaned sources into one set — every source of a "+e+", side by side, ready to resolve.";
+    if(n.type==="resolve"){ var keys=(n.identity&&n.identity.natural||[]).map(function(k){return k.field||k;});
+      return "Collapses duplicate rows into golden "+e+" records — same real "+e+" from different sources becomes <b>one</b>. Matches on <b>"+esc(keys.join(" · ")||"identity")+"</b>"+(n.identity&&n.identity.strong?(" (or the strong key <b>"+esc(n.identity.strong)+"</b> when present)"):"")+". When sources disagree on a field, a survivorship rule picks the winner and the disagreement is flagged for review — never guessed.";}
+    if(n.type==="output") return "Writes the golden <b>"+esc(n.table||("dim_"+e))+"</b> table, assigning each record a stable Hoodie ID that never changes on rebuild.";
+    return "";
+  }
+  function keychips(n){
+    if(n.type!=="resolve") return "";
+    var keys=(n.identity&&n.identity.natural||[]).map(function(k){return k.field||k;});
+    var chips=keys.map(function(k){return '<span class="kp">'+esc(k)+'</span>';});
+    if(n.identity&&n.identity.strong) chips.unshift('<span class="kp" title="strong key">⚷ '+esc(n.identity.strong)+'</span>');
+    return chips.length?'<div class="keys">'+chips.join("")+'</div>':"";
+  }
+
+  // ── select + inspector ──
+  function select(id){ S.sel=id; var n=nodeById(id); if(!n) return;
+    var name=n.name||n.dataset||n.table||n.type;
+    $("stage").innerHTML=
+      '<div class="insp-head"><h1>'+esc(name)+'</h1><div class="desc">'+describe(n)+keychips(n)+'</div>'+
+      '<div class="tabs">'+tabBtn("profile","Profile")+tabBtn("data","Data")+tabBtn("explain","Explain")+'</div></div>'+
+      '<div class="insp-body" id="body"></div>';
+    Array.prototype.forEach.call(document.querySelectorAll(".tab"), function(el){
+      el.onclick=function(){ S.tab=el.getAttribute("data-tab"); paintTabs(); loadTab(); }; });
+    markSel(); paintTabs(); loadTab();
+  }
+  function tabBtn(k,l){ return '<button class="tab" data-tab="'+k+'">'+l+'</button>'; }
+  function paintTabs(){ Array.prototype.forEach.call(document.querySelectorAll(".tab"),function(el){
+    el.classList.toggle("on", el.getAttribute("data-tab")===S.tab); }); }
+  function nodeById(id){ return (S.flow.nodes||[]).filter(function(n){return n.id===id;})[0]; }
+
+  function loadTab(){
+    var body=$("body"); body.innerHTML='<div class="spin"></div>';
+    if(S.tab==="profile") return loadProfile(body);
+    if(S.tab==="data") return loadData(body);
+    return loadExplain(body);
+  }
+
+  // Profile — where bad data screams
+  function loadProfile(body){
+    api("/api/flow/profile", {flow:S.flow, node:S.sel}).then(function(r){
+      if(!r.landed){ body.innerHTML='<div class="err">Could not profile this step. '+esc(r.error||"")+'</div>'; return; }
+      if(!r.fields.length){ body.innerHTML='<div class="hint">No columns to profile at this step.</div>'; return; }
+      var total=r.total||0;
+      var avg=Math.round(r.fields.reduce(function(a,f){return a+(f.informative_pct||0);},0)/r.fields.length);
+      var h='<div class="pf-sum">'+fmt(total)+' rows · '+r.fields.length+' fields · '+avg+'% avg informative</div><div class="pf">';
+      r.fields.forEach(function(f){
+        var fillp=f.fill_pct||0, infp=f.informative_pct||0, otherp=Math.max(0,fillp-infp), emptyp=Math.max(0,100-fillp);
+        var cls=otherp>=15?"bad":(infp<50?"warnf":"");
+        var flag=otherp>0?'<span class="flag other">'+Math.round(otherp)+'% other</span>':(fillp<50?'<span class="flag low">'+Math.round(fillp)+'% filled</span>':"");
+        h+='<div class="fld '+cls+'"><div class="fn"><span>'+esc(f.field)+'</span>'+flag+'</div>'+
+           '<div class="bar3"><i class="g" style="width:'+infp+'%"></i><i class="a" style="width:'+otherp+'%"></i><i class="e" style="width:'+emptyp+'%"></i></div>'+
+           '<div class="st"><span>informative <b>'+Math.round(infp)+'%</b></span><span><b>'+fmt(f.distinct)+'</b> distinct</span></div></div>';
+      });
+      body.innerHTML=h+'</div>';
+    });
+  }
+
+  // Data — sample rows at this step's output
+  function loadData(body){
+    api("/api/flow/preview", {flow:S.flow, node:S.sel, limit:60}).then(function(r){
+      if(!r.landed){ body.innerHTML='<div class="err">Could not preview this step. '+esc(r.error||"")+'</div>'; return; }
+      if(!r.rows.length){ body.innerHTML='<div class="hint">No rows at this step.</div>'; return; }
+      var cols=r.columns.filter(function(c){return c.indexOf("__conflict")<0;});
+      var h='<div class="gridwrap"><table class="grid"><thead><tr>';
+      cols.forEach(function(c){ h+='<th>'+esc(c)+'</th>'; }); h+='</tr></thead><tbody>';
+      r.rows.forEach(function(row){ h+='<tr>';
+        cols.forEach(function(c){ var v=row[c];
+          if(v==null||v===""){ h+='<td class="nullv">∅</td>'; }
+          else if(typeof v==="string" && CATCHALL[v.trim().toLowerCase()]){ h+='<td class="otherv">'+esc(v)+'</td>'; }
+          else if(Array.isArray(v)){ h+='<td>'+esc(v.join(", "))+'</td>'; }
+          else { h+='<td>'+esc(v)+'</td>'; }
+        }); h+='</tr>';
+      });
+      body.innerHTML=h+'</tbody></table></div>';
+    });
+  }
+
+  // Explain — plain language + the compiled SQL on demand
+  function loadExplain(body){
+    var n=nodeById(S.sel);
+    api("/api/flow/sql", {flow:S.flow, node:S.sel}).then(function(r){
+      var h='<div class="exp"><p>'+describe(n)+'</p>'+keychips(n);
+      if(r.ok && r.sql){
+        h+='<details class="sql"><summary>Show the compiled DuckDB SQL — the exact query this step runs</summary><pre class="sql">'+esc(r.sql)+'</pre></details>';
+      } else { h+='<div class="err" style="margin-top:14px">'+esc(r.error||"SQL unavailable")+'</div>'; }
+      body.innerHTML=h+'</div>';
+    });
+  }
+
+  // Run — materialize + mint Hoodie IDs
+  function run(){
+    var out=(S.flow.nodes||[]).filter(function(n){return n.type==="output";})[0];
+    if(!out){ toast("No output step in this flow","bad"); return; }
+    $("run").disabled=true; $("run").textContent="Running…";
+    api("/api/flow/run", {flow:S.flow, node:out.id}).then(function(r){
+      $("run").disabled=false; $("run").textContent="Run → materialize";
+      if(!r.ok){ toast("Run failed: "+(r.error||"?"),"bad"); return; }
+      toast("Built "+r.table+" · "+fmt(r.rows)+" golden records · "+fmt(r.hoodie_minted)+" new Hoodie IDs","good");
+      if(S.tab==="profile") loadTab();
+    });
+  }
+
+  $("seed").onclick=seed; $("run").onclick=run;
+  $("entity").onchange=function(){ if(S.flow) seed(); };
+  ping(); setInterval(ping, 20000);
+})();
+</script>
+</body></html>

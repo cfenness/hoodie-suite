@@ -226,6 +226,20 @@ still a rule, still deterministic, still auditable, never a mutation of the outp
 this by construction: it compiles to SQL over immutable source Parquet, so there is no row to fix —
 only inputs and rules. No feature may add a "just fix this one value" path.
 
+## Identity from public first principles — no proprietary vendor IDs
+
+Identity is built only from **public, observable, or open-standard** signals — never a third party's
+proprietary identifier. For outlets: name, address, geo, license number (public record), GLN. For
+products: brand/name/size, UPC/GTIN (open GS1), the TTB COLA filing (public). This is an ethics rule
+(we do not leverage privileged knowledge of any vendor's internal structure) *and* a better-
+architecture rule: identity built on a vendor's proprietary key depends on something we don't own,
+can't audit, and can't hand a customer — it's fragile and creates lock-in.
+
+Consequence: a source's own id (`source_ref`) may aid **intra-source** stability, but **cross-source**
+truth is always resolved on public attributes; no vendor's id is ever privileged as the spine. If such
+a source flows in, it is matched on the same public signals as every other source. You could show
+exactly how Hoodie resolves identity to anyone — none of it depends on inside knowledge.
+
 ## Generalization — the engine is domain-agnostic; a domain is a config pack
 
 MDM is valuable only if it's **generalized**. Bev-alc is unique in its **field requirements** — never

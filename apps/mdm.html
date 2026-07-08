@@ -64,6 +64,8 @@
   <nav class="side nav">
     <div class="brand"><span class="ey">Hoodie Suite</span><span class="nm">MDM</span></div>
     <a data-sec="overview"><span class="d"></span>Overview</a>
+    <div class="nav-lab">Build</div>
+    <a data-sec="flow"><span class="d"></span>Flow</a>
     <div class="nav-lab">Own</div>
     <a data-sec="master"><span class="d"></span>Master</a>
     <a data-sec="catalog"><span class="d"></span>Catalog</a>
@@ -75,6 +77,7 @@
   <div class="stage">
     <div class="ov" id="ov-overview"><div id="ov-body"><div class="empty">Loading the master-data picture…</div></div></div>
     <iframe id="f-sources"   title="Sources"                   data-src="mdm-sources.html?embed=1"></iframe>
+    <iframe id="f-flow"      title="Flow — master-building"     data-src="mdm-flow.html?embed=1"></iframe>
     <iframe id="f-master"    title="Master-data control plane" data-src="mdm-master.html?embed=1"></iframe>
     <iframe id="f-catalog"   title="Product Catalog"           data-src="mdm-catalog.html?embed=1"></iframe>
     <iframe id="f-outlets"   title="Outlet Master"             data-src="mdm-outlets.html?embed=1"></iframe>
@@ -86,10 +89,11 @@
 <script>
 (function(){
   "use strict";
-  var SECTIONS={overview:null,sources:"f-sources",master:"f-master",catalog:"f-catalog",outlets:"f-outlets",confirm:"f-confirm",registrations:"f-registrations",mapping:"f-mapping",dictionary:"f-dictionary"};
+  var SECTIONS={overview:null,flow:"f-flow",sources:"f-sources",master:"f-master",catalog:"f-catalog",outlets:"f-outlets",confirm:"f-confirm",registrations:"f-registrations",mapping:"f-mapping",dictionary:"f-dictionary"};
   // In the launcher, the launcher's rail becomes THIS console's nav (one sidebar).
   var inLauncher = (window.parent !== window);
   var NAV_META=[{id:"overview",label:"Overview",icon:"OV",desc:"The master-data picture at a glance"},
+                {id:"flow",label:"Flow",group:"Build",icon:"FL",desc:"Seed a master-building flow and see every step — data, profile, explain"},
                 {id:"sources",label:"Sources",group:"Own",icon:"SR",desc:"Every dataset feeding the master, grouped by what it feeds"},
                 {id:"master",label:"Master",group:"Own",icon:"MA",desc:"Canonical entities — brands, SKUs, outlets"},
                 {id:"catalog",label:"Catalog",group:"Own",icon:"CA",desc:"dim_product — the owned product catalog"},
