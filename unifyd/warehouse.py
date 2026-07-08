@@ -40,25 +40,35 @@ def remote():
     return bool(_endpoint() and _bucket())
 
 
-def _local_path(name):
-    os.makedirs(_LOCAL_DIR, exist_ok=True)
-    return os.path.join(_LOCAL_DIR, name + ".parquet")
+def _seg(mode):
+    """The real/synthetic isolation segment. Real and synthetic NEVER share a namespace — a build or a
+    serve reads exactly one. `mode=None` keeps the legacy flat namespace (backward-compatible)."""
+    m = (mode or "").strip().strip("/")
+    return (m + "/") if m else ""
 
 
-def _s3_key(name):
+def _local_path(name, mode=None):
+    d = os.path.join(_LOCAL_DIR, _seg(mode).rstrip("/")) if mode else _LOCAL_DIR
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, name + ".parquet")
+
+
+def _s3_key(name, mode=None):
     p = _prefix()
-    return (p + "/" if p else "") + name + ".parquet"
+    return (p + "/" if p else "") + _seg(mode) + name + ".parquet"
 
 
-def uri(name):
-    """Physical location of dataset `name`: an s3:// URI (remote) or a local file path."""
-    return ("s3://%s/%s" % (_bucket(), _s3_key(name))) if remote() else _local_path(name)
+def uri(name, mode=None):
+    """Physical location of dataset `name`: an s3:// URI (remote) or a local file path. `mode`
+    ('real'|'synthetic') isolates the two into separate namespaces so they can never commingle."""
+    return ("s3://%s/%s" % (_bucket(), _s3_key(name, mode))) if remote() else _local_path(name, mode)
 
 
-def write_parquet(name, records, fields=None):
+def write_parquet(name, records, fields=None, mode=None):
     """Write list-of-dicts to `<name>.parquet` (Tigris or local). Returns {rows, uri}.
     If `fields` is given, every record is projected onto exactly those columns (missing
-    -> None), so the Parquet schema is stable across pulls even when a row lacks a key."""
+    -> None), so the Parquet schema is stable across pulls even when a row lacks a key.
+    `mode` ('real'|'synthetic') writes into the isolated namespace."""
     import pyarrow as pa
     import pyarrow.parquet as pq
     if fields:
@@ -68,15 +78,15 @@ def write_parquet(name, records, fields=None):
         from pyarrow import fs as pafs
         s3 = pafs.S3FileSystem(endpoint_override=_endpoint(), access_key=_env("AWS_ACCESS_KEY_ID"),
                                secret_key=_env("AWS_SECRET_ACCESS_KEY"), region=_region(), scheme="https")
-        pq.write_table(table, "%s/%s" % (_bucket(), _s3_key(name)), filesystem=s3)
+        pq.write_table(table, "%s/%s" % (_bucket(), _s3_key(name, mode)), filesystem=s3)
     else:
-        pq.write_table(table, _local_path(name))
-    return {"rows": len(records), "uri": uri(name)}
+        pq.write_table(table, _local_path(name, mode))
+    return {"rows": len(records), "uri": uri(name, mode)}
 
 
-def list_datasets():
-    """Every <name>.parquet in the warehouse as [{name, rows, fields}] — CHEAP: reads each Parquet
-    footer (row count + schema) only, never the data. Powers the estate model's 'whole thing' view."""
+def list_datasets(mode=None):
+    """Every <name>.parquet in the warehouse (within `mode`, if given) as [{name, rows, fields}] —
+    CHEAP: reads each Parquet footer (row count + schema) only, never the data."""
     import pyarrow.parquet as pq
     out = []
     try:
@@ -84,7 +94,7 @@ def list_datasets():
             from pyarrow import fs as pafs
             s3 = pafs.S3FileSystem(endpoint_override=_endpoint(), access_key=_env("AWS_ACCESS_KEY_ID"),
                                    secret_key=_env("AWS_SECRET_ACCESS_KEY"), region=_region(), scheme="https")
-            base = "%s/%s" % (_bucket(), _prefix())
+            base = ("%s/%s" % (_bucket(), _prefix())) + "/" + _seg(mode).rstrip("/") if mode else ("%s/%s" % (_bucket(), _prefix()))
             infos = s3.get_file_info(pafs.FileSelector(base, recursive=False))
             for info in infos:
                 if info.type != pafs.FileType.File or not info.path.endswith(".parquet"):
@@ -97,7 +107,8 @@ def list_datasets():
                     out.append({"name": name, "rows": 0, "fields": []})
         else:
             import glob
-            for p in glob.glob(os.path.join(_LOCAL_DIR, "*.parquet")):
+            d = os.path.join(_LOCAL_DIR, _seg(mode).rstrip("/")) if mode else _LOCAL_DIR
+            for p in glob.glob(os.path.join(d, "*.parquet")):
                 name = os.path.basename(p)[:-8]
                 try:
                     md = pq.read_metadata(p)
@@ -147,11 +158,11 @@ def connect():
     return con
 
 
-def query(name, sql=None, params=None):
+def query(name, sql=None, params=None, mode=None):
     """Query dataset `name` in place. `sql` may reference the view `t` (the Parquet).
-    Defaults to `SELECT * FROM t`. Returns a list of dicts."""
+    Defaults to `SELECT * FROM t`. `mode` isolates real vs synthetic. Returns a list of dicts."""
     con = connect()
-    src = uri(name).replace("'", "")
+    src = uri(name, mode).replace("'", "")
     con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet('%s')" % src)
     cur = con.execute(sql or "SELECT * FROM t", params or [])
     cols = [d[0] for d in cur.description]

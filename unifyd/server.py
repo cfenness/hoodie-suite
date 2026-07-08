@@ -2956,21 +2956,35 @@ def _flow_jsonsafe(v):
     return v
 
 
+def _flow_mode(body):
+    """real | synthetic — the isolated namespace this request reads/writes. Defaults to real."""
+    m = (str((body or {}).get("mode") or "real")).strip().lower()
+    return m if m in ("real", "synthetic") else "real"
+
+
+def _flow_uri(mode):
+    """A uri resolver bound to a mode, for the flow compiler (so a build reads ONE namespace)."""
+    import warehouse
+    return lambda n: warehouse.uri(n, mode)
+
+
 def _flow_compile(body):
     """Compile the requested node of the posted flow → (sql, flow, node_id). Node defaults to the last."""
     import flow as flowmod
-    import warehouse
     fl = body.get("flow") or {}
     node = body.get("node") or ((fl.get("nodes") or [{}])[-1].get("id"))
-    return flowmod.compile_sql(fl, node, warehouse.uri), fl, node
+    return flowmod.compile_sql(fl, node, _flow_uri(_flow_mode(body))), fl, node
 
 
 @app.get("/api/flow/datasets")
 def flow_datasets_ep():
-    """Input palette — every landed warehouse dataset (name, rows, fields), footer-only (cheap)."""
+    """Input palette — landed datasets in the requested mode (name, rows, fields), footer-only (cheap)."""
     import warehouse
+    mode = (request.args.get("mode") or "real").strip().lower()
+    if mode not in ("real", "synthetic"):
+        mode = "real"
     try:
-        return jsonify(ok=True, datasets=warehouse.list_datasets())
+        return jsonify(ok=True, mode=mode, datasets=warehouse.list_datasets(mode))
     except Exception as e:
         return jsonify(ok=True, datasets=[], error=str(e)[:160])
 
@@ -3004,10 +3018,12 @@ def flow_seed_ep():
     import warehouse
     b = request.get_json(silent=True) or {}
     entity = _entity(b.get("entity") or "outlet")
-    ds = warehouse.list_datasets()
+    mode = _flow_mode(b)
+    ds = warehouse.list_datasets(mode)
     proposed = flowmod.propose_flow(entity, ds, _master_schema(entity))
     proposed["name"] = proposed.get("name") or ("Seed · %s" % entity)
-    return jsonify(ok=True, flow=proposed, datasets=len(ds))
+    proposed["mode"] = mode
+    return jsonify(ok=True, flow=proposed, datasets=len(ds), mode=mode)
 
 
 @app.post("/api/flow/sql")
@@ -3088,7 +3104,7 @@ def flow_conflicts_ep():
     except (ValueError, TypeError):
         limit = 100
     try:
-        csql = flowmod.conflict_sql(b.get("flow") or {}, b.get("node"), field, warehouse.uri, limit=limit)
+        csql = flowmod.conflict_sql(b.get("flow") or {}, b.get("node"), field, _flow_uri(_flow_mode(b)), limit=limit)
         cur = warehouse.connect().execute(csql)
         cols = [d[0] for d in cur.description]
         rows = [dict(zip(cols, r)) for r in cur.fetchall()]
@@ -3108,12 +3124,13 @@ def flow_provenance_ep():
     if rid is None or rid == "":
         return jsonify(ok=False, error="id required"), 200
     try:
+        uf = _flow_uri(_flow_mode(b))
         con = warehouse.connect()
-        inner = flowmod.provenance_sql(b.get("flow") or {}, node, warehouse.uri)
+        inner = flowmod.provenance_sql(b.get("flow") or {}, node, uf)
         cur = con.execute("SELECT * FROM (%s) WHERE _id = ? LIMIT 80" % inner, [rid])
         cols = [d[0] for d in cur.description]
         rows = [dict(zip(cols, r)) for r in cur.fetchall()]
-        gsql = flowmod.compile_sql(b.get("flow") or {}, node, warehouse.uri)
+        gsql = flowmod.compile_sql(b.get("flow") or {}, node, uf)
         gcur = con.execute("SELECT * FROM (%s) q WHERE _id = ? LIMIT 1" % gsql, [rid])
         grow = gcur.fetchone()
         golden = dict(zip([d[0] for d in gcur.description], grow)) if grow else {}
@@ -3134,15 +3151,16 @@ def flow_run_ep():
     node = b.get("node") or ((fl_obj.get("nodes") or [{}])[-1].get("id"))
     nd = {n.get("id"): n for n in fl_obj.get("nodes", [])}.get(node) or {}
     entity = _entity(fl_obj.get("entity") or "outlet")
+    mode = _flow_mode(b)
     table = (nd.get("table") or ("dim_%s" % entity)).strip().replace("'", "")
     pfx = HOODIE_PREFIX.get(entity, "X")
     try:
-        sql = flowmod.compile_sql(fl_obj, node, warehouse.uri)
+        sql = flowmod.compile_sql(fl_obj, node, _flow_uri(mode))
         con = warehouse.connect()
         ids = [r[0] for r in con.execute(
             "SELECT DISTINCT _id FROM (%s) q WHERE _id IS NOT NULL AND _id<>''" % sql).fetchall()]
         reg = load("hoodie_ids.json", {})
-        ent = reg.setdefault(entity, {"map": {}, "next": 1})
+        ent = reg.setdefault(mode, {}).setdefault(entity, {"map": {}, "next": 1})   # real & synthetic keep separate id spaces
         minted = 0
         for i in ids:
             if i not in ent["map"]:
@@ -3151,13 +3169,50 @@ def flow_run_ep():
         con.execute("CREATE OR REPLACE TEMP TABLE _homap(_id VARCHAR, hoodie_id VARCHAR)")
         if ids:
             con.executemany("INSERT INTO _homap VALUES (?,?)", [[i, ent["map"][i]] for i in ids])
-        uri = warehouse.uri(table).replace("'", "")
+        uri = warehouse.uri(table, mode).replace("'", "")
         con.execute("COPY (SELECT m.hoodie_id, q.* FROM (%s) q LEFT JOIN _homap m USING(_id)) "
                     "TO '%s' (FORMAT PARQUET)" % (sql, uri))
         total = con.execute("SELECT count(*) FROM read_parquet('%s')" % uri).fetchone()[0]
     except Exception as e:
         return jsonify(ok=False, error=str(e)[:240]), 200
-    return jsonify(ok=True, table=table, rows=total, hoodie_minted=minted, hoodie_total=len(ent["map"]))
+    return jsonify(ok=True, table=table, mode=mode, rows=total, hoodie_minted=minted, hoodie_total=len(ent["map"]))
+
+
+# ── Serve — syndicate the golden master to consumers. REAL ONLY, by construction: mode is hardcoded
+# 'real', so synthetic can never leak to a consumer. The stable Hoodie ID is the join key downstream. ──
+@app.get("/api/serve/<entity>")
+def serve_list_ep(entity):
+    """Paged syndication read of the golden <entity> master (real only). ?page= &size=."""
+    import warehouse
+    ent = _entity(entity)
+    table = "dim_%s" % ent
+    try:
+        page = max(0, int(request.args.get("page", 0)))
+        size = min(500, max(1, int(request.args.get("size", 100))))
+    except ValueError:
+        page, size = 0, 100
+    try:
+        total = warehouse.query(table, "SELECT count(*) c FROM t", mode="real")[0]["c"]
+        rows = warehouse.query(table, "SELECT * FROM t ORDER BY hoodie_id LIMIT %d OFFSET %d" % (size, page * size),
+                               mode="real")
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:160], records=[]), 200
+    return jsonify(ok=True, entity=ent, mode="real", total=total, page=page, size=size, records=_flow_jsonsafe(rows))
+
+
+@app.get("/api/serve/<entity>/<hid>")
+def serve_one_ep(entity, hid):
+    """A golden record by its stable Hoodie ID (real only) — the consumer's join key into the master."""
+    import warehouse
+    ent = _entity(entity)
+    table = "dim_%s" % ent
+    try:
+        rows = warehouse.query(table, "SELECT * FROM t WHERE hoodie_id = ? LIMIT 1", [hid], mode="real")
+    except Exception as e:
+        return jsonify(ok=True, found=False, error=str(e)[:160]), 200
+    if not rows:
+        return jsonify(ok=True, found=False, hoodie_id=hid), 200
+    return jsonify(ok=True, entity=ent, mode="real", record=_flow_jsonsafe(rows[0]))
 
 # ---- optional: serve the static suite from THIS app (all-in-one image, e.g. Fly.io) ----
 # When SUITE_ROOT is set, one gunicorn process serves BOTH /api/* and the public suite from a single

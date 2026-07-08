@@ -162,7 +162,7 @@
     <button class="btn pri" id="seed">seed ↵</button>
     <button class="btn run" id="run" disabled>run →</button>
     <span class="sp"></span>
-    <span class="mode syn" id="mode" title="real vs synthetic — isolation wiring pending (task #9)">SYNTHETIC</span>
+    <span class="mode real" id="mode" title="real vs synthetic — isolated namespaces; the serve API is real-only">REAL</span>
     <span class="eng"><span class="dot" id="edot"></span><span id="etxt">…</span></span>
     <span class="kbd" id="palbtn">⌘K</span>
   </div>
@@ -190,10 +190,10 @@
   var $=function(id){return document.getElementById(id);};
   var TG={input:"IN",clean:"CL",union:"∪",resolve:"◆",output:"▣"};
   var CATCHALL={other:1,others:1,misc:1,miscellaneous:1,general:1,generic:1,unspecified:1,unknown:1,undefined:1,"default":1,various:1,"n/a":1,na:1,none:1,tbd:1,"null":1};
-  var S={flow:null,sel:null,tab:"profile",rows:null,cols:null,filter:"",focusField:null};
+  var S={flow:null,sel:null,tab:"profile",rows:null,cols:null,filter:"",focusField:null,mode:"real"};
 
   function toast(m,k){var t=$("toast");t.className="";t.textContent=m;void t.offsetWidth;t.className=(k||"")+" show";clearTimeout(toast._t);toast._t=setTimeout(function(){t.className=(k||"");},2600);}
-  function api(p,b){var o={headers:{}};if(b){o.method="POST";o.headers["Content-Type"]="application/json";o.body=JSON.stringify(b);}return fetch(p,o).then(function(r){return r.json();}).catch(function(e){return{ok:false,error:String(e)};});}
+  function api(p,b){var o={headers:{}};if(b){if(typeof b==="object"&&b.mode===undefined)b.mode=S.mode;o.method="POST";o.headers["Content-Type"]="application/json";o.body=JSON.stringify(b);}return fetch(p,o).then(function(r){return r.json();}).catch(function(e){return{ok:false,error:String(e)};});}
 
   function ping(){api("/api/health").then(function(h){var up=!!(h&&h.ok!==false);$("edot").className="dot "+(up?"on":"off");$("etxt").textContent=up?("engine "+fmt(h.datasets)):"offline";});}
 
@@ -431,7 +431,8 @@
 
   $("seed").onclick=seed;$("run").onclick=run;$("entity").onchange=function(){if(S.flow)seed();};
   $("dx").onclick=closeDrawer;$("dscrim").onclick=closeDrawer;
-  $("mode").onclick=function(){var m=$("mode");var syn=m.classList.contains("syn");m.classList.toggle("syn",!syn);m.classList.toggle("real",syn);m.textContent=syn?"REAL":"SYNTHETIC";toast("mode is a visual guard — isolation wiring is task #9","");};
+  function setMode(mode){S.mode=mode;var m=$("mode");m.classList.toggle("syn",mode==="synthetic");m.classList.toggle("real",mode==="real");m.textContent=mode.toUpperCase();}
+  $("mode").onclick=function(){setMode(S.mode==="real"?"synthetic":"real");toast("mode → "+S.mode+" · isolated namespace"+(S.mode==="synthetic"?" — never served":""),"");if(S.flow)seed();};
   ping();setInterval(ping,20000);
 })();
 </script>
