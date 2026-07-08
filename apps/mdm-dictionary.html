@@ -106,6 +106,17 @@
   .cl .cn{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
   .cl .cadd{font-size:11px;font-weight:700;border:1px solid var(--line);border-radius:6px;padding:2px 8px;cursor:pointer;background:var(--panel);color:var(--accent)}
   .badge{font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;background:var(--accent-soft);color:#2E4C6D}
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+  .chipx{display:inline-flex;align-items:center;gap:6px;background:var(--accent-soft);color:#2E4C6D;border:1px solid #D4E0EC;
+         border-radius:20px;padding:4px 6px 4px 12px;font-size:12.5px;font-weight:600}
+  .chipx button{border:none;background:none;color:#5b7590;cursor:pointer;font-size:14px;line-height:1;padding:0 2px}
+  .chipx button:hover{color:var(--bad)}
+  .chips .empty{padding:6px 2px;font-size:12px}
+  #optState.on{background:#E4F1EA;color:#256b47}
+  table.grid select{width:100%;font-family:var(--mono);font-size:12.5px;border:1px solid transparent;border-radius:6px;
+        padding:6px 7px;background:transparent;color:var(--ink)}
+  table.grid select:focus{outline:none;border-color:var(--accent);background:#fff}
+  table.grid select:hover{background:#F7F9FB}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
          padding:9px 16px;border-radius:9px;font-size:12.5px;opacity:0;transition:.25s;pointer-events:none;z-index:50}
   .toast.show{opacity:1}
@@ -121,7 +132,9 @@
   <div class="pagehead"><h1>Data Dictionary</h1>
     <div class="sub">Turn messy source strings into a controlled vocabulary. Pick a source field, see its real
       values, and write substitution rules — <b>cab sauv → Cabernet&nbsp;Sauvignon</b>. <b>Contains</b> extracts an
-      attribute out of free text; <b>exact</b> normalizes a whole value. Saved dictionaries apply on the next master build.</div></div>
+      attribute out of free text; <b>exact</b> normalizes a whole value. Some master fields are <b>controlled</b>
+      (a fixed set of permissible options — container, pack); for those, the canonical value can only be an
+      allowed option. Saved dictionaries apply on the next master build.</div></div>
 
   <div class="layout">
     <div class="side">
@@ -145,6 +158,28 @@
           <div class="fld"><label>No match →</label><select id="fallback">
             <option value="original">keep source value</option>
             <option value="null">blank (extract only)</option></select></div>
+        </div>
+      </div>
+
+      <!-- permissible options (controlled field) -->
+      <div class="card" id="optCard" style="display:none">
+        <div class="hd"><h2>Permissible options <span id="optState" class="badge"></span></h2>
+          <span class="hint" id="optHint"></span></div>
+        <div id="optChips" class="chips"></div>
+        <div class="row" style="margin-top:10px">
+          <div class="fld grow"><input id="optNew" placeholder="Add a permissible option (e.g. 6-Pack) — Enter to add"></div>
+          <button class="btn" id="optAdd">Add</button>
+          <button class="btn pri" id="optSave">Save options</button>
+          <button class="btn" id="optFit">Check source fit</button>
+          <button class="btn danger" id="optClear" title="Make this a free-text field again">Clear (free text)</button>
+        </div>
+        <div id="fitBox" style="display:none;margin-top:12px">
+          <div class="covline" id="fitSummary"></div>
+          <div class="covbar"><i id="fitFill" style="width:0%"></i></div>
+          <div class="covgrid">
+            <div><div class="cband">Source values already permissible (no rule needed)</div><div class="clist" id="fitIn"></div></div>
+            <div><div class="cband">Out-of-domain — need a dictionary rule → an option</div><div class="clist" id="fitOut"></div></div>
+          </div>
         </div>
       </div>
 
@@ -197,6 +232,9 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=n=>(n==null||n==='')?'':Number(n).toLocaleString();
 let CUR={id:null}, SRCVALS=[], MAPPED=new Set();
+let SCHEMA={};      // master field name → {grain, domain:[...]}
+let OPTS=null;      // editable permissible options for the CURRENT target field (null = free-text field)
+const targetName=()=>$('#target').value;
 const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);};
 
 // ---------- boot: datasets, target fields, saved dictionaries ----------
@@ -208,8 +246,10 @@ async function boot(){
   }catch(e){ $('#dataset').innerHTML='<option>ttb_cola</option>'; }
   try{
     const sc=await (await fetch('/api/master/schema?entity=product',{cache:'no-store'})).json();
+    SCHEMA={}; (sc.fields||[]).forEach(f=>SCHEMA[f.name]={grain:f.grain||'',domain:f.domain||null});
     $('#target').innerHTML='<option value="">— (not attached)</option>'+
-      (sc.fields||[]).map(f=>`<option value="${esc(f.name)}">${esc(f.name)} · ${esc(f.grain||'')}</option>`).join('');
+      (sc.fields||[]).map(f=>{const ctl=(f.domain&&f.domain.length)?' 🔒':'';
+        return `<option value="${esc(f.name)}">${esc(f.name)} · ${esc(f.grain||'')}${ctl}</option>`;}).join('');
   }catch(e){}
   await loadFields(); await loadDicts();
 }
@@ -245,18 +285,32 @@ function renderVals(){
 }
 
 // ---------- the grid ----------
+function valueCell(value){
+  // controlled target → a <select> limited to permissible options; else free-text input
+  if(OPTS){
+    const opts=['<option value="">—</option>'].concat(OPTS.map(o=>`<option${o===value?' selected':''}>${esc(o)}</option>`));
+    return `<select class="v">${opts.join('')}</select>`;
+  }
+  return `<input class="v" placeholder="Cabernet Sauvignon">`;
+}
 function addRow(match='',value=''){
   const tr=document.createElement('tr');
   tr.innerHTML=`<td><input class="m" placeholder="cab sauv"></td><td class="arrow">→</td>`+
-    `<td><input class="v" placeholder="Cabernet Sauvignon"></td><td class="hits"></td>`+
+    `<td>${valueCell(value)}</td><td class="hits"></td>`+
     `<td class="rm"><button title="remove">×</button></td>`;
-  tr.querySelector('.m').value=match; tr.querySelector('.v').value=value;
+  tr.querySelector('.m').value=match;
+  const vEl=tr.querySelector('.v'); if(!OPTS) vEl.value=value;
   tr.querySelector('.rm button').onclick=()=>{ tr.remove(); recomputeMapped(); };
   tr.querySelector('.m').addEventListener('input',recomputeMapped);
-  tr.querySelector('.v').addEventListener('keydown',e=>{ if(e.key==='Enter'){ addRow(); focusLastMatch(); }});
+  vEl.addEventListener('keydown',e=>{ if(e.key==='Enter'){ addRow(); focusLastMatch(); }});
   $('#rows').appendChild(tr);
   recomputeMapped();
   return tr;
+}
+function rebuildGridValues(){
+  // re-render value widgets after the target (controlled/free) changed, preserving entered values
+  const rows=$$('#rows tr').map(tr=>({match:tr.querySelector('.m').value, value:tr.querySelector('.v').value}));
+  setGrid(rows.length?rows:[{match:'',value:''}]);
 }
 function focusLastMatch(){ const r=$('#rows').lastElementChild; if(r) r.querySelector('.m').focus(); }
 function focusLastValue(){ const r=$('#rows').lastElementChild; if(r) r.querySelector('.v').focus(); }
@@ -319,7 +373,8 @@ async function openDict(id){
     if(d.source_dataset){ $('#dataset').value=d.source_dataset; await loadFields(); }
     if(d.source_field){ $('#field').value=d.source_field; await loadValues(); }
     $('#target').value=d.target_field||''; $('#mode').value=d.mode||'contains'; $('#fallback').value=d.fallback||'original';
-    setGrid(d.entries||[]);
+    refreshTarget();                       // load the target's permissible options + widget mode…
+    setGrid(d.entries||[]);                // …then lay the saved rows into matching widgets
     $('#delBtn').style.display=''; $('#idbadge').style.display=''; $('#idbadge').textContent=d.id;
     $('#cov').classList.remove('show');
     loadDicts();
@@ -327,7 +382,7 @@ async function openDict(id){
 }
 function newDict(){
   CUR={id:null}; $('#name').value=''; $('#target').value=''; $('#mode').value='contains'; $('#fallback').value='original';
-  setGrid([{match:'',value:''}]); $('#delBtn').style.display='none'; $('#idbadge').style.display='none';
+  refreshTarget(); setGrid([{match:'',value:''}]); $('#delBtn').style.display='none'; $('#idbadge').style.display='none';
   $('#cov').classList.remove('show'); loadDicts(); $('#name').focus();
 }
 async function save(){
@@ -350,7 +405,85 @@ async function del(){
     toast('Deleted'); newDict(); }catch(e){}
 }
 
+// ---------- controlled field / permissible options ----------
+function refreshTarget(){
+  // OPTS = a copy of the target field's permissible options when controlled, else null (free-text)
+  const t=targetName(), dom=t&&SCHEMA[t]?SCHEMA[t].domain:null;
+  OPTS=(dom&&dom.length)?dom.slice():null;
+  renderOpt(); rebuildGridValues();
+}
+function renderOpt(){
+  const t=targetName();
+  if(!t){ $('#optCard').style.display='none'; return; }
+  $('#optCard').style.display='';
+  const controlled=Array.isArray(OPTS);
+  $('#optState').textContent=controlled?('controlled · '+OPTS.length+' options'):'free text';
+  $('#optState').className='badge'+(controlled?' on':'');
+  $('#optHint').textContent=controlled
+    ? 'The canonical value can only be one of these. Removing all options makes it free-text again.'
+    : '“'+t+'” accepts any value. Add options to lock it to a permissible set.';
+  $('#optSave').style.display=controlled?'':'none';
+  $('#optClear').style.display=controlled?'':'none';
+  $('#optFit').style.display=controlled?'':'none';
+  $('#optNew').placeholder=controlled?'Add a permissible option — Enter to add':'Add the first permissible option — Enter to add';
+  $('#fitBox').style.display='none';
+  if(!controlled){ $('#optChips').innerHTML='<span class="empty" style="color:var(--muted)">No constraint — this is a free-text field. Add an option to make it controlled.</span>'; return; }
+  $('#optChips').innerHTML=OPTS.length?OPTS.map((o,i)=>
+    `<span class="chipx">${esc(o)}<button data-i="${i}" title="remove">×</button></span>`).join('')
+    :'<span class="empty" style="color:var(--muted)">No options yet — add some, then Save.</span>';
+  $$('#optChips .chipx button').forEach(b=>b.onclick=()=>{ OPTS.splice(+b.dataset.i,1); renderOpt(); rebuildGridValues(); });
+}
+function addOpt(){
+  const v=$('#optNew').value.trim(); if(!v) return;
+  if(!Array.isArray(OPTS)) OPTS=[];              // first option turns a free-text field controlled
+  if(!OPTS.some(o=>o.toLowerCase()===v.toLowerCase())) OPTS.push(v);
+  $('#optNew').value=''; renderOpt(); rebuildGridValues(); $('#optNew').focus();
+}
+async function saveOpts(){
+  const t=targetName(); if(!t||!Array.isArray(OPTS)) return;
+  try{
+    const j=await (await fetch('/api/master/domain',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({entity:'product',field:t,options:OPTS})})).json();
+    if(j.ok){ SCHEMA[t].domain=j.options; OPTS=j.options.slice(); toast('Saved '+j.options.length+' options for '+t);
+      // reflect the 🔒 marker in the dropdown
+      $$('#target option').forEach(o=>{ if(o.value===t) o.textContent=t+' · '+(SCHEMA[t].grain||'')+(j.options.length?' 🔒':''); });
+      renderOpt(); }
+    else toast(j.error||'Save failed');
+  }catch(e){ toast('Save failed'); }
+}
+async function clearOpts(){
+  const t=targetName(); if(!t) return;
+  if(!confirm('Make “'+t+'” a free-text field again? This removes its permissible-option constraint.')) return;
+  try{
+    await fetch('/api/master/domain',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({entity:'product',field:t,options:[]})});
+    SCHEMA[t].domain=[]; OPTS=null; toast('“'+t+'” is now free text');
+    $$('#target option').forEach(o=>{ if(o.value===t) o.textContent=t+' · '+(SCHEMA[t].grain||''); });
+    renderOpt(); rebuildGridValues();
+  }catch(e){}
+}
+async function checkFit(){
+  const t=targetName(); if(!Array.isArray(OPTS)||!$('#field').value) return;
+  $('#optFit').disabled=true; $('#optFit').textContent='Checking…';
+  try{
+    const j=await (await fetch('/api/master/domain/check',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({dataset:$('#dataset').value,field:$('#field').value,options:OPTS})})).json();
+    if(!j.ok){ toast(j.error||'Check failed'); return; }
+    $('#fitBox').style.display='';
+    $('#fitSummary').innerHTML=`<b>${j.fit_pct}%</b> of rows in <b>${esc(j.field)}</b> already hold a permissible value — <b>${fmt(j.in_rows)}</b> conform, <b>${fmt(j.out_rows)}</b> need a dictionary rule.`;
+    $('#fitFill').style.width=j.fit_pct+'%';
+    $('#fitIn').innerHTML=(j.in_domain||[]).map(r=>`<div class="cl"><span class="ct" title="${esc(r.v)}">${esc(r.v)}</span><span class="cn">${fmt(r.n)}</span></div>`).join('')||'<div class="empty">None match yet</div>';
+    $('#fitOut').innerHTML=(j.out_domain||[]).map(r=>`<div class="cl"><span class="ct" title="${esc(r.v)}">${esc(r.v)}</span><span class="cn">${fmt(r.n)}</span><button class="cadd" data-v="${esc(r.v)}">+ map</button></div>`).join('')||'<div class="empty">Everything conforms 🎉</div>';
+    $$('#fitOut .cadd').forEach(b=>b.onclick=()=>{ addRow(b.dataset.v,''); focusLastValue(); });
+  }catch(e){ toast('Check failed'); }
+  finally{ $('#optFit').disabled=false; $('#optFit').textContent='Check source fit'; }
+}
+
 // ---------- wiring ----------
+$('#target').onchange=refreshTarget;
+$('#optAdd').onclick=addOpt;
+$('#optNew').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); addOpt(); }});
+$('#optSave').onclick=saveOpts; $('#optClear').onclick=clearOpts; $('#optFit').onclick=checkFit;
 $('#dataset').onchange=loadFields;
 $('#field').onchange=()=>{ loadValues(); $('#cov').classList.remove('show'); };
 let st; $('#srch').oninput=()=>{ clearTimeout(st); st=setTimeout(loadValues,250); };
