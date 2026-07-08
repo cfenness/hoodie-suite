@@ -2931,6 +2931,201 @@ def book_summary_ep():
     except Exception as e:
         return jsonify(ok=True, empty=True, note="no book yet — POST /api/seed/build (%s)" % str(e)[:120])
 
+# ── MDM Flow — visual master-building (a node DAG compiled to DuckDB SQL over Parquet) ──────────
+# The engine is flow.py; these routes seed / persist / preview / profile / explain / reconcile / run
+# a flow. Every non-run route is READ-ONLY and sampled — profiling pushes aggregation into DuckDB and
+# never materializes a full table into Python, so line-of-sight stays instant as the sources grow.
+FLOWS_FILE = "flows.json"
+HOODIE_PREFIX = {"outlet": "O", "product": "I", "party": "P"}
+
+
+def _flow_jsonsafe(v):
+    """DuckDB returns lists (list() aggregates), dates and Decimals — make them JSON-safe."""
+    import datetime
+    import decimal
+    if isinstance(v, dict):
+        return {k: _flow_jsonsafe(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_flow_jsonsafe(x) for x in v]
+    if isinstance(v, (datetime.date, datetime.datetime)):
+        return v.isoformat()
+    if isinstance(v, decimal.Decimal):
+        return float(v)
+    if isinstance(v, bytes):
+        return v.decode("utf-8", "replace")
+    return v
+
+
+def _flow_compile(body):
+    """Compile the requested node of the posted flow → (sql, flow, node_id). Node defaults to the last."""
+    import flow as flowmod
+    import warehouse
+    fl = body.get("flow") or {}
+    node = body.get("node") or ((fl.get("nodes") or [{}])[-1].get("id"))
+    return flowmod.compile_sql(fl, node, warehouse.uri), fl, node
+
+
+@app.get("/api/flow/datasets")
+def flow_datasets_ep():
+    """Input palette — every landed warehouse dataset (name, rows, fields), footer-only (cheap)."""
+    import warehouse
+    try:
+        return jsonify(ok=True, datasets=warehouse.list_datasets())
+    except Exception as e:
+        return jsonify(ok=True, datasets=[], error=str(e)[:160])
+
+
+@app.get("/api/flow")
+def flow_list_ep():
+    fl = load(FLOWS_FILE, {})
+    fid = (request.args.get("id") or "").strip()
+    if fid:
+        return jsonify(ok=True, flow=fl.get(fid))
+    return jsonify(ok=True, flows=[{"id": k, "name": v.get("name") or k, "entity": v.get("entity"),
+                                    "nodes": len(v.get("nodes", []))} for k, v in fl.items()])
+
+
+@app.post("/api/flow")
+def flow_save_ep():
+    b = request.get_json(silent=True) or {}
+    fl_obj = b.get("flow") or {}
+    fid = (b.get("id") or fl_obj.get("id") or "").strip() or ("flow_%05d" % (int(time.time()) % 100000))
+    fl_obj["id"] = fid
+    store = load(FLOWS_FILE, {})
+    store[fid] = fl_obj
+    _save_json(FLOWS_FILE, store)
+    return jsonify(ok=True, id=fid, flow=fl_obj)
+
+
+@app.post("/api/flow/seed")
+def flow_seed_ep():
+    """Auto-propose a flow for an entity from what's landed (propose, then dispose — every node editable)."""
+    import flow as flowmod
+    import warehouse
+    b = request.get_json(silent=True) or {}
+    entity = _entity(b.get("entity") or "outlet")
+    ds = warehouse.list_datasets()
+    proposed = flowmod.propose_flow(entity, ds, _master_schema(entity))
+    proposed["name"] = proposed.get("name") or ("Seed · %s" % entity)
+    return jsonify(ok=True, flow=proposed, datasets=len(ds))
+
+
+@app.post("/api/flow/sql")
+def flow_sql_ep():
+    """The compiled DuckDB SQL for a node — the Explain view."""
+    try:
+        sql, _fl, node = _flow_compile(request.get_json(silent=True) or {})
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:240]), 200
+    return jsonify(ok=True, node=node, sql=sql)
+
+
+@app.post("/api/flow/preview")
+def flow_preview_ep():
+    """Sample rows at a node's output — the Data view."""
+    import warehouse
+    b = request.get_json(silent=True) or {}
+    try:
+        limit = min(500, max(1, int(b.get("limit", 50))))
+    except (ValueError, TypeError):
+        limit = 50
+    try:
+        sql, _fl, node = _flow_compile(b)
+        cur = warehouse.connect().execute("SELECT * FROM (%s) q LIMIT %d" % (sql, limit))
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:240], columns=[], rows=[]), 200
+    return jsonify(ok=True, landed=True, node=node, columns=cols, rows=_flow_jsonsafe(rows))
+
+
+@app.post("/api/flow/profile")
+def flow_profile_ep():
+    """Per-column fill-rate + distinct cardinality at a node — the Profile view (sampled at scale)."""
+    import flow as flowmod
+    import warehouse
+    b = request.get_json(silent=True) or {}
+    try:
+        sample = max(0, int(b.get("sample", 0) or 0))
+    except (ValueError, TypeError):
+        sample = 0
+    try:
+        sql, _fl, node = _flow_compile(b)
+        con = warehouse.connect()
+        cols = [d[0] for d in con.execute("SELECT * FROM (%s) q LIMIT 0" % sql).description
+                if not str(d[0]).startswith("_")][:40]
+        if not cols:
+            return jsonify(ok=True, landed=True, node=node, total=0, fields=[])
+        cur = con.execute(flowmod.profile_sql(sql, cols, sample=sample))
+        rec = dict(zip([d[0] for d in cur.description], cur.fetchone()))
+        total = rec.get("_n") or 0
+        out = [{"field": c, "filled": rec.get(c + "†fill") or 0, "distinct": rec.get(c + "†dct") or 0,
+                "fill_pct": round(100 * (rec.get(c + "†fill") or 0) / max(1, total), 1)} for c in cols]
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:240], fields=[]), 200
+    return jsonify(ok=True, landed=True, node=node, total=total, fields=out)
+
+
+@app.post("/api/flow/conflicts")
+def flow_conflicts_ep():
+    """The stewardship queue for one attribute at a resolve node: identities whose sources disagree,
+    with the competing values + their sources — the raw material for the human tier / match page."""
+    import flow as flowmod
+    import warehouse
+    b = request.get_json(silent=True) or {}
+    field = (b.get("field") or "").strip()
+    if not field:
+        return jsonify(ok=False, error="field required"), 200
+    try:
+        limit = min(500, max(1, int(b.get("limit", 100))))
+    except (ValueError, TypeError):
+        limit = 100
+    try:
+        csql = flowmod.conflict_sql(b.get("flow") or {}, b.get("node"), field, warehouse.uri, limit=limit)
+        cur = warehouse.connect().execute(csql)
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:240], conflicts=[]), 200
+    return jsonify(ok=True, landed=True, field=field, conflicts=_flow_jsonsafe(rows))
+
+
+@app.post("/api/flow/run")
+def flow_run_ep():
+    """Materialize a node to a warehouse table, minting STABLE Hoodie IDs via a registry (identity →
+    HO-<x>-###, kept across rebuilds so an id never changes just because an attribute did)."""
+    import flow as flowmod
+    import warehouse
+    b = request.get_json(silent=True) or {}
+    fl_obj = b.get("flow") or {}
+    node = b.get("node") or ((fl_obj.get("nodes") or [{}])[-1].get("id"))
+    nd = {n.get("id"): n for n in fl_obj.get("nodes", [])}.get(node) or {}
+    entity = _entity(fl_obj.get("entity") or "outlet")
+    table = (nd.get("table") or ("dim_%s" % entity)).strip().replace("'", "")
+    pfx = HOODIE_PREFIX.get(entity, "X")
+    try:
+        sql = flowmod.compile_sql(fl_obj, node, warehouse.uri)
+        con = warehouse.connect()
+        ids = [r[0] for r in con.execute(
+            "SELECT DISTINCT _id FROM (%s) q WHERE _id IS NOT NULL AND _id<>''" % sql).fetchall()]
+        reg = load("hoodie_ids.json", {})
+        ent = reg.setdefault(entity, {"map": {}, "next": 1})
+        minted = 0
+        for i in ids:
+            if i not in ent["map"]:
+                ent["map"][i] = "HO-%s-%06d" % (pfx, ent["next"]); ent["next"] += 1; minted += 1
+        _save_json("hoodie_ids.json", reg)
+        con.execute("CREATE OR REPLACE TEMP TABLE _homap(_id VARCHAR, hoodie_id VARCHAR)")
+        if ids:
+            con.executemany("INSERT INTO _homap VALUES (?,?)", [[i, ent["map"][i]] for i in ids])
+        uri = warehouse.uri(table).replace("'", "")
+        con.execute("COPY (SELECT m.hoodie_id, q.* FROM (%s) q LEFT JOIN _homap m USING(_id)) "
+                    "TO '%s' (FORMAT PARQUET)" % (sql, uri))
+        total = con.execute("SELECT count(*) FROM read_parquet('%s')" % uri).fetchone()[0]
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:240]), 200
+    return jsonify(ok=True, table=table, rows=total, hoodie_minted=minted, hoodie_total=len(ent["map"]))
+
 # ---- optional: serve the static suite from THIS app (all-in-one image, e.g. Fly.io) ----
 # When SUITE_ROOT is set, one gunicorn process serves BOTH /api/* and the public suite from a single
 # origin, so the apps' same-origin /api/* fetches work with no separate frontend host and no CORS.

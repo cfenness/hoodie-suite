@@ -88,7 +88,10 @@ def _key_part(spec):
         field, norm = spec.get("field"), (spec.get("norm") or "compare_form")
     else:
         field, norm = spec, "compare_form"
-    return derive._apply_transform(norm, derive.col(field))
+    # COALESCE to '' so a NULL component doesn't null the WHOLE concatenated key (a missing zip/address
+    # would otherwise make `a || b || c` NULL and silently DROP the row from the master). Rows whose key
+    # is empty across every component are filtered out at the resolve node instead.
+    return "COALESCE(%s, '')" % derive._apply_transform(norm, derive.col(field))
 
 
 # ── the compiler: a node → the SQL that produces its output rows ──
@@ -163,7 +166,9 @@ def compile_sql(flow, node_id, uri_fn, _seen=None):
         out.append("count(DISTINCT _source) AS _sources")
         out.append("list(DISTINCT _source) AS _source_list")
         inner = "SELECT *, %s AS _id FROM (%s)" % (id_expr, ins[0])
-        return "SELECT %s FROM (%s) WHERE _id <> '' GROUP BY _id" % (", ".join(out), inner)
+        # keep any row with at least one non-empty key component; drop only all-empty keys (the '␟'
+        # separators alone don't count). Never a blanket `_id <> ''`, which would drop partial keys.
+        return "SELECT %s FROM (%s) WHERE replace(_id, '␟', '') <> '' GROUP BY _id" % (", ".join(out), inner)
 
     if t == "output":
         if not ins:
@@ -202,7 +207,7 @@ def conflict_sql(flow, resolve_node_id, field, uri_fn, limit=100):
     c = derive.col(field)
     inner = "SELECT *, %s AS _id FROM (%s)" % (id_expr, upstream)
     return ("SELECT _id, list(DISTINCT CAST(%s AS VARCHAR)) FILTER (WHERE CAST(%s AS VARCHAR)<>'') AS values, "
-            "list(DISTINCT _source) AS sources, count(*) AS rows FROM (%s) WHERE _id<>'' GROUP BY _id "
+            "list(DISTINCT _source) AS sources, count(*) AS rows FROM (%s) WHERE replace(_id,'␟','')<>'' GROUP BY _id "
             "HAVING count(DISTINCT CAST(%s AS VARCHAR)) FILTER (WHERE CAST(%s AS VARCHAR)<>'') > 1 "
             "ORDER BY rows DESC LIMIT %d" % (c, c, inner, c, c, int(limit)))
 
@@ -219,13 +224,17 @@ _SYNONYMS = {
     "origin": ["origin", "country", "country of origin", "region", "appellation"],
     "category": ["category", "class", "type", "class type", "class/type", "product class"],
     "supplier": ["supplier", "applicant", "registrant", "company", "importer", "producer"],
-    # OUTLET: dba (the trade name customers see) and legal_name (the licensed entity) are kept SEPARATE
-    # on purpose — cross-source they diverge ("Tipsy Tavern" vs "SMITH ENTERPRISES LLC"), so collapsing
-    # them would reject true matches. Match dba-to-dba / legal-to-legal, never dba-to-legal.
-    "name": ["dba", "d b a", "doing business as", "trade name", "tradename", "business name",
-             "outlet", "outlet name", "store", "location name", "establishment", "name"],
-    "legal_name": ["legal name", "legalname", "licensee", "licensee name", "backer", "owner",
-                   "owner name", "registrant", "legal entity", "entity name"],
+    # OUTLET: outlet_name (the licensed/account name — the more consistently-populated one, used for the
+    # identity key) and dba (the trade name customers see) are kept SEPARATE on purpose — cross-source
+    # they diverge ("SMITH ENTERPRISES LLC" vs "Tipsy Tavern"), so collapsing them would reject true
+    # matches. Map legal-to-legal / dba-to-dba, never across. (Field names match DEFAULT_OUTLET_FIELDS.)
+    # outlet_name is the identity/MATCH name — populate it from whatever name a source carries (many give
+    # only a trade name, so trade_name lands here). dba is reserved for an EXPLICIT doing-business-as
+    # column, kept alongside when a source has both a legal name AND a dba.
+    "outlet_name": ["outlet name", "account name", "legal name", "legalname", "licensee", "licensee name",
+                    "backer", "owner", "owner name", "registrant", "business name", "establishment",
+                    "trade name", "tradename", "store", "location name", "name", "outlet"],
+    "dba": ["dba", "d b a", "doing business as"],
     "address": ["address", "street", "addr", "address1", "premise address", "location address",
                 "actual address of premises", "street address", "backer address"],
     "city": ["city", "town", "municipality"],
@@ -241,13 +250,13 @@ _SYNONYMS = {
 _ENTITY_KEYS = {
     "product": [{"field": "brand", "norm": "identity_key"}, {"field": "product_name", "norm": "identity_key"},
                 {"field": "size_ml", "norm": "none"}],
-    "outlet":  [{"field": "name", "norm": "compare_form"}, {"field": "address", "norm": "address_core"},
+    "outlet":  [{"field": "outlet_name", "norm": "compare_form"}, {"field": "address", "norm": "address_core"},
                 {"field": "zip5", "norm": "none"}],
-    "party":   [{"field": "legal_name", "norm": "strip_entity_suffix"}],
+    "party":   [{"field": "outlet_name", "norm": "strip_entity_suffix"}],
 }
 # the fields that decide whether a dataset FEEDS an entity (score = share it can map)
 _ENTITY_NATURAL = {e: [k["field"] for k in ks] for e, ks in _ENTITY_KEYS.items()}
-_ENTITY_STRONG = {"product": "upc", "outlet": None, "party": None}
+_ENTITY_STRONG = {"product": "upc", "outlet": "source_ref", "party": None}
 
 
 def _norm(s):
@@ -371,11 +380,12 @@ def _selftest():
                     {"id": "r", "type": "resolve", "inputs": ["i"], "fields": ["brand"],
                      "identity": {"strong": None, "natural": [{"field": "brand", "norm": "identity_key"}]}}]}
     assert "gift set" in compile_sql(pb, "r", uf), "product identity should still strip editions"
-    # dba vs legal_name stay SEPARATE when seeding an outlet (the cross-source match-killer)
+    # dba vs outlet_name (legal/account) stay SEPARATE when seeding an outlet (the cross-source match-killer)
     oseed = propose_flow("outlet", [{"name": "fl", "fields": ["DBA", "Owner Name", "Location Address 1", "Zip"]}],
-                         ["name", "legal_name", "address", "zip5"])
+                         ["outlet_name", "dba", "address", "zip5", "source_ref"])
     ofm = {f["out"]: f.get("source_field") for f in {n["id"]: n for n in oseed["nodes"]}["cl_fl"]["fields"]}
-    assert ofm.get("name") == "DBA" and ofm.get("legal_name") == "Owner Name", ofm
+    assert ofm.get("dba") == "DBA" and ofm.get("outlet_name") == "Owner Name", ofm
+    assert oseed["nodes"][-2]["identity"]["strong"] == "source_ref", oseed["nodes"][-2]["identity"]
 
     # live check against DuckDB if present: a two-source master with a real conflict
     try:
