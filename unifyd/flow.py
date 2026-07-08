@@ -219,10 +219,13 @@ def conflict_sql(flow, resolve_node_id, field, uri_fn, limit=100):
     upstream = compile_sql(flow, n["inputs"][0], uri_fn) if n.get("inputs") else "SELECT 1"
     c = derive.col(field)
     inner = "SELECT *, %s AS _id FROM (%s)" % (id_expr, upstream)
-    return ("SELECT _id, list(DISTINCT CAST(%s AS VARCHAR)) FILTER (WHERE CAST(%s AS VARCHAR)<>'') AS values, "
-            "list(DISTINCT _source) AS sources, count(*) AS rows FROM (%s) WHERE replace(_id,'␟','')<>'' GROUP BY _id "
+    return ("SELECT _id, "
+            "list(DISTINCT CAST(%s AS VARCHAR)) FILTER (WHERE CAST(%s AS VARCHAR)<>'') AS values, "
+            "list(DISTINCT {'v': CAST(%s AS VARCHAR), 'src': _source}) FILTER (WHERE CAST(%s AS VARCHAR)<>'') AS pairs, "
+            "list(DISTINCT _source) AS sources, count(*) AS rows "
+            "FROM (%s) WHERE replace(_id,'␟','')<>'' GROUP BY _id "
             "HAVING count(DISTINCT CAST(%s AS VARCHAR)) FILTER (WHERE CAST(%s AS VARCHAR)<>'') > 1 "
-            "ORDER BY rows DESC LIMIT %d" % (c, c, inner, c, c, int(limit)))
+            "ORDER BY rows DESC LIMIT %d" % (c, c, c, c, inner, c, c, int(limit)))
 
 
 # ── seeding: auto-build a flow for a master from the datasets already landed ──
@@ -437,7 +440,9 @@ def _selftest():
         assert rec["origin__conflict"] is True, rec                # A vs B → conflict flagged for stewardship
         # conflict queue surfaces the competing values
         cq = con.execute(conflict_sql(fl, "r", "origin", uf2)).fetchall()
-        assert cq and sorted(cq[0][1]) == ["A", "B"], cq
+        assert cq and sorted(cq[0][1]) == ["A", "B"], cq                # values
+        pairs = cq[0][2]                                                # (value, source) pairs — who said what
+        assert {p["v"] for p in pairs} == {"A", "B"} and {p["src"] for p in pairs} == {"s1", "s2"}, pairs
         # profile over the resolved node
         pcols = ["brand", "size_ml", "origin"]
         prof = con.execute(profile_sql(compile_sql(fl, "r", uf2), pcols)).fetchall()

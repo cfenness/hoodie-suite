@@ -95,10 +95,20 @@
   .cf h3{margin:0;font-size:11px;font-weight:700;padding:8px 11px;background:var(--panel);color:var(--ink);display:flex;justify-content:space-between;cursor:pointer}
   .cf h3 .n{color:var(--amber);font-size:10px}
   .cf .rows{display:none}.cf.open .rows{display:block}
-  .cfr{display:grid;grid-template-columns:1fr 220px;gap:12px;padding:6px 11px;border-top:1px solid var(--line2);align-items:center}
+  .cfr{display:grid;grid-template-columns:1fr 170px;gap:12px;padding:6px 11px;border-top:1px solid var(--line2);align-items:center}
   .cfr .vals{display:flex;flex-wrap:wrap;gap:5px}
   .cval{font-size:10.5px;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:2px 7px}
-  .cfr .src{color:var(--mut);font-size:10px;text-align:right}
+  .cval .cs{color:var(--mut2);margin-right:5px}
+  .cfr .win{color:var(--good);font-size:10.5px;font-weight:600;text-align:right;overflow:hidden;text-overflow:ellipsis}
+  .authbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:11px;font-size:10.5px;color:var(--mut)}
+  .authbar .ac{cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:3px 8px;color:var(--ink2);font-weight:600}
+  .authbar .ac:hover{border-color:#33453f}.authbar .ac.top{border-color:var(--amber);color:var(--amber)}
+  .authbar .ac .r{color:var(--mut2);margin-right:4px}
+  .rulesel{display:inline-flex;gap:2px;margin:0 10px}
+  .rulesel button{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:2px 8px;font-size:10px;font-weight:600;color:var(--mut);cursor:pointer}
+  .rulesel button:hover{color:var(--ink2)}
+  .rulesel button.on{background:var(--tealbg);border-color:var(--teal-d);color:var(--teal)}
+  .cf h3{align-items:center}
   /* explain */
   .exp .desc{font-family:var(--alt);font-size:13px;line-height:1.6;color:var(--ink2);max-width:88ch;margin:0 0 10px}
   pre.sql{margin:0;padding:12px;border:1px solid var(--line);border-radius:7px;background:var(--panel);font-size:11px;line-height:1.65;color:#b9d0c8;white-space:pre-wrap;word-break:break-word}
@@ -279,19 +289,43 @@
     if($("clrf"))$("clrf").onclick=function(){S.focusField=null;paintData(v);};
   }
 
-  function loadConflicts(v){var n=nodeById(S.sel);var fields=(n.fields||[]);
-    // ask the engine per field; only show fields that actually disagree
-    var checks=fields.map(function(f){return api("/api/flow/conflicts",{flow:S.flow,node:S.sel,field:f,limit:60}).then(function(r){return{field:f,list:(r&&r.conflicts)||[]};});});
-    Promise.all(checks).then(function(res){
+  // ── conflicts, RESOLVABLE — every gesture writes a rule, never a value (first law) ──
+  function resolveNode(){return (S.flow.nodes||[]).filter(function(n){return n.type==="resolve";})[0];}
+  function sourceUniverse(){return (S.flow.nodes||[]).filter(function(n){return n.type==="input";}).map(function(n){return n.dataset;});}
+  function saveFlow(cb){api("/api/flow",{flow:S.flow}).then(function(r){if(r&&r.ok&&r.flow&&r.flow.id)S.flow.id=r.flow.id;if(cb)cb(r);});}
+  function setRule(field,rule){var rn=resolveNode();if(!rn)return;rn.survivors=rn.survivors||{};rn.survivors[field]=rule;
+    saveFlow(function(){toast(field+" → survive by "+rule+" · a rule, re-materializes","good");loadConflicts($("view"));});}
+  function promoteAuthority(src){var rn=resolveNode();if(!rn)return;
+    var o=(rn.authority&&rn.authority.length?rn.authority.slice():sourceUniverse());
+    rn.authority=[src].concat(o.filter(function(s){return s!==src;}));
+    saveFlow(function(){toast("authority: "+rn.authority.join(" > "),"good");loadConflicts($("view"));});}
+
+  function loadConflicts(v){var rn=resolveNode();if(!rn){v.innerHTML='<div class="hint">conflicts live on the resolve node.</div>';return;}
+    var fields=(rn.fields||[]);v.innerHTML='<div class="spin"></div>';
+    Promise.all([
+      Promise.all(fields.map(function(f){return api("/api/flow/conflicts",{flow:S.flow,node:rn.id,field:f,limit:60}).then(function(r){return{field:f,list:(r&&r.conflicts)||[]};});})),
+      api("/api/flow/preview",{flow:S.flow,node:rn.id,limit:400})
+    ]).then(function(arr){
+      var res=arr[0],prev=arr[1],win={};if(prev&&prev.landed)(prev.rows||[]).forEach(function(row){win[row._id]=row;});
       var hot=res.filter(function(x){return x.list.length;});
-      if(!hot.length){v.innerHTML='<div class="hint">no cross-source conflicts at this step — sources agree where they overlap. ✓</div>';return;}
-      var h='<div class="psum">'+hot.length+' field(s) with cross-source disagreement · resolve by rule, never a row fix</div>';
-      hot.forEach(function(x){h+='<div class="cf open"><h3 data-f="'+esc(x.field)+'"><span>'+esc(x.field)+'</span><span class="n">'+x.list.length+' contested</span></h3><div class="rows">';
-        x.list.slice(0,40).forEach(function(c){var vals=(c.values||[]).map(function(vv){return '<span class="cval">'+esc(vv)+'</span>';}).join("");
-          h+='<div class="cfr"><div class="vals">'+vals+'</div><div class="src">'+esc((c.sources||[]).join(" · "))+'</div></div>';});
+      if(!hot.length){v.innerHTML='<div class="hint">no cross-source conflicts — sources agree where they overlap. ✓</div>';return;}
+      var order=(rn.authority&&rn.authority.length?rn.authority:sourceUniverse());
+      var RULES=["any","authority","frequency","recency","longest"];
+      var h='<div class="psum">'+hot.length+' field(s) contested · pick the RULE that survives — re-materializes on rebuild, never a row fix</div>';
+      h+='<div class="authbar"><span>source authority:</span>'+order.map(function(s,i){return '<span class="ac'+(i===0?" top":"")+'" data-src="'+esc(s)+'"><span class="r">'+(i+1)+'</span>'+esc(s)+'</span>';}).join("")+
+         '<span style="color:var(--mut2)">click to promote · used by fields set to authority</span></div>';
+      hot.forEach(function(x){var cur=(rn.survivors&&rn.survivors[x.field])||"any";
+        h+='<div class="cf open"><h3><span>'+esc(x.field)+'</span><span class="rulesel">'+
+           RULES.map(function(r){return '<button class="'+(r===cur?"on":"")+'" data-field="'+esc(x.field)+'" data-rule="'+r+'">'+r+'</button>';}).join("")+
+           '</span><span class="n">'+x.list.length+' contested</span></h3><div class="rows">';
+        x.list.slice(0,40).forEach(function(c){var pairs=c.pairs||[];
+          var vals=pairs.map(function(p){return '<span class="cval"><span class="cs">'+esc(p.src)+'</span>'+esc(p.v)+'</span>';}).join("")||(c.values||[]).map(function(vv){return '<span class="cval">'+esc(vv)+'</span>';}).join("");
+          var w=(win[c._id]||{})[x.field];
+          h+='<div class="cfr"><div class="vals">'+vals+'</div><div class="win">'+(w!=null&&w!==""?("→ "+esc(w)):"—")+'</div></div>';});
         h+='</div></div>';});
       v.innerHTML=h;
-      Array.prototype.forEach.call(v.querySelectorAll(".cf h3"),function(el){el.onclick=function(){el.parentNode.classList.toggle("open");};});
+      Array.prototype.forEach.call(v.querySelectorAll(".rulesel button"),function(el){el.onclick=function(){setRule(el.getAttribute("data-field"),el.getAttribute("data-rule"));};});
+      Array.prototype.forEach.call(v.querySelectorAll(".authbar .ac"),function(el){el.onclick=function(){promoteAuthority(el.getAttribute("data-src"));};});
     });
   }
 
