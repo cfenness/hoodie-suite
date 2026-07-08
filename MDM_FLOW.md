@@ -284,6 +284,28 @@ guarantee we build to: **a domain pack is data, not code.**
 token-stripping it started as — a hardcoded `identity_key` was an alcohol assumption leaking into the
 generic core.)
 
+## Serve — syndicating the master (real only, by construction)
+
+Producing golden records is the middle of the story; the point is to **serve** them clean downstream
+("resolve once, flows clean through every system"). The serve layer:
+
+- **`GET /api/serve/<entity>/<hoodie_id>`** — a golden record by its stable Hoodie ID (the consumer's
+  join key), and **`GET /api/serve/<entity>`** — a paged read of the master.
+- **Real only, by construction.** Both hardcode `mode='real'`, so a consumer can *never* be handed
+  synthetic data — even when a synthetic master exists in `synthetic/dim_<entity>`. The real≠synthetic
+  isolation (below) is the gate the whole serve layer sits behind.
+- **Next:** a `updated_since=` delta feed (needs a materialized timestamp — ties to bi-temporal
+  history), provenance-on-serve (the trust API — "here's why it says this"), per-customer entitlements
+  and quotas (the OIDC gate + rate limiter are the primitives), and change events / webhooks for push
+  syndication. The contract belongs in `openapi.yaml`, versioned, with a generated typed client.
+
+**Isolation, as implemented:** the warehouse namespaces datasets by mode (`real/…` vs `synthetic/…`);
+a build reads exactly one; Hoodie IDs mint into per-mode id spaces; and the serve API reads real only.
+Internal follow-up: align the flow's output table to the canonical dims the console reads
+(`dim_outlet_resolved` / `dim_sku`), so the workbench's output feeds every existing surface, not just
+the serve API — currently the flow writes `dim_<entity>` and the serve API reads that; the console's
+older tabs still read the legacy `dim_*_resolved` (schema-align, then converge).
+
 ## Low-level canonical → thousands of customers
 
 Resolve identity **once** at an atomic, low-level grain (separate outlet / party / item; both `dba`
