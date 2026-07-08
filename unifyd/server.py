@@ -3053,7 +3053,7 @@ def flow_profile_ep():
         sql, _fl, node = _flow_compile(b)
         con = warehouse.connect()
         cols = [d[0] for d in con.execute("SELECT * FROM (%s) q LIMIT 0" % sql).description
-                if not str(d[0]).startswith("_")][:40]
+                if not str(d[0]).startswith("_") and "__conflict" not in str(d[0])][:40]
         if not cols:
             return jsonify(ok=True, landed=True, node=node, total=0, fields=[])
         cur = con.execute(flowmod.profile_sql(sql, cols, sample=sample))
