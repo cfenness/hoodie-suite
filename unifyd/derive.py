@@ -65,6 +65,66 @@ TRANSFORMS = {
                      "'(19[0-9]{2}|20[0-9]{2}|christmas|holiday|seasonal|limited edition|limited|special edition|"
                      "gift set|gift pack|gift|anniversary|collector|commemorative)','','g'),' +',' ','g'))"),
 }
+
+# ── 'common strings' normalizers (address / entity / name — the recurring dirt; see MDM_FLOW.md) ──
+# Built with an '@@' column placeholder, swapped to '%s' at registration so the templates stay legible.
+# USPS-style token standardization: street types + directionals → one canonical form, so '123 Main
+# Street' and '123 MAIN ST' collapse to the same block key. Longest tokens first (NORTHEAST before
+# NORTH) so the greedy word-boundary replace is stable.
+_STREET_STD = {
+    "STREET": "ST", "AVENUE": "AVE", "BOULEVARD": "BLVD", "DRIVE": "DR", "ROAD": "RD", "LANE": "LN",
+    "COURT": "CT", "PLACE": "PL", "HIGHWAY": "HWY", "PARKWAY": "PKWY", "TERRACE": "TER", "CIRCLE": "CIR",
+    "TRAIL": "TRL", "SQUARE": "SQ", "NORTHEAST": "NE", "NORTHWEST": "NW", "SOUTHEAST": "SE",
+    "SOUTHWEST": "SW", "NORTH": "N", "SOUTH": "S", "EAST": "E", "WEST": "W",
+    "SUITE": "STE", "APARTMENT": "APT", "BUILDING": "BLDG", "FLOOR": "FL",
+}
+
+
+def _std_chain(base):
+    """Wrap `base` (an expr containing the '@@' column placeholder) in a chain of regexp_replace that
+    canonicalizes each address token, then collapse whitespace."""
+    expr = base
+    for word, abbr in sorted(_STREET_STD.items(), key=lambda kv: -len(kv[0])):
+        expr = "regexp_replace(" + expr + ",'\\b" + word + "\\b','" + abbr + "','g')"
+    return "trim(regexp_replace(" + expr + ",' +',' ','g'))"
+
+
+_ADDR_BASE = "upper(regexp_replace(CAST(@@ AS VARCHAR),'[.,#]',' ','g'))"
+_ADDR_STD  = _std_chain(_ADDR_BASE)
+# building-level key: address_std with the secondary-unit clause (STE 400, APT 2B…) removed, so
+# '123 Main' and '123 Main Ste 4' block at the building but the unit distinguishes the tenant.
+_ADDR_CORE = ("trim(regexp_replace(regexp_replace(" + _ADDR_STD +
+              ",'\\b(STE|APT|BLDG|FL|UNIT|RM|ROOM)\\b\\s*[0-9A-Z-]*','','g'),' +',' ','g'))")
+# junk that means 'no value' — the hand-keyed placeholder, not data
+_NULLPH = ("CASE WHEN upper(trim(CAST(@@ AS VARCHAR))) IN "
+           "('N/A','NA','N.A.','NONE','NULL','SAME','SEE ABOVE','UNKNOWN','UNK','TBD','.','0','00','XXX','X','--','---') "
+           "OR trim(CAST(@@ AS VARCHAR))='' THEN NULL ELSE @@ END")
+# strip corporate suffixes → a legal_name_core for entity matching (keep the raw legal name elsewhere)
+_ENTITY = ("trim(regexp_replace(regexp_replace(upper(regexp_replace(CAST(@@ AS VARCHAR),'[.,]',' ','g')),"
+           "'\\b(L L C|LLC|INCORPORATED|INC|CORPORATION|CORP|COMPANY|CO|LLP|LP|LTD|LIMITED|PLLC|PC)\\b','','g'),"
+           "' +',' ','g'))")
+# pull the secondary unit designator's number out to its own field
+_UNIT_EXT = ("regexp_extract(upper(CAST(@@ AS VARCHAR)),"
+             "'(?:\\b(?:STE|SUITE|APT|APARTMENT|UNIT|BLDG|RM|ROOM|FL|FLOOR)\\b|#)\\s*#?\\s*([0-9A-Z-]+)',1)")
+# chain store number: '#1234', 'STORE 45', 'NO. 12' → the number; and the name with it stripped
+_STORE_EXT = "regexp_extract(upper(CAST(@@ AS VARCHAR)),'(?:#|\\bSTORE\\b|\\bSTR\\b|\\bNO\\.?)\\s*([0-9]{2,6})',1)"
+_NAME_NOSTORE = ("trim(regexp_replace(regexp_replace(upper(CAST(@@ AS VARCHAR)),"
+                 "'(?:#|\\bSTORE\\b|\\bSTR\\b|\\bNO\\.?)\\s*[0-9]{2,6}','','g'),' +',' ','g'))")
+# canonical compare form: accents folded, & → AND, punctuation dropped, ws collapsed
+_COMPARE = ("trim(regexp_replace(regexp_replace(regexp_replace(strip_accents(upper(CAST(@@ AS VARCHAR))),"
+            "'&',' AND ','g'),'[^A-Z0-9 ]',' ','g'),' +',' ','g'))")
+
+TRANSFORMS.update({
+    "null_if_placeholder": _NULLPH.replace("@@", "%s"),
+    "strip_entity_suffix": _ENTITY.replace("@@", "%s"),
+    "address_std":         _ADDR_STD.replace("@@", "%s"),
+    "address_core":        _ADDR_CORE.replace("@@", "%s"),
+    "unit_ext":            _UNIT_EXT.replace("@@", "%s"),
+    "store_no_ext":        _STORE_EXT.replace("@@", "%s"),
+    "name_no_store":       _NAME_NOSTORE.replace("@@", "%s"),
+    "compare_form":        _COMPARE.replace("@@", "%s"),
+})
+
 # auto-applied normalizers (declared on a master field, not user-picked in the transform dropdown)
 _NORMALIZER_ONLY = {"upc_normalize", "zip5", "zip4", "state_abbr", "name_clean", "identity_key"}
 TRANSFORM_NAMES = [t for t in TRANSFORMS if t not in _NORMALIZER_ONLY]   # user-selectable (normalizers auto-apply)
@@ -210,7 +270,31 @@ def _selftest():
         dv = dict((r[1], r[0]) for r in con.execute("SELECT %s d, x FROM ct" % dex).fetchall())
         assert dv.get("CABERNET SAUVIGNON RESERVE") == "Cabernet Sauvignon" and dv.get("CAB") == "Cabernet Sauvignon" \
             and dv.get("PINOT NOIR") == "Pinot Noir", dv
-        print("derive self-test: OK — 6 modes compile; size_to_ml 750ML→750; map FRANCE→France; dict cab→Cabernet Sauvignon")
+        # ── 'common strings' normalizers ──
+        con.execute("CREATE TABLE n(x VARCHAR)")
+        con.executemany("INSERT INTO n VALUES (?)", [
+            ("N/A",), ("SMITH ENTERPRISES LLC",), ("John Smith Inc",), ("COSTCO WHOLESALE CORP",),
+            ("123 Main Street",), ("456 North Ave.",), ("789 Oak Blvd Ste 400",), ("100 Sterling Rd",),
+            ("WALMART #1234",), ("Barnes & Noble",), ("Café Ñoño",)])
+
+        def ev(name):
+            e = _apply_transform(name, col("x"))
+            return {r[1]: r[0] for r in con.execute("SELECT %s d, x FROM n" % e).fetchall()}
+        np = ev("null_if_placeholder")
+        assert np["N/A"] is None and np["123 Main Street"] == "123 Main Street", np
+        es = ev("strip_entity_suffix")
+        assert es["SMITH ENTERPRISES LLC"] == "SMITH ENTERPRISES" and es["John Smith Inc"] == "JOHN SMITH" \
+            and es["COSTCO WHOLESALE CORP"] == "COSTCO WHOLESALE", es
+        ad = ev("address_std")
+        assert ad["123 Main Street"] == "123 MAIN ST" and ad["456 North Ave."] == "456 N AVE", ad
+        ac = ev("address_core")
+        assert ac["789 Oak Blvd Ste 400"] == "789 OAK BLVD" and ac["100 Sterling Rd"] == "100 STERLING RD", ac
+        assert ev("unit_ext")["789 Oak Blvd Ste 400"] == "400", ev("unit_ext")
+        assert ev("store_no_ext")["WALMART #1234"] == "1234" and ev("name_no_store")["WALMART #1234"] == "WALMART"
+        cf = ev("compare_form")
+        assert cf["Barnes & Noble"] == "BARNES AND NOBLE" and cf["Café Ñoño"] == "CAFE NONO", cf
+        print("derive self-test: OK — 6 modes compile; size_to_ml 750ML→750; map FRANCE→France; dict cab→Cabernet "
+              "Sauvignon; common-strings: LLC/CORP stripped, USPS address+suite, store# extracted, & → AND, accents folded")
     except ImportError:
         print("derive self-test: OK (compile-only; duckdb not present for eval)")
 

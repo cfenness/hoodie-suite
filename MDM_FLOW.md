@@ -134,6 +134,43 @@ resolves it.
 | `#1234 · STORE 1234 · NO. 1234` | chains | extract `store_number`, strip from name |
 | `& ↔ AND`, possessives, diacritics, case/ws | names | canonical compare form |
 
+## Split-case (repack) explosion — a secondary workflow
+
+Distributors repack mixed cases in the warehouse (3 Grey Goose + 3 Bacardi in one box) that ship as
+one real item with its own repack number/UPC. MDM must **explode** the case into component lines,
+each matched to the right canonical SKU, with quantities allocated to the fact tables (kit-to-
+component). This is a **secondary workflow** (an `explode` node between `clean` and `resolve`), not
+the main resolve path.
+
+- **Detection is aggressive.** A legit single item isn't supposed to carry two brands, so *multiple
+  (usually abbreviated) brand tokens in one item field* is the tell — the abbreviation is a
+  character-limit artifact ("3 GG / 3 BAC"). Lower the confidence threshold and flag on that signal,
+  via either a detector agent sweeping the item stream or an explicit prompt callout; expand the
+  abbreviations against the brand dictionary.
+- **Size is a fact to fetch, not guess.** "3 Grey Goose" is under-determined (50ml…1.75L). The
+  system must *know it doesn't know* and resolve size via the cascade: total net volume on the line
+  (count + total constrains size), the physical-vs-9L-accounting-case distinction (don't treat a 9L
+  statistical case as a bottle count), gross weight as a backstop, the **repack UPC → a stored recipe**
+  (repacks recur — solve once, auto-split forever), authoritative lookup, then you. Mixed-size cases
+  (3×GG 750 + 3×Bacardi 1L) almost always end at the recipe or you — so *remembering* the answer
+  matters more than solving it live.
+
+## The match / steward surface — the human tier, made simple
+
+A two-pane page: **source records on the left, master golden records on the right.** It shows the
+residue the cascade couldn't auto-resolve (filtered to a block — e.g. same address — so you compare
+like with like). Two match gestures, same effect — assign the source record(s) to a master's Hoodie
+ID and persist the decision:
+
+- **select** one-or-more source rows + one master row → **Match** (multi-select left = "these are all
+  this one real entity");
+- **drag** a single source row onto a master row.
+
+Complements: **not a match** (reject → never resurfaces) and **new master** (genuinely new entity →
+mint a fresh Hoodie ID). Every decision is remembered, feeds back to tune thresholds, and — like the
+flow canvas — reads the same resolved tables. The flow *builds and auto-resolves*; this page *decides
+the residue and repairs mistakes*.
+
 ## Low-level canonical → thousands of customers
 
 Resolve identity **once** at an atomic, low-level grain (separate outlet / party / item; both `dba`
@@ -150,8 +187,14 @@ downstream — the spine (`SPINE.md`) is the joint every customer view reads.
 2. **Outlet identity + Hoodie IDs.** Address/suite normalization transforms; premise-vs-mailing and
    ZIP-centroid guards; exact address+geo and address+near-identical-name → auto-merge; `HO-O-`
    registry (stable across rebuilds).
-3. **Verification cascade.** T1 Claude-verify against a whitelist (brand page / TTB); T2 Google
-   oracle (open/closed, place_id only); T3 steward queue (the `outlet_confirms.json` pattern) with
-   evidence. Category (vodka-vs-rum) is the first item-side Check on the same model.
-4. **Generalize.** Party master (`HO-P-`) + licensee↔outlet links; items (`HO-I-`); compliance rules
-   (origin/labeling) as hard checks; per-customer / per-locale projections off the low-level canonical.
+3. **Verification cascade + the match/steward surface.** T1 Claude-verify against a whitelist (brand
+   page / TTB); T2 Google oracle (open/closed, place_id only); T3 the two-pane match page (source left
+   / master right; select-or-drag → match; reject; new-master) over the `outlet_confirms.json` pattern
+   with evidence. Category (vodka-vs-rum) is the first item-side Check on the same model.
+4. **Generalize.** Party master (`HO-P-`) + licensee↔outlet links; items (`HO-I-`); the `explode`
+   node + repack-recipe store for split-cases; compliance rules (origin/labeling) as hard checks;
+   per-customer / per-locale projections off the low-level canonical.
+
+_Landed so far: `flow.py` (DAG compiler, self-tested) and the `derive.py` common-string normalizers
+(entity-suffix strip, placeholder→NULL, USPS address + suite parsing, store-number extraction,
+compare-form), self-tested against DuckDB._
