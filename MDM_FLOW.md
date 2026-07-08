@@ -136,9 +136,19 @@ resolves it.
 
 ## First cascade instance: catch-all density → COLA label backfill
 
-The catch-all detector and the verification cascade compose into the first concrete Check. When an
-**identifiable product field's catch-all share crosses a threshold** (e.g. category is 40% "other"),
-that's not data to accept — it's a signal the *source is systematically unreliable for that field*.
+The catch-all detector and the verification cascade compose into the first concrete Check. Two
+triggers, both firing a label lookup:
+
+- **Record-level (lazy-entry, the VIP signature):** once a record reaches the **identifier level** —
+  identifiable enough to resolve to a COLA product cluster — if **≥40% of its *responded* fields are
+  catch-all**, verify it. The denominator is responded (filled) fields, not all rows: this isolates
+  the lie (a field *answered with a non-answer*) from ordinary blankness. The identifier gate is a
+  precondition (you can't read a label for a product you can't identify) and a filter (don't spend a
+  check on a record too sparse to be real) — and because you must identify on *real* fields, you
+  identify on the clean ones and verify the junk. Defaults: 40% + resolvable-to-cluster, both config.
+- **Field-level (unreliable source):** a field whose catch-all share across the dataset crosses a
+  threshold signals the *source can't be trusted for that field* → verify that field from its authority.
+
 The `verify` node then goes to the **authority the field maps to** — for product class/type, ABV,
 origin, net contents, that's the **TTB COLA label**:
 
