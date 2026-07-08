@@ -63,7 +63,7 @@
 <div class="wrap">
   <div class="pagehead">
     <h1>Field Mapping</h1>
-    <div class="sub">Map any source dataset's fields to the master schema (e.g. <code>or_pricing.size → master.packsize</code>). Mappings persist. Apply a data-dictionary transform BEFORE the map (on the source value) and/or AFTER (on the mapped master value).</div>
+    <div class="sub">Map a source dataset's fields to the master schema. A dataset is usually a <b>mix</b> — in <b>All fields</b> you route each field to whatever master it belongs to (identify <code>AB_Brands → brand</code>, <code>Address → outlet.address</code>, <code>Name → outlet.outlet_name</code>) in one pass. Mappings persist; apply pre/post dictionaries on either side of the map.</div>
   </div>
 
   <div class="bar">
@@ -107,13 +107,18 @@
   const fmt=n=>(n==null||n==='')?'':Number(n).toLocaleString();
   if(new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
   let MASTER=[], TRANSFORMS=['none'], curDs='', fields=[], saved={}, NEEDS=new Set(), DICTS=[];
+  let MASTERS_ALL={}, savedByTarget={};   // All-fields mode: every master's schema + per-target saved sets
 
-  // which master this mapping targets — two dimensions + two facts, each with its own endpoints
-  const TARGETS=[{id:'product',label:'Product',kind:'entity'},{id:'outlet',label:'Outlet',kind:'entity'},
+  // targets: an "All fields" per-field router (default) + two dimensions + two facts, each with endpoints
+  const TARGETS=[{id:'all',label:'All fields',kind:''},
+                 {id:'product',label:'Product',kind:'entity'},{id:'outlet',label:'Outlet',kind:'entity'},
                  {id:'inventory',label:'Inventory',kind:'fact'},{id:'pricing',label:'Pricing',kind:'fact'}];
-  let curTarget='product';
-  function T(){
-    const t=TARGETS.find(x=>x.id===curTarget)||TARGETS[0], f=t.kind==='fact';
+  const ENTITY_ORDER=['outlet','product','inventory','pricing'];   // grouping order in the All-fields dropdown
+  const labelFor=tg=>({outlet:'Outlet',product:'Product',inventory:'Inventory',pricing:'Pricing'}[tg]||tg);
+  let curTarget='all';
+  const isAll=()=>curTarget==='all';
+  function Tfor(target){
+    const t=TARGETS.find(x=>x.id===target)||TARGETS[1], f=t.kind==='fact';
     return {id:t.id, isFact:f,
       schemaUrl: f?'/api/master/fact/schema?fact='+t.id:'/api/master/schema?entity='+t.id,
       mapsGet: ds=> (f?'/api/master/fact/mappings?fact='+t.id:'/api/mappings?entity='+t.id)+'&dataset='+encodeURIComponent(ds),
@@ -123,11 +128,22 @@
       applyUrl: f?'/api/master/fact/apply':'/api/master/apply',
       applyBody: f?{fact:t.id}:{entity:t.id}, table:(f?'fact_':'dim_')+t.id};
   }
+  const T=()=>Tfor(curTarget);
   function renderSeg(){
-    $('#seg').innerHTML=TARGETS.map(t=>'<button data-t="'+t.id+'" class="'+(t.id===curTarget?'on':'')+'">'+t.label+'<span class="fk">'+t.kind+'</span></button>').join('');
+    $('#seg').innerHTML=TARGETS.map(t=>'<button data-t="'+t.id+'" class="'+(t.id===curTarget?'on':'')+'">'+t.label+(t.kind?'<span class="fk">'+t.kind+'</span>':'')+'</button>').join('');
     $('#seg').querySelectorAll('button').forEach(b=>b.onclick=()=>{ curTarget=b.dataset.t; renderSeg(); loadSchema().then(loadDataset); });
   }
   async function loadSchema(){
+    if(isAll()){
+      MASTERS_ALL={};
+      await Promise.all(ENTITY_ORDER.map(async tg=>{
+        try{ const s=await (await fetch(Tfor(tg).schemaUrl,{cache:'no-store'})).json();
+          MASTERS_ALL[tg]=s.fields||[]; if(s.transforms) TRANSFORMS=s.transforms; }
+        catch(e){ MASTERS_ALL[tg]=[]; } }));
+      $('#addf').closest('.newf').style.display='none';
+      $('#apply').textContent='Apply involved'; $('#apply').title='Materialize each master this dataset feeds';
+      return;
+    }
     try{ const s=await (await fetch(T().schemaUrl,{cache:'no-store'})).json();
       MASTER=s.fields||[]; TRANSFORMS=s.transforms||['none']; }catch(e){ MASTER=[]; }
     $('#addf').closest('.newf').style.display=T().isFact?'none':'';   // facts have a fixed schema
@@ -160,33 +176,60 @@
   }
 
   function tOpts(sel){ return TRANSFORMS.map(t=>'<option value="'+t+'"'+(t===sel?' selected':'')+'>'+t+'</option>').join(''); }
-  function mOpts(sel){ return '<option value="">—</option>'+MASTER.map(f=>'<option value="'+esc(f.name)+'"'+(f.name===sel?' selected':'')+'>'+esc(f.name)+'</option>').join(''); }
-  function normOf(name){ const f=MASTER.find(x=>x.name===name); return f&&f.normalize; }
-  function nzBadge(name){ const nz=normOf(name); return nz?'<span class="nz" title="auto-normalized on map to the master">auto: '+(nz==='upc'?'GTIN-14':esc(nz))+'</span>':''; }
+  // master-field <select>. Per-target: value = "field". All-fields: value = "target:field", grouped by entity.
+  function mOpts(sel){
+    if(isAll()){
+      let h='<option value="">—</option>';
+      ENTITY_ORDER.forEach(tg=>{ const fs=MASTERS_ALL[tg]||[]; if(!fs.length) return;
+        h+='<optgroup label="'+labelFor(tg)+'">'+fs.map(f=>{const v=tg+':'+f.name;
+          return '<option value="'+esc(v)+'"'+(v===sel?' selected':'')+'>'+esc(f.name)+'</option>';}).join('')+'</optgroup>'; });
+      return h;
+    }
+    return '<option value="">—</option>'+MASTER.map(f=>'<option value="'+esc(f.name)+'"'+(f.name===sel?' selected':'')+'>'+esc(f.name)+'</option>').join('');
+  }
+  function fieldRec(sel){   // resolve a master field record from a select value (either encoding)
+    if(isAll()){ const p=String(sel||'').split(':'); return (MASTERS_ALL[p[0]]||[]).find(x=>x.name===p[1]); }
+    return MASTER.find(x=>x.name===sel);
+  }
+  function normOf(sel){ const f=fieldRec(sel); return f&&f.normalize; }
+  function nzBadge(sel){ const nz=normOf(sel); return nz?'<span class="nz" title="auto-normalized on map to the master">auto: '+(nz==='upc'?'GTIN-14':esc(nz))+'</span>':''; }
+  const fieldName=sel=> isAll()? (String(sel||'').split(':')[1]||'') : sel;   // the bare master field name
 
   async function loadDataset(){
     // the <select> is the source of truth — sync curDs to what's actually shown so the profiled fields
     // can never drift from the selected dataset (Safari can restore the select's value without re-booting).
     if($('#ds').value) curDs=$('#ds').value;
     $('#status').textContent=''; $('#status').className='status';
-    $('#rows').innerHTML='<tr><td colspan="5" class="empty">reading '+esc(curDs)+'…</td></tr>';
-    let prof, mp, nd;
+    $('#rows').innerHTML='<tr><td colspan="6" class="empty">reading '+esc(curDs)+'…</td></tr>';
+    let prof, nd, mapsets;
     try{
-      [prof, mp, nd]=await Promise.all([
-        (await fetch('/api/item/profile?dataset='+encodeURIComponent(curDs),{cache:'no-store'})).json(),
-        (await fetch(T().mapsGet(curDs),{cache:'no-store'})).json(),
-        (await fetch('/api/dict/needs?dataset='+encodeURIComponent(curDs),{cache:'no-store'})).json().catch(()=>({}))
-      ]);
-    }catch(e){ $('#rows').innerHTML='<tr><td colspan="5" class="empty">could not load.</td></tr>'; return; }
-    if(!prof.landed){ $('#rows').innerHTML='<tr><td colspan="5" class="empty">'+esc(curDs)+' not queryable.</td></tr>'; return; }
+      const tgs=isAll()?ENTITY_ORDER:[curTarget];
+      const base=[
+        fetch('/api/item/profile?dataset='+encodeURIComponent(curDs),{cache:'no-store'}).then(r=>r.json()),
+        fetch('/api/dict/needs?dataset='+encodeURIComponent(curDs),{cache:'no-store'}).then(r=>r.json()).catch(()=>({}))
+      ];
+      const mreqs=tgs.map(tg=>fetch(Tfor(tg).mapsGet(curDs),{cache:'no-store'}).then(r=>r.json()).catch(()=>({mappings:[]})));
+      const res=await Promise.all(base.concat(mreqs));
+      prof=res[0]; nd=res[1]; mapsets={}; tgs.forEach((tg,i)=>mapsets[tg]=res[2+i].mappings||[]);
+    }catch(e){ $('#rows').innerHTML='<tr><td colspan="6" class="empty">could not load.</td></tr>'; return; }
+    if(!prof.landed){ $('#rows').innerHTML='<tr><td colspan="6" class="empty">'+esc(curDs)+' not queryable.</td></tr>'; return; }
     fields=prof.fields||[];
-    saved={}; (mp.mappings||[]).forEach(r=>{ saved[r.source_field]=r; });
-    NEEDS=new Set(((nd&&nd.needs)||[]).filter(n=>n.target===curTarget).map(n=>n.field));
+    savedByTarget={}; saved={};
+    (isAll()?ENTITY_ORDER:[curTarget]).forEach(tg=>{ savedByTarget[tg]={}; (mapsets[tg]||[]).forEach(r=>{ savedByTarget[tg][r.source_field]=r; }); });
+    if(isAll()){
+      // per source field, surface ONE mapping (by ENTITY_ORDER priority); others stay preserved on save
+      fields.forEach(f=>{ for(const tg of ENTITY_ORDER){ const r=savedByTarget[tg][f.field]; if(r){ saved[f.field]=Object.assign({__target:tg}, r); break; } } });
+      NEEDS=new Set(((nd&&nd.needs)||[]).map(n=>n.field));     // any target's flag, in the unified view
+    } else {
+      (mapsets[curTarget]||[]).forEach(r=>{ saved[r.source_field]=r; });
+      NEEDS=new Set(((nd&&nd.needs)||[]).filter(n=>n.target===curTarget).map(n=>n.field));
+    }
     render();
   }
+  function selValue(s){ return isAll()? (s.__target?s.__target+':'+s.master_field:'') : (s.master_field||''); }
   function render(){
     $('#rows').innerHTML=fields.map(f=>{
-      const s=saved[f.field]||{};
+      const s=saved[f.field]||{}, sel=selValue(s);
       const ex=(f.samples&&f.samples.length)
         ? f.samples.map(v=>'<span class="ex" title="'+esc(v)+'">'+esc(v)+'</span>').join('')
         : '<span class="ex empty">no values</span>';
@@ -195,9 +238,9 @@
         '<td><div class="src">'+esc(f.field)+'</div><div class="srcmeta">'+fmt(f.distinct)+' distinct · '+f.fill_pct+'% filled</div><div class="samples">'+ex+'</div></td>'+
         '<td><select class="tsel pre">'+tOpts(s.pre||'none')+'</select></td>'+
         '<td class="arrow">→</td>'+
-        '<td class="'+(s.master_field?'mapped':'')+'"><select class="msel">'+mOpts(s.master_field||'')+'</select>'+nzBadge(s.master_field)+'</td>'+
+        '<td class="'+(s.master_field?'mapped':'')+'"><select class="msel">'+mOpts(sel)+'</select>'+nzBadge(sel)+'</td>'+
         '<td><select class="tsel post">'+tOpts(s.post||'none')+'</select></td>'+
-        '<td class="rulec"><select class="tsel dictsel" title="apply a saved value dictionary (overrides pre/post)">'+dictOpts(s.master_field||'', s.mode==='dict'?s.dict:'')+'</select> '+
+        '<td class="rulec"><select class="tsel dictsel" title="apply a saved value dictionary (overrides pre/post)">'+dictOpts(fieldName(sel), s.mode==='dict'?s.dict:'')+'</select> '+
           '<button class="mini prev">preview</button> <button class="mini fx" title="hand-coded SQL expression — overrides transforms">ƒx</button> '+
           '<button class="ndx'+(NEEDS.has(f.field)?' on':'')+'" title="flag: come back and build a data dictionary for this field">needs dict</button>'+
           '<input class="expr" placeholder="raw SQL expression (overrides pre/post)" value="'+esc(s.expr||'')+'" style="display:'+(hasExpr?'block':'none')+'"></td>'+
@@ -209,66 +252,96 @@
       msel.onchange=()=>{ msel.closest('td').classList.toggle('mapped', !!msel.value);
         const old=msel.parentNode.querySelector('.nz'); if(old) old.remove();
         msel.insertAdjacentHTML('afterend', nzBadge(msel.value));
-        const dsel=tr.querySelector('.dictsel'); if(dsel) dsel.innerHTML=dictOpts(msel.value,''); };  // relevant dicts follow the mapped field
+        const dsel=tr.querySelector('.dictsel'); if(dsel) dsel.innerHTML=dictOpts(fieldName(msel.value),''); };  // relevant dicts follow the mapped field
       tr.querySelector('.prev').onclick=()=>previewRow(tr);
       tr.querySelector('.fx').onclick=()=>{ const i=tr.querySelector('.expr'); const show=i.style.display==='none'; i.style.display=show?'block':'none'; if(show) i.focus(); };
       tr.querySelector('.ndx').onclick=()=>toggleNeeds(tr);
     });
     const nc=NEEDS.size; $('#needcount').textContent=nc?(nc+' flagged for dictionary'):'';
   }
+  function rowTarget(tr){   // the target a row maps into (its own selection in All mode, else the current tab)
+    if(!isAll()) return curTarget;
+    const v=tr.querySelector('.msel').value; return v?v.split(':')[0]:(saved[tr.getAttribute('data-f')]||{}).__target||'product';
+  }
   async function toggleNeeds(tr){
-    const field=tr.getAttribute('data-f'), on=!NEEDS.has(field);
+    const field=tr.getAttribute('data-f'), on=!NEEDS.has(field), tgt=rowTarget(tr);
     if(on) NEEDS.add(field); else NEEDS.delete(field);
     tr.classList.toggle('needs',on); tr.querySelector('.ndx').classList.toggle('on',on);
     $('#needcount').textContent=NEEDS.size?(NEEDS.size+' flagged for dictionary'):'';
     try{ await fetch('/api/dict/needs',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({dataset:curDs,field:field,target:curTarget,on:on})}); }catch(e){}
+      body:JSON.stringify({dataset:curDs,field:field,target:tgt,on:on})}); }catch(e){}
   }
   function buildRule(tr){
     const expr=tr.querySelector('.expr').value.trim();
     const dsel=tr.querySelector('.dictsel'), dictId=dsel?dsel.value:'';
-    const r={ source_field:tr.getAttribute('data-f'), master_field:tr.querySelector('.msel').value,
-              pre:tr.querySelector('.pre').value, post:tr.querySelector('.post').value };
+    const r={ source_field:tr.getAttribute('data-f'), master_field:fieldName(tr.querySelector('.msel').value),
+              pre:tr.querySelector('.pre').value, post:tr.querySelector('.post').value, __target:rowTarget(tr) };
     // precedence: raw expr > dictionary > pre/post transforms
     if(expr){ r.mode='expr'; r.expr=expr; }
     else if(dictId){ r.mode='dict'; r.dict=dictId; }
     else { r.mode='transform'; }
     return r;
   }
+  function cleanRule(r){ const o={source_field:r.source_field, master_field:r.master_field};   // persistable shape (no __target)
+    if(r.mode==='expr'){o.mode='expr';o.expr=r.expr;} else if(r.mode==='dict'){o.mode='dict';o.dict=r.dict;}
+    else {o.mode='transform';o.pre=r.pre;o.post=r.post;} return o; }
   async function previewRow(tr){
     const prow=tr.nextElementSibling, pv=prow.querySelector('.pv'), btn=tr.querySelector('.prev');
     if(prow.style.display!=='none'){ prow.style.display='none'; btn.textContent='preview'; return; }  // toggle closed
     prow.style.display=''; btn.textContent='hide'; pv.innerHTML='<span class="pvmeta">previewing…</span>';
     try{
-      const j=await (await fetch('/api/master/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(T().prevBody(buildRule(tr)))})).json();
+      const r=buildRule(tr);
+      const j=await (await fetch('/api/master/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Tfor(r.__target).prevBody(cleanRule(r)))})).json();
       if(!j.ok){ pv.innerHTML='<span class="pvmeta">'+esc(j.error||'preview failed')+'</span>'; return; }
       pv.innerHTML=(j.rows||[]).map(r=>'<span class="p"><span class="r">'+esc(r.raw||'∅')+'</span><b>→</b><span class="a">'+esc(r.derived==null?'∅':r.derived)+'</span></span>').join('')||'<span class="pvmeta">no sample values</span>';
     }catch(e){ pv.innerHTML='<span class="pvmeta">preview error</span>'; }
   }
+  async function applyOne(target){
+    const t=Tfor(target);
+    const j=await (await fetch(t.applyUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t.applyBody)})).json();
+    if(!j.ok) throw new Error(t.table+': '+(j.error||'apply failed'));
+    const n=(j.skus!=null?j.skus:(j.observations!=null?j.observations:j.rows));
+    return t.table+' · '+fmt(n)+' rows'+((j.warnings&&j.warnings.length)?(' · '+j.warnings.length+' skipped'):'');
+  }
   async function apply(){
-    const t=T();
-    $('#apply').disabled=true; $('#status').textContent='materializing '+t.table+'…'; $('#status').className='status';
-    try{
-      const j=await (await fetch(t.applyUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t.applyBody)})).json();
-      if(j.ok){ const n=(j.skus!=null?j.skus:(j.observations!=null?j.observations:j.rows));
-        $('#status').textContent=t.table+' · '+fmt(n)+' rows from '+j.sources+' source'+(j.sources===1?'':'s')+((j.warnings&&j.warnings.length)?(' · '+j.warnings.length+' skipped'):'')+' ✓'; $('#status').className='status ok'; }
-      else{ $('#status').textContent=j.error||'apply failed'; $('#status').className='status err'; }
-    }catch(e){ $('#status').textContent='apply failed'; $('#status').className='status err'; }
+    // All mode: materialize every master this dataset feeds. Per-target: just that one.
+    const targets=isAll()?ENTITY_ORDER.filter(tg=>Object.keys(savedByTarget[tg]||{}).length):[curTarget];
+    if(!targets.length){ $('#status').textContent='map some fields first'; $('#status').className='status err'; return; }
+    $('#apply').disabled=true; $('#status').className='status';
+    try{ const out=[]; for(const tg of targets){ $('#status').textContent='materializing '+Tfor(tg).table+'…'; out.push(await applyOne(tg)); }
+      $('#status').textContent=out.join('  ·  ')+' ✓'; $('#status').className='status ok';
+    }catch(e){ $('#status').textContent=String(e.message||e); $('#status').className='status err'; }
     $('#apply').disabled=false;
   }
 
   async function save(){
-    const t=T(); const rows=[...document.querySelectorAll('#rows tr[data-f]')].map(buildRule).filter(r=>r.master_field);
     $('#save').disabled=true; $('#status').textContent='saving…'; $('#status').className='status';
     try{
-      const j=await (await fetch(t.mapsPost,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t.mapsBody(rows))})).json();
-      if(j.ok){ $('#status').textContent='saved '+j.count+' mappings ✓'; $('#status').className='status ok'; }
-      else{ $('#status').textContent=j.error||'save failed'; $('#status').className='status err'; }
+      if(isAll()){
+        const rows=[...document.querySelectorAll('#rows tr[data-f]')].map(buildRule);
+        // reconcile against the loaded per-target sets: add / reassign / unmap the ONE surfaced mapping per field,
+        // leaving any other target's mappings for that field untouched (a field can legitimately feed >1 master).
+        const next={}; ENTITY_ORDER.forEach(tg=>next[tg]=Object.assign({}, savedByTarget[tg]||{}));
+        rows.forEach(r=>{ const sf=r.source_field, orig=(saved[sf]||{}).__target, sel=r.master_field?r.__target:'';
+          if(orig && (!sel || sel!==orig)) delete next[orig][sf];         // moved away or cleared
+          if(sel) next[sel][sf]=cleanRule(r); });
+        let total=0;
+        for(const tg of ENTITY_ORDER){ const arr=Object.values(next[tg]||{}); total+=arr.length;
+          await fetch(Tfor(tg).mapsPost,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Tfor(tg).mapsBody(arr))}); }
+        const per=ENTITY_ORDER.filter(tg=>Object.keys(next[tg]||{}).length).map(tg=>Object.keys(next[tg]).length+' '+labelFor(tg)).join(' · ');
+        $('#status').textContent='saved '+total+' mappings ('+(per||'none')+') ✓'; $('#status').className='status ok';
+        await loadDataset();
+      } else {
+        const t=T(); const rows=[...document.querySelectorAll('#rows tr[data-f]')].map(buildRule).filter(r=>r.master_field).map(cleanRule);
+        const j=await (await fetch(t.mapsPost,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t.mapsBody(rows))})).json();
+        if(j.ok){ $('#status').textContent='saved '+j.count+' mappings ✓'; $('#status').className='status ok'; }
+        else{ $('#status').textContent=j.error||'save failed'; $('#status').className='status err'; }
+      }
     }catch(e){ $('#status').textContent='save failed'; $('#status').className='status err'; }
     $('#save').disabled=false;
   }
   async function addField(){
-    const nm=$('#newf').value.trim(); if(!nm) return;
+    const nm=$('#newf').value.trim(); if(!nm||isAll()) return;
     try{
       const j=await (await fetch('/api/master/schema',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm,entity:curTarget})})).json();
       if(j.ok){ MASTER=j.fields; $('#newf').value=''; render(); $('#status').textContent='added master field · '+nm; $('#status').className='status ok'; }
