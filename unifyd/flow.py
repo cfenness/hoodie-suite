@@ -58,7 +58,10 @@ def _survivor_sql(col, rule, auth_expr, recency_col):
         return "arg_max(%s, length(CAST(%s AS VARCHAR))) FILTER (WHERE %s)" % (c, c, nb)
     if rule in ("max", "min", "sum"):
         return "%s(try_cast(%s AS DOUBLE))" % (rule, c)
-    return "any_value(%s) FILTER (WHERE %s)" % (c, nb)             # 'first' — but skip blanks
+    # 'any' (also the default): pick any non-blank value. NOTE this is arbitrary order, not a true
+    # 'first' — and authority/frequency ties resolve arbitrarily too; a deterministic tie-break
+    # (e.g. add source_rank as a secondary sort) is a follow-up, flagged in MDM_FLOW.md.
+    return "any_value(%s) FILTER (WHERE %s)" % (c, nb)
 
 
 def _conflict_sql(col):
@@ -74,6 +77,18 @@ def _authority_case(sources):
     whens = " ".join("WHEN %s THEN %d" % (derive._sqlstr(s), len(sources) - i)
                      for i, s in enumerate(sources))
     return "CASE _source %s ELSE 0 END" % whens
+
+
+def _key_part(spec):
+    """One component of an identity key. `spec` is a field name (→ generic `compare_form`) or a
+    {field, norm} dict — so the identity NORMALIZER is per-entity config, NOT hardcoded. Alcohol opts
+    into `identity_key` (strips vintage/edition); outlets use `compare_form`/`address_core`; another
+    domain picks its own. This is the seam that keeps the resolver domain-agnostic."""
+    if isinstance(spec, dict):
+        field, norm = spec.get("field"), (spec.get("norm") or "compare_form")
+    else:
+        field, norm = spec, "compare_form"
+    return derive._apply_transform(norm, derive.col(field))
 
 
 # ── the compiler: a node → the SQL that produces its output rows ──
@@ -131,7 +146,7 @@ def compile_sql(flow, node_id, uri_fn, _seen=None):
         ident = n.get("identity") or {}
         strong = ident.get("strong")
         natural = ident.get("natural") or []
-        nat_expr = " || '␟' || ".join(derive.identity_expr(k) for k in natural) if natural else "''"
+        nat_expr = " || '␟' || ".join(_key_part(k) for k in natural) if natural else "''"
         if strong:
             id_expr = "COALESCE(NULLIF(CAST(%s AS VARCHAR), ''), %s)" % (derive.col(strong), nat_expr)
         else:
@@ -181,7 +196,7 @@ def conflict_sql(flow, resolve_node_id, field, uri_fn, limit=100):
         raise ValueError("conflict_sql needs a resolve node")
     ident = n.get("identity") or {}
     strong, natural = ident.get("strong"), (ident.get("natural") or [])
-    nat_expr = " || '␟' || ".join(derive.identity_expr(k) for k in natural) if natural else "''"
+    nat_expr = " || '␟' || ".join(_key_part(k) for k in natural) if natural else "''"
     id_expr = ("COALESCE(NULLIF(CAST(%s AS VARCHAR),''), %s)" % (derive.col(strong), nat_expr)) if strong else nat_expr
     upstream = compile_sql(flow, n["inputs"][0], uri_fn) if n.get("inputs") else "SELECT 1"
     c = derive.col(field)
@@ -203,19 +218,35 @@ _SYNONYMS = {
     "abv": ["abv", "alcohol", "alc", "proof", "alcohol content"],
     "origin": ["origin", "country", "country of origin", "region", "appellation"],
     "category": ["category", "class", "type", "class type", "class/type", "product class"],
-    "supplier": ["supplier", "applicant", "registrant", "company", "importer", "owner", "producer"],
-    "name": ["name", "outlet", "outlet name", "business name", "dba", "store", "location name", "licensee"],
-    "address": ["address", "street", "addr", "address1", "premise address", "location address"],
+    "supplier": ["supplier", "applicant", "registrant", "company", "importer", "producer"],
+    # OUTLET: dba (the trade name customers see) and legal_name (the licensed entity) are kept SEPARATE
+    # on purpose — cross-source they diverge ("Tipsy Tavern" vs "SMITH ENTERPRISES LLC"), so collapsing
+    # them would reject true matches. Match dba-to-dba / legal-to-legal, never dba-to-legal.
+    "name": ["dba", "d b a", "doing business as", "trade name", "tradename", "business name",
+             "outlet", "outlet name", "store", "location name", "establishment", "name"],
+    "legal_name": ["legal name", "legalname", "licensee", "licensee name", "backer", "owner",
+                   "owner name", "registrant", "legal entity", "entity name"],
+    "address": ["address", "street", "addr", "address1", "premise address", "location address",
+                "actual address of premises", "street address", "backer address"],
     "city": ["city", "town", "municipality"],
     "state": ["state", "st", "state code"],
     "zip5": ["zip", "zip code", "zipcode", "postal", "postal code", "zip5"],
     "license_num": ["license", "license num", "license number", "licensenum", "permit", "permit number"],
     "county": ["county", "parish"],
 }
-# which master field is the natural identity for each entity (used to score whether a dataset feeds it)
-_ENTITY_NATURAL = {"product": ["brand", "product_name", "size_ml"],
-                   "outlet":  ["name", "address", "zip5"],
-                   "party":   ["supplier"]}
+# Per-entity IDENTITY: the strong key (when present) + the natural-key components, each with the
+# NORMALIZER used to build its key part. This is domain config — the resolver itself stays generic.
+# Alcohol/product opts into `identity_key` (collapses vintage/edition); outlets use `address_core`
+# + `compare_form`; a non-alcohol domain supplies its own entry. Add an entity = add a row here.
+_ENTITY_KEYS = {
+    "product": [{"field": "brand", "norm": "identity_key"}, {"field": "product_name", "norm": "identity_key"},
+                {"field": "size_ml", "norm": "none"}],
+    "outlet":  [{"field": "name", "norm": "compare_form"}, {"field": "address", "norm": "address_core"},
+                {"field": "zip5", "norm": "none"}],
+    "party":   [{"field": "legal_name", "norm": "strip_entity_suffix"}],
+}
+# the fields that decide whether a dataset FEEDS an entity (score = share it can map)
+_ENTITY_NATURAL = {e: [k["field"] for k in ks] for e, ks in _ENTITY_KEYS.items()}
 _ENTITY_STRONG = {"product": "upc", "outlet": None, "party": None}
 
 
@@ -262,7 +293,7 @@ def propose_flow(entity, datasets, master_fields, min_score=0.34):
     canvas. Nothing hidden: every auto-mapped field is a visible, editable clean node."""
     mfields = [f["name"] if isinstance(f, dict) else f for f in master_fields]
     strong = _ENTITY_STRONG.get(entity)
-    natural = [k for k in _ENTITY_NATURAL.get(entity, []) if k in mfields]
+    natural = [k for k in _ENTITY_KEYS.get(entity, []) if k["field"] in mfields]   # {field,norm} specs
     nodes, clean_ids = [], []
     for ds in datasets:
         name = ds.get("name")
@@ -328,6 +359,23 @@ def _selftest():
     ids = {n["id"]: n for n in seed["nodes"]}
     assert "cl_cola" in ids and any(f.get("source_field") == "UPC" for f in ids["cl_cola"]["fields"]), seed
     assert ids["resolve"]["identity"]["strong"] == "upc", seed
+
+    # identity NORMALIZER is per-entity (fix: the resolver no longer hardcodes product token-stripping).
+    # An outlet-style key uses compare_form and must NOT strip edition tokens; product opts into identity_key.
+    ob = {"nodes": [{"id": "i", "type": "input", "dataset": "o", "inputs": []},
+                    {"id": "r", "type": "resolve", "inputs": ["i"], "fields": ["name"],
+                     "identity": {"strong": None, "natural": [{"field": "name", "norm": "compare_form"}]}}]}
+    okey = compile_sql(ob, "r", uf)
+    assert "strip_accents" in okey and "gift set" not in okey, okey        # would false-merge "Holiday Wine" before
+    pb = {"nodes": [{"id": "i", "type": "input", "dataset": "o", "inputs": []},
+                    {"id": "r", "type": "resolve", "inputs": ["i"], "fields": ["brand"],
+                     "identity": {"strong": None, "natural": [{"field": "brand", "norm": "identity_key"}]}}]}
+    assert "gift set" in compile_sql(pb, "r", uf), "product identity should still strip editions"
+    # dba vs legal_name stay SEPARATE when seeding an outlet (the cross-source match-killer)
+    oseed = propose_flow("outlet", [{"name": "fl", "fields": ["DBA", "Owner Name", "Location Address 1", "Zip"]}],
+                         ["name", "legal_name", "address", "zip5"])
+    ofm = {f["out"]: f.get("source_field") for f in {n["id"]: n for n in oseed["nodes"]}["cl_fl"]["fields"]}
+    assert ofm.get("name") == "DBA" and ofm.get("legal_name") == "Owner Name", ofm
 
     # live check against DuckDB if present: a two-source master with a real conflict
     try:

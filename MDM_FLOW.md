@@ -171,6 +171,26 @@ mint a fresh Hoodie ID). Every decision is remembered, feeds back to tune thresh
 flow canvas — reads the same resolved tables. The flow *builds and auto-resolves*; this page *decides
 the residue and repairs mistakes*.
 
+## Generalization — the engine is domain-agnostic; a domain is a config pack
+
+MDM is valuable only if it's **generalized**. Bev-alc is unique in its **field requirements** — never
+in the tool's capacity. So the engine (flow · derive · normalizers · resolve · survivorship ·
+verification cascade · Hoodie IDs · match UI) carries **zero domain assumptions**, and everything
+domain-specific is a **pack of config/data**: the entity identity keys (`_ENTITY_KEYS`), master field
+schemas, normalizer choices, synonym dictionaries, vocabularies, whitelist sources, survivorship
+authority orders, and connectors.
+
+The test: *"syndicate the lettuce industry."* Produce swaps UPC→PLU, brand/product/size→commodity/
+variety/pack, ABV→grade/growing-region, TTB→PACA, "vodka vs rum"→"romaine vs green leaf", the
+whiskey mixed case → a salad-kit pallet. **Not one line of the engine changes** — a location is a
+location, dirty addresses are dirty the same way, split-case explodes identically. `produce_item` is
+one new row in `_ENTITY_KEYS` (PLU strong key + commodity/variety/pack natural key), not a fork. The
+guarantee we build to: **a domain pack is data, not code.**
+
+(This is also why the identity normalizer had to be per-entity config, not the hardcoded product
+token-stripping it started as — a hardcoded `identity_key` was an alcohol assumption leaking into the
+generic core.)
+
 ## Low-level canonical → thousands of customers
 
 Resolve identity **once** at an atomic, low-level grain (separate outlet / party / item; both `dba`
