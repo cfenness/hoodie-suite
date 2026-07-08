@@ -1381,13 +1381,24 @@ MAP_TRANSFORMS = ["none", "trim", "upper", "lower", "title_case", "digits_only",
 # consistency' contract holds even for a schema saved before a normalizer was added.
 _NORMALIZE_DEFAULTS = {"upc": "upc", "gtin": "upc", "zip5": "zip5", "zip4": "zip4",
                        "state": "state", "phone": "phone", "outlet_name": "name", "dba": "name"}
+# CONTROLLED fields — a field with a DOMAIN accepts only these permissible options (enum). Seeded here
+# as sensible starters (editable per-field via /api/master/domain); a dictionary maps raw source strings
+# INTO one of these values. Seeded only when the field carries no `domain` key yet (edits/clears win).
+_DOMAIN_DEFAULTS = {
+    "container": ["Bottle", "Can", "Keg", "Bag-in-Box", "Pouch", "Cask", "Growler"],
+    "pack": ["Single", "2-Pack", "4-Pack", "6-Pack", "8-Pack", "12-Pack", "15-Pack",
+             "18-Pack", "24-Pack", "30-Pack", "Case"],
+    "outlet_type": ["On-Premise", "Off-Premise"],
+}
 
 def _master_schema(entity="product"):
     spec = ENTITIES[_entity(entity)]
-    fields = load(spec["schema"], spec["defaults"])
+    fields = [dict(f) for f in load(spec["schema"], spec["defaults"])]   # copy — never mutate the defaults
     for f in fields:
-        if isinstance(f, dict) and not f.get("normalize") and f.get("name") in _NORMALIZE_DEFAULTS:
+        if not f.get("normalize") and f.get("name") in _NORMALIZE_DEFAULTS:
             f["normalize"] = _NORMALIZE_DEFAULTS[f["name"]]
+        if "domain" not in f and f.get("name") in _DOMAIN_DEFAULTS:
+            f["domain"] = list(_DOMAIN_DEFAULTS[f["name"]])
     return fields
 
 @app.get("/api/master/schema")
@@ -1469,6 +1480,68 @@ def master_schema_post():
                            **({"normalize": body["normalize"]} if body.get("normalize") else {})})
     _save_json(spec["schema"], fields)
     return jsonify(ok=True, entity=entity, fields=fields, meta=_stamp(spec["schemameta"], "schema"))
+
+# ── Controlled vocabularies — a master field's DOMAIN (permissible options). A field with options is an
+# enum; the Dictionary maps raw source values into one of them (off-domain → unmapped). ──
+@app.get("/api/master/domains")
+def master_domains_get():
+    """All controlled fields for an entity → {field: [permissible options]}. ?entity=product|outlet."""
+    entity = _entity(request.args.get("entity", "product"))
+    fields = _master_schema(entity)
+    return jsonify(ok=True, entity=entity,
+                   domains={f["name"]: f["domain"] for f in fields if f.get("domain")})
+
+@app.post("/api/master/domain")
+def master_domain_post():
+    """Set the permissible options for ONE master field. Body: {entity?, field, options:[...]}. An empty
+    list clears the constraint (the field becomes free-text again). De-dupes case-insensitively, keeps order."""
+    b = request.get_json(silent=True) or {}
+    entity = _entity(b.get("entity") or "product")
+    spec = ENTITIES[entity]
+    field = (b.get("field") or "").strip()
+    if not field:
+        return jsonify(ok=False, error="field required"), 400
+    opts, seen = [], set()
+    for o in (b.get("options") or []):
+        s = str(o).strip()
+        if s and s.lower() not in seen:
+            seen.add(s.lower()); opts.append(s)
+    fields = [dict(f) for f in load(spec["schema"], spec["defaults"])]   # copy — never mutate the defaults
+    if not any(f.get("name") == field for f in fields):
+        return jsonify(ok=False, error="unknown field"), 400
+    for f in fields:
+        if f.get("name") == field:
+            f["domain"] = opts                       # explicit key (even []) — blocks the seed default
+    _save_json(spec["schema"], fields)
+    return jsonify(ok=True, entity=entity, field=field, options=opts,
+                   meta=_stamp(spec["schemameta"], "schema"))
+
+@app.post("/api/master/domain/check")
+def master_domain_check():
+    """Fit a source field's real values against a set of permissible options. Body: {dataset, field,
+    options:[...]}. Returns distinct source values split into IN-domain (already a permissible option,
+    case-insensitive exact) and OUT (need a dictionary rule), with row counts — so you can see how much
+    of the source already conforms and what still has to be mapped."""
+    b = request.get_json(silent=True) or {}
+    ds = (b.get("dataset") or "ttb_cola").strip()
+    field = (b.get("field") or "").strip()
+    if field not in _ds_columns(ds):
+        return jsonify(ok=False, error="unknown field for dataset"), 400
+    allowed = {str(o).strip().lower() for o in (b.get("options") or []) if str(o).strip()}
+    try:
+        vals = _cola_q(ds, 'SELECT CAST("%s" AS VARCHAR) v, count(*) n FROM t '
+                       "WHERE CAST(\"%s\" AS VARCHAR)<>'' GROUP BY 1 ORDER BY n DESC LIMIT 400" % (field, field))
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:160]), 200
+    ins, out, in_rows, out_rows = [], [], 0, 0
+    for r in vals:
+        if str(r["v"]).strip().lower() in allowed:
+            ins.append(r); in_rows += r["n"]
+        else:
+            out.append(r); out_rows += r["n"]
+    return jsonify(ok=True, dataset=ds, field=field, in_domain=ins[:60], out_domain=out[:60],
+                   in_rows=in_rows, out_rows=out_rows,
+                   fit_pct=round(100 * in_rows / max(1, in_rows + out_rows), 1))
 
 @app.get("/api/mappings")
 def mappings_get():
