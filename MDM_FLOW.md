@@ -171,6 +171,27 @@ mint a fresh Hoodie ID). Every decision is remembered, feeds back to tune thresh
 flow canvas — reads the same resolved tables. The flow *builds and auto-resolves*; this page *decides
 the residue and repairs mistakes*.
 
+## The first law: never fix the row — fix the rule
+
+The golden record is a **derivation, not a document.** No surface in this system may edit a mastered
+value directly. Fixing the row is the worst thing you can do:
+
+- **it regenerates** — the next pull overwrites the fix (or the fix buries the truth); whack-a-mole forever;
+- **it breaks reproducibility** — the master must be a deterministic function of (sources, rules); a
+  hand-edit makes it un-rebuildable and creates a value that traces to nothing. That untraceable value
+  *is* a restatement waiting to fire;
+- **it destroys the lesson** — a row fix has no moral, trains no one, leaves no guard behind. A *class*
+  fix does;
+- **it creates silent divergence** — a patched cell contradicts every source with no rule to explain
+  why: the "who owns the canonical record" wound.
+
+**Invariant:** every steward action is a **rule that re-materializes on rebuild** — a survivorship
+rule, a dictionary entry, a match/confirm decision, an authority order. A genuine one-off correction
+is captured as an **override rule with provenance** (who · when · why · evidence) and a scope of one —
+still a rule, still deterministic, still auditable, never a mutation of the output. The engine enforces
+this by construction: it compiles to SQL over immutable source Parquet, so there is no row to fix —
+only inputs and rules. No feature may add a "just fix this one value" path.
+
 ## Generalization — the engine is domain-agnostic; a domain is a config pack
 
 MDM is valuable only if it's **generalized**. Bev-alc is unique in its **field requirements** — never
