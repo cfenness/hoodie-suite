@@ -98,7 +98,7 @@
     <thead><tr><th style="width:28%">Source field</th><th>Pre-dict</th><th class="arrow">→</th><th style="width:20%">Master field</th><th>Post-dict</th><th>Rule / preview</th></tr></thead>
     <tbody id="rows"><tr><td colspan="5" class="empty">Pick a source dataset.</td></tr></tbody>
   </table></div></div>
-  <div class="note">Pre / Post are <b>data-dictionary transforms</b> — <code>none · trim · upper · lower · title_case · digits_only · size_to_ml · year_from_date</code> — recorded per row so the master can be materialised with the right normalisation on either side of the map. Unmapped rows (Master = —) are skipped on save.</div>
+  <div class="note">Pre / Post are <b>data-dictionary transforms</b> — <code>none · trim · upper · lower · title_case · digits_only · size_to_ml · year_from_date</code>. The <b>dictionary</b> picker attaches a saved value dictionary (built in the <b>Dictionary</b> tab, e.g. <code>cab sauv → Cabernet Sauvignon</code>) to a row — it overrides pre/post and applies on the next <b>Apply</b>. Precedence: raw <code>ƒx</code> expression &gt; dictionary &gt; pre/post. Unmapped rows (Master = —) are skipped on save.</div>
 </div>
 <script>
 (function(){
@@ -106,7 +106,7 @@
   const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmt=n=>(n==null||n==='')?'':Number(n).toLocaleString();
   if(new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
-  let MASTER=[], TRANSFORMS=['none'], curDs='', fields=[], saved={}, NEEDS=new Set();
+  let MASTER=[], TRANSFORMS=['none'], curDs='', fields=[], saved={}, NEEDS=new Set(), DICTS=[];
 
   // which master this mapping targets — two dimensions + two facts, each with its own endpoints
   const TARGETS=[{id:'product',label:'Product',kind:'entity'},{id:'outlet',label:'Outlet',kind:'entity'},
@@ -135,9 +135,20 @@
     $('#apply').title='Materialize '+T().table+' from all saved mappings';
   }
 
+  async function loadDicts(){
+    try{ const j=await (await fetch('/api/dict/store',{cache:'no-store'})).json(); DICTS=j.dictionaries||[]; }
+    catch(e){ DICTS=[]; }
+  }
+  // dictionaries relevant to a master field: generic (no target) or targeted at this field
+  function dictOpts(masterField, selId){
+    const rel=DICTS.filter(d=>!d.target_field || d.target_field===masterField);
+    return '<option value="">— dictionary —</option>'+rel.map(d=>
+      '<option value="'+esc(d.id)+'"'+(d.id===selId?' selected':'')+'>'+esc(d.name)+' · '+d.entries+'</option>').join('');
+  }
+
   async function boot(){
     renderSeg();
-    await loadSchema();
+    await Promise.all([loadSchema(), loadDicts()]);
     try{
       const cat=await (await fetch('/api/catalog',{cache:'no-store'})).json();
       const items=Object.keys(cat).filter(k=>cat[k].store==='warehouse'||k==='ttb_cola').sort();
@@ -186,7 +197,8 @@
         '<td class="arrow">→</td>'+
         '<td class="'+(s.master_field?'mapped':'')+'"><select class="msel">'+mOpts(s.master_field||'')+'</select>'+nzBadge(s.master_field)+'</td>'+
         '<td><select class="tsel post">'+tOpts(s.post||'none')+'</select></td>'+
-        '<td class="rulec"><button class="mini prev">preview</button> <button class="mini fx" title="hand-coded SQL expression — overrides transforms">ƒx</button> '+
+        '<td class="rulec"><select class="tsel dictsel" title="apply a saved value dictionary (overrides pre/post)">'+dictOpts(s.master_field||'', s.mode==='dict'?s.dict:'')+'</select> '+
+          '<button class="mini prev">preview</button> <button class="mini fx" title="hand-coded SQL expression — overrides transforms">ƒx</button> '+
           '<button class="ndx'+(NEEDS.has(f.field)?' on':'')+'" title="flag: come back and build a data dictionary for this field">needs dict</button>'+
           '<input class="expr" placeholder="raw SQL expression (overrides pre/post)" value="'+esc(s.expr||'')+'" style="display:'+(hasExpr?'block':'none')+'"></td>'+
         '</tr>'+
@@ -196,7 +208,8 @@
       const msel=tr.querySelector('.msel');
       msel.onchange=()=>{ msel.closest('td').classList.toggle('mapped', !!msel.value);
         const old=msel.parentNode.querySelector('.nz'); if(old) old.remove();
-        msel.insertAdjacentHTML('afterend', nzBadge(msel.value)); };
+        msel.insertAdjacentHTML('afterend', nzBadge(msel.value));
+        const dsel=tr.querySelector('.dictsel'); if(dsel) dsel.innerHTML=dictOpts(msel.value,''); };  // relevant dicts follow the mapped field
       tr.querySelector('.prev').onclick=()=>previewRow(tr);
       tr.querySelector('.fx').onclick=()=>{ const i=tr.querySelector('.expr'); const show=i.style.display==='none'; i.style.display=show?'block':'none'; if(show) i.focus(); };
       tr.querySelector('.ndx').onclick=()=>toggleNeeds(tr);
@@ -213,9 +226,13 @@
   }
   function buildRule(tr){
     const expr=tr.querySelector('.expr').value.trim();
+    const dsel=tr.querySelector('.dictsel'), dictId=dsel?dsel.value:'';
     const r={ source_field:tr.getAttribute('data-f'), master_field:tr.querySelector('.msel').value,
               pre:tr.querySelector('.pre').value, post:tr.querySelector('.post').value };
-    if(expr){ r.mode='expr'; r.expr=expr; } else { r.mode='transform'; }
+    // precedence: raw expr > dictionary > pre/post transforms
+    if(expr){ r.mode='expr'; r.expr=expr; }
+    else if(dictId){ r.mode='dict'; r.dict=dictId; }
+    else { r.mode='transform'; }
     return r;
   }
   async function previewRow(tr){
