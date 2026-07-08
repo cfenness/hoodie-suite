@@ -205,6 +205,30 @@ mint a fresh Hoodie ID). Every decision is remembered, feeds back to tune thresh
 flow canvas — reads the same resolved tables. The flow *builds and auto-resolves*; this page *decides
 the residue and repairs mistakes*.
 
+## Real and synthetic never commingle
+
+Synthetic data (the seed book, demo fixtures) exists to build and test against *before* real facts
+land. Two hard rules: synthetic must **never physically commingle** with real (separate warehouse
+namespaces — a build reads one mode only, never both), and synthetic must **never be presentable as
+real** (a loud, persistent badge whenever a surface is in synthetic mode). The mode is carried in the
+**shared context (the spine)** — one flag every app respects — so the whole suite flips between real
+and synthetic at once. Default is real; synthetic is opt-in and unmistakable. A number whose realness
+you can't tell is a number you can't act on — commingling is how an analytics surface dies.
+
+## The two personas — line of sight AND line of action
+
+The tool serves two people, and must not stop at the first:
+
+- **The end user** checks and trusts a master. Needs: seed → understand → trust, without SQL, and an
+  unmistakable read on whether the data is real. (Trust is a completeness requirement, not a polish.)
+- **The data steward lives here all day.** Needs *line of action*, not just line of sight: a **conflict
+  queue** (resolve disagreements), the **two-pane match page** (match / reject / new-master),
+  **search · filter · worklist** to work a real book at scale, **act-on-signal** (a profile flag drills
+  to the offending records / fires the verify), **inline rule editing** (survivorship, dictionary,
+  keys — every edit a rule, per the first law), **provenance drill-down** (which source won each field
+  and why), and **saved work**. A steward tool that can see everything and change nothing is a viewer,
+  not a workbench.
+
 ## The first law: never fix the row — fix the rule
 
 The golden record is a **derivation, not a document.** No surface in this system may edit a mastered
