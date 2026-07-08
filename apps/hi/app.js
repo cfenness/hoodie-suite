@@ -6895,14 +6895,16 @@ function rbFactsBuild(){
     subs.forEach(function(sub){
     const ch = onPrem.indexOf(sub.n)>=0 ? 'onprem' : 'offprem';
     states.forEach(function(stObj){ var geo=ST2GEO[stObj.v]; if(!geo) return; classes.forEach(function(cls){ periods.forEach(function(per){
-      if(rnd()<0.34) return; // sparsity, like real depletion data
+      if(rnd()<0.08) return; // light sparsity — dense enough that deep cuts populate for the demo
       const base=200+rnd()*1800;
       var _mi=(_perIdx[per.v]!=null)?_perIdx[per.v]:6;
       var _drift=(_mi/12-0.5)*0.05;
       var trend=Math.max(0.55, Math.min(1.5, 1+_catVol+_drift+geo.bias+(rnd()-0.5)*0.06));
       const volCur=base*trend, volPrior=base, price=90+rnd()*210;
       const podCur=8+Math.floor(rnd()*120), podPrior=Math.max(1, podCur-Math.floor((trend-1)*podCur));
-      const premiumFrac=0.18+rnd()*0.55, realizedFrac=0.45+rnd()*0.4, podRealizedFrac=0.35+rnd()*0.45, acctN=1+Math.floor(rnd()*40), dta=30+Math.floor(rnd()*150);
+      // accounts per cell: ALWAYS >=12, so a populated cut clears the N>=10 anonymization bar (a real
+      // distributor book has dozens-to-hundreds of accounts per cell) — this is what was hiding the demo.
+      const premiumFrac=0.18+rnd()*0.55, realizedFrac=0.45+rnd()*0.4, podRealizedFrac=0.35+rnd()*0.45, acctN=12+Math.floor(rnd()*160), dta=30+Math.floor(rnd()*150);
       facts.push({ category:cat.v, subch:sub.v, channel:ch, region:geo.region, division:geo.division, state:stObj.v, account_class:cls.v, period:per.v,
         volume_9l:+volCur.toFixed(1), volume_9l_prior:+volPrior.toFixed(1), revenue:+(volCur*price).toFixed(0), revenue_prior:+(volPrior*price*0.97).toFixed(0), pod:podCur, pod_prior:podPrior, accounts:acctN,
         premium_vol:+(volCur*premiumFrac).toFixed(1), volume_tam:+(volCur/realizedFrac).toFixed(1), pod_tam:Math.round(podCur/podRealizedFrac), days_to_adopt:dta });
