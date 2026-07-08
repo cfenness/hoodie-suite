@@ -5661,5 +5661,60 @@ import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0
   else setTimeout(boot,250);
 })();
 </script>
+<!-- Demo / Live data-mode toggle. HI runs on a synthetic demo book (rich by design); this labels the
+     mode so a client never mistakes it for their real data, and in Live surfaces real pipeline progress
+     (live analytical feeds land as the master build completes). Additive — no engine edits. -->
+<script>
+(function(){
+  var KEY='hi_mode';
+  function mode(){ try{ return localStorage.getItem(KEY)==='live'?'live':'demo'; }catch(e){ return 'demo'; } }
+  function setMode(m){ try{ localStorage.setItem(KEY,m); }catch(e){} apply(m); }
+  window.HI_MODE=mode();
+
+  var actions=document.querySelector('.top-actions');
+  var av=actions&&actions.querySelector('.user-avatar');
+  var pill=document.createElement('div'); pill.id='hi-mode-pill';
+  pill.title='Demo = the synthetic demo book · Live = real market feeds (arriving as the master build lands)';
+  pill.style.cssText='display:inline-flex;align-items:center;gap:2px;background:#fff;border:1px solid var(--ui-line,#E4E7EB);border-radius:999px;padding:3px;margin-right:6px;font:600 11.5px/1 var(--ui-font,system-ui,sans-serif)';
+  pill.innerHTML='<button data-m="demo" style="border:none;border-radius:999px;padding:5px 12px;cursor:pointer;background:none;color:#7A828B">Demo</button>'
+    +'<button data-m="live" style="border:none;border-radius:999px;padding:5px 12px;cursor:pointer;background:none;color:#7A828B">Live</button>';
+  if(actions){ if(av) actions.insertBefore(pill, av); else actions.appendChild(pill); }
+  pill.addEventListener('click', function(e){ var b=e.target.closest('button[data-m]'); if(b) setMode(b.dataset.m); });
+
+  function paintPill(m){
+    [].forEach.call(pill.querySelectorAll('button'), function(b){
+      var on=b.dataset.m===m;
+      b.style.background=on?(m==='live'?'#2f7d54':'#C98A1A'):'none';
+      b.style.color=on?'#fff':'#7A828B';
+    });
+  }
+  function banner(show){
+    var id='hi-live-banner', ex=document.getElementById(id);
+    if(!show){ if(ex) ex.remove(); return; }
+    if(ex) return;
+    var b=document.createElement('div'); b.id=id;
+    b.style.cssText='padding:9px 18px;background:#EAF2EC;border-bottom:1px solid #cfe3d6;color:#2f5c43;font:600 12.5px/1.45 var(--ui-font,system-ui,sans-serif);display:flex;align-items:center;gap:10px;flex-wrap:wrap';
+    b.innerHTML='<span style="width:7px;height:7px;border-radius:50%;background:#2f7d54;display:inline-block;flex:0 0 auto"></span>'
+      +'<span><b>Live preview.</b> The analytics below are Hoodie’s demo book — live market feeds land as the master build completes.</span>'
+      +'<span id="hi-live-counts" style="color:#5a7a67;font-weight:500"></span>'
+      +'<a href="#" id="hi-live-todemo" style="margin-left:auto;color:#2f7d54;text-decoration:underline;cursor:pointer">Back to demo data</a>';
+    var header=document.querySelector('header.top-bar');
+    if(header&&header.parentNode) header.parentNode.insertBefore(b, header.nextSibling);
+    else (document.querySelector('.main')||document.body).insertBefore(b, (document.querySelector('.main')||document.body).firstChild);
+    var back=document.getElementById('hi-live-todemo'); if(back) back.addEventListener('click', function(ev){ ev.preventDefault(); setMode('demo'); });
+    try{ fetch('/api/catalog',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(cat){
+      if(!cat) return; var ks=Object.keys(cat).filter(function(k){return k.charAt(0)!=='_';});
+      var rows=ks.reduce(function(a,k){return a+(+cat[k].total||0);},0);
+      var el=document.getElementById('hi-live-counts');
+      if(el) el.textContent='· '+ks.length+' real sources · '+rows.toLocaleString()+' rows in the warehouse';
+    }).catch(function(){}); }catch(e){}
+  }
+  function apply(m){
+    window.HI_MODE=m; try{ document.documentElement.setAttribute('data-hi-mode', m); }catch(e){}
+    paintPill(m); banner(m==='live');
+  }
+  apply(mode());
+})();
+</script>
 </body>
 </html>
