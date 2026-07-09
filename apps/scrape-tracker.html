@@ -166,8 +166,37 @@ function renderGeneric(s){
   $('#dpill').textContent=s.status==='active'?'active':(s.rows?'idle':'empty'); $('#dpill').className='status-pill '+(s.status==='active'?'ok':'degraded');
   $('#dbody').innerHTML='<div class="chips">'+
     chip(fmt(s.rows),'rows in warehouse','accent')+chip(ago(s.fresh_secs),'last landed')+chip(esc(s.kind),'kind')+chip(esc(s.feeds),'feeds')+
-    '</div><div class="card" style="margin-top:14px"><div class="cs">This scrape runs on the collection host and streams to the warehouse as <code>'+esc(s.table)+'</code>. '+
-    (s.status==='active'?'It is actively landing new rows.':'No new rows within the last window — it may be idle or between windows.')+'</div></div>';
+    '</div>'+
+    '<div class="tbl-wrap" style="margin-top:14px"><div class="tbl-head">'+
+      '<h3>Data landing in <code>'+esc(s.table)+'</code> <span id="grc" style="color:var(--muted);font-weight:600;font-size:11.5px"></span></h3>'+
+      '<input id="grq" class="refresh" style="cursor:text;min-width:150px" placeholder="filter rows…"></div>'+
+      '<div id="grtable" class="tscroll"><div class="empty">loading…</div></div></div>';
+  const run=()=>loadRows(s.id, $('#grq').value.trim());
+  let t; $('#grq').oninput=()=>{ clearTimeout(t); t=setTimeout(run,300); };
+  run();
+}
+let GROWS=[], GCOLS=[];
+async function loadRows(id, q){
+  let j; try{ j=await (await fetch('/api/scrape/'+id+'/rows?limit=200'+(q?('&q='+encodeURIComponent(q)):''),{cache:'no-store'})).json(); }
+  catch(e){ $('#grtable').innerHTML='<div class="empty">Could not load rows.</div>'; return; }
+  if(!j.landed){ $('#grtable').innerHTML='<div class="empty">Not in the warehouse yet — this source hasn’t landed data.</div>'; return; }
+  GCOLS=j.columns||[]; GROWS=j.rows||[];
+  // keep the table readable: drop always-empty + noisy blob columns
+  const noisy={other_json:1,label_image_url:1};
+  const cols=GCOLS.filter(c=>!noisy[c] && GROWS.some(r=>r[c]!=null && String(r[c]).trim()!==''));
+  $('#grc').textContent=GROWS.length?('· showing '+GROWS.length+(j.filtered?' matched':'')):'';
+  if(!GROWS.length){ $('#grtable').innerHTML='<div class="empty">'+(j.filtered?'No rows match “'+esc(q)+'”.':'No rows yet.')+'</div>'; return; }
+  const cell=v=>{ v=(v==null?'':String(v)); return v.length>60?esc(v.slice(0,60))+'…':esc(v); };
+  $('#grtable').innerHTML='<table><thead><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+
+    GROWS.map((r,i)=>'<tr data-i="'+i+'">'+cols.map(c=>'<td>'+cell(r[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+  document.querySelectorAll('#grtable tr[data-i]').forEach(tr=>tr.onclick=()=>openRowDrawer(GROWS[+tr.dataset.i]));
+}
+function openRowDrawer(r){
+  const title=r.product_name||r.name||r.brand_name||r.brand||r.chain||r.ttb_id||'Row';
+  $('#drTitle').textContent=title;
+  const kv=GCOLS.filter(c=>r[c]!=null && String(r[c]).trim()!=='' && c!=='other_json');
+  $('#drBody').innerHTML='<div class="kv">'+kv.map(c=>'<div class="k">'+esc(c)+'</div><div class="v">'+esc(String(r[c]))+'</div>').join('')+'</div>';
+  $('#scrim').classList.add('open'); $('#drawer').classList.add('open');
 }
 function chip(n,l,c){ return '<div class="chip"><div class="n '+(c||'')+'">'+(n||'0')+'</div><div class="l">'+l+'</div></div>'; }
 

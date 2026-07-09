@@ -1306,6 +1306,51 @@ def scrapes_ep():
                         concerns=(_walmart_concern_count() if s["id"] == "walmart" else 0)))
     return jsonify(ok=True, now=int(now), scrapes=out)
 
+@app.get("/api/scrape/<sid>/rows")
+def scrape_rows_ep(sid):
+    """A sample of the actual rows for ANY tracked scrape, straight from its warehouse table — so the
+    tracker can show the data (not just counts) for every source, not only Walmart. Optional ?q= filters
+    across all columns; ?limit caps rows (default 200)."""
+    import warehouse
+    s = next((x for x in _SCRAPES if x["id"] == sid), None)
+    if not s:
+        return jsonify(ok=False, error="unknown scrape"), 404
+    table = s["table"]
+    q = (request.args.get("q") or "").strip()
+    try:
+        limit = max(1, min(1000, int(request.args.get("limit", "200"))))
+    except ValueError:
+        limit = 200
+    # column list (works even when a filter yields 0 rows)
+    try:
+        cols = [r["column_name"] for r in warehouse.query(
+            table, "SELECT column_name FROM information_schema.columns "
+                   "WHERE table_name='t' ORDER BY ordinal_position")]
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:140], columns=[], rows=[]), 200
+    # newest-first when the table carries an obvious timestamp column
+    order = next((c for c in ("pulled_at", "at", "approval_date", "modified", "ts") if c in cols), None)
+    sql = "SELECT * FROM t"
+    params = []
+    if q:
+        like = "%" + q.lower() + "%"
+        sql += " WHERE " + " OR ".join("lower(CAST(%s AS VARCHAR)) LIKE ?" % c for c in cols)
+        params = [like] * len(cols)
+    if order:
+        sql += ' ORDER BY "%s" DESC' % order
+    sql += " LIMIT %d" % limit
+    try:
+        rows = warehouse.query(table, sql, params)
+    except Exception as e:
+        return jsonify(ok=True, landed=True, columns=cols, rows=[], error=str(e)[:140]), 200
+    # JSON-safe: stringify anything non-primitive (dates, decimals)
+    for r in rows:
+        for k, v in list(r.items()):
+            if v is not None and not isinstance(v, (str, int, float, bool)):
+                r[k] = str(v)
+    return jsonify(ok=True, landed=True, table=table, columns=cols, rows=rows,
+                   count=len(rows), filtered=bool(q))
+
 @app.get("/api/chains")
 def chains_ep():
     """The bev-alc chains registry — each chain's pricing/inventory feasibility + method + auth. The
