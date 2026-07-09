@@ -179,15 +179,36 @@ Market Intelligence
 <script>(function(){
   function e(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
   function ago(t){ if(!t)return''; var s=Math.floor((Date.now()-t)/1000); if(s<3600)return Math.max(1,Math.floor(s/60))+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
-  fetch('/api/highlights?limit=6',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(d){
-    var hs=(d&&d.highlights)||[], box=document.getElementById('scrape-hl-list'); if(!hs.length||!box) return;
-    box.innerHTML=hs.map(function(h){
+  // Synthetic pipeline highlights for Demo mode — keyed to our real connectors so the strip is populated
+  // even with no recent live pull. In Live mode we show the real /api/highlights (hidden if empty).
+  var N=Date.now(), H=3600000;
+  var SYNTH=[
+    {host:'ttbonline.gov',        engine:'playwright',  count:130603, headline:'2024 COLA label approvals — full year captured', ts:N-42*60000},
+    {host:'abcfws.com',           engine:'bigcommerce', count:13942,  headline:'per-store availability across 133 Virginia ABC stores', ts:N-3*H},
+    {host:'myfloridalicense.com', engine:'socrata',     count:48210,  headline:'active FL on- & off-premise licenses, geocoded', ts:N-6*H},
+    {host:'api.beertech.com',     engine:'graphql',     count:2836,   headline:'retail outlets carrying AB InBev brands', ts:N-9*H},
+    {host:'bcldb.com',            engine:'recipe',      count:11704,  headline:'BC product catalog + current price list', ts:N-20*H},
+    {host:'finder.vtinfo.com',    engine:'vtinfo',      count:5190,   headline:'where-to-buy accounts for tracked brands', ts:N-28*H}
+  ];
+  function render(hs){
+    var box=document.getElementById('scrape-hl-list'), sec=document.getElementById('scrape-hl');
+    if(!box) return;
+    if(!hs||!hs.length){ if(sec) sec.hidden=true; return; }
+    box.innerHTML=hs.slice(0,6).map(function(h){
       return '<div class="card" style="padding:14px 16px"><div style="font-size:10.5px;color:#8a857b;font-weight:600;text-transform:uppercase;letter-spacing:.05em">'+e(h.host||'source')+(h.engine?(' · '+e(h.engine)):'')+' · '+e(ago(h.ts))+'</div>'
-        +'<div style="font-size:24px;font-weight:700;margin:5px 0 3px">'+(h.count||0)+' <span style="font-size:13px;color:#8a857b;font-weight:600">rows</span></div>'
+        +'<div style="font-size:24px;font-weight:700;margin:5px 0 3px">'+Number(h.count||0).toLocaleString()+' <span style="font-size:13px;color:#8a857b;font-weight:600">rows</span></div>'
         +'<div style="font-size:12.5px;color:#3a3a3a;line-height:1.45">'+e((h.headline||'').replace(/^\d[\d,]*\s*rows\s*·?\s*/,'')||'pulled')+'</div></div>';
     }).join('');
-    var sec=document.getElementById('scrape-hl'); if(sec) sec.hidden=false;
-  }).catch(function(){});
+    if(sec) sec.hidden=false;
+  }
+  function load(mode){
+    mode=mode||((function(){try{return localStorage.getItem('hi_mode')==='live'?'live':'demo';}catch(e){return 'demo';}})());
+    if(mode==='demo'){ render(SYNTH); return; }
+    fetch('/api/highlights?limit=6',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;})
+      .then(function(d){ render((d&&d.highlights)||[]); }).catch(function(){ render([]); });
+  }
+  window.__hiHighlights=load;
+  load();
 })();</script>
 
 <div class="home-recommended">
@@ -5712,6 +5733,7 @@ import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0
   function apply(m){
     window.HI_MODE=m; try{ document.documentElement.setAttribute('data-hi-mode', m); }catch(e){}
     paintPill(m); banner(m==='live');
+    if(window.__hiHighlights) try{ window.__hiHighlights(m); }catch(e){}   // repaint the pipeline strip for the mode
   }
   apply(mode());
 })();
