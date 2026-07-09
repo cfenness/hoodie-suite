@@ -1278,6 +1278,8 @@ _SCRAPES = [
      "table": "walmart_products", "feeds": "pricing + inventory", "detail": "walmart"},
     {"id": "kroger",     "name": "Kroger · store-level (API)",  "kind": "product", "source": "developer.kroger.com",
      "table": "kroger_products", "feeds": "pricing + inventory", "detail": None},
+    {"id": "abc",        "name": "ABC Fine Wine · store in/out", "kind": "product", "source": "abcfws.com",
+     "table": "abc_products", "feeds": "pricing + inventory", "detail": None},
     {"id": "chains",     "name": "Bev-alc chains registry",     "kind": "registry", "source": "curated",
      "table": "bevalc_chains", "feeds": "source roadmap", "detail": None},
 ]
