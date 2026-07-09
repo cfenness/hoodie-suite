@@ -25,6 +25,33 @@ NOISE = re.compile(r"framed|design-by|recipe|book|glass-set|shot-glass|decanter|
 def log(*a): print(*a, file=sys.stderr, flush=True)
 
 
+def _load_creds():
+    """Load Tigris creds so a scheduled/headless run can write the warehouse. warehouse.env (a few known
+    locations) first, then ~/.aws/credentials via AWS_PROFILE. Never overrides anything already set."""
+    cand = [os.environ.get("WH_ENV_FILE", ""),
+            os.path.expanduser("~/Desktop/Desktop - Chris’s MacBook Pro/Projects/hoodie-backend/warehouse.env"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "warehouse.env")]
+    for p in cand:
+        if p and os.path.exists(p):
+            for line in open(p):
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1); k = k.strip(); v = v.strip().strip('"').strip("'")
+                    if k and v and not os.environ.get(k):
+                        os.environ[k] = v
+            break
+    if not (os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY")):
+        try:
+            import configparser
+            cp = configparser.ConfigParser(); cp.read(os.path.expanduser("~/.aws/credentials"))
+            prof = os.environ.get("AWS_PROFILE", "default")
+            if cp.has_section(prof):
+                os.environ.setdefault("AWS_ACCESS_KEY_ID", cp.get(prof, "aws_access_key_id", fallback=""))
+                os.environ.setdefault("AWS_SECRET_ACCESS_KEY", cp.get(prof, "aws_secret_access_key", fallback=""))
+        except Exception:
+            pass
+
+
 # ---------------- Bright Data pull ----------------
 def discover_urls(queries, per):
     urls, seen = [], set()
@@ -164,6 +191,7 @@ def main():
     ap.add_argument("--per", type=int, default=4, help="products per query")
     ap.add_argument("--note", default="")
     a = ap.parse_args()
+    _load_creds()
     if a.raw_glob:
         raw = []
         for f in glob.glob(a.raw_glob):

@@ -90,20 +90,26 @@ def list_datasets():
                 if info.type != pafs.FileType.File or not info.path.endswith(".parquet"):
                     continue
                 name = info.path.rsplit("/", 1)[-1][:-8]
+                mod = None
+                try:
+                    mod = info.mtime.timestamp() if info.mtime else None
+                except Exception:
+                    pass
                 try:
                     md = pq.read_metadata(info.path, filesystem=s3)
-                    out.append({"name": name, "rows": md.num_rows, "fields": list(md.schema.names)})
+                    out.append({"name": name, "rows": md.num_rows, "fields": list(md.schema.names), "modified": mod})
                 except Exception:
-                    out.append({"name": name, "rows": 0, "fields": []})
+                    out.append({"name": name, "rows": 0, "fields": [], "modified": mod})
         else:
             import glob
             for p in glob.glob(os.path.join(_LOCAL_DIR, "*.parquet")):
                 name = os.path.basename(p)[:-8]
+                mod = os.path.getmtime(p)
                 try:
                     md = pq.read_metadata(p)
-                    out.append({"name": name, "rows": md.num_rows, "fields": list(md.schema.names)})
+                    out.append({"name": name, "rows": md.num_rows, "fields": list(md.schema.names), "modified": mod})
                 except Exception:
-                    out.append({"name": name, "rows": 0, "fields": []})
+                    out.append({"name": name, "rows": 0, "fields": [], "modified": mod})
     except Exception:
         pass
     return out
