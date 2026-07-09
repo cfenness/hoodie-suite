@@ -107,6 +107,22 @@
   .match .mn{font-weight:700;font-size:13px;margin-top:2px}
   .match .mm{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px}
   .drawer .none{color:var(--muted);font-size:12.5px;padding:8px 0}
+  /* label image in drawer + full-size modal */
+  .lblwrap{margin:4px 0 14px}
+  .lblimg{width:100%;max-height:260px;object-fit:contain;background:#F4F5F7;border:1px solid var(--line);border-radius:9px;cursor:zoom-in;display:block}
+  .lblmiss{color:var(--muted);font-size:12.5px;padding:14px;border:1px dashed var(--line);border-radius:9px;background:#FAFBFC}
+  .lblbtns{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:11.5px}
+  .lbllinks a{color:var(--accent);text-decoration:none} .lbllinks a:hover{text-decoration:underline}
+  .dlbtn{display:inline-block;background:var(--accent);color:#fff;font-weight:700;font-size:11.5px;padding:6px 12px;border-radius:7px;text-decoration:none}
+  .dlbtn:hover{filter:brightness(1.08)}
+  .imgmodal{position:fixed;inset:0;background:rgba(15,20,28,.82);z-index:60;display:none;align-items:center;justify-content:center;padding:24px}
+  .imgmodal.open{display:flex}
+  .imgbox{background:var(--panel);border-radius:12px;max-width:min(900px,94vw);max-height:92vh;display:flex;flex-direction:column;overflow:hidden}
+  .imghd{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .imghd h3{font-size:14px;font-weight:800}
+  .imghd>div{display:flex;align-items:center;gap:10px}
+  .imgbox figure{margin:0;overflow:auto;background:#F4F5F7;display:flex;align-items:center;justify-content:center}
+  .imgbox figure img{max-width:100%;max-height:78vh;object-fit:contain;display:block}
 </style>
 </head>
 <body>
@@ -130,6 +146,15 @@
 <div class="drawer" id="drawer">
   <div class="dh"><h3 id="drTitle"></h3><button class="x" id="drClose">×</button></div>
   <div id="drBody"></div>
+</div>
+
+<div class="imgmodal" id="imgModal">
+  <div class="imgbox">
+    <div class="imghd"><h3 id="imgTitle"></h3>
+      <div><a class="dlbtn" id="imgDl" download>⬇ Download</a>
+      <button class="x" id="imgClose">×</button></div></div>
+    <figure id="imgFig"></figure>
+  </div>
 </div>
 
 <script>
@@ -194,9 +219,33 @@ async function loadRows(id, q){
 function openRowDrawer(r){
   const title=r.product_name||r.name||r.brand_name||r.brand||r.chain||r.ttb_id||'Row';
   $('#drTitle').textContent=title;
-  const kv=GCOLS.filter(c=>r[c]!=null && String(r[c]).trim()!=='' && c!=='other_json');
-  $('#drBody').innerHTML='<div class="kv">'+kv.map(c=>'<div class="k">'+esc(c)+'</div><div class="v">'+esc(String(r[c]))+'</div>').join('')+'</div>';
+  const isLabel = r.ttb_id && ('front_label_url' in r || 'back_label_url' in r || 'label_urls' in r);
+  const hide={other_json:1,front_label_url:1,back_label_url:1,label_urls:1,image_file:1};
+  const kv=GCOLS.filter(c=>r[c]!=null && String(r[c]).trim()!=='' && !(isLabel&&hide[c]));
+  let head='';
+  if(isLabel){
+    const img='/api/ttb-label/'+encodeURIComponent(r.ttb_id);
+    const links=[];
+    if(r.front_label_url) links.push('<a href="'+esc(r.front_label_url)+'" target="_blank" rel="noopener">front original ↗</a>');
+    if(r.back_label_url)  links.push('<a href="'+esc(r.back_label_url)+'" target="_blank" rel="noopener">back original ↗</a>');
+    head='<div class="lblwrap">'+
+      '<img class="lblimg" src="'+img+'" alt="label" '+
+        'onclick="openImg(\''+esc(r.ttb_id)+'\',\''+esc(title).replace(/\\\\/g,"")+'\')" '+
+        'onerror="this.closest(\'.lblwrap\').querySelector(\'.lblmiss\').style.display=\'block\';this.style.display=\'none\'">'+
+      '<div class="lblmiss" style="display:none">Label image not captured yet (this filing hasn’t been OCR’d).</div>'+
+      '<div class="lblbtns"><a class="dlbtn" href="'+img+'?download=1" download>⬇ Download label</a>'+
+        (links.length?' <span class="lbllinks">'+links.join(' · ')+'</span>':'')+'</div></div>';
+  }
+  $('#drBody').innerHTML=head+'<div class="kv">'+kv.map(c=>'<div class="k">'+esc(c)+'</div><div class="v">'+esc(String(r[c]))+'</div>').join('')+'</div>';
   $('#scrim').classList.add('open'); $('#drawer').classList.add('open');
+}
+// full-size label modal with a download button
+function openImg(ttbid, title){
+  const img='/api/ttb-label/'+encodeURIComponent(ttbid);
+  $('#imgTitle').textContent=title||ttbid;
+  $('#imgFig').innerHTML='<img src="'+img+'" alt="label">';
+  $('#imgDl').href=img+'?download=1';
+  $('#imgModal').classList.add('open');
 }
 function chip(n,l,c){ return '<div class="chip"><div class="n '+(c||'')+'">'+(n||'0')+'</div><div class="l">'+l+'</div></div>'; }
 
@@ -275,6 +324,9 @@ async function openDrawer(p){
   }catch(e){ $('#drMatch').innerHTML='<div class="none">Match lookup failed.</div>'; }
 }
 $('#drClose').onclick=$('#scrim').onclick=()=>{ $('#scrim').classList.remove('open'); $('#drawer').classList.remove('open'); };
+$('#imgClose').onclick=()=>$('#imgModal').classList.remove('open');
+$('#imgModal').onclick=e=>{ if(e.target.id==='imgModal') $('#imgModal').classList.remove('open'); };
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') $('#imgModal').classList.remove('open'); });
 
 loadScrapes();
 setInterval(loadScrapes, 60000);   // refresh the scrape statuses each minute

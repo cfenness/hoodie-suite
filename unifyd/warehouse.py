@@ -74,6 +74,39 @@ def write_parquet(name, records, fields=None):
     return {"rows": len(records), "uri": uri(name)}
 
 
+def _s3fs():
+    from pyarrow import fs as pafs
+    return pafs.S3FileSystem(endpoint_override=_endpoint(), access_key=_env("AWS_ACCESS_KEY_ID"),
+                             secret_key=_env("AWS_SECRET_ACCESS_KEY"), region=_region(), scheme="https")
+
+
+def put_bytes(key, data):
+    """Store raw bytes at <bucket>/<key> (remote) or <local>/<key> (disk). Used for label-image
+    thumbnails (key like 'label_images/<ttbid>.jpg') so the suite can serve them — the original TTB
+    URLs are F5-gated and won't load in a browser. Returns the storage key."""
+    if remote():
+        with _s3fs().open_output_stream("%s/%s" % (_bucket(), key)) as f:
+            f.write(data)
+    else:
+        p = os.path.join(_LOCAL_DIR, key)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "wb") as f:
+            f.write(data)
+    return key
+
+
+def get_bytes(key):
+    """Read raw bytes back from <bucket>/<key>, or None if absent."""
+    try:
+        if remote():
+            with _s3fs().open_input_stream("%s/%s" % (_bucket(), key)) as f:
+                return f.read()
+        p = os.path.join(_LOCAL_DIR, key)
+        return open(p, "rb").read() if os.path.exists(p) else None
+    except Exception:
+        return None
+
+
 def list_datasets():
     """Every <name>.parquet in the warehouse as [{name, rows, fields}] — CHEAP: reads each Parquet
     footer (row count + schema) only, never the data. Powers the estate model's 'whole thing' view."""
