@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chains — Hoodie</title>
+<style>
+  :root{
+    --ink:#2B3138; --paper:#F1F3F5; --panel:#fff; --muted:#7A828B; --line:#E4E7EB;
+    --accent:#4E79A7; --accent-soft:#EAF0F6; --good:#3f9668; --gold:#9a7100; --bad:#c0563e;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace; --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--paper);color:var(--ink);font-family:var(--font);font-size:14px}
+  body{padding:22px 26px 60px}
+  .embed body{padding-top:14px}
+  .wrap{max-width:1180px;margin:0 auto}
+  .pagehead h1{font-size:22px;font-weight:800;letter-spacing:-.01em}
+  .pagehead .sub{color:var(--muted);font-size:13px;margin-top:3px;max-width:720px;line-height:1.5}
+  .embed .pagehead{display:none}
+  .chips{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 6px}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 15px;min-width:112px}
+  .chip .n{font-family:var(--mono);font-weight:700;font-size:21px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .chip .n.accent{color:var(--accent)} .chip .n.good{color:var(--good)} .chip .n.gold{color:var(--gold)}
+  .chip .l{font-size:11px;color:var(--muted);margin-top:4px}
+  .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 6px}
+  .seg{display:inline-flex;background:#fff;border:1px solid var(--line);border-radius:9px;padding:3px;gap:2px}
+  .seg button{background:none;border:none;font:inherit;font-size:12px;font-weight:600;color:var(--muted);padding:5px 12px;border-radius:6px;cursor:pointer}
+  .seg button.on{background:var(--accent);color:#fff}
+  input.srch{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 11px;font-family:var(--mono);font-size:12.5px;min-width:200px;outline:none}
+  input.srch:focus{border-color:var(--accent)}
+  .lab{font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em}
+
+  .tbl-wrap{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:10px}
+  .tscroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{background:#F7F9FA;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-size:9px;text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer}
+  th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
+  td{padding:8px 12px;border-bottom:1px solid #F2F4F6;white-space:nowrap;vertical-align:top}
+  tbody tr:hover td{background:#FAFBFC}
+  td.chain{font-weight:700}
+  td.ban{white-space:normal;max-width:230px;color:var(--muted);font-size:11px}
+  .b{font-family:var(--mono);font-size:9px;font-weight:700;text-transform:uppercase;padding:2px 6px;border-radius:5px;display:inline-block}
+  .b.on{background:#EAF0F6;color:#2E4C6D} .b.off{background:#F1F4F6;color:#5f6368}
+  .b.y{background:#E4F1EA;color:#256b47} .b.n{background:#F1F4F6;color:#9aa0a6}
+  .b.src{background:#E4F1EA;color:#256b47} .b.cand{background:#FBEEE0;color:#8a5a12}
+  .meth{font-family:var(--mono);font-size:10.5px;font-weight:600}
+  .meth .fam{padding:2px 6px;border-radius:5px}
+  .fam-bd{background:#EAF0F6;color:#2E4C6D} .fam-api{background:#E9F1EC;color:#256b47} .fam-scrape{background:#F3EEF7;color:#5b3d78}
+  .fam-abc{background:#E9F1EC;color:#256b47} .fam-socrata{background:#E9F1EC;color:#256b47} .fam-menu{background:#FBF1E3;color:#8a5a12} .fam-blocked{background:#F8E3DD;color:#a0402b}
+  .auth-m{color:var(--bad);font-weight:700} .auth-o{color:var(--muted)}
+  .empty{padding:30px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12.5px}
+  .note{font-size:11.5px;color:var(--muted);margin-top:10px;font-family:var(--mono);line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="pagehead"><h1>Bev-Alc Chains</h1>
+    <div class="sub">The top retail &amp; on-premise chains, each assessed for whether we can get <b>pricing</b> and/or
+      <b>inventory</b>, and how. Any chain reachable for one or both is a <b>source we can build</b> — this is the
+      candidate-source catalog that feeds the scrape roadmap.</div></div>
+
+  <div class="chips" id="chips"></div>
+
+  <div class="bar">
+    <span class="lab">Premise</span>
+    <div class="seg" id="segPremise"><button data-v="" class="on">All</button><button data-v="off">Off</button><button data-v="on">On</button></div>
+    <span class="lab" style="margin-left:8px">Yields</span>
+    <div class="seg" id="segYields"><button data-v="" class="on">All</button><button data-v="pricing">Pricing</button><button data-v="inventory">Inventory</button><button data-v="none">Neither</button></div>
+    <input class="srch" id="srch" placeholder="Filter chains, banners, method…" style="margin-left:auto">
+  </div>
+
+  <div class="tbl-wrap"><div class="tscroll"><table>
+    <thead><tr>
+      <th data-k="chain">Chain</th><th data-k="premise">Premise</th><th data-k="channel">Channel</th>
+      <th data-k="est_locations" class="num">Locations</th><th data-k="pricing">Pricing</th><th data-k="inventory">Inventory</th>
+      <th data-k="method">Method</th><th data-k="auth">Auth</th><th data-k="is_source">Source</th><th>Banners / note</th>
+    </tr></thead>
+    <tbody id="rows"><tr><td colspan="10" class="empty">loading…</td></tr></tbody>
+  </table></div></div>
+  <div class="note">Method families — <b>bd</b>: Bright Data managed scraper · <b>api</b>: official API (Kroger) ·
+    <b>scrape</b>: owned site scraper · <b>abc_fws</b>/<b>socrata</b>: built connectors · <b>menu</b>: on-premise menu (page/OCR) ·
+    <b>blocked</b>: no public data. <b>bd:instacart</b> unlocks store-level grocery across many banners.</div>
+</div>
+<script>
+if(new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=n=>(n==null||n==='')?'':Number(n).toLocaleString();
+let ALL=[], fP='', fY='', q='', sortK='is_source', sortDir=-1;
+
+async function load(){
+  let j; try{ j=await (await fetch('/api/chains',{cache:'no-store'})).json(); }catch(e){ $('#rows').innerHTML='<tr><td colspan="10" class="empty">Could not reach the API.</td></tr>'; return; }
+  if(!j.landed){ $('#rows').innerHTML='<tr><td colspan="10" class="empty">Chains registry not built yet. Run <code>python unifyd/chains.py</code>.</td></tr>'; return; }
+  ALL=j.chains||[]; const s=j.summary||{};
+  $('#chips').innerHTML=[chip(fmt(s.total),'chains','accent'),chip(fmt(s.sources),'source-reachable','good'),
+    chip(fmt(s.pricing),'pricing','gold'),chip(fmt(s.inventory),'inventory','gold'),
+    chip(fmt(s.off),'off-premise'),chip(fmt(s.on),'on-premise')].join('');
+  render();
+}
+function chip(n,l,c){ return '<div class="chip"><div class="n '+(c||'')+'">'+(n||'0')+'</div><div class="l">'+l+'</div></div>'; }
+const famClass=m=>'fam-'+String(m||'').split(':')[0].replace('_','');
+function render(){
+  let rows=ALL.filter(r=>{
+    if(fP && r.premise!==fP) return false;
+    if(fY==='pricing' && !(r.yields||'').includes('pricing')) return false;
+    if(fY==='inventory' && !(r.yields||'').includes('inventory')) return false;
+    if(fY==='none' && r.is_source) return false;
+    if(q){ const h=(r.chain+' '+r.banners+' '+r.method+' '+r.channel).toLowerCase(); if(!h.includes(q)) return false; }
+    return true;
+  });
+  rows.sort((a,b)=>{ let x=a[sortK], y=b[sortK]; if(typeof x==='boolean'){x=x?1:0;y=y?1:0;} if(typeof x==='string'){return sortDir*x.localeCompare(y);} return sortDir*((x||0)-(y||0)); });
+  $('#rows').innerHTML=rows.map(r=>{
+    const yn=v=>(v && v!=='no')?('<span class="b y">'+esc(v)+'</span>'):'<span class="b n">no</span>';
+    const auth=r.auth==='mandatory/optional'?'<span class="auth-m">mand/opt</span>':(r.auth==='mandatory'?'<span class="auth-m">mandatory</span>':(r.auth==='optional'?'<span class="auth-o">optional</span>':'<span class="auth-o">—</span>'));
+    return '<tr><td class="chain">'+esc(r.chain)+'</td>'+
+      '<td><span class="b '+r.premise+'">'+esc(r.premise)+'</span></td>'+
+      '<td>'+esc(r.channel)+'</td>'+
+      '<td class="num">'+(r.est_locations?fmt(r.est_locations):'—')+'</td>'+
+      '<td>'+yn(r.pricing)+'</td><td>'+yn(r.inventory)+'</td>'+
+      '<td class="meth"><span class="fam '+famClass(r.method)+'">'+esc(r.method)+'</span></td>'+
+      '<td>'+auth+'</td>'+
+      '<td>'+(r.is_source?'<span class="b src">source</span>':'<span class="b cand">candidate</span>')+'</td>'+
+      '<td class="ban">'+esc((r.banners||'').replace(/;/g,' · '))+(r.note?('<br><i>'+esc(r.note)+'</i>'):'')+'</td></tr>';
+  }).join('')||'<tr><td colspan="10" class="empty">no chains match</td></tr>';
+}
+$$('#segPremise button').forEach(b=>b.onclick=()=>{ fP=b.dataset.v; $$('#segPremise button').forEach(x=>x.classList.toggle('on',x===b)); render(); });
+$$('#segYields button').forEach(b=>b.onclick=()=>{ fY=b.dataset.v; $$('#segYields button').forEach(x=>x.classList.toggle('on',x===b)); render(); });
+$('#srch').oninput=e=>{ q=e.target.value.trim().toLowerCase(); render(); };
+$$('th[data-k]').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(sortK===k) sortDir=-sortDir; else {sortK=k;sortDir=(k==='chain'||k==='channel')?1:-1;} render(); });
+load();
+</script>
+</body>
+</html>
