@@ -33,7 +33,8 @@ CLI:
     python abc_fws_scraper.py --sample 40 --out ./abc_out
     python abc_fws_scraper.py --all --limit 500       # wider crawl (slow; respects delay)
 """
-import argparse, hashlib, json, os, re, sys, time, urllib.request, urllib.error
+import argparse, hashlib, json, os, re, sys, threading, time, urllib.request, urllib.error
+from concurrent.futures import ThreadPoolExecutor
 
 BASE        = "https://abcfws.com"
 SITEMAP     = BASE + "/xmlsitemap.php?type=products&page={}"
@@ -174,20 +175,35 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
         return {}, [run], run["movement"]
 
     targets = (catalog if limit is None else catalog[:limit]) if crawl_all else pick_sample(catalog, sample)
-    log(f"catalog {len(catalog)} products; pulling {len(targets)} (delay {DELAY}s) ~{int(len(targets)*DELAY)}s")
+    # FAST: fetch product pages concurrently (plain HTTP, no anti-bot) instead of serial 10s crawl-delay.
+    workers = int(os.environ.get("ABC_WORKERS", "12"))
+    jitter = float(os.environ.get("ABC_JITTER", "0.25"))   # gentle per-request pause in concurrent mode
+    eta = int(len(targets) * jitter / max(1, workers))
+    log(f"catalog {len(catalog)} products; pulling {len(targets)} ({workers} workers, {jitter}s jitter) ~{eta}s")
 
     cur, ok_n = {}, 0   # cur keyed `sku|storeVal` -> per-store {price, instock, store, sku}
-    for i, (sku, url) in enumerate(targets):
+    lock = threading.Lock()
+    def _one(t):
+        nonlocal ok_n
+        sku, url = t
         try:
             _, rows, ok = fetch_product(sku, url, log=log)
-            ok_n += ok
-            for r in rows:
-                cur[f"{sku}|{r['store_val']}"] = {"price": r["price"], "instock": r["instock"],
-                                                  "store": r["store"], "sku": sku}
+            with lock:
+                ok_n += ok
+                for r in rows:
+                    cur[f"{sku}|{r['store_val']}"] = {"price": r["price"], "instock": r["instock"],
+                                                      "store": r["store"], "sku": sku}
         except Exception as e:
             log(f"  {sku}: {e}")
-        if i < len(targets) - 1:
-            time.sleep(DELAY)
+        if jitter:
+            time.sleep(jitter)
+    if workers > 1:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for _ in ex.map(_one, targets):
+                pass
+    else:
+        for t in targets:
+            _one(t)
 
     prev = {}
     snap_path = os.path.join(state_dir, SNAP_FILE)

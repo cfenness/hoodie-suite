@@ -142,21 +142,36 @@ def pull(sample=30, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
     log(f"catalog {len(catalog)} products; fetching {len(targets)} (per-store variants)")
 
     cur, ok_n, names = {}, 0, {}
-    for i, (slug, url) in enumerate(targets):
+    # FAST: concurrent per-page fetch (plain HTTP) instead of serial DELAY.
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    workers = int(os.environ.get("SPECS_WORKERS", "12"))
+    jitter = float(os.environ.get("SPECS_JITTER", "0.2"))
+    lock = threading.Lock()
+    def _one(t):
+        nonlocal ok_n
+        slug, url = t
         try:
             rows, name = parse_stores(_http(url))
-            if rows:
-                ok_n += 1
-            for r in rows:
-                key = f"{slug}|{r['store']}"
-                cur[key] = {"price": r["price"], "instock": r["instock"],
-                            "store": r["store"], "slug": slug, "sku": r["sku"], "name": name}
-            if name:
-                names[slug] = name
+            with lock:
+                if rows:
+                    ok_n += 1
+                for r in rows:
+                    cur[f"{slug}|{r['store']}"] = {"price": r["price"], "instock": r["instock"],
+                                                   "store": r["store"], "slug": slug, "sku": r["sku"], "name": name}
+                if name:
+                    names[slug] = name
         except Exception as e:
             log(f"  {slug}: {e}")
-        if i < len(targets) - 1:
-            time.sleep(DELAY)
+        if jitter:
+            time.sleep(jitter)
+    if workers > 1:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for _ in ex.map(_one, targets):
+                pass
+    else:
+        for t in targets:
+            _one(t)
 
     prev = {}
     snap_path = os.path.join(state_dir, SNAP)
