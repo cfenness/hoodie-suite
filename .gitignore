@@ -28,3 +28,4 @@ cola_labels.csv
 *.log
 
 # (kept in git on purpose: unifyd/fixtures/ — parser reference pages)
+unifyd/walmart_sched.log
