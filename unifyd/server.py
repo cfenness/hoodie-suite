@@ -1280,6 +1280,12 @@ _SCRAPES = [
      "table": "kroger_products", "feeds": "pricing + inventory", "detail": None},
     {"id": "abc",        "name": "ABC Fine Wine · store in/out", "kind": "product", "source": "abcfws.com",
      "table": "abc_products", "feeds": "pricing + inventory", "detail": None},
+    {"id": "specs",      "name": "Spec's · store in/out",       "kind": "product", "source": "specsonline.com",
+     "table": "specs_products", "feeds": "pricing + inventory", "detail": None},
+    {"id": "binnys",     "name": "Binny's · store qty",         "kind": "product", "source": "binnys.com",
+     "table": "binnys_products", "feeds": "pricing + inventory", "detail": None},
+    {"id": "shopify",    "name": "Shopify DTC brands",          "kind": "product", "source": "shopify sites",
+     "table": "shopify_products", "feeds": "pricing + inventory", "detail": None},
     {"id": "chains",     "name": "Bev-alc chains registry",     "kind": "registry", "source": "curated",
      "table": "bevalc_chains", "feeds": "source roadmap", "detail": None},
 ]
