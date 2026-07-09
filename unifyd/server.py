@@ -1276,6 +1276,10 @@ _SCRAPES = [
      "table": "ttb_cola_detail", "feeds": "product master", "detail": None},
     {"id": "walmart",    "name": "Walmart · bev-alc products", "kind": "product", "source": "walmart.com (Bright Data)",
      "table": "walmart_products", "feeds": "pricing + inventory", "detail": "walmart"},
+    {"id": "kroger",     "name": "Kroger · store-level (API)",  "kind": "product", "source": "developer.kroger.com",
+     "table": "kroger_products", "feeds": "pricing + inventory", "detail": None},
+    {"id": "chains",     "name": "Bev-alc chains registry",     "kind": "registry", "source": "curated",
+     "table": "bevalc_chains", "feeds": "source roadmap", "detail": None},
 ]
 
 @app.get("/api/scrapes")
