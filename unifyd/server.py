@@ -1308,6 +1308,23 @@ def scrapes_ep():
                         concerns=(_walmart_concern_count() if s["id"] == "walmart" else 0)))
     return jsonify(ok=True, now=int(now), scrapes=out)
 
+@app.get("/api/ttb-label/<ttbid>")
+def ttb_label_ep(ttbid):
+    """Serve a stored TTB label thumbnail (the enrichment uploads them to Tigris as
+    label_images/<ttbid>.jpg). The original TTB attachment URLs are F5-gated and won't load in a
+    browser, so the tracker's label modal points at this instead. 404 if we haven't captured it yet."""
+    import warehouse, re
+    tid = re.sub(r"[^0-9]", "", ttbid or "")[:20]
+    if not tid:
+        return ("bad id", 400)
+    data = warehouse.get_bytes("label_images/%s.jpg" % tid)
+    if not data:
+        return ("not captured", 404)
+    headers = {"Content-Type": "image/jpeg", "Cache-Control": "private, max-age=86400"}
+    if request.args.get("download"):
+        headers["Content-Disposition"] = 'attachment; filename="ttb_%s.jpg"' % tid
+    return Response(data, headers=headers)
+
 @app.get("/api/scrape/<sid>/rows")
 def scrape_rows_ep(sid):
     """A sample of the actual rows for ANY tracked scrape, straight from its warehouse table — so the
