@@ -1294,6 +1294,28 @@ def scrapes_ep():
                         concerns=(_walmart_concern_count() if s["id"] == "walmart" else 0)))
     return jsonify(ok=True, now=int(now), scrapes=out)
 
+@app.get("/api/chains")
+def chains_ep():
+    """The bev-alc chains registry — each chain's pricing/inventory feasibility + method + auth. The
+    source-candidate catalog: any chain with pricing and/or inventory reachable is a source we can build."""
+    import warehouse
+    try:
+        rows = warehouse.query("bevalc_chains",
+            "SELECT chain, premise, channel, banners, est_locations, website, pricing, inventory, "
+            "method, auth, note, is_source, yields, family FROM t ORDER BY is_source DESC, est_locations DESC")
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:140], chains=[]), 200
+    from collections import Counter
+    src = [r for r in rows if r["is_source"]]
+    summary = dict(total=len(rows), sources=len(src),
+                   off=sum(1 for r in rows if r["premise"] == "off"),
+                   on=sum(1 for r in rows if r["premise"] == "on"),
+                   pricing=sum(1 for r in rows if r["pricing"] not in ("", "no")),
+                   inventory=sum(1 for r in rows if r["inventory"] not in ("", "no")),
+                   by_family=dict(Counter(r["family"] for r in rows)),
+                   by_channel=dict(Counter(r["channel"] for r in rows)))
+    return jsonify(ok=True, landed=True, summary=summary, chains=rows)
+
 @app.get("/api/walmart/match")
 def walmart_match_ep():
     """Cross-source matches for one Walmart product — TTB COLA filings by brand (potential same product)."""
