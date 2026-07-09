@@ -1187,6 +1187,73 @@ def _resolve_dict_refs(maps):
         out[ds] = rr
     return out
 
+# ── Walmart bev-alc tracker — Bright Data walmart_product → warehouse (walmart_products / walmart_runs).
+# The tracking surface reads live counts + data-quality concerns computed over the current snapshot. ──
+_WM_CONCERNS = [
+    ("high", "not_alcohol",  "is_alcohol = false",
+     "not classified under Alcohol/Spirits/Wine/Beer — possible non-beverage contamination"),
+    ("high", "missing_price", "price IS NULL",
+     "no price captured (often an availability/parse failure)"),
+    ("med", "missing_abv",  "abv IS NULL",              "ABV missing from Walmart specs"),
+    ("med", "missing_size", "size_ml IS NULL",          "size (mL) not parseable"),
+    ("med", "missing_upc",  "CAST(upc AS VARCHAR)=''",  "no UPC / GTIN on the listing"),
+    ("med", "out_of_stock", "in_stock = false",         "out of stock at the resolved store"),
+    ("low", "on_promo",     "on_promo = true",          "final price below list (promo)"),
+]
+
+@app.get("/api/walmart/products")
+def walmart_products_ep():
+    import warehouse
+    try:
+        rows = warehouse.query("walmart_products",
+            "SELECT product_name, brand, category, is_alcohol, size_ml, abv, "
+            "CAST(upc AS VARCHAR) upc, price, list_price, on_promo, availability, in_stock, "
+            "store, store_loc, rating, reviews, url FROM t ORDER BY brand, product_name")
+        return jsonify(ok=True, landed=True, count=len(rows), products=rows)
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:140], products=[]), 200
+
+@app.get("/api/walmart/runs")
+def walmart_runs_ep():
+    """Run history + data-quality concerns + field fill-rates over the current snapshot."""
+    import warehouse
+    try:
+        total = warehouse.query("walmart_products", "SELECT count(*) c FROM t")[0]["c"]
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:140], runs=[], concerns=[], total=0), 200
+    concerns = []
+    for sev, key, cond, msg in _WM_CONCERNS:
+        try:
+            n = warehouse.query("walmart_products", "SELECT count(*) c FROM t WHERE %s" % cond)[0]["c"]
+        except Exception:
+            n = 0
+        if n:
+            concerns.append(dict(severity=sev, key=key, count=n, message=msg))
+    try:
+        d = warehouse.query("walmart_products",
+            "SELECT count(*) c FROM (SELECT upc FROM t WHERE CAST(upc AS VARCHAR)<>'' "
+            "GROUP BY upc HAVING count(*)>1)")[0]["c"]
+        if d:
+            concerns.append(dict(severity="med", key="duplicate_upc", count=d,
+                                 message="same UPC on more than one product"))
+    except Exception:
+        pass
+    fills = {}
+    for f in ("brand", "category", "size_ml", "abv", "upc", "price"):
+        try:
+            filled = warehouse.query("walmart_products",
+                "SELECT count(*) c FROM t WHERE %s IS NOT NULL AND CAST(%s AS VARCHAR)<>''" % (f, f))[0]["c"]
+            fills[f] = round(100 * filled / max(1, total), 1)
+        except Exception:
+            fills[f] = None
+    runs = []
+    try:
+        runs = warehouse.query("walmart_runs", 'SELECT * FROM t ORDER BY "at" DESC')   # "at" is a DuckDB reserved word
+    except Exception:
+        pass
+    return jsonify(ok=True, landed=True, total=total, runs=runs, concerns=concerns, fills=fills,
+                   sev_order={"high": 0, "med": 1, "low": 2})
+
 # ── Field mapping — persist source.field → master.field crosswalks, with pre/post transforms ──
 # The PRODUCT master is the WIDE hierarchy schema — every field declares its GRAIN (brand|product|item|
 # sku|supplier). The apply engine SHREDS one mapped source into dim_brand → dim_product → dim_item →
