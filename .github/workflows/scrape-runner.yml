@@ -59,23 +59,11 @@ jobs:
             bdata login --api-key "${{ secrets.BRIGHTDATA_API_KEY }}" || echo "bdata login skipped"
           fi
 
-      # Refresh the chains registry (feasibility catalog) — cheap, no external creds
-      - name: Chains registry
-        if: ${{ github.event.inputs.connector == '' || contains('all chains', github.event.inputs.connector) }}
-        run: python unifyd/chains.py
-
-      # Walmart bev-alc pull → walmart_products / walmart_runs
-      - name: Walmart
-        if: ${{ github.event.inputs.connector == '' || contains('all walmart', github.event.inputs.connector) }}
+      # One entrypoint refreshes every source into the warehouse (chains registry, local snapshots →
+      # abc/specs/binnys/shopify, Walmart via BD, Kroger via API). Each step is independent + self-gating.
+      - name: Pull all
         env:
           BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
-        run: python unifyd/walmart_scraper.py --per 3 --note "cloud runner"
-
-      # Kroger official API (store-level price + availability). No-op until the connector + creds exist.
-      - name: Kroger
-        if: ${{ (github.event.inputs.connector == '' || contains('all kroger', github.event.inputs.connector)) && env.KROGER_CLIENT_ID != '' }}
-        env:
           KROGER_CLIENT_ID: ${{ secrets.KROGER_CLIENT_ID }}
           KROGER_CLIENT_SECRET: ${{ secrets.KROGER_CLIENT_SECRET }}
-        run: |
-          if [ -f unifyd/kroger_api.py ]; then python unifyd/kroger_api.py; else echo "kroger connector not built yet — skipping"; fi
+        run: python unifyd/run_all.py
