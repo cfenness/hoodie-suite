@@ -1254,6 +1254,65 @@ def walmart_runs_ep():
     return jsonify(ok=True, landed=True, total=total, runs=runs, concerns=concerns, fills=fills,
                    sev_order={"high": 0, "med": 1, "low": 2})
 
+def _walmart_concern_count():
+    import warehouse
+    try:
+        warehouse.query("walmart_products", "SELECT 1 FROM t LIMIT 1")
+    except Exception:
+        return 0
+    n = 0
+    for sev, key, cond, msg in _WM_CONCERNS:
+        try:
+            n += warehouse.query("walmart_products", "SELECT count(*) c FROM t WHERE %s" % cond)[0]["c"]
+        except Exception:
+            pass
+    return n
+
+# ── Scrape/crawl tracker — every active pull that lands in the warehouse, with freshness + concerns. ──
+_SCRAPES = [
+    {"id": "ttb-crawl",  "name": "TTB COLA · crawl (index)",  "kind": "crawl",  "source": "ttbonline.gov",
+     "table": "ttb_cola_index",  "feeds": "product master", "detail": None},
+    {"id": "ttb-detail", "name": "TTB COLA · label detail",   "kind": "detail", "source": "ttbonline.gov",
+     "table": "ttb_cola_detail", "feeds": "product master", "detail": None},
+    {"id": "walmart",    "name": "Walmart · bev-alc products", "kind": "product", "source": "walmart.com (Bright Data)",
+     "table": "walmart_products", "feeds": "pricing + inventory", "detail": "walmart"},
+]
+
+@app.get("/api/scrapes")
+def scrapes_ep():
+    """Every tracked scrape/crawl: rows, freshness (last warehouse landing), status, concerns."""
+    import warehouse, time
+    ds = {d["name"]: d for d in warehouse.list_datasets()}
+    now = time.time(); out = []
+    for s in _SCRAPES:
+        d = ds.get(s["table"], {})
+        rows = d.get("rows", 0); mod = d.get("modified")
+        fresh = (now - mod) if mod else None
+        status = "active" if (fresh is not None and fresh < 1800) else ("idle" if rows else "empty")
+        out.append(dict(s, rows=rows, modified=mod,
+                        fresh_secs=(int(fresh) if fresh is not None else None), status=status,
+                        concerns=(_walmart_concern_count() if s["id"] == "walmart" else 0)))
+    return jsonify(ok=True, now=int(now), scrapes=out)
+
+@app.get("/api/walmart/match")
+def walmart_match_ep():
+    """Cross-source matches for one Walmart product — TTB COLA filings by brand (potential same product)."""
+    import warehouse
+    brand = (request.args.get("brand") or "").strip()
+    if not brand:
+        return jsonify(ok=True, brand="", matches=[])
+    try:
+        rows = warehouse.query("ttb_cola_detail",
+            "SELECT ttb_id, CAST(brand_name AS VARCHAR) brand_name, CAST(class_type_desc AS VARCHAR) class_type, "
+            "CAST(net_contents AS VARCHAR) net_contents, CAST(approval_date AS VARCHAR) approval_date "
+            "FROM t WHERE lower(CAST(brand_name AS VARCHAR)) LIKE ? "
+            "ORDER BY approval_date DESC LIMIT 12", ["%" + brand.lower() + "%"])
+        for r in rows:
+            r["source"] = "TTB COLA"; r["how"] = "brand match"
+        return jsonify(ok=True, brand=brand, matches=rows)
+    except Exception as e:
+        return jsonify(ok=True, brand=brand, matches=[], error=str(e)[:120])
+
 # ── Field mapping — persist source.field → master.field crosswalks, with pre/post transforms ──
 # The PRODUCT master is the WIDE hierarchy schema — every field declares its GRAIN (brand|product|item|
 # sku|supplier). The apply engine SHREDS one mapped source into dim_brand → dim_product → dim_item →
@@ -1409,8 +1468,23 @@ SEED_FACT_MAPPINGS = {
                     {"source_field": "Zip", "master_field": "zip5"},
                     {"source_field": "Brand", "master_field": "brand"},
                     {"source_field": "Brand", "master_field": "carriage"}],
+        "walmart_products": [{"source_field": "store_loc", "master_field": "outlet_name"},
+                             {"source_field": "store", "master_field": "address"},
+                             {"source_field": "brand", "master_field": "brand"},
+                             {"source_field": "product_name", "master_field": "product_name"},
+                             {"source_field": "size_ml", "master_field": "size_ml"},
+                             {"source_field": "upc", "master_field": "upc"},
+                             {"source_field": "in_stock", "master_field": "in_stock"}],
     },
-    "pricing": {},   # price lists (bc_liquor / or_pricing / Total Wine) — mapped in the UI per their headers
+    "pricing": {   # price lists (bc_liquor / or_pricing / Total Wine) — mapped in the UI per their headers
+        "walmart_products": [{"source_field": "store_loc", "master_field": "outlet_name"},
+                             {"source_field": "brand", "master_field": "brand"},
+                             {"source_field": "product_name", "master_field": "product_name"},
+                             {"source_field": "size_ml", "master_field": "size_ml"},
+                             {"source_field": "upc", "master_field": "upc"},
+                             {"source_field": "price", "master_field": "price"},
+                             {"source_field": "list_price", "master_field": "promo"}],
+    },
 }
 def _fact_seed_for(fact, ds):
     seeds = SEED_FACT_MAPPINGS.get(fact, {})
