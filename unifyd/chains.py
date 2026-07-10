@@ -147,6 +147,25 @@ _C = [
     ("MGM Resorts", "on", "casino", "", 30, "mgmresorts.com", "sometimes", "assortment", "menu", "optional", ""),
     ("Boyd Gaming", "on", "casino", "", 28, "boydgaming.com", "sometimes", "assortment", "menu", "optional", ""),
     ("Penn Entertainment", "on", "casino", "", 40, "pennentertainment.com", "sometimes", "assortment", "menu", "optional", ""),
+    # ── supplier TRADE RESOURCE pages (brand-owner portfolios) — after the retail chains. Not
+    #    pricing/inventory, but the canonical CATALOG + bottle-shot IMAGES + spec/sell sheets straight
+    #    from the supplier. Public portfolio pages are open; the full trade centers gate on a trade acct.
+    #    method supplier:trade. (Gallo, Diageo, etc. — a lot of suppliers run one.)
+    ("E&J Gallo", "supplier", "portfolio", "Barefoot;Apothic;La Marca;Josh;High Noon;New Amsterdam", 0, "gallo.com/our-wines", "no", "no", "supplier:trade", "trade acct for full", "portfolio + bottle shots + specs"),
+    ("Constellation Brands", "supplier", "portfolio", "Modelo;Corona;Robert Mondavi;Kim Crawford;Meiomi;High West", 0, "cbrands.com/brands", "no", "no", "supplier:trade", "trade acct for full", "portfolio + images"),
+    ("Diageo", "supplier", "portfolio", "Smirnoff;Crown Royal;Johnnie Walker;Captain Morgan;Don Julio;Casamigos;Guinness", 0, "diageo.com/en/our-brands", "no", "no", "supplier:trade", "MyDiageo trade portal", "portfolio + images; trade resources gated"),
+    ("Pernod Ricard", "supplier", "portfolio", "Jameson;Absolut;Malibu;Kahlua;Jacob's Creek;The Glenlivet", 0, "pernod-ricard.com/en/our-brands", "no", "no", "supplier:trade", "trade acct for full", "portfolio + images"),
+    ("Brown-Forman", "supplier", "portfolio", "Jack Daniel's;Woodford Reserve;Old Forester;Herradura;Korbel", 0, "brown-forman.com/brands", "no", "no", "supplier:trade", "trade acct for full", "portfolio + images"),
+    ("Bacardi", "supplier", "portfolio", "Bacardi;Grey Goose;Patron;Bombay Sapphire;Dewar's;Martini", 0, "bacardilimited.com/our-brands", "no", "no", "supplier:trade", "trade acct for full", "portfolio + images"),
+    ("Suntory Global Spirits", "supplier", "portfolio", "Jim Beam;Maker's Mark;Basil Hayden;Hornitos;Sauza;Roku", 0, "suntoryglobalspirits.com/brands", "no", "no", "supplier:trade", "trade acct for full", "ex-Beam Suntory; portfolio + images"),
+    ("Sazerac", "supplier", "portfolio", "Buffalo Trace;Fireball;Southern Comfort;Wheatley;Eagle Rare", 0, "sazerac.com/our-brands", "no", "no", "supplier:trade", "trade acct for full", "portfolio + images"),
+    ("Campari Group", "supplier", "portfolio", "Campari;Aperol;Wild Turkey;Espolon;Grand Marnier;SKYY", 0, "camparigroup.com/en/brands", "no", "no", "supplier:trade", "trade acct for full", "portfolio + images"),
+    ("Moet Hennessy", "supplier", "portfolio", "Hennessy;Moet & Chandon;Veuve Clicquot;Dom Perignon;Belvedere", 0, "moethennessy.com/en/our-maisons", "no", "no", "supplier:trade", "trade acct for full", "LVMH; portfolio + images"),
+    ("Treasury Wine Estates", "supplier", "portfolio", "19 Crimes;Sterling;Beringer;Penfolds;Matua;Frank Family", 0, "twe-marketing.com", "no", "no", "supplier:trade", "trade marketing portal", "sell sheets + POS + images (trade)"),
+    ("The Wine Group", "supplier", "portfolio", "Cupcake;Franzia;Chloe;Benziger;Concannon", 0, "thewinegroup.com/brands", "no", "no", "supplier:trade", "trade acct for full", "portfolio + images"),
+    ("Deutsch Family", "supplier", "portfolio", "Josh Cellars;Yellow Tail;Fleur de Mer;[yellow tail]", 0, "deutschfamily.com/brands", "no", "no", "supplier:trade", "trade acct for full", "importer portfolio + images"),
+    ("Anheuser-Busch InBev", "supplier", "portfolio", "Budweiser;Michelob Ultra;Stella Artois;Cutwater;Nutrl", 0, "anheuser-busch.com/brands", "no", "no", "supplier:trade", "trade acct for full", "beer+RTD portfolio + images"),
+    ("Molson Coors", "supplier", "portfolio", "Coors;Miller;Blue Moon;Topo Chico;Simply Spiked", 0, "molsoncoors.com/our-brands", "no", "no", "supplier:trade", "trade acct for full", "beer+RTD portfolio + images"),
 ]
 
 FIELDS = ["chain", "premise", "channel", "banners", "est_locations", "website",
@@ -162,10 +181,15 @@ def _rows():
             continue
         seen.add(name)
         pricing, inventory = t[6], t[7]
-        is_source = (pricing not in ("", "no")) or (inventory not in ("", "no"))
-        yields = ",".join([x for x, ok in (("pricing", pricing not in ("", "no")),
-                                            ("inventory", inventory not in ("", "no"))) if ok])
         family = t[8].split(":")[0]
+        yields_list = [x for x, ok in (("pricing", pricing not in ("", "no")),
+                                       ("inventory", inventory not in ("", "no"))) if ok]
+        if family == "supplier":            # trade pages yield catalog + bottle-shot images, not price/inv
+            yields_list += ["catalog", "images"]
+        elif t[8] == "menu":
+            yields_list += ["assortment"]
+        is_source = bool(yields_list)       # any useful yield makes it a source candidate
+        yields = ",".join(yields_list)
         out.append(dict(chain=name, premise=t[1], channel=t[2], banners=t[3], est_locations=t[4],
                         website=t[5], pricing=pricing, inventory=inventory, method=t[8], auth=t[9],
                         note=t[10], is_source=is_source, yields=yields, family=family))

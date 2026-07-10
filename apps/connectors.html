@@ -49,17 +49,19 @@
     <div class="grid">
       <div><label>Client ID</label><input id="krId" placeholder="paste Client ID" autocomplete="off"></div>
       <div><label>Client Secret</label><input id="krSecret" type="password" placeholder="paste Client Secret" autocomplete="off"></div>
-      <div class="full"><label>ZIP codes (store areas, comma-separated)</label>
-        <input id="krZips" value="45202,30303,77002,80202,33602,90012,60601"></div>
-      <div class="full"><label>Search terms</label>
-        <input id="krTerms" value="bourbon,whiskey,vodka,tequila,cabernet sauvignon,chardonnay,ipa,hemp,cbd"></div>
+      <div class="full"><label>ZIP codes — which store regions (comma-separated)</label>
+        <input id="krZips" placeholder="leave blank for all Kroger banner regions (Kroger, Ralphs, Fry's, King Soopers, Smith's, QFC, Harris Teeter…)"></div>
+      <div class="full"><label>Search terms — which categories</label>
+        <input id="krTerms" placeholder="leave blank for the full bev-alc taxonomy (spirits · wine · beer · RTD · hemp/THC)"></div>
     </div>
     <div class="row">
       <button id="krRun">Run Kroger pull</button>
       <div class="status" id="krStatus"></div>
     </div>
-    <div class="hint">Creds are used for this run and kept in memory for reuse. For the daily scheduler,
-      set them once as a secret: <code>flyctl secrets set KROGER_CLIENT_ID=… KROGER_CLIENT_SECRET=…</code></div>
+    <div class="hint">The Kroger API is search-based, so <b>coverage = terms × store regions</b> — neither is
+      optional, but <b>leave them blank for the full built-in coverage</b> (all banners, whole taxonomy). Narrow
+      them only for a quick check. Creds are used for this run and cached in memory. For the daily scheduler,
+      set them once: <code>flyctl secrets set KROGER_CLIENT_ID=… KROGER_CLIENT_SECRET=…</code></div>
     <div class="result" id="krResult"></div>
   </div>
 
