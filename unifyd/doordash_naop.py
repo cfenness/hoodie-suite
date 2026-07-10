@@ -16,6 +16,7 @@ import warehouse
 import observe
 import doordash as dd
 import cocktail_taxonomy as ctx
+import cuisine as cui
 
 # seed on-premise accounts (DoorDash restaurant store ids) — expandable via the SERP/setLocation discovery
 DEFAULT_STORES = ["122020"]                 # Applebee's Grill & Bar (Orlando)
@@ -57,13 +58,14 @@ def run(stores=None, log=print):
     stores = stores or DEFAULT_STORES
     key = dd._api_key()
     run_id = "naop-" + time.strftime("%Y%m%d-%H%M%S")
-    rows = []
+    rows, accounts, unsure = [], [], []
     for sid in stores:
         try:
             h = dd._unlock("https://www.doordash.com/store/%s" % sid, key)
         except Exception as e:
             log("  store %s failed: %s" % (sid, str(e)[:50])); continue
         rest = _restaurant_name(h)
+        cz, czs, csrc = cui.classify(rest, h)                               # servesCuisine off the page
         menu = parse_menu(dd._rsc(h))
         kept = 0
         for it in menu:
@@ -72,16 +74,34 @@ def run(stores=None, log=print):
             b = ctx.classify_beverage(it["name"], it["description"])
             if not (b["is_alcoholic"] or b["category"] == "mocktail"):     # keep alcoholic + mocktails
                 continue
-            rows.append(dict(store=str(sid), account=rest, name=it["name"], description=it["description"][:300],
-                             price=it["price"], price_basis="doordash_delivery", category=b["category"],
+            rows.append(dict(store=str(sid), account=rest, cuisine=cz, cuisines="|".join(czs),
+                             name=it["name"], description=it["description"][:300], price=it["price"],
+                             price_basis="doordash_delivery", category=b["category"],
                              is_alcoholic=b["is_alcoholic"], root=b.get("root", ""), sub=b.get("sub", ""),
                              base_spirit=b.get("base_spirit", ""), beer_style=b.get("beer_style", ""),
                              is_hemp=observe.is_hemp(it["name"], it["description"]), run_id=run_id))
             kept += 1
-        log("  [naop] %-34s (%s) — %d menu items, %d beverages" % (rest, sid, len(menu), kept))
+        accounts.append(dict(store=str(sid), account=rest, cuisine=cz, cuisines="|".join(czs),
+                             cuisine_source=csrc, serves_alcohol=kept > 0, n_beverages=kept, run_id=run_id))
+        if not cz:
+            unsure.append(rest)
+        log("  [naop] %-34s (%s) [%s] — %d menu items, %d beverages" % (rest, sid, cz or "?", len(menu), kept))
+    if unsure:                                                             # Claude fallback for the nameless
+        guess = cui.claude_cuisine(unsure)
+        for coll in (rows, accounts):
+            for r in coll:
+                if not r["cuisine"] and r["account"] in guess:
+                    r["cuisine"] = guess[r["account"]]
+                    if "cuisine_source" in r:
+                        r["cuisine_source"] = "claude"
+        if guess:
+            log("  [naop] Claude cuisine filled %d/%d unsure accounts" % (len(guess), len(unsure)))
     if rows:
         warehouse.write_parquet("naop_beverages", rows)
-        log("[naop] DONE %d beverages across %d accounts -> naop_beverages" % (len(rows), len(stores)))
+    if accounts:
+        warehouse.write_parquet("naop_accounts", accounts)
+        log("[naop] DONE %d beverages · %d accounts (%d serve alcohol) -> naop_beverages / naop_accounts"
+            % (len(rows), len(accounts), sum(1 for a in accounts if a["serves_alcohol"])))
     return len(rows)
 
 

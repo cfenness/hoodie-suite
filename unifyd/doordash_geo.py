@@ -14,6 +14,7 @@ import argparse, json, os, re, sys, time, urllib.parse, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
+import cuisine as cui
 
 ALCOHOL_TERMS = ["liquor", "wine", "beer", "spirits", "bar", "cocktails"]
 
@@ -94,10 +95,21 @@ def run(market="orlando", points=None, log=print):
             for k, v in pts.items():
                 if k not in merchants:
                     is_chain = bool(_CHAINS.search(v["name"]))
+                    # provisional cuisine from the name (restaurants); the pull upgrades it to page servesCuisine
+                    cz = cui.from_name(v["name"]) if v["type"] == "restaurant" else ""
                     merchants[k] = dict(store_id=k, name=v["name"], type=v["type"], is_chain=is_chain,
-                                        chain=(v["name"] if is_chain else ""), market=market)
+                                        chain=(v["name"] if is_chain else ""), cuisine=cz,
+                                        cuisine_source=("name" if cz else ""), market=market)
                     new += 1
             log("  [%s] pt %d/%d (%.3f,%.3f) — +%d new (total %d)" % (market, i + 1, len(grid), lat, lon, new, len(merchants)))
+    unsure = [m["name"] for m in merchants.values() if m["type"] == "restaurant" and not m["cuisine"]]
+    if unsure:                                                     # Claude fallback for name-only unknowns
+        guess = cui.claude_cuisine(unsure)
+        for m in merchants.values():
+            if not m["cuisine"] and m["name"] in guess:
+                m["cuisine"], m["cuisine_source"] = guess[m["name"]], "claude"
+        if guess:
+            log("  [%s] Claude cuisine filled %d/%d unsure restaurants" % (market, len(guess), len(unsure)))
     rows = list(merchants.values())
     if rows:
         warehouse.write_parquet("%s_merchants" % market, rows)
