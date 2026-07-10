@@ -156,6 +156,10 @@ def init(app):
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Bearer ") and verify_mobile_token(auth[7:]):
             return
+        # data ingestion: any script can POST to /api/ingest/* with the shared INGEST_TOKEN
+        _ingest = os.environ.get("INGEST_TOKEN", "")
+        if p.startswith("/api/ingest/") and _ingest and auth == "Bearer " + _ingest:
+            return
         if p.startswith("/api/"):
             return jsonify(ok=False, error="unauthorized"), 401
         # bounce browsers to Google, remembering where they were headed

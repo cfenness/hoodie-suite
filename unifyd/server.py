@@ -1310,6 +1310,36 @@ def scrapes_ep():
                         concerns=(_walmart_concern_count() if s["id"] == "walmart" else 0)))
     return jsonify(ok=True, now=int(now), scrapes=out)
 
+@app.post("/api/ingest/<dataset>")
+def ingest_ep(dataset):
+    """The easy way to push data INTO Unifyd. Any script POSTs JSON records here (Bearer
+    INGEST_TOKEN) and they land straight in the warehouse as <dataset>, which the whole suite
+    already reads. Body: {"records":[{...}], "mode":"append"|"replace", "fields":[...]?}.
+    append = merge onto existing rows; replace = overwrite. Returns {ok, dataset, rows}."""
+    import warehouse, re
+    name = re.sub(r"[^a-z0-9_]", "", (dataset or "").lower())[:60]
+    if not name:
+        return jsonify(ok=False, error="bad dataset name"), 400
+    body = request.get_json(silent=True) or {}
+    recs = body.get("records")
+    if not isinstance(recs, list) or not recs:
+        return jsonify(ok=False, error="records[] required (non-empty list of objects)"), 400
+    if not all(isinstance(r, dict) for r in recs):
+        return jsonify(ok=False, error="each record must be an object"), 400
+    mode = body.get("mode", "append")
+    fields = body.get("fields") or None
+    try:
+        if mode == "append":
+            try:
+                existing = warehouse.query(name, "SELECT * FROM t")
+            except Exception:
+                existing = []
+            recs = existing + recs
+        r = warehouse.write_parquet(name, recs, fields)
+        return jsonify(ok=True, dataset=name, rows=r.get("rows"), mode=mode)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:200]), 500
+
 @app.get("/api/ttb-label/<ttbid>")
 def ttb_label_ep(ttbid):
     """Serve a stored TTB label thumbnail (the enrichment uploads them to Tigris as
