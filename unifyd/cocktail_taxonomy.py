@@ -30,7 +30,7 @@ SUBFAMILIES = [
     ("Daiquiri",         "Sour",           "rum",      r"daiquiri|daquiri|dacquiri"),
     ("Piña Colada",      "Sour",           "rum",      r"pi[nñ]a colada|colada"),
     ("Cosmopolitan",     "Sour",           "vodka",    r"cosmopolitan|cosmo\b"),
-    ("Whiskey Sour",     "Sour",           "whiskey",  r"whiskey sour|whisky sour|amaretto sour|sour\b"),
+    ("Whiskey Sour",     "Sour",           "whiskey",  r"whiskey sour|whisky sour|amaretto sour|vodka sour|gin sour|\bsour$"),
     ("Sidecar",          "Sour",           "brandy",   r"sidecar"),
     ("Gimlet",           "Sour",           "gin",      r"gimlet"),
     ("Lemon Drop",       "Sour",           "vodka",    r"lemon drop|kamikaze|woo ?woo"),
@@ -187,7 +187,8 @@ def classify_beverage(name, description=""):
         return {"category": "mocktail" if mock else "cocktail", "is_alcoholic": not mock,
                 "name": (name or "").strip(), "root": c["root"], "sub": c["sub"],
                 "base_spirit": "" if mock else c["base_spirit"]}
-    if _BEER_HINT.search(text):
+    soda = re.search(r"root beer|\bginger beer\b|cream soda|birch beer|ginger ale", text)
+    if _BEER_HINT.search(text) and not soda:                   # root/ginger beer are non-alc sodas
         fmt = ("draft" if re.search(r"draft|draught|on tap|\bpint\b", text) else
                ("can" if "can" in text else ("bottle" if "bottle" in text else "")))
         return {"category": "beer", "is_alcoholic": not mock, "name": (name or "").strip(),
