@@ -43,6 +43,14 @@ def land(conn):
     if not rows:
         log("  %-8s snapshot empty" % conn); return 0
     warehouse.write_parquet(table, rows)
+    # dated time-series (price + inventory per store) — track changes day over day
+    import observe
+    obs_date = time.strftime("%Y-%m-%d", time.gmtime(ts))
+    observe.record(conn, [dict(store=r["store"], store_id=r["store"], product_id=r["sku"],
+                               brand=r["brand"], name=r["name"], price=r["price"],
+                               in_stock=r["in_stock"], qty=r.get("qty"),
+                               is_hemp=observe.is_hemp(r["brand"], r["name"])) for r in rows],
+                   date=obs_date, log=log)
     skus = len({r["sku"] for r in rows}); stores = len({r["store"] for r in rows})
     oos = sum(1 for r in rows if not r["in_stock"])
     runs = []

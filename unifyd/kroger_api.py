@@ -16,6 +16,20 @@ import argparse, base64, json, os, sys, time, urllib.parse, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
+import observe
+
+
+def _front_image(p):
+    """Best bottle-shot URL from a Kroger product's images[] (front perspective, largest size)."""
+    best, best_area = "", -1
+    rank = {"xlarge": 4, "large": 3, "medium": 2, "small": 1, "thumbnail": 0}
+    for im in (p.get("images") or []):
+        front = (im.get("perspective") == "front") or im.get("featured")
+        for s in (im.get("sizes") or []):
+            score = rank.get(s.get("size", ""), 0) + (10 if front else 0)
+            if s.get("url") and score > best_area:
+                best, best_area = s["url"], score
+    return best
 
 TOKEN_URL = "https://api.kroger.com/v1/connect/oauth2/token"
 API = "https://api.kroger.com/v1"
@@ -84,13 +98,18 @@ def products(tok, term, location_id, limit=25):
         price = it.get("price") or {}
         inv = it.get("inventory") or {}
         stock = inv.get("stockLevel", "")
+        cats = p.get("categories") or []
+        name = p.get("description", "")
         out.append(dict(
             product_id=p.get("productId", ""), upc=p.get("upc", ""), brand=(p.get("brand") or ""),
-            product_name=p.get("description", ""),
-            category=", ".join(p.get("categories") or []),
+            product_name=name,
+            category=", ".join(cats),
             size=it.get("size", ""), price=price.get("regular"), promo=price.get("promo"),
             on_promo=bool(price.get("promo") and price.get("regular") and price["promo"] < price["regular"]),
             stock_level=stock, in_stock=(stock not in ("", "TEMPORARILY_OUT_OF_STOCK")),
+            image_url=_front_image(p),              # bottle shot
+            is_hemp=observe.is_hemp(p.get("brand"), name, " ".join(cats)),
+            raw_json=json.dumps(p),                 # keep EVERYTHING — rather have it and not need it
             location_id=location_id, term=term))
     return out
 
@@ -129,6 +148,12 @@ def run(zips, terms):
         if k not in seen:
             seen.add(k); uniq.append(r)
     warehouse.write_parquet("kroger_products", uniq)
+    # dated time-series (price + inventory per store) so we can track changes day over day
+    observe.record("kroger", [dict(store=r["store"], store_id=r["location_id"],
+                                   product_id=r["product_id"], upc=r["upc"], brand=r["brand"],
+                                   name=r["product_name"], price=r["price"], promo=r["promo"],
+                                   on_promo=r["on_promo"], in_stock=r["in_stock"], qty=None,
+                                   stock_level=r["stock_level"], is_hemp=r.get("is_hemp")) for r in uniq])
     oos = sum(1 for r in uniq if not r["in_stock"])
     runs = []
     try:

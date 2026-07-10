@@ -107,6 +107,42 @@ def get_bytes(key):
         return None
 
 
+def write_partition(name, part, records, fields=None):
+    """Append a TIME-SERIES partition: warehouse/<name>/<part>.parquet (e.g. part='2026-07-10_kroger').
+    Daily runs land one file per (date, source) so history accumulates instead of overwriting — the
+    spine for tracking price + inventory over time. Idempotent per (name, part). Query with query_parts()."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    if fields:
+        records = [{k: r.get(k) for k in fields} for r in records]
+    table = pa.Table.from_pylist(records) if records else pa.table({f: [] for f in (fields or ["_"])})
+    rel = "%s/%s/%s.parquet" % (_prefix(), name, part)
+    if remote():
+        pq.write_table(table, "%s/%s" % (_bucket(), rel), filesystem=_s3fs())
+    else:
+        p = os.path.join(_LOCAL_DIR, name, part + ".parquet")
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        pq.write_table(table, p)
+    return {"rows": len(records), "part": part}
+
+
+def query_parts(name, sql=None, params=None):
+    """Query ALL partitions of a time-series table (warehouse/<name>/*.parquet) as view `t`. Schemas
+    may differ across sources, so union_by_name. Empty-safe (returns [] if no partitions yet)."""
+    import duckdb
+    con = connect()
+    glob = ("s3://%s/%s/%s/*.parquet" % (_bucket(), _prefix(), name)) if remote() \
+        else os.path.join(_LOCAL_DIR, name, "*.parquet")
+    try:
+        con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM "
+                    "read_parquet('%s', union_by_name=true)" % glob)
+    except Exception:
+        return []
+    cur = con.execute(sql or "SELECT * FROM t", params or [])
+    cols = [d[0] for d in cur.description]
+    return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
 def list_datasets():
     """Every <name>.parquet in the warehouse as [{name, rows, fields}] — CHEAP: reads each Parquet
     footer (row count + schema) only, never the data. Powers the estate model's 'whole thing' view."""
