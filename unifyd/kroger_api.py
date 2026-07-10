@@ -12,7 +12,7 @@ secrets) or in warehouse.env. Cred-gated: no-op with a note when they're absent.
     python kroger_api.py                      # default bev-alc terms across a few store zips
     python kroger_api.py --zips 30303,10001 --terms "bourbon,vodka,cabernet"
 """
-import argparse, base64, json, os, sys, time, urllib.parse, urllib.request, urllib.error
+import argparse, base64, json, os, random, sys, time, urllib.parse, urllib.request, urllib.error
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
@@ -88,19 +88,40 @@ def _load_creds():
             pass
 
 
-def _req(url, headers=None, data=None):
-    r = urllib.request.Request(url, data=data, headers=headers or {})
-    try:
-        with urllib.request.urlopen(r, timeout=30) as resp:
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        # surface Kroger's actual error body (e.g. {"error":"invalid_client",...}) instead of a bare 401
-        body = ""
+# Kroger throttles with 429/503 when we push too fast (the 503s in the logs). Back off + retry, and
+# trip a circuit breaker after too many in a row so we STOP rather than grind into a hard block.
+_KR_STRIKES = [0]                      # consecutive throttles across the run
+_KR_BREAKER = int(os.environ.get("KROGER_BREAKER", "12"))
+
+
+class KrogerBlocked(RuntimeError):
+    pass
+
+
+def _req(url, headers=None, data=None, retries=5):
+    for attempt in range(retries + 1):
+        r = urllib.request.Request(url, data=data, headers=headers or {})
         try:
-            body = e.read().decode("utf-8", "replace")[:300]
-        except Exception:
-            pass
-        raise RuntimeError("HTTP %s — %s" % (e.code, body or e.reason))
+            with urllib.request.urlopen(r, timeout=30) as resp:
+                _KR_STRIKES[0] = 0
+                return json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 500, 502, 503, 504):
+                _KR_STRIKES[0] += 1
+                if _KR_STRIKES[0] >= _KR_BREAKER:
+                    raise KrogerBlocked("Kroger throttling us (%d %d× in a row) — stopping this run to avoid a block"
+                                        % (e.code, _KR_STRIKES[0]))
+                ra = e.headers.get("Retry-After") if e.headers else None
+                backoff = float(ra) if (ra and str(ra).isdigit()) else min(60.0, 2.0 ** attempt)
+                time.sleep(backoff + random.uniform(0, 1.5))
+                continue
+            body = ""
+            try:
+                body = e.read().decode("utf-8", "replace")[:300]
+            except Exception:
+                pass
+            raise RuntimeError("HTTP %s — %s" % (e.code, body or e.reason))
+    raise RuntimeError("Kroger: exhausted retries after repeated throttling")
 
 
 def token():
@@ -179,29 +200,40 @@ def run(zips, terms):
         log("  [kroger] OFF — set KROGER_CLIENT_ID / KROGER_CLIENT_SECRET (developer.kroger.com) to enable")
         return None
     run_id = "kr-" + time.strftime("%Y%m%d-%H%M%S")
+    pace = float(os.environ.get("KROGER_PACE", "0.5"))   # base gap between calls (backoff handles bursts)
     seen, uniq, stores = set(), [], set()
-    for zi, z in enumerate(zips, 1):
-        try:
-            locs = locations(tok, z)
-        except Exception as e:
-            log("  locations(%s) failed: %s" % (z, str(e)[:80])); continue
-        for (lid, name, city, state) in locs:
-            stores.add(lid)
-            for t in terms:
-                try:
-                    for r in products(tok, t, lid):
-                        k = (r["product_id"], lid)
-                        if k in seen:
-                            continue
-                        seen.add(k)
-                        r["run_id"] = run_id; r["store"] = name; r["city"] = city; r["state"] = state
-                        uniq.append(r)
-                except Exception as e:
-                    log("  products(%s@%s) failed: %s" % (t, lid, str(e)[:60]))
-                time.sleep(0.2)
-        _land(uniq, len(stores), run_id)     # incremental land after each zip
-        log("  [%s] zip %d/%d (%s) — %d products, %d stores so far -> warehouse"
-            % (run_id, zi, len(zips), z, len(uniq), len(stores)))
+    try:
+        for zi, z in enumerate(zips, 1):
+            try:
+                locs = locations(tok, z)
+            except KrogerBlocked:
+                raise
+            except Exception as e:
+                log("  locations(%s) failed: %s" % (z, str(e)[:80])); continue
+            for (lid, name, city, state) in locs:
+                stores.add(lid)
+                for t in terms:
+                    try:
+                        for r in products(tok, t, lid):
+                            k = (r["product_id"], lid)
+                            if k in seen:
+                                continue
+                            seen.add(k)
+                            r["run_id"] = run_id; r["store"] = name; r["city"] = city; r["state"] = state
+                            uniq.append(r)
+                    except KrogerBlocked:
+                        raise                         # stop the whole run — don't grind into a ban
+                    except Exception as e:
+                        log("  products(%s@%s) failed: %s" % (t, lid, str(e)[:60]))
+                    time.sleep(pace + random.uniform(0, pace))
+            _land(uniq, len(stores), run_id)          # incremental land after each zip
+            log("  [%s] zip %d/%d (%s) — %d products, %d stores so far -> warehouse"
+                % (run_id, zi, len(zips), z, len(uniq), len(stores)))
+    except KrogerBlocked as e:
+        log("  [%s] STOPPED EARLY: %s" % (run_id, e))
+        _land(uniq, len(stores), run_id)              # keep what we got
+        log("[%s] STOPPED %d products across %d stores (throttle breaker) -> warehouse" % (run_id, len(uniq), len(stores)))
+        return run_id, len(uniq)
     log("[%s] DONE %d products across %d stores -> warehouse" % (run_id, len(uniq), len(stores)))
     return run_id, len(uniq)
 

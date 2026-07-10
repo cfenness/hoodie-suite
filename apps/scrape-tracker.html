@@ -211,7 +211,8 @@ function renderGeneric(s){
 let GROWS=[], GCOLS=[];
 async function loadRows(id, q){
   let j; try{ j=await (await fetch('/api/scrape/'+id+'/rows?limit=200'+(q?('&q='+encodeURIComponent(q)):''),{cache:'no-store'})).json(); }
-  catch(e){ $('#grtable').innerHTML='<div class="empty">Could not load rows.</div>'; return; }
+  catch(e){ if(SEL===id) $('#grtable').innerHTML='<div class="empty">Could not load rows.</div>'; return; }
+  if(SEL!==id || !document.getElementById('grtable')) return;   // switched away mid-fetch — stale render
   if(!j.landed){ $('#grtable').innerHTML='<div class="empty">Not in the warehouse yet — this source hasn’t landed data.</div>'; return; }
   GCOLS=j.columns||[]; GROWS=j.rows||[];
   // keep the table readable: drop always-empty + noisy blob columns
@@ -258,10 +259,12 @@ function chip(n,l,c){ return '<div class="chip"><div class="n '+(c||'')+'">'+(n|
 // ---- Walmart detail ----
 const SEVRANK={high:0,med:1,low:2};
 async function loadWalmart(){
+  const my=SEL;                 // guard: if the user switches scrapes mid-fetch, don't overwrite the panel
   $('#dbody').innerHTML='<div class="empty">loading…</div>';
   let meta, prod;
   try{ [meta,prod]=await Promise.all([fetch('/api/walmart/runs',{cache:'no-store'}).then(r=>r.json()), fetch('/api/walmart/products',{cache:'no-store'}).then(r=>r.json())]); }
-  catch(e){ $('#dbody').innerHTML='<div class="empty">Could not load Walmart data.</div>'; return; }
+  catch(e){ if(SEL===my) $('#dbody').innerHTML='<div class="empty">Could not load Walmart data.</div>'; return; }
+  if(SEL!==my) return;          // a different scrape is now selected — this render is stale
   if(!meta.landed){ $('#dbody').innerHTML='<div class="empty">No Walmart pull yet. Run <code>python unifyd/walmart_scraper.py</code>.</div>'; $('#dpill').textContent='no data'; $('#dpill').className='status-pill degraded'; return; }
   const latest=(meta.runs&&meta.runs[0])||{}; const st=latest.status||'ok';
   $('#dpill').textContent=st; $('#dpill').className='status-pill '+(st==='ok'?'ok':'degraded');
