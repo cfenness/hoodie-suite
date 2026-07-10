@@ -25,7 +25,7 @@ CHAINS = {
     "circlek":   {"name": "Circle K",          "stores": ["1696295", "1695349"]},
     "cvs":       {"name": "CVS",               "stores": ["1235440"]},
     "totalwine": {"name": "Total Wine & More", "stores": ["1862062"]},
-    "albertsons":{"name": "Albertsons",        "stores": []},
+    "albertsons":{"name": "Albertsons",        "stores": ["1473954"]},   # Denver = Safeway banner
     "seveneleven":{"name": "7-Eleven",         "stores": []},
     "walgreens": {"name": "Walgreens",         "stores": []},
 }
