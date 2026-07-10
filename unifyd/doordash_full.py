@@ -17,6 +17,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import observe
 import doordash as dd          # reuse _api_key, _unlock, _rsc, _parse_items, _parse_pack, _price_val, _parse_outlet, CHAINS
+import cocktail_taxonomy as ctx  # classify_beverage -> category / is_alcoholic / beer_style
+
+# The non-alcoholic / zero-proof DEPARTMENT (fast-growing adjacency: N/A beer, dealcoholized wine, zero-proof
+# spirits, mocktail RTDs). We also walk category non-alcoholic-1516, but KEEP only the beverage-of-interest
+# (signals below) so we don't drag in soda/water/juice.
+_NA_INTEREST = re.compile(
+    r"non[- ]?alcoholic|alcohol[- ]?removed|alcohol[- ]?free|zero[- ]?proof|de-?alcohol|dealcohol|"
+    r"\bn/?a\b|\b0\.0\b|mocktail|athletic brewing|seedlip|ritual zero|\bghia\b|aplos|\bfre\b|clearscape|"
+    r"coors edge|heineken 0|budweiser zero|michelob ultra zero|kul mocks|divin|lyre'?s|monday zero|"
+    r"three spirit|st\.? ?agrestis|surely|proxies|gnista|for bitter|hop wtr|partake", re.I)
 
 # category name stems that are NOT alcohol (store nav links appear alongside the alcohol tree — skip them)
 _NON_ALCOHOL = ("grocery", "household", "meat", "snack", "candy", "frozen", "medicine", "personal care",
@@ -51,7 +61,7 @@ def full_catalog(store, key, log=print, max_pages=120):
             log("  cat %s failed: %s" % (path.split("/category/")[1][:24], str(e)[:40])); continue
         blob = dd._rsc(html)
         for it in dd._parse_items(blob):
-            items.setdefault(it["name"], it)
+            items.setdefault(it["name"], dict(it, department="alcohol"))
         if outlet is None and ('"latitude"' in html):
             outlet = dd._parse_outlet(html, store, "")
         for c in _cat_paths(html, store):                 # enqueue deeper alcohol categories
@@ -66,12 +76,41 @@ def full_catalog(store, key, log=print, max_pages=120):
     for term in dd.ALCOHOL_TERMS:
         try:
             for it in dd.search_store(store, term, key):
-                items.setdefault(it["name"], it)
+                items.setdefault(it["name"], dict(it, department="alcohol"))
         except Exception:
             pass
         time.sleep(0.4)
     log("  [%s] + term-search union -> %d distinct items" % (store, len(items)))
+    for name, it in _walk_nonalc(store, key, log).items():     # non-alc / zero-proof department
+        items.setdefault(name, it)
     return list(items.values()), outlet
+
+
+def _walk_nonalc(store, key, log=print, max_pages=30):
+    """Walk the non-alcoholic-1516 category tree; keep only the zero-proof / N-A beverages of interest."""
+    root = "/convenience/store/%s/category/non-alcoholic-1516" % store
+    out, seen, pages = {}, set(), 0
+    queue = [root]
+    while queue and pages < max_pages:
+        path = queue.pop(0)
+        if path in seen:
+            continue
+        seen.add(path); pages += 1
+        try:
+            html = dd._unlock("https://www.doordash.com" + path, key)
+        except Exception:
+            continue
+        for it in dd._parse_items(dd._rsc(html)):
+            if it["name"] not in out and _NA_INTEREST.search(it["name"]):
+                out[it["name"]] = dict(it, department="non-alcoholic")
+        for c in _cat_paths(html, store):                      # stay in the non-alc subtree
+            slug = urllib.parse.unquote(c.split("/category/")[1]).lower()
+            if c not in seen and ("non-alcoholic" in slug or "1516" in c or
+                                  re.search(r"zero|mock|alcohol.free|de-?alc|\bna\b", slug)):
+                queue.append(c)
+        time.sleep(0.4)
+    log("  [%s] non-alc dept -> %d zero-proof / N-A items" % (store, len(out)))
+    return out
 
 
 def run(chain, stores=None, log=print):
@@ -84,14 +123,20 @@ def run(chain, stores=None, log=print):
     all_rows, outlets = [], []
     for store in stores:
         items, outlet = full_catalog(store, key, log=log)
-        rows = [dict(it, store=str(store), store_id=str(store), product_id=it["name"][:90],
-                     price_value=dd._price_val(it.get("price", "")), source=chain,
-                     is_hemp=observe.is_hemp(it["name"]), run_id=run_id, **dd._parse_pack(it["name"]))
-                for it in items]
+        rows = []
+        for it in items:
+            dept = it.get("department", "alcohol")
+            b = ctx.classify_beverage(it["name"])
+            rows.append(dict(it, store=str(store), store_id=str(store), product_id=it["name"][:90],
+                             price_value=dd._price_val(it.get("price", "")), source=chain, department=dept,
+                             is_alcoholic=(dept == "alcohol"), bev_category=b["category"],
+                             beer_style=b.get("beer_style", ""), is_hemp=observe.is_hemp(it["name"]),
+                             run_id=run_id, **dd._parse_pack(it["name"])))
+        na = sum(1 for r in rows if r["department"] == "non-alcoholic")
         all_rows.extend(rows)
+        log("  [%s] store %s — %d items (%d alcohol, %d non-alc/zero-proof)" % (chain, store, len(rows), len(rows) - na, na))
         if outlet:
             outlet["source"] = chain; outlets.append(outlet)
-        log("  [%s] store %s — %d items (FULL catalog)" % (chain, store, len(rows)))
     if all_rows:
         warehouse.write_parquet(chain + "_products_full", all_rows)
         observe.record(chain, [dict(store=r["store"], store_id=r["store_id"], product_id=r["product_id"],
