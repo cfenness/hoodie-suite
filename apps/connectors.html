@@ -101,7 +101,10 @@ async function runKroger(){
   const poll=async()=>{
     let j; try{ j=await (await fetch('/api/connector/status/'+jid,{cache:'no-store'})).json(); }catch(e){ setTimeout(poll,2000); return; }
     const secs=Math.floor((Date.now()-t0)/1000);
-    if(j.status==='running'){ $('#krStatus').innerHTML='<span class="s-run">● running… '+secs+'s</span>'; setTimeout(poll,2000); return; }
+    if(j.status==='running'){
+      const p=j.result||{};
+      const prog=p.progress?(' · '+(p.products!=null?p.products.toLocaleString():'0')+' products so far ('+p.progress+')'):'';
+      $('#krStatus').innerHTML='<span class="s-run">● running… '+secs+'s'+prog+'</span>'; setTimeout(poll,3000); return; }
     btn.disabled=false;
     if(j.status==='done'){
       $('#krStatus').innerHTML='<span class="s-ok">✓ done in '+secs+'s</span>';
