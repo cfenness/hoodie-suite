@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       connector:
-        description: "Which connector to run (all | walmart | chains | kroger)"
+        description: "Which connector to run (all | walmart | chains | kroger | target)"
         default: "all"
 
 concurrency:
