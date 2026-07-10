@@ -33,8 +33,17 @@ DEFAULT_TERMS = ["red wine", "white wine", "cabernet sauvignon", "pinot noir", "
 
 
 def _api_key():
-    return json.load(open(os.path.expanduser(
-        "~/Library/Application Support/brightdata-cli/credentials.json")))["api_key"]
+    # Cloud-runnable: prefer the env var (Fly / GitHub Actions secret), fall back to the local BD CLI
+    # credentials file (macOS dev box). Lets the scheduled cloud runner pull Target without ~/Library.
+    k = os.environ.get("BRIGHTDATA_API_KEY")
+    if k:
+        return k.strip()
+    for p in ("~/Library/Application Support/brightdata-cli/credentials.json",   # macOS
+              "~/.config/brightdata-cli/credentials.json"):                       # linux
+        p = os.path.expanduser(p)
+        if os.path.exists(p):
+            return json.load(open(p))["api_key"]
+    raise RuntimeError("no Bright Data API key (set BRIGHTDATA_API_KEY or run `bdata login`)")
 
 
 def _unlock(url, api_key, retries=2):
@@ -181,12 +190,118 @@ def run(stores=None, terms=None, pages=2, log=print):
     return run_id, len(rows)
 
 
+def catalog(seeds, terms, api_key, pages=2, log=print):
+    """Discover the bev-alc product catalog (tcin->product) once, from a few seed stores across regions
+    (Target's assortment + price is largely national). Cheap; the per-store part is inventory."""
+    prods = {}
+    for (store, zipc, state) in seeds:
+        for term in terms:
+            for pg in range(pages):
+                try:
+                    for p in plp_search(term, store, zipc, api_key, offset=pg * 28):
+                        if p["tcin"]:
+                            prods.setdefault(p["tcin"], dict(p, source="target"))
+                except Exception:
+                    pass
+                time.sleep(0.6)
+    log("  [target] catalog: %d distinct bev-alc products" % len(prods))
+    return prods
+
+
+def run_national(log=print, workers=12, batch=24, limit=None):
+    """FULL NATIONAL: national catalog once, then per-store inventory across every target_stores store,
+    concurrently. Lands target_products (catalog) + retail_observations (dated per-store inventory).
+    Incremental (re-writes the growing observation partition every ~100 stores) so it's restart-safe.
+    `limit` caps to a state-spread SAMPLE of stores — the cheap daily cadence (full national = limit=None)."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    key = _api_key()
+    seeds = [("2259", "20001", "DC"), ("3269", "33139", "FL"), ("2088", "90013", "CA"),
+             ("1375", "55401", "MN"), ("77", "77002", "TX")]
+    prods = catalog(seeds, DEFAULT_TERMS, key, log=log)
+    tcins = [t for t in prods if t]
+    if not tcins:
+        log("  [target] no catalog — aborting"); return 0
+    warehouse.write_parquet("target_products", [prods[t] for t in tcins])
+    stores = warehouse.query("target_stores", "SELECT store_id, zip, state FROM t")
+    if limit and len(stores) > limit:
+        buckets = {}                                   # round-robin by state → even national spread, cheap
+        for s in sorted(stores, key=lambda r: (r["state"], str(r["store_id"]))):
+            buckets.setdefault(s["state"], []).append(s)
+        picked, order, row = [], list(buckets.values()), 0
+        while len(picked) < limit:
+            progressed = False
+            for b in order:
+                if row < len(b):
+                    picked.append(b[row]); progressed = True
+                    if len(picked) >= limit:
+                        break
+            if not progressed:
+                break
+            row += 1
+        stores = picked
+        log("  [target] SAMPLE %d stores across %d states (daily cadence; full = --national)"
+            % (len(stores), len(buckets)))
+    log("  [target] national inventory: %d products x %d stores" % (len(tcins), len(stores)))
+    obs, lock, done = [], threading.Lock(), [0]
+    abort = threading.Event()        # trip on systemic failure (credits exhausted / IP-blocked)
+    fails_in_row = [0]               # consecutive fully-failed stores
+    ABORT_AFTER = 20
+
+    def _one(st):
+        if abort.is_set():
+            return
+        store, zipc, state = str(st["store_id"]), st["zip"], st["state"]
+        rows, ok_batches = [], 0
+        for j in range(0, len(tcins), batch):
+            if abort.is_set():
+                return
+            b = tcins[j:j + batch]
+            try:
+                qty = fulfillment_qty(b, store, zipc, state, key)
+            except Exception:
+                continue             # call failed — SKIP (never record a false zero for a dead call)
+            ok_batches += 1
+            for tc in b:
+                q = qty.get(tc); p = prods[tc]
+                rows.append(dict(store=store, store_id=store, product_id=tc, brand=p["brand"],
+                                 name=p["name"], price=p["price"], on_promo=False,
+                                 in_stock=bool(q and q > 0), qty=q, is_hemp=p["is_hemp"]))
+        with lock:
+            if ok_batches == 0:      # every batch for this store failed → systemic, not a real empty
+                fails_in_row[0] += 1
+                if fails_in_row[0] >= ABORT_AFTER and not abort.is_set():
+                    abort.set()
+                    log("  [target] ABORT — %d stores in a row fully failed (credits exhausted / blocked?). "
+                        "Stopping so we don't poison the warehouse with false zeros. %d obs kept from %d stores."
+                        % (fails_in_row[0], len(obs), done[0]))
+                return
+            fails_in_row[0] = 0
+            obs.extend(rows); done[0] += 1
+            if done[0] % 100 == 0:
+                observe.record("target", obs, log=lambda *a: None)   # incremental, restart-safe
+                log("  [target] %d/%d stores · %d observations" % (done[0], len(stores), len(obs)))
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        list(ex.map(_one, stores))
+    if obs:
+        observe.record("target", obs, log=log)
+    tag = "ABORTED (partial — see warning above)" if abort.is_set() else "DONE"
+    log("[target] NATIONAL %s: %d products x %d stores covered = %d per-store observations -> warehouse"
+        % (tag, len(tcins), done[0], len(obs)))
+    return len(obs)
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--national", action="store_true", help="full national per-store inventory sweep")
     ap.add_argument("--terms", default="")
     ap.add_argument("--stores", default="", help="store:zip:state,comma-separated")
     ap.add_argument("--pages", type=int, default=2)
     a = ap.parse_args()
+    if a.national:
+        run_national()
+        return
     terms = [t.strip() for t in a.terms.split(",") if t.strip()] or None
     stores = [tuple(s.split(":")) for s in a.stores.split(",") if s.count(":") == 2] or None
     run(stores=stores, terms=terms, pages=a.pages)

@@ -71,13 +71,16 @@ def main():
     if want("kroger"):
         step("kroger", lambda: subprocess.run(
             [sys.executable, os.path.join(_ROOT, "kroger_api.py")], check=False))
+    if want("target"):   # daily = cheap state-spread SAMPLE (full national is a manual --national deep pull)
+        n = int(os.environ.get("TARGET_DAILY_STORES", "60"))
+        step("target", lambda: importlib.import_module("target_scraper").run_national(log=log, limit=n))
 
     # summary — every chain source now in the warehouse
     try:
         import warehouse, time as _t
         now = _t.time()
         chains = ("walmart_products", "abc_products", "specs_products", "binnys_products",
-                  "shopify_products", "kroger_products")
+                  "shopify_products", "kroger_products", "target_products")
         ds = {d["name"]: d for d in warehouse.list_datasets()}
         log("\n== chain sources in the warehouse ==")
         for t in chains:
