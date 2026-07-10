@@ -1371,8 +1371,13 @@ def _conn_run_job(jid, connector, body):
             if res:
                 rid, n = res
                 job.update(status="done", result={"run_id": rid, "products": n, "zips": len(zips), "terms": len(terms)})
+            elif "401" in buf.getvalue():
+                job.update(status="error", error="Kroger rejected the Client ID/Secret (401 on the token request). "
+                           "The Secret is shown only once at app creation — if you're not 100% sure it's exact, "
+                           "regenerate it in your Kroger app (My Apps → your app → reset/regenerate secret) and paste the fresh value. "
+                           "Also confirm the Client ID is the full string, not truncated.")
             else:
-                job.update(status="error", error="Kroger returned no data — check the Client ID/Secret and that the app has the product.compact scope.")
+                job.update(status="error", error="Kroger returned no data — confirm the app has the product.compact scope and is a production app.")
         else:
             job.update(status="error", error="connector not runnable here: " + connector)
     except Exception as e:
