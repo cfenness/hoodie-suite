@@ -118,9 +118,61 @@ def parse_stores(html):
     return rows, bool(rows) and price is not None
 
 
+# --- REAL per-store bottle counts via the BigCommerce Storefront GraphQL API ------------------
+# ABC's store picker is a set of product VARIANTS (one per store); each variant carries
+# inventory.aggregated.availableToSell — the actual units on hand. The storefront JWT is embedded
+# in every product page (it's the public token the site's own JS uses). This is the sanctioned
+# storefront API — not the robots-disallowed legacy stock AJAX — so we get a true quantity, not
+# just in/out. Toggle with ABC_QTY=0.
+TOKEN_RE = re.compile(r'eyJ0eXAiOiJKV1Qi[A-Za-z0-9_.-]{60,}')
+WANT_QTY = os.environ.get("ABC_QTY", "1") == "1"
+GQL_Q = ('{ site { route(path: "%s") { node { ... on Product { '
+         'prices { price { value } } '
+         'variants(first: 200) { edges { node { sku inventory { isInStock aggregated { availableToSell } } '
+         'options { edges { node { values { edges { node { label } } } } } } } } } } } } } }')
+
+
+def graphql_stores(path, token, host):
+    """Per-store rows with a real quantity via GraphQL. Returns (rows, ok); rows carry `qty`.
+    rows=[{store, sku, instock, qty, price}]. ok=False on any error → caller falls back to HTML."""
+    try:
+        req = urllib.request.Request("https://%s/graphql" % host,
+            data=json.dumps({"query": GQL_Q % path}).encode(),
+            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json",
+                     "User-Agent": UA})
+        r = json.load(urllib.request.urlopen(req, timeout=25))
+        node = (((r.get("data") or {}).get("site") or {}).get("route") or {}).get("node") or {}
+        price = None
+        try: price = float(node["prices"]["price"]["value"])
+        except Exception: pass
+        rows = []
+        for e in ((node.get("variants") or {}).get("edges") or []):
+            n = e["node"]; inv = n.get("inventory") or {}; agg = inv.get("aggregated") or {}
+            opts = (n.get("options") or {}).get("edges") or []
+            label = ""
+            if opts:
+                vals = (opts[0]["node"].get("values") or {}).get("edges") or []
+                if vals: label = vals[0]["node"].get("label", "")
+            if not (label.startswith("ABC #") or label.lower() == "online"):
+                continue
+            rows.append({"store": label, "sku": n.get("sku", ""), "qty": agg.get("availableToSell"),
+                         "instock": bool(inv.get("isInStock")), "price": price})
+        return rows, bool(rows)
+    except Exception:
+        return [], False
+
+
 def fetch_product(sku, url, log=print):
     body, _ = fetch(url)
-    rows, ok = parse_stores(body)
+    if WANT_QTY:
+        m = TOKEN_RE.search(body)
+        if m:
+            host = re.sub(r"^https?://", "", url).split("/")[0]
+            path = "/" + url.split("//", 1)[-1].split("/", 1)[-1]
+            gql_rows, gok = graphql_stores(path, m.group(0), host)
+            if gok:
+                return sku, gql_rows, True          # real per-store quantities
+    rows, ok = parse_stores(body)                    # fallback: binary in/out from HTML
     return sku, rows, ok
 
 
@@ -181,7 +233,7 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
     eta = int(len(targets) * jitter / max(1, workers))
     log(f"catalog {len(catalog)} products; pulling {len(targets)} ({workers} workers, {jitter}s jitter) ~{eta}s")
 
-    cur, ok_n = {}, 0   # cur keyed `sku|storeVal` -> per-store {price, instock, store, sku}
+    cur, ok_n = {}, 0   # cur keyed `sku|store` -> per-store {price, instock, qty, store, sku}
     lock = threading.Lock()
     def _one(t):
         nonlocal ok_n
@@ -191,8 +243,10 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
             with lock:
                 ok_n += ok
                 for r in rows:
-                    cur[f"{sku}|{r['store_val']}"] = {"price": r["price"], "instock": r["instock"],
-                                                      "store": r["store"], "sku": sku}
+                    # key on the store LABEL (present in both GraphQL + HTML modes); qty is the
+                    # real bottle count (GraphQL) or None (HTML in/out fallback).
+                    cur[f"{sku}|{r['store']}"] = {"price": r["price"], "instock": r["instock"],
+                                                  "qty": r.get("qty"), "store": r["store"], "sku": sku}
         except Exception as e:
             log(f"  {sku}: {e}")
         if jitter:
