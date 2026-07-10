@@ -1400,18 +1400,23 @@ def connector_status(jid):
     if os.path.exists(lp):
         try: log = open(lp, "r", errors="replace").read()[-4000:]
         except Exception: pass
-    if m.get("status") == "running" and m.get("pid") and not _pid_alive(m["pid"]):
-        if "DONE" in log:
-            m["status"] = "done"
-            mm = re.search(r"DONE (\d+) products across (\d+) stores", log)
-            if mm: m["result"] = {"products": int(mm.group(1)), "stores": int(mm.group(2))}
+    if m.get("status") == "running":
+        # completion detected from the LOG (a finished detached child becomes a zombie, so the pid can
+        # still look 'alive' — the log markers are the reliable signal).
+        done = re.search(r"DONE (\d+) products across (\d+) stores", log)
+        if done:
+            m["status"] = "done"; m["result"] = {"products": int(done.group(1)), "stores": int(done.group(2))}
         elif "401" in log:
             m["status"] = "error"; m["error"] = ("Kroger rejected the Client ID/Secret (401). The secret is shown once "
                                                  "at app creation — regenerate it in your Kroger app and retry.")
-        else:
+        elif "[kroger] OFF" in log or "token failed" in log:
+            m["status"] = "error"; m["error"] = ("Kroger auth failed — confirm the Client ID/Secret and that the app "
+                                                 "has the product.compact scope and is a production app.")
+        elif m.get("pid") and not _pid_alive(m["pid"]) and log:
             m["status"] = "error"; m["error"] = "run ended without completing — see log."
-        try: json.dump(m, open(mp, "w"))
-        except Exception: pass
+        if m["status"] != "running":
+            try: json.dump(m, open(mp, "w"))
+            except Exception: pass
     m["log"] = log
     prog = re.findall(r"zip (\d+)/(\d+) \([^)]*\) . (\d+) products, (\d+) stores", log)   # live progress
     if prog:
