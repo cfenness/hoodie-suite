@@ -91,7 +91,15 @@ def _load_creds():
 # Kroger throttles with 429/503 when we push too fast (the 503s in the logs). Back off + retry, and
 # trip a circuit breaker after too many in a row so we STOP rather than grind into a hard block.
 _KR_STRIKES = [0]                      # consecutive throttles across the run
-_KR_BREAKER = int(os.environ.get("KROGER_BREAKER", "12"))
+_KR_BREAKER = int(os.environ.get("KROGER_BREAKER", "25"))   # tolerate a longer 503 spell before giving up
+# POLITE PACING — the previous version fired calls back-to-back with no gap, so Kroger 503'd fast and the
+# breaker killed the run after ~2 stores. Keep a min gap between calls and ADAPT it up on every throttle
+# (halve back toward the floor on sustained success), so a run slows into Kroger's limits instead of dying.
+_KR_PACE_MIN = float(os.environ.get("KROGER_PACE", "0.4"))  # floor gap between calls (s)
+_KR_PACE_MAX = 8.0
+_KR_PACE = [_KR_PACE_MIN]              # current adaptive gap
+_KR_LAST = [0.0]                       # ts of last request
+_KR_OK = [0]                           # consecutive successes (for decay)
 
 
 class KrogerBlocked(RuntimeError):
@@ -100,14 +108,22 @@ class KrogerBlocked(RuntimeError):
 
 def _req(url, headers=None, data=None, retries=5):
     for attempt in range(retries + 1):
+        gap = _KR_PACE[0] - (time.time() - _KR_LAST[0])   # honor the adaptive pace
+        if gap > 0:
+            time.sleep(gap)
         r = urllib.request.Request(url, data=data, headers=headers or {})
+        _KR_LAST[0] = time.time()
         try:
             with urllib.request.urlopen(r, timeout=30) as resp:
                 _KR_STRIKES[0] = 0
+                _KR_OK[0] += 1
+                if _KR_OK[0] >= 20 and _KR_PACE[0] > _KR_PACE_MIN:   # sustained success → speed back up
+                    _KR_PACE[0] = max(_KR_PACE_MIN, _KR_PACE[0] / 2); _KR_OK[0] = 0
                 return json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
             if e.code in (429, 500, 502, 503, 504):
-                _KR_STRIKES[0] += 1
+                _KR_STRIKES[0] += 1; _KR_OK[0] = 0
+                _KR_PACE[0] = min(_KR_PACE_MAX, max(_KR_PACE[0] * 1.5, _KR_PACE_MIN * 2))  # back off the pace
                 if _KR_STRIKES[0] >= _KR_BREAKER:
                     raise KrogerBlocked("Kroger throttling us (%d %d× in a row) — stopping this run to avoid a block"
                                         % (e.code, _KR_STRIKES[0]))
