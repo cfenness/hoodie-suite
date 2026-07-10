@@ -55,6 +55,55 @@ def _unlock(url, api_key, retries=2):
     return last
 
 
+# ~90 metro zips spread across Target's footprint — nearby_stores(within=75mi) off these + dedup covers
+# most of the ~1,950 stores. The result (target_stores) is the spine for per-store inventory by state.
+STORE_ZIPS = [
+    "35203", "85004", "85701", "72201", "90012", "92101", "94103", "95814", "93721", "92801", "80202",
+    "80903", "06103", "19801", "20001", "33139", "32801", "33602", "32202", "33401", "30303", "31401",
+    "96813", "83702", "60601", "62701", "46204", "50309", "66603", "40202", "70112", "04101", "21201",
+    "02108", "48226", "49503", "55401", "55901", "39201", "63101", "64106", "59601", "68102", "89101",
+    "89501", "03301", "07102", "87102", "10001", "14202", "13202", "28202", "27601", "58102", "44113",
+    "43215", "45202", "73102", "97204", "19103", "15222", "02903", "29201", "29401", "57104", "37203",
+    "38103", "77002", "75201", "78205", "79901", "76102", "84101", "05401", "23219", "22201", "98101",
+    "99201", "25301", "53202", "53703", "82001"]
+
+
+def nearby_stores(zipc, api_key, within=100, limit=20):   # RedSky caps limit at 20
+    q = {"key": SEARCH_KEY, "limit": limit, "within": within, "place": zipc, "channel": "WEB"}
+    d = json.loads(_unlock("%s/nearby_stores_v1?%s" % (REDSKY, urllib.parse.urlencode(q)), api_key))
+    out = []
+    for s in ((((d.get("data") or {}).get("nearby_stores") or {}).get("stores")) or []):
+        if s.get("is_test_location"):
+            continue
+        a = s.get("mailing_address") or {}; g = s.get("geographic_specifications") or {}
+        out.append(dict(store_id=str(s.get("store_id", "")), name=s.get("location_name", ""),
+                        city=a.get("city", ""), state=a.get("region", ""), zip=a.get("postal_code", ""),
+                        address=a.get("address_line1", ""), phone=s.get("main_voice_phone_number", ""),
+                        lat=g.get("latitude"), lon=g.get("longitude")))
+    return out
+
+
+def enumerate_stores(zips=None, log=print):
+    """Enumerate Target stores nationwide via the store locator; land target_stores (dedup by store_id)."""
+    key = _api_key(); zips = zips or STORE_ZIPS
+    seen = {}
+    for z in zips:
+        try:
+            for s in nearby_stores(z, key):
+                if s["store_id"]:
+                    seen[s["store_id"]] = s
+        except Exception as e:
+            log("  store zip %s failed: %s" % (z, str(e)[:60]))
+        time.sleep(0.7)
+    rows = list(seen.values())
+    from collections import Counter
+    by_state = Counter(r["state"] for r in rows)
+    warehouse.write_parquet("target_stores", rows)
+    log("[target] %d distinct stores across %d states -> target_stores (top: %s)"
+        % (len(rows), len(by_state), dict(by_state.most_common(6))))
+    return len(rows)
+
+
 def _img(item):
     en = (item.get("enrichment") or {}).get("images") or {}
     return en.get("primary_image_url") or ""
