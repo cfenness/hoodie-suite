@@ -18,6 +18,7 @@ When the agent is absent the dashboard falls back to its built-in preview.
 State is persisted to ./agent_state/ (datasets.json, runs.json, cola CSV).
 """
 import csv, gzip, io, json, os, random, re, time, types, urllib.request, datetime, threading, logging
+import subprocess, sys
 from flask import Flask, request, jsonify, send_file, Response, redirect, session
 
 import ttb_cola_scraper as cola   # the scraper you generated
@@ -1340,50 +1341,20 @@ def ingest_ep(dataset):
     except Exception as e:
         return jsonify(ok=False, error=str(e)[:200]), 500
 
-# ── Connector runner (front-end for pulls, no CLI) — for connectors that run on THIS box (pure API).
-# Kroger is a plain HTTPS API, so Fly can run it directly. Creds come from the request (used for the
-# run + cached in-memory for reuse); set them as a Fly secret for the daily scheduler.
-_CONN_JOBS = {}          # jobId -> {connector, status, started, log, result, error}
-_CONN_CREDS = {}         # connector -> {id, secret}  (in-memory only, not persisted to disk)
-_CONN_JOB_N = [0]
+# ── Connector runner (front-end for pulls, no CLI). Runs the connector as a DETACHED SUBPROCESS
+# (immune to gunicorn worker recycling that would kill an in-worker thread) with FILE-BASED status
+# (readable from any worker). Kroger is a plain HTTPS API so Fly runs it directly; kroger_api lands
+# INCREMENTALLY per zip, so progress is saved + visible and a restart never wipes the whole run.
+_CONN_CREDS = {}         # connector -> {id, secret}  (in-memory cache so you don't re-enter every run)
 _CONN_RUNNABLE = {"kroger"}   # extend as API connectors land (target, …)
+_CONN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent_state", "conn")
 
 
-def _conn_run_job(jid, connector, body):
-    import contextlib
-    job = _CONN_JOBS[jid]
-    buf = io.StringIO()
+def _pid_alive(pid):
     try:
-        if connector == "kroger":
-            cid = body.get("client_id") or _CONN_CREDS.get("kroger", {}).get("id") or os.environ.get("KROGER_CLIENT_ID", "")
-            sec = body.get("client_secret") or _CONN_CREDS.get("kroger", {}).get("secret") or os.environ.get("KROGER_CLIENT_SECRET", "")
-            if not (cid and sec):
-                job.update(status="error", error="Kroger Client ID + Secret required")
-                return
-            _CONN_CREDS["kroger"] = {"id": cid, "secret": sec}
-            os.environ["KROGER_CLIENT_ID"] = cid
-            os.environ["KROGER_CLIENT_SECRET"] = sec
-            import kroger_api
-            zips = [z.strip() for z in (body.get("zips") or "").split(",") if z.strip()] or kroger_api.DEFAULT_ZIPS
-            terms = [t.strip() for t in (body.get("terms") or "").split(",") if t.strip()] or kroger_api.DEFAULT_TERMS
-            with contextlib.redirect_stderr(buf):
-                res = kroger_api.run(zips, terms)
-            if res:
-                rid, n = res
-                job.update(status="done", result={"run_id": rid, "products": n, "zips": len(zips), "terms": len(terms)})
-            elif "401" in buf.getvalue():
-                job.update(status="error", error="Kroger rejected the Client ID/Secret (401 on the token request). "
-                           "The Secret is shown only once at app creation — if you're not 100% sure it's exact, "
-                           "regenerate it in your Kroger app (My Apps → your app → reset/regenerate secret) and paste the fresh value. "
-                           "Also confirm the Client ID is the full string, not truncated.")
-            else:
-                job.update(status="error", error="Kroger returned no data — confirm the app has the product.compact scope and is a production app.")
-        else:
-            job.update(status="error", error="connector not runnable here: " + connector)
-    except Exception as e:
-        job.update(status="error", error=str(e)[:200])
-    finally:
-        job["log"] = buf.getvalue()[-4000:]
+        os.kill(int(pid), 0); return True
+    except Exception:
+        return False
 
 
 @app.post("/api/connector/run")
@@ -1392,20 +1363,63 @@ def connector_run():
     connector = (body.get("connector") or "").strip().lower()
     if connector not in _CONN_RUNNABLE:
         return jsonify(ok=False, error="unknown/unsupported connector (runnable: %s)" % ", ".join(sorted(_CONN_RUNNABLE))), 400
-    _CONN_JOB_N[0] += 1
-    jid = "cj-%d-%d" % (int(time.time()), _CONN_JOB_N[0])
-    _CONN_JOBS[jid] = {"connector": connector, "status": "running", "started": int(time.time()),
-                       "log": "", "result": None, "error": None}
-    threading.Thread(target=_conn_run_job, args=(jid, connector, body), daemon=True).start()
-    return jsonify(ok=True, jobId=jid, status="running")
+    os.makedirs(_CONN_DIR, exist_ok=True)
+    jid = "cj-%d-%d" % (int(time.time()), random.randint(100, 999))
+    here = os.path.dirname(os.path.abspath(__file__))
+    if connector == "kroger":
+        cid = body.get("client_id") or _CONN_CREDS.get("kroger", {}).get("id") or os.environ.get("KROGER_CLIENT_ID", "")
+        sec = body.get("client_secret") or _CONN_CREDS.get("kroger", {}).get("secret") or os.environ.get("KROGER_CLIENT_SECRET", "")
+        if not (cid and sec):
+            return jsonify(ok=False, error="Kroger Client ID + Secret required"), 400
+        _CONN_CREDS["kroger"] = {"id": cid, "secret": sec}
+        import kroger_api
+        zips = (body.get("zips") or "").strip() or ",".join(kroger_api.DEFAULT_ZIPS)
+        terms = (body.get("terms") or "").strip() or ",".join(kroger_api.DEFAULT_TERMS)
+        env = dict(os.environ, KROGER_CLIENT_ID=cid, KROGER_CLIENT_SECRET=sec)
+        args = [sys.executable, os.path.join(here, "kroger_api.py"), "--zips", zips, "--terms", terms]
+        lf = open(os.path.join(_CONN_DIR, jid + ".log"), "w")
+        p = subprocess.Popen(args, env=env, stdout=lf, stderr=subprocess.STDOUT, start_new_session=True, cwd=here)
+        json.dump({"connector": connector, "status": "running", "pid": p.pid, "started": int(time.time())},
+                  open(os.path.join(_CONN_DIR, jid + ".json"), "w"))
+        return jsonify(ok=True, jobId=jid, status="running")
+    return jsonify(ok=False, error="not runnable: " + connector), 400
 
 
 @app.get("/api/connector/status/<jid>")
 def connector_status(jid):
-    j = _CONN_JOBS.get(jid)
-    if not j:
+    jid = re.sub(r"[^0-9a-z-]", "", jid or "")
+    mp = os.path.join(_CONN_DIR, jid + ".json")
+    if not os.path.exists(mp):
         return jsonify(ok=False, error="no such job"), 404
-    return jsonify(ok=True, jobId=jid, **j)
+    try:
+        m = json.load(open(mp))
+    except Exception:
+        return jsonify(ok=False, error="job state unreadable"), 500
+    log = ""
+    lp = os.path.join(_CONN_DIR, jid + ".log")
+    if os.path.exists(lp):
+        try: log = open(lp, "r", errors="replace").read()[-4000:]
+        except Exception: pass
+    if m.get("status") == "running" and m.get("pid") and not _pid_alive(m["pid"]):
+        if "DONE" in log:
+            m["status"] = "done"
+            mm = re.search(r"DONE (\d+) products across (\d+) stores", log)
+            if mm: m["result"] = {"products": int(mm.group(1)), "stores": int(mm.group(2))}
+        elif "401" in log:
+            m["status"] = "error"; m["error"] = ("Kroger rejected the Client ID/Secret (401). The secret is shown once "
+                                                 "at app creation — regenerate it in your Kroger app and retry.")
+        else:
+            m["status"] = "error"; m["error"] = "run ended without completing — see log."
+        try: json.dump(m, open(mp, "w"))
+        except Exception: pass
+    m["log"] = log
+    prog = re.findall(r"zip (\d+)/(\d+) \([^)]*\) . (\d+) products, (\d+) stores", log)   # live progress
+    if prog:
+        z, zt, n, st = prog[-1]
+        r = m.get("result") or {}
+        r.update({"products": int(n), "stores": int(st), "progress": "%s/%s zips" % (z, zt)})
+        m["result"] = r
+    return jsonify(ok=True, jobId=jid, **m)
 
 
 @app.get("/api/connector/creds")

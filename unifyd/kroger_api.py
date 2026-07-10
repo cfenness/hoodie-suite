@@ -12,7 +12,7 @@ secrets) or in warehouse.env. Cred-gated: no-op with a note when they're absent.
     python kroger_api.py                      # default bev-alc terms across a few store zips
     python kroger_api.py --zips 30303,10001 --terms "bourbon,vodka,cabernet"
 """
-import argparse, base64, json, os, sys, time, urllib.parse, urllib.request
+import argparse, base64, json, os, sys, time, urllib.parse, urllib.request, urllib.error
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
@@ -90,8 +90,17 @@ def _load_creds():
 
 def _req(url, headers=None, data=None):
     r = urllib.request.Request(url, data=data, headers=headers or {})
-    with urllib.request.urlopen(r, timeout=30) as resp:
-        return json.loads(resp.read().decode())
+    try:
+        with urllib.request.urlopen(r, timeout=30) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        # surface Kroger's actual error body (e.g. {"error":"invalid_client",...}) instead of a bare 401
+        body = ""
+        try:
+            body = e.read().decode("utf-8", "replace")[:300]
+        except Exception:
+            pass
+        raise RuntimeError("HTTP %s — %s" % (e.code, body or e.reason))
 
 
 def token():
@@ -138,41 +147,10 @@ def products(tok, term, location_id, limit=25):
     return out
 
 
-def run(zips, terms):
-    _load_creds()
-    tok = None
-    try:
-        tok = token()
-    except Exception as e:
-        log("  Kroger token failed: %s" % str(e)[:120])
-    if not tok:
-        log("  [kroger] OFF — set KROGER_CLIENT_ID / KROGER_CLIENT_SECRET (developer.kroger.com) to enable")
-        return None
-    run_id = "kr-" + time.strftime("%Y%m%d-%H%M%S")
-    rows, stores = [], []
-    for z in zips:
-        try:
-            locs = locations(tok, z)
-        except Exception as e:
-            log("  locations(%s) failed: %s" % (z, str(e)[:80])); continue
-        for (lid, name, city, state) in locs:
-            stores.append((lid, name, city, state))
-            for t in terms:
-                try:
-                    for r in products(tok, t, lid):
-                        r["run_id"] = run_id; r["store"] = name; r["city"] = city; r["state"] = state
-                        rows.append(r)
-                except Exception as e:
-                    log("  products(%s@%s) failed: %s" % (t, lid, str(e)[:60]))
-                time.sleep(0.2)
-    # de-dupe by product×location
-    seen, uniq = set(), []
-    for r in rows:
-        k = (r["product_id"], r["location_id"])
-        if k not in seen:
-            seen.add(k); uniq.append(r)
+def _land(uniq, n_stores, run_id):
+    """Land the snapshot + dated observations + a run row. Called after EACH zip so progress is saved
+    and visible (restart-safe) — not just once at the end."""
     warehouse.write_parquet("kroger_products", uniq)
-    # dated time-series (price + inventory per store) so we can track changes day over day
     observe.record("kroger", [dict(store=r["store"], store_id=r["location_id"],
                                    product_id=r["product_id"], upc=r["upc"], brand=r["brand"],
                                    name=r["product_name"], price=r["price"], promo=r["promo"],
@@ -181,15 +159,50 @@ def run(zips, terms):
     oos = sum(1 for r in uniq if not r["in_stock"])
     runs = []
     try:
-        runs = warehouse.query("kroger_runs", "SELECT * FROM t")
+        runs = [x for x in warehouse.query("kroger_runs", "SELECT * FROM t") if x.get("run_id") != run_id]
     except Exception:
         pass
-    runs.append(dict(run_id=run_id, at=int(time.time()), products=len(uniq), stores=len(stores),
+    runs.append(dict(run_id=run_id, at=int(time.time()), products=len(uniq), stores=n_stores,
                      in_stock=len(uniq) - oos, on_promo=sum(1 for r in uniq if r["on_promo"]),
                      status=("ok" if uniq else "degraded"), note="kroger api"))
     warehouse.write_parquet("kroger_runs", runs[-50:])
-    log("[%s] %d products across %d stores (%d OOS, %d promo) -> warehouse"
-        % (run_id, len(uniq), len(stores), oos, sum(1 for r in uniq if r["on_promo"])))
+
+
+def run(zips, terms):
+    _load_creds()
+    tok = None
+    try:
+        tok = token()
+    except Exception as e:
+        log("  Kroger token failed: %s" % str(e)[:150])
+    if not tok:
+        log("  [kroger] OFF — set KROGER_CLIENT_ID / KROGER_CLIENT_SECRET (developer.kroger.com) to enable")
+        return None
+    run_id = "kr-" + time.strftime("%Y%m%d-%H%M%S")
+    seen, uniq, stores = set(), [], set()
+    for zi, z in enumerate(zips, 1):
+        try:
+            locs = locations(tok, z)
+        except Exception as e:
+            log("  locations(%s) failed: %s" % (z, str(e)[:80])); continue
+        for (lid, name, city, state) in locs:
+            stores.add(lid)
+            for t in terms:
+                try:
+                    for r in products(tok, t, lid):
+                        k = (r["product_id"], lid)
+                        if k in seen:
+                            continue
+                        seen.add(k)
+                        r["run_id"] = run_id; r["store"] = name; r["city"] = city; r["state"] = state
+                        uniq.append(r)
+                except Exception as e:
+                    log("  products(%s@%s) failed: %s" % (t, lid, str(e)[:60]))
+                time.sleep(0.2)
+        _land(uniq, len(stores), run_id)     # incremental land after each zip
+        log("  [%s] zip %d/%d (%s) — %d products, %d stores so far -> warehouse"
+            % (run_id, zi, len(zips), z, len(uniq), len(stores)))
+    log("[%s] DONE %d products across %d stores -> warehouse" % (run_id, len(uniq), len(stores)))
     return run_id, len(uniq)
 
 
