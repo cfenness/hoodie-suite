@@ -1,0 +1,119 @@
+<meta charset="utf-8">
+<title>Connectors</title>
+<style>
+  :root{
+    --ink:#2B3138; --paper:#F1F3F5; --panel:#fff; --muted:#7A828B; --line:#E4E7EB;
+    --accent:#4E79A7; --accent-soft:#EAF0F6; --good:#3f9668; --gold:#9a7100; --bad:#c0563e;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace; --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} body{margin:0;font-family:var(--font);color:var(--ink);background:var(--paper)}
+  .wrap{max-width:820px;margin:0 auto;padding:26px 22px 60px}
+  h1{font-size:22px;font-weight:800;letter-spacing:-.01em;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13.5px;max-width:60ch;line-height:1.5;margin-bottom:22px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:20px 20px 18px;margin-bottom:16px}
+  .chd{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .chd h2{font-size:16px;font-weight:800;margin:0}
+  .pill{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:20px}
+  .pill.api{background:var(--accent-soft);color:var(--accent)} .pill.ok{background:#E8F3EC;color:var(--good)} .pill.off{background:#F3E9E6;color:var(--bad)}
+  .desc{color:var(--muted);font-size:12.5px;line-height:1.5;margin:2px 0 16px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:0 0 5px}
+  input{width:100%;font-family:var(--font);font-size:13.5px;color:var(--ink);background:#FAFBFC;border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+  input:focus{outline:none;border-color:var(--accent);background:#fff}
+  .full{grid-column:1/-1}
+  .row{display:flex;align-items:center;gap:12px;margin-top:16px}
+  button{font-family:var(--font);font-size:13.5px;font-weight:700;color:#fff;background:var(--accent);border:none;border-radius:9px;padding:10px 20px;cursor:pointer}
+  button:hover{filter:brightness(1.07)} button:disabled{opacity:.5;cursor:default}
+  .status{font-size:12.5px;color:var(--muted)}
+  .status .s-run{color:var(--accent);font-weight:700} .status .s-ok{color:var(--good);font-weight:700} .status .s-err{color:var(--bad);font-weight:700}
+  .result{margin-top:14px;border:1px solid var(--line);border-radius:9px;background:#FAFBFC;padding:12px 14px;font-size:12.5px;display:none}
+  .result.show{display:block}
+  .result .big{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--ink)}
+  .log{font-family:var(--mono);font-size:10.5px;color:var(--muted);white-space:pre-wrap;max-height:150px;overflow:auto;margin-top:8px;line-height:1.5}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:7px;line-height:1.5}
+  .hint code{background:#EEF0F2;border-radius:4px;padding:1px 5px;font-size:11px}
+  .other{color:var(--muted);font-size:12.5px;line-height:1.6}
+  .other b{color:var(--ink)}
+</style>
+
+<div class="wrap">
+  <h1>Connectors</h1>
+  <div class="sub">Run a pull without touching the command line. API connectors run right here; site &amp;
+    label scrapers run on the collection host and land on their schedule.</div>
+
+  <div class="card">
+    <div class="chd"><h2>Kroger</h2><span class="pill api">API</span><span id="krCred" class="pill off">creds needed</span></div>
+    <div class="desc">Official Kroger Developer API — store-level price + inventory status (HIGH / LOW / OUT) with
+      the bottle-shot image. Create an app at developer.kroger.com (scope <b>product.compact</b>); the Client
+      ID/Secret are on <b>My Apps → your app</b>.</div>
+    <div class="grid">
+      <div><label>Client ID</label><input id="krId" placeholder="paste Client ID" autocomplete="off"></div>
+      <div><label>Client Secret</label><input id="krSecret" type="password" placeholder="paste Client Secret" autocomplete="off"></div>
+      <div class="full"><label>ZIP codes (store areas, comma-separated)</label>
+        <input id="krZips" value="45202,30303,77002,80202,33602,90012,60601"></div>
+      <div class="full"><label>Search terms</label>
+        <input id="krTerms" value="bourbon,whiskey,vodka,tequila,cabernet sauvignon,chardonnay,ipa,hemp,cbd"></div>
+    </div>
+    <div class="row">
+      <button id="krRun">Run Kroger pull</button>
+      <div class="status" id="krStatus"></div>
+    </div>
+    <div class="hint">Creds are used for this run and kept in memory for reuse. For the daily scheduler,
+      set them once as a secret: <code>flyctl secrets set KROGER_CLIENT_ID=… KROGER_CLIENT_SECRET=…</code></div>
+    <div class="result" id="krResult"></div>
+  </div>
+
+  <div class="card">
+    <div class="chd"><h2>Other sources</h2></div>
+    <div class="other">
+      <b>ABC, Spec's, Binny's, Shopify, Walmart, TTB</b> run on the collection host (they need a real browser,
+      Bright Data, or the F5-warmed session) and land on their schedule — watch them in the
+      <b>Scrape Tracker</b>. <b>Target</b> and <b>Instacart</b> connectors are in the build queue and will
+      appear here as API connectors once ready.
+    </div>
+  </div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+async function refreshCreds(){
+  try{ const j=await (await fetch('/api/connector/creds',{cache:'no-store'})).json();
+    if(j.have&&j.have.kroger){ $('#krCred').textContent='creds set'; $('#krCred').className='pill ok'; }
+  }catch(e){}
+}
+async function runKroger(){
+  const btn=$('#krRun'); btn.disabled=true;
+  $('#krStatus').innerHTML='<span class="s-run">● starting…</span>';
+  $('#krResult').classList.remove('show');
+  const body={connector:'kroger', client_id:$('#krId').value.trim(), client_secret:$('#krSecret').value.trim(),
+              zips:$('#krZips').value.trim(), terms:$('#krTerms').value.trim()};
+  let jid;
+  try{
+    const r=await (await fetch('/api/connector/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+    if(!r.ok){ $('#krStatus').innerHTML='<span class="s-err">✗ '+(r.error||'failed')+'</span>'; btn.disabled=false; return; }
+    jid=r.jobId;
+  }catch(e){ $('#krStatus').innerHTML='<span class="s-err">✗ could not reach the API</span>'; btn.disabled=false; return; }
+  const t0=Date.now();
+  const poll=async()=>{
+    let j; try{ j=await (await fetch('/api/connector/status/'+jid,{cache:'no-store'})).json(); }catch(e){ setTimeout(poll,2000); return; }
+    const secs=Math.floor((Date.now()-t0)/1000);
+    if(j.status==='running'){ $('#krStatus').innerHTML='<span class="s-run">● running… '+secs+'s</span>'; setTimeout(poll,2000); return; }
+    btn.disabled=false;
+    if(j.status==='done'){
+      $('#krStatus').innerHTML='<span class="s-ok">✓ done in '+secs+'s</span>';
+      $('#krCred').textContent='creds set'; $('#krCred').className='pill ok';
+      const res=j.result||{};
+      $('#krResult').innerHTML='<div class="big">'+(res.products!=null?res.products.toLocaleString():'—')+' products</div>'+
+        '<div style="color:var(--muted);margin-top:2px">across '+(res.zips||'?')+' ZIP areas · run '+(res.run_id||'')+' → warehouse (kroger_products + retail_observations)</div>'+
+        (j.log?'<div class="log">'+j.log.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))+'</div>':'');
+      $('#krResult').classList.add('show');
+    } else {
+      $('#krStatus').innerHTML='<span class="s-err">✗ '+(j.error||'failed')+'</span>';
+      if(j.log){ $('#krResult').innerHTML='<div class="log">'+j.log.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))+'</div>'; $('#krResult').classList.add('show'); }
+    }
+  };
+  setTimeout(poll,1500);
+}
+$('#krRun').onclick=runKroger;
+refreshCreds();
+</script>

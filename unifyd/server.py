@@ -1340,6 +1340,76 @@ def ingest_ep(dataset):
     except Exception as e:
         return jsonify(ok=False, error=str(e)[:200]), 500
 
+# ── Connector runner (front-end for pulls, no CLI) — for connectors that run on THIS box (pure API).
+# Kroger is a plain HTTPS API, so Fly can run it directly. Creds come from the request (used for the
+# run + cached in-memory for reuse); set them as a Fly secret for the daily scheduler.
+_CONN_JOBS = {}          # jobId -> {connector, status, started, log, result, error}
+_CONN_CREDS = {}         # connector -> {id, secret}  (in-memory only, not persisted to disk)
+_CONN_JOB_N = [0]
+_CONN_RUNNABLE = {"kroger"}   # extend as API connectors land (target, …)
+
+
+def _conn_run_job(jid, connector, body):
+    import contextlib
+    job = _CONN_JOBS[jid]
+    buf = io.StringIO()
+    try:
+        if connector == "kroger":
+            cid = body.get("client_id") or _CONN_CREDS.get("kroger", {}).get("id") or os.environ.get("KROGER_CLIENT_ID", "")
+            sec = body.get("client_secret") or _CONN_CREDS.get("kroger", {}).get("secret") or os.environ.get("KROGER_CLIENT_SECRET", "")
+            if not (cid and sec):
+                job.update(status="error", error="Kroger Client ID + Secret required")
+                return
+            _CONN_CREDS["kroger"] = {"id": cid, "secret": sec}
+            os.environ["KROGER_CLIENT_ID"] = cid
+            os.environ["KROGER_CLIENT_SECRET"] = sec
+            import kroger_api
+            zips = [z.strip() for z in (body.get("zips") or "").split(",") if z.strip()] or kroger_api.DEFAULT_ZIPS
+            terms = [t.strip() for t in (body.get("terms") or "").split(",") if t.strip()] or kroger_api.DEFAULT_TERMS
+            with contextlib.redirect_stderr(buf):
+                res = kroger_api.run(zips, terms)
+            if res:
+                rid, n = res
+                job.update(status="done", result={"run_id": rid, "products": n, "zips": len(zips), "terms": len(terms)})
+            else:
+                job.update(status="error", error="Kroger returned no data — check the Client ID/Secret and that the app has the product.compact scope.")
+        else:
+            job.update(status="error", error="connector not runnable here: " + connector)
+    except Exception as e:
+        job.update(status="error", error=str(e)[:200])
+    finally:
+        job["log"] = buf.getvalue()[-4000:]
+
+
+@app.post("/api/connector/run")
+def connector_run():
+    body = request.get_json(silent=True) or {}
+    connector = (body.get("connector") or "").strip().lower()
+    if connector not in _CONN_RUNNABLE:
+        return jsonify(ok=False, error="unknown/unsupported connector (runnable: %s)" % ", ".join(sorted(_CONN_RUNNABLE))), 400
+    _CONN_JOB_N[0] += 1
+    jid = "cj-%d-%d" % (int(time.time()), _CONN_JOB_N[0])
+    _CONN_JOBS[jid] = {"connector": connector, "status": "running", "started": int(time.time()),
+                       "log": "", "result": None, "error": None}
+    threading.Thread(target=_conn_run_job, args=(jid, connector, body), daemon=True).start()
+    return jsonify(ok=True, jobId=jid, status="running")
+
+
+@app.get("/api/connector/status/<jid>")
+def connector_status(jid):
+    j = _CONN_JOBS.get(jid)
+    if not j:
+        return jsonify(ok=False, error="no such job"), 404
+    return jsonify(ok=True, jobId=jid, **j)
+
+
+@app.get("/api/connector/creds")
+def connector_creds():
+    """Which connectors already have creds this process can reuse (so the UI can pre-check them)."""
+    have = {c: bool(_CONN_CREDS.get(c, {}).get("id") or (c == "kroger" and os.environ.get("KROGER_CLIENT_ID")))
+            for c in _CONN_RUNNABLE}
+    return jsonify(ok=True, have=have)
+
 @app.get("/api/ttb-label/<ttbid>")
 def ttb_label_ep(ttbid):
     """Serve a stored TTB label thumbnail (the enrichment uploads them to Tigris as
