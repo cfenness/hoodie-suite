@@ -35,6 +35,12 @@ CLI:
 """
 import argparse, hashlib, json, os, re, sys, threading, time, urllib.request, urllib.error
 from concurrent.futures import ThreadPoolExecutor
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import polite
+
+# safe-scrape knobs (per-host rate/backoff/breaker live in polite; proxy = Tier-2 rotating residential IPs)
+ABC_MIN_INT = float(os.environ.get("ABC_MIN_INTERVAL", "0.6"))
+ABC_PROXY   = os.environ.get("ABC_PROXY", "0") == "1"
 
 BASE        = "https://abcfws.com"
 SITEMAP     = BASE + "/xmlsitemap.php?type=products&page={}"
@@ -56,17 +62,14 @@ STORE_LBL   = re.compile(r'data-product-attribute-value="(\d+)"[^>]*>\s*([^<]{1,
 AVAIL2_RE   = re.compile(r'available_variant_values"\s*:\s*\[([\d,]*)\]', re.I)
 
 
-# ---------------- fetch (stdlib, identifies itself, no gzip surprises) ----------------
+# ---------------- fetch (via polite: rate-limit + backoff + circuit breaker + optional BD proxy) ----------
 def fetch(url, timeout=30):
-    req = urllib.request.Request(url, headers={
-        "User-Agent": UA, "Accept-Encoding": "identity",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    })
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        body = r.read().decode("utf-8", "replace")
-        h = r.headers
-        return body, {"etag": h.get("ETag", ""), "last_modified": h.get("Last-Modified", ""),
-                      "status": r.status if hasattr(r, "status") else 200}
+    body, h = polite.get(url, min_interval=ABC_MIN_INT, jitter=ABC_MIN_INT, timeout=timeout,
+                         headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                                  "Accept-Encoding": "identity"},
+                         breaker_after=4, use_proxy=ABC_PROXY, host="abcfws.com", return_headers=True)
+    return body.decode("utf-8", "replace"), {"etag": h.get("ETag", ""),
+                                             "last_modified": h.get("Last-Modified", ""), "status": 200}
 
 
 # ---------------- sitemap → stable (sku, url) catalog ----------------
@@ -136,11 +139,12 @@ def graphql_stores(path, token, host):
     """Per-store rows with a real quantity via GraphQL. Returns (rows, ok); rows carry `qty`.
     rows=[{store, sku, instock, qty, price}]. ok=False on any error → caller falls back to HTML."""
     try:
-        req = urllib.request.Request("https://%s/graphql" % host,
+        body = polite.get("https://%s/graphql" % host,
             data=json.dumps({"query": GQL_Q % path}).encode(),
-            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json",
-                     "User-Agent": UA})
-        r = json.load(urllib.request.urlopen(req, timeout=25))
+            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+            min_interval=ABC_MIN_INT, jitter=ABC_MIN_INT, timeout=25, breaker_after=4,
+            use_proxy=ABC_PROXY, host="abcfws.com")
+        r = json.loads(body.decode("utf-8", "replace"))
         node = (((r.get("data") or {}).get("site") or {}).get("route") or {}).get("node") or {}
         price = None
         try: price = float(node["prices"]["price"]["value"])
