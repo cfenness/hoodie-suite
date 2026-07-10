@@ -21,6 +21,8 @@
   input{width:100%;font-family:var(--font);font-size:13.5px;color:var(--ink);background:#FAFBFC;border:1px solid var(--line);border-radius:8px;padding:9px 11px}
   input:focus{outline:none;border-color:var(--accent);background:#fff}
   .full{grid-column:1/-1}
+  .showtog{font-family:var(--font);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--accent);background:none;border:none;padding:0 0 0 8px;cursor:pointer}
+  .lenhint{font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted);padding-left:8px}
   .row{display:flex;align-items:center;gap:12px;margin-top:16px}
   button{font-family:var(--font);font-size:13.5px;font-weight:700;color:#fff;background:var(--accent);border:none;border-radius:9px;padding:10px 20px;cursor:pointer}
   button:hover{filter:brightness(1.07)} button:disabled{opacity:.5;cursor:default}
@@ -48,7 +50,7 @@
       ID/Secret are on <b>My Apps → your app</b>.</div>
     <div class="grid">
       <div><label>Client ID</label><input id="krId" placeholder="paste Client ID" autocomplete="off"></div>
-      <div><label>Client Secret</label><input id="krSecret" type="password" placeholder="paste Client Secret" autocomplete="off"></div>
+      <div><label>Client Secret <button type="button" id="krShow" class="showtog">show</button><span id="krLen" class="lenhint"></span></label><input id="krSecret" type="password" placeholder="paste Client Secret" autocomplete="off"></div>
       <div class="full"><label>ZIP codes — which store regions (comma-separated)</label>
         <input id="krZips" placeholder="leave blank for all Kroger banner regions (Kroger, Ralphs, Fry's, King Soopers, Smith's, QFC, Harris Teeter…)"></div>
       <div class="full"><label>Search terms — which categories</label>
@@ -116,6 +118,8 @@ async function runKroger(){
   };
   setTimeout(poll,1500);
 }
+$('#krShow').onclick=()=>{ const i=$('#krSecret'), pw=i.type==='password'; i.type=pw?'text':'password'; $('#krShow').textContent=pw?'hide':'show'; };
+$('#krSecret').addEventListener('input',()=>{ const v=$('#krSecret').value; $('#krLen').textContent=v?(v.length+' chars'+(/\s/.test(v)?' ⚠ contains a space/newline':'')):''; });
 $('#krRun').onclick=runKroger;
 refreshCreds();
 </script>
