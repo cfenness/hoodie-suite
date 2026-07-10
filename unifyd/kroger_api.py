@@ -33,8 +33,32 @@ def _front_image(p):
 
 TOKEN_URL = "https://api.kroger.com/v1/connect/oauth2/token"
 API = "https://api.kroger.com/v1"
-DEFAULT_TERMS = ["bourbon", "whiskey", "vodka", "tequila", "cabernet sauvignon", "chardonnay", "ipa", "lager"]
-DEFAULT_ZIPS = ["45202", "30303", "77002", "80202"]      # Cincinnati, Atlanta, Houston, Denver
+# The API is search-based (term × store), so coverage = terms × zips. These are the comprehensive
+# defaults (used when the UI/CLI leaves them blank): the full bev-alc taxonomy across every Kroger banner
+# region. Widen either list for more coverage; narrow for a quick check.
+DEFAULT_TERMS = [
+    # spirits
+    "bourbon", "rye whiskey", "scotch", "irish whiskey", "tennessee whiskey", "vodka", "gin",
+    "tequila", "mezcal", "rum", "cognac", "brandy", "liqueur", "cordial",
+    # wine
+    "cabernet sauvignon", "merlot", "pinot noir", "red blend", "chardonnay", "sauvignon blanc",
+    "pinot grigio", "rose wine", "riesling", "moscato", "champagne", "prosecco", "sparkling wine",
+    "port wine", "sangria",
+    # beer
+    "ipa", "lager", "pilsner", "stout", "pale ale", "wheat beer", "light beer", "mexican beer",
+    # rtd / adjacent
+    "hard seltzer", "canned cocktail", "hard cider", "sake", "vermouth", "non alcoholic beer",
+    # hemp/thc — grabbed + set aside
+    "hemp", "cbd", "thc seltzer", "thc drink"]
+DEFAULT_ZIPS = [
+    "45202", "43215", "30303", "77002", "75201", "37203", "46204", "40202", "38103", "72201",   # Kroger
+    "80202", "80903",                                                                            # King Soopers
+    "85004", "85701",                                                                            # Fry's
+    "90012", "92101",                                                                            # Ralphs
+    "89101", "84101", "87102",                                                                   # Smith's
+    "98101", "97204",                                                                            # QFC / Fred Meyer
+    "67202", "28202", "27601", "20001",                                                          # Dillons / Harris Teeter
+    "60601", "53202"]                                                                            # Food 4 Less / Metro Market
 
 
 def log(*a): print(*a, file=sys.stderr, flush=True)
