@@ -1313,6 +1313,94 @@ def scrapes_ep():
                         concerns=(_walmart_concern_count() if s["id"] == "walmart" else 0)))
     return jsonify(ok=True, now=int(now), scrapes=out)
 
+# ── Retail Intelligence — the per-store chain catalogs (DoorDash pulls) as an analyst surface.
+# Three lenses over <chain>_products[_full] + doordash_stores: chains overview, chain assortment,
+# and cross-chain product/brand price comparison. apps/retail.html renders these.
+_RETAIL_CHAINS = {"totalwine": "Total Wine & More", "albertsons": "Albertsons",
+                  "cvs": "CVS", "circlek": "Circle K"}
+
+
+def _retail_dataset(chain):
+    import warehouse
+    for name in (chain + "_products_full", chain + "_products"):
+        try:
+            if warehouse.query(name, "SELECT 1 FROM t LIMIT 1"):
+                return name
+        except Exception:
+            pass
+    return None
+
+
+@app.get("/api/retail/chains")
+def retail_chains_ep():
+    import warehouse
+    out = []
+    for ch, label in _RETAIL_CHAINS.items():
+        ds = _retail_dataset(ch)
+        if not ds:
+            continue
+        try:
+            r = warehouse.query(ds, "SELECT count(DISTINCT name) skus, count(DISTINCT store) stores, "
+                                    "min(price_value) pmin, median(price_value) pmed, max(price_value) pmax "
+                                    "FROM t WHERE price_value IS NOT NULL")[0]
+        except Exception:
+            r = {}
+        out.append(dict(chain=ch, name=label, dataset=ds, skus=r.get("skus") or 0, stores=r.get("stores") or 0,
+                        price_min=r.get("pmin"), price_median=r.get("pmed"), price_max=r.get("pmax")))
+    return jsonify(ok=True, chains=out)
+
+
+@app.get("/api/retail/chain/<chain>")
+def retail_chain_ep(chain):
+    import warehouse
+    ds = _retail_dataset(chain)
+    if not ds:
+        return jsonify(ok=False, error="no data for %s" % chain), 404
+    q = (request.args.get("q") or "").strip().lower()
+    lim = min(int(request.args.get("limit", "600")), 3000)
+    where, params = "WHERE price_value IS NOT NULL", []
+    if q:
+        where += " AND lower(name) LIKE ?"; params.append("%" + q + "%")
+    rows = warehouse.query(ds, "SELECT DISTINCT name, price_value, container, unit_size, size_uom, "
+                               "pack_count, image_url, is_hemp FROM t %s ORDER BY price_value DESC LIMIT %d"
+                               % (where, lim), params)
+    return jsonify(ok=True, chain=chain, name=_RETAIL_CHAINS.get(chain, chain), count=len(rows), products=rows)
+
+
+@app.get("/api/retail/search")
+def retail_search_ep():
+    """Cross-chain price comparison for a product/brand query — one row per (chain, product) with price range."""
+    import warehouse
+    q = (request.args.get("q") or "").strip().lower()
+    if len(q) < 2:
+        return jsonify(ok=True, q=q, results=[])
+    out = []
+    for ch, label in _RETAIL_CHAINS.items():
+        ds = _retail_dataset(ch)
+        if not ds:
+            continue
+        try:
+            rows = warehouse.query(ds, "SELECT name, min(price_value) pmin, max(price_value) pmax, "
+                                       "count(DISTINCT store) stores, any_value(image_url) img FROM t "
+                                       "WHERE price_value IS NOT NULL AND lower(name) LIKE ? "
+                                       "GROUP BY name ORDER BY pmin LIMIT 50", ["%" + q + "%"])
+        except Exception:
+            rows = []
+        for r in rows:
+            out.append(dict(r, chain=ch, chain_name=label))
+    out.sort(key=lambda r: (r.get("pmin") if r.get("pmin") is not None else 1e9))
+    return jsonify(ok=True, q=q, results=out[:150])
+
+
+@app.get("/api/retail/stores")
+def retail_stores_ep():
+    import warehouse
+    try:
+        rows = warehouse.query("doordash_stores", "SELECT store_id, chain, store_name, city, state, lat, lon FROM t")
+    except Exception:
+        rows = []
+    return jsonify(ok=True, count=len(rows), stores=rows)
+
 @app.post("/api/ingest/<dataset>")
 def ingest_ep(dataset):
     """The easy way to push data INTO Unifyd. Any script POSTs JSON records here (Bearer
