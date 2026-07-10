@@ -217,7 +217,12 @@ const SEED=[
  {nm:"Virginia ABC",tier:"Control States",foot:"VA · 395 stores",fields:["Price"],gran:"State",plat:"gov price book",prot:"None",tos:"Clean",pri:"P0",status:"Planned",notes:"Statewide-uniform pricing; published list."},
  {nm:"North Carolina ABC",tier:"Control States",foot:"NC · statewide",fields:["Price","Promo"],gran:"State",plat:"gov price list",prot:"None",tos:"Clean",pri:"P1",status:"Planned",notes:"Quarterly list + monthly sales, uniform across all ABC stores."},
  {nm:"Idaho State Liquor",tier:"Control States",foot:"ID · monthly files",fields:["Price"],gran:"State",plat:"gov price files",prot:"None",tos:"Clean",pri:"P1",status:"Planned",notes:"Monthly alphabetical + by-category pricing, floor prices & tiers."},
- {nm:"Remaining control states (13)",tier:"Control States",foot:"OH, OR, MI, UT, AL, IA, ME, MS, MT, NH, VT, WV, WY",fields:["Price"],gran:"State",plat:"gov files",prot:"None",tos:"Clean",pri:"P2",status:"Planned",notes:"Same fetch-and-parse pattern; clone per state. ~23% of US spirits volume across the set."},
+ {nm:"Montana State Liquor",tier:"Control States",foot:"MT · monthly Price Disk",fields:["Price"],gran:"State",plat:"gov XLSX",prot:"None",tos:"Clean",pri:"P2",status:"Live",owner:"Hoodie",notes:"Monthly 'Price Disk' XLSX (full catalog + price) → mt_pricing. Templated URL. Landed."},
+ {nm:"Utah DABS",tier:"Control States",foot:"UT · monthly product list",fields:["Price","Availability"],gran:"State",plat:"gov XLSX",prot:"None",tos:"Clean",pri:"P2",status:"Live",owner:"Hoodie",notes:"Monthly product-list XLSX (FY-period templated URL) → ut_pricing. Per-store on-hand available next (HTML locator)."},
+ {nm:"Alabama ABC",tier:"Control States",foot:"AL · quarterly",fields:["Price"],gran:"State",plat:"gov XLSX",prot:"None",tos:"Clean",pri:"P3",status:"Live",owner:"Hoodie",notes:"'Select Spirits' price-book XLSX → al_pricing (the only xlsx cut; full list is PDF). Landed."},
+ {nm:"Maine Spirits",tier:"Control States",foot:"ME · item listing w/ UPC",fields:["Price","UPC"],gran:"State",plat:"gov XLSX",prot:"Medium",tos:"Clean",pri:"P1",status:"Building",owner:"Hoodie",notes:"Item-listing XLSX WITH UPCs (feeds the UPC engine) — Cloudflare-gated; needs the Unlocker to resolve the file link."},
+ {nm:"Vermont 802 Spirits",tier:"Control States",foot:"VT · price guide",fields:["Price"],gran:"State",plat:"HTML",prot:"Medium",tos:"Clean",pri:"P3",status:"Building",owner:"Hoodie",notes:"Statewide price guide — JS-rendered; needs the backing data source or a browser fetch."},
+ {nm:"Remaining control states",tier:"Control States",foot:"OH, MI, IA, MS, NH, WV, WY",fields:["Price"],gran:"State",plat:"gov files",prot:"None",tos:"Clean",pri:"P2",status:"Planned",notes:"OH/NH per-store need the Unlocker (Cloudflare); IA = BigQuery public mirror (Socrata API retired); WV/WY login-gated."},
 
  {nm:"ABC FWS — Inventory",connId:"abc-fws",tier:"Specialty Bev-Alc",foot:"FL · 133 stores",fields:["Availability","Price"],gran:"Store",plat:"BigCommerce options",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",owner:"Hoodie + Grepsr",notes:"STORE-LEVEL in/out + price. Polite 10s. Home turf. Grepsr also lands a daily hemp-bev cut to S3 (count-alert restored after a low-row day)."},
  {nm:"Spec's — Inventory",connId:"specs",tier:"Specialty Bev-Alc",foot:"TX · 100+ stores",fields:["Availability","Price","Promo"],gran:"Store",plat:"Embedded variants (direct)",prot:"Medium",tos:"Gray",pri:"P0",status:"Ready",owner:"Hoodie + Grepsr",notes:"Direct, no Bright Data. TX outlets can't resolve to the spine yet (outlet master is FL-only). Grepsr 'Spec's Online' hemp-bev feed is daily; promo now pulled from PDP."},
@@ -278,7 +283,10 @@ var DSMAP_NM={       // connId-less landed sources, keyed by exact name
   "Target":["target_products","target_stores"],
   "Oregon OLCC — Pricing":["or_pricing"],
   "Montgomery County MD — ABS":["mont_catalog","mont_sales","mont_purch"],
-  "BC Liquor — Price List":["bc_liquor"]
+  "BC Liquor — Price List":["bc_liquor"],
+  "Idaho State Liquor":["id_products"], "North Carolina ABC":["nc_pricing"],
+  "Montana State Liquor":["mt_pricing"], "Utah DABS":["ut_pricing"], "Alabama ABC":["al_pricing"],
+  "Maine Spirits":["me_pricing"], "Vermont 802 Spirits":["vt_pricing"]
 };
 function dsKeys(s){ return (s.connId&&DSMAP[s.connId]) || DSMAP_NM[s.nm] || (s.connId?[s.connId.replace(/-/g,"_")+"_products"]:[]); }
 function sourceStats(s){
