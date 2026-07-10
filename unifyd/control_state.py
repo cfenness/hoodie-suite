@@ -92,9 +92,184 @@ def build_csv(name, log=print):
     return {"name": name, "rows": res["rows"], "uri": res["uri"], "fields": header, "label": cfg["label"]}
 
 
-def build(name, log=print):
-    """Fetch one source and land it as a warehouse Parquet dataset. Dispatches CKAN-CSV vs Socrata."""
+# ── DIRECT control-state sources (verified live 2026-07-10). Not Socrata/CKAN — each state publishes
+# its price book / product list its own way (a search API, a CSV, a monthly XLSX, or HTML tables). One
+# fetcher per shape; all land a warehouse Parquet like the rest. Registry CUSTOM = name → builder fn.
+import io as _io, csv as _csv, re as _re, datetime as _dt
+from urllib.parse import urljoin as _urljoin
+
+_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36"
+
+
+def _http(url, headers=None, timeout=120):
+    req = urllib.request.Request(url, headers=headers or {"User-Agent": _UA})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read()
+
+
+def _land(name, recs, fields, label, log):
     import warehouse
+    recs = [{f: ("" if r.get(f) is None else r.get(f)) for f in fields} for r in recs]
+    res = warehouse.write_parquet(name, recs, fields=fields)
+    log("%s: wrote %s rows -> %s" % (name, format(res["rows"], ","), res["uri"]))
+    return {"name": name, "rows": res["rows"], "uri": res["uri"], "fields": fields, "label": label}
+
+
+def _xlsx_rows(b):
+    """Parse xlsx bytes -> (header, [dict]). Header = first row in the first 15 with >=3 non-empty cells."""
+    import openpyxl
+    wb = openpyxl.load_workbook(_io.BytesIO(b), read_only=True, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    hi = next((i for i, r in enumerate(rows[:15])
+               if sum(1 for c in r if isinstance(c, str) and c.strip()) >= 3), 0)
+    header, seen = [], {}
+    for j, c in enumerate(rows[hi]):
+        h = (str(c).strip() if c is not None else "") or ("col%d" % j)
+        if h in seen:
+            seen[h] += 1; h = "%s_%d" % (h, seen[h])
+        else:
+            seen[h] = 0
+        header.append(h)
+    out = []
+    for r in rows[hi + 1:]:
+        if not any(c is not None and str(c).strip() for c in r):
+            continue
+        out.append({header[j]: ("" if (j >= len(r) or r[j] is None) else str(r[j])) for j in range(len(header))})
+    return header, out
+
+
+def _find_xlsx(page_url, must=""):
+    html = _http(page_url).decode("utf-8", "replace")
+    links = [l for l in _re.findall(r'href=["\']([^"\']+\.xlsx[^"\']*)["\']', html, _re.I)
+             if must.lower() in l.lower()]
+    return _urljoin(page_url, links[0]) if links else None
+
+
+def build_idaho(log=print):
+    """Idaho ISLD — statewide product + price via the site's public Typesense search API (no anti-bot)."""
+    key = "M7jrNg3txJqfirZM2Cjd1xg2DwQ2NlAS"
+    base = "https://m7zjux4b6qin5verp-1.a1.typesense.net/collections/products/documents/search"
+    fields = ["nabca", "name", "description", "price", "sale_price", "on_sale", "proof", "size",
+              "bottles_sold", "cat_id", "of_idaho"]
+    out, page = [], 1
+    while True:
+        u = base + "?" + urllib.parse.urlencode({"q": "*", "query_by": "name", "per_page": 250, "page": page})
+        d = json.loads(_http(u, {"x-typesense-api-key": key, "User-Agent": _UA}))
+        hits = d.get("hits") or []
+        if not hits:
+            break
+        out.extend({k: (h.get("document") or {}).get(k) for k in fields} for h in hits)
+        if page * 250 >= d.get("found", 0):
+            break
+        page += 1
+    return _land("id_products", out, fields, "Idaho ISLD — product + price (Typesense API)", log)
+
+
+def build_nc(log=print):
+    """North Carolina ABC — full quarterly price list, one CSV URL, no auth."""
+    txt = _http("https://abc2.nc.gov/Pricing/ExportData").decode("utf-8", "replace")
+    rows = list(_csv.reader(_io.StringIO(txt)))
+    header = [h.strip() for h in rows[0]]
+    data = [{header[i]: (r[i] if i < len(r) else "") for i in range(len(header))}
+            for r in rows[1:] if any((c or "").strip() for c in r)]
+    return _land("nc_pricing", data, header, "North Carolina ABC — quarterly price list", log)
+
+
+def build_montana(log=print):
+    """Montana Liquor Control — monthly 'Price Disk' XLSX (full catalog + price), templated URL."""
+    base = "https://revenuefiles.mt.gov/files/Alcoholic-Beverages/Agency-Liquor-Stores/Product-Information/Price-Disks/PriceDisk-%s-%d.xlsx"
+    d = _dt.date.today()
+    for back in range(0, 4):                                  # current month, then walk back
+        m = d.month - back; y = d.year
+        while m <= 0:
+            m += 12; y -= 1
+        url = base % (_dt.date(y, m, 1).strftime("%B"), y)
+        try:
+            header, recs = _xlsx_rows(_http(url))
+            return _land("mt_pricing", recs, header, "Montana — monthly Price Disk (catalog + price)", log)
+        except Exception:
+            continue
+    raise RuntimeError("montana: no Price Disk found for the last 4 months")
+
+
+def build_utah(log=print):
+    """Utah DABS — monthly product-list XLSX at a direct, fiscal-period-templated URL. Utah's FY starts in
+    July: month>=Jul -> FY(year+1) Period(month-6); Jan-Jun -> FY(year) Period(month+6). Walk back a few
+    periods in case the current one isn't posted yet."""
+    base = "https://abs.utah.gov/wp-content/uploads/%s-%d-Product-List-FY%s-P%d.xlsx"
+    d = _dt.date.today()
+    for back in range(0, 4):
+        m = d.month - back; y = d.year
+        while m <= 0:
+            m += 12; y -= 1
+        fy_end = y + 1 if m >= 7 else y
+        period = m - 6 if m >= 7 else m + 6
+        url = base % (_dt.date(y, m, 1).strftime("%B"), y, str(fy_end)[-2:], period)
+        try:
+            header, recs = _xlsx_rows(_http(url))
+            return _land("ut_pricing", recs, header, "Utah DABS — product list + price", log)
+        except Exception:
+            continue
+    raise RuntimeError("utah: no product-list xlsx found for the last 4 periods")
+
+
+def build_alabama(log=print):
+    """Alabama ABC — quarterly price book XLSX (link discovered off the QPL page)."""
+    link = _find_xlsx("https://alabcboard.gov/product-management/QPL", must="price")
+    if not link:
+        raise RuntimeError("alabama: no price-book xlsx link found")
+    header, recs = _xlsx_rows(_http(link))
+    return _land("al_pricing", recs, header, "Alabama ABC — quarterly price book", log)
+
+
+def build_maine(log=print):
+    """Maine Spirits (BABLO) — item listing XLSX WITH UPCs (link discovered off the price-books page)."""
+    for page in ("https://www.mainespirits.com/price-books", "https://www.mainespirits.com/wholesale"):
+        try:
+            link = _find_xlsx(page, must="")
+            if link:
+                header, recs = _xlsx_rows(_http(link))
+                return _land("me_pricing", recs, header, "Maine Spirits — item listing (UPC-bearing)", log)
+        except Exception:
+            continue
+    raise RuntimeError("maine: no item-listing xlsx link found")
+
+
+def build_vermont(log=print):
+    """Vermont (802 Spirits) — statewide price tables scraped from the price-guide category pages."""
+    cats = ["whiskey", "vodka", "gin", "rum", "tequila", "brandy-cognac", "cordials-liqueurs", "wine"]
+    fields = ["category", "code", "brand", "size", "proof", "price", "sale_price"]
+    out = []
+    for cat in cats:
+        try:
+            html = _http("https://www.802spirits.com/price_guide/" + cat).decode("utf-8", "replace")
+        except Exception:
+            continue
+        for tr in _re.findall(r"<tr[^>]*>(.*?)</tr>", html, _re.S | _re.I):
+            cells = [_re.sub(r"<[^>]+>", "", c).strip() for c in _re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", tr, _re.S | _re.I)]
+            cells = [c for c in cells if c]
+            if len(cells) >= 4 and any("$" in c for c in cells):
+                prices = [c for c in cells if "$" in c]
+                out.append(dict(category=cat, code=cells[0], brand=cells[1] if len(cells) > 1 else "",
+                                size=next((c for c in cells if _re.search(r"\d\s*(ml|l|L|oz)", c)), ""),
+                                proof=next((c for c in cells if _re.search(r"^\d{2,3}$", c)), ""),
+                                price=prices[0] if prices else "", sale_price=prices[1] if len(prices) > 1 else ""))
+    if not out:
+        raise RuntimeError("vermont: no price rows parsed")
+    return _land("vt_pricing", out, fields, "Vermont 802 Spirits — statewide price guide", log)
+
+
+CUSTOM = {"id_products": build_idaho, "nc_pricing": build_nc, "mt_pricing": build_montana,
+          "ut_pricing": build_utah, "al_pricing": build_alabama, "me_pricing": build_maine,
+          "vt_pricing": build_vermont}
+
+
+def build(name, log=print):
+    """Fetch one source and land it as a warehouse Parquet dataset. Dispatches custom / CKAN-CSV / Socrata."""
+    import warehouse
+    if name in CUSTOM:
+        return CUSTOM[name](log=log)
     if name in CKAN_CSV:
         return build_csv(name, log=log)
     if name not in CATALOG:
@@ -119,8 +294,14 @@ def build(name, log=print):
 
 
 def build_all(only=None, log=print):
-    names = [only] if only else (list(CATALOG) + list(CKAN_CSV))
-    return [build(n, log=log) for n in names]
+    names = [only] if only else (list(CATALOG) + list(CKAN_CSV) + list(CUSTOM))
+    out = []
+    for n in names:
+        try:
+            out.append(build(n, log=log))
+        except Exception as e:
+            log("%s: FAILED — %s" % (n, str(e)[:120]))
+    return out
 
 
 if __name__ == "__main__":
