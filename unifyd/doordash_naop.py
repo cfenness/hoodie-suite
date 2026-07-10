@@ -28,7 +28,9 @@ _FOOD = re.compile(
     r"shrimp|\bbacon\b|pizza|taco|\bbowl\b|wrap|\bribs\b|combo|platter|sampler|\bbites\b|tenders|mozzarella|"
     r"onion ring|salmon|\bfish\b|sirloin|fajita|burrito|enchilada|\bsub\b|\bmelt\b|hoagie|\bsoup\b|\bchili\b|"
     r"mac (?:and|&) cheese|quesa|flatbread|appetizer|\bentr[eé]e|\bwrap\b|dumpling|spring roll|potstick|"
-    r"pretzel|\bdip\b|cheese bites|garlic bread|breadstick|calamari|guacamole|sliders?", re.I)
+    r"pretzel|\bdip\b|cheese bites|garlic bread|breadstick|calamari|guacamole|sliders?|"
+    r"nigiri|sashimi|\bmaki\b|hand ?roll|\bpoke\b|\bdon\b|ceviche|\bgyoza\b|edamame|\bramen\b|udon|"
+    r"katsu|teriyaki|tempura|\bcurry\b|\bpho\b|dumpling", re.I)   # sushi/Asian dishes ("Sake Nigiri" = salmon)
 
 
 def parse_menu(blob):

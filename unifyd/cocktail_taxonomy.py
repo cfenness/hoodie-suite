@@ -165,7 +165,9 @@ _BEER_HINT = re.compile(
     r"pacifico|yuengling|sam adams|sierra nevada|lagunitas|goose island|\bpbr\b|pabst|shiner|founders|"
     r"new belgium|sculpin|voodoo ranger|hazy|montucky|natural light|busch\b|"
     r"hard seltzer|white claw|\btruly\b|high noon|nutrl|vizzy|\bcider\b|angry orchard|strongbow|"
-    r"twisted tea|mike'?s hard|smirnoff ice|four ?loko|hard (?:tea|lemonade|cider|punch)|surfside|cutwater", re.I)
+    r"twisted tea|mike'?s hard|smirnoff ice|four ?loko|hard (?:tea|lemonade|cider|punch)|surfside|cutwater|"
+    r"sapporo|asahi|kirin|\borion\b|tsingtao|singha|\bchang\b|tiger beer|red horse|\befes\b|peroni|"
+    r"birra moretti|estrella|\bsol\b|bohemia|presidente|tecate|victoria|\bhite\b|cass\b|kloud", re.I)  # world/import lagers
 
 
 def beer_style(text):
@@ -173,6 +175,42 @@ def beer_style(text):
         if re.search(pat, text, re.I):
             return s
     return ""
+
+
+# ── World / traditional alcohol on izakaya, sushi, Korean, and Latin menus — the categories chains never
+# surface. "sake" is the trap: in a sushi menu it means SALMON (鮭), the fish — "Sake Nigiri/Sashimi/Roll"
+# is food, only the DRINK (酒) counts. We gate the drink on a sake-drink signal or brand, and drop the fish.
+_SAKE_FOOD = re.compile(r"nigiri|sashimi|\bmaki\b|hand ?roll|\bdon\b|\bpoke\b|\bsushi\b|over rice|"
+                        r"avocado|cucumber|tempura|teriyaki|\bnabe\b|\bbowl\b", re.I)
+_SAKE_DRINK = re.compile(r"hot sake|cold sake|nigori|junmai|ginj[oō]|daiginj[oō]|sake bomb|sake flight|"
+                         r"sparkling sake|unfiltered sake|plum sake|\btokkuri\b|\bcarafe\b|\bmasu\b|sake ?tini|"
+                         r"gekkeikan|hakutsuru|sho ?chiku ?bai|\btyku\b|momokawa|ozeki|dassai|kubota|murai|"
+                         r"\bnihonshu\b", re.I)
+_SAKE_SERVE = re.compile(r"\b(cup|glass|bottle|carafe|oz|ml|flask|shot|hot|cold|small|large|warm|chilled)\b", re.I)
+_UMESHU = re.compile(r"umeshu|plum wine|\bchoya\b", re.I)
+_SOJU = re.compile(r"\bsoju\b|jinro|chamisul|\bshochu\b|\bsh[oō]ch[uū]\b|baijiu|makgeolli|makkoli|makali", re.I)
+_HIGHBALL = re.compile(r"highball|chu-?hai|chuhai|sake bomb|soju (?:cocktail|bomb)", re.I)
+
+
+def _world_alcohol(name, description=""):
+    """Sake / soju / umeshu / highball on Asian & Latin menus, disambiguated from the fish 'sake'."""
+    text = ("%s %s" % (name or "", description or "")).lower()
+    if _HIGHBALL.search(text):
+        return {"category": "cocktail", "sub": "Highball", "base_spirit": "Whisky/Shochu"}
+    if _UMESHU.search(text):
+        return {"category": "sake", "sub": "Plum Wine"}
+    if _SOJU.search(text):
+        return {"category": "spirit", "base_spirit": "Soju/Shochu"}
+    if _SAKE_FOOD.search(text):                                  # 鮭 salmon/sushi context — never 酒 the drink
+        return None
+    if _SAKE_DRINK.search(text):                                 # junmai/ginjo/daiginjo/nigori/brand = sake alone
+        sub = next((s for s, p in [("Daiginjo", r"daiginj"), ("Ginjo", r"ginj"), ("Junmai", r"junmai"),
+                    ("Nigori", r"nigori"), ("Sparkling", r"sparkling")] if re.search(p, text)), "")
+        return {"category": "sake", "sub": sub}
+    if re.search(r"\bsak[eé]\b", text):                          # bare "sake" — drink if standalone or served
+        if len(text.split()) <= 2 or _SAKE_SERVE.search(text):
+            return {"category": "sake", "sub": ""}
+    return None
 
 
 def classify_beverage(name, description=""):
@@ -193,6 +231,10 @@ def classify_beverage(name, description=""):
                ("can" if "can" in text else ("bottle" if "bottle" in text else "")))
         return {"category": "beer", "is_alcoholic": not mock, "name": (name or "").strip(),
                 "beer_style": beer_style(text), "format": fmt}
+    w = _world_alcohol(name, description)                        # sake / soju / umeshu / highball
+    if w and not mock:
+        return {"category": w["category"], "is_alcoholic": True, "name": (name or "").strip(),
+                "root": "", "sub": w.get("sub", ""), "base_spirit": w.get("base_spirit", "")}
     if mock:            # a named mocktail that isn't a recognized cocktail shape
         return {"category": "mocktail", "is_alcoholic": False, "name": (name or "").strip(),
                 "root": "", "sub": "", "base_spirit": ""}
