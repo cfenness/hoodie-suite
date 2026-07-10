@@ -179,6 +179,14 @@ async function loadScrapes(){
   }).join('');
   document.querySelectorAll('#scrapes .scard').forEach(el=>el.onclick=()=>select(el.dataset.id));
   if(!SEL){ const w=SCRAPES.find(s=>s.detail); if(w) select(w.id); }
+  // live-refresh the open detail for an ACTIVE scrape (counts climb as rows land), preserving the filter
+  const sel=SCRAPES.find(s=>s.id===SEL);
+  if(sel && sel.status==='active'){
+    $('#ddesc').textContent=sel.source+' · '+fmt(sel.rows)+' rows · updated '+ago(sel.fresh_secs)+' · feeds '+esc(sel.feeds);
+    if(sel.detail!=='walmart' && document.getElementById('grtable')){   // walmart has its own refresh button
+      loadRows(sel.id, ($('#grq')?$('#grq').value.trim():''));
+    }
+  }
 }
 function select(id){
   SEL=id; document.querySelectorAll('#scrapes .scard').forEach(el=>el.classList.toggle('on',el.dataset.id===id));
@@ -224,17 +232,15 @@ function openRowDrawer(r){
   const kv=GCOLS.filter(c=>r[c]!=null && String(r[c]).trim()!=='' && !(isLabel&&hide[c]));
   let head='';
   if(isLabel){
+    // Show OUR stored copy — the raw TTB attachment URLs are F5-gated and just render a TTB error page.
     const img='/api/ttb-label/'+encodeURIComponent(r.ttb_id);
-    const links=[];
-    if(r.front_label_url) links.push('<a href="'+esc(r.front_label_url)+'" target="_blank" rel="noopener">front original ↗</a>');
-    if(r.back_label_url)  links.push('<a href="'+esc(r.back_label_url)+'" target="_blank" rel="noopener">back original ↗</a>');
     head='<div class="lblwrap">'+
       '<img class="lblimg" src="'+img+'" alt="label" '+
         'onclick="openImg(\''+esc(r.ttb_id)+'\',\''+esc(title).replace(/\\\\/g,"")+'\')" '+
         'onerror="this.closest(\'.lblwrap\').querySelector(\'.lblmiss\').style.display=\'block\';this.style.display=\'none\'">'+
-      '<div class="lblmiss" style="display:none">Label image not captured yet (this filing hasn’t been OCR’d).</div>'+
+      '<div class="lblmiss" style="display:none">Label image not captured yet — this filing hasn’t been OCR’d.</div>'+
       '<div class="lblbtns"><a class="dlbtn" href="'+img+'?download=1" download>⬇ Download label</a>'+
-        (links.length?' <span class="lbllinks">'+links.join(' · ')+'</span>':'')+'</div></div>';
+        '<span class="lbllinks" style="color:var(--muted)">click image to enlarge</span></div></div>';
   }
   $('#drBody').innerHTML=head+'<div class="kv">'+kv.map(c=>'<div class="k">'+esc(c)+'</div><div class="v">'+esc(String(r[c]))+'</div>').join('')+'</div>';
   $('#scrim').classList.add('open'); $('#drawer').classList.add('open');
