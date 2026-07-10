@@ -25,11 +25,22 @@ RESOLVED SINCE (2026-07-10):
     Publix operates only in FL/GA/AL/SC/NC/TN/VA/KY, so a non-footprint IP -> no valid store -> empty
     <Savings/>. The StoreNbr URL param is IGNORED (store is session/cookie-based, store_selection_method=browser).
 
-LAST MILE (now well-defined): route through a FLORIDA BD exit — the proxy username supports state targeting:
-brd-customer-hl_32bcfbaa-zone-cli_unlocker-country-us-state-fl (or a sticky FL residential session). With a FL
-exit, publix.com auto-selects a real FL store and v4/savings returns a NON-empty <SavingsResultWA>. Then confirm
-the <Saving> element shape, parse, and land (publix_products + retail_observations). To pin store #331
-specifically, also select it in-session. Reuse the ban-safe Tier-2 layer.
+WORKING RECIPE (2026-07-10, geo blocker SOLVED via BD Browser API over CDP):
+  1. Connect Playwright to the BD browser: connect_over_cdp("wss://brd-customer-hl_32bcfbaa-zone-cli_browser:
+     <pw>@brd.superproxy.io:9222")  (cli_browser pw via GET api.brightdata.com/zone/passwords?zone=cli_browser).
+  2. Pin geo BEFORE navigating: cdp=ctx.new_cdp_session(pg); cdp.send("Proxy.setLocation",
+     {"lat":28.484,"lon":-81.462,"distance":40,"strict":True})  ← Orlando/Kirkman coords. (Param names are
+     lat/lon, NOT latitude/longitude.) This is what fixes it — without a footprint geo the store is invalid.
+  3. Navigate https://www.publix.com/savings/weekly-ad/view-all — a real FL store auto-selects (Orlando coords
+     → "Lake Eola", StoreNbr 501). Wait ~10s.
+  4. PRODUCTS load via https://services.publix.com/search/productdata/productitems?Id=<promoGUID>&StoreNbr=<n>
+     — CONFIRMED returns real product JSON. Fetch it IN-PAGE (pg.evaluate fetch, credentials:'include') so the
+     store cookies + same-origin headers apply — a top-level nav or cold proxy call returns empty.
+  LOOSE END: enumerate the weekly-ad promo GUIDs (the <Id> that drives productitems). v4/savings?getSavingType=
+  WeeklyAd returned Savings:[] (empty) and /api/v1/weeklyad/savings/pagesandpromotions returned empty on the
+  last in-page GET — find the call that lists the ad's promo GUIDs (likely a POST, or a different weekly-ad
+  endpoint), then loop productitems per GUID → parse (name/price/BOGO/image) → land (publix_products +
+  retail_observations). To pin store #331 (Kirkman Oaks) specifically, select it via the store picker first.
 """
 import json
 import os
