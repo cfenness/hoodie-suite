@@ -92,6 +92,55 @@ def classify(name, description=""):
             "base_spirit": sp, "method": "needs_review"}          # -> optional grounded LLM pass
 
 
+# Liqueurs / cordials — the sweet stuff that hides in DESSERTS and after-dinner items (Applebee's spiked
+# shakes, tiramisu, bananas foster, Irish coffee, bread pudding w/ bourbon sauce, boozy floats). Scanning
+# desserts too catches brand pours a cocktail-only sweep would miss.
+_LIQUEURS = [
+    ("Baileys", r"baileys|bailey'?s|irish cream"), ("Kahlúa", r"kahl[uú]a|coffee liqueur"),
+    ("Amaretto", r"amaretto|disaronno"), ("RumChata", r"rum ?chata|horchata liqueur"),
+    ("Grand Marnier", r"grand marnier"), ("Cointreau", r"cointreau"), ("Triple Sec", r"triple sec|curacao|curaçao"),
+    ("Chambord", r"chambord"), ("Frangelico", r"frangelico"), ("Limoncello", r"limoncello"),
+    ("Godiva", r"godiva"), ("St-Germain", r"st.?-?germain|elderflower liqueur"), ("Sambuca", r"sambuca"),
+    ("Crème de", r"cr[eè]me de (?:menthe|cacao|cassis|banane)"), ("Marsala", r"marsala"),
+    ("Sherry", r"\bsherry\b"), ("Port", r"\bport wine\b"), ("Aperol/Campari", r"aperol|campari"),
+    ("Irish whiskey", r"irish coffee|jameson"),
+]
+# dessert / after-dinner alcohol signals even when no brand is named
+_DESSERT_ALC = (r"spiked|boozy|drunken|adult (?:shake|milkshake|float)|hard (?:shake|float)|nightcap|"
+                r"bourbon (?:sauce|glaze|caramel|pecan|bread pudding)|rum cake|bananas foster|"
+                r"tiramisu|irish coffee|affogato|espresso martini|liqueur|with (?:kahl|bail|amaretto|rum|bourbon)")
+
+
+def _liqueurs(text):
+    return [nm for nm, pat in _LIQUEURS if re.search(pat, text, re.I)]
+
+
+def detect_alcohol(name, description=""):
+    """Does ANY menu item (dessert, coffee, entrée, drink) contain alcohol — and which brands/spirits?
+    Runs the whole menu, not just the cocktail list. -> {is_alcoholic, form, spirits[], liqueurs[], cocktail}."""
+    text = ("%s %s" % (name or "", description or "")).lower()
+    c = classify(name, description)
+    is_cocktail = c["method"] == "deterministic"
+    spirits = [s for s, pat in _SPIRIT if re.search(pat, text, re.I)]
+    liqs = _liqueurs(text)
+    dessert_hit = bool(re.search(_DESSERT_ALC, text, re.I))
+    is_alc = is_cocktail or bool(spirits) or bool(liqs) or dessert_hit
+    if is_cocktail:
+        form = "cocktail"
+    elif re.search(r"shake|float|malt|sundae", text):
+        form = "spiked shake/float"
+    elif re.search(r"coffee|latte|cappuccino|affogato|espresso", text):
+        form = "after-dinner coffee"
+    elif re.search(r"cake|tiramisu|pudding|foster|pie|brownie|cheesecake|gelato|dessert|cobbler", text):
+        form = "boozy dessert"
+    else:
+        form = "drink" if is_alc else ""
+    if not is_alc:
+        form = ""                                              # non-alcoholic items carry no form
+    return {"is_alcoholic": is_alc, "form": form, "spirits": spirits, "liqueurs": liqs,
+            "cocktail": c if is_cocktail else None}
+
+
 if __name__ == "__main__":
     for n, d in [("Spicy Jalapeño Margarita", "tequila, lime, agave, jalapeño"),
                  ("Kentucky Mule", "bourbon, ginger beer, lime"),
