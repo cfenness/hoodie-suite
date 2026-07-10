@@ -141,6 +141,68 @@ def detect_alcohol(name, description=""):
             "cocktail": c if is_cocktail else None}
 
 
+# ── Mocktails / zero-proof — a fast-growing category worth capturing on its own (a Virgin Margarita is
+# still a Margarita, just non-alcoholic). And BEER — brand + style + format (draft/bottle/can).
+_MOCKTAIL = re.compile(r"mocktail|virgin|zero[- ]?proof|non[- ]?alcoholic|spirit[- ]?free|alcohol[- ]?free|"
+                       r"seedlip|\b0\.0\b|no[- ]?alcohol|nolo\b|shirley temple|roy rogers", re.I)
+BEER_STYLES = [
+    ("IPA", r"\bipa\b|india pale ale|hazy|dipa|new england ale|neipa"),
+    ("Pale Ale", r"pale ale|\bapa\b"), ("Pilsner", r"pilsner|pilsener|\bpils\b"),
+    ("Lager", r"lager|helles|vienna lager|dortmunder|light beer|\blite\b"),
+    ("Stout", r"stout|imperial stout"), ("Porter", r"porter"),
+    ("Wheat", r"wheat|hefeweizen|\bhefe\b|witbier|white ale|blanche"),
+    ("Amber/Red", r"amber|red ale|m[aä]rzen|oktoberfest"), ("Brown Ale", r"brown ale"),
+    ("Sour", r"sour ale|\bgose\b|berliner|lambic|kettle sour"), ("Saison", r"saison|farmhouse ale"),
+    ("Kölsch", r"k[oö]lsch"), ("Bock", r"\bbock\b|doppelbock|maibock"),
+    ("Blonde/Golden", r"blonde ale|golden ale|cream ale"),
+    ("Cider", r"\bcider\b|angry orchard|strongbow|stella cidre"),
+    ("Hard Seltzer", r"hard seltzer|white claw|\btruly\b|high noon|nutrl|vizzy|bon (?:&|and) viv"),
+    ("FMB/Hard RTD", r"twisted tea|mike'?s hard|smirnoff ice|four ?loko|hard (?:tea|lemonade|punch)|surfside|cutwater|ranch water"),
+]
+_BEER_HINT = re.compile(
+    r"\bbeer\b|\bipa\b|\bale\b|lager|pilsner|stout|porter|hefe|saison|k[oö]lsch|draft|draught|on tap|\bpint\b|"
+    r"bud ?light|budweiser|coors|miller|michelob|modelo|corona|heineken|stella|guinness|blue moon|dos equis|"
+    r"pacifico|yuengling|sam adams|sierra nevada|lagunitas|goose island|\bpbr\b|pabst|shiner|founders|"
+    r"new belgium|sculpin|voodoo ranger|hazy|montucky|natural light|busch\b|"
+    r"hard seltzer|white claw|\btruly\b|high noon|nutrl|vizzy|\bcider\b|angry orchard|strongbow|"
+    r"twisted tea|mike'?s hard|smirnoff ice|four ?loko|hard (?:tea|lemonade|cider|punch)|surfside|cutwater", re.I)
+
+
+def beer_style(text):
+    for s, pat in BEER_STYLES:
+        if re.search(pat, text, re.I):
+            return s
+    return ""
+
+
+def classify_beverage(name, description=""):
+    """Unified NAOP drinks classifier → {category, is_alcoholic, name, + type fields}.
+    category ∈ cocktail | mocktail | beer | dessert (boozy) | other. Cocktails carry root/sub/base_spirit,
+    beer carries style/format. A mocktail signal on a cocktail flips it non-alcoholic but keeps the archetype."""
+    text = ("%s %s" % (name or "", description or "")).lower()
+    mock = bool(_MOCKTAIL.search(text))
+    c = classify(name, description)
+    is_cocktail = c["method"] == "deterministic"
+    if is_cocktail:
+        return {"category": "mocktail" if mock else "cocktail", "is_alcoholic": not mock,
+                "name": (name or "").strip(), "root": c["root"], "sub": c["sub"],
+                "base_spirit": "" if mock else c["base_spirit"]}
+    if _BEER_HINT.search(text):
+        fmt = ("draft" if re.search(r"draft|draught|on tap|\bpint\b", text) else
+               ("can" if "can" in text else ("bottle" if "bottle" in text else "")))
+        return {"category": "beer", "is_alcoholic": not mock, "name": (name or "").strip(),
+                "beer_style": beer_style(text), "format": fmt}
+    if mock:            # a named mocktail that isn't a recognized cocktail shape
+        return {"category": "mocktail", "is_alcoholic": False, "name": (name or "").strip(),
+                "root": "", "sub": "", "base_spirit": ""}
+    a = detect_alcohol(name, description)
+    if a["is_alcoholic"]:
+        return {"category": "dessert" if "dessert" in a["form"] or "shake" in a["form"] else "drink",
+                "is_alcoholic": True, "name": (name or "").strip(), "form": a["form"],
+                "spirits": a["spirits"], "liqueurs": a["liqueurs"]}
+    return {"category": "other", "is_alcoholic": False, "name": (name or "").strip()}
+
+
 if __name__ == "__main__":
     for n, d in [("Spicy Jalapeño Margarita", "tequila, lime, agave, jalapeño"),
                  ("Kentucky Mule", "bourbon, ginger beer, lime"),
