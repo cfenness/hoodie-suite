@@ -229,9 +229,18 @@ function openRowDrawer(r){
   const title=r.product_name||r.name||r.brand_name||r.brand||r.chain||r.ttb_id||'Row';
   $('#drTitle').textContent=title;
   const isLabel = r.ttb_id && ('front_label_url' in r || 'back_label_url' in r || 'label_urls' in r);
-  const hide={other_json:1,front_label_url:1,back_label_url:1,label_urls:1,image_file:1};
-  const kv=GCOLS.filter(c=>r[c]!=null && String(r[c]).trim()!=='' && !(isLabel&&hide[c]));
+  // raw_json is a huge blob and image_url is shown as a picture — keep them out of the field list
+  const hide={other_json:1,front_label_url:1,back_label_url:1,label_urls:1,image_file:1,raw_json:1,image_url:1};
+  const kv=GCOLS.filter(c=>r[c]!=null && String(r[c]).trim()!=='' && !((isLabel||1)&&hide[c]));
   let head='';
+  // any row with a real image_url (Kroger bottle shots, etc.) → show the image, not the raw URL
+  if(!isLabel && r.image_url && /^https?:\/\//.test(String(r.image_url))){
+    head='<div class="lblwrap"><img class="lblimg" src="'+esc(r.image_url)+'" alt="product" '+
+      'onclick="window.open(\''+esc(r.image_url)+'\',\'_blank\')" '+
+      'onerror="this.style.display=\'none\'">'+
+      '<div class="lblbtns"><a class="dlbtn" href="'+esc(r.image_url)+'" target="_blank" rel="noopener">↗ Open image</a>'+
+      '<span class="lbllinks" style="color:var(--muted)">click to enlarge</span></div></div>';
+  }
   if(isLabel){
     // Show OUR stored copy — the raw TTB attachment URLs are F5-gated and just render a TTB error page.
     const img='/api/ttb-label/'+encodeURIComponent(r.ttb_id);
