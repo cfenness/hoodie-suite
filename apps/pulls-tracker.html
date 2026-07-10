@@ -57,6 +57,8 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
 .st{cursor:pointer}
 .st-planned{background:var(--gray-soft);color:var(--muted)}.st-building{background:var(--blue-soft);color:var(--blue)}
 .st-ready{background:var(--purple-soft);color:var(--purple-d)}.st-live{background:var(--good-soft);color:var(--good)}
+.st-started{background:#fdf3e0;color:#b26a00}.st-backlog{background:var(--gray-soft);color:var(--muted)}
+.tier.grp-live h2{color:var(--good)}.tier.grp-started h2{color:#b26a00}.tier.grp-backlog h2{color:var(--muted)}
 .st-blocked{background:var(--bad-soft);color:var(--bad)}.st-paused{background:var(--gray-soft);color:var(--muted2)}
 .tos-clean{background:var(--good-soft);color:var(--good)}.tos-gray{background:var(--warn-soft);color:var(--warn)}.tos-hostile{background:var(--bad-soft);color:var(--bad)}
 .gran{background:#eef0fb;color:#4b3fae}
@@ -121,7 +123,7 @@ select.flt{font-family:var(--body);font-size:12.5px;color:var(--ink2);border:1px
   <div class="toolbar">
     <input class="search" id="q" placeholder="Search sources…" autocomplete="off">
     <select class="flt" id="fTier"><option value="">All tiers</option></select>
-    <select class="flt" id="fStatus"><option value="">All status</option><option>Planned</option><option>Building</option><option>Ready</option><option>Live</option><option>Blocked</option><option>Paused</option></select>
+    <select class="flt" id="fStatus"><option value="">All status</option><option>Live</option><option>Started</option><option>Backlog</option></select>
     <select class="flt" id="fTos"><option value="">All ToS</option><option>Clean</option><option>Gray</option><option>Hostile</option></select>
     <select class="flt" id="fPri"><option value="">All priority</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select>
     <select class="flt" id="fOwner"><option value="">All owners</option><option>Hoodie</option><option>Grepsr</option><option>Hoodie + Grepsr</option><option>External</option></select>
@@ -192,6 +194,7 @@ function seedUrl(s){ return URLS[s.nm]||""; }
 function seedConn(s){ var m=SEED.find(function(x){return x.nm===s.nm;}); return (m&&m.connId)||""; }
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=n=>(Number(n)||0).toLocaleString();
 const slug=s=>s.replace(/[^A-Za-z]/g,"").slice(0,2).toUpperCase();
 
 const SEED=[
@@ -207,6 +210,9 @@ const SEED=[
 
  {nm:"US Census — ACS demographics",connId:"census-acs",tier:"Reference Data",foot:"National · Census Bureau API",fields:["population","median_household_income","median_age","median_home_value"],gran:"County",plat:"Census Data API",prot:"None",tos:"Clean",pri:"P1",status:"Ready",owner:"Hoodie",notes:"Trade-area demographics by county (ACS5), joinable to the outlet master via county FIPS (geoid). Not a scrape — documented public JSON API. Needs the free CENSUS_API_KEY (census.gov/developers); degrades with a clear message otherwise. Default footprint FL/TX/IL; pass state:'us' for all counties. Feeds HI's Demographics view + account enrichment."},
 
+ {nm:"Oregon OLCC — Pricing",tier:"Control States",foot:"OR · statewide price book",fields:["Price","Units"],gran:"State",plat:"Socrata API",prot:"None",tos:"Clean",pri:"P1",status:"Live",owner:"Hoodie",notes:"OLCC monthly pricing (vmf2-f83h) → or_pricing. Proof / size / per-bottle-case-oz. Landed."},
+ {nm:"Montgomery County MD — ABS",tier:"Control States",foot:"MD · county monopoly",fields:["Price","Availability","Units"],gran:"State",plat:"Socrata API",prot:"None",tos:"Clean",pri:"P1",status:"Live",owner:"Hoodie",notes:"Full chain: mont_sales (319k item×month) + mont_catalog (price + on-hand inventory) + mont_purch. Landed."},
+ {nm:"BC Liquor — Price List",tier:"Control States",foot:"BC · provincial monopoly",fields:["Price","UPC"],gran:"State",plat:"CKAN CSV",prot:"None",tos:"Clean",pri:"P2",status:"Live",owner:"Hoodie",notes:"BC Liquor price list (SKU, UPC, ABV, price, category) → bc_liquor. Latest CSV auto-resolved. Landed."},
  {nm:"PA Fine Wine & Good Spirits",tier:"Control States",foot:"PA · 568 stores",fields:["Price"],gran:"State",plat:"gov price book",prot:"None",tos:"Clean",pri:"P0",status:"Planned",notes:"Quarterly price listing, statewide-uniform. Biggest clean miss — fetch & parse, not a scrape."},
  {nm:"Virginia ABC",tier:"Control States",foot:"VA · 395 stores",fields:["Price"],gran:"State",plat:"gov price book",prot:"None",tos:"Clean",pri:"P0",status:"Planned",notes:"Statewide-uniform pricing; published list."},
  {nm:"North Carolina ABC",tier:"Control States",foot:"NC · statewide",fields:["Price","Promo"],gran:"State",plat:"gov price list",prot:"None",tos:"Clean",pri:"P1",status:"Planned",notes:"Quarterly list + monthly sales, uniform across all ABC stores."},
@@ -251,6 +257,54 @@ var editId=null;
 var REC={};
 function recHost(u){ try{ return new URL(u).hostname.replace(/^www\./,""); }catch(e){ return ""; } }
 function recStatus(u){ var h=recHost(u); return h?REC[h]:""; }
+
+// ── REAL status, DERIVED from the warehouse (not the hand-set pill). A source is LIVE when its
+// dataset(s) actually hold rows in the store the tracker reads (/api/catalog merges memory+full+
+// warehouse); STARTED when work began (connId / vendor feed / build status) but nothing has landed;
+// BACKLOG when it's only planned. /api/scrapes adds freshness for the scraped subset.
+var DS={};          // {datasetKey: {total, ageDays}}
+var LIVEOK=false;   // did /api/catalog resolve? else fall back to the manual pill so grouping still works
+var DSMAP={          // source connId → warehouse dataset key(s)
+  "census-acs":["census_reference"], "ttb-cola":["ttb_cola_labels","ttb_cola_detail","ttb_cola_index"],
+  "abc-fws":["abc_products"], "specs":["specs_products"], "kroger":["kroger_products"],
+  "target":["target_products","target_stores"], "walmart":["walmart_products"],
+  "fl-items":["fl_items"], "fl-outlets":["outlets_master"], "tx-tabc":["tx_outlets","tx_companies"],
+  "il-chicago":["il_outlets","il_companies"], "ct-dcp":["ct_outlets","ct_brands"],
+  "ny-sla":["ny_outlets"], "co-led":["co_outlets"], "mo-atc":["mo_outlets"]
+};
+var DSMAP_NM={       // connId-less landed sources, keyed by exact name
+  "Binny's — Inventory":["binnys_products"], "Hemp + DTC — Shopify":["shopify_products"],
+  "Publix":["publix_products"], "Kroger (+ banners)":["kroger_products"], "Walmart":["walmart_products"],
+  "Target":["target_products","target_stores"],
+  "Oregon OLCC — Pricing":["or_pricing"],
+  "Montgomery County MD — ABS":["mont_catalog","mont_sales","mont_purch"],
+  "BC Liquor — Price List":["bc_liquor"]
+};
+function dsKeys(s){ return (s.connId&&DSMAP[s.connId]) || DSMAP_NM[s.nm] || (s.connId?[s.connId.replace(/-/g,"_")+"_products"]:[]); }
+function sourceStats(s){
+  var rows=0, age=null, known=false;
+  dsKeys(s).forEach(function(k){ var d=DS[k]; if(d){ known=true; rows+=(d.total||0);
+    if(d.ageDays!=null) age=(age==null?d.ageDays:Math.min(age,d.ageDays)); } });
+  return {rows:rows, ageDays:age, known:known};
+}
+var STARTED_STATUS={Building:1,Ready:1,Live:1,Paused:1};
+function derivedStatus(s){
+  if(!LIVEOK){ if(s.status==="Live")return"Live"; return STARTED_STATUS[s.status]?"Started":"Backlog"; }
+  if(sourceStats(s).rows>0) return "Live";
+  if(s.connId || (s.owner&&/Grepsr|External/.test(s.owner)) || STARTED_STATUS[s.status]) return "Started";
+  return "Backlog";
+}
+function loadLive(){
+  return fetch("/api/catalog",{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(cat){
+    if(!cat) return;
+    LIVEOK=true; DS={};
+    Object.keys(cat).forEach(function(k){ DS[k]={total:(cat[k]&&cat[k].total)||0, ageDays:null}; });
+    return fetch("/api/scrapes",{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(sc){
+      if(sc&&sc.scrapes) sc.scrapes.forEach(function(x){ if(!x.table)return; DS[x.table]=DS[x.table]||{total:0};
+        if(x.rows!=null) DS[x.table].total=x.rows; if(x.fresh_secs!=null) DS[x.table].ageDays=x.fresh_secs/86400; });
+    }).catch(function(){});
+  }).catch(function(){}).then(function(){ render(); });
+}
 
 // Run a source right here — recipe-first (use the proven config) then extract. Result shows
 // inline under the card and folds back into the recipe (updates its status pill).
@@ -423,7 +477,7 @@ function save(){ try{ localStorage.setItem(KEY,JSON.stringify(SOURCES)); }catch(
 
 function passes(s){
   if(STATE.tier&&s.tier!==STATE.tier)return false;
-  if(STATE.status&&s.status!==STATE.status)return false;
+  if(STATE.status&&derivedStatus(s)!==STATE.status)return false;
   if(STATE.tos&&s.tos!==STATE.tos)return false;
   if(STATE.pri&&s.pri!==STATE.pri)return false;
   if(STATE.owner&&(s.owner||"Hoodie")!==STATE.owner)return false;
@@ -431,14 +485,19 @@ function passes(s){
   if(STATE.q){ const q=STATE.q.toLowerCase(); if(!(s.nm+" "+s.foot+" "+s.plat+" "+(s.owner||"")+" "+(s.project||"")+" "+(s.notes||"")).toLowerCase().includes(q))return false; }
   return true;
 }
+var GROUPS=[["Live","Live","data landing in the warehouse now"],
+            ["Started","Started · unfinished","built or vendor-claimed, nothing landed yet"],
+            ["Backlog","Backlog","planned — not started"]];
 function render(){
   const list=$("list"); const shown=SOURCES.filter(passes);
+  var by={Live:[],Started:[],Backlog:[]};
+  shown.forEach(function(s){ (by[derivedStatus(s)]||by.Backlog).push(s); });
   let html="";
-  TIERS.forEach(t=>{
-    const rows=shown.filter(s=>s.tier===t); if(!rows.length)return;
-    const live=rows.filter(s=>s.status==="Live").length;
-    html+='<div class="tier"><h2>'+esc(t)+'</h2><span class="ct">'+rows.length+' source'+(rows.length>1?'s':'')+' · '+live+' live</span><span class="ln"></span></div>';
-    rows.forEach(s=>{ html+=cardHTML(s); });
+  GROUPS.forEach(function(g){
+    var rows=by[g[0]]; if(!rows.length)return;
+    rows.sort(function(a,b){ var d=sourceStats(b).rows-sourceStats(a).rows; return d||a.nm.localeCompare(b.nm); });
+    html+='<div class="tier grp-'+g[0].toLowerCase()+'"><h2>'+esc(g[1])+'</h2><span class="ct">'+rows.length+' source'+(rows.length>1?'s':'')+' · '+esc(g[2])+'</span><span class="ln"></span></div>';
+    rows.forEach(function(s){ html+=cardHTML(s); });
   });
   list.innerHTML=html||'<div class="empty">No sources match these filters.</div>';
   list.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openModal(b.dataset.edit));
@@ -450,7 +509,9 @@ function render(){
   list.querySelectorAll("[data-fld]").forEach(b=>b.onclick=()=>{ const p=b.dataset.fld.split("::"); toggleFld(p[0],p[1]); });
   list.querySelectorAll("[data-report]").forEach(b=>b.onclick=()=>openReport(b.dataset.report));
   renderChips(); syncProjects();
-  $("foot").textContent=SOURCES.length+" sources tracked · "+SOURCES.filter(s=>s.status==="Live").length+" live · saved to this device";
+  var d=k=>SOURCES.filter(s=>derivedStatus(s)===k).length;
+  $("foot").textContent=SOURCES.length+" sources · "+d("Live")+" live · "+d("Started")+" started · "+d("Backlog")+" backlog · "
+    +(LIVEOK?"status from the warehouse":"engine offline — showing planned status");
 }
 function cardHTML(s){
   const on=picked(s);
@@ -472,7 +533,12 @@ function cardHTML(s){
     +'</div></div>'
     +'<div class="right">'
       +'<span class="pill pri '+s.pri.toLowerCase()+'" data-pri="'+s.id+'" title="Click to change priority">'+esc(s.pri)+'</span>'
-      +'<span class="pill st st-'+s.status.toLowerCase()+'" data-cyc="'+s.id+'" title="Click to advance status">'+esc(s.status)+'</span>'
+      +(function(){ var d=derivedStatus(s), st=sourceStats(s);
+          var age=st.ageDays==null?"":((st.ageDays<1?(Math.max(1,Math.round(st.ageDays*24))+"h"):(Math.round(st.ageDays)+"d"))+" ago");
+          if(d==="Live") return '<span class="pill st st-live" title="Real rows in the warehouse'+(LIVEOK?"":" (planned status — engine offline)")+'">● '+fmt(st.rows)+' rows'+(age?" · "+age:"")+'</span>';
+          if(d==="Started") return '<span class="pill st st-started" title="Work started ('+esc(s.status)+') — nothing landed in the warehouse yet">○ started · no data</span>';
+          return '<span class="pill st st-backlog" title="Planned — not started">backlog</span>';
+        })()
       +((s.url||s.connId)?'<button class="iconbtn run" data-run="'+s.id+'" title="'+(s.connId?'Run the owned pull now (engine pipeline)':'Run this source now (recipe-first)')+'"'+(RUNSTATE[s.id]&&RUNSTATE[s.id].state==="running"?" disabled":"")+'>▸</button>':'')
       +((s.tier==="Reference Data")
           ? '<button class="iconbtn" data-join="'+s.id+'" title="Join to the outlet master by county — enrich accounts with demographics (reference data enriches, it doesn\'t ingest to master)">⊕</button>'
@@ -482,12 +548,11 @@ function cardHTML(s){
     +((s.url||s.connId)?runoutHtml(s.id):'');
 }
 function renderChips(){
-  const c=k=>SOURCES.filter(s=>s.status===k).length;
-  const tos=k=>SOURCES.filter(s=>s.tos===k).length;
+  const d=k=>SOURCES.filter(s=>derivedStatus(s)===k).length;
   const vendor=SOURCES.filter(s=>(s.owner||"").indexOf("Grepsr")>=0).length;
   $("chips").innerHTML=
-    chip(SOURCES.length,"sources")+chip(c("Live"),"live")+chip(c("Ready"),"ready")+chip(c("Planned"),"planned")
-    +chip(vendor,"vendor feed")+chip(tos("Clean"),"clean")+chip(tos("Hostile"),"hostile");
+    chip(SOURCES.length,"sources")+chip(d("Live"),"live")+chip(d("Started"),"started")+chip(d("Backlog"),"backlog")
+    +chip(vendor,"vendor feed");
 }
 function chip(n,l){return '<div class="chip"><b>'+n+'</b><span>'+l+'</span></div>';}
 // keep the project filter + modal datalist in sync with whatever projects exist
@@ -561,4 +626,6 @@ function setup(){
 }
 load(); save(); setup(); render();  // persist the owner/project/url backfill so the Analyzer (same-origin) can read URLs
 fetchRecipes();                     // overlay scrape-recipe status per source (best-effort; needs the engine)
+loadLive();                         // DERIVE live/started/backlog from the warehouse (/api/catalog + /api/scrapes)
+setInterval(loadLive, 60000);       // keep the real status current
 </script></body></html>
