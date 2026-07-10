@@ -15,11 +15,21 @@ WHAT'S PROVEN:
     auto-set to StoreNbr=1425 from the residential IP — but 1425 returned an EMPTY <Savings/> (likely a store
     outside Publix's ad footprint / between cycles, or a stale-nav read).
 
-LAST MILE (next pass): (1) get a VALID Florida store number with an active weekly ad — via Publix's store
-locator (services.publix.com store-search by zip) — and set its StoreNbr cookie in the session; (2) confirm
-the <Savings> deal element shape (item title, brand, price, BOGO/dealType, savings, image) on a NON-empty
-response; (3) implement parse + land. Then this captures EVERY Publix weekly ad, every FL store — the BOGO
-volume that matters. Reuse the polite/Unlocker Tier-2 layer so it's ban-safe.
+RESOLVED SINCE (2026-07-10):
+  • Store locator works: GET https://services.publix.com/api/v1/storelocation?zipCode=<zip> -> XML <StoreInfo>
+    blocks with <KEY> (store #), <ADDR>, <WASTORENUM>, <SHORTNAME>. Kirkman & Conroy Orlando =
+    "Kirkman Oaks Shopping Center", 4606 S Kirkman Rd, Orlando FL 32819 = STORE #331 (KEY 00331,
+    WASTORENUM 2500467). Nearby: Plaza at Millenia = KEY 00605.
+  • The empty ads were GEO, not params: v4/savings returns the SESSION store's ad, and the BD exit IP kept
+    landing OUTSIDE Publix's footprint (Texas, then Connecticut; cookie pblx_ot_session_geo shows the state).
+    Publix operates only in FL/GA/AL/SC/NC/TN/VA/KY, so a non-footprint IP -> no valid store -> empty
+    <Savings/>. The StoreNbr URL param is IGNORED (store is session/cookie-based, store_selection_method=browser).
+
+LAST MILE (now well-defined): route through a FLORIDA BD exit — the proxy username supports state targeting:
+brd-customer-hl_32bcfbaa-zone-cli_unlocker-country-us-state-fl (or a sticky FL residential session). With a FL
+exit, publix.com auto-selects a real FL store and v4/savings returns a NON-empty <SavingsResultWA>. Then confirm
+the <Saving> element shape, parse, and land (publix_products + retail_observations). To pin store #331
+specifically, also select it in-session. Reuse the ban-safe Tier-2 layer.
 """
 import json
 import os
