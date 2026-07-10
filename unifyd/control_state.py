@@ -224,16 +224,26 @@ def build_alabama(log=print):
 
 
 def build_maine(log=print):
-    """Maine Spirits (BABLO) — item listing XLSX WITH UPCs (link discovered off the price-books page)."""
-    for page in ("https://www.mainespirits.com/price-books", "https://www.mainespirits.com/wholesale"):
+    """Maine Spirits (BABLO) — Master Price List XLSX (UPC-bearing). The site HTML is Cloudflare-gated, but
+    the static file bypasses it. Filename is month-stamped, so try the current + recent months' Master Price
+    List, then fall back to the undated 'Regular Listings.xlsx' (always the current cut)."""
+    base = "https://www.mainespirits.com/sites/default/files/price_books/"
+    d = _dt.date.today()
+    cands = []
+    for back in range(0, 5):
+        m = d.month - back; y = d.year
+        while m <= 0:
+            m += 12; y -= 1
+        cands.append("%s %d Master Price List.xlsx" % (_dt.date(y, m, 1).strftime("%B"), y))
+    cands.append("Regular Listings.xlsx")
+    for name in cands:
         try:
-            link = _find_xlsx(page, must="")
-            if link:
-                header, recs = _xlsx_rows(_http(link))
-                return _land("me_pricing", recs, header, "Maine Spirits — item listing (UPC-bearing)", log)
+            header, recs = _xlsx_rows(_http(base + urllib.parse.quote(name)))
+            if recs:
+                return _land("me_pricing", recs, header, "Maine Spirits — price list (UPC-bearing)", log)
         except Exception:
             continue
-    raise RuntimeError("maine: no item-listing xlsx link found")
+    raise RuntimeError("maine: no price-book xlsx found (tried recent Master lists + Regular Listings)")
 
 
 def build_vermont(log=print):
