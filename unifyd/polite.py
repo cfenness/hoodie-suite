@@ -22,9 +22,12 @@ Design notes: thread-safe (per-host lock), so the concurrent scrapers (ABC/Spec'
 per host across their worker threads. A tripped breaker raises Blocked — callers should let the run END
 (degraded) rather than swallow it, so we never grind into a ban.
 """
+import gzip
 import os
 import random
+import ssl
 import threading
+import zlib
 import time
 import urllib.error
 import urllib.request
@@ -80,21 +83,29 @@ def _headers(extra=None):
 
 
 def _proxy_opener():
-    """A urllib opener routed through the Bright Data residential/unlocker proxy (rotating IPs)."""
+    """A urllib opener routed through the Bright Data residential/unlocker proxy (rotating IPs + anti-bot).
+    The Unlocker MITMs HTTPS to solve challenges, so its cert won't chain to a public CA — we skip cert
+    verification on the proxied path (standard for the BD Unlocker proxy interface)."""
     user = os.environ.get("BRIGHTDATA_PROXY_USER") or os.environ.get("BRD_PROXY_USER")
     pw = os.environ.get("BRIGHTDATA_PROXY_PASS") or os.environ.get("BRD_PROXY_PASS")
     hostport = os.environ.get("BRIGHTDATA_PROXY", "brd.superproxy.io:22225")
     if not (user and pw):
         return None
     p = "http://%s:%s@%s" % (user, pw, hostport)
-    return urllib.request.build_opener(urllib.request.ProxyHandler({"http": p, "https": p}))
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return urllib.request.build_opener(urllib.request.ProxyHandler({"http": p, "https": p}),
+                                       urllib.request.HTTPSHandler(context=ctx))
 
 
 def get(url, *, min_interval=5.0, jitter=3.0, timeout=30, headers=None, data=None, method=None,
-        max_retries=4, breaker_after=5, breaker_cooldown=600, use_proxy=False, host=None):
-    """Polite GET/POST returning the response body (bytes). Raises Blocked when the host is blocking us and
-    we've decided to stop. `min_interval` is the minimum seconds between requests to this host (set it to
-    the source's crawl-delay); requests are spaced by min_interval + random jitter."""
+        max_retries=4, breaker_after=5, breaker_cooldown=600, use_proxy=False, host=None,
+        return_headers=False):
+    """Polite GET/POST returning the response body (bytes), or (body, headers_dict) when return_headers.
+    Raises Blocked when the host is blocking us and we've decided to stop. `min_interval` is the minimum
+    seconds between requests to this host (set it to the source's crawl-delay); requests are spaced by
+    min_interval + random jitter."""
     host = host or urlparse(url).netloc
     st = _host_state(host)
 
@@ -117,9 +128,17 @@ def get(url, *, min_interval=5.0, jitter=3.0, timeout=30, headers=None, data=Non
         try:
             resp = opener.open(req, timeout=timeout) if opener else urllib.request.urlopen(req, timeout=timeout)
             body = resp.read()
+            enc = (resp.headers.get("Content-Encoding") or "").lower()
+            if enc == "gzip":
+                body = gzip.decompress(body)
+            elif enc == "deflate":
+                try:
+                    body = zlib.decompress(body)
+                except zlib.error:
+                    body = zlib.decompress(body, -zlib.MAX_WBITS)   # raw deflate
             with st.lock:
                 st.fails = 0
-            return body
+            return (body, dict(resp.headers)) if return_headers else body
         except urllib.error.HTTPError as e:
             if e.code in _BLOCK_CODES or e.code in _RETRY_CODES:
                 with st.lock:

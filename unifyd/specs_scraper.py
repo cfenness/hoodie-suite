@@ -13,7 +13,11 @@ sample, diff vs the prior snapshot. Self-reports `degraded` if the `variants` bl
 be parsed on most pages (markup drift).
 """
 import argparse, hashlib, json, os, re, sys, time, urllib.request
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import polite
 from abc_fws_scraper import diff_snapshots   # generic per-key price/in-stock diff
+SPECS_MIN_INT = float(os.environ.get("SPECS_MIN_INTERVAL", "0.6"))
+SPECS_PROXY   = os.environ.get("SPECS_PROXY", "0") == "1"
 
 BASE      = "https://specsonline.com"
 SITEMAP   = BASE + "/sitemap.xml"
@@ -25,9 +29,11 @@ LD_RE     = re.compile(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', 
 
 
 def _http(url, timeout=25):
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Encoding": "identity"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read().decode("utf-8", "replace")
+    # via polite: per-host rate-limit + backoff + circuit breaker + optional BD residential proxy (Tier 2)
+    body = polite.get(url, min_interval=SPECS_MIN_INT, jitter=SPECS_MIN_INT, timeout=timeout,
+                      headers={"Accept-Encoding": "identity"}, breaker_after=4,
+                      use_proxy=SPECS_PROXY, host="specsonline.com")
+    return body.decode("utf-8", "replace")
 
 
 def harvest_ids(max_products=4000, log=print):
