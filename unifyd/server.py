@@ -1291,6 +1291,8 @@ _SCRAPES = [
      "table": "binnys_products", "feeds": "pricing + inventory", "detail": None},
     {"id": "shopify",    "name": "Shopify DTC brands",          "kind": "product", "source": "shopify sites",
      "table": "shopify_products", "feeds": "pricing + inventory", "detail": None},
+    {"id": "publix",     "name": "Publix · weekly ad (BOGO)",   "kind": "promo",   "source": "publix.com (FL/GA/SC)",
+     "table": "publix_products", "feeds": "pricing + promotions", "detail": None},
     # NOTE: the bev-alc chains registry is a source *catalog*, not a scrape — it lives on its own
     # Bev-Alc Chains page, not here.
 ]

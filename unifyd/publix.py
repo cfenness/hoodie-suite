@@ -1,118 +1,120 @@
-"""publix.py — Publix WEEKLY AD (BOGO) capture. Publix's own savings API, NOT the Instacart-gated side.
+"""publix.py — Publix WEEKLY AD (BOGO) capture. Publix's own ad, NOT the Instacart-gated side, NOT age-gated.
 
-STATUS (2026-07-10): Akamai defeated + API + store-scoping cracked; NOT yet landing deals — last mile is a
-valid store with an active ad + confirming the deal XML shape (see below).
-
-WHAT'S PROVEN:
-  • The weekly ad is Publix's OWN API (not Instacart, not age-gated):
-      GET https://services.publix.com/api/v4/savings?getSavingType=WeeklyAd&page=1&pageSize=N&isWeb=true&languageID=1
-    Returns XML rooted at <SavingsResultWA> (… <Savings>…deals…</Savings> …). Store-scoped.
-  • Akamai-protected → our Tier-2 Bright Data layer gets past it (polite use_proxy=True, or the Unlocker API
-    POST api.brightdata.com/request {zone:cli_unlocker,url,format:raw}, or `bdata browser`). Confirmed a live
-    response past Akamai.
-  • STORE CONTEXT is required: v4/savings is keyed by StoreNbr via COOKIE/session (a cold param call errors
-    with a ~3.5KB page; the param StoreNbr= alone didn't populate it). In a `bdata browser` session the store
-    auto-set to StoreNbr=1425 from the residential IP — but 1425 returned an EMPTY <Savings/> (likely a store
-    outside Publix's ad footprint / between cycles, or a stale-nav read).
-
-RESOLVED SINCE (2026-07-10):
-  • Store locator works: GET https://services.publix.com/api/v1/storelocation?zipCode=<zip> -> XML <StoreInfo>
-    blocks with <KEY> (store #), <ADDR>, <WASTORENUM>, <SHORTNAME>. Kirkman & Conroy Orlando =
-    "Kirkman Oaks Shopping Center", 4606 S Kirkman Rd, Orlando FL 32819 = STORE #331 (KEY 00331,
-    WASTORENUM 2500467). Nearby: Plaza at Millenia = KEY 00605.
-  • The empty ads were GEO, not params: v4/savings returns the SESSION store's ad, and the BD exit IP kept
-    landing OUTSIDE Publix's footprint (Texas, then Connecticut; cookie pblx_ot_session_geo shows the state).
-    Publix operates only in FL/GA/AL/SC/NC/TN/VA/KY, so a non-footprint IP -> no valid store -> empty
-    <Savings/>. The StoreNbr URL param is IGNORED (store is session/cookie-based, store_selection_method=browser).
-
-WORKING RECIPE (2026-07-10, geo blocker SOLVED via BD Browser API over CDP):
-  1. Connect Playwright to the BD browser: connect_over_cdp("wss://brd-customer-hl_32bcfbaa-zone-cli_browser:
-     <pw>@brd.superproxy.io:9222")  (cli_browser pw via GET api.brightdata.com/zone/passwords?zone=cli_browser).
-  2. Pin geo BEFORE navigating: cdp=ctx.new_cdp_session(pg); cdp.send("Proxy.setLocation",
-     {"lat":28.484,"lon":-81.462,"distance":40,"strict":True})  ← Orlando/Kirkman coords. (Param names are
-     lat/lon, NOT latitude/longitude.) This is what fixes it — without a footprint geo the store is invalid.
-  3. Navigate https://www.publix.com/savings/weekly-ad/view-all — a real FL store auto-selects (Orlando coords
-     → "Lake Eola", StoreNbr 501). Wait ~10s.
-  4. PRODUCTS load via https://services.publix.com/search/productdata/productitems?Id=<promoGUID>&StoreNbr=<n>
-     — CONFIRMED returns real product JSON. Fetch it IN-PAGE (pg.evaluate fetch, credentials:'include') so the
-     store cookies + same-origin headers apply — a top-level nav or cold proxy call returns empty.
-  LOOSE END: enumerate the weekly-ad promo GUIDs (the <Id> that drives productitems). v4/savings?getSavingType=
-  WeeklyAd returned Savings:[] (empty) and /api/v1/weeklyad/savings/pagesandpromotions returned empty on the
-  last in-page GET — find the call that lists the ad's promo GUIDs (likely a POST, or a different weekly-ad
-  endpoint), then loop productitems per GUID → parse (name/price/BOGO/image) → land (publix_products +
-  retail_observations). To pin store #331 (Kirkman Oaks) specifically, select it via the store picker first.
+WORKING (2026-07-10): the weekly-ad API is a flyer/GraphQL maze whose XHRs carry headers/persisted-queries
+that fight replay, so instead we read the RENDERED deals off publix.com/savings/weekly-ad/view-all — which
+lists every deal with its BOGO/savings text. Access via the BD Browser API over CDP (defeats Akamai), with
+CDP Proxy.setLocation pinned to a Publix-footprint city so a real store auto-selects (Publix operates in
+FL/GA/AL/SC/NC/TN/VA/KY — a non-footprint exit IP yields no store and an empty ad). Lands as publix_products
++ retail_observations (BOGO drives huge volume). Store #331 = Kirkman Oaks, Orlando.
 """
 import json
 import os
 import re
 import sys
 import time
-import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import observe
 
-SAVINGS = "https://services.publix.com/api/v4/savings"
-STORE_LOCATOR = "https://services.publix.com/api/v1/storelocation/storesearch"   # by zip — for FL store nbrs
+# Publix-footprint markets (lat, lon, label) — includes FL, GA, and SC. Each pins the geo so a real store
+# auto-selects; widen freely. Kirkman/Conroy Orlando + Columbia/Charleston SC + Atlanta GA to start.
+MARKETS = [
+    (28.484, -81.462, "Orlando FL (Kirkman/Conroy)"),
+    (25.775, -80.194, "Miami FL"),
+    (34.001, -81.035, "Columbia SC"),
+    (32.777, -79.931, "Charleston SC"),
+    (33.749, -84.388, "Atlanta GA"),
+]
+VIEW_ALL = "https://www.publix.com/savings/weekly-ad/view-all"
 
 
-def _unlocker(url, api_key, cookies=None):
-    """Fetch a URL through the Bright Data Unlocker (raw), past Akamai. cookies = a Cookie header string
-    (needed to carry the StoreNbr session)."""
-    headers = {"Accept": "application/xml,application/json", "Referer": "https://www.publix.com/"}
-    if cookies:
-        headers["Cookie"] = cookies
-    body = json.dumps({"zone": "cli_unlocker", "url": url, "format": "raw", "headers": headers}).encode()
-    req = urllib.request.Request("https://api.brightdata.com/request", data=body,
-                                 headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"})
-    return urllib.request.urlopen(req, timeout=60).read().decode("utf-8", "replace")
-
-
-def savings_url(store_nbr, page=1, page_size=60):
-    q = {"page": page, "pageSize": page_size, "isWeb": "true", "languageID": 1,
-         "getSavingType": "WeeklyAd", "StoreNbr": store_nbr}
-    return SAVINGS + "?" + urllib.parse.urlencode(q)
-
-
-def parse_savings(xml_text):
-    """Parse <SavingsResultWA> weekly-ad XML into deal rows. TODO: confirm element names on a non-empty
-    response (store 1425 returned empty). Placeholder maps the likely fields."""
-    rows = []
-    for block in re.findall(r"<Saving\b.*?</Saving>", xml_text, re.S):
-        def g(tag):
-            m = re.search(r"<%s>(.*?)</%s>" % (tag, tag), block, re.S)
-            return (m.group(1).strip() if m else "")
-        title = g("Title") or g("Description")
-        if not title:
-            continue
-        price = g("Price") or g("FinalPrice")
-        rows.append(dict(name=title, brand=g("Brand"), price=price, deal_type=g("DealType") or g("SavingType"),
-                         is_bogo=("bogo" in block.lower() or "buy one" in block.lower()),
-                         image_url=g("ImageUrl") or g("Image"), is_hemp=observe.is_hemp(title)))
-    return rows
-
-
-def run(store_nbrs, api_key=None):
-    """Pull the weekly ad for each FL store, land as publix_products + retail_observations."""
-    api_key = api_key or json.load(open(os.path.expanduser(
+def _browser_auth():
+    """wss auth for the BD Browser API (cli_browser zone), from the CLI's stored API key."""
+    key = json.load(open(os.path.expanduser(
         "~/Library/Application Support/brightdata-cli/credentials.json")))["api_key"]
-    all_rows = []
-    for sn in store_nbrs:
-        try:
-            xml = _unlocker(savings_url(sn), api_key)
-            deals = parse_savings(xml)
-            for d in deals:
-                d["store"] = str(sn); d["source"] = "publix"
-            all_rows += deals
-            print("  [publix] store %s — %d weekly-ad deals" % (sn, len(deals)))
-            time.sleep(2)
-        except Exception as e:
-            print("  [publix] store %s failed: %s" % (sn, str(e)[:80]))
-    if all_rows:
-        warehouse.write_parquet("publix_products", all_rows)
-        observe.record("publix", [dict(store=r["store"], product_id="", name=r["name"], brand=r.get("brand"),
-                                        price=r.get("price"), on_promo=True, in_stock=True,
-                                        is_hemp=r.get("is_hemp")) for r in all_rows])
-    return len(all_rows)
+    r = urllib.request.Request("https://api.brightdata.com/zone/passwords?zone=cli_browser",
+                               headers={"Authorization": "Bearer " + key})
+    pw = json.loads(urllib.request.urlopen(r, timeout=30).read())["passwords"][0]
+    return "brd-customer-hl_32bcfbaa-zone-cli_browser:%s" % pw
+
+
+def parse_tile(text):
+    """A rendered deal tile -> a row, or None if it's not a product deal. Handles the two Publix formats:
+    '<name> buy 1 get 1 free ... save up to $X.XX'  and  '<name> Save $X.XX on ...'."""
+    t = re.sub(r"\s+", " ", text).strip()
+    bogo = bool(re.search(r"buy 1 get 1 free|BOGO", t, re.I))
+    m = re.search(r"(.+?)\s+buy 1 get 1 free", t, re.I) or re.search(r"(.+?)\s+Save \$", t)
+    name = (m.group(1).strip() if m else "").strip()
+    if not name or len(name) > 90 or name.lower() in ("weekly ad", "bogo"):
+        return None
+    sv = re.search(r"save up to \$([\d.]+)|Save \$([\d.]+)", t, re.I)
+    savings = float(next(g for g in sv.groups() if g)) if sv else None
+    return dict(name=name, promo_type="BOGO" if bogo else "sale", is_bogo=bogo,
+                savings=savings, deal_text=t[:160], is_hemp=observe.is_hemp(name))
+
+
+def _pull_market(pg, cdp, lat, lon, label):
+    cdp.send("Proxy.setLocation", {"lat": lat, "lon": lon, "distance": 40, "strict": True})
+    pg.goto(VIEW_ALL, wait_until="domcontentloaded", timeout=90000)
+    time.sleep(9)
+    for _ in range(9):
+        pg.mouse.wheel(0, 3000); time.sleep(1.8)
+    tiles = pg.evaluate("""() => {
+      const out=new Set();
+      document.querySelectorAll('a,article,li,div').forEach(e=>{
+        const t=(e.innerText||'').trim().replace(/\\s+/g,' ');
+        if(t && /buy 1 get 1 free|BOGO|save up to \\$|Save \\$/i.test(t) && t.length<160) out.add(t);
+      });
+      return [...out];
+    }""")
+    store = ""
+    try:
+        head = pg.inner_text("body")[:600]
+        sm = re.search(r"([A-Za-z .'-]+,\s*[A-Z]{2}\s*\d{5})", head)
+        store = sm.group(1) if sm else label
+    except Exception:
+        store = label
+    return tiles, store
+
+
+def run(markets=None, browser_auth=None):
+    from playwright.sync_api import sync_playwright
+    markets = markets or MARKETS
+    auth = browser_auth or _browser_auth()
+    rows, seen = [], set()
+    with sync_playwright() as p:
+        for lat, lon, label in markets:
+            # CDP Proxy.setLocation can only be set ONCE per browser session, so reconnect per market
+            try:
+                b = p.chromium.connect_over_cdp("wss://%s@brd.superproxy.io:9222" % auth, timeout=60000)
+                ctx = b.contexts[0] if b.contexts else b.new_context()
+                pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+                cdp = ctx.new_cdp_session(pg)
+                tiles, store = _pull_market(pg, cdp, lat, lon, label)
+                b.close()
+            except Exception as e:
+                print("  [publix] %s failed: %s" % (label, str(e)[:80])); continue
+            n = 0
+            for t in tiles:
+                r = parse_tile(t)
+                if not r:
+                    continue
+                k = (store, r["name"])
+                if k in seen:
+                    continue
+                seen.add(k); r.update(store=store, market=label, source="publix"); rows.append(r); n += 1
+            print("  [publix] %-28s (%s) — %d deals" % (label, store, n))
+    if rows:
+        warehouse.write_parquet("publix_products", rows)
+        observe.record("publix", [dict(store=r["store"], product_id="", name=r["name"], brand="",
+                                        price=r.get("savings"), on_promo=True, in_stock=True,
+                                        is_hemp=r.get("is_hemp")) for r in rows])
+        print("[publix] DONE %d weekly-ad deals across %d markets -> warehouse" %
+              (len(rows), len({r["market"] for r in rows})))
+    return len(rows)
+
+
+if __name__ == "__main__":
+    run()
