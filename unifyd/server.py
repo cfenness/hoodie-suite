@@ -1401,6 +1401,109 @@ def retail_stores_ep():
         rows = []
     return jsonify(ok=True, count=len(rows), stores=rows)
 
+
+# ── Market Intelligence: the geographic OUTLET landscape of a metro (chains + independents, retail +
+# on-premise), how complete our sweep is vs Google, and the on-premise (NAOP) beverage menus. Distinct from
+# Retail Intelligence (product/assortment across a few chains) — this is the market's whole outlet universe.
+def _market_merchants(market):
+    import warehouse
+    try:
+        return warehouse.query(market + "_merchants", "SELECT * FROM t")
+    except Exception:
+        return []
+
+
+def _market_coverage(market):
+    import warehouse
+    try:
+        c = warehouse.query(market + "_coverage", "SELECT * FROM t ORDER BY run_id DESC LIMIT 1")
+        return c[0] if c else None
+    except Exception:
+        return None
+
+
+@app.get("/api/market/list")
+def market_list_ep():
+    import warehouse
+    try:
+        ms = sorted({d["name"][:-len("_merchants")] for d in warehouse.list_datasets()
+                     if d["name"].endswith("_merchants")})
+    except Exception:
+        ms = []
+    return jsonify(ok=True, markets=ms or ["orlando"])
+
+
+@app.get("/api/market/summary")
+def market_summary_ep():
+    from collections import Counter
+    market = (request.args.get("market") or "orlando").strip().lower()
+    ms = _market_merchants(market)
+
+    def cnt(f):
+        return sum(1 for m in ms if f(m))
+    cui = Counter((m.get("cuisine") or "—") for m in ms if m.get("type") == "restaurant")
+    return jsonify(ok=True, market=market, total=len(ms),
+                   retail=cnt(lambda m: m.get("type") == "retail"),
+                   restaurant=cnt(lambda m: m.get("type") == "restaurant"),
+                   chain=cnt(lambda m: m.get("is_chain")),
+                   independent=cnt(lambda m: not m.get("is_chain")),
+                   google_confirmed=cnt(lambda m: m.get("google_confirmed")),
+                   cuisines=[{"cuisine": k, "n": v} for k, v in cui.most_common(14)],
+                   coverage=_market_coverage(market))
+
+
+@app.get("/api/market/merchants")
+def market_merchants_ep():
+    market = (request.args.get("market") or "orlando").strip().lower()
+    typ = (request.args.get("type") or "").strip()          # retail | restaurant
+    kind = (request.args.get("kind") or "").strip()         # chain | independent
+    q = (request.args.get("q") or "").strip().lower()
+    ms = _market_merchants(market)
+
+    def keep(m):
+        if typ and m.get("type") != typ:
+            return False
+        if kind == "chain" and not m.get("is_chain"):
+            return False
+        if kind == "independent" and m.get("is_chain"):
+            return False
+        if q and q not in (m.get("name") or "").lower() and q not in (m.get("cuisine") or "").lower():
+            return False
+        return True
+    rows = [m for m in ms if keep(m)]
+    rows.sort(key=lambda m: (m.get("type") or "", 1 if m.get("is_chain") else 0, (m.get("name") or "").lower()))
+    return jsonify(ok=True, market=market, count=len(rows), merchants=rows[:1500])
+
+
+@app.get("/api/market/coverage")
+def market_coverage_ep():
+    market = (request.args.get("market") or "orlando").strip().lower()
+    return jsonify(ok=True, market=market, coverage=_market_coverage(market))
+
+
+@app.get("/api/market/onpremise")
+def market_onpremise_ep():
+    import warehouse
+    q = (request.args.get("q") or "").strip().lower()
+    acct = (request.args.get("account") or "").strip()
+    try:
+        accts = warehouse.query("naop_accounts", "SELECT * FROM t WHERE serves_alcohol = true")
+    except Exception:
+        accts = []
+    if q:
+        accts = [a for a in accts if q in (a.get("account") or "").lower() or q in (a.get("cuisine") or "").lower()]
+    accts.sort(key=lambda a: -(a.get("n_beverages") or 0))
+    bevs = []
+    if acct:
+        try:
+            bevs = warehouse.query("naop_beverages", "SELECT name, description, price, category, cuisine, "
+                                   "base_spirit, beer_style, sub, root FROM t WHERE account = ? "
+                                   "ORDER BY category, price DESC", [acct])
+        except Exception:
+            bevs = []
+    return jsonify(ok=True, count=len(accts), accounts=accts, account=acct, beverages=bevs)
+
+
 @app.post("/api/ingest/<dataset>")
 def ingest_ep(dataset):
     """The easy way to push data INTO Unifyd. Any script POSTs JSON records here (Bearer

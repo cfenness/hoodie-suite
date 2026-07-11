@@ -1,0 +1,192 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Market Intelligence</title>
+<style>
+  :root{
+    --ink:#2B3138; --paper:#F1F3F5; --panel:#fff; --muted:#7A828B; --line:#E4E7EB;
+    --accent:#4E79A7; --accent-soft:#EAF0F6; --good:#3f9668; --gold:#9a7100; --bad:#c0563e;
+    --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --r:12px; --r-sm:8px;
+  }
+  @media (prefers-color-scheme:dark){:root{--ink:#E6E9EC;--paper:#15181C;--panel:#1E2227;--muted:#8A929B;--line:#2C323A;--accent:#7BA7D0;--accent-soft:#212B36}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.45}
+  a{color:var(--accent);text-decoration:none}
+  .wrap{max-width:1240px;margin:0 auto;padding:22px 20px 60px}
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+  header h1{font-size:21px;margin:0 0 3px}
+  header .sub{color:var(--muted);font-size:13px;margin-bottom:16px;max-width:640px}
+  .msel{border:1px solid var(--line);border-radius:999px;padding:7px 13px;font:inherit;font-size:13px;background:var(--panel);color:var(--ink);text-transform:capitalize}
+  .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:20px}
+  .tab{padding:9px 15px;font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab.on{color:var(--accent);border-color:var(--accent)}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:12px;margin-bottom:20px}
+  .sc{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+  .sc b{font-size:25px;font-weight:700;display:block;line-height:1.05;font-variant-numeric:tabular-nums}
+  .sc span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .sc small{font-size:12px;color:var(--muted);font-weight:400}
+  .good{color:var(--good)} .bad{color:var(--bad)} .gold{color:var(--gold)}
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .seg button{border:0;background:var(--panel);color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;padding:7px 13px;cursor:pointer}
+  .seg button.on{background:var(--accent);color:#fff}
+  .search{flex:1;min-width:180px;max-width:380px;border:1px solid var(--line);border-radius:999px;padding:8px 14px;font:inherit;font-size:13.5px;background:var(--panel);color:var(--ink);outline:none}
+  .search:focus{border-color:var(--accent)}
+  .count{color:var(--muted);font-size:12.5px}
+  .cuis{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+  .cchip{font-size:11.5px;background:var(--accent-soft);color:var(--accent);padding:3px 9px;border-radius:999px;cursor:pointer}
+  .cchip b{font-variant-numeric:tabular-nums}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line)}
+  td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tr.click{cursor:pointer} tr.click:hover{background:var(--accent-soft)}
+  .pill{display:inline-block;font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:5px;background:var(--accent-soft);color:var(--accent)}
+  .pill.ind{background:#eef6f0;color:var(--good)} .pill.ch{background:#f0eef7;color:#6b5bb0}
+  .pill.ok{background:#e8f4ea;color:var(--good)} .pill.no{background:#f6ecea;color:var(--bad)}
+  .back{cursor:pointer;color:var(--muted);font-weight:600;font-size:13px}
+  .bar{height:8px;border-radius:5px;background:var(--accent-soft);overflow:hidden;margin:7px 0 3px}
+  .bar i{display:block;height:100%;background:var(--accent);border-radius:5px}
+  .empty{color:var(--muted);text-align:center;padding:44px}
+  .note{background:var(--accent-soft);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;color:var(--muted);font-size:13px;margin-bottom:18px}
+  .cathd{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:16px 0 6px;font-weight:700}
+</style></head>
+<body><div class="wrap">
+<header>
+  <div>
+    <h1>Market Intelligence</h1>
+    <div class="sub">The full outlet landscape of a market — chains <b>and independents</b>, retail <b>and on-premise</b> — with how completely we've swept it.</div>
+  </div>
+  <select class="msel" id="msel"></select>
+</header>
+<div class="tabs">
+  <div class="tab on" data-v="merchants">Merchants</div>
+  <div class="tab" data-v="coverage">Coverage</div>
+  <div class="tab" data-v="onprem">On-Premise</div>
+</div>
+<div id="view"></div>
+</div>
+<script>
+const $=s=>document.querySelector(s), esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money=n=>n==null?'—':'$'+Number(n).toFixed(2), pct=n=>n==null?'—':n+'%', num=n=>(n==null?0:n).toLocaleString();
+let VIEW='merchants', MARKET='orlando', FTYPE='', FKIND='', FQ='';
+async function api(p){ const r=await fetch(p,{cache:'no-store'}); if(!r.ok) throw 0; return r.json(); }
+function offline(){ $('#view').innerHTML='<div class="empty">Couldn’t reach the engine. Start it (<code>./dev.sh</code>) or open the deployed suite.</div>'; }
+
+function setTab(v){ VIEW=v; document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.v===v)); render(); }
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>setTab(t.dataset.v));
+
+async function boot(){
+  let d; try{ d=await api('/api/market/list'); }catch(e){ return offline(); }
+  const ms=(d.markets&&d.markets.length)?d.markets:['orlando'];
+  MARKET=ms.includes('orlando')?'orlando':ms[0];
+  $('#msel').innerHTML=ms.map(m=>'<option'+(m===MARKET?' selected':'')+'>'+esc(m)+'</option>').join('');
+  $('#msel').onchange=e=>{ MARKET=e.target.value; render(); };
+  render();
+}
+async function render(){
+  if(VIEW==='merchants') return renderMerchants();
+  if(VIEW==='coverage')  return renderCoverage();
+  if(VIEW==='onprem')    return renderOnprem();
+}
+
+/* ── Merchants ── */
+async function renderMerchants(){
+  $('#view').innerHTML='<div class="empty">Loading '+esc(MARKET)+' merchants…</div>';
+  let s,l; try{ s=await api('/api/market/summary?market='+MARKET);
+    l=await api('/api/market/merchants?market='+MARKET+'&type='+FTYPE+'&kind='+FKIND+(FQ?'&q='+encodeURIComponent(FQ):'')); }
+  catch(e){ return offline(); }
+  const cov=s.coverage;
+  const stat=(b,sp,cls)=>'<div class="sc"><b class="'+(cls||'')+'">'+b+'</b><span>'+sp+'</span></div>';
+  let html='<div class="stats">'
+    +stat(num(s.total),'outlets')
+    +stat(num(s.retail)+' <small>/ '+num(s.restaurant)+'</small>','retail / on-prem')
+    +stat(num(s.independent)+' <small>/ '+num(s.chain)+'</small>','independent / chain','good')
+    +stat(cov?pct(cov.retail_coverage_pct):'—','vs google retail', cov&&cov.retail_coverage_pct>=70?'good':'gold')
+    +'</div>';
+  // cuisine chips (restaurants)
+  if(s.cuisines&&s.cuisines.length) html+='<div class="cuis">'+s.cuisines.map(c=>
+    '<span class="cchip" data-cui="'+esc(c.cuisine)+'">'+esc(c.cuisine)+' <b>'+c.n+'</b></span>').join('')+'</div>';
+  // filters
+  html+='<div class="toolbar">'
+    +'<span class="seg" id="ty"><button data-t="" class="'+(FTYPE===''?'on':'')+'">All</button>'
+      +'<button data-t="retail" class="'+(FTYPE==='retail'?'on':'')+'">Retail</button>'
+      +'<button data-t="restaurant" class="'+(FTYPE==='restaurant'?'on':'')+'">On-premise</button></span>'
+    +'<span class="seg" id="ki"><button data-k="" class="'+(FKIND===''?'on':'')+'">All</button>'
+      +'<button data-k="independent" class="'+(FKIND==='independent'?'on':'')+'">Independent</button>'
+      +'<button data-k="chain" class="'+(FKIND==='chain'?'on':'')+'">Chain</button></span>'
+    +'<input class="search" id="mq" placeholder="Filter by name or cuisine…" value="'+esc(FQ)+'">'
+    +'<span class="count">'+num(l.count)+' shown</span></div>';
+  html+=l.merchants.length?('<table><thead><tr><th>Outlet</th><th>Type</th><th>Kind</th><th>Cuisine</th></tr></thead><tbody>'
+    +l.merchants.map(m=>'<tr><td>'+esc(m.name)+'</td>'
+      +'<td>'+(m.type==='retail'?'<span class="pill">retail</span>':'<span class="pill">on-prem</span>')+'</td>'
+      +'<td>'+(m.is_chain?'<span class="pill ch">chain</span>':'<span class="pill ind">independent</span>')+'</td>'
+      +'<td>'+(m.cuisine?esc(m.cuisine):'<span style="color:var(--muted)">—</span>')+'</td></tr>').join('')
+    +'</tbody></table>'):'<div class="empty">No merchants match.</div>';
+  $('#view').innerHTML=html;
+  document.querySelectorAll('#ty button').forEach(b=>b.onclick=()=>{FTYPE=b.dataset.t;renderMerchants();});
+  document.querySelectorAll('#ki button').forEach(b=>b.onclick=()=>{FKIND=b.dataset.k;renderMerchants();});
+  document.querySelectorAll('.cchip').forEach(c=>c.onclick=()=>{FQ=c.dataset.cui;FTYPE='restaurant';renderMerchants();});
+  let t; $('#mq').oninput=e=>{clearTimeout(t);const v=e.target.value.trim();t=setTimeout(()=>{FQ=v;renderMerchants();},320);};
+}
+
+/* ── Coverage ── */
+async function renderCoverage(){
+  $('#view').innerHTML='<div class="empty">Loading coverage…</div>';
+  let d; try{ d=await api('/api/market/coverage?market='+MARKET); }catch(e){ return offline(); }
+  const c=d.coverage;
+  if(!c) return $('#view').innerHTML='<div class="note">Coverage hasn’t been computed for <b>'+esc(MARKET)+'</b> yet. '
+    +'It runs the merchant sweep against Google Maps (via Bright Data) and reports what fraction of the real-world '
+    +'alcohol universe we captured. Run <code>python place_coverage.py --market '+esc(MARKET)+'</code>.</div>';
+  const covbar=(label,p,matched,total)=>'<div class="sc" style="grid-column:span 2"><span>'+label+'</span>'
+    +'<div class="bar"><i style="width:'+Math.min(100,p||0)+'%"></i></div>'
+    +'<b class="'+(p>=70?'good':(p>=40?'gold':'bad'))+'" style="font-size:20px">'+pct(p)+'</b> '
+    +'<small>'+num(matched)+' of '+num(total)+' Google outlets on DoorDash</small></div>';
+  const stat=(b,sp,cls)=>'<div class="sc"><b class="'+(cls||'')+'">'+b+'</b><span>'+sp+'</span></div>';
+  $('#view').innerHTML=
+    '<div class="note">How complete is our sweep? We matched our DoorDash merchants against the alcohol outlets '
+      +'Google Maps knows in '+esc(MARKET)+'. Counts only — no Google content is stored.</div>'
+    +'<div class="stats">'
+      +stat(num(c.our_merchants),'our outlets')
+      +stat(num(c.google_alcohol_places),'google universe')
+      +stat(pct(c.confirmed_rate_pct),'google-confirmed', c.confirmed_rate_pct>=80?'good':'gold')
+      +stat(num(c.gap_retail+c.gap_onpremise),'gap (to add)','gold')
+    +'</div>'
+    +'<div class="stats">'
+      +covbar('Off-premise coverage', c.retail_coverage_pct, c.matched_retail, c.google_liquor_stores)
+      +covbar('On-premise coverage', c.onpremise_coverage_pct, c.matched_onpremise, c.google_bars_clubs)
+    +'</div>';
+}
+
+/* ── On-Premise ── */
+let OQ='';
+async function renderOnprem(a){
+  $('#view').innerHTML='<div class="empty">Loading on-premise…</div>';
+  let d; try{ d=await api('/api/market/onpremise'+(a?('?account='+encodeURIComponent(a)):(OQ?('?q='+encodeURIComponent(OQ)):''))); }catch(e){ return offline(); }
+  if(a){ // beverage menu for one account
+    const bevs=d.beverages||[]; const byCat={};
+    bevs.forEach(b=>{(byCat[b.category]=byCat[b.category]||[]).push(b);});
+    let html='<div class="toolbar"><span class="back" id="bk">← Accounts</span><span class="count">'+esc(a)+' · '+bevs.length+' beverages</span></div>';
+    Object.keys(byCat).sort().forEach(cat=>{
+      html+='<div class="cathd">'+esc(cat)+' · '+byCat[cat].length+'</div><table><tbody>'
+        +byCat[cat].map(b=>'<tr><td>'+esc(b.name)+(b.description?'<div style="color:var(--muted);font-size:12px">'+esc(b.description.slice(0,110))+'</div>':'')+'</td>'
+          +'<td style="width:120px">'+[b.base_spirit,b.beer_style,b.sub].filter(Boolean).map(x=>'<span class="pill">'+esc(x)+'</span>').join(' ')+'</td>'
+          +'<td class="count" style="width:60px;text-align:right;font-family:var(--mono)">'+money(b.price)+'</td></tr>').join('')
+        +'</tbody></table>';
+    });
+    $('#view').innerHTML=html; $('#bk').onclick=()=>renderOnprem();
+    return;
+  }
+  const accts=d.accounts||[];
+  let html='<div class="note">Restaurants & bars that <b>deliver alcohol</b> on DoorDash — the on-premise pour '
+    +'(cocktails, sake, beer, wine) with per-item descriptions and delivery price. Discovered via the market sweep.</div>'
+    +'<div class="toolbar"><input class="search" id="oq" placeholder="Filter by name or cuisine…" value="'+esc(OQ)+'">'
+    +'<span class="count">'+accts.length+' alcohol-serving accounts</span></div>';
+  html+=accts.length?('<table><thead><tr><th>Account</th><th>Cuisine</th><th>Beverages</th></tr></thead><tbody>'
+    +accts.map(a=>'<tr class="click" data-a="'+esc(a.account)+'"><td>'+esc(a.account)+'</td>'
+      +'<td>'+(a.cuisine?esc(a.cuisine):'—')+'</td><td class="count">'+(a.n_beverages||0)+'</td></tr>').join('')
+    +'</tbody></table>'):'<div class="empty">No on-premise accounts landed yet. Run the NAOP pull on alcohol-serving restaurants.</div>';
+  $('#view').innerHTML=html;
+  document.querySelectorAll('[data-a]').forEach(r=>r.onclick=()=>renderOnprem(r.dataset.a));
+  let t; const el=$('#oq'); if(el) el.oninput=e=>{clearTimeout(t);const v=e.target.value.trim();t=setTimeout(()=>{OQ=v;renderOnprem();},320);};
+}
+boot();
+</script></body></html>
