@@ -151,36 +151,54 @@ def token():
     return d.get("access_token")
 
 
-def locations(tok, zip_code, limit=2):
-    q = urllib.parse.urlencode({"filter.zipCode.near": zip_code, "filter.limit": limit})
-    d = _req("%s/locations?%s" % (API, q), {"Authorization": "Bearer " + tok})
+# store-level SCALE knobs (env-tunable so a run can be dialed small for a check or full for the whole banner):
+#   KROGER_STORES_PER_ZIP (default 50, Kroger caps filter.limit at 200) — how many stores to enumerate per ZIP
+#   KROGER_RADIUS         (miles, optional) — widen each ZIP's store search to reach the full metro
+#   KROGER_MAX_PER_TERM   (default 250, Kroger caps filter.start at 250) — paginate the per-store catalog per term
+def locations(tok, zip_code, limit=None, radius=None):
+    limit = int(limit or os.environ.get("KROGER_STORES_PER_ZIP", "50"))
+    params = {"filter.zipCode.near": zip_code, "filter.limit": min(max(limit, 1), 200)}
+    radius = radius or os.environ.get("KROGER_RADIUS")
+    if radius:
+        params["filter.radiusInMiles"] = radius
+    d = _req("%s/locations?%s" % (API, urllib.parse.urlencode(params)), {"Authorization": "Bearer " + tok})
     return [(loc["locationId"], loc.get("name", ""),
              (loc.get("address", {}) or {}).get("city", ""), (loc.get("address", {}) or {}).get("state", ""))
             for loc in d.get("data", [])]
 
 
-def products(tok, term, location_id, limit=25):
-    q = urllib.parse.urlencode({"filter.term": term, "filter.locationId": location_id, "filter.limit": limit})
-    d = _req("%s/products?%s" % (API, q), {"Authorization": "Bearer " + tok})
-    out = []
-    for p in d.get("data", []):
-        it = (p.get("items") or [{}])[0]
-        price = it.get("price") or {}
-        inv = it.get("inventory") or {}
-        stock = inv.get("stockLevel", "")
-        cats = p.get("categories") or []
-        name = p.get("description", "")
-        out.append(dict(
-            product_id=p.get("productId", ""), upc=p.get("upc", ""), brand=(p.get("brand") or ""),
-            product_name=name,
-            category=", ".join(cats),
-            size=it.get("size", ""), price=price.get("regular"), promo=price.get("promo"),
-            on_promo=bool(price.get("promo") and price.get("regular") and price["promo"] < price["regular"]),
-            stock_level=stock, in_stock=(stock not in ("", "TEMPORARILY_OUT_OF_STOCK")),
-            image_url=_front_image(p),              # bottle shot
-            is_hemp=observe.is_hemp(p.get("brand"), name, " ".join(cats)),
-            raw_json=json.dumps(p),                 # keep EVERYTHING — rather have it and not need it
-            location_id=location_id, term=term))
+def _parse_product(p, location_id, term):
+    it = (p.get("items") or [{}])[0]
+    price = it.get("price") or {}
+    stock = (it.get("inventory") or {}).get("stockLevel", "")
+    cats = p.get("categories") or []
+    name = p.get("description", "")
+    return dict(
+        product_id=p.get("productId", ""), upc=p.get("upc", ""), brand=(p.get("brand") or ""),
+        product_name=name, category=", ".join(cats),
+        size=it.get("size", ""), price=price.get("regular"), promo=price.get("promo"),
+        on_promo=bool(price.get("promo") and price.get("regular") and price["promo"] < price["regular"]),
+        stock_level=stock, in_stock=(stock not in ("", "TEMPORARILY_OUT_OF_STOCK")),
+        image_url=_front_image(p), is_hemp=observe.is_hemp(p.get("brand"), name, " ".join(cats)),
+        raw_json=json.dumps(p), location_id=location_id, term=term)
+
+
+def products(tok, term, location_id, limit=50, max_items=None):
+    """PAGINATE the per-store catalog for a term (was a single 25-item page). Kroger returns up to 50/page and
+    accepts filter.start up to 250, so this walks the pages to ~250 products/term/store."""
+    max_items = int(max_items or os.environ.get("KROGER_MAX_PER_TERM", "250"))
+    out, start = [], 0
+    while start < max_items:
+        take = min(limit, max_items - start, 50)
+        params = {"filter.term": term, "filter.locationId": location_id, "filter.limit": take}
+        if start:
+            params["filter.start"] = start
+        d = _req("%s/products?%s" % (API, urllib.parse.urlencode(params)), {"Authorization": "Bearer " + tok})
+        batch = d.get("data", []) or []
+        out.extend(_parse_product(p, location_id, term) for p in batch)
+        if len(batch) < take:                     # short page → last page
+            break
+        start += take
     return out
 
 

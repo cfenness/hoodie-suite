@@ -84,7 +84,7 @@ _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
 VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
-               "kroger", "walmart", "target", "doordash", "google"} | set(socrata_outlets.VALID)
+               "kroger", "walmart", "walmart-api", "target", "doordash", "google"} | set(socrata_outlets.VALID)
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
@@ -259,8 +259,23 @@ def google_pull(body):
     return _std_run("google", started, total=n, trigger=body.get("trigger", "manual"),
                     extracts=[{"id": "%s_outlet_hours" % market, "rows": n, "delta": 0, "status": "success"}])
 
-_CONN_PULL = {"kroger": kroger_pull, "walmart": walmart_pull, "target": target_pull,
-              "doordash": doordash_pull, "google": google_pull}
+def walmart_api_pull(body):
+    """Walmart bev-alc CATALOG via the OFFICIAL Walmart I/O Affiliate API (direct, no Bright Data). Needs
+    WALMART_CONSUMER_ID + WALMART_PRIVATE_KEY(_FILE) (enroll at walmart.io). Lands walmart_products (accumulates)."""
+    started = int(time.time() * 1000); body = body or {}
+    import walmart_api
+    terms = [t.strip() for t in (body.get("terms") or "").split(",") if t.strip()] or None
+    res = walmart_api.run(terms, max_per_term=int(body.get("max_per_term", 1000)),
+                          log=lambda m: app.logger.info("WMAPI %s", m))
+    if not res:
+        return _std_run("walmart-api", started, status="degraded", trigger=body.get("trigger", "manual"),
+                        warnings=["Walmart I/O creds missing — set WALMART_CONSUMER_ID + WALMART_PRIVATE_KEY (enroll at walmart.io)"])
+    n = _wh_count("walmart_products")
+    return _std_run("walmart-api", started, total=n, trigger=body.get("trigger", "manual"),
+                    extracts=[{"id": "walmart_products", "rows": n, "delta": 0, "status": "success"}])
+
+_CONN_PULL = {"kroger": kroger_pull, "walmart": walmart_pull, "walmart-api": walmart_api_pull,
+              "target": target_pull, "doordash": doordash_pull, "google": google_pull}
 
 # The connector registry — ONE source of truth the Pulls console reads (/api/connectors): what sources exist,
 # how they run, their warehouse data + <x>_runs table (for last-run), and whether they're enabled (on/off).
@@ -272,7 +287,8 @@ CONNECTORS_META = [
     {"id": "shopify-dtc", "label": "Shopify DTC", "group": "Off-premise", "runs": "shopify_runs", "data": "shopify_products"},
     {"id": "instacart", "label": "Instacart", "group": "Aggregator", "runs": None, "data": None},
     {"id": "kroger", "label": "Kroger", "group": "Grocery chain", "runs": "kroger_runs", "data": "kroger_products", "needs_creds": True},
-    {"id": "walmart", "label": "Walmart", "group": "Grocery chain", "runs": "walmart_runs", "data": "walmart_products", "heavy": True},
+    {"id": "walmart", "label": "Walmart (BD sample)", "group": "Grocery chain", "runs": "walmart_runs", "data": "walmart_products", "heavy": True},
+    {"id": "walmart-api", "label": "Walmart catalog (Walmart I/O API)", "group": "Grocery chain", "runs": "walmart_runs", "data": "walmart_products", "needs_creds": True},
     {"id": "target", "label": "Target", "group": "Grocery chain", "runs": None, "data": "target_products", "heavy": True},
     {"id": "doordash", "label": "DoorDash (market sweep)", "group": "Aggregator", "runs": None, "data": "orlando_merchants", "heavy": True, "toggle": True},
     {"id": "google", "label": "Google Maps (coverage)", "group": "Reference", "runs": None, "data": "orlando_outlet_hours", "heavy": True, "toggle": True},
