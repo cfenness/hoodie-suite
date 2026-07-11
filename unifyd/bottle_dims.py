@@ -119,7 +119,10 @@ def cross_check(read, declared):
             out[f] = {"label": lv, "declared": None, "agrees": None, "action": "fill_candidate"}
         else:
             if f == "net_contents":                            # compare in mL, not string form
-                lm, dm = _to_ml(str(lv)), _to_ml(str(dv))
+                def _ml(x):
+                    m = _to_ml(str(x))
+                    return m if m is not None else (float(x) if re.fullmatch(r"\s*[\d.]+\s*", str(x)) else None)
+                lm, dm = _ml(lv), _ml(dv)
                 agrees = bool(lm and dm and abs(lm - dm) < 1)
             elif f in ("abv", "vintage"):                      # compare numbers (ABV within 0.6%)
                 ln, dn = re.search(r"[\d.]+", str(lv)), re.search(r"[\d.]+", str(dv))
