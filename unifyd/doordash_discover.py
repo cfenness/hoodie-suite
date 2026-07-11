@@ -127,7 +127,10 @@ def run(chains, metros=None, use_browser=True, log=print):
             time.sleep(0.3)
         log("[%s] confirmed %d %s stores" % (ch, kept, name))
     if rows:
-        warehouse.write_parquet("doordash_stores", rows)
+        # ACCUMULATE — doordash_stores is the single national spine that fans every DoorDash connector; a
+        # per-chain run must GROW it, not overwrite all previously-discovered chains.
+        warehouse.write_accumulate("doordash_stores", rows,
+                                   key=lambda r: r.get("store_id") or r.get("fid") or r.get("url") or r.get("name"))
         log("[discover] %d stores across %d chains -> doordash_stores"
             % (len(rows), len({r["chain"] for r in rows})))
     return rows

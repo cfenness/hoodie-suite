@@ -334,7 +334,9 @@ def run_census(market="orlando", platforms=("Shopify",), census=None, out=None, 
                              **dd._parse_pack(it["name"])))
         log("  [off] %-26s (%s) -> %d products" % (s["account"][:26], s["platform"], len(items)))
     if rows:
-        warehouse.write_parquet(out, rows)
+        # ACCUMULATE — `out` is per-market but filled by a PLATFORM-filtered subset; running for one platform
+        # then another into the same table must not wipe the first platform's products.
+        warehouse.write_accumulate(out, rows, key=lambda r: (r.get("account") or r.get("store"), r.get("name")))
     log("[off] %d products -> %s" % (len(rows), out))
     return rows
 

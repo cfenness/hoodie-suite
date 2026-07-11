@@ -182,7 +182,8 @@ def run(stores=None, terms=None, pages=2, log=print):
                 time.sleep(1.0)
         log("  [target] store %s (%s) — %d products" % (store, state, got))
     if rows:
-        warehouse.write_parquet("target_products", rows)
+        # ACCUMULATE — a small/CLI-scoped run() must not overwrite the national catalog run_national builds.
+        warehouse.write_accumulate("target_products", rows, key=lambda r: r.get("tcin") or r.get("product_id"))
         observe.record("target", [dict(store=r["store"], store_id=r["store_id"], product_id=r["tcin"],
                                         brand=r["brand"], name=r["name"], price=r["price"],
                                         in_stock=r["in_stock"], qty=r["qty"], is_hemp=r.get("is_hemp")) for r in rows])

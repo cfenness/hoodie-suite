@@ -107,7 +107,9 @@ def run(markets=None, browser_auth=None):
                 seen.add(k); r.update(store=store, market=label, source="publix"); rows.append(r); n += 1
             print("  [publix] %-28s (%s) — %d deals" % (label, store, n))
     if rows:
-        warehouse.write_parquet("publix_products", rows)
+        # ACCUMULATE — a partial-market run() must not wipe other markets' weekly-ad rows.
+        warehouse.write_accumulate("publix_products", rows,
+                                   key=lambda r: (r.get("market"), r.get("store"), r.get("name")))
         observe.record("publix", [dict(store=r["store"], product_id="", name=r["name"], brand="",
                                         price=r.get("savings"), on_promo=True, in_stock=True,
                                         is_hemp=r.get("is_hemp")) for r in rows])
