@@ -1669,16 +1669,26 @@ def _wq(ds, sql, params=None):
 @app.get("/api/master/workbench/summary")
 def mwb_summary_ep():
     from collections import Counter
-    master = _wq("ttb_master", "SELECT corroborated_by, confidence, member_count FROM t")
+    master = _wq("ttb_master", "SELECT corroborated_by, confidence, member_count, matched_by FROM t")
     review = _wq("ttb_review", "SELECT count(*) n FROM t")
     quar = _wq("ttb_quarantine_summary", "SELECT sum(candidates) n FROM t")
+    decisions = _wq("master_decisions", "SELECT tier FROM t")
     by = Counter(m.get("corroborated_by") for m in master)
-    return jsonify(ok=True, master=len(master),
-                   review=(review[0]["n"] if review else 0),
-                   quarantine=(quar[0]["n"] if quar and quar[0].get("n") else 0),
-                   collapsed=sum((m.get("member_count") or 0) for m in master),
+    mby = Counter((m.get("matched_by") or "auto") for m in master)
+    quar_n = (quar[0]["n"] if quar and quar[0].get("n") else 0)
+    review_n = (review[0]["n"] if review else 0)
+    collapsed = sum((m.get("member_count") or 0) for m in master)
+    # Funnel stages, from real state. senior/steward come from the human-decision log (empty until anyone
+    # escalates); analyst = the pending review queue; confirmed = everything promoted into ttb_master.
+    stages = {"candidates": review_n + quar_n + collapsed,
+              "auto": mby.get("auto", 0), "claude": mby.get("claude", 0),
+              "analyst": review_n,
+              "senior": sum(1 for d in decisions if d.get("tier") == "senior"),
+              "steward": sum(1 for d in decisions if d.get("tier") == "steward"),
+              "confirmed": len(master)}
+    return jsonify(ok=True, master=len(master), review=review_n, quarantine=quar_n, collapsed=collapsed,
                    avg_confidence=round(sum((m.get("confidence") or 0) for m in master) / max(1, len(master)), 3),
-                   by_source=[{"source": k, "n": v} for k, v in by.most_common()])
+                   stages=stages, by_source=[{"source": k, "n": v} for k, v in by.most_common()])
 
 
 @app.get("/api/master/workbench/master")
@@ -1713,6 +1723,66 @@ def mwb_item_ep(cid):
         filings = _wq("ttb_cola", 'SELECT "TTB ID","Brand Name","Fanciful Name","Class/Type","Net Contents",'
                       '"Applicant","Status","Completed Date","UPC" FROM t WHERE "TTB ID" IN (%s)' % ph, ttbids)
     return jsonify(ok=True, item=m, filings=filings)
+
+
+@app.get("/api/master/workbench/candidates/<cid>")
+def mwb_candidates_ep(cid):
+    """The RANKED possible clusters a record could belong to — the disambiguation the workbench is built on.
+    #1 is the cluster's own proposed home (its real confidence); the rest are other clusters that share the
+    brand and overlap on name (potential duplicates / near-misses), scored by token Jaccard. A big gap to #2
+    (or a high #1) means low ambiguity; a near-tie means a human should decide."""
+    base = _wq("ttb_review", "SELECT * FROM t WHERE cluster_id = ?", [cid]) or \
+        _wq("ttb_master", "SELECT * FROM t WHERE cluster_id = ?", [cid])
+    if not base:
+        return jsonify(ok=False, error="not found"), 404
+    base = base[0]
+    brand = (base.get("brand") or "").strip().lower()
+    ntok = set(re.findall(r"[a-z0-9]+", (base.get("candidate_name") or "").lower()))
+    cols = "cluster_id, brand, candidate_name, class_type, confidence, tier, corroborated_by, member_count, size_ml, upc, matched_by"
+    pool = []
+    if brand:
+        pool = _wq("ttb_master", "SELECT %s FROM t WHERE lower(brand) = ?" % cols, [brand]) + \
+               _wq("ttb_review", "SELECT %s FROM t WHERE lower(brand) = ?" % cols, [brand])
+
+    def jac(c):
+        t = set(re.findall(r"[a-z0-9]+", (c.get("candidate_name") or "").lower()))
+        return round(len(ntok & t) / len(ntok | t), 2) if (ntok and t) else 0.0
+
+    def keys_of(c, extra=None):
+        k = []
+        if c.get("upc"):
+            k.append("upc:" + c["upc"])
+        if c.get("brand"):
+            k.append("brand:" + c["brand"].lower().replace(" ", "-"))
+        if c.get("size_ml"):
+            k.append("size:" + str(c["size_ml"]) + "ml")
+        if c.get("class_type"):
+            k.append("class:" + c["class_type"].lower()[:24])
+        return (k + (extra or []))[:5]
+
+    cands = [{"cluster_id": cid, "name": base.get("candidate_name") or base.get("brand"), "grain": "sku",
+              "table": "ttb_" + ("master" if base.get("tier") == 1 else "review"),
+              "conf": round(base.get("confidence") or 0, 2), "win": True,
+              "why": "Proposed cluster — %s match, corroborated by %s (%s member filing%s)." % (
+                  base.get("match_kind") or "partial", base.get("corroborated_by") or "no source yet",
+                  base.get("member_count") or 0, "" if base.get("member_count") == 1 else "s"),
+              "keys": keys_of(base, ["match:" + (base.get("match_kind") or "partial")])}]
+    seen = {cid}
+    alts = []
+    for c in pool:
+        if c["cluster_id"] in seen:
+            continue
+        seen.add(c["cluster_id"])
+        s = jac(c)
+        if s <= 0.15:
+            continue
+        alts.append({"cluster_id": c["cluster_id"], "name": c.get("candidate_name") or c.get("brand"), "grain": "sku",
+                     "table": "ttb_" + ("master" if c.get("tier") == 1 else "review"), "conf": s,
+                     "why": "Same brand (%s); name overlaps %d%% — a potential duplicate cluster." % (
+                         base.get("brand") or "", int(s * 100)),
+                     "keys": keys_of(c)})
+    alts.sort(key=lambda x: -x["conf"])
+    return jsonify(ok=True, cluster_id=cid, candidates=cands + alts[:4])
 
 
 @app.get("/api/master/workbench/review")

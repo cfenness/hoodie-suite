@@ -225,7 +225,7 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
   <div class="hd">
     <h1>Matching workbench</h1>
     <span class="sub">Rank the possible clusters, read the justification, decide — or step it up.</span>
-    <span class="run"><span class="role"><span class="dot analyst"></span>Reviewing as Analyst</span><span>Run <b>master-2026-07-11</b> · <b class="num">12,481</b> candidates</span></span>
+    <span class="run"><span class="role"><span class="dot analyst"></span>Reviewing as Analyst</span><span>Run <b>latest</b> · <b class="num" id="runcand">—</b> candidates</span></span>
   </div>
 
   <div class="funnel" id="funnel">
@@ -247,10 +247,8 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
       <div class="tabs" id="tabs">
         <button class="tab on" data-f="all">All</button>
         <button class="tab" data-f="ambiguous">Ambiguous</button>
-        <button class="tab" data-f="sku">SKU</button>
-        <button class="tab" data-f="item">Item</button>
-        <button class="tab" data-f="product">Product</button>
-        <button class="tab" data-f="outlet">Outlet</button>
+        <button class="tab" data-f="corroborated">Corroborated</button>
+        <button class="tab" data-f="noupc">No UPC</button>
       </div>
       <div class="qlist" id="qlist"></div>
     </aside>
@@ -259,293 +257,210 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 </div>
 
 <script>
-const HI_CONF = 0.95, BIG_GAP = 0.20;
+const API="/api/master/workbench";
+const HI_CONF=0.95, BIG_GAP=0.20;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const stageLabel={auto:"Auto",claude:"Claude",analyst:"Analyst",senior:"Sr Analyst",steward:"Steward",confirmed:"Confirmed",review:"Analyst",conflict:"Conflict",match:"Auto"};
+const TIER_LABEL={senior:"senior analyst", steward:"steward"};
+const STAGE_TITLE={all:"All candidates",candidates:"All candidates",auto:"Auto-matched",claude:"Claude-adjudicated",analyst:"Analyst queue",senior:"Senior-analyst queue",steward:"Steward queue",confirmed:"Confirmed to master"};
+let STUBS=[], STAGES={}, FILT={stage:"analyst",facet:"all",q:""};
+
+function titlecase(s){ return String(s||"").replace(/\w\S*/g,t=>t.charAt(0).toUpperCase()+t.slice(1)); }
+
+// verdict from the ranked candidates. #1 is the proposed home (its match confidence); alternatives are
+// same-brand clusters scored by name overlap. A same-brand cluster scoring as high = a likely duplicate.
 function verdictOf(cands){
-  const top = cands[0].conf, second = cands[1] ? cands[1].conf : 0, gap = +(top-second).toFixed(2);
-  if(top >= HI_CONF) return {kind:"high", label:"High-confidence match", note:`Top candidate ${top.toFixed(2)} clears the ${HI_CONF} bar — auto-confirm eligible.`, gap};
-  if(gap >= BIG_GAP) return {kind:"clear", label:"Clear winner", note:`+${gap.toFixed(2)} gap over #2 — one candidate stands out, low ambiguity.`, gap};
-  return {kind:"ambiguous", label:"Ambiguous — a human decides", note:`Top ${top.toFixed(2)} is below ${HI_CONF} and only +${gap.toFixed(2)} over #2. Too close to call automatically.`, gap};
+  const base=cands[0].conf, alts=cands.slice(1);
+  const topAlt=alts.length?Math.max.apply(null,alts.map(a=>a.conf)):0;
+  if(alts.length && topAlt>=base) return {kind:"ambiguous",label:"Possible duplicate cluster",note:`A same-brand cluster scores ${topAlt.toFixed(2)} — as high as the proposed home. Likely a duplicate to merge.`};
+  if(base>=HI_CONF) return {kind:"high",label:"High-confidence match",note:`Proposed cluster ${base.toFixed(2)} clears the ${HI_CONF} bar — auto-eligible.`};
+  if(!alts.length) return {kind:"clear",label:"No competing cluster",note:`No other cluster shares this brand + name — the proposed home stands alone.`};
+  const gap=+(base-topAlt).toFixed(2);
+  if(gap>=BIG_GAP) return {kind:"clear",label:"Clear winner",note:`+${gap.toFixed(2)} over the nearest same-brand cluster — low ambiguity.`};
+  return {kind:"ambiguous",label:"Ambiguous — a human decides",note:`Only +${gap.toFixed(2)} over a same-brand cluster — too close to call automatically.`};
 }
 
-const CLUSTERS = [
-  { id:"espolon-blanco-750", grain:"sku", stage:"analyst", qshort:"Espolòn Blanco 750 mL", note:"clear · +0.49 gap · 1 to split",
-    subject:{label:"Espolon Silver Tequila 750 mL", src:"Kroger", id:"#KR-1902773"},
-    name:"Espolòn Tequila Blanco 750 mL", table:"dim_sku",
-    meta:[["Category","Tequila · Blanco"],["ABV","40.0%"],["NOM","1440"],["Size","750 mL"]],
-    candidates:[
-      {name:"Espolòn Blanco 750 mL", grain:"sku", table:"dim_sku", conf:0.91, win:true,
-       why:"GTIN-14, brand and size all align. Kroger's \"Silver\" is a labeling synonym for Blanco in tequila — the same expression, not a different product.",
-       keys:["GTIN-14 = 811538010203","brand:espolon","size:750ml","variant:silver→blanco"]},
-      {name:"Espolòn Reposado 750 mL", grain:"sku", table:"dim_sku", conf:0.42,
-       why:"Same brand and size, but Reposado is an aged expression. The DoorDash record that reads \"Reposado\" belongs HERE, not with Blanco.", keys:["brand:espolon","size:750ml","variant:reposado ✗"]},
-      {name:"Espolòn Añejo 750 mL", grain:"sku", table:"dim_sku", conf:0.27,
-       why:"Same brand only. Añejo is further-aged and higher-priced — name overlaps on \"Espolon\" but little else.", keys:["brand:espolon","variant:añejo ✗"]}
-    ],
-    hierarchy:[{g:"Brand",n:"Espolòn",c:"dim_brand · 11 skus"},{g:"Product",n:"Espolòn Blanco",c:"dim_product · 3 items"},{g:"Item",n:"Espolòn Blanco 750",c:"dim_item · 2 skus"},{g:"Sku",n:"Espolòn Blanco 750 mL",c:"UPC 811538010203",here:true}],
-    records:[
-      {src:"TTB COLA",id:"#21089001000123",raw:"ESPOLON TEQUILA BLANCO",by:"auto",key:"GTIN-14 811538010203",conf:1.00,status:"match",fields:[["abv","40.0%","agree"],["size","750 mL","agree"],["nom","1440","agree"]]},
-      {src:"Total Wine",id:"#TW-88213",raw:"Espolòn Blanco Tequila (750 ml)",by:"auto",key:"GTIN-14 811538010203",conf:1.00,status:"match",fields:[["abv","40%","agree"],["size","750 mL","agree"]]},
-      {src:"Kroger",id:"#KR-1902773",raw:"Espolon Silver Tequila 750 mL",by:"claude",key:"name-variant",conf:0.91,status:"claude",fields:[["variant","Silver → Blanco","agree"],["size","750 mL","agree"]]},
-      {src:"DoorDash",id:"#DD-70418",raw:"Espolon Reposado 750 mL",by:"review",key:"fuzzy 0.74",conf:0.74,status:"conflict",fields:[["variant","Reposado ≠ Blanco","diff"],["size","750 mL","agree"]]}
-    ],
-    evidence:{det:[["GTIN-14","00811538010203"],["Brand key","md5:espolon"],["Item key","espolon|blanco|750"],["Sources agreeing","3 of 4"]],fuzzy:0.91,
-      claude:"Silver = Blanco for tequila, so Kroger folds into the winner. The DoorDash \"Reposado\" is candidate #2's record — split it off before confirming."},
-    flags:[{t:"DoorDash \"Espolon Reposado\" scores higher against candidate #2 — split it to Reposado.",act:"Split off",kind:"conflict"}]
-  },
-  { id:"josh-cabernet", grain:"product", stage:"analyst", ambiguous:true, qshort:"Josh Cellars Cabernet", note:"ambiguous · vintage vs NV",
-    subject:{label:"Josh Cellars Cabernet Sauvignon", src:"Target", id:"#TG-55021"},
-    name:"Josh Cellars Cabernet Sauvignon", table:"dim_product",
-    meta:[["Category","Wine · Red"],["Varietal","Cabernet Sauvignon"],["Vintage","disputed"],["Size","750 mL"]],
-    candidates:[
-      {name:"Josh Cellars Cabernet 2021", grain:"product", table:"dim_product", conf:0.55, win:true,
-       why:"Two sources cite 2021 and the label OCR reads 2021 — but vintage is a SKU attribute in our model, so splitting products by vintage may be the wrong grain.", keys:["brand:josh-cellars","varietal:cabernet","vintage:2021"]},
-      {name:"Josh Cellars Cabernet (NV)", grain:"product", table:"dim_product", conf:0.52,
-       why:"A retailer omits the vintage entirely; only 0.03 behind #1. This is exactly why vintage shouldn't gate identity.", keys:["brand:josh-cellars","varietal:cabernet","vintage:none"]},
-      {name:"Josh Cellars Reserve Cabernet", grain:"product", table:"dim_product", conf:0.34,
-       why:"\"Reserve\" is a distinct product line at a higher price — a real different product, not a vintage.", keys:["brand:josh-cellars","line:reserve ✗"]}
-    ],
-    hierarchy:[{g:"Brand",n:"Josh Cellars",c:"dim_brand"},{g:"Product",n:"Josh Cabernet Sauvignon",c:"vintage = attribute",here:true},{g:"Item",n:"Josh Cabernet 750",c:"dim_item"},{g:"Sku",n:"Josh Cabernet 750 mL",c:"vintage-stripped id"}],
-    records:[
-      {src:"Target",id:"#TG-55021",raw:"Josh Cellars Cabernet Sauvignon 2021",by:"review",key:"fuzzy 0.55",conf:0.55,status:"review",fields:[["vintage","2021","diff"],["size","750 mL","agree"]]},
-      {src:"Total Wine",id:"#TW-61220",raw:"Josh Cellars Cabernet 2021 (750 ml)",by:"claude",key:"vintage-match",conf:0.53,status:"claude",fields:[["vintage","2021","agree"],["varietal","Cabernet","agree"]]},
-      {src:"Kroger",id:"#KR-88320",raw:"Josh Cabernet Sauvignon",by:"review",key:"fuzzy 0.52",conf:0.52,status:"review",fields:[["vintage","— none —","diff"],["varietal","Cabernet","agree"]]}
-    ],
-    evidence:{det:[["Brand key","md5:josh-cellars"],["Vintage as identity?","NO (policy)"],["Sources agreeing","2021 ×2 · NV ×1"]],fuzzy:0.55,
-      claude:"The 2021 and NV records are the same product under the vintage-is-an-attribute rule. But #1 and #2 sit +0.03 apart, so the engine won't collapse them automatically — an analyst applies the policy."},
-    flags:[{t:"Per policy, vintage collapses to one product. Apply it to merge 2021 + NV, keeping vintage on the sku.",act:"Apply policy",kind:"review"}]
-  },
-  { id:"titos-1l", grain:"item", stage:"claude", qshort:"Tito's Handmade Vodka 1 L", note:"high 0.97 · confirm",
-    subject:{label:"Titos Vodka 1 Liter", src:"Kroger", id:"#KR-771820"},
-    name:"Tito's Handmade Vodka 1 L", table:"dim_item",
-    meta:[["Category","Vodka"],["ABV","40.0%"],["Size","1 L"],["Skus in item","2"]],
-    candidates:[
-      {name:"Tito's Handmade Vodka 1 L", grain:"item", table:"dim_item", conf:0.97, win:true,
-       why:"All sources normalize to this item once \"Titos\"→\"Tito's\" and \"33.8 fl oz\"→\"1 L\" resolve. Two UPCs are packaging skus beneath it.", keys:["brand:titos","name:handmade-vodka","size:1000ml","norm:oz→ml"]},
-      {name:"Tito's Handmade Vodka 750 mL", grain:"item", table:"dim_item", conf:0.31,
-       why:"Same product, different size — none of these records state 750 mL, so this loses decisively.", keys:["brand:titos","size:750ml ✗"]}
-    ],
-    hierarchy:[{g:"Brand",n:"Tito's",c:"dim_brand · 6 skus"},{g:"Product",n:"Tito's Handmade Vodka",c:"dim_product · 5 items"},{g:"Item",n:"Tito's Handmade Vodka 1 L",c:"dim_item · 2 skus",here:true},{g:"Sku",n:"— 2 packaging skus —",c:"UPC …013 · …112"}],
-    records:[
-      {src:"Walmart",id:"#WM-330214",raw:"Tito's Handmade Vodka, 1 L Bottle",by:"auto",key:"GTIN-14 619947000013",conf:1.00,status:"match",fields:[["size","1 L","agree"],["upc","619947000013","agree"]]},
-      {src:"Kroger",id:"#KR-771820",raw:"Titos Vodka 1 Liter",by:"claude",key:"name-normalize",conf:0.94,status:"claude",fields:[["brand","Titos → Tito's","agree"],["size","1 L","agree"]]},
-      {src:"Target",id:"#TG-40028",raw:"Tito's Handmade Vodka - 1L (33.8 fl oz)",by:"claude",key:"size-normalize",conf:0.92,status:"claude",fields:[["size","33.8 oz → 1 L","agree"]]}
-    ],
-    evidence:{det:[["Brand key","md5:titos"],["Item key","titos|handmade-vodka|1000ml"],["Sources agreeing","3 of 3"],["UPCs seen","2 (packaging)"]],fuzzy:0.97,
-      claude:"Unambiguous once size normalizes. Above the auto bar — the kind of match that shouldn't need a human at all."},
-    flags:[{t:"Two UPCs roll up as sibling skus — confirm they're packaging, not different products.",act:"Review skus",kind:"review"}]
-  },
-  { id:"whispering-angel", grain:"product", stage:"senior", ambiguous:true, qshort:"Whispering Angel Rosé", note:"escalated · vintage split",
-    subject:{label:"Whispering Angel Rosé (Côtes de Provence)", src:"Instacart", id:"#IC-90233"},
-    name:"Whispering Angel Rosé", table:"dim_product",
-    meta:[["Category","Wine · Rosé"],["Region","Côtes de Provence"],["Vintage","disputed"],["Size","750 mL"]],
-    candidates:[
-      {name:"Whispering Angel Rosé 2023", grain:"product", table:"dim_product", conf:0.51, win:true,
-       why:"Two sources state 2023 and the label OCR reads 2023 — but per policy vintages are a SKU attribute, so this may not be the right grain to split on at all.", keys:["brand:whispering-angel","vintage:2023","label-ocr:2023"]},
-      {name:"Whispering Angel Rosé 2022", grain:"product", table:"dim_product", conf:0.47,
-       why:"Two other sources say 2022; one is undated. Only 0.04 behind — the vintages are nearly tied.", keys:["brand:whispering-angel","vintage:2022"]},
-      {name:"Whispering Angel Rosé (NV)", grain:"product", table:"dim_product", conf:0.38,
-       why:"A retailer lists it with no vintage — exactly why the vintage shouldn't gate identity.", keys:["brand:whispering-angel","vintage:none"]}
-    ],
-    hierarchy:[{g:"Brand",n:"Whispering Angel",c:"Château d'Esclans"},{g:"Product",n:"Whispering Angel Rosé",c:"vintage = attribute",here:true},{g:"Item",n:"Whispering Angel Rosé 750",c:"dim_item"},{g:"Sku",n:"Whispering Angel Rosé 750 mL",c:"vintage-stripped id"}],
-    records:[
-      {src:"Total Wine",id:"#TW-51002",raw:"Whispering Angel Rosé 2023 (750 ml)",by:"review",key:"fuzzy 0.51",conf:0.51,status:"review",fields:[["vintage","2023","diff"],["size","750 mL","agree"]]},
-      {src:"ABC FWS",id:"#A-77140",raw:"Whispering Angel Cotes de Provence 2022",by:"review",key:"fuzzy 0.47",conf:0.47,status:"conflict",fields:[["vintage","2022","diff"],["region","Provence","agree"]]},
-      {src:"Instacart",id:"#IC-90233",raw:"Whispering Angel Rosé",by:"review",key:"fuzzy 0.38",conf:0.38,status:"review",fields:[["vintage","— none —","diff"],["size","750 mL","agree"]]}
-    ],
-    evidence:{det:[["Brand key","md5:whispering-angel"],["Vintage as identity?","NO (policy)"],["Sources agreeing","split 2/2/1"]],fuzzy:0.51,
-      claude:"The split is entirely on vintage. Under the rule \"vintages collapse to one product,\" all three merge with vintage recorded per-sku — but that's a policy call, so escalating."},
-    flags:[{t:"Vintage-driven split. Policy says vintages collapse — a steward confirms the rule applies here.",act:"Send to steward",kind:"review"}]
-  },
-  { id:"publix-1420", grain:"outlet", stage:"senior", ambiguous:true, qshort:"Publix #1420 — Orlando", note:"escalated · +0.03 gap",
-    subject:{label:"Publix Super Market #1420", src:"Google Maps", id:"#g-9931"},
-    name:"Publix Super Market #1420", table:"dim_outlet_resolved",
-    meta:[["Type","Grocery · off-premise"],["City","Orlando, FL"],["ZIP","32804"],["Sources","3"]],
-    candidates:[
-      {name:"Publix #1420 — 800 N Orange Ave", grain:"outlet", table:"dim_outlet_resolved", conf:0.62, win:true,
-       why:"Google's pin is 40 m from store #1420's address. But store #1188 is one block away, so geo alone doesn't decide it.", keys:["chain:publix","geo:40m","zip:32804"]},
-      {name:"Publix #1188 — 700 N Orange Ave", grain:"outlet", table:"dim_outlet_resolved", conf:0.59,
-       why:"Adjacent store, same corridor and ZIP — only 0.03 behind. The name in the source doesn't carry a store number to break the tie.", keys:["chain:publix","geo:90m","zip:32804"]},
-      {name:"Publix Liquors #1420", grain:"outlet", table:"dim_outlet_resolved", conf:0.41,
-       why:"The attached liquor store shares the number but holds a separate license and sells the bev-alc — a distinct outlet.", keys:["chain:publix-liquors","license:separate ✗"]}
-    ],
-    hierarchy:[{g:"Chain",n:"Publix",c:"dim_outlet · 1.2k outlets"},{g:"Outlet",n:"Publix #1420",c:"dim_outlet_resolved",here:true},{g:"License",n:"— to attach —",c:"FL DBPR"},{g:"Carriage",n:"— pending —",c:"fact_inventory"}],
-    records:[
-      {src:"Google Maps",id:"#g-9931",raw:"Publix Super Market, N Orange Ave",by:"review",key:"name+geo 40m",conf:0.62,status:"review",fields:[["geo","40 m","agree"],["number","— none —","diff"]]},
-      {src:"FL DBPR",id:"#SEA-58-90210",raw:"PUBLIX SUPER MARKETS INC #1420",by:"review",key:"fuzzy 0.59",conf:0.59,status:"conflict",fields:[["number","1420","agree"],["addr","800 N Orange","agree"]]},
-      {src:"DoorDash",id:"#DD-4401",raw:"Publix, N Orange Ave (Orlando)",by:"review",key:"fuzzy 0.44",conf:0.44,status:"review",fields:[["geo","110 m","diff"]]}
-    ],
-    evidence:{det:[["Outlet key","publix|1420|32804"],["Geo separation","#1420 vs #1188 = 1 block"],["Sources agreeing","1 of 3 on the number"]],fuzzy:0.62,
-      claude:"Two adjacent Publix stores are +0.03 apart; the DBPR record carries #1420 but Google carries no number. Not safe to auto-pick — escalating for a human to confirm which store."},
-    flags:[{t:"Two candidate stores are one block apart (+0.03). Confirm #1420 vs #1188 before attaching the license.",act:"Pick store",kind:"conflict"}]
-  },
-  { id:"house-blend", grain:"product", stage:"steward", ambiguous:true, qshort:"“House Blend Red” (private label)", note:"steward · 4 near-ties",
-    subject:{label:"“House Blend Red” (private label)", src:"Instacart", id:"#IC-70001"},
-    name:"House Blend Red", table:"dim_product",
-    meta:[["Category","Wine · Red blend"],["Brand","private label"],["Size","750 mL"],["Sources","4"]],
-    candidates:[
-      {name:"Store Brand Red Blend — Publix", grain:"product", table:"dim_product", conf:0.44, win:true,
-       why:"Generic name with no brand — four different private labels all score within 0.05. No key separates them.", keys:["name:house-blend","brand:none","private-label"]},
-      {name:"Store Brand Red Blend — Kroger", grain:"product", table:"dim_product", conf:0.42, why:"Different retailer's own label, same generic name.", keys:["name:house-blend","retailer:kroger"]},
-      {name:"Winking Owl Red — Aldi", grain:"product", table:"dim_product", conf:0.40, why:"A named private label that markets as a \"house blend\".", keys:["name:winking-owl","retailer:aldi"]},
-      {name:"NEW product (no match)", grain:"product", table:"dim_product", conf:0.39, why:"None are convincing — this may be a genuinely new private-label product.", keys:["create:new-product"]}
-    ],
-    hierarchy:[{g:"Brand",n:"— unresolved —",c:"private label"},{g:"Product",n:"House Blend Red",c:"dim_product",here:true},{g:"Item",n:"— pending —",c:"dim_item"},{g:"Sku",n:"— pending —",c:"dim_sku"}],
-    records:[
-      {src:"Instacart",id:"#IC-70001",raw:"House Blend Red",by:"review",key:"fuzzy 0.44",conf:0.44,status:"review",fields:[["brand","— none —","diff"]]},
-      {src:"DoorDash",id:"#DD-9902",raw:"Red Blend (house)",by:"review",key:"fuzzy 0.42",conf:0.42,status:"conflict",fields:[["brand","— none —","diff"]]}
-    ],
-    evidence:{det:[["Brand key","— none —"],["Top four spread","0.44 … 0.39"],["Sources agreeing","0"]],fuzzy:0.44,
-      claude:"Four private labels are within 0.05 and none carries a brand — no automated basis to choose, and it may be a new product. This is a governance/policy decision for the steward."},
-    flags:[{t:"No candidate is convincing (four within 0.05). Decide: map to an existing private label or CREATE a new product.",act:"Create new",kind:"conflict"}]
-  },
-  { id:"casamigos-blanco", grain:"sku", stage:"auto", qshort:"Casamigos Blanco 750 mL", note:"exact GTIN · 4 sources",
-    subject:{label:"Casamigos Blanco Tequila 750mL", src:"Total Wine", id:"#TW-33110"},
-    name:"Casamigos Blanco 750 mL", table:"dim_sku",
-    meta:[["Category","Tequila · Blanco"],["ABV","40.0%"],["Size","750 mL"],["Match","exact GTIN"]],
-    candidates:[
-      {name:"Casamigos Blanco 750 mL", grain:"sku", table:"dim_sku", conf:1.00, win:true,
-       why:"Every source carries the same GTIN-14 — a clean deterministic match, no inference needed.", keys:["GTIN-14 = 810055120017","brand:casamigos","size:750ml"]},
-      {name:"Casamigos Reposado 750 mL", grain:"sku", table:"dim_sku", conf:0.22, why:"Same brand and size, different expression — nowhere near.", keys:["brand:casamigos","variant:reposado ✗"]}
-    ],
-    hierarchy:[{g:"Brand",n:"Casamigos",c:"dim_brand · 5 skus"},{g:"Product",n:"Casamigos Blanco",c:"dim_product"},{g:"Item",n:"Casamigos Blanco 750",c:"dim_item"},{g:"Sku",n:"Casamigos Blanco 750 mL",c:"UPC 810055120017",here:true}],
-    records:[
-      {src:"Total Wine",id:"#TW-33110",raw:"Casamigos Blanco Tequila 750mL",by:"auto",key:"GTIN-14 810055120017",conf:1.00,status:"match",fields:[["upc","810055120017","agree"],["size","750 mL","agree"]]},
-      {src:"Walmart",id:"#WM-55201",raw:"Casamigos Blanco Tequila, 750 mL",by:"auto",key:"GTIN-14 810055120017",conf:1.00,status:"match",fields:[["upc","810055120017","agree"]]},
-      {src:"Kroger",id:"#KR-22110",raw:"Casamigos Blanco 750 ml",by:"auto",key:"GTIN-14 810055120017",conf:1.00,status:"match",fields:[["size","750 mL","agree"]]}
-    ],
-    evidence:{det:[["GTIN-14","00810055120017"],["Brand key","md5:casamigos"],["Sources agreeing","4 of 4"]],fuzzy:1.00,
-      claude:"No adjudication needed — deterministic GTIN match across every source. Shown here only because you filtered to the Auto stage."},
-    flags:[]
-  },
-  { id:"jackdaniels-750", grain:"sku", stage:"confirmed", qshort:"Jack Daniel's Old No.7 750 mL", note:"promoted to master",
-    subject:{label:"Jack Daniel's Old No.7 750 mL", src:"master", id:"promoted 2026-07-11"},
-    name:"Jack Daniel's Old No.7 750 mL", table:"dim_sku",
-    meta:[["Category","Whiskey · Tennessee"],["ABV","40.0%"],["Size","750 mL"],["Status","confirmed"]],
-    candidates:[
-      {name:"Jack Daniel's Old No.7 750 mL", grain:"sku", table:"dim_sku", conf:1.00, win:true,
-       why:"Confirmed and promoted — GTIN match across 6 sources; shown for the record.", keys:["GTIN-14 = 082184090563","brand:jack-daniels","size:750ml"]},
-      {name:"Gentleman Jack 750 mL", grain:"sku", table:"dim_sku", conf:0.18, why:"Sibling product, clearly separate.", keys:["brand:jack-daniels","product:gentleman-jack ✗"]}
-    ],
-    hierarchy:[{g:"Brand",n:"Jack Daniel's",c:"dim_brand"},{g:"Product",n:"Old No.7",c:"dim_product"},{g:"Item",n:"Old No.7 750",c:"dim_item"},{g:"Sku",n:"Old No.7 750 mL",c:"UPC 082184090563",here:true}],
-    records:[
-      {src:"TTB COLA",id:"#08018001000234",raw:"JACK DANIEL'S OLD NO. 7",by:"auto",key:"GTIN-14 082184090563",conf:1.00,status:"match",fields:[["size","750 mL","agree"]]},
-      {src:"Walmart",id:"#WM-11002",raw:"Jack Daniel's Old No. 7, 750 mL",by:"auto",key:"GTIN-14 082184090563",conf:1.00,status:"match",fields:[["upc","082184090563","agree"]]}
-    ],
-    evidence:{det:[["GTIN-14","00082184090563"],["Confirmed by","analyst · 2026-07-11"],["Sources agreeing","6 of 6"]],fuzzy:1.00,
-      claude:"Already promoted to dim_sku. Read-only — kept so the confirmed decision stays auditable."},
-    flags:[]
+function stubFrom(row, stage){
+  return {id:row.cluster_id, name:titlecase(row.candidate_name||row.brand||row.cluster_id), grain:"sku", stage,
+          note:((row.match_kind||"partial")+" · "+(row.corroborated_by||"no source")), conf:row.confidence||0,
+          ambiguous:(row.confidence||0)<0.6, corroborated:!!row.corroborated_by, noupc:!row.upc, brand:(row.brand||"")};
+}
+
+function setFunnel(st){
+  STAGES=st||{};
+  const map={all:"candidates",candidates:"candidates",auto:"auto",claude:"claude",analyst:"analyst",senior:"senior",steward:"steward",confirmed:"confirmed"};
+  document.querySelectorAll(".stage").forEach(el=>{
+    const n=st[map[el.dataset.stage]];
+    if(n!=null){ const nn=el.querySelector(".n"); if(nn) nn.textContent=Number(n).toLocaleString(); }
+  });
+}
+
+async function boot(){
+  try{
+    const [s,rv,ms]=await Promise.all([
+      fetch(API+"/summary").then(r=>r.json()),
+      fetch(API+"/review").then(r=>r.json()),
+      fetch(API+"/master").then(r=>r.json())
+    ]);
+    setFunnel(s.stages||{});
+    const cand=(s.stages&&s.stages.candidates)||0;
+    const runEl=$("#runcand"); if(runEl) runEl.textContent=Number(cand).toLocaleString();
+    const stubs=[];
+    (rv.items||[]).forEach(r=>stubs.push(stubFrom(r,"analyst")));
+    (ms.items||[]).forEach(r=>stubs.push(stubFrom(r, r.matched_by==="claude"?"claude":(r.matched_by==="manual"?"confirmed":"auto"))));
+    STUBS=stubs;
+  }catch(e){
+    $("#qlist").innerHTML='<div class="qempty">Couldn’t reach the matching engine.</div>';
+    $("#detail").innerHTML='<div style="padding:44px 24px;color:var(--muted);font-size:13.5px">The matching engine isn’t reachable. Start the agent and reload — this page reads <b>/api/master/workbench/*</b> (real ttb_master / ttb_review clusters).</div>';
+    return;
   }
-];
-
-const STAGE_TOTAL = {all:12481, auto:8203, claude:2946, analyst:1332, senior:214, steward:38, confirmed:9914};
-const STAGE_TITLE = {all:"All candidates", auto:"Auto-matched", claude:"Claude-adjudicated", analyst:"Analyst queue", senior:"Senior-analyst queue", steward:"Steward queue", confirmed:"Confirmed to master"};
-
-const $=s=>document.querySelector(s);
-const esc=s=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
-const stageLabel={auto:"Auto",claude:"Claude",analyst:"Analyst",senior:"Sr Analyst",steward:"Steward",confirmed:"Confirmed",review:"Review",conflict:"Conflict",match:"Auto"};
-const TIER_LABEL={senior:"senior analyst", steward:"steward"};
-let FILT = {stage:"analyst", grain:"all", q:""};
+  renderQueue();
+}
 
 function currentRows(){
   const t=FILT.q.trim().toLowerCase();
-  return CLUSTERS.filter(c=>{
-    if(FILT.stage!=="all" && c.stage!==FILT.stage) return false;
-    if(FILT.grain==="ambiguous"){ if(!c.ambiguous) return false; }
-    else if(FILT.grain!=="all" && c.grain!==FILT.grain) return false;
-    if(t && !((c.qshort||c.name).toLowerCase().includes(t) || (c.note||"").toLowerCase().includes(t))) return false;
+  return STUBS.filter(s=>{
+    if(FILT.stage!=="all" && FILT.stage!=="candidates" && s.stage!==FILT.stage) return false;
+    if(FILT.facet==="ambiguous" && !s.ambiguous) return false;
+    if(FILT.facet==="corroborated" && !s.corroborated) return false;
+    if(FILT.facet==="noupc" && !s.noupc) return false;
+    if(t && !(s.name.toLowerCase().includes(t) || s.note.toLowerCase().includes(t) || s.brand.toLowerCase().includes(t))) return false;
     return true;
   });
 }
 
 function renderQueue(){
-  const rows = currentRows();
-  $("#qtitle").textContent = STAGE_TITLE[FILT.stage];
-  $("#qn").textContent = rows.length;
-  $("#qtot").textContent = STAGE_TOTAL[FILT.stage].toLocaleString();
-  if(!rows.length){ $("#qlist").innerHTML = '<div class="qempty">Nothing in this view — try another stage or filter.</div>'; $("#detail").innerHTML=""; return; }
-  $("#qlist").innerHTML = rows.map((c,i)=>`
-    <button class="qitem${i===0?' sel':''}" data-ref="${c.id}">
-      <div class="r1"><span class="grain ${c.grain}">${c.grain}</span><span class="nm">${esc(c.qshort||c.name)}</span></div>
-      <div class="r2"><span class="pill ${c.stage}"><span class="dot ${c.stage}"></span>${stageLabel[c.stage]}</span>
-        <span>${esc(c.note||"")}</span><span class="conf">${c.candidates[0].conf.toFixed(2)}</span></div>
+  const rows=currentRows();
+  $("#qtitle").textContent=STAGE_TITLE[FILT.stage]||"Queue";
+  $("#qn").textContent=rows.length.toLocaleString();
+  $("#qtot").textContent=Number(STAGES[FILT.stage==="all"?"candidates":FILT.stage]||rows.length).toLocaleString();
+  if(!rows.length){ $("#qlist").innerHTML='<div class="qempty">Nothing in this view — try another stage or filter.</div>'; $("#detail").innerHTML=""; return; }
+  const show=rows.slice(0,300);
+  $("#qlist").innerHTML=show.map((s,i)=>`
+    <button class="qitem${i===0?' sel':''}" data-ref="${esc(s.id)}" data-stage="${esc(s.stage)}">
+      <div class="r1"><span class="grain ${s.grain}">${s.grain}</span><span class="nm">${esc(s.name)}</span></div>
+      <div class="r2"><span class="pill ${s.stage}"><span class="dot ${s.stage}"></span>${stageLabel[s.stage]}</span>
+        <span>${esc(s.note)}</span><span class="conf">${s.conf.toFixed(2)}</span></div>
     </button>`).join("");
   document.querySelectorAll(".qitem").forEach(b=>b.onclick=()=>{
     document.querySelectorAll(".qitem").forEach(x=>x.classList.remove("sel"));
-    b.classList.add("sel"); renderDetail(b.dataset.ref);
+    b.classList.add("sel"); selectCluster(b.dataset.ref, b.dataset.stage);
   });
-  renderDetail(rows[0].id);
+  selectCluster(show[0].id, show[0].stage);
 }
 
-function renderDetail(ref){
-  const c = CLUSTERS.find(x=>x.id===ref) || CLUSTERS[0];
-  const v = verdictOf(c.candidates);
-  const win = c.candidates.find(x=>x.win) || c.candidates[0];
-  const cands = c.candidates.map((cd,i)=>{
-    const gapRow = i===0 && c.candidates[1] ? (()=>{ const g=+(c.candidates[0].conf-c.candidates[1].conf).toFixed(2);
-      return `<div class="gapdiv ${g>=BIG_GAP?'big':'small'}"><span class="gl">${g>=BIG_GAP?'▲ +'+g.toFixed(2)+' gap':'≈ +'+g.toFixed(2)+' — near tie'}</span><span class="seg"></span></div>`; })() : "";
+async function selectCluster(id, stage){
+  $("#detail").innerHTML='<div style="padding:44px 24px;color:var(--faint);font-size:13px">Loading cluster…</div>';
+  let item, cand;
+  try{
+    [item,cand]=await Promise.all([
+      fetch(API+"/item/"+encodeURIComponent(id)).then(r=>r.json()),
+      fetch(API+"/candidates/"+encodeURIComponent(id)).then(r=>r.json())
+    ]);
+  }catch(e){ $("#detail").innerHTML='<div style="padding:44px 24px;color:var(--conflict)">Couldn’t load this cluster.</div>'; return; }
+  renderDetail(adapt(item, cand, stage));
+}
+
+function adapt(itemResp, candResp, stage){
+  const m=(itemResp&&itemResp.item)||{}, filings=(itemResp&&itemResp.filings)||[];
+  let cands=(candResp&&candResp.candidates)||[];
+  if(!cands.length) cands=[{name:titlecase(m.candidate_name||m.brand||m.cluster_id),grain:"sku",table:(m.tier===1?"ttb_master":"ttb_review"),conf:m.confidence||0,win:true,why:"Proposed cluster.",keys:[]}];
+  cands=cands.map(c=>Object.assign({},c,{name:titlecase(c.name)}));
+  const recs=filings.map(f=>({src:"TTB COLA", id:f["TTB ID"], raw:((f["Brand Name"]||"")+(f["Fanciful Name"]?(" — "+f["Fanciful Name"]):"")).trim()||"(no brand on filing)",
+    by:"auto", key:(f["UPC"]||"no UPC"), conf:1.0, status:"match",
+    fields:[["class",(f["Class/Type"]||"—")],["completed",(f["Completed Date"]||"—")],["upc",(f["UPC"]||"— none —")]]}));
+  const alts=cands.slice(1);
+  const dup=alts.length && Math.max.apply(null,alts.map(a=>a.conf))>=cands[0].conf;
+  const flags=[];
+  if(dup) flags.push({t:"A same-brand cluster scores as high — this may be a duplicate that should merge.",act:"Review merge",kind:"conflict"});
+  if(!m.upc) flags.push({t:"No UPC on the cluster — matched on brand + name only.",act:"Find UPC",kind:"review"});
+  if(m.size_matched===false) flags.push({t:"Size isn’t confirmed across the member filings.",act:"Set size",kind:"review"});
+  if(m.tier===0) flags.push({t:"Tier 0 — needs independent corroboration before it can promote to the master.",act:"Corroborate",kind:"review"});
+  return {
+    id:m.cluster_id, grain:"sku", stage:stage||(m.tier===1?"confirmed":"analyst"),
+    subject:{label:titlecase(m.candidate_name||m.brand||m.cluster_id), src:(m.corroborated_by||"no source"), id:m.cluster_id},
+    table:(m.tier===1?"ttb_master":"ttb_review"),
+    meta:[["Class",m.class_type||"—"],["Size",m.size_ml||"—"],["UPC",m.upc||"— none —"],["Tier",String(m.tier==null?"—":m.tier)],["Members",String(m.member_count||recs.length)]],
+    candidates:cands,
+    hierarchy:[{g:"Brand",n:titlecase(m.brand)||"—",c:"dim_brand"},{g:"Class/Type",n:m.class_type||"—",c:"ttb class"},{g:"Cluster",n:titlecase(m.candidate_name)||"—",c:(m.member_count||recs.length)+" filings",here:true},{g:"UPC",n:(m.upc||"— none —"),c:"identity"}],
+    records:recs,
+    evidence:{det:[["Confidence",(m.confidence||0).toFixed(2)],["Match kind",m.match_kind||"—"],["Corroborated by",m.corroborated_by||"— none —"],["Member filings",String(m.member_count||recs.length)]], fuzzy:(m.confidence||0),
+      claude:`${(m.match_kind||"partial")} match on the COLA filings; ${m.corroborated_by?("corroborated by "+m.corroborated_by):"no independent source has confirmed it yet"}.${dup?" A same-brand duplicate cluster exists — consider merging.":""}`},
+    flags:flags
+  };
+}
+
+function renderDetail(c){
+  const v=verdictOf(c.candidates);
+  const win=c.candidates.find(x=>x.win)||c.candidates[0];
+  const cands=c.candidates.map((cd,i)=>{
+    const gapRow= i===0 && c.candidates[1] ? (()=>{ const g=+(c.candidates[0].conf-c.candidates[1].conf).toFixed(2);
+      return `<div class="gapdiv ${g>=BIG_GAP?'big':'small'}"><span class="gl">${g>=BIG_GAP?'▲ +'+g.toFixed(2)+' gap':(g<0?'▼ '+g.toFixed(2)+' — a stronger match':'≈ +'+g.toFixed(2)+' — near tie')}</span><span class="seg"></span></div>`; })() : "";
     return `<details class="cand ${cd.win?'win':''}" ${cd.win?'open':''}>
       <summary>
         <span class="rank">#${i+1}</span>
-        <span class="cn"><span class="nm">${esc(cd.name)} <span class="grain ${cd.grain}">${cd.grain}</span>${cd.win?'<span class="wintag">proposed</span>':''}</span><span class="tb">${esc(cd.table)}</span></span>
-        <span class="cbarwrap"><span class="cbar"><i style="width:${Math.round(cd.conf*100)}%"></i><span class="thr" style="left:${HI_CONF*100}%"></span></span></span>
-        <span class="cscore">${cd.conf.toFixed(2)}</span>
+        <span class="cn"><span class="nm">${esc(cd.name)} <span class="grain ${cd.grain||'sku'}">${cd.grain||'sku'}</span>${cd.win?'<span class="wintag">proposed</span>':''}</span><span class="tb">${esc(cd.table||'')}</span></span>
+        <span class="cbarwrap"><span class="cbar"><i style="width:${Math.round((cd.conf||0)*100)}%"></i><span class="thr" style="left:${HI_CONF*100}%"></span></span></span>
+        <span class="cscore">${(cd.conf||0).toFixed(2)}</span>
       </summary>
-      <div class="cjust">${esc(cd.why)}<div class="jk">${cd.keys.map(k=>`<span class="jchip">${esc(k)}</span>`).join("")}</div>${cd.win?"":'<button class="use">Use this match instead →</button>'}</div>
+      <div class="cjust">${esc(cd.why||"")}<div class="jk">${(cd.keys||[]).map(k=>`<span class="jchip">${esc(k)}</span>`).join("")}</div>${cd.win?"":'<button class="use">Use this match instead →</button>'}</div>
     </details>${gapRow}`;
   }).join("");
-  const roll = c.hierarchy.map(h=>`<div class="rnode ${h.here?'here':''}"><span class="rg">${esc(h.g)}</span><span class="rn">${esc(h.n)}</span><span class="rc">${esc(h.c)}</span></div>`).join("");
+  const roll=c.hierarchy.map(h=>`<div class="rnode ${h.here?'here':''}"><span class="rg">${esc(h.g)}</span><span class="rn">${esc(h.n)}</span><span class="rc">${esc(h.c)}</span></div>`).join("");
   const byPill={match:"auto",auto:"auto",claude:"claude",review:"review",conflict:"conflict"};
   const byLabel={match:"Auto",auto:"Auto",claude:"Claude",review:"Analyst",conflict:"Conflict"};
-  const recs = c.records.map(r=>`
+  const recs=c.records.length? c.records.map(r=>`
     <div class="rec ${r.status}">
       <div class="src"><span class="pill ${byPill[r.status]}"><span class="dot ${byPill[r.status]}"></span>${byLabel[r.status]}</span>
         <span class="srcn">${esc(r.src)}</span><span class="rid">${esc(r.id)}</span><span class="raw">“${esc(r.raw)}”</span></div>
       <div class="ev"><span class="via">via <span class="k">${esc(r.key)}</span></span><span class="conf">${r.conf.toFixed(2)}</span></div>
-      <div class="fields">${r.fields.map(f=>`<span class="fchip ${f[2]}">${esc(f[0])} <b>${esc(f[1])}</b></span>`).join("")}</div>
-    </div>`).join("");
-  const det = c.evidence.det.map(k=>`<div class="krow"><span>${esc(k[0])}</span><span class="mono">${esc(k[1])}</span></div>`).join("");
-  const flags = c.flags.length ? c.flags.map(f=>`<div class="flag ${f.kind==='conflict'?'conf':''}"><span class="fdot"></span><span>${esc(f.t)}</span><button class="act">${esc(f.act)}</button></div>`).join("")
-                               : '<div class="flag" style="border-color:var(--line);background:var(--panel-2)"><span class="fdot" style="background:var(--auto)"></span><span>Nothing to resolve — clean match.</span></div>';
-  const upTgt = c.stage==="steward" ? null : c.stage==="senior" ? "steward" : "senior";
-  const escBtn = upTgt ? `<button class="btn escalate">↑ Escalate to ${TIER_LABEL[upTgt]}</button>` : `<button class="btn escalate" disabled>Steward — final tier</button>`;
-  $("#detail").innerHTML = `
+      <div class="fields">${r.fields.map(f=>`<span class="fchip">${esc(f[0])} <b>${esc(f[1])}</b></span>`).join("")}</div>
+    </div>`).join("") : '<div class="qempty">No member filings returned.</div>';
+  const det=c.evidence.det.map(k=>`<div class="krow"><span>${esc(k[0])}</span><span class="mono">${esc(k[1])}</span></div>`).join("");
+  const flags=c.flags.length? c.flags.map(f=>`<div class="flag ${f.kind==='conflict'?'conf':''}"><span class="fdot"></span><span>${esc(f.t)}</span><button class="act">${esc(f.act)}</button></div>`).join("")
+    : '<div class="flag" style="border-color:var(--line);background:var(--panel-2)"><span class="fdot" style="background:var(--auto)"></span><span>Nothing flagged — clean cluster.</span></div>';
+  const upTgt=c.stage==="steward"?null:(c.stage==="senior"?"steward":"senior");
+  const escBtn=upTgt?`<button class="btn escalate">↑ Escalate to ${TIER_LABEL[upTgt]}</button>`:`<button class="btn escalate" disabled>Steward — final tier</button>`;
+  $("#detail").innerHTML=`
     <div class="dtop">
-      <div class="kick"><span class="dot ${c.stage}"></span>Resolving · ${esc(c.subject.src)} ${esc(c.subject.id)} · ${stageLabel[c.stage]} tier</div>
+      <div class="kick"><span class="dot ${c.stage}"></span>Resolving · ${esc(c.subject.src)} · cluster ${esc(c.subject.id)} · ${stageLabel[c.stage]} tier</div>
       <h2>“${esc(c.subject.label)}” <span class="grain ${c.grain}">${c.grain}</span></h2>
-      <div class="meta"><span class="kv">winning key <span class="keychip">${esc(win.name)}</span></span>${c.meta.map(m=>`<span class="kv">${esc(m[0])} <b>${esc(m[1])}</b></span>`).join("")}</div>
+      <div class="meta"><span class="kv">winning cluster <span class="keychip">${esc(win.name)}</span></span>${c.meta.map(m=>`<span class="kv">${esc(m[0])} <b>${esc(m[1])}</b></span>`).join("")}</div>
     </div>
     <div class="verdict ${v.kind}"><span class="vico">${v.kind==='ambiguous'?'?':'✓'}</span>
       <div><div class="vt">${v.label}</div><div class="vn">${esc(v.note)}</div></div>
       <div class="rule">rule: conf ≥ ${HI_CONF}<br>OR gap ≥ ${BIG_GAP}</div></div>
     <div class="sec"><h3>Possible clusters <span class="c">${c.candidates.length}</span><span class="r">ranked by confidence · expand for the justification</span></h3><div class="cands">${cands}</div></div>
     <div class="roll">${roll}</div>
-    <div class="sec"><h3>Source records in the winner <span class="c">${c.records.length}</span><span class="r">${c.records.filter(r=>r.status==='match'||r.status==='auto').length} auto · ${c.records.filter(r=>r.status==='claude').length} Claude · ${c.records.filter(r=>r.status==='review'||r.status==='conflict').length} need you</span></h3><div class="recs">${recs}</div></div>
+    <div class="sec"><h3>Member filings (TTB COLA) <span class="c">${c.records.length}</span><span class="r">the source records in this cluster</span></h3><div class="recs">${recs}</div></div>
     <div class="sec"><h3>Match evidence</h3><div class="evid">
       <div class="ecard det"><div class="et"><span class="dot auto"></span>Deterministic <span class="scoretag" style="color:var(--auto)">keys</span></div>${det}</div>
-      <div class="ecard ai"><div class="et"><span class="dot claude"></span>Claude <span class="scoretag" style="color:var(--claude)">${c.evidence.fuzzy.toFixed(2)}</span></div><p>${esc(c.evidence.claude)}</p></div></div></div>
+      <div class="ecard ai"><div class="et"><span class="dot claude"></span>Cascade <span class="scoretag" style="color:var(--claude)">${c.evidence.fuzzy.toFixed(2)}</span></div><p>${esc(c.evidence.claude)}</p></div></div></div>
     <div class="sec"><h3>To resolve <span class="c">${c.flags.length}</span></h3><div class="flags">${flags}</div></div>
     <div class="actions">
-      <button class="btn primary">✓ Confirm #1 to master</button>
-      <button class="btn">⑃ Split record</button>
-      <button class="btn">⋈ Merge…</button>
+      <button class="btn primary" title="Read-only in this build — wiring the write next">✓ Confirm #1 to master</button>
+      <button class="btn" title="Read-only in this build">⑃ Split</button>
+      <button class="btn" title="Read-only in this build">⋈ Merge…</button>
       ${escBtn}
       <div class="spacer"></div>
-      <span class="hint"><kbd>C</kbd> confirm · <kbd>E</kbd> escalate · <kbd>J</kbd>/<kbd>K</kbd> next</span>
+      <span class="hint">read-only preview · <kbd>J</kbd>/<kbd>K</kbd> next</span>
     </div>`;
 }
 
 document.querySelectorAll(".stage").forEach(s=>s.onclick=()=>{
   document.querySelectorAll(".stage").forEach(x=>x.classList.remove("on")); s.classList.add("on");
-  FILT.stage = s.dataset.stage; renderQueue();
+  FILT.stage=s.dataset.stage; renderQueue();
 });
 document.querySelectorAll("#tabs .tab").forEach(t=>t.onclick=()=>{
   document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.remove("on")); t.classList.add("on");
-  FILT.grain = t.dataset.f; renderQueue();
+  FILT.facet=t.dataset.f; renderQueue();
 });
-$(".search").addEventListener("input", e=>{ FILT.q = e.target.value; renderQueue(); });
+$(".search").addEventListener("input", e=>{ FILT.q=e.target.value; renderQueue(); });
 $("#theme").onclick=()=>{ const r=document.documentElement;
-  const cur=r.getAttribute("data-theme")|| (matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");
+  const cur=r.getAttribute("data-theme")||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");
   r.setAttribute("data-theme", cur==="dark"?"light":"dark"); };
 
-renderQueue();
+boot();
+
 </script>
