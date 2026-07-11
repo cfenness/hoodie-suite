@@ -36,7 +36,7 @@ def fetch_records(sample=300, crawl_all=False, log=print):
         return query(0, min(sample, 1000)).get("hits", [])
     first = query(0, 1000)
     out = list(first.get("hits", []))
-    pages = min(first.get("nbPages", 1), 40)
+    pages = min(first.get("nbPages", 1), 100)   # was 40 — don't truncate the full Algolia catalog
     for p in range(1, pages):
         try:
             out += query(p, 1000).get("hits", [])

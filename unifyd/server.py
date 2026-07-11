@@ -727,7 +727,7 @@ def abc_pull(params):
 def specs_pull(params):
     started = int(time.time() * 1000)
     ds, runs, _ = specs.pull(
-        sample=params.get("sample", 40), crawl_all=bool(params.get("all")),
+        sample=params.get("sample", 40), crawl_all=params.get("all", True),   # FULL catalog by default (was a 40-sample)
         limit=params.get("limit"), out=os.path.join(STATE_DIR, "specs"),
         state_dir=os.path.join(STATE_DIR, "specs"),
         log=lambda m: app.logger.info("SPECS %s", m))
@@ -739,7 +739,7 @@ def specs_pull(params):
 def binnys_pull(params):
     started = int(time.time() * 1000)
     ds, runs, _ = binnys.pull(
-        sample=params.get("sample", 300), crawl_all=bool(params.get("all")),
+        sample=params.get("sample", 300), crawl_all=params.get("all", True),   # FULL catalog by default (was a 300-sample)
         limit=params.get("limit"), out=os.path.join(STATE_DIR, "binnys"),
         state_dir=os.path.join(STATE_DIR, "binnys"),
         log=lambda m: app.logger.info("BINNYS %s", m))

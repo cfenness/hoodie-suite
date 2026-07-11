@@ -36,7 +36,7 @@ def _http(url, timeout=25):
     return body.decode("utf-8", "replace")
 
 
-def harvest_ids(max_products=4000, log=print):
+def harvest_ids(max_products=20000, log=print):
     out, seen = [], set()
     try:
         idx = _http(SITEMAP)
