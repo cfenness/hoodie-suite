@@ -228,6 +228,84 @@ def woo_catalog(base, key, max_pages=50, log=print):
     return rows
 
 
+_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+       "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
+_WIX_STORES_APP = "1380b703-ce81-ff05-f115-39571d94dfcd"
+_WIX_GQL = ("query getProducts($limit:Int,$offset:Int){ catalog{ products(limit:$limit, offset:$offset, "
+            "onlyVisible:true){ totalCount list{ id name brand price formattedPrice comparePrice sku "
+            "isInStock productType urlPart } } } }")
+
+
+def _wix_instance(base, log=print):
+    """Wix mints per-app instance tokens at the UNAUTHENTICATED /_api/v1/access-tokens bootstrap (this is how
+    the public storefront authorizes itself). Return (instance_token, working_site) — trying apex + www since
+    the census website may be either. urllib follows the apex->www redirect, so we read the final host."""
+    hosts = [base.rstrip("/")]
+    m = re.match(r"(https?://)(www\.)?(.+)", base.rstrip("/"))
+    if m:
+        alt = m.group(1) + ("" if m.group(2) else "www.") + m.group(3)
+        if alt not in hosts:
+            hosts.append(alt)
+    for site in hosts:
+        try:
+            req = urllib.request.Request(site + "/_api/v1/access-tokens", headers={"User-Agent": _UA})
+            resp = urllib.request.urlopen(req, timeout=45)
+            real = "%s://%s" % (urllib.parse.urlparse(resp.geturl()).scheme,
+                                urllib.parse.urlparse(resp.geturl()).netloc)
+            j = json.loads(resp.read().decode("utf-8", "replace"))
+            app = (j.get("apps") or {}).get(_WIX_STORES_APP)
+            if app and app.get("instance"):
+                return app["instance"], (real or site)
+        except Exception as e:
+            log("  [wix] access-tokens %s: %s" % (site, str(e)[:50]))
+    return None, base
+
+
+def wix_catalog(base, key=None, page=100, max_products=None, log=print):
+    """Wix Stores — powers a huge slice of independent liquor retail. The storefront runs on a GraphQL API
+    (`catalog.products`) authorized by an app INSTANCE token that /_api/v1/access-tokens hands out
+    unauthenticated. Bootstrap the token, then page catalog.products (name/brand/price/sku/stock). Full
+    fields, no browser. NB: a site can have the Stores app installed but an EMPTY catalog (totalCount 0) if it
+    sells through a third party instead — that's not a failure, the store just has no Wix inventory."""
+    inst, site = _wix_instance(base, log=log)
+    if not inst:
+        log("  [wix] %s -> no Stores instance (app not installed?)" % base); return []
+    ep = site + "/_api/wix-ecommerce-storefront-web/api"
+    hdr = {"User-Agent": _UA, "Authorization": inst, "Content-Type": "application/json"}
+
+    def gql(offset):
+        body = json.dumps({"query": _WIX_GQL, "variables": {"limit": page, "offset": offset}}).encode()
+        req = urllib.request.Request(ep, data=body, headers=hdr, method="POST")
+        return json.loads(urllib.request.urlopen(req, timeout=60).read().decode("utf-8", "replace"))
+
+    rows, offset, total = [], 0, None
+    while True:
+        try:
+            pq = (((gql(offset).get("data") or {}).get("catalog") or {}).get("products")) or {}
+        except Exception as e:
+            log("  [wix] products offset=%d: %s" % (offset, str(e)[:50])); break
+        if total is None:
+            total = pq.get("totalCount") or 0
+            log("  [wix] %s: totalCount=%d" % (site, total))
+            if not total:
+                return []
+        lst = pq.get("list") or []
+        if not lst:
+            break
+        for p in lst:
+            sku = (p.get("sku") or "").strip()
+            rows.append({"name": _html.unescape(p.get("name") or "").strip(), "brand": (p.get("brand") or ""),
+                         "price": p.get("price"), "sku": sku,
+                         "upc": (sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
+                         "size_ml": _ch_ml(p.get("name")), "category": p.get("productType") or "",
+                         "in_stock": p.get("isInStock")})
+        offset += len(lst)
+        if (max_products and offset >= max_products) or offset >= total:
+            break
+    log("  [wix] %s -> %d products" % (site, len(rows)))
+    return rows[:max_products] if max_products else rows
+
+
 # ── National signature-discovery + sweep — expand the recipes we have to their whole national footprint. For a
 # LIQUOR-SPECIFIC platform (Bottlecapps), SERP its fingerprint -> store domains -> validate -> run the recipe.
 # (Generic platforms — Shopify/Woo — are better discovered per-market via the Maps census.) ──
@@ -400,7 +478,7 @@ def national_sweep(platform, log=print):
     return rows
 
 
-def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecapps", "City Hive"), census=None, out=None, log=print):
+def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecapps", "City Hive", "Wix"), census=None, out=None, log=print):
     """Pull every census e-commerce store on the given platform(s) -> <out> (a corroboration source +
     independent-store assortment). Dispatches per platform recipe. Default = ALL recipe-able platforms
     (was Shopify-only, which left Woo/Bottlecapps stores unscraped). BigCommerce stores are ABC → abc_catalog."""
@@ -432,6 +510,8 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
                 # bound per-store in a multi-store census sweep (full catalog can be thousands/store);
                 # a single-store pull (run()/CLI) goes full (max_products=None).
                 items = cityhive_catalog(s["base"], key, max_products=int(os.environ.get("CITYHIVE_MAX", "600")), log=log)
+            elif "wix" in plat:
+                items = wix_catalog(s["base"], key, log=log)
             else:
                 items = []
         except Exception as e:
