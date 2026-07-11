@@ -69,7 +69,6 @@
     <a data-sec="master"><span class="d"></span>Master</a>
     <a data-sec="catalog"><span class="d"></span>Catalog</a>
     <a data-sec="outlets"><span class="d"></span>Outlets</a>
-    <a data-sec="confirm"><span class="d"></span>Confirm</a>
     <a data-sec="registrations"><span class="d"></span>Registrations</a>
     <a data-sec="mapping"><span class="d"></span>Mapping</a>
     <a data-sec="dictionary"><span class="d"></span>Dictionary</a>
@@ -81,7 +80,6 @@
     <iframe id="f-master"    title="Master — matching workbench" data-src="master-match.html?embed=1"></iframe>
     <iframe id="f-catalog"   title="Product Catalog"           data-src="mdm-catalog.html?embed=1"></iframe>
     <iframe id="f-outlets"   title="Outlet Master"             data-src="mdm-outlets.html?embed=1"></iframe>
-    <iframe id="f-confirm"   title="Confirm / Conform"         data-src="mdm-confirm.html?embed=1"></iframe>
     <iframe id="f-registrations" title="Product Registrations"  data-src="product-registrations.html?embed=1"></iframe>
     <iframe id="f-mapping"   title="Field Mapping"              data-src="field-mapping.html?embed=1"></iframe>
     <iframe id="f-dictionary" title="Data Dictionary"           data-src="mdm-dictionary.html?embed=1"></iframe>
@@ -89,7 +87,7 @@
 <script>
 (function(){
   "use strict";
-  var SECTIONS={overview:null,sources:"f-sources",master:"f-master",catalog:"f-catalog",outlets:"f-outlets",confirm:"f-confirm",registrations:"f-registrations",mapping:"f-mapping",dictionary:"f-dictionary"};
+  var SECTIONS={overview:null,sources:"f-sources",master:"f-master",catalog:"f-catalog",outlets:"f-outlets",registrations:"f-registrations",mapping:"f-mapping",dictionary:"f-dictionary"};
   // In the launcher, the launcher's rail becomes THIS console's nav (one sidebar).
   var inLauncher = (window.parent !== window);
   var NAV_META=[{id:"overview",label:"Overview",icon:"OV",desc:"The master-data picture at a glance"},
@@ -97,7 +95,6 @@
                 {id:"master",label:"Master",group:"Own",icon:"MA",desc:"Canonical entities — brands, SKUs, outlets"},
                 {id:"catalog",label:"Catalog",group:"Own",icon:"CA",desc:"dim_product — the owned product catalog"},
                 {id:"outlets",label:"Outlets",group:"Own",icon:"OU",desc:"dim_outlet_resolved — browse the unified outlet master"},
-                {id:"confirm",label:"Confirm",group:"Own",icon:"CF",desc:"Reconcile the same outlet across sources → Tier-1 truth"},
                 {id:"registrations",label:"Registrations",group:"Own",icon:"PR",desc:"TTB COLA label approvals → products + field dictionary"},
                 {id:"mapping",label:"Mapping",group:"Own",icon:"MP",desc:"Map source fields → master schema, with pre/post dictionaries"},
                 {id:"dictionary",label:"Dictionary",group:"Own",icon:"DC",desc:"Build value dictionaries — cab sauv → Cabernet Sauvignon — against real source values"}];
