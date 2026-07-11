@@ -166,8 +166,18 @@ def run(raw, note=""):
     cc = concerns(norm)
     status = "degraded" if (not norm or any(x["severity"] == "high" for x in cc)) else "ok"
     warnings = [x["message"] for x in cc if x["severity"] == "high"]
-    # land products (full snapshot for the tracker) + append a run record
-    warehouse.write_parquet("walmart_products", norm)
+    # ACCUMULATE: merge this run's products into the existing catalog (dedup by product, newest wins) so a
+    # small/blocked run GROWS the catalog instead of overwriting a bigger prior run.
+    try:
+        existing = warehouse.query("walmart_products", "SELECT * FROM t")
+    except Exception:
+        existing = []
+    _pid = lambda r: r.get("product_id") or r.get("upc") or r.get("url")
+    idx = {_pid(r): r for r in existing}
+    for r in norm:
+        idx[_pid(r)] = r
+    catalog = list(idx.values())
+    warehouse.write_parquet("walmart_products", catalog)
     runs = []
     try:
         runs = warehouse.query("walmart_runs", "SELECT * FROM t")
@@ -203,9 +213,18 @@ def main():
     else:
         urls = discover_urls([q.strip() for q in a.queries.split(",") if q.strip()], a.per)
         log(f"discovered {len(urls)} beverage URLs; pulling…")
+        # cache each BD pull to disk immediately so a downstream failure (e.g. warehouse write)
+        # never wastes the spend — re-land for free with --raw-glob 'walmart_raw/*.json'.
+        raw_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "walmart_raw")
+        os.makedirs(raw_dir, exist_ok=True)
         raw = []
         for i, u in enumerate(urls, 1):
-            raw += pull_product(u)
+            recs = pull_product(u)
+            raw += recs
+            if recs:
+                slug = re.sub(r"[^A-Za-z0-9]+", "_", u.split("/ip/")[-1])[:60]
+                try: json.dump(recs, open(os.path.join(raw_dir, f"{i:04d}_{slug}.json"), "w"))
+                except Exception: pass
             log(f"  [{i}/{len(urls)}] {u.split('/ip/')[-1][:40]}")
     if not raw:
         log("no records pulled — Walmart may be blocking, or bdata is not logged in."); sys.exit(1)

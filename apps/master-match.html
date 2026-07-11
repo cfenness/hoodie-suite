@@ -307,7 +307,7 @@ async function boot(){
     const cand=(s.stages&&s.stages.candidates)||0;
     const runEl=$("#runcand"); if(runEl) runEl.textContent=Number(cand).toLocaleString();
     const stubs=[];
-    (rv.items||[]).forEach(r=>stubs.push(stubFrom(r,"analyst")));
+    (rv.items||[]).forEach(r=>stubs.push(stubFrom(r, r.review_tier || "analyst")));
     (ms.items||[]).forEach(r=>stubs.push(stubFrom(r, r.matched_by==="claude"?"claude":(r.matched_by==="manual"?"confirmed":"auto"))));
     STUBS=stubs;
   }catch(e){
@@ -421,7 +421,7 @@ function renderDetail(c){
   const flags=c.flags.length? c.flags.map(f=>`<div class="flag ${f.kind==='conflict'?'conf':''}"><span class="fdot"></span><span>${esc(f.t)}</span><button class="act">${esc(f.act)}</button></div>`).join("")
     : '<div class="flag" style="border-color:var(--line);background:var(--panel-2)"><span class="fdot" style="background:var(--auto)"></span><span>Nothing flagged — clean cluster.</span></div>';
   const upTgt=c.stage==="steward"?null:(c.stage==="senior"?"steward":"senior");
-  const escBtn=upTgt?`<button class="btn escalate">↑ Escalate to ${TIER_LABEL[upTgt]}</button>`:`<button class="btn escalate" disabled>Steward — final tier</button>`;
+  const escBtn=upTgt?`<button class="btn escalate act-escalate">↑ Escalate to ${TIER_LABEL[upTgt]}</button>`:`<button class="btn escalate" disabled>Steward — final tier</button>`;
   $("#detail").innerHTML=`
     <div class="dtop">
       <div class="kick"><span class="dot ${c.stage}"></span>Resolving · ${esc(c.subject.src)} · cluster ${esc(c.subject.id)} · ${stageLabel[c.stage]} tier</div>
@@ -439,13 +439,27 @@ function renderDetail(c){
       <div class="ecard ai"><div class="et"><span class="dot claude"></span>Cascade <span class="scoretag" style="color:var(--claude)">${c.evidence.fuzzy.toFixed(2)}</span></div><p>${esc(c.evidence.claude)}</p></div></div></div>
     <div class="sec"><h3>To resolve <span class="c">${c.flags.length}</span></h3><div class="flags">${flags}</div></div>
     <div class="actions">
-      <button class="btn primary" title="Read-only in this build — wiring the write next">✓ Confirm #1 to master</button>
-      <button class="btn" title="Read-only in this build">⑃ Split</button>
-      <button class="btn" title="Read-only in this build">⋈ Merge…</button>
+      <button class="btn primary act-confirm">✓ Confirm #1 to master</button>
+      <button class="btn" disabled title="coming next">⑃ Split</button>
+      <button class="btn" disabled title="coming next">⋈ Merge…</button>
       ${escBtn}
       <div class="spacer"></div>
-      <span class="hint">read-only preview · <kbd>J</kbd>/<kbd>K</kbd> next</span>
+      <span class="hint">writes live · <kbd>J</kbd>/<kbd>K</kbd> next</span>
     </div>`;
+  const dnode=$("#detail");
+  const cb=dnode.querySelector(".act-confirm"); if(cb) cb.onclick=()=>doAction(c.id,"confirm",null,win.name);
+  const eb=dnode.querySelector(".act-escalate"); if(eb) eb.onclick=()=>doAction(c.id,"escalate",upTgt);
+}
+
+async function doAction(cid, action, tier, matched_name){
+  const det=$("#detail");
+  det.querySelectorAll(".actions .btn").forEach(b=>b.disabled=true);
+  try{
+    const r=await (await fetch(API+"/match",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({cluster_id:cid, action, tier:tier||"", matched_name:matched_name||""})})).json();
+    if(!r.ok){ alert(r.error||"action failed"); det.querySelectorAll(".actions .btn").forEach(b=>b.disabled=false); return; }
+    boot();   // refresh funnel counts + queue + detail from live state
+  }catch(e){ alert("couldn’t reach the matching engine"); det.querySelectorAll(".actions .btn").forEach(b=>b.disabled=false); }
 }
 
 document.querySelectorAll(".stage").forEach(s=>s.onclick=()=>{
