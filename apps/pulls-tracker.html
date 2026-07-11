@@ -397,8 +397,8 @@ function openReport(id){
       .catch(function(){ btn.disabled=false; btn.textContent="Send report"; alert("Couldn't reach the service desk — is the engine live?"); });
   };
 }
-// Ingest a pull — open the ingestion QA console (suite-themed) as a modal for this source.
-// Reference data ENRICHES (join to outlets by county), it doesn't ingest to master.
+// Reference data ENRICHES (join to outlets by county), it doesn't ingest to master. The real
+// ingest/QA-to-master workflow lives in MDM (Mapping → Apply, Registrations), not a modal here.
 function openJoin(id){
   var s=SOURCES.find(function(x){return x.id===id;}); if(!s) return;
   var ov=document.createElement("div"); ov.className="ingov";
@@ -430,18 +430,6 @@ function openJoin(id){
     .catch(function(){ var body=document.getElementById("joinbody"); if(body) body.innerHTML='<div style="color:var(--bad);font-size:13px">Couldn’t reach the engine.</div>'; });
 }
 
-function openIngest(id){
-  var s=SOURCES.find(function(x){return x.id===id;}); if(!s) return;
-  var ov=document.createElement("div"); ov.className="ingov";
-  var flds=picked(s); var q=isNarrowed(s)?("&fields="+encodeURIComponent(flds.join(","))):"";
-  ov.innerHTML='<div class="ingbox"><div class="inghd"><div class="t">Ingest <small>'+esc(s.nm)+(isNarrowed(s)?(" · "+flds.length+" fields"):"")+'</small></div>'
-    +'<button class="ingx" title="Close">✕</button></div>'
-    +'<iframe class="ingfr" src="ttb-ingestion.html?embed=1'+q+'" title="Ingestion QA"></iframe></div>';
-  document.body.appendChild(ov);
-  ov.querySelector(".ingx").onclick=function(){ ov.remove(); };
-  ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
-  document.addEventListener("keydown",function esc(e){ if(e.key==="Escape"){ ov.remove(); document.removeEventListener("keydown",esc); } });
-}
 function runoutHtml(id){
   var r=RUNSTATE[id]; if(!r) return "";
   var body;
@@ -515,7 +503,6 @@ function render(){
   list.querySelectorAll("[data-cyc]").forEach(b=>b.onclick=()=>cycleStatus(b.dataset.cyc));
   list.querySelectorAll("[data-pri]").forEach(b=>b.onclick=()=>cyclePri(b.dataset.pri));
   list.querySelectorAll("[data-run]").forEach(b=>b.onclick=()=>runSource(b.dataset.run));
-  list.querySelectorAll("[data-ingest]").forEach(b=>b.onclick=()=>openIngest(b.dataset.ingest));
   list.querySelectorAll("[data-join]").forEach(b=>b.onclick=()=>openJoin(b.dataset.join));
   list.querySelectorAll("[data-fld]").forEach(b=>b.onclick=()=>{ const p=b.dataset.fld.split("::"); toggleFld(p[0],p[1]); });
   list.querySelectorAll("[data-report]").forEach(b=>b.onclick=()=>openReport(b.dataset.report));
@@ -553,7 +540,7 @@ function cardHTML(s){
       +((s.url||s.connId)?'<button class="iconbtn run" data-run="'+s.id+'" title="'+(s.connId?'Run the owned pull now (engine pipeline)':'Run this source now (recipe-first)')+'"'+(RUNSTATE[s.id]&&RUNSTATE[s.id].state==="running"?" disabled":"")+'>▸</button>':'')
       +((s.tier==="Reference Data")
           ? '<button class="iconbtn" data-join="'+s.id+'" title="Join to the outlet master by county — enrich accounts with demographics (reference data enriches, it doesn\'t ingest to master)">⊕</button>'
-          : ((s.url||s.connId)?'<button class="iconbtn" data-ingest="'+s.id+'" title="Ingest this pull — QA + commit to master">⤓</button>':''))
+          : '')
       +'<button class="iconbtn" data-edit="'+s.id+'" title="Edit">✎</button>'
     +'</div></div>'
     +((s.url||s.connId)?runoutHtml(s.id):'');
