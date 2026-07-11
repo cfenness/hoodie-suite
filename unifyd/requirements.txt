@@ -19,3 +19,4 @@ PyYAML>=6.0          # serve the OpenAPI spec at /api/openapi.json; lazy-importe
 # Wires to your existing ttb_cola_labels.extract_upc_from_label.
 # pytesseract>=0.3.10
 # pillow>=10.0
+cryptography
