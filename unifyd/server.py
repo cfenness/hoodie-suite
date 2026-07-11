@@ -886,11 +886,35 @@ def derive_hierarchy(datasets, top=50):
     pfs.sort(key=lambda p: p["name"])
     return {"id": "root", "level": "root", "name": "All Sources", "children": pfs}
 
+def _live_datasets():
+    """DATASETS (in-memory samples) MERGED with the LIVE warehouse catalog, so the dataset list + counts are
+    never a stale snapshot (the Jul-6 datasets.json was the sync bug). In-memory sample rows are kept; totals
+    are refreshed to live warehouse truth; warehouse-only datasets appear as row-less entries (real counts,
+    samples fetched on demand). Everything reading /api/datasets now sees current reality."""
+    out = {k: dict(v) for k, v in DATASETS.items()}
+    try:
+        import warehouse
+        for d in warehouse.list_datasets():
+            k = d.get("name", "")
+            if not k or k.startswith("_"):
+                continue
+            total = d.get("rows") or 0
+            if k in out:
+                out[k]["total"] = total                       # refresh the cached count to live truth
+                out[k].setdefault("store", "warehouse")
+            else:
+                out[k] = {"header": d.get("fields") or [], "rows": [], "total": total,
+                          "store": "warehouse", "live": True}
+    except Exception as e:
+        app.logger.warning("live datasets merge failed: %s", e)
+    return out
+
 @app.get("/api/datasets")
 def datasets():
     q = (request.args.get("q") or "").strip().lower()
     only = request.args.get("dataset")
-    src = {only: DATASETS[only]} if only in DATASETS else DATASETS
+    allds = _live_datasets()
+    src = {only: allds[only]} if only in allds else allds
     if not q:
         return jsonify(src)
     out = {}
