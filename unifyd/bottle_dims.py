@@ -298,13 +298,15 @@ def enrich_batch(skus, bd_key=None, log=print):
     return results
 
 
-def run_master(source="totalwine_products_full", limit=200, log=print):
-    """Go GET the bottle dimensions we can — run enrich across a real batch, land bottle_dims_enriched (flat) +
-    the honest hit-rate (enriched vs manual). Only the gettable physical fields; proprietary -> manual."""
+def run_master(source="totalwine_products_full", limit=200, name_col="name", size_col="total_size",
+               out="bottle_dims_enriched", log=print):
+    """Go GET the bottle dimensions we can — run enrich across a real batch, land <out> (flat) + the honest
+    hit-rate (enriched vs manual). Only the gettable physical fields; proprietary -> manual. name_col/size_col
+    let it run on any product source (e.g. Kroger uses product_name/size)."""
     import warehouse
     key = _bd_key()
-    skus = warehouse.query(source, "SELECT DISTINCT name, image_url, total_size FROM t "
-                           "WHERE image_url <> '' AND name <> '' LIMIT %d" % limit)
+    skus = warehouse.query(source, "SELECT DISTINCT %s AS name, image_url, %s AS size FROM t "
+                           "WHERE image_url <> '' AND %s <> '' LIMIT %d" % (name_col, size_col, name_col, limit))
     rows, enriched = [], 0
     for s in skus:
         r = enrich({"name": s["name"], "image_url": s["image_url"], "size": s.get("total_size") or "750 ml"},
@@ -324,12 +326,12 @@ def run_master(source="totalwine_products_full", limit=200, log=print):
         if r["status"] == "enriched":
             enriched += 1
         if len(rows) % 15 == 0:
-            warehouse.write_parquet("bottle_dims_enriched", rows)
+            warehouse.write_parquet(out, rows)
             log("  ...%d/%d (%d enriched)" % (len(rows), len(skus), enriched))
-    warehouse.write_parquet("bottle_dims_enriched", rows)
+    warehouse.write_parquet(out, rows)
     prop = sum(1 for r in rows if (r.get("is_proprietary")))
-    log("[bottle_dims] %d SKUs · %d ENRICHED (%.0f%%) · %d proprietary->manual · %d other-manual -> bottle_dims_enriched"
-        % (len(rows), enriched, 100 * enriched / max(1, len(rows)), prop, len(rows) - enriched - prop))
+    log("[bottle_dims] %s: %d SKUs · %d ENRICHED (%.0f%%) · %d proprietary->manual · %d other-manual -> %s"
+        % (source, len(rows), enriched, 100 * enriched / max(1, len(rows)), prop, len(rows) - enriched - prop, out))
     return rows
 
 
@@ -338,5 +340,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", default="totalwine_products_full")
     ap.add_argument("--limit", type=int, default=200)
+    ap.add_argument("--name-col", default="name")
+    ap.add_argument("--size-col", default="total_size")
+    ap.add_argument("--out", default="bottle_dims_enriched")
     a = ap.parse_args()
-    run_master(a.source, a.limit)
+    run_master(a.source, a.limit, name_col=a.name_col, size_col=a.size_col, out=a.out)
