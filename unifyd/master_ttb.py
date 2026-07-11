@@ -35,11 +35,13 @@ def load_market(log=print):
         except Exception as e:
             log("  (skip %s: %s)" % (ds, str(e)[:40]))
 
-    add("abc_products", "SELECT DISTINCT brand, name FROM t WHERE name IS NOT NULL", "abc", "brand", "name", "name")
+    add("abc_products", "SELECT DISTINCT brand, name FROM t WHERE name <> ''", "abc", "brand", "name", "name")
     add("binnys_products", "SELECT DISTINCT brand, name FROM t WHERE name IS NOT NULL", "binnys", "brand", "name", "name")
     add("totalwine_products_full", "SELECT DISTINCT name, total_size FROM t WHERE name IS NOT NULL", "totalwine", "name", "name", "total_size")
     add("specs_products", "SELECT DISTINCT name FROM t WHERE name IS NOT NULL", "specs", "name", "name", "name")
-    add("kroger_products", "SELECT DISTINCT name, brand FROM t WHERE name IS NOT NULL", "kroger", "brand", "name", "name")
+    add("kroger_products", "SELECT DISTINCT product_name, brand, size, upc FROM t WHERE product_name IS NOT NULL", "kroger", "brand", "product_name", "size")
+    add("walmart_products", "SELECT DISTINCT product_name, brand, size_ml, upc FROM t WHERE product_name IS NOT NULL", "walmart", "brand", "product_name", "size_ml")
+    add("target_products", "SELECT DISTINCT name, brand, upc FROM t WHERE name IS NOT NULL", "target", "brand", "name", "name")
     add("menu_beverages", "SELECT DISTINCT name FROM t WHERE name IS NOT NULL", "menu", "name", "name", "name")
     log("[master] market index built from %d distinct product listings" % len(rows))
     return rows
