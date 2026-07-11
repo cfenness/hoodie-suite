@@ -118,8 +118,15 @@ def cross_check(read, declared):
         if dv in (None, ""):
             out[f] = {"label": lv, "declared": None, "agrees": None, "action": "fill_candidate"}
         else:
-            a, b = _norm(lv), _norm(dv)
-            agrees = bool(a and b and (a == b or a in b or b in a))
+            if f == "net_contents":                            # compare in mL, not string form
+                lm, dm = _to_ml(str(lv)), _to_ml(str(dv))
+                agrees = bool(lm and dm and abs(lm - dm) < 1)
+            elif f in ("abv", "vintage"):                      # compare numbers (ABV within 0.6%)
+                ln, dn = re.search(r"[\d.]+", str(lv)), re.search(r"[\d.]+", str(dv))
+                agrees = bool(ln and dn and abs(float(ln.group()) - float(dn.group())) < (0.6 if f == "abv" else 0.5))
+            else:
+                a, b = _norm(lv), _norm(dv)
+                agrees = bool(a and b and (a == b or a in b or b in a))
             out[f] = {"label": lv, "declared": dv, "agrees": agrees,
                       "action": "confirm" if agrees else "review"}
     return out
