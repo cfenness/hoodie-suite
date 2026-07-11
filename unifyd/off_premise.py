@@ -11,7 +11,7 @@ retail_observations, so off-premise inventory tracks over time like the DoorDash
     python off_premise.py --store haskells --sample 25      # bounded proof
     python off_premise.py --store haskells                  # full catalog
 """
-import argparse, html as _html, json, os, re, sys, time, urllib.request
+import argparse, html as _html, json, os, re, sys, time, urllib.parse, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
@@ -228,6 +228,73 @@ def woo_catalog(base, key, max_pages=50, log=print):
     return rows
 
 
+# ── National signature-discovery + sweep — expand the recipes we have to their whole national footprint. For a
+# LIQUOR-SPECIFIC platform (Bottlecapps), SERP its fingerprint -> store domains -> validate -> run the recipe.
+# (Generic platforms — Shopify/Woo — are better discovered per-market via the Maps census.) ──
+_NOISE = re.compile(r"quora|medium|crunchbase|accessnewswire|retail-today|reddit\.|youtube|facebook|linkedin|"
+                    r"apple\.com|play\.google|glassdoor|indeed|bloomberg|yelp|tripadvisor|/blog|wikipedia|"
+                    r"twitter|instagram|pinterest|g2\.com|capterra|owler|zoominfo", re.I)
+
+
+def discover_stores(query, pages=4, log=print):
+    """SERP a platform signature -> distinct store domains (noise filtered). Market-agnostic national discovery."""
+    key = _bd_key()
+    found = set()
+    for start in range(0, pages * 10, 10):
+        try:
+            j = json.loads(_unlock("https://www.google.com/search?q=%s&brd_json=1&gl=us&hl=en&start=%d"
+                                   % (urllib.parse.quote(query), start), key))
+        except Exception:
+            continue
+        for o in (j.get("organic") or []):
+            l = o.get("link") or ""
+            if l and not _NOISE.search(l):
+                m = re.match(r"https?://[^/]+", l)
+                if m:
+                    found.add(m.group(0))
+        time.sleep(0.3)
+    return sorted(found)
+
+
+def national_sweep(platform, log=print):
+    """Discover every store on a platform nationally (by signature) + run its recipe -> national_<platform>_products."""
+    key = _bd_key()
+    sig = {"bottlecapps": '"powered by bottlecapps" OR "bottlecapps" liquor wine spirits order online',
+           "cityhive": '"powered by city hive" liquor wine spirits'}
+    domains = discover_stores(sig.get(platform, platform), log=log)
+    log("[national] %s: %d candidate store domains" % (platform, len(domains)))
+    rows, hit = [], 0
+    for d in domains:
+        try:
+            if platform == "bottlecapps":
+                sid = bottlecapps_store_id(d, key)
+                items = bottlecapps_catalog(d, sid, key, max_cats=10, log=log) if sid else []
+            elif platform == "shopify":
+                items = shopify_catalog(d, key, log=log)
+            elif platform == "woocommerce":
+                items = woo_catalog(d, key, log=log)
+            else:
+                items = []
+        except Exception as e:
+            log("  [national] %-30s failed: %s" % (d[:30], str(e)[:40])); continue
+        if items:
+            hit += 1
+        for it in items:
+            b = ctx.classify_beverage(it["name"])
+            rows.append(dict(store=d, platform=platform, name=it["name"], brand=it.get("brand", ""),
+                             price_value=it.get("price"), sku=it.get("sku", ""), upc=it.get("upc", ""),
+                             bev_category=b["category"], is_hemp=observe.is_hemp(it["name"]),
+                             **dd._parse_pack(it["name"])))
+        log("  [national] %-32s -> %d products" % (d.replace("https://", "")[:32], len(items)))
+        if rows and hit % 3 == 0:
+            warehouse.write_parquet("national_%s_products" % platform, rows)     # checkpoint
+    if rows:
+        warehouse.write_parquet("national_%s_products" % platform, rows)
+    log("[national] %s: %d products from %d/%d stores -> national_%s_products"
+        % (platform, len(rows), hit, len(domains), platform))
+    return rows
+
+
 def run_census(market="orlando", platforms=("Shopify",), census=None, out=None, log=print):
     """Pull every census e-commerce store on the given platform(s) -> <out> (a corroboration source +
     independent-store assortment). Dispatches per platform recipe. Works for the off-premise OR hemp census."""
@@ -327,8 +394,11 @@ if __name__ == "__main__":
     ap.add_argument("--census", default="", help="market -> pull all its census e-commerce stores")
     ap.add_argument("--platforms", default="Shopify")
     ap.add_argument("--hemp", action="store_true", help="pull the hemp census instead of off-premise")
+    ap.add_argument("--national", default="", help="platform -> discover its stores nationally + sweep")
     a = ap.parse_args()
-    if a.census:
+    if a.national:
+        national_sweep(a.national)
+    elif a.census:
         pl = tuple(p.strip() for p in a.platforms.split(",") if p.strip())
         if a.hemp:
             run_census(a.census, platforms=pl, census="%s_hemp_census" % a.census, out="%s_hemp_products" % a.census)
