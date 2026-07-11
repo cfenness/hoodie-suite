@@ -287,17 +287,20 @@ def national_sweep(platform, log=print):
                              **dd._parse_pack(it["name"])))
         log("  [national] %-32s -> %d products" % (d.replace("https://", "")[:32], len(items)))
         if rows and hit % 3 == 0:
-            warehouse.write_parquet("national_%s_products" % platform, rows)     # checkpoint
+            warehouse.write_accumulate("national_%s_products" % platform, rows,   # checkpoint (accumulates)
+                                       key=lambda r: (r.get("store"), r.get("name")))
     if rows:
-        warehouse.write_parquet("national_%s_products" % platform, rows)
+        warehouse.write_accumulate("national_%s_products" % platform, rows,
+                                   key=lambda r: (r.get("store"), r.get("name")))
     log("[national] %s: %d products from %d/%d stores -> national_%s_products"
         % (platform, len(rows), hit, len(domains), platform))
     return rows
 
 
-def run_census(market="orlando", platforms=("Shopify",), census=None, out=None, log=print):
+def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecapps"), census=None, out=None, log=print):
     """Pull every census e-commerce store on the given platform(s) -> <out> (a corroboration source +
-    independent-store assortment). Dispatches per platform recipe. Works for the off-premise OR hemp census."""
+    independent-store assortment). Dispatches per platform recipe. Default = ALL recipe-able platforms
+    (was Shopify-only, which left Woo/Bottlecapps stores unscraped). BigCommerce stores are ABC → abc_catalog."""
     key = _bd_key()
     census = census or ("%s_offprem_census" % market)
     out = out or ("%s_offprem_products" % market)
