@@ -284,7 +284,7 @@ function verdictOf(cands){
 function stubFrom(row, stage){
   return {id:row.cluster_id, name:titlecase(row.candidate_name||row.brand||row.cluster_id), grain:"sku", stage,
           note:((row.match_kind||"partial")+" · "+(row.corroborated_by||"no source")), conf:row.confidence||0,
-          ambiguous:(row.confidence||0)<0.6, corroborated:!!row.corroborated_by, noupc:!row.upc, brand:(row.brand||"")};
+          ambiguous:(row.confidence||0)<0.6, corroborated:(row.sources||0)>=2, noupc:!row.upc, brand:(row.brand||"")};
 }
 
 // stages that carry a live "NN% ·" prefix on their descriptor (their share of raw candidates)
@@ -374,26 +374,25 @@ function adapt(itemResp, candResp, stage){
   let cands=(candResp&&candResp.candidates)||[];
   if(!cands.length) cands=[{name:titlecase(m.candidate_name||m.brand||m.cluster_id),grain:"sku",table:(m.tier===1?"ttb_master":"ttb_review"),conf:m.confidence||0,win:true,why:"Proposed cluster.",keys:[]}];
   cands=cands.map(c=>Object.assign({},c,{name:titlecase(c.name)}));
-  const recs=filings.map(f=>({src:"TTB COLA", id:f["TTB ID"], raw:((f["Brand Name"]||"")+(f["Fanciful Name"]?(" — "+f["Fanciful Name"]):"")).trim()||"(no brand on filing)",
-    by:"auto", key:(f["UPC"]||"no UPC"), conf:1.0, status:"match",
-    fields:[["class",(f["Class/Type"]||"—")],["completed",(f["Completed Date"]||"—")],["upc",(f["UPC"]||"— none —")]]}));
+  const recs=filings.map(f=>({src:f.source||"source", id:"", raw:(f.name||f.brand||"").trim()||"(no name)",
+    by:"auto", key:f.source||"source", conf:1.0, status:"match",
+    fields:[["brand",(f.brand||"—")],["category",(f.category||"—")]]}));
   const alts=cands.slice(1);
   const dup=alts.length && Math.max.apply(null,alts.map(a=>a.conf))>=cands[0].conf;
   const flags=[];
-  if(dup) flags.push({t:"A same-brand cluster scores as high — this may be a duplicate that should merge.",act:"Review merge",kind:"conflict"});
-  if(!m.upc) flags.push({t:"No UPC on the cluster — matched on brand + name only.",act:"Find UPC",kind:"review"});
-  if(m.size_matched===false) flags.push({t:"Size isn’t confirmed across the member filings.",act:"Set size",kind:"review"});
-  if(m.tier===0) flags.push({t:"Tier 0 — needs independent corroboration before it can promote to the master.",act:"Corroborate",kind:"review"});
+  if(dup) flags.push({t:"A same-brand product scores as high — this may be a duplicate that should merge.",act:"Review merge",kind:"conflict"});
+  if(!m.upc) flags.push({t:"No UPC on the master product — matched on brand + name only.",act:"Find UPC",kind:"review"});
+  if(m.tier===0) flags.push({t:"Single-source — needs an independent source to corroborate before it can be fully trusted.",act:"Corroborate",kind:"review"});
   return {
     id:m.cluster_id, grain:"sku", stage:stage||(m.tier===1?"confirmed":"analyst"),
     subject:{label:titlecase(m.candidate_name||m.brand||m.cluster_id), src:(m.corroborated_by||"no source"), id:m.cluster_id},
-    table:(m.tier===1?"ttb_master":"ttb_review"),
-    meta:[["Class",m.class_type||"—"],["Size",m.size_ml||"—"],["UPC",m.upc||"— none —"],["Tier",String(m.tier==null?"—":m.tier)],["Members",String(m.member_count||recs.length)]],
+    table:(m.tier===1?"dim_product · corroborated":"dim_product · single-source"),
+    meta:[["Category",m.class_type||"—"],["Sources",String(m.sources||recs.length||"—")],["UPC",m.upc||"— none —"],["Source rows",String(m.member_count||recs.length)]],
     candidates:cands,
-    hierarchy:[{g:"Brand",n:titlecase(m.brand)||"—",c:"dim_brand"},{g:"Class/Type",n:m.class_type||"—",c:"ttb class"},{g:"Cluster",n:titlecase(m.candidate_name)||"—",c:(m.member_count||recs.length)+" filings",here:true},{g:"UPC",n:(m.upc||"— none —"),c:"identity"}],
+    hierarchy:[{g:"Brand",n:titlecase(m.brand)||"—",c:"dim_brand"},{g:"Category",n:m.class_type||"—",c:"dim_product"},{g:"Product",n:titlecase(m.candidate_name)||"—",c:(m.sources||recs.length)+" source"+((m.sources||recs.length)===1?"":"s"),here:true},{g:"UPC",n:(m.upc||"— none —"),c:"identity"}],
     records:recs,
-    evidence:{det:[["Confidence",(m.confidence||0).toFixed(2)],["Match kind",m.match_kind||"—"],["Corroborated by",m.corroborated_by||"— none —"],["Member filings",String(m.member_count||recs.length)]], fuzzy:(m.confidence||0),
-      claude:`${(m.match_kind||"partial")} match on the COLA filings; ${m.corroborated_by?("corroborated by "+m.corroborated_by):"no independent source has confirmed it yet"}.${dup?" A same-brand duplicate cluster exists — consider merging.":""}`},
+    evidence:{det:[["Confidence",(m.confidence||0).toFixed(2)],["Match kind",m.match_kind||"—"],["Corroborated by",m.corroborated_by||"— none —"],["Source rows",String(m.member_count||recs.length)]], fuzzy:(m.confidence||0),
+      claude:`${(m.match_kind||"single-source")} product; ${m.corroborated_by?("carried by "+m.corroborated_by):"no independent source has confirmed it yet"}.${dup?" A same-brand duplicate exists — consider merging.":""}`},
     flags:flags
   };
 }
@@ -423,7 +422,7 @@ function renderDetail(c){
         <span class="srcn">${esc(r.src)}</span><span class="rid">${esc(r.id)}</span><span class="raw">“${esc(r.raw)}”</span></div>
       <div class="ev"><span class="via">via <span class="k">${esc(r.key)}</span></span><span class="conf">${r.conf.toFixed(2)}</span></div>
       <div class="fields">${r.fields.map(f=>`<span class="fchip">${esc(f[0])} <b>${esc(f[1])}</b></span>`).join("")}</div>
-    </div>`).join("") : '<div class="qempty">No member filings returned.</div>';
+    </div>`).join("") : '<div class="qempty">No source records returned.</div>';
   const det=c.evidence.det.map(k=>`<div class="krow"><span>${esc(k[0])}</span><span class="mono">${esc(k[1])}</span></div>`).join("");
   const flags=c.flags.length? c.flags.map(f=>`<div class="flag ${f.kind==='conflict'?'conf':''}"><span class="fdot"></span><span>${esc(f.t)}</span><button class="act">${esc(f.act)}</button></div>`).join("")
     : '<div class="flag" style="border-color:var(--line);background:var(--panel-2)"><span class="fdot" style="background:var(--auto)"></span><span>Nothing flagged — clean cluster.</span></div>';
@@ -440,7 +439,7 @@ function renderDetail(c){
       <div class="rule">rule: conf ≥ ${HI_CONF}<br>OR gap ≥ ${BIG_GAP}</div></div>
     <div class="sec"><h3>Possible clusters <span class="c">${c.candidates.length}</span><span class="r">ranked by confidence · expand for the justification</span></h3><div class="cands">${cands}</div></div>
     <div class="roll">${roll}</div>
-    <div class="sec"><h3>Member filings (TTB COLA) <span class="c">${c.records.length}</span><span class="r">the source records in this cluster</span></h3><div class="recs">${recs}</div></div>
+    <div class="sec"><h3>Source catalogs <span class="c">${c.records.length}</span><span class="r">the catalogs this product was found in</span></h3><div class="recs">${recs}</div></div>
     <div class="sec"><h3>Match evidence</h3><div class="evid">
       <div class="ecard det"><div class="et"><span class="dot auto"></span>Deterministic <span class="scoretag" style="color:var(--auto)">keys</span></div>${det}</div>
       <div class="ecard ai"><div class="et"><span class="dot claude"></span>Cascade <span class="scoretag" style="color:var(--claude)">${c.evidence.fuzzy.toFixed(2)}</span></div><p>${esc(c.evidence.claude)}</p></div></div></div>

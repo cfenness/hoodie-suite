@@ -1684,61 +1684,86 @@ def _wq(ds, sql, params=None):
 
 @app.get("/api/master/workbench/summary")
 def mwb_summary_ep():
-    from collections import Counter
-    master = _wq("ttb_master", "SELECT corroborated_by, confidence, member_count, matched_by FROM t")
-    review = _wq("ttb_review", "SELECT count(*) n FROM t")
-    quar = _wq("ttb_quarantine_summary", "SELECT sum(candidates) n FROM t")
-    decisions = _wq("master_decisions", "SELECT tier FROM t")
-    by = Counter(m.get("corroborated_by") for m in master)
-    mby = Counter((m.get("matched_by") or "auto") for m in master)
-    quar_n = (quar[0]["n"] if quar and quar[0].get("n") else 0)
-    review_n = (review[0]["n"] if review else 0)
-    collapsed = sum((m.get("member_count") or 0) for m in master)
-    # Funnel stages, from real state. senior/steward come from the human-decision log (empty until anyone
-    # escalates); analyst = the pending review queue; confirmed = everything promoted into ttb_master.
-    stages = {"candidates": review_n + quar_n + collapsed,
-              "auto": mby.get("auto", 0), "claude": mby.get("claude", 0),
-              "analyst": review_n,
+    # The workbench reflects the REAL product master (dim_product), not the TTB-COLA tiering slice.
+    # The corroboration count (`sources`) is the confidence signal: a product confirmed by 2+ independent
+    # sources is auto-trusted; a single-source product is the analyst queue (needs corroboration). Raw
+    # staged source rows = candidates in; distinct dim_product = confirmed to master.
+    agg = _wq("dim_product", "SELECT count(*) total, "
+              "sum(CASE WHEN sources >= 2 THEN 1 ELSE 0 END) multi FROM t")
+    total = (agg[0]["total"] if agg else 0) or 0
+    multi = (agg[0]["multi"] if agg else 0) or 0
+    single = total - multi
+    stg = _wq("_stage_product", "SELECT count(*) n FROM t")
+    candidates = (stg[0]["n"] if stg and stg[0].get("n") else total)
+    decisions = _wq("master_decisions", "SELECT tier, action FROM t")
+    by = _wq("dim_product", "SELECT s, count(*) n FROM (SELECT unnest(source_list) s FROM t) GROUP BY 1 ORDER BY 2 DESC")
+    stages = {"candidates": candidates,
+              "auto": multi,
+              "claude": sum(1 for d in decisions if d.get("tier") == "claude"),
+              "analyst": single,
               "senior": sum(1 for d in decisions if d.get("tier") == "senior"),
               "steward": sum(1 for d in decisions if d.get("tier") == "steward"),
-              "confirmed": len(master)}
-    return jsonify(ok=True, master=len(master), review=review_n, quarantine=quar_n, collapsed=collapsed,
-                   avg_confidence=round(sum((m.get("confidence") or 0) for m in master) / max(1, len(master)), 3),
-                   stages=stages, by_source=[{"source": k, "n": v} for k, v in by.most_common()])
+              "confirmed": total}
+    return jsonify(ok=True, master=total, review=single, quarantine=0, collapsed=max(0, candidates - total),
+                   avg_confidence=round((multi * 0.88 + single * 0.5) / max(1, total), 3),
+                   stages=stages, by_source=[{"source": r.get("s"), "n": r.get("n")} for r in by])
+
+
+def _wb_brandmap():
+    return {b["brand_key"]: (b.get("brand") or "") for b in _wq("dim_brand", "SELECT brand_key, brand FROM t")}
+
+
+def _wb_prod_stub(p, brands):
+    """Reshape a dim_product row into the field names the workbench frontend consumes (cluster_id /
+    candidate_name / brand / confidence / corroborated_by / tier / member_count). Corroboration =
+    the number of independent sources that carry the product; 2+ = trusted, 1 = needs review."""
+    src = p.get("source_list") or []
+    if isinstance(src, str):
+        src = [src]
+    n = p.get("sources") or len(src) or 1
+    conf = 0.9 if n >= 3 else (0.82 if n == 2 else 0.5)
+    return {"cluster_id": p.get("product_key"), "candidate_name": p.get("product_name"),
+            "brand": brands.get(p.get("brand_key")) or "", "class_type": p.get("category"),
+            "confidence": conf, "corroborated_by": ", ".join(src), "sources": n,
+            "match_kind": ("multi-source" if n >= 2 else "single-source"),
+            "member_count": p.get("source_rows") or 1, "tier": (1 if n >= 2 else 0),
+            "upc": None, "size_ml": None}
 
 
 @app.get("/api/master/workbench/master")
 def mwb_master_ep():
     q = (request.args.get("q") or "").strip().lower()
     src = (request.args.get("source") or "").strip()
-    rows = _wq("ttb_master", "SELECT * FROM t")
-
-    def keep(m):
-        if src and m.get("corroborated_by") != src:
-            return False
-        if q and not any(q in (m.get(k) or "").lower() for k in ("brand", "fanciful", "class_type", "upc")):
-            return False
-        return True
-    rows = [m for m in rows if keep(m)]
-    rows.sort(key=lambda m: -(m.get("confidence") or 0))
-    return jsonify(ok=True, count=len(rows), items=rows[:600])
+    brands = _wb_brandmap()
+    # the trustworthy master = products corroborated by 2+ independent sources
+    rows = _wq("dim_product", "SELECT product_key, brand_key, product_name, category, sources, source_list, "
+               "source_rows FROM t WHERE sources >= 2 ORDER BY sources DESC, source_rows DESC LIMIT 600")
+    items = []
+    for r in rows:
+        st = _wb_prod_stub(r, brands)
+        st["matched_by"] = "auto"
+        if src and src not in (r.get("source_list") or []):
+            continue
+        if q and q not in (st["candidate_name"] or "").lower() and q not in (st["brand"] or "").lower():
+            continue
+        items.append(st)
+    return jsonify(ok=True, count=len(items), items=items)
 
 
 @app.get("/api/master/workbench/item/<cid>")
 def mwb_item_ep(cid):
-    import json as _j
-    m = _wq("ttb_master", "SELECT * FROM t WHERE cluster_id = ?", [cid]) or \
-        _wq("ttb_review", "SELECT * FROM t WHERE cluster_id = ?", [cid])
-    if not m:
+    p = _wq("dim_product", "SELECT * FROM t WHERE product_key = ?", [cid])
+    if not p:
         return jsonify(ok=False, error="not found"), 404
-    m = m[0]
-    ttbids = _j.loads(m.get("members") or "[]")
-    filings = []
-    if ttbids:
-        ph = ",".join("?" * len(ttbids))
-        filings = _wq("ttb_cola", 'SELECT "TTB ID","Brand Name","Fanciful Name","Class/Type","Net Contents",'
-                      '"Applicant","Status","Completed Date","UPC" FROM t WHERE "TTB ID" IN (%s)' % ph, ttbids)
-    return jsonify(ok=True, item=m, filings=filings)
+    p = p[0]
+    st = _wb_prod_stub(p, _wb_brandmap())
+    src = p.get("source_list") or []
+    if isinstance(src, str):
+        src = [src]
+    # "member records" here = the source catalogs the product was found/corroborated in
+    filings = [{"source": s, "brand": st["brand"], "name": st["candidate_name"], "category": st["class_type"]}
+               for s in src]
+    return jsonify(ok=True, item=st, filings=filings)
 
 
 def _wb_norm_brand(s):
@@ -1756,95 +1781,59 @@ def _wb_tokens(s):
 
 @app.get("/api/master/workbench/candidates/<cid>")
 def mwb_candidates_ep(cid):
-    """The RANKED possible clusters a record could belong to — the disambiguation the workbench is built on.
-    #1 is the cluster's own proposed home (its real match confidence); the rest are other clusters scored by a
-    COMPOSITE of real signals — shared GS1/UPC company prefix, brand (normalized so Titos == Tito's), name-token
-    overlap, size, and class/type — so genuine duplicates surface even across messy source strings. A big gap to
-    #2 (or a high #1) means low ambiguity; a near-tie means a human should decide."""
-    base = _wq("ttb_review", "SELECT * FROM t WHERE cluster_id = ?", [cid]) or \
-        _wq("ttb_master", "SELECT * FROM t WHERE cluster_id = ?", [cid])
+    """The RANKED possible clusters a product could belong to — the disambiguation the workbench is built on.
+    #1 is the product's own proposed home (its corroboration confidence); the rest are OTHER products under the
+    SAME brand scored by name-token overlap — so genuine duplicates within a brand surface. A big gap to #2 (or
+    a high #1) means low ambiguity; a near-tie means a human should decide whether they should merge."""
+    base = _wq("dim_product", "SELECT * FROM t WHERE product_key = ?", [cid])
     if not base:
         return jsonify(ok=False, error="not found"), 404
     base = base[0]
-    bnorm = _wb_norm_brand(base.get("brand"))
-    bpfx = _wb_upc_prefix(base.get("upc"))
-    btok = _wb_tokens(base.get("candidate_name"))
-    bsz = str(base.get("size_ml") or "").strip()
-    bcls = (base.get("class_type") or "").strip().lower()
-    cols = "cluster_id, brand, candidate_name, class_type, confidence, tier, corroborated_by, member_count, size_ml, upc, matched_by"
-    pool = _wq("ttb_master", "SELECT %s FROM t" % cols) + _wq("ttb_review", "SELECT %s FROM t" % cols)
-
-    def keys_of(c, extra=None):
-        k = []
-        if c.get("upc"):
-            k.append("upc:" + str(c["upc"]))
-        if c.get("brand"):
-            k.append("brand:" + str(c["brand"]).lower().replace(" ", "-"))
-        if c.get("size_ml"):
-            k.append("size:" + str(c["size_ml"]) + "ml")
-        if c.get("class_type"):
-            k.append("class:" + str(c["class_type"]).lower()[:22])
-        return (k + (extra or []))[:5]
-
-    cands = [{"cluster_id": cid, "name": base.get("candidate_name") or base.get("brand"), "grain": "sku",
-              "table": "ttb_" + ("master" if base.get("tier") == 1 else "review"),
-              "conf": round(base.get("confidence") or 0, 2), "win": True,
-              "why": "Proposed cluster — %s match, corroborated by %s (%s member filing%s)." % (
-                  base.get("match_kind") or "partial", base.get("corroborated_by") or "no source yet",
-                  base.get("member_count") or 0, "" if base.get("member_count") == 1 else "s"),
-              "keys": keys_of(base, ["match:" + (base.get("match_kind") or "partial")])}]
-    seen = {cid}
+    brands = _wb_brandmap()
+    bstub = _wb_prod_stub(base, brands)
+    btok = _wb_tokens(base.get("product_name"))
+    pool = _wq("dim_product", "SELECT product_key, brand_key, product_name, category, sources, source_list "
+               "FROM t WHERE brand_key = ? AND product_key <> ? LIMIT 400", [base.get("brand_key"), cid])
+    cands = [{"cluster_id": cid, "name": bstub["candidate_name"] or bstub["brand"], "grain": "sku",
+              "table": "dim_product", "conf": round(bstub["confidence"], 2), "win": True,
+              "why": "Proposed master product — %s, corroborated by %s (%d source row%s)." % (
+                  bstub["match_kind"], bstub["corroborated_by"] or "one source",
+                  bstub["member_count"], "" if bstub["member_count"] == 1 else "s"),
+              "keys": (["brand:" + (bstub["brand"] or "").lower().replace(" ", "-")] +
+                       ["src:" + s for s in (base.get("source_list") or [])[:3]])[:5]}]
     alts = []
     for c in pool:
-        if c.get("cluster_id") in seen:
-            continue
-        seen.add(c.get("cluster_id"))
-        ctok = _wb_tokens(c.get("candidate_name"))
+        ctok = _wb_tokens(c.get("product_name"))
         nj = (len(btok & ctok) / len(btok | ctok)) if (btok and ctok) else 0.0
-        same_brand = 1 if bnorm and _wb_norm_brand(c.get("brand")) == bnorm else 0
-        cpfx = _wb_upc_prefix(c.get("upc"))
-        upcm = 1 if bpfx and cpfx == bpfx else 0
-        csz = str(c.get("size_ml") or "").strip()
-        szm = 1 if (bsz and csz and bsz == csz) else (0.5 if not (bsz and csz) else 0)
-        clsm = 1 if bcls and (c.get("class_type") or "").strip().lower() == bcls else 0
-        # gate: a real duplicate must share the GS1 prefix, the brand, or a strong name overlap
-        if not (upcm or same_brand or nj >= 0.5):
+        if nj < 0.34:                                     # same-brand + real name overlap = a likely duplicate
             continue
-        score = round(0.40 * nj + 0.24 * upcm + 0.18 * same_brand + 0.10 * szm + 0.08 * clsm, 2)
-        if score <= 0.20:
-            continue
-        reasons = []
-        if upcm:
-            reasons.append("shares GS1 prefix %s" % bpfx)
-        if same_brand:
-            reasons.append("same brand")
-        if nj >= 0.4:
-            reasons.append("%d%% name overlap" % int(nj * 100))
-        if szm == 1:
-            reasons.append("same size")
-        if clsm:
-            reasons.append("same class/type")
-        alts.append({"cluster_id": c.get("cluster_id"), "name": c.get("candidate_name") or c.get("brand"),
-                     "grain": "sku", "table": "ttb_" + ("master" if c.get("tier") == 1 else "review"),
-                     "conf": score, "why": (", ".join(reasons) or "partial match").capitalize() + " — a potential duplicate cluster.",
-                     "keys": keys_of(c)})
+        cn = c.get("sources") or 1
+        alts.append({"cluster_id": c.get("product_key"), "name": c.get("product_name") or bstub["brand"],
+                     "grain": "sku", "table": "dim_product", "conf": round(nj, 2),
+                     "why": "%d%% name overlap under the same brand — a potential duplicate to merge." % int(nj * 100),
+                     "keys": ["brand:" + (bstub["brand"] or "").lower().replace(" ", "-"), "%d src" % cn]})
     alts.sort(key=lambda x: -x["conf"])
     return jsonify(ok=True, cluster_id=cid, candidates=cands + alts[:4])
 
 
 @app.get("/api/master/workbench/review")
 def mwb_review_ep():
-    rows = _wq("ttb_review", "SELECT * FROM t ORDER BY confidence DESC")
+    # analyst queue = single-source products (present in only one catalog) — they need an independent source
+    # to corroborate before they're fully trusted. Highest source_rows first (most-seen singletons first).
+    brands = _wb_brandmap()
+    rows = _wq("dim_product", "SELECT product_key, brand_key, product_name, category, sources, source_list, "
+               "source_rows FROM t WHERE sources = 1 ORDER BY source_rows DESC, product_name LIMIT 400")
     decs = {d.get("cluster_id"): d for d in _wq("master_decisions", "SELECT cluster_id, action, tier FROM t")}
     terminal = {"confirm", "reject", "merge"}
     out = []
     for r in rows:
-        dd = decs.get(r.get("cluster_id"))
+        st = _wb_prod_stub(r, brands)
+        dd = decs.get(st["cluster_id"])
         if dd and dd.get("action") in terminal:               # confirmed/rejected/merged leave the queue
             continue
-        r["review_tier"] = dd.get("tier") if (dd and dd.get("action") == "escalate") else None  # analyst→senior→steward
-        out.append(r)
-    return jsonify(ok=True, count=len(out), items=out[:400])
+        st["review_tier"] = dd.get("tier") if (dd and dd.get("action") == "escalate") else None  # analyst→senior→steward
+        out.append(st)
+    return jsonify(ok=True, count=len(out), items=out)
 
 
 @app.post("/api/master/workbench/match")
