@@ -12,7 +12,8 @@
   --auto:#3E8E6B; --auto-soft:#E6F2EC;
   --claude:#4E79A7; --claude-soft:#E9F0F7;
   --analyst:#9A7100; --analyst-soft:#F6EEDD;
-  --senior:#6B5AA6; --senior-soft:#ECEAF6;
+  --senior:#2E8B8B; --senior-soft:#E1F0EF;
+  --steward:#6B5AA6; --steward-soft:#ECEAF6;
   --conflict:#BE5540; --conflict-soft:#F6E7E2;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -22,24 +23,24 @@
   --ink:#E7EBEF; --ink-2:#C4CBD2; --muted:#8A939C; --faint:#6B747D; --line:#2B313A; --line-2:#242A31;
   --accent:#6E9AC8; --accent-soft:#213042; --accent-line:#33465C;
   --auto:#5FB088; --auto-soft:#1B2C25; --claude:#6E9AC8; --claude-soft:#213042;
-  --analyst:#C9A24A; --analyst-soft:#2E2718; --senior:#9B8AD0; --senior-soft:#262038;
-  --conflict:#D9745C; --conflict-soft:#31211D;
+  --analyst:#C9A24A; --analyst-soft:#2E2718; --senior:#4FB0AC; --senior-soft:#123130;
+  --steward:#9B8AD0; --steward-soft:#262038; --conflict:#D9745C; --conflict-soft:#31211D;
 }}
 :root[data-theme="dark"]{
   --paper:#14171B; --panel:#1D2126; --panel-2:#23282F; --inset:#191D22;
   --ink:#E7EBEF; --ink-2:#C4CBD2; --muted:#8A939C; --faint:#6B747D; --line:#2B313A; --line-2:#242A31;
   --accent:#6E9AC8; --accent-soft:#213042; --accent-line:#33465C;
   --auto:#5FB088; --auto-soft:#1B2C25; --claude:#6E9AC8; --claude-soft:#213042;
-  --analyst:#C9A24A; --analyst-soft:#2E2718; --senior:#9B8AD0; --senior-soft:#262038;
-  --conflict:#D9745C; --conflict-soft:#31211D;
+  --analyst:#C9A24A; --analyst-soft:#2E2718; --senior:#4FB0AC; --senior-soft:#123130;
+  --steward:#9B8AD0; --steward-soft:#262038; --conflict:#D9745C; --conflict-soft:#31211D;
 }
 :root[data-theme="light"]{
   --paper:#EEF1F4; --panel:#FFFFFF; --panel-2:#F6F8FA; --inset:#F1F4F7;
   --ink:#22282E; --ink-2:#3C444C; --muted:#727C86; --faint:#9AA3AC; --line:#E1E6EB; --line-2:#EDF0F3;
   --accent:#4E79A7; --accent-soft:#E9F0F7; --accent-line:#CBDCEC;
   --auto:#3E8E6B; --auto-soft:#E6F2EC; --claude:#4E79A7; --claude-soft:#E9F0F7;
-  --analyst:#9A7100; --analyst-soft:#F6EEDD; --senior:#6B5AA6; --senior-soft:#ECEAF6;
-  --conflict:#BE5540; --conflict-soft:#F6E7E2;
+  --analyst:#9A7100; --analyst-soft:#F6EEDD; --senior:#2E8B8B; --senior-soft:#E1F0EF;
+  --steward:#6B5AA6; --steward-soft:#ECEAF6; --conflict:#BE5540; --conflict-soft:#F6E7E2;
 }
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -67,23 +68,24 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 .hd .run b{color:var(--ink);font-weight:650}
 .role{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--analyst-soft);background:var(--analyst-soft);color:var(--analyst);border-radius:20px;padding:3px 10px;font-size:11.5px;font-weight:700}
 
-.funnel{display:grid;grid-template-columns:repeat(6,1fr);gap:9px;margin-bottom:8px}
-.stage{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 14px 12px;text-align:left;transition:.12s;overflow:hidden}
+.funnel{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:8px}
+.stage{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 13px 11px;text-align:left;transition:.12s;overflow:hidden}
 .stage:hover{border-color:var(--accent-line)}
 .stage.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
-.stage .lab{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);display:flex;align-items:center;gap:6px}
-.stage .n{font-size:23px;font-weight:750;letter-spacing:-.02em;margin-top:5px}
-.stage .pct{font-size:11.5px;color:var(--muted);margin-top:1px}
-.stage .bar{height:4px;border-radius:3px;margin-top:10px;background:var(--line-2);overflow:hidden}
+.stage .lab{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);display:flex;align-items:center;gap:6px}
+.stage .n{font-size:21px;font-weight:750;letter-spacing:-.02em;margin-top:5px}
+.stage .pct{font-size:11px;color:var(--muted);margin-top:1px}
+.stage .bar{height:4px;border-radius:3px;margin-top:9px;background:var(--line-2);overflow:hidden}
 .stage .bar i{display:block;height:100%;border-radius:3px}
 .dot{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
 .dot.auto{background:var(--auto)} .dot.claude{background:var(--claude)} .dot.analyst{background:var(--analyst)}
-.dot.senior{background:var(--senior)} .dot.conflict{background:var(--conflict)} .dot.cand{background:var(--faint)} .dot.confirmed{background:var(--accent)}
+.dot.senior{background:var(--senior)} .dot.steward{background:var(--steward)} .dot.conflict{background:var(--conflict)}
+.dot.cand{background:var(--faint)} .dot.confirmed{background:var(--accent)}
 .stage.s-auto .bar i{background:var(--auto)} .stage.s-claude .bar i{background:var(--claude)}
 .stage.s-analyst .bar i{background:var(--analyst)} .stage.s-senior .bar i{background:var(--senior)}
-.stage.s-all .bar i{background:var(--faint)} .stage.s-confirmed .bar i{background:var(--accent)}
+.stage.s-steward .bar i{background:var(--steward)} .stage.s-all .bar i{background:var(--faint)} .stage.s-confirmed .bar i{background:var(--accent)}
 .flowline{display:flex;align-items:center;gap:6px;color:var(--faint);font-size:11px;margin:2px 4px 18px;flex-wrap:wrap}
-.flowline .seg{flex:1;height:1px;background:var(--line);min-width:12px}
+.flowline .seg{flex:1;height:1px;background:var(--line);min-width:10px}
 .flowline b{color:var(--muted);font-weight:600}
 
 .work{display:grid;grid-template-columns:352px 1fr;gap:16px;align-items:start}
@@ -113,10 +115,11 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 .grain.sku{background:var(--accent-soft);color:var(--accent)}
 .grain.item{background:var(--auto-soft);color:var(--auto)}
 .grain.product{background:var(--analyst-soft);color:var(--analyst)}
-.grain.outlet{background:var(--senior-soft);color:var(--senior)}
+.grain.outlet{background:var(--steward-soft);color:var(--steward)}
 .pill{font-size:10px;font-weight:750;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:20px;display:inline-flex;align-items:center;gap:5px;flex:none}
 .pill.auto{background:var(--auto-soft);color:var(--auto)} .pill.claude{background:var(--claude-soft);color:var(--claude)}
 .pill.analyst{background:var(--analyst-soft);color:var(--analyst)} .pill.senior{background:var(--senior-soft);color:var(--senior)}
+.pill.steward{background:var(--steward-soft);color:var(--steward)}
 .pill.review{background:var(--analyst-soft);color:var(--analyst)} .pill.conflict{background:var(--conflict-soft);color:var(--conflict)}
 .pill.confirmed{background:var(--accent-soft);color:var(--accent)}
 .conf{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:auto;flex:none}
@@ -129,6 +132,49 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 .dtop .meta .kv{display:flex;align-items:center;gap:6px}
 .dtop .meta .kv b{color:var(--ink-2);font-weight:600}
 .keychip{font-family:var(--mono);font-size:12px;background:var(--inset);border:1px solid var(--line);border-radius:7px;padding:3px 9px;color:var(--ink-2)}
+
+/* verdict banner — the auto-resolve rule made visible */
+.verdict{display:flex;align-items:center;gap:13px;margin:16px 22px 0;padding:12px 16px;border-radius:11px;border:1px solid}
+.verdict .vico{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-weight:800;font-size:15px;flex:none}
+.verdict .vt{font-weight:750;font-size:14.5px}
+.verdict .vn{font-size:12.5px;margin-top:1px}
+.verdict.high,.verdict.clear{background:var(--auto-soft);border-color:color-mix(in srgb,var(--auto) 35%,var(--line))}
+.verdict.high .vt,.verdict.clear .vt{color:var(--auto)} .verdict.high .vico,.verdict.clear .vico{background:var(--auto);color:#fff}
+.verdict.high .vn,.verdict.clear .vn{color:color-mix(in srgb,var(--auto) 78%,var(--ink))}
+.verdict.ambiguous{background:var(--analyst-soft);border-color:color-mix(in srgb,var(--analyst) 35%,var(--line))}
+.verdict.ambiguous .vt{color:var(--analyst)} .verdict.ambiguous .vico{background:var(--analyst);color:#fff}
+.verdict.ambiguous .vn{color:color-mix(in srgb,var(--analyst) 72%,var(--ink))}
+.verdict .rule{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right;flex:none}
+
+/* ranked candidate clusters */
+.cands{display:flex;flex-direction:column;gap:0}
+.cand{border:1px solid var(--line);border-radius:11px;background:var(--panel-2);overflow:hidden}
+.cand.win{border-color:color-mix(in srgb,var(--auto) 45%,var(--line));background:var(--panel)}
+.cand summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:26px 1fr 168px auto;gap:13px;align-items:center;padding:12px 15px}
+.cand summary::-webkit-details-marker{display:none}
+.cand summary:hover{background:var(--panel-2)}
+.rank{font-family:var(--mono);font-weight:750;color:var(--faint);font-size:14px;text-align:center}
+.cand.win .rank{color:var(--auto)}
+.cand .cn{min-width:0}
+.cand .cn .nm{font-weight:650;font-size:14px;display:flex;align-items:center;gap:9px}
+.cand .cn .tb{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px}
+.wintag{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--auto);background:var(--auto-soft);border-radius:5px;padding:2px 6px}
+.cbarwrap{display:flex;align-items:center;gap:9px}
+.cbar{height:7px;border-radius:4px;background:var(--line-2);position:relative;overflow:hidden;flex:1}
+.cbar i{display:block;height:100%;border-radius:4px;background:var(--faint)}
+.cand.win .cbar i{background:var(--auto)}
+.cbar .thr{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--conflict);opacity:.7}
+.cscore{font-family:var(--mono);font-weight:700;font-size:13px;min-width:34px;text-align:right}
+.chev{color:var(--faint);font-size:12px;transition:.15s;transform:rotate(0)}
+.cand[open] .chev{transform:rotate(90deg)}
+.cjust{padding:2px 16px 14px 39px;border-top:1px dashed var(--line);font-size:12.5px;color:var(--ink-2);line-height:1.55}
+.cjust .jk{display:flex;flex-wrap:wrap;gap:6px;margin:9px 0 0}
+.cjust .jchip{font-family:var(--mono);font-size:11px;background:var(--inset);border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:var(--ink-2)}
+.cjust .use{margin-top:11px;font-size:12px;font-weight:650;color:var(--accent);border:1px solid var(--accent-line);background:var(--panel);border-radius:8px;padding:6px 12px}
+.gapdiv{display:flex;align-items:center;gap:9px;margin:7px 0 7px 39px;font-size:11px;color:var(--muted)}
+.gapdiv .gl{flex:none;font-weight:650}
+.gapdiv.big .gl{color:var(--auto)} .gapdiv.small .gl{color:var(--analyst)}
+.gapdiv .seg{height:1px;background:var(--line);flex:1}
 
 .roll{display:flex;align-items:stretch;gap:0;padding:14px 22px;border-bottom:1px solid var(--line);background:var(--inset);overflow-x:auto}
 .rnode{flex:1;min-width:120px;display:flex;flex-direction:column;gap:3px;padding:0 16px;position:relative}
@@ -187,12 +233,14 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 .btn.primary:hover{filter:brightness(1.07)}
 .btn.escalate{color:var(--senior)}
 .btn.escalate:hover{border-color:var(--senior);background:var(--senior-soft)}
+.btn:disabled{opacity:.5;cursor:default}
 .actions .spacer{flex:1}
 .actions .hint{font-size:11.5px;color:var(--muted)}
 .actions kbd{font-family:var(--mono);font-size:10.5px;background:var(--inset);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 5px;color:var(--muted)}
 
-@media (max-width:1080px){ .work{grid-template-columns:1fr} .queue{position:static} .qlist{max-height:340px} .funnel{grid-template-columns:repeat(3,1fr)} .evid{grid-template-columns:1fr} }
-@media (max-width:640px){ .funnel{grid-template-columns:repeat(2,1fr)} }
+@media (max-width:1300px){ .funnel{grid-template-columns:repeat(4,1fr)} }
+@media (max-width:1080px){ .work{grid-template-columns:1fr} .queue{position:static} .qlist{max-height:340px} .evid{grid-template-columns:1fr} }
+@media (max-width:720px){ .funnel{grid-template-columns:repeat(2,1fr)} .cand summary{grid-template-columns:22px 1fr auto} .cbarwrap{display:none} }
 </style>
 
 <div class="top">
@@ -204,44 +252,20 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 <div class="wrap">
   <div class="hd">
     <h1>Matching workbench</h1>
-    <span class="sub">Collapse raw source records into canonical master entities.</span>
+    <span class="sub">Rank the possible clusters, read the justification, decide — or step it up.</span>
     <span class="run"><span class="role"><span class="dot analyst"></span>Reviewing as Analyst</span><span>Run <b>master-2026-07-11</b> · <b class="num">12,481</b> candidates</span></span>
   </div>
 
-  <!-- the escalation cascade, as a funnel + filter -->
   <div class="funnel" id="funnel">
-    <button class="stage s-all" data-stage="all">
-      <div class="lab"><span class="dot cand"></span>Candidates</div>
-      <div class="n num">12,481</div><div class="pct">raw records in</div>
-      <div class="bar"><i style="width:100%"></i></div>
-    </button>
-    <button class="stage s-auto" data-stage="auto">
-      <div class="lab"><span class="dot auto"></span>Auto</div>
-      <div class="n num">8,203</div><div class="pct">66% · exact key</div>
-      <div class="bar"><i style="width:66%"></i></div>
-    </button>
-    <button class="stage s-claude" data-stage="claude">
-      <div class="lab"><span class="dot claude"></span>Claude</div>
-      <div class="n num">2,946</div><div class="pct">24% · adjudicated</div>
-      <div class="bar"><i style="width:24%"></i></div>
-    </button>
-    <button class="stage s-analyst on" data-stage="analyst">
-      <div class="lab"><span class="dot analyst"></span>Analyst</div>
-      <div class="n num">1,332</div><div class="pct">11% · your queue</div>
-      <div class="bar"><i style="width:11%"></i></div>
-    </button>
-    <button class="stage s-senior" data-stage="senior">
-      <div class="lab"><span class="dot senior"></span>Sr Analyst</div>
-      <div class="n num">214</div><div class="pct">escalated up</div>
-      <div class="bar"><i style="width:2%"></i></div>
-    </button>
-    <button class="stage s-confirmed" data-stage="confirmed">
-      <div class="lab"><span class="dot confirmed"></span>Confirmed</div>
-      <div class="n num">9,914</div><div class="pct">promoted to master</div>
-      <div class="bar"><i style="width:79%"></i></div>
-    </button>
+    <button class="stage s-all" data-stage="all"><div class="lab"><span class="dot cand"></span>Candidates</div><div class="n num">12,481</div><div class="pct">raw in</div><div class="bar"><i style="width:100%"></i></div></button>
+    <button class="stage s-auto" data-stage="auto"><div class="lab"><span class="dot auto"></span>Auto</div><div class="n num">8,203</div><div class="pct">66% · exact key</div><div class="bar"><i style="width:66%"></i></div></button>
+    <button class="stage s-claude" data-stage="claude"><div class="lab"><span class="dot claude"></span>Claude</div><div class="n num">2,946</div><div class="pct">24% · adjudicated</div><div class="bar"><i style="width:24%"></i></div></button>
+    <button class="stage s-analyst on" data-stage="analyst"><div class="lab"><span class="dot analyst"></span>Analyst</div><div class="n num">1,332</div><div class="pct">your queue</div><div class="bar"><i style="width:11%"></i></div></button>
+    <button class="stage s-senior" data-stage="senior"><div class="lab"><span class="dot senior"></span>Sr Analyst</div><div class="n num">214</div><div class="pct">escalated</div><div class="bar"><i style="width:2%"></i></div></button>
+    <button class="stage s-steward" data-stage="steward"><div class="lab"><span class="dot steward"></span>Steward</div><div class="n num">38</div><div class="pct">final authority</div><div class="bar"><i style="width:1%"></i></div></button>
+    <button class="stage s-confirmed" data-stage="confirmed"><div class="lab"><span class="dot confirmed"></span>Confirmed</div><div class="n num">9,914</div><div class="pct">to master</div><div class="bar"><i style="width:79%"></i></div></button>
   </div>
-  <div class="flowline"><b>raw records</b><span class="seg"></span>exact keys<span class="seg"></span>Claude<span class="seg"></span>analyst<span class="seg"></span>senior analyst<span class="seg"></span><b>canonical master</b></div>
+  <div class="flowline"><b>raw records</b><span class="seg"></span>exact keys<span class="seg"></span>Claude<span class="seg"></span>analyst<span class="seg"></span>senior<span class="seg"></span>steward<span class="seg"></span><b>master</b></div>
 
   <div class="work">
     <aside class="queue">
@@ -251,7 +275,7 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
       </div>
       <div class="tabs" id="tabs">
         <button class="tab on" data-f="all">All</button>
-        <button class="tab" data-f="conflict">Conflicts</button>
+        <button class="tab" data-f="ambiguous">Ambiguous</button>
         <button class="tab" data-f="sku">SKU</button>
         <button class="tab" data-f="item">Item</button>
         <button class="tab" data-f="product">Product</button>
@@ -265,12 +289,33 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 </div>
 
 <script>
+// Auto-resolve rule: a match resolves itself when the top candidate is confident ENOUGH,
+// or there's a big ENOUGH gap to the runner-up. Otherwise a human decides — and can step it up.
+const HI_CONF = 0.95, BIG_GAP = 0.20;
+function verdictOf(cands){
+  const top = cands[0].conf, second = cands[1] ? cands[1].conf : 0, gap = +(top-second).toFixed(2);
+  if(top >= HI_CONF) return {kind:"high", label:"High-confidence match", note:`Top candidate ${top.toFixed(2)} clears the ${HI_CONF} bar — auto-confirm eligible.`, gap};
+  if(gap >= BIG_GAP) return {kind:"clear", label:"Clear winner", note:`+${gap.toFixed(2)} gap over #2 — one candidate stands out, low ambiguity.`, gap};
+  return {kind:"ambiguous", label:"Ambiguous — a human decides", note:`Top ${top.toFixed(2)} is below ${HI_CONF} and only +${gap.toFixed(2)} over #2. Too close to call automatically.`, gap};
+}
+
 const CLUSTERS = [
   {
-    id:"espolon-blanco-750", grain:"sku", stage:"analyst", conf:0.82,
-    name:"Espolòn Tequila Blanco 750 mL", table:"dim_sku",
-    keyType:"GTIN-14", keyValue:"00811538010203",
+    id:"espolon-blanco-750", grain:"sku", stage:"analyst",
+    subject:{label:"Espolon Silver Tequila 750 mL", src:"Kroger", id:"#KR-1902773"},
+    name:"Espolòn Tequila Blanco 750 mL", table:"dim_sku", keyType:"GTIN-14", keyValue:"00811538010203",
     meta:[["Category","Tequila · Blanco"],["ABV","40.0%"],["NOM","1440"],["Size","750 mL"]],
+    candidates:[
+      {name:"Espolòn Blanco 750 mL", grain:"sku", table:"dim_sku", conf:0.91, win:true,
+       why:"GTIN-14, brand and size all align. Kroger's \"Silver\" is a labeling synonym for Blanco in tequila — the same expression, not a different product.",
+       keys:["GTIN-14 = 811538010203","brand:espolon","size:750ml","variant:silver→blanco"]},
+      {name:"Espolòn Reposado 750 mL", grain:"sku", table:"dim_sku", conf:0.42,
+       why:"Same brand and size, but Reposado is an aged expression. The DoorDash record that reads \"Reposado\" belongs HERE, not with Blanco.",
+       keys:["brand:espolon","size:750ml","variant:reposado ✗"]},
+      {name:"Espolòn Añejo 750 mL", grain:"sku", table:"dim_sku", conf:0.27,
+       why:"Same brand only. Añejo is further-aged and typically higher-priced — name overlaps on \"Espolon\" but little else.",
+       keys:["brand:espolon","variant:añejo ✗"]}
+    ],
     hierarchy:[
       {g:"Brand",n:"Espolòn",c:"dim_brand · 11 skus"},
       {g:"Product",n:"Espolòn Blanco",c:"dim_product · 3 items"},
@@ -278,123 +323,118 @@ const CLUSTERS = [
       {g:"Sku",n:"Espolòn Blanco 750 mL",c:"dim_sku · UPC 811538010203",here:true}
     ],
     records:[
-      {src:"TTB COLA",id:"#21089001000123",raw:"ESPOLON TEQUILA BLANCO",by:"auto",key:"GTIN-14 811538010203",conf:1.00,status:"match",
-       fields:[["abv","40.0%","agree"],["size","750 mL","agree"],["nom","1440","agree"]]},
-      {src:"Total Wine",id:"#TW-88213",raw:"Espolòn Blanco Tequila (750 ml)",by:"auto",key:"GTIN-14 811538010203",conf:1.00,status:"match",
-       fields:[["abv","40%","agree"],["size","750 mL","agree"]]},
-      {src:"ABC FWS",id:"#A-44821",raw:"Espolon Blanco Tequila 750ml",by:"auto",key:"brand+name+size",conf:0.98,status:"match",
-       fields:[["size","750 mL","agree"],["price","$27.99",""]]},
-      {src:"Kroger",id:"#KR-1902773",raw:"Espolon Silver Tequila 750 mL",by:"claude",key:"name-variant",conf:0.91,status:"claude",
-       fields:[["variant","Silver → Blanco","agree"],["size","750 mL","agree"]]},
-      {src:"Instacart",id:"#IC-55110",raw:"Espolon Tequila, Blanco (750 mL)",by:"review",key:"fuzzy 0.82",conf:0.82,status:"review",
-       fields:[["size","750 mL","agree"],["upc","— none —","diff"]]},
-      {src:"DoorDash",id:"#DD-70418",raw:"Espolon Reposado 750 mL",by:"review",key:"fuzzy 0.74",conf:0.74,status:"conflict",
-       fields:[["variant","Reposado ≠ Blanco","diff"],["size","750 mL","agree"]]}
+      {src:"TTB COLA",id:"#21089001000123",raw:"ESPOLON TEQUILA BLANCO",by:"auto",key:"GTIN-14 811538010203",conf:1.00,status:"match",fields:[["abv","40.0%","agree"],["size","750 mL","agree"],["nom","1440","agree"]]},
+      {src:"Total Wine",id:"#TW-88213",raw:"Espolòn Blanco Tequila (750 ml)",by:"auto",key:"GTIN-14 811538010203",conf:1.00,status:"match",fields:[["abv","40%","agree"],["size","750 mL","agree"]]},
+      {src:"Kroger",id:"#KR-1902773",raw:"Espolon Silver Tequila 750 mL",by:"claude",key:"name-variant",conf:0.91,status:"claude",fields:[["variant","Silver → Blanco","agree"],["size","750 mL","agree"]]},
+      {src:"DoorDash",id:"#DD-70418",raw:"Espolon Reposado 750 mL",by:"review",key:"fuzzy 0.74",conf:0.74,status:"conflict",fields:[["variant","Reposado ≠ Blanco","diff"],["size","750 mL","agree"]]}
     ],
-    evidence:{
-      det:[["GTIN-14","00811538010203"],["Brand key","md5:espolon"],["Item key","espolon|blanco|750"],["Sources agreeing","3 of 6"]],
-      fuzzy:0.82,
-      claude:"Kroger lists this as \"Silver\" — for tequila, Silver and Blanco are the same expression, so it belongs in this cluster (0.91). The DoorDash record is Reposado, an aged sibling expression: same product family, different item — it should split to its own SKU."
-    },
-    flags:[
-      {t:"Instacart record has no UPC — matched on name+size only (0.82). Confirm it's the same bottle before promoting.",act:"Keep",kind:"review"},
-      {t:"DoorDash \"Espolon Reposado\" is a different expression — likely the wrong cluster.",act:"Split off",kind:"conflict"}
-    ]
+    evidence:{det:[["GTIN-14","00811538010203"],["Brand key","md5:espolon"],["Item key","espolon|blanco|750"],["Sources agreeing","3 of 4"]],fuzzy:0.91,
+      claude:"Silver = Blanco for tequila, so Kroger folds into the winner. The DoorDash \"Reposado\" is candidate #2's record — split it off before confirming."},
+    flags:[{t:"DoorDash \"Espolon Reposado\" scores higher against candidate #2 — split it to Reposado.",act:"Split off",kind:"conflict"}]
   },
   {
-    id:"titos-1l", grain:"item", stage:"claude", conf:0.94,
-    name:"Tito's Handmade Vodka 1 L", table:"dim_item",
-    keyType:"brand+name+size", keyValue:"titos|handmade-vodka|1000ml",
+    id:"titos-1l", grain:"item", stage:"claude",
+    subject:{label:"Titos Vodka 1 Liter", src:"Kroger", id:"#KR-771820"},
+    name:"Tito's Handmade Vodka 1 L", table:"dim_item", keyType:"brand+name+size", keyValue:"titos|handmade-vodka|1000ml",
     meta:[["Category","Vodka"],["ABV","40.0%"],["Size","1 L"],["Skus in item","2"]],
+    candidates:[
+      {name:"Tito's Handmade Vodka 1 L", grain:"item", table:"dim_item", conf:0.97, win:true,
+       why:"All four sources normalize to this item once \"Titos\"→\"Tito's\" and \"33.8 fl oz\"→\"1 L\" resolve. Two distinct UPCs are packaging skus beneath it.",
+       keys:["brand:titos","name:handmade-vodka","size:1000ml","norm:oz→ml"]},
+      {name:"Tito's Handmade Vodka 750 mL", grain:"item", table:"dim_item", conf:0.31,
+       why:"Same product, different size — none of these records state 750 mL, so this loses decisively.",
+       keys:["brand:titos","size:750ml ✗"]}
+    ],
     hierarchy:[
       {g:"Brand",n:"Tito's",c:"dim_brand · 6 skus"},
       {g:"Product",n:"Tito's Handmade Vodka",c:"dim_product · 5 items"},
       {g:"Item",n:"Tito's Handmade Vodka 1 L",c:"dim_item · 2 skus",here:true},
-      {g:"Sku",n:"— 2 packaging skus —",c:"UPC 619947000013 · 619947000112"}
+      {g:"Sku",n:"— 2 packaging skus —",c:"UPC …013 · …112"}
     ],
     records:[
-      {src:"TTB COLA",id:"#19021001000455",raw:"TITO'S HANDMADE VODKA",by:"auto",key:"brand+name",conf:0.97,status:"match",fields:[["abv","40.0%","agree"],["size","1.0 L","agree"]]},
       {src:"Walmart",id:"#WM-330214",raw:"Tito's Handmade Vodka, 1 L Bottle",by:"auto",key:"GTIN-14 619947000013",conf:1.00,status:"match",fields:[["size","1 L","agree"],["upc","619947000013","agree"]]},
-      {src:"Kroger",id:"#KR-771820",raw:"Titos Vodka 1 Liter",by:"claude",key:"name-normalize",conf:0.94,status:"claude",fields:[["size","1 L","agree"],["brand","Titos → Tito's","agree"]]},
+      {src:"Kroger",id:"#KR-771820",raw:"Titos Vodka 1 Liter",by:"claude",key:"name-normalize",conf:0.94,status:"claude",fields:[["brand","Titos → Tito's","agree"],["size","1 L","agree"]]},
       {src:"Target",id:"#TG-40028",raw:"Tito's Handmade Vodka - 1L (33.8 fl oz)",by:"claude",key:"size-normalize",conf:0.92,status:"claude",fields:[["size","33.8 oz → 1 L","agree"]]}
     ],
-    evidence:{
-      det:[["Brand key","md5:titos"],["Item key","titos|handmade-vodka|1000ml"],["Sources agreeing","4 of 4"],["UPCs seen","2 (packaging)"]],
-      fuzzy:0.94,
-      claude:"All four records normalize to the same item once \"Titos\"→\"Tito's\" and \"33.8 fl oz\"→\"1 L\" resolve. Two distinct UPCs are packaging variants of one item — they stay as separate skus beneath it."
-    },
-    flags:[{t:"Two UPCs roll into this item as sibling skus — confirm they're packaging, not different products.",act:"Review skus",kind:"review"}]
+    evidence:{det:[["Brand key","md5:titos"],["Item key","titos|handmade-vodka|1000ml"],["Sources agreeing","3 of 3"],["UPCs seen","2 (packaging)"]],fuzzy:0.97,
+      claude:"Unambiguous once size normalizes. Above the auto bar — this is the kind of match that shouldn't need a human at all."},
+    flags:[{t:"Two UPCs roll up as sibling skus — confirm they're packaging, not different products.",act:"Review skus",kind:"review"}]
   },
   {
-    id:"abc-orlando-outlet", grain:"outlet", stage:"analyst", conf:0.79,
-    name:"ABC Fine Wine & Spirits #114 — Orlando", table:"dim_outlet_resolved",
-    keyType:"name+address+zip5", keyValue:"abc-fws|114|32801",
-    meta:[["Type","Off-premise · retail"],["City","Orlando, FL"],["ZIP","32801"],["Sources","3"]],
+    id:"whispering-angel", grain:"product", stage:"senior",
+    subject:{label:"Whispering Angel Rosé (Côtes de Provence)", src:"Instacart", id:"#IC-90233"},
+    name:"Whispering Angel Rosé", table:"dim_product", keyType:"brand+name", keyValue:"whispering-angel|rose",
+    meta:[["Category","Wine · Rosé"],["Region","Côtes de Provence"],["Vintage","disputed"],["Size","750 mL"]],
+    candidates:[
+      {name:"Whispering Angel Rosé 2023", grain:"product", table:"dim_product", conf:0.51, win:true,
+       why:"Two sources state a 2023 vintage and the label OCR reads 2023 — but per policy vintages are a SKU attribute, not a separate product, so this may not even be the right grain to split on.",
+       keys:["brand:whispering-angel","vintage:2023","label-ocr:2023"]},
+      {name:"Whispering Angel Rosé 2022", grain:"product", table:"dim_product", conf:0.47,
+       why:"Two other sources state 2022; one is undated. Only 0.04 behind — the vintages are nearly tied.",
+       keys:["brand:whispering-angel","vintage:2022"]},
+      {name:"Whispering Angel Rosé (NV)", grain:"product", table:"dim_product", conf:0.38,
+       why:"A retailer lists it with no vintage at all — which is exactly why the vintage shouldn't gate identity.",
+       keys:["brand:whispering-angel","vintage:none"]}
+    ],
     hierarchy:[
-      {g:"Chain",n:"ABC Fine Wine & Spirits",c:"127 outlets"},
-      {g:"Outlet",n:"ABC #114 — Orlando",c:"dim_outlet_resolved",here:true},
-      {g:"License",n:"BEV-58-01234",c:"FL DBPR"},
-      {g:"Carriage",n:"1,904 skus",c:"fact_inventory"}
+      {g:"Brand",n:"Whispering Angel",c:"dim_brand · Château d'Esclans"},
+      {g:"Product",n:"Whispering Angel Rosé",c:"dim_product · vintage = attribute",here:true},
+      {g:"Item",n:"Whispering Angel Rosé 750",c:"dim_item · 1 sku"},
+      {g:"Sku",n:"Whispering Angel Rosé 750 mL",c:"vintage-stripped id"}
     ],
     records:[
-      {src:"ABC FWS",id:"#store-114",raw:"ABC #114 · 100 S Eola Dr, Orlando FL 32801",by:"auto",key:"source_ref abc-114",conf:1.00,status:"match",fields:[["zip","32801","agree"],["lat/lng","28.541,-81.372","agree"]]},
-      {src:"Google Maps",id:"#g-Ux82",raw:"ABC Fine Wine & Spirits, S Eola Dr",by:"claude",key:"name+geo 60m",conf:0.90,status:"claude",fields:[["addr","100 S Eola Dr","agree"],["hours","present",""]]},
-      {src:"FL DBPR",id:"#ABT-58-01234",raw:"ABC LIQUORS INC #114, 100 EOLA DR S",by:"review",key:"fuzzy 0.79",conf:0.79,status:"review",fields:[["addr","100 Eola Dr S","agree"],["zip","32801","agree"],["dba","ABC LIQUORS INC","diff"]]}
+      {src:"Total Wine",id:"#TW-51002",raw:"Whispering Angel Rosé 2023 (750 ml)",by:"review",key:"fuzzy 0.51",conf:0.51,status:"review",fields:[["vintage","2023","diff"],["size","750 mL","agree"]]},
+      {src:"ABC FWS",id:"#A-77140",raw:"Whispering Angel Cotes de Provence 2022",by:"review",key:"fuzzy 0.47",conf:0.47,status:"conflict",fields:[["vintage","2022","diff"],["region","Provence","agree"]]},
+      {src:"Instacart",id:"#IC-90233",raw:"Whispering Angel Rosé",by:"review",key:"fuzzy 0.38",conf:0.38,status:"review",fields:[["vintage","— none —","diff"],["size","750 mL","agree"]]}
     ],
-    evidence:{
-      det:[["Outlet key","abc-fws|114|32801"],["Geo match","60 m radius"],["Sources agreeing","2 of 3"]],
-      fuzzy:0.79,
-      claude:"The DBPR licensee \"ABC LIQUORS INC #114\" is the legal entity behind the retail banner \"ABC Fine Wine & Spirits #114\" — same address and ZIP, different DBA. Confirm to link the license to the outlet."
-    },
-    flags:[{t:"DBPR legal name differs from the retail banner — same address though. Confirm to attach the license.",act:"Confirm link",kind:"review"}]
+    evidence:{det:[["Brand key","md5:whispering-angel"],["Vintage as identity?","NO (policy)"],["Sources agreeing","split 2/2/1"]],fuzzy:0.51,
+      claude:"The split is entirely on vintage. Under the rule \"vintages are a SKU attribute, not a different product,\" all three collapse to one product with vintage recorded per-sku — but that's a policy call above my pay grade. Escalating."},
+    flags:[{t:"Vintage-driven split. Policy says vintages collapse to one product — a steward should confirm the rule applies here.",act:"Apply policy",kind:"review"}]
   }
 ];
 
-const STAGE_TOTAL = {all:12481, auto:8203, claude:2946, analyst:1332, senior:214, confirmed:9914};
-const STAGE_TITLE = {all:"All candidates", auto:"Auto-matched", claude:"Claude-adjudicated", analyst:"Analyst queue", senior:"Senior-analyst queue", confirmed:"Confirmed to master"};
+const STAGE_TOTAL = {all:12481, auto:8203, claude:2946, analyst:1332, senior:214, steward:38, confirmed:9914};
+const STAGE_TITLE = {all:"All candidates", auto:"Auto-matched", claude:"Claude-adjudicated", analyst:"Analyst queue", senior:"Senior-analyst queue", steward:"Steward queue", confirmed:"Confirmed to master"};
 
 const QUEUE = [
-  {ref:"espolon-blanco-750", nm:"Espolòn Tequila Blanco 750 mL", grain:"sku", stage:"analyst", conf:0.82, conflict:true, note:"6 sources · 1 conflict (Reposado)"},
-  {ref:"abc-orlando-outlet", nm:"ABC Fine Wine & Spirits #114", grain:"outlet", stage:"analyst", conf:0.79, note:"3 sources · DBPR name differs"},
-  {ref:"espolon-blanco-750", nm:"Bulleit Bourbon Frontier 750 mL", grain:"sku", stage:"analyst", conf:0.85, note:"5 sources · no UPC on 2"},
-  {ref:"titos-1l", nm:"Josh Cellars Cabernet 2021", grain:"product", stage:"analyst", conf:0.83, conflict:true, note:"vintage vs non-vintage mix"},
-  {ref:"titos-1l", nm:"Tito's Handmade Vodka 1 L", grain:"item", stage:"claude", conf:0.94, note:"Claude confident · confirm"},
-  {ref:"abc-orlando-outlet", nm:"Total Wine #218 — Winter Park", grain:"outlet", stage:"claude", conf:0.88, note:"geo 40 m · confirm"},
+  {ref:"espolon-blanco-750", nm:"Espolòn Tequila Blanco 750 mL", grain:"sku", stage:"analyst", conf:0.91, note:"clear winner · 1 record to split"},
+  {ref:"espolon-blanco-750", nm:"Bulleit Bourbon Frontier 750 mL", grain:"sku", stage:"analyst", conf:0.88, note:"clear · no UPC on 2 sources"},
+  {ref:"whispering-angel", nm:"Josh Cellars Cabernet", grain:"product", stage:"analyst", conf:0.55, ambiguous:true, note:"ambiguous · vintage vs NV"},
+  {ref:"titos-1l", nm:"Tito's Handmade Vodka 1 L", grain:"item", stage:"claude", conf:0.97, note:"high confidence · confirm"},
   {ref:"titos-1l", nm:"Casamigos Reposado 750 mL", grain:"sku", stage:"claude", conf:0.90, note:"name-variant · confirm"},
-  {ref:"titos-1l", nm:"Whispering Angel Rosé 2023", grain:"product", stage:"senior", conf:0.80, conflict:true, note:"escalated · vintage split 2022/23"},
-  {ref:"abc-orlando-outlet", nm:"Publix #1420 — Orlando", grain:"outlet", stage:"senior", conf:0.71, note:"escalated · two candidates"},
+  {ref:"whispering-angel", nm:"Whispering Angel Rosé", grain:"product", stage:"senior", conf:0.51, ambiguous:true, note:"escalated · vintage split 2022/23"},
+  {ref:"whispering-angel", nm:"Publix #1420 — two candidates", grain:"outlet", stage:"senior", conf:0.62, ambiguous:true, note:"escalated · +0.03 gap"},
+  {ref:"whispering-angel", nm:"“House blend” — 4 near-ties", grain:"product", stage:"steward", conf:0.44, ambiguous:true, note:"steward · policy call"},
   {ref:"titos-1l", nm:"Casamigos Blanco 750 mL", grain:"sku", stage:"auto", conf:1.00, note:"exact GTIN · 5 sources"},
-  {ref:"titos-1l", nm:"Absolut Original 1.75 L", grain:"item", stage:"auto", conf:1.00, note:"exact GTIN · 4 sources"},
-  {ref:"espolon-blanco-750", nm:"Jack Daniel's Old No.7 750 mL", grain:"sku", stage:"confirmed", conf:1.00, note:"promoted to master"},
-  {ref:"titos-1l", nm:"Tito's Handmade Vodka 750 mL", grain:"sku", stage:"confirmed", conf:0.99, note:"promoted to master"}
+  {ref:"espolon-blanco-750", nm:"Jack Daniel's Old No.7 750 mL", grain:"sku", stage:"confirmed", conf:1.00, note:"promoted to master"}
 ];
 
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
-const stageLabel={auto:"Auto",claude:"Claude",analyst:"Analyst",senior:"Sr Analyst",confirmed:"Confirmed",review:"Review",conflict:"Conflict",match:"Auto"};
-
+const stageLabel={auto:"Auto",claude:"Claude",analyst:"Analyst",senior:"Sr Analyst",steward:"Steward",confirmed:"Confirmed",review:"Review",conflict:"Conflict",match:"Auto"};
+const TIER_LABEL={senior:"senior analyst", steward:"steward"};
 let FILT = {stage:"analyst", grain:"all", q:""};
 
 function currentRows(){
   const t=FILT.q.trim().toLowerCase();
   return QUEUE.filter(q=>{
     if(FILT.stage!=="all" && q.stage!==FILT.stage) return false;
-    if(FILT.grain==="conflict"){ if(!q.conflict) return false; }
+    if(FILT.grain==="ambiguous"){ if(!q.ambiguous) return false; }
     else if(FILT.grain!=="all" && q.grain!==FILT.grain) return false;
     if(t && !(q.nm.toLowerCase().includes(t) || q.note.toLowerCase().includes(t))) return false;
     return true;
   });
 }
 
-function renderQueue(keepRef){
+function renderQueue(){
   const rows = currentRows();
   $("#qtitle").textContent = STAGE_TITLE[FILT.stage];
   $("#qn").textContent = rows.length;
   $("#qtot").textContent = STAGE_TOTAL[FILT.stage].toLocaleString();
-  if(!rows.length){ $("#qlist").innerHTML = '<div class="qempty">Nothing in this view — try another stage or filter.</div>'; return; }
-  const selRef = (keepRef && rows.some(r=>r.ref===keepRef)) ? keepRef : rows[0].ref;
-  $("#qlist").innerHTML = rows.map(q=>`
-    <button class="qitem${q.ref===selRef?' sel':''}" data-ref="${q.ref}">
+  if(!rows.length){ $("#qlist").innerHTML = '<div class="qempty">Nothing in this view — try another stage or filter.</div>'; $("#detail").innerHTML=""; return; }
+  const selRef = rows[0].ref;
+  $("#qlist").innerHTML = rows.map((q,i)=>`
+    <button class="qitem${i===0?' sel':''}" data-ref="${q.ref}">
       <div class="r1"><span class="grain ${q.grain}">${q.grain}</span><span class="nm">${esc(q.nm)}</span></div>
       <div class="r2"><span class="pill ${q.stage}"><span class="dot ${q.stage}"></span>${stageLabel[q.stage]}</span>
         <span>${esc(q.note)}</span><span class="conf">${q.conf.toFixed(2)}</span></div>
@@ -408,41 +448,67 @@ function renderQueue(keepRef){
 
 function renderDetail(ref){
   const c = CLUSTERS.find(x=>x.id===ref) || CLUSTERS[0];
+  const v = verdictOf(c.candidates);
+  const win = c.candidates.find(x=>x.win) || c.candidates[0];
+
+  // ranked candidate clusters, expandable to justification; threshold marker + gap divider
+  const cands = c.candidates.map((cd,i)=>{
+    const gapRow = i===0 && c.candidates[1] ? (()=>{ const g=+(c.candidates[0].conf-c.candidates[1].conf).toFixed(2);
+      return `<div class="gapdiv ${g>=BIG_GAP?'big':'small'}"><span class="gl">${g>=BIG_GAP?'▲ +'+g.toFixed(2)+' gap':'≈ +'+g.toFixed(2)+' — near tie'}</span><span class="seg"></span></div>`; })() : "";
+    return `<details class="cand ${cd.win?'win':''}" ${cd.win?'open':''}>
+      <summary>
+        <span class="rank">#${i+1}</span>
+        <span class="cn"><span class="nm">${esc(cd.name)} <span class="grain ${cd.grain}">${cd.grain}</span>${cd.win?'<span class="wintag">proposed</span>':''}</span><span class="tb">${esc(cd.table)}</span></span>
+        <span class="cbarwrap"><span class="cbar"><i style="width:${Math.round(cd.conf*100)}%"></i><span class="thr" style="left:${HI_CONF*100}%"></span></span></span>
+        <span class="cscore">${cd.conf.toFixed(2)}</span>
+      </summary>
+      <div class="cjust">${esc(cd.why)}
+        <div class="jk">${cd.keys.map(k=>`<span class="jchip">${esc(k)}</span>`).join("")}</div>
+        ${cd.win?"":'<button class="use">Use this match instead →</button>'}
+      </div>
+    </details>${gapRow}`;
+  }).join("");
+
+  const roll = c.hierarchy.map(h=>`<div class="rnode ${h.here?'here':''}"><span class="rg">${esc(h.g)}</span><span class="rn">${esc(h.n)}</span><span class="rc">${esc(h.c)}</span></div>`).join("");
   const byPill={match:"auto",auto:"auto",claude:"claude",review:"review",conflict:"conflict"};
   const byLabel={match:"Auto",auto:"Auto",claude:"Claude",review:"Analyst",conflict:"Conflict"};
   const recs = c.records.map(r=>`
     <div class="rec ${r.status}">
-      <div class="src">
-        <span class="pill ${byPill[r.status]}"><span class="dot ${byPill[r.status]}"></span>${byLabel[r.status]}</span>
-        <span class="srcn">${esc(r.src)}</span><span class="rid">${esc(r.id)}</span>
-        <span class="raw">“${esc(r.raw)}”</span>
-      </div>
+      <div class="src"><span class="pill ${byPill[r.status]}"><span class="dot ${byPill[r.status]}"></span>${byLabel[r.status]}</span>
+        <span class="srcn">${esc(r.src)}</span><span class="rid">${esc(r.id)}</span><span class="raw">“${esc(r.raw)}”</span></div>
       <div class="ev"><span class="via">via <span class="k">${esc(r.key)}</span></span><span class="conf">${r.conf.toFixed(2)}</span></div>
       <div class="fields">${r.fields.map(f=>`<span class="fchip ${f[2]}">${esc(f[0])} <b>${esc(f[1])}</b></span>`).join("")}</div>
     </div>`).join("");
-  const roll = c.hierarchy.map(h=>`
-    <div class="rnode ${h.here?'here':''}"><span class="rg">${esc(h.g)}</span><span class="rn">${esc(h.n)}</span><span class="rc">${esc(h.c)}</span></div>`).join("");
   const det = c.evidence.det.map(k=>`<div class="krow"><span>${esc(k[0])}</span><span class="mono">${esc(k[1])}</span></div>`).join("");
-  const flags = c.flags.map(f=>`
-    <div class="flag ${f.kind==='conflict'?'conf':''}"><span class="fdot"></span><span>${esc(f.t)}</span><button class="act">${esc(f.act)}</button></div>`).join("");
-  const atSenior = c.stage==="senior";
+  const flags = c.flags.map(f=>`<div class="flag ${f.kind==='conflict'?'conf':''}"><span class="fdot"></span><span>${esc(f.t)}</span><button class="act">${esc(f.act)}</button></div>`).join("");
+
+  // escalation STEPS UP one human rung from where the item sits
+  const upTgt = c.stage==="steward" ? null : c.stage==="senior" ? "steward" : "senior";
+  const escBtn = upTgt ? `<button class="btn escalate">↑ Escalate to ${TIER_LABEL[upTgt]}</button>`
+                       : `<button class="btn escalate" disabled>Steward — final tier</button>`;
+
   $("#detail").innerHTML = `
     <div class="dtop">
-      <div class="kick"><span class="dot ${c.stage}"></span>Proposed canonical · ${c.table} · ${stageLabel[c.stage]} stage</div>
-      <h2>${esc(c.name)} <span class="grain ${c.grain}">${c.grain}</span></h2>
-      <div class="meta">
-        <span class="kv">match key <span class="keychip">${esc(c.keyType)} = ${esc(c.keyValue)}</span></span>
-        ${c.meta.map(m=>`<span class="kv">${esc(m[0])} <b>${esc(m[1])}</b></span>`).join("")}
-        <span class="kv">confidence <b class="mono">${c.conf.toFixed(2)}</b></span>
-      </div>
+      <div class="kick"><span class="dot ${c.stage}"></span>Resolving · ${esc(c.subject.src)} ${esc(c.subject.id)} · ${stageLabel[c.stage]} tier</div>
+      <h2>“${esc(c.subject.label)}” <span class="grain ${c.grain}">${c.grain}</span></h2>
+      <div class="meta"><span class="kv">winning key <span class="keychip">${esc(win.name)}</span></span>${c.meta.map(m=>`<span class="kv">${esc(m[0])} <b>${esc(m[1])}</b></span>`).join("")}</div>
+    </div>
+    <div class="verdict ${v.kind}">
+      <span class="vico">${v.kind==='ambiguous'?'?':'✓'}</span>
+      <div><div class="vt">${v.label}</div><div class="vn">${esc(v.note)}</div></div>
+      <div class="rule">rule: conf ≥ ${HI_CONF}<br>OR gap ≥ ${BIG_GAP}</div>
+    </div>
+    <div class="sec">
+      <h3>Possible clusters <span class="c">${c.candidates.length}</span><span class="r">ranked by confidence · expand for the justification</span></h3>
+      <div class="cands">${cands}</div>
     </div>
     <div class="roll">${roll}</div>
     <div class="sec">
-      <h3>Source records <span class="c">${c.records.length}</span><span class="r">${c.records.filter(r=>r.status==='match'||r.status==='auto').length} auto · ${c.records.filter(r=>r.status==='claude').length} Claude · ${c.records.filter(r=>r.status==='review'||r.status==='conflict').length} need you</span></h3>
+      <h3>Source records in the winner <span class="c">${c.records.length}</span><span class="r">${c.records.filter(r=>r.status==='match'||r.status==='auto').length} auto · ${c.records.filter(r=>r.status==='claude').length} Claude · ${c.records.filter(r=>r.status==='review'||r.status==='conflict').length} need you</span></h3>
       <div class="recs">${recs}</div>
     </div>
     <div class="sec">
-      <h3>Why the engine proposed this</h3>
+      <h3>Match evidence</h3>
       <div class="evid">
         <div class="ecard det"><div class="et"><span class="dot auto"></span>Deterministic <span class="scoretag" style="color:var(--auto)">keys</span></div>${det}</div>
         <div class="ecard ai"><div class="et"><span class="dot claude"></span>Claude <span class="scoretag" style="color:var(--claude)">${c.evidence.fuzzy.toFixed(2)}</span></div><p>${esc(c.evidence.claude)}</p></div>
@@ -453,28 +519,24 @@ function renderDetail(ref){
       <div class="flags">${flags}</div>
     </div>
     <div class="actions">
-      <button class="btn primary">✓ Confirm to master</button>
+      <button class="btn primary">✓ Confirm #1 to master</button>
       <button class="btn">⑃ Split record</button>
-      <button class="btn">⋈ Merge cluster…</button>
-      <button class="btn escalate">↑ ${atSenior?"Return to analyst":"Escalate to senior analyst"}</button>
+      <button class="btn">⋈ Merge…</button>
+      ${escBtn}
       <div class="spacer"></div>
-      <span class="hint"><kbd>C</kbd> confirm · <kbd>S</kbd> split · <kbd>E</kbd> escalate · <kbd>J</kbd>/<kbd>K</kbd> next</span>
+      <span class="hint"><kbd>C</kbd> confirm · <kbd>E</kbd> escalate · <kbd>J</kbd>/<kbd>K</kbd> next</span>
     </div>`;
 }
 
-// funnel → stage filter (this is what the top buttons do now)
 document.querySelectorAll(".stage").forEach(s=>s.onclick=()=>{
   document.querySelectorAll(".stage").forEach(x=>x.classList.remove("on")); s.classList.add("on");
   FILT.stage = s.dataset.stage; renderQueue();
 });
-// tabs → grain / conflict filter
 document.querySelectorAll("#tabs .tab").forEach(t=>t.onclick=()=>{
   document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.remove("on")); t.classList.add("on");
   FILT.grain = t.dataset.f; renderQueue();
 });
-// search
 $(".search").addEventListener("input", e=>{ FILT.q = e.target.value; renderQueue(); });
-// theme
 $("#theme").onclick=()=>{ const r=document.documentElement;
   const cur=r.getAttribute("data-theme")|| (matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");
   r.setAttribute("data-theme", cur==="dark"?"light":"dark"); };
