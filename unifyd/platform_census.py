@@ -81,9 +81,55 @@ def census(market="orlando", near="Orlando FL", scope="retail", log=print):
     return rows
 
 
+_HEMP_TERMS = ["cbd store", "smoke shop", "vape shop", "hemp store", "cbd dispensary", "delta 8 store", "hemp dispensary"]
+
+
+def census_hemp(market="orlando", near="Orlando FL", log=print):
+    """The HEMP vertical — a separate retail world (smoke/CBD/vape/hemp shops) the alcohol sweep never touches.
+    Discover them via Google Maps, then capture the SAME system census: platform + has_ecommerce + sells_hemp +
+    sells_bevalc. Lands <market>_hemp_census. Feeds the hemp-bev interest + the recipe-first build."""
+    import place_coverage as pc
+    key = ms._bd_key()
+    seen = {}
+    for term in _HEMP_TERMS:
+        try:
+            for p in pc._bd_maps_text("%s %s" % (term, near), key):
+                fid = p.get("fid")
+                if fid and fid not in seen:
+                    seen[fid] = {"name": p.get("title"), "website": p.get("link") or "",
+                                 "category": p.get("category")}
+        except Exception:
+            pass
+    log("[hemp] discovered %d distinct hemp/CBD/smoke retailers" % len(seen))
+    rows, run_id = [], "hemp-" + time.strftime("%Y%m%d-%H%M%S")
+    for i, (fid, s) in enumerate(seen.items()):
+        site = s["website"]
+        rec = dict(account=s["name"], google_fid=fid, website=site,
+                   has_website=bool(site and not ms._SOCIAL.search(site)),
+                   platform="", has_ecommerce=False, sells_hemp=False, sells_bevalc=False,
+                   market=market, run_id=run_id)
+        if rec["has_website"]:
+            try:
+                rec.update(detect(ms._unlock(site, key)))
+            except Exception:
+                pass
+        rows.append(rec)
+        if (i + 1) % 20 == 0:
+            warehouse.write_parquet("%s_hemp_census" % market, rows)
+            log("  [hemp] ...%d/%d" % (i + 1, len(seen)))
+        time.sleep(0.4)
+    warehouse.write_parquet("%s_hemp_census" % market, rows)
+    from collections import Counter
+    ecom = sum(1 for r in rows if r["has_ecommerce"])
+    plats = Counter(r["platform"] for r in rows if r["has_ecommerce"] and r["platform"])
+    log("[hemp] %s: %d retailers · %d with website · %d with e-commerce · platforms %s"
+        % (market, len(rows), sum(1 for r in rows if r["has_website"]), ecom, dict(plats.most_common())))
+    return rows
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--market", default="orlando")
-    ap.add_argument("--scope", default="retail", choices=["retail", "all"])
+    ap.add_argument("--scope", default="retail", choices=["retail", "all", "hemp"])
     a = ap.parse_args()
-    census(a.market, scope=a.scope)
+    (census_hemp if a.scope == "hemp" else census)(a.market)
