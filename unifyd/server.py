@@ -1566,7 +1566,36 @@ def mwb_item_ep(cid):
 @app.get("/api/master/workbench/review")
 def mwb_review_ep():
     rows = _wq("ttb_review", "SELECT * FROM t ORDER BY confidence DESC")
+    decided = {d.get("cluster_id") for d in _wq("master_decisions", "SELECT cluster_id FROM t")}
+    rows = [r for r in rows if r.get("cluster_id") not in decided]   # hide already-stewarded items
     return jsonify(ok=True, count=len(rows), items=rows[:400])
+
+
+@app.post("/api/master/workbench/match")
+def mwb_match_ep():
+    """Human tier of the cascade — a steward confirms or rejects a candidate the automations + Claude couldn't.
+    Records the decision; on 'confirm' the item is promoted into the master as matched_by='manual'."""
+    import time as _t
+    import warehouse
+    d = request.get_json(silent=True) or {}
+    cid = (d.get("cluster_id") or "").strip()
+    action = (d.get("action") or "").strip()
+    if not cid or action not in ("confirm", "reject"):
+        return jsonify(ok=False, error="cluster_id + action (confirm|reject) required"), 400
+    dec = dict(cluster_id=cid, action=action, note=(d.get("note") or "")[:200],
+               matched_name=(d.get("matched_name") or "")[:120], steward=(d.get("steward") or "workbench"),
+               ts=int(_t.time()))
+    existing = [e for e in _wq("master_decisions", "SELECT * FROM t") if e.get("cluster_id") != cid]
+    warehouse.write_parquet("master_decisions", existing + [dec])
+    if action == "confirm":
+        row = _wq("ttb_review", "SELECT * FROM t WHERE cluster_id = ?", [cid])
+        if row:
+            r = dict(row[0]); r["matched_by"] = "manual"; r["tier"] = 1
+            if dec["matched_name"]:
+                r["candidate_name"] = dec["matched_name"]
+            master = [m for m in _wq("ttb_master", "SELECT * FROM t") if m.get("cluster_id") != cid]
+            warehouse.write_parquet("ttb_master", master + [r])
+    return jsonify(ok=True, cluster_id=cid, action=action)
 
 
 @app.post("/api/ingest/<dataset>")

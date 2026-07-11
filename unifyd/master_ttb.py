@@ -12,7 +12,7 @@ the UPC on the way), and lands:
 
     python master_ttb.py --cola 25000        # scope the COLA slice (newest first); omit for a bigger run
 """
-import argparse, json, os, sys, time
+import argparse, json, os, re, sys, time, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
@@ -47,14 +47,50 @@ def load_market(log=print):
     return rows
 
 
-def _master_row(cl):
-    cor = cl.get("corroboration", {})
+def _master_row(cl, matched_by):
+    cor = cl.get("corroboration") or cl.get("candidate") or {}
     return dict(cluster_id=cl["cluster_id"], brand=cl.get("brand", ""), fanciful=cl.get("fanciful", ""),
                 class_type=cl.get("class_type", ""), size_ml=cl.get("size_ml"), supplier=cl.get("supplier", ""),
-                upc=cl.get("upc", ""), corroborated_by=cor.get("source", ""), confidence=cor.get("confidence"),
-                match_kind=cor.get("match", ""), size_matched=cor.get("size_matched"),
+                upc=cl.get("upc", "") or cor.get("upc", ""), corroborated_by=cor.get("source", ""),
+                confidence=cor.get("confidence"), match_kind=cor.get("match", ""),
+                size_matched=cor.get("size_matched"), candidate_name=cor.get("name", ""), matched_by=matched_by,
                 member_count=cl.get("count", 0), members=json.dumps(cl.get("members", [])),
-                first_day=cl.get("first_day"), last_day=cl.get("last_day"), tier=1)
+                first_day=cl.get("first_day"), last_day=cl.get("last_day"),
+                tier=(0 if matched_by == "manual_pending" else 1))
+
+
+def claude_match(review_rows, model="claude-opus-4-8", log=print):
+    """AI tier of the cascade: adjudicate each low-confidence candidate the automations couldn't confirm. Claude
+    decides same-product / not for each pair; the ones it confirms promote (matched_by='claude'), the rest fall to
+    the MANUAL queue. Opt-in on ANTHROPIC_API_KEY (no-op without -> everything goes to manual). Returns the set of
+    confirmed cluster_ids."""
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key or not review_rows:
+        return set()
+    confirmed = set()
+    for i in range(0, len(review_rows), 40):
+        batch = review_rows[i:i + 40]
+        lines = ['%d) TTB label: brand="%s" fanciful="%s" type="%s" size=%sml  vs  %s listing: "%s"'
+                 % (j, r["brand"], r.get("fanciful", ""), r.get("class_type", ""), r.get("size_ml"),
+                    r.get("corroborated_by", ""), r.get("candidate_name", "")) for j, r in enumerate(batch)]
+        prompt = ("For each numbered pair, decide if the TTB label item and the retail listing are THE SAME "
+                  "product — same brand + product + roughly the same size (ignore vintage, packaging words, minor "
+                  "spelling). Return ONLY a JSON array of the integer indices that ARE the same product.\n\n"
+                  + "\n".join(lines))
+        body = json.dumps({"model": model, "max_tokens": 1500,
+                           "messages": [{"role": "user", "content": prompt}]}).encode()
+        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=body, headers={
+            "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
+        try:
+            rr = json.loads(urllib.request.urlopen(req, timeout=120).read())
+            txt = "".join(b.get("text", "") for b in rr.get("content", []) if b.get("type") == "text")
+            for k in json.loads(re.search(r"\[.*\]", txt, re.S).group(0)):
+                if isinstance(k, int) and 0 <= k < len(batch):
+                    confirmed.add(batch[k]["cluster_id"])
+        except Exception:
+            pass
+    log("  [claude-match] adjudicated %d candidates -> %d confirmed" % (len(review_rows), len(confirmed)))
+    return confirmed
 
 
 def run(cola_limit=25000, threshold=0.65, log=print):
@@ -67,22 +103,33 @@ def run(cola_limit=25000, threshold=0.65, log=print):
     market = load_market(log)
     res = ct.tier(cola, market, threshold=threshold)
     s = res["summary"]
-    log("[master] %d clusters · %d CONFIRMED (Tier 1) · %d quarantine · %d review · promotion rate %.1f%%"
-        % (s["clusters"], s["tier1_confirmed"], s["tier0_quarantine"], s["review"], 100 * s["promotion_rate"]))
+    from collections import Counter
 
-    master = [_master_row(cl) for cl in res["tier1"]]
-    review = [dict(_master_row(cl), tier=0, review_reason=cl.get("review", "")) for cl in res["review"]]
+    # ── the matching cascade: automations -> Claude -> manual ──
+    auto = [_master_row(cl, "auto") for cl in res["tier1"]]                       # 1) automations made the match
+    cands = [_master_row(cl, "manual_pending") for cl in res["review"] if (cl.get("candidate") or {}).get("name")]
+    log("[master] %d clusters · %d auto-confirmed · %d candidates the automations couldn't confirm -> Claude…"
+        % (s["clusters"], len(auto), len(cands)))
+    claude_ok = claude_match(cands, log=log)                                      # 2) Claude adjudicates the rest
+    claude_rows, manual_rows = [], []
+    for r in cands:
+        if r["cluster_id"] in claude_ok:
+            r["matched_by"], r["tier"] = "claude", 1
+            claude_rows.append(r)
+        else:
+            manual_rows.append(r)                                                # 3) everything left -> manual queue
+
+    master = auto + claude_rows
     if master:
         warehouse.write_parquet("ttb_master", master)
-    if review:
-        warehouse.write_parquet("ttb_review", review)
+    warehouse.write_parquet("ttb_review", manual_rows)                           # the workbench's manual match queue
     warehouse.write_parquet("ttb_quarantine_summary",
                             [dict(r, run_id="master-" + time.strftime("%Y%m%d-%H%M%S")) for r in res["innovation"][:200]])
-    # which sources are doing the confirming?
-    from collections import Counter
-    by_src = Counter(m["corroborated_by"] for m in master)
-    log("[master] confirmed-by source: %s" % dict(by_src.most_common()))
-    return {"master": len(master), "review": len(review), "summary": s}
+    log("[master] CONFIRMED %d = %d auto + %d Claude · %d -> manual queue · by-source %s"
+        % (len(master), len(auto), len(claude_rows), len(manual_rows),
+           dict(Counter(m["corroborated_by"] for m in master).most_common())))
+    return {"master": len(master), "auto": len(auto), "claude": len(claude_rows),
+            "manual": len(manual_rows), "summary": s}
 
 
 if __name__ == "__main__":

@@ -162,7 +162,7 @@ def corroborate(cluster, midx):
     pick = (size_ok or cands)[0]
     conf = (0.9 if size_ok else 0.65) if kind == "exact" else (0.7 if size_ok else 0.45)
     return {"source": pick["source"], "upc": pick["upc"], "confidence": conf,
-            "match": kind, "size_matched": bool(size_ok)}
+            "match": kind, "size_matched": bool(size_ok), "name": pick.get("name", "")}
 
 
 # ---------- top-level tiering ----------
