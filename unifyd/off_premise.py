@@ -118,12 +118,14 @@ def shopify_catalog(base, key, max_pages=25, log=print):
     return rows
 
 
-def run_census(market="orlando", platforms=("Shopify",), log=print):
-    """Pull every census e-commerce store on the given platform(s) -> <market>_offprem_products (a corroboration
-    source + independent-store assortment). Dispatches per platform recipe."""
+def run_census(market="orlando", platforms=("Shopify",), census=None, out=None, log=print):
+    """Pull every census e-commerce store on the given platform(s) -> <out> (a corroboration source +
+    independent-store assortment). Dispatches per platform recipe. Works for the off-premise OR hemp census."""
     key = _bd_key()
+    census = census or ("%s_offprem_census" % market)
+    out = out or ("%s_offprem_products" % market)
     seen, stores = set(), []
-    for s in warehouse.query("%s_offprem_census" % market,
+    for s in warehouse.query(census,
                              "SELECT DISTINCT account, website, platform FROM t WHERE has_ecommerce = true"):
         base = re.match(r"https?://[^/]+", s["website"] or "")
         if not base or base.group(0) in seen:
@@ -147,8 +149,8 @@ def run_census(market="orlando", platforms=("Shopify",), log=print):
                              **dd._parse_pack(it["name"])))
         log("  [off] %-26s (%s) -> %d products" % (s["account"][:26], s["platform"], len(items)))
     if rows:
-        warehouse.write_parquet("%s_offprem_products" % market, rows)
-    log("[off] %d products -> %s_offprem_products" % (len(rows), market))
+        warehouse.write_parquet(out, rows)
+    log("[off] %d products -> %s" % (len(rows), out))
     return rows
 
 
@@ -206,8 +208,13 @@ if __name__ == "__main__":
     ap.add_argument("--sample", type=int, default=0)
     ap.add_argument("--census", default="", help="market -> pull all its census e-commerce stores")
     ap.add_argument("--platforms", default="Shopify")
+    ap.add_argument("--hemp", action="store_true", help="pull the hemp census instead of off-premise")
     a = ap.parse_args()
     if a.census:
-        run_census(a.census, platforms=tuple(p.strip() for p in a.platforms.split(",") if p.strip()))
+        pl = tuple(p.strip() for p in a.platforms.split(",") if p.strip())
+        if a.hemp:
+            run_census(a.census, platforms=pl, census="%s_hemp_census" % a.census, out="%s_hemp_products" % a.census)
+        else:
+            run_census(a.census, platforms=pl)
     elif a.store:
         run(a.store, base=a.base or None, platform=a.platform or None, sample=a.sample or None)
