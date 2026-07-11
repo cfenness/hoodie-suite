@@ -9,7 +9,7 @@ Every field carries {value, source, confidence, ts}. Sources: glass-supplier cat
 TricorBraun) for the numbers; vision for shape + stock-vs-proprietary; GS1 Verify anchors identity (separate).
 No GDSN / licensed data.
 """
-import base64, json, os, re, time, urllib.request
+import base64, json, os, re, time, urllib.parse, urllib.request
 
 SHAPE_CLASSES = ["Bordeaux", "Burgundy", "Claret", "Champagne/Sparkling", "Spirits Round", "Cognac/Brandy",
                  "Flask/Flint", "Hock/Alsace", "Decanter", "Proprietary/Custom", "Other"]
@@ -78,6 +78,100 @@ def classify_bottle(image_bytes, name="", url=""):
 
 def _field(value, source, confidence):
     return {"value": value, "source": source, "confidence": confidence, "ts": None}
+
+
+# ── Glass-catalog spec parser (Berlin Packaging) — the SOURCE of the numbers for a matched stock mold ──
+def _unlock(url, bd_key, dataf=None):
+    body = {"zone": "cli_unlocker", "url": url, "format": "raw"}
+    if dataf:
+        body["data_format"] = dataf
+    r = urllib.request.Request("https://api.brightdata.com/request", data=json.dumps(body).encode(),
+                               headers={"Authorization": "Bearer " + bd_key, "Content-Type": "application/json"})
+    return urllib.request.urlopen(r, timeout=60).read().decode("utf-8", "replace")
+
+
+_IN_MM = 25.4
+_OZ_G = 28.3495
+
+
+def _to_mm(s):
+    if not s:
+        return None
+    m = re.search(r"([\d.]+)\s*(mm|cm|in|inch|\")", s, re.I)
+    if not m:
+        return None
+    v, u = float(m.group(1)), m.group(2).lower()
+    return round(v * (_IN_MM if u.startswith(("in", '"')) else (10 if u == "cm" else 1)), 1)
+
+
+def _to_ml(s):
+    if not s:
+        return None
+    m = re.search(r"([\d.]+)\s*(ml|l|oz)", s, re.I)
+    if not m:
+        return None
+    v, u = float(m.group(1)), m.group(2).lower()
+    return round(v * (1000 if u == "l" else (_OZ_G if u == "oz" else 1)), 0)
+
+
+def _to_g(s):
+    if not s:
+        return None
+    m = re.search(r"([\d.]+)\s*(g|gram|oz|lb)", s, re.I)
+    if not m:
+        return None
+    v, u = float(m.group(1)), m.group(2).lower()
+    return round(v * (_OZ_G if u == "oz" else (453.6 if u == "lb" else 1)), 0)
+
+
+def parse_glass_specs(html):
+    """Berlin Packaging marks specs as data-custom-field-name/-value pairs -> normalized dims (mm, mL, g)."""
+    fields = dict(re.findall(r'data-custom-field-name="([^"]+)"\s+data-custom-field-value="([^"]*)"', html or ""))
+
+    def g(*names):
+        for n in names:
+            for k, v in fields.items():
+                if n.lower() in k.lower() and (v or "").strip():
+                    return v.strip()
+        return None
+    # capacity: prefer a field VALUE stated in mL (the oz variant is named "Std Capacity in Oz.")
+    cap = next((v for k, v in fields.items() if "capacity" in k.lower() and re.search(r"\d\s*ml\b", v, re.I)), None) \
+        or next((v for v in fields.values() if re.fullmatch(r"\s*\d+\s*ml\s*", v or "", re.I)), None)
+    # weight: some pages bury "Weight: 560 grams" in a mis-named field -> scan all values
+    wt = next((v for v in fields.values() if re.search(r"[\d.]+\s*(?:g|gram)s?\b", v or "", re.I)), None) or g("Weight")
+    cp = g("Case Pack", "Case Quantity", "Master Case", "Pack") or ""
+    return {"height_mm": _to_mm(g("Height", "Overall Height")),
+            "diameter_mm": _to_mm(g("Diameter", "Base Diameter", "Body Diameter")),
+            "capacity_ml": _to_ml(cap),
+            "finish": g("Neck Finish", "Finish Type", "Closure"),
+            "weight_g": _to_g(wt),
+            "case_pack": (int(re.search(r"\d+", cp).group(0)) if re.search(r"\d", cp) else None),
+            "_source_fields": len(fields)}
+
+
+# supplier catalogs by domain — Berlin Packaging first (clean custom-field markup)
+_CATALOGS = ["berlinpackaging.com", "tricorbraun.com"]
+
+
+def glass_catalog_specs(size, shape, bd_key, log=print):
+    """Find a stock bottle matching size+shape in a glass catalog -> its published specs. Google-scoped to a
+    catalog domain, then parse. Returns (specs, source_url) or (None, None) — no match -> caller flags manual."""
+    q = "%s %s bottle site:berlinpackaging.com" % (size, shape)
+    try:
+        j = json.loads(_unlock("https://www.google.com/search?q=%s&brd_json=1&gl=us&hl=en"
+                               % urllib.parse.quote(q), bd_key))
+    except Exception:
+        return None, None
+    for o in (j.get("organic") or []):
+        u = o.get("link") or ""
+        if "berlinpackaging.com" in u and re.search(r"-\d{3,}-[kK]/?(?:\?|$)", u):
+            try:
+                specs = parse_glass_specs(_unlock(u, bd_key))
+                if specs.get("height_mm") or specs.get("weight_g"):
+                    return specs, u
+            except Exception:
+                pass
+    return None, None
 
 
 if __name__ == "__main__":
