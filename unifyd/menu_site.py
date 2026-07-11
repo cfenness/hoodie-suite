@@ -14,7 +14,7 @@ deterministic parser. Instead:
 Needs ANTHROPIC_API_KEY (extraction) + BD creds (fetch), so it runs where the key is (Fly).
     python menu_site.py --name "AC Sky Bar" --site http://www.acskybar.com/
 """
-import argparse, json, os, re, sys, time, urllib.parse, urllib.request
+import argparse, base64, json, os, re, sys, time, urllib.parse, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
@@ -26,6 +26,9 @@ _MENU_HINTS = re.compile(r"menu|drink|cocktail|wine|beer|bar\b|beverage|libation
 
 
 def _bd_key():
+    k = os.environ.get("BRIGHTDATA_API_KEY", "").strip()      # env first (Fly/CI), else the CLI creds file (Mac)
+    if k:
+        return k
     return json.load(open(os.path.expanduser(
         "~/Library/Application Support/brightdata-cli/credentials.json")))["api_key"]
 
@@ -37,6 +40,14 @@ def _unlock(url, key, dataf=None):
     r = urllib.request.Request("https://api.brightdata.com/request", data=json.dumps(body).encode(),
                                headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
     return urllib.request.urlopen(r, timeout=75).read().decode("utf-8", "replace")
+
+
+def _fetch_bytes(url, key):
+    """Raw bytes (no decode) — for PDF menus, which Claude reads natively as a document block."""
+    body = {"zone": "cli_unlocker", "url": url, "format": "raw"}
+    r = urllib.request.Request("https://api.brightdata.com/request", data=json.dumps(body).encode(),
+                               headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+    return urllib.request.urlopen(r, timeout=90).read()
 
 
 def discover_site(name, near="Orlando FL", key=None):
@@ -85,6 +96,124 @@ def claude_extract(text, restaurant, model="claude-opus-4-8"):
         return []
 
 
+def _browser_auth():
+    key = _bd_key()
+    r = urllib.request.Request("https://api.brightdata.com/zone/passwords?zone=cli_browser",
+                               headers={"Authorization": "Bearer " + key})
+    return "brd-customer-hl_32bcfbaa-zone-cli_browser:%s" % json.loads(
+        urllib.request.urlopen(r, timeout=30).read())["passwords"][0]
+
+
+_MENU_PATHS = ["/menu", "/menus", "/drinks", "/drink-menu", "/cocktails", "/bar", "/bar-menu",
+               "/wine", "/wine-list", "/beverages", "/food-and-drink"]
+
+
+_DRINK_LINK = re.compile(r"cocktail|bottle|\bdrink|wine|beer|\bbar\b|beverage|libation|spirit|liquor|"
+                         r"\bmenu|\blist\b|tap\b|draft|by the glass", re.I)
+
+
+def render_menu_assets(site, key, log=print, max_items=8, max_pages=8):
+    """BD Browser walks the drink/menu nav TWO levels deep (menus nest: /menu -> COCKTAILS/BOTTLES ->
+    the list, often a PDF). HTML/JS pages -> viewport screenshots; PDF menus -> raw bytes (Claude reads PDFs
+    natively). -> [{'kind':'image'|'pdf','data':bytes,'url':str}] — the uniform substrate for any menu format."""
+    from playwright.sync_api import sync_playwright
+    auth = _browser_auth()
+    base = re.match(r"https?://[^/]+", site).group(0)
+    items, visited, pages = [], set(), 0
+
+    def is_pdf(u):
+        return u.lower().split("?")[0].endswith(".pdf")
+
+    with sync_playwright() as p:
+        b = p.chromium.connect_over_cdp("wss://%s@brd.superproxy.io:9222" % auth, timeout=90000)
+        try:
+            ctx = b.contexts[0] if b.contexts else b.new_context()
+            pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+            pg.set_viewport_size({"width": 1280, "height": 1600})
+
+            def drink_links():
+                links = pg.eval_on_selector_all(
+                    "a", "els=>els.map(a=>[(a.textContent||'').trim().toLowerCase(), a.href])")
+                return [h.split("#")[0] for t, h in links
+                        if h and h.startswith(base) and _DRINK_LINK.search(t or "") and h.split("#")[0] not in visited]
+
+            try:                                               # homepage: collect nav (don't shoot the hero)
+                pg.goto(site, wait_until="domcontentloaded", timeout=45000); time.sleep(3.5)
+                queue = drink_links()
+            except Exception:
+                queue = []
+            for pth in _MENU_PATHS:
+                if base + pth not in queue:
+                    queue.append(base + pth)
+
+            while queue and len(items) < max_items and pages < max_pages:
+                url = queue.pop(0)
+                if url in visited:
+                    continue
+                visited.add(url)
+                if is_pdf(url):                                # PDF menu -> fetch bytes, no render needed
+                    try:
+                        items.append({"kind": "pdf", "data": _fetch_bytes(url, key), "url": url}); pages += 1
+                    except Exception:
+                        pass
+                    continue
+                try:
+                    pg.goto(url, wait_until="domcontentloaded", timeout=30000)
+                except Exception:
+                    continue
+                time.sleep(3.0)
+                blurb = pg.evaluate("(document.title + ' ' + (document.body ? document.body.innerText : '')).slice(0,400)").lower()
+                if re.search(r"not found|can'?t be found|\b404\b|doesn'?t exist|page you.{0,20}looking for", blurb):
+                    continue                                   # 404 / missing (guessed path) — skip
+                pages += 1
+                total = pg.evaluate("Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)")
+                y = 0
+                while y < total and len(items) < max_items:
+                    pg.evaluate("window.scrollTo(0, %d)" % y); time.sleep(0.6)
+                    items.append({"kind": "image", "data": pg.screenshot(), "url": url}); y += 1600
+                    if y >= 1600 * 4:
+                        break
+                for h in drink_links():                        # follow COCKTAILS/BOTTLES tiles + PDF links
+                    if h not in queue:
+                        queue.append(h)
+        finally:
+            b.close()
+    log("  [menu] %d menu assets (%d PDF) across %d pages from %s"
+        % (len(items), sum(1 for i in items if i["kind"] == "pdf"), pages, site))
+    return items
+
+
+def claude_vision_extract(assets, name, model="claude-opus-4-8"):
+    """Claude reads menu screenshots (image blocks) AND PDF menus (document blocks) -> [{name, description,
+    price}] for drinks. Opt-in on ANTHROPIC_API_KEY; handles any menu format uniformly. Persists OUR extraction."""
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key or not assets:
+        return []
+    content = []
+    for a in assets[:8]:
+        d = base64.b64encode(a["data"]).decode()
+        if a["kind"] == "pdf":
+            content.append({"type": "document", "source": {"type": "base64",
+                            "media_type": "application/pdf", "data": d}})
+        else:
+            content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": d}})
+    content.append({"type": "text", "text":
+        "These are screenshots of the menu for \"%s\". Extract every BEVERAGE that is (or could be) alcoholic "
+        "— cocktails, beer, wine, sake, spirits, hard seltzer/cider — PLUS non-alcoholic cocktails / mocktails. "
+        "Ignore food, soda, coffee, tea, juice, water, and section headers. Return ONLY a JSON array of "
+        "{\"name\": string, \"description\": string, \"price\": number|null}. If none, return []." % name})
+    body = json.dumps({"model": model, "max_tokens": 4096,
+                       "messages": [{"role": "user", "content": content}]}).encode()
+    req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=body, headers={
+        "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
+    try:
+        r = json.loads(urllib.request.urlopen(req, timeout=180).read())
+        txt = "".join(bl.get("text", "") for bl in r.get("content", []) if bl.get("type") == "text")
+        return json.loads(re.search(r"\[.*\]", txt, re.S).group(0))
+    except Exception:
+        return []
+
+
 def _menu_text(url, key):
     """Menu page as clean text — markdown first; if JS left it near-empty, strip tags off the raw render."""
     md = _unlock(url, key, dataf="markdown")
@@ -100,13 +229,14 @@ def run(name, site=None, near="Orlando FL", log=print):
     site = site or discover_site(name, near, key)
     if not site:
         log("[menu] no website found for %s" % name); return 0
-    try:
-        home = _unlock(site, key)
-    except Exception as e:
-        log("[menu] %s fetch failed: %s" % (site, str(e)[:40])); return 0
-    menu_url = find_menu_url(home, site)
-    text = _menu_text(menu_url, key)
-    items = claude_extract(text, name)
+    assets = render_menu_assets(site, key, log=log)              # v2: render (JS/image/PDF) -> screenshots + PDFs
+    items = claude_vision_extract(assets, name)
+    menu_url = assets[0]["url"] if assets else site
+    if not items:                                               # fallback: text extraction (plain-HTML menus)
+        try:
+            items = claude_extract(_menu_text(find_menu_url(_unlock(site, key), site), key), name)
+        except Exception:
+            items = []
     run_id = "menu-" + time.strftime("%Y%m%d-%H%M%S")
     rows = []
     for it in items:

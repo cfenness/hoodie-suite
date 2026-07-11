@@ -177,6 +177,29 @@ def beer_style(text):
     return ""
 
 
+# WINE — a major on-premise category. Recognize by VARIETAL/style directly (a menu rarely says "wine"), so
+# "Notorious Pink Rosé" and "Raeburn Pinot Noir" classify without the word wine. (Callers strip food first.)
+_WINE = re.compile(
+    r"\bwine\b|chardonnay|sauv(?:ignon)? blanc|pinot (?:noir|grigio|gris|blanc)|cabernet|\bmerlot\b|malbec|"
+    r"syrah|shiraz|zinfandel|\bros[eé]\b|prosecco|champagne|riesling|moscato|sangiovese|chianti|tempranillo|"
+    r"grenache|\bbrut\b|sparkling wine|red blend|white blend|gew[uü]rztraminer|viognier|barbera|nebbiolo|"
+    r"garnacha|verdejo|albari[nñ]o|\bcava\b|lambrusco|house (?:red|white)|\b(?:red|white) (?:wine|blend)\b", re.I)
+
+
+def wine_sub(text):
+    if re.search(r"prosecco|champagne|sparkling|\bbrut\b|\bcava\b|lambrusco", text, re.I):
+        return "Sparkling"
+    if re.search(r"\bros[eé]\b", text, re.I):
+        return "Rosé"
+    if re.search(r"pinot noir|cabernet|\bmerlot\b|malbec|syrah|shiraz|zinfandel|red (?:wine|blend)|sangiovese|"
+                 r"chianti|tempranillo|grenache|barbera|nebbiolo|garnacha", text, re.I):
+        return "Red"
+    if re.search(r"chardonnay|sauv(?:ignon)? blanc|pinot (?:grigio|gris|blanc)|riesling|moscato|white (?:wine|blend)|"
+                 r"viognier|verdejo|albari|gew", text, re.I):
+        return "White"
+    return ""
+
+
 # ── World / traditional alcohol on izakaya, sushi, Korean, and Latin menus — the categories chains never
 # surface. "sake" is the trap: in a sushi menu it means SALMON (鮭), the fish — "Sake Nigiri/Sashimi/Roll"
 # is food, only the DRINK (酒) counts. We gate the drink on a sake-drink signal or brand, and drop the fish.
@@ -236,6 +259,9 @@ def classify_beverage(name, description=""):
                ("can" if "can" in text else ("bottle" if "bottle" in text else "")))
         return {"category": "beer", "is_alcoholic": not mock, "name": (name or "").strip(),
                 "beer_style": beer_style(nm), "format": fmt}
+    if _WINE.search(text):                                      # wine by varietal (red/white/sparkling/rosé)
+        return {"category": "wine", "is_alcoholic": not mock, "name": (name or "").strip(),
+                "sub": wine_sub(text), "base_spirit": ""}
     w = _world_alcohol(name, "")                                # name-anchored: a dish described w/ sake ≠ the drink
     if w and not mock:
         return {"category": w["category"], "is_alcoholic": True, "name": (name or "").strip(),
