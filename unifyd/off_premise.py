@@ -228,6 +228,84 @@ def woo_catalog(base, key, max_pages=50, log=print):
     return rows
 
 
+_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+       "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
+_WIX_STORES_APP = "1380b703-ce81-ff05-f115-39571d94dfcd"
+_WIX_GQL = ("query getProducts($limit:Int,$offset:Int){ catalog{ products(limit:$limit, offset:$offset, "
+            "onlyVisible:true){ totalCount list{ id name brand price formattedPrice comparePrice sku "
+            "isInStock productType urlPart } } } }")
+
+
+def _wix_instance(base, log=print):
+    """Wix mints per-app instance tokens at the UNAUTHENTICATED /_api/v1/access-tokens bootstrap (this is how
+    the public storefront authorizes itself). Return (instance_token, working_site) — trying apex + www since
+    the census website may be either. urllib follows the apex->www redirect, so we read the final host."""
+    hosts = [base.rstrip("/")]
+    m = re.match(r"(https?://)(www\.)?(.+)", base.rstrip("/"))
+    if m:
+        alt = m.group(1) + ("" if m.group(2) else "www.") + m.group(3)
+        if alt not in hosts:
+            hosts.append(alt)
+    for site in hosts:
+        try:
+            req = urllib.request.Request(site + "/_api/v1/access-tokens", headers={"User-Agent": _UA})
+            resp = urllib.request.urlopen(req, timeout=45)
+            real = "%s://%s" % (urllib.parse.urlparse(resp.geturl()).scheme,
+                                urllib.parse.urlparse(resp.geturl()).netloc)
+            j = json.loads(resp.read().decode("utf-8", "replace"))
+            app = (j.get("apps") or {}).get(_WIX_STORES_APP)
+            if app and app.get("instance"):
+                return app["instance"], (real or site)
+        except Exception as e:
+            log("  [wix] access-tokens %s: %s" % (site, str(e)[:50]))
+    return None, base
+
+
+def wix_catalog(base, key=None, page=100, max_products=None, log=print):
+    """Wix Stores — powers a huge slice of independent liquor retail. The storefront runs on a GraphQL API
+    (`catalog.products`) authorized by an app INSTANCE token that /_api/v1/access-tokens hands out
+    unauthenticated. Bootstrap the token, then page catalog.products (name/brand/price/sku/stock). Full
+    fields, no browser. NB: a site can have the Stores app installed but an EMPTY catalog (totalCount 0) if it
+    sells through a third party instead — that's not a failure, the store just has no Wix inventory."""
+    inst, site = _wix_instance(base, log=log)
+    if not inst:
+        log("  [wix] %s -> no Stores instance (app not installed?)" % base); return []
+    ep = site + "/_api/wix-ecommerce-storefront-web/api"
+    hdr = {"User-Agent": _UA, "Authorization": inst, "Content-Type": "application/json"}
+
+    def gql(offset):
+        body = json.dumps({"query": _WIX_GQL, "variables": {"limit": page, "offset": offset}}).encode()
+        req = urllib.request.Request(ep, data=body, headers=hdr, method="POST")
+        return json.loads(urllib.request.urlopen(req, timeout=60).read().decode("utf-8", "replace"))
+
+    rows, offset, total = [], 0, None
+    while True:
+        try:
+            pq = (((gql(offset).get("data") or {}).get("catalog") or {}).get("products")) or {}
+        except Exception as e:
+            log("  [wix] products offset=%d: %s" % (offset, str(e)[:50])); break
+        if total is None:
+            total = pq.get("totalCount") or 0
+            log("  [wix] %s: totalCount=%d" % (site, total))
+            if not total:
+                return []
+        lst = pq.get("list") or []
+        if not lst:
+            break
+        for p in lst:
+            sku = (p.get("sku") or "").strip()
+            rows.append({"name": _html.unescape(p.get("name") or "").strip(), "brand": (p.get("brand") or ""),
+                         "price": p.get("price"), "sku": sku,
+                         "upc": (sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
+                         "size_ml": _ch_ml(p.get("name")), "category": p.get("productType") or "",
+                         "in_stock": p.get("isInStock")})
+        offset += len(lst)
+        if (max_products and offset >= max_products) or offset >= total:
+            break
+    log("  [wix] %s -> %d products" % (site, len(rows)))
+    return rows[:max_products] if max_products else rows
+
+
 # ── National signature-discovery + sweep — expand the recipes we have to their whole national footprint. For a
 # LIQUOR-SPECIFIC platform (Bottlecapps), SERP its fingerprint -> store domains -> validate -> run the recipe.
 # (Generic platforms — Shopify/Woo — are better discovered per-market via the Maps census.) ──
@@ -236,85 +314,107 @@ _NOISE = re.compile(r"quora|medium|crunchbase|accessnewswire|retail-today|reddit
                     r"twitter|instagram|pinterest|g2\.com|capterra|owler|zoominfo", re.I)
 
 
-def cityhive_catalog(base, key=None, scrolls=10, log=print):
-    """City Hive — the biggest independent-liquor platform (~2000 retailers). Products render via
-    browse_categories/render.json (session-gated container-render, embedded on the store's OWN domain). Drive a
-    BD browser so the session establishes + containers render, capture those responses, and pull the products
-    (data.nodes[*].params.product). Navigates the main departments for wider coverage. Reusable per store."""
-    import json as _j
-    from playwright.sync_api import sync_playwright
-    auth = _browser_auth()
-    prods = {}
-
-    def _nodes(o, out):
-        if isinstance(o, dict):
-            if o.get("type") == "product":
-                out.append(o)
-            for v in o.values():
-                _nodes(v, out)
-        elif isinstance(o, list):
-            for v in o:
-                _nodes(v, out)
-
-    with sync_playwright() as p:
-        br = p.chromium.connect_over_cdp("wss://%s@brd.superproxy.io:9222" % auth)
-        pg = br.new_page(); pg.set_default_navigation_timeout(90000)
-
-        def grab(r):
-            if "browse_categories/render.json" in r.url:
-                try:
-                    d = _j.loads(r.text())
-                except Exception:
-                    return
-                ns = []; _nodes(d.get("data"), ns)
-                for n in ns:
-                    pr = n.get("params", {}).get("product")
-                    if pr and pr.get("id"):
-                        prods[pr["id"]] = pr
-        pg.on("response", grab)
+def _ch_sitemap_products(base, key, log=print):
+    """City Hive stores publish their FULL catalog in /sitemap.xml (product URLs
+    /shop/product/<slug>/<product_id>?option-id=<opt>). BD Unlocker occasionally returns a
+    Cloudflare interstitial instead of the XML, so retry until we get <loc> product URLs."""
+    for _ in range(3):
         try:
-            pg.goto(base.rstrip("/") + "/shop", wait_until="domcontentloaded", timeout=90000); time.sleep(9)
-            for _ in range(scrolls):
-                pg.mouse.wheel(0, 4000); time.sleep(2)
-            links = []
+            xml = _unlock(base.rstrip("/") + "/sitemap.xml", key)
+        except Exception as e:
+            log("  [cityhive] sitemap %s" % str(e)[:60]); continue
+        urls = [l for l in re.findall(r"<loc>([^<]+)</loc>", xml) if "/shop/product/" in l]
+        if urls:
+            return urls
+    return []
+
+
+def _ch_parse_product(html):
+    """Every City Hive product page is server-rendered for SEO — JSON-LD Product + OpenGraph meta
+    carry the whole record (no session/browser). Pull name/price/size/store/image from them."""
+    def meta(*keys):
+        for k in keys:
+            m = re.search(r'<meta[^>]+(?:property|name)="%s"[^>]+content="([^"]*)"' % re.escape(k), html)
+            if m:
+                return _html.unescape(m.group(1))
+        return None
+    d = {}
+    for b in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', html, re.S):
+        try:
+            j = json.loads(b)
+            if j.get("@type") == "Product":
+                d["name"] = j.get("name"); break
+        except Exception:
+            pass
+    title = meta("og:title"); desc = meta("og:description", "description")
+    d["name"] = _html.unescape(d.get("name") or (title.split(" - ")[0].strip() if title else "") or "")
+    p = meta("product:price:amount")
+    try:
+        d["price"] = float(p) if p else None
+    except Exception:
+        d["price"] = None
+    d["pid"] = meta("ch:product:id"); d["image"] = meta("og:image") or ""
+    d["size_ml"] = _ch_ml(title) or _ch_ml(desc)
+    m = re.search(r"from .+? - (.+?) in ([^.]+)", desc or "")
+    if m:
+        d["store"] = m.group(1).strip(); d["store_loc"] = m.group(2).strip()
+    return d
+
+
+def _ch_ml(s):
+    m = re.search(r"([\d.]+)\s*(ml|l|lt|ltr|liter|litre|oz)\b", str(s or ""), re.I)
+    if not m:
+        return None
+    try:
+        v = float(m.group(1)); u = m.group(2).lower()
+        return round(v * (1000 if u.startswith("l") else (29.57 if u == "oz" else 1)))
+    except Exception:
+        return None
+
+
+def cityhive_catalog(base, key=None, max_products=None, workers=8, log=print):
+    """City Hive — the biggest independent-liquor platform (~2000 retailers). The widget's product API
+    is session-gated (browse_categories/render.json only ever serves ~49 curated homepage items), but the
+    store publishes its FULL catalog on the plain SEO surface: /sitemap.xml lists every product URL and each
+    product page is server-rendered with a JSON-LD Product + OpenGraph meta (name/price/size/store/image).
+    So we enumerate the sitemap and parse each page over BD Unlocker — no browser, no session, whole catalog.
+    `max_products` bounds the per-store fetch (None = full); parsing is concurrent."""
+    from concurrent.futures import ThreadPoolExecutor
+    key = key or _bd_key()
+    urls = _ch_sitemap_products(base, key, log=log)
+    if not urls:
+        log("  [cityhive] %s -> no sitemap product URLs (challenge or non-City-Hive store)" % base)
+        return []
+    total = len(urls)
+    if max_products:
+        urls = urls[:max_products]
+    log("  [cityhive] %s: %d products in sitemap%s" %
+        (base, total, "" if not max_products else " (fetching %d)" % len(urls)))
+
+    def fetch(u):
+        for _ in range(2):
             try:
-                for a in pg.query_selector_all("a[href*='/shop/'],a[href*='department'],a[href*='category']")[:10]:
-                    h = a.get_attribute("href")
-                    if h and h not in links:
-                        links.append(h)
+                d = _ch_parse_product(_unlock(u, key))
+                if d.get("name"):
+                    return d, u
             except Exception:
                 pass
-            for h in links[:6]:
-                try:
-                    pg.goto(h if h.startswith("http") else base.rstrip("/") + h, wait_until="domcontentloaded", timeout=60000)
-                    time.sleep(5)
-                    for _ in range(4):
-                        pg.mouse.wheel(0, 4000); time.sleep(2)
-                except Exception:
-                    pass
-        except Exception as e:
-            log("  [cityhive] nav %s" % str(e)[:60])
-        try:
-            br.close()
-        except Exception:
-            pass
-    out = []
-    for pr in prods.values():
-        sz = pr.get("size") or {}; ml = None
-        try:
-            q = float(sz.get("quantity")); u = (sz.get("measure") or "").lower()
-            ml = round(q * (1000 if u == "l" else (29.57 if u == "oz" else 1)))
-        except Exception:
-            pass
-        price = None
-        for m in (pr.get("merchants") or []):
-            for po in (m.get("product_options") or []):
-                price = po.get("price") or price
-        ap = pr.get("additional_properties") or {}
-        out.append(dict(name=pr.get("name", ""), brand="", price=price, sku=str(ap.get("sku", "")), upc="",
-                        size_ml=ml, category=", ".join(pr.get("basic_category") or pr.get("views") or [])))
-    log("  [cityhive] %s -> %d products" % (base, len(out)))
-    return out
+        return None, u
+    rows, done = [], 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for d, u in ex.map(fetch, urls):
+            done += 1
+            if done % 250 == 0:
+                log("  [cityhive]   %d/%d parsed, %d products" % (done, len(urls), len(rows)))
+            if not d:
+                continue
+            oid = _first(re.search(r"option-id=([0-9a-f]+)", u))
+            rows.append(dict(name=d["name"], brand="", price=d.get("price"),
+                             sku=d.get("pid") or "", upc="", size_ml=d.get("size_ml"),
+                             category="", store=d.get("store") or "", image=d.get("image") or "",
+                             option_id=oid or ""))
+    log("  [cityhive] %s -> %d products" % (base, len(rows)))
+    return rows
 
 
 def discover_stores(query, pages=4, log=print):
@@ -378,7 +478,7 @@ def national_sweep(platform, log=print):
     return rows
 
 
-def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecapps", "City Hive"), census=None, out=None, log=print):
+def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecapps", "City Hive", "Wix"), census=None, out=None, log=print):
     """Pull every census e-commerce store on the given platform(s) -> <out> (a corroboration source +
     independent-store assortment). Dispatches per platform recipe. Default = ALL recipe-able platforms
     (was Shopify-only, which left Woo/Bottlecapps stores unscraped). BigCommerce stores are ABC → abc_catalog."""
@@ -407,7 +507,11 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
                 sid = bottlecapps_store_id(s["base"], key)
                 items = bottlecapps_catalog(s["base"], sid, key, log=log) if sid else []
             elif "city hive" in plat or "cityhive" in plat:
-                items = cityhive_catalog(s["base"], key, log=log)
+                # bound per-store in a multi-store census sweep (full catalog can be thousands/store);
+                # a single-store pull (run()/CLI) goes full (max_products=None).
+                items = cityhive_catalog(s["base"], key, max_products=int(os.environ.get("CITYHIVE_MAX", "600")), log=log)
+            elif "wix" in plat:
+                items = wix_catalog(s["base"], key, log=log)
             else:
                 items = []
         except Exception as e:

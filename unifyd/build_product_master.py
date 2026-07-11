@@ -38,6 +38,8 @@ _CFG = {
     "binnys_products": dict(name="name", brand="brand", dedup=["sku"]),          # store×product → distinct products
     "target_products": dict(name="name", brand="brand", cat="category", dedup=["tcin"]),
     "specs_products": dict(name="name", brand="brand", dedup=["sku"]),
+    "cityhive_products": dict(name="name", size_ml="size_ml", cat="bev_category", dedup=["sku"]),  # independent
+
     "or_pricing": dict(name="description", size="size", cat="category", proof="proof"),
     "me_pricing": dict(name="Description", size="Size", upc="UPC", proof="Proof", cat="Product Category"),
     "nc_pricing": dict(name="Brand Name", size="Bottle Size", proof="Proof", brand="Brand Name"),
