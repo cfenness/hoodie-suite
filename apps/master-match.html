@@ -11,7 +11,8 @@
   --accent:#4E79A7; --accent-soft:#E9F0F7; --accent-line:#CBDCEC;
   --auto:#3E8E6B; --auto-soft:#E6F2EC;
   --claude:#4E79A7; --claude-soft:#E9F0F7;
-  --review:#9A7100; --review-soft:#F6EEDD;
+  --analyst:#9A7100; --analyst-soft:#F6EEDD;
+  --senior:#6B5AA6; --senior-soft:#ECEAF6;
   --conflict:#BE5540; --conflict-soft:#F6E7E2;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -20,9 +21,8 @@
   --paper:#14171B; --panel:#1D2126; --panel-2:#23282F; --inset:#191D22;
   --ink:#E7EBEF; --ink-2:#C4CBD2; --muted:#8A939C; --faint:#6B747D; --line:#2B313A; --line-2:#242A31;
   --accent:#6E9AC8; --accent-soft:#213042; --accent-line:#33465C;
-  --auto:#5FB088; --auto-soft:#1B2C25;
-  --claude:#6E9AC8; --claude-soft:#213042;
-  --review:#C9A24A; --review-soft:#2E2718;
+  --auto:#5FB088; --auto-soft:#1B2C25; --claude:#6E9AC8; --claude-soft:#213042;
+  --analyst:#C9A24A; --analyst-soft:#2E2718; --senior:#9B8AD0; --senior-soft:#262038;
   --conflict:#D9745C; --conflict-soft:#31211D;
 }}
 :root[data-theme="dark"]{
@@ -30,14 +30,16 @@
   --ink:#E7EBEF; --ink-2:#C4CBD2; --muted:#8A939C; --faint:#6B747D; --line:#2B313A; --line-2:#242A31;
   --accent:#6E9AC8; --accent-soft:#213042; --accent-line:#33465C;
   --auto:#5FB088; --auto-soft:#1B2C25; --claude:#6E9AC8; --claude-soft:#213042;
-  --review:#C9A24A; --review-soft:#2E2718; --conflict:#D9745C; --conflict-soft:#31211D;
+  --analyst:#C9A24A; --analyst-soft:#2E2718; --senior:#9B8AD0; --senior-soft:#262038;
+  --conflict:#D9745C; --conflict-soft:#31211D;
 }
 :root[data-theme="light"]{
   --paper:#EEF1F4; --panel:#FFFFFF; --panel-2:#F6F8FA; --inset:#F1F4F7;
   --ink:#22282E; --ink-2:#3C444C; --muted:#727C86; --faint:#9AA3AC; --line:#E1E6EB; --line-2:#EDF0F3;
   --accent:#4E79A7; --accent-soft:#E9F0F7; --accent-line:#CBDCEC;
   --auto:#3E8E6B; --auto-soft:#E6F2EC; --claude:#4E79A7; --claude-soft:#E9F0F7;
-  --review:#9A7100; --review-soft:#F6EEDD; --conflict:#BE5540; --conflict-soft:#F6E7E2;
+  --analyst:#9A7100; --analyst-soft:#F6EEDD; --senior:#6B5AA6; --senior-soft:#ECEAF6;
+  --conflict:#BE5540; --conflict-soft:#F6E7E2;
 }
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -47,7 +49,6 @@ body{font-family:var(--font);background:var(--paper);color:var(--ink);font-size:
 button{font-family:inherit;cursor:pointer}
 h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 
-/* ── chrome ── */
 .top{display:flex;align-items:center;gap:14px;padding:12px 22px;background:var(--panel);border-bottom:1px solid var(--line)}
 .crumb{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--muted)}
 .crumb .logo{width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,var(--accent),#3a5f86);display:grid;place-items:center;color:#fff;font-weight:800;font-size:11px}
@@ -59,39 +60,40 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 
 .wrap{max-width:1500px;margin:0 auto;padding:20px 22px 40px}
 
-/* ── funnel ── */
-.hd{display:flex;align-items:baseline;gap:12px;margin:0 2px 12px}
+.hd{display:flex;align-items:baseline;gap:12px;margin:0 2px 12px;flex-wrap:wrap}
 .hd h1{font-size:19px}
 .hd .sub{color:var(--muted);font-size:13px}
-.hd .run{margin-left:auto;font-size:12px;color:var(--muted)}
+.hd .run{margin-left:auto;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:12px}
 .hd .run b{color:var(--ink);font-weight:650}
-.funnel{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:8px}
-.stage{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 15px 13px;text-align:left;transition:.12s;overflow:hidden}
+.role{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--analyst-soft);background:var(--analyst-soft);color:var(--analyst);border-radius:20px;padding:3px 10px;font-size:11.5px;font-weight:700}
+
+.funnel{display:grid;grid-template-columns:repeat(6,1fr);gap:9px;margin-bottom:8px}
+.stage{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 14px 12px;text-align:left;transition:.12s;overflow:hidden}
 .stage:hover{border-color:var(--accent-line)}
 .stage.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
-.stage .lab{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:flex;align-items:center;gap:7px}
-.stage .n{font-size:25px;font-weight:750;letter-spacing:-.02em;margin-top:5px}
-.stage .pct{font-size:12px;color:var(--muted);margin-top:1px}
-.stage .bar{height:4px;border-radius:3px;margin-top:11px;background:var(--line-2);overflow:hidden}
+.stage .lab{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);display:flex;align-items:center;gap:6px}
+.stage .n{font-size:23px;font-weight:750;letter-spacing:-.02em;margin-top:5px}
+.stage .pct{font-size:11.5px;color:var(--muted);margin-top:1px}
+.stage .bar{height:4px;border-radius:3px;margin-top:10px;background:var(--line-2);overflow:hidden}
 .stage .bar i{display:block;height:100%;border-radius:3px}
 .dot{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
-.dot.auto{background:var(--auto)} .dot.claude{background:var(--claude)} .dot.review{background:var(--review)} .dot.conflict{background:var(--conflict)} .dot.cand{background:var(--faint)} .dot.done{background:var(--accent)}
+.dot.auto{background:var(--auto)} .dot.claude{background:var(--claude)} .dot.analyst{background:var(--analyst)}
+.dot.senior{background:var(--senior)} .dot.conflict{background:var(--conflict)} .dot.cand{background:var(--faint)} .dot.confirmed{background:var(--accent)}
 .stage.s-auto .bar i{background:var(--auto)} .stage.s-claude .bar i{background:var(--claude)}
-.stage.s-review .bar i{background:var(--review)} .stage.s-cand .bar i{background:var(--faint)} .stage.s-done .bar i{background:var(--accent)}
-.flowline{display:flex;align-items:center;gap:6px;color:var(--faint);font-size:11px;margin:2px 4px 18px}
-.flowline .seg{flex:1;height:1px;background:var(--line)}
+.stage.s-analyst .bar i{background:var(--analyst)} .stage.s-senior .bar i{background:var(--senior)}
+.stage.s-all .bar i{background:var(--faint)} .stage.s-confirmed .bar i{background:var(--accent)}
+.flowline{display:flex;align-items:center;gap:6px;color:var(--faint);font-size:11px;margin:2px 4px 18px;flex-wrap:wrap}
+.flowline .seg{flex:1;height:1px;background:var(--line);min-width:12px}
 .flowline b{color:var(--muted);font-weight:600}
 
-/* ── workbench split ── */
 .work{display:grid;grid-template-columns:352px 1fr;gap:16px;align-items:start}
 
-/* queue */
 .queue{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;position:sticky;top:14px}
 .qhead{padding:13px 15px 11px;border-bottom:1px solid var(--line)}
 .qhead .t{display:flex;align-items:center;justify-content:space-between}
 .qhead h3{font-size:14px}
 .qhead .cnt{font-size:12px;color:var(--muted)}
-.qhead .cnt b{color:var(--review);font-weight:700}
+.qhead .cnt b{color:var(--ink);font-weight:700}
 .search{margin-top:10px;width:100%;border:1px solid var(--line);background:var(--inset);border-radius:9px;padding:8px 11px;font-size:13px;color:var(--ink)}
 .search::placeholder{color:var(--faint)}
 .search:focus{outline:none;border-color:var(--accent)}
@@ -100,6 +102,7 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 .tab:hover{color:var(--ink)}
 .tab.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
 .qlist{max-height:calc(100vh - 320px);overflow:auto}
+.qempty{padding:26px 16px;text-align:center;color:var(--faint);font-size:13px}
 .qitem{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line-2);border-left:3px solid transparent;padding:12px 15px 12px 13px;display:block;transition:.1s}
 .qitem:hover{background:var(--panel-2)}
 .qitem.sel{background:var(--accent-soft);border-left-color:var(--accent)}
@@ -109,14 +112,15 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 .grain{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:5px;background:var(--inset);color:var(--muted);flex:none}
 .grain.sku{background:var(--accent-soft);color:var(--accent)}
 .grain.item{background:var(--auto-soft);color:var(--auto)}
-.grain.product{background:var(--review-soft);color:var(--review)}
-.grain.outlet{background:#EDEAF6;color:#6B5AA6}
+.grain.product{background:var(--analyst-soft);color:var(--analyst)}
+.grain.outlet{background:var(--senior-soft);color:var(--senior)}
 .pill{font-size:10px;font-weight:750;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:20px;display:inline-flex;align-items:center;gap:5px;flex:none}
 .pill.auto{background:var(--auto-soft);color:var(--auto)} .pill.claude{background:var(--claude-soft);color:var(--claude)}
-.pill.review{background:var(--review-soft);color:var(--review)} .pill.conflict{background:var(--conflict-soft);color:var(--conflict)}
+.pill.analyst{background:var(--analyst-soft);color:var(--analyst)} .pill.senior{background:var(--senior-soft);color:var(--senior)}
+.pill.review{background:var(--analyst-soft);color:var(--analyst)} .pill.conflict{background:var(--conflict-soft);color:var(--conflict)}
+.pill.confirmed{background:var(--accent-soft);color:var(--accent)}
 .conf{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:auto;flex:none}
 
-/* detail */
 .detail{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .dtop{padding:18px 22px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--panel-2),var(--panel))}
 .dtop .kick{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:8px}
@@ -126,7 +130,6 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 .dtop .meta .kv b{color:var(--ink-2);font-weight:600}
 .keychip{font-family:var(--mono);font-size:12px;background:var(--inset);border:1px solid var(--line);border-radius:7px;padding:3px 9px;color:var(--ink-2)}
 
-/* hierarchy rollup */
 .roll{display:flex;align-items:stretch;gap:0;padding:14px 22px;border-bottom:1px solid var(--line);background:var(--inset);overflow-x:auto}
 .rnode{flex:1;min-width:120px;display:flex;flex-direction:column;gap:3px;padding:0 16px;position:relative}
 .rnode + .rnode::before{content:"›";position:absolute;left:-7px;top:11px;color:var(--faint);font-size:16px}
@@ -142,11 +145,10 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 .sec h3 .c{font-family:var(--mono);color:var(--faint);font-weight:600;letter-spacing:0}
 .sec h3 .r{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:600;font-size:11.5px}
 
-/* records table */
 .recs{display:flex;flex-direction:column;gap:8px}
 .rec{border:1px solid var(--line);border-left-width:3px;border-radius:10px;padding:11px 14px;background:var(--panel-2);display:grid;grid-template-columns:1fr auto;gap:8px 14px;align-items:center}
 .rec.match{border-left-color:var(--auto)} .rec.claude{border-left-color:var(--claude)}
-.rec.review{border-left-color:var(--review)} .rec.conflict{border-left-color:var(--conflict)}
+.rec.review{border-left-color:var(--analyst)} .rec.conflict{border-left-color:var(--conflict)}
 .rec .src{display:flex;align-items:center;gap:9px;min-width:0}
 .rec .srcn{font-weight:650;font-size:13px;white-space:nowrap}
 .rec .raw{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -160,7 +162,6 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 .fchip.agree{border-color:color-mix(in srgb,var(--auto) 40%,var(--line));background:var(--auto-soft);color:var(--auto)}
 .fchip.diff{border-color:color-mix(in srgb,var(--conflict) 45%,var(--line));background:var(--conflict-soft);color:var(--conflict)}
 
-/* evidence */
 .evid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .ecard{border:1px solid var(--line);border-radius:11px;padding:13px 15px;background:var(--panel-2)}
 .ecard .et{font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);display:flex;align-items:center;gap:7px;margin-bottom:8px}
@@ -172,26 +173,26 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 .ecard .krow .mono{color:var(--ink)}
 .scoretag{margin-left:auto;font-family:var(--mono);font-weight:700}
 
-/* flags */
 .flags{display:flex;flex-direction:column;gap:8px}
-.flag{display:flex;gap:10px;align-items:flex-start;padding:10px 13px;border-radius:9px;border:1px solid var(--review-soft);background:var(--review-soft);font-size:12.5px;color:var(--ink-2)}
+.flag{display:flex;gap:10px;align-items:flex-start;padding:10px 13px;border-radius:9px;border:1px solid var(--analyst-soft);background:var(--analyst-soft);font-size:12.5px;color:var(--ink-2)}
 .flag.conf{border-color:var(--conflict-soft);background:var(--conflict-soft)}
-.flag .fdot{width:7px;height:7px;border-radius:50%;background:var(--review);margin-top:6px;flex:none}
+.flag .fdot{width:7px;height:7px;border-radius:50%;background:var(--analyst);margin-top:6px;flex:none}
 .flag.conf .fdot{background:var(--conflict)}
 .flag .act{margin-left:auto;font-size:11.5px;font-weight:650;color:var(--accent);white-space:nowrap;border:1px solid var(--accent-line);background:var(--panel);border-radius:7px;padding:4px 9px}
 
-/* action bar */
-.actions{display:flex;align-items:center;gap:10px;padding:15px 22px;border-top:1px solid var(--line);background:var(--panel-2);position:sticky;bottom:0}
+.actions{display:flex;align-items:center;gap:10px;padding:15px 22px;border-top:1px solid var(--line);background:var(--panel-2);position:sticky;bottom:0;flex-wrap:wrap}
 .btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:9px 16px;font-size:13.5px;font-weight:650;display:inline-flex;align-items:center;gap:8px}
 .btn:hover{border-color:var(--accent-line)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .btn.primary:hover{filter:brightness(1.07)}
-.btn.warn:hover{border-color:var(--conflict);color:var(--conflict)}
+.btn.escalate{color:var(--senior)}
+.btn.escalate:hover{border-color:var(--senior);background:var(--senior-soft)}
 .actions .spacer{flex:1}
 .actions .hint{font-size:11.5px;color:var(--muted)}
 .actions kbd{font-family:var(--mono);font-size:10.5px;background:var(--inset);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 5px;color:var(--muted)}
 
-@media (max-width:1080px){ .work{grid-template-columns:1fr} .queue{position:static} .qlist{max-height:340px} .funnel{grid-template-columns:repeat(2,1fr)} .evid{grid-template-columns:1fr} }
+@media (max-width:1080px){ .work{grid-template-columns:1fr} .queue{position:static} .qlist{max-height:340px} .funnel{grid-template-columns:repeat(3,1fr)} .evid{grid-template-columns:1fr} }
+@media (max-width:640px){ .funnel{grid-template-columns:repeat(2,1fr)} }
 </style>
 
 <div class="top">
@@ -203,20 +204,20 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 <div class="wrap">
   <div class="hd">
     <h1>Matching workbench</h1>
-    <span class="sub">Collapse raw source records into canonical master entities — auto, then Claude, then you.</span>
-    <span class="run">Run <b>master-2026-07-11</b> · 14 sources · <b class="num">12,481</b> candidates</span>
+    <span class="sub">Collapse raw source records into canonical master entities.</span>
+    <span class="run"><span class="role"><span class="dot analyst"></span>Reviewing as Analyst</span><span>Run <b>master-2026-07-11</b> · <b class="num">12,481</b> candidates</span></span>
   </div>
 
-  <!-- the cascade, as a funnel + filter -->
+  <!-- the escalation cascade, as a funnel + filter -->
   <div class="funnel" id="funnel">
-    <button class="stage s-cand" data-stage="all">
+    <button class="stage s-all" data-stage="all">
       <div class="lab"><span class="dot cand"></span>Candidates</div>
       <div class="n num">12,481</div><div class="pct">raw records in</div>
       <div class="bar"><i style="width:100%"></i></div>
     </button>
     <button class="stage s-auto" data-stage="auto">
-      <div class="lab"><span class="dot auto"></span>Auto-matched</div>
-      <div class="n num">8,203</div><div class="pct">66% · exact identity key</div>
+      <div class="lab"><span class="dot auto"></span>Auto</div>
+      <div class="n num">8,203</div><div class="pct">66% · exact key</div>
       <div class="bar"><i style="width:66%"></i></div>
     </button>
     <button class="stage s-claude" data-stage="claude">
@@ -224,24 +225,28 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
       <div class="n num">2,946</div><div class="pct">24% · adjudicated</div>
       <div class="bar"><i style="width:24%"></i></div>
     </button>
-    <button class="stage s-review on" data-stage="review">
-      <div class="lab"><span class="dot review"></span>Your review</div>
-      <div class="n num">1,332</div><div class="pct">11% · needs a human</div>
+    <button class="stage s-analyst on" data-stage="analyst">
+      <div class="lab"><span class="dot analyst"></span>Analyst</div>
+      <div class="n num">1,332</div><div class="pct">11% · your queue</div>
       <div class="bar"><i style="width:11%"></i></div>
     </button>
-    <button class="stage s-done" data-stage="confirmed">
-      <div class="lab"><span class="dot done"></span>Confirmed</div>
+    <button class="stage s-senior" data-stage="senior">
+      <div class="lab"><span class="dot senior"></span>Sr Analyst</div>
+      <div class="n num">214</div><div class="pct">escalated up</div>
+      <div class="bar"><i style="width:2%"></i></div>
+    </button>
+    <button class="stage s-confirmed" data-stage="confirmed">
+      <div class="lab"><span class="dot confirmed"></span>Confirmed</div>
       <div class="n num">9,914</div><div class="pct">promoted to master</div>
       <div class="bar"><i style="width:79%"></i></div>
     </button>
   </div>
-  <div class="flowline"><b>raw records</b><span class="seg"></span>deterministic keys<span class="seg"></span>AI adjudication<span class="seg"></span>human gate<span class="seg"></span><b>canonical master</b></div>
+  <div class="flowline"><b>raw records</b><span class="seg"></span>exact keys<span class="seg"></span>Claude<span class="seg"></span>analyst<span class="seg"></span>senior analyst<span class="seg"></span><b>canonical master</b></div>
 
   <div class="work">
-    <!-- QUEUE -->
     <aside class="queue">
       <div class="qhead">
-        <div class="t"><h3>Review queue</h3><span class="cnt"><b id="qn">6</b> of 1,332</span></div>
+        <div class="t"><h3 id="qtitle">Analyst queue</h3><span class="cnt"><b id="qn">0</b> of <span id="qtot">0</span></span></div>
         <input class="search" placeholder="Filter by name, brand, source…">
       </div>
       <div class="tabs" id="tabs">
@@ -255,7 +260,6 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
       <div class="qlist" id="qlist"></div>
     </aside>
 
-    <!-- DETAIL -->
     <main class="detail" id="detail"></main>
   </div>
 </div>
@@ -263,7 +267,7 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 <script>
 const CLUSTERS = [
   {
-    id:"espolon-blanco-750", grain:"sku", stage:"review", conf:0.82,
+    id:"espolon-blanco-750", grain:"sku", stage:"analyst", conf:0.82,
     name:"Espolòn Tequila Blanco 750 mL", table:"dim_sku",
     keyType:"GTIN-14", keyValue:"00811538010203",
     meta:[["Category","Tequila · Blanco"],["ABV","40.0%"],["NOM","1440"],["Size","750 mL"]],
@@ -322,7 +326,7 @@ const CLUSTERS = [
     flags:[{t:"Two UPCs roll into this item as sibling skus — confirm they're packaging, not different products.",act:"Review skus",kind:"review"}]
   },
   {
-    id:"abc-orlando-outlet", grain:"outlet", stage:"review", conf:0.79,
+    id:"abc-orlando-outlet", grain:"outlet", stage:"analyst", conf:0.79,
     name:"ABC Fine Wine & Spirits #114 — Orlando", table:"dim_outlet_resolved",
     keyType:"name+address+zip5", keyValue:"abc-fws|114|32801",
     meta:[["Type","Off-premise · retail"],["City","Orlando, FL"],["ZIP","32801"],["Sources","3"]],
@@ -346,24 +350,51 @@ const CLUSTERS = [
   }
 ];
 
+const STAGE_TOTAL = {all:12481, auto:8203, claude:2946, analyst:1332, senior:214, confirmed:9914};
+const STAGE_TITLE = {all:"All candidates", auto:"Auto-matched", claude:"Claude-adjudicated", analyst:"Analyst queue", senior:"Senior-analyst queue", confirmed:"Confirmed to master"};
+
 const QUEUE = [
-  {ref:"espolon-blanco-750", nm:"Espolòn Tequila Blanco 750 mL", grain:"sku", stage:"conflict", conf:0.82, note:"6 sources · 1 conflict (Reposado)"},
-  {ref:"titos-1l", nm:"Tito's Handmade Vodka 1 L", grain:"item", stage:"claude", conf:0.94, note:"4 sources · 2 skus roll up"},
-  {ref:"abc-orlando-outlet", nm:"ABC Fine Wine & Spirits #114", grain:"outlet", stage:"review", conf:0.79, note:"3 sources · DBPR name differs"},
-  {ref:"espolon-blanco-750", nm:"Bulleit Bourbon Frontier 750 mL", grain:"sku", stage:"review", conf:0.85, note:"5 sources · no UPC on 2"},
-  {ref:"titos-1l", nm:"Whispering Angel Rosé 2023", grain:"product", stage:"review", conf:0.80, note:"vintage split — 2022 vs 2023"},
-  {ref:"abc-orlando-outlet", nm:"Total Wine #218 — Winter Park", grain:"outlet", stage:"claude", conf:0.88, note:"2 sources · geo 40 m"}
+  {ref:"espolon-blanco-750", nm:"Espolòn Tequila Blanco 750 mL", grain:"sku", stage:"analyst", conf:0.82, conflict:true, note:"6 sources · 1 conflict (Reposado)"},
+  {ref:"abc-orlando-outlet", nm:"ABC Fine Wine & Spirits #114", grain:"outlet", stage:"analyst", conf:0.79, note:"3 sources · DBPR name differs"},
+  {ref:"espolon-blanco-750", nm:"Bulleit Bourbon Frontier 750 mL", grain:"sku", stage:"analyst", conf:0.85, note:"5 sources · no UPC on 2"},
+  {ref:"titos-1l", nm:"Josh Cellars Cabernet 2021", grain:"product", stage:"analyst", conf:0.83, conflict:true, note:"vintage vs non-vintage mix"},
+  {ref:"titos-1l", nm:"Tito's Handmade Vodka 1 L", grain:"item", stage:"claude", conf:0.94, note:"Claude confident · confirm"},
+  {ref:"abc-orlando-outlet", nm:"Total Wine #218 — Winter Park", grain:"outlet", stage:"claude", conf:0.88, note:"geo 40 m · confirm"},
+  {ref:"titos-1l", nm:"Casamigos Reposado 750 mL", grain:"sku", stage:"claude", conf:0.90, note:"name-variant · confirm"},
+  {ref:"titos-1l", nm:"Whispering Angel Rosé 2023", grain:"product", stage:"senior", conf:0.80, conflict:true, note:"escalated · vintage split 2022/23"},
+  {ref:"abc-orlando-outlet", nm:"Publix #1420 — Orlando", grain:"outlet", stage:"senior", conf:0.71, note:"escalated · two candidates"},
+  {ref:"titos-1l", nm:"Casamigos Blanco 750 mL", grain:"sku", stage:"auto", conf:1.00, note:"exact GTIN · 5 sources"},
+  {ref:"titos-1l", nm:"Absolut Original 1.75 L", grain:"item", stage:"auto", conf:1.00, note:"exact GTIN · 4 sources"},
+  {ref:"espolon-blanco-750", nm:"Jack Daniel's Old No.7 750 mL", grain:"sku", stage:"confirmed", conf:1.00, note:"promoted to master"},
+  {ref:"titos-1l", nm:"Tito's Handmade Vodka 750 mL", grain:"sku", stage:"confirmed", conf:0.99, note:"promoted to master"}
 ];
 
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
-const stageLabel={conflict:"Conflict",review:"Review",claude:"Claude",auto:"Auto"};
+const stageLabel={auto:"Auto",claude:"Claude",analyst:"Analyst",senior:"Sr Analyst",confirmed:"Confirmed",review:"Review",conflict:"Conflict",match:"Auto"};
 
-function renderQueue(filter){
-  const rows = QUEUE.filter(q=> filter==="all" ? true : filter==="conflict" ? q.stage==="conflict" : q.grain===filter);
+let FILT = {stage:"analyst", grain:"all", q:""};
+
+function currentRows(){
+  const t=FILT.q.trim().toLowerCase();
+  return QUEUE.filter(q=>{
+    if(FILT.stage!=="all" && q.stage!==FILT.stage) return false;
+    if(FILT.grain==="conflict"){ if(!q.conflict) return false; }
+    else if(FILT.grain!=="all" && q.grain!==FILT.grain) return false;
+    if(t && !(q.nm.toLowerCase().includes(t) || q.note.toLowerCase().includes(t))) return false;
+    return true;
+  });
+}
+
+function renderQueue(keepRef){
+  const rows = currentRows();
+  $("#qtitle").textContent = STAGE_TITLE[FILT.stage];
   $("#qn").textContent = rows.length;
-  $("#qlist").innerHTML = rows.map((q,i)=>`
-    <button class="qitem${i===0?' sel':''}" data-ref="${q.ref}">
+  $("#qtot").textContent = STAGE_TOTAL[FILT.stage].toLocaleString();
+  if(!rows.length){ $("#qlist").innerHTML = '<div class="qempty">Nothing in this view — try another stage or filter.</div>'; return; }
+  const selRef = (keepRef && rows.some(r=>r.ref===keepRef)) ? keepRef : rows[0].ref;
+  $("#qlist").innerHTML = rows.map(q=>`
+    <button class="qitem${q.ref===selRef?' sel':''}" data-ref="${q.ref}">
       <div class="r1"><span class="grain ${q.grain}">${q.grain}</span><span class="nm">${esc(q.nm)}</span></div>
       <div class="r2"><span class="pill ${q.stage}"><span class="dot ${q.stage}"></span>${stageLabel[q.stage]}</span>
         <span>${esc(q.note)}</span><span class="conf">${q.conf.toFixed(2)}</span></div>
@@ -372,12 +403,13 @@ function renderQueue(filter){
     document.querySelectorAll(".qitem").forEach(x=>x.classList.remove("sel"));
     b.classList.add("sel"); renderDetail(b.dataset.ref);
   });
+  renderDetail(selRef);
 }
 
 function renderDetail(ref){
   const c = CLUSTERS.find(x=>x.id===ref) || CLUSTERS[0];
   const byPill={match:"auto",auto:"auto",claude:"claude",review:"review",conflict:"conflict"};
-  const byLabel={match:"Auto",auto:"Auto",claude:"Claude",review:"Review",conflict:"Conflict"};
+  const byLabel={match:"Auto",auto:"Auto",claude:"Claude",review:"Analyst",conflict:"Conflict"};
   const recs = c.records.map(r=>`
     <div class="rec ${r.status}">
       <div class="src">
@@ -393,9 +425,10 @@ function renderDetail(ref){
   const det = c.evidence.det.map(k=>`<div class="krow"><span>${esc(k[0])}</span><span class="mono">${esc(k[1])}</span></div>`).join("");
   const flags = c.flags.map(f=>`
     <div class="flag ${f.kind==='conflict'?'conf':''}"><span class="fdot"></span><span>${esc(f.t)}</span><button class="act">${esc(f.act)}</button></div>`).join("");
+  const atSenior = c.stage==="senior";
   $("#detail").innerHTML = `
     <div class="dtop">
-      <div class="kick"><span class="dot ${c.stage}"></span>Proposed canonical · ${c.table}</div>
+      <div class="kick"><span class="dot ${c.stage}"></span>Proposed canonical · ${c.table} · ${stageLabel[c.stage]} stage</div>
       <h2>${esc(c.name)} <span class="grain ${c.grain}">${c.grain}</span></h2>
       <div class="meta">
         <span class="kv">match key <span class="keychip">${esc(c.keyType)} = ${esc(c.keyValue)}</span></span>
@@ -423,26 +456,28 @@ function renderDetail(ref){
       <button class="btn primary">✓ Confirm to master</button>
       <button class="btn">⑃ Split record</button>
       <button class="btn">⋈ Merge cluster…</button>
-      <button class="btn warn">✕ Reject</button>
+      <button class="btn escalate">↑ ${atSenior?"Return to analyst":"Escalate to senior analyst"}</button>
       <div class="spacer"></div>
-      <span class="hint"><kbd>C</kbd> confirm · <kbd>S</kbd> split · <kbd>J</kbd>/<kbd>K</kbd> next</span>
+      <span class="hint"><kbd>C</kbd> confirm · <kbd>S</kbd> split · <kbd>E</kbd> escalate · <kbd>J</kbd>/<kbd>K</kbd> next</span>
     </div>`;
 }
 
-// funnel filter (visual)
+// funnel → stage filter (this is what the top buttons do now)
 document.querySelectorAll(".stage").forEach(s=>s.onclick=()=>{
   document.querySelectorAll(".stage").forEach(x=>x.classList.remove("on")); s.classList.add("on");
+  FILT.stage = s.dataset.stage; renderQueue();
 });
-// queue tabs
+// tabs → grain / conflict filter
 document.querySelectorAll("#tabs .tab").forEach(t=>t.onclick=()=>{
   document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.remove("on")); t.classList.add("on");
-  renderQueue(t.dataset.f); renderDetail(document.querySelector(".qitem")?.dataset.ref);
+  FILT.grain = t.dataset.f; renderQueue();
 });
-// theme toggle
+// search
+$(".search").addEventListener("input", e=>{ FILT.q = e.target.value; renderQueue(); });
+// theme
 $("#theme").onclick=()=>{ const r=document.documentElement;
   const cur=r.getAttribute("data-theme")|| (matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");
   r.setAttribute("data-theme", cur==="dark"?"light":"dark"); };
 
-renderQueue("all");
-renderDetail("espolon-blanco-750");
+renderQueue();
 </script>
