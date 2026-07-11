@@ -55,12 +55,13 @@ def run(limit=None, workers=12, log=print):
             with lock:
                 rows.append(r)
                 if len(rows) % 500 == 0:
-                    warehouse.write_parquet("abc_catalog", rows)     # checkpoint
+                    warehouse.write_accumulate("abc_catalog", rows,   # checkpoint (accumulates, incl. a --limit run)
+                                               key=lambda r: r.get("sku") or r.get("upc") or r.get("url"))
                     log("  ...%d named" % len(rows))
     with ThreadPoolExecutor(max_workers=workers) as ex:
         list(ex.map(w, cat))
     if rows:
-        warehouse.write_parquet("abc_catalog", rows)
+        warehouse.write_accumulate("abc_catalog", rows, key=lambda r: r.get("sku") or r.get("upc") or r.get("url"))
     got = sum(1 for r in rows if r.get("upc"))
     log("[abc-cat] DONE %d products (%d with UPC) -> abc_catalog" % (len(rows), got))
     return len(rows)

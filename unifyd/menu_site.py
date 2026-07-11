@@ -374,12 +374,14 @@ def pull(name, site=None, near="Orlando FL", log=print):
 
 def run(name, site=None, near="Orlando FL", log=print):
     o = pull(name, site, near, log)
+    # ACCUMULATE — menu_beverages/menu_files/account_logos are GLOBAL; a single-account run() must merge into
+    # the corpus (re-pulled account replaced, others preserved), not overwrite it — same as fan() does.
     if o["beverages"]:
-        warehouse.write_parquet("menu_beverages", o["beverages"])
+        warehouse.write_accumulate("menu_beverages", o["beverages"], key=lambda r: r["account"])
     if o["files"]:
-        warehouse.write_parquet("menu_files", o["files"])
+        warehouse.write_accumulate("menu_files", o["files"], key=lambda r: r["storage_key"])
     if o["logo"]:
-        warehouse.write_parquet("account_logos", [o["logo"]])
+        warehouse.write_accumulate("account_logos", [o["logo"]], key=lambda r: r["account"])
     return len(o["beverages"])
 
 

@@ -74,6 +74,25 @@ def write_parquet(name, records, fields=None):
     return {"rows": len(records), "uri": uri(name)}
 
 
+def write_accumulate(name, records, key, fields=None):
+    """MERGE `records` into the existing `<name>` table instead of overwriting it: drop existing rows whose
+    `key` is being re-written, keep the rest, append `records`. So a small/partial/different-scope run GROWS a
+    persistent catalog rather than clobbering a bigger prior run (`write_parquet` is a full overwrite — there
+    is no append). `key` maps a row → the identity a re-pull REPLACES: a product id for catalogs, an account
+    for per-account menus. Use this for any persistent catalog that accumulates across runs; keep plain
+    `write_parquet` for derived/full-rebuild tables and dated partitions."""
+    records = list(records or [])
+    if not records:
+        return {"rows": 0, "uri": uri(name)}
+    try:
+        existing = query(name, "SELECT * FROM t")
+    except Exception:
+        existing = []
+    ks = {key(r) for r in records}
+    merged = [e for e in existing if key(e) not in ks] + records
+    return write_parquet(name, merged, fields=fields)
+
+
 def _s3fs():
     from pyarrow import fs as pafs
     return pafs.S3FileSystem(endpoint_override=_endpoint(), access_key=_env("AWS_ACCESS_KEY_ID"),

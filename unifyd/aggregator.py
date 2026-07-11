@@ -91,7 +91,9 @@ class AggregatorConnector:
 
     def _land(self, uniq, log=print):
         """Snapshot (full raw + image) → <source>_products; lean dated rows → retail_observations."""
-        warehouse.write_parquet("%s_products" % self.source, [{k: r.get(k) for k in ROW_FIELDS} for r in uniq])
+        # ACCUMULATE across zones/addresses — a second zone must not overwrite the first zone's products.
+        warehouse.write_accumulate("%s_products" % self.source, [{k: r.get(k) for k in ROW_FIELDS} for r in uniq],
+                                   key=lambda r: r.get("product_id") or r.get("upc") or r.get("url"))
         observe.record(self.source, [dict(store=r.get("store"), store_id=r.get("store_id"),
                                            product_id=r.get("product_id"), upc=r.get("upc"),
                                            brand=r.get("brand"), name=r.get("name"), price=r.get("price"),
