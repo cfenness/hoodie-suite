@@ -11,7 +11,7 @@ retail_observations, so off-premise inventory tracks over time like the DoorDash
     python off_premise.py --store haskells --sample 25      # bounded proof
     python off_premise.py --store haskells                  # full catalog
 """
-import argparse, html as _html, json, os, re, sys, time, urllib.parse, urllib.request
+import argparse, html as _html, json, os, re, sys, time, urllib.parse, urllib.request, urllib.error
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
@@ -46,6 +46,48 @@ def _unlock(url, key):
     return urllib.request.urlopen(r, timeout=90).read().decode("utf-8", "replace")
 
 
+# ── direct-first fetch — try a free polite request, fall back to BD Unlocker only when actually blocked ──
+# Most catalog surfaces (Shopify /products.json, BigCommerce sitemaps + og pages, City Hive sitemap + product
+# pages) serve fine to a well-behaved direct client; routing them through BD is pure defensiveness/cost. So
+# _fetch tries direct and escalates to _unlock ONLY on a real bot wall (403/429/503, Cloudflare, DataDome, or a
+# connection error). FORCE_BD=1 skips direct (debug); OFFPREM_NO_BD=1 forbids the fallback (never pay BD).
+_BLOCK_MARKERS = ("__cf_chl", "cf-browser-verification", "cf_chl_opt", "just a moment...",
+                  "datadome", "px-captcha", "access denied", "request unsuccessful", "attention required!")
+_FETCH_STATS = {"direct": 0, "bd": 0, "fail": 0}
+
+
+def _looks_blocked(text):
+    low = (text or "")[:4000].lower()
+    return any(m in low for m in _BLOCK_MARKERS)
+
+
+def _fetch(url, key=None, timeout=45, log=None):
+    """Return the body via a free direct request when possible, else Bright Data Unlocker."""
+    if os.environ.get("FORCE_BD") != "1":
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": _UA, "Accept": "text/html,application/json,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                t = r.read().decode("utf-8", "replace")
+            if t and not _looks_blocked(t):
+                _FETCH_STATS["direct"] += 1
+                return t
+        except urllib.error.HTTPError as e:
+            if e.code not in (401, 403, 407, 408, 409, 429, 503):   # a 404/500 won't be fixed by a proxy
+                try:
+                    return e.read().decode("utf-8", "replace")      # hand the body back (e.g. end-of-pagination)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    if os.environ.get("OFFPREM_NO_BD") == "1":                      # forbid paid fallback — free-only mode
+        _FETCH_STATS["fail"] += 1
+        raise RuntimeError("blocked and OFFPREM_NO_BD=1 (no BD fallback) for %s" % url)
+    _FETCH_STATS["bd"] += 1
+    return _unlock(url, key or _bd_key())
+
+
 def _first(m):
     return next((g for g in m.groups() if g), None) if m else None
 
@@ -56,7 +98,7 @@ def bigcommerce_ids(base, key, max_pages=40, log=print):
     urls = []
     for pg in range(1, max_pages + 1):
         try:
-            sm = _unlock("%s/xmlsitemap.php?type=products&page=%d" % (base, pg), key)
+            sm = _fetch("%s/xmlsitemap.php?type=products&page=%d" % (base, pg), key)
         except Exception as e:
             log("  sitemap page %d: %s" % (pg, str(e)[:40])); break
         u = [_html.unescape(x) for x in re.findall(r"<loc>([^<]+)</loc>", sm)]
@@ -70,7 +112,7 @@ def bigcommerce_ids(base, key, max_pages=40, log=print):
 
 def bigcommerce_product(url, key):
     """og:title + og:price:amount + sku from the SERVER HTML (no JS). -> dict or None (self-reports drift)."""
-    p = _unlock(url, key)
+    p = _fetch(url, key)
     name = _first(_BC_TITLE.search(p))
     pm = _BC_PRICE.search(p)
     price = float(pm.group(1)) if pm else None
@@ -93,7 +135,7 @@ def shopify_catalog(base, key, max_pages=25, log=print):
         j = None
         for _try in range(2):                                   # transient BD failures happen under load
             try:
-                j = json.loads(_unlock("%s/products.json?limit=250&page=%d" % (base.rstrip("/"), pg), key))
+                j = json.loads(_fetch("%s/products.json?limit=250&page=%d" % (base.rstrip("/"), pg), key))
                 break
             except Exception:
                 time.sleep(2)
@@ -145,7 +187,7 @@ def _bc_parse(url):
 def bottlecapps_store_id(base, key):
     """Every Bottlecapps store exposes its id in its own page (store_id = "N" or an /s-N/ link)."""
     try:
-        h = _unlock(base.rstrip("/") + "/", key)
+        h = _fetch(base.rstrip("/") + "/", key)
     except Exception:
         return None
     m = re.search(r'store_id\s*=\s*"?(\d{3,7})', h) or re.search(r"/s-(\d{3,7})/", h)
@@ -206,7 +248,7 @@ def woo_catalog(base, key, max_pages=50, log=print):
         j = None
         for _t in range(2):
             try:
-                j = json.loads(_unlock("%s/wp-json/wc/store/v1/products?per_page=100&page=%d"
+                j = json.loads(_fetch("%s/wp-json/wc/store/v1/products?per_page=100&page=%d"
                                        % (base.rstrip("/"), pg), key))
                 break
             except Exception:
@@ -320,7 +362,7 @@ def _ch_sitemap_products(base, key, log=print):
     Cloudflare interstitial instead of the XML, so retry until we get <loc> product URLs."""
     for _ in range(3):
         try:
-            xml = _unlock(base.rstrip("/") + "/sitemap.xml", key)
+            xml = _fetch(base.rstrip("/") + "/sitemap.xml", key)
         except Exception as e:
             log("  [cityhive] sitemap %s" % str(e)[:60]); continue
         urls = [l for l in re.findall(r"<loc>([^<]+)</loc>", xml) if "/shop/product/" in l]
@@ -394,7 +436,7 @@ def cityhive_catalog(base, key=None, max_products=None, workers=8, log=print):
     def fetch(u):
         for _ in range(2):
             try:
-                d = _ch_parse_product(_unlock(u, key))
+                d = _ch_parse_product(_fetch(u, key))
                 if d.get("name"):
                     return d, u
             except Exception:
