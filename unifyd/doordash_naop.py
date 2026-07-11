@@ -96,10 +96,21 @@ def run(stores=None, log=print):
                         r["cuisine_source"] = "claude"
         if guess:
             log("  [naop] Claude cuisine filled %d/%d unsure accounts" % (len(guess), len(unsure)))
+    # ACCUMULATE (naop_* are GLOBAL, not per-market) — merge this sweep into the existing tables so a run
+    # for one metro doesn't wipe another's on-premise menus. Dedup beverages by (account, name), accounts by account.
+    def _merge(name, new_rows, keyf):
+        try:
+            existing = warehouse.query(name, "SELECT * FROM t")
+        except Exception:
+            existing = []
+        idx = {keyf(r): r for r in existing}
+        for r in new_rows:
+            idx[keyf(r)] = r
+        return list(idx.values())
     if rows:
-        warehouse.write_parquet("naop_beverages", rows)
+        warehouse.write_parquet("naop_beverages", _merge("naop_beverages", rows, lambda r: (r.get("account"), r.get("name"))))
     if accounts:
-        warehouse.write_parquet("naop_accounts", accounts)
+        warehouse.write_parquet("naop_accounts", _merge("naop_accounts", accounts, lambda r: r.get("account")))
         log("[naop] DONE %d beverages · %d accounts (%d serve alcohol) -> naop_beverages / naop_accounts"
             % (len(rows), len(accounts), sum(1 for a in accounts if a["serves_alcohol"])))
     return len(rows)
