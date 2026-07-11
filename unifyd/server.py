@@ -1725,39 +1725,49 @@ def mwb_item_ep(cid):
     return jsonify(ok=True, item=m, filings=filings)
 
 
+def _wb_norm_brand(s):
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def _wb_upc_prefix(u):
+    d = re.sub(r"\D", "", u or "")
+    return d[-12:][:7] if len(d) >= 11 else ""       # GS1 company-prefix zone (normalize to 12-digit UPC-A)
+
+
+def _wb_tokens(s):
+    return set(re.findall(r"[a-z0-9]+", (s or "").lower()))
+
+
 @app.get("/api/master/workbench/candidates/<cid>")
 def mwb_candidates_ep(cid):
     """The RANKED possible clusters a record could belong to — the disambiguation the workbench is built on.
-    #1 is the cluster's own proposed home (its real confidence); the rest are other clusters that share the
-    brand and overlap on name (potential duplicates / near-misses), scored by token Jaccard. A big gap to #2
-    (or a high #1) means low ambiguity; a near-tie means a human should decide."""
+    #1 is the cluster's own proposed home (its real match confidence); the rest are other clusters scored by a
+    COMPOSITE of real signals — shared GS1/UPC company prefix, brand (normalized so Titos == Tito's), name-token
+    overlap, size, and class/type — so genuine duplicates surface even across messy source strings. A big gap to
+    #2 (or a high #1) means low ambiguity; a near-tie means a human should decide."""
     base = _wq("ttb_review", "SELECT * FROM t WHERE cluster_id = ?", [cid]) or \
         _wq("ttb_master", "SELECT * FROM t WHERE cluster_id = ?", [cid])
     if not base:
         return jsonify(ok=False, error="not found"), 404
     base = base[0]
-    brand = (base.get("brand") or "").strip().lower()
-    ntok = set(re.findall(r"[a-z0-9]+", (base.get("candidate_name") or "").lower()))
+    bnorm = _wb_norm_brand(base.get("brand"))
+    bpfx = _wb_upc_prefix(base.get("upc"))
+    btok = _wb_tokens(base.get("candidate_name"))
+    bsz = str(base.get("size_ml") or "").strip()
+    bcls = (base.get("class_type") or "").strip().lower()
     cols = "cluster_id, brand, candidate_name, class_type, confidence, tier, corroborated_by, member_count, size_ml, upc, matched_by"
-    pool = []
-    if brand:
-        pool = _wq("ttb_master", "SELECT %s FROM t WHERE lower(brand) = ?" % cols, [brand]) + \
-               _wq("ttb_review", "SELECT %s FROM t WHERE lower(brand) = ?" % cols, [brand])
-
-    def jac(c):
-        t = set(re.findall(r"[a-z0-9]+", (c.get("candidate_name") or "").lower()))
-        return round(len(ntok & t) / len(ntok | t), 2) if (ntok and t) else 0.0
+    pool = _wq("ttb_master", "SELECT %s FROM t" % cols) + _wq("ttb_review", "SELECT %s FROM t" % cols)
 
     def keys_of(c, extra=None):
         k = []
         if c.get("upc"):
-            k.append("upc:" + c["upc"])
+            k.append("upc:" + str(c["upc"]))
         if c.get("brand"):
-            k.append("brand:" + c["brand"].lower().replace(" ", "-"))
+            k.append("brand:" + str(c["brand"]).lower().replace(" ", "-"))
         if c.get("size_ml"):
             k.append("size:" + str(c["size_ml"]) + "ml")
         if c.get("class_type"):
-            k.append("class:" + c["class_type"].lower()[:24])
+            k.append("class:" + str(c["class_type"]).lower()[:22])
         return (k + (extra or []))[:5]
 
     cands = [{"cluster_id": cid, "name": base.get("candidate_name") or base.get("brand"), "grain": "sku",
@@ -1770,16 +1780,37 @@ def mwb_candidates_ep(cid):
     seen = {cid}
     alts = []
     for c in pool:
-        if c["cluster_id"] in seen:
+        if c.get("cluster_id") in seen:
             continue
-        seen.add(c["cluster_id"])
-        s = jac(c)
-        if s <= 0.15:
+        seen.add(c.get("cluster_id"))
+        ctok = _wb_tokens(c.get("candidate_name"))
+        nj = (len(btok & ctok) / len(btok | ctok)) if (btok and ctok) else 0.0
+        same_brand = 1 if bnorm and _wb_norm_brand(c.get("brand")) == bnorm else 0
+        cpfx = _wb_upc_prefix(c.get("upc"))
+        upcm = 1 if bpfx and cpfx == bpfx else 0
+        csz = str(c.get("size_ml") or "").strip()
+        szm = 1 if (bsz and csz and bsz == csz) else (0.5 if not (bsz and csz) else 0)
+        clsm = 1 if bcls and (c.get("class_type") or "").strip().lower() == bcls else 0
+        # gate: a real duplicate must share the GS1 prefix, the brand, or a strong name overlap
+        if not (upcm or same_brand or nj >= 0.5):
             continue
-        alts.append({"cluster_id": c["cluster_id"], "name": c.get("candidate_name") or c.get("brand"), "grain": "sku",
-                     "table": "ttb_" + ("master" if c.get("tier") == 1 else "review"), "conf": s,
-                     "why": "Same brand (%s); name overlaps %d%% — a potential duplicate cluster." % (
-                         base.get("brand") or "", int(s * 100)),
+        score = round(0.40 * nj + 0.24 * upcm + 0.18 * same_brand + 0.10 * szm + 0.08 * clsm, 2)
+        if score <= 0.20:
+            continue
+        reasons = []
+        if upcm:
+            reasons.append("shares GS1 prefix %s" % bpfx)
+        if same_brand:
+            reasons.append("same brand")
+        if nj >= 0.4:
+            reasons.append("%d%% name overlap" % int(nj * 100))
+        if szm == 1:
+            reasons.append("same size")
+        if clsm:
+            reasons.append("same class/type")
+        alts.append({"cluster_id": c.get("cluster_id"), "name": c.get("candidate_name") or c.get("brand"),
+                     "grain": "sku", "table": "ttb_" + ("master" if c.get("tier") == 1 else "review"),
+                     "conf": score, "why": (", ".join(reasons) or "partial match").capitalize() + " — a potential duplicate cluster.",
                      "keys": keys_of(c)})
     alts.sort(key=lambda x: -x["conf"])
     return jsonify(ok=True, cluster_id=cid, candidates=cands + alts[:4])
