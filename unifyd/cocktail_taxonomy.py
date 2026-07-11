@@ -30,7 +30,7 @@ SUBFAMILIES = [
     ("Daiquiri",         "Sour",           "rum",      r"daiquiri|daquiri|dacquiri"),
     ("Piña Colada",      "Sour",           "rum",      r"pi[nñ]a colada|colada"),
     ("Cosmopolitan",     "Sour",           "vodka",    r"cosmopolitan|cosmo\b"),
-    ("Whiskey Sour",     "Sour",           "whiskey",  r"whiskey sour|whisky sour|amaretto sour|sour\b"),
+    ("Whiskey Sour",     "Sour",           "whiskey",  r"whiskey sour|whisky sour|amaretto sour|vodka sour|gin sour|\bsour$"),
     ("Sidecar",          "Sour",           "brandy",   r"sidecar"),
     ("Gimlet",           "Sour",           "gin",      r"gimlet"),
     ("Lemon Drop",       "Sour",           "vodka",    r"lemon drop|kamikaze|woo ?woo"),
@@ -149,9 +149,9 @@ BEER_STYLES = [
     ("IPA", r"\bipa\b|india pale ale|hazy|dipa|new england ale|neipa"),
     ("Pale Ale", r"pale ale|\bapa\b"), ("Pilsner", r"pilsner|pilsener|\bpils\b"),
     ("Lager", r"lager|helles|vienna lager|dortmunder|light beer|\blite\b"),
-    ("Stout", r"stout|imperial stout"), ("Porter", r"porter"),
-    ("Wheat", r"wheat|hefeweizen|\bhefe\b|witbier|white ale|blanche"),
-    ("Amber/Red", r"amber|red ale|m[aä]rzen|oktoberfest"), ("Brown Ale", r"brown ale"),
+    ("Stout", r"stout|imperial stout"), ("Porter", r"\bporter\b"),
+    ("Wheat", r"\bwheat\b|hefeweizen|\bhefe\b|witbier|white ale|blanche"),
+    ("Amber/Red", r"\bamber\b|red ale|m[aä]rzen|oktoberfest"), ("Brown Ale", r"brown ale"),
     ("Sour", r"sour ale|\bgose\b|berliner|lambic|kettle sour"), ("Saison", r"saison|farmhouse ale"),
     ("Kölsch", r"k[oö]lsch"), ("Bock", r"\bbock\b|doppelbock|maibock"),
     ("Blonde/Golden", r"blonde ale|golden ale|cream ale"),
@@ -160,12 +160,14 @@ BEER_STYLES = [
     ("FMB/Hard RTD", r"twisted tea|mike'?s hard|smirnoff ice|four ?loko|hard (?:tea|lemonade|punch)|surfside|cutwater|ranch water"),
 ]
 _BEER_HINT = re.compile(
-    r"\bbeer\b|\bipa\b|\bale\b|lager|pilsner|stout|porter|hefe|saison|k[oö]lsch|draft|draught|on tap|\bpint\b|"
+    r"\bbeer\b|\bipa\b|\bale\b|lager|pilsner|stout|\bporter\b|hefe|saison|k[oö]lsch|draft|draught|on tap|\bpint\b|"
     r"bud ?light|budweiser|coors|miller|michelob|modelo|corona|heineken|stella|guinness|blue moon|dos equis|"
     r"pacifico|yuengling|sam adams|sierra nevada|lagunitas|goose island|\bpbr\b|pabst|shiner|founders|"
     r"new belgium|sculpin|voodoo ranger|hazy|montucky|natural light|busch\b|"
     r"hard seltzer|white claw|\btruly\b|high noon|nutrl|vizzy|\bcider\b|angry orchard|strongbow|"
-    r"twisted tea|mike'?s hard|smirnoff ice|four ?loko|hard (?:tea|lemonade|cider|punch)|surfside|cutwater", re.I)
+    r"twisted tea|mike'?s hard|smirnoff ice|four ?loko|hard (?:tea|lemonade|cider|punch)|surfside|cutwater|"
+    r"sapporo|asahi|kirin|\borion\b|tsingtao|singha|\bchang\b|tiger beer|red horse|\befes\b|\bperoni\b|"
+    r"birra moretti|estrella|\bsol\b|bohemia|presidente|tecate|victoria|\bhite\b|\bcass\b|kloud", re.I)  # world/import lagers
 
 
 def beer_style(text):
@@ -175,11 +177,48 @@ def beer_style(text):
     return ""
 
 
+# ── World / traditional alcohol on izakaya, sushi, Korean, and Latin menus — the categories chains never
+# surface. "sake" is the trap: in a sushi menu it means SALMON (鮭), the fish — "Sake Nigiri/Sashimi/Roll"
+# is food, only the DRINK (酒) counts. We gate the drink on a sake-drink signal or brand, and drop the fish.
+_SAKE_FOOD = re.compile(r"nigiri|sashimi|\bmaki\b|hand ?roll|\bdon\b|\bpoke\b|\bsushi\b|over rice|"
+                        r"avocado|cucumber|tempura|teriyaki|\bnabe\b|\bbowl\b", re.I)
+_SAKE_DRINK = re.compile(r"hot sake|cold sake|nigori|junmai|ginj[oō]|daiginj[oō]|sake bomb|sake flight|"
+                         r"sparkling sake|unfiltered sake|plum sake|\btokkuri\b|\bcarafe\b|\bmasu\b|sake ?tini|"
+                         r"gekkeikan|hakutsuru|sho ?chiku ?bai|\btyku\b|momokawa|ozeki|dassai|kubota|murai|"
+                         r"\bnihonshu\b", re.I)
+_SAKE_SERVE = re.compile(r"\b(cup|glass|bottle|carafe|oz|ml|flask|shot|hot|cold|small|large|warm|chilled)\b", re.I)
+_UMESHU = re.compile(r"umeshu|plum wine|\bchoya\b", re.I)
+_SOJU = re.compile(r"\bsoju\b|jinro|chamisul|\bshochu\b|\bsh[oō]ch[uū]\b|baijiu|makgeolli|makkoli|makali", re.I)
+_HIGHBALL = re.compile(r"highball|chu-?hai|chuhai|sake bomb|soju (?:cocktail|bomb)", re.I)
+
+
+def _world_alcohol(name, description=""):
+    """Sake / soju / umeshu / highball on Asian & Latin menus, disambiguated from the fish 'sake'."""
+    text = ("%s %s" % (name or "", description or "")).lower()
+    if _HIGHBALL.search(text):
+        return {"category": "cocktail", "sub": "Highball", "base_spirit": "Whisky/Shochu"}
+    if _UMESHU.search(text):
+        return {"category": "sake", "sub": "Plum Wine"}
+    if _SOJU.search(text):
+        return {"category": "spirit", "base_spirit": "Soju/Shochu"}
+    if _SAKE_FOOD.search(text):                                  # 鮭 salmon/sushi context — never 酒 the drink
+        return None
+    if _SAKE_DRINK.search(text):                                 # junmai/ginjo/daiginjo/nigori/brand = sake alone
+        sub = next((s for s, p in [("Daiginjo", r"daiginj"), ("Ginjo", r"ginj"), ("Junmai", r"junmai"),
+                    ("Nigori", r"nigori"), ("Sparkling", r"sparkling")] if re.search(p, text)), "")
+        return {"category": "sake", "sub": sub}
+    if re.search(r"\bsak[eé]\b", text):                          # bare "sake" — drink if standalone or served
+        if len(text.split()) <= 2 or _SAKE_SERVE.search(text):
+            return {"category": "sake", "sub": ""}
+    return None
+
+
 def classify_beverage(name, description=""):
     """Unified NAOP drinks classifier → {category, is_alcoholic, name, + type fields}.
     category ∈ cocktail | mocktail | beer | dessert (boozy) | other. Cocktails carry root/sub/base_spirit,
     beer carries style/format. A mocktail signal on a cocktail flips it non-alcoholic but keeps the archetype."""
     text = ("%s %s" % (name or "", description or "")).lower()
+    nm = (name or "").lower()                                   # a beverage's IDENTITY is its name
     mock = bool(_MOCKTAIL.search(text))
     c = classify(name, description)
     is_cocktail = c["method"] == "deterministic"
@@ -187,11 +226,20 @@ def classify_beverage(name, description=""):
         return {"category": "mocktail" if mock else "cocktail", "is_alcoholic": not mock,
                 "name": (name or "").strip(), "root": c["root"], "sub": c["sub"],
                 "base_spirit": "" if mock else c["base_spirit"]}
-    if _BEER_HINT.search(text):
+    # Beer/sake/soju are NAMED products — anchor detection to the NAME. A brewhouse describes its DISHES with
+    # its beer ("Deep Dish Ziti … our Hazy IPA"), so matching the description would mislabel food as a beverage.
+    soda = re.search(r"root beer|\bginger beer\b|cream soda|birch beer|ginger ale", nm)
+    # beer if the NAME carries a beer brand/hint, a recognized style, OR a multipack signal ("6-Pack") —
+    # all name-anchored, so a brewhouse's beer-laced DISH descriptions don't get mislabeled as beer.
+    if (_BEER_HINT.search(nm) or beer_style(nm) or re.search(r"\b\d+[- ]?pack\b|six[- ]?pack", nm)) and not soda:
         fmt = ("draft" if re.search(r"draft|draught|on tap|\bpint\b", text) else
                ("can" if "can" in text else ("bottle" if "bottle" in text else "")))
         return {"category": "beer", "is_alcoholic": not mock, "name": (name or "").strip(),
-                "beer_style": beer_style(text), "format": fmt}
+                "beer_style": beer_style(nm), "format": fmt}
+    w = _world_alcohol(name, "")                                # name-anchored: a dish described w/ sake ≠ the drink
+    if w and not mock:
+        return {"category": w["category"], "is_alcoholic": True, "name": (name or "").strip(),
+                "root": "", "sub": w.get("sub", ""), "base_spirit": w.get("base_spirit", "")}
     if mock:            # a named mocktail that isn't a recognized cocktail shape
         return {"category": "mocktail", "is_alcoholic": False, "name": (name or "").strip(),
                 "root": "", "sub": "", "base_spirit": ""}
