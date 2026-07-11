@@ -229,13 +229,13 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
   </div>
 
   <div class="funnel" id="funnel">
-    <button class="stage s-all" data-stage="all"><div class="lab"><span class="dot cand"></span>Candidates</div><div class="n num">12,481</div><div class="pct">raw in</div><div class="bar"><i style="width:100%"></i></div></button>
-    <button class="stage s-auto" data-stage="auto"><div class="lab"><span class="dot auto"></span>Auto</div><div class="n num">8,203</div><div class="pct">66% · exact key</div><div class="bar"><i style="width:66%"></i></div></button>
-    <button class="stage s-claude" data-stage="claude"><div class="lab"><span class="dot claude"></span>Claude</div><div class="n num">2,946</div><div class="pct">24% · adjudicated</div><div class="bar"><i style="width:24%"></i></div></button>
-    <button class="stage s-analyst on" data-stage="analyst"><div class="lab"><span class="dot analyst"></span>Analyst</div><div class="n num">1,332</div><div class="pct">your queue</div><div class="bar"><i style="width:11%"></i></div></button>
-    <button class="stage s-senior" data-stage="senior"><div class="lab"><span class="dot senior"></span>Sr Analyst</div><div class="n num">214</div><div class="pct">escalated</div><div class="bar"><i style="width:2%"></i></div></button>
-    <button class="stage s-steward" data-stage="steward"><div class="lab"><span class="dot steward"></span>Steward</div><div class="n num">38</div><div class="pct">final authority</div><div class="bar"><i style="width:1%"></i></div></button>
-    <button class="stage s-confirmed" data-stage="confirmed"><div class="lab"><span class="dot confirmed"></span>Confirmed</div><div class="n num">9,914</div><div class="pct">to master</div><div class="bar"><i style="width:79%"></i></div></button>
+    <button class="stage s-all" data-stage="all"><div class="lab"><span class="dot cand"></span>Candidates</div><div class="n num">—</div><div class="pct">raw in</div><div class="bar"><i style="width:0%"></i></div></button>
+    <button class="stage s-auto" data-stage="auto"><div class="lab"><span class="dot auto"></span>Auto</div><div class="n num">—</div><div class="pct">exact key</div><div class="bar"><i style="width:0%"></i></div></button>
+    <button class="stage s-claude" data-stage="claude"><div class="lab"><span class="dot claude"></span>Claude</div><div class="n num">—</div><div class="pct">adjudicated</div><div class="bar"><i style="width:0%"></i></div></button>
+    <button class="stage s-analyst on" data-stage="analyst"><div class="lab"><span class="dot analyst"></span>Analyst</div><div class="n num">—</div><div class="pct">your queue</div><div class="bar"><i style="width:0%"></i></div></button>
+    <button class="stage s-senior" data-stage="senior"><div class="lab"><span class="dot senior"></span>Sr Analyst</div><div class="n num">—</div><div class="pct">escalated</div><div class="bar"><i style="width:0%"></i></div></button>
+    <button class="stage s-steward" data-stage="steward"><div class="lab"><span class="dot steward"></span>Steward</div><div class="n num">—</div><div class="pct">final authority</div><div class="bar"><i style="width:0%"></i></div></button>
+    <button class="stage s-confirmed" data-stage="confirmed"><div class="lab"><span class="dot confirmed"></span>Confirmed</div><div class="n num">—</div><div class="pct">to master</div><div class="bar"><i style="width:0%"></i></div></button>
   </div>
 
   <div class="work">
@@ -287,12 +287,19 @@ function stubFrom(row, stage){
           ambiguous:(row.confidence||0)<0.6, corroborated:!!row.corroborated_by, noupc:!row.upc, brand:(row.brand||"")};
 }
 
+// stages that carry a live "NN% ·" prefix on their descriptor (their share of raw candidates)
+const PCT_STAGES={auto:"exact key",claude:"adjudicated"};
 function setFunnel(st){
   STAGES=st||{};
   const map={all:"candidates",candidates:"candidates",auto:"auto",claude:"claude",analyst:"analyst",senior:"senior",steward:"steward",confirmed:"confirmed"};
+  const cand=Number(st.candidates||0);
   document.querySelectorAll(".stage").forEach(el=>{
-    const n=st[map[el.dataset.stage]];
-    if(n!=null){ const nn=el.querySelector(".n"); if(nn) nn.textContent=Number(n).toLocaleString(); }
+    const key=map[el.dataset.stage], n=st[key];
+    if(n==null) return;
+    const nn=el.querySelector(".n"); if(nn) nn.textContent=Number(n).toLocaleString();
+    const pct=cand?Math.round(n/cand*100):0;
+    const bar=el.querySelector(".bar > i"); if(bar) bar.style.width=Math.min(100,pct)+"%";
+    if(PCT_STAGES[key]){ const pe=el.querySelector(".pct"); if(pe) pe.textContent=pct+"% · "+PCT_STAGES[key]; }
   });
 }
 
