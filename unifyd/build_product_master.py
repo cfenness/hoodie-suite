@@ -16,6 +16,7 @@ import collections, re, sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import master_apply
+import precleanse as _precleanse
 
 FIELDS = ["brand", "brand_group", "product_name", "flavor", "abv", "style", "category", "origin",
           "size_ml", "packsize", "container", "pack", "upc", "gtin", "vintage", "edition", "supplier"]
@@ -221,6 +222,7 @@ def build(log=print):
                 gtin=None, vintage=None, edition=None, supplier=None, _source=ds))
             kept += 1
         log("[master]   %-24s %6d products" % (ds, kept))
+    _precleanse.precleanse(staged, log)                 # precleanse: canonicalize brand + cleanse name FIRST
     canonicalize(staged, log)                           # smarter matching: fold near-dup names before the shred
     log("[master] staged %d rows → _stage_product" % len(staged))
     warehouse.write_parquet("_stage_product", staged, fields=FIELDS + ["_source"])
