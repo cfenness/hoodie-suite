@@ -20,8 +20,11 @@ def _mnames(master_fields):
 
 def source_select(ds, rules, master_fields):
     """The per-source SELECT projecting `ds` onto the master schema (unmapped master fields → NULL).
-    Each mapped field is auto-wrapped in its master field's normalizer (e.g. upc → GTIN-14)."""
+    Each mapped field is auto-wrapped in its master field's normalizer (e.g. upc → GTIN-14). A rule of the
+    form {"filter": "<sql>"} (no source/master field) becomes a source-level WHERE — so a catalog can be
+    scoped to its bev-alc rows (e.g. category='Adult Beverage') before it feeds the master."""
     import warehouse
+    where = next((r["filter"] for r in rules if isinstance(r, dict) and r.get("filter")), None)
     by_master = {r["master_field"]: r for r in rules if r.get("master_field")}
     cols = []
     for f in master_fields:
@@ -35,7 +38,10 @@ def source_select(ds, rules, master_fields):
             cols.append("NULL AS %s" % derive.col(mf))
     cols.append("%s AS %s" % (derive._sqlstr(ds), derive.col("_source")))
     uri = warehouse.uri(ds).replace("'", "")
-    return "SELECT %s FROM read_parquet('%s')" % (", ".join(cols), uri)
+    sql = "SELECT %s FROM read_parquet('%s')" % (", ".join(cols), uri)
+    if where:
+        sql += " WHERE (%s)" % where
+    return sql
 
 
 def preview(dataset, rule, limit=12, normalize=None):
