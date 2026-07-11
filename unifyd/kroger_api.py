@@ -186,8 +186,18 @@ def products(tok, term, location_id, limit=25):
 
 def _land(uniq, n_stores, run_id):
     """Land the snapshot + dated observations + a run row. Called after EACH zip so progress is saved
-    and visible (restart-safe) — not just once at the end."""
-    warehouse.write_parquet("kroger_products", uniq)
+    and visible (restart-safe) — not just once at the end. ACCUMULATES: merges this run's rows into the
+    existing catalog (dedup by store×product, newest wins) so a small run GROWS the catalog instead of
+    overwriting a bigger prior run (the dated time-series lives in retail_observations)."""
+    try:
+        existing = warehouse.query("kroger_products", "SELECT * FROM t")
+    except Exception:
+        existing = []
+    idx = {(r.get("location_id"), r.get("product_id")): r for r in existing}
+    for r in uniq:
+        idx[(r.get("location_id"), r.get("product_id"))] = r
+    catalog = list(idx.values())
+    warehouse.write_parquet("kroger_products", catalog)
     observe.record("kroger", [dict(store=r["store"], store_id=r["location_id"],
                                    product_id=r["product_id"], upc=r["upc"], brand=r["brand"],
                                    name=r["product_name"], price=r["price"], promo=r["promo"],
