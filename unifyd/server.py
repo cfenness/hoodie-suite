@@ -83,12 +83,15 @@ class _JobLogHandler(logging.Handler):
 _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
-VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev"} | set(socrata_outlets.VALID)
+VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
+               "kroger", "walmart", "target", "doordash", "google"} | set(socrata_outlets.VALID)
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
 
 def _dispatch_pull(conn, body):
+    if conn in _CONN_PULL:                     # unified registry (kroger/walmart/target/doordash/google)
+        return _CONN_PULL[conn](body)
     return (cola_pull(body) if conn == "ttb-cola"
             else abc_pull(body) if conn == "abc-fws"
             else specs_pull(body) if conn == "specs"
@@ -163,6 +166,131 @@ def census_pull(body):
     run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = (body or {}).get("trigger", "manual")
     return run
+
+# ── Unified connector wrappers (kroger / walmart / target / doordash / google) ─────────────────────────────
+# These make five formerly out-of-band scrapers FIRST-CLASS connectors on the same /api/run path as every
+# other source: triggerable, schedulable, and visible in run history. Each wrapper runs the owned scraper
+# (which lands its warehouse table + its own <x>_runs) and mirrors the result into ONE standard run record.
+def _run_id():
+    return "R-" + format(int(time.time()) % 100000, "05d")
+
+def _wh_count(name):
+    try:
+        import warehouse
+        return warehouse.query(name, "SELECT count(*) c FROM t")[0]["c"]
+    except Exception:
+        return 0
+
+def _std_run(conn, started, total=0, extracts=None, status="success", warnings=None, note="", trigger="manual"):
+    fin = int(time.time() * 1000)
+    return {"id": _run_id(), "connId": conn, "startedAt": started, "finishedAt": fin,
+            "durationMs": fin - started, "status": status, "trigger": trigger, "total": total,
+            "degraded": status in ("degraded", "partial"), "warnings": warnings or [], "healed": [],
+            "extracts": extracts or [], "note": note}
+
+def kroger_pull(body):
+    """Kroger Developer API (OAuth2) → kroger_products + kroger_runs. Needs KROGER_CLIENT_ID/SECRET (env or
+    body). First-class connector now; the old subprocess path (/api/connector/run) still works too."""
+    started = int(time.time() * 1000); body = body or {}
+    cid = body.get("client_id") or _CONN_CREDS.get("kroger", {}).get("id") or os.environ.get("KROGER_CLIENT_ID", "")
+    sec = body.get("client_secret") or _CONN_CREDS.get("kroger", {}).get("secret") or os.environ.get("KROGER_CLIENT_SECRET", "")
+    if not (cid and sec):
+        return _std_run("kroger", started, status="degraded", trigger=body.get("trigger", "manual"),
+                        warnings=["Kroger Client ID + Secret required (set KROGER_CLIENT_ID/SECRET or pass client_id/client_secret)"])
+    _CONN_CREDS["kroger"] = {"id": cid, "secret": sec}
+    os.environ["KROGER_CLIENT_ID"] = cid; os.environ["KROGER_CLIENT_SECRET"] = sec
+    import kroger_api
+    zips = [z.strip() for z in (body.get("zips") or ",".join(kroger_api.DEFAULT_ZIPS)).split(",") if z.strip()]
+    terms = [t.strip() for t in (body.get("terms") or ",".join(kroger_api.DEFAULT_TERMS)).split(",") if t.strip()]
+    kroger_api.run(zips, terms)
+    n = _wh_count("kroger_products")
+    return _std_run("kroger", started, total=n, trigger=body.get("trigger", "manual"),
+                    extracts=[{"id": "kroger_products", "rows": n, "delta": 0, "status": "success"}])
+
+def walmart_pull(body):
+    """Walmart via Bright Data (discover + product pull) → walmart_products + walmart_runs. HEAVY (BD spend)."""
+    started = int(time.time() * 1000); body = body or {}
+    import walmart_scraper as wm
+    wm._load_creds()
+    per = int(body.get("per", 4))
+    queries = [q.strip() for q in (body.get("queries") or ",".join(wm.DEFAULT_QUERIES)).split(",") if q.strip()]
+    urls = wm.discover_urls(queries, per)
+    raw = []
+    for u in urls:
+        try: raw += wm.pull_product(u)
+        except Exception: pass
+    if not raw:
+        return _std_run("walmart", started, status="degraded", trigger=body.get("trigger", "manual"),
+                        warnings=["no records pulled — Walmart may be blocking, or bdata is not logged in"])
+    wm.run(raw, note=body.get("note", ""))
+    n = _wh_count("walmart_products")
+    return _std_run("walmart", started, total=n, trigger=body.get("trigger", "manual"),
+                    extracts=[{"id": "walmart_products", "rows": n, "delta": 0, "status": "success"}])
+
+def target_pull(body):
+    """Target RedSky (Bright Data) → target_products + target_stores. body.scope=national|local. HEAVY."""
+    started = int(time.time() * 1000); body = body or {}
+    import target_scraper as tg
+    if (body.get("scope") or "national") == "national":
+        tg.run_national(log=lambda m: app.logger.info("TARGET %s", m))
+    else:
+        tg.run(log=lambda m: app.logger.info("TARGET %s", m))
+    n = _wh_count("target_products")
+    return _std_run("target", started, total=n, trigger=body.get("trigger", "manual"),
+                    extracts=[{"id": "target_products", "rows": n, "delta": 0, "status": "success"}])
+
+def doordash_pull(body):
+    """DoorDash geo merchant sweep → <market>_merchants (market intelligence). HEAVY (BD Browser). Toggleable."""
+    started = int(time.time() * 1000); body = body or {}
+    import doordash_geo as dd
+    market = body.get("market", "orlando")
+    dd.run(market=market, log=lambda m: app.logger.info("DOORDASH %s", m))
+    n = _wh_count("%s_merchants" % market)
+    return _std_run("doordash", started, total=n, trigger=body.get("trigger", "manual"),
+                    extracts=[{"id": "%s_merchants" % market, "rows": n, "delta": 0, "status": "success"}])
+
+def google_pull(body):
+    """Google Maps coverage/hours (Bright Data SERP+Maps) → <market>_outlet_hours. HEAVY. Toggleable."""
+    started = int(time.time() * 1000); body = body or {}
+    import place_coverage as pcov
+    market = body.get("market", "orlando"); near = body.get("near", "Orlando FL")
+    pcov.enrich_hours(market=market, near=near, log=lambda m: app.logger.info("GOOGLE %s", m))
+    n = _wh_count("%s_outlet_hours" % market)
+    return _std_run("google", started, total=n, trigger=body.get("trigger", "manual"),
+                    extracts=[{"id": "%s_outlet_hours" % market, "rows": n, "delta": 0, "status": "success"}])
+
+_CONN_PULL = {"kroger": kroger_pull, "walmart": walmart_pull, "target": target_pull,
+              "doordash": doordash_pull, "google": google_pull}
+
+# The connector registry — ONE source of truth the Pulls console reads (/api/connectors): what sources exist,
+# how they run, their warehouse data + <x>_runs table (for last-run), and whether they're enabled (on/off).
+CONNECTORS_META = [
+    {"id": "ttb-cola", "label": "TTB COLA", "group": "Federal", "runs": None, "data": "ttb_cola", "heavy": True},
+    {"id": "abc-fws", "label": "ABC Fine Wine & Spirits (FL)", "group": "Retail chain", "runs": "abc_runs", "data": "abc_products"},
+    {"id": "specs", "label": "Spec's (TX)", "group": "Retail chain", "runs": "specs_runs", "data": "specs_products"},
+    {"id": "binnys", "label": "Binny's (IL)", "group": "Retail chain", "runs": "binnys_runs", "data": "binnys_products"},
+    {"id": "shopify-dtc", "label": "Shopify DTC", "group": "Off-premise", "runs": "shopify_runs", "data": "shopify_products"},
+    {"id": "instacart", "label": "Instacart", "group": "Aggregator", "runs": None, "data": None},
+    {"id": "kroger", "label": "Kroger", "group": "Grocery chain", "runs": "kroger_runs", "data": "kroger_products", "needs_creds": True},
+    {"id": "walmart", "label": "Walmart", "group": "Grocery chain", "runs": "walmart_runs", "data": "walmart_products", "heavy": True},
+    {"id": "target", "label": "Target", "group": "Grocery chain", "runs": None, "data": "target_products", "heavy": True},
+    {"id": "doordash", "label": "DoorDash (market sweep)", "group": "Aggregator", "runs": None, "data": "orlando_merchants", "heavy": True, "toggle": True},
+    {"id": "google", "label": "Google Maps (coverage)", "group": "Reference", "runs": None, "data": "orlando_outlet_hours", "heavy": True, "toggle": True},
+    {"id": "orlando-accounts", "label": "Orlando on-premise", "group": "Market", "runs": None, "data": "orlando_accounts"},
+    {"id": "census-acs", "label": "US Census ACS", "group": "Reference", "runs": None, "data": "census_reference"},
+    {"id": "tx-tabc", "label": "Texas TABC", "group": "State", "runs": None, "data": "tx_outlets"},
+    {"id": "il-chicago", "label": "Chicago", "group": "State", "runs": None, "data": "il_outlets"},
+    {"id": "ct-dcp", "label": "Connecticut", "group": "State", "runs": None, "data": "ct_outlets"},
+    {"id": "total-wine", "label": "Total Wine", "group": "Retail chain", "runs": None, "data": "totalwine_products_full"},
+    {"id": "vtinfo", "label": "VTInfo locator", "group": "Reference", "runs": None, "data": "vtinfo_titos"},
+    {"id": "ab-inbev", "label": "AB InBev locator", "group": "Reference", "runs": None, "data": None},
+]
+
+def _conn_enabled():
+    return (load("connectors.json", {}) or {}).get("enabled", {})
+
+def _conn_is_enabled(cid):
+    return _conn_enabled().get(cid, True)          # default ON; only an explicit false disables
 
 def _new_job(conn):
     jid = "J-%d-%d" % (int(time.time()), len(JOBS) + 1)
@@ -758,11 +886,35 @@ def derive_hierarchy(datasets, top=50):
     pfs.sort(key=lambda p: p["name"])
     return {"id": "root", "level": "root", "name": "All Sources", "children": pfs}
 
+def _live_datasets():
+    """DATASETS (in-memory samples) MERGED with the LIVE warehouse catalog, so the dataset list + counts are
+    never a stale snapshot (the Jul-6 datasets.json was the sync bug). In-memory sample rows are kept; totals
+    are refreshed to live warehouse truth; warehouse-only datasets appear as row-less entries (real counts,
+    samples fetched on demand). Everything reading /api/datasets now sees current reality."""
+    out = {k: dict(v) for k, v in DATASETS.items()}
+    try:
+        import warehouse
+        for d in warehouse.list_datasets():
+            k = d.get("name", "")
+            if not k or k.startswith("_"):
+                continue
+            total = d.get("rows") or 0
+            if k in out:
+                out[k]["total"] = total                       # refresh the cached count to live truth
+                out[k].setdefault("store", "warehouse")
+            else:
+                out[k] = {"header": d.get("fields") or [], "rows": [], "total": total,
+                          "store": "warehouse", "live": True}
+    except Exception as e:
+        app.logger.warning("live datasets merge failed: %s", e)
+    return out
+
 @app.get("/api/datasets")
 def datasets():
     q = (request.args.get("q") or "").strip().lower()
     only = request.args.get("dataset")
-    src = {only: DATASETS[only]} if only in DATASETS else DATASETS
+    allds = _live_datasets()
+    src = {only: allds[only]} if only in allds else allds
     if not q:
         return jsonify(src)
     out = {}
@@ -1720,6 +1872,64 @@ def connector_creds():
     have = {c: bool(_CONN_CREDS.get(c, {}).get("id") or (c == "kroger" and os.environ.get("KROGER_CLIENT_ID")))
             for c in _CONN_RUNNABLE}
     return jsonify(ok=True, have=have)
+
+
+def _conn_last_run(meta):
+    """The last run for a connector, from the SINGLE most authoritative source available: the connector's own
+    <x>_runs warehouse table first, then the in-process RUNS log, then (last resort) a live data-table count
+    that proves we HAVE data even when run history is missing. This is what makes 'what's running' legible."""
+    rt = meta.get("runs")
+    if rt:
+        try:
+            import warehouse
+            rows = warehouse.query(rt, "SELECT * FROM t")
+            if rows:
+                last = rows[-1]
+                cnt = last.get("products") or last.get("skus") or last.get("rows") or last.get("total")
+                return {"run_id": last.get("run_id"), "at": last.get("at"), "status": last.get("status", "ok"),
+                        "count": cnt, "source": rt}
+        except Exception:
+            pass
+    r = next((x for x in RUNS if x.get("connId") == meta["id"]), None)
+    if r:
+        return {"run_id": r.get("id"), "at": r.get("finishedAt"), "status": r.get("status"),
+                "count": r.get("total"), "source": "runs.json"}
+    if meta.get("data"):
+        n = _wh_count(meta["data"])
+        if n:
+            return {"run_id": None, "at": None, "status": "data-present", "count": n, "source": meta["data"]}
+    return None
+
+
+@app.get("/api/connectors")
+def connectors_list():
+    """ONE board for every source: what exists, whether it's enabled (on/off), and its true last run — merged
+    across warehouse <x>_runs, the runs log, and live data counts. The Pulls console renders off this."""
+    en = _conn_enabled()
+    out = []
+    for m in CONNECTORS_META:
+        out.append({"id": m["id"], "label": m.get("label"), "group": m.get("group"),
+                    "heavy": bool(m.get("heavy")), "needs_creds": bool(m.get("needs_creds")),
+                    "toggle": bool(m.get("toggle")), "data": m.get("data"),
+                    "enabled": en.get(m["id"], True),
+                    "runnable": m["id"] in VALID_CONNS,
+                    "last_run": _conn_last_run(m)})
+    return jsonify(ok=True, connectors=out, groups=sorted({m.get("group", "") for m in CONNECTORS_META}))
+
+
+@app.post("/api/connectors/toggle")
+def connectors_toggle():
+    """Turn a source on/off (e.g. DoorDash, Google). Disabled sources are skipped by the scheduler and shown
+    off in the UI; they stay manually runnable. Persisted like the rest of the agent state."""
+    body = request.get_json(silent=True) or {}
+    cid = (body.get("id") or "").strip()
+    if cid not in {m["id"] for m in CONNECTORS_META}:
+        return jsonify(ok=False, error="unknown connector"), 400
+    st = load("connectors.json", {}) or {}
+    en = st.setdefault("enabled", {})
+    en[cid] = bool(body.get("enabled", True))
+    _save_json("connectors.json", st)
+    return jsonify(ok=True, id=cid, enabled=en[cid])
 
 @app.get("/api/ttb-label/<ttbid>")
 def ttb_label_ep(ttbid):
@@ -3083,6 +3293,10 @@ def run():
     conn = body.get("connId")
     if conn not in VALID_CONNS and conn not in FL_CONN:
         return jsonify(error="unknown connId"), 400
+    # On/off gate: a SCHEDULED run of a disabled source is skipped (manual runs still go through, so you can
+    # always force one). This is what the DoorDash/Google (and any) toggle controls.
+    if body.get("trigger") == "scheduled" and not _conn_is_enabled(conn):
+        return jsonify(connId=conn, status="skipped", reason="connector disabled"), 200
     # Async (opt-in via {"stream":true} or ?async=1): run in a thread, stream progress via
     # /api/run/progress. This is what Hoodie Pulls' live console uses.
     if body.get("stream") or request.args.get("async"):
