@@ -14,7 +14,7 @@ deterministic parser. Instead:
 Needs ANTHROPIC_API_KEY (extraction) + BD creds (fetch), so it runs where the key is (Fly).
     python menu_site.py --name "AC Sky Bar" --site http://www.acskybar.com/
 """
-import argparse, base64, json, os, re, sys, time, urllib.parse, urllib.request
+import argparse, base64, hashlib, json, os, re, sys, time, urllib.parse, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
@@ -224,12 +224,40 @@ def _menu_text(url, key):
     # note: image/PDF-only menus still yield little — those need vision/OCR (a follow-on layer)
 
 
+def _slug(name):
+    return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", (name or "").lower())).strip("-")[:60] or "acct"
+
+
+def extract_logo(home_html, base, key):
+    """Grab the account's own logo from its site — og:image, apple-touch-icon, or a logo <img>. First-party
+    (the account's brand asset), so it's ours to store. -> (url, bytes) or (None, None)."""
+    cands = []
+    for pat in (r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)',
+                r'<link[^>]+rel=["\'][^"\']*apple-touch-icon[^"\']*["\'][^>]+href=["\']([^"\']+)'):
+        m = re.search(pat, home_html or "", re.I)
+        if m:
+            cands.append(m.group(1))
+    for im in re.findall(r'<img[^>]+(?:src|data-src)=["\']([^"\']+)["\']', home_html or "", re.I):
+        if re.search(r"logo", im, re.I):
+            cands.append(im); break
+    for u in cands:
+        try:
+            data = _fetch_bytes(urllib.parse.urljoin(base, u), key)
+            if data and len(data) > 500:
+                return urllib.parse.urljoin(base, u), data
+        except Exception:
+            pass
+    return None, None
+
+
 def pull(name, site=None, near="Orlando FL", log=print):
-    """Discover -> render (JS/image/PDF) -> Claude extract -> classify. Returns menu_beverages rows (no write)."""
+    """Discover -> render (JS/image/PDF) -> Claude extract -> classify, AND capture the menu files (PDFs/
+    screenshots) + the account logo for the menu-analytics corpus. Returns {beverages, files, logo} (no write)."""
+    empty = {"beverages": [], "files": [], "logo": None}
     key = _bd_key()
     site = site or discover_site(name, near, key)
     if not site:
-        log("  [menu] %-30s -> no website" % name[:30]); return []
+        log("  [menu] %-30s -> no website" % name[:30]); return empty
     assets = render_menu_assets(site, key, log=lambda *a: None)
     items = claude_vision_extract(assets, name)
     menu_url = assets[0]["url"] if assets else site
@@ -239,6 +267,7 @@ def pull(name, site=None, near="Orlando FL", log=print):
         except Exception:
             items = []
     run_id = "menu-" + time.strftime("%Y%m%d-%H%M%S")
+    slug = _slug(name)
     rows = []
     for it in items:
         nm = (it.get("name") or "").strip()
@@ -252,46 +281,81 @@ def pull(name, site=None, near="Orlando FL", log=print):
                          is_alcoholic=b["is_alcoholic"], root=b.get("root", ""), sub=b.get("sub", ""),
                          base_spirit=b.get("base_spirit", ""), beer_style=b.get("beer_style", ""),
                          source="website", source_url=menu_url, run_id=run_id))
-    log("  [menu] %-30s -> %d beverages (%s)" % (name[:30], len(rows), menu_url.split("/")[-1][:30]))
-    return rows
+    # menu files -> the analytics corpus (PDFs canonical; screenshots for image/HTML menus)
+    files = []
+    for j, a in enumerate(assets):
+        ext = "pdf" if a["kind"] == "pdf" else "png"
+        skey = "menus/%s/%s-%d.%s" % (slug, hashlib.md5(a["url"].encode()).hexdigest()[:8], j, ext)
+        try:
+            warehouse.put_bytes(skey, a["data"])
+            files.append(dict(account=name, kind=a["kind"], source_url=a["url"], storage_key=skey,
+                              bytes=len(a["data"]), run_id=run_id))
+        except Exception:
+            pass
+    # account logo (first-party brand asset)
+    logo = None
+    try:
+        home = _unlock(site, key)
+        lurl, ldata = extract_logo(home, re.match(r"https?://[^/]+", site).group(0), key)
+        if ldata:
+            ext = (re.search(r"\.(png|jpe?g|webp|svg|gif)", lurl or "", re.I) or ["", "png"])[1].lower()
+            skey = "logos/%s.%s" % (slug, ext)
+            warehouse.put_bytes(skey, ldata)
+            logo = dict(account=name, source_url=lurl, storage_key=skey, bytes=len(ldata), run_id=run_id)
+    except Exception:
+        pass
+    log("  [menu] %-28s -> %d bev · %d files%s" % (name[:28], len(rows), len(files), " +logo" if logo else ""))
+    return {"beverages": rows, "files": files, "logo": logo}
 
 
 def run(name, site=None, near="Orlando FL", log=print):
-    rows = pull(name, site, near, log)
-    if rows:
-        warehouse.write_parquet("menu_beverages", rows)
-    return len(rows)
+    o = pull(name, site, near, log)
+    if o["beverages"]:
+        warehouse.write_parquet("menu_beverages", o["beverages"])
+    if o["files"]:
+        warehouse.write_parquet("menu_files", o["files"])
+    if o["logo"]:
+        warehouse.write_parquet("account_logos", [o["logo"]])
+    return len(o["beverages"])
 
 
 def fan(names, near="Orlando FL", log=print):
     """Fan the pull across many accounts; accumulate and MERGE with existing menu_beverages, write once
     (re-pulled accounts replaced, others preserved). This is how we sweep the dine-in on-premise gap."""
-    def _merge_write(rows):
+    def _merge(ds, rows, keyf):
         try:
-            existing = warehouse.query("menu_beverages", "SELECT * FROM t")
+            existing = warehouse.query(ds, "SELECT * FROM t")
         except Exception:
             existing = []
-        pulled = {r["account"] for r in rows}
-        merged = [r for r in existing if r.get("account") not in pulled] + rows
+        keys = {keyf(r) for r in rows}
+        merged = [r for r in existing if keyf(r) not in keys] + rows
         if merged:
-            warehouse.write_parquet("menu_beverages", merged)
+            warehouse.write_parquet(ds, merged)
         return len(merged)
 
-    allrows, hit = [], 0
+    def _flush(bevs, files, logos):
+        _merge("menu_beverages", bevs, lambda r: r["account"])
+        _merge("menu_files", files, lambda r: r["storage_key"])
+        _merge("account_logos", logos, lambda r: r["account"])
+
+    bevs, files, logos, hit = [], [], [], 0
     for i, nm in enumerate(names):
         try:
-            r = pull(nm, near=near, log=log)
-            allrows += r; hit += 1 if r else 0
+            o = pull(nm, near=near, log=log)
+            bevs += o["beverages"]; files += o["files"]
+            if o["logo"]:
+                logos.append(o["logo"])
+            hit += 1 if o["beverages"] else 0
         except Exception as e:
             log("  [menu] %-30s -> FAILED %s" % (nm[:30], str(e)[:40]))
         if (i + 1) % 15 == 0:                                    # checkpoint — a multi-hour sweep saves progress
-            tot = _merge_write(allrows)
-            log("  ...%d/%d accounts · %d with drinks · %d beverages (checkpoint -> %d total)"
-                % (i + 1, len(names), hit, len(allrows), tot))
-    tot = _merge_write(allrows)
-    log("[menu] FAN done: %d/%d accounts had drinks · %d beverages -> menu_beverages (%d total)"
-        % (hit, len(names), len(allrows), tot))
-    return len(allrows)
+            _flush(bevs, files, logos)
+            log("  ...%d/%d · %d w/ drinks · %d bev · %d files · %d logos"
+                % (i + 1, len(names), hit, len(bevs), len(files), len(logos)))
+    _flush(bevs, files, logos)
+    log("[menu] FAN done: %d/%d w/ drinks · %d beverages · %d menu files · %d logos"
+        % (hit, len(names), len(bevs), len(files), len(logos)))
+    return len(bevs)
 
 
 if __name__ == "__main__":
