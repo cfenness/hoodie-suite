@@ -1,0 +1,448 @@
+<meta charset="utf-8">
+<title>Hoodie MDM · Master — Matching Workbench</title>
+<script>if(new URLSearchParams(location.search).has("embed"))document.documentElement.setAttribute("data-embed","1");</script>
+<style>
+:root[data-embed] .top{display:none}
+:root[data-embed] .wrap{padding-top:16px;max-width:none}
+:root[data-embed] body{background:transparent}
+:root{
+  --paper:#EEF1F4; --panel:#FFFFFF; --panel-2:#F6F8FA; --inset:#F1F4F7;
+  --ink:#22282E; --ink-2:#3C444C; --muted:#727C86; --faint:#9AA3AC; --line:#E1E6EB; --line-2:#EDF0F3;
+  --accent:#4E79A7; --accent-soft:#E9F0F7; --accent-line:#CBDCEC;
+  --auto:#3E8E6B; --auto-soft:#E6F2EC;
+  --claude:#4E79A7; --claude-soft:#E9F0F7;
+  --review:#9A7100; --review-soft:#F6EEDD;
+  --conflict:#BE5540; --conflict-soft:#F6E7E2;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#14171B; --panel:#1D2126; --panel-2:#23282F; --inset:#191D22;
+  --ink:#E7EBEF; --ink-2:#C4CBD2; --muted:#8A939C; --faint:#6B747D; --line:#2B313A; --line-2:#242A31;
+  --accent:#6E9AC8; --accent-soft:#213042; --accent-line:#33465C;
+  --auto:#5FB088; --auto-soft:#1B2C25;
+  --claude:#6E9AC8; --claude-soft:#213042;
+  --review:#C9A24A; --review-soft:#2E2718;
+  --conflict:#D9745C; --conflict-soft:#31211D;
+}}
+:root[data-theme="dark"]{
+  --paper:#14171B; --panel:#1D2126; --panel-2:#23282F; --inset:#191D22;
+  --ink:#E7EBEF; --ink-2:#C4CBD2; --muted:#8A939C; --faint:#6B747D; --line:#2B313A; --line-2:#242A31;
+  --accent:#6E9AC8; --accent-soft:#213042; --accent-line:#33465C;
+  --auto:#5FB088; --auto-soft:#1B2C25; --claude:#6E9AC8; --claude-soft:#213042;
+  --review:#C9A24A; --review-soft:#2E2718; --conflict:#D9745C; --conflict-soft:#31211D;
+}
+:root[data-theme="light"]{
+  --paper:#EEF1F4; --panel:#FFFFFF; --panel-2:#F6F8FA; --inset:#F1F4F7;
+  --ink:#22282E; --ink-2:#3C444C; --muted:#727C86; --faint:#9AA3AC; --line:#E1E6EB; --line-2:#EDF0F3;
+  --accent:#4E79A7; --accent-soft:#E9F0F7; --accent-line:#CBDCEC;
+  --auto:#3E8E6B; --auto-soft:#E6F2EC; --claude:#4E79A7; --claude-soft:#E9F0F7;
+  --review:#9A7100; --review-soft:#F6EEDD; --conflict:#BE5540; --conflict-soft:#F6E7E2;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:var(--font);background:var(--paper);color:var(--ink);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.num{font-variant-numeric:tabular-nums}
+button{font-family:inherit;cursor:pointer}
+h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
+
+/* ── chrome ── */
+.top{display:flex;align-items:center;gap:14px;padding:12px 22px;background:var(--panel);border-bottom:1px solid var(--line)}
+.crumb{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--muted)}
+.crumb .logo{width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,var(--accent),#3a5f86);display:grid;place-items:center;color:#fff;font-weight:800;font-size:11px}
+.crumb b{color:var(--ink);font-weight:700}
+.crumb .sep{color:var(--faint)}
+.top .grow{flex:1}
+.themebtn{border:1px solid var(--line);background:var(--panel-2);color:var(--muted);border-radius:8px;padding:6px 11px;font-size:12px;font-weight:600}
+.themebtn:hover{color:var(--ink);border-color:var(--accent-line)}
+
+.wrap{max-width:1500px;margin:0 auto;padding:20px 22px 40px}
+
+/* ── funnel ── */
+.hd{display:flex;align-items:baseline;gap:12px;margin:0 2px 12px}
+.hd h1{font-size:19px}
+.hd .sub{color:var(--muted);font-size:13px}
+.hd .run{margin-left:auto;font-size:12px;color:var(--muted)}
+.hd .run b{color:var(--ink);font-weight:650}
+.funnel{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:8px}
+.stage{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 15px 13px;text-align:left;transition:.12s;overflow:hidden}
+.stage:hover{border-color:var(--accent-line)}
+.stage.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.stage .lab{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:flex;align-items:center;gap:7px}
+.stage .n{font-size:25px;font-weight:750;letter-spacing:-.02em;margin-top:5px}
+.stage .pct{font-size:12px;color:var(--muted);margin-top:1px}
+.stage .bar{height:4px;border-radius:3px;margin-top:11px;background:var(--line-2);overflow:hidden}
+.stage .bar i{display:block;height:100%;border-radius:3px}
+.dot{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+.dot.auto{background:var(--auto)} .dot.claude{background:var(--claude)} .dot.review{background:var(--review)} .dot.conflict{background:var(--conflict)} .dot.cand{background:var(--faint)} .dot.done{background:var(--accent)}
+.stage.s-auto .bar i{background:var(--auto)} .stage.s-claude .bar i{background:var(--claude)}
+.stage.s-review .bar i{background:var(--review)} .stage.s-cand .bar i{background:var(--faint)} .stage.s-done .bar i{background:var(--accent)}
+.flowline{display:flex;align-items:center;gap:6px;color:var(--faint);font-size:11px;margin:2px 4px 18px}
+.flowline .seg{flex:1;height:1px;background:var(--line)}
+.flowline b{color:var(--muted);font-weight:600}
+
+/* ── workbench split ── */
+.work{display:grid;grid-template-columns:352px 1fr;gap:16px;align-items:start}
+
+/* queue */
+.queue{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;position:sticky;top:14px}
+.qhead{padding:13px 15px 11px;border-bottom:1px solid var(--line)}
+.qhead .t{display:flex;align-items:center;justify-content:space-between}
+.qhead h3{font-size:14px}
+.qhead .cnt{font-size:12px;color:var(--muted)}
+.qhead .cnt b{color:var(--review);font-weight:700}
+.search{margin-top:10px;width:100%;border:1px solid var(--line);background:var(--inset);border-radius:9px;padding:8px 11px;font-size:13px;color:var(--ink)}
+.search::placeholder{color:var(--faint)}
+.search:focus{outline:none;border-color:var(--accent)}
+.tabs{display:flex;gap:5px;padding:10px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tab{border:1px solid var(--line);background:var(--panel-2);color:var(--muted);border-radius:20px;padding:4px 11px;font-size:11.5px;font-weight:650}
+.tab:hover{color:var(--ink)}
+.tab.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
+.qlist{max-height:calc(100vh - 320px);overflow:auto}
+.qitem{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line-2);border-left:3px solid transparent;padding:12px 15px 12px 13px;display:block;transition:.1s}
+.qitem:hover{background:var(--panel-2)}
+.qitem.sel{background:var(--accent-soft);border-left-color:var(--accent)}
+.qitem .r1{display:flex;align-items:center;gap:8px}
+.qitem .nm{font-weight:600;font-size:13.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qitem .r2{display:flex;align-items:center;gap:8px;margin-top:5px;color:var(--muted);font-size:11.5px}
+.grain{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:5px;background:var(--inset);color:var(--muted);flex:none}
+.grain.sku{background:var(--accent-soft);color:var(--accent)}
+.grain.item{background:var(--auto-soft);color:var(--auto)}
+.grain.product{background:var(--review-soft);color:var(--review)}
+.grain.outlet{background:#EDEAF6;color:#6B5AA6}
+.pill{font-size:10px;font-weight:750;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:20px;display:inline-flex;align-items:center;gap:5px;flex:none}
+.pill.auto{background:var(--auto-soft);color:var(--auto)} .pill.claude{background:var(--claude-soft);color:var(--claude)}
+.pill.review{background:var(--review-soft);color:var(--review)} .pill.conflict{background:var(--conflict-soft);color:var(--conflict)}
+.conf{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:auto;flex:none}
+
+/* detail */
+.detail{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.dtop{padding:18px 22px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--panel-2),var(--panel))}
+.dtop .kick{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.dtop h2{font-size:22px;letter-spacing:-.02em;display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+.dtop .meta{display:flex;align-items:center;gap:16px;margin-top:11px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.dtop .meta .kv{display:flex;align-items:center;gap:6px}
+.dtop .meta .kv b{color:var(--ink-2);font-weight:600}
+.keychip{font-family:var(--mono);font-size:12px;background:var(--inset);border:1px solid var(--line);border-radius:7px;padding:3px 9px;color:var(--ink-2)}
+
+/* hierarchy rollup */
+.roll{display:flex;align-items:stretch;gap:0;padding:14px 22px;border-bottom:1px solid var(--line);background:var(--inset);overflow-x:auto}
+.rnode{flex:1;min-width:120px;display:flex;flex-direction:column;gap:3px;padding:0 16px;position:relative}
+.rnode + .rnode::before{content:"›";position:absolute;left:-7px;top:11px;color:var(--faint);font-size:16px}
+.rnode .rg{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+.rnode .rn{font-weight:650;font-size:14px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rnode .rc{font-size:11px;color:var(--muted)}
+.rnode.here .rn{color:var(--accent)}
+.rnode.here{background:var(--accent-soft);border-radius:9px}
+
+.sec{padding:16px 22px}
+.sec + .sec{border-top:1px solid var(--line)}
+.sec h3{font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.sec h3 .c{font-family:var(--mono);color:var(--faint);font-weight:600;letter-spacing:0}
+.sec h3 .r{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:600;font-size:11.5px}
+
+/* records table */
+.recs{display:flex;flex-direction:column;gap:8px}
+.rec{border:1px solid var(--line);border-left-width:3px;border-radius:10px;padding:11px 14px;background:var(--panel-2);display:grid;grid-template-columns:1fr auto;gap:8px 14px;align-items:center}
+.rec.match{border-left-color:var(--auto)} .rec.claude{border-left-color:var(--claude)}
+.rec.review{border-left-color:var(--review)} .rec.conflict{border-left-color:var(--conflict)}
+.rec .src{display:flex;align-items:center;gap:9px;min-width:0}
+.rec .srcn{font-weight:650;font-size:13px;white-space:nowrap}
+.rec .raw{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rec .rid{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.rec .ev{display:flex;align-items:center;gap:10px;flex:none}
+.rec .via{font-size:11px;color:var(--muted)}
+.rec .via .k{font-family:var(--mono);color:var(--ink-2)}
+.rec .fields{grid-column:1/-1;display:flex;gap:7px;flex-wrap:wrap;margin-top:2px}
+.fchip{font-size:11px;border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:var(--muted);display:inline-flex;gap:6px;align-items:center;background:var(--panel)}
+.fchip b{color:var(--ink-2);font-weight:600}
+.fchip.agree{border-color:color-mix(in srgb,var(--auto) 40%,var(--line));background:var(--auto-soft);color:var(--auto)}
+.fchip.diff{border-color:color-mix(in srgb,var(--conflict) 45%,var(--line));background:var(--conflict-soft);color:var(--conflict)}
+
+/* evidence */
+.evid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ecard{border:1px solid var(--line);border-radius:11px;padding:13px 15px;background:var(--panel-2)}
+.ecard .et{font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);display:flex;align-items:center;gap:7px;margin-bottom:8px}
+.ecard.det .et{color:var(--auto)} .ecard.ai .et{color:var(--claude)}
+.ecard p{margin:0;font-size:12.5px;color:var(--ink-2);line-height:1.5}
+.ecard .krow{display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:4px 0;border-bottom:1px dashed var(--line)}
+.ecard .krow:last-child{border-bottom:0}
+.ecard .krow span:first-child{color:var(--muted)}
+.ecard .krow .mono{color:var(--ink)}
+.scoretag{margin-left:auto;font-family:var(--mono);font-weight:700}
+
+/* flags */
+.flags{display:flex;flex-direction:column;gap:8px}
+.flag{display:flex;gap:10px;align-items:flex-start;padding:10px 13px;border-radius:9px;border:1px solid var(--review-soft);background:var(--review-soft);font-size:12.5px;color:var(--ink-2)}
+.flag.conf{border-color:var(--conflict-soft);background:var(--conflict-soft)}
+.flag .fdot{width:7px;height:7px;border-radius:50%;background:var(--review);margin-top:6px;flex:none}
+.flag.conf .fdot{background:var(--conflict)}
+.flag .act{margin-left:auto;font-size:11.5px;font-weight:650;color:var(--accent);white-space:nowrap;border:1px solid var(--accent-line);background:var(--panel);border-radius:7px;padding:4px 9px}
+
+/* action bar */
+.actions{display:flex;align-items:center;gap:10px;padding:15px 22px;border-top:1px solid var(--line);background:var(--panel-2);position:sticky;bottom:0}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:9px 16px;font-size:13.5px;font-weight:650;display:inline-flex;align-items:center;gap:8px}
+.btn:hover{border-color:var(--accent-line)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.warn:hover{border-color:var(--conflict);color:var(--conflict)}
+.actions .spacer{flex:1}
+.actions .hint{font-size:11.5px;color:var(--muted)}
+.actions kbd{font-family:var(--mono);font-size:10.5px;background:var(--inset);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 5px;color:var(--muted)}
+
+@media (max-width:1080px){ .work{grid-template-columns:1fr} .queue{position:static} .qlist{max-height:340px} .funnel{grid-template-columns:repeat(2,1fr)} .evid{grid-template-columns:1fr} }
+</style>
+
+<div class="top">
+  <div class="crumb"><span class="logo">H</span><span>Hoodie · Suite</span><span class="sep">/</span><b>Hoodie MDM</b><span class="sep">/</span><b style="color:var(--accent)">Master</b></div>
+  <div class="grow"></div>
+  <button class="themebtn" id="theme">◐ Theme</button>
+</div>
+
+<div class="wrap">
+  <div class="hd">
+    <h1>Matching workbench</h1>
+    <span class="sub">Collapse raw source records into canonical master entities — auto, then Claude, then you.</span>
+    <span class="run">Run <b>master-2026-07-11</b> · 14 sources · <b class="num">12,481</b> candidates</span>
+  </div>
+
+  <!-- the cascade, as a funnel + filter -->
+  <div class="funnel" id="funnel">
+    <button class="stage s-cand" data-stage="all">
+      <div class="lab"><span class="dot cand"></span>Candidates</div>
+      <div class="n num">12,481</div><div class="pct">raw records in</div>
+      <div class="bar"><i style="width:100%"></i></div>
+    </button>
+    <button class="stage s-auto" data-stage="auto">
+      <div class="lab"><span class="dot auto"></span>Auto-matched</div>
+      <div class="n num">8,203</div><div class="pct">66% · exact identity key</div>
+      <div class="bar"><i style="width:66%"></i></div>
+    </button>
+    <button class="stage s-claude" data-stage="claude">
+      <div class="lab"><span class="dot claude"></span>Claude</div>
+      <div class="n num">2,946</div><div class="pct">24% · adjudicated</div>
+      <div class="bar"><i style="width:24%"></i></div>
+    </button>
+    <button class="stage s-review on" data-stage="review">
+      <div class="lab"><span class="dot review"></span>Your review</div>
+      <div class="n num">1,332</div><div class="pct">11% · needs a human</div>
+      <div class="bar"><i style="width:11%"></i></div>
+    </button>
+    <button class="stage s-done" data-stage="confirmed">
+      <div class="lab"><span class="dot done"></span>Confirmed</div>
+      <div class="n num">9,914</div><div class="pct">promoted to master</div>
+      <div class="bar"><i style="width:79%"></i></div>
+    </button>
+  </div>
+  <div class="flowline"><b>raw records</b><span class="seg"></span>deterministic keys<span class="seg"></span>AI adjudication<span class="seg"></span>human gate<span class="seg"></span><b>canonical master</b></div>
+
+  <div class="work">
+    <!-- QUEUE -->
+    <aside class="queue">
+      <div class="qhead">
+        <div class="t"><h3>Review queue</h3><span class="cnt"><b id="qn">6</b> of 1,332</span></div>
+        <input class="search" placeholder="Filter by name, brand, source…">
+      </div>
+      <div class="tabs" id="tabs">
+        <button class="tab on" data-f="all">All</button>
+        <button class="tab" data-f="conflict">Conflicts</button>
+        <button class="tab" data-f="sku">SKU</button>
+        <button class="tab" data-f="item">Item</button>
+        <button class="tab" data-f="product">Product</button>
+        <button class="tab" data-f="outlet">Outlet</button>
+      </div>
+      <div class="qlist" id="qlist"></div>
+    </aside>
+
+    <!-- DETAIL -->
+    <main class="detail" id="detail"></main>
+  </div>
+</div>
+
+<script>
+const CLUSTERS = [
+  {
+    id:"espolon-blanco-750", grain:"sku", stage:"review", conf:0.82,
+    name:"Espolòn Tequila Blanco 750 mL", table:"dim_sku",
+    keyType:"GTIN-14", keyValue:"00811538010203",
+    meta:[["Category","Tequila · Blanco"],["ABV","40.0%"],["NOM","1440"],["Size","750 mL"]],
+    hierarchy:[
+      {g:"Brand",n:"Espolòn",c:"dim_brand · 11 skus"},
+      {g:"Product",n:"Espolòn Blanco",c:"dim_product · 3 items"},
+      {g:"Item",n:"Espolòn Blanco 750",c:"dim_item · 2 skus"},
+      {g:"Sku",n:"Espolòn Blanco 750 mL",c:"dim_sku · UPC 811538010203",here:true}
+    ],
+    records:[
+      {src:"TTB COLA",id:"#21089001000123",raw:"ESPOLON TEQUILA BLANCO",by:"auto",key:"GTIN-14 811538010203",conf:1.00,status:"match",
+       fields:[["abv","40.0%","agree"],["size","750 mL","agree"],["nom","1440","agree"]]},
+      {src:"Total Wine",id:"#TW-88213",raw:"Espolòn Blanco Tequila (750 ml)",by:"auto",key:"GTIN-14 811538010203",conf:1.00,status:"match",
+       fields:[["abv","40%","agree"],["size","750 mL","agree"]]},
+      {src:"ABC FWS",id:"#A-44821",raw:"Espolon Blanco Tequila 750ml",by:"auto",key:"brand+name+size",conf:0.98,status:"match",
+       fields:[["size","750 mL","agree"],["price","$27.99",""]]},
+      {src:"Kroger",id:"#KR-1902773",raw:"Espolon Silver Tequila 750 mL",by:"claude",key:"name-variant",conf:0.91,status:"claude",
+       fields:[["variant","Silver → Blanco","agree"],["size","750 mL","agree"]]},
+      {src:"Instacart",id:"#IC-55110",raw:"Espolon Tequila, Blanco (750 mL)",by:"review",key:"fuzzy 0.82",conf:0.82,status:"review",
+       fields:[["size","750 mL","agree"],["upc","— none —","diff"]]},
+      {src:"DoorDash",id:"#DD-70418",raw:"Espolon Reposado 750 mL",by:"review",key:"fuzzy 0.74",conf:0.74,status:"conflict",
+       fields:[["variant","Reposado ≠ Blanco","diff"],["size","750 mL","agree"]]}
+    ],
+    evidence:{
+      det:[["GTIN-14","00811538010203"],["Brand key","md5:espolon"],["Item key","espolon|blanco|750"],["Sources agreeing","3 of 6"]],
+      fuzzy:0.82,
+      claude:"Kroger lists this as \"Silver\" — for tequila, Silver and Blanco are the same expression, so it belongs in this cluster (0.91). The DoorDash record is Reposado, an aged sibling expression: same product family, different item — it should split to its own SKU."
+    },
+    flags:[
+      {t:"Instacart record has no UPC — matched on name+size only (0.82). Confirm it's the same bottle before promoting.",act:"Keep",kind:"review"},
+      {t:"DoorDash \"Espolon Reposado\" is a different expression — likely the wrong cluster.",act:"Split off",kind:"conflict"}
+    ]
+  },
+  {
+    id:"titos-1l", grain:"item", stage:"claude", conf:0.94,
+    name:"Tito's Handmade Vodka 1 L", table:"dim_item",
+    keyType:"brand+name+size", keyValue:"titos|handmade-vodka|1000ml",
+    meta:[["Category","Vodka"],["ABV","40.0%"],["Size","1 L"],["Skus in item","2"]],
+    hierarchy:[
+      {g:"Brand",n:"Tito's",c:"dim_brand · 6 skus"},
+      {g:"Product",n:"Tito's Handmade Vodka",c:"dim_product · 5 items"},
+      {g:"Item",n:"Tito's Handmade Vodka 1 L",c:"dim_item · 2 skus",here:true},
+      {g:"Sku",n:"— 2 packaging skus —",c:"UPC 619947000013 · 619947000112"}
+    ],
+    records:[
+      {src:"TTB COLA",id:"#19021001000455",raw:"TITO'S HANDMADE VODKA",by:"auto",key:"brand+name",conf:0.97,status:"match",fields:[["abv","40.0%","agree"],["size","1.0 L","agree"]]},
+      {src:"Walmart",id:"#WM-330214",raw:"Tito's Handmade Vodka, 1 L Bottle",by:"auto",key:"GTIN-14 619947000013",conf:1.00,status:"match",fields:[["size","1 L","agree"],["upc","619947000013","agree"]]},
+      {src:"Kroger",id:"#KR-771820",raw:"Titos Vodka 1 Liter",by:"claude",key:"name-normalize",conf:0.94,status:"claude",fields:[["size","1 L","agree"],["brand","Titos → Tito's","agree"]]},
+      {src:"Target",id:"#TG-40028",raw:"Tito's Handmade Vodka - 1L (33.8 fl oz)",by:"claude",key:"size-normalize",conf:0.92,status:"claude",fields:[["size","33.8 oz → 1 L","agree"]]}
+    ],
+    evidence:{
+      det:[["Brand key","md5:titos"],["Item key","titos|handmade-vodka|1000ml"],["Sources agreeing","4 of 4"],["UPCs seen","2 (packaging)"]],
+      fuzzy:0.94,
+      claude:"All four records normalize to the same item once \"Titos\"→\"Tito's\" and \"33.8 fl oz\"→\"1 L\" resolve. Two distinct UPCs are packaging variants of one item — they stay as separate skus beneath it."
+    },
+    flags:[{t:"Two UPCs roll into this item as sibling skus — confirm they're packaging, not different products.",act:"Review skus",kind:"review"}]
+  },
+  {
+    id:"abc-orlando-outlet", grain:"outlet", stage:"review", conf:0.79,
+    name:"ABC Fine Wine & Spirits #114 — Orlando", table:"dim_outlet_resolved",
+    keyType:"name+address+zip5", keyValue:"abc-fws|114|32801",
+    meta:[["Type","Off-premise · retail"],["City","Orlando, FL"],["ZIP","32801"],["Sources","3"]],
+    hierarchy:[
+      {g:"Chain",n:"ABC Fine Wine & Spirits",c:"127 outlets"},
+      {g:"Outlet",n:"ABC #114 — Orlando",c:"dim_outlet_resolved",here:true},
+      {g:"License",n:"BEV-58-01234",c:"FL DBPR"},
+      {g:"Carriage",n:"1,904 skus",c:"fact_inventory"}
+    ],
+    records:[
+      {src:"ABC FWS",id:"#store-114",raw:"ABC #114 · 100 S Eola Dr, Orlando FL 32801",by:"auto",key:"source_ref abc-114",conf:1.00,status:"match",fields:[["zip","32801","agree"],["lat/lng","28.541,-81.372","agree"]]},
+      {src:"Google Maps",id:"#g-Ux82",raw:"ABC Fine Wine & Spirits, S Eola Dr",by:"claude",key:"name+geo 60m",conf:0.90,status:"claude",fields:[["addr","100 S Eola Dr","agree"],["hours","present",""]]},
+      {src:"FL DBPR",id:"#ABT-58-01234",raw:"ABC LIQUORS INC #114, 100 EOLA DR S",by:"review",key:"fuzzy 0.79",conf:0.79,status:"review",fields:[["addr","100 Eola Dr S","agree"],["zip","32801","agree"],["dba","ABC LIQUORS INC","diff"]]}
+    ],
+    evidence:{
+      det:[["Outlet key","abc-fws|114|32801"],["Geo match","60 m radius"],["Sources agreeing","2 of 3"]],
+      fuzzy:0.79,
+      claude:"The DBPR licensee \"ABC LIQUORS INC #114\" is the legal entity behind the retail banner \"ABC Fine Wine & Spirits #114\" — same address and ZIP, different DBA. Confirm to link the license to the outlet."
+    },
+    flags:[{t:"DBPR legal name differs from the retail banner — same address though. Confirm to attach the license.",act:"Confirm link",kind:"review"}]
+  }
+];
+
+const QUEUE = [
+  {ref:"espolon-blanco-750", nm:"Espolòn Tequila Blanco 750 mL", grain:"sku", stage:"conflict", conf:0.82, note:"6 sources · 1 conflict (Reposado)"},
+  {ref:"titos-1l", nm:"Tito's Handmade Vodka 1 L", grain:"item", stage:"claude", conf:0.94, note:"4 sources · 2 skus roll up"},
+  {ref:"abc-orlando-outlet", nm:"ABC Fine Wine & Spirits #114", grain:"outlet", stage:"review", conf:0.79, note:"3 sources · DBPR name differs"},
+  {ref:"espolon-blanco-750", nm:"Bulleit Bourbon Frontier 750 mL", grain:"sku", stage:"review", conf:0.85, note:"5 sources · no UPC on 2"},
+  {ref:"titos-1l", nm:"Whispering Angel Rosé 2023", grain:"product", stage:"review", conf:0.80, note:"vintage split — 2022 vs 2023"},
+  {ref:"abc-orlando-outlet", nm:"Total Wine #218 — Winter Park", grain:"outlet", stage:"claude", conf:0.88, note:"2 sources · geo 40 m"}
+];
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const stageLabel={conflict:"Conflict",review:"Review",claude:"Claude",auto:"Auto"};
+
+function renderQueue(filter){
+  const rows = QUEUE.filter(q=> filter==="all" ? true : filter==="conflict" ? q.stage==="conflict" : q.grain===filter);
+  $("#qn").textContent = rows.length;
+  $("#qlist").innerHTML = rows.map((q,i)=>`
+    <button class="qitem${i===0?' sel':''}" data-ref="${q.ref}">
+      <div class="r1"><span class="grain ${q.grain}">${q.grain}</span><span class="nm">${esc(q.nm)}</span></div>
+      <div class="r2"><span class="pill ${q.stage}"><span class="dot ${q.stage}"></span>${stageLabel[q.stage]}</span>
+        <span>${esc(q.note)}</span><span class="conf">${q.conf.toFixed(2)}</span></div>
+    </button>`).join("");
+  document.querySelectorAll(".qitem").forEach(b=>b.onclick=()=>{
+    document.querySelectorAll(".qitem").forEach(x=>x.classList.remove("sel"));
+    b.classList.add("sel"); renderDetail(b.dataset.ref);
+  });
+}
+
+function renderDetail(ref){
+  const c = CLUSTERS.find(x=>x.id===ref) || CLUSTERS[0];
+  const byPill={match:"auto",auto:"auto",claude:"claude",review:"review",conflict:"conflict"};
+  const byLabel={match:"Auto",auto:"Auto",claude:"Claude",review:"Review",conflict:"Conflict"};
+  const recs = c.records.map(r=>`
+    <div class="rec ${r.status}">
+      <div class="src">
+        <span class="pill ${byPill[r.status]}"><span class="dot ${byPill[r.status]}"></span>${byLabel[r.status]}</span>
+        <span class="srcn">${esc(r.src)}</span><span class="rid">${esc(r.id)}</span>
+        <span class="raw">“${esc(r.raw)}”</span>
+      </div>
+      <div class="ev"><span class="via">via <span class="k">${esc(r.key)}</span></span><span class="conf">${r.conf.toFixed(2)}</span></div>
+      <div class="fields">${r.fields.map(f=>`<span class="fchip ${f[2]}">${esc(f[0])} <b>${esc(f[1])}</b></span>`).join("")}</div>
+    </div>`).join("");
+  const roll = c.hierarchy.map(h=>`
+    <div class="rnode ${h.here?'here':''}"><span class="rg">${esc(h.g)}</span><span class="rn">${esc(h.n)}</span><span class="rc">${esc(h.c)}</span></div>`).join("");
+  const det = c.evidence.det.map(k=>`<div class="krow"><span>${esc(k[0])}</span><span class="mono">${esc(k[1])}</span></div>`).join("");
+  const flags = c.flags.map(f=>`
+    <div class="flag ${f.kind==='conflict'?'conf':''}"><span class="fdot"></span><span>${esc(f.t)}</span><button class="act">${esc(f.act)}</button></div>`).join("");
+  $("#detail").innerHTML = `
+    <div class="dtop">
+      <div class="kick"><span class="dot ${c.stage}"></span>Proposed canonical · ${c.table}</div>
+      <h2>${esc(c.name)} <span class="grain ${c.grain}">${c.grain}</span></h2>
+      <div class="meta">
+        <span class="kv">match key <span class="keychip">${esc(c.keyType)} = ${esc(c.keyValue)}</span></span>
+        ${c.meta.map(m=>`<span class="kv">${esc(m[0])} <b>${esc(m[1])}</b></span>`).join("")}
+        <span class="kv">confidence <b class="mono">${c.conf.toFixed(2)}</b></span>
+      </div>
+    </div>
+    <div class="roll">${roll}</div>
+    <div class="sec">
+      <h3>Source records <span class="c">${c.records.length}</span><span class="r">${c.records.filter(r=>r.status==='match'||r.status==='auto').length} auto · ${c.records.filter(r=>r.status==='claude').length} Claude · ${c.records.filter(r=>r.status==='review'||r.status==='conflict').length} need you</span></h3>
+      <div class="recs">${recs}</div>
+    </div>
+    <div class="sec">
+      <h3>Why the engine proposed this</h3>
+      <div class="evid">
+        <div class="ecard det"><div class="et"><span class="dot auto"></span>Deterministic <span class="scoretag" style="color:var(--auto)">keys</span></div>${det}</div>
+        <div class="ecard ai"><div class="et"><span class="dot claude"></span>Claude <span class="scoretag" style="color:var(--claude)">${c.evidence.fuzzy.toFixed(2)}</span></div><p>${esc(c.evidence.claude)}</p></div>
+      </div>
+    </div>
+    <div class="sec">
+      <h3>To resolve <span class="c">${c.flags.length}</span></h3>
+      <div class="flags">${flags}</div>
+    </div>
+    <div class="actions">
+      <button class="btn primary">✓ Confirm to master</button>
+      <button class="btn">⑃ Split record</button>
+      <button class="btn">⋈ Merge cluster…</button>
+      <button class="btn warn">✕ Reject</button>
+      <div class="spacer"></div>
+      <span class="hint"><kbd>C</kbd> confirm · <kbd>S</kbd> split · <kbd>J</kbd>/<kbd>K</kbd> next</span>
+    </div>`;
+}
+
+// funnel filter (visual)
+document.querySelectorAll(".stage").forEach(s=>s.onclick=()=>{
+  document.querySelectorAll(".stage").forEach(x=>x.classList.remove("on")); s.classList.add("on");
+});
+// queue tabs
+document.querySelectorAll("#tabs .tab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.remove("on")); t.classList.add("on");
+  renderQueue(t.dataset.f); renderDetail(document.querySelector(".qitem")?.dataset.ref);
+});
+// theme toggle
+$("#theme").onclick=()=>{ const r=document.documentElement;
+  const cur=r.getAttribute("data-theme")|| (matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");
+  r.setAttribute("data-theme", cur==="dark"?"light":"dark"); };
+
+renderQueue("all");
+renderDetail("espolon-blanco-750");
+</script>
