@@ -80,6 +80,51 @@ def _field(value, source, confidence):
     return {"value": value, "source": source, "confidence": confidence, "ts": None}
 
 
+# ── Label-as-DQ: read the label attributes off the SAME shot -> confirm/flag/fill the master's declared values.
+# An independent visual source (label vision), treated as INFERENCE — agreement raises confidence, disagreement
+# goes to review, label-only becomes a candidate fill. Especially valuable for varietal (COLA has a code, the
+# label states it), ABV/proof (COLA lacks it), region, vintage. Never auto-committed. ──
+def read_label(image_bytes, name="", url=""):
+    """Vision reads ONLY what the label STATES (no inference) -> declared attributes. Opt-in on ANTHROPIC_API_KEY."""
+    if not image_bytes:
+        return None
+    content = [{"type": "image", "source": {"type": "base64", "media_type": _media_type(image_bytes, url),
+                                            "data": base64.b64encode(image_bytes).decode()}},
+               {"type": "text", "text":
+                "Read ONLY what this beverage-alcohol LABEL literally states — do NOT infer or guess. Return ONLY "
+                "JSON with keys (use null if not visible on the label): {\"brand\": str, \"product_name\": str, "
+                "\"varietal\": str (e.g. Cabernet Sauvignon; null for spirits/beer), \"category\": one of "
+                "wine/spirit/beer/rtd/other, \"abv\": number (percent), \"proof\": number, \"region\": str "
+                "(appellation/origin), \"vintage\": number (year), \"net_contents\": str (e.g. 750 mL)}."}]
+    try:
+        return json.loads(re.search(r"\{.*\}", _anthropic(content), re.S).group(0))
+    except Exception:
+        return None
+
+
+def _norm(s):
+    return re.sub(r"[^a-z0-9]", "", str(s or "").lower())
+
+
+def cross_check(read, declared):
+    """Compare label-read values to the master's declared values -> per-field {label, declared, agrees, action}.
+    action: confirm (agree) | review (disagree) | fill_candidate (master lacks it, label has it)."""
+    out = {}
+    for f in ("brand", "varietal", "category", "abv", "region", "vintage", "net_contents"):
+        lv = (read or {}).get(f)
+        if lv in (None, "", "null"):
+            continue
+        dv = declared.get(f)
+        if dv in (None, ""):
+            out[f] = {"label": lv, "declared": None, "agrees": None, "action": "fill_candidate"}
+        else:
+            a, b = _norm(lv), _norm(dv)
+            agrees = bool(a and b and (a == b or a in b or b in a))
+            out[f] = {"label": lv, "declared": dv, "agrees": agrees,
+                      "action": "confirm" if agrees else "review"}
+    return out
+
+
 # ── Glass-catalog spec parser (Berlin Packaging) — the SOURCE of the numbers for a matched stock mold ──
 def _unlock(url, bd_key, dataf=None):
     body = {"zone": "cli_unlocker", "url": url, "format": "raw"}
