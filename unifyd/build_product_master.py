@@ -30,14 +30,14 @@ _CLEAN_BRAND = [("kroger_products", "brand"), ("walmart_products", "brand"), ("n
 _CFG = {
     "abc_catalog": dict(name="name", size="size", upc="upc"),
     "kroger_products": dict(name="product_name", size="size", upc="upc", brand="brand", cat="category",
-                            filt=lambda r: r.get("category") == "Adult Beverage"),
+                            filt=lambda r: r.get("category") == "Adult Beverage", dedup=["product_id"]),
     "walmart_products": dict(name="product_name", size_ml="size_ml", upc="upc", abv="abv", brand="brand",
                              cat="category", filt=lambda r: r.get("is_alcohol")),
     "totalwine_products_full": dict(name="name", size="name", container="container", cat="bev_category",
                                     filt=lambda r: r.get("is_alcoholic")),
-    "binnys_products": dict(name="name", brand="brand"),
-    "target_products": dict(name="name", brand="brand", cat="category"),
-    "specs_products": dict(name="name", brand="brand"),
+    "binnys_products": dict(name="name", brand="brand", dedup=["sku"]),          # store×product → distinct products
+    "target_products": dict(name="name", brand="brand", cat="category", dedup=["tcin"]),
+    "specs_products": dict(name="name", brand="brand", dedup=["sku"]),
     "or_pricing": dict(name="description", size="size", cat="category", proof="proof"),
     "me_pricing": dict(name="Description", size="Size", upc="UPC", proof="Proof", cat="Product Category"),
     "nc_pricing": dict(name="Brand Name", size="Bottle Size", proof="Proof", brand="Brand Name"),
@@ -114,7 +114,11 @@ def build(log=print):
     staged = []
     for ds, c in _CFG.items():
         try:
-            rows = warehouse.query(ds, "SELECT * FROM t")
+            if c.get("dedup"):                        # store-level source → feed the CATALOG (one row per
+                part = ", ".join('"%s"' % x for x in c["dedup"])   # distinct product), not every store-row
+                rows = warehouse.query(ds, "SELECT * FROM t QUALIFY row_number() OVER (PARTITION BY %s ORDER BY 1)=1" % part)
+            else:
+                rows = warehouse.query(ds, "SELECT * FROM t")
         except Exception as e:
             log("[master] skip %s: %s" % (ds, str(e)[:60])); continue
         f, kept = c.get("filt"), 0
