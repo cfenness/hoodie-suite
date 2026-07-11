@@ -209,23 +209,32 @@ _CATALOGS = ["berlinpackaging.com", "tricorbraun.com"]
 
 
 def glass_catalog_specs(size, shape, bd_key, log=print):
-    """Find a stock bottle matching size+shape in a glass catalog -> its published specs. Google-scoped to a
-    catalog domain, then parse. Returns (specs, source_url) or (None, None) — no match -> caller flags manual."""
-    q = "%s %s bottle site:berlinpackaging.com" % (size, shape)
-    try:
-        j = json.loads(_unlock("https://www.google.com/search?q=%s&brd_json=1&gl=us&hl=en"
-                               % urllib.parse.quote(q), bd_key))
-    except Exception:
-        return None, None
-    for o in (j.get("organic") or []):
-        u = o.get("link") or ""
-        if "berlinpackaging.com" in u and re.search(r"-\d{3,}-[kK]/?(?:\?|$)", u):
-            try:
-                specs = parse_glass_specs(_unlock(u, bd_key))
-                if specs.get("height_mm") or specs.get("weight_g"):
-                    return specs, u
-            except Exception:
-                pass
+    """Find a stock bottle matching size+shape in a glass catalog -> its published specs. Tries several query
+    phrasings and multiple result pages (most misses are SEARCH misses, not catalog gaps on Berlin's huge
+    catalog). Returns (specs, source_url) or (None, None) — no match -> caller flags manual."""
+    sm = re.search(r"[\d.]+\s*(?:ml|l|oz)", str(size), re.I)
+    sq = sm.group(0) if sm else str(size)
+    vessel = "wine bottle" if shape in ("Bordeaux", "Burgundy", "Claret", "Champagne/Sparkling", "Hock/Alsace") else "bottle"
+    queries = ["%s %s bottle site:berlinpackaging.com" % (sq, shape),
+               "%s %s %s site:berlinpackaging.com" % (sq, shape, vessel),
+               "%s %s glass bottle site:berlinpackaging.com" % (sq, shape)]
+    tried = set()
+    for q in queries:
+        try:
+            j = json.loads(_unlock("https://www.google.com/search?q=%s&brd_json=1&gl=us&hl=en"
+                                   % urllib.parse.quote(q), bd_key))
+        except Exception:
+            continue
+        for o in (j.get("organic") or [])[:6]:
+            u = (o.get("link") or "").split("?")[0]
+            if "berlinpackaging.com" in u and re.search(r"-\d{3,}-[kK]/?$", u) and u not in tried:
+                tried.add(u)
+                try:
+                    specs = parse_glass_specs(_unlock(u, bd_key))
+                    if specs.get("height_mm") or specs.get("weight_g"):
+                        return specs, u
+                except Exception:
+                    pass
     return None, None
 
 
