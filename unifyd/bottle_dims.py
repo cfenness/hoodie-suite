@@ -174,5 +174,65 @@ def glass_catalog_specs(size, shape, bd_key, log=print):
     return None, None
 
 
+# ── The enrich orchestrator: vision matches shape -> catalog sources numbers; proprietary/no-match -> manual ──
+def _bd_key():
+    k = os.environ.get("BRIGHTDATA_API_KEY", "").strip()
+    if k:
+        return k
+    return json.load(open(os.path.expanduser(
+        "~/Library/Application Support/brightdata-cli/credentials.json")))["api_key"]
+
+
+_SHAPE_QUERY = {"Bordeaux": "Bordeaux", "Claret": "Bordeaux claret", "Burgundy": "Burgundy",
+                "Champagne/Sparkling": "champagne sparkling", "Spirits Round": "spirits round flint",
+                "Cognac/Brandy": "cognac brandy", "Flask/Flint": "flask", "Hock/Alsace": "hock",
+                "Decanter": "decanter"}
+
+
+def enrich(sku, bd_key=None, log=print):
+    """sku: {name, size?, brand?, category?, upc?, image_url?}. -> {status, shape, fields{f:{value,source,
+    confidence,match,ts,ref}}, reason}. Vision reads shape (proprietary/low-confidence -> MANUAL, no guess);
+    a matched stock mold sources the numbers from the glass catalog."""
+    bd_key = bd_key or _bd_key()
+    ts = time.time()
+    out = {"sku": sku.get("name") or sku.get("upc"), "status": "manual", "shape": None, "fields": {}, "reason": ""}
+    img = fetch_image(sku["image_url"], bd_key) if sku.get("image_url") else None
+    if not img:
+        out["reason"] = "no bottle shot -> manual"; return out
+    v = classify_bottle(img, sku.get("name", ""), sku.get("image_url", ""))
+    out["shape"] = v
+    if not v:
+        out["reason"] = "vision failed -> manual"; return out
+    if v.get("is_proprietary") or (v.get("confidence") or 0) < 0.5:
+        out["reason"] = "proprietary / low-confidence bottle -> manual, no guess"; return out
+    specs, url = glass_catalog_specs(sku.get("size", "750 ml"), _SHAPE_QUERY.get(v["shape_class"], v["shape_class"]), bd_key)
+    if not specs:
+        out["reason"] = "stock shape but no catalog match -> manual"; return out
+    conf = round(min(0.9, v.get("confidence") or 0.7), 2)
+    for f in ("height_mm", "diameter_mm", "capacity_ml", "finish", "weight_g"):
+        if specs.get(f) is not None:
+            out["fields"][f] = {"value": specs[f], "source": "berlin_packaging", "confidence": conf,
+                                "match": "stock_mold", "ts": ts, "ref": url}
+    out["status"] = "enriched" if out["fields"] else "manual"
+    if out["status"] == "manual" and not out["reason"]:
+        out["reason"] = "matched mold but no parseable specs -> manual"
+    return out
+
+
+def enrich_batch(skus, bd_key=None, log=print):
+    bd_key = bd_key or _bd_key()
+    results = []
+    for s in skus:
+        try:
+            r = enrich(s, bd_key, log=log)
+        except Exception as e:
+            r = {"sku": s.get("name"), "status": "manual", "reason": "error: %s" % str(e)[:40], "fields": {}}
+        n = len(r.get("fields", {}))
+        log("  [%s] %-34s -> %s (%d fields)%s" % (r["status"][:4], (r.get("sku") or "")[:34], r["status"], n,
+            "  " + r["reason"] if r["status"] == "manual" else ""))
+        results.append(r)
+    return results
+
+
 if __name__ == "__main__":
     print("bottle_dims — import classify_bottle / fetch_image; run the demo via the harness.")
