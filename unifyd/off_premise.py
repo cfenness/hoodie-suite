@@ -198,6 +198,36 @@ def bottlecapps_catalog(base, store_id, key, max_cats=12, scrolls=8, log=print):
     return list(prods.values())
 
 
+# ── WooCommerce recipe — the public Store API: /wp-json/wc/store/v1/products (no auth), name + price (in
+# CENTS) + sku (usually the UPC), paginated. One of the largest platforms overall (liquor AND hemp). ──
+def woo_catalog(base, key, max_pages=50, log=print):
+    rows = []
+    for pg in range(1, max_pages + 1):
+        j = None
+        for _t in range(2):
+            try:
+                j = json.loads(_unlock("%s/wp-json/wc/store/v1/products?per_page=100&page=%d"
+                                       % (base.rstrip("/"), pg), key))
+                break
+            except Exception:
+                time.sleep(2)
+        if not isinstance(j, list) or not j:
+            break
+        for p in j:
+            pr = (p.get("prices") or {}).get("price")
+            try:
+                price = round(float(pr) / 100.0, 2) if pr not in (None, "") else None
+            except Exception:
+                price = None
+            sku = (p.get("sku") or "").strip()
+            rows.append({"name": _html.unescape(p.get("name") or "").strip(), "brand": "", "price": price,
+                         "sku": sku, "upc": (sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
+                         "product_type": ""})
+        if len(j) < 100:
+            break
+    return rows
+
+
 def run_census(market="orlando", platforms=("Shopify",), census=None, out=None, log=print):
     """Pull every census e-commerce store on the given platform(s) -> <out> (a corroboration source +
     independent-store assortment). Dispatches per platform recipe. Works for the off-premise OR hemp census."""
@@ -220,6 +250,8 @@ def run_census(market="orlando", platforms=("Shopify",), census=None, out=None, 
         try:
             if "shopify" in plat:
                 items = shopify_catalog(s["base"], key, log=log)
+            elif "woocommerce" in plat:
+                items = woo_catalog(s["base"], key, log=log)
             elif "bottlecapps" in plat:
                 sid = bottlecapps_store_id(s["base"], key)
                 items = bottlecapps_catalog(s["base"], sid, key, log=log) if sid else []
