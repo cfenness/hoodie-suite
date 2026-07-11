@@ -288,7 +288,7 @@ function stubFrom(row, stage){
 }
 
 // stages that carry a live "NN% ·" prefix on their descriptor (their share of raw candidates)
-const PCT_STAGES={auto:"exact key",claude:"adjudicated"};
+const PCT_STAGES={auto:"2+ sources",claude:"adjudicated"};
 function setFunnel(st){
   STAGES=st||{};
   const map={all:"candidates",candidates:"candidates",auto:"auto",claude:"claude",analyst:"analyst",senior:"senior",steward:"steward",confirmed:"confirmed"};
@@ -312,6 +312,10 @@ async function boot(){
     ]);
     setFunnel(s.stages||{});
     const cand=(s.stages&&s.stages.candidates)||0;
+    // Candidates are distinct products; note how many raw source rows they collapsed from (so the
+    // 196,535→76,618 dedup is visible without breaking the funnel's single (product) grain).
+    if(s.source_rows){ const el=document.querySelector(".stage.s-all .pct");
+      if(el) el.textContent="from "+Number(s.source_rows).toLocaleString()+" rows"; }
     const runEl=$("#runcand"); if(runEl) runEl.textContent=Number(cand).toLocaleString();
     const stubs=[];
     (rv.items||[]).forEach(r=>stubs.push(stubFrom(r, r.review_tier || "analyst")));

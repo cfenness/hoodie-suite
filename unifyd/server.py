@@ -1685,26 +1685,32 @@ def _wq(ds, sql, params=None):
 @app.get("/api/master/workbench/summary")
 def mwb_summary_ep():
     # The workbench reflects the REAL product master (dim_product), not the TTB-COLA tiering slice.
-    # The corroboration count (`sources`) is the confidence signal: a product confirmed by 2+ independent
-    # sources is auto-trusted; a single-source product is the analyst queue (needs corroboration). Raw
-    # staged source rows = candidates in; distinct dim_product = confirmed to master.
+    # ONE GRAIN — every funnel stage counts distinct PRODUCTS so the funnel reconciles: each candidate sits in
+    # exactly one process state, and Auto + Claude + Analyst + Sr + Steward = Candidates. The 196,535 raw source
+    # rows collapse INTO the 76,618 candidates (shown as source_rows/collapsed, not a stage). Corroboration is
+    # the confidence signal: 2+ sources = auto-trusted; single-source = the analyst queue. Confirmed to master =
+    # the trusted subset (auto-corroborated + Claude-adjudicated + human-confirmed), NOT every built row.
     agg = _wq("dim_product", "SELECT count(*) total, "
               "sum(CASE WHEN sources >= 2 THEN 1 ELSE 0 END) multi FROM t")
     total = (agg[0]["total"] if agg else 0) or 0
-    multi = (agg[0]["multi"] if agg else 0) or 0
-    single = total - multi
+    multi = (agg[0]["multi"] if agg else 0) or 0        # corroborated by 2+ sources → auto
+    single = total - multi                              # single-source → analyst queue
     stg = _wq("_stage_product", "SELECT count(*) n FROM t")
-    candidates = (stg[0]["n"] if stg and stg[0].get("n") else total)
+    source_rows = (stg[0]["n"] if stg and stg[0].get("n") else total)
     decisions = _wq("master_decisions", "SELECT tier, action FROM t")
+    conf_h = sum(1 for d in decisions if d.get("action") == "confirm")       # human-confirmed single-source
+    rej_h = sum(1 for d in decisions if d.get("action") == "reject")
+    claude = sum(1 for d in decisions if d.get("tier") == "claude")
+    sr = sum(1 for d in decisions if d.get("action") == "escalate" and d.get("tier") == "senior")
+    st = sum(1 for d in decisions if d.get("action") == "escalate" and d.get("tier") == "steward")
+    analyst = max(0, single - claude - sr - st - conf_h - rej_h)             # single-source still pending
     by = _wq("dim_product", "SELECT s, count(*) n FROM (SELECT unnest(source_list) s FROM t) GROUP BY 1 ORDER BY 2 DESC")
-    stages = {"candidates": candidates,
-              "auto": multi,
-              "claude": sum(1 for d in decisions if d.get("tier") == "claude"),
-              "analyst": single,
-              "senior": sum(1 for d in decisions if d.get("tier") == "senior"),
-              "steward": sum(1 for d in decisions if d.get("tier") == "steward"),
-              "confirmed": total}
-    return jsonify(ok=True, master=total, review=single, quarantine=0, collapsed=max(0, candidates - total),
+    # process states partition the candidates; Confirmed is the promoted-to-master roll-up (a subset)
+    stages = {"candidates": total,
+              "auto": multi, "claude": claude, "analyst": analyst, "senior": sr, "steward": st,
+              "confirmed": multi + claude + conf_h}
+    return jsonify(ok=True, master=total, review=analyst, quarantine=0,
+                   source_rows=source_rows, collapsed=max(0, source_rows - total),
                    avg_confidence=round((multi * 0.88 + single * 0.5) / max(1, total), 3),
                    stages=stages, by_source=[{"source": r.get("s"), "n": r.get("n")} for r in by])
 
