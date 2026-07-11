@@ -236,6 +236,87 @@ _NOISE = re.compile(r"quora|medium|crunchbase|accessnewswire|retail-today|reddit
                     r"twitter|instagram|pinterest|g2\.com|capterra|owler|zoominfo", re.I)
 
 
+def cityhive_catalog(base, key=None, scrolls=10, log=print):
+    """City Hive — the biggest independent-liquor platform (~2000 retailers). Products render via
+    browse_categories/render.json (session-gated container-render, embedded on the store's OWN domain). Drive a
+    BD browser so the session establishes + containers render, capture those responses, and pull the products
+    (data.nodes[*].params.product). Navigates the main departments for wider coverage. Reusable per store."""
+    import json as _j
+    from playwright.sync_api import sync_playwright
+    auth = _browser_auth()
+    prods = {}
+
+    def _nodes(o, out):
+        if isinstance(o, dict):
+            if o.get("type") == "product":
+                out.append(o)
+            for v in o.values():
+                _nodes(v, out)
+        elif isinstance(o, list):
+            for v in o:
+                _nodes(v, out)
+
+    with sync_playwright() as p:
+        br = p.chromium.connect_over_cdp("wss://%s@brd.superproxy.io:9222" % auth)
+        pg = br.new_page(); pg.set_default_navigation_timeout(90000)
+
+        def grab(r):
+            if "browse_categories/render.json" in r.url:
+                try:
+                    d = _j.loads(r.text())
+                except Exception:
+                    return
+                ns = []; _nodes(d.get("data"), ns)
+                for n in ns:
+                    pr = n.get("params", {}).get("product")
+                    if pr and pr.get("id"):
+                        prods[pr["id"]] = pr
+        pg.on("response", grab)
+        try:
+            pg.goto(base.rstrip("/") + "/shop", wait_until="domcontentloaded", timeout=90000); time.sleep(9)
+            for _ in range(scrolls):
+                pg.mouse.wheel(0, 4000); time.sleep(2)
+            links = []
+            try:
+                for a in pg.query_selector_all("a[href*='/shop/'],a[href*='department'],a[href*='category']")[:10]:
+                    h = a.get_attribute("href")
+                    if h and h not in links:
+                        links.append(h)
+            except Exception:
+                pass
+            for h in links[:6]:
+                try:
+                    pg.goto(h if h.startswith("http") else base.rstrip("/") + h, wait_until="domcontentloaded", timeout=60000)
+                    time.sleep(5)
+                    for _ in range(4):
+                        pg.mouse.wheel(0, 4000); time.sleep(2)
+                except Exception:
+                    pass
+        except Exception as e:
+            log("  [cityhive] nav %s" % str(e)[:60])
+        try:
+            br.close()
+        except Exception:
+            pass
+    out = []
+    for pr in prods.values():
+        sz = pr.get("size") or {}; ml = None
+        try:
+            q = float(sz.get("quantity")); u = (sz.get("measure") or "").lower()
+            ml = round(q * (1000 if u == "l" else (29.57 if u == "oz" else 1)))
+        except Exception:
+            pass
+        price = None
+        for m in (pr.get("merchants") or []):
+            for po in (m.get("product_options") or []):
+                price = po.get("price") or price
+        ap = pr.get("additional_properties") or {}
+        out.append(dict(name=pr.get("name", ""), brand="", price=price, sku=str(ap.get("sku", "")), upc="",
+                        size_ml=ml, category=", ".join(pr.get("basic_category") or pr.get("views") or [])))
+    log("  [cityhive] %s -> %d products" % (base, len(out)))
+    return out
+
+
 def discover_stores(query, pages=4, log=print):
     """SERP a platform signature -> distinct store domains (noise filtered). Market-agnostic national discovery."""
     key = _bd_key()
@@ -297,7 +378,7 @@ def national_sweep(platform, log=print):
     return rows
 
 
-def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecapps"), census=None, out=None, log=print):
+def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecapps", "City Hive"), census=None, out=None, log=print):
     """Pull every census e-commerce store on the given platform(s) -> <out> (a corroboration source +
     independent-store assortment). Dispatches per platform recipe. Default = ALL recipe-able platforms
     (was Shopify-only, which left Woo/Bottlecapps stores unscraped). BigCommerce stores are ABC → abc_catalog."""
@@ -325,6 +406,8 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
             elif "bottlecapps" in plat:
                 sid = bottlecapps_store_id(s["base"], key)
                 items = bottlecapps_catalog(s["base"], sid, key, log=log) if sid else []
+            elif "city hive" in plat or "cityhive" in plat:
+                items = cityhive_catalog(s["base"], key, log=log)
             else:
                 items = []
         except Exception as e:
