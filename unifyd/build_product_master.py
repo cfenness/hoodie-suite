@@ -111,6 +111,81 @@ def _to_ml(s):
     return round(v) if v else None
 
 
+# ── smarter matching: canonicalize near-duplicate product names WITHIN a brand so they collapse ─────────────
+# The exact-string hierarchy shred leaves "Plymouth Gin", "Plymouth Gin - - - Glass" and "PLYMOUTH GIN 82P" as
+# THREE products, so the same item looks single-source when 3 sources actually carry it. Canonicalization maps
+# each name to a token-set signature (lowercase, drop word-order / punctuation / dup + container/format noise),
+# then folds descriptor-only supersets (…+ "82p"/"1935"), and rewrites every row in a cluster to one display
+# name — so the existing exact collapse now merges them. Measured lift: ~1,414 → ~3,234 corroborated items.
+# format/container words = pure noise, safe to drop from BOTH the match signature and the display name.
+_FORMAT_NOISE = {"glass", "bottle", "bottles", "btl", "can", "cans", "pet", "plastic", "gift", "box", "boxed",
+                 "boxset", "bag", "each", "ea", "nr", "pack", "packs"}
+# articles/prepositions: drop from the match signature only (keep in display — "Ace of Spades" needs its "of").
+_STOP = {"the", "a", "an", "and", "of", "with"}
+_NOISE_TOK = _FORMAT_NOISE | _STOP
+_DESC_TOK = re.compile(r"^\d{2,3}p?$|^\d{2,3}proof$|^\d{4}$|^\d+ml$|^\d+l$")   # proof / vintage / size remnants
+
+
+def _tokset(name):
+    return frozenset(t for t in re.findall(r"[a-z0-9]+", (name or "").lower())
+                     if t not in _NOISE_TOK and len(t) > 1)
+
+
+def _clean_display(name):
+    toks = [t for t in re.split(r"\s+", (name or "").strip())
+            if t and (set(t) - set("-–")) and t.lower() not in _FORMAT_NOISE]   # drop pure-dash + format words
+    s = re.sub(r"#\d+\b\s*", "", " ".join(toks))          # drop "#815"-style SKU refs
+    return re.sub(r"\s{2,}", " ", s).strip(" -–")
+
+
+def canonicalize(staged, log=print):
+    import collections
+    by_brand = collections.defaultdict(lambda: collections.defaultdict(list))   # brand -> tokset -> rows
+    for r in staged:
+        ts = _tokset(r.get("product_name"))
+        if ts:
+            by_brand[r["brand"]][ts].append(r)
+    folded = fuzzy = 0
+    for brand, tsmap in by_brand.items():
+        parent = {}
+        keys = sorted(tsmap.keys(), key=len)
+        if len(keys) <= 200:                            # descriptor-superset fold (skip huge brands: O(n^2))
+            for a in keys:
+                for b in keys:
+                    if len(b) <= len(a) or not (a < b):
+                        continue
+                    extra = b - a
+                    if extra and all(_DESC_TOK.match(t) for t in extra):   # b == a + only proof/vintage/size
+                        parent[a] = b
+                        break
+
+        def root(k):
+            seen = set()
+            while k in parent and k not in seen:
+                seen.add(k); k = parent[k]
+            return k
+        groups = collections.defaultdict(list)
+        for ts, rows in tsmap.items():
+            rk = root(ts)
+            groups[rk].extend(rows)
+            if rk != ts:
+                fuzzy += 1
+        for rows in groups.values():
+            names = collections.Counter(_clean_display(r["product_name"]) for r in rows if r.get("product_name"))
+            names.pop("", None)
+            if not names:
+                continue
+            # canonical display: fewest signature tokens (the base product, not a descriptor variant),
+            # then most common, then shortest — so "Plymouth Gin" wins over "Plymouth Gin 82P".
+            canon = sorted(names.items(), key=lambda kv: (len(_tokset(kv[0])), -kv[1], len(kv[0])))[0][0]
+            if len(names) > 1:
+                folded += len(names) - 1
+            for r in rows:
+                r["product_name"] = canon
+    log("[master] canonicalize: folded %d name-variants (%d via descriptor-superset fuzzy)" % (folded, fuzzy))
+    return staged
+
+
 def build(log=print):
     by1 = build_brand_dict(log)
     staged = []
@@ -146,6 +221,7 @@ def build(log=print):
                 gtin=None, vintage=None, edition=None, supplier=None, _source=ds))
             kept += 1
         log("[master]   %-24s %6d products" % (ds, kept))
+    canonicalize(staged, log)                           # smarter matching: fold near-dup names before the shred
     log("[master] staged %d rows → _stage_product" % len(staged))
     warehouse.write_parquet("_stage_product", staged, fields=FIELDS + ["_source"])
     con = warehouse.connect()
