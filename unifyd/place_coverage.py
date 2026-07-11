@@ -51,7 +51,85 @@ def _text_client(key):
     return call
 
 
-def google_universe(market, key, _nearby=None, log=print):
+# ── Bright Data SERP → Google Maps engine (no Places key needed; uses the BD creds we already hold). Google
+# Maps returns a stable `fid` per place (dedup id, like place_id) + a `category` tag array we derive a type
+# from. ToS discipline unchanged: we compute in memory and persist only COUNTS + our own merchants' fids. ──
+_OFF_CATS = {"liquor_store", "wine_store", "beer_store", "off_licence", "wine_wholesaler", "brewing_supply_store"}
+_ON_CATS = {"bar", "cocktail_bar", "lounge", "pub", "sports_bar", "wine_bar", "brewery", "brewpub", "beer_garden",
+            "night_club", "gastropub", "izakaya", "tiki_bar", "dive_bar", "beer_hall", "taproom", "bar_and_grill",
+            "lounge_bar", "wine_cellar", "distillery"}
+_MAPS_TERMS = ["liquor store", "wine and spirits", "bar", "cocktail bar", "brewery", "night club"]
+
+
+def _bd_key():
+    return json.load(open(os.path.expanduser(
+        "~/Library/Application Support/brightdata-cli/credentials.json")))["api_key"]
+
+
+def _maps_type(categories):
+    ids = {(c.get("id") or "").lower() for c in (categories or [])}
+    if ids & _OFF_CATS:
+        return "liquor_store"
+    if ids & _ON_CATS:
+        return "bar"
+    return ""
+
+
+def _bd_maps(query, lat, lon, key, zoom=13):
+    import urllib.parse, urllib.request
+    url = ("https://www.google.com/maps/search/%s/@%.4f,%.4f,%dz?brd_json=1&hl=en&gl=us"
+           % (urllib.parse.quote(query), lat, lon, zoom))
+    body = json.dumps({"zone": "cli_unlocker", "url": url, "format": "raw"}).encode()
+    r = urllib.request.Request("https://api.brightdata.com/request", data=body,
+                               headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+    return (json.loads(urllib.request.urlopen(r, timeout=75).read()) or {}).get("organic", []) or []
+
+
+def bd_universe(market, key=None, points=None, log=print):
+    """Tiled Google-Maps-via-BD over the grid -> {fid: {norm, type, addr}} (in-memory real-world universe)."""
+    key = key or _bd_key()
+    grid = geo.MARKETS[market]
+    if points:
+        grid = grid[:points]
+    uni = {}
+    for i, (lat, lon) in enumerate(grid):
+        for term in _MAPS_TERMS:
+            try:
+                for p in _bd_maps(term, lat, lon, key):
+                    fid, t = p.get("fid"), _maps_type(p.get("category"))
+                    if not fid:
+                        continue
+                    if fid not in uni:
+                        uni[fid] = {"norm": _norm(p.get("title")), "type": t, "addr": p.get("address", "")}
+                    elif not uni[fid]["type"] and t:
+                        uni[fid]["type"] = t
+            except Exception:
+                pass
+            time.sleep(0.15)
+        if (i + 1) % 6 == 0:
+            log("  [maps] %d/%d pins — %d distinct alcohol places" % (i + 1, len(grid), len(uni)))
+    return uni
+
+
+def match_by_name(merchants, universe):
+    """Match OUR merchants to the Google universe by normalized name (exact, then loose contains)."""
+    unorm = {}
+    for fid, v in universe.items():
+        unorm.setdefault(v["norm"], fid)
+    for m in merchants:
+        n = _norm(m.get("name"))
+        fid = unorm.get(n)
+        if not fid and len(n) >= 6:
+            for un, f in unorm.items():
+                if un and min(len(un), len(n)) >= 6 and (un in n or n in un):
+                    fid = f
+                    break
+        m["google_fid"] = fid or ""
+        m["google_confirmed"] = bool(fid)
+    return merchants
+
+
+def _official_universe(market, key, _nearby=None, log=print):
     """Tiled Nearby Search over the grid -> {place_id: primary_type}. In-memory only (place_id is storable,
     but we keep the universe transient and persist just its counts)."""
     near = _nearby or _nearby_client(key)
@@ -88,49 +166,48 @@ def confirm_merchants(merchants, market, key, _text=None):
     return merchants
 
 
-def run(market="orlando", key=None, log=print):
-    key = key or os.environ.get("GOOGLE_MAPS_API_KEY", "").strip()
-    if not key:
-        return {"status": "google-disabled", "detail": "GOOGLE_MAPS_API_KEY not set"}
+def run(market="orlando", key=None, points=None, log=print, persist=True):
+    """Coverage via Bright Data SERP -> Google Maps (no Places key). Matches our merchants to the Google
+    alcohol universe by fid, reports two-way coverage per type. Persists counts + our merchants' fids only."""
     merchants = warehouse.query("%s_merchants" % market, "SELECT * FROM t")
     if not merchants:
         return {"status": "no-merchants", "detail": "run doordash_geo --market %s first" % market}
 
-    universe = google_universe(market, key, log=log)                 # real-world alcohol outlets Google knows
-    confirm_merchants(merchants, market, key)                        # our merchants -> place_id
+    universe = bd_universe(market, key, points=points, log=log)      # real-world alcohol outlets Google knows
+    match_by_name(merchants, universe)                              # our merchants -> fid
 
-    upids = {"liquor_store": {p for p, t in universe.items() if t == "liquor_store"},
-             "bar": {p for p, t in universe.items() if t in ("bar", "night_club")}}
-    our_retail = {m["google_place_id"] for m in merchants if m["type"] == "retail" and m.get("google_place_id")}
-    our_rest = {m["google_place_id"] for m in merchants if m["type"] == "restaurant" and m.get("google_place_id")}
+    liq = {f for f, v in universe.items() if v["type"] == "liquor_store"}
+    bars = {f for f, v in universe.items() if v["type"] == "bar"}
+    our_ret = {m["google_fid"] for m in merchants if m["type"] == "retail" and m.get("google_fid")}
+    our_res = {m["google_fid"] for m in merchants if m["type"] == "restaurant" and m.get("google_fid")}
 
     def pct(a, b):
         return round(100.0 * a / b, 1) if b else None
 
     rep = dict(
-        market=market,
+        market=market, engine="bd-serp-maps",
         our_merchants=len(merchants),
         our_retail=sum(1 for m in merchants if m["type"] == "retail"),
         our_restaurant=sum(1 for m in merchants if m["type"] == "restaurant"),
         our_confirmed=sum(1 for m in merchants if m.get("google_confirmed")),
-        google_liquor_stores=len(upids["liquor_store"]),
-        google_bars_clubs=len(upids["bar"]),
-        matched_retail=len(our_retail & upids["liquor_store"]),
-        matched_onpremise=len(our_rest & upids["bar"]),
-        retail_coverage_pct=pct(len(our_retail & upids["liquor_store"]), len(upids["liquor_store"])),
-        onpremise_coverage_pct=pct(len(our_rest & upids["bar"]), len(upids["bar"])),
-        gap_retail=len(upids["liquor_store"] - our_retail),          # on Google, not on our DoorDash sweep
-        gap_onpremise=len(upids["bar"] - our_rest),
+        google_alcohol_places=len(universe),
+        google_liquor_stores=len(liq),
+        google_bars_clubs=len(bars),
+        matched_retail=len(our_ret & liq),
+        matched_onpremise=len(our_res & bars),
+        retail_coverage_pct=pct(len(our_ret & liq), len(liq)),      # of Google's liquor stores, % on our DoorDash
+        onpremise_coverage_pct=pct(len(our_res & bars), len(bars)),
+        gap_retail=len(liq - our_ret),                              # on Google, not in our sweep
+        gap_onpremise=len(bars - our_res),
         confirmed_rate_pct=pct(sum(1 for m in merchants if m.get("google_confirmed")), len(merchants)),
         run_id="cov-" + time.strftime("%Y%m%d-%H%M%S"))
 
-    # persist: counts summary (safe) + our merchants annotated with the durable place_id (ToS-allowed)
-    warehouse.write_parquet("%s_coverage" % market, [rep])
-    warehouse.write_parquet("%s_merchants" % market,
-                            [{k: v for k, v in m.items() if k != "google_types"} for m in merchants])
-    log("[coverage] %s: %d/%d merchants Google-confirmed (%.0f%%) · retail coverage %s%% of %d Google liquor "
+    if persist:                                                     # counts summary + our merchants' fids only
+        warehouse.write_parquet("%s_coverage" % market, [rep])
+        warehouse.write_parquet("%s_merchants" % market, merchants)
+    log("[coverage] %s: %d/%d merchants Google-confirmed (%s%%) · retail coverage %s%% of %d Google liquor "
         "stores · on-premise %s%% of %d Google bars/clubs · gap %d retail / %d on-premise"
-        % (market, rep["our_confirmed"], rep["our_merchants"], rep["confirmed_rate_pct"] or 0,
+        % (market, rep["our_confirmed"], rep["our_merchants"], rep["confirmed_rate_pct"],
            rep["retail_coverage_pct"], rep["google_liquor_stores"], rep["onpremise_coverage_pct"],
            rep["google_bars_clubs"], rep["gap_retail"], rep["gap_onpremise"]))
     return rep
@@ -139,6 +216,7 @@ def run(market="orlando", key=None, log=print):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--market", default="orlando")
+    ap.add_argument("--points", type=int, default=0, help="limit grid tiles (smoke test)")
     a = ap.parse_args()
-    r = run(a.market)
+    r = run(a.market, points=a.points or None)
     print(json.dumps(r, indent=2))
