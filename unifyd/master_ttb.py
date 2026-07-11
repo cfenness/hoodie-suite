@@ -35,7 +35,7 @@ def load_market(log=print):
         except Exception as e:
             log("  (skip %s: %s)" % (ds, str(e)[:40]))
 
-    add("abc_products", "SELECT DISTINCT brand, name FROM t WHERE name <> ''", "abc", "brand", "name", "name")
+    add("abc_catalog", "SELECT DISTINCT name, brand, size, upc FROM t WHERE name IS NOT NULL", "abc", "brand", "name", "size")
     add("binnys_products", "SELECT DISTINCT brand, name FROM t WHERE name IS NOT NULL", "binnys", "brand", "name", "name")
     add("totalwine_products_full", "SELECT DISTINCT name, total_size FROM t WHERE name IS NOT NULL", "totalwine", "name", "name", "total_size")
     add("specs_products", "SELECT DISTINCT name FROM t WHERE name IS NOT NULL", "specs", "name", "name", "name")
