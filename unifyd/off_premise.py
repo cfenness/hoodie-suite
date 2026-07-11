@@ -85,6 +85,73 @@ def bigcommerce_product(url, key):
 _RECIPES = {"bigcommerce": (bigcommerce_ids, bigcommerce_product)}
 
 
+# ── Shopify recipe — the golden path: /products.json returns the whole catalog as JSON (name / vendor /
+# price / sku), paginated. sku is very often the UPC. One clean call per page, no per-product fetch. ──
+def shopify_catalog(base, key, max_pages=25, log=print):
+    rows = []
+    for pg in range(1, max_pages + 1):
+        j = None
+        for _try in range(2):                                   # transient BD failures happen under load
+            try:
+                j = json.loads(_unlock("%s/products.json?limit=250&page=%d" % (base.rstrip("/"), pg), key))
+                break
+            except Exception:
+                time.sleep(2)
+        if j is None:
+            break
+        ps = j.get("products") or []
+        if not ps:
+            break
+        for p in ps:
+            v = (p.get("variants") or [{}])[0]
+            try:
+                price = float(v.get("price")) if v.get("price") not in (None, "") else None
+            except Exception:
+                price = None
+            sku = (v.get("sku") or "").strip()
+            rows.append({"name": (p.get("title") or "").strip(), "brand": (p.get("vendor") or "").strip(),
+                         "price": price, "sku": sku,
+                         "upc": (sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
+                         "product_type": (p.get("product_type") or "")})
+        if len(ps) < 250:
+            break
+    return rows
+
+
+def run_census(market="orlando", platforms=("Shopify",), log=print):
+    """Pull every census e-commerce store on the given platform(s) -> <market>_offprem_products (a corroboration
+    source + independent-store assortment). Dispatches per platform recipe."""
+    key = _bd_key()
+    seen, stores = set(), []
+    for s in warehouse.query("%s_offprem_census" % market,
+                             "SELECT DISTINCT account, website, platform FROM t WHERE has_ecommerce = true"):
+        base = re.match(r"https?://[^/]+", s["website"] or "")
+        if not base or base.group(0) in seen:
+            continue
+        seen.add(base.group(0)); stores.append(dict(s, base=base.group(0)))
+    run_id = "offprem-" + time.strftime("%Y%m%d-%H%M%S")
+    rows = []
+    for s in stores:
+        plat = (s["platform"] or "").lower()
+        if not any(p.lower() in plat for p in platforms):
+            continue
+        try:
+            items = shopify_catalog(s["base"], key, log=log) if "shopify" in plat else []
+        except Exception as e:
+            log("  [off] %-26s FAILED %s" % (s["account"][:26], str(e)[:40])); continue
+        for it in items:
+            b = ctx.classify_beverage(it["name"])
+            rows.append(dict(store=s["account"], base=s["base"], platform=s["platform"], name=it["name"],
+                             brand=it["brand"], price_value=it["price"], sku=it["sku"], upc=it["upc"],
+                             bev_category=b["category"], is_hemp=observe.is_hemp(it["name"]), run_id=run_id,
+                             **dd._parse_pack(it["name"])))
+        log("  [off] %-26s (%s) -> %d products" % (s["account"][:26], s["platform"], len(items)))
+    if rows:
+        warehouse.write_parquet("%s_offprem_products" % market, rows)
+    log("[off] %d products -> %s_offprem_products" % (len(rows), market))
+    return rows
+
+
 def run(store, base=None, platform=None, sample=None, delay=1.5, log=print):
     cfg = STORES.get(store, {})
     base = (base or cfg.get("base", "")).rstrip("/")
@@ -133,9 +200,14 @@ def run(store, base=None, platform=None, sample=None, delay=1.5, log=print):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--store", required=True)
+    ap.add_argument("--store", default="")
     ap.add_argument("--base", default="")
     ap.add_argument("--platform", default="")
     ap.add_argument("--sample", type=int, default=0)
+    ap.add_argument("--census", default="", help="market -> pull all its census e-commerce stores")
+    ap.add_argument("--platforms", default="Shopify")
     a = ap.parse_args()
-    run(a.store, base=a.base or None, platform=a.platform or None, sample=a.sample or None)
+    if a.census:
+        run_census(a.census, platforms=tuple(p.strip() for p in a.platforms.split(",") if p.strip()))
+    elif a.store:
+        run(a.store, base=a.base or None, platform=a.platform or None, sample=a.sample or None)
