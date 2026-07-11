@@ -106,6 +106,64 @@ def _norm(s):
     return re.sub(r"[^a-z0-9]", "", str(s or "").lower())
 
 
+# ── Attribute extraction from the NAME (deterministic, free) — age (category-aware), ABV/proof, vintage,
+# varietal. Confirm/fill against the label read where available. NAS is flagged, never a guessed age. ──
+_AGE_YEAR = re.compile(r"\b(\d{1,2})\s*-?\s*(?:year|yr|yo|y\.?o\.?|a[nñ]os|jahre|ans)\b", re.I)
+_AGE_OLD = re.compile(r"\baged\s+(\d{1,2})\b|\b(\d{1,2})\s+years?\s+old\b", re.I)
+_COGNAC_AGE = [("hors d'age", 10), ("extra old", 10), (" xo", 10), ("napoleon", 6), ("vsop", 4), (" vs ", 2)]
+_TEQUILA_AGE = [("extra a", (3, None)), ("añejo", (1, 3)), ("anejo", (1, 3)), ("reposado", (0.17, 1)),
+                ("joven", (0, 0.17)), ("blanco", (0, 0)), ("plata", (0, 0)), ("silver", (0, 0))]
+_AGED_CAT = re.compile(r"whisk|bourbon|scotch|\brye\b|\brum\b|brandy|cognac|armagnac|tequila|mezcal", re.I)
+_PROOF = re.compile(r"\b(\d{2,3}(?:\.\d)?)\s*proof\b", re.I)
+_ABV = re.compile(r"\b(\d{1,2}(?:\.\d)?)\s*%(?:\s*(?:abv|alc))?", re.I)
+_VINTAGE = re.compile(r"\b(19[5-9]\d|20[0-4]\d)\b")
+_VARIETALS = ["cabernet sauvignon", "sauvignon blanc", "pinot noir", "pinot grigio", "pinot gris", "chardonnay",
+              "merlot", "malbec", "syrah", "shiraz", "zinfandel", "riesling", "sangiovese", "tempranillo",
+              "grenache", "nebbiolo", "moscato", "prosecco", "champagne", "rosé", "cabernet", "gewürztraminer"]
+
+
+def derive_age(name, category=""):
+    """Category-aware age: year statement (whisky/rum/brandy) | designation (cognac VS/VSOP/XO) | category
+    (tequila blanco/reposado/añejo) | NAS. Never guesses a number. -> dict or {} (n/a for wine/vodka/gin/beer)."""
+    t = " %s " % (name or "").lower()
+    m = _AGE_YEAR.search(t) or _AGE_OLD.search(t)
+    if m:
+        yr = int(next(g for g in m.groups() if g))
+        if 1 <= yr <= 99:
+            return {"age_years": yr, "age_statement": "%d Year" % yr, "source": "name", "confidence": 0.9}
+    for k, mn in _COGNAC_AGE:
+        if k in t:
+            return {"age_designation": k.strip().upper(), "age_min_years": mn, "source": "name", "confidence": 0.8}
+    for k, (lo, hi) in _TEQUILA_AGE:
+        if re.search(k, t):
+            return {"age_category": k.replace("a", "añejo") if k.startswith("a") else k, "age_min_years": lo,
+                    "age_max_years": hi, "source": "name", "confidence": 0.85}
+    if _AGED_CAT.search(t):
+        return {"is_nas": True, "age_statement": "NAS", "source": "name", "confidence": 0.55}
+    return {}
+
+
+def extract_from_name(name):
+    """Deterministic attributes from the product name -> {age, abv, vintage, varietal} (each with source/conf)."""
+    t = name or ""
+    out = {}
+    age = derive_age(t)
+    if age:
+        out["age"] = age
+    pm, am = _PROOF.search(t), _ABV.search(t)
+    if pm:
+        out["abv"] = {"value": round(float(pm.group(1)) / 2, 1), "source": "name(proof)", "confidence": 0.9}
+    elif am and float(am.group(1)) <= 70:
+        out["abv"] = {"value": float(am.group(1)), "source": "name", "confidence": 0.9}
+    vm = _VINTAGE.search(t)
+    if vm:
+        out["vintage"] = {"value": int(vm.group(1)), "source": "name", "confidence": 0.85}
+    lv = next((v for v in _VARIETALS if v in t.lower()), None)
+    if lv:
+        out["varietal"] = {"value": lv.title(), "source": "name", "confidence": 0.9}
+    return out
+
+
 def cross_check(read, declared):
     """Compare label-read values to the master's declared values -> per-field {label, declared, agrees, action}.
     action: confirm (agree) | review (disagree) | fill_candidate (master lacks it, label has it)."""
