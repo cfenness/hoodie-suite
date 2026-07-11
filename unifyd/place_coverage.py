@@ -111,6 +111,44 @@ def bd_universe(market, key=None, points=None, log=print):
     return uni
 
 
+def _bd_maps_text(query, key):
+    import urllib.parse, urllib.request
+    url = "https://www.google.com/maps/search/%s/?brd_json=1&hl=en&gl=us" % urllib.parse.quote(query)
+    body = json.dumps({"zone": "cli_unlocker", "url": url, "format": "raw"}).encode()
+    r = urllib.request.Request("https://api.brightdata.com/request", data=body,
+                               headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+    return (json.loads(urllib.request.urlopen(r, timeout=75).read()) or {}).get("organic", []) or []
+
+
+def enrich_hours(market="orlando", near="Orlando FL", key=None, log=print):
+    """Grab open hours + address + phone + google_fid for every merchant from Google Maps — factual, refreshable
+    fields (ToS: keep the durable id, refresh the rest). Lands <market>_outlet_hours; enriches the outlet master
+    and doubles as the google_fid match key. Works for on- AND off-premise (all outlets have a Maps listing)."""
+    key = key or _bd_key()
+    merchants = warehouse.query("%s_merchants" % market, "SELECT store_id, name, type, is_chain FROM t")
+    run_id = "hours-" + time.strftime("%Y%m%d-%H%M%S")
+    rows = []
+    for i, m in enumerate(merchants):
+        try:
+            ps = _bd_maps_text("%s %s" % (m["name"], near), key)
+            p = ps[0] if ps else {}
+        except Exception:
+            p = {}
+        rows.append(dict(account=m["name"], store_id=m.get("store_id", ""), type=m.get("type", ""),
+                         is_chain=m.get("is_chain"), hours=json.dumps(p.get("open_hours") or {}),
+                         address=p.get("address", ""), phone=p.get("phone", ""), rating=p.get("rating"),
+                         google_fid=p.get("fid", ""), market=market, run_id=run_id))
+        if (i + 1) % 25 == 0:
+            warehouse.write_parquet("%s_outlet_hours" % market, rows)          # checkpoint
+            log("  [hours] ...%d/%d" % (i + 1, len(merchants)))
+    warehouse.write_parquet("%s_outlet_hours" % market, rows)
+    got = sum(1 for r in rows if r["hours"] != "{}")
+    fids = sum(1 for r in rows if r["google_fid"])
+    log("[hours] %s: %d/%d with hours · %d with google_fid -> %s_outlet_hours"
+        % (market, got, len(rows), fids, market))
+    return rows
+
+
 def match_by_name(merchants, universe):
     """Match OUR merchants to the Google universe by normalized name (exact, then loose contains)."""
     unorm = {}
