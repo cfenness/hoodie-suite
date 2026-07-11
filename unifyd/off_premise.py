@@ -118,6 +118,86 @@ def shopify_catalog(base, key, max_pages=25, log=print):
     return rows
 
 
+# ── Bottlecapps recipe — the crack: DataDome-protected JS app, but EVERYTHING is keyed by store_id. Category
+# tree = /s-<sid>/c-N/buy-<slug> (+ t-/v- subcats); product = /product/s-<sid>/p-<pid>/buy-<name-size-slug>.
+# BD Browser (past DataDome) walks the top categories, scrolls to load the section-loader batches, and reads
+# product links (name+size in the slug). Reusable for ANY Bottlecapps store — just its store_id. ──
+def _browser_auth():
+    key = _bd_key()
+    r = urllib.request.Request("https://api.brightdata.com/zone/passwords?zone=cli_browser",
+                               headers={"Authorization": "Bearer " + key})
+    return "brd-customer-hl_32bcfbaa-zone-cli_browser:%s" % json.loads(
+        urllib.request.urlopen(r, timeout=30).read())["passwords"][0]
+
+
+_BC_SIZE = re.compile(r"(\d+(?:\.\d+)?)-(ml|l|liter|oz|pk|pack|ltr)\b", re.I)
+
+
+def _bc_parse(url):
+    m = re.search(r"/p-(\d+)/buy-(.+?)(?:\?|$)", url)
+    if not m:
+        return None, None, None
+    pid, slug = m.group(1), m.group(2)
+    sz = _BC_SIZE.search(slug)
+    return pid, slug.replace("-", " ").strip(), (sz.group(0).replace("-", " ") if sz else "")
+
+
+def bottlecapps_store_id(base, key):
+    """Every Bottlecapps store exposes its id in its own page (store_id = "N" or an /s-N/ link)."""
+    try:
+        h = _unlock(base.rstrip("/") + "/", key)
+    except Exception:
+        return None
+    m = re.search(r'store_id\s*=\s*"?(\d{3,7})', h) or re.search(r"/s-(\d{3,7})/", h)
+    return m.group(1) if m else None
+
+
+def bottlecapps_catalog(base, store_id, key, max_cats=12, scrolls=8, log=print):
+    from playwright.sync_api import sync_playwright
+    base = base.rstrip("/")
+    prods = {}
+    with sync_playwright() as p:
+        b = p.chromium.connect_over_cdp("wss://%s@brd.superproxy.io:9222" % _browser_auth(), timeout=90000)
+        try:
+            ctx = b.contexts[0] if b.contexts else b.new_context()
+            pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+
+            def _settle():
+                try:
+                    pg.wait_for_load_state("load", timeout=20000)
+                except Exception:
+                    pass
+                time.sleep(8)                                   # the JS nav / product grid renders after load
+
+            def _hrefs(sel):                                    # retry — the page can redirect mid-eval
+                for _t in range(3):
+                    try:
+                        return pg.eval_on_selector_all(sel, "els=>els.map(a=>a.href).filter(Boolean)")
+                    except Exception:
+                        time.sleep(3)
+                return []
+            pg.goto(base + "/", wait_until="domcontentloaded", timeout=120000); _settle()
+            cats = sorted(set(l for l in _hrefs("a") if re.search(r"/s-%s/c-\d+/buy-[a-z0-9-]+$" % store_id, l)))[:max_cats]
+            log("  [bottlecapps] store %s: %d top categories" % (store_id, len(cats)))
+            for c in cats:
+                try:
+                    pg.goto(c, wait_until="domcontentloaded", timeout=90000)
+                except Exception:
+                    continue
+                _settle()
+                for _ in range(scrolls):
+                    pg.mouse.wheel(0, 7000); time.sleep(1.3)
+                hrefs = _hrefs("a[href*='/product/s-%s/']" % store_id)
+                for u in set(hrefs):
+                    pid, name, size = _bc_parse(u)
+                    if pid and pid not in prods:
+                        prods[pid] = {"name": name, "size": size, "price": None, "sku": "", "upc": "",
+                                      "product_type": "", "url": u.split("?")[0]}
+        finally:
+            b.close()
+    return list(prods.values())
+
+
 def run_census(market="orlando", platforms=("Shopify",), census=None, out=None, log=print):
     """Pull every census e-commerce store on the given platform(s) -> <out> (a corroboration source +
     independent-store assortment). Dispatches per platform recipe. Works for the off-premise OR hemp census."""
@@ -138,7 +218,13 @@ def run_census(market="orlando", platforms=("Shopify",), census=None, out=None, 
         if not any(p.lower() in plat for p in platforms):
             continue
         try:
-            items = shopify_catalog(s["base"], key, log=log) if "shopify" in plat else []
+            if "shopify" in plat:
+                items = shopify_catalog(s["base"], key, log=log)
+            elif "bottlecapps" in plat:
+                sid = bottlecapps_store_id(s["base"], key)
+                items = bottlecapps_catalog(s["base"], sid, key, log=log) if sid else []
+            else:
+                items = []
         except Exception as e:
             log("  [off] %-26s FAILED %s" % (s["account"][:26], str(e)[:40])); continue
         for it in items:
