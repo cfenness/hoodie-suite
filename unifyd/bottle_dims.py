@@ -289,5 +289,45 @@ def enrich_batch(skus, bd_key=None, log=print):
     return results
 
 
+def run_master(source="totalwine_products_full", limit=200, log=print):
+    """Go GET the bottle dimensions we can — run enrich across a real batch, land bottle_dims_enriched (flat) +
+    the honest hit-rate (enriched vs manual). Only the gettable physical fields; proprietary -> manual."""
+    import warehouse
+    key = _bd_key()
+    skus = warehouse.query(source, "SELECT DISTINCT name, image_url, total_size FROM t "
+                           "WHERE image_url <> '' AND name <> '' LIMIT %d" % limit)
+    rows, enriched = [], 0
+    for s in skus:
+        r = enrich({"name": s["name"], "image_url": s["image_url"], "size": s.get("total_size") or "750 ml"},
+                   key, log=lambda *a: None)
+        f = r.get("fields", {})
+        first = next(iter(f.values()), {})
+        rows.append(dict(sku=s["name"][:120], status=r["status"],
+                         shape=(r.get("shape") or {}).get("shape_class", ""),
+                         is_proprietary=(r.get("shape") or {}).get("is_proprietary"),
+                         height_mm=f.get("height_mm", {}).get("value"),
+                         diameter_mm=f.get("diameter_mm", {}).get("value"),
+                         capacity_ml=f.get("capacity_ml", {}).get("value"),
+                         finish=f.get("finish", {}).get("value"),
+                         weight_g=f.get("weight_g", {}).get("value"),
+                         confidence=first.get("confidence"), source=first.get("source", ""),
+                         ref=first.get("ref", ""), reason=r.get("reason", "")))
+        if r["status"] == "enriched":
+            enriched += 1
+        if len(rows) % 15 == 0:
+            warehouse.write_parquet("bottle_dims_enriched", rows)
+            log("  ...%d/%d (%d enriched)" % (len(rows), len(skus), enriched))
+    warehouse.write_parquet("bottle_dims_enriched", rows)
+    prop = sum(1 for r in rows if (r.get("is_proprietary")))
+    log("[bottle_dims] %d SKUs · %d ENRICHED (%.0f%%) · %d proprietary->manual · %d other-manual -> bottle_dims_enriched"
+        % (len(rows), enriched, 100 * enriched / max(1, len(rows)), prop, len(rows) - enriched - prop))
+    return rows
+
+
 if __name__ == "__main__":
-    print("bottle_dims — import classify_bottle / fetch_image; run the demo via the harness.")
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--source", default="totalwine_products_full")
+    ap.add_argument("--limit", type=int, default=200)
+    a = ap.parse_args()
+    run_master(a.source, a.limit)
