@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import master_apply
 import precleanse as _precleanse
+import sku_match as _sku_match
 
 FIELDS = ["brand", "brand_group", "product_name", "flavor", "abv", "style", "category", "origin",
           "size_ml", "packsize", "container", "pack", "upc", "gtin", "vintage", "edition", "supplier"]
@@ -224,6 +225,7 @@ def build(log=print):
         log("[master]   %-24s %6d products" % (ds, kept))
     _precleanse.precleanse(staged, log)                 # precleanse: canonicalize brand + cleanse name FIRST
     canonicalize(staged, log)                           # smarter matching: fold near-dup names before the shred
+    _sku_match.propagate_upcs(staged, log)              # SKU-first: propagate UPCs across matched item clusters
     log("[master] staged %d rows → _stage_product" % len(staged))
     warehouse.write_parquet("_stage_product", staged, fields=FIELDS + ["_source"])
     con = warehouse.connect()

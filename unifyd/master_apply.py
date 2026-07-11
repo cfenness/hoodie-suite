@@ -74,9 +74,11 @@ ENTITY_IDENTITY = {
 HIERARCHY = ["brand", "product", "item", "sku"]
 # the NATURAL-key components ADDED at each grain (cumulative — a level's key includes all ancestors').
 GRAIN_KEY = {"brand": ["brand"], "product": ["flavor", "product_name"],
-             "item": ["size_ml", "container"], "sku": ["pack"]}
-# name-ish key parts get vintage/edition stripped (derive.identity_expr) so releases collapse to one row;
-# note UPC + vintage + edition are sku ATTRIBUTES, deliberately absent from GRAIN_KEY['sku'].
+             "item": ["size_ml", "container"], "sku": ["pack", "upc"]}
+# The SKU is the matching TARGET (the fully-specified sellable unit), and a UPC is its GLOBAL identity — two
+# rows with the same UPC are the same SKU, two different UPCs are two different SKUs. So UPC is in the sku key.
+# This relies on sku_match.propagate_upcs() running FIRST (fills missing UPCs across single-UPC item clusters),
+# so a no-UPC row doesn't split off from its UPC'd siblings. vintage/edition remain sku attributes.
 NAMEISH = {"brand", "product_name", "flavor", "container"}
 # default grain per field name when a schema field doesn't declare one
 GRAIN_DEFAULTS = {"brand": "brand", "brand_group": "brand",
