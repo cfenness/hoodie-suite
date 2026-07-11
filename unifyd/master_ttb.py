@@ -42,6 +42,7 @@ def load_market(log=print):
     add("kroger_products", "SELECT DISTINCT product_name, brand, size, upc FROM t WHERE product_name IS NOT NULL", "kroger", "brand", "product_name", "size")
     add("walmart_products", "SELECT DISTINCT product_name, brand, size_ml, upc FROM t WHERE product_name IS NOT NULL", "walmart", "brand", "product_name", "size_ml")
     add("target_products", "SELECT DISTINCT name, brand, upc FROM t WHERE name IS NOT NULL", "target", "brand", "name", "name")
+    add("orlando_offprem_products", "SELECT DISTINCT name, brand, upc FROM t WHERE name IS NOT NULL", "independent", "brand", "name", "name")
     add("menu_beverages", "SELECT DISTINCT name FROM t WHERE name IS NOT NULL", "menu", "name", "name", "name")
     log("[master] market index built from %d distinct product listings" % len(rows))
     return rows
