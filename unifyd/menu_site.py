@@ -224,12 +224,13 @@ def _menu_text(url, key):
     # note: image/PDF-only menus still yield little — those need vision/OCR (a follow-on layer)
 
 
-def run(name, site=None, near="Orlando FL", log=print):
+def pull(name, site=None, near="Orlando FL", log=print):
+    """Discover -> render (JS/image/PDF) -> Claude extract -> classify. Returns menu_beverages rows (no write)."""
     key = _bd_key()
     site = site or discover_site(name, near, key)
     if not site:
-        log("[menu] no website found for %s" % name); return 0
-    assets = render_menu_assets(site, key, log=log)              # v2: render (JS/image/PDF) -> screenshots + PDFs
+        log("  [menu] %-30s -> no website" % name[:30]); return []
+    assets = render_menu_assets(site, key, log=lambda *a: None)
     items = claude_vision_extract(assets, name)
     menu_url = assets[0]["url"] if assets else site
     if not items:                                               # fallback: text extraction (plain-HTML menus)
@@ -251,10 +252,46 @@ def run(name, site=None, near="Orlando FL", log=print):
                          is_alcoholic=b["is_alcoholic"], root=b.get("root", ""), sub=b.get("sub", ""),
                          base_spirit=b.get("base_spirit", ""), beer_style=b.get("beer_style", ""),
                          source="website", source_url=menu_url, run_id=run_id))
+    log("  [menu] %-30s -> %d beverages (%s)" % (name[:30], len(rows), menu_url.split("/")[-1][:30]))
+    return rows
+
+
+def run(name, site=None, near="Orlando FL", log=print):
+    rows = pull(name, site, near, log)
     if rows:
         warehouse.write_parquet("menu_beverages", rows)
-    log("[menu] %-30s -> %d beverages (menu: %s)" % (name[:30], len(rows), menu_url))
     return len(rows)
+
+
+def fan(names, near="Orlando FL", log=print):
+    """Fan the pull across many accounts; accumulate and MERGE with existing menu_beverages, write once
+    (re-pulled accounts replaced, others preserved). This is how we sweep the dine-in on-premise gap."""
+    def _merge_write(rows):
+        try:
+            existing = warehouse.query("menu_beverages", "SELECT * FROM t")
+        except Exception:
+            existing = []
+        pulled = {r["account"] for r in rows}
+        merged = [r for r in existing if r.get("account") not in pulled] + rows
+        if merged:
+            warehouse.write_parquet("menu_beverages", merged)
+        return len(merged)
+
+    allrows, hit = [], 0
+    for i, nm in enumerate(names):
+        try:
+            r = pull(nm, near=near, log=log)
+            allrows += r; hit += 1 if r else 0
+        except Exception as e:
+            log("  [menu] %-30s -> FAILED %s" % (nm[:30], str(e)[:40]))
+        if (i + 1) % 15 == 0:                                    # checkpoint — a multi-hour sweep saves progress
+            tot = _merge_write(allrows)
+            log("  ...%d/%d accounts · %d with drinks · %d beverages (checkpoint -> %d total)"
+                % (i + 1, len(names), hit, len(allrows), tot))
+    tot = _merge_write(allrows)
+    log("[menu] FAN done: %d/%d accounts had drinks · %d beverages -> menu_beverages (%d total)"
+        % (hit, len(names), len(allrows), tot))
+    return len(allrows)
 
 
 if __name__ == "__main__":
