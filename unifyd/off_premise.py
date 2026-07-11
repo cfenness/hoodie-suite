@@ -236,85 +236,107 @@ _NOISE = re.compile(r"quora|medium|crunchbase|accessnewswire|retail-today|reddit
                     r"twitter|instagram|pinterest|g2\.com|capterra|owler|zoominfo", re.I)
 
 
-def cityhive_catalog(base, key=None, scrolls=10, log=print):
-    """City Hive — the biggest independent-liquor platform (~2000 retailers). Products render via
-    browse_categories/render.json (session-gated container-render, embedded on the store's OWN domain). Drive a
-    BD browser so the session establishes + containers render, capture those responses, and pull the products
-    (data.nodes[*].params.product). Navigates the main departments for wider coverage. Reusable per store."""
-    import json as _j
-    from playwright.sync_api import sync_playwright
-    auth = _browser_auth()
-    prods = {}
-
-    def _nodes(o, out):
-        if isinstance(o, dict):
-            if o.get("type") == "product":
-                out.append(o)
-            for v in o.values():
-                _nodes(v, out)
-        elif isinstance(o, list):
-            for v in o:
-                _nodes(v, out)
-
-    with sync_playwright() as p:
-        br = p.chromium.connect_over_cdp("wss://%s@brd.superproxy.io:9222" % auth)
-        pg = br.new_page(); pg.set_default_navigation_timeout(90000)
-
-        def grab(r):
-            if "browse_categories/render.json" in r.url:
-                try:
-                    d = _j.loads(r.text())
-                except Exception:
-                    return
-                ns = []; _nodes(d.get("data"), ns)
-                for n in ns:
-                    pr = n.get("params", {}).get("product")
-                    if pr and pr.get("id"):
-                        prods[pr["id"]] = pr
-        pg.on("response", grab)
+def _ch_sitemap_products(base, key, log=print):
+    """City Hive stores publish their FULL catalog in /sitemap.xml (product URLs
+    /shop/product/<slug>/<product_id>?option-id=<opt>). BD Unlocker occasionally returns a
+    Cloudflare interstitial instead of the XML, so retry until we get <loc> product URLs."""
+    for _ in range(3):
         try:
-            pg.goto(base.rstrip("/") + "/shop", wait_until="domcontentloaded", timeout=90000); time.sleep(9)
-            for _ in range(scrolls):
-                pg.mouse.wheel(0, 4000); time.sleep(2)
-            links = []
+            xml = _unlock(base.rstrip("/") + "/sitemap.xml", key)
+        except Exception as e:
+            log("  [cityhive] sitemap %s" % str(e)[:60]); continue
+        urls = [l for l in re.findall(r"<loc>([^<]+)</loc>", xml) if "/shop/product/" in l]
+        if urls:
+            return urls
+    return []
+
+
+def _ch_parse_product(html):
+    """Every City Hive product page is server-rendered for SEO — JSON-LD Product + OpenGraph meta
+    carry the whole record (no session/browser). Pull name/price/size/store/image from them."""
+    def meta(*keys):
+        for k in keys:
+            m = re.search(r'<meta[^>]+(?:property|name)="%s"[^>]+content="([^"]*)"' % re.escape(k), html)
+            if m:
+                return _html.unescape(m.group(1))
+        return None
+    d = {}
+    for b in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', html, re.S):
+        try:
+            j = json.loads(b)
+            if j.get("@type") == "Product":
+                d["name"] = j.get("name"); break
+        except Exception:
+            pass
+    title = meta("og:title"); desc = meta("og:description", "description")
+    d["name"] = _html.unescape(d.get("name") or (title.split(" - ")[0].strip() if title else "") or "")
+    p = meta("product:price:amount")
+    try:
+        d["price"] = float(p) if p else None
+    except Exception:
+        d["price"] = None
+    d["pid"] = meta("ch:product:id"); d["image"] = meta("og:image") or ""
+    d["size_ml"] = _ch_ml(title) or _ch_ml(desc)
+    m = re.search(r"from .+? - (.+?) in ([^.]+)", desc or "")
+    if m:
+        d["store"] = m.group(1).strip(); d["store_loc"] = m.group(2).strip()
+    return d
+
+
+def _ch_ml(s):
+    m = re.search(r"([\d.]+)\s*(ml|l|lt|ltr|liter|litre|oz)\b", str(s or ""), re.I)
+    if not m:
+        return None
+    try:
+        v = float(m.group(1)); u = m.group(2).lower()
+        return round(v * (1000 if u.startswith("l") else (29.57 if u == "oz" else 1)))
+    except Exception:
+        return None
+
+
+def cityhive_catalog(base, key=None, max_products=None, workers=8, log=print):
+    """City Hive — the biggest independent-liquor platform (~2000 retailers). The widget's product API
+    is session-gated (browse_categories/render.json only ever serves ~49 curated homepage items), but the
+    store publishes its FULL catalog on the plain SEO surface: /sitemap.xml lists every product URL and each
+    product page is server-rendered with a JSON-LD Product + OpenGraph meta (name/price/size/store/image).
+    So we enumerate the sitemap and parse each page over BD Unlocker — no browser, no session, whole catalog.
+    `max_products` bounds the per-store fetch (None = full); parsing is concurrent."""
+    from concurrent.futures import ThreadPoolExecutor
+    key = key or _bd_key()
+    urls = _ch_sitemap_products(base, key, log=log)
+    if not urls:
+        log("  [cityhive] %s -> no sitemap product URLs (challenge or non-City-Hive store)" % base)
+        return []
+    total = len(urls)
+    if max_products:
+        urls = urls[:max_products]
+    log("  [cityhive] %s: %d products in sitemap%s" %
+        (base, total, "" if not max_products else " (fetching %d)" % len(urls)))
+
+    def fetch(u):
+        for _ in range(2):
             try:
-                for a in pg.query_selector_all("a[href*='/shop/'],a[href*='department'],a[href*='category']")[:10]:
-                    h = a.get_attribute("href")
-                    if h and h not in links:
-                        links.append(h)
+                d = _ch_parse_product(_unlock(u, key))
+                if d.get("name"):
+                    return d, u
             except Exception:
                 pass
-            for h in links[:6]:
-                try:
-                    pg.goto(h if h.startswith("http") else base.rstrip("/") + h, wait_until="domcontentloaded", timeout=60000)
-                    time.sleep(5)
-                    for _ in range(4):
-                        pg.mouse.wheel(0, 4000); time.sleep(2)
-                except Exception:
-                    pass
-        except Exception as e:
-            log("  [cityhive] nav %s" % str(e)[:60])
-        try:
-            br.close()
-        except Exception:
-            pass
-    out = []
-    for pr in prods.values():
-        sz = pr.get("size") or {}; ml = None
-        try:
-            q = float(sz.get("quantity")); u = (sz.get("measure") or "").lower()
-            ml = round(q * (1000 if u == "l" else (29.57 if u == "oz" else 1)))
-        except Exception:
-            pass
-        price = None
-        for m in (pr.get("merchants") or []):
-            for po in (m.get("product_options") or []):
-                price = po.get("price") or price
-        ap = pr.get("additional_properties") or {}
-        out.append(dict(name=pr.get("name", ""), brand="", price=price, sku=str(ap.get("sku", "")), upc="",
-                        size_ml=ml, category=", ".join(pr.get("basic_category") or pr.get("views") or [])))
-    log("  [cityhive] %s -> %d products" % (base, len(out)))
-    return out
+        return None, u
+    rows, done = [], 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for d, u in ex.map(fetch, urls):
+            done += 1
+            if done % 250 == 0:
+                log("  [cityhive]   %d/%d parsed, %d products" % (done, len(urls), len(rows)))
+            if not d:
+                continue
+            oid = _first(re.search(r"option-id=([0-9a-f]+)", u))
+            rows.append(dict(name=d["name"], brand="", price=d.get("price"),
+                             sku=d.get("pid") or "", upc="", size_ml=d.get("size_ml"),
+                             category="", store=d.get("store") or "", image=d.get("image") or "",
+                             option_id=oid or ""))
+    log("  [cityhive] %s -> %d products" % (base, len(rows)))
+    return rows
 
 
 def discover_stores(query, pages=4, log=print):
@@ -407,7 +429,9 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
                 sid = bottlecapps_store_id(s["base"], key)
                 items = bottlecapps_catalog(s["base"], sid, key, log=log) if sid else []
             elif "city hive" in plat or "cityhive" in plat:
-                items = cityhive_catalog(s["base"], key, log=log)
+                # bound per-store in a multi-store census sweep (full catalog can be thousands/store);
+                # a single-store pull (run()/CLI) goes full (max_products=None).
+                items = cityhive_catalog(s["base"], key, max_products=int(os.environ.get("CITYHIVE_MAX", "600")), log=log)
             else:
                 items = []
         except Exception as e:
