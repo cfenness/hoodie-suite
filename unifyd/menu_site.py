@@ -250,6 +250,70 @@ def extract_logo(home_html, base, key):
     return None, None
 
 
+# ── On-premise menu-platform census — the parallel to the off-premise platform census. For each restaurant,
+# detect the ordering/menu PLATFORM (structured -> a deterministic recipe) or an in-HTML menu (text-pullable),
+# so we only fall back to Claude VISION for the PDF/image/JS long tail. Prioritizes which menu recipes to build.
+_MENU_PLATFORMS = [
+    ("Toast", r"toasttab\.com|toast-embed|order\.toasttab|toast_online"),
+    ("Square", r"square\.site|squareup\.com|square-online|square-marketplace"),
+    ("Popmenu", r"popmenu"),
+    ("BentoBox", r"getbento|bentobox"),
+    ("Chownow", r"chownow"),
+    ("SpotHopper", r"spothopper"),
+    ("Menufy", r"menufy"),
+    ("Olo", r"\bolo\b|olocdn"),
+    ("Wix Restaurants", r"wixrestaurants|wix.{0,20}restaurant"),
+    ("OpenMenu", r"openmenu"),
+    ("SinglePlatform", r"singleplatform"),
+    ("UpMenu", r"upmenu"),
+]
+_SCHEMA_MENU = re.compile(r'"@type":\s*"(?:Menu|MenuItem|MenuSection)"', re.I)
+_MENU_PRICE = re.compile(r'\$\s?\d{1,3}(?:\.\d{2})?')
+
+
+def detect_menu(html):
+    """-> {menu_platform, has_schema_menu, html_menu, pullable, needs_vision}. pullable = a structured platform,
+    schema.org Menu, or an in-HTML priced menu (all deterministic). Else needs_vision (PDF/image/JS bespoke)."""
+    plat = next((n for n, p in _MENU_PLATFORMS if re.search(p, html or "", re.I)), "")
+    schema = bool(_SCHEMA_MENU.search(html or ""))
+    prices = len(_MENU_PRICE.findall(html or ""))
+    html_menu = prices >= 8 and bool(re.search(r"cocktail|margarita|entr[eé]e|appetiz|\bwine\b|\bbeer\b|draft", html or "", re.I))
+    pullable = bool(plat or schema or html_menu)
+    return {"menu_platform": plat, "has_schema_menu": schema, "html_menu": html_menu, "price_count": prices,
+            "pullable": pullable, "needs_vision": not pullable}
+
+
+def menu_census(market="orlando", near="Orlando FL", limit=None, log=print):
+    """Detect each on-premise restaurant's menu platform / pullability -> <market>_menu_census + the distribution
+    (which menu recipes to build vs. what needs Claude vision)."""
+    key = _bd_key()
+    rests = warehouse.query("%s_merchants" % market, "SELECT DISTINCT name FROM t WHERE type = 'restaurant'")
+    if limit:
+        rests = rests[:limit]
+    rows, run_id = [], "menucensus-" + time.strftime("%Y%m%d-%H%M%S")
+    for i, r in enumerate(rests):
+        site = discover_site(r["name"], near, key)
+        rec = dict(account=r["name"], website=site or "", market=market, run_id=run_id,
+                   menu_platform="", has_schema_menu=False, html_menu=False, pullable=False, needs_vision=True)
+        if site and not _SOCIAL.search(site):
+            try:
+                rec.update(detect_menu(_unlock(site, key)))
+            except Exception:
+                pass
+        rows.append(rec)
+        if (i + 1) % 20 == 0:
+            warehouse.write_parquet("%s_menu_census" % market, rows); log("  [menu-census] ...%d/%d" % (i + 1, len(rests)))
+        time.sleep(0.3)
+    warehouse.write_parquet("%s_menu_census" % market, rows)
+    from collections import Counter
+    plats = Counter(r["menu_platform"] for r in rows if r["menu_platform"])
+    pull = sum(1 for r in rows if r["pullable"])
+    log("[menu-census] %s: %d restaurants · %d pullable (%d schema, %d html-menu) · %d need vision · platforms %s"
+        % (market, len(rows), pull, sum(1 for r in rows if r["has_schema_menu"]),
+           sum(1 for r in rows if r["html_menu"]), sum(1 for r in rows if r["needs_vision"]), dict(plats.most_common())))
+    return rows
+
+
 def pull(name, site=None, near="Orlando FL", log=print):
     """Discover -> render (JS/image/PDF) -> Claude extract -> classify, AND capture the menu files (PDFs/
     screenshots) + the account logo for the menu-analytics corpus. Returns {beverages, files, logo} (no write)."""
