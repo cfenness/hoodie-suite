@@ -1504,6 +1504,71 @@ def market_onpremise_ep():
     return jsonify(ok=True, count=len(accts), accounts=accts, account=acct, beverages=bevs)
 
 
+# ── Master Matching Workbench: the canonical master = TTB items CONFIRMED to exist elsewhere. Drill from a
+# master record down to the COLA filings underneath it + the source that corroborated it (see: master_ttb.py).
+def _wq(ds, sql, params=None):
+    import warehouse
+    try:
+        return warehouse.query(ds, sql, params)
+    except Exception:
+        return []
+
+
+@app.get("/api/master/workbench/summary")
+def mwb_summary_ep():
+    from collections import Counter
+    master = _wq("ttb_master", "SELECT corroborated_by, confidence, member_count FROM t")
+    review = _wq("ttb_review", "SELECT count(*) n FROM t")
+    quar = _wq("ttb_quarantine_summary", "SELECT sum(candidates) n FROM t")
+    by = Counter(m.get("corroborated_by") for m in master)
+    return jsonify(ok=True, master=len(master),
+                   review=(review[0]["n"] if review else 0),
+                   quarantine=(quar[0]["n"] if quar and quar[0].get("n") else 0),
+                   collapsed=sum((m.get("member_count") or 0) for m in master),
+                   avg_confidence=round(sum((m.get("confidence") or 0) for m in master) / max(1, len(master)), 3),
+                   by_source=[{"source": k, "n": v} for k, v in by.most_common()])
+
+
+@app.get("/api/master/workbench/master")
+def mwb_master_ep():
+    q = (request.args.get("q") or "").strip().lower()
+    src = (request.args.get("source") or "").strip()
+    rows = _wq("ttb_master", "SELECT * FROM t")
+
+    def keep(m):
+        if src and m.get("corroborated_by") != src:
+            return False
+        if q and not any(q in (m.get(k) or "").lower() for k in ("brand", "fanciful", "class_type", "upc")):
+            return False
+        return True
+    rows = [m for m in rows if keep(m)]
+    rows.sort(key=lambda m: -(m.get("confidence") or 0))
+    return jsonify(ok=True, count=len(rows), items=rows[:600])
+
+
+@app.get("/api/master/workbench/item/<cid>")
+def mwb_item_ep(cid):
+    import json as _j
+    m = _wq("ttb_master", "SELECT * FROM t WHERE cluster_id = ?", [cid]) or \
+        _wq("ttb_review", "SELECT * FROM t WHERE cluster_id = ?", [cid])
+    if not m:
+        return jsonify(ok=False, error="not found"), 404
+    m = m[0]
+    ttbids = _j.loads(m.get("members") or "[]")
+    filings = []
+    if ttbids:
+        ph = ",".join("?" * len(ttbids))
+        filings = _wq("ttb_cola", 'SELECT "TTB ID","Brand Name","Fanciful Name","Class/Type","Net Contents",'
+                      '"Applicant","Status","Completed Date","UPC" FROM t WHERE "TTB ID" IN (%s)' % ph, ttbids)
+    return jsonify(ok=True, item=m, filings=filings)
+
+
+@app.get("/api/master/workbench/review")
+def mwb_review_ep():
+    rows = _wq("ttb_review", "SELECT * FROM t ORDER BY confidence DESC")
+    return jsonify(ok=True, count=len(rows), items=rows[:400])
+
+
 @app.post("/api/ingest/<dataset>")
 def ingest_ep(dataset):
     """The easy way to push data INTO Unifyd. Any script POSTs JSON records here (Bearer

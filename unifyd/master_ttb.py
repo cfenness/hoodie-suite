@@ -1,0 +1,90 @@
+"""master_ttb.py — promote TTB COLA items into the canonical master ONLY when confirmed to exist elsewhere.
+
+A TTB COLA filing is a label APPROVAL, not proof a product is on the market — millions are filed, many never
+ship. So COLA seeds Tier 0 (quarantine); an item lands in the master only when an INDEPENDENT market source
+(ABC, Total Wine, Binny's, on-premise menus, …) corroborates it. This assembles the market index from every
+product source we hold, runs cola_tiering.tier() (cluster label-iterations -> corroborate -> promote, healing
+the UPC on the way), and lands:
+  · ttb_master   — Tier 1: confirmed-elsewhere items = the canonical master, each with PROVENANCE (the COLA
+                   filings underneath + the corroborating source + confidence + healed UPC).
+  · ttb_review   — low-confidence matches for the workbench review queue.
+  · ttb_quarantine_summary — Tier 0 innovation radar (filed, unconfirmed) by supplier.
+
+    python master_ttb.py --cola 25000        # scope the COLA slice (newest first); omit for a bigger run
+"""
+import argparse, json, os, sys, time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import warehouse
+import cola_tiering as ct
+
+
+def load_market(log=print):
+    """Every product source -> normalized market rows {source, brand, name, size, upc}. DISTINCT collapses the
+    store x sku explosion (abc_products is 1.9M rows but far fewer distinct products)."""
+    rows = []
+
+    def add(ds, sql, src, brand_k, name_k, size_k):
+        try:
+            for r in warehouse.query(ds, sql):
+                nm = r.get(name_k)
+                if not nm:
+                    continue
+                rows.append({"source": src, "brand": (r.get(brand_k) or nm), "name": nm,
+                             "size": (r.get(size_k) or nm), "upc": r.get("upc") or ""})
+        except Exception as e:
+            log("  (skip %s: %s)" % (ds, str(e)[:40]))
+
+    add("abc_products", "SELECT DISTINCT brand, name FROM t WHERE name IS NOT NULL", "abc", "brand", "name", "name")
+    add("binnys_products", "SELECT DISTINCT brand, name FROM t WHERE name IS NOT NULL", "binnys", "brand", "name", "name")
+    add("totalwine_products_full", "SELECT DISTINCT name, total_size FROM t WHERE name IS NOT NULL", "totalwine", "name", "name", "total_size")
+    add("specs_products", "SELECT DISTINCT name FROM t WHERE name IS NOT NULL", "specs", "name", "name", "name")
+    add("kroger_products", "SELECT DISTINCT name, brand FROM t WHERE name IS NOT NULL", "kroger", "brand", "name", "name")
+    add("menu_beverages", "SELECT DISTINCT name FROM t WHERE name IS NOT NULL", "menu", "name", "name", "name")
+    log("[master] market index built from %d distinct product listings" % len(rows))
+    return rows
+
+
+def _master_row(cl):
+    cor = cl.get("corroboration", {})
+    return dict(cluster_id=cl["cluster_id"], brand=cl.get("brand", ""), fanciful=cl.get("fanciful", ""),
+                class_type=cl.get("class_type", ""), size_ml=cl.get("size_ml"), supplier=cl.get("supplier", ""),
+                upc=cl.get("upc", ""), corroborated_by=cor.get("source", ""), confidence=cor.get("confidence"),
+                match_kind=cor.get("match", ""), size_matched=cor.get("size_matched"),
+                member_count=cl.get("count", 0), members=json.dumps(cl.get("members", [])),
+                first_day=cl.get("first_day"), last_day=cl.get("last_day"), tier=1)
+
+
+def run(cola_limit=25000, threshold=0.65, log=print):
+    # 0.65 promotes a genuine brand-in-product-name match WITH a size match (0.7) or an exact-brand match (0.65).
+    # The library default (0.85) demands exact brand + size, which our current market coverage (TotalWine/Binny's/
+    # Spec's/menus — abc_products landed EMPTY name/brand, a pull bug to fix) rarely satisfies. Tunable upward as
+    # market coverage grows.
+    log("[master] loading COLA (newest %d) + market sources…" % cola_limit)
+    cola = warehouse.query("ttb_cola", 'SELECT * FROM t ORDER BY "Completed Date" DESC LIMIT %d' % cola_limit)
+    market = load_market(log)
+    res = ct.tier(cola, market, threshold=threshold)
+    s = res["summary"]
+    log("[master] %d clusters · %d CONFIRMED (Tier 1) · %d quarantine · %d review · promotion rate %.1f%%"
+        % (s["clusters"], s["tier1_confirmed"], s["tier0_quarantine"], s["review"], 100 * s["promotion_rate"]))
+
+    master = [_master_row(cl) for cl in res["tier1"]]
+    review = [dict(_master_row(cl), tier=0, review_reason=cl.get("review", "")) for cl in res["review"]]
+    if master:
+        warehouse.write_parquet("ttb_master", master)
+    if review:
+        warehouse.write_parquet("ttb_review", review)
+    warehouse.write_parquet("ttb_quarantine_summary",
+                            [dict(r, run_id="master-" + time.strftime("%Y%m%d-%H%M%S")) for r in res["innovation"][:200]])
+    # which sources are doing the confirming?
+    from collections import Counter
+    by_src = Counter(m["corroborated_by"] for m in master)
+    log("[master] confirmed-by source: %s" % dict(by_src.most_common()))
+    return {"master": len(master), "review": len(review), "summary": s}
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--cola", type=int, default=25000)
+    a = ap.parse_args()
+    print(json.dumps(run(cola_limit=a.cola)["summary"], indent=2))

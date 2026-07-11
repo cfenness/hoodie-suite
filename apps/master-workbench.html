@@ -1,0 +1,131 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Master Matching Workbench</title>
+<style>
+  :root{
+    --ink:#2B3138; --paper:#F1F3F5; --panel:#fff; --muted:#7A828B; --line:#E4E7EB;
+    --accent:#4E79A7; --accent-soft:#EAF0F6; --good:#3f9668; --gold:#9a7100; --bad:#c0563e;
+    --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --r:12px; --r-sm:8px;
+  }
+  @media (prefers-color-scheme:dark){:root{--ink:#E6E9EC;--paper:#15181C;--panel:#1E2227;--muted:#8A929B;--line:#2C323A;--accent:#7BA7D0;--accent-soft:#212B36}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.45}
+  .wrap{max-width:1340px;margin:0 auto;padding:20px 20px 50px}
+  header h1{font-size:21px;margin:0 0 3px}
+  header .sub{color:var(--muted);font-size:13px;margin-bottom:14px;max-width:720px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:11px;margin-bottom:14px}
+  .sc{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+  .sc b{font-size:23px;font-weight:700;display:block;line-height:1.05;font-variant-numeric:tabular-nums}
+  .sc span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .srcchips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+  .src{font-size:11.5px;background:var(--accent-soft);color:var(--accent);padding:3px 9px;border-radius:999px;cursor:pointer;border:1px solid transparent}
+  .src.on{border-color:var(--accent)}
+  .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:14px}
+  .tab{padding:8px 14px;font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab.on{color:var(--accent);border-color:var(--accent)}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  @media (max-width:900px){.split{grid-template-columns:1fr}}
+  .search{width:100%;max-width:420px;border:1px solid var(--line);border-radius:999px;padding:8px 14px;font:inherit;font-size:13.5px;background:var(--panel);color:var(--ink);outline:none;margin-bottom:10px}
+  .search:focus{border-color:var(--accent)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;padding:7px 9px;border-bottom:1px solid var(--line)}
+  td{padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tr.click{cursor:pointer} tr.click:hover{background:var(--accent-soft)} tr.sel{background:var(--accent-soft)}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:5px;background:var(--accent-soft);color:var(--accent)}
+  .conf{display:inline-block;min-width:38px;text-align:center;font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:5px}
+  .c-hi{background:#e8f4ea;color:var(--good)} .c-md{background:#fbf3e0;color:var(--gold)} .c-lo{background:#f6ecea;color:var(--bad)}
+  .detail{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:0;position:sticky;top:12px;overflow:hidden}
+  .dhead{padding:15px 17px;border-bottom:1px solid var(--line)}
+  .dhead .b{font-size:17px;font-weight:700}
+  .dhead .f{color:var(--muted);font-size:13px}
+  .dbody{padding:15px 17px}
+  .auto{background:var(--accent-soft);border-radius:var(--r-sm);padding:11px 13px;margin-bottom:12px}
+  .auto h4{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)}
+  .arow{display:flex;gap:9px;align-items:flex-start;margin:6px 0;font-size:13px}
+  .arow .ic{width:18px;flex:none;text-align:center}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px;margin-bottom:12px}
+  .kv .k{color:var(--muted)}
+  .undhd{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin:4px 0 6px}
+  .empty{color:var(--muted);text-align:center;padding:40px}
+  .count{color:var(--muted);font-size:12px}
+</style></head>
+<body><div class="wrap">
+<header>
+  <h1>Master Matching Workbench</h1>
+  <div class="sub">The canonical master is built from TTB COLA — but a label approval isn't proof a product ships. An item lands here <b>only when an independent market source confirms it exists</b>. Every record drills to the filings underneath it and the source that corroborated it.</div>
+</header>
+<div class="stats" id="stats"></div>
+<div class="srcchips" id="srcs"></div>
+<div class="tabs">
+  <div class="tab on" data-v="master">Master · confirmed</div>
+  <div class="tab" data-v="review">Review queue</div>
+</div>
+<div class="split">
+  <div><input class="search" id="q" placeholder="Filter by brand, fanciful name, class/type, UPC…"><div id="list"></div></div>
+  <div id="detail"></div>
+</div>
+</div>
+<script>
+const $=s=>document.querySelector(s), esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let VIEW='master', SRC='', Q='', SEL=null;
+async function api(p){ const r=await fetch(p,{cache:'no-store'}); if(!r.ok) throw 0; return r.json(); }
+function offline(){ $('#list').innerHTML='<div class="empty">Couldn’t reach the engine, or the corroboration run hasn’t landed yet (<code>python master_ttb.py</code>).</div>'; }
+const confCls=c=>c>=0.8?'c-hi':(c>=0.6?'c-md':'c-lo'), ml=n=>n?(n>=1000?(n/1000)+'L':n+'ml'):'—';
+
+function setTab(v){ VIEW=v; document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.v===v)); load(); }
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>setTab(t.dataset.v));
+
+async function boot(){
+  let s; try{ s=await api('/api/master/workbench/summary'); }catch(e){ return offline(); }
+  const sc=(b,sp)=>'<div class="sc"><b>'+b+'</b><span>'+sp+'</span></div>';
+  $('#stats').innerHTML=sc((s.master||0).toLocaleString(),'master items')
+    +sc((s.collapsed||0).toLocaleString(),'filings collapsed')
+    +sc(Math.round((s.avg_confidence||0)*100)+'%','avg confidence')
+    +sc((s.review||0).toLocaleString(),'in review')
+    +sc((s.quarantine||0).toLocaleString(),'quarantined');
+  $('#srcs').innerHTML='<span class="src'+(SRC===''?' on':'')+'" data-s="">all sources</span>'
+    +(s.by_source||[]).map(x=>'<span class="src'+(SRC===x.source?' on':'')+'" data-s="'+esc(x.source)+'">confirmed by '+esc(x.source)+' · '+x.n+'</span>').join('');
+  document.querySelectorAll('.src').forEach(c=>c.onclick=()=>{SRC=c.dataset.s;boot();load();});
+  load();
+}
+async function load(){
+  $('#list').innerHTML='<div class="empty">Loading…</div>';
+  const ep=VIEW==='master'?('/api/master/workbench/master?source='+encodeURIComponent(SRC)+(Q?'&q='+encodeURIComponent(Q):'')):'/api/master/workbench/review';
+  let d; try{ d=await api(ep); }catch(e){ return offline(); }
+  const items=d.items||[];
+  if(!items.length) return $('#list').innerHTML='<div class="empty">No '+VIEW+' items'+(Q?' match “'+esc(Q)+'”':'')+'.</div>';
+  $('#list').innerHTML='<div class="count" style="margin-bottom:8px">'+d.count.toLocaleString()+(VIEW==='master'?' confirmed master items':' items awaiting review')+'</div>'
+    +'<table><thead><tr><th>Brand / Fanciful</th><th>Class/Type</th><th>Size</th><th>Confirmed by</th><th>Conf</th></tr></thead><tbody>'
+    +items.map(m=>'<tr class="click" data-id="'+esc(m.cluster_id)+'"><td><b>'+esc(m.brand||'—')+'</b>'
+        +(m.fanciful?'<div class="count">'+esc(m.fanciful)+'</div>':'')
+        +(m.member_count>1?' <span class="pill">'+m.member_count+' filings</span>':'')+'</td>'
+      +'<td>'+esc((m.class_type||'').slice(0,26))+'</td><td class="mono">'+ml(m.size_ml)+'</td>'
+      +'<td>'+(m.corroborated_by?'<span class="pill">'+esc(m.corroborated_by)+'</span>':'—')+'</td>'
+      +'<td><span class="conf '+confCls(m.confidence)+'">'+Math.round((m.confidence||0)*100)+'</span></td></tr>').join('')
+    +'</tbody></table>';
+  document.querySelectorAll('[data-id]').forEach(r=>r.onclick=()=>{ document.querySelectorAll('tr.sel').forEach(x=>x.classList.remove('sel')); r.classList.add('sel'); openItem(r.dataset.id); });
+  if(items[0]) openItem(items[0].cluster_id);
+}
+async function openItem(cid){
+  SEL=cid; $('#detail').innerHTML='<div class="detail"><div class="dbody"><div class="empty">Loading…</div></div></div>';
+  let d; try{ d=await api('/api/master/workbench/item/'+encodeURIComponent(cid)); }catch(e){ return; }
+  const m=d.item, f=d.filings||[];
+  const conf=Math.round((m.confidence||0)*100);
+  const auto='<div class="auto"><h4>Value-adding automations</h4>'
+    +'<div class="arow"><span class="ic">🧬</span><div><b>Cluster collapse</b> — '+(m.member_count||1)+' label filing'+((m.member_count||1)==1?'':'s')+' recognized as one SKU (brand + fanciful + class + size + permit-holder within window), so label iterations don’t inflate the master.</div></div>'
+    +'<div class="arow"><span class="ic">'+(conf>=80?'✅':'⚠️')+'</span><div><b>Market corroboration</b> — confirmed present at <span class="pill">'+esc(m.corroborated_by||'—')+'</span> at <span class="conf '+confCls(m.confidence)+'">'+conf+'%</span> ('+esc(m.match_kind||'')+(m.size_matched?', size-matched':'')+'). This is why it’s in the master, not quarantine.</div></div>'
+    +'<div class="arow"><span class="ic">🔖</span><div><b>UPC heal</b> — '+(m.upc?('resolved to <span class="mono">'+esc(m.upc)+'</span> from the corroborating source'):'no UPC recovered yet')+'.</div></div></div>';
+  const kv='<div class="kv"><span class="k">Class/Type</span><span>'+esc(m.class_type||'—')+'</span>'
+    +'<span class="k">Size</span><span class="mono">'+ml(m.size_ml)+'</span>'
+    +'<span class="k">Supplier / permit</span><span>'+esc(m.supplier||'—')+'</span>'
+    +'<span class="k">Cluster</span><span class="mono">'+esc(m.cluster_id)+'</span></div>';
+  const und='<div class="undhd">Underlying COLA filings ('+f.length+') — the raw items inside this master record</div>'
+    +(f.length?'<div style="overflow-x:auto"><table><thead><tr><th>TTB ID</th><th>Fanciful</th><th>Applicant</th><th>Status</th><th>Date</th></tr></thead><tbody>'
+      +f.map(x=>'<tr><td class="mono">'+esc(x['TTB ID'])+'</td><td>'+esc(x['Fanciful Name']||'—')+'</td><td>'+esc((x['Applicant']||'').slice(0,26))+'</td><td>'+esc(x['Status']||'')+'</td><td class="mono">'+esc(x['Completed Date']||'')+'</td></tr>').join('')
+      +'</tbody></table></div>':'<div class="count">filings not loaded</div>');
+  $('#detail').innerHTML='<div class="detail"><div class="dhead"><div class="b">'+esc(m.brand||'—')+'</div><div class="f">'+esc(m.fanciful||m.class_type||'')+'</div></div><div class="dbody">'+auto+kv+und+'</div></div>';
+}
+let t; $('#q').oninput=e=>{ clearTimeout(t); Q=e.target.value.trim(); t=setTimeout(load,300); };
+boot();
+</script></body></html>
