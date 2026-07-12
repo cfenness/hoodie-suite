@@ -23,7 +23,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 
 _HOST = socket.gethostname().split(".")[0]
-FIELDS = ["run_id", "connId", "status", "host", "startedAt", "updatedAt", "finishedAt", "n", "total", "note"]
+FIELDS = ["run_id", "connId", "status", "host", "startedAt", "updatedAt", "progressedAt", "finishedAt",
+          "n", "total", "note"]
 
 
 class Run:
@@ -35,6 +36,7 @@ class Run:
         self.n = 0
         self.every = every
         self.started = int(time.time() * 1000)
+        self.progressed = self.started               # when n LAST advanced (heartbeat alone doesn't touch this)
         self._last = 0.0
         self._status = "running"
         self._write("running")
@@ -52,14 +54,19 @@ class Run:
         self._status = status
         now = int(time.time() * 1000)
         rec = dict(run_id=self.id, connId=self.conn_id, status=status, host=_HOST,
-                   startedAt=self.started, updatedAt=now, finishedAt=(now if finished else None),
-                   n=self.n, total=self.total, note=str(note)[:200])
+                   startedAt=self.started, updatedAt=now, progressedAt=self.progressed,
+                   finishedAt=(now if finished else None), n=self.n, total=self.total, note=str(note)[:200])
         try:
-            warehouse.write_accumulate("scrape_runs", [rec], key=lambda r: r["run_id"], fields=FIELDS)
+            # ONE FILE PER RUN — writing to a shared scrape_runs table would read-modify-write race with other
+            # runs (two crawls in one process clobber each other's heartbeat -> false 'stalled'). Per-run
+            # partitions never touch the same file. /api/jobs globs them.
+            warehouse.write_partition("scrape_runs", self.id, [rec], FIELDS)
         except Exception:
             pass
 
     def progress(self, n, total=None):
+        if n != self.n:
+            self.progressed = int(time.time() * 1000)   # real forward progress (distinct from a heartbeat)
         self.n = n
         if total is not None:
             self.total = total
