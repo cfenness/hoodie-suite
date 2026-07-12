@@ -661,8 +661,7 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
                        bev_category=b["category"], is_hemp=observe.is_hemp(it["name"]), run_id=run_id,
                        **dd._parse_pack(it["name"]))
             for k in _extra:
-                if it.get(k) not in (None, ""):
-                    rec[k] = it[k]
+                rec[k] = it.get(k)          # always set the key (None default) → consistent table schema
             rows.append(rec)
         log("  [off] %-26s (%s) -> %d products" % (s["account"][:26], s["platform"], len(items)))
     if rows:
