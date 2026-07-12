@@ -1,0 +1,142 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cluster Review — Ambiguous Merges</title>
+<style>
+:root{--bg:#f7f8fa;--panel:#fff;--panel-2:#f1f3f6;--ink:#1c2330;--muted:#5b6472;--faint:#95a0b0;--line:#e3e7ee;
+  --accent:#4E79A7;--accent-soft:#eaf0f7;--good:#3f9b6a;--good-soft:#e7f4ec;--warn:#c98a2b;--warn-soft:#f7efe0;
+  --bad:#c0503f;--bad-soft:#f6e7e4;--inset:#eef1f5}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1319;--panel:#161c25;--panel-2:#1b222d;--ink:#e7ecf3;
+  --muted:#9aa6b6;--faint:#66717f;--line:#28313d;--accent:#6b97c9;--accent-soft:#1c2836;--good:#4bb97f;
+  --good-soft:#152a20;--warn:#d69b45;--warn-soft:#2a2415;--bad:#d9705f;--bad-soft:#2b1a17;--inset:#1a212b}}
+:root[data-theme=dark]{--bg:#0f1319;--panel:#161c25;--panel-2:#1b222d;--ink:#e7ecf3;--muted:#9aa6b6;--faint:#66717f;
+  --line:#28313d;--accent:#6b97c9;--accent-soft:#1c2836;--good:#4bb97f;--good-soft:#152a20;--warn:#d69b45;
+  --warn-soft:#2a2415;--bad:#d9705f;--bad-soft:#2b1a17;--inset:#1a212b}
+:root[data-theme=light]{--bg:#f7f8fa;--panel:#fff;--panel-2:#f1f3f6;--ink:#1c2330;--muted:#5b6472;--faint:#95a0b0;
+  --line:#e3e7ee;--accent:#4E79A7;--accent-soft:#eaf0f7;--good:#3f9b6a;--good-soft:#e7f4ec;--warn:#c98a2b;
+  --warn-soft:#f7efe0;--bad:#c0503f;--bad-soft:#f6e7e4;--inset:#eef1f5}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:960px;margin:0 auto;padding:22px}
+h1{font-size:19px;margin:0 0 3px} .sub{color:var(--muted);font-size:13px;margin:0 0 16px;max-width:720px}
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+.bar input{flex:1;min-width:200px;padding:8px 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);
+  color:var(--ink);font-size:13px} .bar input:focus{outline:none;border-color:var(--accent)}
+.bar .stat{font-size:12.5px;color:var(--muted)} .bar .stat b{color:var(--ink)}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--panel);color:var(--muted);font-size:12.5px;padding:7px 12px;cursor:pointer}
+.seg button.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.cards{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.card.gone{opacity:0;transform:translateY(-6px);transition:.25s;pointer-events:none}
+.chd{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.nm{font-weight:650;font-size:15px} .br{color:var(--muted);font-size:12.5px}
+.pill{font-size:11px;padding:1px 8px;border-radius:20px;font-weight:600;margin-left:auto}
+.pill.call{background:var(--warn-soft);color:var(--warn)} .pill.easy{background:var(--good-soft);color:var(--good)}
+.why{font-size:12.5px;color:var(--muted);margin:6px 0 11px}
+.mem{display:grid;grid-template-columns:1fr auto auto;gap:2px 14px;align-items:center;
+  border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.mrow{display:contents}
+.mrow>div{padding:8px 12px;border-top:1px solid var(--line)}
+.mrow:first-child>div{border-top:0}
+.mrow .u{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+.mrow .u.none{color:var(--faint);font-style:italic;font-family:inherit}
+.mrow .u .dup{color:var(--bad);font-weight:600}
+.mrow .sc{font-size:12px;color:var(--muted);text-align:right;white-space:nowrap}
+.mrow .rw{font-size:12px;color:var(--muted);text-align:right;white-space:nowrap}
+.act{display:flex;gap:9px;margin-top:12px}
+.act button{border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:8px;
+  padding:8px 15px;font-size:13px;font-weight:600;cursor:pointer;transition:.12s}
+.act .merge:hover{border-color:var(--good);background:var(--good-soft);color:var(--good)}
+.act .keep:hover{border-color:var(--muted);background:var(--inset)}
+.act .flag{margin-left:auto;font-weight:500;color:var(--muted)}
+.empty{color:var(--muted);padding:48px 0;text-align:center}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);
+  padding:9px 16px;border-radius:9px;font-size:13px;opacity:0;transition:.2s;pointer-events:none}
+.toast.show{opacity:.95}
+</style>
+<div class="wrap">
+  <h1>Cluster Review — ambiguous merges</h1>
+  <p class="sub">SKUs that are the <b>same product, size &amp; pack</b> but split across different or missing UPCs — very
+    likely one sellable unit fractured by UPC noise. Decide <b>merge</b> (one SKU) or <b>keep separate</b>. Highest-impact
+    duplicates first. Decisions persist and collapse the master on the next rebuild.</p>
+  <div class="bar">
+    <input id="q" placeholder="Filter by product or brand…">
+    <div class="seg" id="seg">
+      <button data-f="all" class="on">All</button>
+      <button data-f="call">Real call</button>
+      <button data-f="easy">Clear merge</button>
+    </div>
+    <span class="stat" id="stat"></span>
+  </div>
+  <div class="cards" id="cards"><div class="empty">Loading…</div></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const API="/api/master/workbench";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let ALL=[], FILT="all", Q="";
+
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1600);}
+
+// normalize a UPC to its 12-digit core so shifted zero-padding / EAN-13 duplicates line up visibly
+function core(u){u=String(u||"").replace(/\D/g,"");if(u.length>12)u=u.slice(-12);return u.replace(/^0+/,"");}
+
+function render(){
+  let list=ALL.filter(m=>{
+    if(FILT==="call" && m.distinct_upc<2) return false;
+    if(FILT==="easy" && m.distinct_upc>=2) return false;
+    if(Q){const s=(m.name+" "+m.brand).toLowerCase();if(!s.includes(Q))return false;}
+    return true;
+  });
+  $("#stat").innerHTML=`<b>${list.length}</b> group${list.length===1?"":"s"} · <b>${ALL.length}</b> total`;
+  if(!list.length){$("#cards").innerHTML='<div class="empty">Nothing to review here. 🎉</div>';return;}
+  $("#cards").innerHTML=list.map(m=>{
+    // mark UPC cores that repeat across members (the tell-tale duplicate)
+    const cores={};(m.members||[]).forEach(x=>{const c=core(x.upc);if(c)cores[c]=(cores[c]||0)+1;});
+    const rows=(m.members||[]).map(x=>{
+      const c=core(x.upc), dup=c&&cores[c]>1;
+      const u=x.upc?`<span class="u${dup?'':''}">${dup?'<span class="dup">':''}${esc(x.upc)}${dup?'</span>':''}</span>`
+                   :`<span class="u none">no UPC</span>`;
+      return `<div class="mrow"><div>${u}</div><div class="sc">${x.sources} source${x.sources===1?"":"s"}</div>`
+           + `<div class="rw">${x.source_rows} row${x.source_rows===1?"":"s"}</div></div>`;
+    }).join("");
+    const call=m.distinct_upc>=2;
+    return `<div class="card" id="c_${esc(m.merge_id)}">
+      <div class="chd"><span class="nm">${esc(m.name)}</span><span class="br">${esc(m.brand)}</span>
+        <span class="pill ${call?'call':'easy'}">${call?m.distinct_upc+' UPCs — real call':'likely one SKU'}</span></div>
+      <div class="why">${esc(m.reason)} · ${m.n_skus} SKUs · ${m.total_rows} source rows</div>
+      <div class="mem">${rows}</div>
+      <div class="act">
+        <button class="merge" onclick="decide('${esc(m.merge_id)}','merge',this)">✓ Merge — one SKU</button>
+        <button class="keep" onclick="decide('${esc(m.merge_id)}','keep_separate',this)">Keep separate</button>
+      </div></div>`;
+  }).join("");
+}
+
+async function decide(id,action,btn){
+  btn.disabled=true;
+  const card=$("#c_"+CSS.escape(id));
+  try{
+    const r=await fetch(API+"/merge",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({merge_id:id,action})}).then(r=>r.json());
+    if(!r.ok)throw 0;
+    ALL=ALL.filter(m=>m.merge_id!==id);
+    if(card){card.classList.add("gone");setTimeout(render,240);}else render();
+    toast(action==="merge"?"Merged ✓":"Kept separate");
+  }catch(e){btn.disabled=false;toast("Couldn't save — is the engine up?");}
+}
+
+async function load(){
+  const r=await fetch(API+"/merges").then(r=>r.json()).catch(()=>null);
+  if(!r||!r.ok){$("#cards").innerHTML='<div class="empty">Master engine not reachable.</div>';return;}
+  ALL=r.merges||[];
+  if(!ALL.length && r.note){$("#cards").innerHTML=`<div class="empty">${esc(r.note)}</div>`;return;}
+  render();
+}
+$("#q").oninput=e=>{Q=e.target.value.trim().toLowerCase();render();};
+$("#seg").onclick=e=>{const b=e.target.closest("button");if(!b)return;
+  [...$("#seg").children].forEach(x=>x.classList.remove("on"));b.classList.add("on");FILT=b.dataset.f;render();};
+load();
+</script>

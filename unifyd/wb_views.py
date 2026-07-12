@@ -36,6 +36,59 @@ def _rows(con, sql):
     return [dict(zip(cols, r)) for r in cur.fetchall()]
 
 
+def _size_label(v):
+    if not v:
+        return ""
+    try:
+        v = float(v)
+    except Exception:
+        return ""
+    return ("%gL" % (v / 1000.0)) if v >= 1000 else ("%gml" % v)
+
+
+def build_merges(con, log=print):
+    """Ambiguous MERGE groups for the cluster-review page: SKUs that are the SAME product + size + pack but
+    split across DIFFERENT/missing UPCs — i.e. very likely one sellable unit fractured by UPC noise. Grouping
+    by (item_key, pack) isolates exactly that (same item = same product+size; same pack = same unit; the only
+    thing left differing is the UPC). Distinct-UPC count drives confidence + whether it's a clear merge or a
+    genuine judgement call. Prioritized by total source rows (impact). -> wb_merges."""
+    MERGE = ("SELECT s.item_key, s.pack, b.brand, p.product_name, i.size_ml, i.container, "
+             "count(*) n_skus, sum(s.source_rows) total_rows, list(s.sku_key) sku_keys, list(s.upc) upcs, "
+             "list(s.sources) src_counts, list(s.source_list) src_lists, list(s.source_rows) row_counts "
+             "FROM dim_sku s LEFT JOIN dim_item i ON s.item_key = i.item_key "
+             "LEFT JOIN dim_product p ON i.product_key = p.product_key "
+             "LEFT JOIN dim_brand b ON p.brand_key = b.brand_key "
+             "GROUP BY s.item_key, s.pack, b.brand, p.product_name, i.size_ml, i.container "
+             "HAVING count(*) > 1 ORDER BY total_rows DESC LIMIT %d" % CAP)
+    out = []
+    for g in _rows(con, MERGE):
+        skus, upcs = g["sku_keys"], g["upcs"]
+        srcc, srcl, rowc = g["src_counts"], g["src_lists"], g["row_counts"]
+        members = []
+        for k in range(len(skus)):
+            members.append({"sku_key": skus[k], "upc": (upcs[k] or ""), "sources": srcc[k],
+                            "source_list": list(srcl[k]) if srcl[k] is not None else [],
+                            "source_rows": rowc[k]})
+        distinct_upc = len({m["upc"] for m in members if m["upc"]})
+        conf = 0.92 if distinct_upc <= 1 else (0.6 if distinct_upc == 2 else 0.42)
+        reason = ("Same product / size / pack; UPC missing on some — almost certainly one SKU."
+                  if distinct_upc <= 1 else
+                  "Same product / size / pack but %d different UPCs — a real merge call." % distinct_upc)
+        pk = ("×%s" % g["pack"]) if (g["pack"] and str(g["pack"]) not in ("1", "1.0", "")) else ""
+        name = " · ".join(x for x in [(g["product_name"] or "").strip(), _size_label(g["size_ml"]),
+                                      (g["container"] or ""), pk] if x) or "(unnamed)"
+        out.append({"merge_id": "%s|%s" % (g["item_key"], g["pack"] or ""), "item_key": g["item_key"],
+                    "pack": str(g["pack"] or ""), "brand": g["brand"] or "", "name": name,
+                    "size_ml": g["size_ml"], "n_skus": g["n_skus"], "total_rows": g["total_rows"],
+                    "distinct_upc": distinct_upc, "confidence": conf, "reason": reason,
+                    "members": json.dumps(members)})
+    warehouse.write_parquet("wb_merges", out,
+                            fields=["merge_id", "item_key", "pack", "brand", "name", "size_ml", "n_skus",
+                                    "total_rows", "distinct_upc", "confidence", "reason", "members"])
+    log("[wb_views] wb_merges=%d ambiguous merge groups" % len(out))
+    return len(out)
+
+
 def build(log=print):
     con = warehouse.connect()
     for t in ("dim_sku", "dim_item", "dim_product", "dim_brand", "_stage_product"):
@@ -58,9 +111,10 @@ def build(log=print):
     warehouse.write_parquet("wb_summary", [{"total": agg["total"], "multi": agg["multi"] or 0,
                                             "source_rows": src_rows, "by_source": json.dumps(by)}],
                             fields=["total", "multi", "source_rows", "by_source"])
-    log("[wb_views] wb_master=%d · wb_queue=%d (cap %d) · total=%d multi=%d"
-        % (len(master), len(queue), CAP, agg["total"], agg["multi"] or 0))
-    return {"wb_master": len(master), "wb_queue": len(queue), "total": agg["total"]}
+    merges = build_merges(con, log=log)
+    log("[wb_views] wb_master=%d · wb_queue=%d (cap %d) · total=%d multi=%d · wb_merges=%d"
+        % (len(master), len(queue), CAP, agg["total"], agg["multi"] or 0, merges))
+    return {"wb_master": len(master), "wb_queue": len(queue), "wb_merges": merges, "total": agg["total"]}
 
 
 if __name__ == "__main__":

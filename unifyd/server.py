@@ -2029,6 +2029,53 @@ def mwb_review_ep():
     return jsonify(ok=True, count=len(out), items=out)
 
 
+@app.get("/api/master/workbench/merges")
+def mwb_merges_ep():
+    """Ambiguous MERGE groups for the cluster-review page — SKUs that are the same product+size+pack split
+    across different/missing UPCs (the 'one unit fractured by UPC noise' duplicates). From the pre-computed
+    wb_merges view; groups already decided (merge / keep-separate) drop out. Prioritized by impact (rows)."""
+    q = (request.args.get("q") or "").strip().lower()
+    view = _wb_view("wb_merges")
+    if view is None:
+        return jsonify(ok=True, count=0, merges=[], note="wb_merges not built yet — runs on the next master rebuild")
+    decided = {d.get("cluster_id") for d in _wq("master_decisions", "SELECT cluster_id, action FROM t")
+               if d.get("action") in ("merge", "keep_separate")}
+    out = []
+    for r in view:
+        if r["merge_id"] in decided:
+            continue
+        if q and q not in (r.get("name") or "").lower() and q not in (r.get("brand") or "").lower():
+            continue
+        m = dict(r)
+        try:
+            m["members"] = json.loads(r.get("members") or "[]")
+        except Exception:
+            m["members"] = []
+        out.append(m)
+    out.sort(key=lambda x: -(x.get("total_rows") or 0))        # highest-impact duplicates first
+    return jsonify(ok=True, count=len(out), merges=out[:400])
+
+
+@app.post("/api/master/workbench/merge")
+def mwb_merge_decide_ep():
+    """Record a cluster-review decision — 'merge' (these SKUs are one) or 'keep_separate' (genuinely distinct).
+    Persists to master_decisions (keyed by merge_id) so the group leaves the review list; the master collapses
+    merged SKUs on the next rebuild that consumes these decisions."""
+    import time as _t
+    import warehouse
+    d = request.get_json(silent=True) or {}
+    mid = (d.get("merge_id") or "").strip()
+    action = (d.get("action") or "").strip()
+    if not mid or action not in ("merge", "keep_separate"):
+        return jsonify(ok=False, error="merge_id + action (merge|keep_separate) required"), 400
+    dec = dict(cluster_id=mid, action=action, tier="merge-review", note=(d.get("note") or "")[:200],
+               matched_name=(d.get("name") or "")[:120], steward=(d.get("steward") or "cluster-review"),
+               ts=int(_t.time()))
+    existing = [e for e in _wq("master_decisions", "SELECT * FROM t") if e.get("cluster_id") != mid]
+    warehouse.write_parquet("master_decisions", existing + [dec])
+    return jsonify(ok=True, merge_id=mid, action=action)
+
+
 @app.post("/api/master/workbench/match")
 def mwb_match_ep():
     """Human tier of the cascade — a steward confirms or rejects a candidate the automations + Claude couldn't.
