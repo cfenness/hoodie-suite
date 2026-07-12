@@ -111,17 +111,34 @@ def bigcommerce_ids(base, key, max_pages=40, log=print):
 
 
 def bigcommerce_product(url, key):
-    """og:title + og:price:amount + sku from the SERVER HTML (no JS). -> dict or None (self-reports drift)."""
+    """Take EVERYTHING off the SERVER HTML (no JS): og tags + the schema.org Product JSON-LD (brand /
+    description / sku / gtin / category / image). -> dict or None (self-reports drift)."""
     p = _fetch(url, key)
     name = _first(_BC_TITLE.search(p))
-    pm = _BC_PRICE.search(p)
-    price = float(pm.group(1)) if pm else None
     if not name:
         return None
+    ld = _jsonld_product(p)
+
+    def meta(*keys):
+        for k in keys:
+            m = re.search(r'<meta[^>]+(?:property|name)="%s"[^>]+content="([^"]*)"' % re.escape(k), p)
+            if m:
+                return _html.unescape(m.group(1))
+        return ""
+    pm = _BC_PRICE.search(p)
+    offers = ld.get("offers") if isinstance(ld.get("offers"), dict) else (ld.get("offers") or [{}])[0] if ld.get("offers") else {}
+    price = (float(pm.group(1)) if pm else None) or _num(offers.get("price"))
     im = _BC_INSTOCK.search(p)
     instock = (im.group(1) == "true" or bool(im.group(2))) if im else None
-    return {"name": _html.unescape(name).strip(), "price": price, "sku": _first(_BC_SKU.search(p)) or "",
-            "in_stock": instock, "url": url}
+    sku = _first(_BC_SKU.search(p)) or str(ld.get("sku") or "")
+    gtin = str(ld.get("gtin13") or ld.get("gtin12") or ld.get("gtin") or "").strip()
+    upc = next((x for x in (gtin, sku) if re.fullmatch(r"\d{8,14}", x or "")), "")
+    return {"name": _html.unescape(name).strip(), "price": price, "brand": _ld_str(ld.get("brand")),
+            "sku": sku, "upc": upc, "item_code": str(ld.get("productID") or ld.get("mpn") or ""),
+            "in_stock": instock, "category": _ld_str(ld.get("category")),
+            "description": _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", ld.get("description") or meta("og:description") or ""))).strip()[:2000],
+            "image": _ld_str(ld.get("image")) or meta("og:image"), "url": url,
+            "raw_json": json.dumps(ld, separators=(",", ":"))[:6000] if ld else ""}
 
 
 _RECIPES = {"bigcommerce": (bigcommerce_ids, bigcommerce_product)}
@@ -420,32 +437,55 @@ def _ch_sitemap_products(base, key, log=print):
     return []
 
 
+def _jsonld_product(html):
+    """The schema.org Product JSON-LD off a server-rendered page — the richest single structured blob
+    (name/brand/description/sku/gtin/category/offers). Shared by BigCommerce + City Hive."""
+    for b in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', html, re.S):
+        try:
+            j = json.loads(b)
+        except Exception:
+            continue
+        for d in (j if isinstance(j, list) else [j]):
+            t = d.get("@type") if isinstance(d, dict) else None
+            if t == "Product" or (isinstance(t, list) and "Product" in t):
+                return d
+    return {}
+
+
+def _ld_str(v):
+    if isinstance(v, dict):
+        return v.get("name") or ""
+    if isinstance(v, list):
+        return _ld_str(v[0]) if v else ""
+    return v or ""
+
+
 def _ch_parse_product(html):
-    """Every City Hive product page is server-rendered for SEO — JSON-LD Product + OpenGraph meta
-    carry the whole record (no session/browser). Pull name/price/size/store/image from them."""
+    """Every City Hive product page is server-rendered for SEO — take EVERYTHING off the JSON-LD Product +
+    OpenGraph meta (name/brand/price/size/category/description/upc/store/image), not just name+price."""
     def meta(*keys):
         for k in keys:
             m = re.search(r'<meta[^>]+(?:property|name)="%s"[^>]+content="([^"]*)"' % re.escape(k), html)
             if m:
                 return _html.unescape(m.group(1))
         return None
+    ld = _jsonld_product(html)
     d = {}
-    for b in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', html, re.S):
-        try:
-            j = json.loads(b)
-            if j.get("@type") == "Product":
-                d["name"] = j.get("name"); break
-        except Exception:
-            pass
     title = meta("og:title"); desc = meta("og:description", "description")
-    d["name"] = _html.unescape(d.get("name") or (title.split(" - ")[0].strip() if title else "") or "")
+    d["name"] = _html.unescape(ld.get("name") or (title.split(" - ")[0].strip() if title else "") or "")
     p = meta("product:price:amount")
     try:
-        d["price"] = float(p) if p else None
+        d["price"] = float(p) if p else _num(_ld_str((ld.get("offers") or {}).get("price") if isinstance(ld.get("offers"), dict) else None))
     except Exception:
         d["price"] = None
-    d["pid"] = meta("ch:product:id"); d["image"] = meta("og:image") or ""
+    d["pid"] = meta("ch:product:id"); d["image"] = _ld_str(ld.get("image")) or meta("og:image") or ""
     d["size_ml"] = _ch_ml(title) or _ch_ml(desc)
+    d["brand"] = _ld_str(ld.get("brand"))
+    d["category"] = _ld_str(ld.get("category")) or (meta("product:category") or "")
+    gtin = str(ld.get("gtin13") or ld.get("gtin12") or ld.get("gtin") or "").strip()
+    d["upc"] = gtin if re.fullmatch(r"\d{8,14}", gtin) else ""
+    d["sku"] = str(ld.get("sku") or "")
+    d["description"] = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", ld.get("description") or ""))).strip()[:2000]
     m = re.search(r"from .+? - (.+?) in ([^.]+)", desc or "")
     if m:
         d["store"] = m.group(1).strip(); d["store_loc"] = m.group(2).strip()
@@ -500,10 +540,11 @@ def cityhive_catalog(base, key=None, max_products=None, workers=8, log=print):
             if not d:
                 continue
             oid = _first(re.search(r"option-id=([0-9a-f]+)", u))
-            rows.append(dict(name=d["name"], brand="", price=d.get("price"),
-                             sku=d.get("pid") or "", upc="", size_ml=d.get("size_ml"),
-                             category="", store=d.get("store") or "", image=d.get("image") or "",
-                             option_id=oid or ""))
+            rows.append(dict(name=d["name"], brand=d.get("brand") or "", price=d.get("price"),
+                             sku=d.get("sku") or d.get("pid") or "", upc=d.get("upc") or "",
+                             size_ml=d.get("size_ml"), category=d.get("category") or "",
+                             description=d.get("description") or "", store=d.get("store") or "",
+                             image=d.get("image") or "", option_id=oid or ""))
     log("  [cityhive] %s -> %d products" % (base, len(rows)))
     return rows
 
