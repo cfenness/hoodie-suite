@@ -30,6 +30,8 @@ h1{font-size:19px;margin:0} .live{font-size:12px;color:var(--muted)}
 .conn{font-weight:680;font-size:14.5px} .pill{font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.03em}
 .pill.running{background:var(--accent-soft);color:var(--run)} .pill.success{background:var(--good-soft);color:var(--good)}
 .pill.error,.pill.degraded{background:var(--bad-soft);color:var(--bad)}
+.pill.paced,.pill.stalled{background:rgba(201,138,43,.14);color:var(--warn)}
+.job.paced{border-color:var(--warn);box-shadow:0 0 0 3px rgba(201,138,43,.12)}
 .spacer{flex:1} .el{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 .bar{height:8px;background:var(--inset);border-radius:5px;overflow:hidden;margin:9px 0 7px}
 .bar i{display:block;height:100%;background:var(--run);border-radius:5px;transition:width .5s}
@@ -58,21 +60,25 @@ async function tick(){
   $("#live").innerHTML=`<span class="dot ${d.active?'on':''}"></span>${d.active} running · ${d.jobs.length} recent`;
   if(!d.jobs.length){ $("#list").innerHTML='<div class="empty">No runs yet. Kick one off from Pulls.</div>'; return; }
   $("#list").innerHTML=d.jobs.map(j=>{
-    const run=j.status==="running";
+    const paced=j.status==="paced";
+    const run=(j.status==="running"||paced);
     const known=j.pct!=null;
-    const bar= run&&!known ? '<div class="bar indet"><i></i></div>'
-             : `<div class="bar"><i style="width:${j.pct!=null?j.pct:(run?0:100)}%"></i></div>`;
-    const rate=j.ratePerSec?`<span><b>${j.ratePerSec.toLocaleString()}</b>/s</span>`:"";
+    const spin=j.status==="running"&&!known;           // spinner only when actively moving (not paced)
+    const bar= spin ? '<div class="bar indet"><i></i></div>'
+             : `<div class="bar"><i style="width:${j.pct!=null?j.pct:(run?15:100)}%"></i></div>`;
+    const rt=j.ratePerSec||j.rate; const rate=rt?`<span><b>${rt.toLocaleString()}</b>/s</span>`:"";
     const eta=(run&&j.etaMs!=null)?`<span>ETA <b>${dur(j.etaMs)}</b></span>`:"";
-    const prog=known?`<span><b>${fmt(j.current)}</b> / ${fmt(j.total)}${j.pct!=null?` · ${j.pct}%`:""}</span>`
+    const cur=(j.current!=null)?j.current:j.done;
+    const prog=known?`<span><b>${fmt(cur)}</b> / ${fmt(j.total)}${j.pct!=null?` · ${j.pct}%`:""}</span>`
              :(j.landed!=null?`<span><b>${fmt(j.landed)}</b> landed</span>`:"");
-    return `<div class="job ${run?'running':''}">
+    return `<div class="job ${run?'running':''}${paced?' paced':''}">
       <div class="jr1"><span class="conn">${esc(j.connId)}</span>
-        <span class="pill ${j.status}">${esc(j.status)}</span>
+        <span class="pill ${j.status}">${paced?'polite pace':esc(j.status)}</span>
         <span class="spacer"></span><span class="el">${dur(j.elapsedMs)}</span></div>
       ${bar}
       <div class="stats">${prog}${rate}${eta}</div>
-      ${run&&j.lastMsg?`<div class="stage">▸ ${esc(j.lastMsg)}</div>`:""}
+      ${paced?'<div class="stage">▸ politely rate-limited — alive, just pacing to stay under the crawl limit</div>'
+             :(run&&j.lastMsg?`<div class="stage">▸ ${esc(j.lastMsg)}</div>`:"")}
       ${j.error?`<div class="err">✕ ${esc(j.error)}</div>`:""}
     </div>`;
   }).join("");

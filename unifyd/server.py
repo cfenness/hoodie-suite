@@ -3862,20 +3862,26 @@ def jobs_ep():
         out.append(dict(id=jid, connId=job["connId"], status=job["status"], startedAt=job["startedAt"],
                         finishedAt=job.get("finishedAt"), elapsedMs=(job.get("finishedAt") or now) - job["startedAt"],
                         error=job.get("error"), landed=(job.get("run") or {}).get("total"), **p))
-    # runs registered via runlog (scrapes that run OFF the server box — laptops, crons, batch sweeps)
+    # runs registered via runlog (scrapes that run OFF the server box — laptops, crons, batch sweeps). One file
+    # per run (glob), so concurrent runs don't clobber each other's heartbeat.
     try:
-        rows = _wq("scrape_runs", "SELECT * FROM t WHERE updatedAt >= ? ORDER BY startedAt DESC LIMIT 40",
-                   [now - 24 * 3600 * 1000])
+        import warehouse as _wh
+        rows = _wh.query_parts("scrape_runs", "SELECT * FROM t WHERE updatedAt >= ? ORDER BY startedAt DESC "
+                               "LIMIT 40", [now - 24 * 3600 * 1000])
         seen = {j["id"] for j in out}
         for r in rows:
             if r.get("run_id") in seen:
                 continue
             n, tot = r.get("n") or 0, r.get("total")
             elapsed = (r.get("finishedAt") or r.get("updatedAt") or now) - (r.get("startedAt") or now)
-            # a run whose updatedAt is stale (>3 min) but still 'running' is almost certainly dead
             status = r.get("status")
-            if status == "running" and (now - (r.get("updatedAt") or now)) > 180000:
-                status = "stalled"
+            hb_age = now - (r.get("updatedAt") or now)             # since last heartbeat
+            prog_age = now - (r.get("progressedAt") or r.get("updatedAt") or now)   # since n last advanced
+            if status == "running":
+                if hb_age > 180000:
+                    status = "stalled"                             # no heartbeat = the process died/hung
+                elif prog_age > 90000:
+                    status = "paced"                               # alive + heartbeating, just politely throttled
             rate = (n / (elapsed / 1000.0)) if (elapsed > 0 and n) else None
             eta = ((tot - n) / rate * 1000) if (rate and tot and tot > n) else None
             out.append(dict(id=r.get("run_id"), connId=r.get("connId"), status=status,
@@ -3886,7 +3892,7 @@ def jobs_ep():
     except Exception:
         pass
     out.sort(key=lambda j: -(j.get("startedAt") or 0))
-    return jsonify(ok=True, active=sum(1 for j in out if j.get("status") == "running"), jobs=out[:40])
+    return jsonify(ok=True, active=sum(1 for j in out if j.get("status") in ("running", "paced")), jobs=out[:40])
 
 
 @app.post("/api/analyze")
