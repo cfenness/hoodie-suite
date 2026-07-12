@@ -49,7 +49,8 @@ _CFG = {
     # TTB COLA — the federal label registry = the historical backbone (~1M bottle+vintage records). Pre-joined
     # (detail + labels) + deduped in ttb_products; brand extracted from the name via the dictionary; vintage →
     # dim_vintage aux (bottles don't split by vintage). All alcohol, so no bev-alc filter.
-    "ttb_products": dict(name="name", cat="category", origin="origin", size="net_contents", vintage="vintage", upc="upc"),
+    "ttb_products": dict(name="name", brand="brand_name", cat="category", origin="origin", size="net_contents",
+                         vintage="vintage", upc="upc"),
 
     "or_pricing": dict(name="description", size="size", cat="category", proof="proof"),
     "me_pricing": dict(name="Description", size="Size", upc="UPC", proof="Proof", cat="Product Category"),
@@ -94,7 +95,9 @@ def build_brand_dict(log=print):
 
 def resolve_brand(name, by1, clean=None):
     if clean and str(clean).strip():
-        return str(clean).strip()
+        c = str(clean).strip()
+        return c.title() if c.isupper() else c        # TTB brand_name is ALL-CAPS -> readable display
+
     toks = re.findall(r"[A-Za-z0-9'&.\-]+", (name or "").strip())
     if not toks:
         return None
@@ -175,6 +178,34 @@ def _core_key(name):
     return frozenset(t for t in _tokset(name) if not _DESC_TOK.match(t) and t not in _CATEGORY_TOK)
 
 
+def _ncmp(s):
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def _canon_product_name(brand, name_counter, rows):
+    """Enforce consistent verbiage: the product reads as 'Brand + type/flavor' (New Amsterdam -> New Amsterdam
+    Vodka). Prefer the CONSENSUS source name that already leads with the brand; ensure it's brand-prefixed; and
+    if a product resolves to just the bare brand, append its beverage type so the flagship still names itself."""
+    ranked = sorted(name_counter.items(), key=lambda kv: (-kv[1], -len(_tokset(kv[0])), len(kv[0])))
+    bl = _ncmp(brand)
+    canon = next((n for n, _ in ranked if bl and _ncmp(n).startswith(bl)), None) or ranked[0][0]
+    if brand and not _ncmp(canon).startswith(bl):                 # not brand-led -> prepend the brand
+        canon = ("%s %s" % (brand, canon)).strip()
+    if brand and _ncmp(canon) == bl:                              # resolved to the bare brand -> add its type
+        types = collections.Counter()
+        for n, c in name_counter.items():
+            for t in _tokset(n):
+                if t in _CATEGORY_TOK:
+                    types[t] += c
+        for r in rows:
+            for t in _tokset(r.get("category")):
+                if t in _CATEGORY_TOK:
+                    types[t] += 1
+        if types:
+            canon = "%s %s" % (brand, types.most_common(1)[0][0].title())
+    return canon
+
+
 def canonicalize(staged, log=print):
     """Fold product-name variants to ONE canonical string per (brand, significant-core) so the same product
     corroborates across sources. Groups by the core-key (identity tokens, minus size/proof/vintage remnants and
@@ -192,9 +223,8 @@ def canonicalize(staged, log=print):
         names.pop("", None)
         if not names:
             continue
-        # canonical display: fewest signature tokens (the base product, not a descriptor variant), then most
-        # common, then shortest — so "Plymouth Gin" wins over "Plymouth Gin 82P".
-        canon = sorted(names.items(), key=lambda kv: (len(_tokset(kv[0])), -kv[1], len(kv[0])))[0][0]
+        # canonical display: enforced verbiage — 'Brand + type/flavor', from the cross-source consensus.
+        canon = _canon_product_name(rows[0].get("brand"), names, rows)
         if len(names) > 1:
             folded += len(names) - 1
         for r in rows:
