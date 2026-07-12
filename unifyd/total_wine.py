@@ -15,7 +15,7 @@ master by brand+name+size, not the UPC spine. Pages are ~1MB, so a full crawl is
 `cap` bounds a run. PerimeterX could tighten the mobile-UA gap — stay polite (delay) and watch for 403.
 stdlib only. Same (datasets,[run],movement) contract as the other owned connectors.
 """
-import argparse, hashlib, json, os, re, sys, time, urllib.request, urllib.error
+import argparse, hashlib, json, os, random, re, sys, time, urllib.request, urllib.error
 
 MOBILE_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
              "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
@@ -147,6 +147,79 @@ def pull(cap=400, delay=1.0, out=".", state_dir=None, log=print):
     return ds, [run], {"sampled": len(cur), "changed": changed}
 
 
+def _price(v):
+    try:
+        return float(re.sub(r"[^0-9.]", "", str(v or "")).strip(".")) or None
+    except Exception:
+        return None
+
+
+def crawl_land(cap=200000, delay=0.0, workers=4, out="agent_state/total_wine", log=print):
+    """FULL catalog crawl that LANDS rich dict records to the warehouse table `total_wine_products` — the table
+    the master reads. Unlike pull() (the connector contract, returns a dataset dict), this persists every field
+    the page structures: brand/name/size/price/category/image + the attributes geo (varietal/origin/region/
+    sub_region/appellation/style/abv). Direct mobile-UA fetch (no BD). Concurrent + incrementally checkpointed
+    via write_accumulate(key=sku) so a long crawl is safe and resumable."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import warehouse
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    os.makedirs(out, exist_ok=True)
+    urls = product_urls(cap, log)
+    if not urls:
+        log("total-wine: no product URLs (sitemap or mobile-UA path changed)"); return 0
+    run_id = "tw-" + time.strftime("%Y%m%d-%H%M%S")
+    landed = {"n": 0}; blocked = {"n": 0}; batch = []
+
+    def flush():
+        if batch:
+            warehouse.write_accumulate("total_wine_products", list(batch), key=lambda r: r["sku"])
+            landed["n"] += len(batch); batch.clear()
+
+    def one(u):
+        # PerimeterX rate-limits concurrent mobile-UA bursts (403/429). Retry with exponential backoff + jitter —
+        # the blocks are transient, so a short wait past the burst usually clears them.
+        html = None
+        for attempt in range(4):
+            try:
+                html = _fetch(u); break
+            except urllib.error.HTTPError as e:
+                if e.code in (403, 429) and attempt < 3:
+                    time.sleep((1.5 ** attempt) + random.uniform(0, 0.8)); continue
+                if e.code in (403, 429):
+                    blocked["n"] += 1
+                return None
+            except Exception:
+                return None
+        if html is None:
+            return None
+        p = parse_product(html, u)
+        if not (p and p.get("sku")):
+            return None
+        return {"sku": p["sku"], "brand": p.get("brand", ""), "name": p.get("name", ""), "size": p.get("size", ""),
+                "price": _price(p.get("price")), "category": p.get("category", ""), "description": p.get("desc", ""),
+                "image": p.get("img", ""), "url": u, "varietal": p.get("varietal", ""), "origin": p.get("origin", ""),
+                "region": p.get("region", ""), "sub_region": p.get("sub_region", ""),
+                "appellation": p.get("appellation", ""), "style": p.get("style", ""), "abv": p.get("abv", ""),
+                "run_id": run_id}
+
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for rec in ex.map(one, urls):
+            done += 1
+            if rec:
+                batch.append(rec)
+            if len(batch) >= 250:
+                flush(); log("  landed %d (%d/%d fetched, %d blocked)" % (landed["n"], done, len(urls), blocked["n"]))
+            if delay:
+                time.sleep(delay)
+    flush()
+    if blocked["n"] > len(urls) * 0.3:
+        log("total-wine: WARNING %d/%d blocked (403/429) — PerimeterX may have tightened the mobile-UA gap"
+            % (blocked["n"], len(urls)))
+    log("total-wine: landed %d products -> total_wine_products (%d blocked)" % (landed["n"], blocked["n"]))
+    return landed["n"]
+
+
 def _run(n, changed, status, warnings, started):
     return {"id": "R-TW" + hashlib.sha1(str(n).encode()).hexdigest()[:3].upper(), "connId": "total-wine",
             "startedAt": started, "finishedAt": int(time.time() * 1000), "durationMs": 0,
@@ -159,7 +232,13 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Total Wine direct product scrape (mobile-UA + sitemap + microdata).")
     ap.add_argument("--cap", type=int, default=20); ap.add_argument("--delay", type=float, default=0.5)
     ap.add_argument("--out", default="./tw_out")
+    ap.add_argument("--land", action="store_true", help="FULL crawl that lands total_wine_products (the master table)")
+    ap.add_argument("--workers", type=int, default=8)
     a = ap.parse_args(argv)
+    if a.land:
+        crawl_land(cap=a.cap if a.cap != 20 else 200000, delay=a.delay if a.delay != 0.5 else 0.0,
+                   workers=a.workers, out=a.out)
+        return
     ds, runs, _ = pull(cap=a.cap, delay=a.delay, out=a.out, state_dir=a.out)
     r = list(ds.values())[0] if ds else {"rows": []}
     for row in r["rows"][:12]:

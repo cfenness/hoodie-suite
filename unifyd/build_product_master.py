@@ -39,8 +39,11 @@ _CFG = {
                             image="image_url", filt=lambda r: r.get("category") == "Adult Beverage", dedup=["product_id"]),
     "walmart_products": dict(name="product_name", size_ml="size_ml", upc="upc", abv="abv", brand="brand",
                              cat="category", filt=lambda r: r.get("is_alcohol")),
-    "totalwine_products_full": dict(name="name", size="name", container="container", cat="bev_category",
-                                    filt=lambda r: r.get("is_alcoholic")),
+    # Total Wine — landed by total_wine.crawl_land (mobile-UA microdata + the structured attributes JSON), so it
+    # carries the geo the old thin `totalwine_products_full` table never did (varietal/origin/region/appellation).
+    "total_wine_products": dict(name="name", brand="brand", size="size", cat="category", abv="abv", image="image",
+                                varietal="varietal", origin="origin", region="region", sub_region="sub_region",
+                                appellation="appellation", dedup=["sku"]),
     "binnys_products": dict(name="name", brand="brand", dedup=["sku"], varietal="varietal", image="image",  # store×product →
                             region="region", origin="origin", cat="category"),                # distinct products
     "target_products": dict(name="name", brand="brand", cat="category", image="image_url", dedup=["tcin"]),
