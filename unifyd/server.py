@@ -297,7 +297,7 @@ CONNECTORS_META = [
     {"id": "tx-tabc", "label": "Texas TABC", "group": "State", "runs": None, "data": "tx_outlets"},
     {"id": "il-chicago", "label": "Chicago", "group": "State", "runs": None, "data": "il_outlets"},
     {"id": "ct-dcp", "label": "Connecticut", "group": "State", "runs": None, "data": "ct_outlets"},
-    {"id": "total-wine", "label": "Total Wine", "group": "Retail chain", "runs": None, "data": "totalwine_products_full"},
+    {"id": "total-wine", "label": "Total Wine", "group": "Retail chain", "runs": None, "data": "total_wine_products"},
     {"id": "vtinfo", "label": "VTInfo locator", "group": "Reference", "runs": None, "data": "vtinfo_titos"},
     {"id": "ab-inbev", "label": "AB InBev locator", "group": "Reference", "runs": None, "data": None},
 ]

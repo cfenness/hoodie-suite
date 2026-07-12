@@ -37,7 +37,7 @@ def load_market(log=print):
 
     add("abc_catalog", "SELECT DISTINCT name, brand, size, upc FROM t WHERE name IS NOT NULL", "abc", "brand", "name", "size")
     add("binnys_products", "SELECT DISTINCT brand, name FROM t WHERE name IS NOT NULL", "binnys", "brand", "name", "name")
-    add("totalwine_products_full", "SELECT DISTINCT name, total_size FROM t WHERE name IS NOT NULL", "totalwine", "name", "name", "total_size")
+    add("total_wine_products", "SELECT DISTINCT name, size FROM t WHERE name IS NOT NULL", "totalwine", "name", "name", "size")
     add("specs_products", "SELECT DISTINCT name FROM t WHERE name IS NOT NULL", "specs", "name", "name", "name")
     add("kroger_products", "SELECT DISTINCT product_name, brand, size, upc FROM t WHERE product_name IS NOT NULL", "kroger", "brand", "product_name", "size")
     add("walmart_products", "SELECT DISTINCT product_name, brand, size_ml, upc FROM t WHERE product_name IS NOT NULL", "walmart", "brand", "product_name", "size_ml")

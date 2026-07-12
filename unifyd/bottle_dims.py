@@ -356,7 +356,7 @@ def enrich_batch(skus, bd_key=None, log=print):
     return results
 
 
-def run_master(source="totalwine_products_full", limit=200, name_col="name", size_col="total_size",
+def run_master(source="total_wine_products", limit=200, name_col="name", size_col="size",
                out="bottle_dims_enriched", log=print):
     """Go GET the bottle dimensions we can — run enrich across a real batch, land <out> (flat) + the honest
     hit-rate (enriched vs manual). Only the gettable physical fields; proprietary -> manual. name_col/size_col
@@ -396,7 +396,7 @@ def run_master(source="totalwine_products_full", limit=200, name_col="name", siz
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--source", default="totalwine_products_full")
+    ap.add_argument("--source", default="total_wine_products")
     ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--name-col", default="name")
     ap.add_argument("--size-col", default="total_size")
