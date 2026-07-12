@@ -413,6 +413,7 @@ function renderDetail(c){
         <span class="cn"><span class="nm">${esc(cd.name)} <span class="grain ${cd.grain||'sku'}">${cd.grain||'sku'}</span>${cd.win?'<span class="wintag">proposed</span>':''}</span><span class="tb">${esc(cd.table||'')}</span></span>
         <span class="cbarwrap"><span class="cbar"><i style="width:${Math.round((cd.conf||0)*100)}%"></i><span class="thr" style="left:${HI_CONF*100}%"></span></span></span>
         <span class="cscore">${(cd.conf||0).toFixed(2)}</span>
+        <button class="skux" data-sku="${esc(cd.cluster_id||cd.id||'')}" title="Expand — all data attached to this SKU">⤢</button>
       </summary>
       <div class="cjust">${esc(cd.why||"")}<div class="jk">${(cd.keys||[]).map(k=>`<span class="jchip">${esc(k)}</span>`).join("")}</div>${cd.win?"":'<button class="use">Use this match instead →</button>'}</div>
     </details>${gapRow}`;
@@ -484,6 +485,77 @@ $(".search").addEventListener("input", e=>{ FILT.q=e.target.value; renderQueue()
 $("#theme").onclick=()=>{ const r=document.documentElement;
   const cur=r.getAttribute("data-theme")||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");
   r.setAttribute("data-theme", cur==="dark"?"light":"dark"); };
+
+// ── SKU expand modal — all data attached to a SKU (from any cluster) + image + on-demand label-vision ──
+(function(){
+  const css=`
+  .skux{margin-left:6px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);border-radius:6px;
+    cursor:pointer;font-size:12px;padding:0 6px;flex:none} .skux:hover{border-color:var(--accent);color:var(--accent)}
+  .mback{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-start;justify-content:center;z-index:60;padding:5vh 20px}
+  .mback.on{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;max-width:760px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 24px 70px rgba(0,0,0,.35)}
+  .mhead{display:flex;gap:14px;padding:18px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:1}
+  .mimg{width:92px;height:92px;flex:none;border-radius:9px;background:var(--inset);object-fit:contain;border:1px solid var(--line)}
+  .mh-t h2{margin:0;font-size:17px} .mh-t .mb{color:var(--muted);font-size:12.5px;margin-top:4px}
+  .mx{margin-left:auto;border:none;background:none;color:var(--muted);font-size:24px;cursor:pointer;line-height:1;align-self:flex-start}
+  .mbody{padding:16px 20px}
+  .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:9px}
+  .fcell{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  .fcell .fk{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+  .fcell .fv{font-size:13.5px;margin-top:2px;word-break:break-word} .fcell .fv.empty{color:var(--faint)}
+  .msec{margin-top:16px} .msec h4{margin:0 0 8px;font-size:12.5px;color:var(--muted);font-weight:650}
+  .vbtn{border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);border-radius:8px;padding:8px 13px;cursor:pointer;font-weight:600;font-size:13px}
+  .vbtn:disabled{opacity:.6;cursor:default} .vrow{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .vres .fcell .fv{color:var(--good)}`;
+  const s=document.createElement("style"); s.textContent=css; document.head.appendChild(s);
+  const back=document.createElement("div"); back.className="mback"; back.id="skuback";
+  back.innerHTML='<div class="modal" id="skumodal"></div>';
+  back.onclick=e=>{ if(e.target===back) close(); };
+  document.body.appendChild(back);
+  function close(){ back.classList.remove("on"); }
+  window._closeSku=close;
+  document.addEventListener("keydown", e=>{ if(e.key==="Escape") close(); });
+  const size=ml=>ml?(ml>=1000?(ml/1000)+"L":ml+"ml"):"";
+  const cell=(k,v)=>`<div class="fcell"><div class="fk">${esc(k)}</div><div class="fv ${v?'':'empty'}">${esc(v||"—")}</div></div>`;
+  window.openSkuModal=async function(sku){
+    if(!sku) return;
+    const m=document.getElementById("skumodal");
+    m.innerHTML='<div class="mbody" style="padding:44px;color:var(--muted)">Loading…</div>'; back.classList.add("on");
+    let d; try{ d=await fetch(API+"/item/"+encodeURIComponent(sku)).then(r=>r.json()); }catch(e){ m.innerHTML='<div class="mbody">Couldn’t load.</div>'; return; }
+    if(!d||!d.ok){ m.innerHTML='<div class="mbody">Not found.</div>'; return; }
+    const it=d.item, fields=[["Product",it.candidate_name],["Brand",it.brand],["UPC",it.upc],["Size",size(it.size_ml)],
+      ["Origin (source)",it.origin],["Bottled in",it.bottled_in],["Region",it.region],["Sub-region",it.sub_region],
+      ["Appellation",it.appellation],["Varietal",it.varietal],["ABV",it.abv],["Category",it.category],
+      ["Pack",it.pack],["Sources",it.sources],["Vintages",(it.vintages||[]).join(", ")]];
+    m.innerHTML=`<div class="mhead">
+        ${it.image?`<img class="mimg" src="${esc(it.image)}" onerror="this.style.visibility='hidden'">`:'<div class="mimg"></div>'}
+        <div class="mh-t"><h2>${esc(it.candidate_name||"SKU")}</h2>
+          <div class="mb">${esc(it.brand||"")} · ${it.upc?("UPC "+esc(it.upc)):"no UPC"} · ${it.sources} source${it.sources===1?"":"s"}</div></div>
+        <button class="mx" onclick="_closeSku()">×</button></div>
+      <div class="mbody"><div class="fgrid">${fields.map(f=>cell(f[0],f[1])).join("")}</div>
+        <div class="msec"><h4>Seen in · ${esc(it.corroborated_by||"—")}</h4></div>
+        <div class="msec"><div class="vrow"><button class="vbtn" id="vbtn" ${it.image?"":"disabled"}>◉ Read the label with vision</button>
+          <span style="color:var(--faint);font-size:12px">${it.image?"reads COO / appellation / varietal / abv off the image":"no image on this SKU"}</span></div>
+          <div id="vres"></div></div></div>`;
+    const vb=m.querySelector("#vbtn");
+    if(vb) vb.onclick=()=>runVision(it.cluster_id, vb, m.querySelector("#vres"));
+  };
+  async function runVision(sku, btn, res){
+    btn.disabled=true; btn.textContent="◉ Reading the label…";
+    let d; try{ d=await fetch(API+"/vision/"+encodeURIComponent(sku),{method:"POST"}).then(r=>r.json()); }
+    catch(e){ res.innerHTML='<div style="color:var(--bad);font-size:12.5px">vision unreachable</div>'; btn.disabled=false; btn.textContent="◉ Read the label with vision"; return; }
+    btn.disabled=false; btn.textContent="◉ Read again";
+    if(!d||!d.ok){ res.innerHTML=`<div style="color:var(--bad);font-size:12.5px">${esc((d&&d.error)||"failed")}</div>`; return; }
+    const f=d.fields||{}, show=[["Origin (source)",f.origin],["Bottled in",f.bottled_in],["Region",f.region],["Sub-region",f.sub_region],
+      ["Appellation",f.appellation],["Varietal",f.varietal],["ABV",f.abv],["UPC",f.upc],["Vintage",f.vintage],["Net contents",f.net_contents],["Gov warning",f.gov_warning]].filter(x=>x[1]!=null&&x[1]!=="");
+    res.innerHTML=`<h4 style="margin:12px 0 8px;color:var(--good);font-size:12.5px">What the label says</h4>
+      <div class="fgrid vres">${show.length?show.map(x=>cell(x[0],x[1])).join(""):'<div class="fcell"><div class="fv empty">nothing legible on this image</div></div>'}</div>`;
+  }
+  document.addEventListener("click", e=>{
+    const b=e.target.closest(".skux"); if(!b) return;
+    e.preventDefault(); e.stopPropagation(); openSkuModal(b.dataset.sku);
+  });
+})();
 
 boot();
 

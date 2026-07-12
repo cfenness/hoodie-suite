@@ -23,7 +23,7 @@ import placeholders as _placeholders
 # origin = SOURCE of the juice (COO — where the liquid is from); bottled_in = where it was bottled (kept
 # SEPARATE — a Barbados rum bottled in the US is origin=Barbados, bottled_in=US).
 FIELDS = ["brand", "brand_group", "product_name", "flavor", "abv", "style", "category", "origin", "bottled_in",
-          "region", "sub_region", "appellation", "varietal",
+          "region", "sub_region", "appellation", "varietal", "image",
           "size_ml", "packsize", "container", "pack", "upc", "gtin", "vintage", "edition", "supplier"]
 
 # sources with a REAL brand column — used to seed the brand dictionary
@@ -34,18 +34,18 @@ _CLEAN_BRAND = [("kroger_products", "brand"), ("walmart_products", "brand"), ("n
 # per-source projection: which columns carry name / size / upc / abv(or proof) / category / clean-brand, + a
 # bev-alc filter so non-alcohol rows (a Kroger marinade) don't feed the master.
 _CFG = {
-    "abc_catalog": dict(name="name", size="size", upc="upc"),
+    "abc_catalog": dict(name="name", size="size", upc="upc", image="image"),
     "kroger_products": dict(name="product_name", size="size", upc="upc", brand="brand", cat="category",
-                            filt=lambda r: r.get("category") == "Adult Beverage", dedup=["product_id"]),
+                            image="image_url", filt=lambda r: r.get("category") == "Adult Beverage", dedup=["product_id"]),
     "walmart_products": dict(name="product_name", size_ml="size_ml", upc="upc", abv="abv", brand="brand",
                              cat="category", filt=lambda r: r.get("is_alcohol")),
     "totalwine_products_full": dict(name="name", size="name", container="container", cat="bev_category",
                                     filt=lambda r: r.get("is_alcoholic")),
-    "binnys_products": dict(name="name", brand="brand", dedup=["sku"], varietal="varietal",  # store×product →
+    "binnys_products": dict(name="name", brand="brand", dedup=["sku"], varietal="varietal", image="image",  # store×product →
                             region="region", origin="origin", cat="category"),                # distinct products
-    "target_products": dict(name="name", brand="brand", cat="category", dedup=["tcin"]),
+    "target_products": dict(name="name", brand="brand", cat="category", image="image_url", dedup=["tcin"]),
     "specs_products": dict(name="name", brand="brand", dedup=["sku"]),
-    "cityhive_products": dict(name="name", size_ml="size_ml", cat="bev_category", dedup=["sku"]),  # independent
+    "cityhive_products": dict(name="name", size_ml="size_ml", cat="bev_category", image="image", dedup=["sku"]),  # independent
     # TTB COLA — the federal label registry = the historical backbone (~1M bottle+vintage records). Pre-joined
     # (detail + labels) + deduped in ttb_products; brand extracted from the name via the dictionary; vintage →
     # dim_vintage aux (bottles don't split by vintage). All alcohol, so no bev-alc filter.
@@ -249,7 +249,7 @@ def build(log=print):
                 gtin=None, edition=None, supplier=None, _source=ds,
                 vintage=_clean_vintage(r.get(c["vintage"])) if c.get("vintage") else None,
                 **{fld: ((str(r.get(c[fld])).strip() or None) if c.get(fld) and r.get(c[fld]) else None)
-                   for fld in ("region", "sub_region", "appellation", "varietal")}))
+                   for fld in ("region", "sub_region", "appellation", "varietal", "image")}))
             kept += 1
         log("[master]   %-24s %6d products" % (ds, kept))
     _precleanse.precleanse(staged, log)                 # precleanse: canonicalize brand + cleanse name FIRST

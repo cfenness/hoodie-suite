@@ -85,6 +85,7 @@ GRAIN_DEFAULTS = {"brand": "brand", "brand_group": "brand",
     "product_name": "product", "flavor": "product", "abv": "product", "style": "product",
     "category": "product", "origin": "product", "bottled_in": "product",
     "region": "product", "sub_region": "product", "appellation": "product", "varietal": "product",
+    "image": "product",
     "size_ml": "item", "packsize": "item", "container": "item",
     "pack": "sku", "upc": "sku", "gtin": "sku", "vintage": "sku", "edition": "sku",
     "supplier": "supplier"}
