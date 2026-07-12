@@ -163,6 +163,21 @@ def resolve_hierarchy(master_fields, dim_uri, con, built_by="SYS", built_at=None
         n = con.execute("SELECT count(*) FROM read_parquet('%s')" % rdst).fetchone()[0]
         out["supplier"] = {"rows": n, "uri": warehouse.uri("dim_supplier")}
         log("dim_supplier: %d brand↔supplier assocs" % n)
+    # vintage AUX — sku↔vintage association (same shape as supplier). A SKU is the individual BOTTLE
+    # (product+size+pack+upc); vintages do NOT split it — they're tracked here so "2020 vs 2021 Caymus 750ml"
+    # is queryable without multiplying SKUs. Populated by sources that carry a vintage (e.g. TTB wine_vintage).
+    if "vintage" in mnames:
+        vcol = derive.col("vintage")
+        sql = ("WITH b AS (SELECT * FROM read_parquet('%s')%s) "
+               "SELECT %s AS sku_key, CAST(%s AS VARCHAR) AS vintage, %d AS active_date, "
+               "count(*) AS source_rows, list_distinct(list(_source)) AS source_list "
+               "FROM b WHERE nullif(trim(CAST(%s AS VARCHAR)),'') IS NOT NULL GROUP BY %s, %s"
+               % (dim_uri, gate, keys["sku"], vcol, built_at, vcol, keys["sku"], vcol))
+        rdst = warehouse.uri("dim_vintage").replace("'", "")
+        con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (sql, rdst))
+        n = con.execute("SELECT count(*) FROM read_parquet('%s')" % rdst).fetchone()[0]
+        out["vintage"] = {"rows": n, "uri": warehouse.uri("dim_vintage")}
+        log("dim_vintage: %d sku↔vintage assocs" % n)
     return out
 
 
