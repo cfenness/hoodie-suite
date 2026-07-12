@@ -261,6 +261,11 @@ def build(log=print):
     h = master_apply.resolve_hierarchy(FIELDS, warehouse.uri("_stage_product").strip("'"), con, built_by="build_product_master")
     dims = {k: v["rows"] for k, v in h.items() if isinstance(v, dict) and "rows" in v}
     log("[master] DONE — %s" % dims)
+    try:                                                # pre-compute the workbench list views (fast cold-load)
+        import wb_views
+        wb_views.build(log=log)
+    except Exception as e:
+        log("[master] wb_views skipped: %s" % str(e)[:80])
     return dims
 
 

@@ -1692,13 +1692,25 @@ def mwb_summary_ep():
     # the trusted subset (auto-corroborated + Claude-adjudicated + human-confirmed), NOT every built row.
     # SKU is the matching TARGET (product + size + pack, UPC-identified) — the only grain where price/inventory/
     # distribution compare across sources. Count SKUs; corroboration = the same SKU seen in 2+ sources.
-    agg = _wq_cached("dim_sku", "SELECT count(*) total, "
-              "sum(CASE WHEN sources >= 2 THEN 1 ELSE 0 END) multi FROM t")
-    total = (agg[0]["total"] if agg else 0) or 0
-    multi = (agg[0]["multi"] if agg else 0) or 0        # corroborated by 2+ sources → auto
+    # Rebuild-stable numbers from the pre-computed wb_summary view (avoids the dim_sku unnest/GROUP BY scan on
+    # the cold load); fall back to the live aggregates if the view isn't built yet.
+    sv = _wb_view("wb_summary")
+    if sv:
+        s0 = sv[0]
+        total = s0.get("total") or 0
+        multi = s0.get("multi") or 0
+        source_rows = s0.get("source_rows") or total
+        by = [{"s": x.get("source"), "n": x.get("n")} for x in json.loads(s0.get("by_source") or "[]")]
+    else:
+        agg = _wq_cached("dim_sku", "SELECT count(*) total, "
+                         "sum(CASE WHEN sources >= 2 THEN 1 ELSE 0 END) multi FROM t")
+        total = (agg[0]["total"] if agg else 0) or 0
+        multi = (agg[0]["multi"] if agg else 0) or 0
+        stg = _wq_cached("_stage_product", "SELECT count(*) n FROM t")
+        source_rows = (stg[0]["n"] if stg and stg[0].get("n") else total)
+        by = _wq_cached("dim_sku", "SELECT s, count(*) n FROM (SELECT unnest(source_list) s FROM t) "
+                        "GROUP BY 1 ORDER BY 2 DESC")
     single = total - multi                              # single-source → analyst queue
-    stg = _wq_cached("_stage_product", "SELECT count(*) n FROM t")
-    source_rows = (stg[0]["n"] if stg and stg[0].get("n") else total)
     decisions = _wq("master_decisions", "SELECT tier, action FROM t")
     conf_h = sum(1 for d in decisions if d.get("action") == "confirm")       # human-confirmed single-source
     rej_h = sum(1 for d in decisions if d.get("action") == "reject")
@@ -1706,7 +1718,6 @@ def mwb_summary_ep():
     sr = sum(1 for d in decisions if d.get("action") == "escalate" and d.get("tier") == "senior")
     st = sum(1 for d in decisions if d.get("action") == "escalate" and d.get("tier") == "steward")
     analyst = max(0, single - claude - sr - st - conf_h - rej_h)             # single-source still pending
-    by = _wq_cached("dim_sku", "SELECT s, count(*) n FROM (SELECT unnest(source_list) s FROM t) GROUP BY 1 ORDER BY 2 DESC")
     # process states partition the candidates; Confirmed is the promoted-to-master roll-up (a subset)
     stages = {"candidates": total,
               "auto": multi, "claude": claude, "analyst": analyst, "senior": sr, "steward": st,
@@ -1805,6 +1816,15 @@ def _wq_cached(ds, sql, params=None):
     return _WB["q"][key]
 
 
+def _wb_view(name):
+    """Read a pre-computed workbench view (wb_master / wb_queue / wb_summary from wb_views.py), cached until the
+    next rebuild. Returns None if the table isn't present yet -> callers fall back to the live computation."""
+    try:
+        return _wq_cached(name, "SELECT * FROM t")
+    except Exception:
+        return None
+
+
 def _wb_sku_stub(sk, itemmap, prodmap, brands):
     """Reshape a dim_sku row into the fields the workbench consumes. The SKU is the MATCHING TARGET — the
     fully-specified sellable unit (product + size + pack), identified by UPC where present. Name + brand resolve
@@ -1828,17 +1848,42 @@ def _wb_sku_stub(sk, itemmap, prodmap, brands):
             "upc": (sk.get("upc") or None), "size_ml": size_ml}
 
 
+def _wb_view_stub(r):
+    """Same frontend shape as _wb_sku_stub, but from a pre-joined wb_master/wb_queue row (brand + product_name
+    already resolved) — so the list endpoints need no name maps or dim_sku scan at request time."""
+    src = r.get("source_list") or []
+    if isinstance(src, str):
+        src = [src]
+    n = r.get("sources") or len(src) or 1
+    conf = 0.9 if n >= 3 else (0.82 if n == 2 else 0.5)
+    sz = _wb_size_label(r.get("size_ml"))
+    name = " · ".join([x for x in [(r.get("product_name") or "").strip(), sz, (r.get("container") or "")] if x]) \
+        or "(unnamed item)"
+    return {"cluster_id": r.get("sku_key"), "candidate_name": name, "product_key": r.get("product_key"),
+            "brand": r.get("brand") or "", "class_type": None, "confidence": conf,
+            "corroborated_by": ", ".join(src), "sources": n,
+            "match_kind": ("multi-source" if n >= 2 else "single-source"),
+            "member_count": r.get("source_rows") or 1, "tier": (1 if n >= 2 else 0),
+            "upc": (r.get("upc") or None), "size_ml": r.get("size_ml")}
+
+
 @app.get("/api/master/workbench/master")
 def mwb_master_ep():
     q = (request.args.get("q") or "").strip().lower()
     src = (request.args.get("source") or "").strip()
-    brands, prodmap, itemmap = _wb_maps()
-    # the trustworthy master = SKUs corroborated by 2+ independent sources (the same SKU seen across sources)
-    rows = _wq_cached("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list, "
-               "source_rows FROM t WHERE sources >= 2 ORDER BY sources DESC, source_rows DESC LIMIT 600")
+    # the trustworthy master = SKUs corroborated by 2+ independent sources (the same SKU seen across sources).
+    # Prefer the pre-computed wb_master view (tiny, names pre-joined); fall back to the live scan if not built yet.
+    view = _wb_view("wb_master")
+    if view is not None:
+        rows, stub = view[:600], _wb_view_stub
+    else:
+        brands, prodmap, itemmap = _wb_maps()
+        rows = _wq_cached("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list, "
+                          "source_rows FROM t WHERE sources >= 2 ORDER BY sources DESC, source_rows DESC LIMIT 600")
+        stub = lambda r: _wb_sku_stub(r, itemmap, prodmap, brands)
     items = []
     for r in rows:
-        st = _wb_sku_stub(r, itemmap, prodmap, brands)
+        st = stub(r)
         st["matched_by"] = "auto"
         if src and src not in (r.get("source_list") or []):
             continue
@@ -1962,15 +2007,20 @@ def mwb_candidates_ep(cid):
 @app.get("/api/master/workbench/review")
 def mwb_review_ep():
     # analyst queue = single-source SKUs (in only one catalog) — need an independent source to corroborate
-    # before they're fully trusted. Highest source_rows first (most-seen singletons first).
-    brands, prodmap, itemmap = _wb_maps()
-    rows = _wq_cached("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list, "
-               "source_rows FROM t WHERE sources = 1 ORDER BY source_rows DESC LIMIT 400")
+    # before they're fully trusted. Highest source_rows first (most-seen singletons first). Prefer wb_queue.
+    view = _wb_view("wb_queue")
+    if view is not None:
+        rows, stub = view[:400], _wb_view_stub
+    else:
+        brands, prodmap, itemmap = _wb_maps()
+        rows = _wq_cached("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list, "
+                          "source_rows FROM t WHERE sources = 1 ORDER BY source_rows DESC LIMIT 400")
+        stub = lambda r: _wb_sku_stub(r, itemmap, prodmap, brands)
     decs = {d.get("cluster_id"): d for d in _wq("master_decisions", "SELECT cluster_id, action, tier FROM t")}
     terminal = {"confirm", "reject", "merge"}
     out = []
     for r in rows:
-        st = _wb_sku_stub(r, itemmap, prodmap, brands)
+        st = stub(r)
         dd = decs.get(st["cluster_id"])
         if dd and dd.get("action") in terminal:               # confirmed/rejected/merged leave the queue
             continue
