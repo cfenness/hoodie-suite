@@ -95,10 +95,11 @@ def build_brand_dict(log=print):
 
 def resolve_brand(name, by1, clean=None):
     if clean and str(clean).strip():
-        c = str(clean).strip()
+        c = _precleanse.unescape(str(clean)).strip()   # D&#39;Aquino -> D'Aquino
         return c.title() if c.isupper() else c        # TTB brand_name is ALL-CAPS -> readable display
 
-    toks = re.findall(r"[A-Za-z0-9'&.\-]+", (name or "").strip())
+    name = _precleanse.unescape(name or "")
+    toks = re.findall(r"[A-Za-z0-9'&.\-]+", name.strip())
     if not toks:
         return None
     low = (name or "").strip().lower()

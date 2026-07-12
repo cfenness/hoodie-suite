@@ -2076,10 +2076,12 @@ def mwb_merge_detail_ep(mid):
         members = json.loads(grp.get("members") or "[]")
     except Exception:
         members = []
-    # Per-member image: images are aggregated to the PRODUCT grain in the master, so every SKU of a product
-    # shares one — which is why the modal showed the same photo for every UPC. Pull the image each SOURCE
-    # actually showed for THIS upc from the raw staged rows (one batched scan), and fall back to the product
-    # image only when a source gave none.
+    try:
+        attrs = json.loads(grp.get("attrs") or "{}")     # shared product attributes (pre-computed in wb_merges)
+    except Exception:
+        attrs = {}
+    # The group + its shared attributes come straight from the cached wb_merges row — no dim scans on modal open.
+    # The ONLY thing that varies per member is the image each source showed for THIS upc (one batched scan).
     upcs = [str(m.get("upc")) for m in members if m.get("upc")]
     upc_img = {}
     if upcs:
@@ -2093,22 +2095,15 @@ def mwb_merge_detail_ep(mid):
             pass
     detailed = []
     for m in members:
-        full = _sku_full(m.get("sku_key")) or {}
-        img = upc_img.get(str(m.get("upc"))) or full.get("image") or ""
-        detailed.append({"sku_key": m.get("sku_key"), "upc": m.get("upc") or "",
+        detailed.append({"sku_key": m.get("sku_key"), "upc": m.get("upc") or "", "gtin": m.get("gtin") or "",
                          "sources": m.get("sources"), "source_rows": m.get("source_rows"),
                          "source_list": m.get("source_list") or [],
-                         "name": full.get("candidate_name") or grp.get("name"),
-                         "image": img, "origin": full.get("origin") or "",
-                         "region": full.get("region") or "", "sub_region": full.get("sub_region") or "",
-                         "appellation": full.get("appellation") or "", "varietal": full.get("varietal") or "",
-                         "abv": full.get("abv") or "", "category": full.get("category") or "",
-                         "pack": full.get("pack") or "", "vintages": full.get("vintages") or []})
+                         "image": upc_img.get(str(m.get("upc"))) or attrs.get("image") or ""})
     hero = next((d for d in detailed if d.get("image")), (detailed[0] if detailed else {}))
     return jsonify(ok=True, merge_id=mid, name=grp.get("name"), brand=grp.get("brand"),
                    reason=grp.get("reason"), distinct_upc=grp.get("distinct_upc"),
                    size_ml=grp.get("size_ml"), n_skus=grp.get("n_skus"), total_rows=grp.get("total_rows"),
-                   hero=hero, members=detailed)
+                   attrs=attrs, hero=hero, members=detailed)
 
 
 @app.post("/api/master/workbench/merge")
