@@ -15,6 +15,7 @@ Or manually: r = runlog.start("abc-fws"); r.progress(n, total); r.finish("done",
 import os
 import socket
 import sys
+import threading
 import time
 import traceback
 
@@ -35,9 +36,20 @@ class Run:
         self.every = every
         self.started = int(time.time() * 1000)
         self._last = 0.0
+        self._status = "running"
         self._write("running")
+        # background heartbeat: keep updatedAt fresh even during long quiet stretches (a polite crawl can go
+        # minutes between log lines), so the board only shows 'stalled' on a REAL hang, not just silence.
+        self._stop = threading.Event()
+        self._hb = threading.Thread(target=self._heartbeat, daemon=True)
+        self._hb.start()
+
+    def _heartbeat(self):
+        while not self._stop.wait(60):
+            self._write(self._status)
 
     def _write(self, status, note="", finished=False):
+        self._status = status
         now = int(time.time() * 1000)
         rec = dict(run_id=self.id, connId=self.conn_id, status=status, host=_HOST,
                    startedAt=self.started, updatedAt=now, finishedAt=(now if finished else None),
@@ -57,6 +69,7 @@ class Run:
             self._write("running")
 
     def finish(self, status="done", note=""):
+        self._stop.set()
         self._write(status, note, finished=True)
 
 

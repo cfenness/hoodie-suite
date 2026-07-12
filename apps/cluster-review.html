@@ -69,6 +69,25 @@ h1{font-size:19px;margin:0 0 3px} .sub{color:var(--muted);font-size:13px;margin:
 .shared{display:flex;flex-wrap:wrap;gap:5px 18px;font-size:12.5px;color:var(--muted);
   padding-bottom:13px;margin-bottom:14px;border-bottom:1px solid var(--line)}
 .shared b{color:var(--ink);font-weight:600}
+.tblwrap{overflow-x:auto}
+.mtbl{width:100%;border-collapse:collapse;font-size:13px}
+.mtbl th{text-align:left;font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--muted);padding:5px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.mtbl th.num,.mtbl td.num{text-align:right;font-variant-numeric:tabular-nums}
+.mtbl td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+.mtbl tbody tr:hover td{background:var(--panel-2)}
+.mtbl .ck{width:26px} .mtbl .thc{width:50px}
+.th{height:40px;width:40px;object-fit:contain;border-radius:5px;background:var(--panel-2);cursor:zoom-in;display:block}
+.noimg{color:var(--faint)}
+.mtbl .u{font-family:ui-monospace,Menlo,monospace;font-weight:600}
+.mtbl .u.none{color:var(--faint);font-style:italic;font-weight:400;font-family:inherit}
+.mtbl .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--muted)}
+.mtbl .srcc .s{background:var(--inset);border-radius:4px;padding:1px 5px;margin-right:3px;font-size:11px;color:var(--muted);white-space:nowrap}
+.selhint{font-size:12px;color:var(--muted);padding-top:11px} .selhint b{color:var(--ink)}
+.mfoot .split:hover{border-color:var(--warn);background:var(--warn-soft);color:var(--warn)}
+#lightbox{position:fixed;inset:0;background:rgba(8,11,16,.85);display:none;align-items:center;justify-content:center;
+  z-index:80;cursor:zoom-out;padding:30px}
+#lightbox.on{display:flex} #lightbox img{max-width:90vw;max-height:90vh;border-radius:8px;background:#fff}
 .mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
 .mc{border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--bg)}
 .mc.dupu{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
@@ -179,25 +198,42 @@ async function openMergeModal(mid){
     ["Appellation",A.appellation],["Style",A.style],["ABV",A.abv],["Category",A.category]]
     .filter(a=>a[1]).map(a=>`<div><b>${esc(a[0])}:</b> ${esc(a[1])}</div>`).join("");
   const cores={};(d.members||[]).forEach(x=>{const c=core(x.upc);if(c)cores[c]=(cores[c]||0)+1;});
-  const cards=(d.members||[]).map(x=>{
+  const rows=(d.members||[]).map(x=>{
     const c=core(x.upc), dup=c&&cores[c]>1;
-    const img=x.image?`<img src="${esc(x.image)}" loading="lazy" onerror="this.parentNode.textContent='image unavailable'">`:'no image';
-    const upc=x.upc?`<span class="u">${esc(x.upc)}${dup?' <span style="color:var(--bad);font-size:11px">↔ dup</span>':''}</span>`:'<span class="u none">no UPC</span>';
-    const gtin=x.gtin?`<div style="font-size:11px;color:var(--muted);font-family:ui-monospace,Menlo,monospace;margin-top:3px">GTIN ${esc(x.gtin)}</div>`:'';
-    const srcs=(x.source_list||[]).map(s=>`<span class="s">${esc(s)}</span>`).join("")||'<span class="s">—</span>';
-    return `<div class="mc${dup?' dupu':''}"><div class="img">${img}</div><div class="b">
-      ${upc}${gtin}<div class="src">${srcs}</div>
-      <div style="font-size:11px;color:var(--faint);margin-top:6px">${x.source_rows} source row${x.source_rows===1?"":"s"}</div></div></div>`;
+    const thumb=x.image?`<img class="th" src="${esc(x.image)}" loading="lazy" onclick="lightbox('${esc(x.image)}')" onerror="this.replaceWith(document.createTextNode('—'))">`:'<span class="noimg">—</span>';
+    const upc=x.upc?`<span class="u">${esc(x.upc)}${dup?' <span style="color:var(--bad)">↔</span>':''}</span>`:'<span class="u none">no UPC</span>';
+    const srcs=(x.source_list||[]).map(s=>`<span class="s">${esc(s)}</span>`).join("")||'—';
+    return `<tr data-sku="${esc(x.sku_key)}"><td class="ck"><input type="checkbox" class="msel" checked></td>
+      <td class="thc">${thumb}</td><td>${upc}</td><td class="mono">${x.gtin?esc(x.gtin):'—'}</td>
+      <td class="srcc">${srcs}</td><td class="num">${x.source_rows}</td></tr>`;
   }).join("");
   $("#modal").innerHTML=`<div class="mh"><div><div class="mt">${esc(d.name)}</div>
       <div class="ms">${esc(d.brand)} · ${d.n_skus} SKUs · ${d.distinct_upc} distinct UPCs · ${d.total_rows} source rows<br>${esc(d.reason)}</div></div>
       <button class="x" onclick="closeModal()">×</button></div>
     <div class="mbody">
       ${shared?`<div class="shared">${shared}</div>`:''}
-      <div class="mgrid">${cards}</div></div>
-    <div class="mfoot"><button class="merge" onclick="decideModal('${esc(mid)}','merge')">✓ Merge — one SKU</button>
-      <button class="keep" onclick="decideModal('${esc(mid)}','keep_separate')">Keep separate</button></div>`;
+      <div class="tblwrap"><table class="mtbl">
+        <thead><tr><th class="ck"><input type="checkbox" id="selall" checked title="select all"></th>
+          <th></th><th>UPC</th><th>GTIN</th><th>Sources</th><th class="num">Rows</th></tr></thead>
+        <tbody id="mtb">${rows}</tbody></table></div>
+      <div class="selhint" id="selhint"></div></div>
+    <div class="mfoot">
+      <button class="merge" onclick="mergeSelected('${esc(mid)}')">✓ Merge selected — one SKU</button>
+      <button class="split" onclick="splitSelected('${esc(mid)}')">⑂ Selected differ — split off</button>
+      <button class="keep" onclick="decideModal('${esc(mid)}','keep_separate')">Keep all separate</button></div>`;
+  const upd=()=>{const n=selectedSkus().length,t=(d.members||[]).length;$("#selhint").innerHTML=`<b>${n}</b> of ${t} selected — merge the ones you know match, leave the rest`;};
+  $("#selall").onchange=e=>{document.querySelectorAll('.msel').forEach(c=>c.checked=e.target.checked);upd();};
+  document.querySelectorAll('.msel').forEach(c=>c.onchange=upd); upd();
 }
+function selectedSkus(){return [...document.querySelectorAll('#mtb tr')].filter(tr=>{const c=tr.querySelector('.msel');return c&&c.checked;}).map(tr=>tr.dataset.sku);}
+async function postDecide(mid,action,sku_keys){
+  const r=await fetch(API+"/merge",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({merge_id:mid,action,sku_keys})}).then(r=>r.json()).catch(()=>null);
+  if(r&&r.ok){ALL=ALL.filter(m=>m.merge_id!==mid);closeModal();render();return true;} toast("Couldn't save."); return false;
+}
+async function mergeSelected(mid){const s=selectedSkus();if(s.length<2){toast("Select 2+ that are the same");return;}if(await postDecide(mid,"merge",s))toast("Merged "+s.length+" ✓");}
+async function splitSelected(mid){const s=selectedSkus();if(!s.length){toast("Select the ones that differ");return;}if(await postDecide(mid,"split",s))toast("Split off "+s.length);}
+function lightbox(url){let l=document.getElementById("lightbox");if(!l){l=document.createElement("div");l.id="lightbox";l.onclick=()=>l.classList.remove("on");document.body.appendChild(l);}l.innerHTML=`<img src="${url}">`;l.classList.add("on");}
 async function decideModal(id,action){
   const r=await fetch(API+"/merge",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({merge_id:id,action})}).then(r=>r.json()).catch(()=>null);

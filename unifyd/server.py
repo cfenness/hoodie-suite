@@ -2108,19 +2108,21 @@ def mwb_merge_detail_ep(mid):
 
 @app.post("/api/master/workbench/merge")
 def mwb_merge_decide_ep():
-    """Record a cluster-review decision — 'merge' (these SKUs are one) or 'keep_separate' (genuinely distinct).
-    Persists to master_decisions (keyed by merge_id) so the group leaves the review list; the master collapses
-    merged SKUs on the next rebuild that consumes these decisions."""
+    """Record a cluster-review decision. `action`: 'merge' (these are one SKU — optionally only the SELECTED
+    sku_keys, so a reviewer can merge the 20 they know match and leave the rest), 'split' (the selected sku_keys
+    are a distinct SKU from the others), or 'keep_separate' (all genuinely distinct). Persists to
+    master_decisions (keyed by merge_id) with the member subset; the master applies it on the next rebuild."""
     import time as _t
     import warehouse
     d = request.get_json(silent=True) or {}
     mid = (d.get("merge_id") or "").strip()
     action = (d.get("action") or "").strip()
-    if not mid or action not in ("merge", "keep_separate"):
-        return jsonify(ok=False, error="merge_id + action (merge|keep_separate) required"), 400
+    if not mid or action not in ("merge", "keep_separate", "split"):
+        return jsonify(ok=False, error="merge_id + action (merge|split|keep_separate) required"), 400
+    sku_keys = [str(s) for s in (d.get("sku_keys") or []) if s]
     dec = dict(cluster_id=mid, action=action, tier="merge-review", note=(d.get("note") or "")[:200],
                matched_name=(d.get("name") or "")[:120], steward=(d.get("steward") or "cluster-review"),
-               ts=int(_t.time()))
+               members=json.dumps(sku_keys)[:4000], ts=int(_t.time()))
     existing = [e for e in _wq("master_decisions", "SELECT * FROM t") if e.get("cluster_id") != mid]
     warehouse.write_parquet("master_decisions", existing + [dec])
     return jsonify(ok=True, merge_id=mid, action=action)
