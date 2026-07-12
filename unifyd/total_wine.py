@@ -25,11 +25,29 @@ HEADER = ["Brand", "Name", "Size", "Price", "SKU", "Category", "varietal", "orig
           "appellation", "style", "abv", "description", "URL"]
 
 
+def _looks_blocked(html):
+    h = (html or "")[:4000].lower()
+    return ("px-captcha" in h or "perimeterx" in h or "/_px/" in h or
+            "access to this page has been denied" in h or (len(html or "") < 1200 and "totalwine" not in h))
+
+
 def _fetch(url, timeout=30):
-    req = urllib.request.Request(url, headers={"User-Agent": MOBILE_UA, "Accept": "*/*",
-                                               "Accept-Language": "en-US,en;q=0.9"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read().decode("utf-8", "replace")
+    """Direct mobile-UA first (free — defeats PerimeterX when the IP isn't flagged). If that's blocked and
+    TW_BD=1, fall back to Bright Data Unlocker (reliable but paid). BD stays OPT-IN so a full 150k-page crawl
+    never silently burns proxy budget — the sitemap fetches always go direct (not walled)."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": MOBILE_UA, "Accept": "*/*",
+                                                   "Accept-Language": "en-US,en;q=0.9"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            t = r.read().decode("utf-8", "replace")
+        if t and not _looks_blocked(t):
+            return t
+        raise urllib.error.HTTPError(url, 403, "PerimeterX block page", None, None)   # -> BD path below
+    except urllib.error.HTTPError as e:
+        if e.code not in (403, 429, 503) or os.environ.get("TW_BD") != "1":
+            raise
+    import menu_site as ms
+    return ms._unlock(url, ms._bd_key())
 
 
 def product_sitemaps(log=print):
