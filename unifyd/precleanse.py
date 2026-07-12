@@ -15,6 +15,14 @@ Size extraction is owned by build_product_master. Ambiguous same-brand name vari
 """
 import collections
 import re
+import unicodedata
+
+
+def deaccent(s):
+    """Fold accents/diacritics to ASCII for MATCHING keys only (Château->Chateau, José->Jose, Rémy->Remy), so
+    accented and un-accented spellings of the same brand/product corroborate across sources. Display names keep
+    their accents — this is applied to the match key, not the shown string."""
+    return unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode("ascii")
 
 # generic corporate/category tokens that don't distinguish a brand — stripped from the brand MATCH key so
 # "Tito's Handmade Vodka" == "Tito Handmade". Corporate suffixes + the spirit/beer category words (a category
@@ -41,8 +49,8 @@ def _titlecase(s):
 
 
 def nbrand(s):
-    """Aggressive brand match-key: lowercase, drop possessive + plural 's, punctuation, generic suffixes."""
-    s = (s or "").lower()
+    """Aggressive brand match-key: de-accent, lowercase, drop possessive + plural 's, punctuation, generic suffixes."""
+    s = deaccent(s).lower()
     s = re.sub(r"'s\b", "", s)                      # possessive: tito's -> tito
     s = re.sub(r"[^a-z0-9]+", " ", s)
     toks = [t for t in s.split() if t not in _GENERIC and len(t) > 1]

@@ -625,8 +625,11 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
             continue
         seen.add(base.group(0)); stores.append(dict(s, base=base.group(0)))
     run_id = "offprem-" + time.strftime("%Y%m%d-%H%M%S")
+    import runlog
+    _rl = runlog.start("offprem-%s" % market, total=len(stores))     # register in the Active Runs board
     rows = []
-    for s in stores:
+    for si, s in enumerate(stores):
+        _rl.progress(si + 1)
         plat = (s["platform"] or "").lower()
         if not any(p.lower() in plat for p in platforms):
             continue
@@ -668,6 +671,7 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
         # ACCUMULATE — `out` is per-market but filled by a PLATFORM-filtered subset; running for one platform
         # then another into the same table must not wipe the first platform's products.
         warehouse.write_accumulate(out, rows, key=lambda r: (r.get("account") or r.get("store"), r.get("name")))
+    _rl.finish("done", note="%d products from %d stores" % (len(rows), len(stores)))
     log("[off] %d products -> %s" % (len(rows), out))
     return rows
 

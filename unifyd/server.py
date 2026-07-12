@@ -3849,7 +3849,31 @@ def jobs_ep():
         out.append(dict(id=jid, connId=job["connId"], status=job["status"], startedAt=job["startedAt"],
                         finishedAt=job.get("finishedAt"), elapsedMs=(job.get("finishedAt") or now) - job["startedAt"],
                         error=job.get("error"), landed=(job.get("run") or {}).get("total"), **p))
-    return jsonify(ok=True, active=sum(1 for j in out if j["status"] == "running"), jobs=out)
+    # runs registered via runlog (scrapes that run OFF the server box — laptops, crons, batch sweeps)
+    try:
+        rows = _wq("scrape_runs", "SELECT * FROM t WHERE updatedAt >= ? ORDER BY startedAt DESC LIMIT 40",
+                   [now - 24 * 3600 * 1000])
+        seen = {j["id"] for j in out}
+        for r in rows:
+            if r.get("run_id") in seen:
+                continue
+            n, tot = r.get("n") or 0, r.get("total")
+            elapsed = (r.get("finishedAt") or r.get("updatedAt") or now) - (r.get("startedAt") or now)
+            # a run whose updatedAt is stale (>3 min) but still 'running' is almost certainly dead
+            status = r.get("status")
+            if status == "running" and (now - (r.get("updatedAt") or now)) > 180000:
+                status = "stalled"
+            rate = (n / (elapsed / 1000.0)) if (elapsed > 0 and n) else None
+            eta = ((tot - n) / rate * 1000) if (rate and tot and tot > n) else None
+            out.append(dict(id=r.get("run_id"), connId=r.get("connId"), status=status,
+                            startedAt=r.get("startedAt"), finishedAt=r.get("finishedAt"), elapsedMs=elapsed,
+                            done=n, total=tot, pct=(round(100 * n / tot) if (tot and n) else None),
+                            rate=(round(rate, 1) if rate else None), etaMs=(int(eta) if eta else None),
+                            host=r.get("host"), note=r.get("note"), landed=n))
+    except Exception:
+        pass
+    out.sort(key=lambda j: -(j.get("startedAt") or 0))
+    return jsonify(ok=True, active=sum(1 for j in out if j.get("status") == "running"), jobs=out[:40])
 
 
 @app.post("/api/analyze")
