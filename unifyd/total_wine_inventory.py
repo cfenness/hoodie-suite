@@ -99,9 +99,16 @@ def _store_meta(fetch_json, store_id):
         return None, ""
 
 
+# fetch IN-PAGE: a same-origin fetch() from the page's own JS carries every cookie + header the app sends
+# (page.request does NOT replicate the PX/session context, so it 403s). One warmed session serves the batch.
+_FETCH_JS = ("async (url) => { try { const r = await fetch(url, {headers:{'accept':'application/json, text/plain, */*'}});"
+             " if(!r.ok) return {ok:false, s:r.status}; return {ok:true, d: await r.json()}; }"
+             " catch(e){ return {ok:false, e:String(e)}; } }")
+
+
 def _pull_bdbrowser(store_id, state, skuids, log):
-    """Pull THROUGH one live BD Browser session — page.request reuses its IP + warmed PX cookie, so every
-    getProduct returns JSON. One session serves the whole batch (amortized BD, not per-request)."""
+    """Pull THROUGH one live BD Browser session — an in-page fetch() reuses the session's IP + warmed PX
+    cookie, so every getProduct returns JSON. One session serves the whole batch (amortized BD)."""
     import menu_site as ms
     from playwright.sync_api import sync_playwright
     auth = ms._browser_auth()
@@ -116,21 +123,24 @@ def _pull_bdbrowser(store_id, state, skuids, log):
             st = state
             if not st:
                 try:
-                    r = pg.request.get(STORE_API % store_id, timeout=20000)
-                    st = (r.json().get("state") or "US")[:2].upper()
+                    r = pg.evaluate(_FETCH_JS, STORE_API % store_id)
+                    st = ((r.get("d") or {}).get("state") or "US")[:2].upper() if r.get("ok") else "US"
                 except Exception:
                     st = "US"
+            blocked = 0
             for i, sk in enumerate(skuids):
                 try:
-                    r = pg.request.get(API % (sk, st, store_id), timeout=20000)
-                    if r.status == 200:
-                        rec = parse_product(r.json(), store_id)
+                    r = pg.evaluate(_FETCH_JS, API % (sk, st, store_id))
+                    if r.get("ok"):
+                        rec = parse_product(r.get("d"), store_id)
                         if rec:
                             rows.append(rec)
+                    elif r.get("s") in (403, 429):
+                        blocked += 1
                 except Exception:
                     pass
                 if (i + 1) % 50 == 0:
-                    log("  [tw-inv] %d/%d pulled (%d products)" % (i + 1, len(skuids), len(rows)))
+                    log("  [tw-inv] %d/%d pulled (%d products, %d blocked)" % (i + 1, len(skuids), len(rows), blocked))
                 time.sleep(0.25)
         finally:
             b.close()
@@ -181,10 +191,14 @@ def pull_store(store_id, state=None, limit=300, log=print):
     in_stock = sum(1 for r in rows if r["in_stock"])
     tot_units = sum((r["qty"] or 0) for r in rows)
     # enrich the master's total_wine_products with geo/abv/price (accumulate, keyed by sku)
-    enr = [{"sku": r["sku"], "name": r["name"], "brand": r["brand"], "size": r["size"],
-            "price": r["price"], "abv": r["abv"], "varietal": r["varietal"], "origin": r["origin"],
-            "region": r["region"], "style": r["style"], "category": r["style"], "url": "",
-            "store_id": r["store_id"]} for r in rows]
+    # coerce to match the existing total_wine_products schema (abv is a string there from the catalog crawl;
+    # price stays float) so write_accumulate doesn't hit a column type conflict.
+    def _s(v):
+        return "" if v is None else str(v)
+    enr = [{"sku": _s(r["sku"]), "name": _s(r["name"]), "brand": _s(r["brand"]), "size": _s(r["size"]),
+            "price": r["price"], "abv": _s(r["abv"]), "varietal": _s(r["varietal"]), "origin": _s(r["origin"]),
+            "region": _s(r["region"]), "style": _s(r["style"]), "category": _s(r["style"]), "url": "",
+            "store_id": _s(r["store_id"])} for r in rows]
     try:
         warehouse.write_accumulate("total_wine_products", enr, key=lambda r: r["sku"])
     except Exception as e:
