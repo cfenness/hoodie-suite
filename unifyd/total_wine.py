@@ -82,8 +82,20 @@ def parse_product(html, url):
         size = _m(r"([0-9][0-9.]*\s*(?:ml|ML|L|Liter|oz|OZ|Pack|pk))\b", seg) or _m(r"([0-9][0-9.]*\s*(?:ml|L))\b", name)
         price = _m(r'itemProp="price"[^>]*content="([0-9.]+)"', html) or _m(r'"price"\s*:\s*"?\$?([0-9]+\.[0-9]{2})', html) or _m(r"\$([0-9]+\.[0-9]{2})", html)
         cat = _m(r'itemProp="itemListElement".*?itemProp="name"[^>]*content="([^"]*)"', html, re.S)
+        # TAKE EVERYTHING — Total Wine embeds a structured attributes JSON: {"attributeName":"Varietal Type",
+        # "value":"..."}, Country State, Appellation, Region, Style, ABV, Taste/Body. Map the geo/varietal ones.
+        attrs = {}
+        for an, av in re.findall(r'"attributeName":"([^"]+)","value":"([^"]+)"', html):
+            attrs.setdefault(an, av)
+
+        def a(*names):
+            return next((attrs[n] for n in names if attrs.get(n)), "")
         return {"sku": sku, "brand": brand, "name": name, "size": size, "price": price,
-                "category": cat, "desc": desc, "img": img, "url": url}
+                "category": cat, "desc": desc, "img": img, "url": url,
+                "varietal": a("Varietal Type", "Varietal"), "origin": a("Country State", "Country"),
+                "region": a("Region"), "sub_region": a("Sub Region", "Sub-Region", "Sub-Appellation"),
+                "appellation": a("Appellation"), "style": a("Style", "Wine Style"),
+                "abv": a("ABV", "Alcohol Content"), "taste": a("Taste"), "body": a("Body")}
     return None
 
 
