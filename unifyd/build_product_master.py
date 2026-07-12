@@ -311,6 +311,11 @@ def build(log=print):
     h = master_apply.resolve_hierarchy(FIELDS, warehouse.uri("_stage_product").strip("'"), con, built_by="build_product_master")
     dims = {k: v["rows"] for k, v in h.items() if isinstance(v, dict) and "rows" in v}
     log("[master] DONE — %s" % dims)
+    try:                                                # mint/reuse durable Hoodie IDs for the rebuilt entities
+        import hoodie_ids                                # (persistent registry — same real entity keeps its id)
+        hoodie_ids.assign(log=log)
+    except Exception as e:
+        log("[master] hoodie_ids skipped: %s" % str(e)[:80])
     try:                                                # pre-compute the workbench list views (fast cold-load)
         import wb_views
         wb_views.build(log=log)
