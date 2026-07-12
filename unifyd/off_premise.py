@@ -549,6 +549,83 @@ def cityhive_catalog(base, key=None, max_products=None, workers=8, log=print):
     return rows
 
 
+# ── Squarespace Commerce recipe — the crack: Squarespace exposes EVERYTHING as JSON. sitemap.xml lists every
+# product URL (they all contain `/p/`), and appending `?format=json` to any product URL returns the full item
+# (title, variants[{sku, priceMoney, salePriceMoney, qtyInStock, optionValues}], assetUrl image, body). No API
+# key, no browser — universal across any Squarespace store regardless of its shop path. Per-product fetch, so
+# bounded by max_products in a multi-store census sweep. ──
+def _sqsp_money(v, item):
+    m = (v.get("salePriceMoney") if v.get("onSale") else None) or v.get("priceMoney") \
+        or item.get("salePriceMoney") or item.get("priceMoney") or {}
+    try:
+        return float(m.get("value")) if m.get("value") not in (None, "") else None
+    except Exception:
+        return None
+
+
+def squarespace_product(url, key):
+    """One Squarespace product URL -> a row per purchasable variant (size options become separate variants)."""
+    try:
+        # direct-first (?format=json is a public endpoint, no bot wall) — BD only if actually blocked
+        j = json.loads(_fetch(url + ("&" if "?" in url else "?") + "format=json", key))
+    except Exception:
+        return []
+    item = j.get("item") or ((j.get("items") or [{}])[0])
+    if not isinstance(item, dict) or not item.get("title"):
+        return []
+    title = _html.unescape(item.get("title") or "").strip()
+    img = item.get("assetUrl") or ""
+    desc = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", item.get("excerpt") or item.get("body") or ""))).strip()[:2000]
+    variants = item.get("variants") or [{}]
+    out = []
+    for v in variants:
+        # size/option variants (e.g. "750ml" / "1.5L") ride optionValues -> fold into the name for size parsing
+        opt = " ".join(str(o.get("value") or "") for o in (v.get("optionValues") or []) if isinstance(o, dict)).strip()
+        name = ("%s %s" % (title, opt)).strip() if opt and opt.lower() not in title.lower() else title
+        sku = (v.get("sku") or "").strip()
+        qty = v.get("qtyInStock")
+        out.append({"name": name, "brand": "", "price": _sqsp_money(v, item),
+                    "sku": sku, "upc": (sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
+                    "size_ml": _ch_ml(name), "in_stock": bool(v.get("unlimited") or (qty or 0) > 0),
+                    "qty": (None if v.get("unlimited") else qty), "image": img, "description": desc,
+                    "product_type": str(item.get("productType") or ""), "url": item.get("fullUrl") or url,
+                    "raw_json": json.dumps(item)[:12000]})
+    return out
+
+
+def squarespace_catalog(base, key=None, max_products=None, workers=6, log=print):
+    """Every product on a Squarespace store: sitemap.xml -> /p/ URLs -> per-product ?format=json (concurrent)."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    key = key or _bd_key()
+    base = base.rstrip("/")
+    try:
+        sm = _fetch(base + "/sitemap.xml", key)        # direct-first; sitemap is public
+    except Exception as e:
+        log("  [sqsp] %s sitemap: %s" % (base, str(e)[:50])); return []
+    urls = [u for u in re.findall(r"<loc>\s*([^<]+?)\s*</loc>", sm or "") if "/p/" in u]
+    # de-dupe, keep order; cap for a multi-store sweep
+    seen, prod = set(), []
+    for u in urls:
+        if u not in seen:
+            seen.add(u); prod.append(u)
+    if max_products:
+        prod = prod[:max_products]
+    if not prod:
+        log("  [sqsp] %s: no /p/ products in sitemap (Squarespace Commerce not in use?)" % base); return []
+    rows, lock = [], threading.Lock()
+
+    def w(u):
+        r = squarespace_product(u, key)
+        if r:
+            with lock:
+                rows.extend(r)
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
+        list(ex.map(w, prod))
+    log("  [sqsp] %s -> %d products (%d variants)" % (base, len(prod), len(rows)))
+    return rows
+
+
 def discover_stores(query, pages=4, log=print):
     """SERP a platform signature -> distinct store domains (noise filtered). Market-agnostic national discovery."""
     key = _bd_key()
@@ -647,6 +724,9 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
                 items = cityhive_catalog(s["base"], key, max_products=int(os.environ.get("CITYHIVE_MAX", "600")), log=log)
             elif "wix" in plat:
                 items = wix_catalog(s["base"], key, log=log)
+            elif "squarespace" in plat:
+                # per-product fetch -> bound in a multi-store sweep (single-store run()/CLI goes full).
+                items = squarespace_catalog(s["base"], key, max_products=int(os.environ.get("SQSP_MAX", "800")), log=log)
             else:
                 items = []
         except Exception as e:
@@ -722,8 +802,68 @@ def run(store, base=None, platform=None, sample=None, delay=1.5, log=print):
     return run_id, len(rows)
 
 
+# canonical set of platforms run_census() can dispatch — KEEP IN SYNC with the dispatch in run_census().
+# value = the recipe fn(s) that handle it. BigCommerce is proven via ABC's abc_catalog, not run_census.
+RECIPE_PLATFORMS = {"bigcommerce": "abc_catalog / bigcommerce_ids", "shopify": "shopify_catalog",
+                    "woocommerce": "woo_catalog", "bottlecapps": "bottlecapps_catalog",
+                    "wix": "wix_catalog", "city hive": "cityhive_catalog", "cityhive": "cityhive_catalog",
+                    "squarespace": "squarespace_catalog"}
+
+
+def _has_recipe(platform):
+    p = (platform or "").lower()
+    return any(k in p for k in RECIPE_PLATFORMS)
+
+
+def recipe_gap(log=print):
+    """Standing recipe-coverage report — the 'systems we've found that we can't (yet) crawl' view.
+
+    Scans every *_census table in the warehouse, tallies e-commerce stores by detected PLATFORM, and marks each:
+      • proven          — a recipe is registered AND it has yielded products (appears in a *_products table)
+      • recipe-unproven — a recipe is registered but hasn't produced anything yet (needs validating/fixing)
+      • bespoke         — no platform detected; each store is its own custom job (low priority)
+      • NO RECIPE       — a real named platform we have no recipe for -> BUILD priority
+    Ranks by store count so the biggest un-crawlable systems float to the top = what to build/fix next.
+    """
+    from collections import defaultdict
+    ds = warehouse.list_datasets()
+    have = {d["name"]: d for d in ds}
+    census_tbls = [d["name"] for d in ds if d["name"].endswith("_census") and d.get("rows")]
+    prod_tbls = [d["name"] for d in ds if d["name"].endswith("_products") and d.get("rows")]
+    counts, markets = defaultdict(int), defaultdict(set)
+    for t in census_tbls:
+        try:
+            for r in warehouse.query(t, "SELECT platform, count(*) c FROM t WHERE has_ecommerce = true GROUP BY platform"):
+                if r["platform"]:
+                    counts[r["platform"]] += r["c"]; markets[r["platform"]].add(t.replace("_offprem_census", "").replace("_hemp_census", ""))
+        except Exception:
+            pass
+    proven = set()
+    for t in prod_tbls:
+        try:
+            for r in warehouse.query(t, "SELECT DISTINCT platform FROM t WHERE platform IS NOT NULL"):
+                proven.add((r["platform"] or "").lower())
+        except Exception:
+            pass
+    if have.get("abc_catalog", {}).get("rows"):
+        proven.add("bigcommerce")                         # BigCommerce proves via ABC's abc_catalog
+    out = []
+    for plat, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+        pl = plat.lower()
+        registered = _has_recipe(plat)
+        is_proven = registered and any(k in pl or pl in k for k in proven)
+        status = ("proven" if is_proven else "recipe-unproven") if registered else \
+                 ("bespoke" if "bespoke" in pl else "NO RECIPE")
+        out.append({"platform": plat, "stores": n, "markets": sorted(markets[plat]), "status": status})
+    log("[recipe-gap] %d census tables · %d platforms" % (len(census_tbls), len(out)))
+    for r in out:
+        log("  %-16s %5d stores  %-16s %s" % (r["platform"], r["stores"], r["status"], ",".join(r["markets"])))
+    return out
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
+    ap.add_argument("--gap", action="store_true", help="print the standing recipe-coverage gap report")
     ap.add_argument("--store", default="")
     ap.add_argument("--base", default="")
     ap.add_argument("--platform", default="")
@@ -733,7 +873,9 @@ if __name__ == "__main__":
     ap.add_argument("--hemp", action="store_true", help="pull the hemp census instead of off-premise")
     ap.add_argument("--national", default="", help="platform -> discover its stores nationally + sweep")
     a = ap.parse_args()
-    if a.national:
+    if a.gap:
+        recipe_gap()
+    elif a.national:
         national_sweep(a.national)
     elif a.census:
         pl = tuple(p.strip() for p in a.platforms.split(",") if p.strip())
