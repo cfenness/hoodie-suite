@@ -22,9 +22,13 @@ def materialize(log=print):
     d = warehouse.uri("ttb_cola_detail").replace("'", "")
     l = warehouse.uri("ttb_cola_labels").replace("'", "")
     # one row per distinct bottle+vintage; brand+fanciful → name; UPC joined from label OCR by ttb_id
+    # brand_name is the FILED brand (the real top-level identity — "St Clair Winery", "Chateau Margaux"); keep
+    # it as its own column so the master maps it directly instead of re-guessing the brand from the name string
+    # (which shatters French/Italian wine producers into "Domaine de" / "Chateau La"). fanciful is the product.
     join = (
         "SELECT trim(d.brand_name || CASE WHEN d.fanciful_name IS NOT NULL AND d.fanciful_name<>'' "
         "THEN ' '||d.fanciful_name ELSE '' END) AS name, "
+        "nullif(trim(d.brand_name),'') AS brand_name, nullif(trim(d.fanciful_name),'') AS fanciful_name, "
         "d.class_type_desc AS category, d.origin_code AS origin, d.net_contents AS net_contents, "
         "d.wine_vintage AS vintage, d.grape_varietal AS varietal, l.upc AS upc "
         "FROM read_parquet('%s') d LEFT JOIN read_parquet('%s') l ON d.ttb_id = l.ttb_id "
