@@ -1722,10 +1722,16 @@ def mwb_summary_ep():
     stages = {"candidates": total,
               "auto": multi, "claude": claude, "analyst": analyst, "senior": sr, "steward": st,
               "confirmed": multi + claude + conf_h}
+    # product-level tiering (TTB's real grain — it can't form SKUs): products corroborated across sources,
+    # and specifically the TTB-registered products ALSO seen in retail (Tier-1 promotions).
+    s0 = sv[0] if sv else {}
+    product_tier = {"products": s0.get("prod_total") or 0, "corroborated": s0.get("prod_corr") or 0,
+                    "ttb_corroborated": s0.get("ttb_corr") or 0, "ttb_registered": s0.get("ttb_total") or 0}
     return jsonify(ok=True, master=total, review=analyst, quarantine=0,
                    source_rows=source_rows, collapsed=max(0, source_rows - total),
                    avg_confidence=round((multi * 0.88 + single * 0.5) / max(1, total), 3),
-                   stages=stages, by_source=[{"source": r.get("s"), "n": r.get("n")} for r in by])
+                   stages=stages, product_tier=product_tier,
+                   by_source=[{"source": r.get("s"), "n": r.get("n")} for r in by])
 
 
 def _wb_brandmap():

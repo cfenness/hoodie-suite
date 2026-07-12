@@ -224,7 +224,7 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 <div class="shell">
   <div class="hd">
     <h1>Matching workbench</h1>
-    <span class="sub">Rank the possible clusters, read the justification, decide — or step it up.</span>
+    <span class="sub">Rank the possible clusters, read the justification, decide — or step it up. <span id="ptier" style="color:var(--muted)"></span></span>
     <span class="run"><span class="role"><span class="dot analyst"></span>Reviewing as Analyst</span><span>Run <b>latest</b> · <b class="num" id="runcand">—</b> candidates</span></span>
   </div>
 
@@ -311,6 +311,9 @@ async function boot(){
       fetch(API+"/master").then(r=>r.json())
     ]);
     setFunnel(s.stages||{});
+    const pt=s.product_tier; const pe=$("#ptier");
+    if(pt&&pe){ pe.innerHTML="· <b>"+Number(pt.corroborated||0).toLocaleString()+"</b> products corroborated"
+      +(pt.ttb_corroborated?" ("+Number(pt.ttb_corroborated).toLocaleString()+" registered <i>and</i> sold — TTB↔retail)":""); }
     const cand=(s.stages&&s.stages.candidates)||0;
     // Candidates are distinct products; note how many raw source rows they collapsed from (so the
     // 196,535→76,618 dedup is visible without breaking the funnel's single (product) grain).

@@ -108,9 +108,19 @@ def build(log=print):
         src_rows = _rows(con, "SELECT count(*) n FROM _stage_product")[0]["n"]
     except Exception:
         src_rows = agg["total"]
+    # PRODUCT-level tiering — TTB has no size/UPC so it can only corroborate at the product grain (a registered
+    # product also seen in retail = Tier-1). This is TTB's real contribution, invisible at the SKU grain.
+    pc = _rows(con, "SELECT count(*) ptot, sum(CASE WHEN sources>=2 THEN 1 ELSE 0 END) pcorr, "
+                    "sum(CASE WHEN list_contains(source_list,'ttb_products') "
+                    "AND len(list_filter(source_list, x -> x <> 'ttb_products'))>0 THEN 1 ELSE 0 END) ttb_corr, "
+                    "sum(CASE WHEN list_contains(source_list,'ttb_products') THEN 1 ELSE 0 END) ttb_tot "
+                    "FROM dim_product")[0]
     warehouse.write_parquet("wb_summary", [{"total": agg["total"], "multi": agg["multi"] or 0,
-                                            "source_rows": src_rows, "by_source": json.dumps(by)}],
-                            fields=["total", "multi", "source_rows", "by_source"])
+                                            "source_rows": src_rows, "by_source": json.dumps(by),
+                                            "prod_total": pc["ptot"], "prod_corr": pc["pcorr"] or 0,
+                                            "ttb_corr": pc["ttb_corr"] or 0, "ttb_total": pc["ttb_tot"] or 0}],
+                            fields=["total", "multi", "source_rows", "by_source", "prod_total", "prod_corr",
+                                    "ttb_corr", "ttb_total"])
     merges = build_merges(con, log=log)
     log("[wb_views] wb_master=%d · wb_queue=%d (cap %d) · total=%d multi=%d · wb_merges=%d"
         % (len(master), len(queue), CAP, agg["total"], agg["multi"] or 0, merges))
