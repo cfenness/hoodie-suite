@@ -147,41 +147,48 @@ def pull(sample=30, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
     targets = (catalog if limit is None else catalog[:limit]) if crawl_all else pick_sample(catalog, sample)
     log(f"catalog {len(catalog)} products; fetching {len(targets)} (per-store variants)")
 
-    cur, ok_n, names = {}, 0, {}
+    import runlog
+    cur, ok_n, names, done = {}, 0, {}, [0]
     # FAST: concurrent per-page fetch (plain HTTP) instead of serial DELAY.
     import threading
     from concurrent.futures import ThreadPoolExecutor
     workers = int(os.environ.get("SPECS_WORKERS", "12"))
     jitter = float(os.environ.get("SPECS_JITTER", "0.2"))
     lock = threading.Lock()
-    def _one(t):
-        nonlocal ok_n
-        slug, url = t
-        try:
-            html = _http(url)
-            rows, name = parse_stores(html)
-            mi = re.search(r'(?:og:image|twitter:image)"[^>]*content="([^"]+)"', html or "", re.I)
-            img = mi.group(1) if mi else ""
+    with runlog.track("specs", total=len(targets)) as _run:      # register on the Active Runs board w/ progress
+        def _one(t):
+            nonlocal ok_n
+            slug, url = t
+            try:
+                html = _http(url)
+                rows, name = parse_stores(html)
+                mi = re.search(r'(?:og:image|twitter:image)"[^>]*content="([^"]+)"', html or "", re.I)
+                img = mi.group(1) if mi else ""
+                with lock:
+                    if rows:
+                        ok_n += 1
+                    for r in rows:
+                        cur[f"{slug}|{r['store']}"] = {"price": r["price"], "instock": r["instock"],
+                                                       "store": r["store"], "slug": slug, "sku": r["sku"],
+                                                       "name": name, "image": img}
+                    if name:
+                        names[slug] = name
+            except Exception as e:
+                log(f"  {slug}: {e}")
             with lock:
-                if rows:
-                    ok_n += 1
-                for r in rows:
-                    cur[f"{slug}|{r['store']}"] = {"price": r["price"], "instock": r["instock"],
-                                                   "store": r["store"], "slug": slug, "sku": r["sku"],
-                                                   "name": name, "image": img}
-                if name:
-                    names[slug] = name
-        except Exception as e:
-            log(f"  {slug}: {e}")
-        if jitter:
-            time.sleep(jitter)
-    if workers > 1:
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            for _ in ex.map(_one, targets):
-                pass
-    else:
-        for t in targets:
-            _one(t)
+                done[0] += 1
+                if done[0] % 50 == 0:
+                    _run.progress(done[0])
+            if jitter:
+                time.sleep(jitter)
+        if workers > 1:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                for _ in ex.map(_one, targets):
+                    pass
+        else:
+            for t in targets:
+                _one(t)
+        _run.progress(len(targets))
 
     prev = {}
     snap_path = os.path.join(state_dir, SNAP)

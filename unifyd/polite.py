@@ -23,6 +23,7 @@ per host across their worker threads. A tripped breaker raises Blocked — calle
 (degraded) rather than swallow it, so we never grind into a ban.
 """
 import gzip
+import json
 import os
 import random
 import ssl
@@ -99,6 +100,19 @@ def _proxy_opener():
                                        urllib.request.HTTPSHandler(context=ctx))
 
 
+def _bd_rest_request(url, timeout):
+    """BD Web Unlocker via its REST API (api.brightdata.com/request, cli_unlocker zone) — the PROVEN path: uses
+    the CLI/API key, no proxy-port creds needed, and solves the anti-bot challenge server-side. Returns the
+    urlopen response of the BD call (read() -> the unlocked target body). Raises HTTPError on BD failure, so the
+    caller's breaker/backoff logic applies unchanged."""
+    import menu_site as _ms                         # lazy: avoid import cycle; reuse the working key + zone
+    payload = json.dumps({"zone": "cli_unlocker", "url": url, "format": "raw"}).encode()
+    req = urllib.request.Request("https://api.brightdata.com/request", data=payload,
+                                 headers={"Authorization": "Bearer " + _ms._bd_key(),
+                                          "Content-Type": "application/json"})
+    return urllib.request.urlopen(req, timeout=max(timeout, 75))
+
+
 def get(url, *, min_interval=5.0, jitter=3.0, timeout=30, headers=None, data=None, method=None,
         max_retries=4, breaker_after=5, breaker_cooldown=600, use_proxy=False, host=None,
         return_headers=False):
@@ -115,6 +129,9 @@ def get(url, *, min_interval=5.0, jitter=3.0, timeout=30, headers=None, data=Non
                       % (host, st.open_until - now))
 
     opener = _proxy_opener() if use_proxy else None
+    # proxied GET with no proxy-port creds -> fall back to the BD Web Unlocker REST API (proven path). POST keeps
+    # the direct/opener path (the REST body/method passthrough isn't needed for our GraphQL sitemap harvest).
+    rest = use_proxy and opener is None and data is None and (method is None or method.upper() == "GET")
 
     for attempt in range(max_retries + 1):
         # pace: hold the per-host lock only to reserve the slot, then sleep outside it
@@ -126,7 +143,12 @@ def get(url, *, min_interval=5.0, jitter=3.0, timeout=30, headers=None, data=Non
 
         req = urllib.request.Request(url, data=data, headers=_headers(headers), method=method)
         try:
-            resp = opener.open(req, timeout=timeout) if opener else urllib.request.urlopen(req, timeout=timeout)
+            if rest:
+                resp = _bd_rest_request(url, timeout)
+            elif opener:
+                resp = opener.open(req, timeout=timeout)
+            else:
+                resp = urllib.request.urlopen(req, timeout=timeout)
             body = resp.read()
             enc = (resp.headers.get("Content-Encoding") or "").lower()
             if enc == "gzip":
