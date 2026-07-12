@@ -153,7 +153,7 @@ _DESC_TOK = re.compile(r"^\d{2,3}p?$|^\d{2,3}proof$|^\d{4}$|^\d+ml$|^\d+l$")   #
 
 
 def _tokset(name):
-    return frozenset(t for t in re.findall(r"[a-z0-9]+", (name or "").lower())
+    return frozenset(t for t in re.findall(r"[a-z0-9]+", _precleanse.deaccent(name).lower())
                      if t not in _NOISE_TOK and len(t) > 1)
 
 
@@ -179,7 +179,7 @@ def _core_key(name):
 
 
 def _ncmp(s):
-    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+    return re.sub(r"[^a-z0-9]", "", _precleanse.deaccent(s).lower())
 
 
 def _canon_product_name(brand, name_counter, rows):
