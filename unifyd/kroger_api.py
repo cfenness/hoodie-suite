@@ -246,6 +246,8 @@ def run(zips, terms):
     run_id = "kr-" + time.strftime("%Y%m%d-%H%M%S")
     pace = float(os.environ.get("KROGER_PACE", "0.5"))   # base gap between calls (backoff handles bursts)
     seen, uniq, stores = set(), [], set()
+    import runlog
+    _rl = runlog.start("kroger", total=len(zips))        # register on the Active Runs board (was invisible)
     try:
         for zi, z in enumerate(zips, 1):
             try:
@@ -271,13 +273,16 @@ def run(zips, terms):
                         log("  products(%s@%s) failed: %s" % (t, lid, str(e)[:60]))
                     time.sleep(pace + random.uniform(0, pace))
             _land(uniq, len(stores), run_id)          # incremental land after each zip
+            _rl.progress(zi)
             log("  [%s] zip %d/%d (%s) — %d products, %d stores so far -> warehouse"
                 % (run_id, zi, len(zips), z, len(uniq), len(stores)))
     except KrogerBlocked as e:
         log("  [%s] STOPPED EARLY: %s" % (run_id, e))
         _land(uniq, len(stores), run_id)              # keep what we got
+        _rl.finish("degraded", note="throttle breaker after %d stores; %d products" % (len(stores), len(uniq)))
         log("[%s] STOPPED %d products across %d stores (throttle breaker) -> warehouse" % (run_id, len(uniq), len(stores)))
         return run_id, len(uniq)
+    _rl.finish("done", note="%d products across %d stores" % (len(uniq), len(stores)))
     log("[%s] DONE %d products across %d stores -> warehouse" % (run_id, len(uniq), len(stores)))
     return run_id, len(uniq)
 

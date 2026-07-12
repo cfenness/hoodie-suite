@@ -73,6 +73,11 @@ def run(store, state=None, shards=1, shard=0, resume=True, log=print):
             # unique observation partition per (shard, batch) — concurrent shards must NOT share one file
             got += _land(rows, log, part="%s_total-wine_s%d_b%d" % (day, shard, b))
             rl.progress(min(b + BATCH, total))
+            # a nearly-empty batch => the PX session died silently (empties read as 'no product', not 'blocked');
+            # small batches self-heal (next batch re-warms a fresh session), so just flag it, loudly.
+            if batch and len(rows) < max(3, len(batch) // 20):
+                log("[tw-full] ⚠ batch %d yielded only %d/%d — likely a dead PX session; next batch re-warms"
+                    % (b, len(rows), len(batch)))
             log("[tw-full] %d/%d skus · +%d products this batch · %d landed cumulative"
                 % (min(b + BATCH, total), total, len(rows), got))
     log("[tw-full] DONE store %s%s: %d products landed" % (store, (" shard %d" % shard) if shards > 1 else "", got))
