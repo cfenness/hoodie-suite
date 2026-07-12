@@ -25,8 +25,8 @@ def materialize(log=print):
     join = (
         "SELECT trim(d.brand_name || CASE WHEN d.fanciful_name IS NOT NULL AND d.fanciful_name<>'' "
         "THEN ' '||d.fanciful_name ELSE '' END) AS name, "
-        "d.class_type_desc AS category, d.net_contents AS net_contents, d.wine_vintage AS vintage, "
-        "d.grape_varietal AS varietal, l.upc AS upc "
+        "d.class_type_desc AS category, d.origin_code AS origin, d.net_contents AS net_contents, "
+        "d.wine_vintage AS vintage, d.grape_varietal AS varietal, l.upc AS upc "
         "FROM read_parquet('%s') d LEFT JOIN read_parquet('%s') l ON d.ttb_id = l.ttb_id "
         "WHERE d.brand_name IS NOT NULL AND d.brand_name<>'' "
         "QUALIFY row_number() OVER (PARTITION BY d.brand_name, d.fanciful_name, d.net_contents, d.wine_vintage) = 1"

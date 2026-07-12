@@ -44,13 +44,13 @@ _CFG = {
     # TTB COLA — the federal label registry = the historical backbone (~1M bottle+vintage records). Pre-joined
     # (detail + labels) + deduped in ttb_products; brand extracted from the name via the dictionary; vintage →
     # dim_vintage aux (bottles don't split by vintage). All alcohol, so no bev-alc filter.
-    "ttb_products": dict(name="name", cat="category", size="net_contents", vintage="vintage", upc="upc"),
+    "ttb_products": dict(name="name", cat="category", origin="origin", size="net_contents", vintage="vintage", upc="upc"),
 
     "or_pricing": dict(name="description", size="size", cat="category", proof="proof"),
     "me_pricing": dict(name="Description", size="Size", upc="UPC", proof="Proof", cat="Product Category"),
     "nc_pricing": dict(name="Brand Name", size="Bottle Size", proof="Proof", brand="Brand Name"),
     "bc_liquor": dict(name="PRODUCT_LONG_NAME", upc="PRODUCT_BASE_UPC_NO", litres="PRODUCT_LITRES_PER_CONTAINER",
-                      abv="PRODUCT_ALCOHOL_PERCENT", cat="ITEM_CATEGORY_NAME"),
+                      abv="PRODUCT_ALCOHOL_PERCENT", cat="ITEM_CATEGORY_NAME", origin="PRODUCT_COUNTRY_ORIGIN_NAME"),
     "ut_pricing": dict(name="Description", size="Size"),
     "mont_catalog": dict(name="description", size="size", cat="category"),
     "id_products": dict(name="name", size="size", proof="proof"),
@@ -104,6 +104,18 @@ def clean_name(name):
     s = re.sub(_SZ, " ", (name or ""))
     s = re.sub(r"\s*[-–]\s*$", "", s)
     return re.sub(r"\s{2,}", " ", s).strip()
+
+
+def _clean_vintage(v):
+    """Keep only real vintages — a 4-digit year in range, or NV. Drops the junk that leaks into TTB
+    wine_vintage (ABV '11.5', size '1.5L', age '8 YR', garbage OCR)."""
+    s = str(v or "").strip()
+    if re.fullmatch(r"(?:n\.?v\.?|non[- ]?vintage)", s, re.I):
+        return "NV"
+    m = re.fullmatch(r"(18|19|20)\d{2}", s)
+    if m and 1850 <= int(s) <= 2035:
+        return s
+    return None
 
 
 def _to_ml(s):
@@ -221,11 +233,13 @@ def build(log=print):
             abv = _fnum(r.get(c["abv"])) if c.get("abv") else \
                 ((_fnum(r.get(c["proof"])) / 2) if c.get("proof") and _fnum(r.get(c["proof"])) else None)
             staged.append(dict(brand=brand, brand_group=None, product_name=clean_name(nm), flavor=None, abv=abv,
-                style=None, category=r.get(c["cat"]) if c.get("cat") else None, origin=None, size_ml=sz,
+                style=None, category=r.get(c["cat"]) if c.get("cat") else None,
+                origin=((str(r.get(c["origin"])).strip().title() or None) if c.get("origin") and r.get(c["origin"]) else None),
+                size_ml=sz,
                 packsize=None, container=r.get(c["container"]) if c.get("container") else None, pack=None,
                 upc=(re.sub(r"\D", "", str(r.get(c["upc"]))) or None) if c.get("upc") and r.get(c["upc"]) else None,
                 gtin=None, edition=None, supplier=None, _source=ds,
-                vintage=((str(r.get(c["vintage"])).strip() or None) if c.get("vintage") and r.get(c["vintage"]) else None)))
+                vintage=_clean_vintage(r.get(c["vintage"])) if c.get("vintage") else None))
             kept += 1
         log("[master]   %-24s %6d products" % (ds, kept))
     _precleanse.precleanse(staged, log)                 # precleanse: canonicalize brand + cleanse name FIRST

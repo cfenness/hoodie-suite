@@ -1930,6 +1930,87 @@ def mwb_match_ep():
     return jsonify(ok=True, cluster_id=cid, action=action, tier=tier)
 
 
+# ── Master data stewardship — human fills missing MASTER fields (geo especially), persisted as ground truth
+# in master_overrides. This is the feedback loop: the values reinforce the automated extractors (retailer facets
+# + label vision) and overlay the master on rebuild. Geo (origin→region→sub_region→appellation) is master data,
+# so it must be fillable at the low level, not curated. ──
+_STEWARD_FIELDS = [
+    {"key": "origin", "label": "Origin (country / state)", "col": "origin"},
+    {"key": "region", "label": "Region", "col": None},
+    {"key": "sub_region", "label": "Sub-region", "col": None},
+    {"key": "appellation", "label": "Appellation", "col": None},
+    {"key": "varietal", "label": "Grape / varietal", "col": None},
+]
+_STEWARD_KEYS = {f["key"] for f in _STEWARD_FIELDS}
+
+
+def _steward_overrides():
+    return _wq("master_overrides", "SELECT product_key, field, value FROM t")
+
+
+@app.get("/api/master/steward/summary")
+def steward_summary_ep():
+    from collections import defaultdict
+    prods = _wq("dim_product", "SELECT product_key, origin FROM t")
+    total = len(prods)
+    byfield = defaultdict(set)
+    for o in _steward_overrides():
+        byfield[o.get("field")].add(o.get("product_key"))
+    origin_col = {p["product_key"] for p in prods if (p.get("origin") or "").strip()}
+    out = []
+    for f in _STEWARD_FIELDS:
+        filled = set(byfield.get(f["key"], set()))
+        if f["col"] == "origin":
+            filled |= origin_col
+        out.append({"key": f["key"], "label": f["label"], "filled": len(filled),
+                    "missing": max(0, total - len(filled)), "total": total})
+    return jsonify(ok=True, fields=out, total=total)
+
+
+@app.get("/api/master/steward/queue")
+def steward_queue_ep():
+    field = (request.args.get("field") or "").strip()
+    limit = min(int(request.args.get("limit") or 40), 100)
+    fdef = next((f for f in _STEWARD_FIELDS if f["key"] == field), None)
+    if not fdef:
+        return jsonify(ok=False, error="unknown field"), 400
+    brands = _wb_brandmap()
+    # most-corroborated products first — the ones that matter most to get right
+    prods = _wq("dim_product", "SELECT product_key, brand_key, product_name, category, origin, style, sources "
+                "FROM t ORDER BY sources DESC LIMIT 6000")
+    have = {o.get("product_key") for o in _steward_overrides() if o.get("field") == field}
+    out = []
+    for p in prods:
+        pk = p.get("product_key")
+        if pk in have:
+            continue
+        if fdef["col"] and (p.get(fdef["col"]) or "").strip():
+            continue
+        out.append({"product_key": pk, "name": p.get("product_name"), "brand": brands.get(p.get("brand_key")) or "",
+                    "category": p.get("category"), "origin": p.get("origin"), "sources": p.get("sources")})
+        if len(out) >= limit:
+            break
+    return jsonify(ok=True, field=field, label=fdef["label"], count=len(out), items=out)
+
+
+@app.post("/api/master/steward/set")
+def steward_set_ep():
+    import time as _t
+    import warehouse
+    d = request.get_json(silent=True) or {}
+    pk = (d.get("product_key") or "").strip()
+    field = (d.get("field") or "").strip()
+    value = (d.get("value") or "").strip()
+    if not pk or field not in _STEWARD_KEYS or not value:
+        return jsonify(ok=False, error="product_key + field + value required"), 400
+    rec = dict(product_key=pk, field=field, value=value[:120],
+               steward=(d.get("steward") or "steward")[:60], ts=int(_t.time()))
+    existing = [e for e in _wq("master_overrides", "SELECT * FROM t")
+                if not (e.get("product_key") == pk and e.get("field") == field)]
+    warehouse.write_parquet("master_overrides", existing + [rec])
+    return jsonify(ok=True, product_key=pk, field=field, value=rec["value"])
+
+
 @app.post("/api/ingest/<dataset>")
 def ingest_ep(dataset):
     """The easy way to push data INTO Unifyd. Any script POSTs JSON records here (Bearer

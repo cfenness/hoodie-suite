@@ -1,0 +1,94 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Master Data Steward</title>
+<style>
+:root{--bg:#f7f8fa;--panel:#fff;--panel-2:#f1f3f6;--ink:#1c2330;--muted:#5b6472;--faint:#95a0b0;--line:#e3e7ee;
+  --accent:#4E79A7;--accent-soft:#eaf0f7;--good:#3f9b6a;--good-soft:#e7f4ec;--warn:#c98a2b;--inset:#eef1f5}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1319;--panel:#161c25;--panel-2:#1b222d;--ink:#e7ecf3;
+  --muted:#9aa6b6;--faint:#66717f;--line:#28313d;--accent:#6b97c9;--accent-soft:#1c2836;--good:#4bb97f;
+  --good-soft:#152a20;--warn:#d69b45;--inset:#1a212b}}
+:root[data-theme=dark]{--bg:#0f1319;--panel:#161c25;--panel-2:#1b222d;--ink:#e7ecf3;--muted:#9aa6b6;--faint:#66717f;
+  --line:#28313d;--accent:#6b97c9;--accent-soft:#1c2836;--good:#4bb97f;--good-soft:#152a20;--warn:#d69b45;--inset:#1a212b}
+:root[data-theme=light]{--bg:#f7f8fa;--panel:#fff;--panel-2:#f1f3f6;--ink:#1c2330;--muted:#5b6472;--faint:#95a0b0;
+  --line:#e3e7ee;--accent:#4E79A7;--accent-soft:#eaf0f7;--good:#3f9b6a;--good-soft:#e7f4ec;--warn:#c98a2b;--inset:#eef1f5}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:22px}
+h1{font-size:19px;margin:0 0 3px} .sub{color:var(--muted);font-size:13px;margin:0 0 18px}
+.fields{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+.fld{flex:1;min-width:150px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:11px 13px;cursor:pointer;transition:.12s}
+.fld:hover{border-color:var(--accent)} .fld.on{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.fld .fl{font-weight:650;font-size:13px} .fld .fn{font-size:11.5px;color:var(--muted);margin-top:2px}
+.fld .bar{height:4px;background:var(--inset);border-radius:3px;margin-top:8px;overflow:hidden}
+.fld .bar i{display:block;height:100%;background:var(--good);border-radius:3px}
+.qhead{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+.qhead h2{font-size:15px;margin:0} .qhead .c{color:var(--muted);font-size:12.5px}
+.rows{display:flex;flex-direction:column;gap:7px}
+.row{display:grid;grid-template-columns:1fr 200px;gap:12px;align-items:center;background:var(--panel);
+  border:1px solid var(--line);border-radius:9px;padding:10px 13px}
+.row.saved{border-color:var(--good);background:var(--good-soft)}
+.pn{font-weight:600;font-size:13.5px} .pm{font-size:11.5px;color:var(--muted);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap}
+.pm .tag{background:var(--inset);border-radius:5px;padding:1px 6px}
+.row input{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);
+  color:var(--ink);font-size:13px} .row input:focus{outline:none;border-color:var(--accent)}
+.hint{color:var(--faint);font-size:12px;margin-top:14px}
+.empty{color:var(--muted);padding:40px 0;text-align:center}
+.pick{color:var(--muted);padding:40px 0;text-align:center}
+</style>
+<div class="wrap">
+  <h1>Master Data Steward</h1>
+  <p class="sub">Fill missing master fields — prioritized by corroboration (the products that matter most, first). Every value persists as ground truth and reinforces the automated extractors. Press <b>Enter</b> to save &amp; advance.</p>
+  <div class="fields" id="fields"></div>
+  <div id="panel"><div class="pick">Pick a field above to start.</div></div>
+  <div class="hint" id="hint"></div>
+</div>
+<script>
+const API="/api/master/steward";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let FIELD=null;
+
+async function loadFields(){
+  const s=await fetch(API+"/summary").then(r=>r.json()).catch(()=>null);
+  if(!s||!s.ok){ $("#fields").innerHTML='<div class="pick">Master engine not reachable — start the agent.</div>'; return; }
+  $("#fields").innerHTML=s.fields.map(f=>{
+    const pct=f.total?Math.round(100*f.filled/f.total):0;
+    return `<button class="fld${f.key===FIELD?' on':''}" data-f="${f.key}">
+      <div class="fl">${esc(f.label)}</div>
+      <div class="fn">${f.filled.toLocaleString()} filled · ${f.missing.toLocaleString()} to go</div>
+      <div class="bar"><i style="width:${pct}%"></i></div></button>`;}).join("");
+  document.querySelectorAll(".fld").forEach(b=>b.onclick=()=>selectField(b.dataset.f));
+}
+
+async function selectField(f){
+  FIELD=f; document.querySelectorAll(".fld").forEach(b=>b.classList.toggle("on",b.dataset.f===f));
+  $("#panel").innerHTML='<div class="pick">Loading…</div>';
+  const d=await fetch(API+"/queue?field="+encodeURIComponent(f)+"&limit=60").then(r=>r.json()).catch(()=>null);
+  if(!d||!d.ok){ $("#panel").innerHTML='<div class="empty">Couldn’t load the queue.</div>'; return; }
+  if(!d.items.length){ $("#panel").innerHTML='<div class="empty">Nothing missing this field in the top-priority set. 🎉</div>'; return; }
+  $("#panel").innerHTML=`<div class="qhead"><h2>${esc(d.label)}</h2><span class="c">${d.count} products missing it (most-corroborated first)</span></div>
+    <div class="rows" id="rows">${d.items.map(it=>`
+      <div class="row" data-pk="${esc(it.product_key)}">
+        <div><div class="pn">${esc(it.name||"—")}</div>
+          <div class="pm">${it.brand?`<span class="tag">${esc(it.brand)}</span>`:""}${it.category?`<span class="tag">${esc(it.category)}</span>`:""}${it.origin?`<span class="tag">origin: ${esc(it.origin)}</span>`:""}<span class="tag">${it.sources} src</span></div>
+        </div>
+        <input placeholder="${esc(d.label)}…" autocomplete="off">
+      </div>`).join("")}</div>`;
+  const inputs=[...document.querySelectorAll(".row input")];
+  inputs.forEach((inp,i)=>{
+    inp.onkeydown=async e=>{
+      if(e.key!=="Enter") return;
+      const v=inp.value.trim(); if(!v) return;
+      const row=inp.closest(".row"), pk=row.dataset.pk;
+      const r=await fetch(API+"/set",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({product_key:pk,field:FIELD,value:v})}).then(r=>r.json()).catch(()=>null);
+      if(r&&r.ok){ row.classList.add("saved"); inp.disabled=true;
+        const nx=inputs[i+1]; if(nx) nx.focus(); loadFields(); }
+    };
+  });
+  if(inputs[0]) inputs[0].focus();
+}
+loadFields();
+</script>
