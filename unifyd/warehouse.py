@@ -238,6 +238,17 @@ def connect():
         con.execute("SET s3_secret_access_key='%s';" % _env("AWS_SECRET_ACCESS_KEY").replace("'", ""))
         con.execute("SET s3_url_style='path';")
         con.execute("SET s3_use_ssl=true;")
+    # Memory guard (env-driven so LOCAL rebuilds stay unthrottled). On the Fly server the master tables
+    # (dim_sku ~874k→1M) are big enough that an unbounded query OOM-kills the gunicorn worker; a memory_limit
+    # + temp_directory makes DuckDB SPILL to disk instead of dying. Set DUCKDB_MEMORY_LIMIT in the server env.
+    lim = os.environ.get("DUCKDB_MEMORY_LIMIT")
+    if lim:
+        safe = lim.replace("'", "")
+        con.execute("SET memory_limit='%s';" % safe)
+        con.execute("SET temp_directory='%s';" % os.environ.get("DUCKDB_TEMP_DIR", "/tmp").replace("'", ""))
+        thr = os.environ.get("DUCKDB_THREADS")
+        if thr and str(thr).isdigit():
+            con.execute("SET threads=%d;" % int(thr))
     return con
 
 
