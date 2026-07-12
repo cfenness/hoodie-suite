@@ -36,7 +36,12 @@ def _http(url, timeout=25):
     return body.decode("utf-8", "replace")
 
 
-def harvest_ids(max_products=20000, log=print):
+def harvest_ids(max_products=None, log=print):
+    # max_products=None -> WHOLE catalog (Spec's is ~41k across 21 sitemaps; the old default of 20000 silently
+    # truncated it to half). Set SPECS_MAX_PRODUCTS to cap deliberately; a cap that bites is logged, not silent.
+    if max_products is None:
+        env = os.environ.get("SPECS_MAX_PRODUCTS")
+        max_products = int(env) if env else 10 ** 9
     out, seen = [], set()
     try:
         idx = _http(SITEMAP)
@@ -53,6 +58,7 @@ def harvest_ids(max_products=20000, log=print):
             if slug and slug not in seen:
                 seen.add(slug); out.append((slug, u))
                 if len(out) >= max_products:
+                    log(f"[specs] hit SPECS_MAX_PRODUCTS={max_products} — TRUNCATING (catalog is larger)")
                     return out
         log(f"{cs.rsplit('/',1)[-1]}: {len(out)} products so far")
     return out
