@@ -44,6 +44,59 @@ def detect(html):
             "sells_hemp": bool(_HEMP.search(html)), "sells_bevalc": bool(_BEVALC.search(html))}
 
 
+def store_account(page):
+    """Pull the store's OWN account info from ITS website — schema.org LocalBusiness/Store JSON-LD (the standard
+    a store's site publishes about itself) with tel:/mailto: fallbacks. First-party, no Google: store_name,
+    street/city/state/zip/country, phone, email, geo lat/lng, opening hours, social links."""
+    out = {}
+    for blk in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', page or "", re.S):
+        try:
+            data = json.loads(blk.strip())
+        except Exception:
+            continue
+        nodes = data if isinstance(data, list) else [data]
+        if isinstance(data, dict) and isinstance(data.get("@graph"), list):
+            nodes = nodes + data["@graph"]
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            typ = node.get("@type") or ""
+            typ = " ".join(typ) if isinstance(typ, list) else str(typ)
+            if not re.search(r"Store|LocalBusiness|Organization|Restaurant|Winery|Brewery", typ, re.I):
+                continue
+            addr = node.get("address") or {}
+            if isinstance(addr, list):
+                addr = addr[0] if addr else {}
+            out.setdefault("store_name", node.get("name"))
+            out.setdefault("phone", node.get("telephone"))
+            out.setdefault("email", node.get("email"))
+            if isinstance(addr, dict):
+                out.setdefault("street", addr.get("streetAddress"))
+                out.setdefault("city", addr.get("addressLocality"))
+                out.setdefault("state", addr.get("addressRegion"))
+                out.setdefault("zip", addr.get("postalCode"))
+                out.setdefault("country", addr.get("addressCountry"))
+            geo = node.get("geo") or {}
+            if isinstance(geo, dict):
+                out.setdefault("lat", geo.get("latitude"))
+                out.setdefault("lng", geo.get("longitude"))
+            oh = node.get("openingHours") or node.get("openingHoursSpecification")
+            if oh and "hours" not in out:
+                out["hours"] = json.dumps(oh)[:600]
+            sa = node.get("sameAs")
+            if sa and "socials" not in out:
+                out["socials"] = (", ".join(sa) if isinstance(sa, list) else str(sa))[:400]
+    if not out.get("phone"):
+        m = re.search(r'tel:\+?([\d\-().\s]{7,18})', page or "")
+        if m:
+            out["phone"] = m.group(1).strip()
+    if not out.get("email"):
+        m = re.search(r'mailto:([^"\'>\s?]+@[^"\'>\s?]+)', page or "")
+        if m:
+            out["email"] = m.group(1)
+    return {k: (v if isinstance(v, (int, float)) else str(v)[:200]) for k, v in out.items() if v not in (None, "")}
+
+
 def census(market="orlando", near="Orlando FL", scope="retail", log=print):
     key = ms._bd_key()
     where = "type='retail'" if scope == "retail" else "1=1"
@@ -63,7 +116,9 @@ def census(market="orlando", near="Orlando FL", scope="retail", log=print):
                    market=market, run_id=run_id)
         if rec["has_website"]:
             try:
-                rec.update(detect(ms._unlock(site, key)))
+                page = ms._unlock(site, key)
+                rec.update(detect(page))
+                rec.update(store_account(page))       # account info from the STORE'S OWN site (no Google)
             except Exception:
                 pass
         rows.append(rec)
@@ -109,7 +164,9 @@ def census_discover(market, near, terms, out, log=print):
                    sells_hemp=False, sells_bevalc=False, market=market, run_id=run_id)
         if rec["has_website"]:
             try:
-                rec.update(detect(ms._unlock(site, key)))
+                page = ms._unlock(site, key)
+                rec.update(detect(page))
+                rec.update(store_account(page))       # account info from the STORE'S OWN site (no Google)
             except Exception:
                 pass
         rows.append(rec)
