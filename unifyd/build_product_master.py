@@ -18,6 +18,7 @@ import warehouse
 import master_apply
 import precleanse as _precleanse
 import sku_match as _sku_match
+import placeholders as _placeholders
 
 # origin = SOURCE of the juice (COO — where the liquid is from); bottled_in = where it was bottled (kept
 # SEPARATE — a Barbados rum bottled in the US is origin=Barbados, bottled_in=US).
@@ -225,6 +226,8 @@ def build(log=print):
             if f and not f(r):
                 continue
             nm = r.get(c["name"])
+            if _placeholders.is_placeholder_name(nm):     # drop template/demo products ("I'm a product")
+                continue
             brand = resolve_brand(nm, by1, r.get(c["brand"]) if c.get("brand") else None)
             if not brand:
                 continue
