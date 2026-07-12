@@ -341,7 +341,7 @@ _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 _WIX_STORES_APP = "1380b703-ce81-ff05-f115-39571d94dfcd"
 _WIX_GQL = ("query getProducts($limit:Int,$offset:Int){ catalog{ products(limit:$limit, offset:$offset, "
             "onlyVisible:true){ totalCount list{ id name brand price formattedPrice comparePrice sku "
-            "isInStock productType urlPart } } } }")
+            "isInStock productType urlPart media{ mainMedia{ image{ url } } } } } } }")
 
 
 def _wix_instance(base, log=print):
@@ -402,11 +402,15 @@ def wix_catalog(base, key=None, page=100, max_products=None, log=print):
             break
         for p in lst:
             sku = (p.get("sku") or "").strip()
+            img = (((p.get("media") or {}).get("mainMedia") or {}).get("image") or {}).get("url") or ""
+            if img.startswith("wix:image://"):  # internal URI -> fetchable static CDN url
+                mid = img[len("wix:image://v1/"):].split("#")[0].split("/")[0]
+                img = ("https://static.wixstatic.com/media/" + mid) if mid else ""
             rows.append({"name": _html.unescape(p.get("name") or "").strip(), "brand": (p.get("brand") or ""),
                          "price": p.get("price"), "sku": sku,
                          "upc": (sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
                          "size_ml": _ch_ml(p.get("name")), "category": p.get("productType") or "",
-                         "in_stock": p.get("isInStock")})
+                         "image": img, "in_stock": p.get("isInStock")})
         offset += len(lst)
         if (max_products and offset >= max_products) or offset >= total:
             break
