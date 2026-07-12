@@ -15,6 +15,7 @@ batch a FRESH BD Browser session (re-warmed PX), and is:
 """
 import argparse, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import time
 import warehouse
 import observe
 import runlog
@@ -31,11 +32,12 @@ def _done_skus():
         return set()
 
 
-def _land(rows, log):
-    """Land a batch exactly like total_wine_inventory.pull_store: observations + enrich total_wine_products."""
+def _land(rows, log, part=None):
+    """Land a batch exactly like total_wine_inventory.pull_store: observations + enrich total_wine_products.
+    `part` MUST be unique per batch/shard — else concurrent shards overwrite one shared observation file."""
     if not rows:
         return 0
-    n = observe.record("total-wine", rows, log=lambda *a: None)
+    n = observe.record("total-wine", rows, log=lambda *a: None, part=part)
 
     def _s(v):
         return "" if v is None else str(v)
@@ -64,10 +66,12 @@ def run(store, state=None, shards=1, shard=0, resume=True, log=print):
     total, got = len(allsk), 0
     conn = "total-wine-full" + ("/s%d" % shard if shards > 1 else "")
     with runlog.track(conn, total=total) as rl:
+        day = time.strftime("%Y-%m-%d")
         for b in range(0, total, BATCH):
             batch = allsk[b:b + BATCH]
             rows = twi._pull_bdbrowser(store, state, batch, log)   # fresh session + PX warm per batch
-            got += _land(rows, log)
+            # unique observation partition per (shard, batch) — concurrent shards must NOT share one file
+            got += _land(rows, log, part="%s_total-wine_s%d_b%d" % (day, shard, b))
             rl.progress(min(b + BATCH, total))
             log("[tw-full] %d/%d skus · +%d products this batch · %d landed cumulative"
                 % (min(b + BATCH, total), total, len(rows), got))
