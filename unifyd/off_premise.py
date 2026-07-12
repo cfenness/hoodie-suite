@@ -278,18 +278,45 @@ def woo_catalog(base, key, max_pages=50, log=print):
         if not isinstance(j, list) or not j:
             break
         for p in j:
-            pr = (p.get("prices") or {}).get("price")
-            try:
-                price = round(float(pr) / 100.0, 2) if pr not in (None, "") else None
-            except Exception:
-                price = None
-            sku = (p.get("sku") or "").strip()
-            rows.append({"name": _html.unescape(p.get("name") or "").strip(), "brand": "", "price": price,
-                         "sku": sku, "upc": (sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
-                         "product_type": ""})
+            rows.append(_woo_row(p))
         if len(j) < 100:
             break
     return rows
+
+
+# WooCommerce ATTRIBUTES are the prize on wine/spirit stores — "Region: Napa", "Country: France",
+# "Varietal: Cabernet", "ABV: 14%" are structured there. Map the known ones to master fields; keep the rest
+# (+ description, categories, tags, image, item code) + raw.
+_WOO_ATTR = {"region": "region", "sub-region": "sub_region", "subregion": "sub_region", "appellation": "appellation",
+             "country": "origin", "country of origin": "origin", "origin": "origin",
+             "varietal": "varietal", "grape": "varietal", "grape variety": "varietal", "varietals": "varietal",
+             "abv": "abv", "alcohol": "abv", "alcohol content": "abv", "vintage": "vintage", "year": "vintage",
+             "bottled in": "bottled_in", "bottler": "bottled_in"}
+
+
+def _woo_row(p):
+    pr = (p.get("prices") or {}).get("price")
+    price = None
+    try:
+        price = round(float(pr) / 100.0, 2) if pr not in (None, "") else None
+    except Exception:
+        pass
+    sku = (p.get("sku") or "").strip()
+    desc = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ",
+             p.get("description") or p.get("short_description") or ""))).strip()
+    cats = ", ".join(c.get("name", "") for c in (p.get("categories") or []) if c.get("name"))
+    row = {"name": _html.unescape(p.get("name") or "").strip(), "brand": "", "price": price,
+           "sku": sku, "upc": (sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
+           "item_code": str(p.get("id") or ""), "product_type": cats, "tags": cats,
+           "description": desc[:2000], "image": ((p.get("images") or [{}])[0] or {}).get("src") or "",
+           "raw_json": json.dumps(p, separators=(",", ":"))[:8000]}
+    for a in (p.get("attributes") or []):
+        nm = (a.get("name") or "").strip().lower()
+        val = ", ".join(t.get("name", "") for t in (a.get("terms") or []) if t.get("name"))
+        fld = _WOO_ATTR.get(nm)
+        if fld and val and not row.get(fld):
+            row[fld] = val
+    return row
 
 
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -583,8 +610,8 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
         # optional rich fields the enriched recipes capture — carried through so NOTHING the retailer gives is
         # lost (flavor/varietal in tags+description, item code, weight, stock, image, and the full raw record).
         _extra = ("tags", "description", "item_code", "product_type", "compare_at_price", "grams", "in_stock",
-                  "image", "size_opt", "vintage_opt", "abv", "region", "appellation", "varietal", "country",
-                  "raw_json")
+                  "image", "size_opt", "vintage_opt", "abv", "vintage", "origin", "bottled_in", "region",
+                  "sub_region", "appellation", "varietal", "raw_json")
         for it in items:
             b = ctx.classify_beverage(it["name"])
             rec = dict(store=s["account"], base=s["base"], platform=s["platform"], name=it["name"],

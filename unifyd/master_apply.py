@@ -83,7 +83,7 @@ NAMEISH = {"brand", "product_name", "flavor", "container"}
 # default grain per field name when a schema field doesn't declare one
 GRAIN_DEFAULTS = {"brand": "brand", "brand_group": "brand",
     "product_name": "product", "flavor": "product", "abv": "product", "style": "product",
-    "category": "product", "origin": "product",
+    "category": "product", "origin": "product", "bottled_in": "product",
     "size_ml": "item", "packsize": "item", "container": "item",
     "pack": "sku", "upc": "sku", "gtin": "sku", "vintage": "sku", "edition": "sku",
     "supplier": "supplier"}
