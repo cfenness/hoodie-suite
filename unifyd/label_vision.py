@@ -84,10 +84,15 @@ def extract(image_url):
 
 
 def run(source="binnys_products", limit=200, workers=6, log=print):
-    """Pull products WITH an image that still lack COO/appellation, vision-extract, land to label_extract."""
+    """Pull products WITH a REAL image that still lack COO/appellation, vision-extract, land to label_extract.
+    Placeholder images (no-image / coming-soon graphics reused across many products) are skipped — feeding them
+    to vision wastes API and returns garbage."""
+    import placeholders
+    ph = placeholders.placeholder_images(source, image_col="image", key_col="sku", log=log)
     rows = warehouse.query(source, "SELECT DISTINCT sku, name, image FROM t "
-                           "WHERE image IS NOT NULL AND image<>'' LIMIT %d" % int(limit))
-    log("[vision] %s: %d imaged products to read" % (source, len(rows)))
+                           "WHERE image IS NOT NULL AND image<>'' LIMIT %d" % (int(limit) * 3))
+    rows = [r for r in rows if r["image"] not in ph][:int(limit)]
+    log("[vision] %s: %d imaged products to read (placeholders skipped)" % (source, len(rows)))
 
     def one(r):
         try:
