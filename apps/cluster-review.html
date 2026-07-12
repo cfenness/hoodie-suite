@@ -66,6 +66,9 @@ h1{font-size:19px;margin:0 0 3px} .sub{color:var(--muted);font-size:13px;margin:
 .mh .mt{font-weight:700;font-size:16px} .mh .ms{font-size:12.5px;color:var(--muted);margin-top:3px}
 .mh .x{margin-left:auto;background:none;border:0;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;flex:none}
 .mbody{padding:16px 18px}
+.shared{display:flex;flex-wrap:wrap;gap:5px 18px;font-size:12.5px;color:var(--muted);
+  padding-bottom:13px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+.shared b{color:var(--ink);font-weight:600}
 .mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
 .mc{border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--bg)}
 .mc.dupu{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
@@ -168,23 +171,30 @@ async function openMergeModal(mid){
   $("#mask").classList.add("on");
   const d=await fetch(API+"/merge-detail/"+encodeURIComponent(mid)).then(r=>r.json()).catch(()=>null);
   if(!d||!d.ok){$("#modal").innerHTML='<div class="mh"><div class="mt">Couldn\'t load this cluster.</div><button class="x" onclick="closeModal()">×</button></div>';return;}
+  const A=d.attrs||{};
+  const packType=(A.pack&&String(A.pack)!=="1"&&String(A.pack)!=="1.0")
+    ? (A.pack+"-pack"+(A.container?" "+A.container:"")) : (A.container||"single unit");
+  const shared=[["Size",A.size],["Pack type",packType],["Flavor",A.flavor],["Varietal",A.varietal],
+    ["Origin",A.origin],["Bottled in",A.bottled_in],["Region",A.region],["Sub-region",A.sub_region],
+    ["Appellation",A.appellation],["Style",A.style],["ABV",A.abv],["Category",A.category]]
+    .filter(a=>a[1]).map(a=>`<div><b>${esc(a[0])}:</b> ${esc(a[1])}</div>`).join("");
   const cores={};(d.members||[]).forEach(x=>{const c=core(x.upc);if(c)cores[c]=(cores[c]||0)+1;});
   const cards=(d.members||[]).map(x=>{
     const c=core(x.upc), dup=c&&cores[c]>1;
     const img=x.image?`<img src="${esc(x.image)}" loading="lazy" onerror="this.parentNode.textContent='image unavailable'">`:'no image';
     const upc=x.upc?`<span class="u">${esc(x.upc)}${dup?' <span style="color:var(--bad);font-size:11px">↔ dup</span>':''}</span>`:'<span class="u none">no UPC</span>';
+    const gtin=x.gtin?`<div style="font-size:11px;color:var(--muted);font-family:ui-monospace,Menlo,monospace;margin-top:3px">GTIN ${esc(x.gtin)}</div>`:'';
     const srcs=(x.source_list||[]).map(s=>`<span class="s">${esc(s)}</span>`).join("")||'<span class="s">—</span>';
-    const attrs=[["Varietal",x.varietal],["Origin",x.origin],["Region",x.region],["Appellation",x.appellation],["ABV",x.abv],["Vintages",(x.vintages||[]).join(", ")]]
-      .filter(a=>a[1]).map(a=>`<div><b>${esc(a[0])}:</b> ${esc(a[1])}</div>`).join("");
     return `<div class="mc${dup?' dupu':''}"><div class="img">${img}</div><div class="b">
-      ${upc}<div class="src">${srcs}</div>
-      <div class="at">${attrs||'<span style="color:var(--faint)">no attributes captured yet</span>'}</div>
+      ${upc}${gtin}<div class="src">${srcs}</div>
       <div style="font-size:11px;color:var(--faint);margin-top:6px">${x.source_rows} source row${x.source_rows===1?"":"s"}</div></div></div>`;
   }).join("");
   $("#modal").innerHTML=`<div class="mh"><div><div class="mt">${esc(d.name)}</div>
       <div class="ms">${esc(d.brand)} · ${d.n_skus} SKUs · ${d.distinct_upc} distinct UPCs · ${d.total_rows} source rows<br>${esc(d.reason)}</div></div>
       <button class="x" onclick="closeModal()">×</button></div>
-    <div class="mbody"><div class="mgrid">${cards}</div></div>
+    <div class="mbody">
+      ${shared?`<div class="shared">${shared}</div>`:''}
+      <div class="mgrid">${cards}</div></div>
     <div class="mfoot"><button class="merge" onclick="decideModal('${esc(mid)}','merge')">✓ Merge — one SKU</button>
       <button class="keep" onclick="decideModal('${esc(mid)}','keep_separate')">Keep separate</button></div>`;
 }

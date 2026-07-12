@@ -14,15 +14,23 @@ Size extraction is owned by build_product_master. Ambiguous same-brand name vari
 ("Texas Vodka" vs "Vodka") are for the Claude adjudication tier, not deterministic rules.
 """
 import collections
+import html
 import re
 import unicodedata
 
 
+def unescape(s):
+    """HTML-unescape source text — the TTB COLA feed stores names entity-encoded (D&#39;AQUINO, Ch&acirc;teau,
+    Domaine &amp; Fils), which otherwise turns `&#39;` into a stray '39' token and shatters the brand. Applied
+    to BOTH display and match keys (it fixes the actual characters)."""
+    return html.unescape(str(s or ""))
+
+
 def deaccent(s):
     """Fold accents/diacritics to ASCII for MATCHING keys only (Château->Chateau, José->Jose, Rémy->Remy), so
-    accented and un-accented spellings of the same brand/product corroborate across sources. Display names keep
-    their accents — this is applied to the match key, not the shown string."""
-    return unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode("ascii")
+    accented and un-accented spellings of the same brand/product corroborate across sources. HTML-unescapes
+    first (so &acirc; -> â -> a). Display names keep their accents — this is applied to the match key."""
+    return unicodedata.normalize("NFKD", unescape(s)).encode("ascii", "ignore").decode("ascii")
 
 # generic corporate/category tokens that don't distinguish a brand — stripped from the brand MATCH key so
 # "Tito's Handmade Vodka" == "Tito Handmade". Corporate suffixes + the spirit/beer category words (a category
@@ -83,6 +91,7 @@ def clean_name(name, brand):
     alignment + the within-brand canonicalizer + Claude handle the residual name variance."""
     if not name:
         return name
+    name = unescape(name)                               # D&#39;Aquino -> D'Aquino (fix the display too)
     s = _titlecase(name) if _is_allcaps(name) else name
     toks = [t for t in re.split(r"\s+", s.strip())
             if t and (set(t) - set("-–")) and t.lower() not in _FORMAT_NOISE]
