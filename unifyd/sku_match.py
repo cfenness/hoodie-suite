@@ -21,17 +21,33 @@ import re
 _PLACEHOLDER = {"000000000000", "111111111111", "999999999999", "123456789012"}
 
 
+def _gs1_check(body):
+    """GS1 mod-10 check digit for a GTIN body (all digits except the check)."""
+    tot = 0
+    for i, ch in enumerate(reversed(body)):
+        tot += int(ch) * (3 if i % 2 == 0 else 1)
+    return (10 - tot % 10) % 10
+
+
 def norm_upc(u):
-    """Canonicalize a UPC/EAN/GTIN to a comparable 12-digit core (strip non-digits, drop leading zeros from
-    EAN-13/GTIN-14 packaging, zero-pad to 12). Returns None for junk (empty, all-same, placeholder, bad length)."""
+    """Canonicalize a UPC/EAN/GTIN to its GS1 SIGNIFICANT CORE (the manufacturer+item body, leading zeros and the
+    check digit removed) so the same barcode matches across the padding/encoding noise the sources introduce:
+    UPC-A vs EAN-13 vs GTIN-14, a stray leading zero, or a dropped/mis-shifted check digit. The move that matters:
+    if the digits already end in a VALID check digit we strip it; otherwise we treat the digits AS the core — so
+    `085000019498` (valid, core 08500001949) and `008500001949` (that core, leading-zero-padded, check dropped)
+    both reduce to `8500001949` and finally match. Returns None for junk (empty, all-same, placeholder, bad length)."""
     d = re.sub(r"\D", "", str(u or ""))
-    if not (8 <= len(d) <= 14):
+    if not (8 <= len(d) <= 14) or len(set(d)) == 1:      # too short/long or all-same-digit (0000…, 1111…)
         return None
-    if len(set(d)) == 1:                       # all-same-digit (0000…, 1111…)
-        return None
-    core = d.lstrip("0")
-    core = core.zfill(12) if len(core) <= 12 else core
-    return None if core in _PLACEHOLDER else core
+    if d.zfill(12) in _PLACEHOLDER or d.lstrip("0") in {p.lstrip("0") for p in _PLACEHOLDER}:
+        return None                                      # sequential/placeholder barcode (123456789012 …)
+    d = d.lstrip("0") or "0"
+    if len(d) >= 9 and _gs1_check(d[:-1]) == int(d[-1]):  # ends in a valid check digit -> strip it to the core
+        core = d[:-1]
+    else:                                                 # no valid check -> the digits already ARE the core
+        core = d
+    core = core.lstrip("0") or "0"
+    return None if (core in _PLACEHOLDER or len(core) < 5) else core
 
 
 def _item_sig(r):
