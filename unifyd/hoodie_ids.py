@@ -47,6 +47,41 @@ def hoodie_id(letter, seq):
     return "HZ-%s-%07d" % (letter, seq)
 
 
+_LETTER = {e: l for e, _, _, l in ENTITIES}
+
+
+def ensure_many(keysets, now=None, log=print):
+    """Get-or-mint Hoodie IDs for arbitrary keys, persisting once. `keysets` = {entity_type: iterable_of_keys}.
+    Returns {entity_type: {key: hoodie_id}}. Lets a consumer (e.g. facts.py) stamp durable ids without needing
+    a full assign() pass first — new keys mint, existing ones reuse. Same registry, so assign() stays in sync."""
+    now = now or time.strftime("%Y-%m-%dT%H:%M:%SZ")
+    reg = _load_registry()
+    have = {(r["entity_type"], str(r["master_key"])): r for r in reg}
+    maxseq = {}
+    for r in reg:
+        maxseq[r["entity_type"]] = max(maxseq.get(r["entity_type"], 0), int(r["seq"] or 0))
+    records, out = list(reg), {}
+    for etype, keys in keysets.items():
+        letter = _LETTER.get(etype, etype[:1].upper())
+        m = {}
+        for k in keys:
+            k = str(k)
+            rec = have.get((etype, k))
+            if rec:
+                rec["last_seen"] = now
+            else:
+                maxseq[etype] = maxseq.get(etype, 0) + 1
+                rec = {"entity_type": etype, "master_key": k, "hoodie_id": hoodie_id(letter, maxseq[etype]),
+                       "seq": maxseq[etype], "first_seen": now, "last_seen": now}
+                records.append(rec)
+                have[(etype, k)] = rec
+            m[k] = rec["hoodie_id"]
+        out[etype] = m
+    warehouse.write_parquet(REG, records, REG_FIELDS)
+    log("[hz] ensure_many: %d total ids across %s" % (len(records), ", ".join(keysets)))
+    return out
+
+
 def assign(only=None, now=None, log=print):
     now = now or time.strftime("%Y-%m-%dT%H:%M:%SZ")
     reg = _load_registry()

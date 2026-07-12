@@ -32,11 +32,12 @@ except Exception:
     def norm_upc(u):
         return str(u or "").lstrip("0") or None
 
-STORE_FIELDS = ["store_key", "source", "store_id", "store_name", "chain", "city", "state", "zip", "lat", "lng"]
-PRICE_FIELDS = ["date", "source", "store_key", "store_id", "product_id", "upc", "sku_key",
-                "price", "on_promo", "promo"]
-INV_FIELDS = ["date", "source", "store_key", "store_id", "product_id", "upc", "sku_key",
-              "qty", "in_stock", "stock_level"]
+STORE_FIELDS = ["store_key", "hoodie_store_id", "source", "store_id", "store_name", "chain",
+                "city", "state", "zip", "lat", "lng"]
+PRICE_FIELDS = ["date", "source", "store_key", "hoodie_store_id", "store_id", "product_id", "upc",
+                "sku_key", "hoodie_sku_id", "price", "on_promo", "promo"]
+INV_FIELDS = ["date", "source", "store_key", "hoodie_store_id", "store_id", "product_id", "upc",
+              "sku_key", "hoodie_sku_id", "qty", "in_stock", "stock_level"]
 
 _OBS_COLS = 'SELECT "date", source, store, store_id, product_id, upc, price, on_promo, promo, ' \
             'qty, in_stock, stock_level FROM t'
@@ -80,13 +81,33 @@ def _geo_for(source):
     return {}
 
 
+def _sku_hz_map(log):
+    """sku_key -> Hoodie sku id (HZ-K…). SKUs already carry ids from the master rebuild's assign(); this just
+    reads them so the facts can reference the DURABLE product id, not the volatile sku_key hash."""
+    try:
+        return {str(r["master_key"]): r["hoodie_id"] for r in warehouse.query(
+            "hoodie_ids", "SELECT master_key, hoodie_id FROM t WHERE entity_type='sku'")}
+    except Exception as e:
+        log("  [facts] sku hoodie-id map unavailable: %s" % str(e)[:50])
+        return {}
+
+
 def build(source=None, log=print):
-    umap = _upc_sku_map(log)
+    import hoodie_ids
+    umap = _upc_sku_map(log)                             # upc(norm) -> sku_key
+    skhz = _sku_hz_map(log)                              # sku_key -> HZ-K id
     where = 'WHERE source = ?' if source else ''
-    slices = warehouse.query_parts("retail_observations",
-                                   'SELECT DISTINCT "date", source FROM t %s' % where,
-                                   [source] if source else None)
-    log("[facts] %d (date,source) slices to build%s" % (len(slices), " for " + source if source else ""))
+    params = [source] if source else None
+    slices = warehouse.query_parts("retail_observations", 'SELECT DISTINCT "date", source FROM t %s' % where, params)
+    # pre-mint a durable HZ-R id for every store in scope, so BOTH the facts and dim_store carry it
+    allstores = warehouse.query_parts("retail_observations", 'SELECT DISTINCT source, store_id FROM t %s' % where, params)
+    store_keys = {store_key(str(r["source"]), str(r.get("store_id") or "")) for r in allstores}
+    try:
+        sid_map = hoodie_ids.ensure_many({"store": list(store_keys)}, log=lambda *a: None)["store"]
+    except Exception as e:
+        log("  [facts] hoodie store ids skipped: %s" % str(e)[:60]); sid_map = {}
+    log("[facts] %d slices · %d stores · %d sku-ids%s" % (len(slices), len(store_keys), len(skhz),
+                                                          " for " + source if source else ""))
     stores, np_tot, ni_tot = {}, 0, 0
     for sl in slices:
         d, src = sl["date"], sl["source"]
@@ -96,16 +117,18 @@ def build(source=None, log=print):
         for r in rows:
             sid = str(r.get("store_id", "") or "")
             sk = store_key(src, sid)
+            hz_store = sid_map.get(sk)
             if sk not in stores:
                 g = geo.get(sid, {})
-                stores[sk] = {"store_key": sk, "source": src, "store_id": sid,
+                stores[sk] = {"store_key": sk, "hoodie_store_id": hz_store, "source": src, "store_id": sid,
                               "store_name": r.get("store") or g.get("chain") or "", "chain": g.get("chain") or "",
                               "city": g.get("city"), "state": g.get("state"), "zip": g.get("zip"),
                               "lat": g.get("lat"), "lng": g.get("lng")}
             upc = str(r.get("upc") or "")
             skukey = umap.get(norm_upc(upc)) if upc else None
-            base = {"date": d, "source": src, "store_key": sk, "store_id": sid,
-                    "product_id": str(r.get("product_id") or ""), "upc": upc, "sku_key": skukey}
+            base = {"date": d, "source": src, "store_key": sk, "hoodie_store_id": hz_store, "store_id": sid,
+                    "product_id": str(r.get("product_id") or ""), "upc": upc, "sku_key": skukey,
+                    "hoodie_sku_id": (skhz.get(skukey) if skukey else None)}
             invs.append({**base, "qty": r.get("qty"), "in_stock": bool(r.get("in_stock")),
                          "stock_level": r.get("stock_level") or ""})
             if r.get("price") is not None:
