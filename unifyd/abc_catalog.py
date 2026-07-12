@@ -21,6 +21,8 @@ _BRAND = re.compile(r'"brand":\s*\{[^}]*"name":\s*"([^"]+)"|itemprop="brand"[^>]
 _SIZE = re.compile(r'(\d+(?:\.\d+)?)\s?(ml|l|liter|litre|oz)\b', re.I)
 _UPC = re.compile(r'"gtin1?[234]?":\s*"?(\d{8,14})"?|itemprop="gtin\d*"[^>]*content="(\d{8,14})"', re.I)
 _PRICE = re.compile(r'(?:og:price:amount|product:price:amount)"[^>]*content="([\d.]+)"', re.I)
+_IMG = re.compile(r'(?:og:image|twitter:image)"[^>]*content="([^"]+)"', re.I)
+_DESC = re.compile(r'(?:og:description|"description")"[^>]*content="([^"]+)"', re.I)
 
 
 def _f(m):
@@ -37,9 +39,12 @@ def one(sku, url):
         return None
     name = _html.unescape(nm).split(" | ")[0].strip()
     pm = _PRICE.search(body)
+    im = _IMG.search(body); dm = _DESC.search(body)
     return {"sku": sku, "name": name, "brand": _html.unescape(_f(_BRAND.search(body)) or "").strip(),
             "size": (_SIZE.search(name).group(0) if _SIZE.search(name) else ""),
-            "upc": _f(_UPC.search(body)) or "", "price": (float(pm.group(1)) if pm else None), "url": url}
+            "upc": _f(_UPC.search(body)) or "", "price": (float(pm.group(1)) if pm else None),
+            "image": (im.group(1) if im else ""),
+            "description": (_html.unescape(dm.group(1))[:2000] if dm else ""), "url": url}
 
 
 def run(limit=None, workers=12, log=print):

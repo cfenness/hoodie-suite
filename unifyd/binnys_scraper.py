@@ -67,7 +67,7 @@ def to_snapshot(records):
         rich = {"name": h.get("productName"), "brand": h.get("productBrandName") or "",
                 "varietal": h.get("productVarietal") or "", "region": h.get("region") or "",
                 "origin": h.get("country") or "", "category": h.get("productType") or h.get("gtmCategory") or "",
-                "item_size": h.get("itemSize") or ""}
+                "item_size": h.get("itemSize") or "", "image": h.get("imageUrl") or ""}
         for sp in (h.get("storesPriceAndInventory") or []):
             store = str(sp.get("storeCode") or "")
             if not store:

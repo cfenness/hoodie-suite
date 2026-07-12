@@ -158,13 +158,17 @@ def pull(sample=30, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
         nonlocal ok_n
         slug, url = t
         try:
-            rows, name = parse_stores(_http(url))
+            html = _http(url)
+            rows, name = parse_stores(html)
+            mi = re.search(r'(?:og:image|twitter:image)"[^>]*content="([^"]+)"', html or "", re.I)
+            img = mi.group(1) if mi else ""
             with lock:
                 if rows:
                     ok_n += 1
                 for r in rows:
                     cur[f"{slug}|{r['store']}"] = {"price": r["price"], "instock": r["instock"],
-                                                   "store": r["store"], "slug": slug, "sku": r["sku"], "name": name}
+                                                   "store": r["store"], "slug": slug, "sku": r["sku"],
+                                                   "name": name, "image": img}
                 if name:
                     names[slug] = name
         except Exception as e:
