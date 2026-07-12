@@ -3597,6 +3597,48 @@ def run_progress():
                    elapsedMs=(job["finishedAt"] or now) - job["startedAt"],
                    log=job["log"], run=job["run"], error=job["error"])
 
+_PROG_RE = re.compile(r"(\d[\d,]*)\s*/\s*(\d[\d,]*)")
+
+
+def _job_progress(job):
+    """Parse live progress out of the job's log — scrapers emit 'fetched 50/1000', 'page 3/100', 'N/800
+    parsed' etc. Latest N/M wins → current/total/pct + rows/sec + ETA + the current-stage line."""
+    cur = tot = 0
+    last = ""
+    for e in (job.get("log") or [])[-60:]:
+        msg = (e.get("msg") if isinstance(e, dict) else str(e)) or ""
+        if msg.strip():
+            last = msg
+        mm = list(_PROG_RE.finditer(msg))
+        if mm:
+            try:
+                c = int(mm[-1].group(1).replace(",", "")); t = int(mm[-1].group(2).replace(",", ""))
+                if 0 < c <= t:
+                    cur, tot = c, t
+            except Exception:
+                pass
+    now = int(time.time() * 1000)
+    el = ((job.get("finishedAt") or now) - job["startedAt"]) / 1000.0
+    rate = (cur / el) if (cur and el > 0) else 0
+    eta = int(((tot - cur) / rate) * 1000) if (rate > 0 and tot > cur) else None
+    return {"current": cur, "total": tot, "pct": (round(100 * cur / tot) if tot else None),
+            "lastMsg": last[:160], "ratePerSec": round(rate, 1), "etaMs": eta}
+
+
+@app.get("/api/jobs")
+def jobs_ep():
+    """Live board of all pull jobs (running + recent) with parsed progress/ETA/rows-per-sec — the active-run
+    tracker. Poll this to watch pulls in flight, not just their last-run status."""
+    now = int(time.time() * 1000)
+    out = []
+    for jid, job in sorted(JOBS.items(), key=lambda kv: -kv[1]["startedAt"])[:30]:
+        p = _job_progress(job)
+        out.append(dict(id=jid, connId=job["connId"], status=job["status"], startedAt=job["startedAt"],
+                        finishedAt=job.get("finishedAt"), elapsedMs=(job.get("finishedAt") or now) - job["startedAt"],
+                        error=job.get("error"), landed=(job.get("run") or {}).get("total"), **p))
+    return jsonify(ok=True, active=sum(1 for j in out if j["status"] == "running"), jobs=out)
+
+
 @app.post("/api/analyze")
 def analyze_ep():
     """Read an uploaded dataset → context-aware first pass + (when it fits) Report Builder
