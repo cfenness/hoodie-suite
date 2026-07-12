@@ -127,8 +127,39 @@ def bigcommerce_product(url, key):
 _RECIPES = {"bigcommerce": (bigcommerce_ids, bigcommerce_product)}
 
 
-# ── Shopify recipe — the golden path: /products.json returns the whole catalog as JSON (name / vendor /
-# price / sku), paginated. sku is very often the UPC. One clean call per page, no per-product fetch. ──
+# TAKE EVERYTHING the retailer gives — not just name/price. The scraper's job is to lose NOTHING: capture every
+# field the source exposes (flavor/varietal/region live in tags + description; item code, barcode/UPC, size/
+# vintage in options, weight, stock, image) PLUS the full raw record for anything we don't map yet.
+def _num(x):
+    try:
+        return float(x) if str(x).strip() not in ("", "None") else None
+    except Exception:
+        return None
+
+
+def _shopify_row(p):
+    v = (p.get("variants") or [{}])[0]
+    sku = (v.get("sku") or "").strip()
+    barcode = (v.get("barcode") or "").strip()
+    upc = next((x for x in (barcode, sku) if x.isdigit() and 8 <= len(x) <= 14), "")
+    tags = p.get("tags")
+    tags = tags if isinstance(tags, list) else [t.strip() for t in str(tags or "").split(",") if t.strip()]
+    desc = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", p.get("body_html") or ""))).strip()
+    opts = {o.get("name", "").lower(): (v.get("option%d" % (i + 1)) or "")
+            for i, o in enumerate(p.get("options") or [])}
+    return {"name": (p.get("title") or "").strip(), "brand": (p.get("vendor") or "").strip(),
+            "price": _num(v.get("price")), "compare_at_price": _num(v.get("compare_at_price")),
+            "sku": sku, "upc": upc, "item_code": str(p.get("id") or ""),
+            "product_type": p.get("product_type") or "", "tags": ", ".join(tags),
+            "description": desc[:2000], "handle": p.get("handle") or "", "variant": v.get("title") or "",
+            "grams": v.get("grams"), "in_stock": v.get("available"),
+            "size_opt": opts.get("size") or "", "vintage_opt": opts.get("vintage") or "",
+            "image": ((p.get("images") or [{}])[0] or {}).get("src") or "",
+            "raw_json": json.dumps(p, separators=(",", ":"))[:8000]}
+
+
+# ── Shopify recipe — the golden path: /products.json returns the whole catalog as JSON, paginated. We now
+# capture the FULL product (tags/description/options/barcode/weight/stock/image + raw), not just name/price. ──
 def shopify_catalog(base, key, max_pages=25, log=print):
     rows = []
     for pg in range(1, max_pages + 1):
@@ -145,16 +176,7 @@ def shopify_catalog(base, key, max_pages=25, log=print):
         if not ps:
             break
         for p in ps:
-            v = (p.get("variants") or [{}])[0]
-            try:
-                price = float(v.get("price")) if v.get("price") not in (None, "") else None
-            except Exception:
-                price = None
-            sku = (v.get("sku") or "").strip()
-            rows.append({"name": (p.get("title") or "").strip(), "brand": (p.get("vendor") or "").strip(),
-                         "price": price, "sku": sku,
-                         "upc": (sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
-                         "product_type": (p.get("product_type") or "")})
+            rows.append(_shopify_row(p))
         if len(ps) < 250:
             break
     return rows
@@ -558,12 +580,22 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
                 items = []
         except Exception as e:
             log("  [off] %-26s FAILED %s" % (s["account"][:26], str(e)[:40])); continue
+        # optional rich fields the enriched recipes capture — carried through so NOTHING the retailer gives is
+        # lost (flavor/varietal in tags+description, item code, weight, stock, image, and the full raw record).
+        _extra = ("tags", "description", "item_code", "product_type", "compare_at_price", "grams", "in_stock",
+                  "image", "size_opt", "vintage_opt", "abv", "region", "appellation", "varietal", "country",
+                  "raw_json")
         for it in items:
             b = ctx.classify_beverage(it["name"])
-            rows.append(dict(store=s["account"], base=s["base"], platform=s["platform"], name=it["name"],
-                             brand=it["brand"], price_value=it["price"], sku=it["sku"], upc=it["upc"],
-                             bev_category=b["category"], is_hemp=observe.is_hemp(it["name"]), run_id=run_id,
-                             **dd._parse_pack(it["name"])))
+            rec = dict(store=s["account"], base=s["base"], platform=s["platform"], name=it["name"],
+                       brand=it.get("brand", ""), price_value=it.get("price"), sku=it.get("sku", ""),
+                       upc=it.get("upc", ""), size_ml=it.get("size_ml"),
+                       bev_category=b["category"], is_hemp=observe.is_hemp(it["name"]), run_id=run_id,
+                       **dd._parse_pack(it["name"]))
+            for k in _extra:
+                if it.get(k) not in (None, ""):
+                    rec[k] = it[k]
+            rows.append(rec)
         log("  [off] %-26s (%s) -> %d products" % (s["account"][:26], s["platform"], len(items)))
     if rows:
         # ACCUMULATE — `out` is per-market but filled by a PLATFORM-filtered subset; running for one platform
