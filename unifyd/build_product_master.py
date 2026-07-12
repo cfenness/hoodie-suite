@@ -41,6 +41,10 @@ _CFG = {
     "target_products": dict(name="name", brand="brand", cat="category", dedup=["tcin"]),
     "specs_products": dict(name="name", brand="brand", dedup=["sku"]),
     "cityhive_products": dict(name="name", size_ml="size_ml", cat="bev_category", dedup=["sku"]),  # independent
+    # TTB COLA — the federal label registry = the historical backbone (~1M bottle+vintage records). Pre-joined
+    # (detail + labels) + deduped in ttb_products; brand extracted from the name via the dictionary; vintage →
+    # dim_vintage aux (bottles don't split by vintage). All alcohol, so no bev-alc filter.
+    "ttb_products": dict(name="name", cat="category", size="net_contents", vintage="vintage", upc="upc"),
 
     "or_pricing": dict(name="description", size="size", cat="category", proof="proof"),
     "me_pricing": dict(name="Description", size="Size", upc="UPC", proof="Proof", cat="Product Category"),
@@ -220,7 +224,8 @@ def build(log=print):
                 style=None, category=r.get(c["cat"]) if c.get("cat") else None, origin=None, size_ml=sz,
                 packsize=None, container=r.get(c["container"]) if c.get("container") else None, pack=None,
                 upc=(re.sub(r"\D", "", str(r.get(c["upc"]))) or None) if c.get("upc") and r.get(c["upc"]) else None,
-                gtin=None, vintage=None, edition=None, supplier=None, _source=ds))
+                gtin=None, edition=None, supplier=None, _source=ds,
+                vintage=((str(r.get(c["vintage"])).strip() or None) if c.get("vintage") and r.get(c["vintage"]) else None)))
             kept += 1
         log("[master]   %-24s %6d products" % (ds, kept))
     _precleanse.precleanse(staged, log)                 # precleanse: canonicalize brand + cleanse name FIRST
