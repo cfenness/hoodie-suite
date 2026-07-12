@@ -566,7 +566,8 @@ def _sqsp_money(v, item):
 def squarespace_product(url, key):
     """One Squarespace product URL -> a row per purchasable variant (size options become separate variants)."""
     try:
-        j = json.loads(_unlock(url + ("&" if "?" in url else "?") + "format=json", key))
+        # direct-first (?format=json is a public endpoint, no bot wall) — BD only if actually blocked
+        j = json.loads(_fetch(url + ("&" if "?" in url else "?") + "format=json", key))
     except Exception:
         return []
     item = j.get("item") or ((j.get("items") or [{}])[0])
@@ -599,7 +600,7 @@ def squarespace_catalog(base, key=None, max_products=None, workers=6, log=print)
     key = key or _bd_key()
     base = base.rstrip("/")
     try:
-        sm = _unlock(base + "/sitemap.xml", key)
+        sm = _fetch(base + "/sitemap.xml", key)        # direct-first; sitemap is public
     except Exception as e:
         log("  [sqsp] %s sitemap: %s" % (base, str(e)[:50])); return []
     urls = [u for u in re.findall(r"<loc>\s*([^<]+?)\s*</loc>", sm or "") if "/p/" in u]
