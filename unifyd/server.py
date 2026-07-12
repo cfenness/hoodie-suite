@@ -1807,20 +1807,55 @@ def mwb_master_ep():
     return jsonify(ok=True, count=len(items), items=items)
 
 
-@app.get("/api/master/workbench/item/<cid>")
-def mwb_item_ep(cid):
+def _sku_full(cid):
+    """Everything attached to a SKU — the sku stub + its product-grain attributes (image/geo/varietal/abv) +
+    its vintages (dim_vintage). Shared by the item detail + the expand-modal + the vision run."""
     sk = _wq("dim_sku", "SELECT * FROM t WHERE sku_key = ?", [cid])
     if not sk:
-        return jsonify(ok=False, error="not found"), 404
+        return None
     sk = sk[0]
-    st = _wb_sku_stub(sk, _wb_itemmap(), _wb_productmap(), _wb_brandmap())
-    src = sk.get("source_list") or []
-    if isinstance(src, str):
-        src = [src]
-    # "member records" = the source catalogs this SKU was found/corroborated in (price/distribution comparands)
+    itemmap = _wb_itemmap()
+    st = _wb_sku_stub(sk, itemmap, _wb_productmap(), _wb_brandmap())
+    pk = (itemmap.get(sk.get("item_key")) or (None, None, None))[0]
+    attrs = (_wq("dim_product", "SELECT * FROM t WHERE product_key = ?", [pk]) or [{}])[0] if pk else {}
+    st["image"] = attrs.get("image") or ""
+    for f in ("origin", "bottled_in", "region", "sub_region", "appellation", "varietal", "category", "abv", "style"):
+        st[f] = attrs.get(f) or st.get(f) or ""
+    st["pack"] = sk.get("pack") or ""
+    st["gtin"] = sk.get("gtin") or ""
+    st["vintages"] = [v["vintage"] for v in _wq("dim_vintage", "SELECT DISTINCT vintage FROM t WHERE sku_key = ? "
+                                                 "ORDER BY vintage", [cid])]
+    return st
+
+
+@app.get("/api/master/workbench/item/<cid>")
+def mwb_item_ep(cid):
+    st = _sku_full(cid)
+    if st is None:
+        return jsonify(ok=False, error="not found"), 404
+    src = st.get("corroborated_by", "")
+    src = [s for s in (src.split(", ") if src else []) if s]
     filings = [{"source": s, "brand": st["brand"], "name": st["candidate_name"], "category": (st["upc"] or "no UPC")}
                for s in src]
     return jsonify(ok=True, item=st, filings=filings)
+
+
+@app.post("/api/master/workbench/vision/<cid>")
+def mwb_vision_ep(cid):
+    """On-demand: run label-vision on THIS SKU's image (the button in the queue/modal). Returns the fields Claude
+    read off the label so a steward can eyeball + accept them. Only runs one image — cheap, human-triggered."""
+    st = _sku_full(cid)
+    if st is None:
+        return jsonify(ok=False, error="not found"), 404
+    img = st.get("image") or ""
+    if not img:
+        return jsonify(ok=False, error="no image on this SKU to read"), 400
+    try:
+        import label_vision
+        fields = label_vision.extract(img)
+    except Exception as e:
+        return jsonify(ok=False, error="vision failed: %s" % str(e)[:200]), 500
+    return jsonify(ok=True, sku_key=cid, image=img, fields=fields)
 
 
 def _wb_norm_brand(s):
