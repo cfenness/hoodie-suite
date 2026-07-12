@@ -722,8 +722,67 @@ def run(store, base=None, platform=None, sample=None, delay=1.5, log=print):
     return run_id, len(rows)
 
 
+# canonical set of platforms run_census() can dispatch — KEEP IN SYNC with the dispatch in run_census().
+# value = the recipe fn(s) that handle it. BigCommerce is proven via ABC's abc_catalog, not run_census.
+RECIPE_PLATFORMS = {"bigcommerce": "abc_catalog / bigcommerce_ids", "shopify": "shopify_catalog",
+                    "woocommerce": "woo_catalog", "bottlecapps": "bottlecapps_catalog",
+                    "wix": "wix_catalog", "city hive": "cityhive_catalog", "cityhive": "cityhive_catalog"}
+
+
+def _has_recipe(platform):
+    p = (platform or "").lower()
+    return any(k in p for k in RECIPE_PLATFORMS)
+
+
+def recipe_gap(log=print):
+    """Standing recipe-coverage report — the 'systems we've found that we can't (yet) crawl' view.
+
+    Scans every *_census table in the warehouse, tallies e-commerce stores by detected PLATFORM, and marks each:
+      • proven          — a recipe is registered AND it has yielded products (appears in a *_products table)
+      • recipe-unproven — a recipe is registered but hasn't produced anything yet (needs validating/fixing)
+      • bespoke         — no platform detected; each store is its own custom job (low priority)
+      • NO RECIPE       — a real named platform we have no recipe for -> BUILD priority
+    Ranks by store count so the biggest un-crawlable systems float to the top = what to build/fix next.
+    """
+    from collections import defaultdict
+    ds = warehouse.list_datasets()
+    have = {d["name"]: d for d in ds}
+    census_tbls = [d["name"] for d in ds if d["name"].endswith("_census") and d.get("rows")]
+    prod_tbls = [d["name"] for d in ds if d["name"].endswith("_products") and d.get("rows")]
+    counts, markets = defaultdict(int), defaultdict(set)
+    for t in census_tbls:
+        try:
+            for r in warehouse.query(t, "SELECT platform, count(*) c FROM t WHERE has_ecommerce = true GROUP BY platform"):
+                if r["platform"]:
+                    counts[r["platform"]] += r["c"]; markets[r["platform"]].add(t.replace("_offprem_census", "").replace("_hemp_census", ""))
+        except Exception:
+            pass
+    proven = set()
+    for t in prod_tbls:
+        try:
+            for r in warehouse.query(t, "SELECT DISTINCT platform FROM t WHERE platform IS NOT NULL"):
+                proven.add((r["platform"] or "").lower())
+        except Exception:
+            pass
+    if have.get("abc_catalog", {}).get("rows"):
+        proven.add("bigcommerce")                         # BigCommerce proves via ABC's abc_catalog
+    out = []
+    for plat, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+        pl = plat.lower()
+        registered = _has_recipe(plat)
+        is_proven = registered and any(k in pl or pl in k for k in proven)
+        status = ("proven" if is_proven else "recipe-unproven") if registered else \
+                 ("bespoke" if "bespoke" in pl else "NO RECIPE")
+        out.append({"platform": plat, "stores": n, "markets": sorted(markets[plat]), "status": status})
+    log("[recipe-gap] %d census tables · %d platforms" % (len(census_tbls), len(out)))
+    for r in out:
+        log("  %-16s %5d stores  %-16s %s" % (r["platform"], r["stores"], r["status"], ",".join(r["markets"])))
+    return out
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
+    ap.add_argument("--gap", action="store_true", help="print the standing recipe-coverage gap report")
     ap.add_argument("--store", default="")
     ap.add_argument("--base", default="")
     ap.add_argument("--platform", default="")
@@ -733,7 +792,9 @@ if __name__ == "__main__":
     ap.add_argument("--hemp", action="store_true", help="pull the hemp census instead of off-premise")
     ap.add_argument("--national", default="", help="platform -> discover its stores nationally + sweep")
     a = ap.parse_args()
-    if a.national:
+    if a.gap:
+        recipe_gap()
+    elif a.national:
         national_sweep(a.national)
     elif a.census:
         pl = tuple(p.strip() for p in a.platforms.split(",") if p.strip())
