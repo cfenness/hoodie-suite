@@ -50,10 +50,40 @@ h1{font-size:19px;margin:0 0 3px} .sub{color:var(--muted);font-size:13px;margin:
 .act .merge:hover{border-color:var(--good);background:var(--good-soft);color:var(--good)}
 .act .keep:hover{border-color:var(--muted);background:var(--inset)}
 .act .flag{margin-left:auto;font-weight:500;color:var(--muted)}
+.chd .xp{border:1px solid var(--line);background:var(--panel-2);color:var(--muted);border-radius:7px;
+  font-size:11.5px;font-weight:600;padding:2px 9px;cursor:pointer;flex:none}
+.chd .xp:hover{border-color:var(--accent);color:var(--accent)}
 .empty{color:var(--muted);padding:48px 0;text-align:center}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);
   padding:9px 16px;border-radius:9px;font-size:13px;opacity:0;transition:.2s;pointer-events:none}
 .toast.show{opacity:.95}
+/* detail modal */
+.mask{position:fixed;inset:0;background:rgba(10,14,20,.55);display:none;align-items:flex-start;justify-content:center;
+  padding:40px 18px;overflow:auto;z-index:50} .mask.on{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;max-width:820px;width:100%;
+  box-shadow:0 24px 60px rgba(0,0,0,.3)}
+.mh{display:flex;align-items:flex-start;gap:8px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.mh .mt{font-weight:700;font-size:16px} .mh .ms{font-size:12.5px;color:var(--muted);margin-top:3px}
+.mh .x{margin-left:auto;background:none;border:0;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;flex:none}
+.mbody{padding:16px 18px}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.mc{border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--bg)}
+.mc.dupu{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.mc .img{height:150px;background:var(--panel-2) center/contain no-repeat;display:flex;align-items:center;
+  justify-content:center;color:var(--faint);font-size:12px;border-bottom:1px solid var(--line)}
+.mc .img img{max-height:150px;max-width:100%;display:block}
+.mc .b{padding:10px 12px}
+.mc .u{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;font-weight:600}
+.mc .u.none{color:var(--faint);font-style:italic;font-weight:400;font-family:inherit}
+.mc .src{font-size:11.5px;color:var(--muted);margin-top:5px;display:flex;gap:4px;flex-wrap:wrap}
+.mc .src .s{background:var(--inset);border-radius:5px;padding:1px 6px}
+.mc .at{font-size:12px;color:var(--muted);margin-top:7px;display:flex;flex-direction:column;gap:2px}
+.mc .at b{color:var(--ink);font-weight:600}
+.mfoot{display:flex;gap:10px;padding:14px 18px;border-top:1px solid var(--line)}
+.mfoot button{border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:8px;
+  padding:9px 18px;font-size:13.5px;font-weight:600;cursor:pointer}
+.mfoot .merge:hover{border-color:var(--good);background:var(--good-soft);color:var(--good)}
+.mfoot .keep:hover{border-color:var(--muted);background:var(--inset)}
 </style>
 <div class="wrap">
   <h1>Cluster Review — ambiguous merges</h1>
@@ -72,6 +102,7 @@ h1{font-size:19px;margin:0 0 3px} .sub{color:var(--muted);font-size:13px;margin:
   <div class="cards" id="cards"><div class="empty">Loading…</div></div>
 </div>
 <div class="toast" id="toast"></div>
+<div class="mask" id="mask"><div class="modal" id="modal"></div></div>
 <script>
 const API="/api/master/workbench";
 const $=s=>document.querySelector(s);
@@ -105,7 +136,8 @@ function render(){
     const call=m.distinct_upc>=2;
     return `<div class="card" id="c_${esc(m.merge_id)}">
       <div class="chd"><span class="nm">${esc(m.name)}</span><span class="br">${esc(m.brand)}</span>
-        <span class="pill ${call?'call':'easy'}">${call?m.distinct_upc+' UPCs — real call':'likely one SKU'}</span></div>
+        <span class="pill ${call?'call':'easy'}">${call?m.distinct_upc+' UPCs — real call':'likely one SKU'}</span>
+        <button class="xp" onclick="openMergeModal('${esc(m.merge_id)}')" title="See the products side by side">⤢ details</button></div>
       <div class="why">${esc(m.reason)} · ${m.n_skus} SKUs · ${m.total_rows} source rows</div>
       <div class="mem">${rows}</div>
       <div class="act">
@@ -126,6 +158,41 @@ async function decide(id,action,btn){
     if(card){card.classList.add("gone");setTimeout(render,240);}else render();
     toast(action==="merge"?"Merged ✓":"Kept separate");
   }catch(e){btn.disabled=false;toast("Couldn't save — is the engine up?");}
+}
+
+function closeModal(){$("#mask").classList.remove("on");}
+$("#mask").onclick=e=>{if(e.target===$("#mask"))closeModal();};
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
+async function openMergeModal(mid){
+  $("#modal").innerHTML='<div class="mh"><div class="mt">Loading…</div><button class="x" onclick="closeModal()">×</button></div>';
+  $("#mask").classList.add("on");
+  const d=await fetch(API+"/merge-detail/"+encodeURIComponent(mid)).then(r=>r.json()).catch(()=>null);
+  if(!d||!d.ok){$("#modal").innerHTML='<div class="mh"><div class="mt">Couldn\'t load this cluster.</div><button class="x" onclick="closeModal()">×</button></div>';return;}
+  const cores={};(d.members||[]).forEach(x=>{const c=core(x.upc);if(c)cores[c]=(cores[c]||0)+1;});
+  const cards=(d.members||[]).map(x=>{
+    const c=core(x.upc), dup=c&&cores[c]>1;
+    const img=x.image?`<img src="${esc(x.image)}" loading="lazy" onerror="this.parentNode.textContent='image unavailable'">`:'no image';
+    const upc=x.upc?`<span class="u">${esc(x.upc)}${dup?' <span style="color:var(--bad);font-size:11px">↔ dup</span>':''}</span>`:'<span class="u none">no UPC</span>';
+    const srcs=(x.source_list||[]).map(s=>`<span class="s">${esc(s)}</span>`).join("")||'<span class="s">—</span>';
+    const attrs=[["Varietal",x.varietal],["Origin",x.origin],["Region",x.region],["Appellation",x.appellation],["ABV",x.abv],["Vintages",(x.vintages||[]).join(", ")]]
+      .filter(a=>a[1]).map(a=>`<div><b>${esc(a[0])}:</b> ${esc(a[1])}</div>`).join("");
+    return `<div class="mc${dup?' dupu':''}"><div class="img">${img}</div><div class="b">
+      ${upc}<div class="src">${srcs}</div>
+      <div class="at">${attrs||'<span style="color:var(--faint)">no attributes captured yet</span>'}</div>
+      <div style="font-size:11px;color:var(--faint);margin-top:6px">${x.source_rows} source row${x.source_rows===1?"":"s"}</div></div></div>`;
+  }).join("");
+  $("#modal").innerHTML=`<div class="mh"><div><div class="mt">${esc(d.name)}</div>
+      <div class="ms">${esc(d.brand)} · ${d.n_skus} SKUs · ${d.distinct_upc} distinct UPCs · ${d.total_rows} source rows<br>${esc(d.reason)}</div></div>
+      <button class="x" onclick="closeModal()">×</button></div>
+    <div class="mbody"><div class="mgrid">${cards}</div></div>
+    <div class="mfoot"><button class="merge" onclick="decideModal('${esc(mid)}','merge')">✓ Merge — one SKU</button>
+      <button class="keep" onclick="decideModal('${esc(mid)}','keep_separate')">Keep separate</button></div>`;
+}
+async function decideModal(id,action){
+  const r=await fetch(API+"/merge",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({merge_id:id,action})}).then(r=>r.json()).catch(()=>null);
+  if(r&&r.ok){ALL=ALL.filter(m=>m.merge_id!==id);closeModal();render();toast(action==="merge"?"Merged ✓":"Kept separate");}
+  else toast("Couldn't save.");
 }
 
 async function load(){

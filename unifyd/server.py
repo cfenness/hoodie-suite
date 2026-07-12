@@ -2056,6 +2056,39 @@ def mwb_merges_ep():
     return jsonify(ok=True, count=len(out), merges=out[:400])
 
 
+@app.get("/api/master/workbench/merge-detail/<path:mid>")
+def mwb_merge_detail_ep(mid):
+    """Full detail for one merge group — each member SKU enriched with its image / geo / varietal / ABV /
+    vintages / source list, so a reviewer can SEE the products side by side before deciding to merge."""
+    view = _wb_view("wb_merges")
+    if view is None:
+        return jsonify(ok=False, error="not built"), 404
+    grp = next((r for r in view if r.get("merge_id") == mid), None)
+    if not grp:
+        return jsonify(ok=False, error="not found"), 404
+    try:
+        members = json.loads(grp.get("members") or "[]")
+    except Exception:
+        members = []
+    detailed = []
+    for m in members:
+        full = _sku_full(m.get("sku_key")) or {}
+        detailed.append({"sku_key": m.get("sku_key"), "upc": m.get("upc") or "",
+                         "sources": m.get("sources"), "source_rows": m.get("source_rows"),
+                         "source_list": m.get("source_list") or [],
+                         "name": full.get("candidate_name") or grp.get("name"),
+                         "image": full.get("image") or "", "origin": full.get("origin") or "",
+                         "region": full.get("region") or "", "sub_region": full.get("sub_region") or "",
+                         "appellation": full.get("appellation") or "", "varietal": full.get("varietal") or "",
+                         "abv": full.get("abv") or "", "category": full.get("category") or "",
+                         "pack": full.get("pack") or "", "vintages": full.get("vintages") or []})
+    hero = next((d for d in detailed if d.get("image")), (detailed[0] if detailed else {}))
+    return jsonify(ok=True, merge_id=mid, name=grp.get("name"), brand=grp.get("brand"),
+                   reason=grp.get("reason"), distinct_upc=grp.get("distinct_upc"),
+                   size_ml=grp.get("size_ml"), n_skus=grp.get("n_skus"), total_rows=grp.get("total_rows"),
+                   hero=hero, members=detailed)
+
+
 @app.post("/api/master/workbench/merge")
 def mwb_merge_decide_ep():
     """Record a cluster-review decision — 'merge' (these SKUs are one) or 'keep_separate' (genuinely distinct).
