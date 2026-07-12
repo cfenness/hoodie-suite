@@ -234,6 +234,27 @@ def canonicalize(staged, log=print):
     return staged
 
 
+def split_by_abv(staged, log=print):
+    """Un-merge products that canonicalization over-collapsed. Proof/ABV DISTINGUISHES spirit expressions (Old
+    Forester 86 vs 100 proof) but the proof token is stripped as a 'descriptor', so with no UPC to separate them
+    they land in one cluster spanning 43% / 46.5% / 50% ABV. ABV is the reliable signal: where a (brand, product,
+    size) cluster carries 2+ materially different ABVs, bind the proof back into the product name so they split
+    into distinct products. Rows with no ABV stay in the base (unspecified) product — honestly un-splittable."""
+    groups = collections.defaultdict(list)
+    for r in staged:
+        groups[(r.get("brand"), r.get("product_name"), r.get("size_ml"))].append(r)
+    split = 0
+    for rows in groups.values():
+        abvs = {round(float(r["abv"]), 1) for r in rows if r.get("abv")}
+        if len(abvs) >= 2 and (max(abvs) - min(abvs)) >= 1.0:      # genuinely different strengths = different SKUs
+            for r in rows:
+                if r.get("abv"):
+                    r["product_name"] = "%s %d Proof" % (r["product_name"], round(float(r["abv"]) * 2))
+                    split += 1
+    log("[master] split %d rows by ABV (distinct-proof expressions no UPC could separate)" % split)
+    return staged
+
+
 def build(log=print):
     by1 = build_brand_dict(log)
     staged = []
@@ -279,6 +300,7 @@ def build(log=print):
         log("[master]   %-24s %6d products" % (ds, kept))
     _precleanse.precleanse(staged, log)                 # precleanse: canonicalize brand + cleanse name FIRST
     canonicalize(staged, log)                           # smarter matching: fold near-dup names before the shred
+    split_by_abv(staged, log)                           # then un-merge distinct-proof expressions ABV separates
     _sku_match.propagate_upcs(staged, log)              # SKU-first: propagate UPCs across matched item clusters
     log("[master] staged %d rows → _stage_product" % len(staged))
     warehouse.write_parquet("_stage_product", staged, fields=FIELDS + ["_source"])
