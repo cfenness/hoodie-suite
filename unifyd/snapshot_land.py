@@ -33,7 +33,7 @@ def _norm(cell, chain, ts):
     # carry the rich fields the enriched scrapers capture — ALWAYS include them (empty string default) so the
     # column exists in the table even when sparse; conditional inclusion dropped sparse fields at schema-infer.
     for k in ("varietal", "region", "sub_region", "appellation", "origin", "category", "item_size",
-              "upc", "abv", "description"):
+              "upc", "abv", "description", "image"):
         row[k] = cell.get(k) or ""
     return row
 
