@@ -21,7 +21,8 @@ MOBILE_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit
              "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
 SITEMAP_INDEX = "https://www.totalwine.com/sitemap.xml"
 SNAP = "total_wine_snapshot.json"
-HEADER = ["Brand", "Name", "Size", "Price", "SKU", "Category", "URL"]
+HEADER = ["Brand", "Name", "Size", "Price", "SKU", "Category", "varietal", "origin", "region",
+          "appellation", "style", "abv", "description", "URL"]
 
 
 def _fetch(url, timeout=30):
@@ -134,7 +135,9 @@ def pull(cap=400, delay=1.0, out=".", state_dir=None, log=print):
     changed = sum(1 for k, v in cur.items() if k not in prev or prev[k].get("price") != v.get("price"))
     json.dump({"__ts__": started, "cells": cur}, open(sp, "w"))
 
-    rows = [[v["brand"], v["name"], v["size"], v["price"], v["sku"], v["category"], v["url"]]
+    rows = [[v["brand"], v["name"], v["size"], v["price"], v["sku"], v["category"], v.get("varietal", ""),
+             v.get("origin", ""), v.get("region", ""), v.get("appellation", ""), v.get("style", ""),
+             v.get("abv", ""), v.get("desc", ""), v["url"]]
             for v in sorted(cur.values(), key=lambda x: (x["brand"], x["name"]))]
     status = "degraded" if (warns or not cur) else "success"
     ds = {"total_wine_products": {"header": HEADER, "rows": rows[:800], "total": len(rows),
