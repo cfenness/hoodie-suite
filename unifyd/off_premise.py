@@ -549,6 +549,82 @@ def cityhive_catalog(base, key=None, max_products=None, workers=8, log=print):
     return rows
 
 
+# ── Squarespace Commerce recipe — the crack: Squarespace exposes EVERYTHING as JSON. sitemap.xml lists every
+# product URL (they all contain `/p/`), and appending `?format=json` to any product URL returns the full item
+# (title, variants[{sku, priceMoney, salePriceMoney, qtyInStock, optionValues}], assetUrl image, body). No API
+# key, no browser — universal across any Squarespace store regardless of its shop path. Per-product fetch, so
+# bounded by max_products in a multi-store census sweep. ──
+def _sqsp_money(v, item):
+    m = (v.get("salePriceMoney") if v.get("onSale") else None) or v.get("priceMoney") \
+        or item.get("salePriceMoney") or item.get("priceMoney") or {}
+    try:
+        return float(m.get("value")) if m.get("value") not in (None, "") else None
+    except Exception:
+        return None
+
+
+def squarespace_product(url, key):
+    """One Squarespace product URL -> a row per purchasable variant (size options become separate variants)."""
+    try:
+        j = json.loads(_unlock(url + ("&" if "?" in url else "?") + "format=json", key))
+    except Exception:
+        return []
+    item = j.get("item") or ((j.get("items") or [{}])[0])
+    if not isinstance(item, dict) or not item.get("title"):
+        return []
+    title = _html.unescape(item.get("title") or "").strip()
+    img = item.get("assetUrl") or ""
+    desc = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", item.get("excerpt") or item.get("body") or ""))).strip()[:2000]
+    variants = item.get("variants") or [{}]
+    out = []
+    for v in variants:
+        # size/option variants (e.g. "750ml" / "1.5L") ride optionValues -> fold into the name for size parsing
+        opt = " ".join(str(o.get("value") or "") for o in (v.get("optionValues") or []) if isinstance(o, dict)).strip()
+        name = ("%s %s" % (title, opt)).strip() if opt and opt.lower() not in title.lower() else title
+        sku = (v.get("sku") or "").strip()
+        qty = v.get("qtyInStock")
+        out.append({"name": name, "brand": "", "price": _sqsp_money(v, item),
+                    "sku": sku, "upc": (sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
+                    "size_ml": _ch_ml(name), "in_stock": bool(v.get("unlimited") or (qty or 0) > 0),
+                    "qty": (None if v.get("unlimited") else qty), "image": img, "description": desc,
+                    "product_type": str(item.get("productType") or ""), "url": item.get("fullUrl") or url,
+                    "raw_json": json.dumps(item)[:12000]})
+    return out
+
+
+def squarespace_catalog(base, key=None, max_products=None, workers=6, log=print):
+    """Every product on a Squarespace store: sitemap.xml -> /p/ URLs -> per-product ?format=json (concurrent)."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    key = key or _bd_key()
+    base = base.rstrip("/")
+    try:
+        sm = _unlock(base + "/sitemap.xml", key)
+    except Exception as e:
+        log("  [sqsp] %s sitemap: %s" % (base, str(e)[:50])); return []
+    urls = [u for u in re.findall(r"<loc>\s*([^<]+?)\s*</loc>", sm or "") if "/p/" in u]
+    # de-dupe, keep order; cap for a multi-store sweep
+    seen, prod = set(), []
+    for u in urls:
+        if u not in seen:
+            seen.add(u); prod.append(u)
+    if max_products:
+        prod = prod[:max_products]
+    if not prod:
+        log("  [sqsp] %s: no /p/ products in sitemap (Squarespace Commerce not in use?)" % base); return []
+    rows, lock = [], threading.Lock()
+
+    def w(u):
+        r = squarespace_product(u, key)
+        if r:
+            with lock:
+                rows.extend(r)
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
+        list(ex.map(w, prod))
+    log("  [sqsp] %s -> %d products (%d variants)" % (base, len(prod), len(rows)))
+    return rows
+
+
 def discover_stores(query, pages=4, log=print):
     """SERP a platform signature -> distinct store domains (noise filtered). Market-agnostic national discovery."""
     key = _bd_key()
@@ -647,6 +723,9 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
                 items = cityhive_catalog(s["base"], key, max_products=int(os.environ.get("CITYHIVE_MAX", "600")), log=log)
             elif "wix" in plat:
                 items = wix_catalog(s["base"], key, log=log)
+            elif "squarespace" in plat:
+                # per-product fetch -> bound in a multi-store sweep (single-store run()/CLI goes full).
+                items = squarespace_catalog(s["base"], key, max_products=int(os.environ.get("SQSP_MAX", "800")), log=log)
             else:
                 items = []
         except Exception as e:
@@ -726,7 +805,8 @@ def run(store, base=None, platform=None, sample=None, delay=1.5, log=print):
 # value = the recipe fn(s) that handle it. BigCommerce is proven via ABC's abc_catalog, not run_census.
 RECIPE_PLATFORMS = {"bigcommerce": "abc_catalog / bigcommerce_ids", "shopify": "shopify_catalog",
                     "woocommerce": "woo_catalog", "bottlecapps": "bottlecapps_catalog",
-                    "wix": "wix_catalog", "city hive": "cityhive_catalog", "cityhive": "cityhive_catalog"}
+                    "wix": "wix_catalog", "city hive": "cityhive_catalog", "cityhive": "cityhive_catalog",
+                    "squarespace": "squarespace_catalog"}
 
 
 def _has_recipe(platform):
