@@ -27,9 +27,15 @@ def _norm(cell, chain, ts):
     qty = cell.get("qty")
     if instock is None and qty is not None:
         instock = qty > 0
-    return dict(chain=chain, sku=str(cell.get("sku", "")), store=str(cell.get("store", "")),
-                name=(cell.get("name") or cell.get("title") or ""), brand=(cell.get("brand") or ""),
-                price=cell.get("price"), qty=qty, in_stock=bool(instock), pulled_at=ts)
+    row = dict(chain=chain, sku=str(cell.get("sku", "")), store=str(cell.get("store", "")),
+               name=(cell.get("name") or cell.get("title") or ""), brand=(cell.get("brand") or ""),
+               price=cell.get("price"), qty=qty, in_stock=bool(instock), pulled_at=ts)
+    # carry any rich fields the enriched scrapers captured (varietal/region/origin/category/size/upc/desc)
+    for k in ("varietal", "region", "sub_region", "appellation", "origin", "category", "item_size",
+              "upc", "abv", "description"):
+        if cell.get(k) not in (None, ""):
+            row[k] = cell[k]
+    return row
 
 
 def land(conn):

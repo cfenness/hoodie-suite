@@ -22,6 +22,7 @@ import sku_match as _sku_match
 # origin = SOURCE of the juice (COO — where the liquid is from); bottled_in = where it was bottled (kept
 # SEPARATE — a Barbados rum bottled in the US is origin=Barbados, bottled_in=US).
 FIELDS = ["brand", "brand_group", "product_name", "flavor", "abv", "style", "category", "origin", "bottled_in",
+          "region", "sub_region", "appellation", "varietal",
           "size_ml", "packsize", "container", "pack", "upc", "gtin", "vintage", "edition", "supplier"]
 
 # sources with a REAL brand column — used to seed the brand dictionary
@@ -39,7 +40,8 @@ _CFG = {
                              cat="category", filt=lambda r: r.get("is_alcohol")),
     "totalwine_products_full": dict(name="name", size="name", container="container", cat="bev_category",
                                     filt=lambda r: r.get("is_alcoholic")),
-    "binnys_products": dict(name="name", brand="brand", dedup=["sku"]),          # store×product → distinct products
+    "binnys_products": dict(name="name", brand="brand", dedup=["sku"], varietal="varietal",  # store×product →
+                            region="region", origin="origin", cat="category"),                # distinct products
     "target_products": dict(name="name", brand="brand", cat="category", dedup=["tcin"]),
     "specs_products": dict(name="name", brand="brand", dedup=["sku"]),
     "cityhive_products": dict(name="name", size_ml="size_ml", cat="bev_category", dedup=["sku"]),  # independent
@@ -242,7 +244,9 @@ def build(log=print):
                 packsize=None, container=r.get(c["container"]) if c.get("container") else None, pack=None,
                 upc=(re.sub(r"\D", "", str(r.get(c["upc"]))) or None) if c.get("upc") and r.get(c["upc"]) else None,
                 gtin=None, edition=None, supplier=None, _source=ds,
-                vintage=_clean_vintage(r.get(c["vintage"])) if c.get("vintage") else None))
+                vintage=_clean_vintage(r.get(c["vintage"])) if c.get("vintage") else None,
+                **{fld: ((str(r.get(c[fld])).strip() or None) if c.get(fld) and r.get(c[fld]) else None)
+                   for fld in ("region", "sub_region", "appellation", "varietal")}))
             kept += 1
         log("[master]   %-24s %6d products" % (ds, kept))
     _precleanse.precleanse(staged, log)                 # precleanse: canonicalize brand + cleanse name FIRST
