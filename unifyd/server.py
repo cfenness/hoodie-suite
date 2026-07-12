@@ -1690,8 +1690,9 @@ def mwb_summary_ep():
     # rows collapse INTO the 76,618 candidates (shown as source_rows/collapsed, not a stage). Corroboration is
     # the confidence signal: 2+ sources = auto-trusted; single-source = the analyst queue. Confirmed to master =
     # the trusted subset (auto-corroborated + Claude-adjudicated + human-confirmed), NOT every built row.
-    # ITEM is the key grain (product + size) — the sellable unit market data keys on. Count items.
-    agg = _wq("dim_item", "SELECT count(*) total, "
+    # SKU is the matching TARGET (product + size + pack, UPC-identified) — the only grain where price/inventory/
+    # distribution compare across sources. Count SKUs; corroboration = the same SKU seen in 2+ sources.
+    agg = _wq("dim_sku", "SELECT count(*) total, "
               "sum(CASE WHEN sources >= 2 THEN 1 ELSE 0 END) multi FROM t")
     total = (agg[0]["total"] if agg else 0) or 0
     multi = (agg[0]["multi"] if agg else 0) or 0        # corroborated by 2+ sources → auto
@@ -1705,7 +1706,7 @@ def mwb_summary_ep():
     sr = sum(1 for d in decisions if d.get("action") == "escalate" and d.get("tier") == "senior")
     st = sum(1 for d in decisions if d.get("action") == "escalate" and d.get("tier") == "steward")
     analyst = max(0, single - claude - sr - st - conf_h - rej_h)             # single-source still pending
-    by = _wq("dim_item", "SELECT s, count(*) n FROM (SELECT unnest(source_list) s FROM t) GROUP BY 1 ORDER BY 2 DESC")
+    by = _wq("dim_sku", "SELECT s, count(*) n FROM (SELECT unnest(source_list) s FROM t) GROUP BY 1 ORDER BY 2 DESC")
     # process states partition the candidates; Confirmed is the promoted-to-master roll-up (a subset)
     stages = {"candidates": total,
               "auto": multi, "claude": claude, "analyst": analyst, "senior": sr, "steward": st,
@@ -1756,21 +1757,51 @@ def _wb_item_stub(it, prodmap, brands):
             "upc": None, "size_ml": it.get("size_ml")}
 
 
+def _wb_itemmap():
+    """item_key -> (product_key, size_ml, container) — to name a SKU (product + size + pack) via its item."""
+    return {i["item_key"]: (i.get("product_key"), i.get("size_ml"), i.get("container"))
+            for i in _wq("dim_item", "SELECT item_key, product_key, size_ml, container FROM t")}
+
+
+def _wb_sku_stub(sk, itemmap, prodmap, brands):
+    """Reshape a dim_sku row into the fields the workbench consumes. The SKU is the MATCHING TARGET — the
+    fully-specified sellable unit (product + size + pack), identified by UPC where present. Name + brand resolve
+    up through item_key -> product_key. Corroboration (`sources`) = the same SKU seen in N sources."""
+    pk, size_ml, container = itemmap.get(sk.get("item_key"), (None, None, None))
+    pname, bkey = prodmap.get(pk, (None, None))
+    src = sk.get("source_list") or []
+    if isinstance(src, str):
+        src = [src]
+    n = sk.get("sources") or len(src) or 1
+    conf = 0.9 if n >= 3 else (0.82 if n == 2 else 0.5)
+    pack = sk.get("pack")
+    parts = [(pname or "").strip(), _wb_size_label(size_ml), (container or ""),
+             ("%s-pk" % pack if pack else "")]
+    name = " · ".join([x for x in parts if x]) or "(unnamed sku)"
+    return {"cluster_id": sk.get("sku_key"), "candidate_name": name, "item_key": sk.get("item_key"),
+            "product_key": pk, "brand": brands.get(bkey) or "", "class_type": None,
+            "confidence": conf, "corroborated_by": ", ".join(src), "sources": n,
+            "match_kind": ("multi-source" if n >= 2 else "single-source"),
+            "member_count": sk.get("source_rows") or 1, "tier": (1 if n >= 2 else 0),
+            "upc": (sk.get("upc") or None), "size_ml": size_ml}
+
+
 @app.get("/api/master/workbench/master")
 def mwb_master_ep():
     q = (request.args.get("q") or "").strip().lower()
     src = (request.args.get("source") or "").strip()
-    brands, prodmap = _wb_brandmap(), _wb_productmap()
-    # the trustworthy master = ITEMS corroborated by 2+ independent sources
-    rows = _wq("dim_item", "SELECT item_key, product_key, size_ml, container, sources, source_list, "
+    brands, prodmap, itemmap = _wb_brandmap(), _wb_productmap(), _wb_itemmap()
+    # the trustworthy master = SKUs corroborated by 2+ independent sources (the same SKU seen across sources)
+    rows = _wq("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list, "
                "source_rows FROM t WHERE sources >= 2 ORDER BY sources DESC, source_rows DESC LIMIT 600")
     items = []
     for r in rows:
-        st = _wb_item_stub(r, prodmap, brands)
+        st = _wb_sku_stub(r, itemmap, prodmap, brands)
         st["matched_by"] = "auto"
         if src and src not in (r.get("source_list") or []):
             continue
-        if q and q not in (st["candidate_name"] or "").lower() and q not in (st["brand"] or "").lower():
+        if q and q not in (st["candidate_name"] or "").lower() and q not in (st["brand"] or "").lower() \
+                and q not in (st["upc"] or ""):
             continue
         items.append(st)
     return jsonify(ok=True, count=len(items), items=items)
@@ -1778,16 +1809,16 @@ def mwb_master_ep():
 
 @app.get("/api/master/workbench/item/<cid>")
 def mwb_item_ep(cid):
-    it = _wq("dim_item", "SELECT * FROM t WHERE item_key = ?", [cid])
-    if not it:
+    sk = _wq("dim_sku", "SELECT * FROM t WHERE sku_key = ?", [cid])
+    if not sk:
         return jsonify(ok=False, error="not found"), 404
-    it = it[0]
-    st = _wb_item_stub(it, _wb_productmap(), _wb_brandmap())
-    src = it.get("source_list") or []
+    sk = sk[0]
+    st = _wb_sku_stub(sk, _wb_itemmap(), _wb_productmap(), _wb_brandmap())
+    src = sk.get("source_list") or []
     if isinstance(src, str):
         src = [src]
-    # "member records" here = the source catalogs the item was found/corroborated in
-    filings = [{"source": s, "brand": st["brand"], "name": st["candidate_name"], "category": _wb_size_label(it.get("size_ml"))}
+    # "member records" = the source catalogs this SKU was found/corroborated in (price/distribution comparands)
+    filings = [{"source": s, "brand": st["brand"], "name": st["candidate_name"], "category": (st["upc"] or "no UPC")}
                for s in src]
     return jsonify(ok=True, item=st, filings=filings)
 
@@ -1807,60 +1838,62 @@ def _wb_tokens(s):
 
 @app.get("/api/master/workbench/candidates/<cid>")
 def mwb_candidates_ep(cid):
-    """The RANKED possible clusters an ITEM could belong to — the disambiguation the workbench is built on.
-    #1 is the item's own proposed home (its corroboration confidence); the rest are OTHER items under the SAME
-    brand scored by name-token overlap (name carries the size), so genuine duplicate items (same product+size,
-    different source string) surface. A big gap to #2 (or a high #1) = low ambiguity; a near-tie = a human decides."""
-    base = _wq("dim_item", "SELECT * FROM t WHERE item_key = ?", [cid])
+    """The RANKED possible SKUs this one could really be — the disambiguation the workbench is built on. #1 is
+    the SKU's own proposed home; the rest are OTHER SKUs of the SAME PRODUCT (across sizes/packs/UPCs) scored by
+    name + UPC overlap, so a genuine duplicate SKU (same sellable unit, different source string / stray UPC)
+    surfaces. A big gap to #2 (or a high #1) = low ambiguity; a near-tie = a human decides whether to merge."""
+    base = _wq("dim_sku", "SELECT * FROM t WHERE sku_key = ?", [cid])
     if not base:
         return jsonify(ok=False, error="not found"), 404
     base = base[0]
-    brands, prodmap = _wb_brandmap(), _wb_productmap()
-    bstub = _wb_item_stub(base, prodmap, brands)
+    brands, prodmap, itemmap = _wb_brandmap(), _wb_productmap(), _wb_itemmap()
+    bstub = _wb_sku_stub(base, itemmap, prodmap, brands)
     btok = _wb_tokens(bstub["candidate_name"])
-    _, bkey = prodmap.get(base.get("product_key"), (None, None))
-    same_brand = {pk for pk, (nm, bk) in prodmap.items() if bk == bkey and pk != base.get("product_key")}
+    bpk = (itemmap.get(base.get("item_key")) or (None, None, None))[0]
+    same_prod_items = [ik for ik, (pk, _, _) in itemmap.items() if pk == bpk]   # SKUs of the same product
     pool = []
-    if same_brand:
-        pks = list(same_brand)[:300]
-        ph = ",".join("?" * len(pks))
-        pool = _wq("dim_item", "SELECT item_key, product_key, size_ml, container, sources, source_list "
-                   "FROM t WHERE product_key IN (%s) AND item_key <> ? LIMIT 400" % ph, pks + [cid])
-    cands = [{"cluster_id": cid, "name": bstub["candidate_name"], "grain": "item",
-              "table": "dim_item", "conf": round(bstub["confidence"], 2), "win": True,
-              "why": "Proposed master item — %s, corroborated by %s (%d source row%s)." % (
+    if same_prod_items:
+        iks = same_prod_items[:400]
+        ph = ",".join("?" * len(iks))
+        pool = _wq("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list "
+                   "FROM t WHERE item_key IN (%s) AND sku_key <> ? LIMIT 400" % ph, iks + [cid])
+    cands = [{"cluster_id": cid, "name": bstub["candidate_name"], "grain": "sku",
+              "table": "dim_sku", "conf": round(bstub["confidence"], 2), "win": True,
+              "why": "Proposed master SKU — %s, corroborated by %s (%d source row%s)." % (
                   bstub["match_kind"], bstub["corroborated_by"] or "one source",
                   bstub["member_count"], "" if bstub["member_count"] == 1 else "s"),
-              "keys": (["brand:" + (bstub["brand"] or "").lower().replace(" ", "-")] +
-                       (["size:" + _wb_size_label(base.get("size_ml"))] if base.get("size_ml") else []) +
+              "keys": ([("upc:" + bstub["upc"]) if bstub["upc"] else "no-upc",
+                        "brand:" + (bstub["brand"] or "").lower().replace(" ", "-")] +
                        ["src:" + s for s in (bstub["corroborated_by"].split(", ") if bstub["corroborated_by"] else [])[:2]])[:5]}]
     alts = []
     for c in pool:
-        cst = _wb_item_stub(c, prodmap, brands)
+        cst = _wb_sku_stub(c, itemmap, prodmap, brands)
         ctok = _wb_tokens(cst["candidate_name"])
         nj = (len(btok & ctok) / len(btok | ctok)) if (btok and ctok) else 0.0
-        if nj < 0.34:                                     # same-brand + real name overlap = a likely duplicate item
+        upc_same = bool(bstub["upc"]) and bstub["upc"] == cst["upc"]
+        if nj < 0.34 and not upc_same:
             continue
-        alts.append({"cluster_id": cst["cluster_id"], "name": cst["candidate_name"], "grain": "item",
-                     "table": "dim_item", "conf": round(nj, 2),
-                     "why": "%d%% name overlap under the same brand — a potential duplicate item to merge." % int(nj * 100),
-                     "keys": ["brand:" + (cst["brand"] or "").lower().replace(" ", "-"), "%d src" % cst["sources"]]})
+        alts.append({"cluster_id": cst["cluster_id"], "name": cst["candidate_name"], "grain": "sku",
+                     "table": "dim_sku", "conf": round(1.0 if upc_same else nj, 2),
+                     "why": ("Same UPC — definitively the same SKU, merge." if upc_same else
+                             "%d%% name overlap, same product — a potential duplicate SKU." % int(nj * 100)),
+                     "keys": ([("upc:" + cst["upc"]) if cst["upc"] else "no-upc", "%d src" % cst["sources"]])})
     alts.sort(key=lambda x: -x["conf"])
     return jsonify(ok=True, cluster_id=cid, candidates=cands + alts[:4])
 
 
 @app.get("/api/master/workbench/review")
 def mwb_review_ep():
-    # analyst queue = single-source ITEMS (present in only one catalog) — they need an independent source to
-    # corroborate before they're fully trusted. Highest source_rows first (most-seen singletons first).
-    brands, prodmap = _wb_brandmap(), _wb_productmap()
-    rows = _wq("dim_item", "SELECT item_key, product_key, size_ml, container, sources, source_list, "
+    # analyst queue = single-source SKUs (in only one catalog) — need an independent source to corroborate
+    # before they're fully trusted. Highest source_rows first (most-seen singletons first).
+    brands, prodmap, itemmap = _wb_brandmap(), _wb_productmap(), _wb_itemmap()
+    rows = _wq("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list, "
                "source_rows FROM t WHERE sources = 1 ORDER BY source_rows DESC LIMIT 400")
     decs = {d.get("cluster_id"): d for d in _wq("master_decisions", "SELECT cluster_id, action, tier FROM t")}
     terminal = {"confirm", "reject", "merge"}
     out = []
     for r in rows:
-        st = _wb_item_stub(r, prodmap, brands)
+        st = _wb_sku_stub(r, itemmap, prodmap, brands)
         dd = decs.get(st["cluster_id"])
         if dd and dd.get("action") in terminal:               # confirmed/rejected/merged leave the queue
             continue
