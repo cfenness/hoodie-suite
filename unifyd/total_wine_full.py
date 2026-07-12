@@ -69,7 +69,14 @@ def run(store, state=None, shards=1, shard=0, resume=True, log=print):
         day = time.strftime("%Y-%m-%d")
         for b in range(0, total, BATCH):
             batch = allsk[b:b + BATCH]
-            rows = twi._pull_bdbrowser(store, state, batch, log)   # fresh session + PX warm per batch
+            try:
+                rows = twi._pull_bdbrowser(store, state, batch, log)   # fresh session + PX warm per batch
+            except Exception as e:
+                # a batch can fail on a flaky BD Browser warm (Page.goto timeout) or a dropped session — that
+                # must NOT kill the whole run; log, advance, and let the NEXT batch open a fresh session.
+                log("[tw-full] ⚠ batch %d failed to pull (%s) — skipping; next batch re-warms" % (b, str(e)[:70]))
+                rl.progress(min(b + BATCH, total))
+                continue
             # unique observation partition per (shard, batch) — concurrent shards must NOT share one file
             got += _land(rows, log, part="%s_total-wine_s%d_b%d" % (day, shard, b))
             rl.progress(min(b + BATCH, total))
