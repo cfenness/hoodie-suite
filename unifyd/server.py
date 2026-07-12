@@ -1935,7 +1935,8 @@ def mwb_match_ep():
 # + label vision) and overlay the master on rebuild. Geo (origin→region→sub_region→appellation) is master data,
 # so it must be fillable at the low level, not curated. ──
 _STEWARD_FIELDS = [
-    {"key": "origin", "label": "Origin (country / state)", "col": "origin"},
+    {"key": "origin", "label": "Origin — source of the juice (COO)", "col": "origin"},
+    {"key": "bottled_in", "label": "Bottled in", "col": "bottled_in"},
     {"key": "region", "label": "Region", "col": None},
     {"key": "sub_region", "label": "Sub-region", "col": None},
     {"key": "appellation", "label": "Appellation", "col": None},
@@ -1951,17 +1952,18 @@ def _steward_overrides():
 @app.get("/api/master/steward/summary")
 def steward_summary_ep():
     from collections import defaultdict
-    prods = _wq("dim_product", "SELECT product_key, origin FROM t")
+    cols = [f["col"] for f in _STEWARD_FIELDS if f["col"]]
+    prods = _wq("dim_product", "SELECT product_key, %s FROM t" % ", ".join(cols))
     total = len(prods)
     byfield = defaultdict(set)
     for o in _steward_overrides():
         byfield[o.get("field")].add(o.get("product_key"))
-    origin_col = {p["product_key"] for p in prods if (p.get("origin") or "").strip()}
+    col_filled = {c: {p["product_key"] for p in prods if (p.get(c) or "").strip()} for c in cols}
     out = []
     for f in _STEWARD_FIELDS:
         filled = set(byfield.get(f["key"], set()))
-        if f["col"] == "origin":
-            filled |= origin_col
+        if f["col"]:
+            filled |= col_filled.get(f["col"], set())
         out.append({"key": f["key"], "label": f["label"], "filled": len(filled),
                     "missing": max(0, total - len(filled)), "total": total})
     return jsonify(ok=True, fields=out, total=total)
@@ -1976,8 +1978,8 @@ def steward_queue_ep():
         return jsonify(ok=False, error="unknown field"), 400
     brands = _wb_brandmap()
     # most-corroborated products first — the ones that matter most to get right
-    prods = _wq("dim_product", "SELECT product_key, brand_key, product_name, category, origin, style, sources "
-                "FROM t ORDER BY sources DESC LIMIT 6000")
+    prods = _wq("dim_product", "SELECT product_key, brand_key, product_name, category, origin, bottled_in, "
+                "style, sources FROM t ORDER BY sources DESC LIMIT 6000")
     have = {o.get("product_key") for o in _steward_overrides() if o.get("field") == field}
     out = []
     for p in prods:

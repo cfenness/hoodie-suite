@@ -19,7 +19,9 @@ import master_apply
 import precleanse as _precleanse
 import sku_match as _sku_match
 
-FIELDS = ["brand", "brand_group", "product_name", "flavor", "abv", "style", "category", "origin",
+# origin = SOURCE of the juice (COO — where the liquid is from); bottled_in = where it was bottled (kept
+# SEPARATE — a Barbados rum bottled in the US is origin=Barbados, bottled_in=US).
+FIELDS = ["brand", "brand_group", "product_name", "flavor", "abv", "style", "category", "origin", "bottled_in",
           "size_ml", "packsize", "container", "pack", "upc", "gtin", "vintage", "edition", "supplier"]
 
 # sources with a REAL brand column — used to seed the brand dictionary
@@ -235,6 +237,7 @@ def build(log=print):
             staged.append(dict(brand=brand, brand_group=None, product_name=clean_name(nm), flavor=None, abv=abv,
                 style=None, category=r.get(c["cat"]) if c.get("cat") else None,
                 origin=((str(r.get(c["origin"])).strip().title() or None) if c.get("origin") and r.get(c["origin"]) else None),
+                bottled_in=((str(r.get(c["bottled_in"])).strip().title() or None) if c.get("bottled_in") and r.get(c["bottled_in"]) else None),
                 size_ml=sz,
                 packsize=None, container=r.get(c["container"]) if c.get("container") else None, pack=None,
                 upc=(re.sub(r"\D", "", str(r.get(c["upc"]))) or None) if c.get("upc") and r.get(c["upc"]) else None,
