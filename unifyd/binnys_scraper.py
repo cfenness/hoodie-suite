@@ -57,13 +57,17 @@ def _store_price(sp):
 
 
 def to_snapshot(records):
-    """Per-store cells keyed `sku|storeCode` -> {price, qty, name, store}."""
+    """Per-store cells keyed `sku|storeCode`. TAKE EVERYTHING the Algolia record gives — brand/varietal/
+    region/country(=origin)/category/size are all structured fields on the hit, not just name+price."""
     snap, parsed_qty = {}, 0
     for h in records:
         sku = str(h.get("objectID") or "")
         if not sku:
             continue
-        name = h.get("productName")
+        rich = {"name": h.get("productName"), "brand": h.get("productBrandName") or "",
+                "varietal": h.get("productVarietal") or "", "region": h.get("region") or "",
+                "origin": h.get("country") or "", "category": h.get("productType") or h.get("gtmCategory") or "",
+                "item_size": h.get("itemSize") or ""}
         for sp in (h.get("storesPriceAndInventory") or []):
             store = str(sp.get("storeCode") or "")
             if not store:
@@ -72,8 +76,7 @@ def to_snapshot(records):
             qty = int(qty) if isinstance(qty, (int, float)) else None
             if qty is not None:
                 parsed_qty += 1
-            snap[f"{sku}|{store}"] = {"price": _store_price(sp), "qty": qty,
-                                      "name": name, "store": store, "sku": sku}
+            snap[f"{sku}|{store}"] = dict(rich, price=_store_price(sp), qty=qty, store=store, sku=sku)
     return snap, parsed_qty
 
 
