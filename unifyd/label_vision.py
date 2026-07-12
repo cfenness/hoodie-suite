@@ -83,16 +83,27 @@ def extract(image_url):
     return {}
 
 
-def run(source="binnys_products", limit=200, workers=6, log=print):
-    """Pull products WITH a REAL image that still lack COO/appellation, vision-extract, land to label_extract.
-    Placeholder images (no-image / coming-soon graphics reused across many products) are skipped — feeding them
-    to vision wastes API and returns garbage."""
+# Vision's value is the fields it can actually READ off the label: origin(COO)/region/varietal/ABV. If the
+# structured pull already has these, we're confident → skip (that's "clearly Napa Cabernet 12.5%, don't run").
+# UPC is deliberately NOT in this gate — front-label shots don't show the barcode, and UPC is the structured-
+# source + UPC-engine + back-label track, not front-label vision.
+_CONF_GEO = tuple((os.environ.get("VISION_CONF_FIELDS") or "origin,region,varietal").split(","))
+
+
+def run(source="binnys_products", limit=200, workers=6, only_gaps=True, log=print):
+    """Vision-extract only LOW-CONFIDENCE imaged products — ones the structured pull left GAPS on (missing
+    origin/region/varietal/abv). Products already resolved (Napa + Cabernet + 12.5%) are skipped: vision is
+    per-image $$, so we only spend it where we're unsure. Placeholder images are skipped too."""
     import placeholders
+    cols = set(warehouse.query(source, "SELECT * FROM t LIMIT 1")[0].keys())
+    gap = ["(%s IS NULL OR %s='')" % (c, c) for c in _CONF_GEO if c in cols]
+    where = "image IS NOT NULL AND image<>''" + ((" AND (" + " OR ".join(gap) + ")") if (only_gaps and gap) else "")
     ph = placeholders.placeholder_images(source, image_col="image", key_col="sku", log=log)
-    rows = warehouse.query(source, "SELECT DISTINCT sku, name, image FROM t "
-                           "WHERE image IS NOT NULL AND image<>'' LIMIT %d" % (int(limit) * 3))
+    rows = warehouse.query(source, "SELECT DISTINCT sku, name, image FROM t WHERE %s LIMIT %d"
+                           % (where, int(limit) * 3))
     rows = [r for r in rows if r["image"] not in ph][:int(limit)]
-    log("[vision] %s: %d imaged products to read (placeholders skipped)" % (source, len(rows)))
+    log("[vision] %s: %d LOW-CONFIDENCE imaged products to read (confident ones + placeholders skipped)"
+        % (source, len(rows)))
 
     def one(r):
         try:
