@@ -12,6 +12,9 @@ primary_region = 'iad'
 [env]
   PORT = '8080'
   SUITE_ROOT = '/app'
+  # Cap DuckDB so a big master query spills to disk instead of OOM-killing the worker (see warehouse.connect).
+  DUCKDB_MEMORY_LIMIT = '1200MB'
+  DUCKDB_THREADS = '2'
 
 [http_service]
   internal_port = 8080
@@ -29,4 +32,6 @@ primary_region = 'iad'
 
 [[vm]]
   size = 'shared-cpu-1x'
-  memory = '1gb'
+  # 2gb: the master data outgrew 1gb — DuckDB queries over dim_sku (~874k→1M) OOM-killed
+  # the gunicorn worker on 1gb. Paired with a DuckDB memory_limit in warehouse.connect().
+  memory = '2gb'
