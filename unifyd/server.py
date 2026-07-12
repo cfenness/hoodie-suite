@@ -1692,12 +1692,12 @@ def mwb_summary_ep():
     # the trusted subset (auto-corroborated + Claude-adjudicated + human-confirmed), NOT every built row.
     # SKU is the matching TARGET (product + size + pack, UPC-identified) — the only grain where price/inventory/
     # distribution compare across sources. Count SKUs; corroboration = the same SKU seen in 2+ sources.
-    agg = _wq("dim_sku", "SELECT count(*) total, "
+    agg = _wq_cached("dim_sku", "SELECT count(*) total, "
               "sum(CASE WHEN sources >= 2 THEN 1 ELSE 0 END) multi FROM t")
     total = (agg[0]["total"] if agg else 0) or 0
     multi = (agg[0]["multi"] if agg else 0) or 0        # corroborated by 2+ sources → auto
     single = total - multi                              # single-source → analyst queue
-    stg = _wq("_stage_product", "SELECT count(*) n FROM t")
+    stg = _wq_cached("_stage_product", "SELECT count(*) n FROM t")
     source_rows = (stg[0]["n"] if stg and stg[0].get("n") else total)
     decisions = _wq("master_decisions", "SELECT tier, action FROM t")
     conf_h = sum(1 for d in decisions if d.get("action") == "confirm")       # human-confirmed single-source
@@ -1706,7 +1706,7 @@ def mwb_summary_ep():
     sr = sum(1 for d in decisions if d.get("action") == "escalate" and d.get("tier") == "senior")
     st = sum(1 for d in decisions if d.get("action") == "escalate" and d.get("tier") == "steward")
     analyst = max(0, single - claude - sr - st - conf_h - rej_h)             # single-source still pending
-    by = _wq("dim_sku", "SELECT s, count(*) n FROM (SELECT unnest(source_list) s FROM t) GROUP BY 1 ORDER BY 2 DESC")
+    by = _wq_cached("dim_sku", "SELECT s, count(*) n FROM (SELECT unnest(source_list) s FROM t) GROUP BY 1 ORDER BY 2 DESC")
     # process states partition the candidates; Confirmed is the promoted-to-master roll-up (a subset)
     stages = {"candidates": total,
               "auto": multi, "claude": claude, "analyst": analyst, "senior": sr, "steward": st,
@@ -1763,6 +1763,48 @@ def _wb_itemmap():
             for i in _wq("dim_item", "SELECT item_key, product_key, size_ml, container FROM t")}
 
 
+# The workbench's dominant cost was re-reading big master tables from S3 on EVERY request — the full-table
+# name maps (dim_product ~830k + dim_item ~871k + dim_brand) AND re-scanning dim_sku (~874k) per query. All of
+# it only changes on a master REBUILD, so cache it, invalidated by a cheap row-count "version" (count = parquet
+# metadata, no full scan) revalidated at most every 30s. First request after a rebuild pays the load; the rest
+# are instant. `_wq_cached` memoizes read-query RESULTS the same way (safe — workbench reads are rebuild-stable).
+_WB = {"ts": 0.0, "ver": None, "maps": None, "q": {}}
+
+
+def _wb_ver():
+    now = time.time()
+    if _WB["ver"] is not None and (now - _WB["ts"]) < 30:
+        return _WB["ver"]
+    try:
+        ver = tuple((_wq(t, "SELECT count(*) c FROM t") or [{}])[0].get("c")
+                    for t in ("dim_brand", "dim_product", "dim_item", "dim_sku"))
+    except Exception:
+        ver = _WB["ver"]
+    if ver != _WB["ver"]:                 # a rebuild changed the tables → drop all caches
+        _WB["maps"] = None
+        _WB["q"] = {}
+        _WB["ver"] = ver
+    _WB["ts"] = now
+    return _WB["ver"]
+
+
+def _wb_maps():
+    _wb_ver()
+    if _WB["maps"] is None:
+        _WB["maps"] = (_wb_brandmap(), _wb_productmap(), _wb_itemmap())
+    return _WB["maps"]
+
+
+def _wq_cached(ds, sql, params=None):
+    """A workbench read query, memoized until the next master rebuild. Turns a per-request S3 parquet scan
+    into a one-time cost. Use ONLY for read-only, rebuild-stable queries (never for decisions/writes)."""
+    _wb_ver()
+    key = (ds, sql, tuple(params or []))
+    if key not in _WB["q"]:
+        _WB["q"][key] = _wq(ds, sql, params)
+    return _WB["q"][key]
+
+
 def _wb_sku_stub(sk, itemmap, prodmap, brands):
     """Reshape a dim_sku row into the fields the workbench consumes. The SKU is the MATCHING TARGET — the
     fully-specified sellable unit (product + size + pack), identified by UPC where present. Name + brand resolve
@@ -1790,9 +1832,9 @@ def _wb_sku_stub(sk, itemmap, prodmap, brands):
 def mwb_master_ep():
     q = (request.args.get("q") or "").strip().lower()
     src = (request.args.get("source") or "").strip()
-    brands, prodmap, itemmap = _wb_brandmap(), _wb_productmap(), _wb_itemmap()
+    brands, prodmap, itemmap = _wb_maps()
     # the trustworthy master = SKUs corroborated by 2+ independent sources (the same SKU seen across sources)
-    rows = _wq("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list, "
+    rows = _wq_cached("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list, "
                "source_rows FROM t WHERE sources >= 2 ORDER BY sources DESC, source_rows DESC LIMIT 600")
     items = []
     for r in rows:
@@ -1810,20 +1852,20 @@ def mwb_master_ep():
 def _sku_full(cid):
     """Everything attached to a SKU — the sku stub + its product-grain attributes (image/geo/varietal/abv) +
     its vintages (dim_vintage). Shared by the item detail + the expand-modal + the vision run."""
-    sk = _wq("dim_sku", "SELECT * FROM t WHERE sku_key = ?", [cid])
+    sk = _wq_cached("dim_sku", "SELECT * FROM t WHERE sku_key = ?", [cid])
     if not sk:
         return None
     sk = sk[0]
-    itemmap = _wb_itemmap()
-    st = _wb_sku_stub(sk, itemmap, _wb_productmap(), _wb_brandmap())
+    brands, prodmap, itemmap = _wb_maps()
+    st = _wb_sku_stub(sk, itemmap, prodmap, brands)
     pk = (itemmap.get(sk.get("item_key")) or (None, None, None))[0]
-    attrs = (_wq("dim_product", "SELECT * FROM t WHERE product_key = ?", [pk]) or [{}])[0] if pk else {}
+    attrs = (_wq_cached("dim_product", "SELECT * FROM t WHERE product_key = ?", [pk]) or [{}])[0] if pk else {}
     st["image"] = attrs.get("image") or ""
     for f in ("origin", "bottled_in", "region", "sub_region", "appellation", "varietal", "category", "abv", "style"):
         st[f] = attrs.get(f) or st.get(f) or ""
     st["pack"] = sk.get("pack") or ""
     st["gtin"] = sk.get("gtin") or ""
-    st["vintages"] = [v["vintage"] for v in _wq("dim_vintage", "SELECT DISTINCT vintage FROM t WHERE sku_key = ? "
+    st["vintages"] = [v["vintage"] for v in _wq_cached("dim_vintage", "SELECT DISTINCT vintage FROM t WHERE sku_key = ? "
                                                  "ORDER BY vintage", [cid])]
     return st
 
@@ -1877,11 +1919,11 @@ def mwb_candidates_ep(cid):
     the SKU's own proposed home; the rest are OTHER SKUs of the SAME PRODUCT (across sizes/packs/UPCs) scored by
     name + UPC overlap, so a genuine duplicate SKU (same sellable unit, different source string / stray UPC)
     surfaces. A big gap to #2 (or a high #1) = low ambiguity; a near-tie = a human decides whether to merge."""
-    base = _wq("dim_sku", "SELECT * FROM t WHERE sku_key = ?", [cid])
+    base = _wq_cached("dim_sku", "SELECT * FROM t WHERE sku_key = ?", [cid])
     if not base:
         return jsonify(ok=False, error="not found"), 404
     base = base[0]
-    brands, prodmap, itemmap = _wb_brandmap(), _wb_productmap(), _wb_itemmap()
+    brands, prodmap, itemmap = _wb_maps()
     bstub = _wb_sku_stub(base, itemmap, prodmap, brands)
     btok = _wb_tokens(bstub["candidate_name"])
     bpk = (itemmap.get(base.get("item_key")) or (None, None, None))[0]
@@ -1890,7 +1932,7 @@ def mwb_candidates_ep(cid):
     if same_prod_items:
         iks = same_prod_items[:400]
         ph = ",".join("?" * len(iks))
-        pool = _wq("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list "
+        pool = _wq_cached("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list "
                    "FROM t WHERE item_key IN (%s) AND sku_key <> ? LIMIT 400" % ph, iks + [cid])
     cands = [{"cluster_id": cid, "name": bstub["candidate_name"], "grain": "sku",
               "table": "dim_sku", "conf": round(bstub["confidence"], 2), "win": True,
@@ -1921,8 +1963,8 @@ def mwb_candidates_ep(cid):
 def mwb_review_ep():
     # analyst queue = single-source SKUs (in only one catalog) — need an independent source to corroborate
     # before they're fully trusted. Highest source_rows first (most-seen singletons first).
-    brands, prodmap, itemmap = _wb_brandmap(), _wb_productmap(), _wb_itemmap()
-    rows = _wq("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list, "
+    brands, prodmap, itemmap = _wb_maps()
+    rows = _wq_cached("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list, "
                "source_rows FROM t WHERE sources = 1 ORDER BY source_rows DESC LIMIT 400")
     decs = {d.get("cluster_id"): d for d in _wq("master_decisions", "SELECT cluster_id, action, tier FROM t")}
     terminal = {"confirm", "reject", "merge"}
@@ -1988,7 +2030,7 @@ def _steward_overrides():
 def steward_summary_ep():
     from collections import defaultdict
     cols = [f["col"] for f in _STEWARD_FIELDS if f["col"]]
-    prods = _wq("dim_product", "SELECT product_key, %s FROM t" % ", ".join(cols))
+    prods = _wq_cached("dim_product", "SELECT product_key, %s FROM t" % ", ".join(cols))
     total = len(prods)
     byfield = defaultdict(set)
     for o in _steward_overrides():
@@ -2011,9 +2053,9 @@ def steward_queue_ep():
     fdef = next((f for f in _STEWARD_FIELDS if f["key"] == field), None)
     if not fdef:
         return jsonify(ok=False, error="unknown field"), 400
-    brands = _wb_brandmap()
+    brands = _wb_maps()[0]
     # most-corroborated products first — the ones that matter most to get right
-    prods = _wq("dim_product", "SELECT product_key, brand_key, product_name, category, origin, bottled_in, "
+    prods = _wq_cached("dim_product", "SELECT product_key, brand_key, product_name, category, origin, bottled_in, "
                 "style, sources FROM t ORDER BY sources DESC LIMIT 6000")
     have = {o.get("product_key") for o in _steward_overrides() if o.get("field") == field}
     out = []
@@ -4276,6 +4318,21 @@ def index():
 @app.get("/<path:relpath>")
 def suite_static(relpath):
     return _suite_send(relpath)                       # /api/* rules are more specific and win over this
+
+def _wb_warm():
+    """Pre-load the workbench name maps in the background at boot so the FIRST user request isn't the slow one
+    (the maps are the 17s shared cost). Best-effort; failures just fall back to lazy caching on first request."""
+    try:
+        _wb_maps()
+    except Exception:
+        pass
+
+
+try:
+    threading.Thread(target=_wb_warm, daemon=True).start()
+except Exception:
+    pass
+
 
 if __name__ == "__main__":
     print("Unifyd agent on http://127.0.0.1:8765  (Ctrl-C to stop)")
