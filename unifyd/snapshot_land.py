@@ -30,11 +30,11 @@ def _norm(cell, chain, ts):
     row = dict(chain=chain, sku=str(cell.get("sku", "")), store=str(cell.get("store", "")),
                name=(cell.get("name") or cell.get("title") or ""), brand=(cell.get("brand") or ""),
                price=cell.get("price"), qty=qty, in_stock=bool(instock), pulled_at=ts)
-    # carry any rich fields the enriched scrapers captured (varietal/region/origin/category/size/upc/desc)
+    # carry the rich fields the enriched scrapers capture — ALWAYS include them (empty string default) so the
+    # column exists in the table even when sparse; conditional inclusion dropped sparse fields at schema-infer.
     for k in ("varietal", "region", "sub_region", "appellation", "origin", "category", "item_size",
               "upc", "abv", "description"):
-        if cell.get(k) not in (None, ""):
-            row[k] = cell[k]
+        row[k] = cell.get(k) or ""
     return row
 
 
