@@ -26,6 +26,7 @@ import gzip
 import json
 import os
 import random
+import socket
 import ssl
 import threading
 import zlib
@@ -178,7 +179,9 @@ def get(url, *, min_interval=5.0, jitter=3.0, timeout=30, headers=None, data=Non
                 time.sleep(backoff)
                 continue
             raise
-        except (urllib.error.URLError, TimeoutError, ConnectionError):
+        except (urllib.error.URLError, TimeoutError, ConnectionError, socket.timeout):
+            # socket.timeout is NOT a subclass of TimeoutError on Python 3.9 (the venv's interpreter), so it
+            # would otherwise escape this handler and crash the whole run on a single slow read.
             if attempt >= max_retries:
                 raise
             time.sleep(min(60.0, 2.0 ** attempt) + random.uniform(0, jitter))
