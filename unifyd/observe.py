@@ -34,9 +34,13 @@ def is_hemp(*texts):
     return bool(HEMP_RE.search(" ".join(str(t or "") for t in texts)))
 
 
-def record(source, rows, date=None, log=print):
+def record(source, rows, date=None, log=print, part=None):
     """Append today's per-store observations for `source` to the retail_observations time-series.
-    Idempotent per (date, source) — re-running a source on the same day replaces that day's file."""
+
+    Default part = '<date>_<source>' — idempotent per (date, source): re-running a source in ONE call replaces
+    that day's file. Sources that land in MANY calls (batched) or CONCURRENTLY (sharded, e.g. total_wine_full's
+    5 shards) MUST pass a unique `part` per call — otherwise every call overwrites the same file and only the
+    last write survives (silent data loss). Pass e.g. part='<date>_<source>_s2b7'; query_parts globs them all."""
     if not rows:
         return 0
     date = date or time.strftime("%Y-%m-%d")
@@ -51,7 +55,7 @@ def record(source, rows, date=None, log=print):
                     "qty": r.get("qty"), "stock_level": r.get("stock_level", ""),
                     "is_hemp": bool(r.get("is_hemp"))})
     try:
-        warehouse.write_partition("retail_observations", "%s_%s" % (date, source), out, OBS_FIELDS)
+        warehouse.write_partition("retail_observations", part or ("%s_%s" % (date, source)), out, OBS_FIELDS)
         log("  [observe] +%d %s observations @ %s -> retail_observations" % (len(out), source, date))
     except Exception as e:
         log("  [observe] land failed: %s" % str(e)[:100])
