@@ -36,7 +36,12 @@ def _http(url, timeout=25):
     return body.decode("utf-8", "replace")
 
 
-def harvest_ids(max_products=20000, log=print):
+def harvest_ids(max_products=None, log=print):
+    # max_products=None -> WHOLE catalog (Spec's is ~41k across 21 sitemaps; the old default of 20000 silently
+    # truncated it to half). Set SPECS_MAX_PRODUCTS to cap deliberately; a cap that bites is logged, not silent.
+    if max_products is None:
+        env = os.environ.get("SPECS_MAX_PRODUCTS")
+        max_products = int(env) if env else 10 ** 9
     out, seen = [], set()
     try:
         idx = _http(SITEMAP)
@@ -53,6 +58,7 @@ def harvest_ids(max_products=20000, log=print):
             if slug and slug not in seen:
                 seen.add(slug); out.append((slug, u))
                 if len(out) >= max_products:
+                    log(f"[specs] hit SPECS_MAX_PRODUCTS={max_products} — TRUNCATING (catalog is larger)")
                     return out
         log(f"{cs.rsplit('/',1)[-1]}: {len(out)} products so far")
     return out
@@ -147,41 +153,48 @@ def pull(sample=30, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
     targets = (catalog if limit is None else catalog[:limit]) if crawl_all else pick_sample(catalog, sample)
     log(f"catalog {len(catalog)} products; fetching {len(targets)} (per-store variants)")
 
-    cur, ok_n, names = {}, 0, {}
+    import runlog
+    cur, ok_n, names, done = {}, 0, {}, [0]
     # FAST: concurrent per-page fetch (plain HTTP) instead of serial DELAY.
     import threading
     from concurrent.futures import ThreadPoolExecutor
     workers = int(os.environ.get("SPECS_WORKERS", "12"))
     jitter = float(os.environ.get("SPECS_JITTER", "0.2"))
     lock = threading.Lock()
-    def _one(t):
-        nonlocal ok_n
-        slug, url = t
-        try:
-            html = _http(url)
-            rows, name = parse_stores(html)
-            mi = re.search(r'(?:og:image|twitter:image)"[^>]*content="([^"]+)"', html or "", re.I)
-            img = mi.group(1) if mi else ""
+    with runlog.track("specs", total=len(targets)) as _run:      # register on the Active Runs board w/ progress
+        def _one(t):
+            nonlocal ok_n
+            slug, url = t
+            try:
+                html = _http(url)
+                rows, name = parse_stores(html)
+                mi = re.search(r'(?:og:image|twitter:image)"[^>]*content="([^"]+)"', html or "", re.I)
+                img = mi.group(1) if mi else ""
+                with lock:
+                    if rows:
+                        ok_n += 1
+                    for r in rows:
+                        cur[f"{slug}|{r['store']}"] = {"price": r["price"], "instock": r["instock"],
+                                                       "store": r["store"], "slug": slug, "sku": r["sku"],
+                                                       "name": name, "image": img}
+                    if name:
+                        names[slug] = name
+            except Exception as e:
+                log(f"  {slug}: {e}")
             with lock:
-                if rows:
-                    ok_n += 1
-                for r in rows:
-                    cur[f"{slug}|{r['store']}"] = {"price": r["price"], "instock": r["instock"],
-                                                   "store": r["store"], "slug": slug, "sku": r["sku"],
-                                                   "name": name, "image": img}
-                if name:
-                    names[slug] = name
-        except Exception as e:
-            log(f"  {slug}: {e}")
-        if jitter:
-            time.sleep(jitter)
-    if workers > 1:
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            for _ in ex.map(_one, targets):
-                pass
-    else:
-        for t in targets:
-            _one(t)
+                done[0] += 1
+                if done[0] % 50 == 0:
+                    _run.progress(done[0])
+            if jitter:
+                time.sleep(jitter)
+        if workers > 1:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                for _ in ex.map(_one, targets):
+                    pass
+        else:
+            for t in targets:
+                _one(t)
+        _run.progress(len(targets))
 
     prev = {}
     snap_path = os.path.join(state_dir, SNAP)
