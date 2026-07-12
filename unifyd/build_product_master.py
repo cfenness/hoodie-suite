@@ -161,51 +161,45 @@ def _clean_display(name):
     return re.sub(r"\s{2,}", " ", s).strip(" -–")
 
 
-def canonicalize(staged, log=print):
-    import collections
-    by_brand = collections.defaultdict(lambda: collections.defaultdict(list))   # brand -> tokset -> rows
-    for r in staged:
-        ts = _tokset(r.get("product_name"))
-        if ts:
-            by_brand[r["brand"]][ts].append(r)
-    folded = fuzzy = 0
-    for brand, tsmap in by_brand.items():
-        parent = {}
-        keys = sorted(tsmap.keys(), key=len)
-        if len(keys) <= 200:                            # descriptor-superset fold (skip huge brands: O(n^2))
-            for a in keys:
-                for b in keys:
-                    if len(b) <= len(a) or not (a < b):
-                        continue
-                    extra = b - a
-                    if extra and all(_DESC_TOK.match(t) for t in extra):   # b == a + only proof/vintage/size
-                        parent[a] = b
-                        break
+# GENERIC beverage-type words carry no product identity within a brand+size ("New Amsterdam Vodka" == "New
+# Amsterdam"), so removing them lets those variants fold. Flavor/expression/varietal words (Citron, Black,
+# Reserve, Cabernet) are NOT here — they distinguish real products and must survive.
+_CATEGORY_TOK = {"vodka", "gin", "rum", "whiskey", "whisky", "bourbon", "tequila", "mezcal", "cognac", "brandy",
+                 "liqueur", "cordial", "wine", "beer", "ale", "lager", "cider", "scotch", "vermouth", "sake",
+                 "soju", "spirits", "spirit", "liquor", "schnapps"}
 
-        def root(k):
-            seen = set()
-            while k in parent and k not in seen:
-                seen.add(k); k = parent[k]
-            return k
-        groups = collections.defaultdict(list)
-        for ts, rows in tsmap.items():
-            rk = root(ts)
-            groups[rk].extend(rows)
-            if rk != ts:
-                fuzzy += 1
-        for rows in groups.values():
-            names = collections.Counter(_clean_display(r["product_name"]) for r in rows if r.get("product_name"))
-            names.pop("", None)
-            if not names:
-                continue
-            # canonical display: fewest signature tokens (the base product, not a descriptor variant),
-            # then most common, then shortest — so "Plymouth Gin" wins over "Plymouth Gin 82P".
-            canon = sorted(names.items(), key=lambda kv: (len(_tokset(kv[0])), -kv[1], len(kv[0])))[0][0]
-            if len(names) > 1:
-                folded += len(names) - 1
-            for r in rows:
-                r["product_name"] = canon
-    log("[master] canonicalize: folded %d name-variants (%d via descriptor-superset fuzzy)" % (folded, fuzzy))
+
+def _core_key(name):
+    """The product's IDENTITY tokens within its brand — the tokset minus size/proof/vintage remnants and generic
+    beverage-type words. Two names with the same core (+ same brand + size) are the same product."""
+    return frozenset(t for t in _tokset(name) if not _DESC_TOK.match(t) and t not in _CATEGORY_TOK)
+
+
+def canonicalize(staged, log=print):
+    """Fold product-name variants to ONE canonical string per (brand, significant-core) so the same product
+    corroborates across sources. Groups by the core-key (identity tokens, minus size/proof/vintage remnants and
+    generic type words) — O(n), so it scales to EVERY brand (the old descriptor-superset fold was O(n^2) and
+    skipped brands with >200 name-variants, exactly the popular brands with the most cross-source overlap).
+    Flavor/expression tokens survive the core-key, so distinct products (Absolut vs Absolut Citron, Jim Beam vs
+    Jim Beam Black) stay apart; size still separates SKUs downstream."""
+    import collections
+    groups = collections.defaultdict(list)
+    for r in staged:
+        groups[(r.get("brand"), _core_key(r.get("product_name")))].append(r)
+    folded = 0
+    for rows in groups.values():
+        names = collections.Counter(_clean_display(r["product_name"]) for r in rows if r.get("product_name"))
+        names.pop("", None)
+        if not names:
+            continue
+        # canonical display: fewest signature tokens (the base product, not a descriptor variant), then most
+        # common, then shortest — so "Plymouth Gin" wins over "Plymouth Gin 82P".
+        canon = sorted(names.items(), key=lambda kv: (len(_tokset(kv[0])), -kv[1], len(kv[0])))[0][0]
+        if len(names) > 1:
+            folded += len(names) - 1
+        for r in rows:
+            r["product_name"] = canon
+    log("[master] canonicalize: folded %d name-variants to canonical (brand+core, all brands)" % folded)
     return staged
 
 
