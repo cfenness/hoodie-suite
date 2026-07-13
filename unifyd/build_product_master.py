@@ -22,8 +22,8 @@ import placeholders as _placeholders
 
 # origin = SOURCE of the juice (COO — where the liquid is from); bottled_in = where it was bottled (kept
 # SEPARATE — a Barbados rum bottled in the US is origin=Barbados, bottled_in=US).
-FIELDS = ["brand", "brand_group", "product_name", "flavor", "abv", "style", "category", "origin", "bottled_in",
-          "region", "sub_region", "appellation", "varietal", "image",
+FIELDS = ["brand", "brand_group", "product_name", "class_type", "core_name", "flavor", "abv", "style", "category",
+          "origin", "bottled_in", "region", "sub_region", "appellation", "varietal", "image",
           "size_ml", "packsize", "container", "pack", "upc", "gtin", "vintage", "edition", "supplier"]
 
 # sources with a REAL brand column — used to seed the brand dictionary
@@ -336,6 +336,47 @@ def build(log=print):
     canonicalize(staged, log)                           # smarter matching: fold near-dup names before the shred
     split_by_abv(staged, log)                           # then un-merge distinct-proof expressions ABV separates
     _sku_match.propagate_upcs(staged, log)              # SKU-first: propagate UPCs across matched item clusters
+    # TTB<->retail bridge: the class/type is a FIELD on the registry side, baked into the NAME on the retail side.
+    # Extract a canonical class + a class/type-stripped name-core from the FINAL name, so the product KEY aligns
+    # "Buffalo Trace" (TTB, category=bourbon) with "Buffalo Trace Kentucky Straight Bourbon Whiskey" (retail).
+    # The product KEY is brand + class_type + core_name, so core_name must be just the DISTINGUISHER — not the
+    # brand and NOT the store/distributor prefix. Retail titles bury the product in store noise ("Happysliquor
+    # Bacardi Superior", "My Store BACARDI Superior White Rum", "(Online) Bacardi Superior"), which otherwise
+    # fragments one product into dozens. Since the brand is already resolved, take the name FROM the brand onward
+    # (drops the store prefix), strip the brand token itself, then strip class/type + size -> "Superior".
+    import class_type as _classt
+    for s in staged:
+        pn = (s.get("product_name") or "").strip()
+        brand = (s.get("brand") or "").strip()
+        src = pn
+        if brand:
+            i = pn.lower().find(brand.lower())
+            if i >= 0:
+                src = pn[i + len(brand):]                # everything AFTER the brand (store prefix + brand dropped)
+        ct, _cc, core = _classt.classify(src, s.get("varietal") or s.get("category") or "")
+        s["class_type"] = ct or None
+        s["core_name"] = core or None                    # empty for a flagship (product == brand) — that's fine
+    # class_type CONSISTENCY: class is now part of the product key, so a row where the class wasn't detected
+    # ("Bacardi Superior" with no rum word) would split from its siblings ("... Rum" -> rum). Within each
+    # (brand, core) group, adopt the MAJORITY class for the blanks + clear misdetection outliers (a class seen
+    # <1/3 as often as the modal), while preserving genuine near-balanced splits (Old Overholt bourbon vs rye).
+    from collections import Counter as _Counter
+    _grp = {}
+    for s in staged:
+        _grp.setdefault(((s.get("brand") or "").strip().lower(), (s.get("core_name") or "").strip().lower()), []).append(s)
+    _fixed = 0
+    for g in _grp.values():
+        cts = _Counter(s["class_type"] for s in g if s.get("class_type"))
+        if not cts:
+            continue
+        modal, mcount = cts.most_common(1)[0]
+        for s in g:
+            cur = s.get("class_type")
+            if (not cur) or (cur != modal and cts[cur] * 3 < mcount):
+                if cur != modal:
+                    s["class_type"] = modal
+                    _fixed += 1
+    log("[master] class_type consistency: %d rows aligned to their brand+core majority" % _fixed)
     log("[master] staged %d rows → _stage_product" % len(staged))
     warehouse.write_parquet("_stage_product", staged, fields=FIELDS + ["_source", "_source_id"])
     con = warehouse.connect()

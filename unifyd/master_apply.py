@@ -79,10 +79,11 @@ GRAIN_KEY = {"brand": ["brand"], "product": ["flavor", "product_name"],
 # rows with the same UPC are the same SKU, two different UPCs are two different SKUs. So UPC is in the sku key.
 # This relies on sku_match.propagate_upcs() running FIRST (fills missing UPCs across single-UPC item clusters),
 # so a no-UPC row doesn't split off from its UPC'd siblings. vintage/edition remain sku attributes.
-NAMEISH = {"brand", "product_name", "flavor", "container"}
+NAMEISH = {"brand", "product_name", "core_name", "flavor", "container"}
 # default grain per field name when a schema field doesn't declare one
 GRAIN_DEFAULTS = {"brand": "brand", "brand_group": "brand",
-    "product_name": "product", "flavor": "product", "abv": "product", "style": "product",
+    "product_name": "product", "core_name": "product", "class_type": "product",
+    "flavor": "product", "abv": "product", "style": "product",
     "category": "product", "origin": "product", "bottled_in": "product",
     "region": "product", "sub_region": "product", "appellation": "product", "varietal": "product",
     "image": "product",
@@ -101,8 +102,14 @@ def _keyexprs(mnames):
     """Cumulative md5 identity key per grain — name parts vintage/edition-stripped so a sku is stable
     across vintages/editions. Returns {grain: sql_md5_expr}."""
     cum, keys = [], {}
+    # TTB<->retail bridge: when the staging carries a class/type-stripped core_name, the PRODUCT key is built from
+    # (flavor, class_type, core_name) instead of the raw product_name — so the registry and retail spellings of
+    # the same product collapse to one key, while class_type keeps bourbon vs rye (etc.) apart. Absent core_name,
+    # the key is unchanged (other resolve_hierarchy callers keep the raw product_name).
+    has_core = "core_name" in mnames
     for g in HIERARCHY:
-        for c in GRAIN_KEY.get(g, []):
+        comps = (["flavor", "class_type", "core_name"] if (g == "product" and has_core) else GRAIN_KEY.get(g, []))
+        for c in comps:
             if c in mnames:
                 # coalesce EVERY component to '' — an unmapped name field (NULL) would otherwise make the
                 # whole `||` concatenation NULL, collapsing all keys into one group.

@@ -31,7 +31,7 @@ _TYPES = [
     (r"\bgin\b", "gin", "GIN"),
     (r"\btequila\b|\bblanco\b|reposado|\banejo\b|añejo", "tequila", "TEQ"),
     (r"\bmezcal\b|\bmescal\b", "mezcal", "MZC"),
-    (r"\brum\b|\brhum\b", "rum", "RUM"),
+    (r"\brum\b|\brhum\b|\bron\b", "rum", "RUM"),
     (r"\bcognac\b", "cognac", "COG"),
     (r"\bbrandy\b|\barmagnac\b", "brandy", "BRA"),
     (r"liqueur|cordial|schnapps|\bcreme\b|\bcream\b", "liqueur", "LIQ"),
@@ -79,7 +79,7 @@ _TYPES = [(re.compile(p, re.I), t, c) for p, t, c in _TYPES]
 # Editions that DISTINGUISH products (reserve, single barrel, small batch…) are deliberately NOT here.
 _STRIP = re.compile(
     r"\b(kentucky|straight|tennessee|canadian|irish|scotch|blended|blend|table|fine|premium|"
-    r"whisky|whiskey|bourbon|rye|vodka|gin|tequila|mezcal|rum|rhum|cognac|brandy|liqueur|cordial|"
+    r"whisky|whiskey|bourbon|rye|vodka|gin|tequila|mezcal|rum|rhum|ron|cognac|brandy|liqueur|cordial|"
     r"spirit|spirits|liquor|beer|ale|lager|ipa|pilsner|pils|stout|porter|seltzer|cider|"
     r"wine|red|white|ros[eé]|sparkling|champagne|prosecco|moscato|cabernet|sauvignon|blanc|"
     r"pinot|noir|grigio|gris|chardonnay|merlot|riesling|malbec|zinfandel|zin|syrah|shiraz|"
