@@ -2193,6 +2193,30 @@ def coverage_points_ep():
     return jsonify(ok=True, points=rows, capped=len(rows) >= 45000)
 
 
+@app.get("/api/coverage/heat")
+def coverage_heat_ep():
+    """Every geocoded outlet as a [lat,lng] pair for the density (Verizon-style) coverage surface. Rounded to
+    ~11m to shrink the payload (gzipped); optional source / sells filter. Reservoir-sampled if huge."""
+    import warehouse
+    src = (request.args.get("source") or "").strip()
+    sells = (request.args.get("sells") or "").strip().lower()
+    cond = ["lat IS NOT NULL"]
+    params = []
+    if src:
+        cond.append("source = ?"); params.append(src)
+    if sells in ("beer", "wine", "spirits", "hemp", "cannabis", "rtd_spirits"):
+        cond.append("f_%s" % sells)
+    wsql = " AND ".join(cond)
+    try:
+        n = warehouse.query("src_outlets", "SELECT count(*) c FROM t WHERE %s" % wsql, params)[0]["c"]
+        samp = "" if n <= 220000 else " USING SAMPLE reservoir(200000 ROWS)"
+        rows = warehouse.query("src_outlets", "SELECT round(CAST(lat AS DOUBLE),4) y, round(CAST(lng AS DOUBLE),4) x "
+                               "FROM t WHERE %s%s" % (wsql, samp), params)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:160], points=[])
+    return jsonify(ok=True, total=n, points=[[r["y"], r["x"]] for r in rows])
+
+
 @app.get("/api/master/workbench/matches")
 def mwb_matches_ep():
     """Dedup candidates at EVERY grain — brand / product / item / supplier — that the Hoodie ID mnemonic blocks
