@@ -256,15 +256,17 @@ def classify_type(text, is_hemp=False):
 
 
 def _license_flags(source, lic):
-    """(beer, wine, spirits, hemp) an outlet may sell, from its license type (CA) or its source default."""
+    """(beer, wine, spirits, hemp, licensed) an outlet may sell. `licensed` = the flags came from a real license
+    TYPE (regulatory truth), not a coarse source default — so the spirits-RTD class (beer/wine license, no
+    spirits) isn't falsely inferred from e.g. AB's beer-only locator default."""
     key = str(lic or "").strip()
     trip = _CA_LIC.get(key) or _CA_LIC.get(key.zfill(2))
     if trip:
-        return [bool(trip[0]), bool(trip[1]), bool(trip[2]), False]
+        return [bool(trip[0]), bool(trip[1]), bool(trip[2]), False, True]
     df = _SRC_FLAGS.get(source)
     if df:
-        return [bool(df[0]), bool(df[1]), bool(df[2]), bool(df[3])]
-    return [False, False, False, False]
+        return [bool(df[0]), bool(df[1]), bool(df[2]), bool(df[3]), False]
+    return [False, False, False, False, False]
 
 
 # every store-bearing source → (clean SYSTEM tag). Fuzzy-mapped from each table's own columns.
@@ -282,7 +284,8 @@ def normalize_outlets(log=print):
     just the 3k resolved stage."""
     out = {}
     FLD = ["source", "store_id", "store_name", "chain", "is_chain", "f_beer", "f_wine", "f_spirits", "f_hemp",
-           "f_cannabis", "f_rtd_spirits", "address", "city", "state", "zip", "lat", "lng", "phone", "hoodie_outlet"]
+           "f_cannabis", "f_rtd_spirits", "flag_basis", "license_conflict", "address", "city", "state", "zip",
+           "lat", "lng", "phone", "hoodie_outlet"]
     # observation/chain sources whose source-tag IS the banner (the store rows are all that chain)
     SOURCE_CHAIN = {"target": "Target", "kroger": "Kroger", "binnys": "Binny's", "specs": "Spec's",
                     "abc": "ABC Fine Wine", "total-wine": "Total Wine", "totalwine": "Total Wine",
@@ -302,10 +305,14 @@ def normalize_outlets(log=print):
         k = (src, sid or nm)
         if k not in out:
             chain = _chain_of(nm, kw.get("chain") or SOURCE_CHAIN.get(src))
-            b, w, s, h = _license_flags(src, kw.get("license_type"))   # what this account CAN sell
+            # license = the fallback/permitted set (what it's ALLOWED to sell). Products (below) are the ground
+            # truth of what it DOES sell and override this; the license is then used only to flag a conflict.
+            b, w, s, h, lic = _license_flags(src, kw.get("license_type"))
+            basis = "license" if lic else ("source" if (b or w or s or h) else "none")
             out[k] = {"source": src, "store_id": str(sid or ""), "store_name": nm, "chain": chain,
                       "is_chain": bool(chain), "f_beer": b, "f_wine": w, "f_spirits": s, "f_hemp": h,
-                      "f_cannabis": False, "f_rtd_spirits": False, "address": kw.get("address") or "",
+                      "f_cannabis": False, "f_rtd_spirits": False, "flag_basis": basis, "license_conflict": False,
+                      "_lic": (b, w, s) if lic else None, "address": kw.get("address") or "",
                       "city": kw.get("city") or "", "state": kw.get("state") or "", "zip": kw.get("zip") or "",
                       "lat": _num(kw.get("lat")), "lng": _num(kw.get("lng")), "phone": kw.get("phone") or "",
                       "hoodie_outlet": H.brand_code(nm or str(sid))}
@@ -377,9 +384,13 @@ def normalize_outlets(log=print):
     # 6) product-carried flags — an account that CARRIES wine sells wine (Barefoot → wine), even if its license
     #    row didn't say so. OR the categories of everything each store stocks into its flags.
     _apply_product_flags(out, log)
-    # rtd_spirits = a beer/wine outlet that can carry spirit-based RTDs but NOT full spirits (the class to find)
+    # rtd_spirits = a beer/wine outlet that can carry spirit-based RTDs but NOT full spirits — the class to find.
+    # GROUNDED in real evidence (products carried, or a license), never a coarse source default (so AB's beer-only
+    # locator doesn't false-positive every beer retailer).
     for o in out.values():
-        o["f_rtd_spirits"] = bool((o["f_beer"] or o["f_wine"]) and not o["f_spirits"])
+        o["f_rtd_spirits"] = bool(o["flag_basis"] in ("product", "license")
+                                  and (o["f_beer"] or o["f_wine"]) and not o["f_spirits"])
+        o.pop("_lic", None)
 
     warehouse.write_parquet("src_outlets", list(out.values()), FLD)
     geo = sum(1 for v in out.values() if v["lat"] is not None)
@@ -401,6 +412,11 @@ def _apply_product_flags(out, log=print):
         if b: o["f_beer"] = True
         if s: o["f_spirits"] = True
         if h: o["f_hemp"] = True
+        if w or b or s or h:
+            o["flag_basis"] = "product"          # products are the ground truth — they upgrade the basis
+            lic = o.get("_lic")                  # and the license becomes a CHECK: carrying what it can't sell = error
+            if lic and ((s and not lic[2]) or (w and not lic[1]) or (b and not lic[0])):
+                o["license_conflict"] = True
 
     for tbl, plat_col in (("offprem_products", "platform"), ("cityhive_products", None)):
         try:
