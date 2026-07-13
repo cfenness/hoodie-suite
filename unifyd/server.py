@@ -2348,7 +2348,7 @@ def mwb_merge_decide_ep():
     sku_keys = [str(s) for s in (d.get("sku_keys") or []) if s]
     dec = dict(cluster_id=mid, action=action, tier="merge-review", note=(d.get("note") or "")[:200],
                matched_name=(d.get("name") or "")[:120], steward=(d.get("steward") or "cluster-review"),
-               members=json.dumps(sku_keys)[:4000], ts=int(_t.time()))
+               members=json.dumps(sku_keys)[:4000], removed="[]", ts=int(_t.time()))
     existing = [e for e in _wq("master_decisions", "SELECT * FROM t") if e.get("cluster_id") != mid]
     warehouse.write_parquet("master_decisions", existing + [dec])
     return jsonify(ok=True, merge_id=mid, action=action)
@@ -2371,7 +2371,7 @@ def mwb_match_ep():
     members = [str(m) for m in (d.get("members") or []) if str(m).strip()][:200]
     dec = dict(cluster_id=cid, action=action, tier=tier, note=(d.get("note") or "")[:200],
                matched_name=(d.get("matched_name") or "")[:120], steward=(d.get("steward") or "workbench"),
-               removed=json.dumps(members), ts=int(_t.time()))
+               members="[]", removed=json.dumps(members), ts=int(_t.time()))
     existing = [e for e in _wq("master_decisions", "SELECT * FROM t") if e.get("cluster_id") != cid]
     warehouse.write_parquet("master_decisions", existing + [dec])
     if action == "confirm":
