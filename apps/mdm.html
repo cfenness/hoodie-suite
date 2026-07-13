@@ -71,6 +71,7 @@
     <a data-sec="review"><span class="d"></span>Review</a>
     <a data-sec="catalog"><span class="d"></span>Catalog</a>
     <a data-sec="outlets"><span class="d"></span>Outlets</a>
+    <a data-sec="coverage"><span class="d"></span>Coverage</a>
     <a data-sec="registrations"><span class="d"></span>Registrations</a>
     <a data-sec="mapping"><span class="d"></span>Mapping</a>
     <a data-sec="dictionary"><span class="d"></span>Dictionary</a>
@@ -86,6 +87,7 @@
     <iframe id="f-review"    title="Cluster Review — ambiguous merges" data-src="cluster-review.html?embed=1"></iframe>
     <iframe id="f-catalog"   title="Product Catalog"           data-src="mdm-catalog.html?embed=1"></iframe>
     <iframe id="f-outlets"   title="Outlet Master"             data-src="mdm-outlets.html?embed=1"></iframe>
+    <iframe id="f-coverage"  title="Coverage Map"              data-src="coverage-map.html"></iframe>
     <iframe id="f-registrations" title="Product Registrations"  data-src="product-registrations.html?embed=1"></iframe>
     <iframe id="f-mapping"   title="Field Mapping"              data-src="field-mapping.html?embed=1"></iframe>
     <iframe id="f-dictionary" title="Data Dictionary"           data-src="mdm-dictionary.html?embed=1"></iframe>
@@ -94,7 +96,7 @@
 <script>
 (function(){
   "use strict";
-  var SECTIONS={overview:null,sources:"f-sources",master:"f-master",steward:"f-steward",review:"f-review",catalog:"f-catalog",outlets:"f-outlets",registrations:"f-registrations",mapping:"f-mapping",dictionary:"f-dictionary",runs:"f-runs"};
+  var SECTIONS={overview:null,sources:"f-sources",master:"f-master",steward:"f-steward",review:"f-review",catalog:"f-catalog",outlets:"f-outlets",coverage:"f-coverage",registrations:"f-registrations",mapping:"f-mapping",dictionary:"f-dictionary",runs:"f-runs"};
   // In the launcher, the launcher's rail becomes THIS console's nav (one sidebar).
   var inLauncher = (window.parent !== window);
   var NAV_META=[{id:"overview",label:"Overview",icon:"OV",desc:"The master-data picture at a glance"},
@@ -104,6 +106,7 @@
                 {id:"review",label:"Review",group:"Own",icon:"RV",desc:"Ambiguous merge clusters — same product/size/pack split by UPC noise; merge or keep separate"},
                 {id:"catalog",label:"Catalog",group:"Own",icon:"CA",desc:"dim_product — the owned product catalog"},
                 {id:"outlets",label:"Outlets",group:"Own",icon:"OU",desc:"dim_outlet_resolved — browse the unified outlet master"},
+                {id:"coverage",label:"Coverage",group:"Own",icon:"CV",desc:"The full book of accounts on a map — every store-bearing source, click into any account"},
                 {id:"registrations",label:"Registrations",group:"Own",icon:"PR",desc:"TTB COLA label approvals → products + field dictionary"},
                 {id:"mapping",label:"Mapping",group:"Own",icon:"MP",desc:"Map source fields → master schema, with pre/post dictionaries"},
                 {id:"dictionary",label:"Dictionary",group:"Own",icon:"DC",desc:"Build value dictionaries — cab sauv → Cabernet Sauvignon — against real source values"},

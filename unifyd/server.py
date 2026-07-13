@@ -2091,6 +2091,59 @@ def src_feeds_ep():
     return jsonify(ok=True, feeds=summ)
 
 
+@app.get("/api/coverage")
+def coverage_ep():
+    """Coverage map — the FULL book of accounts (src_outlets, every store-bearing source) as by-source and
+    by-state rollups plus the geocoded points to pin. The map opens on ALL sources. Accounts without precise
+    lat/lng roll up to their state (bubble); geocoded ones drop a pin."""
+    import warehouse
+    try:
+        by_src = warehouse.query("src_outlets", "SELECT source, count(*) n, "
+                                 "count(*) FILTER (WHERE lat IS NOT NULL) geo FROM t GROUP BY source ORDER BY n DESC")
+    except Exception:
+        return jsonify(ok=True, total=0, by_source=[], by_state=[], points=[],
+                       note="src_outlets not built yet — runs on the next master rebuild")
+    by_state = warehouse.query("src_outlets", "SELECT upper(trim(state)) state, count(*) n, "
+                               "count(*) FILTER (WHERE lat IS NOT NULL) geo FROM t "
+                               "WHERE nullif(trim(state),'') IS NOT NULL GROUP BY state ORDER BY n DESC")
+    total = sum(r["n"] for r in by_src)
+    xs = warehouse.query("src_outlets", "SELECT upper(trim(state)) state, source, count(*) n FROM t "
+                         "WHERE nullif(trim(state),'') IS NOT NULL GROUP BY state, source")
+    pts = warehouse.query("src_outlets", "SELECT source, store_name, city, state, "
+                          "round(CAST(lat AS DOUBLE),5) lat, round(CAST(lng AS DOUBLE),5) lng FROM t "
+                          "WHERE lat IS NOT NULL AND lng IS NOT NULL LIMIT 12000")
+    return jsonify(ok=True, total=total, by_source=by_src, by_state=by_state, by_state_source=xs, points=pts)
+
+
+@app.get("/api/coverage/accounts")
+def coverage_accounts_ep():
+    """Browse / search the accounts behind the map — filter by source, state, or text. Returns full account
+    rows (name, address, city, state, zip, geo, phone, hoodie_outlet) so a click opens the account's info."""
+    import warehouse
+    src = (request.args.get("source") or "").strip()
+    state = (request.args.get("state") or "").strip().upper()
+    q = (request.args.get("q") or "").strip().lower()
+    try:
+        limit = min(1000, max(1, int(request.args.get("limit") or 300)))
+    except Exception:
+        limit = 300
+    where, params = ["1=1"], []
+    if src:
+        where.append("source = ?"); params.append(src)
+    if state:
+        where.append("upper(trim(state)) = ?"); params.append(state)
+    if q:
+        where.append("(lower(store_name) LIKE ? OR lower(city) LIKE ? OR lower(address) LIKE ?)")
+        params += ["%" + q + "%"] * 3
+    try:
+        rows = warehouse.query("src_outlets", "SELECT source, store_id, store_name, address, city, state, zip, "
+                               "CAST(lat AS DOUBLE) lat, CAST(lng AS DOUBLE) lng, phone, hoodie_outlet FROM t "
+                               "WHERE %s ORDER BY store_name LIMIT %d" % (" AND ".join(where), limit), params)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:160], accounts=[])
+    return jsonify(ok=True, count=len(rows), accounts=rows)
+
+
 @app.get("/api/master/workbench/matches")
 def mwb_matches_ep():
     """Dedup candidates at EVERY grain — brand / product / item / supplier — that the Hoodie ID mnemonic blocks
