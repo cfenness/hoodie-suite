@@ -479,7 +479,11 @@ def normalize_outlets(log=print):
         g = lambda r, f: (r.get(cm[f]) if cm.get(f) else None)
         n0 = len(out)
         for r in rows:
-            nm = (g(r, "name") or "").strip() or (g(r, "owner") or "").strip()   # DBA, else owner/entity
+            dba = (g(r, "name") or "").strip(); own = (g(r, "owner") or "").strip()
+            if dba and own and _re.match(r"^#?\s*\d+$", dba):   # a bare store-# DBA ("#8078") is meaningless alone
+                nm = "%s %s" % (own, dba)                       # -> "HASCO STATIONS LLC #8078"
+            else:
+                nm = dba or own                                 # DBA, else owner/entity
             _put(tag, g(r, "license") or nm, nm, chain=g(r, "chain"), license_type=g(r, "license_type"),
                  address=g(r, "address"), city=g(r, "city"), state=g(r, "state"), zip=g(r, "zip"),
                  lat=g(r, "lat"), lng=g(r, "lng"), phone=g(r, "phone"))
