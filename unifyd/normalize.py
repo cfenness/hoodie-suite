@@ -64,6 +64,42 @@ def _addr_valid(street, city, state, zip_, has_geo=False):
     return bool((len(st) == 2) or (len(z) >= 5))
 
 
+_CORP = None
+
+
+def _name_key(name):
+    """Normalized name for MATCHING — lowercase, drop store numbers + corp suffixes (LLC/INC/CO/THE) +
+    punctuation. '7-Eleven #1234' -> '7 eleven'; 'ABC Liquor, Inc.' -> 'abc liquor'. A blocking/compare key."""
+    import re
+    global _CORP
+    if _CORP is None:
+        _CORP = re.compile(r"\b(inc|incorporated|llc|l\.?l\.?c|corp|corporation|co|company|ltd|the|and|&)\b\.?", re.I)
+    s = str(name or "").lower()
+    s = re.sub(r"#\s*\w+|\bno\.?\s*\d+|\b\d{2,}\b", " ", s)   # store numbers
+    s = _CORP.sub(" ", s)
+    s = re.sub(r"[^a-z0-9 ]", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _phone_norm(p):
+    """10-digit phone (strong same-outlet match key across sources). '' if not a US 10-digit number."""
+    import re
+    d = re.sub(r"\D", "", str(p or ""))
+    if len(d) == 11 and d[0] == "1":
+        d = d[1:]
+    return d if len(d) == 10 else ""
+
+
+def _upc_norm(u):
+    """Normalized product UPC/GTIN — digits only, padded to GTIN-14 (a canonical cross-source item key).
+    '' if not 8–14 digits or an obvious placeholder (all same digit)."""
+    import re
+    d = re.sub(r"\D", "", str(u or ""))
+    if len(d) < 8 or len(d) > 14 or len(set(d)) <= 1:
+        return ""
+    return d.zfill(14)
+
+
 def _addr_key(street, city, state, zip_):
     """Stable key for an address → its geocode. Used by both the geocode runner (populates geocode_cache)
     and normalize (applies the cache), so geocoding is standard + persistent + incremental."""
@@ -78,7 +114,7 @@ def _apply_geocode(out, log=print):
     Geocoding is standard: sources that ship coords keep them; the rest get pinned once their address is cached."""
     try:
         cache = {r["addr_key"]: r for r in warehouse.query("geocode_cache",
-                 "SELECT addr_key, CAST(lat AS DOUBLE) lat, CAST(lng AS DOUBLE) lng FROM t")}
+                 "SELECT addr_key, CAST(lat AS DOUBLE) lat, CAST(lng AS DOUBLE) lng, county_fips FROM t")}
     except Exception:
         return
     n = 0
@@ -87,7 +123,9 @@ def _apply_geocode(out, log=print):
             continue
         c = cache.get(_addr_key(o["address"], o["city"], o["state"], o["zip"]))
         if c and c["lat"] is not None:
-            o["lat"], o["lng"] = c["lat"], c["lng"]; n += 1
+            o["lat"], o["lng"] = c["lat"], c["lng"]
+            o["county_fips"] = c.get("county_fips") or ""
+            n += 1
     log("[normalize] geocode cache filled %d outlets (of %d entries)" % (n, len(cache)))
 
 
@@ -124,31 +162,34 @@ def normalize_catalog(log=print):
         # ONE product type per product (Wine/Beer/Spirits/Hemp/Cannabis) from category + name + varietal
         ptid, ptname = classify_type(" ".join(str(x) for x in
                                      (r.get("category"), pname, r.get("varietal"), r.get("flavor")) if x))
-        brands.setdefault((src, bc), {"source": src, "source_id": sid, "hoodie_brand": bc, "brand": brand})
+        nk = _name_key(brand + " " + pname)          # normalized name key (match blocking/compare)
+        un = _upc_norm(upc)                          # canonical GTIN-14 (cross-source item key)
+        brands.setdefault((src, bc), {"source": src, "source_id": sid, "hoodie_brand": bc, "brand": brand,
+                                      "name_key": _name_key(brand)})
         products.setdefault((src, pc), {"source": src, "source_id": sid, "hoodie_product": pc, "brand": brand,
-                                        "product_name": pname, "flavor": r.get("flavor"), "category": r.get("category"),
-                                        "product_type_id": ptid, "product_type": ptname,
+                                        "product_name": pname, "name_key": nk, "flavor": r.get("flavor"),
+                                        "category": r.get("category"), "product_type_id": ptid, "product_type": ptname,
                                         "abv": r.get("abv"), "varietal": r.get("varietal"), "origin": r.get("origin"),
                                         "region": r.get("region"), "image": r.get("image")})
         items.setdefault((src, ic), {"source": src, "source_id": sid, "hoodie_item": ic, "brand": brand,
-                                     "product_name": pname, "product_type_id": ptid, "product_type": ptname,
-                                     "size_ml": r.get("size_ml"), "container": r.get("container")})
-        skus.setdefault((src, kc, upc), {"source": src, "source_id": sid, "upc": upc, "hoodie_sku": kc,
-                                         "brand": brand, "product_name": pname, "product_type_id": ptid,
+                                     "product_name": pname, "name_key": nk, "product_type_id": ptid,
+                                     "product_type": ptname, "size_ml": r.get("size_ml"), "container": r.get("container")})
+        skus.setdefault((src, kc, upc), {"source": src, "source_id": sid, "upc": upc, "upc_norm": un, "hoodie_sku": kc,
+                                         "brand": brand, "product_name": pname, "name_key": nk, "product_type_id": ptid,
                                          "product_type": ptname, "size_ml": r.get("size_ml"),
                                          "container": r.get("container"), "pack": r.get("pack")})
     warehouse.write_parquet("src_brands", list(brands.values()),
-                            ["source", "source_id", "hoodie_brand", "brand"])
+                            ["source", "source_id", "hoodie_brand", "brand", "name_key"])
     warehouse.write_parquet("src_products", list(products.values()),
-                            ["source", "source_id", "hoodie_product", "brand", "product_name", "flavor",
+                            ["source", "source_id", "hoodie_product", "brand", "product_name", "name_key", "flavor",
                              "category", "product_type_id", "product_type", "abv", "varietal", "origin",
                              "region", "image"])
     warehouse.write_parquet("src_items", list(items.values()),
-                            ["source", "source_id", "hoodie_item", "brand", "product_name", "product_type_id",
-                             "product_type", "size_ml", "container"])
+                            ["source", "source_id", "hoodie_item", "brand", "product_name", "name_key",
+                             "product_type_id", "product_type", "size_ml", "container"])
     warehouse.write_parquet("src_skus", list(skus.values()),
-                            ["source", "source_id", "upc", "hoodie_sku", "brand", "product_name", "product_type_id",
-                             "product_type", "size_ml", "container", "pack"])
+                            ["source", "source_id", "upc", "upc_norm", "hoodie_sku", "brand", "product_name",
+                             "name_key", "product_type_id", "product_type", "size_ml", "container", "pack"])
     warehouse.write_parquet("dim_product_type", [{"product_type_id": i, "product_type": n} for i, n in PRODUCT_TYPES],
                             ["product_type_id", "product_type"])
     types = {}
@@ -319,7 +360,9 @@ def normalize_outlets(log=print):
     out = {}
     FLD = ["source", "store_id", "store_name", "chain", "is_chain", "f_beer", "f_wine", "f_spirits", "f_hemp",
            "f_cannabis", "f_rtd_spirits", "flag_basis", "license_conflict", "address", "city", "state", "zip",
-           "lat", "lng", "phone", "addr_valid", "hoodie_outlet"]
+           "lat", "lng", "phone", "addr_valid", "hoodie_outlet",
+           # ── match keys (for consolidating the same real outlet across sources → dim_outlet) ──
+           "name_key", "phone_norm", "addr_key", "geo_cell", "county_fips"]
     # observation/chain sources whose source-tag IS the banner (the store rows are all that chain)
     SOURCE_CHAIN = {"target": "Target", "kroger": "Kroger", "binnys": "Binny's", "specs": "Spec's",
                     "abc": "ABC Fine Wine", "total-wine": "Total Wine", "totalwine": "Total Wine",
@@ -352,7 +395,10 @@ def normalize_outlets(log=print):
                       "_lic": (b, w, s) if lic else None, "address": addr, "city": city, "state": state, "zip": zp,
                       "lat": _num(kw.get("lat")), "lng": _num(kw.get("lng")), "phone": kw.get("phone") or "",
                       "addr_valid": _addr_valid(addr, city, state, zp, has_geo),
-                      "hoodie_outlet": H.brand_code(nm or str(sid))}
+                      "hoodie_outlet": H.brand_code(nm or str(sid)),
+                      "name_key": _name_key(nm), "phone_norm": _phone_norm(kw.get("phone")),
+                      "addr_key": _addr_key(addr, city, state, zp) if addr else "",
+                      "geo_cell": "", "county_fips": ""}
 
     # 1) license / ABC / chain / on-premise tables — fuzzy-mapped from each table's own schema
     for tbl, tag in _OUTLET_TABLES:
@@ -443,10 +489,12 @@ def normalize_outlets(log=print):
     log("[normalize] backfill: %d outlets borrowed geo from a same-address sibling" % filled)
     # 6) geocode — pin any addressed outlet that arrived without coords (CA licenses etc.) from geocode_cache
     _apply_geocode(out, log)
-    # re-validate: anything now geocoded (borrowed or cached) is a confirmed valid address
+    # re-validate + geo_cell: anything now geocoded (borrowed or cached) is a valid address; stamp a ~110m
+    # spatial cell for match blocking.
     for o in out.values():
         if o["lat"] is not None:
             o["addr_valid"] = True
+            o["geo_cell"] = "%.3f,%.3f" % (o["lat"], o["lng"])
     # 6) product-carried flags — an account that CARRIES wine sells wine (Barefoot → wine), even if its license
     #    row didn't say so. OR the categories of everything each store stocks into its flags.
     _apply_product_flags(out, log)
