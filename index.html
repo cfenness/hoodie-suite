@@ -547,10 +547,11 @@
   }
   function setHomeLink(appMode){
     var hl=document.getElementById('homeLink'); if(!hl) return;
+    // home button = go home; the ⌄ chevron (always present) opens the app-switcher dropdown
     if(appMode&&appNav){ var a=byId[appNav.app];
-      hl.innerHTML='⌂ <span class="hl-tx">&nbsp;'+(a?a.name:'App')+'</span><span class="hl-cv">⌄</span>';
-      hl.title='Switch app'; }
-    else { hl.innerHTML='⌂ <span class="hl-tx">&nbsp;All apps</span>'; hl.title='All apps'; }
+      hl.innerHTML='⌂ <span class="hl-tx">&nbsp;'+(a?a.name:'App')+'</span><span class="hl-cv" title="Switch app">⌄</span>';
+      hl.title='Home'; }
+    else { hl.innerHTML='⌂ <span class="hl-tx">&nbsp;All apps</span><span class="hl-cv" title="Switch app">⌄</span>'; hl.title='Home'; }
   }
   function toggleAppSelector(){
     var ex=document.getElementById('appSelPop'); if(ex){ ex.remove(); return; }
@@ -813,7 +814,10 @@
   }
   /* an app can post an in-app breadcrumb (e.g. the open record) → shows as "App › crumb" */
   spine.on('crumb',t=>{ appcrumbx.textContent = t ? (' › '+t) : ''; });
-  document.getElementById('homeLink').addEventListener('click',()=>{ if(appNav){ toggleAppSelector(); } else { location.hash=''; } });
+  document.getElementById('homeLink').addEventListener('click',(e)=>{
+    if(e.target.closest('.hl-cv')){ toggleAppSelector(); }        // the ⌄ chevron switches apps (the dropdown)
+    else { location.hash=''; closeNav(); }                        // the home button ALWAYS just goes home
+  });
   document.getElementById('brand').addEventListener('click',()=>{location.hash='';});
   document.getElementById('mark').addEventListener('click',()=>{location.hash='';});
   window.addEventListener('hashchange',route);
