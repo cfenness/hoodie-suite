@@ -2064,6 +2064,33 @@ def mwb_merges_ep():
     return jsonify(ok=True, count=len(out), merges=out[:400])
 
 
+@app.get("/api/src")
+def src_feeds_ep():
+    """The inbound normalization spine — the 7 src_<grain> feeds every source shreds into, with per-grain
+    records / distinct entities / how many are corroborated by 2+ sources (tagged match, no key join). Plus the
+    sources that emit each grain. Powers the estate's clean feed view (7 feeds, not 50 raw tables)."""
+    import warehouse
+    try:
+        summ = warehouse.query("src_summary", "SELECT grain, \"table\", records, entities, corroborated FROM t")
+    except Exception:
+        return jsonify(ok=True, feeds=[], note="src_summary not built yet — runs on the next master rebuild")
+    order = {"brand": 0, "product": 1, "item": 2, "sku": 3, "outlet": 4, "pricing": 5, "inventory": 6}
+    for f in summ:
+        try:
+            f["sources"] = sorted({r["source"] for r in warehouse.query(f["table"], "SELECT DISTINCT source FROM t")})
+        except Exception:
+            f["sources"] = []
+    for g, tbl in (("pricing", "src_pricing"), ("inventory", "src_inventory")):
+        try:
+            n = warehouse.query(tbl, "SELECT count(*) c FROM t")[0]["c"]
+            summ.append({"grain": g, "table": tbl, "records": n, "entities": None, "corroborated": None,
+                         "sources": sorted({r["source"] for r in warehouse.query(tbl, "SELECT DISTINCT source FROM t")})})
+        except Exception:
+            pass
+    summ.sort(key=lambda f: order.get(f["grain"], 9))
+    return jsonify(ok=True, feeds=summ)
+
+
 @app.get("/api/master/workbench/matches")
 def mwb_matches_ep():
     """Dedup candidates at EVERY grain — brand / product / item / supplier — that the Hoodie ID mnemonic blocks

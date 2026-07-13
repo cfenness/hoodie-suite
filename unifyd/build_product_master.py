@@ -350,6 +350,11 @@ def build(log=print):
         hoodie_ids.assign(log=log)
     except Exception as e:
         log("[master] hoodie_ids skipped: %s" % str(e)[:80])
+    try:                                                # inbound normalization: shred every source row into the
+        import normalize                                # per-grain src_<grain> feeds (tagged + Hoodie-mnemonic)
+        normalize.build(log=log)
+    except Exception as e:
+        log("[master] normalize (src_<grain>) skipped: %s" % str(e)[:80])
     try:                                                # pre-compute the workbench list views (fast cold-load)
         import wb_views
         wb_views.build(log=log)

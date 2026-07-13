@@ -96,6 +96,19 @@
   .efilter button{background:rgba(18,28,25,.82);border:1px solid var(--line);border-radius:20px;padding:5px 13px;color:#a9c9c0;font-family:var(--mono);font-size:10.5px;cursor:pointer;backdrop-filter:blur(6px);transition:border-color .15s,background .15s,color .15s}
   .efilter button:hover{border-color:var(--teal);color:#eafaf5}
   .efilter button.on{background:var(--teal);color:#0e1613;border-color:var(--teal);font-weight:700}
+  /* available recipes — the proven platform recipes the engine can run (click to fly to that system) */
+  .recbtn{position:fixed;top:118px;right:22px;z-index:7;font-family:var(--mono);font-size:10.5px;color:#a9c9c0;background:rgba(18,28,25,.82);border:1px solid var(--line);border-radius:20px;padding:5px 13px;cursor:pointer;backdrop-filter:blur(6px);transition:border-color .15s}
+  .recbtn:hover{border-color:var(--teal);color:#eafaf5}
+  .recbtn b{color:#d9b03f}
+  .recpanel{position:fixed;top:152px;right:22px;width:250px;max-height:calc(100vh - 190px);overflow:auto;z-index:7;background:rgba(18,28,25,.94);border:1px solid var(--line);border-radius:12px;padding:12px 14px;backdrop-filter:blur(6px);display:none}
+  .recpanel.show{display:block}
+  .recpanel .rh{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#6f938a;margin-bottom:8px}
+  .recpanel .rr{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:11.5px;color:#cfe6df;cursor:pointer}
+  .recpanel .rr:first-of-type{border-top:none}
+  .recpanel .rr:hover{color:#eafaf5}
+  .recpanel .rr .rdot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+  .recpanel .rr .rpl{margin-left:auto;font-family:var(--mono);font-size:8.5px;color:#6f938a;letter-spacing:.04em;white-space:nowrap}
+  .recpanel .rnone{font-size:11px;color:#6f938a}
 </style>
 <script type="importmap">
 { "imports": {
@@ -110,13 +123,15 @@
   <div class="live off" id="live" title="Live read from the engine · click to refresh"><span class="dot"></span><span id="livetx">connecting…</span></div>
   <div class="hud top">
     <div class="brand"><div class="ey">Hoodie Suite · Estate</div><h1>The Estate, as an object</h1></div>
-    <div class="hint"><b>drag</b> to spin · <b>scroll</b> to zoom · <b>click a node</b> to focus<br>a node lights only what it touches — the rest drops out</div>
+    <div class="hint"><b>drag</b> / <b>WASD</b> to spin · <b>scroll</b> to zoom · <b>click a node</b> to focus<br><b>click a family label</b> to fly into its center · a node lights only what it touches</div>
   </div>
   <div class="esearch" id="esearch">
     <input id="eq" placeholder="🔍 search a node — fly to it…" autocomplete="off" spellcheck="false">
     <div class="eres" id="eres"></div>
   </div>
   <div class="efilter" id="efilter"></div>
+  <div class="recbtn" id="recbtn">▤ recipes <b id="reccount">0</b></div>
+  <div class="recpanel" id="recpanel"><div class="rh">Available recipes · click to fly</div><div id="reclist"></div></div>
   <div class="sel" id="sel"></div>
   <div class="flat" id="flat"></div>
   <div class="legend">entity ●<span class="sw" style="background:#3fb8a3"></span> · feed ◆<span class="di" style="background:#5bb86e"></span><br>live<span class="sw" style="background:#5bb86e"></span> · planned<span class="sw" style="background:#5f7a72"></span> · drifting<span class="sw" style="background:#d99a3f"></span> · broke<span class="sw" style="background:#d9584f"></span><br><span class="cf">|—&lt; one‑to‑many</span> · 🔑 key</div>
@@ -245,13 +260,21 @@ function layoutClusters3D(nodes){
   nodes.forEach(n=>{ if(n.kind!=='src')return; const c=clusterOf(n); (groups[c.key]=groups[c.key]||{def:c,nodes:[]}).nodes.push(n); n._ck=c.key; });
   const order=CLUSTER_DEF.concat([CLUSTER_FALL]).filter(c=>groups[c.key]);
   const metas=[];
-  order.forEach((cdef,i)=>{
-    // anchor each source blob near the ENTITY it feeds, pushed out + behind the spine (−z) so the
-    // model reads in front and its feeds hang beneath/behind it, grouped and legible.
-    const ep=ENT_POS[cdef.key], dir=(ep&&ep.length()>1)?ep.clone().normalize():new THREE.Vector3(0,-1,0);
-    const base=ep?ep.clone():new THREE.Vector3(0,-30,0);
-    const center=base.multiplyScalar(1.35).add(dir.multiplyScalar(34)).add(new THREE.Vector3(0,-6,-64));
-    const g=groups[cdef.key], M=g.nodes.length, pr=15+Math.sqrt(M)*6.5;
+  // OVERLAP-FREE layout: spread the source families FAR apart around a wide arc BENEATH the backbone — each
+  // family is its own compact fibonacci ball, and the arc places their CENTERS ~R·(arc/N) apart, far larger
+  // than any ball, so balls AND their labels stay clear. Ordered by the entity they feed (hierarchy reading);
+  // fly into a ball to read its sources. Compact balls (small radius) keep families distinct at any count.
+  const prOf=c=>15+Math.sqrt(groups[c.key].nodes.length)*5.2;       // bigger balls so members spread, not cram
+  const slots=order.slice().sort((a,b)=>((ENT_POS[a.key]?ENT_POS[a.key].x:9)-(ENT_POS[b.key]?ENT_POS[b.key].x:9)));
+  const N=slots.length;
+  // SCALE the ring with how much it must hold: wider arc + larger radius as more families / larger balls appear,
+  // so the model GROWS to fit the feeds instead of cramming them. Radius guarantees center-spacing > ball size.
+  const maxBall=Math.max(28,...slots.map(prOf));
+  const R=Math.max(300, 240 + N*26 + maxBall*1.6), SPAN=Math.PI*1.28;   // grow with family count
+  slots.forEach((cdef,si)=>{
+    const g=groups[cdef.key], M=g.nodes.length, pr=prOf(cdef);
+    const f=(N>1? si/(N-1) : 0.5), ang=-SPAN/2 + f*SPAN;            // even spread across the arc
+    const center=new THREE.Vector3(Math.sin(ang)*R, -64, -30 - Math.cos(ang)*R*0.5);
     g.nodes.forEach((n,j)=>{
       const y2=1-(j+0.5)/M*2, r2=Math.sqrt(Math.max(0,1-y2*y2)), t2=j*2.399963;
       n.pos=center.clone().add(new THREE.Vector3(Math.cos(t2)*r2, y2, Math.sin(t2)*r2).multiplyScalar(pr*Math.cbrt((j+0.5)/M)));
@@ -264,10 +287,31 @@ function layoutClusters3D(nodes){
 // ── live read ──────────────────────────────────────────────────────────────────────
 async function loadLive(){
   const get=u=>fetch(u,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
-  const [recs,dsets,hls,srcs]=await Promise.all([get('/api/recipes'),get('/api/catalog'),get('/api/highlights'),get('/api/sources')]);
+  const [recs,dsets,hls,srcs,srf]=await Promise.all([get('/api/recipes'),get('/api/catalog'),get('/api/highlights'),get('/api/sources'),get('/api/src')]);
   // adopt the server's SINGLE source of truth for labels + which master each feeds (no hardcoded map to drift)
   if(srcs&&srcs.sources) srcs.sources.forEach(s=>{ SRCLABEL[s.id]=s.label; SRCFEEDS[s.id]=s.feeds||[]; });
-  return { recipes:(recs&&recs.recipes)||[], datasets:dsets||{}, highlights:(hls&&hls.highlights)||[], online:!!(recs||dsets) };
+  return { recipes:(recs&&recs.recipes)||[], datasets:dsets||{}, highlights:(hls&&hls.highlights)||[],
+           srcfeeds:(srf&&srf.feeds)||[], online:!!(recs||dsets||srf) };
+}
+// consolidate the raw feeds → one node per SYSTEM (shopify once, not 22 metro tables). Invert /api/src:
+// each src_<grain> feed lists the source SYSTEMS that emit it → a system emits {grains}; we place it at its
+// coarsest grain and wire it to every grain it feeds. This is "Shopify feeding, not the metros themselves".
+const SYS_LABEL={shopify:'Shopify',woocommerce:'WooCommerce',wix:'Wix',squarespace:'Squarespace',ttb:'TTB · COLA',
+  abc:'ABC FWS',binnys:"Binny's",specs:"Spec's",'total-wine':'Total Wine',kroger:'Kroger',target:'Target',
+  walmart:'Walmart',cityhive:'City Hive','bc-liquor':'BC Liquor',mont:'Montgomery MD',or:'Oregon OLCC',
+  ut:'Utah DABS',me:'Maine',nc:'North Carolina',id:'Idaho','ab-outlets':'Virginia ABC',offprem:'Off-premise',
+  'vtinfo-titos':'VTInfo'};
+const GRAIN_ENT={brand:'brand',product:'product',item:'item',sku:'sku',outlet:'outlet',pricing:'pricing',inventory:'inventory'};
+const GRAIN_RANK=['brand','product','item','sku','outlet','pricing','inventory'];
+function systemFeeds(srcfeeds){
+  const emits={}, recByGrain={};
+  (srcfeeds||[]).forEach(f=>{ (f.sources||[]).forEach(s=>{ (emits[s]=emits[s]||new Set()).add(f.grain);
+    (recByGrain[s]=recByGrain[s]||{})[f.grain]=f.records; }); });
+  return Object.keys(emits).map(s=>{ const gs=[...emits[s]];
+    const primary=GRAIN_RANK.find(g=>emits[s].has(g))||'product';
+    return {sys:s, grains:gs.map(g=>GRAIN_ENT[g]).filter(Boolean), primaryEnt:GRAIN_ENT[primary]||'product',
+            recs:recByGrain[s], label:SYS_LABEL[s]||s};
+  });
 }
 // build the graph model from the live read (+ catalog for the familiar estate)
 function buildModel(live){
@@ -304,11 +348,27 @@ function buildModel(live){
     const sub=(rec?('recipe · '+rec.status):(s.tier||'')) + (s.foot?(' · '+s.foot):'');
     addSource('c'+i, s.nm||('source '+i), status, sub, cols, (s.tier||'')+' '+(s.nm||''), liveFlag, null, hostOf(s.url));
   });
-  // 2) owned datasets pulled by the engine — real data, real columns
-  Object.entries(live.datasets||{}).forEach(([k,v])=>{
-    const cols=(v&&v.header)||[]; const rows=(v&&(v.total||(v.rows&&v.rows.length)))||'';
-    addSource('d:'+k, dsName(k), 'data', 'owned dataset'+(rows?(' · '+rows+' rows'):''), cols, k, true, k);
-  });
+  // 2) CONSOLIDATED SYSTEM feeds from the normalization spine (/api/src) — Shopify appears ONCE (feeding
+  //    brand→product→item→sku), not as 22 metro tables. Every source that shreds into src_<grain> is pulled
+  //    through here, wired to each grain it emits. This is the clean feed layer (systems, not raw tables).
+  const sysFeeds=systemFeeds(live.srcfeeds);
+  if(sysFeeds.length){
+    sysFeeds.forEach(sf=>{
+      const total=Object.values(sf.recs||{}).reduce((a,b)=>a+(b||0),0);
+      const n={id:'sys:'+sf.sys, label:sf.label, full:sf.label, kind:'src', status:'data', live:true,
+               cols:[], dataset:null, host:null, system:sf.sys, recs:sf.recs,
+               sub:'system feed · '+sf.grains.map(g=>ENTLABEL[g]||g).join(' · ')+(total?(' · '+total.toLocaleString()+' recs'):''),
+               primaryEnt:sf.primaryEnt, pos:stablePos(sf.label, sf.grains)};
+      nodes.push(n); byId[n.id]=n;
+      sf.grains.forEach(e=>{ if(ENT_POS[e]) edges.push({a:n.id,b:e,road:e==='pricing'?'price':(e==='inventory'?'availability':(e==='outlet'?'address':(e==='brand'?'brand':'has')))}); });
+    });
+  } else {
+    // fallback (engine offline / src_ not built yet): the raw owned-dataset tables, one node each
+    Object.entries(live.datasets||{}).forEach(([k,v])=>{
+      const cols=(v&&v.header)||[]; const rows=(v&&(v.total||(v.rows&&v.rows.length)))||'';
+      addSource('d:'+k, dsName(k), 'data', 'owned dataset'+(rows?(' · '+rows+' rows'):''), cols, k, true, k);
+    });
+  }
   // 3) any proven/analyzed recipe not already shown (new backend sources appear on their own)
   (live.recipes||[]).forEach((r,i)=>{
     const cols=Object.keys((r.config&&r.config.field_map)||{}).concat((r.config&&r.config.fields)||[]);
@@ -327,8 +387,25 @@ const scene=new THREE.Scene(); scene.fog=new THREE.FogExp2(0x0e1613,0.0026);
 const camera=new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.5, 3000); camera.position.set(120,72,196);
 const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight); renderer.setPixelRatio(Math.min(2,devicePixelRatio)); stage.appendChild(renderer.domElement);
 const lr=new CSS2DRenderer(); lr.setSize(innerWidth,innerHeight); lr.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:4'; document.body.appendChild(lr.domElement);
-const controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true; controls.dampingFactor=.08; controls.rotateSpeed=.7; controls.minDistance=18; controls.maxDistance=640;
+const controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true; controls.dampingFactor=.075;
+controls.rotateSpeed=1.05; controls.zoomSpeed=1.25; controls.panSpeed=.9; controls.minDistance=6; controls.maxDistance=1400;
 controls.zoomToCursor=true;   // scroll zooms toward the mouse, not the pivot
+// arrow keys / WASD ORBIT the object around the pivot (a bigger model needs turning to traverse); shift = faster.
+// Implemented in spherical coords so it works regardless of OrbitControls internals.
+addEventListener('keydown',e=>{ if(e.target&&/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  const k=e.key, step=(e.shiftKey?0.30:0.13);
+  let yaw=0,pitch=0;
+  if(k==='ArrowLeft'||k==='a'||k==='A') yaw=-step;
+  else if(k==='ArrowRight'||k==='d'||k==='D') yaw=step;
+  else if(k==='ArrowUp'||k==='w'||k==='W') pitch=-step;
+  else if(k==='ArrowDown'||k==='s'||k==='S') pitch=step;
+  else return;
+  e.preventDefault();
+  const off=camera.position.clone().sub(controls.target);
+  const sph=new THREE.Spherical().setFromVector3(off);
+  sph.theta+=yaw; sph.phi=Math.max(0.06,Math.min(Math.PI-0.06,sph.phi+pitch));
+  off.setFromSpherical(sph); camera.position.copy(controls.target.clone().add(off));
+});
 scene.add(new THREE.AmbientLight(0xffffff,.78)); const dl=new THREE.DirectionalLight(0xdff5ee,.7); dl.position.set(60,120,80); scene.add(dl);
 // no ground grid — it reads as a floor and makes orbit feel like the scene sways; this is an
 // object you spin in space. a faint far starfield gives just enough spatial reference.
@@ -439,7 +516,9 @@ function focusCluster(cl){
   nodes.forEach(x=>{ const on=ids.has(x.id); x.mat.opacity=on?1:.04; x.lo.classList.toggle('dim',!on); x.mesh.scale.setScalar(x.kind==='ent'?7.6:(x.live?4.9:3.8)); });
   edges.forEach(e=>{ const on=ids.has(e.a)&&ids.has(e.b); e.mat.opacity=on?.85:.02; if(e.badge)e.badge.classList.toggle('dim',!on); });
   clusterLabels.forEach(o=>o.element.classList.toggle('dim', o.userData.cl.key!==cl.key));
-  const off=camera.position.clone().sub(controls.target).normalize().multiplyScalar(cl.r+95);
+  // fly INTO the ball — camera lands just inside the fibonacci shell, pivot at the center, so you read the
+  // family's sources surrounding you from the middle (not from outside). Small offset = "from the center".
+  const off=camera.position.clone().sub(controls.target).normalize().multiplyScalar(Math.max(10,cl.r*0.45));
   fly={toT:cl.center.clone(),toC:cl.center.clone().add(off),t:0,fromT:controls.target.clone(),fromC:camera.position.clone()};
   const ents=[...ids].map(id=>byId[id]).filter(x=>x&&x.kind==='ent').map(x=>x.label);
   selEl.innerHTML='<div class="k">Family · '+cl.count+' source'+(cl.count===1?'':'s')+'</div>'
@@ -564,9 +643,28 @@ function spawnPulse(node){
 }
 const liveEl=document.getElementById('live'), liveTx=document.getElementById('livetx');
 let lastRead=0, lastSig='', seenTs=0, issuesCount=0;
+// ── available recipes panel — the proven platform recipes the engine can run ────────
+const recBtn=document.getElementById('recbtn'), recPanel=document.getElementById('recpanel');
+recBtn.onclick=()=>recPanel.classList.toggle('show');
+function renderRecipes(recipes){
+  document.getElementById('reccount').textContent=(recipes||[]).length;
+  const list=document.getElementById('reclist');
+  if(!recipes||!recipes.length){ list.innerHTML='<div class="rnone">No recipes proven yet.</div>'; return; }
+  const rank={proven:0,live:0,ready:1,building:2,drifting:3,broken:4};
+  const rs=recipes.slice().sort((a,b)=>(rank[(a.status||'').toLowerCase()]??5)-(rank[(b.status||'').toLowerCase()]??5)
+    || String(a.host).localeCompare(String(b.host)));
+  list.innerHTML=rs.map((r,i)=>{ const col=STCOL[(r.status||'').toLowerCase()]||'#5bb86e';
+    return '<div class="rr" data-host="'+esc(r.host)+'"><span class="rdot" style="background:'+col+'"></span>'
+      +'<span>'+esc(String(r.host).replace(/^www\./,''))+'</span>'
+      +'<span class="rpl">'+esc((r.platform||'').toString().slice(0,14))+' · '+esc(r.status||'')+'</span></div>'; }).join('');
+  list.querySelectorAll('.rr').forEach(el=>el.onclick=()=>{ const h=el.getAttribute('data-host');
+    const n=nodes.find(x=>x.kind==='src'&&(x.host===h||(x.full||'').toLowerCase().includes(h.toLowerCase())));
+    if(n) setFocus(n); });
+}
 const RE_ISSUE=/broke|fail|block|drift|degrad|partial/;   // real problems only — 'paused' is intentional, stays neutral
 async function refresh(){
   const live=await loadLive();
+  renderRecipes(live.recipes);
   const model=buildModel(live);
   // only rebuild the scene when the estate actually changed (else the poll would flicker + reset focus)
   const sig=model.nodes.map(n=>n.id+':'+n.status).sort().join('|');
