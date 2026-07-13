@@ -103,6 +103,54 @@ def build_merges(con, log=print):
     return len(out)
 
 
+def build_brand_merges(con, log=print):
+    """Brand-dedup candidates via the Hoodie ID mnemonic as a BLOCKING key, then an in-block similarity filter.
+    The 6-char brand mnemonic collapses spelling/punctuation/typo variants (Savannah Chanele / Savahhah-Chanelle
+    / Savannah Chanelle -> SAVCHA); within each block we keep only members that actually match the anchor
+    (SequenceMatcher >= .82) so a coincidental co-mnemonic (Savary Chablis) doesn't get merged. This is the
+    matching the exact-hash key can't do — near-duplicate BRANDS. -> wb_brand_merges (impact-ranked)."""
+    import collections
+    import difflib
+    import re
+    import hoodie_ids
+
+    def _n(s):
+        return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+    rows = warehouse.query("dim_brand", "SELECT brand_key, brand, source_rows, sources, hoodie_id FROM t "
+                           "WHERE brand IS NOT NULL AND brand <> ''")
+    blocks = collections.defaultdict(list)
+    for r in rows:
+        blocks[hoodie_ids.brand_code(r["brand"])].append(r)
+    out = []
+    for code, mem in blocks.items():
+        if len(mem) < 2:
+            continue
+        mem.sort(key=lambda r: -(r["source_rows"] or 0))                 # anchor = most-corroborated spelling
+        anchor = mem[0]
+        an = _n(anchor["brand"])
+        grp, sims = [anchor], []
+        for m in mem[1:]:
+            s = difflib.SequenceMatcher(None, an, _n(m["brand"])).ratio()
+            if s >= 0.82:
+                grp.append(m); sims.append(s)
+        if len(grp) < 2:
+            continue
+        members = [{"brand_key": g["brand_key"], "brand": g["brand"], "hoodie_id": g.get("hoodie_id") or "",
+                    "source_rows": g["source_rows"] or 0, "sources": g["sources"] or 0} for g in grp]
+        out.append({"merge_id": "brand|" + code, "block": code, "canonical": anchor["brand"],
+                    "n_brands": len(grp), "total_rows": sum(m["source_rows"] for m in members),
+                    "confidence": round(min(sims), 2),
+                    "reason": "%d brand spellings share mnemonic %s and match the canonical" % (len(grp), code),
+                    "members": json.dumps(members)})
+    out.sort(key=lambda x: -x["total_rows"])
+    out = out[:CAP]
+    warehouse.write_parquet("wb_brand_merges", out,
+                            fields=["merge_id", "block", "canonical", "n_brands", "total_rows",
+                                    "confidence", "reason", "members"])
+    log("[wb_views] wb_brand_merges=%d brand-dedup candidate groups (mnemonic-blocked)" % len(out))
+    return len(out)
+
+
 def build(log=print):
     con = warehouse.connect()
     for t in ("dim_sku", "dim_item", "dim_product", "dim_brand", "_stage_product"):
@@ -136,9 +184,14 @@ def build(log=print):
                             fields=["total", "multi", "source_rows", "by_source", "prod_total", "prod_corr",
                                     "ttb_corr", "ttb_total"])
     merges = build_merges(con, log=log)
-    log("[wb_views] wb_master=%d · wb_queue=%d (cap %d) · total=%d multi=%d · wb_merges=%d"
-        % (len(master), len(queue), CAP, agg["total"], agg["multi"] or 0, merges))
-    return {"wb_master": len(master), "wb_queue": len(queue), "wb_merges": merges, "total": agg["total"]}
+    try:
+        bmerges = build_brand_merges(con, log=log)         # mnemonic-blocked brand dedup (needs dim_brand.hoodie_id)
+    except Exception as e:
+        bmerges = 0; log("[wb_views] wb_brand_merges skipped: %s" % str(e)[:80])
+    log("[wb_views] wb_master=%d · wb_queue=%d (cap %d) · total=%d multi=%d · wb_merges=%d · wb_brand_merges=%d"
+        % (len(master), len(queue), CAP, agg["total"], agg["multi"] or 0, merges, bmerges))
+    return {"wb_master": len(master), "wb_queue": len(queue), "wb_merges": merges,
+            "wb_brand_merges": bmerges, "total": agg["total"]}
 
 
 if __name__ == "__main__":

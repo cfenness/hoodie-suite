@@ -2064,6 +2064,33 @@ def mwb_merges_ep():
     return jsonify(ok=True, count=len(out), merges=out[:400])
 
 
+@app.get("/api/master/workbench/brand-merges")
+def mwb_brand_merges_ep():
+    """Brand-DEDUP candidates for the steward — near-duplicate brands the Hoodie ID mnemonic blocks together
+    (New Amsterdam / New Amsteram; Crown Royal / Crowm Royal), similarity-filtered, confidence + impact ranked.
+    From wb_brand_merges (built each rebuild). Decided groups drop out. This is the matching wired to the ID."""
+    q = (request.args.get("q") or "").strip().lower()
+    view = _wb_view("wb_brand_merges")
+    if view is None:
+        return jsonify(ok=True, count=0, merges=[], note="wb_brand_merges not built yet — runs on the next master rebuild")
+    decided = {d.get("cluster_id") for d in _wq("master_decisions", "SELECT cluster_id, action FROM t")
+               if d.get("action") in ("merge", "keep_separate")}
+    out = []
+    for r in view:
+        if r["merge_id"] in decided:
+            continue
+        if q and q not in (r.get("canonical") or "").lower():
+            continue
+        m = dict(r)
+        try:
+            m["members"] = json.loads(r.get("members") or "[]")
+        except Exception:
+            m["members"] = []
+        out.append(m)
+    out.sort(key=lambda x: (-(x.get("confidence") or 0), -(x.get("total_rows") or 0)))   # surest + highest-impact first
+    return jsonify(ok=True, count=len(out), merges=out[:400])
+
+
 @app.get("/api/master/workbench/merge-detail/<path:mid>")
 def mwb_merge_detail_ep(mid):
     """Full detail for one merge group — each member SKU enriched with its image / geo / varietal / ABV /
