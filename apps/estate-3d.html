@@ -245,18 +245,17 @@ function layoutClusters3D(nodes){
   nodes.forEach(n=>{ if(n.kind!=='src')return; const c=clusterOf(n); (groups[c.key]=groups[c.key]||{def:c,nodes:[]}).nodes.push(n); n._ck=c.key; });
   const order=CLUSTER_DEF.concat([CLUSTER_FALL]).filter(c=>groups[c.key]);
   const metas=[];
-  // OVERLAP-FREE layout: lay the source families out left→right BENEATH the model backbone, ordered by the
-  // entity they feed (so the reading still matches the hierarchy), each in its OWN width-slot sized to its
-  // ball radius (+ a gap). Because the slots tile a line and never overlap, the blobs can't collide no matter
-  // how many sources we add — the "sort it out once and for all" fix. A little z/y offset by radius keeps depth.
-  const prOf=c=>14+Math.sqrt(groups[c.key].nodes.length)*5.2;
+  // OVERLAP-FREE layout: spread the source families FAR apart around a wide arc BENEATH the backbone — each
+  // family is its own compact fibonacci ball, and the arc places their CENTERS ~R·(arc/N) apart, far larger
+  // than any ball, so balls AND their labels stay clear. Ordered by the entity they feed (hierarchy reading);
+  // fly into a ball to read its sources. Compact balls (small radius) keep families distinct at any count.
+  const prOf=c=>11+Math.sqrt(groups[c.key].nodes.length)*3.6;
   const slots=order.slice().sort((a,b)=>((ENT_POS[a.key]?ENT_POS[a.key].x:9)-(ENT_POS[b.key]?ENT_POS[b.key].x:9)));
-  const GAP=16, widths=slots.map(c=>2*prOf(c)+GAP), total=widths.reduce((a,b)=>a+b,0);
-  let x=-total/2;
+  const N=slots.length, R=210, SPAN=Math.PI*1.15;                   // wide front arc, camera-facing
   slots.forEach((cdef,si)=>{
-    const g=groups[cdef.key], M=g.nodes.length, pr=prOf(cdef), w=widths[si];
-    const cx=x + w/2; x += w;                                       // running cursor: each slot tiles the line
-    const center=new THREE.Vector3(cx, -30-pr*0.45, -66-pr*0.35);   // beneath + behind the backbone
+    const g=groups[cdef.key], M=g.nodes.length, pr=prOf(cdef);
+    const f=(N>1? si/(N-1) : 0.5), ang=-SPAN/2 + f*SPAN;            // even spread across the arc
+    const center=new THREE.Vector3(Math.sin(ang)*R, -54, -26 - Math.cos(ang)*R*0.45);
     g.nodes.forEach((n,j)=>{
       const y2=1-(j+0.5)/M*2, r2=Math.sqrt(Math.max(0,1-y2*y2)), t2=j*2.399963;
       n.pos=center.clone().add(new THREE.Vector3(Math.cos(t2)*r2, y2, Math.sin(t2)*r2).multiplyScalar(pr*Math.cbrt((j+0.5)/M)));
