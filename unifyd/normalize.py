@@ -87,38 +87,135 @@ def normalize_catalog(log=print):
     return {"src_brands": len(brands), "src_products": len(products), "src_items": len(items), "src_skus": len(skus)}
 
 
+# fuzzy column resolver — each outlet source has its own schema, so map by preference (exact col, then contains).
+# One resolver handles CA/VA license tables, chain-store tables, on-premise merchant tables without per-table code.
+_OUTLET_PREF = {
+    "name": ["dba", "trade_name", "store_name", "outlet_name", "business_name", "premise_name", "name",
+             "primary owner", "primary_owner", "owner name", "merchant", "store"],
+    "address": ["location address 1", "premises address", "street_address", "street", "address_line_1", "address"],
+    "city": ["location city", "premises city", "city"],
+    "state": ["location state", "premises state", "state"],
+    "zip": ["location zip", "premises zip", "zip5", "zipcode", "zip", "postal_code", "postal"],
+    "lat": ["latitude", "lat"],
+    "lng": ["longitude", "lng", "lon", "long"],
+    "license": ["license number", "license_id", "license_num", "file number", "vpid", "credential", "outlet_id"],
+}
+
+
+def _outlet_colmap(header):
+    low = {h.lower(): h for h in header}
+    cm = {}
+    for field, prefs in _OUTLET_PREF.items():
+        got = None
+        for p in prefs:                       # exact (lower) match first
+            if p in low:
+                got = low[p]; break
+        if not got:
+            for p in prefs:                   # then contains
+                hit = next((h for h in header if p in h.lower()), None)
+                if hit:
+                    got = hit; break
+        if got:
+            cm[field] = got
+    return cm
+
+
+# every store-bearing source → (clean SYSTEM tag). Fuzzy-mapped from each table's own columns.
+_OUTLET_TABLES = [("ca_outlets", "ca-abc"), ("ab_outlets", "va-abc"), ("target_stores", "target"),
+                  ("orlando_merchants", "orlando"), ("doordash_stores", "doordash")]
+
+
 def normalize_outlets(log=print):
-    """src_outlets — pull through EVERY outlet source: the resolved outlet stage (license + census + chain
-    outlets, tagged by _source, with address/geo) AND the retail-observation stores (the price/inventory
-    outlets). Raw keys (source, store_id) + a name mnemonic as the Hoodie outlet code."""
+    """src_outlets — pull an outlet through from EVERY store-bearing source, tagged by SYSTEM: the license /
+    ABC premise tables (CA ~129k, VA), chain-store tables (Target…), on-premise merchants (Orlando, DoorDash),
+    the off-premise PLATFORM retailers (each Shopify / Woo / Wix / Squarespace store is an account), City Hive
+    retailers, the resolved outlet stage, and the retail-observation stores. Each outlet carries raw keys
+    (source, store_id) + a name mnemonic as the Hoodie outlet code. This is the full book of accounts, not
+    just the 3k resolved stage."""
     out = {}
-    FLD = ["source", "store_id", "store_name", "address", "city", "state", "lat", "lng", "phone", "hoodie_outlet"]
+    FLD = ["source", "store_id", "store_name", "address", "city", "state", "zip", "lat", "lng", "phone", "hoodie_outlet"]
+
+    def _num(v):
+        try:
+            f = float(v)
+            return f if f != 0 else None
+        except (TypeError, ValueError):
+            return None
 
     def _put(src, sid, nm, **kw):
+        nm = (nm or "").strip()
+        if not nm and not sid:
+            return
         k = (src, sid or nm)
         if k not in out:
-            out[k] = {"source": src, "store_id": sid, "store_name": nm, "address": kw.get("address") or "",
-                      "city": kw.get("city") or "", "state": kw.get("state") or "", "lat": kw.get("lat"),
-                      "lng": kw.get("lng"), "phone": kw.get("phone") or "",
-                      "hoodie_outlet": H.brand_code(nm or sid)}
-    # 1) the resolved outlet stage — the license / census / chain outlets, tagged by their own source
+            out[k] = {"source": src, "store_id": str(sid or ""), "store_name": nm, "address": kw.get("address") or "",
+                      "city": kw.get("city") or "", "state": kw.get("state") or "", "zip": kw.get("zip") or "",
+                      "lat": _num(kw.get("lat")), "lng": _num(kw.get("lng")), "phone": kw.get("phone") or "",
+                      "hoodie_outlet": H.brand_code(nm or str(sid))}
+
+    # 1) license / ABC / chain / on-premise tables — fuzzy-mapped from each table's own schema
+    for tbl, tag in _OUTLET_TABLES:
+        try:
+            rows = warehouse.query(tbl, "SELECT * FROM t")
+        except Exception:
+            continue
+        if not rows:
+            continue
+        cm = _outlet_colmap(list(rows[0].keys()))
+        g = lambda r, f: (r.get(cm[f]) if cm.get(f) else None)
+        n0 = len(out)
+        for r in rows:
+            _put(tag, g(r, "license") or g(r, "name"), g(r, "name"), address=g(r, "address"), city=g(r, "city"),
+                 state=g(r, "state"), zip=g(r, "zip"), lat=g(r, "lat"), lng=g(r, "lng"))
+        log("  [normalize] outlets %-18s %-10s +%d" % (tbl, tag, len(out) - n0))
+
+    # 2) off-premise PLATFORM retailers — each distinct store (base/domain) is an account, tagged by platform
+    try:
+        for r in warehouse.query("offprem_products",
+                                 "SELECT DISTINCT base, platform, name FROM t WHERE base IS NOT NULL"):
+            plat = (r.get("platform") or "offprem").lower().replace(" stores", "").replace(" ", "-")
+            _put(plat, r["base"], r["base"])          # store identity = its domain
+    except Exception as e:
+        log("  [normalize] offprem stores: %s" % str(e)[:60])
+    # City Hive retailers
+    try:
+        for r in warehouse.query("cityhive_products", "SELECT DISTINCT store, base FROM t WHERE store IS NOT NULL"):
+            _put("cityhive", r.get("store") or r.get("base"), r.get("store") or r.get("base"))
+    except Exception as e:
+        log("  [normalize] cityhive stores: %s" % str(e)[:60])
+
+    # sources already pulled from their raw tables above — don't re-ingest them from the resolved stage or the
+    # observations (same source, two capture paths → double-count). ab/va = ab_outlets; target = target_stores.
+    RAW_TAGS = {tag for _, tag in _OUTLET_TABLES}
+    STAGE_ALIAS = {"ab-outlets": "va-abc", "ab-locator": "va-abc", "ab": "va-abc", "target-stores": "target"}
+
+    # 3) the resolved outlet stage — only sources the raw tables DON'T already cover (Tito's locator, census)
     try:
         for r in warehouse.query("_stage_outlet", "SELECT _source, license_num, source_ref, outlet_name, address, "
-                                 "city, state, lat, lng, phone FROM t WHERE outlet_name IS NOT NULL"):
-            _put(_clean_src(r.get("_source") or "outlet"), str(r.get("license_num") or r.get("source_ref") or ""),
+                                 "city, state, zip5, lat, lng, phone FROM t WHERE outlet_name IS NOT NULL"):
+            tag = _clean_src(r.get("_source") or "outlet")
+            tag = STAGE_ALIAS.get(tag, tag)
+            if tag in RAW_TAGS:
+                continue
+            _put(tag, str(r.get("license_num") or r.get("source_ref") or ""),
                  r.get("outlet_name") or "", address=r.get("address"), city=r.get("city"), state=r.get("state"),
-                 lat=r.get("lat"), lng=r.get("lng"), phone=r.get("phone"))
+                 zip=r.get("zip5"), lat=r.get("lat"), lng=r.get("lng"), phone=r.get("phone"))
     except Exception as e:
         log("  [normalize] _stage_outlet: %s" % str(e)[:60])
-    # 2) retail chain stores from the price/inventory observations
+    # 4) retail chain stores from the price/inventory observations — only sources with no raw table (specs,
+    #    binnys, kroger, abc…); target already came from target_stores with better keys
     try:
         for r in warehouse.query_parts("retail_observations",
                                        'SELECT DISTINCT source, store_id, store FROM t WHERE store_id <> \'\''):
+            if r["source"] in RAW_TAGS:
+                continue
             _put(r["source"], str(r["store_id"] or ""), r.get("store") or "")
     except Exception as e:
         log("  [normalize] observation stores: %s" % str(e)[:60])
+
     warehouse.write_parquet("src_outlets", list(out.values()), FLD)
-    log("[normalize] src_outlets=%d (resolved stage + observation stores)" % len(out))
+    geo = sum(1 for v in out.values() if v["lat"] is not None)
+    log("[normalize] src_outlets=%d (%d geocoded) across all store-bearing sources" % (len(out), geo))
     return {"src_outlets": len(out)}
 
 
