@@ -2064,6 +2064,38 @@ def mwb_merges_ep():
     return jsonify(ok=True, count=len(out), merges=out[:400])
 
 
+@app.get("/api/master/workbench/matches")
+def mwb_matches_ep():
+    """Dedup candidates at EVERY grain — brand / product / item / supplier — that the Hoodie ID mnemonic blocks
+    together (New Amsterdam / New Amsteram; Maker's Mark / Makers Mark), similarity-filtered, confidence + impact
+    ranked. These are the matches ABOVE the SKU: corroboration that holds without an exact SKU match. From
+    wb_matches (rebuilt each cycle); decided groups drop out. ?grain=brand|product|item|supplier filters."""
+    q = (request.args.get("q") or "").strip().lower()
+    grain = (request.args.get("grain") or "").strip().lower()
+    view = _wb_view("wb_matches")
+    if view is None:
+        return jsonify(ok=True, count=0, merges=[], by_grain={}, note="wb_matches not built yet — runs on the next master rebuild")
+    decided = {d.get("cluster_id") for d in _wq("master_decisions", "SELECT cluster_id, action FROM t")
+               if d.get("action") in ("merge", "keep_separate")}
+    out, by_grain = [], {}
+    for r in view:
+        by_grain[r.get("grain")] = by_grain.get(r.get("grain"), 0) + 1
+        if r["merge_id"] in decided:
+            continue
+        if grain and (r.get("grain") or "") != grain:
+            continue
+        if q and q not in (r.get("canonical") or "").lower():
+            continue
+        m = dict(r)
+        try:
+            m["members"] = json.loads(r.get("members") or "[]")
+        except Exception:
+            m["members"] = []
+        out.append(m)
+    out.sort(key=lambda x: (-(x.get("confidence") or 0), -(x.get("total_rows") or 0)))   # surest + highest-impact first
+    return jsonify(ok=True, count=len(out), by_grain=by_grain, merges=out[:400])
+
+
 @app.get("/api/master/workbench/merge-detail/<path:mid>")
 def mwb_merge_detail_ep(mid):
     """Full detail for one merge group — each member SKU enriched with its image / geo / varietal / ABV /
