@@ -32,6 +32,38 @@ def _clean_src(t):
     return t.replace("_products", "").replace("_catalog", "").replace("_pricing", "").replace("_", "-")
 
 
+_ADDR_ABBR = [(r"\bSTREET\b", "ST"), (r"\bAVENUE\b", "AVE"), (r"\bBOULEVARD\b", "BLVD"), (r"\bDRIVE\b", "DR"),
+              (r"\bROAD\b", "RD"), (r"\bLANE\b", "LN"), (r"\bCOURT\b", "CT"), (r"\bHIGHWAY\b", "HWY"),
+              (r"\bPARKWAY\b", "PKWY"), (r"\bNORTH\b", "N"), (r"\bSOUTH\b", "S"), (r"\bEAST\b", "E"), (r"\bWEST\b", "W")]
+
+
+def _clean_addr(a):
+    """Precleanse a street address: uppercase, collapse whitespace, standardize street-type abbreviations, and
+    drop trailing suite/unit lines (a common Census no-match cause). Better geocode match + cleaner dedup."""
+    import re
+    s = re.sub(r"\s+", " ", str(a or "").upper()).strip().strip(",")
+    s = re.sub(r"[,\s]+(STE|SUITE|UNIT|APT|BLDG|#)\s*\S+.*$", "", s).strip()   # drop suite/unit tail
+    for pat, rep in _ADDR_ABBR:
+        s = re.sub(pat, rep, s)
+    return re.sub(r"\s+", " ", s).strip(", ")
+
+
+def _addr_valid(street, city, state, zip_, has_geo=False):
+    """Is this a real, mappable address? geocoded => valid. Otherwise it must be structurally complete:
+    a street WITH a number + a city + (a 2-letter state OR a 5-digit ZIP), and not a placeholder."""
+    if has_geo:
+        return True
+    import re
+    s = str(street or "").strip()
+    if not s or not re.search(r"\d", s) or re.search(r"^(n/?a|none|unknown|null|tbd)$", s, re.I):
+        return False
+    if not str(city or "").strip():
+        return False
+    st = str(state or "").strip()
+    z = re.sub(r"[^0-9]", "", str(zip_ or ""))
+    return bool((len(st) == 2) or (len(z) >= 5))
+
+
 def _addr_key(street, city, state, zip_):
     """Stable key for an address → its geocode. Used by both the geocode runner (populates geocode_cache)
     and normalize (applies the cache), so geocoding is standard + persistent + incremental."""
@@ -131,7 +163,8 @@ def normalize_catalog(log=print):
 # One resolver handles CA/VA license tables, chain-store tables, on-premise merchant tables without per-table code.
 _OUTLET_PREF = {
     "name": ["dba name", "dba", "trade_name", "store_name", "outlet_name", "business_name", "premise_name",
-             "name", "merchant", "store"],
+             "name", "account", "merchant", "store"],
+    "phone": ["phone", "telephone", "phone_number"],
     "owner": ["primary name", "owner name", "primary owner", "primary_owner", "owner", "backer", "licensee"],
     "chain": ["chain", "banner", "parent", "brand_group"],   # explicit chain/banner column when a source has one
     "is_chain": ["is_chain", "ischain"],
@@ -272,7 +305,8 @@ def _license_flags(source, lic):
 # every store-bearing source → (clean SYSTEM tag). Fuzzy-mapped from each table's own columns.
 # ab_outlets = the AB InBev retailer locator (national — where their beer is sold), NOT a state ABC.
 _OUTLET_TABLES = [("ca_outlets", "ca-abc"), ("ab_outlets", "ab-inbev"), ("target_stores", "target"),
-                  ("orlando_merchants", "orlando"), ("doordash_stores", "doordash")]
+                  ("orlando_outlet_hours", "orlando"), ("orlando_merchants", "orlando"),
+                  ("doordash_stores", "doordash")]
 
 
 def normalize_outlets(log=print):
@@ -285,7 +319,7 @@ def normalize_outlets(log=print):
     out = {}
     FLD = ["source", "store_id", "store_name", "chain", "is_chain", "f_beer", "f_wine", "f_spirits", "f_hemp",
            "f_cannabis", "f_rtd_spirits", "flag_basis", "license_conflict", "address", "city", "state", "zip",
-           "lat", "lng", "phone", "hoodie_outlet"]
+           "lat", "lng", "phone", "addr_valid", "hoodie_outlet"]
     # observation/chain sources whose source-tag IS the banner (the store rows are all that chain)
     SOURCE_CHAIN = {"target": "Target", "kroger": "Kroger", "binnys": "Binny's", "specs": "Spec's",
                     "abc": "ABC Fine Wine", "total-wine": "Total Wine", "totalwine": "Total Wine",
@@ -304,6 +338,9 @@ def normalize_outlets(log=print):
             return
         k = (src, sid or nm)
         if k not in out:
+            addr = _clean_addr(kw.get("address"))                          # precleanse the street address
+            city, state, zp = kw.get("city") or "", kw.get("state") or "", kw.get("zip") or ""
+            has_geo = _num(kw.get("lat")) is not None
             chain = _chain_of(nm, kw.get("chain") or SOURCE_CHAIN.get(src))
             # license = the fallback/permitted set (what it's ALLOWED to sell). Products (below) are the ground
             # truth of what it DOES sell and override this; the license is then used only to flag a conflict.
@@ -312,9 +349,9 @@ def normalize_outlets(log=print):
             out[k] = {"source": src, "store_id": str(sid or ""), "store_name": nm, "chain": chain,
                       "is_chain": bool(chain), "f_beer": b, "f_wine": w, "f_spirits": s, "f_hemp": h,
                       "f_cannabis": False, "f_rtd_spirits": False, "flag_basis": basis, "license_conflict": False,
-                      "_lic": (b, w, s) if lic else None, "address": kw.get("address") or "",
-                      "city": kw.get("city") or "", "state": kw.get("state") or "", "zip": kw.get("zip") or "",
+                      "_lic": (b, w, s) if lic else None, "address": addr, "city": city, "state": state, "zip": zp,
                       "lat": _num(kw.get("lat")), "lng": _num(kw.get("lng")), "phone": kw.get("phone") or "",
+                      "addr_valid": _addr_valid(addr, city, state, zp, has_geo),
                       "hoodie_outlet": H.brand_code(nm or str(sid))}
 
     # 1) license / ABC / chain / on-premise tables — fuzzy-mapped from each table's own schema
@@ -332,7 +369,7 @@ def normalize_outlets(log=print):
             nm = (g(r, "name") or "").strip() or (g(r, "owner") or "").strip()   # DBA, else owner/entity
             _put(tag, g(r, "license") or nm, nm, chain=g(r, "chain"), license_type=g(r, "license_type"),
                  address=g(r, "address"), city=g(r, "city"), state=g(r, "state"), zip=g(r, "zip"),
-                 lat=g(r, "lat"), lng=g(r, "lng"))
+                 lat=g(r, "lat"), lng=g(r, "lng"), phone=g(r, "phone"))
         log("  [normalize] outlets %-18s %-10s +%d" % (tbl, tag, len(out) - n0))
 
     # 2) off-premise PLATFORM retailers — each distinct store (base/domain) is an account, tagged by platform
@@ -379,8 +416,37 @@ def normalize_outlets(log=print):
     except Exception as e:
         log("  [normalize] observation stores: %s" % str(e)[:60])
 
-    # 5) geocode — pin any addressed outlet that arrived without coords (CA licenses etc.) from geocode_cache
+    # 5) BACKFILL across sources — the same physical address seen in two sources: one may have geo/phone the
+    #    other lacks. Borrow it (key = cleansed address + zip5), so a store geocoded via one path pins everywhere.
+    import re as _re2
+    groups = {}
+    for o in out.values():
+        if not o["address"]:
+            continue
+        z5 = _re2.sub(r"[^0-9]", "", o["zip"])[:5]
+        groups.setdefault((o["address"], z5), []).append(o)
+    filled = 0
+    for g in groups.values():
+        if len(g) < 2:
+            continue
+        lat = next((x["lat"] for x in g if x["lat"] is not None), None)
+        lng = next((x["lng"] for x in g if x["lat"] is not None), None)
+        phone = next((x["phone"] for x in g if x["phone"]), "")
+        chain = next((x["chain"] for x in g if x["chain"]), "")
+        for x in g:
+            if x["lat"] is None and lat is not None:
+                x["lat"], x["lng"], filled = lat, lng, filled + 1
+            if not x["phone"] and phone:
+                x["phone"] = phone
+            if not x["chain"] and chain:
+                x["chain"], x["is_chain"] = chain, True
+    log("[normalize] backfill: %d outlets borrowed geo from a same-address sibling" % filled)
+    # 6) geocode — pin any addressed outlet that arrived without coords (CA licenses etc.) from geocode_cache
     _apply_geocode(out, log)
+    # re-validate: anything now geocoded (borrowed or cached) is a confirmed valid address
+    for o in out.values():
+        if o["lat"] is not None:
+            o["addr_valid"] = True
     # 6) product-carried flags — an account that CARRIES wine sells wine (Barefoot → wine), even if its license
     #    row didn't say so. OR the categories of everything each store stocks into its flags.
     _apply_product_flags(out, log)
