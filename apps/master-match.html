@@ -408,17 +408,20 @@ function renderDetail(c){
   const v=verdictOf(c.candidates);
   const win=c.candidates.find(x=>x.win)||c.candidates[0];
   const cands=c.candidates.map((cd,i)=>{
+    // #1 = the proposed HOME (its match confidence). Alts = OTHER SKUs of the same product scored by DUPLICATE
+    // likelihood — a high alt means "likely the same sellable unit, merge it", NOT "a better home".
     const gapRow= i===0 && c.candidates[1] ? (()=>{ const g=+(c.candidates[0].conf-c.candidates[1].conf).toFixed(2);
-      return `<div class="gapdiv ${g>=BIG_GAP?'big':'small'}"><span class="gl">${g>=BIG_GAP?'▲ +'+g.toFixed(2)+' gap':(g<0?'▼ '+g.toFixed(2)+' — a stronger match':'≈ +'+g.toFixed(2)+' — near tie')}</span><span class="seg"></span></div>`; })() : "";
+      return `<div class="gapdiv ${g>=BIG_GAP?'big':'small'}"><span class="gl">${g>=BIG_GAP?'▲ +'+g.toFixed(2)+' gap — clear home':(g<0?'▼ a duplicate SKU scores higher — merge it, don’t re-home':'≈ near tie — a likely duplicate')}</span><span class="seg"></span></div>`; })() : "";
+    const dup = !cd.win;   // every alternative is a duplicate candidate, not a competing home
     return `<details class="cand ${cd.win?'win':''}" ${cd.win?'open':''}>
       <summary>
         <span class="rank">#${i+1}</span>
-        <span class="cn"><span class="nm">${esc(cd.name)} <span class="grain ${cd.grain||'sku'}">${cd.grain||'sku'}</span>${cd.win?'<span class="wintag">proposed</span>':''}</span><span class="tb">${esc(cd.table||'')}</span></span>
+        <span class="cn"><span class="nm">${esc(cd.name)} <span class="grain ${cd.grain||'sku'}">${cd.grain||'sku'}</span>${cd.win?'<span class="wintag">proposed home</span>':'<span class="wintag" style="background:var(--panel-2);color:var(--muted)">duplicate?</span>'}</span><span class="tb">${esc(cd.table||'')}</span></span>
         <span class="cbarwrap"><span class="cbar"><i style="width:${Math.round((cd.conf||0)*100)}%"></i><span class="thr" style="left:${HI_CONF*100}%"></span></span></span>
-        <span class="cscore">${(cd.conf||0).toFixed(2)}</span>
+        <span class="cscore" title="${dup?'duplicate likelihood':'home match confidence'}">${(cd.conf||0).toFixed(2)}<span style="display:block;font-size:8px;font-weight:400;color:var(--muted);letter-spacing:.04em">${dup?'dup':'home'}</span></span>
         <button class="skux" data-sku="${esc(cd.cluster_id||cd.id||'')}" title="Expand — all data attached to this SKU">⤢</button>
       </summary>
-      <div class="cjust">${esc(cd.why||"")}<div class="jk">${(cd.keys||[]).map(k=>`<span class="jchip">${esc(k)}</span>`).join("")}</div>${cd.win?"":'<button class="use">Use this match instead →</button>'}</div>
+      <div class="cjust">${esc(cd.why||"")}<div class="jk">${(cd.keys||[]).map(k=>`<span class="jchip">${esc(k)}</span>`).join("")}</div>${cd.win?"":`<button class="use">⋈ Merge — same SKU as this →</button>`}</div>
     </details>${gapRow}`;
   }).join("");
   const roll=c.hierarchy.map(h=>`<div class="rnode ${h.here?'here':''}"><span class="rg">${esc(h.g)}</span><span class="rn">${esc(h.n)}</span><span class="rc">${esc(h.c)}</span></div>`).join("");
@@ -426,7 +429,7 @@ function renderDetail(c){
   const byLabel={match:"Auto",auto:"Auto",claude:"Claude",review:"Analyst",conflict:"Conflict"};
   const recs=c.records.length? c.records.map(r=>`
     <div class="rec ${r.status}">
-      <div class="src"><span class="pill ${byPill[r.status]}"><span class="dot ${byPill[r.status]}"></span>${byLabel[r.status]}</span>
+      <div class="src"><input type="checkbox" class="rsel" data-src="${esc(r.src)}" title="select to split this source out of the cluster"><span class="pill ${byPill[r.status]}"><span class="dot ${byPill[r.status]}"></span>${byLabel[r.status]}</span>
         <span class="srcn">${esc(r.src)}</span><span class="rid">${esc(r.id)}</span><span class="raw">“${esc(r.raw)}”</span></div>
       <div class="ev"><span class="via">via <span class="k">${esc(r.key)}</span></span><span class="conf">${r.conf.toFixed(2)}</span></div>
       <div class="fields">${r.fields.map(f=>`<span class="fchip">${esc(f[0])} <b>${esc(f[1])}</b></span>`).join("")}</div>
@@ -454,7 +457,7 @@ function renderDetail(c){
     <div class="sec"><h3>To resolve <span class="c">${c.flags.length}</span></h3><div class="flags">${flags}</div></div>
     <div class="actions">
       <button class="btn primary act-confirm">✓ Confirm #1 to master</button>
-      <button class="btn" disabled title="coming next">⑃ Split</button>
+      <button class="btn act-split" title="Tick sources under ‘Source catalogs’ that don’t belong, then split them out">⑃ Split off selected</button>
       <button class="btn" disabled title="coming next">⋈ Merge…</button>
       ${escBtn}
       <div class="spacer"></div>
@@ -463,14 +466,20 @@ function renderDetail(c){
   const dnode=$("#detail");
   const cb=dnode.querySelector(".act-confirm"); if(cb) cb.onclick=()=>doAction(c.id,"confirm",null,win.name);
   const eb=dnode.querySelector(".act-escalate"); if(eb) eb.onclick=()=>doAction(c.id,"escalate",upTgt);
+  const sb=dnode.querySelector(".act-split"); if(sb) sb.onclick=()=>{
+    const members=[...dnode.querySelectorAll(".rsel:checked")].map(x=>x.getAttribute("data-src"));
+    if(!members.length){ alert("Tick the sources under ‘Source catalogs’ that don’t belong to this cluster, then Split."); return; }
+    if(!confirm("Split "+members.length+" source"+(members.length>1?"s":"")+" out of this cluster? They'll be re-matched on the next run.")) return;
+    doAction(c.id,"split",null,null,members);
+  };
 }
 
-async function doAction(cid, action, tier, matched_name){
+async function doAction(cid, action, tier, matched_name, members){
   const det=$("#detail");
   det.querySelectorAll(".actions .btn").forEach(b=>b.disabled=true);
   try{
     const r=await (await fetch(API+"/match",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({cluster_id:cid, action, tier:tier||"", matched_name:matched_name||""})})).json();
+      body:JSON.stringify({cluster_id:cid, action, tier:tier||"", matched_name:matched_name||"", members:members||[]})})).json();
     if(!r.ok){ alert(r.error||"action failed"); det.querySelectorAll(".actions .btn").forEach(b=>b.disabled=false); return; }
     boot();   // refresh funnel counts + queue + detail from live state
   }catch(e){ alert("couldn’t reach the matching engine"); det.querySelectorAll(".actions .btn").forEach(b=>b.disabled=false); }
