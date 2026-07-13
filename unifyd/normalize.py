@@ -93,6 +93,8 @@ _OUTLET_PREF = {
     "name": ["dba name", "dba", "trade_name", "store_name", "outlet_name", "business_name", "premise_name",
              "name", "merchant", "store"],
     "owner": ["primary name", "owner name", "primary owner", "primary_owner", "owner", "backer", "licensee"],
+    "chain": ["chain", "banner", "parent", "brand_group"],   # explicit chain/banner column when a source has one
+    "is_chain": ["is_chain", "ischain"],
     "address": ["prem addr 1", "location address 1", "premises address", "street_address", "street",
                 "address_line_1", "address"],
     "city": ["prem city", "location city", "premises city", "city"],
@@ -122,6 +124,37 @@ def _outlet_colmap(header):
     return cm
 
 
+# CHAIN / banner grouping — the high-value signal (is this outlet part of a chain?). Explicit chain columns win;
+# otherwise derive the banner from the store name against the major US bev-alc / grocery / convenience chains.
+# User directive: "especially anything that identifies if the outlet is part of a chain grouping, in any site".
+import re as _re
+_CHAINS = [(n, _re.compile(p, _re.I)) for n, p in [
+    ("7-Eleven", r"\b7[\s-]?eleven\b|\b7-?11\b"), ("Circle K", r"circle\s?k"), ("Speedway", r"speedway"),
+    ("Wawa", r"\bwawa\b"), ("QuikTrip", r"quiktrip|\bqt\b"), ("Casey's", r"casey'?s"), ("Sheetz", r"sheetz"),
+    ("Kum & Go", r"kum\s?&?\s?go"), ("Murphy", r"murphy\s?(usa|express)"), ("RaceTrac", r"racetrac"),
+    ("CVS", r"\bcvs\b"), ("Walgreens", r"walgreen"), ("Rite Aid", r"rite\s?aid"), ("Walmart", r"wal[\s-]?mart"),
+    ("Target", r"\btarget\b"), ("Costco", r"costco"), ("Sam's Club", r"sam'?s\s?club"), ("BJ's", r"bj'?s\s?whole"),
+    ("Kroger", r"kroger"), ("Albertsons", r"albertsons"), ("Safeway", r"safeway"), ("Publix", r"publix"),
+    ("Whole Foods", r"whole\s?foods"), ("Trader Joe's", r"trader\s?joe"), ("Meijer", r"meijer"),
+    ("H-E-B", r"\bh[\s-]?e[\s-]?b\b"), ("Food Lion", r"food\s?lion"), ("Giant", r"\bgiant\b"),
+    ("Stop & Shop", r"stop\s?&?\s?shop"), ("Total Wine", r"total\s?wine"), ("BevMo", r"bevmo"),
+    ("Binny's", r"binny'?s"), ("Spec's", r"spec'?s"), ("ABC Fine Wine", r"abc\s?fine\s?wine"),
+    ("Dollar General", r"dollar\s?general"), ("Family Dollar", r"family\s?dollar"), ("Aldi", r"\baldi\b"),
+    ("Costco", r"costco"), ("Gopuff", r"gopuff"), ("ampm", r"\bampm\b"), ("Chevron", r"chevron"),
+    ("Shell", r"\bshell\b"), ("Exxon", r"exxon"), ("Marathon", r"marathon\s?(gas|petrol|#)")]]
+
+
+def _chain_of(name, explicit=None):
+    """Return the chain/banner grouping for an outlet — explicit column wins, else derive from the name."""
+    if explicit and str(explicit).strip() and str(explicit).strip().lower() not in ("none", "null", "false", "0"):
+        return str(explicit).strip()
+    n = name or ""
+    for cn, rx in _CHAINS:
+        if rx.search(n):
+            return cn
+    return ""
+
+
 # every store-bearing source → (clean SYSTEM tag). Fuzzy-mapped from each table's own columns.
 # ab_outlets = the AB InBev retailer locator (national — where their beer is sold), NOT a state ABC.
 _OUTLET_TABLES = [("ca_outlets", "ca-abc"), ("ab_outlets", "ab-inbev"), ("target_stores", "target"),
@@ -136,7 +169,12 @@ def normalize_outlets(log=print):
     (source, store_id) + a name mnemonic as the Hoodie outlet code. This is the full book of accounts, not
     just the 3k resolved stage."""
     out = {}
-    FLD = ["source", "store_id", "store_name", "address", "city", "state", "zip", "lat", "lng", "phone", "hoodie_outlet"]
+    FLD = ["source", "store_id", "store_name", "chain", "is_chain", "address", "city", "state", "zip",
+           "lat", "lng", "phone", "hoodie_outlet"]
+    # observation/chain sources whose source-tag IS the banner (the store rows are all that chain)
+    SOURCE_CHAIN = {"target": "Target", "kroger": "Kroger", "binnys": "Binny's", "specs": "Spec's",
+                    "abc": "ABC Fine Wine", "total-wine": "Total Wine", "totalwine": "Total Wine",
+                    "albertsons": "Albertsons", "circlek": "Circle K", "cvs": "CVS", "publix": "Publix"}
 
     def _num(v):
         try:
@@ -151,9 +189,11 @@ def normalize_outlets(log=print):
             return
         k = (src, sid or nm)
         if k not in out:
-            out[k] = {"source": src, "store_id": str(sid or ""), "store_name": nm, "address": kw.get("address") or "",
-                      "city": kw.get("city") or "", "state": kw.get("state") or "", "zip": kw.get("zip") or "",
-                      "lat": _num(kw.get("lat")), "lng": _num(kw.get("lng")), "phone": kw.get("phone") or "",
+            chain = _chain_of(nm, kw.get("chain") or SOURCE_CHAIN.get(src))
+            out[k] = {"source": src, "store_id": str(sid or ""), "store_name": nm, "chain": chain,
+                      "is_chain": bool(chain), "address": kw.get("address") or "", "city": kw.get("city") or "",
+                      "state": kw.get("state") or "", "zip": kw.get("zip") or "", "lat": _num(kw.get("lat")),
+                      "lng": _num(kw.get("lng")), "phone": kw.get("phone") or "",
                       "hoodie_outlet": H.brand_code(nm or str(sid))}
 
     # 1) license / ABC / chain / on-premise tables — fuzzy-mapped from each table's own schema
@@ -169,7 +209,7 @@ def normalize_outlets(log=print):
         n0 = len(out)
         for r in rows:
             nm = (g(r, "name") or "").strip() or (g(r, "owner") or "").strip()   # DBA, else owner/entity
-            _put(tag, g(r, "license") or nm, nm, address=g(r, "address"), city=g(r, "city"),
+            _put(tag, g(r, "license") or nm, nm, chain=g(r, "chain"), address=g(r, "address"), city=g(r, "city"),
                  state=g(r, "state"), zip=g(r, "zip"), lat=g(r, "lat"), lng=g(r, "lng"))
         log("  [normalize] outlets %-18s %-10s +%d" % (tbl, tag, len(out) - n0))
 

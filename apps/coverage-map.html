@@ -180,7 +180,7 @@ async function loadAccounts(filter){
   box.innerHTML=acc.map((a,i)=>
     '<div class="acc" data-i="'+i+'"><div class="nm">'+esc(a.store_name||'(unnamed)')+'</div>'
     +'<div class="sub"><span class="dot" style="background:'+colOf(a.source)+'"></span>'+esc(a.source)
-    +(a.city?(' · '+esc(a.city)):'')+(a.state?(' '+esc(a.state)):'')+(a.lat!=null?' · 📍':'')+'</div></div>').join('')
+    +(a.chain?(' · 🔗'+esc(a.chain)):'')+(a.city?(' · '+esc(a.city)):'')+(a.state?(' '+esc(a.state)):'')+(a.lat!=null?' · 📍':'')+'</div></div>').join('')
     +(d.count>=400?'<div class="acc"><div class="none">showing first 400</div></div>':'');
   box.querySelectorAll('.acc[data-i]').forEach(el=>el.onclick=()=>{
     box.querySelectorAll('.acc').forEach(x=>x.classList.remove('on')); el.classList.add('on');
@@ -192,7 +192,7 @@ function clearList(){ listReq++; document.getElementById('acctitle').textContent
 document.getElementById('accclr').onclick=clearList;
 function showDetail(a){
   const el=document.getElementById('detail');
-  const rows=[['source',a.source,'mono'],['hoodie id',a.hoodie_outlet,'mono'],['store id',a.store_id,'mono'],
+  const rows=[['source',a.source,'mono'],['chain',a.chain],['hoodie id',a.hoodie_outlet,'mono'],['store id',a.store_id,'mono'],
     ['address',[a.address,a.city,[a.state,a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')],
     ['phone',a.phone],['geo',(a.lat!=null&&a.lng!=null)?(a.lat+', '+a.lng):null,'mono']]
     .filter(r=>r[1]!=null&&String(r[1]).trim()!=='');
