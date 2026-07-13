@@ -103,6 +103,29 @@ def normalize_facts(log=print):
     return n
 
 
+def corroboration(log=print):
+    """Per grain: records, distinct entities (by Hoodie mnemonic), and how many are CORROBORATED (seen by >=2
+    sources) — the tagged multi-source match, computed WITHOUT any exact-key join. Lands src_summary."""
+    con = warehouse.connect()
+    out = []
+    for grain, tbl, idc in [("brand", "src_brands", "hoodie_brand"), ("product", "src_products", "hoodie_product"),
+                            ("item", "src_items", "hoodie_item"), ("sku", "src_skus", "hoodie_sku"),
+                            ("outlet", "src_outlets", "hoodie_outlet")]:
+        try:
+            r = con.execute("WITH g AS (SELECT %s k, count(*) recs, count(DISTINCT source) ns "
+                            "FROM read_parquet('%s') GROUP BY %s) "
+                            "SELECT sum(recs), count(*), count(*) FILTER (WHERE ns>=2) FROM g"
+                            % (idc, warehouse.uri(tbl), idc)).fetchone()
+            out.append({"grain": grain, "table": tbl, "records": r[0] or 0, "entities": r[1] or 0,
+                        "corroborated": r[2] or 0})
+        except Exception as e:
+            log("  [normalize] corr %s: %s" % (grain, str(e)[:45]))
+    warehouse.write_parquet("src_summary", out, ["grain", "table", "records", "entities", "corroborated"])
+    log("[normalize] corroboration -> src_summary: %s"
+        % {o["grain"]: "%d/%d corr" % (o["corroborated"], o["entities"]) for o in out})
+    return out
+
+
 def build(catalog=True, outlets=True, facts=True, log=print):
     out = {}
     if catalog:
@@ -111,6 +134,8 @@ def build(catalog=True, outlets=True, facts=True, log=print):
         out.update(normalize_outlets(log))
     if facts:
         out.update(normalize_facts(log))
+    if catalog or outlets:
+        corroboration(log)
     log("[normalize] DONE: %s" % out)
     return out
 
