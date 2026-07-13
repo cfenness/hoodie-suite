@@ -17,6 +17,7 @@
   .lbl.ent .pk{display:block;font-family:var(--mono);font-weight:500;font-size:8.5px;letter-spacing:.02em;color:#d9b03f;margin-top:1px;opacity:.92}
   .lbl.planned{color:#6f938a}
   .lbl.dim{opacity:.1}
+  .lbl.hush{display:none}   /* source labels hidden until their family is focused — declutters the field */
   .clbl{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;pointer-events:auto;cursor:pointer;white-space:nowrap;text-shadow:0 1px 6px rgba(0,0,0,.92),0 0 2px rgba(0,0,0,.9);opacity:.94;transition:opacity .3s}
   .clbl b{font-weight:700;opacity:.62;margin-left:4px}
   .clbl:hover{opacity:1}
@@ -267,17 +268,19 @@ function layoutClusters3D(nodes){
   // family is its own compact fibonacci ball, and the arc places their CENTERS ~R·(arc/N) apart, far larger
   // than any ball, so balls AND their labels stay clear. Ordered by the entity they feed (hierarchy reading);
   // fly into a ball to read its sources. Compact balls (small radius) keep families distinct at any count.
-  const prOf=c=>15+Math.sqrt(groups[c.key].nodes.length)*5.2;       // bigger balls so members spread, not cram
+  // ball radius grows with member count but is CAPPED so a big family (Inventory/Pricing) doesn't become a
+  // giant off-screen sphere — members pack denser instead. Cap keeps every ball enterable + on-screen.
+  const prOf=c=>Math.min(46, 12+Math.sqrt(groups[c.key].nodes.length)*3.4);
   const slots=order.slice().sort((a,b)=>((ENT_POS[a.key]?ENT_POS[a.key].x:9)-(ENT_POS[b.key]?ENT_POS[b.key].x:9)));
   const N=slots.length;
-  // SCALE the ring with how much it must hold: wider arc + larger radius as more families / larger balls appear,
-  // so the model GROWS to fit the feeds instead of cramming them. Radius guarantees center-spacing > ball size.
+  // arc radius scales gently with family count (capped) so centers stay >2 ball-widths apart without flinging
+  // balls beyond the view. maxBall*2 guarantees no two balls touch.
   const maxBall=Math.max(28,...slots.map(prOf));
-  const R=Math.max(300, 240 + N*26 + maxBall*1.6), SPAN=Math.PI*1.28;   // grow with family count
+  const R=Math.min(560, Math.max(260, 190 + N*14 + maxBall*2)), SPAN=Math.PI*1.2;
   slots.forEach((cdef,si)=>{
     const g=groups[cdef.key], M=g.nodes.length, pr=prOf(cdef);
     const f=(N>1? si/(N-1) : 0.5), ang=-SPAN/2 + f*SPAN;            // even spread across the arc
-    const center=new THREE.Vector3(Math.sin(ang)*R, -64, -30 - Math.cos(ang)*R*0.5);
+    const center=new THREE.Vector3(Math.sin(ang)*R, -60, -30 - Math.cos(ang)*R*0.5);
     g.nodes.forEach((n,j)=>{
       const y2=1-(j+0.5)/M*2, r2=Math.sqrt(Math.max(0,1-y2*y2)), t2=j*2.399963;
       n.pos=center.clone().add(new THREE.Vector3(Math.cos(t2)*r2, y2, Math.sin(t2)*r2).multiplyScalar(pr*Math.cbrt((j+0.5)/M)));
@@ -374,6 +377,11 @@ function buildModel(live){
     const cleanTag=k=>k.replace(/_products$|_catalog$|_pricing$/,'').replace(/_/g,'-');
     Object.entries(live.datasets||{}).forEach(([k,v])=>{
       if(k==='offprem_products' || covered.has(cleanTag(k))) return;   // already a system feed
+      // per-metro discovery tables (orlando_offprem_census, phoenix_offprem_products…) are the raw scrape
+      // artifacts behind the Shopify/Woo systems — don't re-add them as their own nodes (that's the cram).
+      // Keep only NATIONAL reference (census_reference / census_acs) + real standalone datasets.
+      if(/offprem/i.test(k)) return;
+      if(/_census$/i.test(k) && !/^census_/i.test(k)) return;
       const cols=(v&&v.header)||[]; const rows=(v&&(v.total||(v.rows&&v.rows.length)))||'';
       addSource('d:'+k, dsName(k), 'data', 'owned dataset'+(rows?(' · '+rows+' rows'):''), cols, k, true, k);
     });
@@ -464,7 +472,7 @@ function buildGraph(model){
     const col=ent?0x3fb8a3:new THREE.Color(STCOL[n.status]||(n.live?0x5bb86e:0x5f7a72)).getHex();
     const mat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:ent?.5:(n.live?.3:.12),roughness:.5,metalness:.1,transparent:true,opacity:1,flatShading:!ent});
     const m=new THREE.Mesh(ent?esph:soct,mat); m.scale.setScalar(ent?7.6:(n.live?4.9:3.8)); m.position.copy(n.pos); m.userData=n; graph.add(m); n.mesh=m; n.mat=mat;
-    const d=document.createElement('div'); d.className='lbl'+(ent?' ent':(n.live?'':' planned'));
+    const d=document.createElement('div'); d.className='lbl'+(ent?' ent':(' hush'+(n.live?'':' planned')));
     if(ent){ const meta=ENTMETA[n.id]; d.innerHTML='<span class="en">'+n.label+'</span>'+(meta?'<span class="pk">🔑 '+meta.pk+'</span>':''); }
     else d.textContent=n.label;
     // label offset is in the mesh's LOCAL space (scaled by setScalar above), so keep it just
@@ -513,11 +521,11 @@ function setFocus(n){
   selected=n;
   if(window.__efSync) window.__efSync(n?(n.kind==='ent'?n.id:' '):'');   // sync the entity-filter chips
 
-  if(!n){ nodes.forEach(x=>{x.mat.opacity=1;x.lo.classList.remove('dim');x.mesh.scale.setScalar(x.kind==='ent'?7.6:(x.live?4.9:3.8));}); edges.forEach(e=>{e.mat.opacity=.32; if(e.badge)e.badge.classList.remove('dim');}); clusterLabels.forEach(o=>o.element.classList.remove('dim')); selEl.classList.remove('show');
+  if(!n){ nodes.forEach(x=>{x.mat.opacity=1;x.lo.classList.remove('dim');if(x.kind==='src')x.lo.classList.add('hush');x.mesh.scale.setScalar(x.kind==='ent'?7.6:(x.live?4.9:3.8));}); edges.forEach(e=>{e.mat.opacity=.32; if(e.badge)e.badge.classList.remove('dim');}); clusterLabels.forEach(o=>o.element.classList.remove('dim')); selEl.classList.remove('show');
     if(homeT){ const off=camera.position.clone().sub(controls.target); fly={toT:homeT.clone(),toC:homeT.clone().add(off),t:0,fromT:controls.target.clone(),fromC:camera.position.clone()}; }  // re-center the pivot
     return; }
   const keep=new Set([n.id,...adj[n.id]]);
-  nodes.forEach(x=>{ const on=keep.has(x.id); x.mat.opacity=on?1:.05; x.lo.classList.toggle('dim',!on); x.mesh.scale.setScalar((x.kind==='ent'?7.6:(x.live?4.9:3.8))*(x.id===n.id?1.35:1)); });
+  nodes.forEach(x=>{ const on=keep.has(x.id); x.mat.opacity=on?1:.05; x.lo.classList.toggle('dim',!on); if(x.kind==='src')x.lo.classList.toggle('hush',!on); x.mesh.scale.setScalar((x.kind==='ent'?7.6:(x.live?4.9:3.8))*(x.id===n.id?1.35:1)); });
   edges.forEach(e=>{ const on=(e.a===n.id||e.b===n.id); e.mat.opacity=on?.92:.02; if(e.badge)e.badge.classList.toggle('dim',!on); });
   clusterLabels.forEach(o=>o.element.classList.toggle('dim', o.userData.cl.key!==n._ck));
   showSel(n); flyTo(n);
@@ -528,7 +536,7 @@ function focusCluster(cl){
   selected=null; if(window.__efSync) window.__efSync(' ');
   const ids=new Set(cl.nodes.map(n=>n.id));
   edges.forEach(e=>{ if(ids.has(e.a)&&byId[e.b].kind==='ent')ids.add(e.b); if(ids.has(e.b)&&byId[e.a].kind==='ent')ids.add(e.a); });
-  nodes.forEach(x=>{ const on=ids.has(x.id); x.mat.opacity=on?1:.04; x.lo.classList.toggle('dim',!on); x.mesh.scale.setScalar(x.kind==='ent'?7.6:(x.live?4.9:3.8)); });
+  nodes.forEach(x=>{ const on=ids.has(x.id); x.mat.opacity=on?1:.04; x.lo.classList.toggle('dim',!on); if(x.kind==='src')x.lo.classList.toggle('hush',!on); x.mesh.scale.setScalar(x.kind==='ent'?7.6:(x.live?4.9:3.8)); });
   edges.forEach(e=>{ const on=ids.has(e.a)&&ids.has(e.b); e.mat.opacity=on?.85:.02; if(e.badge)e.badge.classList.toggle('dim',!on); });
   clusterLabels.forEach(o=>o.element.classList.toggle('dim', o.userData.cl.key!==cl.key));
   // fly INTO the ball — camera lands just inside the fibonacci shell, pivot at the center, so you read the
