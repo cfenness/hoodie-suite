@@ -65,9 +65,9 @@ def main():
         step("chains", lambda: importlib.import_module("chains").build())
     if want("snapshots"):
         step("snapshots", lambda: importlib.import_module("snapshot_land").land_all())
-    if want("walmart"):
+    if want("walmart"):     # DIRECT (mobile-UA past PerimeterX, __NEXT_DATA__) — $0, no Bright Data
         step("walmart", lambda: subprocess.run(
-            [sys.executable, os.path.join(_ROOT, "walmart_scraper.py"), "--per", "3", "--note", "run_all"], check=False))
+            [sys.executable, os.path.join(_ROOT, "walmart_direct.py"), "--max-pages", "4"], check=False))
     if want("kroger"):
         step("kroger", lambda: subprocess.run(
             [sys.executable, os.path.join(_ROOT, "kroger_api.py")], check=False))
