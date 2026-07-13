@@ -333,13 +333,13 @@ async function boot(){
 }
 
 function currentRows(){
-  const t=FILT.q.trim().toLowerCase();
+  // NB: text search (FILT.q) is done SERVER-side now (searchStubs), across the whole set incl. by source —
+  // so don't re-filter by name here (that would drop source-matched items like total-wine).
   return STUBS.filter(s=>{
     if(FILT.stage!=="all" && FILT.stage!=="candidates" && s.stage!==FILT.stage) return false;
     if(FILT.facet==="ambiguous" && !s.ambiguous) return false;
     if(FILT.facet==="corroborated" && !s.corroborated) return false;
     if(FILT.facet==="noupc" && !s.noupc) return false;
-    if(t && !(s.name.toLowerCase().includes(t) || s.note.toLowerCase().includes(t) || s.brand.toLowerCase().includes(t))) return false;
     return true;
   });
 }
@@ -493,7 +493,21 @@ document.querySelectorAll("#tabs .tab").forEach(t=>t.onclick=()=>{
   document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.remove("on")); t.classList.add("on");
   FILT.facet=t.dataset.f; renderQueue();
 });
-$(".search").addEventListener("input", e=>{ FILT.q=e.target.value; renderQueue(); });
+// server-side search — re-fetch the queue + master filtered by q across the WHOLE set (not just the loaded
+// page), so items that sort past the first page or come from a specific source (e.g. total-wine) are found.
+let _sT=null;
+async function searchStubs(q){
+  try{
+    const qs=q?("?q="+encodeURIComponent(q)):"";
+    const [rv,ms]=await Promise.all([fetch(API+"/review"+qs).then(r=>r.json()), fetch(API+"/master"+qs).then(r=>r.json())]);
+    const stubs=[];
+    (rv.items||[]).forEach(r=>stubs.push(stubFrom(r, r.review_tier || "analyst")));
+    (ms.items||[]).forEach(r=>stubs.push(stubFrom(r, r.matched_by==="claude"?"claude":(r.matched_by==="manual"?"confirmed":"auto"))));
+    STUBS=stubs; renderQueue();
+  }catch(e){ renderQueue(); }
+}
+$(".search").addEventListener("input", e=>{ FILT.q=e.target.value; clearTimeout(_sT);
+  _sT=setTimeout(()=>searchStubs(FILT.q.trim()), FILT.q.trim().length?260:0); });
 $("#theme").onclick=()=>{ const r=document.documentElement;
   const cur=r.getAttribute("data-theme")||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");
   r.setAttribute("data-theme", cur==="dark"?"light":"dark"); };

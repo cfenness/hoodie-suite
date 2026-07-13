@@ -1875,6 +1875,34 @@ def _wb_view_stub(r):
             "upc": (r.get("upc") or None), "size_ml": r.get("size_ml")}
 
 
+_JOIN_SERVER = ("SELECT s.sku_key, s.item_key, i.product_key, b.brand, p.product_name, i.size_ml, i.container, "
+                "s.pack, s.upc, s.sources, s.source_list, s.source_rows "
+                "FROM read_parquet('%s') s LEFT JOIN read_parquet('%s') i ON s.item_key = i.item_key "
+                "LEFT JOIN read_parquet('%s') p ON i.product_key = p.product_key "
+                "LEFT JOIN read_parquet('%s') b ON p.brand_key = b.brand_key ")
+
+
+def _wb_search(q, single_source, limit=400):
+    """Search the FULL master (dim_sku join, ~1M) by name / brand / source — so a query finds items that sort
+    past the capped wb_ views (e.g. a low-volume Total Wine SKU). single_source True → analyst queue else master."""
+    import warehouse
+    con = warehouse.connect()
+    p = {t: warehouse.uri(t).strip("'") for t in ("dim_sku", "dim_item", "dim_product", "dim_brand")}
+    like = "%" + q.replace(" ", "%") + "%"
+    scond = "s.sources = 1" if single_source else "s.sources >= 2"
+    sql = (_JOIN_SERVER % (p["dim_sku"], p["dim_item"], p["dim_product"], p["dim_brand"])
+           + "WHERE %s AND (lower(p.product_name) LIKE ? OR lower(b.brand) LIKE ? OR "
+             "replace(lower(array_to_string(s.source_list, ' ')), '_', ' ') LIKE ?) "
+             "ORDER BY s.source_rows DESC LIMIT %d" % (scond, limit))
+    try:
+        cur = con.execute(sql, [like, like, like])
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception as e:
+        app.logger.warning("wb_search: %s", e)
+        return []
+
+
 @app.get("/api/master/workbench/master")
 def mwb_master_ep():
     q = (request.args.get("q") or "").strip().lower()
@@ -1882,7 +1910,11 @@ def mwb_master_ep():
     # the trustworthy master = SKUs corroborated by 2+ independent sources (the same SKU seen across sources).
     # Prefer the pre-computed wb_master view (tiny, names pre-joined); fall back to the live scan if not built yet.
     view = _wb_view("wb_master")
-    if view is not None:
+    if q and view is not None:              # search the FULL master (past the cap), not just the loaded view
+        rows, stub = _wb_search(q, single_source=False, limit=600), _wb_view_stub
+        if src:
+            rows = [r for r in rows if src in (r.get("source_list") or [])]
+    elif view is not None:
         rows, stub = view[:600], _wb_view_stub
     else:
         brands, prodmap, itemmap = _wb_maps()
@@ -2016,8 +2048,11 @@ def mwb_candidates_ep(cid):
 def mwb_review_ep():
     # analyst queue = single-source SKUs (in only one catalog) — need an independent source to corroborate
     # before they're fully trusted. Highest source_rows first (most-seen singletons first). Prefer wb_queue.
+    q = (request.args.get("q") or "").strip().lower()
     view = _wb_view("wb_queue")
-    if view is not None:
+    if q and view is not None:              # search the FULL queue (past the cap) so "total wine" finds items
+        rows, stub = _wb_search(q, single_source=True, limit=400), _wb_view_stub
+    elif view is not None:
         rows, stub = view[:400], _wb_view_stub
     else:
         brands, prodmap, itemmap = _wb_maps()
