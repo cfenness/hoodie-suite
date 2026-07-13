@@ -103,51 +103,97 @@ def build_merges(con, log=print):
     return len(out)
 
 
-def build_brand_merges(con, log=print):
-    """Brand-dedup candidates via the Hoodie ID mnemonic as a BLOCKING key, then an in-block similarity filter.
-    The 6-char brand mnemonic collapses spelling/punctuation/typo variants (Savannah Chanele / Savahhah-Chanelle
-    / Savannah Chanelle -> SAVCHA); within each block we keep only members that actually match the anchor
-    (SequenceMatcher >= .82) so a coincidental co-mnemonic (Savary Chablis) doesn't get merged. This is the
-    matching the exact-hash key can't do — near-duplicate BRANDS. -> wb_brand_merges (impact-ranked)."""
+def _grain_merges(grain, rows, name_of, block_of, thresh=0.82):
+    """Generic mnemonic-blocked dedup for one grain: block, then keep in-block members matching the anchor
+    (SequenceMatcher >= thresh). Returns candidate groups. `rows` carry key/name/source_rows/sources/hoodie_id."""
     import collections
     import difflib
     import re
-    import hoodie_ids
 
     def _n(s):
         return re.sub(r"[^a-z0-9]", "", (s or "").lower())
-    rows = warehouse.query("dim_brand", "SELECT brand_key, brand, source_rows, sources, hoodie_id FROM t "
-                           "WHERE brand IS NOT NULL AND brand <> ''")
     blocks = collections.defaultdict(list)
     for r in rows:
-        blocks[hoodie_ids.brand_code(r["brand"])].append(r)
+        b = block_of(r)
+        if b:
+            blocks[b].append(r)
     out = []
     for code, mem in blocks.items():
         if len(mem) < 2:
             continue
         mem.sort(key=lambda r: -(r["source_rows"] or 0))                 # anchor = most-corroborated spelling
         anchor = mem[0]
-        an = _n(anchor["brand"])
+        an = _n(name_of(anchor))
         grp, sims = [anchor], []
         for m in mem[1:]:
-            s = difflib.SequenceMatcher(None, an, _n(m["brand"])).ratio()
-            if s >= 0.82:
+            s = difflib.SequenceMatcher(None, an, _n(name_of(m))).ratio()
+            if s >= thresh:
                 grp.append(m); sims.append(s)
         if len(grp) < 2:
             continue
-        members = [{"brand_key": g["brand_key"], "brand": g["brand"], "hoodie_id": g.get("hoodie_id") or "",
+        members = [{"key": g["key"], "name": name_of(g), "hoodie_id": g.get("hoodie_id") or "",
                     "source_rows": g["source_rows"] or 0, "sources": g["sources"] or 0} for g in grp]
-        out.append({"merge_id": "brand|" + code, "block": code, "canonical": anchor["brand"],
-                    "n_brands": len(grp), "total_rows": sum(m["source_rows"] for m in members),
-                    "confidence": round(min(sims), 2),
-                    "reason": "%d brand spellings share mnemonic %s and match the canonical" % (len(grp), code),
+        out.append({"grain": grain, "merge_id": "%s|%s" % (grain, code), "block": code,
+                    "canonical": name_of(anchor), "n": len(grp),
+                    "total_rows": sum(m["source_rows"] for m in members), "confidence": round(min(sims), 2),
+                    "reason": "%d %s spellings share mnemonic %s and match the canonical" % (len(grp), grain, code),
                     "members": json.dumps(members)})
     out.sort(key=lambda x: -x["total_rows"])
-    out = out[:CAP]
-    warehouse.write_parquet("wb_brand_merges", out,
-                            fields=["merge_id", "block", "canonical", "n_brands", "total_rows",
+    return out[:CAP]
+
+
+def build_brand_merges(con, log=print):
+    """Dedup candidates at EVERY grain — brand, product, item, supplier — via the Hoodie ID mnemonic as a
+    BLOCKING key. Corroboration lives above the SKU: two sources often agree on the brand/product/item without
+    an exact SKU match, and near-duplicate names (New Amsterdam / New Amsteram) never sku-match at all. Blocking
+    by the nested ID prefix (brand [:6], product [:9], item [:13]) + a similarity filter surfaces those merges
+    at each level. -> wb_matches (grain-tagged, impact-ranked). (Name kept for the build() caller.)"""
+    import hoodie_ids
+    q = warehouse.query
+    out = []
+    # BRAND
+    out += _grain_merges("brand",
+                         [{"key": r["brand_key"], "brand": r["brand"], **r} for r in
+                          q("dim_brand", "SELECT brand_key, brand, source_rows, sources, hoodie_id FROM t "
+                                         "WHERE brand IS NOT NULL AND brand <> ''")],
+                         lambda r: r["brand"], lambda r: hoodie_ids.brand_code(r["brand"]))
+    # PRODUCT — block by the RAW brand+product mnemonic (recomputed; the stamped id is disambiguated-unique so
+    # it never collides). Near-name products of the same brand block together, then similarity-filtered.
+    dp = warehouse.uri("dim_product"); db = warehouse.uri("dim_brand"); di = warehouse.uri("dim_item")
+    out += _grain_merges("product",
+                         [{"key": r["product_key"], **r} for r in
+                          q("dim_product", "SELECT p.product_key, p.product_name, p.source_rows, p.sources, "
+                            "p.hoodie_id, b.brand FROM read_parquet('%s') p LEFT JOIN read_parquet('%s') b "
+                            "ON p.brand_key=b.brand_key WHERE p.product_name IS NOT NULL AND p.product_name <> ''"
+                            % (dp, db))],
+                         lambda r: r["product_name"],
+                         lambda r: hoodie_ids.brand_code(r.get("brand") or "") + hoodie_ids.product_code(r["product_name"], r.get("brand") or ""))
+    # ITEM — block by brand+product+container+size mnemonic; name = product_name + size
+    out += _grain_merges("item",
+                         [{"key": r["item_key"], **r} for r in
+                          q("dim_item", "SELECT i.item_key, i.size_ml, i.container, i.hoodie_id, i.source_rows, "
+                            "i.sources, p.product_name, b.brand FROM read_parquet('%s') i "
+                            "LEFT JOIN read_parquet('%s') p ON i.product_key=p.product_key "
+                            "LEFT JOIN read_parquet('%s') b ON p.brand_key=b.brand_key "
+                            "WHERE p.product_name IS NOT NULL AND p.product_name <> ''" % (di, dp, db))],
+                         lambda r: "%s %s" % (r.get("product_name") or "", r.get("size_ml") or ""),
+                         lambda r: (hoodie_ids.brand_code(r.get("brand") or "") + hoodie_ids.product_code(r.get("product_name") or "", r.get("brand") or "")
+                                    + hoodie_ids.container_code(r.get("container")) + hoodie_ids.size_code(r.get("size_ml"))))
+    # SUPPLIER — empty until supplier data lands; the path is ready
+    try:
+        out += _grain_merges("supplier",
+                             [{"key": r["supplier_key"], **r} for r in
+                              q("dim_supplier", "SELECT supplier_key, supplier_name, source_rows, sources, "
+                                                "hoodie_id FROM t WHERE supplier_name IS NOT NULL")],
+                             lambda r: r["supplier_name"], lambda r: hoodie_ids.brand_code(r["supplier_name"]))
+    except Exception:
+        pass
+    warehouse.write_parquet("wb_matches", out,
+                            fields=["grain", "merge_id", "block", "canonical", "n", "total_rows",
                                     "confidence", "reason", "members"])
-    log("[wb_views] wb_brand_merges=%d brand-dedup candidate groups (mnemonic-blocked)" % len(out))
+    from collections import Counter
+    bg = Counter(r["grain"] for r in out)
+    log("[wb_views] wb_matches=%d dedup candidate groups %s (mnemonic-blocked, all grains)" % (len(out), dict(bg)))
     return len(out)
 
 
@@ -185,13 +231,13 @@ def build(log=print):
                                     "ttb_corr", "ttb_total"])
     merges = build_merges(con, log=log)
     try:
-        bmerges = build_brand_merges(con, log=log)         # mnemonic-blocked brand dedup (needs dim_brand.hoodie_id)
+        matches = build_brand_merges(con, log=log)         # mnemonic-blocked dedup at brand/product/item/supplier
     except Exception as e:
-        bmerges = 0; log("[wb_views] wb_brand_merges skipped: %s" % str(e)[:80])
-    log("[wb_views] wb_master=%d · wb_queue=%d (cap %d) · total=%d multi=%d · wb_merges=%d · wb_brand_merges=%d"
-        % (len(master), len(queue), CAP, agg["total"], agg["multi"] or 0, merges, bmerges))
+        matches = 0; log("[wb_views] wb_matches skipped: %s" % str(e)[:80])
+    log("[wb_views] wb_master=%d · wb_queue=%d (cap %d) · total=%d multi=%d · wb_merges=%d · wb_matches=%d"
+        % (len(master), len(queue), CAP, agg["total"], agg["multi"] or 0, merges, matches))
     return {"wb_master": len(master), "wb_queue": len(queue), "wb_merges": merges,
-            "wb_brand_merges": bmerges, "total": agg["total"]}
+            "wb_matches": matches, "total": agg["total"]}
 
 
 if __name__ == "__main__":
