@@ -939,6 +939,22 @@ def datasets():
         out[k] = dict(ds, rows=rows, matched=len(rows))
     return jsonify(out)
 
+# TTL memoize for read-only rollups the estate/coverage UIs POLL. Each of these fans out into many remote-parquet
+# scans (a /api/catalog poll was ~25s, /api/coverage ~8s); polling stacked them into timeouts. These only change
+# on a pull/rebuild, so a short TTL is safe and turns the poll into a served-from-RAM hit.
+_TTL_CACHE = {}
+
+
+def _ttl(key, ttl, fn):
+    now = time.time()
+    hit = _TTL_CACHE.get(key)
+    if hit and (now - hit[0]) < ttl:
+        return hit[1]
+    val = fn()
+    _TTL_CACHE[key] = (now, val)
+    return val
+
+
 def _catalog_map():
     """Every dataset we hold, across all three stores: {key: {header, total, store}}. memory = in-RAM
     sample; full = save_full'd on Tigris; warehouse = Parquet. Precedence memory → full → warehouse."""
@@ -963,7 +979,7 @@ def _catalog_map():
 @app.get("/api/catalog")
 def catalog_ep():
     """The estate model's 'whole thing' view (it polls this so new datasets appear on their own)."""
-    return jsonify(_catalog_map())
+    return jsonify(_ttl("catalog", 90, _catalog_map))
 
 # ── /api/sources — the SINGLE source of truth for what we hold + what each dataset FEEDS. Driven by the
 # mappings/seeds themselves (authoritative) + name heuristics, so labels/tags stay accurate as the list
@@ -2131,13 +2147,17 @@ def coverage_ep():
     """Coverage map — the FULL book of accounts (src_outlets, every store-bearing source) as by-source and
     by-state rollups plus the geocoded points to pin. The map opens on ALL sources. Accounts without precise
     lat/lng roll up to their state (bubble); geocoded ones drop a pin."""
+    return jsonify(_ttl("coverage", 90, _coverage_data))
+
+
+def _coverage_data():
     import warehouse
     try:
         by_src = warehouse.query("src_outlets", "SELECT source, count(*) n, "
                                  "count(*) FILTER (WHERE lat IS NOT NULL) geo FROM t GROUP BY source ORDER BY n DESC")
     except Exception:
-        return jsonify(ok=True, total=0, by_source=[], by_state=[], points=[],
-                       note="src_outlets not built yet — runs on the next master rebuild")
+        return dict(ok=True, total=0, by_source=[], by_state=[], points=[],
+                    note="src_outlets not built yet — runs on the next master rebuild")
     by_state = warehouse.query("src_outlets", "SELECT upper(trim(state)) state, count(*) n, "
                                "count(*) FILTER (WHERE lat IS NOT NULL) geo FROM t "
                                "WHERE nullif(trim(state),'') IS NOT NULL GROUP BY state ORDER BY n DESC")
@@ -2161,8 +2181,8 @@ def coverage_ep():
         geocoded = warehouse.query("src_outlets", "SELECT count(*) n FROM t WHERE lat IS NOT NULL")[0]["n"]
     except Exception:
         geocoded = 0
-    return jsonify(ok=True, total=total, geocoded=geocoded, chained=chained, flags=flags, by_source=by_src,
-                   by_state=by_state, by_state_source=xs, by_chain=by_chain)
+    return dict(ok=True, total=total, geocoded=geocoded, chained=chained, flags=flags, by_source=by_src,
+                by_state=by_state, by_state_source=xs, by_chain=by_chain)
 
 
 @app.get("/api/coverage/accounts")
