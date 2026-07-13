@@ -62,28 +62,41 @@ def normalize_catalog(log=print):
         pc = bc + H.product_code(pname, brand)
         ic = pc + H.container_code(r.get("container")) + H.size_code(r.get("size_ml"))
         kc = ic + H.pack_code(r.get("pack"), pname)
+        # ONE product type per product (Wine/Beer/Spirits/Hemp/Cannabis) from category + name + varietal
+        ptid, ptname = classify_type(" ".join(str(x) for x in
+                                     (r.get("category"), pname, r.get("varietal"), r.get("flavor")) if x))
         brands.setdefault((src, bc), {"source": src, "source_id": sid, "hoodie_brand": bc, "brand": brand})
         products.setdefault((src, pc), {"source": src, "source_id": sid, "hoodie_product": pc, "brand": brand,
                                         "product_name": pname, "flavor": r.get("flavor"), "category": r.get("category"),
+                                        "product_type_id": ptid, "product_type": ptname,
                                         "abv": r.get("abv"), "varietal": r.get("varietal"), "origin": r.get("origin"),
                                         "region": r.get("region"), "image": r.get("image")})
         items.setdefault((src, ic), {"source": src, "source_id": sid, "hoodie_item": ic, "brand": brand,
-                                     "product_name": pname, "size_ml": r.get("size_ml"), "container": r.get("container")})
+                                     "product_name": pname, "product_type_id": ptid, "product_type": ptname,
+                                     "size_ml": r.get("size_ml"), "container": r.get("container")})
         skus.setdefault((src, kc, upc), {"source": src, "source_id": sid, "upc": upc, "hoodie_sku": kc,
-                                         "brand": brand, "product_name": pname, "size_ml": r.get("size_ml"),
+                                         "brand": brand, "product_name": pname, "product_type_id": ptid,
+                                         "product_type": ptname, "size_ml": r.get("size_ml"),
                                          "container": r.get("container"), "pack": r.get("pack")})
     warehouse.write_parquet("src_brands", list(brands.values()),
                             ["source", "source_id", "hoodie_brand", "brand"])
     warehouse.write_parquet("src_products", list(products.values()),
                             ["source", "source_id", "hoodie_product", "brand", "product_name", "flavor",
-                             "category", "abv", "varietal", "origin", "region", "image"])
+                             "category", "product_type_id", "product_type", "abv", "varietal", "origin",
+                             "region", "image"])
     warehouse.write_parquet("src_items", list(items.values()),
-                            ["source", "source_id", "hoodie_item", "brand", "product_name", "size_ml", "container"])
+                            ["source", "source_id", "hoodie_item", "brand", "product_name", "product_type_id",
+                             "product_type", "size_ml", "container"])
     warehouse.write_parquet("src_skus", list(skus.values()),
-                            ["source", "source_id", "upc", "hoodie_sku", "brand", "product_name", "size_ml",
-                             "container", "pack"])
-    log("[normalize] catalog: src_brands=%d · src_products=%d · src_items=%d · src_skus=%d"
-        % (len(brands), len(products), len(items), len(skus)))
+                            ["source", "source_id", "upc", "hoodie_sku", "brand", "product_name", "product_type_id",
+                             "product_type", "size_ml", "container", "pack"])
+    warehouse.write_parquet("dim_product_type", [{"product_type_id": i, "product_type": n} for i, n in PRODUCT_TYPES],
+                            ["product_type_id", "product_type"])
+    types = {}
+    for p in products.values():
+        types[p["product_type"] or "(unknown)"] = types.get(p["product_type"] or "(unknown)", 0) + 1
+    log("[normalize] catalog: src_brands=%d · src_products=%d (types %s) · src_items=%d · src_skus=%d"
+        % (len(brands), len(products), types, len(items), len(skus)))
     return {"src_brands": len(brands), "src_products": len(products), "src_items": len(items), "src_skus": len(skus)}
 
 
@@ -189,6 +202,30 @@ _BEV = {"wine": r"wine|\bred\b|\bwhite\b|ros[eé]|champagne|sparkling|sangria|ri
         "spirits": r"spirit|vodka|whisk|\brum\b|\bgin\b|tequila|bourbon|liqueur|cordial|brandy|cognac|mezcal|scotch|schnapps",
         "hemp": r"hemp|\bthc\b|\bcbd\b|delta[\s-]?[89]|cannabinoid"}
 _BEV = {k: _re.compile(v, _re.I) for k, v in _BEV.items()}
+
+
+# ── product TYPE dimension — one type per product (extensible; ids leave room for future types) ──────────
+# A product is exactly one type, so the product grain gets (product_type_id, product_type) — a small dimension,
+# not 5 booleans. New types (RTD, Cider, Seltzer, Sake, N/A…) just take the next id + a new string value.
+PRODUCT_TYPES = [(1, "Wine"), (2, "Beer"), (3, "Spirits"), (4, "Hemp"), (5, "Cannabis")]
+_PT_CANNABIS = _re.compile(r"cannabis|marijuana|dispensary|\bweed\b", _re.I)
+
+
+def classify_type(text, is_hemp=False):
+    """Assign ONE product type (id, name) from a product's category/name. Precedence
+    cannabis > hemp > spirits > wine > beer. (0, '') when unknown — leaves room for future type ids."""
+    t = text or ""
+    if _PT_CANNABIS.search(t):
+        return (5, "Cannabis")
+    if is_hemp or _BEV["hemp"].search(t):
+        return (4, "Hemp")
+    if _BEV["spirits"].search(t):
+        return (3, "Spirits")
+    if _BEV["wine"].search(t):
+        return (1, "Wine")
+    if _BEV["beer"].search(t):
+        return (2, "Beer")
+    return (0, "")
 
 
 def _license_flags(source, lic):
