@@ -32,6 +32,33 @@ def _clean_src(t):
     return t.replace("_products", "").replace("_catalog", "").replace("_pricing", "").replace("_", "-")
 
 
+def _addr_key(street, city, state, zip_):
+    """Stable key for an address → its geocode. Used by both the geocode runner (populates geocode_cache)
+    and normalize (applies the cache), so geocoding is standard + persistent + incremental."""
+    import re
+    z = re.sub(r"[^0-9]", "", str(zip_ or ""))[:5]
+    return "|".join([str(street or "").strip().lower(), str(city or "").strip().lower(),
+                     str(state or "").strip().upper(), z])
+
+
+def _apply_geocode(out, log=print):
+    """Fill lat/lng for any outlet that has an address but no coords, from geocode_cache (keyed by address).
+    Geocoding is standard: sources that ship coords keep them; the rest get pinned once their address is cached."""
+    try:
+        cache = {r["addr_key"]: r for r in warehouse.query("geocode_cache",
+                 "SELECT addr_key, CAST(lat AS DOUBLE) lat, CAST(lng AS DOUBLE) lng FROM t")}
+    except Exception:
+        return
+    n = 0
+    for o in out.values():
+        if o["lat"] is not None or not o["address"]:
+            continue
+        c = cache.get(_addr_key(o["address"], o["city"], o["state"], o["zip"]))
+        if c and c["lat"] is not None:
+            o["lat"], o["lng"] = c["lat"], c["lng"]; n += 1
+    log("[normalize] geocode cache filled %d outlets (of %d entries)" % (n, len(cache)))
+
+
 def _platform_map():
     """offprem sku -> platform (Shopify/WooCommerce/…) so the offprem feed reads by SYSTEM, not by metro."""
     m = {}
@@ -345,7 +372,9 @@ def normalize_outlets(log=print):
     except Exception as e:
         log("  [normalize] observation stores: %s" % str(e)[:60])
 
-    # 5) product-carried flags — an account that CARRIES wine sells wine (Barefoot → wine), even if its license
+    # 5) geocode — pin any addressed outlet that arrived without coords (CA licenses etc.) from geocode_cache
+    _apply_geocode(out, log)
+    # 6) product-carried flags — an account that CARRIES wine sells wine (Barefoot → wine), even if its license
     #    row didn't say so. OR the categories of everything each store stocks into its flags.
     _apply_product_flags(out, log)
     # rtd_spirits = a beer/wine outlet that can carry spirit-based RTDs but NOT full spirits (the class to find)

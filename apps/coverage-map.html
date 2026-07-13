@@ -103,7 +103,7 @@
     </div>
   </div>
   <div class="detail" id="detail"></div>
-  <div class="legend"><b>bubbles</b> = accounts by state · <b>pins</b> = geocoded<br>click a bubble or pin to browse accounts</div>
+  <div class="legend"><b>zoom out</b> = state bubbles · <b>zoom in</b> = one pin per outlet<br>click a state to zoom · click a pin or result for the account</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -121,7 +121,7 @@ const PAL=['#4E79A7','#F28E2B','#59A14F','#B07AA1','#76B7B2','#E15759','#EDC948'
 '#499894','#D37295','#B6992D','#86BCB6','#D4A6C8','#79706E','#A0CBE8','#F1CE63','#FABFD2','#BAB0AC','#D7B5A6'];
 // wheelPxPerZoomLevel raised (default 60) + zoomSnap .5 so a trackpad flick steps ~one level, not three
 const map=L.map('map',{zoomControl:true,attributionControl:false,minZoom:3,maxZoom:16,worldCopyJump:true,
-  wheelPxPerZoomLevel:140,wheelDebounceTime:60,zoomSnap:.5,zoomDelta:.5}).setView([39.5,-98.5],4);
+  preferCanvas:true,wheelPxPerZoomLevel:140,wheelDebounceTime:60,zoomSnap:.5,zoomDelta:.5}).setView([39.5,-98.5],4);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19}).addTo(map);
 L.control.attribution({prefix:false}).addAttribution('© OpenStreetMap · © CARTO').addTo(map);
 
@@ -136,7 +136,7 @@ async function load(){
   if(!d||!d.ok||!d.by_source){ if(L0)L0.textContent='engine offline — coverage needs the backend'; return; }
   DATA=d;
   (d.by_source||[]).forEach((s,i)=>{ srcColor[s.source]=PAL[i%PAL.length]; active.add(s.source); });
-  document.getElementById('tot').innerHTML='<b>'+fmt(d.total)+'</b> accounts · '+(d.by_source||[]).length+' sources · '+fmt((d.points||[]).length)+' geocoded';
+  document.getElementById('tot').innerHTML='<b>'+fmt(d.total)+'</b> accounts · '+(d.by_source||[]).length+' sources · '+fmt(d.geocoded||0)+' geocoded';
   renderSources(); redraw();
   if(L0)L0.remove();
 }
@@ -155,26 +155,44 @@ function stateTotals(){
     t[r.state]=(t[r.state]||0)+r.n; });
   return t;
 }
+// ONE POINT = ONE OUTLET. Zoomed out (national): state bubbles for the overview. Zoomed in: individual pins
+// loaded per viewport (bbox) so every account renders without shipping ~200k at once. Click a state → zoom in.
+const ZOOM_PINS=6;
 function redraw(){
-  bubbleLayer.clearLayers(); pinLayer.clearLayers();
+  const zoomedIn = map.getZoom()>=ZOOM_PINS;
+  drawBubbles(!zoomedIn);
+  if(zoomedIn) loadViewportPins(); else { pinLayer.clearLayers(); }
+}
+function drawBubbles(show){
+  bubbleLayer.clearLayers();
+  if(!show){ return; }
   const t=stateTotals(), max=Math.max(1,...Object.values(t));
   Object.entries(t).forEach(([st,n])=>{
     const r=8+Math.sqrt(n/max)*34;
     const c=L.circleMarker(STC[st],{radius:r,color:'#4E79A7',weight:1.5,fillColor:'#4E79A7',fillOpacity:.22});
-    c.bindTooltip('<b>'+st+'</b> · '+fmt(n)+' accounts',{direction:'top',className:'covtip'});
-    c.on('click',()=>loadAccounts({state:st}));
+    c.bindTooltip('<b>'+st+'</b> · '+fmt(n)+' accounts · click to zoom in',{direction:'top',className:'covtip'});
+    c.on('click',()=>{ map.flyTo(STC[st],7,{duration:.8}); loadAccounts({state:st}); });
     bubbleLayer.addLayer(c);
   });
-  let drawn=0;
-  (DATA.points||[]).forEach(p=>{ if(!active.has(p.source))return; if(sellFlag && !p['f_'+sellFlag])return;
-    if(drawn>=6000)return; if(p.lat==null||p.lng==null)return;
-    drawn++;
-    const m=L.circleMarker([p.lat,p.lng],{radius:3.2,color:colOf(p.source),weight:0,fillColor:colOf(p.source),fillOpacity:.85});
-    m.on('click',()=>showDetail({store_name:p.store_name,source:p.source,city:p.city,state:p.state,lat:p.lat,lng:p.lng}));
-    m.bindTooltip(esc(p.store_name||p.source),{direction:'top',className:'covtip'});
+}
+let pinReq=0;
+async function loadViewportPins(){
+  const my=++pinReq;
+  const b=map.getBounds();
+  const params=new URLSearchParams({bbox:[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(x=>x.toFixed(4)).join(',')});
+  if(sellFlag) params.set('sells',sellFlag);
+  const d=await fetch('/api/coverage/points?'+params,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
+  if(my!==pinReq || !d) return;
+  pinLayer.clearLayers();
+  (d.points||[]).forEach(p=>{ if(!active.has(p.source))return; if(p.lat==null)return;
+    const m=L.circleMarker([p.lat,p.lng],{radius:3.4,color:colOf(p.source),weight:0,fillColor:colOf(p.source),fillOpacity:.85});
+    m.on('click',()=>showDetail(p));
+    m.bindTooltip(esc(p.store_name||p.source)+(p.chain?(' · '+esc(p.chain)):''),{direction:'top',className:'covtip'});
     pinLayer.addLayer(m);
   });
 }
+let moveT=null;
+map.on('moveend',()=>{ clearTimeout(moveT); moveT=setTimeout(()=>{ if(DATA) redraw(); },240); });
 let listReq=0;
 async function loadAccounts(filter){
   const my=++listReq;

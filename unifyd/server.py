@@ -2122,12 +2122,12 @@ def coverage_ep():
                                 "count(*) FILTER (WHERE f_rtd_spirits) rtd_spirits FROM t")[0]
     except Exception:
         flags = {}
-    pts = warehouse.query("src_outlets", "SELECT source, store_name, chain, city, state, "
-                          "f_beer, f_wine, f_spirits, f_hemp, f_rtd_spirits, "
-                          "round(CAST(lat AS DOUBLE),5) lat, round(CAST(lng AS DOUBLE),5) lng FROM t "
-                          "WHERE lat IS NOT NULL AND lng IS NOT NULL LIMIT 40000")
-    return jsonify(ok=True, total=total, chained=chained, flags=flags, by_source=by_src, by_state=by_state,
-                   by_state_source=xs, by_chain=by_chain, points=pts)
+    try:                                    # geocoded total (pins are loaded per-viewport, not shipped here)
+        geocoded = warehouse.query("src_outlets", "SELECT count(*) n FROM t WHERE lat IS NOT NULL")[0]["n"]
+    except Exception:
+        geocoded = 0
+    return jsonify(ok=True, total=total, geocoded=geocoded, chained=chained, flags=flags, by_source=by_src,
+                   by_state=by_state, by_state_source=xs, by_chain=by_chain)
 
 
 @app.get("/api/coverage/accounts")
@@ -2164,6 +2164,32 @@ def coverage_accounts_ep():
     except Exception as e:
         return jsonify(ok=False, error=str(e)[:160], accounts=[])
     return jsonify(ok=True, count=len(rows), accounts=rows)
+
+
+@app.get("/api/coverage/points")
+def coverage_points_ep():
+    """One pin per outlet within a map viewport (bbox=west,south,east,north) — so the map renders every
+    geocoded account at national scale without shipping all ~200k at once. Optional source / sells filters."""
+    import warehouse
+    try:
+        w, s, e, n = [float(x) for x in (request.args.get("bbox") or "").split(",")]
+    except Exception:
+        return jsonify(ok=True, points=[], capped=False)
+    src = (request.args.get("source") or "").strip()
+    sells = (request.args.get("sells") or "").strip().lower()
+    cond = ["lat IS NOT NULL", "CAST(lat AS DOUBLE) BETWEEN ? AND ?", "CAST(lng AS DOUBLE) BETWEEN ? AND ?"]
+    params = [s, n, w, e]
+    if src:
+        cond.append("source = ?"); params.append(src)
+    if sells in ("beer", "wine", "spirits", "hemp", "cannabis", "rtd_spirits"):
+        cond.append("f_%s" % sells)
+    try:
+        rows = warehouse.query("src_outlets", "SELECT source, store_name, chain, f_beer, f_wine, f_spirits, f_hemp, "
+                               "f_rtd_spirits, round(CAST(lat AS DOUBLE),5) lat, round(CAST(lng AS DOUBLE),5) lng "
+                               "FROM t WHERE %s LIMIT 45000" % " AND ".join(cond), params)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:160], points=[])
+    return jsonify(ok=True, points=rows, capped=len(rows) >= 45000)
 
 
 @app.get("/api/master/workbench/matches")
