@@ -3204,12 +3204,21 @@ def fact_mappings_post():
     return jsonify(ok=True, fact=fact, dataset=ds, count=len(m[ds]),
                    meta=_stamp(spec["mapmeta"], ds))
 
-# ── MDM workbench: browse the resolved OUTLET master (dim_outlet_resolved) ──
-_OUTM_COLS = "outlet_key,outlet_name,dba,address,city,state,zip5,zip4,county_fips,lat,lng,phone,outlet_type,license_num,source_ref,carriage,source_rows,sources,source_list"
+# ── MDM workbench: browse the OUTLET book (src_outlets — the full account universe, every store-bearing
+# source). "carriage" shows what the outlet SELLS (the sell-flags); "sources" shows its source. ──
+_OUTM_SELL = ("concat_ws(', ', CASE WHEN f_beer THEN 'Beer' END, CASE WHEN f_wine THEN 'Wine' END, "
+              "CASE WHEN f_spirits THEN 'Spirits' END, CASE WHEN f_hemp THEN 'Hemp' END, "
+              "CASE WHEN f_cannabis THEN 'Cannabis' END)")
+_OUTM_SEL = ("source||'|'||store_id outlet_key, store_name outlet_name, address, city, state, zip zip5, "
+             "'' zip4, chain outlet_type, %s carriage, source sources, source source_list, "
+             "CAST(lat AS DOUBLE) lat, CAST(lng AS DOUBLE) lng, phone, addr_valid, flag_basis, "
+             "license_conflict, hoodie_outlet source_ref, is_chain" % _OUTM_SELL)
+
+
 @app.get("/api/master/outlets")
 def master_outlets_browse_ep():
-    """Paged, filterable view of the resolved outlet master. ?q= (name/addr/city), ?state=, ?page=, ?size=.
-    Returns rows + total + a state facet, so the workbench can browse + filter the real master."""
+    """Paged, filterable view of the outlet book (src_outlets — 220k+ accounts across every source). ?q=
+    (name/addr/city), ?state=, ?page=, ?size=. Rows + total + a state facet for the workbench."""
     import warehouse
     q = (request.args.get("q") or "").strip().lower()
     state = (request.args.get("state") or "").strip().upper()
@@ -3221,16 +3230,17 @@ def master_outlets_browse_ep():
     if state:
         where.append("upper(CAST(state AS VARCHAR)) = ?"); params.append(state)
     if q:
-        where.append("(lower(CAST(outlet_name AS VARCHAR)) LIKE ? OR lower(CAST(address AS VARCHAR)) LIKE ? OR lower(CAST(city AS VARCHAR)) LIKE ?)")
+        where.append("(lower(CAST(store_name AS VARCHAR)) LIKE ? OR lower(CAST(address AS VARCHAR)) LIKE ? OR lower(CAST(city AS VARCHAR)) LIKE ?)")
         qq = "%" + q + "%"; params += [qq, qq, qq]
     wsql = (" WHERE " + " AND ".join(where)) if where else ""
     try:
-        total = warehouse.query("dim_outlet_resolved", "SELECT count(*) c FROM t" + wsql, params)[0]["c"]
-        rows = warehouse.query("dim_outlet_resolved",
-            "SELECT %s FROM t%s ORDER BY state, city, outlet_name LIMIT %d OFFSET %d"
-            % (_OUTM_COLS, wsql, size, page * size), params)
-        facet = warehouse.query("dim_outlet_resolved",
-            "SELECT CAST(state AS VARCHAR) state, count(*) n FROM t%s GROUP BY 1 ORDER BY n DESC LIMIT 60" % wsql, params)
+        total = warehouse.query("src_outlets", "SELECT count(*) c FROM t" + wsql, params)[0]["c"]
+        rows = warehouse.query("src_outlets",
+            "SELECT %s FROM t%s ORDER BY (nullif(trim(store_name),'') IS NULL), (lat IS NULL), state, city, "
+            "store_name LIMIT %d OFFSET %d" % (_OUTM_SEL, wsql, size, page * size), params)
+        fwhere = " WHERE " + " AND ".join(where + ["nullif(trim(CAST(state AS VARCHAR)),'') IS NOT NULL"])
+        facet = warehouse.query("src_outlets",
+            "SELECT CAST(state AS VARCHAR) state, count(*) n FROM t%s GROUP BY 1 ORDER BY n DESC LIMIT 60" % fwhere, params)
     except Exception as e:
         return jsonify(ok=True, landed=False, error=str(e)[:140], outlets=[], total=0), 200
     return jsonify(ok=True, landed=True, total=total, page=page, size=size,
@@ -3238,15 +3248,15 @@ def master_outlets_browse_ep():
 
 @app.get("/api/master/outlet")
 def master_outlet_one_ep():
-    """One resolved outlet's full record (all fields + which sources contributed) for the detail panel."""
+    """One outlet's full record (from src_outlets) for the detail panel — keyed source|store_id."""
     import warehouse
     key = (request.args.get("key") or "").strip()
-    if not key:
+    if not key or "|" not in key:
         return jsonify(ok=False, error="key required"), 400
+    src, sid = key.split("|", 1)
     try:
-        rows = warehouse.query("dim_outlet_resolved",
-            "SELECT %s, master_created_at, master_updated_at, updated_by FROM t WHERE outlet_key = ? LIMIT 1"
-            % _OUTM_COLS, [key])
+        rows = warehouse.query("src_outlets", "SELECT %s FROM t WHERE source = ? AND CAST(store_id AS VARCHAR) = ? LIMIT 1"
+                               % _OUTM_SEL, [src, sid])
     except Exception as e:
         return jsonify(ok=False, error=str(e)[:140]), 200
     return jsonify(ok=True, outlet=(rows[0] if rows else None))
@@ -3406,13 +3416,13 @@ def master_outlets_geo_ep():
         where.append("upper(CAST(state AS VARCHAR)) = ?"); params.append(st)
     q = (request.args.get("q") or "").strip().lower()
     if q:
-        where.append("(lower(CAST(outlet_name AS VARCHAR)) LIKE ? OR lower(CAST(city AS VARCHAR)) LIKE ?)")
+        where.append("(lower(CAST(store_name AS VARCHAR)) LIKE ? OR lower(CAST(city AS VARCHAR)) LIKE ?)")
         qq = "%" + q + "%"; params += [qq, qq]
     wsql = " WHERE " + " AND ".join(where)
     try:
-        rows = warehouse.query("dim_outlet_resolved",
-            "SELECT outlet_key, try_cast(lat AS DOUBLE) AS lat, try_cast(lng AS DOUBLE) AS lng, "
-            "CAST(outlet_name AS VARCHAR) AS \"name\", CAST(state AS VARCHAR) AS state FROM t%s LIMIT 20000" % wsql, params)
+        rows = warehouse.query("src_outlets",
+            "SELECT source||'|'||store_id outlet_key, try_cast(lat AS DOUBLE) AS lat, try_cast(lng AS DOUBLE) AS lng, "
+            "CAST(store_name AS VARCHAR) AS \"name\", CAST(state AS VARCHAR) AS state FROM t%s LIMIT 20000" % wsql, params)
     except Exception as e:
         return jsonify(ok=True, landed=False, error=str(e)[:140], points=[]), 200
     return jsonify(ok=True, landed=True, count=len(rows), points=rows)

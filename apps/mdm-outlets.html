@@ -73,9 +73,9 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="pagehead"><h1>Outlet Master</h1>
-    <div class="sub">Browse <code>dim_outlet_resolved</code> — the unified outlet master. Search, filter by
-      state, and open any outlet to see its full record, brand carriage, and which sources confirm it.</div></div>
+  <div class="pagehead"><h1>Outlet Book</h1>
+    <div class="sub">Browse <code>src_outlets</code> — the full account universe (every store-bearing source).
+      Search, filter by state, and open any outlet to see its record, chain, what it sells, and its source.</div></div>
 
   <div class="chips" id="chips"></div>
   <div class="bar">
@@ -105,7 +105,7 @@ async function load(){
   const url='/api/master/outlets?page='+page+'&size='+size+'&q='+encodeURIComponent(q)+'&state='+encodeURIComponent(st);
   try{
     const j=await (await fetch(url,{cache:'no-store'})).json();
-    if(!j.landed){ document.getElementById('rows').innerHTML='<tr><td colspan="6" class="empty">No outlet master yet — run an outlet Apply in Mapping (or a pull + build) to populate <code>dim_outlet_resolved</code>.</td></tr>'; document.getElementById('chips').innerHTML=''; return; }
+    if(!j.landed){ document.getElementById('rows').innerHTML='<tr><td colspan="6" class="empty">No outlets yet — run a pull + normalize to populate <code>src_outlets</code>.</td></tr>'; document.getElementById('chips').innerHTML=''; return; }
     total=j.total; render(j);
   }catch(e){ document.getElementById('rows').innerHTML='<tr><td colspan="6" class="empty">Connect the engine to browse the master.</td></tr>'; }
 }
