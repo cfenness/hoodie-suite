@@ -670,6 +670,11 @@ def build(catalog=True, outlets=True, facts=True, log=print):
         out.update(normalize_catalog(log))
     if outlets:
         out.update(normalize_outlets(log))
+        try:                                    # consolidate the raw src_outlets book into distinct dim_outlet
+            import dim_outlet
+            out["dim_outlet"] = dim_outlet.build(log)["distinct"]
+        except Exception as e:
+            log("  [normalize] dim_outlet skipped: %s" % str(e)[:80])
     if facts:
         out.update(normalize_facts(log))
     if catalog or outlets:
