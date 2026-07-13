@@ -236,6 +236,17 @@ def _world_alcohol(name, description=""):
     return None
 
 
+# FOOD dishes whose names collide with beverage BRANDS ("Victoria's Filet Mignon" ~ Cerveza Victoria,
+# "Coronado Burger" ~ Corona). A restaurant menu is mostly food, so a savory-dish hint in the NAME vetoes any
+# beverage classification below — this runs after the cocktail check, so real cocktails are unaffected.
+_FOOD = re.compile(
+    r"\b(filet|mignon|lobster|shrimp|scampi|steak|ribeye|sirloin|prime rib|burger|sandwich|panini|pasta|"
+    r"alfredo|ziti|lasagna|ravioli|gnocchi|chicken|salmon|tilapia|salad|onion ring|bloomin|appetizer|"
+    r"entr\w*e|quesadilla|taco|nacho|wings?|ribs?|brisket|\bpork\b|\bbbq\b|mashed|broccoli|asparagus|"
+    r"soup|chowder|platter|omelet|pancake|waffle|burrito|enchilada|meatball|hoagie|\bcrab\b|oyster|"
+    r"scallop|calamari|dumpling|noodle|biscuit|\bfries\b|slider|\bwok\b|stir.?fry)\b", re.I)
+
+
 def classify_beverage(name, description=""):
     """Unified NAOP drinks classifier → {category, is_alcoholic, name, + type fields}.
     category ∈ cocktail | mocktail | beer | dessert (boozy) | other. Cocktails carry root/sub/base_spirit,
@@ -249,12 +260,16 @@ def classify_beverage(name, description=""):
         return {"category": "mocktail" if mock else "cocktail", "is_alcoholic": not mock,
                 "name": (name or "").strip(), "root": c["root"], "sub": c["sub"],
                 "base_spirit": "" if mock else c["base_spirit"]}
+    if _FOOD.search(nm):                                        # a food dish (name may collide with a bev brand)
+        return {"category": "other", "is_alcoholic": False, "name": (name or "").strip()}
     # Beer/sake/soju are NAMED products — anchor detection to the NAME. A brewhouse describes its DISHES with
     # its beer ("Deep Dish Ziti … our Hazy IPA"), so matching the description would mislabel food as a beverage.
     soda = re.search(r"root beer|\bginger beer\b|cream soda|birch beer|ginger ale", nm)
     # beer if the NAME carries a beer brand/hint, a recognized style, OR a multipack signal ("6-Pack") —
     # all name-anchored, so a brewhouse's beer-laced DISH descriptions don't get mislabeled as beer.
-    if (_BEER_HINT.search(nm) or beer_style(nm) or re.search(r"\b\d+[- ]?pack\b|six[- ]?pack", nm)) and not soda:
+    # a bare "12-pack" is NOT beer (cookie shops sell 12-packs) — a pack only counts WITH a beer word.
+    pack = re.search(r"\b\d+[- ]?pack\b|six[- ]?pack", nm) and re.search(r"beer|lager|\bale\b|ipa|pilsner|stout|cerveza|seltzer", nm)
+    if (_BEER_HINT.search(nm) or beer_style(nm) or pack) and not soda:
         fmt = ("draft" if re.search(r"draft|draught|on tap|\bpint\b", text) else
                ("can" if "can" in text else ("bottle" if "bottle" in text else "")))
         return {"category": "beer", "is_alcoholic": not mock, "name": (name or "").strip(),
