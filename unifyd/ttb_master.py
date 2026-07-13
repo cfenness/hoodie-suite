@@ -29,7 +29,11 @@ def materialize(log=print):
         "SELECT trim(d.brand_name || CASE WHEN d.fanciful_name IS NOT NULL AND d.fanciful_name<>'' "
         "THEN ' '||d.fanciful_name ELSE '' END) AS name, "
         "nullif(trim(d.brand_name),'') AS brand_name, nullif(trim(d.fanciful_name),'') AS fanciful_name, "
-        "d.class_type_desc AS category, d.origin_code AS origin, d.net_contents AS net_contents, "
+        "d.class_type_desc AS category, d.origin_code AS origin, "
+        # net_contents + abv: prefer the label OCR (real bottle facts) and fall back to the filed detail — the
+        # detail's net_contents is blank post-2010 and it has no abv on beer/spirits, so the label fills both.
+        "coalesce(nullif(trim(l.net_contents),''), d.net_contents) AS net_contents, "
+        "coalesce(nullif(trim(l.abv),''), nullif(trim(d.alcohol_content),'')) AS abv, "
         "d.wine_vintage AS vintage, d.grape_varietal AS varietal, l.upc AS upc "
         "FROM read_parquet('%s') d LEFT JOIN read_parquet('%s') l ON d.ttb_id = l.ttb_id "
         "WHERE d.brand_name IS NOT NULL AND d.brand_name<>'' "
