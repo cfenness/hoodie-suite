@@ -2193,10 +2193,11 @@ def coverage_points_ep():
     return jsonify(ok=True, points=rows, capped=len(rows) >= 45000)
 
 
-@app.get("/api/coverage/heat")
-def coverage_heat_ep():
-    """Every geocoded outlet as a [lat,lng] pair for the density (Verizon-style) coverage surface. Rounded to
-    ~11m to shrink the payload (gzipped); optional source / sells filter. Reservoir-sampled if huge."""
+@app.get("/api/coverage/dots")
+def coverage_dots_ep():
+    """Every geocoded outlet as [lat, lng, source_index] for a ONE-POINT-PER-OUTLET canvas layer — all points
+    drawn in one pass, so zoomed out they fill into a coverage/density picture and zoomed in they're distinct.
+    Returns a sources[] index for colouring. Optional source / sells filter. Reservoir-sampled above 220k."""
     import warehouse
     src = (request.args.get("source") or "").strip()
     sells = (request.args.get("sells") or "").strip().lower()
@@ -2209,12 +2210,40 @@ def coverage_heat_ep():
     wsql = " AND ".join(cond)
     try:
         n = warehouse.query("src_outlets", "SELECT count(*) c FROM t WHERE %s" % wsql, params)[0]["c"]
-        samp = "" if n <= 220000 else " USING SAMPLE reservoir(200000 ROWS)"
-        rows = warehouse.query("src_outlets", "SELECT round(CAST(lat AS DOUBLE),4) y, round(CAST(lng AS DOUBLE),4) x "
-                               "FROM t WHERE %s%s" % (wsql, samp), params)
+        samp = "" if n <= 220000 else " USING SAMPLE reservoir(210000 ROWS)"
+        rows = warehouse.query("src_outlets", "SELECT source, round(CAST(lat AS DOUBLE),4) y, "
+                               "round(CAST(lng AS DOUBLE),4) x FROM t WHERE %s%s" % (wsql, samp), params)
     except Exception as e:
-        return jsonify(ok=False, error=str(e)[:160], points=[])
-    return jsonify(ok=True, total=n, points=[[r["y"], r["x"]] for r in rows])
+        return jsonify(ok=False, error=str(e)[:160], points=[], sources=[])
+    srcs, idx, pts = [], {}, []
+    for r in rows:
+        s = r["source"]
+        if s not in idx:
+            idx[s] = len(srcs); srcs.append(s)
+        pts.append([r["y"], r["x"], idx[s]])
+    return jsonify(ok=True, total=n, sources=srcs, points=pts)
+
+
+@app.get("/api/coverage/at")
+def coverage_at_ep():
+    """The single nearest account to a clicked lat/lng (within a small box) — full record for the detail panel."""
+    import warehouse
+    try:
+        lat = float(request.args.get("lat")); lng = float(request.args.get("lng"))
+        r = min(0.2, max(0.0005, float(request.args.get("r", 0.03))))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, account=None)
+    try:
+        rows = warehouse.query("src_outlets", "SELECT source, store_id, store_name, chain, is_chain, f_beer, f_wine, "
+                               "f_spirits, f_hemp, f_cannabis, f_rtd_spirits, flag_basis, license_conflict, address, "
+                               "city, state, zip, addr_valid, CAST(lat AS DOUBLE) lat, CAST(lng AS DOUBLE) lng, phone, "
+                               "hoodie_outlet FROM t WHERE lat IS NOT NULL AND CAST(lat AS DOUBLE) BETWEEN ? AND ? "
+                               "AND CAST(lng AS DOUBLE) BETWEEN ? AND ? ORDER BY power(CAST(lat AS DOUBLE)-?,2)+"
+                               "power(CAST(lng AS DOUBLE)-?,2) LIMIT 1",
+                               [lat - r, lat + r, lng - r, lng + r, lat, lng])
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:160], account=None)
+    return jsonify(ok=True, account=(rows[0] if rows else None))
 
 
 @app.get("/api/master/workbench/matches")
