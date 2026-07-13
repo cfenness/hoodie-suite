@@ -2363,12 +2363,15 @@ def mwb_match_ep():
     d = request.get_json(silent=True) or {}
     cid = (d.get("cluster_id") or "").strip()
     action = (d.get("action") or "").strip()
-    if not cid or action not in ("confirm", "reject", "escalate"):
-        return jsonify(ok=False, error="cluster_id + action (confirm|reject|escalate) required"), 400
+    if not cid or action not in ("confirm", "reject", "escalate", "split"):
+        return jsonify(ok=False, error="cluster_id + action (confirm|reject|escalate|split) required"), 400
     tier = (d.get("tier") or "").strip().lower() if action == "escalate" else ""
+    # split = prune wrong members OUT of this cluster (the listed sources don't belong); recorded so the next
+    # matcher run re-attributes them instead of collapsing them here. VIP/vpid is never the split anchor.
+    members = [str(m) for m in (d.get("members") or []) if str(m).strip()][:200]
     dec = dict(cluster_id=cid, action=action, tier=tier, note=(d.get("note") or "")[:200],
                matched_name=(d.get("matched_name") or "")[:120], steward=(d.get("steward") or "workbench"),
-               ts=int(_t.time()))
+               removed=json.dumps(members), ts=int(_t.time()))
     existing = [e for e in _wq("master_decisions", "SELECT * FROM t") if e.get("cluster_id") != cid]
     warehouse.write_parquet("master_decisions", existing + [dec])
     if action == "confirm":
