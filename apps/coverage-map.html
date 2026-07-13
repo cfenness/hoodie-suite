@@ -3,395 +3,212 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Coverage Map — Hoodie Suite</title>
+<title>Coverage · Accounts — Hoodie Suite</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root{
-    --ink:#0e1613; --paper:#e9f2ef; --panel:rgba(18,28,25,.93); --line:#22322e; --muted:#8aa39d;
-    --accent:#4E79A7; --gold:#d9b03f; --teal:#3fb8a3; --good:#5bb86e;
-    --disp:"Space Grotesk", system-ui, sans-serif; --mono:"IBM Plex Mono", monospace;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%}
-  body{font-family:var(--disp);background:var(--ink);color:var(--paper);overflow:hidden}
-  #map{position:fixed;inset:0;background:#0b1210;z-index:0}
-  .leaflet-container{background:#0b1210;font-family:var(--mono)}
-  .leaflet-control-zoom a{background:var(--panel);color:var(--paper);border-color:var(--line)}
+  :root{ --accent:#4E79A7; --accent-2:#6f9bc9; --ink:#0e1613; --panel:#121c19; --paper:#e9f2ef; --muted:#8aa39d;
+         --line:#22322e; --good:#5bb86e; --warn:#d99a3f;
+         --disp:"Fraunces",Georgia,serif; --body:"Inter",system-ui,sans-serif; --mono:"JetBrains Mono",monospace; }
+  *{box-sizing:border-box} html,body{margin:0;height:100%;overflow:hidden;background:var(--ink);color:var(--paper);font-family:var(--body)}
+  #map{position:fixed;inset:0;background:#0e1613;z-index:1}
+  .leaflet-container{background:#0e1613;font-family:var(--mono)}
   .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel);color:var(--paper);border:1px solid var(--line)}
-  .leaflet-popup-content{font-family:var(--mono);font-size:12px;line-height:1.5}
-  .leaflet-popup-content b{color:#eafaf5}
-
-  .hud{position:fixed;z-index:500;pointer-events:none}
-  .top{top:0;left:0;right:0;padding:15px 18px;display:flex;align-items:flex-start;gap:14px;background:linear-gradient(180deg,rgba(14,22,19,.92),rgba(14,22,19,0))}
-  .brand .ey{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:#6f938a}
-  .brand h1{font-weight:700;font-size:19px;margin-top:3px;color:#eafaf5}
-  .count{margin-left:auto;text-align:right;font-family:var(--mono);font-size:11px;color:#a9c9c0;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:7px 12px;pointer-events:auto}
-  .count b{color:var(--teal);font-size:15px}
-
-  .panel{position:fixed;top:66px;left:18px;z-index:500;width:236px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 15px;backdrop-filter:blur(6px)}
-  .panel h2{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#6f938a;margin-bottom:9px}
-  .panel .grp{margin-bottom:13px}
-  select,input{width:100%;background:#0e1613;color:#dcefe9;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-family:var(--mono);font-size:12px;outline:none}
-  select:focus,input:focus{border-color:var(--accent)}
-  .chk{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:4px 0;cursor:pointer;color:#cfe6df}
-  .chk input{width:auto;cursor:pointer}
-  .chk .sw{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
-  .legend{position:fixed;bottom:18px;left:18px;z-index:500;font-family:var(--mono);font-size:10.5px;color:#a9c9c0;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px 12px;line-height:1.9}
-  .legend .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
-  .note{margin-top:9px;font-size:11px;color:#c98a4a;line-height:1.4}
-  .load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:600;font-family:var(--mono);font-size:12px;color:#6f938a;background:var(--ink)}
-
-  /* click a dot → everything we hold for that outlet */
-  .detail{position:fixed;top:0;right:0;bottom:0;z-index:700;width:340px;max-width:88vw;background:var(--panel);
-    border-left:1px solid var(--line);backdrop-filter:blur(8px);transform:translateX(100%);
-    transition:transform .22s cubic-bezier(.2,.7,.3,1);overflow-y:auto;padding:16px 17px 26px}
-  .detail.open{transform:none}
-  .detail .x{position:absolute;top:12px;right:13px;width:26px;height:26px;border:1px solid var(--line);
-    border-radius:7px;background:#0e1613;color:#9db8b1;font-family:var(--mono);font-size:15px;cursor:pointer;line-height:1}
-  .detail .x:hover{color:#eafaf5;border-color:var(--accent)}
-  .dhead{padding-right:34px;margin-bottom:15px}
-  .dhead .pin{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:middle}
-  .dhead h2{font-weight:700;font-size:16px;color:#eafaf5;line-height:1.25;display:inline}
-  .dhead .sub{font-family:var(--mono);font-size:11px;color:#8aa39d;margin-top:5px}
-  .dsec{margin-bottom:16px}
-  .dsec > h3{font-family:var(--mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:#6f938a;
-    margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--line)}
-  .row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;padding:3px 0;align-items:baseline}
-  .row .k{color:#8aa39d;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;flex:0 0 auto}
-  .row .v{color:#dcefe9;text-align:right;font-variant-numeric:tabular-nums}
-  .stat{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px}
-  .stat .c{background:#0e1613;border:1px solid var(--line);border-radius:9px;padding:9px 8px;text-align:center}
-  .stat .c .n{font-family:var(--mono);font-weight:600;font-size:17px;color:var(--teal);font-variant-numeric:tabular-nums}
-  .stat .c .n.na{color:#5c6f6a;font-size:12px}
-  .stat .c .l{font-size:9.5px;color:#8aa39d;text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
-  .mkt{font-size:12px;color:#cfe6df;line-height:1.55}
-  .mkt .big{color:var(--gold);font-weight:600}
-  .dmuted{font-size:11px;color:#6f938a;font-style:italic;line-height:1.5}
-  .dloading{font-family:var(--mono);font-size:11px;color:#6f938a}
-
-  /* the data underneath the map: outlet master as a paged table drawer */
-  .drawer{position:fixed;left:0;right:0;bottom:0;z-index:650;background:var(--panel);border-top:1px solid var(--line);
-    backdrop-filter:blur(8px);transform:translateY(calc(100% - 36px));transition:transform .22s cubic-bezier(.2,.7,.3,1);
-    max-height:46vh;display:flex;flex-direction:column}
-  .drawer.open{transform:none}
-  .dhandle{height:36px;flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:0 15px;cursor:pointer;
-    font-family:var(--mono);font-size:11px;color:#a9c9c0;user-select:none}
-  .drawer.open .dhandle{border-bottom:1px solid var(--line)}
-  .dhandle .chev{transition:transform .2s;color:#6f938a}
-  .drawer.open .dhandle .chev{transform:rotate(180deg)}
-  .dhandle b{color:var(--teal)}
-  .dctrls{margin-left:auto;display:flex;align-items:center;gap:10px}
-  .dctrls input{width:190px;padding:5px 9px;font-size:11px}
-  .dpager{display:flex;align-items:center;gap:6px}
-  .dpager button{background:#0e1613;color:#cfe6df;border:1px solid var(--line);border-radius:6px;padding:3px 10px;
-    font-family:var(--mono);font-size:12px;cursor:pointer;line-height:1.2}
-  .dpager button:disabled{opacity:.35;cursor:default}
-  .dpager span{min-width:118px;text-align:center;color:#8aa39d}
-  .dscroll{overflow:auto;flex:1 1 auto}
-  table.grid{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px}
-  table.grid th{position:sticky;top:0;background:#0e1613;color:#6f938a;text-transform:uppercase;letter-spacing:.06em;
-    font-size:9px;text-align:left;padding:8px 11px;border-bottom:1px solid var(--line);z-index:1;white-space:nowrap}
-  table.grid td{padding:6px 11px;border-bottom:1px solid rgba(34,50,46,.5);color:#dcefe9;white-space:nowrap;
-    max-width:230px;overflow:hidden;text-overflow:ellipsis}
-  table.grid tbody tr{cursor:pointer}
-  table.grid tbody tr:hover td{background:rgba(63,184,163,.09)}
-  table.grid .gpin{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:7px;vertical-align:middle}
+  .leaflet-popup-content{font-family:var(--mono);font-size:11.5px;margin:9px 12px}
+  .leaflet-bar a{background:var(--panel);color:var(--paper);border-color:var(--line)}
+  .leaflet-bar a:hover{background:#1a2622}
+  .covtip{background:var(--panel)!important;border:1px solid var(--line)!important;color:#eafaf5!important;font-family:var(--mono);font-size:11px}
+  .covtip:before{display:none}
+  .hud{position:fixed;z-index:5;pointer-events:none}
+  .top{top:0;left:0;right:0;padding:16px 20px;display:flex;align-items:flex-start;gap:14px;background:linear-gradient(180deg,rgba(14,22,19,.9),rgba(14,22,19,0))}
+  .brand .ey{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:#6f938a}
+  .brand h1{font-family:var(--disp);font-weight:700;font-size:19px;margin:3px 0 0;color:#eafaf5}
+  .brand .tot{font-family:var(--mono);font-size:11px;color:var(--accent-2);margin-top:3px}
+  .brand .tot b{color:#eafaf5}
+  .panel{position:fixed;left:16px;top:74px;bottom:16px;width:280px;z-index:6;display:flex;flex-direction:column;gap:10px;pointer-events:auto}
+  .card{background:rgba(18,28,25,.94);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(6px)}
+  .sbox{padding:11px 13px}
+  .sbox input{width:100%;background:#0e1613;border:1px solid var(--line);border-radius:8px;padding:8px 11px;color:#dcefe9;font-family:var(--mono);font-size:12px;outline:none}
+  .sbox input:focus{border-color:var(--accent)}
+  .srcwrap{padding:11px 13px;overflow:auto;flex:0 0 auto;max-height:38%}
+  .srch{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#6f938a;margin-bottom:9px;display:flex;justify-content:space-between}
+  .srch a{color:var(--accent-2);cursor:pointer;text-decoration:none;pointer-events:auto}
+  .src{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;cursor:pointer;color:#cfe6df}
+  .src .sw{width:9px;height:9px;border-radius:2px;flex:0 0 auto}
+  .src .cnt{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:#8aa39d;font-variant-numeric:tabular-nums}
+  .src.off{opacity:.34}
+  .src.off .sw{background:#3a4a45 !important}
+  .accwrap{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
+  .acch{padding:10px 13px 8px;font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#6f938a;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line)}
+  .acch .clr{margin-left:auto;color:var(--accent-2);cursor:pointer;text-transform:none;letter-spacing:0;font-size:10px}
+  .acclist{overflow:auto;flex:1 1 auto}
+  .acc{padding:8px 13px;border-bottom:1px solid rgba(34,50,46,.5);cursor:pointer;font-size:12px}
+  .acc:hover{background:rgba(78,121,167,.14)}
+  .acc.on{background:rgba(78,121,167,.22)}
+  .acc .nm{color:#eafaf5;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .acc .sub{font-family:var(--mono);font-size:10px;color:#8aa39d;margin-top:1px;display:flex;gap:6px;align-items:center}
+  .acc .dot{width:7px;height:7px;border-radius:2px;flex:0 0 auto}
+  .acc .none{color:#6f938a;font-style:italic;padding:14px 0;text-align:center}
+  .detail{position:fixed;right:16px;top:74px;width:300px;max-height:calc(100vh - 90px);overflow:auto;z-index:6;background:rgba(18,28,25,.96);border:1px solid var(--line);border-radius:13px;padding:16px 17px;backdrop-filter:blur(7px);transform:translateX(14px);opacity:0;transition:.2s;pointer-events:none}
+  .detail.show{transform:none;opacity:1;pointer-events:auto}
+  .detail .k{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#6f938a}
+  .detail .nm{font-family:var(--disp);font-weight:600;font-size:19px;margin:3px 0 3px;color:#eafaf5;line-height:1.2}
+  .detail .badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:#cfe6df;background:rgba(78,121,167,.16);border:1px solid var(--line);border-radius:20px;padding:2px 9px;margin-bottom:11px}
+  .detail .badge .dot{width:7px;height:7px;border-radius:2px}
+  .detail .row{display:flex;gap:9px;padding:6px 0;border-top:1px solid var(--line);font-size:12.5px}
+  .detail .row .lab{font-family:var(--mono);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:#6f938a;flex:0 0 84px;padding-top:1px}
+  .detail .row .val{color:#dcefe9;word-break:break-word}
+  .detail .row .val.mono{font-family:var(--mono);font-size:11px;color:var(--accent-2)}
+  .detail .x{position:absolute;top:12px;right:13px;font-family:var(--mono);font-size:12px;color:#a9c9c0;background:none;border:1px solid var(--line);border-radius:7px;padding:3px 9px;cursor:pointer}
+  .detail .x:hover{border-color:var(--accent);color:#eafaf5}
+  .detail .nogeo{margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--warn)}
+  .loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9;font-family:var(--mono);font-size:12px;color:#6f938a;background:var(--ink)}
+  .legend{position:fixed;right:16px;bottom:16px;z-index:5;font-family:var(--mono);font-size:10px;color:#6f938a;text-align:right;line-height:1.8;pointer-events:none;background:rgba(14,22,19,.6);padding:7px 11px;border-radius:9px}
+  .legend b{color:#a9c9c0}
+  @media (max-width:760px){ .panel{width:210px} .detail{width:210px} }
 </style>
 </head>
 <body>
   <div id="map"></div>
-  <div class="load" id="load">reading outlets…</div>
+  <div class="loading" id="loading">reading the book of accounts…</div>
   <div class="hud top">
-    <div class="brand"><div class="ey">Hoodie Suite · Estate</div><h1>Coverage Map</h1></div>
-    <div class="count" id="count">—</div>
-  </div>
-  <div class="panel" id="panel">
-    <div class="grp">
-      <h2>Dataset</h2>
-      <select id="ds">
-        <option value="outlets_master">All outlets — master (national)</option>
-        <option value="ny_outlets">New York — SLA licenses</option>
-        <option value="tx_outlets">Texas — TABC outlets</option>
-        <option value="co_outlets">Colorado — liquor licenses</option>
-        <option value="mo_outlets">Missouri — alcohol licenses</option>
-        <option value="il_outlets">Chicago — Liquor outlets</option>
-        <option value="ct_outlets">Connecticut — premises</option>
-      </select>
-    </div>
-    <div class="grp" id="typegrp">
-      <h2>License type</h2>
-      <div id="types"></div>
-    </div>
-    <div class="grp">
-      <h2>Area</h2>
-      <select id="area"><option value="">All areas</option></select>
-    </div>
-    <div class="grp" style="margin-bottom:0">
-      <h2>Search name</h2>
-      <input id="q" placeholder="e.g. Binny's">
-    </div>
-    <div class="note" id="note" style="display:none"></div>
-  </div>
-  <div class="legend">
-    <span class="sw" style="background:#d9b03f"></span>off-premise (package goods)<br>
-    <span class="sw" style="background:#3fb8a3"></span>on-premise (tavern / consumption)
-  </div>
-  <div class="detail" id="detail" aria-hidden="true">
-    <button class="x" id="dx" aria-label="Close">×</button>
-    <div id="dbody"></div>
-  </div>
-  <div class="drawer" id="drawer">
-    <div class="dhandle" id="dhandle">
-      <span class="chev">▲</span>&nbsp;Outlet master&nbsp;·&nbsp;<b id="dtotal">—</b>
-      <div class="dctrls" id="dctrls">
-        <input id="dq" placeholder="search name across the master…">
-        <div class="dpager">
-          <button id="dprev" aria-label="Previous">‹</button>
-          <span id="dpageinfo">—</span>
-          <button id="dnext" aria-label="Next">›</button>
-        </div>
-      </div>
-    </div>
-    <div class="dscroll">
-      <table class="grid" id="dgrid">
-        <thead><tr><th>Name</th><th>License type</th><th>Owner</th><th>City</th><th>County</th><th>State</th><th>Source</th></tr></thead>
-        <tbody id="dgridbody"></tbody>
-      </table>
+    <div class="brand">
+      <div class="ey">Hoodie MDM · Coverage</div>
+      <h1>The book of accounts</h1>
+      <div class="tot" id="tot">—</div>
     </div>
   </div>
+  <div class="panel">
+    <div class="card sbox"><input id="q" placeholder="🔍 search accounts by name / city…" autocomplete="off" spellcheck="false"></div>
+    <div class="card srcwrap">
+      <div class="srch"><span>Sources</span><span><a id="allon">all</a> · <a id="alloff">none</a></span></div>
+      <div id="srclist"></div>
+    </div>
+    <div class="card accwrap">
+      <div class="acch"><span id="acctitle">Accounts</span><span class="clr" id="accclr" style="display:none">✕ clear</span></div>
+      <div class="acclist" id="acclist"><div class="acc"><div class="none">Click a state, a pin, or search to list accounts.</div></div></div>
+    </div>
+  </div>
+  <div class="detail" id="detail"></div>
+  <div class="legend"><b>bubbles</b> = accounts by state · <b>pins</b> = geocoded<br>click a bubble or pin to browse accounts</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-(function(){
-  const $=s=>document.querySelector(s);
-  const map=L.map('map',{zoomControl:true,preferCanvas:true}).setView([39.5,-98.35],4);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
-    attribution:'© OpenStreetMap © CARTO', subdomains:'abcd', maxZoom:19
-  }).addTo(map);
-  function isOff(t){ return /package goods/i.test(t||''); }
-  function color(t){ return isOff(t)?'#d9b03f':'#3fb8a3'; }
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// US state centroids (approx) — ungeocoded accounts roll up to their state bubble so the full book shows
+const STC={AL:[32.8,-86.8],AK:[64.2,-150],AZ:[34.2,-111.7],AR:[34.9,-92.4],CA:[37.2,-119.5],CO:[39,-105.5],
+CT:[41.6,-72.7],DE:[39,-75.5],DC:[38.9,-77],FL:[28.6,-82.4],GA:[32.7,-83.4],HI:[20.3,-156.4],ID:[44.4,-114.6],
+IL:[40,-89.2],IN:[39.9,-86.3],IA:[42,-93.5],KS:[38.5,-98.4],KY:[37.5,-85.3],LA:[31,-92],ME:[45.4,-69.2],
+MD:[39,-76.8],MA:[42.3,-71.8],MI:[44.3,-85.4],MN:[46.3,-94.3],MS:[32.7,-89.7],MO:[38.4,-92.5],MT:[47,-109.6],
+NE:[41.5,-99.8],NV:[39.3,-116.6],NH:[43.7,-71.6],NJ:[40.2,-74.7],NM:[34.4,-106.1],NY:[42.9,-75.5],NC:[35.6,-79.4],
+ND:[47.4,-100.5],OH:[40.3,-82.8],OK:[35.6,-97.5],OR:[43.9,-120.6],PA:[40.9,-77.8],RI:[41.7,-71.5],SC:[33.9,-80.9],
+SD:[44.4,-100.2],TN:[35.9,-86.4],TX:[31.5,-99.3],UT:[39.3,-111.7],VT:[44,-72.7],VA:[37.5,-78.9],WA:[47.4,-120.5],
+WV:[38.6,-80.6],WI:[44.6,-89.9],WY:[43,-107.5],PR:[18.2,-66.5]};
+const PAL=['#4E79A7','#F28E2B','#59A14F','#B07AA1','#76B7B2','#E15759','#EDC948','#9C755F','#FF9DA7','#8CD17D',
+'#499894','#D37295','#B6992D','#86BCB6','#D4A6C8','#79706E','#A0CBE8','#F1CE63','#FABFD2','#BAB0AC','#D7B5A6'];
+const map=L.map('map',{zoomControl:true,attributionControl:false,minZoom:3,maxZoom:16,worldCopyJump:true}).setView([39.5,-98.5],4);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19}).addTo(map);
+L.control.attribution({prefix:false}).addAttribution('© OpenStreetMap · © CARTO').addTo(map);
 
-  // One canvas layer draws EVERY dot in a single pass — 200k+ points render in ~ms and show true
-  // density/gaps (200k individual Leaflet markers was the slowdown; a sample would hide the gaps).
-  const DotLayer=L.Layer.extend({
-    initialize(){ this._pts=[]; },
-    setData(pts){ this._pts=pts; if(this._map) this._reset(); return this; },
-    onAdd(map){
-      this._map=map;
-      const c=this._c=L.DomUtil.create('canvas','leaflet-zoom-hide');
-      c.style.position='absolute'; c.style.top='0'; c.style.left='0'; c.style.pointerEvents='none';
-      map.getPanes().overlayPane.appendChild(c);
-      map.on('moveend', this._reset, this);
-      this._reset();
-    },
-    onRemove(map){ L.DomUtil.remove(this._c); map.off('moveend', this._reset, this); },
-    _reset(){
-      const m=this._map, size=m.getSize(), dpr=window.devicePixelRatio||1;
-      this._c.width=size.x*dpr; this._c.height=size.y*dpr;
-      this._c.style.width=size.x+'px'; this._c.style.height=size.y+'px';
-      L.DomUtil.setPosition(this._c, m.containerPointToLayerPoint([0,0]));
-      const ctx=this._c.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
-      ctx.clearRect(0,0,size.x,size.y); ctx.globalAlpha=.8;
-      const w=size.x, h=size.y;
-      for(const p of this._pts){
-        const cp=m.latLngToContainerPoint([p.lat,p.lng]);
-        if(cp.x<-4||cp.y<-4||cp.x>w+4||cp.y>h+4) continue;
-        ctx.fillStyle=color(p.type);
-        ctx.fillRect(cp.x-1.5, cp.y-1.5, 3, 3);
-      }
-      ctx.globalAlpha=1;
-    }
+let DATA=null, srcColor={}, active=new Set();
+const bubbleLayer=L.layerGroup().addTo(map), pinLayer=L.layerGroup().addTo(map);
+function fmt(n){ return (n||0).toLocaleString(); }
+function colOf(s){ return srcColor[s]||'#8aa39d'; }
+
+async function load(){
+  const d=await fetch('/api/coverage',{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
+  const L0=document.getElementById('loading');
+  if(!d||!d.ok||!d.by_source){ if(L0)L0.textContent='engine offline — coverage needs the backend'; return; }
+  DATA=d;
+  (d.by_source||[]).forEach((s,i)=>{ srcColor[s.source]=PAL[i%PAL.length]; active.add(s.source); });
+  document.getElementById('tot').innerHTML='<b>'+fmt(d.total)+'</b> accounts · '+(d.by_source||[]).length+' sources · '+fmt((d.points||[]).length)+' geocoded';
+  renderSources(); redraw();
+  if(L0)L0.remove();
+}
+function renderSources(){
+  const el=document.getElementById('srclist');
+  el.innerHTML=(DATA.by_source||[]).map(s=>
+    '<div class="src'+(active.has(s.source)?'':' off')+'" data-s="'+esc(s.source)+'">'
+    +'<span class="sw" style="background:'+colOf(s.source)+'"></span>'+esc(s.source)
+    +'<span class="cnt">'+fmt(s.n)+'</span></div>').join('');
+  el.querySelectorAll('.src').forEach(x=>x.onclick=()=>{ const s=x.getAttribute('data-s');
+    if(active.has(s))active.delete(s); else active.add(s); renderSources(); redraw(); });
+}
+function stateTotals(){
+  const t={};
+  (DATA.by_state_source||[]).forEach(r=>{ if(!active.has(r.source))return; if(!r.state||!STC[r.state])return;
+    t[r.state]=(t[r.state]||0)+r.n; });
+  return t;
+}
+function redraw(){
+  bubbleLayer.clearLayers(); pinLayer.clearLayers();
+  const t=stateTotals(), max=Math.max(1,...Object.values(t));
+  Object.entries(t).forEach(([st,n])=>{
+    const r=8+Math.sqrt(n/max)*34;
+    const c=L.circleMarker(STC[st],{radius:r,color:'#4E79A7',weight:1.5,fillColor:'#4E79A7',fillOpacity:.22});
+    c.bindTooltip('<b>'+st+'</b> · '+fmt(n)+' accounts',{direction:'top',className:'covtip'});
+    c.on('click',()=>loadAccounts({state:st}));
+    bubbleLayer.addLayer(c);
   });
-  let ALL=[], DRAWN=[], dots=null;
-
-  function draw(){
-    const types=[...document.querySelectorAll('#types input:checked')].map(c=>c.value);
-    const area=$('#area').value, q=$('#q').value.trim().toLowerCase();
-    const pts=ALL.filter(p=>{
-      if(types.length && !types.some(t=>(p.type||'').includes(t))) return false;
-      if(area && p.area!==area) return false;
-      if(q && !((p.name||'').toLowerCase().includes(q))) return false;
-      return true;
-    });
-    DRAWN=pts;
-    if(!dots) dots=new DotLayer().addTo(map);
-    dots.setData(pts);
-    $('#count').innerHTML='<b>'+pts.length.toLocaleString()+'</b> outlets'+
-      (CAPPED?' · '+INVIEW.toLocaleString()+'+ (capped — narrow the view)':'');
-  }
-  // click the map → nearest drawn dot within ~7px → its detail
-  map.on('click',e=>{
-    const cp=e.containerPoint; let best=null, bd=64;
-    for(const p of DRAWN){
-      const pp=map.latLngToContainerPoint([p.lat,p.lng]);
-      const d=(pp.x-cp.x)*(pp.x-cp.x)+(pp.y-cp.y)*(pp.y-cp.y);
-      if(d<bd){ bd=d; best=p; }
-    }
-    if(best) openDetail(best);
+  let drawn=0;
+  (DATA.points||[]).forEach(p=>{ if(!active.has(p.source))return; if(drawn>=6000)return; if(p.lat==null||p.lng==null)return;
+    drawn++;
+    const m=L.circleMarker([p.lat,p.lng],{radius:3.2,color:colOf(p.source),weight:0,fillColor:colOf(p.source),fillOpacity:.85});
+    m.on('click',()=>showDetail({store_name:p.store_name,source:p.source,city:p.city,state:p.state,lat:p.lat,lng:p.lng}));
+    m.bindTooltip(esc(p.store_name||p.source),{direction:'top',className:'covtip'});
+    pinLayer.addLayer(m);
   });
-
-  // ---- click a dot → everything we hold: the outlet's own record + its Census market context ----
-  let ctxSeq=0;
-  function fmtNum(n){ return (n==null)?null : Number(n).toLocaleString(); }
-  function fmtUSD(n){ return (n==null)?null : '$'+(n>=1e6? (n/1e6).toFixed(1)+'M' : Number(n).toLocaleString()); }
-  function statCell(n,label,fmt){ const v=(n==null)?null:(fmt?fmt(n):fmtNum(n));
-    return '<div class="c"><div class="n'+(v==null?' na':'')+'">'+(v==null?'—':esc(v))+'</div><div class="l">'+esc(label)+'</div></div>'; }
-
-  function pick(rec, keys){ for(const k of keys){ for(const rk in rec){ if(rk.toLowerCase()===k && String(rec[rk]||'').trim()) return rec[rk]; } } return ''; }
-  function openDetail(p){
-    const d=$('#detail');
-    const off=isOff(p.type);
-    $('#dbody').innerHTML=
-      '<div class="dhead"><span class="pin" style="background:'+color(p.type)+'"></span>'+
-        '<h2>'+esc(p.name||'Outlet')+'</h2>'+
-        '<div class="sub">'+esc(off?'off-premise · package goods':'on-premise · consumption')+'</div></div>'+
-      '<div class="dsec" id="recsec"><h3>Outlet record</h3><div class="dloading">reading record…</div></div>'+
-      '<div class="dsec" id="ctxsec"><h3>Market context · Census</h3>'+
-        (p.county_fips
-          ? '<div class="dloading" id="ctxload">reading county '+esc(p.county_fips)+'…</div>'
-          : '<div class="dmuted">Geocode this dataset to unlock market context (no county FIPS on this record).</div>')+
-      '</div>';
-    d.classList.add('open'); d.setAttribute('aria-hidden','false');
-    loadRecord($('#ds').value, p.i);
-    if(p.county_fips) loadContext(p.county_fips);
-  }
-  async function loadRecord(did, i){
-    const my=++ctxSeq;                                // shares the click-guard sequence
-    try{
-      const r=await fetch('/api/outlets/one?dataset='+encodeURIComponent(did)+'&i='+encodeURIComponent(i),{cache:'no-store'});
-      const j=await r.json();
-      if(my!==ctxSeq || !$('#recsec')) return;
-      if(!j.ok){ $('#recsec').innerHTML='<h3>Outlet record</h3><div class="dmuted">record unavailable.</div>'; return; }
-      const rec=j.record||{};
-      const addr=[pick(rec,['address','location address 1','street']), pick(rec,['city','location city']),
-                  pick(rec,['state','location state']), pick(rec,['zip','location zip'])].filter(Boolean).join(', ');
-      const rows=[
-        ['License type', pick(rec,['license_type','license_types','credential','type'])],
-        ['License #', pick(rec,['license_num','license number','license_id','outlet_id'])],
-        ['Owner', pick(rec,['owner','owner name','backer'])],
-        ['Address', addr||null],
-        ['County', pick(rec,['county','location county'])],
-        ['Status', pick(rec,['primary status','status'])],
-        ['Source', pick(rec,['source'])]
-      ].filter(x=>x[1]).map(x=>'<div class="row"><span class="k">'+esc(x[0])+'</span><span class="v">'+esc(x[1])+'</span></div>').join('');
-      $('#recsec').innerHTML='<h3>Outlet record</h3>'+(rows||'<div class="dmuted">no additional fields.</div>');
-    }catch(e){ if(my===ctxSeq && $('#recsec')) $('#recsec').innerHTML='<h3>Outlet record</h3><div class="dmuted">could not load record.</div>'; }
-  }
-  function closeDetail(){ const d=$('#detail'); d.classList.remove('open'); d.setAttribute('aria-hidden','true'); ctxSeq++; }
-
-  async function loadContext(fips){
-    const my=++ctxSeq;
-    try{
-      const r=await fetch('/api/outlets/context?county_fips='+encodeURIComponent(fips),{cache:'no-store'});
-      const j=await r.json();
-      if(my!==ctxSeq) return;                        // a newer dot was clicked
-      if(!j.ok){ $('#ctxsec').innerHTML='<h3>Market context · Census</h3><div class="dmuted">'+esc(j.error||'unavailable')+'</div>'; return; }
-      renderContext(j);
-    }catch(e){ if(my===ctxSeq) $('#ctxsec').innerHTML='<h3>Market context · Census</h3><div class="dmuted">could not load: '+esc(e.message)+'</div>'; }
-  }
-  function renderContext(j){
-    const R=j.market.retailers, W=j.market.wholesalers, O=j.market.onpremise;
-    let head='';
-    if(R.estab!=null){
-      head='<div class="mkt">This county has <span class="big">'+fmtNum(R.estab)+'</span> beer/wine/liquor retailers'+
-        (j.per_10k_retailers!=null? ' — <span class="big">'+j.per_10k_retailers+'</span> per 10k residents':'')+'.';
-      if(R.nonemployer_state!=null) head+=' Statewide, <span class="big">'+fmtNum(R.nonemployer_state)+'</span> more are nonemployer (sole-proprietor) shops CBP doesn\'t count.';
-      head+='</div>';
-    }
-    $('#ctxsec').innerHTML='<h3>Market context · Census</h3>'+head+
-      '<div class="row"><span class="k">County population</span><span class="v">'+(fmtNum(j.population)||'—')+'</span></div>'+
-      '<div style="margin-top:11px"><div class="row" style="padding-bottom:6px"><span class="k">Retailers (44531)</span><span class="v"></span></div>'+
-      '<div class="stat">'+statCell(R.estab,'estab')+statCell(R.emp,'employees')+statCell(R.payann,'ann. payroll',fmtUSD)+'</div></div>'+
-      '<div><div class="row" style="padding-bottom:6px"><span class="k">Wholesalers (4248)</span><span class="v"></span></div>'+
-      '<div class="stat">'+statCell(W.estab,'estab')+statCell(W.emp,'employees')+statCell(W.payann,'ann. payroll',fmtUSD)+'</div></div>'+
-      '<div><div class="row" style="padding-bottom:6px"><span class="k">Drinking places (722)</span><span class="v"></span></div>'+
-      '<div class="stat">'+statCell(O.estab,'estab')+statCell(O.emp,'employees')+statCell(O.payann,'ann. payroll',fmtUSD)+'</div></div>'+
-      '<div class="dmuted" style="margin-top:8px">CBP '+esc(j.county_fips)+' · null = Census-suppressed or not reported, not zero.</div>';
-  }
-
-  function buildFilters(){
-    // license types present
-    const tset=new Set(); ALL.forEach(p=>(p.type||'').split(';').forEach(t=>t&&tset.add(t.trim())));
-    $('#types').innerHTML=[...tset].sort().map(t=>
-      '<label class="chk"><input type="checkbox" value="'+esc(t)+'"><span class="sw" style="background:'+color(t)+'"></span>'+esc(t)+'</label>').join('')
-      || '<div style="font-size:11px;color:#6f938a">no type field</div>';
-    document.querySelectorAll('#types input').forEach(c=>c.addEventListener('change',draw));
-    // areas
-    const aset=new Set(); ALL.forEach(p=>p.area&&aset.add(p.area));
-    $('#area').innerHTML='<option value="">All areas ('+aset.size+')</option>'+
-      [...aset].sort().map(a=>'<option value="'+esc(a)+'">'+esc(a)+'</option>').join('');
-  }
-
-  // Viewport-based loading: only fetch the dots in the current map bounds (sampled if the view holds
-  // more than a screenful), and refetch as you pan/zoom — so the browser never renders more than ~40k
-  // at once, no matter how big the master gets. The table below is how you browse/search everything.
-  let CURDS='outlets_master', FIRST=true, INVIEW=0, CAPPED=false, loadSeq=0;
-  async function loadViewport(spin){
-    const my=++loadSeq;
-    if(spin){ $('#load').style.display='flex'; }
-    $('#note').style.display='none';
-    const b=map.getBounds();
-    const bbox=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(n=>n.toFixed(5)).join(',');
-    try{
-      const r=await fetch('/api/outlets/geo?dataset='+encodeURIComponent(CURDS)+'&bbox='+bbox,{cache:'no-store'});
-      const j=await r.json();
-      if(my!==loadSeq) return;                 // a newer pan/zoom superseded this
-      ALL=j.points||[]; INVIEW=j.in_view||ALL.length; CAPPED=!!j.capped;
-      if(!ALL.length && !INVIEW){ $('#note').style.display='block'; $('#note').textContent=j.note||'no geocoded outlets in view.'; }
-      if(FIRST){ buildFilters(); FIRST=false; }
-      draw();
-    }catch(e){ if(my===loadSeq){ $('#note').style.display='block'; $('#note').textContent='could not load: '+e.message; } }
-    if(my===loadSeq) $('#load').style.display='none';
-  }
-  function load(ds){ CURDS=ds; FIRST=true; loadViewport(true); }
-  let moveT=null;
-  map.on('moveend', ()=>{ clearTimeout(moveT); moveT=setTimeout(()=>loadViewport(false), 280); });
-
-  // ---- outlet master table (the data underneath the map): server-paged + searchable ----
-  let tOffset=0, tFiltered=0, tSeq=0; const tLimit=50; let tRows=[];
-  function tPage(){ return Math.floor(tOffset/tLimit)+1; }
-  function tPages(){ return Math.max(1, Math.ceil(tFiltered/tLimit)); }
-  async function loadTable(reset){
-    if(reset) tOffset=0;
-    const my=++tSeq, ds=$('#ds').value, q=$('#dq').value.trim();
-    $('#dgridbody').innerHTML='<tr><td colspan="7" class="dloading" style="padding:12px">reading master…</td></tr>';
-    try{
-      const r=await fetch('/api/outlets/table?dataset='+encodeURIComponent(ds)+'&offset='+tOffset+'&limit='+tLimit+'&q='+encodeURIComponent(q),{cache:'no-store'});
-      const j=await r.json();
-      if(my!==tSeq) return;
-      tFiltered=j.filtered||0; tRows=j.rows||[];
-      $('#dtotal').innerHTML=(q? tFiltered.toLocaleString()+' of '+(j.total||0).toLocaleString() : (j.total||0).toLocaleString())+' records';
-      $('#dpageinfo').textContent='page '+tPage()+' / '+tPages();
-      $('#dprev').disabled = tOffset<=0;
-      $('#dnext').disabled = tOffset+tLimit>=tFiltered;
-      $('#dgridbody').innerHTML = tRows.map(o=>
-        '<tr data-i="'+o.i+'"><td><span class="gpin" style="background:'+color(o.type)+'"></span>'+esc(o.name||'—')+'</td>'+
-        '<td>'+esc(o.type||'')+'</td><td>'+esc(o.owner||'')+'</td><td>'+esc(o.city||'')+'</td>'+
-        '<td>'+esc(o.county||'')+'</td><td>'+esc(o.state||'')+'</td><td>'+esc(o.source||'')+'</td></tr>').join('')
-        || '<tr><td colspan="7" class="dmuted" style="padding:12px">no records match.</td></tr>';
-      [...document.querySelectorAll('#dgridbody tr[data-i]')].forEach((tr,k)=>tr.addEventListener('click',()=>selectRow(tRows[k])));
-    }catch(e){ if(my===tSeq) $('#dgridbody').innerHTML='<tr><td colspan="7" style="padding:12px;color:#c98a4a">could not load: '+esc(e.message)+'</td></tr>'; }
-  }
-  function selectRow(o){
-    const la=parseFloat(o.lat), lo=parseFloat(o.lng);
-    openDetail({i:o.i, name:o.name, type:o.type, area:o.county, county_fips:o.county_fips, lat:la, lng:lo});
-    if(la && lo && Math.abs(la)<90) map.setView([la,lo], Math.max(map.getZoom(), 13));
-  }
-  $('#dhandle').addEventListener('click',()=>{ const d=$('#drawer'); d.classList.toggle('open'); if(d.classList.contains('open') && !tRows.length) loadTable(true); });
-  $('#dctrls').addEventListener('click',e=>e.stopPropagation());   // controls don't toggle the drawer
-  $('#dprev').addEventListener('click',()=>{ if(tOffset>0){ tOffset=Math.max(0,tOffset-tLimit); loadTable(false);} });
-  $('#dnext').addEventListener('click',()=>{ if(tOffset+tLimit<tFiltered){ tOffset+=tLimit; loadTable(false);} });
-  let dqt=null; $('#dq').addEventListener('input',()=>{ clearTimeout(dqt); dqt=setTimeout(()=>loadTable(true),220); });
-
-  $('#ds').addEventListener('change',e=>{closeDetail();load(e.target.value); if($('#drawer').classList.contains('open')) loadTable(true);});
-  $('#dx').addEventListener('click',closeDetail);
-  document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDetail(); });
-  $('#area').addEventListener('change',draw);
-  let qt=null; $('#q').addEventListener('input',()=>{clearTimeout(qt);qt=setTimeout(draw,160);});
-  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-  window.__loadCoverage=load;   // test hook
-  load('outlets_master');
-})();
+}
+let listReq=0;
+async function loadAccounts(filter){
+  const my=++listReq;
+  const params=new URLSearchParams();
+  if(filter.state) params.set('state',filter.state);
+  if(filter.source) params.set('source',filter.source);
+  if(filter.q) params.set('q',filter.q);
+  params.set('limit','400');
+  const title=filter.q?('“'+filter.q+'”'):(filter.state?('State · '+filter.state):(filter.source||'Accounts'));
+  document.getElementById('acctitle').textContent=title;
+  document.getElementById('accclr').style.display='inline';
+  const box=document.getElementById('acclist'); box.innerHTML='<div class="acc"><div class="none">loading…</div></div>';
+  const d=await fetch('/api/coverage/accounts?'+params,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
+  if(my!==listReq) return;
+  if(!d||!d.accounts||!d.accounts.length){ box.innerHTML='<div class="acc"><div class="none">no accounts</div></div>'; return; }
+  const acc=d.accounts.filter(a=>active.has(a.source));
+  box.innerHTML=acc.map((a,i)=>
+    '<div class="acc" data-i="'+i+'"><div class="nm">'+esc(a.store_name||'(unnamed)')+'</div>'
+    +'<div class="sub"><span class="dot" style="background:'+colOf(a.source)+'"></span>'+esc(a.source)
+    +(a.city?(' · '+esc(a.city)):'')+(a.state?(' '+esc(a.state)):'')+(a.lat!=null?' · 📍':'')+'</div></div>').join('')
+    +(d.count>=400?'<div class="acc"><div class="none">showing first 400</div></div>':'');
+  box.querySelectorAll('.acc[data-i]').forEach(el=>el.onclick=()=>{
+    box.querySelectorAll('.acc').forEach(x=>x.classList.remove('on')); el.classList.add('on');
+    showDetail(acc[+el.dataset.i]); });
+}
+function clearList(){ listReq++; document.getElementById('acctitle').textContent='Accounts';
+  document.getElementById('accclr').style.display='none';
+  document.getElementById('acclist').innerHTML='<div class="acc"><div class="none">Click a state, a pin, or search to list accounts.</div></div>'; }
+document.getElementById('accclr').onclick=clearList;
+function showDetail(a){
+  const el=document.getElementById('detail');
+  const rows=[['source',a.source,'mono'],['hoodie id',a.hoodie_outlet,'mono'],['store id',a.store_id,'mono'],
+    ['address',[a.address,a.city,[a.state,a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')],
+    ['phone',a.phone],['geo',(a.lat!=null&&a.lng!=null)?(a.lat+', '+a.lng):null,'mono']]
+    .filter(r=>r[1]!=null&&String(r[1]).trim()!=='');
+  el.innerHTML='<button class="x" id="dx">✕</button>'
+    +'<div class="k">Account</div><div class="nm">'+esc(a.store_name||'(unnamed)')+'</div>'
+    +'<div class="badge"><span class="dot" style="background:'+colOf(a.source)+'"></span>'+esc(a.source)+'</div>'
+    +rows.map(r=>'<div class="row"><span class="lab">'+esc(r[0])+'</span><span class="val'+(r[2]?' '+r[2]:'')+'">'+esc(r[1])+'</span></div>').join('')
+    +((a.lat==null)?'<div class="nogeo">⚑ not geocoded — shown via its state bubble</div>':'');
+  el.classList.add('show'); document.getElementById('dx').onclick=()=>el.classList.remove('show');
+  if(a.lat!=null&&a.lng!=null){ map.flyTo([a.lat,a.lng],11,{duration:.8}); }
+  else if(a.state&&STC[a.state]){ map.flyTo(STC[a.state],6,{duration:.8}); }
+}
+let qt=null;
+document.getElementById('q').addEventListener('input',e=>{ clearTimeout(qt); const v=e.target.value.trim();
+  qt=setTimeout(()=>{ if(v.length>=2) loadAccounts({q:v}); else clearList(); },260); });
+document.getElementById('allon').onclick=()=>{ (DATA.by_source||[]).forEach(s=>active.add(s.source)); renderSources(); redraw(); };
+document.getElementById('alloff').onclick=()=>{ active.clear(); renderSources(); redraw(); };
+load();
 </script>
 </body>
 </html>

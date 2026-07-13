@@ -90,12 +90,14 @@ def normalize_catalog(log=print):
 # fuzzy column resolver — each outlet source has its own schema, so map by preference (exact col, then contains).
 # One resolver handles CA/VA license tables, chain-store tables, on-premise merchant tables without per-table code.
 _OUTLET_PREF = {
-    "name": ["dba", "trade_name", "store_name", "outlet_name", "business_name", "premise_name", "name",
-             "primary owner", "primary_owner", "owner name", "merchant", "store"],
-    "address": ["location address 1", "premises address", "street_address", "street", "address_line_1", "address"],
-    "city": ["location city", "premises city", "city"],
-    "state": ["location state", "premises state", "state"],
-    "zip": ["location zip", "premises zip", "zip5", "zipcode", "zip", "postal_code", "postal"],
+    "name": ["dba name", "dba", "trade_name", "store_name", "outlet_name", "business_name", "premise_name",
+             "name", "merchant", "store"],
+    "owner": ["primary name", "owner name", "primary owner", "primary_owner", "owner", "backer", "licensee"],
+    "address": ["prem addr 1", "location address 1", "premises address", "street_address", "street",
+                "address_line_1", "address"],
+    "city": ["prem city", "location city", "premises city", "city"],
+    "state": ["prem state", "location state", "premises state", "state"],
+    "zip": ["prem zip", "location zip", "premises zip", "zip5", "zipcode", "zip", "postal_code", "postal"],
     "lat": ["latitude", "lat"],
     "lng": ["longitude", "lng", "lon", "long"],
     "license": ["license number", "license_id", "license_num", "file number", "vpid", "credential", "outlet_id"],
@@ -121,7 +123,8 @@ def _outlet_colmap(header):
 
 
 # every store-bearing source → (clean SYSTEM tag). Fuzzy-mapped from each table's own columns.
-_OUTLET_TABLES = [("ca_outlets", "ca-abc"), ("ab_outlets", "va-abc"), ("target_stores", "target"),
+# ab_outlets = the AB InBev retailer locator (national — where their beer is sold), NOT a state ABC.
+_OUTLET_TABLES = [("ca_outlets", "ca-abc"), ("ab_outlets", "ab-inbev"), ("target_stores", "target"),
                   ("orlando_merchants", "orlando"), ("doordash_stores", "doordash")]
 
 
@@ -165,7 +168,8 @@ def normalize_outlets(log=print):
         g = lambda r, f: (r.get(cm[f]) if cm.get(f) else None)
         n0 = len(out)
         for r in rows:
-            _put(tag, g(r, "license") or g(r, "name"), g(r, "name"), address=g(r, "address"), city=g(r, "city"),
+            nm = (g(r, "name") or "").strip() or (g(r, "owner") or "").strip()   # DBA, else owner/entity
+            _put(tag, g(r, "license") or nm, nm, address=g(r, "address"), city=g(r, "city"),
                  state=g(r, "state"), zip=g(r, "zip"), lat=g(r, "lat"), lng=g(r, "lng"))
         log("  [normalize] outlets %-18s %-10s +%d" % (tbl, tag, len(out) - n0))
 
@@ -187,7 +191,7 @@ def normalize_outlets(log=print):
     # sources already pulled from their raw tables above — don't re-ingest them from the resolved stage or the
     # observations (same source, two capture paths → double-count). ab/va = ab_outlets; target = target_stores.
     RAW_TAGS = {tag for _, tag in _OUTLET_TABLES}
-    STAGE_ALIAS = {"ab-outlets": "va-abc", "ab-locator": "va-abc", "ab": "va-abc", "target-stores": "target"}
+    STAGE_ALIAS = {"ab-outlets": "ab-inbev", "ab-locator": "ab-inbev", "ab": "ab-inbev", "target-stores": "target"}
 
     # 3) the resolved outlet stage — only sources the raw tables DON'T already cover (Tito's locator, census)
     try:
