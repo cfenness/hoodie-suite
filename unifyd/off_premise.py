@@ -751,8 +751,17 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
         # ACCUMULATE — `out` is per-market but filled by a PLATFORM-filtered subset; running for one platform
         # then another into the same table must not wipe the first platform's products.
         warehouse.write_accumulate(out, rows, key=lambda r: (r.get("account") or r.get("store"), r.get("name")))
+        # feed the FACTS: independent-retailer price + in/out over time. unique part per market -> no clobber.
+        obs = [dict(store=r.get("account") or r.get("store"), store_id=r.get("base") or r.get("account") or "",
+                    product_id=(r.get("sku") or (r.get("name") or "")[:90]), upc=r.get("upc") or "",
+                    brand=r.get("brand") or "", name=r.get("name") or "", price=r.get("price_value"),
+                    in_stock=r.get("in_stock"), is_hemp=r.get("is_hemp")) for r in rows]
+        observe.record("offprem", obs, part="%s_offprem_%s" % (time.strftime("%Y-%m-%d"), market))
+        # feed the MASTER: one consolidated catalog table (in _CFG) so independent products join the master.
+        warehouse.write_accumulate("offprem_products", rows,
+                                   key=lambda r: ((r.get("base") or ""), (r.get("sku") or r.get("name") or "")))
     _rl.finish("done", note="%d products from %d stores" % (len(rows), len(stores)))
-    log("[off] %d products -> %s" % (len(rows), out))
+    log("[off] %d products -> %s (+ facts + offprem_products)" % (len(rows), out))
     return rows
 
 
