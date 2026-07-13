@@ -25,6 +25,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import hoodie_ids as H
+import class_type as _class
 
 
 def _clean_src(t):
@@ -156,13 +157,18 @@ def normalize_catalog(log=print):
         src = (plat.get(sid) or "offprem") if rawsrc == "offprem_products" else _clean_src(rawsrc)
         brand = r["brand"]; pname = r.get("product_name") or ""
         bc = H.brand_code(brand)
-        pc = bc + H.product_code(pname, brand)
+        # TTB<->retail bridge: the regulatory class/type lives in a FIELD on the TTB side (category/varietal) and
+        # baked into the NAME on the retail side. Extract a canonical class + a stripped name-core so both align.
+        # varietal beats the coarse category for wine (TTB "TABLE WINE WHITE" vs retail "Sauvignon Blanc").
+        ct_type, ct_code, core = _class.classify(pname, r.get("varietal") or r.get("category") or "")
+        core = core or pname                         # never key on an empty core
+        pc = bc + ct_code + H.product_code(core, brand)   # brand + class + edition — aligned across sources
         ic = pc + H.container_code(r.get("container")) + H.size_code(r.get("size_ml"))
         kc = ic + H.pack_code(r.get("pack"), pname)
         # ONE product type per product (Wine/Beer/Spirits/Hemp/Cannabis) from category + name + varietal
         ptid, ptname = classify_type(" ".join(str(x) for x in
                                      (r.get("category"), pname, r.get("varietal"), r.get("flavor")) if x))
-        nk = _name_key(brand + " " + pname)          # normalized name key (match blocking/compare)
+        nk = _name_key(brand + " " + core)           # name key on the CORE so blocking aligns TTB<->retail
         un = _upc_norm(upc)                          # canonical GTIN-14 (cross-source item key)
         at = derive_product_attrs(pname, brand, r.get("category"), r.get("size_ml"), r.get("container"),
                                   r.get("pack"), r.get("abv"), r.get("origin"), r.get("varietal"))
@@ -171,6 +177,7 @@ def normalize_catalog(log=print):
         products.setdefault((src, pc), {"source": src, "source_id": sid, "hoodie_product": pc, "brand": brand,
                                         "product_name": pname, "name_key": nk, "flavor": r.get("flavor"),
                                         "category": r.get("category"), "product_type_id": ptid, "product_type": ptname,
+                                        "class_type": ct_type,
                                         "abv": r.get("abv"), "proof": at["proof"], "varietal": r.get("varietal"),
                                         "origin": r.get("origin"), "origin_class": at["origin_class"],
                                         "region": r.get("region"), "age_years": at["age_years"],
@@ -189,7 +196,7 @@ def normalize_catalog(log=print):
                             ["source", "source_id", "hoodie_brand", "brand", "name_key"])
     warehouse.write_parquet("src_products", list(products.values()),
                             ["source", "source_id", "hoodie_product", "brand", "product_name", "name_key", "flavor",
-                             "category", "product_type_id", "product_type", "abv", "proof", "varietal", "origin",
+                             "category", "product_type_id", "product_type", "class_type", "abv", "proof", "varietal", "origin",
                              "origin_class", "region", "age_years", "volume_tier", "organic", "non_alc", "image"])
     warehouse.write_parquet("src_items", list(items.values()),
                             ["source", "source_id", "hoodie_item", "brand", "product_name", "name_key",
