@@ -198,14 +198,19 @@ async function openMergeModal(mid){
     ["Appellation",A.appellation],["Style",A.style],["ABV",A.abv],["Category",A.category]]
     .filter(a=>a[1]).map(a=>`<div><b>${esc(a[0])}:</b> ${esc(a[1])}</div>`).join("");
   const cores={};(d.members||[]).forEach(x=>{const c=core(x.upc);if(c)cores[c]=(cores[c]||0)+1;});
+  const at=v=>(v===0||v)?esc(v):'—';
   const rows=(d.members||[]).map(x=>{
     const c=core(x.upc), dup=c&&cores[c]>1;
     const thumb=x.image?`<img class="th" src="${esc(x.image)}" loading="lazy" onclick="lightbox('${esc(x.image)}')" onerror="this.replaceWith(document.createTextNode('—'))">`:'<span class="noimg">—</span>';
     const upc=x.upc?`<span class="u">${esc(x.upc)}${dup?' <span style="color:var(--bad)">↔</span>':''}</span>`:'<span class="u none">no UPC</span>';
     const srcs=(x.source_list||[]).map(s=>`<span class="s">${esc(s)}</span>`).join("")||'—';
+    // TTB COLA detail deep-link — judge the real filing when a member came from TTB
+    const ttb=x.ttb_id?` <a href="https://ttbonline.gov/colasonline/viewColaDetails.do?action=publicFormDisplay&ttbid=${esc(x.ttb_id)}" target="_blank" rel="noopener" title="open the TTB COLA detail" style="color:var(--accent);text-decoration:none">COLA↗</a>`:'';
     return `<tr data-sku="${esc(x.sku_key)}"><td class="ck"><input type="checkbox" class="msel" checked></td>
-      <td class="thc">${thumb}</td><td>${upc}</td><td class="mono">${x.gtin?esc(x.gtin):'—'}</td>
-      <td class="srcc">${srcs}</td><td class="num">${x.source_rows}</td></tr>`;
+      <td class="thc">${thumb}</td><td>${at(x.variant)}${ttb}</td>
+      <td class="num">${x.size_ml?esc(x.size_ml)+'ml':'—'}</td><td class="num">${x.abv?esc(x.abv)+'%':'—'}</td>
+      <td>${at(x.pack||x.container)}</td><td>${at(x.origin)}</td><td>${upc}</td>
+      <td class="srcc">${srcs}</td></tr>`;
   }).join("");
   $("#modal").innerHTML=`<div class="mh"><div><div class="mt">${esc(d.name)}</div>
       <div class="ms">${esc(d.brand)} · ${d.n_skus} SKUs · ${d.distinct_upc} distinct UPCs · ${d.total_rows} source rows<br>${esc(d.reason)}</div></div>
@@ -214,7 +219,7 @@ async function openMergeModal(mid){
       ${shared?`<div class="shared">${shared}</div>`:''}
       <div class="tblwrap"><table class="mtbl">
         <thead><tr><th class="ck"><input type="checkbox" id="selall" checked title="select all"></th>
-          <th></th><th>UPC</th><th>GTIN</th><th>Sources</th><th class="num">Rows</th></tr></thead>
+          <th></th><th>Variant</th><th class="num">Size</th><th class="num">ABV</th><th>Pack</th><th>Origin</th><th>UPC</th><th>Sources</th></tr></thead>
         <tbody id="mtb">${rows}</tbody></table></div>
       <div class="selhint" id="selhint"></div></div>
     <div class="mfoot">

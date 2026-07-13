@@ -2298,23 +2298,33 @@ def mwb_merge_detail_ep(mid):
         attrs = {}
     # The group + its shared attributes come straight from the cached wb_merges row — no dim scans on modal open.
     # The ONLY thing that varies per member is the image each source showed for THIS upc (one batched scan).
+    # Enrich each member with ALL the attributes we captured (by UPC, one batched scan) — so a reviewer judges
+    # the cluster on the FULL data (size / abv / pack / container / origin / varietal / name), not UPC alone.
     upcs = [str(m.get("upc")) for m in members if m.get("upc")]
-    upc_img = {}
+    upc_attr = {}
     if upcs:
         try:
             ph = ",".join("?" * len(upcs))
-            for r in _wq("_stage_product", "SELECT CAST(upc AS VARCHAR) u, any_value(image) img FROM t "
-                         "WHERE CAST(upc AS VARCHAR) IN (%s) AND image IS NOT NULL AND image<>'' GROUP BY 1" % ph,
+            for r in _wq("_stage_product", "SELECT CAST(upc AS VARCHAR) u, any_value(image) img, "
+                         "any_value(product_name) nm, any_value(size_ml) size_ml, any_value(abv) abv, "
+                         "any_value(container) container, any_value(pack) pack, any_value(origin) origin, "
+                         "any_value(varietal) varietal, any_value(_source_id) source_id, "
+                         "list(DISTINCT _source) srcs FROM t WHERE CAST(upc AS VARCHAR) IN (%s) GROUP BY 1" % ph,
                          upcs):
-                upc_img[r.get("u")] = r.get("img")
+                upc_attr[r.get("u")] = r
         except Exception:
             pass
     detailed = []
     for m in members:
+        a = upc_attr.get(str(m.get("upc"))) or {}
         detailed.append({"sku_key": m.get("sku_key"), "upc": m.get("upc") or "", "gtin": m.get("gtin") or "",
                          "sources": m.get("sources"), "source_rows": m.get("source_rows"),
-                         "source_list": m.get("source_list") or [],
-                         "image": upc_img.get(str(m.get("upc"))) or attrs.get("image") or ""})
+                         "source_list": m.get("source_list") or a.get("srcs") or [],
+                         "variant": a.get("nm") or "", "size_ml": a.get("size_ml"), "abv": a.get("abv"),
+                         "container": a.get("container") or "", "pack": a.get("pack") or "",
+                         "origin": a.get("origin") or "", "varietal": a.get("varietal") or "",
+                         "ttb_id": a.get("source_id") if (a.get("srcs") and "ttb_products" in (a.get("srcs") or [])) else "",
+                         "image": a.get("img") or attrs.get("image") or ""})
     hero = next((d for d in detailed if d.get("image")), (detailed[0] if detailed else {}))
     return jsonify(ok=True, merge_id=mid, name=grp.get("name"), brand=grp.get("brand"),
                    reason=grp.get("reason"), distinct_upc=grp.get("distinct_upc"),

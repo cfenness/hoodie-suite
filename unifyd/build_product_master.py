@@ -57,7 +57,7 @@ _CFG = {
     # (detail + labels) + deduped in ttb_products; brand extracted from the name via the dictionary; vintage →
     # dim_vintage aux (bottles don't split by vintage). All alcohol, so no bev-alc filter.
     "ttb_products": dict(name="name", brand="brand_name", cat="category", origin="origin", size="net_contents",
-                         vintage="vintage", upc="upc", abv="abv", varietal="varietal"),
+                         vintage="vintage", upc="upc", abv="abv", varietal="varietal", id="ttb_id"),
 
     "or_pricing": dict(name="description", size="size", cat="category", proof="proof"),
     "me_pricing": dict(name="Description", size="Size", upc="UPC", proof="Proof", cat="Product Category"),
