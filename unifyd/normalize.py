@@ -95,6 +95,7 @@ _OUTLET_PREF = {
     "owner": ["primary name", "owner name", "primary owner", "primary_owner", "owner", "backer", "licensee"],
     "chain": ["chain", "banner", "parent", "brand_group"],   # explicit chain/banner column when a source has one
     "is_chain": ["is_chain", "ischain"],
+    "license_type": ["license type", "license_type", "license_types", "credential", "type"],  # → sell-flags
     "address": ["prem addr 1", "location address 1", "premises address", "street_address", "street",
                 "address_line_1", "address"],
     "city": ["prem city", "location city", "premises city", "city"],
@@ -155,6 +156,53 @@ def _chain_of(name, explicit=None):
     return ""
 
 
+# ── sell-flags: what an account CAN sell (license) + DOES sell (products carried) ────────────────────
+# 5 flags per account: beer / wine / spirits / hemp / cannabis. Plus rtd_spirits = a beer/wine outlet that
+# can carry spirit-based RTDs but NOT full spirits (the class the user wants to find).
+# CA ABC license type → (beer, wine, spirits) the outlet may sell — the dominant license source (96k rows).
+_CA_LIC = {
+    "20": (1, 1, 0),  # off-sale beer & wine (grocery / c-store) → RTD-spirits candidate
+    "21": (1, 1, 1),  # off-sale general (liquor store)
+    "40": (1, 0, 0),  # on-sale beer
+    "41": (1, 1, 0),  # on-sale beer & wine — eating place
+    "42": (1, 1, 0),  # on-sale beer & wine — public premises
+    "47": (1, 1, 1),  # on-sale general — eating place
+    "48": (1, 1, 1),  # on-sale general — public premises
+    "61": (1, 0, 0),  # on-sale beer — public premises
+    "75": (1, 1, 1),  # brewpub — general
+    "23": (1, 0, 0),  # small beer manufacturer
+    "01": (1, 0, 0),  # beer manufacturer
+    "02": (0, 1, 0),  # winegrower
+    "51": (1, 1, 1), "52": (1, 1, 1), "57": (1, 1, 1),  # clubs
+    "58": (1, 1, 0),  # caterer's (beer & wine)
+    "70": (1, 1, 1),  # on-sale general — restrictive
+}
+# by SOURCE default (when no license type) → (beer, wine, spirits, hemp)
+_SRC_FLAGS = {
+    "ab-inbev": (1, 0, 0, 0),                                        # beer locator
+    "target": (1, 1, 0, 0), "kroger": (1, 1, 0, 0), "publix": (1, 1, 0, 0), "albertsons": (1, 1, 0, 0),
+    "circlek": (1, 1, 0, 0), "cvs": (1, 1, 0, 0),                    # grocery / c-store (beer & wine)
+    "total-wine": (1, 1, 1, 0), "binnys": (1, 1, 1, 0), "specs": (1, 1, 1, 0), "abc": (1, 1, 1, 0),  # liquor
+}
+_BEV = {"wine": r"wine|\bred\b|\bwhite\b|ros[eé]|champagne|sparkling|sangria|riesling|merlot|cabernet|chardonnay",
+        "beer": r"beer|lager|\bale\b|\bipa\b|cider|\bmalt\b|seltzer|pilsner|stout|porter|hard\s?soda",
+        "spirits": r"spirit|vodka|whisk|\brum\b|\bgin\b|tequila|bourbon|liqueur|cordial|brandy|cognac|mezcal|scotch|schnapps",
+        "hemp": r"hemp|\bthc\b|\bcbd\b|delta[\s-]?[89]|cannabinoid"}
+_BEV = {k: _re.compile(v, _re.I) for k, v in _BEV.items()}
+
+
+def _license_flags(source, lic):
+    """(beer, wine, spirits, hemp) an outlet may sell, from its license type (CA) or its source default."""
+    key = str(lic or "").strip()
+    trip = _CA_LIC.get(key) or _CA_LIC.get(key.zfill(2))
+    if trip:
+        return [bool(trip[0]), bool(trip[1]), bool(trip[2]), False]
+    df = _SRC_FLAGS.get(source)
+    if df:
+        return [bool(df[0]), bool(df[1]), bool(df[2]), bool(df[3])]
+    return [False, False, False, False]
+
+
 # every store-bearing source → (clean SYSTEM tag). Fuzzy-mapped from each table's own columns.
 # ab_outlets = the AB InBev retailer locator (national — where their beer is sold), NOT a state ABC.
 _OUTLET_TABLES = [("ca_outlets", "ca-abc"), ("ab_outlets", "ab-inbev"), ("target_stores", "target"),
@@ -169,8 +217,8 @@ def normalize_outlets(log=print):
     (source, store_id) + a name mnemonic as the Hoodie outlet code. This is the full book of accounts, not
     just the 3k resolved stage."""
     out = {}
-    FLD = ["source", "store_id", "store_name", "chain", "is_chain", "address", "city", "state", "zip",
-           "lat", "lng", "phone", "hoodie_outlet"]
+    FLD = ["source", "store_id", "store_name", "chain", "is_chain", "f_beer", "f_wine", "f_spirits", "f_hemp",
+           "f_cannabis", "f_rtd_spirits", "address", "city", "state", "zip", "lat", "lng", "phone", "hoodie_outlet"]
     # observation/chain sources whose source-tag IS the banner (the store rows are all that chain)
     SOURCE_CHAIN = {"target": "Target", "kroger": "Kroger", "binnys": "Binny's", "specs": "Spec's",
                     "abc": "ABC Fine Wine", "total-wine": "Total Wine", "totalwine": "Total Wine",
@@ -190,10 +238,12 @@ def normalize_outlets(log=print):
         k = (src, sid or nm)
         if k not in out:
             chain = _chain_of(nm, kw.get("chain") or SOURCE_CHAIN.get(src))
+            b, w, s, h = _license_flags(src, kw.get("license_type"))   # what this account CAN sell
             out[k] = {"source": src, "store_id": str(sid or ""), "store_name": nm, "chain": chain,
-                      "is_chain": bool(chain), "address": kw.get("address") or "", "city": kw.get("city") or "",
-                      "state": kw.get("state") or "", "zip": kw.get("zip") or "", "lat": _num(kw.get("lat")),
-                      "lng": _num(kw.get("lng")), "phone": kw.get("phone") or "",
+                      "is_chain": bool(chain), "f_beer": b, "f_wine": w, "f_spirits": s, "f_hemp": h,
+                      "f_cannabis": False, "f_rtd_spirits": False, "address": kw.get("address") or "",
+                      "city": kw.get("city") or "", "state": kw.get("state") or "", "zip": kw.get("zip") or "",
+                      "lat": _num(kw.get("lat")), "lng": _num(kw.get("lng")), "phone": kw.get("phone") or "",
                       "hoodie_outlet": H.brand_code(nm or str(sid))}
 
     # 1) license / ABC / chain / on-premise tables — fuzzy-mapped from each table's own schema
@@ -209,8 +259,9 @@ def normalize_outlets(log=print):
         n0 = len(out)
         for r in rows:
             nm = (g(r, "name") or "").strip() or (g(r, "owner") or "").strip()   # DBA, else owner/entity
-            _put(tag, g(r, "license") or nm, nm, chain=g(r, "chain"), address=g(r, "address"), city=g(r, "city"),
-                 state=g(r, "state"), zip=g(r, "zip"), lat=g(r, "lat"), lng=g(r, "lng"))
+            _put(tag, g(r, "license") or nm, nm, chain=g(r, "chain"), license_type=g(r, "license_type"),
+                 address=g(r, "address"), city=g(r, "city"), state=g(r, "state"), zip=g(r, "zip"),
+                 lat=g(r, "lat"), lng=g(r, "lng"))
         log("  [normalize] outlets %-18s %-10s +%d" % (tbl, tag, len(out) - n0))
 
     # 2) off-premise PLATFORM retailers — each distinct store (base/domain) is an account, tagged by platform
@@ -257,10 +308,55 @@ def normalize_outlets(log=print):
     except Exception as e:
         log("  [normalize] observation stores: %s" % str(e)[:60])
 
+    # 5) product-carried flags — an account that CARRIES wine sells wine (Barefoot → wine), even if its license
+    #    row didn't say so. OR the categories of everything each store stocks into its flags.
+    _apply_product_flags(out, log)
+    # rtd_spirits = a beer/wine outlet that can carry spirit-based RTDs but NOT full spirits (the class to find)
+    for o in out.values():
+        o["f_rtd_spirits"] = bool((o["f_beer"] or o["f_wine"]) and not o["f_spirits"])
+
     warehouse.write_parquet("src_outlets", list(out.values()), FLD)
     geo = sum(1 for v in out.values() if v["lat"] is not None)
-    log("[normalize] src_outlets=%d (%d geocoded) across all store-bearing sources" % (len(out), geo))
+    fl = {k: sum(1 for v in out.values() if v[k]) for k in ("f_beer", "f_wine", "f_spirits", "f_hemp", "f_rtd_spirits")}
+    log("[normalize] src_outlets=%d (%d geocoded) · flags %s" % (len(out), geo, fl))
     return {"src_outlets": len(out)}
+
+
+def _apply_product_flags(out, log=print):
+    """OR product-carried categories into each outlet's sell-flags. offprem / City Hive carry bev_category
+    (classify by category+name); retail_observations carries is_hemp only (per-store)."""
+    W, B, S = _BEV["wine"].pattern, _BEV["beer"].pattern, _BEV["spirits"].pattern
+
+    def orflag(key, w=0, b=0, s=0, h=0):
+        o = out.get(key)
+        if not o:
+            return
+        if w: o["f_wine"] = True
+        if b: o["f_beer"] = True
+        if s: o["f_spirits"] = True
+        if h: o["f_hemp"] = True
+
+    for tbl, plat_col in (("offprem_products", "platform"), ("cityhive_products", None)):
+        try:
+            expr = "lower(coalesce(bev_category,'')||' '||coalesce(name,''))"
+            sel = ("SELECT %s, base, bool_or(regexp_matches(%s,'%s')) w, bool_or(regexp_matches(%s,'%s')) b, "
+                   "bool_or(regexp_matches(%s,'%s')) s, bool_or(coalesce(is_hemp,false)) h FROM t "
+                   "WHERE base IS NOT NULL GROUP BY %s, base"
+                   % (plat_col or "'x'", expr, W, expr, B, expr, S, plat_col or "'x'"))
+            for r in warehouse.query(tbl, sel):
+                src = ((r.get("platform") or "offprem").lower().replace(" stores", "").replace(" ", "-")
+                       if plat_col else "cityhive")
+                orflag((src, r["base"]), r["w"], r["b"], r["s"], r["h"])
+        except Exception as e:
+            log("  [normalize] %s product-flags: %s" % (tbl, str(e)[:70]))
+    try:                                    # observation stores → hemp only (no category on observations)
+        for r in warehouse.query_parts("retail_observations", "SELECT source, store_id, "
+                                       "bool_or(coalesce(is_hemp,false)) h FROM t WHERE store_id<>'' "
+                                       "GROUP BY source, store_id"):
+            if r["h"]:
+                orflag((r["source"], str(r["store_id"])), h=1)
+    except Exception as e:
+        log("  [normalize] observation product-flags: %s" % str(e)[:70])
 
 
 def normalize_facts(log=print):

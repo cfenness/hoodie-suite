@@ -62,6 +62,14 @@
   .detail .x{position:absolute;top:12px;right:13px;font-family:var(--mono);font-size:12px;color:#a9c9c0;background:none;border:1px solid var(--line);border-radius:7px;padding:3px 9px;cursor:pointer}
   .detail .x:hover{border-color:var(--accent);color:#eafaf5}
   .detail .nogeo{margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--warn)}
+  .detail .fchips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:11px}
+  .fchip{font-family:var(--mono);font-size:10px;color:#dcefe9;background:rgba(89,161,79,.16);border:1px solid var(--line);border-radius:20px;padding:2px 9px}
+  .fchip.rtd{color:#0e1613;background:var(--warn);font-weight:600}
+  .sells{display:flex;gap:5px;flex-wrap:wrap;padding:0 13px 11px}
+  .sells button{flex:1 1 auto;background:#0e1613;border:1px solid var(--line);border-radius:7px;padding:5px 4px;color:#a9c9c0;font-family:var(--mono);font-size:10px;cursor:pointer;white-space:nowrap}
+  .sells button:hover{border-color:var(--accent);color:#eafaf5}
+  .sells button.on{background:var(--accent);color:#0e1613;border-color:var(--accent);font-weight:700}
+  .sells button.rtd.on{background:var(--warn);border-color:var(--warn)}
   .loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9;font-family:var(--mono);font-size:12px;color:#6f938a;background:var(--ink)}
   .legend{position:fixed;right:16px;bottom:16px;z-index:5;font-family:var(--mono);font-size:10px;color:#6f938a;text-align:right;line-height:1.8;pointer-events:none;background:rgba(14,22,19,.6);padding:7px 11px;border-radius:9px}
   .legend b{color:#a9c9c0}
@@ -79,7 +87,12 @@
     </div>
   </div>
   <div class="panel">
-    <div class="card sbox"><input id="q" placeholder="🔍 search accounts by name / city…" autocomplete="off" spellcheck="false"></div>
+    <div class="card sbox"><input id="q" placeholder="🔍 search accounts by name / city…" autocomplete="off" spellcheck="false">
+      <div class="sells" id="sells">
+        <button data-f="beer">🍺</button><button data-f="wine">🍷</button><button data-f="spirits">🥃</button>
+        <button data-f="hemp">🌿</button><button data-f="rtd_spirits" class="rtd" title="beer/wine outlets that can sell spirit-RTDs but not spirits">RTD</button>
+      </div>
+    </div>
     <div class="card srcwrap">
       <div class="srch"><span>Sources</span><span><a id="allon">all</a> · <a id="alloff">none</a></span></div>
       <div id="srclist"></div>
@@ -153,7 +166,8 @@ function redraw(){
     bubbleLayer.addLayer(c);
   });
   let drawn=0;
-  (DATA.points||[]).forEach(p=>{ if(!active.has(p.source))return; if(drawn>=6000)return; if(p.lat==null||p.lng==null)return;
+  (DATA.points||[]).forEach(p=>{ if(!active.has(p.source))return; if(sellFlag && !p['f_'+sellFlag])return;
+    if(drawn>=6000)return; if(p.lat==null||p.lng==null)return;
     drawn++;
     const m=L.circleMarker([p.lat,p.lng],{radius:3.2,color:colOf(p.source),weight:0,fillColor:colOf(p.source),fillOpacity:.85});
     m.on('click',()=>showDetail({store_name:p.store_name,source:p.source,city:p.city,state:p.state,lat:p.lat,lng:p.lng}));
@@ -168,6 +182,7 @@ async function loadAccounts(filter){
   if(filter.state) params.set('state',filter.state);
   if(filter.source) params.set('source',filter.source);
   if(filter.q) params.set('q',filter.q);
+  if(sellFlag) params.set('sells',sellFlag);
   params.set('limit','400');
   const title=filter.q?('“'+filter.q+'”'):(filter.state?('State · '+filter.state):(filter.source||'Accounts'));
   document.getElementById('acctitle').textContent=title;
@@ -196,9 +211,13 @@ function showDetail(a){
     ['address',[a.address,a.city,[a.state,a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')],
     ['phone',a.phone],['geo',(a.lat!=null&&a.lng!=null)?(a.lat+', '+a.lng):null,'mono']]
     .filter(r=>r[1]!=null&&String(r[1]).trim()!=='');
+  const F=[['f_beer','🍺 Beer'],['f_wine','🍷 Wine'],['f_spirits','🥃 Spirits'],['f_hemp','🌿 Hemp'],['f_cannabis','🍁 Cannabis']];
+  const chips=F.filter(f=>a[f[0]]).map(f=>'<span class="fchip on">'+f[1]+'</span>').join('')
+    + (a.f_rtd_spirits?'<span class="fchip rtd">spirits-RTD ok · no spirits</span>':'');
   el.innerHTML='<button class="x" id="dx">✕</button>'
     +'<div class="k">Account</div><div class="nm">'+esc(a.store_name||'(unnamed)')+'</div>'
     +'<div class="badge"><span class="dot" style="background:'+colOf(a.source)+'"></span>'+esc(a.source)+'</div>'
+    +(chips?'<div class="fchips">'+chips+'</div>':'')
     +rows.map(r=>'<div class="row"><span class="lab">'+esc(r[0])+'</span><span class="val'+(r[2]?' '+r[2]:'')+'">'+esc(r[1])+'</span></div>').join('')
     +((a.lat==null)?'<div class="nogeo">⚑ not geocoded — shown via its state bubble</div>':'');
   el.classList.add('show'); document.getElementById('dx').onclick=()=>el.classList.remove('show');
@@ -210,6 +229,15 @@ document.getElementById('q').addEventListener('input',e=>{ clearTimeout(qt); con
   qt=setTimeout(()=>{ if(v.length>=2) loadAccounts({q:v}); else clearList(); },260); });
 document.getElementById('allon').onclick=()=>{ (DATA.by_source||[]).forEach(s=>active.add(s.source)); renderSources(); redraw(); };
 document.getElementById('alloff').onclick=()=>{ active.clear(); renderSources(); redraw(); };
+// sell-flag filter — beer/wine/spirits/hemp + the spirits-RTD-but-not-spirits class
+let sellFlag='';
+document.querySelectorAll('#sells button').forEach(b=>b.onclick=()=>{
+  const f=b.getAttribute('data-f'); sellFlag=(sellFlag===f)?'':f;
+  document.querySelectorAll('#sells button').forEach(x=>x.classList.toggle('on', x.getAttribute('data-f')===sellFlag));
+  redraw();
+  const q=document.getElementById('q').value.trim();
+  if(q.length>=2) loadAccounts({q}); else if(sellFlag) loadAccounts({}); else clearList();
+});
 load();
 </script>
 </body>

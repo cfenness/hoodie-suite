@@ -2115,10 +2115,18 @@ def coverage_ep():
         chained = warehouse.query("src_outlets", "SELECT count(*) n FROM t WHERE is_chain")[0]["n"]
     except Exception:
         by_chain, chained = [], 0
+    try:                                    # sell-flag rollup (beer/wine/spirits/hemp/cannabis + rtd-spirits class)
+        flags = warehouse.query("src_outlets", "SELECT count(*) FILTER (WHERE f_beer) beer, "
+                                "count(*) FILTER (WHERE f_wine) wine, count(*) FILTER (WHERE f_spirits) spirits, "
+                                "count(*) FILTER (WHERE f_hemp) hemp, count(*) FILTER (WHERE f_cannabis) cannabis, "
+                                "count(*) FILTER (WHERE f_rtd_spirits) rtd_spirits FROM t")[0]
+    except Exception:
+        flags = {}
     pts = warehouse.query("src_outlets", "SELECT source, store_name, chain, city, state, "
+                          "f_beer, f_wine, f_spirits, f_hemp, f_rtd_spirits, "
                           "round(CAST(lat AS DOUBLE),5) lat, round(CAST(lng AS DOUBLE),5) lng FROM t "
                           "WHERE lat IS NOT NULL AND lng IS NOT NULL LIMIT 40000")
-    return jsonify(ok=True, total=total, chained=chained, by_source=by_src, by_state=by_state,
+    return jsonify(ok=True, total=total, chained=chained, flags=flags, by_source=by_src, by_state=by_state,
                    by_state_source=xs, by_chain=by_chain, points=pts)
 
 
@@ -2130,6 +2138,7 @@ def coverage_accounts_ep():
     src = (request.args.get("source") or "").strip()
     state = (request.args.get("state") or "").strip().upper()
     chain = (request.args.get("chain") or "").strip()
+    sells = (request.args.get("sells") or "").strip().lower()   # beer|wine|spirits|hemp|cannabis|rtd_spirits
     q = (request.args.get("q") or "").strip().lower()
     try:
         limit = min(1000, max(1, int(request.args.get("limit") or 300)))
@@ -2142,12 +2151,15 @@ def coverage_accounts_ep():
         where.append("upper(trim(state)) = ?"); params.append(state)
     if chain:
         where.append("chain = ?"); params.append(chain)
+    if sells in ("beer", "wine", "spirits", "hemp", "cannabis", "rtd_spirits"):
+        where.append("f_%s" % sells)
     if q:
         where.append("(lower(store_name) LIKE ? OR lower(city) LIKE ? OR lower(address) LIKE ?)")
         params += ["%" + q + "%"] * 3
     try:
-        rows = warehouse.query("src_outlets", "SELECT source, store_id, store_name, chain, is_chain, address, city, "
-                               "state, zip, CAST(lat AS DOUBLE) lat, CAST(lng AS DOUBLE) lng, phone, hoodie_outlet "
+        rows = warehouse.query("src_outlets", "SELECT source, store_id, store_name, chain, is_chain, f_beer, f_wine, "
+                               "f_spirits, f_hemp, f_cannabis, f_rtd_spirits, address, city, state, zip, "
+                               "CAST(lat AS DOUBLE) lat, CAST(lng AS DOUBLE) lng, phone, hoodie_outlet "
                                "FROM t WHERE %s ORDER BY store_name LIMIT %d" % (" AND ".join(where), limit), params)
     except Exception as e:
         return jsonify(ok=False, error=str(e)[:160], accounts=[])
