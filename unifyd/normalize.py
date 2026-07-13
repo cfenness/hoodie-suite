@@ -164,32 +164,40 @@ def normalize_catalog(log=print):
                                      (r.get("category"), pname, r.get("varietal"), r.get("flavor")) if x))
         nk = _name_key(brand + " " + pname)          # normalized name key (match blocking/compare)
         un = _upc_norm(upc)                          # canonical GTIN-14 (cross-source item key)
+        at = derive_product_attrs(pname, brand, r.get("category"), r.get("size_ml"), r.get("container"),
+                                  r.get("pack"), r.get("abv"), r.get("origin"), r.get("varietal"))
         brands.setdefault((src, bc), {"source": src, "source_id": sid, "hoodie_brand": bc, "brand": brand,
                                       "name_key": _name_key(brand)})
         products.setdefault((src, pc), {"source": src, "source_id": sid, "hoodie_product": pc, "brand": brand,
                                         "product_name": pname, "name_key": nk, "flavor": r.get("flavor"),
                                         "category": r.get("category"), "product_type_id": ptid, "product_type": ptname,
-                                        "abv": r.get("abv"), "varietal": r.get("varietal"), "origin": r.get("origin"),
-                                        "region": r.get("region"), "image": r.get("image")})
+                                        "abv": r.get("abv"), "proof": at["proof"], "varietal": r.get("varietal"),
+                                        "origin": r.get("origin"), "origin_class": at["origin_class"],
+                                        "region": r.get("region"), "age_years": at["age_years"],
+                                        "volume_tier": at["volume_tier"], "organic": at["organic"],
+                                        "non_alc": at["non_alc"], "image": r.get("image")})
         items.setdefault((src, ic), {"source": src, "source_id": sid, "hoodie_item": ic, "brand": brand,
                                      "product_name": pname, "name_key": nk, "product_type_id": ptid,
-                                     "product_type": ptname, "size_ml": r.get("size_ml"), "container": r.get("container")})
+                                     "product_type": ptname, "size_ml": r.get("size_ml"),
+                                     "container": r.get("container"), "volume_tier": at["volume_tier"]})
         skus.setdefault((src, kc, upc), {"source": src, "source_id": sid, "upc": upc, "upc_norm": un, "hoodie_sku": kc,
                                          "brand": brand, "product_name": pname, "name_key": nk, "product_type_id": ptid,
                                          "product_type": ptname, "size_ml": r.get("size_ml"),
-                                         "container": r.get("container"), "pack": r.get("pack")})
+                                         "container": r.get("container"), "pack": r.get("pack"),
+                                         "pack_size": at["pack_size"], "pack_type": at["pack_type"]})
     warehouse.write_parquet("src_brands", list(brands.values()),
                             ["source", "source_id", "hoodie_brand", "brand", "name_key"])
     warehouse.write_parquet("src_products", list(products.values()),
                             ["source", "source_id", "hoodie_product", "brand", "product_name", "name_key", "flavor",
-                             "category", "product_type_id", "product_type", "abv", "varietal", "origin",
-                             "region", "image"])
+                             "category", "product_type_id", "product_type", "abv", "proof", "varietal", "origin",
+                             "origin_class", "region", "age_years", "volume_tier", "organic", "non_alc", "image"])
     warehouse.write_parquet("src_items", list(items.values()),
                             ["source", "source_id", "hoodie_item", "brand", "product_name", "name_key",
-                             "product_type_id", "product_type", "size_ml", "container"])
+                             "product_type_id", "product_type", "size_ml", "container", "volume_tier"])
     warehouse.write_parquet("src_skus", list(skus.values()),
                             ["source", "source_id", "upc", "upc_norm", "hoodie_sku", "brand", "product_name",
-                             "name_key", "product_type_id", "product_type", "size_ml", "container", "pack"])
+                             "name_key", "product_type_id", "product_type", "size_ml", "container", "pack",
+                             "pack_size", "pack_type"])
     warehouse.write_parquet("dim_product_type", [{"product_type_id": i, "product_type": n} for i, n in PRODUCT_TYPES],
                             ["product_type_id", "product_type"])
     types = {}
@@ -327,6 +335,58 @@ def classify_type(text, is_hemp=False):
     if _BEV["beer"].search(t):
         return (2, "Beer")
     return (0, "")
+
+
+# ── product attribute extraction — derive a RICH field set (not UPC-dependent) so matching rests on the
+# agreement of many attributes. Everything below is derived from the name + fields we already hold. ──────
+_PACK_RE = _re.compile(r"\b(\d{1,3})\s*[-/ ]?\s*(pk|pack|ct|count|cans?|bottles?|btls?|pack)\b", _re.I)
+_AGE_RE = _re.compile(r"\b(\d{1,2})\s*[- ]?\s*(years?|yrs?|yo)\b", _re.I)
+_DOMESTIC = _re.compile(r"\b(u\.?s\.?a?|united states|america|domestic|california|kentucky|tennessee|oregon|"
+                        r"washington|new york|texas|napa|sonoma|willamette|bourbon)\b", _re.I)
+_IMPORT_HINT = _re.compile(r"\b(france|italy|spain|scotland|ireland|mexico|germany|japan|canada|chile|"
+                           r"argentina|australia|portugal|import(ed)?)\b", _re.I)
+
+
+def derive_product_attrs(name, brand, category, size_ml, container, pack, abv, origin, varietal):
+    """Derive the rich attribute set — pack size/type, proof, age, domestic/import, volume tier, flags — from
+    the product name + existing fields. Any one can be dirty; matching rests on how many AGREE."""
+    n = (name or "")
+    nl = n.lower()
+    a = {}
+    m = _PACK_RE.search(n)
+    a["pack_size"] = int(m.group(1)) if (m and 1 < int(m.group(1)) <= 48) else 1
+    if container and str(container).strip():
+        pt = str(container).strip().lower()
+    elif _re.search(r"\bcans?\b|\bsltz\b|seltzer", nl):
+        pt = "can"
+    elif _re.search(r"\bkeg\b", nl):
+        pt = "keg"
+    elif _re.search(r"\bbox\b|bag.?in.?box|\bbib\b", nl):
+        pt = "box"
+    elif _re.search(r"\bpouch\b", nl):
+        pt = "pouch"
+    elif _re.search(r"\bpet\b|plastic", nl):
+        pt = "pet"
+    else:
+        pt = "bottle"
+    a["pack_type"] = pt
+    try:
+        a["proof"] = round(float(abv) * 2, 1) if abv not in (None, "") else None
+    except (TypeError, ValueError):
+        a["proof"] = None
+    ag = _AGE_RE.search(n)
+    a["age_years"] = int(ag.group(1)) if ag else None
+    src = " ".join(str(x) for x in (origin, n) if x)
+    a["origin_class"] = ("domestic" if _DOMESTIC.search(src) else ("import" if _IMPORT_HINT.search(src) else None))
+    try:
+        sz = float(size_ml) if size_ml not in (None, "") else None
+    except (TypeError, ValueError):
+        sz = None
+    a["volume_tier"] = (None if sz is None else "single-serve" if sz <= 355 else "standard" if sz <= 1000
+                        else "large" if sz < 1500 else "magnum+")
+    a["organic"] = bool(_re.search(r"\borganic\b", nl))
+    a["non_alc"] = bool(_re.search(r"non.?alcoholic|alcohol.?free|\b0\.0\b|\bn/?a\b(?!.*napa)", nl))
+    return a
 
 
 def _license_flags(source, lic):
