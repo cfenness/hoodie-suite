@@ -241,10 +241,13 @@ def _world_alcohol(name, description=""):
 # beverage classification below — this runs after the cocktail check, so real cocktails are unaffected.
 _FOOD = re.compile(
     r"\b(filet|mignon|lobster|shrimp|scampi|steak|ribeye|sirloin|prime rib|burger|sandwich|panini|pasta|"
-    r"alfredo|ziti|lasagna|ravioli|gnocchi|chicken|salmon|tilapia|salad|onion ring|bloomin|appetizer|"
-    r"entr\w*e|quesadilla|taco|nacho|wings?|ribs?|brisket|\bpork\b|\bbbq\b|mashed|broccoli|asparagus|"
-    r"soup|chowder|platter|omelet|pancake|waffle|burrito|enchilada|meatball|hoagie|\bcrab\b|oyster|"
-    r"scallop|calamari|dumpling|noodle|biscuit|\bfries\b|slider|\bwok\b|stir.?fry)\b", re.I)
+    r"alfredo|ziti|lasagna|ravioli|gnocchi|penne|rigatoni|spaghetti|fettuccine|linguine|tortellini|"
+    r"parmigiana|parmesan|marsala|piccata|risotto|bolognese|carbonara|marinara|bruschetta|caprese|"
+    r"antipast\w+|calzone|stromboli|pollo|chicken|salmon|tilapia|tuna|salad|onion ring|bloomin|appetizer|"
+    r"entr\w*e|quesadilla|taco|nacho|wings?|ribs?|brisket|\bpork\b|\bbeef\b|\bbbq\b|mashed|broccoli|"
+    r"asparagus|soup|chowder|platter|omelet|pancake|waffle|burrito|enchilada|meatball|hoagie|\bcrab\b|"
+    r"oyster|scallop|calamari|dumpling|noodle|biscuit|\bfries\b|slider|\bwok\b|stir.?fry|tiramisu|"
+    r"cannoli|gelato|\bwrap\b|\bmelt\b|\bplate\b)\b", re.I)   # dessert/drink-ambiguous words (cake/pie/bowl) left out on purpose
 
 
 def classify_beverage(name, description=""):
@@ -254,14 +257,14 @@ def classify_beverage(name, description=""):
     text = ("%s %s" % (name or "", description or "")).lower()
     nm = (name or "").lower()                                   # a beverage's IDENTITY is its name
     mock = bool(_MOCKTAIL.search(text))
+    if _FOOD.search(nm):                                        # a food DISH is never a drink — check first, so
+        return {"category": "other", "is_alcoholic": False, "name": (name or "").strip()}  # "Penne Vodka" ≠ vodka
     c = classify(name, description)
     is_cocktail = c["method"] == "deterministic"
     if is_cocktail:
         return {"category": "mocktail" if mock else "cocktail", "is_alcoholic": not mock,
                 "name": (name or "").strip(), "root": c["root"], "sub": c["sub"],
                 "base_spirit": "" if mock else c["base_spirit"]}
-    if _FOOD.search(nm):                                        # a food dish (name may collide with a bev brand)
-        return {"category": "other", "is_alcoholic": False, "name": (name or "").strip()}
     # Beer/sake/soju are NAMED products — anchor detection to the NAME. A brewhouse describes its DISHES with
     # its beer ("Deep Dish Ziti … our Hazy IPA"), so matching the description would mislabel food as a beverage.
     soda = re.search(r"root beer|\bginger beer\b|cream soda|birch beer|ginger ale", nm)

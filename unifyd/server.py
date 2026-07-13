@@ -1676,17 +1676,49 @@ def market_onpremise_ep():
         accts = warehouse.query("naop_accounts", "SELECT * FROM t WHERE serves_alcohol = true")
     except Exception:
         accts = []
+    # Fold in FIRST-PARTY menus (menu_site.py: Google-discovered site/PDF menus, read by Claude). Most bars pour
+    # DINE-IN only, so DoorDash misses them — these are the real drink lists (price_basis='menu_list', not
+    # delivery-inflated). Prefer them; add any venue DoorDash didn't surface.
+    try:
+        mcounts = warehouse.query("menu_beverages", "SELECT account, count(*) n FROM t GROUP BY account")
+    except Exception:
+        mcounts = []
+    by_name = {(a.get("account") or "").lower(): a for a in accts}
+    for m in mcounts:
+        nm = m.get("account") or ""
+        a = by_name.get(nm.lower())
+        if a:
+            a["first_party"] = True
+            a["n_beverages"] = max(a.get("n_beverages") or 0, m["n"])
+        else:
+            accts.append({"account": nm, "cuisine": "", "serves_alcohol": True,
+                          "n_beverages": m["n"], "first_party": True})
     if q:
         accts = [a for a in accts if q in (a.get("account") or "").lower() or q in (a.get("cuisine") or "").lower()]
     accts.sort(key=lambda a: -(a.get("n_beverages") or 0))
     bevs = []
     if acct:
-        try:
-            bevs = warehouse.query("naop_beverages", "SELECT name, description, price, category, cuisine, "
-                                   "base_spirit, beer_style, sub, root FROM t WHERE account = ? "
-                                   "ORDER BY category, price DESC", [acct])
-        except Exception:
-            bevs = []
+        cols = "name, description, price, category, base_spirit, beer_style, sub, root, price_basis"
+        rows = []
+        for tbl, src in (("menu_beverages", "menu"), ("naop_beverages", "doordash")):
+            try:
+                for r in warehouse.query(tbl, "SELECT %s FROM t WHERE account = ?" % cols, [acct]):
+                    r["source"] = src
+                    rows.append(r)
+            except Exception:
+                pass
+        seen = {}                                # dedup by name — the first-party dine-in menu wins over delivery
+        for r in rows:
+            k = (r.get("name") or "").strip().lower()
+            if k and (k not in seen or r["source"] == "menu"):
+                seen[k] = r
+
+        def _pr(r):
+            try:
+                return float(r.get("price") or 0)
+            except (TypeError, ValueError):
+                return 0.0
+        bevs = sorted(seen.values(), key=lambda r: (r.get("category") or "", -_pr(r)))
     return jsonify(ok=True, count=len(accts), accounts=accts, account=acct, beverages=bevs)
 
 
