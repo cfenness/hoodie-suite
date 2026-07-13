@@ -105,10 +105,9 @@
     </div>
   </div>
   <div class="detail" id="detail"></div>
-  <div class="legend"><b>coverage density</b> — every geocoded account<br>zoom in for individual pins · click a pin or result for the account</div>
+  <div class="legend"><b>one dot = one outlet</b> · zoom out to see coverage density<br>coloured by source · click a dot or result for the account</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <script>
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 // US state centroids (approx) — ungeocoded accounts roll up to their state bubble so the full book shows
@@ -129,12 +128,34 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{sub
 L.control.attribution({prefix:false}).addAttribution('© OpenStreetMap · © CARTO').addTo(map);
 
 let DATA=null, srcColor={}, active=new Set();
-const pinLayer=L.layerGroup().addTo(map);
-// the coverage DENSITY surface (Verizon-style) — a heatmap of every geocoded outlet
-let heat=null;
-const HEAT_GRAD={0.0:'rgba(74,32,110,0)',0.25:'#5e2a8c',0.45:'#a3208a',0.62:'#d6336c',0.78:'#f03e3e',0.9:'#ff922b',1.0:'#ffe066'};
+let ALLPTS=[], DOTSRC=[];   // every geocoded outlet [lat,lng,srcIdx] + the source-name index
 function fmt(n){ return (n||0).toLocaleString(); }
 function colOf(s){ return srcColor[s]||'#8aa39d'; }
+
+// ONE POINT PER OUTLET — a single canvas draws every geocoded outlet in one pass, so zoomed out the points
+// fill into a coverage/density picture and zoomed in they're distinct + clickable (cell-coverage style).
+const DotLayer=L.Layer.extend({
+  onAdd(map){ this._map=map; const c=this._c=L.DomUtil.create('canvas','leaflet-zoom-hide');
+    c.style.cssText='position:absolute;top:0;left:0;pointer-events:none';
+    map.getPanes().overlayPane.appendChild(c);
+    map.on('moveend zoomend viewreset', this._draw, this); this._draw(); },
+  onRemove(map){ L.DomUtil.remove(this._c); map.off('moveend zoomend viewreset', this._draw, this); },
+  _draw(){ const m=this._map; if(!m) return; const size=m.getSize(), dpr=Math.min(2,window.devicePixelRatio||1);
+    this._c.width=size.x*dpr; this._c.height=size.y*dpr; this._c.style.width=size.x+'px'; this._c.style.height=size.y+'px';
+    L.DomUtil.setPosition(this._c, m.containerPointToLayerPoint([0,0]));
+    const ctx=this._c.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,size.x,size.y);
+    const z=m.getZoom(), w=size.x, h=size.y;
+    const rad = z>=9?3 : z>=7?2.2 : z>=5?1.5 : 1.1;         // dots grow a touch as you zoom in
+    ctx.globalAlpha = z>=6?0.92:0.72;
+    for(let i=0;i<ALLPTS.length;i++){ const p=ALLPTS[i];
+      if(!active.has(DOTSRC[p[2]])) continue;                // source filter (client-side, per draw)
+      const cp=m.latLngToContainerPoint([p[0],p[1]]);
+      if(cp.x<-2||cp.y<-2||cp.x>w+2||cp.y>h+2) continue;
+      ctx.fillStyle=colOf(DOTSRC[p[2]]); ctx.fillRect(cp.x-rad/2, cp.y-rad/2, rad, rad); }
+    ctx.globalAlpha=1; }
+});
+const dots=new DotLayer().addTo(map);
+function redrawDots(){ dots._draw(); }
 
 async function load(){
   const d=await fetch('/api/coverage',{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
@@ -143,7 +164,7 @@ async function load(){
   DATA=d;
   (d.by_source||[]).forEach((s,i)=>{ srcColor[s.source]=PAL[i%PAL.length]; active.add(s.source); });
   document.getElementById('tot').innerHTML='<b>'+fmt(d.total)+'</b> accounts · '+(d.by_source||[]).length+' sources · '+fmt(d.geocoded||0)+' geocoded';
-  renderSources(); loadHeat(); redraw();
+  renderSources(); loadDots();
   if(L0)L0.remove();
 }
 function renderSources(){
@@ -153,43 +174,23 @@ function renderSources(){
     +'<span class="sw" style="background:'+colOf(s.source)+'"></span>'+esc(s.source)
     +'<span class="cnt">'+fmt(s.n)+'</span></div>').join('');
   el.querySelectorAll('.src').forEach(x=>x.onclick=()=>{ const s=x.getAttribute('data-s');
-    if(active.has(s))active.delete(s); else active.add(s); renderSources(); loadHeat(); redraw(); });
+    if(active.has(s))active.delete(s); else active.add(s); renderSources(); redrawDots(); });
 }
-// COVERAGE SURFACE (Verizon-style): a continuous heat density of every geocoded outlet, always on. Zoomed in
-// (>=z8) we ALSO drop individual pins per viewport so an outlet is clickable. No state bubbles.
-const ZOOM_PINS=8;
-function redraw(){
-  if(map.getZoom()>=ZOOM_PINS) loadViewportPins(); else pinLayer.clearLayers();
-}
-let heatReq=0;
-async function loadHeat(){
-  const my=++heatReq;
+let dotReq=0;
+async function loadDots(){
+  const my=++dotReq;
   const params=new URLSearchParams(); if(sellFlag) params.set('sells',sellFlag);
-  if(active.size===1) params.set('source',[...active][0]);   // isolate one source's coverage when soloed
-  const d=await fetch('/api/coverage/heat?'+params,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
-  if(my!==heatReq || !d || !d.points) return;
-  const opts={radius:14,blur:20,maxZoom:9,minOpacity:.35,max:1.0,gradient:HEAT_GRAD};
-  if(!heat){ heat=L.heatLayer(d.points,opts).addTo(map); }
-  else{ heat.setLatLngs(d.points); }
+  const d=await fetch('/api/coverage/dots?'+params,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
+  if(my!==dotReq || !d || !d.points) return;
+  ALLPTS=d.points; DOTSRC=d.sources||[];
+  redrawDots();
 }
-let pinReq=0;
-async function loadViewportPins(){
-  const my=++pinReq;
-  const b=map.getBounds();
-  const params=new URLSearchParams({bbox:[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(x=>x.toFixed(4)).join(',')});
-  if(sellFlag) params.set('sells',sellFlag);
-  const d=await fetch('/api/coverage/points?'+params,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
-  if(my!==pinReq || !d) return;
-  pinLayer.clearLayers();
-  (d.points||[]).forEach(p=>{ if(!active.has(p.source))return; if(p.lat==null)return;
-    const m=L.circleMarker([p.lat,p.lng],{radius:3.4,color:colOf(p.source),weight:0,fillColor:colOf(p.source),fillOpacity:.85});
-    m.on('click',()=>showDetail(p));
-    m.bindTooltip(esc(p.store_name||p.source)+(p.chain?(' · '+esc(p.chain)):''),{direction:'top',className:'covtip'});
-    pinLayer.addLayer(m);
-  });
-}
-let moveT=null;
-map.on('moveend',()=>{ clearTimeout(moveT); moveT=setTimeout(()=>{ if(DATA) redraw(); },240); });
+// click the map → the nearest account to that point (server-side), then its detail
+map.on('click', async e=>{
+  const z=map.getZoom(), r = z>=11?0.008 : z>=8?0.03 : z>=6?0.09 : 0.25;
+  const d=await fetch('/api/coverage/at?lat='+e.latlng.lat+'&lng='+e.latlng.lng+'&r='+r,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
+  if(d && d.account && active.has(d.account.source)) showDetail(d.account);
+});
 let listReq=0;
 async function loadAccounts(filter){
   const my=++listReq;
@@ -245,14 +246,14 @@ function showDetail(a){
 let qt=null;
 document.getElementById('q').addEventListener('input',e=>{ clearTimeout(qt); const v=e.target.value.trim();
   qt=setTimeout(()=>{ if(v.length>=2) loadAccounts({q:v}); else clearList(); },260); });
-document.getElementById('allon').onclick=()=>{ (DATA.by_source||[]).forEach(s=>active.add(s.source)); renderSources(); loadHeat(); redraw(); };
-document.getElementById('alloff').onclick=()=>{ active.clear(); renderSources(); loadHeat(); redraw(); };
+document.getElementById('allon').onclick=()=>{ (DATA.by_source||[]).forEach(s=>active.add(s.source)); renderSources(); redrawDots(); };
+document.getElementById('alloff').onclick=()=>{ active.clear(); renderSources(); redrawDots(); };
 // sell-flag filter — beer/wine/spirits/hemp + the spirits-RTD-but-not-spirits class
 let sellFlag='';
 document.querySelectorAll('#sells button').forEach(b=>b.onclick=()=>{
   const f=b.getAttribute('data-f'); sellFlag=(sellFlag===f)?'':f;
   document.querySelectorAll('#sells button').forEach(x=>x.classList.toggle('on', x.getAttribute('data-f')===sellFlag));
-  loadHeat(); redraw();
+  loadDots();
   const q=document.getElementById('q').value.trim();
   if(q.length>=2) loadAccounts({q}); else if(sellFlag) loadAccounts({}); else clearList();
 });
