@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import menu_site as ms            # discover_site helpers: _bd_key, _SOCIAL, _unlock
 import place_coverage as pc       # _bd_maps_text (Maps website lookup)
+import off_premise as _op         # _fetch: direct-first homepage fetch (free; OFFPREM_NO_BD=1 forbids paid BD)
 
 # ordered by liquor-ecommerce relevance; first match wins
 _PLATFORMS = [
@@ -116,7 +117,7 @@ def census(market="orlando", near="Orlando FL", scope="retail", log=print):
                    market=market, run_id=run_id)
         if rec["has_website"]:
             try:
-                page = ms._unlock(site, key)
+                page = _op._fetch(site, key)   # direct-first (free); BD only if OFFPREM_NO_BD unset
                 rec.update(detect(page))
                 rec.update(store_account(page))       # account info from the STORE'S OWN site (no Google)
             except Exception:
@@ -137,7 +138,16 @@ def census(market="orlando", near="Orlando FL", scope="retail", log=print):
 
 
 _HEMP_TERMS = ["cbd store", "smoke shop", "vape shop", "hemp store", "cbd dispensary", "delta 8 store", "hemp dispensary"]
-_LIQUOR_TERMS = ["liquor store", "wine and spirits", "wine shop", "bottle shop", "package store", "spirits store"]
+_LIQUOR_TERMS = [
+    # spirits / package
+    "liquor store", "wine and spirits", "package store", "spirits store", "abc store",
+    # wine
+    "wine shop", "wine store", "wine merchant", "fine wine",
+    # beer — the under-covered slice
+    "beer store", "craft beer store", "bottle shop", "beer and wine", "growler shop", "brewery bottle shop",
+    # grocery / market that carries beer & wine — the missed slice
+    "grocery store beer wine", "gourmet market", "specialty food market", "italian market", "deli beer wine",
+    "convenience store beer wine", "corner store beer wine", "natural grocery beer wine"]
 
 
 def census_discover(market, near, terms, out, log=print):
@@ -164,7 +174,7 @@ def census_discover(market, near, terms, out, log=print):
                    sells_hemp=False, sells_bevalc=False, market=market, run_id=run_id)
         if rec["has_website"]:
             try:
-                page = ms._unlock(site, key)
+                page = _op._fetch(site, key)   # direct-first (free); BD only if OFFPREM_NO_BD unset
                 rec.update(detect(page))
                 rec.update(store_account(page))       # account info from the STORE'S OWN site (no Google)
             except Exception:
