@@ -208,12 +208,15 @@ function roadsFromCols(cols, hints){
   if(any(/avail|stock|inventory|instock|units|on.?hand|depletion|movement/)) es.push(['inventory','availability']);
   if(any(/licens|permit|\babt\b|dbpr/)) es.push(['outlet','license#']);
   if(any(/address|\bcity\b|\bzip\b|\bstate\b|\blat\b|\blng\b|longitude|latitude|store|location|premise|phone|\bdba\b/)) es.push(['outlet','address']);
+  // reference / context data (Census & friends) → its own limb, not miscast as a product source
+  if(any(/census|demographic|\bacs\b|population|household|median|\bincome\b|\bcbp\b|nonemployer|\bnes\b|\bpep\b|\bfips\b|tract|estab/)) es.push(['reference','data']);
   // tier / name hints when columns are sparse
   const h=(hints||'').toLowerCase();
   if(!es.length && /on-premise|locator|yext|location|outlet/.test(h)) es.push(['outlet','address']);
   if(!es.length && /dbpr|abt|licens/.test(h)) es.push(['outlet','license#']);
   if(!es.length && /nabca|deplet|control|inventory/.test(h)) es.push(['inventory','availability']);
   if(!es.length && /price|pricing/.test(h)) es.push(['pricing','price']);
+  if(!es.length && /census|demographic|reference|acs|cbp|population/.test(h)) es.push(['reference','data']);
   if(!es.length) es.push(['product','name']);
   const seen=new Set(); return es.filter(e=> !seen.has(e[0]) && seen.add(e[0]));
 }
@@ -324,6 +327,7 @@ function buildModel(live){
   function addSource(key,disp,status,sub,cols,hints,liveFlag,dataset,host){
     const dn=disp.toLowerCase(); if(seen[dn]) return; seen[dn]=1;
     let rs=roadsFromCols(cols,hints);
+    const preEnt=(rs[0]&&rs[0][0])||'reference';   // best signal BEFORE the fact-filter — so a pricing-only
     // FACT edges (inventory/pricing) must be CONFIRMED, not guessed from a column name: keep them only
     // when the server's /api/sources feeds say this dataset actually feeds that fact (a real mapping or
     // seed exists). So a node only attaches to Inventory when we've confirmed inventory exists for it.
@@ -332,8 +336,9 @@ function buildModel(live){
     if(feeds) ['inventory','pricing'].forEach(f=>{ if(feeds.indexOf(f)>=0 && !rs.some(x=>x[0]===f)) rs.push([f, f==='pricing'?'price':'availability']); });
     const ents=rs.map(r=>r[0]);
     const n={id:key,label:friendly(disp),full:disp,kind:'src',status:(status||'planned').toLowerCase(),
+             // source still clusters by its best signal (preEnt) even when the fact edge is unconfirmed — no 'other'
              sub:sub,live:liveFlag,cols:(cols||[]),dataset:dataset||null,host:host||null,
-             primaryEnt:ents[0]||'other',pos:stablePos(disp,ents)};
+             primaryEnt:ents[0]||preEnt,pos:stablePos(disp,ents.length?ents:[preEnt])};
     nodes.push(n); byId[key]=n; rs.forEach(([e,road])=>edges.push({a:key,b:e,road}));
   }
 
@@ -362,6 +367,16 @@ function buildModel(live){
       nodes.push(n); byId[n.id]=n;
       sf.grains.forEach(e=>{ if(ENT_POS[e]) edges.push({a:n.id,b:e,road:e==='pricing'?'price':(e==='inventory'?'availability':(e==='outlet'?'address':(e==='brand'?'brand':'has')))}); });
     });
+    // owned datasets NOT already shown as a system feed — Census / reference / outlet-only tables etc. Without
+    // this they vanish when online (the system feeds only cover src_-emitting sources). Mapped by roadsFromCols
+    // (Census → reference limb), so nothing lands unmapped in 'Other'.
+    const covered=new Set(sysFeeds.map(sf=>sf.sys));
+    const cleanTag=k=>k.replace(/_products$|_catalog$|_pricing$/,'').replace(/_/g,'-');
+    Object.entries(live.datasets||{}).forEach(([k,v])=>{
+      if(k==='offprem_products' || covered.has(cleanTag(k))) return;   // already a system feed
+      const cols=(v&&v.header)||[]; const rows=(v&&(v.total||(v.rows&&v.rows.length)))||'';
+      addSource('d:'+k, dsName(k), 'data', 'owned dataset'+(rows?(' · '+rows+' rows'):''), cols, k, true, k);
+    });
   } else {
     // fallback (engine offline / src_ not built yet): the raw owned-dataset tables, one node each
     Object.entries(live.datasets||{}).forEach(([k,v])=>{
@@ -388,7 +403,7 @@ const camera=new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.5, 3000);
 const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight); renderer.setPixelRatio(Math.min(2,devicePixelRatio)); stage.appendChild(renderer.domElement);
 const lr=new CSS2DRenderer(); lr.setSize(innerWidth,innerHeight); lr.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:4'; document.body.appendChild(lr.domElement);
 const controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true; controls.dampingFactor=.075;
-controls.rotateSpeed=1.05; controls.zoomSpeed=1.25; controls.panSpeed=.9; controls.minDistance=6; controls.maxDistance=1400;
+controls.rotateSpeed=1.05; controls.zoomSpeed=0.62; controls.panSpeed=.9; controls.minDistance=6; controls.maxDistance=1400;
 controls.zoomToCursor=true;   // scroll zooms toward the mouse, not the pivot
 // arrow keys / WASD ORBIT the object around the pivot (a bigger model needs turning to traverse); shift = faster.
 // Implemented in spherical coords so it works regardless of OrbitControls internals.

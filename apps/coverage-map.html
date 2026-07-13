@@ -106,7 +106,9 @@ SD:[44.4,-100.2],TN:[35.9,-86.4],TX:[31.5,-99.3],UT:[39.3,-111.7],VT:[44,-72.7],
 WV:[38.6,-80.6],WI:[44.6,-89.9],WY:[43,-107.5],PR:[18.2,-66.5]};
 const PAL=['#4E79A7','#F28E2B','#59A14F','#B07AA1','#76B7B2','#E15759','#EDC948','#9C755F','#FF9DA7','#8CD17D',
 '#499894','#D37295','#B6992D','#86BCB6','#D4A6C8','#79706E','#A0CBE8','#F1CE63','#FABFD2','#BAB0AC','#D7B5A6'];
-const map=L.map('map',{zoomControl:true,attributionControl:false,minZoom:3,maxZoom:16,worldCopyJump:true}).setView([39.5,-98.5],4);
+// wheelPxPerZoomLevel raised (default 60) + zoomSnap .5 so a trackpad flick steps ~one level, not three
+const map=L.map('map',{zoomControl:true,attributionControl:false,minZoom:3,maxZoom:16,worldCopyJump:true,
+  wheelPxPerZoomLevel:140,wheelDebounceTime:60,zoomSnap:.5,zoomDelta:.5}).setView([39.5,-98.5],4);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19}).addTo(map);
 L.control.attribution({prefix:false}).addAttribution('© OpenStreetMap · © CARTO').addTo(map);
 
