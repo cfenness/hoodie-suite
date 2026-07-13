@@ -197,6 +197,74 @@ def build_brand_merges(con, log=print):
     return len(out)
 
 
+def apply_decisions(rows, log=print):
+    """RECLUSTER — respect the human decisions in master_decisions so the master reflects the corrections:
+    - merge: the listed sku_keys are ONE SKU → collapse into one canonical (source_list/rows accumulate).
+    - split (from the match workbench): the listed SOURCES don't belong to that cluster → prune them.
+    A merged cluster can cross the sources>=2 line (moves to master); a pruned one can drop below it (→ queue).
+    No decisions = identity (fast path). vpid is never a merge/split anchor — decisions key on our sku_key."""
+    import json as _json
+    try:                                    # SELECT * — the split rows carry `removed`, merge rows carry
+        decs = warehouse.query("master_decisions", "SELECT * FROM t")   # `members`; schema varies, so read all
+    except Exception:
+        return rows
+    if not decs:
+        return rows
+    parent = {}
+
+    def find(x):
+        r = x
+        while parent.get(r, r) != r:
+            r = parent[r]
+        while parent.get(x, x) != r:
+            parent[x], x = r, parent[x]
+        return r
+    split_src, nmerge = {}, 0
+    for d in decs:
+        if d.get("action") == "merge":
+            try:
+                mem = _json.loads(d.get("members") or "[]")
+            except Exception:
+                mem = []
+            for k in mem[1:]:
+                parent.setdefault(mem[0], mem[0]); parent[k] = mem[0]; nmerge += 1
+        elif d.get("action") == "split":
+            try:
+                rem = _json.loads(d.get("removed") or "[]")
+            except Exception:
+                rem = []
+            if rem:
+                split_src.setdefault(d.get("cluster_id"), set()).update(rem)
+    canon = {}
+    for r in rows:
+        sk = r["sku_key"]
+        ck = find(sk)
+        sl = r.get("source_list")
+        if isinstance(sl, str):
+            try:
+                sl = _json.loads(sl)
+            except Exception:
+                sl = [sl] if sl else []
+        sl = list(sl or [])
+        rem = split_src.get(sk)
+        if rem:
+            sl = [s for s in sl if s not in rem]
+        if ck in canon:
+            c = canon[ck]
+            c["source_list"] = sorted(set((c["source_list"] or []) + sl))
+            c["source_rows"] = (c.get("source_rows") or 0) + (r.get("source_rows") or 0)
+        else:
+            nr = dict(r); nr["sku_key"] = ck; nr["source_list"] = sorted(set(sl)); canon[ck] = nr
+    out = []
+    for c in canon.values():
+        c["sources"] = len(c["source_list"] or [])
+        if c["sources"] >= 1:
+            out.append(c)
+    log("[wb_views] recluster: %d merges + %d splits applied → %d clusters (was %d)"
+        % (nmerge, len(split_src), len(out), len(rows)))
+    return out
+
+
 def build(log=print):
     con = warehouse.connect()
     for t in ("dim_sku", "dim_item", "dim_product", "dim_brand", "_stage_product"):
@@ -207,6 +275,13 @@ def build(log=print):
             log("[wb_views] view %s: %s" % (t, str(e)[:60]))
     master = _rows(con, _JOIN + "WHERE s.sources >= 2 ORDER BY s.sources DESC, s.source_rows DESC LIMIT %d" % CAP)
     queue = _rows(con, _JOIN + "WHERE s.sources = 1 ORDER BY s.source_rows DESC LIMIT %d" % CAP)
+    # RECLUSTER — apply human merge/split decisions, then re-partition (a merge can push a SKU into the master;
+    # a split can drop it back to the queue). Identity when there are no decisions.
+    combined = apply_decisions(master + queue, log=log)
+    master = sorted([r for r in combined if (r.get("sources") or 0) >= 2],
+                    key=lambda r: (-(r.get("sources") or 0), -(r.get("source_rows") or 0)))[:CAP]
+    queue = sorted([r for r in combined if (r.get("sources") or 0) == 1],
+                   key=lambda r: -(r.get("source_rows") or 0))[:CAP]
     warehouse.write_parquet("wb_master", master, fields=FIELDS)
     warehouse.write_parquet("wb_queue", queue, fields=FIELDS)
     agg = _rows(con, "SELECT count(*) total, sum(CASE WHEN sources >= 2 THEN 1 ELSE 0 END) multi FROM dim_sku")[0]
