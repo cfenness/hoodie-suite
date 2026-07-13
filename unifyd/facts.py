@@ -81,6 +81,17 @@ def _geo_for(source):
     return {}
 
 
+def _xwalk_map(log):
+    """(source, product_id) -> sku_key, from the master's source crosswalk. Resolves UPC-less sources
+    (ABC/Binny's/Target/Total Wine) that the UPC path can't reach. Empty until the master emits it."""
+    try:
+        return {(r["source"], str(r["product_id"])): r["sku_key"] for r in warehouse.query(
+            "xwalk_source_sku", "SELECT source, product_id, sku_key FROM t")}
+    except Exception as e:
+        log("  [facts] source xwalk unavailable (rebuild the master to emit it): %s" % str(e)[:50])
+        return {}
+
+
 def _sku_hz_map(log):
     """sku_key -> Hoodie sku id (HZ-K…). SKUs already carry ids from the master rebuild's assign(); this just
     reads them so the facts can reference the DURABLE product id, not the volatile sku_key hash."""
@@ -94,7 +105,8 @@ def _sku_hz_map(log):
 
 def build(source=None, log=print):
     import hoodie_ids
-    umap = _upc_sku_map(log)                             # upc(norm) -> sku_key
+    umap = _upc_sku_map(log)                             # upc(norm) -> sku_key   (UPC-bearing sources)
+    xw = _xwalk_map(log)                                 # (source, product_id) -> sku_key  (UPC-less sources)
     skhz = _sku_hz_map(log)                              # sku_key -> HZ-K id
     where = 'WHERE source = ?' if source else ''
     params = [source] if source else None
@@ -125,9 +137,10 @@ def build(source=None, log=print):
                               "city": g.get("city"), "state": g.get("state"), "zip": g.get("zip"),
                               "lat": g.get("lat"), "lng": g.get("lng")}
             upc = str(r.get("upc") or "")
-            skukey = umap.get(norm_upc(upc)) if upc else None
+            pid = str(r.get("product_id") or "")
+            skukey = xw.get((src, pid)) or (umap.get(norm_upc(upc)) if upc else None)   # crosswalk first, then UPC
             base = {"date": d, "source": src, "store_key": sk, "hoodie_store_id": hz_store, "store_id": sid,
-                    "product_id": str(r.get("product_id") or ""), "upc": upc, "sku_key": skukey,
+                    "product_id": pid, "upc": upc, "sku_key": skukey,
                     "hoodie_sku_id": (skhz.get(skukey) if skukey else None)}
             invs.append({**base, "qty": r.get("qty"), "in_stock": bool(r.get("in_stock")),
                          "stock_level": r.get("stock_level") or ""})

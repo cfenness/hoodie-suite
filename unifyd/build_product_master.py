@@ -34,7 +34,7 @@ _CLEAN_BRAND = [("kroger_products", "brand"), ("walmart_products", "brand"), ("n
 # per-source projection: which columns carry name / size / upc / abv(or proof) / category / clean-brand, + a
 # bev-alc filter so non-alcohol rows (a Kroger marinade) don't feed the master.
 _CFG = {
-    "abc_catalog": dict(name="name", size="size", upc="upc", image="image"),
+    "abc_catalog": dict(name="name", size="size", upc="upc", image="image", id="sku"),
     "kroger_products": dict(name="product_name", size="size", upc="upc", brand="brand", cat="category",
                             image="image_url", filt=lambda r: r.get("category") == "Adult Beverage", dedup=["product_id"]),
     "walmart_products": dict(name="product_name", size_ml="size_ml", upc="upc", abv="abv", brand="brand",
@@ -258,6 +258,30 @@ def split_by_abv(staged, log=print):
     return staged
 
 
+def build_source_xwalk(con, log=print):
+    """(source, source_product_id) -> product_key / item_key / sku_key. Recomputes the SAME md5 identity keys
+    master_apply.resolve_hierarchy assigns, but over _stage_product (which now carries _source + _source_id) —
+    so every source catalog row maps to the master key it landed in. This is what lets the fact tables resolve
+    UPC-LESS observations (ABC/Binny's/Target/Total Wine, keyed by the retailer's own product id) to a master
+    product — the ~7M rows the UPC path could never reach."""
+    keys = master_apply._keyexprs(FIELDS)
+    uri = warehouse.uri("_stage_product")                 # quoted 's3://…'
+    sql = ("SELECT _source AS source, CAST(_source_id AS VARCHAR) AS product_id, "
+           "%s AS product_key, %s AS item_key, %s AS sku_key "
+           "FROM read_parquet('%s') WHERE _source_id IS NOT NULL AND _source_id <> '' "
+           "GROUP BY 1, 2, 3, 4, 5" % (keys["product"], keys["item"], keys["sku"], uri))
+    # normalize the catalog TABLE name to the OBSERVATION source name so facts join directly:
+    # abc_catalog->abc, binnys_products->binnys, total_wine_products->total-wine …
+    def _obs_src(t):
+        return t.replace("_products", "").replace("_catalog", "").replace("_", "-")
+    rows = [dict(source=_obs_src(r[0]), product_id=r[1], product_key=r[2], item_key=r[3], sku_key=r[4])
+            for r in con.execute(sql).fetchall()]
+    warehouse.write_parquet("xwalk_source_sku", rows,
+                            ["source", "product_id", "product_key", "item_key", "sku_key"])
+    log("[master] xwalk_source_sku: %d (source,product_id)->sku rows" % len(rows))
+    return len(rows)
+
+
 def build(log=print):
     by1 = build_brand_dict(log)
     staged = []
@@ -271,6 +295,7 @@ def build(log=print):
         except Exception as e:
             log("[master] skip %s: %s" % (ds, str(e)[:60])); continue
         f, kept = c.get("filt"), 0
+        idc = c.get("id") or ((c.get("dedup") or [None])[0])   # the source's product-id col (matches obs.product_id)
         for r in rows:
             if f and not f(r):
                 continue
@@ -296,6 +321,7 @@ def build(log=print):
                 packsize=None, container=r.get(c["container"]) if c.get("container") else None, pack=None,
                 upc=(re.sub(r"\D", "", str(r.get(c["upc"]))) or None) if c.get("upc") and r.get(c["upc"]) else None,
                 gtin=None, edition=None, supplier=None, _source=ds,
+                _source_id=(str(r.get(idc)) if idc and r.get(idc) is not None else None),
                 vintage=_clean_vintage(r.get(c["vintage"])) if c.get("vintage") else None,
                 **{fld: ((str(r.get(c[fld])).strip() or None) if c.get(fld) and r.get(c[fld]) else None)
                    for fld in ("region", "sub_region", "appellation", "varietal", "image")}))
@@ -306,10 +332,14 @@ def build(log=print):
     split_by_abv(staged, log)                           # then un-merge distinct-proof expressions ABV separates
     _sku_match.propagate_upcs(staged, log)              # SKU-first: propagate UPCs across matched item clusters
     log("[master] staged %d rows → _stage_product" % len(staged))
-    warehouse.write_parquet("_stage_product", staged, fields=FIELDS + ["_source"])
+    warehouse.write_parquet("_stage_product", staged, fields=FIELDS + ["_source", "_source_id"])
     con = warehouse.connect()
     h = master_apply.resolve_hierarchy(FIELDS, warehouse.uri("_stage_product").strip("'"), con, built_by="build_product_master")
     dims = {k: v["rows"] for k, v in h.items() if isinstance(v, dict) and "rows" in v}
+    try:                                                # source (source, product_id) -> sku_key crosswalk
+        build_source_xwalk(con, log=log)               # (recomputes the SAME md5 keys over _stage_product)
+    except Exception as e:
+        log("[master] source xwalk skipped: %s" % str(e)[:80])
     log("[master] DONE — %s" % dims)
     try:                                                # mint/reuse durable Hoodie IDs for the rebuilt entities
         import hoodie_ids                                # (persistent registry — same real entity keeps its id)
