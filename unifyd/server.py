@@ -2109,10 +2109,17 @@ def coverage_ep():
     total = sum(r["n"] for r in by_src)
     xs = warehouse.query("src_outlets", "SELECT upper(trim(state)) state, source, count(*) n FROM t "
                          "WHERE nullif(trim(state),'') IS NOT NULL GROUP BY state, source")
-    pts = warehouse.query("src_outlets", "SELECT source, store_name, city, state, "
+    try:
+        by_chain = warehouse.query("src_outlets", "SELECT chain, count(*) n FROM t WHERE nullif(chain,'') "
+                                   "IS NOT NULL GROUP BY chain ORDER BY n DESC LIMIT 60")
+        chained = warehouse.query("src_outlets", "SELECT count(*) n FROM t WHERE is_chain")[0]["n"]
+    except Exception:
+        by_chain, chained = [], 0
+    pts = warehouse.query("src_outlets", "SELECT source, store_name, chain, city, state, "
                           "round(CAST(lat AS DOUBLE),5) lat, round(CAST(lng AS DOUBLE),5) lng FROM t "
-                          "WHERE lat IS NOT NULL AND lng IS NOT NULL LIMIT 12000")
-    return jsonify(ok=True, total=total, by_source=by_src, by_state=by_state, by_state_source=xs, points=pts)
+                          "WHERE lat IS NOT NULL AND lng IS NOT NULL LIMIT 40000")
+    return jsonify(ok=True, total=total, chained=chained, by_source=by_src, by_state=by_state,
+                   by_state_source=xs, by_chain=by_chain, points=pts)
 
 
 @app.get("/api/coverage/accounts")
@@ -2122,6 +2129,7 @@ def coverage_accounts_ep():
     import warehouse
     src = (request.args.get("source") or "").strip()
     state = (request.args.get("state") or "").strip().upper()
+    chain = (request.args.get("chain") or "").strip()
     q = (request.args.get("q") or "").strip().lower()
     try:
         limit = min(1000, max(1, int(request.args.get("limit") or 300)))
@@ -2132,13 +2140,15 @@ def coverage_accounts_ep():
         where.append("source = ?"); params.append(src)
     if state:
         where.append("upper(trim(state)) = ?"); params.append(state)
+    if chain:
+        where.append("chain = ?"); params.append(chain)
     if q:
         where.append("(lower(store_name) LIKE ? OR lower(city) LIKE ? OR lower(address) LIKE ?)")
         params += ["%" + q + "%"] * 3
     try:
-        rows = warehouse.query("src_outlets", "SELECT source, store_id, store_name, address, city, state, zip, "
-                               "CAST(lat AS DOUBLE) lat, CAST(lng AS DOUBLE) lng, phone, hoodie_outlet FROM t "
-                               "WHERE %s ORDER BY store_name LIMIT %d" % (" AND ".join(where), limit), params)
+        rows = warehouse.query("src_outlets", "SELECT source, store_id, store_name, chain, is_chain, address, city, "
+                               "state, zip, CAST(lat AS DOUBLE) lat, CAST(lng AS DOUBLE) lng, phone, hoodie_outlet "
+                               "FROM t WHERE %s ORDER BY store_name LIMIT %d" % (" AND ".join(where), limit), params)
     except Exception as e:
         return jsonify(ok=False, error=str(e)[:160], accounts=[])
     return jsonify(ok=True, count=len(rows), accounts=rows)
