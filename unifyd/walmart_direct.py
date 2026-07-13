@@ -95,6 +95,46 @@ def search_page(term, page=1):
     return out
 
 
+# product-detail spec name (lowercased contains) -> our rich field. The /ip/ page's idml.specifications carries
+# the RNDC-style vector: varietal, region, vintage, ABV, container, flavor, pairing, wine score, size.
+_SPEC_FIELD = [("wine varietal", "varietal"), ("varietal", "varietal"), ("grape", "varietal"),
+               ("wine region", "region"), ("region", "region"), ("appellation", "region"),
+               ("vintage", "vintage"), ("alcohol content", "abv_str"), ("proof", "abv_str"),
+               ("container type", "container"), ("container", "container"), ("flavor", "flavor"),
+               ("food pairing", "pairing"), ("wine pairing", "pairing"), ("pairing", "pairing"),
+               ("wine score", "wine_score"), ("size", "size_str"), ("net content", "size_str")]
+
+
+def detail(url, log=print):
+    """Fetch a product /ip/ page and pull the rich spec vector + inventory (availability + aisle). Defensive:
+    walks __NEXT_DATA__ for `specifications` + availability wherever they sit. NEEDS live validation (Walmart
+    throttles rapid detail fetches — pace it; warmed-cookie/BD only if the direct path degrades)."""
+    try:
+        m = _ND.search(_get(url))
+    except Exception as e:
+        log("  detail %s: %s" % (url[-40:], str(e)[:50])); return {}
+    if not m:
+        return {}
+    dd = json.loads(m.group(1))
+    out = {}
+    specs = _find(dd, "specifications")
+    if isinstance(specs, list):
+        for s in specs:
+            nm = str(s.get("name") or "").lower(); val = s.get("value")
+            if not val:
+                continue
+            for key, fld in _SPEC_FIELD:
+                if key in nm and fld not in out:
+                    out[fld] = (", ".join(val) if isinstance(val, list) else str(val)).strip(); break
+    if out.get("abv_str"):                       # "13.5% ABV" or "80 Proof" -> abv number
+        n = _fnum(out["abv_str"])
+        out["abv"] = (n / 2 if "proof" in out["abv_str"].lower() and n else n)
+    av = str(_find(dd, "availabilityStatusDisplayValue") or _find(dd, "availabilityStatus") or "").lower()
+    out["in_stock"] = bool(av) and "out" not in av and "unavailable" not in av
+    out["aisle"] = _find(dd, "aisle") or _find(dd, "aisleLocation") or ""
+    return out
+
+
 def crawl(terms=None, max_pages=4, delay=1.2, log=print):
     terms = terms or DEFAULT_TERMS
     seen, rows = set(), []
@@ -117,19 +157,30 @@ def crawl(terms=None, max_pages=4, delay=1.2, log=print):
     return rows
 
 
-def pull(terms=None, max_pages=4, delay=1.2, out=".", log=print):
+def pull(terms=None, max_pages=4, delay=1.2, detail_pages=False, detail_cap=400, out=".", log=print):
     rows = crawl(terms, max_pages, delay, log)
+    if detail_pages:                             # enrich with the /ip/ spec vector + inventory (paced!)
+        n = min(len(rows), detail_cap)
+        for i, r in enumerate(rows[:n]):
+            if r.get("url"):
+                r.update(detail(r["url"], log))
+                time.sleep(max(delay, 1.6))      # detail pages throttle faster than search — slow down
+            if (i + 1) % 25 == 0:
+                log("  detail-enriched %d/%d" % (i + 1, n))
     warehouse.write_parquet("walmart_products", rows,
                             fields=["product_name", "item_id", "price", "size_ml", "brand", "image", "url",
-                                    "category", "is_alcohol"])
+                                    "category", "is_alcohol", "varietal", "region", "vintage", "abv",
+                                    "container", "flavor", "pairing", "wine_score", "aisle", "in_stock"])
     try:
         observe.record("walmart", [{"source": "walmart", "store_id": "", "store": "Walmart",
                                     "product_id": r["item_id"], "upc": "", "price": r["price"],
-                                    "in_stock": True, "is_hemp": ("hemp" in r["product_name"].lower()
+                                    "in_stock": r.get("in_stock", True), "stock_level": r.get("aisle") or "",
+                                    "is_hemp": ("hemp" in r["product_name"].lower()
                                     or "thc" in r["product_name"].lower())} for r in rows if r["price"] is not None])
     except Exception as e:
         log("  observe skipped: %s" % str(e)[:60])
-    log("walmart_direct: %d products landed (direct, $0 BD)" % len(rows))
+    log("walmart_direct: %d products landed%s (direct, $0 BD)"
+        % (len(rows), " + detail-enriched" if detail_pages else ""))
     return len(rows)
 
 
@@ -138,6 +189,8 @@ if __name__ == "__main__":
     ap.add_argument("--terms", default="")
     ap.add_argument("--max-pages", type=int, default=4)
     ap.add_argument("--delay", type=float, default=1.2)
+    ap.add_argument("--detail", action="store_true", help="fetch /ip/ pages for the rich spec vector + inventory")
+    ap.add_argument("--detail-cap", type=int, default=400)
     a = ap.parse_args()
     t = [x.strip() for x in a.terms.split(",") if x.strip()] or None
-    pull(terms=t, max_pages=a.max_pages, delay=a.delay)
+    pull(terms=t, max_pages=a.max_pages, delay=a.delay, detail_pages=a.detail, detail_cap=a.detail_cap)

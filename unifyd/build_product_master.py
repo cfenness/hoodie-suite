@@ -38,7 +38,8 @@ _CFG = {
     "kroger_products": dict(name="product_name", size="size", upc="upc", brand="brand", cat="category",
                             image="image_url", filt=lambda r: r.get("category") == "Adult Beverage", dedup=["product_id"]),
     "walmart_products": dict(name="product_name", size_ml="size_ml", upc="upc", abv="abv", brand="brand",
-                             cat="category", filt=lambda r: r.get("is_alcohol")),
+                             cat="category", varietal="varietal", region="region", vintage="vintage",
+                             container="container", image="image", filt=lambda r: r.get("is_alcohol")),
     # Total Wine — landed by total_wine.crawl_land (mobile-UA microdata + the structured attributes JSON), so it
     # carries the geo the old thin `totalwine_products_full` table never did (varietal/origin/region/appellation).
     "total_wine_products": dict(name="name", brand="brand", size="size", cat="category", abv="abv", image="image",
