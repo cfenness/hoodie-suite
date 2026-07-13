@@ -3900,11 +3900,51 @@ def scraper_fingerprint():
             out.append(fp)
     return jsonify(results=out)
 
+# The full recipe LIBRARY — every deterministic scraper/connector we've built, not just the hosts that have
+# been run through the analyzer. platform recipes (multi-retailer) + site/chain/locator/control-state/reference
+# connectors. The estate shows all of these so the recipe picture is the real one, not a sliver.
+_RECIPE_CONNECTORS = [
+    # (name, platform/impl, status, kind)
+    ("Total Wine", "getProduct API", "proven", "chain"), ("ABC FWS", "BigCommerce", "proven", "chain"),
+    ("Binny's", "site", "proven", "chain"), ("Spec's", "site", "proven", "chain"),
+    ("Kroger", "products API", "proven", "chain"), ("Target", "RedSky", "proven", "chain"),
+    ("Walmart", "Bright Data", "proven", "chain"), ("City Hive", "container API", "building", "platform"),
+    ("AB InBev locator", "GraphQL", "proven", "locator"), ("VTInfo · Tito's", "locator", "proven", "locator"),
+    ("Outback locator", "Yext", "proven", "locator"), ("DoorDash", "GraphQL aggregator", "proven", "aggregator"),
+    ("Instacart", "location aggregator", "building", "aggregator"),
+    ("TTB COLA", "federal registry", "proven", "reference"), ("Census ACS/CBP", "Census API", "proven", "reference"),
+    ("Oregon OLCC", "control state", "proven", "control"), ("Montgomery MD", "control state", "proven", "control"),
+    ("BC Liquor", "control state", "proven", "control"), ("Utah DABS", "control state", "proven", "control"),
+    ("Idaho / NC / MT / AL / ME", "control state", "proven", "control"),
+    ("TX / IL / NY / CO / MO / CT", "Socrata outlets", "proven", "license"),
+    ("CA ABC", "license roster", "proven", "license"), ("FL DBPR/ABT", "license roster", "proven", "license"),
+]
+
+
 @app.get("/api/recipes")
 def recipes_list():
     import recipes
-    items = sorted(RECIPES.values(), key=lambda r: (r.get("status") != "proven", r.get("host", "")))
-    return jsonify(recipes=items, stats=recipes.stats(RECIPES))
+    seen, lib = set(), []
+    # 1) the platform recipes (multi-retailer, dispatched by run_census)
+    try:
+        import off_premise
+        for plat, impl in sorted(off_premise.RECIPE_PLATFORMS.items()):
+            k = plat.replace("cityhive", "city hive")
+            if k in seen:
+                continue
+            seen.add(k)
+            lib.append({"host": plat.title(), "platform": plat, "status": "proven", "kind": "platform", "impl": impl})
+    except Exception:
+        pass
+    # 2) the built site / chain / locator / control-state / reference connectors
+    for name, impl, st, kind in _RECIPE_CONNECTORS:
+        lib.append({"host": name, "platform": impl, "status": st, "kind": kind, "impl": impl})
+    # 3) analyzer-learned per-host recipes (recipes.json) — merge on top (they carry field maps + run history)
+    for r in RECIPES.values():
+        lib.append(dict(r, kind=r.get("kind", "analyzed")))
+    order = {"proven": 0, "live": 0, "building": 1, "candidate": 2}
+    lib.sort(key=lambda r: (order.get((r.get("status") or "").lower(), 3), r.get("host", "")))
+    return jsonify(recipes=lib, stats=recipes.stats(RECIPES))
 
 @app.delete("/api/recipes/<host>")
 def recipes_delete(host):
