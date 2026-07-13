@@ -49,6 +49,10 @@ _CFG = {
     "target_products": dict(name="name", brand="brand", cat="category", image="image_url", dedup=["tcin"]),
     "specs_products": dict(name="name", brand="brand", dedup=["sku"]),
     "cityhive_products": dict(name="name", size_ml="size_ml", cat="bev_category", image="image", dedup=["sku"]),  # independent
+    # off_premise.run_census — independent retailers on Shopify/Woo/Squarespace/Wix (free direct-fetch sweep)
+    "offprem_products": dict(name="name", brand="brand", size_ml="size_ml", cat="bev_category", upc="upc",
+                             abv="abv", image="image", varietal="varietal", origin="origin", region="region",
+                             sub_region="sub_region", appellation="appellation", id="sku", dedup=["base", "name"]),
     # TTB COLA — the federal label registry = the historical backbone (~1M bottle+vintage records). Pre-joined
     # (detail + labels) + deduped in ttb_products; brand extracted from the name via the dictionary; vintage →
     # dim_vintage aux (bottles don't split by vintage). All alcohol, so no bev-alc filter.
