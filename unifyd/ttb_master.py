@@ -26,7 +26,8 @@ def materialize(log=print):
     # it as its own column so the master maps it directly instead of re-guessing the brand from the name string
     # (which shatters French/Italian wine producers into "Domaine de" / "Chateau La"). fanciful is the product.
     join = (
-        "SELECT trim(d.brand_name || CASE WHEN d.fanciful_name IS NOT NULL AND d.fanciful_name<>'' "
+        "SELECT d.ttb_id AS ttb_id, "                # carried so each TTB record links to its COLA detail page
+        "trim(d.brand_name || CASE WHEN d.fanciful_name IS NOT NULL AND d.fanciful_name<>'' "
         "THEN ' '||d.fanciful_name ELSE '' END) AS name, "
         "nullif(trim(d.brand_name),'') AS brand_name, nullif(trim(d.fanciful_name),'') AS fanciful_name, "
         "d.class_type_desc AS category, d.origin_code AS origin, "
