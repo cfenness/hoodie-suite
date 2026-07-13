@@ -1959,11 +1959,11 @@ def mwb_master_ep():
     # Prefer the pre-computed wb_master view (tiny, names pre-joined); fall back to the live scan if not built yet.
     view = _wb_view("wb_master")
     if q and view is not None:              # search the FULL master (past the cap), not just the loaded view
-        rows, stub = _wb_search(q, single_source=False, limit=600), _wb_view_stub
+        rows, stub = _wb_search(q, single_source=False, limit=5000), _wb_view_stub
         if src:
             rows = [r for r in rows if src in (r.get("source_list") or [])]
     elif view is not None:
-        rows, stub = view[:600], _wb_view_stub
+        rows, stub = view[:5000], _wb_view_stub
     else:
         brands, prodmap, itemmap = _wb_maps()
         rows = _wq_cached("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list, "
@@ -2099,9 +2099,9 @@ def mwb_review_ep():
     q = (request.args.get("q") or "").strip().lower()
     view = _wb_view("wb_queue")
     if q and view is not None:              # search the FULL queue (past the cap) so "total wine" finds items
-        rows, stub = _wb_search(q, single_source=True, limit=400), _wb_view_stub
+        rows, stub = _wb_search(q, single_source=True, limit=5000), _wb_view_stub
     elif view is not None:
-        rows, stub = view[:400], _wb_view_stub
+        rows, stub = view[:5000], _wb_view_stub
     else:
         brands, prodmap, itemmap = _wb_maps()
         rows = _wq_cached("dim_sku", "SELECT sku_key, item_key, pack, upc, sources, source_list, "

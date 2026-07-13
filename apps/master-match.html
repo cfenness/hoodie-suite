@@ -97,6 +97,8 @@ h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.01em}
 .qempty{padding:26px 16px;text-align:center;color:var(--faint);font-size:13px}
 .qitem{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line-2);border-left:3px solid transparent;padding:12px 15px 12px 13px;display:block;transition:.1s}
 .qitem:hover{background:var(--panel-2)}
+.qmore{width:100%;text-align:center;background:var(--panel-2);border:0;border-top:1px solid var(--line-2);color:var(--accent);font:600 12px/1 inherit;padding:13px;cursor:pointer;letter-spacing:.02em}
+.qmore:hover{background:var(--panel);color:var(--paper)}
 .qitem.sel{background:var(--accent-soft);border-left-color:var(--accent)}
 .qitem .r1{display:flex;align-items:center;gap:8px}
 .qitem .nm{font-weight:600;font-size:13.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -265,6 +267,7 @@ const stageLabel={auto:"Auto",claude:"Claude",analyst:"Analyst",senior:"Sr Analy
 const TIER_LABEL={senior:"senior analyst", steward:"steward"};
 const STAGE_TITLE={all:"All candidates",candidates:"All candidates",auto:"Auto-matched",claude:"Claude-adjudicated",analyst:"Analyst queue",senior:"Senior-analyst queue",steward:"Steward queue",confirmed:"Confirmed to master"};
 let STUBS=[], STAGES={}, FILT={stage:"analyst",facet:"all",q:""};
+let QLIMIT=300, SELREF=null;   // queue shows QLIMIT at a time; "Load more" grows it. SELREF keeps the selection.
 
 function titlecase(s){ return String(s||"").replace(/\w\S*/g,t=>t.charAt(0).toUpperCase()+t.slice(1)); }
 
@@ -344,24 +347,27 @@ function currentRows(){
   });
 }
 
-function renderQueue(){
+function renderQueue(keep){
+  if(!keep) QLIMIT=300;                         // filter/stage change starts fresh; "Load more" keeps growing
   const rows=currentRows();
   $("#qtitle").textContent=STAGE_TITLE[FILT.stage]||"Queue";
   $("#qn").textContent=rows.length.toLocaleString();
   $("#qtot").textContent=Number(STAGES[FILT.stage==="all"?"candidates":FILT.stage]||rows.length).toLocaleString();
   if(!rows.length){ $("#qlist").innerHTML='<div class="qempty">Nothing in this view — try another stage or filter.</div>'; $("#detail").innerHTML=""; return; }
-  const show=rows.slice(0,300);
+  const show=rows.slice(0,QLIMIT), left=rows.length-show.length;
   $("#qlist").innerHTML=show.map((s,i)=>`
-    <button class="qitem${i===0?' sel':''}" data-ref="${esc(s.id)}" data-stage="${esc(s.stage)}">
+    <button class="qitem${s.id===SELREF?' sel':(i===0&&!SELREF?' sel':'')}" data-ref="${esc(s.id)}" data-stage="${esc(s.stage)}">
       <div class="r1"><span class="grain ${s.grain}">${s.grain}</span><span class="nm">${esc(s.name)}</span></div>
       <div class="r2"><span class="pill ${s.stage}"><span class="dot ${s.stage}"></span>${stageLabel[s.stage]}</span>
         <span>${esc(s.note)}</span><span class="conf">${s.conf.toFixed(2)}</span></div>
-    </button>`).join("");
+    </button>`).join("")
+    + (left>0 ? `<button class="qmore" id="qmore">Load ${Math.min(500,left).toLocaleString()} more · ${left.toLocaleString()} left</button>` : "");
   document.querySelectorAll(".qitem").forEach(b=>b.onclick=()=>{
     document.querySelectorAll(".qitem").forEach(x=>x.classList.remove("sel"));
-    b.classList.add("sel"); selectCluster(b.dataset.ref, b.dataset.stage);
+    b.classList.add("sel"); SELREF=b.dataset.ref; selectCluster(b.dataset.ref, b.dataset.stage);
   });
-  selectCluster(show[0].id, show[0].stage);
+  const qm=$("#qmore"); if(qm) qm.onclick=()=>{ QLIMIT+=500; renderQueue(true); };
+  if(!keep){ SELREF=show[0].id; selectCluster(show[0].id, show[0].stage); }
 }
 
 async function selectCluster(id, stage){
