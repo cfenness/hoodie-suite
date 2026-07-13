@@ -2158,9 +2158,10 @@ def coverage_accounts_ep():
         params += ["%" + q + "%"] * 3
     try:
         rows = warehouse.query("src_outlets", "SELECT source, store_id, store_name, chain, is_chain, f_beer, f_wine, "
-                               "f_spirits, f_hemp, f_cannabis, f_rtd_spirits, address, city, state, zip, "
-                               "CAST(lat AS DOUBLE) lat, CAST(lng AS DOUBLE) lng, phone, hoodie_outlet "
-                               "FROM t WHERE %s ORDER BY store_name LIMIT %d" % (" AND ".join(where), limit), params)
+                               "f_spirits, f_hemp, f_cannabis, f_rtd_spirits, flag_basis, license_conflict, address, "
+                               "city, state, zip, CAST(lat AS DOUBLE) lat, CAST(lng AS DOUBLE) lng, phone, "
+                               "hoodie_outlet FROM t WHERE %s ORDER BY store_name LIMIT %d"
+                               % (" AND ".join(where), limit), params)
     except Exception as e:
         return jsonify(ok=False, error=str(e)[:160], accounts=[])
     return jsonify(ok=True, count=len(rows), accounts=rows)

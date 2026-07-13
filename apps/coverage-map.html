@@ -65,6 +65,8 @@
   .detail .fchips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:11px}
   .fchip{font-family:var(--mono);font-size:10px;color:#dcefe9;background:rgba(89,161,79,.16);border:1px solid var(--line);border-radius:20px;padding:2px 9px}
   .fchip.rtd{color:#0e1613;background:var(--warn);font-weight:600}
+  .fchip.err{color:#0e1613;background:#d9584f;font-weight:600}
+  .fbasis{width:100%;font-family:var(--mono);font-size:9.5px;color:#6f938a;margin-top:2px}
   .sells{display:flex;gap:5px;flex-wrap:wrap;padding:0 13px 11px}
   .sells button{flex:1 1 auto;background:#0e1613;border:1px solid var(--line);border-radius:7px;padding:5px 4px;color:#a9c9c0;font-family:var(--mono);font-size:10px;cursor:pointer;white-space:nowrap}
   .sells button:hover{border-color:var(--accent);color:#eafaf5}
@@ -230,8 +232,11 @@ function showDetail(a){
     ['phone',a.phone],['geo',(a.lat!=null&&a.lng!=null)?(a.lat+', '+a.lng):null,'mono']]
     .filter(r=>r[1]!=null&&String(r[1]).trim()!=='');
   const F=[['f_beer','🍺 Beer'],['f_wine','🍷 Wine'],['f_spirits','🥃 Spirits'],['f_hemp','🌿 Hemp'],['f_cannabis','🍁 Cannabis']];
-  const chips=F.filter(f=>a[f[0]]).map(f=>'<span class="fchip on">'+f[1]+'</span>').join('')
+  const BASIS={product:'✓ grounded in products carried',license:'⚖ license-permitted',source:'~ source estimate'};
+  let chips=F.filter(f=>a[f[0]]).map(f=>'<span class="fchip on">'+f[1]+'</span>').join('')
     + (a.f_rtd_spirits?'<span class="fchip rtd">spirits-RTD ok · no spirits</span>':'');
+  if(chips && a.flag_basis && BASIS[a.flag_basis]) chips+='<span class="fbasis">'+BASIS[a.flag_basis]+'</span>';
+  if(a.license_conflict) chips+='<span class="fchip err">⚠ sells beyond its license</span>';
   el.innerHTML='<button class="x" id="dx">✕</button>'
     +'<div class="k">Account</div><div class="nm">'+esc(a.store_name||'(unnamed)')+'</div>'
     +'<div class="badge"><span class="dot" style="background:'+colOf(a.source)+'"></span>'+esc(a.source)+'</div>'
