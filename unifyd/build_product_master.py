@@ -36,7 +36,11 @@ _CLEAN_BRAND = [("kroger_products", "brand"), ("walmart_products", "brand"), ("n
 # per-source projection: which columns carry name / size / upc / abv(or proof) / category / clean-brand, + a
 # bev-alc filter so non-alcohol rows (a Kroger marinade) don't feed the master.
 _CFG = {
-    "abc_catalog": dict(name="name", size="size", upc="upc", image="image", id="sku"),
+    # ABC via its SearchSpring facet API (abc_facets.py) — rich, retailer-tagged: varietal/type/region/country/
+    # class from ABC's OWN drill-path taxonomy (authoritative, not name-guessed). No UPC in the facet feed; the
+    # store-inventory abc_catalog (UPC) still feeds observe, and both share `sku`.
+    "abc_products": dict(name="name", brand="brand", varietal="varietal", region="region", origin="country",
+                         sub_region="sub_region", cat="type", size="size", image="image", id="sku"),
     "kroger_products": dict(name="product_name", size="size", upc="upc", brand="brand", cat="category",
                             image="image_url", filt=lambda r: r.get("category") == "Adult Beverage", dedup=["product_id"]),
     "walmart_products": dict(name="product_name", size_ml="size_ml", upc="upc", abv="abv", brand="brand",
