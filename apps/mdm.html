@@ -64,11 +64,7 @@
   <nav class="side nav">
     <div class="brand"><span class="ey">Hoodie Suite</span><span class="nm">MDM</span></div>
     <a data-sec="overview"><span class="d"></span>Overview</a>
-    <div class="nav-lab">Own</div>
-    <a data-sec="sources"><span class="d"></span>Sources</a>
-    <a data-sec="provenance"><span class="d"></span>Provenance</a>
-    <a data-sec="sourcespec"><span class="d"></span>Source Spec</a>
-    <a data-sec="chains"><span class="d"></span>Chains</a>
+    <div class="nav-lab">Manage</div>
     <a data-sec="master"><span class="d"></span>Master</a>
     <a data-sec="steward"><span class="d"></span>Steward</a>
     <a data-sec="review"><span class="d"></span>Review</a>
@@ -78,6 +74,11 @@
     <a data-sec="registrations"><span class="d"></span>Registrations</a>
     <a data-sec="mapping"><span class="d"></span>Mapping</a>
     <a data-sec="dictionary"><span class="d"></span>Dictionary</a>
+    <div class="nav-lab">Sources</div>
+    <a data-sec="sources"><span class="d"></span>Sources</a>
+    <a data-sec="provenance"><span class="d"></span>Provenance</a>
+    <a data-sec="sourcespec"><span class="d"></span>Source Spec</a>
+    <a data-sec="chains"><span class="d"></span>Chains</a>
     <div class="nav-lab">Operate</div>
     <a data-sec="runs"><span class="d"></span>Active Runs</a>
     <div class="foot"><span class="dot" id="eng-dot"></span><span id="eng-txt">checking…</span></div>
@@ -106,19 +107,19 @@
   // In the launcher, the launcher's rail becomes THIS console's nav (one sidebar).
   var inLauncher = (window.parent !== window);
   var NAV_META=[{id:"overview",label:"Overview",icon:"OV",desc:"The master-data picture at a glance"},
-                {id:"sources",label:"Sources",group:"Own",icon:"SR",desc:"Every dataset feeding the master, grouped by what it feeds"},
-                {id:"provenance",label:"Provenance",group:"Own",icon:"PV",desc:"Every source — origin, method, what it provides; inventory counts vs availability"},
-                {id:"sourcespec",label:"Source Spec",group:"Own",icon:"SS",desc:"Per source — the fields we capture (% populated) + sample rows; the field-capture audit"},
-                {id:"chains",label:"Chains",group:"Own",icon:"CH",desc:"Bev-alc retail & on-premise chains scored for reachability — the candidate-source catalog + scrape roadmap to chase"},
-                {id:"master",label:"Master",group:"Own",icon:"MA",desc:"Canonical entities — brands, SKUs, outlets"},
-                {id:"steward",label:"Steward",group:"Own",icon:"ST",desc:"Steward the master — review, edit and approve canonical records"},
-                {id:"review",label:"Review",group:"Own",icon:"RV",desc:"Ambiguous merge clusters — same product/size/pack split by UPC noise; merge or keep separate"},
-                {id:"catalog",label:"Catalog",group:"Own",icon:"CA",desc:"dim_product — the owned product catalog"},
-                {id:"outlets",label:"Outlets",group:"Own",icon:"OU",desc:"src_outlets — the full account book (every store-bearing source)"},
-                {id:"coverage",label:"Coverage",group:"Own",icon:"CV",desc:"The full book of accounts on a map — every store-bearing source, click into any account"},
-                {id:"registrations",label:"Registrations",group:"Own",icon:"PR",desc:"TTB COLA label approvals → products + field dictionary"},
-                {id:"mapping",label:"Mapping",group:"Own",icon:"MP",desc:"Map source fields → master schema, with pre/post dictionaries"},
-                {id:"dictionary",label:"Dictionary",group:"Own",icon:"DC",desc:"Build value dictionaries — cab sauv → Cabernet Sauvignon — against real source values"},
+                {id:"master",label:"Master",group:"Manage",icon:"MA",desc:"Canonical entities — brands, SKUs, outlets"},
+                {id:"steward",label:"Steward",group:"Manage",icon:"ST",desc:"Steward the master — review, edit and approve canonical records"},
+                {id:"review",label:"Review",group:"Manage",icon:"RV",desc:"Ambiguous merge clusters — same product/size/pack split by UPC noise; merge or keep separate"},
+                {id:"catalog",label:"Catalog",group:"Manage",icon:"CA",desc:"dim_product — the owned product catalog"},
+                {id:"outlets",label:"Outlets",group:"Manage",icon:"OU",desc:"src_outlets — the full account book (every store-bearing source)"},
+                {id:"coverage",label:"Coverage",group:"Manage",icon:"CV",desc:"The full book of accounts on a map — every store-bearing source, click into any account"},
+                {id:"registrations",label:"Registrations",group:"Manage",icon:"PR",desc:"TTB COLA label approvals → products + field dictionary"},
+                {id:"mapping",label:"Mapping",group:"Manage",icon:"MP",desc:"Map source fields → master schema, with pre/post dictionaries"},
+                {id:"dictionary",label:"Dictionary",group:"Manage",icon:"DC",desc:"Build value dictionaries — cab sauv → Cabernet Sauvignon — against real source values"},
+                {id:"sources",label:"Sources",group:"Sources",icon:"SR",desc:"Every dataset feeding the master, grouped by what it feeds"},
+                {id:"provenance",label:"Provenance",group:"Sources",icon:"PV",desc:"Every source — origin, method, what it provides; inventory counts vs availability"},
+                {id:"sourcespec",label:"Source Spec",group:"Sources",icon:"SS",desc:"Per source — the fields we capture (% populated) + sample rows; the field-capture audit"},
+                {id:"chains",label:"Chains",group:"Sources",icon:"CH",desc:"Bev-alc retail & on-premise chains scored for reachability — the candidate-source catalog + scrape roadmap to chase"},
                 {id:"runs",label:"Active Runs",group:"Operate",icon:"AR",desc:"Every pull in flight — live progress, throughput and ETA"}];
   function publishNav(active){ if(inLauncher){ try{ parent.postMessage({__hoodie:"nav",app:"mdm",sections:NAV_META,active:active},"*"); }catch(e){} } }
   var esc=function(s){return String(s==null?"":s).replace(/[&<>]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;"}[c];});};
