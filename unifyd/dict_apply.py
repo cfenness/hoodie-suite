@@ -25,7 +25,9 @@ SEED = {
     # NOISE — channel / placeholder / format tokens that never distinguish a product. value '' => drop the token.
     "noise": ["online", "in-store", "instore", "pickup", "delivery", "web", "various", "assorted", "misc",
               "notspecified", "specified", "default", "sample", "miniature", "mini", "travel", "trv", "duty",
-              "free", "pet", "plastic", "case", "single", "each", "unit", "new", "item", "product", "store"],
+              "free", "pet", "plastic", "case", "single", "each", "unit", "new", "item", "product", "store",
+              "tallboy", "tallcan", "tall", "sleek", "slim", "rtd", "vp", "combo", "cocktail", "premixed",
+              "seltzer", "canned", "bottled", "draft", "nitro"],
     # SIZE/format remnants that leak past the regex strip (e.g. "1.75lit", "ltr"). value '' => drop.
     "size": ["ltr", "lit", "liter", "litre", "ml", "cl", "oz", "gallon", "gal", "pk", "pack", "ct", "count"],
     # DESCRIPTOR SYNONYMS — the SAME expression written different ways collapses to one canonical token.
