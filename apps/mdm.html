@@ -67,6 +67,7 @@
     <div class="nav-lab">Own</div>
     <a data-sec="sources"><span class="d"></span>Sources</a>
     <a data-sec="provenance"><span class="d"></span>Provenance</a>
+    <a data-sec="sourcespec"><span class="d"></span>Source Spec</a>
     <a data-sec="master"><span class="d"></span>Master</a>
     <a data-sec="steward"><span class="d"></span>Steward</a>
     <a data-sec="review"><span class="d"></span>Review</a>
@@ -84,6 +85,7 @@
     <div class="ov" id="ov-overview"><div id="ov-body"><div class="empty">Loading the master-data picture…</div></div></div>
     <iframe id="f-sources"   title="Sources"                   data-src="mdm-sources.html?embed=1"></iframe>
     <iframe id="f-provenance" title="Sources · Provenance"     data-src="mdm-provenance.html"></iframe>
+    <iframe id="f-sourcespec" title="Source Spec"              data-src="mdm-sourcespec.html"></iframe>
     <iframe id="f-master"    title="Master — matching workbench" data-src="master-match.html?embed=1"></iframe>
     <iframe id="f-steward"   title="Master Steward"             data-src="steward.html?embed=1"></iframe>
     <iframe id="f-review"    title="Cluster Review — ambiguous merges" data-src="cluster-review.html?embed=1"></iframe>
@@ -98,12 +100,13 @@
 <script>
 (function(){
   "use strict";
-  var SECTIONS={overview:null,sources:"f-sources",provenance:"f-provenance",master:"f-master",steward:"f-steward",review:"f-review",catalog:"f-catalog",outlets:"f-outlets",coverage:"f-coverage",registrations:"f-registrations",mapping:"f-mapping",dictionary:"f-dictionary",runs:"f-runs"};
+  var SECTIONS={overview:null,sources:"f-sources",provenance:"f-provenance",sourcespec:"f-sourcespec",master:"f-master",steward:"f-steward",review:"f-review",catalog:"f-catalog",outlets:"f-outlets",coverage:"f-coverage",registrations:"f-registrations",mapping:"f-mapping",dictionary:"f-dictionary",runs:"f-runs"};
   // In the launcher, the launcher's rail becomes THIS console's nav (one sidebar).
   var inLauncher = (window.parent !== window);
   var NAV_META=[{id:"overview",label:"Overview",icon:"OV",desc:"The master-data picture at a glance"},
                 {id:"sources",label:"Sources",group:"Own",icon:"SR",desc:"Every dataset feeding the master, grouped by what it feeds"},
                 {id:"provenance",label:"Provenance",group:"Own",icon:"PV",desc:"Every source — origin, method, what it provides; inventory counts vs availability"},
+                {id:"sourcespec",label:"Source Spec",group:"Own",icon:"SS",desc:"Per source — the fields we capture (% populated) + sample rows; the field-capture audit"},
                 {id:"master",label:"Master",group:"Own",icon:"MA",desc:"Canonical entities — brands, SKUs, outlets"},
                 {id:"steward",label:"Steward",group:"Own",icon:"ST",desc:"Steward the master — review, edit and approve canonical records"},
                 {id:"review",label:"Review",group:"Own",icon:"RV",desc:"Ambiguous merge clusters — same product/size/pack split by UPC noise; merge or keep separate"},
