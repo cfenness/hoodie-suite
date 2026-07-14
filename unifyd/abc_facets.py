@@ -26,8 +26,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 
 SITE = "p16j4k"
+# SearchSpring caps deep paging at 10k results, so harvest per TOP CATEGORY (each < 10k) — this also completes
+# the alcohol catalog cleanly and tags each product with its top category.
+CATS = ["Wine", "Spirits", "Beer", "Ready To Drink"]
 API = ("https://%s.a.searchspring.io/api/search/search.json?siteId=%s"
-       "&resultsFormat=native&resultsPerPage=%d&page=%d&q=")
+       "&resultsFormat=native&resultsPerPage=%d&page=%d&q=&bgfilter.categories_hierarchy=%s")
 FLD = ["sku", "uid", "name", "brand", "url", "category", "type", "varietal", "region", "country", "class",
        "size", "price", "msrp", "rating", "rating_count", "in_stock", "on_sale", "source_certified", "image", "raw_json"]
 
@@ -69,43 +72,48 @@ def _paths(ch):
 
 
 def pull(cap=None, page_size=100, delay=0.15, log=print):
-    products, taxonomy, seen, page, total = [], {}, set(), 1, None
-    while True:
-        try:
-            d = json.loads(_get(API % (SITE, SITE, page_size, page)))
-        except Exception as e:
-            log("[abc_facets] page %d: %s" % (page, str(e)[:70])); break
-        total = (d.get("pagination") or {}).get("totalResults") or total
-        res = d.get("results") or []
-        if not res:
+    import urllib.parse
+    products, taxonomy, seen = [], {}, set()
+    for cat in CATS:
+        page, total = 1, None
+        while True:
+            try:
+                d = json.loads(_get(API % (SITE, SITE, page_size, page, urllib.parse.quote(cat))))
+            except Exception as e:
+                log("[abc_facets] %s page %d: %s" % (cat, page, str(e)[:60])); break
+            total = (d.get("pagination") or {}).get("totalResults") or total
+            res = d.get("results") or []
+            if not res:
+                break
+            for r in res:
+                uid = r.get("uid") or r.get("sku")
+                if not uid or uid in seen:
+                    continue
+                seen.add(uid)
+                pp = _paths(r.get("categories_hierarchy"))
+                for ax in ("type", "varietal", "region", "country"):
+                    if pp.get(ax):
+                        taxonomy.setdefault(ax, set()).add(pp[ax])
+                products.append({
+                    "sku": r.get("sku", ""), "uid": str(uid), "name": _html.unescape(r.get("name", "")),
+                    "brand": r.get("brand", ""), "url": "https://abcfws.com" + (r.get("url") or ""),
+                    "category": pp.get("category", "") or cat, "type": pp.get("type", ""),
+                    "varietal": pp.get("varietal", ""), "region": pp.get("region", ""),
+                    "country": pp.get("country", ""), "class": r.get("custom_class", ""),
+                    "size": r.get("custom_item_size", ""), "price": r.get("price", ""), "msrp": r.get("msrp", ""),
+                    "rating": r.get("rating", ""), "rating_count": r.get("ratingCount", ""),
+                    "in_stock": r.get("ss_in_stock", ""), "on_sale": r.get("ss_on_sale", ""),
+                    "source_certified": r.get("custom_source_certified", ""), "image": r.get("imageUrl", ""),
+                    "raw_json": json.dumps({k: v for k, v in r.items() if not str(k).startswith("intelli")},
+                                           separators=(",", ":"))})
+            log("[abc_facets] %-14s page %d  %d products (cat total %s)" % (cat, page, len(products), total))
+            page += 1
+            if len(res) < page_size or (cap and len(products) >= cap):
+                break
+            if delay:
+                time.sleep(delay)
+        if cap and len(products) >= cap:
             break
-        for r in res:
-            uid = r.get("uid") or r.get("sku")
-            if not uid or uid in seen:
-                continue
-            seen.add(uid)
-            pp = _paths(r.get("categories_hierarchy"))
-            for ax in ("type", "varietal", "region", "country"):
-                if pp.get(ax):
-                    taxonomy.setdefault(ax, set()).add(pp[ax])
-            products.append({
-                "sku": r.get("sku", ""), "uid": str(uid), "name": _html.unescape(r.get("name", "")),
-                "brand": r.get("brand", ""), "url": "https://abcfws.com" + (r.get("url") or ""),
-                "category": pp.get("category", ""), "type": pp.get("type", ""), "varietal": pp.get("varietal", ""),
-                "region": pp.get("region", ""), "country": pp.get("country", ""), "class": r.get("custom_class", ""),
-                "size": r.get("custom_item_size", ""), "price": r.get("price", ""), "msrp": r.get("msrp", ""),
-                "rating": r.get("rating", ""), "rating_count": r.get("ratingCount", ""),
-                "in_stock": r.get("ss_in_stock", ""), "on_sale": r.get("ss_on_sale", ""),
-                "source_certified": r.get("custom_source_certified", ""), "image": r.get("imageUrl", ""),
-                "raw_json": json.dumps({k: v for k, v in r.items() if not str(k).startswith("intelli")},
-                                       separators=(",", ":"))})
-        if page % 10 == 0 or (total and len(products) >= total):
-            log("[abc_facets] page %d  %d/%s products" % (page, len(products), total))
-        page += 1
-        if (cap and len(products) >= cap) or (total and len(seen) >= total):
-            break
-        if delay:
-            time.sleep(delay)
     warehouse.write_parquet("abc_products", products, fields=FLD)
     tax = [{"source": "abc", "axis": ax, "value": v} for ax, vs in taxonomy.items() for v in sorted(vs)]
     if tax:
