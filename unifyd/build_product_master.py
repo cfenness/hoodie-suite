@@ -24,7 +24,7 @@ import placeholders as _placeholders
 # origin = SOURCE of the juice (COO — where the liquid is from); bottled_in = where it was bottled (kept
 # SEPARATE — a Barbados rum bottled in the US is origin=Barbados, bottled_in=US).
 FIELDS = ["brand", "brand_group", "product_name", "class_type", "core_name", "flavor", "abv", "style", "category",
-          "origin", "bottled_in", "region", "sub_region", "appellation", "varietal", "image",
+          "origin", "country", "state", "bottled_in", "region", "sub_region", "appellation", "varietal", "image",
           "taste", "body", "food_pairing", "expert_rating", "finish",   # ecommerce PDP describing-fields
           "size_ml", "packsize", "container", "pack", "upc", "gtin", "vintage", "edition", "supplier"]
 
@@ -39,8 +39,8 @@ _CFG = {
     # ABC via its SearchSpring facet API (abc_facets.py) — rich, retailer-tagged: varietal/type/region/country/
     # class from ABC's OWN drill-path taxonomy (authoritative, not name-guessed). No UPC in the facet feed; the
     # store-inventory abc_catalog (UPC) still feeds observe, and both share `sku`.
-    "abc_products": dict(name="name", brand="brand", varietal="varietal", region="region", origin="country",
-                         sub_region="sub_region", cat="type", size="size", image="image", id="sku"),
+    "abc_products": dict(name="name", brand="brand", varietal="varietal", region="region", country="country",
+                         origin="country", sub_region="sub_region", cat="type", size="size", image="image", id="sku"),
     "kroger_products": dict(name="product_name", size="size", upc="upc", brand="brand", cat="category",
                             image="image_url", filt=lambda r: r.get("category") == "Adult Beverage", dedup=["product_id"]),
     "walmart_products": dict(name="product_name", size_ml="size_ml", upc="upc", abv="abv", brand="brand",
@@ -51,9 +51,9 @@ _CFG = {
     # carries the geo the old thin `totalwine_products_full` table never did (varietal/origin/region/appellation).
     "total_wine_products": dict(name="name", brand="brand", size="size", cat="category", abv="abv", image="image",
                                 varietal="varietal", origin="origin", region="region", sub_region="sub_region",
-                                appellation="appellation", style="style", taste="taste", body="body",
-                                food_pairing="food_pairing", expert_rating="expert_rating", finish="finish",
-                                dedup=["sku"]),
+                                appellation="appellation", country="country", state="state", style="style",
+                                taste="taste", body="body", food_pairing="food_pairing",
+                                expert_rating="expert_rating", finish="finish", dedup=["sku"]),
     "binnys_products": dict(name="name", brand="brand", dedup=["sku"], varietal="varietal", image="image",  # store×product →
                             region="region", sub_region="sub_region", appellation="appellation",             # distinct products
                             abv="abv", origin="origin", cat="category"),
@@ -411,7 +411,7 @@ def build(log=print):
                 _source_id=(str(r.get(idc)) if idc and r.get(idc) is not None else None),
                 vintage=_clean_vintage(r.get(c["vintage"])) if c.get("vintage") else None,
                 **{fld: ((str(r.get(c[fld])).strip() or None) if c.get(fld) and r.get(c[fld]) else None)
-                   for fld in ("region", "sub_region", "appellation", "varietal", "image",
+                   for fld in ("region", "sub_region", "appellation", "varietal", "image", "country", "state",
                                "taste", "body", "food_pairing", "expert_rating", "finish")}))
             kept += 1
         log("[master]   %-24s %6d products" % (ds, kept))
