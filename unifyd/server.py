@@ -2335,6 +2335,13 @@ def coverage_accounts_ep():
         limit = min(1000, max(1, int(request.args.get("limit") or 300)))
     except Exception:
         limit = 300
+    if not (src or state or chain or sells or q):       # the landing view — TTL-cache + warm it
+        return jsonify(_ttl("cov_accounts_%d" % limit, 90, lambda: _cov_accounts_data("", "", "", "", "", limit)))
+    return jsonify(_cov_accounts_data(src, state, chain, sells, q, limit))
+
+
+def _cov_accounts_data(src, state, chain, sells, q, limit):
+    import warehouse
     where, params = ["1=1"], []
     if src:
         where.append("source = ?"); params.append(src)
@@ -2356,8 +2363,8 @@ def coverage_accounts_ep():
                                "LIMIT %d"
                                % (" AND ".join(where), limit), params)   # real names first, bare store-#s then empties last
     except Exception as e:
-        return jsonify(ok=False, error=str(e)[:160], accounts=[])
-    return jsonify(ok=True, count=len(rows), accounts=rows)
+        return dict(ok=False, error=str(e)[:160], accounts=[])
+    return dict(ok=True, count=len(rows), accounts=rows)
 
 
 @app.get("/api/coverage/points")
@@ -2391,9 +2398,15 @@ def coverage_dots_ep():
     """Every geocoded outlet as [lat, lng, source_index] for a ONE-POINT-PER-OUTLET canvas layer — all points
     drawn in one pass, so zoomed out they fill into a coverage/density picture and zoomed in they're distinct.
     Returns a sources[] index for colouring. Optional source / sells filter. Reservoir-sampled above 220k."""
-    import warehouse
     src = (request.args.get("source") or "").strip()
     sells = (request.args.get("sells") or "").strip().lower()
+    if not src and not sells:               # the full-book layer (biggest payload) — TTL-cache + warm it
+        return jsonify(_ttl("cov_dots", 90, lambda: _cov_dots_data("", "")))
+    return jsonify(_cov_dots_data(src, sells))
+
+
+def _cov_dots_data(src, sells):
+    import warehouse
     cond = ["lat IS NOT NULL"]
     params = []
     if src:
@@ -2402,19 +2415,19 @@ def coverage_dots_ep():
         cond.append("f_%s" % sells)
     wsql = " AND ".join(cond)
     try:
-        n = warehouse.query("src_outlets", "SELECT count(*) c FROM t WHERE %s" % wsql, params)[0]["c"]
+        n = _wq_cached("src_outlets", "SELECT count(*) c FROM t WHERE %s" % wsql, params)[0]["c"]
         samp = "" if n <= 220000 else " USING SAMPLE reservoir(210000 ROWS)"
         rows = warehouse.query("src_outlets", "SELECT source, round(CAST(lat AS DOUBLE),4) y, "
                                "round(CAST(lng AS DOUBLE),4) x FROM t WHERE %s%s" % (wsql, samp), params)
     except Exception as e:
-        return jsonify(ok=False, error=str(e)[:160], points=[], sources=[])
+        return dict(ok=False, error=str(e)[:160], points=[], sources=[])
     srcs, idx, pts = [], {}, []
     for r in rows:
         s = r["source"]
         if s not in idx:
             idx[s] = len(srcs); srcs.append(s)
         pts.append([r["y"], r["x"], idx[s]])
-    return jsonify(ok=True, total=n, sources=srcs, points=pts)
+    return dict(ok=True, total=n, sources=srcs, points=pts)
 
 
 @app.get("/api/coverage/at")
@@ -3466,13 +3479,19 @@ _OUTM_SEL = ("source||'|'||store_id outlet_key, store_name outlet_name, address,
 def master_outlets_browse_ep():
     """Paged, filterable view of the outlet book (src_outlets — 220k+ accounts across every source). ?q=
     (name/addr/city), ?state=, ?page=, ?size=. Rows + total + a state facet for the workbench."""
-    import warehouse
     q = (request.args.get("q") or "").strip().lower()
     state = (request.args.get("state") or "").strip().upper()
     try:
         page = max(0, int(request.args.get("page", 0))); size = min(200, max(1, int(request.args.get("size", 50))))
     except ValueError:
         page, size = 0, 50
+    if not q and not state and page == 0:       # the landing page — TTL-cache + warm it
+        return jsonify(_ttl("outlets_resp_%d" % size, 90, lambda: _outlets_data("", "", 0, size)))
+    return jsonify(_outlets_data(q, state, page, size))
+
+
+def _outlets_data(q, state, page, size):
+    import warehouse
     where, params = [], []
     if state:
         where.append("upper(CAST(state AS VARCHAR)) = ?"); params.append(state)
@@ -3480,18 +3499,19 @@ def master_outlets_browse_ep():
         where.append("(lower(CAST(store_name AS VARCHAR)) LIKE ? OR lower(CAST(address AS VARCHAR)) LIKE ? OR lower(CAST(city AS VARCHAR)) LIKE ?)")
         qq = "%" + q + "%"; params += [qq, qq, qq]
     wsql = (" WHERE " + " AND ".join(where)) if where else ""
+    fwhere = " WHERE " + " AND ".join(where + ["nullif(trim(CAST(state AS VARCHAR)),'') IS NOT NULL"])
     try:
-        total = warehouse.query("src_outlets", "SELECT count(*) c FROM t" + wsql, params)[0]["c"]
+        # count + state facet are rebuild-stable per filter → cache them; only the page rows are fetched live.
+        total = _wq_cached("src_outlets", "SELECT count(*) c FROM t" + wsql, params)[0]["c"]
         rows = warehouse.query("src_outlets",
             "SELECT %s FROM t%s ORDER BY (nullif(trim(store_name),'') IS NULL), (lat IS NULL), state, city, "
             "store_name LIMIT %d OFFSET %d" % (_OUTM_SEL, wsql, size, page * size), params)
-        fwhere = " WHERE " + " AND ".join(where + ["nullif(trim(CAST(state AS VARCHAR)),'') IS NOT NULL"])
-        facet = warehouse.query("src_outlets",
+        facet = _wq_cached("src_outlets",
             "SELECT CAST(state AS VARCHAR) state, count(*) n FROM t%s GROUP BY 1 ORDER BY n DESC LIMIT 60" % fwhere, params)
     except Exception as e:
-        return jsonify(ok=True, landed=False, error=str(e)[:140], outlets=[], total=0), 200
-    return jsonify(ok=True, landed=True, total=total, page=page, size=size,
-                   outlets=rows, states=[{"state": r["state"], "n": r["n"]} for r in facet])
+        return dict(ok=True, landed=False, error=str(e)[:140], outlets=[], total=0)
+    return dict(ok=True, landed=True, total=total, page=page, size=size,
+                outlets=rows, states=[{"state": r["state"], "n": r["n"]} for r in facet])
 
 @app.get("/api/master/outlet")
 def master_outlet_one_ep():
@@ -3592,30 +3612,54 @@ def _sku_join():
             % (u("dim_item"), u("dim_product"), u("dim_brand")))
 _SKU_SEL = ("t.sku_key, t.upc, t.pack, t.vintage, t.edition, t.sources, t.source_list, "
             "p.product_name, p.category, p.origin, p.abv, it.size_ml, b.brand, b.brand_group")
+_CATALOG_COLS = ("sku_key, upc, pack, vintage, edition, sources, source_list, product_name, category, "
+                 "origin, abv, size_ml, brand, brand_group")
+
+
 @app.get("/api/master/skus")
 def master_skus_ep():
-    """Paged, filterable SKU catalog — dim_sku joined to item/product/brand. ?q= (brand/product/upc)."""
-    import warehouse
+    """Paged, filterable SKU catalog. Pages the FLAT pre-sorted `catalog_skus` table (built at rebuild) so the
+    landing load is a cheap LIMIT/OFFSET, not a 1M-row 4-table join+sort per request. ?q= (brand/product/upc)."""
     q = (request.args.get("q") or "").strip().lower()
     try:
         page = max(0, int(request.args.get("page", 0))); size = min(200, max(1, int(request.args.get("size", 50))))
     except ValueError:
         page, size = 0, 50
+    if not q and page == 0:                 # the landing page — TTL-cache + warm it
+        return jsonify(_ttl("skus_resp_%d" % size, 90, lambda: _skus_data("", 0, size)))
+    return jsonify(_skus_data(q, page, size))
+
+
+def _skus_data(q, page, size):
+    import warehouse
     where, params = [], []
     if q:
-        where.append("(lower(CAST(b.brand AS VARCHAR)) LIKE ? OR lower(CAST(p.product_name AS VARCHAR)) LIKE ? OR lower(CAST(t.upc AS VARCHAR)) LIKE ?)")
+        where.append("(brand_lc LIKE ? OR product_lc LIKE ? OR upc_lc LIKE ?)")
         qq = "%" + q + "%"; params += [qq, qq, qq]
     wsql = (" WHERE " + " AND ".join(where)) if where else ""
+    try:                                    # flat catalog: pre-sorted, so no ORDER BY needed on read
+        total = _wq_cached("catalog_skus", "SELECT count(*) c FROM t" + wsql, params)[0]["c"]
+        rows = warehouse.query("catalog_skus", "SELECT %s FROM t%s LIMIT %d OFFSET %d"
+                               % (_CATALOG_COLS, wsql, size, page * size), params)
+        return dict(ok=True, landed=True, total=total, page=page, size=size, skus=rows)
+    except Exception:
+        pass
+    # Fallback: the flat table isn't built yet — do the live join (slow, but correct).
     jn = _sku_join()
+    w2 = []
+    if q:
+        w2.append("(lower(CAST(b.brand AS VARCHAR)) LIKE ? OR lower(CAST(p.product_name AS VARCHAR)) LIKE ? "
+                  "OR lower(CAST(t.upc AS VARCHAR)) LIKE ?)")
+    w2sql = (" WHERE " + " AND ".join(w2)) if w2 else ""
     try:
-        total = warehouse.query("dim_sku", "SELECT count(*) c FROM t %s%s" % (jn, wsql), params)[0]["c"]
+        total = warehouse.query("dim_sku", "SELECT count(*) c FROM t %s%s" % (jn, w2sql), params)[0]["c"]
         rows = warehouse.query("dim_sku", "SELECT %s FROM t %s%s "
                                "ORDER BY (CASE WHEN b.brand IS NULL OR CAST(b.brand AS VARCHAR)='' THEN 1 ELSE 0 END), "
-                               "b.brand, p.product_name LIMIT %d OFFSET %d"   # brand-less filings sort last
-                               % (_SKU_SEL, jn, wsql, size, page * size), params)
+                               "b.brand, p.product_name LIMIT %d OFFSET %d"
+                               % (_SKU_SEL, jn, w2sql, size, page * size), params)
     except Exception as e:
-        return jsonify(ok=True, landed=False, error=str(e)[:140], skus=[], total=0), 200
-    return jsonify(ok=True, landed=True, total=total, page=page, size=size, skus=rows)
+        return dict(ok=True, landed=False, error=str(e)[:140], skus=[], total=0)
+    return dict(ok=True, landed=True, total=total, page=page, size=size, skus=rows)
 
 @app.get("/api/master/sku")
 def master_sku_one_ep():
@@ -3633,12 +3677,11 @@ def master_sku_one_ep():
 @app.get("/api/master/counts")
 def master_counts_ep():
     """Row counts of each master table — for the workbench overview + catalog header."""
-    import warehouse
     out = {}
     for t in ("dim_brand", "dim_product", "dim_item", "dim_sku", "dim_supplier", "dim_outlet_resolved",
               "fact_inventory", "fact_pricing"):
         try:
-            out[t] = warehouse.query(t, "SELECT count(*) c FROM t")[0]["c"]
+            out[t] = _wq_cached(t, "SELECT count(*) c FROM t")[0]["c"]   # rebuild-stable → cached
         except Exception:
             out[t] = None
     return jsonify(ok=True, counts=out)
@@ -3647,10 +3690,18 @@ def master_counts_ep():
 def master_outlets_geo_ep():
     """Light geocoded points from the resolved outlet master for the workbench map. Optional ?bbox=
     west,south,east,north (viewport) + ?q= / ?state=. Ships {outlet_key,lat,lng,name,state} only."""
+    bb = request.args.get("bbox", "")
+    st = (request.args.get("state") or "").strip().upper()
+    q = (request.args.get("q") or "").strip().lower()
+    if not (bb or st or q):                     # default full map — TTL-cache + warm
+        return jsonify(_ttl("outlets_geo", 90, lambda: _outlets_geo_data("", "", "")))
+    return jsonify(_outlets_geo_data(bb, st, q))
+
+
+def _outlets_geo_data(bb, st, q):
     import warehouse
     where = ["try_cast(lat AS DOUBLE) IS NOT NULL", "try_cast(lng AS DOUBLE) IS NOT NULL"]
     params = []
-    bb = request.args.get("bbox", "")
     if bb:
         try:
             w, s, e, n = (float(x) for x in bb.split(","))
@@ -3658,10 +3709,8 @@ def master_outlets_geo_ep():
             params += [s, n, w, e]
         except (ValueError, TypeError):
             pass
-    st = (request.args.get("state") or "").strip().upper()
     if st:
         where.append("upper(CAST(state AS VARCHAR)) = ?"); params.append(st)
-    q = (request.args.get("q") or "").strip().lower()
     if q:
         where.append("(lower(CAST(store_name AS VARCHAR)) LIKE ? OR lower(CAST(city AS VARCHAR)) LIKE ?)")
         qq = "%" + q + "%"; params += [qq, qq]
@@ -3671,8 +3720,8 @@ def master_outlets_geo_ep():
             "SELECT source||'|'||store_id outlet_key, try_cast(lat AS DOUBLE) AS lat, try_cast(lng AS DOUBLE) AS lng, "
             "CAST(store_name AS VARCHAR) AS \"name\", CAST(state AS VARCHAR) AS state FROM t%s LIMIT 20000" % wsql, params)
     except Exception as e:
-        return jsonify(ok=True, landed=False, error=str(e)[:140], points=[]), 200
-    return jsonify(ok=True, landed=True, count=len(rows), points=rows)
+        return dict(ok=True, landed=False, error=str(e)[:140], points=[])
+    return dict(ok=True, landed=True, count=len(rows), points=rows)
 
 @app.post("/api/master/fact/apply")
 def fact_apply_ep():
@@ -4973,6 +5022,14 @@ def _wb_warm():
         lambda: _ttl("wb_master_resp", 90, lambda: _wb_master_data("", "")),   # trusted master (default)
         lambda: _ttl("wb_merges_resp", 90, lambda: _wb_merges_data("")),   # merge queue (default)
         _wb_merge_upc_attrs,                              # per-member attrs for cluster-open (was a scan/click)
+        lambda: _ttl("skus_resp_50", 90, lambda: _skus_data("", 0, 50)),        # catalog landing page
+        lambda: _ttl("outlets_resp_50", 90, lambda: _outlets_data("", "", 0, 50)),  # outlets landing page
+        lambda: _ttl("cov_accounts_300", 90, lambda: _cov_accounts_data("", "", "", "", "", 300)),  # coverage list
+        lambda: _ttl("cov_dots", 90, lambda: _cov_dots_data("", "")),           # coverage full-book dot layer
+        lambda: _ttl("outlets_geo", 90, lambda: _outlets_geo_data("", "", "")),  # workbench outlet map
+        lambda: [_wq_cached(t, "SELECT count(*) c FROM t") for t in           # catalog header counts
+                 ("dim_brand", "dim_product", "dim_item", "dim_sku", "dim_supplier",
+                  "dim_outlet_resolved", "fact_inventory", "fact_pricing")],
         lambda: _ttl("coverage", 90, _coverage_data),
         lambda: _ttl("catalog", 90, _catalog_map),
         lambda: _ttl("source_spec", 600, _source_spec_data),

@@ -265,6 +265,28 @@ def apply_decisions(rows, log=print):
     return out
 
 
+def build_catalog_flat(con, log=print):
+    """Flat, PRE-SORTED SKU catalog (`catalog_skus`): dim_sku joined to item/product/brand ONCE and written
+    sorted by brand/product. The /api/master/skus browser then pages it with a cheap LIMIT/OFFSET over a flat
+    file (row-group order == the sort) instead of a 1M-row 4-table join + full sort on every request (~38s).
+    Lowercased brand/product/upc columns let search filter without a per-row CAST/lower. COPY writes straight to
+    parquet (no Python materialization of 1M rows)."""
+    uri = warehouse.uri("catalog_skus").strip("'")
+    con.execute(
+        "COPY (SELECT s.sku_key, s.upc, s.pack, s.vintage, s.edition, s.sources, s.source_list, "
+        "p.product_name, p.category, p.origin, p.abv, it.size_ml, b.brand, b.brand_group, "
+        "lower(CAST(b.brand AS VARCHAR)) brand_lc, lower(CAST(p.product_name AS VARCHAR)) product_lc, "
+        "lower(CAST(s.upc AS VARCHAR)) upc_lc "
+        "FROM dim_sku s LEFT JOIN dim_item it ON s.item_key=it.item_key "
+        "LEFT JOIN dim_product p ON it.product_key=p.product_key "
+        "LEFT JOIN dim_brand b ON p.brand_key=b.brand_key "
+        "ORDER BY (b.brand IS NULL OR CAST(b.brand AS VARCHAR)=''), b.brand, p.product_name) "
+        "TO '%s' (FORMAT PARQUET)" % uri)
+    n = _rows(con, "SELECT count(*) c FROM read_parquet('%s')" % uri)[0]["c"]
+    log("[wb_views] catalog_skus=%d (flat, pre-sorted)" % n)
+    return n
+
+
 def build(log=print):
     con = warehouse.connect()
     for t in ("dim_sku", "dim_item", "dim_product", "dim_brand", "_stage_product"):
@@ -309,6 +331,10 @@ def build(log=print):
         matches = build_brand_merges(con, log=log)         # mnemonic-blocked dedup at brand/product/item/supplier
     except Exception as e:
         matches = 0; log("[wb_views] wb_matches skipped: %s" % str(e)[:80])
+    try:
+        build_catalog_flat(con, log=log)                   # flat pre-sorted SKU catalog for fast paging
+    except Exception as e:
+        log("[wb_views] catalog_skus skipped: %s" % str(e)[:80])
     log("[wb_views] wb_master=%d · wb_queue=%d (cap %d) · total=%d multi=%d · wb_merges=%d · wb_matches=%d"
         % (len(master), len(queue), CAP, agg["total"], agg["multi"] or 0, merges, matches))
     return {"wb_master": len(master), "wb_queue": len(queue), "wb_merges": merges,
