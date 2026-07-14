@@ -43,6 +43,19 @@ def step(name, fn):
         log("  ✗ %-10s %s" % (name, str(e)[:90]))
 
 
+def _embed_step():
+    """Bounded incremental product-image embed → img_vec, then refresh the img_matches candidate signal.
+    Capped per source (CPU inference is slow); accumulates + skips already-embedded, so it's resumable."""
+    import img_embed
+    for src, cap in (("abc_products", None), ("specs_products", 6000),
+                     ("offprem_products", 20000), ("binnys_products", 8000)):
+        try:
+            img_embed.build(src, limit=cap, log=log)
+        except Exception as e:
+            log("  embed %s: %s" % (src, str(e)[:70]))
+    img_embed.cross_match(threshold=0.88, log=log)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scrape", action="store_true", help="re-run the slow site scrapers before landing")
@@ -74,6 +87,8 @@ def main():
     if want("target"):   # daily = cheap state-spread SAMPLE (full national is a manual --national deep pull)
         n = int(os.environ.get("TARGET_DAILY_STORES", "60"))
         step("target", lambda: importlib.import_module("target_scraper").run_national(log=log, limit=n))
+    if want("embed"):    # opt-in (--only embed): bounded product-image CLIP embed + cross-source match signal.
+        step("embed", _embed_step)   # local-only (needs torch); slow on CPU, so capped + incremental/resumable.
 
     # summary — every chain source now in the warehouse
     try:
