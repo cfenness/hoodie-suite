@@ -25,6 +25,7 @@ import placeholders as _placeholders
 # SEPARATE — a Barbados rum bottled in the US is origin=Barbados, bottled_in=US).
 FIELDS = ["brand", "brand_group", "product_name", "class_type", "core_name", "flavor", "abv", "style", "category",
           "origin", "bottled_in", "region", "sub_region", "appellation", "varietal", "image",
+          "taste", "body", "food_pairing", "expert_rating", "finish",   # ecommerce PDP describing-fields
           "size_ml", "packsize", "container", "pack", "upc", "gtin", "vintage", "edition", "supplier"]
 
 # sources with a REAL brand column — used to seed the brand dictionary
@@ -45,7 +46,9 @@ _CFG = {
     # carries the geo the old thin `totalwine_products_full` table never did (varietal/origin/region/appellation).
     "total_wine_products": dict(name="name", brand="brand", size="size", cat="category", abv="abv", image="image",
                                 varietal="varietal", origin="origin", region="region", sub_region="sub_region",
-                                appellation="appellation", dedup=["sku"]),
+                                appellation="appellation", style="style", taste="taste", body="body",
+                                food_pairing="food_pairing", expert_rating="expert_rating", finish="finish",
+                                dedup=["sku"]),
     "binnys_products": dict(name="name", brand="brand", dedup=["sku"], varietal="varietal", image="image",  # store×product →
                             region="region", origin="origin", cat="category"),                # distinct products
     "target_products": dict(name="name", brand="brand", cat="category", image="image_url", dedup=["tcin"]),
@@ -386,7 +389,8 @@ def build(log=print):
             abv = _fnum(r.get(c["abv"])) if c.get("abv") else \
                 ((_fnum(r.get(c["proof"])) / 2) if c.get("proof") and _fnum(r.get(c["proof"])) else None)
             staged.append(dict(brand=brand, brand_group=None, product_name=clean_name(nm), flavor=None, abv=abv,
-                style=None, category=r.get(c["cat"]) if c.get("cat") else None,
+                style=(str(r.get(c["style"])).strip() or None) if c.get("style") and r.get(c["style"]) else None,
+                category=r.get(c["cat"]) if c.get("cat") else None,
                 origin=((str(r.get(c["origin"])).strip().title() or None) if c.get("origin") and r.get(c["origin"]) else None),
                 bottled_in=((str(r.get(c["bottled_in"])).strip().title() or None) if c.get("bottled_in") and r.get(c["bottled_in"]) else None),
                 size_ml=sz,
@@ -396,7 +400,8 @@ def build(log=print):
                 _source_id=(str(r.get(idc)) if idc and r.get(idc) is not None else None),
                 vintage=_clean_vintage(r.get(c["vintage"])) if c.get("vintage") else None,
                 **{fld: ((str(r.get(c[fld])).strip() or None) if c.get(fld) and r.get(c[fld]) else None)
-                   for fld in ("region", "sub_region", "appellation", "varietal", "image")}))
+                   for fld in ("region", "sub_region", "appellation", "varietal", "image",
+                               "taste", "body", "food_pairing", "expert_rating", "finish")}))
             kept += 1
         log("[master]   %-24s %6d products" % (ds, kept))
     _precleanse.precleanse(staged, log)                 # precleanse: canonicalize brand + cleanse name FIRST

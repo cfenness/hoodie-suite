@@ -109,12 +109,18 @@ def parse_product(html, url):
 
         def a(*names):
             return next((attrs[n] for n in names if attrs.get(n)), "")
+        # Everything on the PDP that DESCRIBES the product is an MDM field (ecommerce is the clearest case for
+        # MDM). Map the valuable named attributes AND keep the FULL attribute set as raw_json so nothing is lost.
+        import json as _json
         return {"sku": sku, "brand": brand, "name": name, "size": size, "price": price,
                 "category": cat, "desc": desc, "img": img, "url": url,
                 "varietal": a("Varietal Type", "Varietal"), "origin": a("Country State", "Country"),
                 "region": a("Region"), "sub_region": a("Sub Region", "Sub-Region", "Sub-Appellation"),
                 "appellation": a("Appellation"), "style": a("Style", "Wine Style"),
-                "abv": a("ABV", "Alcohol Content"), "taste": a("Taste"), "body": a("Body")}
+                "abv": a("ABV", "Alcohol Content"), "taste": a("Taste", "Tasting Notes"), "body": a("Body"),
+                "wine_type": a("Wine Type", "Type"), "food_pairing": a("Food Pairing", "Food Pairings", "Pairings"),
+                "expert_rating": a("Expert Rating", "Professional Rating"), "finish": a("Finish"),
+                "raw_json": _json.dumps(attrs, separators=(",", ":"))}
     return None
 
 
@@ -218,7 +224,10 @@ def crawl_land(cap=200000, delay=0.0, workers=4, out="agent_state/total_wine", l
                 "image": p.get("img", ""), "url": u, "varietal": p.get("varietal", ""), "origin": p.get("origin", ""),
                 "region": p.get("region", ""), "sub_region": p.get("sub_region", ""),
                 "appellation": p.get("appellation", ""), "style": p.get("style", ""), "abv": p.get("abv", ""),
-                "run_id": run_id}
+                # every describing field the PDP exposes -> an MDM field (+ raw_json = nothing dropped)
+                "taste": p.get("taste", ""), "body": p.get("body", ""), "wine_type": p.get("wine_type", ""),
+                "food_pairing": p.get("food_pairing", ""), "expert_rating": p.get("expert_rating", ""),
+                "finish": p.get("finish", ""), "raw_json": p.get("raw_json", ""), "run_id": run_id}
 
     done = 0
     with ThreadPoolExecutor(max_workers=workers) as ex:
