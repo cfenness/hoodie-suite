@@ -393,7 +393,9 @@ def build(log=print):
             if i >= 0:
                 src = pn[i + len(brand):]                # everything AFTER the brand (store prefix + brand dropped)
         ct, _cc, core = _classt.classify(src, s.get("varietal") or s.get("category") or "")
-        s["class_type"] = ct or None
+        # fill what the regex classifier misses via the CLASS dictionary (brand->class: "Budweiser" -> beer,
+        # "Montecristo" -> cigar). Editable data, so the null class_types keep shrinking without touching code.
+        s["class_type"] = ct or _dict_apply.classify(s.get("product_name") or "", "class") or None
         s["core_name"] = core or None                    # empty for a flagship (product == brand) — that's fine
     # class_type CONSISTENCY: class is now part of the product key, so a row where the class wasn't detected
     # ("Bacardi Superior" with no rum word) would split from its siblings ("... Rum" -> rum). Within each

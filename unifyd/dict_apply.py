@@ -32,6 +32,23 @@ SEED = {
     "descriptor": {"blanco": "white", "plata": "white", "silver": "white", "platinum": "white",
                    "anejo": "anejo", "añejo": "anejo", "reposado": "reposado", "rye": "rye",
                    "extra": "", "smooth": "", "original": "", "classic": "", "premium": "", "genuine": ""},
+    # CLASS derivation (CONTAINS) — a brand/keyword -> class, to FILL what the regex classifier misses (a beer
+    # with no style word). Longest match wins. Keep entries UNAMBIGUOUS (avoid bare words that overlap types).
+    "class": {"budweiser": "beer", "bud light": "beer", "coors": "beer", "miller lite": "beer",
+              "miller high life": "beer", "michelob": "beer", "\bbusch": "beer", "modelo": "beer",
+              "corona extra": "beer", "corona premier": "beer", "heineken": "beer", "stella artois": "beer",
+              "guinness": "beer", "samuel adams": "beer", "sam adams": "beer", "spaten": "beer", "pabst": "beer",
+              "yuengling": "beer", "blue moon": "beer", "dos equis": "beer", "pacifico": "beer",
+              "natural light": "beer", "natty": "beer", "keystone": "beer", "rolling rock": "beer",
+              "shiner": "beer", "lagunitas": "beer", "new belgium": "beer", "founders": "beer",
+              "goose island": "beer", "bell's": "beer", "victoria": "beer",
+              "white claw": "seltzer", "truly": "seltzer", "bud light seltzer": "seltzer",
+              "twisted tea": "rtd", "mike's hard": "rtd", "smirnoff ice": "rtd", "high noon": "rtd",
+              "montecristo": "cigar", "arturo fuente": "cigar", "rocky patel": "cigar", "romeo y julieta": "cigar",
+              "cohiba": "cigar", "macanudo": "cigar", "la aroma de cuba": "cigar", "perla del mar": "cigar",
+              "1 stick": "cigar", " maduro": "cigar", "acid kuba": "cigar", "don tomas": "cigar",
+              "gatorade": "non-alc", "powerade": "non-alc", "master of mixes": "non-alc", "hop wtr": "non-alc",
+              "mentos": "non-alc", "0.0 na": "non-alc", " n/a ": "non-alc"},
 }
 
 
@@ -46,6 +63,17 @@ def load(kind=None):
             m.setdefault(r.get("kind"), {})[(r.get("match") or "").lower()] = (r.get("value") or "")
         _CACHE["m"] = m
     return _CACHE["m"].get(kind, {}) if kind is not None else _CACHE["m"]
+
+
+def classify(text, kind="class"):
+    """CONTAINS-mode lookup: the longest dictionary `match` that appears in `text` -> its value. Fills what the
+    regex classifier misses (a beer BRAND with no style word: "Budweiser 25.4Z" -> beer). '' if nothing matches."""
+    t = (text or "").lower()
+    best_v, best_len = "", 0
+    for m, v in load(kind).items():
+        if len(m) > best_len and m in t:
+            best_v, best_len = v, len(m)
+    return best_v
 
 
 def norm_token(tok, kinds=("noise", "size", "descriptor")):
@@ -68,10 +96,12 @@ def seed(log=print):
         rows.append({"kind": "size", "match": w, "value": "", "mode": "exact"})
     for m, v in SEED["descriptor"].items():
         rows.append({"kind": "descriptor", "match": m, "value": v, "mode": "exact"})
+    for m, v in SEED["class"].items():
+        rows.append({"kind": "class", "match": m, "value": v, "mode": "contains"})
     warehouse.write_parquet("match_dict", rows, fields=FIELDS)
     _CACHE.clear()
-    log("[dict_apply] seeded match_dict: %d entries (%d noise, %d size, %d descriptor)"
-        % (len(rows), len(SEED["noise"]), len(SEED["size"]), len(SEED["descriptor"])))
+    log("[dict_apply] seeded match_dict: %d entries (%d noise, %d size, %d descriptor, %d class)"
+        % (len(rows), len(SEED["noise"]), len(SEED["size"]), len(SEED["descriptor"]), len(SEED["class"])))
     return len(rows)
 
 
