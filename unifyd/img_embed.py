@@ -124,35 +124,120 @@ def build(source, limit=None, workers=12, log=print):
     return landed
 
 
+_STOP = {"the", "and", "of", "wine", "wines", "spirits", "liqueur", "bottle", "ml", "l", "red", "white",
+         "napa", "valley", "reserve", "vineyards", "winery", "co", "kentucky", "straight"}
+_MATCH_FIELDS = ["a_source", "a_sku", "a_upc", "b_source", "b_sku", "b_upc", "cosine", "name_sim",
+                 "class_agree", "varietal_agree", "flavor_agree", "size_agree", "confidence", "verdict"]
+
+
+def _toks(s):
+    import re
+    return set(t for t in re.findall(r"[a-z0-9]+", (s or "").lower()) if len(t) > 1 and t not in _STOP)
+
+
+def _jacc(a, b):
+    A, B = _toks(a), _toks(b)
+    return round(len(A & B) / len(A | B), 3) if (A | B) else 0.0
+
+
+def _agree(x, y):
+    """1 = both present + equal, -1 = both present + differ (a CONFLICT), 0 = unknown (either side missing).
+    Coerces non-strings (e.g. size_ml floats) and treats 750 == 750.0."""
+    def norm(v):
+        if v is None:
+            return ""
+        if isinstance(v, float) and v.is_integer():
+            v = int(v)
+        return str(v).strip().lower()
+    x, y = norm(x), norm(y)
+    if not x or not y or x == "none" or y == "none":
+        return 0
+    return 1 if x == y else -1
+
+
 def cross_match(threshold=0.9, log=print):
-    """Cross-source image pairs with cosine >= threshold — a same-product candidate SIGNAL, never a decision and
-    never an identity assignment. Validated failure mode: same-brand different-varietal look-alikes (Bogle
-    Merlot vs Bogle Cab, Bacardi Superior vs Bacardi Lime) share a label design and score high, so image
-    similarity ALONE is not enough — the matcher must gate every pair on name/attribute agreement, and we do NOT
-    borrow a UPC across an image match (that would inject a wrong identity). Lands `img_matches`
-    (a_source,a_sku,a_upc, b_source,b_sku,b_upc, cosine) as candidate pairs to CORROBORATE, brute-force over the
-    embedded set (fine for the candidate scale; swap in FAISS for the full book)."""
+    """Cross-source image pairs with cosine >= threshold, each SCORED against the item/product information so the
+    look-alikes get demoted. Image similarity alone confuses same-brand/different-varietal bottles (Bogle Merlot
+    vs Bogle Cab both ~0.96 — same label design); comparing the normalized `_stage_product` attributes fixes it:
+
+      • varietal / class_type / flavor CONFLICT (both present, differ) -> `look_alike`  (same brand, diff product)
+      • name-token agreement corroborates (catches the off-premise store-brand-name bug: the two names still
+        share "Johnnie Walker Black" even when the brand column is a store name)
+      • size is INFORMATIONAL, never a gate — a wrong-size photo must not reject a real match (user's rule)
+
+    Lands `img_matches` with cosine + the agreement signals + a combined `confidence` + `verdict`
+    (`same_item` / `review` / `look_alike` / `weak`). Still a SOFT signal — never an identity/UPC assignment."""
     import numpy as np
     rows = warehouse.query("img_vec", "SELECT source, sku, upc, vec FROM t")
     if not rows:
         log("[img_embed] img_vec empty — run build first"); return 0
-    M = np.stack([unpack(r["vec"]) for r in rows])        # (N, 512) unit vectors → cosine = dot
+    M = np.nan_to_num(np.stack([unpack(r["vec"]) for r in rows]), nan=0.0)   # a bad/empty embed -> 0 -> excluded
     src = [r["source"] for r in rows]
-    out = []
+    pairs = []
     for i in range(len(rows)):
-        sims = M[i + 1:] @ M[i]                            # only j>i, no self/dup
+        sims = M[i + 1:] @ M[i]
         for off, c in enumerate(sims):
             j = i + 1 + off
-            if c >= threshold and src[i] != src[j]:       # CROSS-source only (within-source dupes aren't matches)
-                a, b = rows[i], rows[j]
-                out.append({"a_source": a["source"], "a_sku": a["sku"], "a_upc": a.get("upc") or "",
-                            "b_source": b["source"], "b_sku": b["sku"], "b_upc": b.get("upc") or "",
-                            "cosine": round(float(c), 4)})
-    warehouse.write_parquet("img_matches", out,
-                            fields=["a_source", "a_sku", "a_upc", "b_source", "b_sku", "b_upc", "cosine"])
-    log("[img_embed] img_matches: %d cross-source candidate pairs >= %.2f (corroborate with name before use)"
-        % (len(out), threshold))
+            if c >= threshold and src[i] != src[j]:       # cross-source only
+                pairs.append((rows[i], rows[j], float(c)))
+    # batch-load the normalized item/product attributes for every (source, sku) in the pairs
+    need = {(r["source"], r["sku"]) for p in pairs for r in (p[0], p[1])}
+    stg = _stage_lookup(need)
+    out = []
+    for a, b, c in pairs:
+        sa = stg.get((a["source"], a["sku"]), {})
+        sb = stg.get((b["source"], b["sku"]), {})
+        name_sim = _jacc(sa.get("product_name") or sa.get("core_name"),
+                         sb.get("product_name") or sb.get("core_name"))
+        cls = _agree(sa.get("class_type"), sb.get("class_type"))
+        var = _agree(sa.get("varietal"), sb.get("varietal"))
+        flav = _agree(sa.get("flavor"), sb.get("flavor"))
+        size_agree = _agree(sa.get("size_ml"), sb.get("size_ml"))     # recorded, NOT gated
+        conflict = cls < 0 or var < 0 or flav < 0
+        if conflict:                                       # image says same, product info says NO
+            verdict, conf = "look_alike", round(c * 0.3, 3)
+        elif c >= 0.9 and name_sim >= 0.5:
+            verdict = "same_item"
+            conf = round(min(1.0, c * 0.55 + name_sim * 0.35 + (0.06 if size_agree == 1 else 0) + 0.08), 3)
+        elif c >= 0.9 or name_sim >= 0.4:
+            verdict, conf = "review", round(c * 0.5 + name_sim * 0.3, 3)
+        else:
+            verdict, conf = "weak", round(c * 0.4, 3)
+        out.append({"a_source": a["source"], "a_sku": a["sku"], "a_upc": a.get("upc") or "",
+                    "b_source": b["source"], "b_sku": b["sku"], "b_upc": b.get("upc") or "",
+                    "cosine": round(c, 4), "name_sim": name_sim, "class_agree": cls, "varietal_agree": var,
+                    "flavor_agree": flav, "size_agree": size_agree, "confidence": conf, "verdict": verdict})
+    warehouse.write_parquet("img_matches", out, fields=_MATCH_FIELDS)
+    tally = {}
+    for r in out:
+        tally[r["verdict"]] = tally.get(r["verdict"], 0) + 1
+    log("[img_embed] img_matches: %d cross-source pairs >= %.2f  %s" % (len(out), threshold, tally))
     return len(out)
+
+
+def _stage_lookup(pairs):
+    """Batch-load normalized item/product attributes from `_stage_product` for a set of (source, sku)."""
+    if not pairs:
+        return {}
+    by_src = {}
+    for s, k in pairs:
+        by_src.setdefault(s, set()).add(str(k))
+    out = {}
+    for source, skus in by_src.items():
+        skus = list(skus)
+        for i in range(0, len(skus), 900):               # chunk the IN() list
+            chunk = skus[i:i + 900]
+            ph = ",".join("?" * len(chunk))
+            try:
+                rows = warehouse.query("_stage_product",
+                    "SELECT CAST(_source_id AS VARCHAR) sid, product_name, core_name, brand, varietal, "
+                    "class_type, flavor, size_ml FROM t WHERE _source=? AND CAST(_source_id AS VARCHAR) IN (%s)"
+                    % ph, [source] + chunk)
+            except Exception:
+                rows = []
+            for r in rows:
+                out[(source, r["sid"])] = r
+    return out
 
 
 def main(argv=None):
