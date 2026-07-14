@@ -49,6 +49,31 @@ SEED = {
               "1 stick": "cigar", " maduro": "cigar", "acid kuba": "cigar", "don tomas": "cigar",
               "gatorade": "non-alc", "powerade": "non-alc", "master of mixes": "non-alc", "hop wtr": "non-alc",
               "mentos": "non-alc", "0.0 na": "non-alc", " n/a ": "non-alc"},
+    # VARIETAL derivation (CONTAINS) — the grape sits in the wine's NAME; a clean controlled vocab. Longest match
+    # wins, so "cabernet sauvignon" beats a bare "cabernet". Fills varietal for sources that don't supply it.
+    "varietal": {"cabernet sauvignon": "Cabernet Sauvignon", "sauvignon blanc": "Sauvignon Blanc",
+                 "pinot noir": "Pinot Noir", "pinot grigio": "Pinot Grigio", "pinot gris": "Pinot Gris",
+                 "petite sirah": "Petite Sirah", "petit verdot": "Petit Verdot", "cabernet franc": "Cabernet Franc",
+                 "chenin blanc": "Chenin Blanc", "gruner veltliner": "Gruner Veltliner", "chardonnay": "Chardonnay",
+                 "merlot": "Merlot", "malbec": "Malbec", "zinfandel": "Zinfandel", "riesling": "Riesling",
+                 "syrah": "Syrah", "shiraz": "Syrah", "moscato": "Moscato", "muscat": "Moscato",
+                 "sangiovese": "Sangiovese", "tempranillo": "Tempranillo", "grenache": "Grenache",
+                 "gewurztraminer": "Gewurztraminer", "gewürztraminer": "Gewurztraminer", "nebbiolo": "Nebbiolo",
+                 "barbera": "Barbera", "viognier": "Viognier", "carmenere": "Carmenere", "primitivo": "Zinfandel",
+                 "montepulciano": "Montepulciano", "verdejo": "Verdejo", "albarino": "Albarino",
+                 "albariño": "Albarino", "vermentino": "Vermentino", "torrontes": "Torrontes", "semillon": "Semillon",
+                 "mourvedre": "Mourvedre", "cinsault": "Cinsault", "pinotage": "Pinotage", "cabernet": "Cabernet Sauvignon"},
+    # FLAVOR derivation (CONTAINS) — RTDs / flavored spirits carry the flavor in the NAME ("Margarita Pineapple").
+    "flavor": {"black cherry": "Black Cherry", "green apple": "Green Apple", "passion fruit": "Passion Fruit",
+               "wild berry": "Wild Berry", "mixed berry": "Mixed Berry", "pink lemonade": "Pink Lemonade",
+               "pineapple": "Pineapple", "watermelon": "Watermelon", "strawberry": "Strawberry",
+               "raspberry": "Raspberry", "blackberry": "Blackberry", "blueberry": "Blueberry", "cranberry": "Cranberry",
+               "grapefruit": "Grapefruit", "pomegranate": "Pomegranate", "tangerine": "Tangerine", "peach": "Peach",
+               "mango": "Mango", "cherry": "Cherry", "lime": "Lime", "lemon": "Lemon", "orange": "Orange",
+               "apple": "Apple", "grape": "Grape", "coconut": "Coconut", "vanilla": "Vanilla", "cinnamon": "Cinnamon",
+               "honey": "Honey", "ginger": "Ginger", "guava": "Guava", "kiwi": "Kiwi", "banana": "Banana",
+               "caramel": "Caramel", "chocolate": "Chocolate", "espresso": "Espresso", "coffee": "Coffee",
+               "cucumber": "Cucumber", "apricot": "Apricot", "grape": "Grape"},
 }
 
 
@@ -96,12 +121,13 @@ def seed(log=print):
         rows.append({"kind": "size", "match": w, "value": "", "mode": "exact"})
     for m, v in SEED["descriptor"].items():
         rows.append({"kind": "descriptor", "match": m, "value": v, "mode": "exact"})
-    for m, v in SEED["class"].items():
-        rows.append({"kind": "class", "match": m, "value": v, "mode": "contains"})
+    for kind in ("class", "varietal", "flavor"):
+        for m, v in SEED[kind].items():
+            rows.append({"kind": kind, "match": m, "value": v, "mode": "contains"})
     warehouse.write_parquet("match_dict", rows, fields=FIELDS)
     _CACHE.clear()
-    log("[dict_apply] seeded match_dict: %d entries (%d noise, %d size, %d descriptor, %d class)"
-        % (len(rows), len(SEED["noise"]), len(SEED["size"]), len(SEED["descriptor"]), len(SEED["class"])))
+    log("[dict_apply] seeded match_dict: %d entries (%s)"
+        % (len(rows), ", ".join("%d %s" % (len(SEED[k]), k) for k in ("noise", "size", "descriptor", "class", "varietal", "flavor"))))
     return len(rows)
 
 

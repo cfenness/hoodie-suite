@@ -421,6 +421,12 @@ def build(log=print):
         # fill what the regex classifier misses via the CLASS dictionary (brand->class: "Budweiser" -> beer,
         # "Montecristo" -> cigar). Editable data, so the null class_types keep shrinking without touching code.
         s["class_type"] = ct or _dict_apply.classify(s.get("product_name") or "", "class") or None
+        # varietal + flavor are among the CLEANEST fields but most retailers don't supply them — derive from the
+        # NAME where the source didn't ("… Cabernet Sauvignon" -> varietal; "Margarita Pineapple" -> flavor).
+        if not s.get("varietal"):
+            s["varietal"] = _dict_apply.classify(s.get("product_name") or "", "varietal") or None
+        if not s.get("flavor"):
+            s["flavor"] = _dict_apply.classify(s.get("product_name") or "", "flavor") or None
         # core_name gets the SAME dictionary treatment as _core_key: strip pack-counts ("Mango 4-pack" -> "Mango"),
         # drop noise/size tokens, collapse descriptor synonyms — so the product KEY aligns across sources.
         s["core_name"] = _clean_core(core, s) or None    # empty for a flagship (product == brand) — that's fine
