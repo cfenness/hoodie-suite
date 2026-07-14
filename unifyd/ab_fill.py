@@ -17,7 +17,19 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ab_locator
 import warehouse
 
-TARGET = {"WA", "OR", "NV", "AZ", "ID", "MT", "UT", "WY", "CO", "NM", "AK", "HI"}
+WEST = {"WA", "OR", "NV", "AZ", "ID", "MT", "UT", "WY", "CO", "NM", "AK", "HI"}
+ALL_STATES = {"AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS",
+              "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY",
+              "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
+              "WI", "WY", "DC"}
+TARGET = WEST                                    # default frontier; --national widens it to every state
+NATIONAL_SEED = [  # a metro or two per state — BFS harvests each outlet's own zip to densify from these
+    "35203", "36104", "72201", "90001", "94102", "95814", "92101", "93701", "06103", "19801", "20001", "32801",
+    "33101", "32202", "33602", "30303", "31401", "60601", "62701", "46204", "50309", "66101", "67202", "40202",
+    "40507", "70112", "70801", "04101", "21201", "02108", "01103", "48226", "49503", "55401", "39201", "63101",
+    "64106", "68102", "03101", "07102", "10001", "14202", "13202", "12207", "28202", "27601", "58102", "44113",
+    "43215", "45202", "73102", "74103", "19107", "15222", "02903", "29201", "29401", "57104", "37203", "38103",
+    "75201", "77002", "78205", "79901", "76102", "23219", "22314", "25301", "53202"]
 FLD = ["VPID", "Name", "Address", "City", "State", "Zip", "Lat", "Lng", "AB_Brands", "Zips_Hit"]
 SEED = ["98101", "98402", "99201", "98661", "98004", "98801", "98901", "98225", "98501",   # WA
         "97201", "97401", "97501", "97701", "97801", "97301", "97420",                      # OR
@@ -57,12 +69,17 @@ def _flush(existing, acc, log):
     return added
 
 
-def run(cap=900, radius=25.0, delay=0.15, ckpt=250, log=print):
+def run(cap=900, radius=25.0, delay=0.15, ckpt=250, national=False, log=print):
+    global TARGET
+    seed = SEED
+    if national:                                 # densify the WHOLE country, not just the west
+        TARGET = ALL_STATES
+        seed = NATIONAL_SEED + SEED
     existing = {str(r["VPID"]): dict(r) for r in warehouse.query("ab_outlets", "SELECT * FROM t")}
     base = len(existing)
-    log("[ab_fill] existing ab_outlets: %d" % base)
+    log("[ab_fill] existing ab_outlets: %d (frontier: %s states)" % (base, len(TARGET)))
     acc = {}                                     # vpid -> {schema fields + _b(brands) + _z(zips hit)}
-    swept, queue, t0 = set(), list(dict.fromkeys(SEED)), time.time()
+    swept, queue, t0 = set(), list(dict.fromkeys(seed)), time.time()
     while queue and len(swept) < cap:
         z = queue.pop(0)
         if z in swept:
@@ -105,5 +122,6 @@ if __name__ == "__main__":
     ap.add_argument("--cap", type=int, default=900)
     ap.add_argument("--radius", type=float, default=25.0)
     ap.add_argument("--delay", type=float, default=0.15)
+    ap.add_argument("--national", action="store_true", help="densify every state, not just the west")
     a = ap.parse_args()
-    run(cap=a.cap, radius=a.radius, delay=a.delay)
+    run(cap=a.cap, radius=a.radius, delay=a.delay, national=a.national)
