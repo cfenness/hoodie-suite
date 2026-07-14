@@ -2485,6 +2485,49 @@ def mwb_matches_ep():
     return jsonify(ok=True, count=len(out), by_grain=by_grain, merges=out[:400])
 
 
+@app.get("/api/master/workbench/image-matches")
+def mwb_image_matches_ep():
+    """Cross-source candidate pairs the PRODUCT IMAGES agree on (CLIP embedding, img_embed.py) — the ones the
+    mnemonic blocking MISSES (e.g. an off-premise store-brand-name row that never blocks with the real brand).
+    Each pair is already scored against the item/product attributes: `verdict` (same_item / review) + a combined
+    `confidence`, with look-alikes (same label, different varietal) demoted out. SOFT signal for the adjudication
+    queue — it proposes a merge to confirm, it never merges on its own or assigns a UPC."""
+    return jsonify(_ttl("img_matches_resp", 120, _img_matches_data))
+
+
+def _img_matches_data():
+    try:
+        rows = _wq_cached("img_matches", "SELECT * FROM t WHERE verdict IN ('same_item','review') "
+                          "ORDER BY confidence DESC LIMIT 500")
+    except Exception:
+        return dict(ok=True, count=0, matches=[], note="img_matches not built yet — run img_embed build+match")
+    if not rows:
+        return dict(ok=True, count=0, matches=[])
+    need = {}
+    for m in rows:
+        need.setdefault(m["a_source"], set()).add(str(m["a_sku"]))
+        need.setdefault(m["b_source"], set()).add(str(m["b_sku"]))
+    nm = {}
+    for s, ks in need.items():
+        ks = list(ks)
+        for i in range(0, len(ks), 900):
+            ch = ks[i:i + 900]; ph = ",".join("?" * len(ch))
+            for r in _wq("_stage_product", "SELECT CAST(_source_id AS VARCHAR) k, product_name, brand, varietal, "
+                         "size_ml FROM t WHERE _source=? AND CAST(_source_id AS VARCHAR) IN (%s)" % ph, [s] + ch):
+                nm[(s, r["k"])] = r
+
+    def side(src, sku, upc):
+        r = nm.get((src, str(sku)), {})
+        return {"source": src, "sku": sku, "upc": upc or "", "name": r.get("product_name") or "",
+                "brand": r.get("brand") or "", "varietal": r.get("varietal") or "", "size_ml": r.get("size_ml")}
+    out = [{"a": side(m["a_source"], m["a_sku"], m.get("a_upc")),
+            "b": side(m["b_source"], m["b_sku"], m.get("b_upc")),
+            "cosine": m["cosine"], "confidence": m["confidence"], "verdict": m["verdict"],
+            "name_sim": m["name_sim"], "varietal_agree": m["varietal_agree"], "size_agree": m["size_agree"]}
+           for m in rows]
+    return dict(ok=True, count=len(out), matches=out)
+
+
 @app.get("/api/master/workbench/merge-detail/<path:mid>")
 def mwb_merge_detail_ep(mid):
     """Full detail for one merge group — each member SKU enriched with its image / geo / varietal / ABV /
@@ -5023,6 +5066,7 @@ def _wb_warm():
         lambda: _ttl("wb_master_resp", 90, lambda: _wb_master_data("", "")),   # trusted master (default)
         lambda: _ttl("wb_merges_resp", 90, lambda: _wb_merges_data("")),   # merge queue (default)
         _wb_merge_upc_attrs,                              # per-member attrs for cluster-open (was a scan/click)
+        lambda: _ttl("img_matches_resp", 120, _img_matches_data),   # image-similarity candidate queue
         lambda: _ttl("skus_resp_50", 90, lambda: _skus_data("", 0, 50)),        # catalog landing page
         lambda: _ttl("outlets_resp_50", 90, lambda: _outlets_data("", "", 0, 50)),  # outlets landing page
         lambda: _ttl("cov_accounts_300", 90, lambda: _cov_accounts_data("", "", "", "", "", 300)),  # coverage list

@@ -335,6 +335,11 @@ def build(log=print):
         build_catalog_flat(con, log=log)                   # flat pre-sorted SKU catalog for fast paging
     except Exception as e:
         log("[wb_views] catalog_skus skipped: %s" % str(e)[:80])
+    try:
+        import img_embed                                    # refresh the image-similarity candidate signal from
+        img_embed.cross_match(threshold=0.88, log=log)     # whatever's in img_vec (cheap; embedding is separate)
+    except Exception as e:
+        log("[wb_views] img_matches skipped: %s" % str(e)[:80])
     log("[wb_views] wb_master=%d · wb_queue=%d (cap %d) · total=%d multi=%d · wb_merges=%d · wb_matches=%d"
         % (len(master), len(queue), CAP, agg["total"], agg["multi"] or 0, merges, matches))
     return {"wb_master": len(master), "wb_queue": len(queue), "wb_merges": merges,
