@@ -1878,7 +1878,7 @@ def _wb_itemmap():
 # it only changes on a master REBUILD, so cache it, invalidated by a cheap row-count "version" (count = parquet
 # metadata, no full scan) revalidated at most every 30s. First request after a rebuild pays the load; the rest
 # are instant. `_wq_cached` memoizes read-query RESULTS the same way (safe — workbench reads are rebuild-stable).
-_WB = {"ts": 0.0, "ver": None, "maps": None, "mupc": None, "q": {}}
+_WB = {"ts": 0.0, "ver": None, "maps": None, "mupc": None, "detail": None, "pitems": None, "q": {}}
 
 
 def _wb_ver():
@@ -1899,6 +1899,8 @@ def _wb_ver():
     if ver != _WB["ver"]:                 # a rebuild changed the tables → drop all caches
         _WB["maps"] = None
         _WB["mupc"] = None
+        _WB["detail"] = None
+        _WB["pitems"] = None
         _WB["q"] = {}
         _WB["ver"] = ver
     _WB["ts"] = now
@@ -1910,6 +1912,37 @@ def _wb_maps():
     if _WB["maps"] is None:
         _WB["maps"] = (_wb_brandmap(), _wb_productmap(), _wb_itemmap())
     return _WB["maps"]
+
+
+def _wb_prod_items():
+    """product_key -> [item_key] reverse index, so 'other SKUs of the same product' is an O(1) dict lookup
+    instead of a full 1M-row Python scan of itemmap on EVERY candidates request."""
+    _wb_ver()
+    if _WB["pitems"] is None:
+        _, _, itemmap = _wb_maps()
+        idx = {}
+        for ik, (pk, _sz, _c) in itemmap.items():
+            if pk:
+                idx.setdefault(pk, []).append(ik)
+        _WB["pitems"] = idx
+    return _WB["pitems"]
+
+
+def _wb_detail():
+    """Index the warmed wb_queue + wb_master view rows by sku_key. Those views are pre-joined AND now carry the
+    detail-modal columns (image / varietal / region / abv / pack / gtin …), so the item-detail modal serves
+    straight from RAM with NO dim_sku / dim_product scan (each open used to full-scan the 1M-row tables, ~26s
+    cold). Tiny (~8k rows) → instant warm, negligible memory. A non-queue cid misses → per-cid scan fallback."""
+    _wb_ver()
+    if _WB["detail"] is None:
+        idx = {}
+        for v in ("wb_queue", "wb_master"):
+            for r in (_wb_view(v) or []):
+                k = r.get("sku_key")
+                if k is not None:
+                    idx[str(k)] = r
+        _WB["detail"] = idx
+    return _WB["detail"]
 
 
 def _wb_merge_upc_attrs():
@@ -2076,21 +2109,30 @@ def _wb_master_data(q, src):
 def _sku_full(cid):
     """Everything attached to a SKU — the sku stub + its product-grain attributes (image/geo/varietal/abv) +
     its vintages (dim_vintage). Shared by the item detail + the expand-modal + the vision run."""
-    sk = _wq_cached("dim_sku", "SELECT * FROM t WHERE sku_key = ?", [cid])
-    if not sk:
-        return None
-    sk = sk[0]
-    brands, prodmap, itemmap = _wb_maps()
-    st = _wb_sku_stub(sk, itemmap, prodmap, brands)
-    pk = (itemmap.get(sk.get("item_key")) or (None, None, None))[0]
-    attrs = (_wq_cached("dim_product", "SELECT * FROM t WHERE product_key = ?", [pk]) or [{}])[0] if pk else {}
-    st["image"] = attrs.get("image") or ""
-    for f in ("origin", "bottled_in", "region", "sub_region", "appellation", "varietal", "category", "abv", "style"):
-        st[f] = attrs.get(f) or st.get(f) or ""
-    st["pack"] = sk.get("pack") or ""
-    st["gtin"] = sk.get("gtin") or ""
-    st["vintages"] = [v["vintage"] for v in _wq_cached("dim_vintage", "SELECT DISTINCT vintage FROM t WHERE sku_key = ? "
-                                                 "ORDER BY vintage", [cid])]
+    row = _wb_detail().get(str(cid))                     # warmed, widened view row for queue/master items
+    if row is not None:                                  # the hot path — everything from RAM, no dim scans
+        st = _wb_view_stub(row)
+        st["image"] = row.get("image") or ""
+        for f in ("origin", "bottled_in", "region", "sub_region", "appellation", "varietal", "category", "abv", "style"):
+            st[f] = row.get(f) or ""
+        st["pack"] = row.get("pack") or ""
+        st["gtin"] = row.get("gtin") or ""
+    else:                                                # not a queue/master item → per-cid scan fallback
+        got = _wq_cached("dim_sku", "SELECT * FROM t WHERE sku_key = ?", [cid])
+        if not got:
+            return None
+        sk = got[0]
+        brands, prodmap, itemmap = _wb_maps()
+        st = _wb_sku_stub(sk, itemmap, prodmap, brands)
+        pk = (itemmap.get(sk.get("item_key")) or (None, None, None))[0]
+        attrs = (_wq_cached("dim_product", "SELECT * FROM t WHERE product_key = ?", [pk]) or [{}])[0] if pk else {}
+        st["image"] = attrs.get("image") or ""
+        for f in ("origin", "bottled_in", "region", "sub_region", "appellation", "varietal", "category", "abv", "style"):
+            st[f] = attrs.get(f) or st.get(f) or ""
+        st["pack"] = sk.get("pack") or ""
+        st["gtin"] = sk.get("gtin") or ""
+    st["vintages"] = [v["vintage"] for v in _wq_cached("dim_vintage",   # small table; cached per cid
+                      "SELECT DISTINCT vintage FROM t WHERE sku_key = ? ORDER BY vintage", [cid])]
     return st
 
 
@@ -2143,15 +2185,17 @@ def mwb_candidates_ep(cid):
     the SKU's own proposed home; the rest are OTHER SKUs of the SAME PRODUCT (across sizes/packs/UPCs) scored by
     name + UPC overlap, so a genuine duplicate SKU (same sellable unit, different source string / stray UPC)
     surfaces. A big gap to #2 (or a high #1) = low ambiguity; a near-tie = a human decides whether to merge."""
-    base = _wq_cached("dim_sku", "SELECT * FROM t WHERE sku_key = ?", [cid])
-    if not base:
-        return jsonify(ok=False, error="not found"), 404
-    base = base[0]
+    base = _wb_detail().get(str(cid))                    # warmed view row (queue/master); else per-cid scan
+    if base is None:
+        got = _wq_cached("dim_sku", "SELECT * FROM t WHERE sku_key = ?", [cid])
+        if not got:
+            return jsonify(ok=False, error="not found"), 404
+        base = got[0]
     brands, prodmap, itemmap = _wb_maps()
     bstub = _wb_sku_stub(base, itemmap, prodmap, brands)
     btok = _wb_tokens(bstub["candidate_name"])
     bpk = (itemmap.get(base.get("item_key")) or (None, None, None))[0]
-    same_prod_items = [ik for ik, (pk, _, _) in itemmap.items() if pk == bpk]   # SKUs of the same product
+    same_prod_items = _wb_prod_items().get(bpk, [])       # O(1) reverse index, not a 1M-row scan of itemmap
     pool = []
     if same_prod_items:
         iks = same_prod_items[:400]
@@ -5066,6 +5110,8 @@ def _wb_warm():
         lambda: _ttl("wb_master_resp", 90, lambda: _wb_master_data("", "")),   # trusted master (default)
         lambda: _ttl("wb_merges_resp", 90, lambda: _wb_merges_data("")),   # merge queue (default)
         _wb_merge_upc_attrs,                              # per-member attrs for cluster-open (was a scan/click)
+        _wb_prod_items,                                  # product->items reverse index (candidates modal)
+        _wb_detail,                                      # bulk detail for queue/master items (item-detail modal)
         lambda: _ttl("img_matches_resp", 120, _img_matches_data),   # image-similarity candidate queue
         lambda: _ttl("skus_resp_50", 90, lambda: _skus_data("", 0, 50)),        # catalog landing page
         lambda: _ttl("outlets_resp_50", 90, lambda: _outlets_data("", "", 0, 50)),  # outlets landing page
