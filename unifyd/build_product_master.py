@@ -59,8 +59,8 @@ _CFG = {
                             abv="abv", origin="origin", cat="category"),
     "target_products": dict(name="name", brand="brand", cat="category", image="image_url", dedup=["tcin"]),
     "specs_products": dict(name="name", brand="brand", dedup=["sku"], varietal="varietal", region="region",
-                           sub_region="sub_region", appellation="appellation", origin="origin", cat="category",
-                           abv="abv", image="image"),
+                           country="origin", state="state", cat="type", abv="abv", image="image",
+                           upc="upc", vintage="vintage", taste="tasting_notes"),   # upc now parsed from image
     "cityhive_products": dict(name="name", size_ml="size_ml", cat="bev_category", image="image", dedup=["sku"]),  # independent
     # off_premise.run_census — independent retailers on Shopify/Woo/Squarespace/Wix (free direct-fetch sweep)
     "offprem_products": dict(name="name", brand="brand", size_ml="size_ml", cat="bev_category", upc="upc",

@@ -133,6 +133,116 @@ def parse_stores(html):
     return rows, name
 
 
+_UPC_RE = re.compile(r'/(\d{11,14})\.(?:jpg|jpeg|png|webp)', re.I)
+# Every product-level field the PDP exposes → a clean column in specs_products (feeds the master).
+SPECS_FLD = ["sku", "slug", "url", "name", "brand", "type", "varietal", "abv", "origin", "region", "state",
+             "vintage", "tasting_notes", "pairs_with", "description", "price", "upc", "image",
+             "in_stock_stores", "store_count", "raw_json"]
+
+
+def _brace_obj(s, anchor):
+    """The brace-balanced JSON object that CONTAINS `anchor` — walk back to its opening '{', forward to close."""
+    i = s.find(anchor)
+    if i < 0:
+        return None
+    depth, start = 0, None
+    for k in range(i, -1, -1):
+        c = s[k]
+        if c == "}":
+            depth += 1
+        elif c == "{":
+            if depth == 0:
+                start = k; break
+            depth -= 1
+    if start is None:
+        return None
+    depth = 0
+    for k in range(start, len(s)):
+        c = s[k]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(s[start:k + 1])
+                except Exception:
+                    return None
+    return None
+
+
+def _attrs_obj(html):
+    """The PDP's product-attribute object (type/brand/abv/region/origin/varietal/vintage/tastingNotes/pairsWith)."""
+    for s in (html, _maybe_unescape(html)):
+        o = _brace_obj(s, '"tastingNotes"')
+        if isinstance(o, dict) and "brand" in o:
+            return o
+    return None
+
+
+def _ld_product(html):
+    for blk in LD_RE.findall(html):
+        try:
+            data = json.loads(blk)
+        except Exception:
+            continue
+        for d in (data if isinstance(data, list) else [data]):
+            if isinstance(d, dict) and d.get("@type") == "Product":
+                return d
+    return None
+
+
+def _state_from_region(region):
+    m = re.search(r"\(([A-Z]{2})\)\s*$", region or "")   # "Kentucky (KY)" -> "KY"
+    return m.group(1) if m else ""
+
+
+def parse_product(html, slug, url, stores=None):
+    """FULL product-detail record from a Spec's PDP — everything on the page: the PRODUCT DETAILS block
+    (type/brand/abv/region/origin/varietal/vintage/tasting notes/pairs-with) + ld+json (name/description/
+    each-price/image) + the UPC parsed from the image filename (Spec's names product images by UPC) + a
+    per-store availability roll-up. raw_json keeps the untouched source blocks (full-capture directive)."""
+    a = _attrs_obj(html) or {}
+    ld = _ld_product(html) or {}
+    im = ld.get("image")
+    img = (im[0] if isinstance(im, list) and im else im) if im else ""
+    if not img:
+        mi = re.search(r'(?:og:image|twitter:image)"[^>]*content="([^"]+)"', html or "", re.I)
+        img = mi.group(1) if mi else ""
+    um = _UPC_RE.search(img or "")
+    off = ld.get("offers") or {}
+    if isinstance(off, list):
+        off = off[0] if off else {}
+    try:
+        price = float(off.get("price")) if off.get("price") else None
+    except Exception:
+        price = None
+    stores = stores or []
+    region = (a.get("region") or "").strip()
+    return {
+        "sku": (a.get("sku") or ld.get("sku") or "").strip(),
+        "slug": slug, "url": url,
+        "name": (ld.get("name") or _name(html) or "").strip(),
+        "brand": (a.get("brand") or "").strip(),
+        "type": (a.get("type") or "").strip(),
+        "varietal": (a.get("varietal") or "").strip(),
+        "abv": (a.get("abv") or "").strip(),
+        "origin": (a.get("origin") or "").strip(),          # country, e.g. "United States"
+        "region": region,                                   # e.g. "Kentucky (KY)"
+        "state": _state_from_region(region),
+        "vintage": (a.get("vintage") or "").strip(),
+        "tasting_notes": (a.get("tastingNotes") or "").strip(),
+        "pairs_with": (a.get("pairsWith") or "").strip(),
+        "description": (ld.get("description") or "").strip(),
+        "price": price,
+        "upc": (um.group(1) if um else ""),
+        "image": img,
+        "in_stock_stores": sum(1 for s in stores if s.get("instock")),
+        "store_count": len(stores),
+        "raw_json": json.dumps({"attrs": a, "offers": off}, separators=(",", ":"))[:8000],
+    }
+
+
 def run_record(movement, n_products, status, warnings):
     rid = "R-SPX" + hashlib.sha1(str(movement.get("sampled", "")).encode()).hexdigest()[:3].upper()
     return {"id": rid, "connId": "specs", "startedAt": 0, "finishedAt": 0, "durationMs": 0,
@@ -154,7 +264,7 @@ def pull(sample=30, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
     log(f"catalog {len(catalog)} products; fetching {len(targets)} (per-store variants)")
 
     import runlog
-    cur, ok_n, names, done = {}, 0, {}, [0]
+    cur, ok_n, names, done, products = {}, 0, {}, [0], {}
     # FAST: concurrent per-page fetch (plain HTTP) instead of serial DELAY.
     import threading
     from concurrent.futures import ThreadPoolExecutor
@@ -168,8 +278,8 @@ def pull(sample=30, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
             try:
                 html = _http(url)
                 rows, name = parse_stores(html)
-                mi = re.search(r'(?:og:image|twitter:image)"[^>]*content="([^"]+)"', html or "", re.I)
-                img = mi.group(1) if mi else ""
+                prod = parse_product(html, slug, url, stores=rows)   # full product-detail record
+                img = prod.get("image") or ""
                 with lock:
                     if rows:
                         ok_n += 1
@@ -179,6 +289,8 @@ def pull(sample=30, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
                                                        "name": name, "image": img}
                     if name:
                         names[slug] = name
+                    if prod.get("name") or prod.get("sku"):
+                        products[slug] = prod
             except Exception as e:
                 log(f"  {slug}: {e}")
             with lock:
@@ -216,7 +328,30 @@ def pull(sample=30, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
             for k, v in sorted(cur.items())]
     datasets = {"specs_store_cells": {"header": header, "rows": rows[:800],
                                       "total": len(rows), "products": n_products, "movement": movement}}
-    json.dump(datasets, open(os.path.join(out, "datasets.json"), "w"), indent=2)
+    # Land the full product catalog (all detail fields + raw_json) — accumulates so a sample run updates the
+    # products it touched and keeps the rest (persistent catalog). Feeds the master via specs_products.
+    prod_list = list(products.values())
+    if prod_list:
+        try:
+            import warehouse
+            if crawl_all and limit is None:
+                # a FULL crawl is the authoritative catalog → OVERWRITE (replaces any older/duplicated table).
+                warehouse.write_parquet("specs_products", prod_list, fields=SPECS_FLD)
+                log(f"landed specs_products: {len(prod_list)} products (full catalog, overwrite)")
+            else:
+                # a partial/sample run only updates the products it touched → accumulate, keep the rest.
+                warehouse.write_accumulate("specs_products", prod_list,
+                                           key=lambda r: r.get("sku") or r.get("slug"), fields=SPECS_FLD)
+                log(f"landed specs_products: +{len(prod_list)} products (accumulated)")
+        except Exception as e:
+            log(f"specs_products land skipped: {str(e)[:80]}")
+        p_header = ["SKU", "Name", "Brand", "Type", "ABV", "Region", "UPC", "Price"]
+        p_rows = [[p["sku"], p["name"], p["brand"], p["type"], p["abv"], p["region"], p["upc"], p["price"]]
+                  for p in prod_list]
+        datasets["specs_products"] = {"header": p_header, "rows": p_rows[:800], "total": len(prod_list),
+                                      "_rows_full": p_rows}
+    json.dump({"specs_store_cells": datasets["specs_store_cells"]},
+              open(os.path.join(out, "datasets.json"), "w"), indent=2)
     datasets["specs_store_cells"]["_rows_full"] = rows   # full set for export (in-memory return only)
     run = run_record(movement, n_products, status, warnings)
     log(f"done: {n_products} products × stores = {len(cur)} cells; "
