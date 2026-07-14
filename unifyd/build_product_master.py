@@ -41,7 +41,8 @@ _CFG = {
                             image="image_url", filt=lambda r: r.get("category") == "Adult Beverage", dedup=["product_id"]),
     "walmart_products": dict(name="product_name", size_ml="size_ml", upc="upc", abv="abv", brand="brand",
                              cat="category", varietal="varietal", region="region", vintage="vintage",
-                             container="container", image="image", filt=lambda r: r.get("is_alcohol")),
+                             container="container", image="image", flavor="flavor", food_pairing="pairing",
+                             filt=lambda r: r.get("is_alcohol")),
     # Total Wine — landed by total_wine.crawl_land (mobile-UA microdata + the structured attributes JSON), so it
     # carries the geo the old thin `totalwine_products_full` table never did (varietal/origin/region/appellation).
     "total_wine_products": dict(name="name", brand="brand", size="size", cat="category", abv="abv", image="image",
@@ -50,21 +51,26 @@ _CFG = {
                                 food_pairing="food_pairing", expert_rating="expert_rating", finish="finish",
                                 dedup=["sku"]),
     "binnys_products": dict(name="name", brand="brand", dedup=["sku"], varietal="varietal", image="image",  # store×product →
-                            region="region", origin="origin", cat="category"),                # distinct products
+                            region="region", sub_region="sub_region", appellation="appellation",             # distinct products
+                            abv="abv", origin="origin", cat="category"),
     "target_products": dict(name="name", brand="brand", cat="category", image="image_url", dedup=["tcin"]),
-    "specs_products": dict(name="name", brand="brand", dedup=["sku"]),
+    "specs_products": dict(name="name", brand="brand", dedup=["sku"], varietal="varietal", region="region",
+                           sub_region="sub_region", appellation="appellation", origin="origin", cat="category",
+                           abv="abv", image="image"),
     "cityhive_products": dict(name="name", size_ml="size_ml", cat="bev_category", image="image", dedup=["sku"]),  # independent
     # off_premise.run_census — independent retailers on Shopify/Woo/Squarespace/Wix (free direct-fetch sweep)
     "offprem_products": dict(name="name", brand="brand", size_ml="size_ml", cat="bev_category", upc="upc",
                              abv="abv", image="image", varietal="varietal", origin="origin", region="region",
-                             sub_region="sub_region", appellation="appellation", id="sku", dedup=["base", "name"]),
+                             sub_region="sub_region", appellation="appellation", container="container",
+                             vintage="vintage", bottled_in="bottled_in", id="sku", dedup=["base", "name"]),
     # TTB COLA — the federal label registry = the historical backbone (~1M bottle+vintage records). Pre-joined
     # (detail + labels) + deduped in ttb_products; brand extracted from the name via the dictionary; vintage →
     # dim_vintage aux (bottles don't split by vintage). All alcohol, so no bev-alc filter.
     "ttb_products": dict(name="name", brand="brand_name", cat="category", origin="origin", size="net_contents",
                          vintage="vintage", upc="upc", abv="abv", varietal="varietal", id="ttb_id"),
 
-    "or_pricing": dict(name="description", size="size", cat="category", proof="proof"),
+    "or_pricing": dict(name="description", size="size", cat="category", proof="proof",
+                       origin="countryoforigin", container="containertype"),
     "me_pricing": dict(name="Description", size="Size", upc="UPC", proof="Proof", cat="Product Category"),
     "nc_pricing": dict(name="Brand Name", size="Bottle Size", proof="Proof", brand="Brand Name"),
     "bc_liquor": dict(name="PRODUCT_LONG_NAME", upc="PRODUCT_BASE_UPC_NO", litres="PRODUCT_LITRES_PER_CONTAINER",
@@ -388,7 +394,8 @@ def build(log=print):
                 sz = _to_ml(r.get(c.get("size"))) if c.get("size") else None
             abv = _fnum(r.get(c["abv"])) if c.get("abv") else \
                 ((_fnum(r.get(c["proof"])) / 2) if c.get("proof") and _fnum(r.get(c["proof"])) else None)
-            staged.append(dict(brand=brand, brand_group=None, product_name=clean_name(nm), flavor=None, abv=abv,
+            staged.append(dict(brand=brand, brand_group=None, product_name=clean_name(nm),
+                flavor=(str(r.get(c["flavor"])).strip() or None) if c.get("flavor") and r.get(c["flavor"]) else None, abv=abv,
                 style=(str(r.get(c["style"])).strip() or None) if c.get("style") and r.get(c["style"]) else None,
                 category=r.get(c["cat"]) if c.get("cat") else None,
                 origin=((str(r.get(c["origin"])).strip().title() or None) if c.get("origin") and r.get(c["origin"]) else None),
