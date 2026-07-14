@@ -1877,7 +1877,7 @@ def _wb_itemmap():
 # it only changes on a master REBUILD, so cache it, invalidated by a cheap row-count "version" (count = parquet
 # metadata, no full scan) revalidated at most every 30s. First request after a rebuild pays the load; the rest
 # are instant. `_wq_cached` memoizes read-query RESULTS the same way (safe — workbench reads are rebuild-stable).
-_WB = {"ts": 0.0, "ver": None, "maps": None, "q": {}}
+_WB = {"ts": 0.0, "ver": None, "maps": None, "mupc": None, "q": {}}
 
 
 def _wb_ver():
@@ -1889,8 +1889,15 @@ def _wb_ver():
                     for t in ("dim_brand", "dim_product", "dim_item", "dim_sku"))
     except Exception:
         ver = _WB["ver"]
+    # A transient count-query failure returns None for that table — do NOT let a flaky read look like a rebuild
+    # and nuke every workbench cache (which would make the whole console intermittently cold). Only accept a
+    # version made of clean, non-None counts; otherwise keep the current one and try again next tick.
+    if _WB["ver"] is not None and any(c is None for c in ver):
+        _WB["ts"] = now
+        return _WB["ver"]
     if ver != _WB["ver"]:                 # a rebuild changed the tables → drop all caches
         _WB["maps"] = None
+        _WB["mupc"] = None
         _WB["q"] = {}
         _WB["ver"] = ver
     _WB["ts"] = now
@@ -1902,6 +1909,41 @@ def _wb_maps():
     if _WB["maps"] is None:
         _WB["maps"] = (_wb_brandmap(), _wb_productmap(), _wb_itemmap())
     return _WB["maps"]
+
+
+def _wb_merge_upc_attrs():
+    """upc -> per-member attributes (image/name/size/abv/…) for the merge-review clusters, built ONCE and
+    cached until rebuild. Opening a cluster used to run a fresh _stage_product scan per click (~1-3s each);
+    but the member UPCs across ALL merge groups are a small bounded set (~thousands), so we scan them once
+    up front and every cluster-open becomes an instant dict lookup."""
+    _wb_ver()
+    if _WB["mupc"] is None:
+        view = _wb_view("wb_merges") or []
+        upcs = set()
+        for g in view:
+            try:
+                for m in json.loads(g.get("members") or "[]"):
+                    if m.get("upc"):
+                        upcs.add(str(m["upc"]))
+            except Exception:
+                pass
+        upcs = sorted(upcs)
+        attrs = {}
+        for i in range(0, len(upcs), 2000):                 # chunk the IN(...) list so no single query is huge
+            chunk = upcs[i:i + 2000]
+            ph = ",".join("?" * len(chunk))
+            try:
+                for r in _wq("_stage_product",
+                             "SELECT CAST(upc AS VARCHAR) u, any_value(image) img, any_value(product_name) nm, "
+                             "any_value(size_ml) size_ml, any_value(abv) abv, any_value(container) container, "
+                             "any_value(pack) pack, any_value(origin) origin, any_value(varietal) varietal, "
+                             "any_value(_source_id) source_id, list(DISTINCT _source) srcs "
+                             "FROM t WHERE CAST(upc AS VARCHAR) IN (%s) GROUP BY 1" % ph, chunk):
+                    attrs[r.get("u")] = r
+            except Exception:
+                pass
+        _WB["mupc"] = attrs
+    return _WB["mupc"]
 
 
 def _wq_cached(ds, sql, params=None):
@@ -2451,20 +2493,8 @@ def mwb_merge_detail_ep(mid):
     # The ONLY thing that varies per member is the image each source showed for THIS upc (one batched scan).
     # Enrich each member with ALL the attributes we captured (by UPC, one batched scan) — so a reviewer judges
     # the cluster on the FULL data (size / abv / pack / container / origin / varietal / name), not UPC alone.
-    upcs = [str(m.get("upc")) for m in members if m.get("upc")]
-    upc_attr = {}
-    if upcs:
-        try:
-            ph = ",".join("?" * len(upcs))
-            for r in _wq("_stage_product", "SELECT CAST(upc AS VARCHAR) u, any_value(image) img, "
-                         "any_value(product_name) nm, any_value(size_ml) size_ml, any_value(abv) abv, "
-                         "any_value(container) container, any_value(pack) pack, any_value(origin) origin, "
-                         "any_value(varietal) varietal, any_value(_source_id) source_id, "
-                         "list(DISTINCT _source) srcs FROM t WHERE CAST(upc AS VARCHAR) IN (%s) GROUP BY 1" % ph,
-                         upcs):
-                upc_attr[r.get("u")] = r
-        except Exception:
-            pass
+    # UPC -> attributes comes from the cached merge-UPC map (built once, warmed) — no per-open _stage_product scan.
+    upc_attr = _wb_merge_upc_attrs()
     detailed = []
     for m in members:
         a = upc_attr.get(str(m.get("upc"))) or {}
@@ -4942,6 +4972,7 @@ def _wb_warm():
         lambda: _ttl("wb_review_resp", 90, lambda: _wb_review_data("")),   # analyst queue (default, no filter)
         lambda: _ttl("wb_master_resp", 90, lambda: _wb_master_data("", "")),   # trusted master (default)
         lambda: _ttl("wb_merges_resp", 90, lambda: _wb_merges_data("")),   # merge queue (default)
+        _wb_merge_upc_attrs,                              # per-member attrs for cluster-open (was a scan/click)
         lambda: _ttl("coverage", 90, _coverage_data),
         lambda: _ttl("catalog", 90, _catalog_map),
         lambda: _ttl("source_spec", 600, _source_spec_data),
