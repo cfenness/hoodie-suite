@@ -15,6 +15,7 @@ adds the quality the master needs:
 import collections, re, sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
+import dict_apply as _dict_apply
 import master_apply
 import precleanse as _precleanse
 import sku_match as _sku_match
@@ -187,7 +188,7 @@ _FORMAT_NOISE = {"glass", "bottle", "bottles", "btl", "can", "cans", "pet", "pla
 # articles/prepositions: drop from the match signature only (keep in display — "Ace of Spades" needs its "of").
 _STOP = {"the", "a", "an", "and", "of", "with"}
 _NOISE_TOK = _FORMAT_NOISE | _STOP
-_DESC_TOK = re.compile(r"^\d{2,3}p?$|^\d{2,3}proof$|^\d{4}$|^\d+ml$|^\d+l$")   # proof / vintage / size remnants
+_DESC_TOK = re.compile(r"^\d{2,3}p?$|^\d{2,3}proof$|^\d{4}$|^\d+(ml|l|lit|ltr|cl|oz|pk|pt|qt)$")  # proof/vintage/size remnants
 
 
 def _tokset(name):
@@ -212,8 +213,17 @@ _CATEGORY_TOK = {"vodka", "gin", "rum", "whiskey", "whisky", "bourbon", "tequila
 
 def _core_key(name):
     """The product's IDENTITY tokens within its brand — the tokset minus size/proof/vintage remnants and generic
-    beverage-type words. Two names with the same core (+ same brand + size) are the same product."""
-    return frozenset(t for t in _tokset(name) if not _DESC_TOK.match(t) and t not in _CATEGORY_TOK)
+    beverage-type words, THEN normalized through the data dictionaries (dict_apply: drop noise/size/format tokens,
+    collapse descriptor synonyms so "Superior Silver" == "Superior Blanco"). Two names with the same core (+ same
+    brand + size) are the same product. The dictionaries are editable data, not hardcoded rules."""
+    out = set()
+    for t in _tokset(name):
+        if _DESC_TOK.match(t) or t in _CATEGORY_TOK:
+            continue
+        nt = _dict_apply.norm_token(t)          # '' drops (noise/size); else the canonical synonym token
+        if nt:
+            out.add(nt)
+    return frozenset(out)
 
 
 def _ncmp(s):
