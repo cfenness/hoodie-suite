@@ -1770,6 +1770,12 @@ def _wq(ds, sql, params=None):
 
 @app.get("/api/master/workbench/summary")
 def mwb_summary_ep():
+    # Whole-response TTL cache (60s): the funnel numbers are rebuild-stable and human decisions lag <=60s, so
+    # serve from RAM and let the warmer keep it hot -> no user eats the per-request Tigris round-trips.
+    return jsonify(_ttl("wb_summary_resp", 90, _wb_summary_data))
+
+
+def _wb_summary_data():
     # The workbench reflects the REAL product master (dim_product), not the TTB-COLA tiering slice.
     # ONE GRAIN — every funnel stage counts distinct PRODUCTS so the funnel reconciles: each candidate sits in
     # exactly one process state, and Auto + Claude + Analyst + Sr + Steward = Candidates. The 196,535 raw source
@@ -1813,11 +1819,11 @@ def mwb_summary_ep():
     s0 = sv[0] if sv else {}
     product_tier = {"products": s0.get("prod_total") or 0, "corroborated": s0.get("prod_corr") or 0,
                     "ttb_corroborated": s0.get("ttb_corr") or 0, "ttb_registered": s0.get("ttb_total") or 0}
-    return jsonify(ok=True, master=total, review=analyst, quarantine=0,
-                   source_rows=source_rows, collapsed=max(0, source_rows - total),
-                   avg_confidence=round((multi * 0.88 + single * 0.5) / max(1, total), 3),
-                   stages=stages, product_tier=product_tier,
-                   by_source=[{"source": r.get("s"), "n": r.get("n")} for r in by])
+    return dict(ok=True, master=total, review=analyst, quarantine=0,
+                source_rows=source_rows, collapsed=max(0, source_rows - total),
+                avg_confidence=round((multi * 0.88 + single * 0.5) / max(1, total), 3),
+                stages=stages, product_tier=product_tier,
+                by_source=[{"source": r.get("s"), "n": r.get("n")} for r in by])
 
 
 def _wb_brandmap():
@@ -1991,6 +1997,12 @@ def _wb_search(q, single_source, limit=400):
 def mwb_master_ep():
     q = (request.args.get("q") or "").strip().lower()
     src = (request.args.get("source") or "").strip()
+    if not q and not src:               # the unfiltered master is the landing view — TTL-cache + warm it
+        return jsonify(_ttl("wb_master_resp", 90, lambda: _wb_master_data("", "")))
+    return jsonify(_wb_master_data(q, src))
+
+
+def _wb_master_data(q, src):
     # the trustworthy master = SKUs corroborated by 2+ independent sources (the same SKU seen across sources).
     # Prefer the pre-computed wb_master view (tiny, names pre-joined); fall back to the live scan if not built yet.
     view = _wb_view("wb_master")
@@ -2015,7 +2027,7 @@ def mwb_master_ep():
                 and q not in (st["upc"] or ""):
             continue
         items.append(st)
-    return jsonify(ok=True, count=len(items), items=items)
+    return dict(ok=True, count=len(items), items=items)
 
 
 def _sku_full(cid):
@@ -2130,9 +2142,17 @@ def mwb_candidates_ep(cid):
 
 @app.get("/api/master/workbench/review")
 def mwb_review_ep():
+    # The default (unfiltered) queue is the landing view — TTL-cache it (90s) and warm it so it's never cold;
+    # a search (q=...) runs live against the full queue.
+    q = (request.args.get("q") or "").strip().lower()
+    if not q:
+        return jsonify(_ttl("wb_review_resp", 90, lambda: _wb_review_data("")))
+    return jsonify(_wb_review_data(q))
+
+
+def _wb_review_data(q):
     # analyst queue = single-source SKUs (in only one catalog) — need an independent source to corroborate
     # before they're fully trusted. Highest source_rows first (most-seen singletons first). Prefer wb_queue.
-    q = (request.args.get("q") or "").strip().lower()
     view = _wb_view("wb_queue")
     if q and view is not None:              # search the FULL queue (past the cap) so "total wine" finds items
         rows, stub = _wb_search(q, single_source=True, limit=5000), _wb_view_stub
@@ -2153,18 +2173,24 @@ def mwb_review_ep():
             continue
         st["review_tier"] = dd.get("tier") if (dd and dd.get("action") == "escalate") else None  # analyst→senior→steward
         out.append(st)
-    return jsonify(ok=True, count=len(out), items=out)
+    return dict(ok=True, count=len(out), items=out)
 
 
 @app.get("/api/master/workbench/merges")
 def mwb_merges_ep():
+    q = (request.args.get("q") or "").strip().lower()
+    if not q:                           # the unfiltered merge queue is the landing view — TTL-cache + warm it
+        return jsonify(_ttl("wb_merges_resp", 90, lambda: _wb_merges_data("")))
+    return jsonify(_wb_merges_data(q))
+
+
+def _wb_merges_data(q):
     """Ambiguous MERGE groups for the cluster-review page — SKUs that are the same product+size+pack split
     across different/missing UPCs (the 'one unit fractured by UPC noise' duplicates). From the pre-computed
     wb_merges view; groups already decided (merge / keep-separate) drop out. Prioritized by impact (rows)."""
-    q = (request.args.get("q") or "").strip().lower()
     view = _wb_view("wb_merges")
     if view is None:
-        return jsonify(ok=True, count=0, merges=[], note="wb_merges not built yet — runs on the next master rebuild")
+        return dict(ok=True, count=0, merges=[], note="wb_merges not built yet — runs on the next master rebuild")
     decided = {d.get("cluster_id") for d in _wq("master_decisions", "SELECT cluster_id, action FROM t")
                if d.get("action") in ("merge", "keep_separate")}
     out = []
@@ -2180,7 +2206,7 @@ def mwb_merges_ep():
             m["members"] = []
         out.append(m)
     out.sort(key=lambda x: -(x.get("total_rows") or 0))        # highest-impact duplicates first
-    return jsonify(ok=True, count=len(out), merges=out[:400])
+    return dict(ok=True, count=len(out), merges=out[:400])
 
 
 @app.get("/api/src")
@@ -4903,12 +4929,35 @@ def suite_static(relpath):
     return _suite_send(relpath)                       # /api/* rules are more specific and win over this
 
 def _wb_warm():
-    """Pre-load the workbench name maps in the background at boot so the FIRST user request isn't the slow one
-    (the maps are the 17s shared cost). Best-effort; failures just fall back to lazy caching on first request."""
-    try:
-        _wb_maps()
-    except Exception:
-        pass
+    """Keep the heavy read caches WARM in the background so no user (or the first after a rebuild) hits a cold
+    scan. At the larger master scale the cold cost is real: the 1M-row name maps (~17s), the workbench views, the
+    coverage/catalog rollups. Each is rebuild-invalidated (or short-TTL), so we re-warm on a loop — after a rebuild
+    the caches repopulate before the next user arrives, and steady-state re-warms return instantly from cache."""
+    import time as _t
+    _t.sleep(2)                                          # let the app finish importing
+    warmers = [
+        _wb_maps,                                        # 1M-row product/brand name maps (the big shared cost)
+        lambda: [_wb_view(v) for v in ("wb_summary", "wb_master", "wb_queue", "wb_merges")],
+        lambda: _ttl("wb_summary_resp", 90, _wb_summary_data),   # the funnel summary (workbench landing)
+        lambda: _ttl("wb_review_resp", 90, lambda: _wb_review_data("")),   # analyst queue (default, no filter)
+        lambda: _ttl("wb_master_resp", 90, lambda: _wb_master_data("", "")),   # trusted master (default)
+        lambda: _ttl("wb_merges_resp", 90, lambda: _wb_merges_data("")),   # merge queue (default)
+        lambda: _ttl("coverage", 90, _coverage_data),
+        lambda: _ttl("catalog", 90, _catalog_map),
+        lambda: _ttl("source_spec", 600, _source_spec_data),
+    ]
+    n = 0
+    while True:
+        for w in warmers:
+            # source_spec is a heavy full scan; warm it only occasionally (its own 10-min TTL covers the rest).
+            if w is warmers[-1] and n % 6 != 0:
+                continue
+            try:
+                w()
+            except Exception:
+                pass
+        n += 1
+        _t.sleep(75)                                     # < the 90s TTL, so the short-TTL rollups stay warm
 
 
 try:
