@@ -981,6 +981,42 @@ def catalog_ep():
     """The estate model's 'whole thing' view (it polls this so new datasets appear on their own)."""
     return jsonify(_ttl("catalog", 90, _catalog_map))
 
+
+# ── Source Spec — per source, the fields we capture (% populated) + sample rows. LIVE off _stage_product so the
+# field-capture picture updates itself every rebuild (the page reads this instead of a baked-in snapshot). ──
+_SPEC_FIELDS = ["brand", "product_name", "class_type", "varietal", "flavor", "category", "style", "abv", "size_ml",
+                "container", "pack", "upc", "vintage", "region", "sub_region", "appellation", "country", "state",
+                "origin", "taste", "body", "food_pairing", "expert_rating", "finish", "image"]
+
+
+def _source_spec_data():
+    import warehouse
+    sel = ", ".join("count(*) FILTER(WHERE nullif(trim(CAST(%s AS VARCHAR)),'') IS NOT NULL) AS \"%s\"" % (f, f)
+                    for f in _SPEC_FIELDS)
+    try:
+        rows = warehouse.query("_stage_product", "SELECT _source, count(*) n, %s FROM t GROUP BY _source "
+                               "ORDER BY n DESC" % sel)
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:140], "sources": []}
+    spec = []
+    for r in rows:
+        n = r["n"] or 1
+        fields = {f: round(100.0 * (r.get(f) or 0) / n) for f in _SPEC_FIELDS if r.get(f)}
+        try:
+            ex = [(e.get("product_name") or "")[:52] for e in warehouse.query(
+                "_stage_product", "SELECT product_name FROM t WHERE _source = ? AND product_name IS NOT NULL "
+                "LIMIT 3", [r["_source"]])]
+        except Exception:
+            ex = []
+        spec.append({"source": r["_source"], "rows": n, "fields_pct": fields, "examples": ex})
+    return {"ok": True, "sources": spec, "all_fields": _SPEC_FIELDS}
+
+
+@app.get("/api/master/source-spec")
+def source_spec_ep():
+    """Live field-capture spec per source (cached 10 min — only changes on a rebuild)."""
+    return jsonify(_ttl("source_spec", 600, _source_spec_data))
+
 # ── /api/sources — the SINGLE source of truth for what we hold + what each dataset FEEDS. Driven by the
 # mappings/seeds themselves (authoritative) + name heuristics, so labels/tags stay accurate as the list
 # grows. Powers the MDM Sources view and keeps the estate tags current (no more hardcoded name map). ──
