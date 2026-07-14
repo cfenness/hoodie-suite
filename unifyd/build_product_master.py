@@ -101,20 +101,49 @@ def build_brand_dict(log=print):
     return by1
 
 
+# style/category words that pollute the brand dictionary (a brewery named "Saison") — never a brand ON THEIR OWN.
+_STYLE_WORDS = {"saison", "ipa", "ale", "lager", "stout", "porter", "pilsner", "pils", "beer", "cider", "seltzer",
+                "mead", "rum", "ron", "vodka", "gin", "whiskey", "whisky", "bourbon", "rye", "scotch", "tequila",
+                "mezcal", "brandy", "cognac", "liqueur", "wine", "red", "white", "rose", "rosé", "champagne",
+                "prosecco", "sparkling", "sake", "reserve", "select", "premium", "classic"}
+
+
+def _scan_brand(name, by1):
+    """The BASE KNOWN dictionary brand appearing ANYWHERE in the name — skips a leading store/distributor prefix
+    ("Broadway Spirits Bacardi Superior" -> Bacardi). Ignores lone style words. None if no recognized brand."""
+    toks = re.findall(r"[A-Za-z0-9'&.\-]+", _precleanse.unescape(name or ""))
+    for i in range(len(toks)):
+        tail = " ".join(toks[i:]).lower()
+        cands = [b for b in by1.get(toks[i].lower(), [])
+                 if tail.startswith(b.lower()) and b.lower() not in _STYLE_WORDS]
+        if cands:
+            return min(cands, key=len)              # the BASE brand (Bacardi, not Bacardi Superior) — the
+    return None                                     # sub-brand/expression is the product core, so this merges
+
+
+def _known_brand(c, by1):
+    t = re.findall(r"[A-Za-z0-9'&.\-]+", c or "")
+    return bool(t) and any(b.lower() == (c or "").strip().lower() for b in by1.get(t[0].lower(), []))
+
+
 def resolve_brand(name, by1, clean=None):
+    # A KNOWN brand in the NAME wins over a store/distributor prefix. The off-premise (Shopify) feeds put the
+    # STORE in the brand column ("Broadway Spirits", "Happysliquor", "Jensens Liquors"), which fragments one
+    # product across dozens of store-"brands". So trust the brand column only when it is ITSELF a known brand;
+    # otherwise, if the name carries a recognized brand, use that.
+    dict_brand = _scan_brand(name, by1)
+    nm = _precleanse.unescape(name or "").strip()
     if clean and str(clean).strip():
         c = _precleanse.unescape(str(clean)).strip()   # D&#39;Aquino -> D'Aquino
-        return c.title() if c.isupper() else c        # TTB brand_name is ALL-CAPS -> readable display
-
-    name = _precleanse.unescape(name or "")
-    toks = re.findall(r"[A-Za-z0-9'&.\-]+", name.strip())
-    if not toks:
-        return None
-    low = (name or "").strip().lower()
-    for b in by1.get(toks[0].lower(), []):          # longest dictionary brand the name starts with
-        if low.startswith(b.lower()):
-            return b
-    return " ".join(toks[:2])                        # fallback: first 1-2 words
+        # Override the column ONLY on the off-premise pattern: the NAME starts with the store column, and the
+        # column isn't itself a known brand. Then the real brand is what appears AFTER the store prefix.
+        if dict_brand and not _known_brand(c, by1) and nm.lower().startswith(c.lower()):
+            return dict_brand
+        return c.title() if c.isupper() else c          # TTB brand_name is ALL-CAPS -> readable display
+    if dict_brand:                                      # no brand column (City Hive) — scan the name
+        return dict_brand
+    toks = re.findall(r"[A-Za-z0-9'&.\-]+", _precleanse.unescape(name or "").strip())
+    return " ".join(toks[:2]) if toks else None         # fallback: first 1-2 words (unknown indie brand)
 
 
 def clean_name(name):
