@@ -22,9 +22,14 @@ import warehouse
 
 CAP = int(os.environ.get("WB_VIEW_CAP", "4000"))       # list views are paginated/scannable in the UI; cap generously
 FIELDS = ["sku_key", "item_key", "product_key", "brand", "product_name", "size_ml", "container",
-          "pack", "upc", "sources", "source_list", "source_rows"]
+          "pack", "upc", "sources", "source_list", "source_rows",
+          # detail-modal fields, pre-joined so the item-detail modal serves from the warmed view (no dim scans)
+          "gtin", "image", "varietal", "region", "sub_region", "appellation", "origin", "bottled_in",
+          "abv", "category", "style"]
 _JOIN = ("SELECT s.sku_key, s.item_key, i.product_key, b.brand, p.product_name, i.size_ml, i.container, "
-         "s.pack, s.upc, s.sources, s.source_list, s.source_rows "
+         "s.pack, s.upc, s.sources, s.source_list, s.source_rows, "
+         "s.gtin, p.image, p.varietal, p.region, p.sub_region, p.appellation, p.origin, p.bottled_in, "
+         "p.abv, p.category, p.style "
          "FROM dim_sku s LEFT JOIN dim_item i ON s.item_key = i.item_key "
          "LEFT JOIN dim_product p ON i.product_key = p.product_key "
          "LEFT JOIN dim_brand b ON p.brand_key = b.brand_key ")
