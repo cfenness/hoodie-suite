@@ -211,6 +211,31 @@ _CATEGORY_TOK = {"vodka", "gin", "rum", "whiskey", "whisky", "bourbon", "tequila
                  "soju", "spirits", "spirit", "liquor", "schnapps"}
 
 
+_PACK_RE = re.compile(r"\b\d+\s*[-x/]?\s*(pack|pk|cans?|bottles?|btls?|ct|count| pk)\b|\b\d+\s*[-x]\s*\d+\b", re.I)
+
+
+def _clean_core(core, s=None):
+    """Normalize the product-KEY core: strip pack-counts ("Mango 4-pack" -> "Mango"), strip the row's OWN
+    region/appellation/origin (those are attributes we already capture, NOT the product core — so "Reserve
+    Paso Robles" and "Reserve California" both -> "Reserve"), then run each token through the data dictionaries
+    (drop noise/size, collapse synonyms). Preserves display case. '' for a flagship (nothing after the brand)."""
+    core = _PACK_RE.sub(" ", core or "")
+    if s:                                        # the product's own geography is an attribute, not its identity
+        for fld in ("region", "sub_region", "appellation", "origin", "bottled_in"):
+            v = (s.get(fld) or "").strip()
+            if len(v) > 2:
+                core = re.sub(r"\b" + re.escape(v) + r"\b", " ", core, flags=re.I)
+    out = []
+    for t in re.findall(r"[A-Za-z0-9'&.\-]+", core):
+        nt = _dict_apply.norm_token(t.lower())
+        if nt == t.lower():          # unchanged -> keep original case for display
+            out.append(t)
+        elif nt:                     # synonym-mapped (e.g. silver -> white)
+            out.append(nt)
+        # else '' -> drop (noise/size)
+    return re.sub(r"\s+", " ", " ".join(out)).strip(" -&.,")
+
+
 def _core_key(name):
     """The product's IDENTITY tokens within its brand — the tokset minus size/proof/vintage remnants and generic
     beverage-type words, THEN normalized through the data dictionaries (dict_apply: drop noise/size/format tokens,
@@ -396,7 +421,9 @@ def build(log=print):
         # fill what the regex classifier misses via the CLASS dictionary (brand->class: "Budweiser" -> beer,
         # "Montecristo" -> cigar). Editable data, so the null class_types keep shrinking without touching code.
         s["class_type"] = ct or _dict_apply.classify(s.get("product_name") or "", "class") or None
-        s["core_name"] = core or None                    # empty for a flagship (product == brand) — that's fine
+        # core_name gets the SAME dictionary treatment as _core_key: strip pack-counts ("Mango 4-pack" -> "Mango"),
+        # drop noise/size tokens, collapse descriptor synonyms — so the product KEY aligns across sources.
+        s["core_name"] = _clean_core(core, s) or None    # empty for a flagship (product == brand) — that's fine
     # class_type CONSISTENCY: class is now part of the product key, so a row where the class wasn't detected
     # ("Bacardi Superior" with no rum word) would split from its siblings ("... Rum" -> rum). Within each
     # (brand, core) group, adopt the MAJORITY class for the blanks + clear misdetection outliers (a class seen
