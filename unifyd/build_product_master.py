@@ -211,17 +211,20 @@ _CATEGORY_TOK = {"vodka", "gin", "rum", "whiskey", "whisky", "bourbon", "tequila
                  "soju", "spirits", "spirit", "liquor", "schnapps"}
 
 
-_PACK_RE = re.compile(r"\b\d+\s*[-x/]?\s*(pack|pk|cans?|bottles?|btls?|ct|count| pk)\b|\b\d+\s*[-x]\s*\d+\b", re.I)
+# pack/format counts: "4-pack", "6-4pks", "3 8", "8pk", "12 x 355", "24 count"…
+_PACK_RE = re.compile(r"\b\d+\s*[-x/]?\s*(pack|pk|pks|cans?|bottles?|btls?|ct|count)\b|"
+                      r"\b\d+\s*[-x]\s*\d+\s*(pks?|pack|cans?)?\b|\b\d+\s+\d+\b", re.I)
 
 
 def _clean_core(core, s=None):
-    """Normalize the product-KEY core: strip pack-counts ("Mango 4-pack" -> "Mango"), strip the row's OWN
-    region/appellation/origin (those are attributes we already capture, NOT the product core — so "Reserve
-    Paso Robles" and "Reserve California" both -> "Reserve"), then run each token through the data dictionaries
-    (drop noise/size, collapse synonyms). Preserves display case. '' for a flagship (nothing after the brand)."""
+    """Normalize the product-KEY core into just the product DISTINGUISHER — everything that belongs at another
+    grain level is pulled out: pack/format counts (sku level: "Mango 4-pack" -> "Mango"), the row's own
+    flavor/varietal (product attributes, kept in their fields + the key, not duplicated in the core), and its
+    region/appellation/origin (attributes, so "Reserve Paso Robles" == "Reserve California" -> "Reserve"). Then
+    each token runs through the data dictionaries (drop noise/format/size, collapse synonyms). '' for a flagship."""
     core = _PACK_RE.sub(" ", core or "")
-    if s:                                        # the product's own geography is an attribute, not its identity
-        for fld in ("region", "sub_region", "appellation", "origin", "bottled_in"):
+    if s:                                        # attributes captured at their own grain -> not the product core
+        for fld in ("flavor", "varietal", "region", "sub_region", "appellation", "origin", "bottled_in"):
             v = (s.get(fld) or "").strip()
             if len(v) > 2:
                 core = re.sub(r"\b" + re.escape(v) + r"\b", " ", core, flags=re.I)
