@@ -114,7 +114,10 @@ def parse_product(html, url):
         import json as _json
         return {"sku": sku, "brand": brand, "name": name, "size": size, "price": price,
                 "category": cat, "desc": desc, "img": img, "url": url,
+                # APPELLATION HIERARCHY (country > state > region > sub_region > appellation) — capture every
+                # level cleanly, not just a combined "origin"; it's a controlled geography taxonomy.
                 "varietal": a("Varietal Type", "Varietal"), "origin": a("Country State", "Country"),
+                "country": a("Country", "Country State"), "state": a("State", "Province", "State/Province"),
                 "region": a("Region"), "sub_region": a("Sub Region", "Sub-Region", "Sub-Appellation"),
                 "appellation": a("Appellation"), "style": a("Style", "Wine Style"),
                 "abv": a("ABV", "Alcohol Content"), "taste": a("Taste", "Tasting Notes"), "body": a("Body"),
@@ -222,6 +225,7 @@ def crawl_land(cap=200000, delay=0.0, workers=4, out="agent_state/total_wine", l
         return {"sku": p["sku"], "brand": p.get("brand", ""), "name": p.get("name", ""), "size": p.get("size", ""),
                 "price": _price(p.get("price")), "category": p.get("category", ""), "description": p.get("desc", ""),
                 "image": p.get("img", ""), "url": u, "varietal": p.get("varietal", ""), "origin": p.get("origin", ""),
+                "country": p.get("country", ""), "state": p.get("state", ""),
                 "region": p.get("region", ""), "sub_region": p.get("sub_region", ""),
                 "appellation": p.get("appellation", ""), "style": p.get("style", ""), "abv": p.get("abv", ""),
                 # every describing field the PDP exposes -> an MDM field (+ raw_json = nothing dropped)
