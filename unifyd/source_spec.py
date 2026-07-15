@@ -130,6 +130,38 @@ SPEC = {
         "notes": "Full catalog + price from SEO, no browser. Per-store count needs the session-walled widget "
                  "API (see [[cityhive-crack]]). prices.json/offers.json are public but need store/option context.",
     },
+    # ── Total Wine — getProduct API (total_wine_inventory.py). The RICHEST payload we get: exact counts + the
+    # full RNDC attribute vector + awards + multi-location planogram. NO UPC field. (audited 2026-07-15) ──
+    "total_wine": {
+        "label": "Total Wine (getProduct)",
+        "endpoint": "GET /product/api/product/product-detail/v1/getProduct/<skuId>?...&storeId=<S> (warmed PX cookie)",
+        "grain": "product × store",
+        "raw": [
+            ("skuId", "SKU (productId-1) — NO UPC exists anywhere in the payload", "sku (upc always '')"),
+            ("stockLevel[].stock", "EXACT per-store on-hand units", "qty"),
+            ("stockLevel[].purchaseLimit", "per-order purchase cap", "purchase_limit"),
+            ("stockMessages.{digitalStoreQuantity,shippingStoreQuantity,digitalInStock,digitalLimitedStock}",
+             "store + shipping quantities + in/limited-stock flags", "store_qty / shipping_qty / stock_level"),
+            ("price[].{price,type}", "price + type (EDLP)", "price / price_type"),
+            ("name / brand.{name,id}", "name + brand + brand id", "name / brand / brand_id"),
+            ("packageDescription / options[].value", "size ('1.75L Box') + package variants", "size"),
+            ("alcoholPercentage", "ABV", "abv"),
+            ("itemCharacteristics[] (FINISH/TASTE1-3/STYLE/BODY)", "RNDC attribute vector", "finish/taste/style/body"),
+            ("categories[] (VARIETAL_TYPE/COUNTRY_STATE/REGION/PRODUCT_TYPE)", "geo/type", "varietal/origin/region/style"),
+            ("review", "tasting notes + AWARD ('Gold - SIP Awards', '92 points')", "tasting_notes / award (parsed)"),
+            ("pairingsConfig[].options / productHighlights / tasteProfiles", "food pairings + taste descriptors", "pairings"),
+            ("customerAverageRating / customerReviewsCount", "ratings", "rating / reviews"),
+            ("lisaInfo[] / rawLocation / bay / shelf / location", "MULTI-LOCATION planogram (aisle + cooler door)",
+             "bay / shelf / aisle / raw_location"),
+            ("productUrl / canonicalUrl", "URL", "url"),
+            ("images[].url", "image", "image"),
+            ("department / directType / salesStrategy", "dept + Spirits-Direct ship flag", "department / direct_ship"),
+            ("merchBadges[] (new)", "merch badges", "is_new"),
+            ("shoppingOptions[] / skus[] / breadCrumbs / metaDescription", "fulfillment / variants / nav", "raw_json"),
+        ],
+        "notes": "total_wine_inventory.py parse_product (audited a real getProduct). COUNTS (stock) + the fullest "
+                 "enrichment of any source — RNDC vector, awards, pairings, multi-location planogram — but NO UPC.",
+    },
     # ── Stop & Shop — Ahold/Peapod product API (stop_and_shop.py). Rich master + planogram. (2026-07-15) ──
     "stop_and_shop": {
         "label": "Stop & Shop (Ahold/Peapod)",
