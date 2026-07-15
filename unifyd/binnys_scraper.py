@@ -23,7 +23,7 @@ import observe
 PRODUCT_FIELDS = ["sku", "store", "name", "brand", "varietal", "region", "origin", "category", "department",
                   "item_size", "unit_label", "case_pack", "proof", "abv", "thc_mg", "cbd_mg", "rating",
                   "reviews", "discount_pct", "deal_of_week", "is_sold_out", "in_store_only", "is_hemp",
-                  "short_desc", "product_url", "image", "price", "qty"]
+                  "short_desc", "product_url", "image", "price", "qty", "raw_json"]
 
 APP_ID  = os.environ.get("BINNYS_ALGOLIA_APP", "Z25A2A928M")
 API_KEY = os.environ.get("BINNYS_ALGOLIA_KEY", "88b6125855a0bbd845447e35de8d51c5")  # public search-only key
@@ -100,7 +100,10 @@ def to_snapshot(records):
                 "deal_of_week": bool(h.get("isDealOfTheWeek")),
                 "is_sold_out": bool(h.get("isSoldOut")), "in_store_only": bool(h.get("isInStoreOnly")),
                 "short_desc": (h.get("shortDescription") or "")[:500],
-                "is_hemp": observe.is_hemp(name, h.get("productType") or "") or bool(thc or cbd)}
+                "is_hemp": observe.is_hemp(name, h.get("productType") or "") or bool(thc or cbd),
+                # keep the WHOLE Algolia hit — capture everything the source serves, not just what we promote
+                "raw_json": json.dumps({k: v for k, v in h.items() if k != "_highlightResult"},
+                                       separators=(",", ":"))[:6000]}
         for sp in (h.get("storesPriceAndInventory") or []):
             store = str(sp.get("storeCode") or "")
             if not store:
