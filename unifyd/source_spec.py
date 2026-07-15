@@ -130,6 +130,40 @@ SPEC = {
         "notes": "Full catalog + price from SEO, no browser. Per-store count needs the session-walled widget "
                  "API (see [[cityhive-crack]]). prices.json/offers.json are public but need store/option context.",
     },
+    # ── Walmart — /ip/ detail __NEXT_DATA__ product object (walmart_direct.py, DIRECT via mobile UA). Rich
+    # master + enrichment; UPC is exposed on DETAIL (not search). (captured 2026-07-15) ──
+    "walmart": {
+        "label": "Walmart (/ip/ detail)",
+        "endpoint": "GET /ip/… __NEXT_DATA__ .product  (mobile UA past PerimeterX, no BD)",
+        "grain": "product × store",
+        "raw": [
+            ("usItemId", "Walmart item id", "item_id"),
+            ("upc", "UPC — the master match key (DETAIL only; search hides it)", "upc"),
+            ("id / offerId", "product/offer ids", "offer_id"),
+            ("name", "product name", "product_name"),
+            ("brand", "brand", "brand"),
+            ("type", "Walmart class (Wine/Beer/…)", "type"),
+            ("rhPath", "retail-hierarchy path 40000:42000:… (taxonomy)", "rh_path"),
+            ("category.path[]", "breadcrumb Food>Alcohol>Wine", "category_path"),
+            ("productTypeId / primaryShelfId / ironbankCategory", "taxonomy/shelf ids", "product_type_id/…"),
+            ("shortDescription", "marketing text — carries ABV ('6% ABV') + calories + packaging", "abv (parsed)"),
+            ("idml.specifications[]", "RNDC vector: varietal/region/vintage/ABV/container/flavor/pairing/wine_score",
+             "varietal/region/vintage/abv/container/flavor/pairing/wine_score"),
+            ("productLocation[0].displayValue", "AISLE ('A34') — was missed (not a key named 'aisle')", "aisle"),
+            ("orderLimit / orderMinLimit", "per-order purchase cap", "order_limit"),
+            ("availabilityStatus", "IN_STOCK/OOS (no number)", "in_stock"),
+            ("location.{storeIds,city,stateOrProvinceCode}", "per-store context", "store_id/store_city/store_state"),
+            ("isLMPAlcoholItem / legalRestriction", "alcohol-marketplace + restriction flags", "is_alcohol"),
+            ("averageRating / numberOfReviews", "ratings", "avg_rating / num_reviews"),
+            ("badges.flags[] (ROLLBACK)", "Rollback promo badge", "rollback → on_promo"),
+            ("secondaryOfferPrice.currentPrice.price / priceInfo", "price", "price"),
+            ("sellerName / sellerType", "seller (Walmart.com/marketplace)", "seller"),
+            ("imageInfo.allImages[]", "images", "image"),
+            ("salesUnit / weightIncrement / promoData / discounts / returnAttributes", "misc", "raw_json"),
+        ],
+        "notes": "walmart_direct.py detail(). UPC + rhPath + aisle + ABV(from shortDescription) were the gaps a "
+                 "'capture all of this' pass closed. Search page is thinner (no UPC); DETAIL has the full object.",
+    },
     # ── Kroger ATLAS (internal API) — the RICH per-GTIN payload (kroger_atlas.py). No raw count (HIGH/LOW),
     # but a master + enrichment trove: bottle dimensions, gtin14, ABV, taxonomy, planogram. (captured 2026-07-15) ──
     "kroger_atlas": {
