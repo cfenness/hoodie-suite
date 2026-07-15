@@ -65,20 +65,34 @@ def _cols(t):
             "image": pick("image", "image_url"), "state": pick("state"), "url": pick("url")}
 
 
+# broad SQL pre-filter terms — cannabinoid words + brand stems. A dose-only hit ('5mg') always co-occurs with a
+# cannabinoid word (the classifier requires canna AND dose), so 'mg' need not be here. This cuts a 1.5M-row
+# catalog to the few hundred candidates the Python classifier then decides precisely (it rejects 'canned' etc.).
+_PREFILTER = ["thc", "cbd", "cbn", "cbg", "hemp", "delta", "cannabin", "cannabis", "rosin", "microdose", "nano",
+              "cann", "brez", "brēz", "cycling frog", "wynk", "happi", "crescent", "trail magic", "uncle arnie",
+              "pamos", "hi seltzer", "keef", "artet", "mary jones", "hometown", "rebel rabbit", "8th wonder",
+              "ghost drops", "absolute terps", "cantrip", "top shelf", "minny grown", "funcky buddha", "moon star"]
+
+
 def scan_table(t, log=print):
     c = _cols(t)
     if not c["name"]:
         return []
     sel = ", ".join("%s AS %s" % (c[k], k) for k in c if c[k]) or "%s AS name" % c["name"]
-    rows = warehouse.query(t, "SELECT %s FROM t" % sel)
+    where = " OR ".join("lower(%s) LIKE '%%%s%%'" % (c["name"], term) for term in _PREFILTER)
+    rows = warehouse.query(t, "SELECT %s FROM t WHERE %s" % (sel, where))
     out = []
     for r in rows:
         sig = classify(r.get("name"), r.get("cat"))
         if not sig:
             continue
+        # size/price kept as raw STRINGS — sources mix "355", 355.0, "7.5 oz", "$5.99", so a fixed str column
+        # is the only type that survives across every catalog (downstream parses as needed).
         out.append({"source": t, "name": r.get("name"), "brand": r.get("brand") or "",
-                    "category": r.get("cat") or "", "upc": str(r.get("upc") or ""), "size_ml": r.get("size"),
-                    "price": r.get("price"), "image": r.get("image") or "", "state": r.get("state") or "",
+                    "category": r.get("cat") or "", "upc": str(r.get("upc") or ""),
+                    "size_ml": ("" if r.get("size") is None else str(r.get("size"))),
+                    "price": ("" if r.get("price") is None else str(r.get("price"))),
+                    "image": r.get("image") or "", "state": r.get("state") or "",
                     "url": r.get("url") or "", "signal": sig})
     log("  %-24s %5d hemp-beverage of %d" % (t, len(out), len(rows)))
     return out
