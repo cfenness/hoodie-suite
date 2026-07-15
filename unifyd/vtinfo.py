@@ -48,6 +48,10 @@ BRANDS = {
     # a DISTRIBUTOR's whole book, theme v3 (Florida Distributing brand-finder, Orlando) — carries
     # lat/lng + store_type per account. No uuid; custID alone drives the session.
     "fl-distributing": {"custID": "00177", "uuid": "", "name": "Florida Distributing Co.", "m": "100", "theme": "3"},
+    # HEMP/THC beverage brands on VTInfo — a hemp brand's finder = every retailer carrying it, in any state,
+    # which both VERIFIES the hemp chains (Total Wine/Kwik Trip/Cub/Coborn's/Target…) and discovers the
+    # independents. Cann confirmed live (200 accounts in one MN zip). Add more via discover() on each brand.
+    "cann": {"custID": "S5S", "uuid": "8QR7cJLcKti6m9rPPVGMfdo9AbCV9pv6ydQN", "name": "Cann (THC/hemp bev)", "m": "5"},
 }
 
 
