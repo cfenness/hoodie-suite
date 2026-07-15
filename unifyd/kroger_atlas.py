@@ -3,8 +3,9 @@
 
 The public Developer API (kroger_api.py) is thin. The internal atlas endpoint
 `GET /atlas/v1/product/v2/products?filter.gtin13s=…&projections=items.full,…` returns FAR more per product —
-and none of the inventory-count kind (that's HIGH/LOW everywhere, see [[provenance-and-source-spec]]), but a
-trove of MASTER + ENRICHMENT data keyed by GTIN:
+a trove of MASTER + ENRICHMENT data keyed by GTIN — AND, when the response carries the populated inventory
+objects, an EXACT per-store on-hand count (`inventorySummaries[].details[].availableToSell` /
+`inventory.locations[].available`; some responses have it empty + only the HIGH/LOW enum):
 
   • dimensions {height,width,length} + gtin14  → BOTTLE DIMENSIONS keyed by GTIN (feeds bottle_dims/master —
     authoritative + free, vs the vision/label derivation). For a bottle width==length==diameter.
@@ -50,7 +51,7 @@ FIELDS = ["gtin14", "upc", "product_id", "name", "brand", "brand_code", "size", 
           "height_mm", "width_mm", "length_mm", "diameter_mm", "abv", "alcohol_flag", "age_restricted",
           "dsd_item", "temperature", "snap_eligible", "prop65", "restriction_codes", "avg_rating", "num_reviews",
           "aisle", "aisle_number", "facings", "planogram_json", "store_id", "facility_id",
-          "pickup_level", "delivery_level", "instore_level", "price", "sale_price", "sale_ends",
+          "available_units", "pickup_level", "delivery_level", "instore_level", "price", "sale_price", "sale_ends",
           "image", "captured_at", "source", "raw_json"]
 
 _IN = re.compile(r"([\d.]+)\s*\[in_i\]", re.I)                       # "10.78 [in_i]"
@@ -84,11 +85,25 @@ def parse_atlas_product(p):
     com, dep, sub = ft.get("commodity") or {}, ft.get("department") or {}, ft.get("subCommodity") or {}
     brand = it.get("brand") or {}
     h_mm, w_mm, l_mm = _mm(dims.get("height")), _mm(dims.get("width")), _mm(dims.get("length"))
-    # per-modality availability (inventoryLevel = HIGH/LOW; NO raw count — see source_spec)
+    # per-modality availability (inventoryLevel = HIGH/LOW enum)
     lvl = {}
     for fs in (p.get("fulfillmentSummaries") or []):
         av = fs.get("availability") or {}
         lvl[(fs.get("type") or "").upper()] = av.get("inventoryLevel") or ("OOS" if av.get("sellable") is False else "")
+    # EXACT numeric on-hand — present when the response carries the populated inventory objects (NOT always;
+    # some responses have inventorySummaries:[] and only the enum). Prefer inventorySummaries[].details[]
+    # .availableToSell, fall back to inventory.locations[].available.
+    units = None
+    for sm in (p.get("inventorySummaries") or []):
+        for det in (sm.get("details") or []):
+            a = det.get("availableToSell")
+            if isinstance(a, (int, float)):
+                units = a if units is None else max(units, a)
+    if units is None:
+        for locn in ((p.get("inventory") or {}).get("locations") or []):
+            a = locn.get("available")
+            if isinstance(a, (int, float)):
+                units = a if units is None else max(units, a)
     # planogram — may have MULTIPLE locations (main aisle + display); keep the primary + the full list
     locs = ((p.get("location") or {}).get("locations")) or []
     prim = locs[0] if locs else {}
@@ -125,6 +140,7 @@ def parse_atlas_product(p):
         "facings": prim.get("numOfFacings") or "",
         "planogram_json": json.dumps(locs, separators=(",", ":"))[:1500],
         "store_id": hl.get("storeId") or "", "facility_id": hl.get("facilityId") or "",
+        "available_units": units,   # EXACT on-hand when the response carries populated inventory (else None)
         "pickup_level": lvl.get("PICKUP", ""), "delivery_level": lvl.get("DELIVERY", ""),
         "instore_level": lvl.get("IN_STORE", ""),
         "price": reg, "sale_price": promo.get("defaultDescription") or "",
@@ -183,7 +199,7 @@ def run(gtins, cookie, store_id, facility_id, modality="PICKUP", land=True, log=
                                    fields=FIELDS)
         obs = [{"store": "Kroger %s" % r["store_id"], "store_id": r["store_id"], "product_id": r["product_id"],
                 "upc": r["upc"], "brand": r["brand"], "name": r["name"], "price": None,
-                "in_stock": r["pickup_level"] not in ("", "OOS"), "qty": None,
+                "in_stock": r["pickup_level"] not in ("", "OOS"), "qty": r["available_units"],
                 "stock_level": r["pickup_level"], "is_hemp": observe.is_hemp(r["name"], r["category"])}
                for r in recs]
         observe.record("kroger_atlas", obs, log=log)
