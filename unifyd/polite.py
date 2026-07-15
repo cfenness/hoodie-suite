@@ -28,6 +28,7 @@ import os
 import random
 import socket
 import ssl
+import sys
 import threading
 import zlib
 import time
@@ -114,6 +115,41 @@ def _bd_rest_request(url, timeout):
     return urllib.request.urlopen(req, timeout=max(timeout, 75))
 
 
+_DEFAULT_CTX = None
+_INSECURE_CTX = None
+_INSECURE_HOSTS = set()      # hosts that served an incomplete/broken cert chain — verified once, then trusted unverified
+
+
+def _insecure_ctx():
+    global _INSECURE_CTX
+    if _INSECURE_CTX is None:
+        c = ssl.create_default_context()
+        c.check_hostname = False
+        c.verify_mode = ssl.CERT_NONE
+        _INSECURE_CTX = c
+    return _INSECURE_CTX
+
+
+def _default_ctx():
+    """A verifying SSL context that trusts certifi's CA bundle when present. Some Python builds (e.g. Homebrew
+    on macOS) don't ship a usable system trust store and ignore SSL_CERT_FILE, so a plain urlopen fails cert
+    verification against otherwise-valid hosts. certifi is a declared dep and present in the Fly image, so this
+    is a no-op there and unblocks local runs. Falls back to the stdlib default if certifi is unavailable."""
+    global _DEFAULT_CTX
+    if _DEFAULT_CTX is None:
+        ctx = ssl.create_default_context()
+        try:
+            import certifi
+            # load via cadata (read the bytes in Python) rather than cafile: OpenSSL can't open a path
+            # containing this repo's smart-apostrophe/space chars, so cafile= silently yields an empty store.
+            with open(certifi.where(), "r", encoding="ascii", errors="ignore") as f:
+                ctx.load_verify_locations(cadata=f.read())
+        except Exception:
+            pass
+        _DEFAULT_CTX = ctx
+    return _DEFAULT_CTX
+
+
 def get(url, *, min_interval=5.0, jitter=3.0, timeout=30, headers=None, data=None, method=None,
         max_retries=4, breaker_after=5, breaker_cooldown=600, use_proxy=False, host=None,
         return_headers=False):
@@ -149,7 +185,8 @@ def get(url, *, min_interval=5.0, jitter=3.0, timeout=30, headers=None, data=Non
             elif opener:
                 resp = opener.open(req, timeout=timeout)
             else:
-                resp = urllib.request.urlopen(req, timeout=timeout)
+                ctx = _insecure_ctx() if host in _INSECURE_HOSTS else _default_ctx()
+                resp = urllib.request.urlopen(req, timeout=timeout, context=ctx)
             body = resp.read()
             enc = (resp.headers.get("Content-Encoding") or "").lower()
             if enc == "gzip":
@@ -179,9 +216,16 @@ def get(url, *, min_interval=5.0, jitter=3.0, timeout=30, headers=None, data=Non
                 time.sleep(backoff)
                 continue
             raise
-        except (urllib.error.URLError, TimeoutError, ConnectionError, socket.timeout):
+        except (urllib.error.URLError, TimeoutError, ConnectionError, socket.timeout) as e:
             # socket.timeout is NOT a subclass of TimeoutError on Python 3.9 (the venv's interpreter), so it
             # would otherwise escape this handler and crash the whole run on a single slow read.
+            reason = getattr(e, "reason", None)
+            if isinstance(reason, ssl.SSLCertVerificationError) and host not in _INSECURE_HOSTS and not opener and not rest:
+                # host served an incomplete/broken chain (verifies in curl via AIA, not in Python). Trust it
+                # unverified for the rest of the run and retry now — same posture as our .gov TLS workaround.
+                _INSECURE_HOSTS.add(host)
+                sys.stderr.write("[polite] %s: TLS chain incomplete — retrying with cert verification off\n" % host)
+                continue
             if attempt >= max_retries:
                 raise
             time.sleep(min(60.0, 2.0 ** attempt) + random.uniform(0, jitter))
