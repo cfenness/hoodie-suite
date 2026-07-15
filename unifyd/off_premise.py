@@ -423,17 +423,29 @@ _NOISE = re.compile(r"quora|medium|crunchbase|accessnewswire|retail-today|reddit
 
 
 def _ch_sitemap_products(base, key, log=print):
-    """City Hive stores publish their FULL catalog in /sitemap.xml (product URLs
-    /shop/product/<slug>/<product_id>?option-id=<opt>). BD Unlocker occasionally returns a
-    Cloudflare interstitial instead of the XML, so retry until we get <loc> product URLs."""
-    for _ in range(3):
-        try:
-            xml = _fetch(base.rstrip("/") + "/sitemap.xml", key)
-        except Exception as e:
-            log("  [cityhive] sitemap %s" % str(e)[:60]); continue
-        urls = [l for l in re.findall(r"<loc>([^<]+)</loc>", xml) if "/shop/product/" in l]
-        if urls:
-            return urls
+    """City Hive stores publish their FULL catalog as a product sitemap of URLs shaped
+    /shop/product/<slug>/<product_id>?option-id=<opt>. The path varies by store — some use /sitemap.xml,
+    others a Google product sitemap at /googlesitemapxml.xml (Top Ten Liquors: 6,407 products there while
+    /sitemap.xml holds only category URLs) — so try both, plus any Sitemap: line in robots.txt. BD Unlocker
+    occasionally returns a Cloudflare interstitial instead of the XML, so retry each candidate."""
+    base = base.rstrip("/")
+    cands = [base + "/sitemap.xml", base + "/googlesitemapxml.xml"]
+    try:                                                    # honor robots.txt Sitemap: directives
+        robots = _fetch(base + "/robots.txt", key)
+        for sm in re.findall(r"(?im)^\s*Sitemap:\s*(\S+)", robots):
+            if sm not in cands:
+                cands.append(sm.strip())
+    except Exception:
+        pass
+    for url in cands:
+        for _ in range(3):
+            try:
+                xml = _fetch(url, key)
+            except Exception as e:
+                log("  [cityhive] sitemap %s %s" % (url, str(e)[:50])); continue
+            urls = [l for l in re.findall(r"<loc>([^<]+)</loc>", xml) if "/shop/product/" in l]
+            if urls:
+                return urls
     return []
 
 
@@ -547,6 +559,48 @@ def cityhive_catalog(base, key=None, max_products=None, workers=8, log=print):
                              image=d.get("image") or "", option_id=oid or ""))
     log("  [cityhive] %s -> %d products" % (base, len(rows)))
     return rows
+
+
+# Named national/multi-store City Hive chains we track BY NAME (not via a market census) — e.g. the liquor
+# chains a hemp-data vendor bills for. Both publish their full catalog on the SEO surface, so cityhive_catalog
+# covers them; we just want them as a first-class, recurring pull. (chain, base, states).
+CITYHIVE_CHAINS = [
+    ("Top Ten Liquors", "https://www.toptenliquors.com", "MN"),    # 6,407 products; has a THC-drink category
+    ("Liquor Barn", "https://www.liquorbarn.com", "KY"),           # Cloudflare-fronted — needs the BD Unlocker path
+]
+_CH_CHAIN_FLD = ["chain", "store", "base", "state", "name", "brand", "price", "sku", "upc", "size_ml",
+                 "category", "is_hemp", "description", "image", "option_id", "captured_at", "source"]
+
+
+def pull_cityhive_chains(chains=None, max_products=None, land=True, log=print):
+    """Pull the named City Hive liquor chains (Top Ten, Liquor Barn) via the SEO-surface catalog recipe and
+    land `cityhive_chain_products` (accumulating snapshot, hemp-flagged). Grabs the WHOLE catalog (bev-alc
+    first) and flags hemp/THC — THC drinks carry the dose in the name (e.g. '10mg THC'), so hemp_scan/observe
+    catch them. No per-store inventory count (the widget API is session-walled), but full catalog + price."""
+    chains = chains or CITYHIVE_CHAINS
+    key = _bd_key()
+    ts = int(time.time())
+    allrows = []
+    for name, base, state in chains:
+        try:
+            items = cityhive_catalog(base, key, max_products=max_products, log=log)
+        except Exception as e:
+            log("  [cityhive-chain] %s FAILED %s" % (name, str(e)[:50])); continue
+        for it in items:
+            allrows.append(dict(chain=name, store=it.get("store") or name, base=base, state=state,
+                                name=it["name"], brand=it.get("brand", ""), price=it.get("price"),
+                                sku=it.get("sku", ""), upc=it.get("upc", ""), size_ml=it.get("size_ml"),
+                                category=it.get("category", ""),
+                                is_hemp=observe.is_hemp(it["name"], it.get("category", "")),
+                                description=it.get("description", ""), image=it.get("image", ""),
+                                option_id=it.get("option_id", ""), captured_at=ts, source="cityhive"))
+    if land and allrows:
+        warehouse.write_accumulate("cityhive_chain_products", allrows,
+                                   key=lambda r: (r["base"], r["sku"] or r["name"]), fields=_CH_CHAIN_FLD)
+    hemp = sum(1 for r in allrows if r["is_hemp"])
+    log("[cityhive-chain] %d products across %d chains -> cityhive_chain_products (%d hemp)"
+        % (len(allrows), len(chains), hemp))
+    return allrows
 
 
 # ── Squarespace Commerce recipe — the crack: Squarespace exposes EVERYTHING as JSON. sitemap.xml lists every
