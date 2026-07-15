@@ -189,6 +189,35 @@ def _to_ml(s):
     return round(v) if v else None
 
 
+def _sane_ml(v):
+    """Reject implausible size parses (75000 / 375000 ml — ml/L or ×N bugs) so a bad mapped value doesn't poison
+    the item grain; the name re-parse then supplies a clean size. Retail bev-alc runs ~1 ml .. 20 L."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    return round(v) if 1 <= v <= 20000 else None
+
+
+_PACKN = re.compile(r"\b(\d{1,2})\s*(?:pk|pack|packs|ct|count)\b|\bpack\s*of\s*(\d{1,2})\b|\b(\d{1,2})\s*x\s*\d",
+                    re.I)
+
+
+def _pack_of(name):
+    """Pack count from the product NAME: '6-pack' / '12pk' / '4 pack' / 'pack of 6' / '6 x 355ml' → the integer.
+    Singles (1) and absurd counts return None so a pack signal only fires when it's real — this is what keeps a
+    6-pack from clustering with the single (the pack is part of the SKU grain)."""
+    m = _PACKN.search(name or "")
+    if not m:
+        return None
+    n = next((g for g in m.groups() if g), None)
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return None
+    return n if 2 <= n <= 48 else None
+
+
 # ── smarter matching: canonicalize near-duplicate product names WITHIN a brand so they collapse ─────────────
 # The exact-string hierarchy shred leaves "Plymouth Gin", "Plymouth Gin - - - Glass" and "PLYMOUTH GIN 82P" as
 # THREE products, so the same item looks single-source when 3 sources actually carry it. Canonicalization maps
@@ -396,6 +425,10 @@ def build(log=print):
                 sz = ((_fnum(r.get(c["litres"])) or 0) * 1000) or None
             else:
                 sz = _to_ml(r.get(c.get("size"))) if c.get("size") else None
+            sz = _sane_ml(sz)                            # drop insane parses (75000/375000 ml) so name re-parse wins
+            if not sz:                                   # source left size blank → parse it from the product NAME
+                sz = _sane_ml(_to_ml(nm))                # (e.g. "New Amsterdam Vodka 1750ml" → 1750)
+            pk = _pack_of(nm)                            # pack count from the name ("6-pack"/"12pk"/"4 x 355ml")
             abv = _fnum(r.get(c["abv"])) if c.get("abv") else \
                 ((_fnum(r.get(c["proof"])) / 2) if c.get("proof") and _fnum(r.get(c["proof"])) else None)
             staged.append(dict(brand=brand, brand_group=None, product_name=clean_name(nm),
@@ -405,7 +438,8 @@ def build(log=print):
                 origin=((str(r.get(c["origin"])).strip().title() or None) if c.get("origin") and r.get(c["origin"]) else None),
                 bottled_in=((str(r.get(c["bottled_in"])).strip().title() or None) if c.get("bottled_in") and r.get(c["bottled_in"]) else None),
                 size_ml=sz,
-                packsize=None, container=r.get(c["container"]) if c.get("container") else None, pack=None,
+                packsize=None, container=r.get(c["container"]) if c.get("container") else None,
+                pack=(_fnum(r.get(c["pack"])) if c.get("pack") and r.get(c["pack"]) else None) or pk,
                 upc=(re.sub(r"\D", "", str(r.get(c["upc"]))) or None) if c.get("upc") and r.get(c["upc"]) else None,
                 gtin=None, edition=None, supplier=None, _source=ds,
                 _source_id=(str(r.get(idc)) if idc and r.get(idc) is not None else None),
