@@ -91,7 +91,7 @@ def to_snapshot(records):
                 "origin": h.get("country") or "", "category": h.get("productType") or h.get("gtmCategory") or "",
                 "department": h.get("productDepartment") or "",
                 "item_size": h.get("itemSize") or "", "unit_label": h.get("priceUnitLabel") or "",
-                "case_pack": h.get("casePack"), "image": h.get("imageUrl") or "",
+                "case_pack": _num(h.get("casePack")), "image": h.get("imageUrl") or "",
                 "product_url": h.get("productUrl") or h.get("productLink") or "",
                 "proof": proof, "abv": (round(proof / 2, 1) if proof else None),
                 "thc_mg": thc, "cbd_mg": cbd,
@@ -182,8 +182,14 @@ def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=p
     # dated observation time-series (qty = exact on-hand; the whole reason Binny's is a Counts source).
     try:
         recs = [{k: v.get(k) for k in PRODUCT_FIELDS} for v in cur.values()]
-        warehouse.write_accumulate("binnys_products", recs, key=lambda r: (r["sku"], r["store"]),
-                                   fields=PRODUCT_FIELDS)
+        # a FULL crawl is the complete catalog -> OVERWRITE (a clean, consistently-typed schema); merging into
+        # the old narrower table with write_accumulate hits a pyarrow type conflict (old string cols vs new
+        # numeric). A partial/sample run still accumulates so it grows rather than clobbers.
+        if crawl_all:
+            warehouse.write_parquet("binnys_products", recs, fields=PRODUCT_FIELDS)
+        else:
+            warehouse.write_accumulate("binnys_products", recs, key=lambda r: (r["sku"], r["store"]),
+                                       fields=PRODUCT_FIELDS)
         observe.record("binnys", [{"source": "binnys", "store_id": v["store"], "store": "Binny's #%s" % v["store"],
                                    "product_id": v["sku"], "upc": "", "brand": v["brand"], "name": v["name"],
                                    "price": v["price"], "on_promo": bool(v.get("deal_of_week") or v.get("discount_pct")),
