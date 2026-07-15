@@ -40,9 +40,17 @@ _CFG = {
     # class from ABC's OWN drill-path taxonomy (authoritative, not name-guessed). No UPC in the facet feed; the
     # store-inventory abc_catalog (UPC) still feeds observe, and both share `sku`.
     "abc_products": dict(name="name", brand="brand", varietal="varietal", region="region", country="country",
-                         origin="country", sub_region="sub_region", cat="type", size="size", image="image", id="sku"),
+                         origin="country", sub_region="sub_region", cat="type", size="size", image="image", id="sku",
+                         upc="upc", gtin="gtin"),                       # UPC/GTIN now captured (BigCommerce variant)
     "kroger_products": dict(name="product_name", size="size", upc="upc", brand="brand", cat="category",
                             image="image_url", filt=lambda r: r.get("category") == "Adult Beverage", dedup=["product_id"]),
+    # Kroger internal atlas API — gtin14 + dims + ABV keyed by GTIN (barcode key for the whole Kroger banner set)
+    "kroger_atlas_products": dict(name="name", brand="brand", size="size", gtin="gtin14", abv="abv",
+                                  cat="category", image="image", filt=lambda r: r.get("alcohol_flag"),
+                                  dedup=["gtin14"]),
+    # Stop & Shop (Ahold/Peapod) — UPC + subcat, per-store
+    "stop_and_shop_products": dict(name="name", brand="brand", upc="upc", cat="subcat", size="size",
+                                   image="image", filt=lambda r: r.get("is_alcohol"), dedup=["prod_id"]),
     "walmart_products": dict(name="product_name", size_ml="size_ml", upc="upc", abv="abv", brand="brand",
                              cat="category", varietal="varietal", region="region", vintage="vintage",
                              container="container", image="image", flavor="flavor", food_pairing="pairing",
@@ -151,6 +159,10 @@ def resolve_brand(name, by1, clean=None):
         c = _precleanse.unescape(str(clean)).strip()   # D&#39;Aquino -> D'Aquino
         # Override the column ONLY on the off-premise pattern: the NAME starts with the store column, and the
         # column isn't itself a known brand. Then the real brand is what appears AFTER the store prefix.
+        # NOTE: a store-WORD heuristic (liquors/spirits/vineyard/brewing…) was tried and REVERTED — those words
+        # are also in real PRODUCER brands (Voodoo Brewing, Björnson Vineyards, La Pulga Spirits), so it clobbered
+        # legit brands. Distinguishing retailer from producer needs a curated retailer list / the TTB filer
+        # bridge, not a word heuristic. See master-fanout-brand-resolution.
         if dict_brand and not _known_brand(c, by1) and nm.lower().startswith(c.lower()):
             return dict_brand
         return c.title() if c.isupper() else c          # TTB brand_name is ALL-CAPS -> readable display
@@ -461,7 +473,8 @@ def build(log=print):
                 packsize=None, container=r.get(c["container"]) if c.get("container") else None,
                 pack=(_fnum(r.get(c["pack"])) if c.get("pack") and r.get(c["pack"]) else None) or pk,
                 upc=(re.sub(r"\D", "", str(r.get(c["upc"]))) or None) if c.get("upc") and r.get(c["upc"]) else None,
-                gtin=None, edition=None, supplier=None, _source=ds,
+                gtin=(re.sub(r"\D", "", str(r.get(c["gtin"]))) or None) if c.get("gtin") and r.get(c["gtin"]) else None,
+                edition=None, supplier=None, _source=ds,
                 _source_id=(str(r.get(idc)) if idc and r.get(idc) is not None else None),
                 vintage=_clean_vintage(r.get(c["vintage"])) if c.get("vintage") else None,
                 **{fld: ((str(r.get(c[fld])).strip() or None) if c.get(fld) and r.get(c[fld]) else None)

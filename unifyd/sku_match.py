@@ -59,7 +59,9 @@ def propagate_upcs(staged, log=print):
     """Fill missing UPCs across single-UPC item clusters; leave multi-UPC clusters as distinct SKUs. Mutates
     `upc` in place to the normalized value and returns (staged, stats)."""
     for r in staged:
-        r["upc"] = norm_upc(r.get("upc"))
+        # GTIN is just a barcode in another encoding (gtin14 = the UPC, zero-padded) — norm_upc reduces both to
+        # the same core, so fall back to gtin when upc is absent. Activates Kroger gtin14 / ABC gtin as match keys.
+        r["upc"] = norm_upc(r.get("upc")) or norm_upc(r.get("gtin"))
 
     groups = collections.defaultdict(list)
     for r in staged:
