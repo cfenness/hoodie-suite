@@ -105,10 +105,38 @@ _SPEC_FIELD = [("wine varietal", "varietal"), ("varietal", "varietal"), ("grape"
                ("wine score", "wine_score"), ("size", "size_str"), ("net content", "size_str")]
 
 
+def _product_node(dd):
+    """The rich /ip/ product object in __NEXT_DATA__ — the dict carrying usItemId + name (+ upc). _find returns
+    the first `product` key, but that isn't always the item node, so verify shape and fall back to a walk."""
+    p = _find(dd, "product")
+    if isinstance(p, dict) and p.get("usItemId") and p.get("name"):
+        return p
+    hit = [None]
+
+    def walk(o):
+        if hit[0] is not None:
+            return
+        if isinstance(o, dict):
+            if o.get("usItemId") and o.get("name") and ("upc" in o or "priceInfo" in o):
+                hit[0] = o; return
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(dd)
+    return hit[0] or {}
+
+
+_ABV_TXT = re.compile(r"(\d{1,2}(?:\.\d)?)\s*%\s*ABV", re.I)
+
+
 def detail(url, log=print):
-    """Fetch a product /ip/ page and pull the rich spec vector + inventory (availability + aisle). Defensive:
-    walks __NEXT_DATA__ for `specifications` + availability wherever they sit. NEEDS live validation (Walmart
-    throttles rapid detail fetches — pace it; warmed-cookie/BD only if the direct path degrades)."""
+    """Fetch a product /ip/ page and pull EVERYTHING valuable off the product object — the rich spec vector
+    (varietal/region/vintage/ABV/container/…) AND the master + enrichment fields the object carries directly:
+    UPC (the master key — exposed on detail even though search hides it), aisle (productLocation), retail-
+    hierarchy taxonomy (rhPath/category path/productTypeId), order limit, ratings, Rollback badge, per-store
+    availability. Defensive: walks __NEXT_DATA__ for whatever sits where. Pace it (Walmart throttles detail)."""
     try:
         m = _ND.search(_get(url))
     except Exception as e:
@@ -126,12 +154,52 @@ def detail(url, log=print):
             for key, fld in _SPEC_FIELD:
                 if key in nm and fld not in out:
                     out[fld] = (", ".join(val) if isinstance(val, list) else str(val)).strip(); break
-    if out.get("abv_str"):                       # "13.5% ABV" or "80 Proof" -> abv number
+    p = _product_node(dd)
+    # ── master identity keys ──
+    out["upc"] = p.get("upc") or ""                              # exposed on DETAIL (not search) — the match key
+    out["item_id"] = str(p.get("usItemId") or out.get("item_id") or "")
+    out["offer_id"] = p.get("offerId") or ""
+    out["brand"] = p.get("brand") or out.get("brand") or ""
+    out["type"] = p.get("type") or ""                            # "Wine"/"Beer"/… (Walmart's own class)
+    # ── taxonomy: retail hierarchy path + category breadcrumb + product-type id ──
+    out["rh_path"] = p.get("rhPath") or ""                       # "40000:42000:42001:42100:42206"
+    out["product_type_id"] = p.get("productTypeId") or ""
+    out["primary_shelf_id"] = p.get("primaryShelfId") or ""
+    out["ironbank_category"] = p.get("ironbankCategory") or ""   # "Alcoholic Beverages"
+    cat = p.get("category") or {}
+    out["category_path"] = " > ".join(c.get("name", "") for c in (cat.get("path") or [])) or out.get("category", "")
+    # ── ABV: spec first, else the shortDescription ("6% ABV") ──
+    if out.get("abv_str"):                                       # "13.5% ABV" or "80 Proof" -> number
         n = _fnum(out["abv_str"])
         out["abv"] = (n / 2 if "proof" in out["abv_str"].lower() and n else n)
-    av = str(_find(dd, "availabilityStatusDisplayValue") or _find(dd, "availabilityStatus") or "").lower()
+    if out.get("abv") is None:
+        am = _ABV_TXT.search(p.get("shortDescription") or "")
+        out["abv"] = float(am.group(1)) if am else None
+    # ── inventory / placement / store context ──
+    av = str(p.get("availabilityStatus") or _find(dd, "availabilityStatus") or "").lower()
     out["in_stock"] = bool(av) and "out" not in av and "unavailable" not in av
-    out["aisle"] = _find(dd, "aisle") or _find(dd, "aisleLocation") or ""
+    ploc = p.get("productLocation") or []                        # aisle lives here: [{displayValue:"A34"}]
+    out["aisle"] = (ploc[0].get("displayValue") if ploc else "") or _find(dd, "aisle") or ""
+    out["order_limit"] = p.get("orderLimit")                     # per-order purchase cap
+    loc = p.get("location") or {}
+    out["store_id"] = (loc.get("storeIds") or [""])[0]
+    out["store_state"] = loc.get("stateOrProvinceCode") or ""
+    out["store_city"] = loc.get("city") or ""
+    out["is_alcohol"] = bool(p.get("isLMPAlcoholItem")) or out.get("is_alcohol", True)
+    # ── signals ──
+    out["avg_rating"] = p.get("averageRating")
+    out["num_reviews"] = p.get("numberOfReviews")
+    flags = ((p.get("badges") or {}).get("flags")) or []
+    out["rollback"] = any((f.get("key") == "ROLLBACK" or f.get("text") == "Rollback") for f in flags)
+    out["seller"] = p.get("sellerName") or ""
+    if p.get("name"):
+        out["product_name"] = p["name"]
+    pi = p.get("secondaryOfferPrice") or {}
+    cp = (pi.get("currentPrice") or {}).get("price")
+    if cp is not None:
+        out["price"] = cp
+    # keep the WHOLE product node — everything Walmart serves, not just what we promote
+    out["raw_json"] = json.dumps(p, separators=(",", ":"))[:6000]
     return out
 
 
@@ -168,12 +236,16 @@ def pull(terms=None, max_pages=4, delay=1.2, detail_pages=False, detail_cap=400,
             if (i + 1) % 25 == 0:
                 log("  detail-enriched %d/%d" % (i + 1, n))
     warehouse.write_parquet("walmart_products", rows,
-                            fields=["product_name", "item_id", "price", "size_ml", "brand", "image", "url",
-                                    "category", "is_alcohol", "varietal", "region", "vintage", "abv",
-                                    "container", "flavor", "pairing", "wine_score", "aisle", "in_stock"])
+                            fields=["product_name", "item_id", "upc", "offer_id", "price", "size_ml", "brand",
+                                    "type", "image", "url", "category", "category_path", "rh_path",
+                                    "product_type_id", "primary_shelf_id", "ironbank_category", "is_alcohol",
+                                    "varietal", "region", "vintage", "abv", "container", "flavor", "pairing",
+                                    "wine_score", "aisle", "order_limit", "store_id", "store_state", "store_city",
+                                    "avg_rating", "num_reviews", "rollback", "seller", "in_stock", "raw_json"])
     try:
-        observe.record("walmart", [{"source": "walmart", "store_id": "", "store": "Walmart",
-                                    "product_id": r["item_id"], "upc": "", "price": r["price"],
+        observe.record("walmart", [{"source": "walmart", "store_id": r.get("store_id", ""), "store": "Walmart",
+                                    "product_id": r["item_id"], "upc": r.get("upc", ""), "price": r["price"],
+                                    "on_promo": bool(r.get("rollback")),
                                     "in_stock": r.get("in_stock", True), "stock_level": r.get("aisle") or "",
                                     "is_hemp": ("hemp" in r["product_name"].lower()
                                     or "thc" in r["product_name"].lower())} for r in rows if r["price"] is not None])
