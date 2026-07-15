@@ -56,12 +56,24 @@ class Blocked(RuntimeError):
     pass
 
 
+_DESK = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
+         "Chrome/131.0.0.0 Safari/537.36")
+
+
 def _get(url, timeout=30, cookie=None):
-    hdrs = {"User-Agent": _MOB, "Accept": "text/html", "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip"}
     cookie = cookie or WALMART_COOKIE
     if cookie:
-        hdrs["Cookie"] = cookie
+        # a warmed PX cookie is minted by DESKTOP Chrome — replay it with a MATCHING desktop UA + full browser
+        # headers, or PX re-challenges on the UA/fingerprint mismatch (the mobile UA fails even with the cookie).
+        hdrs = {"User-Agent": _DESK, "Cookie": cookie, "Referer": "https://www.walmart.com/",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9", "Accept-Encoding": "gzip, deflate",
+                "sec-ch-ua": '"Chromium";v="131", "Not_A Brand";v="24"', "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"macOS"', "sec-fetch-dest": "document", "sec-fetch-mode": "navigate",
+                "sec-fetch-site": "same-origin", "sec-fetch-user": "?1", "upgrade-insecure-requests": "1"}
+    else:
+        hdrs = {"User-Agent": _MOB, "Accept": "text/html", "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip"}
     raw = urllib.request.urlopen(urllib.request.Request(url, headers=hdrs), timeout=timeout).read()
     body = gzip.decompress(raw).decode("utf-8", "replace") if raw[:2] == b"\x1f\x8b" else raw.decode("utf-8", "replace")
     if "px-captcha" in body or "Robot or human" in body[:2000]:
