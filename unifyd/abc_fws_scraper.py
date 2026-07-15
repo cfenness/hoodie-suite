@@ -131,7 +131,7 @@ TOKEN_RE = re.compile(r'eyJ0eXAiOiJKV1Qi[A-Za-z0-9_.-]{60,}')
 WANT_QTY = os.environ.get("ABC_QTY", "1") == "1"
 GQL_Q = ('{ site { route(path: "%s") { node { ... on Product { '
          'prices { price { value } } '
-         'variants(first: 200) { edges { node { sku inventory { isInStock aggregated { availableToSell } } '
+         'variants(first: 200) { edges { node { sku upc gtin inventory { isInStock aggregated { availableToSell } } '
          'options { edges { node { values { edges { node { label } } } } } } } } } } } } } }')
 
 
@@ -160,6 +160,7 @@ def graphql_stores(path, token, host):
             if not (label.startswith("ABC #") or label.lower() == "online"):
                 continue
             rows.append({"store": label, "sku": n.get("sku", ""), "qty": agg.get("availableToSell"),
+                         "upc": n.get("upc") or "", "gtin": n.get("gtin") or "",
                          "instock": bool(inv.get("isInStock")), "price": price})
         return rows, bool(rows)
     except Exception:
@@ -250,7 +251,8 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
                     # key on the store LABEL (present in both GraphQL + HTML modes); qty is the
                     # real bottle count (GraphQL) or None (HTML in/out fallback).
                     cur[f"{sku}|{r['store']}"] = {"price": r["price"], "instock": r["instock"],
-                                                  "qty": r.get("qty"), "store": r["store"], "sku": sku}
+                                                  "qty": r.get("qty"), "store": r["store"], "sku": sku,
+                                                  "upc": r.get("upc", ""), "gtin": r.get("gtin", "")}
         except Exception as e:
             log(f"  {sku}: {e}")
         if jitter:
