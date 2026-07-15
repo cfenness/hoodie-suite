@@ -198,6 +198,8 @@ def detail(url, log=print):
     cp = (pi.get("currentPrice") or {}).get("price")
     if cp is not None:
         out["price"] = cp
+    # keep the WHOLE product node — everything Walmart serves, not just what we promote
+    out["raw_json"] = json.dumps(p, separators=(",", ":"))[:6000]
     return out
 
 
@@ -239,7 +241,7 @@ def pull(terms=None, max_pages=4, delay=1.2, detail_pages=False, detail_cap=400,
                                     "product_type_id", "primary_shelf_id", "ironbank_category", "is_alcohol",
                                     "varietal", "region", "vintage", "abv", "container", "flavor", "pairing",
                                     "wine_score", "aisle", "order_limit", "store_id", "store_state", "store_city",
-                                    "avg_rating", "num_reviews", "rollback", "seller", "in_stock"])
+                                    "avg_rating", "num_reviews", "rollback", "seller", "in_stock", "raw_json"])
     try:
         observe.record("walmart", [{"source": "walmart", "store_id": r.get("store_id", ""), "store": "Walmart",
                                     "product_id": r["item_id"], "upc": r.get("upc", ""), "price": r["price"],
