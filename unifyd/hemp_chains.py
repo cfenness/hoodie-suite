@@ -49,7 +49,9 @@ _H = [
     # ── national convenience / mass — THC bev in the loophole states (Grepsr had some on-hold) ──
     ("Circle K", "convenience", "national", "likely", "unknown", "unknown", "", 7000, "THC bev in hemp states; Grepsr on-hold"),
     ("Target", "mass", "national", "likely", "unknown", "bd:target", "", 1950, "CBD + some THC bev; Grepsr on-hold"),
-    ("7-Eleven", "convenience", "national", "verify", "unknown", "unknown", "", 9000, "some CBD; THC bev by market"),
+    ("7-Eleven", "convenience", "national", "likely", "count", "sevennow", "sevennow_products", 9000,
+     "7NOW (first-party delivery) exposes EXACT per-store on-hand counts + UPC + price; Beer/Wine confirmed "
+     "(Austin store: 125 beer + 97 wine w/ counts), hemp bev surfaces the same way in stores that carry it"),
     ("Sheetz", "convenience", "Mid-Atlantic", "verify", "unknown", "unknown", "", 700, "carries Delta-8/THC bev in some markets"),
     # ── liquor superstores — carry hemp bev where legal ──
     ("BevMo!", "liquor", "CA,AZ", "verify", "unknown", "unknown", "", 160, "check hemp bev assortment"),
