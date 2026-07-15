@@ -281,10 +281,30 @@ def _clean_core(core, s=None):
     return re.sub(r"\s+", " ", " ".join(out)).strip(" -&.,")
 
 
+# A cask / lot / batch / négociant number is the PRODUCT DISTINGUISHER, not a proof/size remnant — so it must
+# survive the _DESC_TOK stripping, or every single-cask bottling collapses into one product (SMWS "Society"
+# 94.48/11.43…, "Cameron Hughes LOT 105/121…", "De Negoce N. 07"). Two shapes: a marker+number, and a bare
+# decimal cask id (excluding sizes like 1.75L).
+_DIST_MARK = re.compile(r"\b(?:lot|cask|batch|barrel|edition|series|selection|no|n)\.?\s*#?\s*(\d[\d.]*)", re.I)
+_DIST_DEC = re.compile(r"(?<![\d.])(\d{1,3}\.\d{1,3})(?![\d.])(?!\s*(?:l|liter|litre|ml|oz|cl)\b)", re.I)
+
+
+def _distinguishers(name):
+    """Cask/lot/batch/edition ids in a name, as atomic 'id<digits>' tokens — kept so distinct bottlings don't fold."""
+    out = set()
+    for rx in (_DIST_MARK, _DIST_DEC):
+        for m in rx.finditer(name or ""):
+            d = re.sub(r"\D", "", m.group(1))
+            if d:
+                out.add("id" + d)
+    return out
+
+
 def _core_key(name):
     """The product's IDENTITY tokens within its brand — the tokset minus size/proof/vintage remnants and generic
     beverage-type words, THEN normalized through the data dictionaries (dict_apply: drop noise/size/format tokens,
-    collapse descriptor synonyms so "Superior Silver" == "Superior Blanco"). Two names with the same core (+ same
+    collapse descriptor synonyms so "Superior Silver" == "Superior Blanco"). Cask/lot/batch numbers are preserved
+    as distinguishers (so single-cask/négociant bottlings stay distinct). Two names with the same core (+ same
     brand + size) are the same product. The dictionaries are editable data, not hardcoded rules."""
     out = set()
     for t in _tokset(name):
@@ -293,7 +313,7 @@ def _core_key(name):
         nt = _dict_apply.norm_token(t)          # '' drops (noise/size); else the canonical synonym token
         if nt:
             out.add(nt)
-    return frozenset(out)
+    return frozenset(out | _distinguishers(name))
 
 
 def _ncmp(s):
