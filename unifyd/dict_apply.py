@@ -130,7 +130,43 @@ def seed(log=print):
     _CACHE.clear()
     log("[dict_apply] seeded match_dict: %d entries (%s)"
         % (len(rows), ", ".join("%d %s" % (len(SEED[k]), k) for k in ("noise", "size", "descriptor", "class", "varietal", "flavor"))))
+    fold_taxonomy(log=log)                                # extend with the retailers' drill-path vocabularies
     return len(rows)
+
+
+# retail 'type' facet label → our canonical class, for the clean ones (the drill-path harvest gives these free)
+_TYPE_CLASS = {"brandy & cognac": "brandy", "cordials & liqueurs": "liqueur", "tequila & mezcal": "tequila",
+               "scotch": "scotch", "bourbon": "bourbon", "rye whiskey": "rye", "irish whiskey": "whiskey",
+               "gin": "gin", "rum": "rum", "vodka": "vodka", "red wine": "wine", "white wine": "wine",
+               "sparkling wine": "sparkling", "rosé wine": "wine", "champagne": "sparkling"}
+
+
+def fold_taxonomy(log=print):
+    """Fold the drill-path harvested vocabularies (`source_taxonomy`, mined from retailers' faceted navigation)
+    INTO match_dict so the declarative engine + the item-grain clustering pick them up automatically — the
+    retailer's own controlled vocabulary, self-updating on re-crawl. A 'varietal' facet value becomes a varietal
+    dictionary entry; a recognized 'type' facet becomes a class entry. Accumulates (keyed on kind+match) so it
+    extends the dictionary without clobbering the seed or hand-curated rows. Skips catch-all facets (Shop All…)."""
+    try:
+        tax = warehouse.query("source_taxonomy", "SELECT DISTINCT axis, value FROM t")
+    except Exception:
+        return 0
+    add = []
+    for r in tax:
+        ax = (r.get("axis") or "").lower()
+        v = (r.get("value") or "").strip()
+        if not v or v.lower().startswith("shop all") or v.lower() in ("featured", "all", "n/a"):
+            continue
+        if ax == "varietal":
+            add.append({"kind": "varietal", "match": v.lower(), "value": v, "mode": "contains"})
+        elif ax == "type" and v.lower() in _TYPE_CLASS:
+            add.append({"kind": "class", "match": v.lower(), "value": _TYPE_CLASS[v.lower()], "mode": "contains"})
+    if add:
+        warehouse.write_accumulate("match_dict", add, key=lambda x: (x["kind"], x["match"]), fields=FIELDS)
+        _CACHE.clear()
+    log("[dict_apply] folded %d drill-path taxonomy entries into match_dict (%d varietal, %d class)"
+        % (len(add), sum(1 for a in add if a["kind"] == "varietal"), sum(1 for a in add if a["kind"] == "class")))
+    return len(add)
 
 
 if __name__ == "__main__":
