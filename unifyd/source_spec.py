@@ -152,11 +152,23 @@ SPEC = {
             ("images[]", "images", "image"),
         ],
         "collapsed": [("items[].inventory.stockLevel", "public API's ONLY inventory field — a 3-value enum, "
-                       "NOT a number. A raw numeric on-hand may exist in the internal site/app payload "
-                       "before this collapse — UNCONFIRMED, needs a devtools/mitmproxy trace on known-HIGH "
-                       "and known-LOW SKUs. Side channel: Instacart/Shipt scarcity messaging.")],
-        "notes": "Public API is real + free but scrubbed. The raw-count hunt (internal endpoints) is the open "
-                 "task — this row is exactly why a raw-field spec separate from the structured one matters.",
+                       "NOT a number. Internal API has an inventory.projected projection (see internal[]).")],
+        "internal": [
+            ("endpoint", "GET /atlas/v1/product/v2/products?filter.gtin13s=…&projections=items.full,offers.compact,"
+             "nutrition.label,inventory.projected,variantGroupings.compact  (the internal 'atlas' gateway the "
+             "site/app uses — CONFIRMED richer than the public API)"),
+            ("auth", "x-laf-object header = JSON array [{banner,storeId,modality:{type}}]; store from DD_modStore "
+             "cookie (division 011 / store 00439). Exact header needs a clean capture to replay (hand-built "
+             "variants hit server validation)."),
+            ("location.locations[]", "PLANOGRAM — aisle #/side, bayInAisle, numOfFacings, physicalShelfNumber, "
+             "shelfPositionInBay. Public API has NONE of this. Feeds [[planogram-app]]."),
+            ("price.storePrices.promo", "nfor deals (2 for $7), unitPrice, equivalizedUnitPrice — richer than public"),
+            ("inventory.projected", "OPEN: the projection name implies a projected/possibly-numeric on-hand view; "
+             "not yet read (couldn't reproduce the LAF header to fetch it). THE raw-count hunt target."),
+        ],
+        "notes": "Public API is real+free but scrubbed. Internal atlas API is CONFIRMED richer (planogram + "
+                 "inventory.projected). Open task: capture the exact x-laf-object header, replay, read "
+                 "products[].inventory. Side channel: Instacart/Shipt scarcity messaging.",
     },
 }
 
@@ -180,6 +192,7 @@ def emit_json(path=None):
     doc = {k: {"label": v["label"], "endpoint": v["endpoint"], "grain": v.get("grain", ""),
                "raw_fields": [{"field": f, "meaning": m, "maps_to": t} for f, m, t in v.get("raw", [])],
                "collapsed": v.get("collapsed", []), "walled": v.get("walled", []),
+               "internal": v.get("internal", []),
                "store_summary": v.get("store_summary", []), "notes": v.get("notes", "")}
            for k, v in SPEC.items()}
     with open(path, "w") as fh:
