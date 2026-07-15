@@ -159,6 +159,10 @@ def resolve_brand(name, by1, clean=None):
         c = _precleanse.unescape(str(clean)).strip()   # D&#39;Aquino -> D'Aquino
         # Override the column ONLY on the off-premise pattern: the NAME starts with the store column, and the
         # column isn't itself a known brand. Then the real brand is what appears AFTER the store prefix.
+        # NOTE: a store-WORD heuristic (liquors/spirits/vineyard/brewing…) was tried and REVERTED — those words
+        # are also in real PRODUCER brands (Voodoo Brewing, Björnson Vineyards, La Pulga Spirits), so it clobbered
+        # legit brands. Distinguishing retailer from producer needs a curated retailer list / the TTB filer
+        # bridge, not a word heuristic. See master-fanout-brand-resolution.
         if dict_brand and not _known_brand(c, by1) and nm.lower().startswith(c.lower()):
             return dict_brand
         return c.title() if c.isupper() else c          # TTB brand_name is ALL-CAPS -> readable display
