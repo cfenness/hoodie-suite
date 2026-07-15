@@ -82,7 +82,19 @@ STORE_SEEDS = [
 PROD_FIELDS = ["store_id", "store_city", "department", "department_id", "category", "subcategory",
                "product_id", "slin", "upc", "name", "brand", "size", "price", "original_price",
                "available", "available_quantity", "store_quantity", "age_restricted", "is_hemp",
-               "hemp_signal", "image", "long_desc", "captured_at", "source", "raw_json"]
+               "hemp_signal", "on_promo", "promo", "promo_desc", "promo_ends", "image", "long_desc",
+               "captured_at", "source", "raw_json"]
+
+
+def _promo(p):
+    """Flatten the first promo/deal on a product → (on_promo, short, long, expiration). 7NOW deals are
+    'buy 4 / $3 off'-style item promos (promo_short_desc), NOT shelf markdowns, so price stays regular."""
+    pr = (p.get("promos") or [])
+    if not pr:
+        return False, "", "", ""
+    d = pr[0]
+    return True, (d.get("promo_short_desc") or d.get("promo_name") or ""), \
+        (d.get("promo_long_desc") or ""), (d.get("expiration_date") or "")
 
 
 class Fetcher:
@@ -166,6 +178,7 @@ def harvest_store(fetch, store, log=print):
             sig = hemp_scan.classify(name, cat) or (hemp_scan.classify(name, sub_name) if sub_name else None)
             is_hemp = bool(sig) or hemp_dept
             sq = p.get("store_quantity")
+            on_promo, promo, promo_desc, promo_ends = _promo(p)
             snap.append({
                 "store_id": store["store_id"], "store_city": store.get("city", ""),
                 "department": dept, "department_id": cat_id, "category": cat, "subcategory": sub_name,
@@ -176,6 +189,7 @@ def harvest_store(fetch, store, log=print):
                 "available": bool(p.get("available")), "available_quantity": p.get("availableQuantity"),
                 "store_quantity": sq, "age_restricted": bool(p.get("age_restricted")),
                 "is_hemp": is_hemp, "hemp_signal": sig or "",
+                "on_promo": on_promo, "promo": promo, "promo_desc": promo_desc[:300], "promo_ends": promo_ends,
                 "image": (p.get("images") or [p.get("thumbnail")])[0] if (p.get("images") or p.get("thumbnail")) else "",
                 "long_desc": (p.get("long_desc") or "")[:500], "captured_at": ts, "source": "sevennow",
                 "raw_json": json.dumps(p, separators=(",", ":"))[:4000]})
@@ -183,8 +197,9 @@ def harvest_store(fetch, store, log=print):
                 "store": store.get("city", ""), "store_id": store["store_id"],
                 "product_id": str(p.get("product_id") or ""), "upc": str(p.get("upc") or ""),
                 "brand": p.get("brand") or "", "name": name, "price": _to_price(p.get("price")),
-                "on_promo": bool(p.get("promos")), "in_stock": bool(p.get("available")),
-                "qty": sq,                                   # EXACT on-hand — the whole point
+                "promo": promo, "on_promo": on_promo, "in_stock": bool(p.get("available")),
+                "qty": sq,                                   # EXACT on-hand (store_quantity) — uncapped, unlike
+                                                             # availableQuantity (the ≤100 ORDER cap the site enforces)
                 "stock_level": p.get("availabilityMessage") or "", "is_hemp": is_hemp})
     log("  -> %d products (%d alcohol, %d hemp)" % (
         len(snap), sum(1 for r in snap if r["age_restricted"]), sum(1 for r in snap if r["is_hemp"])))
