@@ -130,6 +130,28 @@ SPEC = {
         "notes": "Full catalog + price from SEO, no browser. Per-store count needs the session-walled widget "
                  "API (see [[cityhive-crack]]). prices.json/offers.json are public but need store/option context.",
     },
+    # ── ABC Fine Wine (FL) — BigCommerce. Store = a product-option VARIANT; the storefront GraphQL + the
+    # availability endpoint give exact per-store count + UPC/GTIN. (abc_fws_scraper.py, audited 2026-07-15) ──
+    "abc_fws": {
+        "label": "ABC Fine Wine (BigCommerce)",
+        "endpoint": "POST /graphql (variants+inventory) + product page (store options) — public storefront JWT",
+        "grain": "product × store (store = BigCommerce option value)",
+        "raw": [
+            ("variants[].inventory.aggregated.availableToSell", "EXACT per-store on-hand (=available_on_hand=stock)", "qty"),
+            ("variants[].sku", "SKU (sku-storeValue)", "sku"),
+            ("variants[].upc", "UPC — was NOT requested; added to the query (the master key)", "upc"),
+            ("variants[].gtin", "GTIN — added to the query", "gtin"),
+            ("variants[].inventory.isInStock", "in-stock bool", "instock"),
+            ("variants[].options...values.label", "the STORE ('ABC #003 - OBT' / 'Online')", "store"),
+            ("prices.price.value", "chain price (one price, not per-store)", "price"),
+            ("available_variant_values[] (product page)", "in-stock store-option values (HTML fallback path)", "instock set"),
+            ("available_on_hand / available_to_sell / stock", "same number via the availability endpoint", "qty (via GraphQL)"),
+            ("out_of_stock_behavior / out_of_stock_message", "OOS handling", "raw"),
+            ("v3_variant_id / variantId / mpn / weight", "BigCommerce ids", "raw"),
+        ],
+        "notes": "abc_fws_scraper.py. Counts (availableToSell) + now UPC/GTIN. Store is a BC product option; the "
+                 "product page's available_variant_values is the robots-safe in/out fallback when GraphQL is off.",
+    },
     # ── Binny's — public Algolia index (binnys_scraper.py). The hit carries 57 fields; we take the valuable
     # ones. Native per-store NUMERIC qty is the prize. (audited live 2026-07-15) ──
     "binnys": {
@@ -232,11 +254,15 @@ SPEC = {
             ("price.storePrices.{regular,promo}", "price + sale + expiration", "price / sale_price / sale_ends"),
             ("laf[].modality.handoffLocation.{storeId,facilityId}", "store + facility", "store_id / facility_id"),
             ("sourceLocations[].dsdItem", "Direct Store Delivery flag (supplier delivers direct)", "dsd_item"),
-            ("inventorySummaries[]", "empty in sampling — no numeric count", "DROP:empty/no count"),
+            ("inventorySummaries[].details[].availableToSell", "EXACT per-store on-hand COUNT (a NUMBER) — present "
+             "when the response carries populated inventory (a Ralphs sample: 6); empty in an earlier sample "
+             "(then only the HIGH/LOW enum). Kroger IS a Counts source.", "available_units"),
+            ("inventory.locations[].available", "per-store on-hand count (fallback source for the number)", "available_units"),
         ],
-        "notes": "kroger_atlas.py. The dimensions+gtin14 feed bottle_dims/master keyed by GTIN (authoritative + "
-                 "free vs vision-derived); ABV fills a TTB gap; familyTree feeds the dictionary; planogram feeds "
-                 "[[planogram-app]]. Needs a warmed kroger.com cookie + LAF header (store from DD_modStore).",
+        "notes": "kroger_atlas.py. COUNTS: available_units = the exact number when populated. Plus dimensions+gtin14 "
+                 "→ bottle_dims/master keyed by GTIN (free vs vision-derived); ABV fills a TTB gap; familyTree → "
+                 "dictionary; planogram → [[planogram-app]]. Needs a warmed kroger.com cookie + LAF header. Same "
+                 "atlas API on ALL Kroger banners (Ralphs, Fred Meyer, King Soopers, …).",
     },
     # ── Kroger PUBLIC API — THE motivating case: the public Developer API COLLAPSES a numeric count to a 3-value enum.
     # Raw internal count (if any) is UNCONFIRMED — needs a network trace on the site/app (see notes). ──
@@ -259,10 +285,10 @@ SPEC = {
             ("aisleLocations[]", "aisle/shelf", "raw_json"),
             ("images[]", "images", "image"),
         ],
-        "collapsed": [("items[].inventory.stockLevel", "public API inventory = a 3-value enum (HIGH/LOW/OOS), "
-                       "NOT a number. RESOLVED 2026-07-15: the INTERNAL atlas API also collapses to the same "
-                       "enum (availability.inventoryLevel HIGH/LOW) — there is NO raw on-hand count in Kroger's "
-                       "web/app payload at all. The count is scrubbed at the source, not just the public layer.")],
+        "collapsed": [("items[].inventory.stockLevel", "the PUBLIC API's inventory = a 3-value enum "
+                       "(HIGH/LOW/OOS), NOT a number. But the INTERNAL atlas API DOES carry the exact count "
+                       "(inventorySummaries[].details[].availableToSell) — see the kroger_atlas source. So the "
+                       "number exists; it's just scrubbed out of the PUBLIC Developer API.")],
         "internal": [
             ("endpoint", "GET /atlas/v1/product/v2/products?filter.gtin13s=…&projections=items.full,inventory.projected,…"
              " (the 'atlas' gateway the site/app uses; auth = x-laf-object header, LAF = [{assortmentKeys:[…], "
