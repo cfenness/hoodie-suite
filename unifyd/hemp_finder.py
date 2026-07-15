@@ -94,7 +94,8 @@ def run(brands=("cann",), delay=4.0, land=True, log=print):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Hemp retailers in every state via the VTInfo brand finder.")
-    ap.add_argument("--brands", default="cann", help="comma-separated brand keys in vtinfo.BRANDS")
+    ap.add_argument("--brands", default=",".join(vtinfo.HEMP_BRANDS),
+                    help="comma-separated brand keys in vtinfo.BRANDS (default: all hemp brands)")
     ap.add_argument("--delay", type=float, default=1.0)
     a = ap.parse_args(argv)
     run(brands=[b.strip() for b in a.brands.split(",") if b.strip()], delay=a.delay)
