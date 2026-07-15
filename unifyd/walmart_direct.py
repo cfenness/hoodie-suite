@@ -44,11 +44,30 @@ def _size_ml(name):
     return v if u == "ml" else v * 29.5735 if u == "oz" else v * 1000
 
 
-def _get(url, timeout=30):
-    req = urllib.request.Request(url, headers={"User-Agent": _MOB, "Accept": "text/html",
-                                               "Accept-Language": "en-US,en;q=0.9", "Accept-Encoding": "gzip"})
-    raw = urllib.request.urlopen(req, timeout=timeout).read()
-    return gzip.decompress(raw).decode("utf-8", "replace") if raw[:2] == b"\x1f\x8b" else raw.decode("utf-8", "replace")
+# walmart.com is PerimeterX-walled; the old mobile-UA bypass is CLOSED (search now returns the "Robot or human?"
+# px-captcha page, no __NEXT_DATA__). To stay OFF Bright Data, warm a PX cookie once in a real browser (pass the
+# "Robot or human?" yourself), then export `copy(document.cookie)` and set WALMART_COOKIE / --cookie. The warmed
+# `_px3`/`pxvid` session replays here within its TTL — same pattern as Total Wine (also PX) and 7NOW (Incapsula).
+# Long-term clean path = the Walmart I/O official API (no PX, no BD, no captcha) — see walmart-tracker memory.
+WALMART_COOKIE = os.environ.get("WALMART_COOKIE", "")
+
+
+class Blocked(RuntimeError):
+    pass
+
+
+def _get(url, timeout=30, cookie=None):
+    hdrs = {"User-Agent": _MOB, "Accept": "text/html", "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip"}
+    cookie = cookie or WALMART_COOKIE
+    if cookie:
+        hdrs["Cookie"] = cookie
+    raw = urllib.request.urlopen(urllib.request.Request(url, headers=hdrs), timeout=timeout).read()
+    body = gzip.decompress(raw).decode("utf-8", "replace") if raw[:2] == b"\x1f\x8b" else raw.decode("utf-8", "replace")
+    if "px-captcha" in body or "Robot or human" in body[:2000]:
+        raise Blocked("walmart PerimeterX 'Robot or human?' challenge — warm a fresh WALMART_COOKIE in a browser "
+                      "(pass the captcha, then copy(document.cookie)); the mobile-UA bypass is closed.")
+    return body
 
 
 def _find(o, key="itemStacks"):
