@@ -24,6 +24,19 @@ HEMP_RE = re.compile(
     r"\b(hemp|cbd|thc|thca|delta[\s-]?(?:8|9|10)|d8|d9|hhc|cbn|cbg|cbc|"
     r"cannabis|cannabinoid|marijuana|edible|full[\s-]?spectrum)\b", re.I)
 
+# NON-ALCOHOLIC alternatives — a first-class inclusion, not filtered out (Heineken 0.0, Athletic, dealcoholized
+# wine, zero-proof spirits, Seedlip…). The retailer's own CATEGORY is the most reliable signal (Total Wine's
+# "Non-Alcoholic" category is the reference), so PASS the category too — a name alone misses NA house brands.
+NON_ALC_RE = re.compile(
+    r"\b(non[\s-]?alcoholic|alcohol[\s-]?free|de[\s-]?alcoholi[sz]ed|dealcoholi[sz]ed|"
+    r"zero[\s-]?proof|non[\s-]?alc|\bN\.?A\.?\s+(?:beer| (?:i\.?)?p\.?a)|"       # "N/A beer", "NA IPA"
+    r"0\.0\s*%?(?:\s*abv)?|0\.5\s*%\s*abv)\b", re.I)
+# non-alc house brands / lines that don't say "non-alcoholic" in the name
+NON_ALC_BRANDS = re.compile(
+    r"\b(athletic brewing|athletic\b|heineken\s*0\.?0?|budweiser zero|corona (?:cero|sunbrew)|guinness\s*0|"
+    r"lagunitas ipna|best day brewing|partake|ghia|seedlip|ritual zero|lyre'?s|monday (?:gin|zero)|"
+    r"gruvi|surely|st\.?\s*agrestis|hop wtr|for bitter for worse|three spirit|sipsmith freeglider)\b", re.I)
+
 # lean, dated time-series columns (the FULL raw record + images live in each <conn>_products snapshot)
 OBS_FIELDS = ["date", "source", "store", "store_id", "product_id", "upc", "brand", "name",
               "price", "promo", "on_promo", "in_stock", "qty", "stock_level", "is_hemp"]
@@ -32,6 +45,14 @@ OBS_FIELDS = ["date", "source", "store", "store_id", "product_id", "upc", "brand
 def is_hemp(*texts):
     """True if any of the given text fields looks like a hemp/THC/CBD product."""
     return bool(HEMP_RE.search(" ".join(str(t or "") for t in texts)))
+
+
+def is_non_alc(*texts):
+    """True if the product is a NON-ALCOHOLIC alternative. Pass name AND category (+ brand) — the retailer's
+    category is the strongest signal; the name regex + a house-brand list cover the rest (Heineken 0.0,
+    Athletic, dealcoholized wine, zero-proof spirits)."""
+    s = " ".join(str(t or "") for t in texts)
+    return bool(NON_ALC_RE.search(s) or NON_ALC_BRANDS.search(s))
 
 
 def record(source, rows, date=None, log=print, part=None):
