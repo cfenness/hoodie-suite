@@ -49,13 +49,47 @@ def _geo(cats):
     return g
 
 
+import re
+_AWARD = re.compile(
+    r"\b(Double Gold|Gold|Silver|Bronze|Platinum|Best in Class|\d{2,3}\s*(?:points?|pts))\b\s*[-–—]?\s*"
+    r"([A-Z][A-Za-z0-9&'. ]*(?:Awards?|Competition|Challenge|Spectator|Advocate|Enthusiast|SIP))?", 0)
+
+
+def _chars(d):
+    """itemCharacteristics = the RNDC-style attribute vector Total Wine serves: finish/taste/style/body/varietal.
+    Richer than the `categories` geo, so take it too. TASTE1/2/3 collapse into one comma-joined taste."""
+    out = {"finish": "", "taste": "", "style": "", "body": ""}
+    tastes = []
+    for c in (d.get("itemCharacteristics") or []):
+        t, v = (c.get("type") or ""), (c.get("value") or "")
+        if not v:
+            continue
+        if t == "FINISH":
+            out["finish"] = v
+        elif t.startswith("TASTE"):
+            tastes.append(v)
+        elif t == "STYLE":
+            out["style"] = v
+        elif t == "BODY":
+            out["body"] = v
+    out["taste"] = ", ".join(tastes)
+    return out
+
+
+def _award(review):
+    m = _AWARD.search(review or "")
+    return (m.group(0).strip(" -–—") if m else "")
+
+
 def parse_product(d, store_id, store_name=""):
-    """getProduct JSON -> a flat observation+enrichment record. None if the payload isn't a product."""
+    """getProduct JSON -> a flat observation+enrichment record with EVERYTHING Total Wine serves. None if not a
+    product. NOTE: Total Wine's getProduct exposes NO UPC field — upc stays '' by design, not an oversight."""
     if not isinstance(d, dict) or not d.get("skuId"):
         return None
     sm = d.get("stockMessages") or {}
     stock = (d.get("stockLevel") or [{}])
-    units = (stock[0] or {}).get("stock")
+    st0 = stock[0] or {}
+    units = st0.get("stock")
     if units is None:
         units = sm.get("digitalStoreQuantity")
     price = None
@@ -64,15 +98,34 @@ def parse_product(d, store_id, store_name=""):
             price = p.get("price"); break
     in_stock = bool(sm.get("digitalInStock") or sm.get("shippingInStock")) and not d.get("unavailableAtStore")
     g = _geo(d.get("categories"))
+    ch = _chars(d)
+    brand = d.get("brand") or {}
+    imgs = d.get("images") or []
+    review = d.get("review") or ""
+    badges = [b.get("badgeCode") for b in (d.get("merchBadges") or []) if isinstance(b, dict)]
     return {"store_id": str(store_id), "store": store_name or ("Total Wine #%s" % store_id),
             "product_id": d.get("skuId"), "sku": d.get("skuId"), "upc": "",
-            "brand": ((d.get("brand") or {}).get("name") if isinstance(d.get("brand"), dict) else "") or "",
-            "name": d.get("name") or "", "price": price, "in_stock": in_stock, "qty": units,
+            "brand": (brand.get("name") if isinstance(brand, dict) else "") or "",
+            "brand_id": (brand.get("id") if isinstance(brand, dict) else "") or "",
+            "name": d.get("name") or "", "price": price, "price_type": (d.get("price") or [{}])[0].get("type", ""),
+            "in_stock": in_stock, "qty": units,
+            "store_qty": sm.get("digitalStoreQuantity"), "shipping_qty": sm.get("shippingStoreQuantity"),
+            "purchase_limit": st0.get("purchaseLimit"),
             "stock_level": ("OOS" if not in_stock else ("LIMITED" if sm.get("digitalLimitedStock") else "IN")),
             "size": d.get("packageDescription") or "", "abv": d.get("alcoholPercentage"),
-            "shipping_qty": sm.get("shippingStoreQuantity"),
             "bay": d.get("bay") or "", "shelf": d.get("shelf") or "", "aisle": d.get("location") or "",
-            "is_hemp": observe.is_hemp(d.get("name") or ""), **g}
+            "raw_location": d.get("rawLocation") or "",              # full multi-location planogram (lisaInfo)
+            "finish": ch["finish"], "taste": ch["taste"], "body": ch["body"],
+            "tasting_notes": review[:800], "award": _award(review),
+            "pairings": ", ".join(o for pc in (d.get("pairingsConfig") or []) for o in (pc.get("options") or [])),
+            "rating": d.get("customerAverageRating"), "reviews": d.get("customerReviewsCount"),
+            "department": d.get("department") or "", "direct_ship": d.get("directType") or "",
+            "is_new": "new" in badges,
+            "url": d.get("productUrl") or d.get("canonicalUrl") or "",
+            "image": (imgs[0].get("url") or imgs[0].get("imageUrl") if imgs and isinstance(imgs[0], dict) else "") or "",
+            "is_hemp": observe.is_hemp(d.get("name") or "", ch["style"] or g.get("style") or ""),
+            "raw_json": json.dumps(d, separators=(",", ":"))[:6000],
+            "style": ch["style"] or g["style"], "varietal": g["varietal"], "origin": g["origin"], "region": g["region"]}
 
 
 def _skuids_from_sitemap(limit, log):
@@ -179,6 +232,22 @@ def _pull_direct(store_id, state, skuids, log):
     return rows
 
 
+def enrich_rows(rows):
+    """parse_product records -> total_wine_products enrichment records (FULL field set incl. finish/taste/award/
+    pairings/planogram + raw_json). Shared by pull_store and total_wine_full._land so both land the same schema."""
+    def _s(v):
+        return "" if v is None else str(v)
+    return [{"sku": _s(r["sku"]), "name": _s(r["name"]), "brand": _s(r["brand"]), "brand_id": _s(r["brand_id"]),
+             "size": _s(r["size"]), "price": r["price"], "abv": _s(r["abv"]), "varietal": _s(r["varietal"]),
+             "origin": _s(r["origin"]), "region": _s(r["region"]), "style": _s(r["style"]), "category": _s(r["style"]),
+             "finish": _s(r["finish"]), "taste": _s(r["taste"]), "body": _s(r["body"]),
+             "tasting_notes": _s(r["tasting_notes"]), "award": _s(r["award"]), "pairings": _s(r["pairings"]),
+             "rating": r["rating"], "reviews": r["reviews"], "purchase_limit": r["purchase_limit"],
+             "store_qty": r["store_qty"], "direct_ship": _s(r["direct_ship"]), "department": _s(r["department"]),
+             "url": _s(r["url"]), "image": _s(r["image"]), "raw_location": _s(r["raw_location"]),
+             "raw_json": _s(r["raw_json"]), "store_id": _s(r["store_id"])} for r in rows]
+
+
 def pull_store(store_id, state=None, limit=300, log=print):
     log("[tw-inv] store %s: building product universe from sitemap…" % store_id)
     skuids = _skuids_from_sitemap(limit, log)
@@ -193,12 +262,7 @@ def pull_store(store_id, state=None, limit=300, log=print):
     # enrich the master's total_wine_products with geo/abv/price (accumulate, keyed by sku)
     # coerce to match the existing total_wine_products schema (abv is a string there from the catalog crawl;
     # price stays float) so write_accumulate doesn't hit a column type conflict.
-    def _s(v):
-        return "" if v is None else str(v)
-    enr = [{"sku": _s(r["sku"]), "name": _s(r["name"]), "brand": _s(r["brand"]), "size": _s(r["size"]),
-            "price": r["price"], "abv": _s(r["abv"]), "varietal": _s(r["varietal"]), "origin": _s(r["origin"]),
-            "region": _s(r["region"]), "style": _s(r["style"]), "category": _s(r["style"]), "url": "",
-            "store_id": _s(r["store_id"])} for r in rows]
+    enr = enrich_rows(rows)
     try:
         warehouse.write_accumulate("total_wine_products", enr, key=lambda r: r["sku"])
     except Exception as e:
