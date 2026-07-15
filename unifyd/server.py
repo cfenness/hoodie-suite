@@ -2136,7 +2136,7 @@ def _sku_full(cid):
     return st
 
 
-_COLA_URL = "https://ttbonline.gov/colasonline/viewColaDetails.do?action=publicFormDisplay&ttbid=%s"
+_COLA_URL = "https://www.ttbonline.gov/colasonline/viewColaDetails.do?action=publicDisplaySearchBasic&ttbid=%s"
 
 
 def _item_cola_filings(cid):

@@ -148,7 +148,7 @@ async function openItem(cid){
     +'<span class="k">Cluster</span><span class="mono">'+esc(m.cluster_id)+'</span></div>';
   const und='<div class="undhd">Underlying COLA filings ('+f.length+') — the raw items inside this master record</div>'
     +(f.length?'<div style="overflow-x:auto"><table><thead><tr><th>TTB ID</th><th>Fanciful</th><th>Applicant</th><th>Status</th><th>Date</th></tr></thead><tbody>'
-      +f.map(x=>'<tr><td class="mono"><a href="'+esc(x.cola_url||('https://ttbonline.gov/colasonline/viewColaDetails.do?action=publicFormDisplay&ttbid='+encodeURIComponent(x.ttb_id||'')))+'" target="_blank" rel="noopener" title="Open the TTB COLA detail page">'+esc(x.ttb_id||'—')+' ↗</a></td><td>'+esc(x.fanciful||'—')+'</td><td>'+esc((x.applicant||'').slice(0,26))+'</td><td>'+esc(x.status||'')+'</td><td class="mono">'+esc(x.completed||x.approved||'')+'</td></tr>').join('')
+      +f.map(x=>'<tr><td class="mono"><a href="'+esc(x.cola_url||('https://www.ttbonline.gov/colasonline/viewColaDetails.do?action=publicDisplaySearchBasic&ttbid='+encodeURIComponent(x.ttb_id||'')))+'" target="_blank" rel="noopener" title="Open the TTB COLA detail page">'+esc(x.ttb_id||'—')+' ↗</a></td><td>'+esc(x.fanciful||'—')+'</td><td>'+esc((x.applicant||'').slice(0,26))+'</td><td>'+esc(x.status||'')+'</td><td class="mono">'+esc(x.completed||x.approved||'')+'</td></tr>').join('')
       +'</tbody></table></div>':'<div class="count">no TTB COLA filings for this item</div>');
   $('#detail').innerHTML='<div class="detail"><div class="dhead"><div class="b">'+esc(m.brand||'—')+'</div><div class="f">'+esc(m.fanciful||m.class_type||'')+'</div></div><div class="dbody">'+auto+kv+und+'</div></div>';
 }
