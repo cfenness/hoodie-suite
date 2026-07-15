@@ -49,22 +49,37 @@ def _chain(name):
     return "independent"
 
 
-def run(brands=("cann",), delay=1.0, land=True, log=print):
-    zips = list(STATE_ZIPS.values())
+def run(brands=("cann",), delay=4.0, land=True, log=print):
+    import time
     all_rows, by_state = {}, {}
     for brand in brands:
-        ds, runs, mv = vtinfo.pull(brand=brand, zips=zips, delay=delay, out="/tmp/vt_hemp",
-                                   state_dir="/tmp/vt_hemp", log=log)
-        rows = next(iter(ds.values()), {}).get("_rows_full", []) if ds else []
-        for r in rows:
-            rec = dict(zip(vtinfo.HEADER, r))              # Brand,Account,Street,City,State,Zip,Phone,Miles,Lat,Lng,StoreType,Source,Zip_Searched
-            key = (rec["Brand"], rec["Account"], rec["Street"])
-            all_rows[key] = {"brand": rec["Brand"], "account": rec["Account"], "chain": _chain(rec["Account"]),
-                             "street": rec["Street"], "city": rec["City"], "state": rec["State"],
-                             "zip": rec["Zip"], "phone": rec["Phone"], "lat": rec.get("Lat", ""),
-                             "lng": rec.get("Lng", ""), "store_type": rec.get("StoreType", ""),
-                             "source": "vtinfo", "zip_searched": rec.get("Zip_Searched", "")}
-            by_state[rec["State"]] = by_state.get(rec["State"], 0) + 1
+        b = vtinfo.BRANDS.get(brand, {})
+        custID, uuid = b.get("custID"), b.get("uuid", "")
+        m, theme = b.get("m", "5"), b.get("theme", "1")
+        for state, z in STATE_ZIPS.items():
+            backoff = 25
+            for attempt in range(4):                       # VTInfo arms an h-captcha on rapid requests; it's
+                try:                                       # rate-based, so back off and retry rather than lose the zip
+                    rows = list(vtinfo.search_zip(custID, uuid, z, delay=delay, m=m, theme=theme, log=lambda *a: None))
+                    for r in rows:
+                        key = (brand, r["account"], r["street"])
+                        all_rows[key] = {"brand": r.get("brand") or brand, "account": r["account"],
+                                         "chain": _chain(r["account"]), "street": r["street"], "city": r["city"],
+                                         "state": r["state"] or state, "zip": r["zip"], "phone": r["phone"],
+                                         "lat": r.get("lat", ""), "lng": r.get("lng", ""),
+                                         "store_type": r.get("store_type", ""), "source": "vtinfo",
+                                         "zip_searched": r.get("zip_searched", z)}
+                        by_state[r["state"] or state] = by_state.get(r["state"] or state, 0) + 1
+                    log("  %s %s: %d accounts (running %d)" % (state, z, len(rows), len(all_rows)))
+                    break
+                except RuntimeError as e:
+                    if "captcha" in str(e).lower() and attempt < 3:
+                        log("  %s captcha — backing off %ds" % (state, backoff)); time.sleep(backoff); backoff *= 2
+                        continue
+                    log("  %s %s: %s" % (state, z, str(e)[:60])); break
+                except Exception as e:
+                    log("  %s %s: %s" % (state, z, str(e)[:60])); break
+            time.sleep(delay)
     recs = list(all_rows.values())
     if land and recs:
         warehouse.write_accumulate("hemp_retailers", recs,
