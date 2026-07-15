@@ -1,0 +1,457 @@
+#!/usr/bin/env python3
+"""source_spec.py — the RAW field inventory per source, kept SEPARATE from the structured/master schema.
+
+`gen_provenance.py` says, at a summary level, WHAT each source provides. This says exactly WHICH raw fields a
+source emits — verbatim field names, what each means, and which structured/master field we map it into (or
+whether it's DROPPED, i.e. kept only in raw_json, never promoted). Two reasons this is its own artifact:
+
+  1. **Catch collapsed signal.** The raw list is where a source quietly loses fidelity before we even map it —
+     the canonical case is Kroger, whose public API collapses a numeric on-hand count to HIGH/LOW/OOS. A raw
+     field inventory makes "is there a truer field we're not seeing?" answerable per source.
+  2. **Never silently drop a field.** Every raw field is accounted for: mapped, or explicitly DROPPED with a
+     reason. New source fields that appear on a re-pull show up as un-catalogued → a prompt to decide.
+
+Keep this current with every scraper change (see the provenance directive). `raw` field names are EXACTLY as
+the source emits them (dotted = nested). `maps_to` = the structured field; "" = raw_json only (not promoted);
+"DROP:<why>" = deliberately excluded. Emit `source_fields.json` for the MDM page + a workbook sheet.
+
+    python source_spec.py            # print a coverage summary
+    python source_spec.py --json     # emit source_fields.json
+"""
+import argparse
+import json
+import os
+import sys
+
+# Each entry: source key -> {"label","endpoint","grain","raw":[(field, meaning, maps_to), ...],"notes"}
+# maps_to conventions: a structured field name, "" (raw_json only), or "DROP:<reason>".
+SPEC = {
+    # ── 7-Eleven / 7NOW — first-party BFF. EXACT per-store count is present RAW (store_quantity); the ORDER
+    # cap (availableQuantity ≤100) is a separate, collapsed field. Both captured. (observed 2026-07-15) ──
+    "sevennow": {
+        "label": "7-Eleven (7NOW)",
+        "endpoint": "GET /api/bff/unified-catalog/v1/conv/inventory/subcategories?storeId&categoryId",
+        "grain": "product × store",
+        "raw": [
+            ("store_quantity", "TRUE on-hand unit count (uncapped)", "qty / store_quantity"),
+            ("availableQuantity", "ORDERABLE cap (min(store_quantity−buffer, 100)) — collapsed", "available_quantity"),
+            ("available", "in-stock bool", "available / in_stock"),
+            ("availabilityMessage", "'Available' etc.", "stock_level"),
+            ("minimum_on_hand_quantity", "reorder floor", ""),
+            ("limit_per_order", "per-order max", ""),
+            ("current_order_quantity", "qty already in this cart", "DROP:session-specific"),
+            ("ignore_quantity", "sell-without-stock flag", ""),
+            ("upc", "14-digit UPC", "upc"),
+            ("slin", "7-Eleven internal SKU", "slin"),
+            ("product_id", "catalog product id (e.g. 175730-0-1)", "product_id"),
+            ("name", "product name", "name"),
+            ("brand", "brand", "brand"),
+            ("size_value", "size (e.g. 24oz)", "size"),
+            ("price", "price in cents", "price (÷100)"),
+            ("original_price", "pre-deal price in cents", "original_price"),
+            ("promos", "array of deals {promo_short_desc,promo_long_desc,expiration_date,promo_type}", "on_promo/promo/promo_desc/promo_ends"),
+            ("age_restricted", "alcohol/tobacco flag", "age_restricted"),
+            ("age_restriction", "min age", ""),
+            ("category", "department name", "category"),
+            ("category_id", "department id", "department_id"),
+            ("subcategory", "subcategory", "subcategory"),
+            ("department_id", "department id", ""),
+            ("images", "image URLs", "image"),
+            ("thumbnail", "thumbnail URL", "image (fallback)"),
+            ("long_desc", "description", "long_desc"),
+            ("calories", "calories", "DROP:not bev-alc relevant"),
+            ("country", "country", "DROP:always US"),
+            ("tags", "merch tags", "raw_json"),
+            ("meta_tags", "SEO tags", "DROP:SEO"),
+            ("matching_ids", "cross-catalog ids", "raw_json"),
+            ("matching_slins", "cross-catalog slins", "raw_json"),
+            ("has_modifiers", "configurable flag", "DROP:food only"),
+            ("isComboEligible", "combo-deal flag", "raw_json"),
+            ("isFoodStampAllowed", "EBT flag", "DROP:not relevant"),
+            ("popularity", "rank", "raw_json"),
+            ("catalog_type", "catalog id (7now)", "DROP:constant"),
+            ("consent_required", "age-gate flag", "raw_json"),
+            ("bundle_promo_id", "bundle id", "raw_json"),
+            ("nudge_description", "upsell text", "DROP:marketing"),
+        ],
+        "store_summary": [("inventory.active", "# active products at store", "store metric"),
+                          ("inventory.outOfStock", "# OOS products at store", "store metric")],
+        "notes": "store_summary from content/homepage .inventory. store_quantity is the whole point — a real "
+                 "count where most chains give in/out only.",
+    },
+    # ── Haskell's — BigCommerce Storefront GraphQL (public JWT). Real count = availableToSell. (2026-07-15) ──
+    "haskells": {
+        "label": "Haskell's (BigCommerce)",
+        "endpoint": "POST /graphql  site.route(path).node ...Product",
+        "grain": "product (single store)",
+        "raw": [
+            ("entityId", "BigCommerce product id", "product_id"),
+            ("name", "product name", "name"),
+            ("sku", "SKU", "sku"),
+            ("brand.name", "brand", "brand"),
+            ("prices.price.value", "current price", "price"),
+            ("prices.retailPrice.value", "list/retail price", "retail_price"),
+            ("prices.salePrice.value", "sale price (if on sale)", "price + on_sale"),
+            ("variants[].sku", "variant SKU", "sku"),
+            ("variants[].gtin", "UPC/GTIN", "upc"),
+            ("variants[].upc", "UPC (alt field)", "upc (fallback)"),
+            ("variants[].inventory.isInStock", "in-stock bool", "in_stock"),
+            ("variants[].inventory.aggregated.availableToSell", "EXACT on-hand units", "qty"),
+            ("defaultImage.url", "image", "image"),
+        ],
+        "notes": "Whole catalog via sitemap (sidesteps the pagination-100 cap). Storefront JWT scraped from the "
+                 "product page. Category from the page breadcrumb (not GraphQL here).",
+    },
+    # ── City Hive — SEO surface (widget product API is session-walled). No count via SEO. (2026-07-15) ──
+    "cityhive": {
+        "label": "City Hive (SEO surface)",
+        "endpoint": "GET product page — JSON-LD Product + OpenGraph meta",
+        "grain": "product × store",
+        "raw": [
+            ("ld:name", "product name (JSON-LD)", "name"),
+            ("ld:brand.name", "brand", "brand"),
+            ("ld:sku", "SKU", "sku"),
+            ("ld:gtin13|gtin12|gtin", "UPC/GTIN", "upc"),
+            ("ld:category", "category", "category"),
+            ("ld:description", "description", "description"),
+            ("ld:offers.price", "price (JSON-LD)", "price (fallback)"),
+            ("ld:image", "image", "image"),
+            ("og:title", "'Name SIZE - Store'", "name/size_ml"),
+            ("product:price:amount", "price (OpenGraph)", "price"),
+            ("og:description", "'Buy NAME size for $X from City - Store #NN in City, ST'", "store/store_loc/size"),
+            ("ch:product:id", "City Hive product id", "pid/sku (fallback)"),
+            ("og:image", "image", "image (fallback)"),
+            ("url:option-id", "option id (from product URL)", "option_id"),
+        ],
+        "walled": [("product_options[].quantity", "per-store on-hand count", "NOT AVAILABLE via SEO — widget API session-walled"),
+                   ("product_options[].max_purchase_quantity", "order cap", "widget API only"),
+                   ("product_option/<id>/prices.json", "per-store price (public, needs store ctx)", "not yet wired"),
+                   ("product/<id>/offers.json?option_id", "promos (public)", "not yet wired")],
+        "notes": "Full catalog + price from SEO, no browser. Per-store count needs the session-walled widget "
+                 "API (see [[cityhive-crack]]). prices.json/offers.json are public but need store/option context.",
+    },
+    # ── Total Wine — getProduct API (total_wine_inventory.py). The RICHEST payload we get: exact counts + the
+    # full RNDC attribute vector + awards + multi-location planogram. NO UPC field. (audited 2026-07-15) ──
+    "total_wine": {
+        "label": "Total Wine (getProduct)",
+        "endpoint": "GET /product/api/product/product-detail/v1/getProduct/<skuId>?...&storeId=<S> (warmed PX cookie)",
+        "grain": "product × store",
+        "raw": [
+            ("skuId", "SKU (productId-1) — NO UPC exists anywhere in the payload", "sku (upc always '')"),
+            ("stockLevel[].stock", "EXACT per-store on-hand units", "qty"),
+            ("stockLevel[].purchaseLimit", "per-order purchase cap", "purchase_limit"),
+            ("stockMessages.{digitalStoreQuantity,shippingStoreQuantity,digitalInStock,digitalLimitedStock}",
+             "store + shipping quantities + in/limited-stock flags", "store_qty / shipping_qty / stock_level"),
+            ("price[].{price,type}", "price + type (EDLP)", "price / price_type"),
+            ("name / brand.{name,id}", "name + brand + brand id", "name / brand / brand_id"),
+            ("packageDescription / options[].value", "size ('1.75L Box') + package variants", "size"),
+            ("alcoholPercentage", "ABV", "abv"),
+            ("itemCharacteristics[] (FINISH/TASTE1-3/STYLE/BODY)", "RNDC attribute vector", "finish/taste/style/body"),
+            ("categories[] (VARIETAL_TYPE/COUNTRY_STATE/REGION/PRODUCT_TYPE)", "geo/type", "varietal/origin/region/style"),
+            ("review", "tasting notes + AWARD ('Gold - SIP Awards', '92 points')", "tasting_notes / award (parsed)"),
+            ("pairingsConfig[].options / productHighlights / tasteProfiles", "food pairings + taste descriptors", "pairings"),
+            ("customerAverageRating / customerReviewsCount", "ratings", "rating / reviews"),
+            ("lisaInfo[] / rawLocation / bay / shelf / location", "MULTI-LOCATION planogram (aisle + cooler door)",
+             "bay / shelf / aisle / raw_location"),
+            ("productUrl / canonicalUrl", "URL", "url"),
+            ("images[].url", "image", "image"),
+            ("department / directType / salesStrategy", "dept + Spirits-Direct ship flag", "department / direct_ship"),
+            ("merchBadges[] (new)", "merch badges", "is_new"),
+            ("shoppingOptions[] / skus[] / breadCrumbs / metaDescription", "fulfillment / variants / nav", "raw_json"),
+        ],
+        "notes": "total_wine_inventory.py parse_product (audited a real getProduct). COUNTS (stock) + the fullest "
+                 "enrichment of any source — RNDC vector, awards, pairings, multi-location planogram — but NO UPC.",
+    },
+    # ── Stop & Shop — Ahold/Peapod product API (stop_and_shop.py). Rich master + planogram. (2026-07-15) ──
+    "stop_and_shop": {
+        "label": "Stop & Shop (Ahold/Peapod)",
+        "endpoint": "GET /api/v6.0/products/<store>?text=… (robots-DISALLOWED /api/; warmed session)",
+        "grain": "product × store",
+        "raw": [
+            ("prodId", "Peapod product id", "prod_id"),
+            ("upc", "UPC — the master key", "upc"),
+            ("name / brand / brandId", "name + brand", "name / brand / brand_id"),
+            ("size / unitMeasure", "size ('750 ML BTL') + unit ('LTR')", "size / unit_measure"),
+            ("price / regularPrice / unitPrice / weightedRegularPrice", "prices", "price / regular_price / unit_price"),
+            ("aisle / section / pickStoreLocationId", "PLANOGRAM (aisle 9 / section 026 / '09B-026-001-002')",
+             "aisle / section / pick_location"),
+            ("categoryPath[] / subcatName / rootCatName / subcatId", "category tree + subcat ('Non-Alcoholic Beer')",
+             "category_path / subcat / root_cat"),
+            ("isAlcohol", "bev-alc flag", "is_alcohol"),
+            ("bottleDepositMap", "per-state bottle deposit {NY:0.05}", "bottle_deposit"),
+            ("nutrition.{totalCalories,servingSize,servingsPerContainer}", "nutrition", "calories/serving_size/servings"),
+            ("flags.outOfStock", "in/out bool — NO numeric count", "out_of_stock"),
+            ("hasCoupon / availableDisplayCoupons / advertiseOnSale / bmsm", "promo signals", "has_coupon / on_sale"),
+            ("ebtEligible / isMarketplaceProduct", "EBT / 3P flags", "ebt_eligible / marketplace"),
+            ("image.{small,medium,large}", "image", "image"),
+            ("rating / reviewId / guidingStars / sustainabilityRating / weightIncrement", "misc", "raw_json"),
+        ],
+        "notes": "stop_and_shop.py parse_product. Peapod platform → Giant/Hannaford/Food Lion by host. Rich master "
+                 "+ planogram + nutrition + deposits; no count. ToS-sensitive (robots disallows /api/).",
+    },
+    # ── H-E-B (target — no payload yet) ──
+    "heb": {
+        "label": "H-E-B (target)",
+        "endpoint": "heb.com — React + GraphQL (robots DISALLOWS /graphql); sitemap open",
+        "grain": "product × store (TX/MX)",
+        "raw": [("(payload needed)", "GraphQL is robots-blocked + anti-bot; recon via a captured response to map "
+                 "fields (expect: name, brand, price, size, per-store availability, aisle). Strong TX beer/wine.", "TBD")],
+        "notes": "Not built. Recon needed — capture a heb.com product GraphQL response to inventory the fields.",
+    },
+    # ── Aldi US (target — no payload yet) ──
+    "aldi": {
+        "label": "Aldi US (target)",
+        "endpoint": "aldi.us — product API (robots DISALLOWS /api/)",
+        "grain": "product (mostly chain-level)",
+        "raw": [("(payload needed)", "alcohol = private-label (Winking Owl wine etc.) in wine-permitted states; "
+                 "capture an aldi.us product API response to map fields. ToS-sensitive (/api/ disallowed).", "TBD")],
+        "notes": "Not built. Recon needed — capture an aldi.us product response.",
+    },
+    # ── Trader Joe's — Adobe Commerce (Magento) GraphQL (data.products.items[]). Food-primary; sells wine only
+    # in CA (Charles Shaw). No UPC + no count in the payload (availability is a 1/0 flag). (2026-07-15) ──
+    "trader_joes": {
+        "label": "Trader Joe's (Magento GraphQL)",
+        "endpoint": "POST /api/graphql  data.products.items[]",
+        "grain": "product (chain-level; no per-store)",
+        "raw": [
+            ("sku", "TJ internal SKU (e.g. 083981) — NO UPC anywhere in the payload", "sku"),
+            ("item_title", "name", "name"),
+            ("price_range.minimum_price.final_price.value", "price", "price"),
+            ("retail_price", "list price (string)", "price (fallback)"),
+            ("availability", "'1'/'0' flag — in/out only, NO count", "in_stock"),
+            ("category_hierarchy[].name", "category tree (Products>Food>From The Freezer>…)", "category_path"),
+            ("sales_size / sales_uom_description", "size + unit ('7 Oz')", "size"),
+            ("primary_image / primary_image_meta", "image (+ srcset renditions)", "image"),
+            ("published / __typename", "publish flag / SimpleProduct|ConfigurableProduct", "raw_json"),
+        ],
+        "notes": "Adobe Commerce GraphQL — same recipe shape as any Magento store. Food-first; the bev-alc slice "
+                 "is CA wine only (Charles Shaw). No UPC, no numeric count. Not yet built as a connector.",
+    },
+    # ── ABC Fine Wine (FL) — BigCommerce. Store = a product-option VARIANT; the storefront GraphQL + the
+    # availability endpoint give exact per-store count + UPC/GTIN. (abc_fws_scraper.py, audited 2026-07-15) ──
+    "abc_fws": {
+        "label": "ABC Fine Wine (BigCommerce)",
+        "endpoint": "POST /graphql (variants+inventory) + product page (store options) — public storefront JWT",
+        "grain": "product × store (store = BigCommerce option value)",
+        "raw": [
+            ("variants[].inventory.aggregated.availableToSell", "EXACT per-store on-hand (=available_on_hand=stock)", "qty"),
+            ("variants[].sku", "SKU (sku-storeValue)", "sku"),
+            ("variants[].upc", "UPC — was NOT requested; added to the query (the master key)", "upc"),
+            ("variants[].gtin", "GTIN — added to the query", "gtin"),
+            ("variants[].inventory.isInStock", "in-stock bool", "instock"),
+            ("variants[].options...values.label", "the STORE ('ABC #003 - OBT' / 'Online')", "store"),
+            ("prices.price.value", "chain price (one price, not per-store)", "price"),
+            ("available_variant_values[] (product page)", "in-stock store-option values (HTML fallback path)", "instock set"),
+            ("available_on_hand / available_to_sell / stock", "same number via the availability endpoint", "qty (via GraphQL)"),
+            ("out_of_stock_behavior / out_of_stock_message", "OOS handling", "raw"),
+            ("v3_variant_id / variantId / mpn / weight", "BigCommerce ids", "raw"),
+        ],
+        "notes": "abc_fws_scraper.py. Counts (availableToSell) + now UPC/GTIN. Store is a BC product option; the "
+                 "product page's available_variant_values is the robots-safe in/out fallback when GraphQL is off.",
+    },
+    # ── Binny's — public Algolia index (binnys_scraper.py). The hit carries 57 fields; we take the valuable
+    # ones. Native per-store NUMERIC qty is the prize. (audited live 2026-07-15) ──
+    "binnys": {
+        "label": "Binny's (Algolia)",
+        "endpoint": "POST {app}-dsn.algolia.net/1/indexes/Products_Production/query (public search key)",
+        "grain": "product × store",
+        "raw": [
+            ("objectID", "product id (Binny's SKU)", "sku"),
+            ("storesPriceAndInventory[].purchaseAvailability", "EXACT per-store on-hand units", "qty"),
+            ("storesPriceAndInventory[].prices.{regularPrice,salePrice,isOnSale}", "per-store price", "price"),
+            ("productName / productBrandName", "name / brand", "name / brand"),
+            ("proof", "proof → ABV (proof/2) — the big gap this audit closed (was capturing NO ABV)", "proof / abv"),
+            ("productVarietal / region / country / productType / productDepartment", "geo + type + dept",
+             "varietal / region / origin / category / department"),
+            ("itemSize / priceUnitLabel", "size + '750 ml Bottle' unit label", "item_size / unit_label"),
+            ("casePack", "bottles per case", "case_pack"),
+            ("ratingNumber / reviewsAmount", "ratings", "rating / reviews"),
+            ("pricePercentDiscount / isDealOfTheWeek", "promo/discount signals", "discount_pct / deal_of_week"),
+            ("isSoldOut / isInStoreOnly / inStockStores / onSaleStores", "availability signals", "is_sold_out / in_store_only"),
+            ("shortDescription / productDescriptionLong", "descriptions", "short_desc"),
+            ("productUrl / productLink", "product URL", "product_url"),
+            ("imageUrl / relativeImageUrl", "image", "image"),
+            ("thcMgPer{Serving,Unit,SellPack} / cbdMgPer*", "THC/CBD dose — schema-present but EMPTY at Binny's "
+             "across all hemp products (captured anyway, future-proof — NOT a live THC-mg source)", "thc_mg / cbd_mg"),
+            ("designations / hierarchicalCategories / cigarShape|Size|Strength|Wrapper", "wine designations / cat "
+             "tree / cigar attrs", "raw_json"),
+            ("pointsMax/Min / variantCode / replacementCode / priceBoostIndex / date_timestamp", "loyalty/internal",
+             "DROP:internal"),
+            ("(no upc/gtin)", "Binny's Algolia exposes NO UPC — matching rests on name-key + variantCode", "—"),
+        ],
+        "notes": "binnys_scraper.py to_snapshot. Live-audited: 14,678 cells all with qty; proof→ABV on ~43%. "
+                 "Also fixed: the scraper now write_accumulates binnys_products + observe (was snapshot-JSON only).",
+    },
+    # ── Walmart — /ip/ detail __NEXT_DATA__ product object (walmart_direct.py, DIRECT via mobile UA). Rich
+    # master + enrichment; UPC is exposed on DETAIL (not search). (captured 2026-07-15) ──
+    "walmart": {
+        "label": "Walmart (/ip/ detail)",
+        "endpoint": "GET /ip/… __NEXT_DATA__ .product  (mobile UA past PerimeterX, no BD)",
+        "grain": "product × store",
+        "raw": [
+            ("usItemId", "Walmart item id", "item_id"),
+            ("upc", "UPC — the master match key (DETAIL only; search hides it)", "upc"),
+            ("id / offerId", "product/offer ids", "offer_id"),
+            ("name", "product name", "product_name"),
+            ("brand", "brand", "brand"),
+            ("type", "Walmart class (Wine/Beer/…)", "type"),
+            ("rhPath", "retail-hierarchy path 40000:42000:… (taxonomy)", "rh_path"),
+            ("category.path[]", "breadcrumb Food>Alcohol>Wine", "category_path"),
+            ("productTypeId / primaryShelfId / ironbankCategory", "taxonomy/shelf ids", "product_type_id/…"),
+            ("shortDescription", "marketing text — carries ABV ('6% ABV') + calories + packaging", "abv (parsed)"),
+            ("idml.specifications[]", "RNDC vector: varietal/region/vintage/ABV/container/flavor/pairing/wine_score",
+             "varietal/region/vintage/abv/container/flavor/pairing/wine_score"),
+            ("productLocation[0].displayValue", "AISLE ('A34') — was missed (not a key named 'aisle')", "aisle"),
+            ("orderLimit / orderMinLimit", "per-order purchase cap", "order_limit"),
+            ("availabilityStatus", "IN_STOCK/OOS (no number)", "in_stock"),
+            ("location.{storeIds,city,stateOrProvinceCode}", "per-store context", "store_id/store_city/store_state"),
+            ("isLMPAlcoholItem / legalRestriction", "alcohol-marketplace + restriction flags", "is_alcohol"),
+            ("averageRating / numberOfReviews", "ratings", "avg_rating / num_reviews"),
+            ("badges.flags[] (ROLLBACK)", "Rollback promo badge", "rollback → on_promo"),
+            ("secondaryOfferPrice.currentPrice.price / priceInfo", "price", "price"),
+            ("sellerName / sellerType", "seller (Walmart.com/marketplace)", "seller"),
+            ("imageInfo.allImages[]", "images", "image"),
+            ("salesUnit / weightIncrement / promoData / discounts / returnAttributes", "misc", "raw_json"),
+        ],
+        "notes": "walmart_direct.py detail(). UPC + rhPath + aisle + ABV(from shortDescription) were the gaps a "
+                 "'capture all of this' pass closed. Search page is thinner (no UPC); DETAIL has the full object.",
+    },
+    # ── Kroger ATLAS (internal API) — the RICH per-GTIN payload (kroger_atlas.py). No raw count (HIGH/LOW),
+    # but a master + enrichment trove: bottle dimensions, gtin14, ABV, taxonomy, planogram. (captured 2026-07-15) ──
+    "kroger_atlas": {
+        "label": "Kroger atlas (internal)",
+        "endpoint": "GET /atlas/v1/product/v2/products?filter.gtin13s=…&projections=items.full,… (x-laf-object hdr)",
+        "grain": "product × store",
+        "raw": [
+            ("item.gtin14", "14-digit GTIN", "gtin14"),
+            ("item.upc", "UPC", "upc"),
+            ("item.description", "name", "name"),
+            ("item.brand.{name,code}", "brand + Kroger brand code", "brand / brand_code"),
+            ("item.customerFacingSize", "size", "size"),
+            ("item.dimensions.{height,width,length}", "PHYSICAL dims in inches [in_i] → mm (bottle: width≈length=Ø)",
+             "height_mm / width_mm / length_mm / diameter_mm"),
+            ("item.romanceDescription", "marketing HTML — carries ABV ('8.5% alcohol by volume')", "abv (parsed)"),
+            ("item.familyTree.{commodity,department,subCommodity}", "Kroger taxonomy codes+names",
+             "commodity/department/subcommodity (+codes)"),
+            ("item.categories[]", "category", "category"),
+            ("item.alcoholFlag / ageRestrictionFlag", "bev-alc + age flags", "alcohol_flag / age_restricted"),
+            ("item.temperatureIndicatorName", "Ambient/Refrigerated/Frozen", "temperature"),
+            ("item.snapEligible", "EBT", "snap_eligible"),
+            ("item.prop65.required", "CA Prop 65", "prop65"),
+            ("item.restrictionGroupCodes[]", "ship/sale restriction codes", "restriction_codes"),
+            ("item.ratingsAndReviewsAggregate", "avg rating + review count", "avg_rating / num_reviews"),
+            ("item.images[]", "images (front)", "image"),
+            ("item.linkedItem", "related SKU ids", "raw_json"),
+            ("item.omniChannelBrandName / receiptDescription / seoDescription", "alt names", "raw_json"),
+            ("item.taxGroupCode / itemTypeCode / salesChannelCode", "internal codes", "raw_json"),
+            ("location.locations[]", "PLANOGRAM — aisle desc/number/side, bayInAisle, numOfFacings (MULTIPLE bays)",
+             "aisle / aisle_number / facings / planogram_json"),
+            ("fulfillmentSummaries[].availability", "inventoryLevel HIGH/LOW + sellable, per modality",
+             "pickup_level / delivery_level / instore_level"),
+            ("price.storePrices.{regular,promo}", "price + sale + expiration", "price / sale_price / sale_ends"),
+            ("laf[].modality.handoffLocation.{storeId,facilityId}", "store + facility", "store_id / facility_id"),
+            ("sourceLocations[].dsdItem", "Direct Store Delivery flag (supplier delivers direct)", "dsd_item"),
+            ("inventorySummaries[].details[].availableToSell", "EXACT per-store on-hand COUNT (a NUMBER) — present "
+             "when the response carries populated inventory (a Ralphs sample: 6); empty in an earlier sample "
+             "(then only the HIGH/LOW enum). Kroger IS a Counts source.", "available_units"),
+            ("inventory.locations[].available", "per-store on-hand count (fallback source for the number)", "available_units"),
+        ],
+        "notes": "kroger_atlas.py. COUNTS: available_units = the exact number when populated. Plus dimensions+gtin14 "
+                 "→ bottle_dims/master keyed by GTIN (free vs vision-derived); ABV fills a TTB gap; familyTree → "
+                 "dictionary; planogram → [[planogram-app]]. Needs a warmed kroger.com cookie + LAF header. Same "
+                 "atlas API on ALL Kroger banners (Ralphs, Fred Meyer, King Soopers, …).",
+    },
+    # ── Kroger PUBLIC API — THE motivating case: the public Developer API COLLAPSES a numeric count to a 3-value enum.
+    # Raw internal count (if any) is UNCONFIRMED — needs a network trace on the site/app (see notes). ──
+    "kroger": {
+        "label": "Kroger (+ banners)",
+        "endpoint": "GET /v1/products (official OAuth2 Developer API)",
+        "grain": "product × store",
+        "raw": [
+            ("productId", "Kroger product id", "product_id"),
+            ("upc", "UPC", "upc"),
+            ("brand", "brand", "brand"),
+            ("description", "product name/description", "name"),
+            ("categories[]", "category list", "category"),
+            ("items[].itemId", "item id", "sku"),
+            ("items[].size", "size", "size"),
+            ("items[].price.regular", "regular price", "price"),
+            ("items[].price.promo", "promo price", "promo"),
+            ("items[].inventory.stockLevel", "HIGH | LOW | TEMPORARILY_OUT_OF_STOCK — COLLAPSED count", "stock_level"),
+            ("items[].fulfillment", "curbside/delivery/inStore/shipToHome bools", ""),
+            ("aisleLocations[]", "aisle/shelf", "raw_json"),
+            ("images[]", "images", "image"),
+        ],
+        "collapsed": [("items[].inventory.stockLevel", "the PUBLIC API's inventory = a 3-value enum "
+                       "(HIGH/LOW/OOS), NOT a number. But the INTERNAL atlas API DOES carry the exact count "
+                       "(inventorySummaries[].details[].availableToSell) — see the kroger_atlas source. So the "
+                       "number exists; it's just scrubbed out of the PUBLIC Developer API.")],
+        "internal": [
+            ("endpoint", "GET /atlas/v1/product/v2/products?filter.gtin13s=…&projections=items.full,inventory.projected,…"
+             " (the 'atlas' gateway the site/app uses; auth = x-laf-object header, LAF = [{assortmentKeys:[…], "
+             "listingKeys:[<storeId>], …}] — NOT {banner,storeId,modality}, which is why hand-built replays 400'd)."),
+            ("fulfillmentSummaries[].availability", "inventoryLevel (HIGH/LOW) + sellable + unavailabilityMessage, "
+             "PER fulfillment type (PICKUP/DELIVERY/IN_STORE separately) — richer than the public single status, "
+             "but STILL the enum, no number."),
+            ("inventorySummaries[]", "present but EMPTY for the sampled SKU — the only remaining numeric lead; "
+             "spot-check known-LOW SKUs, low expectation."),
+            ("location.locations[] (item)", "PLANOGRAM — aisle #/side, bayInAisle, numOfFacings, physicalShelfNumber. "
+             "Public API has NONE of this. The real reason to pull the internal API. Feeds [[planogram-app]]."),
+            ("price regular/sale", "sale price + expirationDate + equivalizedUnitPrice — richer than public."),
+        ],
+        "notes": "RESOLVED: no raw numeric count anywhere in Kroger web/app (internal API also gives inventoryLevel "
+                 "HIGH/LOW). Internal atlas API is still worth pulling for planogram + per-modality availability + "
+                 "richer pricing. A true count would need a side channel (Instacart/Shipt 'only N left') or "
+                 "Kroger's internal ordering systems — out of web scope.",
+    },
+}
+
+
+def coverage(spec=None):
+    spec = spec or SPEC
+    out = {}
+    for k, v in spec.items():
+        raw = v.get("raw", [])
+        mapped = sum(1 for _, _, m in raw if m and not m.startswith("DROP"))
+        dropped = sum(1 for _, _, m in raw if m.startswith("DROP"))
+        rawonly = sum(1 for _, _, m in raw if m == "" or m == "raw_json")
+        out[k] = {"raw_fields": len(raw), "mapped": mapped, "raw_json_only": rawonly, "dropped": dropped,
+                  "collapsed": len(v.get("collapsed", [])), "walled": len(v.get("walled", []))}
+    return out
+
+
+def emit_json(path=None):
+    path = path or os.path.join(os.path.dirname(os.path.abspath(__file__)), "out", "source_fields.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    doc = {k: {"label": v["label"], "endpoint": v["endpoint"], "grain": v.get("grain", ""),
+               "raw_fields": [{"field": f, "meaning": m, "maps_to": t} for f, m, t in v.get("raw", [])],
+               "collapsed": v.get("collapsed", []), "walled": v.get("walled", []),
+               "internal": v.get("internal", []),
+               "store_summary": v.get("store_summary", []), "notes": v.get("notes", "")}
+           for k, v in SPEC.items()}
+    with open(path, "w") as fh:
+        json.dump(doc, fh, indent=2)
+    return path
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Raw source-field spec (separate from the structured master schema).")
+    ap.add_argument("--json", action="store_true", help="emit out/source_fields.json")
+    a = ap.parse_args(argv)
+    if a.json:
+        print("wrote", emit_json())
+        return 0
+    for k, c in coverage().items():
+        extra = []
+        if c["collapsed"]:
+            extra.append("%d COLLAPSED" % c["collapsed"])
+        if c["walled"]:
+            extra.append("%d walled" % c["walled"])
+        print("  %-12s %2d raw fields | %2d mapped, %2d raw_json, %2d dropped%s"
+              % (k, c["raw_fields"], c["mapped"], c["raw_json_only"], c["dropped"],
+                 ("  [" + ", ".join(extra) + "]") if extra else ""))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

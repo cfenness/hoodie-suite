@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import hoodie_ids as H
 import class_type as _class
+import observe as _observe
 
 
 def _clean_src(t):
@@ -392,7 +393,10 @@ def derive_product_attrs(name, brand, category, size_ml, container, pack, abv, o
     a["volume_tier"] = (None if sz is None else "single-serve" if sz <= 355 else "standard" if sz <= 1000
                         else "large" if sz < 1500 else "magnum+")
     a["organic"] = bool(_re.search(r"\borganic\b", nl))
-    a["non_alc"] = bool(_re.search(r"non.?alcoholic|alcohol.?free|\b0\.0\b|\bn/?a\b(?!.*napa)", nl))
+    # non-alc is a first-class inclusion (Heineken 0.0, Athletic, dealcoholized, zero-proof) — use the shared
+    # detector with the CATEGORY (the retailer category, e.g. Total Wine's "Non-Alcoholic", is the strongest
+    # signal; a name alone misses NA house brands). Central here so every source is tagged consistently.
+    a["non_alc"] = _observe.is_non_alc(name, category, brand)
     return a
 
 
