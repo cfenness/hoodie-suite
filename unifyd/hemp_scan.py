@@ -106,6 +106,16 @@ def scan(sources=None, land=True, log=print):
             all_hits.extend(scan_table(t, log=log))
         except Exception as e:
             log("  %-24s skip: %s" % (t, str(e)[:60]))
+    # many catalogs are store×product cells (Binny's, Spec's), so the same hemp product repeats per store —
+    # collapse to DISTINCT products per source (keyed by UPC where present, else the name).
+    seen, uniq = set(), []
+    for h in all_hits:
+        k = (h["source"], h["upc"] or (h["name"] or "").strip().lower())
+        if k in seen:
+            continue
+        seen.add(k); uniq.append(h)
+    log("[hemp] deduped %d store-cells → %d distinct hemp-beverage products" % (len(all_hits), len(uniq)))
+    all_hits = uniq
     if land and all_hits:
         warehouse.write_parquet("hemp_products", all_hits, fields=HEMP_FLD)
     from collections import Counter
