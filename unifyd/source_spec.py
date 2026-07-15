@@ -130,6 +130,26 @@ SPEC = {
         "notes": "Full catalog + price from SEO, no browser. Per-store count needs the session-walled widget "
                  "API (see [[cityhive-crack]]). prices.json/offers.json are public but need store/option context.",
     },
+    # ── Trader Joe's — Adobe Commerce (Magento) GraphQL (data.products.items[]). Food-primary; sells wine only
+    # in CA (Charles Shaw). No UPC + no count in the payload (availability is a 1/0 flag). (2026-07-15) ──
+    "trader_joes": {
+        "label": "Trader Joe's (Magento GraphQL)",
+        "endpoint": "POST /api/graphql  data.products.items[]",
+        "grain": "product (chain-level; no per-store)",
+        "raw": [
+            ("sku", "TJ internal SKU (e.g. 083981) — NO UPC anywhere in the payload", "sku"),
+            ("item_title", "name", "name"),
+            ("price_range.minimum_price.final_price.value", "price", "price"),
+            ("retail_price", "list price (string)", "price (fallback)"),
+            ("availability", "'1'/'0' flag — in/out only, NO count", "in_stock"),
+            ("category_hierarchy[].name", "category tree (Products>Food>From The Freezer>…)", "category_path"),
+            ("sales_size / sales_uom_description", "size + unit ('7 Oz')", "size"),
+            ("primary_image / primary_image_meta", "image (+ srcset renditions)", "image"),
+            ("published / __typename", "publish flag / SimpleProduct|ConfigurableProduct", "raw_json"),
+        ],
+        "notes": "Adobe Commerce GraphQL — same recipe shape as any Magento store. Food-first; the bev-alc slice "
+                 "is CA wine only (Charles Shaw). No UPC, no numeric count. Not yet built as a connector.",
+    },
     # ── ABC Fine Wine (FL) — BigCommerce. Store = a product-option VARIANT; the storefront GraphQL + the
     # availability endpoint give exact per-store count + UPC/GTIN. (abc_fws_scraper.py, audited 2026-07-15) ──
     "abc_fws": {
