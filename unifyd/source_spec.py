@@ -130,7 +130,48 @@ SPEC = {
         "notes": "Full catalog + price from SEO, no browser. Per-store count needs the session-walled widget "
                  "API (see [[cityhive-crack]]). prices.json/offers.json are public but need store/option context.",
     },
-    # ── Kroger — THE motivating case: the public Developer API COLLAPSES a numeric count to a 3-value enum.
+    # ── Kroger ATLAS (internal API) — the RICH per-GTIN payload (kroger_atlas.py). No raw count (HIGH/LOW),
+    # but a master + enrichment trove: bottle dimensions, gtin14, ABV, taxonomy, planogram. (captured 2026-07-15) ──
+    "kroger_atlas": {
+        "label": "Kroger atlas (internal)",
+        "endpoint": "GET /atlas/v1/product/v2/products?filter.gtin13s=…&projections=items.full,… (x-laf-object hdr)",
+        "grain": "product × store",
+        "raw": [
+            ("item.gtin14", "14-digit GTIN", "gtin14"),
+            ("item.upc", "UPC", "upc"),
+            ("item.description", "name", "name"),
+            ("item.brand.{name,code}", "brand + Kroger brand code", "brand / brand_code"),
+            ("item.customerFacingSize", "size", "size"),
+            ("item.dimensions.{height,width,length}", "PHYSICAL dims in inches [in_i] → mm (bottle: width≈length=Ø)",
+             "height_mm / width_mm / length_mm / diameter_mm"),
+            ("item.romanceDescription", "marketing HTML — carries ABV ('8.5% alcohol by volume')", "abv (parsed)"),
+            ("item.familyTree.{commodity,department,subCommodity}", "Kroger taxonomy codes+names",
+             "commodity/department/subcommodity (+codes)"),
+            ("item.categories[]", "category", "category"),
+            ("item.alcoholFlag / ageRestrictionFlag", "bev-alc + age flags", "alcohol_flag / age_restricted"),
+            ("item.temperatureIndicatorName", "Ambient/Refrigerated/Frozen", "temperature"),
+            ("item.snapEligible", "EBT", "snap_eligible"),
+            ("item.prop65.required", "CA Prop 65", "prop65"),
+            ("item.restrictionGroupCodes[]", "ship/sale restriction codes", "restriction_codes"),
+            ("item.ratingsAndReviewsAggregate", "avg rating + review count", "avg_rating / num_reviews"),
+            ("item.images[]", "images (front)", "image"),
+            ("item.linkedItem", "related SKU ids", "raw_json"),
+            ("item.omniChannelBrandName / receiptDescription / seoDescription", "alt names", "raw_json"),
+            ("item.taxGroupCode / itemTypeCode / salesChannelCode", "internal codes", "raw_json"),
+            ("location.locations[]", "PLANOGRAM — aisle desc/number/side, bayInAisle, numOfFacings (MULTIPLE bays)",
+             "aisle / aisle_number / facings / planogram_json"),
+            ("fulfillmentSummaries[].availability", "inventoryLevel HIGH/LOW + sellable, per modality",
+             "pickup_level / delivery_level / instore_level"),
+            ("price.storePrices.{regular,promo}", "price + sale + expiration", "price / sale_price / sale_ends"),
+            ("laf[].modality.handoffLocation.{storeId,facilityId}", "store + facility", "store_id / facility_id"),
+            ("sourceLocations[].dsdItem", "Direct Store Delivery flag (supplier delivers direct)", "dsd_item"),
+            ("inventorySummaries[]", "empty in sampling — no numeric count", "DROP:empty/no count"),
+        ],
+        "notes": "kroger_atlas.py. The dimensions+gtin14 feed bottle_dims/master keyed by GTIN (authoritative + "
+                 "free vs vision-derived); ABV fills a TTB gap; familyTree feeds the dictionary; planogram feeds "
+                 "[[planogram-app]]. Needs a warmed kroger.com cookie + LAF header (store from DD_modStore).",
+    },
+    # ── Kroger PUBLIC API — THE motivating case: the public Developer API COLLAPSES a numeric count to a 3-value enum.
     # Raw internal count (if any) is UNCONFIRMED — needs a network trace on the site/app (see notes). ──
     "kroger": {
         "label": "Kroger (+ banners)",
