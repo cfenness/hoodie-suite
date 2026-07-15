@@ -130,6 +130,39 @@ SPEC = {
         "notes": "Full catalog + price from SEO, no browser. Per-store count needs the session-walled widget "
                  "API (see [[cityhive-crack]]). prices.json/offers.json are public but need store/option context.",
     },
+    # ── Binny's — public Algolia index (binnys_scraper.py). The hit carries 57 fields; we take the valuable
+    # ones. Native per-store NUMERIC qty is the prize. (audited live 2026-07-15) ──
+    "binnys": {
+        "label": "Binny's (Algolia)",
+        "endpoint": "POST {app}-dsn.algolia.net/1/indexes/Products_Production/query (public search key)",
+        "grain": "product × store",
+        "raw": [
+            ("objectID", "product id (Binny's SKU)", "sku"),
+            ("storesPriceAndInventory[].purchaseAvailability", "EXACT per-store on-hand units", "qty"),
+            ("storesPriceAndInventory[].prices.{regularPrice,salePrice,isOnSale}", "per-store price", "price"),
+            ("productName / productBrandName", "name / brand", "name / brand"),
+            ("proof", "proof → ABV (proof/2) — the big gap this audit closed (was capturing NO ABV)", "proof / abv"),
+            ("productVarietal / region / country / productType / productDepartment", "geo + type + dept",
+             "varietal / region / origin / category / department"),
+            ("itemSize / priceUnitLabel", "size + '750 ml Bottle' unit label", "item_size / unit_label"),
+            ("casePack", "bottles per case", "case_pack"),
+            ("ratingNumber / reviewsAmount", "ratings", "rating / reviews"),
+            ("pricePercentDiscount / isDealOfTheWeek", "promo/discount signals", "discount_pct / deal_of_week"),
+            ("isSoldOut / isInStoreOnly / inStockStores / onSaleStores", "availability signals", "is_sold_out / in_store_only"),
+            ("shortDescription / productDescriptionLong", "descriptions", "short_desc"),
+            ("productUrl / productLink", "product URL", "product_url"),
+            ("imageUrl / relativeImageUrl", "image", "image"),
+            ("thcMgPer{Serving,Unit,SellPack} / cbdMgPer*", "THC/CBD dose — schema-present but EMPTY at Binny's "
+             "across all hemp products (captured anyway, future-proof — NOT a live THC-mg source)", "thc_mg / cbd_mg"),
+            ("designations / hierarchicalCategories / cigarShape|Size|Strength|Wrapper", "wine designations / cat "
+             "tree / cigar attrs", "raw_json"),
+            ("pointsMax/Min / variantCode / replacementCode / priceBoostIndex / date_timestamp", "loyalty/internal",
+             "DROP:internal"),
+            ("(no upc/gtin)", "Binny's Algolia exposes NO UPC — matching rests on name-key + variantCode", "—"),
+        ],
+        "notes": "binnys_scraper.py to_snapshot. Live-audited: 14,678 cells all with qty; proof→ABV on ~43%. "
+                 "Also fixed: the scraper now write_accumulates binnys_products + observe (was snapshot-JSON only).",
+    },
     # ── Walmart — /ip/ detail __NEXT_DATA__ product object (walmart_direct.py, DIRECT via mobile UA). Rich
     # master + enrichment; UPC is exposed on DETAIL (not search). (captured 2026-07-15) ──
     "walmart": {
