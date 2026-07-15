@@ -2136,6 +2136,39 @@ def _sku_full(cid):
     return st
 
 
+_COLA_URL = "https://ttbonline.gov/colasonline/viewColaDetails.do?action=publicFormDisplay&ttbid=%s"
+
+
+def _item_cola_filings(cid):
+    """The real TTB COLA label filings that collapsed into this master SKU: the ttb_ids (via the source xwalk,
+    where TTB is source 'ttb') joined to ttb_cola_detail — the DETAIL table keyed by the same 14-digit ttb_id (the
+    ttb_cola search table uses a different 9-digit id, so it doesn't join) — for fanciful / brand / class-type /
+    status / approval-date / varietal. Each row links to its public COLA detail page. Cached per item."""
+    try:
+        ids = [str(r["product_id"]) for r in _wq_cached(
+            "xwalk_source_sku", "SELECT product_id FROM t WHERE source='ttb' AND sku_key=? LIMIT 60", [cid])]
+    except Exception:
+        ids = []
+    if not ids:
+        return []
+    ph = ",".join("?" * len(ids))
+    try:
+        rows = _wq_cached("ttb_cola_detail",
+                          "SELECT CAST(ttb_id AS VARCHAR) ttb_id, fanciful_name fanciful, brand_name applicant, "
+                          "status, approval_date completed, class_type_desc class_type, grape_varietal varietal, "
+                          "alcohol_content abv FROM t WHERE CAST(ttb_id AS VARCHAR) IN (%s)" % ph, ids)
+    except Exception:
+        rows = []
+    seen = {str(r.get("ttb_id")): r for r in rows}       # fill in ttb_ids the detail table didn't have, link still works
+    out = []
+    for i in ids:
+        r = dict(seen.get(i, {"ttb_id": i}))
+        r["ttb_id"] = i
+        r["cola_url"] = _COLA_URL % i
+        out.append(r)
+    return out
+
+
 @app.get("/api/master/workbench/item/<cid>")
 def mwb_item_ep(cid):
     st = _sku_full(cid)
@@ -2145,7 +2178,7 @@ def mwb_item_ep(cid):
     src = [s for s in (src.split(", ") if src else []) if s]
     filings = [{"source": s, "brand": st["brand"], "name": st["candidate_name"], "category": (st["upc"] or "no UPC")}
                for s in src]
-    return jsonify(ok=True, item=st, filings=filings)
+    return jsonify(ok=True, item=st, filings=filings, cola_filings=_item_cola_filings(cid))
 
 
 @app.post("/api/master/workbench/vision/<cid>")
