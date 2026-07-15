@@ -15,6 +15,16 @@ on binnys.com). Self-reports `degraded` if the key rotates or the per-store sche
 """
 import argparse, hashlib, json, os, sys, time, urllib.request
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import warehouse
+import observe
+
+# binnys_products snapshot columns (the rich per-store cell → the master + hemp views read these)
+PRODUCT_FIELDS = ["sku", "store", "name", "brand", "varietal", "region", "origin", "category", "department",
+                  "item_size", "unit_label", "case_pack", "proof", "abv", "thc_mg", "cbd_mg", "rating",
+                  "reviews", "discount_pct", "deal_of_week", "is_sold_out", "in_store_only", "is_hemp",
+                  "short_desc", "product_url", "image", "price", "qty"]
+
 APP_ID  = os.environ.get("BINNYS_ALGOLIA_APP", "Z25A2A928M")
 API_KEY = os.environ.get("BINNYS_ALGOLIA_KEY", "88b6125855a0bbd845447e35de8d51c5")  # public search-only key
 INDEX   = os.environ.get("BINNYS_ALGOLIA_INDEX", "Products_Production")
@@ -56,18 +66,41 @@ def _store_price(sp):
     except (ValueError, TypeError): return None
 
 
+def _num(v):
+    try:
+        return float(v) if v not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 def to_snapshot(records):
-    """Per-store cells keyed `sku|storeCode`. TAKE EVERYTHING the Algolia record gives — brand/varietal/
-    region/country(=origin)/category/size are all structured fields on the hit, not just name+price."""
+    """Per-store cells keyed `sku|storeCode`. TAKE EVERYTHING the Algolia hit gives — it carries 57 fields, not
+    just name+price: proof (→ABV), THC/CBD mg per serving/unit (the dose the hemp vendor is 19-100% null on),
+    case pack, unit label, ratings, deal/discount, descriptions, availability — all structured on the record."""
     snap, parsed_qty = {}, 0
     for h in records:
         sku = str(h.get("objectID") or "")
         if not sku:
             continue
-        rich = {"name": h.get("productName"), "brand": h.get("productBrandName") or "",
+        proof = _num(h.get("proof"))
+        thc = _num(h.get("thcMgPerServing")) or _num(h.get("thcMgPerUnit")) or _num(h.get("thcMgPerSellPack"))
+        cbd = _num(h.get("cbdMgPerServing")) or _num(h.get("cbdMgPerUnit")) or _num(h.get("cbdMgPerSellPack"))
+        name = h.get("productName") or ""
+        rich = {"name": name, "brand": h.get("productBrandName") or "",
                 "varietal": h.get("productVarietal") or "", "region": h.get("region") or "",
                 "origin": h.get("country") or "", "category": h.get("productType") or h.get("gtmCategory") or "",
-                "item_size": h.get("itemSize") or "", "image": h.get("imageUrl") or ""}
+                "department": h.get("productDepartment") or "",
+                "item_size": h.get("itemSize") or "", "unit_label": h.get("priceUnitLabel") or "",
+                "case_pack": h.get("casePack"), "image": h.get("imageUrl") or "",
+                "product_url": h.get("productUrl") or h.get("productLink") or "",
+                "proof": proof, "abv": (round(proof / 2, 1) if proof else None),
+                "thc_mg": thc, "cbd_mg": cbd,
+                "rating": _num(h.get("ratingNumber")), "reviews": _num(h.get("reviewsAmount")),
+                "discount_pct": _num(h.get("pricePercentDiscount")),
+                "deal_of_week": bool(h.get("isDealOfTheWeek")),
+                "is_sold_out": bool(h.get("isSoldOut")), "in_store_only": bool(h.get("isInStoreOnly")),
+                "short_desc": (h.get("shortDescription") or "")[:500],
+                "is_hemp": observe.is_hemp(name, h.get("productType") or "") or bool(thc or cbd)}
         for sp in (h.get("storesPriceAndInventory") or []):
             store = str(sp.get("storeCode") or "")
             if not store:
@@ -142,6 +175,20 @@ def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=p
     status = "degraded" if warnings else "success"
 
     json.dump({"__ts__": int(time.time() * 1000), "cells": cur}, open(snap_path, "w"), indent=2)
+    # land the rich per-store cells to the warehouse (the master + hemp views read binnys_products) + the
+    # dated observation time-series (qty = exact on-hand; the whole reason Binny's is a Counts source).
+    try:
+        recs = [{k: v.get(k) for k in PRODUCT_FIELDS} for v in cur.values()]
+        warehouse.write_accumulate("binnys_products", recs, key=lambda r: (r["sku"], r["store"]),
+                                   fields=PRODUCT_FIELDS)
+        observe.record("binnys", [{"source": "binnys", "store_id": v["store"], "store": "Binny's #%s" % v["store"],
+                                   "product_id": v["sku"], "upc": "", "brand": v["brand"], "name": v["name"],
+                                   "price": v["price"], "on_promo": bool(v.get("deal_of_week") or v.get("discount_pct")),
+                                   "in_stock": (v.get("qty") or 0) > 0, "qty": v.get("qty"),
+                                   "is_hemp": v.get("is_hemp")} for v in cur.values()],
+                       log=log)
+    except Exception as e:
+        log("  [binnys] warehouse land skipped: %s" % str(e)[:80])
     # browsable rollup: one row per (product, store) with price + on-hand units
     header = ["SKU", "Product", "Store", "Price", "Units on hand"]
     rows = [[v["sku"], v["name"], v["store"], v["price"], v["qty"]]
