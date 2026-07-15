@@ -130,6 +130,51 @@ SPEC = {
         "notes": "Full catalog + price from SEO, no browser. Per-store count needs the session-walled widget "
                  "API (see [[cityhive-crack]]). prices.json/offers.json are public but need store/option context.",
     },
+    # ── Stop & Shop — Ahold/Peapod product API (stop_and_shop.py). Rich master + planogram. (2026-07-15) ──
+    "stop_and_shop": {
+        "label": "Stop & Shop (Ahold/Peapod)",
+        "endpoint": "GET /api/v6.0/products/<store>?text=… (robots-DISALLOWED /api/; warmed session)",
+        "grain": "product × store",
+        "raw": [
+            ("prodId", "Peapod product id", "prod_id"),
+            ("upc", "UPC — the master key", "upc"),
+            ("name / brand / brandId", "name + brand", "name / brand / brand_id"),
+            ("size / unitMeasure", "size ('750 ML BTL') + unit ('LTR')", "size / unit_measure"),
+            ("price / regularPrice / unitPrice / weightedRegularPrice", "prices", "price / regular_price / unit_price"),
+            ("aisle / section / pickStoreLocationId", "PLANOGRAM (aisle 9 / section 026 / '09B-026-001-002')",
+             "aisle / section / pick_location"),
+            ("categoryPath[] / subcatName / rootCatName / subcatId", "category tree + subcat ('Non-Alcoholic Beer')",
+             "category_path / subcat / root_cat"),
+            ("isAlcohol", "bev-alc flag", "is_alcohol"),
+            ("bottleDepositMap", "per-state bottle deposit {NY:0.05}", "bottle_deposit"),
+            ("nutrition.{totalCalories,servingSize,servingsPerContainer}", "nutrition", "calories/serving_size/servings"),
+            ("flags.outOfStock", "in/out bool — NO numeric count", "out_of_stock"),
+            ("hasCoupon / availableDisplayCoupons / advertiseOnSale / bmsm", "promo signals", "has_coupon / on_sale"),
+            ("ebtEligible / isMarketplaceProduct", "EBT / 3P flags", "ebt_eligible / marketplace"),
+            ("image.{small,medium,large}", "image", "image"),
+            ("rating / reviewId / guidingStars / sustainabilityRating / weightIncrement", "misc", "raw_json"),
+        ],
+        "notes": "stop_and_shop.py parse_product. Peapod platform → Giant/Hannaford/Food Lion by host. Rich master "
+                 "+ planogram + nutrition + deposits; no count. ToS-sensitive (robots disallows /api/).",
+    },
+    # ── H-E-B (target — no payload yet) ──
+    "heb": {
+        "label": "H-E-B (target)",
+        "endpoint": "heb.com — React + GraphQL (robots DISALLOWS /graphql); sitemap open",
+        "grain": "product × store (TX/MX)",
+        "raw": [("(payload needed)", "GraphQL is robots-blocked + anti-bot; recon via a captured response to map "
+                 "fields (expect: name, brand, price, size, per-store availability, aisle). Strong TX beer/wine.", "TBD")],
+        "notes": "Not built. Recon needed — capture a heb.com product GraphQL response to inventory the fields.",
+    },
+    # ── Aldi US (target — no payload yet) ──
+    "aldi": {
+        "label": "Aldi US (target)",
+        "endpoint": "aldi.us — product API (robots DISALLOWS /api/)",
+        "grain": "product (mostly chain-level)",
+        "raw": [("(payload needed)", "alcohol = private-label (Winking Owl wine etc.) in wine-permitted states; "
+                 "capture an aldi.us product API response to map fields. ToS-sensitive (/api/ disallowed).", "TBD")],
+        "notes": "Not built. Recon needed — capture an aldi.us product response.",
+    },
     # ── Trader Joe's — Adobe Commerce (Magento) GraphQL (data.products.items[]). Food-primary; sells wine only
     # in CA (Charles Shaw). No UPC + no count in the payload (availability is a 1/0 flag). (2026-07-15) ──
     "trader_joes": {
