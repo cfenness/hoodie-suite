@@ -28,9 +28,10 @@ HEMP_RE = re.compile(
 # wine, zero-proof spirits, Seedlip…). The retailer's own CATEGORY is the most reliable signal (Total Wine's
 # "Non-Alcoholic" category is the reference), so PASS the category too — a name alone misses NA house brands.
 NON_ALC_RE = re.compile(
-    r"\b(non[\s-]?alcoholic|alcohol[\s-]?free|de[\s-]?alcoholi[sz]ed|dealcoholi[sz]ed|"
-    r"zero[\s-]?proof|non[\s-]?alc|\bN\.?A\.?\s+(?:beer| (?:i\.?)?p\.?a)|"       # "N/A beer", "NA IPA"
-    r"0\.0\s*%?(?:\s*abv)?|0\.5\s*%\s*abv)\b", re.I)
+    r"(?:\b(?:non[\s-]?alcoholic|alcohol[\s-]?free|de[\s-]?alcoholi[sz]ed|dealcoholi[sz]ed|"
+    r"zero[\s-]?proof|non[\s-]?alc|N\.?A\.?\s+(?:beer| (?:i\.?)?p\.?a))\b|"       # "N/A beer", "NA IPA"
+    r"\b0(?:\.\d)?\s*%(?!\s*(?:sugar|carb|fat|sodium|juice|added))|"             # 0% / 0.0% (alcohol, not nutrition)
+    r"\b0\.0\b(?:\s*abv)?)", re.I)
 # non-alc house brands / lines that don't say "non-alcoholic" in the name
 NON_ALC_BRANDS = re.compile(
     r"\b(athletic brewing|athletic\b|heineken\s*0\.?0?|budweiser zero|corona (?:cero|sunbrew)|guinness\s*0|"
