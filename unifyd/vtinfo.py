@@ -52,7 +52,13 @@ BRANDS = {
     # which both VERIFIES the hemp chains (Total Wine/Kwik Trip/Cub/Coborn's/Target…) and discovers the
     # independents. Cann confirmed live (200 accounts in one MN zip). Add more via discover() on each brand.
     "cann": {"custID": "S5S", "uuid": "8QR7cJLcKti6m9rPPVGMfdo9AbCV9pv6ydQN", "name": "Cann (THC/hemp bev)", "m": "5"},
+    "wynk": {"custID": "S4V", "uuid": "OkBikYm1nil0ofVzncjAXRHK4lut8bWuxjbq", "name": "Wynk (THC seltzer)", "m": "5"},
+    "trail-magic": {"custID": "P4H", "uuid": "OqFRnApBoEpFrkBiSqU2iiDLlduqb4EbNm9t", "name": "Trail Magic (THC bev)", "m": "5"},
+    "uncle-arnies": {"custID": "UOU", "uuid": "g8C7Mx3bA6yA339T0EEEqXvl8Ol1KBYLXeW5", "name": "Uncle Arnie's (THC bev)", "m": "5"},
+    "crescent-9": {"custID": "UEF", "uuid": "", "name": "Crescent 9 (THC bev)", "m": "5"},
 }
+# hemp/THC beverage brands present in BRANDS — hemp_finder sweeps these across the national ZIP grid.
+HEMP_BRANDS = ["cann", "wynk", "trail-magic", "uncle-arnies", "crescent-9"]
 
 
 def _fetch(url, data=None, timeout=25, referer=None):
