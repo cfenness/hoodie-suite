@@ -151,24 +151,27 @@ SPEC = {
             ("aisleLocations[]", "aisle/shelf", "raw_json"),
             ("images[]", "images", "image"),
         ],
-        "collapsed": [("items[].inventory.stockLevel", "public API's ONLY inventory field — a 3-value enum, "
-                       "NOT a number. Internal API has an inventory.projected projection (see internal[]).")],
+        "collapsed": [("items[].inventory.stockLevel", "public API inventory = a 3-value enum (HIGH/LOW/OOS), "
+                       "NOT a number. RESOLVED 2026-07-15: the INTERNAL atlas API also collapses to the same "
+                       "enum (availability.inventoryLevel HIGH/LOW) — there is NO raw on-hand count in Kroger's "
+                       "web/app payload at all. The count is scrubbed at the source, not just the public layer.")],
         "internal": [
-            ("endpoint", "GET /atlas/v1/product/v2/products?filter.gtin13s=…&projections=items.full,offers.compact,"
-             "nutrition.label,inventory.projected,variantGroupings.compact  (the internal 'atlas' gateway the "
-             "site/app uses — CONFIRMED richer than the public API)"),
-            ("auth", "x-laf-object header = JSON array [{banner,storeId,modality:{type}}]; store from DD_modStore "
-             "cookie (division 011 / store 00439). Exact header needs a clean capture to replay (hand-built "
-             "variants hit server validation)."),
-            ("location.locations[]", "PLANOGRAM — aisle #/side, bayInAisle, numOfFacings, physicalShelfNumber, "
-             "shelfPositionInBay. Public API has NONE of this. Feeds [[planogram-app]]."),
-            ("price.storePrices.promo", "nfor deals (2 for $7), unitPrice, equivalizedUnitPrice — richer than public"),
-            ("inventory.projected", "OPEN: the projection name implies a projected/possibly-numeric on-hand view; "
-             "not yet read (couldn't reproduce the LAF header to fetch it). THE raw-count hunt target."),
+            ("endpoint", "GET /atlas/v1/product/v2/products?filter.gtin13s=…&projections=items.full,inventory.projected,…"
+             " (the 'atlas' gateway the site/app uses; auth = x-laf-object header, LAF = [{assortmentKeys:[…], "
+             "listingKeys:[<storeId>], …}] — NOT {banner,storeId,modality}, which is why hand-built replays 400'd)."),
+            ("fulfillmentSummaries[].availability", "inventoryLevel (HIGH/LOW) + sellable + unavailabilityMessage, "
+             "PER fulfillment type (PICKUP/DELIVERY/IN_STORE separately) — richer than the public single status, "
+             "but STILL the enum, no number."),
+            ("inventorySummaries[]", "present but EMPTY for the sampled SKU — the only remaining numeric lead; "
+             "spot-check known-LOW SKUs, low expectation."),
+            ("location.locations[] (item)", "PLANOGRAM — aisle #/side, bayInAisle, numOfFacings, physicalShelfNumber. "
+             "Public API has NONE of this. The real reason to pull the internal API. Feeds [[planogram-app]]."),
+            ("price regular/sale", "sale price + expirationDate + equivalizedUnitPrice — richer than public."),
         ],
-        "notes": "Public API is real+free but scrubbed. Internal atlas API is CONFIRMED richer (planogram + "
-                 "inventory.projected). Open task: capture the exact x-laf-object header, replay, read "
-                 "products[].inventory. Side channel: Instacart/Shipt scarcity messaging.",
+        "notes": "RESOLVED: no raw numeric count anywhere in Kroger web/app (internal API also gives inventoryLevel "
+                 "HIGH/LOW). Internal atlas API is still worth pulling for planogram + per-modality availability + "
+                 "richer pricing. A true count would need a side channel (Instacart/Shipt 'only N left') or "
+                 "Kroger's internal ordering systems — out of web scope.",
     },
 }
 
