@@ -93,7 +93,7 @@ def _first(m):
 
 
 # ── BigCommerce recipe ──────────────────────────────────────────────────────────────────────────────────
-def bigcommerce_ids(base, key, max_pages=40, log=print):
+def bigcommerce_ids(base, key, max_pages=400, log=print):
     """Walk /xmlsitemap.php?type=products -> every product URL (the full catalog spine)."""
     urls = []
     for pg in range(1, max_pages + 1):
@@ -154,34 +154,43 @@ def _num(x):
         return None
 
 
-def _shopify_row(p):
-    v = (p.get("variants") or [{}])[0]
-    sku = (v.get("sku") or "").strip()
-    barcode = (v.get("barcode") or "").strip()
-    upc = next((x for x in (barcode, sku) if x.isdigit() and 8 <= len(x) <= 14), "")
+def _shopify_rows(p):
+    """One row PER VARIANT — a product sold in 750ml + 1.75L (or by vintage) is multiple purchasable SKUs at
+    different prices/barcodes; taking only variants[0] silently dropped every size but the first. Each variant
+    carries the shared product context (tags/description/type) so nothing is lost."""
     tags = p.get("tags")
     tags = tags if isinstance(tags, list) else [t.strip() for t in str(tags or "").split(",") if t.strip()]
     desc = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", p.get("body_html") or ""))).strip()
-    opts = {o.get("name", "").lower(): (v.get("option%d" % (i + 1)) or "")
-            for i, o in enumerate(p.get("options") or [])}
-    return {"name": (p.get("title") or "").strip(), "brand": (p.get("vendor") or "").strip(),
-            "price": _num(v.get("price")), "compare_at_price": _num(v.get("compare_at_price")),
-            "sku": sku, "upc": upc, "item_code": str(p.get("id") or ""),
-            "product_type": p.get("product_type") or "", "tags": ", ".join(tags),
-            "description": desc[:2000], "handle": p.get("handle") or "", "variant": v.get("title") or "",
-            "grams": v.get("grams"), "in_stock": v.get("available"),
-            "size_opt": opts.get("size") or "", "vintage_opt": opts.get("vintage") or "",
-            "image": ((p.get("images") or [{}])[0] or {}).get("src") or "",
-            "raw_json": json.dumps(p, separators=(",", ":"))[:8000]}
+    opt_names = [o.get("name", "").lower() for o in (p.get("options") or [])]
+    img = ((p.get("images") or [{}])[0] or {}).get("src") or ""
+    rows = []
+    for v in (p.get("variants") or [{}]):
+        sku = (v.get("sku") or "").strip()
+        barcode = (v.get("barcode") or "").strip()
+        upc = next((x for x in (barcode, sku) if x.isdigit() and 8 <= len(x) <= 14), "")
+        opts = {opt_names[i]: (v.get("option%d" % (i + 1)) or "") for i in range(len(opt_names))}
+        vt = v.get("title") or ""
+        # size is often in the variant TITLE ("750ml"), not a "Size" option — capture it either way
+        size_opt = opts.get("size") or opts.get("volume") or (vt if re.search(r"\d\s*(ml|l|oz|pk|pack|liter)\b", vt, re.I) else "")
+        rows.append({"name": (p.get("title") or "").strip(), "brand": (p.get("vendor") or "").strip(),
+                     "price": _num(v.get("price")), "compare_at_price": _num(v.get("compare_at_price")),
+                     "sku": sku, "upc": upc, "barcode": barcode, "item_code": str(v.get("id") or p.get("id") or ""),
+                     "product_type": p.get("product_type") or "", "tags": ", ".join(tags),
+                     "description": desc[:2000], "handle": p.get("handle") or "", "variant": v.get("title") or "",
+                     "grams": v.get("grams"), "in_stock": v.get("available"),
+                     "size_opt": size_opt, "vintage_opt": opts.get("vintage") or "",
+                     "image": ((v.get("featured_image") or {}) or {}).get("src") or img,
+                     "raw_json": json.dumps(dict(p, variants=[v]), separators=(",", ":"))[:8000]})
+    return rows
 
 
 # ── Shopify recipe — the golden path: /products.json returns the whole catalog as JSON, paginated. We now
 # capture the FULL product (tags/description/options/barcode/weight/stock/image + raw), not just name/price. ──
-def shopify_catalog(base, key, max_pages=25, log=print):
+def shopify_catalog(base, key, max_pages=400, log=print):
     rows = []
-    for pg in range(1, max_pages + 1):
+    for pg in range(1, max_pages + 1):                          # loop stops at the true last page; cap is a backstop
         j = None
-        for _try in range(2):                                   # transient BD failures happen under load
+        for _try in range(2):                                   # transient failures happen under load
             try:
                 j = json.loads(_fetch("%s/products.json?limit=250&page=%d" % (base.rstrip("/"), pg), key))
                 break
@@ -193,7 +202,7 @@ def shopify_catalog(base, key, max_pages=25, log=print):
         if not ps:
             break
         for p in ps:
-            rows.append(_shopify_row(p))
+            rows.extend(_shopify_rows(p))                       # one row PER VARIANT
         if len(ps) < 250:
             break
     return rows
@@ -281,7 +290,7 @@ def bottlecapps_catalog(base, store_id, key, max_cats=12, scrolls=8, log=print):
 
 # ── WooCommerce recipe — the public Store API: /wp-json/wc/store/v1/products (no auth), name + price (in
 # CENTS) + sku (usually the UPC), paginated. One of the largest platforms overall (liquor AND hemp). ──
-def woo_catalog(base, key, max_pages=50, log=print):
+def woo_catalog(base, key, max_pages=400, log=print):
     rows = []
     for pg in range(1, max_pages + 1):
         j = None
@@ -330,6 +339,8 @@ def _woo_row(p):
     for a in (p.get("attributes") or []):
         nm = (a.get("name") or "").strip().lower()
         val = ", ".join(t.get("name", "") for t in (a.get("terms") or []) if t.get("name"))
+        if nm in ("brand", "brands", "producer", "winery", "distillery", "vendor") and val and not row["brand"]:
+            row["brand"] = val                                  # Woo hides brand in an attribute/taxonomy, not a field
         fld = _WOO_ATTR.get(nm)
         if fld and val and not row.get(fld):
             row[fld] = val
@@ -339,6 +350,14 @@ def _woo_row(p):
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
 _WIX_STORES_APP = "1380b703-ce81-ff05-f115-39571d94dfcd"
+# FULL field set (description/image/options/attributes/discount) — falls back to the minimal query if a Wix site's
+# schema rejects it, so we always get SOMETHING but capture everything where supported.
+_WIX_GQL_FULL = ("query getProducts($limit:Int,$offset:Int){ catalog{ products(limit:$limit, offset:$offset, "
+                 "onlyVisible:true){ totalCount list{ id name brand description ribbon price formattedPrice "
+                 "comparePrice discountedPrice sku isInStock productType urlPart "
+                 "media{ mainMedia{ thumbnail{ url } } } "
+                 "options{ title selections{ value } } "
+                 "additionalInfoSections{ title description } } } } }")
 _WIX_GQL = ("query getProducts($limit:Int,$offset:Int){ catalog{ products(limit:$limit, offset:$offset, "
             "onlyVisible:true){ totalCount list{ id name brand price formattedPrice comparePrice sku "
             "isInStock productType urlPart } } } }")
@@ -381,20 +400,29 @@ def wix_catalog(base, key=None, page=100, max_products=None, log=print):
     ep = site + "/_api/wix-ecommerce-storefront-web/api"
     hdr = {"User-Agent": _UA, "Authorization": inst, "Content-Type": "application/json"}
 
-    def gql(offset):
-        body = json.dumps({"query": _WIX_GQL, "variables": {"limit": page, "offset": offset}}).encode()
+    def gql(query, offset):
+        body = json.dumps({"query": query, "variables": {"limit": page, "offset": offset}}).encode()
         req = urllib.request.Request(ep, data=body, headers=hdr, method="POST")
         return json.loads(urllib.request.urlopen(req, timeout=60).read().decode("utf-8", "replace"))
+
+    # probe the FULL query once; if this site's schema rejects it, fall back to the minimal field set
+    q = _WIX_GQL_FULL
+    try:
+        probe = gql(_WIX_GQL_FULL, 0)
+        if probe.get("errors") or not (((probe.get("data") or {}).get("catalog") or {}).get("products")):
+            q = _WIX_GQL
+    except Exception:
+        q = _WIX_GQL
 
     rows, offset, total = [], 0, None
     while True:
         try:
-            pq = (((gql(offset).get("data") or {}).get("catalog") or {}).get("products")) or {}
+            pq = (((gql(q, offset).get("data") or {}).get("catalog") or {}).get("products")) or {}
         except Exception as e:
             log("  [wix] products offset=%d: %s" % (offset, str(e)[:50])); break
         if total is None:
             total = pq.get("totalCount") or 0
-            log("  [wix] %s: totalCount=%d" % (site, total))
+            log("  [wix] %s: totalCount=%d (fields=%s)" % (site, total, "full" if q is _WIX_GQL_FULL else "min"))
             if not total:
                 return []
         lst = pq.get("list") or []
@@ -402,16 +430,36 @@ def wix_catalog(base, key=None, page=100, max_products=None, log=print):
             break
         for p in lst:
             sku = (p.get("sku") or "").strip()
+            img = _dig_wix(p, "media", "mainMedia", "thumbnail", "url") or ""
+            opts = "; ".join("%s: %s" % ((o.get("title") or ""),
+                                         ", ".join(s.get("value", "") for s in (o.get("selections") or [])))
+                             for o in (p.get("options") or []) if isinstance(o, dict))
+            info = " | ".join("%s: %s" % ((s.get("title") or ""), (s.get("description") or ""))
+                              for s in (p.get("additionalInfoSections") or []) if isinstance(s, dict))
+            desc = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ",
+                    p.get("description") or info or ""))).strip()
             rows.append({"name": _html.unescape(p.get("name") or "").strip(), "brand": (p.get("brand") or ""),
-                         "price": p.get("price"), "sku": sku,
+                         "price": p.get("discountedPrice") or p.get("price"),
+                         "compare_at_price": p.get("comparePrice"), "sku": sku,
                          "upc": (sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
                          "size_ml": _ch_ml(p.get("name")), "category": p.get("productType") or "",
-                         "in_stock": p.get("isInStock")})
+                         "in_stock": p.get("isInStock"), "ribbon": p.get("ribbon") or "",
+                         "options": opts[:400], "description": desc[:2000], "image": img,
+                         "info": info[:1000],
+                         "raw_json": json.dumps(p, separators=(",", ":"))[:8000]})
         offset += len(lst)
         if (max_products and offset >= max_products) or offset >= total:
             break
     log("  [wix] %s -> %d products" % (site, len(rows)))
     return rows[:max_products] if max_products else rows
+
+
+def _dig_wix(d, *path):
+    for k in path:
+        if not isinstance(d, dict):
+            return None
+        d = d.get(k)
+    return d if isinstance(d, str) else None
 
 
 # ── National signature-discovery + sweep — expand the recipes we have to their whole national footprint. For a
@@ -556,7 +604,8 @@ def cityhive_catalog(base, key=None, max_products=None, workers=8, log=print):
                              sku=d.get("sku") or d.get("pid") or "", upc=d.get("upc") or "",
                              size_ml=d.get("size_ml"), category=d.get("category") or "",
                              description=d.get("description") or "", store=d.get("store") or "",
-                             image=d.get("image") or "", option_id=oid or ""))
+                             image=d.get("image") or "", option_id=oid or "",
+                             raw_json=json.dumps(d, separators=(",", ":"))[:8000]))
     log("  [cityhive] %s -> %d products" % (base, len(rows)))
     return rows
 
@@ -711,8 +760,8 @@ def national_sweep(platform, log=print):
     for d in domains:
         try:
             if platform == "bottlecapps":
-                sid = bottlecapps_store_id(d, key)
-                items = bottlecapps_catalog(d, sid, key, max_cats=10, log=log) if sid else []
+                import bottlecapps                        # full-capture module supersedes the shallow recipe
+                items = bottlecapps.pull_store(d, log=log)
             elif platform == "shopify":
                 items = shopify_catalog(d, key, log=log)
             elif platform == "woocommerce":
@@ -727,15 +776,18 @@ def national_sweep(platform, log=print):
             b = ctx.classify_beverage(it["name"])
             rows.append(dict(store=d, platform=platform, name=it["name"], brand=it.get("brand", ""),
                              price_value=it.get("price"), sku=it.get("sku", ""), upc=it.get("upc", ""),
+                             size_opt=it.get("size_opt", ""), item_code=it.get("item_code", ""),
                              bev_category=b["category"], is_hemp=observe.is_hemp(it["name"]),
                              **dd._parse_pack(it["name"])))
         log("  [national] %-32s -> %d products" % (d.replace("https://", "")[:32], len(items)))
+        _nkey = lambda r: (r.get("store"), r.get("sku") or r.get("item_code")
+                           or ((r.get("name") or "") + "|" + str(r.get("size_opt") or "")))
         if rows and hit % 3 == 0:
-            warehouse.write_accumulate("national_%s_products" % platform, rows,   # checkpoint (accumulates)
-                                       key=lambda r: (r.get("store"), r.get("name")))
+            warehouse.write_accumulate("national_%s_products" % platform, rows, key=_nkey)   # checkpoint
     if rows:
         warehouse.write_accumulate("national_%s_products" % platform, rows,
-                                   key=lambda r: (r.get("store"), r.get("name")))
+                                   key=lambda r: (r.get("store"), r.get("sku") or r.get("item_code")
+                                                  or ((r.get("name") or "") + "|" + str(r.get("size_opt") or ""))))
     log("[national] %s: %d products from %d/%d stores -> national_%s_products"
         % (platform, len(rows), hit, len(domains), platform))
     return rows
@@ -770,17 +822,15 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
             elif "woocommerce" in plat:
                 items = woo_catalog(s["base"], key, log=log)
             elif "bottlecapps" in plat:
-                sid = bottlecapps_store_id(s["base"], key)
-                items = bottlecapps_catalog(s["base"], sid, key, log=log) if sid else []
+                import bottlecapps                        # full-capture module (patchright, all cats, price+UPC)
+                items = bottlecapps.pull_store(s["base"], log=log)
             elif "city hive" in plat or "cityhive" in plat:
-                # bound per-store in a multi-store census sweep (full catalog can be thousands/store);
-                # a single-store pull (run()/CLI) goes full (max_products=None).
-                items = cityhive_catalog(s["base"], key, max_products=int(os.environ.get("CITYHIVE_MAX", "600")), log=log)
+                # default FULL (capture everything); CITYHIVE_MAX bounds it only for a quick market census.
+                items = cityhive_catalog(s["base"], key, max_products=(int(os.environ.get("CITYHIVE_MAX", "0")) or None), log=log)
             elif "wix" in plat:
                 items = wix_catalog(s["base"], key, log=log)
             elif "squarespace" in plat:
-                # per-product fetch -> bound in a multi-store sweep (single-store run()/CLI goes full).
-                items = squarespace_catalog(s["base"], key, max_products=int(os.environ.get("SQSP_MAX", "800")), log=log)
+                items = squarespace_catalog(s["base"], key, max_products=(int(os.environ.get("SQSP_MAX", "0")) or None), log=log)
             else:
                 items = []
         except Exception as e:
@@ -804,7 +854,11 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
     if rows:
         # ACCUMULATE — `out` is per-market but filled by a PLATFORM-filtered subset; running for one platform
         # then another into the same table must not wipe the first platform's products.
-        warehouse.write_accumulate(out, rows, key=lambda r: (r.get("account") or r.get("store"), r.get("name")))
+        # variant-safe identity: a product's sizes are distinct SKUs — key on sku/variant-id/size, NOT bare name,
+        # or per-variant rows would collapse back to one.
+        warehouse.write_accumulate(out, rows, key=lambda r: (
+            (r.get("account") or r.get("store")),
+            r.get("sku") or r.get("item_code") or ((r.get("name") or "") + "|" + str(r.get("size_opt") or r.get("size_ml") or ""))))
         # feed the FACTS: independent-retailer price + in/out over time. unique part per market -> no clobber.
         obs = [dict(store=r.get("account") or r.get("store"), store_id=r.get("base") or r.get("account") or "",
                     product_id=(r.get("sku") or (r.get("name") or "")[:90]), upc=r.get("upc") or "",
@@ -813,7 +867,9 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
         observe.record("offprem", obs, part="%s_offprem_%s" % (time.strftime("%Y-%m-%d"), market))
         # feed the MASTER: one consolidated catalog table (in _CFG) so independent products join the master.
         warehouse.write_accumulate("offprem_products", rows,
-                                   key=lambda r: ((r.get("base") or ""), (r.get("sku") or r.get("name") or "")))
+                                   key=lambda r: ((r.get("base") or ""),
+                                                  r.get("sku") or r.get("item_code")
+                                                  or ((r.get("name") or "") + "|" + str(r.get("size_opt") or r.get("size_ml") or ""))))
     _rl.finish("done", note="%d products from %d stores" % (len(rows), len(stores)))
     log("[off] %d products -> %s (+ facts + offprem_products)" % (len(rows), out))
     return rows
