@@ -939,6 +939,37 @@ def datasets():
         out[k] = dict(ds, rows=rows, matched=len(rows))
     return jsonify(out)
 
+
+@app.get("/api/source")
+def api_source():
+    """Live raw-data viewer feed. No ?name → the source list with live row counts (for the picker). With
+    ?name=<table> → that source's newest rows straight from the warehouse, so a UI can poll and watch it build."""
+    import warehouse
+    name = request.args.get("name")
+    if not name:
+        try:
+            src = sorted(({"name": d.get("name"), "rows": d.get("rows", 0) or 0, "modified": d.get("modified")}
+                          for d in warehouse.list_datasets() if d.get("name") and not d["name"].startswith("_")),
+                         key=lambda x: x["name"])
+        except Exception as e:
+            return jsonify({"error": str(e)[:200]}), 500
+        return jsonify({"sources": src})
+    limit = min(int(request.args.get("limit", 100) or 100), 500)
+    try:
+        cols = list(warehouse.query(name, "SELECT * FROM t LIMIT 1")[0].keys())
+        # newest first if the table has a time-ish column (quoted — 'at' is a DuckDB reserved word)
+        order = next((c for c in ("captured_at", "pulled_at", "at", "modified", "date", "run_id") if c in cols), None)
+        sql = "SELECT * FROM t" + (' ORDER BY "%s" DESC' % order if order else "") + " LIMIT %d" % limit
+        rows = warehouse.query(name, sql)
+        cnt = warehouse.query(name, "SELECT count(*) c FROM t")[0]["c"]
+        # drop bulky raw_json from the wire payload (keep a marker) so the live table stays snappy
+        for r in rows:
+            if r.get("raw_json") is not None:
+                r["raw_json"] = "…"
+        return jsonify({"name": name, "count": cnt, "columns": [c for c in cols], "rows": rows, "order_by": order})
+    except Exception as e:
+        return jsonify({"name": name, "error": str(e)[:200], "rows": [], "count": 0, "columns": []}), 200
+
 # TTL memoize for read-only rollups the estate/coverage UIs POLL. Each of these fans out into many remote-parquet
 # scans (a /api/catalog poll was ~25s, /api/coverage ~8s); polling stacked them into timeouts. These only change
 # on a pull/rebuild, so a short TTL is safe and turns the poll into a served-from-RAM hit.

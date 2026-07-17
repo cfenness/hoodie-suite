@@ -1,0 +1,117 @@
+<style>
+  :root{
+    --bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;
+    --accent:#4E79A7;--good:#5bb86e;--warn:#d99a3f;--bad:#e5636b;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--sans:Inter,system-ui,-apple-system,sans-serif;
+  }
+  @media (prefers-color-scheme:light){:root{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}}
+  :root[data-theme="light"]{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}
+  :root[data-theme="dark"]{--bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px}
+  .bar{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line);
+       background:var(--panel);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+  h1{font-size:15px;margin:0;font-weight:650;letter-spacing:.2px;display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 0 var(--good);animation:pulse 2s infinite}
+  .dot.off{background:var(--mut);animation:none;box-shadow:none}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(91,184,110,.5)}70%{box-shadow:0 0 0 6px rgba(91,184,110,0)}100%{box-shadow:0 0 0 0 rgba(91,184,110,0)}}
+  select,input,button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;
+       padding:7px 10px;font-family:var(--sans);font-size:13px}
+  select{min-width:220px}
+  button{cursor:pointer}button:hover{border-color:var(--accent)}
+  .spacer{flex:1}
+  .stat{display:flex;flex-direction:column;line-height:1.15}
+  .stat b{font-size:20px;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+  .stat span{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut)}
+  .delta{color:var(--good);font-size:12px;font-family:var(--mono)}
+  .wrap{padding:0;overflow:auto;height:calc(100vh - 58px)}
+  table{border-collapse:collapse;width:max-content;min-width:100%;font-family:var(--mono);font-size:12px}
+  thead th{position:sticky;top:0;background:var(--panel2);color:var(--mut);text-align:left;padding:8px 12px;
+       border-bottom:1px solid var(--line);white-space:nowrap;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  tbody td{padding:6px 12px;border-bottom:1px solid var(--line);white-space:nowrap;max-width:340px;overflow:hidden;text-overflow:ellipsis}
+  tbody tr:hover td{background:var(--panel)}
+  tr.fresh td{animation:flash 1.6s ease-out}
+  @keyframes flash{from{background:rgba(78,121,167,.35)}to{background:transparent}}
+  .num{text-align:right;color:var(--ink)}
+  .msg{padding:40px;color:var(--mut);text-align:center}
+  .pill{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);color:var(--mut)}
+</style>
+
+<div class="bar">
+  <h1><span id="dot" class="dot"></span>Source Data <span class="pill">live</span></h1>
+  <select id="src"><option>loading sources…</option></select>
+  <input id="find" placeholder="filter rows…" style="width:150px">
+  <div class="spacer"></div>
+  <div class="stat"><b id="count">—</b><span>rows <span id="delta" class="delta"></span></span></div>
+  <div class="stat"><b id="cols">—</b><span>columns</span></div>
+  <div class="stat"><b id="showing">—</b><span>showing newest</span></div>
+  <button id="live">⏸ pause</button>
+  <span id="updated" class="pill">—</span>
+</div>
+<div class="wrap"><div id="body" class="msg">Pick a source to watch it build.</div></div>
+
+<script>
+const $=s=>document.querySelector(s);
+let cur=null, last=0, timer=null, on=true, seen=new Set();
+const fmt=n=>n==null?'—':n.toLocaleString();
+const isNum=v=>typeof v==='number'||(typeof v==='string'&&v!==''&&!isNaN(v)&&/^-?[\d.,$%]+$/.test(v));
+
+async function loadSources(){
+  try{
+    const r=await fetch('/api/source'); const j=await r.json();
+    const sel=$('#src'); sel.innerHTML='';
+    (j.sources||[]).forEach(s=>{
+      const o=document.createElement('option');
+      o.value=s.name; o.textContent=`${s.name}  ·  ${fmt(s.rows)}`;
+      sel.appendChild(o);
+    });
+    if(!cur && sel.options.length){ cur=sel.value; select(cur); }
+  }catch(e){ $('#src').innerHTML='<option>server offline</option>'; }
+}
+function select(name){ cur=name; last=0; seen=new Set(); $('#delta').textContent=''; $('#body').innerHTML='<div class="msg">loading…</div>'; poll(); }
+
+async function poll(){
+  if(!cur) return;
+  try{
+    const r=await fetch('/api/source?name='+encodeURIComponent(cur)+'&limit=200');
+    const j=await r.json();
+    if(j.error){ $('#body').innerHTML='<div class="msg">'+j.error+'</div>'; return; }
+    const c=j.count||0, d=last?c-last:0; last=c;
+    $('#count').textContent=fmt(c);
+    $('#delta').textContent=d>0?('+'+fmt(d)):'';
+    $('#cols').textContent=(j.columns||[]).length;
+    $('#showing').textContent=fmt((j.rows||[]).length);
+    $('#updated').textContent=new Date().toLocaleTimeString();
+    render(j);
+  }catch(e){ $('#updated').textContent='offline'; }
+}
+
+function render(j){
+  const cols=j.columns||[], rows=j.rows||[], f=$('#find').value.trim().toLowerCase();
+  const shown=f?rows.filter(r=>cols.some(c=>String(r[c]??'').toLowerCase().includes(f))):rows;
+  if(!shown.length){ $('#body').innerHTML='<div class="msg">no rows'+(f?' match “'+f+'”':'')+' yet</div>'; return; }
+  const key=r=>cols.map(c=>r[c]).join('|');
+  let html='<table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
+  for(const r of shown){
+    const k=key(r), fresh=last && !seen.has(k);
+    html+='<tr'+(fresh?' class="fresh"':'')+'>'+cols.map(c=>{
+      let v=r[c]; const num=isNum(v);
+      v=v==null?'':String(v); if(v.length>120)v=v.slice(0,120)+'…';
+      return '<td class="'+(num?'num':'')+'">'+v.replace(/</g,'&lt;')+'</td>';
+    }).join('')+'</tr>';
+  }
+  html+='</tbody></table>';
+  $('#body').innerHTML=html;
+  seen=new Set(shown.map(key));
+}
+
+$('#src').addEventListener('change',e=>select(e.target.value));
+$('#find').addEventListener('input',()=>{ if(cur) poll(); });
+$('#live').addEventListener('click',()=>{
+  on=!on; $('#live').textContent=on?'⏸ pause':'▶ resume'; $('#dot').className='dot'+(on?'':' off');
+  if(on){ poll(); timer=setInterval(()=>on&&poll(),4000);} else clearInterval(timer);
+});
+loadSources();
+setInterval(loadSources, 20000);            // refresh the source list + counts periodically
+timer=setInterval(()=>on&&poll(),4000);     // live poll every 4s
+</script>
