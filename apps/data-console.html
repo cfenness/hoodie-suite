@@ -74,11 +74,36 @@
   .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:15;display:none}.backdrop.on{display:block}
   .filterbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
   .mono{font-family:var(--mono)}
+  /* one search bar → searches everything */
+  .search{flex:1;min-width:220px;max-width:560px;font-size:13.5px;padding:8px 12px;border-radius:8px}
+  .search:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+  .searchpanel{position:fixed;inset:0;top:47px;background:var(--bg);z-index:12;overflow:auto;display:none}
+  .searchpanel.on{display:block}
+  .sp-head{position:sticky;top:0;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 18px;
+       display:flex;align-items:center;gap:14px;flex-wrap:wrap;z-index:2}
+  .sp-head b{font-family:var(--mono);font-size:14px}
+  .prog{height:4px;background:var(--panel2);border-radius:3px;flex:1;min-width:120px;max-width:300px;overflow:hidden}
+  .prog i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
+  .sp-body{padding:8px 18px 60px}
+  .sr-group{border:1px solid var(--line);border-radius:10px;margin:10px 0;overflow:hidden;background:var(--panel)}
+  .sr-gh{display:flex;align-items:center;gap:10px;padding:9px 13px;background:var(--panel2);cursor:pointer;flex-wrap:wrap}
+  .sr-gh:hover{background:var(--panel)}
+  .sr-gh .nm{font-family:var(--mono);font-size:13px;font-weight:600}
+  .sr-gh .mc{font-family:var(--mono);font-size:10.5px;color:var(--accent)}
+  .sr-cnt{font-family:var(--mono);font-size:11px;color:var(--mut);margin-left:auto}
+  .sr-rows{overflow-x:auto}
+  .sr-rows table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:11.5px}
+  .sr-rows td{padding:5px 10px;border-bottom:1px solid var(--line);border-top:1px solid var(--line);white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis}
+  .sr-rows td.k{color:var(--mut);position:sticky;left:0;background:var(--panel)}
+  mark{background:color-mix(in srgb,var(--warn) 40%,transparent);color:var(--ink);border-radius:2px;padding:0 1px}
+  .badge{font-family:var(--mono);font-size:10px;padding:1px 7px;border-radius:20px;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+  .sp-close{cursor:pointer;background:none;border:none;color:var(--mut);font-size:22px;margin-left:6px}
 </style>
 
 <div class="bar">
   <h1><span id="dot" class="dot"></span>Data Console</h1>
   <span id="wh" class="wh prod">…</span>
+  <input id="q" class="search" placeholder="🔍  Search everything — every dataset, row &amp; column…" autocomplete="off">
   <span id="asof" class="asof">—</span>
   <div class="spacer"></div>
   <button id="refresh">↻ refresh</button>
@@ -97,6 +122,17 @@
 <div id="accounts" class="page"></div>
 <div id="master" class="page"></div>
 <div id="errors" class="page"></div>
+
+<div id="searchpanel" class="searchpanel">
+  <div class="sp-head">
+    <b id="sp-q">—</b>
+    <div class="prog"><i id="sp-prog"></i></div>
+    <span id="sp-stat" class="asof">—</span>
+    <div class="spacer"></div>
+    <button id="sp-close" class="sp-close">×</button>
+  </div>
+  <div id="sp-body" class="sp-body"></div>
+</div>
 
 <div id="backdrop" class="backdrop"></div>
 <div id="drawer" class="drawer">
@@ -257,5 +293,62 @@ $('#d-close').onclick=closeDrawer; $('#backdrop').onclick=closeDrawer;
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   view=t.dataset.view; document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id===view)); });
+// ── search everything ──
+let SQ='', spoll=null, sdeb=null;
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function hl(v,q){ v=esc(v); if(!q)return v; try{ const re=new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig'); return v.replace(re,'<mark>$1</mark>'); }catch(e){ return v; } }
+function openSearch(){ $('#searchpanel').classList.add('on'); }
+function closeSearch(){ $('#searchpanel').classList.remove('on'); if(spoll){clearInterval(spoll);spoll=null;} }
+
+async function runSearch(q){
+  SQ=q; if(!q||q.length<2){ closeSearch(); return; }
+  openSearch(); $('#sp-q').textContent='“'+q+'”'; $('#sp-stat').textContent='searching…'; $('#sp-prog').style.width='4%';
+  const step=async()=>{
+    let r; try{ r=await(await fetch('/api/monitor/search?q='+encodeURIComponent(q))).json(); }catch(e){ return; }
+    if(r.q!==undefined && r.q.toLowerCase()!==SQ.toLowerCase()) return;   // stale
+    renderSearch(r);
+    if(r.done && spoll){ clearInterval(spoll); spoll=null; }
+  };
+  if(spoll)clearInterval(spoll);
+  await step(); if(!$('#searchpanel').classList.contains('on'))return;
+  spoll=setInterval(step, 1200);
+}
+
+function renderSearch(r){
+  const pct = r.total? Math.round(100*r.searched/r.total):(r.done?100:6);
+  $('#sp-prog').style.width=Math.max(pct,4)+'%';
+  const cap=(r.capped||[]).length;
+  $('#sp-stat').innerHTML = (r.done?'done':'searching')+` · ${r.total_rows||0} rows in ${(r.hits||[]).length} datasets`
+    + (r.total?` · scanned ${r.searched}/${r.total}`:'') + (cap?` · <span style="color:var(--warn)">${cap} large tables partial</span>`:'')
+    + (r.elapsed?` · ${r.elapsed}s`:'');
+  const q=r.q||SQ;
+  // merge: deep hits (full data) take precedence; instant sample hits fill gaps for not-yet-scanned datasets
+  const seen=new Set((r.hits||[]).map(h=>h.dataset));
+  const groups=[];
+  (r.hits||[]).forEach(h=>groups.push({...h, kind:'deep'}));
+  (r.instant||[]).forEach(h=>{ if(!seen.has(h.dataset)&&(h.rows.length||h.in_name||h.match_columns.length)) groups.push({dataset:h.dataset, rows:h.rows, match_cols:h.match_cols||[], columns:h.columns, kind:'sample', in_name:h.in_name, match_columns:h.match_columns}); });
+  if(!groups.length){ $('#sp-body').innerHTML=`<div class="msg">${r.done?'No matches for “'+esc(q)+'”.':'searching all datasets…'}</div>`; return; }
+  $('#sp-body').innerHTML=groups.map(g=>{
+    const cols=g.columns||(g.rows[0]?Object.keys(g.rows[0]):[]);
+    const show=(g.match_cols&&g.match_cols.length)?g.match_cols.concat(cols.filter(c=>!g.match_cols.includes(c))).slice(0,6):cols.slice(0,6);
+    const rowsHtml=(g.rows||[]).slice(0,8).map(row=>`<tr>${show.map(c=>`<td${g.match_cols&&g.match_cols.includes(c)?' style="color:var(--ink)"':''}>${hl(row[c],q)}</td>`).join('')}</tr>`).join('');
+    return `<div class="sr-group">
+      <div class="sr-gh" onclick="openDetail('${g.dataset}')">
+        <span class="nm">${esc(g.dataset)}</span>
+        ${g.in_name?'<span class="badge">name match</span>':''}
+        ${g.kind==='sample'?'<span class="badge">sample</span>':''}
+        ${(g.match_cols&&g.match_cols.length)?`<span class="mc">in: ${g.match_cols.join(', ')}</span>`:(g.match_columns&&g.match_columns.length?`<span class="mc">column: ${g.match_columns.join(', ')}</span>`:'')}
+        <span class="sr-cnt">${g.rows&&g.rows.length?g.rows.length+(g.kind==='deep'?'+ rows':' sample rows'):'—'} · open ↗</span>
+      </div>
+      ${rowsHtml?`<div class="sr-rows"><table><thead><tr>${show.map(c=>`<th style="text-align:left;padding:5px 10px;color:var(--mut);font-size:10px;text-transform:uppercase">${esc(c)}</th>`).join('')}</tr></thead><tbody>${rowsHtml}</tbody></table></div>`:''}
+    </div>`;
+  }).join('');
+}
+
+$('#q').addEventListener('input', e=>{ clearTimeout(sdeb); const v=e.target.value.trim(); sdeb=setTimeout(()=>runSearch(v), 350); });
+$('#q').addEventListener('keydown', e=>{ if(e.key==='Enter'){ clearTimeout(sdeb); runSearch(e.target.value.trim()); } if(e.key==='Escape'){ e.target.value=''; closeSearch(); } });
+$('#sp-close').onclick=closeSearch;
+document.addEventListener('keydown', e=>{ if((e.metaKey||e.ctrlKey)&&e.key==='k'){ e.preventDefault(); $('#q').focus(); } });
+
 load(); setInterval(()=>load(),30000);
 </script>

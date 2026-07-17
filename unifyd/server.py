@@ -1072,6 +1072,18 @@ def api_monitor_data():
                     "note": "live sample (preview being precomputed in the background)"})
 
 
+@app.get("/api/monitor/search")
+def api_monitor_search():
+    """Search everything — one query across all datasets / all rows / all columns. Returns instant hits (samples +
+    names) immediately, then a progressive deep-sweep snapshot; poll the same URL until done=true."""
+    import monitor
+    q = (request.args.get("q") or "").strip()
+    try:
+        return jsonify(monitor.search(q))
+    except Exception as e:
+        return jsonify({"q": q, "done": True, "error": str(e)[:200], "instant": [], "hits": []}), 200
+
+
 @app.get("/api/monitor/history")
 def api_monitor_history():
     """The saved row-count time-series for one source → [[ts, rows], …] (rows-over-time sparkline)."""
@@ -5294,6 +5306,10 @@ def _monitor_warm():
     monitor.snapshot()                                   # serves cache + kicks a background refresh when stale
     try:
         _mon_con()                                       # pay the ~6s httpfs/S3 setup at boot, not on first click
+    except Exception:
+        pass
+    try:
+        monitor.warm_search_pool()                       # warm the 8-connection search pool so first search is fast
     except Exception:
         pass
 

@@ -509,6 +509,174 @@ def samples_status():
     return {"ready": len(_SAMPLES["data"]), "total": total, "at": _SAMPLES["at"]}
 
 
+# ── SEARCH EVERYTHING: one query across all datasets / all rows / all columns. Substring search has no index to
+# prune with, so a live full scan of 250M+ rows is impossible — a miss on a big table just times out. The design:
+# (1) INSTANT layer — search the in-memory samples + dataset/column names, returned immediately; (2) DEEP layer — a
+# parallel federated sweep (`WHERE concat_ws(all cols) ILIKE ?`) across every dataset on a warm connection pool, each
+# dataset interrupt-capped and the whole job time-budgeted, streamed in progressively with an honest coverage report
+# (which datasets were only partially scanned). Smallest datasets first so hits appear fast. Results are cached per
+# query so a repeat is instant.
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+_SEARCH_JOBS = {}
+_SEARCH_JOBS_LOCK = threading.Lock()
+_SEARCH_TLS = threading.local()
+_SEARCH_EXEC = ThreadPoolExecutor(max_workers=8, thread_name_prefix="search")
+
+
+def _search_con():
+    """A warm, thread-LOCAL DuckDB connection (DuckDB connections aren't safe to share across concurrent queries;
+    thread-local gives each pool worker its own, warmed once)."""
+    con = getattr(_SEARCH_TLS, "con", None)
+    if con is None:
+        import warehouse
+        con = warehouse.connect()
+        try:
+            con.execute("SET enable_progress_bar=false")
+        except Exception:
+            pass
+        _SEARCH_TLS.con = con
+    return con
+
+
+def warm_search_pool():
+    """Pre-warm each pool thread's connection (the ~6s httpfs/S3 setup) at boot so the first search isn't slow."""
+    for _ in range(8):
+        try:
+            _SEARCH_EXEC.submit(_search_con)
+        except Exception:
+            pass
+
+
+def _esc_like(q):
+    return q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _match_cols(rows, ql):
+    cols = set()
+    for r in rows:
+        for k, v in r.items():
+            if v is not None and ql in str(v).lower():
+                cols.add(k)
+    return sorted(cols)
+
+
+def _search_one(name, q, limit, timeout_s):
+    """Search ONE dataset's full data for the substring across all columns; interrupt-capped so a big-table miss
+    aborts instead of hanging. Returns (rows, columns, capped)."""
+    import warehouse
+    con = _search_con()
+    try:
+        src = warehouse.uri(name).replace("'", "")
+        # exclude the bulky raw_json blob from the scan (per-row it can be 8-16KB — searching it would scan GBs);
+        # its extracted fields are already real columns. Fall back to plain * if the table has no raw_json.
+        try:
+            con.execute("CREATE OR REPLACE VIEW t AS SELECT * EXCLUDE (raw_json) FROM read_parquet('%s')" % src)
+        except Exception:
+            con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet('%s')" % src)
+    except Exception:
+        return [], [], False
+    capped = {"v": False}
+
+    def kill():
+        capped["v"] = True
+        try:
+            con.interrupt()
+        except Exception:
+            pass
+    timer = threading.Timer(timeout_s, kill)
+    timer.start()
+    try:
+        # to_json(t) renders the WHOLE row (all columns) as text — searching it hits any column. (concat_ws over
+        # COLUMNS(*) silently collapsed to the first column, so it must NOT be used here.)
+        cur = con.execute(
+            "SELECT * FROM t WHERE to_json(t) ILIKE ? ESCAPE '\\' LIMIT %d" % limit,
+            ["%" + _esc_like(q) + "%"])
+        cols = [c[0] for c in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+        for r in rows:
+            if r.get("raw_json") is not None:
+                r["raw_json"] = "…"
+        return rows, cols, capped["v"]
+    except Exception:
+        return [], [], capped["v"]                       # interrupted (cap) or read error
+    finally:
+        timer.cancel()
+
+
+def _search_instant(q):
+    """Immediate hits from the in-memory samples + dataset/column NAMES (zero I/O)."""
+    ql = q.lower()
+    out = []
+    if not _SAMPLES["data"]:
+        _load_samples()
+    for name, smp in _SAMPLES["data"].items():
+        hitrows = [r for r in smp.get("rows", []) if any(v is not None and ql in str(v).lower() for v in r.values())]
+        col_hits = [c for c in smp.get("columns", []) if ql in c.lower()]
+        if hitrows or col_hits or ql in name.lower():
+            out.append({"dataset": name, "in_name": ql in name.lower(), "match_columns": col_hits,
+                        "columns": smp.get("columns", []), "rows": hitrows[:6],
+                        "match_cols": _match_cols(hitrows, ql)})
+    out.sort(key=lambda h: (not h["in_name"], -len(h["rows"])))
+    return out
+
+
+def _job_view(job, max_ds=60):
+    hits = sorted(job["hits"], key=lambda h: -len(h["rows"]))[:max_ds]
+    return {"q": job["q"], "done": job["done"], "searched": job["searched"], "total": job["total"],
+            "instant": job["instant"], "hits": hits, "capped": job.get("capped", []),
+            "total_rows": sum(len(h["rows"]) for h in job["hits"]),
+            "elapsed": round(time.time() - job["started"], 1)}
+
+
+def _search_run(job, q, per_ds_limit, per_ds_timeout, budget):
+    ql = q.lower()
+    srcmap = {s["name"]: s for s in (_CACHE["data"] or {}).get("sources", [])}
+    names = [n for n, s in srcmap.items() if s.get("group") not in ("runlog", "staging") and (s.get("rows") or 0) > 0]
+    names.sort(key=lambda n: srcmap.get(n, {}).get("rows", 0))    # small datasets first → hits stream fast
+    job["total"] = len(names)
+    deadline = time.time() + budget
+    futs = {_SEARCH_EXEC.submit(_search_one, n, q, per_ds_limit, per_ds_timeout): n for n in names}
+    for fut in as_completed(futs):
+        n = futs[fut]
+        try:
+            rows, cols, capped = fut.result()
+        except Exception:
+            rows, cols, capped = [], [], False
+        job["searched"] += 1
+        if rows:
+            job["hits"].append({"dataset": n, "columns": cols, "rows": rows, "rowcount": srcmap.get(n, {}).get("rows"),
+                                "match_cols": _match_cols(rows, ql)})
+        if capped:
+            job["capped"].append(n)
+        if time.time() > deadline:
+            for f in futs:
+                f.cancel()
+            break
+    job["done"] = True
+
+
+def search(q, per_ds_limit=12, per_ds_timeout=4, budget=26):
+    """Start (or return the cached) 'search everything' job. Returns instant hits immediately + a job snapshot the
+    console polls as the deep sweep streams in. Cached per query for 5 min so a repeat is instant."""
+    qn = " ".join(q.strip().lower().split())
+    if len(qn) < 2:
+        return {"q": q, "done": True, "instant": [], "hits": [], "searched": 0, "total": 0,
+                "note": "type at least 2 characters"}
+    with _SEARCH_JOBS_LOCK:
+        job = _SEARCH_JOBS.get(qn)
+        if job and (time.time() - job["started"]) < 300:
+            return _job_view(job)
+        job = {"q": q, "started": time.time(), "done": False, "instant": _search_instant(q),
+               "hits": [], "searched": 0, "total": 0, "capped": []}
+        _SEARCH_JOBS[qn] = job
+        # prune old jobs
+        for k in [k for k, v in _SEARCH_JOBS.items() if time.time() - v["started"] > 600]:
+            _SEARCH_JOBS.pop(k, None)
+    threading.Thread(target=_search_run, args=(job, q, per_ds_limit, per_ds_timeout, budget), daemon=True).start()
+    return _job_view(job)
+
+
 if __name__ == "__main__":
     import sys
     try:                                              # read PRODUCTION, not the local fallback
