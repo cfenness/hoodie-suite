@@ -192,26 +192,40 @@ function render(){
 }
 
 function renderOverview(){
-  const t=M.totals||{}, h=t.health||{}, S=M.sources||[];
+  const t=M.totals||{}, h=t.health||{}, R=M.roster||[];
   const cards=[
     ['grand_rows','total rows','across '+(t.datasets||0)+' datasets'],
-    ['sources','sources / scrapes',''],['accounts','accounts',''],
+    ['source_count','sources',(R.length||t.source_count||0)+' pulling in'],['accounts','accounts',''],
     ['items','master items',''],['products','products',''],['skus','skus',''],
-  ].map(([k,l,sub])=>`<div class="card"><b>${fmt(t[k])}</b><span>${l}</span>${sub?`<br><small>${sub}</small>`:''}</div>`).join('');
+  ].map(([k,l,sub])=>`<div class="card"><b>${fmt(k==='source_count'?(R.length||t.source_count):t[k])}</b><span>${l}</span>${sub?`<br><small>${sub}</small>`:''}</div>`).join('');
   const horder=['ok','stale','degraded','error','unknown'];
   const health=horder.filter(k=>h[k]).map(k=>`<div class="hchip"><span class="sq" style="background:var(${STC[k]})"></span><b>${h[k]}</b><span>${k}</span></div>`).join('')||'<span class="msg">no pull-cadence sources</span>';
+  // the SOURCE roster — every source we have, rolled up (however its datasets are named / however it runs)
+  const rows=R.map(s=>`<tr onclick="openSource('${s.key}')">
+     <td class="name">${esc(s.label)}</td><td class="grp">${s.kind}</td><td>${stampPill(s.status)}</td>
+     <td class="num">${fmt(s.rows)}</td><td class="num">${s.dataset_count}</td><td class="num">${age(s.modified?(Date.now()/1000-s.modified):null)}</td></tr>`).join('');
   const conns=(M.connectors||[]).map(c=>`<tr onclick="openDetailConn('${c.conn}')"><td class="name">${c.conn}</td><td>${stampPill(c.status)}</td>
      <td class="num">${c.datasets}</td><td class="num">${fmt(c.rows)}</td><td class="num">${c.warnings?`<span class="warnpill">${c.warnings}⚠</span>`:''}</td>
-     <td>${ago(c.run_ts)}</td><td>${c.trigger||''}</td></tr>`).join('');
+     <td>${ago(c.run_ts)}</td></tr>`).join('');
   const groups=Object.entries(t.by_group||{}).sort((a,b)=>b[1].rows-a[1].rows).map(([g,v])=>
      `<tr><td class="name">${g}</td><td class="num">${v.count}</td><td class="num">${fmt(v.rows)}</td></tr>`).join('');
   $('#overview').innerHTML=`
     <div class="cards">${cards}</div>
     <div class="sec">Pull health — is data coming in?</div><div class="health">${health}</div>
-    <div class="sec">Connectors <span class="grp">(health straight from the run log)</span></div>
-    <table><thead><tr><th>connector</th><th>status</th><th class="num">datasets</th><th class="num">rows</th><th class="num">warn</th><th>last run</th><th>trigger</th></tr></thead><tbody>${conns||'<tr><td class="msg" colspan=7>no connectors logged</td></tr>'}</tbody></table>
+    <div class="sec">Sources <span class="grp">(every source we pull — click to see its datasets)</span></div>
+    <table><thead><tr><th>source</th><th>type</th><th>status</th><th class="num">rows</th><th class="num">datasets</th><th class="num">fresh</th></tr></thead>
+      <tbody>${rows||'<tr><td class="msg" colspan=6>no sources</td></tr>'}</tbody></table>
+    <div class="sec">Connector run log <span class="grp">(authoritative pull-health for run-logged connectors)</span></div>
+    <table><thead><tr><th>connector</th><th>status</th><th class="num">datasets</th><th class="num">rows</th><th class="num">warn</th><th>last run</th></tr></thead><tbody>${conns||'<tr><td class="msg" colspan=6>none</td></tr>'}</tbody></table>
     <div class="sec">By layer</div>
     <table style="max-width:520px"><thead><tr><th>layer</th><th class="num">datasets</th><th class="num">rows</th></tr></thead><tbody>${groups}</tbody></table>`;
+}
+// open a source → show its datasets (filter the Sources tab to just this source's datasets)
+function openSource(key){
+  const s=(M.roster||[]).find(x=>x.key===key); if(!s)return;
+  if(s.datasets.length===1){ openDetail(s.datasets[0]); return; }
+  document.querySelector('.tab[data-view="sources"]').click();
+  setTimeout(()=>{ const f=$('#f-sources'); if(f){ f.value=s.label; filterRows('sources'); f.focus(); } },50);
 }
 
 const COLS=[['name','source'],['group','layer'],['rows','rows','num'],['delta','Δ','num'],['status','health'],['age_s','fresh','num'],['fields','cols','num']];
@@ -220,8 +234,8 @@ function renderTable(id,filter){
   S.sort((a,b)=>{ let x=a[sortKey],y=b[sortKey]; x=x==null?-Infinity:x; y=y==null?-Infinity:y;
     if(typeof x==='string')return sortDir*x.localeCompare(y); return sortDir*(x-y); });
   const head=COLS.map(([k,l,n])=>`<th class="${n||''}" onclick="setSort('${k}')">${l}${sortKey===k?(sortDir<0?' ↓':' ↑'):''}</th>`).join('');
-  const rows=S.map(s=>`<tr onclick="openDetail('${s.name}')">
-    <td class="name">${s.name}${s.warnings&&s.warnings.length?` <span class="warnpill">${s.warnings.length}⚠</span>`:''}</td>
+  const rows=S.map(s=>`<tr onclick="openDetail('${s.name}')" data-src="${esc(s.source_label||'')}">
+    <td class="name">${s.name}${s.source_label?` <span class="grp">· ${esc(s.source_label)}</span>`:''}${s.warnings&&s.warnings.length?` <span class="warnpill">${s.warnings.length}⚠</span>`:''}</td>
     <td class="grp">${s.group}</td><td class="num">${fmt(s.rows)}</td><td class="num">${delta(s.delta)}</td>
     <td>${stampPill(s.status)}</td><td class="num">${age(s.age_s)}</td><td class="num">${s.fields}</td></tr>`).join('');
   $('#'+id).innerHTML=`<div class="filterbar"><input id="f-${id}" placeholder="filter ${S.length} sources…" oninput="filterRows('${id}')">

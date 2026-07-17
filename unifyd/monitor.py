@@ -11,6 +11,7 @@ there is no embedded/mock fallback: if the warehouse can't be read, the manifest
 """
 import json
 import os
+import re
 import time
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
@@ -21,9 +22,10 @@ _HIST = os.path.join(_STATE, "monitor_hist.json")     # {name: [[ts, rows], ...]
 
 # ── dataset classification: what KIND of thing is each parquet, so the console groups it meaningfully ──────────
 # order matters (first match wins). group → how the console buckets it.
-_DERIVED_PREFIX = ("wb_", "img_", "xwalk_", "fact_")
+_DERIVED_PREFIX = ("wb_", "img_", "xwalk_", "fact_", "bottle_dims", "master_enriched", "master_decisions")
 _DERIVED_SUFFIX = ("_cluster", "_coherence", "_matches", "_merges", "_queue", "_vec", "_summary", "_signal")
-_DERIVED_EXACT = {"match_dict", "catalog_skus", "hoodie_ids", "source_taxonomy", "price_coherence"}
+_DERIVED_EXACT = {"match_dict", "catalog_skus", "hoodie_ids", "source_taxonomy", "price_coherence",
+                  "master_decisions", "smoketest", "ingest_selftest"}
 _GROUPS = [
     ("staging",   lambda n: n.startswith("_")),                      # staging / scratch (hidden by default)
     ("runlog",    lambda n: n.endswith("_runs") or n == "scrape_runs"),
@@ -45,6 +47,74 @@ def classify(name):
         except Exception:
             pass
     return "scrape"                                                   # everything else = a raw source pull
+
+
+# ── canonical SOURCE per dataset: so EVERY source we have shows up ONCE in the console, its data rolled up, no
+# matter how its datasets are named (Total Wine = totalwine/total_wine/master_enriched_tw → one source) or how it
+# runs (connector / launchd / manual). Curated for the known families; anything unmatched falls back to its prefix
+# so nothing is ever dropped. Order = most specific first.
+_SOURCE_DEFS = [
+    (("ubereats",),        "ubereats",    "Uber Eats",                 "aggregator"),
+    (("sevennow",),        "sevennow",    "7NOW · 7-Eleven",           "aggregator"),
+    (("instacart",),       "instacart",   "Instacart",                 "aggregator"),
+    (("doordash", "orlando_merchants"), "doordash", "DoorDash",        "aggregator"),
+    (("abc",),             "abc",         "ABC Fine Wine & Spirits",   "retail chain"),
+    (("binnys",),          "binnys",      "Binny's",                   "retail chain"),
+    (("specs",),           "specs",       "Spec's",                    "retail chain"),
+    (("totalwine", "total_wine", "master_enriched_tw"), "total_wine", "Total Wine & More", "retail chain"),
+    (("haskell",),         "haskells",    "Haskell's",                 "retail chain"),
+    (("walmart",),         "walmart",     "Walmart",                   "grocery"),
+    (("target",),          "target",      "Target",                    "grocery"),
+    (("kroger",),          "kroger",      "Kroger",                    "grocery"),
+    (("publix",),          "publix",      "Publix",                    "grocery"),
+    (("albertsons",),      "albertsons",  "Albertsons",                "grocery"),
+    (("circlek", "circle_k"), "circlek",  "Circle K",                  "convenience"),
+    (("cvs",),             "cvs",         "CVS",                       "drug"),
+    (("cityhive",),        "cityhive",    "City Hive network",         "off-premise"),
+    (("offprem",),         "offprem",     "Off-premise sweep",         "off-premise"),
+    (("bevalc_chains", "bev_alc_chains"), "chains-catalog", "Chain reachability catalog", "reference"),
+    (("shopify",),         "shopify",     "Shopify DTC",               "off-premise"),
+    (("bottlecapps", "national_bottlecapps"), "bottlecapps", "Bottlecapps network", "off-premise"),
+    (("bbg",),             "bbg",         "BBG e-commerce",            "off-premise"),
+    (("winebow",),         "winebow",     "Winebow (distributor)",     "distributor"),
+    (("vtinfo",),          "vtinfo",      "VTInfo where-to-buy",       "reference"),
+    (("ab_outlets", "ab_inbev"), "ab-inbev", "AB InBev locator",       "reference"),
+    (("census",),          "census",      "US Census ACS",             "reference"),
+    (("ttb",),             "ttb",         "TTB COLA registry",         "federal"),
+    (("hemp",),            "hemp",        "Hemp feeds",                "off-premise"),
+    (("or_pricing",),      "or-control",  "Oregon (control state)",    "control state"),
+    (("ut_pricing",),      "ut-control",  "Utah (control state)",      "control state"),
+    (("nc_pricing",),      "nc-control",  "North Carolina (control)",  "control state"),
+    (("mt_pricing",),      "mt-control",  "Montana (control state)",   "control state"),
+    (("me_pricing",),      "me-control",  "Maine (control state)",     "control state"),
+    (("al_pricing",),      "al-control",  "Alabama (control state)",   "control state"),
+    (("id_products",),     "id-control",  "Idaho (control state)",     "control state"),
+    (("bc_liquor",),       "bc-control",  "British Columbia (control)", "control state"),
+    (("mont",),            "montgomery",  "Montgomery County MD",      "control state"),
+    (("tx_",),             "tx-tabc",     "Texas TABC",                "state licenses"),
+    (("il_",),             "il-chicago",  "Chicago / Illinois",        "state licenses"),
+    (("ct_",),             "ct-dcp",      "Connecticut DCP",           "state licenses"),
+    (("ca_",),             "ca-abc",      "California ABC",            "state licenses"),
+    (("fl_", "fl-", "bd400", "abtbrands"), "fl-dbpr", "Florida DBPR",  "state licenses"),
+    (("naop",),            "naop",        "NAOP on-premise",           "market"),
+    (("orlando",),         "orlando",     "Orlando market",            "market"),
+    (("geocode", "match_dict", "menu"), "misc", "Misc / enrichment",   "reference"),
+]
+
+
+def source_of(name):
+    """(key, label, kind) — the canonical source this dataset belongs to."""
+    for prefixes, key, label, kind in _SOURCE_DEFS:
+        for p in prefixes:
+            pat = p if p.endswith(("_", "-")) else p + "_"
+            if name == p or name.startswith(pat):
+                return key, label, kind
+    m = re.match(r"^(.+?)_offprem", name)                             # <city>_offprem_* → the off-premise sweep
+    if m:
+        return "offprem", "Off-premise sweep", "off-premise"
+    key = re.split(r"_(products|catalog|outlets|accounts|census|pricing|inventory|stores|merchants|snapshot|"
+                   r"full|liquor|purch|sales|brands|titos|labels|detail|hours)\b", name)[0]
+    return key, key.replace("_", " ").title(), "other"
 
 
 def _load_json(path, default):
@@ -298,8 +368,33 @@ def build(record_history=True, hist_cap=60):
     sources.sort(key=lambda s: (s["modified"] or 0), reverse=True)  # freshest first
     connectors = sorted(conns.values(), key=lambda c: ({"error": 0, "degraded": 1, "stale": 2}.get(c["status"], 3),
                                                         -(c["run_ts"] or 0)))
+
+    # SOURCE roster — every INGEST source we have, rolled up from its (possibly many, possibly oddly-named) datasets,
+    # so the console shows the full source list at a glance and nothing is missed (e.g. Uber Eats, 7NOW, control
+    # states — which run outside the connector run-log). Outputs (master/derived/staging/runlog) are not sources.
+    rank = {"error": 3, "degraded": 2, "stale": 1, "ok": 0, "unknown": 0, "derived": 0}
+    roster = {}
+    for s in sources:
+        if s["group"] not in ("scrape", "accounts", "timeseries"):
+            continue
+        key, label, kind = source_of(s["name"])
+        s["source"], s["source_label"] = key, label
+        r = roster.setdefault(key, {"key": key, "label": label, "kind": kind, "datasets": [], "rows": 0,
+                                    "modified": None, "status": "unknown", "conn": ""})
+        r["datasets"].append(s["name"])
+        r["rows"] += s["rows"]
+        r["modified"] = max(r["modified"] or 0, s["modified"] or 0) or None
+        if s.get("conn") and not r["conn"]:
+            r["conn"] = s["conn"]
+        if rank.get(s["status"], 0) >= rank.get(r["status"], 0):
+            r["status"] = s["status"]
+    roster = sorted(roster.values(), key=lambda r: (r["modified"] or 0), reverse=True)
+    for r in roster:
+        r["dataset_count"] = len(r["datasets"])
+    totals["source_count"] = len(roster)
+
     return {"as_of": now, "live": True, "warehouse": wh, "build_ms": round((time.time() - now) * 1000),
-            "totals": totals, "connectors": connectors, "sources": sources}
+            "totals": totals, "connectors": connectors, "roster": roster, "sources": sources}
 
 
 # ── caching: memory + disk + background refresh, so the console is ALWAYS instant after the first ever build ───
