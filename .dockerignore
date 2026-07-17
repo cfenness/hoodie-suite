@@ -8,10 +8,20 @@ node_modules
 **/__pycache__
 **/*.pyc
 # engine runtime (regenerated at run time; state persists via STATE_BUCKET if set)
+# These are LARGE scraper-output dirs (full_out was 11GB, specs_out ~1GB) — never web-served and
+# rebuilt at run time. Excluding them keeps the remote-build context tiny (~12GB -> ~20MB = fast deploys).
 unifyd/agent_state
 unifyd/cola_out
 unifyd/out
 unifyd/fixtures
+unifyd/full_out
+unifyd/full_pull_out
+unifyd/specs_out
+unifyd/walmart_raw
+unifyd/*_out
+unifyd/*_raw
+**/*.parquet
+**/*_snapshot.json
 # secrets + local env
 .env
 .env.*
