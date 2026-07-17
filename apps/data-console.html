@@ -1,0 +1,255 @@
+<style>
+  :root{
+    --bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;
+    --accent:#4E79A7;--good:#5bb86e;--warn:#d99a3f;--bad:#e5636b;--derived:#6f7d90;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--sans:Inter,system-ui,-apple-system,sans-serif;
+  }
+  @media (prefers-color-scheme:light){:root{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}}
+  :root[data-theme="light"]{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}
+  :root[data-theme="dark"]{--bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px}
+  .bar{display:flex;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--line);
+       background:var(--panel);position:sticky;top:0;z-index:6;flex-wrap:wrap}
+  h1{font-size:15px;margin:0;font-weight:650;letter-spacing:.2px;display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--good);animation:pulse 2.4s infinite}
+  .dot.off{background:var(--bad);animation:none}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(91,184,110,.5)}70%{box-shadow:0 0 0 6px rgba(91,184,110,0)}100%{box-shadow:0 0 0 0 rgba(91,184,110,0)}}
+  .spacer{flex:1}
+  button,select,input{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;
+       padding:7px 10px;font-family:var(--sans);font-size:13px}
+  button{cursor:pointer}button:hover{border-color:var(--accent)}
+  .tabs{display:flex;gap:2px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:47px;z-index:5}
+  .tab{padding:9px 15px;font-size:13px;color:var(--mut);cursor:pointer;border-bottom:2px solid transparent;font-weight:550}
+  .tab.on{color:var(--ink);border-bottom-color:var(--accent)}
+  .tab .b{font-family:var(--mono);font-size:11px;margin-left:6px;color:var(--mut)}
+  /* warehouse identity — the trust stamp, always visible */
+  .wh{font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:6px;display:flex;align-items:center;gap:6px;font-weight:600}
+  .wh.prod{background:rgba(91,184,110,.14);color:var(--good);border:1px solid rgba(91,184,110,.4)}
+  .wh.local{background:rgba(229,99,107,.14);color:var(--bad);border:1px solid rgba(229,99,107,.5)}
+  .asof{font-family:var(--mono);font-size:11px;color:var(--mut)}
+  .banner{background:var(--bad);color:#fff;padding:9px 18px;font-size:13px;font-weight:600;display:none}
+  .banner.show{display:block}
+  .page{padding:16px 18px;display:none}.page.on{display:block}
+  /* overview cards */
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+  .card b{font-size:26px;font-family:var(--mono);font-variant-numeric:tabular-nums;display:block;line-height:1.1}
+  .card span{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut)}
+  .card small{font-size:11px;color:var(--mut);font-family:var(--mono)}
+  .sec{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--mut);margin:18px 0 8px;font-weight:650}
+  /* health strip */
+  .health{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .hchip{display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+  .hchip b{font-family:var(--mono);font-size:18px;font-variant-numeric:tabular-nums}
+  .hchip span{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px}
+  .sq{width:9px;height:9px;border-radius:2px;display:inline-block}
+  table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px}
+  thead th{position:sticky;top:83px;background:var(--panel2);color:var(--mut);text-align:left;padding:8px 11px;
+       border-bottom:1px solid var(--line);white-space:nowrap;font-weight:600;font-size:10.5px;text-transform:uppercase;
+       letter-spacing:.4px;cursor:pointer;user-select:none}
+  thead th.num,tbody td.num{text-align:right}
+  tbody td{padding:7px 11px;border-bottom:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
+  tbody tr{cursor:pointer}tbody tr:hover td{background:var(--panel)}
+  tbody td.name{font-family:var(--mono);color:var(--ink);max-width:260px;overflow:hidden;text-overflow:ellipsis}
+  .stat-pill{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+  .grp{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
+  .dpos{color:var(--good)}.dneg{color:var(--bad)}.dzero{color:var(--mut)}
+  .warnpill{color:var(--warn);font-size:11px}
+  /* detail drawer */
+  .drawer{position:fixed;top:0;right:0;width:min(760px,92vw);height:100vh;background:var(--panel);border-left:1px solid var(--line);
+       z-index:20;transform:translateX(100%);transition:transform .18s ease;display:flex;flex-direction:column;box-shadow:-10px 0 30px rgba(0,0,0,.25)}
+  .drawer.open{transform:translateX(0)}
+  .dhead{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .dhead h2{font-size:15px;margin:0;font-family:var(--mono)}
+  .dbody{overflow:auto;flex:1}
+  .dstats{display:flex;gap:18px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .dstats .s b{font-family:var(--mono);font-size:18px;font-variant-numeric:tabular-nums;display:block}
+  .dstats .s span{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
+  .spark{height:34px;width:100%}
+  .dtable{width:100%}.dtable thead th{top:0}
+  .dtable tbody td{max-width:280px;overflow:hidden;text-overflow:ellipsis}
+  .msg{padding:40px;color:var(--mut);text-align:center}
+  .x{margin-left:auto;cursor:pointer;color:var(--mut);font-size:20px;background:none;border:none}
+  .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:15;display:none}.backdrop.on{display:block}
+  .filterbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+  .mono{font-family:var(--mono)}
+</style>
+
+<div class="bar">
+  <h1><span id="dot" class="dot"></span>Data Console</h1>
+  <span id="wh" class="wh prod">…</span>
+  <span id="asof" class="asof">—</span>
+  <div class="spacer"></div>
+  <button id="refresh">↻ refresh</button>
+</div>
+<div class="tabs">
+  <div class="tab on" data-view="overview">Overview</div>
+  <div class="tab" data-view="sources">Sources &amp; Scrapes<span class="b" id="tb-src"></span></div>
+  <div class="tab" data-view="accounts">Accounts<span class="b" id="tb-acc"></span></div>
+  <div class="tab" data-view="master">Master<span class="b" id="tb-mst"></span></div>
+  <div class="tab" data-view="errors">Attention<span class="b" id="tb-err"></span></div>
+</div>
+<div id="banner" class="banner"></div>
+
+<div id="overview" class="page on"></div>
+<div id="sources" class="page"></div>
+<div id="accounts" class="page"></div>
+<div id="master" class="page"></div>
+<div id="errors" class="page"></div>
+
+<div id="backdrop" class="backdrop"></div>
+<div id="drawer" class="drawer">
+  <div class="dhead"><h2 id="d-name">—</h2><span id="d-grp" class="stat-pill"></span><button class="x" id="d-close">×</button></div>
+  <div class="dstats" id="d-stats"></div>
+  <div class="dbody" id="d-body"><div class="msg">…</div></div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+const fmt=n=>n==null?'—':Number(n).toLocaleString();
+const STC={ok:'--good',stale:'--warn',error:'--bad',degraded:'--warn',derived:'--derived',unknown:'--mut'};
+let M=null, view='overview', sortKey='modified', sortDir=-1;
+
+function age(s){ if(s==null)return '—'; s=Math.max(0,s); const d=s/86400,h=s/3600,m=s/60;
+  return d>=1?d.toFixed(d<10?1:0)+'d':h>=1?h.toFixed(0)+'h':m>=1?m.toFixed(0)+'m':Math.round(s)+'s'; }
+function ago(ts){ if(!ts)return '—'; return age((Date.now()/1000)-ts)+' ago'; }
+function stampPill(st){ const c=STC[st]||'--mut'; return `<span class="stat-pill" style="background:color-mix(in srgb,var(${c}) 16%,transparent);color:var(${c})">${st}</span>`; }
+function delta(d){ if(d==null)return '<span class="dzero">·</span>'; if(d===0)return '<span class="dzero">0</span>';
+  return `<span class="${d>0?'dpos':'dneg'}">${d>0?'+':''}${fmt(d)}</span>`; }
+
+async function load(fresh){
+  try{
+    const r=await fetch('/api/monitor'+(fresh?'?fresh=1':'')); M=await r.json();
+  }catch(e){ M={live:false,error:'backend unreachable — the console shows nothing rather than guess',sources:[],totals:{}}; }
+  paintStamp(); render();
+}
+function paintStamp(){
+  const wh=$('#wh'), b=$('#banner'), dot=$('#dot');
+  if(!M.live){ dot.classList.add('off'); b.className='banner show';
+    b.textContent='⚠ '+(M.error||'warehouse not readable — no data shown'); wh.className='wh local'; wh.textContent='NO DATA'; $('#asof').textContent=''; return; }
+  dot.classList.remove('off'); b.className='banner';
+  const w=M.warehouse||{}; const prod=w.kind==='production';
+  wh.className='wh '+(prod?'prod':'local');
+  wh.innerHTML=(prod?'● PRODUCTION':'● LOCAL / DEV')+` &nbsp;<span style="opacity:.7">${w.label||''}</span>`;
+  const asof=new Date((M.as_of||0)*1000).toLocaleTimeString();
+  $('#asof').textContent=`as of ${asof}`+(M.cached?` · cached ${age(M.cache_age_s)} ago`:'')+(M.build_ms?` · read in ${M.build_ms}ms`:'')+(M.refreshing?' · refreshing…':'');
+}
+
+function render(){
+  const t=M.totals||{}, S=M.sources||[];
+  $('#tb-src').textContent=S.filter(s=>s.group==='scrape').length||'';
+  $('#tb-acc').textContent=S.filter(s=>s.group==='accounts').length||'';
+  $('#tb-mst').textContent=S.filter(s=>['master','conformed','derived'].includes(s.group)).length||'';
+  const attn=S.filter(s=>['error','degraded','stale'].includes(s.status)).length+((M.connectors||[]).filter(c=>['error','degraded'].includes(c.status)).length);
+  $('#tb-err').textContent=attn||'';
+  renderOverview(); renderTable('sources',s=>s.group==='scrape'||s.group==='timeseries');
+  renderTable('accounts',s=>s.group==='accounts');
+  renderTable('master',s=>['master','conformed','derived'].includes(s.group));
+  renderErrors();
+}
+
+function renderOverview(){
+  const t=M.totals||{}, h=t.health||{}, S=M.sources||[];
+  const cards=[
+    ['grand_rows','total rows','across '+(t.datasets||0)+' datasets'],
+    ['sources','sources / scrapes',''],['accounts','accounts',''],
+    ['items','master items',''],['products','products',''],['skus','skus',''],
+  ].map(([k,l,sub])=>`<div class="card"><b>${fmt(t[k])}</b><span>${l}</span>${sub?`<br><small>${sub}</small>`:''}</div>`).join('');
+  const horder=['ok','stale','degraded','error','unknown'];
+  const health=horder.filter(k=>h[k]).map(k=>`<div class="hchip"><span class="sq" style="background:var(${STC[k]})"></span><b>${h[k]}</b><span>${k}</span></div>`).join('')||'<span class="msg">no pull-cadence sources</span>';
+  const conns=(M.connectors||[]).map(c=>`<tr onclick="openDetailConn('${c.conn}')"><td class="name">${c.conn}</td><td>${stampPill(c.status)}</td>
+     <td class="num">${c.datasets}</td><td class="num">${fmt(c.rows)}</td><td class="num">${c.warnings?`<span class="warnpill">${c.warnings}⚠</span>`:''}</td>
+     <td>${ago(c.run_ts)}</td><td>${c.trigger||''}</td></tr>`).join('');
+  const groups=Object.entries(t.by_group||{}).sort((a,b)=>b[1].rows-a[1].rows).map(([g,v])=>
+     `<tr><td class="name">${g}</td><td class="num">${v.count}</td><td class="num">${fmt(v.rows)}</td></tr>`).join('');
+  $('#overview').innerHTML=`
+    <div class="cards">${cards}</div>
+    <div class="sec">Pull health — is data coming in?</div><div class="health">${health}</div>
+    <div class="sec">Connectors <span class="grp">(health straight from the run log)</span></div>
+    <table><thead><tr><th>connector</th><th>status</th><th class="num">datasets</th><th class="num">rows</th><th class="num">warn</th><th>last run</th><th>trigger</th></tr></thead><tbody>${conns||'<tr><td class="msg" colspan=7>no connectors logged</td></tr>'}</tbody></table>
+    <div class="sec">By layer</div>
+    <table style="max-width:520px"><thead><tr><th>layer</th><th class="num">datasets</th><th class="num">rows</th></tr></thead><tbody>${groups}</tbody></table>`;
+}
+
+const COLS=[['name','source'],['group','layer'],['rows','rows','num'],['delta','Δ','num'],['status','health'],['age_s','fresh','num'],['fields','cols','num']];
+function renderTable(id,filter){
+  const S=(M.sources||[]).filter(filter);
+  S.sort((a,b)=>{ let x=a[sortKey],y=b[sortKey]; x=x==null?-Infinity:x; y=y==null?-Infinity:y;
+    if(typeof x==='string')return sortDir*x.localeCompare(y); return sortDir*(x-y); });
+  const head=COLS.map(([k,l,n])=>`<th class="${n||''}" onclick="setSort('${k}')">${l}${sortKey===k?(sortDir<0?' ↓':' ↑'):''}</th>`).join('');
+  const rows=S.map(s=>`<tr onclick="openDetail('${s.name}')">
+    <td class="name">${s.name}${s.warnings&&s.warnings.length?` <span class="warnpill">${s.warnings.length}⚠</span>`:''}</td>
+    <td class="grp">${s.group}</td><td class="num">${fmt(s.rows)}</td><td class="num">${delta(s.delta)}</td>
+    <td>${stampPill(s.status)}</td><td class="num">${age(s.age_s)}</td><td class="num">${s.fields}</td></tr>`).join('');
+  $('#'+id).innerHTML=`<div class="filterbar"><input id="f-${id}" placeholder="filter ${S.length} sources…" oninput="filterRows('${id}')">
+     <span class="asof">${S.length} sources · ${fmt(S.reduce((a,s)=>a+s.rows,0))} rows</span></div>
+     <table><thead><tr>${head}</tr></thead><tbody>${rows||'<tr><td class="msg" colspan=7>none</td></tr>'}</tbody></table>`;
+}
+function filterRows(id){ const q=($('#f-'+id).value||'').toLowerCase();
+  document.querySelectorAll('#'+id+' tbody tr').forEach(tr=>{ tr.style.display=tr.textContent.toLowerCase().includes(q)?'':'none'; }); }
+function setSort(k){ if(sortKey===k)sortDir*=-1; else{sortKey=k;sortDir=(k==='name'||k==='group')?1:-1;} render(); }
+
+function renderErrors(){
+  const S=(M.sources||[]).filter(s=>['error','degraded','stale'].includes(s.status));
+  const C=(M.connectors||[]).filter(c=>['error','degraded'].includes(c.status));
+  const cc=C.map(c=>`<tr onclick="openDetailConn('${c.conn}')"><td class="name">${c.conn}</td><td>${stampPill(c.status)}</td>
+     <td>${c.run_status||''}</td><td class="num">${c.warnings?`<span class="warnpill">${c.warnings}⚠</span>`:''}</td><td class="num">${c.datasets}</td><td>${ago(c.run_ts)}</td>
+     <td><button onclick="event.stopPropagation();rerun('${c.conn}')">↻ rerun</button></td></tr>`).join('');
+  S.sort((a,b)=>({error:0,degraded:1,stale:2}[a.status])-({error:0,degraded:1,stale:2}[b.status]));
+  const ss=S.map(s=>`<tr onclick="openDetail('${s.name}')"><td class="name">${s.name}</td><td>${stampPill(s.status)}</td>
+     <td class="num">${fmt(s.rows)}</td><td class="num">${age(s.age_s)}</td><td class="grp">${s.group}</td>
+     <td>${(s.warnings||[]).slice(0,1).join('')||''}</td></tr>`).join('');
+  $('#errors').innerHTML=`
+    <div class="sec">Connectors needing attention</div>
+    <table><thead><tr><th>connector</th><th>status</th><th>run</th><th class="num">warn</th><th class="num">datasets</th><th>last run</th><th></th></tr></thead>
+      <tbody>${cc||'<tr><td class="msg" colspan=7>all connectors healthy</td></tr>'}</tbody></table>
+    <div class="sec">Sources: failing, degraded, or stale (&gt;3d)</div>
+    <table><thead><tr><th>source</th><th>status</th><th class="num">rows</th><th class="num">age</th><th>layer</th><th>note</th></tr></thead>
+      <tbody>${ss||'<tr><td class="msg" colspan=6>nothing stale or failing</td></tr>'}</tbody></table>`;
+}
+
+// ── detail drawer: real rows + rows-over-time for one source ──
+let curName=null;
+async function openDetail(name){
+  curName=name; $('#drawer').classList.add('open'); $('#backdrop').classList.add('on');
+  const s=(M.sources||[]).find(x=>x.name===name)||{};
+  $('#d-name').textContent=name; $('#d-grp').outerHTML=`<span id="d-grp" class="stat-pill" style="background:color-mix(in srgb,var(${STC[s.status]||'--mut'}) 16%,transparent)">${s.status||s.group}</span>`;
+  $('#d-stats').innerHTML=`<div class="s"><b>${fmt(s.rows)}</b><span>rows (exact · footer)</span></div>
+    <div class="s"><b>${fmt(s.fields)}</b><span>columns</span></div><div class="s"><b>${age(s.age_s)}</b><span>since change</span></div>
+    <div class="s"><b>${delta(s.delta)}</b><span>Δ last run</span></div>
+    <div class="s"><b>${s.conn?`<button onclick="rerun('${s.conn}')">↻ rerun ${s.conn}</button>`:'—'}</b><span></span></div>`;
+  $('#d-body').innerHTML='<div class="msg">loading real rows…</div>';
+  try{
+    const [dR,hR]=await Promise.all([fetch('/api/monitor/data?name='+encodeURIComponent(name)+'&limit=120'),
+                                     fetch('/api/monitor/history?name='+encodeURIComponent(name))]);
+    const d=await dR.json(), h=await hR.json();
+    const spark=sparkline((h.series||[]).map(p=>p[1]));
+    const cols=d.columns||[]; const th=cols.map(c=>`<th>${c}</th>`).join('');
+    const tr=(d.rows||[]).map(r=>`<tr>${cols.map(c=>`<td title="${String(r[c]??'').replace(/"/g,'&quot;')}">${String(r[c]??'')}</td>`).join('')}</tr>`).join('');
+    $('#d-body').innerHTML=`${spark}${d.note?`<div class="asof" style="padding:0 18px">${d.note}</div>`:''}
+      <table class="dtable"><thead><tr>${th}</tr></thead><tbody>${tr||'<tr><td class="msg">no rows</td></tr>'}</tbody></table>`;
+  }catch(e){ $('#d-body').innerHTML='<div class="msg">could not read rows</div>'; }
+}
+function openDetailConn(conn){ const s=(M.sources||[]).find(x=>x.conn===conn); if(s)openDetail(s.name);
+  else alert('Connector '+conn+' has no directly-linked dataset to preview.'); }
+function sparkline(vals){ if(!vals||vals.length<2)return '<div class="asof" style="padding:8px 18px">no count history yet</div>';
+  const w=700,hh=34,mx=Math.max(...vals),mn=Math.min(...vals),rng=(mx-mn)||1;
+  const pts=vals.map((v,i)=>`${(i/(vals.length-1))*w},${hh-((v-mn)/rng)*(hh-4)-2}`).join(' ');
+  return `<div style="padding:10px 18px 4px"><div class="asof">rows over time · ${fmt(mn)} → ${fmt(mx)}</div>
+    <svg class="spark" viewBox="0 0 ${w} ${hh}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg></div>`; }
+function closeDrawer(){ $('#drawer').classList.remove('open'); $('#backdrop').classList.remove('on'); }
+
+async function rerun(conn){
+  if(!confirm('Trigger a real pull for "'+conn+'"?'))return;
+  try{ await fetch('/api/monitor/rerun',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({conn})});
+    alert('Pull triggered for '+conn+'. Counts update as it lands.'); setTimeout(()=>load(true),1500);
+  }catch(e){ alert('Could not trigger: '+e); } }
+
+$('#refresh').onclick=()=>{ $('#asof').textContent='refreshing…'; load(true); };
+$('#d-close').onclick=closeDrawer; $('#backdrop').onclick=closeDrawer;
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  view=t.dataset.view; document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
+  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id===view)); });
+load(); setInterval(()=>load(),30000);
+</script>

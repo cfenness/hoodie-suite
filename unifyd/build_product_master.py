@@ -26,7 +26,8 @@ import placeholders as _placeholders
 FIELDS = ["brand", "brand_group", "product_name", "class_type", "core_name", "flavor", "abv", "style", "category",
           "origin", "country", "state", "bottled_in", "region", "sub_region", "appellation", "varietal", "image",
           "taste", "body", "food_pairing", "expert_rating", "finish",   # ecommerce PDP describing-fields
-          "size_ml", "packsize", "container", "pack", "upc", "gtin", "vintage", "edition", "supplier"]
+          "size_ml", "packsize", "container", "pack", "upc", "gtin", "vintage", "edition", "supplier",
+          "price"]   # shelf price (soft cross-source clustering signal via price_signal.py — never a key)
 
 # sources with a REAL brand column — used to seed the brand dictionary
 _CLEAN_BRAND = [("kroger_products", "brand"), ("walmart_products", "brand"), ("nc_pricing", "Brand Name"),
@@ -51,6 +52,9 @@ _CFG = {
     # Stop & Shop (Ahold/Peapod) — UPC + subcat, per-store
     "stop_and_shop_products": dict(name="name", brand="brand", upc="upc", cat="subcat", size="size",
                                    image="image", filt=lambda r: r.get("is_alcohol"), dedup=["prod_id"]),
+    # Haskell's (MN, BigCommerce) — UPC + price + exact count; size parses from the name (no size column)
+    "haskells_products": dict(name="name", brand="brand", upc="upc", cat="category", image="image",
+                              price="price", dedup=["sku"]),
     "walmart_products": dict(name="product_name", size_ml="size_ml", upc="upc", abv="abv", brand="brand",
                              cat="category", varietal="varietal", region="region", vintage="vintage",
                              container="container", image="image", flavor="flavor", food_pairing="pairing",
@@ -428,6 +432,191 @@ def build_source_xwalk(con, log=print):
     return len(rows)
 
 
+def build_price_coherence(con, log=print):
+    """SOFT price signal over the master. Groups _stage_product by the SAME product_key the shred assigns and,
+    per key, normalizes each source's shelf price to a per-750ml single (price_signal.unit_price) and scores
+    cross-source agreement. Two payoffs, both non-destructive (writes a signal table, never re-keys):
+      • match QUALITY — a multi-source product whose sources agree on unit price is a price-CORROBORATED match
+        (the same confirmation the image signal gives); `price_corroborated` counts these.
+      • DQ / over-merge — a key whose unit prices diverge >2× flags a size/pack mislabel or two different
+        products keyed together (`divergent`), routed to the review queue.
+    Chris's lens: within a chain the price is within a few bucks, so agreement across chains is strong evidence."""
+    import price_signal
+    keys = master_apply._keyexprs(FIELDS)
+    uri = warehouse.uri("_stage_product")
+    sql = ("SELECT %s AS product_key, _source AS source, price, size_ml, pack "
+           "FROM read_parquet('%s') WHERE price IS NOT NULL AND price > 0" % (keys["product"], uri))
+    rows = con.execute(sql).fetchall()
+    by_key = {}
+    for pk, src, price, size_ml, pack in rows:
+        by_key.setdefault(pk, []).append((src, price_signal.unit_price(price, size_ml, pack)))
+    out, corrob, diverg, priced_keys = [], 0, 0, 0
+    for pk, members in by_key.items():
+        ups = [u for _s, u in members if u is not None]
+        st = price_signal.cluster_stats(ups)
+        if not st:
+            continue
+        priced_keys += 1
+        n_sources = len({s for s, _u in members})
+        div_idx = price_signal.divergence(ups, tol_ratio=2.0)
+        # price-corroborated = >=2 priced sources whose unit price agrees within band
+        agree = sum(1 for u in ups if price_signal.agrees(u, st["median"])) if n_sources >= 2 else 0
+        is_corrob = n_sources >= 2 and agree >= 2
+        if is_corrob:
+            corrob += 1
+        if div_idx:
+            diverg += 1
+        out.append(dict(product_key=pk, n_priced=st["n"], n_sources=n_sources,
+                        median_unit_price=st["median"], min_unit_price=st["min"], max_unit_price=st["max"],
+                        spread_ratio=st["spread_ratio"], agree_within_band=agree,
+                        price_corroborated=bool(is_corrob), divergent=bool(div_idx)))
+    warehouse.write_parquet("price_coherence", out,
+                            ["product_key", "n_priced", "n_sources", "median_unit_price", "min_unit_price",
+                             "max_unit_price", "spread_ratio", "agree_within_band", "price_corroborated", "divergent"])
+    log("[master] price_coherence: %d priced product-keys | %d price-corroborated (multi-source agree) | "
+        "%d divergent (>2x — over-merge/size DQ)" % (priced_keys, corrob, diverg))
+    return len(out)
+
+
+def build_category_signal(con, log=print):
+    """UPC-FREE identity via the category discriminator tree ([[discriminator-identity-model]]). UPC coverage is
+    biased — retailers scan at POS so their barcodes are clean, but the supplier/distributor tier barely uses UPC,
+    so the ~88% with no barcode are concentrated where identity matters most. This groups _stage_product by the
+    category_key (category_tree.key: walk each record down its category's discriminator tree — scotch → malt →
+    age → cask …) and writes `category_cluster` (the identity a record lands in with no barcode) + logs the
+    multi-source lift vs the md5 item key. Non-destructive; a signal table, never re-keys the dims. NOTE: a pure
+    hard key over-splits on a MISSING discriminator (age stated on one source only) — the tri-state
+    category_tree.compare() calls those AMBIGUOUS and is the next step (union-find + price/UPC tie-break)."""
+    import category_tree
+    keys = master_apply._keyexprs(FIELDS)
+    uri = warehouse.uri("_stage_product")
+    cur = con.execute("SELECT product_name, brand, category, class_type, varietal, region, abv, size_ml, "
+                      "vintage, _source, %s AS item_key FROM read_parquet('%s')" % (keys["item"], uri))
+    cat, item_src = {}, collections.defaultdict(set)
+    while True:
+        batch = cur.fetchmany(50000)
+        if not batch:
+            break
+        for (name, brand, category, class_type, varietal, region, abv, size_ml, vintage, source, item_key) in batch:
+            if item_key:
+                item_src[item_key].add(source)
+            ck, canon = category_tree.key(name, brand=brand, category=category, class_type=class_type,
+                                          fields={"varietal": varietal, "region": region, "abv": abv,
+                                                  "size_ml": size_ml, "vintage": vintage})
+            if not ck:
+                continue
+            e = cat.get(ck)
+            if e is None:
+                cat[ck] = {"sources": {source}, "n": 1, "name": name or "", "canon": canon}
+            else:
+                e["sources"].add(source); e["n"] += 1
+    out = [dict(category_key=ck, canon=e["canon"][:200], members=e["n"], n_sources=len(e["sources"]),
+                sources=",".join(sorted(e["sources"]))[:300], sample_name=(e["name"] or "")[:200],
+                corroborated=len(e["sources"]) >= 2)
+           for ck, e in cat.items()]
+    warehouse.write_parquet("category_cluster", out,
+                            ["category_key", "canon", "members", "n_sources", "sources", "sample_name", "corroborated"])
+    cat_multi = sum(1 for e in cat.values() if len(e["sources"]) >= 2)
+    item_multi = sum(1 for s in item_src.values() if len(s) >= 2)
+    log("[master] category_cluster: %d keys (%d multi-source %.2f%%) vs md5 item %d keys (%d multi-source %.2f%%); "
+        "UPC-free identity consolidates %d→%d distinct items" %
+        (len(cat), cat_multi, 100.0 * cat_multi / max(1, len(cat)),
+         len(item_src), item_multi, 100.0 * item_multi / max(1, len(item_src)), len(item_src), len(cat)))
+    return len(out)
+
+
+def build_identity_clusters(con, log=print):
+    """RESOLVED spine identity: union-find (identity_resolve) over the category clusters, recovering the ~13%
+    AMBIGUOUS over-splits the hard category key leaves — merges compatible keys within a (family,brand) block
+    that a shared UPC or an agreeing price band confirms ([[discriminator-identity-model]]). Writes
+    `identity_cluster` — the transferable, UPC-optional key everything (incl. TTB, [[ttb-not-spine]]) routes
+    into — and logs the multi-source lift vs the raw category key. Non-destructive; a signal table, not a re-key."""
+    import category_tree, price_signal, identity_resolve
+    MAXB = int(os.environ.get("IDENTITY_MAX_BLOCK", "400"))          # skip pairwise on pathological blocks
+    uri = warehouse.uri("_stage_product")
+    cols = {d[0] for d in con.execute("SELECT * FROM read_parquet('%s') LIMIT 0" % uri).description}
+    price_sel = "price" if "price" in cols else "NULL AS price"    # price is a newer staged column; tolerate its absence
+    cur = con.execute("SELECT product_name, brand, category, class_type, varietal, region, abv, size_ml, "
+                      "vintage, pack, %s, upc, _source FROM read_parquet('%s')" % (price_sel, uri))
+    blocks, ck_src, ck_n = {}, collections.defaultdict(set), collections.Counter()   # blocks; ck->sources; ck->rows
+    while True:
+        batch = cur.fetchmany(50000)
+        if not batch:
+            break
+        for (name, brand, category, class_type, varietal, region, abv, size_ml,
+             vintage, pack, price, upc, source) in batch:
+            fields = {"varietal": varietal, "region": region, "abv": abv, "size_ml": size_ml, "vintage": vintage}
+            vec = category_tree.vector(name, brand=brand, category=category, class_type=class_type, fields=fields)
+            ck, _canon = category_tree.key_from_vector(vec)
+            if not ck:
+                continue
+            ck_src[ck].add(source); ck_n[ck] += 1
+            # block by the SAME normalized brand the vector's brand node uses, else same-key rows split blocks
+            bkey = (category_tree.family(category, class_type, name), category_tree._brand_norm(brand))
+            blk = blocks.setdefault(bkey, {})
+            e = blk.get(ck)
+            if e is None:
+                e = blk[ck] = {"vec": vec, "sources": set(), "unit_prices": [], "upcs": set(), "n": 0, "name": name or ""}
+            e["sources"].add(source); e["n"] += 1
+            up = price_signal.unit_price(price, size_ml, pack)
+            if up is not None:
+                e["unit_prices"].append(up)
+            nu = _sku_match.norm_upc(upc)
+            if nu:
+                e["upcs"].add(nu)
+    cluster_src, cluster_meta = collections.defaultdict(set), {}
+    reasons = collections.Counter()
+    skipped_blocks = skipped_keys = 0
+    for (fam, brand), blk in blocks.items():
+        if len(blk) > MAXB:
+            skipped_blocks += 1; skipped_keys += len(blk)
+            roots = {k: k for k in blk}
+        else:
+            roots, merges = identity_resolve.resolve_block(blk)
+            for _a, _b, why in merges:
+                reasons[why] += 1
+        for ck, root in roots.items():
+            cid = root                          # the representative category_key already encodes family+brand
+            e = blk[ck]
+            cluster_src[cid] |= e["sources"]
+            m = cluster_meta.setdefault(cid, {"members": 0, "name": e["name"]})
+            m["members"] += e["n"]
+    total_rows = sum(ck_n.values())
+    ck_multi = sum(1 for s in ck_src.values() if len(s) >= 2)
+    cl_multi = sum(1 for s in cluster_src.values() if len(s) >= 2)
+    # record-level coverage: fraction of ROWS in a multi-source identity. Monotonic under merging (the honest
+    # lift metric — merging can only move rows INTO a multi-source cluster, never out; distinct-key rate can dip
+    # when two already-multi-source keys correctly merge).
+    ck_cov = sum(n for ck, n in ck_n.items() if len(ck_src[ck]) >= 2)
+    cl_cov = sum(cluster_meta[cid]["members"] for cid, src in cluster_src.items() if len(src) >= 2)
+    # TIER (implements [[ttb-not-spine]] non-destructively): a cluster is Tier 1 = the canonical master iff a
+    # COMMERCIAL (non-TTB) source carries it; TTB-only = Tier 0 = quarantine/innovation-radar, NOT the master
+    # count. TTB is a contributor, not the spine — it never mints a master identity on its own.
+    _TTB = {"ttb_products"}
+    def _tier(src):
+        return 1 if (set(src) - _TTB) else 0
+    out = [dict(cluster_id=cid, members=cluster_meta[cid]["members"], n_sources=len(src),
+                commercial_sources=len(set(src) - _TTB), has_ttb=("ttb_products" in src), tier=_tier(src),
+                sources=",".join(sorted(src))[:300], sample_name=(cluster_meta[cid]["name"] or "")[:200],
+                corroborated=len(src) >= 2)
+           for cid, src in cluster_src.items()]
+    warehouse.write_parquet("identity_cluster", out,
+                            ["cluster_id", "members", "n_sources", "commercial_sources", "has_ttb", "tier",
+                             "sources", "sample_name", "corroborated"])
+    tier1 = sum(1 for _c, s in cluster_src.items() if _tier(s) == 1)
+    log("[master]   TIER (TTB not spine): %d Tier-1 = canonical master (commercial-corroborated) | %d Tier-0 = "
+        "TTB-only quarantine/innovation-radar" % (tier1, len(cluster_src) - tier1))
+    log("[master] identity_cluster: %d clusters (raw category %d keys) — consolidated %d; merges %s; "
+        "skipped %d big blocks (%d keys, >%d)" %
+        (len(cluster_src), len(ck_src), len(ck_src) - len(cluster_src), dict(reasons),
+         skipped_blocks, skipped_keys, MAXB))
+    log("[master]   multi-source RECORD coverage: %.2f%% resolved (%d/%d rows) vs %.2f%% raw category "
+        "(%d rows) — +%d rows now cross-source corroborated" %
+        (100.0 * cl_cov / max(1, total_rows), cl_cov, total_rows,
+         100.0 * ck_cov / max(1, total_rows), ck_cov, cl_cov - ck_cov))
+    return len(out)
+
+
 def build(log=print):
     by1 = build_brand_dict(log)
     staged = []
@@ -475,6 +664,9 @@ def build(log=print):
                 upc=(re.sub(r"\D", "", str(r.get(c["upc"]))) or None) if c.get("upc") and r.get(c["upc"]) else None,
                 gtin=(re.sub(r"\D", "", str(r.get(c["gtin"]))) or None) if c.get("gtin") and r.get(c["gtin"]) else None,
                 edition=None, supplier=None, _source=ds,
+                # shelf price → soft clustering signal (price_signal.py). Read the source's price col (per-source
+                # override via _CFG "price", else a plain "price" column); None where the source carries none.
+                price=_fnum(r.get(c["price"])) if c.get("price") else _fnum(r.get("price")),
                 _source_id=(str(r.get(idc)) if idc and r.get(idc) is not None else None),
                 vintage=_clean_vintage(r.get(c["vintage"])) if c.get("vintage") else None,
                 **{fld: ((str(r.get(c[fld])).strip() or None) if c.get(fld) and r.get(c[fld]) else None)
@@ -546,6 +738,18 @@ def build(log=print):
         build_source_xwalk(con, log=log)               # (recomputes the SAME md5 keys over _stage_product)
     except Exception as e:
         log("[master] source xwalk skipped: %s" % str(e)[:80])
+    try:                                                # SOFT price signal: cross-source unit-price agreement
+        build_price_coherence(con, log=log)            # (price-corroborated matches + over-merge DQ), non-destructive
+    except Exception as e:
+        log("[master] price_coherence skipped: %s" % str(e)[:80])
+    try:                                                # UPC-FREE identity: category discriminator-tree key
+        build_category_signal(con, log=log)            # (category_cluster — match path for the ~88% w/o UPC)
+    except Exception as e:
+        log("[master] category_cluster skipped: %s" % str(e)[:80])
+    try:                                                # RESOLVED spine: union-find recovers ambiguous over-splits
+        build_identity_clusters(con, log=log)          # (identity_cluster — price/UPC-confirmed merges)
+    except Exception as e:
+        log("[master] identity_cluster skipped: %s" % str(e)[:80])
     log("[master] DONE — %s" % dims)
     try:                                                # mint/reuse durable Hoodie IDs for the rebuilt entities
         import hoodie_ids                                # (persistent registry — same real entity keeps its id)

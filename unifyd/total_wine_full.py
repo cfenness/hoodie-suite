@@ -39,12 +39,7 @@ def _land(rows, log, part=None):
         return 0
     n = observe.record("total-wine", rows, log=lambda *a: None, part=part)
 
-    def _s(v):
-        return "" if v is None else str(v)
-    enr = [{"sku": _s(r["sku"]), "name": _s(r["name"]), "brand": _s(r["brand"]), "size": _s(r["size"]),
-            "price": r["price"], "abv": _s(r["abv"]), "varietal": _s(r["varietal"]), "origin": _s(r["origin"]),
-            "region": _s(r["region"]), "style": _s(r["style"]), "category": _s(r["style"]), "url": "",
-            "store_id": _s(r["store_id"])} for r in rows]
+    enr = twi.enrich_rows(rows)          # full field set (finish/taste/award/pairings/planogram/… + raw_json)
     try:
         warehouse.write_accumulate("total_wine_products", enr, key=lambda r: r["sku"])
     except Exception as e:
@@ -65,15 +60,18 @@ def run(store, state=None, shards=1, shard=0, resume=True, log=print):
     state = (state or "").upper() or "US"
     total, got = len(allsk), 0
     conn = "total-wine-full" + ("/s%d" % shard if shards > 1 else "")
+    # TW_FETCH=direct -> $0 local-browser cookie warm + requests.Session (no flaky BD Browser CDP); else bdbrowser
+    pull = twi._pull_direct if twi.FETCH == "direct" else twi._pull_bdbrowser
+    log("[tw-full] fetch mode: %s" % twi.FETCH)
     with runlog.track(conn, total=total) as rl:
         day = time.strftime("%Y-%m-%d")
         for b in range(0, total, BATCH):
             batch = allsk[b:b + BATCH]
             try:
-                rows = twi._pull_bdbrowser(store, state, batch, log)   # fresh session + PX warm per batch
+                rows = pull(store, state, batch, log)                 # fresh PX warm per batch (self-healing)
             except Exception as e:
-                # a batch can fail on a flaky BD Browser warm (Page.goto timeout) or a dropped session — that
-                # must NOT kill the whole run; log, advance, and let the NEXT batch open a fresh session.
+                # a batch can fail on a flaky warm (goto timeout) or a dropped session — that must NOT kill the
+                # run; log, advance, and let the NEXT batch open a fresh session.
                 log("[tw-full] ⚠ batch %d failed to pull (%s) — skipping; next batch re-warms" % (b, str(e)[:70]))
                 rl.progress(min(b + BATCH, total))
                 continue

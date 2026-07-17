@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""specs_scraper.py — STORE-LEVEL price + availability tracker for Spec's (specsonline.com).
+"""specs_scraper.py — STORE-LEVEL price + INVENTORY-COUNT tracker for Spec's (specsonline.com).
 
 Spec's serves bots (200) and embeds a per-store `variants` object right in the product
-page — 114 stores, each with `inStock` (bool) and `unitPrice` (cents) keyed by a store code
-in `code` ("<storeCode>-<sku>"). So we fetch the product page directly (no Bright Data) and
-read per-store price + availability. Snapshot is keyed `sku|storeCode`; day-over-day the
-per-store in/out and price moves are the directional signal (Spec's exposes binary in/out,
-not a unit count like Binny's).
+page — ~190 store variants, each with `inStock` (bool) and `unitPrice` (cents) keyed by a store code
+in `code` ("<storeCode>-<sku>"). That page block gives per-store price + in/out for free in
+ONE fetch. The actual UNIT COUNT lives one hop away: the PDP calls an inventory API
+`GET /api/products/stock/{storeCode}-{upc}/` → {status:"ok", available:N, tracked:bool}.
+So Spec's is a real COUNTS source (like Binny's/ABC), not just in/out — we read the number
+per (store, product) from that endpoint. Snapshot keyed `sku|storeCode`, carrying `qty`.
 
 connId: `specs`. Harvest product URLs from the sitemap (direct), poll a deterministic
 sample, diff vs the prior snapshot. Self-reports `degraded` if the `variants` block can't
 be parsed on most pages (markup drift).
+
+Counts fan out one call per (in-stock store, product) — SPECS_QTY=1 default; set
+SPECS_COUNT_STORES="0,5,35" to restrict counts to a focus set of stores (bounds request
+volume on a full crawl), else all in-stock stores are counted.
 """
 import argparse, hashlib, json, os, re, sys, time, urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -18,6 +23,8 @@ import polite
 from abc_fws_scraper import diff_snapshots   # generic per-key price/in-stock diff
 SPECS_MIN_INT = float(os.environ.get("SPECS_MIN_INTERVAL", "0.6"))
 SPECS_PROXY   = os.environ.get("SPECS_PROXY", "0") == "1"
+SPECS_QTY     = os.environ.get("SPECS_QTY", "1") == "1"          # pull the numeric per-store unit count
+_COUNT_STORES = {s.strip() for s in os.environ.get("SPECS_COUNT_STORES", "").split(",") if s.strip()}
 
 BASE      = "https://specsonline.com"
 SITEMAP   = BASE + "/sitemap.xml"
@@ -133,11 +140,46 @@ def parse_stores(html):
     return rows, name
 
 
+def fetch_store_qty(store, upc, timeout=15):
+    """Per-store on-hand UNITS via Spec's inventory API: /api/products/stock/{store}-{upc}/
+    → {status:'ok', available:N, tracked:bool}. Returns the int count, or None when the
+    product isn't inventory-tracked at that store or the call fails. This is the numeric
+    count the embedded `variants` block omits (it carries only the inStock bool)."""
+    if not (store and upc):
+        return None
+    try:
+        d = json.loads(_http("%s/api/products/stock/%s-%s/" % (BASE, store, upc), timeout=timeout))
+    except Exception:
+        return None
+    if not isinstance(d, dict) or d.get("status") != "ok" or not d.get("tracked"):
+        return None
+    v = d.get("available")
+    return int(v) if isinstance(v, (int, float)) else None
+
+
+def store_quantities(rows, upc, log=print):
+    """For a product's per-store `rows` (from parse_stores), fetch the unit count at each IN-STOCK store
+    (out-of-stock ⇒ 0, no call needed). Restrict to SPECS_COUNT_STORES when set. Returns {store: qty}."""
+    qmap = {}
+    if not (SPECS_QTY and upc):
+        return qmap
+    for r in rows:
+        st = r.get("store")
+        if not r.get("instock"):
+            continue
+        if _COUNT_STORES and st not in _COUNT_STORES:
+            continue
+        q = fetch_store_qty(st, upc)
+        if q is not None:
+            qmap[st] = q
+    return qmap
+
+
 _UPC_RE = re.compile(r'/(\d{11,14})\.(?:jpg|jpeg|png|webp)', re.I)
 # Every product-level field the PDP exposes → a clean column in specs_products (feeds the master).
 SPECS_FLD = ["sku", "slug", "url", "name", "brand", "type", "varietal", "abv", "origin", "region", "state",
              "vintage", "tasting_notes", "pairs_with", "description", "price", "upc", "image",
-             "in_stock_stores", "store_count", "raw_json"]
+             "in_stock_stores", "store_count", "units_total", "stores_tracked", "raw_json"]
 
 
 def _brace_obj(s, anchor):
@@ -280,13 +322,19 @@ def pull(sample=30, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
                 rows, name = parse_stores(html)
                 prod = parse_product(html, slug, url, stores=rows)   # full product-detail record
                 img = prod.get("image") or ""
+                # numeric per-store units via the inventory API (the count the variants block omits)
+                qmap = store_quantities(rows, prod.get("upc") or "", log=log)
+                if qmap:
+                    prod["units_total"] = sum(qmap.values())         # product headline: total on-hand across counted stores
+                    prod["stores_tracked"] = len(qmap)
                 with lock:
                     if rows:
                         ok_n += 1
                     for r in rows:
                         cur[f"{slug}|{r['store']}"] = {"price": r["price"], "instock": r["instock"],
                                                        "store": r["store"], "slug": slug, "sku": r["sku"],
-                                                       "name": name, "image": img}
+                                                       "name": name, "image": img, "qty": qmap.get(r["store"]),
+                                                       "upc": prod.get("upc") or "", "brand": prod.get("brand") or ""}
                     if name:
                         names[slug] = name
                     if prod.get("name") or prod.get("sku"):
@@ -323,8 +371,21 @@ def pull(sample=30, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
     status = "failed" if not cur else ("degraded" if warnings else "success")
 
     json.dump({"__ts__": int(time.time() * 1000), "cells": cur}, open(snap_path, "w"), indent=2)
-    header = ["SKU", "Product", "Store", "Price", "In Stock"]
-    rows = [[v["sku"] or v["slug"], v["name"], v["store"], v["price"], v["instock"]]
+    # Land the per-store observation time-series with the UNIT COUNT (makes Spec's a true Counts source, like
+    # Binny's) — qty=exact on-hand, in_stock from the variants block. Dated partition per (date, source).
+    try:
+        import observe
+        observe.record("specs", [dict(source="specs", store_id=v["store"], store="Spec's #%s" % v["store"],
+                                      product_id=v.get("sku") or v["slug"], upc=v.get("upc", ""),
+                                      brand=v.get("brand", ""), name=v.get("name") or "", price=v.get("price"),
+                                      on_promo=False, in_stock=bool(v.get("instock")), qty=v.get("qty"),
+                                      stock_level=("in" if v.get("instock") else "out"), is_hemp=False)
+                                 for v in cur.values()], log=log)
+    except Exception as e:
+        log("  [specs] observe skipped: %s" % str(e)[:80])
+    n_qty = sum(1 for v in cur.values() if v.get("qty") is not None)
+    header = ["SKU", "Product", "Store", "Price", "In Stock", "Units"]
+    rows = [[v["sku"] or v["slug"], v["name"], v["store"], v["price"], v["instock"], v.get("qty")]
             for k, v in sorted(cur.items())]
     datasets = {"specs_store_cells": {"header": header, "rows": rows[:800],
                                       "total": len(rows), "products": n_products, "movement": movement}}
@@ -354,7 +415,7 @@ def pull(sample=30, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
               open(os.path.join(out, "datasets.json"), "w"), indent=2)
     datasets["specs_store_cells"]["_rows_full"] = rows   # full set for export (in-memory return only)
     run = run_record(movement, n_products, status, warnings)
-    log(f"done: {n_products} products × stores = {len(cur)} cells; "
+    log(f"done: {n_products} products × stores = {len(cur)} cells ({n_qty} with a unit count); "
         + (f"{movement['changed']} store-cells moved since last run" if prev else "baseline"))
     return datasets, [run], movement
 

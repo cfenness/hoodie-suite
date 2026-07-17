@@ -1,0 +1,28 @@
+# Cloud scraper-worker: run the no-BD browser scrapers (UberEats first) HEADFUL under Xvfb on Linux.
+# Headless is Cloudflare-blocked, so we need a real rendered browser on a virtual framebuffer. The Playwright
+# base image ships the browser system-deps + Xvfb; we add REAL google-chrome-stable (channel="chrome") + patchright.
+FROM mcr.microsoft.com/playwright/python:v1.48.0-jammy
+
+RUN apt-get update && apt-get install -y --no-install-recommends wget gnupg xvfb ca-certificates \
+ && wget -q -O /usr/share/keyrings/google-chrome.pub https://dl.google.com/linux/linux_signing_key.pub \
+ && echo "deb [signed-by=/usr/share/keyrings/google-chrome.pub] http://dl.google.com/linux/chrome/deb/ stable main" \
+      > /etc/apt/sources.list.d/google-chrome.list \
+ && apt-get update && apt-get install -y --no-install-recommends google-chrome-stable \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir playwright patchright pyarrow duckdb requests \
+ && python -m playwright install chromium \
+ && python -m patchright install chromium
+
+WORKDIR /app
+COPY unifyd/ /app/unifyd/
+
+# real Chrome, headful (Xvfb provides the display), persistent profile on the mounted volume so zone/trust survive
+ENV BROWSER_CHANNEL=chrome \
+    BROWSER_HEADFUL=1 \
+    BROWSER_PROFILE_DIR=/data/profiles \
+    PYTHONUNBUFFERED=1
+
+# Run the probe to a file on the VOLUME, then idle — result persists regardless of ssh/log flakiness.
+# Read it with: flyctl ssh console -C "cat /data/ue_result.txt". Clears the stale Chrome profile lock first.
+CMD ["bash","-lc","rm -f /data/profiles/ubereats_com_chrome/Singleton*; xvfb-run -a python /app/unifyd/ubereats.py --max-stores 2 --no-land > /data/ue_result.txt 2>&1; echo DONE >> /data/ue_result.txt; sleep infinity"]

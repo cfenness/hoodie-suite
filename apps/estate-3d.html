@@ -18,6 +18,8 @@
   .lbl.planned{color:#6f938a}
   .lbl.dim{opacity:.1}
   .lbl.hush{display:none}   /* source labels hidden until their family is focused — declutters the field */
+  .lbl.near,.lbl.hov{display:block!important;opacity:1!important}   /* reveal on zoom-in (.near) or hover (.hov) — labels shouldn't need a click */
+  .lbl.hov{color:#fff;font-weight:600;z-index:6}
   .clbl{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;pointer-events:auto;cursor:pointer;white-space:nowrap;text-shadow:0 1px 6px rgba(0,0,0,.92),0 0 2px rgba(0,0,0,.9);opacity:.94;transition:opacity .3s}
   .clbl b{font-weight:700;opacity:.62;margin-left:4px}
   .clbl:hover{opacity:1}
@@ -325,6 +327,19 @@ function buildModel(live){
   ENT.forEach(e=>{ const n={id:e.id,label:e.label,kind:'ent',pos:ENT_POS[e.id].clone()}; nodes.push(n); byId[e.id]=n; });
   CANON.forEach(([a,b,road,ca,cb])=>edges.push({a,b,road:road||'is-a',card:true,ca:ca||null,cb:cb||null}));
 
+  // ── src_<grain> STAGING TIER — every source first NORMALIZES into src_<grain> (a per-source shred), which the
+  // matcher then CONSOLIDATES into the master dim. So the lineage reads source → src_brand → Brand, not
+  // source → Brand: sources attach to the staging node, and one "match" edge carries it into the master.
+  const STAGED=new Set(['brand','product','item','sku','outlet']);
+  const stageId=g=>'src-'+g;
+  const stageB=e=>STAGED.has(e)?stageId(e):e;   // route a source's grain edge through its staging node
+  STAGED.forEach(g=>{ const base=ENT_POS[g]; if(!base) return;
+    const off=(g==='outlet')?new THREE.Vector3(0,16,-20):new THREE.Vector3(0,15,24);
+    const n={id:stageId(g),label:'src_'+g,kind:'stage',grain:g,live:true,pos:base.clone().add(off)};
+    nodes.push(n); byId[n.id]=n;
+    edges.push({a:stageId(g),b:g,road:'match',stage:true});   // consolidation: src_<grain> → master dim
+  });
+
   const recByHost={}; (live.recipes||[]).forEach(r=>{ recByHost[r.host]=r; });
   const seen={};   // dedupe by display name
   function addSource(key,disp,status,sub,cols,hints,liveFlag,dataset,host){
@@ -342,7 +357,7 @@ function buildModel(live){
              // source still clusters by its best signal (preEnt) even when the fact edge is unconfirmed — no 'other'
              sub:sub,live:liveFlag,cols:(cols||[]),dataset:dataset||null,host:host||null,
              primaryEnt:ents[0]||preEnt,pos:stablePos(disp,ents.length?ents:[preEnt])};
-    nodes.push(n); byId[key]=n; rs.forEach(([e,road])=>edges.push({a:key,b:e,road}));
+    nodes.push(n); byId[key]=n; rs.forEach(([e,road])=>edges.push({a:key,b:stageB(e),road}));
   }
 
   // 1) the familiar estate — catalog names, with LIVE status/cols overlaid from the backend
@@ -368,7 +383,7 @@ function buildModel(live){
                sub:'system feed · '+sf.grains.map(g=>ENTLABEL[g]||g).join(' · ')+(total?(' · '+total.toLocaleString()+' recs'):''),
                primaryEnt:sf.primaryEnt, pos:stablePos(sf.label, sf.grains)};
       nodes.push(n); byId[n.id]=n;
-      sf.grains.forEach(e=>{ if(ENT_POS[e]) edges.push({a:n.id,b:e,road:e==='pricing'?'price':(e==='inventory'?'availability':(e==='outlet'?'address':(e==='brand'?'brand':'has')))}); });
+      sf.grains.forEach(e=>{ if(ENT_POS[e]) edges.push({a:n.id,b:stageB(e),road:e==='pricing'?'price':(e==='inventory'?'availability':(e==='outlet'?'address':(e==='brand'?'brand':'has')))}); });
     });
     // owned datasets NOT already shown as a system feed — Census / reference / outlet-only tables etc. Without
     // this they vanish when online (the system feeds only cover src_-emitting sources). Mapped by roadsFromCols
@@ -468,12 +483,13 @@ function buildGraph(model){
   disposeGraph();
   nodes=model.nodes; edges=model.edges; byId=model.byId; adj=model.adj; selected=null;
   nodes.forEach(n=>{
-    const ent=n.kind==='ent';
-    const col=ent?0x3fb8a3:new THREE.Color(STCOL[n.status]||(n.live?0x5bb86e:0x5f7a72)).getHex();
-    const mat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:ent?.5:(n.live?.3:.12),roughness:.5,metalness:.1,transparent:true,opacity:1,flatShading:!ent});
-    const m=new THREE.Mesh(ent?esph:soct,mat); m.scale.setScalar(ent?7.6:(n.live?4.9:3.8)); m.position.copy(n.pos); m.userData=n; graph.add(m); n.mesh=m; n.mat=mat;
-    const d=document.createElement('div'); d.className='lbl'+(ent?' ent':(' hush'+(n.live?'':' planned')));
+    const ent=n.kind==='ent'; const stage=n.kind==='stage';
+    const col=ent?0x3fb8a3:(stage?0xd9b03f:new THREE.Color(STCOL[n.status]||(n.live?0x5bb86e:0x5f7a72)).getHex());
+    const mat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:ent?.5:(stage?.42:(n.live?.3:.12)),roughness:.5,metalness:.1,transparent:true,opacity:1,flatShading:!ent&&!stage});
+    const m=new THREE.Mesh((ent||stage)?esph:soct,mat); m.scale.setScalar(ent?7.6:(stage?5.4:(n.live?4.9:3.8))); m.position.copy(n.pos); m.userData=n; graph.add(m); n.mesh=m; n.mat=mat;
+    const d=document.createElement('div'); d.className='lbl'+(ent?' ent':(stage?' ent':(' hush'+(n.live?'':' planned'))));
     if(ent){ const meta=ENTMETA[n.id]; d.innerHTML='<span class="en">'+n.label+'</span>'+(meta?'<span class="pk">🔑 '+meta.pk+'</span>':''); }
+    else if(stage){ d.innerHTML='<span class="en">'+n.label+'</span><span class="pk">normalize → match</span>'; }
     else d.textContent=n.label;
     // label offset is in the mesh's LOCAL space (scaled by setScalar above), so keep it just
     // past the unit-geometry radius (1) — ~1.5 sits the label snug above the node, not floating.
@@ -530,7 +546,7 @@ function setFocus(n){
   clusterLabels.forEach(o=>o.element.classList.toggle('dim', o.userData.cl.key!==n._ck));
   showSel(n); flyTo(n);
 }
-function flyTo(n){ const off=camera.position.clone().sub(controls.target).normalize().multiplyScalar(n.kind==='ent'?72:54);
+function flyTo(n){ const off=camera.position.clone().sub(controls.target).normalize().multiplyScalar(n.kind==='ent'?72:36);   // land closer to a source ball so you actually reach it
   fly={toT:n.pos.clone(),toC:n.pos.clone().add(off),t:0,fromT:controls.target.clone(),fromC:camera.position.clone()}; }
 function focusCluster(cl){
   selected=null; if(window.__efSync) window.__efSync(' ');
@@ -650,6 +666,17 @@ addEventListener('pointerup',ev=>{
     if(bd<46) node=best; }
   setFocus(node);
 });
+// hover reveals the nearest ball's label — so labels are visible by MOVING over the field, no click/reach needed
+let _hov=null;
+addEventListener('pointermove',ev=>{
+  if(ev.buttons){ if(_hov){ _hov.lo&&_hov.lo.classList.remove('hov'); _hov=null; } return; }   // orbiting → no hover
+  let best=null,bd=1e9; const v=new THREE.Vector3();
+  nodes.forEach(n=>{ if(!n.lo)return; v.copy(n.pos).project(camera); if(v.z>1)return;
+    const d=Math.hypot((v.x*.5+.5)*innerWidth-ev.clientX,(-v.y*.5+.5)*innerHeight-ev.clientY); if(d<bd){bd=d;best=n;} });
+  const near=bd<38?best:null;
+  if(near!==_hov){ if(_hov&&_hov.lo)_hov.lo.classList.remove('hov'); if(near&&near.lo)near.lo.classList.add('hov'); _hov=near;
+    document.body.style.cursor=near?'pointer':''; }
+});
 
 // ── refresh (live read) ─────────────────────────────────────────────────────────
 // a pull fired → send a glow travelling down each of that source's roads to the entities it feeds
@@ -715,6 +742,7 @@ function tick(){ requestAnimationFrame(tick);
   if(fly){ fly.t=Math.min(1,fly.t+.045); const e=1-Math.pow(1-fly.t,3); controls.target.lerpVectors(fly.fromT,fly.toT,e); camera.position.lerpVectors(fly.fromC,fly.toC,e); if(fly.t>=1)fly=null; }
   const t=performance.now()*0.001, now=performance.now();
   nodes.forEach(n=>{ if(n.kind==='ent'&&n.mat) n.mat.emissiveIntensity=.42+Math.sin(t*1.6+n.pos.x)*.1;
+    if(n.lo && n.kind!=='ent') n.lo.classList.toggle('near', camera.position.distanceTo(n.pos) < 46);  // zoom in on a ball → its label shows
     if(n.kind==='src'&&n.mesh) n.mesh.rotation.y+=0.0045;   // feed gems turn slowly — a distinct life from the still spine
     if(n.kind==='src'&&n.mat&&/broke|fail|block/.test(n.status)) n.mat.emissiveIntensity=.35+.4*Math.abs(Math.sin(now*0.004));   // failing node breathes red
     if(n._glow){ if(n._glow>now){ if(n.mat){ n.mat.emissiveIntensity=.9; } if(n.lo)n.lo.style.color='#eafaf5'; } else { n._glow=0; if(n.lo)n.lo.style.color=''; } } });

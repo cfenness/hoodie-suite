@@ -279,6 +279,17 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
     status = "failed" if not cur else ("degraded" if warnings else "success")
 
     json.dump({"__ts__": int(time.time() * 1000), "cells": cur}, open(snap_path, "w"), indent=2)
+    # Store the daily price+inventory time-series (qty = real per-store units via GraphQL availableToSell) so
+    # ABC feeds retail_observations like the other Counts sources — the whole point of a daily pull.
+    try:
+        import observe
+        observe.record("abc-fws", [dict(source="abc-fws", store_id=str(v["store"]), store="ABC #%s" % v["store"],
+                                        product_id=str(v["sku"]), upc=v.get("upc", ""), brand="", name="",
+                                        price=v["price"], on_promo=False, in_stock=bool(v.get("instock")),
+                                        qty=v.get("qty"), stock_level="", is_hemp=False)
+                                   for v in cur.values()], log=log)
+    except Exception as e:
+        log("  [abc] observe skipped: %s" % str(e)[:80])
     header = ["SKU", "Store", "Price", "In Stock"]
     rows = [[v["sku"], v["store"], v["price"], v["instock"]] for k, v in sorted(cur.items())]
     n_products = len({v["sku"] for v in cur.values()})

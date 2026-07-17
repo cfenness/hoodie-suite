@@ -970,6 +970,73 @@ def api_source():
     except Exception as e:
         return jsonify({"name": name, "error": str(e)[:200], "rows": [], "count": 0, "columns": []}), 200
 
+
+# ── Data Console: the one trustworthy monitoring surface (pull health · counts · errors · live data) ──────────
+@app.get("/api/monitor")
+def api_monitor():
+    """The manifest: every source/scrape/account/master with real counts (parquet footers), freshness, run-health,
+    deltas, plus connector rollup + totals. Stamped (as_of/live/cached/warehouse) so the console proves it's real.
+    Cheap + cached — safe to poll. ?fresh=1 forces a synchronous rebuild."""
+    import monitor
+    try:
+        m = monitor.snapshot() if request.args.get("fresh") != "1" else monitor.build()
+        return jsonify(m)
+    except Exception as e:
+        return jsonify({"live": False, "error": str(e)[:200], "sources": [], "totals": {}}), 200
+
+
+@app.get("/api/monitor/data")
+def api_monitor_data():
+    """Real rows for ONE source, straight from the warehouse — the 'view the actual data' pane. Bounded so it stays
+    fast even on huge tables: newest-first only when the table is small enough to sort, else a plain capped read."""
+    import warehouse
+    name = request.args.get("name", "")
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    limit = min(int(request.args.get("limit", 100) or 100), 500)
+    try:
+        total = warehouse.query(name, "SELECT count(*) c FROM t")[0]["c"]      # cheap on parquet (footer)
+        cols = list(warehouse.query(name, "SELECT * FROM t LIMIT 1")[0].keys()) if total else []
+        order = next((c for c in ("captured_at", "pulled_at", "at", "modified", "date", "run_id") if c in cols), None)
+        # only pay for a global sort when the table is small; on big tables a full ORDER BY would scan everything
+        do_order = order and total <= 2_000_000
+        sql = "SELECT * FROM t" + (' ORDER BY "%s" DESC' % order if do_order else "") + " LIMIT %d" % limit
+        rows = warehouse.query(name, sql)
+        for r in rows:
+            if r.get("raw_json") is not None:
+                r["raw_json"] = "…"
+        return jsonify({"name": name, "count": total, "columns": cols, "rows": rows,
+                        "order_by": order if do_order else None,
+                        "note": None if do_order else ("newest-first sort skipped (>2M rows) — showing a fast sample"
+                                                        if order else None)})
+    except Exception as e:
+        return jsonify({"name": name, "error": str(e)[:200], "rows": [], "count": 0, "columns": []}), 200
+
+
+@app.get("/api/monitor/history")
+def api_monitor_history():
+    """The saved row-count time-series for one source → [[ts, rows], …] (rows-over-time sparkline)."""
+    import monitor
+    name = request.args.get("name", "")
+    return jsonify({"name": name, "series": monitor.history(name) if name else []})
+
+
+@app.post("/api/monitor/rerun")
+def api_monitor_rerun():
+    """Trigger a pull for a connector/source from the console — reuses the existing run path so behavior matches
+    the Pulls surface exactly."""
+    conn = (request.get_json(silent=True) or {}).get("conn") or request.args.get("conn", "")
+    if not conn:
+        return jsonify({"error": "conn required"}), 400
+    try:
+        import monitor
+        monitor._CACHE["at"] = 0                       # invalidate so the next snapshot reflects the rerun
+    except Exception:
+        pass
+    with app.test_request_context(json={"connId": conn}):
+        return run()                                   # delegate to the canonical /api/run handler
+
+
 # TTL memoize for read-only rollups the estate/coverage UIs POLL. Each of these fans out into many remote-parquet
 # scans (a /api/catalog poll was ~25s, /api/coverage ~8s); polling stacked them into timeouts. These only change
 # on a pull/rebuild, so a short TTL is safe and turns the poll into a served-from-RAM hit.

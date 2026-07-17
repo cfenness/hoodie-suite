@@ -29,3 +29,9 @@ cola_labels.csv
 
 # (kept in git on purpose: unifyd/fixtures/ — parser reference pages)
 unifyd/walmart_sched.log
+
+# runtime scraper output (not source)
+unifyd/full_out/
+unifyd/specs_out/
+unifyd/walmart_raw/
+unifyd/full_pull_out/

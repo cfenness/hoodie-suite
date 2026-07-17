@@ -159,8 +159,15 @@ def run(limit=None, land=True, log=print):
     log("[haskells] %d products to fetch" % len(catalog))
     ts = int(time.time())
     token_cache, snap, obs = {}, [], []
+    errs = 0
     for i, (slug, url) in enumerate(catalog):
-        g = fetch_product(slug, url, token_cache, log=log)
+        try:                                        # one bad URL (e.g. a 301 redirect loop) must NOT kill the
+            g = fetch_product(slug, url, token_cache, log=log)   # whole crawl + lose everything landed after it
+        except Exception as e:
+            errs += 1
+            if errs <= 10:
+                log("  skip %s: %s" % (slug, str(e)[:70]))
+            continue
         snap.append({"store": STORE, "product_id": g["product_id"], "sku": g["sku"], "upc": g["upc"],
                      "name": g["name"], "brand": g["brand"], "category": g.get("category", ""),
                      "price": g["price"], "retail_price": g["retail_price"], "on_sale": g["on_sale"],
@@ -178,8 +185,8 @@ def run(limit=None, land=True, log=print):
         observe.record("haskells", obs, log=log)
     counted = sum(1 for r in snap if r["qty"] is not None)
     hemp = sum(1 for r in snap if r["is_hemp"])
-    log("[haskells] DONE: %d products -> haskells_products (%d with an exact count, %d hemp)"
-        % (len(snap), counted, hemp))
+    log("[haskells] DONE: %d products -> haskells_products (%d with an exact count, %d hemp, %d skipped)"
+        % (len(snap), counted, hemp, errs))
     return snap
 
 
