@@ -1038,39 +1038,38 @@ def _query_timeout(name, sql, timeout_s):
 
 @app.get("/api/monitor/data")
 def api_monitor_data():
-    """Real rows for ONE source — the 'view the actual data' pane. Performance-hardened for object storage read from
-    the cloud host: exact count comes FROM the manifest (footer, already known) so we don't re-scan; rows are a
-    bounded, timeout-guarded sample (no global ORDER BY — a full sort would read the whole table); and the sample is
-    cached so re-opening is instant. A slow/huge table degrades to schema-only rather than hanging."""
+    """Real rows for ONE source — the 'view the actual data' pane. SCALES to 100M+ row datasets because it does NOT
+    read the lake at request time: it serves a PRECOMPUTED preview sample held in memory (built + refreshed in the
+    background, bounded to N rows per dataset). Exact count comes from the manifest footer. A dataset not yet sampled
+    falls back to one bounded, timeout-guarded live read (and gets picked up by the next background pass)."""
+    import monitor
     name = request.args.get("name", "")
     if not name:
         return jsonify({"error": "name required"}), 400
-    limit = min(int(request.args.get("limit", 60) or 60), 200)
-    cached = _DATA_SAMPLE_CACHE.get(name)
-    if cached and (time.time() - cached[0]) < 300 and not request.args.get("fresh"):
-        return jsonify(dict(cached[1], cached=True))
-
-    # exact count is already known from the manifest footer — reuse it, don't pay a 7s count(*)
     try:
-        import monitor
         total = next((s["rows"] for s in monitor.snapshot().get("sources", []) if s["name"] == name), None)
     except Exception:
         total = None
 
+    smp = monitor.sample(name)
+    if smp and not request.args.get("fresh"):
+        return jsonify({"name": name, "count": total, "columns": smp.get("columns", []),
+                        "rows": smp.get("rows", []), "order_by": None, "cached": True,
+                        "sampled_at": smp.get("at"),
+                        "note": "preview sample — precomputed, refreshed in the background (instant at any scale)"})
+
+    # no precomputed sample yet → one bounded, timeout-guarded live read; the background pass will cache it next
+    limit = min(int(request.args.get("limit", 60) or 60), 200)
     rows, timed_out = _query_timeout(name, "SELECT * FROM t LIMIT %d" % limit, timeout_s=20)
     if timed_out or rows is None:
-        payload = {"name": name, "count": total, "columns": [], "rows": [], "order_by": None,
-                   "note": "live preview timed out — this table is large to sample from object storage. "
-                           "Row count above is exact (from file metadata)."}
-        return jsonify(payload), 200
+        return jsonify({"name": name, "count": total, "columns": [], "rows": [], "order_by": None,
+                        "note": "building this source's preview… (exact row count above is from file metadata)"}), 200
     cols = list(rows[0].keys()) if rows else []
     for r in rows:
         if r.get("raw_json") is not None:
             r["raw_json"] = "…"
-    payload = {"name": name, "count": total, "columns": cols, "rows": rows, "order_by": None,
-               "note": "fast sample (unsorted) — object-storage reads are high-latency; this avoids a full scan"}
-    _DATA_SAMPLE_CACHE[name] = (time.time(), payload)
-    return jsonify(payload)
+    return jsonify({"name": name, "count": total, "columns": cols, "rows": rows, "order_by": None,
+                    "note": "live sample (preview being precomputed in the background)"})
 
 
 @app.get("/api/monitor/history")
@@ -5344,6 +5343,26 @@ def _wb_warm():
         n += 1
         _t.sleep(75)                                     # < the 90s TTL, so the short-TTL rollups stay warm
 
+
+def _monitor_sample_loop():
+    """Continuously (re)build the Data Console's precomputed preview samples in the background — a few datasets per
+    pass, only those whose data changed — so the drawer serves from memory (instant) at any dataset size. Runs on
+    its own thread so it never blocks the other warmers; incremental + capped so cost stays flat as data grows."""
+    import time as _t
+    import monitor
+    _t.sleep(8)                                          # let the manifest warm first (samples read its source list)
+    while True:
+        try:
+            monitor.refresh_samples()
+        except Exception:
+            pass
+        _t.sleep(25)
+
+
+try:
+    threading.Thread(target=_monitor_sample_loop, daemon=True).start()
+except Exception:
+    pass
 
 try:
     threading.Thread(target=_wb_warm, daemon=True).start()

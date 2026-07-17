@@ -406,6 +406,109 @@ def history(name):
     return _load_hist().get(name, [])
 
 
+# ── PRECOMPUTED preview samples: the drawer must stay instant as datasets grow to 100M+ rows. Reading a live
+# LIMIT-N off a growing remote parquet is O(file complexity) — it degrades. Instead we sample each dataset ONCE in
+# the background (bounded to N rows), hold it in memory, and serve the drawer from there → 0-latency, and the store
+# is bounded by dataset COUNT (grows slowly), not row count (explodes). Rebuilt incrementally: only datasets whose
+# data changed (mtime moved) are re-sampled, and only a few per cycle, so background cost stays flat at any scale.
+_SAMPLES_S3 = "_monitor_samples.json"
+_SAMPLES = {"at": 0, "wh": None, "data": {}}              # name -> {at, mod, columns, rows}
+_SAMPLES_LOCK = threading.Lock()
+_SAMPLE_CON = {"con": None}
+SAMPLE_ROWS = 60
+
+
+def _sample_con():
+    if _SAMPLE_CON["con"] is None:
+        import warehouse
+        con = warehouse.connect()                         # one warm httpfs/S3 connection, reused for all sampling
+        try:
+            con.execute("SET enable_progress_bar=false")  # keep server logs clean
+        except Exception:
+            pass
+        _SAMPLE_CON["con"] = con
+    return _SAMPLE_CON["con"]
+
+
+def _load_samples():
+    """Warm the in-memory sample store from S3 (once), identity-gated so a local/dev sample set is never served
+    as production."""
+    if _SAMPLES["data"]:
+        return
+    try:
+        import warehouse
+        raw = warehouse.get_bytes(_SAMPLES_S3)
+        d = json.loads(raw) if raw else None
+        if d and d.get("data") and (not d.get("wh") or d["wh"] == warehouse_identity().get("kind")):
+            _SAMPLES.update(at=d.get("at", 0), wh=d.get("wh"), data=d["data"])
+    except Exception:
+        pass
+
+
+def sample(name):
+    """The precomputed preview for one dataset → {columns, rows, at} or None (drawer serves this instantly)."""
+    if not _SAMPLES["data"]:
+        _load_samples()
+    return _SAMPLES["data"].get(name)
+
+
+def _read_sample(name, limit):
+    import warehouse
+    con = _sample_con()
+    src = warehouse.uri(name).replace("'", "")
+    con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet('%s')" % src)
+    cur = con.execute("SELECT * FROM t LIMIT %d" % limit)
+    cols = [c[0] for c in cur.description]
+    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    for r in rows:                                        # never ship the bulky raw_json blob over the wire
+        if r.get("raw_json") is not None:
+            r["raw_json"] = "…"
+    return cols, rows
+
+
+def refresh_samples(max_per_cycle=12, limit=SAMPLE_ROWS):
+    """Incrementally (re)sample datasets whose data changed since last sampled — a few per cycle so the background
+    cost stays flat no matter how many/how big the datasets get. Persists the whole (small) store to S3. Returns the
+    number re-sampled this cycle. Reads the freshest datasets first (they're the ones users are watching)."""
+    sources = (_CACHE["data"] or {}).get("sources", [])
+    if not sources:
+        return 0
+    with _SAMPLES_LOCK:
+        _load_samples()
+        store = _SAMPLES["data"]
+        done = 0
+        for s in sources:                                 # sources are pre-sorted freshest-first
+            if done >= max_per_cycle:
+                break
+            name, mod = s["name"], s.get("modified")
+            have = store.get(name)
+            if have and have.get("mod") == mod:           # unchanged since last sample → skip
+                continue
+            try:
+                cols, rows = _read_sample(name, limit)
+                store[name] = {"at": time.time(), "mod": mod, "columns": cols, "rows": rows}
+                done += 1
+            except Exception:
+                store.setdefault(name, {"at": time.time(), "mod": mod, "columns": [], "rows": [], "err": True})
+        if done:
+            _SAMPLES.update(at=time.time(), wh=warehouse_identity().get("kind"), data=store)
+            try:
+                import warehouse
+                warehouse.put_bytes(_SAMPLES_S3, json.dumps(
+                    {"at": time.time(), "wh": _SAMPLES["wh"], "data": store}).encode("utf-8"))
+            except Exception:
+                pass
+        return done
+
+
+def samples_status():
+    """How complete the sample store is (for the console to show 'previews ready N/total')."""
+    if not _SAMPLES["data"]:
+        _load_samples()
+    total = len((_CACHE["data"] or {}).get("sources", []))
+    return {"ready": len(_SAMPLES["data"]), "total": total, "at": _SAMPLES["at"]}
+
+
 if __name__ == "__main__":
     import sys
     try:                                              # read PRODUCTION, not the local fallback
