@@ -138,9 +138,10 @@ def warehouse_identity():
             "bucket": None}
 
 
-def _list_datasets_fast(workers=24):
-    """Same as warehouse.list_datasets but reads the Parquet footers CONCURRENTLY (169 S3 round-trips → ~2s not
-    ~30s). Falls back to the sequential warehouse version if the parallel path isn't available."""
+def _list_datasets_fast(workers=80):
+    """Same as warehouse.list_datasets but reads the Parquet footers CONCURRENTLY. The reads are pure I/O against
+    object storage (each ~tens of ms locally but far higher from the cloud host), so heavy parallelism is the lever —
+    80 workers turns a ~130s serial sweep into a fraction of that. Falls back to the sequential warehouse version."""
     import warehouse
     try:
         if not warehouse.remote():
@@ -305,34 +306,51 @@ def build(record_history=True, hist_cap=60):
 import threading
 
 _CACHE_FILE = os.path.join(_STATE, "monitor_cache.json")
+_S3_KEY = "_monitor_cache.json"                          # persisted to the warehouse bucket → survives restarts
 _CACHE = {"at": 0, "data": None}
 _LOCK = threading.Lock()
 _REFRESHING = {"on": False}
 
 
 def _persist(data):
+    payload = json.dumps({"at": time.time(), "data": data})
     try:
         with open(_CACHE_FILE, "w") as f:
-            json.dump({"at": time.time(), "data": data}, f)
+            f.write(payload)
+    except Exception:
+        pass
+    try:                                                # ALSO to S3 so a fresh machine has it instantly (no 130s build)
+        import warehouse
+        warehouse.put_bytes(_S3_KEY, payload.encode("utf-8"))
     except Exception:
         pass
 
 
-def _load_disk():
-    """Load the persisted manifest — but ONLY if it was written against the SAME warehouse we're reading now.
-    A cache built in local/dev mode must never be served as production (and vice-versa), or the console would show
-    the wrong universe as if it were real. Identity mismatch → discard."""
-    d = _load_json(_CACHE_FILE, None)
-    if d and d.get("data"):
-        cached_wh = (d["data"].get("warehouse") or {}).get("kind")
-        if cached_wh and cached_wh != warehouse_identity().get("kind"):
-            try:
-                os.remove(_CACHE_FILE)
-            except Exception:
-                pass
-            return False
-        _CACHE.update(at=d.get("at", 0), data=d["data"])
-        return True
+def _valid_for_now(data):
+    """A cache is only usable if it was built against the SAME warehouse we're reading now — a local/dev cache must
+    never be served as production (or vice-versa)."""
+    wh = (data.get("warehouse") or {}).get("kind")
+    return not wh or wh == warehouse_identity().get("kind")
+
+
+def _load_persisted():
+    """Warm the in-memory cache from a persisted snapshot: S3 first (survives restarts / new machines), then local
+    disk. Returns True if a valid same-warehouse snapshot was loaded. This is what keeps the console INSTANT on a
+    cold machine instead of blocking ~130s on a live build against high-latency object storage."""
+    for src in ("s3", "disk"):
+        d = None
+        try:
+            if src == "s3":
+                import warehouse
+                raw = warehouse.get_bytes(_S3_KEY)
+                d = json.loads(raw) if raw else None
+            else:
+                d = _load_json(_CACHE_FILE, None)
+        except Exception:
+            d = None
+        if d and d.get("data") and _valid_for_now(d["data"]):
+            _CACHE.update(at=d.get("at", 0), data=d["data"])
+            return True
     return False
 
 
@@ -352,24 +370,34 @@ def _refresh_async():
     threading.Thread(target=run, daemon=True).start()
 
 
-def snapshot(max_age=45):
-    """The manifest the console polls. Never blocks after the first build: returns the memory/disk cache instantly
-    and refreshes in the background when stale. Every payload is stamped (cached, cache_age_s) so freshness is
-    always visible — the console shows 'as of Xs ago' honestly rather than pretending a poll is live."""
+def warm():
+    """Build + persist the manifest if we don't already have a valid one. Called from the server's startup warm
+    thread so the first user request is served from cache, never a cold 130s build."""
+    with _LOCK:
+        if _CACHE["data"] is not None:
+            return
+    if not _load_persisted():
+        _refresh_async()
+
+
+def snapshot(max_age=180):
+    """The manifest the console polls. NEVER blocks on the slow build: serves the in-memory / persisted (S3→disk)
+    snapshot instantly and refreshes in the background when stale. If nothing is cached yet, kicks the build and
+    returns a stamped 'building' stub so the console shows a spinner instead of hanging ~130s. Every payload is
+    stamped (cached/cache_age_s/building) so freshness is always honest."""
     now = time.time()
     with _LOCK:
         have = _CACHE["data"] is not None
     if not have:
-        have = _load_disk()
+        have = _load_persisted()                        # try S3 → disk (fast); do NOT build synchronously
     if not have:
-        data = build()                                  # first ever: build synchronously (~6s), then persist
-        with _LOCK:
-            _CACHE.update(at=now, data=data)
-        _persist(data)
-        return dict(data, cached=False, cache_age_s=0)
+        _refresh_async()                                # building in the background; tell the console to wait
+        return {"as_of": now, "live": True, "building": True, "warehouse": warehouse_identity(),
+                "totals": {}, "connectors": [], "sources": [],
+                "note": "building the manifest (first run against object storage — a few seconds)…"}
     age = now - _CACHE["at"]
     if age >= max_age:
-        _refresh_async()                                # stale → kick a background rebuild, serve current now
+        _refresh_async()                                # stale → background rebuild, serve current now
     return dict(_CACHE["data"], cached=True, cache_age_s=round(age, 1), refreshing=_REFRESHING["on"])
 
 

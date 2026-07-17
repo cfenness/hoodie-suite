@@ -979,38 +979,71 @@ def api_monitor():
     Cheap + cached — safe to poll. ?fresh=1 forces a synchronous rebuild."""
     import monitor
     try:
-        m = monitor.snapshot() if request.args.get("fresh") != "1" else monitor.build()
-        return jsonify(m)
+        if request.args.get("fresh") == "1":
+            monitor._refresh_async()          # kick a background rebuild; never block the request on a ~130s build
+        return jsonify(monitor.snapshot())
     except Exception as e:
         return jsonify({"live": False, "error": str(e)[:200], "sources": [], "totals": {}}), 200
 
 
+_DATA_SAMPLE_CACHE = {}                       # name -> (built_at, payload); makes re-opening a source instant
+
+
+def _query_timeout(name, sql, timeout_s):
+    """Run a warehouse query with a hard wall-clock timeout. Object storage from the cloud host is high-latency and
+    a big-table read can hang or take >60s — this bounds it so the drawer never freezes the UI. Returns
+    (rows|None, timed_out)."""
+    import warehouse
+    box = {}
+
+    def run():
+        try:
+            box["rows"] = warehouse.query(name, sql)
+        except Exception as e:
+            box["err"] = str(e)
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(timeout_s)
+    if t.is_alive():
+        return None, True
+    return box.get("rows"), False
+
+
 @app.get("/api/monitor/data")
 def api_monitor_data():
-    """Real rows for ONE source, straight from the warehouse — the 'view the actual data' pane. Bounded so it stays
-    fast even on huge tables: newest-first only when the table is small enough to sort, else a plain capped read."""
-    import warehouse
+    """Real rows for ONE source — the 'view the actual data' pane. Performance-hardened for object storage read from
+    the cloud host: exact count comes FROM the manifest (footer, already known) so we don't re-scan; rows are a
+    bounded, timeout-guarded sample (no global ORDER BY — a full sort would read the whole table); and the sample is
+    cached so re-opening is instant. A slow/huge table degrades to schema-only rather than hanging."""
     name = request.args.get("name", "")
     if not name:
         return jsonify({"error": "name required"}), 400
-    limit = min(int(request.args.get("limit", 100) or 100), 500)
+    limit = min(int(request.args.get("limit", 60) or 60), 200)
+    cached = _DATA_SAMPLE_CACHE.get(name)
+    if cached and (time.time() - cached[0]) < 300 and not request.args.get("fresh"):
+        return jsonify(dict(cached[1], cached=True))
+
+    # exact count is already known from the manifest footer — reuse it, don't pay a 7s count(*)
     try:
-        total = warehouse.query(name, "SELECT count(*) c FROM t")[0]["c"]      # cheap on parquet (footer)
-        cols = list(warehouse.query(name, "SELECT * FROM t LIMIT 1")[0].keys()) if total else []
-        order = next((c for c in ("captured_at", "pulled_at", "at", "modified", "date", "run_id") if c in cols), None)
-        # only pay for a global sort when the table is small; on big tables a full ORDER BY would scan everything
-        do_order = order and total <= 2_000_000
-        sql = "SELECT * FROM t" + (' ORDER BY "%s" DESC' % order if do_order else "") + " LIMIT %d" % limit
-        rows = warehouse.query(name, sql)
-        for r in rows:
-            if r.get("raw_json") is not None:
-                r["raw_json"] = "…"
-        return jsonify({"name": name, "count": total, "columns": cols, "rows": rows,
-                        "order_by": order if do_order else None,
-                        "note": None if do_order else ("newest-first sort skipped (>2M rows) — showing a fast sample"
-                                                        if order else None)})
-    except Exception as e:
-        return jsonify({"name": name, "error": str(e)[:200], "rows": [], "count": 0, "columns": []}), 200
+        import monitor
+        total = next((s["rows"] for s in monitor.snapshot().get("sources", []) if s["name"] == name), None)
+    except Exception:
+        total = None
+
+    rows, timed_out = _query_timeout(name, "SELECT * FROM t LIMIT %d" % limit, timeout_s=20)
+    if timed_out or rows is None:
+        payload = {"name": name, "count": total, "columns": [], "rows": [], "order_by": None,
+                   "note": "live preview timed out — this table is large to sample from object storage. "
+                           "Row count above is exact (from file metadata)."}
+        return jsonify(payload), 200
+    cols = list(rows[0].keys()) if rows else []
+    for r in rows:
+        if r.get("raw_json") is not None:
+            r["raw_json"] = "…"
+    payload = {"name": name, "count": total, "columns": cols, "rows": rows, "order_by": None,
+               "note": "fast sample (unsorted) — object-storage reads are high-latency; this avoids a full scan"}
+    _DATA_SAMPLE_CACHE[name] = (time.time(), payload)
+    return jsonify(payload)
 
 
 @app.get("/api/monitor/history")
@@ -5226,6 +5259,15 @@ def index():
 def suite_static(relpath):
     return _suite_send(relpath)                       # /api/* rules are more specific and win over this
 
+def _monitor_warm():
+    """Ensure the Data Console manifest is built + kept fresh in the background (build at boot from a persisted
+    snapshot if present, else a background build), so /api/monitor is always served from cache — never a cold
+    ~130s live sweep of object storage on a user request."""
+    import monitor
+    monitor.warm()
+    monitor.snapshot()                                   # serves cache + kicks a background refresh when stale
+
+
 def _wb_warm():
     """Keep the heavy read caches WARM in the background so no user (or the first after a rebuild) hits a cold
     scan. At the larger master scale the cold cost is real: the 1M-row name maps (~17s), the workbench views, the
@@ -5255,6 +5297,8 @@ def _wb_warm():
         lambda: _ttl("coverage", 90, _coverage_data),
         lambda: _ttl("catalog", 90, _catalog_map),
         lambda: _ttl("source_spec", 600, _source_spec_data),
+        _monitor_warm,                                   # Data Console manifest — build at boot, keep warm (never
+                                                         # let a user hit the cold ~130s object-storage sweep)
     ]
     n = 0
     while True:

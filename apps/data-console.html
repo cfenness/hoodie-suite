@@ -128,6 +128,12 @@ function paintStamp(){
   const wh=$('#wh'), b=$('#banner'), dot=$('#dot');
   if(!M.live){ dot.classList.add('off'); b.className='banner show';
     b.textContent='⚠ '+(M.error||'warehouse not readable — no data shown'); wh.className='wh local'; wh.textContent='NO DATA'; $('#asof').textContent=''; return; }
+  if(M.building){ dot.classList.remove('off'); b.className='banner show'; b.style.background='var(--accent)';
+    b.textContent='⏳ '+(M.note||'building the manifest…'); wh.className='wh prod';
+    wh.innerHTML='● '+((M.warehouse||{}).kind==='production'?'PRODUCTION':'LOCAL'); $('#asof').textContent='building…';
+    if(!paintStamp._poll){ paintStamp._poll=setInterval(()=>load(),3000); } return; }
+  if(paintStamp._poll){ clearInterval(paintStamp._poll); paintStamp._poll=null; }
+  b.style.background='';
   dot.classList.remove('off'); b.className='banner';
   const w=M.warehouse||{}; const prod=w.kind==='production';
   wh.className='wh '+(prod?'prod':'local');
