@@ -987,26 +987,53 @@ def api_monitor():
 
 
 _DATA_SAMPLE_CACHE = {}                       # name -> (built_at, payload); makes re-opening a source instant
+_MON_CON = {"con": None}                       # ONE warm DuckDB connection reused for drawer reads
+_MON_LOCK = threading.Lock()
+
+
+def _mon_con():
+    """A persistent DuckDB connection for the console's data reads. `INSTALL/LOAD httpfs` + S3 config costs ~6s and
+    was being paid on EVERY warehouse.query() — reusing one warm connection drops a small-table read from ~18s to
+    ~2s against object storage. Pre-warmed at boot so the first user click isn't the one that pays the 6s."""
+    if _MON_CON["con"] is None:
+        import warehouse
+        _MON_CON["con"] = warehouse.connect()
+    return _MON_CON["con"]
 
 
 def _query_timeout(name, sql, timeout_s):
-    """Run a warehouse query with a hard wall-clock timeout. Object storage from the cloud host is high-latency and
-    a big-table read can hang or take >60s — this bounds it so the drawer never freezes the UI. Returns
+    """Run a drawer read on the warm connection with a hard timeout via DuckDB interrupt() — object storage from the
+    cloud host is high-latency and a big-table read can take >60s, so this bounds it (the connection stays usable
+    after an interrupt). Serialized by a lock (one shared connection; drawer reads are infrequent). Returns
     (rows|None, timed_out)."""
     import warehouse
-    box = {}
-
-    def run():
+    with _MON_LOCK:
         try:
-            box["rows"] = warehouse.query(name, sql)
-        except Exception as e:
-            box["err"] = str(e)
-    t = threading.Thread(target=run, daemon=True)
-    t.start()
-    t.join(timeout_s)
-    if t.is_alive():
-        return None, True
-    return box.get("rows"), False
+            con = _mon_con()
+            src = warehouse.uri(name).replace("'", "")
+            timed = {"v": False}
+
+            def kill():
+                timed["v"] = True
+                try:
+                    con.interrupt()
+                except Exception:
+                    pass
+            timer = threading.Timer(timeout_s, kill)
+            timer.start()
+            try:
+                con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet('%s')" % src)
+                cur = con.execute(sql)
+                cols = [d[0] for d in cur.description]
+                rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+                return rows, False
+            except Exception:
+                return None, timed["v"]          # interrupted (timeout) or read error
+            finally:
+                timer.cancel()
+        except Exception:
+            _MON_CON["con"] = None                # drop a broken connection so the next read reconnects clean
+            return None, False
 
 
 @app.get("/api/monitor/data")
@@ -5266,6 +5293,10 @@ def _monitor_warm():
     import monitor
     monitor.warm()
     monitor.snapshot()                                   # serves cache + kicks a background refresh when stale
+    try:
+        _mon_con()                                       # pay the ~6s httpfs/S3 setup at boot, not on first click
+    except Exception:
+        pass
 
 
 def _wb_warm():
