@@ -266,13 +266,19 @@ def pull(terms=None, max_pages=4, delay=1.2, detail_pages=False, detail_cap=400,
                 time.sleep(max(delay, 1.6))      # detail pages throttle faster than search — slow down
             if (i + 1) % 25 == 0:
                 log("  detail-enriched %d/%d" % (i + 1, n))
-    warehouse.write_parquet("walmart_products", rows,
-                            fields=["product_name", "item_id", "upc", "offer_id", "price", "size_ml", "brand",
-                                    "type", "image", "url", "category", "category_path", "rh_path",
-                                    "product_type_id", "primary_shelf_id", "ironbank_category", "is_alcohol",
-                                    "varietal", "region", "vintage", "abv", "container", "flavor", "pairing",
-                                    "wine_score", "aisle", "order_limit", "store_id", "store_state", "store_city",
-                                    "avg_rating", "num_reviews", "rollback", "seller", "in_stock", "raw_json"])
+    if not rows:                                 # NEVER clobber a good catalog with an empty/blocked crawl
+        log("[walmart] 0 rows this crawl — NOT writing (would wipe the existing catalog)")
+        return rows
+    # ACCUMULATE (not overwrite): a partial crawl (one store, some categories) grows the catalog per store|item
+    # instead of replacing it — the bug that wiped 756 -> 0.
+    warehouse.write_accumulate("walmart_products", rows,
+                               key=lambda r: (r.get("store_id", ""), r.get("item_id") or r.get("upc") or r.get("product_name")),
+                               fields=["product_name", "item_id", "upc", "offer_id", "price", "size_ml", "brand",
+                                       "type", "image", "url", "category", "category_path", "rh_path",
+                                       "product_type_id", "primary_shelf_id", "ironbank_category", "is_alcohol",
+                                       "varietal", "region", "vintage", "abv", "container", "flavor", "pairing",
+                                       "wine_score", "aisle", "order_limit", "store_id", "store_state", "store_city",
+                                       "avg_rating", "num_reviews", "rollback", "seller", "in_stock", "raw_json"])
     try:
         observe.record("walmart", [{"source": "walmart", "store_id": r.get("store_id", ""), "store": "Walmart",
                                     "product_id": r["item_id"], "upc": r.get("upc", ""), "price": r["price"],

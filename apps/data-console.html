@@ -211,9 +211,15 @@ function renderOverview(){
   const horder=['ok','stale','degraded','error','unknown'];
   const health=horder.filter(k=>h[k]).map(k=>`<div class="hchip"><span class="sq" style="background:var(${STC[k]})"></span><b>${h[k]}</b><span>${k}</span></div>`).join('')||'<span class="msg">no pull-cadence sources</span>';
   // the SOURCE roster — every source we have, rolled up (however its datasets are named / however it runs)
+  const RUNC={ok:'--good','no-change':'--warn',failed:'--bad',timeout:'--bad'};
+  const runCell=s=>{ if(!s.run_status)return '<span class="grp">—</span>';
+    const c=RUNC[s.run_status]||'--mut';
+    const d=s.run_delta>0?` <span class="dpos">+${fmt(s.run_delta)}</span>`:(s.run_status==='no-change'?' <span class="dzero">0</span>':'');
+    return `<span class="stat-pill" style="background:color-mix(in srgb,var(${c}) 16%,transparent);color:var(${c})" title="${esc((s.run_error||'')+(s.run_ts?' · '+new Date(s.run_ts*1000).toLocaleString():''))}">${s.run_status}</span>${d} <span class="grp">${ago(s.run_ts)}</span>${s.run_error?' <span class="warnpill" title="'+esc(s.run_error)+'">⚠</span>':''}`; };
   const rows=R.map(s=>`<tr onclick="openSource('${s.key}')">
      <td class="name">${esc(s.label)}</td><td class="grp">${s.kind}</td><td>${stampPill(s.status)}</td>
-     <td class="num">${fmt(s.rows)}</td><td class="num">${s.dataset_count}</td><td class="num">${age(s.modified?(Date.now()/1000-s.modified):null)}</td></tr>`).join('');
+     <td class="num">${fmt(s.rows)}</td><td class="num">${s.dataset_count}</td><td class="num">${age(s.modified?(Date.now()/1000-s.modified):null)}</td>
+     <td>${runCell(s)}</td></tr>`).join('');
   const conns=(M.connectors||[]).map(c=>`<tr onclick="openDetailConn('${c.conn}')"><td class="name">${c.conn}</td><td>${stampPill(c.status)}</td>
      <td class="num">${c.datasets}</td><td class="num">${fmt(c.rows)}</td><td class="num">${c.warnings?`<span class="warnpill">${c.warnings}⚠</span>`:''}</td>
      <td>${ago(c.run_ts)}</td></tr>`).join('');
@@ -223,7 +229,7 @@ function renderOverview(){
     <div class="cards">${cards}</div>
     <div class="sec">Pull health — is data coming in?</div><div class="health">${health}</div>
     <div class="sec">Sources <span class="grp">(every source we pull — click to see its datasets)</span></div>
-    <table><thead><tr><th>source</th><th>type</th><th>status</th><th class="num">rows</th><th class="num">datasets</th><th class="num">fresh</th></tr></thead>
+    <table><thead><tr><th>source</th><th>type</th><th>status</th><th class="num">rows</th><th class="num">datasets</th><th class="num">fresh</th><th>last run</th></tr></thead>
       <tbody>${rows||'<tr><td class="msg" colspan=6>no sources</td></tr>'}</tbody></table>
     <div class="sec">Connector run log <span class="grp">(authoritative pull-health for run-logged connectors)</span></div>
     <table><thead><tr><th>connector</th><th>status</th><th class="num">datasets</th><th class="num">rows</th><th class="num">warn</th><th>last run</th></tr></thead><tbody>${conns||'<tr><td class="msg" colspan=6>none</td></tr>'}</tbody></table>

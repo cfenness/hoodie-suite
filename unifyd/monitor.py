@@ -179,6 +179,29 @@ def _runs_tables_index(datasets):
     return out
 
 
+def _source_runs_index():
+    """Latest run per source from `source_runs` (written by run_sources.py) → {table_name: run_record}. This is the
+    authoritative per-source outcome: status (ok/failed/timeout/no-change), delta, error, when. Powers the console's
+    'last run' + failure reporting so nothing is silently dropped."""
+    import warehouse
+    try:
+        runs = warehouse.query("source_runs", "SELECT * FROM t")
+    except Exception:
+        return {}
+    latest = {}
+    for r in runs:
+        sid = r.get("source")
+        if sid and (sid not in latest or (r.get("ts_end") or 0) > (latest[sid].get("ts_end") or 0)):
+            latest[sid] = r
+    out = {}
+    for r in latest.values():
+        for t in str(r.get("tables") or "").split(","):
+            t = t.strip()
+            if t:
+                out[t] = r
+    return out
+
+
 def _match_run(name, run_ds, run_conn, run_tables):
     """Best health record for a dataset. STRICT to preserve trust — a wrong attribution is as bad as a wrong
     status. Order: exact extract-id match (authoritative) → `<base>_runs` table whose base prefixes the name →
@@ -385,6 +408,7 @@ def build(record_history=True, hist_cap=60):
     # so the console shows the full source list at a glance and nothing is missed (e.g. Uber Eats, 7NOW, control
     # states — which run outside the connector run-log). Outputs (master/derived/staging/runlog) are not sources.
     rank = {"error": 3, "degraded": 2, "stale": 1, "ok": 0, "unknown": 0, "derived": 0}
+    run_by_table = _source_runs_index()                  # authoritative per-source run outcomes (run_sources.py)
     roster = {}
     for s in sources:
         if s["group"] not in ("scrape", "accounts", "timeseries"):
@@ -400,6 +424,13 @@ def build(record_history=True, hist_cap=60):
             r["conn"] = s["conn"]
         if rank.get(s["status"], 0) >= rank.get(r["status"], 0):
             r["status"] = s["status"]
+        run = run_by_table.get(s["name"])                # attach the last run_sources outcome (status/error/when)
+        if run and (not r.get("run_ts") or run.get("ts_end", 0) > r.get("run_ts", 0)):
+            r["run_status"] = run.get("status")
+            r["run_ts"] = run.get("ts_end")
+            r["run_delta"] = run.get("delta")
+            r["run_error"] = run.get("error") or ""
+            r["run_duration"] = run.get("duration_s")
     roster = sorted(roster.values(), key=lambda r: (r["modified"] or 0), reverse=True)
     for r in roster:
         r["dataset_count"] = len(r["datasets"])
