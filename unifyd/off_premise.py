@@ -303,11 +303,59 @@ def woo_catalog(base, key, max_pages=400, log=print):
                 time.sleep(2)
         if not isinstance(j, list) or not j:
             break
+        variable = []
         for p in j:
-            rows.append(_woo_row(p))
+            if p.get("type") == "variable" and p.get("variations"):
+                variable.append(p)                          # expand after the page (per-variation fetch, concurrent)
+            else:
+                rows.append(_woo_row(p))
+        if variable:
+            rows.extend(_woo_expand_variations(base, key, variable, log=log))
         if len(j) < 100:
             break
     return rows
+
+
+def _woo_expand_variations(base, key, parents, log=print, workers=8):
+    """A variable Woo product (e.g. a wine in 750ml/1.5L) exposes only variation IDs — each variation is its OWN
+    product with its own price/sku. Fetch them (concurrently) so every size lands as a distinct row instead of one
+    price-range row. Size comes from the parent's variations[].attributes."""
+    from concurrent.futures import ThreadPoolExecutor
+    jobs = []
+    for p in parents:
+        base_row = _woo_row(p)
+        for var in (p.get("variations") or []):
+            if isinstance(var, dict) and var.get("id"):
+                jobs.append((base_row, var))
+
+    def fetch(job):
+        base_row, var = job
+        try:
+            v = json.loads(_fetch("%s/wp-json/wc/store/v1/products/%d" % (base.rstrip("/"), var["id"]), key))
+        except Exception:
+            return None
+        size = "; ".join(str(a.get("value") or "") for a in (var.get("attributes") or []) if a.get("value"))
+        pr = (v.get("prices") or {}).get("price")
+        try:
+            price = round(float(pr) / 100.0, 2) if pr not in (None, "") else base_row.get("price")
+        except Exception:
+            price = base_row.get("price")
+        vsku = (v.get("sku") or "").strip()
+        r = dict(base_row)
+        r.update(price=price, sku=vsku or base_row.get("sku", ""),
+                 upc=(vsku if vsku.isdigit() and 8 <= len(vsku) <= 14 else base_row.get("upc", "")),
+                 item_code=str(var["id"]), variant=size, size_opt=size,
+                 size_ml=_ch_ml(size) or base_row.get("size_ml"),
+                 in_stock=v.get("is_in_stock"))
+        return r
+    out = []
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for r in ex.map(fetch, jobs):
+            if r:
+                out.append(r)
+    if jobs:
+        log("  [woo] expanded %d variable products -> %d variation rows" % (len(parents), len(out)))
+    return out
 
 
 # WooCommerce ATTRIBUTES are the prize on wine/spirit stores — "Region: Napa", "Country: France",
