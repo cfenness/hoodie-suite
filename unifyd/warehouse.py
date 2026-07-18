@@ -195,24 +195,28 @@ def list_datasets():
     try:
         if remote():
             from pyarrow import fs as pafs
+            from concurrent.futures import ThreadPoolExecutor
             s3 = pafs.S3FileSystem(endpoint_override=_endpoint(), access_key=_env("AWS_ACCESS_KEY_ID"),
                                    secret_key=_env("AWS_SECRET_ACCESS_KEY"), region=_region(), scheme="https")
             base = "%s/%s" % (_bucket(), _prefix())
-            infos = s3.get_file_info(pafs.FileSelector(base, recursive=False))
-            for info in infos:
-                if info.type != pafs.FileType.File or not info.path.endswith(".parquet"):
-                    continue
+            infos = [i for i in s3.get_file_info(pafs.FileSelector(base, recursive=False))
+                     if i.type == pafs.FileType.File and i.path.endswith(".parquet")]
+
+            def _one(info):
+                # each footer read is an independent S3 round-trip (~200ms); reading them SEQUENTIALLY over ~170
+                # files is 30s+ (and worse under crawl write-contention) — that hung /api/datasets. Parallelize.
                 name = info.path.rsplit("/", 1)[-1][:-8]
-                mod = None
                 try:
                     mod = info.mtime.timestamp() if info.mtime else None
                 except Exception:
-                    pass
+                    mod = None
                 try:
                     md = pq.read_metadata(info.path, filesystem=s3)
-                    out.append({"name": name, "rows": md.num_rows, "fields": list(md.schema.names), "modified": mod})
+                    return {"name": name, "rows": md.num_rows, "fields": list(md.schema.names), "modified": mod}
                 except Exception:
-                    out.append({"name": name, "rows": 0, "fields": [], "modified": mod})
+                    return {"name": name, "rows": 0, "fields": [], "modified": mod}
+            with ThreadPoolExecutor(max_workers=24) as ex:
+                out = list(ex.map(_one, infos))
         else:
             import glob
             for p in glob.glob(os.path.join(_LOCAL_DIR, "*.parquet")):

@@ -902,11 +902,7 @@ def derive_hierarchy(datasets, top=50):
     pfs.sort(key=lambda p: p["name"])
     return {"id": "root", "level": "root", "name": "All Sources", "children": pfs}
 
-def _live_datasets():
-    """DATASETS (in-memory samples) MERGED with the LIVE warehouse catalog, so the dataset list + counts are
-    never a stale snapshot (the Jul-6 datasets.json was the sync bug). In-memory sample rows are kept; totals
-    are refreshed to live warehouse truth; warehouse-only datasets appear as row-less entries (real counts,
-    samples fetched on demand). Everything reading /api/datasets now sees current reality."""
+def _compute_live_datasets():
     out = {k: dict(v) for k, v in DATASETS.items()}
     try:
         import warehouse
@@ -924,6 +920,35 @@ def _live_datasets():
     except Exception as e:
         app.logger.warning("live datasets merge failed: %s", e)
     return out
+
+
+import threading as _threading
+_DS_CACHE = {"t": 0.0, "v": None, "refreshing": False}
+
+
+def _live_datasets():
+    """DATASETS (in-memory samples) MERGED with the LIVE warehouse catalog. The warehouse footer scan
+    (list_datasets over ~170 Tigris files) can take many seconds under crawl write-contention, so this is cached
+    with STALE-WHILE-REVALIDATE: once warm it returns instantly and refreshes in the background — the endpoint
+    never hangs (which read as 'site down' while a national crawl hammered Tigris)."""
+    import time as _t
+    c = _DS_CACHE
+    now = _t.time()
+    if c["v"] is not None and now - c["t"] < 45:
+        return c["v"]                                         # fresh
+    if c["v"] is not None:                                    # stale but present → serve now, refresh in background
+        if not c["refreshing"]:
+            c["refreshing"] = True
+
+            def _bg():
+                try:
+                    v = _compute_live_datasets(); c["v"] = v; c["t"] = _t.time()
+                finally:
+                    c["refreshing"] = False
+            _threading.Thread(target=_bg, daemon=True).start()
+        return c["v"]
+    v = _compute_live_datasets(); c["v"] = v; c["t"] = _t.time()  # cold: compute once
+    return v
 
 @app.get("/api/datasets")
 def datasets():
