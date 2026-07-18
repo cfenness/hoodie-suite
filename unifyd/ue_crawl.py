@@ -254,7 +254,91 @@ def _pull_nav(w, p, captured, uuid, name, href, enrich, max_items_enrich, site, 
     return merged, outlet
 
 
-# ── national crawl loop ───────────────────────────────────────────────────────────────────────────────────────
+# ── STORE-DRIVEN deep crawl — iterate coverage's store list (no feed scroll); parallel-safe via per-worker proxy ─
+def crawl_stores(zones, site="ubereats", shard=None, enrich=True, max_items_enrich=25, log=print):
+    """DEEP crawl driven by the stores COVERAGE already found (<site>_stores) instead of re-scrolling feeds. For
+    each zone: warm the session there (getStoreV1 is zone-bound) then `goto` each captured store within ~25km and
+    pull its catalog + bev-alc detail. No feed extraction. PARALLEL-SAFE: each worker pins its OWN sticky proxy IP
+    (via its --shard tag), so concurrent workers don't share/flag one IP → scale throughput. Resumable + deduped.
+    """
+    cfg = ue.SITES.get(site, ue.SITES["ubereats"])
+    ue._CUR.update(base=cfg["base"], domain=cfg["domain"], source=site)
+    # per-worker sticky proxy IP — the whole point: concurrent workers each on a distinct, stable residential IP.
+    if os.environ.get("UE_PROXY") == "1" and resi.enabled():
+        tag = "ued" + (shard.replace("/", "_") if shard else "0")
+        os.environ.update(resi.sticky(tag))                  # pin RESI_PROXY_* to this worker's IP
+        os.environ["BROWSER_PROXY"] = resi._session_url(tag) or ""
+        log("[ue-deep] worker on sticky proxy IP tag=%s" % tag)
+    else:
+        os.environ.pop("BROWSER_PROXY", None)
+    zonelist = zones
+    if shard:
+        i, n = (int(x) for x in shard.split("/")); zonelist = zones[i::n]
+    allstores = warehouse.query("%s_stores" % site,
+                                "SELECT store_uuid, store_name, url, lat, lng FROM t WHERE url <> '' AND lat IS NOT NULL")
+    done = landed_store_uuids(site)
+    log("[ue-deep] site=%s | %d zones (shard) | %d coverage stores | %d already deep-crawled"
+        % (site, len(zonelist), len(allstores), len(done)))
+    tot_stores = tot_items = 0
+    with browser_warm.Warmer(cfg["domain"], channel="chrome", headful=True) as w:
+        ctx = w._ctx; p = w._page()
+        captured = {"store": [], "items": [], "mi_req": None, "sv_req": None}
+
+        def _on(r):
+            try:
+                if "/_p/api/getMenuItemV1" in r.url and _ok(r):
+                    captured["items"].append(r.json())
+            except Exception:
+                pass
+        ctx.on("response", _on)
+
+        def on_req(r):
+            if "/_p/api/getMenuItemV1" in r.url and captured["mi_req"] is None:
+                try:
+                    captured["mi_req"] = {"url": r.url, "body": json.loads(r.post_data or "{}"),
+                                          "headers": {k: v for k, v in dict(r.headers).items()
+                                                      if k.lower().startswith("x-uber-") or k.lower() == "x-csrf-token"}}
+                except Exception:
+                    captured["mi_req"] = {"url": r.url, "body": {}, "headers": {}}
+        ctx.on("request", on_req)
+
+        for zi, z in enumerate(zonelist):
+            det = geocode(z, session="z%d" % zi)
+            if not det:
+                log("[ue-deep] zone '%s' geocode FAILED" % z); continue
+            zlat, zlng = det["latitude"], det["longitude"]
+            near = [r for r in allstores
+                    if abs(r["lat"] - zlat) < 0.3 and abs(r["lng"] - zlng) < 0.3 and r["store_uuid"] not in done]
+            near.sort(key=lambda r: 0 if (ue._LIQUOR_STORE_RE.search(r["store_name"] or "")
+                                          or ue._RETAIL_RE.search(r["store_name"] or "")) else 1)
+            if not near:
+                log("[ue-deep] zone %d/%d %s: no fresh coverage stores" % (zi + 1, len(zonelist), det["address"]["title"][:20])); continue
+            # warm the session at this zone (a store's getStoreV1 only returns in-zone) so goto(store) works
+            try:
+                p.goto(pl_url(det, base=cfg["base"]), wait_until="domcontentloaded", timeout=60000)
+                p.wait_for_timeout(4000); ue._clear_challenge(p, log)
+            except Exception:
+                pass
+            log("[ue-deep] zone %d/%d %-20s: %d stores to pull" % (zi + 1, len(zonelist), det["address"]["title"][:20], len(near)))
+            batch = []
+            for si, r in enumerate(near):
+                done.add(r["store_uuid"])
+                try:
+                    merged, _ = _pull_nav(w, p, captured, r["store_uuid"], r["store_name"], r["url"],
+                                          enrich, max_items_enrich, site, log)
+                except Exception as e:
+                    merged = None; log("  %-26s ERR %s" % ((r["store_name"] or "")[:26], str(e)[:40]))
+                if merged:
+                    batch.extend(merged); tot_stores += 1
+                if len(batch) >= 150:
+                    ue.land(batch, zone=det["address"]["title"][:40], site=site, log=log); tot_items += len(batch); batch = []
+            if batch:
+                ue.land(batch, zone=det["address"]["title"][:40], site=site, log=log); tot_items += len(batch)
+        log("[ue-deep] DONE — %d stores, %d items across %d zones" % (tot_stores, tot_items, len(zonelist)))
+    return tot_stores, tot_items
+
+
+# ── national crawl loop (feed-driven; used for coverage-first discovery) ──────────────────────────────────────
 def crawl_zones(zones, site="ubereats", max_stores=300, enrich=True, max_items_enrich=200,
                 bevalc_only=False, resume=True, log=print):
     """zones = iterable of query strings (cities/ZIPs) OR pre-geocoded pl= URLs. Crawl each zone's stores;
@@ -384,6 +468,8 @@ def main(argv=None):
     ap.add_argument("--bevalc-only", action="store_true", help="off-premise only (retail/liquor); default also on-premise")
     ap.add_argument("--coverage", action="store_true",
                     help="FAST: harvest every merchant's geo from the feed (no per-store nav) → fills the map")
+    ap.add_argument("--deep-stores", action="store_true",
+                    help="DEEP crawl driven by coverage's store list (no feed scroll); per-worker sticky proxy IP")
     ap.add_argument("--shard", default="", help="i/N — process only zone slice i of N (parallel workers)")
     ap.add_argument("--no-resume", action="store_true")
     a = ap.parse_args(argv)
@@ -400,6 +486,9 @@ def main(argv=None):
         print("[ue-crawl] shard %d/%d → %d zones" % (i, n, len(zones)))
     if a.coverage:
         crawl_coverage(zones, site=a.site, resume=not a.no_resume)
+    elif a.deep_stores:
+        crawl_stores(zones, site=a.site, shard=a.shard or None, enrich=not a.no_enrich,
+                     max_items_enrich=a.max_items_enrich)
     else:
         crawl_zones(zones, site=a.site, max_stores=a.max_stores, enrich=not a.no_enrich,
                     max_items_enrich=a.max_items_enrich, bevalc_only=a.bevalc_only, resume=not a.no_resume)
