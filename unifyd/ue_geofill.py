@@ -64,18 +64,53 @@ def parse(html):
     return None
 
 
+def _base(site):
+    return "https://www.ubereats.com" if site == "ubereats" else "https://postmates.com"
+
+
 def _targets(site):
-    """store_uuid+url still needing geo: in the sitemap but not yet in <site>_geo (any terminal status)."""
+    """store_uuid+url still needing geo, minus those already terminal in <site>_geo. Universe = <site>_sitemap
+    (full harvest, has url) if present, else <site>_stores (coverage — build the /store/ url from slug+uuid)."""
     try:
         done = {r["store_uuid"] for r in warehouse.query("%s_geo" % site,
                 "SELECT store_uuid FROM t WHERE geo_status IN ('ok','gone')")}
     except Exception:
         done = set()
-    rows = warehouse.query("%s_sitemap" % site, "SELECT store_uuid, url, store_name FROM t WHERE url <> ''")
+    try:
+        rows = warehouse.query("%s_sitemap" % site, "SELECT store_uuid, url, store_name FROM t WHERE url <> ''")
+    except Exception:
+        rows = []
+    if not rows:                       # no sitemap harvest for this site — fall back to the crawled stores,
+        rows = [r for r in warehouse.query("%s_stores" % site,   # which already carry a resolvable /store/ url
+                "SELECT store_uuid, url, store_name FROM t WHERE store_uuid <> '' AND url IS NOT NULL AND url <> ''")]
     return [r for r in rows if r["store_uuid"] not in done]
 
 
-def geofill(site="ubereats", limit=None, workers=10, flush=1000, log=print):
+def wait_clear(site="ubereats", probe_every=60, max_min=180, log=print):
+    """Before opening the pool, confirm the home IP isn't velocity-clamped: one slow probe every `probe_every`s
+    until a 200 (or timeout). Avoids hammering — and thereby prolonging — a 429 soft-ban."""
+    try:
+        u = warehouse.query("%s_sitemap" % site, "SELECT url FROM t WHERE url <> '' LIMIT 1")[0]["url"]
+    except Exception:
+        return True
+    t0 = time.time()
+    while time.time() - t0 < max_min * 60:
+        try:
+            st, doc = _fetch(u)
+        except Exception:
+            st, doc = 0, ""
+        if st == 200 and parse(doc):
+            log("[geofill] home IP clear (200) after %dm — starting" % int((time.time() - t0) / 60))
+            return True
+        log("[geofill] home IP still clamped (%s); waiting %ds…" % (st, probe_every))
+        time.sleep(probe_every)
+    log("[geofill] gave up waiting for clear after %dm" % max_min)
+    return False
+
+
+def geofill(site="ubereats", limit=None, workers=10, flush=1000, log=print, preflight=True):
+    if preflight and not wait_clear(site, log=log):
+        return 0
     tgt = _targets(site)
     if limit:
         tgt = tgt[:limit]
