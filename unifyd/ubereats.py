@@ -37,6 +37,17 @@ ZONE_ORLANDO = ("https://www.ubereats.com/feed?diningMode=DELIVERY&pl=JTdCJTIyYW
                 "LTc5NDctZjBkNWYxNmNiZDRlJTIyJTJDJTIycmVmZXJlbmNlVHlwZSUyMiUzQSUyMnViZXJfcGxhY2VzJTIyJTJDJTIy"
                 "bGF0aXR1ZGUlMjIlM0EyOC41MTU5NTYxJTJDJTIybG9uZ2l0dWRlJTIyJTNBLTgxLjQ1MTI2MzUlN0Q%3D")
 
+# Postmates runs on the SAME Uber BFF (identical getStoreV1/getMenuItemV1) — only the domain differs. So the whole
+# recipe is reused; `site` swaps the domain, feed base, and the `pl=` zone (same base64 location works on both).
+_PL = ZONE_ORLANDO.split("pl=", 1)[1]
+SITES = {
+    "ubereats":  {"domain": "ubereats.com",  "base": "https://www.ubereats.com",
+                  "zone": ZONE_ORLANDO},
+    "postmates": {"domain": "postmates.com", "base": "https://postmates.com",
+                  "zone": "https://postmates.com/feed?diningMode=DELIVERY&pl=" + _PL},
+}
+_CUR = {"base": "https://www.ubereats.com", "domain": "ubereats.com", "source": "ubereats"}
+
 
 def _clear_challenge(p, log=print, tries=12):
     """Cloudflare/Uber interstitial ('Just a moment' / 'security check') auto-clears for a real headful render —
@@ -332,17 +343,20 @@ def _feed_stores(page):
     for href, name in rows:
         m = re.search(r"/store/([^/]+)/([A-Za-z0-9_\-]+)$", href)
         if m:
-            out.append((m.group(1), m.group(2), (name or "").strip(), "https://www.ubereats.com" + href))
+            out.append((m.group(1), m.group(2), (name or "").strip(), _CUR["base"] + href))
     return out
 
 
-def crawl(zone_url=ZONE_ORLANDO, max_stores=8, retail_only=True, enrich=True, max_items_enrich=250, log=print):
+def crawl(zone_url=None, max_stores=8, retail_only=True, enrich=True, max_items_enrich=250, site="ubereats", log=print):
     """Prime the sticky zone, read the feed, pull each (retail) store's catalog → parsed items with channel price.
     Returns (stores, items). Uses the PROVEN no-BD recipe: real Chrome + headful + a human CLICK-THROUGH from the
     feed (deep-linking a store URL trips reCAPTCHA's 'security check'; a trusted click from the feed clears it).
     Catalog list = getStoreV1; per-item detail (UPC/promo) = getMenuItemV1 (fires on item click — sampled)."""
+    cfg = SITES.get(site, SITES["ubereats"])
+    _CUR.update(base=cfg["base"], domain=cfg["domain"], source=site)
+    zone_url = zone_url or cfg["zone"]
     captured = {"store": [], "items": [], "mi_req": None}
-    with browser_warm.Warmer("ubereats.com", channel="chrome", headful=True) as w:
+    with browser_warm.Warmer(cfg["domain"], channel="chrome", headful=True) as w:
         ctx = w._ctx
         p = w._page()
 
@@ -579,17 +593,17 @@ UE_FIELDS = ["item_uuid", "product_uuid", "store_uuid", "store_name", "name", "s
              "image", "image_count", "zone", "raw_json"]
 
 
-def land(items, zone="orlando", log=print):
-    """Persist the pull: ubereats_products catalog + the dated price time-series. source='ubereats' IS the
-    CHANNEL — paired with the direct feed's source it yields the aggregator markup. store_uuid is the merchant's
-    UberEats id; reconcile it to a hoodie_outlet (name+address+geo) so ABC-from-UberEats lands on ABC (TODO)."""
+def land(items, zone="orlando", site="ubereats", log=print):
+    """Persist the pull: <site>_products catalog + the dated price time-series. source=site IS the CHANNEL —
+    paired with the direct feed's source it yields the aggregator markup. (UberEats + Postmates share the Uber
+    BFF but land to separate channel tables.)"""
     import warehouse
     import observe
     for it in items:
         it["zone"] = zone
-    warehouse.write_accumulate("ubereats_products", items,
+    warehouse.write_accumulate("%s_products" % site, items,
                                key=lambda r: (r.get("store_uuid"), r.get("item_uuid")), fields=UE_FIELDS)
-    observe.record("ubereats", [dict(source="ubereats", store_id=i.get("store_uuid", ""),
+    observe.record(site, [dict(source=site, store_id=i.get("store_uuid", ""),
                                      store=i.get("store_name", ""), product_id=i.get("item_uuid", ""),
                                      upc=i.get("upc", ""), brand="", name=i.get("name", ""),
                                      price=i.get("price"), on_promo=bool(i.get("on_promo")),
@@ -603,17 +617,19 @@ def land(items, zone="orlando", log=print):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="UberEats channel pull (no Bright Data — our own real Chrome).")
+    ap.add_argument("--site", default="ubereats", choices=["ubereats", "postmates"], help="Uber-BFF channel")
+    ap.add_argument("--zone", default=None, help="override the feed zone URL (pl=)")
     ap.add_argument("--max-stores", type=int, default=6)
     ap.add_argument("--all-merchants", action="store_true", help="don't filter to retail/grocery")
     ap.add_argument("--no-enrich", action="store_true", help="catalog only; skip per-item getMenuItemV1 detail")
     ap.add_argument("--max-items-enrich", type=int, default=250, help="per-store cap on detail fetches (politeness)")
     ap.add_argument("--no-land", action="store_true")
     a = ap.parse_args(argv)
-    stores, items = crawl(max_stores=a.max_stores, retail_only=not a.all_merchants,
-                          enrich=not a.no_enrich, max_items_enrich=a.max_items_enrich)
+    stores, items = crawl(zone_url=a.zone, max_stores=a.max_stores, retail_only=not a.all_merchants,
+                          enrich=not a.no_enrich, max_items_enrich=a.max_items_enrich, site=a.site)
     if items and not a.no_land:
         try:
-            land(items)
+            land(items, site=a.site)
         except Exception as e:
             print("land skipped:", str(e)[:90])
     alc = [i for i in items if i["is_alcohol"]]
