@@ -68,9 +68,11 @@ def pl_url(det, base="https://www.ubereats.com"):
 
 
 # ── resume ────────────────────────────────────────────────────────────────────────────────────────────────────
-def landed_store_uuids(site="ubereats"):
+def landed_store_uuids(site="ubereats", table="products"):
+    """Distinct store_uuids already landed, for resume/dedup. `table` picks the grain: coverage dedupes against
+    `<site>_stores` (the store outlets it lands), deep dedupes against `<site>_products` (stores it item-crawled)."""
     try:
-        rows = warehouse.query("%s_products" % site, "SELECT DISTINCT store_uuid FROM t WHERE store_uuid <> ''")
+        rows = warehouse.query("%s_%s" % (site, table), "SELECT DISTINCT store_uuid FROM t WHERE store_uuid <> ''")
         return {r["store_uuid"] for r in rows}
     except Exception:
         return set()
@@ -154,7 +156,7 @@ def crawl_coverage(zones, site="ubereats", resume=True, log=print):
         os.environ["BROWSER_PROXY"] = resi._session_url("uecov") or ""
     else:
         os.environ.pop("BROWSER_PROXY", None)
-    done = landed_store_uuids(site) if resume else set()
+    done = landed_store_uuids(site, "stores") if resume else set()   # coverage dedupes against the STORES it lands
     log("[ue-cov] site=%s | %d zones | %d stores already landed" % (site, len(zones), len(done)))
     tot = 0
     with browser_warm.Warmer(cfg["domain"], channel="chrome", headful=True) as w:
