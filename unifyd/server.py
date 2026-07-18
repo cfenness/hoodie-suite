@@ -1139,12 +1139,29 @@ def api_monitor_rerun():
 _TTL_CACHE = {}
 
 
+_TTL_REFRESHING = {}
+
+
 def _ttl(key, ttl, fn):
+    """TTL cache with STALE-WHILE-REVALIDATE: once warm it returns the cached value instantly and refreshes in a
+    background thread when stale — so a cached endpoint (e.g. the coverage-map dots) never blocks a request even
+    while src_outlets is mid-rewrite (a periodic refresh). Only the very first (cold) call computes synchronously."""
     now = time.time()
     hit = _TTL_CACHE.get(key)
     if hit and (now - hit[0]) < ttl:
+        return hit[1]                                   # fresh
+    if hit is not None:                                 # stale but present → serve now, refresh in background
+        if not _TTL_REFRESHING.get(key):
+            _TTL_REFRESHING[key] = True
+
+            def _bg():
+                try:
+                    _TTL_CACHE[key] = (time.time(), fn())
+                finally:
+                    _TTL_REFRESHING[key] = False
+            _threading.Thread(target=_bg, daemon=True).start()
         return hit[1]
-    val = fn()
+    val = fn()                                          # cold: compute once
     _TTL_CACHE[key] = (now, val)
     return val
 
