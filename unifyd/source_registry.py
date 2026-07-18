@@ -37,7 +37,8 @@ SOURCES = [
 
     # ── Grocery / big-box ─────────────────────────────────────────────────────────────────────────────────────
     dict(id="walmart", label="Walmart", code="import walmart_direct as m; m.pull(detail_pages=True, detail_cap=600)",
-         tables=["walmart_products"], klass="mac", cadence="daily", enabled=True, note="in-page browser crawl, no BD"),
+         tables=["walmart_products"], klass="mac", cadence="daily", enabled=True,
+         requires=["WALMART_COOKIE"], note="__NEXT_DATA__ over stdlib HTTP, no BD — needs a warmed PX cookie"),
     dict(id="target", label="Target", code="import target_scraper as m; m.run()",
          tables=["target_products", "target_stores"], klass="headless", cadence="daily", enabled=True, note="RedSky API"),
     dict(id="kroger", label="Kroger (atlas inventory)", code="import kroger_atlas as m; m.main([])",
@@ -98,6 +99,9 @@ SOURCES = [
          tables=["hemp_products"], klass="headless", cadence="daily", enabled=True, note="hemp-bev feed"),
     dict(id="hemp-finder", label="Hemp retailers", code="import hemp_finder as m; m.run()",
          tables=["hemp_retailers"], klass="headless", cadence="weekly", enabled=True, note="retailer discovery"),
+    dict(id="hemp-inventory", label="Hemp per-store inventory", code="import hemp_inventory as m; m.main([])",
+         tables=["hemp_inventory"], klass="headless", cadence="daily", enabled=True,
+         note="per-store COUNTS from Shopify hemp retailers (cart-add trick) — distinct from hemp-scan listings"),
 ]
 
 
