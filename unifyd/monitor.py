@@ -208,6 +208,9 @@ def warehouse_identity():
             "bucket": None}
 
 
+_FOOTER_CACHE = {}                                            # name -> (mtime, rows, fields) — skip unchanged footers
+
+
 def _list_datasets_fast(workers=80):
     """Same as warehouse.list_datasets but reads the Parquet footers CONCURRENTLY. The reads are pure I/O against
     object storage (each ~tens of ms locally but far higher from the cloud host), so heavy parallelism is the lever —
@@ -233,11 +236,20 @@ def _list_datasets_fast(workers=80):
                 mod = info.mtime.timestamp() if info.mtime else None
             except Exception:
                 pass
+            # INCREMENTAL: a dataset's footer (rows/schema) only changes when the file is rewritten. The S3 listing
+            # gives mtime cheaply — so re-read the footer ONLY when mtime moved; reuse the cache otherwise. Turns a
+            # ~40s full sweep into ~2s once warm (only the handful of actively-landing tables are re-read), so the
+            # console's counts refresh near-live as pulls land.
+            cached = _FOOTER_CACHE.get(name)
+            if cached and cached[0] == mod and mod is not None:
+                return {"name": name, "rows": cached[1], "fields": cached[2], "modified": mod}
             try:
                 md = pq.read_metadata(info.path, filesystem=s3)
+                _FOOTER_CACHE[name] = (mod, md.num_rows, list(md.schema.names))
                 return {"name": name, "rows": md.num_rows, "fields": list(md.schema.names), "modified": mod}
             except Exception:
-                return {"name": name, "rows": 0, "fields": [], "modified": mod}
+                return {"name": name, "rows": (cached[1] if cached else 0),
+                        "fields": (cached[2] if cached else []), "modified": mod}
         with ThreadPoolExecutor(max_workers=workers) as ex:
             return list(ex.map(read_one, infos))
     except Exception:
@@ -475,7 +487,7 @@ def warm():
         _refresh_async()
 
 
-def snapshot(max_age=180):
+def snapshot(max_age=45):
     """The manifest the console polls. NEVER blocks on the slow build: serves the in-memory / persisted (S3→disk)
     snapshot instantly and refreshes in the background when stale. If nothing is cached yet, kicks the build and
     returns a stamped 'building' stub so the console shows a spinner instead of hanging ~130s. Every payload is
