@@ -609,6 +609,12 @@ def land(items, zone="orlando", site="ubereats", log=print):
     import observe
     for it in items:
         it["zone"] = zone
+        # coerce any nested field (list/dict) to a JSON string so Parquet has a stable scalar column — full
+        # capture (gtins/classifications/dietary_labels/nutritional_info/endorsements) is kept, not dropped.
+        for k in UE_FIELDS:
+            v = it.get(k)
+            if isinstance(v, (list, dict)):
+                it[k] = json.dumps(v, separators=(",", ":"), default=str)
     warehouse.write_accumulate("%s_products" % site, items,
                                key=lambda r: (r.get("store_uuid"), r.get("item_uuid")), fields=UE_FIELDS)
     observe.record(site, [dict(source=site, store_id=i.get("store_uuid", ""),
