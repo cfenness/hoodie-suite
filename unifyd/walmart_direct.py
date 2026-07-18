@@ -268,11 +268,43 @@ def detail(url, log=print):
     return out
 
 
-def crawl(terms=None, max_pages=4, delay=1.2, log=print):
+_LAND_KEY = lambda r: (r.get("store_id", ""), r.get("item_id") or r.get("upc") or r.get("product_name"))
+_LAND_FIELDS = ["product_name", "item_id", "upc", "offer_id", "price", "size_ml", "brand",
+                "type", "image", "url", "category", "category_path", "rh_path",
+                "product_type_id", "primary_shelf_id", "ironbank_category", "is_alcohol",
+                "varietal", "region", "vintage", "abv", "container", "flavor", "pairing",
+                "wine_score", "aisle", "order_limit", "store_id", "store_state", "store_city",
+                "avg_rating", "num_reviews", "rollback", "seller", "in_stock", "raw_json"]
+
+
+def _land(rows, log=print):
+    """Accumulate rows into walmart_products (keyed store|item) + record observations. Empty rows never
+    written (the clobber guard also refuses). Returns count landed."""
+    if not rows:
+        return 0
+    warehouse.write_accumulate("walmart_products", rows, key=_LAND_KEY, fields=_LAND_FIELDS)
+    try:
+        observe.record("walmart", [{"source": "walmart", "store_id": r.get("store_id", ""), "store": "Walmart",
+                                    "product_id": r["item_id"], "upc": r.get("upc", ""), "price": r["price"],
+                                    "on_promo": bool(r.get("rollback")), "in_stock": r.get("in_stock", True),
+                                    "stock_level": r.get("aisle") or "",
+                                    "is_hemp": ("hemp" in r["product_name"].lower()
+                                                or "thc" in r["product_name"].lower())}
+                                   for r in rows if r["price"] is not None])
+    except Exception as e:
+        log("  observe skipped: %s" % str(e)[:60])
+    return len(rows)
+
+
+def crawl(terms=None, max_pages=4, delay=1.2, log=print, land_each=False):
+    """Crawl the bev-alc search terms. With land_each=True, each term's rows are accumulated to the
+    warehouse AS SOON AS the term finishes — so a long/throttled run persists progress incrementally
+    instead of all-or-nothing at the end (robust to PX throttling mid-run)."""
     terms = terms or DEFAULT_TERMS
     seen, rows = set(), []
     for term in terms:
         got = 0
+        term_rows = []
         for pg in range(1, max_pages + 1):
             try:
                 page = search_page(term, pg)
@@ -283,15 +315,18 @@ def crawl(terms=None, max_pages=4, delay=1.2, log=print):
             new = [r for r in page if r["item_id"] and r["item_id"] not in seen]
             for r in new:
                 seen.add(r["item_id"])
-            rows.extend(new); got += len(new)
+            rows.extend(new); term_rows.extend(new); got += len(new)
             if delay:
                 time.sleep(delay)
-        log("walmart: %-24s +%d (total %d)" % (term, got, len(rows)))
+        if land_each and term_rows:
+            _land(term_rows, log)
+        log("walmart: %-24s +%d (total %d)%s" % (term, got, len(rows), " ✓landed" if land_each and term_rows else ""))
     return rows
 
 
 def pull(terms=None, max_pages=4, delay=1.2, detail_pages=False, detail_cap=400, out=".", log=print):
-    rows = crawl(terms, max_pages, delay, log)
+    # land per-term so a long/throttled run persists progress incrementally (not all-or-nothing at the end)
+    rows = crawl(terms, max_pages, delay, log, land_each=not detail_pages)
     if detail_pages:                             # enrich with the /ip/ spec vector + inventory (paced!)
         n = min(len(rows), detail_cap)
         for i, r in enumerate(rows[:n]):
@@ -300,28 +335,10 @@ def pull(terms=None, max_pages=4, delay=1.2, detail_pages=False, detail_cap=400,
                 time.sleep(max(delay, 1.6))      # detail pages throttle faster than search — slow down
             if (i + 1) % 25 == 0:
                 log("  detail-enriched %d/%d" % (i + 1, n))
+        _land(rows, log)                         # single land after enrichment (rows now carry detail fields)
     if not rows:                                 # NEVER clobber a good catalog with an empty/blocked crawl
         log("[walmart] 0 rows this crawl — NOT writing (would wipe the existing catalog)")
-        return rows
-    # ACCUMULATE (not overwrite): a partial crawl (one store, some categories) grows the catalog per store|item
-    # instead of replacing it — the bug that wiped 756 -> 0.
-    warehouse.write_accumulate("walmart_products", rows,
-                               key=lambda r: (r.get("store_id", ""), r.get("item_id") or r.get("upc") or r.get("product_name")),
-                               fields=["product_name", "item_id", "upc", "offer_id", "price", "size_ml", "brand",
-                                       "type", "image", "url", "category", "category_path", "rh_path",
-                                       "product_type_id", "primary_shelf_id", "ironbank_category", "is_alcohol",
-                                       "varietal", "region", "vintage", "abv", "container", "flavor", "pairing",
-                                       "wine_score", "aisle", "order_limit", "store_id", "store_state", "store_city",
-                                       "avg_rating", "num_reviews", "rollback", "seller", "in_stock", "raw_json"])
-    try:
-        observe.record("walmart", [{"source": "walmart", "store_id": r.get("store_id", ""), "store": "Walmart",
-                                    "product_id": r["item_id"], "upc": r.get("upc", ""), "price": r["price"],
-                                    "on_promo": bool(r.get("rollback")),
-                                    "in_stock": r.get("in_stock", True), "stock_level": r.get("aisle") or "",
-                                    "is_hemp": ("hemp" in r["product_name"].lower()
-                                    or "thc" in r["product_name"].lower())} for r in rows if r["price"] is not None])
-    except Exception as e:
-        log("  observe skipped: %s" % str(e)[:60])
+        return 0
     log("walmart_direct: %d products landed%s (direct, $0 BD)"
         % (len(rows), " + detail-enriched" if detail_pages else ""))
     return len(rows)
