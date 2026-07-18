@@ -41,8 +41,10 @@ def pull(site="ubereats", log=print):
     failed = []
     for i in range(26):
         xml = None
-        for attempt in range(4):                            # retry each sitemap on a FRESH proxy IP (the proxy has
-            px = resi._session_url("sm%d_%d" % (i, attempt))  # transient CONNECT-tunnel blips)
+        for attempt in range(4):
+            # the sitemap is PUBLIC + robots-permitted (listed in robots.txt) — fetch it DIRECT (home IP): no
+            # anti-bot, no geo-sensitivity, and it dodges proxy CONNECT-tunnel outages. Proxy only as a fallback.
+            px = None if attempt < 2 else resi._session_url("sm%d_%d" % (i, attempt))
             try:
                 s = cr.Session(impersonate="chrome", proxies={"http": px, "https": px} if px else None, timeout=60)
                 xml = gzip.decompress(s.get(SM % i).content).decode("utf-8", "replace")
