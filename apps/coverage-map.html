@@ -94,6 +94,9 @@
         <button data-f="beer">🍺</button><button data-f="wine">🍷</button><button data-f="spirits">🥃</button>
         <button data-f="hemp">🌿</button><button data-f="rtd_spirits" class="rtd" title="beer/wine outlets that can sell spirit-RTDs but not spirits">RTD</button>
       </div>
+      <div class="sells" id="corrob" style="padding-top:0">
+        <button id="multiBtn" style="flex:1 1 100%" title="Only accounts corroborated by 2+ sources at the same spot (cross-source geo-match, ~110m margin). High-confidence outlets; single-source dots = unconfirmed / possible gaps.">✓ confirmed by 2+ sources</button>
+      </div>
     </div>
     <div class="card srcwrap">
       <div class="srch"><span>Sources</span><span><a id="allon">all</a> · <a id="alloff">none</a></span></div>
@@ -179,7 +182,7 @@ function renderSources(){
 let dotReq=0;
 async function loadDots(){
   const my=++dotReq;
-  const params=new URLSearchParams(); if(sellFlag) params.set('sells',sellFlag);
+  const params=new URLSearchParams(); if(sellFlag) params.set('sells',sellFlag); if(multiOnly) params.set('multi','1');
   const d=await fetch('/api/coverage/dots?'+params,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
   if(my!==dotReq || !d || !d.points) return;
   ALLPTS=d.points; DOTSRC=d.sources||[];
@@ -249,6 +252,8 @@ document.getElementById('q').addEventListener('input',e=>{ clearTimeout(qt); con
 document.getElementById('allon').onclick=()=>{ (DATA.by_source||[]).forEach(s=>active.add(s.source)); renderSources(); redrawDots(); };
 document.getElementById('alloff').onclick=()=>{ active.clear(); renderSources(); redrawDots(); };
 // sell-flag filter — beer/wine/spirits/hemp + the spirits-RTD-but-not-spirits class
+let multiOnly=false;
+document.getElementById('multiBtn').onclick=(e)=>{ multiOnly=!multiOnly; e.currentTarget.classList.toggle('on',multiOnly); loadDots(); };
 let sellFlag='';
 document.querySelectorAll('#sells button').forEach(b=>b.onclick=()=>{
   const f=b.getAttribute('data-f'); sellFlag=(sellFlag===f)?'':f;

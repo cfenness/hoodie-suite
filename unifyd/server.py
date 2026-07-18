@@ -2689,12 +2689,15 @@ def coverage_dots_ep():
     Returns a sources[] index for colouring. Optional source / sells filter. Reservoir-sampled above 220k."""
     src = (request.args.get("source") or "").strip()
     sells = (request.args.get("sells") or "").strip().lower()
-    if not src and not sells:               # the full-book layer (biggest payload) — TTL-cache + warm it
-        return jsonify(_ttl("cov_dots", 90, lambda: _cov_dots_data("", "")))
-    return jsonify(_cov_dots_data(src, sells))
+    multi = request.args.get("multi") in ("1", "true", "yes")   # only outlets CONFIRMED by 2+ sources at one spot
+    if not src and not sells and not multi:  # the full-book layer (biggest payload) — TTL-cache + warm it
+        return jsonify(_ttl("cov_dots", 90, lambda: _cov_dots_data("", "", False)))
+    if multi and not src and not sells:
+        return jsonify(_ttl("cov_dots_multi", 90, lambda: _cov_dots_data("", "", True)))
+    return jsonify(_cov_dots_data(src, sells, multi))
 
 
-def _cov_dots_data(src, sells):
+def _cov_dots_data(src, sells, multi=False):
     import warehouse
     cond = ["lat IS NOT NULL"]
     params = []
@@ -2703,11 +2706,20 @@ def _cov_dots_data(src, sells):
     if sells in ("beer", "wine", "spirits", "hemp", "cannabis", "rtd_spirits"):
         cond.append("f_%s" % sells)
     wsql = " AND ".join(cond)
+    # multi-source = the same physical outlet seen by >=2 sources. Geocodes vary between sources, so we bucket to a
+    # ~110m cell (round lat/lng to 3 dp) and keep cells where >=2 DISTINCT sources land — the corroboration view.
+    # warehouse.query exposes the parquet as the view `t`; the multi self-join references that same view.
+    join = ("" if not multi else
+            " JOIN (SELECT round(CAST(lat AS DOUBLE),3) cy, round(CAST(lng AS DOUBLE),3) cx FROM t "
+            "WHERE lat IS NOT NULL GROUP BY 1,2 HAVING count(DISTINCT source) >= 2) m "
+            "ON round(CAST(t.lat AS DOUBLE),3)=m.cy AND round(CAST(t.lng AS DOUBLE),3)=m.cx")
+    tw = (wsql.replace("lat IS NOT NULL", "t.lat IS NOT NULL").replace("source =", "t.source =")) if multi else wsql
     try:
-        n = _wq_cached("src_outlets", "SELECT count(*) c FROM t WHERE %s" % wsql, params)[0]["c"]
+        n = _wq_cached("src_outlets", "SELECT count(*) c FROM t%s WHERE %s" % (join, tw), params)[0]["c"]
         samp = "" if n <= 220000 else " USING SAMPLE reservoir(210000 ROWS)"
-        rows = warehouse.query("src_outlets", "SELECT source, round(CAST(lat AS DOUBLE),4) y, "
-                               "round(CAST(lng AS DOUBLE),4) x FROM t WHERE %s%s" % (wsql, samp), params)
+        rows = warehouse.query("src_outlets", "SELECT t.source, round(CAST(t.lat AS DOUBLE),4) y, "
+                               "round(CAST(t.lng AS DOUBLE),4) x FROM t%s WHERE %s%s"
+                               % (join, tw, samp), params)
     except Exception as e:
         return dict(ok=False, error=str(e)[:160], points=[], sources=[])
     srcs, idx, pts = [], {}, []
