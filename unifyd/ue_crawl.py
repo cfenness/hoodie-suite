@@ -171,12 +171,15 @@ def _feed_outlets(feed_payloads, site):
     return list(out.values())
 
 
-def crawl_coverage(zones, site="ubereats", resume=True, geo_state=None, log=print):
+def crawl_coverage(zones, site="ubereats", resume=True, geo_state=None, land_table=None, log=print):
     """FAST national coverage: per zone, load the feed once and harvest EVERY merchant's geo (mapMarker) +
-    identity from getFeedV1 → land <site>_stores. No per-store navigation → hundreds of geo'd outlets per zone
-    in seconds. `geo_state` (full US state name, e.g. 'illinois') routes the browser through a proxy IP in THAT
-    state — UberEats' feed returns empty when the exit IP's geo conflicts with the zone, so a state-worker crawls
-    its own state's zones through a state-matched IP (dodges home-IP flagging + runs parallel per state)."""
+    identity from getFeedV1 → land `land_table` (default <site>_stores). No per-store navigation → hundreds of
+    geo'd outlets per zone in seconds. `geo_state` (full US state name, e.g. 'illinois') routes the browser
+    through a proxy IP in THAT state — UberEats' feed returns empty when the exit IP's geo conflicts with the
+    zone, so a state-worker crawls its own state's zones through a state-matched IP (dodges home-IP flagging +
+    runs parallel per state). PARALLEL workers MUST each pass a distinct `land_table` (their own state table) —
+    concurrent write_accumulate to ONE shared table races and clobbers; the parent merges the state tables."""
+    store_table = land_table or ("%s_stores" % site)
     cfg = ue.SITES.get(site, ue.SITES["ubereats"])
     ue._CUR.update(base=cfg["base"], domain=cfg["domain"], source=site)
     if geo_state and resi.enabled():
@@ -186,7 +189,13 @@ def crawl_coverage(zones, site="ubereats", resume=True, geo_state=None, log=prin
         os.environ["BROWSER_PROXY"] = resi._session_url("uecov") or ""
     else:
         os.environ.pop("BROWSER_PROXY", None)
-    done = landed_store_uuids(site, "stores") if resume else set()   # coverage dedupes against the STORES it lands
+    done = set()                                                     # dedupe against THIS worker's own store table
+    if resume:
+        try:
+            done = {r["store_uuid"] for r in
+                    warehouse.query(store_table, "SELECT DISTINCT store_uuid FROM t WHERE store_uuid <> ''")}
+        except Exception:
+            done = set()
     log("[ue-cov] site=%s | %d zones | %d stores already landed" % (site, len(zones), len(done)))
     tot = 0
     with browser_warm.Warmer(cfg["domain"], channel="chrome", headful=True) as w:
@@ -215,7 +224,7 @@ def crawl_coverage(zones, site="ubereats", resume=True, geo_state=None, log=prin
                 for o in fresh:
                     done.add(o["store_uuid"])
                 if fresh:
-                    warehouse.write_accumulate("%s_stores" % site, fresh, key=lambda r: r["store_uuid"], fields=STORE_FIELDS)
+                    warehouse.write_accumulate(store_table, fresh, key=lambda r: r["store_uuid"], fields=STORE_FIELDS)
                     tot += len(fresh)
                 log("[ue-cov] zone %d/%d %-22s %d markers, %d new (run total %d)" % (
                     zi + 1, len(zones), label[:22], len(outlets), len(fresh), tot))
