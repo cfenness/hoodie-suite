@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+"""resi.py — ONE provider-agnostic residential-proxy resolver for every scraper.
+
+Set a single env var and any pool (IPRoyal, Bright Data, Webshare, …) works across both
+the stdlib fetchers and the patchright/playwright browsers. Switching pools = changing
+one line; scraper code never changes.
+
+Config, checked in priority order:
+  1. RESI_PROXY        — a full URL:  http://user:pass@host:port   (or user:pass@host:port)
+  2. RESI_PROXY_USER + RESI_PROXY_PASS + RESI_PROXY_HOST + RESI_PROXY_PORT   (parts; the
+     password is URL-encoded for you, so IPRoyal's `_country-us_session-x` params are safe)
+  3. Fallback: the existing Bright Data vars (BRIGHTDATA_PROXY_USER/PASS/HOST/PORT or
+     BRIGHTDATA_PROXY) so nothing that works today breaks.
+
+IPRoyal example (residential, PAYG, no business):
+    RESI_PROXY_HOST=geo.iproyal.com
+    RESI_PROXY_PORT=12321
+    RESI_PROXY_USER=<your-username>
+    RESI_PROXY_PASS=<your-password>_country-us          # append _session-<id>_lifetime-30m for sticky
+
+Verify it (prints the exit IP + geo THROUGH the proxy — should be a US residential IP that
+is NOT your home IP):
+    python resi.py
+"""
+import os
+import ssl
+import urllib.parse
+import urllib.request
+
+
+# providers whose HTTPS is a clean CONNECT tunnel (real cert) → verify normally. Bright Data's
+# Unlocker MITMs HTTPS to solve challenges, so its cert won't chain to a public CA → skip verify.
+def _is_unlocker(host):
+    return "brd.superproxy" in (host or "") or "brightdata" in (host or "")
+
+
+def parts():
+    """Resolve (user, pass, host, port) from the env, or (None,…) if no proxy is configured."""
+    # 1. full URL
+    full = os.environ.get("RESI_PROXY", "").strip()
+    if full:
+        if "://" not in full:
+            full = "http://" + full
+        u = urllib.parse.urlsplit(full)
+        return (urllib.parse.unquote(u.username or ""), urllib.parse.unquote(u.password or ""),
+                u.hostname or "", str(u.port or ""))
+    # 2. parts (resi), else 3. bright data parts / combined
+    user = (os.environ.get("RESI_PROXY_USER") or os.environ.get("BRIGHTDATA_PROXY_USER") or "").strip()
+    pw = os.environ.get("RESI_PROXY_PASS") or os.environ.get("BRIGHTDATA_PROXY_PASS") or ""
+    if user and pw:
+        host = (os.environ.get("RESI_PROXY_HOST") or os.environ.get("BRIGHTDATA_PROXY_HOST")
+                or "brd.superproxy.io").strip()
+        port = (os.environ.get("RESI_PROXY_PORT") or os.environ.get("BRIGHTDATA_PROXY_PORT")
+                or "33335").strip()
+        return (user, pw, host, port)
+    combined = os.environ.get("BRIGHTDATA_PROXY", "").strip()
+    if combined:
+        if "://" not in combined:
+            combined = "http://" + combined
+        u = urllib.parse.urlsplit(combined)
+        return (urllib.parse.unquote(u.username or ""), urllib.parse.unquote(u.password or ""),
+                u.hostname or "", str(u.port or ""))
+    return (None, None, None, None)
+
+
+def enabled():
+    return bool(parts()[0])
+
+
+def url():
+    """Full proxy URL `http://user:pass@host:port` (password URL-encoded), or None if unconfigured."""
+    user, pw, host, port = parts()
+    if not user:
+        return None
+    cred = urllib.parse.quote(user, safe="") + ":" + urllib.parse.quote(pw, safe="")
+    return "http://%s@%s:%s" % (cred, host, port)
+
+
+def proxies():
+    """requests-style {'http':…, 'https':…} dict, or None. Pass straight to requests(proxies=…)."""
+    p = url()
+    return {"http": p, "https": p} if p else None
+
+
+def browser():
+    """patchright/playwright proxy dict {'server','username','password'}, or None. The server is the
+    bare host:port (creds go in separate fields — playwright rejects creds embedded in server)."""
+    user, pw, host, port = parts()
+    if not user:
+        return None
+    return {"server": "http://%s:%s" % (host, port), "username": user, "password": pw}
+
+
+def opener(verify=None):
+    """A urllib opener routed through the proxy. `verify` defaults to False for BD Unlocker hosts
+    (their MITM cert won't chain) and True otherwise (IPRoyal/Webshare are clean CONNECT tunnels)."""
+    p = url()
+    if not p:
+        return None
+    _, _, host, _ = parts()
+    if verify is None:
+        verify = not _is_unlocker(host)
+    handlers = [urllib.request.ProxyHandler({"http": p, "https": p})]
+    if not verify:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        handlers.append(urllib.request.HTTPSHandler(context=ctx))
+    return urllib.request.build_opener(*handlers)
+
+
+def sticky(tag, lifetime="30m"):
+    """Return a COPY of the proxy env pinned to one IP for `tag` (so a cookie-warmed session keeps the
+    same exit IP). Provider-aware: IPRoyal appends `_session-<tag>_lifetime-…` to the password; Bright
+    Data appends `-session-<tag>` to the username. Use: os.environ.update(resi.sticky('7now-tx')) before
+    launching the browser/opener. No-op (returns {}) if no proxy configured."""
+    user, pw, host, port = parts()
+    if not user:
+        return {}
+    safe = "".join(c for c in str(tag) if c.isalnum())[:24]
+    if "iproyal" in (host or ""):
+        pw = pw.split("_session-")[0] + "_session-%s_lifetime-%s" % (safe, lifetime)
+    elif _is_unlocker(host):
+        user = user.split("-session-")[0] + "-session-" + safe
+    return {"RESI_PROXY_USER": user, "RESI_PROXY_PASS": pw,
+            "RESI_PROXY_HOST": host, "RESI_PROXY_PORT": port, "RESI_PROXY": ""}
+
+
+def exit_ip(timeout=25):
+    """Fetch the exit IP + geo THROUGH the proxy (via ipapi.co) — the verification probe. Returns a dict
+    or raises. Direct (no proxy) if unconfigured, so you can compare against your home IP."""
+    import json
+    op = opener()
+    o = op.open if op else urllib.request.urlopen
+    body = o(urllib.request.Request("https://ipapi.co/json/",
+                                    headers={"User-Agent": "curl/8"}), timeout=timeout).read()
+    return json.loads(body.decode("utf-8", "replace"))
+
+
+def _load_env_file():
+    """Load warehouse.env (same file kroger_api._load_creds reads) so `python resi.py` sees RESI_PROXY_*
+    without exporting anything. Only sets keys not already in the environment."""
+    for p in [os.environ.get("WH_ENV_FILE", ""),
+              os.path.expanduser("~/Desktop/Desktop - Chris’s MacBook Pro/Projects/hoodie-backend/warehouse.env"),
+              os.path.join(os.path.dirname(os.path.abspath(__file__)), "warehouse.env")]:
+        if p and os.path.exists(p):
+            for line in open(p, encoding="utf-8", errors="replace"):
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    k, v = k.strip(), v.strip().strip('"').strip("'")
+                    if k and v and not os.environ.get(k):
+                        os.environ[k] = v
+            break
+
+
+if __name__ == "__main__":
+    _load_env_file()
+    print("proxy configured:", enabled(), "| host:", parts()[2] or "—")
+    if enabled():
+        try:
+            home = None
+            try:
+                import json
+                home = json.loads(urllib.request.urlopen("https://ipapi.co/json/", timeout=20)
+                                  .read().decode())["ip"]
+            except Exception:
+                pass
+            info = exit_ip()
+            print("  exit IP :", info.get("ip"), "(%s, %s %s)" % (
+                info.get("org", "?"), info.get("city", "?"), info.get("region", "?")))
+            print("  home IP :", home or "(couldn't fetch)")
+            print("  VERDICT :", "✅ routing through proxy — different IP"
+                  if home and info.get("ip") != home else
+                  "⚠️  exit IP == home IP — proxy NOT engaged" if home else
+                  "exit IP fetched via proxy (couldn't compare to home)")
+        except Exception as e:
+            print("  ERROR through proxy:", str(e)[:200])
+    else:
+        print("  set RESI_PROXY (or RESI_PROXY_USER/PASS/HOST/PORT) and re-run.")
