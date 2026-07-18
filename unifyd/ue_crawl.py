@@ -113,6 +113,94 @@ def _store_outlet(payloads, uuid, name, site):
             "captured_at": int(_t.time()), "raw_json": ""}
 
 
+# ── FAST coverage: extract every merchant's geo from the feed's mapMarkers (no per-store nav) ──────────────────
+def _feed_outlets(feed_payloads, site):
+    """Walk getFeedV1 payload(s) → a geo'd outlet per merchant. Each store card carries storeUuid + title +
+    actionUrl and a parallel mapMarker{latitude,longitude,description.title}. 300+ stores per feed, in seconds."""
+    import time as _t
+    base = ue.SITES.get(site, ue.SITES["ubereats"])["base"]
+    out = {}
+
+    def walk(o):
+        if isinstance(o, dict):
+            mm = o.get("mapMarker")
+            su = o.get("storeUuid")
+            if su and isinstance(mm, dict) and isinstance(mm.get("latitude"), (int, float)):
+                nm = ((mm.get("description") or {}).get("title")) or ""
+                if not nm:
+                    t = o.get("title")
+                    nm = t if isinstance(t, str) else (t or {}).get("text", "") if isinstance(t, dict) else ""
+                au = o.get("actionUrl") or ""
+                out[su] = {"store_uuid": su, "store_name": nm, "lat": mm["latitude"], "lng": mm["longitude"],
+                           "address": au, "city": "", "state": "", "postal_code": "", "phone": "", "chain": "",
+                           "source": site, "url": base + au, "captured_at": int(_t.time()), "raw_json": ""}
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    for pl in feed_payloads:
+        walk(pl)
+    return list(out.values())
+
+
+def crawl_coverage(zones, site="ubereats", resume=True, log=print):
+    """FAST national coverage: per zone, load the feed once and harvest EVERY merchant's geo (mapMarker) +
+    identity from getFeedV1 → land <site>_stores. No per-store navigation → hundreds of geo'd outlets per zone
+    in seconds. Fills the coverage map nationally fast; deep catalog/UPC is the separate crawl_zones pass."""
+    cfg = ue.SITES.get(site, ue.SITES["ubereats"])
+    ue._CUR.update(base=cfg["base"], domain=cfg["domain"], source=site)
+    if os.environ.get("UE_PROXY") == "1" and resi.enabled():
+        os.environ["BROWSER_PROXY"] = resi._session_url("uecov") or ""
+    else:
+        os.environ.pop("BROWSER_PROXY", None)
+    done = landed_store_uuids(site) if resume else set()
+    log("[ue-cov] site=%s | %d zones | %d stores already landed" % (site, len(zones), len(done)))
+    tot = 0
+    with browser_warm.Warmer(cfg["domain"], channel="chrome", headful=True) as w:
+        ctx = w._ctx; p = w._page()
+        feeds = []
+        ctx.on("response", lambda r: _grab_feed(r, feeds))
+        for zi, z in enumerate(zones):
+            feeds.clear()
+            url, label = (z, z) if z.startswith("http") else (None, z)
+            if url is None:
+                det = geocode(z, session="z%d" % zi)
+                if not det:
+                    log("[ue-cov] zone %d/%d '%s': geocode FAILED" % (zi + 1, len(zones), z)); continue
+                url = pl_url(det, base=cfg["base"]); label = det["address"]["title"]
+            try:
+                p.goto(url, wait_until="domcontentloaded", timeout=60000)
+                p.wait_for_timeout(4000); ue._clear_challenge(p, log)
+                for _ in range(12):                      # wait for the first feed response
+                    if feeds:
+                        break
+                    ue._clear_challenge(p, log); p.wait_for_timeout(1500)
+                for _ in range(10):                      # scroll to load more merchants → more markers
+                    p.mouse.wheel(0, 9000); p.wait_for_timeout(900)
+                outlets = _feed_outlets(feeds, site)
+                fresh = [o for o in outlets if o["store_uuid"] not in done]
+                for o in fresh:
+                    done.add(o["store_uuid"])
+                if fresh:
+                    warehouse.write_accumulate("%s_stores" % site, fresh, key=lambda r: r["store_uuid"], fields=STORE_FIELDS)
+                    tot += len(fresh)
+                log("[ue-cov] zone %d/%d %-22s %d markers, %d new (run total %d)" % (
+                    zi + 1, len(zones), label[:22], len(outlets), len(fresh), tot))
+            except Exception as e:
+                log("[ue-cov] zone %s ERR %s" % (label[:20], str(e)[:55]))
+    log("[ue-cov] DONE — %d new geo'd stores across %d zones" % (tot, len(zones)))
+    return tot
+
+
+def _grab_feed(r, feeds):
+    try:
+        if "/_p/api/getFeedV1" in r.url and _ok(r):
+            feeds.append(r.json())
+    except Exception:
+        pass
+
+
 # ── per-store pull via in-session NAVIGATION — getStoreV1 fires natively (no 403), getMenuItemV1 replays ───────
 def _pull_nav(w, p, captured, uuid, name, href, enrich, max_items_enrich, site, log):
     """In the warmed session, navigate to the store URL (getStoreV1 fires natively — replaying it for other
@@ -288,6 +376,8 @@ def main(argv=None):
     ap.add_argument("--max-items-enrich", type=int, default=200)
     ap.add_argument("--no-enrich", action="store_true", help="catalog only; skip getMenuItemV1 UPC/recipe detail")
     ap.add_argument("--bevalc-only", action="store_true", help="off-premise only (retail/liquor); default also on-premise")
+    ap.add_argument("--coverage", action="store_true",
+                    help="FAST: harvest every merchant's geo from the feed (no per-store nav) → fills the map")
     ap.add_argument("--no-resume", action="store_true")
     a = ap.parse_args(argv)
     zones = []
@@ -297,8 +387,11 @@ def main(argv=None):
         zones += [z.strip() for z in a.zones.split(";") if z.strip()]
     if not zones:
         print("no zones — pass --zones or --zones-file"); return 2
-    crawl_zones(zones, site=a.site, max_stores=a.max_stores, enrich=not a.no_enrich,
-                max_items_enrich=a.max_items_enrich, bevalc_only=a.bevalc_only, resume=not a.no_resume)
+    if a.coverage:
+        crawl_coverage(zones, site=a.site, resume=not a.no_resume)
+    else:
+        crawl_zones(zones, site=a.site, max_stores=a.max_stores, enrich=not a.no_enrich,
+                    max_items_enrich=a.max_items_enrich, bevalc_only=a.bevalc_only, resume=not a.no_resume)
     return 0
 
 
