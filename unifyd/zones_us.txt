@@ -1,0 +1,230 @@
+# US zone seed for ue_crawl.py — one query per line (city, ST or ZIP). mapsSearchV1 geocodes each.
+# Starter national set (major metros, all states). Expand to ZIP-level for gap-free density.
+# Stores are deduped across overlapping zones, so denser lists just improve coverage, never double-crawl.
+New York, NY
+Los Angeles, CA
+Chicago, IL
+Houston, TX
+Phoenix, AZ
+Philadelphia, PA
+San Antonio, TX
+San Diego, CA
+Dallas, TX
+San Jose, CA
+Austin, TX
+Jacksonville, FL
+Fort Worth, TX
+Columbus, OH
+Charlotte, NC
+Indianapolis, IN
+San Francisco, CA
+Seattle, WA
+Denver, CO
+Washington, DC
+Boston, MA
+El Paso, TX
+Nashville, TN
+Detroit, MI
+Oklahoma City, OK
+Portland, OR
+Las Vegas, NV
+Memphis, TN
+Louisville, KY
+Baltimore, MD
+Milwaukee, WI
+Albuquerque, NM
+Tucson, AZ
+Fresno, CA
+Sacramento, CA
+Kansas City, MO
+Mesa, AZ
+Atlanta, GA
+Omaha, NE
+Colorado Springs, CO
+Raleigh, NC
+Long Beach, CA
+Virginia Beach, VA
+Miami, FL
+Oakland, CA
+Minneapolis, MN
+Tulsa, OK
+Bakersfield, CA
+Wichita, KS
+Arlington, TX
+Aurora, CO
+Tampa, FL
+New Orleans, LA
+Cleveland, OH
+Honolulu, HI
+Anaheim, CA
+Lexington, KY
+Stockton, CA
+Corpus Christi, TX
+Henderson, NV
+Riverside, CA
+Newark, NJ
+Saint Paul, MN
+Santa Ana, CA
+Cincinnati, OH
+Irvine, CA
+Orlando, FL
+Pittsburgh, PA
+St. Louis, MO
+Greensboro, NC
+Lincoln, NE
+Anchorage, AK
+Plano, TX
+Durham, NC
+Jersey City, NJ
+Chandler, AZ
+Chula Vista, CA
+Buffalo, NY
+North Las Vegas, NV
+Gilbert, AZ
+Madison, WI
+Reno, NV
+Toledo, OH
+Fort Wayne, IN
+Lubbock, TX
+St. Petersburg, FL
+Laredo, TX
+Irving, TX
+Chesapeake, VA
+Winston-Salem, NC
+Glendale, AZ
+Scottsdale, AZ
+Garland, TX
+Boise, ID
+Norfolk, VA
+Spokane, WA
+Fremont, CA
+Richmond, VA
+Santa Clarita, CA
+San Bernardino, CA
+Baton Rouge, LA
+Hialeah, FL
+Tacoma, WA
+Modesto, CA
+Port St. Lucie, FL
+Huntsville, AL
+Des Moines, IA
+Moreno Valley, CA
+Fontana, CA
+Frisco, TX
+Rochester, NY
+Yonkers, NY
+Fayetteville, NC
+Worcester, MA
+Columbus, GA
+Cape Coral, FL
+McKinney, TX
+Little Rock, AR
+Oxnard, CA
+Amarillo, TX
+Augusta, GA
+Salt Lake City, UT
+Montgomery, AL
+Birmingham, AL
+Grand Rapids, MI
+Grand Prairie, TX
+Overland Park, KS
+Tallahassee, FL
+Huntington Beach, CA
+Sioux Falls, SD
+Peoria, AZ
+Knoxville, TN
+Glendale, CA
+Vancouver, WA
+Providence, RI
+Akron, OH
+Brownsville, TX
+Mobile, AL
+Newport News, VA
+Fort Lauderdale, FL
+Chattanooga, TN
+Shreveport, LA
+Aurora, IL
+Elk Grove, CA
+Ontario, CA
+Salem, OR
+Cary, NC
+Santa Rosa, CA
+Rancho Cucamonga, CA
+Eugene, OR
+Oceanside, CA
+Clarksville, TN
+Garden Grove, CA
+Lancaster, CA
+Springfield, MO
+Pembroke Pines, FL
+Fort Collins, CO
+Palmdale, CA
+Salinas, CA
+Hayward, CA
+Corona, CA
+Paterson, NJ
+Murfreesboro, TN
+Macon, GA
+Lakewood, CO
+Killeen, TX
+Springfield, MA
+Alexandria, VA
+Kansas City, KS
+Sunnyvale, CA
+Hollywood, FL
+Roseville, CA
+Charleston, SC
+Escondido, CA
+Joliet, IL
+Jackson, MS
+Bellevue, WA
+Surprise, AZ
+Naperville, IL
+Pasadena, TX
+Pomona, CA
+Bridgeport, CT
+Denton, TX
+Rockford, IL
+Mesquite, TX
+Savannah, GA
+Syracuse, NY
+McAllen, TX
+Torrance, CA
+Olathe, KS
+Visalia, CA
+Thornton, CO
+Fullerton, CA
+Gainesville, FL
+Waco, TX
+West Valley City, UT
+Warren, MI
+Hampton, VA
+Dayton, OH
+Columbia, SC
+Orange, CA
+Cedar Rapids, IA
+Stamford, CT
+Victorville, CA
+Pasadena, CA
+Elizabeth, NJ
+New Haven, CT
+Miramar, FL
+Kent, WA
+Sterling Heights, MI
+Carrollton, TX
+Coral Springs, FL
+Midland, TX
+Norman, OK
+Athens, GA
+Santa Clara, CA
+Columbia, MO
+Fargo, ND
+Pearl City, HI
+Billings, MT
+Portland, ME
+Manchester, NH
+Burlington, VT
+Wilmington, DE
+Providence, RI
+Charleston, WV
+Cheyenne, WY
