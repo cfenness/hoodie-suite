@@ -34,6 +34,9 @@ jobs:
           fi
       - uses: actions/checkout@v4
         if: steps.gate.outputs.go == 'true'
+      - name: Validate inline HTML JS (launcher + apps) — a syntax error silently blanks the app grid
+        if: steps.gate.outputs.go == 'true'
+        run: node scripts/check_html_js.js
       - uses: superfly/flyctl-actions/setup-flyctl@master
         if: steps.gate.outputs.go == 'true'
       - run: flyctl deploy --remote-only --ha=false

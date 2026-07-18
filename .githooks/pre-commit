@@ -1,0 +1,8 @@
+#!/bin/bash
+# Guard: refuse to commit an inline-HTML-JS syntax error — one such error silently blanks the
+# entire launcher app grid (shipped once as a "site down"). Override with: git commit --no-verify
+if command -v node >/dev/null 2>&1; then
+  node "$(git rev-parse --show-toplevel)/scripts/check_html_js.js" || {
+    echo "pre-commit BLOCKED: inline HTML JS syntax error above. Fix it, or 'git commit --no-verify' to override."
+    exit 1; }
+fi
