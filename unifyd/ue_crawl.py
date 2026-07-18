@@ -78,6 +78,31 @@ def landed_store_uuids(site="ubereats", table="products"):
         return set()
 
 
+# 2-letter state -> IPRoyal geo name (full, lowercase, dashed) for matching the proxy exit IP to the zone
+US_STATES = {"AL": "alabama", "AK": "alaska", "AZ": "arizona", "AR": "arkansas", "CA": "california",
+             "CO": "colorado", "CT": "connecticut", "DE": "delaware", "DC": "district-of-columbia",
+             "FL": "florida", "GA": "georgia", "HI": "hawaii", "ID": "idaho", "IL": "illinois", "IN": "indiana",
+             "IA": "iowa", "KS": "kansas", "KY": "kentucky", "LA": "louisiana", "ME": "maine", "MD": "maryland",
+             "MA": "massachusetts", "MI": "michigan", "MN": "minnesota", "MS": "mississippi", "MO": "missouri",
+             "MT": "montana", "NE": "nebraska", "NV": "nevada", "NH": "new-hampshire", "NJ": "new-jersey",
+             "NM": "new-mexico", "NY": "new-york", "NC": "north-carolina", "ND": "north-dakota", "OH": "ohio",
+             "OK": "oklahoma", "OR": "oregon", "PA": "pennsylvania", "RI": "rhode-island", "SC": "south-carolina",
+             "SD": "south-dakota", "TN": "tennessee", "TX": "texas", "UT": "utah", "VT": "vermont",
+             "VA": "virginia", "WA": "washington", "WV": "west-virginia", "WI": "wisconsin", "WY": "wyoming"}
+
+
+def zones_by_state(zones):
+    """Group 'City, ST' zone queries by US state (full lowercase name for proxy geo-targeting). Unparseable
+    zones fall under 'us' (no geo pin)."""
+    import re as _re
+    groups = {}
+    for z in zones:
+        m = _re.search(r",\s*([A-Z]{2})\s*$", z.strip())
+        st = US_STATES.get(m.group(1)) if m else None
+        groups.setdefault(st or "us", []).append(z)
+    return groups
+
+
 # ── store OUTLET capture (geo) — feeds src_outlets + the coverage map ─────────────────────────────────────────
 STORE_FIELDS = ["store_uuid", "store_name", "lat", "lng", "address", "city", "state", "postal_code",
                 "phone", "chain", "source", "url", "captured_at", "raw_json"]
@@ -146,13 +171,18 @@ def _feed_outlets(feed_payloads, site):
     return list(out.values())
 
 
-def crawl_coverage(zones, site="ubereats", resume=True, log=print):
+def crawl_coverage(zones, site="ubereats", resume=True, geo_state=None, log=print):
     """FAST national coverage: per zone, load the feed once and harvest EVERY merchant's geo (mapMarker) +
     identity from getFeedV1 → land <site>_stores. No per-store navigation → hundreds of geo'd outlets per zone
-    in seconds. Fills the coverage map nationally fast; deep catalog/UPC is the separate crawl_zones pass."""
+    in seconds. `geo_state` (full US state name, e.g. 'illinois') routes the browser through a proxy IP in THAT
+    state — UberEats' feed returns empty when the exit IP's geo conflicts with the zone, so a state-worker crawls
+    its own state's zones through a state-matched IP (dodges home-IP flagging + runs parallel per state)."""
     cfg = ue.SITES.get(site, ue.SITES["ubereats"])
     ue._CUR.update(base=cfg["base"], domain=cfg["domain"], source=site)
-    if os.environ.get("UE_PROXY") == "1" and resi.enabled():
+    if geo_state and resi.enabled():
+        os.environ["BROWSER_PROXY"] = resi.geo_session_url("cov" + geo_state.replace(" ", ""), state=geo_state) or ""
+        log("[ue-cov] routing through a %s proxy IP" % geo_state)
+    elif os.environ.get("UE_PROXY") == "1" and resi.enabled():
         os.environ["BROWSER_PROXY"] = resi._session_url("uecov") or ""
     else:
         os.environ.pop("BROWSER_PROXY", None)

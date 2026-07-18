@@ -106,6 +106,28 @@ def _session_url(session):
     return "http://%s@%s:%s" % (cred, host, port)
 
 
+def geo_session_url(session, state=None, city=None, lifetime="30m"):
+    """A proxy URL pinned to a US geo (IPRoyal `_state-<state>` / `_city-<city>` on the password) AND a sticky
+    session id — so a browser routed through it exits from the SAME region as the delivery zone it's crawling.
+    UberEats' feed is location-based and returns EMPTY when the exit IP's geo conflicts with the pl= zone, so
+    geo-matching the IP is what makes the proxy work for coverage (and lets per-region workers run in parallel).
+    `state`/`city` are lowercased and space→dash (e.g. 'Illinois'→'illinois', 'New York'→'new-york')."""
+    user, pw, host, port = parts()
+    if not user:
+        return None
+    base = pw.split("_country")[0].split("_state")[0].split("_city")[0].split("_session")[0]
+    tag = "".join(c for c in str(session) if c.isalnum())[:24]
+    geo = "_country-us"
+    if state:
+        geo += "_state-" + str(state).strip().lower().replace(" ", "-")
+    if city:
+        geo += "_city-" + str(city).strip().lower().replace(" ", "-")
+    if "iproyal" in (host or ""):
+        pw = base + geo + "_session-%s_lifetime-%s" % (tag, lifetime)
+    cred = urllib.parse.quote(user, safe="") + ":" + urllib.parse.quote(pw, safe="")
+    return "http://%s@%s:%s" % (cred, host, port)
+
+
 def opener(verify=None, session=None):
     """A urllib opener routed through the proxy. `verify` defaults to False for BD Unlocker hosts
     (their MITM cert won't chain) and True otherwise (IPRoyal/Webshare are clean CONNECT tunnels).
