@@ -331,9 +331,11 @@ def _woo_row(p):
     desc = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ",
              p.get("description") or p.get("short_description") or ""))).strip()
     cats = ", ".join(c.get("name", "") for c in (p.get("categories") or []) if c.get("name"))
-    row = {"name": _html.unescape(p.get("name") or "").strip(), "brand": "", "price": price,
+    nm = _html.unescape(p.get("name") or "").strip()
+    row = {"name": nm, "brand": "", "price": price,
            "sku": sku, "upc": (sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
            "item_code": str(p.get("id") or ""), "product_type": cats, "tags": cats,
+           "size_ml": _ch_ml(nm),                          # Woo has no size field — parse it from the name
            "description": desc[:2000], "image": ((p.get("images") or [{}])[0] or {}).get("src") or "",
            "raw_json": json.dumps(p, separators=(",", ":"))[:8000]}
     for a in (p.get("attributes") or []):
@@ -352,12 +354,12 @@ _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 _WIX_STORES_APP = "1380b703-ce81-ff05-f115-39571d94dfcd"
 # FULL field set (description/image/options/attributes/discount) — falls back to the minimal query if a Wix site's
 # schema rejects it, so we always get SOMETHING but capture everything where supported.
+# field set validated live against the Wix storefront GraphQL (budsliquors.com): description/ribbon/discountedPrice/
+# comparePrice/options are valid; media{} and additionalInfoSections{} are NOT (they 400 the whole query) → excluded.
 _WIX_GQL_FULL = ("query getProducts($limit:Int,$offset:Int){ catalog{ products(limit:$limit, offset:$offset, "
                  "onlyVisible:true){ totalCount list{ id name brand description ribbon price formattedPrice "
                  "comparePrice discountedPrice sku isInStock productType urlPart "
-                 "media{ mainMedia{ thumbnail{ url } } } "
-                 "options{ title selections{ value } } "
-                 "additionalInfoSections{ title description } } } } }")
+                 "options{ title selections{ value } } } } } }")
 _WIX_GQL = ("query getProducts($limit:Int,$offset:Int){ catalog{ products(limit:$limit, offset:$offset, "
             "onlyVisible:true){ totalCount list{ id name brand price formattedPrice comparePrice sku "
             "isInStock productType urlPart } } } }")
@@ -430,22 +432,18 @@ def wix_catalog(base, key=None, page=100, max_products=None, log=print):
             break
         for p in lst:
             sku = (p.get("sku") or "").strip()
-            img = _dig_wix(p, "media", "mainMedia", "thumbnail", "url") or ""
             opts = "; ".join("%s: %s" % ((o.get("title") or ""),
                                          ", ".join(s.get("value", "") for s in (o.get("selections") or [])))
                              for o in (p.get("options") or []) if isinstance(o, dict))
-            info = " | ".join("%s: %s" % ((s.get("title") or ""), (s.get("description") or ""))
-                              for s in (p.get("additionalInfoSections") or []) if isinstance(s, dict))
-            desc = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ",
-                    p.get("description") or info or ""))).strip()
-            rows.append({"name": _html.unescape(p.get("name") or "").strip(), "brand": (p.get("brand") or ""),
+            desc = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", p.get("description") or ""))).strip()
+            nm = _html.unescape(p.get("name") or "").strip()
+            rows.append({"name": nm, "brand": (p.get("brand") or ""),
                          "price": p.get("discountedPrice") or p.get("price"),
                          "compare_at_price": p.get("comparePrice"), "sku": sku,
                          "upc": (sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
-                         "size_ml": _ch_ml(p.get("name")), "category": p.get("productType") or "",
-                         "in_stock": p.get("isInStock"), "ribbon": p.get("ribbon") or "",
-                         "options": opts[:400], "description": desc[:2000], "image": img,
-                         "info": info[:1000],
+                         "size_ml": _ch_ml(nm) or _ch_ml(opts), "size_opt": opts[:120],
+                         "category": p.get("productType") or "", "in_stock": p.get("isInStock"),
+                         "ribbon": p.get("ribbon") or "", "options": opts[:400], "description": desc[:2000],
                          "raw_json": json.dumps(p, separators=(",", ":"))[:8000]})
         offset += len(lst)
         if (max_products and offset >= max_products) or offset >= total:
