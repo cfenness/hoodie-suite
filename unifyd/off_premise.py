@@ -402,12 +402,15 @@ _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 _WIX_STORES_APP = "1380b703-ce81-ff05-f115-39571d94dfcd"
 # FULL field set (description/image/options/attributes/discount) — falls back to the minimal query if a Wix site's
 # schema rejects it, so we always get SOMETHING but capture everything where supported.
-# field set validated live against the Wix storefront GraphQL (budsliquors.com): description/ribbon/discountedPrice/
-# comparePrice/options are valid; media{} and additionalInfoSections{} are NOT (they 400 the whole query) → excluded.
+# field set validated live against the Wix storefront GraphQL: description/ribbon/discount/comparePrice/options and
+# productItems{...} (per-VARIANT price/sku/inventory) are all valid; media{}/additionalInfoSections{}/variantId are
+# NOT. productItems is the key: it exposes each size variant as a distinct item with its own price + sku.
 _WIX_GQL_FULL = ("query getProducts($limit:Int,$offset:Int){ catalog{ products(limit:$limit, offset:$offset, "
                  "onlyVisible:true){ totalCount list{ id name brand description ribbon price formattedPrice "
                  "comparePrice discountedPrice sku isInStock productType urlPart "
-                 "options{ title selections{ value } } } } } }")
+                 "options{ id title selections{ id value } } "
+                 "productItems{ id optionsSelections price formattedPrice comparePrice sku isVisible "
+                 "inventory{ status quantity } } } } } }")
 _WIX_GQL = ("query getProducts($limit:Int,$offset:Int){ catalog{ products(limit:$limit, offset:$offset, "
             "onlyVisible:true){ totalCount list{ id name brand price formattedPrice comparePrice sku "
             "isInStock productType urlPart } } } }")
@@ -479,20 +482,40 @@ def wix_catalog(base, key=None, page=100, max_products=None, log=print):
         if not lst:
             break
         for p in lst:
-            sku = (p.get("sku") or "").strip()
-            opts = "; ".join("%s: %s" % ((o.get("title") or ""),
-                                         ", ".join(s.get("value", "") for s in (o.get("selections") or [])))
-                             for o in (p.get("options") or []) if isinstance(o, dict))
             desc = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", p.get("description") or ""))).strip()
             nm = _html.unescape(p.get("name") or "").strip()
-            rows.append({"name": nm, "brand": (p.get("brand") or ""),
-                         "price": p.get("discountedPrice") or p.get("price"),
-                         "compare_at_price": p.get("comparePrice"), "sku": sku,
-                         "upc": (sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
-                         "size_ml": _ch_ml(nm) or _ch_ml(opts), "size_opt": opts[:120],
-                         "category": p.get("productType") or "", "in_stock": p.get("isInStock"),
-                         "ribbon": p.get("ribbon") or "", "options": opts[:400], "description": desc[:2000],
-                         "raw_json": json.dumps(p, separators=(",", ":"))[:8000]})
+            opts_txt = "; ".join("%s: %s" % ((o.get("title") or ""),
+                                             ", ".join(s.get("value", "") for s in (o.get("selections") or [])))
+                                 for o in (p.get("options") or []) if isinstance(o, dict))
+            # selection-id -> value, so a productItem's optionsSelections (ids) resolve to size labels ("750ml")
+            sel = {s.get("id"): s.get("value") for o in (p.get("options") or []) for s in (o.get("selections") or [])}
+            base_row = {"name": nm, "brand": (p.get("brand") or ""),
+                        "compare_at_price": p.get("comparePrice"),
+                        "category": p.get("productType") or "", "ribbon": p.get("ribbon") or "",
+                        "options": opts_txt[:400], "description": desc[:2000],
+                        "raw_json": json.dumps(p, separators=(",", ":"))[:8000]}
+            pitems = p.get("productItems") or []
+            if len(pitems) > 1:
+                # a real Wix variant product → one DISTINCT ITEM per size, each with its own price + sku + stock
+                for pi in pitems:
+                    size = " / ".join(str(sel.get(i) or i) for i in (pi.get("optionsSelections") or []))
+                    psku = (pi.get("sku") or "").strip() or (p.get("sku") or "").strip()
+                    inv = pi.get("inventory") or {}
+                    rows.append(dict(base_row, name=("%s %s" % (nm, size)).strip() if size else nm,
+                                     price=pi.get("price") if pi.get("price") is not None else p.get("price"),
+                                     sku=psku, upc=(psku if psku.isdigit() and 8 <= len(psku) <= 14 else ""),
+                                     item_code=str(pi.get("id") or ""), variant=size,
+                                     size_opt=size or opts_txt[:120], size_ml=_ch_ml(size) or _ch_ml(nm),
+                                     in_stock=(inv.get("status") == "IN_STOCK") if inv.get("status") else pi.get("isVisible")))
+            else:
+                pi = pitems[0] if pitems else {}
+                sku = ((pi.get("sku") or "").strip() or (p.get("sku") or "").strip())
+                rows.append(dict(base_row,
+                                 price=(pi.get("price") if pi.get("price") is not None else (p.get("discountedPrice") or p.get("price"))),
+                                 sku=sku, upc=(sku if sku.isdigit() and 8 <= len(sku) <= 14 else ""),
+                                 item_code=str(pi.get("id") or p.get("id") or ""),
+                                 size_ml=_ch_ml(nm) or _ch_ml(opts_txt), size_opt=opts_txt[:120],
+                                 in_stock=p.get("isInStock")))
         offset += len(lst)
         if (max_products and offset >= max_products) or offset >= total:
             break
