@@ -90,18 +90,27 @@ class Store:
     def __enter__(self):
         self._w = browser_warm.Warmer(_domain(self.base), channel="chrome", headful=True, patchright=True).__enter__()
         p = self._w._page()
+
+        def try_clear(tries):
+            for _ in range(tries):                           # ride out DataDome; the app hydrates the store_id
+                p.wait_for_timeout(2500)
+                try:
+                    self._w.human(1)
+                except Exception:
+                    pass
+                html = p.content()
+                m = re.search(r'store_id\s*=\s*"?(\d{3,7})', html) or re.search(r"/s-(\d{3,7})/", html)
+                if m:
+                    return m.group(1)
+            return None
         p.goto(self.base + "/", wait_until="domcontentloaded", timeout=90000)
-        for _ in range(20):                                  # ride out DataDome; the store app hydrates the store_id
-            p.wait_for_timeout(2500)
+        self.sid = try_clear(20)
+        if not self.sid:                                     # DataDome sometimes needs a reload to serve the app
             try:
-                self._w.human(1)
+                p.goto(self.base + "/", wait_until="domcontentloaded", timeout=90000)
             except Exception:
                 pass
-            html = p.content()
-            m = re.search(r'store_id\s*=\s*"?(\d{3,7})', html) or re.search(r"/s-(\d{3,7})/", html)
-            if m:
-                self.sid = m.group(1)
-                break
+            self.sid = try_clear(16)
         if not self.sid:
             raise RuntimeError("store_id not found — DataDome not cleared for %s" % self.base)
         self.cats = p.eval_on_selector_all(
@@ -217,20 +226,40 @@ def find_stores(pages=8, log=print):
 def national(max_stores=None, max_products=None, log=print):
     """Discover every Bottlecapps store + FULL-capture each → accumulate into bottlecapps_products. This is the
     'grab everything' entry point. Runs on the Mac (headful, DataDome). Resumable via write_accumulate (key
-    store|pid), so a re-run refreshes prices and adds new products without dropping prior capture."""
+    store|pid), so a re-run refreshes prices and adds new products without dropping prior capture.
+
+    Each store is pulled in its OWN SUBPROCESS: the patchright/Chromium sync driver leaves an asyncio loop that
+    breaks the next store's launch if reused in-process, and a fresh process also gives each store a clean browser
+    (better DataDome clears) and isolates crashes. The child (`--store`) pulls + lands itself; we tally its summary."""
+    import subprocess
+    import glob
     stores = find_stores(log=log)
     if max_stores:
         stores = stores[:max_stores]
+    here = os.path.dirname(os.path.abspath(__file__))
     total, ok = 0, 0
     for i, base in enumerate(stores):
         base = base if base.startswith("http") else "https://" + base
         log("[bottlecapps] store %d/%d: %s" % (i + 1, len(stores), base))
+        for lk in glob.glob(os.path.expanduser("~/.hoodie_browser_profiles/*/Singleton*")):
+            try:
+                os.remove(lk)                                # clear stale profile locks so the browser can launch
+            except Exception:
+                pass
+        args = ["--store", base] + (["--max-products", str(max_products)] if max_products else [])
+        code = ("import sys; sys.path.insert(0, %r); import kroger_api; kroger_api._load_creds(); "
+                "import bottlecapps; bottlecapps.main(%r)" % (here, args))
         try:
-            recs = pull_store(base, max_products=max_products, log=log)
-            if recs:
-                land(recs, log=log)
-                total += len(recs)
+            r = subprocess.run([sys.executable, "-c", code], cwd=here, timeout=7200,
+                               capture_output=True, text=True)
+            m = re.search(r'"products":\s*(\d+)', r.stdout or "")
+            n = int(m.group(1)) if m else 0
+            if n:
+                total += n
                 ok += 1
+            log("  → %d products%s" % (n, "" if n else " (0 — %s)" % ((r.stderr or "").strip().splitlines()[-1][:70] if r.stderr else "no summary")))
+        except subprocess.TimeoutExpired:
+            log("  %s TIMEOUT (>2h)" % base)
         except Exception as e:
             log("  %s ERR %s" % (base, str(e)[:90]))
     log("[bottlecapps] NATIONAL done: %d products across %d/%d stores" % (total, ok, len(stores)))
