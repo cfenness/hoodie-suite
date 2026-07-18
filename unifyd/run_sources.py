@@ -51,8 +51,18 @@ def _counts(tables):
 def run_one(source, log=print):
     """Run one source in a subprocess, measure before/after row counts, classify the outcome."""
     sid = source["id"]
-    before = _counts(source["tables"])
     t0 = time.time()
+    # Skip-with-reason: a source gated on credentials we don't have must report honestly ("no-creds"),
+    # NOT run and fail — otherwise it wastes a slot and (pre-guard) risked clobbering a good table with empty.
+    missing = [v for v in source.get("requires", []) if not os.environ.get(v)]
+    if missing:
+        a = sum(v for v in _counts(source["tables"]).values() if v) or 0
+        log("  %-16s %-9s %s" % (sid, "no-creds", "| missing " + ", ".join(missing)))
+        return dict(run_id="%s-%d" % (sid, int(t0)), source=sid, label=source["label"], klass=source["klass"],
+                    ts_start=int(t0), ts_end=int(time.time()), duration_s=0.0, status="no-creds",
+                    rows_before=a, rows_after=a, delta=0, tables=",".join(source["tables"]),
+                    error="missing env: " + ", ".join(missing), host=os.uname().nodename[:40])
+    before = _counts(source["tables"])
     code = ("import sys; sys.path.insert(0, %r); import kroger_api; kroger_api._load_creds(); %s"
             % (HERE, source["code"]))
     if source["klass"] == "mac":

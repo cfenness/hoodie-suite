@@ -55,14 +55,39 @@ def uri(name):
     return ("s3://%s/%s" % (_bucket(), _s3_key(name))) if remote() else _local_path(name)
 
 
-def write_parquet(name, records, fields=None):
+def row_count(name):
+    """Current row count of `<name>` via its Parquet FOOTER only (cheap — never reads data).
+    Returns 0 if the table doesn't exist yet or can't be read."""
+    import pyarrow.parquet as pq
+    try:
+        u = uri(name)
+        if u.startswith("s3://"):
+            return pq.read_metadata(u[5:], filesystem=_s3fs()).num_rows
+        return pq.read_metadata(u).num_rows
+    except Exception:
+        return 0
+
+
+def write_parquet(name, records, fields=None, allow_empty=False):
     """Write list-of-dicts to `<name>.parquet` (Tigris or local). Returns {rows, uri}.
     If `fields` is given, every record is projected onto exactly those columns (missing
-    -> None), so the Parquet schema is stable across pulls even when a row lacks a key."""
+    -> None), so the Parquet schema is stable across pulls even when a row lacks a key.
+
+    SAFETY GUARD: writing 0 rows over a table that currently HAS rows is refused (raises),
+    because an empty write is never a legitimate rebuild — it's a failed scrape about to
+    clobber a good catalog (this is exactly how census_reference got wiped 24,546 -> 0).
+    Pass allow_empty=True only for a deliberate truncate."""
     import pyarrow as pa
     import pyarrow.parquet as pq
+    records = list(records or [])
     if fields:
         records = [{k: r.get(k) for k in fields} for r in records]
+    if not records and not allow_empty:
+        existing = row_count(name)
+        if existing > 0:
+            raise ValueError(
+                "write_parquet(%r) refused: 0 rows would overwrite %d existing rows "
+                "(failed pull?). Pass allow_empty=True to force a truncate." % (name, existing))
     table = pa.Table.from_pylist(records) if records else pa.table({f: [] for f in (fields or ["_"])})
     if remote():
         from pyarrow import fs as pafs
