@@ -32,12 +32,14 @@
   .banner.show{display:block}
   .page{padding:16px 18px;display:none}.page.on{display:block}
   /* overview cards */
-  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
-  .card b{font-size:26px;font-family:var(--mono);font-variant-numeric:tabular-nums;display:block;line-height:1.1}
-  .card span{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:11px;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;transition:border-color .15s,transform .15s}
+  .card:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));transform:translateY(-1px)}
+  .card b{font-size:27px;font-family:var(--mono);font-variant-numeric:tabular-nums;display:block;line-height:1.08;letter-spacing:-.5px}
+  .card span{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--mut);font-weight:600}
   .card small{font-size:11px;color:var(--mut);font-family:var(--mono)}
-  .sec{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--mut);margin:18px 0 8px;font-weight:650}
+  .sec{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--ink);margin:22px 0 9px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .sec::before{content:"";width:3px;height:12px;border-radius:2px;background:var(--accent)}
   /* health strip */
   .health{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
   .hchip{display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
@@ -50,7 +52,9 @@
        letter-spacing:.4px;cursor:pointer;user-select:none}
   thead th.num,tbody td.num{text-align:right}
   tbody td{padding:7px 11px;border-bottom:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
-  tbody tr{cursor:pointer}tbody tr:hover td{background:var(--panel)}
+  tbody tr{cursor:pointer}
+  tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--panel2) 45%,transparent)}
+  tbody tr:hover td{background:color-mix(in srgb,var(--accent) 9%,var(--panel))}
   tbody td.name{font-family:var(--mono);color:var(--ink);max-width:260px;overflow:hidden;text-overflow:ellipsis}
   .stat-pill{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
   .grp{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
@@ -103,7 +107,7 @@
 <div class="bar">
   <h1><span id="dot" class="dot"></span>Data Console</h1>
   <span id="wh" class="wh prod">…</span>
-  <input id="q" class="search" placeholder="🔍  Search everything — every dataset, row &amp; column…" autocomplete="off">
+  <input id="q" class="search" placeholder="🔍  Search everything — ⌘K" autocomplete="off">
   <span id="asof" class="asof">—</span>
   <div class="spacer"></div>
   <button id="refresh">↻ refresh</button>
@@ -144,6 +148,11 @@
 <script>
 const $=s=>document.querySelector(s);
 const fmt=n=>n==null?'—':Number(n).toLocaleString();
+const fmtBig=n=>{ if(n==null)return '—'; n=Number(n);
+  if(n>=1e9)return (n/1e9).toFixed(n>=1e10?0:1).replace(/\.0$/,'')+'B';
+  if(n>=1e6)return (n/1e6).toFixed(n>=1e7?0:1).replace(/\.0$/,'')+'M';
+  if(n>=1e4)return (n/1e3).toFixed(0)+'K';
+  return n.toLocaleString(); };
 const STC={ok:'--good',stale:'--warn',error:'--bad',degraded:'--warn',derived:'--derived',unknown:'--mut'};
 let M=null, view='overview', sortKey='modified', sortDir=-1;
 
@@ -197,7 +206,8 @@ function renderOverview(){
     ['grand_rows','total rows','across '+(t.datasets||0)+' datasets'],
     ['source_count','sources',(R.length||t.source_count||0)+' pulling in'],['accounts','accounts',''],
     ['items','master items',''],['products','products',''],['skus','skus',''],
-  ].map(([k,l,sub])=>`<div class="card"><b>${fmt(k==='source_count'?(R.length||t.source_count):t[k])}</b><span>${l}</span>${sub?`<br><small>${sub}</small>`:''}</div>`).join('');
+  ].map(([k,l,sub])=>{const v=k==='source_count'?(R.length||t.source_count):t[k];
+    return `<div class="card" title="${fmt(v)}"><b>${fmtBig(v)}</b><span>${l}</span>${sub?`<br><small>${sub}</small>`:''}</div>`;}).join('');
   const horder=['ok','stale','degraded','error','unknown'];
   const health=horder.filter(k=>h[k]).map(k=>`<div class="hchip"><span class="sq" style="background:var(${STC[k]})"></span><b>${h[k]}</b><span>${k}</span></div>`).join('')||'<span class="msg">no pull-cadence sources</span>';
   // the SOURCE roster — every source we have, rolled up (however its datasets are named / however it runs)
