@@ -85,7 +85,7 @@ def run_one(source, log=print):
                ts_start=int(t0), ts_end=int(time.time()), duration_s=dur, status=status,
                rows_before=b, rows_after=a, delta=delta, tables=",".join(source["tables"]),
                error=error, host=os.uname().nodename[:40])
-    log("  %-16s %-9s Δ%-10s %5ss %s" % (sid, status, ("+%d" % delta if delta else "0"), dur,
+    log("  %-16s %-9s Δ%-10s %5ss %s" % (sid, status, ("%+d" % delta if delta else "0"), dur,
                                          ("| " + error) if error else ""))
     return rec
 
@@ -118,9 +118,19 @@ def run_all(cadence=None, only=None, headless_only=False, mac_only=False, worker
 
     if not mac_only and headless:
         log("[run_sources] %d headless sources (parallel x%d) …" % (len(headless), workers))
+        from concurrent.futures import as_completed
         with ThreadPoolExecutor(max_workers=workers) as ex:
-            records += list(ex.map(lambda s: run_one(s, log=log), headless))
-        _land_runs(records, log=log)                       # land partial early so the console shows progress
+            futs = {ex.submit(run_one, s, log): s for s in headless}
+            for fut in as_completed(futs):                 # land EACH result the moment it finishes — the console
+                try:                                       # updates live instead of waiting for the slowest source
+                    rec = fut.result()
+                except Exception as e:
+                    s = futs[fut]; rec = dict(run_id="%s-err" % s["id"], source=s["id"], label=s["label"],
+                                              klass=s["klass"], status="failed", error=str(e)[:200], delta=0,
+                                              rows_before=0, rows_after=0, ts_start=0, ts_end=int(time.time()),
+                                              duration_s=0, tables=",".join(s["tables"]), host="")
+                records.append(rec)
+                _land_runs([rec], log=log)
 
     if not headless_only and mac:
         log("[run_sources] %d Mac/browser sources (SEQUENTIAL — anti-bot) …" % len(mac))
