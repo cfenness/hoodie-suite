@@ -60,6 +60,21 @@ The **owned layer** — the scrapers and pipeline that produce master data, cons
 from the former standalone `unifyd-scraper/` project. It is NOT part of the static site
 and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs).
 
+**Standing rules (scraper hygiene — load-bearing, learned the hard way):**
+- **One active scraper per source.** `unifyd/source_registry.py` is the single source
+  of truth for which module + entrypoint is live for each source. When you replace a
+  scraper with a better iteration, repoint the registry AND `git mv` the old module to
+  `unifyd/_archive/` with a note (see `unifyd/_archive/README.md`). Never leave two
+  iterations of the same source side-by-side in `unifyd/` — that's how the thin
+  `kroger_api` got run instead of the real `kroger_atlas` inventory bypass. Archive,
+  don't delete (the work is expensive to re-derive). *Parked* unfinished work with no
+  active replacement stays in `unifyd/`; only *superseded* iterations get archived.
+- **Never clobber a catalog.** `warehouse.write_parquet` refuses to overwrite a
+  populated table with 0 rows (raises unless `allow_empty=True`) — an empty write is a
+  failed scrape, not a rebuild. Persistent catalogs use `write_accumulate` (merge).
+- **Creds-gated sources declare `requires=[env]`** in the registry; `run_sources.py`
+  reports them `no-creds` (skipped, honest) instead of running them to failure.
+
 - `unifyd/server.py` — a local Flask agent (`python unifyd/server.py`, port 8765) that
   serves `hoodie_mdm.html` and runs real pulls on `/api/run`. Endpoints: `/api/health`,
   `/api/datasets` (supports `?q=` / `?dataset=` for scoped queries), `/api/runs`, `/api/run`,

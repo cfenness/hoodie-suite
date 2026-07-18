@@ -28,3 +28,4 @@ unifyd/*_raw
 *.log
 # docs / dev-only (they're in the image harmlessly, but no need to ship them)
 *.test.js
+unifyd/_archive/
