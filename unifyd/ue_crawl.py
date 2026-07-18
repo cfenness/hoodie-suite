@@ -104,7 +104,7 @@ def zones_by_state(zones):
 
 
 # ── store OUTLET capture (geo) — feeds src_outlets + the coverage map ─────────────────────────────────────────
-STORE_FIELDS = ["store_uuid", "store_name", "lat", "lng", "address", "city", "state", "postal_code",
+STORE_FIELDS = ["store_uuid", "api_uuid", "store_name", "lat", "lng", "address", "city", "state", "postal_code",
                 "phone", "chain", "source", "url", "captured_at", "raw_json"]
 
 
@@ -145,6 +145,7 @@ def _feed_outlets(feed_payloads, site):
     """Walk getFeedV1 payload(s) → a geo'd outlet per merchant. Each store card carries storeUuid + title +
     actionUrl and a parallel mapMarker{latitude,longitude,description.title}. 300+ stores per feed, in seconds."""
     import time as _t
+    import re as _re
     base = ue.SITES.get(site, ue.SITES["ubereats"])["base"]
     out = {}
 
@@ -158,9 +159,14 @@ def _feed_outlets(feed_payloads, site):
                     t = o.get("title")
                     nm = t if isinstance(t, str) else (t or {}).get("text", "") if isinstance(t, dict) else ""
                 au = o.get("actionUrl") or ""
-                out[su] = {"store_uuid": su, "store_name": nm, "lat": mm["latitude"], "lng": mm["longitude"],
-                           "address": au, "city": "", "state": "", "postal_code": "", "phone": "", "chain": "",
-                           "source": site, "url": base + au, "captured_at": int(_t.time()), "raw_json": ""}
+                # CANONICAL account id = the URL id from the actionUrl (matches the sitemap); the feed's storeUuid
+                # is a DIFFERENT id (the API/getStoreV1 key) — keep it as api_uuid. Dedup by URL id across sources.
+                m = _re.search(r"/store/[^/]+/([A-Za-z0-9_\-]{15,})", au)
+                uid = m.group(1) if m else su
+                out[uid] = {"store_uuid": uid, "api_uuid": su, "store_name": nm, "lat": mm["latitude"],
+                            "lng": mm["longitude"], "address": au, "city": "", "state": "", "postal_code": "",
+                            "phone": "", "chain": "", "source": site, "url": base + au,
+                            "captured_at": int(_t.time()), "raw_json": ""}
             for v in o.values():
                 walk(v)
         elif isinstance(o, list):
