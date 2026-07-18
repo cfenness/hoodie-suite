@@ -386,6 +386,14 @@ def crawl(zone_url=None, max_stores=8, retail_only=True, enrich=True, max_items_
         p.wait_for_timeout(5000)
         _clear_challenge(p, log)          # ride out Cloudflare's "just a moment" (headful clears it)
         w.human()
+        # scroll the feed to load EVERY merchant (infinite scroll) — not just the initial render
+        prev = 0
+        for i in range(60):
+            p.mouse.wheel(0, 9000); p.wait_for_timeout(1100)
+            n = len(_feed_stores(p))
+            if n == prev and i > 4:
+                break
+            prev = n
         stores = _feed_stores(p)
         if retail_only:
             stores = [s for s in stores if _RETAIL_RE.search(s[2])] or stores
