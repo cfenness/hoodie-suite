@@ -53,10 +53,22 @@ class Store:
         except Exception:
             pass
 
-    def fetch(self, url):
+    def fetch(self, url, allow_nav=True):
+        """In-page fetch first (fast); Cloudflare blocks some endpoints (the sitemap XML → status 0) even in
+        session, so fall back to a real browser NAVIGATION, which passes. Returns the body (page source)."""
         try:
             st, body = self._w.fetch(url)
-            return body if st == 200 else ""
+            if st == 200 and body:
+                return body
+        except Exception:
+            pass
+        if not allow_nav:
+            return ""
+        try:
+            p = self._w._page()
+            p.goto(url, wait_until="domcontentloaded", timeout=60000)
+            p.wait_for_timeout(1500)
+            return p.content()
         except Exception:
             return ""
 
@@ -71,23 +83,17 @@ def _sitemap_products(store):
     """Every product URL via the store's sitemap (in-page fetch past Cloudflare). Reuses the candidate logic from
     off_premise._ch_sitemap_products (/sitemap.xml, /googlesitemapxml.xml, robots Sitemap: lines)."""
     base = store.base
-    cands = [base + "/sitemap.xml", base + "/googlesitemapxml.xml"]
-    try:
-        robots = store.fetch(base + "/robots.txt")
-        for sm in re.findall(r"(?im)^\s*Sitemap:\s*(\S+)", robots or ""):
-            if sm not in cands:
-                cands.append(sm.strip())
-    except Exception:
-        pass
+    # googlesitemapxml.xml holds the FULL product list (Top Ten: 12,816 vs 6,408 in sitemap.xml) — try it first.
+    cands = [base + "/googlesitemapxml.xml", base + "/sitemap.xml"]
     for url in cands:
         xml = store.fetch(url)
-        urls = [l for l in re.findall(r"<loc>([^<]+)</loc>", xml or "") if "/shop/product/" in l]
-        # a sitemap index → follow child product sitemaps
-        if not urls and xml and "<sitemapindex" in xml:
-            for child in re.findall(r"<loc>([^<]+)</loc>", xml):
+        # extract product URLs by PATTERN (works whether we got raw <loc> XML or a browser-rendered XML view)
+        urls = re.findall(r'https?://[^\s"<>]+/shop/product/[^\s"<>?]+', xml or "")
+        if not urls and xml and "sitemapindex" in xml:      # index → follow child sitemaps
+            for child in re.findall(r'https?://[^\s"<>]+\.xml', xml):
                 cx = store.fetch(child)
-                urls += [l for l in re.findall(r"<loc>([^<]+)</loc>", cx or "") if "/shop/product/" in l]
-                store.settle(80)
+                urls += re.findall(r'https?://[^\s"<>]+/shop/product/[^\s"<>?]+', cx or "")
+                store.settle(60)
         if urls:
             return list(dict.fromkeys(urls))
     return []
