@@ -91,10 +91,26 @@ def browser():
     return {"server": "http://%s:%s" % (host, port), "username": user, "password": pw}
 
 
-def opener(verify=None):
+def _session_url(session):
+    """Like url() but pinned to a specific rotating session id, so each retry gets a DIFFERENT exit IP
+    (IPRoyal: `_session-<id>` on pass; BD: `-session-<id>` on user). Used by opener(session=…)."""
+    user, pw, host, port = parts()
+    if not user:
+        return None
+    tag = "".join(c for c in str(session) if c.isalnum())[:24]
+    if "iproyal" in (host or ""):
+        pw = pw.split("_session-")[0] + "_session-%s_lifetime-5m" % tag
+    elif _is_unlocker(host):
+        user = user.split("-session-")[0] + "-session-" + tag
+    cred = urllib.parse.quote(user, safe="") + ":" + urllib.parse.quote(pw, safe="")
+    return "http://%s@%s:%s" % (cred, host, port)
+
+
+def opener(verify=None, session=None):
     """A urllib opener routed through the proxy. `verify` defaults to False for BD Unlocker hosts
-    (their MITM cert won't chain) and True otherwise (IPRoyal/Webshare are clean CONNECT tunnels)."""
-    p = url()
+    (their MITM cert won't chain) and True otherwise (IPRoyal/Webshare are clean CONNECT tunnels).
+    `session` pins a rotating-session id so callers can force a fresh exit IP per retry."""
+    p = _session_url(session) if session is not None else url()
     if not p:
         return None
     _, _, host, _ = parts()

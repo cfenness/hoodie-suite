@@ -74,12 +74,46 @@ def _get(url, timeout=30, cookie=None):
     else:
         hdrs = {"User-Agent": _MOB, "Accept": "text/html", "Accept-Language": "en-US,en;q=0.9",
                 "Accept-Encoding": "gzip"}
-    raw = urllib.request.urlopen(urllib.request.Request(url, headers=hdrs), timeout=timeout).read()
-    body = gzip.decompress(raw).decode("utf-8", "replace") if raw[:2] == b"\x1f\x8b" else raw.decode("utf-8", "replace")
-    if "px-captcha" in body or "Robot or human" in body[:2000]:
-        raise Blocked("walmart PerimeterX 'Robot or human?' challenge — warm a fresh WALMART_COOKIE in a browser "
-                      "(pass the captcha, then copy(document.cookie)); the mobile-UA bypass is closed.")
-    return body
+    # Walmart PerimeterX is a PROBABILISTIC wall — a clean residential IP + real Chrome TLS sails through ~50-80%
+    # of the time, no cookie needed; the rest hit "Robot or human?". So we RETRY with a FRESH exit IP each time
+    # (rotating proxy session) AND back off between tries — rapid-fire retries are a velocity spike PX clamps as a
+    # burst, which is why spaced requests pass but bursts fail. curl_cffi impersonates Chrome's JA3 (urllib's TLS
+    # is an instant tell); falls back to urllib, then to a direct off-proxy fetch.
+    try:
+        import resi
+        _use_proxy = resi.enabled()
+    except Exception:
+        resi, _use_proxy = None, False
+    try:
+        from curl_cffi import requests as _cr
+    except Exception:
+        _cr = None
+    tries = 8 if _use_proxy else 1
+    last = None
+    for i in range(tries):
+        if i:
+            time.sleep(min(1.5 * (2 ** (i - 1)), 12))       # backoff: 1.5, 3, 6, 12, 12… seconds
+        px = (resi._session_url("wm%d%d" % (id(url) % 9973, i)) if _use_proxy else None)
+        try:
+            if _cr is not None:
+                r = _cr.get(url, impersonate="chrome", timeout=timeout,
+                            proxies=({"http": px, "https": px} if px else None))
+                body = r.text
+            else:
+                op = resi.opener(session="wm%d%d" % (id(url) % 9973, i)) if _use_proxy else None
+                req = urllib.request.Request(url, headers=hdrs)
+                raw = (op.open(req, timeout=timeout) if op else
+                       urllib.request.urlopen(req, timeout=timeout)).read()
+                body = (gzip.decompress(raw).decode("utf-8", "replace") if raw[:2] == b"\x1f\x8b"
+                        else raw.decode("utf-8", "replace"))
+        except Exception as e:
+            last = e
+            continue
+        if "px-captcha" in body or "Robot or human" in body[:2000]:
+            last = Blocked("PX challenge")
+            continue                                        # rotate to a fresh exit IP + back off, retry
+        return body
+    raise Blocked("walmart PerimeterX after %d paced IP rotations — retry later. (%s)" % (tries, last))
 
 
 def _find(o, key="itemStacks"):
