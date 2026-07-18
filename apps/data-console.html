@@ -211,7 +211,7 @@ function renderOverview(){
   const horder=['ok','stale','degraded','error','unknown'];
   const health=horder.filter(k=>h[k]).map(k=>`<div class="hchip"><span class="sq" style="background:var(${STC[k]})"></span><b>${h[k]}</b><span>${k}</span></div>`).join('')||'<span class="msg">no pull-cadence sources</span>';
   // the SOURCE roster — every source we have, rolled up (however its datasets are named / however it runs)
-  const RUNC={ok:'--good','no-change':'--warn',failed:'--bad',timeout:'--bad'};
+  const RUNC={ok:'--good',current:'--good','no-change':'--warn',empty:'--bad',failed:'--bad',timeout:'--bad'};
   const runCell=s=>{ if(!s.run_status)return '<span class="grp">—</span>';
     const c=RUNC[s.run_status]||'--mut';
     const d=s.run_delta>0?` <span class="dpos">+${fmt(s.run_delta)}</span>`:(s.run_status==='no-change'?' <span class="dzero">0</span>':'');

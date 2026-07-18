@@ -78,9 +78,11 @@ def run_one(source, log=print):
     b = sum(v for v in before.values() if v) or 0
     a = sum(v for v in after.values() if v) or 0
     delta = a - b
-    # VERIFY LANDING: a clean exit that didn't move any row count is suspicious — surface it, don't call it success.
-    if status == "ok" and delta <= 0 and a == b:
-        status = "no-change"
+    # VERIFY LANDING, honestly: a clean run that added rows = ok. Added none but the table HAS data = "current"
+    # (a stable re-pull — e.g. a 55k catalog with nothing new — is fine, not a failure). Added none and the table
+    # is EMPTY = "empty" (genuinely broken — nothing was ever captured). Only "empty" and errors are real problems.
+    if status == "ok" and delta <= 0:
+        status = "current" if a > 0 else "empty"
     rec = dict(run_id="%s-%d" % (sid, int(t0)), source=sid, label=source["label"], klass=source["klass"],
                ts_start=int(t0), ts_end=int(time.time()), duration_s=dur, status=status,
                rows_before=b, rows_after=a, delta=delta, tables=",".join(source["tables"]),
