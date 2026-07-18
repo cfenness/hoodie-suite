@@ -222,29 +222,35 @@ def _pull_nav(w, p, captured, uuid, name, href, enrich, max_items_enrich, site, 
     outlet = _store_outlet(captured["store"], uuid, name, site)
     if not got:
         return None, outlet
+    # flag bev-alc from the CATALOG (name match; dedicated liquor store → whole catalog is bev). The full catalog
+    # is always LANDED; we only spend getMenuItemV1 on the bev-alc items — a ~20-item enrich on a 500-item grocery
+    # instead of all 500 (the master only needs UPC/recipe on the beverage items). That's the item-speed lever.
+    liquor = bool(ue._LIQUOR_STORE_RE.search(name))
+    for it in got:
+        it["is_alcohol"] = it.get("is_alcohol") or liquor or bool(ue._BEVALC_RE.search(it.get("name", "")))
     enriched = {}
     if enrich:
-        idx = ue._catalog_index(captured["store"])
-        if captured["mi_req"] is None:                       # learn the getMenuItemV1 template once (first store)
-            ue._click_first_item(p, log); p.wait_for_timeout(2000)
-        req = captured["mi_req"]
-        if req and req.get("body"):
-            first = got[0]
-            known = {"url": req["url"], "index": idx, "headers": req.get("headers", {}),
-                     "item": first.get("item_uuid"), "section": first.get("section"),
-                     "subsection": first.get("subsection"), "store": uuid}
-            try:
-                enriched = ue.enrich_store(w, uuid, name, got, req["body"], known, max_items=max_items_enrich, log=log)
-            except Exception as e:
-                log("  enrich %s: %s" % (name[:20], str(e)[:40]))
+        targets = got if liquor else [r for r in got if r["is_alcohol"]]
+        if targets:
+            idx = ue._catalog_index(captured["store"])
+            if captured["mi_req"] is None:                   # learn the getMenuItemV1 template once (first store)
+                ue._click_first_item(p, log); p.wait_for_timeout(2000)
+            req = captured["mi_req"]
+            if req and req.get("body"):
+                first = targets[0]
+                known = {"url": req["url"], "index": idx, "headers": req.get("headers", {}),
+                         "item": first.get("item_uuid"), "section": first.get("section"),
+                         "subsection": first.get("subsection"), "store": uuid}
+                try:
+                    enriched = ue.enrich_store(w, uuid, name, targets, req["body"], known,
+                                               max_items=max_items_enrich, log=log)
+                except Exception as e:
+                    log("  enrich %s: %s" % (name[:20], str(e)[:40]))
         for det in captured["items"]:
             data = ue._menu_item_data(det)
             if data and data.get("uuid"):
                 enriched[data["uuid"]] = ue.parse_item(data, uuid, name)
     merged = [enriched.get(r["item_uuid"], r) for r in got]
-    liquor = bool(ue._LIQUOR_STORE_RE.search(name))
-    for it in merged:
-        it["is_alcohol"] = it["is_alcohol"] or liquor or bool(ue._BEVALC_RE.search(it.get("name", "")))
     return merged, outlet
 
 
@@ -378,6 +384,7 @@ def main(argv=None):
     ap.add_argument("--bevalc-only", action="store_true", help="off-premise only (retail/liquor); default also on-premise")
     ap.add_argument("--coverage", action="store_true",
                     help="FAST: harvest every merchant's geo from the feed (no per-store nav) → fills the map")
+    ap.add_argument("--shard", default="", help="i/N — process only zone slice i of N (parallel workers)")
     ap.add_argument("--no-resume", action="store_true")
     a = ap.parse_args(argv)
     zones = []
@@ -387,6 +394,10 @@ def main(argv=None):
         zones += [z.strip() for z in a.zones.split(";") if z.strip()]
     if not zones:
         print("no zones — pass --zones or --zones-file"); return 2
+    if a.shard:                                              # deal zones round-robin across N parallel workers
+        i, n = (int(x) for x in a.shard.split("/"))
+        zones = zones[i::n]
+        print("[ue-crawl] shard %d/%d → %d zones" % (i, n, len(zones)))
     if a.coverage:
         crawl_coverage(zones, site=a.site, resume=not a.no_resume)
     else:

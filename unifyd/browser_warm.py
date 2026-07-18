@@ -88,6 +88,7 @@ class Warmer:
             from playwright.sync_api import sync_playwright
         self._pw = sync_playwright().start()
         suffix = ("_patchright" if self.patchright else "_chrome" if self.channel == "chrome" else "")
+        suffix += os.environ.get("BROWSER_PROFILE_SUFFIX", "")   # distinct profile per parallel worker (sharded crawls)
         prof = os.path.join(_PROFILE_ROOT, self.domain.replace(".", "_") + suffix)
         os.makedirs(prof, exist_ok=True)
         if self.patchright:
