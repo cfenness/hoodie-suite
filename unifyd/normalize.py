@@ -507,6 +507,21 @@ def normalize_outlets(log=print):
             _put("cityhive", r.get("store") or r.get("base"), r.get("store") or r.get("base"))
     except Exception as e:
         log("  [normalize] cityhive stores: %s" % str(e)[:60])
+    # UberEats / Postmates delivery merchants (on + off premise) — captured WITH geo by ue_crawl, so each store
+    # is a geocoded account that lands straight on the coverage map and joins the cross-source geo-match.
+    for site in ("ubereats", "postmates"):
+        try:
+            n0 = len(out)
+            for r in warehouse.query("%s_stores" % site,
+                                     "SELECT store_uuid, store_name, lat, lng, address, city, state, postal_code, phone "
+                                     "FROM t WHERE store_name <> ''"):
+                _put(site, r["store_uuid"], r["store_name"], address=r.get("address"), city=r.get("city"),
+                     state=r.get("state"), zip=r.get("postal_code"), lat=r.get("lat"), lng=r.get("lng"),
+                     phone=r.get("phone"))
+            if len(out) > n0:
+                log("  [normalize] %s stores +%d" % (site, len(out) - n0))
+        except Exception as e:
+            log("  [normalize] %s stores: %s" % (site, str(e)[:60]))
 
     # sources already pulled from their raw tables above — don't re-ingest them from the resolved stage or the
     # observations (same source, two capture paths → double-count). ab/va = ab_outlets; target = target_stores.

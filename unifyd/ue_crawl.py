@@ -49,8 +49,11 @@ def geocode(query, session=None):
         hits = (s.post(API + "mapsSearchV1", json={"query": query}, headers=H).json() or {}).get("data") or []
         if not hits:
             return None
-        pid = hits[0]["id"]
-        det = (s.post(API + "getDeliveryLocationV1", json={"placeId": pid, "provider": "uber_places"},
+        # avoid narrow POIs with ~no delivery coverage (airports, venues, freight); prefer a real place/locality
+        BAD = {"AIRPORT", "TRAVEL_AND_TRANSPORTATION", "CARGO_TRANSPORTATION", "FREIGHT_FACILITY",
+               "MUSIC_VENUE", "PERFORMING_ARTS", "STADIUM", "HOSPITAL"}
+        pick = next((h for h in hits if not (set(h.get("categories") or []) & BAD)), hits[0])
+        det = (s.post(API + "getDeliveryLocationV1", json={"placeId": pick["id"], "provider": "uber_places"},
                       headers=H).json() or {}).get("data")
         return det if det and det.get("latitude") is not None else None
     except Exception:
@@ -73,26 +76,79 @@ def landed_store_uuids(site="ubereats"):
         return set()
 
 
-# ── one-store pull (mirrors ubereats.crawl's proven per-store logic) ──────────────────────────────────────────
-def _pull_one_store(w, p, captured, uuid, name, enrich, max_items_enrich, log):
-    captured["store"].clear(); captured["items"].clear()
-    if not w.click_through(uuid):
+# ── store OUTLET capture (geo) — feeds src_outlets + the coverage map ─────────────────────────────────────────
+STORE_FIELDS = ["store_uuid", "store_name", "lat", "lng", "address", "city", "state", "postal_code",
+                "phone", "chain", "source", "url", "captured_at", "raw_json"]
+
+
+def _store_outlet(payloads, uuid, name, site):
+    """Dig the store's own geo + address out of the getStoreV1 payload → an outlet row for src_outlets / the map.
+    Walks generically (schema varies) for latitude/longitude + the address parts. None if no coords found."""
+    got = {"lat": None, "lng": None, "address": "", "city": "", "state": "", "postal_code": "", "phone": ""}
+
+    def walk(o):
+        if isinstance(o, dict):
+            if got["lat"] is None and isinstance(o.get("latitude"), (int, float)) and isinstance(o.get("longitude"), (int, float)):
+                got["lat"], got["lng"] = o["latitude"], o["longitude"]
+            for k, dst in (("streetAddress", "address"), ("address1", "address"), ("title", "address"),
+                           ("city", "city"), ("region", "state"), ("state", "state"),
+                           ("postalCode", "postal_code"), ("phoneNumber", "phone"), ("phone", "phone")):
+                v = o.get(k)
+                if v and isinstance(v, str) and not got[dst]:
+                    got[dst] = v
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    for pl in payloads:
+        walk(pl)
+    if got["lat"] is None:
         return None
+    import time as _t
+    return {"store_uuid": uuid, "store_name": name, "lat": got["lat"], "lng": got["lng"],
+            "address": got["address"], "city": got["city"], "state": (got["state"] or "")[:2].upper() if len(got["state"] or "") == 2 else got["state"],
+            "postal_code": got["postal_code"], "phone": got["phone"], "chain": "", "source": site,
+            "url": "%s/store/x/%s" % (ue.SITES.get(site, ue.SITES["ubereats"])["base"], uuid),
+            "captured_at": int(_t.time()), "raw_json": ""}
+
+
+# ── per-store pull via in-session NAVIGATION — getStoreV1 fires natively (no 403), getMenuItemV1 replays ───────
+def _pull_nav(w, p, captured, uuid, name, href, enrich, max_items_enrich, site, log):
+    """In the warmed session, navigate to the store URL (getStoreV1 fires natively — replaying it for other
+    stores 403s), parse the catalog + store outlet, then replay getMenuItemV1 per item for UPC/recipe detail.
+    Returns (merged_items|None, outlet|None)."""
+    captured["store"].clear(); captured["items"].clear()
+    try:
+        with p.expect_response(lambda r: "/_p/api/getStoreV1" in r.url, timeout=30000) as ri:
+            p.goto(href, wait_until="commit", timeout=45000)
+        try:
+            captured["store"].append(ri.value.json())    # reliable body (held by expect_response)
+        except Exception:
+            pass
+    except Exception:
+        try: p.goto(href, wait_until="domcontentloaded", timeout=30000)
+        except Exception: pass
+    p.wait_for_timeout(1800); ue._clear_challenge(p, log)
     got = ue._items_from_store(captured["store"], uuid, name)
+    outlet = _store_outlet(captured["store"], uuid, name, site)
     if not got:
-        return []
+        return None, outlet
     enriched = {}
     if enrich:
         idx = ue._catalog_index(captured["store"])
-        ue._click_first_item(p, log)
-        p.wait_for_timeout(2200)
+        if captured["mi_req"] is None:                       # learn the getMenuItemV1 template once (first store)
+            ue._click_first_item(p, log); p.wait_for_timeout(2000)
         req = captured["mi_req"]
         if req and req.get("body"):
-            first = ue._menu_item_data(captured["items"][0]) if captured["items"] else None
+            first = got[0]
             known = {"url": req["url"], "index": idx, "headers": req.get("headers", {}),
-                     "item": (first or {}).get("uuid"), "section": (first or {}).get("sectionUuid"),
-                     "subsection": (first or {}).get("subsectionUuid"), "store": uuid}
-            enriched = ue.enrich_store(w, uuid, name, got, req["body"], known, max_items=max_items_enrich, log=log)
+                     "item": first.get("item_uuid"), "section": first.get("section"),
+                     "subsection": first.get("subsection"), "store": uuid}
+            try:
+                enriched = ue.enrich_store(w, uuid, name, got, req["body"], known, max_items=max_items_enrich, log=log)
+            except Exception as e:
+                log("  enrich %s: %s" % (name[:20], str(e)[:40]))
         for det in captured["items"]:
             data = ue._menu_item_data(det)
             if data and data.get("uuid"):
@@ -101,7 +157,7 @@ def _pull_one_store(w, p, captured, uuid, name, enrich, max_items_enrich, log):
     liquor = bool(ue._LIQUOR_STORE_RE.search(name))
     for it in merged:
         it["is_alcohol"] = it["is_alcohol"] or liquor or bool(ue._BEVALC_RE.search(it.get("name", "")))
-    return merged
+    return merged, outlet
 
 
 # ── national crawl loop ───────────────────────────────────────────────────────────────────────────────────────
@@ -115,23 +171,40 @@ def crawl_zones(zones, site="ubereats", max_stores=300, enrich=True, max_items_e
     done = landed_store_uuids(site) if resume else set()
     log("[ue-crawl] site=%s | %d zones | %d stores already landed (resume)" % (site, len(zones), len(done)))
 
-    # route the browser through the residential proxy (sticky per run so the session IP is stable)
-    if resi.enabled():
+    # UberEats/Postmates were cracked from our OWN home residential IP (no proxy needed) — a flagged proxy IP
+    # degrades the feed (renders ~1 merchant). So default to the HOME IP; opt into the proxy only with UE_PROXY=1.
+    if os.environ.get("UE_PROXY") == "1" and resi.enabled():
         os.environ["BROWSER_PROXY"] = resi._session_url("uecrawl") or ""
+    else:
+        os.environ.pop("BROWSER_PROXY", None)
     tot_items = tot_stores = 0
     with browser_warm.Warmer(cfg["domain"], channel="chrome", headful=True) as w:
         ctx = w._ctx; p = w._page()
-        captured = {"store": [], "items": [], "mi_req": None}
-        ctx.on("response", lambda r: (
-            captured["store"].append(r.json()) if "/_p/api/getStoreV1" in r.url and _ok(r) else
-            captured["items"].append(r.json()) if "/_p/api/getMenuItemV1" in r.url and _ok(r) else None))
+        captured = {"store": [], "items": [], "mi_req": None, "sv_req": None}
+
+        def _on_resp(r):
+            # getStoreV1 is captured via expect_response in _pull_nav (reliable body); here only opportunistically
+            # grab getMenuItemV1 bodies fired by clicks. Guard r.json() — bodies get evicted on navigation.
+            try:
+                if "/_p/api/getMenuItemV1" in r.url and _ok(r):
+                    captured["items"].append(r.json())
+            except Exception:
+                pass
+        ctx.on("response", _on_resp)
+
+        def _hdrs(r):
+            return {k: v for k, v in dict(r.headers).items()
+                    if k.lower().startswith("x-uber-") or k.lower() == "x-csrf-token"}
 
         def on_req(r):
+            # learn the app's own getStoreV1 + getMenuItemV1 request shapes (url + x-uber-* headers) once — then we
+            # REPLAY getStoreV1 for every store in the zone (no per-store click) and getMenuItemV1 for every item.
+            if "/_p/api/getStoreV1" in r.url and captured["sv_req"] is None:
+                try: captured["sv_req"] = {"url": r.url, "headers": _hdrs(r)}
+                except Exception: captured["sv_req"] = {"url": r.url, "headers": {}}
             if "/_p/api/getMenuItemV1" in r.url and captured["mi_req"] is None:
                 try:
-                    captured["mi_req"] = {"url": r.url, "body": json.loads(r.post_data or "{}"),
-                                          "headers": {k: v for k, v in dict(r.headers).items()
-                                                      if k.lower().startswith("x-uber-") or k.lower() == "x-csrf-token"}}
+                    captured["mi_req"] = {"url": r.url, "body": json.loads(r.post_data or "{}"), "headers": _hdrs(r)}
                 except Exception:
                     captured["mi_req"] = {"url": r.url, "body": {}, "headers": {}}
         ctx.on("request", on_req)
@@ -145,36 +218,53 @@ def crawl_zones(zones, site="ubereats", max_stores=300, enrich=True, max_items_e
                     log("[ue-crawl] zone %d/%d '%s': geocode FAILED — skip" % (zi + 1, len(zones), z)); continue
                 url = pl_url(det, base=cfg["base"]); label = det["address"]["title"]
             try:
-                p.goto(url, wait_until="domcontentloaded", timeout=60000)
-                p.wait_for_timeout(5000); ue._clear_challenge(p, log); w.human()
-                prev = 0
-                for i in range(60):
-                    p.mouse.wheel(0, 9000); p.wait_for_timeout(1000)
-                    n = len(ue._feed_stores(p))
-                    if n == prev and i > 4:
+                # load the feed, RETRYING the zone if it renders empty (challenge didn't clear / slow render)
+                stores = []
+                for attempt in range(3):
+                    p.goto(url, wait_until="domcontentloaded", timeout=60000)
+                    p.wait_for_timeout(4000); ue._clear_challenge(p, log)
+                    for _ in range(15):                  # wait for the feed to populate (poll ~30s)
+                        if len(ue._feed_stores(p)) > 5:
+                            break
+                        ue._clear_challenge(p, log); p.wait_for_timeout(2000)
+                    w.human()
+                    prev = 0
+                    for i in range(80):                  # scroll the infinite feed to load EVERY merchant
+                        p.mouse.wheel(0, 9000); p.wait_for_timeout(1100)
+                        n = len(ue._feed_stores(p))
+                        if n == prev and i > 6:
+                            break
+                        prev = n
+                    stores = ue._feed_stores(p)
+                    if len(stores) > 5:
                         break
-                    prev = n
-                stores = ue._feed_stores(p)
+                    log("[ue-crawl] zone %s: feed rendered %d — retry %d" % (label[:20], len(stores), attempt + 1))
                 if bevalc_only:
                     stores = [s for s in stores if ue._RETAIL_RE.search(s[2]) or ue._LIQUOR_STORE_RE.search(s[2])]
                 fresh = [s for s in stores if s[1] not in done]
                 log("[ue-crawl] zone %d/%d %s: %d merchants, %d new" % (zi + 1, len(zones), label[:24], len(stores), len(fresh)))
-                zone_items = []
-                for slug, uuid, name, href in fresh[:max_stores]:
-                    if "/feed" not in p.url:
-                        try: p.goto(url, wait_until="commit", timeout=45000)
-                        except Exception: pass
-                        p.wait_for_timeout(2500); ue._clear_challenge(p, log)
-                    try:
-                        merged = _pull_one_store(w, p, captured, uuid, name, enrich, max_items_enrich, log)
-                    except Exception as e:
-                        log("  %-30s ERR %s" % (name[:30], str(e)[:50])); merged = None
+                fresh = fresh[:max_stores]
+                zone_items, zone_outlets = [], []
+                # navigate to each store IN-SESSION (goto works inside a warmed session; getStoreV1 fires natively —
+                # replaying it for arbitrary stores 403s). getMenuItemV1 then replays for the UPC/recipe detail.
+                for si, (slug, uuid, name, href) in enumerate(fresh):
                     done.add(uuid)
+                    merged, outlet = (None, None)
+                    try:
+                        merged, outlet = _pull_nav(w, p, captured, uuid, name, href, enrich, max_items_enrich, site, log)
+                    except Exception as e:
+                        log("  %-30s ERR %s" % (name[:30], str(e)[:50]))
+                    if outlet:
+                        zone_outlets.append(outlet)
                     if merged:
                         zone_items.extend(merged); tot_stores += 1
-                        log("  %-30s %d items (%d w/UPC)" % (name[:30], len(merged), sum(1 for x in merged if x.get("upc"))))
-                    try: p.go_back(); p.wait_for_timeout(2000)
-                    except Exception: pass
+                        log("  %-30s %d items (%d w/UPC)%s" % (name[:30], len(merged),
+                            sum(1 for x in merged if x.get("upc")), " @geo" if outlet else ""))
+                    if (si + 1) % 20 == 0 and zone_items:                 # land in batches for very large zones
+                        ue.land(zone_items, zone=label[:40], site=site, log=log); tot_items += len(zone_items); zone_items = []
+                if zone_outlets:
+                    warehouse.write_accumulate("%s_stores" % site, zone_outlets,
+                                               key=lambda r: r["store_uuid"], fields=STORE_FIELDS)
                 if zone_items:
                     ue.land(zone_items, zone=label[:40], site=site, log=log)   # land per ZONE (incremental)
                     tot_items += len(zone_items)
