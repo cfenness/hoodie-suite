@@ -36,15 +36,21 @@ def pull(site="ubereats", log=print):
     base = "https://www.ubereats.com" if site == "ubereats" else "https://postmates.com"
     from curl_cffi import requests as cr
     px = resi._session_url("uesitemap")
-    s = cr.Session(impersonate="chrome", proxies={"http": px, "https": px} if px else None, timeout=60)
     seen = {}
     t0 = time.time()
+    failed = []
     for i in range(26):
-        try:
-            raw = s.get(SM % i).content
-            xml = gzip.decompress(raw).decode("utf-8", "replace")
-        except Exception as e:
-            log("  sitemap %02d: %s" % (i, str(e)[:60])); continue
+        xml = None
+        for attempt in range(4):                            # retry each sitemap on a FRESH proxy IP (the proxy has
+            px = resi._session_url("sm%d_%d" % (i, attempt))  # transient CONNECT-tunnel blips)
+            try:
+                s = cr.Session(impersonate="chrome", proxies={"http": px, "https": px} if px else None, timeout=60)
+                xml = gzip.decompress(s.get(SM % i).content).decode("utf-8", "replace")
+                break
+            except Exception as e:
+                last = e
+        if xml is None:
+            failed.append(i); log("  sitemap %02d: FAILED after retries: %s" % (i, str(last)[:50])); continue
         for loc in re.findall(r"<loc>(https://www\.ubereats\.com/store/[^<]+)</loc>", xml):   # /store/ = US (no /xx/)
             m = re.search(r"/store/([^/]+)/([A-Za-z0-9_\-]{20,})$", loc)
             if m and m.group(2) not in seen:
@@ -54,8 +60,10 @@ def pull(site="ubereats", log=print):
                               "captured_at": int(time.time())}
         if i % 5 == 0 or i == 25:
             log("  sitemap %02d/25: %s US outlets cumulative (%ds)" % (i, format(len(seen), ","), int(time.time() - t0)))
-    warehouse.write_parquet("%s_sitemap" % site, list(seen.values()), fields=FIELDS)
-    log("[sitemap] %s: %s US outlets -> %s_sitemap" % (site, format(len(seen), ","), site))
+    # ACCUMULATE (never overwrite) so a partial run only GROWS the universe table
+    warehouse.write_accumulate("%s_sitemap" % site, list(seen.values()), key=lambda r: r["store_uuid"], fields=FIELDS)
+    log("[sitemap] %s: %s US outlets this run -> %s_sitemap%s" % (site, format(len(seen), ","), site,
+        (" (still failed: %s)" % failed) if failed else ""))
     return len(seen)
 
 
