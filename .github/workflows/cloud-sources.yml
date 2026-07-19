@@ -7,14 +7,13 @@ name: cloud-sources
 # Anything needing a real browser (Total Wine, Publix, UberEats/Target catalogs, TTB's TSPD warm) is NOT
 # here — those still run on the Mac. Creds sources auto-skip ("no-creds") if their secret isn't set.
 #
-# REQUIRED repo secrets (Settings → Secrets and variables → Actions):
-#   AWS_ENDPOINT_URL_S3      https://fly.storage.tigris.dev        (turns on warehouse remote mode)
-#   BUCKET_NAME              the Tigris warehouse bucket
-#   AWS_ACCESS_KEY_ID        Tigris access key
-#   AWS_SECRET_ACCESS_KEY    Tigris secret key
-#   ISP_PROXIES              the IPRoyal ISP list, comma-separated host:port:user:pass  (geofill only)
-# OPTIONAL (each unlocks its source; skipped honestly if absent):
-#   CENSUS_API_KEY           free Census key → reference data
+# Repo secrets used (already present in this repo):
+#   AWS_ENDPOINT_URL_S3       https://fly.storage.tigris.dev       (turns on warehouse remote mode)
+#   TIGRIS_ACCESS_KEY_ID      Tigris access key   → mapped to AWS_ACCESS_KEY_ID below
+#   TIGRIS_SECRET_ACCESS_KEY  Tigris secret key   → mapped to AWS_SECRET_ACCESS_KEY below
+#   ISP_PROXIES               IPRoyal ISP list, comma-separated host:port:user:pass  (geofill only)
+# BUCKET_NAME is not sensitive, so it's set inline below (no secret needed).
+# OPTIONAL (skipped honestly if absent): CENSUS_API_KEY → reference data.
 
 on:
   schedule:
@@ -35,9 +34,9 @@ jobs:
     timeout-minutes: 150
     env:
       AWS_ENDPOINT_URL_S3: ${{ secrets.AWS_ENDPOINT_URL_S3 }}
-      BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      BUCKET_NAME: hoodie-suite-warehouse
+      AWS_ACCESS_KEY_ID: ${{ secrets.TIGRIS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.TIGRIS_SECRET_ACCESS_KEY }}
       AWS_REGION: auto
       ISP_PROXIES: ${{ secrets.ISP_PROXIES }}
       CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
