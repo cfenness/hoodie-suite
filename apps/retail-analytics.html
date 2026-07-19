@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoodie Retail Analytics</title>
+<style>
+  html,body{margin:0}
+  :root{
+    --paper:#F5F7FA; --card:#FFFFFF; --ink:#1A2430; --muted:#5C6775; --faint:#8A94A2;
+    --line:#E3E8EF; --line2:#EDF1F6; --accent:#4E79A7; --accent-soft:#4E79A722;
+    --good:#3F8F63; --good-soft:#3F8F6318; --warn:#B8862E; --warn-soft:#B8862E18;
+    --bad:#C1544A; --bad-soft:#C1544A18; --shadow:0 1px 2px #1a243008, 0 4px 16px #1a243010;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#0F141A; --card:#171E27; --ink:#E7ECF3; --muted:#95A1B1; --faint:#68727F;
+      --line:#26303B; --line2:#1E2731; --accent:#6E97C4; --accent-soft:#6E97C426;
+      --good:#5AAE7C; --good-soft:#5AAE7c1e; --warn:#D0A445; --warn-soft:#d0a4451e;
+      --bad:#D96A5F; --bad-soft:#d96a5f1e; --shadow:0 1px 2px #0006, 0 6px 20px #0004;
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#F5F7FA; --card:#FFFFFF; --ink:#1A2430; --muted:#5C6775; --faint:#8A94A2;
+    --line:#E3E8EF; --line2:#EDF1F6; --accent:#4E79A7; --accent-soft:#4E79A722;
+    --good:#3F8F63; --good-soft:#3F8F6318; --warn:#B8862E; --warn-soft:#B8862E18;
+    --bad:#C1544A; --bad-soft:#C1544A18; --shadow:0 1px 2px #1a243008, 0 4px 16px #1a243010;
+  }
+  :root[data-theme="dark"]{
+    --paper:#0F141A; --card:#171E27; --ink:#E7ECF3; --muted:#95A1B1; --faint:#68727F;
+    --line:#26303B; --line2:#1E2731; --accent:#6E97C4; --accent-soft:#6E97C426;
+    --good:#5AAE7C; --good-soft:#5AAE7c1e; --warn:#D0A445; --warn-soft:#d0a4451e;
+    --bad:#D96A5F; --bad-soft:#d96a5f1e; --shadow:0 1px 2px #0006, 0 6px 20px #0004;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.45;
+    -webkit-font-smoothing:antialiased;margin:0}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 20px 64px}
+  .tnum{font-variant-numeric:tabular-nums}
+  a{color:inherit}
+
+  /* header */
+  .top{display:flex;flex-wrap:wrap;align-items:center;gap:14px 18px;margin-bottom:6px}
+  .brandmark{display:flex;align-items:center;gap:11px}
+  .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#2f5e8e);
+    display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;box-shadow:var(--shadow)}
+  .brandmark h1{font-size:17px;font-weight:700;letter-spacing:-.2px;margin:0}
+  .brandmark .sub{font-size:11px;color:var(--faint);letter-spacing:.04em;text-transform:uppercase;margin-top:1px}
+  .spacer{flex:1}
+  .thesis{display:inline-flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);
+    border:1px solid var(--line);background:var(--card);border-radius:999px;padding:6px 12px}
+  .thesis b{color:var(--ink);font-weight:600}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--good);box-shadow:0 0 0 3px var(--good-soft)}
+
+  /* controls */
+  .controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:16px 0 18px;
+    padding-bottom:16px;border-bottom:1px solid var(--line)}
+  .seg{display:inline-flex;background:var(--line2);border:1px solid var(--line);border-radius:10px;padding:3px}
+  .seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;
+    padding:6px 15px;border-radius:7px;cursor:pointer;transition:.15s}
+  .seg button[aria-pressed="true"]{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+  .pick{display:flex;gap:7px;flex-wrap:wrap}
+  .chip{border:1px solid var(--line);background:var(--card);color:var(--muted);font:inherit;font-size:13px;
+    font-weight:600;padding:6px 13px;border-radius:999px;cursor:pointer;transition:.15s;display:flex;gap:7px;align-items:center}
+  .chip:hover{border-color:var(--accent)}
+  .chip[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .chip .av{width:18px;height:18px;border-radius:5px;background:var(--accent-soft);color:var(--accent);
+    display:grid;place-items:center;font-size:10px;font-weight:800}
+
+  /* kpi strip */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:13px 15px;box-shadow:var(--shadow)}
+  .kpi .k{font-size:11px;color:var(--faint);letter-spacing:.03em;text-transform:uppercase;font-weight:600}
+  .kpi .v{font-size:23px;font-weight:750;letter-spacing:-.5px;margin-top:5px}
+  .kpi .d{font-size:11.5px;margin-top:2px;color:var(--muted)}
+  .kpi .d.g{color:var(--good)} .kpi .d.b{color:var(--bad)} .kpi .d.w{color:var(--warn)}
+
+  /* grid + cards */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:17px 18px;box-shadow:var(--shadow)}
+  .card.wide{grid-column:1 / -1}
+  .ch{display:flex;align-items:center;gap:9px;margin-bottom:3px}
+  .ch h2{font-size:14px;font-weight:700;letter-spacing:-.1px;margin:0}
+  .ch .ico{width:22px;height:22px;border-radius:6px;background:var(--accent-soft);color:var(--accent);
+    display:grid;place-items:center}
+  .ch .ico svg{width:13px;height:13px}
+  .csub{font-size:11.5px;color:var(--faint);margin:0 0 14px 31px}
+  .prov{font-family:var(--mono);font-size:10.5px;color:var(--faint);display:inline-flex;align-items:center;gap:5px}
+  .prov::before{content:"◦";color:var(--accent)}
+
+  /* badges */
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:650;border-radius:999px;
+    padding:4px 11px;border:1px solid transparent}
+  .badge.g{background:var(--good-soft);color:var(--good);border-color:var(--good)}
+  .badge.w{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+  .badge.b{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
+  .badge.n{background:var(--line2);color:var(--muted);border-color:var(--line)}
+
+  /* price card */
+  .price-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+  .price-now{font-size:27px;font-weight:770;letter-spacing:-.6px}
+  .price-base{font-size:12px;color:var(--muted);margin-top:1px}
+  .spark{width:100%;height:96px;display:block}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:9px}
+  .legend i{display:inline-block;width:16px;height:0;border-top-width:2px;border-top-style:solid;
+    vertical-align:middle;margin-right:5px}
+  .infer{margin-top:14px;border-top:1px solid var(--line);padding-top:13px;display:flex;flex-direction:column;gap:11px}
+  .infer .row{display:flex;gap:11px;align-items:flex-start}
+  .infer .glyph{flex:none;width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-size:12px}
+  .infer .t{font-size:12.5px}
+  .infer .t b{font-weight:650}
+  .infer .t span{color:var(--muted)}
+
+  /* shelf / planogram */
+  .shelf{border:1px solid var(--line);border-radius:10px;background:linear-gradient(180deg,var(--line2),transparent);
+    padding:10px 10px 8px;overflow-x:auto}
+  .shelf-row{display:flex;gap:4px;align-items:flex-end;min-width:min-content}
+  .fac{flex:none;border-radius:5px 5px 3px 3px;border:1px solid var(--line);background:var(--card);
+    display:flex;flex-direction:column;justify-content:flex-end;padding:6px 6px 5px;min-width:44px;position:relative}
+  .fac.own{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 1px var(--accent) inset}
+  .fac .nm{font-size:9.5px;font-weight:600;line-height:1.15;color:var(--ink)}
+  .fac.own .nm{color:var(--accent)}
+  .fac .fc{font-size:9px;color:var(--faint);font-family:var(--mono);margin-top:3px}
+  .shelf-base{height:6px;background:var(--line);border-radius:0 0 4px 4px;margin-top:4px}
+  .dist{width:100%;border-collapse:collapse;margin-top:6px;font-size:12.5px}
+  .dist th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--faint);
+    font-weight:600;padding:7px 8px;border-bottom:1px solid var(--line)}
+  .dist td{padding:8px;border-bottom:1px solid var(--line2)}
+  .dist td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  .bar{height:6px;border-radius:3px;background:var(--accent);display:inline-block;vertical-align:middle}
+  .bartrack{display:inline-block;width:64px;height:6px;border-radius:3px;background:var(--line2);vertical-align:middle;margin-right:8px;overflow:hidden}
+  .bartrack .bar{display:block;height:100%}
+
+  /* menu / drink types */
+  .dtypes{display:flex;flex-direction:column;gap:9px;margin-bottom:4px}
+  .dtype{display:grid;grid-template-columns:120px 1fr 42px;gap:10px;align-items:center;font-size:12.5px}
+  .dtype .lab{color:var(--ink);font-weight:600}
+  .dtype .pct{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;font-size:12px}
+  .cocktails{display:flex;flex-direction:column;gap:1px;margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+  .ck{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line2);font-size:12.5px}
+  .ck:last-child{border-bottom:0}
+  .ck .rk{font-family:var(--mono);font-size:11px;color:var(--faint);width:16px}
+  .ck .cn{flex:1;font-weight:600}
+  .ck .cc{color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
+  .ck .cp{font-variant-numeric:tabular-nums;font-weight:650;color:var(--accent)}
+
+  /* cross-banner table */
+  .xb{width:100%;border-collapse:collapse;font-size:12.5px}
+  .xb th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--faint);
+    font-weight:600;padding:8px;border-bottom:1px solid var(--line)}
+  .xb td{padding:9px 8px;border-bottom:1px solid var(--line2);vertical-align:middle}
+  .xb td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  .synced{display:inline-flex;gap:3px}
+  .synced i{width:7px;height:14px;border-radius:2px;background:var(--line);display:inline-block}
+  .synced i.on{background:var(--bad)}
+  .foot{margin-top:22px;text-align:center;font-size:11px;color:var(--faint)}
+  @media(max-width:820px){ .kpis{grid-template-columns:repeat(2,1fr)} .grid{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brandmark">
+      <div class="logo">H</div>
+      <div><h1>Hoodie Retail Intelligence</h1><div class="sub">Alt-data category signal</div></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="thesis"><span class="dot"></span><b>No depletions.&nbsp;No POS scans.</b>&nbsp;Derived from public + scraped retail &amp; menu data.</div>
+  </header>
+
+  <div class="controls">
+    <div class="seg" id="lens">
+      <button data-lens="brand" aria-pressed="true">By Brand</button>
+      <button data-lens="retailer" aria-pressed="false">By Retailer</button>
+    </div>
+    <div class="pick" id="pick"></div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+  <div class="grid" id="grid"></div>
+
+  <div class="foot">Mockup · synthetic figures · every panel below is computable today from catalog + menu scrapes — no distributor depletions, no Nielsen/Circana scans.</div>
+</div>
+
+<script>
+const ICON = {
+  price:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-5 4 3 7-8"/><path d="M16 4h5v5"/></svg>',
+  shelf:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg>',
+  menu:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3v7a3 3 0 006 0V3M9 3v18M18 3c-1.5 1-2 3-2 6s.5 4 2 5v7"/></svg>',
+  net:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.5 8l3 8M16.5 8l-3 8"/></svg>'
+};
+
+/* ---- synthetic data ---- */
+const DATA = {
+  brand:{
+    titos:{
+      name:"Tito's Handmade Vodka", av:"T", sub:"Vodka · 750ml equivalent",
+      kpis:[
+        {k:"Retail carriage",v:"1,204",d:"stores observed",t:""},
+        {k:"Price vs baseline",v:"Typical",d:"+0.3% · in-band",t:"g"},
+        {k:"On-prem menus",v:"3,410",d:"+112 this month",t:"g"},
+        {k:"Promo funding",v:"Retailer",d:"last 3 deals self-funded",t:""}
+      ],
+      price:{now:"$24.99",base:"typical $24.90 · band $22.10–$26.40",cls:"Typical price",clsT:"g",
+        series:[25.0,24.9,25.1,24.9,23.2,24.9,25.0,24.8,24.9,25.1,24.9,24.99],
+        band:[22.1,26.4], lo:21.5, hi:27, promos:[4],
+        cadence:{g:"var(--accent)",t:"<b>Ad cadence:</b> <span>Publix promos cluster Wed; Total Wine rolls monthly (1st). Next expected drop ~Wed.</span>"},
+        funding:{g:"var(--good)",bg:"var(--good-soft)",t:"<b>Funding: retailer-led.</b> <span>Recent deals appear on single banners on their ad day — normal margin promo, not a supplier push.</span>"},
+        anomaly:{g:"var(--muted)",bg:"var(--line2)",t:"<b>No anomaly.</b> <span>Price sits inside the learned band; no mid-cycle or synchronized discounting detected.</span>"}},
+      plano:{prov:"catalog scrape · 1,204 stores · faceted-nav sections",
+        shelf:[{n:"Absolut",f:2},{n:"Ketel One",f:3},{n:"Tito's 1.75L",f:3,own:1},{n:"Tito's 750",f:4,own:1},
+          {n:"Tito's 375",f:2,own:1},{n:"Grey Goose",f:3},{n:"Svedka",f:2}],
+        dist:[{r:"Total Wine",p:99,u:"exact units"},{r:"Publix",p:96,u:"in-stock"},{r:"ABC Fine W&S",p:94,u:"per-store"},
+          {r:"Kroger",p:81,u:"status"},{r:"7-Eleven",p:38,u:"exact units"}]},
+      menu:{prov:"on-prem menu scrape · UberEats/DoorDash · 3,410 menus",
+        types:[{n:"Vodka Soda",p:31},{n:"Moscow Mule",p:24},{n:"Martini",p:18},{n:"Bloody Mary",p:15},{n:"Cosmopolitan",p:7}],
+        cocktails:[{n:"Tito's & Soda",c:"1,910 menus",p:"$11"},{n:"Moscow Mule",c:"1,480 menus",p:"$13"},
+          {n:"Dirty Martini",c:"1,020 menus",p:"$14"},{n:"Bloody Mary",c:"905 menus",p:"$12"},{n:"Espresso Martini",c:"612 menus",p:"$15"}]},
+      xb:{title:"Cross-banner promo ledger — last 8 weeks",prov:"discount events · 5 banners",
+        rows:[{b:"Publix",day:"Wed",depth:"10% off",sync:[0,0,1,0,0,0,0,0],src:"Retailer"},
+          {b:"Total Wine",day:"1st",depth:"$2 off",sync:[1,0,0,0,0,0,0,0],src:"Retailer"},
+          {b:"ABC Fine W&S",day:"Fri",depth:"BOGO 50%",sync:[0,0,0,0,0,1,0,0],src:"Retailer"},
+          {b:"Kroger",day:"Wed",depth:"digital $3",sync:[0,0,1,0,0,0,0,0],src:"Retailer"}]}
+    },
+    budlight:{
+      name:"Bud Light", av:"B", sub:"Beer · 12-pack equivalent",
+      kpis:[
+        {k:"Retail carriage",v:"2,847",d:"stores observed",t:""},
+        {k:"Price vs baseline",v:"−19%",d:"deep promo · anomalous",t:"b"},
+        {k:"On-prem menus",v:"5,120",d:"draft + package",t:""},
+        {k:"Promo funding",v:"Supplier",d:"synced across 8 banners",t:"w"}
+      ],
+      price:{now:"$14.49",base:"typical $17.90 · band $16.80–$19.20",cls:"Deep promo · anomalous",clsT:"b",
+        series:[18.0,17.9,18.1,17.8,17.9,15.9,14.8,14.5,14.9,14.6,14.5,14.49],
+        band:[16.8,19.2], lo:13.8, hi:20, promos:[5,6,7,8,9,10,11],
+        cadence:{g:"var(--bad)",t:"<b>Cadence BROKEN:</b> <span>Discounts appear mid-cycle, off every banner's normal ad day, and persist for weeks — not a scheduled promo.</span>"},
+        funding:{g:"var(--warn)",bg:"var(--warn-soft)",t:"<b>Funding: supplier-led (distress push).</b> <span>Same depth synchronized across 8 independent banners in one window → coordinated upstream, not retailer choice.</span>"},
+        anomaly:{g:"var(--bad)",bg:"var(--bad-soft)",t:"<b>Anomaly flagged.</b> <span>Sustained −19% below baseline, broad + synchronized + off-cadence — the trade-push / clearance signature.</span>"}},
+      plano:{prov:"catalog scrape · 2,847 stores · domestic-beer set",
+        shelf:[{n:"Coors Lt",f:4},{n:"Miller Lt",f:3},{n:"Bud Light 12",f:5,own:1},{n:"Bud Light 24",f:4,own:1},
+          {n:"Bud Light 6",f:2,own:1},{n:"Michelob",f:3},{n:"Busch",f:2}],
+        dist:[{r:"Kroger",p:92,u:"status"},{r:"Publix",p:90,u:"in-stock"},{r:"7-Eleven",p:74,u:"exact units"},
+          {r:"Total Wine",p:63,u:"exact units"},{r:"ABC Fine W&S",p:41,u:"per-store"}]},
+      menu:{prov:"on-prem menu scrape · 5,120 menus",
+        types:[{n:"Draft pour",p:44},{n:"Bottle/Can",p:39},{n:"Bucket (5)",p:11},{n:"Pitcher",p:6}],
+        cocktails:[{n:"Draft (16 oz)",c:"3,240 menus",p:"$6"},{n:"Bottle",c:"2,010 menus",p:"$5"},
+          {n:"Bucket of 5",c:"640 menus",p:"$22"},{n:"Michelada (BL)",c:"410 menus",p:"$9"},{n:"Pitcher",c:"300 menus",p:"$18"}]},
+      xb:{title:"Cross-banner promo ledger — last 8 weeks",prov:"discount events · 8 banners · SYNCED",
+        rows:[{b:"Kroger",day:"mid-cycle",depth:"−18%",sync:[0,0,0,0,1,1,1,1],src:"Supplier"},
+          {b:"Publix",day:"mid-cycle",depth:"−19%",sync:[0,0,0,0,1,1,1,1],src:"Supplier"},
+          {b:"7-Eleven",day:"mid-cycle",depth:"−20%",sync:[0,0,0,0,0,1,1,1],src:"Supplier"},
+          {b:"Total Wine",day:"mid-cycle",depth:"−18%",sync:[0,0,0,0,1,1,1,1],src:"Supplier"}]}
+    }
+  },
+  retailer:{
+    publix:{
+      name:"Publix", av:"P", sub:"Grocery · FL/Southeast · 1,380 stores",
+      kpis:[
+        {k:"Bev-alc SKUs",v:"4,610",d:"observed assortment",t:""},
+        {k:"Ad cadence",v:"Wed",d:"94% of promos flip Wed",t:"g"},
+        {k:"Price index",v:"103",d:"vs market basket (=100)",t:"w"},
+        {k:"Active promos",v:"212",d:"this week",t:""}
+      ],
+      price:{now:"Index 103",base:"vs 5-banner market basket · 100 = market",cls:"Priced above market",clsT:"w",
+        series:[101,102,103,103,102,103,104,103,103,102,103,103],
+        band:[98,104], lo:96, hi:107, promos:[],
+        cadence:{g:"var(--accent)",t:"<b>Ad cadence: Wednesday.</b> <span>94% of discount transitions land Wed — scan Wed + Thu, skip the rest of the week.</span>"},
+        funding:{g:"var(--good)",bg:"var(--good-soft)",t:"<b>Promo mix: mostly self-funded.</b> <span>Most deals are single-banner on the Wed ad; ~14% synchronize with other banners (supplier programs).</span>"},
+        anomaly:{g:"var(--warn)",bg:"var(--warn-soft)",t:"<b>Watch:</b> <span>Domestic beer running −17% mid-cycle — a supplier push flowing through, not a Publix-initiated deal.</span>"}},
+      plano:{prov:"faceted-nav taxonomy · 1,380 stores",
+        shelf:[{n:"Vodka",f:5},{n:"Whiskey",f:5},{n:"Tequila",f:3,own:1},{n:"Wine",f:6},{n:"Dom. Beer",f:4},{n:"Craft",f:3},{n:"Seltzer",f:2}],
+        dist:[{r:"Wine",p:34,u:"1,560 SKUs"},{r:"Spirits",p:29,u:"1,340 SKUs"},{r:"Beer",p:22,u:"1,010 SKUs"},
+          {r:"Seltzer/RTD",p:10,u:"460 SKUs"},{r:"Non-alc",p:5,u:"240 SKUs"}]},
+      menu:{prov:"nearby on-prem accounts · trade-area overlap",
+        types:[{n:"Vodka",p:28},{n:"Whiskey",p:24},{n:"Tequila",p:21},{n:"Rum",p:14},{n:"Gin",p:13}],
+        cocktails:[{n:"Tito's & Soda",c:"in 1,910 menus",p:"$11"},{n:"Margarita",c:"in 1,700 menus",p:"$13"},
+          {n:"Old Fashioned",c:"in 1,120 menus",p:"$14"},{n:"Espresso Martini",c:"in 612 menus",p:"$15"},{n:"Mule",c:"in 1,480 menus",p:"$13"}]},
+      xb:{title:"Assortment gaps vs market — brands carried elsewhere, absent here",prov:"cross-banner set difference",
+        rows:[{b:"High West Rye",day:"Spirits",depth:"in 3/5 banners",sync:[1,1,1,0,0,0,0,0],src:"Gap"},
+          {b:"Liquid Death",day:"Water/RTD",depth:"in 4/5 banners",sync:[1,1,1,1,0,0,0,0],src:"Gap"},
+          {b:"Cutwater RTD",day:"RTD",depth:"in 3/5 banners",sync:[1,1,1,0,0,0,0,0],src:"Gap"}]}
+    },
+    totalwine:{
+      name:"Total Wine & More", av:"T", sub:"Off-premise · national · 270 stores",
+      kpis:[
+        {k:"Bev-alc SKUs",v:"18,240",d:"exact per-store counts",t:""},
+        {k:"Ad cadence",v:"Monthly",d:"resets ~1st",t:""},
+        {k:"Price index",v:"96",d:"vs market basket (=100)",t:"g"},
+        {k:"Active promos",v:"1,140",d:"this cycle",t:""}
+      ],
+      price:{now:"Index 96",base:"vs 5-banner market basket · 100 = market",cls:"Priced below market",clsT:"g",
+        series:[97,96,96,95,96,96,95,96,96,95,96,96],
+        band:[94,98], lo:92, hi:101, promos:[],
+        cadence:{g:"var(--accent)",t:"<b>Ad cadence: monthly.</b> <span>Prices reset near the 1st and hold — a monthly scan captures ~90% of changes.</span>"},
+        funding:{g:"var(--good)",bg:"var(--good-soft)",t:"<b>Deep own-label + supplier co-op.</b> <span>Winery-Direct/private labels priced below market; branded deals often carry supplier funding.</span>"},
+        anomaly:{g:"var(--muted)",bg:"var(--line2)",t:"<b>No anomaly.</b> <span>Broad, stable, below-market index — consistent EDLP posture, no distress signature.</span>"}},
+      plano:{prov:"getProduct API · exact units · 270 stores",
+        shelf:[{n:"Wine",f:7},{n:"Whiskey",f:5,own:1},{n:"Vodka",f:4},{n:"Tequila",f:4},{n:"Craft Beer",f:5},{n:"RTD",f:3},{n:"Cigars",f:2}],
+        dist:[{r:"Wine",p:46,u:"8,390 SKUs"},{r:"Spirits",p:31,u:"5,650 SKUs"},{r:"Beer",p:15,u:"2,740 SKUs"},
+          {r:"RTD/Seltzer",p:6,u:"1,090 SKUs"},{r:"Other",p:2,u:"370 SKUs"}]},
+      menu:{prov:"nearby on-prem accounts · trade-area overlap",
+        types:[{n:"Whiskey",p:30},{n:"Wine BTG",p:26},{n:"Tequila",p:18},{n:"Vodka",p:15},{n:"Gin",p:11}],
+        cocktails:[{n:"Old Fashioned",c:"in 1,120 menus",p:"$14"},{n:"Margarita",c:"in 1,700 menus",p:"$13"},
+          {n:"Negroni",c:"in 540 menus",p:"$14"},{n:"Manhattan",c:"in 480 menus",p:"$15"},{n:"Paloma",c:"in 610 menus",p:"$12"}]},
+      xb:{title:"Assortment gaps vs market — brands carried elsewhere, absent here",prov:"cross-banner set difference",
+        rows:[{b:"Tito's 375ml",day:"Vodka",depth:"in 4/5 banners",sync:[1,1,1,1,0,0,0,0],src:"Gap"},
+          {b:"White Claw Surge",day:"Seltzer",depth:"in 3/5 banners",sync:[1,1,1,0,0,0,0,0],src:"Gap"}]}
+    }
+  }
+};
+
+/* ---- render helpers ---- */
+function sparkline(p){
+  const W=440,H=96,pad=6, n=p.series.length;
+  const lo=p.lo, hi=p.hi, span=hi-lo;
+  const x=i=> pad + i*(W-2*pad)/(n-1);
+  const y=v=> H-pad - (v-lo)/span*(H-2*pad);
+  const bandTop=y(p.band[1]), bandBot=y(p.band[0]);
+  let path=""; p.series.forEach((v,i)=> path += (i?"L":"M")+x(i).toFixed(1)+","+y(v).toFixed(1)+" ");
+  let dots=""; p.promos.forEach(i=>{ dots+=`<circle cx="${x(i).toFixed(1)}" cy="${y(p.series[i]).toFixed(1)}" r="3.4" fill="var(--bad)" stroke="var(--card)" stroke-width="1.5"/>`; });
+  const li=n-1;
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="price history vs typical band">
+    <rect x="${pad}" y="${bandTop.toFixed(1)}" width="${W-2*pad}" height="${(bandBot-bandTop).toFixed(1)}" fill="var(--accent-soft)"/>
+    <line x1="${pad}" x2="${W-pad}" y1="${bandTop.toFixed(1)}" y2="${bandTop.toFixed(1)}" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 3" opacity=".5"/>
+    <line x1="${pad}" x2="${W-pad}" y1="${bandBot.toFixed(1)}" y2="${bandBot.toFixed(1)}" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 3" opacity=".5"/>
+    <path d="${path}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}
+    <circle cx="${x(li).toFixed(1)}" cy="${y(p.series[li]).toFixed(1)}" r="4" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/>
+  </svg>`;
+}
+function inferRow(o){ return `<div class="row"><div class="glyph" style="background:${o.bg||'var(--accent-soft)'};color:${o.g}">●</div><div class="t">${o.t}</div></div>`; }
+
+function priceCard(e){
+  const p=e.price;
+  return `<section class="card">
+    <div class="ch"><div class="ico">${ICON.price}</div><h2>Price &amp; Promo Intelligence</h2></div>
+    <p class="csub">Live price classified against this ${e._t==='brand'?'item':'banner'}'s learned baseline — the Google-Flights "low / typical / high," for bev-alc.</p>
+    <div class="price-head">
+      <div><div class="price-now tnum">${p.now}</div><div class="price-base">${p.base}</div></div>
+      <span class="badge ${p.clsT}">${p.cls}</span>
+    </div>
+    ${sparkline(p)}
+    <div class="legend"><span><i style="border-color:var(--ink)"></i>observed price</span>
+      <span><i style="border-color:var(--accent);border-top-style:dashed"></i>typical band</span>
+      <span><i style="border-color:var(--bad);width:8px"></i>promo event</span></div>
+    <div class="infer">
+      ${inferRow(p.cadence)}${inferRow(p.funding)}${inferRow(p.anomaly)}
+    </div>
+    <div style="margin-top:12px"><span class="prov">learned baseline · discount events · no depletions</span></div>
+  </section>`;
+}
+function planoCard(e){
+  const pl=e.plano, max=Math.max(...pl.shelf.map(s=>s.f));
+  const facs=pl.shelf.map(s=>`<div class="fac ${s.own?'own':''}" style="height:${40+s.f/max*46}px">
+     <div class="nm">${s.n}</div><div class="fc">${s.f} fac</div></div>`).join("");
+  const rows=pl.dist.map(d=>`<tr><td>${d.r}</td>
+     <td><span class="bartrack"><span class="bar" style="width:${d.p}%"></span></span></td>
+     <td class="num">${d.p}%</td><td style="color:var(--muted);font-size:11.5px">${d.u}</td></tr>`).join("");
+  return `<section class="card">
+    <div class="ch"><div class="ico">${ICON.shelf}</div><h2>Reverse Planogram &amp; Assortment</h2></div>
+    <p class="csub">Shelf set reconstructed from observed catalog + faceted-nav sections — the planogram, inferred without a retailer feed.</p>
+    <div class="shelf"><div class="shelf-row">${facs}</div><div class="shelf-base"></div></div>
+    <table class="dist"><thead><tr><th>${e._t==='brand'?'Retailer':'Category'}</th><th>Share of set</th><th></th><th>Read</th></tr></thead><tbody>${rows}</tbody></table>
+    <div style="margin-top:11px"><span class="prov">${pl.prov}</span></div>
+  </section>`;
+}
+function menuCard(e){
+  const m=e.menu, max=Math.max(...m.types.map(t=>t.p));
+  const types=m.types.map(t=>`<div class="dtype"><span class="lab">${t.n}</span>
+    <span class="bartrack" style="width:100%"><span class="bar" style="width:${t.p/max*100}%"></span></span>
+    <span class="pct">${t.p}%</span></div>`).join("");
+  const cks=m.cocktails.map((c,i)=>`<div class="ck"><span class="rk">${i+1}</span><span class="cn">${c.n}</span><span class="cc">${c.c}</span><span class="cp">${c.p}</span></div>`).join("");
+  return `<section class="card">
+    <div class="ch"><div class="ico">${ICON.menu}</div><h2>On-Premise Menu &amp; Recipe Intelligence</h2></div>
+    <p class="csub">${e._t==='brand'?'How the brand actually appears on menus':'Drink demand in the trade area'} — drink types &amp; serves parsed from menu scrapes.</p>
+    <div class="dtypes">${types}</div>
+    <div class="cocktails">${cks}</div>
+    <div style="margin-top:11px"><span class="prov">${m.prov}</span></div>
+  </section>`;
+}
+function xbCard(e){
+  const x=e.xb;
+  const rows=x.rows.map(r=>{
+    const sync=r.sync.map(s=>`<i class="${s?'on':''}"></i>`).join("");
+    const tone = r.src==='Supplier'?'w':(r.src==='Gap'?'n':'g');
+    return `<tr><td><b>${r.b}</b></td><td style="color:var(--muted)">${r.day}</td><td class="tnum">${r.depth}</td>
+      <td><span class="synced" title="week-by-week">${sync}</span></td>
+      <td><span class="badge ${tone}">${r.src}</span></td></tr>`;
+  }).join("");
+  return `<section class="card wide">
+    <div class="ch"><div class="ico">${ICON.net}</div><h2>${x.title}</h2></div>
+    <p class="csub">Same item across banners over 8 weeks — synchronization reveals whether a deal is retailer-funded or a supplier push.</p>
+    <div style="overflow-x:auto"><table class="xb"><thead><tr><th>Banner</th><th>Day</th><th>Depth</th><th>8-week pattern</th><th>Inferred source</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div style="margin-top:11px"><span class="prov">${x.prov}</span></div>
+  </section>`;
+}
+
+/* ---- state + wiring ---- */
+let LENS="brand", KEY="titos";
+function render(){
+  const e = Object.assign({_t:LENS}, DATA[LENS][KEY]);
+  document.getElementById('kpis').innerHTML = e.kpis.map(k=>
+    `<div class="kpi"><div class="k">${k.k}</div><div class="v tnum">${k.v}</div><div class="d ${k.t}">${k.d}</div></div>`).join("");
+  document.getElementById('grid').innerHTML = priceCard(e)+planoCard(e)+menuCard(e)+xbCard(e);
+}
+function buildPick(){
+  const items = DATA[LENS];
+  document.getElementById('pick').innerHTML = Object.keys(items).map(k=>
+    `<button class="chip" data-key="${k}" aria-pressed="${k===KEY}"><span class="av">${items[k].av}</span>${items[k].name}</button>`).join("");
+  document.querySelectorAll('#pick .chip').forEach(b=> b.onclick=()=>{ KEY=b.dataset.key; buildPick(); render(); });
+}
+document.querySelectorAll('#lens button').forEach(b=> b.onclick=()=>{
+  LENS=b.dataset.lens;
+  document.querySelectorAll('#lens button').forEach(x=>x.setAttribute('aria-pressed', x===b));
+  KEY = Object.keys(DATA[LENS])[0];
+  buildPick(); render();
+});
+buildPick(); render();
+</script>
+</body>
+</html>
