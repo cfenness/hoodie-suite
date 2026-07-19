@@ -10,6 +10,9 @@ Thumbs.db
 .env.*
 *.pem
 aws.json
+warehouse.env
+isp_proxies.txt
+**/isp_proxies.txt
 
 # Python (unifyd engine)
 __pycache__/
