@@ -242,6 +242,45 @@ def isp_proxies(key=None):
     return {"http": p, "https": p} if p else None
 
 
+_ISP_US = [None]                                   # cache of US-exit pool IPs (probed once)
+
+
+def isp_us_pool():
+    """The subset of the ISP pool that exits in the US — for US-only sources (Publix, Target) where a foreign
+    exit IP trips geo/Akamai even with a spoofed browser geolocation. Probes ipapi once, then caches."""
+    if _ISP_US[0] is None:
+        us = []
+        try:
+            from curl_cffi import requests as cr
+            for p in isp_pool():
+                try:
+                    d = cr.Session(impersonate="chrome", timeout=15, proxies={"http": p, "https": p}).get(
+                        "https://ipapi.co/json/", headers={"User-Agent": "curl/8"}).json()
+                    if d.get("country_code") == "US":
+                        us.append(p)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        _ISP_US[0] = us or isp_pool()              # fallback: any IP if none probe US
+    return _ISP_US[0]
+
+
+def isp_us_url(key=None):
+    """Pick a US-exit ISP IP (sticky by key, else round-robin). None if pool empty."""
+    pool = isp_us_pool()
+    if not pool:
+        return None
+    if key is not None:
+        h = 0
+        for c in str(key):
+            h = (h * 131 + ord(c)) & 0xFFFFFFFF
+        return pool[h % len(pool)]
+    i = _ISP_RR[0] % len(pool)
+    _ISP_RR[0] += 1
+    return pool[i]
+
+
 def best_url(key=None):
     """The preferred proxy for bandwidth-heavy fetches: an ISP IP (flat-rate, unlimited) if a pool is set,
     else the rotating residential session URL. Lets scrapers say `resi.best_url(tag)` and get the cheap path."""

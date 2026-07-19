@@ -56,7 +56,10 @@ def parse_tile(text):
 
 
 def _pull_market(pg, cdp, lat, lon, label):
-    cdp.send("Proxy.setLocation", {"lat": lat, "lon": lon, "distance": 40, "strict": True})
+    # BD path pins the store via CDP Proxy.setLocation; the ISP path pins it via the browser context's
+    # geolocation (set at launch), so cdp is None there and we skip this.
+    if cdp is not None:
+        cdp.send("Proxy.setLocation", {"lat": lat, "lon": lon, "distance": 40, "strict": True})
     pg.goto(VIEW_ALL, wait_until="domcontentloaded", timeout=90000)
     time.sleep(9)
     for _ in range(9):
@@ -79,21 +82,40 @@ def _pull_market(pg, cdp, lat, lon, label):
     return tiles, store
 
 
-def run(markets=None, browser_auth=None):
+def run(markets=None, browser_auth=None, use_isp=None):
+    """Weekly-ad deals per market. Two transports, same extraction:
+      • ISP (default when an ISP pool is configured): a LOCAL Chrome through a US ISP IP, store pinned by the
+        browser context's geolocation — flat-rate, replaces BD Browser. $0 marginal per market.
+      • BD Browser (fallback): remote CDP + Proxy.setLocation (metered)."""
+    import resi
     from playwright.sync_api import sync_playwright
     markets = markets or MARKETS
-    auth = browser_auth or _browser_auth()
+    isp_on = resi.isp_enabled() if use_isp is None else use_isp
+    auth = None if isp_on else (browser_auth or _browser_auth())
     rows, seen = [], set()
     with sync_playwright() as p:
         for lat, lon, label in markets:
-            # CDP Proxy.setLocation can only be set ONCE per browser session, so reconnect per market
             try:
-                b = p.chromium.connect_over_cdp("wss://%s@brd.superproxy.io:9222" % auth, timeout=60000)
-                ctx = b.contexts[0] if b.contexts else b.new_context()
-                pg = ctx.pages[0] if ctx.pages else ctx.new_page()
-                cdp = ctx.new_cdp_session(pg)
-                tiles, store = _pull_market(pg, cdp, lat, lon, label)
-                b.close()
+                if isp_on:
+                    # local browser through a US ISP IP; geolocation set at context = store auto-selects
+                    import browser_warm
+                    px = resi.isp_us_url("publix-%s" % label)
+                    b = p.chromium.launch(headless=True, channel="chrome", proxy=browser_warm._parse_proxy(px),
+                                          args=["--disable-blink-features=AutomationControlled", "--no-first-run"])
+                    ctx = b.new_context(user_agent=browser_warm.UA, locale="en-US",
+                                        viewport={"width": 1300, "height": 1400},
+                                        geolocation={"latitude": lat, "longitude": lon}, permissions=["geolocation"])
+                    pg = ctx.new_page()
+                    tiles, store = _pull_market(pg, None, lat, lon, label)
+                    b.close()
+                else:
+                    # CDP Proxy.setLocation can only be set ONCE per browser session, so reconnect per market
+                    b = p.chromium.connect_over_cdp("wss://%s@brd.superproxy.io:9222" % auth, timeout=60000)
+                    ctx = b.contexts[0] if b.contexts else b.new_context()
+                    pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+                    cdp = ctx.new_cdp_session(pg)
+                    tiles, store = _pull_market(pg, cdp, lat, lon, label)
+                    b.close()
             except Exception as e:
                 print("  [publix] %s failed: %s" % (label, str(e)[:80])); continue
             n = 0
