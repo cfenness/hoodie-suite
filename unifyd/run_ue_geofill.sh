@@ -4,7 +4,7 @@
 # a stop or a block wave. refresh_fast (5-min loop) folds <site>_geo into src_outlets as it lands. Log: /tmp/ue_geofill.log
 cd "$(dirname "$0")"
 PY="/Users/chrisfennessey/Desktop/Desktop - Chris’s MacBook Pro/Projects/hoodie-backend/venv/bin/python"; [ -x "$PY" ] || PY=python3
-WORKERS="${1:-24}"
+WORKERS="${1:-4}"
 for site in ubereats postmates; do
   echo "=== geofill $site @ $(date) ===" >> /tmp/ue_geofill.log
   # loop until a pass finishes with no remaining blocked (resume shrinks the target each pass)

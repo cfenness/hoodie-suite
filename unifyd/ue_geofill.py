@@ -41,9 +41,9 @@ def _fetch(url, px=None):
     return r.status_code, (r.text if r.status_code == 200 else "")
 
 
-def parse(html):
+def parse(doc):
     """Pull the Restaurant/FoodEstablishment JSON-LD → geo + address dict, or None if absent."""
-    for b in _JSONLD.findall(html):
+    for b in _JSONLD.findall(doc):
         try:
             d = json.loads(b)
         except Exception:
@@ -86,7 +86,7 @@ def _targets(site):
     return [r for r in rows if r["store_uuid"] not in done]
 
 
-def wait_clear(site="ubereats", probe_every=60, max_min=180, log=print):
+def wait_clear(site="ubereats", probe_every=120, max_min=360, log=print):
     """Before opening the pool, confirm the home IP isn't velocity-clamped: one slow probe every `probe_every`s
     until a 200 (or timeout). Avoids hammering — and thereby prolonging — a 429 soft-ban."""
     try:
@@ -108,7 +108,7 @@ def wait_clear(site="ubereats", probe_every=60, max_min=180, log=print):
     return False
 
 
-def geofill(site="ubereats", limit=None, workers=10, flush=1000, log=print, preflight=True):
+def geofill(site="ubereats", limit=None, workers=4, flush=1000, log=print, preflight=True):
     if preflight and not wait_clear(site, log=log):
         return 0
     tgt = _targets(site)
@@ -119,9 +119,13 @@ def geofill(site="ubereats", limit=None, workers=10, flush=1000, log=print, pref
     if not total:
         return 0
     out, done, ok, gone, blocked = [], [0], [0], [0], [0]
+    from collections import deque
+    recent = deque(maxlen=40)                 # rolling block outcomes → circuit breaker
+    go = threading.Event(); go.set()          # cleared = paused (IP re-flagged, let it cool)
     t0 = time.time()
 
     def work(r):
+        go.wait()                             # park here while paused
         url, uuid = r["url"], r["store_uuid"]
         for attempt in range(4):
             px = resi._session_url("geo%s%d" % (uuid[:6], attempt)) if attempt >= 3 else None
@@ -157,6 +161,13 @@ def geofill(site="ubereats", limit=None, workers=10, flush=1000, log=print, pref
                         warehouse.write_accumulate("%s_geo" % site, out,
                                                    key=lambda r: r["store_uuid"], fields=FIELDS)
                         out = []
+            # circuit breaker: if the IP re-flags (challenge/block spike), pause everyone + wait for real recovery
+            recent.append(res is None)
+            if go.is_set() and len(recent) == recent.maxlen and sum(recent) >= 0.6 * recent.maxlen:
+                go.clear()
+                log("  [breaker] %d%% blocked — pausing to let the IP cool" % int(100 * sum(recent) / len(recent)))
+                wait_clear(site, log=log)
+                recent.clear(); go.set()
             if done[0] % 1000 == 0 or done[0] == total:
                 rate = done[0] / max(1, time.time() - t0)
                 log("  %d/%d  ok=%d gone=%d blocked=%d  %.1f/s  ETA %dm"
