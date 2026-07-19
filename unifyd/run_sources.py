@@ -166,10 +166,12 @@ def main(argv=None):
     ap.add_argument("--exclude", default="", help="comma-separated source ids to skip")
     ap.add_argument("--headless-only", action="store_true")
     ap.add_argument("--mac-only", action="store_true")
+    ap.add_argument("--workers", type=int, default=6, help="parallel headless workers (lower on RAM-limited cloud runners)")
     a = ap.parse_args(argv)
     only = [x.strip() for x in a.only.split(",") if x.strip()] or None
     exclude = [x.strip() for x in a.exclude.split(",") if x.strip()] or None
-    run_all(cadence=a.cadence, only=only, exclude=exclude, headless_only=a.headless_only, mac_only=a.mac_only)
+    run_all(cadence=a.cadence, only=only, exclude=exclude, headless_only=a.headless_only,
+            mac_only=a.mac_only, workers=a.workers)
     return 0
 
 

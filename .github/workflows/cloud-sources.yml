@@ -60,7 +60,9 @@ jobs:
         continue-on-error: true
         # Exclude target + publix: they flip to a local-browser path when ISP_PROXIES is set, and this
         # runner has no Chrome. They stay on the Mac / BD. Everything else here is pure HTTP.
-        run: python run_sources.py --headless-only --cadence daily --exclude target,publix
+        # -u = unbuffered (progress is visible even if a source is killed); --workers 3 keeps RAM in
+        # bounds on the 7GB runner (6-wide + DuckDB + pyarrow OOM'd the first run).
+        run: python -u run_sources.py --headless-only --cadence daily --exclude target,publix --workers 3
 
       - name: UberEats account universe (sitemap, direct)
         working-directory: unifyd
