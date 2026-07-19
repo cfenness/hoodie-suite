@@ -55,10 +55,12 @@ jobs:
         run: |
           python -c "import warehouse; assert warehouse.remote(), 'warehouse not in remote mode — set AWS_ENDPOINT_URL_S3 + BUCKET_NAME'; print('warehouse remote OK:', __import__('os').environ.get('BUCKET_NAME'))"
 
-      - name: Headless sources (registry)
+      - name: Headless sources (registry, pure-HTTP only)
         working-directory: unifyd
         continue-on-error: true
-        run: python run_sources.py --headless-only --cadence daily
+        # Exclude target + publix: they flip to a local-browser path when ISP_PROXIES is set, and this
+        # runner has no Chrome. They stay on the Mac / BD. Everything else here is pure HTTP.
+        run: python run_sources.py --headless-only --cadence daily --exclude target,publix
 
       - name: UberEats account universe (sitemap, direct)
         working-directory: unifyd

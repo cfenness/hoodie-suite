@@ -116,12 +116,16 @@ def _land_runs(records, log=print):
     log("[run_sources] %d run, %d ok -> source_runs%s" % (len(records), ok, ("  FAILED/NO-CHANGE: " + ", ".join(bad)) if bad else ""))
 
 
-def run_all(cadence=None, only=None, headless_only=False, mac_only=False, workers=6, log=print):
-    """Run the enabled sources: headless/creds in PARALLEL, then Mac (browser) sources SEQUENTIALLY."""
+def run_all(cadence=None, only=None, exclude=None, headless_only=False, mac_only=False, workers=6, log=print):
+    """Run the enabled sources: headless/creds in PARALLEL, then Mac (browser) sources SEQUENTIALLY.
+    `exclude` drops source ids (e.g. browser-on-ISP sources that can't run in a no-Chrome cloud runner)."""
     src = [s for s in reg.SOURCES if s.get("enabled")]
     if only:
         want = set(only)
         src = [s for s in src if s["id"] in want]
+    if exclude:
+        skip = set(exclude)
+        src = [s for s in src if s["id"] not in skip]
     if cadence:
         src = [s for s in src if s.get("cadence") == cadence or cadence == "all"]
     headless = [s for s in src if s["klass"] in ("headless", "creds")]
@@ -159,11 +163,13 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Run all sources, verify landing, log outcomes.")
     ap.add_argument("--cadence", default="daily", help="daily | weekly | all")
     ap.add_argument("--only", default="", help="comma-separated source ids")
+    ap.add_argument("--exclude", default="", help="comma-separated source ids to skip")
     ap.add_argument("--headless-only", action="store_true")
     ap.add_argument("--mac-only", action="store_true")
     a = ap.parse_args(argv)
     only = [x.strip() for x in a.only.split(",") if x.strip()] or None
-    run_all(cadence=a.cadence, only=only, headless_only=a.headless_only, mac_only=a.mac_only)
+    exclude = [x.strip() for x in a.exclude.split(",") if x.strip()] or None
+    run_all(cadence=a.cadence, only=only, exclude=exclude, headless_only=a.headless_only, mac_only=a.mac_only)
     return 0
 
 
