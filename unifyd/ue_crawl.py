@@ -105,7 +105,7 @@ def zones_by_state(zones):
 
 # ── store OUTLET capture (geo) — feeds src_outlets + the coverage map ─────────────────────────────────────────
 STORE_FIELDS = ["store_uuid", "api_uuid", "store_name", "lat", "lng", "address", "city", "state", "postal_code",
-                "phone", "chain", "source", "url", "captured_at", "raw_json"]
+                "phone", "chain", "source", "url", "captured_at", "signal", "raw_json"]
 
 
 def _store_outlet(payloads, uuid, name, site):
@@ -143,11 +143,38 @@ def _store_outlet(payloads, uuid, name, site):
 # ── FAST coverage: extract every merchant's geo from the feed's mapMarkers (no per-store nav) ──────────────────
 def _feed_outlets(feed_payloads, site):
     """Walk getFeedV1 payload(s) → a geo'd outlet per merchant. Each store card carries storeUuid + title +
-    actionUrl and a parallel mapMarker{latitude,longitude,description.title}. 300+ stores per feed, in seconds."""
+    actionUrl and a parallel mapMarker{latitude,longitude,description.title}. 300+ stores per feed, in seconds.
+
+    The feed card is STORE-LEVEL: besides geo/id it carries promo/badge text, price-range, rating, ETA and
+    open/closed — enough to track NEW OUTLETS + store-wide promos + availability daily WITHOUT a getStore call
+    (item-level price/UPC still needs getStore). We retain the whole card as raw_json so no signal is lost even
+    before we formally parse each field, plus a best-effort `signal` digest for cheap day-over-day diffing."""
     import time as _t
     import re as _re
+    import json as _j
     base = ue.SITES.get(site, ue.SITES["ubereats"])["base"]
     out = {}
+
+    def _signal(o):
+        """Best-effort store-level change signal: pull common promo/badge/meta strings without assuming the exact
+        schema (feed field names drift) — scan the card's shallow scalars + labelled text nodes."""
+        bits = []
+        def grab(x, depth=0):
+            if depth > 4:
+                return
+            if isinstance(x, dict):
+                for k, v in x.items():
+                    kl = str(k).lower()
+                    if isinstance(v, str) and v and any(t in kl for t in
+                            ("promo", "offer", "badge", "deal", "eta", "fee", "price", "rating", "closed", "status")):
+                        bits.append("%s=%s" % (kl, v[:60]))
+                    elif isinstance(v, (dict, list)):
+                        grab(v, depth + 1)
+            elif isinstance(x, list):
+                for v in x[:12]:
+                    grab(v, depth + 1)
+        grab(o)
+        return " | ".join(sorted(set(bits))[:20])
 
     def walk(o):
         if isinstance(o, dict):
@@ -163,10 +190,14 @@ def _feed_outlets(feed_payloads, site):
                 # is a DIFFERENT id (the API/getStoreV1 key) — keep it as api_uuid. Dedup by URL id across sources.
                 m = _re.search(r"/store/[^/]+/([A-Za-z0-9_\-]{15,})", au)
                 uid = m.group(1) if m else su
+                try:
+                    raw = _j.dumps(o, separators=(",", ":"))[:8000]
+                except Exception:
+                    raw = ""
                 out[uid] = {"store_uuid": uid, "api_uuid": su, "store_name": nm, "lat": mm["latitude"],
                             "lng": mm["longitude"], "address": au, "city": "", "state": "", "postal_code": "",
                             "phone": "", "chain": "", "source": site, "url": base + au,
-                            "captured_at": int(_t.time()), "raw_json": ""}
+                            "captured_at": int(_t.time()), "signal": _signal(o), "raw_json": raw}
             for v in o.values():
                 walk(v)
         elif isinstance(o, list):
