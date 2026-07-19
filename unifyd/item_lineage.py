@@ -21,7 +21,9 @@ import re
 import time
 
 EVENT_FIELDS = ["event_id", "ts", "day", "source", "store_id", "item_uuid", "upc", "name", "section",
-                "event_type", "price", "list_price", "on_promo", "discount", "orphan", "supersedes", "detail"]
+                "event_type", "price", "list_price", "on_promo", "discount",
+                "promo_start", "promo_end",          # fuel for promo-calendar cadence + scan-at-expiry scheduling
+                "orphan", "supersedes", "detail"]
 # event_type ∈ new_item | enrich_pending | enriched | price | discount | attr | delist | supersedes
 
 
@@ -48,7 +50,8 @@ def _ev(store_id, source, it, event_type, ts, **kw):
              item_uuid=it.get("item_uuid"), upc=it.get("upc"), name=it.get("name"),
              section=it.get("section"), event_type=event_type,
              price=it.get("price"), list_price=it.get("list_price"),
-             on_promo=it.get("on_promo"), discount=it.get("discount"))
+             on_promo=it.get("on_promo"), discount=it.get("discount"),
+             promo_start=it.get("promo_start"), promo_end=it.get("promo_end"))
     d.update(kw)
     d["event_id"] = _eid(store_id, it.get("item_uuid"), event_type, d.get("day"), kw.get("upc") or it.get("upc"),
                          d.get("price"), d.get("discount"))
