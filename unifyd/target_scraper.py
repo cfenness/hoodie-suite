@@ -4,8 +4,10 @@ Target has no login/age gate on product data, a clean JSON API, and — unusuall
 inventory count. Two RedSky calls per term:
   • plp_search_v2                     -> products: tcin, name, price, brand, image (discovery + price)
   • product_summary_with_fulfillment  -> per-store location_available_to_promise_quantity (numeric inventory)
-Fetched through the BD Unlocker (POST api.brightdata.com/request, format=raw) which defeats Target's anti-bot
-and rotates IPs (Tier-5 sanctioned/managed path). Lands target_products + retail_observations, with image +
+TWO transports (auto-selected): when an ISP pool is configured (ISP_PROXIES), a warmed local-Chrome session
+through a US ISP IP does an in-page fetch of RedSky — FLAT-RATE, no BD (a warmed cookie won't transfer to curl,
+so the browser stays in the loop; slower than BD but $0 marginal). Otherwise the BD Unlocker (POST
+api.brightdata.com/request) — metered, faster. Lands target_products + retail_observations, with image +
 is_hemp. Store ids from the store-locator; a few markets to start.
 
     python target_scraper.py                      # default terms x stores
@@ -22,6 +24,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import observe
+import resi
 
 REDSKY = "https://redsky.target.com/redsky_aggregations/v1/web"
 SEARCH_KEY = "9f36aeafbe60771e321a7cc95a78140772ab3e96"     # Target's public web search key
@@ -64,6 +67,70 @@ def _unlock(url, api_key, retries=2):
     return last
 
 
+# ── ISP path (flat-rate): replace the metered BD Unlocker with a warmed local-Chrome session through a US ISP IP.
+# RedSky binds the session to the browser (a warmed cookie won't transfer to curl — tested 403), so we in-page
+# fetch. Playwright sync isn't thread-safe, so each thread gets its OWN warmed session (run_national is threaded).
+import threading as _th
+import atexit as _atexit
+_TL = _th.local()
+_ISP_LAUNCH = _th.Lock()
+_ISP_ALL = []
+
+
+def _isp_session():
+    w = getattr(_TL, "w", None)
+    if w is None:
+        import browser_warm
+        px = resi.isp_us_url("target-%d" % _th.get_ident())      # US exit (Target is US-only)
+        with _ISP_LAUNCH:                                        # serialize launch + per-thread profile dir
+            os.environ["BROWSER_PROFILE_SUFFIX"] = "_tgt%d" % (_th.get_ident() % 100000)
+            w = browser_warm.Warmer("target.com", headful=False, channel="chrome", proxy=px)
+            w.__enter__()
+        w.prime("https://www.target.com/", settle_ms=7000)       # warm cookies + Akamai clearance
+        try:
+            w.human(4)                                           # sensor signals so Akamai posts a clear token
+        except Exception:
+            pass
+        _TL.w = w
+        with _ISP_LAUNCH:
+            _ISP_ALL.append(w)
+    return _TL.w
+
+
+def _close_isp():
+    for w in _ISP_ALL:
+        try:
+            w.__exit__(None, None, None)
+        except Exception:
+            pass
+    _ISP_ALL.clear()
+
+
+_atexit.register(_close_isp)
+
+
+def _get(url, api_key):
+    """Parsed RedSky JSON. ISP pool set → warmed local-Chrome in-page fetch (flat-rate, replaces BD Unlocker);
+    else → BD Unlocker (metered)."""
+    if resi.isp_enabled():
+        w = _isp_session()
+        obj = None
+        for attempt in range(3):                                 # Akamai may need a few s post-load to clear
+            st, obj = w.fetch_json(url)
+            if isinstance(obj, dict) and obj.get("data"):
+                return obj
+            if isinstance(obj, list) and obj:
+                return obj
+            time.sleep(3)
+            if attempt == 0:
+                try:
+                    w.prime("https://www.target.com/", settle_ms=6000)
+                except Exception:
+                    pass
+        return obj if isinstance(obj, (dict, list)) else {}
+    return json.loads(_unlock(url, api_key))
+
+
 # ~90 metro zips spread across Target's footprint — nearby_stores(within=75mi) off these + dedup covers
 # most of the ~1,950 stores. The result (target_stores) is the spine for per-store inventory by state.
 STORE_ZIPS = [
@@ -79,7 +146,7 @@ STORE_ZIPS = [
 
 def nearby_stores(zipc, api_key, within=100, limit=20):   # RedSky caps limit at 20
     q = {"key": SEARCH_KEY, "limit": limit, "within": within, "place": zipc, "channel": "WEB"}
-    d = json.loads(_unlock("%s/nearby_stores_v1?%s" % (REDSKY, urllib.parse.urlencode(q)), api_key))
+    d = _get("%s/nearby_stores_v1?%s" % (REDSKY, urllib.parse.urlencode(q)), api_key)
     out = []
     for s in ((((d.get("data") or {}).get("nearby_stores") or {}).get("stores")) or []):
         if s.get("is_test_location"):
@@ -122,7 +189,7 @@ def plp_search(term, store, zipc, api_key, offset=0, count=28):
     q = {"key": SEARCH_KEY, "channel": "WEB", "count": count, "default_purchasability_filter": "true",
          "keyword": term, "offset": offset, "page": "/s/" + term, "platform": "desktop",
          "pricing_store_id": store, "store_ids": store, "visitor_id": "0193", "zip": zipc}
-    d = json.loads(_unlock("%s/plp_search_v2?%s" % (REDSKY, urllib.parse.urlencode(q)), api_key))
+    d = _get("%s/plp_search_v2?%s" % (REDSKY, urllib.parse.urlencode(q)), api_key)
     prods = (((d.get("data") or {}).get("search") or {}).get("products")) or []
     out = []
     for p in prods:
@@ -140,7 +207,7 @@ def fulfillment_qty(tcins, store, zipc, state, api_key):
     """{tcin: available_to_promise_quantity} for a store, from product_summary_with_fulfillment."""
     q = {"key": SEARCH_KEY, "tcins": ",".join(tcins), "store_id": store, "pricing_store_id": store,
          "zip": zipc, "state": state, "channel": "WEB"}
-    d = json.loads(_unlock("%s/product_summary_with_fulfillment_v1?%s" % (REDSKY, urllib.parse.urlencode(q)), api_key))
+    d = _get("%s/product_summary_with_fulfillment_v1?%s" % (REDSKY, urllib.parse.urlencode(q)), api_key)
     out = {}
     for p in ((d.get("data") or {}).get("product_summaries") or []):
         so = (p.get("fulfillment") or {}).get("store_options") or []
@@ -152,7 +219,7 @@ def fulfillment_qty(tcins, store, zipc, state, api_key):
 def run(stores=None, terms=None, pages=2, log=print):
     stores = stores or DEFAULT_STORES
     terms = terms or DEFAULT_TERMS
-    key = _api_key()
+    key = None if resi.isp_enabled() else _api_key()             # ISP path needs no BD key
     run_id = "tg-" + time.strftime("%Y%m%d-%H%M%S")
     rows, seen = [], set()
     for (store, zipc, state) in stores:
@@ -216,7 +283,10 @@ def run_national(log=print, workers=12, batch=24, limit=None):
     `limit` caps to a state-spread SAMPLE of stores — the cheap daily cadence (full national = limit=None)."""
     import threading
     from concurrent.futures import ThreadPoolExecutor
-    key = _api_key()
+    key = None if resi.isp_enabled() else _api_key()             # ISP path needs no BD key
+    if resi.isp_enabled():
+        workers = min(workers, 4)                                # each worker warms a browser — bound the fleet
+        log("  [target] flat-rate ISP path (warmed local Chrome, %d workers)" % workers)
     seeds = [("2259", "20001", "DC"), ("3269", "33139", "FL"), ("2088", "90013", "CA"),
              ("1375", "55401", "MN"), ("77", "77002", "TX")]
     prods = catalog(seeds, DEFAULT_TERMS, key, log=log)
