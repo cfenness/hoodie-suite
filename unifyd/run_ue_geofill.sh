@@ -9,7 +9,7 @@ for site in ubereats postmates; do
   echo "=== geofill $site @ $(date) ===" >> /tmp/ue_geofill.log
   # loop until a pass finishes with no remaining blocked (resume shrinks the target each pass)
   for pass in 1 2 3; do
-    "$PY" -c "import sys; sys.path.insert(0,'.'); import kroger_api; kroger_api._load_creds(); \
+    "$PY" -u -c "import sys; sys.path.insert(0,'.'); import kroger_api; kroger_api._load_creds(); \
 import ue_geofill; ue_geofill.geofill('$site', workers=$WORKERS)" >> /tmp/ue_geofill.log 2>&1
     sleep 30
   done
