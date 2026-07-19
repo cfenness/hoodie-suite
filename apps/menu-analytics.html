@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoodie Menu Analytics</title>
+<style>
+  html,body{margin:0}
+  :root{
+    --paper:#F5F7FA; --card:#FFFFFF; --ink:#1A2430; --muted:#5C6775; --faint:#8A94A2;
+    --line:#E3E8EF; --line2:#EDF1F6; --accent:#4E79A7; --accent-soft:#4E79A722;
+    --good:#3F8F63; --good-soft:#3F8F6318; --warn:#B8862E; --warn-soft:#B8862E18;
+    --bad:#C1544A; --bad-soft:#C1544A18; --shadow:0 1px 2px #1a243008, 0 4px 16px #1a243010;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --paper:#0F141A; --card:#171E27; --ink:#E7ECF3; --muted:#95A1B1; --faint:#68727F;
+    --line:#26303B; --line2:#1E2731; --accent:#6E97C4; --accent-soft:#6E97C426;
+    --good:#5AAE7C; --good-soft:#5AAE7c1e; --warn:#D0A445; --warn-soft:#d0a4451e;
+    --bad:#D96A5F; --bad-soft:#d96a5f1e; --shadow:0 1px 2px #0006, 0 6px 20px #0004;}}
+  :root[data-theme="light"]{--paper:#F5F7FA;--card:#FFFFFF;--ink:#1A2430;--muted:#5C6775;--faint:#8A94A2;--line:#E3E8EF;--line2:#EDF1F6;--accent:#4E79A7;--accent-soft:#4E79A722;--good:#3F8F63;--good-soft:#3F8F6318;--warn:#B8862E;--warn-soft:#B8862E18;--bad:#C1544A;--bad-soft:#C1544A18;--shadow:0 1px 2px #1a243008,0 4px 16px #1a243010;}
+  :root[data-theme="dark"]{--paper:#0F141A;--card:#171E27;--ink:#E7ECF3;--muted:#95A1B1;--faint:#68727F;--line:#26303B;--line2:#1E2731;--accent:#6E97C4;--accent-soft:#6E97C426;--good:#5AAE7C;--good-soft:#5AAE7c1e;--warn:#D0A445;--warn-soft:#d0a4451e;--bad:#D96A5F;--bad-soft:#d96a5f1e;--shadow:0 1px 2px #0006,0 6px 20px #0004;}
+  *{box-sizing:border-box}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.45;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 20px 64px}
+  .tnum{font-variant-numeric:tabular-nums}
+  .top{display:flex;flex-wrap:wrap;align-items:center;gap:14px 18px}
+  .brandmark{display:flex;align-items:center;gap:11px}
+  .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#2f5e8e);display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;box-shadow:var(--shadow)}
+  .brandmark h1{font-size:17px;font-weight:700;letter-spacing:-.2px;margin:0}
+  .brandmark .sub{font-size:11px;color:var(--faint);letter-spacing:.04em;text-transform:uppercase;margin-top:1px}
+  .spacer{flex:1}
+  .thesis{display:inline-flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);border:1px solid var(--line);background:var(--card);border-radius:999px;padding:6px 12px}
+  .thesis b{color:var(--ink);font-weight:600}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--good);box-shadow:0 0 0 3px var(--good-soft)}
+  .controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:16px 0 18px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+  .clabel{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;font-weight:600;margin-right:4px}
+  .chip{border:1px solid var(--line);background:var(--card);color:var(--muted);font:inherit;font-size:13px;font-weight:600;padding:6px 13px;border-radius:999px;cursor:pointer;transition:.15s}
+  .chip:hover{border-color:var(--accent)}
+  .chip[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:13px 15px;box-shadow:var(--shadow)}
+  .kpi .k{font-size:11px;color:var(--faint);letter-spacing:.03em;text-transform:uppercase;font-weight:600}
+  .kpi .v{font-size:23px;font-weight:750;letter-spacing:-.5px;margin-top:5px}
+  .kpi .d{font-size:11.5px;margin-top:2px;color:var(--muted)}
+  .kpi .d.g{color:var(--good)} .kpi .d.b{color:var(--bad)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:17px 18px;box-shadow:var(--shadow)}
+  .card.wide{grid-column:1 / -1}
+  .ch{display:flex;align-items:center;gap:9px;margin-bottom:3px}
+  .ch h2{font-size:14px;font-weight:700;letter-spacing:-.1px;margin:0}
+  .ch .ico{width:22px;height:22px;border-radius:6px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center}
+  .ch .ico svg{width:13px;height:13px}
+  .csub{font-size:11.5px;color:var(--faint);margin:0 0 14px 31px}
+  .prov{font-family:var(--mono);font-size:10.5px;color:var(--faint);display:inline-flex;align-items:center;gap:5px}
+  .prov::before{content:"◦";color:var(--accent)}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:650;border-radius:999px;padding:3px 9px;border:1px solid transparent}
+  .badge.g{background:var(--good-soft);color:var(--good);border-color:var(--good)}
+  .badge.w{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+  .badge.a{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+  .badge.n{background:var(--line2);color:var(--muted);border-color:var(--line)}
+  /* call-rate meters */
+  .callrow{display:grid;grid-template-columns:96px 1fr 44px;gap:11px;align-items:center;margin-bottom:11px;font-size:12.5px}
+  .callrow .lab{font-weight:600}
+  .meter{height:16px;border-radius:5px;background:var(--line2);overflow:hidden;display:flex;border:1px solid var(--line)}
+  .meter .call{background:var(--accent);height:100%}
+  .meter .well{background:var(--line);height:100%}
+  .callrow .pct{text-align:right;font-variant-numeric:tabular-nums;color:var(--accent);font-weight:700}
+  .legend{display:flex;gap:15px;font-size:11px;color:var(--muted);margin:2px 0 14px 0}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:middle;margin-right:5px}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--faint);font-weight:600;padding:7px 8px;border-bottom:1px solid var(--line)}
+  td{padding:8px;border-bottom:1px solid var(--line2);font-size:12.5px}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  .rk{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .bartrack{display:inline-block;width:56px;height:6px;border-radius:3px;background:var(--line2);vertical-align:middle;margin-right:8px;overflow:hidden}
+  .bartrack .bar{display:block;height:100%;background:var(--accent)}
+  /* trends */
+  .trend{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid var(--line2);font-size:12.5px}
+  .trend:last-child{border-bottom:0}
+  .trend .nm{flex:1;font-weight:600}
+  .trend .spark{width:70px;height:26px}
+  .trend .chg{font-variant-numeric:tabular-nums;font-weight:700;width:52px;text-align:right}
+  .trend .chg.up{color:var(--good)} .trend .chg.dn{color:var(--bad)}
+  .cols2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  .subhead{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:600;margin:0 0 8px}
+  .foot{margin-top:22px;text-align:center;font-size:11px;color:var(--faint)}
+  @media(max-width:820px){.kpis{grid-template-columns:repeat(2,1fr)}.grid,.cols2{grid-template-columns:1fr}}
+</style>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brandmark"><div class="logo">H</div>
+      <div><h1>Hoodie Menu Analytics</h1><div class="sub">On-premise · brand calls · cocktails · trends</div></div></div>
+    <div class="spacer"></div>
+    <div class="thesis"><span class="dot"></span><b>No depletions.</b>&nbsp;Parsed from on-premise menu scrapes.</div>
+  </header>
+  <div class="controls">
+    <span class="clabel">Region</span><div class="chips" id="regions"></div>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="grid" id="grid"></div>
+  <div class="foot">Mockup · synthetic figures · every panel is computable from UberEats/DoorDash menu + recipe scrapes — brand calls, cocktail classification, and trends without any depletion or POS data.</div>
+</div>
+<script>
+const IC={
+  call:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 5v14a2 2 0 002 2h12a2 2 0 002-2V5M8 5V3h8v2M9 10h6M9 14h4"/></svg>',
+  glass:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3h14l-2 9a5 5 0 01-10 0L5 3zM12 17v4M8 21h8"/></svg>',
+  trend:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 3 8-9"/><path d="M15 5h6v6"/></svg>'
+};
+function spark(series,up){const W=70,H=26,n=series.length,lo=Math.min(...series),hi=Math.max(...series),sp=(hi-lo)||1;
+  const x=i=>2+i*(W-4)/(n-1),y=v=>H-2-(v-lo)/sp*(H-4);let d="";series.forEach((v,i)=>d+=(i?"L":"M")+x(i).toFixed(1)+","+y(v).toFixed(1)+" ");
+  const c=up?'var(--good)':'var(--bad)';return `<svg class="spark" viewBox="0 0 ${W} ${H}"><path d="${d}" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${x(n-1).toFixed(1)}" cy="${y(series[n-1]).toFixed(1)}" r="2.4" fill="${c}"/></svg>`;}
+
+const DATA={
+  national:{name:"National", menus:"312,400", outlets:"96,120", serves:"1.9M serves", callrate:"46%",
+    calls:[{cat:"Vodka",call:44},{cat:"Whiskey",call:58},{cat:"Tequila",call:63},{cat:"Gin",call:51},{cat:"Rum",call:38},{cat:"Cognac",call:71}],
+    brands:[{n:"Tito's",cat:"Vodka",tier:"call",share:14.2,menus:"41,900"},{n:"Casamigos",cat:"Tequila",tier:"top-shelf",share:9.1,menus:"27,000"},
+      {n:"Espolòn",cat:"Tequila",tier:"call",share:6.4,menus:"18,900"},{n:"Grey Goose",cat:"Vodka",tier:"top-shelf",share:6.1,menus:"18,100"},
+      {n:"Bulleit",cat:"Whiskey",tier:"call",share:5.7,menus:"16,800"},{n:"Hendrick's",cat:"Gin",tier:"top-shelf",share:4.3,menus:"12,700"}],
+    cocktails:[{n:"Margarita",share:18,price:"$13",up:1},{n:"Old Fashioned",share:12,price:"$14",up:1},{n:"Espresso Martini",share:9,price:"$15",up:1},
+      {n:"Moscow Mule",share:8,price:"$13",up:0},{n:"Martini",share:7,price:"$15",up:0},{n:"Negroni",share:5,price:"$14",up:1},
+      {n:"Cosmopolitan",share:3,price:"$13",up:0},{n:"Paloma",share:3,price:"$12",up:1}],
+    rising:[{n:"Espresso Martini",s:[10,12,15,19,24,30],c:"+41%"},{n:"Ranch Water",s:[2,3,5,7,9,12],c:"+38%"},{n:"Paloma",s:[6,7,8,9,11,13],c:"+22%"},{n:"Spicy Margarita",s:[8,10,12,13,15,17],c:"+19%"}],
+    falling:[{n:"Cosmopolitan",s:[9,8,7,6,5,4],c:"−22%"},{n:"Appletini",s:[5,4,4,3,3,2],c:"−31%"},{n:"Long Island",s:[7,6,6,5,5,4],c:"−16%"}],
+    risingBrands:[{n:"Casamigos",s:[4,5,6,7,8,9],c:"+28%"},{n:"Espolòn",s:[3,4,4,5,6,6],c:"+24%"},{n:"Tito's",s:[12,12,13,13,14,14],c:"+9%"}]},
+  tx:{name:"Texas", menus:"24,800", outlets:"7,900", serves:"148K serves", callrate:"52%",
+    calls:[{cat:"Vodka",call:41},{cat:"Whiskey",call:55},{cat:"Tequila",call:74},{cat:"Gin",call:44},{cat:"Rum",call:33},{cat:"Cognac",call:66}],
+    brands:[{n:"Espolòn",cat:"Tequila",tier:"call",share:11.9,menus:"3,120"},{n:"Casamigos",cat:"Tequila",tier:"top-shelf",share:10.4,menus:"2,720"},
+      {n:"Tito's",cat:"Vodka",tier:"call",share:16.1,menus:"4,200"},{n:"Don Julio",cat:"Tequila",tier:"top-shelf",share:7.2,menus:"1,880"},
+      {n:"Bulleit",cat:"Whiskey",tier:"call",share:5.1,menus:"1,330"},{n:"Hornitos",cat:"Tequila",tier:"call",share:4.6,menus:"1,200"}],
+    cocktails:[{n:"Margarita",share:29,price:"$12",up:1},{n:"Ranch Water",share:11,price:"$11",up:1},{n:"Paloma",share:8,price:"$12",up:1},
+      {n:"Old Fashioned",share:9,price:"$13",up:0},{n:"Spicy Margarita",share:7,price:"$13",up:1},{n:"Michelada",share:6,price:"$10",up:0},
+      {n:"Espresso Martini",share:5,price:"$14",up:1},{n:"Mule",share:4,price:"$12",up:0}],
+    rising:[{n:"Ranch Water",s:[4,6,9,12,15,19],c:"+52%"},{n:"Spicy Margarita",s:[7,9,11,13,16,20],c:"+33%"},{n:"Paloma",s:[6,7,8,10,12,14],c:"+27%"}],
+    falling:[{n:"Cosmopolitan",s:[5,4,4,3,3,2],c:"−28%"},{n:"Long Island",s:[8,7,6,6,5,5],c:"−19%"}],
+    risingBrands:[{n:"Espolòn",s:[6,7,9,10,11,12],c:"+34%"},{n:"Lone River",s:[1,2,3,4,6,8],c:"+61%"},{n:"Hornitos",s:[3,3,4,4,5,5],c:"+18%"}]},
+  ny:{name:"New York", menus:"31,200", outlets:"9,400", serves:"210K serves", callrate:"49%",
+    calls:[{cat:"Vodka",call:47},{cat:"Whiskey",call:61},{cat:"Tequila",call:58},{cat:"Gin",call:56},{cat:"Rum",call:39},{cat:"Cognac",call:78}],
+    brands:[{n:"Tito's",cat:"Vodka",tier:"call",share:13.1,menus:"4,090"},{n:"Grey Goose",cat:"Vodka",tier:"top-shelf",share:8.4,menus:"2,620"},
+      {n:"Hendrick's",cat:"Gin",tier:"top-shelf",share:6.6,menus:"2,060"},{n:"Casamigos",cat:"Tequila",tier:"top-shelf",share:7.8,menus:"2,430"},
+      {n:"Bulleit",cat:"Whiskey",tier:"call",share:5.9,menus:"1,840"},{n:"Aperol",cat:"Aperitif",tier:"call",share:5.2,menus:"1,620"}],
+    cocktails:[{n:"Espresso Martini",share:14,price:"$16",up:1},{n:"Negroni",share:9,price:"$15",up:1},{n:"Martini",share:9,price:"$16",up:0},
+      {n:"Old Fashioned",share:11,price:"$16",up:0},{n:"Margarita",share:12,price:"$15",up:0},{n:"Aperol Spritz",share:7,price:"$14",up:1},
+      {n:"Cosmopolitan",share:4,price:"$15",up:0},{n:"Manhattan",share:5,price:"$16",up:0}],
+    rising:[{n:"Espresso Martini",s:[12,15,19,24,30,38],c:"+46%"},{n:"Aperol Spritz",s:[6,7,9,11,14,17],c:"+31%"},{n:"Negroni",s:[7,8,9,11,12,14],c:"+24%"}],
+    falling:[{n:"Cosmopolitan",s:[7,6,5,5,4,4],c:"−24%"},{n:"Appletini",s:[4,3,3,2,2,1],c:"−38%"}],
+    risingBrands:[{n:"Casamigos",s:[5,6,7,8,9,10],c:"+26%"},{n:"Aperol",s:[3,4,5,6,7,8],c:"+29%"},{n:"Michter's",s:[2,3,3,4,4,5],c:"+21%"}]}
+};
+
+function callCard(e){
+  const rows=e.calls.map(c=>`<div class="callrow"><span class="lab">${c.cat}</span>
+    <span class="meter"><span class="call" style="width:${c.call}%"></span><span class="well" style="width:${100-c.call}%"></span></span>
+    <span class="pct">${c.call}%</span></div>`).join("");
+  const tierTone={"top-shelf":"a","call":"g","well":"n"};
+  const brows=e.brands.map((b,i)=>`<tr><td class="rk">${i+1}</td><td><b>${b.n}</b></td><td style="color:var(--muted)">${b.cat}</td>
+    <td><span class="badge ${tierTone[b.tier]||'n'}">${b.tier}</span></td><td class="num">${b.share}%</td><td style="color:var(--muted);font-size:11.5px">${b.menus} menus</td></tr>`).join("");
+  return `<section class="card">
+    <div class="ch"><div class="ico">${IC.call}</div><h2>Brand Call Analysis</h2></div>
+    <p class="csub">How often a menu names a specific brand vs a generic well pour — the on-premise brand-penetration signal.</p>
+    ${rows}
+    <div class="legend"><span><i style="background:var(--accent)"></i>brand called</span><span><i style="background:var(--line)"></i>well / generic</span></div>
+    <table><thead><tr><th>#</th><th>Top brand calls</th><th>Cat</th><th>Tier</th><th>Share</th><th></th></tr></thead><tbody>${brows}</tbody></table>
+    <div style="margin-top:11px"><span class="prov">recipe + item-name parse · brand resolver</span></div>
+  </section>`;
+}
+function cocktailCard(e){
+  const max=Math.max(...e.cocktails.map(c=>c.share));
+  const rows=e.cocktails.map(c=>`<tr><td><b>${c.n}</b>${c.up?' <span class="badge g" style="padding:1px 6px;font-size:10px">▲</span>':''}</td>
+    <td><span class="bartrack"><span class="bar" style="width:${c.share/max*100}%"></span></span></td>
+    <td class="num">${c.share}%</td><td class="num" style="color:var(--accent)">${c.price}</td></tr>`).join("");
+  return `<section class="card">
+    <div class="ch"><div class="ico">${IC.glass}</div><h2>Cocktail Classification</h2></div>
+    <p class="csub">Every menu serve classified into a drink type from its name + recipe — with menu share and typical price.</p>
+    <table><thead><tr><th>Cocktail type</th><th>Menu share</th><th></th><th>Avg price</th></tr></thead><tbody>${rows}</tbody></table>
+    <div style="margin-top:11px"><span class="prov">classifier: name + ingredient set → 240 canonical drink types</span></div>
+  </section>`;
+}
+function trendCard(e){
+  const t=(arr,up)=>arr.map(x=>`<div class="trend"><span class="nm">${x.n}</span>${spark(x.s,up)}<span class="chg ${up?'up':'dn'}">${x.c}</span></div>`).join("");
+  return `<section class="card wide">
+    <div class="ch"><div class="ico">${IC.trend}</div><h2>Trends — trailing 6 periods</h2></div>
+    <p class="csub">What's moving on menus, ${e.name==='National'?'nationally':'in '+e.name}: rising & fading cocktails, and brand calls gaining share.</p>
+    <div class="cols2">
+      <div><p class="subhead">▲ Rising cocktails</p>${t(e.rising,true)}</div>
+      <div><p class="subhead">▼ Fading cocktails</p>${t(e.falling,false)}</div>
+    </div>
+    <div style="margin-top:16px"><p class="subhead">▲ Brand calls gaining share</p><div class="cols2">${
+      e.risingBrands.map(x=>`<div class="trend"><span class="nm">${x.n}</span>${spark(x.s,true)}<span class="chg up">${x.c}</span></div>`).join("")
+    }</div></div>
+    <div style="margin-top:11px"><span class="prov">period-over-period menu appearance deltas</span></div>
+  </section>`;
+}
+
+let R="national";
+function render(){
+  const e=DATA[R];
+  document.getElementById('kpis').innerHTML=[
+    {k:"Menus analyzed",v:e.menus,d:"unique on-prem menus"},
+    {k:"Outlets",v:e.outlets,d:"with a bev-alc menu"},
+    {k:"Serves classified",v:e.serves,d:"named + recipe-matched"},
+    {k:"Brand-call rate",v:e.callrate,d:"named brand vs well",cls:"g"}
+  ].map(k=>`<div class="kpi"><div class="k">${k.k}</div><div class="v tnum">${k.v}</div><div class="d ${k.cls||''}">${k.d}</div></div>`).join("");
+  document.getElementById('grid').innerHTML=callCard(e)+cocktailCard(e)+trendCard(e);
+}
+document.getElementById('regions').innerHTML=Object.keys(DATA).map(k=>
+  `<button class="chip" data-r="${k}" aria-pressed="${k===R}">${DATA[k].name}</button>`).join("");
+document.querySelectorAll('#regions .chip').forEach(b=>b.onclick=()=>{
+  R=b.dataset.r;document.querySelectorAll('#regions .chip').forEach(x=>x.setAttribute('aria-pressed',x===b));render();});
+render();
+</script>
+</body>
+</html>

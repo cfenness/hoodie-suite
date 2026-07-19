@@ -138,6 +138,14 @@
   .dtype{display:grid;grid-template-columns:120px 1fr 42px;gap:10px;align-items:center;font-size:12.5px}
   .dtype .lab{color:var(--ink);font-weight:600}
   .dtype .pct{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;font-size:12px}
+  .callband{display:flex;gap:13px;align-items:center;background:var(--accent-soft);border:1px solid var(--accent);
+    border-radius:10px;padding:10px 13px;margin-bottom:13px}
+  .callband .cbn{font-size:24px;font-weight:780;letter-spacing:-.6px;color:var(--accent);line-height:1}
+  .callband .cbl{font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:600;margin-top:2px}
+  .callband .cbstat{flex:none;text-align:center;min-width:66px;border-right:1px solid var(--accent);padding-right:13px}
+  .callband .cbnote{font-size:12px;color:var(--ink)}
+  .xlink{margin-top:13px;padding-top:11px;border-top:1px dashed var(--line);font-size:11.5px;color:var(--muted)}
+  .xlink b{color:var(--accent)}
   .cocktails{display:flex;flex-direction:column;gap:1px;margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
   .ck{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line2);font-size:12.5px}
   .ck:last-child{border-bottom:0}
@@ -233,6 +241,7 @@ const DATA = {
         dist:[{r:"Total Wine",p:99,u:"exact units"},{r:"Publix",p:96,u:"in-stock"},{r:"ABC Fine W&S",p:94,u:"per-store"},
           {r:"Kroger",p:81,u:"status"},{r:"7-Eleven",p:38,u:"exact units"}]},
       menu:{prov:"on-prem menu scrape · UberEats/DoorDash · 3,410 menus",
+        call:{rate:"62%",note:"Named by brand in 62% of the vodka drinks it appears in — vs a 44% category call-rate. Strong on-premise pull."},
         types:[{n:"Vodka Soda",p:31},{n:"Moscow Mule",p:24},{n:"Martini",p:18},{n:"Bloody Mary",p:15},{n:"Cosmopolitan",p:7}],
         cocktails:[{n:"Tito's & Soda",c:"1,910 menus",p:"$11"},{n:"Moscow Mule",c:"1,480 menus",p:"$13"},
           {n:"Dirty Martini",c:"1,020 menus",p:"$14"},{n:"Bloody Mary",c:"905 menus",p:"$12"},{n:"Espresso Martini",c:"612 menus",p:"$15"}]},
@@ -271,6 +280,7 @@ const DATA = {
         dist:[{r:"Kroger",p:92,u:"status"},{r:"Publix",p:90,u:"in-stock"},{r:"7-Eleven",p:74,u:"exact units"},
           {r:"Total Wine",p:63,u:"exact units"},{r:"ABC Fine W&S",p:41,u:"per-store"}]},
       menu:{prov:"on-prem menu scrape · 5,120 menus",
+        call:{rate:"71%",label:"Draft share",note:"71% of its menu appearances are draft (vs package) — the on-premise format skews heavily to draft pours."},
         types:[{n:"Draft pour",p:44},{n:"Bottle/Can",p:39},{n:"Bucket (5)",p:11},{n:"Pitcher",p:6}],
         cocktails:[{n:"Draft (16 oz)",c:"3,240 menus",p:"$6"},{n:"Bottle",c:"2,010 menus",p:"$5"},
           {n:"Bucket of 5",c:"640 menus",p:"$22"},{n:"Michelada (BL)",c:"410 menus",p:"$9"},{n:"Pitcher",c:"300 menus",p:"$18"}]},
@@ -306,6 +316,7 @@ const DATA = {
         dist:[{r:"Wine",p:34,u:"1,560 SKUs"},{r:"Spirits",p:29,u:"1,340 SKUs"},{r:"Beer",p:22,u:"1,010 SKUs"},
           {r:"Seltzer/RTD",p:10,u:"460 SKUs"},{r:"Non-alc",p:5,u:"240 SKUs"}]},
       menu:{prov:"nearby on-prem accounts · trade-area overlap",
+        call:{rate:"48%",label:"Trade-area call rate",note:"48% of drinks in Publix's trade areas name a specific brand — a proxy for premium demand around these stores."},
         types:[{n:"Vodka",p:28},{n:"Whiskey",p:24},{n:"Tequila",p:21},{n:"Rum",p:14},{n:"Gin",p:13}],
         cocktails:[{n:"Tito's & Soda",c:"in 1,910 menus",p:"$11"},{n:"Margarita",c:"in 1,700 menus",p:"$13"},
           {n:"Old Fashioned",c:"in 1,120 menus",p:"$14"},{n:"Espresso Martini",c:"in 612 menus",p:"$15"},{n:"Mule",c:"in 1,480 menus",p:"$13"}]},
@@ -340,6 +351,7 @@ const DATA = {
         dist:[{r:"Wine",p:46,u:"8,390 SKUs"},{r:"Spirits",p:31,u:"5,650 SKUs"},{r:"Beer",p:15,u:"2,740 SKUs"},
           {r:"RTD/Seltzer",p:6,u:"1,090 SKUs"},{r:"Other",p:2,u:"370 SKUs"}]},
       menu:{prov:"nearby on-prem accounts · trade-area overlap",
+        call:{rate:"55%",label:"Trade-area call rate",note:"55% brand-call rate in surrounding on-prem accounts — an upscale, spirits-forward trade area."},
         types:[{n:"Whiskey",p:30},{n:"Wine BTG",p:26},{n:"Tequila",p:18},{n:"Vodka",p:15},{n:"Gin",p:11}],
         cocktails:[{n:"Old Fashioned",c:"in 1,120 menus",p:"$14"},{n:"Margarita",c:"in 1,700 menus",p:"$13"},
           {n:"Negroni",c:"in 540 menus",p:"$14"},{n:"Manhattan",c:"in 480 menus",p:"$15"},{n:"Paloma",c:"in 610 menus",p:"$12"}]},
@@ -411,12 +423,16 @@ function menuCard(e){
     <span class="bartrack" style="width:100%"><span class="bar" style="width:${t.p/max*100}%"></span></span>
     <span class="pct">${t.p}%</span></div>`).join("");
   const cks=m.cocktails.map((c,i)=>`<div class="ck"><span class="rk">${i+1}</span><span class="cn">${c.n}</span><span class="cc">${c.c}</span><span class="cp">${c.p}</span></div>`).join("");
+  const call = m.call ? `<div class="callband"><div class="cbstat"><div class="cbn tnum">${m.call.rate}</div>
+      <div class="cbl">${m.call.label||'Brand-call rate'}</div></div><div class="cbnote">${m.call.note}</div></div>` : "";
   return `<section class="card">
     <div class="ch"><div class="ico">${ICON.menu}</div><h2>On-Premise Menu &amp; Recipe Intelligence</h2></div>
-    <p class="csub">${e._t==='brand'?'How the brand actually appears on menus':'Drink demand in the trade area'} — drink types &amp; serves parsed from menu scrapes.</p>
+    <p class="csub">${e._t==='brand'?'How the brand actually appears on menus':'Drink demand in the trade area'} — drink types, serves &amp; brand calls parsed from menu scrapes.</p>
+    ${call}
     <div class="dtypes">${types}</div>
     <div class="cocktails">${cks}</div>
-    <div style="margin-top:11px"><span class="prov">${m.prov}</span></div>
+    <div class="xlink">Full brand-call breakdown, cocktail classification &amp; regional trends → <b>Menu Analytics</b></div>
+    <div style="margin-top:9px"><span class="prov">${m.prov}</span></div>
   </section>`;
 }
 function invCard(e){
