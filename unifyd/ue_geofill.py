@@ -109,7 +109,8 @@ def wait_clear(site="ubereats", probe_every=120, max_min=360, log=print):
 
 
 def geofill(site="ubereats", limit=None, workers=4, flush=1000, log=print, preflight=True):
-    if preflight and not wait_clear(site, log=log):
+    # ISP pool = fresh un-flagged IPs → no need to wait out a home-IP velocity clamp; go straight in.
+    if preflight and not resi.isp_enabled() and not wait_clear(site, log=log):
         return 0
     tgt = _targets(site)
     if limit:
@@ -124,11 +125,20 @@ def geofill(site="ubereats", limit=None, workers=4, flush=1000, log=print, prefl
     go = threading.Event(); go.set()          # cleared = paused (IP re-flagged, let it cool)
     t0 = time.time()
 
+    isp = resi.isp_enabled()
+    if isp:
+        log("[geofill] routing via ISP pool (%d IPs, flat-rate/unlimited)" % len(resi.isp_pool()))
+
     def work(r):
         go.wait()                             # park here while paused
         url, uuid = r["url"], r["store_uuid"]
         for attempt in range(4):
-            px = resi._session_url("geo%s%d" % (uuid[:6], attempt)) if attempt >= 3 else None
+            # ISP pool (flat-rate): rotate to a fresh pool IP each attempt — spreads load, dodges per-IP flags.
+            # No pool: home IP direct, escalating to rotating residential only on the last try.
+            if isp:
+                px = resi.isp_url("geo%s%d" % (uuid[:6], attempt))
+            else:
+                px = resi._session_url("geo%s%d" % (uuid[:6], attempt)) if attempt >= 3 else None
             try:
                 st, doc = _fetch(url, px)
             except Exception:

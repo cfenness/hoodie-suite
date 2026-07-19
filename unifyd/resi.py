@@ -164,6 +164,74 @@ def sticky(tag, lifetime="30m"):
             "RESI_PROXY_HOST": host, "RESI_PROXY_PORT": port, "RESI_PROXY": ""}
 
 
+# ── ISP / static-residential pool ────────────────────────────────────────────────────────────────────────
+# ISP proxies bill FLAT per IP (unlimited bandwidth) instead of per-GB — the cost-effective path for the
+# bandwidth-heavy catalog/geofill fetches (any US IP works; no geo-match needed there). A pool of fixed IPs also
+# gives free parallelism + flag distribution: pin each worker to a different IP so no single IP gets burned.
+# Config: ISP_PROXIES = one endpoint per line (or comma/semicolon-separated). Accepts any of:
+#     http://user:pass@host:port   |   user:pass@host:port   |   host:port:user:pass   |   host:port
+# Paste the list straight from the IPRoyal ISP dashboard. Falls back to nothing (isp_enabled()=False) if unset.
+_ISP_RR = [0]
+
+
+def _parse_isp_entry(s):
+    s = s.strip()
+    if not s:
+        return None
+    if "://" in s:
+        return s
+    if "@" in s:                                   # user:pass@host:port
+        return "http://" + s
+    parts_ = s.split(":")
+    if len(parts_) == 4:                           # host:port:user:pass (IPRoyal export)
+        h, po, u, pw = parts_
+        return "http://%s:%s@%s:%s" % (urllib.parse.quote(u, safe=""), urllib.parse.quote(pw, safe=""), h, po)
+    if len(parts_) == 2:                           # host:port (creds already in URL / open)
+        return "http://%s" % s
+    return None
+
+
+def isp_pool():
+    """List of normalized proxy URLs from ISP_PROXIES (empty if unset). Each is a static, unlimited-bandwidth IP."""
+    raw = os.environ.get("ISP_PROXIES", "")
+    if not raw:
+        return []
+    entries = [e for chunk in raw.replace(";", "\n").replace(",", "\n").splitlines() for e in [chunk.strip()] if e]
+    return [p for p in (_parse_isp_entry(e) for e in entries) if p]
+
+
+def isp_enabled():
+    return bool(isp_pool())
+
+
+def isp_url(key=None):
+    """Pick one proxy URL from the ISP pool. With `key` → deterministic (a warmed cookie sticks to one IP);
+    without → round-robin across the pool (spreads load + distributes any flagging). None if pool empty."""
+    pool = isp_pool()
+    if not pool:
+        return None
+    if key is not None:
+        h = 0
+        for c in str(key):
+            h = (h * 131 + ord(c)) & 0xFFFFFFFF
+        return pool[h % len(pool)]
+    i = _ISP_RR[0] % len(pool)
+    _ISP_RR[0] += 1
+    return pool[i]
+
+
+def isp_proxies(key=None):
+    """requests-style {'http':…,'https':…} for one ISP IP, or None. Pass to requests/curl_cffi(proxies=…)."""
+    p = isp_url(key)
+    return {"http": p, "https": p} if p else None
+
+
+def best_url(key=None):
+    """The preferred proxy for bandwidth-heavy fetches: an ISP IP (flat-rate, unlimited) if a pool is set,
+    else the rotating residential session URL. Lets scrapers say `resi.best_url(tag)` and get the cheap path."""
+    return isp_url(key) if isp_enabled() else _session_url(key if key is not None else "rot")
+
+
 def exit_ip(timeout=25):
     """Fetch the exit IP + geo THROUGH the proxy (via ipapi.co) — the verification probe. Returns a dict
     or raises. Direct (no proxy) if unconfigured, so you can compare against your home IP."""
