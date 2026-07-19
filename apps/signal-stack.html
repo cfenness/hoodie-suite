@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoodie Signal Stack</title>
+<style>
+  html,body{margin:0}
+  :root{
+    --paper:#F5F7FA; --card:#FFFFFF; --ink:#1A2430; --muted:#5C6775; --faint:#8A94A2;
+    --line:#E3E8EF; --line2:#EDF1F6; --accent:#4E79A7; --accent-soft:#4E79A722;
+    --good:#3F8F63; --good-soft:#3F8F6318; --warn:#B8862E; --warn-soft:#B8862E18;
+    --bad:#C1544A; --bad-soft:#C1544A18; --shadow:0 1px 2px #1a243008, 0 4px 16px #1a243010;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --paper:#0F141A; --card:#171E27; --ink:#E7ECF3; --muted:#95A1B1; --faint:#68727F;
+    --line:#26303B; --line2:#1E2731; --accent:#6E97C4; --accent-soft:#6E97C426;
+    --good:#5AAE7C; --good-soft:#5AAE7c1e; --warn:#D0A445; --warn-soft:#d0a4451e;
+    --bad:#D96A5F; --bad-soft:#d96a5f1e; --shadow:0 1px 2px #0006, 0 6px 20px #0004;}}
+  :root[data-theme="light"]{--paper:#F5F7FA;--card:#FFFFFF;--ink:#1A2430;--muted:#5C6775;--faint:#8A94A2;--line:#E3E8EF;--line2:#EDF1F6;--accent:#4E79A7;--accent-soft:#4E79A722;--good:#3F8F63;--good-soft:#3F8F6318;--warn:#B8862E;--warn-soft:#B8862E18;--bad:#C1544A;--bad-soft:#C1544A18;--shadow:0 1px 2px #1a243008,0 4px 16px #1a243010;}
+  :root[data-theme="dark"]{--paper:#0F141A;--card:#171E27;--ink:#E7ECF3;--muted:#95A1B1;--faint:#68727F;--line:#26303B;--line2:#1E2731;--accent:#6E97C4;--accent-soft:#6E97C426;--good:#5AAE7C;--good-soft:#5AAE7c1e;--warn:#D0A445;--warn-soft:#d0a4451e;--bad:#D96A5F;--bad-soft:#d96a5f1e;--shadow:0 1px 2px #0006,0 6px 20px #0004;}
+  *{box-sizing:border-box}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.45;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 20px 64px}
+  .tnum{font-variant-numeric:tabular-nums}
+  .top{display:flex;flex-wrap:wrap;align-items:center;gap:14px 18px}
+  .brandmark{display:flex;align-items:center;gap:11px}
+  .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#2f5e8e);display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;box-shadow:var(--shadow)}
+  .brandmark h1{font-size:17px;font-weight:700;letter-spacing:-.2px;margin:0}
+  .brandmark .sub{font-size:11px;color:var(--faint);letter-spacing:.04em;text-transform:uppercase;margin-top:1px}
+  .spacer{flex:1}
+  .thesis{display:inline-flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);border:1px solid var(--line);background:var(--card);border-radius:999px;padding:6px 12px}
+  .thesis b{color:var(--ink);font-weight:600}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--good);box-shadow:0 0 0 3px var(--good-soft)}
+  /* subject bar — the shared key every instrument reads */
+  .subjectbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:16px 0 6px;padding:12px 14px;background:var(--card);border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow)}
+  .subjectbar .lab{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;font-weight:700}
+  .chip{border:1px solid var(--line);background:var(--paper);color:var(--muted);font:inherit;font-size:13px;font-weight:600;padding:6px 13px;border-radius:999px;cursor:pointer;transition:.15s}
+  .chip:hover{border-color:var(--accent)}
+  .chip[aria-pressed="true"]{border-color:var(--accent);color:#fff;background:var(--accent)}
+  .vs{display:flex;align-items:center;gap:8px;margin-left:auto}
+  .vs .chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink)}
+  .keynote{font-size:11.5px;color:var(--faint);margin:0 0 14px 2px}
+  .keynote b{color:var(--accent)}
+  /* verdict */
+  .verdict{display:flex;gap:13px;align-items:center;border-radius:14px;padding:15px 17px;margin-bottom:14px;border:1px solid transparent}
+  .verdict.g{background:var(--good-soft);border-color:var(--good)}
+  .verdict.w{background:var(--warn-soft);border-color:var(--warn)}
+  .verdict .vi{flex:none;width:40px;height:40px;border-radius:11px;display:grid;place-items:center;font-size:20px;font-weight:800;color:#fff}
+  .verdict.g .vi{background:var(--good)} .verdict.w .vi{background:var(--warn)}
+  .verdict .vt b{font-weight:750;font-size:15px} .verdict .vt div{font-size:12.5px;color:var(--muted);margin-top:2px}
+  /* funnel */
+  .funnel{display:grid;grid-template-columns:repeat(4,1fr);gap:0;align-items:stretch}
+  .stage{position:relative;background:var(--card);border:1px solid var(--line);padding:15px 15px 14px;box-shadow:var(--shadow)}
+  .stage:first-child{border-radius:14px 0 0 14px}
+  .stage:last-child{border-radius:0 14px 14px 0}
+  .stage + .stage{border-left:0}
+  .stage .arrow{position:absolute;right:-11px;top:50%;transform:translateY(-50%);z-index:3;width:22px;height:22px;border-radius:50%;background:var(--paper);border:1px solid var(--line);display:grid;place-items:center;color:var(--faint);font-size:12px}
+  .stage:last-child .arrow{display:none}
+  .stage .step{font-size:10px;font-family:var(--mono);color:var(--faint);letter-spacing:.04em}
+  .stage h3{font-size:13.5px;font-weight:700;margin:3px 0 1px}
+  .stage .what{font-size:10.5px;color:var(--faint);margin-bottom:11px}
+  .stage .dir{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:750;border-radius:8px;padding:4px 10px;margin-bottom:9px}
+  .dir.up{background:var(--good-soft);color:var(--good)} .dir.dn{background:var(--bad-soft);color:var(--bad)} .dir.flat{background:var(--line2);color:var(--muted)}
+  .stage .metric{font-size:12.5px;color:var(--ink);margin-bottom:5px;display:flex;justify-content:space-between;gap:8px}
+  .stage .metric b{font-variant-numeric:tabular-nums}
+  .stage .open{margin-top:11px;display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:650;color:var(--accent);cursor:pointer;background:none;border:0;padding:0;font-family:inherit}
+  .stage .open:hover{text-decoration:underline}
+  .stage .spark{width:100%;height:30px;margin-bottom:8px}
+  /* compare mode: two funnels stacked, labelled */
+  .cmp-label{font-size:12px;font-weight:700;margin:14px 0 6px;display:flex;align-items:center;gap:8px}
+  .cmp-label .sw{width:11px;height:11px;border-radius:3px}
+  .backbone{margin-top:18px;font-size:11.5px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;display:flex;gap:10px;align-items:flex-start}
+  .backbone svg{flex:none;width:16px;height:16px;color:var(--accent);margin-top:1px}
+  .backbone b{color:var(--ink)}
+  .foot{margin-top:20px;text-align:center;font-size:11px;color:var(--faint)}
+  @media(max-width:820px){.funnel{grid-template-columns:1fr}.stage{border-radius:0!important;border-left:1px solid var(--line)!important;border-top:0}.stage:first-child{border-radius:14px 14px 0 0!important;border-top:1px solid var(--line)!important}.stage:last-child{border-radius:0 0 14px 14px!important}.stage .arrow{right:50%;top:auto;bottom:-11px;transform:translateX(50%) rotate(90deg)}}
+</style>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brandmark"><div class="logo">H</div>
+      <div><h1>Hoodie Signal Stack</h1><div class="sub">Shelf-to-glass · one subject, four instruments</div></div></div>
+    <div class="spacer"></div>
+    <div class="thesis"><span class="dot"></span><b>One backbone.</b>&nbsp;Every instrument reads the same SKU identity.</div>
+  </header>
+
+  <div class="subjectbar">
+    <span class="lab">Subject</span>
+    <div id="subjects" style="display:flex;gap:7px;flex-wrap:wrap"></div>
+    <div class="vs"><span class="lab">Compare</span><button class="chip" id="cmpBtn" aria-pressed="false">vs Vodka</button></div>
+  </div>
+  <p class="keynote">Pick a category once — it drives all four instruments below. The path runs <b>Menu → Basket → Store → Price</b>: the earliest signal (what's being poured) to the slowest (shelf price). When they agree, it's a confirmed shift.</p>
+
+  <div id="verdict"></div>
+  <div id="funnels"></div>
+
+  <div class="backbone">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/></svg>
+    <div><b>Why the four line up:</b> every instrument resolves to the same Canon (MDM) SKU identity — COLA/TTB-anchored, not fragile scraped listing IDs. That shared spine is what lets a menu serve, a basket rank, a store's shelf, and a shelf price all be read as <b>the same product</b>. Replicating the connective tissue is the moat, not the scraping.</div>
+  </div>
+
+  <div class="foot">Mockup · synthetic but internally consistent — the same subject flows through all four instruments. Each stage opens its full app carrying the subject.</div>
+</div>
+<script>
+// each instrument reads the SAME subject — this models the shared Canon SKU identity.
+const STAGES=[
+  {key:"menu", step:"1 · earliest", app:"menu-analytics", title:"Menu", what:"What's being poured on-premise"},
+  {key:"basket", step:"2", app:"retail-analytics", title:"Basket", what:"Gaining / losing shelf rank"},
+  {key:"store", step:"3", app:"market", title:"Store", what:"Distribution breadth across doors"},
+  {key:"price", step:"4 · slowest", app:"price-index", title:"Price", what:"What it costs, indexed"},
+];
+// subject → per-instrument read (dir: up|dn|flat, series for a mini trend, metrics)
+const DATA={
+  tequila:{label:"Tequila", verdict:"g", vhead:"Confirmed momentum — all four signals point up",
+    vsub:"Tequila is rising at every stage of the funnel, earliest (menu) to slowest (price). A real, corroborated category shift — not a promo blip.",
+    menu:{dir:"up",d:"+18%",series:[10,12,14,17,21,26],metrics:[["Tequila-forward serves","+18% share"],["Brand-call rate","63% (↑)"],["Lead vs retail","~2 cycles"]]},
+    basket:{dir:"up",d:"+2 ranks",series:[8,8,7,6,6,5],metrics:[["Avg category rank","5th (↑ from 7th)"],["Displacement events","Tequila ▸ Vodka ×3"],["New-entrant velocity","fast"]]},
+    store:{dir:"up",d:"+6%",series:[40,41,43,45,47,49],metrics:[["Doors carrying","+6% breadth"],["New class-of-trade","c-store, grocery"],["Distribution trend","widening"]]},
+    price:{dir:"up",d:"+3.2%",series:[100,100.6,101.4,102.1,102.8,103.2],metrics:[["Category index","103.2 (+3.2%)"],["Driver","demand-led, low promo"],["Channel gap","+14% on-prem"]]}},
+  vodka:{label:"Vodka", verdict:"w", vhead:"Fading — signals point down/flat across the funnel",
+    vsub:"Vodka is losing at the leading stages (menu, basket) with price soft — the mirror image of tequila. The displacement shows up earliest on-premise.",
+    menu:{dir:"dn",d:"−9%",series:[26,25,24,23,22,21],metrics:[["Vodka-forward serves","−9% share"],["Brand-call rate","44% (↓)"],["Well-pour share","rising"]]},
+    basket:{dir:"dn",d:"−2 ranks",series:[4,4,5,5,6,6],metrics:[["Avg category rank","6th (↓ from 4th)"],["Displaced by","Tequila, RTD"],["New-entrant velocity","slow"]]},
+    store:{dir:"flat",d:"flat",series:[50,50,49,50,49,49],metrics:[["Doors carrying","flat / saturated"],["Net new doors","~0"],["Distribution trend","mature"]]},
+    price:{dir:"dn",d:"−1.4%",series:[100,99.8,99.6,99.4,99.2,98.6],metrics:[["Category index","98.6 (−1.4%)"],["Driver","promo-led, soft"],["Mid-cycle discounts","elevated"]]}},
+  whiskey:{label:"Whiskey", verdict:"g", vhead:"Firming — premium end leads",
+    vsub:"Whiskey holds with a premiumizing mix: menu calls up, price firm, distribution steady. Momentum concentrated at the high end.",
+    menu:{dir:"up",d:"+7%",series:[18,19,20,21,22,23],metrics:[["Whiskey serves","+7% share"],["Brand-call rate","58% (↑)"],["Old Fashioned","top serve"]]},
+    basket:{dir:"flat",d:"steady",series:[3,3,3,4,3,3],metrics:[["Avg category rank","3rd (steady)"],["Premium tier","gaining"],["Displacement","low"]]},
+    store:{dir:"flat",d:"+1%",series:[44,44,45,45,45,45],metrics:[["Doors carrying","+1% breadth"],["Class-of-trade","stable"],["Distribution trend","mature"]]},
+    price:{dir:"up",d:"+4.1%",series:[100,100.8,101.6,102.5,103.4,104.1],metrics:[["Category index","104.1 (+4.1%)"],["Driver","premiumization"],["Promo intensity","low"]]}},
+  rtd:{label:"RTD / Seltzer", verdict:"g", vhead:"Fastest riser — menu + price both up",
+    vsub:"RTD is the fastest mover: menu presence and price both climbing, distribution expanding into new class-of-trade. Early and broad.",
+    menu:{dir:"up",d:"+24%",series:[6,8,11,15,20,26],metrics:[["RTD on menus","+24% (canned cocktails)"],["Linked to","cocktail archetypes"],["Lead vs retail","large"]]},
+    basket:{dir:"up",d:"+3 ranks",series:[9,8,7,6,5,4],metrics:[["Avg category rank","4th (↑ from 7th)"],["Displacement","▸ Beer, Vodka"],["New-entrant velocity","very fast"]]},
+    store:{dir:"up",d:"+11%",series:[30,33,36,40,44,48],metrics:[["Doors carrying","+11% breadth"],["New class-of-trade","c-store, grocery"],["Distribution trend","expanding fast"]]},
+    price:{dir:"up",d:"+4.4%",series:[100,100.9,101.8,102.7,103.6,104.4],metrics:[["Category index","104.4 (+4.4%)"],["Driver","demand + mix"],["Premiumization","high"]]}},
+};
+
+let SUBJ="tequila", CMP=false;
+function spark(series,dir){const W=100,H=30,n=series.length,lo=Math.min(...series),hi=Math.max(...series),sp=(hi-lo)||1;
+  const x=i=>3+i*(W-6)/(n-1),y=v=>H-3-(v-lo)/sp*(H-6);let d="";series.forEach((v,i)=>d+=(i?"L":"M")+x(i).toFixed(1)+","+y(v).toFixed(1)+" ");
+  const c=dir==="up"?'var(--good)':dir==="dn"?'var(--bad)':'var(--muted)';
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${d}" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${x(n-1).toFixed(1)}" cy="${y(series[n-1]).toFixed(1)}" r="2.6" fill="${c}"/></svg>`;}
+const ARROW={up:"↑",dn:"↓",flat:"→"};
+function stageCard(subjKey,st){
+  const r=DATA[subjKey][st.key];
+  const mets=r.metrics.map(m=>`<div class="metric"><span style="color:var(--muted)">${m[0]}</span><b>${m[1]}</b></div>`).join("");
+  return `<div class="stage">
+    <div class="arrow">›</div>
+    <div class="step">${st.step}</div><h3>${st.title}</h3><div class="what">${st.what}</div>
+    <span class="dir ${r.dir}">${ARROW[r.dir]} ${r.d}</span>
+    ${spark(r.series,r.dir)}
+    ${mets}
+    <button class="open" data-app="${st.app}">Open ${st.title==='Menu'?'Menu Analytics':st.title==='Basket'?'Retail Analytics':st.title==='Store'?'Market Intelligence':'Price Index'} →</button>
+  </div>`;
+}
+function funnelFor(subjKey){ return `<div class="funnel">${STAGES.map(s=>stageCard(subjKey,s)).join("")}</div>`; }
+
+function render(){
+  const d=DATA[SUBJ];
+  document.getElementById('verdict').innerHTML = CMP ? "" :
+    `<div class="verdict ${d.verdict}"><div class="vi">${d.verdict==='g'?'✓':'≈'}</div>
+      <div class="vt"><b>${d.label}: ${d.vhead}</b><div>${d.vsub}</div></div></div>`;
+  if(!CMP){
+    document.getElementById('funnels').innerHTML = funnelFor(SUBJ);
+  } else {
+    document.getElementById('funnels').innerHTML =
+      `<div class="cmp-label"><span class="sw" style="background:var(--good)"></span>${DATA[SUBJ].label} — rising across the funnel</div>${funnelFor(SUBJ)}
+       <div class="cmp-label"><span class="sw" style="background:var(--bad)"></span>Vodka — fading across the funnel</div>${funnelFor('vodka')}`;
+  }
+  document.querySelectorAll('.open').forEach(b=>b.onclick=()=>openApp(b.dataset.app));
+}
+// CONNECTION POINT: hand off to the full instrument app, carrying the subject.
+function openApp(appId){
+  const subject=SUBJ;
+  try{ // spine-native nav if the shell exposes it
+    if(window.parent && window.parent!==window){ window.parent.postMessage({__spine:"hoodie:spine",kind:"nav",payload:{app:appId,scope:{subject}}},"*"); }
+  }catch(e){}
+  try{ if(window.top){ window.top.location.hash = "#"+appId; } }catch(e){ location.hash="#"+appId; }
+}
+document.getElementById('subjects').innerHTML=Object.keys(DATA).filter(k=>k!=='vodka'||true).map(k=>
+  `<button class="chip" data-s="${k}" aria-pressed="${k===SUBJ}">${DATA[k].label}</button>`).join("");
+document.querySelectorAll('#subjects .chip').forEach(b=>b.onclick=()=>{SUBJ=b.dataset.s;
+  document.querySelectorAll('#subjects .chip').forEach(x=>x.setAttribute('aria-pressed',x===b));render();});
+document.getElementById('cmpBtn').onclick=()=>{CMP=!CMP;document.getElementById('cmpBtn').setAttribute('aria-pressed',CMP);render();};
+render();
+</script>
+</body>
+</html>

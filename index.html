@@ -374,6 +374,7 @@
 <script>
   const APPS=[
     {id:'dashboard',name:'Hoodie Intelligence',desc:'Market intelligence & QBR briefs',group:'Commercial',status:'live',file:'apps/dashboard.html',mark:'HI'},
+    {id:'signal-stack',name:'Signal Stack',desc:"The shelf-to-glass workspace — pick one subject, read all four instruments (Menu → Basket → Store → Price) with a cross-signal verdict and hand-offs into each.",group:'Signal Stack',status:'beta',file:'apps/signal-stack.html',mark:'SS'},
     {id:'retail',name:'Retail Intelligence',desc:"Per-store assortment & price across the chains we pull — cross-chain compare.",group:'Signal Stack',status:'beta',file:'apps/retail.html',mark:'RI'},
     {id:'retail-analytics',name:'Retail Analytics',desc:"By brand & retailer: price/promo intelligence, reverse planogram, on-prem menu recipes — all from scraped data, no depletions or scans.",group:'Signal Stack',status:'beta',file:'apps/retail-analytics.html',mark:'RA'},
     {id:'menu-analytics',name:'Menu Analytics',desc:"On-premise menu intelligence — brand-call rates, cocktail classification & trends by region, from menu scrapes.",group:'Signal Stack',status:'beta',file:'apps/menu-analytics.html',mark:'MA'},
@@ -421,6 +422,8 @@
     prism:S+'<path d="M12 5 L18.5 17 L5.5 17 Z"/><path d="M2 12 H8.7"/><path d="M15 13 L21 10 M15 13 L21.5 13 M15 13 L21 16"/></svg>',
     // Product Catalog — a grid of records
     catalog:S+'<rect x="3" y="4" width="18" height="16" rx="1.6"/><path d="M3 9 H21 M3 14 H21 M9 9 V20"/></svg>',
+    // Signal Stack — stacked layers (the four instruments on one backbone)
+    'signal-stack':S+'<path d="M12 3 L21 7.5 L12 12 L3 7.5 Z"/><path d="M3 12 L12 16.5 L21 12"/><path d="M3 16.5 L12 21 L21 16.5"/></svg>',
     // Retail Analytics — bars with a baseline (price/promo classification)
     'retail-analytics':S+'<path d="M4 4 V20 H20"/><rect x="7" y="12" width="2.6" height="5"/><rect x="11.4" y="9" width="2.6" height="8"/><rect x="15.8" y="6" width="2.6" height="11"/></svg>',
     // Menu Analytics — a cocktail glass
