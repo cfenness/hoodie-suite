@@ -192,12 +192,28 @@ def _parse_isp_entry(s):
 
 
 def isp_pool():
-    """List of normalized proxy URLs from ISP_PROXIES (empty if unset). Each is a static, unlimited-bandwidth IP."""
+    """Normalized proxy URLs for the ISP pool. Sources, merged + de-duped:
+      • ISP_PROXIES env — comma/semicolon/newline-separated endpoints (one line in a .env file);
+      • a FILE with one endpoint per line — path from ISP_PROXIES_FILE, else the default isp_proxies.txt next to
+        this module. Easiest for a 15-IP list: paste the IPRoyal export one-per-line into unifyd/isp_proxies.txt.
+    Each entry is a static, unlimited-bandwidth IP."""
+    entries = []
     raw = os.environ.get("ISP_PROXIES", "")
-    if not raw:
-        return []
-    entries = [e for chunk in raw.replace(";", "\n").replace(",", "\n").splitlines() for e in [chunk.strip()] if e]
-    return [p for p in (_parse_isp_entry(e) for e in entries) if p]
+    if raw:
+        entries += [c.strip() for c in raw.replace(";", "\n").replace(",", "\n").splitlines() if c.strip()]
+    path = os.environ.get("ISP_PROXIES_FILE") or os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                              "isp_proxies.txt")
+    if os.path.exists(path):
+        for line in open(path, encoding="utf-8", errors="replace"):
+            line = line.strip()
+            if line and not line.startswith("#"):
+                entries.append(line)
+    out, seen = [], set()
+    for e in entries:
+        p = _parse_isp_entry(e)
+        if p and p not in seen:
+            seen.add(p); out.append(p)
+    return out
 
 
 def isp_enabled():
