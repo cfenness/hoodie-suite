@@ -31,7 +31,9 @@ primary_region = 'iad'
     path = '/api/health'
 
 [[vm]]
-  size = 'shared-cpu-1x'
-  # 2gb: the master data outgrew 1gb — DuckDB queries over dim_sku (~874k→1M) OOM-killed
-  # the gunicorn worker on 1gb. Paired with a DuckDB memory_limit in warehouse.connect().
-  memory = '2gb'
+  # 4 vCPU: 1 shared vCPU couldn't run the warehouse footer scans (list_datasets over 170+ Tigris files)
+  # without pegging the CPU and starving request/health threads — the machine crash-looped ("site stuck").
+  # 4 cores give the background DuckDB scans room while the worker keeps serving.
+  size = 'shared-cpu-4x'
+  # 4gb: the master data outgrew 2gb as the warehouse ballooned; DuckDB queries need headroom.
+  memory = '4gb'
