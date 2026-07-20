@@ -33,6 +33,54 @@ def _num(v):
         return None
 
 
+def parse_upload(filename, raw, scan=15):
+    """Parse an uploaded CSV/TSV or XLSX into (header, rows), auto-detecting the header row so files with a
+    title/preamble (common in exported menus & inventory — e.g. a dispensary menu whose header is on row 3)
+    still read correctly. Returns {header, rows, header_row, sheet}. stdlib for CSV; openpyxl (lazy) for XLSX."""
+    import io
+    name = (filename or "").lower()
+    if name.endswith((".xlsx", ".xlsm")):
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        ws = wb[wb.sheetnames[0]]
+        grid = [[("" if c is None else c) for c in row] for row in ws.iter_rows(values_only=True)]
+        sheet = wb.sheetnames[0]
+    else:
+        import csv
+        text = raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else raw
+        head = text[:4000]
+        delim = "\t" if (name.endswith(".tsv") or head.count("\t") > head.count(",")) else ","
+        grid = list(csv.reader(io.StringIO(text), delimiter=delim))
+        sheet = None
+    grid = [r for r in grid if r is not None]
+    if not grid:
+        return {"header": [], "rows": [], "header_row": 0, "sheet": sheet}
+
+    def _score(row):                                     # label-ish header score: non-empty, short, non-numeric
+        n = 0
+        for c in row:
+            s = str(c).strip()
+            if not s:
+                continue
+            try:
+                float(s.replace(",", "").replace("$", "").replace("%", "")); continue
+            except Exception:
+                pass
+            if len(s) <= 40:
+                n += 1
+        return n
+    hi = max(range(min(scan, len(grid))), key=lambda i: (_score(grid[i]), -i))
+    header = [str(c).strip() for c in grid[hi]]
+    keep = [j for j, h in enumerate(header) if h]        # drop columns with an empty header (trims blank margins)
+    header = [header[j] for j in keep]
+    rows = []
+    for r in grid[hi + 1:]:
+        vals = [str(r[j]).strip() if j < len(r) else "" for j in keep]
+        if any(vals):
+            rows.append(vals)
+    return {"header": header, "rows": rows, "header_row": hi, "sheet": sheet}
+
+
 def profile_columns(header, rows, top_k=8):
     """Per-column type/cardinality/null-rate/stats/top-values — the structured summary the
     LLM reads. Works on any tabular data, cheap, stdlib-only."""

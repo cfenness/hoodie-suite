@@ -20,3 +20,4 @@ PyYAML>=6.0          # serve the OpenAPI spec at /api/openapi.json; lazy-importe
 # pytesseract>=0.3.10
 # pillow>=10.0
 cryptography
+openpyxl
