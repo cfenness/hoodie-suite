@@ -936,19 +936,24 @@ def _live_datasets():
     now = _t.time()
     if c["v"] is not None and now - c["t"] < 45:
         return c["v"]                                         # fresh
-    if c["v"] is not None:                                    # stale but present → serve now, refresh in background
-        if not c["refreshing"]:
-            c["refreshing"] = True
+    # cold OR stale → kick a background refresh and NEVER block the request thread on the 170-file Tigris footer
+    # scan. That synchronous cold scan could exceed gunicorn's 120s timeout under crawl write-contention → the
+    # worker was killed and the machine crash-looped (site "down"). Cold now returns the in-memory base instantly;
+    # live warehouse counts populate a few seconds later once the daemon thread finishes.
+    if not c["refreshing"]:
+        c["refreshing"] = True
 
-            def _bg():
-                try:
-                    v = _compute_live_datasets(); c["v"] = v; c["t"] = _t.time()
-                finally:
-                    c["refreshing"] = False
-            _threading.Thread(target=_bg, daemon=True).start()
-        return c["v"]
-    v = _compute_live_datasets(); c["v"] = v; c["t"] = _t.time()  # cold: compute once
-    return v
+        def _bg():
+            try:
+                v = _compute_live_datasets(); c["v"] = v; c["t"] = _t.time()
+            except Exception as e:
+                app.logger.warning("datasets refresh failed: %s", e)
+            finally:
+                c["refreshing"] = False
+        _threading.Thread(target=_bg, daemon=True).start()
+    if c["v"] is not None:
+        return c["v"]                                         # stale — serve it
+    return {k: dict(v) for k, v in DATASETS.items()}          # cold — instant base; live counts fill in async
 
 @app.get("/api/datasets")
 def datasets():
@@ -972,13 +977,11 @@ def api_source():
     import warehouse
     name = request.args.get("name")
     if not name:
-        try:
-            src = sorted(({"name": d.get("name"), "rows": d.get("rows", 0) or 0, "modified": d.get("modified")}
-                          for d in warehouse.list_datasets() if d.get("name") and not d["name"].startswith("_")),
-                         key=lambda x: x["name"])
-        except Exception as e:
-            return jsonify({"error": str(e)[:200]}), 500
-        return jsonify({"sources": src})
+        def _srclist():                                       # cached + background-refreshed so the 170-file
+            return sorted(({"name": d.get("name"), "rows": d.get("rows", 0) or 0, "modified": d.get("modified")}
+                           for d in warehouse.list_datasets() if d.get("name") and not d["name"].startswith("_")),
+                          key=lambda x: x["name"])              # Tigris scan never blocks the worker (crash-loop)
+        return jsonify({"sources": _ttl("source_list", 60, _srclist, cold=[])})
     limit = min(int(request.args.get("limit", 100) or 100), 500)
     try:
         cols = list(warehouse.query(name, "SELECT * FROM t LIMIT 1")[0].keys())
@@ -1142,28 +1145,27 @@ _TTL_CACHE = {}
 _TTL_REFRESHING = {}
 
 
-def _ttl(key, ttl, fn):
-    """TTL cache with STALE-WHILE-REVALIDATE: once warm it returns the cached value instantly and refreshes in a
-    background thread when stale — so a cached endpoint (e.g. the coverage-map dots) never blocks a request even
-    while src_outlets is mid-rewrite (a periodic refresh). Only the very first (cold) call computes synchronously."""
+def _ttl(key, ttl, fn, cold=None):
+    """TTL cache with STALE-WHILE-REVALIDATE that NEVER blocks a request thread — even on the cold first call.
+    A cold fn() over the now-huge warehouse (170+ Tigris files) could exceed gunicorn's 120s worker timeout →
+    the worker is killed and the machine crash-loops (site 'down'). So cold kicks a background compute and returns
+    `cold` (None/[] — the polling UI fills in on its next tick); stale serves the last value while refreshing."""
     now = time.time()
     hit = _TTL_CACHE.get(key)
     if hit and (now - hit[0]) < ttl:
         return hit[1]                                   # fresh
-    if hit is not None:                                 # stale but present → serve now, refresh in background
-        if not _TTL_REFRESHING.get(key):
-            _TTL_REFRESHING[key] = True
+    if not _TTL_REFRESHING.get(key):                    # cold OR stale → refresh in a daemon thread, never block
+        _TTL_REFRESHING[key] = True
 
-            def _bg():
-                try:
-                    _TTL_CACHE[key] = (time.time(), fn())
-                finally:
-                    _TTL_REFRESHING[key] = False
-            _threading.Thread(target=_bg, daemon=True).start()
-        return hit[1]
-    val = fn()                                          # cold: compute once
-    _TTL_CACHE[key] = (now, val)
-    return val
+        def _bg():
+            try:
+                _TTL_CACHE[key] = (time.time(), fn())
+            except Exception as e:
+                app.logger.warning("ttl refresh %s failed: %s", key, e)
+            finally:
+                _TTL_REFRESHING[key] = False
+        _threading.Thread(target=_bg, daemon=True).start()
+    return hit[1] if hit is not None else cold          # stale → last value; cold → placeholder until first land
 
 
 def _catalog_map():
