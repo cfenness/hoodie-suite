@@ -36,4 +36,4 @@ EXPOSE 8080
 # mid-fetch (which surfaced in the client as a bogus "Analyzer is offline"). Threads are safe here:
 # the work is I/O-bound (network) so the GIL is released during waits; shared state stays in one process.
 # gunicorn runs from /app/unifyd (WORKDIR) so `server:app` resolves; it serves the suite from SUITE_ROOT=/app.
-CMD ["sh", "-c", "gunicorn -w 1 --threads 8 --timeout 120 -b 0.0.0.0:${PORT:-8080} server:app"]
+CMD ["sh", "-c", "gunicorn -w 1 --threads 24 --timeout 120 -b 0.0.0.0:${PORT:-8080} server:app"]
