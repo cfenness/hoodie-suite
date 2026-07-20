@@ -4782,6 +4782,27 @@ def ai_read_ep():
     return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
 
 
+@app.post("/api/parse-upload")
+def parse_upload_ep():
+    """Fast parse-only (no Claude): raw CSV/TSV/XLSX upload → header (auto-detected past preamble) + rows +
+    per-field profile. For multi-file ingest (e.g. the Order Hub taking 50 supplier menus) where a Claude read
+    per file would be too slow/costly — heuristic column mapping happens client-side."""
+    f = request.files.get("file")
+    if not f:
+        return jsonify(error="no file"), 400
+    try:
+        raw = f.read()
+        parsed = analyze.parse_upload(f.filename or "upload.csv", raw)
+    except Exception as e:
+        return jsonify(error="parse-failed", detail=str(e)[:200]), 400
+    if not parsed.get("header"):
+        return jsonify(error="parse-failed", detail="couldn't find a header row"), 400
+    prof = analyze.profile_columns(parsed["header"], parsed["rows"])
+    return jsonify(filename=f.filename, header=parsed["header"], rows=parsed["rows"][:20000],
+                   header_row=parsed["header_row"], sheet=parsed.get("sheet"),
+                   row_count=len(parsed["rows"]), profile=prof)
+
+
 @app.post("/api/ai-read-upload")
 def ai_read_upload_ep():
     """File-mode reader: accepts a raw CSV/TSV/XLSX upload (multipart 'file'), auto-detects the header row
