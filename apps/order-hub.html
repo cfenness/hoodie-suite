@@ -179,12 +179,12 @@ function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return
 function ingest(fileList){
   Array.prototype.forEach.call(fileList, function(file){
     var idx = FILES.length;
-    FILES.push({filename:file.name, header:[], rows:[], map:{}, products:[], loading:true, error:null});
+    FILES.push({filename:file.name, file:file, header:[], rows:[], row_src:[], header_row:0, map:{}, products:[], loading:true, error:null});
     renderFiles();
     var fd=new FormData(); fd.append("file",file);
     fetch("/api/parse-upload",{method:"POST",body:fd})
       .then(function(r){return r.json().catch(function(){return{};}).then(function(j){ if(!r.ok) throw ((j&&(j.detail||j.error))||("HTTP "+r.status)); return j; });})
-      .then(function(j){ var f=FILES[idx]; f.header=j.header||[]; f.rows=j.rows||[]; f.loading=false;
+      .then(function(j){ var f=FILES[idx]; f.header=j.header||[]; f.rows=j.rows||[]; f.row_src=j.row_src||[]; f.header_row=j.header_row||0; f.loading=false;
         f.map=guessMap(f.header, j.profile||{}); buildProducts(f); renderFiles(); refreshCounts(); })
       .catch(function(e){ var f=FILES[idx]; f.loading=false; f.error=String(e); renderFiles(); });
   });
@@ -278,15 +278,28 @@ function renderSend(){
   var da=document.getElementById("dl-all"); if(da)da.onclick=function(){ s.sups.forEach(function(fi){exportSupplier(+fi);}); };
 }
 function csvCell(v){ v=String(v==null?"":v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+function dl(blob, name){ var url=URL.createObjectURL(blob); var a=document.createElement("a"); a.href=url; a.download=name; a.click(); setTimeout(function(){URL.revokeObjectURL(url);},1500); }
 function exportSupplier(fi){
   var f=FILES[fi];
-  var header=f.header.concat(["ORDER QTY"]);
-  var lines=[header.map(csvCell).join(",")];
-  var pi=colIdx(f.header,f.map.product);
+  var base=f.filename.replace(/\.[^.]+$/,"")+" - ORDER";
+  // XLSX source → refill the ORIGINAL file WITH ITS FORMATTING (server-side openpyxl), quantities written in.
+  if(/\.(xlsx|xlsm)$/i.test(f.filename||"") && f.file){
+    var orders={};
+    Object.keys(ORDER).forEach(function(k){ var p=k.split("|"); if(+p[0]!==fi) return; var src=(f.row_src||[])[+p[1]]; if(src!=null) orders[src]=ORDER[k]; });
+    var fd=new FormData(); fd.append("file",f.file); fd.append("orders",JSON.stringify(orders)); fd.append("header_row",String(f.header_row||0));
+    fetch("/api/refill-xlsx",{method:"POST",body:fd})
+      .then(function(r){ if(!r.ok) return r.text().then(function(t){ throw t; }); return r.blob(); })
+      .then(function(blob){ dl(blob, base+".xlsx"); })
+      .catch(function(e){ alert("Refill failed: "+String(e).slice(0,180)+"\nFalling back to CSV."); exportCsv(fi); });
+    return;
+  }
+  exportCsv(fi);
+}
+function exportCsv(fi){
+  var f=FILES[fi];
+  var lines=[f.header.concat(["ORDER QTY"]).map(csvCell).join(",")];
   f.rows.forEach(function(r,ri){ var q=ORDER[fi+"|"+ri]||""; lines.push(r.concat([q]).map(csvCell).join(",")); });
-  var blob=new Blob([lines.join("\r\n")],{type:"text/csv"}); var url=URL.createObjectURL(blob);
-  var a=document.createElement("a"); a.href=url; a.download=f.filename.replace(/\.[^.]+$/,"")+" - ORDER.csv"; a.click();
-  setTimeout(function(){URL.revokeObjectURL(url);},1500);
+  dl(new Blob([lines.join("\r\n")],{type:"text/csv"}), f.filename.replace(/\.[^.]+$/,"")+" - ORDER.csv");
 }
 
 /* ---- nav ---- */

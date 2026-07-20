@@ -4799,8 +4799,51 @@ def parse_upload_ep():
         return jsonify(error="parse-failed", detail="couldn't find a header row"), 400
     prof = analyze.profile_columns(parsed["header"], parsed["rows"])
     return jsonify(filename=f.filename, header=parsed["header"], rows=parsed["rows"][:20000],
+                   row_src=parsed.get("row_src", [])[:20000],
                    header_row=parsed["header_row"], sheet=parsed.get("sheet"),
                    row_count=len(parsed["rows"]), profile=prof)
+
+
+@app.post("/api/refill-xlsx")
+def refill_xlsx_ep():
+    """Refill an ORIGINAL xlsx WITH ITS FORMATTING: load the uploaded file writable (openpyxl preserves styles),
+    append an order column, and write the quantities at their physical rows. `orders` = {physical_0based_row: qty}
+    (from parse-upload's row_src), `header_row` places the column label. Returns the formatted .xlsx."""
+    import io
+    import openpyxl
+    from flask import send_file
+    f = request.files.get("file")
+    if not f:
+        return jsonify(error="no file"), 400
+    try:
+        orders = json.loads(request.form.get("orders") or "{}")
+    except Exception:
+        orders = {}
+    label = (request.form.get("label") or "ORDER QTY")[:40]
+    try:
+        header_row = int(request.form.get("header_row") or 0)
+    except Exception:
+        header_row = 0
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(f.read()))          # writable → preserves original formatting
+        ws = wb[wb.sheetnames[0]]
+        qcol = ws.max_column + 1                                   # append the order column after the used range
+        ws.cell(row=header_row + 1, column=qcol, value=label)      # header at its physical (1-based) row
+        for k, v in orders.items():
+            if v in (None, "", 0, "0"):
+                continue
+            try:
+                r0 = int(k)
+                q = int(v) if str(v).strip().lstrip("-").isdigit() else v
+                ws.cell(row=r0 + 1, column=qcol, value=q)
+            except Exception:
+                pass
+        out = io.BytesIO(); wb.save(out); out.seek(0)
+    except Exception as e:
+        return jsonify(error="refill-failed", detail=str(e)[:200]), 400
+    fn = (f.filename or "order").rsplit(".", 1)[0] + " - ORDER.xlsx"
+    return send_file(out, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     as_attachment=True, download_name=fn)
 
 
 @app.post("/api/ai-read-upload")

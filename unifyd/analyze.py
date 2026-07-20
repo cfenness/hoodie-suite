@@ -74,11 +74,13 @@ def parse_upload(filename, raw, scan=15):
     keep = [j for j, h in enumerate(header) if h]        # drop columns with an empty header (trims blank margins)
     header = [header[j] for j in keep]
     rows = []
-    for r in grid[hi + 1:]:
+    row_src = []
+    for off, r in enumerate(grid[hi + 1:]):
         vals = [str(r[j]).strip() if j < len(r) else "" for j in keep]
         if any(vals):
             rows.append(vals)
-    return {"header": header, "rows": rows, "header_row": hi, "sheet": sheet}
+            row_src.append(hi + 1 + off)          # physical 0-based grid row — for faithful write-back/refill
+    return {"header": header, "rows": rows, "row_src": row_src, "header_row": hi, "sheet": sheet}
 
 
 def profile_columns(header, rows, top_k=8):
