@@ -20304,6 +20304,11 @@ overrideLabel: 'Analyze this file →'
 return;
 }
 
+// No goal column → this is NOT a goals file (actuals/depletions, or any other dataset). Don't force the
+// goal-realism frame — it yields all "—". Read the file on its own terms (Claude) and scope the Report Builder
+// to its own fields. Only genuine goal files fall through to the goal-vs-industry overlay below.
+if(!hasGoal){ frOpenInReportBuilder(filename, parsed); return; }
+
 // Find column indexes
 const colIdx = {};
 Object.keys(roles).forEach(function(i){ colIdx[roles[i]] = parseInt(i, 10); });
@@ -20854,6 +20859,24 @@ if(backBtn) backBtn.addEventListener('click', overlayResetToUpload);
 }
 
 function overlayHandleFile(file){
+// XLSX/XLSM are binary — can't be read as text. Send the raw file to the engine, which parses it (openpyxl),
+// auto-detects the header row (handles title/preamble rows like a dispensary menu), and returns header + rows.
+// Then read it on its own terms + scope the Report Builder to it (spreadsheets are typically non-standard).
+if(/\.(xlsx|xlsm)$/i.test(file.name||'')){
+overlayShowState('analyzing');
+var sx = document.getElementById('overlay-analyzing-steps');
+if(sx) sx.innerHTML = '<div class="overlay-analyzing-step show"><span class="step-bullet">•</span>Parsing spreadsheet + detecting the header…</div>';
+var fd = new FormData(); fd.append('file', file);
+fetch('/api/ai-read-upload', { method:'POST', body:fd })
+.then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ if(!r.ok && !(j&&j.parse)) throw ((j&&(j.detail||j.error))||('HTTP '+r.status)); return j; }); })
+.then(function(res){
+var pz = res.parse || {};
+if(!pz.header || !pz.header.length) throw 'could not find a header row in the spreadsheet';
+frOpenInReportBuilder(file.name, { columns: pz.header, rows: pz.rows || [], rowCount: pz.row_count || (pz.rows||[]).length });
+})
+.catch(function(e){ overlayShowRedirect({ title:'Could not read that spreadsheet', body:'<p>'+String(e)+'</p><p>Try exporting the sheet as CSV, or check that it has a header row.</p>', override: overlayResetToUpload, overrideLabel:'Try another file' }); });
+return;
+}
 const reader = new FileReader();
 reader.onload = function(e){
 const text = e.target.result;

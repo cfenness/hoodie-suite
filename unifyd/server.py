@@ -4803,7 +4803,8 @@ def ai_read_upload_ep():
     if not isinstance(result, dict):
         result = {"error": "ai-read-failed"}
     result["parse"] = {"header": parsed["header"], "header_row": parsed["header_row"],
-                       "sheet": parsed.get("sheet"), "row_count": len(parsed["rows"]), "profile": prof}
+                       "sheet": parsed.get("sheet"), "row_count": len(parsed["rows"]),
+                       "rows": parsed["rows"][:8000], "profile": prof}
     if "error" not in result:
         return jsonify(result)
     return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
