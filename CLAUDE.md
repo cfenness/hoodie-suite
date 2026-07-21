@@ -138,6 +138,21 @@ inside. The intended shape is API Gateway + Lambda behind a `/api/*` CloudFront
 behavior on the same domain. See the "backend on-ramp" sections of `README.md` and
 `SPINE.md` before adding any server code.
 
+### Snowflake load — the seed to Unifyd (`snowflake/`)
+A staged SQL build that lands the whole warehouse in Snowflake — the Parquet layout was designed to be
+Snowflake-loadable (NRT-PLAN.md §2: "migration is a load, not a rewrite"), and this is that load. It's
+**generated, not hand-kept**: `snowflake/build_snowflake_sql.py` derives everything from the same
+sources of truth the engine uses — `source_registry.py` for the raw source list, the typed catalog in
+the generator (mirroring `build_product_master.py`/`normalize.py`/`dim_outlet.py`) for the canonical
+star. Three schemas: `RAW` (one landing table per source Parquet, **schema-agnostic** via Snowflake
+`INFER_SCHEMA` + `MATCH_BY_COLUMN_NAME` — scraper drift just flows through, same as the DuckDB
+`read_parquet` path), `MASTER` (the **typed** star `dim_brand/product/item/sku` + `dim_outlet` +
+`src_<grain>` + signal tables — the seed), `MART` (views). It stages SQL only — nothing connects to
+Snowflake or touches prod. `python snowflake/build_snowflake_sql.py [--live]` regenerates; `--live`
+reads the warehouse to include every present table and resolve bucketed (v2) tables to their manifest's
+active parts. `snowflake/` is engine/infra — never web-served (not in `_SUITE_OK_TOP`), like `unifyd/`.
+See `snowflake/README.md`.
+
 ## Health & smoke (keeping the served data trustworthy)
 
 Two standing tools exist so failures are loud, not quiet. Keep them passing and keep them honest.

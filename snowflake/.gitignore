@@ -1,0 +1,2 @@
+# Local credential-filled copies of the SQL (e.g. an envsubst'd 02_stage.local.sql) — never commit keys.
+*.local.sql
