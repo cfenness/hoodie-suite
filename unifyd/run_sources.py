@@ -99,6 +99,21 @@ def due_builds(now=None):
     return out
 
 
+def mac_window_open(now=None):
+    """True when the Mac browser window is open (default 20:00–08:00 local, env MAC_HOURS='20-8').
+    The anti-bot sources need a QUIET Mac — Cloudflare/DataDome/Incapsula degrade under daytime
+    browser contention (why the old schedule ran at 03:00) — so daytime --due ticks stay
+    headless-only and the browser sweeps catch up when the window opens. Explicit --mac-only
+    bypasses this (a human asking is the override)."""
+    spec = os.environ.get("MAC_HOURS", "20-8")
+    try:
+        start, end = (int(x) for x in spec.split("-"))
+    except Exception:
+        start, end = 20, 8
+    h = time.localtime(now or time.time()).tm_hour
+    return (start <= h or h < end) if start > end else (start <= h < end)
+
+
 def _acquire_lock():
     """One dispatcher pass at a time (fcntl, non-blocking): a 30-min tick that fires while a 4-hour
     Mac browser sweep is still running must no-op, not stack a second Chrome. Returns the held file
@@ -251,10 +266,17 @@ def main(argv=None):
         due = due_sources()
         if only:
             due = [s for s in due if s["id"] in set(only)]
+        headless_only = a.headless_only
+        if not a.mac_only and not headless_only and not mac_window_open():
+            n_mac = sum(1 for s in due if s["klass"] == "mac")
+            if n_mac:
+                print("[run_sources] mac window closed (MAC_HOURS=%s) — deferring %d browser "
+                      "source(s) to the window" % (os.environ.get("MAC_HOURS", "20-8"), n_mac))
+            headless_only = True
         if due:
             print("[run_sources] due: " + ", ".join(s["id"] for s in due))
             run_all(cadence="all", only=[s["id"] for s in due], exclude=exclude,
-                    headless_only=a.headless_only, mac_only=a.mac_only, workers=a.workers)
+                    headless_only=headless_only, mac_only=a.mac_only, workers=a.workers)
         else:
             print("[run_sources] no sources due.")
         # Derived master builds run AFTER the landings that triggered them — and only on the plain
