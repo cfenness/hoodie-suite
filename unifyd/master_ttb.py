@@ -17,6 +17,14 @@ import argparse, json, os, re, sys, time, urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import cola_tiering as ct
+import upc as _upc
+
+
+def _full_upc(raw):
+    """Translation heal → a full valid code where provable: checkless-13 (the Kroger shape — this is where
+    ttb_master's 72%-bad-check upc cohort came from) first (a broken '00'-13 would pass normalize's length
+    gate as-is), then normalize (heals zero-stripped), else the raw digits unchanged."""
+    return _upc.from_checkless_13(raw) or _upc.normalize(raw) or (raw or "")
 
 
 def load_market(log=print):
@@ -31,7 +39,7 @@ def load_market(log=print):
                 if not nm:
                     continue
                 rows.append({"source": src, "brand": (r.get(brand_k) or nm), "name": nm,
-                             "size": (r.get(size_k) or nm), "upc": r.get("upc") or ""})
+                             "size": (r.get(size_k) or nm), "upc": _full_upc(r.get("upc"))})
         except Exception as e:
             log("  (skip %s: %s)" % (ds, str(e)[:40]))
 

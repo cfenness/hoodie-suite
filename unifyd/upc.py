@@ -26,9 +26,25 @@ def only_digits(s):
 
 
 def normalize(code):
-    """Return a canonical 8/12/13/14-digit code, or '' if it isn't one."""
+    """Return a canonical 8/12/13/14-digit code, or '' if it isn't one.
+
+    ZERO-STRIP HEAL: spreadsheets/CSV exports eat leading zeros, so a real UPC-A lands as
+    10–11 digits and used to be discarded as malformed. Pad back to 12 (or 7→EAN-8) and accept
+    ONLY if the padded code passes the mod-10 check — a random pad passes just 10% of the time,
+    so the check digit is the proof the zeros were really stripped. This is a TRANSLATION-layer
+    heal: callers keep the raw landed value; the healed code lives in the normalized/agg tables."""
     c = only_digits(code)
-    return c if len(c) in (8, 12, 13, 14) else ""
+    if len(c) in (8, 12, 13, 14):
+        return c
+    if len(c) in (10, 11):                     # zero-stripped UPC-A
+        p = c.zfill(12)
+        if check_digit_ok(p):
+            return p
+    if len(c) == 7:                            # zero-stripped EAN-8
+        p = c.zfill(8)
+        if check_digit_ok(p):
+            return p
+    return ""
 
 
 def check_digit_ok(code):
@@ -40,6 +56,27 @@ def check_digit_ok(code):
     body, chk = d[:-1], d[-1]
     total = sum(x * (3 if i % 2 == 0 else 1) for i, x in enumerate(reversed(body)))
     return (10 - total % 10) % 10 == chk
+
+
+def with_check_digit(body):
+    """Append the GS1 mod-10 check digit to a 7/11/12/13-digit code BODY (EAN-8/UPC-A/EAN-13/GTIN-14)."""
+    b = only_digits(body)
+    if len(b) not in (7, 11, 12, 13):
+        return ""
+    total = sum(x * (3 if i % 2 == 0 else 1) for i, x in enumerate(int(c) for c in reversed(b)))
+    return b + str((10 - total % 10) % 10)
+
+
+def from_checkless_13(code):
+    """Kroger-class heal: their API 'upc' is the UPC-A BODY (no check digit) zero-padded to 13 digits —
+    ~90% fail the EAN-13 check as-is; healed codes join other sources' UPCs (0 → 1,347 join lift, proven).
+    Shape-gated: 13 digits, '00' pad, failing as-is → drop the pad, append the computed check. Returns ''
+    when it isn't that shape. (The ~10% that pass the EAN-13 check by coincidence are indistinguishable
+    without cross-source evidence and are left alone.) TRANSLATION-layer only — landed data stays raw."""
+    d = only_digits(code)
+    if len(d) == 13 and d[:2] == "00" and not check_digit_ok(d):
+        return with_check_digit(d[2:])
+    return ""
 
 
 def is_placeholder(code):
@@ -165,6 +202,20 @@ def _selftest():
     assert classify("2123456789012"[:12]) in ("restricted", "bad_check")  # ns=2 variable weight
     assert classify("") == "empty"
     assert classify("12ab") == "malformed"
+    # zero-strip heal: Excel ate the leading zero(s) → pad back iff the check digit proves it
+    assert normalize("36000291452") == "036000291452"    # 11-digit → healed UPC-A
+    assert classify("36000291452") == "valid"
+    assert normalize("3456789017") == "003456789017"     # 10-digit (two zeros stripped) → healed
+    assert classify("3456789017") == "valid"
+    assert normalize("36000291453") == ""                # padded check digit FAILS → stays malformed
+    assert classify("36000291453") == "malformed"
+    assert brand_key("36000291452") == "0360002"         # healed code clusters with its owner
+    # checkless-13 heal (Kroger class): body zero-padded to 13, no check digit
+    assert with_check_digit("03600029145") == "036000291452"
+    assert from_checkless_13("0008068600140") == "080686001409"   # pad dropped, check appended
+    assert classify(from_checkless_13("0008068600140")) == "valid"
+    assert from_checkless_13("036000291452") == ""       # real UPC-A → not that shape, untouched
+    assert from_checkless_13("0002150001340") == ""      # passes EAN-13 as-is → left alone
     assert brand_key("036000291452") == "0360002"
     xw = build_crosswalk([("036000291452", "ACME WINE CO"), ("036000291469", "Acme Wine Company"),
                           ("036000291476", "ACME WINE, LLC")])

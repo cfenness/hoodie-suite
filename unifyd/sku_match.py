@@ -29,18 +29,34 @@ def _gs1_check(body):
     return (10 - tot % 10) % 10
 
 
+def _restricted(d):
+    """A LOCALLY-assigned code that is NOT a global product identity — retailers reuse it across different
+    products, so it must never key a SKU. Detected on the NUMBER SYSTEM, independent of the check digit
+    (classify() checks bad_check before restricted, so a broken in-store code masquerades as bad_check):
+    UPC-A number-system 2 (variable-weight/in-store), 4 (internal/no-format), 5 (coupon); EAN-13 in-store
+    prefix 2xx. Measured harm without this: 14,917 ns-2 codes in off-premise/hemp acted as global keys and
+    collided ~1,515 genuinely-different products onto a shared 'UPC' (a bourbon keyed to a wine)."""
+    if len(d) == 13 and d[0] == "2":                     # EAN-13 in-store range (200-299)
+        return True
+    frame = d[-12:] if len(d) >= 12 else d.zfill(12)     # the UPC-A 12-frame; number system is its first digit
+    return frame[0] in ("2", "4", "5")
+
+
 def norm_upc(u):
     """Canonicalize a UPC/EAN/GTIN to its GS1 SIGNIFICANT CORE (the manufacturer+item body, leading zeros and the
     check digit removed) so the same barcode matches across the padding/encoding noise the sources introduce:
     UPC-A vs EAN-13 vs GTIN-14, a stray leading zero, or a dropped/mis-shifted check digit. The move that matters:
     if the digits already end in a VALID check digit we strip it; otherwise we treat the digits AS the core — so
     `085000019498` (valid, core 08500001949) and `008500001949` (that core, leading-zero-padded, check dropped)
-    both reduce to `8500001949` and finally match. Returns None for junk (empty, all-same, placeholder, bad length)."""
+    both reduce to `8500001949` and finally match. Returns None for junk (empty, all-same, placeholder, bad
+    length, or a locally-assigned restricted/in-store code that isn't a global identity)."""
     d = re.sub(r"\D", "", str(u or ""))
     if not (8 <= len(d) <= 14) or len(set(d)) == 1:      # too short/long or all-same-digit (0000…, 1111…)
         return None
     if d.zfill(12) in _PLACEHOLDER or d.lstrip("0") in {p.lstrip("0") for p in _PLACEHOLDER}:
         return None                                      # sequential/placeholder barcode (123456789012 …)
+    if _restricted(d):
+        return None                                      # variable-weight/in-store/coupon — reused, not global
     d = d.lstrip("0") or "0"
     if len(d) >= 9 and _gs1_check(d[:-1]) == int(d[-1]):  # ends in a valid check digit -> strip it to the core
         core = d[:-1]
@@ -106,3 +122,25 @@ def coverage(staged):
             "distinct_skus": len(by_sku), "upc_anchored_skus": len(upc_skus),
             "corroborated_skus": sum(1 for v in by_sku.values() if len(v) >= 2),
             "corroborated_upc_skus": sum(1 for k in upc_skus if len(by_sku[k]) >= 2)}
+
+
+def _selftest():
+    # real UPC-A survives, reduced to its check-stripped core
+    assert norm_upc("085000019498") == "8500001949"
+    assert norm_upc("0085000019498") == "8500001949"      # EAN-13 zero-padded → same core
+    # restricted/in-store codes are rejected (number-system 2/4/5), even when zero-padded to EAN-13
+    assert norm_upc("210000015263") is None               # ns-2 variable-weight (the collision cohort)
+    assert norm_upc("0210000015263") is None
+    assert norm_upc("410000000021") is None               # ns-4 internal
+    assert norm_upc("510000000024") is None               # ns-5 coupon
+    # a normal manufacturer code that merely FAILS its check digit keeps ALL digits as the core (checkless-body)
+    assert norm_upc("036000291453") == "36000291453"
+    # …and the valid sibling strips its check digit, so the two DON'T collide (different SKUs, as they should be)
+    assert norm_upc("036000291452") == "3600029145"
+    # placeholders + junk still rejected
+    assert norm_upc("000000000000") is None and norm_upc("123") is None
+    print("sku_match.py self-test: OK")
+
+
+if __name__ == "__main__":
+    _selftest()

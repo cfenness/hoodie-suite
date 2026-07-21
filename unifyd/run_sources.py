@@ -268,6 +268,17 @@ def run_all(cadence=None, only=None, exclude=None, headless_only=False, mac_only
             _land_runs([rec], log=log)                      # land each immediately
 
     log("[run_sources] DONE — %d sources" % len(records))
+
+    # post-pass: normalization scout over the freshly-landed tables (read-only; proposals → normalization_
+    # findings). Subprocess + best-effort so a scout failure can never poison the run log above.
+    try:
+        log("[run_sources] normalization scout …")
+        r = subprocess.run([PY, os.path.join(HERE, "normalization_scout.py")],
+                           capture_output=True, text=True, timeout=1800)
+        tail = (r.stdout or "").strip().splitlines()
+        log("[run_sources] scout: %s" % (tail[-1] if tail else "no output (rc=%s)" % r.returncode))
+    except Exception as e:
+        log("[run_sources] scout skipped: %s" % str(e)[:120])
     return records
 
 
