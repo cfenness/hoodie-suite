@@ -55,14 +55,15 @@ def _num(v):
 
 
 def _emit(out, dataset, year, naics, geo_level, fips, metrics, row, flags, ts):
-    """Append one long/tall row per metric; suppression from the metric's _F flag or a null value."""
+    """Append one long/tall row per metric; suppression from the metric's _F flag or a null value.
+    Unparseable/suppressed values land as None (not "") so metric_value stays a typed float column —
+    a mixed float/str column fails pyarrow inference when merged with prior typed rows."""
     for m in metrics:
         raw = row.get(m)
         val = _num(raw)
         flag = (row.get(m + "_F") or "").strip() if flags else ""
         supp = bool(flag) or (val is None and raw not in ("0", 0))
-        out.append([dataset, year, naics, geo_level, fips, m.lower(),
-                    (val if val is not None else ""), supp, ts])
+        out.append([dataset, year, naics, geo_level, fips, m.lower(), val, supp, ts])
 
 
 def pull_cbp(year=CBP_YEAR, naics=NAICS):
@@ -112,20 +113,35 @@ def pull_pep(year=PEP_YEAR):
             continue
         for r in rows:
             fips = r.get("state", "") + r.get("county", "") if level == "county" else r.get("state", "")
-            out.append(["pep", year, "", level, fips, "population", _num(r.get("POP")) or "", False, ts])
+            out.append(["pep", year, "", level, fips, "population", _num(r.get("POP")), False, ts])
     return out
 
 
+def _cell_key(r):
+    """The identity a re-pull REPLACES: one (dataset, vintage, naics, geo, metric) cell."""
+    return (r["dataset"], r["vintage_year"], r["naics_code"], r["geo_level"], r["geo_fips"], r["metric_name"])
+
+
 def build(log=print):
-    """Run the four datasets → long/tall census_reference; write to the warehouse. Returns stats."""
+    """Run the datasets → long/tall census_reference; MERGE into the warehouse. Returns stats.
+
+    Persistent catalog, so write_accumulate (never write_parquet): a re-pull replaces each
+    (dataset, vintage, naics, geo, metric) cell it actually fetched and keeps everything else,
+    so a partial pull (one dataset erroring, per-request excepts swallowed above) can no longer
+    shrink the table — this is the writer that wiped census_reference 24,546 → 0 when a keyless
+    pull returned nothing and landed as truth. An all-empty pull now raises instead of writing."""
     import warehouse
     rows = []
     for name, fn in (("cbp", pull_cbp), ("nonemployer", pull_nonemp), ("pep", pull_pep)):
         r = fn()
         log("census %s: %d rows" % (name, len(r)))
         rows.extend(r)
-    res = warehouse.write_parquet("census_reference", [dict(zip(REF_HEADER, r)) for r in rows], fields=REF_HEADER)
-    log("census_reference: %d rows -> %s" % (res["rows"], res["uri"]))
+    if not rows:
+        raise RuntimeError("census build: all pulls returned 0 rows (missing/invalid CENSUS_API_KEY "
+                           "or API down) — refusing to land an empty census_reference")
+    res = warehouse.write_accumulate("census_reference", [dict(zip(REF_HEADER, r)) for r in rows],
+                                     key=_cell_key, fields=REF_HEADER)
+    log("census_reference: %d rows total -> %s" % (res["rows"], res["uri"]))
     return {"rows": res["rows"], "uri": res["uri"]}
 
 
