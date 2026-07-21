@@ -2,7 +2,7 @@
   "meta": {
     "project": "Hoodie Suite",
     "prefix": "HS",
-    "next_id": 23,
+    "next_id": 24,
     "statuses": [
       "proposed",
       "backlog",
@@ -748,6 +748,33 @@
         "CLAUDE.md",
         "canon-seed/CLAUDE.md",
         "apps/docs/process.md"
+      ]
+    },
+    {
+      "id": "HS-023",
+      "title": "Cross-repo board — one Tickets view over HS + HB + HA + HC",
+      "type": "feat",
+      "status": "proposed",
+      "size": "S",
+      "priority": "P2",
+      "created": "2026-07-08",
+      "updated": "2026-07-08",
+      "branch": "",
+      "commits": [],
+      "summary": "The suite's Tickets board learns to aggregate all four repos' tickets.json into one view: a repo filter chip row (Suite · Backend · App · Canon), repo-prefixed cards, one place to see the whole estate's pipeline. Suite tickets load same-origin as today; the other repos' files are fetched from GitHub raw URLs when reachable (graceful 'repo not reachable' chip when not — e.g. private raw without auth), so the board degrades honestly rather than breaking.",
+      "context": "Each repo keeps its own tickets.json as source of truth (sessions working a repo edit only their own file — no cross-repo write coupling). The suite board is READ-ONLY over the others. Open question for confirmation: is GitHub-raw fetch acceptable for private repos (may require a token → likely lands as 'not reachable' chips until the engine proxies it), or should the engine gain a small /api/tickets/all proxy endpoint that fetches server-side with its GitHub credential? Proxy is more reliable; raw-fetch is zero backend change.",
+      "acceptance": [
+        "Suite #tickets shows a repo filter; All shows every reachable repo's tickets with repo-tagged cards",
+        "Unreachable repos show an honest 'not reachable' chip — never a broken board",
+        "Suite-only behavior unchanged when filtered to Suite; drawer renders foreign tickets identically",
+        "No repo's tickets.json schema or ownership changes"
+      ],
+      "verification_plan": [
+        "In-browser: All view renders HS+HB+HA cards with repo tags; kill one source → chip degrades honestly; filter interactions + drawer on a foreign ticket"
+      ],
+      "files": [
+        "apps/tickets.html",
+        "unifyd/server.py (only if the proxy option is chosen)"
       ]
     }
   ]
