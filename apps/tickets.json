@@ -353,13 +353,15 @@
       "id": "HS-010",
       "title": "Two-pane match/steward page — source left, master right",
       "type": "feat",
-      "status": "ready",
+      "status": "in-review",
       "size": "M",
       "priority": "P1",
       "created": "2026-07-08",
       "updated": "2026-07-08",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
-      "commits": [],
+      "commits": [
+        "ed7ab01"
+      ],
       "summary": "Record-level matching for the residue the identity key missed: source records on the left, golden masters on the right. Select 1+ left + 1 right → Match (multi-select = 'these are all this one real entity'), or DRAG a single source row onto a master. Plus 'not a match' (suppressed forever) and 'new master' (mint a fresh Hoodie ID). The owner specified this page's interaction model verbatim.",
       "context": "This is T3 of the cascade made concrete — and under the accuracy-first standard it should see only the 5–10% residue. Every decision is a persisted RULE that re-applies on rebuild (generalize the outlet_confirms.json pattern → match_decisions.json keyed by mode+entity; a decision is {a, b, verdict, at, by} where a/b are identity signatures, NOT row edits — first law). Filter both panes to a BLOCK (e.g. same address_core, or the jaro-winkler/geo candidate pairs from the existing Confirm SQL) so the steward compares like with like. Decisions feed back as tuning signal for the resolver's thresholds.",
       "acceptance": [
@@ -380,6 +382,20 @@
         "apps/mdm-match.html",
         "unifyd/server.py",
         "unifyd/flow.py"
+      ],
+      "qa_checks": [
+        "Suggested pair chip click preselects both sides; match (button AND the m key) merges them; after refresh the merged record shows 2 src and the suggestion is gone",
+        "Drag a left row onto a right row — it must match immediately (no button)",
+        "not-a-match on a pair, reload the page — the pair must NOT reappear in Suggested",
+        "new-master marks the record 'standalone ✓' and it stays after reload",
+        "Run the flow afterwards (POST /api/flow/run) — dim_<entity> row count reflects the merges, and re-seeding does NOT ingest dim_outlet as a source (self-ingestion guard)",
+        "A record can never be matched to itself (select same id both sides → blocked)"
+      ],
+      "review_notes": [
+        "Is every decision a persisted RULE applied pre-GROUP-BY (survivorship reruns), never an edit to output rows?",
+        "match/decide input validation — can junk verdicts/ids corrupt match_decisions.json?",
+        "The candidates SQL self-join — quadratic on golden count; is the limit protective enough for now, and is the blocked-pairs filter server-side?",
+        "XSS in labels rendered into suggestion chips and rows?"
       ]
     },
     {

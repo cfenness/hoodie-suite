@@ -101,12 +101,41 @@ def _index(flow):
 
 def _identity_inner(node, upstream_sql):
     """Add the resolve node's identity key as `_id` to its upstream rows — the ONE basis shared by the
-    GROUP BY, the conflict queue, and provenance, so all three compute the identical identity."""
+    GROUP BY, the conflict queue, and provenance, so all three compute the identical identity.
+    node.remap ([[from_id, to_id], …] — steward match DECISIONS, injected by the server from the
+    persisted decision store) is applied HERE, before the GROUP BY, so a hand-matched pair re-groups
+    and full survivorship reruns over the merged rows: a decision is a rule that re-materializes,
+    never an edit to the output (first law)."""
     ident = node.get("identity") or {}
     strong, natural = ident.get("strong"), (ident.get("natural") or [])
     nat = " || '␟' || ".join(_key_part(k) for k in natural) if natural else "''"
     idx = ("COALESCE(NULLIF(CAST(%s AS VARCHAR), ''), %s)" % (derive.col(strong), nat)) if strong else nat
+    remap = [r for r in (node.get("remap") or []) if isinstance(r, (list, tuple)) and len(r) == 2 and r[0] != r[1]]
+    if remap:
+        whens = " ".join("WHEN %s THEN %s" % (derive._sqlstr(a), derive._sqlstr(b)) for a, b in remap)
+        idx = "CASE (%s) %s ELSE (%s) END" % (idx, whens, idx)
     return "SELECT *, %s AS _id FROM (%s)" % (idx, upstream_sql)
+
+
+def candidates_sql(flow, resolve_node_id, uri_fn, min_sim=0.82, limit=200):
+    """Match candidates for the steward's two-pane page: pairs of DISTINCT golden identities that look
+    like the same real thing — same block (first non-strong natural key component's normalized value,
+    e.g. outlet address_core… actually the LAST component, zip-like, is the cheapest block) with
+    similar names. Returns (a_id, b_id, a_label, b_label, sim). Pairs the steward already decided are
+    filtered by the CALLER (the decision store lives server-side)."""
+    n = _index(flow).get(resolve_node_id)
+    if not n or n.get("type") != "resolve":
+        raise ValueError("candidates_sql needs a resolve node")
+    fields = n.get("fields") or []
+    label = fields[0] if fields else "_id"
+    lc = derive.col(label)
+    golden = compile_sql(flow, resolve_node_id, uri_fn)
+    sim = "jaro_winkler_similarity(lower(CAST(a.%s AS VARCHAR)), lower(CAST(b.%s AS VARCHAR)))" % (lc, lc)
+    return ("SELECT a._id AS a_id, b._id AS b_id, CAST(a.%s AS VARCHAR) AS a_label, "
+            "CAST(b.%s AS VARCHAR) AS b_label, round(%s, 3) AS sim "
+            "FROM (%s) a JOIN (%s) b ON a._id < b._id "
+            "WHERE %s >= %f ORDER BY sim DESC LIMIT %d"
+            % (lc, lc, sim, golden, golden, sim, float(min_sim), int(limit)))
 
 
 def compile_sql(flow, node_id, uri_fn, _seen=None):
@@ -321,10 +350,18 @@ def score_dataset(columns, entity, master_fields):
     return have / max(1, len(need)), amap
 
 
+# The engine's own OUTPUT tables — never seeding INPUTS. Without this guard the master eats its own
+# materialized output (dim_* maps perfectly onto the master schema, by definition) and every rebuild
+# double-counts: a self-ingestion feedback loop. Found live when a run's dim_outlet re-entered the seed.
+_OUTPUT_PREFIXES = ("dim_", "fact_", "_stage_")
+
+
 def propose_flow(entity, datasets, master_fields, min_score=0.34):
     """SEED a flow for `entity` from what's landed. `datasets` = [{name, fields:[...]}]. Returns a flow
     dict (input→clean per feeding source → union → resolve→output) — a DRAFT the steward tweaks on the
-    canvas. Nothing hidden: every auto-mapped field is a visible, editable clean node."""
+    canvas. Nothing hidden: every auto-mapped field is a visible, editable clean node. The engine's own
+    output tables (dim_/fact_/_stage_) are never proposed as inputs."""
+    datasets = [d for d in datasets if not str(d.get("name", "")).startswith(_OUTPUT_PREFIXES)]
     mfields = [f["name"] if isinstance(f, dict) else f for f in master_fields]
     strong = _ENTITY_STRONG.get(entity)
     natural = [k for k in _ENTITY_KEYS.get(entity, []) if k["field"] in mfields]   # {field,norm} specs
@@ -411,6 +448,11 @@ def _selftest():
     ofm = {f["out"]: f.get("source_field") for f in {n["id"]: n for n in oseed["nodes"]}["cl_fl"]["fields"]}
     assert ofm.get("dba") == "DBA" and ofm.get("outlet_name") == "Owner Name", ofm
     assert oseed["nodes"][-2]["identity"]["strong"] == "source_ref", oseed["nodes"][-2]["identity"]
+    # self-ingestion guard: the engine's own outputs are NEVER proposed as inputs
+    noself = propose_flow("outlet", [{"name": "dim_outlet", "fields": ["outlet_name", "address", "zip5"]},
+                                     {"name": "fl", "fields": ["DBA", "Owner Name", "Location Address 1", "Zip"]}],
+                          ["outlet_name", "dba", "address", "zip5"])
+    assert all(n.get("dataset") != "dim_outlet" for n in noself["nodes"] if n["type"] == "input"), noself
 
     # live check against DuckDB if present: a two-source master with a real conflict
     try:
@@ -459,6 +501,25 @@ def _selftest():
         pcols = ["brand", "size_ml", "origin"]
         prof = con.execute(profile_sql(compile_sql(fl, "r", uf2), pcols)).fetchall()
         assert prof[0][0] == 1, prof                               # _n = 1 golden record
+        # steward match decision: remap re-groups BEFORE the GROUP BY, so survivorship reruns over the
+        # merged rows (a decision is a rule, not an output edit). 'Titos' vs a variant spelling:
+        import copy
+        con.execute("COPY (SELECT * FROM (VALUES ('Titoz','750ml','C')) t(Brand,Size,Origin)) TO '%s/s3.parquet'" % d)
+        fl2 = copy.deepcopy(fl)                                     # deep copy of the two-source flow
+        next(n2 for n2 in fl2["nodes"] if n2["id"] == "i2")["dataset"] = "s3"   # i2 reads the variant source
+        ids = sorted(r[0] for r in con.execute(
+            "SELECT _id FROM (%s)" % compile_sql(fl2, "r", uf2)).fetchall())
+        assert len(ids) == 2, ids                                   # titos + titoz — unmerged residue
+        next(n2 for n2 in fl2["nodes"] if n2["id"] == "r")["remap"] = [[ids[1], ids[0]]]   # steward: same
+        merged = con.execute(compile_sql(fl2, "r", uf2)).fetchall()
+        mcols = [c[0] for c in con.description]
+        mrec = dict(zip(mcols, merged[0]))
+        assert len(merged) == 1 and mrec["_rows"] == 3, (merged,)   # re-grouped to ONE golden
+        assert mrec["origin"] == "A", mrec                          # authority s1>s2 STILL decides — survivorship reran
+        # candidates: titos/titoz similarity surfaces the pair for the steward (query the UNremapped flow)
+        fl3 = {"nodes": [dict(n2, remap=[]) if n2.get("id") == "r" else n2 for n2 in fl2["nodes"]]}
+        cand = con.execute(candidates_sql(fl3, "r", uf2, min_sim=0.8)).fetchall()
+        assert any(c[4] >= 0.8 for c in cand), cand
         # catch-all detection: 'other'/'misc' are populated-but-empty — counted, not accepted as filled
         con.execute("CREATE TABLE ca(cat VARCHAR)")
         con.executemany("INSERT INTO ca VALUES (?)", [("Vodka",), ("Other",), ("OTHER",), ("misc",)])

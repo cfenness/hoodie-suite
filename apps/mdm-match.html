@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<!-- Hoodie Suite · MDM — Match. The steward's two-pane record-level surface (HS-010, owner-specced):
+     source/residue golden records LEFT, masters RIGHT. Select 1+ left + 1 right → Match, or DRAG a
+     left row onto a right row. Plus Not-a-match and New-master. Every decision is a persisted RULE
+     (match_decisions.json) injected into the resolver as an identity remap — it re-groups BEFORE the
+     GROUP BY so survivorship reruns over the merged rows on every rebuild. First law: no output edit.
+     Keyboard: j/k suggestions · m match · x not-a-match · n new-master · / search. -->
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoodie · MDM Match</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--teal:#4E79A7;--teal-d:#3D6089;--teal-soft:#E8EEF5;--ink:#243330;--ink2:#3A4A47;
+        --muted:#5E6B68;--muted2:#8A928F;--line:#D7DDDB;--line2:#E4E9E8;--paper:#F4F6F5;--surface:#fff;
+        --good:#15803d;--good-soft:#e7f3ec;--warn:#b45309;--warn-soft:#fbeede;--bad:#b4232a;--bad-soft:#f8e6e7;
+        --mono:'JetBrains Mono',ui-monospace,monospace;--body:'Inter',system-ui,sans-serif;}
+  *{box-sizing:border-box} html,body{margin:0;height:100%}
+  body{display:flex;flex-direction:column;height:100vh;overflow:hidden;font-family:var(--mono);font-size:12px;color:var(--ink);background:var(--paper)}
+  button,select,input{font-family:inherit;font-size:inherit;color:inherit}
+  .top{flex:0 0 auto;display:flex;align-items:center;gap:10px;height:40px;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--line)}
+  .bc{font-weight:700;color:var(--teal-d)}.bc b{color:var(--ink)}.bc .s{color:var(--muted2)}
+  select,.btn{background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-weight:600;cursor:pointer;color:var(--ink2)}
+  .btn:hover{background:var(--paper)} .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn.match{background:var(--good-soft);border-color:#bfe0cb;color:var(--good)}
+  .btn.rej{background:var(--bad-soft);border-color:#EBC9CB;color:var(--bad)}
+  .btn.new{background:var(--teal-soft);border-color:#CDDDEC;color:var(--teal-d)}
+  .sp{flex:1}
+  .mode{cursor:pointer;font-weight:700;letter-spacing:.08em;border-radius:6px;padding:3px 9px;font-size:10px;border:1px solid #bfe0cb;background:var(--good-soft);color:var(--good)}
+  .mode.syn{background:var(--warn-soft);border-color:#f0d3a8;color:var(--warn)}
+  .kbd{color:var(--muted2);font-size:10px}
+  /* suggestions strip */
+  .sugg{flex:0 0 auto;display:flex;gap:7px;align-items:center;padding:8px 14px;background:var(--surface);border-bottom:1px solid var(--line);overflow-x:auto}
+  .sugg .lab{font-size:9.5px;letter-spacing:.12em;color:var(--muted2);font-weight:700;text-transform:uppercase;flex:0 0 auto}
+  .sg{flex:0 0 auto;display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:4px 9px;cursor:pointer;background:var(--paper);font-size:11px}
+  .sg:hover{border-color:#B9CBDE}
+  .sg.on{border-color:var(--teal);background:var(--teal-soft)}
+  .sg .sim{color:var(--warn);font-weight:700}
+  .sg .arr{color:var(--muted2)}
+  .empty-sugg{color:var(--muted2);font-style:italic;font-family:var(--body);font-size:12px}
+  /* panes */
+  .panes{flex:1;display:flex;min-height:0}
+  .pane{flex:1;display:flex;flex-direction:column;min-width:0}
+  .pane+.pane{border-left:1px solid var(--line)}
+  .ph{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line);background:var(--surface)}
+  .ph .t{font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .ph input{flex:1;border:1px solid var(--line);border-radius:7px;padding:5px 9px;background:var(--paper)}
+  .ph .n{color:var(--muted2);font-size:10px}
+  .rows{flex:1;overflow-y:auto;padding:6px 8px}
+  .row{display:flex;align-items:center;gap:9px;padding:7px 9px;border:1px solid transparent;border-radius:8px;cursor:pointer;background:var(--surface);margin-bottom:5px}
+  .row:hover{border-color:#B9CBDE}
+  .row.sel{border-color:var(--teal);background:var(--teal-soft)}
+  .row.droptgt{border-color:var(--good);background:var(--good-soft)}
+  .row .cb{flex:0 0 auto}
+  .row .lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--ink)}
+  .row .sub{flex:0 0 auto;color:var(--muted2);font-size:10px}
+  .row .srcs{flex:0 0 auto;font-size:9px;font-weight:700;border-radius:999px;padding:1px 7px;background:var(--line2);color:var(--muted)}
+  .row .srcs.multi{background:var(--good-soft);color:var(--good)}
+  .row .rev{flex:0 0 auto;font-size:9px;font-weight:700;color:var(--teal-d)}
+  .hint{color:var(--muted2);font-family:var(--body);font-size:12px;padding:14px;font-style:italic}
+  .spin{width:18px;height:18px;border:2px solid var(--line);border-top-color:var(--teal);border-radius:50%;animation:sp .7s linear infinite;margin:26px auto}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  #toast{position:fixed;bottom:14px;left:50%;transform:translateX(-50%) translateY(14px);background:var(--ink);color:#fff;padding:8px 14px;border-radius:8px;font-size:11.5px;font-weight:600;opacity:0;transition:.2s;pointer-events:none;z-index:50}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast.good{background:#14532d}#toast.bad{background:#7f1d1d}
+</style></head><body>
+  <div class="top">
+    <span class="bc"><b>hoodie</b><span class="s">·</span>mdm<span class="s">/</span>match</span>
+    <select id="entity"><option value="outlet">outlet</option><option value="product">product</option><option value="party">party</option></select>
+    <button class="btn" id="reload">reload</button>
+    <span class="sp"></span>
+    <button class="btn match" id="act-match" disabled>match (m)</button>
+    <button class="btn rej" id="act-diff" disabled>not a match (x)</button>
+    <button class="btn new" id="act-new" disabled>new master (n)</button>
+    <span class="mode" id="mode">REAL</span>
+    <span class="kbd">j/k · m/x/n · drag left→right</span>
+  </div>
+  <div class="sugg" id="sugg"><span class="lab">Suggested</span><span class="empty-sugg">loading…</span></div>
+  <div class="panes">
+    <div class="pane">
+      <div class="ph"><span class="t">Source records</span><input id="ql" placeholder="/ search left…"><span class="n" id="nl"></span></div>
+      <div class="rows" id="left"><div class="spin"></div></div>
+    </div>
+    <div class="pane">
+      <div class="ph"><span class="t">Master</span><input id="qr" placeholder="search right…"><span class="n" id="nr"></span></div>
+      <div class="rows" id="right"><div class="spin"></div></div>
+    </div>
+  </div>
+  <div id="toast"></div>
+<script>
+(function(){
+  "use strict";
+  var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
+  var $=function(id){return document.getElementById(id);};
+  var S={flow:null,node:null,mode:"real",recs:[],cands:[],selL:{},selR:null,ql:"",qr:"",sgSel:-1,labelField:null};
+
+  function toast(m,k){var t=$("toast");t.className="";t.textContent=m;void t.offsetWidth;t.className=(k||"")+" show";clearTimeout(toast._t);toast._t=setTimeout(function(){t.className=(k||"");},2400);}
+  function api(p,b){b=b||{};if(b.mode===undefined)b.mode=S.mode;
+    return fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}).then(function(r){return r.json();}).catch(function(e){return{ok:false,error:String(e)};});}
+
+  function boot(){
+    $("left").innerHTML='<div class="spin"></div>';$("right").innerHTML='<div class="spin"></div>';
+    api("/api/flow/seed",{entity:$("entity").value}).then(function(r){
+      if(!r||!r.ok||!r.flow||!(r.flow.nodes||[]).length){$("left").innerHTML='<div class="hint">'+esc((r&&r.flow&&r.flow.note)||"no landed data for this master — run a pull first")+'</div>';$("right").innerHTML='<div class="hint">—</div>';return;}
+      S.flow=r.flow;
+      var res=(r.flow.nodes||[]).filter(function(n){return n.type==="resolve";})[0];
+      S.node=res?res.id:null;
+      S.labelField=(res&&res.fields&&res.fields[0])||null;
+      refresh();
+    });
+  }
+  function refresh(){
+    Promise.all([
+      api("/api/match/records",{flow:S.flow,node:S.node,limit:300}),
+      api("/api/match/candidates",{flow:S.flow,node:S.node})
+    ]).then(function(rr){
+      var rec=rr[0],cand=rr[1];
+      if(!rec.landed){$("left").innerHTML='<div class="hint">'+esc(rec.error||"records failed")+'</div>';$("right").innerHTML="";return;}
+      S.recs=rec.records||[];S.cands=(cand.candidates||[]);S.selL={};S.selR=null;S.sgSel=-1;
+      paint();
+    });
+  }
+
+  function label(r){return String((S.labelField&&r[S.labelField])||r._id||"?");}
+  function fmtRow(r,side){
+    var sel=side==="L"?!!S.selL[r._id]:S.selR===r._id;
+    var srcs=r._sources||1;
+    return '<div class="row'+(sel?" sel":"")+'" data-id="'+esc(r._id)+'" data-side="'+side+'"'+(side==="L"?' draggable="true"':'')+'>'+
+      (side==="L"?'<input type="checkbox" class="cb"'+(sel?" checked":"")+'>':'<input type="radio" class="cb" name="rsel"'+(sel?" checked":"")+'>')+
+      '<span class="lbl">'+esc(label(r))+'</span>'+
+      (r._reviewed?'<span class="rev">standalone ✓</span>':'')+
+      '<span class="srcs'+(srcs>1?" multi":"")+'">'+srcs+' src</span>'+
+      '<span class="sub">'+(r._rows||1)+' rows</span></div>';
+  }
+  function shown(side){
+    var q=(side==="L"?S.ql:S.qr).toLowerCase();
+    return S.recs.filter(function(r){return !q||label(r).toLowerCase().indexOf(q)>=0;});
+  }
+  function paint(){
+    var L=shown("L"),R=shown("R");
+    $("nl").textContent=L.length+" records";$("nr").textContent=R.length+" masters";
+    $("left").innerHTML=L.length?L.map(function(r){return fmtRow(r,"L");}).join(""):'<div class="hint">nothing on this side.</div>';
+    $("right").innerHTML=R.length?R.map(function(r){return fmtRow(r,"R");}).join(""):'<div class="hint">nothing on this side.</div>';
+    var h=S.cands.length?S.cands.slice(0,30).map(function(c,i){
+      return '<span class="sg'+(i===S.sgSel?" on":"")+'" data-i="'+i+'">'+esc(c.a_label||c.a_id)+'<span class="arr">↔</span>'+esc(c.b_label||c.b_id)+'<span class="sim">'+(c.sim!=null?c.sim.toFixed(2):"")+'</span></span>';
+    }).join(""):'<span class="empty-sugg">no suggested pairs — sources agree, or everything is decided ✓</span>';
+    $("sugg").innerHTML='<span class="lab">Suggested</span>'+h;
+    wire();actions();
+  }
+  function wire(){
+    Array.prototype.forEach.call(document.querySelectorAll(".row"),function(el){
+      var id=el.getAttribute("data-id"),side=el.getAttribute("data-side");
+      el.onclick=function(){ if(side==="L"){ if(S.selL[id])delete S.selL[id]; else S.selL[id]=true; } else { S.selR=(S.selR===id?null:id); } paint(); };
+      if(side==="L"){
+        el.ondragstart=function(ev){ S.selL[id]=true; ev.dataTransfer.setData("text/plain",id); };
+      } else {
+        el.ondragover=function(ev){ev.preventDefault();el.classList.add("droptgt");};
+        el.ondragleave=function(){el.classList.remove("droptgt");};
+        el.ondrop=function(ev){ev.preventDefault();el.classList.remove("droptgt");
+          var a=ev.dataTransfer.getData("text/plain"); if(a&&a!==id){S.selL={};S.selL[a]=true;S.selR=id;decide("same");}};
+      }
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".sg"),function(el){
+      el.onclick=function(){pickSuggestion(+el.getAttribute("data-i"));};
+    });
+  }
+  function pickSuggestion(i){
+    var c=S.cands[i]; if(!c)return; S.sgSel=i;
+    S.selL={}; S.selL[c.a_id]=true; S.selR=c.b_id; paint();
+  }
+  function actions(){
+    var nL=Object.keys(S.selL).length;
+    $("act-match").disabled=!(nL>=1&&S.selR&&!S.selL[S.selR]);
+    $("act-diff").disabled=!(nL===1&&S.selR&&!S.selL[S.selR]);
+    $("act-new").disabled=!(nL>=1);
+  }
+  function decide(verdict){
+    var ids=Object.keys(S.selL); if(!ids.length)return;
+    if(verdict!=="new"&&!S.selR)return;
+    if(verdict!=="new"&&S.selL[S.selR]){toast("a record can't match itself","bad");return;}
+    var calls=ids.map(function(a){return api("/api/match/decide",{entity:(S.flow&&S.flow.entity)||$("entity").value,verdict:verdict,a:a,b:verdict==="new"?null:S.selR});});
+    Promise.all(calls).then(function(rs){
+      var bad=rs.filter(function(r){return !r.ok;})[0];
+      if(bad){toast("decide failed · "+(bad.error||"?"),"bad");return;}
+      toast(verdict==="same"?(ids.length+" matched → master · a rule, re-materializes"):verdict==="different"?"kept apart — won't resurface":"marked standalone","good");
+      refresh();
+    });
+  }
+  $("act-match").onclick=function(){decide("same");};
+  $("act-diff").onclick=function(){decide("different");};
+  $("act-new").onclick=function(){decide("new");};
+  $("reload").onclick=refresh;
+  $("entity").onchange=boot;
+  $("mode").onclick=function(){S.mode=(S.mode==="real"?"synthetic":"real");var m=$("mode");
+    m.classList.toggle("syn",S.mode==="synthetic");m.textContent=S.mode.toUpperCase();boot();};
+  $("ql").oninput=function(){S.ql=$("ql").value;paint();};
+  $("qr").oninput=function(){S.qr=$("qr").value;paint();};
+  document.addEventListener("keydown",function(e){
+    if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName||""))return;
+    if(e.key==="j"||e.key==="k"){ if(!S.cands.length)return;
+      S.sgSel=e.key==="j"?Math.min(S.sgSel+1,Math.min(S.cands.length,30)-1):Math.max(S.sgSel-1,0);
+      pickSuggestion(S.sgSel); }
+    else if(e.key==="m"&&!$("act-match").disabled)decide("same");
+    else if(e.key==="x"&&!$("act-diff").disabled)decide("different");
+    else if(e.key==="n"&&!$("act-new").disabled)decide("new");
+    else if(e.key==="/"){e.preventDefault();$("ql").focus();}
+  });
+  boot();
+})();
+</script>
+</body></html>

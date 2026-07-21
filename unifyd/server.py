@@ -2969,11 +2969,13 @@ def _flow_uri(mode):
 
 
 def _flow_compile(body):
-    """Compile the requested node of the posted flow → (sql, flow, node_id). Node defaults to the last."""
+    """Compile the requested node of the posted flow → (sql, flow, node_id). Node defaults to the last.
+    Steward match decisions are injected first, so preview/profile/sql all show merges applied."""
     import flow as flowmod
-    fl = body.get("flow") or {}
+    mode = _flow_mode(body)
+    fl = _inject_match_decisions(body.get("flow") or {}, mode)
     node = body.get("node") or ((fl.get("nodes") or [{}])[-1].get("id"))
-    return flowmod.compile_sql(fl, node, _flow_uri(_flow_mode(body))), fl, node
+    return flowmod.compile_sql(fl, node, _flow_uri(mode)), fl, node
 
 
 @app.get("/api/flow/datasets")
@@ -3104,7 +3106,8 @@ def flow_conflicts_ep():
     except (ValueError, TypeError):
         limit = 100
     try:
-        csql = flowmod.conflict_sql(b.get("flow") or {}, b.get("node"), field, _flow_uri(_flow_mode(b)), limit=limit)
+        csql = flowmod.conflict_sql(_inject_match_decisions(b.get("flow") or {}, _flow_mode(b)),
+                                    b.get("node"), field, _flow_uri(_flow_mode(b)), limit=limit)
         cur = warehouse.connect().execute(csql)
         cols = [d[0] for d in cur.description]
         rows = [dict(zip(cols, r)) for r in cur.fetchall()]
@@ -3126,7 +3129,7 @@ def flow_provenance_ep():
     try:
         uf = _flow_uri(_flow_mode(b))
         con = warehouse.connect()
-        inner = flowmod.provenance_sql(b.get("flow") or {}, node, uf)
+        inner = flowmod.provenance_sql(_inject_match_decisions(b.get("flow") or {}, _flow_mode(b)), node, uf)
         cur = con.execute("SELECT * FROM (%s) WHERE _id = ? LIMIT 80" % inner, [rid])
         cols = [d[0] for d in cur.description]
         rows = [dict(zip(cols, r)) for r in cur.fetchall()]
@@ -3152,6 +3155,7 @@ def flow_run_ep():
     nd = {n.get("id"): n for n in fl_obj.get("nodes", [])}.get(node) or {}
     entity = _entity(fl_obj.get("entity") or "outlet")
     mode = _flow_mode(b)
+    fl_obj = _inject_match_decisions(fl_obj, mode)                 # decisions re-materialize on every run
     table = (nd.get("table") or ("dim_%s" % entity)).strip().replace("'", "")
     pfx = HOODIE_PREFIX.get(entity, "X")
     try:
@@ -3176,6 +3180,143 @@ def flow_run_ep():
     except Exception as e:
         return jsonify(ok=False, error=str(e)[:240]), 200
     return jsonify(ok=True, table=table, mode=mode, rows=total, hoodie_minted=minted, hoodie_total=len(ent["map"]))
+
+
+# ── Match — the steward's two-pane record-level surface (HS-010). Decisions are RULES that persist
+# (match_decisions.json) and re-materialize: 'same' pairs are injected into the resolve node as an
+# identity remap BEFORE the GROUP BY, so survivorship reruns over the merged rows on every rebuild.
+# 'different' suppresses the pair from candidates; 'new' marks a record reviewed-standalone. ──
+def _match_store():
+    return load("match_decisions.json", {})
+
+
+def _match_key(a, b):
+    return "|".join(sorted([str(a), str(b)]))
+
+
+def _match_canon(decisions):
+    """Union-find over 'same' pairs → {id: canonical_id} (lexicographically smallest root, so the
+    remap is deterministic across rebuilds)."""
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for rec in decisions.values():
+        if rec.get("verdict") == "same":
+            ra, rb = find(rec["a"]), find(rec["b"])
+            if ra != rb:
+                lo, hi = sorted([ra, rb])
+                parent[hi] = lo
+    return {x: find(x) for x in list(parent) if find(x) != x}
+
+
+def _inject_match_decisions(fl, mode):
+    """Set node.remap on every resolve node from the persisted decisions for (mode, entity)."""
+    if not isinstance(fl, dict):
+        return fl
+    ent = _entity(fl.get("entity") or "outlet")
+    dec = (_match_store().get(mode, {}) or {}).get(ent, {})
+    canon = _match_canon(dec)
+    if canon:
+        for n in fl.get("nodes", []):
+            if n.get("type") == "resolve":
+                n["remap"] = sorted(canon.items())
+    return fl
+
+
+@app.post("/api/match/candidates")
+def match_candidates_ep():
+    """Suggested pairs for the two-pane page: similar-looking DISTINCT golden identities, minus pairs
+    the steward already decided. Body: {flow, node, mode, min, limit}."""
+    import flow as flowmod
+    import warehouse
+    b = request.get_json(silent=True) or {}
+    mode = _flow_mode(b)
+    fl = _inject_match_decisions(b.get("flow") or {}, mode)
+    try:
+        mn = min(0.99, max(0.5, float(b.get("min", 0.82))))
+        lim = min(500, max(1, int(b.get("limit", 120))))
+    except (TypeError, ValueError):
+        mn, lim = 0.82, 120
+    try:
+        sql = flowmod.candidates_sql(fl, b.get("node"), _flow_uri(mode), min_sim=mn, limit=lim + 100)
+        cur = warehouse.connect().execute(sql)
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:200], candidates=[]), 200
+    ent = _entity(fl.get("entity") or "outlet")
+    decided = (_match_store().get(mode, {}) or {}).get(ent, {})
+    out = [r for r in rows if _match_key(r["a_id"], r["b_id"]) not in decided][:lim]
+    return jsonify(ok=True, landed=True, mode=mode, candidates=_flow_jsonsafe(out))
+
+
+@app.post("/api/match/records")
+def match_records_ep():
+    """Golden records for the panes (decisions applied, so matched pairs already show merged).
+    Body: {flow, node, mode, q, limit}. Returns id/_sources/_rows + the resolve node's fields."""
+    import flow as flowmod
+    import warehouse
+    b = request.get_json(silent=True) or {}
+    mode = _flow_mode(b)
+    fl = _inject_match_decisions(b.get("flow") or {}, mode)
+    node = b.get("node")
+    q = (str(b.get("q") or "")).strip().lower()
+    try:
+        lim = min(500, max(1, int(b.get("limit", 200))))
+    except (TypeError, ValueError):
+        lim = 200
+    try:
+        sql = flowmod.compile_sql(fl, node, _flow_uri(mode))
+        where = ""
+        params = []
+        if q:
+            where = " WHERE lower(CAST(q AS VARCHAR)) LIKE ?"      # whole-row text match, cheap + generic
+            params = ["%" + q.replace("%", "").replace("_", "") + "%"]
+        cur = warehouse.connect().execute(
+            "SELECT * FROM (%s) q%s ORDER BY _sources ASC, _rows DESC LIMIT %d" % (sql, where, lim), params)
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:200], records=[]), 200
+    ent = _entity(fl.get("entity") or "outlet")
+    decided = (_match_store().get(mode, {}) or {}).get(ent, {})
+    standalone = {v["a"] for v in decided.values() if v.get("verdict") == "new"}
+    for r in rows:
+        r["_reviewed"] = r.get("_id") in standalone
+    return jsonify(ok=True, landed=True, mode=mode, columns=[c for c in cols if "__conflict" not in c],
+                   records=_flow_jsonsafe(rows))
+
+
+@app.post("/api/match/decide")
+def match_decide_ep():
+    """Persist a steward decision: {mode, entity, verdict: same|different|new, a, b?}. 'same' merges a
+    INTO b's group on every rebuild; 'different' suppresses the pair; 'new' marks a standalone. Multi-
+    select = one call per left id. Idempotent per pair."""
+    b = request.get_json(silent=True) or {}
+    mode = _flow_mode(b)
+    ent = _entity(b.get("entity") or "outlet")
+    verdict = (b.get("verdict") or "").strip()
+    a, b2 = (str(b.get("a") or "")).strip(), (str(b.get("b") or "")).strip()
+    if verdict not in ("same", "different", "new"):
+        return jsonify(ok=False, error="verdict must be same|different|new"), 400
+    if not a or (verdict != "new" and not b2):
+        return jsonify(ok=False, error="a required (and b for same/different)"), 400
+    store = _match_store()
+    bucket = store.setdefault(mode, {}).setdefault(ent, {})
+    key = _match_key(a, b2) if verdict != "new" else ("new|" + a)
+    bucket[key] = {"a": a, "b": b2 or None, "verdict": verdict,
+                   "at": int(time.time()), "by": _user_rec().get("code", "SYS")}
+    _save_json("match_decisions.json", store)
+    counts = {}
+    for v in bucket.values():
+        counts[v["verdict"]] = counts.get(v["verdict"], 0) + 1
+    return jsonify(ok=True, mode=mode, entity=ent, decided=len(bucket), counts=counts)
 
 
 # ── Tickets — inline editing from the board. The STRUCTURE lives in apps/tickets.schema.json (owner-
