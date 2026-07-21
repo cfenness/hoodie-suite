@@ -161,7 +161,16 @@ def run_one(source, log=print):
                            capture_output=True, text=True)
         if r.returncode != 0:
             status = "failed"
-            error = (r.stderr or r.stdout or "").strip().splitlines()[-1][:300] if (r.stderr or r.stdout) else "nonzero exit"
+            # Keep the CRASH SITE, not just the message: the last traceback 'File "…", line N' frame plus
+            # the final line. One stripped message line ("utf-8 codec can't decode…") left the specs crash
+            # unlocatable; the frame makes the next intermittent failure a pinpointed diagnosis.
+            out = (r.stderr or r.stdout or "").strip()
+            if out:
+                lines = out.splitlines()
+                frames = [l.strip() for l in lines if l.strip().startswith('File "')]
+                error = (" | ".join(frames[-1:] + [lines[-1]]))[:300]
+            else:
+                error = "nonzero exit"
     except subprocess.TimeoutExpired:
         status, error = "timeout", "exceeded %ds" % _TIMEOUT.get(source["klass"], 5400)
     except Exception as e:
