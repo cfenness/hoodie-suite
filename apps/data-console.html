@@ -231,10 +231,15 @@ function renderOverview(){
     const c=RUNC[s.run_status]||'--mut';
     const d=s.run_delta>0?` <span class="dpos">+${fmt(s.run_delta)}</span>`:(s.run_status==='no-change'?' <span class="dzero">0</span>':'');
     return `<span class="stat-pill" style="background:color-mix(in srgb,var(${c}) 16%,transparent);color:var(${c})" title="${esc((s.run_error||'')+(s.run_ts?' · '+new Date(s.run_ts*1000).toLocaleString():''))}">${s.run_status}</span>${d} <span class="grp">${ago(s.run_ts)}</span>${s.run_error?' <span class="warnpill" title="'+esc(s.run_error)+'">⚠</span>':''}`; };
+  const invCell=s=>{ if(!s.obs_rows)return '<span class="grp">—</span>';
+    const fresh=s.obs_latest>=new Date(Date.now()-3*86400e3).toISOString().slice(0,10);
+    return `${fmtBig(s.obs_rows)} <span class="grp" style="${fresh?'':'color:var(--warn)'}">${s.obs_latest||''}</span>`; };
   const rows=R.map(s=>`<tr onclick="openSource('${s.key}')">
      <td class="name">${esc(s.label)}</td><td class="grp">${s.kind}</td><td>${stampPill(s.status)}</td>
      <td>${sloPill(s)}</td>
-     <td class="num">${fmt(s.rows)}</td><td class="num">${s.dataset_count}</td><td class="num">${age(s.modified?(Date.now()/1000-s.modified):null)}</td>
+     <td class="num">${fmt(s.rows)}</td><td class="num">${s.dataset_count}</td>
+     <td class="num" title="per-store inventory observations · latest day landed">${invCell(s)}</td>
+     <td class="num">${age(s.modified?(Date.now()/1000-s.modified):null)}</td>
      <td>${runCell(s)}</td></tr>`).join('');
   const conns=(M.connectors||[]).map(c=>`<tr onclick="openDetailConn('${c.conn}')"><td class="name">${c.conn}</td><td>${stampPill(c.status)}</td>
      <td class="num">${c.datasets}</td><td class="num">${fmt(c.rows)}</td><td class="num">${c.warnings?`<span class="warnpill">${c.warnings}⚠</span>`:''}</td>
@@ -245,20 +250,57 @@ function renderOverview(){
     <div class="cards">${cards}</div>
     <div class="sec">Dispatcher — the near-real-time loop</div><div class="health">${disp}</div>
     <div class="sec">Pull health — is data coming in?</div><div class="health">${health}</div>
-    <div class="sec">Sources <span class="grp">(every source we pull — click to see its datasets)</span></div>
-    <table><thead><tr><th>source</th><th>type</th><th>status</th><th>slo</th><th class="num">rows</th><th class="num">datasets</th><th class="num">fresh</th><th>last run</th></tr></thead>
-      <tbody>${rows||'<tr><td class="msg" colspan=8>no sources</td></tr>'}</tbody></table>
+    <div class="sec">Sources <span class="grp">(every source we pull — click to drill into its datasets &amp; accounts with inventory)</span></div>
+    <table><thead><tr><th>source</th><th>type</th><th>status</th><th>slo</th><th class="num">rows</th><th class="num">datasets</th><th class="num">inventory · latest</th><th class="num">fresh</th><th>last run</th></tr></thead>
+      <tbody>${rows||'<tr><td class="msg" colspan=9>no sources</td></tr>'}</tbody></table>
     <div class="sec">Connector run log <span class="grp">(authoritative pull-health for run-logged connectors)</span></div>
     <table><thead><tr><th>connector</th><th>status</th><th class="num">datasets</th><th class="num">rows</th><th class="num">warn</th><th>last run</th></tr></thead><tbody>${conns||'<tr><td class="msg" colspan=6>none</td></tr>'}</tbody></table>
     <div class="sec">By layer</div>
     <table style="max-width:520px"><thead><tr><th>layer</th><th class="num">datasets</th><th class="num">rows</th></tr></thead><tbody>${groups}</tbody></table>`;
 }
-// open a source → show its datasets (filter the Sources tab to just this source's datasets)
-function openSource(key){
+// open a source → the SOURCE drawer: its datasets + its accounts-with-inventory (per-store rollup of the
+// source's latest observation day, from /api/monitor/source). A source with no per-store observations and a
+// single dataset still shortcuts straight to that dataset's rows.
+async function openSource(key){
   const s=(M.roster||[]).find(x=>x.key===key); if(!s)return;
-  if(s.datasets.length===1){ openDetail(s.datasets[0]); return; }
-  document.querySelector('.tab[data-view="sources"]').click();
-  setTimeout(()=>{ const f=$('#f-sources'); if(f){ f.value=s.label; filterRows('sources'); f.focus(); } },50);
+  if(!s.obs_rows && s.datasets.length===1){ openDetail(s.datasets[0]); return; }
+  $('#drawer').classList.add('open'); $('#backdrop').classList.add('on');
+  $('#d-name').textContent=s.label;
+  $('#d-grp').outerHTML=`<span id="d-grp" class="stat-pill" style="background:color-mix(in srgb,var(${STC[s.status]||'--mut'}) 16%,transparent)">${s.status}</span>`;
+  $('#d-stats').innerHTML=`<div class="s"><b>${fmt(s.rows)}</b><span>rows</span></div>
+    <div class="s"><b>${s.dataset_count}</b><span>datasets</span></div>
+    <div class="s"><b>${s.obs_rows?fmtBig(s.obs_rows):'—'}</b><span>inventory obs</span></div>
+    <div class="s"><b>${s.obs_latest||'—'}</b><span>latest obs day</span></div>
+    <div class="s"><b>${s.conn?`<button onclick="rerun('${s.conn}')">↻ rerun ${s.conn}</button>`:'—'}</b><span></span></div>`;
+  const dsChips=s.datasets.map(d=>`<button class="mono" style="margin:0 6px 6px 0" onclick="openDetail('${d}')">${d} ↗</button>`).join('');
+  $('#d-body').innerHTML=`<div style="padding:12px 18px">
+     <div class="sec" style="margin-top:0">Datasets</div>${dsChips||'<span class="grp">observation parts only</span>'}
+     <div class="sec">Accounts with inventory</div>
+     <div id="src-acc"><div class="msg">reading the latest observation day…</div></div></div>`;
+  try{
+    const r=await(await fetch('/api/monitor/source?key='+encodeURIComponent(key))).json();
+    if(!$('#src-acc'))return;                                     // drawer moved on
+    const A=r.accounts||[];
+    if(!A.length){ $('#src-acc').innerHTML=`<div class="msg">${esc(r.note||'no per-store inventory for this source')}</div>`; return; }
+    const hasQty=A.some(a=>a.units!=null);
+    const rows=A.map(a=>`<tr data-in="${a.in_stock||0}">
+       <td class="name">${esc(a.store||a.store_id)}</td><td class="num">${fmt(a.skus)}</td>
+       <td class="num">${fmt(a.in_stock)}</td>${hasQty?`<td class="num">${a.units==null?'—':fmt(Math.round(a.units))}</td>`:''}
+       <td class="num">${a.avg_price==null?'—':'$'+Number(a.avg_price).toFixed(2)}</td></tr>`).join('');
+    $('#src-acc').innerHTML=`
+      <div class="filterbar"><input id="f-srcacc" placeholder="filter ${A.length} accounts…" oninput="srcAccFilter()">
+        <label style="font-size:12px;color:var(--mut)"><input type="checkbox" id="srcacc-inv" checked onchange="srcAccFilter()"> only accounts with inventory</label>
+        <span class="asof">${r.with_inventory??''} of ${A.length} accounts have stock · day ${r.date||''}</span></div>
+      <table class="dtable"><thead><tr><th>account / store</th><th class="num">skus tracked</th><th class="num">in stock</th>${hasQty?'<th class="num">units on hand</th>':''}<th class="num">avg price</th></tr></thead>
+      <tbody id="srcacc-body">${rows}</tbody></table>`;
+    srcAccFilter();
+  }catch(e){ if($('#src-acc'))$('#src-acc').innerHTML='<div class="msg">could not read accounts</div>'; }
+}
+function srcAccFilter(){
+  const q=($('#f-srcacc')?.value||'').toLowerCase(), only=$('#srcacc-inv')?.checked;
+  document.querySelectorAll('#srcacc-body tr').forEach(tr=>{
+    const hit=tr.textContent.toLowerCase().includes(q), inv=!only||Number(tr.dataset.in)>0;
+    tr.style.display=(hit&&inv)?'':'none'; });
 }
 
 const COLS=[['name','source'],['group','layer'],['rows','rows','num'],['delta','Δ','num'],['status','health'],['age_s','fresh','num'],['fields','cols','num']];

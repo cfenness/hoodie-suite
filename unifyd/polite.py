@@ -232,6 +232,16 @@ def get(url, *, min_interval=5.0, jitter=3.0, timeout=30, headers=None, data=Non
     raise Blocked("%s: exhausted %d retries" % (host, max_retries))
 
 
+def reset(host):
+    """Clear a host's breaker/fail state. For callers that switch transport mid-run (e.g. flip to the BD
+    proxy after the direct crawl hits a 403 wall) — the block that tripped the breaker doesn't apply to the
+    new path, so the run can continue instead of dying."""
+    st = _host_state(host)
+    with st.lock:
+        st.fails = 0
+        st.open_until = 0.0
+
+
 def status():
     """Snapshot of per-host health — for a monitor/alert (fails + whether the breaker is open)."""
     now = time.time()
