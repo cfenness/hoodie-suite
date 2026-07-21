@@ -16,6 +16,7 @@ import source_registry as reg
 
 TMP = tempfile.mkdtemp(prefix="wh_due_")
 warehouse._LOCAL_DIR = TMP
+os.environ["HOME"] = TMP    # isolate the machine-global dispatcher lock (~/.hoodie) from a live launchd tick
 
 passed = failed = 0
 
@@ -152,6 +153,27 @@ mac = sorted([s for s in enabled if s["klass"] == "mac"], key=lambda s: s.get("p
 ids = [s["id"] for s in mac]
 ok("aggregators first", ids[:2] == ["ubereats", "postmates"])
 ok("anti-bot trio last", ids[-3:] == ["sevennow", "cityhive", "bottlecapps"])
+
+# 9) crash-site capture: a SIGKILL is reported as a signal (not a mislabeled stdout line — the specs
+# red herring), a real traceback keeps its frame, and a bare nonzero exit says so
+def run_src(code):
+    return run_sources.run_one(dict(id="probe", label="probe", klass="headless", tables=[], code=code),
+                               log=lambda *a: None)
+
+# killed by SIGKILL after printing a benign "utf-8 codec" line to stdout — must NOT echo that line
+killed = run_src("print(\"  some-slug: 'utf-8' codec can't decode byte 0x80\"); import os,sys; sys.stdout.flush(); "
+                 "os.kill(os.getpid(), 9)")
+ok("SIGKILL reported as signal, not the stdout red herring",
+   "SIGKILL" in killed["error"] and "codec" not in killed["error"])
+ok("OOM hint on SIGKILL", "OOM" in killed["error"])
+
+# a real uncaught exception keeps its crash-site frame
+crashed = run_src("raise ValueError('boom at the real site')")
+ok("real traceback keeps File-frame", "File \"" in crashed["error"] and "boom at the real site" in crashed["error"])
+
+# a bare nonzero exit with no traceback says so rather than inventing an error
+bare = run_src("import sys; print('just some log output'); sys.exit(3)")
+ok("bare nonzero exit labeled honestly", "nonzero exit 3" in bare["error"] and "just some log" not in bare["error"])
 
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n%d passed, %d failed" % (passed, failed))

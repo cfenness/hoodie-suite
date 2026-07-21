@@ -170,16 +170,32 @@ def run_one(source, log=print):
                            capture_output=True, text=True)
         if r.returncode != 0:
             status = "failed"
-            # Keep the CRASH SITE, not just the message: the last traceback 'File "…", line N' frame plus
-            # the final line. One stripped message line ("utf-8 codec can't decode…") left the specs crash
-            # unlocatable; the frame makes the next intermittent failure a pinpointed diagnosis.
-            out = (r.stderr or r.stdout or "").strip()
-            if out:
-                lines = out.splitlines()
-                frames = [l.strip() for l in lines if l.strip().startswith('File "')]
-                error = (" | ".join(frames[-1:] + [lines[-1]]))[:300]
+            # A NEGATIVE returncode = killed by a signal, NOT a Python exception (subprocess convention).
+            # This is the specs red herring: the 40k-product crawl was OOM-killed (SIGKILL/-9) and the old
+            # capture grabbed the last stdout line — which was a CAUGHT per-page "'utf-8' codec…" log from a
+            # worker thread — and mislabeled it as the crash. Report the signal honestly instead of echoing
+            # unrelated output. -9 under a big in-memory crawl = OOM; that's a resource verdict, not a bug.
+            if r.returncode < 0:
+                import signal as _sig
+                try:
+                    nm = _sig.Signals(-r.returncode).name
+                except Exception:
+                    nm = "SIG%d" % (-r.returncode)
+                error = "killed by %s (%d)%s" % (nm, -r.returncode,
+                                                 " — OOM likely; reduce crawl memory/concurrency" if -r.returncode == 9 else "")
             else:
-                error = "nonzero exit"
+                # Real nonzero EXIT: keep the CRASH SITE — the last traceback 'File "…", line N' frame plus the
+                # final message line. Only trust a message line when there IS a traceback; otherwise a caught,
+                # logged worker error must not masquerade as the fatal one.
+                out = (r.stderr or "").strip() or (r.stdout or "").strip()
+                lines = out.splitlines() if out else []
+                frames = [l.strip() for l in lines if l.strip().startswith('File "')]
+                if frames:
+                    error = (" | ".join([frames[-1], lines[-1]]))[:300]
+                elif "Traceback (most recent call last)" in out:
+                    error = lines[-1][:300]
+                else:
+                    error = "nonzero exit %d (no traceback — see run log)" % r.returncode
     except subprocess.TimeoutExpired:
         status, error = "timeout", "exceeded %ds" % timeout_s
     except Exception as e:
