@@ -154,6 +154,12 @@ const fmtBig=n=>{ if(n==null)return '—'; n=Number(n);
   if(n>=1e4)return (n/1e3).toFixed(0)+'K';
   return n.toLocaleString(); };
 const STC={ok:'--good',stale:'--warn',error:'--bad',degraded:'--warn',derived:'--derived',unknown:'--mut'};
+const SLOC={fresh:'--good',due:'--warn',breach:'--bad',never:'--mut'};
+// the SLO verdict = the dispatcher CONTRACT (ledger age vs interval_h), distinct from file-age "fresh"
+function sloPill(s){ if(!s.slo)return '<span class="grp">—</span>';
+  const c=SLOC[s.slo]||'--mut';
+  const tip=`ledger age ${s.slo_age_h==null?'—':s.slo_age_h+'h'} / interval ${s.slo_interval_h}h · breach at 2× · ${s.slo_source_id||''}`;
+  return `<span class="stat-pill" style="background:color-mix(in srgb,var(${c}) 16%,transparent);color:var(${c})" title="${tip}">${s.slo}</span>`; }
 let M=null, view='overview', sortKey='modified', sortDir=-1;
 
 function age(s){ if(s==null)return '—'; s=Math.max(0,s); const d=s/86400,h=s/3600,m=s/60;
@@ -210,6 +216,15 @@ function renderOverview(){
     return `<div class="card" title="${fmt(v)}"><b>${fmtBig(v)}</b><span>${l}</span>${sub?`<br><small>${sub}</small>`:''}</div>`;}).join('');
   const horder=['ok','stale','degraded','error','unknown'];
   const health=horder.filter(k=>h[k]).map(k=>`<div class="hchip"><span class="sq" style="background:var(${STC[k]})"></span><b>${h[k]}</b><span>${k}</span></div>`).join('')||'<span class="msg">no pull-cadence sources</span>';
+  // the dispatcher strip — the near-real-time loop itself: window state, what's due, master-build ages, SLO tally
+  const D=M.dispatcher||{}, sc=D.slo_counts||{};
+  const disp = D.error
+    ? `<span class="warnpill">dispatcher state unavailable: ${esc(D.error)}</span>`
+    : `<div class="hchip" title="anti-bot browser sources run only in this window (MAC_HOURS)"><span class="sq" style="background:var(${D.mac_window_open?'--good':'--warn'})"></span><b>${D.mac_window_open?'open':'closed'}</b><span>mac window ${esc(D.mac_hours||'')}</span></div>
+       <div class="hchip" title="${esc((D.due_now||[]).join(', ')||'nothing due')}"><b>${(D.due_now||[]).length}</b><span>sources due now</span></div>
+       <div class="hchip" title="${esc((D.builds_due||[]).join(', ')||'no builds due')}"><b>${(D.builds_due||[]).length}</b><span>builds due</span></div>
+       ${(D.builds||[]).map(b=>`<div class="hchip" title="rebuilds when new rows land · min gap ${b.interval_h}h"><b>${b.age_h==null?'never':b.age_h+'h'}</b><span>${esc(b.label)}</span></div>`).join('')}
+       ${['fresh','due','breach','never'].filter(k=>sc[k]).map(k=>`<div class="hchip"><span class="sq" style="background:var(${SLOC[k]})"></span><b>${sc[k]}</b><span>slo ${k}</span></div>`).join('')}`;
   // the SOURCE roster — every source we have, rolled up (however its datasets are named / however it runs)
   const RUNC={ok:'--good',current:'--good','no-change':'--warn','no-creds':'--warn',empty:'--bad',failed:'--bad',timeout:'--bad'};
   const runCell=s=>{ if(!s.run_status)return '<span class="grp">—</span>';
@@ -218,6 +233,7 @@ function renderOverview(){
     return `<span class="stat-pill" style="background:color-mix(in srgb,var(${c}) 16%,transparent);color:var(${c})" title="${esc((s.run_error||'')+(s.run_ts?' · '+new Date(s.run_ts*1000).toLocaleString():''))}">${s.run_status}</span>${d} <span class="grp">${ago(s.run_ts)}</span>${s.run_error?' <span class="warnpill" title="'+esc(s.run_error)+'">⚠</span>':''}`; };
   const rows=R.map(s=>`<tr onclick="openSource('${s.key}')">
      <td class="name">${esc(s.label)}</td><td class="grp">${s.kind}</td><td>${stampPill(s.status)}</td>
+     <td>${sloPill(s)}</td>
      <td class="num">${fmt(s.rows)}</td><td class="num">${s.dataset_count}</td><td class="num">${age(s.modified?(Date.now()/1000-s.modified):null)}</td>
      <td>${runCell(s)}</td></tr>`).join('');
   const conns=(M.connectors||[]).map(c=>`<tr onclick="openDetailConn('${c.conn}')"><td class="name">${c.conn}</td><td>${stampPill(c.status)}</td>
@@ -227,10 +243,11 @@ function renderOverview(){
      `<tr><td class="name">${g}</td><td class="num">${v.count}</td><td class="num">${fmt(v.rows)}</td></tr>`).join('');
   $('#overview').innerHTML=`
     <div class="cards">${cards}</div>
+    <div class="sec">Dispatcher — the near-real-time loop</div><div class="health">${disp}</div>
     <div class="sec">Pull health — is data coming in?</div><div class="health">${health}</div>
     <div class="sec">Sources <span class="grp">(every source we pull — click to see its datasets)</span></div>
-    <table><thead><tr><th>source</th><th>type</th><th>status</th><th class="num">rows</th><th class="num">datasets</th><th class="num">fresh</th><th>last run</th></tr></thead>
-      <tbody>${rows||'<tr><td class="msg" colspan=6>no sources</td></tr>'}</tbody></table>
+    <table><thead><tr><th>source</th><th>type</th><th>status</th><th>slo</th><th class="num">rows</th><th class="num">datasets</th><th class="num">fresh</th><th>last run</th></tr></thead>
+      <tbody>${rows||'<tr><td class="msg" colspan=8>no sources</td></tr>'}</tbody></table>
     <div class="sec">Connector run log <span class="grp">(authoritative pull-health for run-logged connectors)</span></div>
     <table><thead><tr><th>connector</th><th>status</th><th class="num">datasets</th><th class="num">rows</th><th class="num">warn</th><th>last run</th></tr></thead><tbody>${conns||'<tr><td class="msg" colspan=6>none</td></tr>'}</tbody></table>
     <div class="sec">By layer</div>
