@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="robots" content="noindex, nofollow"/>
+<title>Hoodie Suite · Hub</title>
+<link rel="icon" href="favicon.ico"/>
+<style>
+  :root{
+    --paper:#FBFAF8; --card:#FFFFFF; --ink:#1E262E; --ink-2:#3A4650; --mut:#63727F;
+    --slate:#4E79A7; --slate-ink:#3C608A; --line:#E2E6EC; --line-2:#EEF1F5; --rail:#F4F6F9;
+    --good:#3F8F6E; --good-bg:#E7F3ED; --warn:#B6822C; --warn-bg:#F6EEDC; --bad:#C0574A; --bad-bg:#F6E5E2;
+    --chip:#EEF2F7; --shadow:0 1px 2px rgba(30,38,46,.06),0 10px 26px rgba(30,38,46,.06);
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --bk-intel:#4E79A7; --bk-ops:#3F8F6E; --bk-master:#8A5FB0; --bk-comm:#B6822C;
+    --rail-w:250px;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --paper:#12161B; --card:#1A2027; --ink:#E7ECF1; --ink-2:#C4CDD6; --mut:#8A98A5;
+    --slate:#6E9BCB; --slate-ink:#8CB2DA; --line:#28313A; --line-2:#20272E; --rail:#161B21;
+    --chip:#232C35; --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 30px rgba(0,0,0,.34);
+    --good:#5FB58E; --good-bg:#1A2C25; --warn:#D0A14A; --warn-bg:#2C2618; --bad:#DB7C6E; --bad-bg:#2E1F1D;
+    --bk-master:#A986C8;
+  }}
+  :root[data-theme="dark"]{
+    --paper:#12161B; --card:#1A2027; --ink:#E7ECF1; --ink-2:#C4CDD6; --mut:#8A98A5;
+    --slate:#6E9BCB; --slate-ink:#8CB2DA; --line:#28313A; --line-2:#20272E; --rail:#161B21;
+    --chip:#232C35; --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 30px rgba(0,0,0,.34);
+    --good:#5FB58E; --good-bg:#1A2C25; --warn:#D0A14A; --warn-bg:#2C2618; --bad:#DB7C6E; --bad-bg:#2E1F1D;
+    --bk-master:#A986C8;
+  }
+  :root[data-theme="light"]{
+    --paper:#FBFAF8; --card:#FFFFFF; --ink:#1E262E; --ink-2:#3A4650; --mut:#63727F;
+    --slate:#4E79A7; --slate-ink:#3C608A; --line:#E2E6EC; --line-2:#EEF1F5; --rail:#F4F6F9;
+    --good:#3F8F6E; --good-bg:#E7F3ED; --warn:#B6822C; --warn-bg:#F6EEDC; --bad:#C0574A; --bad-bg:#F6E5E2;
+    --chip:#EEF2F7; --shadow:0 1px 2px rgba(30,38,46,.06),0 10px 26px rgba(30,38,46,.06);
+    --bk-master:#8A5FB0;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;overflow:hidden}
+  button{font-family:inherit;cursor:pointer}
+  .mono,code{font-family:var(--mono)}
+
+  /* top bar */
+  header{height:52px;flex:none;display:flex;align-items:center;gap:14px;padding:0 16px;background:var(--card);border-bottom:1px solid var(--line);z-index:30}
+  .brand{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+  .brand .dot{width:11px;height:11px;border-radius:3px;background:var(--slate);box-shadow:0 0 0 4px color-mix(in srgb,var(--slate) 18%,transparent)}
+  .brand b{font-weight:700;letter-spacing:.02em;font-size:14.5px}
+  .brand .sub{color:var(--mut);font-size:12.5px}
+  .crumb{color:var(--mut);font-size:13px;display:flex;align-items:center;gap:7px}
+  .crumb b{color:var(--ink)}
+  .spacer{flex:1}
+  .kbtn{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--paper);color:var(--mut);border-radius:8px;padding:6px 11px;font-size:13px}
+  .kbtn kbd{font-family:var(--mono);font-size:11px;background:var(--card);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .pulse{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:999px}
+  .pulse .led{width:7px;height:7px;border-radius:50%}
+  .pulse.ok{background:var(--good-bg);color:var(--good)}.pulse.ok .led{background:var(--good)}
+  .pulse.warn{background:var(--warn-bg);color:var(--warn)}.pulse.warn .led{background:var(--warn)}
+  .pulse.bad{background:var(--bad-bg);color:var(--bad)}.pulse.bad .led{background:var(--bad)}
+  .pulse.dim{background:var(--chip);color:var(--mut)}.pulse.dim .led{background:var(--mut)}
+  .ext{color:var(--mut);text-decoration:none;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:none}
+  .ext.show{display:inline-block}
+  .tgl{border:1px solid var(--line);background:var(--paper);color:var(--mut);border-radius:8px;padding:6px 9px;font-size:12px;font-family:var(--mono)}
+
+  /* layout */
+  .body{flex:1;display:flex;min-height:0}
+  nav.rail{width:var(--rail-w);flex:none;background:var(--rail);border-right:1px solid var(--line);overflow-y:auto;padding:12px 10px 20px}
+  .rail .grp{margin-bottom:6px}
+  .rail .ghead{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:9px;font-size:12.5px;font-weight:600;letter-spacing:.02em;color:var(--ink-2);cursor:pointer}
+  .rail .ghead:hover{background:var(--card)}
+  .rail .ghead .bar{width:4px;height:16px;border-radius:2px;background:var(--gc,var(--slate));flex:none}
+  .rail .ghead .cnt{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--mut)}
+  .rail .ghead .chev{color:var(--mut);font-size:10px;transition:transform .15s}
+  .rail .grp.open .chev{transform:rotate(90deg)}
+  .rail .items{display:none;flex-direction:column;gap:1px;padding:2px 0 6px 6px}
+  .rail .grp.open .items{display:flex}
+  .rail .item{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;font-size:13.5px;color:var(--ink-2);cursor:pointer;border:1px solid transparent}
+  .rail .item:hover{background:var(--card)}
+  .rail .item.active{background:var(--card);border-color:var(--line);color:var(--ink);font-weight:600}
+  .rail .item .mk{font-family:var(--mono);font-size:9.5px;font-weight:700;color:#fff;background:var(--gc,var(--slate));width:24px;height:18px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;flex:none}
+  .rail .item.star .mk{box-shadow:0 0 0 2px color-mix(in srgb,var(--gc) 34%,transparent)}
+  .rail .item .st{margin-left:auto;width:7px;height:7px;border-radius:50%;flex:none}
+  .st.ok{background:var(--good)}.st.warn{background:var(--warn)}.st.bad{background:var(--bad)}.st.none{background:transparent}
+  .rail .drawer{margin-top:14px;border-top:1px dashed var(--line);padding-top:12px}
+  .rail .drawer .dh{font-size:11.5px;color:var(--mut);padding:4px 9px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;gap:7px}
+  .rail .drawer.open .items{display:flex}
+
+  /* stage */
+  main{flex:1;position:relative;min-width:0;background:var(--paper);overflow:auto}
+  iframe#frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--card);display:none}
+  iframe#frame.show{display:block}
+  #home{padding:0;display:block}
+  #frameload{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:var(--paper);z-index:5}
+  #frameload.show{display:flex}
+  #frameload .fm{font-family:var(--mono);font-weight:700;color:#fff;background:var(--slate);width:44px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:9px}
+  #frameload .ft{color:var(--mut);font-size:13px}
+
+  /* home canvas — a working launcher, grouped by bucket */
+  .canvas{max-width:1160px;margin:0 auto;padding:18px 22px 56px}
+  .sectlabel{display:flex;align-items:baseline;gap:10px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin:0 0 14px}
+  .sectlabel b{color:var(--ink-2)}
+  .panels{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+  .panel .ph{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line-2)}
+  .panel .ph .bar{width:4px;height:17px;border-radius:2px;background:var(--dc);flex:none}
+  .panel .ph h2{font-size:14.5px;margin:0;font-weight:680;letter-spacing:-.005em;cursor:pointer}
+  .panel .ph h2:hover{color:var(--dc)}
+  .panel .ph .cnt{font-family:var(--mono);font-size:11px;color:var(--mut)}
+  .panel .ph .stat{margin-left:auto}
+  .panel .apps{display:flex;flex-direction:column;padding:5px}
+  .applink{display:flex;align-items:center;gap:10px;padding:7px 9px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+  .applink:hover{background:var(--rail);border-color:var(--line)}
+  .applink .mk{font-family:var(--mono);font-size:9.5px;font-weight:700;color:#fff;background:var(--dc);width:24px;height:18px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;flex:none}
+  .applink .nm{font-size:13.5px;font-weight:600;flex:none}
+  .applink.star .nm::after{content:"★";color:var(--dc);font-size:10px;margin-left:5px;vertical-align:1px}
+  .applink .ds{font-size:12px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+  .applink .st{width:7px;height:7px;border-radius:50%;flex:none}
+  .drawer-panel{grid-column:1/-1;background:var(--rail);border:1px solid var(--line);border-radius:12px;padding:11px 14px}
+  .drawer-panel .dph{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);cursor:pointer}
+  .drawer-panel .dchev{transition:transform .15s}
+  .drawer-panel.open .dchev{transform:rotate(90deg)}
+  .drawer-panel .ditems{display:none;flex-wrap:wrap;gap:6px;margin-top:11px}
+  .drawer-panel.open .ditems{display:flex}
+  .dpill{font-size:12.5px;background:var(--card);border:1px solid var(--line);border-radius:7px;padding:5px 11px;color:var(--ink-2);cursor:pointer;display:flex;align-items:center;gap:7px}
+  .dpill:hover{border-color:var(--mut)}
+  .dpill .mk{font-family:var(--mono);font-size:9px;font-weight:700;color:var(--mut)}
+  .fresh{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px}
+  .fresh .led{width:7px;height:7px;border-radius:50%}
+  .fresh.ok{background:var(--good-bg);color:var(--good)}.fresh.ok .led{background:var(--good)}
+  .fresh.warn{background:var(--warn-bg);color:var(--warn)}.fresh.warn .led{background:var(--warn)}
+  .fresh.bad{background:var(--bad-bg);color:var(--bad)}.fresh.bad .led{background:var(--bad)}
+  .fresh.dim{background:var(--chip);color:var(--mut)}.fresh.dim .led{background:var(--mut)}
+
+  /* bucket hub (level 1) */
+  .hubhead{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .hubhead .bar{width:5px;height:26px;border-radius:3px;background:var(--dc)}
+  .hubhead h1{font-size:24px;font-weight:730;letter-spacing:-.015em;margin:0}
+  .hubhead .back{margin-left:auto;border:1px solid var(--line);background:var(--card);color:var(--mut);border-radius:8px;padding:6px 11px;font-size:13px}
+  .hubsub{color:var(--ink-2);margin:0 0 22px;font-size:14.5px}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}
+  .tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;cursor:pointer;transition:transform .12s,border-color .12s;position:relative}
+  .tile:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--dc) 45%,var(--line))}
+  .tile h3{font-size:15px;margin:0 0 6px;display:flex;align-items:center;gap:8px}
+  .tile .mk{font-family:var(--mono);font-size:9.5px;font-weight:700;color:#fff;background:var(--dc);width:24px;height:18px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;flex:none}
+  .tile p{margin:0;font-size:12.5px;color:var(--mut);line-height:1.5}
+  .tile .star-badge{position:absolute;top:13px;right:13px;font-size:11px;color:var(--dc);font-weight:700}
+  .tile .tf{margin-top:11px}
+
+  /* command palette */
+  .pk-scrim{position:fixed;inset:0;background:rgba(20,26,32,.4);display:none;z-index:50}
+  .pk-scrim.show{display:block}
+  .pk{position:fixed;left:50%;top:14%;transform:translateX(-50%);width:min(560px,92vw);background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.3);z-index:51;display:none;overflow:hidden}
+  .pk.show{display:block}
+  .pk input{width:100%;border:0;border-bottom:1px solid var(--line);padding:15px 18px;font-size:16px;background:transparent;color:var(--ink);outline:none}
+  .pk .res{max-height:52vh;overflow-y:auto;padding:6px}
+  .pk .r{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:9px;cursor:pointer}
+  .pk .r.sel,.pk .r:hover{background:var(--chip)}
+  .pk .r .mk{font-family:var(--mono);font-size:10px;font-weight:700;color:#fff;width:26px;height:20px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;flex:none}
+  .pk .r .nm{font-size:14px;font-weight:600}
+  .pk .r .bk{margin-left:auto;font-size:11px;color:var(--mut);font-family:var(--mono)}
+  .pk .r .ds{font-size:12px;color:var(--mut)}
+
+  @media(max-width:820px){
+    .doors{grid-template-columns:1fr}.tiles{grid-template-columns:1fr 1fr}
+    nav.rail{position:absolute;z-index:20;height:100%;box-shadow:var(--shadow);transform:translateX(-100%);transition:transform .2s}
+    body.nav-open nav.rail{transform:none}
+  }
+  @media(max-width:560px){.tiles{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand" id="brand" title="Home">
+    <span class="dot"></span><b>HOODIE</b><span class="sub">Hub</span>
+  </div>
+  <span class="crumb" id="crumb"></span>
+  <div class="spacer"></div>
+  <button class="kbtn" id="kbtn"><span>Search</span><kbd>⌘K</kbd></button>
+  <span class="pulse dim" id="pulse"><span class="led"></span>checking…</span>
+  <a class="ext" id="ext" target="_blank" rel="noopener">Open ↗</a>
+  <button class="tgl" id="tgl" title="Toggle theme">◑</button>
+</header>
+
+<div class="body">
+  <nav class="rail" id="rail"></nav>
+  <main>
+    <div id="home"></div>
+    <iframe id="frame" title="app"></iframe>
+    <div id="frameload"><div class="fm" id="flMark"></div><div class="ft" id="flTxt">Loading…</div></div>
+  </main>
+</div>
+
+<div class="pk-scrim" id="pkScrim"></div>
+<div class="pk" id="pk">
+  <input id="pkIn" placeholder="Search surfaces, buckets…" autocomplete="off"/>
+  <div class="res" id="pkRes"></div>
+</div>
+
+<script src="spine/spine.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  /* ============================ the registry ============================ */
+  /* Parallel to index.html's APPS — this shell owns its own four-bucket map.
+     bucket ∈ intel | ops | master | commercial | utility. star = bucket front door. */
+  var BUCKETS = [
+    {id:"intel",     name:"Hoodie Intelligence", role:"Read the market — report & analyze",        color:"var(--bk-intel)"},
+    {id:"ops",       name:"Data Operations",     role:"Run the machine — acquisition & health",     color:"var(--bk-ops)"},
+    {id:"master",    name:"Master Data",         role:"Own the master — matching & review",          color:"var(--bk-master)"},
+    {id:"commercial",name:"Commercial Apps",     role:"Act on it — the tools you work in",           color:"var(--bk-comm)"}
+  ];
+  var UTIL = {id:"utility", name:"Utility", role:"Present, learn, admin", color:"var(--mut)"};
+
+  var APPS = [
+    // Hoodie Intelligence
+    {id:"dashboard",  bucket:"intel", star:1, mark:"HI", name:"Hoodie Intelligence", desc:"Market intelligence & QBR briefs.", file:"apps/dashboard.html"},
+    {id:"signal-stack",bucket:"intel",         mark:"SS", name:"Signal Stack", desc:"Menu → Basket → Store → Price on one subject, with a cross-signal verdict.", file:"apps/signal-stack.html"},
+    {id:"retail",     bucket:"intel",          mark:"RI", name:"Retail Intelligence", desc:"Per-store assortment & price across the chains — cross-chain compare.", file:"apps/retail.html"},
+    {id:"retail-analytics",bucket:"intel",     mark:"RA", name:"Retail Analytics", desc:"Price/promo, reverse planogram, on-prem recipes by brand & retailer.", file:"apps/retail-analytics.html"},
+    {id:"menu-analytics",bucket:"intel",       mark:"MA", name:"Menu Analytics", desc:"Brand-call rates & cocktail trends by region, from menu scrapes.", file:"apps/menu-analytics.html"},
+    {id:"price-index",bucket:"intel",          mark:"PI", name:"Price Index", desc:"A bev-alc CPI from shelf prices — dispersion, promo intensity, premiumization.", file:"apps/price-index.html"},
+    {id:"market",     bucket:"intel",          mark:"MI", name:"Market Intelligence", desc:"The outlet landscape of a metro vs Google coverage.", file:"apps/market.html"},
+    {id:"planogram",  bucket:"intel",          mark:"PG", name:"Planogram", desc:"Facings (or a photo) vs the market benchmark — voids & over-space.", file:"apps/planogram-repcount.html"},
+
+    // Data Operations
+    {id:"data-console",bucket:"ops",  star:1,  mark:"DC", name:"Data Console", desc:"Every source, account & master dim with real counts, freshness & health — live from the warehouse.", file:"apps/data-console.html", healthSource:1},
+    {id:"connectors", bucket:"ops",            mark:"PU", name:"Pulls", desc:"Every source that feeds the master — running, last-run, on/off, pull now.", file:"apps/connectors.html"},
+    {id:"sources",    bucket:"ops",            mark:"SR", name:"Sources", desc:"Discover & add new sources — a URL becomes data + a reusable recipe.", file:"apps/sources.html"},
+    {id:"chains",     bucket:"ops",            mark:"CH", name:"Bev-Alc Chains", desc:"Top retail & on-premise chains scored for reachability & method.", file:"apps/chains.html"},
+    {id:"estate3d",   bucket:"ops",            mark:"3D", name:"Estate", desc:"The data estate as a 3D object — spin, fly, focus a node.", file:"apps/estate-3d.html"},
+    {id:"csv",        bucket:"ops",            mark:"CV", name:"CSV Viewer", desc:"Excel-style grid for any CSV — sort, filter, freeze; watch a file grow live.", file:"apps/csv-viewer.html"},
+
+    // Master Data
+    {id:"mdm",        bucket:"master", star:1, mark:"HM", name:"Hoodie MDM", desc:"The master console — sources, catalog, outlets, registrations, dictionary.", file:"apps/mdm.html"},
+    {id:"match-review",bucket:"master", star:1, mark:"MR", name:"Match Review", desc:"The one place — automatched items and the human-in-the-loop queue for unknown matches.", file:"apps/match-review.html", reviewSource:1},
+    {id:"workbench",  bucket:"master",         mark:"MW", name:"Matching Workbench", desc:"The deep multi-enterprise matching bench (merge groups, image matches, stewardship).", file:"apps/master-workbench.html"},
+    {id:"upc",        bucket:"master",         mark:"UP", name:"UPC Check", desc:"Validate & classify UPC/EAN codes and check the prefix against the brand owner.", file:"apps/upc-check.html"},
+
+    // Commercial
+    {id:"crm",        bucket:"commercial", star:1, mark:"HR", name:"Hoodie Relations", desc:"Industry-associations CRM.", file:"apps/crm.html"},
+    {id:"order-hub",  bucket:"commercial",     mark:"OH", name:"Order Hub", desc:"Inbound supplier menus → one order page → refill each file & stage to send.", file:"apps/order-hub.html"},
+    {id:"locator",    bucket:"commercial",     mark:"PL", name:"Product Locator", desc:"Every account carrying a brand near a location — bars, restaurants, stores.", file:"apps/product-locator.html"},
+    {id:"territory",  bucket:"commercial",     mark:"TB", name:"Territory Builder", desc:"Named account groups — powers target-vs-competition comparisons.", file:"apps/territory.html"},
+    {id:"breakeven",  bucket:"commercial",     mark:"BE", name:"Deal Break-Even", desc:"Enter a deal — get break-even, margin & profit.", file:"apps/breakeven.html"},
+    {id:"overlay",    bucket:"commercial",     mark:"OV", name:"Overlay Your Data", desc:"Drop a CSV — Claude reads it and surfaces what's worth pulling.", file:"apps/overlay.html"},
+
+    // Utility drawer
+    {id:"presenter",  bucket:"utility", mark:"PR", name:"Presenter", desc:"Speaker's workbench · run a demo.", file:"apps/presenter.html"},
+    {id:"training",   bucket:"utility", mark:"BN", name:"The Bench", desc:"Training — tasting, catman, perceptual & sales.", file:"apps/training-suite.html"},
+    {id:"prism",      bucket:"utility", mark:"PM", name:"Prism", desc:"Mobile — every cut of your book + the pulse feed.", file:"apps/prism.html"},
+    {id:"roadmap",    bucket:"utility", mark:"RM", name:"Product Roadmap", desc:"What's shipping & when.", file:"apps/roadmap.html"},
+    {id:"kb",         bucket:"utility", mark:"PA", name:"Principles & Architecture", desc:"The thinking behind the platform.", file:"apps/principles-hub.html"},
+    {id:"device-preview",bucket:"utility",mark:"DP",name:"Device Preview", desc:"Render any app in phone/tablet frames.", file:"apps/device-preview.html"},
+    {id:"admin",      bucket:"utility", mark:"AD", name:"Admin Console", desc:"Usage · app registry & flags · access · data-ops.", file:"apps/admin.html"}
+  ];
+  var byId = {}; APPS.forEach(function(a){ byId[a.id]=a; });
+  function bucketDef(id){ return BUCKETS.concat([UTIL]).find(function(b){return b.id===id;}); }
+  function appsIn(bid){ return APPS.filter(function(a){return a.bucket===bid;}); }
+  function bcolor(bid){ var b=bucketDef(bid); return b?b.color:"var(--slate)"; }
+
+  /* ============================ freshness (live, never mocked) ============================ */
+  var STATE = { live:false, health:null, review:null };
+  function fetchMonitor(){
+    return fetch("/api/monitor").then(function(r){return r.ok?r.json():null;}).then(function(m){
+      if(m && m.live!==false){ STATE.live=true; STATE.health=m.health||rollup(m.sources); }
+      else STATE.live=false;
+    }).catch(function(){ STATE.live=false; });
+  }
+  function rollup(sources){
+    var h={ok:0,degraded:0,error:0,stale:0,unknown:0};
+    (sources||[]).forEach(function(s){ if(s.status && h[s.status]!=null) h[s.status]++; });
+    return h;
+  }
+  function fetchReview(){
+    // the true "to review" depth = the analyst funnel stage (single-source, pending corroboration),
+    // matching Match Review's own funnel — not the capped queue-page length.
+    return fetch("/api/master/workbench/summary").then(function(r){return r.ok?r.json():null;}).then(function(d){
+      if(d && d.stages && typeof d.stages.analyst==="number") STATE.review = d.stages.analyst;
+    }).catch(function(){});
+  }
+  function opsVerdict(){
+    if(!STATE.live||!STATE.health) return null;
+    var h=STATE.health, total=(h.ok||0)+(h.stale||0)+(h.error||0)+(h.degraded||0);
+    if(total===0) return null;                                   // health not populated yet — no false green
+    if((h.error||0)>0) return {cls:"bad",  txt:(h.error)+" failed"};
+    if((h.stale||0)>0||(h.degraded||0)>0) return {cls:"warn", txt:((h.stale||0)+(h.degraded||0))+" need attention"};
+    return {cls:"ok", txt:(h.ok||0)+" sources fresh"};
+  }
+  function globalPulse(){
+    var p=document.getElementById("pulse");
+    if(!STATE.live){ p.className="pulse dim"; p.innerHTML='<span class="led"></span>warehouse offline'; return; }
+    var v=opsVerdict();
+    if(!v){ p.className="pulse dim"; p.innerHTML='<span class="led"></span>reading health…'; return; }
+    p.className="pulse "+v.cls;
+    p.innerHTML='<span class="led"></span>'+(v.cls==="ok"?"ALL FRESH · ":"")+v.txt;
+  }
+
+  /* ============================ spine host ============================ */
+  var HIER = {id:"root",level:"root",name:"All Portfolios",children:[]};
+  var spine = HoodieSpine.host({hierarchy:HIER});
+  var okJson=function(r){return r.ok?r.json():Promise.reject();};
+  fetch("/api/hierarchy").then(okJson)
+    .catch(function(){return fetch("spine/hierarchy.sample.json").then(okJson);})
+    .then(function(h){ if(h){HIER=h;spine.setHierarchy(h);} }).catch(function(){});
+  spine.on("nav", function(p){ if(p&&p.app&&byId[p.app]){ if(p.scope)spine.setContext({scope:p.scope}); location.hash="#"+p.app; } });
+  spine.on("crumb", function(t){ var c=document.getElementById("appcrumbx"); if(c) c.textContent = t?(" › "+t):""; });
+
+  /* ============================ rail ============================ */
+  function renderRail(){
+    var rail=document.getElementById("rail"); rail.innerHTML="";
+    BUCKETS.forEach(function(b){
+      rail.appendChild(railGroup(b, false));
+    });
+    var d=railGroup(UTIL, true); d.classList.add("drawer"); rail.appendChild(d);
+  }
+  function railGroup(b, isDrawer){
+    var open = openGroups[b.id] || false;
+    var g=document.createElement("div"); g.className="grp"+(open?" open":""); g.style.setProperty("--gc", b.color);
+    var head=document.createElement("div"); head.className= isDrawer?"dh":"ghead";
+    if(isDrawer){
+      head.innerHTML='<span class="chev">▸</span> '+b.name.toUpperCase()+' drawer';
+    }else{
+      head.innerHTML='<span class="bar"></span><span>'+b.name+'</span><span class="cnt">'+appsIn(b.id).length+'</span><span class="chev">▸</span>';
+    }
+    head.onclick=function(){ openGroups[b.id]=!open; renderRail(); };
+    g.appendChild(head);
+    var items=document.createElement("div"); items.className="items";
+    appsIn(b.id).forEach(function(a){
+      var el=document.createElement("div"); el.className="item"+(a.star?" star":""); el.dataset.id=a.id; el.style.setProperty("--gc", b.color);
+      el.innerHTML='<span class="mk">'+a.mark+'</span><span>'+a.name+'</span><span class="st '+dotFor(a)+'"></span>';
+      el.onclick=function(){ location.hash="#"+a.id; };
+      items.appendChild(el);
+    });
+    g.appendChild(items);
+    return g;
+  }
+  function dotFor(a){
+    if(a.healthSource){ var v=opsVerdict(); return v?v.cls==="warn"?"warn":v.cls==="bad"?"bad":"ok":"none"; }
+    if(a.reviewSource){ return (STATE.review>0)?"warn":(STATE.review===0?"ok":"none"); }
+    return "none";
+  }
+  var openGroups={};
+
+  /* ============================ home (level 0) — grouped launcher ============================ */
+  function renderHome(){
+    var el=document.getElementById("home");
+    var panels = BUCKETS.map(function(b){
+      var apps = appsIn(b.id);
+      var rows = apps.map(function(a){
+        return '<div class="applink'+(a.star?' star':'')+'" data-id="'+a.id+'" style="--dc:'+b.color+'">'+
+          '<span class="mk">'+a.mark+'</span><span class="nm">'+a.name+'</span>'+
+          '<span class="ds">'+a.desc+'</span>'+
+          '<span class="st '+dotFor(a)+'"></span>'+
+        '</div>';
+      }).join("");
+      return '<div class="panel" style="--dc:'+b.color+'">'+
+        '<div class="ph"><span class="bar"></span><h2 data-bucket="'+b.id+'" title="Filter to this bucket">'+b.name+'</h2>'+
+          '<span class="cnt">'+apps.length+'</span><span class="stat">'+bucketStat(b.id)+'</span></div>'+
+        '<div class="apps">'+rows+'</div>'+
+      '</div>';
+    }).join("");
+    var util = appsIn("utility");
+    var drawer = '<div class="drawer-panel'+(openGroups.utility?" open":"")+'" id="homeDrawer">'+
+      '<div class="dph" id="homeDrawerH"><span class="dchev">▸</span> Utility · present, learn, admin &nbsp;·&nbsp; '+util.length+'</div>'+
+      '<div class="ditems">'+util.map(function(a){
+        return '<span class="dpill" data-id="'+a.id+'"><span class="mk">'+a.mark+'</span>'+a.name+'</span>';
+      }).join("")+'</div></div>';
+    el.innerHTML =
+      '<div class="canvas">'+
+        '<div class="sectlabel"><b>Surfaces</b> · grouped into four buckets '+globalStatInline()+'</div>'+
+        '<div class="panels">'+panels+drawer+'</div>'+
+      '</div>';
+    el.querySelectorAll(".applink,.dpill").forEach(function(r){ r.onclick=function(){ location.hash="#"+r.dataset.id; }; });
+    el.querySelectorAll(".panel .ph h2").forEach(function(h){ h.onclick=function(){ location.hash="#b/"+h.dataset.bucket; }; });
+    var dh=el.querySelector("#homeDrawerH");
+    if(dh) dh.onclick=function(){ openGroups.utility=!openGroups.utility; el.querySelector("#homeDrawer").classList.toggle("open"); };
+  }
+  function globalStatInline(){
+    if(!STATE.live) return '<span style="color:var(--mut);margin-left:auto">warehouse offline</span>';
+    var v=opsVerdict(); if(!v) return "";
+    return '<span class="fresh '+v.cls+'" style="margin-left:auto"><span class="led"></span>'+v.txt+'</span>';
+  }
+  function bucketStat(bid){
+    if(bid==="ops"){ var v=opsVerdict(); return v?'<span class="fresh '+v.cls+'"><span class="led"></span>'+v.txt+'</span>':'<span class="fresh dim"><span class="led"></span>offline</span>'; }
+    if(bid==="master"){ if(STATE.review>0) return '<span class="fresh warn"><span class="led"></span>'+nfmtK(STATE.review)+' in review</span>';
+      if(STATE.review===0) return '<span class="fresh ok"><span class="led"></span>queue clear</span>';
+      return ''; }
+    if(bid==="intel"){ if(STATE.live&&STATE.health) return '<span class="fresh ok"><span class="led"></span>'+(STATE.health.ok||0)+' fresh</span>';
+      return ''; }
+    return '';
+  }
+  function nfmtK(n){ n=Number(n)||0; if(n>=1e6) return (n/1e6).toFixed(1)+"M"; return n>=1000?(Math.round(n/1000)+"k"):String(n); }
+
+  /* ============================ bucket hub (level 1) ============================ */
+  function renderHub(bid){
+    var b=bucketDef(bid); if(!b){ location.hash=""; return; }
+    var el=document.getElementById("home");
+    var tiles = appsIn(bid).map(function(a){
+      return '<div class="tile" data-id="'+a.id+'" style="--dc:'+b.color+'">'+
+        (a.star?'<span class="star-badge">★</span>':'')+
+        '<h3><span class="mk">'+a.mark+'</span>'+a.name+'</h3>'+
+        '<p>'+a.desc+'</p>'+
+        '<div class="tf">'+tileBadge(a)+'</div>'+
+      '</div>';
+    }).join("");
+    el.innerHTML =
+      '<div class="canvas" style="--dc:'+b.color+'">'+
+        '<div class="hubhead"><span class="bar"></span><h1>'+b.name+'</h1>'+
+          '<button class="back" id="hubBack">← All buckets</button></div>'+
+        '<p class="hubsub">'+b.role+'.</p>'+
+        '<div class="tiles">'+tiles+'</div>'+
+      '</div>';
+    el.querySelector("#hubBack").onclick=function(){ location.hash=""; };
+    el.querySelectorAll(".tile").forEach(function(t){ t.onclick=function(){ location.hash="#"+t.dataset.id; }; });
+  }
+  function tileBadge(a){
+    if(a.healthSource){ var v=opsVerdict(); return v?'<span class="fresh '+v.cls+'"><span class="led"></span>'+v.txt+'</span>':""; }
+    if(a.reviewSource){ if(STATE.review>0) return '<span class="fresh warn"><span class="led"></span>'+STATE.review+' need you</span>';
+      if(STATE.review===0) return '<span class="fresh ok"><span class="led"></span>queue clear</span>'; return ""; }
+    return "";
+  }
+
+  /* ============================ router ============================ */
+  var frame=document.getElementById("frame"), home=document.getElementById("home");
+  var ext=document.getElementById("ext"), crumb=document.getElementById("crumb");
+  var frameload=document.getElementById("frameload"), flMark=document.getElementById("flMark"), flTxt=document.getElementById("flTxt");
+  function setCrumb(html){ crumb.innerHTML = html || ""; }
+  function logUsage(id){ try{ fetch("/api/usage/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({app:id}),keepalive:true}).catch(function(){}); }catch(e){} }
+
+  function route(){
+    var h = location.hash || "";
+    // #b/<bucket> → level-1 hub
+    if(h.indexOf("#b/")===0){
+      var bid=h.slice(3); frame.classList.remove("show"); frame.removeAttribute("src");
+      ext.classList.remove("show"); frameload.classList.remove("show"); home.style.display="block";
+      renderHub(bid); var bd=bucketDef(bid);
+      setCrumb(bd?('<b>'+bd.name+'</b>'):''); markActive(""); return;
+    }
+    var id=h.replace("#","");
+    var app=byId[id];
+    if(app){
+      logUsage(id); markActive(id);
+      var bd=bucketDef(app.bucket);
+      setCrumb((bd?('<span>'+bd.name+'</span> › '):'')+'<b>'+app.name+'</b><span id="appcrumbx"></span>');
+      if(frame.getAttribute("src")!==app.file){
+        flMark.textContent=app.mark||""; flTxt.textContent="Loading "+app.name+"…"; frameload.classList.add("show");
+        frame.setAttribute("src", app.file);
+        frame.onload=function(){ frameload.classList.remove("show"); try{ spine.pushTo(frame.contentWindow); }catch(e){} };
+      } else { try{ spine.pushTo(frame.contentWindow); }catch(e){} }
+      frame.classList.add("show"); home.style.display="none";
+      ext.href=app.file; ext.classList.add("show");
+      if(app.bucket && !openGroups[app.bucket]){ openGroups[app.bucket]=true; renderRail(); markActive(id); }
+    } else {
+      frame.classList.remove("show"); frame.removeAttribute("src"); home.style.display="block";
+      ext.classList.remove("show"); frameload.classList.remove("show");
+      setCrumb(""); renderHome(); markActive("");
+    }
+    document.body.classList.remove("nav-open");
+  }
+  function markActive(id){ document.querySelectorAll(".rail .item").forEach(function(x){ x.classList.toggle("active", x.dataset.id===id); }); }
+
+  document.getElementById("brand").onclick=function(){ location.hash=""; };
+
+  /* ============================ command palette ============================ */
+  var pk=document.getElementById("pk"), pkScrim=document.getElementById("pkScrim"), pkIn=document.getElementById("pkIn"), pkRes=document.getElementById("pkRes");
+  var pkSel=0, pkList=[];
+  function openPk(){ pk.classList.add("show"); pkScrim.classList.add("show"); pkIn.value=""; drawPk(""); pkIn.focus(); }
+  function closePk(){ pk.classList.remove("show"); pkScrim.classList.remove("show"); }
+  function drawPk(q){
+    q=(q||"").toLowerCase().trim();
+    var buckets = BUCKETS.map(function(b){ return {kind:"bucket", id:b.id, name:b.name, desc:b.role, mark:"▦", color:b.color}; });
+    var apps = APPS.map(function(a){ var bd=bucketDef(a.bucket); return {kind:"app", id:a.id, name:a.name, desc:a.desc, mark:a.mark, color:bd?bd.color:"var(--slate)", bk:bd?bd.name:""}; });
+    var all = buckets.concat(apps);
+    pkList = q ? all.filter(function(r){ return (r.name+" "+r.desc+" "+(r.bk||"")).toLowerCase().indexOf(q)>=0; }) : all;
+    pkSel=0;
+    pkRes.innerHTML = pkList.map(function(r,i){
+      return '<div class="r'+(i===0?" sel":"")+'" data-i="'+i+'" style="--dc:'+r.color+'">'+
+        '<span class="mk" style="background:'+r.color+'">'+r.mark+'</span>'+
+        '<span class="nm">'+r.name+'</span>'+
+        (r.bk?'<span class="bk">'+r.bk+'</span>':(r.kind==="bucket"?'<span class="bk">bucket</span>':''))+
+      '</div>';
+    }).join("") || '<div class="r"><span class="ds">No matches.</span></div>';
+    pkRes.querySelectorAll(".r[data-i]").forEach(function(el){ el.onclick=function(){ pick(+el.dataset.i); }; });
+  }
+  function pick(i){ var r=pkList[i]; if(!r) return; closePk(); location.hash = r.kind==="bucket" ? "#b/"+r.id : "#"+r.id; }
+  pkIn.addEventListener("input", function(){ drawPk(pkIn.value); });
+  pkIn.addEventListener("keydown", function(e){
+    if(e.key==="ArrowDown"){ e.preventDefault(); pkSel=Math.min(pkSel+1,pkList.length-1); syncSel(); }
+    else if(e.key==="ArrowUp"){ e.preventDefault(); pkSel=Math.max(pkSel-1,0); syncSel(); }
+    else if(e.key==="Enter"){ e.preventDefault(); pick(pkSel); }
+    else if(e.key==="Escape"){ closePk(); }
+  });
+  function syncSel(){ pkRes.querySelectorAll(".r[data-i]").forEach(function(el){ el.classList.toggle("sel", +el.dataset.i===pkSel); }); var s=pkRes.querySelector(".r.sel"); if(s)s.scrollIntoView({block:"nearest"}); }
+  document.getElementById("kbtn").onclick=openPk;
+  pkScrim.onclick=closePk;
+  window.addEventListener("keydown", function(e){
+    if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==="k"){ e.preventDefault(); pk.classList.contains("show")?closePk():openPk(); }
+  });
+
+  /* ============================ theme ============================ */
+  document.getElementById("tgl").onclick=function(){
+    var cur=document.documentElement.getAttribute("data-theme");
+    var next=cur==="dark"?"light":(cur==="light"?"dark":(matchMedia("(prefers-color-scheme:dark)").matches?"light":"dark"));
+    document.documentElement.setAttribute("data-theme",next);
+  };
+
+  /* ============================ boot ============================ */
+  function refreshDynamic(){ renderRail(); if(!location.hash){ renderHome(); } else if(location.hash.indexOf("#b/")===0){ renderHub(location.hash.slice(3)); } globalPulse(); }
+  renderRail(); route();
+  Promise.all([fetchMonitor(), fetchReview()]).then(refreshDynamic);
+  window.addEventListener("hashchange", route);
+  // keep freshness current without hammering — poll every 90s
+  setInterval(function(){ Promise.all([fetchMonitor(), fetchReview()]).then(refreshDynamic); }, 90000);
+})();
+</script>
+</body>
+</html>

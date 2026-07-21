@@ -5755,7 +5755,7 @@ def order_sheet_ep(oid):
 # An ALLOWLIST of public top-level entries is enforced so the engine (unifyd/, *.py, scripts/, docs,
 # dotfiles, .env) is NEVER web-served — it mirrors the deploy.sh / deploy.yml exclude lists.
 SUITE_ROOT = os.environ.get("SUITE_ROOT", "").strip()
-_SUITE_OK_TOP = {"index.html", "apps", "spine", "suite.css", "suite-header.js",
+_SUITE_OK_TOP = {"index.html", "hub.html", "apps", "spine", "suite.css", "suite-header.js",
                  "suite-export.js", "fullread.js", "dq.js", "dq_frontier.js", "datagrid.js",
                  "apps.registry.json", "favicon.ico"}
 
@@ -5788,6 +5788,10 @@ def _suite_send(relpath):
 @app.get("/prism.html")
 def prism_shortcut():
     return redirect("/apps/prism.html")              # friendly short URL for the mobile app
+
+@app.get("/hub")
+def hub_shortcut():
+    return _suite_send("hub.html")                    # the four-bucket IA shell — parallel to index.html (/)
 
 @app.get("/")
 def index():
@@ -5889,5 +5893,6 @@ except Exception:
 
 
 if __name__ == "__main__":
-    print("Unifyd agent on http://127.0.0.1:8765  (Ctrl-C to stop)")
-    app.run(host="127.0.0.1", port=8765, debug=False, threaded=True)
+    _port = int(os.environ.get("PORT", "8765"))          # PORT override lets a second dev agent run beside 8765
+    print("Unifyd agent on http://127.0.0.1:%d  (Ctrl-C to stop)" % _port)
+    app.run(host="127.0.0.1", port=_port, debug=False, threaded=True)
