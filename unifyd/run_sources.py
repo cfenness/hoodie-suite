@@ -11,6 +11,13 @@ one-at-a-time (they degrade under contention).
   python run_sources.py --cadence weekly
   python run_sources.py --only walmart,kroger,publix
   python run_sources.py --headless-only          # skip the Mac/browser sources
+  python run_sources.py --due                    # SLO dispatcher: run ONLY what's past its interval
+
+--due is the near-real-time dispatcher (NRT-PLAN.md §3): each source is due when its last attempt
+in `source_runs` is older than its `interval_h` (registry; default daily=24h, weekly=168h). Because
+source_runs is the SHARED warehouse ledger, due-ness is host-global — a source the cloud runner just
+landed shows fresh to the Mac tick and is skipped, so hosts dedupe through the ledger instead of a
+schedule matrix. Fire it often (launchd/cron every 30min); a lock file makes overlapping passes no-op.
 """
 import argparse
 import glob
@@ -38,6 +45,45 @@ def _rows(table):
 
 def _counts(tables):
     return {t: _rows(t) for t in tables}
+
+
+def _interval_h(source):
+    """Refresh interval in hours: per-source `interval_h` override, else cadence default."""
+    return float(source.get("interval_h") or (168 if source.get("cadence") == "weekly" else 24))
+
+
+def due_sources(now=None, grace=0.98):
+    """The enabled sources whose interval has lapsed — last attempt (ts_start of ANY status in
+    source_runs) older than interval_h * grace. The 2% grace keeps a fixed tick (e.g. a 24h-interval
+    source checked every 30min) from slipping a full tick each day. Never-run sources are due."""
+    import warehouse
+    now = now or time.time()
+    last = {}
+    try:
+        for r in warehouse.query("source_runs", "SELECT source, MAX(ts_start) AS ts FROM t GROUP BY source"):
+            last[r["source"]] = float(r["ts"] or 0)
+    except Exception:
+        pass                                  # no ledger yet -> everything enabled is due
+    return [s for s in reg.SOURCES if s.get("enabled")
+            and now - last.get(s["id"], 0) >= _interval_h(s) * 3600 * grace]
+
+
+def _acquire_lock():
+    """One dispatcher pass at a time (fcntl, non-blocking): a 30-min tick that fires while a 4-hour
+    Mac browser sweep is still running must no-op, not stack a second Chrome. Returns the held file
+    (keep a reference — GC releases the lock) or None if another pass holds it."""
+    import fcntl
+    path = os.path.join(HERE, "agent_state", "run_sources.lock")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    lf = open(path, "w")
+    try:
+        fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lf.close()
+        return None
+    lf.write("%d\n" % os.getpid())
+    lf.flush()
+    return lf
 
 
 def run_one(source, log=print):
@@ -121,7 +167,10 @@ def run_all(cadence=None, only=None, exclude=None, headless_only=False, mac_only
     if cadence:
         src = [s for s in src if s.get("cadence") == cadence or cadence == "all"]
     headless = [s for s in src if s["klass"] in ("headless", "creds")]
-    mac = [s for s in src if s["klass"] == "mac"]
+    # Mac (browser) sources honor `priority` (lower first): the long aggregator sweeps go first, the
+    # contention-sensitive anti-bot trio (7-Eleven/CityHive/Bottlecapps) last — the run_mac_queue.sh
+    # ordering, now expressed in the registry instead of a wrapper script.
+    mac = sorted([s for s in src if s["klass"] == "mac"], key=lambda s: s.get("priority", 50))
     records = []
 
     if not mac_only and headless:
@@ -159,9 +208,25 @@ def main(argv=None):
     ap.add_argument("--headless-only", action="store_true")
     ap.add_argument("--mac-only", action="store_true")
     ap.add_argument("--workers", type=int, default=6, help="parallel headless workers (lower on RAM-limited cloud runners)")
+    ap.add_argument("--due", action="store_true", help="SLO dispatcher: run only sources past their interval_h")
     a = ap.parse_args(argv)
     only = [x.strip() for x in a.only.split(",") if x.strip()] or None
     exclude = [x.strip() for x in a.exclude.split(",") if x.strip()] or None
+    if a.due:
+        lock = _acquire_lock()
+        if not lock:
+            print("[run_sources] another dispatcher pass holds the lock — nothing to do.")
+            return 0
+        due = due_sources()
+        if only:
+            due = [s for s in due if s["id"] in set(only)]
+        if not due:
+            print("[run_sources] nothing due.")
+            return 0
+        print("[run_sources] due: " + ", ".join(s["id"] for s in due))
+        run_all(cadence="all", only=[s["id"] for s in due], exclude=exclude,
+                headless_only=a.headless_only, mac_only=a.mac_only, workers=a.workers)
+        return 0
     run_all(cadence=a.cadence, only=only, exclude=exclude, headless_only=a.headless_only,
             mac_only=a.mac_only, workers=a.workers)
     return 0

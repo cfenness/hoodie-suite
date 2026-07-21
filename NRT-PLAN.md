@@ -82,8 +82,8 @@ Three roles, each on the cheapest hardware that does the job:
 | Role | Where | Cost profile |
 |---|---|---|
 | **Serve** | existing Fly shared-cpu-4x/4GB | always-on (already paid). Only reads small marts + manifest. **Never runs builds.** |
-| **Build** | **ephemeral Fly worker machine** (~16GB, performance CPU), launched on schedule via Machines API / `fly machine run --rm`, does merges + master build + compaction, exits | pay per-second while running; hourly 10–20min runs ≈ single-digit $/mo |
-| **Scrape** | Mac (anti-bot headful, launchd — already running) + headless sources movable to the worker/cron | Mac is free; headless is cheap anywhere |
+| **Build** | **GitHub Actions is already the ephemeral runner** (`cloud-sources.yml` daily, `scrape-runner.yml` 12h — land straight to Tigris). Master builds/compaction join those workflows. A dedicated Fly worker machine (~16GB, per-second billing) is a **gated upgrade**: adopt only when a build exceeds Actions' 6h/7GB limits. | Actions minutes ≈ free at current volume |
+| **Scrape** | Mac (anti-bot headful, launchd — already running) + headless sources in the Actions runners | Mac is free; headless is cheap anywhere |
 
 - DuckDB-on-Tigris stays the engine. **Snowflake decision gate** (don't pay for it early):
   adopt only when (a) request-path queries need cross-grain joins partition pruning can't
@@ -164,8 +164,8 @@ cost proportional to **what changed**, not what exists.
 
 | Phase | Work | Why this order |
 |---|---|---|
-| **1** | Warehouse v2: partitioned layout + DuckDB merge + manifest (§1a–c) | everything depends on it; do BEFORE big data arrives |
-| **2** | Ephemeral worker machine + `--due` dispatcher (§2, §3) | moves builds off the serving VM, establishes the cycle |
+| **1** | Warehouse v2: partitioned layout + DuckDB merge + manifest (§1a–c) — **BUILT** (`feat/warehouse-v2-partitioned`, 22-check compat suite) | everything depends on it; do BEFORE big data arrives |
+| **2** | `--due` dispatcher (§2, §3) — **BUILT** (`feat/nrt-due-dispatcher`: registry `interval_h`/`priority`, ledger-driven due-ness, lock, run_due.sh + launchd template). Cloud runner = existing GH Actions; Fly worker deferred behind the §2 gate | moves builds off the serving VM, establishes the cycle |
 | **3** | Incremental master wired to the manifest watermark (§4) | master starts tracking sources automatically |
 | **4** | SipSource ingest + marts (§1d) | lands on infrastructure already sized for it |
 | **5** | Hot-tier promotion (diff recipes hourly) + freshness UI (§3, §5) | the visible "near real time" payoff |

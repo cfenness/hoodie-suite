@@ -16,6 +16,15 @@ Each entry:
   cadence : "daily" | "weekly"  (weekly for huge/slow backfills like TTB)
   enabled : run it in the daily pass
   note    : mechanism / caveats
+
+Optional scheduling metadata (the --due dispatcher, NRT-PLAN.md §3):
+  interval_h : refresh interval in hours — overrides the cadence default (daily=24, weekly=168).
+               This is the near-real-time knob: promote a source to the hot tier by setting e.g.
+               interval_h=4 once its recipe supports cheap diffs. Due-ness is computed from the
+               shared source_runs ledger, so any host (Mac tick, cloud runner) skips what another
+               host just landed.
+  priority   : Mac-queue order, lower first (default 50). Long aggregator sweeps run first; the
+               contention-sensitive anti-bot trio last (was run_mac_queue.sh's hardcoded order).
 """
 
 SOURCES = [
@@ -56,11 +65,11 @@ SOURCES = [
 
     # ── Aggregators / convenience (Mac headful — anti-bot) ────────────────────────────────────────────────────
     dict(id="ubereats", label="Uber Eats", code="import ubereats as m; m.main(['--site','ubereats','--max-stores','1000'])",
-         tables=["ubereats_products"], klass="mac", cadence="daily", enabled=True, note="Uber BFF, all stores"),
+         tables=["ubereats_products"], klass="mac", cadence="daily", enabled=True, priority=10, note="Uber BFF, all stores"),
     dict(id="postmates", label="Postmates", code="import ubereats as m; m.main(['--site','postmates','--max-stores','1000'])",
-         tables=["postmates_products"], klass="mac", cadence="daily", enabled=True, note="Uber BFF, all stores"),
+         tables=["postmates_products"], klass="mac", cadence="daily", enabled=True, priority=11, note="Uber BFF, all stores"),
     dict(id="sevennow", label="7-Eleven (7NOW)", code="import sevennow_warm as m; m.main()",
-         tables=["sevennow_products"], klass="mac", cadence="daily", enabled=True, note="Incapsula — patchright"),
+         tables=["sevennow_products"], klass="mac", cadence="daily", enabled=True, priority=60, note="Incapsula — patchright"),
 
     # ── Off-premise platforms ─────────────────────────────────────────────────────────────────────────────────
     dict(id="offprem-census", label="Off-premise census (Shopify/Woo/Wix/Sqsp)",
@@ -69,9 +78,9 @@ SOURCES = [
               "[m.run_census(market=x, platforms=('Shopify','WooCommerce','Wix','Squarespace')) for x in markets]",
          tables=["offprem_products"], klass="headless", cadence="daily", enabled=True, note="22 markets, no-BD"),
     dict(id="bottlecapps", label="Bottlecapps network", code="import bottlecapps as m; m.national()",
-         tables=["bottlecapps_products"], klass="mac", cadence="daily", enabled=True, note="DataDome — patchright"),
+         tables=["bottlecapps_products"], klass="mac", cadence="daily", enabled=True, priority=62, note="DataDome — patchright"),
     dict(id="cityhive", label="City Hive network", code="import cityhive as m; m.national(max_stores=12)",
-         tables=["cityhive_products"], klass="mac", cadence="daily", enabled=True, note="Cloudflare — patchright"),
+         tables=["cityhive_products"], klass="mac", cadence="daily", enabled=True, priority=61, note="Cloudflare — patchright"),
     dict(id="bbg", label="BBG e-commerce", code="import bbg_salsify as m; m.pull()",
          tables=["bbg_products"], klass="headless", cadence="daily", enabled=True, note="Salsify API"),
 
