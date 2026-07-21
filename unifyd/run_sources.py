@@ -121,11 +121,13 @@ def mac_window_open(now=None):
 
 
 def _acquire_lock():
-    """One dispatcher pass at a time (fcntl, non-blocking): a 30-min tick that fires while a 4-hour
-    Mac browser sweep is still running must no-op, not stack a second Chrome. Returns the held file
-    (keep a reference — GC releases the lock) or None if another pass holds it."""
+    """One dispatcher pass per HOST (fcntl, non-blocking): a 30-min tick that fires while a 4-hour
+    Mac browser sweep is still running must no-op, not stack a second Chrome. The lock lives at a
+    MACHINE-GLOBAL path (~/.hoodie/run_sources.lock), not under the checkout — a per-checkout lock
+    let a tick from the launchd checkout run concurrently with a pass from a worktree (learned
+    2026-07-21). Returns the held file (keep a reference — GC releases the lock) or None."""
     import fcntl
-    path = os.path.join(HERE, "agent_state", "run_sources.lock")
+    path = os.path.join(os.path.expanduser("~"), ".hoodie", "run_sources.lock")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     lf = open(path, "w")
     try:
