@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<!-- Hoodie Suite · Docs — the Handbook viewer (Confluence-style space). Pages are markdown in
+     apps/docs/, indexed by apps/docs/index.json. Audience-oriented orientation + pointers; the deep
+     canonical docs stay beside the code. Dependency-free: a ~70-line markdown renderer, no libs. -->
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoodie · Docs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--teal:#4E79A7;--teal-d:#3D6089;--teal-soft:#E8EEF5;--ink:#243330;--ink2:#3A4A47;
+        --muted:#5E6B68;--muted2:#8A928F;--line:#D7DDDB;--line2:#E4E9E8;--paper:#F4F6F5;--surface:#fff;
+        --mono:'JetBrains Mono',ui-monospace,monospace;--disp:'Fraunces',Georgia,serif;--body:'Inter',system-ui,sans-serif;}
+  *{box-sizing:border-box} html,body{margin:0;height:100%}
+  body{display:flex;height:100vh;overflow:hidden;font-family:var(--body);color:var(--ink);background:var(--paper)}
+  nav{flex:0 0 262px;overflow:auto;background:var(--surface);border-right:1px solid var(--line);padding:18px 14px}
+  .brand{padding:2px 10px 14px;line-height:1.05}
+  .brand .ey{font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);display:block;font-weight:600}
+  .brand .nm{font-family:var(--disp);font-size:21px;font-weight:700;color:var(--teal-d);letter-spacing:-.01em}
+  .sec{font-family:var(--mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted2);font-weight:700;padding:14px 10px 5px}
+  nav a{display:block;padding:7px 10px;border-radius:8px;font-size:13px;font-weight:600;color:var(--ink2);cursor:pointer;text-decoration:none}
+  nav a:hover{background:var(--paper)}
+  nav a.on{background:var(--teal-soft);color:var(--teal-d)}
+  nav a .aud{display:block;font-size:10.5px;color:var(--muted2);font-weight:500;margin-top:1px}
+  main{flex:1;overflow:auto}
+  .page{max-width:860px;padding:30px 40px 80px;line-height:1.65}
+  .page h1{font-family:var(--disp);font-size:27px;font-weight:700;letter-spacing:-.01em;margin:0 0 6px}
+  .page h2{font-family:var(--disp);font-size:19px;font-weight:700;margin:28px 0 8px;padding-top:14px;border-top:1px solid var(--line2)}
+  .page h3{font-size:14.5px;font-weight:700;margin:20px 0 6px}
+  .page p{font-size:14px;color:var(--ink2);margin:8px 0}
+  .page ul,.page ol{margin:8px 0;padding-left:22px}
+  .page li{font-size:14px;color:var(--ink2);margin:4px 0}
+  .page code{font-family:var(--mono);font-size:12px;background:var(--teal-soft);color:var(--teal-d);border-radius:5px;padding:1px 5px}
+  .page pre{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;overflow-x:auto;margin:12px 0}
+  .page pre code{background:none;color:var(--ink2);padding:0;font-size:12px;line-height:1.6}
+  .page strong{color:var(--ink)}
+  .page a{color:var(--teal-d);font-weight:600}
+  .page blockquote{border-left:3px solid var(--teal);margin:12px 0;padding:2px 14px;color:var(--muted)}
+  .page hr{border:0;border-top:1px solid var(--line);margin:22px 0}
+  .meta{font-family:var(--mono);font-size:10px;color:var(--muted2);letter-spacing:.06em;text-transform:uppercase;margin-bottom:18px}
+  .err{color:#b4232a;background:#f8e6e7;border:1px solid #EBC9CB;border-radius:9px;padding:11px 14px;font-size:13px}
+  .spin{width:20px;height:20px;border:2.5px solid var(--line);border-top-color:var(--teal);border-radius:50%;animation:sp .7s linear infinite;margin:60px auto}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style></head><body>
+  <nav id="nav"><div class="brand"><span class="ey">Hoodie Suite</span><span class="nm">Docs</span></div><div class="spin"></div></nav>
+  <main><div class="page" id="page"><div class="spin"></div></div></main>
+<script>
+(function(){
+  "use strict";
+  var esc=function(s){return String(s==null?"":s).replace(/[&<>]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;"}[c];});};
+  var IDX=null, CUR=null;
+
+  // ── tiny markdown renderer: headings, lists, code fences, inline code/bold/em/links, quotes, hr ──
+  function inline(s){
+    s=esc(s);
+    s=s.replace(/`([^`]+)`/g,function(_,c){return "<code>"+c+"</code>";});
+    s=s.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>");
+    s=s.replace(/\*([^*]+)\*/g,"<em>$1</em>");
+    s=s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,'<a href="$2">$1</a>');
+    return s;
+  }
+  function md(src){
+    var out=[], lines=src.split("\n"), i=0, inCode=false, buf=[], listT=null;
+    function closeList(){ if(listT){ out.push("</"+listT+">"); listT=null; } }
+    while(i<lines.length){
+      var l=lines[i];
+      if(l.slice(0,3)==="```"){ if(inCode){ out.push("<pre><code>"+esc(buf.join("\n"))+"</code></pre>"); buf=[]; inCode=false; } else { closeList(); inCode=true; } i++; continue; }
+      if(inCode){ buf.push(l); i++; continue; }
+      var t=l.trim();
+      if(t===""){ closeList(); i++; continue; }
+      if(t==="---"){ closeList(); out.push("<hr>"); i++; continue; }
+      var h=t.match(/^(#{1,4})\s+(.*)$/);
+      if(h){ closeList(); var n=h[1].length; out.push("<h"+n+">"+inline(h[2])+"</h"+n+">"); i++; continue; }
+      if(t.charAt(0)===">"){ closeList(); out.push("<blockquote><p>"+inline(t.replace(/^>\s?/,""))+"</p></blockquote>"); i++; continue; }
+      var ul=t.match(/^[-*]\s+(.*)$/), ol=t.match(/^\d+\.\s+(.*)$/);
+      if(ul||ol){ var want=ul?"ul":"ol"; if(listT!==want){ closeList(); out.push("<"+want+">"); listT=want; }
+        // hanging continuation lines (indented) join the item
+        var item=(ul||ol)[1]; while(i+1<lines.length && /^\s{2,}\S/.test(lines[i+1]) && !/^\s*[-*]|\s*\d+\./.test(lines[i+1])){ i++; item+=" "+lines[i].trim(); }
+        out.push("<li>"+inline(item)+"</li>"); i++; continue; }
+      // paragraph: join soft-wrapped lines
+      var para=[t];
+      while(i+1<lines.length){ var nx=lines[i+1], nt=nx.trim();
+        if(nt===""||nt.slice(0,3)==="```"||/^(#{1,4})\s/.test(nt)||/^[-*]\s/.test(nt)||/^\d+\.\s/.test(nt)||nt==="---"||nt.charAt(0)===">") break;
+        para.push(nt); i++; }
+      closeList(); out.push("<p>"+inline(para.join(" "))+"</p>"); i++;
+    }
+    closeList();
+    if(inCode) out.push("<pre><code>"+esc(buf.join("\n"))+"</code></pre>");
+    return out.join("\n");
+  }
+
+  function renderNav(){
+    var h='<div class="brand"><span class="ey">Hoodie Suite</span><span class="nm">Docs</span></div>';
+    IDX.sections.forEach(function(s){ h+='<div class="sec">'+esc(s.title)+'</div>';
+      s.pages.forEach(function(p){ h+='<a data-id="'+esc(p.id)+'" class="'+(CUR===p.id?"on":"")+'">'+esc(p.title)+'<span class="aud">'+esc(p.audience||"")+'</span></a>'; }); });
+    document.getElementById("nav").innerHTML=h;
+    Array.prototype.forEach.call(document.querySelectorAll("nav a"),function(a){ a.onclick=function(){ open_(a.getAttribute("data-id")); }; });
+  }
+  function pageById(id){ var found=null; IDX.sections.forEach(function(s){ s.pages.forEach(function(p){ if(p.id===id) found=p; }); }); return found; }
+  function open_(id){
+    var p=pageById(id)||IDX.sections[0].pages[0]; CUR=p.id; renderNav();
+    var el=document.getElementById("page"); el.innerHTML='<div class="spin"></div>';
+    fetch("docs/"+p.file,{cache:"no-store"}).then(function(r){ if(!r.ok) throw new Error(r.status); return r.text(); })
+      .then(function(txt){ el.innerHTML='<div class="meta">'+esc(p.audience||"")+' · handbook · updated with the code (docs-as-code)</div>'+md(txt);
+        el.parentNode.scrollTop=0; })
+      .catch(function(e){ el.innerHTML='<div class="err">Could not load '+esc(p.file)+' — '+esc(String(e))+'</div>'; });
+    try{ history.replaceState(null,"","#"+p.id); }catch(e){}
+  }
+  fetch("docs/index.json",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
+    IDX=d; var want=(location.hash||"").replace("#","");
+    open_(want||d.sections[0].pages[0].id);
+  }).catch(function(e){ document.getElementById("page").innerHTML='<div class="err">Could not load the handbook index — '+esc(String(e))+'</div>'; });
+})();
+</script>
+</body></html>

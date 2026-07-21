@@ -51,14 +51,17 @@ ticket left stale.** The single source of truth is **`tickets.json`** (repo root
 `tickets.html` (serve the repo root and open it). Ticket prefix: `HC-`. A ticket must carry enough
 detail that a lead engineer can pick it up cold.
 
-1. **Before writing code:** create the ticket (id `HC-<next_id>`, bump `meta.next_id`). Required
-   fields: `title`, `type` (`feat|fix|chore|docs`), `status`, `size` (S/M/L/XL — XL must be split
-   before starting), `priority`, `summary`, `context` (why / the decision behind it), `acceptance`
-   (testable criteria), and a `verification_plan`. Trivial exceptions (typo-level) may skip a ticket;
-   when in doubt, ticket it.
-2. **Pipeline:** `backlog → ready → in-progress → in-review → done`. Update `status` as work moves —
-   `in-progress` when you start, `in-review` when pushed and awaiting review/verification, `done`
-   only when acceptance criteria are verified (evidence recorded in `verification`).
+1. **PROPOSE → CONFIRM (the scope gate).** Before implementation, Claude DRAFTS the ticket (id
+   `HC-<next_id>`, bump `meta.next_id`; status `proposed`) and **returns it in chat** — title, size,
+   acceptance criteria, verification plan — for the user to confirm or adjust in plain language.
+   Only a user-confirmed ticket moves to `ready` and gets built. This keeps decisions at the user
+   level without the user writing tickets, and limits usage by agreeing scope BEFORE building.
+   Exceptions: an explicit "just do it" / work the user already specified in detail in chat (record
+   that as the confirmation) / trivial typo-level fixes. Required fields: `title`, `type`
+   (`feat|fix|chore|docs`), `status`, `size` (S/M/L/XL — XL must be split before starting),
+   `priority`, `summary`, `context`, `acceptance` (testable), `verification_plan`.
+2. **Pipeline:** `proposed → backlog → ready → in-progress → in-review → done`; `done` only when
+   acceptance criteria are verified (evidence in `verification`) AND the agentic gates have run.
 3. **On completion:** fill `commits` (short SHAs), `files`, `implementation` (concrete notes — key
    functions, decisions, gotchas), and replace `verification_plan` with `verification` (what was
    actually run/observed). Update `updated`.
@@ -68,6 +71,11 @@ detail that a lead engineer can pick it up cold.
 6. **Phase mapping:** give each of the 7 phases an epic-level ticket; work tickets link their phase
    in `context`. A phase is `done` only when its acceptance is verified — including its automatch /
    precision numbers where applicable.
+7. **AGENTIC REVIEW + QA (quality gates, in-review → done):** an adversarial review of the diff by a
+   FRESH context (not the author's), findings recorded in the ticket's `review` field ("none found"
+   is valid; unrun is not); and verification EXECUTED, not asserted — self-tests + end-to-end smoke
+   for engine changes, real-browser drives with reviewed renders for UI. A surviving finding becomes
+   a fix or a new ticket — never a silent pass.
 
 (The same rule governs `hoodie-suite` (`HS-`), `hoodie-backend` (`HB-`), `hoodie-app` (`HA-`).)
 

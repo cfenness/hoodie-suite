@@ -138,20 +138,50 @@ ticket left stale.** The single source of truth is **`apps/tickets.json`**; the 
 `apps/tickets.html` (launcher → `#tickets`). This is how work is saved — a ticket must carry enough
 detail that a lead engineer can pick it up cold.
 
-1. **Before writing code:** create the ticket (id `HS-<next_id>`, bump `meta.next_id`). Required
-   fields: `title`, `type` (`feat|fix|chore|docs`), `status`, `size` (S/M/L/XL — XL must be split
-   before starting), `priority`, `summary`, `context` (why / the decision behind it), `acceptance`
-   (testable criteria), and a `verification_plan`. Trivial exceptions (typo-level) may skip a ticket;
-   when in doubt, ticket it.
-2. **Pipeline:** `backlog → ready → in-progress → in-review → done`. Update `status` as work moves —
-   `in-progress` when you start, `in-review` when pushed and awaiting review/verification, `done`
+1. **PROPOSE → CONFIRM (the scope gate).** Before implementation, Claude DRAFTS the ticket (id
+   `HS-<next_id>`, bump `meta.next_id`; status `proposed`) and **returns it in chat** — title, size,
+   acceptance criteria, verification plan — for the user to confirm or adjust in plain language.
+   Claude updates the ticket to match; only a user-confirmed ticket moves to `ready` and gets built.
+   This keeps decisions at the user level without the user writing tickets, and limits usage by
+   agreeing scope BEFORE tokens are spent building the wrong thing. Exceptions: the user explicitly
+   says "just do it" / work the user already specified in detail in chat (the chat spec IS the
+   confirmation — record it) / trivial typo-level fixes. Required fields: `title`, `type`
+   (`feat|fix|chore|docs`), `status`, `size` (S/M/L/XL — XL must be split before starting),
+   `priority`, `summary`, `context` (why / the decision behind it), `acceptance` (testable criteria),
+   and a `verification_plan`. When in doubt, ticket it.
+2. **Pipeline:** `proposed → backlog → ready → in-progress → in-review → done`. Update `status` as
+   work moves — `in-progress` when you start, `in-review` when pushed and awaiting review/QA, `done`
    only when acceptance criteria are verified (evidence recorded in `verification`).
+   **`in-review` → `done` requires the agentic gates (below).**
 3. **On completion:** fill `commits` (short SHAs), `files`, `implementation` (concrete notes — key
    functions, decisions, gotchas), and replace `verification_plan` with `verification` (what was
    actually run/observed). Update `updated`.
 4. **Commits reference tickets** — mention the id (e.g. `HS-012`) in the commit body when work maps
    to a ticket.
 5. Discovered follow-up work becomes a **new ticket** (link it in `followups`), not a mental note.
+6. **AGENTIC REVIEW + QA (the quality gates — required to close a ticket).** Before `in-review` →
+   `done`:
+   - **Agentic review:** an adversarial review pass over the diff, run by a fresh agent/context (not
+     the author-context; e.g. the `/code-review` skill or a spawned reviewer) hunting correctness
+     bugs, first-law violations, silent data loss, and law drift. Findings recorded in the ticket's
+     `review` field — `"none found"` is a valid finding, an unrun review is not.
+   - **Agentic QA:** verification EXECUTED, not asserted — engine changes run their self-tests +
+     end-to-end smoke; UI changes are driven in a real browser (playwright) with the rendered result
+     REVIEWED, not just non-erroring. Evidence goes in `verification` (observed outputs, not
+     intentions).
+   The session doing the work may run these gates itself only with fresh-context agents; a finding
+   that survives becomes a fix (same ticket) or a new ticket — never a silent pass.
+
+## The Handbook (docs-as-code)
+
+**`apps/docs/`** is the Confluence-style documentation space — everything application & data
+engineers, PMs, and commercial teams need to know about the apps and repos. Viewer:
+`apps/docs.html` (launcher → `#docs`); index: `apps/docs/index.json`; pages are markdown in
+`apps/docs/`. Rules: the handbook is **audience-oriented orientation + pointers** — the deep
+canonical docs (`MDM_FLOW.md`, `BACKEND_DESIGN.md`, `SPINE.md`, per-repo READMEs/CLAUDE.md) stay
+canonical, the handbook links to them rather than duplicating (drift kills docs). **A change that
+alters behavior, contracts, or process updates the relevant handbook page in the same commit.** New
+page = add the .md + one `index.json` entry.
 
 ## Git conventions
 

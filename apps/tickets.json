@@ -2,8 +2,9 @@
   "meta": {
     "project": "Hoodie Suite",
     "prefix": "HS",
-    "next_id": 20,
+    "next_id": 23,
     "statuses": [
+      "proposed",
       "backlog",
       "ready",
       "in-progress",
@@ -643,6 +644,110 @@
       ],
       "files": [
         "apps/tickets.json"
+      ]
+    },
+    {
+      "id": "HS-020",
+      "title": "Propose→Confirm ticket loop — scope decisions stay at the user level",
+      "type": "chore",
+      "status": "done",
+      "size": "S",
+      "priority": "P1",
+      "created": "2026-07-08",
+      "updated": "2026-07-08",
+      "branch": "claude/world-class-mdm-strategy-7bpom6",
+      "commits": [
+        "2ec57eb"
+      ],
+      "summary": "New first step of the hard rule: before implementation, Claude DRAFTS the ticket (status 'proposed') and RETURNS it in chat — title, size, acceptance, verification plan — for the user to confirm or adjust in plain language. Only a confirmed ticket is built. 'proposed' added to the pipeline and rendered as the first board column (dashed amber).",
+      "context": "Owner's design: limit usage by agreeing scope BEFORE tokens are spent building the wrong thing, and keep decisions at the user level without the user writing each ticket. Skips: an explicit 'just do it', work already specified in detail in chat (that chat spec is recorded as the confirmation), typo-level fixes. Mirrored to canon-seed and the HB-/HA- repo rules.",
+      "acceptance": [
+        "CLAUDE.md rule step 1 is PROPOSE→CONFIRM; pipeline reads proposed → backlog → ready → in-progress → in-review → done",
+        "All four boards (suite, backend, app, canon-seed) render the Proposed column",
+        "meta.statuses updated in all tickets.json files"
+      ],
+      "implementation": [
+        "CLAUDE.md rule rewrite; boards: COLS + .s-proposed style; metas via script. The loop is demonstrated live at the end of this session (HS-010 proposed for confirmation)"
+      ],
+      "verification": [
+        "JSONs validate; suite board renders 6 columns in-browser"
+      ],
+      "files": [
+        "CLAUDE.md",
+        "apps/tickets.html",
+        "apps/tickets.json",
+        "canon-seed/CLAUDE.md",
+        "canon-seed/tickets.html",
+        "canon-seed/tickets.json"
+      ]
+    },
+    {
+      "id": "HS-021",
+      "title": "The Handbook — Confluence-style docs space (apps/docs)",
+      "type": "docs",
+      "status": "done",
+      "size": "M",
+      "priority": "P1",
+      "created": "2026-07-08",
+      "updated": "2026-07-08",
+      "branch": "claude/world-class-mdm-strategy-7bpom6",
+      "commits": [
+        "2ec57eb"
+      ],
+      "summary": "A documentation space covering what application & data engineers, PMs, and commercial teams need to know about the apps and repos. Viewer apps/docs.html (launcher → #docs) renders markdown pages from apps/docs/ via a ~70-line dependency-free renderer; index.json defines sections by audience. Five seed pages: platform (the estate map), engineering (dev loops/contracts/deploy/auth), data (model/masters/laws/pipeline/DQ), product (surfaces/positioning/the standard/vocabulary), process (tickets/propose-confirm/agentic gates).",
+      "context": "Anti-drift design: the handbook is audience-oriented ORIENTATION + POINTERS — the canonical deep docs (MDM_FLOW.md, BACKEND_DESIGN.md, SPINE.md, per-repo CLAUDE.md) stay canonical and are linked, never duplicated. Docs-as-code rule added to CLAUDE.md: a change that alters behavior/contracts/process updates the relevant handbook page in the SAME commit. Placed under apps/ so it serves under the existing _SUITE_OK_TOP allowlist with no server change.",
+      "acceptance": [
+        "#docs renders: sidebar from index.json (sections + audience tags), markdown pages (headings, lists, code fences, inline code/bold/links, quotes) on the base theme",
+        "Five pages exist and read as genuine orientation for their audience",
+        "CLAUDE.md carries the Handbook + docs-as-code rule; new page = one .md + one index.json entry"
+      ],
+      "implementation": [
+        "apps/docs.html (viewer + tiny md renderer, hash routing per page); apps/docs/{index.json, platform.md, engineering.md, data.md, product.md, process.md}; index.html one APPS line (id 'docs', Internal, mark DC)"
+      ],
+      "verification": [
+        "Rendered in-browser via the engine's static route; sidebar + page render reviewed"
+      ],
+      "files": [
+        "apps/docs.html",
+        "apps/docs/index.json",
+        "apps/docs/platform.md",
+        "apps/docs/engineering.md",
+        "apps/docs/data.md",
+        "apps/docs/product.md",
+        "apps/docs/process.md",
+        "index.html",
+        "CLAUDE.md"
+      ]
+    },
+    {
+      "id": "HS-022",
+      "title": "Agentic review + QA — required quality gates on in-review → done",
+      "type": "chore",
+      "status": "done",
+      "size": "S",
+      "priority": "P1",
+      "created": "2026-07-08",
+      "updated": "2026-07-08",
+      "branch": "claude/world-class-mdm-strategy-7bpom6",
+      "commits": [
+        "2ec57eb"
+      ],
+      "summary": "Closing a ticket now requires two agentic gates: (1) AGENTIC REVIEW — an adversarial pass over the diff by a FRESH context (the /code-review skill or a spawned reviewer), hunting correctness bugs, first-law violations, silent data loss, and law drift; findings recorded in the ticket's `review` field ('none found' is a valid finding, an unrun review is not). (2) AGENTIC QA — verification EXECUTED, not asserted: self-tests + end-to-end smoke for engine changes; real-browser playwright drives with REVIEWED renders for UI changes; evidence in `verification` as observed outputs.",
+      "context": "Encodes what this session already practiced ad hoc (the smoke test that caught the NULL-key data loss; screenshots read, not just taken) as a mandatory gate. A surviving finding becomes a fix on the same ticket or a new ticket — never a silent pass. The author-session may run gates only via fresh-context agents. Mirrored to canon-seed (rule 7) and the HB-/HA- repo rules; also documented in the handbook process page.",
+      "acceptance": [
+        "CLAUDE.md rule 6 defines both gates and the `review` ticket field; canon-seed carries rule 7 verbatim-equivalent",
+        "Handbook process.md documents the gates for all repos"
+      ],
+      "implementation": [
+        "Rule text in CLAUDE.md + canon-seed/CLAUDE.md; process.md section. Schema: tickets MAY carry `review` (findings list/outcome) — boards already render unknown fields gracefully by omission; drawer rendering of `review` is a small follow-up when the first gated ticket closes"
+      ],
+      "verification": [
+        "Rule text cross-read across suite + canon-seed; process.md renders in the handbook"
+      ],
+      "files": [
+        "CLAUDE.md",
+        "canon-seed/CLAUDE.md",
+        "apps/docs/process.md"
       ]
     }
   ]

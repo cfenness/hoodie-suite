@@ -1,0 +1,19 @@
+{
+  "space": "Hoodie Handbook",
+  "note": "Audience-oriented orientation + pointers. Canonical deep docs live beside the code (MDM_FLOW.md, BACKEND_DESIGN.md, SPINE.md, per-repo CLAUDE.md/README); this space links, never duplicates. Update the relevant page in the same commit as a behavior/contract/process change (CLAUDE.md hard rule).",
+  "sections": [
+    {"title": "Start here", "pages": [
+      {"id": "platform", "file": "platform.md", "title": "The platform — repos & how they connect", "audience": "everyone"}
+    ]},
+    {"title": "Engineering", "pages": [
+      {"id": "engineering", "file": "engineering.md", "title": "Engineering guide — dev loops, contracts, deploy", "audience": "app & data engineers"},
+      {"id": "process", "file": "process.md", "title": "Process — tickets, propose→confirm, agentic review & QA", "audience": "everyone shipping"}
+    ]},
+    {"title": "Data", "pages": [
+      {"id": "data", "file": "data.md", "title": "The data platform — model, masters, laws, pipeline", "audience": "data engineers & analysts"}
+    ]},
+    {"title": "Product & Commercial", "pages": [
+      {"id": "product", "file": "product.md", "title": "Product & commercial guide — surfaces, positioning, the standard", "audience": "PMs & commercial teams"}
+    ]}
+  ]
+}
