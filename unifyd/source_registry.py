@@ -114,6 +114,25 @@ SOURCES = [
 ]
 
 
+# ── Derived master builds (NRT-PLAN.md Phase 3) ───────────────────────────────────────────────────────────────
+# Not scrapes: these consolidate LANDED source tables into the master, so they belong to the dispatcher, not a
+# human. The --due pass runs a build when any upstream source has landed NEW rows (status "ok") since the
+# build's last attempt, throttled by interval_h (the min gap between rebuilds). Same subprocess + verify-landing
+# + source_runs ledger treatment as sources. `after=[source ids]` narrows the trigger; omitted = any source.
+# Builds run ONLY on the plain `--due` host (the Mac tick today) — the --headless-only cloud runner skips them —
+# so the single-writer rule holds for dim_* tables.
+BUILDS = [
+    dict(id="build-outlets", label="Outlet shred → dim_outlet",
+         code="import normalize as m; m.build(catalog=False, outlets=True, facts=False)",
+         tables=["src_outlets", "dim_outlet"], klass="build", interval_h=6, enabled=True,
+         note="src_outlets re-shred + cross-source geo-match consolidation (supersedes run_coverage_refresh.sh)"),
+    dict(id="build-product-master", label="Product master (dim_sku chain)",
+         code="import build_product_master as m; m.build()",
+         tables=["dim_sku"], klass="build", interval_h=12, enabled=True,
+         note="brand dict → stage → shred to dim_brand/product/item/sku + xwalk/coherence/identity clusters"),
+]
+
+
 def by_id(sid):
     return next((s for s in SOURCES if s["id"] == sid), None)
 

@@ -67,7 +67,49 @@ ok("second acquire refused", run_sources._acquire_lock() is None)
 l1.close()
 ok("released lock re-acquirable", run_sources._acquire_lock() is not None)
 
-# 6) mac ordering: priorities put aggregators first, anti-bot trio last
+# 6) derived builds (Phase 3): trigger on fresh 'ok' landings, throttled by min gap
+SR = ["run_id", "source", "ts_start", "ts_end", "status"]
+
+
+def ledger(rows):
+    warehouse.write_parquet("source_runs", rows, fields=SR, allow_empty=True)
+
+
+ledger([])
+ok("no landings -> no builds due", run_sources.due_builds(now=NOW) == [])
+
+# a source landed new rows 1h ago; builds never ran -> both due
+ledger([dict(run_id="s1", source="binnys", ts_start=NOW - 3700, ts_end=NOW - 3600, status="ok")])
+ok("fresh ok landing -> builds due",
+   {b["id"] for b in run_sources.due_builds(now=NOW)} == {"build-outlets", "build-product-master"})
+
+# build ran AFTER the landing -> not due; and a 'current' (no new rows) landing never triggers
+ledger([dict(run_id="s1", source="binnys", ts_start=NOW - 3700, ts_end=NOW - 3600, status="ok"),
+        dict(run_id="b1", source="build-outlets", ts_start=NOW - 3000, ts_end=NOW - 2900, status="ok"),
+        dict(run_id="b2", source="build-product-master", ts_start=NOW - 3000, ts_end=NOW - 2900, status="ok"),
+        dict(run_id="s2", source="specs", ts_start=NOW - 1000, ts_end=NOW - 900, status="current")])
+ok("built after landing + only 'current' since -> not due", run_sources.due_builds(now=NOW) == [])
+
+# new ok landing since the build, but build ran 1h ago (< 6h min gap) -> throttled
+ledger([dict(run_id="b1", source="build-outlets", ts_start=NOW - 3600, ts_end=NOW - 3500, status="ok"),
+        dict(run_id="b2", source="build-product-master", ts_start=NOW - 3600, ts_end=NOW - 3500, status="ok"),
+        dict(run_id="s3", source="specs", ts_start=NOW - 600, ts_end=NOW - 500, status="ok")])
+ok("min gap throttles rebuild", run_sources.due_builds(now=NOW) == [])
+
+# build ran 7h ago (> 6h gap for build-outlets, < 12h for product-master), landing 1h ago
+ledger([dict(run_id="b1", source="build-outlets", ts_start=NOW - 7 * 3600, ts_end=NOW - 7 * 3600 + 60, status="ok"),
+        dict(run_id="b2", source="build-product-master", ts_start=NOW - 7 * 3600, ts_end=NOW - 7 * 3600 + 60, status="ok"),
+        dict(run_id="s4", source="specs", ts_start=NOW - 3600, ts_end=NOW - 3500, status="ok")])
+ok("per-build min gaps respected",
+   {b["id"] for b in run_sources.due_builds(now=NOW)} == {"build-outlets"})
+
+# after=[...] narrows the trigger
+b_out = next(b for b in reg.BUILDS if b["id"] == "build-outlets")
+b_out["after"] = ["ca-abc"]
+ok("after-list ignores unrelated landings", run_sources.due_builds(now=NOW) == [])
+del b_out["after"]
+
+# 7) mac ordering: priorities put aggregators first, anti-bot trio last
 mac = sorted([s for s in enabled if s["klass"] == "mac"], key=lambda s: s.get("priority", 50))
 ids = [s["id"] for s in mac]
 ok("aggregators first", ids[:2] == ["ubereats", "postmates"])

@@ -33,7 +33,8 @@ import source_registry as reg
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PY = sys.executable
-_TIMEOUT = {"headless": 5400, "creds": 5400, "mac": 14400}   # 1.5h headless, 4h Mac (browser sweeps are long)
+_TIMEOUT = {"headless": 5400, "creds": 5400, "mac": 14400,   # 1.5h headless, 4h Mac (browser sweeps are long)
+            "build": 10800}                                  # 3h for master builds (dim_sku chain)
 
 
 def _rows(table):
@@ -66,6 +67,36 @@ def due_sources(now=None, grace=0.98):
         pass                                  # no ledger yet -> everything enabled is due
     return [s for s in reg.SOURCES if s.get("enabled")
             and now - last.get(s["id"], 0) >= _interval_h(s) * 3600 * grace]
+
+
+def due_builds(now=None):
+    """Derived master builds due (NRT-PLAN §4/Phase 3): an upstream source landed NEW rows
+    (status 'ok' — delta moved, not just 'current') since the build's last attempt, and the
+    build's min gap (interval_h) has passed. Same source_runs ledger, so the master lags any
+    landing by at most one dispatcher cycle without ever rebuilding when nothing changed."""
+    import warehouse
+    now = now or time.time()
+    last_attempt, last_ok = {}, {}
+    try:
+        for r in warehouse.query("source_runs",
+                                 "SELECT source, MAX(ts_start) AS ts, "
+                                 "MAX(CASE WHEN status='ok' THEN ts_end END) AS ok_ts FROM t GROUP BY source"):
+            last_attempt[r["source"]] = float(r["ts"] or 0)
+            if r["ok_ts"]:
+                last_ok[r["source"]] = float(r["ok_ts"])
+    except Exception:
+        return []                        # no ledger yet -> nothing has landed -> nothing to build
+    out = []
+    for b in getattr(reg, "BUILDS", []):
+        if not b.get("enabled"):
+            continue
+        mine = last_attempt.get(b["id"], 0)
+        if now - mine < float(b.get("interval_h") or 6) * 3600:
+            continue
+        ups = b.get("after") or [s["id"] for s in reg.SOURCES if s.get("enabled")]
+        if max((last_ok.get(u, 0) for u in ups), default=0) > mine:
+            out.append(b)
+    return out
 
 
 def _acquire_lock():
@@ -220,12 +251,21 @@ def main(argv=None):
         due = due_sources()
         if only:
             due = [s for s in due if s["id"] in set(only)]
-        if not due:
-            print("[run_sources] nothing due.")
-            return 0
-        print("[run_sources] due: " + ", ".join(s["id"] for s in due))
-        run_all(cadence="all", only=[s["id"] for s in due], exclude=exclude,
-                headless_only=a.headless_only, mac_only=a.mac_only, workers=a.workers)
+        if due:
+            print("[run_sources] due: " + ", ".join(s["id"] for s in due))
+            run_all(cadence="all", only=[s["id"] for s in due], exclude=exclude,
+                    headless_only=a.headless_only, mac_only=a.mac_only, workers=a.workers)
+        else:
+            print("[run_sources] no sources due.")
+        # Derived master builds run AFTER the landings that triggered them — and only on the plain
+        # --due host (the Mac tick): the --headless-only cloud runner skips them so dim_* keeps a
+        # single writer. A build that misses this pass fires on the next tick via the ledger.
+        if not (a.headless_only or a.mac_only):
+            builds = due_builds()
+            if builds:
+                print("[run_sources] builds due: " + ", ".join(b["id"] for b in builds))
+                for b in builds:
+                    _land_runs([run_one(b)])
         return 0
     run_all(cadence=a.cadence, only=only, exclude=exclude, headless_only=a.headless_only,
             mac_only=a.mac_only, workers=a.workers)
