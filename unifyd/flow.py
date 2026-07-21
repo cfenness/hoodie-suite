@@ -245,13 +245,21 @@ def compile_sql(flow, node_id, uri_fn, _seen=None):
         id_col = n.get("id_col") or on[0]["auth"]
         uri = str(uri_fn(authority)).replace("'", "")
         # DEDUPE the authority to one row per join key BEFORE the join — else a reference with N rows for
-        # a key multiplies the upstream row N×. row_number()=1 over the join keys is the guard.
-        pk = ", ".join(derive.col(p["auth"]) for p in on)
-        ref = ("SELECT * FROM read_parquet('%s') QUALIFY row_number() OVER (PARTITION BY %s)=1" % (uri, pk))
-        conds = " AND ".join(
-            "lower(trim(CAST(u.%s AS VARCHAR))) = lower(trim(CAST(ref.%s AS VARCHAR)))"
-            % (derive.col(p["field"]), derive.col(p["auth"])) for p in on)
-        matched = "ref.%s IS NOT NULL" % derive.col(id_col)
+        # a key multiplies the upstream row N×. The PARTITION must use the SAME normalized key the join
+        # matches on: partitioning on the RAW value would split 'Titos'/'titos' into two survivors that
+        # both then match one upstream row (case/whitespace variants ARE the norm in real COLA strings) →
+        # a fan-out. ORDER BY id_col NULLS LAST makes the survivor deterministic across rebuilds and
+        # prefers a row that actually carries evidence.
+        nkey = lambda side, c: "lower(trim(CAST(%s.%s AS VARCHAR)))" % (side, derive.col(c))
+        pk = ", ".join("lower(trim(CAST(%s AS VARCHAR)))" % derive.col(p["auth"]) for p in on)
+        ref = ("SELECT *, TRUE AS _verify_hit FROM read_parquet('%s') "
+               "QUALIFY row_number() OVER (PARTITION BY %s ORDER BY %s NULLS LAST)=1"
+               % (uri, pk, derive.col(id_col)))
+        conds = " AND ".join("%s = %s" % (nkey("u", p["field"]), nkey("ref", p["auth"])) for p in on)
+        # `matched` = the join SUCCEEDED, keyed on a marker guaranteed non-null on any joined row — NOT on
+        # id_col, which can be legitimately NULL on a matched authority row (a COLA filing the scraper
+        # flagged `degraded` may carry a null ttbid) and would then silently drop a real correction.
+        matched = "ref._verify_hit IS NOT NULL"
         sel = ["u.* EXCLUDE (%s)" % ", ".join(derive.col(p["field"]) for p in vfields)] if vfields else ["u.*"]
         for p in vfields:
             uv, av = "u.%s" % derive.col(p["field"]), "ref.%s" % derive.col(p["auth"])
@@ -659,6 +667,24 @@ def _selftest():
         assert vrec["_n"] == 3 and vrec["_matched"] == 2, vrec
         assert vrec["origin†backfilled"] == 1 and vrec["origin†overrode"] == 1 and vrec["origin†unmatched"] == 1, vrec
         assert vrec["category†backfilled"] == 1 and vrec["category†agreed"] == 1, vrec
+        # regression (adversarial review BLOCKER): a case/whitespace-VARIANT duplicate authority key must
+        # still dedup to ONE survivor. Partitioning on the raw key kept both 'Titos'/'titos ' and both
+        # matched the one upstream row on the normalized join → the upstream row FANNED OUT. Guard: the
+        # PARTITION uses the same normalized key as the join.
+        con.execute("COPY (SELECT * FROM (VALUES ('TTB001','Titos','Vodka','USA'),('TTBX','titos ','Gin','Mexico')) "
+                    "t(ttbid,brand,class_type,origin)) TO '%s/colavar.parquet'" % d)
+        vf2 = copy.deepcopy(vflow); next(x for x in vf2["nodes"] if x["id"] == "v")["authority"] = "colavar"
+        assert con.execute("SELECT count(*) FROM (%s)" % compile_sql(vf2, "v", uf2)).fetchone()[0] == 3, "case-variant dupe fanned out"
+        # regression (adversarial review MAJOR): a MATCHED authority row whose id_col (ttbid) is NULL must
+        # STILL enrich — `matched` is keyed on a join marker, not the nullable evidence id, so a real
+        # correction isn't silently dropped as 'unmatched'.
+        con.execute("COPY (SELECT * FROM (VALUES (NULL,'Titos','Vodka','USA')) t(ttbid,brand,class_type,origin)) "
+                    "TO '%s/colanull.parquet'" % d)
+        vf3 = copy.deepcopy(vflow); next(x for x in vf3["nodes"] if x["id"] == "v")["authority"] = "colanull"
+        cur3 = con.execute("SELECT * FROM (%s) WHERE lower(brand)='titos'" % compile_sql(vf3, "v", uf2))
+        row3 = dict(zip([c[0] for c in cur3.description], cur3.fetchone()))
+        assert row3["category"] == "Vodka" and row3["category__verify"] == "backfilled", row3   # enriched despite NULL ttbid
+        assert row3["_verify_matched"] is True and row3["_verify_ref"] is None, row3             # match true, evidence id null
         print("flow self-test: OK — 3 rows→1 golden; size normalized+agrees; origin conflict A>B by authority; "
               "conflict queue + profile land; catch-all: 4 filled → 3 'other' flagged (1 informative); "
               "verify: authority backfills 'other'→Vodka + overrides wrong origin, deduped→no fan-out, "

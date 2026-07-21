@@ -2,7 +2,7 @@
   "meta": {
     "project": "Hoodie Suite",
     "prefix": "HS",
-    "next_id": 27,
+    "next_id": 28,
     "statuses": [
       "proposed",
       "backlog",
@@ -424,13 +424,15 @@
       "id": "HS-011",
       "title": "Verify node — catch-all density → COLA label backfill (first live Check)",
       "type": "feat",
-      "status": "in-progress",
+      "status": "in-review",
       "size": "L",
       "priority": "P1",
       "created": "2026-07-08",
-      "updated": "2026-07-08",
+      "updated": "2026-07-21",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
-      "commits": [],
+      "commits": [
+        "a24c5f8"
+      ],
       "summary": "The first ACTIVE verification-cascade Check: the system notices its own blind spot (catch-all density) and goes to the authority (the TTB COLA label) for the fact. Backfill empty/other silently; escalate specific-value conflicts with evidence; every recovered value traces to TTB COLA + filing id and re-materializes on rebuild.",
       "context": "Two triggers, owner-specified: RECORD-level (the VIP lazy-entry signature) — once a record reaches the IDENTIFIER LEVEL (resolvable to a COLA product cluster on clean fields), fire if ≥40% of its RESPONDED fields are catch-all; denominator = responded fields only, which isolates 'answered with a non-answer' from ordinary blankness, and the identifier gate is both precondition (can't read a label for an unidentifiable product) and economics (don't spend a lookup on a too-sparse record). FIELD-level — a field whose dataset-wide catch-all share crosses threshold = the source can't be trusted for that field. Both thresholds domain config. The vodka-vs-rum case (one source says vodka, another rum — happens constantly) resolves by the label as higher authority, never by voting.",
       "acceptance": [
@@ -441,11 +443,85 @@
         "Tier telemetry: verify decisions counted into the automatch scorecard shares"
       ],
       "implementation": [
-        "Reuse: catch-all share per field is ALREADY computed by profile_sql (HS-005); COLA clusters + /api/cola/* endpoints exist; the node needs the trigger evaluation, the cluster join, and the rule-emission. UI: a verify node card in the flow rail showing fired/backfilled/escalated counts"
+        "Verify NODE (mechanism) — DONE. `verify` node in compile_sql (unifyd/flow.py): LEFT JOIN of upstream to an authority reference; per verified field a value CASE + a status CASE (_verify_case) sharing one load-bearing fall-through — unmatched → unverified → backfilled → overrode → agreed. Backfill fires on empty OR catch-all (reuses the _CATCHALL vocabulary from HS-005 profiling); override fires on a real (normalized) disagreement, authority wins. Emits <field>__verify, _verify_ref (filing id = evidence), _verify_src, _verify_matched.",
+        "No fan-out: authority deduped via QUALIFY row_number()=1, PARTITION BY the SAME normalized key the join matches on (lower(trim(...))), ORDER BY id_col NULLS LAST for a deterministic, evidence-preferring survivor.",
+        "matched sentinel is a constant join marker (TRUE AS _verify_hit in the ref subquery), NOT the nullable id_col — so a matched authority row with a null filing id still enriches (its correction isn't dropped).",
+        "verify_report_sql + POST /api/flow/verify/report (server.py): matched %, per-field enriched/backfilled/overrode/agreed/unmatched/unverified counts. div-by-zero guarded, wrong-node-type pre-checked.",
+        "UI (apps/mdm-flow.html): verify tab (loadVerify) with stacked status bars + % enriched; TG glyph, describe(), palette view. Read-only over the report contract.",
+        "NOT built (distinct slice, see followups HS-027): the density TRIGGERS (record-level >=40% catch-all of responded fields once at identifier level; field-level dataset-wide share) that decide WHICH records get sent to the authority; cluster-first COLA resolution (cola_cluster.py); verify decisions into the automatch scorecard. Live COLA is TLS-blocked in the sandbox, so cluster-first end-to-end is a first-live-run item."
       ],
       "verification_plan": [
         "Fixture dataset with planted 'other' categories that COLA can answer → assert silent backfills carry filing-id provenance; planted vodka-vs-rum conflict → escalates with evidence, label wins; sub-identifier-level record → degraded, no lookup spent; thresholds config-swappable"
       ],
+      "files": [
+        "unifyd/flow.py",
+        "unifyd/server.py",
+        "apps/mdm-flow.html"
+      ],
+      "verification": [
+        "python3 unifyd/flow.py — self-test OK: proves backfill('other'->Vodka), override(wrong origin), agreed, unmatched(untouched, no fabricated match); + two regressions added for the gate findings (case-variant dup authority key -> still 3 rows/no fan-out; NULL id_col on a matched row -> still enriched, matched=True/ref=None).",
+        "Live (server on :8765, synthetic ns): /api/flow/verify/report -> total 3, matched 2/3, category{backfilled1,agreed1,unmatched1}, origin{backfilled1,overrode1,unmatched1}. /api/flow/preview -> 3 rows, Titos Vodka/backfilled+USA/overrode ref TTB001, Deep Eddy USA/backfilled, Ghost untouched(unmatched,ref null).",
+        "Live re-probe of the two gate defects after fix: colavar (Titos + 'titos ') -> 3 rows not 4 (fan-out closed); colanull (ttbid NULL) -> Titos Vodka/backfilled matched=True ref=None (dropped-correction closed).",
+        "Browser (playwright, base light theme): mdm-flow.html loads with 0 uncaught JS exceptions; verify view markup rendered/reviewed under real stylesheet (fixed a flag-clipping layout nit). Full in-app tab click-through pending a flow that emits a verify node (canvas node-authoring = task/HS followup)."
+      ],
+      "review": {
+        "reviewer": "agentic adversarial pass (fresh-context) on commit a24c5f8 diff",
+        "blocker": [
+          "FAN-OUT: authority dedup partitioned on the RAW key while the join matched on the normalized (lower/trim) key -> case/whitespace-variant authority rows survived as two partitions and both matched one upstream row, duplicating it. FIXED: partition on the same normalized key + deterministic ORDER BY. Verified live (colavar -> 3 rows)."
+        ],
+        "major": [
+          "DROPPED CORRECTION: `matched` keyed on ref.<id_col> IS NOT NULL -> a legitimately matched authority row with a NULL filing id (degraded COLA) was reported 'unmatched' and its correction silently dropped. FIXED: matched keyed on a constant join marker (_verify_hit). Verified live (colanull -> still enriched)."
+        ],
+        "minor": [
+          "NONDETERMINISTIC dedup survivor when variant rows disagree (no ORDER BY tiebreak). FIXED: ORDER BY id_col NULLS LAST.",
+          "EXCLUDE of a verified field absent from the upstream schema -> opaque DuckDB Binder Error. Fails LOUDLY/gracefully (endpoint landed:false), not silently. LEFT AS-IS; clearer pre-validation tracked in followups (HS-027)."
+        ],
+        "cleared": [
+          "CASE value/status agreement across all 5 states",
+          "SQL injection/escaping (all config via derive.col/_sqlstr)",
+          "report endpoint div-by-zero + node-type guard",
+          "no row-drop/mutation beyond the two fixed items"
+        ]
+      },
+      "qa_results": [
+        "flow.py self-test PASS; derive.py self-test PASS.",
+        "Live report/preview assertions PASS (exact counts, no fan-out, first-law no-fabricated-match).",
+        "Edge probes PASS: no `on` keys -> graceful error; authority not landed -> landed:false; duplicate authority key -> no fan-out; authority field NULL -> 'unverified', upstream kept (not NULLed); wrong node type -> graceful error.",
+        "Browser: page loads, 0 uncaught JS exceptions."
+      ],
+      "followups": [
+        "HS-027"
+      ]
+    },
+    {
+      "id": "HS-027",
+      "title": "Verify TRIGGERS + cluster-first COLA resolution (the 'when to invoke the authority' layer)",
+      "type": "feat",
+      "status": "proposed",
+      "size": "L",
+      "priority": "P1",
+      "created": "2026-07-21",
+      "updated": "2026-07-21",
+      "branch": "claude/world-class-mdm-strategy-7bpom6",
+      "commits": [],
+      "summary": "HS-011 built the verify NODE (the mechanism that reads an authority and backfills/overrides). This is the DECISION layer that fires it economically and correctly: the density triggers that pick which records/fields go to the authority, and cluster-first resolution so a bottle resolves to its COLA product CLUSTER (many filings per real product) before any class/type is read.",
+      "context": "Split out of HS-011 to let the gate-passed node ship on its own verified merits. Owner-specified triggers: RECORD-level — once a record reaches IDENTIFIER LEVEL (resolvable to a COLA cluster on clean fields), fire if >=40% of its RESPONDED fields are catch-all (denominator = responded fields only, isolating 'answered with a non-answer' from ordinary blankness; the identifier gate is both precondition and economics — don't spend a lookup on a too-sparse record). FIELD-level — a field whose dataset-wide catch-all share crosses threshold = the source can't be trusted for that field. Both thresholds domain config. The vodka-vs-rum conflict resolves by the label as higher authority, never by voting (the node already does this once pointed at a cluster).",
+      "acceptance": [
+        "A record-level trigger predicate gates which rows the verify node enriches: identifier-level reached AND >=40% of responded fields catch-all; denominator counts responded (non-blank) fields only; threshold is domain config.",
+        "A field-level trigger flags a (source,field) whose dataset-wide catch-all share crosses a configurable threshold.",
+        "Cluster-first: the verify join resolves to a COLA product CLUSTER (cola_cluster.py), not one arbitrary filing; a bottle never matches a single filing when a cluster exists.",
+        "Sub-identifier-level records degrade honestly (no lookup spent, no fabricated match).",
+        "Verify decisions counted into the automatch scorecard shares (tier telemetry).",
+        "First live COLA run: validate against real TTB COLA data (TLS-blocked in the sandbox — first run live), confirm the parser/cluster path end-to-end."
+      ],
+      "verification_plan": [
+        "Fixture with planted catch-all records above/below the 40% responded-field gate -> assert only qualifying, identifier-level records are sent to the authority; thresholds config-swappable.",
+        "Cluster fixture (many filings, one product) -> assert the join resolves to the cluster and reads a single stable class/type.",
+        "Sub-identifier record -> assert degraded, no lookup.",
+        "Scorecard deltas reflect verify backfills/overrides."
+      ],
+      "review_notes": [],
+      "qa_checks": [],
       "files": [
         "unifyd/flow.py",
         "unifyd/server.py",
