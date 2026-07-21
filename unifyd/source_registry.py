@@ -16,6 +16,15 @@ Each entry:
   cadence : "daily" | "weekly"  (weekly for huge/slow backfills like TTB)
   enabled : run it in the daily pass
   note    : mechanism / caveats
+
+Optional scheduling metadata (the --due dispatcher, NRT-PLAN.md §3):
+  interval_h : refresh interval in hours — overrides the cadence default (daily=24, weekly=168).
+               This is the near-real-time knob: promote a source to the hot tier by setting e.g.
+               interval_h=4 once its recipe supports cheap diffs. Due-ness is computed from the
+               shared source_runs ledger, so any host (Mac tick, cloud runner) skips what another
+               host just landed.
+  priority   : Mac-queue order, lower first (default 50). Long aggregator sweeps run first; the
+               contention-sensitive anti-bot trio last (was run_mac_queue.sh's hardcoded order).
 """
 
 SOURCES = [
@@ -56,11 +65,11 @@ SOURCES = [
 
     # ── Aggregators / convenience (Mac headful — anti-bot) ────────────────────────────────────────────────────
     dict(id="ubereats", label="Uber Eats", code="import ubereats as m; m.main(['--site','ubereats','--max-stores','1000'])",
-         tables=["ubereats_products"], klass="mac", cadence="daily", enabled=True, note="Uber BFF, all stores"),
+         tables=["ubereats_products"], klass="mac", cadence="daily", enabled=True, priority=10, note="Uber BFF, all stores"),
     dict(id="postmates", label="Postmates", code="import ubereats as m; m.main(['--site','postmates','--max-stores','1000'])",
-         tables=["postmates_products"], klass="mac", cadence="daily", enabled=True, note="Uber BFF, all stores"),
+         tables=["postmates_products"], klass="mac", cadence="daily", enabled=True, priority=11, note="Uber BFF, all stores"),
     dict(id="sevennow", label="7-Eleven (7NOW)", code="import sevennow_warm as m; m.main()",
-         tables=["sevennow_products"], klass="mac", cadence="daily", enabled=True, note="Incapsula — patchright"),
+         tables=["sevennow_products"], klass="mac", cadence="daily", enabled=True, priority=60, note="Incapsula — patchright"),
 
     # ── Off-premise platforms ─────────────────────────────────────────────────────────────────────────────────
     dict(id="offprem-census", label="Off-premise census (Shopify/Woo/Wix/Sqsp)",
@@ -69,9 +78,9 @@ SOURCES = [
               "[m.run_census(market=x, platforms=('Shopify','WooCommerce','Wix','Squarespace')) for x in markets]",
          tables=["offprem_products"], klass="headless", cadence="daily", enabled=True, note="22 markets, no-BD"),
     dict(id="bottlecapps", label="Bottlecapps network", code="import bottlecapps as m; m.national()",
-         tables=["bottlecapps_products"], klass="mac", cadence="daily", enabled=True, note="DataDome — patchright"),
+         tables=["bottlecapps_products"], klass="mac", cadence="daily", enabled=True, priority=62, note="DataDome — patchright"),
     dict(id="cityhive", label="City Hive network", code="import cityhive as m; m.national(max_stores=12)",
-         tables=["cityhive_products"], klass="mac", cadence="daily", enabled=True, note="Cloudflare — patchright"),
+         tables=["cityhive_products"], klass="mac", cadence="daily", enabled=True, priority=61, note="Cloudflare — patchright"),
     dict(id="bbg", label="BBG e-commerce", code="import bbg_salsify as m; m.pull()",
          tables=["bbg_products"], klass="headless", cadence="daily", enabled=True, note="Salsify API"),
 
@@ -102,6 +111,25 @@ SOURCES = [
     dict(id="hemp-inventory", label="Hemp per-store inventory", code="import hemp_inventory as m; m.main([])",
          tables=["hemp_inventory"], klass="headless", cadence="daily", enabled=True,
          note="per-store COUNTS from Shopify hemp retailers (cart-add trick) — distinct from hemp-scan listings"),
+]
+
+
+# ── Derived master builds (NRT-PLAN.md Phase 3) ───────────────────────────────────────────────────────────────
+# Not scrapes: these consolidate LANDED source tables into the master, so they belong to the dispatcher, not a
+# human. The --due pass runs a build when any upstream source has landed NEW rows (status "ok") since the
+# build's last attempt, throttled by interval_h (the min gap between rebuilds). Same subprocess + verify-landing
+# + source_runs ledger treatment as sources. `after=[source ids]` narrows the trigger; omitted = any source.
+# Builds run ONLY on the plain `--due` host (the Mac tick today) — the --headless-only cloud runner skips them —
+# so the single-writer rule holds for dim_* tables.
+BUILDS = [
+    dict(id="build-outlets", label="Outlet shred → dim_outlet",
+         code="import normalize as m; m.build(catalog=False, outlets=True, facts=False)",
+         tables=["src_outlets", "dim_outlet"], klass="build", interval_h=6, enabled=True,
+         note="src_outlets re-shred + cross-source geo-match consolidation (supersedes run_coverage_refresh.sh)"),
+    dict(id="build-product-master", label="Product master (dim_sku chain)",
+         code="import build_product_master as m; m.build()",
+         tables=["dim_sku"], klass="build", interval_h=12, enabled=True,
+         note="brand dict → stage → shred to dim_brand/product/item/sku + xwalk/coherence/identity clusters"),
 ]
 
 

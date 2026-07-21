@@ -9,6 +9,8 @@ on:
       - "unifyd/warehouse.py"
       - "unifyd/warehouse_compat_test.py"
       - "unifyd/run_sources.py"
+      - "unifyd/run_sources_due_test.py"
+      - "unifyd/source_registry.py"
   workflow_dispatch:
 
 jobs:
@@ -22,3 +24,4 @@ jobs:
           python-version: "3.12"
       - run: pip install pyarrow duckdb
       - run: python unifyd/warehouse_compat_test.py
+      - run: python unifyd/run_sources_due_test.py
