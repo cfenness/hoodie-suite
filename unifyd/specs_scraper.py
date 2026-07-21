@@ -396,9 +396,20 @@ def pull(sample=30, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
         try:
             import warehouse
             if crawl_all and limit is None:
-                # a FULL crawl is the authoritative catalog → OVERWRITE (replaces any older/duplicated table).
-                warehouse.write_parquet("specs_products", prod_list, fields=SPECS_FLD)
-                log(f"landed specs_products: {len(prod_list)} products (full catalog, overwrite)")
+                # a FULL crawl is the authoritative catalog → OVERWRITE — but only when it actually looks
+                # like one. SHRINK GUARD (learned 2026-07-21: a full crawl died mid-run and its overwrite
+                # clobbered 40,689 rows down to 163 — the empty-guard only stops 0-row writes): a "full"
+                # result under 70% of the existing catalog is a failed/partial crawl, so ACCUMULATE it
+                # instead — the touched products still update and the rest of the catalog survives.
+                existing = warehouse.row_count("specs_products")
+                if existing and len(prod_list) < 0.7 * existing:
+                    warehouse.write_accumulate("specs_products", prod_list,
+                                               key=lambda r: r.get("sku") or r.get("slug"), fields=SPECS_FLD)
+                    log(f"landed specs_products: +{len(prod_list)} ACCUMULATED — full-crawl result is under "
+                        f"70% of the existing {existing} rows (partial crawl?), refusing to overwrite")
+                else:
+                    warehouse.write_parquet("specs_products", prod_list, fields=SPECS_FLD)
+                    log(f"landed specs_products: {len(prod_list)} products (full catalog, overwrite)")
             else:
                 # a partial/sample run only updates the products it touched → accumulate, keep the rest.
                 warehouse.write_accumulate("specs_products", prod_list,
