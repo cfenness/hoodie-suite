@@ -1,0 +1,24 @@
+# Warehouse compatibility gate (NRT-PLAN.md §8e): warehouse.py is a de-facto cross-repo API
+# (hoodie-backend sys.path-imports it), and every merge is in the nightly launchd write path the
+# same day — so layout/engine changes must prove v1/v2 parity before they land.
+name: tests
+
+on:
+  pull_request:
+    paths:
+      - "unifyd/warehouse.py"
+      - "unifyd/warehouse_compat_test.py"
+      - "unifyd/run_sources.py"
+  workflow_dispatch:
+
+jobs:
+  warehouse-compat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyarrow duckdb
+      - run: python unifyd/warehouse_compat_test.py
