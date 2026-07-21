@@ -109,7 +109,25 @@ b_out["after"] = ["ca-abc"]
 ok("after-list ignores unrelated landings", run_sources.due_builds(now=NOW) == [])
 del b_out["after"]
 
-# 7) mac ordering: priorities put aggregators first, anti-bot trio last
+# 7) mac quiet-hours window (default 20-8, env-tunable, wrap + non-wrap)
+def at_hour(h):
+    t = list(time.localtime())
+    t[3], t[4], t[5] = h, 0, 0
+    return time.mktime(tuple(t))
+
+
+os.environ.pop("MAC_HOURS", None)
+ok("default window open at 23:00", run_sources.mac_window_open(at_hour(23)))
+ok("default window open at 03:00", run_sources.mac_window_open(at_hour(3)))
+ok("default window closed at 14:00", not run_sources.mac_window_open(at_hour(14)))
+os.environ["MAC_HOURS"] = "9-17"
+ok("non-wrapping window honored", run_sources.mac_window_open(at_hour(10))
+   and not run_sources.mac_window_open(at_hour(20)))
+os.environ["MAC_HOURS"] = "garbage"
+ok("bad spec falls back to default", not run_sources.mac_window_open(at_hour(14)))
+os.environ.pop("MAC_HOURS", None)
+
+# 8) mac ordering: priorities put aggregators first, anti-bot trio last
 mac = sorted([s for s in enabled if s["klass"] == "mac"], key=lambda s: s.get("priority", 50))
 ids = [s["id"] for s in mac]
 ok("aggregators first", ids[:2] == ["ubereats", "postmates"])
