@@ -87,6 +87,14 @@ T2  EXTERNAL ORACLE Google Places etc. — "which business is OPERATIONAL at thi
 T3  HUMAN (steward) only the residue the tiers above couldn't verify
 ```
 
+**The automatch standard: 90–95%.** The bar the cascade is built to hit — 90–95% of match decisions
+resolve WITHOUT a human (T0–T2), leaving a 5–10% residue for the steward. Human involvement is limited
+until absolutely necessary; the tiers exist to earn that. Automatch rate is therefore a first-class,
+continuously measured metric (it belongs on the DQ scorecard): report `auto / claude-verified /
+oracle-resolved / human` shares per entity per build, and treat a falling automatch rate as a
+regression, not a fact of life. This is also the north star for **hoodie-canon** — the 7-phase,
+agent-integrated rebuild of the end-to-end MDM pipeline; this engine and this doc are its seed.
+
 - **Claude verifies facts, it doesn't vote.** For a category conflict (one source says vodka, another
   rum — common), Claude checks TTB COLA / the brand page and *concludes*, carrying the evidence. Even
   a confident deterministic or human call can be cross-checked against the brand page. The **whitelist
