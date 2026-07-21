@@ -4855,16 +4855,19 @@ def parse_upload_ep():
         return jsonify(error="parse-failed", detail="couldn't find a header row"), 400
     prof = analyze.profile_columns(parsed["header"], parsed["rows"])
     return jsonify(filename=f.filename, header=parsed["header"], rows=parsed["rows"][:20000],
-                   row_src=parsed.get("row_src", [])[:20000],
+                   row_src=parsed.get("row_src", [])[:20000], col_src=parsed.get("col_src", []),
                    header_row=parsed["header_row"], sheet=parsed.get("sheet"),
                    row_count=len(parsed["rows"]), profile=prof)
 
 
 @app.post("/api/refill-xlsx")
 def refill_xlsx_ep():
-    """Refill an ORIGINAL xlsx WITH ITS FORMATTING: load the uploaded file writable (openpyxl preserves styles),
-    append an order column, and write the quantities at their physical rows. `orders` = {physical_0based_row: qty}
-    (from parse-upload's row_src), `header_row` places the column label. Returns the formatted .xlsx."""
+    """Refill an ORIGINAL xlsx WITH ITS FORMATTING: load the uploaded file writable (openpyxl preserves styles)
+    and write the quantities at their physical rows. `orders` = {physical_0based_row: qty} (from parse-upload's
+    row_src). Landing: `qty_col` (physical 0-based col, from parse-upload's col_src) drops quantities INTO that
+    existing column — so a menu whose own formulas hang off its units column (e.g. Curaleaf's Base Total $ =
+    Total Units × Base $) computes when the supplier opens it. Without `qty_col`, appends an order column
+    (`header_row` places its label). Returns the formatted .xlsx."""
     import io
     import openpyxl
     from flask import send_file
@@ -4881,13 +4884,40 @@ def refill_xlsx_ep():
     except Exception:
         header_row = 0
     try:
+        qty_col = int(request.form.get("qty_col"))                 # physical 0-based landing column
+    except (TypeError, ValueError):
+        qty_col = -1
+    try:
+        data_rows = json.loads(request.form.get("rows") or "[]")   # parsed data rows (row_src) — clearing scope
+    except Exception:
+        data_rows = []
+    try:
         wb = openpyxl.load_workbook(io.BytesIO(f.read()))          # writable → preserves original formatting
         ws = wb[wb.sheetnames[0]]
-        qcol = ws.max_column + 1                                   # append the order column after the used range
-        ws.cell(row=header_row + 1, column=qcol, value=label)      # header at its physical (1-based) row
+        if 0 <= qty_col:
+            qcol = qty_col + 1                                     # land in the file's own column (header stays)
+            # Phantom-order guard: a pre-filled landing column (par/suggested quantities, or a
+            # re-uploaded prior order) must not survive as silent order lines the buyer never sees.
+            # Clear LITERAL values on every data row not ordered; leave formulas alone — they
+            # compute from their own inputs (e.g. =SUM(LOC1:LOC4)) and evaluate 0 when empty.
+            for r0 in data_rows:
+                try:
+                    r0 = int(r0)
+                except (TypeError, ValueError):
+                    continue
+                if str(r0) in orders:
+                    continue
+                cell = ws.cell(row=r0 + 1, column=qcol)
+                if cell.data_type != "f" and cell.value not in (None, ""):
+                    cell.value = None
+        else:
+            qcol = ws.max_column + 1                               # append the order column after the used range
+            ws.cell(row=header_row + 1, column=qcol, value=label)  # header at its physical (1-based) row
         for k, v in orders.items():
-            if v in (None, "", 0, "0"):
+            if v in (None, ""):
                 continue
+            if qty_col < 0 and v in (0, "0"):
+                continue                                           # append mode: blank already means no order
             try:
                 r0 = int(k)
                 q = int(v) if str(v).strip().lstrip("-").isdigit() else v
@@ -4900,6 +4930,54 @@ def refill_xlsx_ep():
     fn = (f.filename or "order").rsplit(".", 1)[0] + " - ORDER.xlsx"
     return send_file(out, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                      as_attachment=True, download_name=fn)
+
+
+# Known brand → public Lingo kit (kit uuid). Menus from these suppliers can auto-attach product photography.
+LINGO_BRANDS = {
+    "curaleaf-ny": {"label": "Curaleaf NY", "kit": "A4EAE236-742F-443B-BC4E-5A94D1A04B12",
+                    "portal": "4PkjwR", "sections": ["Product Photography", "Strain Cards"],
+                    "match": ["curaleaf", "ocm-xrod", "whole flower", "20 to 1", "20to1"]},
+}
+_LINGO_MAN = {}  # kit uuid -> manifest (in-process cache; Lingo kits are stable)
+
+
+def _lingo_manifest(kit, sections=None):
+    key = kit
+    if key not in _LINGO_MAN:
+        import lingo_assets
+        _LINGO_MAN[key] = lingo_assets.manifest(kit, only_sections=sections)
+    return _LINGO_MAN[key]
+
+
+@app.post("/api/lingo-images")
+def lingo_images_ep():
+    """Attach brand product photography to an inbound menu. POST {brand|kit|portal, products:[{name}], sections?}
+    → {kit, asset_total, matched, matches:[{name, matched, img, thumb, full, score}]}. Images come from a public
+    Lingo DAM portal (see unifyd/lingo_assets.py); URLs carry a durable public token and render directly in <img>."""
+    import lingo_assets
+    b = request.get_json(force=True, silent=True) or {}
+    brand = (b.get("brand") or "").strip().lower()
+    kit = (b.get("kit") or "").strip()
+    portal = (b.get("portal") or "").strip()
+    sections = b.get("sections")
+    products = b.get("products") or []
+    reg = LINGO_BRANDS.get(brand)
+    if reg:
+        kit = kit or reg["kit"]; sections = sections or reg["sections"]
+    if not kit and portal:
+        try:
+            kit = kit or (lingo_assets.portal(portal) or {}).get("uuid")  # portal metadata only; kit still needed
+        except Exception:
+            pass
+    if not kit:
+        return jsonify(error="no-kit", detail="pass brand, kit, or a resolvable portal"), 400
+    try:
+        man = _lingo_manifest(kit, sections)
+        matches = lingo_assets.match_products(products, man) if products else []
+    except Exception as e:
+        return jsonify(error="lingo-failed", detail=str(e)[:200]), 502
+    return jsonify(kit=kit, asset_total=man.get("asset_total", 0),
+                   matched=sum(1 for m in matches if m.get("matched")), matches=matches)
 
 
 @app.post("/api/ai-read-upload")
