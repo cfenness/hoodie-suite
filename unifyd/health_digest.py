@@ -90,7 +90,7 @@ def _registry_dataset_map(manifest):
     return out
 
 
-def build_digest():
+def build_digest(weekly=False):
     now = time.time()
     findings = []
 
@@ -110,7 +110,7 @@ def build_digest():
         findings.append(_finding("manifest-error", "critical", "warehouse",
                                  "warehouse unreadable — NOTHING below was checked",
                                  {"error": manifest.get("error"), "warehouse": wh}))
-        return _assemble(now, wh, manifest, findings, checked=0)
+        return _assemble(now, wh, manifest, findings, checked=0, weekly=weekly)
 
     if wh.get("kind") != "production":
         findings.append(_finding("wrong-warehouse", "critical", "warehouse",
@@ -247,10 +247,15 @@ def build_digest():
                                   "run_ago": _ago(now - c["run_ts"]) if c.get("run_ts") else None,
                                   "trigger": c.get("trigger")}))
 
-    return _assemble(now, wh, manifest, findings, checked=len(enabled))
+    # weekly deep audit (Mondays / --weekly): field-drift, fixture regression, docs drift — see deep_audit.py
+    if weekly:
+        import deep_audit
+        findings.extend(deep_audit.run(manifest, now))
+
+    return _assemble(now, wh, manifest, findings, checked=len(enabled), weekly=weekly)
 
 
-def _assemble(now, wh, manifest, findings, checked):
+def _assemble(now, wh, manifest, findings, checked, weekly=False):
     findings.sort(key=lambda f: (_sev_rank(f["severity"]), f["source"]))
     counts = {"critical": 0, "warn": 0, "info": 0}
     for f in findings:
@@ -269,7 +274,7 @@ def _assemble(now, wh, manifest, findings, checked):
 
     t = manifest.get("totals") or {}
     return {
-        "as_of": now, "generated_by": "health_digest.py", "warehouse": wh,
+        "as_of": now, "generated_by": "health_digest.py", "weekly": weekly, "warehouse": wh,
         "ok": counts["critical"] == 0 and counts["warn"] == 0,
         "counts": counts, "sources_checked": checked,
         "new_criticals": sum(1 for f in findings if f["severity"] == "critical" and f["new"]),
@@ -309,7 +314,7 @@ def render_text(d):
 
 
 def main(argv):
-    d = build_digest()
+    d = build_digest(weekly="--weekly" in argv)
     os.makedirs(_OUT, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M", time.localtime(d["as_of"]))
     with open(os.path.join(_OUT, "digest-%s.json" % stamp), "w") as fh:
