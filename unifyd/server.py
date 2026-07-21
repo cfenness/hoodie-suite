@@ -160,6 +160,15 @@ def census_pull(body):
     to outlets via county FIPS). Needs the free CENSUS_API_KEY; degrades with a clear warning
     otherwise. `state` scopes it (FIPS, or 'us' for all counties); default = FL/TX/IL."""
     started = int(time.time() * 1000)
+    # Honest creds gate (standing rule): a source gated on a credential we don't have reports
+    # `no-creds` (skipped), NOT `failed`. Without the key every fetch is refused and census.pull
+    # returns 0 counties → status "failed", which the health digest flags as a critical run-failed
+    # even though nothing is broken — it's just un-credentialed on this host.
+    if not os.environ.get("CENSUS_API_KEY", "").strip():
+        return _std_run("census-acs", started, status="no-creds",
+                        trigger=(body or {}).get("trigger", "manual"),
+                        warnings=["Census API key required — set CENSUS_API_KEY "
+                                  "(free at census.gov/developers/)"])
     ds, runs, _ = census.pull(state=(body or {}).get("state"),
                               log=lambda m: app.logger.info("CENSUS %s", m))
     DATASETS.update(_absorb(ds)); save()
