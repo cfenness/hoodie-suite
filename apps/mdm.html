@@ -69,6 +69,7 @@
     <a data-sec="steward"><span class="d"></span>Steward</a>
     <a data-sec="review"><span class="d"></span>Review</a>
     <a data-sec="catalog"><span class="d"></span>Catalog</a>
+    <a data-sec="labelreader"><span class="d"></span>Label Reader</a>
     <a data-sec="outlets"><span class="d"></span>Outlets</a>
     <a data-sec="coverage"><span class="d"></span>Coverage</a>
     <a data-sec="registrations"><span class="d"></span>Registrations</a>
@@ -93,6 +94,7 @@
     <iframe id="f-steward"   title="Master Steward"             data-src="steward.html?embed=1"></iframe>
     <iframe id="f-review"    title="Cluster Review — ambiguous merges" data-src="cluster-review.html?embed=1"></iframe>
     <iframe id="f-catalog"   title="Product Catalog"           data-src="mdm-catalog.html?embed=1"></iframe>
+    <iframe id="f-labelreader" title="Label Reader"            data-src="mdm-label-reader.html?embed=1"></iframe>
     <iframe id="f-outlets"   title="Outlet Master"             data-src="mdm-outlets.html?embed=1"></iframe>
     <iframe id="f-coverage"  title="Coverage Map"              data-src="coverage-map.html"></iframe>
     <iframe id="f-registrations" title="Product Registrations"  data-src="product-registrations.html?embed=1"></iframe>
@@ -103,7 +105,7 @@
 <script>
 (function(){
   "use strict";
-  var SECTIONS={overview:null,sources:"f-sources",provenance:"f-provenance",sourcespec:"f-sourcespec",chains:"f-chains",master:"f-master",steward:"f-steward",review:"f-review",catalog:"f-catalog",outlets:"f-outlets",coverage:"f-coverage",registrations:"f-registrations",mapping:"f-mapping",dictionary:"f-dictionary",runs:"f-runs"};
+  var SECTIONS={overview:null,sources:"f-sources",provenance:"f-provenance",sourcespec:"f-sourcespec",chains:"f-chains",master:"f-master",steward:"f-steward",review:"f-review",catalog:"f-catalog",labelreader:"f-labelreader",outlets:"f-outlets",coverage:"f-coverage",registrations:"f-registrations",mapping:"f-mapping",dictionary:"f-dictionary",runs:"f-runs"};
   // In the launcher, the launcher's rail becomes THIS console's nav (one sidebar).
   var inLauncher = (window.parent !== window);
   var NAV_META=[{id:"overview",label:"Overview",icon:"OV",desc:"The master-data picture at a glance"},
@@ -111,6 +113,7 @@
                 {id:"steward",label:"Steward",group:"Manage",icon:"ST",desc:"Steward the master — review, edit and approve canonical records"},
                 {id:"review",label:"Review",group:"Manage",icon:"RV",desc:"Ambiguous merge clusters — same product/size/pack split by UPC noise; merge or keep separate"},
                 {id:"catalog",label:"Catalog",group:"Manage",icon:"CA",desc:"dim_product — the owned product catalog"},
+                {id:"labelreader",label:"Label Reader",group:"Manage",icon:"LR",desc:"Read one product-page/label URL into clean MDM fields — the interactive twin of the catalog scrapers"},
                 {id:"outlets",label:"Outlets",group:"Manage",icon:"OU",desc:"src_outlets — the full account book (every store-bearing source)"},
                 {id:"coverage",label:"Coverage",group:"Manage",icon:"CV",desc:"The full book of accounts on a map — every store-bearing source, click into any account"},
                 {id:"registrations",label:"Registrations",group:"Manage",icon:"PR",desc:"TTB COLA label approvals → products + field dictionary"},

@@ -102,6 +102,16 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   locally (`python unifyd/schedule_pull.py abc-fws --every 24h`).
 - `unifyd/pull_sources.py` — agent-less batch pull (Florida is live/tested; COLA needs
   `requests`+`bs4`). Emits `out/datasets.js` + `out/runs.json`.
+- `unifyd/label_reader.py` — read ONE product-page/label URL into clean MDM fields,
+  interactively (the human-in-the-loop twin of the catalog scrapers). Dispatch by host: Total
+  Wine reuses `total_wine.parse_product`; ABC + everything else use a generic PDP parser
+  (schema.org JSON-LD + OpenGraph + on-page `<dt>/<dd>` & `<th>/<td>` spec tables) mapped onto a
+  canonical field set (brand/varietal/appellation-hierarchy/ABV/ratings/closure/… + full
+  attribute set as raw_json). Fetch is mobile-UA where PerimeterX-walled, BD-Unlocker fallback;
+  a light SSRF guard blocks internal hosts. Optional Claude-vision pass (`label_vision.extract`)
+  fills what the HTML doesn't structure, per-field provenance = structured vs vision. Reads land
+  in `label_reads`. Endpoints: `POST /api/label/read {url, vision?}`, `GET /api/label/reads`.
+  Surface: `apps/mdm-label-reader.html` (the **Label Reader** section in `apps/mdm.html`).
 - `unifyd/hoodie_mdm.html` — the MDM control plane the agent serves. Reads `/api/*` when
   the agent is up, falls back to an embedded `const DATASETS` preview otherwise.
 - **Runtime is git-ignored:** `agent_state/`, `cola_out/`, `out/`, `__pycache__/`.

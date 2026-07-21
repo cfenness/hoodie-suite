@@ -5426,6 +5426,38 @@ def book_summary_ep():
     except Exception as e:
         return jsonify(ok=True, empty=True, note="no book yet — POST /api/seed/build (%s)" % str(e)[:120])
 
+
+# ── Label Reader — read ONE PDP/label URL into clean MDM fields, interactively ──
+# The human-in-the-loop twin of the catalog scrapers: paste a Total Wine / ABC / any retail product
+# URL → fetch (mobile-UA where PerimeterX-walled, BD Unlocker fallback) → every describing field the
+# page structures, + optional Claude-vision read of the label image. Reads land in `label_reads`.
+@app.post("/api/label/read")
+def label_read_ep():
+    body = request.get_json(force=True, silent=True) or {}
+    url = (body.get("url") or "").strip()
+    if not url:
+        return jsonify(ok=False, error="url required"), 400
+    import label_reader
+    try:
+        result = label_reader.read(url, vision=bool(body.get("vision")),
+                                   land=bool(body.get("land", True)), log=app.logger.info)
+    except ValueError as e:               # bad/blocked URL — a user-fixable input error
+        return jsonify(ok=False, error=str(e)), 400
+    except Exception as e:                # fetch/parse failure
+        return jsonify(ok=False, error=str(e)[:220]), 502
+    return jsonify(result)
+
+
+@app.get("/api/label/reads")
+def label_reads_ep():
+    import label_reader
+    try:
+        limit = min(200, max(1, int(request.args.get("limit", 50))))
+    except Exception:
+        limit = 50
+    return jsonify(ok=True, reads=label_reader.recent(limit))
+
+
 # ---- optional: serve the static suite from THIS app (all-in-one image, e.g. Fly.io) ----
 # When SUITE_ROOT is set, one gunicorn process serves BOTH /api/* and the public suite from a single
 # origin, so the apps' same-origin /api/* fetches work with no separate frontend host and no CORS.
