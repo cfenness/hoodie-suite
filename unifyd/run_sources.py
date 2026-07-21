@@ -53,18 +53,32 @@ def _interval_h(source):
     return float(source.get("interval_h") or (168 if source.get("cadence") == "weekly" else 24))
 
 
+def ledger_last():
+    """Per-source (last_attempt_ts, last_ok_end) unioned from BOTH ledgers: the append-only
+    `source_runs_log` partitions (authoritative going forward) and the legacy `source_runs` table
+    (history). Two dicts: {source: max ts_start} and {source: max ts_end where status='ok'}."""
+    import warehouse
+    last, last_ok = {}, {}
+    sql = ("SELECT source, MAX(ts_start) AS ts, "
+           "MAX(CASE WHEN status='ok' THEN ts_end END) AS ok_ts FROM t GROUP BY source")
+    for fn, name in ((warehouse.query, "source_runs"), (warehouse.query_parts, "source_runs_log")):
+        try:
+            for r in fn(name, sql):
+                sid = r["source"]
+                last[sid] = max(last.get(sid, 0), float(r["ts"] or 0))
+                if r.get("ok_ts"):
+                    last_ok[sid] = max(last_ok.get(sid, 0), float(r["ok_ts"]))
+        except Exception:
+            pass
+    return last, last_ok
+
+
 def due_sources(now=None, grace=0.98):
     """The enabled sources whose interval has lapsed — last attempt (ts_start of ANY status in
-    source_runs) older than interval_h * grace. The 2% grace keeps a fixed tick (e.g. a 24h-interval
+    the ledger) older than interval_h * grace. The 2% grace keeps a fixed tick (e.g. a 24h-interval
     source checked every 30min) from slipping a full tick each day. Never-run sources are due."""
-    import warehouse
     now = now or time.time()
-    last = {}
-    try:
-        for r in warehouse.query("source_runs", "SELECT source, MAX(ts_start) AS ts FROM t GROUP BY source"):
-            last[r["source"]] = float(r["ts"] or 0)
-    except Exception:
-        pass                                  # no ledger yet -> everything enabled is due
+    last, _ = ledger_last()
     return [s for s in reg.SOURCES if s.get("enabled")
             and now - last.get(s["id"], 0) >= _interval_h(s) * 3600 * grace]
 
@@ -72,20 +86,12 @@ def due_sources(now=None, grace=0.98):
 def due_builds(now=None):
     """Derived master builds due (NRT-PLAN §4/Phase 3): an upstream source landed NEW rows
     (status 'ok' — delta moved, not just 'current') since the build's last attempt, and the
-    build's min gap (interval_h) has passed. Same source_runs ledger, so the master lags any
-    landing by at most one dispatcher cycle without ever rebuilding when nothing changed."""
-    import warehouse
+    build's min gap (interval_h) has passed. Same ledger, so the master lags any landing by at
+    most one dispatcher cycle without ever rebuilding when nothing changed."""
     now = now or time.time()
-    last_attempt, last_ok = {}, {}
-    try:
-        for r in warehouse.query("source_runs",
-                                 "SELECT source, MAX(ts_start) AS ts, "
-                                 "MAX(CASE WHEN status='ok' THEN ts_end END) AS ok_ts FROM t GROUP BY source"):
-            last_attempt[r["source"]] = float(r["ts"] or 0)
-            if r["ok_ts"]:
-                last_ok[r["source"]] = float(r["ok_ts"])
-    except Exception:
-        return []                        # no ledger yet -> nothing has landed -> nothing to build
+    last_attempt, last_ok = ledger_last()
+    if not last_ok:
+        return []                        # nothing has ever landed -> nothing to build
     out = []
     for b in getattr(reg, "BUILDS", []):
         if not b.get("enabled"):
@@ -115,11 +121,13 @@ def mac_window_open(now=None):
 
 
 def _acquire_lock():
-    """One dispatcher pass at a time (fcntl, non-blocking): a 30-min tick that fires while a 4-hour
-    Mac browser sweep is still running must no-op, not stack a second Chrome. Returns the held file
-    (keep a reference — GC releases the lock) or None if another pass holds it."""
+    """One dispatcher pass per HOST (fcntl, non-blocking): a 30-min tick that fires while a 4-hour
+    Mac browser sweep is still running must no-op, not stack a second Chrome. The lock lives at a
+    MACHINE-GLOBAL path (~/.hoodie/run_sources.lock), not under the checkout — a per-checkout lock
+    let a tick from the launchd checkout run concurrently with a pass from a worktree (learned
+    2026-07-21). Returns the held file (keep a reference — GC releases the lock) or None."""
     import fcntl
-    path = os.path.join(HERE, "agent_state", "run_sources.lock")
+    path = os.path.join(os.path.expanduser("~"), ".hoodie", "run_sources.lock")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     lf = open(path, "w")
     try:
@@ -162,7 +170,16 @@ def run_one(source, log=print):
                            capture_output=True, text=True)
         if r.returncode != 0:
             status = "failed"
-            error = (r.stderr or r.stdout or "").strip().splitlines()[-1][:300] if (r.stderr or r.stdout) else "nonzero exit"
+            # Keep the CRASH SITE, not just the message: the last traceback 'File "…", line N' frame plus
+            # the final line. One stripped message line ("utf-8 codec can't decode…") left the specs crash
+            # unlocatable; the frame makes the next intermittent failure a pinpointed diagnosis.
+            out = (r.stderr or r.stdout or "").strip()
+            if out:
+                lines = out.splitlines()
+                frames = [l.strip() for l in lines if l.strip().startswith('File "')]
+                error = (" | ".join(frames[-1:] + [lines[-1]]))[:300]
+            else:
+                error = "nonzero exit"
     except subprocess.TimeoutExpired:
         status, error = "timeout", "exceeded %ds" % timeout_s
     except Exception as e:
@@ -192,13 +209,20 @@ SR_FIELDS = ["run_id", "source", "label", "klass", "ts_start", "ts_end", "durati
 
 
 def _land_runs(records, log=print):
+    """Land run outcomes APPEND-ONLY: one immutable partition file per landing, never a rewrite.
+
+    Learned 2026-07-21: the old read-modify-write accumulate raced the cloud runner — two hosts
+    landing concurrently clobbered each other's whole-table rewrites, a full catch-up pass vanished
+    from the ledger, and everything re-ran. An append can never lose another host's writes. Readers
+    union this log with the legacy `source_runs` table (ledger_last / monitor)."""
     import warehouse
     if not records:
         return
-    warehouse.write_accumulate("source_runs", records, key=lambda r: r["run_id"], fields=SR_FIELDS)
+    part = "%d_%s_%d" % (int(time.time() * 1000), os.uname().nodename.split(".")[0][:20], os.getpid())
+    warehouse.write_partition("source_runs_log", part, records, fields=SR_FIELDS)
     ok = sum(1 for r in records if r["status"] == "ok")
     bad = [r["source"] for r in records if r["status"] in ("failed", "timeout", "no-change")]
-    log("[run_sources] %d run, %d ok -> source_runs%s" % (len(records), ok, ("  FAILED/NO-CHANGE: " + ", ".join(bad)) if bad else ""))
+    log("[run_sources] %d run, %d ok -> source_runs_log%s" % (len(records), ok, ("  FAILED/NO-CHANGE: " + ", ".join(bad)) if bad else ""))
 
 
 def run_all(cadence=None, only=None, exclude=None, headless_only=False, mac_only=False, workers=6, log=print):

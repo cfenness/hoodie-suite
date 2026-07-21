@@ -15,7 +15,7 @@
   <array>
     <string>/bin/bash</string>
     <string>-c</string>
-    <string>exec bash "/Users/chrisfennessey/Desktop/Desktop - Chris’s MacBook Pro/Projects/hoodie-suite/unifyd/run_due.sh"</string>
+    <string>exec bash "/Users/chrisfennessey/hoodie-runner/unifyd/run_due.sh"</string>
   </array>
   <key>StartInterval</key><integer>1800</integer>
   <key>RunAtLoad</key><true/>

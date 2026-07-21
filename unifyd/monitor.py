@@ -184,9 +184,14 @@ def _source_runs_index():
     authoritative per-source outcome: status (ok/failed/timeout/no-change), delta, error, when. Powers the console's
     'last run' + failure reporting so nothing is silently dropped."""
     import warehouse
-    try:
-        runs = warehouse.query("source_runs", "SELECT * FROM t")
-    except Exception:
+    runs = []
+    for fn, name in ((warehouse.query, "source_runs"),           # legacy table (history)
+                     (warehouse.query_parts, "source_runs_log")):  # append-only log (authoritative now)
+        try:
+            runs += fn(name, "SELECT * FROM t")
+        except Exception:
+            pass
+    if not runs:
         return {}
     latest = {}
     for r in runs:
@@ -436,8 +441,52 @@ def build(record_history=True, hist_cap=60):
         r["dataset_count"] = len(r["datasets"])
     totals["source_count"] = len(roster)
 
+    # ── SLO overlay + dispatcher state (NRT-PLAN §5/§6): the freshness CONTRACT per source, not just age.
+    # Each registry source carries interval_h (its near-real-time knob); the verdict compares the ledger's
+    # last attempt against it: fresh (< interval) / due (< 2×) / breach (≥ 2×) / never. The dispatcher block
+    # shows the loop itself — window state, what's due right now, master-build ages — so the console proves
+    # the near-real-time system is alive, not just that files changed.
+    dispatcher = {}
+    try:
+        import source_registry as _sreg
+        import run_sources as _rs
+        ledger, _lok = _rs.ledger_last()          # unions the legacy table + the append-only log
+        _sev = {"breach": 3, "due": 2, "never": 1, "fresh": 0}
+        slo_by_key = {}
+        for s in _sreg.SOURCES:
+            if not s.get("enabled"):
+                continue
+            iv = float(s.get("interval_h") or (168 if s.get("cadence") == "weekly" else 24))
+            age_h = round((now - ledger[s["id"]]) / 3600, 1) if ledger.get(s["id"]) else None
+            slo = "never" if age_h is None else ("fresh" if age_h < iv else "due" if age_h < 2 * iv else "breach")
+            for t in s.get("tables", []):
+                k = source_of(t)[0]
+                cur = slo_by_key.get(k)
+                if not cur or _sev[slo] > _sev[cur["slo"]]:      # a source with several registry rows shows its worst
+                    slo_by_key[k] = {"slo": slo, "slo_interval_h": iv, "slo_age_h": age_h, "slo_source_id": s["id"]}
+        slo_counts = {}
+        for r in roster:
+            e = slo_by_key.get(r["key"])
+            if e:
+                r.update(e)
+                slo_counts[e["slo"]] = slo_counts.get(e["slo"], 0) + 1
+        builds = []
+        for b in getattr(_sreg, "BUILDS", []):
+            if not b.get("enabled"):
+                continue
+            age_h = round((now - ledger[b["id"]]) / 3600, 1) if ledger.get(b["id"]) else None
+            builds.append({"id": b["id"], "label": b["label"], "interval_h": b.get("interval_h"),
+                           "age_h": age_h, "tables": b.get("tables", [])})
+        dispatcher = {"mac_window_open": _rs.mac_window_open(now), "mac_hours": os.environ.get("MAC_HOURS", "20-8"),
+                      "due_now": [s["id"] for s in _rs.due_sources(now=now)],
+                      "builds_due": [b["id"] for b in _rs.due_builds(now=now)],
+                      "builds": builds, "slo_counts": slo_counts}
+    except Exception as e:
+        dispatcher = {"error": str(e)[:150]}
+
     return {"as_of": now, "live": True, "warehouse": wh, "build_ms": round((time.time() - now) * 1000),
-            "totals": totals, "connectors": connectors, "roster": roster, "sources": sources}
+            "totals": totals, "connectors": connectors, "roster": roster, "sources": sources,
+            "dispatcher": dispatcher}
 
 
 # ── caching: memory + disk + background refresh, so the console is ALWAYS instant after the first ever build ───
