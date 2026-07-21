@@ -32,14 +32,20 @@ _BC_INSTOCK = re.compile(r'"instock"\s*:\s*(true|false)|product:availability"[^>
 
 
 def _bd_key():
-    k = os.environ.get("BRIGHTDATA_API_KEY", "").strip()
-    if k:
-        return k
-    return json.load(open(os.path.expanduser(
-        "~/Library/Application Support/brightdata-cli/credentials.json")))["api_key"]
+    """BRIGHTDATA_API_KEY env, else the `bdata login` credential store (all platforms), else None.
+    This is a direct-first, no-BD connector: the key is only needed for the optional Unlocker
+    fallback, so a missing key must NOT crash the run. Delegates to brightdata._key(), which
+    resolves the macOS / XDG / Linux ~/.config / Windows cred paths — the old hardcoded macOS
+    path raised FileNotFoundError on the Linux CI runner, killing the whole census before a
+    single fetch (health finding: offprem-census run-failed)."""
+    import brightdata
+    return brightdata._key()
 
 
 def _unlock(url, key):
+    if not key:
+        raise RuntimeError("Bright Data fallback needed for %s but no key "
+                           "(set BRIGHTDATA_API_KEY or run `bdata login`)" % url)
     body = {"zone": "cli_unlocker", "url": url, "format": "raw"}
     r = urllib.request.Request("https://api.brightdata.com/request", data=json.dumps(body).encode(),
                                headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
