@@ -30,18 +30,10 @@ _TIMEOUT = {"headless": 5400, "creds": 5400, "mac": 14400}   # 1.5h headless, 4h
 
 
 def _rows(table):
-    """Current row count of one table via its Parquet FOOTER (cheap) — None if the table doesn't exist yet."""
+    """Current row count of one table — layout-aware via warehouse.row_count (single-file footer,
+    or the bucket manifest for v2 tables). None if the table doesn't exist yet."""
     import warehouse
-    import pyarrow.parquet as pq
-    try:
-        u = warehouse.uri(table)
-        if u.startswith("s3://"):
-            md = pq.read_metadata(u[5:], filesystem=warehouse._s3fs())
-        else:
-            md = pq.read_metadata(u)
-        return md.num_rows
-    except Exception:
-        return None
+    return warehouse.row_count(table) or None
 
 
 def _counts(tables):

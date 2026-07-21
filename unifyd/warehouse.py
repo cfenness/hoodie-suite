@@ -15,8 +15,19 @@ Env (Tigris on Fly provides the first three via `fly storage create`):
   BUCKET_NAME           the bucket                            (or WAREHOUSE_BUCKET)
   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION
   WAREHOUSE_PREFIX      key prefix inside the bucket (default 'warehouse')
+
+Two layouts coexist (NRT-PLAN.md §1/§8d). v1: one `<name>.parquet` per table — the default,
+unchanged. v2 "bucketed": big accumulating catalogs split into md5-prefix hash buckets
+(`<name>/__b=<hex>/part-v<n>.parquet`) with a per-table JSON manifest
+(`_manifest/<name>.json`) recording layout + live part files. The public API is the same for
+both — `query`/`row_count`/`write_accumulate`/`list_datasets` route through the manifest and
+fall back to v1 when absent, so existing callers (including hoodie-backend, which imports
+this file) never change.
 """
+import hashlib
+import json
 import os
+import time
 
 
 def _env(*names, default=""):
@@ -56,8 +67,11 @@ def uri(name):
 
 
 def row_count(name):
-    """Current row count of `<name>` via its Parquet FOOTER only (cheap — never reads data).
-    Returns 0 if the table doesn't exist yet or can't be read."""
+    """Current row count of `<name>` — from the layout manifest when the table is bucketed (v2),
+    else via its Parquet FOOTER only (cheap — never reads data). 0 if absent/unreadable."""
+    man = read_manifest(name)
+    if man and man.get("layout") == "bucketed":
+        return sum(int(p.get("rows") or 0) for p in (man.get("parts") or {}).values())
     import pyarrow.parquet as pq
     try:
         u = uri(name)
@@ -79,6 +93,12 @@ def write_parquet(name, records, fields=None, allow_empty=False):
     Pass allow_empty=True only for a deliberate truncate."""
     import pyarrow as pa
     import pyarrow.parquet as pq
+    man = read_manifest(name)
+    if man:
+        raise ValueError(
+            "write_parquet(%r) refused: table uses the bucketed layout (manifest v%s) — a single-file "
+            "overwrite would shadow it. Use write_accumulate (bucket-merge), or rollback_to_single() "
+            "first for a deliberate rebuild." % (name, man.get("version")))
     records = list(records or [])
     if fields:
         records = [{k: r.get(k) for k in fields} for r in records]
@@ -105,10 +125,17 @@ def write_accumulate(name, records, key, fields=None):
     persistent catalog rather than clobbering a bigger prior run (`write_parquet` is a full overwrite — there
     is no append). `key` maps a row → the identity a re-pull REPLACES: a product id for catalogs, an account
     for per-account menus. Use this for any persistent catalog that accumulates across runs; keep plain
-    `write_parquet` for derived/full-rebuild tables and dated partitions."""
+    `write_parquet` for derived/full-rebuild tables and dated partitions.
+
+    Tables migrated to the BUCKETED layout (migrate_to_bucketed / create_bucketed) take the v2 path:
+    the merge happens per-bucket in DuckDB (memory bounded by a bucket, not the table) and identity
+    comes from the manifest's key_cols — the `key` lambda is not consulted for those tables."""
     records = list(records or [])
     if not records:
         return {"rows": 0, "uri": uri(name)}
+    man = read_manifest(name)
+    if man and man.get("layout") == "bucketed":
+        return _accumulate_bucketed(name, man, records)
     try:
         existing = query(name, "SELECT * FROM t")
     except Exception:
@@ -229,6 +256,18 @@ def list_datasets():
                     out.append({"name": name, "rows": 0, "fields": [], "modified": mod})
     except Exception:
         pass
+    # v2 (bucketed) tables are directories, not top-level files — surface them from their manifests,
+    # replacing any same-name single-file rollback copy so counts reflect the LIVE layout.
+    try:
+        for man in _list_manifests():
+            if man.get("layout") != "bucketed":
+                continue
+            rows = sum(int(p.get("rows") or 0) for p in (man.get("parts") or {}).values())
+            out = [o for o in out if o["name"] != man["table"]]
+            out.append({"name": man["table"], "rows": rows, "fields": man.get("fields") or [],
+                        "modified": man.get("updated_at")})
+    except Exception:
+        pass
     return out
 
 
@@ -283,10 +322,329 @@ def connect():
 
 def query(name, sql=None, params=None):
     """Query dataset `name` in place. `sql` may reference the view `t` (the Parquet).
-    Defaults to `SELECT * FROM t`. Returns a list of dicts."""
+    Defaults to `SELECT * FROM t`. Returns a list of dicts.
+
+    Dual-read: a bucketed (v2) table resolves to its manifest's ACTIVE part files; everything
+    else reads the single `<name>.parquet` exactly as before."""
     con = connect()
-    src = uri(name).replace("'", "")
-    con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet('%s')" % src)
+    man = read_manifest(name)
+    if man and man.get("layout") == "bucketed":
+        files = [f for p in (man.get("parts") or {}).values() for f in (p.get("files") or [])]
+        if not files:
+            return []
+        lst = ", ".join("'%s'" % _part_sql_path(f).replace("'", "") for f in files)
+        con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet([%s], union_by_name=true)" % lst)
+    else:
+        src = uri(name).replace("'", "")
+        con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet('%s')" % src)
     cur = con.execute(sql or "SELECT * FROM t", params or [])
     cols = [d[0] for d in cur.description]
     return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+# Warehouse v2 — manifest-driven BUCKETED layout (NRT-PLAN.md Phase 1).
+#
+# WHY: the v1 accumulate path materializes the whole table in Python and rewrites one file —
+# fine at 100k rows, impossible at 250M. v2 splits a catalog into md5-prefix hash buckets and
+# merges ONLY the buckets touched by new records, in DuckDB, so memory and I/O are bounded by
+# a bucket (~table/N), not the table.
+#
+# CONTRACT (cross-repo — hoodie-backend sys.path-imports this file): the v1 public API keeps
+# working unchanged; the manifest routes. SINGLE WRITER PER TABLE is assumed (the standing
+# one-active-scraper-per-source rule). The manifest is written LAST on every mutation, so a
+# crashed merge leaves only orphan part files (ignored — reads use the manifest's file list),
+# never a torn table. Rollback = drop the manifest (migrate KEEPS the original single file).
+# The manifest `changelog` doubles as the change feed hoodie-canon consumes ("which buckets
+# changed since version W" — see manifest_changelog).
+#
+# Bucket assignment MUST be identical Python-side (new records) and SQL-side (migration):
+# both use md5 of the same '|'-joined key string — never a runtime-version-dependent hash.
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+
+_MAN_DIR = "_manifest"
+_MAN_TTL = 15.0     # seconds — short per-process cache so hot read paths (server /api) don't
+_MAN_CACHE = {}     # add an S3 round-trip per call for the ~170 unmigrated tables; busted on write.
+
+
+def _man_rel(name):
+    return "%s/%s.json" % (_MAN_DIR, name)
+
+
+def read_manifest(name):
+    """The table's layout manifest, or None (= v1 single-file layout). Cached ~15s per process."""
+    now = time.time()
+    hit = _MAN_CACHE.get(name)
+    if hit and now - hit[0] < _MAN_TTL:
+        return hit[1]
+    man = None
+    try:
+        if remote():
+            with _s3fs().open_input_stream("%s/%s/%s" % (_bucket(), _prefix(), _man_rel(name))) as f:
+                man = json.loads(f.read().decode("utf-8"))
+        else:
+            p = os.path.join(_LOCAL_DIR, _MAN_DIR, name + ".json")
+            man = json.loads(open(p, "rb").read().decode("utf-8")) if os.path.exists(p) else None
+    except Exception:
+        man = None
+    _MAN_CACHE[name] = (now, man)
+    return man
+
+
+def _write_manifest(name, man):
+    data = json.dumps(man, separators=(",", ":")).encode("utf-8")
+    if remote():
+        with _s3fs().open_output_stream("%s/%s/%s" % (_bucket(), _prefix(), _man_rel(name))) as f:
+            f.write(data)
+    else:
+        p = os.path.join(_LOCAL_DIR, _MAN_DIR, name + ".json")
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        tmp = p + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, p)
+    _MAN_CACHE[name] = (time.time(), man)
+
+
+def _drop_manifest(name):
+    try:
+        if remote():
+            _s3fs().delete_file("%s/%s/%s" % (_bucket(), _prefix(), _man_rel(name)))
+        else:
+            p = os.path.join(_LOCAL_DIR, _MAN_DIR, name + ".json")
+            if os.path.exists(p):
+                os.remove(p)
+    except Exception:
+        pass
+    _MAN_CACHE.pop(name, None)
+
+
+def _list_manifests():
+    """Every layout manifest in the warehouse (one small JSON read per v2 table)."""
+    mans = []
+    try:
+        if remote():
+            from pyarrow import fs as pafs
+            base = "%s/%s/%s" % (_bucket(), _prefix(), _MAN_DIR)
+            names = [i.path.rsplit("/", 1)[-1][:-5] for i in _s3fs().get_file_info(pafs.FileSelector(base))
+                     if i.type == pafs.FileType.File and i.path.endswith(".json")]
+        else:
+            import glob as _g
+            names = [os.path.basename(p)[:-5] for p in _g.glob(os.path.join(_LOCAL_DIR, _MAN_DIR, "*.json"))]
+        for n in names:
+            m = read_manifest(n)
+            if m:
+                mans.append(m)
+    except Exception:
+        pass
+    return mans
+
+
+def _part_rel(name, bucket_hex, version):
+    return "%s/__b=%s/part-v%d.parquet" % (name, bucket_hex, version)
+
+
+def _part_sql_path(rel):
+    """A part file's path as DuckDB read_parquet wants it (s3:// or local)."""
+    return ("s3://%s/%s/%s" % (_bucket(), _prefix(), rel)) if remote() else os.path.join(_LOCAL_DIR, rel)
+
+
+def _part_write(rel, table):
+    import pyarrow.parquet as pq
+    if remote():
+        pq.write_table(table, "%s/%s/%s" % (_bucket(), _prefix(), rel), filesystem=_s3fs(), compression="zstd")
+    else:
+        p = os.path.join(_LOCAL_DIR, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        pq.write_table(table, p, compression="zstd")
+
+
+def _part_delete(rel):
+    try:
+        if remote():
+            _s3fs().delete_file("%s/%s/%s" % (_bucket(), _prefix(), rel))
+        else:
+            p = os.path.join(_LOCAL_DIR, rel)
+            if os.path.exists(p):
+                os.remove(p)
+    except Exception:
+        pass
+
+
+def _list_part_rels(name):
+    """Every `__b=*/*.parquet` file currently on storage for `name`, as prefix-relative paths
+    (includes orphans from a crashed run — the manifest, not this listing, defines what's live)."""
+    rels = []
+    try:
+        if remote():
+            from pyarrow import fs as pafs
+            root = "%s/%s/" % (_bucket(), _prefix())
+            for i in _s3fs().get_file_info(pafs.FileSelector(root + name, recursive=True)):
+                if i.type == pafs.FileType.File and "/__b=" in i.path and i.path.endswith(".parquet"):
+                    rels.append(i.path[len(root):])
+        else:
+            import glob as _g
+            for p in _g.glob(os.path.join(_LOCAL_DIR, name, "__b=*", "*.parquet")):
+                rels.append(os.path.relpath(p, _LOCAL_DIR).replace(os.sep, "/"))
+    except Exception:
+        pass
+    return rels
+
+
+def _key_sql(key_cols):
+    """SQL expression for the identity key. MUST stay in lockstep with _key_py — producing the
+    same string for the same row is what makes the Python-side bucket match the SQL-side one."""
+    return " || '|' || ".join("COALESCE(CAST(\"%s\" AS VARCHAR), '')" % c for c in key_cols)
+
+
+def _key_py(rec, key_cols):
+    return "|".join("" if rec.get(c) is None else str(rec.get(c)) for c in key_cols)
+
+
+def _bucket_hex(key, hex_len):
+    return hashlib.md5(key.encode("utf-8", "replace")).hexdigest()[:hex_len]
+
+
+def create_bucketed(name, key_cols, fields, hex_len=2):
+    """Declare a NEW table bucketed from birth (e.g. a SipSource-scale feed): writes an empty
+    manifest so the first write_accumulate lands bucket parts directly. hex_len 1 = 16 buckets
+    (medium tables), 2 = 256 (default — the 250M-row class)."""
+    if read_manifest(name):
+        raise ValueError("create_bucketed(%r): manifest already exists" % name)
+    if row_count(name) > 0:
+        raise ValueError("create_bucketed(%r): table already has single-file data — use migrate_to_bucketed" % name)
+    man = dict(table=name, layout="bucketed", hex_len=int(hex_len), key_cols=list(key_cols),
+               fields=list(fields), version=0, updated_at=int(time.time()), parts={},
+               changelog=[dict(op="create", version=0, ts=int(time.time()), buckets=[], delta_rows=0)])
+    _write_manifest(name, man)
+    return man
+
+
+def migrate_to_bucketed(name, key_cols, hex_len=2):
+    """One-time, VERIFIED migration of an existing single-file table to the bucketed layout.
+
+    One DuckDB pass (COPY … PARTITION_BY) splits the table into md5-prefix buckets; row count
+    AND distinct-key count are checked against the original BEFORE the manifest is written; the
+    original single file is KEPT untouched as the rollback copy (rollback_to_single = drop the
+    manifest). Key columns must be string-typed identity columns (SKUs, UUIDs, store ids) so the
+    Python and SQL key strings agree. Run only from the writer host, never mid-scrape."""
+    import pyarrow.parquet as pq
+    if read_manifest(name):
+        raise ValueError("migrate_to_bucketed(%r): already migrated" % name)
+    hex_len = int(hex_len)
+    if hex_len not in (1, 2):
+        raise ValueError("hex_len must be 1 (16 buckets) or 2 (256 buckets)")
+    src = uri(name).replace("'", "")
+    con = connect()
+    ks = _key_sql(key_cols)
+    n_rows, n_keys = con.execute(
+        "SELECT COUNT(*), COUNT(DISTINCT (%s)) FROM read_parquet('%s')" % (ks, src)).fetchone()
+    if not n_rows:
+        raise ValueError("migrate_to_bucketed(%r): empty/missing — use create_bucketed for new tables" % name)
+    u = uri(name)
+    schema = (pq.read_metadata(u[5:], filesystem=_s3fs()) if u.startswith("s3://")
+              else pq.read_metadata(u)).schema
+    names = list(schema.names)
+    if "__b" in names:
+        raise ValueError("migrate_to_bucketed(%r): table already has a __b column" % name)
+    for c in key_cols:
+        if c not in names:
+            raise ValueError("migrate_to_bucketed(%r): key column %r not in table" % (name, c))
+    for rel in _list_part_rels(name):        # leftovers from a crashed attempt — nothing reads them
+        _part_delete(rel)
+    out_dir = (("s3://%s/%s/%s" % (_bucket(), _prefix(), name)) if remote()
+               else os.path.join(_LOCAL_DIR, name)).replace("'", "")
+    con.execute("COPY (SELECT *, substr(md5(%s), 1, %d) AS __b FROM read_parquet('%s')) TO '%s' "
+                "(FORMAT PARQUET, PARTITION_BY (__b), COMPRESSION ZSTD)" % (ks, hex_len, src, out_dir))
+    parts, total = {}, 0
+    for rel in _list_part_rels(name):
+        b = rel.split("__b=", 1)[1].split("/", 1)[0]
+        pu = _part_sql_path(rel)
+        md = pq.read_metadata(pu[5:], filesystem=_s3fs()) if pu.startswith("s3://") else pq.read_metadata(pu)
+        e = parts.setdefault(b, dict(files=[], rows=0, updated_at=int(time.time())))
+        e["files"].append(rel)
+        e["rows"] += md.num_rows
+        total += md.num_rows
+    chk_keys = con.execute("SELECT COUNT(DISTINCT (%s)) FROM read_parquet('%s/__b=*/*.parquet')"
+                           % (ks, out_dir)).fetchone()[0]
+    if total != n_rows or chk_keys != n_keys:
+        raise ValueError("migrate_to_bucketed(%r): VERIFY FAILED (rows %s->%s, distinct keys %s->%s) — "
+                         "manifest NOT written, original file untouched" % (name, n_rows, total, n_keys, chk_keys))
+    man = dict(table=name, layout="bucketed", hex_len=hex_len, key_cols=list(key_cols), fields=names,
+               version=1, updated_at=int(time.time()), parts=parts,
+               changelog=[dict(op="migrate", version=1, ts=int(time.time()), buckets=sorted(parts),
+                               delta_rows=int(n_rows))])
+    _write_manifest(name, man)
+    return {"rows": int(n_rows), "buckets": len(parts), "uri": uri(name)}
+
+
+def _accumulate_bucketed(name, man, records):
+    """v2 merge: group new records into their md5-prefix buckets, then rewrite ONLY the touched
+    buckets — DuckDB anti-join (existing minus re-written keys) + the new rows, written as one
+    fresh part per bucket. Manifest last (the atomic swap), replaced files deleted after."""
+    import pyarrow as pa
+    cols = man["fields"]
+    kc, hex_len = man["key_cols"], int(man["hex_len"])
+    recs = [{k: r.get(k) for k in cols} for r in records]
+    buckets = {}
+    for r in recs:
+        buckets.setdefault(_bucket_hex(_key_py(r, kc), hex_len), []).append(r)
+    version = int(man["version"]) + 1
+    ks = _key_sql(kc)
+    sel = ", ".join('"%s"' % c for c in cols)
+    stale = []
+    con = connect()     # ONE connection for all buckets — connect() re-runs httpfs setup per call,
+    for b in sorted(buckets):                        # which multiplies badly over 256 buckets.
+        new_tbl = pa.Table.from_pylist(buckets[b])
+        con.register("newt", new_tbl)
+        files = ((man.get("parts") or {}).get(b) or {}).get("files") or []
+        if files:
+            lst = ", ".join("'%s'" % _part_sql_path(f).replace("'", "") for f in files)
+            merged = con.execute(
+                "SELECT %s FROM read_parquet([%s], union_by_name=true) "
+                "WHERE (%s) NOT IN (SELECT (%s) FROM newt) "
+                "UNION ALL SELECT %s FROM newt" % (sel, lst, ks, ks, sel)).fetch_arrow_table()
+        else:
+            merged = con.execute("SELECT %s FROM newt" % sel).fetch_arrow_table()
+        rel = _part_rel(name, b, version)
+        _part_write(rel, merged)
+        stale += files
+        man.setdefault("parts", {})[b] = dict(files=[rel], rows=merged.num_rows, updated_at=int(time.time()))
+    man["version"] = version
+    man["updated_at"] = int(time.time())
+    man.setdefault("changelog", []).append(dict(op="accumulate", version=version, ts=int(time.time()),
+                                                buckets=sorted(buckets), delta_rows=len(recs)))
+    man["changelog"] = man["changelog"][-200:]
+    _write_manifest(name, man)      # readers switch to the new parts HERE — never mid-write
+    for f in stale:                 # only then drop replaced files (best-effort; orphans are inert)
+        _part_delete(f)
+    return {"rows": len(recs), "uri": uri(name)}
+
+
+def rollback_to_single(name):
+    """Point readers back at the original single file (KEPT by migrate_to_bucketed) by dropping
+    the manifest. Bucket part files are left on storage for inspection — delete them once the
+    rollback is confirmed. Refuses if no single-file copy exists to fall back to."""
+    import pyarrow.parquet as pq
+    if not read_manifest(name):
+        raise ValueError("rollback_to_single(%r): no manifest — already single-file" % name)
+    u = uri(name)
+    try:
+        n = (pq.read_metadata(u[5:], filesystem=_s3fs()) if u.startswith("s3://")
+             else pq.read_metadata(u)).num_rows
+    except Exception:
+        n = 0
+    if n <= 0:
+        raise ValueError("rollback_to_single(%r): no single-file copy exists to fall back to" % name)
+    _drop_manifest(name)
+    return {"rows": n, "uri": u}
+
+
+def manifest_changelog(name, since_version=0):
+    """The change feed (the seam hoodie-canon consumes — NRT-PLAN.md §8c): changelog entries
+    with version > since_version, each naming the buckets touched, when, and how many rows
+    landed. [] for v1 tables (no manifest)."""
+    man = read_manifest(name)
+    if not man:
+        return []
+    return [e for e in man.get("changelog", []) if int(e.get("version", 0)) > int(since_version)]
