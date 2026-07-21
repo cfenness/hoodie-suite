@@ -87,13 +87,23 @@ T2  EXTERNAL ORACLE Google Places etc. — "which business is OPERATIONAL at thi
 T3  HUMAN (steward) only the residue the tiers above couldn't verify
 ```
 
-**The automatch standard: 90–95%.** The bar the cascade is built to hit — 90–95% of match decisions
-resolve WITHOUT a human (T0–T2), leaving a 5–10% residue for the steward. Human involvement is limited
-until absolutely necessary; the tiers exist to earn that. Automatch rate is therefore a first-class,
-continuously measured metric (it belongs on the DQ scorecard): report `auto / claude-verified /
-oracle-resolved / human` shares per entity per build, and treat a falling automatch rate as a
-regression, not a fact of life. This is also the north star for **hoodie-canon** — the 7-phase,
-agent-integrated rebuild of the end-to-end MDM pipeline; this engine and this doc are its seed.
+**The automatch standard: 90–95% — accuracy-first, by definition.** This is NOT a quota. **Accuracy
+is the binding constraint; automation is maximized subject to it.** 90–95% is the *high end of the
+range where accuracy stays front and center* — the frontier where the cascade can still stand behind
+every automatic decision with evidence. Past it, you're trading accuracy for automation, and we don't
+make that trade. Consequences:
+
+- The rate is **earned, never bought**: it rises through better tiers (better normalizers, stronger
+  evidence, more authorities in the whitelist) — **never by loosening match thresholds.** A change
+  that raises automatch by admitting less-certain merges is a regression, whatever the rate says.
+- A decision the cascade cannot make accurately **goes to the human — that is the design working,
+  not failing.** The 5–10% residue is the honest price of the 90–95% being trustworthy.
+- Measure it as a pair on the DQ scorecard: `auto / claude-verified / oracle-resolved / human` shares
+  per entity per build, **and** false-merge precision by audit sampling of automatic decisions.
+  Either number moving the wrong way is a regression.
+
+This is the north star for **hoodie-canon** — the 7-phase, agent-integrated rebuild of the end-to-end
+MDM pipeline (human involvement limited until absolutely necessary); this engine and this doc seed it.
 
 - **Claude verifies facts, it doesn't vote.** For a category conflict (one source says vodka, another
   rum — common), Claude checks TTB COLA / the brand page and *concludes*, carrying the evidence. Even
