@@ -1,0 +1,28 @@
+{
+  "_note": "THE ticket structure, defined in the repo — the board drawer renders (and edits) tickets from this file, in this order. Add/remove/reorder sections here and every ticket follows; no board code change needed. kind: text (paragraph) | list (bullet items) | chips (short tokens). editable: whether the inline editor offers it. agents_must_execute: the QA/review gate agents are REQUIRED to execute each item in this section and report per-item results.",
+  "header_fields": ["id", "type", "size", "priority", "status", "title", "branch", "commits"],
+  "sections": [
+    {"key": "summary", "label": "Summary", "kind": "text", "editable": true,
+     "hint": "What this is, in a paragraph a lead engineer reads first."},
+    {"key": "context", "label": "Context / why", "kind": "text", "editable": true,
+     "hint": "The decision behind it — why this, why now, what almost went wrong before."},
+    {"key": "acceptance", "label": "Acceptance criteria", "kind": "list", "editable": true, "checkbox": true,
+     "hint": "Testable statements. Done means every one verified with evidence."},
+    {"key": "qa_checks", "label": "QA — things to check (plain language)", "kind": "list", "editable": true, "agents_must_execute": true,
+     "hint": "Owner-authored, plain English. The QA gate agent MUST execute every item here and report pass/fail per item — e.g. 'open it on a phone-width window', 'try a name with an apostrophe', 'make sure the old tabs still work'."},
+    {"key": "review_notes", "label": "Review — things to look at (plain language)", "kind": "list", "editable": true, "agents_must_execute": true,
+     "hint": "Owner-authored focus areas for the adversarial reviewer — e.g. 'is anything editing a golden value directly?', 'could this leak synthetic data?'."},
+    {"key": "implementation", "label": "Implementation notes", "kind": "list", "editable": true,
+     "hint": "Key functions, decisions, gotchas — written for whoever touches this next."},
+    {"key": "verification_plan", "label": "Verification plan", "kind": "list", "editable": true, "when_status": ["proposed", "backlog", "ready", "in-progress"],
+     "hint": "How done will be proven, before it's built."},
+    {"key": "verification", "label": "Verification — done", "kind": "list", "editable": true, "when_status": ["in-review", "done"],
+     "hint": "What was ACTUALLY run and OBSERVED — outputs, not intentions."},
+    {"key": "review", "label": "Agentic review — findings", "kind": "list", "editable": true, "when_status": ["in-review", "done"],
+     "hint": "The fresh-context reviewer's findings + outcomes. 'none found' is valid; unrun is not."},
+    {"key": "qa_results", "label": "Agentic QA — per-check results", "kind": "list", "editable": true, "when_status": ["in-review", "done"],
+     "hint": "One line per qa_check + per acceptance criterion: PASS/FAIL + what was observed."},
+    {"key": "files", "label": "Files", "kind": "chips", "editable": true, "hint": "Repo-relative paths this ticket touches."},
+    {"key": "followups", "label": "Follow-ups", "kind": "list", "editable": true, "hint": "Discovered work → new tickets, linked here."}
+  ]
+}

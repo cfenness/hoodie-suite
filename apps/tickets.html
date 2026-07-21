@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <!-- Hoodie Suite · Tickets — the engineering board. Single source of truth is apps/tickets.json;
-     Claude Code creates/sizes/moves tickets there per the hard rule in CLAUDE.md. This page is the
-     read surface: a pipeline board (backlog → ready → in progress → in review → done) + a detail
-     drawer with enough context to hand any ticket to a lead engineer cold. Dependency-free. -->
+     the TICKET STRUCTURE is apps/tickets.schema.json (owner-editable: add/remove/reorder sections
+     there and the drawer follows — no code change). The drawer EDITS inline when the engine is up:
+     Save → POST /api/tickets/save writes tickets.json on disk (commit for durability). Pipeline
+     board (proposed → … → done) + a detail drawer a lead engineer can pick up cold. -->
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hoodie · Tickets</title>
@@ -15,7 +16,6 @@
         --mono:'JetBrains Mono',ui-monospace,monospace;--disp:'Fraunces',Georgia,serif;--body:'Inter',system-ui,sans-serif;}
   *{box-sizing:border-box} html,body{margin:0;height:100%}
   body{display:flex;flex-direction:column;height:100vh;overflow:hidden;font-family:var(--body);color:var(--ink);background:var(--paper)}
-  /* top bar */
   .top{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:14px 20px 12px;background:var(--surface);border-bottom:1px solid var(--line)}
   .top .brand{line-height:1.05}
   .top .ey{font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);display:block;font-weight:600}
@@ -26,9 +26,10 @@
   .seg button.on{background:var(--surface);color:var(--teal-d);box-shadow:0 1px 2px rgba(20,30,28,.08)}
   .sp{flex:1}
   .stats{font-family:var(--mono);font-size:10.5px;color:var(--muted);font-weight:600}
-  /* board */
+  .eng{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--muted2);font-weight:600}
+  .eng .dot{width:7px;height:7px;border-radius:50%;background:var(--muted2)}.eng .dot.on{background:var(--good)}
   .board{flex:1;display:flex;gap:12px;min-height:0;overflow-x:auto;padding:14px 20px}
-  .col{flex:1 0 232px;max-width:330px;display:flex;flex-direction:column;min-height:0}
+  .col{flex:1 0 220px;max-width:330px;display:flex;flex-direction:column;min-height:0}
   .col h2{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 8px;display:flex;align-items:center;gap:7px}
   .col h2 .n{background:var(--line2);color:var(--muted);border-radius:999px;padding:1px 8px;font-size:9.5px}
   .col h2 .dot{width:7px;height:7px;border-radius:3px}
@@ -44,23 +45,28 @@
   .pill.sz{background:var(--paper);border:1px solid var(--line);color:var(--ink2)}
   .pill.p1{background:var(--warn-soft);color:var(--warn)}.pill.p2,.pill.p3{background:var(--paper);border:1px solid var(--line);color:var(--muted)}
   .empty-col{color:var(--muted2);font-size:12px;padding:8px 4px;font-style:italic}
-  /* status colors */
   .s-proposed{background:#E0A83A;outline:2px dashed #E0A83A;outline-offset:1px}.s-backlog{background:#C7CCD2}.s-ready{background:#8a7bbf}.s-in-progress{background:#d69b3a}.s-in-review{background:var(--teal)}.s-done{background:var(--good)}
   /* drawer */
   .scrim{position:fixed;inset:0;background:rgba(36,51,48,.32);display:none;z-index:40}.scrim.on{display:block}
-  .drawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,95vw);background:var(--surface);border-left:1px solid var(--line);box-shadow:-16px 0 48px rgba(20,30,28,.14);transform:translateX(100%);transition:.22s;z-index:41;display:flex;flex-direction:column}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:min(680px,95vw);background:var(--surface);border-left:1px solid var(--line);box-shadow:-16px 0 48px rgba(20,30,28,.14);transform:translateX(100%);transition:.22s;z-index:41;display:flex;flex-direction:column}
   .drawer.on{transform:none}
   .dh{flex:0 0 auto;padding:16px 22px 12px;border-bottom:1px solid var(--line)}
-  .dh .row1{display:flex;align-items:center;gap:10px}
+  .dh .row1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .dh .did{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--teal-d)}
-  .dh .x{margin-left:auto;cursor:pointer;color:var(--muted);border:1px solid var(--line);border-radius:7px;padding:3px 10px;font-family:var(--mono);font-size:11px;font-weight:700}
-  .dh .x:hover{color:var(--ink);background:var(--paper)}
+  .dh .x,.dh .ebtn{cursor:pointer;color:var(--muted);border:1px solid var(--line);border-radius:7px;padding:3px 10px;font-family:var(--mono);font-size:11px;font-weight:700;background:var(--surface)}
+  .dh .x:hover,.dh .ebtn:hover{color:var(--ink);background:var(--paper)}
+  .dh .ebtn.save{background:var(--teal-d);border-color:var(--teal-d);color:#fff}
+  .dh .ebtn:disabled{opacity:.4;cursor:not-allowed}
+  .dh .push{margin-left:auto;display:flex;gap:6px}
   .dh h1{font-family:var(--disp);font-size:19px;font-weight:700;margin:7px 0 9px;letter-spacing:-.01em;line-height:1.25}
-  .dh .meta{display:flex;flex-wrap:wrap;gap:6px}
+  .dh input.title{font-family:var(--disp);font-size:18px;font-weight:700;width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin:7px 0 9px;color:var(--ink)}
+  .dh .meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .dh select{font-family:var(--mono);font-size:10.5px;font-weight:600;border:1px solid var(--line);border-radius:7px;padding:3px 6px;background:var(--surface);color:var(--ink2)}
   .db{flex:1;overflow-y:auto;padding:16px 22px 28px}
   .sec{margin-bottom:16px}
-  .sec h3{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 7px}
-  .sec p{font-size:13.5px;line-height:1.6;color:var(--ink2);margin:0}
+  .sec h3{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 7px;display:flex;align-items:center;gap:7px}
+  .sec h3 .amx{font-size:8px;background:var(--warn-soft);color:var(--warn);border-radius:999px;padding:1px 7px;letter-spacing:.05em}
+  .sec p{font-size:13.5px;line-height:1.6;color:var(--ink2);margin:0;white-space:pre-wrap}
   .sec ul{margin:0;padding-left:18px}
   .sec li{font-size:13px;line-height:1.6;color:var(--ink2);margin-bottom:3px}
   .sec.ac li{list-style:none;position:relative;padding-left:4px}
@@ -69,8 +75,20 @@
   .mono-chips{display:flex;flex-wrap:wrap;gap:5px}
   .mc{font-family:var(--mono);font-size:10.5px;font-weight:600;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:var(--ink2)}
   .mc.commit{color:var(--teal-d);background:var(--teal-soft);border-color:#CDDDEC}
+  .hintl{font-size:11.5px;color:var(--muted2);font-style:italic;margin:2px 0 6px}
   .foot-note{font-size:11.5px;color:var(--muted2);border-top:1px solid var(--line2);margin-top:6px;padding-top:10px}
   .load-err{padding:40px;text-align:center;color:var(--muted)}
+  /* edit mode */
+  .sec textarea{width:100%;min-height:64px;font-family:var(--body);font-size:13px;line-height:1.55;border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--ink2);resize:vertical}
+  .erow{display:flex;gap:6px;margin-bottom:5px}
+  .erow input{flex:1;font-family:var(--body);font-size:12.5px;border:1px solid var(--line);border-radius:7px;padding:6px 9px;color:var(--ink2)}
+  .erow .del{cursor:pointer;border:1px solid var(--line);background:var(--surface);border-radius:7px;color:var(--muted);font-weight:700;padding:0 9px}
+  .erow .del:hover{color:var(--bad);border-color:#EBC9CB}
+  .eadd{cursor:pointer;border:1px dashed var(--line);background:none;border-radius:7px;color:var(--teal-d);font-size:12px;font-weight:600;padding:5px 11px}
+  .eadd:hover{background:var(--teal-soft)}
+  #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--ink);color:#fff;padding:9px 15px;border-radius:8px;font-size:12px;font-weight:600;opacity:0;transition:.22s;pointer-events:none;z-index:60}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast.good{background:#14532d}#toast.bad{background:#7f1d1d}
 </style></head><body>
   <div class="top">
     <div class="brand"><span class="ey">Hoodie Suite</span><span class="nm">Tickets</span></div>
@@ -79,22 +97,39 @@
       <button data-t="" class="on">All</button><button data-t="feat">Feat</button><button data-t="fix">Fix</button><button data-t="chore">Chore</button><button data-t="docs">Docs</button>
     </div>
     <span class="sp"></span>
+    <span class="eng"><span class="dot" id="edot"></span><span id="etxt">read-only</span></span>
     <span class="stats" id="stats">…</span>
   </div>
   <div class="board" id="board"><div class="load-err">Loading tickets…</div></div>
   <div class="scrim" id="scrim"></div>
   <div class="drawer" id="drawer"></div>
+  <div id="toast"></div>
 <script>
 (function(){
   "use strict";
   var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
   var $=function(id){return document.getElementById(id);};
   var COLS=[["proposed","Proposed"],["backlog","Backlog"],["ready","Ready"],["in-progress","In Progress"],["in-review","In Review"],["done","Done"]];
-  var S={all:[],q:"",type:""};
+  var FALLBACK_SCHEMA={header_fields:["id","type","size","priority","status","title","branch","commits"],sections:[
+    {key:"summary",label:"Summary",kind:"text",editable:true},{key:"context",label:"Context / why",kind:"text",editable:true},
+    {key:"acceptance",label:"Acceptance criteria",kind:"list",editable:true,checkbox:true},
+    {key:"implementation",label:"Implementation notes",kind:"list",editable:true},
+    {key:"verification_plan",label:"Verification plan",kind:"list",editable:true},
+    {key:"verification",label:"Verification — done",kind:"list",editable:true},
+    {key:"files",label:"Files",kind:"chips",editable:true},{key:"followups",label:"Follow-ups",kind:"list",editable:true}]};
+  var S={all:[],meta:{},q:"",type:"",schema:FALLBACK_SCHEMA,engine:false,editing:false,cur:null};
 
-  function load(){
-    fetch("tickets.json",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
-      S.all=(d.tickets||[]);render();
+  function toast(m,k){var t=$("toast");t.className="";t.textContent=m;void t.offsetWidth;t.className=(k||"")+" show";clearTimeout(toast._t);toast._t=setTimeout(function(){t.className=(k||"");},2600);}
+
+  function load(openId){
+    Promise.all([
+      fetch("tickets.json",{cache:"no-store"}).then(function(r){return r.json();}),
+      fetch("tickets.schema.json",{cache:"no-store"}).then(function(r){return r.json();}).catch(function(){return FALLBACK_SCHEMA;}),
+      fetch("/api/health").then(function(r){return r.ok;}).catch(function(){return false;})
+    ]).then(function(res){
+      S.all=(res[0].tickets||[]); S.meta=res[0].meta||{}; S.schema=res[1]||FALLBACK_SCHEMA; S.engine=!!res[2];
+      $("edot").className="dot "+(S.engine?"on":""); $("etxt").textContent=S.engine?"editable · engine up":"read-only";
+      render(); if(openId) open_(openId);
     }).catch(function(e){$("board").innerHTML='<div class="load-err">Could not load tickets.json — '+esc(String(e))+'</div>';});
   }
 
@@ -130,40 +165,95 @@
     });
   }
 
-  function sec(title,body){return body?'<div class="sec"><h3>'+title+'</h3>'+body+'</div>':"";}
-  function list(items,cls){return (items&&items.length)?('<div class="sec '+(cls||"")+'"'+'><ul>'+items.map(function(x){return '<li>'+esc(x)+'</li>';}).join("")+'</ul></div>'):"";}
+  function ticketById(id){return S.all.filter(function(x){return x.id===id;})[0];}
+  function visible(sec,t){ if(!sec.when_status) return true; return sec.when_status.indexOf(t.status)>=0; }
+
+  // ── view mode ──
+  function viewSection(sec,t){
+    var v=t[sec.key];
+    if(v==null||(Array.isArray(v)&&!v.length)||v==="") return "";
+    var badge=sec.agents_must_execute?'<span class="amx">agents execute each</span>':"";
+    var head='<h3>'+esc(sec.label)+badge+'</h3>';
+    if(sec.kind==="text") return '<div class="sec">'+head+'<p>'+esc(v)+'</p></div>';
+    if(sec.kind==="chips") return '<div class="sec">'+head+'<div class="mono-chips">'+v.map(function(x){return '<span class="mc">'+esc(x)+'</span>';}).join("")+'</div></div>';
+    var cls=sec.checkbox?"sec ac":"sec";
+    return '<div class="'+cls+'">'+head+'<ul>'+v.map(function(x){return '<li>'+esc(x)+'</li>';}).join("")+'</ul></div>';
+  }
 
   function open_(id){
-    var t=S.all.filter(function(x){return x.id===id;})[0];if(!t)return;
+    var t=ticketById(id); if(!t) return; S.cur=id; S.editing=false;
     var statusLab=(COLS.filter(function(c){return c[0]===t.status;})[0]||["",t.status])[1];
     var h='<div class="dh"><div class="row1"><span class="did">'+esc(t.id)+'</span>'+
       '<span class="pill '+esc(t.type)+'">'+esc(t.type)+'</span>'+
       '<span class="pill sz">'+esc(t.size)+'</span>'+
       '<span class="pill '+esc((t.priority||"p2").toLowerCase())+'">'+esc(t.priority||"")+'</span>'+
       '<span class="pill sz"><span class="dot s-'+esc(t.status)+'" style="display:inline-block;width:7px;height:7px;border-radius:3px;margin-right:5px"></span>'+esc(statusLab)+'</span>'+
-      '<span class="x" id="dx">esc ✕</span></div>'+
+      '<span class="push">'+(S.engine?'<button class="ebtn" id="edit">edit</button>':'')+'<span class="x" id="dx">esc ✕</span></span></div>'+
       '<h1>'+esc(t.title)+'</h1>'+
-      '<div class="meta mono-chips">'+
-        (t.branch?'<span class="mc">'+esc(t.branch)+'</span>':"")+
-        (t.commits||[]).map(function(c){return '<span class="mc commit">'+esc(c)+'</span>';}).join("")+
-      '</div></div>'+
+      '<div class="meta mono-chips">'+(t.branch?'<span class="mc">'+esc(t.branch)+'</span>':"")+
+      (t.commits||[]).map(function(c){return '<span class="mc commit">'+esc(c)+'</span>';}).join("")+'</div></div>'+
       '<div class="db'+(t.status==="done"?" done":"")+'">'+
-      sec("Summary",'<p>'+esc(t.summary)+'</p>')+
-      sec("Context / why",t.context?'<p>'+esc(t.context)+'</p>':"")+
-      (t.acceptance&&t.acceptance.length?('<div class="sec"><h3>'+(t.status==="done"?"Acceptance — met":"Acceptance criteria")+'</h3>'+list(t.acceptance,"ac").replace('<div class="sec ac">','<div class="ac">')+'</div>'):"")+
-      (t.implementation&&t.implementation.length?('<div class="sec"><h3>Implementation notes</h3>'+list(t.implementation)+'</div>'):"")+
-      (t.verification&&t.verification.length?('<div class="sec"><h3>Verification — done</h3>'+list(t.verification)+'</div>'):"")+
-      (t.verification_plan&&t.verification_plan.length?('<div class="sec"><h3>Verification plan</h3>'+list(t.verification_plan)+'</div>'):"")+
-      (t.files&&t.files.length?sec("Files",'<div class="mono-chips">'+t.files.map(function(f){return '<span class="mc">'+esc(f)+'</span>';}).join("")+'</div>'):"")+
-      (t.followups&&t.followups.length?('<div class="sec"><h3>Follow-ups</h3>'+list(t.followups)+'</div>'):"")+
-      '<div class="foot-note">created '+esc(t.created)+' · updated '+esc(t.updated)+' · source of truth: apps/tickets.json (edited by rule — see CLAUDE.md “Ticket discipline”)</div>'+
+      S.schema.sections.filter(function(s){return visible(s,t);}).map(function(s){return viewSection(s,t);}).join("")+
+      '<div class="foot-note">created '+esc(t.created)+' · updated '+esc(t.updated)+' · structure: apps/tickets.schema.json (edit it to change every ticket) · data: apps/tickets.json'+(S.engine?'':' · start the engine to edit inline')+'</div>'+
       '</div>';
-    $("drawer").innerHTML=h;$("drawer").classList.add("on");$("scrim").classList.add("on");
-    $("dx").onclick=close_;
+    $("drawer").innerHTML=h; $("drawer").classList.add("on"); $("scrim").classList.add("on");
+    $("dx").onclick=close_; if($("edit"))$("edit").onclick=function(){edit_(id);};
   }
-  function close_(){$("drawer").classList.remove("on");$("scrim").classList.remove("on");}
-  $("scrim").onclick=close_;
-  document.addEventListener("keydown",function(e){if(e.key==="Escape")close_();});
+
+  // ── edit mode: form rendered FROM the schema ──
+  function editSection(sec,t){
+    var badge=sec.agents_must_execute?'<span class="amx">agents execute each</span>':"";
+    var head='<h3>'+esc(sec.label)+badge+'</h3>'+(sec.hint?'<div class="hintl">'+esc(sec.hint)+'</div>':"");
+    if(sec.kind==="text")
+      return '<div class="sec" data-key="'+esc(sec.key)+'" data-kind="text">'+head+'<textarea>'+esc(t[sec.key]||"")+'</textarea></div>';
+    var items=(t[sec.key]||[]);
+    var rows=items.map(function(x){return '<div class="erow"><input value="'+esc(x)+'"><button class="del">✕</button></div>';}).join("");
+    return '<div class="sec" data-key="'+esc(sec.key)+'" data-kind="list">'+head+'<div class="rows">'+rows+'</div><button class="eadd">+ add</button></div>';
+  }
+  function edit_(id){
+    var t=ticketById(id); if(!t) return; S.editing=true;
+    var selOpt=function(list,cur){return list.map(function(x){return '<option'+(x===cur?" selected":"")+'>'+esc(x)+'</option>';}).join("");};
+    var h='<div class="dh"><div class="row1"><span class="did">'+esc(t.id)+'</span>'+
+      '<select id="f-type">'+selOpt(["feat","fix","chore","docs"],t.type)+'</select>'+
+      '<select id="f-size">'+selOpt(["S","M","L","XL"],t.size)+'</select>'+
+      '<select id="f-priority">'+selOpt(["P1","P2","P3"],t.priority||"P2")+'</select>'+
+      '<select id="f-status">'+selOpt(S.meta.statuses||COLS.map(function(c){return c[0];}),t.status)+'</select>'+
+      '<span class="push"><button class="ebtn save" id="save">save</button><button class="ebtn" id="cancel">cancel</button></span></div>'+
+      '<input class="title" id="f-title" value="'+esc(t.title)+'">'+
+      '</div><div class="db" id="editbody">'+
+      S.schema.sections.map(function(s){return editSection(s,t);}).join("")+
+      '<div class="foot-note">saves to apps/tickets.json via the engine · commit the file for durability · empty sections are removed</div></div>';
+    $("drawer").innerHTML=h;
+    Array.prototype.forEach.call(document.querySelectorAll("#editbody .del"),function(b){b.onclick=function(){b.parentNode.parentNode.removeChild(b.parentNode);};});
+    Array.prototype.forEach.call(document.querySelectorAll("#editbody .eadd"),function(b){b.onclick=function(){
+      var row=document.createElement("div");row.className="erow";row.innerHTML='<input value=""><button class="del">✕</button>';
+      row.querySelector(".del").onclick=function(){row.parentNode.removeChild(row);};
+      b.parentNode.querySelector(".rows").appendChild(row);row.querySelector("input").focus();};});
+    $("cancel").onclick=function(){open_(id);};
+    $("save").onclick=function(){save_(id);};
+  }
+  function collect(){
+    var patch={title:$("f-title").value.trim(),type:$("f-type").value,size:$("f-size").value,
+               priority:$("f-priority").value,status:$("f-status").value};
+    Array.prototype.forEach.call(document.querySelectorAll("#editbody .sec"),function(el){
+      var key=el.getAttribute("data-key"),kind=el.getAttribute("data-kind");
+      if(kind==="text"){patch[key]=el.querySelector("textarea").value.trim();}
+      else{var vals=[];Array.prototype.forEach.call(el.querySelectorAll(".erow input"),function(i){if(i.value.trim())vals.push(i.value.trim());});patch[key]=vals;}
+    });
+    return patch;
+  }
+  function save_(id){
+    var btn=$("save");btn.disabled=true;btn.textContent="saving…";
+    fetch("/api/tickets/save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:id,ticket:collect()})})
+      .then(function(r){return r.json();})
+      .then(function(r){ if(!r.ok){toast("save failed · "+(r.error||"?"),"bad");btn.disabled=false;btn.textContent="save";return;}
+        toast("saved — commit apps/tickets.json for durability","good"); load(id); })
+      .catch(function(e){toast("save failed · "+e,"bad");btn.disabled=false;btn.textContent="save";});
+  }
+
+  function close_(){$("drawer").classList.remove("on");$("scrim").classList.remove("on");S.editing=false;}
+  $("scrim").onclick=function(){if(!S.editing)close_();};
+  document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!S.editing)close_();});
 
   $("q").oninput=function(){S.q=$("q").value;render();};
   Array.prototype.forEach.call(document.querySelectorAll("#typeseg button"),function(b){

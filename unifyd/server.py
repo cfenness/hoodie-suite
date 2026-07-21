@@ -3178,6 +3178,57 @@ def flow_run_ep():
     return jsonify(ok=True, table=table, mode=mode, rows=total, hoodie_minted=minted, hoodie_total=len(ent["map"]))
 
 
+# ── Tickets — inline editing from the board. The STRUCTURE lives in apps/tickets.schema.json (owner-
+# editable); this endpoint persists drawer edits back into apps/tickets.json (the git-tracked source
+# of truth). On a deployed box edits live until redeploy — committing the file is the durable save. ──
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _tickets_paths():
+    return (os.path.join(_REPO_ROOT, "apps", "tickets.json"),
+            os.path.join(_REPO_ROOT, "apps", "tickets.schema.json"))
+
+
+@app.post("/api/tickets/save")
+def tickets_save_ep():
+    """Persist an inline ticket edit: {id, ticket:{...}}. Only fields the schema declares (plus the
+    header fields) are accepted; id is immutable; `updated` is stamped server-side."""
+    import datetime
+    b = request.get_json(silent=True) or {}
+    tid, patch = (b.get("id") or "").strip(), b.get("ticket") or {}
+    if not tid or not isinstance(patch, dict):
+        return jsonify(ok=False, error="id + ticket required"), 400
+    tpath, spath = _tickets_paths()
+    try:
+        with open(spath) as f:
+            schema = json.load(f)
+        allowed = set(schema.get("header_fields", [])) | {s["key"] for s in schema.get("sections", [])}
+        allowed.discard("id")
+        with open(tpath) as f:
+            data = json.load(f)
+    except Exception as e:
+        return jsonify(ok=False, error="load failed: %s" % str(e)[:120]), 200
+    tk = next((t for t in data.get("tickets", []) if t.get("id") == tid), None)
+    if not tk:
+        return jsonify(ok=False, error="unknown ticket id"), 404
+    st = patch.get("status")
+    if st is not None and st not in data.get("meta", {}).get("statuses", []):
+        return jsonify(ok=False, error="unknown status"), 400
+    for k, v in patch.items():
+        if k in allowed:
+            if v in (None, "", []):
+                tk.pop(k, None)                                   # remove emptied sections entirely
+            else:
+                tk[k] = v
+    tk["updated"] = datetime.date.today().isoformat()
+    try:
+        with open(tpath, "w") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return jsonify(ok=False, error="write failed: %s" % str(e)[:120]), 200
+    return jsonify(ok=True, ticket=tk)
+
+
 # ── Serve — syndicate the golden master to consumers. REAL ONLY, by construction: mode is hardcoded
 # 'real', so synthetic can never leak to a consumer. The stable Hoodie ID is the join key downstream. ──
 @app.get("/api/serve/<entity>")

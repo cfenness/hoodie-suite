@@ -159,18 +159,22 @@ detail that a lead engineer can pick it up cold.
 4. **Commits reference tickets** — mention the id (e.g. `HS-012`) in the commit body when work maps
    to a ticket.
 5. Discovered follow-up work becomes a **new ticket** (link it in `followups`), not a mental note.
-6. **AGENTIC REVIEW + QA (the quality gates — required to close a ticket).** Before `in-review` →
-   `done`:
-   - **Agentic review:** an adversarial review pass over the diff, run by a fresh agent/context (not
-     the author-context; e.g. the `/code-review` skill or a spawned reviewer) hunting correctness
-     bugs, first-law violations, silent data loss, and law drift. Findings recorded in the ticket's
-     `review` field — `"none found"` is a valid finding, an unrun review is not.
-   - **Agentic QA:** verification EXECUTED, not asserted — engine changes run their self-tests +
-     end-to-end smoke; UI changes are driven in a real browser (playwright) with the rendered result
-     REVIEWED, not just non-erroring. Evidence goes in `verification` (observed outputs, not
-     intentions).
-   The session doing the work may run these gates itself only with fresh-context agents; a finding
-   that survives becomes a fix (same ticket) or a new ticket — never a silent pass.
+6. **AGENTIC REVIEW + QA (the quality gates — required to close a ticket).** Run as **parallel,
+   fresh-context agents** (never the author-context), at the throughput of a professional QA team —
+   the minimum workload per ticket is defined, not discretionary:
+   - **Agentic review (the adversarial pass):** EVERY changed hunk read adversarially — correctness
+     bugs, first-law violations, silent data loss, law drift, injection/escaping, failure paths.
+     EVERY item in the ticket's `review_notes` (owner-authored, plain language) explicitly addressed.
+     Diffs spanning engine + UI get one reviewer per surface, in parallel. Findings triaged
+     **blocker / major / minor** into the ticket's `review` field — `"none found"` is a valid
+     finding, an unrun review is not. Blockers stop the close.
+   - **Agentic QA (the execution pass):** EVERY acceptance criterion EXECUTED (not read); EVERY item
+     in `qa_checks` (owner-authored, plain language) EXECUTED with a per-item PASS/FAIL + what was
+     observed, recorded in `qa_results`; the repo's FULL self-test suite run (not just the touched
+     module); UI changes driven in a real browser incl. at least one negative/edge probe per surface
+     (bad input, empty state, engine offline); renders REVIEWED, not just non-erroring.
+   A surviving finding becomes a fix (same ticket) or a new ticket — never a silent pass. Evidence
+   is observed output, never intention.
 
 ## The Handbook (docs-as-code)
 

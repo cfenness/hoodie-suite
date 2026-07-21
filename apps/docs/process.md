@@ -30,16 +30,28 @@ detail in chat (record that as the confirmation), typo-level fixes.
 
 ## Agentic review & QA (the quality gates: in-review → done)
 
-1. **Agentic review** — an adversarial pass over the diff by a FRESH context (not the author's):
-   the `/code-review` skill or a spawned reviewer agent, hunting correctness bugs, first-law
-   violations, silent data loss, law drift. Findings land in the ticket's `review` field —
-   "none found" is a valid finding; an unrun review is not.
-2. **Agentic QA** — verification executed, not asserted: engine changes run self-tests + end-to-end
-   smoke; UI changes are driven in a real browser (playwright) and the rendered result is REVIEWED
-   (screenshots read, not just non-erroring). Evidence goes in `verification` as observed outputs.
+Run as **parallel fresh-context agents** at professional-QA-team throughput — the per-ticket
+workload is DEFINED, not discretionary:
 
-A surviving finding becomes a fix on the same ticket or a new ticket — never a silent pass. The
-session that wrote the code may run the gates only via fresh-context agents.
+1. **Agentic review** — every changed hunk read adversarially (correctness, first-law violations,
+   silent data loss, law drift, injection/escaping, failure paths); every owner-authored
+   `review_notes` item explicitly addressed; engine+UI diffs get one reviewer per surface in
+   parallel. Findings triaged **blocker/major/minor** into the ticket's `review` field. Blockers
+   stop the close. "None found" is a valid finding; an unrun review is not.
+2. **Agentic QA** — every acceptance criterion EXECUTED; every owner-authored `qa_checks` item
+   EXECUTED with per-item PASS/FAIL + observations in `qa_results`; the FULL self-test suite run;
+   UI driven in a real browser with at least one negative/edge probe per surface; renders REVIEWED.
+
+The owner writes `qa_checks` and `review_notes` in plain English on any ticket (inline, in the
+board's editor) — the agents are REQUIRED to execute each item. A surviving finding becomes a fix
+or a new ticket — never a silent pass.
+
+## Editing tickets inline
+
+The ticket STRUCTURE is `apps/tickets.schema.json` — add/remove/reorder sections there and every
+ticket drawer follows, no code change. With the engine up, the board's drawer has an **edit** mode:
+change any section, add/remove items, save → writes `apps/tickets.json` on disk (commit the file
+for durability; the board reminds you).
 
 ## Docs-as-code
 

@@ -2,7 +2,7 @@
   "meta": {
     "project": "Hoodie Suite",
     "prefix": "HS",
-    "next_id": 24,
+    "next_id": 25,
     "statuses": [
       "proposed",
       "backlog",
@@ -758,7 +758,7 @@
       "size": "S",
       "priority": "P2",
       "created": "2026-07-08",
-      "updated": "2026-07-08",
+      "updated": "2026-07-21",
       "branch": "",
       "commits": [],
       "summary": "The suite's Tickets board learns to aggregate all four repos' tickets.json into one view: a repo filter chip row (Suite · Backend · App · Canon), repo-prefixed cards, one place to see the whole estate's pipeline. Suite tickets load same-origin as today; the other repos' files are fetched from GitHub raw URLs when reachable (graceful 'repo not reachable' chip when not — e.g. private raw without auth), so the board degrades honestly rather than breaking.",
@@ -775,6 +775,51 @@
       "files": [
         "apps/tickets.html",
         "unifyd/server.py (only if the proxy option is chosen)"
+      ]
+    },
+    {
+      "id": "HS-024",
+      "title": "Editable inline tickets (schema-defined) + plain-language QA/review + FAANG-throughput gates",
+      "type": "feat",
+      "status": "in-progress",
+      "size": "M",
+      "priority": "P1",
+      "created": "2026-07-08",
+      "updated": "2026-07-08",
+      "branch": "claude/world-class-mdm-strategy-7bpom6",
+      "commits": [],
+      "summary": "The ticket becomes an owner-editable structure: apps/tickets.schema.json defines the sections (add/remove/reorder there → every ticket drawer follows, no code change); the board drawer gains an inline EDIT mode (engine up → edit any section, add/remove items, save → POST /api/tickets/save writes apps/tickets.json on disk). Two new owner-authored plain-language sections — qa_checks and review_notes — that the gate agents are REQUIRED to execute item-by-item, reporting per-item PASS/FAIL into qa_results. The gate rule is upgraded to a DEFINED minimum workload run by parallel fresh-context agents (every hunk reviewed, every criterion + every qa_check executed, full self-test suite, negative probes).",
+      "context": "Owner's spec in chat (recorded as the propose→confirm confirmation per the rule's exception): 'inline html ticket structure… define the structure in the repo that I can go in and add/remove details in the ticket itself… space for plain-language qa/review things to check… qa/review agents with the work throughput of a FAANG qa team.' Durability note: on a deployed box, saves persist until redeploy — committing tickets.json is the durable save (the UI says so after every save).",
+      "acceptance": [
+        "Editing the schema file alone (add/remove/reorder a section) changes every ticket's drawer with zero board-code changes",
+        "With the engine up: edit → change fields/sections → save → tickets.json on disk reflects the change and the drawer re-renders it; emptied sections are removed from the ticket",
+        "Engine down: board says read-only, edit is hidden, everything else works",
+        "Server accepts only schema-declared fields, rejects unknown ticket ids and unknown statuses, stamps updated server-side",
+        "qa_checks / review_notes render with an 'agents execute each' badge and are editable inline",
+        "CLAUDE.md gate 6 + Handbook process page define the parallel-agent minimum workload"
+      ],
+      "qa_checks": [
+        "Open HS-023 in the board, hit edit, add an acceptance line, save, reload the page — the line survives",
+        "Stop the engine and reload the board — it must say read-only and hide the edit button, with the board still browsable",
+        "Edit a field to contain an apostrophe and a <b> tag — after save it must render as literal text, not markup",
+        "curl the save endpoint with an unknown ticket id and with a junk status — both must be rejected with ok:false",
+        "Empty out a section's items in edit mode and save — the section disappears from the drawer view (not an empty header)"
+      ],
+      "review_notes": [
+        "Does /api/tickets/save restrict writes to schema-declared fields — no arbitrary key injection into tickets.json?",
+        "Can a failed save corrupt tickets.json (partial write)? What happens on concurrent saves?",
+        "XSS: is every edited value esc()'d at every render site (view mode, edit inputs, chips)?",
+        "Does the endpoint sit behind the same auth gate as the rest of /api/* on the deployed box?"
+      ],
+      "verification_plan": [
+        "Playwright: full edit round-trip on the live board; negative probes (engine down, junk status via curl); parallel review+QA agents run as the first live execution of the upgraded gate, findings recorded in review/qa_results"
+      ],
+      "files": [
+        "apps/tickets.schema.json",
+        "apps/tickets.html",
+        "unifyd/server.py",
+        "CLAUDE.md",
+        "apps/docs/process.md"
       ]
     }
   ]
