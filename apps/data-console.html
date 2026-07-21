@@ -57,6 +57,11 @@
   tbody tr:hover td{background:color-mix(in srgb,var(--accent) 9%,var(--panel))}
   tbody td.name{font-family:var(--mono);color:var(--ink);max-width:260px;overflow:hidden;text-overflow:ellipsis}
   .stat-pill{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+  /* bucket header rows — group sources by type / datasets by source */
+  tr.bucket td{background:var(--panel2)!important;color:var(--ink);font-family:var(--sans);font-size:10.5px;
+       text-transform:uppercase;letter-spacing:.7px;font-weight:700;padding:6px 11px;border-top:1px solid var(--line)}
+  tr.bucket td .grp{font-weight:600;letter-spacing:.4px;margin-left:8px}
+  tr.bucket.link{cursor:pointer}tr.bucket.link:hover td{color:var(--accent)}
   .grp{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
   .dpos{color:var(--good)}.dneg{color:var(--bad)}.dzero{color:var(--mut)}
   .warnpill{color:var(--warn);font-size:11px}
@@ -234,13 +239,20 @@ function renderOverview(){
   const invCell=s=>{ if(!s.obs_rows)return '<span class="grp">—</span>';
     const fresh=s.obs_latest>=new Date(Date.now()-3*86400e3).toISOString().slice(0,10);
     return `${fmtBig(s.obs_rows)} <span class="grp" style="${fresh?'':'color:var(--warn)'}">${s.obs_latest||''}</span>`; };
-  const rows=R.map(s=>`<tr onclick="openSource('${s.key}')">
-     <td class="name">${esc(s.label)}</td><td class="grp">${s.kind}</td><td>${stampPill(s.status)}</td>
+  const srcRow=s=>`<tr onclick="openSource('${s.key}')">
+     <td class="name">${esc(s.label)}</td><td>${stampPill(s.status)}</td>
      <td>${sloPill(s)}</td>
      <td class="num">${fmt(s.rows)}</td><td class="num">${s.dataset_count}</td>
      <td class="num" title="per-store inventory observations · latest day landed">${invCell(s)}</td>
      <td class="num">${age(s.modified?(Date.now()/1000-s.modified):null)}</td>
-     <td>${runCell(s)}</td></tr>`).join('');
+     <td>${runCell(s)}</td></tr>`;
+  // bucket the roster by TYPE (kind) — all retail chains together, all control states together, etc.
+  const kinds={};
+  R.forEach(s=>{ (kinds[s.kind]=kinds[s.kind]||[]).push(s); });
+  const rows=Object.entries(kinds)
+    .sort((a,b)=>b[1].reduce((x,s)=>x+(s.rows||0)+(s.obs_rows||0),0)-a[1].reduce((x,s)=>x+(s.rows||0)+(s.obs_rows||0),0))
+    .map(([k,list])=>`<tr class="bucket"><td colspan="8">${esc(k)}<span class="grp">${list.length} source${list.length>1?'s':''} · ${fmt(list.reduce((x,s)=>x+(s.rows||0),0))} rows${list.some(s=>s.obs_rows)?' · '+fmtBig(list.reduce((x,s)=>x+(s.obs_rows||0),0))+' inventory obs':''}</span></td></tr>`
+      + list.map(srcRow).join('')).join('');
   const conns=(M.connectors||[]).map(c=>`<tr onclick="openDetailConn('${c.conn}')"><td class="name">${c.conn}</td><td>${stampPill(c.status)}</td>
      <td class="num">${c.datasets}</td><td class="num">${fmt(c.rows)}</td><td class="num">${c.warnings?`<span class="warnpill">${c.warnings}⚠</span>`:''}</td>
      <td>${ago(c.run_ts)}</td></tr>`).join('');
@@ -250,9 +262,9 @@ function renderOverview(){
     <div class="cards">${cards}</div>
     <div class="sec">Dispatcher — the near-real-time loop</div><div class="health">${disp}</div>
     <div class="sec">Pull health — is data coming in?</div><div class="health">${health}</div>
-    <div class="sec">Sources <span class="grp">(every source we pull — click to drill into its datasets &amp; accounts with inventory)</span></div>
-    <table><thead><tr><th>source</th><th>type</th><th>status</th><th>slo</th><th class="num">rows</th><th class="num">datasets</th><th class="num">inventory · latest</th><th class="num">fresh</th><th>last run</th></tr></thead>
-      <tbody>${rows||'<tr><td class="msg" colspan=9>no sources</td></tr>'}</tbody></table>
+    <div class="sec">Sources <span class="grp">(every source we pull, bucketed by type — click to drill into its datasets &amp; accounts with inventory)</span></div>
+    <table><thead><tr><th>source</th><th>status</th><th>slo</th><th class="num">rows</th><th class="num">datasets</th><th class="num">inventory · latest</th><th class="num">fresh</th><th>last run</th></tr></thead>
+      <tbody>${rows||'<tr><td class="msg" colspan=8>no sources</td></tr>'}</tbody></table>
     <div class="sec">Connector run log <span class="grp">(authoritative pull-health for run-logged connectors)</span></div>
     <table><thead><tr><th>connector</th><th>status</th><th class="num">datasets</th><th class="num">rows</th><th class="num">warn</th><th>last run</th></tr></thead><tbody>${conns||'<tr><td class="msg" colspan=6>none</td></tr>'}</tbody></table>
     <div class="sec">By layer</div>
@@ -309,16 +321,33 @@ function renderTable(id,filter){
   S.sort((a,b)=>{ let x=a[sortKey],y=b[sortKey]; x=x==null?-Infinity:x; y=y==null?-Infinity:y;
     if(typeof x==='string')return sortDir*x.localeCompare(y); return sortDir*(x-y); });
   const head=COLS.map(([k,l,n])=>`<th class="${n||''}" onclick="setSort('${k}')">${l}${sortKey===k?(sortDir<0?' ↓':' ↑'):''}</th>`).join('');
-  const rows=S.map(s=>`<tr onclick="openDetail('${s.name}')" data-src="${esc(s.source_label||'')}">
-    <td class="name">${s.name}${s.source_label?` <span class="grp">· ${esc(s.source_label)}</span>`:''}${s.warnings&&s.warnings.length?` <span class="warnpill">${s.warnings.length}⚠</span>`:''}</td>
+  const row=s=>`<tr onclick="openDetail('${s.name}')" data-grp="${esc(s.source_label||s.group)}">
+    <td class="name">${s.name}${s.warnings&&s.warnings.length?` <span class="warnpill">${s.warnings.length}⚠</span>`:''}</td>
     <td class="grp">${s.group}</td><td class="num">${fmt(s.rows)}</td><td class="num">${delta(s.delta)}</td>
-    <td>${stampPill(s.status)}</td><td class="num">${age(s.age_s)}</td><td class="num">${s.fields}</td></tr>`).join('');
-  $('#'+id).innerHTML=`<div class="filterbar"><input id="f-${id}" placeholder="filter ${S.length} sources…" oninput="filterRows('${id}')">
+    <td>${stampPill(s.status)}</td><td class="num">${age(s.age_s)}</td><td class="num">${s.fields}</td></tr>`;
+  // bucket the datasets by SOURCE (all ttb_* pulls together, all fl_* together…), freshest bucket first;
+  // within a bucket the chosen column sort applies. The bucket header opens the source drawer.
+  const buckets={};
+  S.forEach(s=>{ const k=s.source_label||s.group; (buckets[k]=buckets[k]||{key:s.source||'',list:[]}).list.push(s); });
+  const rows=Object.entries(buckets)
+    .sort((a,b)=>Math.max(...b[1].list.map(s=>s.modified||0))-Math.max(...a[1].list.map(s=>s.modified||0)))
+    .map(([label,b])=>`<tr class="bucket${b.key?' link':''}" data-grp="${esc(label)}" ${b.key?`onclick="openSource('${b.key}')"`:''}>
+       <td colspan="7">${esc(label)}<span class="grp">${b.list.length} dataset${b.list.length>1?'s':''} · ${fmt(b.list.reduce((x,s)=>x+s.rows,0))} rows${b.key?' · open ↗':''}</span></td></tr>`
+      + b.list.map(row).join('')).join('');
+  const prevQ=($('#f-'+id)||{}).value||'';                 // keep an active filter across the 30s poll re-render
+  $('#'+id).innerHTML=`<div class="filterbar"><input id="f-${id}" placeholder="filter ${S.length} sources…" value="${esc(prevQ)}" oninput="filterRows('${id}')">
      <span class="asof">${S.length} sources · ${fmt(S.reduce((a,s)=>a+s.rows,0))} rows</span></div>
      <table><thead><tr>${head}</tr></thead><tbody>${rows||'<tr><td class="msg" colspan=7>none</td></tr>'}</tbody></table>`;
+  if(prevQ)filterRows(id);
 }
 function filterRows(id){ const q=($('#f-'+id).value||'').toLowerCase();
-  document.querySelectorAll('#'+id+' tbody tr').forEach(tr=>{ tr.style.display=tr.textContent.toLowerCase().includes(q)?'':'none'; }); }
+  document.querySelectorAll('#'+id+' tbody tr:not(.bucket)').forEach(tr=>{
+    tr.style.display=(tr.textContent+' '+(tr.dataset.grp||'')).toLowerCase().includes(q)?'':'none'; });
+  document.querySelectorAll('#'+id+' tbody tr.bucket').forEach(h=>{           // hide a bucket header when empty
+    const any=[...document.querySelectorAll('#'+id+' tbody tr:not(.bucket)')]
+      .some(tr=>tr.dataset.grp===h.dataset.grp&&tr.style.display!=='none');
+    h.style.display=any?'':'none'; });
+}
 function setSort(k){ if(sortKey===k)sortDir*=-1; else{sortKey=k;sortDir=(k==='name'||k==='group')?1:-1;} render(); }
 
 function renderErrors(){
