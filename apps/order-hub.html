@@ -45,7 +45,7 @@
   .file .meta{font-size:11px;color:var(--faint);font-family:var(--mono)}
   .file .badge{font-size:11px;font-weight:650;border-radius:999px;padding:3px 9px;border:1px solid transparent}
   .badge.g{background:var(--good-soft);color:var(--good);border-color:var(--good)} .badge.w{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
-  .maprow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:11px}
+  .maprow{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:11px}
   .maprow label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:600;margin-bottom:3px}
   .maprow select{width:100%;font:inherit;font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink)}
   .rm{margin-left:auto;border:none;background:none;color:var(--faint);cursor:pointer;font-size:16px}
@@ -62,6 +62,11 @@
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   .qty{width:64px;font:inherit;font-size:12.5px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;text-align:right;background:var(--paper);color:var(--ink)}
   .qty.set{border-color:var(--accent);background:var(--accent-soft);font-weight:700}
+  .pcell{display:flex;align-items:center;gap:9px}
+  .pthumb{width:34px;height:34px;flex:0 0 34px;border-radius:6px;object-fit:contain;background:#fff;border:1px solid var(--line);cursor:zoom-in}
+  .pthumb:hover{transform:scale(2.6);transition:transform .12s;position:relative;z-index:5;box-shadow:var(--shadow)}
+  .pthumb.ph{display:inline-block}
+  .badge.i{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
   tr.ordered td{background:var(--accent-soft)}
   /* summary bar */
   .summary{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -4px 16px #1a243014;padding:11px 20px;display:flex;align-items:center;gap:18px;z-index:20}
@@ -117,12 +122,12 @@
   <!-- STEP 3 -->
   <div class="panel" id="panel-send">
     <div class="card"><div style="font-weight:700;font-size:14px;margin-bottom:3px">Refill &amp; stage to send</div>
-      <div style="font-size:12.5px;color:var(--muted)">Each supplier's original file is refilled with your order quantities (an <b>ORDER QTY</b> column) and staged. Download to send it back — one filled order per supplier.</div></div>
+      <div style="font-size:12.5px;color:var(--muted)">Each supplier's original file is refilled with your order quantities — dropped into the file's own units column when it has one (so its own totals compute), else an appended <b>ORDER QTY</b> column — and staged. Download to send it back — one filled order per supplier.</div></div>
     <div id="send"></div>
     <div id="send-actions" style="margin-top:6px"></div>
   </div>
 
-  <div style="margin-top:24px;text-align:center;font-size:11px;color:var(--faint)">v1 · parsing is real (Hoodie engine); ordering + refill run in your browser. Refilled orders download as CSV (original columns + ORDER QTY).</div>
+  <div style="margin-top:24px;text-align:center;font-size:11px;color:var(--faint)">v1 · parsing is real (Hoodie engine); xlsx menus refill in their original formatting (+ ORDER QTY column), CSV menus as CSV. Known brands auto-attach product photography from the brand's public asset portal.</div>
 </div>
 
 <div class="summary" id="summary" style="display:none">
@@ -136,26 +141,43 @@
 </div>
 
 <script>
-var FILES = [];          // {filename, header, rows, map:{product,price,pack,avail}, products:[{ri,name,price,pack,avail}]}
+var FILES = [];          // {uid, filename, header, rows, map:{product,price,pack,avail,land}, products:[{ri,name,price,pack,avail}]}
+var UIDC = 0;            // per-file uid — ORDER keys + async callbacks bind to it, so removing a file never shifts another's orders
 var ORDER = {};          // "fileIdx|ri" -> qty
 var STEP = "ingest";
 
 /* ---- column auto-mapping ---- */
 function guessMap(header, profile){
   var H = header.map(function(h){return (h||"").toLowerCase();});
-  function find(res, numeric){
-    for(var i=0;i<H.length;i++){ for(var k=0;k<res.length;k++){ if(H[i].indexOf(res[k])>=0){
-      if(numeric){ var p=(profile.columns||[])[i]; if(p && p.type!=="number" && p.type!=="int" && p.type!=="float") continue; }
-      return header[i]; } } }
+  var AVAIL_MARKS = ["avail","on hand","on-hand","qoh","stock","inventory","in stock"];
+  function find(res, opts){   // PATTERN-major: an earlier (more specific) pattern beats an earlier column
+    opts = opts || {};
+    for(var k=0;k<res.length;k++){ for(var i=0;i<H.length;i++){
+      if(H[i].indexOf(res[k])<0) continue;
+      if(opts.numeric){ var p=(profile.columns||[])[i]; if(p && p.type!=="number" && p.type!=="int" && p.type!=="float") continue; }
+      if(opts.excludeMarks && opts.excludeMarks.some(function(m){return H[i].indexOf(m)>=0;})) continue;
+      return header[i];
+    } }
     return "";
   }
   var product = find(["product name","product","item name","item","description","sku name","strain","name"]) || header[0];
-  var price = find(["base $","price","msrp","cost","unit price","wholesale","case price","$"], true);
+  var price = find(["base $","price","msrp","cost","unit price","wholesale","case price","$"], {numeric:true});
   var pack = find(["pack","size","bin size","case","uom","unit size","count","bottle"]);
-  var avail = find(["total units","units","available","on hand","qoh","stock","inventory","quantity available"], true);
-  return {product:product, price:price, pack:pack, avail:avail};
+  // availability = on-hand style markers — NEVER the order write target
+  var avail = find(AVAIL_MARKS, {numeric:true});
+  // where the order lands: the file's own order-entry column (e.g. Curaleaf "Total Units", which its
+  // Base Total $ formula multiplies). Specific order-entry names first; bare units/qty tokens only for
+  // headers with NO availability marker — a stock column ("Qty Available", "Units On Hand") must never
+  // become the write target. "" = no such column → append ORDER QTY on refill.
+  var land = find(["number of units","total units","order qty","order quantity","qty to order","units to order","order units"], {excludeMarks:AVAIL_MARKS})
+          || find(["units","qty","quantity"], {excludeMarks:AVAIL_MARKS});
+  if (land && land === avail) land = "";   // paranoia: on any residual collision, availability wins
+  // land is stored as a parsed-column INDEX string — bare names alias under duplicate headers,
+  // and the landing column is a WRITE target, so it must address one exact column
+  return {product:product, price:price, pack:pack, avail:avail, land: land ? String(header.indexOf(land)) : ""};
 }
 function colIdx(header,name){ return name?header.indexOf(name):-1; }
+function landIdx(f){ var v=f.map.land; return (v===""||v==null)?-1:+v; }  // land is stored as a parsed-col index
 function num(v){ var n=parseFloat(String(v==null?"":v).replace(/[,$]/g,"")); return isNaN(n)?null:n; }
 
 function buildProducts(f){
@@ -174,19 +196,38 @@ function buildProducts(f){
   });
 }
 
+/* ---- brand product photography (public Lingo DAM portals) ---- */
+// Client-side detect: which known brand kit an inbound menu belongs to (by filename + product vocabulary).
+var BRANDS=[{id:"curaleaf-ny",label:"Curaleaf NY",
+  test:function(f){var hay=(f.filename+" "+f.products.slice(0,40).map(function(p){return p.name;}).join(" ")).toLowerCase();
+    return /curaleaf|ocm-xrod/.test(hay) || (/whole flower|20 to 1|20to1|slim pen/.test(hay) && /curaleaf|cannabis|thc/.test(hay));}}];
+function detectBrand(f){for(var i=0;i<BRANDS.length;i++){try{if(BRANDS[i].test(f))return BRANDS[i].id;}catch(e){}}return null;}
+function attachImages(f){
+  var brand=detectBrand(f); if(!brand||!f.products.length||f.imaging) return;
+  f.imaging=true;
+  fetch("/api/lingo-images",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({brand:brand,products:f.products.map(function(p){return {name:p.name};})})})
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(j){ f.imaging=false; if(!j||!j.matches){f.imaged=false; renderFiles(); return;}
+      j.matches.forEach(function(m,i){ if(f.products[i]&&m.matched){f.products[i].img=m.full;f.products[i].thumb=m.thumb||m.img;} });
+      f.imaged=true; f.imgCount=j.matched; f.imgBrand=(BRANDS.filter(function(b){return b.id===brand;})[0]||{}).label;
+      renderFiles(); if(STEP==="store")renderStore(); })
+    .catch(function(){ f.imaging=false; renderFiles(); });
+}
+
 /* ---- ingest ---- */
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c];});}
 function ingest(fileList){
   Array.prototype.forEach.call(fileList, function(file){
-    var idx = FILES.length;
-    FILES.push({filename:file.name, file:file, header:[], rows:[], row_src:[], header_row:0, map:{}, products:[], loading:true, error:null});
+    var f = {uid:++UIDC, filename:file.name, file:file, header:[], rows:[], row_src:[], col_src:[], header_row:0, map:{}, products:[], loading:true, error:null};
+    FILES.push(f);       // callbacks close over the object itself — index shifts from removals can't misroute them
     renderFiles();
     var fd=new FormData(); fd.append("file",file);
     fetch("/api/parse-upload",{method:"POST",body:fd})
       .then(function(r){return r.json().catch(function(){return{};}).then(function(j){ if(!r.ok) throw ((j&&(j.detail||j.error))||("HTTP "+r.status)); return j; });})
-      .then(function(j){ var f=FILES[idx]; f.header=j.header||[]; f.rows=j.rows||[]; f.row_src=j.row_src||[]; f.header_row=j.header_row||0; f.loading=false;
-        f.map=guessMap(f.header, j.profile||{}); buildProducts(f); renderFiles(); refreshCounts(); })
-      .catch(function(e){ var f=FILES[idx]; f.loading=false; f.error=String(e); renderFiles(); });
+      .then(function(j){ f.header=j.header||[]; f.rows=j.rows||[]; f.row_src=j.row_src||[]; f.col_src=j.col_src||[]; f.header_row=j.header_row||0; f.loading=false;
+        f.map=guessMap(f.header, j.profile||{}); buildProducts(f); renderFiles(); refreshCounts(); attachImages(f); })
+      .catch(function(e){ f.loading=false; f.error=String(e); renderFiles(); });
   });
 }
 function renderFiles(){
@@ -196,8 +237,11 @@ function renderFiles(){
     if(f.loading) return '<div class="file"><div class="fh"><span class="fn">'+esc(f.filename)+'</span><span class="meta">parsing…</span></div></div>';
     if(f.error) return '<div class="file"><div class="fh"><span class="fn">'+esc(f.filename)+'</span><span class="badge w">could not parse</span><span class="meta">'+esc(f.error)+'</span><button class="rm" data-rm="'+i+'">✕</button></div></div>';
     var opts=function(sel){return '<option value="">— none —</option>'+f.header.map(function(h){return '<option'+(h===sel?' selected':'')+'>'+esc(h)+'</option>';}).join('');};
+    var imgBadge = f.imaging ? '<span class="badge i">matching images…</span>'
+      : (f.imaged && f.imgCount ? '<span class="badge i">🖼 '+f.imgCount+' images · '+esc(f.imgBrand||"")+'</span>' : '');
+    var landOpts='<option value="">— append new column —</option>'+f.header.map(function(h,ci){return '<option value="'+ci+'"'+(String(ci)===f.map.land?' selected':'')+'>'+esc(h)+'</option>';}).join('');
     return '<div class="file"><div class="fh"><span class="fn">'+esc(f.filename)+'</span>'
-      +'<span class="badge g">'+f.products.length+' products</span>'
+      +'<span class="badge g">'+f.products.length+' products</span>'+imgBadge
       +'<span class="meta">'+f.rows.length+' rows · '+f.header.length+' cols'+(f.header_row?'':'')+'</span>'
       +'<button class="rm" data-rm="'+i+'">✕</button></div>'
       +'<div class="maprow">'
@@ -205,10 +249,14 @@ function renderFiles(){
       +'<div><label>Price</label><select data-map="price" data-f="'+i+'">'+opts(f.map.price)+'</select></div>'
       +'<div><label>Pack / size</label><select data-map="pack" data-f="'+i+'">'+opts(f.map.pack)+'</select></div>'
       +'<div><label>Available</label><select data-map="avail" data-f="'+i+'">'+opts(f.map.avail)+'</select></div>'
+      +'<div><label>Order lands in</label><select data-map="land" data-f="'+i+'">'+landOpts+'</select></div>'
       +'</div></div>';
   }).join("");
-  box.querySelectorAll("[data-rm]").forEach(function(b){b.onclick=function(){FILES.splice(+b.dataset.rm,1);renderFiles();refreshCounts();};});
-  box.querySelectorAll("select[data-map]").forEach(function(s){s.onchange=function(){var f=FILES[+s.dataset.f];f.map[s.dataset.map]=s.value;buildProducts(f);renderFiles();refreshCounts();};});
+  box.querySelectorAll("[data-rm]").forEach(function(b){b.onclick=function(){
+    var f=FILES[+b.dataset.rm]; FILES.splice(+b.dataset.rm,1);
+    if(f) Object.keys(ORDER).forEach(function(k){ if(+k.split("|")[0]===f.uid) delete ORDER[k]; });  // its orders go with it
+    renderFiles();refreshCounts();};});
+  box.querySelectorAll("select[data-map]").forEach(function(s){s.onchange=function(){var f=FILES[+s.dataset.f];f.map[s.dataset.map]=s.value;f.imaged=false;buildProducts(f);renderFiles();refreshCounts();attachImages(f);};});
   document.getElementById("ingest-actions").style.display = FILES.some(function(f){return f.products.length;}) ? "block":"none";
 }
 
@@ -221,10 +269,13 @@ function renderStore(){
   box.innerHTML = FILES.map(function(f,fi){
     var prods=f.products.filter(function(p){return !q || p.name.toLowerCase().indexOf(q)>=0;});
     if(!prods.length) return "";
-    var stot=0; prods.forEach(function(p){var v=ORDER[fi+"|"+p.ri]; if(v) stot+=v*(p.price||0);});
+    var stot=0; prods.forEach(function(p){var v=ORDER[f.uid+"|"+p.ri]; if(v) stot+=v*(p.price||0);});
     var rows=prods.map(function(p){
-      var key=fi+"|"+p.ri, v=ORDER[key]||"";
-      return '<tr class="'+(v?'ordered':'')+'"><td>'+esc(p.name)+'</td><td>'+esc(p.pack)+'</td>'
+      var key=f.uid+"|"+p.ri, v=ORDER[key]||"";
+      var thumb = p.thumb ? '<img class="pthumb" src="'+esc(p.thumb)+'" loading="lazy" alt="" onerror="this.style.visibility=\'hidden\'">'
+                          : (f.imaged ? '<span class="pthumb ph"></span>' : '');
+      var pcell = thumb ? '<div class="pcell">'+thumb+'<span>'+esc(p.name)+'</span></div>' : esc(p.name);
+      return '<tr class="'+(v?'ordered':'')+'"><td>'+pcell+'</td><td>'+esc(p.pack)+'</td>'
         +'<td class="num">'+(p.price!=null?"$"+p.price.toFixed(2):"—")+'</td>'
         +'<td class="num">'+(p.avail!=null?p.avail:"—")+'</td>'
         +'<td class="num"><input class="qty'+(v?' set':'')+'" type="number" min="0" step="1" value="'+v+'" data-key="'+key+'"></td></tr>';
@@ -241,9 +292,9 @@ function renderStore(){
 /* ---- summary + send ---- */
 function orderStats(){
   var lines=0,units=0,cost=0,sups={};
-  Object.keys(ORDER).forEach(function(k){ var q=ORDER[k]; if(!q)return; var fi=+k.split("|")[0], ri=+k.split("|")[1];
-    var f=FILES[fi]; var p=f&&f.products.filter(function(x){return x.ri===ri;})[0]; if(!p)return;
-    lines++; units+=q; cost+=q*(p.price||0); sups[fi]=1; });
+  Object.keys(ORDER).forEach(function(k){ var q=ORDER[k]; if(!q)return; var uid=+k.split("|")[0], ri=+k.split("|")[1];
+    var f=FILES.filter(function(x){return x.uid===uid;})[0]; var p=f&&f.products.filter(function(x){return x.ri===ri;})[0]; if(!p)return;
+    lines++; units+=q; cost+=q*(p.price||0); sups[FILES.indexOf(f)]=1; });  // consumers read s.sups as FILES indices
   return {lines:lines,units:units,cost:cost,sups:Object.keys(sups)};
 }
 function refreshSummary(){
@@ -268,7 +319,7 @@ function renderSend(){
   if(!s.lines){ box.innerHTML='<div class="empty">No order yet — set quantities in the store (step 2).</div>'; document.getElementById("send-actions").innerHTML=""; return; }
   box.innerHTML = s.sups.map(function(fi){ fi=+fi; var f=FILES[fi];
     var lines=0,units=0,cost=0;
-    f.products.forEach(function(p){var q=ORDER[fi+"|"+p.ri]; if(q){lines++;units+=q;cost+=q*(p.price||0);}});
+    f.products.forEach(function(p){var q=ORDER[f.uid+"|"+p.ri]; if(q){lines++;units+=q;cost+=q*(p.price||0);}});
     return '<div class="sendcard"><div><div class="snm">'+esc(f.filename)+'</div>'
       +'<div class="sd">'+lines+' items · '+units.toLocaleString()+' units · est. $'+Math.round(cost).toLocaleString()+'</div></div>'
       +'<div class="status"><button class="btn ghost" data-dl="'+fi+'">↓ Download filled order</button></div></div>';
@@ -285,8 +336,15 @@ function exportSupplier(fi){
   // XLSX source → refill the ORIGINAL file WITH ITS FORMATTING (server-side openpyxl), quantities written in.
   if(/\.(xlsx|xlsm)$/i.test(f.filename||"") && f.file){
     var orders={};
-    Object.keys(ORDER).forEach(function(k){ var p=k.split("|"); if(+p[0]!==fi) return; var src=(f.row_src||[])[+p[1]]; if(src!=null) orders[src]=ORDER[k]; });
+    Object.keys(ORDER).forEach(function(k){ var p=k.split("|"); if(+p[0]!==f.uid) return; var src=(f.row_src||[])[+p[1]]; if(src!=null) orders[src]=ORDER[k]; });
     var fd=new FormData(); fd.append("file",f.file); fd.append("orders",JSON.stringify(orders)); fd.append("header_row",String(f.header_row||0));
+    // land quantities in the file's own units column (its formulas compute off it) when one is selected.
+    // f.map.land is a parsed-column INDEX (string) — names alias under duplicate headers.
+    var li=landIdx(f);
+    if(li>=0 && (f.col_src||[])[li]!=null){
+      fd.append("qty_col", String(f.col_src[li]));
+      fd.append("rows", JSON.stringify(f.row_src||[]));   // clearing scope for the phantom-order guard
+    }
     fetch("/api/refill-xlsx",{method:"POST",body:fd})
       .then(function(r){ if(!r.ok) return r.text().then(function(t){ throw t; }); return r.blob(); })
       .then(function(blob){ dl(blob, base+".xlsx"); })
@@ -297,8 +355,13 @@ function exportSupplier(fi){
 }
 function exportCsv(fi){
   var f=FILES[fi];
-  var lines=[f.header.concat(["ORDER QTY"]).map(csvCell).join(",")];
-  f.rows.forEach(function(r,ri){ var q=ORDER[fi+"|"+ri]||""; lines.push(r.concat([q]).map(csvCell).join(",")); });
+  var li=landIdx(f);                              // landing column: write qty in place instead of appending
+  var lines=[(li>=0?f.header:f.header.concat(["ORDER QTY"])).map(csvCell).join(",")];
+  f.rows.forEach(function(r,ri){ var q=ORDER[f.uid+"|"+ri]||"";
+    // landing mode overwrites the column on EVERY row — pre-filled par/prior-order values
+    // must not survive as phantom order lines the buyer never saw
+    if(li>=0){ var row=r.slice(); row[li]=q; lines.push(row.map(csvCell).join(",")); }
+    else lines.push(r.concat([q]).map(csvCell).join(",")); });
   dl(new Blob([lines.join("\r\n")],{type:"text/csv"}), f.filename.replace(/\.[^.]+$/,"")+" - ORDER.csv");
 }
 
