@@ -51,6 +51,28 @@ def remote():
     return bool(_endpoint() and _bucket())
 
 
+def _retry(fn, what="s3 write"):
+    """Run a remote write with bounded exponential backoff. Tigris multipart uploads occasionally
+    time out mid-part (curlCode 28 / AWS NETWORK_CONNECTION during UploadPart) — a transient
+    network blip, not a data problem — and that was surfacing as a whole failed pull (e.g.
+    offprem-census losing a 5000s crawl to one dropped part). Retrying the write is safe: every
+    warehouse write is a full-object PUT or a fresh part file, so a re-run overwrites cleanly and
+    is idempotent. Local-disk writes don't come through here. Env: WAREHOUSE_WRITE_RETRIES (default 4)."""
+    import time as _t
+    tries = max(1, int(os.environ.get("WAREHOUSE_WRITE_RETRIES", "4")))
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as e:
+            msg = str(e)
+            transient = any(s in msg for s in ("curlCode: 28", "NETWORK_CONNECTION", "Timeout was reached",
+                                               "timed out", "Connection reset", "SlowDown", "503",
+                                               "InternalError", "RequestTimeout"))
+            if i == tries - 1 or not transient:
+                raise
+            _t.sleep(min(2 ** i, 30))          # 1s, 2s, 4s, 8s … capped 30s
+
+
 def _local_path(name):
     os.makedirs(_LOCAL_DIR, exist_ok=True)
     return os.path.join(_LOCAL_DIR, name + ".parquet")
@@ -113,7 +135,8 @@ def write_parquet(name, records, fields=None, allow_empty=False):
         from pyarrow import fs as pafs
         s3 = pafs.S3FileSystem(endpoint_override=_endpoint(), access_key=_env("AWS_ACCESS_KEY_ID"),
                                secret_key=_env("AWS_SECRET_ACCESS_KEY"), region=_region(), scheme="https")
-        pq.write_table(table, "%s/%s" % (_bucket(), _s3_key(name)), filesystem=s3)
+        _retry(lambda: pq.write_table(table, "%s/%s" % (_bucket(), _s3_key(name)), filesystem=s3),
+               "write_parquet %s" % name)
     else:
         pq.write_table(table, _local_path(name))
     return {"rows": len(records), "uri": uri(name)}
@@ -156,8 +179,10 @@ def put_bytes(key, data):
     thumbnails (key like 'label_images/<ttbid>.jpg') so the suite can serve them — the original TTB
     URLs are F5-gated and won't load in a browser. Returns the storage key."""
     if remote():
-        with _s3fs().open_output_stream("%s/%s" % (_bucket(), key)) as f:
-            f.write(data)
+        def _put():
+            with _s3fs().open_output_stream("%s/%s" % (_bucket(), key)) as f:
+                f.write(data)
+        _retry(_put, "put_bytes %s" % key)
     else:
         p = os.path.join(_LOCAL_DIR, key)
         os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -189,7 +214,8 @@ def write_partition(name, part, records, fields=None):
     table = pa.Table.from_pylist(records) if records else pa.table({f: [] for f in (fields or ["_"])})
     rel = "%s/%s/%s.parquet" % (_prefix(), name, part)
     if remote():
-        pq.write_table(table, "%s/%s" % (_bucket(), rel), filesystem=_s3fs())
+        _retry(lambda: pq.write_table(table, "%s/%s" % (_bucket(), rel), filesystem=_s3fs()),
+               "write_partition %s/%s" % (name, part))
     else:
         p = os.path.join(_LOCAL_DIR, name, part + ".parquet")
         os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -288,7 +314,8 @@ def write_parquet_from_csv(name, csv_path, fields=None):
         from pyarrow import fs as pafs
         s3 = pafs.S3FileSystem(endpoint_override=_endpoint(), access_key=_env("AWS_ACCESS_KEY_ID"),
                                secret_key=_env("AWS_SECRET_ACCESS_KEY"), region=_region(), scheme="https")
-        pq.write_table(table, "%s/%s" % (_bucket(), _s3_key(name)), filesystem=s3)
+        _retry(lambda: pq.write_table(table, "%s/%s" % (_bucket(), _s3_key(name)), filesystem=s3),
+               "write_parquet_from_csv %s" % name)
     else:
         pq.write_table(table, _local_path(name))
     return {"rows": table.num_rows, "uri": uri(name)}
@@ -394,8 +421,10 @@ def read_manifest(name):
 def _write_manifest(name, man):
     data = json.dumps(man, separators=(",", ":")).encode("utf-8")
     if remote():
-        with _s3fs().open_output_stream("%s/%s/%s" % (_bucket(), _prefix(), _man_rel(name))) as f:
-            f.write(data)
+        def _put():
+            with _s3fs().open_output_stream("%s/%s/%s" % (_bucket(), _prefix(), _man_rel(name))) as f:
+                f.write(data)
+        _retry(_put, "manifest %s" % name)
     else:
         p = os.path.join(_LOCAL_DIR, _MAN_DIR, name + ".json")
         os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -452,7 +481,8 @@ def _part_sql_path(rel):
 def _part_write(rel, table):
     import pyarrow.parquet as pq
     if remote():
-        pq.write_table(table, "%s/%s/%s" % (_bucket(), _prefix(), rel), filesystem=_s3fs(), compression="zstd")
+        _retry(lambda: pq.write_table(table, "%s/%s/%s" % (_bucket(), _prefix(), rel),
+                                      filesystem=_s3fs(), compression="zstd"), "part_write %s" % rel)
     else:
         p = os.path.join(_LOCAL_DIR, rel)
         os.makedirs(os.path.dirname(p), exist_ok=True)

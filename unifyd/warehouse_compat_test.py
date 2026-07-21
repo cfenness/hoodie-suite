@@ -121,6 +121,36 @@ low = warehouse.query("cat_new", "SELECT price FROM t WHERE store = 'S1' "
                                  "AND CAST(substr(sku, 4) AS INT) < 10")
 ok("born-bucketed update applied", len(low) == 10 and all(r["price"] == "1.11" for r in low))
 
+# ── 10) _retry: transient S3 errors retried, permanent errors raised immediately ────────────────
+os.environ["WAREHOUSE_WRITE_RETRIES"] = "4"
+calls = {"n": 0}
+
+
+def flaky(n_fail, exc):
+    calls["n"] = 0
+
+    def fn():
+        calls["n"] += 1
+        if calls["n"] <= n_fail:
+            raise exc
+        return "ok"
+    return fn
+
+ok("retry: succeeds after transient blips",
+   warehouse._retry(flaky(2, OSError("AWS Error NETWORK_CONNECTION ... curlCode: 28"))) == "ok" and calls["n"] == 3)
+
+try:
+    warehouse._retry(flaky(9, OSError("curlCode: 28, Timeout was reached")))
+    ok("retry: gives up after the cap", False)
+except OSError:
+    ok("retry: gives up after the cap", calls["n"] == 4)
+
+try:
+    warehouse._retry(flaky(1, ValueError("AccessDenied: bad key")))
+    ok("retry: permanent error raised immediately", False)
+except ValueError:
+    ok("retry: permanent error raised immediately", calls["n"] == 1)
+
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
