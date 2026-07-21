@@ -1077,8 +1077,9 @@ def _query_timeout(name, sql, timeout_s):
     import warehouse
     with _MON_LOCK:
         try:
+            import monitor
             con = _mon_con()
-            src = warehouse.uri(name).replace("'", "")
+            src = monitor.read_expr(name)                 # partitioned-aware (glob for retail_observations etc.)
             timed = {"v": False}
 
             def kill():
@@ -1090,7 +1091,7 @@ def _query_timeout(name, sql, timeout_s):
             timer = threading.Timer(timeout_s, kill)
             timer.start()
             try:
-                con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet('%s')" % src)
+                con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM %s" % src)
                 cur = con.execute(sql)
                 cols = [d[0] for d in cur.description]
                 rows = [dict(zip(cols, row)) for row in cur.fetchall()]
@@ -1138,6 +1139,21 @@ def api_monitor_data():
             r["raw_json"] = "…"
     return jsonify({"name": name, "count": total, "columns": cols, "rows": rows, "order_by": None,
                     "note": "live sample (preview being precomputed in the background)"})
+
+
+@app.get("/api/monitor/source")
+def api_monitor_source():
+    """One SOURCE's drill-in: its datasets + its ACCOUNTS-WITH-INVENTORY (per-store skus / in-stock / units on
+    the source's latest observation day). Reads only that source's latest-date part files (filename-pruned),
+    cached until a new part lands — so the console can filter any scrape down to real accounts instantly."""
+    import monitor
+    key = request.args.get("key", "")
+    if not key:
+        return jsonify({"error": "key required"}), 400
+    try:
+        return jsonify(monitor.source_detail(key))
+    except Exception as e:
+        return jsonify({"key": key, "accounts": [], "note": "error: %s" % str(e)[:150]}), 200
 
 
 @app.get("/api/monitor/search")

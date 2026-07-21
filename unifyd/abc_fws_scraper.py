@@ -41,6 +41,15 @@ import polite
 # safe-scrape knobs (per-host rate/backoff/breaker live in polite; proxy = Tier-2 rotating residential IPs)
 ABC_MIN_INT = float(os.environ.get("ABC_MIN_INTERVAL", "0.6"))
 ABC_PROXY   = os.environ.get("ABC_PROXY", "0") == "1"
+# The direct crawl periodically hits a volume-triggered 403 wall (WAF) partway through the daily full sweep —
+# single probes still return 200, so it's rate-based, not a UA/robots block. When that happens mid-run we flip
+# to the BD proxy (rotating IPs) for the remainder instead of losing the day's inventory. Starts per ABC_PROXY.
+_PROXY = {"on": ABC_PROXY}
+
+
+def _proxy_available():
+    return bool((os.environ.get("BRIGHTDATA_PROXY_USER") or os.environ.get("BRD_PROXY_USER"))
+                and (os.environ.get("BRIGHTDATA_PROXY_PASS") or os.environ.get("BRD_PROXY_PASS")))
 
 BASE        = "https://abcfws.com"
 SITEMAP     = BASE + "/xmlsitemap.php?type=products&page={}"
@@ -64,10 +73,19 @@ AVAIL2_RE   = re.compile(r'available_variant_values"\s*:\s*\[([\d,]*)\]', re.I)
 
 # ---------------- fetch (via polite: rate-limit + backoff + circuit breaker + optional BD proxy) ----------
 def fetch(url, timeout=30):
-    body, h = polite.get(url, min_interval=ABC_MIN_INT, jitter=ABC_MIN_INT, timeout=timeout,
-                         headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                                  "Accept-Encoding": "identity"},
-                         breaker_after=4, use_proxy=ABC_PROXY, host="abcfws.com", return_headers=True)
+    def _get():
+        return polite.get(url, min_interval=ABC_MIN_INT, jitter=ABC_MIN_INT, timeout=timeout,
+                          headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                                   "Accept-Encoding": "identity"},
+                          breaker_after=4, use_proxy=_PROXY["on"], host="abcfws.com", return_headers=True)
+    try:
+        body, h = _get()
+    except polite.Blocked:
+        if _PROXY["on"] or not _proxy_available():
+            raise
+        _PROXY["on"] = True                      # 403 wall mid-run → finish through the BD proxy
+        polite.reset("abcfws.com")               # the trip was on the direct path; the proxy path is fresh
+        body, h = _get()
     return body.decode("utf-8", "replace"), {"etag": h.get("ETag", ""),
                                              "last_modified": h.get("Last-Modified", ""), "status": 200}
 
@@ -143,7 +161,7 @@ def graphql_stores(path, token, host):
             data=json.dumps({"query": GQL_Q % path}).encode(),
             headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
             min_interval=ABC_MIN_INT, jitter=ABC_MIN_INT, timeout=25, breaker_after=4,
-            use_proxy=ABC_PROXY, host="abcfws.com")
+            use_proxy=_PROXY["on"], host="abcfws.com")
         r = json.loads(body.decode("utf-8", "replace"))
         node = (((r.get("data") or {}).get("site") or {}).get("route") or {}).get("node") or {}
         price = None
@@ -283,7 +301,7 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
     # ABC feeds retail_observations like the other Counts sources — the whole point of a daily pull.
     try:
         import observe
-        observe.record("abc-fws", [dict(source="abc-fws", store_id=str(v["store"]), store="ABC #%s" % v["store"],
+        observe.record("abc-fws", [dict(source="abc-fws", store_id=str(v["store"]), store=str(v["store"]),
                                         product_id=str(v["sku"]), upc=v.get("upc", ""), brand="", name="",
                                         price=v["price"], on_promo=False, in_stock=bool(v.get("instock")),
                                         qty=v.get("qty"), stock_level="", is_hemp=False)

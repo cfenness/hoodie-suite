@@ -27,7 +27,7 @@ _DERIVED_SUFFIX = ("_cluster", "_coherence", "_matches", "_merges", "_queue", "_
 _DERIVED_EXACT = {"match_dict", "catalog_skus", "hoodie_ids", "source_taxonomy", "price_coherence",
                   "master_decisions", "smoketest", "ingest_selftest"}
 _GROUPS = [
-    ("staging",   lambda n: n.startswith("_")),                      # staging / scratch (hidden by default)
+    ("staging",   lambda n: n.startswith("_") or "scratch" in n),    # staging / scratch (hidden by default)
     ("runlog",    lambda n: n.endswith("_runs") or n == "scrape_runs"),
     ("master",    lambda n: n.startswith("dim_")),                   # identity-resolved master dims
     ("conformed", lambda n: n.startswith("src_")),                   # per-grain conformed source rows
@@ -240,46 +240,85 @@ _FOOTER_CACHE = {}                                            # name -> (mtime, 
 
 
 def _list_datasets_fast(workers=80):
-    """Same as warehouse.list_datasets but reads the Parquet footers CONCURRENTLY. The reads are pure I/O against
-    object storage (each ~tens of ms locally but far higher from the cloud host), so heavy parallelism is the lever —
-    80 workers turns a ~130s serial sweep into a fraction of that. Falls back to the sequential warehouse version."""
+    """Same as warehouse.list_datasets but reads the Parquet footers CONCURRENTLY — and, unlike the warehouse
+    version, ALSO surfaces PARTITIONED tables (warehouse/<name>/<part>.parquet — retail_observations, fact_*,
+    scrape_runs), which a flat top-level listing silently drops. A partitioned table comes back as ONE dataset
+    entry with rows summed across parts, `partitioned: True`, and a `parts` list [{part, rows, modified}] so the
+    manifest can attribute time-series rows per source from part NAMES alone (parts are `<date>_<source>…`).
+    The reads are pure I/O against object storage, so heavy parallelism is the lever. Falls back to the
+    sequential warehouse version (top-level files only) on any error."""
     import warehouse
     try:
-        if not warehouse.remote():
-            return warehouse.list_datasets()
         import pyarrow.parquet as pq
-        from pyarrow import fs as pafs
         from concurrent.futures import ThreadPoolExecutor
-        s3 = pafs.S3FileSystem(endpoint_override=warehouse._endpoint(), access_key=warehouse._env("AWS_ACCESS_KEY_ID"),
-                               secret_key=warehouse._env("AWS_SECRET_ACCESS_KEY"), region=warehouse._region(),
-                               scheme="https")
-        base = "%s/%s" % (warehouse._bucket(), warehouse._prefix())
-        infos = [i for i in s3.get_file_info(pafs.FileSelector(base, recursive=False))
-                 if i.type == pafs.FileType.File and i.path.endswith(".parquet")]
+        if warehouse.remote():
+            from pyarrow import fs as pafs
+            s3 = pafs.S3FileSystem(endpoint_override=warehouse._endpoint(),
+                                   access_key=warehouse._env("AWS_ACCESS_KEY_ID"),
+                                   secret_key=warehouse._env("AWS_SECRET_ACCESS_KEY"),
+                                   region=warehouse._region(), scheme="https")
+            base = "%s/%s" % (warehouse._bucket(), warehouse._prefix())
+            infos = [(i.path[len(base) + 1:], i.path, i) for i
+                     in s3.get_file_info(pafs.FileSelector(base, recursive=True))
+                     if i.type == pafs.FileType.File and i.path.endswith(".parquet")]
+        else:
+            import glob as _glob
+            s3 = None
+            root = warehouse._LOCAL_DIR
+            infos = []
+            for p in _glob.glob(os.path.join(root, "**", "*.parquet"), recursive=True):
+                rel = os.path.relpath(p, root)
+                infos.append((rel.replace(os.sep, "/"), p, None))
 
-        def read_one(info):
-            name = info.path.rsplit("/", 1)[-1][:-8]
-            mod = None
+        def _mtime(path, info):
+            if info is not None:
+                try:
+                    return info.mtime.timestamp() if info.mtime else None
+                except Exception:
+                    return None
             try:
-                mod = info.mtime.timestamp() if info.mtime else None
+                return os.path.getmtime(path)
             except Exception:
-                pass
-            # INCREMENTAL: a dataset's footer (rows/schema) only changes when the file is rewritten. The S3 listing
-            # gives mtime cheaply — so re-read the footer ONLY when mtime moved; reuse the cache otherwise. Turns a
-            # ~40s full sweep into ~2s once warm (only the handful of actively-landing tables are re-read), so the
-            # console's counts refresh near-live as pulls land.
-            cached = _FOOTER_CACHE.get(name)
+                return None
+
+        def read_one(item):
+            rel, path, info = item
+            mod = _mtime(path, info)
+            # INCREMENTAL: a footer (rows/schema) only changes when the file is rewritten. The listing gives
+            # mtime cheaply — re-read the footer ONLY when mtime moved; reuse the cache otherwise. Turns a
+            # ~40s full sweep into ~2s once warm, so the console's counts refresh near-live as pulls land.
+            cached = _FOOTER_CACHE.get(rel)
             if cached and cached[0] == mod and mod is not None:
-                return {"name": name, "rows": cached[1], "fields": cached[2], "modified": mod}
+                return rel, mod, cached[1], cached[2]
             try:
-                md = pq.read_metadata(info.path, filesystem=s3)
-                _FOOTER_CACHE[name] = (mod, md.num_rows, list(md.schema.names))
-                return {"name": name, "rows": md.num_rows, "fields": list(md.schema.names), "modified": mod}
+                md = pq.read_metadata(path, filesystem=s3) if s3 is not None else pq.read_metadata(path)
+                _FOOTER_CACHE[rel] = (mod, md.num_rows, list(md.schema.names))
+                return rel, mod, md.num_rows, list(md.schema.names)
             except Exception:
-                return {"name": name, "rows": (cached[1] if cached else 0),
-                        "fields": (cached[2] if cached else []), "modified": mod}
+                return rel, mod, (cached[1] if cached else 0), (cached[2] if cached else [])
+
         with ThreadPoolExecutor(max_workers=workers) as ex:
-            return list(ex.map(read_one, infos))
+            footers = list(ex.map(read_one, infos))
+
+        out, parted = [], {}
+        for rel, mod, rows, fields in footers:
+            if "/" not in rel:                                       # top-level <name>.parquet — as before
+                out.append({"name": rel[:-8], "rows": rows, "fields": fields, "modified": mod})
+                continue
+            top = rel.split("/", 1)[0]
+            if top == "_manifest":                                   # v2 layout manifests, not data
+                continue
+            d = parted.setdefault(top, {"name": top, "rows": 0, "fields": [], "modified": None,
+                                        "partitioned": True, "parts": []})
+            d["rows"] += rows
+            d["modified"] = max(d["modified"] or 0, mod or 0) or None
+            if (mod or 0) >= (d.get("_ffrom") or 0) and fields:      # fields from the newest part
+                d["fields"], d["_ffrom"] = fields, (mod or 0)
+            d["parts"].append({"part": rel.rsplit("/", 1)[-1][:-8], "rows": rows, "modified": mod})
+        for d in parted.values():
+            d.pop("_ffrom", None)
+            out.append(d)
+        return out
     except Exception:
         return warehouse.list_datasets()
 
@@ -315,6 +354,27 @@ def build(record_history=True, hist_cap=60):
     grand_rows = 0
     health = {"ok": 0, "degraded": 0, "error": 0, "stale": 0, "unknown": 0}
     STALE_S = 3 * 86400                                              # >3 days since data changed = stale
+
+    # per-source TIME-SERIES attribution: shared partitioned tables (retail_observations) land one part per
+    # (date, source), so part NAMES alone tell us how many observation rows each SOURCE contributed and when it
+    # last landed — no lake scan. This is what lets the console answer "which sources have per-store inventory,
+    # and is it still coming in" and drill a source down to its accounts-with-inventory.
+    observations = {}                                                # roster key -> {rows, latest, parts:[names]}
+    _PART_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})_(.+)$")
+    for d in datasets:
+        if not d.get("partitioned") or classify(d["name"]) != "timeseries":
+            continue
+        for p in d.get("parts") or []:
+            m = _PART_RE.match(p["part"])
+            if not m:
+                continue
+            date, src = m.group(1), m.group(2)
+            key, label, kind = source_of(src.replace("-", "_"))
+            o = observations.setdefault(key, {"rows": 0, "latest": "", "parts": [], "table": d["name"],
+                                              "label": label})
+            o["rows"] += p["rows"] or 0
+            o["latest"] = max(o["latest"], date)
+            o["parts"].append({"part": p["part"], "date": date, "rows": p["rows"], "table": d["name"]})
 
     for d in datasets:
         n = d["name"]
@@ -352,6 +412,7 @@ def build(record_history=True, hist_cap=60):
 
         sources.append({
             "name": n, "group": grp, "rows": rows, "fields": len(d.get("fields") or []),
+            "partitioned": bool(d.get("partitioned")),
             "modified": mod, "age_s": age, "delta": delta, "status": status,
             "run_status": (run or {}).get("status") or "", "run_ts": (run or {}).get("ts"),
             "warnings": (run or {}).get("warnings") or [], "degraded": bool((run or {}).get("degraded")),
@@ -418,6 +479,11 @@ def build(record_history=True, hist_cap=60):
     for s in sources:
         if s["group"] not in ("scrape", "accounts", "timeseries"):
             continue
+        if s["group"] == "timeseries" and s.get("partitioned"):
+            # a SHARED time-series spine (retail_observations) — every source lands into it, so it is not
+            # itself a source. Its rows are attributed per source above (`observations`) instead.
+            s["source"], s["source_label"] = "observations", "every source · shared time-series"
+            continue
         key, label, kind = source_of(s["name"])
         s["source"], s["source_label"] = key, label
         r = roster.setdefault(key, {"key": key, "label": label, "kind": kind, "datasets": [], "rows": 0,
@@ -436,6 +502,17 @@ def build(record_history=True, hist_cap=60):
             r["run_delta"] = run.get("delta")
             r["run_error"] = run.get("error") or ""
             r["run_duration"] = run.get("duration_s")
+    # attach the per-source time-series attribution (inventory rows + when they last landed). A source whose
+    # ONLY footprint is observation parts (no snapshot table of its own) still gets a roster entry — nothing
+    # that lands inventory is ever invisible.
+    for key, o in observations.items():
+        r = roster.get(key)
+        if r is None:
+            r = roster.setdefault(key, {"key": key, "label": o["label"], "kind": "other", "datasets": [],
+                                        "rows": 0, "modified": None, "status": "ok", "conn": ""})
+        r["obs_rows"] = o["rows"]
+        r["obs_latest"] = o["latest"]
+
     roster = sorted(roster.values(), key=lambda r: (r["modified"] or 0), reverse=True)
     for r in roster:
         r["dataset_count"] = len(r["datasets"])
@@ -486,7 +563,9 @@ def build(record_history=True, hist_cap=60):
 
     return {"as_of": now, "live": True, "warehouse": wh, "build_ms": round((time.time() - now) * 1000),
             "totals": totals, "connectors": connectors, "roster": roster, "sources": sources,
-            "dispatcher": dispatcher}
+            "dispatcher": dispatcher,
+            "observations": {k: {"rows": o["rows"], "latest": o["latest"], "table": o["table"],
+                                 "parts": o["parts"]} for k, o in observations.items()}}
 
 
 # ── caching: memory + disk + background refresh, so the console is ALWAYS instant after the first ever build ───
@@ -593,6 +672,98 @@ def history(name):
     return _load_hist().get(name, [])
 
 
+def read_expr(name):
+    """The DuckDB source expression for dataset `name` — a single-file read for plain tables, a glob
+    (union_by_name — per-source part schemas can differ) for PARTITIONED tables. Every console read path
+    (preview / sample / search) goes through this so partitioned tables (retail_observations) are readable
+    like any other dataset instead of 404ing on a nonexistent single file."""
+    import warehouse
+    s = next((x for x in (_CACHE["data"] or {}).get("sources", []) if x["name"] == name), None)
+    if s and s.get("partitioned"):
+        glob = ("s3://%s/%s/%s/*.parquet" % (warehouse._bucket(), warehouse._prefix(), name)) \
+            if warehouse.remote() else os.path.join(warehouse._LOCAL_DIR, name, "*.parquet")
+        return "read_parquet('%s', union_by_name=true)" % glob.replace("'", "")
+    return "read_parquet('%s')" % warehouse.uri(name).replace("'", "")
+
+
+# ── SOURCE DRILL-IN: a source's ACCOUNTS-WITH-INVENTORY — the per-store rollup of its latest observation day.
+# Bounded by design: it reads ONLY the part files of THAT source's LATEST date (parts are one file per
+# date×source, so the filename list from the manifest is the pruning index — no full-table scan ever).
+_SRC_DETAIL_CACHE = {}                                   # key -> {sig, at, payload}
+_SRC_DETAIL_LOCK = threading.Lock()
+
+
+def source_detail(key, timeout_s=45):
+    """Accounts-with-inventory for one roster source: per-store {skus, in_stock, units, avg price} on the
+    source's most recent observation date, plus which observation source-ids and parts fed it. Cached until the
+    source lands a new part. Returns an honest {accounts: [], note} when the source has no per-store data."""
+    import warehouse
+    snap = _CACHE["data"] or {}
+    obs = (snap.get("observations") or {}).get(key)
+    roster = next((r for r in snap.get("roster", []) if r.get("key") == key), {})
+    base = {"key": key, "label": roster.get("label") or key, "datasets": roster.get("datasets") or [],
+            "obs_rows": (obs or {}).get("rows"), "obs_latest": (obs or {}).get("latest")}
+    if not obs or not obs.get("parts"):
+        return dict(base, accounts=[], date=None,
+                    note="no per-store inventory observations for this source yet")
+    latest = max(p["date"] for p in obs["parts"])
+    parts = [p for p in obs["parts"] if p["date"] == latest]
+    sig = "|".join(sorted(p["part"] for p in parts))
+    with _SRC_DETAIL_LOCK:
+        c = _SRC_DETAIL_CACHE.get(key)
+        if c and c["sig"] == sig:
+            return c["payload"]
+    if warehouse.remote():
+        uris = ["s3://%s/%s/%s/%s.parquet" % (warehouse._bucket(), warehouse._prefix(), p["table"], p["part"])
+                for p in parts]
+    else:
+        uris = [os.path.join(warehouse._LOCAL_DIR, p["table"], p["part"] + ".parquet") for p in parts]
+    con = warehouse.connect()
+    expr = "read_parquet([%s], union_by_name=true)" % ", ".join("'%s'" % u.replace("'", "") for u in uris)
+    timed = {"v": False}
+
+    def kill():
+        timed["v"] = True
+        try:
+            con.interrupt()
+        except Exception:
+            pass
+    timer = threading.Timer(timeout_s, kill)
+    timer.start()
+    try:
+        cur = con.execute(
+            "SELECT coalesce(nullif(store_id,''), store) AS store_id, max(store) AS store, "
+            "count(*) AS skus, sum(CASE WHEN in_stock THEN 1 ELSE 0 END) AS in_stock, "
+            "sum(CASE WHEN qty IS NOT NULL THEN qty ELSE 0 END) AS units, "
+            "count(qty) AS qty_n, round(avg(price), 2) AS avg_price "
+            "FROM %s GROUP BY 1 ORDER BY in_stock DESC, skus DESC LIMIT 2000" % expr)
+        cols = [c2[0] for c2 in cur.description]
+        accounts = [dict(zip(cols, r)) for r in cur.fetchall()]
+    except Exception as e:
+        return dict(base, accounts=[], date=latest,
+                    note=("read timed out — try again" if timed["v"] else "read failed: %s" % str(e)[:120]))
+    finally:
+        timer.cancel()
+        try:
+            con.close()
+        except Exception:
+            pass
+    for a in accounts:                                    # qty is None-heavy for binary in/out sources — be honest
+        if not a.pop("qty_n", 0):
+            a["units"] = None
+        # translation-layer heal (landed data is never rewritten): early abc-fws days landed store as
+        # "ABC #<full label>" (double prefix). store_id was always clean — prefer it when store just wraps it.
+        if a.get("store") and a.get("store_id") and a["store"] != a["store_id"] \
+                and a["store"].endswith(str(a["store_id"])):
+            a["store"] = a["store_id"]
+    payload = dict(base, date=latest, accounts=accounts,
+                   account_count=len(accounts),
+                   with_inventory=sum(1 for a in accounts if (a.get("in_stock") or 0) > 0))
+    with _SRC_DETAIL_LOCK:
+        _SRC_DETAIL_CACHE[key] = {"sig": sig, "at": time.time(), "payload": payload}
+    return payload
+
+
 # ── PRECOMPUTED preview samples: the drawer must stay instant as datasets grow to 100M+ rows. Reading a live
 # LIMIT-N off a growing remote parquet is O(file complexity) — it degrades. Instead we sample each dataset ONCE in
 # the background (bounded to N rows), hold it in memory, and serve the drawer from there → 0-latency, and the store
@@ -640,10 +811,8 @@ def sample(name):
 
 
 def _read_sample(name, limit):
-    import warehouse
     con = _sample_con()
-    src = warehouse.uri(name).replace("'", "")
-    con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet('%s')" % src)
+    con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM %s" % read_expr(name))
     cur = con.execute("SELECT * FROM t LIMIT %d" % limit)
     cols = [c[0] for c in cur.description]
     rows = [dict(zip(cols, r)) for r in cur.fetchall()]
@@ -751,16 +920,15 @@ def _match_cols(rows, ql):
 def _search_one(name, q, limit, timeout_s):
     """Search ONE dataset's full data for the substring across all columns; interrupt-capped so a big-table miss
     aborts instead of hanging. Returns (rows, columns, capped)."""
-    import warehouse
     con = _search_con()
     try:
-        src = warehouse.uri(name).replace("'", "")
+        src = read_expr(name)
         # exclude the bulky raw_json blob from the scan (per-row it can be 8-16KB — searching it would scan GBs);
         # its extracted fields are already real columns. Fall back to plain * if the table has no raw_json.
         try:
-            con.execute("CREATE OR REPLACE VIEW t AS SELECT * EXCLUDE (raw_json) FROM read_parquet('%s')" % src)
+            con.execute("CREATE OR REPLACE VIEW t AS SELECT * EXCLUDE (raw_json) FROM %s" % src)
         except Exception:
-            con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet('%s')" % src)
+            con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM %s" % src)
     except Exception:
         return [], [], False
     capped = {"v": False}
