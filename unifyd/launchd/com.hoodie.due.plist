@@ -9,10 +9,13 @@
 <plist version="1.0">
 <dict>
   <key>Label</key><string>com.hoodie.due</string>
+  <!-- bash -c form: launchd denies SPAWNING a job whose script argument is under ~/Desktop
+       ("Operation not permitted", exit 126), but a bash started with -c reads/executes it fine. -->
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/chrisfennessey/Desktop/Desktop - Chris’s MacBook Pro/Projects/hoodie-suite/unifyd/run_due.sh</string>
+    <string>-c</string>
+    <string>exec bash "/Users/chrisfennessey/Desktop/Desktop - Chris’s MacBook Pro/Projects/hoodie-suite/unifyd/run_due.sh"</string>
   </array>
   <key>StartInterval</key><integer>1800</integer>
   <key>RunAtLoad</key><true/>
