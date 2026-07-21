@@ -527,26 +527,32 @@ def build_category_signal(con, log=print):
     return len(out)
 
 
-def build_identity_clusters(con, log=print):
+def build_identity_clusters(con, item_key_expr, log=print):
     """RESOLVED spine identity: union-find (identity_resolve) over the category clusters, recovering the ~13%
     AMBIGUOUS over-splits the hard category key leaves — merges compatible keys within a (family,brand) block
-    that a shared UPC or an agreeing price band confirms ([[discriminator-identity-model]]). Writes
-    `identity_cluster` — the transferable, UPC-optional key everything (incl. TTB, [[ttb-not-spine]]) routes
-    into — and logs the multi-source lift vs the raw category key. Non-destructive; a signal table, not a re-key."""
+    that a shared UPC or an agreeing price band confirms ([[discriminator-identity-model]]). Writes:
+      · `identity_cluster`     — the cluster report (tier/sources/sample), as before.
+      · `xwalk_item_identity`  — {md5 item_key -> resolved_id}, the PROMOTION: resolve_hierarchy joins this so
+                                 dim_item/dim_sku carry a `resolved_id` that collapses the hard-key over-splits.
+                                 The resolved identity graduates from advisory signal to a key ON the master.
+    Runs BEFORE the shred (reads _stage_product). `item_key_expr` is the SAME md5 item-key SQL the shred uses,
+    so the xwalk joins 1:1. Returns the xwalk uri (None if empty)."""
     import category_tree, price_signal, identity_resolve
     MAXB = int(os.environ.get("IDENTITY_MAX_BLOCK", "400"))          # skip pairwise on pathological blocks
     uri = warehouse.uri("_stage_product")
     cols = {d[0] for d in con.execute("SELECT * FROM read_parquet('%s') LIMIT 0" % uri).description}
     price_sel = "price" if "price" in cols else "NULL AS price"    # price is a newer staged column; tolerate its absence
     cur = con.execute("SELECT product_name, brand, category, class_type, varietal, region, abv, size_ml, "
-                      "vintage, pack, %s, upc, _source FROM read_parquet('%s')" % (price_sel, uri))
+                      "vintage, pack, %s, upc, _source, %s AS item_key FROM read_parquet('%s')"
+                      % (price_sel, item_key_expr, uri))
     blocks, ck_src, ck_n = {}, collections.defaultdict(set), collections.Counter()   # blocks; ck->sources; ck->rows
+    item_root = collections.defaultdict(collections.Counter)     # md5 item_key -> Counter(cluster_id) for majority
     while True:
         batch = cur.fetchmany(50000)
         if not batch:
             break
         for (name, brand, category, class_type, varietal, region, abv, size_ml,
-             vintage, pack, price, upc, source) in batch:
+             vintage, pack, price, upc, source, item_key) in batch:
             fields = {"varietal": varietal, "region": region, "abv": abv, "size_ml": size_ml, "vintage": vintage}
             vec = category_tree.vector(name, brand=brand, category=category, class_type=class_type, fields=fields)
             ck, _canon = category_tree.key_from_vector(vec)
@@ -558,8 +564,11 @@ def build_identity_clusters(con, log=print):
             blk = blocks.setdefault(bkey, {})
             e = blk.get(ck)
             if e is None:
-                e = blk[ck] = {"vec": vec, "sources": set(), "unit_prices": [], "upcs": set(), "n": 0, "name": name or ""}
+                e = blk[ck] = {"vec": vec, "sources": set(), "unit_prices": [], "upcs": set(), "n": 0,
+                               "name": name or "", "item_keys": collections.Counter()}
             e["sources"].add(source); e["n"] += 1
+            if item_key:
+                e["item_keys"][item_key] += 1
             up = price_signal.unit_price(price, size_ml, pack)
             if up is not None:
                 e["unit_prices"].append(up)
@@ -583,6 +592,8 @@ def build_identity_clusters(con, log=print):
             cluster_src[cid] |= e["sources"]
             m = cluster_meta.setdefault(cid, {"members": 0, "name": e["name"]})
             m["members"] += e["n"]
+            for ik, cnt in e["item_keys"].items():   # accumulate each md5 item_key's vote for this cluster
+                item_root[ik][cid] += cnt
     total_rows = sum(ck_n.values())
     ck_multi = sum(1 for s in ck_src.values() if len(s) >= 2)
     cl_multi = sum(1 for s in cluster_src.values() if len(s) >= 2)
@@ -616,7 +627,23 @@ def build_identity_clusters(con, log=print):
         "(%d rows) — +%d rows now cross-source corroborated" %
         (100.0 * cl_cov / max(1, total_rows), cl_cov, total_rows,
          100.0 * ck_cov / max(1, total_rows), ck_cov, cl_cov - ck_cov))
-    return len(out)
+    # PROMOTION: md5 item_key -> resolved_id (majority cluster vote per item_key). This is what
+    # resolve_hierarchy joins so dim_item/dim_sku carry the resolved identity. One row per item_key → a 1:1
+    # join. A resolved_id that maps back to itself is a singleton (its md5 key was never merged).
+    resolved_of_item = {ik: c.most_common(1)[0][0] for ik, c in item_root.items()}
+    xw = [dict(item_key=ik, resolved_id=rid, n_sources=len(cluster_src[rid]),
+               commercial_sources=len(set(cluster_src[rid]) - _TTB), tier=_tier(cluster_src[rid]))
+          for ik, rid in resolved_of_item.items()]
+    if not xw:
+        log("[master]   xwalk_item_identity: empty (no keyable rows) — dim_item resolved_id will fall back")
+        return None
+    warehouse.write_parquet("xwalk_item_identity", xw,
+                            ["item_key", "resolved_id", "n_sources", "commercial_sources", "tier"])
+    n_ik, n_rid = len(resolved_of_item), len(set(resolved_of_item.values()))
+    log("[master]   xwalk_item_identity: %d md5 item-keys → %d resolved identities "
+        "(%d over-splits collapsed, %.1f%%) — dim_item/dim_sku now carry resolved_id" %
+        (n_ik, n_rid, n_ik - n_rid, 100.0 * (n_ik - n_rid) / max(1, n_ik)))
+    return warehouse.uri("xwalk_item_identity")
 
 
 def build(log=print):
@@ -734,7 +761,16 @@ def build(log=print):
     log("[master] staged %d rows → _stage_product" % len(staged))
     warehouse.write_parquet("_stage_product", staged, fields=FIELDS + ["_source", "_source_id"])
     con = warehouse.connect()
-    h = master_apply.resolve_hierarchy(FIELDS, warehouse.uri("_stage_product").strip("'"), con, built_by="build_product_master")
+    # RESOLVED identity FIRST (union-find over category clusters) → xwalk_item_identity, so the shred can carry
+    # resolved_id onto dim_item/dim_sku. Best-effort: if it fails, the shred runs unresolved (md5 keys only).
+    xw_uri = None
+    try:
+        item_key_expr = master_apply._keyexprs(master_apply._mnames(FIELDS))["item"]
+        xw_uri = build_identity_clusters(con, item_key_expr, log=log)
+    except Exception as e:
+        log("[master] identity_cluster skipped: %s" % str(e)[:80])
+    h = master_apply.resolve_hierarchy(FIELDS, warehouse.uri("_stage_product").strip("'"), con,
+                                       built_by="build_product_master", resolved_xwalk_uri=xw_uri)
     dims = {k: v["rows"] for k, v in h.items() if isinstance(v, dict) and "rows" in v}
     try:                                                # source (source, product_id) -> sku_key crosswalk
         build_source_xwalk(con, log=log)               # (recomputes the SAME md5 keys over _stage_product)
@@ -748,10 +784,16 @@ def build(log=print):
         build_category_signal(con, log=log)            # (category_cluster — match path for the ~88% w/o UPC)
     except Exception as e:
         log("[master] category_cluster skipped: %s" % str(e)[:80])
-    try:                                                # RESOLVED spine: union-find recovers ambiguous over-splits
-        build_identity_clusters(con, log=log)          # (identity_cluster — price/UPC-confirmed merges)
-    except Exception as e:
-        log("[master] identity_cluster skipped: %s" % str(e)[:80])
+    # resolved-identity distinct counts (the automatch headline): how many resolved items/skus the dims carry
+    if xw_uri:
+        try:
+            for g in ("item", "sku"):
+                tot = con.execute("SELECT count(*), count(DISTINCT resolved_id) FROM read_parquet('%s')"
+                                  % warehouse.uri("dim_%s" % g)).fetchone()
+                log("[master]   dim_%s: %d md5 rows → %d RESOLVED %ss (%d over-splits collapsed by resolved_id)"
+                    % (g, tot[0], tot[1], g, tot[0] - tot[1]))
+        except Exception as e:
+            log("[master] resolved-count report skipped: %s" % str(e)[:80])
     log("[master] DONE — %s" % dims)
     try:                                                # mint/reuse durable Hoodie IDs for the rebuilt entities
         import hoodie_ids                                # (persistent registry — same real entity keeps its id)
