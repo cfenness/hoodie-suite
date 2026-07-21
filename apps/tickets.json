@@ -450,7 +450,7 @@
       "size": "L",
       "priority": "P2",
       "created": "2026-07-08",
-      "updated": "2026-07-08",
+      "updated": "2026-07-21",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
       "commits": [],
       "summary": "Grow /api/serve from a paged read into the syndication contract: ?updated_since= delta feed, provenance-on-serve (the trust API — every value with its source, per hoodie_id), per-customer entitlements + quotas, change events/webhooks later. Contract versioned in openapi.yaml so the app's typed client regenerates against it (hoodie-app HA-004 followup).",
@@ -461,13 +461,13 @@
         "Entitlements: a scoped consumer provably receives only its slice; quota enforcement measurable; entitlement config is data, not code",
         "openapi.yaml documents every serve route; unmerge exists as an override rule with provenance (who/when/why), re-materializes correctly"
       ],
-      "verification_plan": [
-        "Two-build delta test; cross-consumer entitlement isolation test; unmerge round-trip (merge → unmerge → rebuild → two golden records again, ids preserved per registry policy)"
-      ],
       "files": [
         "unifyd/server.py",
         "unifyd/warehouse.py",
         "unifyd/openapi.yaml"
+      ],
+      "verification_plan": [
+        "Two-build delta test; cross-consumer entitlement isolation test; unmerge round-trip (merge → unmerge → rebuild → two golden records again, ids preserved per registry policy)"
       ]
     },
     {
