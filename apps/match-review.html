@@ -129,6 +129,7 @@
   <div class="funnel" id="funnel"></div>
   <div class="tabs">
     <button class="tab on" data-tab="review" id="tabReview">Needs you<span class="n" id="cReview">·</span></button>
+    <button class="tab" data-tab="merges" id="tabMerges">Duplicates<span class="n" id="cMerges">·</span></button>
     <button class="tab" data-tab="master" id="tabMaster">Automatched<span class="n" id="cMaster">·</span></button>
   </div>
 </div>
@@ -142,7 +143,7 @@
   "use strict";
   var API = "";
   var TAB = "review";
-  var reviewItems = null, masterItems = null, SUMMARY = null, LIVE = null;
+  var reviewItems = null, masterItems = null, mergeItems = null, mergeTotal = null, SUMMARY = null, LIVE = null;
   var main = document.getElementById("main");
 
   function api(path, opts){ return fetch(API+path, opts).then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); }); }
@@ -176,6 +177,7 @@
     document.getElementById("cReview").textContent = rTotal!=null ? nfmt(rTotal) : (reviewItems?nfmt(reviewItems.length):"·");
     var mTotal = (SUMMARY && SUMMARY.stages && SUMMARY.stages.auto);
     document.getElementById("cMaster").textContent = mTotal!=null ? nfmt(mTotal) : (masterItems?nfmt(masterItems.length):"·");
+    document.getElementById("cMerges").textContent = (mergeTotal!=null) ? nfmt(mergeTotal) : (mergeItems?nfmt(mergeItems.length):"·");
   }
 
   /* ---------- data ---------- */
@@ -190,6 +192,11 @@
       main.innerHTML=loadingHtml("Loading the review queue…");
       api("/api/master/workbench/review").then(function(d){ reviewItems=d.items||[]; setCounts(); render(); })
         .catch(function(){ LIVE=false; renderFresh(); render(); });
+    }else if(TAB==="merges"){
+      if(mergeItems){ render(); return; }
+      main.innerHTML=loadingHtml("Loading duplicate groups…");
+      api("/api/master/workbench/merges").then(function(d){ mergeItems=d.merges||[]; mergeTotal=(typeof d.count==="number"?d.count:mergeItems.length); setCounts(); render(); })
+        .catch(function(){ LIVE=false; renderFresh(); render(); });
     }else{
       if(masterItems){ render(); return; }
       main.innerHTML=loadingHtml("Loading automatched items…");
@@ -202,7 +209,7 @@
   /* ---------- render ---------- */
   function render(){
     if(LIVE===false){ main.innerHTML = offlineHtml(); return; }
-    if(TAB==="review") renderReview(); else renderMaster();
+    if(TAB==="review") renderReview(); else if(TAB==="merges") renderMerges(); else renderMaster();
   }
   function offlineHtml(){
     return '<div class="empty"><div class="big">◍</div><h3>The warehouse agent isn’t reachable</h3>'+
@@ -348,6 +355,85 @@
           .catch(function(){ toast("Couldn’t reverse — is the agent up?"); b.disabled=false; });
       });
     });
+  }
+
+  /* ---------- duplicates (merge groups) ---------- */
+  function renderMerges(){
+    var items=mergeItems||[];
+    if(!items.length){
+      main.innerHTML='<div class="empty"><div class="big">≣</div><h3>No duplicate groups</h3><p>When the master build finds the same product+size split across different or missing UPCs, the merge calls land here. Nothing pending.</p></div>';
+      return;
+    }
+    var capNote = (mergeTotal!=null && mergeTotal>items.length) ? ('showing the top '+nfmt(items.length)+' of '+nfmt(mergeTotal))
+                                                               : (items.length+' groups');
+    var html='<div class="toolbar"><input id="gf" placeholder="Filter duplicates…"/>'+
+      '<span class="hint">'+capNote+' · same product+size fractured across UPCs · highest-impact first</span></div>'+
+      '<div class="qlist" id="glist"></div>';
+    main.innerHTML=html;
+    drawMergeList(items);
+    document.getElementById("gf").addEventListener("input", function(){
+      var q=this.value.toLowerCase().trim();
+      drawMergeList(items.filter(function(g){ return ((g.name||"")+" "+(g.brand||"")).toLowerCase().indexOf(q)>=0; }));
+    });
+  }
+  function drawMergeList(items){
+    var box=document.getElementById("glist"); if(!box) return;
+    box.innerHTML = items.slice(0,300).map(function(g){
+      var mid=g.merge_id;
+      return '<div class="qcard" data-mid="'+mid+'">'+
+        '<div class="qtop">'+
+          '<div><div class="qname">'+(g.name||"(unnamed)")+'</div>'+
+          '<div class="qmeta">'+(g.brand?'<span class="src">'+g.brand+'</span>':'')+
+            '<span>'+g.n_skus+' SKUs</span><span>'+g.distinct_upc+' distinct UPC'+(g.distinct_upc===1?'':'s')+'</span>'+
+            (g.total_rows?'<span>'+g.total_rows+' rows</span>':'')+
+          '</div></div>'+
+          '<div class="qright"><span class="conf lo">merge?</span><span class="chev">▸</span></div>'+
+        '</div>'+
+        '<div class="qbody" id="mbody-'+mid+'"><div class="spin"></div></div>'+
+      '</div>';
+    }).join("");
+    box.querySelectorAll(".qcard").forEach(function(card){
+      card.querySelector(".qtop").addEventListener("click", function(){ toggleMerge(card); });
+    });
+  }
+  function toggleMerge(card){
+    var open=card.classList.toggle("open");
+    if(!open) return;
+    var mid=card.dataset.mid, body=document.getElementById("mbody-"+mid);
+    if(body.dataset.loaded){ return; }
+    api("/api/master/workbench/merge-detail/"+encodeURIComponent(mid)).then(function(d){
+      body.dataset.loaded="1";
+      var mems=(d.members||[]);
+      body.innerHTML =
+        '<div style="font-size:12px;color:var(--mut);margin-bottom:8px">'+(d.reason||"")+'</div>'+
+        mems.map(function(m){
+          var srcs=(m.source_list||[]).map(function(s){return '<span class="src">'+s+'</span>';}).join("");
+          var attrs=[m.size_ml?_sz(m.size_ml):"", m.pack?("×"+m.pack):"", m.abv?(m.abv+"% ABV"):"", m.container||""].filter(Boolean).join(" · ");
+          return '<div class="cand"><div class="cw"><div>'+(m.variant||d.name||"member")+
+            (attrs?' <span style="color:var(--mut)">'+attrs+'</span>':'')+'</div>'+
+            '<div class="keys"><span>'+(m.upc?("upc:"+m.upc):"no-upc")+'</span>'+srcs+'</div>'+
+          '</div></div>';
+        }).join("")+
+        '<div class="qact">'+
+          '<button class="btn pri" data-act="merge">⣿ Merge — one SKU</button>'+
+          '<button class="btn" data-act="keep_separate">Keep separate</button>'+
+        '</div>';
+      body.querySelectorAll(".btn").forEach(function(b){
+        b.addEventListener("click", function(){ decideMerge(mid, b.dataset.act, d.name, body); });
+      });
+    }).catch(function(){ body.innerHTML='<div class="cand"><div class="cw">Couldn’t load the group.</div></div>'; });
+  }
+  function _sz(ml){ ml=Number(ml); if(!ml) return ""; return ml>=1000?((ml/1000)+"L"):(ml+"ml"); }
+  function decideMerge(mid, action, name, body){
+    body.querySelectorAll(".btn").forEach(function(b){ b.disabled=true; });
+    api("/api/master/workbench/merge", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({merge_id:mid, action:action, name:name})})
+      .then(function(){
+        mergeItems=(mergeItems||[]).filter(function(x){ return String(x.merge_id)!==String(mid); });
+        var card=body.closest(".qcard"); if(card){ card.style.transition="opacity .2s"; card.style.opacity="0"; setTimeout(function(){ card.remove(); },200); }
+        setCounts();
+        toast(action==="merge"?"Merged into one SKU":"Kept separate");
+      })
+      .catch(function(){ toast("Couldn’t record — is the agent up?"); body.querySelectorAll(".btn").forEach(function(b){ b.disabled=false; }); });
   }
 
   /* ---------- tabs ---------- */
