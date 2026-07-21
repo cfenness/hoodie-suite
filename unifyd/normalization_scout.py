@@ -34,6 +34,7 @@ import argparse, collections, json, os, re, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import upc
+import sku_match as _sku_match
 
 CODE_COL = re.compile(r"upc|gtin|barcode|ean", re.I)
 NAME_COL = re.compile(r"^(name|product_name|description|title|item_name|display_name|desc)$", re.I)
@@ -121,6 +122,18 @@ def scan_code_field(table, col, vals, min_cohort):
                                 "check); verify via cross-source UPC join lift",
                                 ("%s→%s" % (d, upc.from_checkless_13(d)) for d in bad)))
     rest = [d for d in digits if d not in explained]
+    # restricted/in-store codes (number-system 2/4/5) are LOCALLY assigned — reused across products, never a
+    # global key. classify() reports these as bad_check (its check runs first), so surface them explicitly.
+    restricted = [d for d in rest if _sku_match.norm_upc(d) is None and len(d) in (12, 13)
+                  and (d[-12:] if len(d) >= 12 else d.zfill(12))[0] in ("2", "4", "5")]
+    if len(restricted) >= min_cohort:
+        explained.update(restricted)
+        out.append(_finding(table, col, "restricted_instore_codes", "deterministic", len(restricted), n,
+                            "%d codes are number-system 2/4/5 (variable-weight/in-store/coupon) — locally "
+                            "assigned, reused across products" % len(restricted),
+                            "sku_match.norm_upc rejects these as match keys (not a global identity); ensure "
+                            "any source-specific UPC use does the same", restricted))
+    rest = [d for d in rest if d not in explained]
     cls = collections.Counter(upc.classify(d) for d in rest)
     for status, prop in (("placeholder", "suppress at translation — pre-assignment dummy barcodes"),
                          ("bad_check", "quarantine at translation; check for truncation/typo class"),
