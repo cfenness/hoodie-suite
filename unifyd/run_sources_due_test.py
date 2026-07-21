@@ -34,12 +34,14 @@ enabled = [s for s in reg.SOURCES if s.get("enabled")]
 ok("all enabled due with empty ledger", {s["id"] for s in run_sources.due_sources(now=NOW)} == {s["id"] for s in enabled})
 
 # 2) fabricate a ledger: binnys ran 1h ago (fresh), specs 25h ago (due), ttb-style weekly fresh at 100h
+SRF = ["run_id", "source", "ts_start", "ts_end", "status"]
 recs = [
-    dict(run_id="binnys-x", source="binnys", ts_start=NOW - 3600),
-    dict(run_id="specs-x", source="specs", ts_start=NOW - 25 * 3600),
-    dict(run_id="winebow-x", source="winebow", ts_start=NOW - 100 * 3600),   # weekly: due at 168h
+    dict(run_id="binnys-x", source="binnys", ts_start=NOW - 3600, ts_end=NOW - 3500, status="ok"),
+    dict(run_id="specs-x", source="specs", ts_start=NOW - 25 * 3600, ts_end=NOW - 25 * 3600, status="ok"),
+    dict(run_id="winebow-x", source="winebow", ts_start=NOW - 100 * 3600,   # weekly: due at 168h
+         ts_end=NOW - 100 * 3600, status="ok"),
 ]
-warehouse.write_parquet("source_runs", recs, fields=["run_id", "source", "ts_start"])
+warehouse.write_parquet("source_runs", recs, fields=SRF)
 due = {s["id"] for s in run_sources.due_sources(now=NOW)}
 ok("fresh daily skipped", "binnys" not in due)
 ok("stale daily due", "specs" in due)
@@ -53,12 +55,29 @@ ok("interval_h override makes hot source due", "binnys" in {s["id"] for s in run
 del b["interval_h"]
 
 # 4) grace: a 24h source last run 23.9h ago is due (0.98 grace), 20h ago is not
-warehouse.write_parquet("source_runs", [dict(run_id="b1", source="binnys", ts_start=NOW - 23.9 * 3600)],
-                        fields=["run_id", "source", "ts_start"], allow_empty=True)
+warehouse.write_parquet("source_runs", [dict(run_id="b1", source="binnys", ts_start=NOW - 23.9 * 3600,
+                                             ts_end=NOW - 23.9 * 3600, status="ok")],
+                        fields=SRF, allow_empty=True)
 ok("grace catches near-interval", "binnys" in {s["id"] for s in run_sources.due_sources(now=NOW)})
-warehouse.write_parquet("source_runs", [dict(run_id="b2", source="binnys", ts_start=NOW - 20 * 3600)],
-                        fields=["run_id", "source", "ts_start"], allow_empty=True)
+warehouse.write_parquet("source_runs", [dict(run_id="b2", source="binnys", ts_start=NOW - 20 * 3600,
+                                             ts_end=NOW - 20 * 3600, status="ok")],
+                        fields=SRF, allow_empty=True)
 ok("well-inside interval not due", "binnys" not in {s["id"] for s in run_sources.due_sources(now=NOW)})
+
+# 4b) APPEND-ONLY ledger (the cross-host race fix): landings from two "hosts" both survive, and
+# due-ness honors the union of the legacy table + the log partitions
+rec_a = dict(run_id="ha-1", source="target", label="Target", klass="headless", ts_start=NOW - 600,
+             ts_end=NOW - 500, duration_s=100, status="ok", rows_before=0, rows_after=10, delta=10,
+             tables="target_products", error="", host="host-a")
+rec_b = dict(rec_a, run_id="hb-1", source="publix", tables="publix_products", host="host-b")
+run_sources._land_runs([rec_a], log=lambda *a: None)
+time.sleep(0.01)
+run_sources._land_runs([rec_b], log=lambda *a: None)          # a second landing must not clobber the first
+last, last_ok = run_sources.ledger_last()
+ok("append-only: both hosts' landings survive", last.get("target") and last.get("publix"))
+ok("ledger unions legacy + log", last.get("binnys") == NOW - 20 * 3600 and last_ok.get("target") == NOW - 500)
+due_u = {s["id"] for s in run_sources.due_sources(now=NOW)}
+ok("due-ness honors the log", "target" not in due_u and "publix" not in due_u)
 
 # 5) the overlap lock: second acquire in-process fails while the first is held
 l1 = run_sources._acquire_lock()
@@ -72,6 +91,7 @@ SR = ["run_id", "source", "ts_start", "ts_end", "status"]
 
 
 def ledger(rows):
+    shutil.rmtree(os.path.join(warehouse._LOCAL_DIR, "source_runs_log"), ignore_errors=True)  # fresh scenario
     warehouse.write_parquet("source_runs", rows, fields=SR, allow_empty=True)
 
 

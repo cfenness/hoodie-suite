@@ -184,9 +184,14 @@ def _source_runs_index():
     authoritative per-source outcome: status (ok/failed/timeout/no-change), delta, error, when. Powers the console's
     'last run' + failure reporting so nothing is silently dropped."""
     import warehouse
-    try:
-        runs = warehouse.query("source_runs", "SELECT * FROM t")
-    except Exception:
+    runs = []
+    for fn, name in ((warehouse.query, "source_runs"),           # legacy table (history)
+                     (warehouse.query_parts, "source_runs_log")):  # append-only log (authoritative now)
+        try:
+            runs += fn(name, "SELECT * FROM t")
+        except Exception:
+            pass
+    if not runs:
         return {}
     latest = {}
     for r in runs:
@@ -443,11 +448,9 @@ def build(record_history=True, hist_cap=60):
     # the near-real-time system is alive, not just that files changed.
     dispatcher = {}
     try:
-        import warehouse
         import source_registry as _sreg
         import run_sources as _rs
-        ledger = {r2["source"]: float(r2["ts"] or 0) for r2 in warehouse.query(
-            "source_runs", "SELECT source, MAX(ts_start) AS ts FROM t GROUP BY source")}
+        ledger, _lok = _rs.ledger_last()          # unions the legacy table + the append-only log
         _sev = {"breach": 3, "due": 2, "never": 1, "fresh": 0}
         slo_by_key = {}
         for s in _sreg.SOURCES:
