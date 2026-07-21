@@ -97,6 +97,15 @@ SOURCES = [
     dict(id="census", label="US Census ACS", code="import census_ref as m; m.build()",
          tables=["census_reference"], klass="creds", cadence="weekly", enabled=True,
          requires=["CENSUS_API_KEY"], note="Census API (census_ref.build) — free key, re-derivable"),
+    dict(id="tax-rates", label="Bev-alc tax RATES (TTB + state excise)", code="import tax_rates as m; m.build()",
+         tables=["tax_rates"], klass="headless", cadence="weekly", enabled=True,
+         note="federal CBMA schedule (encoded, TTB) + 51-jurisdiction state excise seed (Tax Foundation Jan 2026); "
+              "effective-dated ref, landed_cost.py reads it — verify state cells vs DOR to promote seed->verified"),
+    dict(id="tax-revenue", label="Bev-alc tax REVENUE (Census STC + TTB)", code="import tax_revenue as m; m.build()",
+         tables=["tax_revenue"], klass="creds", cadence="weekly", enabled=True,
+         requires=["CENSUS_API_KEY"],
+         note="Census govs STC (T10 alc sales tax, T20 alc license) per state — live; TTB federal commodity "
+              "collections run live on the Mac (TTB TLS-blocked on Fly)"),
     dict(id="vtinfo", label="VTInfo locator", code="import vtinfo as m; m.pull()",
          tables=["vtinfo_titos"], klass="headless", cadence="weekly", enabled=True, note="where-to-buy GraphQL"),
     dict(id="naop", label="NAOP on-premise", code="import doordash_naop as m; m.run()",
