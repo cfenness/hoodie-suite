@@ -19,11 +19,40 @@ import re
 import unicodedata
 
 
+_MOJI_MARKS = ("Ã", "â€", "Â")
+
+
+def demojibake(s):
+    """Repair UTF-8-read-as-latin1 double-encoding (AÃ±ejo→Añejo, RosÃ©→Rosé, â€™→'). Only accepts the
+    re-decode when it strictly REDUCES the artifact markers — a string that legitimately contains 'Ã' is
+    left alone. cp1252 first (maps the €/™ bytes the smart-quote artifacts need), latin-1 as fallback."""
+    t = str(s or "")
+    if not any(m in t for m in _MOJI_MARKS):
+        return t
+    score = sum(t.count(m) for m in _MOJI_MARKS)
+    try:      # "sloppy cp1252": per-char cp1252, falling back to the raw latin-1 byte for the control
+        bs = bytearray()                       # chars cp1252 leaves undefined (0x81/0x8D/0x8F/0x90/0x9D —
+        for ch in t:                           # the â€\x9d right-quote artifact needs exactly this)
+            try:
+                bs += ch.encode("cp1252")
+            except UnicodeEncodeError:
+                if ord(ch) > 0xFF:
+                    raise
+                bs.append(ord(ch))
+        fixed = bytes(bs).decode("utf-8")
+        if sum(fixed.count(m) for m in _MOJI_MARKS) < score:
+            return fixed
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
+    return t
+
+
 def unescape(s):
     """HTML-unescape source text — the TTB COLA feed stores names entity-encoded (D&#39;AQUINO, Ch&acirc;teau,
-    Domaine &amp; Fils), which otherwise turns `&#39;` into a stray '39' token and shatters the brand. Applied
-    to BOTH display and match keys (it fixes the actual characters)."""
-    return html.unescape(str(s or ""))
+    Domaine &amp; Fils), which otherwise turns `&#39;` into a stray '39' token and shatters the brand. Also
+    repairs mojibake (the specs-brand Ã±ejo class) via demojibake. Applied to BOTH display and match keys
+    (it fixes the actual characters)."""
+    return demojibake(html.unescape(str(s or "")))
 
 
 def deaccent(s):

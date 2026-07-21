@@ -112,6 +112,12 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   fills what the HTML doesn't structure, per-field provenance = structured vs vision. Reads land
   in `label_reads`. Endpoints: `POST /api/label/read {url, vision?}`, `GET /api/label/reads`.
   Surface: `apps/mdm-label-reader.html` (the **Label Reader** section in `apps/mdm.html`).
+- `unifyd/menu_ingest.py` — parse a DISTRIBUTOR WHOLESALE MENU file (xlsx/csv; cannabis
+  Curaleaf NY is the reference shape) into normalized order lines. stdlib-only (xlsx = zipped
+  XML), heuristic header-row detection + column synonyms, brand-section context, Excel serial
+  dates, THC normalization. Lands `distributor_menu_items`; behind `apps/ordering.html`
+  (Wholesale Ordering: all menus → one catalog → one order → per-distributor PO sheets via
+  `/api/menus/*` + `/api/orders*`).
 - `unifyd/hoodie_mdm.html` — the MDM control plane the agent serves. Reads `/api/*` when
   the agent is up, falls back to an embedded `const DATASETS` preview otherwise.
 - **Runtime is git-ignored:** `agent_state/`, `cola_out/`, `out/`, `__pycache__/`.

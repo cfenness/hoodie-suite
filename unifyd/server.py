@@ -160,6 +160,15 @@ def census_pull(body):
     to outlets via county FIPS). Needs the free CENSUS_API_KEY; degrades with a clear warning
     otherwise. `state` scopes it (FIPS, or 'us' for all counties); default = FL/TX/IL."""
     started = int(time.time() * 1000)
+    # Honest creds gate (standing rule): a source gated on a credential we don't have reports
+    # `no-creds` (skipped), NOT `failed`. Without the key every fetch is refused and census.pull
+    # returns 0 counties → status "failed", which the health digest flags as a critical run-failed
+    # even though nothing is broken — it's just un-credentialed on this host.
+    if not os.environ.get("CENSUS_API_KEY", "").strip():
+        return _std_run("census-acs", started, status="no-creds",
+                        trigger=(body or {}).get("trigger", "manual"),
+                        warnings=["Census API key required — set CENSUS_API_KEY "
+                                  "(free at census.gov/developers/)"])
     ds, runs, _ = census.pull(state=(body or {}).get("state"),
                               log=lambda m: app.logger.info("CENSUS %s", m))
     DATASETS.update(_absorb(ds)); save()
@@ -1068,8 +1077,9 @@ def _query_timeout(name, sql, timeout_s):
     import warehouse
     with _MON_LOCK:
         try:
+            import monitor
             con = _mon_con()
-            src = warehouse.uri(name).replace("'", "")
+            src = monitor.read_expr(name)                 # partitioned-aware (glob for retail_observations etc.)
             timed = {"v": False}
 
             def kill():
@@ -1081,7 +1091,7 @@ def _query_timeout(name, sql, timeout_s):
             timer = threading.Timer(timeout_s, kill)
             timer.start()
             try:
-                con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet('%s')" % src)
+                con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM %s" % src)
                 cur = con.execute(sql)
                 cols = [d[0] for d in cur.description]
                 rows = [dict(zip(cols, row)) for row in cur.fetchall()]
@@ -1129,6 +1139,21 @@ def api_monitor_data():
             r["raw_json"] = "…"
     return jsonify({"name": name, "count": total, "columns": cols, "rows": rows, "order_by": None,
                     "note": "live sample (preview being precomputed in the background)"})
+
+
+@app.get("/api/monitor/source")
+def api_monitor_source():
+    """One SOURCE's drill-in: its datasets + its ACCOUNTS-WITH-INVENTORY (per-store skus / in-stock / units on
+    the source's latest observation day). Reads only that source's latest-date part files (filename-pruned),
+    cached until a new part lands — so the console can filter any scrape down to real accounts instantly."""
+    import monitor
+    key = request.args.get("key", "")
+    if not key:
+        return jsonify({"error": "key required"}), 400
+    try:
+        return jsonify(monitor.source_detail(key))
+    except Exception as e:
+        return jsonify({"key": key, "accounts": [], "note": "error: %s" % str(e)[:150]}), 200
 
 
 @app.get("/api/monitor/search")
@@ -4830,16 +4855,19 @@ def parse_upload_ep():
         return jsonify(error="parse-failed", detail="couldn't find a header row"), 400
     prof = analyze.profile_columns(parsed["header"], parsed["rows"])
     return jsonify(filename=f.filename, header=parsed["header"], rows=parsed["rows"][:20000],
-                   row_src=parsed.get("row_src", [])[:20000],
+                   row_src=parsed.get("row_src", [])[:20000], col_src=parsed.get("col_src", []),
                    header_row=parsed["header_row"], sheet=parsed.get("sheet"),
                    row_count=len(parsed["rows"]), profile=prof)
 
 
 @app.post("/api/refill-xlsx")
 def refill_xlsx_ep():
-    """Refill an ORIGINAL xlsx WITH ITS FORMATTING: load the uploaded file writable (openpyxl preserves styles),
-    append an order column, and write the quantities at their physical rows. `orders` = {physical_0based_row: qty}
-    (from parse-upload's row_src), `header_row` places the column label. Returns the formatted .xlsx."""
+    """Refill an ORIGINAL xlsx WITH ITS FORMATTING: load the uploaded file writable (openpyxl preserves styles)
+    and write the quantities at their physical rows. `orders` = {physical_0based_row: qty} (from parse-upload's
+    row_src). Landing: `qty_col` (physical 0-based col, from parse-upload's col_src) drops quantities INTO that
+    existing column — so a menu whose own formulas hang off its units column (e.g. Curaleaf's Base Total $ =
+    Total Units × Base $) computes when the supplier opens it. Without `qty_col`, appends an order column
+    (`header_row` places its label). Returns the formatted .xlsx."""
     import io
     import openpyxl
     from flask import send_file
@@ -4856,13 +4884,40 @@ def refill_xlsx_ep():
     except Exception:
         header_row = 0
     try:
+        qty_col = int(request.form.get("qty_col"))                 # physical 0-based landing column
+    except (TypeError, ValueError):
+        qty_col = -1
+    try:
+        data_rows = json.loads(request.form.get("rows") or "[]")   # parsed data rows (row_src) — clearing scope
+    except Exception:
+        data_rows = []
+    try:
         wb = openpyxl.load_workbook(io.BytesIO(f.read()))          # writable → preserves original formatting
         ws = wb[wb.sheetnames[0]]
-        qcol = ws.max_column + 1                                   # append the order column after the used range
-        ws.cell(row=header_row + 1, column=qcol, value=label)      # header at its physical (1-based) row
+        if 0 <= qty_col:
+            qcol = qty_col + 1                                     # land in the file's own column (header stays)
+            # Phantom-order guard: a pre-filled landing column (par/suggested quantities, or a
+            # re-uploaded prior order) must not survive as silent order lines the buyer never sees.
+            # Clear LITERAL values on every data row not ordered; leave formulas alone — they
+            # compute from their own inputs (e.g. =SUM(LOC1:LOC4)) and evaluate 0 when empty.
+            for r0 in data_rows:
+                try:
+                    r0 = int(r0)
+                except (TypeError, ValueError):
+                    continue
+                if str(r0) in orders:
+                    continue
+                cell = ws.cell(row=r0 + 1, column=qcol)
+                if cell.data_type != "f" and cell.value not in (None, ""):
+                    cell.value = None
+        else:
+            qcol = ws.max_column + 1                               # append the order column after the used range
+            ws.cell(row=header_row + 1, column=qcol, value=label)  # header at its physical (1-based) row
         for k, v in orders.items():
-            if v in (None, "", 0, "0"):
+            if v in (None, ""):
                 continue
+            if qty_col < 0 and v in (0, "0"):
+                continue                                           # append mode: blank already means no order
             try:
                 r0 = int(k)
                 q = int(v) if str(v).strip().lstrip("-").isdigit() else v
@@ -4875,6 +4930,54 @@ def refill_xlsx_ep():
     fn = (f.filename or "order").rsplit(".", 1)[0] + " - ORDER.xlsx"
     return send_file(out, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                      as_attachment=True, download_name=fn)
+
+
+# Known brand → public Lingo kit (kit uuid). Menus from these suppliers can auto-attach product photography.
+LINGO_BRANDS = {
+    "curaleaf-ny": {"label": "Curaleaf NY", "kit": "A4EAE236-742F-443B-BC4E-5A94D1A04B12",
+                    "portal": "4PkjwR", "sections": ["Product Photography", "Strain Cards"],
+                    "match": ["curaleaf", "ocm-xrod", "whole flower", "20 to 1", "20to1"]},
+}
+_LINGO_MAN = {}  # kit uuid -> manifest (in-process cache; Lingo kits are stable)
+
+
+def _lingo_manifest(kit, sections=None):
+    key = kit
+    if key not in _LINGO_MAN:
+        import lingo_assets
+        _LINGO_MAN[key] = lingo_assets.manifest(kit, only_sections=sections)
+    return _LINGO_MAN[key]
+
+
+@app.post("/api/lingo-images")
+def lingo_images_ep():
+    """Attach brand product photography to an inbound menu. POST {brand|kit|portal, products:[{name}], sections?}
+    → {kit, asset_total, matched, matches:[{name, matched, img, thumb, full, score}]}. Images come from a public
+    Lingo DAM portal (see unifyd/lingo_assets.py); URLs carry a durable public token and render directly in <img>."""
+    import lingo_assets
+    b = request.get_json(force=True, silent=True) or {}
+    brand = (b.get("brand") or "").strip().lower()
+    kit = (b.get("kit") or "").strip()
+    portal = (b.get("portal") or "").strip()
+    sections = b.get("sections")
+    products = b.get("products") or []
+    reg = LINGO_BRANDS.get(brand)
+    if reg:
+        kit = kit or reg["kit"]; sections = sections or reg["sections"]
+    if not kit and portal:
+        try:
+            kit = kit or (lingo_assets.portal(portal) or {}).get("uuid")  # portal metadata only; kit still needed
+        except Exception:
+            pass
+    if not kit:
+        return jsonify(error="no-kit", detail="pass brand, kit, or a resolvable portal"), 400
+    try:
+        man = _lingo_manifest(kit, sections)
+        matches = lingo_assets.match_products(products, man) if products else []
+    except Exception as e:
+        return jsonify(error="lingo-failed", detail=str(e)[:200]), 502
+    return jsonify(kit=kit, asset_total=man.get("asset_total", 0),
+                   matched=sum(1 for m in matches if m.get("matched")), matches=matches)
 
 
 @app.post("/api/ai-read-upload")
@@ -5456,6 +5559,194 @@ def label_reads_ep():
     except Exception:
         limit = 50
     return jsonify(ok=True, reads=label_reader.recent(limit))
+
+
+# ── Wholesale ordering — distributor menus in, one ordering page, orders fanned back out ──
+# The team ask: every distributor emails a wholesale menu (xlsx); parse them ALL into one central
+# catalog, let a retailer build a single order across distributors, then return each distributor
+# exactly their slice as an order sheet. Menus land in the warehouse (distributor_menu_items via
+# menu_ingest); orders are small transactional state → orders.json (the load/_save_json store).
+ORDERS = load("orders.json", [])
+
+
+@app.post("/api/menus/upload")
+def menus_upload_ep():
+    """Upload one distributor menu file. Body: {filename, b64, distributor?}. Parses (header-row
+    detection + column synonyms), lands to distributor_menu_items, returns the parse summary so the
+    UI can show what mapped before the retailer trusts it."""
+    import base64 as _b64
+    import menu_ingest
+    body = request.get_json(force=True, silent=True) or {}
+    fn = (body.get("filename") or "menu.xlsx").strip()
+    try:
+        data = _b64.b64decode(body.get("b64") or "")
+    except Exception:
+        return jsonify(ok=False, error="bad b64"), 400
+    if not data:
+        return jsonify(ok=False, error="filename + b64 file content required"), 400
+    if len(data) > 15 * 1024 * 1024:
+        return jsonify(ok=False, error="file too large (15MB max)"), 400
+    try:
+        parsed = menu_ingest.parse(data, filename=fn, distributor=(body.get("distributor") or "").strip())
+    except Exception as e:
+        return jsonify(ok=False, error="parse failed: %s" % str(e)[:200]), 500
+    if not parsed.get("ok"):
+        return jsonify(ok=False, error=parsed.get("error", "unparseable")), 422
+    n = menu_ingest.land(parsed)
+    its = parsed["items"]
+    return jsonify(ok=True, menu_id=parsed["menu_id"], distributor=parsed["distributor"],
+                   menu_date=parsed["menu_date"], license=parsed["license"], lines=n,
+                   brands=sorted({i["brand"] for i in its if i["brand"]}),
+                   warnings=parsed["warnings"])
+
+
+@app.get("/api/menus")
+def menus_list_ep():
+    """Every ingested menu, newest first — plus which one is CURRENT per distributor (the ordering
+    page shops current menus only; older ones stay for history/price movement)."""
+    try:
+        rows = warehouse.query("distributor_menu_items",
+                               "SELECT menu_id, distributor, menu_date, license, source_file, "
+                               "COUNT(*) AS lines, MAX(ts) AS ts FROM t "
+                               "GROUP BY 1,2,3,4,5 ORDER BY menu_date DESC, ts DESC")
+    except Exception:
+        return jsonify(ok=True, menus=[], note="no menus yet — upload a distributor menu")
+    seen = set()
+    for r in rows:
+        r["current"] = r["distributor"] not in seen
+        seen.add(r["distributor"])
+    return jsonify(ok=True, menus=rows)
+
+
+@app.get("/api/menus/items")
+def menus_items_ep():
+    """The combined catalog the ordering page shops: the CURRENT menu's lines per distributor
+    (or one menu via ?menu_id=). ?q= filters name/brand/batch."""
+    mid = (request.args.get("menu_id") or "").strip()
+    q = (request.args.get("q") or "").strip().lower()
+    try:
+        if mid:
+            rows = warehouse.query("distributor_menu_items",
+                                   "SELECT * FROM t WHERE menu_id = ? ORDER BY line", [mid])
+        else:
+            rows = warehouse.query("distributor_menu_items",
+                                   "SELECT t.* FROM t JOIN (SELECT distributor, MAX(menu_date) AS d "
+                                   "FROM t GROUP BY 1) cur ON t.distributor = cur.distributor AND "
+                                   "t.menu_date = cur.d ORDER BY t.distributor, t.line")
+    except Exception:
+        return jsonify(ok=True, items=[], note="no menus yet")
+    if q:
+        rows = [r for r in rows if q in " ".join(str(r.get(k) or "") for k in
+                                                 ("product_name", "brand", "batch", "category")).lower()]
+    return jsonify(ok=True, items=rows, total=len(rows))
+
+
+@app.post("/api/orders")
+def orders_submit_ep():
+    """Submit a retailer order. Body: {retailer, license?, notes?, lines:[{menu_id, line, qty}]}.
+    Lines are re-resolved against the WAREHOUSE (price/batch come from the menu of record, never
+    the client), grouped per distributor, and persisted. Returns the order incl. the per-
+    distributor breakdown the sheets are generated from."""
+    body = request.get_json(force=True, silent=True) or {}
+    retailer = (body.get("retailer") or "").strip()
+    lines = body.get("lines") or []
+    if not retailer or not lines:
+        return jsonify(ok=False, error="retailer + lines[] required"), 400
+    want = {}
+    for l in lines:
+        try:
+            qty = int(l.get("qty") or 0)
+        except Exception:
+            qty = 0
+        if qty > 0 and l.get("menu_id") is not None:
+            want[(str(l["menu_id"]), int(l.get("line", -1)))] = qty
+    if not want:
+        return jsonify(ok=False, error="no lines with qty > 0"), 400
+    try:
+        mids = sorted({k[0] for k in want})
+        rows = warehouse.query("distributor_menu_items",
+                               "SELECT * FROM t WHERE menu_id IN (%s)" % ",".join("?" * len(mids)), mids)
+    except Exception as e:
+        return jsonify(ok=False, error="menu lookup failed: %s" % str(e)[:120]), 500
+    by_key = {(str(r["menu_id"]), int(r["line"])): r for r in rows}
+    resolved, missing = [], 0
+    for k, qty in want.items():
+        r = by_key.get(k)
+        if not r:
+            missing += 1
+            continue
+        unit = r.get("base_price")
+        resolved.append({"menu_id": k[0], "line": k[1], "distributor": r.get("distributor"),
+                         "brand": r.get("brand"), "product_name": r.get("product_name"),
+                         "batch": r.get("batch"), "size": r.get("size"), "thc_pct": r.get("thc_pct"),
+                         "bin_size": r.get("bin_size"), "qty": qty, "unit_price": unit,
+                         "line_total": round(unit * qty, 2) if unit is not None else None})
+    if not resolved:
+        return jsonify(ok=False, error="no order lines resolved against the stored menus"), 422
+    dists = {}
+    for l in resolved:
+        d = dists.setdefault(l["distributor"], {"distributor": l["distributor"], "lines": 0,
+                                                "units": 0, "total": 0.0})
+        d["lines"] += 1
+        d["units"] += l["qty"]
+        d["total"] = round(d["total"] + (l["line_total"] or 0), 2)
+    oid = "ORD-%s-%03d" % (time.strftime("%Y%m%d"), len(ORDERS) % 1000)
+    order = {"id": oid, "retailer": retailer[:120], "license": (body.get("license") or "").strip()[:60],
+             "notes": (body.get("notes") or "").strip()[:500], "ts": int(time.time() * 1000),
+             "status": "submitted", "lines": resolved, "distributors": sorted(dists.values(),
+                                                                              key=lambda d: d["distributor"]),
+             "total": round(sum(l["line_total"] or 0 for l in resolved), 2),
+             "units": sum(l["qty"] for l in resolved), "unresolved": missing}
+    ORDERS.append(order)
+    _save_json("orders.json", ORDERS)
+    return jsonify(ok=True, order=order)
+
+
+@app.get("/api/orders")
+def orders_list_ep():
+    slim = [{k: o[k] for k in ("id", "retailer", "ts", "status", "total", "units")} |
+            {"distributors": [d["distributor"] for d in o.get("distributors", [])],
+             "lines": len(o.get("lines", []))}
+            for o in reversed(ORDERS)]
+    return jsonify(ok=True, orders=slim)
+
+
+@app.get("/api/orders/<oid>")
+def order_get_ep(oid):
+    o = next((o for o in ORDERS if o["id"] == oid), None)
+    return (jsonify(ok=True, order=o) if o else (jsonify(ok=False, error="not found"), 404))
+
+
+@app.get("/api/orders/<oid>/sheet")
+def order_sheet_ep(oid):
+    """The per-distributor order sheet — ?distributor=X → a CSV of exactly that distributor's slice
+    (the artifact that goes back to them). This is the 'return the order to the right distributor'
+    leg: today a download/email attachment; the auto-send hook goes here when SMTP lands."""
+    import csv as _csv
+    import io as _io
+    o = next((o for o in ORDERS if o["id"] == oid), None)
+    if not o:
+        return jsonify(ok=False, error="not found"), 404
+    dist = (request.args.get("distributor") or "").strip()
+    lines = [l for l in o["lines"] if not dist or l["distributor"] == dist]
+    if not lines:
+        return jsonify(ok=False, error="no lines for that distributor"), 404
+    buf = _io.StringIO()
+    w = _csv.writer(buf)
+    w.writerow(["Purchase Order", o["id"]])
+    w.writerow(["Retailer", o["retailer"], "License", o.get("license", "")])
+    w.writerow(["Distributor", dist or "ALL", "Date", time.strftime("%Y-%m-%d", time.localtime(o["ts"] / 1000))])
+    w.writerow([])
+    w.writerow(["Product", "Brand", "Batch #", "Size", "THC %", "Case Size", "Qty", "Unit $", "Line Total $"])
+    for l in lines:
+        w.writerow([l["product_name"], l["brand"], l["batch"], l["size"], l["thc_pct"],
+                    l["bin_size"], l["qty"], l["unit_price"], l["line_total"]])
+    w.writerow([])
+    w.writerow(["", "", "", "", "", "TOTAL", sum(l["qty"] for l in lines), "",
+                round(sum(l["line_total"] or 0 for l in lines), 2)])
+    fn = "%s_%s.csv" % (oid, re.sub(r"[^A-Za-z0-9]+", "_", dist or "all"))
+    return Response(buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="%s"' % fn})
 
 
 # ---- optional: serve the static suite from THIS app (all-in-one image, e.g. Fly.io) ----

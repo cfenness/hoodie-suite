@@ -43,6 +43,8 @@ _CFG = {
     "abc_products": dict(name="name", brand="brand", varietal="varietal", region="region", country="country",
                          origin="country", sub_region="sub_region", cat="type", size="size", image="image", id="sku",
                          upc="upc", gtin="gtin"),                       # UPC/GTIN now captured (BigCommerce variant)
+    # NOTE kroger 'upc' is the UPC-A BODY, checkless (+often zero-stripped) — sku_match.norm_upc's core
+    # reduction absorbs that shape for matching; upc.from_checkless_13 heals it where a FULL code is needed.
     "kroger_products": dict(name="product_name", size="size", upc="upc", brand="brand", cat="category",
                             image="image_url", filt=lambda r: r.get("category") == "Adult Beverage", dedup=["product_id"]),
     # Kroger internal atlas API — gtin14 + dims + ABV keyed by GTIN (barcode key for the whole Kroger banner set)

@@ -80,7 +80,8 @@ def parse_upload(filename, raw, scan=15):
         if any(vals):
             rows.append(vals)
             row_src.append(hi + 1 + off)          # physical 0-based grid row — for faithful write-back/refill
-    return {"header": header, "rows": rows, "row_src": row_src, "header_row": hi, "sheet": sheet}
+    return {"header": header, "rows": rows, "row_src": row_src, "col_src": keep,  # keep = parsed col → physical 0-based col
+            "header_row": hi, "sheet": sheet}
 
 
 def profile_columns(header, rows, top_k=8):
