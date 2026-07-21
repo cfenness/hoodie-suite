@@ -2,7 +2,7 @@
   "meta": {
     "project": "Hoodie Suite",
     "prefix": "HS",
-    "next_id": 25,
+    "next_id": 26,
     "statuses": [
       "proposed",
       "backlog",
@@ -444,15 +444,15 @@
     },
     {
       "id": "HS-013",
-      "title": "Serve depth — delta feed, provenance-on-serve, entitlements, change events",
       "type": "feat",
-      "status": "backlog",
       "size": "L",
       "priority": "P2",
-      "created": "2026-07-08",
-      "updated": "2026-07-21",
+      "status": "backlog",
+      "title": "Serve depth — delta feed, provenance-on-serve, entitlements, change events",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
       "commits": [],
+      "created": "2026-07-08",
+      "updated": "2026-07-21",
       "summary": "Grow /api/serve from a paged read into the syndication contract: ?updated_since= delta feed, provenance-on-serve (the trust API — every value with its source, per hoodie_id), per-customer entitlements + quotas, change events/webhooks later. Contract versioned in openapi.yaml so the app's typed client regenerates against it (hoodie-app HA-004 followup).",
       "context": "The 'thousands of customers' path. Preconditions already landed: real-only gate (HS-009), stable Hoodie IDs, provenance internally (HS-008). The delta feed needs a materialized per-record timestamp — which drags in the golden-record HISTORY/changelog floor item; UNMERGE (reversible merge) belongs to the same floor bundle: stewards WILL merge wrong, and reversal must be a rule too. Entitlements build on primitives that exist (OIDC gate, bearer exchange, per-IP rate limiter) — extension, not greenfield.",
       "acceptance": [
@@ -461,13 +461,13 @@
         "Entitlements: a scoped consumer provably receives only its slice; quota enforcement measurable; entitlement config is data, not code",
         "openapi.yaml documents every serve route; unmerge exists as an override rule with provenance (who/when/why), re-materializes correctly"
       ],
+      "verification_plan": [
+        "Two-build delta test; cross-consumer entitlement isolation test; unmerge round-trip (merge → unmerge → rebuild → two golden records again, ids preserved per registry policy)"
+      ],
       "files": [
         "unifyd/server.py",
         "unifyd/warehouse.py",
         "unifyd/openapi.yaml"
-      ],
-      "verification_plan": [
-        "Two-build delta test; cross-consumer entitlement isolation test; unmerge round-trip (merge → unmerge → rebuild → two golden records again, ids preserved per registry policy)"
       ]
     },
     {
@@ -781,13 +781,17 @@
       "id": "HS-024",
       "title": "Editable inline tickets (schema-defined) + plain-language QA/review + FAANG-throughput gates",
       "type": "feat",
-      "status": "in-progress",
+      "status": "done",
       "size": "M",
       "priority": "P1",
       "created": "2026-07-08",
       "updated": "2026-07-08",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
-      "commits": [],
+      "commits": [
+        "9f2fa83",
+        "838d90c",
+        "bbf3031"
+      ],
       "summary": "The ticket becomes an owner-editable structure: apps/tickets.schema.json defines the sections (add/remove/reorder there → every ticket drawer follows, no code change); the board drawer gains an inline EDIT mode (engine up → edit any section, add/remove items, save → POST /api/tickets/save writes apps/tickets.json on disk). Two new owner-authored plain-language sections — qa_checks and review_notes — that the gate agents are REQUIRED to execute item-by-item, reporting per-item PASS/FAIL into qa_results. The gate rule is upgraded to a DEFINED minimum workload run by parallel fresh-context agents (every hunk reviewed, every criterion + every qa_check executed, full self-test suite, negative probes).",
       "context": "Owner's spec in chat (recorded as the propose→confirm confirmation per the rule's exception): 'inline html ticket structure… define the structure in the repo that I can go in and add/remove details in the ticket itself… space for plain-language qa/review things to check… qa/review agents with the work throughput of a FAANG qa team.' Durability note: on a deployed box, saves persist until redeploy — committing tickets.json is the durable save (the UI says so after every save).",
       "acceptance": [
@@ -811,15 +815,56 @@
         "XSS: is every edited value esc()'d at every render site (view mode, edit inputs, chips)?",
         "Does the endpoint sit behind the same auth gate as the rest of /api/* on the deployed box?"
       ],
-      "verification_plan": [
-        "Playwright: full edit round-trip on the live board; negative probes (engine down, junk status via curl); parallel review+QA agents run as the first live execution of the upgraded gate, findings recorded in review/qa_results"
-      ],
       "files": [
         "apps/tickets.schema.json",
         "apps/tickets.html",
         "unifyd/server.py",
         "CLAUDE.md",
         "apps/docs/process.md"
+      ],
+      "review": [
+        "GATE RUN (parallel fresh-context agents, first live execution of the upgraded rule). Reviewer verdicts on the 4 owner review_notes: key-injection PASS (schema-restricted fields) with value-shape caveat; partial-write/concurrency FAIL; XSS PASS (every render site esc()'d); auth PASS (identical OIDC/token/rate-limit stack as all /api/*).",
+        "MAJOR (fixed): non-atomic truncate-then-write could corrupt tickets.json on crash — now tmp + os.replace",
+        "MAJOR (fixed): no lock on read-modify-write under threaded server — now module-level threading.Lock around load-patch-dump; 12 parallel saves verified → valid JSON",
+        "MAJOR (fixed): pop-on-empty applied to header fields (cleared title deleted the key) — headers never popped; empty title now 400 'title required'",
+        "MAJOR (fixed): no value-shape validation (dict-for-list persisted, broke drawer) — _ticket_value_ok enforces bounded str/list-of-str per schema kind; type/size/priority enum-checked",
+        "MINOR (fixed): load/write failures returned 200 — now 500; MINOR (fixed): save path shuffled key order — canonical rebuild (header → created/updated → schema order); MINOR (fixed): editable:false now honored in editor + server; MINOR (fixed): FALLBACK_SCHEMA synced with qa_checks/review_notes/review/qa_results; MINOR (fixed): save button re-enabled before reload",
+        "MINOR (followup HS-025): editable badge keys off auth-exempt /api/health — a gated deploy shows edit it can't use; MINOR (accepted): esc() doesn't cover single quotes — safe today (all generated attributes double-quoted), noted for future attribute changes"
+      ],
+      "qa_results": [
+        "QA agent 6/6 PASS, environment left as found (schema md5-identical, engine up, no probe artifacts):",
+        "1 PASS edit→save→full-reload round-trip survives on HS-013, then cleanly removed",
+        "2 PASS apostrophe + <b> tag renders as literal text (zero <b> elements in drawer DOM); raw text in tickets.json; original restored",
+        "3 PASS unknown id → ok:false 404; junk status → ok:false 400; HS-013 byte-identical after both rejections",
+        "4 PASS emptied section removes the key and the drawer shows no empty header; restored after",
+        "5 PASS schema-driven proven: temp section added to tickets.schema.json appeared in the editor with zero board-code change, removed cleanly",
+        "6 PASS engine down → 'read-only', edit hidden, board fully browsable (24 cards); engine restarted, health 200"
+      ],
+      "verification": [
+        "Author smoke + both gate agents (above). Post-fix re-verification: negative probes return 404/400; enum + empty-title rejected; dict-for-list ignored (shape validation); 12 concurrent saves → file valid JSON (lock); FULL self-test suite green (flow.py + derive.py)"
+      ]
+    },
+    {
+      "id": "HS-025",
+      "title": "Editable badge should probe an authenticated endpoint, not /api/health",
+      "type": "fix",
+      "status": "backlog",
+      "size": "S",
+      "priority": "P3",
+      "created": "2026-07-08",
+      "updated": "2026-07-08",
+      "branch": "",
+      "commits": [],
+      "summary": "The board decides 'editable · engine up' by probing /api/health, which is exempt from the OIDC gate and AGENT_TOKEN — so on a gated deploy a browser without auth is shown edit mode and only discovers it can't save when the save fails. Probe an authenticated endpoint (or treat a 401 on save-probe as read-only).",
+      "context": "Reviewer minor from the HS-024 gate run. Cosmetic-to-confusing on deployed boxes; harmless locally.",
+      "acceptance": [
+        "A browser that cannot pass the auth gate sees read-only (no edit button); an authenticated one sees edit; local ungated dev unchanged"
+      ],
+      "verification_plan": [
+        "Deployed-box (or simulated gate) probe with and without auth"
+      ],
+      "files": [
+        "apps/tickets.html"
       ]
     }
   ]

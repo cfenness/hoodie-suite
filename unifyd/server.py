@@ -3189,44 +3189,79 @@ def _tickets_paths():
             os.path.join(_REPO_ROOT, "apps", "tickets.schema.json"))
 
 
+_TICKETS_LOCK = threading.Lock()          # review finding: threaded server, read-modify-write race
+_TICKET_ENUMS = {"type": ("feat", "fix", "chore", "docs"), "size": ("S", "M", "L", "XL"),
+                 "priority": ("P1", "P2", "P3")}
+
+
+def _ticket_value_ok(kind, v, maxlen=4000, maxitems=100):
+    """Shape-validate a patch value against the schema kind (review finding: any JSON type used to
+    persist and then break the drawer). text/header → bounded str; list/chips → bounded list of str."""
+    if kind == "text":
+        return isinstance(v, str) and len(v) <= maxlen
+    return (isinstance(v, list) and len(v) <= maxitems
+            and all(isinstance(x, str) and len(x) <= maxlen for x in v))
+
+
 @app.post("/api/tickets/save")
 def tickets_save_ep():
-    """Persist an inline ticket edit: {id, ticket:{...}}. Only fields the schema declares (plus the
-    header fields) are accepted; id is immutable; `updated` is stamped server-side."""
+    """Persist an inline ticket edit: {id, ticket:{...}}. Only fields the schema declares (and marks
+    editable) are accepted, shape-validated; id immutable; `updated` stamped server-side. Atomic
+    write (tmp + os.replace) under a lock — a crash or concurrent save can never corrupt the file."""
     import datetime
     b = request.get_json(silent=True) or {}
     tid, patch = (b.get("id") or "").strip(), b.get("ticket") or {}
     if not tid or not isinstance(patch, dict):
         return jsonify(ok=False, error="id + ticket required"), 400
     tpath, spath = _tickets_paths()
-    try:
-        with open(spath) as f:
-            schema = json.load(f)
-        allowed = set(schema.get("header_fields", [])) | {s["key"] for s in schema.get("sections", [])}
-        allowed.discard("id")
-        with open(tpath) as f:
-            data = json.load(f)
-    except Exception as e:
-        return jsonify(ok=False, error="load failed: %s" % str(e)[:120]), 200
-    tk = next((t for t in data.get("tickets", []) if t.get("id") == tid), None)
-    if not tk:
-        return jsonify(ok=False, error="unknown ticket id"), 404
-    st = patch.get("status")
-    if st is not None and st not in data.get("meta", {}).get("statuses", []):
-        return jsonify(ok=False, error="unknown status"), 400
-    for k, v in patch.items():
-        if k in allowed:
-            if v in (None, "", []):
-                tk.pop(k, None)                                   # remove emptied sections entirely
-            else:
-                tk[k] = v
-    tk["updated"] = datetime.date.today().isoformat()
-    try:
-        with open(tpath, "w") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        return jsonify(ok=False, error="write failed: %s" % str(e)[:120]), 200
-    return jsonify(ok=True, ticket=tk)
+    with _TICKETS_LOCK:
+        try:
+            with open(spath) as f:
+                schema = json.load(f)
+            header = [h for h in schema.get("header_fields", []) if h != "id"]
+            sections = {s["key"]: s for s in schema.get("sections", []) if s.get("editable", True)}
+            with open(tpath) as f:
+                data = json.load(f)
+        except Exception as e:
+            return jsonify(ok=False, error="load failed: %s" % str(e)[:120]), 500
+        tk = next((t for t in data.get("tickets", []) if t.get("id") == tid), None)
+        if not tk:
+            return jsonify(ok=False, error="unknown ticket id"), 404
+        st = patch.get("status")
+        if st is not None and st not in data.get("meta", {}).get("statuses", []):
+            return jsonify(ok=False, error="unknown status"), 400
+        for k, allowed_vals in _TICKET_ENUMS.items():
+            if k in patch and patch[k] not in allowed_vals:
+                return jsonify(ok=False, error="invalid %s" % k), 400
+        if "title" in patch and not (isinstance(patch.get("title"), str) and patch["title"].strip()):
+            return jsonify(ok=False, error="title required"), 400   # never pop a header field to empty
+        for k, v in patch.items():
+            if k in header:
+                if _ticket_value_ok("text", v) or isinstance(v, list):   # commits is a list header field
+                    if k == "commits" and not _ticket_value_ok("list", v):
+                        continue
+                    tk[k] = v
+            elif k in sections:
+                kind = "text" if sections[k].get("kind") == "text" else "list"
+                if v in (None, "", []):
+                    tk.pop(k, None)                               # emptied SECTIONS are removed; headers never
+                elif _ticket_value_ok(kind, v):
+                    tk[k] = v
+        tk["updated"] = datetime.date.today().isoformat()
+        # canonical key order (review minor: save path shuffled keys when sections were re-added)
+        order = ["id"] + header + ["created", "updated"] + [s["key"] for s in schema.get("sections", [])]
+        rebuilt = {k: tk[k] for k in order if k in tk}
+        rebuilt.update({k: v for k, v in tk.items() if k not in rebuilt})
+        idx = next(i for i, t in enumerate(data["tickets"]) if t.get("id") == tid)
+        data["tickets"][idx] = rebuilt
+        try:
+            tmp = tpath + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, tpath)                                # atomic — never a truncated source of truth
+        except Exception as e:
+            return jsonify(ok=False, error="write failed: %s" % str(e)[:120]), 500
+    return jsonify(ok=True, ticket=rebuilt)
 
 
 # ── Serve — syndicate the golden master to consumers. REAL ONLY, by construction: mode is hardcoded

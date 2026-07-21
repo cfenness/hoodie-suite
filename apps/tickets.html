@@ -113,7 +113,11 @@
   var FALLBACK_SCHEMA={header_fields:["id","type","size","priority","status","title","branch","commits"],sections:[
     {key:"summary",label:"Summary",kind:"text",editable:true},{key:"context",label:"Context / why",kind:"text",editable:true},
     {key:"acceptance",label:"Acceptance criteria",kind:"list",editable:true,checkbox:true},
+    {key:"qa_checks",label:"QA — things to check (plain language)",kind:"list",editable:true,agents_must_execute:true},
+    {key:"review_notes",label:"Review — things to look at (plain language)",kind:"list",editable:true,agents_must_execute:true},
     {key:"implementation",label:"Implementation notes",kind:"list",editable:true},
+    {key:"review",label:"Agentic review — findings",kind:"list",editable:true},
+    {key:"qa_results",label:"Agentic QA — per-check results",kind:"list",editable:true},
     {key:"verification_plan",label:"Verification plan",kind:"list",editable:true},
     {key:"verification",label:"Verification — done",kind:"list",editable:true},
     {key:"files",label:"Files",kind:"chips",editable:true},{key:"followups",label:"Follow-ups",kind:"list",editable:true}]};
@@ -221,7 +225,7 @@
       '<span class="push"><button class="ebtn save" id="save">save</button><button class="ebtn" id="cancel">cancel</button></span></div>'+
       '<input class="title" id="f-title" value="'+esc(t.title)+'">'+
       '</div><div class="db" id="editbody">'+
-      S.schema.sections.map(function(s){return editSection(s,t);}).join("")+
+      S.schema.sections.filter(function(s){return s.editable!==false;}).map(function(s){return editSection(s,t);}).join("")+
       '<div class="foot-note">saves to apps/tickets.json via the engine · commit the file for durability · empty sections are removed</div></div>';
     $("drawer").innerHTML=h;
     Array.prototype.forEach.call(document.querySelectorAll("#editbody .del"),function(b){b.onclick=function(){b.parentNode.parentNode.removeChild(b.parentNode);};});
@@ -246,7 +250,8 @@
     var btn=$("save");btn.disabled=true;btn.textContent="saving…";
     fetch("/api/tickets/save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:id,ticket:collect()})})
       .then(function(r){return r.json();})
-      .then(function(r){ if(!r.ok){toast("save failed · "+(r.error||"?"),"bad");btn.disabled=false;btn.textContent="save";return;}
+      .then(function(r){ btn.disabled=false;btn.textContent="save";
+        if(!r.ok){toast("save failed · "+(r.error||"?"),"bad");return;}
         toast("saved — commit apps/tickets.json for durability","good"); load(id); })
       .catch(function(e){toast("save failed · "+e,"bad");btn.disabled=false;btn.textContent="save";});
   }
