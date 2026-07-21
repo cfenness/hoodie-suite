@@ -2,7 +2,7 @@
   "meta": {
     "project": "Hoodie Suite",
     "prefix": "HS",
-    "next_id": 19,
+    "next_id": 20,
     "statuses": [
       "backlog",
       "ready",
@@ -31,25 +31,33 @@
       "branch": "claude/world-class-mdm-strategy-7bpom6",
       "commits": [
         "dcc0b4f",
-        "ac98c0b"
+        "ac98c0b",
+        "73b87d1",
+        "640707e"
       ],
-      "summary": "A flow is a DAG of typed nodes (input | clean | union | resolve | output) that compiles to ONE nested DuckDB SQL query over Parquet — no per-row Python. The resolve node is the golden-record loop: dedup on a strong/natural identity key, per-attribute survivorship, and <field>__conflict flags.",
-      "context": "Tableau-Prep-style master building on the existing derive.py idiom (every transform = a SQL expression). Reuses derive.compile_rule for all field expressions, so Mapping-tab rules and flow rules are one vocabulary.",
+      "summary": "A flow is a DAG of typed nodes (input | clean | union | resolve | output) that compiles to ONE nested DuckDB SQL query over Parquet — no per-row Python, no intermediate copies. The resolve node is the golden-record loop: dedup on a strong/natural identity key, per-attribute survivorship, and <field>__conflict flags for the stewardship queue.",
+      "context": "Tableau-Prep-style master building on the existing derive.py idiom (every transform = one SQL expression). Reuses derive.compile_rule + derive.apply_normalizer for all clean-node field expressions, so Mapping-tab rules and flow rules are ONE vocabulary — a rule learned in either place works in both. Design goal named by the owner: line of sight — every step must be inspectable and explainable.",
       "acceptance": [
-        "compile_sql(flow, node, uri_fn) returns runnable DuckDB SQL for any node; cycles and bad refs raise",
-        "resolve dedups on strong key (upc/source_ref) when present, else normalized natural key; survivorship rules: any | authority | frequency | recency | longest | min/max/sum",
-        "conflict_sql returns the stewardship queue (identities whose sources disagree, with value↔source pairs)",
-        "propose_flow(entity, datasets, master_fields) seeds a full draft flow from landed data",
-        "identity normalization is PER-ENTITY config (_ENTITY_KEYS) — no product logic hardcoded in the resolver"
+        "compile_sql(flow, node_id, uri_fn) returns runnable DuckDB SQL for any node's OUTPUT; cycles raise ValueError('flow has a cycle at node …'); unknown node/type raises",
+        "input compiles to SELECT *, '<ds>' AS _source FROM read_parquet('<uri>') — provenance rides from the first touch",
+        "clean projects derive rules onto the master schema (unmapped fields → NULL), carries _source, ANDs optional row filters",
+        "union is UNION ALL BY NAME over its inputs (schema-aligned stack, order-independent)",
+        "resolve dedups on strong key (COALESCE(NULLIF(strong,''), natural)) else the normalized natural key; survivorship rules any | authority | frequency | recency | longest | min | max | sum; emits _rows, _sources, _source_list, and <field>__conflict per attribute",
+        "conflict_sql returns the stewardship queue: identities whose sources disagree on a field, with values, value↔source pairs ({v, src}), sources, row counts",
+        "propose_flow(entity, datasets, master_fields) seeds a full draft flow (input→clean per feeding source →union→resolve→output) from landed data",
+        "identity normalization is PER-ENTITY config (_ENTITY_KEYS) — zero product logic hardcoded in the resolver"
       ],
       "implementation": [
-        "unifyd/flow.py — pure/stdlib + derive. Key seams: _key_part() (per-entity key normalizer), _identity_inner() (ONE identity basis shared by resolve/conflicts/provenance), _survivor_sql() (rule → aggregate), _authority_case() (source rank)",
-        "Known fix baked in: key parts COALESCE to '' so a NULL component can't null the whole concatenated key and silently drop rows (a || b || c is NULL if any part is); only all-empty keys are filtered",
-        "Known fix baked in: outlet keys use compare_form/address_core, NOT the product identity_key (which strips 'holiday' etc. — would false-merge 'Holiday Wine & Spirits')",
-        "'first' survivorship is honestly named 'any' (any_value = arbitrary order); deterministic tie-break for authority/frequency is a documented follow-up"
+        "unifyd/flow.py, pure stdlib + derive. Key seams: _key_part(spec) — a key component is {field, norm} (norm defaults compare_form), compiled via derive._apply_transform; _identity_inner(node, upstream_sql) — attaches the resolve node's identity as _id, and is THE ONE basis shared by resolve's GROUP BY, conflict_sql, and provenance_sql so the three can never disagree about what merged; _survivor_sql(col, rule, auth_expr, recency_col) — rule → aggregate; _authority_case(sources) — CASE _source WHEN … mapping best-first order to descending ranks, 0 for unlisted",
+        "Survivorship SQL per rule: any → any_value(c) FILTER (WHERE nonblank); authority → arg_max(c, CASE-rank) FILTER nonblank; frequency → mode(c); recency → arg_max(c, recency_col) FILTER nonblank; longest → arg_max(c, length(CAST c AS VARCHAR)); min/max/sum → agg(try_cast(c AS DOUBLE)). Conflict flag: count(DISTINCT CAST(c AS VARCHAR)) FILTER (WHERE <>'') > 1",
+        "BUG FOUND+FIXED (data loss, the canonical match anti-pattern): SQL `a || b || c` is NULL if ANY part is NULL, so a row missing one key component silently VANISHED from the master — the end-to-end smoke test caught tx_outlets contributing zero golden records. Fix: every key part wraps COALESCE(<norm(col)>, ''), and the resolve filters WHERE replace(_id,'␟','') <> '' — drop only ALL-empty keys, never partial ones. Key components join on the ␟ separator",
+        "BUG FOUND+FIXED (false merge): identity originally ran every natural-key field through derive.identity_expr, which strips product edition tokens (holiday, seasonal, limited…). Applied to outlets, 'Holiday Wine & Spirits' would lose 'holiday' and could collide with another 'Wine & Spirits'. Fix: _ENTITY_KEYS gives each entity its own normalizer set — product: identity_key (vintage/edition stripping is CORRECT there); outlet: compare_form + address_core + zip5(none); party: strip_entity_suffix. Strong keys: product=upc, outlet=source_ref, party=None",
+        "HONESTY RENAME: the 'first' survivorship rule is actually any_value (arbitrary order in DuckDB) — renamed 'any' and documented; a deterministic tie-break for authority/frequency ties (secondary sort on source rank) is an open follow-up, noted in MDM_FLOW.md",
+        "propose_flow: score_dataset = share of the entity's identity fields auto_map can fill (threshold 0.34); every clean node projects the FULL master schema (unmapped → {mode:'expr', expr:'NULL'}) so union aligns; single-source flows skip the union node; auto_map is synonym-table driven (_SYNONYMS) with first-claim-wins per master field",
+        "DECISION (identity name mapping): a source's trade_name feeds outlet_name (the MATCH name — many sources carry only a trade name) and dba is reserved for an explicit doing-business-as column; before this, tx.trade_name landed on dba, leaving outlet_name NULL and the TX rows keyless (caught by the same smoke test)"
       ],
       "verification": [
-        "python3 unifyd/flow.py self-test green vs real DuckDB: 3 rows → 1 golden; size normalized + agrees; origin conflict A>B by authority; conflict queue + profile SQL land; catch-all 4 filled → 3 flagged"
+        "python3 unifyd/flow.py self-test green against real DuckDB 1.5.4: two-source fixture (s1: Titos 750ML/750 ML origin A ×2 rows; s2: Titos 750ml origin B) → 1 golden with _rows=3, _sources=2; size_ml normalized to 750 by all → size_ml__conflict false; origin A vs B → conflict true, authority s1>s2 survives A; conflict queue returns values [A,B] AND pairs {v,src} covering both sources; provenance returns the 3 constituent rows; profile lands (_n=1); catch-all test: 4 filled → 3 flagged ('Other','OTHER','misc'), 1 informative; cycle guard raises; product-vs-outlet key compile asserts ('gift set' present in product key SQL, absent in outlet key SQL); outlet seed maps DBA→dba + Owner Name→outlet_name with strong=source_ref"
       ],
       "files": [
         "unifyd/flow.py"
@@ -57,10 +65,10 @@
     },
     {
       "id": "HS-002",
-      "title": "MDM_FLOW.md — design canon (first law, personas, cascade, generalization)",
+      "title": "MDM_FLOW.md — the design canon (laws, cascade, personas, generalization, standard)",
       "type": "docs",
       "status": "done",
-      "size": "S",
+      "size": "M",
       "priority": "P1",
       "created": "2026-07-08",
       "updated": "2026-07-08",
@@ -71,18 +79,24 @@
         "0cd2b4e",
         "91284c5",
         "673317c",
-        "5bae731"
+        "5bae731",
+        "78a5b00",
+        "4df4286"
       ],
-      "summary": "The shared design reference for the MDM build. Build against it; don't re-derive it in chat.",
-      "context": "Captures the laws the code must obey: (1) never fix the row — fix the rule (golden record is a derivation; every steward action is a rule that re-materializes); (2) real≠synthetic never commingle; (3) identity from public first principles — no proprietary vendor IDs; (4) engine is domain-agnostic, a domain is a config pack ('syndicate the lettuce industry' = one _ENTITY_KEYS row); (5) two personas — end user needs trust-at-a-glance, steward needs line of ACTION.",
+      "summary": "The canon of record for the MDM build — the laws the code must obey, updated in the same commits as the behavior they govern. Downstream repos (canon-seed) sync their laws to THIS doc verbatim; a law changes here first, then propagates.",
+      "context": "Written incrementally as each principle was decided with the owner, so every law carries its origin: (1) THE FIRST LAW — never fix the row, fix the rule: the golden record is a derivation, not a document; a row fix regenerates on the next pull, breaks reproducibility (an untraceable value = a restatement waiting to fire), destroys the lesson, and silently diverges from source; every steward action is a rule that re-materializes; a one-off is an override rule with provenance and a scope of one. (2) Real≠synthetic never commingle (separate namespaces, loud badge, never servable). (3) Identity from public first principles — no proprietary vendor IDs (an ethics decision by the owner re: VIP, and better architecture: portable, auditable, no lock-in). (4) The engine is domain-agnostic; a domain is a config pack — bev-alc is unique in field requirements, not tool capacity (the 'syndicate the lettuce industry' test: produce = UPC→PLU, TTB→PACA, one _ENTITY_KEYS row, zero engine changes). (5) Two personas — end user needs trust-at-a-glance; the steward LIVES here and needs line of ACTION, not just sight.",
       "acceptance": [
-        "Doc exists at repo root beside SPINE.md/BACKEND_DESIGN.md and reflects implemented reality (updated same-commit as behavior changes)"
+        "Doc at repo root beside SPINE.md/BACKEND_DESIGN.md; every section marked 'as implemented' matches shipped endpoints/files",
+        "THE AUTOMATCH STANDARD stated accuracy-first (owner's correction, commit 4df4286): 90–95% is NOT a quota — accuracy is the binding constraint and automation is maximized subject to it; the rate is EARNED through better tiers (normalizers, evidence, authorities), never bought by loosening thresholds; the 5–10% human residue is the design working; measured as the PAIR — auto/claude-verified/oracle-resolved/human shares per entity per build AND false-merge precision by audit sampling"
       ],
       "implementation": [
-        "Also specs: verification cascade (T0 deterministic → T1 Claude-verify vs whitelist → T2 external oracle (Google = oracle-not-store, persist decision + place_id only) → T3 human), catch-all→COLA verify trigger (record-level: ≥40% of RESPONDED fields catch-all once identifier-level; field-level: dataset share), split-case explode + repack recipes, two-pane match page, serve layer, edge-case catalog (dba≠legal, premise vs mailing, licensee≠establishment, lifecycle)"
+        "Sections and their content: the verification cascade (T0 deterministic → T1 Claude-verify: fetch the FACT from a whitelist of authoritative sources, verdict+evidence+confidence, never a similarity vote → T2 external oracle: Google Places = oracle-NOT-store, persist only the decision + durable place_id, never the payload; 'one open, one closed' resolves a same-address name conflict → T3 human, last and rarest)",
+        "Catch-all→COLA verify triggers (owner-specified): RECORD-level lazy-entry — once a record reaches the identifier level (resolvable to a COLA product cluster), fire if ≥40% of its RESPONDED fields are catch-all (denominator = responded fields, isolating 'answered with a non-answer' from ordinary blankness; you identify on the clean fields and verify the junk); FIELD-level — dataset-wide catch-all share = source untrustworthy for that field. Backfill-empty silently; escalate specific-value conflicts with evidence (label wins as higher authority); provenance = TTB COLA + filing id",
+        "Split-case (repack) explosion: detection = multiple abbreviated brand tokens in one item field (a legit item doesn't carry two brands; abbreviation is a character-limit artifact — owner's field knowledge); size is a FACT TO FETCH, not a guess (Grey Goose spans 50ml–1.75L): total net volume constrains count×size → the physical-vs-9L-ACCOUNTING-case trap (never treat a 9L statistical case as a bottle count) → gross-weight backstop → repack-UPC → stored recipe (solve once, auto-split forever) → authoritative lookup → human; mixed-size cases end at the recipe or the human, so REMEMBERING beats solving live",
+        "The match/steward surface spec (two-pane, select-or-drag), the serve layer (real-only by construction), the edge-case catalog grounded in the real connectors (dba≠legal_name — NY legalname doubles as owner; premise vs mailing address — CT backer_address is the licensee's HQ/lawyer; licensee≠establishment — TX master_file_id; lifecycle — new operator at same address after a gap = NEW outlet + old closed, Google open/closed resolves it), and the common-strings table that became HS-003"
       ],
       "verification": [
-        "Reviewed against shipped code each merge — sections marked 'as implemented' match endpoints/files"
+        "Cross-read against shipped code at each merge; canon-seed/CLAUDE.md laws diffed against this doc after the accuracy-first reframe"
       ],
       "files": [
         "MDM_FLOW.md"
@@ -90,7 +104,7 @@
     },
     {
       "id": "HS-003",
-      "title": "Common-string normalizers in derive.py (the edge-case catalog, banked)",
+      "title": "Common-string normalizers in derive.py — the edge-case catalog, banked as code",
       "type": "feat",
       "status": "done",
       "size": "S",
@@ -101,20 +115,23 @@
       "commits": [
         "3ff819e"
       ],
-      "summary": "Eight reusable SQL transforms for the recurring dirt in outlet/party data, each self-tested against DuckDB.",
-      "context": "A matching model is built from how data is actually dirty. These feed the resolve node's identity keys and any clean-node rule.",
+      "summary": "Eight reusable SQL transforms for the recurring dirt in outlet/party data, registered in derive.TRANSFORMS so they work in every rule, every flow clean node, and every identity key — each self-tested against live DuckDB rows.",
+      "context": "Owner's directive: 'keep pressing on edge cases — it's how a model is actually built; find the common strings and address them.' The catalog was mined from the REAL connectors (master.py colmaps, socrata_outlets, ct_dcp, tx_tabc), not invented: legal-suffix noise in licensee-name sources, hand-keyed placeholders, USPS drift, chain store numbers, unicode/punctuation variance.",
       "acceptance": [
-        "null_if_placeholder: N/A · NONE · SAME · SEE ABOVE · . · 0 · XXX → NULL",
-        "strip_entity_suffix: SMITH ENTERPRISES LLC → SMITH ENTERPRISES (legal_name_core)",
-        "address_std: USPS token standardization (123 Main Street → 123 MAIN ST); address_core: secondary-unit clause removed → building-level block key; unit_ext: STE 400 → 400",
-        "store_no_ext / name_no_store: WALMART #1234 → 1234 / WALMART",
-        "compare_form: accents folded, & → AND, punctuation dropped (Café Ñoño → CAFE NONO)"
+        "null_if_placeholder: N/A · NA · N.A. · NONE · NULL · SAME · SEE ABOVE · UNKNOWN · UNK · TBD · . · 0 · 00 · XXX · X · -- · --- (and blank) → NULL; real values pass through",
+        "strip_entity_suffix: 'SMITH ENTERPRISES LLC' → 'SMITH ENTERPRISES'; 'John Smith Inc' → 'JOHN SMITH'; 'COSTCO WHOLESALE CORP' → 'COSTCO WHOLESALE' (handles L L C, INCORPORATED, LLP, LP, LTD, LIMITED, PLLC, PC; dots/commas pre-stripped)",
+        "address_std: '123 Main Street' → '123 MAIN ST'; '456 North Ave.' → '456 N AVE' (USPS token standardization)",
+        "address_core: '789 Oak Blvd Ste 400' → '789 OAK BLVD' (secondary-unit clause removed → the building-level block key); unit_ext: same input → '400'",
+        "store_no_ext / name_no_store: 'WALMART #1234' → '1234' / 'WALMART' (patterns: #, STORE, STR, NO. + 2–6 digits)",
+        "compare_form: 'Barnes & Noble' → 'BARNES AND NOBLE'; 'Café Ñoño' → 'CAFE NONO' (strip_accents, &→AND, punctuation dropped, whitespace collapsed)"
       ],
       "implementation": [
-        "unifyd/derive.py TRANSFORMS registry — templates built with an '@@' placeholder then registered as %s templates; _STREET_STD longest-token-first so NORTHEAST replaces before NORTH. address_std is a ~20-token subset of the full USPS suffix table — widening it is HS-016 scope"
+        "Templates authored with an '@@' column placeholder for legibility, then registered into TRANSFORMS as %s templates (the registry's existing convention). _STREET_STD (~20 tokens: street types, directionals incl. compounds, unit designators) applies LONGEST-TOKEN-FIRST so NORTHEAST→NE replaces before NORTH→N — order is load-bearing",
+        "SCOPE HONESTY: _STREET_STD is a ~20-token subset of the ~200-entry USPS suffix table; PO-box detection and the premise-vs-mailing merge guard are deliberately NOT here — widened + hardened in HS-016",
+        "These feed _ENTITY_KEYS (HS-001): outlet identity = compare_form(outlet_name) ␟ address_core(address) ␟ zip5 — which is exactly what let '123 Main St' merge with '123 Main Street' in the endpoint smoke test"
       ],
       "verification": [
-        "python3 unifyd/derive.py green — each transform evaluated against live DuckDB rows"
+        "python3 unifyd/derive.py green — every transform evaluated against live DuckDB rows with the exact example strings above; existing 6-mode compile tests unchanged and green"
       ],
       "files": [
         "unifyd/derive.py"
@@ -122,7 +139,7 @@
     },
     {
       "id": "HS-004",
-      "title": "/api/flow/* endpoints — seed·save·preview·profile·sql·conflicts·run",
+      "title": "/api/flow/* endpoints — the engine, reachable and sampled",
       "type": "feat",
       "status": "done",
       "size": "M",
@@ -134,18 +151,22 @@
         "73b87d1",
         "5d77fba"
       ],
-      "summary": "The flow engine, reachable from the browser. Every read endpoint is sampled/aggregated in DuckDB (never a full table into Python).",
-      "context": "GET /api/flow/datasets (input palette, Parquet-footer-only), GET/POST /api/flow (persist to agent_state flows.json), POST seed / preview / profile / sql / conflicts / run.",
+      "summary": "Nine endpoints wiring flow.py to the browser. Every read is sampled/aggregated INSIDE DuckDB — a full table is never materialized into Python — so line-of-sight stays instant as sources grow.",
+      "context": "Routes (all under the existing auth gate + rate limit): GET /api/flow/datasets (input palette from Parquet FOOTERS only — rows+schema, never data); GET/POST /api/flow (persist flows to agent_state/flows.json, id minted flow_#####); POST /api/flow/seed {entity} (propose_flow over landed datasets + the entity's saved master schema); POST /api/flow/preview {flow,node,limit≤500}; POST /api/flow/profile {flow,node,sample} (fill/distinct/catch-all per column); POST /api/flow/sql (the Explain view); POST /api/flow/conflicts {flow,node,field,limit≤500}; POST /api/flow/provenance {flow,node,id} (HS-008); POST /api/flow/run (materialize + mint Hoodie IDs).",
       "acceptance": [
-        "seed → propose_flow over landed datasets; preview → sample rows at any node; profile → per-column fill/distinct/catch-all; sql → the compiled query (Explain); conflicts → the stewardship queue; run → COPY the output node to warehouse Parquet",
-        "run mints STABLE Hoodie IDs via a registry (agent_state hoodie_ids.json: identity signature → HO-<X>-######); rebuilds reuse, never remint",
-        "profile excludes internal __conflict/_-prefixed columns"
+        "seed → a full draft flow + dataset count; unknown/empty warehouse degrades to a note, never a 500",
+        "profile excludes internal columns (_-prefixed AND __conflict), caps at 40 columns, returns filled/distinct/catchall/fill_pct/informative_pct per field",
+        "run: SELECT DISTINCT _id from the compiled node → registry mint HO-<pfx>-%06d (prefixes: outlet=O, product=I, party=P) → TEMP TABLE _homap join → COPY (SELECT m.hoodie_id, q.* …) TO '<table>.parquet'; response carries rows, hoodie_minted, hoodie_total",
+        "Hoodie IDs are STABLE: the registry (agent_state/hoodie_ids.json, identity-signature → id) is consulted before minting; a rebuild reuses every existing id",
+        "every endpoint returns ok:true with a bounded error string on failure (degrade honestly — no stack traces to the client)"
       ],
       "implementation": [
-        "unifyd/server.py — section '── MDM Flow ──' above the static-serving block. _flow_jsonsafe handles DuckDB lists/dates/Decimals. HOODIE_PREFIX: outlet=O, product=I, party=P"
+        "server.py section '── MDM Flow ──' placed above the static-serving block. _flow_compile(body) resolves node (defaults to the flow's last node) and compiles with the mode-bound uri resolver (mode added in HS-009). _flow_jsonsafe recursively converts DuckDB output: date/datetime→isoformat, Decimal→float, bytes→utf-8-replace, lists/dicts deep — needed because list(DISTINCT …) aggregates and Parquet dates otherwise break jsonify",
+        "FIX 5d77fba: the resolve node's <field>__conflict helper columns were rendering as profile cards (28 'fields' instead of 14) — filtered at the column-introspection step, verified in-browser",
+        "hoodie_ids.json shape after HS-009: {mode: {entity: {map: {identity→id}, next: int}}} — real and synthetic mint from SEPARATE id spaces"
       ],
       "verification": [
-        "End-to-end smoke (flask test_client + local Parquet): seed 2 datasets → 7 nodes; 4 source rows → 3 golden with Trader Joe's merged cross-source ('123 Main St' == '123 Main Street' via address_core); rerun minted 0 (id stability proven)"
+        "End-to-end smoke (flask test_client + local Parquet warehouse, ab_outlets + tx_outlets fixtures): seed → 2 datasets, 7 nodes; preview at resolve → 3 golden from 4 source rows with Trader Joe's merged cross-source ('123 Main St' ≡ '123 Main Street' via address_core, _sources=2, _source_list=[tx_outlets, ab_outlets]); profile → 28→14 fields after fix; run → dim_outlet with hoodie_id column, 3 minted; SECOND run → hoodie_minted=0, hoodie_total=3 (stability proven, not asserted)"
       ],
       "files": [
         "unifyd/server.py"
@@ -153,7 +174,7 @@
     },
     {
       "id": "HS-005",
-      "title": "Catch-all detection — 'other' is populated-but-empty",
+      "title": "Catch-all detection — 'other' is populated-but-empty, and it screams",
       "type": "feat",
       "status": "done",
       "size": "S",
@@ -164,16 +185,20 @@
       "commits": [
         "e228ebf"
       ],
-      "summary": "Profile counts catch-all values ('other', 'misc', 'unknown', 'n/a'…) per column and reports informative completeness = filled − catch-all. A field 100% filled but 80% 'other' screams instead of passing.",
-      "context": "The VIP lazy-entry signature: enter the fields you need, dump the rest to 'other'. Catch-alls masquerade as known values — worse than NULL, which is honestly unknown. We COUNT them, we do not null them (some are legitimate).",
+      "summary": "The profile counts catch-all values per column and reports INFORMATIVE completeness (filled − catch-all). A field 100% filled but 80% 'other' now screams instead of passing every completeness metric.",
+      "context": "Owner's formative scar (the VIP lazy-entry pattern): record-enterers fill the fields they need and dump the rest to 'other'. A catch-all is worse than NULL — NULL honestly says 'unknown'; 'other' LIES that the answer is known. It defeats completeness metrics (non-null ≠ informative), is a one-way information loss (you can't recover a category from 'other', and you'd never know to), poisons matching and rollups (indistinguishable from a real category), and bills the enterer's convenience to everyone downstream. 'Hoodie will never lose on accuracy.'",
       "acceptance": [
-        "profile_sql emits <col>†other per column; /api/flow/profile returns catchall + informative_pct; self-test: 4 filled → 3 flagged, 1 informative"
+        "_CATCHALL vocabulary (16 values: other, others, misc, miscellaneous, general, generic, unspecified, unknown, undefined, default, various, n/a, na, none, tbd, null) matched case-insensitively, trimmed",
+        "profile_sql emits count(*) FILTER (catch-all) AS <col>†other per column alongside †fill and †dct",
+        "/api/flow/profile returns catchall + informative_pct = (filled − catchall)/total per field",
+        "DECISION: catch-alls are COUNTED, never auto-nulled — some are legitimate values; the measurement is the guard, nulling would be a silent row-fix of its own"
       ],
       "implementation": [
-        "unifyd/flow.py _CATCHALL vocabulary + _catchall_pred; server profile endpoint computes informative_pct. Next consumer: HS-012 verify node (the ≥40%-of-responded-fields trigger)"
+        "flow.py: _catchall_pred(qcol) → lower(trim(CAST … AS VARCHAR)) IN (…); profile_sql keeps sampling support (USING SAMPLE n ROWS) so the scan stays bounded at scale",
+        "Downstream consumers already specced: HS-011's record-level trigger (≥40% of RESPONDED fields catch-all at identifier level → COLA label verify) and the UI thresholds (≥15% other → red card, <50% informative → amber) in HS-006"
       ],
       "verification": [
-        "Self-test green; in-browser dba/city show '38% other' red flags on the synthetic set"
+        "Self-test: 4 filled values ('Vodka','Other','OTHER','misc') → fill=4, other=3, informative=1; in-browser on the synthetic outlet set: dba and city flag '38% other' red, honest 0%-filled fields flag amber"
       ],
       "files": [
         "unifyd/flow.py",
@@ -182,7 +207,7 @@
     },
     {
       "id": "HS-006",
-      "title": "Flow workbench UI — consolidated, dense, keyboard-driven (apps/mdm-flow.html)",
+      "title": "Flow workbench UI — one master surface, dense, mono, keyboard-driven, on the base theme",
       "type": "feat",
       "status": "done",
       "size": "L",
@@ -193,21 +218,27 @@
       "commits": [
         "7155ee8",
         "bab4b95",
-        "78163fe"
+        "78163fe",
+        "5d77fba"
       ],
-      "summary": "ONE master surface ('reduce to a master'): the pipeline stages ARE the old tabs — input=Sources, clean=Mapping+Dictionary, resolve=Master+Confirm. Dense, mono-forward, keyboard-first, on the suite's LIGHT base theme.",
-      "context": "Power-user skin by explicit product decision (code font 'fits the moment'); the --ui token + spacing are the swap points for a softer end-user skin later. Views per node: profile (dense rows, catch-all screams) · data (tight grid, catch-all cells inverted red, ∅ nulls) · conflicts (resolve nodes) · explain (plain language + the compiled SQL).",
+      "summary": "apps/mdm-flow.html — the consolidated master-building workbench. Owner's directive 'reduce to a master': the pipeline stages ARE the old tabs (input=Sources, clean=Mapping+Dictionary, resolve=Master+Confirm), inline in one surface. Dense, mono-forward, keyboard-first — and on the suite's LIGHT base theme.",
+      "context": "Three explicit owner decisions govern this file: (1) POWER-USER SKIN — 'you get that I like code font… fits the moment; we can translate it later when it's not me looking': mono chrome + density are deliberate; the --ui font token + spacing are the single swap points for a softer end-user skin later, structure unchanged. (2) CONSOLIDATION — 'reduce to a master': one surface, not a tab hunt; the old Mapping/Dictionary tabs stay in mdm.html until convergence completes. (3) COMPLEXITY LIVES IN THE ENGINE — 'we take the complexity on the back end to simplify the front end': the UI holds no matching/survivorship logic, it renders what the engine computed.",
       "acceptance": [
-        "Seed → pipeline rail renders; every node inspectable in ≤1 click; ⌘K palette (seed/run/jump/view), j/k node nav, 1-4 views, / filter",
-        "Act-on-signal: clicking a flagged field in profile auto-filters Data to the offending rows",
-        "Run → materializes + toasts golden count and Hoodie IDs minted",
-        "Matches the suite base palette (mdm.html tokens) — NOT a dark IDE theme (regression fixed in 78163fe)"
+        "Seed → pipeline rail (sources+their clean nodes grouped, then union/resolve/output on the master spine); every node inspectable in one click",
+        "Views per node: profile (dense rows — informative/other/empty stacked bar, ≥15% other red, <50% informative amber, distinct counts), data (tight grid, catch-all cells inverted red, ∅ for nulls), conflicts (resolve nodes only), explain (plain-language description + key chips + the exact compiled DuckDB SQL)",
+        "ACT-ON-SIGNAL: clicking a flagged field in the profile jumps to Data auto-filtered to that field's problem rows (null/empty/catch-all) — verified: dba → '✕ dba problems · 7/8 rows'",
+        "Keyboard: ⌘K command palette (seed per entity, run, jump-to-node, switch view — filterable, arrow/enter), j/k node navigation, 1–4 view switch (conflicts slot only on resolve nodes), / focuses the row filter",
+        "Run → materializes via /api/flow/run and toasts 'built <table> · N golden · M new HO ids'",
+        "Renders as HOODIE, not a model: base light palette (paper #F4F6F5, surface #fff, teal #4E79A7/#3D6089, ink #243330 — the mdm.html tokens)"
       ],
       "implementation": [
-        "apps/mdm-flow.html, single-file, dependency-free. Registered as the 'Flow' section in apps/mdm.html (SECTIONS + NAV_META + lazy iframe). Old Mapping/Dictionary tabs deliberately left in place until consolidation completes"
+        "Single-file, dependency-free (suite convention). Registered as the 'Flow' section in apps/mdm.html: one SECTIONS entry, one NAV_META entry, one lazy-mounted iframe — additive, nothing removed",
+        "REGRESSION FOUND+FIXED (78163fe), owner's catch — 'your screenshots don't match the base theme, they match the model theme': v1 shipped on a dark IDE palette (the generic AI-tool look) instead of deriving from the suite's design system; embedded in the light console it read as a foreign object. Re-skinned to the base tokens and fixed every hardcoded dark value (SQL pre text, profile bar empty-segment, toast, palette scrim, tag/chip colors, selection color). Lesson recorded: derive from the design system, never default",
+        "Act-on-signal implementation: profile row click sets S.focusField → Data view filters rows where that field is null/blank/catch-all; the filter chip clears it. Data caches the preview (S.rows) per node selection to avoid refetching on filter keystrokes",
+        "FIX 5d77fba folded in: profile excludes __conflict helper columns (14 real fields, not 28)"
       ],
       "verification": [
-        "Playwright in-browser: all four views + palette screenshotted and reviewed; act-on-signal drill verified (dba → 7/8 problem rows)"
+        "Playwright in-browser against the live engine + synthetic warehouse: all four views screenshotted and REVIEWED (not just non-erroring); palette opened and navigated; act-on-signal drill verified; light re-skin verified in profile + conflicts views"
       ],
       "files": [
         "apps/mdm-flow.html",
@@ -216,7 +247,7 @@
     },
     {
       "id": "HS-007",
-      "title": "Resolvable conflicts — steward picks the RULE, never the value",
+      "title": "Resolvable conflicts — the steward picks the RULE, never the value",
       "type": "feat",
       "status": "done",
       "size": "M",
@@ -227,16 +258,19 @@
       "commits": [
         "d7a5d7b"
       ],
-      "summary": "The conflicts view is a workbench: per-field survivorship rule selector (any/authority/frequency/recency/longest), promotable source-authority order, live golden winner per contested record. Every gesture writes flow.survivors[field] / flow.authority and persists — first law by construction.",
-      "context": "conflict_sql extended to return value↔source PAIRS ({v, src}) so authority resolution is transparent — you see who said what.",
+      "summary": "The conflicts view became a workbench: per-field survivorship rule selector (any · authority · frequency · recency · longest), a promotable source-authority order, and the LIVE golden winner per contested record. Every gesture writes a rule that re-materializes — there is no control that edits a value. The first law, enforced by the UI's shape.",
+      "context": "First law consequence: 'resolving' a conflict means choosing the rule that governs the field, not picking a value for one row. The engine change that makes resolution TRANSPARENT: conflict_sql now returns value↔source PAIRS — list(DISTINCT {'v': value, 'src': _source}) — so the steward sees exactly who said what before choosing whom to trust.",
       "acceptance": [
-        "Setting outlet_name → authority with tx_outlets promoted #1 deterministically flips the golden winner to the tx values; 'any' fields visibly wobble between rebuilds (the case for ruling every contested field, made visible)"
+        "Per contested field: rule selector writes flow.survivors[field]; authority bar shows the node's source order (best-first, rank chips), click promotes a source to #1 and writes flow.authority; both persist via POST /api/flow and the view re-queries",
+        "Live winner column (→ value) re-previews the resolve node keyed by _id, so a rule change updates the golden value in front of the steward",
+        "Setting outlet_name → authority with tx_outlets promoted deterministically flips the winners to the tx values (TRADER JOES, TWIN LIQUORS)"
       ],
       "implementation": [
-        "unifyd/flow.py conflict_sql pairs; apps/mdm-flow.html loadConflicts/setRule/promoteAuthority; persisted via POST /api/flow"
+        "flow.py: conflict_sql adds the pairs aggregate; self-test asserts pairs cover {A,B}×{s1,s2}. UI (mdm-flow.html): loadConflicts probes every resolve-node field via /api/flow/conflicts and shows only fields that actually disagree; setRule/promoteAuthority mutate the in-memory flow, saveFlow persists, view reloads",
+        "OBSERVED, WORTH KEEPING: fields left on 'any' visibly WOBBLED between two renders ('123 Main Street' → '123 Main St') because any_value is arbitrary-order — while the authority-ruled field held stable. The screenshots accidentally demonstrate the case for ruling every contested field: an unruled field is a coin flip per rebuild; a ruled field is defensible"
       ],
       "verification": [
-        "Self-test asserts pairs {A,B}×{s1,s2}; in-browser before/after screenshots reviewed"
+        "Self-test green (pairs assertion); Playwright drive: promote tx_outlets → set outlet_name=authority → before/after screenshots show the winner flip + the toast 'outlet_name → survive by authority · a rule, re-materializes'"
       ],
       "files": [
         "unifyd/flow.py",
@@ -256,16 +290,18 @@
       "commits": [
         "640707e"
       ],
-      "summary": "Click a golden record → drawer showing, per field, the golden value beside each source row's value with the WINNING source highlighted. 'Here are the rows it came from', not 'trust me'.",
-      "context": "Identity centralized as _identity_inner() so resolve, conflicts, and provenance compute the IDENTICAL _id — provenance can never show rows that didn't actually merge.",
+      "summary": "Click any golden record → a drawer showing, per field, the golden value beside each constituent source row's value, with the WINNING source highlighted green. 'Here are the rows it came from' — not 'trust me'. The trust surface that makes zero-restatements defensible.",
+      "context": "Refactor that makes it correct-by-construction: identity extraction was centralized as _identity_inner(), THE single basis used by resolve's GROUP BY, conflict_sql, and the new provenance_sql — so provenance can never display rows that didn't actually merge into that golden record (they share the same _id computation by definition, not by convention).",
       "acceptance": [
-        "POST /api/flow/provenance {flow, node, id} → constituent source rows + current golden; resolve-node Data rows clickable; esc/scrim closes"
+        "POST /api/flow/provenance {flow, node, id} → the golden row + up to 80 constituent upstream (pre-resolve) rows filtered WHERE _id = ?",
+        "Resolve-node Data rows are clickable (hint shown); drawer renders a field × (golden | source…) matrix; cell highlighted green when it equals the golden value (the winner); ∅ for empties; Esc / scrim / ✕ close",
+        "Drawer title falls back through outlet_name → dba → brand → first field → id"
       ],
       "implementation": [
-        "unifyd/flow.py provenance_sql; unifyd/server.py /api/flow/provenance; apps/mdm-flow.html drawer (openProvenance/paintData crow rows)"
+        "flow.py: provenance_sql(flow, resolve_node_id, uri_fn) = _identity_inner over the compiled upstream; server.py endpoint also fetches the golden row (compiled resolve SQL WHERE _id = ?) so the matrix has its comparison column; _flow_jsonsafe covers the list-typed _source_list"
       ],
       "verification": [
-        "Self-test: 3 source rows → the 1 golden share the id; in-browser TWIN LIQUORS drill: outlet_name/address won from tx_outlets, city agreed by both, ∅ for empties"
+        "Self-test: 3 upstream rows share the 1 golden's _id; in-browser TWIN LIQUORS drill: 2 source rows → 1 golden; outlet_name + address highlighted under tx_outlets (authority winner), city green under BOTH sources (they agree — Austin), license_num from tx only, empties honest ∅"
       ],
       "files": [
         "unifyd/flow.py",
@@ -275,7 +311,7 @@
     },
     {
       "id": "HS-009",
-      "title": "Real/synthetic isolation + real-only serve API (the syndication gate)",
+      "title": "Real/synthetic isolation + the real-only serve API (the syndication gate)",
       "type": "feat",
       "status": "done",
       "size": "L",
@@ -287,18 +323,20 @@
         "a53f3e9",
         "5bae731"
       ],
-      "summary": "Warehouse namespaces datasets by mode (real/ vs synthetic/); a build reads exactly ONE; Hoodie IDs mint into per-mode id spaces; /api/serve/<entity> and /api/serve/<entity>/<hoodie_id> are REAL-ONLY by construction (mode hardcoded), so synthetic can never reach a consumer.",
-      "context": "Precondition for serving the master to Unifyd/customers. A number whose realness you can't tell is a number you can't act on — commingling is how an analytics surface dies.",
+      "summary": "Warehouse namespaces every dataset by mode (real/ vs synthetic/); a build reads exactly ONE namespace; Hoodie IDs mint from per-mode id spaces; and /api/serve/<entity> + /api/serve/<entity>/<hoodie_id> are REAL-ONLY BY CONSTRUCTION (mode hardcoded server-side) — synthetic can never reach a consumer, not by policy but by code shape.",
+      "context": "Owner's requirement, twice over: 'you need to isolate real and synthetic… I can't do anything in Hoodie Intelligence' (a number whose realness you can't tell is a number you can't act on — commingling is how an analytics surface dies), and the serve question ('should we think about how to serve to Unifyd? API?') made isolation the non-negotiable GATE on syndication. The stable Hoodie ID is the consumer's join key — the ID is the product.",
       "acceptance": [
-        "warehouse.uri/query/list_datasets/write_parquet take mode; mode=None keeps the legacy flat namespace (fully backward-compatible)",
-        "every /api/flow/* endpoint threads mode; UI mode toggle actually drives requests (default REAL) and re-seeds on flip",
-        "/api/serve returns only real records even when a synthetic master exists"
+        "warehouse.py: uri/query/list_datasets/write_parquet all take mode; _seg() maps mode → path segment (local subdir, S3 key prefix); mode=None preserves the legacy flat namespace so every pre-existing endpoint is untouched (backward-compatible by default)",
+        "server.py: _flow_mode(body) validates to real|synthetic (default real); _flow_uri(mode) binds the compiler's uri resolver; ALL nine /api/flow/* endpoints thread mode; flow/run writes the output table INTO the mode namespace and mints from hoodie_ids.json[mode][entity]",
+        "/api/serve/<entity>?page=&size= (paged, ORDER BY hoodie_id) and /api/serve/<entity>/<hid> read mode='real' hardcoded — there is no parameter that can change it",
+        "UI: the REAL/SYNTHETIC badge is a functional toggle (green REAL / amber SYNTHETIC), injected into every POST body by the api() wrapper, default REAL, re-seeds on flip"
       ],
       "implementation": [
-        "unifyd/warehouse.py _seg(); unifyd/server.py _flow_mode/_flow_uri + serve endpoints; apps/mdm-flow.html setMode. hoodie_ids.json is now keyed {mode: {entity: {map, next}}}"
+        "Per-mode id spaces both start at HO-O-000001 and never collide because they live under separate registry keys — a deliberate choice: synthetic ids are as stable as real ones (demos survive rebuilds) but are meaningless outside their namespace",
+        "Serve pagination caps size at 500; missing table degrades to ok:true, landed:false with a bounded error"
       ],
       "verification": [
-        "End-to-end: synthetic ns [tx,ab] + real ns [real_outlets] built separately (each ids from HO-O-000001); /api/serve/outlet returned ONLY Bar Louie (real); by-id lookup HO-O-000001 → Bar Louie"
+        "End-to-end proof: wrote ab+tx fixtures into synthetic/, one real_outlets fixture into real/; list_datasets(synthetic)=[tx,ab], list_datasets(real)=[real_outlets], list_datasets()=[] (isolation physical); synthetic build → 2 golden (HO-O-000001..2 in synthetic space); real build → 1 golden (HO-O-000001 in real space); /api/serve/outlet → total=1, ONLY 'Bar Louie' — the synthetically-mastered Trader Joe's/Total Wine EXIST in synthetic/dim_outlet and were NOT servable; by-id lookup HO-O-000001 → Bar Louie"
       ],
       "files": [
         "unifyd/warehouse.py",
@@ -321,19 +359,21 @@
       "updated": "2026-07-08",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
       "commits": [],
-      "summary": "Record-level matching for the residue the identity key missed: source records left, golden masters right; select 1+ left + 1 right → Match, or drag a source row onto a master. Plus 'not a match' (never resurfaces) and 'new master' (mint a fresh Hoodie ID).",
-      "context": "Spec in MDM_FLOW.md 'The match / steward surface'. Every decision is a persisted RULE that re-applies on rebuild (outlet_confirms.json pattern → generalize to match_decisions.json keyed by mode+entity), feeding back to tune the resolver. Filter both panes to a block (e.g. same address_core) so you compare like with like.",
+      "summary": "Record-level matching for the residue the identity key missed: source records on the left, golden masters on the right. Select 1+ left + 1 right → Match (multi-select = 'these are all this one real entity'), or DRAG a single source row onto a master. Plus 'not a match' (suppressed forever) and 'new master' (mint a fresh Hoodie ID). The owner specified this page's interaction model verbatim.",
+      "context": "This is T3 of the cascade made concrete — and under the accuracy-first standard it should see only the 5–10% residue. Every decision is a persisted RULE that re-applies on rebuild (generalize the outlet_confirms.json pattern → match_decisions.json keyed by mode+entity; a decision is {a, b, verdict, at, by} where a/b are identity signatures, NOT row edits — first law). Filter both panes to a BLOCK (e.g. same address_core, or the jaro-winkler/geo candidate pairs from the existing Confirm SQL) so the steward compares like with like. Decisions feed back as tuning signal for the resolver's thresholds.",
       "acceptance": [
-        "Multi-select left + single right → assigns those source records to the master's hoodie_id; decision persists and survives re-run",
-        "Reject persists and suppresses the pair from future queues; New-master mints from the registry (per-mode)",
-        "Decisions applied during resolve (post-GROUP-BY id remap) so the golden output reflects them",
-        "Keyboard: j/k through candidates, m match, x reject, n new-master"
+        "Multi-select left + single right → assigns those source identity signatures to the master's hoodie_id; persists; SURVIVES a full re-run (the apply step is part of resolve)",
+        "Drag a left row onto a right row = the same assignment, one gesture",
+        "Reject persists and suppresses the pair from every future candidate queue; New-master mints from the per-mode registry",
+        "Decisions applied DURING resolve — a post-GROUP-BY id remap executed before Hoodie-ID mapping in flow_run_ep, so the golden output and serve API reflect them",
+        "Keyboard: j/k through candidate pairs, m match, x reject, n new-master — a steward works a 200-item queue without the mouse",
+        "Match rate telemetry: the page reports how many decisions came from each tier (feeds the automatch scorecard pair)"
       ],
       "implementation": [
-        "New apps/mdm-match.html (or a 'match' view inside mdm-flow.html — decide by nav weight); engine: candidate pairs from the existing jaro-winkler/geo confirm SQL generalized per entity; apply step joins decisions before Hoodie-ID mapping in flow_run_ep"
+        "New apps/mdm-match.html on the base light theme (or a 'match' view inside mdm-flow.html — decide by nav weight when building); engine: candidate pairs from the existing jaro_winkler_similarity + geo-cell SQL (server.py _CONFIRM_SQL) generalized per entity; apply step joins match_decisions before the _homap hoodie mapping in flow_run_ep"
       ],
       "verification_plan": [
-        "Synthetic near-dupes that exact keys miss (name variant + no geo) matched by hand; re-run shows them merged under one hoodie_id; reject case never resurfaces; playwright drive of both gestures"
+        "Fixture with near-dupes exact keys miss (name variant + no geo); match by hand → re-run shows ONE golden under one hoodie_id; reject case never resurfaces in candidates; new-master case mints; playwright drives both gestures + the keyboard path"
       ],
       "files": [
         "apps/mdm-match.html",
@@ -352,18 +392,20 @@
       "updated": "2026-07-08",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
       "commits": [],
-      "summary": "The first active verification-cascade Check: when catch-all density crosses threshold, resolve the record to its TTB COLA product cluster and read the authoritative value off the label (class/type→category, ABV, origin, net contents). Backfill empty/other silently; escalate conflicts with evidence (label wins). Provenance = TTB COLA + filing id.",
-      "context": "Two triggers (spec'd in MDM_FLOW.md): RECORD-level — once identifiable (resolvable to a cluster), fire if ≥40% of RESPONDED fields are catch-all (denominator = responded, not all rows — isolates 'answered with a non-answer' from blankness); FIELD-level — dataset-wide catch-all share = source untrustworthy for that field. Both thresholds domain config.",
+      "summary": "The first ACTIVE verification-cascade Check: the system notices its own blind spot (catch-all density) and goes to the authority (the TTB COLA label) for the fact. Backfill empty/other silently; escalate specific-value conflicts with evidence; every recovered value traces to TTB COLA + filing id and re-materializes on rebuild.",
+      "context": "Two triggers, owner-specified: RECORD-level (the VIP lazy-entry signature) — once a record reaches the IDENTIFIER LEVEL (resolvable to a COLA product cluster on clean fields), fire if ≥40% of its RESPONDED fields are catch-all; denominator = responded fields only, which isolates 'answered with a non-answer' from ordinary blankness, and the identifier gate is both precondition (can't read a label for an unidentifiable product) and economics (don't spend a lookup on a too-sparse record). FIELD-level — a field whose dataset-wide catch-all share crosses threshold = the source can't be trusted for that field. Both thresholds domain config. The vodka-vs-rum case (one source says vodka, another rum — happens constantly) resolves by the label as higher authority, never by voting.",
       "acceptance": [
-        "verify node type compiles into the flow between clean/union and resolve; backfills are RULES with provenance, re-materialize on rebuild (first law)",
-        "Authority-to-field mapping is domain config: COLA answers product facts ONLY (never outlet address)",
-        "A vodka-vs-rum category conflict resolves to the label value with the filing id recorded as evidence"
+        "verify node type compiles into the flow between clean/union and resolve; its backfills are RULES with provenance that re-materialize (first law) — never mutations of landed data",
+        "Authority-to-field mapping is domain config: COLA answers PRODUCT facts (class/type→category, ABV, origin, net contents) and never outlet fields (those route to Google/state-license authorities)",
+        "Cluster-first: resolve the record to its COLA product CLUSTER (cola_cluster.py — COLA is a filing system, many filings per real product) before reading a class/type; never match a bottle to one arbitrary filing",
+        "Backfill-empty happens silently (pure gain); overwrite-conflict escalates with the evidence trail (label value + filing id vs the source's claim); the record degrades honestly when it can't reach identifier level",
+        "Tier telemetry: verify decisions counted into the automatch scorecard shares"
       ],
       "implementation": [
-        "Reuse cola_cluster.py (filing→product clusters) + /api/cola/*; new flow node type 'verify' in flow.py + UI card; catch-all share already computed by profile_sql (HS-005)"
+        "Reuse: catch-all share per field is ALREADY computed by profile_sql (HS-005); COLA clusters + /api/cola/* endpoints exist; the node needs the trigger evaluation, the cluster join, and the rule-emission. UI: a verify node card in the flow rail showing fired/backfilled/escalated counts"
       ],
       "verification_plan": [
-        "Fixture dataset with planted 'other' categories that COLA can answer; assert backfill provenance + conflict escalation; degraded-honest when a record can't reach identifier level"
+        "Fixture dataset with planted 'other' categories that COLA can answer → assert silent backfills carry filing-id provenance; planted vodka-vs-rum conflict → escalates with evidence, label wins; sub-identifier-level record → degraded, no lookup spent; thresholds config-swappable"
       ],
       "files": [
         "unifyd/flow.py",
@@ -374,7 +416,7 @@
     },
     {
       "id": "HS-012",
-      "title": "Explode node + repack-recipe store (split mixed cases)",
+      "title": "Explode node + repack-recipe store — split mixed cases to the right SKUs",
       "type": "feat",
       "status": "backlog",
       "size": "L",
@@ -383,16 +425,16 @@
       "updated": "2026-07-08",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
       "commits": [],
-      "summary": "Kit-to-component: distributor repacks ('3 Grey Goose + 3 Bacardi', one repack UPC) explode into component lines matched to canonical SKUs, quantities fanned to facts.",
-      "context": "Secondary workflow, aggressive detection: multiple (usually abbreviated) brand tokens in one item field is the tell — a legit single item doesn't carry two brands (character-limit artifact). Lower confidence threshold; detector agent or prompt callout; expand abbreviations against the brand dictionary. SIZE IS A FACT TO FETCH, not a guess: total net volume (count+total constrains size) → physical-vs-9L accounting case distinction → gross weight backstop → repack-UPC stored recipe (solve once, auto-split forever) → authoritative lookup → human. Mixed-size cases usually end at the recipe or the human — remembering matters more than solving live.",
+      "summary": "Kit-to-component explosion: a distributor repack ('3 Grey Goose + 3 Bacardi', shipped as one real item with its own repack number/UPC) explodes into component lines matched to the right canonical SKUs, quantities fanned to the fact tables. A SECONDARY workflow (an explode node between clean and resolve), not the main resolve path.",
+      "context": "Owner's spec, including the pressure test ('you know exactly what I'm saying but have no idea what size bottles were in that case'): DETECTION is aggressive — multiple (usually ABBREVIATED) brand tokens in one item field is the tell, because a legit single item doesn't carry two brands and the abbreviation is a character-limit artifact ('3 GG / 3 BAC'); lower the confidence threshold, run either a detector agent over the item stream or an explicit prompt callout, and expand abbreviations against the brand dictionary. SIZE IS A FACT TO FETCH, never a guess (Grey Goose spans 50ml–1.75L; guessing 750 is the bug): the cascade is (1) total net volume on the line — count × size constrained; (2) the PHYSICAL-vs-9L-ACCOUNTING-CASE trap — depletion 'cases' are often 9L statistical cases (12×750≡9L), never treat that count as bottles; (3) gross weight backstop (~0.95 kg/L separates 750ml from 1.75L); (4) repack UPC → STORED RECIPE — repacks recur, solve once and every later occurrence auto-splits; (5) authoritative lookup; (6) human — whose answer becomes the stored recipe so it never asks twice. Mixed-size cases (3×GG 750 + 3×Bacardi 1L) defeat the volume constraint and almost always end at the recipe or the human: REMEMBERING beats solving live.",
       "acceptance": [
-        "explode node between clean and resolve; repack recipe store keyed by repack UPC; first occurrence resolved → every later occurrence auto-splits; steward answer becomes the stored recipe (never asks twice)"
-      ],
-      "implementation": [
-        "flow.py node type + recipes-style store (mirrors unifyd/recipes.py pattern); brand-token detector over item fields"
+        "explode node between clean and resolve; BOM expansion emits component rows with quantities; provenance carries the repack id + resolution method",
+        "Repack recipe store keyed by repack UPC (mirrors the unifyd/recipes.py self-reinforcing pattern); first resolution persists; second sighting auto-splits with zero escalation",
+        "Multi-brand-token detector flags candidates at a LOW threshold; brand-dictionary expansion of abbreviations; false-positive path degrades honestly (flag, don't explode, when unverified)",
+        "9L-vs-physical case classification is an explicit check with its own verdict — never an assumption"
       ],
       "verification_plan": [
-        "Fixtures: single-size case w/ total volume (deterministic), mixed-size case (routes to recipe/human), recurring repack UPC (auto-split on second sight)"
+        "Fixtures: single-size case w/ total volume (deterministic split, no human); mixed-size case (routes to recipe/human, never guesses); recurring repack UPC (auto-split on second sight, telemetry shows tier=recipe); 9L accounting case (classified, not exploded as bottles)"
       ],
       "files": [
         "unifyd/flow.py",
@@ -401,7 +443,7 @@
     },
     {
       "id": "HS-013",
-      "title": "Serve depth — delta feed, provenance-on-serve, entitlements, events",
+      "title": "Serve depth — delta feed, provenance-on-serve, entitlements, change events",
       "type": "feat",
       "status": "backlog",
       "size": "L",
@@ -410,13 +452,16 @@
       "updated": "2026-07-08",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
       "commits": [],
-      "summary": "Grow /api/serve into the syndication contract: ?updated_since= delta feed (needs a materialized timestamp per record — ties to golden-record history), provenance-on-serve (the trust API: every value with its source), per-customer entitlements + quotas on the existing OIDC/bearer + rate-limit primitives, change events/webhooks later. Contract versioned in openapi.yaml.",
-      "context": "The 'thousands of customers' path. Real-only gate already enforced (HS-009). Floor items from the world-class audit that land here: golden-record history/changelog + unmerge (reversible merge).",
+      "summary": "Grow /api/serve from a paged read into the syndication contract: ?updated_since= delta feed, provenance-on-serve (the trust API — every value with its source, per hoodie_id), per-customer entitlements + quotas, change events/webhooks later. Contract versioned in openapi.yaml so the app's typed client regenerates against it (hoodie-app HA-004 followup).",
+      "context": "The 'thousands of customers' path. Preconditions already landed: real-only gate (HS-009), stable Hoodie IDs, provenance internally (HS-008). The delta feed needs a materialized per-record timestamp — which drags in the golden-record HISTORY/changelog floor item; UNMERGE (reversible merge) belongs to the same floor bundle: stewards WILL merge wrong, and reversal must be a rule too. Entitlements build on primitives that exist (OIDC gate, bearer exchange, per-IP rate limiter) — extension, not greenfield.",
       "acceptance": [
-        "Delta feed returns only records changed since ts; provenance endpoint per hoodie_id; entitlement scoping provably filters; openapi.yaml documents all serve routes"
+        "Delta: two consecutive builds where one source value changes → the delta feed returns exactly the one changed record with its new materialized_at",
+        "Provenance-on-serve: GET /api/serve/<entity>/<hid>/provenance → per-field value + winning source + rule that chose it (the external face of HS-008)",
+        "Entitlements: a scoped consumer provably receives only its slice; quota enforcement measurable; entitlement config is data, not code",
+        "openapi.yaml documents every serve route; unmerge exists as an override rule with provenance (who/when/why), re-materializes correctly"
       ],
       "verification_plan": [
-        "Two-build delta test (change one source value → exactly one record in the delta); entitlement isolation test"
+        "Two-build delta test; cross-consumer entitlement isolation test; unmerge round-trip (merge → unmerge → rebuild → two golden records again, ids preserved per registry policy)"
       ],
       "files": [
         "unifyd/server.py",
@@ -435,13 +480,15 @@
       "updated": "2026-07-08",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
       "commits": [],
-      "summary": "The flow writes dim_<entity>; the console's older tabs (Outlets, Catalog) and /api/master/* read the legacy dim_outlet_resolved / dim_sku. Schema-align and converge so the workbench's output feeds every existing surface, not just /api/serve.",
-      "context": "Until this lands the workbench is load-bearing for serve but a sandbox for the older tabs. Decide: flow adopts the legacy names+schemas, or the legacy endpoints repoint (mode-aware) — pick ONE, migrate, delete the seam.",
+      "summary": "The flow writes dim_<entity>; the console's older tabs (Outlets, Catalog, Confirm) and /api/master/* read the legacy dim_outlet_resolved / dim_sku built by master_apply. Until they converge, the workbench is load-bearing for /api/serve but a SANDBOX for the older surfaces. Pick ONE canonical set, migrate, delete the seam.",
+      "context": "Two viable directions — (a) the flow adopts the legacy table names + schemas (least churn in the older tabs, but freezes the legacy shred's schema), or (b) the legacy /api/master/* endpoints repoint at the flow's mode-aware dim_<entity> (one engine, one output; older tabs may need column mapping). Decide when picking this up; do not run both writers against one table name — that's silent divergence, the exact thing the first law exists to prevent.",
       "acceptance": [
-        "After a flow run, Outlets tab and /api/master/outlets show the flow-built golden records (hoodie_id column included); no endpoint reads a stale table"
+        "After a flow run, the Outlets tab and /api/master/outlets show the flow-built golden records INCLUDING the hoodie_id column",
+        "No endpoint reads a stale table; count parity between the workbench's resolve preview and the console's browse for the same build",
+        "The retired path is deleted, not left dormant"
       ],
       "verification_plan": [
-        "Run flow → open Outlets/Confirm tabs against the same data; count parity check"
+        "Run flow on the fixture set → open Outlets/Confirm tabs against the same warehouse → row and field parity check; grep for readers of the retired table name afterwards"
       ],
       "files": [
         "unifyd/server.py",
@@ -451,7 +498,7 @@
     },
     {
       "id": "HS-015",
-      "title": "Steward scale polish — server-side search/pagination + bulk rule apply",
+      "title": "Steward scale polish — server-side search/pagination + bulk rule apply + node caching",
       "type": "feat",
       "status": "backlog",
       "size": "M",
@@ -460,22 +507,25 @@
       "updated": "2026-07-08",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
       "commits": [],
-      "summary": "Data view is client-side over a 400-row preview — fine for the demo set, unusable on 50k outlets. Server-side search/filter/pagination on preview; bulk 'apply this survivorship rule to all fields matching X'; explicit Save affordance for the flow.",
-      "context": "The steward 'lives here' requirement at real book scale. Sampled profiling + node-output Parquet caching (documented scale posture) also land here.",
+      "summary": "The Data view is client-side over a 400-row preview — right for the fixture set, unusable on 50k+ outlets. Move search/filter/pagination into DuckDB (WHERE/LIMIT/OFFSET on the compiled node SQL); add bulk survivorship ('apply this rule to every field matching X' — one gesture, N rules); an explicit Save affordance; and materialize node outputs to their own Parquet so downstream steps and re-clicks read the cached intermediate instead of re-running the whole nested query from raw.",
+      "context": "The steward-lives-here requirement at real-book scale (FL alone is 52k outlets). The scale posture is already documented in MDM_FLOW.md (sampled profiling is implemented; node-output caching and partitioning are not). Partition the big datasets (TTB by year, outlets by state) so read_parquet prunes.",
       "acceptance": [
-        "Search 50k-row node output < 1s (DuckDB-side LIMIT/OFFSET/WHERE); worklist survives reload; bulk rule apply writes N survivor entries in one gesture"
+        "Search over a 50k-row node output returns < 1s (DuckDB-side); pagination stable under sort; the worklist survives reload",
+        "Bulk rule apply writes N survivors entries in one gesture and re-previews once",
+        "Node output caching: second inspection of an unchanged node reads its Parquet, not the recompiled query (cache keyed on the node's compiled SQL hash)"
       ],
       "verification_plan": [
-        "Load-test against a full-state pull (FL outlets); keyboard walk of a 200-item queue"
+        "Load test against a full-state pull (FL outlets); keyboard walk of a 200-item conflict queue; cache-hit timing before/after"
       ],
       "files": [
         "unifyd/server.py",
-        "apps/mdm-flow.html"
+        "apps/mdm-flow.html",
+        "unifyd/flow.py"
       ]
     },
     {
       "id": "HS-016",
-      "title": "Harden address normalization — full USPS table, PO-box + premise/mailing detection",
+      "title": "Harden address normalization — full USPS table, PO-box, premise-vs-mailing guard",
       "type": "feat",
       "status": "backlog",
       "size": "M",
@@ -484,13 +534,16 @@
       "updated": "2026-07-08",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
       "commits": [],
-      "summary": "address_std covers ~20 tokens vs the ~200-entry USPS suffix table; no PO-box detection; premise-vs-mailing smell ('one address, many DBAs' = HQ/lawyer address) not yet enforced as a merge guard.",
-      "context": "From the self-audit + edge-case catalog: CT backer_address is the licensee's address; a chain filing 50 licenses at one HQ collapses to a fake outlet under naive address blocking. Guard: require geo agreement or a premise-typed address before an address auto-merge; never let ZIP-centroid coords count as geo agreement.",
+      "summary": "address_std covers ~20 tokens vs the ~200-entry USPS suffix table; there is no PO-box handling; and the premise-vs-mailing smell is documented but not enforced as a merge guard. Close all three.",
+      "context": "From the self-audit + the connector-grounded edge-case catalog: CT's backer_address is the LICENSEE'S address (often an HQ or a lawyer's office), NY explicitly provides actualaddressofpremises — a chain filing 50 licenses at one corporate address would collapse into one fake outlet under naive address blocking. Guards specified in MDM_FLOW.md: require geo agreement OR a premise-typed address before an address auto-merge; 'one address, many DBAs' is a mailing-address smell → route to verify, never auto-merge; NEVER let ZIP-centroid coordinates count as geo agreement (fake precision); never force-merge on ZIP alone.",
       "acceptance": [
-        "Full suffix table; PO BOX → own component + never a premise key; one-address-many-DBAs routes to verify instead of merging; ZIP-centroid guard in the resolve path"
+        "Full USPS suffix/directional table in _STREET_STD (or a generated equivalent), round-trip tested",
+        "PO BOX parsed to its own component and NEVER usable as a premise block key",
+        "One-address-many-DBAs detection routes to the verify/match queue instead of merging; ZIP-centroid guard live in the resolve path",
+        "Fixture: 50 licenses at one HQ address do NOT merge into one outlet"
       ],
       "verification_plan": [
-        "Fixture: 50-license HQ address does NOT merge; PO-box records keyed separately; suffix round-trip tests"
+        "Suffix round-trip tests; the HQ-collapse fixture; PO-box records keyed separately; regression run of the existing address_core merge cases (123 Main St ≡ 123 Main Street must still merge)"
       ],
       "files": [
         "unifyd/derive.py",
@@ -507,19 +560,21 @@
       "created": "2026-07-08",
       "updated": "2026-07-08",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
-      "commits": [],
-      "summary": "Engineering tickets as a first-class suite surface: apps/tickets.json is the single source of truth; apps/tickets.html renders the pipeline board (backlog → ready → in-progress → in-review → done) with a detail drawer carrying lead-engineer-grade context; CLAUDE.md gains a HARD RULE that every non-trivial unit of work is ticketed, sized, and moved through the pipeline with verification evidence.",
-      "context": "Work was previously recorded only in chat + commit messages — illegible without the transcript. Tickets ride the repo (versioned, deployed, viewable on web at #tickets), so the record survives the session and reads like a normal team's board. The full MDM session (17 commits) is backfilled as HS-001…HS-009 done + HS-010…HS-016 pipeline.",
+      "commits": [
+        "50ef00f"
+      ],
+      "summary": "Engineering tickets as a first-class suite surface: apps/tickets.json is the single source of truth; apps/tickets.html renders the pipeline board (backlog → ready → in-progress → in-review → done) with a detail drawer carrying lead-engineer-grade context; CLAUDE.md gains the HARD RULE that every non-trivial unit of work is ticketed, sized, and moved through the pipeline with verification evidence.",
+      "context": "Owner's requirement: work must be saved the way a team saves it — viewable on the web, functioning like a normal ticket pipeline, every ticket detailed enough to hand to a lead engineer cold. Previously the record lived in chat + commit messages — illegible without the transcript. Tickets ride the repo: versioned, deployed, surviving every session. The rule binds ALL future Claude Code sessions in this repo via CLAUDE.md, and was mirrored to hoodie-backend (HB-) and hoodie-app (HA-) with per-repo files so any session can honor it without the suite checked out.",
       "acceptance": [
-        "Board at #tickets renders columns by status with search + type filter; card → drawer with summary/context/acceptance/implementation/verification/files/commits",
-        "CLAUDE.md hard rule: ticket before implementation, S/M/L/XL sizing (XL must split), status moves with work, done requires verification evidence, follow-ups become tickets",
-        "Registered in the launcher APPS registry (Internal, beside Product Roadmap); data servable under the deploy allowlist (lives in apps/)"
+        "Board at #tickets (launcher, Internal group beside Product Roadmap): status columns, search, type filter; card → drawer with summary / context-why / acceptance (☑ when done) / implementation / verification / files / commits / branch",
+        "CLAUDE.md hard rule: ticket before implementation; S/M/L/XL sizing (XL must split); status moves with work; done ONLY with verification evidence; follow-ups become tickets; commits reference ids",
+        "Data servable under the deploy allowlist (lives in apps/, which _SUITE_OK_TOP permits)"
       ],
       "implementation": [
-        "apps/tickets.json (schema in meta), apps/tickets.html (dependency-free, base light theme, esc/scrim drawer), index.html one APPS line, CLAUDE.md 'Ticket discipline (HARD RULE)' section"
+        "apps/tickets.json (schema in meta), apps/tickets.html (dependency-free, base light theme, esc/scrim drawer), index.html one APPS line ({id:'tickets', group:'Internal', mark:'TK'}), CLAUDE.md 'Ticket discipline (HARD RULE)' section. Board is deliberately read-only — status changes happen by editing tickets.json under the rule; a drag-to-move UI over an engine persistence route is a candidate future ticket"
       ],
       "verification": [
-        "JSON validates (17 tickets); page + data serve 200 via the engine's SUITE_ROOT route; playwright: board renders 16 cards across 5 columns, HS-010 drawer shows full lead-engineer detail"
+        "JSON validates; page + data serve 200 via the engine's SUITE_ROOT route; playwright: board renders across 5 columns, HS-010 drawer shows the full hand-off detail"
       ],
       "files": [
         "apps/tickets.json",
@@ -539,17 +594,19 @@
       "updated": "2026-07-08",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
       "commits": [
-        "3c8ae2c"
+        "f7e99d3"
       ],
-      "summary": "One-copy install kit for the hoodie-canon repo: canon-seed/CLAUDE.md (the seven MDM laws verbatim from MDM_FLOW.md — first law, accuracy-first 90–95% automatch, the cascade, real≠synthetic, public-first-principles identity, catch-alls, domain-agnostic engine — plus the HC- ticket HARD RULE with a 7-phase epic mapping), a seeded tickets.json whose HC-001 mandates backfilling phase 1 from REAL history, the board page, and README-SEED.md install/merge instructions.",
-      "context": "The canon repo-add was blocked pending a UI approval this session couldn't click, so the transplant was built in-suite (the seed repo canon reads anyway). Invariants encoded: laws are verbatim-synced to MDM_FLOW.md (canon of record; change there first, then propagate); the automatch measurement harness (rate shares + false-merge precision by audit sampling) comes BEFORE chasing the rate; backfill is never invented — it must be written by a session that can see the repo.",
+      "summary": "One-copy install kit for the hoodie-canon repo (the 7-phase, agent-integrated MDM rebuild): canon-seed/CLAUDE.md carries the seven MDM laws VERBATIM from MDM_FLOW.md plus the HC- ticket HARD RULE extended with 7-phase epic mapping (a phase is done only when its acceptance — including automatch/precision numbers — is verified); a seeded tickets.json whose HC-001 mandates backfilling phase 1 from REAL history; the board page; README-SEED.md install/merge instructions.",
+      "context": "The canon repo-add was blocked pending a UI approval this session couldn't click (3× 'requires approval'), so the transplant was built in-suite — the seed repo canon reads anyway. Invariants encoded: laws verbatim-sync to MDM_FLOW.md (canon of record — change there first, then propagate); the automatch MEASUREMENT HARNESS (rate shares + false-merge precision by audit sampling) comes BEFORE chasing the rate; backfill is never invented — it must be written by a session that can see the repo; merge-don't-clobber if canon already has a CLAUDE.md.",
       "acceptance": [
-        "canon-seed/ contains CLAUDE.md, tickets.json (HC-, next_id 2, HC-001 ready), tickets.html, README-SEED.md",
-        "Install is one cp from a sibling checkout; merge-don't-clobber rule stated for an existing CLAUDE.md",
-        "Laws text matches MDM_FLOW.md's current statements including the accuracy-first reframe"
+        "canon-seed/ contains CLAUDE.md (laws + HC- rule), tickets.json (HC-, next_id 2, HC-001 ready), tickets.html, README-SEED.md",
+        "Install is one cp from a sibling checkout; laws text matches MDM_FLOW.md including the accuracy-first reframe (4df4286)"
+      ],
+      "implementation": [
+        "The laws packaged: first law; accuracy-first 90–95% automatch (the pair); the cascade; real≠synthetic; public-first-principles identity; catch-alls; domain-agnostic engine. Canon-specific addition: phase-epic ticket mapping"
       ],
       "verification": [
-        "Seed tickets.json validates; board page renders (same file verified in hoodie-backend/app installs); laws cross-read against MDM_FLOW.md after the accuracy-first commit (4df4286)"
+        "Seed tickets.json validates; board page is the same file verified in the hoodie-backend/app installs; laws cross-read against MDM_FLOW.md post-4df4286"
       ],
       "files": [
         "canon-seed/CLAUDE.md",
@@ -559,6 +616,33 @@
       ],
       "followups": [
         "When repo access is approved: install in hoodie-canon and execute HC-001 (fill orientation + backfill phase 1 from real history)"
+      ]
+    },
+    {
+      "id": "HS-019",
+      "title": "Deep-detail backfill pass over the ticket record",
+      "type": "docs",
+      "status": "done",
+      "size": "M",
+      "priority": "P1",
+      "created": "2026-07-08",
+      "updated": "2026-07-08",
+      "branch": "claude/world-class-mdm-strategy-7bpom6",
+      "commits": [
+        "0e52165"
+      ],
+      "summary": "Rewrite HS-001…018 at full lead-engineer depth before the session context evaporates: per-function implementation notes, the found-bug narratives with root causes (NULL-poisoned identity keys silently dropping rows; product token-stripping false-merging outlets; trade_name landing on dba and leaving rows keyless; __conflict columns polluting the profile; the dark-theme regression), the exact SQL idioms per survivorship rule, the owner's decisions with their reasoning (power-user skin + swap point, reduce-to-a-master, accuracy-first standard, counted-not-nulled catch-alls, read-only board), and verification entries upgraded to the actually-observed outputs (the wobbling 'any' field, hoodie_minted=0 on rebuild, 'Bar Louie'-only serve).",
+      "context": "The deep context — WHY each decision was made and what almost went wrong — existed only in this session. The hard rule says tickets are how work is saved; a backfill at summary depth would have saved the WHAT and lost the WHY. HB-/HA- backfills already sit at the depth their thin histories support (1 and 9 commits respectively, captured from their real states) and were not padded.",
+      "acceptance": [
+        "Every done ticket names its key functions/seams, records found-bugs as narratives (symptom → root cause → fix → the test that now guards it), and lists verification as observed outputs, not intentions",
+        "Every open ticket carries enough spec (interaction model, triggers, guards, acceptance, verification plan) to be picked up cold with zero chat context",
+        "Owner decisions are attributed and quoted where they set direction"
+      ],
+      "verification": [
+        "JSON validates (19 tickets); board + drawer render spot-checked in-browser after the rewrite"
+      ],
+      "files": [
+        "apps/tickets.json"
       ]
     }
   ]
