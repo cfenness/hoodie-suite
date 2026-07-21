@@ -14,6 +14,11 @@ creativity, zero restatements as the track record.
   master-building workbench — seed a master from landed sources, watch bad data scream in the
   profile, resolve conflicts by RULE, click any golden record for its provenance ("here are the
   rows it came from"). This is the trust story, live.
+- **Match** (#mdm → Match): the steward's two-pane surface for the residue automation can't decide —
+  source records left, masters right; select-or-drag to match, "not a match", "new master", with
+  suggested pairs ranked by similarity. Every decision is a RULE that re-applies on every rebuild
+  (survivorship reruns over the merged records) — never an edit to the output. This is the human
+  5–10% of the accuracy-first automatch standard, made fast.
 - **Tickets** (#tickets) & **Roadmap** (#roadmap): how work is planned, sized, verified — the
   operating discipline is itself demoable.
 - **Hoodie App** (mobile): the field surface — Prism (the book cut by any dimension), Hoodie

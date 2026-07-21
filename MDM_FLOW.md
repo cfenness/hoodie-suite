@@ -223,6 +223,17 @@ mint a fresh Hoodie ID). Every decision is remembered, feeds back to tune thresh
 flow canvas — reads the same resolved tables. The flow *builds and auto-resolves*; this page *decides
 the residue and repairs mistakes*.
 
+**As implemented (HS-010):** `apps/mdm-match.html` (the Match section of the MDM console) over
+`/api/match/candidates|records|decide`. Decisions persist per mode+entity in `match_decisions.json`;
+'same' pairs canonicalize via union-find (deterministic smallest-root) and are injected into the
+resolve node as an identity **remap applied before the GROUP BY** — the pair re-groups and full
+survivorship reruns on every rebuild, across every surface (preview · conflicts · provenance · run ·
+serve). 'different' suppresses the pair from candidates; 'new' marks a reviewed standalone.
+Candidates = jaro-winkler over distinct golden identities, decided pairs filtered server-side.
+Related guard found in the same build: **the seeder never proposes the engine's own outputs
+(`dim_/fact_/_stage_`) as inputs** — a materialized master re-entering its own build is a
+double-counting feedback loop (self-ingestion), now excluded and self-tested.
+
 ## Real and synthetic never commingle
 
 Synthetic data (the seed book, demo fixtures) exists to build and test against *before* real facts
