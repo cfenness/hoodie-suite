@@ -129,7 +129,9 @@
     Promise.all([
       fetch("tickets.json",{cache:"no-store"}).then(function(r){return r.json();}),
       fetch("tickets.schema.json",{cache:"no-store"}).then(function(r){return r.json();}).catch(function(){return FALLBACK_SCHEMA;}),
-      fetch("/api/health").then(function(r){return r.ok;}).catch(function(){return false;})
+      // HS-025: probe an AUTHENTICATED endpoint — /api/health is exempt from the OIDC gate, so a
+      // gated deploy would show an edit mode it can't use. 401/403 → honest read-only.
+      fetch("/api/flow/datasets?mode=real").then(function(r){return r.ok;}).catch(function(){return false;})
     ]).then(function(res){
       S.all=(res[0].tickets||[]); S.meta=res[0].meta||{}; S.schema=res[1]||FALLBACK_SCHEMA; S.engine=!!res[2];
       $("edot").className="dot "+(S.engine?"on":""); $("etxt").textContent=S.engine?"editable · engine up":"read-only";

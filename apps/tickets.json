@@ -864,23 +864,28 @@
       "id": "HS-025",
       "title": "Editable badge should probe an authenticated endpoint, not /api/health",
       "type": "fix",
-      "status": "backlog",
+      "status": "done",
       "size": "S",
       "priority": "P3",
       "created": "2026-07-08",
       "updated": "2026-07-08",
       "branch": "",
-      "commits": [],
+      "commits": [
+        "cc799fa"
+      ],
       "summary": "The board decides 'editable · engine up' by probing /api/health, which is exempt from the OIDC gate and AGENT_TOKEN — so on a gated deploy a browser without auth is shown edit mode and only discovers it can't save when the save fails. Probe an authenticated endpoint (or treat a 401 on save-probe as read-only).",
       "context": "Reviewer minor from the HS-024 gate run. Cosmetic-to-confusing on deployed boxes; harmless locally.",
       "acceptance": [
         "A browser that cannot pass the auth gate sees read-only (no edit button); an authenticated one sees edit; local ungated dev unchanged"
       ],
-      "verification_plan": [
-        "Deployed-box (or simulated gate) probe with and without auth"
-      ],
       "files": [
         "apps/tickets.html"
+      ],
+      "review": [
+        "This fix IS a reviewer finding from the HS-024 gate run (the change implements the reviewer's own suggested remedy); no additional findings on the one-line probe swap"
+      ],
+      "verification": [
+        "Playwright, both paths observed: engine up ungated → badge 'editable · engine up' + edit button present; simulated gated deploy (route /api/flow/datasets → 401 while /api/health stays 200) → badge 'read-only', edit button absent, board fully browsable"
       ]
     }
   ]
