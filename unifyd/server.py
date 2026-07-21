@@ -3149,6 +3149,40 @@ def flow_provenance_ep():
                    rows=_flow_jsonsafe(rows), golden=_flow_jsonsafe(golden))
 
 
+@app.post("/api/flow/verify/report")
+def flow_verify_report_ep():
+    """Telemetry for a verify node: rows total, how many matched the authority, and per verified field the
+    count in each status (agreed/backfilled/overrode/unmatched/unverified) + the % of catch-all/empty
+    fields the authority actually filled. This is how the Check earns trust — observed, not asserted.
+    Body: {flow, node, mode}."""
+    import flow as flowmod
+    import warehouse
+    b = request.get_json(silent=True) or {}
+    node = b.get("node")
+    fl = b.get("flow") or {}
+    nd = {n.get("id"): n for n in fl.get("nodes", [])}.get(node) or {}
+    if nd.get("type") != "verify":
+        return jsonify(ok=False, error="node is not a verify node"), 200
+    try:
+        cur = warehouse.connect().execute(flowmod.verify_report_sql(fl, node, _flow_uri(_flow_mode(b))))
+        rec = dict(zip([d[0] for d in cur.description], cur.fetchone()))
+        total = rec.get("_n") or 0
+        matched = rec.get("_matched") or 0
+        vfields = [p for p in (nd.get("fields") or []) if p.get("field") and p.get("auth")]
+        out = []
+        for p in vfields:
+            f = p["field"]
+            counts = {st: (rec.get(f + "†" + st) or 0) for st in flowmod._VERIFY_STATUSES}
+            touched = counts["backfilled"] + counts["overrode"]     # fields the authority actually moved
+            out.append({"field": f, "authority_field": p.get("auth"), **counts,
+                        "touched": touched,
+                        "touched_pct": round(100 * touched / max(1, total), 1)})
+    except Exception as e:
+        return jsonify(ok=True, landed=False, error=str(e)[:240], fields=[]), 200
+    return jsonify(ok=True, landed=True, node=node, total=total, matched=matched,
+                   matched_pct=round(100 * matched / max(1, total), 1), fields=out)
+
+
 @app.post("/api/flow/run")
 def flow_run_ep():
     """Materialize a node to a warehouse table, minting STABLE Hoodie IDs via a registry (identity →

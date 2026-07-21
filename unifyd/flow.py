@@ -12,6 +12,11 @@ Node types (each compiles to a SELECT over its input node(s)):
     clean    {source, fields:[{out,rule,normalize}], filters:[expr]}
                                                  project source columns onto the master schema (derive rules)
     union    (many inputs)                       UNION ALL BY NAME of its inputs — stack sources of one master
+    verify   {authority, on:[{field,auth}],       check each row against an AUTHORITY reference (a COLA
+              fields:[{field,auth}], id_col}       filing, a registry) — backfill catch-all/empty fields,
+                                                 override real conflicts (authority wins), carry the filing
+                                                 id as evidence. LEFT JOIN into ONE deduped reference: it
+                                                 enriches in place and NEVER changes the row count.
     resolve  {identity:{strong,natural[]}, fields[], survivors:{field:rule},
               authority[], recency}              one golden row per identity: dedup (redundancy) + per-
                                                  attribute survivorship + <field>__conflict flags
@@ -77,6 +82,40 @@ def _authority_case(sources):
     whens = " ".join("WHEN %s THEN %d" % (derive._sqlstr(s), len(sources) - i)
                      for i, s in enumerate(sources))
     return "CASE _source %s ELSE 0 END" % whens
+
+
+# ── verify: check a record against an AUTHORITY reference (a COLA filing, a licence registry) and
+# backfill/override from it. The five states, ordered — the CASE falls through them exactly once:
+_VERIFY_STATUSES = ("agreed", "backfilled", "overrode", "unmatched", "unverified")
+
+
+def _blank_expr(qcol):
+    """Literally null/empty. The AUTHORITY side is read literally — only a truly missing value is 'no
+    value' to verify against; we don't second-guess a registry's own placeholders."""
+    return "(%s IS NULL OR CAST(%s AS VARCHAR)='')" % (qcol, qcol)
+
+
+def _empty_or_catchall(qcol):
+    """The UPSTREAM states verify may replace: missing OR a catch-all placeholder ('other', 'misc', …).
+    A catch-all is populated-but-empty — exactly the field the authority should fill. (Uses the same
+    _CATCHALL vocabulary the profile counts, so 'looks known but isn't' means one thing across the engine.)"""
+    return "(%s IS NULL OR CAST(%s AS VARCHAR)='' OR %s)" % (qcol, qcol, _catchall_pred(qcol))
+
+
+def _verify_case(uv, av, matched, value):
+    """One field's verify decision. `matched` is the truthy expr that an authority row joined; `uv`/`av`
+    the upstream/authority value exprs. value=True → the surviving VALUE (authority wins on backfill /
+    override); value=False → the STATUS label. Fall-through order is load-bearing and mirrors
+    _VERIFY_STATUSES: unmatched (no reference) → unverified (authority silent) → backfilled (upstream
+    empty/catch-all) → overrode (real disagreement) → agreed. The authority only ever moves a field OFF
+    a blank/wrong value; it never overwrites an agreeing one (that would be edit-for-edit's-sake)."""
+    same = "lower(trim(CAST(%s AS VARCHAR))) = lower(trim(CAST(%s AS VARCHAR)))" % (uv, av)
+    if value:
+        return ("CASE WHEN NOT (%s) THEN %s WHEN %s THEN %s WHEN %s THEN %s WHEN NOT (%s) THEN %s ELSE %s END"
+                % (matched, uv, _blank_expr(av), uv, _empty_or_catchall(uv), av, same, av, uv))
+    return ("CASE WHEN NOT (%s) THEN 'unmatched' WHEN %s THEN 'unverified' WHEN %s THEN 'backfilled' "
+            "WHEN NOT (%s) THEN 'overrode' ELSE 'agreed' END"
+            % (matched, _blank_expr(av), _empty_or_catchall(uv), same))
 
 
 def _key_part(spec):
@@ -189,6 +228,40 @@ def compile_sql(flow, node_id, uri_fn, _seen=None):
             raise ValueError("union node %s has no inputs" % node_id)
         return " UNION ALL BY NAME ".join("SELECT * FROM (%s)" % s for s in ins)
 
+    if t == "verify":
+        # Check each row against an AUTHORITY reference and enrich IN PLACE: backfill catch-all/empty
+        # fields, override real conflicts (authority wins), carry the filing id as evidence. It is a
+        # LEFT JOIN into ONE deduped reference — verify NEVER changes the row count (a fan-out would be
+        # silent duplication), and a decision to trust a source is a compiled RULE, not an output edit.
+        if not ins:
+            raise ValueError("verify node %s has no input" % node_id)
+        authority = n.get("authority") or n.get("dataset") or ""
+        if not authority:
+            raise ValueError("verify node %s needs an authority dataset" % node_id)
+        on = [p for p in (n.get("on") or []) if p.get("field") and p.get("auth")]
+        if not on:
+            raise ValueError("verify node %s needs at least one join key (on)" % node_id)
+        vfields = [p for p in (n.get("fields") or []) if p.get("field") and p.get("auth")]
+        id_col = n.get("id_col") or on[0]["auth"]
+        uri = str(uri_fn(authority)).replace("'", "")
+        # DEDUPE the authority to one row per join key BEFORE the join — else a reference with N rows for
+        # a key multiplies the upstream row N×. row_number()=1 over the join keys is the guard.
+        pk = ", ".join(derive.col(p["auth"]) for p in on)
+        ref = ("SELECT * FROM read_parquet('%s') QUALIFY row_number() OVER (PARTITION BY %s)=1" % (uri, pk))
+        conds = " AND ".join(
+            "lower(trim(CAST(u.%s AS VARCHAR))) = lower(trim(CAST(ref.%s AS VARCHAR)))"
+            % (derive.col(p["field"]), derive.col(p["auth"])) for p in on)
+        matched = "ref.%s IS NOT NULL" % derive.col(id_col)
+        sel = ["u.* EXCLUDE (%s)" % ", ".join(derive.col(p["field"]) for p in vfields)] if vfields else ["u.*"]
+        for p in vfields:
+            uv, av = "u.%s" % derive.col(p["field"]), "ref.%s" % derive.col(p["auth"])
+            sel.append("%s AS %s" % (_verify_case(uv, av, matched, True), derive.col(p["field"])))
+            sel.append("%s AS %s" % (_verify_case(uv, av, matched, False), derive.col(p["field"] + "__verify")))
+        sel.append("CAST(ref.%s AS VARCHAR) AS _verify_ref" % derive.col(id_col))   # the filing id: evidence
+        sel.append("%s AS _verify_src" % derive._sqlstr(authority))
+        sel.append("%s AS _verify_matched" % matched)
+        return "SELECT %s FROM (%s) u LEFT JOIN (%s) ref ON %s" % (", ".join(sel), ins[0], ref, conds)
+
     if t == "resolve":
         if not ins:
             raise ValueError("resolve node %s has no input" % node_id)
@@ -271,6 +344,25 @@ def provenance_sql(flow, resolve_node_id, uri_fn):
         raise ValueError("provenance_sql needs a resolve node")
     up = compile_sql(flow, n["inputs"][0], uri_fn) if n.get("inputs") else "SELECT 1"
     return _identity_inner(n, up)
+
+
+def verify_report_sql(flow, verify_node_id, uri_fn):
+    """Telemetry over a verify node: rows total, how many MATCHED the authority, and per verified field
+    the count in each status (agreed / backfilled / overrode / unmatched / unverified). This is how you
+    SEE the check earning its keep — how many catch-all/empty fields the authority filled, how many real
+    conflicts it overrode — instead of trusting that it did."""
+    n = _index(flow).get(verify_node_id)
+    if not n or n.get("type") != "verify":
+        raise ValueError("verify_report_sql needs a verify node")
+    inner = compile_sql(flow, verify_node_id, uri_fn)
+    vfields = [p for p in (n.get("fields") or []) if p.get("field") and p.get("auth")]
+    parts = ["count(*) AS _n", "count(*) FILTER (WHERE _verify_matched) AS _matched"]
+    for p in vfields:
+        vc = derive.col(p["field"] + "__verify")
+        for st in _VERIFY_STATUSES:
+            parts.append("count(*) FILTER (WHERE %s = %s) AS %s"
+                         % (vc, derive._sqlstr(st), derive.col(p["field"] + "†" + st)))
+    return "SELECT %s FROM (%s) q" % (", ".join(parts), inner)
 
 
 # ── seeding: auto-build a flow for a master from the datasets already landed ──
@@ -533,8 +625,44 @@ def _selftest():
         pcur = con.execute(profile_sql("SELECT * FROM ca", ["cat"]))
         prec = dict(zip([d[0] for d in pcur.description], pcur.fetchone()))
         assert prec["cat†fill"] == 4 and prec["cat†other"] == 3, prec   # 4 'filled' but only 1 informative
+        # verify node: check rows against an AUTHORITY reference (COLA-style filing) and enrich in place —
+        # backfill catch-all/empty, override real conflicts, NEVER fan out. Synthetic authority here; real
+        # TTB/COLA data isn't landed in the sandbox (TLS-blocked), so live COLA end-to-end is the follow-up.
+        con.execute("COPY (SELECT * FROM (VALUES "
+                    "('TTB001','Titos','Vodka','USA'),('TTB002','Deep Eddy','Vodka','USA'),"
+                    "('TTB001b','Titos','Vodka','USA')"                  # dupe key 'Titos' → must NOT fan out
+                    ") t(ttbid,brand,class_type,origin)) TO '%s/cola.parquet'" % d)
+        con.execute("COPY (SELECT * FROM (VALUES "
+                    "('Titos','Other','Russia'),"        # category catch-all → backfill; origin wrong → override
+                    "('Deep Eddy','Vodka',''),"          # category agrees; origin empty → backfill
+                    "('Ghost Brand','Other','USA')"      # no authority row → unmatched, untouched
+                    ") t(brand,category,origin)) TO '%s/up.parquet'" % d)
+        vflow = {"nodes": [
+            {"id": "vi", "type": "input", "dataset": "up", "inputs": []},
+            {"id": "v", "type": "verify", "inputs": ["vi"], "authority": "cola", "id_col": "ttbid",
+             "on": [{"field": "brand", "auth": "brand"}],
+             "fields": [{"field": "category", "auth": "class_type"}, {"field": "origin", "auth": "origin"}]}]}
+        vrows = con.execute("SELECT * FROM (%s) ORDER BY brand" % compile_sql(vflow, "v", uf2)).fetchall()
+        vcols = [c[0] for c in con.description]
+        by = {r["brand"]: r for r in (dict(zip(vcols, x)) for x in vrows)}
+        assert len(vrows) == 3, vrows                                   # deduped authority → NO fan-out on 'Titos'
+        assert by["Deep Eddy"]["category__verify"] == "agreed", by["Deep Eddy"]
+        assert by["Deep Eddy"]["origin"] == "USA" and by["Deep Eddy"]["origin__verify"] == "backfilled", by["Deep Eddy"]
+        assert by["Titos"]["category"] == "Vodka" and by["Titos"]["category__verify"] == "backfilled", by["Titos"]
+        assert by["Titos"]["origin"] == "USA" and by["Titos"]["origin__verify"] == "overrode", by["Titos"]
+        assert by["Titos"]["_verify_ref"] in ("TTB001", "TTB001b"), by["Titos"]   # the filing id is the evidence
+        assert by["Ghost Brand"]["category__verify"] == "unmatched", by["Ghost Brand"]
+        assert by["Ghost Brand"]["category"] == "Other", by["Ghost Brand"]   # first law: never fabricate a match
+        assert by["Ghost Brand"]["_verify_ref"] is None, by["Ghost Brand"]
+        vr = con.execute(verify_report_sql(vflow, "v", uf2))
+        vrec = dict(zip([c[0] for c in vr.description], vr.fetchone()))
+        assert vrec["_n"] == 3 and vrec["_matched"] == 2, vrec
+        assert vrec["origin†backfilled"] == 1 and vrec["origin†overrode"] == 1 and vrec["origin†unmatched"] == 1, vrec
+        assert vrec["category†backfilled"] == 1 and vrec["category†agreed"] == 1, vrec
         print("flow self-test: OK — 3 rows→1 golden; size normalized+agrees; origin conflict A>B by authority; "
-              "conflict queue + profile land; catch-all: 4 filled → 3 'other' flagged (1 informative)")
+              "conflict queue + profile land; catch-all: 4 filled → 3 'other' flagged (1 informative); "
+              "verify: authority backfills 'other'→Vodka + overrides wrong origin, deduped→no fan-out, "
+              "no-match untouched")
     except ImportError:
         print("flow self-test: OK (compile-only; duckdb not present for eval)")
 

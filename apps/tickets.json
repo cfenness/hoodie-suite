@@ -424,7 +424,7 @@
       "id": "HS-011",
       "title": "Verify node — catch-all density → COLA label backfill (first live Check)",
       "type": "feat",
-      "status": "ready",
+      "status": "in-progress",
       "size": "L",
       "priority": "P1",
       "created": "2026-07-08",

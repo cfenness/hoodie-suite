@@ -188,7 +188,7 @@
   var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
   var fmt=function(n){return n==null?"—":Number(n).toLocaleString();};
   var $=function(id){return document.getElementById(id);};
-  var TG={input:"IN",clean:"CL",union:"∪",resolve:"◆",output:"▣"};
+  var TG={input:"IN",clean:"CL",union:"∪",verify:"✓",resolve:"◆",output:"▣"};
   var CATCHALL={other:1,others:1,misc:1,miscellaneous:1,general:1,generic:1,unspecified:1,unknown:1,undefined:1,"default":1,various:1,"n/a":1,na:1,none:1,tbd:1,"null":1};
   var S={flow:null,sel:null,tab:"profile",rows:null,cols:null,filter:"",focusField:null,mode:"real"};
 
@@ -238,6 +238,8 @@
     if(n.type==="clean"){var m=(n.fields||[]).filter(function(f){return f.source_field;}).length;
       return "Maps <b>"+m+"</b> columns from <b>"+esc(n.source)+"</b> onto the "+e+" schema — each value normalized (addresses standardized, names cleaned, placeholders dropped) so every source speaks one language. (This is the old Mapping + Dictionary, inline.)";}
     if(n.type==="union")return "Stacks the cleaned sources into one set — every source of a "+e+", ready to resolve.";
+    if(n.type==="verify"){var vf=(n.fields||[]).map(function(x){return x.field;});
+      return "Checks each record against the authority <b>"+esc(n.authority||"?")+"</b> — joins on <b>"+esc((n.on||[]).map(function(x){return x.field;}).join(" · ")||"key")+"</b>, then backfills empty/catch-all "+(vf.length?("("+esc(vf.join(", "))+") "):"")+"and overrides real conflicts (the authority wins). Every touched value carries the filing id as evidence; a no-match is left untouched, never invented. (First law: it enriches in place, never fans out.)";}
     if(n.type==="resolve"){var k=(n.identity&&n.identity.natural||[]).map(function(x){return x.field||x;});
       return "Collapses duplicates into golden "+e+" records — matches on <b>"+esc(k.join(" · ")||"identity")+"</b>"+(n.identity&&n.identity.strong?(" (or strong key <b>"+esc(n.identity.strong)+"</b>)"):"")+". Disagreements are flagged, never guessed. (This is the old Master + Confirm, inline.)";}
     if(n.type==="output")return "Writes golden <b>"+esc(n.table||("dim_"+e))+"</b>, each record a stable Hoodie ID that never changes on rebuild.";
@@ -248,15 +250,18 @@
     return c.length?'<div class="chips">'+c.join("")+'</div>':"";}
 
   function select(id){S.sel=id;var n=nodeById(id);if(!n)return;S.rows=null;S.filter="";S.focusField=null;
-    var nm=n.name||n.dataset||n.table||n.type, isR=n.type==="resolve";
+    var nm=n.name||n.dataset||n.table||n.type, isR=n.type==="resolve", isV=n.type==="verify";
+    var k=3;
     var tabs='<button class="vt" data-t="profile">profile<span class="n">1</span></button>'+
              '<button class="vt" data-t="data">data<span class="n">2</span></button>'+
-             (isR?'<button class="vt" data-t="conflicts">conflicts<span class="n">3</span></button>':'')+
-             '<button class="vt" data-t="explain">explain<span class="n">'+(isR?4:3)+'</span></button>';
+             (isR?'<button class="vt" data-t="conflicts">conflicts<span class="n">'+(k++)+'</span></button>':'')+
+             (isV?'<button class="vt" data-t="verify">verify<span class="n">'+(k++)+'</span></button>':'')+
+             '<button class="vt" data-t="explain">explain<span class="n">'+(k++)+'</span></button>';
     $("mid").innerHTML='<div class="nh"><div class="t"><h1>'+esc(nm)+'</h1><span class="ty">'+n.type+'</span></div>'+
       '<div class="d">'+describe(n)+'</div>'+chips(n)+'<div class="vtabs">'+tabs+'</div></div><div class="view" id="view"></div>';
     Array.prototype.forEach.call(document.querySelectorAll(".vt"),function(el){el.onclick=function(){S.tab=el.getAttribute("data-t");paintTabs();loadTab();};});
-    if(S.tab==="conflicts"&&!isR)S.tab="profile";
+    if(S.tab==="conflicts"&&!isR)S.tab=isV?"verify":"profile";
+    if(S.tab==="verify"&&!isV)S.tab="profile";
     markPipe();paintTabs();loadTab();
   }
   function paintTabs(){Array.prototype.forEach.call(document.querySelectorAll(".vt"),function(el){el.classList.toggle("on",el.getAttribute("data-t")===S.tab);});}
@@ -265,7 +270,30 @@
     if(S.tab==="profile")return loadProfile(v);
     if(S.tab==="data")return loadData(v);
     if(S.tab==="conflicts")return loadConflicts(v);
+    if(S.tab==="verify")return loadVerify(v);
     return loadExplain(v);}
+
+  // ── verify report — how the Check earns trust: what the authority actually filled / overrode ──
+  function loadVerify(v){api("/api/flow/verify/report",{flow:S.flow,node:S.sel}).then(function(r){
+    if(!r||r.ok===false){v.innerHTML='<div class="err">'+esc((r&&r.error)||"not a verify node")+'</div>';return;}
+    if(!r.landed){v.innerHTML='<div class="err">verify report failed · '+esc(r.error||"authority not landed")+'</div>';return;}
+    if(!r.fields.length){v.innerHTML='<div class="hint">no fields configured to verify.</div>';return;}
+    var h='<div class="psum">'+fmt(r.total)+' rows · <b>'+r.matched_pct+'%</b> matched the authority ('+fmt(r.matched)+'/'+fmt(r.total)+') · green = filled/corrected from the authoritative record</div>';
+    r.fields.forEach(function(f){var t=r.total||1,seg=function(n){return 100*(n||0)/t;};
+      var bf=seg(f.backfilled),ov=seg(f.overrode),ag=seg(f.agreed),un=seg(f.unmatched),uv=seg(f.unverified);
+      var flag=f.touched>0?'<span class="flag" style="background:#e6f4ea;color:#137333">'+f.touched_pct+'% enriched</span>':(f.unmatched===t?'<span class="flag low">no matches</span>':'');
+      h+='<div class="prow" title="'+esc(f.field+' ← '+f.authority_field+' · backfilled '+f.backfilled+' · overrode '+f.overrode+' · agreed '+f.agreed+' · unmatched '+f.unmatched+' · unverified '+f.unverified)+'"><div class="pf">'+esc(f.field)+flag+'</div>'+
+         '<div class="bar3" style="display:flex">'+
+           '<i style="width:'+bf+'%;background:#137333" title="backfilled '+f.backfilled+'"></i>'+
+           '<i style="width:'+ov+'%;background:#a8710a" title="overrode '+f.overrode+'"></i>'+
+           '<i style="width:'+ag+'%;background:#9aa0a6" title="agreed '+f.agreed+'"></i>'+
+           '<i style="width:'+uv+'%;background:#c9cccf" title="unverified '+f.unverified+'"></i>'+
+           '<i style="width:'+un+'%;background:#e8eaed" title="unmatched '+f.unmatched+'"></i>'+
+         '</div>'+
+         '<div class="pm">bf <b>'+fmt(f.backfilled)+'</b> · ov <b>'+fmt(f.overrode)+'</b></div>'+
+         '<div class="pm" style="color:var(--mut2)">← '+esc(f.authority_field)+'</div></div>';});
+    h+='<div class="hint" style="margin-top:10px">backfilled = authority filled an empty/catch-all · overrode = authority corrected a conflict · agreed = source already right · unmatched = no reference row (left untouched) · unverified = authority had no value.</div>';
+    v.innerHTML=h;});}
 
   function loadProfile(v){api("/api/flow/profile",{flow:S.flow,node:S.sel}).then(function(r){
     if(!r.landed){v.innerHTML='<div class="err">profile failed · '+esc(r.error||"")+'</div>';return;}
@@ -398,7 +426,7 @@
     {t:"run → materialize",tg:"▣",go:run},
   ];
     if(S.flow){orderedNodes().forEach(function(n){c.push({t:"jump: "+(n.name||n.dataset||n.table||n.type),tg:TG[n.type],go:function(){select(n.id);}});});
-      ["profile","data","conflicts","explain"].forEach(function(t){c.push({t:"view: "+t,tg:"·",go:function(){S.tab=t;paintTabs();loadTab();}});});}
+      ["profile","data","conflicts","verify","explain"].forEach(function(t){c.push({t:"view: "+t,tg:"·",go:function(){S.tab=t;paintTabs();loadTab();}});});}
     return c;}
   function openPal(){PAL=cmds();PALSEL=0;$("pal").classList.add("on");$("palq").value="";renderPal();$("palq").focus();}
   function closePal(){$("pal").classList.remove("on");}
