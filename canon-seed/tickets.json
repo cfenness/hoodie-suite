@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "project": "Hoodie Canon",
+    "prefix": "HC",
+    "next_id": 2,
+    "statuses": ["backlog", "ready", "in-progress", "in-review", "done"],
+    "sizes": {"S": "≤ half a day", "M": "half day – 2 days", "L": "2 – 5 days", "XL": "needs breakdown — split before starting"},
+    "note": "Single source of truth for engineering tickets in this repo. Claude Code MUST create/update tickets here per the hard rule in CLAUDE.md. Board: tickets.html (serve the repo root and open /tickets.html). SEEDED from hoodie-suite/canon-seed — backfill phase-1 work from the repo's real history before adding new tickets."
+  },
+  "tickets": [
+    {
+      "id": "HC-001",
+      "title": "Adopt ticket discipline + backfill phase 1 from real history",
+      "type": "chore", "status": "ready", "size": "S", "priority": "P1",
+      "created": "2026-07-08", "updated": "2026-07-08",
+      "branch": "",
+      "commits": [],
+      "summary": "Install the seeded discipline (CLAUDE.md laws + this file + the board), then BACKFILL: read the repo's actual git history and state, and record everything phase 1 has shipped as done tickets with implementation notes and verification evidence, plus the remaining phases as epic-level pipeline tickets (backlog/ready) with acceptance criteria — including the automatch/precision measurement harness, which should exist before the rate is chased.",
+      "context": "Seeded from hoodie-suite/canon-seed (see its README-SEED.md). The laws in CLAUDE.md must stay verbatim-synced to hoodie-suite/MDM_FLOW.md — that doc is the canon of record. Backfill must be written from the repo's REAL state by a session that can see it — never invented.",
+      "acceptance": [
+        "CLAUDE.md 'What this is' filled from the repo's actual phase-1 state; seed comment removed; laws verbatim",
+        "Every phase-1 unit of work is a done ticket with commits, files, implementation notes, and verification evidence",
+        "The 7 phases exist as epic tickets, each with acceptance criteria; measurement harness (automatch shares + false-merge precision by audit sampling) is an explicit early ticket",
+        "Board renders from ./tickets.json; meta.next_id correct"
+      ],
+      "verification_plan": ["JSON validates; board screenshotted; a lead engineer can reconstruct phase 1 from the tickets without the chat transcript"],
+      "files": ["CLAUDE.md", "tickets.json", "tickets.html"]
+    }
+  ]
+}
