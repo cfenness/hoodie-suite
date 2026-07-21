@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<!-- Hoodie Suite · Tickets — the engineering board. Single source of truth is apps/tickets.json;
+     Claude Code creates/sizes/moves tickets there per the hard rule in CLAUDE.md. This page is the
+     read surface: a pipeline board (backlog → ready → in progress → in review → done) + a detail
+     drawer with enough context to hand any ticket to a lead engineer cold. Dependency-free. -->
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoodie · Tickets</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--teal:#4E79A7;--teal-d:#3D6089;--teal-soft:#E8EEF5;--ink:#243330;--ink2:#3A4A47;
+        --muted:#5E6B68;--muted2:#8A928F;--line:#D7DDDB;--line2:#E4E9E8;--paper:#F4F6F5;--surface:#fff;
+        --good:#15803d;--good-soft:#e7f3ec;--warn:#b45309;--warn-soft:#fbeede;--bad:#b4232a;--bad-soft:#f8e6e7;
+        --mono:'JetBrains Mono',ui-monospace,monospace;--disp:'Fraunces',Georgia,serif;--body:'Inter',system-ui,sans-serif;}
+  *{box-sizing:border-box} html,body{margin:0;height:100%}
+  body{display:flex;flex-direction:column;height:100vh;overflow:hidden;font-family:var(--body);color:var(--ink);background:var(--paper)}
+  /* top bar */
+  .top{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:14px 20px 12px;background:var(--surface);border-bottom:1px solid var(--line)}
+  .top .brand{line-height:1.05}
+  .top .ey{font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);display:block;font-weight:600}
+  .top .nm{font-family:var(--disp);font-size:20px;font-weight:700;color:var(--teal-d);letter-spacing:-.01em}
+  .top input{font-family:var(--body);font-size:13px;border:1px solid var(--line);border-radius:8px;padding:7px 11px;width:250px;background:var(--surface);color:var(--ink)}
+  .seg{display:flex;gap:2px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:2px}
+  .seg button{font-family:var(--body);font-size:12px;font-weight:600;border:0;background:none;color:var(--muted);border-radius:6px;padding:5px 11px;cursor:pointer}
+  .seg button.on{background:var(--surface);color:var(--teal-d);box-shadow:0 1px 2px rgba(20,30,28,.08)}
+  .sp{flex:1}
+  .stats{font-family:var(--mono);font-size:10.5px;color:var(--muted);font-weight:600}
+  /* board */
+  .board{flex:1;display:flex;gap:12px;min-height:0;overflow-x:auto;padding:14px 20px}
+  .col{flex:1 0 232px;max-width:330px;display:flex;flex-direction:column;min-height:0}
+  .col h2{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 8px;display:flex;align-items:center;gap:7px}
+  .col h2 .n{background:var(--line2);color:var(--muted);border-radius:999px;padding:1px 8px;font-size:9.5px}
+  .col h2 .dot{width:7px;height:7px;border-radius:3px}
+  .col .cards{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-bottom:8px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:11px 13px;cursor:pointer;transition:.12s}
+  .card:hover{border-color:#B9CBDE;box-shadow:0 3px 10px rgba(20,30,28,.06)}
+  .card .id{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--teal-d)}
+  .card .tt{font-size:13px;font-weight:600;line-height:1.3;margin:4px 0 8px;color:var(--ink)}
+  .card .meta{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+  .pill{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-radius:999px;padding:2px 7px}
+  .pill.feat{background:var(--teal-soft);color:var(--teal-d)}.pill.fix{background:var(--bad-soft);color:var(--bad)}
+  .pill.chore{background:var(--line2);color:var(--muted)}.pill.docs{background:#efe9f7;color:#6b5b95}
+  .pill.sz{background:var(--paper);border:1px solid var(--line);color:var(--ink2)}
+  .pill.p1{background:var(--warn-soft);color:var(--warn)}.pill.p2,.pill.p3{background:var(--paper);border:1px solid var(--line);color:var(--muted)}
+  .empty-col{color:var(--muted2);font-size:12px;padding:8px 4px;font-style:italic}
+  /* status colors */
+  .s-backlog{background:#C7CCD2}.s-ready{background:#8a7bbf}.s-in-progress{background:#d69b3a}.s-in-review{background:var(--teal)}.s-done{background:var(--good)}
+  /* drawer */
+  .scrim{position:fixed;inset:0;background:rgba(36,51,48,.32);display:none;z-index:40}.scrim.on{display:block}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,95vw);background:var(--surface);border-left:1px solid var(--line);box-shadow:-16px 0 48px rgba(20,30,28,.14);transform:translateX(100%);transition:.22s;z-index:41;display:flex;flex-direction:column}
+  .drawer.on{transform:none}
+  .dh{flex:0 0 auto;padding:16px 22px 12px;border-bottom:1px solid var(--line)}
+  .dh .row1{display:flex;align-items:center;gap:10px}
+  .dh .did{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--teal-d)}
+  .dh .x{margin-left:auto;cursor:pointer;color:var(--muted);border:1px solid var(--line);border-radius:7px;padding:3px 10px;font-family:var(--mono);font-size:11px;font-weight:700}
+  .dh .x:hover{color:var(--ink);background:var(--paper)}
+  .dh h1{font-family:var(--disp);font-size:19px;font-weight:700;margin:7px 0 9px;letter-spacing:-.01em;line-height:1.25}
+  .dh .meta{display:flex;flex-wrap:wrap;gap:6px}
+  .db{flex:1;overflow-y:auto;padding:16px 22px 28px}
+  .sec{margin-bottom:16px}
+  .sec h3{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 7px}
+  .sec p{font-size:13.5px;line-height:1.6;color:var(--ink2);margin:0}
+  .sec ul{margin:0;padding-left:18px}
+  .sec li{font-size:13px;line-height:1.6;color:var(--ink2);margin-bottom:3px}
+  .sec.ac li{list-style:none;position:relative;padding-left:4px}
+  .sec.ac li::before{content:"☐";position:absolute;left:-16px;color:var(--muted2)}
+  .done .sec.ac li::before{content:"☑";color:var(--good)}
+  .mono-chips{display:flex;flex-wrap:wrap;gap:5px}
+  .mc{font-family:var(--mono);font-size:10.5px;font-weight:600;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:var(--ink2)}
+  .mc.commit{color:var(--teal-d);background:var(--teal-soft);border-color:#CDDDEC}
+  .foot-note{font-size:11.5px;color:var(--muted2);border-top:1px solid var(--line2);margin-top:6px;padding-top:10px}
+  .load-err{padding:40px;text-align:center;color:var(--muted)}
+</style></head><body>
+  <div class="top">
+    <div class="brand"><span class="ey">Hoodie Suite</span><span class="nm">Tickets</span></div>
+    <input id="q" placeholder="Search tickets…">
+    <div class="seg" id="typeseg">
+      <button data-t="" class="on">All</button><button data-t="feat">Feat</button><button data-t="fix">Fix</button><button data-t="chore">Chore</button><button data-t="docs">Docs</button>
+    </div>
+    <span class="sp"></span>
+    <span class="stats" id="stats">…</span>
+  </div>
+  <div class="board" id="board"><div class="load-err">Loading tickets…</div></div>
+  <div class="scrim" id="scrim"></div>
+  <div class="drawer" id="drawer"></div>
+<script>
+(function(){
+  "use strict";
+  var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
+  var $=function(id){return document.getElementById(id);};
+  var COLS=[["backlog","Backlog"],["ready","Ready"],["in-progress","In Progress"],["in-review","In Review"],["done","Done"]];
+  var S={all:[],q:"",type:""};
+
+  function load(){
+    fetch("tickets.json",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
+      S.all=(d.tickets||[]);render();
+    }).catch(function(e){$("board").innerHTML='<div class="load-err">Could not load tickets.json — '+esc(String(e))+'</div>';});
+  }
+
+  function match(t){
+    if(S.type&&t.type!==S.type)return false;
+    if(!S.q)return true;
+    var q=S.q.toLowerCase();
+    return [t.id,t.title,t.summary,t.context,(t.files||[]).join(" ")].join(" ").toLowerCase().indexOf(q)>=0;
+  }
+
+  function render(){
+    var shown=S.all.filter(match);
+    var open=S.all.filter(function(t){return t.status!=="done";}).length;
+    $("stats").textContent=S.all.length+" tickets · "+open+" open · "+(S.all.length-open)+" done";
+    var h="";
+    COLS.forEach(function(c){
+      var items=shown.filter(function(t){return t.status===c[0];});
+      h+='<div class="col"><h2><span class="dot s-'+c[0]+'"></span>'+c[1]+'<span class="n">'+items.length+'</span></h2><div class="cards">';
+      if(!items.length)h+='<div class="empty-col">—</div>';
+      items.forEach(function(t){
+        h+='<div class="card" data-id="'+esc(t.id)+'"><span class="id">'+esc(t.id)+'</span>'+
+           '<div class="tt">'+esc(t.title)+'</div><div class="meta">'+
+           '<span class="pill '+esc(t.type)+'">'+esc(t.type)+'</span>'+
+           '<span class="pill sz">'+esc(t.size)+'</span>'+
+           '<span class="pill '+esc((t.priority||"p2").toLowerCase())+'">'+esc(t.priority||"")+'</span>'+
+           '</div></div>';
+      });
+      h+='</div></div>';
+    });
+    $("board").innerHTML=h;
+    Array.prototype.forEach.call(document.querySelectorAll(".card"),function(el){
+      el.onclick=function(){open_(el.getAttribute("data-id"));};
+    });
+  }
+
+  function sec(title,body){return body?'<div class="sec"><h3>'+title+'</h3>'+body+'</div>':"";}
+  function list(items,cls){return (items&&items.length)?('<div class="sec '+(cls||"")+'"'+'><ul>'+items.map(function(x){return '<li>'+esc(x)+'</li>';}).join("")+'</ul></div>'):"";}
+
+  function open_(id){
+    var t=S.all.filter(function(x){return x.id===id;})[0];if(!t)return;
+    var statusLab=(COLS.filter(function(c){return c[0]===t.status;})[0]||["",t.status])[1];
+    var h='<div class="dh"><div class="row1"><span class="did">'+esc(t.id)+'</span>'+
+      '<span class="pill '+esc(t.type)+'">'+esc(t.type)+'</span>'+
+      '<span class="pill sz">'+esc(t.size)+'</span>'+
+      '<span class="pill '+esc((t.priority||"p2").toLowerCase())+'">'+esc(t.priority||"")+'</span>'+
+      '<span class="pill sz"><span class="dot s-'+esc(t.status)+'" style="display:inline-block;width:7px;height:7px;border-radius:3px;margin-right:5px"></span>'+esc(statusLab)+'</span>'+
+      '<span class="x" id="dx">esc ✕</span></div>'+
+      '<h1>'+esc(t.title)+'</h1>'+
+      '<div class="meta mono-chips">'+
+        (t.branch?'<span class="mc">'+esc(t.branch)+'</span>':"")+
+        (t.commits||[]).map(function(c){return '<span class="mc commit">'+esc(c)+'</span>';}).join("")+
+      '</div></div>'+
+      '<div class="db'+(t.status==="done"?" done":"")+'">'+
+      sec("Summary",'<p>'+esc(t.summary)+'</p>')+
+      sec("Context / why",t.context?'<p>'+esc(t.context)+'</p>':"")+
+      (t.acceptance&&t.acceptance.length?('<div class="sec"><h3>'+(t.status==="done"?"Acceptance — met":"Acceptance criteria")+'</h3>'+list(t.acceptance,"ac").replace('<div class="sec ac">','<div class="ac">')+'</div>'):"")+
+      (t.implementation&&t.implementation.length?('<div class="sec"><h3>Implementation notes</h3>'+list(t.implementation)+'</div>'):"")+
+      (t.verification&&t.verification.length?('<div class="sec"><h3>Verification — done</h3>'+list(t.verification)+'</div>'):"")+
+      (t.verification_plan&&t.verification_plan.length?('<div class="sec"><h3>Verification plan</h3>'+list(t.verification_plan)+'</div>'):"")+
+      (t.files&&t.files.length?sec("Files",'<div class="mono-chips">'+t.files.map(function(f){return '<span class="mc">'+esc(f)+'</span>';}).join("")+'</div>'):"")+
+      (t.followups&&t.followups.length?('<div class="sec"><h3>Follow-ups</h3>'+list(t.followups)+'</div>'):"")+
+      '<div class="foot-note">created '+esc(t.created)+' · updated '+esc(t.updated)+' · source of truth: apps/tickets.json (edited by rule — see CLAUDE.md “Ticket discipline”)</div>'+
+      '</div>';
+    $("drawer").innerHTML=h;$("drawer").classList.add("on");$("scrim").classList.add("on");
+    $("dx").onclick=close_;
+  }
+  function close_(){$("drawer").classList.remove("on");$("scrim").classList.remove("on");}
+  $("scrim").onclick=close_;
+  document.addEventListener("keydown",function(e){if(e.key==="Escape")close_();});
+
+  $("q").oninput=function(){S.q=$("q").value;render();};
+  Array.prototype.forEach.call(document.querySelectorAll("#typeseg button"),function(b){
+    b.onclick=function(){S.type=b.getAttribute("data-t");
+      Array.prototype.forEach.call(document.querySelectorAll("#typeseg button"),function(x){x.classList.toggle("on",x===b);});
+      render();};
+  });
+  load();
+})();
+</script>
+</body></html>

@@ -131,6 +131,28 @@ production; there is no staging branch.
 deploy runs): `curl -s https://hoodie-suite.fly.dev/robots.txt` and check the launcher
 reflects the change, or `flyctl releases -a hoodie-suite`.
 
+## Ticket discipline (HARD RULE)
+
+Every non-trivial unit of work moves through a ticket. **No implementation without a ticket; no
+ticket left stale.** The single source of truth is **`apps/tickets.json`**; the board is
+`apps/tickets.html` (launcher → `#tickets`). This is how work is saved — a ticket must carry enough
+detail that a lead engineer can pick it up cold.
+
+1. **Before writing code:** create the ticket (id `HS-<next_id>`, bump `meta.next_id`). Required
+   fields: `title`, `type` (`feat|fix|chore|docs`), `status`, `size` (S/M/L/XL — XL must be split
+   before starting), `priority`, `summary`, `context` (why / the decision behind it), `acceptance`
+   (testable criteria), and a `verification_plan`. Trivial exceptions (typo-level) may skip a ticket;
+   when in doubt, ticket it.
+2. **Pipeline:** `backlog → ready → in-progress → in-review → done`. Update `status` as work moves —
+   `in-progress` when you start, `in-review` when pushed and awaiting review/verification, `done`
+   only when acceptance criteria are verified (evidence recorded in `verification`).
+3. **On completion:** fill `commits` (short SHAs), `files`, `implementation` (concrete notes — key
+   functions, decisions, gotchas), and replace `verification_plan` with `verification` (what was
+   actually run/observed). Update `updated`.
+4. **Commits reference tickets** — mention the id (e.g. `HS-012`) in the commit body when work maps
+   to a ticket.
+5. Discovered follow-up work becomes a **new ticket** (link it in `followups`), not a mental note.
+
 ## Git conventions
 
 - **Never commit directly to `main`** — always work on a feature branch. `main` is
