@@ -132,6 +132,10 @@ Two standing tools exist so failures are loud, not quiet. Keep them passing and 
   stand out. Runs via `unifyd/run_health_digest.sh` (launchd `com.hoodie.health`, 07:30 daily);
   writes `unifyd/agent_state/health/latest.{json,txt}` + an optional Claude triage in
   `latest_triage.md` (judgment layer only — it NEVER changes the verdict). Exit 2 = critical.
+  Mondays (or `--weekly` / `HEALTH_WEEKLY=1`) add the **deep audit** (`unifyd/deep_audit.py`):
+  field-drift (a source lands rows but a column went null — footer null-stats vs baseline),
+  parser regression vs `unifyd/fixtures/` (add a scraper = one `FIXTURE_CHECKS` row), and
+  docs-drift (CLAUDE/README/SPINE referencing paths that no longer exist).
 - **Suite smoke — `python3 tools/smoke_check.py`**: deterministic; proves every `APPS` entry
   serves, no dangling ids/groups, every local src/href/iframe reference resolves, orphan app
   files are surfaced. The `/smoke` skill layers a browser runtime pass on top (console errors,

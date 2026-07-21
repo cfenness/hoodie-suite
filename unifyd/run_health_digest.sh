@@ -24,8 +24,12 @@ set -a
 . ./.env 2>/dev/null
 set +a
 
-# ── 1. the deterministic digest (writes agent_state/health/latest.{json,txt} + a dated copy) ──────────────────
-"$PY" health_digest.py
+# ── 1. the deterministic digest (writes agent_state/health/latest.{json,txt} + a dated copy).
+# Mondays add the weekly deep audit (field-drift / fixture regression / docs drift — deep_audit.py);
+# force any day with HEALTH_WEEKLY=1.
+FLAGS=""
+if [ "$(date +%u)" = "1" ] || [ "${HEALTH_WEEKLY:-0}" = "1" ]; then FLAGS="--weekly"; fi
+"$PY" health_digest.py $FLAGS
 VERDICT=$?    # 0 clear · 1 warn · 2 critical
 echo "[health] digest exit=$VERDICT"
 
