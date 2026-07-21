@@ -31,9 +31,15 @@ VIEW_ALL = "https://www.publix.com/savings/weekly-ad/view-all"
 
 
 def _browser_auth():
-    """wss auth for the BD Browser API (cli_browser zone), from the CLI's stored API key."""
-    key = json.load(open(os.path.expanduser(
-        "~/Library/Application Support/brightdata-cli/credentials.json")))["api_key"]
+    """wss auth for the BD Browser API (cli_browser zone), from the stored/env Bright Data key.
+    Publix needs BD Browser unless an ISP pool is configured (see run()), so a missing key is a
+    legitimate can't-run — but raise a CLEAR error naming the fix, not a FileNotFoundError on a
+    hardcoded macOS cred path (which is what a keyless Linux CI runner hit)."""
+    import brightdata
+    key = brightdata._key()      # BRIGHTDATA_API_KEY env, else the `bdata login` store (all platforms)
+    if not key:
+        raise RuntimeError("Publix needs a Bright Data key (set BRIGHTDATA_API_KEY or run `bdata login`) "
+                           "or an ISP pool (resi.isp_enabled) — none configured")
     r = urllib.request.Request("https://api.brightdata.com/zone/passwords?zone=cli_browser",
                                headers={"Authorization": "Bearer " + key})
     pw = json.loads(urllib.request.urlopen(r, timeout=30).read())["passwords"][0]
