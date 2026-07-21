@@ -5529,6 +5529,194 @@ def book_summary_ep():
     except Exception as e:
         return jsonify(ok=True, empty=True, note="no book yet — POST /api/seed/build (%s)" % str(e)[:120])
 
+# ── Wholesale ordering — distributor menus in, one ordering page, orders fanned back out ──
+# The team ask: every distributor emails a wholesale menu (xlsx); parse them ALL into one central
+# catalog, let a retailer build a single order across distributors, then return each distributor
+# exactly their slice as an order sheet. Menus land in the warehouse (distributor_menu_items via
+# menu_ingest); orders are small transactional state → orders.json (the load/_save_json store).
+ORDERS = load("orders.json", [])
+
+
+@app.post("/api/menus/upload")
+def menus_upload_ep():
+    """Upload one distributor menu file. Body: {filename, b64, distributor?}. Parses (header-row
+    detection + column synonyms), lands to distributor_menu_items, returns the parse summary so the
+    UI can show what mapped before the retailer trusts it."""
+    import base64 as _b64
+    import menu_ingest
+    body = request.get_json(force=True, silent=True) or {}
+    fn = (body.get("filename") or "menu.xlsx").strip()
+    try:
+        data = _b64.b64decode(body.get("b64") or "")
+    except Exception:
+        return jsonify(ok=False, error="bad b64"), 400
+    if not data:
+        return jsonify(ok=False, error="filename + b64 file content required"), 400
+    if len(data) > 15 * 1024 * 1024:
+        return jsonify(ok=False, error="file too large (15MB max)"), 400
+    try:
+        parsed = menu_ingest.parse(data, filename=fn, distributor=(body.get("distributor") or "").strip())
+    except Exception as e:
+        return jsonify(ok=False, error="parse failed: %s" % str(e)[:200]), 500
+    if not parsed.get("ok"):
+        return jsonify(ok=False, error=parsed.get("error", "unparseable")), 422
+    n = menu_ingest.land(parsed)
+    its = parsed["items"]
+    return jsonify(ok=True, menu_id=parsed["menu_id"], distributor=parsed["distributor"],
+                   menu_date=parsed["menu_date"], license=parsed["license"], lines=n,
+                   brands=sorted({i["brand"] for i in its if i["brand"]}),
+                   warnings=parsed["warnings"])
+
+
+@app.get("/api/menus")
+def menus_list_ep():
+    """Every ingested menu, newest first — plus which one is CURRENT per distributor (the ordering
+    page shops current menus only; older ones stay for history/price movement)."""
+    try:
+        rows = warehouse.query("distributor_menu_items",
+                               "SELECT menu_id, distributor, menu_date, license, source_file, "
+                               "COUNT(*) AS lines, MAX(ts) AS ts FROM t "
+                               "GROUP BY 1,2,3,4,5 ORDER BY menu_date DESC, ts DESC")
+    except Exception:
+        return jsonify(ok=True, menus=[], note="no menus yet — upload a distributor menu")
+    seen = set()
+    for r in rows:
+        r["current"] = r["distributor"] not in seen
+        seen.add(r["distributor"])
+    return jsonify(ok=True, menus=rows)
+
+
+@app.get("/api/menus/items")
+def menus_items_ep():
+    """The combined catalog the ordering page shops: the CURRENT menu's lines per distributor
+    (or one menu via ?menu_id=). ?q= filters name/brand/batch."""
+    mid = (request.args.get("menu_id") or "").strip()
+    q = (request.args.get("q") or "").strip().lower()
+    try:
+        if mid:
+            rows = warehouse.query("distributor_menu_items",
+                                   "SELECT * FROM t WHERE menu_id = ? ORDER BY line", [mid])
+        else:
+            rows = warehouse.query("distributor_menu_items",
+                                   "SELECT t.* FROM t JOIN (SELECT distributor, MAX(menu_date) AS d "
+                                   "FROM t GROUP BY 1) cur ON t.distributor = cur.distributor AND "
+                                   "t.menu_date = cur.d ORDER BY t.distributor, t.line")
+    except Exception:
+        return jsonify(ok=True, items=[], note="no menus yet")
+    if q:
+        rows = [r for r in rows if q in " ".join(str(r.get(k) or "") for k in
+                                                 ("product_name", "brand", "batch", "category")).lower()]
+    return jsonify(ok=True, items=rows, total=len(rows))
+
+
+@app.post("/api/orders")
+def orders_submit_ep():
+    """Submit a retailer order. Body: {retailer, license?, notes?, lines:[{menu_id, line, qty}]}.
+    Lines are re-resolved against the WAREHOUSE (price/batch come from the menu of record, never
+    the client), grouped per distributor, and persisted. Returns the order incl. the per-
+    distributor breakdown the sheets are generated from."""
+    body = request.get_json(force=True, silent=True) or {}
+    retailer = (body.get("retailer") or "").strip()
+    lines = body.get("lines") or []
+    if not retailer or not lines:
+        return jsonify(ok=False, error="retailer + lines[] required"), 400
+    want = {}
+    for l in lines:
+        try:
+            qty = int(l.get("qty") or 0)
+        except Exception:
+            qty = 0
+        if qty > 0 and l.get("menu_id") is not None:
+            want[(str(l["menu_id"]), int(l.get("line", -1)))] = qty
+    if not want:
+        return jsonify(ok=False, error="no lines with qty > 0"), 400
+    try:
+        mids = sorted({k[0] for k in want})
+        rows = warehouse.query("distributor_menu_items",
+                               "SELECT * FROM t WHERE menu_id IN (%s)" % ",".join("?" * len(mids)), mids)
+    except Exception as e:
+        return jsonify(ok=False, error="menu lookup failed: %s" % str(e)[:120]), 500
+    by_key = {(str(r["menu_id"]), int(r["line"])): r for r in rows}
+    resolved, missing = [], 0
+    for k, qty in want.items():
+        r = by_key.get(k)
+        if not r:
+            missing += 1
+            continue
+        unit = r.get("base_price")
+        resolved.append({"menu_id": k[0], "line": k[1], "distributor": r.get("distributor"),
+                         "brand": r.get("brand"), "product_name": r.get("product_name"),
+                         "batch": r.get("batch"), "size": r.get("size"), "thc_pct": r.get("thc_pct"),
+                         "bin_size": r.get("bin_size"), "qty": qty, "unit_price": unit,
+                         "line_total": round(unit * qty, 2) if unit is not None else None})
+    if not resolved:
+        return jsonify(ok=False, error="no order lines resolved against the stored menus"), 422
+    dists = {}
+    for l in resolved:
+        d = dists.setdefault(l["distributor"], {"distributor": l["distributor"], "lines": 0,
+                                                "units": 0, "total": 0.0})
+        d["lines"] += 1
+        d["units"] += l["qty"]
+        d["total"] = round(d["total"] + (l["line_total"] or 0), 2)
+    oid = "ORD-%s-%03d" % (time.strftime("%Y%m%d"), len(ORDERS) % 1000)
+    order = {"id": oid, "retailer": retailer[:120], "license": (body.get("license") or "").strip()[:60],
+             "notes": (body.get("notes") or "").strip()[:500], "ts": int(time.time() * 1000),
+             "status": "submitted", "lines": resolved, "distributors": sorted(dists.values(),
+                                                                              key=lambda d: d["distributor"]),
+             "total": round(sum(l["line_total"] or 0 for l in resolved), 2),
+             "units": sum(l["qty"] for l in resolved), "unresolved": missing}
+    ORDERS.append(order)
+    _save_json("orders.json", ORDERS)
+    return jsonify(ok=True, order=order)
+
+
+@app.get("/api/orders")
+def orders_list_ep():
+    slim = [{k: o[k] for k in ("id", "retailer", "ts", "status", "total", "units")} |
+            {"distributors": [d["distributor"] for d in o.get("distributors", [])],
+             "lines": len(o.get("lines", []))}
+            for o in reversed(ORDERS)]
+    return jsonify(ok=True, orders=slim)
+
+
+@app.get("/api/orders/<oid>")
+def order_get_ep(oid):
+    o = next((o for o in ORDERS if o["id"] == oid), None)
+    return (jsonify(ok=True, order=o) if o else (jsonify(ok=False, error="not found"), 404))
+
+
+@app.get("/api/orders/<oid>/sheet")
+def order_sheet_ep(oid):
+    """The per-distributor order sheet — ?distributor=X → a CSV of exactly that distributor's slice
+    (the artifact that goes back to them). This is the 'return the order to the right distributor'
+    leg: today a download/email attachment; the auto-send hook goes here when SMTP lands."""
+    import csv as _csv
+    import io as _io
+    o = next((o for o in ORDERS if o["id"] == oid), None)
+    if not o:
+        return jsonify(ok=False, error="not found"), 404
+    dist = (request.args.get("distributor") or "").strip()
+    lines = [l for l in o["lines"] if not dist or l["distributor"] == dist]
+    if not lines:
+        return jsonify(ok=False, error="no lines for that distributor"), 404
+    buf = _io.StringIO()
+    w = _csv.writer(buf)
+    w.writerow(["Purchase Order", o["id"]])
+    w.writerow(["Retailer", o["retailer"], "License", o.get("license", "")])
+    w.writerow(["Distributor", dist or "ALL", "Date", time.strftime("%Y-%m-%d", time.localtime(o["ts"] / 1000))])
+    w.writerow([])
+    w.writerow(["Product", "Brand", "Batch #", "Size", "THC %", "Case Size", "Qty", "Unit $", "Line Total $"])
+    for l in lines:
+        w.writerow([l["product_name"], l["brand"], l["batch"], l["size"], l["thc_pct"],
+                    l["bin_size"], l["qty"], l["unit_price"], l["line_total"]])
+    w.writerow([])
+    w.writerow(["", "", "", "", "", "TOTAL", sum(l["qty"] for l in lines), "",
+                round(sum(l["line_total"] or 0 for l in lines), 2)])
+    fn = "%s_%s.csv" % (oid, re.sub(r"[^A-Za-z0-9]+", "_", dist or "all"))
+    return Response(buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="%s"' % fn})
+
+
 # ---- optional: serve the static suite from THIS app (all-in-one image, e.g. Fly.io) ----
 # When SUITE_ROOT is set, one gunicorn process serves BOTH /api/* and the public suite from a single
 # origin, so the apps' same-origin /api/* fetches work with no separate frontend host and no CORS.
