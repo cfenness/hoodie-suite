@@ -122,6 +122,25 @@ inside. The intended shape is API Gateway + Lambda behind a `/api/*` CloudFront
 behavior on the same domain. See the "backend on-ramp" sections of `README.md` and
 `SPINE.md` before adding any server code.
 
+## Health & smoke (keeping the served data trustworthy)
+
+Two standing tools exist so failures are loud, not quiet. Keep them passing and keep them honest.
+
+- **Data health — `unifyd/health_digest.py`**: the daily deterministic verdict on every
+  registry-enabled source (failed/degraded runs, staleness vs cadence, row-count collapse,
+  honest no-creds skips). Every finding cites evidence and carries `first_seen` so new breaks
+  stand out. Runs via `unifyd/run_health_digest.sh` (launchd `com.hoodie.health`, 07:30 daily);
+  writes `unifyd/agent_state/health/latest.{json,txt}` + an optional Claude triage in
+  `latest_triage.md` (judgment layer only — it NEVER changes the verdict). Exit 2 = critical.
+- **Suite smoke — `python3 tools/smoke_check.py`**: deterministic; proves every `APPS` entry
+  serves, no dangling ids/groups, every local src/href/iframe reference resolves, orphan app
+  files are surfaced. The `/smoke` skill layers a browser runtime pass on top (console errors,
+  blank renders, composite tabs). Run before "ship it" and after any shell/spine change.
+- **launchd gotcha (load-bearing)**: a LaunchAgent whose script argument lives under `~/Desktop`
+  fails at spawn with `Operation not permitted` (exit 126) — the job silently never runs. Use the
+  `bash -c 'exec bash "<script>"'` form (see `unifyd/launchd/*.plist`). This killed the entire
+  scheduled-scrape pipeline once; the health digest is what catches it if it regresses.
+
 ## Deploy
 
 **Production is Fly.io** — `hoodie-suite.fly.dev`, one all-in-one machine serving the

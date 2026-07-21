@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r \".tool_input.file_path // .tool_response.filePath // empty\"); case \"$f\" in */apps/*.html|*/index.html|*/spine/*) cd \"${CLAUDE_PROJECT_DIR:-.}\"; [ -f tools/smoke_check.py ] || exit 0; out=$(python3 tools/smoke_check.py 2>&1) || { printf \"%s\\n\" \"$out\" >&2; exit 2; } ;; esac",
+            "timeout": 60,
+            "statusMessage": "Suite smoke check (registry · serving · wiring)…"
+          }
+        ]
+      }
+    ]
+  }
+}

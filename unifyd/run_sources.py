@@ -164,8 +164,9 @@ def run_one(source, log=print):
             except Exception:
                 pass
     status, error = "ok", ""
+    timeout_s = source.get("timeout") or _TIMEOUT.get(source["klass"], 5400)   # registry per-source override
     try:
-        r = subprocess.run([PY, "-c", code], cwd=HERE, timeout=_TIMEOUT.get(source["klass"], 5400),
+        r = subprocess.run([PY, "-c", code], cwd=HERE, timeout=timeout_s,
                            capture_output=True, text=True)
         if r.returncode != 0:
             status = "failed"
@@ -180,7 +181,7 @@ def run_one(source, log=print):
             else:
                 error = "nonzero exit"
     except subprocess.TimeoutExpired:
-        status, error = "timeout", "exceeded %ds" % _TIMEOUT.get(source["klass"], 5400)
+        status, error = "timeout", "exceeded %ds" % timeout_s
     except Exception as e:
         status, error = "failed", str(e)[:300]
     after = _counts(source["tables"])

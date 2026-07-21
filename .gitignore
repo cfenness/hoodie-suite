@@ -14,6 +14,11 @@ warehouse.env
 isp_proxies.txt
 **/isp_proxies.txt
 
+# Claude Code — skills are committed; machine-local settings/state are not
+.claude/settings.local.json
+.claude/launch.json
+.claude/worktrees/
+
 # Python (unifyd engine)
 __pycache__/
 *.py[cod]
