@@ -1014,6 +1014,37 @@ def api_monitor():
         return jsonify({"live": False, "error": str(e)[:200], "sources": [], "totals": {}}), 200
 
 
+@app.get("/api/monitor/health")
+def api_monitor_health():
+    """The daily data-health VERDICT (health_digest.py): deterministic findings w/ evidence + first_seen. Reads the
+    local digest when this host produced one (the Mac), else the copy the digest pushes to the warehouse bucket —
+    so the Fly-served console shows the SAME verdict. Always stamped; honest 'no digest yet' when neither exists.
+    The optional Claude triage rides along only where it exists locally (judgment layer — never part of the verdict)."""
+    base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent_state", "health")
+    digest, origin = None, None
+    try:
+        with open(os.path.join(base, "latest.json")) as f:
+            digest, origin = json.load(f), "local"
+    except Exception:
+        try:
+            import warehouse
+            raw = warehouse.get_bytes("_health_digest.json")
+            if raw:
+                digest, origin = json.loads(raw), "warehouse"
+        except Exception:
+            pass
+    if not digest:
+        return jsonify({"available": False, "note": "no digest yet — health_digest.py has not run"}), 200
+    triage = None
+    try:
+        with open(os.path.join(base, "latest_triage.md")) as f:
+            triage = f.read()
+    except Exception:
+        pass
+    return jsonify(dict(digest, available=True, origin=origin, triage=triage,
+                        age_s=round(time.time() - (digest.get("as_of") or 0))))
+
+
 _DATA_SAMPLE_CACHE = {}                       # name -> (built_at, payload); makes re-opening a source instant
 _MON_CON = {"con": None}                       # ONE warm DuckDB connection reused for drawer reads
 _MON_LOCK = threading.Lock()

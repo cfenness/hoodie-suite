@@ -209,7 +209,32 @@ def build_digest():
                                       "previous_at": series[-2][0], "current_at": series[-1][0],
                                       "threshold_pct": COLLAPSE_PCT, "conn": s.get("conn")}))
 
-    # 4) degraded/failed on NON-registry connectors (agent-run pulls like census-acs live in runs.json only)
+    # 4) registry hygiene — the standing scraper rules, checked mechanically. A registry entry whose module
+    # is gone can never run; a module living in BOTH unifyd/ and _archive/ is the exact two-iterations-side-
+    # by-side failure the archive standard exists to prevent (kroger_api vs kroger_atlas).
+    import re as _re
+    archive = set()
+    arch_dir = os.path.join(_DIR, "_archive")
+    if os.path.isdir(arch_dir):
+        archive = {f[:-3] for f in os.listdir(arch_dir) if f.endswith(".py")}
+    from source_registry import SOURCES as _ALL
+    for src in _ALL:
+        mods = set(_re.findall(r"import (\w+)", src.get("code") or "")) - {"warehouse", "re", "sys", "os", "time", "json"}
+        for mod in sorted(mods):
+            live = os.path.exists(os.path.join(_DIR, mod + ".py"))
+            if not live:
+                findings.append(_finding("registry-module-missing", "warn", src["id"],
+                                         "%s: registry imports `%s` but unifyd/%s.py does not exist%s" % (
+                                             src["label"], mod, mod,
+                                             " (it is in _archive/ — repoint or restore)" if mod in archive else ""),
+                                         {"module": mod, "archived": mod in archive, "enabled": src.get("enabled")}))
+            elif mod in archive:
+                findings.append(_finding("archive-shadow", "warn", src["id"],
+                                         "`%s` exists in BOTH unifyd/ and _archive/ — two iterations side-by-side "
+                                         "(archive standard: exactly one active module per source)" % mod,
+                                         {"module": mod, "registry_source": src["id"]}))
+
+    # 5) degraded/failed on NON-registry connectors (agent-run pulls like census-acs live in runs.json only)
     reg_ids = {s["id"] for s, _, _ in reg}
     for c in manifest.get("connectors", []):
         if c["conn"] in reg_ids or c.get("status") not in ("error", "degraded"):
@@ -294,6 +319,11 @@ def main(argv):
     text = render_text(d)
     with open(os.path.join(_OUT, "latest.txt"), "w") as fh:
         fh.write(text)
+    try:                                     # ALSO to the warehouse bucket, so the Fly-served Data Console can
+        import warehouse                     # show the SAME verdict the Mac produced (server: /api/monitor/health)
+        warehouse.put_bytes("_health_digest.json", json.dumps(d, default=str).encode("utf-8"))
+    except Exception:
+        pass
     print(json.dumps(d, indent=1, default=str) if "--json" in argv else text)
     return 2 if d["counts"]["critical"] else (1 if d["counts"]["warn"] else 0)
 

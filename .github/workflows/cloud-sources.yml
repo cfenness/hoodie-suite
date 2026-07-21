@@ -60,9 +60,13 @@ jobs:
         continue-on-error: true
         # Exclude target + publix: they flip to a local-browser path when ISP_PROXIES is set, and this
         # runner has no Chrome. They stay on the Mac / BD. Everything else here is pure HTTP.
+        # Exclude abc-fws: abcfws.com 403s GitHub's datacenter IPs (breaker tripped 3 days straight,
+        # 07-19..07-21) while the same scraper runs clean from the Mac — Mac-only until proxied.
+        # Exclude offprem-census: needs the Bright Data CLI credential file, which this runner
+        # doesn't have (failed FileNotFoundError ~/.../brightdata-cli/credentials.json) — Mac-only.
         # -u = unbuffered (progress is visible even if a source is killed); --workers 3 keeps RAM in
         # bounds on the 7GB runner (6-wide + DuckDB + pyarrow OOM'd the first run).
-        run: python -u run_sources.py --headless-only --cadence daily --exclude target,publix --workers 3
+        run: python -u run_sources.py --headless-only --cadence daily --exclude target,publix,abc-fws,offprem-census --workers 3
 
       - name: UberEats account universe (sitemap, direct)
         working-directory: unifyd

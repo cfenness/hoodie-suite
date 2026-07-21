@@ -40,7 +40,8 @@ SOURCES = [
     dict(id="abc-fws", label="ABC FW&S (inventory)", code="import abc_fws_scraper as m; m.pull(crawl_all=True)",
          tables=["abc_products"], klass="headless", cadence="daily", enabled=True, note="per-store inventory"),
     dict(id="haskells", label="Haskell's (MN)", code="import haskells as m; m.run(limit=None)",
-         tables=["haskells_products"], klass="headless", cadence="daily", enabled=True, note="first-party site"),
+         tables=["haskells_products"], klass="headless", cadence="daily", enabled=True, timeout=10800,
+         note="first-party site; full-catalog crawl outgrew the 5400s default (timed out 07-18)"),
     dict(id="total-wine", label="Total Wine", code="import total_wine_full as m; m.run()",
          tables=["total_wine_products"], klass="mac", cadence="daily", enabled=True, note="PerimeterX — browser"),
 

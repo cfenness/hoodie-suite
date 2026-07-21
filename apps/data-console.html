@@ -102,6 +102,23 @@
   mark{background:color-mix(in srgb,var(--warn) 40%,transparent);color:var(--ink);border-radius:2px;padding:0 1px}
   .badge{font-family:var(--mono);font-size:10px;padding:1px 7px;border-radius:20px;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
   .sp-close{cursor:pointer;background:none;border:none;color:var(--mut);font-size:22px;margin-left:6px}
+  /* daily health verdict strip (health_digest.py via /api/monitor/health) */
+  .health{display:none;align-items:center;gap:10px;padding:7px 18px;border-bottom:1px solid var(--line);font-size:12.5px;cursor:pointer;flex-wrap:wrap}
+  .health.show{display:flex}
+  .health .vp{font-family:var(--mono);font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;letter-spacing:.04em}
+  .health.good .vp{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+  .health.warn .vp{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+  .health.bad .vp{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+  .health .top{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:52vw}
+  .health .meta{color:var(--mut);font-family:var(--mono);font-size:10.5px;margin-left:auto}
+  .hlist{display:none;border-bottom:1px solid var(--line);padding:4px 18px 10px;max-height:300px;overflow:auto}
+  .hlist.show{display:block}
+  .hlist .hf{display:flex;gap:9px;align-items:baseline;padding:3.5px 0;font-size:12.5px;border-bottom:1px dashed color-mix(in srgb,var(--line) 60%,transparent)}
+  .hlist .hf:last-child{border-bottom:0}
+  .hlist .hf .sev{font-family:var(--mono);font-size:9.5px;font-weight:700;width:34px;flex-shrink:0}
+  .hlist .hf.critical .sev{color:var(--bad)} .hlist .hf.warn .sev{color:var(--warn)} .hlist .hf.info .sev{color:var(--mut)}
+  .hlist .hf .since{color:var(--mut);font-family:var(--mono);font-size:10px;margin-left:auto;flex-shrink:0}
+  .hlist .hf .new{color:var(--bad);font-family:var(--mono);font-size:9.5px;font-weight:700;flex-shrink:0}
 </style>
 
 <div class="bar">
@@ -120,6 +137,8 @@
   <div class="tab" data-view="errors">Attention<span class="b" id="tb-err"></span></div>
 </div>
 <div id="banner" class="banner"></div>
+<div id="health" class="health" title="Daily deterministic data-health verdict (health_digest.py) — click for findings"></div>
+<div id="hlist" class="hlist"></div>
 
 <div id="overview" class="page on"></div>
 <div id="sources" class="page"></div>
@@ -167,7 +186,30 @@ async function load(fresh){
   try{
     const r=await fetch('/api/monitor'+(fresh?'?fresh=1':'')); M=await r.json();
   }catch(e){ M={live:false,error:'backend unreachable — the console shows nothing rather than guess',sources:[],totals:{}}; }
-  paintStamp(); render();
+  paintStamp(); render(); loadHealth();
+}
+
+async function loadHealth(){       // uses the file's existing esc() helper (declared later; hoisting-safe at call time)
+  // the daily deterministic verdict (health_digest.py). Absent ≠ healthy — the strip only shows when a
+  // real digest exists; it never invents a green light.
+  let H=null; try{ H=await(await fetch('/api/monitor/health')).json(); }catch(e){}
+  const el=$('#health'), list=$('#hlist');
+  if(!H||!H.available){ el.classList.remove('show'); list.classList.remove('show'); return; }
+  const c=H.counts||{}, crit=c.critical||0, warn=c.warn||0, info=c.info||0;
+  const cls=crit?'bad':(warn?'warn':'good');
+  const verdict=crit||warn?`${crit} CRIT / ${warn} WARN`:'ALL CLEAR';
+  const top=(H.findings||[]).find(f=>f.severity!=='info');
+  el.className='health show '+cls;
+  el.innerHTML=`<span class="vp">${esc(verdict)}</span>`
+    +(top?`<span class="top">${esc(top.summary)}</span>`:`<span class="top" style="color:var(--mut)">every registry-enabled source current · no failed/degraded runs · no count collapses${info?` · ${info} known creds-gated skip${info>1?'s':''}`:''}</span>`)
+    +`<span class="meta">digest ${age(H.age_s)} ago · ${esc(H.origin)} · ${H.sources_checked} sources checked</span>`;
+  list.innerHTML=(H.findings||[]).map(f=>
+    `<div class="hf ${esc(f.severity)}"><span class="sev">${esc(f.severity==='critical'?'CRIT':f.severity.toUpperCase())}</span>`
+    +(f.new&&f.severity!=='info'?'<span class="new">NEW</span>':'')
+    +`<span>${esc(f.summary)}</span>`
+    +`<span class="since">${f.first_seen?'since '+new Date(f.first_seen*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'}):''}</span></div>`).join('')
+    ||'<div class="hf"><span>no findings</span></div>';
+  el.onclick=()=>list.classList.toggle('show');
 }
 function paintStamp(){
   const wh=$('#wh'), b=$('#banner'), dot=$('#dot');
