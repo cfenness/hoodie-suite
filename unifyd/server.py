@@ -2030,7 +2030,13 @@ def _save_json(name, obj):
             app.logger.warning("S3 save %s failed: %s", name, e)
     else:
         try:
-            json.dump(obj, open(os.path.join(STATE_DIR, name), "w"))
+            # atomic (review major): a crash mid-dump used to truncate the state file, and load()'s
+            # default-on-error would then silently blank it — steward decisions vanishing without a word
+            path = os.path.join(STATE_DIR, name)
+            tmp = path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(obj, f)
+            os.replace(tmp, path)
         except Exception as e:
             app.logger.warning("save %s failed: %s", name, e)
 
@@ -3186,6 +3192,9 @@ def flow_run_ep():
 # (match_decisions.json) and re-materialize: 'same' pairs are injected into the resolve node as an
 # identity remap BEFORE the GROUP BY, so survivorship reruns over the merged rows on every rebuild.
 # 'different' suppresses the pair from candidates; 'new' marks a record reviewed-standalone. ──
+_MATCH_LOCK = threading.Lock()    # review blocker: UI multi-select fires N parallel decides
+
+
 def _match_store():
     return load("match_decisions.json", {})
 
@@ -3195,8 +3204,11 @@ def _match_key(a, b):
 
 
 def _match_canon(decisions):
-    """Union-find over 'same' pairs → {id: canonical_id} (lexicographically smallest root, so the
-    remap is deterministic across rebuilds)."""
+    """Union-find over 'same' pairs → {id: canonical_id}. DIRECTION-AWARE (review major): 'same'
+    means a merges INTO b — the b/master side stays the component root, so the master's minted
+    Hoodie ID survives the merge instead of churning to whichever key sorts first. Decisions are
+    applied in stored (at, a) order, so the result is deterministic across rebuilds; on a chain
+    a→b, b→c the final root is c — exactly what the steward said."""
     parent = {}
 
     def find(x):
@@ -3206,13 +3218,21 @@ def _match_canon(decisions):
             x = parent[x]
         return x
 
-    for rec in decisions.values():
-        if rec.get("verdict") == "same":
-            ra, rb = find(rec["a"]), find(rec["b"])
-            if ra != rb:
-                lo, hi = sorted([ra, rb])
-                parent[hi] = lo
+    recs = [r for r in decisions.values() if r.get("verdict") == "same" and r.get("b")]
+    for rec in sorted(recs, key=lambda r: (r.get("at", 0), str(r.get("a")))):
+        ra, rb = find(str(rec["a"])), find(str(rec["b"]))
+        if ra != rb:
+            parent[ra] = rb                                       # INTO the master's root
     return {x: find(x) for x in list(parent) if find(x) != x}
+
+
+def _match_decided_keys(decisions):
+    """Pair-keys of every decided pair, CANONICALIZED (review major: raw at-decision-time keys go
+    stale once a later merge renames a group — the rejected pair would resurface)."""
+    canon = _match_canon(decisions)
+    c = lambda x: canon.get(str(x), str(x))
+    return {_match_key(c(v["a"]), c(v["b"])) for v in decisions.values()
+            if v.get("verdict") in ("same", "different") and v.get("b")}
 
 
 def _inject_match_decisions(fl, mode):
@@ -3244,14 +3264,17 @@ def match_candidates_ep():
     except (TypeError, ValueError):
         mn, lim = 0.82, 120
     try:
-        sql = flowmod.candidates_sql(fl, b.get("node"), _flow_uri(mode), min_sim=mn, limit=lim + 100)
+        ent_pre = _entity(fl.get("entity") or "outlet")
+        n_dec = len((_match_store().get(mode, {}) or {}).get(ent_pre, {}))
+        sql = flowmod.candidates_sql(fl, b.get("node"), _flow_uri(mode), min_sim=mn,
+                                     limit=lim + n_dec + 100)     # window survives many decided pairs
         cur = warehouse.connect().execute(sql)
         cols = [d[0] for d in cur.description]
         rows = [dict(zip(cols, r)) for r in cur.fetchall()]
     except Exception as e:
         return jsonify(ok=True, landed=False, error=str(e)[:200], candidates=[]), 200
     ent = _entity(fl.get("entity") or "outlet")
-    decided = (_match_store().get(mode, {}) or {}).get(ent, {})
+    decided = _match_decided_keys((_match_store().get(mode, {}) or {}).get(ent, {}))
     out = [r for r in rows if _match_key(r["a_id"], r["b_id"]) not in decided][:lim]
     return jsonify(ok=True, landed=True, mode=mode, candidates=_flow_jsonsafe(out))
 
@@ -3285,10 +3308,11 @@ def match_records_ep():
     except Exception as e:
         return jsonify(ok=True, landed=False, error=str(e)[:200], records=[]), 200
     ent = _entity(fl.get("entity") or "outlet")
-    decided = (_match_store().get(mode, {}) or {}).get(ent, {})
-    standalone = {v["a"] for v in decided.values() if v.get("verdict") == "new"}
+    dec = (_match_store().get(mode, {}) or {}).get(ent, {})
+    canon = _match_canon(dec)
+    standalone = {canon.get(str(v["a"]), str(v["a"])) for v in dec.values() if v.get("verdict") == "new"}
     for r in rows:
-        r["_reviewed"] = r.get("_id") in standalone
+        r["_reviewed"] = str(r.get("_id")) in standalone
     return jsonify(ok=True, landed=True, mode=mode, columns=[c for c in cols if "__conflict" not in c],
                    records=_flow_jsonsafe(rows))
 
@@ -3307,12 +3331,17 @@ def match_decide_ep():
         return jsonify(ok=False, error="verdict must be same|different|new"), 400
     if not a or (verdict != "new" and not b2):
         return jsonify(ok=False, error="a required (and b for same/different)"), 400
-    store = _match_store()
-    bucket = store.setdefault(mode, {}).setdefault(ent, {})
-    key = _match_key(a, b2) if verdict != "new" else ("new|" + a)
-    bucket[key] = {"a": a, "b": b2 or None, "verdict": verdict,
-                   "at": int(time.time()), "by": _user_rec().get("code", "SYS")}
-    _save_json("match_decisions.json", store)
+    if verdict != "new" and a == b2:                               # QA gap: was client-side only
+        return jsonify(ok=False, error="a and b must differ"), 400
+    if len(a) > 512 or len(b2) > 512:                              # review minor: unbounded id blobs
+        return jsonify(ok=False, error="id too long"), 400
+    with _MATCH_LOCK:                                              # review blocker: parallel decides raced
+        store = _match_store()
+        bucket = store.setdefault(mode, {}).setdefault(ent, {})
+        key = _match_key(a, b2) if verdict != "new" else ("new|" + a)
+        bucket[key] = {"a": a, "b": b2 or None, "verdict": verdict,
+                       "at": int(time.time()), "by": _user_rec().get("code", "SYS")}
+        _save_json("match_decisions.json", store)
     counts = {}
     for v in bucket.values():
         counts[v["verdict"]] = counts.get(v["verdict"], 0) + 1

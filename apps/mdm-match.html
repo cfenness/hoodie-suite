@@ -66,7 +66,7 @@
 </style></head><body>
   <div class="top">
     <span class="bc"><b>hoodie</b><span class="s">·</span>mdm<span class="s">/</span>match</span>
-    <select id="entity"><option value="outlet">outlet</option><option value="product">product</option><option value="party">party</option></select>
+    <select id="entity"><option value="outlet">outlet</option><option value="product">product</option></select>
     <button class="btn" id="reload">reload</button>
     <span class="sp"></span>
     <button class="btn match" id="act-match" disabled>match (m)</button>
@@ -142,7 +142,7 @@
     $("left").innerHTML=L.length?L.map(function(r){return fmtRow(r,"L");}).join(""):'<div class="hint">nothing on this side.</div>';
     $("right").innerHTML=R.length?R.map(function(r){return fmtRow(r,"R");}).join(""):'<div class="hint">nothing on this side.</div>';
     var h=S.cands.length?S.cands.slice(0,30).map(function(c,i){
-      return '<span class="sg'+(i===S.sgSel?" on":"")+'" data-i="'+i+'">'+esc(c.a_label||c.a_id)+'<span class="arr">↔</span>'+esc(c.b_label||c.b_id)+'<span class="sim">'+(c.sim!=null?c.sim.toFixed(2):"")+'</span></span>';
+      return '<span class="sg'+(i===S.sgSel?" on":"")+'" data-i="'+i+'">'+esc(c.a_label||c.a_id)+'<span class="arr">↔</span>'+esc(c.b_label||c.b_id)+'<span class="sim">'+(isFinite(Number(c.sim))?Number(c.sim).toFixed(2):"")+'</span></span>';
     }).join(""):'<span class="empty-sugg">no suggested pairs — sources agree, or everything is decided ✓</span>';
     $("sugg").innerHTML='<span class="lab">Suggested</span>'+h;
     wire();actions();

@@ -131,11 +131,18 @@ def candidates_sql(flow, resolve_node_id, uri_fn, min_sim=0.82, limit=200):
     lc = derive.col(label)
     golden = compile_sql(flow, resolve_node_id, uri_fn)
     sim = "jaro_winkler_similarity(lower(CAST(a.%s AS VARCHAR)), lower(CAST(b.%s AS VARCHAR)))" % (lc, lc)
-    return ("SELECT a._id AS a_id, b._id AS b_id, CAST(a.%s AS VARCHAR) AS a_label, "
+    # BLOCK the self-join (review major: a bare golden×golden join is O(n²) similarity evaluations —
+    # ~1.25B at 50k goldens). First-character-of-label equality is the entity-generic v1 block: cheap,
+    # never hides a pair that agrees on its first letter (Twin/TWIN ✓). Configurable per-entity block
+    # keys (zip5, token prefix) are the follow-up — a zip block would hide cross-zip dupes.
+    blk = ("substr(lower(trim(CAST(a.%s AS VARCHAR))), 1, 1) = substr(lower(trim(CAST(b.%s AS VARCHAR))), 1, 1)"
+           % (lc, lc))
+    return ("WITH g AS (%s) "
+            "SELECT a._id AS a_id, b._id AS b_id, CAST(a.%s AS VARCHAR) AS a_label, "
             "CAST(b.%s AS VARCHAR) AS b_label, round(%s, 3) AS sim "
-            "FROM (%s) a JOIN (%s) b ON a._id < b._id "
+            "FROM g a JOIN g b ON a._id < b._id AND %s "
             "WHERE %s >= %f ORDER BY sim DESC LIMIT %d"
-            % (lc, lc, sim, golden, golden, sim, float(min_sim), int(limit)))
+            % (golden, lc, lc, sim, blk, sim, float(min_sim), int(limit)))
 
 
 def compile_sql(flow, node_id, uri_fn, _seen=None):

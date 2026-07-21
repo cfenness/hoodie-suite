@@ -2,7 +2,7 @@
   "meta": {
     "project": "Hoodie Suite",
     "prefix": "HS",
-    "next_id": 26,
+    "next_id": 27,
     "statuses": [
       "proposed",
       "backlog",
@@ -353,14 +353,15 @@
       "id": "HS-010",
       "title": "Two-pane match/steward page — source left, master right",
       "type": "feat",
-      "status": "in-review",
+      "status": "done",
       "size": "M",
       "priority": "P1",
       "created": "2026-07-08",
       "updated": "2026-07-08",
       "branch": "claude/world-class-mdm-strategy-7bpom6",
       "commits": [
-        "ed7ab01"
+        "4ebcb65",
+        "759be73"
       ],
       "summary": "Record-level matching for the residue the identity key missed: source records on the left, golden masters on the right. Select 1+ left + 1 right → Match (multi-select = 'these are all this one real entity'), or DRAG a single source row onto a master. Plus 'not a match' (suppressed forever) and 'new master' (mint a fresh Hoodie ID). The owner specified this page's interaction model verbatim.",
       "context": "This is T3 of the cascade made concrete — and under the accuracy-first standard it should see only the 5–10% residue. Every decision is a persisted RULE that re-applies on rebuild (generalize the outlet_confirms.json pattern → match_decisions.json keyed by mode+entity; a decision is {a, b, verdict, at, by} where a/b are identity signatures, NOT row edits — first law). Filter both panes to a BLOCK (e.g. same address_core, or the jaro-winkler/geo candidate pairs from the existing Confirm SQL) so the steward compares like with like. Decisions feed back as tuning signal for the resolver's thresholds.",
@@ -374,9 +375,6 @@
       ],
       "implementation": [
         "New apps/mdm-match.html on the base light theme (or a 'match' view inside mdm-flow.html — decide by nav weight when building); engine: candidate pairs from the existing jaro_winkler_similarity + geo-cell SQL (server.py _CONFIRM_SQL) generalized per entity; apply step joins match_decisions before the _homap hoodie mapping in flow_run_ep"
-      ],
-      "verification_plan": [
-        "Fixture with near-dupes exact keys miss (name variant + no geo); match by hand → re-run shows ONE golden under one hoodie_id; reject case never resurfaces in candidates; new-master case mints; playwright drives both gestures + the keyboard path"
       ],
       "files": [
         "apps/mdm-match.html",
@@ -396,6 +394,30 @@
         "match/decide input validation — can junk verdicts/ids corrupt match_decisions.json?",
         "The candidates SQL self-join — quadratic on golden count; is the limit protective enough for now, and is the blocked-pairs filter server-side?",
         "XSS in labels rendered into suggestion chips and rows?"
+      ],
+      "review": [
+        "GATE RUN (parallel fresh-context agents). Reviewer verdicts on owner review_notes: first-law PASS (remap pre-GROUP-BY, survivorship reruns, no output edits anywhere); decide validation mostly-PASS (verdict whitelisted, SQL via _sqlstr — caps added); candidates blocked-pairs filter server-side YES but join had NO blocking; XSS PASS (every sink esc()'d, attributes double-quoted).",
+        "BLOCKER (fixed): match_decide_ep was an unlocked read-modify-write on a threaded server — the UI's own multi-select fires N parallel POSTs and all but the last writer's decisions silently vanished behind a 'matched' toast. Now under _MATCH_LOCK; 12 parallel decides → 12/12 persisted.",
+        "MAJOR (fixed): merge DIRECTION was discarded — smallest-root canonicalization could flip a merged group's _id to the residue's key, orphaning the master's minted Hoodie ID (silent identity churn). _match_canon is now direction-aware: 'same' merges a INTO b, the master side stays the root, applied in stored (at,a) order for determinism; chains a→b, b→c end at c. Verified live: master kept HO-O-000002 across the merge, 0 re-mints.",
+        "MAJOR (fixed): 'different'/'new' suppression went stale after canonical-id changes (a rejected pair could resurface under a renamed group). Decided keys + standalone flags now canonicalize through _match_canon before comparing; unit-checked.",
+        "MAJOR (fixed): candidates_sql had no blocking — bare golden×golden jaro-winkler, O(n²) (~1.25B evals at 50k). Now CTE + first-char-of-label equality block (entity-generic, never hides a first-letter-agreeing pair); configurable per-entity block keys filed as HS-026.",
+        "MAJOR (fixed, global): _save_json wrote state files non-atomically — a crash mid-dump truncated the file and load()'s default-on-error silently blanked every steward decision. Now tmp + os.replace for ALL agent_state JSON.",
+        "MINOR (fixed): id length cap (512) on decide; party option removed from the match UI (unknown entities coerced into the product bucket — contamination); Number() guard on sim in chips; decided-window widened by len(decided). MINOR (accepted/reconciled): 'new master' marks reviewed-standalone — the Hoodie ID mints at run, not decision time; acceptance wording reconciled. MINOR (filed HS-026): remap zero-match degraded warning, _OUTPUT_PREFIXES at compile-time + case-insensitive, q-column shadow in records search, batched UI decide."
+      ],
+      "qa_results": [
+        "QA agent 6/6 executed (5 clean PASS + 1 gap found and fixed), environment left as found:",
+        "1 PASS chip preselects both sides; real 'm' keypress matches; merged Twin shows 2 src; suggestions empty (assertion tightened to the Twin row — Trader Joes is naturally 2-src)",
+        "2 PASS real headless drag_to of left TWIN LIQOURS onto right Twin Liquors matched with no button",
+        "3 PASS not-a-match survives full reload — pair never resurfaced",
+        "4 PASS new-master 'standalone ✓' persists across reload",
+        "5 PASS run rows = golden minus merges; re-seed with dim_outlet present proposes only tx+ab (self-ingestion guard holds)",
+        "6 GAP→FIXED server accepted a==b (client-side-only validation) — now 400 'a and b must differ'; oversize ids also rejected"
+      ],
+      "verification": [
+        "Post-fix re-verification, all observed: flow.py self-test green (incl. blocked candidates + remap survivorship rerun); canon unit checks (direction, 3-chain, canonicalized stale-suppression); 12 parallel decides → 12/12 persisted; self-match + oversize 400; master Hoodie ID stable across merge (HO-O-000002, minted 0 on rebuild); UI drive: suggestion → m-key match → merged 2 src, drag-to-match, reject persistence, standalone persistence"
+      ],
+      "followups": [
+        "HS-026 match hardening round 2"
       ]
     },
     {
@@ -886,6 +908,31 @@
       ],
       "verification": [
         "Playwright, both paths observed: engine up ungated → badge 'editable · engine up' + edit button present; simulated gated deploy (route /api/flow/datasets → 401 while /api/health stays 200) → badge 'read-only', edit button absent, board fully browsable"
+      ]
+    },
+    {
+      "id": "HS-026",
+      "title": "Match hardening round 2 — block keys, remap drift warning, guard depth",
+      "type": "chore",
+      "status": "backlog",
+      "size": "M",
+      "priority": "P3",
+      "created": "2026-07-08",
+      "updated": "2026-07-08",
+      "branch": "",
+      "commits": [],
+      "summary": "Residual minors from the HS-010 gate: configurable per-entity candidate BLOCK KEYS (first-char is the v1; zip5/token-prefix per entity, chosen to never hide true dupes); a degraded-style warning when a stored remap id matches zero rows (identity keys/normalizers changed — merges silently stop applying); _OUTPUT_PREFIXES self-ingestion guard applied at compile/run time too (not just seeding) and case-insensitively; records search q-column shadow; UI batches multi-select decides into fewer calls.",
+      "context": "All from the HS-010 adversarial review; none block correctness today (verified), all matter at scale or under schema evolution.",
+      "acceptance": [
+        "Block keys config per entity with a no-hidden-true-dupes test; zero-match remap emits a visible warning; a saved flow ingesting dim_* is refused at compile; search works on a column named q; one POST per decide batch"
+      ],
+      "verification_plan": [
+        "Unit tests per item + a 50k-golden candidates timing check"
+      ],
+      "files": [
+        "unifyd/flow.py",
+        "unifyd/server.py",
+        "apps/mdm-match.html"
       ]
     }
   ]
