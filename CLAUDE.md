@@ -74,6 +74,24 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   failed scrape, not a rebuild. Persistent catalogs use `write_accumulate` (merge).
 - **Creds-gated sources declare `requires=[env]`** in the registry; `run_sources.py`
   reports them `no-creds` (skipped, honest) instead of running them to failure.
+- **FREE-FIRST — do NOT default to paid proxies (load-bearing, keeps getting reverted).**
+  Two proxy tiers: the flat-rate **ISP pool** (fixed per-IP, unlimited bandwidth) and the
+  **per-GB** rotating-residential / BD-Unlocker tier (the one that runs up a thousands-a-month
+  tab). `FETCH_POLICY` (default `flat`) is the dial: `free` = no proxies at all; `flat` = ISP
+  pool only; `paid` = per-GB **opt-in**. `resi.paygo_allowed()` is `False` unless `FETCH_POLICY=paid`,
+  and every per-GB seam (`resi.parts()` → url/browser/opener/…, plus `polite`'s BD path) honors it.
+  **~20 of ~29 sources need NO proxy** (direct HTTP / public API / sitemap); only the 9 `anti-bot`
+  sources even tempt one — see `cost_class` in `/api/registry/sources`. When you touch a scraper,
+  NEVER add a per-GB proxy as the default path or "to make it work" — try direct → mobile-UA →
+  a real **local browser** (patchright/playwright, no proxy) → the flat ISP pool, in that order.
+- **The anti-bot free method runs from a RESIDENTIAL IP, not the cloud.** The hard-won recipe
+  (e.g. `ubereats.py`: a real Chromium on a residential IP hitting the first-party BFF with the
+  app's own `x-uber-*` headers — NO Bright Data, NO cookie; `ue_geofill.py`: universe fetched
+  DIRECT from the home IP) only clears PerimeterX/Forter **because the exit IP is residential**.
+  On a datacenter host (Fly/CI) the datacenter IP is blocked, and the wrong reflex is "buy a
+  residential proxy." The RIGHT answer: run the `anti-bot` sources on the **residential executor**
+  (the Mac — `$0`) and keep the cloud for the ~20 free API sources. `ue_crawl.py`'s "proxy for
+  everything" path is opt-in scale (`FETCH_POLICY=paid`), never the default. Don't re-litigate this.
 
 - `unifyd/server.py` — a local Flask agent (`python unifyd/server.py`, port 8765) that
   serves `hoodie_mdm.html` and runs real pulls on `/api/run`. Endpoints: `/api/health`,
