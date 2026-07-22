@@ -34,11 +34,20 @@ def _raw_glob(name):
 
 
 def _con(name):
-    """A DuckDB connection with the raw feed mounted as a hive-partitioned view `raw`."""
+    """A DuckDB connection with the raw feed mounted as a hive-partitioned view `raw`.
+    No union_by_name: every partition shares one identical schema, and the union-type coercion path
+    trips an internal assertion on some DuckDB builds (NumericValueUnionToValue). Measures are cast to
+    DOUBLE so SUM/roll-up math is version-stable regardless of the parquet's float32 storage."""
     import warehouse
     con = warehouse.connect()
-    con.execute("CREATE OR REPLACE VIEW raw AS SELECT * FROM read_parquet('%s', hive_partitioning=true, "
-                "union_by_name=true)" % _raw_glob(name).replace("'", ""))
+    # period + market are real columns inside every file (the sim writes them), so no hive_partitioning
+    # is needed — and turning it on would collide the path-derived period/market with the in-file ones.
+    con.execute(
+        "CREATE OR REPLACE VIEW raw AS SELECT period, market, premise, distributor, "
+        "supplier_id, brand_id, item_id, category, size_ml, "
+        "CAST(cases_9l AS DOUBLE) AS cases_9l, CAST(cases_physical AS DOUBLE) AS cases_physical, "
+        "CAST(revenue_usd AS DOUBLE) AS revenue_usd "
+        "FROM read_parquet('%s')" % _raw_glob(name).replace("'", ""))
     return con
 
 
