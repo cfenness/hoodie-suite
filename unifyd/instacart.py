@@ -376,6 +376,34 @@ class Instacart(AggregatorConnector):
             % (retailer, len(uniq), len(stores), skipped))
         return uniq
 
+    def probe_url(self, url, log=print):
+        """Ground-truth probe: warm the homepage, then navigate an EXACT captured graphql URL and report what
+        comes back (length + whether it carries item/availability data). Answers 'does this op work from here
+        with only a homepage-warmed session?' without any of the sweep machinery."""
+        if not self._page:
+            self._launch()
+        try:
+            self._page.goto("https://www.instacart.com/", wait_until="domcontentloaded", timeout=60000)
+            self._page.wait_for_timeout(3000)
+            self._page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            self._page.wait_for_timeout(3000)
+            txt = self._page.inner_text("body")
+            m = re.search(r"(\{.*\})", txt, re.S)
+            body = m.group(1) if m else txt
+            has_items = '"items"' in body or '"__typename":"ItemsItem"' in body
+            has_avail = "stockLevel" in body or '"availability"' in body
+            n = 0
+            try:
+                d = json.loads(body)
+                n = len((((d.get("data") or {}).get("items")) or []))
+            except Exception:
+                pass
+            log("[probe] len=%d items=%s availability=%s parsed_items=%d" % (len(body), has_items, has_avail, n))
+            log("[probe] head: %s" % body[:400].replace("\n", " "))
+            return {"len": len(body), "has_items": has_items, "has_avail": has_avail, "n": n, "head": body[:600]}
+        finally:
+            self.close()
+
     def pull_zones(self, zones, queries=None, log=print):
         """Replay SearchResultsPlacements DIRECTLY for explicit zones — each a dict
         {shopId, postalCode, zoneId, slug?}. No homepage / address / geolocation: the zone IS the location,

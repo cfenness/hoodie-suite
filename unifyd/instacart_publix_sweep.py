@@ -61,6 +61,13 @@ def run():
     import warehouse
     from instacart import Instacart, INVENTORY_QUERIES
 
+    # PROBE mode: replay an exact captured graphql URL from here and report what comes back (ground truth).
+    probe = os.environ.get("IC_PROBE_URL", "").strip()
+    if probe:
+        print("[publix-sweep] PROBE of a captured graphql URL from this IP (no proxy, no bd)")
+        Instacart().probe_url(probe, log=print)
+        return 0
+
     # DIRECT-REPLAY path: if IC_ZONES is set (JSON list of {shopId,postalCode,zoneId,slug}) replay those
     # Publix stores directly — no homepage/address/geolocation (a datacenter IP won't surface Publix).
     zones_json = os.environ.get("IC_ZONES", "").strip()

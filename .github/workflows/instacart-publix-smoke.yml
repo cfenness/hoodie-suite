@@ -15,6 +15,9 @@ on:
       zones:
         description: 'IC_ZONES JSON — direct replay, e.g. [{"shopId":"3396","postalCode":"33101","zoneId":"...","slug":"publix"}]'
         default: ""
+      probe_url:
+        description: "IC_PROBE_URL — replay an exact captured graphql URL and report what it returns"
+        default: ""
 
 env:
   AWS_ENDPOINT_URL_S3: https://fly.storage.tigris.dev
@@ -52,4 +55,5 @@ jobs:
         env:
           IC_MAX_STORES: ${{ github.event.inputs.max_stores || '2' }}
           IC_ZONES: ${{ github.event.inputs.zones || '' }}
+          IC_PROBE_URL: ${{ github.event.inputs.probe_url || '' }}
         run: python -u instacart_publix_sweep.py
