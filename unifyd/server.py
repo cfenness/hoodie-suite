@@ -217,24 +217,24 @@ def kroger_pull(body):
                     extracts=[{"id": "kroger_products", "rows": n, "delta": 0, "status": "success"}])
 
 def walmart_pull(body):
-    """Walmart via Bright Data (discover + product pull) → walmart_products + walmart_runs. HEAVY (BD spend)."""
+    """Walmart via the DIRECT residential-proxy scraper (walmart_direct: IPRoyal residential exit + curl_cffi
+    Chrome-JA3 impersonation, paced rotation) → walmart_products + retail observations. $0 — NO Bright Data,
+    NO official API. This matches the source registry (walmart -> walmart_direct); the old Bright Data path
+    (walmart_scraper) is kept only for the standalone walmart_schedule.sh, not the app run path."""
     started = int(time.time() * 1000); body = body or {}
-    import walmart_scraper as wm
-    wm._load_creds()
-    per = int(body.get("per", 4))
-    queries = [q.strip() for q in (body.get("queries") or ",".join(wm.DEFAULT_QUERIES)).split(",") if q.strip()]
-    urls = wm.discover_urls(queries, per)
-    raw = []
-    for u in urls:
-        try: raw += wm.pull_product(u)
-        except Exception: pass
-    if not raw:
+    import walmart_direct as wd
+    before = _wh_count("walmart_products")
+    terms = [q.strip() for q in (body.get("queries") or "").split(",") if q.strip()] or None
+    n = wd.pull(terms=terms, max_pages=int(body.get("max_pages", 4)),
+                detail_pages=bool(body.get("detail", True)), detail_cap=int(body.get("detail_cap", 600)),
+                log=lambda m: app.logger.info("WALMART %s", m))
+    after = _wh_count("walmart_products")
+    if not n:
         return _std_run("walmart", started, status="degraded", trigger=body.get("trigger", "manual"),
-                        warnings=["no records pulled — Walmart may be blocking, or bdata is not logged in"])
-    wm.run(raw, note=body.get("note", ""))
-    n = _wh_count("walmart_products")
-    return _std_run("walmart", started, total=n, trigger=body.get("trigger", "manual"),
-                    extracts=[{"id": "walmart_products", "rows": n, "delta": 0, "status": "success"}])
+                        warnings=["0 products — PerimeterX may be blocking the residential exit; "
+                                  "check RESI_PROXY_* creds and curl_cffi availability"])
+    return _std_run("walmart", started, total=after, trigger=body.get("trigger", "manual"),
+                    extracts=[{"id": "walmart_products", "rows": after, "delta": after - before, "status": "success"}])
 
 def target_pull(body):
     """Target RedSky (Bright Data) → target_products + target_stores. body.scope=national|local. HEAVY."""
