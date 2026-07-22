@@ -128,9 +128,34 @@ full set (no ledger) — the change-aware skipping is a `--live`-only optimizati
 per-table breakdown, straight from `INFORMATION_SCHEMA.ROW_COUNT` (no scans) — so "how many records
 did we drop this morning" is answered by the load itself.
 
-**Run `load.sh` where the warehouse is reachable** (the Fly machine, or a box with the Tigris env) —
-it does the `--live` regen so only present, changed tables load, bucketed catalogs resolve to their
-active parts, and the counts are real.
+**Run `load.sh` where the warehouse is reachable** (a box with `snowsql` + the Tigris env) — it does
+the `--live` regen so only present, changed tables load, bucketed catalogs resolve to their active
+parts, and the counts are real.
+
+### On the Fly machine (no snowsql) — `run_load.py`
+
+The Fly image is `python:3.12-slim` with no `snowsql` binary, so the load runs there via
+**`run_load.py`** — the Python-connector twin of `load.sh` (same change-aware regen → load →
+commit-ledger flow, executed through `snowflake-connector-python`). It **reuses the Tigris creds the
+app already has** (`BUCKET_NAME`, `AWS_*`), so the only new secrets are the Snowflake ones:
+
+```bash
+fly secrets set -a hoodie-suite \
+  SNOWFLAKE_ACCOUNT=<acct> SNOWFLAKE_USER=<user> SNOWFLAKE_PASSWORD=<pw>   # or SNOWFLAKE_PRIVATE_KEY=<PEM>
+# optional: SNOWFLAKE_ROLE, SNOWFLAKE_WAREHOUSE (default UNIFYD_LOAD)
+```
+
+Schedule it as its **own daily Fly Machine** (separate from the serving machine — the prod site is
+never touched), built from the same image:
+
+```bash
+fly machine run -a hoodie-suite --schedule daily --vm-memory 2048 \
+  sh -lc "pip install -q snowflake-connector-python && python /app/snowflake/run_load.py"
+```
+
+Run once by hand first to confirm creds/schema: `fly ssh console -a hoodie-suite -C \
+"sh -lc 'pip install -q snowflake-connector-python && python /app/snowflake/run_load.py --dry-run'"`,
+then drop `--dry-run`. It prints the total records loaded at the end.
 
 ## Regenerate
 
@@ -166,7 +191,9 @@ prefer creating the stage under a controlled role and keep keys out of shared wo
 
 ```
 build_snowflake_sql.py   the generator (single source of truth for the build)
-load.sh                  the morning drop — regenerate --live, then load; idempotent, prints counts
+load.sh                  the morning drop via snowsql — regenerate --live, load, commit ledger
+run_load.py              the morning drop via snowflake-connector-python (the Fly machine; no snowsql)
+requirements-load.txt    the one extra dep for run_load.py (snowflake-connector-python)
 sql/00_config.template.sql   account setup + how to fill the Tigris credentials
 sql/01_database.sql          database UNIFYD + schemas RAW / MASTER / MART
 sql/02_stage.sql             Parquet file format + external stage → Tigris (${...} placeholders)
