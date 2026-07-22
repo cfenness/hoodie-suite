@@ -131,6 +131,16 @@ BUILDS = [
          code="import build_product_master as m; m.build()",
          tables=["dim_sku"], klass="build", interval_h=12, enabled=True,
          note="brand dict → stage → shred to dim_brand/product/item/sku + xwalk/coherence/identity clusters"),
+    # Phase 4 — SipSource depletion feed (NRT-PLAN §1d): the ~500M-row raw grain (sip_raw, hive-
+    # partitioned period=YYYYMM/market=XX) is NEVER served; this rolls it into small dimension-BOUNDED
+    # marts the site reads. Wired but DISABLED until the real feed lands (no `sipsource-feed` source yet
+    # — the feed is a delivered file, landed by sipsource_ingest.land(); sipsource_sim proves the shape).
+    # Flip enabled=True the day the feed arrives; `after` makes it rebuild only when a new drop lands.
+    dict(id="build-sipsource-marts", label="SipSource depletion marts",
+         code="import sipsource_ingest as m; m.build_marts('sip_raw')",
+         tables=["mart_sip_brand_market_month"], klass="build", interval_h=24, enabled=False,
+         after=["sipsource-feed"],
+         note="raw 500M sip_raw → brand×market×month + supplier×cat + category marts (bounded, +YoY)"),
 ]
 
 
