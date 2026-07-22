@@ -140,8 +140,10 @@ def _acquire_lock():
     return lf
 
 
-def run_one(source, log=print):
-    """Run one source in a subprocess, measure before/after row counts, classify the outcome."""
+def run_one(source, log=print, extra_env=None):
+    """Run one source in a subprocess, measure before/after row counts, classify the outcome.
+    `extra_env` overlays the subprocess env (e.g. the scheduler forces RESI_ISP_ONLY=1 so an unattended
+    run can never open the per-GB residential-proxy tab)."""
     sid = source["id"]
     t0 = time.time()
     # Skip-with-reason: a source gated on credentials we don't have must report honestly ("no-creds"),
@@ -166,7 +168,7 @@ def run_one(source, log=print):
     status, error = "ok", ""
     timeout_s = source.get("timeout") or _TIMEOUT.get(source["klass"], 5400)   # registry per-source override
     run_token = "%s-%d" % (sid, int(t0))
-    env = dict(os.environ, HOODIE_RUN_TOKEN=run_token)   # write_accumulate stamps coverage rows with this
+    env = dict(os.environ, HOODIE_RUN_TOKEN=run_token, **(extra_env or {}))   # coverage stamp + optional overlays
     try:
         r = subprocess.run([PY, "-c", code], cwd=HERE, timeout=timeout_s,
                            capture_output=True, text=True, env=env)

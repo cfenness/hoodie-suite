@@ -4366,9 +4366,12 @@ def _sched_tick():
         if not _SCHED["mac"]:
             due = [s for s in due if s["klass"] != "mac"]
         _SCHED["last_due"] = [s["id"] for s in due]
+        # COST GUARD: an unattended tick forces per-GB residential OFF (flat ISP pool only) so the
+        # scheduler can never run up a metered proxy tab. Opt in deliberately with SCHEDULER_PAYGO=1.
+        overlay = {} if _truthy(os.environ.get("SCHEDULER_PAYGO")) else {"RESI_ISP_ONLY": "1"}
         for s in due:
             try:
-                rec = rs.run_one(s)
+                rec = rs.run_one(s, extra_env=overlay)
                 rs._land_runs([rec], log=lambda *a: None)
                 _SCHED["runs"].insert(0, {"source": rec.get("source"), "status": rec.get("status"),
                                           "delta": rec.get("delta"), "cov_items": rec.get("cov_items"),
@@ -4415,11 +4418,46 @@ def registry_scheduler_status_ep():
         due = [s["id"] for s in rs.due_sources()]
     except Exception:
         due = []
+    try:
+        import resi
+        proxy = {"usage": resi.usage(), "scheduler_paygo": _truthy(os.environ.get("SCHEDULER_PAYGO"))}
+    except Exception:
+        proxy = None
     return jsonify(ok=True, enabled=_SCHED["enabled"], interval_s=_SCHED["interval_s"], mac=_SCHED["mac"],
                    running=_SCHED["running"], ticks=_SCHED["ticks"], last_tick=_SCHED["last_tick"],
                    next_tick=_SCHED["next_tick"], thread_started=_SCHED["thread_started"],
                    due_now=due, last_due=_SCHED["last_due"], last_skip=_SCHED["last_skip"],
-                   recent=_SCHED["runs"][:20], error=_SCHED["error"])
+                   proxy=proxy, recent=_SCHED["runs"][:20], error=_SCHED["error"])
+
+
+@app.get("/api/registry/proxy")
+def registry_proxy_status_ep():
+    """Residential-proxy COST view: this month's per-GB session usage + the guard state (flat ISP pool
+    size, isp_only, monthly cap, whether per-GB is currently allowed). The ISP pool bills flat; only the
+    per-GB tier runs up a tab, and this is where you see/limit it."""
+    import resi
+    return jsonify(ok=True, usage=resi.usage(),
+                   env={"RESI_ISP_ONLY": resi.isp_only(), "RESI_MONTHLY_MAX_SESSIONS": resi.monthly_cap(),
+                        "SCHEDULER_PAYGO": _truthy(os.environ.get("SCHEDULER_PAYGO"))})
+
+
+@app.post("/api/registry/proxy")
+def registry_proxy_control_ep():
+    """Set the per-GB guard at runtime (in-memory; the RESI_* env vars are the durable default). Body:
+    {isp_only:bool, max_sessions:int, reset:bool}. isp_only=true is the hard 'never spend per-GB' switch."""
+    import resi
+    b = request.get_json(silent=True) or {}
+    if "isp_only" in b:
+        os.environ["RESI_ISP_ONLY"] = "1" if b["isp_only"] else "0"
+    if "max_sessions" in b:
+        try:
+            os.environ["RESI_MONTHLY_MAX_SESSIONS"] = str(max(0, int(b["max_sessions"])))
+        except (ValueError, TypeError):
+            pass
+    if b.get("reset"):
+        resi.reset_month()
+    return jsonify(ok=True, usage=resi.usage(),
+                   env={"RESI_ISP_ONLY": resi.isp_only(), "RESI_MONTHLY_MAX_SESSIONS": resi.monthly_cap()})
 
 
 @app.post("/api/registry/scheduler")
