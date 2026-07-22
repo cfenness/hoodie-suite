@@ -4,17 +4,17 @@ name: instacart-publix-smoke
 # warehouse (Tigris) — real Chromium, NO Bright Data, NO proxy. Defaults to 2 stores so it's cheap; the
 # FULL footprint sweep runs in-app via the `instacart-publix` registry source. Reuses the same Tigris
 # secrets warm-sources.yml already uses (no new secrets). Remove before the connector PR merges to main.
+# Dispatch-only: the ZIP-sweep can't reach Publix from a datacenter IP (regional chains aren't offered),
+# so don't auto-run it on every push. Use IC_ZONES (a real Publix zone) for the direct-replay validation.
 on:
-  push:
-    paths:
-      - unifyd/instacart.py
-      - unifyd/instacart_publix_sweep.py
-      - .github/workflows/instacart-publix-smoke.yml
   workflow_dispatch:
     inputs:
       max_stores:
-        description: "distinct Publix stores to sweep (0 = all footprint zips)"
+        description: "distinct Publix stores to sweep via ZIP (0 = all footprint zips; datacenter IP won't reach Publix)"
         default: "2"
+      zones:
+        description: 'IC_ZONES JSON — direct replay, e.g. [{"shopId":"3396","postalCode":"33101","zoneId":"...","slug":"publix"}]'
+        default: ""
 
 env:
   AWS_ENDPOINT_URL_S3: https://fly.storage.tigris.dev
@@ -51,4 +51,5 @@ jobs:
         working-directory: unifyd
         env:
           IC_MAX_STORES: ${{ github.event.inputs.max_stores || '2' }}
+          IC_ZONES: ${{ github.event.inputs.zones || '' }}
         run: python -u instacart_publix_sweep.py
