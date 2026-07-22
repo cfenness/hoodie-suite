@@ -87,6 +87,18 @@
   .rail .drawer{margin-top:14px;border-top:1px dashed var(--line);padding-top:12px}
   .rail .drawer .dh{font-size:11.5px;color:var(--mut);padding:4px 9px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;gap:7px}
   .rail .drawer.open .items{display:flex}
+  /* app-nav mode — an opened app's own tabs/sections drive the rail */
+  .rail .navback{display:flex;align-items:center;gap:6px;padding:7px 9px;margin-bottom:4px;font-size:12.5px;color:var(--mut);cursor:pointer;border-radius:8px}
+  .rail .navback:hover{background:var(--card);color:var(--ink)}
+  .rail .apphdr{display:flex;align-items:center;gap:9px;padding:5px 9px 11px;font-size:14px;font-weight:700;border-bottom:1px solid var(--line);margin-bottom:6px}
+  .rail .apphdr .mk{font-family:var(--mono);font-size:9.5px;font-weight:700;color:#fff;width:24px;height:18px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;flex:none}
+  .rail .secgrp{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);padding:10px 9px 4px;cursor:pointer;display:flex;align-items:center;gap:6px}
+  .rail .secgrp .cv{margin-left:auto;font-size:9px;transition:transform .15s}
+  .rail .secgrp.collapsed .cv{transform:rotate(-90deg)}
+  .rail .secitem{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;font-size:13px;color:var(--ink-2);cursor:pointer;border:1px solid transparent}
+  .rail .secitem:hover{background:var(--card)}
+  .rail .secitem.active{background:var(--card);border-color:var(--line);color:var(--ink);font-weight:600}
+  .rail .secitem .ic{width:18px;text-align:center;flex:none;color:var(--mut);font-size:12px}
 
   /* stage */
   main{flex:1;position:relative;min-width:0;background:var(--paper);overflow:auto}
@@ -309,13 +321,68 @@
   spine.on("nav", function(p){ if(p&&p.app&&byId[p.app]){ if(p.scope)spine.setContext({scope:p.scope}); location.hash="#"+p.app; } });
   spine.on("crumb", function(t){ var c=document.getElementById("appcrumbx"); if(c) c.textContent = t?(" › "+t):""; });
 
+  /* An opened app can PUBLISH its own tabs/sections into the shared rail (postMessage) — so nested
+     tabs (Hoodie Intelligence, MDM) are reachable from the shell. Apps opt in; nothing changes here for
+     apps that don't. Contract mirrors the production launcher: {__hoodie:'nav'|'section', ...}. */
+  window.addEventListener("message", function(ev){
+    var d=ev.data; if(!d || (d.__hoodie!=="nav" && d.__hoodie!=="section")) return;
+    var curId=(location.hash||"").replace("#","");
+    if(!byId[curId]) return;                                  // only while an app is open
+    if(d.__hoodie==="nav"){
+      appNav={app:curId, sections:d.sections||[], active:d.active, collapsed:{}};
+      (d.collapsedGroups||[]).forEach(function(g){ appNav.collapsed[g]=true; });   // deep groups start nested
+      renderRail();
+    }else if(d.__hoodie==="section" && appNav){                // app switched section internally → follow it
+      appNav.active=d.id;
+      var ag=""; appNav.sections.forEach(function(s){ if(s.id===d.id) ag=s.group||""; });
+      if(ag) appNav.collapsed[ag]=false;                       // expand the group holding the now-active view
+      renderRail();
+    }
+  });
+
   /* ============================ rail ============================ */
+  // appNav = the opened app's own tabs/sections, published over postMessage. While set,
+  // the rail shows that nav (so nested tabs like Hoodie Intelligence's or MDM's are reachable).
+  var appNav = null;
   function renderRail(){
     var rail=document.getElementById("rail"); rail.innerHTML="";
+    if(appNav && appNav.sections && appNav.sections.length){ renderAppNavRail(rail); return; }
     BUCKETS.forEach(function(b){
       rail.appendChild(railGroup(b, false));
     });
     var d=railGroup(UTIL, true); d.classList.add("drawer"); rail.appendChild(d);
+  }
+  function renderAppNavRail(rail){
+    var a = byId[appNav.app] || {}, col = bcolor(a.bucket);
+    var back=document.createElement("div"); back.className="navback"; back.innerHTML="‹ All surfaces";
+    back.onclick=function(){ location.hash=""; };
+    rail.appendChild(back);
+    var hdr=document.createElement("div"); hdr.className="apphdr";
+    hdr.innerHTML='<span class="mk" style="background:'+col+'">'+(a.mark||"")+'</span>'+(a.name||"App");
+    rail.appendChild(hdr);
+    var groups={}, order=[];
+    appNav.sections.forEach(function(s){ var g=s.group||""; if(!(g in groups)){groups[g]=[];order.push(g);} groups[g].push(s); });
+    var activeGroup=""; appNav.sections.forEach(function(s){ if(s.id===appNav.active) activeGroup=s.group||""; });
+    order.forEach(function(g){
+      if(g){
+        var collapsed = !!appNav.collapsed[g] && g!==activeGroup;
+        var gh=document.createElement("div"); gh.className="secgrp"+(collapsed?" collapsed":""); gh.innerHTML=g+'<span class="cv">▾</span>';
+        gh.onclick=function(){ appNav.collapsed[g]=!appNav.collapsed[g]; renderRail(); };
+        rail.appendChild(gh);
+        if(collapsed) return;
+      }
+      groups[g].forEach(function(s){
+        var el=document.createElement("div"); el.className="secitem"+(s.id===appNav.active?" active":""); el.dataset.sec=s.id; el.title=s.desc||s.label||"";
+        el.innerHTML='<span class="ic">'+(s.icon||s.mark||"•")+'</span><span class="nm">'+(s.label||s.id)+'</span>';
+        el.onclick=function(){ selectSection(s.id); };
+        rail.appendChild(el);
+      });
+    });
+  }
+  function selectSection(id){
+    appNav.active=id;
+    try{ frame.contentWindow.postMessage({__hoodie:"section",id:id},"*"); }catch(e){}
+    document.querySelectorAll(".rail .secitem").forEach(function(x){ x.classList.toggle("active", x.dataset.sec===id); });
   }
   function railGroup(b, isDrawer){
     var open = openGroups[b.id] || false;
@@ -433,6 +500,8 @@
 
   function route(){
     var h = location.hash || "";
+    var curApp = (h.indexOf("#b/")===0) ? null : byId[h.replace("#","")];
+    if(appNav && (!curApp || appNav.app!==curApp.id)){ appNav=null; renderRail(); }   // left/switched app → rail back to buckets
     // #b/<bucket> → level-1 hub
     if(h.indexOf("#b/")===0){
       var bid=h.slice(3); frame.classList.remove("show"); frame.removeAttribute("src");
