@@ -70,6 +70,13 @@ SOURCES = [
          note="thin public OAuth API — product/UPC seed that feeds the atlas GTIN universe (NOT real inventory)"),
     dict(id="publix", label="Publix", code="import publix as m; m.run()",
          tables=["publix_products"], klass="headless", cadence="daily", enabled=True, note="weekly-ad API"),
+    dict(id="instacart-publix", label="Publix (Instacart inventory)",
+         code="import instacart_publix_sweep as m; m.run()",
+         tables=["instacart_products"], klass="headless", cadence="weekly", enabled=True, timeout=21600,
+         note="FREE per-store Publix INVENTORY via Instacart's SearchResultsPlacements (headless Chromium, "
+              "NO bd/NO proxy). Sweeps the Publix footprint (FL/GA/AL/SC/NC/TN/VA/KY metro zips), captures "
+              "in-stock + stock_level per store -> retail_observations. Bound a run with IC_MAX_STORES; widen "
+              "coverage with IC_ZIPS. Runs in-app (ships Chromium) or any datacenter runner."),
     dict(id="stop-and-shop", label="Stop & Shop", code="import stop_and_shop as m; m.main([])",
          tables=["stop_and_shop_products"], klass="mac", cadence="daily", enabled=False, note="needs a warmed cookie — not headless"),
 

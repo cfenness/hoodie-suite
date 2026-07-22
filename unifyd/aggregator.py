@@ -99,4 +99,5 @@ class AggregatorConnector:
                                            brand=r.get("brand"), name=r.get("name"), price=r.get("price"),
                                            promo=r.get("promo"), on_promo=r.get("on_promo"),
                                            in_stock=r.get("in_stock"), qty=r.get("qty"),
+                                           stock_level=r.get("stock_level"),
                                            is_hemp=r.get("is_hemp")) for r in uniq], log=log)

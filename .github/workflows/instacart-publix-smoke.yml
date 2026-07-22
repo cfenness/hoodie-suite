@@ -1,0 +1,54 @@
+name: instacart-publix-smoke
+
+# Bounded PROOF that the free Instacart Publix inventory sweep lands per-store stock to the SHARED
+# warehouse (Tigris) — real Chromium, NO Bright Data, NO proxy. Defaults to 2 stores so it's cheap; the
+# FULL footprint sweep runs in-app via the `instacart-publix` registry source. Reuses the same Tigris
+# secrets warm-sources.yml already uses (no new secrets). Remove before the connector PR merges to main.
+on:
+  push:
+    paths:
+      - unifyd/instacart.py
+      - unifyd/instacart_publix_sweep.py
+      - .github/workflows/instacart-publix-smoke.yml
+  workflow_dispatch:
+    inputs:
+      max_stores:
+        description: "distinct Publix stores to sweep (0 = all footprint zips)"
+        default: "2"
+
+env:
+  AWS_ENDPOINT_URL_S3: https://fly.storage.tigris.dev
+  BUCKET_NAME: hoodie-suite-warehouse
+  AWS_REGION: auto
+  AWS_ACCESS_KEY_ID: ${{ secrets.TIGRIS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.TIGRIS_SECRET_ACCESS_KEY }}
+  FETCH_POLICY: free
+  BROWSER_HEADFUL: "0"
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: real Chrome
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq wget
+          wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt-get install -y -qq ./google-chrome-stable_current_amd64.deb
+      - name: python deps
+        run: pip install --quiet playwright pyarrow duckdb boto3
+      - name: guard — warehouse creds present
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::Tigris creds missing (TIGRIS_ACCESS_KEY_ID / TIGRIS_SECRET_ACCESS_KEY)."; exit 1
+          fi
+      - name: Publix inventory sweep (free, no bd) -> SHARED warehouse
+        working-directory: unifyd
+        env:
+          IC_MAX_STORES: ${{ github.event.inputs.max_stores || '2' }}
+        run: python -u instacart_publix_sweep.py

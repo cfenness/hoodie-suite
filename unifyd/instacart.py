@@ -39,6 +39,19 @@ import urllib.parse
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from aggregator import AggregatorConnector
+import observe
+
+
+def _find_items(o, out):
+    """Recursively collect every Instacart item node (`Item*` typename with a name/id) from a placement tree."""
+    if isinstance(o, dict):
+        if str(o.get("__typename", "")).startswith("Item") and (o.get("name") or o.get("id")):
+            out.append(o)
+        for v in o.values():
+            _find_items(v, out)
+    elif isinstance(o, list):
+        for v in o:
+            _find_items(v, out)
 
 GRAPHQL = "https://www.instacart.com/graphql"
 SEARCH_OP = "SearchResultsPlacements"
@@ -46,6 +59,32 @@ SEARCH_HASH = "6f8d4a3f450d8d25dbb87b6b5bcb82180a1b3c972366fb1fb7de816c05523f4a"
 # non-membership groceries to prefer (membership warehouses block the product query)
 GROCERY = ["ALDI", "Target", "Publix", "Kroger", "Rouses", "Wegmans", "GIANT", "Food Lion",
            "Meijer", "Safeway", "Albertsons", "The Fresh Market", "Sprouts"]
+# A broad, department-spanning basket — a per-store INVENTORY probe (what's in stock + at what stock level),
+# meant to take as wide an in-stock cross-section per store as search allows. Each term returns up to `first`
+# items; more TERMS (breadth across departments) matters more than depth per term.
+INVENTORY_QUERIES = [
+    # dairy & eggs
+    "milk", "eggs", "cheese", "butter", "yogurt", "cream", "sour cream",
+    # produce
+    "bananas", "apples", "lettuce", "tomatoes", "onions", "potatoes", "avocado", "berries", "grapes",
+    # meat & seafood
+    "chicken breast", "ground beef", "bacon", "sausage", "pork", "salmon", "shrimp", "deli turkey",
+    # bakery & bread
+    "bread", "bagels", "tortillas", "buns",
+    # pantry / center store
+    "cereal", "rice", "pasta", "pasta sauce", "peanut butter", "canned soup", "beans", "flour", "sugar",
+    "cooking oil", "coffee", "tea", "snack bars",
+    # beverages
+    "water", "soda", "juice", "sports drink", "sparkling water", "energy drink",
+    # alcohol (returns availability where the store surfaces it)
+    "beer", "wine", "vodka", "whiskey", "tequila", "hard seltzer",
+    # frozen
+    "ice cream", "frozen pizza", "frozen vegetables",
+    # snacks & candy
+    "chips", "cookies", "crackers", "candy", "popcorn",
+    # household & baby & pet
+    "paper towels", "toilet paper", "laundry detergent", "dish soap", "trash bags", "diapers", "dog food",
+]
 BLOCK_HINTS = ["press & hold", "press and hold", "are you a robot", "unusual traffic", "access denied",
                "enter the characters", "verify you are human"]
 UA = os.environ.get("BROWSER_UA",
@@ -63,8 +102,9 @@ window.chrome = window.chrome || { runtime: {} };
 class Instacart(AggregatorConnector):
     source = "instacart"
 
-    def __init__(self, session="ic"):
+    def __init__(self, session="ic", target_retailer=None):
         self.session = session
+        self.target_retailer = target_retailer           # e.g. "Publix" — enter THIS storefront, not the first grocery
         self._pw = self._browser = self._ctx = self._page = None
         self._gql = []                                   # every /graphql request URL the page fires
 
@@ -132,7 +172,12 @@ class Instacart(AggregatorConnector):
         """Enter a regular (non-membership) grocery so shop context is set, run one seed search to fire a
         live SearchResultsPlacements request, and read {slug, shopId, postalCode, zoneId} back out of it."""
         slug = ""
-        for name in GROCERY:
+        # If a specific retailer is targeted (e.g. Publix), enter THAT storefront; else fall back to the
+        # first non-membership grocery on offer. Targeting first means a zip with no Publix simply yields no
+        # Publix zone (we skip it) rather than silently pulling ALDI.
+        order = ([self.target_retailer] if self.target_retailer else []) + \
+                [g for g in GROCERY if g.lower() != (self.target_retailer or "").lower()]
+        for name in order:
             try:
                 link = self._page.get_by_text(re.compile(re.escape(name), re.I)).first
                 if link and link.is_visible():
@@ -165,7 +210,7 @@ class Instacart(AggregatorConnector):
             urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["variables"][0]))
         return {"slug": slug, "shopId": v["shopId"], "postalCode": v["postalCode"], "zoneId": v["zoneId"]}
 
-    def _search_url(self, zone, query, first=24):
+    def _search_url(self, zone, query, first=60):        # take as many per query as the op will return
         variables = {"query": query, "shopId": zone["shopId"], "postalCode": zone["postalCode"],
                      "zoneId": zone["zoneId"], "first": first, "orderBy": "bestMatch", "searchSource": "search",
                      "filters": [], "disableReformulation": False, "disableLlm": False, "forceInspiration": False,
@@ -191,39 +236,94 @@ class Instacart(AggregatorConnector):
                     d = json.loads(m.group(1))
                     placements = (((d.get("data") or {}).get("searchResultsPlacements") or {})
                                   .get("placements")) or []
-                    return placements, None              # SearchResultsPlacements isn't cursor-paged in this op
+                    items = []                           # flatten to EVERY item node (a grid is ~24/query, not 1)
+                    _find_items(placements, items)
+                    return items, None                   # SearchResultsPlacements isn't cursor-paged in this op
                 except Exception:
                     pass
             time.sleep(2)
         return [], None
 
-    def parse_item(self, raw, retailer, zone):
-        """Pull item cards out of a placement. Instacart item nodes are `Item*` typenames carrying a name,
-        a price viewSection (priceString/fullPriceString), a size, and an image."""
-        def find_items(o, out):
-            if isinstance(o, dict):
-                if str(o.get("__typename", "")).startswith("Item") and (o.get("name") or o.get("id")):
-                    out.append(o)
-                for v in o.values():
-                    find_items(v, out)
-            elif isinstance(o, list):
-                for v in o:
-                    find_items(v, out)
-        items = []
-        find_items(raw, items)
-        if not items:
+    def parse_item(self, it, retailer, zone):
+        """Map ONE Instacart `ItemsItem` node onto a row, reading the REAL per-store inventory signal.
+
+        The item carries `availability{available, stockLevel}` (e.g. "highlyInStock"/"outOfStock") — that,
+        keyed by store_id, IS the inventory (lands in retail_observations.stock_level/in_stock). Price is the
+        structured `price.viewSection.priceValueString` (regex `$x.xx` only as a fallback), brand is
+        `brandName`, size is `size`."""
+        if not isinstance(it, dict) or not (it.get("name") or it.get("id")):
             return None
-        it = items[0]
-        price_str = json.dumps(it)                       # price lives in a nested viewSection; pull first $x.xx
-        pm = re.search(r"\$(\d+\.\d{2})", price_str)
-        img = re.search(r'https://[^"\\]+?\.(?:png|jpe?g)[^"\\]*', price_str)
+        # availability — the real stock signal (default to in-stock only when the node omits availability)
+        av = it.get("availability") or {}
+        avs = av.get("viewSection") or {}
+        available = av.get("available")
+        in_stock = bool(available) if available is not None else True
+        stock_level = av.get("stockLevel") or avs.get("stockLevelLabelString") or ""
+        # price — structured value first, `$x.xx` regex only as a fallback
+        price = None
+        pv = (it.get("price") or {}).get("viewSection") or {}
+        raw_price = pv.get("priceValueString") or pv.get("priceString")
+        if raw_price:
+            m = re.search(r"(\d+(?:\.\d+)?)", str(raw_price).replace(",", ""))
+            price = float(m.group(1)) if m else None
+        if price is None:
+            pm = re.search(r"\$(\d+\.\d{2})", json.dumps(it))
+            price = float(pm.group(1)) if pm else None
+        # product image lives under the item's own viewSection (search only there so we don't grab the
+        # stock-status icon asset that sits under availability.viewSection)
+        img = re.search(r'https://[^"\\]+?\.(?:png|jpe?g)[^"\\]*', json.dumps(it.get("viewSection") or {}))
         return dict(retailer=zone.get("slug", retailer), store=zone.get("slug", retailer),
                     store_id=zone.get("shopId"), zone=zone.get("zoneId"),
-                    product_id=str(it.get("id") or it.get("legacyId") or ""), upc="",
-                    brand="", name=it.get("name", ""), category="", size=it.get("size", ""),
-                    price=float(pm.group(1)) if pm else None, in_stock=True,
-                    image_url=img.group(0) if img else "", url="",
-                    raw_json=json.dumps(it)[:4000])
+                    product_id=str(it.get("id") or it.get("legacyId") or it.get("productId") or ""), upc="",
+                    brand=it.get("brandName") or "", name=it.get("name", ""), category="",
+                    size=it.get("size", "") or "", price=price, in_stock=in_stock, stock_level=stock_level,
+                    image_url=img.group(0) if img else "", url="", raw_json=json.dumps(it)[:4000])
+
+    def sweep(self, zips, retailer="Publix", queries=None, per_query_pages=1, log=print):
+        """Sweep ONE retailer (e.g. Publix) across a list of delivery zips — each zip resolves to the nearest
+        store, so a footprint of zips ≈ that chain's stores. For each zip: set the zip, ENTER that retailer's
+        storefront (skip the zip if it isn't offered there — never fall back to another chain), and probe the
+        INVENTORY_QUERIES basket. Lands incrementally (accumulate) so a long sweep is restart-safe and dedups
+        stores that two zips share. Returns the accumulated rows."""
+        queries = queries or INVENTORY_QUERIES
+        self.target_retailer = retailer
+        if not self._page:
+            self._launch()
+        seen, uniq, stores, skipped = set(), [], {}, 0
+        try:
+            for i, z in enumerate(zips):
+                try:
+                    self.open_session(address=z)
+                    zone = self.open_zone(self.session, address=z)
+                except Exception as e:
+                    skipped += 1; log("  [instacart] zip %s: no zone (%s)" % (z, str(e)[:70])); continue
+                slug = (zone.get("slug") or "")
+                if retailer.lower().replace(" ", "") not in slug.lower().replace("-", ""):
+                    skipped += 1; log("  [instacart] zip %s entered %r ≠ %s — skip" % (z, slug, retailer)); continue
+                if zone.get("shopId") in stores:         # this zip maps to a store we already swept
+                    log("  [instacart] zip %s -> %s (dup store, skip)" % (z, slug)); continue
+                n0 = len(uniq)
+                for q in queries:
+                    raw, _ = self.fetch_page(self.session, zone, q, None)
+                    for it in (raw or []):
+                        row = self.parse_item(it, retailer, zone)
+                        if not row:
+                            continue
+                        row.setdefault("source", self.source)
+                        row["is_hemp"] = observe.is_hemp(row.get("brand"), row.get("name"), row.get("category"))
+                        k = (row.get("store_id"), row.get("product_id"))
+                        if k in seen:
+                            continue
+                        seen.add(k); uniq.append(row)
+                stores[zone.get("shopId")] = slug
+                self._land(uniq, log)                     # incremental, keyed-merge (never shrinks)
+                log("  [instacart] zip %s -> %s: +%d in-stock (%d stores, %d rows) [%d/%d]"
+                    % (z, slug, len(uniq) - n0, len(stores), len(uniq), i + 1, len(zips)))
+        finally:
+            self.close()
+        log("[instacart] SWEEP DONE %s: %d in-stock rows across %d stores (%d zips skipped)"
+            % (retailer, len(uniq), len(stores), skipped))
+        return uniq
 
     # ensure the browser is always torn down, even though the base pull() doesn't know about it
     def pull(self, *a, **k):

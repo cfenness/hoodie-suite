@@ -818,11 +818,22 @@ def instacart_pull(params):
     if isinstance(queries, str):
         queries = [q.strip() for q in queries.split(",") if q.strip()]
     pages = int(params.get("pages", 2))
+    # A retailer + zip list = a footprint INVENTORY sweep (e.g. {"retailer":"Publix","zips":[...]}). Each zip
+    # resolves to the nearest store of that chain, so a footprint of zips ≈ that chain's stores.
+    retailer = params.get("retailer")
+    zips = params.get("zips")
+    if isinstance(zips, str):
+        zips = [z.strip() for z in zips.split(",") if z.strip()]
     rows, warnings, status = [], [], "success"
     try:
-        from instacart import Instacart
-        rows = Instacart().pull(address=zip_, retailers=["grocery"], queries=queries,
-                                per_query_pages=pages, log=lambda m: app.logger.info("INSTACART %s", m))
+        from instacart import Instacart, INVENTORY_QUERIES
+        if retailer and zips:
+            rows = Instacart(target_retailer=retailer).sweep(
+                zips, retailer=retailer, queries=(queries if params.get("queries") else INVENTORY_QUERIES),
+                log=lambda m: app.logger.info("INSTACART %s", m))
+        else:
+            rows = Instacart().pull(address=zip_, retailers=["grocery"], queries=queries,
+                                    per_query_pages=pages, log=lambda m: app.logger.info("INSTACART %s", m))
         if not rows:
             status = "degraded"
             warnings.append("Free browser reached Instacart but landed 0 products (membership wall / zone "
