@@ -4220,6 +4220,15 @@ def registry_sources_ep():
         import coverage as cov
     except Exception:
         cov = None
+    def _cost_class(s):
+        # what a source actually needs: 'free' (direct HTTP / API / sitemap — $0), 'free-api-key' (a free
+        # key), or 'anti-bot' (the ONLY class that even tempts a paid proxy — and it should try the free
+        # local-browser / mobile-UA path first).
+        note = (s.get("note") or "").lower()
+        if s["klass"] == "mac" or any(w in note for w in
+                ("perimeterx", "imperva", "incapsula", "datadome", "cloudflare", "waf", "akamai", "forter")):
+            return "anti-bot"
+        return "free-api-key" if s["klass"] == "creds" else "free"
     out = []
     for s in reg.SOURCES:
         try:
@@ -4228,10 +4237,12 @@ def registry_sources_ep():
             cv = None
         out.append({"id": s["id"], "label": s["label"], "klass": s["klass"], "cadence": s.get("cadence"),
                     "enabled": bool(s.get("enabled")), "tables": s.get("tables"),
+                    "cost_class": _cost_class(s),
                     "requires": s.get("requires") or [],
                     "missing_creds": [e for e in (s.get("requires") or []) if not os.environ.get(e)],
                     "coverage": cv})
-    return jsonify(ok=True, count=len(out), remote=warehouse.remote(), sources=out)
+    n_free = sum(1 for x in out if x["cost_class"] != "anti-bot" and x["enabled"])
+    return jsonify(ok=True, count=len(out), free_or_keyed=n_free, remote=warehouse.remote(), sources=out)
 
 
 @app.get("/api/registry/coverage")
@@ -4437,16 +4448,21 @@ def registry_proxy_status_ep():
     per-GB tier runs up a tab, and this is where you see/limit it."""
     import resi
     return jsonify(ok=True, usage=resi.usage(),
-                   env={"RESI_ISP_ONLY": resi.isp_only(), "RESI_MONTHLY_MAX_SESSIONS": resi.monthly_cap(),
+                   env={"FETCH_POLICY": resi.fetch_policy(), "RESI_ISP_ONLY": resi.isp_only(),
+                        "RESI_MONTHLY_MAX_SESSIONS": resi.monthly_cap(),
                         "SCHEDULER_PAYGO": _truthy(os.environ.get("SCHEDULER_PAYGO"))})
 
 
 @app.post("/api/registry/proxy")
 def registry_proxy_control_ep():
-    """Set the per-GB guard at runtime (in-memory; the RESI_* env vars are the durable default). Body:
-    {isp_only:bool, max_sessions:int, reset:bool}. isp_only=true is the hard 'never spend per-GB' switch."""
+    """Set the cost dial at runtime (in-memory; the env vars are the durable default). Body:
+    {policy:'free'|'flat'|'paid', isp_only:bool, max_sessions:int, reset:bool}. policy='free' spends
+    nothing (direct/browser only); 'flat' adds the fixed ISP pool; 'paid' opts into the per-GB tier."""
     import resi
     b = request.get_json(silent=True) or {}
+    if b.get("policy") in ("free", "flat", "paid"):
+        os.environ["FETCH_POLICY"] = b["policy"]
+        os.environ.pop("FETCH_FREE_ONLY", None)
     if "isp_only" in b:
         os.environ["RESI_ISP_ONLY"] = "1" if b["isp_only"] else "0"
     if "max_sessions" in b:
@@ -4457,7 +4473,8 @@ def registry_proxy_control_ep():
     if b.get("reset"):
         resi.reset_month()
     return jsonify(ok=True, usage=resi.usage(),
-                   env={"RESI_ISP_ONLY": resi.isp_only(), "RESI_MONTHLY_MAX_SESSIONS": resi.monthly_cap()})
+                   env={"FETCH_POLICY": resi.fetch_policy(), "RESI_ISP_ONLY": resi.isp_only(),
+                        "RESI_MONTHLY_MAX_SESSIONS": resi.monthly_cap()})
 
 
 @app.post("/api/registry/scheduler")

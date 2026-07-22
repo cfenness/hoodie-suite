@@ -210,6 +210,8 @@ def isp_pool():
       • a FILE with one endpoint per line — path from ISP_PROXIES_FILE, else the default isp_proxies.txt next to
         this module. Easiest for a 15-IP list: paste the IPRoyal export one-per-line into unifyd/isp_proxies.txt.
     Each entry is a static, unlimited-bandwidth IP."""
+    if not isp_allowed():                              # FETCH_POLICY=free → no proxies at all (truly $0)
+        return []
     entries = []
     raw = os.environ.get("ISP_PROXIES", "")
     if raw:
@@ -348,8 +350,30 @@ def _cur():
     return _MEM["months"].setdefault(_month(), {"sessions": 0, "bytes": 0})
 
 
+def _env_truthy(name):
+    return str(os.environ.get(name, "")).strip().lower() in ("1", "true", "yes", "on")
+
+
+def fetch_policy():
+    """How far up the COST ladder fetches may go — free | flat | paid. THE cost dial:
+      free : direct + mobile-UA + a real local browser only. NO proxies. $0.
+      flat : the above + the flat-rate ISP pool (fixed per-IP, unlimited GB). NO per-GB tier.  ← default
+      paid : the above + the per-GB residential / BD-Unlocker tier (still capped by the meter/isp_only).
+    So paid is OPT-IN: nothing spends per-GB unless you deliberately set FETCH_POLICY=paid. FETCH_FREE_ONLY=1
+    is a shortcut for 'free'. Free-first is the whole point: 20 of ~29 sources never need a proxy at all."""
+    if _env_truthy("FETCH_FREE_ONLY"):
+        return "free"
+    p = str(os.environ.get("FETCH_POLICY", "flat")).strip().lower()
+    return p if p in ("free", "flat", "paid") else "flat"
+
+
+def isp_allowed():
+    """The flat ISP pool is usable only under 'flat'/'paid' (it's a fixed cost, not free)."""
+    return fetch_policy() in ("flat", "paid")
+
+
 def isp_only():
-    return str(os.environ.get("RESI_ISP_ONLY", "")).strip().lower() in ("1", "true", "yes", "on")
+    return _env_truthy("RESI_ISP_ONLY")
 
 
 def monthly_cap():
@@ -360,8 +384,11 @@ def monthly_cap():
 
 
 def paygo_allowed():
-    """Whether the PER-GB tier may be used right now — False when RESI_ISP_ONLY is set or the monthly
-    session cap is reached. Never consults parts() (no recursion); the flat ISP pool is never gated."""
+    """Whether the PER-GB tier may be used right now — only under FETCH_POLICY=paid, and even then False
+    when RESI_ISP_ONLY is set or the monthly session cap is reached. So per-GB is OPT-IN (default flat
+    forbids it). Never consults parts() (no recursion); the flat ISP pool has its own isp_allowed() gate."""
+    if fetch_policy() != "paid":
+        return False
     if isp_only():
         return False
     cap = monthly_cap()
@@ -397,8 +424,8 @@ def usage():
         c = dict(_cur())
     _meter_save()
     return {"month": _month(), "sessions": c["sessions"], "bytes": c["bytes"],
-            "cap_sessions": monthly_cap(), "isp_only": isp_only(), "isp_pool": len(isp_pool()),
-            "paygo_allowed": paygo_allowed()}
+            "policy": fetch_policy(), "cap_sessions": monthly_cap(), "isp_only": isp_only(),
+            "isp_allowed": isp_allowed(), "isp_pool": len(isp_pool()), "paygo_allowed": paygo_allowed()}
 
 
 def reset_month():
