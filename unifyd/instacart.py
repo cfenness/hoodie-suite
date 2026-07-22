@@ -54,8 +54,14 @@ def _find_items(o, out):
             _find_items(v, out)
 
 GRAPHQL = "https://www.instacart.com/graphql"
+# DISCOVERY (search -> item ids). CloudFront 403s this op from DATACENTER IPs (tested, twice) — it needs a
+# residential/in-territory session. Hash rotates; capture a live SearchResultsPlacements request to refresh.
 SEARCH_OP = "SearchResultsPlacements"
-SEARCH_HASH = "6f8d4a3f450d8d25dbb87b6b5bcb82180a1b3c972366fb1fb7de816c05523f4a"
+SEARCH_HASH = "8b04dde9ac6078497aed4bb629fcc10661c9e217c0dd424017afebab4fe9ea4f"
+# HYDRATION (known item ids -> availability/stock/price). This op WORKS FREE FROM THE CLOUD (tested: 55KB,
+# real availability, from a bare datacenter IP). Batch item ids through it to refresh per-store inventory.
+ITEMS_OP = "Items"
+ITEMS_HASH = "9ad66078d7fa81276b6bd4eb6a6f6fcdd1f4022ff0c3f5b4663c62877f06692a"
 # non-membership groceries to prefer (membership warehouses block the product query)
 GROCERY = ["ALDI", "Target", "Publix", "Kroger", "Rouses", "Wegmans", "GIANT", "Food Lion",
            "Meijer", "Safeway", "Albertsons", "The Fresh Market", "Sprouts"]
@@ -102,28 +108,60 @@ window.chrome = window.chrome || { runtime: {} };
 class Instacart(AggregatorConnector):
     source = "instacart"
 
-    def __init__(self, session="ic", target_retailer=None):
+    def __init__(self, session="ic", target_retailer=None, use_proxy=None):
         self.session = session
         self.target_retailer = target_retailer           # e.g. "Publix" — enter THIS storefront, not the first grocery
+        # use_proxy: True routes the browser through the FLAT ISP pool (residential) — needed for DISCOVERY
+        # (SearchResultsPlacements 403s from datacenter). None = auto (proxy only if the ISP pool is available
+        # and FETCH_POLICY allows it). Hydration (Items) works free and sets this False.
+        self.use_proxy = use_proxy
         self._pw = self._browser = self._ctx = self._page = None
         self._gql = []                                   # every /graphql request URL the page fires
 
-    # ---- free browser lifecycle (no BD, no proxy) ----
+    def _proxy(self):
+        """The FLAT ISP-pool exit for discovery — NEVER a per-GB seam. None unless the ISP pool is configured
+        and FETCH_POLICY permits it (the sanctioned residential tier). `use_proxy=False` forces the free path."""
+        if self.use_proxy is False or os.environ.get("IC_NO_PROXY"):
+            return None
+        try:
+            import resi
+            url = resi.isp_url("instacart")              # flat ISP pool, gated by isp_allowed() internally
+            if url:
+                import browser_warm
+                return browser_warm._parse_proxy(url)
+        except Exception:
+            pass
+        bp = os.environ.get("BROWSER_PROXY")             # explicit override (warm-sources pattern)
+        if bp:
+            try:
+                import browser_warm
+                return browser_warm._parse_proxy(bp)
+            except Exception:
+                pass
+        return None
+
+    # ---- browser lifecycle: free by default; flat ISP pool only for discovery (no bd, no per-GB) ----
     def _launch(self):
         from playwright.sync_api import sync_playwright
         headful = os.environ.get("BROWSER_HEADFUL", "1") != "0"
+        proxy = self._proxy()
         self._pw = sync_playwright().start()
         last = None
         for ch in ("chrome", None):                      # real Chrome first, bundled Chromium fallback
             try:
-                self._browser = (self._pw.chromium.launch(headless=not headful, channel=ch,
-                                                           args=["--no-sandbox"]) if ch
-                                 else self._pw.chromium.launch(headless=not headful, args=["--no-sandbox"]))
+                kw = {"headless": not headful, "args": ["--no-sandbox"]}
+                if ch:
+                    kw["channel"] = ch
+                if proxy:
+                    kw["proxy"] = proxy
+                self._browser = self._pw.chromium.launch(**kw)
                 break
             except Exception as e:
                 last = e
         if not self._browser:
             raise RuntimeError("could not launch a free browser (channel chrome/bundled): %s" % last)
+        if proxy:
+            print("[instacart] browser via flat ISP exit %s" % str(proxy.get("server")))
         self._ctx = self._browser.new_context(locale="en-US", user_agent=UA)
         self._ctx.add_init_script(_STEALTH)
         self._page = self._ctx.new_page()
@@ -374,6 +412,67 @@ class Instacart(AggregatorConnector):
             self.close()
         log("[instacart] SWEEP DONE %s: %d in-stock rows across %d stores (%d zips skipped)"
             % (retailer, len(uniq), len(stores), skipped))
+        return uniq
+
+    def _items_url(self, zone, ids):
+        variables = {"ids": list(ids), "shopId": zone["shopId"], "zoneId": zone["zoneId"],
+                     "postalCode": zone["postalCode"]}
+        ext = {"persistedQuery": {"version": 1, "sha256Hash": ITEMS_HASH}}
+        return "%s?operationName=%s&variables=%s&extensions=%s" % (
+            GRAPHQL, ITEMS_OP, urllib.parse.quote(json.dumps(variables, separators=(",", ":"))),
+            urllib.parse.quote(json.dumps(ext, separators=(",", ":"))))
+
+    def hydrate(self, zone, ids, batch=24, log=print):
+        """Hydrate KNOWN item ids -> availability/stock/price via the Items op — WORKS FREE FROM THE CLOUD
+        (unlike search, which CloudFront 403s from datacenter IPs). `ids` look like 'items_<ns>-<pid>';
+        `zone` = {shopId, postalCode, zoneId, slug?}. Lands per-store inventory (in_stock + stock_level)
+        incrementally. This is the ongoing free refresh once a store's id universe is known."""
+        ids = [i for i in dict.fromkeys(ids) if i]
+        if not (zone.get("shopId") and zone.get("postalCode") and zone.get("zoneId")):
+            log("[instacart] hydrate: zone missing ids — abort"); return []
+        self.use_proxy = False                           # Items works free from the cloud — no ISP pool needed
+        if not self._page:
+            self._launch()
+        slug = zone.get("slug") or ("shop-%s" % zone.get("shopId"))
+        seen, uniq = set(), []
+        try:
+            self._page.goto("https://www.instacart.com/", wait_until="domcontentloaded", timeout=60000)
+            self._page.wait_for_timeout(3000)
+            for b in range(0, len(ids), batch):
+                chunk = ids[b:b + batch]
+                for _ in range(3):
+                    try:
+                        self._page.goto(self._items_url(zone, chunk), wait_until="domcontentloaded", timeout=60000)
+                        self._page.wait_for_timeout(1500)
+                        txt = self._page.inner_text("body")
+                    except Exception:
+                        time.sleep(2); continue
+                    m = re.search(r"(\{.*\})", txt, re.S)
+                    if m:
+                        try:
+                            d = json.loads(m.group(1))
+                            got = ((d.get("data") or {}).get("items")) or []
+                            for it in got:
+                                row = self.parse_item(it, slug, zone)
+                                if not row:
+                                    continue
+                                row.setdefault("source", self.source)
+                                row["is_hemp"] = observe.is_hemp(row.get("brand"), row.get("name"),
+                                                                 row.get("category"))
+                                k = (row.get("store_id"), row.get("product_id"))
+                                if k in seen:
+                                    continue
+                                seen.add(k); uniq.append(row)
+                            break
+                        except Exception:
+                            pass
+                    time.sleep(1)
+                if (b // batch) % 5 == 0 and uniq:
+                    self._land(uniq, log)
+            self._land(uniq, log)
+        finally:
+            self.close()
+        log("[instacart] HYDRATE shopId=%s (%s): %d items with availability" % (zone.get("shopId"), slug, len(uniq)))
         return uniq
 
     def probe_url(self, url, log=print):

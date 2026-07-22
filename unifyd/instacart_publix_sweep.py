@@ -68,6 +68,18 @@ def run():
         Instacart().probe_url(probe, log=print)
         return 0
 
+    # HYDRATE path: IC_ZONES (one zone) + IC_IDS (item ids) -> Items op (WORKS FREE FROM THE CLOUD).
+    ids_env = os.environ.get("IC_IDS", "").strip()
+    zones_env = os.environ.get("IC_ZONES", "").strip()
+    if ids_env and zones_env:
+        zone = json.loads(zones_env)[0] if zones_env.startswith("[") else json.loads(zones_env)
+        ids = json.loads(ids_env) if ids_env.startswith("[") else [x.strip() for x in ids_env.split(",") if x.strip()]
+        where = "SHARED (Tigris)" if warehouse.remote() else "LOCAL (dry)"
+        print("[publix-sweep] HYDRATE %d item ids for shopId=%s -> %s (Items op, no proxy, no bd)"
+              % (len(ids), zone.get("shopId"), where))
+        rows = Instacart().hydrate(zone, ids, log=print)
+        return _report(warehouse, rows, 0, 0, where)
+
     # DIRECT-REPLAY path: if IC_ZONES is set (JSON list of {shopId,postalCode,zoneId,slug}) replay those
     # Publix stores directly — no homepage/address/geolocation (a datacenter IP won't surface Publix).
     zones_json = os.environ.get("IC_ZONES", "").strip()
