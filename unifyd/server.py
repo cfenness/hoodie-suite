@@ -5843,12 +5843,17 @@ def prism_shortcut():
 
 @app.get("/hub")
 def hub_shortcut():
-    return _suite_send("hub.html")                    # the four-bucket IA shell — parallel to index.html (/)
+    return _suite_send("hub.html")                    # the four-bucket hub (also the homepage below)
+
+@app.get("/classic")
+@app.get("/launcher")
+def classic_launcher():
+    return _suite_send("index.html")                 # the previous flat-grid launcher — kept, one-line reversible
 
 @app.get("/")
 def index():
     if SUITE_ROOT:
-        return _suite_send("index.html")             # the launcher, not the MDM console
+        return _suite_send("hub.html")               # the four-bucket hub is now the homepage (was index.html; still at /classic)
     return send_file(HTML_PATH)
 
 @app.get("/<path:relpath>")

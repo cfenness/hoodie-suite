@@ -476,7 +476,9 @@
       '<div class="dph" id="homeDrawerH"><span class="dchev">▸</span> Utility · present, learn, admin &nbsp;·&nbsp; '+util.length+'</div>'+
       '<div class="ditems">'+util.map(function(a){
         return '<span class="dpill" data-id="'+a.id+'"><span class="mk">'+a.mark+'</span>'+a.name+'</span>';
-      }).join("")+'</div></div>';
+      }).join("")+
+      '<a class="dpill dlink" href="/classic" title="The previous flat-grid launcher"><span class="mk">◱</span>Classic launcher ↗</a>'+
+      '</div></div>';
     el.innerHTML =
       '<div class="canvas">'+
         '<div class="hero">'+
@@ -487,7 +489,7 @@
         '</div>'+
         sections+drawer+
       '</div>';
-    el.querySelectorAll(".app,.dpill").forEach(function(r){ r.onclick=function(){ location.hash="#"+r.dataset.id; }; });
+    el.querySelectorAll(".app,.dpill:not(.dlink)").forEach(function(r){ r.onclick=function(){ location.hash="#"+r.dataset.id; }; });
     el.querySelectorAll(".glabel").forEach(function(h){ h.onclick=function(){ location.hash="#b/"+h.dataset.bucket; }; });
     var dh=el.querySelector("#homeDrawerH");
     if(dh) dh.onclick=function(){ openGroups.utility=!openGroups.utility; el.querySelector("#homeDrawer").classList.toggle("open"); };
