@@ -198,7 +198,7 @@
     api("/api/tax/revenue").then(function(j){
       if(!j||j.landed===false||!(j.rows&&j.rows.length)){
         $("revTable").innerHTML='<div class="empty">Not landed yet — Census STC runs with a CENSUS_API_KEY pass. '+
-          'Confirm the AMOUNT scale (USD thousands) on the first live run.</div>';return;}
+          'Values are USD thousands (Census convention; the connector self-checks the scale each pull).</div>';return;}
       var rows=j.rows.slice().sort(function(a,b){return (b.fiscal_year-a.fiscal_year)||a.jurisdiction.localeCompare(b.jurisdiction);}).slice(0,60);
       var unit=(rows[0]&&rows[0].unit)||"";
       var h='<table><thead><tr><th>State</th><th>FY</th><th>Kind</th><th class="r">Collections'+(unit?(" ("+esc(unit)+")"):"")+'</th></tr></thead><tbody>';
