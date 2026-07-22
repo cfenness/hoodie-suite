@@ -177,6 +177,7 @@
       if(!r) return '<td class="r">—</td>';
       if(!String(r.rate_value||"").trim()) return '<td class="r">n/a<span class="badge unv">unv</span></td>';
       var b=(String(r.is_control_state)==="true")?'<span class="badge ctrl">ctrl</span>':'';
+      if(r.provenance==="verified") b+='<span class="badge ver" title="'+esc(r.source||"")+'">✓</span>';
       return '<td class="r">'+m2(r.rate_value)+b+'</td>';
     }
     var h='<table><thead><tr><th>State</th><th class="r">Spirits</th><th class="r">Wine</th><th class="r">Beer</th><th>As of</th></tr></thead><tbody>';

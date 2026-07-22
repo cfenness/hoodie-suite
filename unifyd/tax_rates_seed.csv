@@ -11,20 +11,20 @@ state,AZ,beer,,,excise,gallon,0.1600,USD,false,2026-01-01,"Tax Foundation (effec
 state,AR,spirits,,,excise,gallon,9.7600,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,AR,wine,,,excise,gallon,1.5000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,AR,beer,,,excise,gallon,0.3700,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,CA,spirits,,,excise,gallon,3.3000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,CA,wine,,,excise,gallon,0.2000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,CA,beer,,,excise,gallon,0.2000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,CO,spirits,,,excise,gallon,2.2800,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,CO,wine,,,excise,gallon,0.3200,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,CO,beer,,,excise,gallon,0.0800,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
+state,CA,spirits,,,excise,gallon,3.3000,USD,false,2026-01-01,CA CDTFA (Pub 92),verified,<=100 proof; >100 proof $6.60/gal
+state,CA,wine,,,excise,gallon,0.2000,USD,false,2026-01-01,CA CDTFA (Pub 92),verified,<=14% & >14%; sparkling $0.30/gal
+state,CA,beer,,,excise,gallon,0.2000,USD,false,2026-01-01,CA CDTFA (Pub 92),verified,
+state,CO,spirits,,,excise,gallon,2.2800,USD,false,2026-01-01,CO DOR (CRS 44-3-503),verified,$0.6026/liter
+state,CO,wine,,,excise,gallon,0.3200,USD,false,2026-01-01,CO DOR (CRS 44-3-503),verified,$0.0733/L base + $0.01/L wine development fee; CO-produced wines carry graduated surcharges
+state,CO,beer,,,excise,gallon,0.0800,USD,false,2026-01-01,CO DOR (CRS 44-3-503),verified,
 state,CT,spirits,,,excise,gallon,5.9400,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,CT,wine,,,excise,gallon,0.7900,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,CT,beer,,,excise,gallon,0.1900,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,DE,spirits,,,excise,gallon,4.5000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,DE,wine,,,excise,gallon,1.6300,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,DE,beer,,,excise,gallon,0.2600,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,FL,spirits,,,excise,gallon,6.5000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,FL,wine,,,excise,gallon,2.2500,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
+state,FL,spirits,,,excise,gallon,6.5000,USD,false,2026-01-01,FL Stat. 565.12,verified,17.259-55.78% ABV; >55.78% $9.53/gal
+state,FL,wine,,,excise,gallon,2.2500,USD,false,2026-01-01,FL Stat. 564.06,verified,still wine
 state,FL,beer,,,excise,gallon,0.4800,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,GA,spirits,,,excise,gallon,3.7900,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,GA,wine,,,excise,gallon,1.5100,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
@@ -35,9 +35,9 @@ state,HI,beer,,,excise,gallon,0.9300,USD,false,2026-01-01,"Tax Foundation (effec
 state,ID,spirits,,,excise,gallon,12.9400,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,effective/implied rate incl. state markup — read control_state.py price book for true landed cost
 state,ID,wine,,,excise,gallon,0.4500,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,ID,beer,,,excise,gallon,0.1500,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,IL,spirits,,,excise,gallon,8.5500,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,IL,wine,,,excise,gallon,1.3900,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,IL,beer,,,excise,gallon,0.2300,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
+state,IL,spirits,,,excise,gallon,8.5500,USD,false,2026-01-01,IL DOR (Liquor Gallonage Tax),verified,>20% ABV; PA104-0468 ABV reclass eff Jul2026
+state,IL,wine,,,excise,gallon,1.3900,USD,false,2026-01-01,IL DOR (Liquor Gallonage Tax),verified,<=20% ABV
+state,IL,beer,,,excise,gallon,0.2310,USD,false,2026-01-01,IL DOR (Liquor Gallonage Tax),verified,0.5-7% ABV incl cider
 state,IN,spirits,,,excise,gallon,2.6800,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,IN,wine,,,excise,gallon,0.4700,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,IN,beer,,,excise,gallon,0.1200,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
@@ -59,15 +59,15 @@ state,ME,beer,,,excise,gallon,0.3500,USD,false,2026-01-01,"Tax Foundation (effec
 state,MD,spirits,,,excise,gallon,5.4600,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,MD,wine,,,excise,gallon,1.6400,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,MD,beer,,,excise,gallon,0.6000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,MA,spirits,,,excise,gallon,4.0500,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,MA,wine,,,excise,gallon,0.5500,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,MA,beer,,,excise,gallon,0.1100,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
+state,MA,spirits,,,excise,gallon,4.0500,USD,false,2026-01-01,MA MGL c.138 s.21,verified,>15-50% ABV; >50% per proof gal; <=15% $1.10/gal
+state,MA,wine,,,excise,gallon,0.5500,USD,false,2026-01-01,MA MGL c.138 s.21,verified,still; sparkling $0.70/gal
+state,MA,beer,,,excise,gallon,0.1065,USD,false,2026-01-01,MA MGL c.138 s.21,verified,$3.30/31-gal barrel
 state,MI,spirits,,,excise,gallon,14.6100,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,effective/implied rate incl. state markup — read control_state.py price book for true landed cost
 state,MI,wine,,,excise,gallon,0.5100,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,MI,beer,,,excise,gallon,0.2000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,MN,spirits,,,excise,gallon,8.7400,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,MN,wine,,,excise,gallon,1.2500,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,MN,beer,,,excise,gallon,0.4700,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
+state,MN,spirits,,,excise,gallon,5.0300,USD,false,2026-01-01,MN DOR (Minn Stat 297G),verified,statutory; TF $8.74 effective incl 2.5% gross-receipts + $0.01/bottle
+state,MN,wine,,,excise,gallon,0.3000,USD,false,2026-01-01,MN DOR (Minn Stat 297G),verified,"<=14%; 14-21% $0.95, 21-24% $1.82; +2.5% gross-receipts"
+state,MN,beer,,,excise,gallon,0.1500,USD,false,2026-01-01,MN DOR (Minn Stat 297G),verified,strong $4.60/bbl; 3.2% $2.40/bbl; +2.5% gross-receipts
 state,MS,spirits,,,excise,gallon,9.3800,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,effective/implied rate incl. state markup — read control_state.py price book for true landed cost
 state,MS,wine,,,excise,gallon,,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",unverified,control state — pricing unavailable to impute effective wine excise
 state,MS,beer,,,excise,gallon,0.4300,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
@@ -86,15 +86,15 @@ state,NV,beer,,,excise,gallon,0.1600,USD,false,2026-01-01,"Tax Foundation (effec
 state,NH,spirits,,,excise,gallon,0.0000,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,effective/implied rate incl. state markup — read control_state.py price book for true landed cost
 state,NH,wine,,,excise,gallon,,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",unverified,control state — pricing unavailable to impute effective wine excise
 state,NH,beer,,,excise,gallon,0.3000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,NJ,spirits,,,excise,gallon,5.5000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,NJ,wine,,,excise,gallon,0.8800,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,NJ,beer,,,excise,gallon,0.1200,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
+state,NJ,spirits,,,excise,gallon,5.5000,USD,false,2026-01-01,NJ Div of Taxation (NJAC 18:3-2.1),verified,
+state,NJ,wine,,,excise,gallon,0.8750,USD,false,2026-01-01,NJ Div of Taxation (NJAC 18:3-2.1),verified,
+state,NJ,beer,,,excise,gallon,0.1200,USD,false,2026-01-01,NJ Div of Taxation (NJAC 18:3-2.1),verified,
 state,NM,spirits,,,excise,gallon,6.0600,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,NM,wine,,,excise,gallon,1.7000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,NM,beer,,,excise,gallon,0.4100,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,NY,spirits,,,excise,gallon,6.4400,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,NY,wine,,,excise,gallon,0.3000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,NY,beer,,,excise,gallon,0.1400,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
+state,NY,spirits,,,excise,gallon,6.4400,USD,false,2026-01-01,NY DTF (tax.ny.gov),verified,statutory $1.70/liter; NYC +$0.264/liter
+state,NY,wine,,,excise,gallon,0.3000,USD,false,2026-01-01,NY DTF (tax.ny.gov),verified,>24% ABV taxed per liter
+state,NY,beer,,,excise,gallon,0.1400,USD,false,2026-01-01,NY DTF (tax.ny.gov),verified,NYC +$0.12/gal
 state,NC,spirits,,,excise,gallon,18.2300,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,effective/implied rate incl. state markup — read control_state.py price book for true landed cost
 state,NC,wine,,,excise,gallon,1.0000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,NC,beer,,,excise,gallon,0.6200,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
@@ -110,9 +110,9 @@ state,OK,beer,,,excise,gallon,0.4000,USD,false,2026-01-01,"Tax Foundation (effec
 state,OR,spirits,,,excise,gallon,23.7400,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,effective/implied rate incl. state markup — read control_state.py price book for true landed cost
 state,OR,wine,,,excise,gallon,0.6700,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,OR,beer,,,excise,gallon,0.0800,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,PA,spirits,,,excise,gallon,7.4800,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,effective/implied rate incl. state markup — read control_state.py price book for true landed cost
+state,PA,spirits,,,excise,gallon,7.4800,USD,true,2026-01-01,PA DOR / PLCB,seed,"control: 18% Johnstown Flood tax + ~30% PLCB markup; TF $7.48 imputed, no per-gal excise"
 state,PA,wine,,,excise,gallon,,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",unverified,control state — pricing unavailable to impute effective wine excise
-state,PA,beer,,,excise,gallon,0.0800,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
+state,PA,beer,,,excise,gallon,0.0800,USD,false,2026-01-01,PA DOR (61 Pa Code Ch.74),verified,malt beverage tax (penny a pint)
 state,RI,spirits,,,excise,gallon,5.4000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,RI,wine,,,excise,gallon,1.4000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,RI,beer,,,excise,gallon,0.1200,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
@@ -125,21 +125,21 @@ state,SD,beer,,,excise,gallon,0.2700,USD,false,2026-01-01,"Tax Foundation (effec
 state,TN,spirits,,,excise,gallon,4.4600,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,TN,wine,,,excise,gallon,1.2700,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,TN,beer,,,excise,gallon,1.2900,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,TX,spirits,,,excise,gallon,2.4000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,TX,wine,,,excise,gallon,0.2000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,TX,beer,,,excise,gallon,0.1900,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
+state,TX,spirits,,,excise,gallon,2.4000,USD,false,2026-01-01,TX 16 TAC 39.2 / TABC,verified,
+state,TX,wine,,,excise,gallon,0.2040,USD,false,2026-01-01,TX 16 TAC 39.2 / TABC,verified,<14%; >=14% $0.408/gal; sparkling $0.516/gal
+state,TX,beer,,,excise,gallon,0.1940,USD,false,2026-01-01,TX 16 TAC 39.2 / TABC,verified,malt bev $6.00/31-gal barrel
 state,UT,spirits,,,excise,gallon,16.0700,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,effective/implied rate incl. state markup — read control_state.py price book for true landed cost
 state,UT,wine,,,excise,gallon,,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",unverified,control state — pricing unavailable to impute effective wine excise
 state,UT,beer,,,excise,gallon,0.4400,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,VT,spirits,,,excise,gallon,9.0600,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,effective/implied rate incl. state markup — read control_state.py price book for true landed cost
 state,VT,wine,,,excise,gallon,0.5500,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,VT,beer,,,excise,gallon,0.2700,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,VA,spirits,,,excise,gallon,23.4700,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,effective/implied rate incl. state markup — read control_state.py price book for true landed cost
-state,VA,wine,,,excise,gallon,1.5100,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,VA,beer,,,excise,gallon,0.2600,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,WA,spirits,,,excise,gallon,36.6800,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,WA,wine,,,excise,gallon,0.8700,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
-state,WA,beer,,,excise,gallon,0.2600,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
+state,VA,spirits,,,excise,gallon,23.4700,USD,true,2026-01-01,VA ABC (abc.virginia.gov),seed,"control: ~69% ABC markup + 20% tax; TF $23.47 imputed, no per-gal excise"
+state,VA,wine,,,excise,gallon,1.5100,USD,false,2026-01-01,VA DOR / VA ABC,verified,$0.40/liter + 4% state wine tax
+state,VA,beer,,,excise,gallon,0.2565,USD,false,2026-01-01,VA DOR,verified,
+state,WA,spirits,,,excise,liter,3.7708,USD,false,2026-01-01,WA DOR (spirits liter tax),verified,spirits liter tax $3.7708/L + 20.5% spirits sales tax (see sales row); TF $36.68/gal = effective combined
+state,WA,wine,,,excise,gallon,0.8700,USD,false,2026-01-01,WA DOR,verified,
+state,WA,beer,,,excise,gallon,0.2600,USD,false,2026-01-01,WA DOR,verified,
 state,WV,spirits,,,excise,gallon,8.9800,USD,true,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,effective/implied rate incl. state markup — read control_state.py price book for true landed cost
 state,WV,wine,,,excise,gallon,1.0000,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 state,WV,beer,,,excise,gallon,0.1800,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
@@ -152,3 +152,13 @@ state,WY,beer,,,excise,gallon,0.0200,USD,false,2026-01-01,"Tax Foundation (effec
 local,DC,spirits,,,excise,gallon,6.6800,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 local,DC,wine,,,excise,gallon,2.0700,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
 local,DC,beer,,,excise,gallon,0.7900,USD,false,2026-01-01,"Tax Foundation (effective rate, Jan 2026)",seed,TF effective rate (may fold in bottle/case fees); verify statutory excise vs state DOR
+local,Cook County IL,spirits,,,excise,gallon,2.5000,USD,false,2026-01-01,Cook County Dept of Revenue,verified,">=20% ABV; local, stacks on IL + Chicago"
+local,Cook County IL,wine,,,excise,gallon,0.2400,USD,false,2026-01-01,Cook County Dept of Revenue,verified,<=14% ABV
+local,Cook County IL,beer,,,excise,gallon,0.0900,USD,false,2026-01-01,Cook County Dept of Revenue,verified,
+local,Chicago IL,spirits,,,excise,gallon,2.6800,USD,false,2026-01-01,City of Chicago Liquor Tax,verified,">=20% ABV; <=14% $0.36, 14-20% $0.89; DTC->1.5% eff 2026-03-01"
+local,Chicago IL,wine,,,excise,gallon,0.3600,USD,false,2026-01-01,City of Chicago Liquor Tax,verified,<=14% ABV tier
+local,Chicago IL,beer,,,excise,gallon,0.2900,USD,false,2026-01-01,City of Chicago Liquor Tax,verified,
+local,New York City NY,spirits,,,excise,liter,0.2640,USD,false,2026-01-01,NYC (NY DTF),verified,on top of NY state
+local,New York City NY,beer,,,excise,gallon,0.1200,USD,false,2026-01-01,NYC (NY DTF),verified,on top of NY state
+state,MN,all,,,sales,percent,2.5000,USD,false,2026-01-01,MN DOR (Minn Stat 295.75),verified,"liquor gross-receipts tax, in addition to excise"
+state,WA,spirits,,,sales,percent,20.5000,USD,false,2026-01-01,WA DOR,verified,"spirits sales tax, on top of $3.7708/L liter tax"
