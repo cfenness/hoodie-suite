@@ -46,15 +46,18 @@ SOURCES = [
          tables=["total_wine_products"], klass="mac", cadence="daily", enabled=True, note="PerimeterX — browser"),
 
     # ── Grocery / big-box ─────────────────────────────────────────────────────────────────────────────────────
-    dict(id="walmart", label="Walmart", code="import walmart_direct as m; m.pull(detail_pages=True, detail_cap=600)",
+    dict(id="walmart", label="Walmart",
+         code="import walmart_direct as m; m.pull(detail_pages=True, detail_cap=600, browse=True)",
          tables=["walmart_products"], klass="mac", cadence="daily", enabled=True,
-         requires=["WALMART_COOKIE"], note="__NEXT_DATA__ over stdlib HTTP, no BD — needs a warmed PX cookie"),
+         note="__NEXT_DATA__ via a warmed PX browser session (browser_warm, no manual cookie) — runs in the "
+              "cloud in warm-sources.yml; degrades to WALMART_COOKIE/mobile+ISP when no browser is present"),
     dict(id="target", label="Target", code="import target_scraper as m; m.run()",
          tables=["target_products", "target_stores"], klass="headless", cadence="daily", enabled=True, note="RedSky API"),
     dict(id="kroger", label="Kroger (atlas inventory)", code="import kroger_atlas as m; m.main([])",
          tables=["kroger_atlas_products"], klass="mac", cadence="daily", enabled=True,
-         requires=["KROGER_COOKIE", "KROGER_STORE", "KROGER_FACILITY"],
-         note="INTERNAL atlas endpoint = exact per-store on-hand + dims + ABV; warmed cookie (anti-bot), Tier B"),
+         requires=["KROGER_STORE", "KROGER_FACILITY"],
+         note="INTERNAL atlas endpoint = exact per-store on-hand + dims + ABV; cookie AUTO-WARMED per run "
+              "(browser_warm — no manual paste), store from the x-laf-object header; cloud: warm-sources.yml"),
     dict(id="kroger-api", label="Kroger (API UPC seed)", code="import kroger_api as m; m.main()",
          tables=["kroger_products"], klass="creds", cadence="weekly", enabled=True,
          requires=["KROGER_CLIENT_ID", "KROGER_CLIENT_SECRET"],
