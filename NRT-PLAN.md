@@ -168,7 +168,7 @@ cost proportional to **what changed**, not what exists.
 | **1** | Warehouse v2: partitioned layout + DuckDB merge + manifest (§1a–c) — **BUILT** (`feat/warehouse-v2-partitioned`, 22-check compat suite) | everything depends on it; do BEFORE big data arrives |
 | **2** | `--due` dispatcher (§2, §3) — **BUILT** (`feat/nrt-due-dispatcher`: registry `interval_h`/`priority`, ledger-driven due-ness, lock, run_due.sh + launchd template). Cloud runner = existing GH Actions; Fly worker deferred behind the §2 gate | moves builds off the serving VM, establishes the cycle |
 | **3** | Master builds wired to the dispatcher (§4 as re-scoped by §8c) — **BUILT** (`BUILDS` registry: build-outlets + build-product-master run when an upstream source lands new rows, min-gap throttled, Mac-tick only so dim_* keeps one writer; deep incrementalism stays hoodie-canon's) | master starts tracking sources automatically |
-| **4** | SipSource ingest + marts (§1d) | lands on infrastructure already sized for it |
+| **4** | SipSource ingest + marts (§1d) — **SIMULATED & PROVEN** (`sipsource_sim.py` synthetic feed + `sipsource_ingest.py` marts; feed lands hive-partitioned period×market, raw NEVER served, dimension-BOUNDED marts). Proof at 50M→100M: raw doubles, serving mart stays 9.13M→9.24M (1.01×), conservation exact, scoped query ~30ms, 500M extrapolates to ~9.5GB raw / ~1–3min worker rebuild. `build-sipsource-marts` wired in the registry (disabled until the real feed lands). | lands on infrastructure already sized for it |
 | **5** | Hot-tier promotion (diff recipes hourly) + freshness UI (§3, §5) | the visible "near real time" payoff |
 | **6** | Cost ledger + SLO alerting (§6) | keeps the extended cost provably minimal |
 

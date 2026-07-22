@@ -86,18 +86,21 @@ _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
 VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
-               "kroger", "walmart", "walmart-api", "target", "doordash", "google"} | set(socrata_outlets.VALID)
+               "kroger", "walmart", "walmart-api", "target", "doordash", "google",
+               "ubereats", "postmates", "naop"} | set(socrata_outlets.VALID)
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
 
 def _dispatch_pull(conn, body):
-    if conn in _CONN_PULL:                     # unified registry (kroger/walmart/target/doordash/google)
+    # SINGLE SOURCE OF TRUTH: sources the registry owns run THROUGH the registry entrypoint (run_one), never a
+    # hand-maintained *_pull copy — so a fix in source_registry can never be silently bypassed by the app path
+    # (the drift that made "we fixed it 100 times" literally true — see _REGISTRY_CONN / dispatch_guard_test).
+    if conn in _REGISTRY_CONN:
+        return _run_via_registry(conn, body)
+    if conn in _CONN_PULL:                     # legacy hand-wired pulls not yet in the registry (target/doordash/google)
         return _CONN_PULL[conn](body)
     return (cola_pull(body) if conn == "ttb-cola"
-            else abc_pull(body) if conn == "abc-fws"
-            else specs_pull(body) if conn == "specs"
-            else binnys_pull(body) if conn == "binnys"
             else shopify_pull(body) if conn == "shopify-dtc"
             else instacart_pull(body) if conn == "instacart"
             else places_pull(body) if conn == "orlando-accounts"
@@ -105,7 +108,6 @@ def _dispatch_pull(conn, body):
             else tx_pull(body) if conn == "tx-tabc"
             else il_pull(body) if conn == "il-chicago"
             else ct_pull(body) if conn == "ct-dcp"
-            else total_wine_pull(body) if conn == "total-wine"
             else vtinfo_pull(body) if conn == "vtinfo"
             else ab_inbev_pull(body) if conn == "ab-inbev"
             else socrata_pull(conn, body) if conn in socrata_outlets.VALID
@@ -199,6 +201,38 @@ def _std_run(conn, started, total=0, extracts=None, status="success", warnings=N
             "degraded": status in ("degraded", "partial"), "warnings": warnings or [], "healed": [],
             "extracts": extracts or [], "note": note}
 
+
+# ── ONE dispatch path: app connId -> source_registry id ──────────────────────────────────────────────────────
+# For these, /api/run executes the REGISTRY entrypoint (run_sources.run_one) — the single source of truth the
+# scheduled path already uses — instead of a parallel *_pull function that drifts. This is the fix for scrapers
+# "regressing": a fix in source_registry now applies to the app path automatically and can't be bypassed.
+# ubereats/postmates/naop were previously not runnable through the app at all. Enforced by dispatch_guard_test.
+_REGISTRY_CONN = {"abc-fws": "abc-fws", "specs": "specs", "binnys": "binnys", "walmart": "walmart",
+                  "kroger": "kroger", "total-wine": "total-wine", "ubereats": "ubereats",
+                  "postmates": "postmates", "naop": "naop"}
+
+
+def _run_via_registry(conn, body):
+    """Run `conn` through its source_registry entrypoint via run_sources.run_one — the exact code the scheduled
+    path runs (isolated subprocess, creds-gated via `requires`, timeout-bounded, OOM-reported, warehouse-count
+    delta). Adapts run_one's record into the app run-record shape. This is what keeps the app from drifting."""
+    import source_registry as _reg
+    import run_sources as _rs
+    body = body or {}
+    rid = _REGISTRY_CONN[conn]
+    src = next((s for s in _reg.SOURCES if s["id"] == rid), None)
+    if not src:
+        return _std_run(conn, int(time.time() * 1000), status="failed",
+                        warnings=["no source_registry entry '%s'" % rid], trigger=body.get("trigger", "manual"))
+    rec = _rs.run_one(src, log=lambda m: app.logger.info("RUN[%s] %s", conn, m))
+    started = int(rec.get("ts_start", time.time()) * 1000)
+    app_status = {"ok": "success", "no-change": "success"}.get(rec.get("status"), rec.get("status", "failed"))
+    tables = [t.strip() for t in (rec.get("tables") or "").split(",") if t.strip()]
+    rows_after, delta = rec.get("rows_after", 0), rec.get("delta", 0)
+    return _std_run(conn, started, total=rows_after, status=app_status, trigger=body.get("trigger", "manual"),
+                    warnings=([rec["error"]] if rec.get("error") else []),
+                    extracts=[{"id": t, "rows": rows_after, "delta": delta, "status": app_status} for t in tables])
+
 def kroger_pull(body):
     """Kroger Developer API (OAuth2) → kroger_products + kroger_runs. Needs KROGER_CLIENT_ID/SECRET (env or
     body). First-class connector now; the old subprocess path (/api/connector/run) still works too."""
@@ -219,24 +253,24 @@ def kroger_pull(body):
                     extracts=[{"id": "kroger_products", "rows": n, "delta": 0, "status": "success"}])
 
 def walmart_pull(body):
-    """Walmart via Bright Data (discover + product pull) → walmart_products + walmart_runs. HEAVY (BD spend)."""
+    """Walmart via the DIRECT residential-proxy scraper (walmart_direct: IPRoyal residential exit + curl_cffi
+    Chrome-JA3 impersonation, paced rotation) → walmart_products + retail observations. $0 — NO Bright Data,
+    NO official API. This matches the source registry (walmart -> walmart_direct); the old Bright Data path
+    (walmart_scraper) is kept only for the standalone walmart_schedule.sh, not the app run path."""
     started = int(time.time() * 1000); body = body or {}
-    import walmart_scraper as wm
-    wm._load_creds()
-    per = int(body.get("per", 4))
-    queries = [q.strip() for q in (body.get("queries") or ",".join(wm.DEFAULT_QUERIES)).split(",") if q.strip()]
-    urls = wm.discover_urls(queries, per)
-    raw = []
-    for u in urls:
-        try: raw += wm.pull_product(u)
-        except Exception: pass
-    if not raw:
+    import walmart_direct as wd
+    before = _wh_count("walmart_products")
+    terms = [q.strip() for q in (body.get("queries") or "").split(",") if q.strip()] or None
+    n = wd.pull(terms=terms, max_pages=int(body.get("max_pages", 4)),
+                detail_pages=bool(body.get("detail", True)), detail_cap=int(body.get("detail_cap", 600)),
+                log=lambda m: app.logger.info("WALMART %s", m))
+    after = _wh_count("walmart_products")
+    if not n:
         return _std_run("walmart", started, status="degraded", trigger=body.get("trigger", "manual"),
-                        warnings=["no records pulled — Walmart may be blocking, or bdata is not logged in"])
-    wm.run(raw, note=body.get("note", ""))
-    n = _wh_count("walmart_products")
-    return _std_run("walmart", started, total=n, trigger=body.get("trigger", "manual"),
-                    extracts=[{"id": "walmart_products", "rows": n, "delta": 0, "status": "success"}])
+                        warnings=["0 products — PerimeterX may be blocking the residential exit; "
+                                  "check RESI_PROXY_* creds and curl_cffi availability"])
+    return _std_run("walmart", started, total=after, trigger=body.get("trigger", "manual"),
+                    extracts=[{"id": "walmart_products", "rows": after, "delta": after - before, "status": "success"}])
 
 def target_pull(body):
     """Target RedSky (Bright Data) → target_products + target_stores. body.scope=national|local. HEAVY."""
@@ -285,7 +319,9 @@ def walmart_api_pull(body):
     return _std_run("walmart-api", started, total=n, trigger=body.get("trigger", "manual"),
                     extracts=[{"id": "walmart_products", "rows": n, "delta": 0, "status": "success"}])
 
-_CONN_PULL = {"kroger": kroger_pull, "walmart": walmart_pull, "walmart-api": walmart_api_pull,
+# kroger + walmart moved to the registry path (_REGISTRY_CONN); their old *_pull functions are now dead code
+# (kept until a follow-up removes them) and MUST NOT be re-wired here — dispatch_guard_test enforces that.
+_CONN_PULL = {"walmart-api": walmart_api_pull,
               "target": target_pull, "doordash": doordash_pull, "google": google_pull}
 
 # The connector registry — ONE source of truth the Pulls console reads (/api/connectors): what sources exist,
@@ -1724,6 +1760,58 @@ _WM_CONCERNS = [
     ("med", "out_of_stock", "in_stock = false",         "out of stock at the resolved store"),
     ("low", "on_promo",     "on_promo = true",          "final price below list (promo)"),
 ]
+
+# ── /api/tax/* — beverage-alcohol tax reference (tax_rates.py / tax_revenue.py / landed_cost.py).
+# rates   = per-unit schedule (federal CBMA, encoded + state excise seed, effective-dated)
+# revenue = Census STC collections (T10 alc sales tax, T20 alc license) per state
+# landed  = the itemized cost stack ordering/keystone calls; also the pre-tax normalizer for the price signal
+@app.get("/api/tax/rates")
+def tax_rates_ep():
+    """Effective-dated bev-alc tax RATE schedule. ?jurisdiction=TX&class=spirits&type=excise&level=state.
+    Serves the assembled seed (federal + state CSV) if the warehouse table isn't landed yet."""
+    import tax_rates
+    j = request.args.get("jurisdiction") or None; c = request.args.get("class") or None
+    t = request.args.get("type") or None; lvl = request.args.get("level") or None
+    try:
+        rows = tax_rates.query(jurisdiction=j, beverage_class=c, rate_type=t, level=lvl)
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except Exception:
+        rows, _ = tax_rates.assemble(log=lambda *a: None)
+        rows = [r for r in rows if (not j or r["jurisdiction"] == j) and (not c or r["beverage_class"] == c)
+                and (not t or r["rate_type"] == t) and (not lvl or r["jurisdiction_level"] == lvl)]
+        return jsonify(ok=True, landed=False, count=len(rows), rows=rows, note="assembled from seed (tax_rates not landed)")
+
+@app.get("/api/tax/revenue")
+def tax_revenue_ep():
+    """Bev-alc tax REVENUE (collections). ?source=census_stc&jurisdiction=TX&kind=sales&year=2021."""
+    import tax_revenue
+    try:
+        yr = int(request.args["year"]) if request.args.get("year") else None
+        rows = tax_revenue.query(source=request.args.get("source") or None,
+                                 jurisdiction=request.args.get("jurisdiction") or None,
+                                 tax_kind=request.args.get("kind") or None, year=yr)
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="tax_revenue not landed yet (needs a CENSUS_API_KEY run)")
+
+@app.get("/api/tax/landed")
+def tax_landed_ep():
+    """Itemized landed-cost / tax stack for one item. ?base=12&state=TX&class=spirits&abv=40&size_ml=750&sales=0.
+    The pre-tax basis (landed_cost - base) is what price_signal.py subtracts to compare shelf prices across states."""
+    import landed_cost
+    try:
+        base = float(request.args.get("base", "0") or 0)
+        size_ml = float(request.args.get("size_ml", "750") or 750)
+        abv = request.args.get("abv"); abv = float(abv) if abv not in (None, "") else None
+    except ValueError as e:
+        return jsonify(ok=False, error="bad numeric param: %s" % e), 400
+    state = (request.args.get("state") or "").upper()
+    if not state:
+        return jsonify(ok=False, error="state required (2-letter)"), 400
+    r = landed_cost.landed_cost(base, state, request.args.get("class") or "spirits", abv=abv, size_ml=size_ml,
+                                include_sales_tax=(request.args.get("sales") in ("1", "true", "yes")))
+    return jsonify(ok=True, **r)
 
 @app.get("/api/walmart/products")
 def walmart_products_ep():
@@ -6131,12 +6219,17 @@ def prism_shortcut():
 
 @app.get("/hub")
 def hub_shortcut():
-    return _suite_send("hub.html")                    # the four-bucket IA shell — parallel to index.html (/)
+    return _suite_send("hub.html")                    # the four-bucket hub (also the homepage below)
+
+@app.get("/classic")
+@app.get("/launcher")
+def classic_launcher():
+    return _suite_send("index.html")                 # the previous flat-grid launcher — kept, one-line reversible
 
 @app.get("/")
 def index():
     if SUITE_ROOT:
-        return _suite_send("index.html")             # the launcher, not the MDM console
+        return _suite_send("hub.html")               # the four-bucket hub is now the homepage (was index.html; still at /classic)
     return send_file(HTML_PATH)
 
 @app.get("/<path:relpath>")

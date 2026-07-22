@@ -53,11 +53,10 @@ SOURCES = [
               "920=Orlando Millenia is the documented default, override via TW_STORE/TW_STATE. (was run() -> TypeError)"),
 
     # ── Grocery / big-box ─────────────────────────────────────────────────────────────────────────────────────
-    dict(id="walmart", label="Walmart",
-         code="import walmart_direct as m; m.pull(detail_pages=True, detail_cap=600, browse=True)",
-         tables=["walmart_products"], klass="mac", cadence="daily", enabled=True,
-         note="__NEXT_DATA__ via a warmed PX browser session (browser_warm, no manual cookie) — runs in the "
-              "cloud in warm-sources.yml; degrades to WALMART_COOKIE/mobile+ISP when no browser is present"),
+    dict(id="walmart", label="Walmart", code="import walmart_direct as m; m.pull(detail_pages=True, detail_cap=600)",
+         tables=["walmart_products"], klass="headless", cadence="daily", enabled=True,
+         note="walmart_direct: IPRoyal residential exit + curl_cffi Chrome-JA3, $0 (no BD, no API). "
+              "A warmed WALMART_COOKIE is an OPTIONAL boost, NOT required — do not gate the run on it."),
     dict(id="target", label="Target", code="import target_scraper as m; m.run()",
          tables=["target_products", "target_stores"], klass="headless", cadence="daily", enabled=True, note="RedSky API"),
     dict(id="kroger", label="Kroger (atlas inventory)", code="import kroger_atlas as m; m.main([])",
@@ -107,6 +106,15 @@ SOURCES = [
     dict(id="census", label="US Census ACS", code="import census_ref as m; m.build()",
          tables=["census_reference"], klass="creds", cadence="weekly", enabled=True,
          requires=["CENSUS_API_KEY"], note="Census API (census_ref.build) — free key, re-derivable"),
+    dict(id="tax-rates", label="Bev-alc tax RATES (TTB + state excise)", code="import tax_rates as m; m.build()",
+         tables=["tax_rates"], klass="headless", cadence="weekly", enabled=True,
+         note="federal CBMA schedule (encoded, TTB) + 51-jurisdiction state excise seed (Tax Foundation Jan 2026); "
+              "effective-dated ref, landed_cost.py reads it — verify state cells vs DOR to promote seed->verified"),
+    dict(id="tax-revenue", label="Bev-alc tax REVENUE (Census STC + TTB)", code="import tax_revenue as m; m.build()",
+         tables=["tax_revenue"], klass="creds", cadence="weekly", enabled=True,
+         requires=["CENSUS_API_KEY"],
+         note="Census govs STC (T10 alc sales tax, T20 alc license) per state — live; TTB federal commodity "
+              "collections run live on the Mac (TTB TLS-blocked on Fly)"),
     dict(id="vtinfo", label="VTInfo locator", code="import vtinfo as m; m.pull()",
          tables=["vtinfo_titos"], klass="headless", cadence="weekly", enabled=True, note="where-to-buy GraphQL"),
     dict(id="naop", label="NAOP on-premise", code="import doordash_naop as m; m.run()",
@@ -141,6 +149,16 @@ BUILDS = [
          code="import build_product_master as m; m.build()",
          tables=["dim_sku"], klass="build", interval_h=12, enabled=True,
          note="brand dict → stage → shred to dim_brand/product/item/sku + xwalk/coherence/identity clusters"),
+    # Phase 4 — SipSource depletion feed (NRT-PLAN §1d): the ~500M-row raw grain (sip_raw, hive-
+    # partitioned period=YYYYMM/market=XX) is NEVER served; this rolls it into small dimension-BOUNDED
+    # marts the site reads. Wired but DISABLED until the real feed lands (no `sipsource-feed` source yet
+    # — the feed is a delivered file, landed by sipsource_ingest.land(); sipsource_sim proves the shape).
+    # Flip enabled=True the day the feed arrives; `after` makes it rebuild only when a new drop lands.
+    dict(id="build-sipsource-marts", label="SipSource depletion marts",
+         code="import sipsource_ingest as m; m.build_marts('sip_raw')",
+         tables=["mart_sip_brand_market_month"], klass="build", interval_h=24, enabled=False,
+         after=["sipsource-feed"],
+         note="raw 500M sip_raw → brand×market×month + supplier×cat + category marts (bounded, +YoY)"),
 ]
 
 

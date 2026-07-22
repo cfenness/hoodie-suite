@@ -75,6 +75,7 @@
     <a data-sec="registrations"><span class="d"></span>Registrations</a>
     <a data-sec="mapping"><span class="d"></span>Mapping</a>
     <a data-sec="dictionary"><span class="d"></span>Dictionary</a>
+    <a data-sec="tax"><span class="d"></span>Tax</a>
     <div class="nav-lab">Sources</div>
     <a data-sec="sources"><span class="d"></span>Sources</a>
     <a data-sec="provenance"><span class="d"></span>Provenance</a>
@@ -100,12 +101,13 @@
     <iframe id="f-registrations" title="Product Registrations"  data-src="product-registrations.html?embed=1"></iframe>
     <iframe id="f-mapping"   title="Field Mapping"              data-src="field-mapping.html?embed=1"></iframe>
     <iframe id="f-dictionary" title="Data Dictionary"           data-src="mdm-dictionary.html?embed=1"></iframe>
+    <iframe id="f-tax"       title="Bev-Alc Tax"                data-src="mdm-tax.html?embed=1"></iframe>
     <iframe id="f-runs"      title="Active Runs"                data-src="runs.html?embed=1"></iframe>
   </div>
 <script>
 (function(){
   "use strict";
-  var SECTIONS={overview:null,sources:"f-sources",provenance:"f-provenance",sourcespec:"f-sourcespec",chains:"f-chains",master:"f-master",steward:"f-steward",review:"f-review",catalog:"f-catalog",labelreader:"f-labelreader",outlets:"f-outlets",coverage:"f-coverage",registrations:"f-registrations",mapping:"f-mapping",dictionary:"f-dictionary",runs:"f-runs"};
+  var SECTIONS={overview:null,sources:"f-sources",provenance:"f-provenance",sourcespec:"f-sourcespec",chains:"f-chains",master:"f-master",steward:"f-steward",review:"f-review",catalog:"f-catalog",labelreader:"f-labelreader",outlets:"f-outlets",coverage:"f-coverage",registrations:"f-registrations",mapping:"f-mapping",dictionary:"f-dictionary",tax:"f-tax",runs:"f-runs"};
   // In the launcher, the launcher's rail becomes THIS console's nav (one sidebar).
   var inLauncher = (window.parent !== window);
   var NAV_META=[{id:"overview",label:"Overview",icon:"OV",desc:"The master-data picture at a glance"},
@@ -119,6 +121,7 @@
                 {id:"registrations",label:"Registrations",group:"Manage",icon:"PR",desc:"TTB COLA label approvals → products + field dictionary"},
                 {id:"mapping",label:"Mapping",group:"Manage",icon:"MP",desc:"Map source fields → master schema, with pre/post dictionaries"},
                 {id:"dictionary",label:"Dictionary",group:"Manage",icon:"DC",desc:"Build value dictionaries — cab sauv → Cabernet Sauvignon — against real source values"},
+                {id:"tax",label:"Tax",group:"Manage",icon:"TX",desc:"Bev-alc tax reference — federal + state excise rates, a landed-cost calculator, and Census collections"},
                 {id:"sources",label:"Sources",group:"Sources",icon:"SR",desc:"Every dataset feeding the master, grouped by what it feeds"},
                 {id:"provenance",label:"Provenance",group:"Sources",icon:"PV",desc:"Every source — origin, method, what it provides; inventory counts vs availability"},
                 {id:"sourcespec",label:"Source Spec",group:"Sources",icon:"SS",desc:"Per source — the fields we capture (% populated) + sample rows; the field-capture audit"},

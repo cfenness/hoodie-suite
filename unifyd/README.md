@@ -21,6 +21,9 @@ that pulls real source data behind it.
 | `abc_fws_scraper.py` | ABC FWS (abcfws.com) directional inventory tracker — polite, stdlib-only. See below. |
 | `pull_sources.py` | Standalone batch pull (Florida + COLA) → emits `datasets.js` + `runs.json`. Use without the agent. |
 | `schedule_pull.py` | Run any pull on a cadence locally (POSTs `/api/run` every N hours) — Layer-3-lite before the backend. |
+| `tax_rates.py` | Bev-alc tax **rate** reference (`tax_rates`): federal CBMA excise (encoded from TTB) + 51-jurisdiction state excise (Tax Foundation, Jan 2026 seed) in `tax_rates_seed.csv`. Long/tall, effective-dated, append-only. **12 pipeline states DOR-verified** (tranche 1: CA/TX/NY/FL/IL/MN/NJ/MA/CO/WA/VA/PA — statutory corrections + Cook County/Chicago/NYC local rows + MN/WA percentage-tax rows); rest remain TF seed. |
+| `tax_revenue.py` | Bev-alc tax **revenue** (`tax_revenue`): Census govs STC collections (T10 alc sales tax, T20 alc license) per state — live via `CENSUS_API_KEY`; TTB federal commodity series runs live on the Mac (TTB TLS-blocked on Fly). |
+| `landed_cost.py` | The tax **translation layer**: `landed_cost(base, state, class, abv, size)` stacks federal + state tax into an itemized cost; `pretax_price(...)` strips excise to a comparable pre-tax basis for the price signal. Reads `tax_rates`; control states are flagged, not double-counted. Served at `/api/tax/{rates,revenue,landed}`. |
 | `requirements.txt` | Dependencies for the agent + scraper. |
 | `fixtures/` | Captured TTB result pages (`cola_results.html`, `cola_debug.html`) — reference markup for confirming the parser's column map on a live run. |
 

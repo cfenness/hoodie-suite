@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bev-Alc Tax — Hoodie MDM</title>
+<style>
+  :root{
+    --ink:#2B3138; --paper:#F1F3F5; --panel:#fff; --muted:#7A828B; --line:#E4E7EB;
+    --accent:#4E79A7; --accent-d:#3D6089; --accent-soft:#EAF0F6; --good:#3f9668; --good-soft:#e7f3ec;
+    --warn:#b45309; --warn-soft:#fbeede; --bad:#b4232a; --bad-soft:#f8e6e7;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace; --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--paper);color:var(--ink);font-family:var(--font);font-size:14px}
+  body{padding:22px 26px 60px}
+  body.embed{padding-top:14px}
+  .wrap{max-width:1160px;margin:0 auto}
+  .pagehead h1{font-size:22px;font-weight:800;letter-spacing:-.01em}
+  .pagehead .sub{color:var(--muted);font-size:13px;margin-top:3px;max-width:760px;line-height:1.5}
+  body.embed .pagehead{display:none}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-top:16px}
+  .card h2{font-size:15px;font-weight:800;letter-spacing:-.01em;margin-bottom:3px}
+  .card .h-note{color:var(--muted);font-size:12px;margin-bottom:14px;line-height:1.45}
+  /* calculator */
+  .calc{display:grid;grid-template-columns:340px 1fr;gap:22px}
+  @media(max-width:720px){.calc{grid-template-columns:1fr}}
+  .field{margin-bottom:11px}
+  .field label{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;font-weight:700}
+  .field input,.field select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px;font-family:var(--font);background:#fff;color:var(--ink)}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--accent)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .chk{display:flex;align-items:center;gap:8px;margin:6px 0 12px;font-size:12.5px;color:var(--muted)}
+  button.primary{background:var(--accent);border:1px solid var(--accent-d);color:#fff;border-radius:9px;padding:10px 18px;font-weight:700;font-size:13px;cursor:pointer;width:100%}
+  button.primary:hover{background:var(--accent-d)} button.primary:disabled{opacity:.5;cursor:default}
+  /* result */
+  .result{border:1px solid var(--line);border-radius:10px;padding:2px 16px 8px;background:#fcfdfe;min-height:200px}
+  .lrow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line);font-size:13.5px}
+  .lrow:first-child{border-top:0}
+  .lrow .k{color:var(--ink)} .lrow .k small{color:var(--muted);font-family:var(--mono);font-size:10.5px;margin-left:6px}
+  .lrow .v{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
+  .lrow.total{border-top:2px solid var(--ink);margin-top:2px} .lrow.total .k{font-weight:800} .lrow.total .v{font-weight:800;font-size:15px}
+  .lrow.landed .v{color:var(--accent-d)}
+  .eff{display:inline-block;background:var(--accent-soft);color:#2E4C6D;font-family:var(--mono);font-size:10.5px;font-weight:700;border-radius:6px;padding:2px 8px}
+  .warnbox{background:var(--warn-soft);border:1px solid #f0d3a8;color:#7a4a10;border-radius:9px;padding:9px 12px;font-size:12px;margin-top:12px;line-height:1.5}
+  .empty{color:var(--muted);font-size:12.5px;padding:26px 4px;text-align:center}
+  /* tables */
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line)}
+  th{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  td.r,th.r{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+  tbody tr:hover{background:var(--paper)}
+  .badge{display:inline-block;font-family:var(--mono);font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;border-radius:5px;margin-left:6px}
+  .badge.ctrl{background:var(--warn-soft);color:var(--warn)} .badge.seed{background:var(--accent-soft);color:#2E4C6D}
+  .badge.unv{background:var(--bad-soft);color:var(--bad)} .badge.ver{background:var(--good-soft);color:var(--good)}
+  .filt{width:220px;padding:8px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:12px}
+  .filt:focus{outline:none;border-color:var(--accent)}
+  .note{color:var(--muted);font-size:11.5px;margin-top:10px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="pagehead">
+    <h1>Beverage-Alcohol Tax</h1>
+    <div class="sub">The tax reference layer — per-unit rate schedule (federal CBMA excise + state excise) and
+      the landed-cost calculator that stacks tax onto a base cost. Control-state spirits rates are effective/implied
+      (they embed the state markup), so the calculator flags them instead of double-counting.</div>
+  </div>
+
+  <!-- ── Landed-cost calculator ─────────────────────────────────────────── -->
+  <section class="card">
+    <h2>Landed-cost calculator</h2>
+    <div class="h-note">Stacks federal + state excise (+ optional special sales) onto base cost. The
+      <b>pre-tax basis</b> it returns is what you subtract from an observed shelf price to compare across states.</div>
+    <div class="calc">
+      <div class="inputs">
+        <div class="two">
+          <div class="field"><label>Base cost $</label><input id="c-base" type="number" step="0.01" value="12.00"></div>
+          <div class="field"><label>State</label><select id="c-state"></select></div>
+        </div>
+        <div class="two">
+          <div class="field"><label>Class</label><select id="c-class">
+            <option value="spirits">Spirits</option><option value="wine">Wine</option>
+            <option value="beer">Beer</option><option value="cider">Cider</option>
+            <option value="sparkling_wine">Sparkling wine</option><option value="carbonated_wine">Carbonated wine</option>
+          </select></div>
+          <div class="field"><label>ABV %</label><input id="c-abv" type="number" step="0.1" value="40"></div>
+        </div>
+        <div class="field"><label>Size</label><select id="c-size">
+          <option value="750">750 mL bottle</option><option value="1750">1.75 L</option>
+          <option value="375">375 mL</option><option value="355">355 mL (12 oz can)</option>
+          <option value="2130">6× 12 oz (2130 mL)</option><option value="8520">24× 12 oz case</option>
+        </select></div>
+        <label class="chk"><input id="c-sales" type="checkbox"> include special alcohol sales tax (if any)</label>
+        <button class="primary" id="c-go">Compute landed cost</button>
+      </div>
+      <div class="result" id="calcResult"><div class="empty">Set the inputs and compute — the itemized tax stack appears here.</div></div>
+    </div>
+  </section>
+
+  <!-- ── Federal schedule ───────────────────────────────────────────────── -->
+  <section class="card">
+    <h2>Federal excise · TTB (CBMA, permanent)</h2>
+    <div class="h-note">Standard (non-small-producer) rates. Wine is ABV-tiered; &gt;24% ABV is taxed as spirits.</div>
+    <div id="fedTable"><div class="empty">Loading…</div></div>
+  </section>
+
+  <!-- ── State rates ────────────────────────────────────────────────────── -->
+  <section class="card">
+    <h2>State excise rates <span style="font-weight:500;color:var(--muted);font-size:12px">$/gallon</span></h2>
+    <div class="h-note">Tax Foundation effective rates (Jan 2026), seeded — promote per-state vs DOR to
+      <span class="badge ver">verified</span>. <span class="badge ctrl">control</span> spirits embed the state markup
+      (read the control-state price book); <span class="badge unv">unverified</span> = pricing unavailable to impute.</div>
+    <input class="filt" id="stFilter" placeholder="Filter by state (e.g. TX)…">
+    <div id="stTable"><div class="empty">Loading…</div></div>
+  </section>
+
+  <!-- ── Revenue ────────────────────────────────────────────────────────── -->
+  <section class="card">
+    <h2>Tax revenue · collections</h2>
+    <div class="h-note">Census STC — Alcoholic Beverages Sales Tax (T10) + License (T20), per state.</div>
+    <div id="revTable"><div class="empty">Loading…</div></div>
+  </section>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  if(new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
+  var $=function(id){return document.getElementById(id);};
+  var esc=function(s){return String(s==null?"":s).replace(/[&<>]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;"}[c];});};
+  var num=function(v){var n=parseFloat(v);return isFinite(n)?n:null;};
+  var m2=function(v){var n=num(v);return n==null?"—":"$"+n.toFixed(2);};
+  var m4=function(v){var n=num(v);return n==null?"—":"$"+n.toFixed(4).replace(/0+$/,"").replace(/\.$/,".00");};
+  function api(path){return fetch(path,{cache:"no-store"}).then(function(r){return r.json();}).catch(function(){return null;});}
+
+  var USPS=["AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
+
+  // ── rates: load once, split federal/state ──────────────────────────────
+  var STATE_ROWS=[];
+  function loadRates(){
+    api("/api/tax/rates").then(function(j){
+      var rows=(j&&j.rows)||[];
+      renderFederal(rows.filter(function(r){return r.jurisdiction_level==="federal";}));
+      STATE_ROWS=rows.filter(function(r){return r.jurisdiction_level!=="federal";});
+      var states=[]; STATE_ROWS.forEach(function(r){if(states.indexOf(r.jurisdiction)<0)states.push(r.jurisdiction);});
+      fillStateSelect(states.length?states.sort():USPS);
+      renderStates("");
+      if(j&&j.landed===false) hint();
+    });
+  }
+  function hint(){ /* seed served (not landed) — the calculator still works off the same source */ }
+
+  function renderFederal(fed){
+    if(!fed.length){$("fedTable").innerHTML='<div class="empty">Federal schedule unavailable.</div>';return;}
+    var order={spirits:0,wine:1,sparkling_wine:2,carbonated_wine:3,cider:4,beer:5};
+    fed.sort(function(a,b){return (order[a.beverage_class]||9)-(order[b.beverage_class]||9) || num(a.abv_min)-num(b.abv_min);});
+    var h='<table><thead><tr><th>Class</th><th>ABV band</th><th class="r">Rate</th><th>Basis</th><th>Notes</th></tr></thead><tbody>';
+    fed.forEach(function(r){
+      var band=(r.abv_min||r.abv_max)?((r.abv_min||"0")+"–"+(r.abv_max||"∞")+"%"):"all";
+      h+='<tr><td><b>'+esc(r.beverage_class.replace("_"," "))+'</b></td><td>'+esc(band)+'</td>'+
+         '<td class="r">'+m4(r.rate_value)+'</td><td>'+esc((r.basis||"").replace("_"," "))+'</td>'+
+         '<td style="color:var(--muted);font-size:11.5px">'+esc((r.notes||"").slice(0,60))+'</td></tr>';
+    });
+    $("fedTable").innerHTML=h+"</tbody></table>";
+  }
+
+  function renderStates(filter){
+    var by={};
+    STATE_ROWS.forEach(function(r){
+      var s=by[r.jurisdiction]||(by[r.jurisdiction]={juris:r.jurisdiction});
+      s[r.beverage_class]=r; });
+    var keys=Object.keys(by).sort();
+    if(filter) keys=keys.filter(function(k){return k.indexOf(filter.toUpperCase())===0;});
+    if(!keys.length){$("stTable").innerHTML='<div class="empty">No states match "'+esc(filter)+'".</div>';return;}
+    function cell(r){
+      if(!r) return '<td class="r">—</td>';
+      if(!String(r.rate_value||"").trim()) return '<td class="r">n/a<span class="badge unv">unv</span></td>';
+      var b=(String(r.is_control_state)==="true")?'<span class="badge ctrl">ctrl</span>':'';
+      if(r.provenance==="verified") b+='<span class="badge ver" title="'+esc(r.source||"")+'">✓</span>';
+      return '<td class="r">'+m2(r.rate_value)+b+'</td>';
+    }
+    var h='<table><thead><tr><th>State</th><th class="r">Spirits</th><th class="r">Wine</th><th class="r">Beer</th><th>As of</th></tr></thead><tbody>';
+    keys.forEach(function(k){var s=by[k];
+      h+='<tr><td><b>'+esc(k)+'</b></td>'+cell(s.spirits)+cell(s.wine)+cell(s.beer)+
+         '<td style="color:var(--muted)">'+esc((s.spirits||s.beer||{}).effective_date||"")+'</td></tr>';});
+    $("stTable").innerHTML=h+"</tbody></table>";
+  }
+
+  function fillStateSelect(states){
+    var sel=$("c-state"); sel.innerHTML="";
+    states.forEach(function(s){var o=document.createElement("option");o.value=s;o.textContent=s;sel.appendChild(o);});
+    sel.value = states.indexOf("TX")>=0?"TX":states[0];
+  }
+
+  // ── revenue ────────────────────────────────────────────────────────────
+  function loadRevenue(){
+    api("/api/tax/revenue").then(function(j){
+      if(!j||j.landed===false||!(j.rows&&j.rows.length)){
+        $("revTable").innerHTML='<div class="empty">Not landed yet — Census STC runs with a CENSUS_API_KEY pass. '+
+          'Values are USD thousands (Census convention; the connector self-checks the scale each pull).</div>';return;}
+      var rows=j.rows.slice().sort(function(a,b){return (b.fiscal_year-a.fiscal_year)||a.jurisdiction.localeCompare(b.jurisdiction);}).slice(0,60);
+      var unit=(rows[0]&&rows[0].unit)||"";
+      var h='<table><thead><tr><th>State</th><th>FY</th><th>Kind</th><th class="r">Collections'+(unit?(" ("+esc(unit)+")"):"")+'</th></tr></thead><tbody>';
+      rows.forEach(function(r){
+        h+='<tr><td><b>'+esc(r.jurisdiction)+'</b></td><td>'+esc(r.fiscal_year)+'</td><td>'+esc(r.tax_kind)+
+           '</td><td class="r">'+(r.suppressed?'suppressed':(num(r.metric_value)!=null?Number(r.metric_value).toLocaleString():"—"))+'</td></tr>';});
+      $("revTable").innerHTML=h+"</tbody></table>";
+    });
+  }
+
+  // ── calculator ─────────────────────────────────────────────────────────
+  function compute(){
+    var base=$("c-base").value||"0", st=$("c-state").value, cls=$("c-class").value,
+        abv=$("c-abv").value, size=$("c-size").value, sales=$("c-sales").checked?"1":"0";
+    var url="/api/tax/landed?base="+encodeURIComponent(base)+"&state="+encodeURIComponent(st)+
+            "&class="+encodeURIComponent(cls)+"&abv="+encodeURIComponent(abv)+"&size_ml="+encodeURIComponent(size)+"&sales="+sales;
+    $("c-go").disabled=true; $("calcResult").innerHTML='<div class="empty">Computing…</div>';
+    api(url).then(function(r){
+      $("c-go").disabled=false;
+      if(!r||r.ok===false){$("calcResult").innerHTML='<div class="warnbox">'+esc((r&&r.error)||"calculation failed")+'</div>';return;}
+      var lines='';
+      lines+=row("Base cost","",r.base_cost);
+      (r.lines||[]).forEach(function(l){
+        var lbl=l.kind==="federal_excise"?"Federal excise":l.kind==="state_excise"?"State excise":l.kind==="sales_tax"?"Sales tax":l.kind;
+        var meta=l.basis==="percent"?(l.rate+"%"):("$"+l.rate+"/"+String(l.basis||"").replace("_"," "));
+        lines+=row(lbl,meta,l.amount);
+      });
+      if(!(r.lines&&r.lines.length)) lines+='<div class="lrow"><span class="k" style="color:var(--muted)">no excise lines applied</span><span class="v">—</span></div>';
+      lines+=rowc("Total tax","",r.total_tax,"total");
+      lines+=rowc("Landed cost","",r.landed_cost,"landed");
+      var eff=r.effective_tax_rate!=null?('<span class="eff">effective '+(r.effective_tax_rate*100).toFixed(1)+'%</span>'):'';
+      var pre='<div class="lrow"><span class="k">Pre-tax basis <small>subtract from a shelf price</small></span><span class="v">'+m2(r.tax_per_unit_pretax_basis)+'</span></div>';
+      var warn=(r.warnings&&r.warnings.length)?'<div class="warnbox"><b>Notes</b><br>'+r.warnings.map(esc).join("<br>")+'</div>':'';
+      $("calcResult").innerHTML=lines+pre+'<div style="margin-top:12px">'+eff+'</div>'+warn;
+    });
+  }
+  function row(k,meta,v){return '<div class="lrow"><span class="k">'+esc(k)+(meta?' <small>'+esc(meta)+'</small>':'')+'</span><span class="v">'+m4(v)+'</span></div>';}
+  function rowc(k,meta,v,cls){return '<div class="lrow '+cls+'"><span class="k">'+esc(k)+'</span><span class="v">'+m2(v)+'</span></div>';}
+
+  $("c-go").onclick=compute;
+  $("stFilter").oninput=function(){renderStates(this.value.trim());};
+  // sensible ABV defaults when class changes
+  $("c-class").onchange=function(){var d={spirits:40,wine:13,beer:5,cider:6,sparkling_wine:12,carbonated_wine:8}[this.value];if(d!=null)$("c-abv").value=d;};
+
+  loadRates(); loadRevenue();
+})();
+</script>
+</body>
+</html>

@@ -21,10 +21,11 @@ PyYAML>=6.0          # serve the OpenAPI spec at /api/openapi.json; lazy-importe
 # pillow>=10.0
 cryptography
 openpyxl
+curl_cffi>=0.7        # Chrome-JA3 TLS impersonation for walmart_direct (PerimeterX reads urllib's TLS as a bot tell)
 
 # Instacart (free, no bd): a self-hosted Chromium drives Instacart's own SearchResultsPlacements GraphQL.
 # The Docker image installs this + the bundled Chromium (see Dockerfile). Lazy-imported in instacart.py, so
 # it's optional for local dev — only needed to run the Instacart pull. Runs HEADLESS (BROWSER_HEADFUL=0),
-# proven to land data from a bare datacenter IP (instacart-free-verify CI). Install locally with:
+# proven to land data from a bare datacenter IP. Install locally with:
 #   pip install playwright && playwright install chromium
 # playwright>=1.40
