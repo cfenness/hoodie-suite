@@ -183,7 +183,9 @@ def enumerate_stores(zips=None, log=print):
     rows = list(seen.values())
     from collections import Counter
     by_state = Counter(r["state"] for r in rows)
-    warehouse.write_parquet("target_stores", rows)
+    # ACCUMULATE by store_id — a partial/bounded enumeration (a few zips) must ADD/update stores, never
+    # overwrite the national set. write_parquet here clobbered 1163 stores down to 60 on a 3-zip run.
+    warehouse.write_accumulate("target_stores", rows, key=lambda r: r.get("store_id"))
     log("[target] %d distinct stores across %d states -> target_stores (top: %s)"
         % (len(rows), len(by_state), dict(by_state.most_common(6))))
     return len(rows)
@@ -259,7 +261,11 @@ def run(stores=None, terms=None, pages=2, log=print):
         log("  [target] store %s (%s) — %d products" % (store, state, got))
     if rows:
         # ACCUMULATE — a small/CLI-scoped run() must not overwrite the national catalog run_national builds.
-        warehouse.write_accumulate("target_products", rows, key=lambda r: r.get("tcin") or r.get("product_id"))
+        # KEY BY tcin|store — target_products grain is product×STORE (per-store price/qty). Keying on tcin
+        # alone dropped a product's rows for ALL OTHER stores whenever one store re-pulled (2139 -> 2048).
+        warehouse.write_accumulate("target_products", rows,
+                                   key=lambda r: "%s|%s" % (r.get("tcin") or r.get("product_id"),
+                                                            r.get("store") or r.get("store_id")))
         observe.record("target", [dict(store=r["store"], store_id=r["store_id"], product_id=r["tcin"],
                                         brand=r["brand"], name=r["name"], price=r["price"],
                                         in_stock=r["in_stock"], qty=r["qty"], is_hemp=r.get("is_hemp")) for r in rows])

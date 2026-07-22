@@ -6,6 +6,7 @@ on:
   push:
     paths:
       - unifyd/target_warehouse_probe.py
+      - unifyd/target_scraper.py
       - .github/workflows/target-warehouse-probe.yml
   workflow_dispatch:
 
