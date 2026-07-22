@@ -84,18 +84,21 @@ _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
 VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
-               "kroger", "walmart", "walmart-api", "target", "doordash", "google"} | set(socrata_outlets.VALID)
+               "kroger", "walmart", "walmart-api", "target", "doordash", "google",
+               "ubereats", "postmates", "naop"} | set(socrata_outlets.VALID)
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
 
 def _dispatch_pull(conn, body):
-    if conn in _CONN_PULL:                     # unified registry (kroger/walmart/target/doordash/google)
+    # SINGLE SOURCE OF TRUTH: sources the registry owns run THROUGH the registry entrypoint (run_one), never a
+    # hand-maintained *_pull copy — so a fix in source_registry can never be silently bypassed by the app path
+    # (the drift that made "we fixed it 100 times" literally true — see _REGISTRY_CONN / dispatch_guard_test).
+    if conn in _REGISTRY_CONN:
+        return _run_via_registry(conn, body)
+    if conn in _CONN_PULL:                     # legacy hand-wired pulls not yet in the registry (target/doordash/google)
         return _CONN_PULL[conn](body)
     return (cola_pull(body) if conn == "ttb-cola"
-            else abc_pull(body) if conn == "abc-fws"
-            else specs_pull(body) if conn == "specs"
-            else binnys_pull(body) if conn == "binnys"
             else shopify_pull(body) if conn == "shopify-dtc"
             else instacart_pull(body) if conn == "instacart"
             else places_pull(body) if conn == "orlando-accounts"
@@ -103,7 +106,6 @@ def _dispatch_pull(conn, body):
             else tx_pull(body) if conn == "tx-tabc"
             else il_pull(body) if conn == "il-chicago"
             else ct_pull(body) if conn == "ct-dcp"
-            else total_wine_pull(body) if conn == "total-wine"
             else vtinfo_pull(body) if conn == "vtinfo"
             else ab_inbev_pull(body) if conn == "ab-inbev"
             else socrata_pull(conn, body) if conn in socrata_outlets.VALID
@@ -197,6 +199,38 @@ def _std_run(conn, started, total=0, extracts=None, status="success", warnings=N
             "degraded": status in ("degraded", "partial"), "warnings": warnings or [], "healed": [],
             "extracts": extracts or [], "note": note}
 
+
+# ── ONE dispatch path: app connId -> source_registry id ──────────────────────────────────────────────────────
+# For these, /api/run executes the REGISTRY entrypoint (run_sources.run_one) — the single source of truth the
+# scheduled path already uses — instead of a parallel *_pull function that drifts. This is the fix for scrapers
+# "regressing": a fix in source_registry now applies to the app path automatically and can't be bypassed.
+# ubereats/postmates/naop were previously not runnable through the app at all. Enforced by dispatch_guard_test.
+_REGISTRY_CONN = {"abc-fws": "abc-fws", "specs": "specs", "binnys": "binnys", "walmart": "walmart",
+                  "kroger": "kroger", "total-wine": "total-wine", "ubereats": "ubereats",
+                  "postmates": "postmates", "naop": "naop"}
+
+
+def _run_via_registry(conn, body):
+    """Run `conn` through its source_registry entrypoint via run_sources.run_one — the exact code the scheduled
+    path runs (isolated subprocess, creds-gated via `requires`, timeout-bounded, OOM-reported, warehouse-count
+    delta). Adapts run_one's record into the app run-record shape. This is what keeps the app from drifting."""
+    import source_registry as _reg
+    import run_sources as _rs
+    body = body or {}
+    rid = _REGISTRY_CONN[conn]
+    src = next((s for s in _reg.SOURCES if s["id"] == rid), None)
+    if not src:
+        return _std_run(conn, int(time.time() * 1000), status="failed",
+                        warnings=["no source_registry entry '%s'" % rid], trigger=body.get("trigger", "manual"))
+    rec = _rs.run_one(src, log=lambda m: app.logger.info("RUN[%s] %s", conn, m))
+    started = int(rec.get("ts_start", time.time()) * 1000)
+    app_status = {"ok": "success", "no-change": "success"}.get(rec.get("status"), rec.get("status", "failed"))
+    tables = [t.strip() for t in (rec.get("tables") or "").split(",") if t.strip()]
+    rows_after, delta = rec.get("rows_after", 0), rec.get("delta", 0)
+    return _std_run(conn, started, total=rows_after, status=app_status, trigger=body.get("trigger", "manual"),
+                    warnings=([rec["error"]] if rec.get("error") else []),
+                    extracts=[{"id": t, "rows": rows_after, "delta": delta, "status": app_status} for t in tables])
+
 def kroger_pull(body):
     """Kroger Developer API (OAuth2) → kroger_products + kroger_runs. Needs KROGER_CLIENT_ID/SECRET (env or
     body). First-class connector now; the old subprocess path (/api/connector/run) still works too."""
@@ -283,7 +317,9 @@ def walmart_api_pull(body):
     return _std_run("walmart-api", started, total=n, trigger=body.get("trigger", "manual"),
                     extracts=[{"id": "walmart_products", "rows": n, "delta": 0, "status": "success"}])
 
-_CONN_PULL = {"kroger": kroger_pull, "walmart": walmart_pull, "walmart-api": walmart_api_pull,
+# kroger + walmart moved to the registry path (_REGISTRY_CONN); their old *_pull functions are now dead code
+# (kept until a follow-up removes them) and MUST NOT be re-wired here — dispatch_guard_test enforces that.
+_CONN_PULL = {"walmart-api": walmart_api_pull,
               "target": target_pull, "doordash": doordash_pull, "google": google_pull}
 
 # The connector registry — ONE source of truth the Pulls console reads (/api/connectors): what sources exist,
