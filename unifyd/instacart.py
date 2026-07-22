@@ -150,23 +150,65 @@ class Instacart(AggregatorConnector):
         return self.session
 
     def _set_zip(self, address):
-        """Best-effort: set a delivery ZIP so a real storefront/zone resolves. `address` may be a bare ZIP."""
+        """Set a delivery ZIP so a REGIONAL chain (Publix) resolves. Instacart commits an address via an
+        autocomplete dropdown, not a bare Enter — so type the zip, wait for suggestions, and CLICK the first
+        one. Returns True if an address input was found + a suggestion clicked."""
         zip_ = ""
         if address:
             m = re.search(r"\b(\d{5})\b", str(address))
             zip_ = m.group(1) if m else ""
         if not zip_:
-            return
-        for sel in ('input[data-testid="address-input"]', 'input[placeholder*="ZIP"]',
-                    'input[placeholder*="address" i]', 'input[type="text"]'):
+            return False
+        # 1) reveal the address input (a header location button opens it on some layouts)
+        for opener in ('button[aria-label*="address" i]', 'button[aria-label*="location" i]',
+                       '[data-testid*="address" i] button', 'button:has-text("your address")'):
             try:
-                el = self._page.query_selector(sel)
-                if el and el.is_visible():
-                    el.click(); el.fill(zip_); self._page.wait_for_timeout(1500)
-                    self._page.keyboard.press("Enter"); self._page.wait_for_timeout(4000)
-                    return
+                b = self._page.query_selector(opener)
+                if b and b.is_visible():
+                    b.click(); self._page.wait_for_timeout(1200); break
             except Exception:
                 pass
+        # 2) type the zip into the address field, 3) click the first autocomplete suggestion
+        for sel in ('input[data-testid="address-input"]', 'input[id*="address" i]',
+                    'input[placeholder*="ZIP" i]', 'input[placeholder*="address" i]',
+                    'input[placeholder*="delivery" i]', 'input[autocomplete="address-line1"]'):
+            try:
+                el = self._page.query_selector(sel)
+                if not (el and el.is_visible()):
+                    continue
+                el.click(); el.fill(""); el.type(zip_, delay=60)
+                self._page.wait_for_timeout(2500)
+                for opt in ('[role="option"]', 'ul[role="listbox"] li', '[data-testid*="suggestion" i]',
+                            'li[id*="option" i]'):
+                    try:
+                        first = self._page.query_selector(opt)
+                        if first and first.is_visible():
+                            first.click(); self._page.wait_for_timeout(4000)
+                            return True
+                    except Exception:
+                        pass
+                # no dropdown — fall back to Enter (older layout)
+                self._page.keyboard.press("Enter"); self._page.wait_for_timeout(4000)
+                return True
+            except Exception:
+                pass
+        return False
+
+    def _visible_retailers(self, limit=20):
+        """The retailer names Instacart is offering for the current zone — so a miss tells us whether the
+        chain wasn't offered (address didn't take) vs. our click missed it."""
+        names = []
+        try:
+            for el in self._page.query_selector_all('a[href*="/store/"], img[alt]'):
+                t = (el.get_attribute("alt") or el.inner_text() or "").strip()
+                t = re.sub(r"\s+", " ", t)[:40]
+                if t and t not in names:
+                    names.append(t)
+                if len(names) >= limit:
+                    break
+        except Exception:
+            pass
+        return names
 
     def open_zone(self, session, address=None):
         """Enter a regular (non-membership) grocery so shop context is set, run one seed search to fire a
@@ -294,12 +336,21 @@ class Instacart(AggregatorConnector):
             for i, z in enumerate(zips):
                 try:
                     self.open_session(address=z)
+                except Exception as e:
+                    skipped += 1; log("  [instacart] zip %s: session blocked (%s)" % (z, str(e)[:70])); continue
+                offered = self._visible_retailers()     # what this zone actually offers (diagnostic)
+                try:
                     zone = self.open_zone(self.session, address=z)
                 except Exception as e:
-                    skipped += 1; log("  [instacart] zip %s: no zone (%s)" % (z, str(e)[:70])); continue
+                    skipped += 1
+                    log("  [instacart] zip %s: no zone (%s) | offered: %s"
+                        % (z, str(e)[:60], ", ".join(offered[:12]) or "?")); continue
                 slug = (zone.get("slug") or "")
                 if retailer.lower().replace(" ", "") not in slug.lower().replace("-", ""):
-                    skipped += 1; log("  [instacart] zip %s entered %r ≠ %s — skip" % (z, slug, retailer)); continue
+                    skipped += 1
+                    log("  [instacart] zip %s entered %r ≠ %s (resolved postalCode=%s) | offered: %s"
+                        % (z, slug, retailer, zone.get("postalCode"), ", ".join(offered[:12]) or "?"))
+                    continue
                 if zone.get("shopId") in stores:         # this zip maps to a store we already swept
                     log("  [instacart] zip %s -> %s (dup store, skip)" % (z, slug)); continue
                 n0 = len(uniq)
