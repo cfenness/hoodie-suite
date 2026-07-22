@@ -17,7 +17,7 @@
     --disp:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
     --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
     --sans:var(--disp);
-    --bk-intel:#4E79A7; --bk-ops:#3F8F6E; --bk-master:#8A5FB0; --bk-comm:#B6822C;
+    --bk-intel:#4E79A7; --bk-retail:#3E8A8A; --bk-ops:#3F8F6E; --bk-master:#8A5FB0; --bk-comm:#B6822C;
     --rail-w:250px;
   }
   @media (prefers-color-scheme:dark){:root{
@@ -25,14 +25,14 @@
     --slate:#6E9BCB; --slate-ink:#8CB2DA; --line:#28313A; --line-2:#20272E; --rail:#161B21;
     --chip:#232C35; --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 30px rgba(0,0,0,.34);
     --good:#5FB58E; --good-bg:#1A2C25; --warn:#D0A14A; --warn-bg:#2C2618; --bad:#DB7C6E; --bad-bg:#2E1F1D;
-    --bk-master:#A986C8;
+    --bk-master:#A986C8; --bk-retail:#57ADAD;
   }}
   :root[data-theme="dark"]{
     --paper:#12161B; --card:#1A2027; --ink:#E7ECF1; --ink-2:#C4CDD6; --mut:#8A98A5;
     --slate:#6E9BCB; --slate-ink:#8CB2DA; --line:#28313A; --line-2:#20272E; --rail:#161B21;
     --chip:#232C35; --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 30px rgba(0,0,0,.34);
     --good:#5FB58E; --good-bg:#1A2C25; --warn:#D0A14A; --warn-bg:#2C2618; --bad:#DB7C6E; --bad-bg:#2E1F1D;
-    --bk-master:#A986C8;
+    --bk-master:#A986C8; --bk-retail:#57ADAD;
   }
   :root[data-theme="light"]{
     --paper:#F1F3F5; --card:#FFFFFF; --ink:#2B3138; --ink-2:#4A535C; --mut:#7A828B;
@@ -238,10 +238,11 @@
   "use strict";
 
   /* ============================ the registry ============================ */
-  /* Parallel to index.html's APPS — this shell owns its own four-bucket map.
-     bucket ∈ intel | ops | master | commercial | utility. star = bucket front door. */
+  /* Parallel to index.html's APPS — this shell owns its own bucket map.
+     bucket ∈ intel | retail | ops | master | commercial | utility. star = bucket front door. */
   var BUCKETS = [
-    {id:"intel",     name:"Hoodie Intelligence", role:"Read the market — report & analyze",        color:"var(--bk-intel)"},
+    {id:"intel",     name:"Hoodie Intelligence", role:"Report & present — QBRs, decks, the signal read", color:"var(--bk-intel)"},
+    {id:"retail",    name:"Retail Intelligence", role:"One subject, every instrument — menu · price · shelf · market", color:"var(--bk-retail)"},
     {id:"ops",       name:"Data Operations",     role:"Run the machine — acquisition & health",     color:"var(--bk-ops)"},
     {id:"master",    name:"Master Data",         role:"Own the master — matching & review",          color:"var(--bk-master)"},
     {id:"commercial",name:"Commercial Apps",     role:"Act on it — the tools you work in",           color:"var(--bk-comm)"}
@@ -252,12 +253,15 @@
     // Hoodie Intelligence
     {id:"dashboard",  bucket:"intel", star:1, nav:1, mark:"HI", name:"Hoodie Intelligence", desc:"Market intelligence & QBR briefs.", file:"apps/dashboard.html"},
     {id:"signal-stack",bucket:"intel",         mark:"SS", name:"Signal Stack", desc:"Menu → Basket → Store → Price on one subject, with a cross-signal verdict.", file:"apps/signal-stack.html"},
-    {id:"retail",     bucket:"intel",          mark:"RI", name:"Retail Intelligence", desc:"Per-store assortment & price across the chains — cross-chain compare.", file:"apps/retail.html"},
-    {id:"retail-analytics",bucket:"intel",     mark:"RA", name:"Retail Analytics", desc:"Price/promo, reverse planogram, on-prem recipes by brand & retailer.", file:"apps/retail-analytics.html"},
-    {id:"menu-analytics",bucket:"intel",       mark:"MA", name:"Menu Analytics", desc:"Brand-call rates & cocktail trends by region, from menu scrapes.", file:"apps/menu-analytics.html"},
-    {id:"price-index",bucket:"intel",          mark:"PI", name:"Price Index", desc:"A bev-alc CPI from shelf prices — dispersion, promo intensity, premiumization.", file:"apps/price-index.html"},
-    {id:"market",     bucket:"intel",          mark:"MI", name:"Market Intelligence", desc:"The outlet landscape of a metro vs Google coverage.", file:"apps/market.html"},
     {id:"planogram",  bucket:"intel",          mark:"PG", name:"Planogram", desc:"Facings (or a photo) vs the market benchmark — voids & over-space.", file:"apps/planogram-repcount.html"},
+
+    // Retail Intelligence — one subject, every instrument (the multi-tab workspace + its instruments)
+    {id:"retail-suite",bucket:"retail", star:1, nav:1, mark:"RX", name:"Retail Intelligence", desc:"One subject across every instrument — search a brand once, menu · price · shelf · market all filter together.", file:"apps/retail-intelligence.html"},
+    {id:"retail",     bucket:"retail",         mark:"RI", name:"Retail Intelligence · Store", desc:"Per-store assortment & price across the chains — cross-chain compare.", file:"apps/retail.html"},
+    {id:"retail-analytics",bucket:"retail",    mark:"RA", name:"Retail Analytics", desc:"Price/promo, reverse planogram, on-prem recipes by brand & retailer.", file:"apps/retail-analytics.html"},
+    {id:"menu-analytics",bucket:"retail",      mark:"MA", name:"Menu Analytics", desc:"Brand-call rates & cocktail trends by region, from menu scrapes.", file:"apps/menu-analytics.html"},
+    {id:"price-index",bucket:"retail",         mark:"PI", name:"Price Index", desc:"A bev-alc CPI from shelf prices — dispersion, promo intensity, premiumization.", file:"apps/price-index.html"},
+    {id:"market",     bucket:"retail",         mark:"MI", name:"Market Intelligence", desc:"The outlet landscape of a metro vs Google coverage.", file:"apps/market.html"},
 
     // Data Operations
     {id:"data-console",bucket:"ops",  star:1,  mark:"DC", name:"Data Console", desc:"Every source, account & master dim with real counts, freshness & health — live from the warehouse.", file:"apps/data-console.html", healthSource:1},
@@ -477,8 +481,8 @@
       '<div class="canvas">'+
         '<div class="hero">'+
           '<div class="eyebrow">Hoodie · Unifyd</div>'+
-          '<h1>The suite, <span class="thin">in four buckets.</span></h1>'+
-          '<p class="sub">Each bucket is a way into the surfaces inside; scope and date set once above carry into every one.</p>'+
+          '<h1>The suite, <span class="thin">by how you work.</span></h1>'+
+          '<p class="sub">Each area is a way into the surfaces inside; scope and date set once above carry into every one.</p>'+
           '<div class="statline">'+heroStat()+'</div>'+
         '</div>'+
         sections+drawer+
@@ -494,7 +498,7 @@
                           : '<span style="color:var(--mut)">warehouse offline</span>';
     var v=STATE.live?opsVerdict():null;
     var fr=v?('<span class="sep">·</span><span class="fresh '+v.cls+'"><span class="led"></span>'+v.txt+'</span>'):"";
-    return live+'<span class="sep">·</span><b>'+nApps+'</b> surfaces<span class="sep">·</span><b>4</b> buckets'+fr;
+    return live+'<span class="sep">·</span><b>'+nApps+'</b> surfaces<span class="sep">·</span><b>'+BUCKETS.length+'</b> areas'+fr;
   }
   function bucketStat(bid){
     if(bid==="ops"){ var v=opsVerdict(); return v?'<span class="fresh '+v.cls+'"><span class="led"></span>'+v.txt+'</span>':'<span class="fresh dim"><span class="led"></span>offline</span>'; }
