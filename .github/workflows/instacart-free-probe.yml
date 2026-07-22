@@ -1,0 +1,31 @@
+name: instacart-free-probe
+
+# Is the NO-Bright-Data, NO-proxy Instacart path viable? Real Chrome on a free datacenter runner drives
+# the same recipe (homepage -> zone -> store -> product GraphQL) that instacart.py does via `bdata browser`.
+on:
+  push:
+    paths:
+      - unifyd/instacart_free_probe.py
+      - .github/workflows/instacart-free-probe.yml
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: system deps — real Chrome + Xvfb
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb wget
+          wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt-get install -y -qq ./google-chrome-stable_current_amd64.deb
+      - name: playwright
+        run: pip install --quiet playwright
+      - name: probe Instacart (free browser, no proxy, no bd)
+        working-directory: unifyd
+        run: xvfb-run -a python -u instacart_free_probe.py
