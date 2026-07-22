@@ -1,0 +1,34 @@
+name: target-scraper-probe
+
+# Verify the SHIPPED, fixed target_scraper lands data with FETCH_POLICY=free (no proxy tier at all) on
+# a free datacenter runner. Grounds the code change, not just the raw API.
+on:
+  push:
+    paths:
+      - unifyd/target_scraper.py
+      - unifyd/target_scraper_probe.py
+      - .github/workflows/target-scraper-probe.yml
+  workflow_dispatch:
+
+jobs:
+  scraper-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: system deps — real Chrome + Xvfb
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb wget
+          wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt-get install -y -qq ./google-chrome-stable_current_amd64.deb
+      - name: python deps
+        run: pip install --quiet playwright curl_cffi duckdb pyarrow requests beautifulsoup4
+      - name: run the fixed target_scraper (FETCH_POLICY=free, no proxy)
+        working-directory: unifyd
+        env:
+          FETCH_POLICY: free
+        run: xvfb-run -a python -u target_scraper_probe.py

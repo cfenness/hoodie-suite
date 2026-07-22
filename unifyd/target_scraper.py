@@ -109,11 +109,14 @@ def _close_isp():
 _atexit.register(_close_isp)
 
 
-def _get(url, api_key):
-    """Parsed RedSky JSON. ISP pool set → warmed local-Chrome in-page fetch (flat-rate, replaces BD Unlocker);
-    else → BD Unlocker (metered)."""
-    if resi.isp_enabled():
-        w = _isp_session()
+def _get(url, api_key=None):
+    """Parsed RedSky JSON. FREE-FIRST (PROVEN 2026-07-22, target-browser-probe on a GitHub datacenter
+    runner, no proxy: real Chrome loaded target.com then read RedSky in-page → HTTP 200, 20 stores).
+    Akamai clears for the browser's OWN session from ANY IP, so we use a warmed browser: an ISP IP if a
+    pool is set, else the LOCAL IP (proxy=None — the datacenter/host IP itself). The metered BD Unlocker
+    is a LAST resort, used ONLY under FETCH_POLICY=paid."""
+    try:
+        w = _isp_session()                                       # ISP IP if a pool is set, else local IP (proxy=None)
         obj = None
         for attempt in range(3):                                 # Akamai may need a few s post-load to clear
             st, obj = w.fetch_json(url)
@@ -127,8 +130,14 @@ def _get(url, api_key):
                     w.prime("https://www.target.com/", settle_ms=6000)
                 except Exception:
                     pass
-        return obj if isinstance(obj, (dict, list)) else {}
-    return json.loads(_unlock(url, api_key))
+        if isinstance(obj, (dict, list)) and obj:
+            return obj
+    except Exception:
+        if not resi.paygo_allowed():
+            raise                                                # no browser AND no paid fallback → fail honestly
+    if resi.paygo_allowed():                                     # opt-in metered fallback only
+        return json.loads(_unlock(url, api_key or _api_key()))
+    return {}
 
 
 # ~90 metro zips spread across Target's footprint — nearby_stores(within=75mi) off these + dedup covers
@@ -161,7 +170,7 @@ def nearby_stores(zipc, api_key, within=100, limit=20):   # RedSky caps limit at
 
 def enumerate_stores(zips=None, log=print):
     """Enumerate Target stores nationwide via the store locator; land target_stores (dedup by store_id)."""
-    key = _api_key(); zips = zips or STORE_ZIPS
+    key = None; zips = zips or STORE_ZIPS                        # browser-first (see _get); no BD key needed
     seen = {}
     for z in zips:
         try:
@@ -219,7 +228,7 @@ def fulfillment_qty(tcins, store, zipc, state, api_key):
 def run(stores=None, terms=None, pages=2, log=print):
     stores = stores or DEFAULT_STORES
     terms = terms or DEFAULT_TERMS
-    key = None if resi.isp_enabled() else _api_key()             # ISP path needs no BD key
+    key = None                                                   # browser-first path needs no BD key (see _get)
     run_id = "tg-" + time.strftime("%Y%m%d-%H%M%S")
     rows, seen = [], set()
     for (store, zipc, state) in stores:
@@ -283,7 +292,7 @@ def run_national(log=print, workers=12, batch=24, limit=None):
     `limit` caps to a state-spread SAMPLE of stores — the cheap daily cadence (full national = limit=None)."""
     import threading
     from concurrent.futures import ThreadPoolExecutor
-    key = None if resi.isp_enabled() else _api_key()             # ISP path needs no BD key
+    key = None                                                   # browser-first path needs no BD key (see _get)
     if resi.isp_enabled():
         workers = min(workers, 4)                                # each worker warms a browser — bound the fleet
         log("  [target] flat-rate ISP path (warmed local Chrome, %d workers)" % workers)
