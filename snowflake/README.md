@@ -85,8 +85,42 @@ snowsql -a <account> -u <user> -f sql/05_marts.sql               # views → UNI
 snowsql -a <account> -u <user> -f sql/06_validate.sql            # eyeball the STATUS column
 ```
 
-Re-runnable: every `CREATE` is `IF NOT EXISTS` (raw) or `CREATE OR REPLACE` (master/marts), and
-`COPY` skips files already loaded (Snowflake load metadata) unless you add `FORCE = TRUE`.
+## Daily refresh — the morning drop
+
+Built to run every morning after the overnight scrape pass, idempotently, at scale (tens of millions
+of rows is a routine bulk `COPY` for Snowflake — the volume is trivial; correctness is the thing that
+matters). One command:
+
+```bash
+export SNOW_CONN=<snowsql connection name>          # ~/.snowsql/config (account/user/role/warehouse)
+export TIGRIS_BUCKET=<bucket> TIGRIS_KEY_ID=<key> TIGRIS_SECRET=<secret>
+export AWS_ENDPOINT_URL_S3=https://fly.storage.tigris.dev BUCKET_NAME=$TIGRIS_BUCKET \
+       AWS_ACCESS_KEY_ID=$TIGRIS_KEY_ID AWS_SECRET_ACCESS_KEY=$TIGRIS_SECRET   # for the --live regen
+./load.sh                # regenerates from the live warehouse, then loads; prints the record count
+./load.sh --dry-run      # regenerate + show the plan, run nothing
+```
+
+**Why it's safe to re-run every day (no duplicates).** Two refresh disciplines, matched to how the
+engine writes each table:
+
+- **Source catalogs** (Total Wine, Kroger, ABC, the off-premise feeds, …) are **rewritten in place**
+  by the engine (`write_accumulate` / overwrite reuse the same filename). So RAW loads them with
+  `CREATE OR REPLACE TABLE … + COPY … FORCE = TRUE` — a **full refresh** that mirrors the current
+  file. Re-inferring the schema each run also absorbs scraper drift. A naive `IF NOT EXISTS` + append
+  would double-load the rewritten file every morning; this can't.
+- **Time-series** (`retail_observations`) are **write-once dated partitions**, so RAW loads them with
+  `CREATE IF NOT EXISTS` + append `COPY` — load metadata skips what's already in, only the new day
+  lands, history accumulates. This is the incremental path.
+- **The master star** is `CREATE OR REPLACE` + `COPY` — a clean rebuild from the engine's freshly
+  built dims each morning.
+
+`06_validate.sql` prints the headline at the end of every run — total records loaded and the
+per-table breakdown, straight from `INFORMATION_SCHEMA.ROW_COUNT` (no scans) — so "how many records
+did we drop this morning" is answered by the load itself.
+
+**Run `load.sh` where the warehouse is reachable** (the Fly machine, or a box with the Tigris env) —
+it does the `--live` regen so only present tables load, bucketed catalogs resolve to their active
+parts, and the counts are real.
 
 ## Regenerate
 
@@ -122,6 +156,7 @@ prefer creating the stage under a controlled role and keep keys out of shared wo
 
 ```
 build_snowflake_sql.py   the generator (single source of truth for the build)
+load.sh                  the morning drop — regenerate --live, then load; idempotent, prints counts
 sql/00_config.template.sql   account setup + how to fill the Tigris credentials
 sql/01_database.sql          database UNIFYD + schemas RAW / MASTER / MART
 sql/02_stage.sql             Parquet file format + external stage → Tigris (${...} placeholders)

@@ -8,6 +8,20 @@
 -- 06_validate.sql — post-load assertions. The named "full" sources MUST be non-empty; the star must
 -- have landed; the joins must resolve. Run after 03/04. Eyeball the STATUS column.
 
+-- 0) THE HEADLINE — total records loaded + the per-table breakdown (from INFORMATION_SCHEMA.ROW_COUNT,
+--    maintained by Snowflake, so this is cheap — no table scans). This is the "N sources / M records"
+--    answer, refreshed every run.
+SELECT TABLE_SCHEMA AS schema_name, COUNT(*) AS tables, TO_VARCHAR(SUM(ROW_COUNT), '999,999,999,999') AS records
+FROM UNIFYD.INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA IN ('RAW', 'MASTER') AND TABLE_TYPE = 'BASE TABLE'
+GROUP BY ROLLUP (TABLE_SCHEMA)
+ORDER BY schema_name NULLS LAST;
+
+SELECT TABLE_SCHEMA AS schema_name, TABLE_NAME AS table_name, ROW_COUNT AS n_rows
+FROM UNIFYD.INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA IN ('RAW', 'MASTER') AND TABLE_TYPE = 'BASE TABLE'
+ORDER BY ROW_COUNT DESC NULLS LAST;
+
 -- 1) Named priority sources — every one must be > 0 rows (an EMPTY here = a failed load, not a rebuild).
 SELECT 'total_wine_products' AS table_name, COUNT(*) AS n_rows, IFF(COUNT(*) > 0, 'OK', 'EMPTY — investigate') AS status FROM UNIFYD.RAW.TOTAL_WINE_PRODUCTS
 UNION ALL

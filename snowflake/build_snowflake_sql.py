@@ -406,8 +406,13 @@ def _raw_block(table, note, srcs, priority, files=None, rows=None):
     else:
         copy_from = "'%s'" % loc
         infer_loc = "'%s'" % loc
+    # CREATE OR REPLACE (not IF NOT EXISTS): source Parquet is rewritten in place each run
+    # (write_accumulate / overwrite reuse the same filename with new content), so the load is a
+    # FULL REFRESH that mirrors the current file — re-inferring the schema (picks up scraper drift)
+    # and truncating first, so a daily re-run can't double-load the rewritten file. Append-only
+    # time-series (retail_observations) is the exception and is handled separately.
     return header + (
-        "CREATE TABLE IF NOT EXISTS {fqtn}\n"
+        "CREATE OR REPLACE TABLE {fqtn}\n"
         "  USING TEMPLATE (\n"
         "    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))\n"
         "    FROM TABLE(INFER_SCHEMA(LOCATION => {infer}, FILE_FORMAT => '{fmt}')));\n"
@@ -415,6 +420,7 @@ def _raw_block(table, note, srcs, priority, files=None, rows=None):
         "  FROM {cfrom}\n"
         "  FILE_FORMAT = (FORMAT_NAME = '{fmt}')\n"
         "  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE\n"
+        "  FORCE = TRUE\n"                                 # table was just replaced (empty) — load all
         "  ON_ERROR = ABORT_STATEMENT;\n"
     ).format(fqtn=fqtn, infer=infer_loc, cfrom=copy_from, fmt=FMT)
 
@@ -426,8 +432,15 @@ def emit_raw(layout=None):
 --
 -- Each table is CREATEd from the Parquet's own schema (INFER_SCHEMA) and loaded with
 -- MATCH_BY_COLUMN_NAME, so a scraper widening its columns needs no change here — exactly the
--- drift-tolerance the DuckDB read_parquet path has today. Re-running COPY is safe: Snowflake skips
--- files already loaded (load metadata) unless FORCE=TRUE.
+-- drift-tolerance the DuckDB read_parquet path has today.
+--
+-- REFRESH SEMANTICS (this is safe to run every morning):
+--   • source catalogs  → CREATE OR REPLACE + COPY: the engine rewrites these files in place
+--     (write_accumulate / overwrite), so the load is a FULL REFRESH that mirrors the current file.
+--     Re-inferring re-picks-up drift; replacing first means a daily re-run can't double-load.
+--   • time-series (retail_observations) → CREATE IF NOT EXISTS + append COPY: these are write-once
+--     dated partition files, so COPY's load metadata skips what's already in and only the new day
+--     lands. History accumulates instead of being rebuilt.
 --
 -- LAYOUT: this offline build assumes the v1 single-file layout (<name>.parquet), correct for every
 -- named "full" source and the whole master layer. Tables migrated to the bucketed (v2) layout (big
@@ -570,6 +583,20 @@ def emit_validate():
 -- 06_validate.sql — post-load assertions. The named "full" sources MUST be non-empty; the star must
 -- have landed; the joins must resolve. Run after 03/04. Eyeball the STATUS column.
 
+-- 0) THE HEADLINE — total records loaded + the per-table breakdown (from INFORMATION_SCHEMA.ROW_COUNT,
+--    maintained by Snowflake, so this is cheap — no table scans). This is the "N sources / M records"
+--    answer, refreshed every run.
+SELECT TABLE_SCHEMA AS schema_name, COUNT(*) AS tables, TO_VARCHAR(SUM(ROW_COUNT), '999,999,999,999') AS records
+FROM {db}.INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA IN ('{raw}', '{master}') AND TABLE_TYPE = 'BASE TABLE'
+GROUP BY ROLLUP (TABLE_SCHEMA)
+ORDER BY schema_name NULLS LAST;
+
+SELECT TABLE_SCHEMA AS schema_name, TABLE_NAME AS table_name, ROW_COUNT AS n_rows
+FROM {db}.INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA IN ('{raw}', '{master}') AND TABLE_TYPE = 'BASE TABLE'
+ORDER BY ROW_COUNT DESC NULLS LAST;
+
 -- 1) Named priority sources — every one must be > 0 rows (an EMPTY here = a failed load, not a rebuild).
 {priority}
 ORDER BY table_name;
@@ -597,7 +624,7 @@ SELECT COUNT(*) AS distinct_outlets,
        COUNT_IF(ARRAY_CONTAINS('ab-inbev'::VARIANT, sources)) AS from_ab_inbev,
        COUNT_IF(vpid <> '') AS with_vpid
 FROM {db}.{master}.dim_outlet;
-""".format(priority=priority_checks, db=DB, master=SCHEMA_MASTER)
+""".format(priority=priority_checks, db=DB, raw=SCHEMA_RAW, master=SCHEMA_MASTER)
 
 
 FILES = [
