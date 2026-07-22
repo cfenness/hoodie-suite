@@ -11,11 +11,15 @@ Two tiers, mirroring how the rest of the engine treats authority ([[cola-tiering
     (FED_RATES) as the default, and optionally re-confirmed live from the TTB rate page. TTB is
     TLS-blocked from Fly, so live-refresh is a Mac-run step ([[ttb-fast-scrape]]); the encoded schedule
     is what Fly lands.
-  • STATE (seed → DOR) — state excise + any special alcohol sales rate, seeded from tax_rates_seed.csv
-    (provenance=seed, each row carries its source + as-of year), replaceable per-state by an authoritative
-    DOR fetcher later. CONTROL states carry an IMPLIED excise — the state markup IS the tax — so their
-    excise is flagged is_control_state and should be read from the control_state.py price book, not taken
-    as a clean statutory rate ([[control-states-and-ca]]).
+  • STATE (seed → DOR) — state excise + any special alcohol sales rate in tax_rates_seed.csv. Base layer
+    is Tax Foundation (Jan 2026, provenance=seed); TRANCHE-1 DOR VERIFICATION (2026-07) promoted 12 pipeline
+    states (CA/TX/NY/FL/IL/MN/NJ/MA/CO/WA/VA/PA) to provenance=verified against state DOR/statute, correcting
+    where TF's *effective* rate diverged from the *statutory* excise (MN spirits $8.74→$5.03 etc.) and
+    decomposing bundled taxes into a clean excise row + a separate percentage row (MN 2.5% gross-receipts,
+    WA 20.5% spirits sales, WA spirits as a $3.7708/L liter tax). LOCAL rows were added where material
+    (Cook County & Chicago IL, NYC). Remaining states stay TF seed — extend the tranche the same way.
+    CONTROL states carry an IMPLIED spirits excise — the state markup IS the tax — flagged is_control_state
+    and read from the control_state.py price book, not taken as a clean statutory rate ([[control-states-and-ca]]).
 
 Honest failure: a class/state we can't map is emitted with provenance='unverified' + a warning, never a
 silent 0 — a missing rate must look missing, not free. build() returns {rows, warnings, degraded}.
