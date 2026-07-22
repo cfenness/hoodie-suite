@@ -376,6 +376,48 @@ class Instacart(AggregatorConnector):
             % (retailer, len(uniq), len(stores), skipped))
         return uniq
 
+    def pull_zones(self, zones, queries=None, log=print):
+        """Replay SearchResultsPlacements DIRECTLY for explicit zones — each a dict
+        {shopId, postalCode, zoneId, slug?}. No homepage / address / geolocation: the zone IS the location,
+        so this reaches a REGIONAL chain (Publix) that a datacenter IP would never surface on the homepage.
+        Only a warmed page context (cookies/TLS) is needed, which one homepage load provides. Lands per-store
+        inventory (in_stock + stock_level) incrementally. This is the robust path for chain-targeted pulls."""
+        queries = queries or INVENTORY_QUERIES
+        if not self._page:
+            self._launch()
+        try:                                             # one homepage load to warm cookies for the graphql replay
+            self._page.goto("https://www.instacart.com/", wait_until="domcontentloaded", timeout=60000)
+            self._page.wait_for_timeout(3000)
+        except Exception:
+            pass
+        seen, uniq, stores = set(), [], {}
+        try:
+            for i, zone in enumerate(zones):
+                if not (zone.get("shopId") and zone.get("postalCode") and zone.get("zoneId")):
+                    log("  [instacart] zone %r missing shopId/postalCode/zoneId — skip" % zone); continue
+                slug = zone.get("slug") or ("shop-%s" % zone.get("shopId"))
+                n0 = len(uniq)
+                for q in queries:
+                    raw, _ = self.fetch_page(self.session, zone, q, None)
+                    for it in (raw or []):
+                        row = self.parse_item(it, slug, zone)
+                        if not row:
+                            continue
+                        row.setdefault("source", self.source)
+                        row["is_hemp"] = observe.is_hemp(row.get("brand"), row.get("name"), row.get("category"))
+                        k = (row.get("store_id"), row.get("product_id"))
+                        if k in seen:
+                            continue
+                        seen.add(k); uniq.append(row)
+                stores[zone.get("shopId")] = slug
+                self._land(uniq, log)
+                log("  [instacart] zone shopId=%s (%s): +%d in-stock (%d rows, %d stores) [%d/%d]"
+                    % (zone.get("shopId"), slug, len(uniq) - n0, len(uniq), len(stores), i + 1, len(zones)))
+        finally:
+            self.close()
+        log("[instacart] ZONES DONE: %d in-stock rows across %d stores" % (len(uniq), len(stores)))
+        return uniq
+
     # ensure the browser is always torn down, even though the base pull() doesn't know about it
     def pull(self, *a, **k):
         try:

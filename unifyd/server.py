@@ -824,10 +824,15 @@ def instacart_pull(params):
     zips = params.get("zips")
     if isinstance(zips, str):
         zips = [z.strip() for z in zips.split(",") if z.strip()]
+    zones = params.get("zones")                          # explicit {shopId,postalCode,zoneId,slug} list = direct replay
     rows, warnings, status = [], [], "success"
     try:
         from instacart import Instacart, INVENTORY_QUERIES
-        if retailer and zips:
+        if zones:
+            rows = Instacart().pull_zones(
+                zones, queries=(queries if params.get("queries") else INVENTORY_QUERIES),
+                log=lambda m: app.logger.info("INSTACART %s", m))
+        elif retailer and zips:
             rows = Instacart(target_retailer=retailer).sweep(
                 zips, retailer=retailer, queries=(queries if params.get("queries") else INVENTORY_QUERIES),
                 log=lambda m: app.logger.info("INSTACART %s", m))

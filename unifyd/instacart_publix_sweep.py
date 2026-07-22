@@ -57,8 +57,22 @@ def run():
                     help="comma-separated zips (overrides the built-in Publix footprint)")
     a = ap.parse_args()
 
+    import json
     import warehouse
     from instacart import Instacart, INVENTORY_QUERIES
+
+    # DIRECT-REPLAY path: if IC_ZONES is set (JSON list of {shopId,postalCode,zoneId,slug}) replay those
+    # Publix stores directly — no homepage/address/geolocation (a datacenter IP won't surface Publix).
+    zones_json = os.environ.get("IC_ZONES", "").strip()
+    if zones_json:
+        try:
+            zones = json.loads(zones_json)
+        except Exception as e:
+            print("[publix-sweep] IC_ZONES is not valid JSON: %s" % str(e)[:120]); return 1
+        where = "SHARED (Tigris)" if warehouse.remote() else "LOCAL (dry)"
+        print("[publix-sweep] DIRECT REPLAY of %d Publix zone(s) -> %s (no proxy, no bd)" % (len(zones), where))
+        rows = Instacart().pull_zones(zones, queries=INVENTORY_QUERIES, log=print)
+        return _report(warehouse, rows, 0, 0, where)
 
     zips = [z.strip() for z in a.zips.split(",") if z.strip()] or PUBLIX_ZIPS
     if a.max_stores and a.max_stores > 0:
@@ -82,14 +96,23 @@ def run():
     ic = Instacart(target_retailer="Publix")
     rows = ic.sweep(zips, retailer="Publix", queries=INVENTORY_QUERIES, log=print)
 
+    return _report(warehouse, rows, o0, s0, where)
+
+
+def _report(warehouse, rows, o0, s0, where):
+    def obs():
+        try:
+            r = warehouse.query_parts("retail_observations",
+                                      "SELECT count(*) c, count(distinct store_id) s FROM t WHERE source='instacart'")
+            return (int(r[0]["c"]), int(r[0]["s"])) if r else (0, 0)
+        except Exception:
+            return (0, 0)
     o1, s1 = obs()
-    prod = 0
     try:
         prod = warehouse.row_count("instacart_products")
     except Exception:
-        pass
-    # stock-level distribution — proves whether the REAL availability signal came through (vs presence-only)
-    levels = []
+        prod = 0
+    levels = []                                          # stock-level distribution = did the availability signal land?
     try:
         levels = warehouse.query_parts(
             "retail_observations",
@@ -106,12 +129,11 @@ def run():
     for r in (levels or []):
         print("      %-16s %6d rows  (%d out-of-stock)" % (r.get("lvl"), r.get("n"), r.get("oos") or 0))
     if levels and all((r.get("lvl") == "(none)") for r in levels):
-        print("      NOTE: stock_level empty on all rows → SearchResultsPlacements didn't carry availability; "
-              "presence=in-stock only. Next: capture the availability op.")
+        print("      NOTE: stock_level empty on all rows → the op didn't carry availability; presence=in-stock only.")
     print("\nVERDICT: %s" % (
-        "PUBLIX INVENTORY LANDED — per-store in-stock rows written to %s, NO proxy, NO bd." % where
+        "INVENTORY LANDED — per-store in-stock rows written to %s, NO proxy, NO bd." % where
         if (o1 - o0) > 0 else
-        "NO PUBLIX INVENTORY LANDED — check the log (no Publix zone captured, or anti-bot at this IP)."))
+        "NO INVENTORY LANDED — check the log (no zone reached, or anti-bot at this IP)."))
     return 0 if (o1 - o0) > 0 else 1
 
 
