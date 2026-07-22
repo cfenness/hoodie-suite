@@ -260,12 +260,18 @@ def run(stores=None, terms=None, pages=2, log=print):
                 time.sleep(1.0)
         log("  [target] store %s (%s) — %d products" % (store, state, got))
     if rows:
-        # ACCUMULATE — a small/CLI-scoped run() must not overwrite the national catalog run_national builds.
-        # KEY BY tcin|store — target_products grain is product×STORE (per-store price/qty). Keying on tcin
-        # alone dropped a product's rows for ALL OTHER stores whenever one store re-pulled (2139 -> 2048).
-        warehouse.write_accumulate("target_products", rows,
-                                   key=lambda r: "%s|%s" % (r.get("tcin") or r.get("product_id"),
-                                                            r.get("store") or r.get("store_id")))
+        # target_products is the per-PRODUCT catalog — build_product_master DEDUPS it by tcin, and per-store
+        # price/qty lives in retail_observations (observe.record below). So write DISTINCT products keyed by
+        # tcin; NEVER per-store rows (that bloats the catalog, and the tcin-keyed consumer collapses them).
+        # Matches run_national's catalog grain. write_accumulate merges, so it never clobbers.
+        cat = {}
+        for r in rows:
+            tc = r.get("tcin") or r.get("product_id")
+            if tc and tc not in cat:
+                cat[tc] = dict(tcin=tc, product_id=tc, name=r.get("name"), brand=r.get("brand"),
+                               category=r.get("category"), image_url=r.get("image_url"),
+                               price=r.get("price"), is_hemp=r.get("is_hemp"), source="target")
+        warehouse.write_accumulate("target_products", list(cat.values()), key=lambda r: r["tcin"])
         observe.record("target", [dict(store=r["store"], store_id=r["store_id"], product_id=r["tcin"],
                                         brand=r["brand"], name=r["name"], price=r["price"],
                                         in_stock=r["in_stock"], qty=r["qty"], is_hemp=r.get("is_hemp")) for r in rows])
@@ -308,7 +314,9 @@ def run_national(log=print, workers=12, batch=24, limit=None):
     tcins = [t for t in prods if t]
     if not tcins:
         log("  [target] no catalog — aborting"); return 0
-    warehouse.write_parquet("target_products", [prods[t] for t in tcins])
+    # ACCUMULATE by tcin (per-product catalog) — write_parquet OVERWRITES, so a catalog() that came back
+    # short (a block, a partial fetch) would clobber the full national catalog. Merge instead: never shrink.
+    warehouse.write_accumulate("target_products", [prods[t] for t in tcins], key=lambda r: r.get("tcin"))
     stores = warehouse.query("target_stores", "SELECT store_id, zip, state FROM t")
     if limit and len(stores) > limit:
         buckets = {}                                   # round-robin by state → even national spread, cheap

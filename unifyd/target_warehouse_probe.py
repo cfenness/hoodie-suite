@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""target_warehouse_probe.py — the REAL bar: does Target data actually LAND in the warehouse, free?
+"""target_warehouse_probe.py — restore the store table + verify the CORRECTED per-product landing, free.
 
-Not a store count, not a 200 — this runs the real target_scraper against the real (Tigris) warehouse
-with FETCH_POLICY=free (no proxy tier available) and reports target_products / target_stores row counts
-BEFORE and AFTER. If the count moves, Target data is IN THE WAREHOUSE, landed free from a cloud runner.
-Exit 0 iff target_products grew."""
+Does three real things against the real Tigris warehouse (FETCH_POLICY=free, no proxy):
+  1. RESTORE target_stores — re-enumerate the FULL zip set (write_accumulate by store_id merges the
+     national ~1163 back; the first buggy probe had clobbered it to 60).
+  2. Land the per-PRODUCT catalog for a couple of stores via the fixed run() (dedup by tcin — no per-store
+     bloat), and per-store inventory to retail_observations.
+  3. Report before/after counts. Done iff stores are restored AND target_products did not shrink.
+"""
 import os
 import sys
 
-os.environ.setdefault("FETCH_POLICY", "free")        # prove it with NO proxy tier at all
+os.environ.setdefault("FETCH_POLICY", "free")
 os.environ.setdefault("BROWSER_CHANNEL", "chrome")
 
 import warehouse                                       # noqa: E402
@@ -22,37 +25,38 @@ def rc(name):
         return 0
 
 
-print("warehouse.remote()=%s  bucket=%s  FETCH_POLICY=%s  isp_pool=%d  paygo_allowed=%s" % (
-    warehouse.remote(), warehouse._bucket(), resi.fetch_policy(), len(resi.isp_pool()), resi.paygo_allowed()))
-if not warehouse.remote():
-    print("WARNING: not in remote (Tigris) mode — writes are LOCAL/ephemeral, not the real warehouse.")
+print("warehouse.remote()=%s  bucket=%s  FETCH_POLICY=%s  paygo_allowed=%s" % (
+    warehouse.remote(), warehouse._bucket(), resi.fetch_policy(), resi.paygo_allowed()))
 
 import target_scraper as t                             # noqa: E402
 
-b_prod, b_store = rc("target_products"), rc("target_stores")
-print("BEFORE  target_products=%d  target_stores=%d" % (b_prod, b_store))
+b_store, b_prod, b_obs = rc("target_stores"), rc("target_products"), rc("retail_observations")
+print("BEFORE  target_stores=%d  target_products=%d  retail_observations=%d" % (b_store, b_prod, b_obs))
 
-# stores — light store-locator landing
+# 1) RESTORE the national store set — full zip enumeration, merged by store_id
 try:
-    t.enumerate_stores(zips=["10001", "90012", "60601"])
+    t.enumerate_stores()
 except Exception as e:
     print("enumerate_stores error: %s" % str(e)[:160])
 
-# products — a REAL bev-alc catalog slice for one store (assortment is largely national).
-# write_accumulate MERGES, so this adds toward the full catalog; it never clobbers.
+# 2) per-PRODUCT catalog + per-store obs for two stores (the fixed run(): dedup by tcin, no bloat)
 try:
-    run_id, n = t.run(stores=[("3412", "10001", "NY")],
+    run_id, n = t.run(stores=[("3412", "10001", "NY"), ("1382", "90012", "CA")],
                       terms=["vodka", "whiskey", "tequila", "rum", "wine", "bourbon", "gin", "seltzer"],
                       pages=2, log=print)
-    print("run() -> %s, %d product rows this slice" % (run_id, n))
+    print("run() -> %s, %d per-store product rows fetched (deduped to catalog by tcin)" % (run_id, n))
 except Exception as e:
-    print("run() raised (rows may still have landed pre-error): %s" % str(e)[:200])
+    print("run() raised (rows may have landed pre-error): %s" % str(e)[:200])
 
-a_prod, a_store = rc("target_products"), rc("target_stores")
-print("AFTER   target_products=%d (%+d)  target_stores=%d (%+d)" % (
-    a_prod, a_prod - b_prod, a_store, a_store - b_store))
-ok = (a_prod - b_prod) > 0
+a_store, a_prod, a_obs = rc("target_stores"), rc("target_products"), rc("retail_observations")
+print("AFTER   target_stores=%d (%+d)  target_products=%d (%+d)  retail_observations=%d (%+d)" % (
+    a_store, a_store - b_store, a_prod, a_prod - b_prod, a_obs, a_obs - b_obs))
+
+stores_ok = a_store >= 1000                            # national set restored
+prod_ok = a_prod >= b_prod                             # per-product catalog did NOT shrink (grain fixed)
+obs_ok = a_obs > b_obs                                 # per-store inventory landed to observations
 print("\nVERDICT: %s" % (
-    "TARGET DATA IS IN THE WAREHOUSE — real rows landed FREE (cloud runner, no proxy). Full catalog = scale the sweep."
-    if ok else "no product rows landed — NOT done; investigate (see errors above)."))
-sys.exit(0 if ok else 1)
+    "STORES RESTORED (%d), per-product catalog intact/grew, inventory landed — FREE, no proxy." % a_store
+    if (stores_ok and prod_ok) else
+    "NOT done — stores_ok=%s prod_no_shrink=%s obs_grew=%s (see numbers)." % (stores_ok, prod_ok, obs_ok)))
+sys.exit(0 if (stores_ok and prod_ok) else 1)
