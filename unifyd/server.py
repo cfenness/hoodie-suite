@@ -4198,6 +4198,126 @@ def runs():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Registry pipeline — EXECUTE the canonical source_registry sources IN THE APP.
+#
+# The point (owner, 2026-07-22): data operations should run in the deployed app, which holds the
+# secrets ONCE in its Fly config — not in a re-provisioned sandbox or re-added to CI every time. So
+# these endpoints run run_sources.run_one server-side using THIS process's environment (its secrets,
+# its warehouse creds, its proxy), land to the shared source_runs ledger, and report expected-vs-landed
+# COVERAGE. Behind the OIDC gate like every /api/* route. This is distinct from /api/run (the older
+# connId pull surface); it drives the 31-source canonical registry that run_sources + health use.
+# ─────────────────────────────────────────────────────────────────────────────
+_REG_JOBS = {}
+
+
+@app.get("/api/registry/sources")
+def registry_sources_ep():
+    """The canonical source list + each source's expected-vs-landed coverage + which creds are absent
+    HERE (so you can see what this executor can actually run). Reads the app's own warehouse/ledger."""
+    import source_registry as reg
+    import warehouse
+    try:
+        import coverage as cov
+    except Exception:
+        cov = None
+    out = []
+    for s in reg.SOURCES:
+        try:
+            cv = cov.assess(s) if cov else None
+        except Exception:
+            cv = None
+        out.append({"id": s["id"], "label": s["label"], "klass": s["klass"], "cadence": s.get("cadence"),
+                    "enabled": bool(s.get("enabled")), "tables": s.get("tables"),
+                    "requires": s.get("requires") or [],
+                    "missing_creds": [e for e in (s.get("requires") or []) if not os.environ.get(e)],
+                    "coverage": cv})
+    return jsonify(ok=True, count=len(out), remote=warehouse.remote(), sources=out)
+
+
+@app.get("/api/registry/coverage")
+def registry_coverage_ep():
+    """Expected-vs-landed store/item coverage for every source, from the app's coverage_log — the honest
+    'did the last run actually cover the catalog' read that a cumulative row-count can't give."""
+    import source_registry as reg
+    import coverage as cov
+    out = {}
+    for s in reg.SOURCES:
+        try:
+            out[s["id"]] = cov.assess(s)
+        except Exception as e:
+            out[s["id"]] = {"error": str(e)[:120]}
+    return jsonify(ok=True, coverage=out)
+
+
+def _reg_run_job(jid, ids):
+    import run_sources as rs
+    import source_registry as reg
+    job = _REG_JOBS[jid]
+
+    def _log(*a):
+        job["log"].append(" ".join(str(x) for x in a))
+        del job["log"][:-200]
+    for i in ids:
+        s = reg.by_id(i)
+        if not s:
+            continue
+        job["current"] = i
+        try:
+            rec = rs.run_one(s, log=_log)
+            rs._land_runs([rec], log=lambda *a: None)     # shared ledger → health + /api/runs see it
+        except Exception as e:
+            rec = {"source": i, "status": "failed", "error": str(e)[:300]}
+        job["records"].append(rec)
+    job["current"] = None
+    job["status"] = "done"
+    job["finishedAt"] = int(time.time() * 1000)
+
+
+@app.post("/api/registry/run")
+def registry_run_ep():
+    """Run registry source(s) SERVER-SIDE with the app's env/secrets. Body: {id} or {ids:[...]} or
+    {cadence}; {include_mac:true} to include the anti-bot browser sources (default: headless/creds only,
+    since a server without a warmed browser can't run them); {sync:true} to block for a single source
+    (else a background job → poll /api/registry/run/progress?id=)."""
+    import source_registry as reg
+    import run_sources as rs
+    body = request.get_json(silent=True) or {}
+    ids = body.get("ids") or ([body["id"]] if body.get("id") else None)
+    if not ids:
+        cad = body.get("cadence")
+        ok_klass = (lambda k: True) if body.get("include_mac") else (lambda k: k != "mac")
+        ids = [s["id"] for s in reg.SOURCES if s.get("enabled") and ok_klass(s["klass"])
+               and (not cad or s.get("cadence") == cad or cad == "all")]
+    ids = [i for i in ids if reg.by_id(i)]
+    if not ids:
+        return jsonify(ok=False, error="no matching enabled sources"), 400
+    if body.get("sync") and len(ids) == 1:
+        rec = rs.run_one(reg.by_id(ids[0]))
+        rs._land_runs([rec], log=lambda *a: None)
+        return jsonify(ok=True, sync=True, record=rec)
+    jid = "reg-%d" % int(time.time() * 1000)
+    _REG_JOBS[jid] = {"id": jid, "ids": ids, "status": "running", "current": None,
+                      "startedAt": int(time.time() * 1000), "finishedAt": None, "log": [], "records": []}
+    for old in sorted(_REG_JOBS, key=lambda k: _REG_JOBS[k]["startedAt"])[:-50]:
+        _REG_JOBS.pop(old, None)                              # keep the last ~50 jobs
+    threading.Thread(target=_reg_run_job, args=(jid, ids), daemon=True).start()
+    return jsonify(ok=True, jobId=jid, running=ids), 202
+
+
+@app.get("/api/registry/run/progress")
+def registry_run_progress_ep():
+    """Poll a background registry run: status, the source in flight, run records so far (with coverage),
+    and the recent log tail."""
+    jid = (request.args.get("id") or "").strip()
+    job = _REG_JOBS.get(jid)
+    if not job:
+        return jsonify(ok=False, error="unknown job"), 404
+    return jsonify(ok=True, id=job["id"], status=job["status"], current=job["current"],
+                   startedAt=job["startedAt"], finishedAt=job["finishedAt"],
+                   records=job["records"], log=job["log"][-60:])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Service desk — data-quality reports (raised from the suite, tracked in the CRM)
 # ─────────────────────────────────────────────────────────────────────────────
 _SERVICE_STATES = ("open", "acknowledged", "reported", "resolved")
