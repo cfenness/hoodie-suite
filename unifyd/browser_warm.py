@@ -211,6 +211,30 @@ class Warmer:
         return self._ctx.cookies()
 
 
+def warm_cookie(domain, url, name_filter=None, challenge_gone=None, settle_ms=3000, log=None, **kw):
+    """One-call 'give me a FRESH cookie': open a warmed session for `domain`, load `url` so the anti-bot
+    JS mints the trusted cookie, and return it as a `Cookie:` header string (optionally filtered to
+    `name_filter`). This is the path for scrapers that REPLAY the cookie through requests/urllib — an
+    Incapsula/Imperva-style session token that isn't bound to the TLS fingerprint (Kroger's atlas), as
+    opposed to the fingerprint-bound PerimeterX case that must fetch in-page. `**kw` (channel, proxy,
+    headful, patchright) pass through to Warmer. Returns '' if a browser isn't available or warming
+    fails, so the caller can fall back to a configured cookie — warming is a strict upgrade, never a
+    hard dependency."""
+    try:
+        with Warmer(domain, **kw) as w:
+            w.prime(url, settle_ms=settle_ms, challenge_gone=challenge_gone)
+            ck = w.cookie_header(name_filter)
+        if log:
+            log("[browser_warm] %s cookie warmed (%d chars)" % (domain, len(ck)) if ck
+                else "[browser_warm] %s warmed but no cookies captured" % domain)
+        return ck
+    except Exception as e:
+        if log:
+            log("[browser_warm] %s warm failed (%s) — caller falls back to a configured cookie"
+                % (domain, str(e)[:70]))
+        return ""
+
+
 def probe(domain, url, blocked_re=r"Robot or human|captcha|Access Denied|Incapsula|/_Incapsula_|Pardon the",
           challenge_gone=None):
     """Diagnostic: can this warmed browser reach a real page for `url`? Returns a dict {status, len, blocked}.

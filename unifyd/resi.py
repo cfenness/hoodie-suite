@@ -35,7 +35,15 @@ def _is_unlocker(host):
 
 
 def parts():
-    """Resolve (user, pass, host, port) from the env, or (None,…) if no proxy is configured."""
+    """Resolve (user, pass, host, port) from the env, or (None,…) if no proxy is configured.
+
+    COST GUARD: the per-GB tier (rotating residential / BD Unlocker) is resolved HERE — the flat-rate ISP
+    pool has its own path (isp_pool) and is never gated. So when per-GB is forbidden (RESI_ISP_ONLY) or a
+    monthly cap is reached, returning (None,…) disables EVERY per-GB getter (url/proxies/browser/opener/
+    _session_url/geo_session_url/sticky/best_url) at once — the source falls back to the flat ISP pool or
+    fails honestly, and can never run up a metered tab unattended."""
+    if not paygo_allowed():
+        return (None, None, None, None)
     # 1. full URL
     full = os.environ.get("RESI_PROXY", "").strip()
     if full:
@@ -73,6 +81,7 @@ def url():
     if not user:
         return None
     cred = urllib.parse.quote(user, safe="") + ":" + urllib.parse.quote(pw, safe="")
+    note_session()                                     # per-GB handout — metered for the cost cap
     return "http://%s@%s:%s" % (cred, host, port)
 
 
@@ -88,6 +97,7 @@ def browser():
     user, pw, host, port = parts()
     if not user:
         return None
+    note_session()                                     # per-GB browser context — metered
     return {"server": "http://%s:%s" % (host, port), "username": user, "password": pw}
 
 
@@ -103,6 +113,7 @@ def _session_url(session):
     elif _is_unlocker(host):
         user = user.split("-session-")[0] + "-session-" + tag
     cred = urllib.parse.quote(user, safe="") + ":" + urllib.parse.quote(pw, safe="")
+    note_session()                                     # per-GB rotating session — metered
     return "http://%s@%s:%s" % (cred, host, port)
 
 
@@ -125,6 +136,7 @@ def geo_session_url(session, state=None, city=None, lifetime="30m"):
     if "iproyal" in (host or ""):
         pw = base + geo + "_session-%s_lifetime-%s" % (tag, lifetime)
     cred = urllib.parse.quote(user, safe="") + ":" + urllib.parse.quote(pw, safe="")
+    note_session()                                     # per-GB geo-pinned session — metered
     return "http://%s@%s:%s" % (cred, host, port)
 
 
@@ -160,6 +172,7 @@ def sticky(tag, lifetime="30m"):
         pw = pw.split("_session-")[0] + "_session-%s_lifetime-%s" % (safe, lifetime)
     elif _is_unlocker(host):
         user = user.split("-session-")[0] + "-session-" + safe
+    note_session()                                     # per-GB IP pin — metered
     return {"RESI_PROXY_USER": user, "RESI_PROXY_PASS": pw,
             "RESI_PROXY_HOST": host, "RESI_PROXY_PORT": port, "RESI_PROXY": ""}
 
@@ -197,6 +210,8 @@ def isp_pool():
       • a FILE with one endpoint per line — path from ISP_PROXIES_FILE, else the default isp_proxies.txt next to
         this module. Easiest for a 15-IP list: paste the IPRoyal export one-per-line into unifyd/isp_proxies.txt.
     Each entry is a static, unlimited-bandwidth IP."""
+    if not isp_allowed():                              # FETCH_POLICY=free → no proxies at all (truly $0)
+        return []
     entries = []
     raw = os.environ.get("ISP_PROXIES", "")
     if raw:
@@ -283,8 +298,140 @@ def isp_us_url(key=None):
 
 def best_url(key=None):
     """The preferred proxy for bandwidth-heavy fetches: an ISP IP (flat-rate, unlimited) if a pool is set,
-    else the rotating residential session URL. Lets scrapers say `resi.best_url(tag)` and get the cheap path."""
+    else the rotating residential session URL. Lets scrapers say `resi.best_url(tag)` and get the cheap path.
+    When per-GB is forbidden/capped and no ISP pool is set, returns None (fetch direct or skip — never spend)."""
     return isp_url(key) if isp_enabled() else _session_url(key if key is not None else "rot")
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+# PER-GB COST GUARD — the ISP pool bills FLAT (unlimited), but the rotating-residential / BD-Unlocker tier
+# bills PER GB: the one that runs up a tab. This bounds/forbids it so unattended capture (the scheduler)
+# can't. The gate lives in parts(), so ALL per-GB getters honor it at once; the flat ISP pool is untouched.
+#   RESI_ISP_ONLY=1             hard-forbid per-GB (flat ISP pool only)
+#   RESI_MONTHLY_MAX_SESSIONS   cap per-GB proxy handouts (sessions) per calendar month (0/unset = no cap)
+# Usage is metered per month (in-memory + best-effort persisted to the warehouse) and read via usage().
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+import time as _time
+import threading as _threading
+_METER_LOCK = _threading.Lock()
+_MEM = {"loaded": False, "months": {}}                 # {month: {"sessions": n, "bytes": n}}
+
+
+def _month():
+    g = _time.gmtime()
+    return "%04d-%02d" % (g.tm_year, g.tm_mon)
+
+
+def _meter_load():
+    if _MEM["loaded"]:
+        return
+    try:
+        import warehouse
+        import json as _json
+        raw = warehouse.get_bytes("resi_usage.json")
+        if raw:
+            _MEM["months"] = _json.loads(raw) or {}
+    except Exception:
+        pass
+    _MEM["loaded"] = True
+
+
+def _meter_save():
+    try:
+        import warehouse
+        import json as _json
+        warehouse.put_bytes("resi_usage.json", _json.dumps(_MEM["months"]).encode("utf-8"))
+    except Exception:
+        pass
+
+
+def _cur():
+    _meter_load()
+    return _MEM["months"].setdefault(_month(), {"sessions": 0, "bytes": 0})
+
+
+def _env_truthy(name):
+    return str(os.environ.get(name, "")).strip().lower() in ("1", "true", "yes", "on")
+
+
+def fetch_policy():
+    """How far up the COST ladder fetches may go — free | flat | paid. THE cost dial:
+      free : direct + mobile-UA + a real local browser only. NO proxies. $0.
+      flat : the above + the flat-rate ISP pool (fixed per-IP, unlimited GB). NO per-GB tier.  ← default
+      paid : the above + the per-GB residential / BD-Unlocker tier (still capped by the meter/isp_only).
+    So paid is OPT-IN: nothing spends per-GB unless you deliberately set FETCH_POLICY=paid. FETCH_FREE_ONLY=1
+    is a shortcut for 'free'. Free-first is the whole point: 20 of ~29 sources never need a proxy at all."""
+    if _env_truthy("FETCH_FREE_ONLY"):
+        return "free"
+    p = str(os.environ.get("FETCH_POLICY", "flat")).strip().lower()
+    return p if p in ("free", "flat", "paid") else "flat"
+
+
+def isp_allowed():
+    """The flat ISP pool is usable only under 'flat'/'paid' (it's a fixed cost, not free)."""
+    return fetch_policy() in ("flat", "paid")
+
+
+def isp_only():
+    return _env_truthy("RESI_ISP_ONLY")
+
+
+def monthly_cap():
+    try:
+        return int(os.environ.get("RESI_MONTHLY_MAX_SESSIONS", "0") or 0)
+    except (ValueError, TypeError):
+        return 0
+
+
+def paygo_allowed():
+    """Whether the PER-GB tier may be used right now — only under FETCH_POLICY=paid, and even then False
+    when RESI_ISP_ONLY is set or the monthly session cap is reached. So per-GB is OPT-IN (default flat
+    forbids it). Never consults parts() (no recursion); the flat ISP pool has its own isp_allowed() gate."""
+    if fetch_policy() != "paid":
+        return False
+    if isp_only():
+        return False
+    cap = monthly_cap()
+    if cap:
+        with _METER_LOCK:
+            if _cur()["sessions"] >= cap:
+                return False
+    return True
+
+
+def note_session(n=1):
+    """Count a per-GB proxy handout (≈ one rotating-session / exit-IP grant). The per-GB getters call this;
+    persisted every ~10 to keep S3 writes off the hot path."""
+    with _METER_LOCK:
+        c = _cur()
+        c["sessions"] += n
+        dirty = (c["sessions"] % 10 == 0)
+    if dirty:
+        _meter_save()
+
+
+def note_bytes(n):
+    """Optional finer meter: real bytes through the per-GB tier, when a caller knows them."""
+    if not n:
+        return
+    with _METER_LOCK:
+        _cur()["bytes"] += int(n)
+
+
+def usage():
+    """This month's per-GB usage + guard state — for the cost view / API."""
+    with _METER_LOCK:
+        c = dict(_cur())
+    _meter_save()
+    return {"month": _month(), "sessions": c["sessions"], "bytes": c["bytes"],
+            "policy": fetch_policy(), "cap_sessions": monthly_cap(), "isp_only": isp_only(),
+            "isp_allowed": isp_allowed(), "isp_pool": len(isp_pool()), "paygo_allowed": paygo_allowed()}
+
+
+def reset_month():
+    with _METER_LOCK:
+        _MEM["months"][_month()] = {"sessions": 0, "bytes": 0}
+    _meter_save()
 
 
 def exit_ip(timeout=25):

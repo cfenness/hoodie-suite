@@ -38,12 +38,19 @@ SOURCES = [
     dict(id="abc-catalog", label="ABC FW&S (catalog)", code="import abc_catalog as m; m.run()",
          tables=["abc_catalog"], klass="headless", cadence="weekly", enabled=True, note="BigCommerce sitemap"),
     dict(id="abc-fws", label="ABC FW&S (inventory)", code="import abc_fws_scraper as m; m.pull(crawl_all=True)",
-         tables=["abc_products"], klass="headless", cadence="daily", enabled=True, note="per-store inventory"),
+         tables=["abc_products"], klass="headless", cadence="daily", enabled=True, note="per-store inventory",
+         # COVERAGE (coverage.py): item/store columns + the KNOWN universe, so a run that lands far fewer
+         # SKUs/stores than this reads `partial` instead of a silent stale merge. Omit expected_* to let
+         # coverage self-calibrate from the touched high-water-mark; set them when the universe is known.
+         item_col="sku", store_col="store", expected_items=13900, expected_stores=133),
     dict(id="haskells", label="Haskell's (MN)", code="import haskells as m; m.run(limit=None)",
          tables=["haskells_products"], klass="headless", cadence="daily", enabled=True, timeout=10800,
          note="first-party site; full-catalog crawl outgrew the 5400s default (timed out 07-18)"),
-    dict(id="total-wine", label="Total Wine", code="import total_wine_full as m; m.run()",
-         tables=["total_wine_products"], klass="mac", cadence="daily", enabled=True, note="PerimeterX — browser"),
+    dict(id="total-wine", label="Total Wine",
+         code="import os, total_wine_full as m; m.run(os.environ.get('TW_STORE','920'), state=os.environ.get('TW_STATE','FL'))",
+         tables=["total_wine_products"], klass="mac", cadence="daily", enabled=True,
+         note="PerimeterX — browser. run() needs a storeId (national catalog, that store's price/stock); "
+              "920=Orlando Millenia is the documented default, override via TW_STORE/TW_STATE. (was run() -> TypeError)"),
 
     # ── Grocery / big-box ─────────────────────────────────────────────────────────────────────────────────────
     dict(id="walmart", label="Walmart", code="import walmart_direct as m; m.pull(detail_pages=True, detail_cap=600)",
@@ -54,8 +61,9 @@ SOURCES = [
          tables=["target_products", "target_stores"], klass="headless", cadence="daily", enabled=True, note="RedSky API"),
     dict(id="kroger", label="Kroger (atlas inventory)", code="import kroger_atlas as m; m.main([])",
          tables=["kroger_atlas_products"], klass="mac", cadence="daily", enabled=True,
-         requires=["KROGER_COOKIE", "KROGER_STORE", "KROGER_FACILITY"],
-         note="INTERNAL atlas endpoint = exact per-store on-hand + dims + ABV; warmed cookie (anti-bot), Tier B"),
+         requires=["KROGER_STORE", "KROGER_FACILITY"],
+         note="INTERNAL atlas endpoint = exact per-store on-hand + dims + ABV; cookie AUTO-WARMED per run "
+              "(browser_warm — no manual paste), store from the x-laf-object header; cloud: warm-sources.yml"),
     dict(id="kroger-api", label="Kroger (API UPC seed)", code="import kroger_api as m; m.main()",
          tables=["kroger_products"], klass="creds", cadence="weekly", enabled=True,
          requires=["KROGER_CLIENT_ID", "KROGER_CLIENT_SECRET"],

@@ -109,11 +109,14 @@ def _close_isp():
 _atexit.register(_close_isp)
 
 
-def _get(url, api_key):
-    """Parsed RedSky JSON. ISP pool set → warmed local-Chrome in-page fetch (flat-rate, replaces BD Unlocker);
-    else → BD Unlocker (metered)."""
-    if resi.isp_enabled():
-        w = _isp_session()
+def _get(url, api_key=None):
+    """Parsed RedSky JSON. FREE-FIRST (PROVEN 2026-07-22, target-browser-probe on a GitHub datacenter
+    runner, no proxy: real Chrome loaded target.com then read RedSky in-page → HTTP 200, 20 stores).
+    Akamai clears for the browser's OWN session from ANY IP, so we use a warmed browser: an ISP IP if a
+    pool is set, else the LOCAL IP (proxy=None — the datacenter/host IP itself). The metered BD Unlocker
+    is a LAST resort, used ONLY under FETCH_POLICY=paid."""
+    try:
+        w = _isp_session()                                       # ISP IP if a pool is set, else local IP (proxy=None)
         obj = None
         for attempt in range(3):                                 # Akamai may need a few s post-load to clear
             st, obj = w.fetch_json(url)
@@ -127,8 +130,14 @@ def _get(url, api_key):
                     w.prime("https://www.target.com/", settle_ms=6000)
                 except Exception:
                     pass
-        return obj if isinstance(obj, (dict, list)) else {}
-    return json.loads(_unlock(url, api_key))
+        if isinstance(obj, (dict, list)) and obj:
+            return obj
+    except Exception:
+        if not resi.paygo_allowed():
+            raise                                                # no browser AND no paid fallback → fail honestly
+    if resi.paygo_allowed():                                     # opt-in metered fallback only
+        return json.loads(_unlock(url, api_key or _api_key()))
+    return {}
 
 
 # ~90 metro zips spread across Target's footprint — nearby_stores(within=75mi) off these + dedup covers
@@ -144,7 +153,7 @@ STORE_ZIPS = [
     "99201", "25301", "53202", "53703", "82001"]
 
 
-def nearby_stores(zipc, api_key, within=100, limit=20):   # RedSky caps limit at 20
+def nearby_stores(zipc, api_key=None, within=100, limit=20):   # RedSky caps limit at 20; api_key only for opt-in paid
     q = {"key": SEARCH_KEY, "limit": limit, "within": within, "place": zipc, "channel": "WEB"}
     d = _get("%s/nearby_stores_v1?%s" % (REDSKY, urllib.parse.urlencode(q)), api_key)
     out = []
@@ -161,7 +170,7 @@ def nearby_stores(zipc, api_key, within=100, limit=20):   # RedSky caps limit at
 
 def enumerate_stores(zips=None, log=print):
     """Enumerate Target stores nationwide via the store locator; land target_stores (dedup by store_id)."""
-    key = _api_key(); zips = zips or STORE_ZIPS
+    key = None; zips = zips or STORE_ZIPS                        # browser-first (see _get); no BD key needed
     seen = {}
     for z in zips:
         try:
@@ -174,7 +183,9 @@ def enumerate_stores(zips=None, log=print):
     rows = list(seen.values())
     from collections import Counter
     by_state = Counter(r["state"] for r in rows)
-    warehouse.write_parquet("target_stores", rows)
+    # ACCUMULATE by store_id — a partial/bounded enumeration (a few zips) must ADD/update stores, never
+    # overwrite the national set. write_parquet here clobbered 1163 stores down to 60 on a 3-zip run.
+    warehouse.write_accumulate("target_stores", rows, key=lambda r: r.get("store_id"))
     log("[target] %d distinct stores across %d states -> target_stores (top: %s)"
         % (len(rows), len(by_state), dict(by_state.most_common(6))))
     return len(rows)
@@ -185,7 +196,7 @@ def _img(item):
     return en.get("primary_image_url") or ""
 
 
-def plp_search(term, store, zipc, api_key, offset=0, count=28):
+def plp_search(term, store, zipc, api_key=None, offset=0, count=28):
     q = {"key": SEARCH_KEY, "channel": "WEB", "count": count, "default_purchasability_filter": "true",
          "keyword": term, "offset": offset, "page": "/s/" + term, "platform": "desktop",
          "pricing_store_id": store, "store_ids": store, "visitor_id": "0193", "zip": zipc}
@@ -203,7 +214,7 @@ def plp_search(term, store, zipc, api_key, offset=0, count=28):
     return out
 
 
-def fulfillment_qty(tcins, store, zipc, state, api_key):
+def fulfillment_qty(tcins, store, zipc, state, api_key=None):
     """{tcin: available_to_promise_quantity} for a store, from product_summary_with_fulfillment."""
     q = {"key": SEARCH_KEY, "tcins": ",".join(tcins), "store_id": store, "pricing_store_id": store,
          "zip": zipc, "state": state, "channel": "WEB"}
@@ -219,7 +230,7 @@ def fulfillment_qty(tcins, store, zipc, state, api_key):
 def run(stores=None, terms=None, pages=2, log=print):
     stores = stores or DEFAULT_STORES
     terms = terms or DEFAULT_TERMS
-    key = None if resi.isp_enabled() else _api_key()             # ISP path needs no BD key
+    key = None                                                   # browser-first path needs no BD key (see _get)
     run_id = "tg-" + time.strftime("%Y%m%d-%H%M%S")
     rows, seen = [], set()
     for (store, zipc, state) in stores:
@@ -249,8 +260,18 @@ def run(stores=None, terms=None, pages=2, log=print):
                 time.sleep(1.0)
         log("  [target] store %s (%s) — %d products" % (store, state, got))
     if rows:
-        # ACCUMULATE — a small/CLI-scoped run() must not overwrite the national catalog run_national builds.
-        warehouse.write_accumulate("target_products", rows, key=lambda r: r.get("tcin") or r.get("product_id"))
+        # target_products is the per-PRODUCT catalog — build_product_master DEDUPS it by tcin, and per-store
+        # price/qty lives in retail_observations (observe.record below). So write DISTINCT products keyed by
+        # tcin; NEVER per-store rows (that bloats the catalog, and the tcin-keyed consumer collapses them).
+        # Matches run_national's catalog grain. write_accumulate merges, so it never clobbers.
+        cat = {}
+        for r in rows:
+            tc = r.get("tcin") or r.get("product_id")
+            if tc and tc not in cat:
+                cat[tc] = dict(tcin=tc, product_id=tc, name=r.get("name"), brand=r.get("brand"),
+                               category=r.get("category"), image_url=r.get("image_url"),
+                               price=r.get("price"), is_hemp=r.get("is_hemp"), source="target")
+        warehouse.write_accumulate("target_products", list(cat.values()), key=lambda r: r["tcin"])
         observe.record("target", [dict(store=r["store"], store_id=r["store_id"], product_id=r["tcin"],
                                         brand=r["brand"], name=r["name"], price=r["price"],
                                         in_stock=r["in_stock"], qty=r["qty"], is_hemp=r.get("is_hemp")) for r in rows])
@@ -283,7 +304,7 @@ def run_national(log=print, workers=12, batch=24, limit=None):
     `limit` caps to a state-spread SAMPLE of stores — the cheap daily cadence (full national = limit=None)."""
     import threading
     from concurrent.futures import ThreadPoolExecutor
-    key = None if resi.isp_enabled() else _api_key()             # ISP path needs no BD key
+    key = None                                                   # browser-first path needs no BD key (see _get)
     if resi.isp_enabled():
         workers = min(workers, 4)                                # each worker warms a browser — bound the fleet
         log("  [target] flat-rate ISP path (warmed local Chrome, %d workers)" % workers)
@@ -293,7 +314,9 @@ def run_national(log=print, workers=12, batch=24, limit=None):
     tcins = [t for t in prods if t]
     if not tcins:
         log("  [target] no catalog — aborting"); return 0
-    warehouse.write_parquet("target_products", [prods[t] for t in tcins])
+    # ACCUMULATE by tcin (per-product catalog) — write_parquet OVERWRITES, so a catalog() that came back
+    # short (a block, a partial fetch) would clobber the full national catalog. Merge instead: never shrink.
+    warehouse.write_accumulate("target_products", [prods[t] for t in tcins], key=lambda r: r.get("tcin"))
     stores = warehouse.query("target_stores", "SELECT store_id, zip, state FROM t")
     if limit and len(stores) > limit:
         buckets = {}                                   # round-robin by state → even national spread, cheap

@@ -158,14 +158,23 @@ def write_accumulate(name, records, key, fields=None):
         return {"rows": 0, "uri": uri(name)}
     man = read_manifest(name)
     if man and man.get("layout") == "bucketed":
-        return _accumulate_bucketed(name, man, records)
+        res = _accumulate_bucketed(name, man, records)
+    else:
+        try:
+            existing = query(name, "SELECT * FROM t")
+        except Exception:
+            existing = []
+        ks = {key(r) for r in records}
+        merged = [e for e in existing if key(e) not in ks] + records
+        res = write_parquet(name, merged, fields=fields)
+    # Coverage telemetry: record how many distinct items/stores THIS write touched (the honest per-run
+    # signal a cumulative merge can't give). Best-effort AFTER the write — must never affect the landing.
     try:
-        existing = query(name, "SELECT * FROM t")
+        import coverage as _cov
+        _cov.record_write(name, records, key=key, result=res)
     except Exception:
-        existing = []
-    ks = {key(r) for r in records}
-    merged = [e for e in existing if key(e) not in ks] + records
-    return write_parquet(name, merged, fields=fields)
+        pass
+    return res
 
 
 def _s3fs():

@@ -74,6 +74,38 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   failed scrape, not a rebuild. Persistent catalogs use `write_accumulate` (merge).
 - **Creds-gated sources declare `requires=[env]`** in the registry; `run_sources.py`
   reports them `no-creds` (skipped, honest) instead of running them to failure.
+- **NEVER assert a paid path is REQUIRED without grounding it in the code (load-bearing — unsupported
+  "you have to pay for this" claims have wasted real money).** Before saying a paid proxy / API / service
+  is necessary, cite the specific evidence: the fetch code that has no direct/mobile-UA/local-browser
+  path, or an actual tested block *from a residential IP* — not a datacenter one. "It's blocked" is NOT
+  proof a paid path is required; a datacenter-IP block is an execution-PLACEMENT problem (run it on a
+  residential executor), and the default assumption is that a free path exists until the code proves it
+  cannot. If you can't ground the claim in code, don't make it — investigate first.
+- **FREE-FIRST — do NOT default to paid proxies (load-bearing, keeps getting reverted).**
+  Two proxy tiers: the flat-rate **ISP pool** (fixed per-IP, unlimited bandwidth) and the
+  **per-GB** rotating-residential / BD-Unlocker tier (the one that runs up a thousands-a-month
+  tab). `FETCH_POLICY` (default `flat`) is the dial: `free` = no proxies at all; `flat` = ISP
+  pool only; `paid` = per-GB **opt-in**. `resi.paygo_allowed()` is `False` unless `FETCH_POLICY=paid`,
+  and every per-GB seam (`resi.parts()` → url/browser/opener/…, plus `polite`'s BD path) honors it.
+  **~20 of ~29 sources need NO proxy** (direct HTTP / public API / sitemap); only the 9 `anti-bot`
+  sources even tempt one — see `cost_class` in `/api/registry/sources`. When you touch a scraper,
+  NEVER add a per-GB proxy as the default path or "to make it work" — try direct → mobile-UA →
+  a real **local browser** (patchright/playwright, no proxy) → the flat ISP pool, in that order.
+- **The anti-bot free method runs from a RESIDENTIAL IP, not the cloud.** The hard-won recipe
+  (e.g. `ubereats.py`: a real Chromium on a residential IP hitting the first-party BFF with the
+  app's own `x-uber-*` headers — NO Bright Data, NO cookie; `ue_geofill.py`: universe fetched
+  DIRECT from the home IP) only clears PerimeterX/Forter **because the exit IP is residential**.
+  On a datacenter host (Fly/CI) the datacenter IP is blocked, and the wrong reflex is "buy a
+  residential proxy." The RIGHT answer: run the `anti-bot` sources on the **residential executor**
+  (the Mac — `$0`) and keep the cloud for the ~20 free API sources. `ue_crawl.py`'s "proxy for
+  everything" path is opt-in scale (`FETCH_POLICY=paid`), never the default. Don't re-litigate this.
+  - **Not every `anti-bot` source needs the residential executor — test, don't assume.** `unifyd/instacart.py`
+    is the proven counter-example: a self-hosted **headless** Chromium (Playwright, NO Bright Data, NO proxy)
+    drives Instacart's own `SearchResultsPlacements` GraphQL and lands per-store product+price **from a bare
+    datacenter IP** — a CI matrix confirmed headless-no-Xvfb lands data, so the Fly image ships just the
+    bundled Chromium and the Instacart pull runs in-app for `$0`. The old BD managed-dataset scraper is
+    archived (`_archive/instacart_scraper.py`). Never re-add Bright Data to Instacart "to make it work";
+    if the datacenter path ever regresses, prove the block from a residential IP first (see the paid-path rule).
 
 - `unifyd/server.py` — a local Flask agent (`python unifyd/server.py`, port 8765) that
   serves `hoodie_mdm.html` and runs real pulls on `/api/run`. Endpoints: `/api/health`,
@@ -137,6 +169,21 @@ sample file; apps keep calling `applyContext(ctx)` but fetch `/api/<entity>?scop
 inside. The intended shape is API Gateway + Lambda behind a `/api/*` CloudFront
 behavior on the same domain. See the "backend on-ramp" sections of `README.md` and
 `SPINE.md` before adding any server code.
+
+### Snowflake load — the seed to Unifyd (`snowflake/`)
+A staged SQL build that lands the whole warehouse in Snowflake — the Parquet layout was designed to be
+Snowflake-loadable (NRT-PLAN.md §2: "migration is a load, not a rewrite"), and this is that load. It's
+**generated, not hand-kept**: `snowflake/build_snowflake_sql.py` derives everything from the same
+sources of truth the engine uses — `source_registry.py` for the raw source list, the typed catalog in
+the generator (mirroring `build_product_master.py`/`normalize.py`/`dim_outlet.py`) for the canonical
+star. Three schemas: `RAW` (one landing table per source Parquet, **schema-agnostic** via Snowflake
+`INFER_SCHEMA` + `MATCH_BY_COLUMN_NAME` — scraper drift just flows through, same as the DuckDB
+`read_parquet` path), `MASTER` (the **typed** star `dim_brand/product/item/sku` + `dim_outlet` +
+`src_<grain>` + signal tables — the seed), `MART` (views). It stages SQL only — nothing connects to
+Snowflake or touches prod. `python snowflake/build_snowflake_sql.py [--live]` regenerates; `--live`
+reads the warehouse to include every present table and resolve bucketed (v2) tables to their manifest's
+active parts. `snowflake/` is engine/infra — never web-served (not in `_SUITE_OK_TOP`), like `unifyd/`.
+See `snowflake/README.md`.
 
 ## Health & smoke (keeping the served data trustworthy)
 

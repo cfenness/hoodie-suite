@@ -1,44 +1,42 @@
 """instacart.py — Instacart connector on the aggregator harness (see aggregator.py).
 
-STATUS (2026-07-10): API cracked + anti-bot solved; NOT yet reliably landing data — the last mile is
-BD-browser automation hardening (see FRICTION below). Recon proved every hard unknown:
+STATUS (2026-07-22): FREE PATH. The browser DRIVER is now a self-hosted Playwright Chromium — NO Bright Data,
+NO proxy. A cloud probe (`instacart_free_probe.py`, run on a bare datacenter runner) proved a real Chromium
+reaches Instacart's homepage → a grocery storefront → the product GraphQL with no anti-bot block and no paid
+layer (home=True blocked=False store=True search_gql=True products=76). The data is Instacart's own persisted
+GraphQL — the browser is only how we drive a real session; it never needed to be a paid one.
 
-  • Anti-bot: `bdata browser` (Bright Data Browser API, zone cli_browser) defeats Forter/reCAPTCHA where
-    local headless can't. Open with `--country us`; a delivery ZONE auto-sets from the residential IP
-    (no address dance) — the homepage then lists real retailers with delivery times.
-  • Product API: persisted GraphQL
+The recipe (unchanged from the BD era — only the driver changed):
+  • ZONE: a delivery zone = {shopId, postalCode, zoneId}. It rides in the `variables` of every live
+    `SearchResultsPlacements` request. We ENTER a non-membership grocery storefront (membership warehouses
+    wall the product query), run one seed search, and read the three ids back out of the captured request URL.
+  • PRODUCT API: persisted GraphQL
       GET https://www.instacart.com/graphql?operationName=SearchResultsPlacements
-          &variables={query, shopId, postalCode, zoneId, first, orderBy:"bestMatch", searchSource:"search",
-                      filters:[], contentManagementSearchParams:{itemGridColumnCount:N}, pageViewId, ...}
+          &variables={query, shopId, postalCode, zoneId, first, orderBy:"bestMatch", ...}
           &extensions={persistedQuery:{version:1, sha256Hash:SEARCH_HASH}}
-    Returns clean JSON at data.searchResultsPlacements.placements[]. Confirmed it returns JSON (a spirits
-    query returned the alcohol-gate payload, proving the call works).
-  • shopId is per-retailer-per-zone; zone = {postalCode, zoneId} from the IP. Get all three from any live
-    SearchResultsPlacements request URL in `bdata browser network` (they're in the variables).
-  • ALCOHOL GATE (verified in PA and LA): alcohol needs a logged-in, age-verified session — anonymous
-    returns "alcohol products aren't available" + "Log in". NON-alcohol browses anonymously. So bev-alc
-    needs an account session (cookies) injected into the BD browser; non-alcohol is the proof-of-pipe.
+    Returns clean JSON at data.searchResultsPlacements.placements[]. We replay it per query term with our own
+    zone — no browser interaction per page, just a navigation to the graphql URL and a body read.
+  • ALCOHOL GATE (verified in PA + LA): alcohol needs a logged-in, age-verified session — anonymous returns
+    "alcohol products aren't available". NON-alcohol browses anonymously, so the free anon path is the
+    proof-of-pipe + the whole non-alc long tail; bev-alc later needs an account session injected here.
 
-FRICTION still to harden (why this doesn't land data yet):
-  • Membership retailers (Costco/Sam's) show a membership wall → no SearchResultsPlacements fires. Pick a
-    regular grocery (ALDI, Target, Publix, Kroger, Rouses, …).
-  • Storefronts must be ENTERED (click the retailer) before /store/<slug>/s?k= works; a direct search URL
-    without shop context redirects to the homepage.
-  • Params must be scraped from a LIVE SearchResultsPlacements request (only present once a real search
-    fires) — capture that URL, then re-issue with your own query terms.
-  • Direct navigation to a raw graphql URL is occasionally flaky ("site can't be reached") — retry.
-
-Once those are hardened this class's hooks drop straight onto AggregatorConnector; DoorDash/Uber Eats then
-reuse the same base (their own persisted op + zone + login).
+Driver notes (free Playwright):
+  • Headful by default under Xvfb (BROWSER_HEADFUL unset → headless=False) — matches the probe; the toughest
+    fingerprinting sometimes needs a real window, and a datacenter Xvfb window cleared Instacart in the probe.
+    Set BROWSER_HEADFUL=0 to force headless.
+  • Channel `chrome` (real Google Chrome) first, bundled Chromium as fallback — Chrome's build id trusts more.
+  • Network capture: `page.on("request")` records every `/graphql` URL into `self._gql`; open_zone reads the
+    seed `SearchResultsPlacements` URL out of it (the ids only exist once a real search fires).
+  • NO proxy is ever configured here. This connector is `cost_class: anti-bot` but runs $0 from a residential
+    OR datacenter browser; per the standing rule it must NEVER acquire a per-GB proxy "to make it work".
 """
 import json
+import os
 import re
-import subprocess
 import time
 import urllib.parse
 
 import sys
-import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from aggregator import AggregatorConnector
 
@@ -48,11 +46,18 @@ SEARCH_HASH = "6f8d4a3f450d8d25dbb87b6b5bcb82180a1b3c972366fb1fb7de816c05523f4a"
 # non-membership groceries to prefer (membership warehouses block the product query)
 GROCERY = ["ALDI", "Target", "Publix", "Kroger", "Rouses", "Wegmans", "GIANT", "Food Lion",
            "Meijer", "Safeway", "Albertsons", "The Fresh Market", "Sprouts"]
-
-
-def _bb(*args, timeout=120):
-    """Run a `bdata browser` subcommand, return stdout."""
-    return subprocess.run(["bdata", "browser", *args], capture_output=True, text=True, timeout=timeout).stdout
+BLOCK_HINTS = ["press & hold", "press and hold", "are you a robot", "unusual traffic", "access denied",
+               "enter the characters", "verify you are human"]
+UA = os.environ.get("BROWSER_UA",
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36")
+# Minimal stealth — undo the vanilla-automation tells (same patches browser_warm.py uses).
+_STEALTH = """
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+window.chrome = window.chrome || { runtime: {} };
+"""
 
 
 class Instacart(AggregatorConnector):
@@ -60,37 +65,104 @@ class Instacart(AggregatorConnector):
 
     def __init__(self, session="ic"):
         self.session = session
+        self._pw = self._browser = self._ctx = self._page = None
+        self._gql = []                                   # every /graphql request URL the page fires
+
+    # ---- free browser lifecycle (no BD, no proxy) ----
+    def _launch(self):
+        from playwright.sync_api import sync_playwright
+        headful = os.environ.get("BROWSER_HEADFUL", "1") != "0"
+        self._pw = sync_playwright().start()
+        last = None
+        for ch in ("chrome", None):                      # real Chrome first, bundled Chromium fallback
+            try:
+                self._browser = (self._pw.chromium.launch(headless=not headful, channel=ch,
+                                                           args=["--no-sandbox"]) if ch
+                                 else self._pw.chromium.launch(headless=not headful, args=["--no-sandbox"]))
+                break
+            except Exception as e:
+                last = e
+        if not self._browser:
+            raise RuntimeError("could not launch a free browser (channel chrome/bundled): %s" % last)
+        self._ctx = self._browser.new_context(locale="en-US", user_agent=UA)
+        self._ctx.add_init_script(_STEALTH)
+        self._page = self._ctx.new_page()
+        self._page.on("request", lambda r: self._gql.append(r.url) if "/graphql" in r.url else None)
+
+    def close(self):
+        for obj, meth in ((self._browser, "close"), (self._pw, "stop")):
+            try:
+                getattr(obj, meth)() if obj else None
+            except Exception:
+                pass
+        self._browser = self._pw = self._ctx = self._page = None
 
     def open_session(self, address=None):
-        _bb("open", "https://www.instacart.com/", "--country", "us", "--session", self.session)
+        if not self._page:
+            self._launch()
+        self._page.goto("https://www.instacart.com/", wait_until="domcontentloaded", timeout=60000)
+        self._page.wait_for_timeout(5000)
+        body = (self._page.content() or "").lower()
+        if any(h in body for h in BLOCK_HINTS):
+            raise RuntimeError("Instacart anti-bot blocked the free browser (datacenter IP?) — "
+                               "run this source on the residential executor, NOT a paid proxy")
+        self._set_zip(address)
         return self.session
 
+    def _set_zip(self, address):
+        """Best-effort: set a delivery ZIP so a real storefront/zone resolves. `address` may be a bare ZIP."""
+        zip_ = ""
+        if address:
+            m = re.search(r"\b(\d{5})\b", str(address))
+            zip_ = m.group(1) if m else ""
+        if not zip_:
+            return
+        for sel in ('input[data-testid="address-input"]', 'input[placeholder*="ZIP"]',
+                    'input[placeholder*="address" i]', 'input[type="text"]'):
+            try:
+                el = self._page.query_selector(sel)
+                if el and el.is_visible():
+                    el.click(); el.fill(zip_); self._page.wait_for_timeout(1500)
+                    self._page.keyboard.press("Enter"); self._page.wait_for_timeout(4000)
+                    return
+            except Exception:
+                pass
+
     def open_zone(self, session, address=None):
-        """Enter a regular (non-membership) grocery so shop context is set, run one search to capture a
-        live SearchResultsPlacements URL, and read {shopId, postalCode, zoneId} + slug back out."""
-        snap = _bb("snapshot", "--interactive", "--session", session)
-        ref = slug = ""
+        """Enter a regular (non-membership) grocery so shop context is set, run one seed search to fire a
+        live SearchResultsPlacements request, and read {slug, shopId, postalCode, zoneId} back out of it."""
+        slug = ""
         for name in GROCERY:
-            m = re.search(r'link "([^"]*%s[^"]*)" \[ref=(e\d+)\]' % re.escape(name), snap, re.I)
-            if m:
-                ref = m.group(2); break
-        if not ref:
-            raise RuntimeError("no non-membership grocery retailer found on the homepage")
-        _bb("click", ref, "--session", session); time.sleep(4)
-        st = _bb("status", "--session", session)
-        sm = re.search(r"/store/([^/\"]+)", st)
-        slug = sm.group(1) if sm else ""
-        _bb("open", "https://www.instacart.com/store/%s/s?k=milk" % slug, "--country", "us", "--session", session)
-        time.sleep(6)
-        url = ""
-        for line in _bb("network", "--session", session).splitlines():
-            if SEARCH_OP in line:
-                m = re.search(r"https://www\.instacart\.com/graphql\?operationName=%s[^\s]+" % SEARCH_OP, line)
-                if m:
-                    url = m.group(0); break
+            try:
+                link = self._page.get_by_text(re.compile(re.escape(name), re.I)).first
+                if link and link.is_visible():
+                    link.click(timeout=5000); self._page.wait_for_timeout(6000)
+                    break
+            except Exception:
+                continue
+        m = re.search(r"/store/([^/?\"]+)", self._page.url)
+        slug = m.group(1) if m else ""
+        # seed search — fires the SearchResultsPlacements request whose variables carry the zone ids
+        self._gql = []
+        try:
+            box = self._page.query_selector('input[type="search"], input[placeholder*="Search" i]')
+            if box:
+                box.click(); box.fill("milk"); self._page.keyboard.press("Enter")
+                self._page.wait_for_timeout(6000)
+        except Exception:
+            pass
+        url = next((u for u in self._gql if SEARCH_OP in u), "")
+        if not url:                                      # fall back to navigating a raw seed search URL
+            if slug:
+                self._page.goto("https://www.instacart.com/store/%s/s?k=milk" % slug,
+                                wait_until="domcontentloaded", timeout=60000)
+                self._page.wait_for_timeout(6000)
+                url = next((u for u in self._gql if SEARCH_OP in u), "")
         if not url:
-            raise RuntimeError("no %s call captured for slug %s (membership wall?)" % (SEARCH_OP, slug))
-        v = json.loads(urllib.parse.unquote(urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["variables"][0]))
+            raise RuntimeError("no %s call captured for slug %r (membership wall / not entered?)"
+                               % (SEARCH_OP, slug))
+        v = json.loads(urllib.parse.unquote(
+            urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["variables"][0]))
         return {"slug": slug, "shopId": v["shopId"], "postalCode": v["postalCode"], "zoneId": v["zoneId"]}
 
     def _search_url(self, zone, query, first=24):
@@ -106,16 +178,20 @@ class Instacart(AggregatorConnector):
             urllib.parse.quote(json.dumps(ext, separators=(",", ":"))))
 
     def fetch_page(self, session, zone, query, cursor=None):
-        for _ in range(3):                       # raw-graphql nav is occasionally flaky — retry
-            _bb("open", self._search_url(zone, query), "--country", "us", "--session", session)
-            time.sleep(3)
-            txt = _bb("get", "text", "--session", session)
+        for _ in range(3):                               # raw-graphql nav is occasionally flaky — retry
+            try:
+                self._page.goto(self._search_url(zone, query), wait_until="domcontentloaded", timeout=60000)
+                self._page.wait_for_timeout(2500)
+                txt = self._page.inner_text("body")
+            except Exception:
+                time.sleep(2); continue
             m = re.search(r"(\{.*\})", txt, re.S)
             if m:
                 try:
                     d = json.loads(m.group(1))
-                    placements = (((d.get("data") or {}).get("searchResultsPlacements") or {}).get("placements")) or []
-                    return placements, None      # SearchResultsPlacements isn't cursor-paged in this op
+                    placements = (((d.get("data") or {}).get("searchResultsPlacements") or {})
+                                  .get("placements")) or []
+                    return placements, None              # SearchResultsPlacements isn't cursor-paged in this op
                 except Exception:
                     pass
             time.sleep(2)
@@ -138,7 +214,7 @@ class Instacart(AggregatorConnector):
         if not items:
             return None
         it = items[0]
-        price_str = json.dumps(it)              # price lives in a nested viewSection; pull the first $x.xx
+        price_str = json.dumps(it)                       # price lives in a nested viewSection; pull first $x.xx
         pm = re.search(r"\$(\d+\.\d{2})", price_str)
         img = re.search(r'https://[^"\\]+?\.(?:png|jpe?g)[^"\\]*', price_str)
         return dict(retailer=zone.get("slug", retailer), store=zone.get("slug", retailer),
@@ -148,3 +224,10 @@ class Instacart(AggregatorConnector):
                     price=float(pm.group(1)) if pm else None, in_stock=True,
                     image_url=img.group(0) if img else "", url="",
                     raw_json=json.dumps(it)[:4000])
+
+    # ensure the browser is always torn down, even though the base pull() doesn't know about it
+    def pull(self, *a, **k):
+        try:
+            return super().pull(*a, **k)
+        finally:
+            self.close()

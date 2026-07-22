@@ -26,7 +26,9 @@ import abc_fws_scraper as abc      # ABC FWS directional inventory tracker (BigC
 import specs_scraper as specs      # Spec's directional tracker (Next.js, via Bright Data)
 import binnys_scraper as binnys    # Binny's directional tracker (Algolia feed, no Bright Data)
 import shopify_scraper as shopify  # DTC brands on Shopify (hemp + bev-alc) via public /products.json
-import instacart_scraper as instacart  # store-level Instacart via Bright Data managed dataset
+# Instacart: the FREE Playwright connector (instacart.Instacart) is the active source — no Bright Data,
+# no proxy (proven landing per instacart-free-verify CI). Imported lazily in instacart_pull so a slim
+# image without the browser lib doesn't break server import. The old BD dataset scraper is archived.
 import analyze                      # data-reader brain behind "Overlay your data"
 import planogram                    # benchmark + shelf-vision + pitch behind the Planogram app
 import hi_analyst                   # the real Claude analyst behind Hoodie Intelligence Q&A
@@ -805,14 +807,46 @@ def shopify_pull(params):
     return run
 
 def instacart_pull(params):
+    """FREE Instacart pull — self-hosted Playwright browser drives Instacart's own SearchResultsPlacements
+    GraphQL (no Bright Data, no proxy). Lands per-store product+price into instacart_products +
+    retail_observations via the aggregator base. Instacart is a browser source: this needs Chromium in the
+    image (it ships one) — if the browser can't launch it reports an HONEST failed run, never a 0-row pass."""
     started = int(time.time() * 1000)
-    ds, runs, _ = instacart.pull(out=os.path.join(STATE_DIR, "instacart"),
-        state_dir=os.path.join(STATE_DIR, "instacart"), urls=params.get("urls"),
-        log=lambda m: app.logger.info("INSTACART %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
+    zip_ = str(params.get("zip") or params.get("address") or "10001")
+    queries = params.get("queries") or ["milk", "vodka", "chips", "coffee", "eggs", "water",
+                                        "soda", "bread", "cheese", "beer"]
+    if isinstance(queries, str):
+        queries = [q.strip() for q in queries.split(",") if q.strip()]
+    pages = int(params.get("pages", 2))
+    rows, warnings, status = [], [], "success"
+    try:
+        from instacart import Instacart
+        rows = Instacart().pull(address=zip_, retailers=["grocery"], queries=queries,
+                                per_query_pages=pages, log=lambda m: app.logger.info("INSTACART %s", m))
+        if not rows:
+            status = "degraded"
+            warnings.append("Free browser reached Instacart but landed 0 products (membership wall / zone "
+                            "capture / anti-bot at this IP). It's a browser source — needs Chromium here or "
+                            "the residential executor.")
+    except ImportError as e:
+        status = "failed"
+        warnings.append("Instacart needs Playwright + Chromium (free, no bd) — this image should ship it: %s"
+                        % str(e)[:160])
+    except Exception as e:
+        status = "failed"
+        warnings.append("Instacart free pull failed: %s" % str(e)[:200])
+    if rows:                                          # keep the console preview populated (real data is in the warehouse)
+        header = ["Store", "Product", "Price", "In Stock"]
+        drows = [[r.get("store"), r.get("name"), r.get("price"), r.get("in_stock")] for r in rows]
+        DATASETS.update(_absorb({"instacart_products": {"header": header, "rows": drows[:800],
+                                 "total": len(rows), "stores": len({r.get("store_id") for r in rows})}}))
+        save()
+    finished = int(time.time() * 1000)
+    return {"id": "R-IC%05d" % (started % 100000), "connId": "instacart", "startedAt": started,
+            "finishedAt": finished, "durationMs": finished - started, "status": status,
+            "total": len(rows), "degraded": status == "degraded", "warnings": warnings, "healed": [],
+            "extracts": [{"id": "instacart_products", "rows": len(rows), "delta": len(rows),
+                          "status": status}], "trigger": params.get("trigger", "manual")}
 
 def total_wine_pull(params):
     started = int(time.time() * 1000)
@@ -4283,6 +4317,312 @@ def dataset_download():
 @app.get("/api/runs")
 def runs():
     return jsonify(RUNS[:200])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Registry pipeline — EXECUTE the canonical source_registry sources IN THE APP.
+#
+# The point (owner, 2026-07-22): data operations should run in the deployed app, which holds the
+# secrets ONCE in its Fly config — not in a re-provisioned sandbox or re-added to CI every time. So
+# these endpoints run run_sources.run_one server-side using THIS process's environment (its secrets,
+# its warehouse creds, its proxy), land to the shared source_runs ledger, and report expected-vs-landed
+# COVERAGE. Behind the OIDC gate like every /api/* route. This is distinct from /api/run (the older
+# connId pull surface); it drives the 31-source canonical registry that run_sources + health use.
+# ─────────────────────────────────────────────────────────────────────────────
+_REG_JOBS = {}
+
+
+@app.get("/api/registry/sources")
+def registry_sources_ep():
+    """The canonical source list + each source's expected-vs-landed coverage + which creds are absent
+    HERE (so you can see what this executor can actually run). Reads the app's own warehouse/ledger."""
+    import source_registry as reg
+    import warehouse
+    try:
+        import coverage as cov
+    except Exception:
+        cov = None
+    def _cost_class(s):
+        # what a source actually needs: 'free' (direct HTTP / API / sitemap — $0), 'free-api-key' (a free
+        # key), or 'anti-bot' (the ONLY class that even tempts a paid proxy — and it should try the free
+        # local-browser / mobile-UA path first).
+        note = (s.get("note") or "").lower()
+        if s["klass"] == "mac" or any(w in note for w in
+                ("perimeterx", "imperva", "incapsula", "datadome", "cloudflare", "waf", "akamai", "forter")):
+            return "anti-bot"
+        return "free-api-key" if s["klass"] == "creds" else "free"
+    out = []
+    for s in reg.SOURCES:
+        try:
+            cv = cov.assess(s) if cov else None
+        except Exception:
+            cv = None
+        out.append({"id": s["id"], "label": s["label"], "klass": s["klass"], "cadence": s.get("cadence"),
+                    "enabled": bool(s.get("enabled")), "tables": s.get("tables"),
+                    "cost_class": _cost_class(s),
+                    "requires": s.get("requires") or [],
+                    "missing_creds": [e for e in (s.get("requires") or []) if not os.environ.get(e)],
+                    "coverage": cv})
+    n_free = sum(1 for x in out if x["cost_class"] != "anti-bot" and x["enabled"])
+    return jsonify(ok=True, count=len(out), free_or_keyed=n_free, remote=warehouse.remote(), sources=out)
+
+
+@app.get("/api/registry/coverage")
+def registry_coverage_ep():
+    """Expected-vs-landed store/item coverage for every source, from the app's coverage_log — the honest
+    'did the last run actually cover the catalog' read that a cumulative row-count can't give."""
+    import source_registry as reg
+    import coverage as cov
+    out = {}
+    for s in reg.SOURCES:
+        try:
+            out[s["id"]] = cov.assess(s)
+        except Exception as e:
+            out[s["id"]] = {"error": str(e)[:120]}
+    return jsonify(ok=True, coverage=out)
+
+
+def _reg_run_job(jid, ids):
+    import run_sources as rs
+    import source_registry as reg
+    job = _REG_JOBS[jid]
+
+    def _log(*a):
+        job["log"].append(" ".join(str(x) for x in a))
+        del job["log"][:-200]
+    for i in ids:
+        s = reg.by_id(i)
+        if not s:
+            continue
+        job["current"] = i
+        try:
+            rec = rs.run_one(s, log=_log)
+            rs._land_runs([rec], log=lambda *a: None)     # shared ledger → health + /api/runs see it
+        except Exception as e:
+            rec = {"source": i, "status": "failed", "error": str(e)[:300]}
+        job["records"].append(rec)
+    job["current"] = None
+    job["status"] = "done"
+    job["finishedAt"] = int(time.time() * 1000)
+
+
+@app.post("/api/registry/run")
+def registry_run_ep():
+    """Run registry source(s) SERVER-SIDE with the app's env/secrets. Body: {id} or {ids:[...]} or
+    {cadence}; {include_mac:true} to include the anti-bot browser sources (default: headless/creds only,
+    since a server without a warmed browser can't run them); {sync:true} to block for a single source
+    (else a background job → poll /api/registry/run/progress?id=)."""
+    import source_registry as reg
+    import run_sources as rs
+    body = request.get_json(silent=True) or {}
+    ids = body.get("ids") or ([body["id"]] if body.get("id") else None)
+    if not ids:
+        cad = body.get("cadence")
+        ok_klass = (lambda k: True) if body.get("include_mac") else (lambda k: k != "mac")
+        ids = [s["id"] for s in reg.SOURCES if s.get("enabled") and ok_klass(s["klass"])
+               and (not cad or s.get("cadence") == cad or cad == "all")]
+    ids = [i for i in ids if reg.by_id(i)]
+    if not ids:
+        return jsonify(ok=False, error="no matching enabled sources"), 400
+    if body.get("sync") and len(ids) == 1:
+        rec = rs.run_one(reg.by_id(ids[0]))
+        rs._land_runs([rec], log=lambda *a: None)
+        return jsonify(ok=True, sync=True, record=rec)
+    jid = "reg-%d" % int(time.time() * 1000)
+    _REG_JOBS[jid] = {"id": jid, "ids": ids, "status": "running", "current": None,
+                      "startedAt": int(time.time() * 1000), "finishedAt": None, "log": [], "records": []}
+    for old in sorted(_REG_JOBS, key=lambda k: _REG_JOBS[k]["startedAt"])[:-50]:
+        _REG_JOBS.pop(old, None)                              # keep the last ~50 jobs
+    threading.Thread(target=_reg_run_job, args=(jid, ids), daemon=True).start()
+    return jsonify(ok=True, jobId=jid, running=ids), 202
+
+
+@app.get("/api/registry/run/progress")
+def registry_run_progress_ep():
+    """Poll a background registry run: status, the source in flight, run records so far (with coverage),
+    and the recent log tail."""
+    jid = (request.args.get("id") or "").strip()
+    job = _REG_JOBS.get(jid)
+    if not job:
+        return jsonify(ok=False, error="unknown job"), 404
+    return jsonify(ok=True, id=job["id"], status=job["status"], current=job["current"],
+                   startedAt=job["startedAt"], finishedAt=job["finishedAt"],
+                   records=job["records"], log=job["log"][-60:])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# In-app SCHEDULER — the app runs due sources on their cadence, itself.
+#
+# So capture doesn't depend on GitHub Actions (which need secrets re-added and were dying mid-run) or a
+# human/CLI trigger: a daemon thread in the single gunicorn worker ticks every SCHEDULER_INTERVAL, asks
+# run_sources which sources are DUE (past their interval_h in the shared ledger), and runs them with the
+# app's own env/secrets — landing to the same ledger + coverage the rest of the pipeline reads. It takes
+# the SAME machine-global file lock run_sources' --due uses, so an in-app tick and a CLI/CI pass dedupe
+# instead of stacking. Default headless/creds only (a server has no warmed browser); SCHEDULER_MAC=1
+# opts the anti-bot browser sources in (only where the image actually has Chrome + a proxy).
+#
+# Env: SCHEDULER=1 auto-starts it at boot; SCHEDULER_INTERVAL (s, default 1800); SCHEDULER_MAC=1.
+# Runtime toggle without redeploy: POST /api/registry/scheduler {enabled, interval_s, run_now}.
+# ─────────────────────────────────────────────────────────────────────────────
+def _truthy(v):
+    return str(v or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+_SCHED = {"enabled": _truthy(os.environ.get("SCHEDULER")),
+          "interval_s": max(60, int(os.environ.get("SCHEDULER_INTERVAL", "1800") or 1800)),
+          "mac": _truthy(os.environ.get("SCHEDULER_MAC")),
+          "thread_started": False, "running": False, "ticks": 0,
+          "last_tick": None, "next_tick": None, "last_due": [], "last_skip": None,
+          "runs": [], "error": None}
+_SCHED_LOCK = threading.Lock()
+
+
+def _sched_tick():
+    """One dispatcher pass: run every DUE source once, land it, record the outcome. No-ops cleanly when
+    nothing is due or another pass holds the machine-global lock."""
+    import run_sources as rs
+    with _SCHED_LOCK:
+        if _SCHED["running"]:
+            return
+        _SCHED["running"] = True
+    lock = None
+    try:
+        lock = rs._acquire_lock()                    # dedupe with any CLI/CI --due pass on this host
+        if not lock:
+            _SCHED["last_skip"] = "lock held by another pass"
+            return
+        try:
+            due = rs.due_sources()
+        except Exception as e:
+            _SCHED["error"] = "due_sources: %s" % str(e)[:160]
+            due = []
+        if not _SCHED["mac"]:
+            due = [s for s in due if s["klass"] != "mac"]
+        _SCHED["last_due"] = [s["id"] for s in due]
+        # COST GUARD: an unattended tick forces per-GB residential OFF (flat ISP pool only) so the
+        # scheduler can never run up a metered proxy tab. Opt in deliberately with SCHEDULER_PAYGO=1.
+        overlay = {} if _truthy(os.environ.get("SCHEDULER_PAYGO")) else {"RESI_ISP_ONLY": "1"}
+        for s in due:
+            try:
+                rec = rs.run_one(s, extra_env=overlay)
+                rs._land_runs([rec], log=lambda *a: None)
+                _SCHED["runs"].insert(0, {"source": rec.get("source"), "status": rec.get("status"),
+                                          "delta": rec.get("delta"), "cov_items": rec.get("cov_items"),
+                                          "cov_stores": rec.get("cov_stores"), "at": int(time.time())})
+                del _SCHED["runs"][80:]
+            except Exception as e:
+                _SCHED["error"] = "%s: %s" % (s["id"], str(e)[:160])
+        _SCHED["ticks"] += 1
+        _SCHED["last_tick"] = int(time.time())
+    finally:
+        if lock:
+            try:
+                lock.close()                          # release the machine-global lock
+            except Exception:
+                pass
+        _SCHED["running"] = False
+
+
+def _scheduler_loop():
+    while True:
+        try:
+            if _SCHED["enabled"]:
+                _sched_tick()
+        except Exception as e:
+            _SCHED["error"] = "loop: %s" % str(e)[:160]
+        _SCHED["next_tick"] = int(time.time()) + _SCHED["interval_s"]
+        time.sleep(_SCHED["interval_s"])
+
+
+def _ensure_scheduler_thread():
+    """Start the single scheduler daemon (idempotent). Started at import when SCHEDULER=1, or on first
+    runtime enable via the API — so you can turn capture on without a redeploy."""
+    with _SCHED_LOCK:
+        if _SCHED["thread_started"]:
+            return
+        _SCHED["thread_started"] = True
+    threading.Thread(target=_scheduler_loop, name="hoodie-scheduler", daemon=True).start()
+
+
+@app.get("/api/registry/scheduler")
+def registry_scheduler_status_ep():
+    import run_sources as rs
+    try:
+        due = [s["id"] for s in rs.due_sources()]
+    except Exception:
+        due = []
+    try:
+        import resi
+        proxy = {"usage": resi.usage(), "scheduler_paygo": _truthy(os.environ.get("SCHEDULER_PAYGO"))}
+    except Exception:
+        proxy = None
+    return jsonify(ok=True, enabled=_SCHED["enabled"], interval_s=_SCHED["interval_s"], mac=_SCHED["mac"],
+                   running=_SCHED["running"], ticks=_SCHED["ticks"], last_tick=_SCHED["last_tick"],
+                   next_tick=_SCHED["next_tick"], thread_started=_SCHED["thread_started"],
+                   due_now=due, last_due=_SCHED["last_due"], last_skip=_SCHED["last_skip"],
+                   proxy=proxy, recent=_SCHED["runs"][:20], error=_SCHED["error"])
+
+
+@app.get("/api/registry/proxy")
+def registry_proxy_status_ep():
+    """Residential-proxy COST view: this month's per-GB session usage + the guard state (flat ISP pool
+    size, isp_only, monthly cap, whether per-GB is currently allowed). The ISP pool bills flat; only the
+    per-GB tier runs up a tab, and this is where you see/limit it."""
+    import resi
+    return jsonify(ok=True, usage=resi.usage(),
+                   env={"FETCH_POLICY": resi.fetch_policy(), "RESI_ISP_ONLY": resi.isp_only(),
+                        "RESI_MONTHLY_MAX_SESSIONS": resi.monthly_cap(),
+                        "SCHEDULER_PAYGO": _truthy(os.environ.get("SCHEDULER_PAYGO"))})
+
+
+@app.post("/api/registry/proxy")
+def registry_proxy_control_ep():
+    """Set the cost dial at runtime (in-memory; the env vars are the durable default). Body:
+    {policy:'free'|'flat'|'paid', isp_only:bool, max_sessions:int, reset:bool}. policy='free' spends
+    nothing (direct/browser only); 'flat' adds the fixed ISP pool; 'paid' opts into the per-GB tier."""
+    import resi
+    b = request.get_json(silent=True) or {}
+    if b.get("policy") in ("free", "flat", "paid"):
+        os.environ["FETCH_POLICY"] = b["policy"]
+        os.environ.pop("FETCH_FREE_ONLY", None)
+    if "isp_only" in b:
+        os.environ["RESI_ISP_ONLY"] = "1" if b["isp_only"] else "0"
+    if "max_sessions" in b:
+        try:
+            os.environ["RESI_MONTHLY_MAX_SESSIONS"] = str(max(0, int(b["max_sessions"])))
+        except (ValueError, TypeError):
+            pass
+    if b.get("reset"):
+        resi.reset_month()
+    return jsonify(ok=True, usage=resi.usage(),
+                   env={"FETCH_POLICY": resi.fetch_policy(), "RESI_ISP_ONLY": resi.isp_only(),
+                        "RESI_MONTHLY_MAX_SESSIONS": resi.monthly_cap()})
+
+
+@app.post("/api/registry/scheduler")
+def registry_scheduler_control_ep():
+    """Toggle/adjust the scheduler at runtime (in-memory; SCHEDULER env is the durable default). Body:
+    {enabled:bool, interval_s:int, mac:bool, run_now:bool}. run_now fires one tick immediately."""
+    b = request.get_json(silent=True) or {}
+    if "enabled" in b:
+        _SCHED["enabled"] = bool(b["enabled"])
+    if "mac" in b:
+        _SCHED["mac"] = bool(b["mac"])
+    if "interval_s" in b:
+        try:
+            _SCHED["interval_s"] = max(60, int(b["interval_s"]))
+        except (ValueError, TypeError):
+            pass
+    if _SCHED["enabled"]:
+        _ensure_scheduler_thread()
+    if b.get("run_now"):
+        threading.Thread(target=_sched_tick, name="hoodie-scheduler-kick", daemon=True).start()
+    return jsonify(ok=True, enabled=_SCHED["enabled"], interval_s=_SCHED["interval_s"], mac=_SCHED["mac"],
+                   thread_started=_SCHED["thread_started"], kicked=bool(b.get("run_now")))
+
+
+if _SCHED["enabled"]:                                 # auto-start under gunicorn when SCHEDULER=1
+    _ensure_scheduler_thread()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

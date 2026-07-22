@@ -89,11 +89,21 @@ def _proxy_opener():
     """A urllib opener routed through the Bright Data residential/unlocker proxy (rotating IPs + anti-bot).
     The Unlocker MITMs HTTPS to solve challenges, so its cert won't chain to a public CA — we skip cert
     verification on the proxied path (standard for the BD Unlocker proxy interface)."""
+    try:                                               # per-GB COST GUARD: never open the metered tab when
+        import resi                                     # it's forbidden (RESI_ISP_ONLY) or the monthly cap is hit
+        if not resi.paygo_allowed():
+            return None
+    except ImportError:
+        pass
     user = os.environ.get("BRIGHTDATA_PROXY_USER") or os.environ.get("BRD_PROXY_USER")
     pw = os.environ.get("BRIGHTDATA_PROXY_PASS") or os.environ.get("BRD_PROXY_PASS")
     hostport = os.environ.get("BRIGHTDATA_PROXY", "brd.superproxy.io:22225")
     if not (user and pw):
         return None
+    try:
+        resi.note_session()
+    except Exception:
+        pass
     p = "http://%s:%s@%s" % (user, pw, hostport)
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
@@ -107,6 +117,10 @@ def _bd_rest_request(url, timeout):
     the CLI/API key, no proxy-port creds needed, and solves the anti-bot challenge server-side. Returns the
     urlopen response of the BD call (read() -> the unlocked target body). Raises HTTPError on BD failure, so the
     caller's breaker/backoff logic applies unchanged."""
+    import resi                                       # per-GB COST GUARD — the BD Unlocker REST path bills per GB
+    if not resi.paygo_allowed():
+        raise RuntimeError("per-GB proxy disabled (RESI_ISP_ONLY) or monthly session cap reached")
+    resi.note_session()
     import menu_site as _ms                         # lazy: avoid import cycle; reuse the working key + zone
     payload = json.dumps({"zone": "cli_unlocker", "url": url, "format": "raw"}).encode()
     req = urllib.request.Request("https://api.brightdata.com/request", data=payload,

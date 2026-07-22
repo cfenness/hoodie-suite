@@ -23,11 +23,17 @@ WORKDIR /app/unifyd
 COPY unifyd/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt gunicorn && pip install --no-cache-dir --upgrade certifi
 
+# Instacart is a browser source but a FREE one — its data is Instacart's own SearchResultsPlacements
+# GraphQL, driven by a self-hosted Chromium (NO Bright Data, NO proxy). The instacart-free-verify CI
+# matrix PROVED it lands products HEADLESS from a bare datacenter IP (no Xvfb needed) — so ship just the
+# bundled Chromium + its OS libs; the connector runs headless in-container (BROWSER_HEADFUL=0 below).
+RUN pip install --no-cache-dir playwright && playwright install --with-deps chromium
+
 # the whole repo: the engine (unifyd/) + the static suite (index.html, apps/, spine/, …)
 COPY . /app
 
 # SUITE_ROOT switches server.py into all-in-one mode (serve static + /api). PORT is injected by the host.
-ENV PORT=8080 SUITE_ROOT=/app
+ENV PORT=8080 SUITE_ROOT=/app BROWSER_HEADFUL=0
 EXPOSE 8080
 
 # ONE worker on purpose — state is in-process; a single worker keeps it coherent. But add THREADS so
