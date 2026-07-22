@@ -385,11 +385,16 @@ class Instacart(AggregatorConnector):
         try:
             self._page.goto("https://www.instacart.com/", wait_until="domcontentloaded", timeout=60000)
             self._page.wait_for_timeout(3000)
-            self._page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            self._page.wait_for_timeout(3000)
-            txt = self._page.inner_text("body")
-            m = re.search(r"(\{.*\})", txt, re.S)
-            body = m.group(1) if m else txt
+            # in-page fetch (a legit XHR from the app with cookies) — NOT a top-level document nav to /graphql,
+            # which CloudFront 403s. This is how the real site calls graphql.
+            raw = self._page.evaluate(
+                """async (u) => { try {
+                       const r = await fetch(u, {headers: {'accept':'application/json','x-client-identifier':'web'},
+                                                 credentials:'include'});
+                       return r.status + "~~" + (await r.text());
+                   } catch (e) { return "ERR~~" + e.message; } }""", url)
+            status, _, body = raw.partition("~~")
+            log("[probe] fetch http-status=%s" % status)
             has_items = '"items"' in body or '"__typename":"ItemsItem"' in body
             has_avail = "stockLevel" in body or '"availability"' in body
             n = 0
