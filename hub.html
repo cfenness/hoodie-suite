@@ -102,6 +102,9 @@
   .rail .secitem:hover{background:var(--card)}
   .rail .secitem.active{background:var(--card);border-color:var(--line);color:var(--ink);font-weight:600}
   .rail .secitem .ic{width:18px;text-align:center;flex:none;color:var(--mut);font-size:12px}
+  .rail .secload{font-family:var(--mono);font-size:11px;color:var(--mut);padding:10px 9px;letter-spacing:.04em;opacity:.7;animation:secpulse 1.1s ease-in-out infinite}
+  @keyframes secpulse{0%,100%{opacity:.4}50%{opacity:.85}}
+  @media(prefers-reduced-motion:reduce){.rail .secload{animation:none}}
 
   /* stage */
   main{flex:1;position:relative;min-width:0;background:var(--paper);overflow:auto}
@@ -247,7 +250,7 @@
 
   var APPS = [
     // Hoodie Intelligence
-    {id:"dashboard",  bucket:"intel", star:1, mark:"HI", name:"Hoodie Intelligence", desc:"Market intelligence & QBR briefs.", file:"apps/dashboard.html"},
+    {id:"dashboard",  bucket:"intel", star:1, nav:1, mark:"HI", name:"Hoodie Intelligence", desc:"Market intelligence & QBR briefs.", file:"apps/dashboard.html"},
     {id:"signal-stack",bucket:"intel",         mark:"SS", name:"Signal Stack", desc:"Menu → Basket → Store → Price on one subject, with a cross-signal verdict.", file:"apps/signal-stack.html"},
     {id:"retail",     bucket:"intel",          mark:"RI", name:"Retail Intelligence", desc:"Per-store assortment & price across the chains — cross-chain compare.", file:"apps/retail.html"},
     {id:"retail-analytics",bucket:"intel",     mark:"RA", name:"Retail Analytics", desc:"Price/promo, reverse planogram, on-prem recipes by brand & retailer.", file:"apps/retail-analytics.html"},
@@ -265,7 +268,7 @@
     {id:"csv",        bucket:"ops",            mark:"CV", name:"CSV Viewer", desc:"Excel-style grid for any CSV — sort, filter, freeze; watch a file grow live.", file:"apps/csv-viewer.html"},
 
     // Master Data
-    {id:"mdm",        bucket:"master", star:1, mark:"HM", name:"Hoodie MDM", desc:"The master console — sources, catalog, outlets, registrations, dictionary.", file:"apps/mdm.html"},
+    {id:"mdm",        bucket:"master", star:1, nav:1, mark:"HM", name:"Hoodie MDM", desc:"The master console — sources, catalog, outlets, registrations, dictionary.", file:"apps/mdm.html"},
     {id:"match-review",bucket:"master", star:1, mark:"MR", name:"Match Review", desc:"The one place — automatched items and the human-in-the-loop queue for unknown matches.", file:"apps/match-review.html", reviewSource:1},
     {id:"workbench",  bucket:"master",         mark:"MW", name:"Matching Workbench", desc:"The deep multi-enterprise matching bench (merge groups, image matches, stewardship).", file:"apps/master-workbench.html"},
     {id:"upc",        bucket:"master",         mark:"UP", name:"UPC Check", desc:"Validate & classify UPC/EAN codes and check the prefix against the brand owner.", file:"apps/upc-check.html"},
@@ -342,21 +345,28 @@
   /* An opened app can PUBLISH its own tabs/sections into the shared rail (postMessage) — so nested
      tabs (Hoodie Intelligence, MDM) are reachable from the shell. Apps opt in; nothing changes here for
      apps that don't. Contract mirrors the production launcher: {__hoodie:'nav'|'section', ...}. */
+  var navCache={};                                            // appId -> {sections, active, collapsed} — instant on return
   window.addEventListener("message", function(ev){
     var d=ev.data; if(!d || (d.__hoodie!=="nav" && d.__hoodie!=="section")) return;
     var curId=(location.hash||"").replace("#","");
     if(!byId[curId]) return;                                  // only while an app is open
     if(d.__hoodie==="nav"){
-      appNav={app:curId, sections:d.sections||[], active:d.active, collapsed:{}};
-      (d.collapsedGroups||[]).forEach(function(g){ appNav.collapsed[g]=true; });   // deep groups start nested
+      var collapsed={}; (d.collapsedGroups||[]).forEach(function(g){ collapsed[g]=true; });   // deep groups start nested
+      navCache[curId]={sections:d.sections||[], active:d.active, collapsed:collapsed};
+      appNav={app:curId, sections:d.sections||[], active:d.active, collapsed:Object.assign({},collapsed)};
       renderRail();
     }else if(d.__hoodie==="section" && appNav){                // app switched section internally → follow it
-      appNav.active=d.id;
+      appNav.active=d.id; if(navCache[curId]) navCache[curId].active=d.id;
       var ag=""; appNav.sections.forEach(function(s){ if(s.id===d.id) ag=s.group||""; });
-      if(ag) appNav.collapsed[ag]=false;                       // expand the group holding the now-active view
-      renderRail();
+      if(ag){ appNav.collapsed[ag]=false; }                    // expand the group holding the now-active view
+      updateSectionActive(d.id);                               // cheap: just move the highlight, no full rebuild
     }
   });
+  function updateSectionActive(id){
+    var items=document.querySelectorAll(".rail .secitem");
+    if(!items.length){ renderRail(); return; }
+    items.forEach(function(x){ x.classList.toggle("active", x.dataset.sec===id); });
+  }
 
   /* ============================ rail ============================ */
   // appNav = the opened app's own tabs/sections, published over postMessage. While set,
@@ -364,7 +374,7 @@
   var appNav = null;
   function renderRail(){
     var rail=document.getElementById("rail"); rail.innerHTML="";
-    if(appNav && appNav.sections && appNav.sections.length){ renderAppNavRail(rail); return; }
+    if(appNav){ renderAppNavRail(rail); return; }             // app drives the rail (sections, or a loading shell)
     BUCKETS.forEach(function(b){
       rail.appendChild(railGroup(b, false));
     });
@@ -378,6 +388,10 @@
     var hdr=document.createElement("div"); hdr.className="apphdr";
     hdr.innerHTML='<span class="mk" style="background:'+col+'">'+(a.mark||"")+'</span>'+(a.name||"App");
     rail.appendChild(hdr);
+    if(!appNav.sections.length){                              // loading shell — tabs not published yet
+      var ld=document.createElement("div"); ld.className="secload"; ld.textContent="loading tabs…";
+      rail.appendChild(ld); return;
+    }
     var groups={}, order=[];
     appNav.sections.forEach(function(s){ var g=s.group||""; if(!(g in groups)){groups[g]=[];order.push(g);} groups[g].push(s); });
     var activeGroup=""; appNav.sections.forEach(function(s){ if(s.id===appNav.active) activeGroup=s.group||""; });
@@ -546,6 +560,14 @@
       logUsage(id); markActive(id);
       var bd=bucketDef(app.bucket);
       setCrumb((bd?('<span>'+bd.name+'</span> › '):'')+'<b>'+app.name+'</b><span id="appcrumbx"></span>');
+      // apps that drive their own nav: swap the rail IMMEDIATELY (cached sections, or a "loading" shell)
+      // so selecting them feels instant instead of waiting ~700ms for the heavy iframe to publish its nav.
+      if(app.nav){
+        var c=navCache[id];
+        appNav = c ? {app:id, sections:c.sections, active:c.active, collapsed:Object.assign({},c.collapsed)}
+                   : {app:id, sections:[], active:null, collapsed:{}, loading:true};
+        renderRail();
+      }
       if(frame.getAttribute("src")!==app.file){
         flMark.textContent=app.mark||""; flTxt.textContent="Loading "+app.name+"…"; frameload.classList.add("show");
         frame.setAttribute("src", app.file);
@@ -553,7 +575,7 @@
       } else { try{ spine.pushTo(frame.contentWindow); }catch(e){} }
       frame.classList.add("show"); home.style.display="none";
       ext.href=app.file; ext.classList.add("show");
-      if(app.bucket && !openGroups[app.bucket]){ openGroups[app.bucket]=true; renderRail(); markActive(id); }
+      if(!appNav && app.bucket && !openGroups[app.bucket]){ openGroups[app.bucket]=true; renderRail(); markActive(id); }
     } else {
       frame.classList.remove("show"); frame.removeAttribute("src"); home.style.display="block";
       ext.classList.remove("show"); frameload.classList.remove("show");
