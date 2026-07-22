@@ -5717,20 +5717,14 @@ def order_get_ep(oid):
     return (jsonify(ok=True, order=o) if o else (jsonify(ok=False, error="not found"), 404))
 
 
-@app.get("/api/orders/<oid>/sheet")
-def order_sheet_ep(oid):
-    """The per-distributor order sheet — ?distributor=X → a CSV of exactly that distributor's slice
-    (the artifact that goes back to them). This is the 'return the order to the right distributor'
-    leg: today a download/email attachment; the auto-send hook goes here when SMTP lands."""
+def _po_csv(o, dist):
+    """Build the per-distributor PO sheet → (filename, csv_text). Shared by the download + the
+    auto-send attachment so both are byte-identical. `dist`='' → the whole order."""
     import csv as _csv
     import io as _io
-    o = next((o for o in ORDERS if o["id"] == oid), None)
-    if not o:
-        return jsonify(ok=False, error="not found"), 404
-    dist = (request.args.get("distributor") or "").strip()
     lines = [l for l in o["lines"] if not dist or l["distributor"] == dist]
     if not lines:
-        return jsonify(ok=False, error="no lines for that distributor"), 404
+        return None, None
     buf = _io.StringIO()
     w = _csv.writer(buf)
     w.writerow(["Purchase Order", o["id"]])
@@ -5744,9 +5738,142 @@ def order_sheet_ep(oid):
     w.writerow([])
     w.writerow(["", "", "", "", "", "TOTAL", sum(l["qty"] for l in lines), "",
                 round(sum(l["line_total"] or 0 for l in lines), 2)])
-    fn = "%s_%s.csv" % (oid, re.sub(r"[^A-Za-z0-9]+", "_", dist or "all"))
-    return Response(buf.getvalue(), mimetype="text/csv; charset=utf-8",
+    fn = "%s_%s.csv" % (o["id"], re.sub(r"[^A-Za-z0-9]+", "_", dist or "all"))
+    return fn, buf.getvalue()
+
+
+@app.get("/api/orders/<oid>/sheet")
+def order_sheet_ep(oid):
+    """The per-distributor order sheet — ?distributor=X → a CSV of exactly that distributor's slice
+    (the artifact that goes back to them). Download form of the same file /api/orders/<id>/send emails."""
+    o = next((o for o in ORDERS if o["id"] == oid), None)
+    if not o:
+        return jsonify(ok=False, error="not found"), 404
+    fn, csv_text = _po_csv(o, (request.args.get("distributor") or "").strip())
+    if csv_text is None:
+        return jsonify(ok=False, error="no lines for that distributor"), 404
+    return Response(csv_text, mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": 'attachment; filename="%s"' % fn})
+
+
+# ── Distributor contact book — where each distributor's order goes back to ──
+DISTRIBUTOR_CONTACTS = load("distributor_contacts.json", {})    # {distributor: {email, contact, cc}}
+
+
+@app.get("/api/distributors")
+def distributors_ep():
+    """Every distributor we have a menu from, merged with its saved order-contact — so the ordering
+    page can show who's ready to auto-send and who still needs an email."""
+    known = []
+    try:
+        known = [r["distributor"] for r in warehouse.query(
+            "distributor_menu_items", "SELECT DISTINCT distributor FROM t ORDER BY 1")]
+    except Exception:
+        known = []
+    for d in DISTRIBUTOR_CONTACTS:
+        if d not in known:
+            known.append(d)
+    out = []
+    for d in known:
+        c = DISTRIBUTOR_CONTACTS.get(d, {})
+        out.append({"distributor": d, "email": c.get("email", ""), "contact": c.get("contact", ""),
+                    "cc": c.get("cc", ""), "has_email": bool(c.get("email"))})
+    return jsonify(ok=True, distributors=out, smtp_configured=bool(os.environ.get("SMTP_HOST", "").strip()))
+
+
+@app.post("/api/distributors")
+def distributor_save_ep():
+    """Save/update one distributor's order contact. Body: {distributor, email, contact?, cc?}."""
+    b = request.get_json(force=True, silent=True) or {}
+    d = (b.get("distributor") or "").strip()
+    email = (b.get("email") or "").strip()
+    if not d:
+        return jsonify(ok=False, error="distributor required"), 400
+    if email and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        return jsonify(ok=False, error="that doesn't look like a valid email"), 400
+    DISTRIBUTOR_CONTACTS[d] = {"email": email, "contact": (b.get("contact") or "").strip()[:80],
+                              "cc": (b.get("cc") or "").strip()[:200]}
+    _save_json("distributor_contacts.json", DISTRIBUTOR_CONTACTS)
+    return jsonify(ok=True, distributor=d, **DISTRIBUTOR_CONTACTS[d])
+
+
+def _smtp_cfg():
+    h = os.environ.get("SMTP_HOST", "").strip()
+    if not h:
+        return None
+    return {"host": h, "port": int(os.environ.get("SMTP_PORT", "587") or 587),
+            "user": os.environ.get("SMTP_USER", "").strip(), "pass": os.environ.get("SMTP_PASS", ""),
+            "from": os.environ.get("SMTP_FROM", "").strip() or os.environ.get("SMTP_USER", "").strip(),
+            "starttls": os.environ.get("SMTP_STARTTLS", "1").strip() not in ("0", "false", "no")}
+
+
+def _send_po_email(cfg, to, cc, subject, body, fn, csv_text):
+    import smtplib
+    from email.message import EmailMessage
+    msg = EmailMessage()
+    msg["From"] = cfg["from"]; msg["To"] = to
+    if cc:
+        msg["Cc"] = cc
+    msg["Subject"] = subject
+    msg.set_content(body)
+    # Attach as str (not bytes) so the part declares charset=utf-8 — otherwise accented chars /
+    # em-dashes in retailer or product names arrive mojibake'd. A str routes through
+    # set_text_content(), which takes `subtype` but not `maintype` (text/* is implied).
+    msg.add_attachment(csv_text, subtype="csv", filename=fn)
+    rcpts = [to] + ([c.strip() for c in cc.split(",") if c.strip()] if cc else [])
+    with smtplib.SMTP(cfg["host"], cfg["port"], timeout=30) as s:
+        if cfg["starttls"]:
+            s.starttls()
+        if cfg["user"]:
+            s.login(cfg["user"], cfg["pass"])
+        s.send_message(msg, from_addr=cfg["from"], to_addrs=rcpts)
+
+
+@app.post("/api/orders/<oid>/send")
+def order_send_ep(oid):
+    """Email the PO sheet back to each distributor on the order (or just ?distributor=/body distributor).
+    Needs SMTP_* env + a saved contact email per distributor. Returns per-distributor results; the UI
+    falls back to download + copy-email for any that aren't send-ready. Records sends on the order."""
+    o = next((o for o in ORDERS if o["id"] == oid), None)
+    if not o:
+        return jsonify(ok=False, error="not found"), 404
+    b = request.get_json(force=True, silent=True) or {}
+    only = (b.get("distributor") or "").strip()
+    dists = [d["distributor"] for d in o.get("distributors", []) if not only or d["distributor"] == only]
+    if not dists:
+        return jsonify(ok=False, error="no matching distributor on this order"), 400
+    cfg = _smtp_cfg()
+    if not cfg:
+        return jsonify(ok=False, error="email-not-configured",
+                       note="Set SMTP_HOST/PORT/USER/PASS/FROM to enable auto-send. Until then use the "
+                            "PO-sheet download + copy-email.",
+                       needs_contact=[d for d in dists if not DISTRIBUTOR_CONTACTS.get(d, {}).get("email")]), 200
+    results, sent_log = [], o.get("sent", [])
+    for d in dists:
+        c = DISTRIBUTOR_CONTACTS.get(d, {})
+        to = c.get("email", "")
+        if not to:
+            results.append({"distributor": d, "ok": False, "reason": "no-contact"})
+            continue
+        fn, csv_text = _po_csv(o, d)
+        dtot = next((x for x in o["distributors"] if x["distributor"] == d), {})
+        body = ("Purchase order %s from %s%s.\n\n%s lines · %s units · $%s.\n\nThe PO sheet is attached "
+                "as a CSV.%s\n\n— sent via Hoodie Suite Wholesale Ordering" % (
+                    o["id"], o["retailer"], (" (%s)" % o["license"]) if o.get("license") else "",
+                    dtot.get("lines", "?"), dtot.get("units", "?"), dtot.get("total", "?"),
+                    ("\n\nNotes: " + o["notes"]) if o.get("notes") else ""))
+        try:
+            _send_po_email(cfg, to, c.get("cc", ""), "PO %s — %s" % (o["id"], o["retailer"]), body, fn, csv_text)
+            rec = {"distributor": d, "to": to, "at": int(time.time() * 1000)}
+            sent_log = [s for s in sent_log if s.get("distributor") != d] + [rec]
+            results.append({"distributor": d, "ok": True, "to": to})
+        except Exception as e:
+            results.append({"distributor": d, "ok": False, "reason": str(e)[:160]})
+    o["sent"] = sent_log
+    if any(r["ok"] for r in results):
+        o["status"] = "sent" if all(r["ok"] for r in results) else "partially-sent"
+    _save_json("orders.json", ORDERS)
+    return jsonify(ok=any(r["ok"] for r in results), results=results, order_status=o.get("status"))
 
 
 # ---- optional: serve the static suite from THIS app (all-in-one image, e.g. Fly.io) ----
