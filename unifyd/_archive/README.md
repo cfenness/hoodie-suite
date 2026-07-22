@@ -31,6 +31,7 @@ path; moving a file here is a deliberate "this is retired" signal.
 | File | Was | Superseded by | Note |
 |---|---|---|---|
 | `full_pull.py` | "run every no-BD/no-cookie source at full scale" one-shot runner | `run_sources.py` + `source_registry.py` | The registry-driven runner does this with verify-landing + per-source status; the old flat runner had neither. |
+| `instacart_scraper.py` | store-level Instacart via **Bright Data** managed dataset (paid, per-record) | `instacart.py` (free self-hosted Playwright driver on the aggregator base) | The data was always Instacart's own `SearchResultsPlacements` GraphQL; BD was only the browser. The free driver captures a live zone + replays the persisted query — proven to land products with NO proxy/NO bd (instacart-free-verify CI). BD spend removed. |
 
 ## Superseded but NOT yet moved (blocked on a code change — do not lose track)
 
@@ -53,3 +54,4 @@ Tracked here so they're not forgotten:
 | Hemp listings | `hemp_scan.py` | — |
 | Hemp per-store counts | `hemp_inventory.py` | — |
 | 7-Eleven | `sevennow_warm.py` | `sevennow.py` = library it wraps (keep) |
+| Instacart | `instacart.py` (free Playwright driver, aggregator base) | `instacart_scraper.py` = archived BD dataset (paid) |

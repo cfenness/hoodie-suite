@@ -26,7 +26,9 @@ import abc_fws_scraper as abc      # ABC FWS directional inventory tracker (BigC
 import specs_scraper as specs      # Spec's directional tracker (Next.js, via Bright Data)
 import binnys_scraper as binnys    # Binny's directional tracker (Algolia feed, no Bright Data)
 import shopify_scraper as shopify  # DTC brands on Shopify (hemp + bev-alc) via public /products.json
-import instacart_scraper as instacart  # store-level Instacart via Bright Data managed dataset
+# Instacart: the FREE Playwright connector (instacart.Instacart) is the active source — no Bright Data,
+# no proxy (proven landing per instacart-free-verify CI). Imported lazily in instacart_pull so a slim
+# image without the browser lib doesn't break server import. The old BD dataset scraper is archived.
 import analyze                      # data-reader brain behind "Overlay your data"
 import planogram                    # benchmark + shelf-vision + pitch behind the Planogram app
 import hi_analyst                   # the real Claude analyst behind Hoodie Intelligence Q&A
@@ -769,14 +771,46 @@ def shopify_pull(params):
     return run
 
 def instacart_pull(params):
+    """FREE Instacart pull — self-hosted Playwright browser drives Instacart's own SearchResultsPlacements
+    GraphQL (no Bright Data, no proxy). Lands per-store product+price into instacart_products +
+    retail_observations via the aggregator base. Instacart is a browser source: this needs Chromium in the
+    image (it ships one) — if the browser can't launch it reports an HONEST failed run, never a 0-row pass."""
     started = int(time.time() * 1000)
-    ds, runs, _ = instacart.pull(out=os.path.join(STATE_DIR, "instacart"),
-        state_dir=os.path.join(STATE_DIR, "instacart"), urls=params.get("urls"),
-        log=lambda m: app.logger.info("INSTACART %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
+    zip_ = str(params.get("zip") or params.get("address") or "10001")
+    queries = params.get("queries") or ["milk", "vodka", "chips", "coffee", "eggs", "water",
+                                        "soda", "bread", "cheese", "beer"]
+    if isinstance(queries, str):
+        queries = [q.strip() for q in queries.split(",") if q.strip()]
+    pages = int(params.get("pages", 2))
+    rows, warnings, status = [], [], "success"
+    try:
+        from instacart import Instacart
+        rows = Instacart().pull(address=zip_, retailers=["grocery"], queries=queries,
+                                per_query_pages=pages, log=lambda m: app.logger.info("INSTACART %s", m))
+        if not rows:
+            status = "degraded"
+            warnings.append("Free browser reached Instacart but landed 0 products (membership wall / zone "
+                            "capture / anti-bot at this IP). It's a browser source — needs Chromium here or "
+                            "the residential executor.")
+    except ImportError as e:
+        status = "failed"
+        warnings.append("Instacart needs Playwright + Chromium (free, no bd) — this image should ship it: %s"
+                        % str(e)[:160])
+    except Exception as e:
+        status = "failed"
+        warnings.append("Instacart free pull failed: %s" % str(e)[:200])
+    if rows:                                          # keep the console preview populated (real data is in the warehouse)
+        header = ["Store", "Product", "Price", "In Stock"]
+        drows = [[r.get("store"), r.get("name"), r.get("price"), r.get("in_stock")] for r in rows]
+        DATASETS.update(_absorb({"instacart_products": {"header": header, "rows": drows[:800],
+                                 "total": len(rows), "stores": len({r.get("store_id") for r in rows})}}))
+        save()
+    finished = int(time.time() * 1000)
+    return {"id": "R-IC%05d" % (started % 100000), "connId": "instacart", "startedAt": started,
+            "finishedAt": finished, "durationMs": finished - started, "status": status,
+            "total": len(rows), "degraded": status == "degraded", "warnings": warnings, "healed": [],
+            "extracts": [{"id": "instacart_products", "rows": len(rows), "delta": len(rows),
+                          "status": status}], "trigger": params.get("trigger", "manual")}
 
 def total_wine_pull(params):
     started = int(time.time() * 1000)
