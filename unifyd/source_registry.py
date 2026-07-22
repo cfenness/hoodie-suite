@@ -47,8 +47,9 @@ SOURCES = [
 
     # ── Grocery / big-box ─────────────────────────────────────────────────────────────────────────────────────
     dict(id="walmart", label="Walmart", code="import walmart_direct as m; m.pull(detail_pages=True, detail_cap=600)",
-         tables=["walmart_products"], klass="mac", cadence="daily", enabled=True,
-         requires=["WALMART_COOKIE"], note="__NEXT_DATA__ over stdlib HTTP, no BD — needs a warmed PX cookie"),
+         tables=["walmart_products"], klass="headless", cadence="daily", enabled=True,
+         note="walmart_direct: IPRoyal residential exit + curl_cffi Chrome-JA3, $0 (no BD, no API). "
+              "A warmed WALMART_COOKIE is an OPTIONAL boost, NOT required — do not gate the run on it."),
     dict(id="target", label="Target", code="import target_scraper as m; m.run()",
          tables=["target_products", "target_stores"], klass="headless", cadence="daily", enabled=True, note="RedSky API"),
     dict(id="kroger", label="Kroger (atlas inventory)", code="import kroger_atlas as m; m.main([])",
