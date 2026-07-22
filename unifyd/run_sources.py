@@ -165,9 +165,11 @@ def run_one(source, log=print):
                 pass
     status, error = "ok", ""
     timeout_s = source.get("timeout") or _TIMEOUT.get(source["klass"], 5400)   # registry per-source override
+    run_token = "%s-%d" % (sid, int(t0))
+    env = dict(os.environ, HOODIE_RUN_TOKEN=run_token)   # write_accumulate stamps coverage rows with this
     try:
         r = subprocess.run([PY, "-c", code], cwd=HERE, timeout=timeout_s,
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, env=env)
         if r.returncode != 0:
             status = "failed"
             # A NEGATIVE returncode = killed by a signal, NOT a Python exception (subprocess convention).
@@ -211,17 +213,38 @@ def run_one(source, log=print):
     # is EMPTY = "empty" (genuinely broken — nothing was ever captured). Only "empty" and errors are real problems.
     if status == "ok" and delta <= 0:
         status = "current" if a > 0 else "empty"
-    rec = dict(run_id="%s-%d" % (sid, int(t0)), source=sid, label=source["label"], klass=source["klass"],
+    # COVERAGE: how much of the source's universe THIS run actually touched (expected vs landed store/item
+    # counts) — the honest signal a cumulative merge can't give. A run can be 'current'/'ok' by row-count yet
+    # 'partial' by coverage (blocked mid-crawl); this is what surfaces that. Best-effort — never fails a run.
+    cov = {}
+    try:
+        import coverage as _cov
+        cv = _cov.assess(source)
+        cov = dict(cov_basis=cv["basis"],
+                   landed_items=cv["items"]["landed"], expected_items=cv["items"]["expected"],
+                   cov_items_pct=cv["items"]["pct"], cov_items=cv["items"]["verdict"],
+                   landed_stores=cv["stores"]["landed"], expected_stores=cv["stores"]["expected"],
+                   cov_stores_pct=cv["stores"]["pct"], cov_stores=cv["stores"]["verdict"])
+    except Exception:
+        cv = None
+    rec = dict(run_id=run_token, source=sid, label=source["label"], klass=source["klass"],
                ts_start=int(t0), ts_end=int(time.time()), duration_s=dur, status=status,
                rows_before=b, rows_after=a, delta=delta, tables=",".join(source["tables"]),
-               error=error, host=os.uname().nodename[:40])
-    log("  %-16s %-9s Δ%-10s %5ss %s" % (sid, status, ("%+d" % delta if delta else "0"), dur,
-                                         ("| " + error) if error else ""))
+               error=error, host=os.uname().nodename[:40], **cov)
+    covnote = ""
+    if cv and (cv["items"]["verdict"] == "partial" or cv["stores"]["verdict"] == "partial"):
+        covnote = " ⚠cov %s/%s items · %s/%s stores" % (cv["items"]["landed"], cv["items"]["expected"],
+                                                        cv["stores"]["landed"], cv["stores"]["expected"])
+    log("  %-16s %-9s Δ%-10s %5ss %s%s" % (sid, status, ("%+d" % delta if delta else "0"), dur,
+                                           ("| " + error) if error else "", covnote))
     return rec
 
 
 SR_FIELDS = ["run_id", "source", "label", "klass", "ts_start", "ts_end", "duration_s", "status",
-             "rows_before", "rows_after", "delta", "tables", "error", "host"]
+             "rows_before", "rows_after", "delta", "tables", "error", "host",
+             # coverage (expected vs landed store/item counts for THIS run — the partial-scrape signal)
+             "cov_basis", "landed_items", "expected_items", "cov_items_pct", "cov_items",
+             "landed_stores", "expected_stores", "cov_stores_pct", "cov_stores"]
 
 
 def _land_runs(records, log=print):

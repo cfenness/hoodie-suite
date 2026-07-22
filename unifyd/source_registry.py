@@ -38,7 +38,11 @@ SOURCES = [
     dict(id="abc-catalog", label="ABC FW&S (catalog)", code="import abc_catalog as m; m.run()",
          tables=["abc_catalog"], klass="headless", cadence="weekly", enabled=True, note="BigCommerce sitemap"),
     dict(id="abc-fws", label="ABC FW&S (inventory)", code="import abc_fws_scraper as m; m.pull(crawl_all=True)",
-         tables=["abc_products"], klass="headless", cadence="daily", enabled=True, note="per-store inventory"),
+         tables=["abc_products"], klass="headless", cadence="daily", enabled=True, note="per-store inventory",
+         # COVERAGE (coverage.py): item/store columns + the KNOWN universe, so a run that lands far fewer
+         # SKUs/stores than this reads `partial` instead of a silent stale merge. Omit expected_* to let
+         # coverage self-calibrate from the touched high-water-mark; set them when the universe is known.
+         item_col="sku", store_col="store", expected_items=13900, expected_stores=133),
     dict(id="haskells", label="Haskell's (MN)", code="import haskells as m; m.run(limit=None)",
          tables=["haskells_products"], klass="headless", cadence="daily", enabled=True, timeout=10800,
          note="first-party site; full-catalog crawl outgrew the 5400s default (timed out 07-18)"),

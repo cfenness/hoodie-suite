@@ -16,6 +16,8 @@ The checks (each finding carries code / severity / evidence):
   run-failed        CRIT  a registry-enabled source's latest run failed / timed out / errored
   run-degraded      WARN  a run self-reported degraded (parser drift caught by the scraper's own selectors)
   rows-collapsed    CRIT  a pull table's count fell >COLLAPSE_PCT vs its previous point (or to zero)
+  coverage-shortfall C/W  last run touched far fewer stores/items than expected — a partial scrape a
+                          cumulative merge hides (table didn't shrink, so collapse/staleness can't see it)
   pull-stale        C/W   a registry-enabled source's data is older than its cadence allows
   run-no-change     WARN  a run "succeeded" but landed zero delta (run_sources' own bad-smell status)
   table-missing     WARN  a registry-enabled source's declared table doesn't exist in the warehouse
@@ -160,6 +162,32 @@ def build_digest(weekly=False):
             findings.append(_finding("run-degraded", "warn", sid,
                                      "%s: run self-reported DEGRADED (parser drift) on %s" % (label, ", ".join(degraded)),
                                      {"datasets": degraded, "warnings": warns}))
+
+        # 1b) COVERAGE — expected vs landed store/item counts for the last run. A cumulative merge never
+        # shrinks, so freshness and collapse are BLIND to a blocked/partial scrape: the table stays full and
+        # the run reads 'current'/'ok'. Coverage is the only signal that catches "it ran, it 'landed', but it
+        # only touched 3% of the catalog." Severe shortfall (<50% of expected) = critical, else warn.
+        try:
+            import coverage as _cov
+            cv = _cov.assess(src)
+        except Exception:
+            cv = None
+        # Only when the source ACTUALLY recorded a run's coverage (last_ts>0). A source with a registry
+        # `expected_*` but no coverage history yet would otherwise read 0/expected = "partial" and double-
+        # report the existing never-landed/stale critical — that's noise, not a second failure.
+        if cv and cv.get("last_ts"):
+            short = [(dim, cv[dim]) for dim in ("items", "stores") if cv[dim].get("verdict") == "partial"]
+            if short:
+                pcts = [d["pct"] for _, d in short if d.get("pct") is not None]
+                worst = min(pcts) if pcts else 0
+                it, stx = cv["items"], cv["stores"]
+                findings.append(_finding("coverage-shortfall", "critical" if worst < 50 else "warn", sid,
+                    "%s: last run covered %s/%s items, %s/%s stores (%.0f%% of expected — partial scrape; the "
+                    "table didn't shrink, so coverage is the ONLY signal)" % (
+                        label, it["landed"], it["expected"], stx["landed"], stx["expected"], worst),
+                    {"landed_items": it["landed"], "expected_items": it["expected"], "items_pct": it["pct"],
+                     "landed_stores": stx["landed"], "expected_stores": stx["expected"], "stores_pct": stx["pct"],
+                     "basis": cv["basis"]}))
 
         # 2) freshness vs the cadence CONTRACT — data mtime is the truth (a run log can lie; the footer can't)
         newest = max((d.get("modified") or 0 for d in datasets), default=None) or None
