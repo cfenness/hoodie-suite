@@ -16,12 +16,25 @@ primary_region = 'iad'
   DUCKDB_MEMORY_LIMIT = '1200MB'
   DUCKDB_THREADS = '2'
 
+# Two process groups from ONE image, so data pulls never run on the box that serves the site:
+#   app    — serves the public suite + /api (small, always-on, public).
+#   runner — runs the scrapers/pulls OFF the serving worker. On 2026-07-22 three concurrent
+#            catalog crawls held ~3.8gb RSS and OOM-killed the 4gb serving worker TWICE, taking
+#            the live site down briefly. The runner is the same app image on its own 8gb machine
+#            with no public route, so a heavy crawl can't touch the site. Trigger pulls against
+#            it via the app's own /api/run (reached over Fly private networking / flyctl proxy).
+[processes]
+  app = "gunicorn -w 1 --threads 24 --timeout 120 -b 0.0.0.0:8080 server:app"
+  # --timeout 0: the runner's worker does long single-threaded crawls; never let the arbiter kill a busy worker.
+  runner = "gunicorn -w 1 --threads 8 --timeout 0 -b 0.0.0.0:8080 server:app"
+
 [http_service]
   internal_port = 8080
   force_https = true
   auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
+  processes = ['app']
 
   [[http_service.checks]]
     interval = '15s'
@@ -37,3 +50,10 @@ primary_region = 'iad'
   size = 'shared-cpu-4x'
   # 4gb: the master data outgrew 2gb as the warehouse ballooned; DuckDB queries need headroom.
   memory = '4gb'
+  processes = ['app']
+
+[[vm]]
+  # runner: heavy catalog crawls held ~3.8gb RSS and OOM-killed the 4gb serving worker — 8gb gives headroom.
+  size = 'shared-cpu-4x'
+  memory = '8gb'
+  processes = ['runner']
