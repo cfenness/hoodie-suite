@@ -94,9 +94,20 @@ SOURCES = [
          tables=["ca_outlets"], klass="mac", cadence="weekly", enabled=True, note="WAF — browser headers"),
     dict(id="control-states", label="Control states (OR/UT/NC/MT/ME/AL/BC/MontMD)", code="import control_state as m; m.build_all()",
          tables=["or_pricing", "ut_pricing", "mont_sales"], klass="headless", cadence="weekly", enabled=True, note="per-state fetchers"),
-    dict(id="census", label="US Census ACS", code="import census_ref as m; m.build()",
+    dict(id="census", label="US Census (CBP/Nonemp/PEP/EconCensus)", code="import census_ref as m; m.build()",
          tables=["census_reference"], klass="creds", cadence="weekly", enabled=True,
-         requires=["CENSUS_API_KEY"], note="Census API (census_ref.build) — free key, re-derivable"),
+         requires=["CENSUS_API_KEY"],
+         note="Census API (census_ref.build) — CBP + Nonemployer + PEP + Economic Census (ecnbasic: SALES/"
+              "receipts by bev-alc NAICS to county); long/tall, re-derivable"),
+    dict(id="census-acs", label="US Census ACS (all tables + featured)", code="import census_ref as m; m.build_acs()",
+         tables=["census_acs"], klass="creds", cadence="weekly", enabled=True,
+         requires=["CENSUS_API_KEY"],
+         note="ALL 1,193 ACS5 detailed tables @ state + featured bev-alc metrics (21+, income, households) @ "
+              "county; ~1,193 group() calls. Full all-tables×county + tract/block-group is a partitioned/bulk follow-up"),
+    dict(id="census-migration", label="US Census migration flows", code="import census_ref as m; m.build_flows()",
+         tables=["census_migration"], klass="creds", cadence="weekly", enabled=True,
+         requires=["CENSUS_API_KEY"],
+         note="ACS county-to-county flows (MOVEDIN/OUT/NET + FROMABROAD) — market-momentum signal for trade areas"),
     dict(id="tax-rates", label="Bev-alc tax RATES (TTB + state excise)", code="import tax_rates as m; m.build()",
          tables=["tax_rates"], klass="headless", cadence="weekly", enabled=True,
          note="federal CBMA schedule (encoded, TTB) + 51-jurisdiction state excise seed (Tax Foundation Jan 2026); "
