@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Retail Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  :root{
+    --paper:#F1F3F5; --card:#FFFFFF; --ink:#2B3138; --ink-2:#4A535C; --mut:#7A828B;
+    --teal:#3E8A8A; --teal-deep:#2F6C6C; --line:#DDE2E6; --line-2:#E8EBEE; --rail:#E9ECEF;
+    --good:#3F8F6E; --good-bg:#E4F1EA; --warn:#B6822C; --warn-bg:#F4ECD9; --chip:#E8EBEE;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+    --disp:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --serif:"Source Serif 4",Georgia,serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --paper:#12161B; --card:#1A2027; --ink:#E7ECF1; --ink-2:#C4CDD6; --mut:#8A98A5;
+    --teal:#57ADAD; --teal-deep:#7CC4C4; --line:#28313A; --line-2:#20272E; --rail:#161B21; --chip:#232C35;
+    --good:#5FB58E; --good-bg:#1A2C25; --warn:#D0A14A; --warn-bg:#2C2618;
+  }}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--disp);display:flex;flex-direction:column;overflow:hidden;-webkit-font-smoothing:antialiased}
+  button,input{font-family:inherit}
+
+  header.rx{flex:none;background:var(--card);border-bottom:1px solid var(--line);padding:12px 18px 0}
+  .rx-top{display:flex;align-items:center;gap:14px}
+  .rx-mk{font-family:var(--mono);font-size:11px;font-weight:700;color:#fff;background:var(--teal);width:30px;height:24px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;flex:none}
+  .rx-ttl{font-size:16px;font-weight:700;letter-spacing:-.01em}
+  .rx-ttl .sub{font-family:var(--serif);font-weight:400;color:var(--mut);font-size:13px;margin-left:8px}
+  .rx-spacer{flex:1}
+
+  /* global subject search */
+  .subwrap{display:flex;align-items:center;gap:10px;flex:1;max-width:560px}
+  .subbox{flex:1;display:flex;align-items:center;gap:9px;border:1.5px solid var(--line);background:var(--paper);border-radius:8px;padding:2px 4px 2px 12px;transition:border-color .12s}
+  .subbox:focus-within{border-color:var(--teal)}
+  .subbox .mag{color:var(--mut);font-size:14px;flex:none}
+  .subbox input{flex:1;border:0;background:transparent;outline:none;color:var(--ink);font-size:14.5px;padding:8px 0}
+  .subbox .go{font-family:var(--mono);font-size:11px;font-weight:600;color:#fff;background:var(--teal);border:0;border-radius:6px;padding:7px 12px;cursor:pointer}
+  .subbox .clear{border:0;background:none;color:var(--mut);font-size:16px;cursor:pointer;padding:0 8px;display:none}
+  .subbox.active .clear{display:block}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;padding:9px 0 0}
+  .chips .lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);align-self:center;margin-right:2px}
+  .chip{font-family:var(--serif);font-size:13px;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:4px 12px;color:var(--ink-2);cursor:pointer}
+  .chip:hover{border-color:var(--teal);color:var(--ink)}
+  .subj-active{font-family:var(--mono);font-size:11px;color:var(--teal-deep);font-weight:600}
+
+  /* tab bar (hidden when embedded — the shell rail drives tabs) */
+  .tabbar{display:flex;gap:2px;margin-top:11px}
+  body.embed .tabbar{display:none}
+  .tab{display:flex;align-items:center;gap:7px;padding:9px 15px;font-size:13.5px;font-weight:600;color:var(--mut);border:0;background:none;border-bottom:2px solid transparent;cursor:pointer}
+  .tab.on{color:var(--ink);border-bottom-color:var(--teal)}
+  .tab .aw{width:6px;height:6px;border-radius:50%;background:var(--good)}
+  .tab .soon{font-family:var(--mono);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);border:1px solid var(--line);border-radius:3px;padding:0 4px}
+
+  main{flex:1;position:relative;min-height:0}
+  .tabframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--card);display:none}
+  .tabframe.on{display:block}
+  .hint{position:absolute;left:0;right:0;bottom:0;padding:6px 16px;font-family:var(--mono);font-size:10.5px;color:var(--mut);background:linear-gradient(var(--card),transparent);pointer-events:none;text-align:center;opacity:.85}
+</style>
+</head>
+<body>
+<header class="rx">
+  <div class="rx-top">
+    <span class="rx-mk">RX</span>
+    <span class="rx-ttl">Retail Intelligence <span class="sub">one subject, every instrument</span></span>
+    <div class="rx-spacer"></div>
+    <div class="subwrap">
+      <div class="subbox" id="subbox">
+        <span class="mag">⌕</span>
+        <input id="subin" placeholder="Search a brand — Tito’s, Casamigos, Modelo…" autocomplete="off"/>
+        <button class="clear" id="subclear" title="Clear subject">×</button>
+        <button class="go" id="subgo">Filter all</button>
+      </div>
+    </div>
+  </div>
+  <div class="chips">
+    <span class="lbl">Try</span>
+    <span class="chip" data-s="Tito's">Tito’s</span>
+    <span class="chip" data-s="Casamigos">Casamigos</span>
+    <span class="chip" data-s="Modelo">Modelo</span>
+    <span class="chip" data-s="Michelob Ultra">Michelob Ultra</span>
+    <span class="rx-spacer"></span>
+    <span class="subj-active" id="subjActive"></span>
+  </div>
+  <div class="tabbar" id="tabbar"></div>
+</header>
+<main id="main"></main>
+
+<script src="../spine/spine.js"></script>
+<script>
+(function(){
+  "use strict";
+  var EMBED = window.parent && window.parent !== window;
+  if(EMBED) document.body.classList.add("embed");
+
+  // The instruments. aware = subscribes to the subject today (filters live). others: adoption pending.
+  var TABS = [
+    {id:"store",     label:"Store",     file:"retail.html",           aware:true},
+    {id:"analytics", label:"Analytics", file:"retail-analytics.html", aware:true},
+    {id:"menu",      label:"Menu",      file:"menu-analytics.html",   aware:false},
+    {id:"price",     label:"Price",     file:"price-index.html",      aware:false},
+    {id:"market",    label:"Market",    file:"market.html",           aware:false}
+  ];
+  var active = TABS[0].id, SUBJECT = null;
+
+  // The composite is a spine HOST for its instrument iframes: setContext broadcasts the subject to all of them,
+  // and the host auto-replies to each iframe's `ready`, so a lazily-mounted tab receives the current subject.
+  var host = HoodieSpine.host({hierarchy:{id:"root",level:"root",name:"All",children:[]}});
+
+  // build tabs + frames
+  var main=document.getElementById("main"), tabbar=document.getElementById("tabbar");
+  TABS.forEach(function(t){
+    var b=document.createElement("button"); b.className="tab"+(t.id===active?" on":""); b.dataset.id=t.id;
+    b.innerHTML=(t.aware?'<span class="aw" title="filters on the subject"></span>':'')+t.label+(t.aware?"":'<span class="soon">soon</span>');
+    b.onclick=function(){ show(t.id); };
+    tabbar.appendChild(b);
+    var f=document.createElement("iframe"); f.className="tabframe"+(t.id===active?" on":""); f.id="f-"+t.id;
+    f.setAttribute("data-src", t.file); f.title=t.label;
+    main.appendChild(f);
+  });
+  var hint=document.createElement("div"); hint.className="hint"; main.appendChild(hint);
+
+  function show(id){
+    active=id;
+    TABS.forEach(function(t){
+      var f=document.getElementById("f-"+t.id), b=tabbar.querySelector('[data-id="'+t.id+'"]');
+      var on=t.id===id;
+      if(on && f.getAttribute("data-src") && !f.getAttribute("src")){ f.setAttribute("src", f.getAttribute("data-src")); }  // lazy mount
+      f.classList.toggle("on", on);
+      if(b) b.classList.toggle("on", on);
+    });
+    var t=TABS.filter(function(x){return x.id===id;})[0];
+    hint.textContent = (t && !t.aware && SUBJECT) ? ("“"+SUBJECT+"” doesn’t filter "+t.label+" yet — this instrument is being wired to the shared subject") : "";
+    // reflect active tab to the shell rail so its highlight follows
+    try{ if(EMBED) window.parent.postMessage({__hoodie:"section", id:id}, "*"); }catch(e){}
+  }
+
+  // ---- global subject ----
+  var subin=document.getElementById("subin"), subbox=document.getElementById("subbox"), subjActive=document.getElementById("subjActive");
+  function setSubject(s){
+    s=(s||"").trim();
+    SUBJECT = s || null;
+    subin.value = s;
+    subbox.classList.toggle("active", !!s);
+    subjActive.textContent = s ? ("▸ every instrument filtered to “"+s+"”") : "";
+    // broadcast to every instrument iframe via the spine (scope = the subject)
+    host.setContext({ scope: s ? {id:slug(s), level:"brand", name:s} : null });
+    var t=TABS.filter(function(x){return x.id===active;})[0];
+    hint.textContent = (t && !t.aware && s) ? ("“"+s+"” doesn’t filter "+t.label+" yet — this instrument is being wired to the shared subject") : "";
+  }
+  function slug(s){ return s.toLowerCase().replace(/[^a-z0-9]+/g,""); }
+  document.getElementById("subgo").onclick=function(){ setSubject(subin.value); };
+  document.getElementById("subclear").onclick=function(){ setSubject(""); subin.focus(); };
+  subin.addEventListener("keydown", function(e){ if(e.key==="Enter"){ setSubject(subin.value); } });
+  document.querySelectorAll(".chip").forEach(function(c){ c.onclick=function(){ setSubject(c.dataset.s); }; });
+
+  // ---- shell integration: publish the tabs as this app's nav, accept section commands ----
+  function publishNav(){
+    try{ window.parent.postMessage({__hoodie:"nav", app:"retail-suite",
+      sections:TABS.map(function(t){ return {id:t.id, label:t.label, mark:t.label.slice(0,2).toUpperCase(),
+                                              desc:t.aware?"filters on the subject":"subject-aware soon"}; }),
+      active:active}, "*"); }catch(e){}
+  }
+  window.addEventListener("message", function(ev){
+    var d=ev.data; if(!d) return;
+    if(d.__hoodie==="section" && d.id){ show(d.id); }         // shell rail clicked a tab
+  });
+  if(EMBED) publishNav();
+
+  // mount the first tab
+  show(active);
+})();
+</script>
+<script src="../suite-header.js" data-id="retail-suite" data-mark="RX" data-name="Retail Intelligence" data-status="beta"></script>
+</body>
+</html>
