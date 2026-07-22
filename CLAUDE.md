@@ -99,6 +99,13 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   residential proxy." The RIGHT answer: run the `anti-bot` sources on the **residential executor**
   (the Mac — `$0`) and keep the cloud for the ~20 free API sources. `ue_crawl.py`'s "proxy for
   everything" path is opt-in scale (`FETCH_POLICY=paid`), never the default. Don't re-litigate this.
+  - **Not every `anti-bot` source needs the residential executor — test, don't assume.** `unifyd/instacart.py`
+    is the proven counter-example: a self-hosted **headless** Chromium (Playwright, NO Bright Data, NO proxy)
+    drives Instacart's own `SearchResultsPlacements` GraphQL and lands per-store product+price **from a bare
+    datacenter IP** — a CI matrix confirmed headless-no-Xvfb lands data, so the Fly image ships just the
+    bundled Chromium and the Instacart pull runs in-app for `$0`. The old BD managed-dataset scraper is
+    archived (`_archive/instacart_scraper.py`). Never re-add Bright Data to Instacart "to make it work";
+    if the datacenter path ever regresses, prove the block from a residential IP first (see the paid-path rule).
 
 - `unifyd/server.py` — a local Flask agent (`python unifyd/server.py`, port 8765) that
   serves `hoodie_mdm.html` and runs real pulls on `/api/run`. Endpoints: `/api/health`,
