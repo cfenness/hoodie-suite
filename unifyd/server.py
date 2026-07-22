@@ -4318,6 +4318,137 @@ def registry_run_progress_ep():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# In-app SCHEDULER — the app runs due sources on their cadence, itself.
+#
+# So capture doesn't depend on GitHub Actions (which need secrets re-added and were dying mid-run) or a
+# human/CLI trigger: a daemon thread in the single gunicorn worker ticks every SCHEDULER_INTERVAL, asks
+# run_sources which sources are DUE (past their interval_h in the shared ledger), and runs them with the
+# app's own env/secrets — landing to the same ledger + coverage the rest of the pipeline reads. It takes
+# the SAME machine-global file lock run_sources' --due uses, so an in-app tick and a CLI/CI pass dedupe
+# instead of stacking. Default headless/creds only (a server has no warmed browser); SCHEDULER_MAC=1
+# opts the anti-bot browser sources in (only where the image actually has Chrome + a proxy).
+#
+# Env: SCHEDULER=1 auto-starts it at boot; SCHEDULER_INTERVAL (s, default 1800); SCHEDULER_MAC=1.
+# Runtime toggle without redeploy: POST /api/registry/scheduler {enabled, interval_s, run_now}.
+# ─────────────────────────────────────────────────────────────────────────────
+def _truthy(v):
+    return str(v or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+_SCHED = {"enabled": _truthy(os.environ.get("SCHEDULER")),
+          "interval_s": max(60, int(os.environ.get("SCHEDULER_INTERVAL", "1800") or 1800)),
+          "mac": _truthy(os.environ.get("SCHEDULER_MAC")),
+          "thread_started": False, "running": False, "ticks": 0,
+          "last_tick": None, "next_tick": None, "last_due": [], "last_skip": None,
+          "runs": [], "error": None}
+_SCHED_LOCK = threading.Lock()
+
+
+def _sched_tick():
+    """One dispatcher pass: run every DUE source once, land it, record the outcome. No-ops cleanly when
+    nothing is due or another pass holds the machine-global lock."""
+    import run_sources as rs
+    with _SCHED_LOCK:
+        if _SCHED["running"]:
+            return
+        _SCHED["running"] = True
+    lock = None
+    try:
+        lock = rs._acquire_lock()                    # dedupe with any CLI/CI --due pass on this host
+        if not lock:
+            _SCHED["last_skip"] = "lock held by another pass"
+            return
+        try:
+            due = rs.due_sources()
+        except Exception as e:
+            _SCHED["error"] = "due_sources: %s" % str(e)[:160]
+            due = []
+        if not _SCHED["mac"]:
+            due = [s for s in due if s["klass"] != "mac"]
+        _SCHED["last_due"] = [s["id"] for s in due]
+        for s in due:
+            try:
+                rec = rs.run_one(s)
+                rs._land_runs([rec], log=lambda *a: None)
+                _SCHED["runs"].insert(0, {"source": rec.get("source"), "status": rec.get("status"),
+                                          "delta": rec.get("delta"), "cov_items": rec.get("cov_items"),
+                                          "cov_stores": rec.get("cov_stores"), "at": int(time.time())})
+                del _SCHED["runs"][80:]
+            except Exception as e:
+                _SCHED["error"] = "%s: %s" % (s["id"], str(e)[:160])
+        _SCHED["ticks"] += 1
+        _SCHED["last_tick"] = int(time.time())
+    finally:
+        if lock:
+            try:
+                lock.close()                          # release the machine-global lock
+            except Exception:
+                pass
+        _SCHED["running"] = False
+
+
+def _scheduler_loop():
+    while True:
+        try:
+            if _SCHED["enabled"]:
+                _sched_tick()
+        except Exception as e:
+            _SCHED["error"] = "loop: %s" % str(e)[:160]
+        _SCHED["next_tick"] = int(time.time()) + _SCHED["interval_s"]
+        time.sleep(_SCHED["interval_s"])
+
+
+def _ensure_scheduler_thread():
+    """Start the single scheduler daemon (idempotent). Started at import when SCHEDULER=1, or on first
+    runtime enable via the API — so you can turn capture on without a redeploy."""
+    with _SCHED_LOCK:
+        if _SCHED["thread_started"]:
+            return
+        _SCHED["thread_started"] = True
+    threading.Thread(target=_scheduler_loop, name="hoodie-scheduler", daemon=True).start()
+
+
+@app.get("/api/registry/scheduler")
+def registry_scheduler_status_ep():
+    import run_sources as rs
+    try:
+        due = [s["id"] for s in rs.due_sources()]
+    except Exception:
+        due = []
+    return jsonify(ok=True, enabled=_SCHED["enabled"], interval_s=_SCHED["interval_s"], mac=_SCHED["mac"],
+                   running=_SCHED["running"], ticks=_SCHED["ticks"], last_tick=_SCHED["last_tick"],
+                   next_tick=_SCHED["next_tick"], thread_started=_SCHED["thread_started"],
+                   due_now=due, last_due=_SCHED["last_due"], last_skip=_SCHED["last_skip"],
+                   recent=_SCHED["runs"][:20], error=_SCHED["error"])
+
+
+@app.post("/api/registry/scheduler")
+def registry_scheduler_control_ep():
+    """Toggle/adjust the scheduler at runtime (in-memory; SCHEDULER env is the durable default). Body:
+    {enabled:bool, interval_s:int, mac:bool, run_now:bool}. run_now fires one tick immediately."""
+    b = request.get_json(silent=True) or {}
+    if "enabled" in b:
+        _SCHED["enabled"] = bool(b["enabled"])
+    if "mac" in b:
+        _SCHED["mac"] = bool(b["mac"])
+    if "interval_s" in b:
+        try:
+            _SCHED["interval_s"] = max(60, int(b["interval_s"]))
+        except (ValueError, TypeError):
+            pass
+    if _SCHED["enabled"]:
+        _ensure_scheduler_thread()
+    if b.get("run_now"):
+        threading.Thread(target=_sched_tick, name="hoodie-scheduler-kick", daemon=True).start()
+    return jsonify(ok=True, enabled=_SCHED["enabled"], interval_s=_SCHED["interval_s"], mac=_SCHED["mac"],
+                   thread_started=_SCHED["thread_started"], kicked=bool(b.get("run_now")))
+
+
+if _SCHED["enabled"]:                                 # auto-start under gunicorn when SCHEDULER=1
+    _ensure_scheduler_thread()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Service desk — data-quality reports (raised from the suite, tracked in the CRM)
 # ─────────────────────────────────────────────────────────────────────────────
 _SERVICE_STATES = ("open", "acknowledged", "reported", "resolved")
