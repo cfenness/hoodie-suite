@@ -86,9 +86,46 @@ def enabled():
     return bool(cid and secret and sess)
 
 
-def _allowed_emails():
-    raw = os.environ.get("ALLOWED_EMAILS", "")
+# ── Access model ────────────────────────────────────────────────────────────────────────────────────
+# Two tiers: ADMINS (manage the allowlist + the admin console) and ALLOWED users (get in). The effective
+# allowlist is the UNION of three sources, so the admin UI can add users without a redeploy AND a bad edit
+# can never lock everyone out or open the gate:
+#   1. ALLOWED_EMAILS env  — the immutable "bootstrap" list (set via `flyctl secrets`).
+#   2. a runtime provider   — the UI-managed list server.py registers (durable admin_allowlist.json).
+#   3. the admins           — always allowed, so an admin can never lock themselves out.
+_DEFAULT_ADMIN = "chris.fennessey1@gmail.com"     # fail-safe owner: admin even if ADMIN_EMAILS is unset
+_allow_provider = None
+
+
+def _admin_emails():
+    """The admin set (manage users + admin console). ADMIN_EMAILS env override; defaults to the owner so
+    admin access can't be accidentally removed."""
+    raw = os.environ.get("ADMIN_EMAILS", "").strip()
+    if not raw:
+        return {_DEFAULT_ADMIN}
     return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def is_admin(email):
+    return bool(email) and str(email).strip().lower() in _admin_emails()
+
+
+def set_allowlist_provider(fn):
+    """server.py registers a 0-arg callable returning the UI-managed emails (durable state). A hook, so
+    auth_gate stays free of any warehouse/state dependency."""
+    global _allow_provider
+    _allow_provider = fn
+
+
+def _allowed_emails():
+    emails = {e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()}
+    if _allow_provider:
+        try:
+            emails |= {str(e).strip().lower() for e in (_allow_provider() or []) if str(e).strip()}
+        except Exception:
+            pass                                   # store unreachable -> env + admins (fail safe, never lock out)
+    emails |= _admin_emails()                       # admins are always allowed
+    return emails
 
 
 def _redirect_uri():
@@ -232,9 +269,10 @@ def init(app):
 
     @app.get("/auth/me")
     def auth_me():
-        # Public: lets the UI decide whether to show a "Sign out" control. Reveals only
-        # the already-signed-in account's own email (or null); no info leak when gate is off.
-        return jsonify(gated=enabled(), email=session.get("email"))
+        # Public: lets the UI decide whether to show a "Sign out" control + admin-only tiles. Reveals only
+        # the already-signed-in account's own email + admin status (or null); no info leak when gate is off.
+        em = session.get("email")
+        return jsonify(gated=enabled(), email=em, is_admin=is_admin(em))
 
     @app.post("/api/auth/mobile")
     def auth_mobile():
