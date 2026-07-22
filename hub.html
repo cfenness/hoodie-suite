@@ -114,18 +114,19 @@
   #frameload .ft{color:var(--mut);font-size:13px}
 
   /* home — Hoodie identity: Space Grotesk display, Source Serif body, mono labels, slate accent, card grid */
-  .canvas{max-width:1180px;margin:0 auto;padding:30px 24px 60px}
-  .hero{margin-bottom:26px}
+  .canvas{max-width:1180px;margin:0 auto;padding:20px 24px 56px}
+  .hero{margin-bottom:14px}
   .hero .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--slate);font-weight:600}
-  .hero h1{font-family:var(--disp);font-weight:700;font-size:clamp(27px,3.4vw,35px);letter-spacing:-.02em;margin:11px 0 0;line-height:1.05;color:var(--ink)}
+  .hero h1{font-family:var(--disp);font-weight:700;font-size:clamp(24px,2.8vw,30px);letter-spacing:-.02em;margin:8px 0 0;line-height:1.05;color:var(--ink)}
   .hero h1 .thin{font-weight:400;color:var(--mut)}
-  .hero .sub{font-family:var(--serif);font-size:15.5px;color:var(--ink-2);margin:13px 0 0;max-width:62ch;line-height:1.5}
-  .hero .statline{display:flex;align-items:center;gap:14px;margin-top:18px;font-family:var(--mono);font-size:11px;color:var(--mut);letter-spacing:.03em;flex-wrap:wrap}
+  .hero .sub{font-family:var(--serif);font-size:14.5px;color:var(--ink-2);margin:9px 0 0;max-width:58ch;line-height:1.45}
+  .hero .statline{display:flex;align-items:center;gap:13px;margin-top:13px;font-family:var(--mono);font-size:11px;color:var(--mut);letter-spacing:.03em;flex-wrap:wrap}
   .hero .statline b{color:var(--ink);font-weight:600}
   .hero .statline .sep{color:var(--line)}
 
-  .bsec{margin-top:26px}
-  .bsec .bhead{display:flex;align-items:center;gap:10px;margin:0 0 11px}
+  .bsec{margin-top:20px}
+  .bsec:first-of-type{margin-top:0}
+  .bsec .bhead{display:flex;align-items:center;gap:10px;margin:0 0 10px}
   .bsec .bhead .glabel{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--dc);cursor:pointer}
   .bsec .bhead .glabel:hover{text-decoration:underline}
   .bsec .bhead .role{font-family:var(--serif);font-size:13px;color:var(--mut)}
@@ -463,7 +464,7 @@
         '<div class="hero">'+
           '<div class="eyebrow">Hoodie · Unifyd</div>'+
           '<h1>The suite, <span class="thin">in four buckets.</span></h1>'+
-          '<p class="sub">Reporting, data operations, master data, and the commercial apps — each a way into the surfaces inside. Scope and date set once above carry into every one.</p>'+
+          '<p class="sub">Each bucket is a way into the surfaces inside; scope and date set once above carry into every one.</p>'+
           '<div class="statline">'+heroStat()+'</div>'+
         '</div>'+
         sections+drawer+
