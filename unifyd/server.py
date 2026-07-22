@@ -1691,6 +1691,58 @@ _WM_CONCERNS = [
     ("low", "on_promo",     "on_promo = true",          "final price below list (promo)"),
 ]
 
+# ── /api/tax/* — beverage-alcohol tax reference (tax_rates.py / tax_revenue.py / landed_cost.py).
+# rates   = per-unit schedule (federal CBMA, encoded + state excise seed, effective-dated)
+# revenue = Census STC collections (T10 alc sales tax, T20 alc license) per state
+# landed  = the itemized cost stack ordering/keystone calls; also the pre-tax normalizer for the price signal
+@app.get("/api/tax/rates")
+def tax_rates_ep():
+    """Effective-dated bev-alc tax RATE schedule. ?jurisdiction=TX&class=spirits&type=excise&level=state.
+    Serves the assembled seed (federal + state CSV) if the warehouse table isn't landed yet."""
+    import tax_rates
+    j = request.args.get("jurisdiction") or None; c = request.args.get("class") or None
+    t = request.args.get("type") or None; lvl = request.args.get("level") or None
+    try:
+        rows = tax_rates.query(jurisdiction=j, beverage_class=c, rate_type=t, level=lvl)
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except Exception:
+        rows, _ = tax_rates.assemble(log=lambda *a: None)
+        rows = [r for r in rows if (not j or r["jurisdiction"] == j) and (not c or r["beverage_class"] == c)
+                and (not t or r["rate_type"] == t) and (not lvl or r["jurisdiction_level"] == lvl)]
+        return jsonify(ok=True, landed=False, count=len(rows), rows=rows, note="assembled from seed (tax_rates not landed)")
+
+@app.get("/api/tax/revenue")
+def tax_revenue_ep():
+    """Bev-alc tax REVENUE (collections). ?source=census_stc&jurisdiction=TX&kind=sales&year=2021."""
+    import tax_revenue
+    try:
+        yr = int(request.args["year"]) if request.args.get("year") else None
+        rows = tax_revenue.query(source=request.args.get("source") or None,
+                                 jurisdiction=request.args.get("jurisdiction") or None,
+                                 tax_kind=request.args.get("kind") or None, year=yr)
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="tax_revenue not landed yet (needs a CENSUS_API_KEY run)")
+
+@app.get("/api/tax/landed")
+def tax_landed_ep():
+    """Itemized landed-cost / tax stack for one item. ?base=12&state=TX&class=spirits&abv=40&size_ml=750&sales=0.
+    The pre-tax basis (landed_cost - base) is what price_signal.py subtracts to compare shelf prices across states."""
+    import landed_cost
+    try:
+        base = float(request.args.get("base", "0") or 0)
+        size_ml = float(request.args.get("size_ml", "750") or 750)
+        abv = request.args.get("abv"); abv = float(abv) if abv not in (None, "") else None
+    except ValueError as e:
+        return jsonify(ok=False, error="bad numeric param: %s" % e), 400
+    state = (request.args.get("state") or "").upper()
+    if not state:
+        return jsonify(ok=False, error="state required (2-letter)"), 400
+    r = landed_cost.landed_cost(base, state, request.args.get("class") or "spirits", abv=abv, size_ml=size_ml,
+                                include_sales_tax=(request.args.get("sales") in ("1", "true", "yes")))
+    return jsonify(ok=True, **r)
+
 @app.get("/api/walmart/products")
 def walmart_products_ep():
     import warehouse
