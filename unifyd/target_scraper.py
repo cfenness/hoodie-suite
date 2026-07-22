@@ -153,7 +153,7 @@ STORE_ZIPS = [
     "99201", "25301", "53202", "53703", "82001"]
 
 
-def nearby_stores(zipc, api_key, within=100, limit=20):   # RedSky caps limit at 20
+def nearby_stores(zipc, api_key=None, within=100, limit=20):   # RedSky caps limit at 20; api_key only for opt-in paid
     q = {"key": SEARCH_KEY, "limit": limit, "within": within, "place": zipc, "channel": "WEB"}
     d = _get("%s/nearby_stores_v1?%s" % (REDSKY, urllib.parse.urlencode(q)), api_key)
     out = []
@@ -194,7 +194,7 @@ def _img(item):
     return en.get("primary_image_url") or ""
 
 
-def plp_search(term, store, zipc, api_key, offset=0, count=28):
+def plp_search(term, store, zipc, api_key=None, offset=0, count=28):
     q = {"key": SEARCH_KEY, "channel": "WEB", "count": count, "default_purchasability_filter": "true",
          "keyword": term, "offset": offset, "page": "/s/" + term, "platform": "desktop",
          "pricing_store_id": store, "store_ids": store, "visitor_id": "0193", "zip": zipc}
@@ -212,7 +212,7 @@ def plp_search(term, store, zipc, api_key, offset=0, count=28):
     return out
 
 
-def fulfillment_qty(tcins, store, zipc, state, api_key):
+def fulfillment_qty(tcins, store, zipc, state, api_key=None):
     """{tcin: available_to_promise_quantity} for a store, from product_summary_with_fulfillment."""
     q = {"key": SEARCH_KEY, "tcins": ",".join(tcins), "store_id": store, "pricing_store_id": store,
          "zip": zipc, "state": state, "channel": "WEB"}
