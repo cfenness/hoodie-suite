@@ -1,0 +1,35 @@
+name: instacart-free-verify
+
+# Does the FREE Instacart connector (no Bright Data, no proxy) actually LAND data end-to-end?
+# Drives the real Instacart class against a scratch LOCAL warehouse on a bare datacenter runner and
+# reports the row counts it lands. Green = repoint server.py off the paid BD dataset.
+on:
+  push:
+    paths:
+      - unifyd/instacart.py
+      - unifyd/instacart_free_verify.py
+      - .github/workflows/instacart-free-verify.yml
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: system deps — real Chrome + Xvfb
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb wget
+          wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt-get install -y -qq ./google-chrome-stable_current_amd64.deb
+      - name: python deps
+        run: pip install --quiet playwright pyarrow duckdb
+      - name: verify free Instacart connector (no proxy, no bd)
+        working-directory: unifyd
+        env:
+          FETCH_POLICY: free
+        run: xvfb-run -a python -u instacart_free_verify.py
