@@ -75,7 +75,11 @@ def run(cap=900, radius=25.0, delay=0.15, ckpt=250, national=False, log=print):
     if national:                                 # densify the WHOLE country, not just the west
         TARGET = ALL_STATES
         seed = NATIONAL_SEED + SEED
-    existing = {str(r["VPID"]): dict(r) for r in warehouse.query("ab_outlets", "SELECT * FROM t")}
+    try:
+        _prior = warehouse.query("ab_outlets", "SELECT * FROM t")
+    except Exception:
+        _prior = []                                    # first run / empty warehouse: table not created yet — start empty
+    existing = {str(r["VPID"]): dict(r) for r in _prior}
     base = len(existing)
     log("[ab_fill] existing ab_outlets: %d (frontier: %s states)" % (base, len(TARGET)))
     acc = {}                                     # vpid -> {schema fields + _b(brands) + _z(zips hit)}
