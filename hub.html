@@ -6,14 +6,17 @@
 <meta name="robots" content="noindex, nofollow"/>
 <title>Hoodie Suite · Hub</title>
 <link rel="icon" href="favicon.ico"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
   :root{
-    --paper:#FBFAF8; --card:#FFFFFF; --ink:#1E262E; --ink-2:#3A4650; --mut:#63727F;
-    --slate:#4E79A7; --slate-ink:#3C608A; --line:#E2E6EC; --line-2:#EEF1F5; --rail:#F4F6F9;
-    --good:#3F8F6E; --good-bg:#E7F3ED; --warn:#B6822C; --warn-bg:#F6EEDC; --bad:#C0574A; --bad-bg:#F6E5E2;
-    --chip:#EEF2F7; --shadow:0 1px 2px rgba(30,38,46,.06),0 10px 26px rgba(30,38,46,.06);
-    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
-    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --paper:#F1F3F5; --card:#FFFFFF; --ink:#2B3138; --ink-2:#4A535C; --mut:#7A828B;
+    --slate:#4E79A7; --slate-ink:#3D6089; --line:#DDE2E6; --line-2:#E8EBEE; --rail:#E9ECEF;
+    --good:#3F8F6E; --good-bg:#E4F1EA; --warn:#B6822C; --warn-bg:#F4ECD9; --bad:#C0574A; --bad-bg:#F4E2DF;
+    --chip:#E8EBEE; --shadow:0 1px 2px rgba(27,30,36,.05),0 10px 22px -16px rgba(27,30,36,.5);
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --disp:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+    --sans:var(--disp);
     --bk-intel:#4E79A7; --bk-ops:#3F8F6E; --bk-master:#8A5FB0; --bk-comm:#B6822C;
     --rail-w:250px;
   }
@@ -32,10 +35,10 @@
     --bk-master:#A986C8;
   }
   :root[data-theme="light"]{
-    --paper:#FBFAF8; --card:#FFFFFF; --ink:#1E262E; --ink-2:#3A4650; --mut:#63727F;
-    --slate:#4E79A7; --slate-ink:#3C608A; --line:#E2E6EC; --line-2:#EEF1F5; --rail:#F4F6F9;
-    --good:#3F8F6E; --good-bg:#E7F3ED; --warn:#B6822C; --warn-bg:#F6EEDC; --bad:#C0574A; --bad-bg:#F6E5E2;
-    --chip:#EEF2F7; --shadow:0 1px 2px rgba(30,38,46,.06),0 10px 26px rgba(30,38,46,.06);
+    --paper:#F1F3F5; --card:#FFFFFF; --ink:#2B3138; --ink-2:#4A535C; --mut:#7A828B;
+    --slate:#4E79A7; --slate-ink:#3D6089; --line:#DDE2E6; --line-2:#E8EBEE; --rail:#E9ECEF;
+    --good:#3F8F6E; --good-bg:#E4F1EA; --warn:#B6822C; --warn-bg:#F4ECD9; --bad:#C0574A; --bad-bg:#F4E2DF;
+    --chip:#E8EBEE; --shadow:0 1px 2px rgba(27,30,36,.05),0 10px 22px -16px rgba(27,30,36,.5);
     --bk-master:#8A5FB0;
   }
   *{box-sizing:border-box}
@@ -110,36 +113,50 @@
   #frameload .fm{font-family:var(--mono);font-weight:700;color:#fff;background:var(--slate);width:44px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:9px}
   #frameload .ft{color:var(--mut);font-size:13px}
 
-  /* home canvas — a working launcher, grouped by bucket */
-  .canvas{max-width:1160px;margin:0 auto;padding:18px 22px 56px}
-  .sectlabel{display:flex;align-items:baseline;gap:10px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin:0 0 14px}
-  .sectlabel b{color:var(--ink-2)}
-  .panels{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
-  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
-  .panel .ph{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line-2)}
-  .panel .ph .bar{width:4px;height:17px;border-radius:2px;background:var(--dc);flex:none}
-  .panel .ph h2{font-size:14.5px;margin:0;font-weight:680;letter-spacing:-.005em;cursor:pointer}
-  .panel .ph h2:hover{color:var(--dc)}
-  .panel .ph .cnt{font-family:var(--mono);font-size:11px;color:var(--mut)}
-  .panel .ph .stat{margin-left:auto}
-  .panel .apps{display:flex;flex-direction:column;padding:5px}
-  .applink{display:flex;align-items:center;gap:10px;padding:7px 9px;border-radius:8px;cursor:pointer;border:1px solid transparent}
-  .applink:hover{background:var(--rail);border-color:var(--line)}
-  .applink .mk{font-family:var(--mono);font-size:9.5px;font-weight:700;color:#fff;background:var(--dc);width:24px;height:18px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;flex:none}
-  .applink .nm{font-size:13.5px;font-weight:600;flex:none}
-  .applink.star .nm::after{content:"★";color:var(--dc);font-size:10px;margin-left:5px;vertical-align:1px}
-  .applink .ds{font-size:12px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
-  .applink .st{width:7px;height:7px;border-radius:50%;flex:none}
-  .drawer-panel{grid-column:1/-1;background:var(--rail);border:1px solid var(--line);border-radius:12px;padding:11px 14px}
-  .drawer-panel .dph{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);cursor:pointer}
+  /* home — Hoodie identity: Space Grotesk display, Source Serif body, mono labels, slate accent, card grid */
+  .canvas{max-width:1180px;margin:0 auto;padding:30px 24px 60px}
+  .hero{margin-bottom:26px}
+  .hero .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--slate);font-weight:600}
+  .hero h1{font-family:var(--disp);font-weight:700;font-size:clamp(27px,3.4vw,35px);letter-spacing:-.02em;margin:11px 0 0;line-height:1.05;color:var(--ink)}
+  .hero h1 .thin{font-weight:400;color:var(--mut)}
+  .hero .sub{font-family:var(--serif);font-size:15.5px;color:var(--ink-2);margin:13px 0 0;max-width:62ch;line-height:1.5}
+  .hero .statline{display:flex;align-items:center;gap:14px;margin-top:18px;font-family:var(--mono);font-size:11px;color:var(--mut);letter-spacing:.03em;flex-wrap:wrap}
+  .hero .statline b{color:var(--ink);font-weight:600}
+  .hero .statline .sep{color:var(--line)}
+
+  .bsec{margin-top:26px}
+  .bsec .bhead{display:flex;align-items:center;gap:10px;margin:0 0 11px}
+  .bsec .bhead .glabel{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--dc);cursor:pointer}
+  .bsec .bhead .glabel:hover{text-decoration:underline}
+  .bsec .bhead .role{font-family:var(--serif);font-size:13px;color:var(--mut)}
+  .bsec .bhead .cnt{font-family:var(--mono);font-size:10.5px;color:var(--mut)}
+  .bsec .bhead .stat{margin-left:auto}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(244px,1fr));gap:11px}
+  .app{display:flex;flex-direction:column;border:1px solid var(--line);border-left:3px solid var(--dc);background:var(--card);padding:13px 15px;cursor:pointer;transition:transform .13s,box-shadow .13s,border-color .13s;min-height:112px;border-radius:3px}
+  .app:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+  .app .top{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+  .app .ic{width:27px;height:27px;flex:none;display:flex;align-items:center;justify-content:center;background:var(--dc);color:#fff;font-family:var(--disp);font-weight:600;font-size:11px;border-radius:3px}
+  .app .nm{font-family:var(--disp);font-weight:600;font-size:15px;letter-spacing:-.01em;color:var(--ink);line-height:1.15}
+  .app .star{margin-left:auto;color:var(--dc);font-size:12px;flex:none}
+  .app .stled{width:7px;height:7px;border-radius:50%;flex:none;margin-left:auto}
+  .app.star .star+.stled{margin-left:6px}
+  .app .ds{font-family:var(--serif);font-size:12.5px;color:var(--ink-2);line-height:1.4}
+  .app .foot{margin-top:auto;padding-top:11px;display:flex;align-items:center;justify-content:space-between}
+  .app .cat{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+  .app .open{font-family:var(--mono);font-size:11px;color:var(--dc);font-weight:600;display:flex;align-items:center;gap:5px}
+  .app:hover .open .a{transform:translateX(3px)}
+  .app .open .a{transition:transform .14s}
+
+  .drawer-panel{margin-top:26px;border-top:1px dashed var(--line);padding-top:14px}
+  .drawer-panel .dph{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);cursor:pointer;font-weight:600}
   .drawer-panel .dchev{transition:transform .15s}
   .drawer-panel.open .dchev{transform:rotate(90deg)}
-  .drawer-panel .ditems{display:none;flex-wrap:wrap;gap:6px;margin-top:11px}
+  .drawer-panel .ditems{display:none;flex-wrap:wrap;gap:7px;margin-top:12px}
   .drawer-panel.open .ditems{display:flex}
-  .dpill{font-size:12.5px;background:var(--card);border:1px solid var(--line);border-radius:7px;padding:5px 11px;color:var(--ink-2);cursor:pointer;display:flex;align-items:center;gap:7px}
-  .dpill:hover{border-color:var(--mut)}
+  .dpill{font-family:var(--disp);font-size:12.5px;font-weight:500;background:var(--card);border:1px solid var(--line);border-radius:3px;padding:6px 11px;color:var(--ink-2);cursor:pointer;display:flex;align-items:center;gap:7px}
+  .dpill:hover{border-color:var(--slate);color:var(--ink)}
   .dpill .mk{font-family:var(--mono);font-size:9px;font-weight:700;color:var(--mut)}
-  .fresh{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px}
+  .fresh{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 9px;border-radius:3px}
   .fresh .led{width:7px;height:7px;border-radius:50%}
   .fresh.ok{background:var(--good-bg);color:var(--good)}.fresh.ok .led{background:var(--good)}
   .fresh.warn{background:var(--warn-bg);color:var(--warn)}.fresh.warn .led{background:var(--warn)}
@@ -412,22 +429,27 @@
   }
   var openGroups={};
 
-  /* ============================ home (level 0) — grouped launcher ============================ */
+  /* ============================ home (level 0) — hero + grouped card grid ============================ */
   function renderHome(){
     var el=document.getElementById("home");
-    var panels = BUCKETS.map(function(b){
-      var apps = appsIn(b.id);
-      var rows = apps.map(function(a){
-        return '<div class="applink'+(a.star?' star':'')+'" data-id="'+a.id+'" style="--dc:'+b.color+'">'+
-          '<span class="mk">'+a.mark+'</span><span class="nm">'+a.name+'</span>'+
-          '<span class="ds">'+a.desc+'</span>'+
-          '<span class="st '+dotFor(a)+'"></span>'+
+    var nApps = APPS.filter(function(a){return a.bucket!=="utility";}).length;
+    var sections = BUCKETS.map(function(b){
+      var cards = appsIn(b.id).map(function(a){
+        var dot = dotFor(a);
+        return '<div class="app'+(a.star?" star":"")+'" data-id="'+a.id+'" style="--dc:'+b.color+'">'+
+          '<div class="top"><span class="ic">'+a.mark+'</span><span class="nm">'+a.name+'</span>'+
+            (a.star?'<span class="star">★</span>':'')+
+            (dot!=="none"?'<span class="stled" style="background:var(--'+(dot==="ok"?"good":dot==="warn"?"warn":"bad")+')"></span>':'')+
+          '</div>'+
+          '<div class="ds">'+a.desc+'</div>'+
+          '<div class="foot"><span class="cat">'+b.name+'</span><span class="open">Open <span class="a">→</span></span></div>'+
         '</div>';
       }).join("");
-      return '<div class="panel" style="--dc:'+b.color+'">'+
-        '<div class="ph"><span class="bar"></span><h2 data-bucket="'+b.id+'" title="Filter to this bucket">'+b.name+'</h2>'+
-          '<span class="cnt">'+apps.length+'</span><span class="stat">'+bucketStat(b.id)+'</span></div>'+
-        '<div class="apps">'+rows+'</div>'+
+      return '<div class="bsec" style="--dc:'+b.color+'">'+
+        '<div class="bhead"><span class="glabel" data-bucket="'+b.id+'" title="Focus this bucket">'+b.name+'</span>'+
+          '<span class="role">'+b.role+'</span><span class="cnt">'+appsIn(b.id).length+'</span>'+
+          '<span class="stat">'+bucketStat(b.id)+'</span></div>'+
+        '<div class="grid">'+cards+'</div>'+
       '</div>';
     }).join("");
     var util = appsIn("utility");
@@ -438,18 +460,26 @@
       }).join("")+'</div></div>';
     el.innerHTML =
       '<div class="canvas">'+
-        '<div class="sectlabel"><b>Surfaces</b> · grouped into four buckets '+globalStatInline()+'</div>'+
-        '<div class="panels">'+panels+drawer+'</div>'+
+        '<div class="hero">'+
+          '<div class="eyebrow">Hoodie · Unifyd</div>'+
+          '<h1>The suite, <span class="thin">in four buckets.</span></h1>'+
+          '<p class="sub">Reporting, data operations, master data, and the commercial apps — each a way into the surfaces inside. Scope and date set once above carry into every one.</p>'+
+          '<div class="statline">'+heroStat()+'</div>'+
+        '</div>'+
+        sections+drawer+
       '</div>';
-    el.querySelectorAll(".applink,.dpill").forEach(function(r){ r.onclick=function(){ location.hash="#"+r.dataset.id; }; });
-    el.querySelectorAll(".panel .ph h2").forEach(function(h){ h.onclick=function(){ location.hash="#b/"+h.dataset.bucket; }; });
+    el.querySelectorAll(".app,.dpill").forEach(function(r){ r.onclick=function(){ location.hash="#"+r.dataset.id; }; });
+    el.querySelectorAll(".glabel").forEach(function(h){ h.onclick=function(){ location.hash="#b/"+h.dataset.bucket; }; });
     var dh=el.querySelector("#homeDrawerH");
     if(dh) dh.onclick=function(){ openGroups.utility=!openGroups.utility; el.querySelector("#homeDrawer").classList.toggle("open"); };
   }
-  function globalStatInline(){
-    if(!STATE.live) return '<span style="color:var(--mut);margin-left:auto">warehouse offline</span>';
-    var v=opsVerdict(); if(!v) return "";
-    return '<span class="fresh '+v.cls+'" style="margin-left:auto"><span class="led"></span>'+v.txt+'</span>';
+  function heroStat(){
+    var nApps = APPS.filter(function(a){return a.bucket!=="utility";}).length;
+    var live = STATE.live ? '<span class="chip"><span class="led" style="width:6px;height:6px;border-radius:50%;background:var(--good);display:inline-block;margin-right:6px"></span>warehouse live</span>'
+                          : '<span style="color:var(--mut)">warehouse offline</span>';
+    var v=STATE.live?opsVerdict():null;
+    var fr=v?('<span class="sep">·</span><span class="fresh '+v.cls+'"><span class="led"></span>'+v.txt+'</span>'):"";
+    return live+'<span class="sep">·</span><b>'+nApps+'</b> surfaces<span class="sep">·</span><b>4</b> buckets'+fr;
   }
   function bucketStat(bid){
     if(bid==="ops"){ var v=opsVerdict(); return v?'<span class="fresh '+v.cls+'"><span class="led"></span>'+v.txt+'</span>':'<span class="fresh dim"><span class="led"></span>offline</span>'; }
