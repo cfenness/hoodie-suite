@@ -74,6 +74,13 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   failed scrape, not a rebuild. Persistent catalogs use `write_accumulate` (merge).
 - **Creds-gated sources declare `requires=[env]`** in the registry; `run_sources.py`
   reports them `no-creds` (skipped, honest) instead of running them to failure.
+- **NEVER assert a paid path is REQUIRED without grounding it in the code (load-bearing — unsupported
+  "you have to pay for this" claims have wasted real money).** Before saying a paid proxy / API / service
+  is necessary, cite the specific evidence: the fetch code that has no direct/mobile-UA/local-browser
+  path, or an actual tested block *from a residential IP* — not a datacenter one. "It's blocked" is NOT
+  proof a paid path is required; a datacenter-IP block is an execution-PLACEMENT problem (run it on a
+  residential executor), and the default assumption is that a free path exists until the code proves it
+  cannot. If you can't ground the claim in code, don't make it — investigate first.
 - **FREE-FIRST — do NOT default to paid proxies (load-bearing, keeps getting reverted).**
   Two proxy tiers: the flat-rate **ISP pool** (fixed per-IP, unlimited bandwidth) and the
   **per-GB** rotating-residential / BD-Unlocker tier (the one that runs up a thousands-a-month
