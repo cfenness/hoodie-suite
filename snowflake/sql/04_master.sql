@@ -15,6 +15,7 @@
 -- Order matters only for readability; there are no enforced FKs (Snowflake doesn't enforce them),
 -- but the *_key columns join the star: dim_sku.item_key → dim_item.item_key → dim_product.product_key
 -- → dim_brand.brand_key; xwalk_source_sku bridges raw source rows to those keys.
+-- (--live is change-aware: a dim whose Parquet hasn't moved since the last load is left in place.)
 USE SCHEMA UNIFYD.MASTER;
 
 

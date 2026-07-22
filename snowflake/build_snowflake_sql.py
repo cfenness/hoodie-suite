@@ -42,6 +42,7 @@ Emitted files (idempotent — CREATE … IF NOT EXISTS / CREATE OR REPLACE where
   sql/06_validate.sql          post-load row-count / freshness assertions (named sources must be > 0)
 """
 import argparse
+import json
 import os
 import sys
 
@@ -274,10 +275,65 @@ def live_layout():
         man = warehouse.read_manifest(name)
         if man and man.get("layout") == "bucketed":
             files = [f for p in (man.get("parts") or {}).values() for f in (p.get("files") or [])]
+            version = man.get("version")
         else:
             files = ["%s.parquet" % name]
-        out[name] = {"rows": d.get("rows", 0), "files": files, "bucketed": bool(man)}
+            version = None
+        # mtime (object last-modified) + manifest version are the CHANGE signals: a rewritten-in-place
+        # catalog bumps its mtime, a bucketed accumulate bumps its manifest version. rows is the tiebreak.
+        out[name] = {"rows": d.get("rows", 0), "files": files, "bucketed": bool(man),
+                     "mtime": d.get("modified"), "version": version}
     return out
+
+
+# ── change-aware load: a warehouse-persisted ledger of what Snowflake last loaded ─────────────────
+# Signature per table = (rows, mtime, version). A table is "dirty" (needs reload) when its current
+# signature differs from the committed ledger — i.e. the engine actually rewrote it since we last
+# loaded. The morning drop then refreshes ONLY what moved (a store doesn't change its whole catalog
+# nightly, so most tables are clean). Ledger lives in the warehouse so any host shares it. The pending
+# snapshot is written locally by --live and promoted to the ledger by --commit-state AFTER a successful
+# load (so a failed load never marks a table clean).
+_STATE_KEY = "_snowflake/load_state.json"
+_PENDING = os.path.join(HERE, "sql", ".load_state.pending.json")
+
+
+def _sig(info):
+    return {"rows": info.get("rows"), "mtime": info.get("mtime"), "version": info.get("version")}
+
+
+def _read_ledger():
+    try:
+        import json as _j
+        import warehouse
+        b = warehouse.get_bytes(_STATE_KEY)
+        return _j.loads(b.decode("utf-8")) if b else {}
+    except Exception:
+        return {}
+
+
+def plan_changes(layout):
+    """(dirty, snapshot): `dirty[name]` True when the table changed since the ledger (missing → dirty);
+    `snapshot` is the current signature of every present table, to commit after a successful load."""
+    ledger = _read_ledger()
+    dirty, snapshot = {}, {}
+    for name, info in (layout or {}).items():
+        sig = _sig(info)
+        snapshot[name] = sig
+        dirty[name] = ledger.get(name) != sig
+    return dirty, snapshot
+
+
+def commit_state():
+    """Promote the pending snapshot (written by the last --live run) into the warehouse ledger. Called by
+    load.sh only after a successful load, so the ledger reflects exactly what Snowflake now holds."""
+    import json as _j
+    if not os.path.exists(_PENDING):
+        print("no pending load state (%s) — nothing to commit" % _PENDING)
+        return
+    snap = _j.loads(open(_PENDING).read())
+    import warehouse
+    warehouse.put_bytes(_STATE_KEY, _j.dumps(snap, separators=(",", ":")).encode("utf-8"))
+    print("committed load state: %d tables → warehouse:%s" % (len(snap), _STATE_KEY))
 
 
 # ══════════════════════════════════════════════════════════════════════════════════════════════════
@@ -425,7 +481,7 @@ def _raw_block(table, note, srcs, priority, files=None, rows=None):
     ).format(fqtn=fqtn, infer=infer_loc, cfrom=copy_from, fmt=FMT)
 
 
-def emit_raw(layout=None):
+def emit_raw(layout=None, dirty=None):
     cat = raw_catalog()
     parts = [_BANNER, """--
 -- 03_raw_tables.sql — land every source Parquet into {db}.{raw}, schema-agnostically.
@@ -449,8 +505,11 @@ def emit_raw(layout=None):
 {live_note}
 USE SCHEMA {db}.{raw};
 """.format(db=DB, raw=SCHEMA_RAW,
-           live_note="-- (this file WAS generated with --live: bucketed tables carry their resolved part list.)\n"
-                     if layout else "")]
+           live_note=("-- (generated with --live: present tables only, bucketed→active parts, and "
+                      "CHANGE-AWARE —\n--  a catalog whose Parquet hasn't moved since the last load is "
+                      "skipped, not reloaded.)\n" if dirty is not None else
+                      "-- (generated with --live: bucketed tables carry their resolved part list.)\n"
+                      if layout else ""))]
 
     # time-series prefix loads first (special: whole partition set → one table, clustered by date)
     parts.append("\n-- ── time-series fact partitions (load the whole prefix; union_by_name) ──")
@@ -475,10 +534,25 @@ USE SCHEMA {db}.{raw};
         ).format(fqtn=fqtn, stage=STAGE, t=t, fmt=FMT))
 
     parts.append("\n-- ── source catalogs ──")
+    unchanged = absent = 0
     for table, note, srcs, priority in cat:
         info = (layout or {}).get(table) or {}
+        if layout is not None:                            # --live: emit ONLY present, changed tables
+            if table not in layout:                       # never scraped yet — don't COPY a missing file
+                parts.append("\n-- %s — not present in the warehouse yet, skipped" % table)
+                absent += 1
+                continue
+            if dirty is not None and not dirty.get(table, True):
+                r = info.get("rows")
+                parts.append("\n-- %s — UNCHANGED since last load, skipped (%s rows already in Snowflake)"
+                             % (table, f"{r:,}" if r is not None else "?"))
+                unchanged += 1
+                continue
         parts.append("\n" + _raw_block(table, note, srcs, priority,
                                        files=info.get("files"), rows=info.get("rows")))
+    if layout is not None:
+        parts.append("\n-- change-aware: %d catalog(s) refreshed, %d unchanged, %d not-yet-present (skipped)."
+                     % (len(cat) - unchanged - absent, unchanged, absent))
     return "\n".join(parts)
 
 
@@ -513,7 +587,7 @@ def _copy_master(schema, spec, layout=None):
     ).format(fqtn=fqtn, cfrom=cfrom, db=DB, raw=SCHEMA_RAW, fmt=FMT)
 
 
-def emit_master(layout=None):
+def emit_master(layout=None, dirty=None):
     parts = [_BANNER, """--
 -- 04_master.sql — the canonical star, typed. THE SEED TO UNIFYD.
 --
@@ -524,10 +598,25 @@ def emit_master(layout=None):
 -- Order matters only for readability; there are no enforced FKs (Snowflake doesn't enforce them),
 -- but the *_key columns join the star: dim_sku.item_key → dim_item.item_key → dim_product.product_key
 -- → dim_brand.brand_key; xwalk_source_sku bridges raw source rows to those keys.
+-- (--live is change-aware: a dim whose Parquet hasn't moved since the last load is left in place.)
 USE SCHEMA {db}.{master};
 """.format(db=DB, master=SCHEMA_MASTER)]
+    unchanged = absent = 0
     for spec in MASTER:
+        load = spec["load"]
+        if layout is not None:                            # --live: emit ONLY present, changed dims
+            if load not in layout:                        # master build hasn't produced it yet
+                parts.append("\n-- %s — source Parquet (%s) not present, skipped" % (spec["name"], load))
+                absent += 1
+                continue
+            if dirty is not None and not dirty.get(load, True):
+                parts.append("\n-- %s — UNCHANGED since last load, skipped" % spec["name"])
+                unchanged += 1
+                continue
         parts.append("\n" + _create_table(SCHEMA_MASTER, spec) + _copy_master(SCHEMA_MASTER, spec, layout))
+    if layout is not None:
+        parts.append("\n-- change-aware: %d master table(s) refreshed, %d unchanged, %d not-yet-present (skipped)."
+                     % (len(MASTER) - unchanged - absent, unchanged, absent))
     return "\n".join(parts)
 
 
@@ -628,30 +717,48 @@ FROM {db}.{master}.dim_outlet;
 
 
 FILES = [
-    ("00_config.template.sql", lambda layout: emit_config()),
-    ("01_database.sql", lambda layout: emit_database()),
-    ("02_stage.sql", lambda layout: emit_stage()),
-    ("03_raw_tables.sql", lambda layout: emit_raw(layout)),
-    ("04_master.sql", lambda layout: emit_master(layout)),
-    ("05_marts.sql", lambda layout: emit_marts()),
-    ("06_validate.sql", lambda layout: emit_validate()),
+    ("00_config.template.sql", lambda layout, dirty: emit_config()),
+    ("01_database.sql", lambda layout, dirty: emit_database()),
+    ("02_stage.sql", lambda layout, dirty: emit_stage()),
+    ("03_raw_tables.sql", lambda layout, dirty: emit_raw(layout, dirty)),
+    ("04_master.sql", lambda layout, dirty: emit_master(layout, dirty)),
+    ("05_marts.sql", lambda layout, dirty: emit_marts()),
+    ("06_validate.sql", lambda layout, dirty: emit_validate()),
 ]
 
 
 def main():
     ap = argparse.ArgumentParser(description="Generate the Snowflake load build from the registry.")
     ap.add_argument("--live", action="store_true",
-                    help="read the warehouse to include every present table + resolve bucketed layouts")
+                    help="read the warehouse: present tables only, bucketed→active parts, CHANGE-AWARE "
+                         "(skip catalogs whose Parquet hasn't moved since the last load)")
+    ap.add_argument("--commit-state", action="store_true",
+                    help="promote the last --live plan's snapshot into the warehouse load ledger — run "
+                         "AFTER a successful load (load.sh does this) so a failed load never marks a table clean")
     ap.add_argument("--out", default=os.path.join(HERE, "sql"), help="output dir (default snowflake/sql)")
     a = ap.parse_args()
+    if a.commit_state:
+        commit_state()
+        return
     layout = live_layout() if a.live else None
+    if a.live and not layout:                             # warehouse unreachable/empty → don't emit an
+        print("!! --live returned no tables; emitting the full offline build instead", file=sys.stderr)
+        layout = None                                     # empty load. Fall back to the committed seed.
+    dirty, snapshot = plan_changes(layout) if (a.live and layout is not None) else (None, None)
     os.makedirs(a.out, exist_ok=True)
     for fname, fn in FILES:
         path = os.path.join(a.out, fname)
         with open(path, "w") as f:
-            f.write(fn(layout))
+            f.write(fn(layout, dirty))
         print("wrote %s" % os.path.relpath(path, os.path.dirname(HERE)))
+    if snapshot is not None:                          # stash the plan for --commit-state (post-load)
+        with open(_PENDING, "w") as f:
+            json.dump(snapshot, f)
     n_raw = len(raw_catalog()) + len(TIMESERIES)
+    if dirty is not None:
+        n_dirty = sum(1 for v in dirty.values() if v)
+        print("\nchange-aware: %d of %d present tables changed since the last load → refresh; rest skipped"
+              % (n_dirty, len(dirty)))
     print("\n%d raw tables · %d master tables · %d priority 'full' sources%s"
           % (n_raw, len(MASTER), len(PRIORITY), "  (LIVE: refined from warehouse)" if layout else ""))
 

@@ -114,13 +114,23 @@ engine writes each table:
 - **The master star** is `CREATE OR REPLACE` + `COPY` — a clean rebuild from the engine's freshly
   built dims each morning.
 
+**Change-aware — only reload what actually moved.** A store doesn't swap its whole catalog nightly;
+the file object is rewritten but the data barely changes. So under `--live` the generator diffs each
+table's signature (object mtime for single-file, manifest version for bucketed, row count) against a
+**load ledger** persisted in the warehouse (`_snowflake/load_state.json`) and emits a refresh **only
+for the tables that changed** — everything else becomes a `-- … UNCHANGED, skipped` comment, and
+tables not yet scraped are skipped too. `load.sh` commits the ledger **only after a successful load**
+(`--commit-state`), so a failed load never marks a table clean. First run (empty ledger) = full seed;
+every morning after touches just the deltas. The offline committed build under `sql/` is always the
+full set (no ledger) — the change-aware skipping is a `--live`-only optimization.
+
 `06_validate.sql` prints the headline at the end of every run — total records loaded and the
 per-table breakdown, straight from `INFORMATION_SCHEMA.ROW_COUNT` (no scans) — so "how many records
 did we drop this morning" is answered by the load itself.
 
 **Run `load.sh` where the warehouse is reachable** (the Fly machine, or a box with the Tigris env) —
-it does the `--live` regen so only present tables load, bucketed catalogs resolve to their active
-parts, and the counts are real.
+it does the `--live` regen so only present, changed tables load, bucketed catalogs resolve to their
+active parts, and the counts are real.
 
 ## Regenerate
 

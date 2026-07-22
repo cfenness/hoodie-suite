@@ -1,2 +1,4 @@
 # Local credential-filled copies of the SQL (e.g. an envsubst'd 02_stage.local.sql) — never commit keys.
 *.local.sql
+# The change-aware load plan snapshot written by --live (runtime state, promoted to the warehouse ledger).
+sql/.load_state.pending.json

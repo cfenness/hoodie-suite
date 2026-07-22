@@ -585,7 +585,7 @@ COPY INTO UNIFYD.RAW.UT_PRICING
 
 
 -- walmart_products
---   __NEXT_DATA__ over stdlib HTTP, no BD — needs a warmed PX cookie
+--   __NEXT_DATA__ via a warmed PX browser session (browser_warm, no manual cookie) — runs in the cloud in warm-sources.yml; degrades to WALMART_COOKIE/mobile+ISP when no browser is present
 --   registry source(s): walmart
 CREATE OR REPLACE TABLE UNIFYD.RAW.WALMART_PRODUCTS
   USING TEMPLATE (

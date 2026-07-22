@@ -63,10 +63,18 @@ echo "→ sql/02_stage.sql (credentials via envsubst)"
 envsubst '$TIGRIS_BUCKET $TIGRIS_PREFIX $TIGRIS_ENDPOINT $TIGRIS_KEY_ID $TIGRIS_SECRET' \
   < sql/02_stage.sql | snowsql -c "$SNOW_CONN" -o exit_on_error=true -o friendly=false
 
-# 3) The load. RAW catalogs full-refresh; time-series appends; master rebuilt; marts; validate.
+# 3) The load. RAW catalogs full-refresh (only the CHANGED ones under --live); time-series appends;
+#    master rebuilt; marts; validate.
 run sql/03_raw_tables.sql
 run sql/04_master.sql
 run sql/05_marts.sql
 run sql/06_validate.sql
+
+# 4) Commit the change ledger — ONLY now that the load succeeded (set -e means we didn't get here on
+#    failure), so tomorrow's --live run skips whatever didn't move. Offline runs have no live plan to commit.
+if [ "$REGEN_LIVE" = 1 ]; then
+  echo "→ committing load state (change ledger)…"
+  python3 build_snowflake_sql.py --commit-state
+fi
 
 echo "✓ morning drop complete — see the 06_validate output above for per-source row counts."
