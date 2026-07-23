@@ -85,7 +85,11 @@ class Warmer:
         if self.patchright:
             from patchright.sync_api import sync_playwright
         else:
-            from playwright.sync_api import sync_playwright
+            try:
+                from playwright.sync_api import sync_playwright
+            except ImportError:      # the Fly runner image ships patchright (stealthier), not playwright — use it
+                from patchright.sync_api import sync_playwright
+                self.patchright = True   # take the stealth launch branch below (no UA/args/init-script overrides)
         self._pw = sync_playwright().start()
         suffix = ("_patchright" if self.patchright else "_chrome" if self.channel == "chrome" else "")
         suffix += os.environ.get("BROWSER_PROFILE_SUFFIX", "")   # distinct profile per parallel worker (sharded crawls)
