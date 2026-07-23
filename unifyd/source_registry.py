@@ -127,6 +127,17 @@ SOURCES = [
               "collections run live on the Mac (TTB TLS-blocked on Fly)"),
     dict(id="vtinfo", label="VTInfo locator", code="import vtinfo as m; m.pull()",
          tables=["vtinfo_titos"], klass="headless", cadence="weekly", enabled=True, note="where-to-buy GraphQL"),
+    # ── Distributor catalogs (open JSON APIs — one recipe per PLATFORM, keyed by distributor id/slug) ──
+    dict(id="vip-brandbuilder", label="VIP Brand Builder (distributor catalogs)",
+         code="import vtinfo_bbs as m; m.pull()", tables=["vip_brandbuilder_items"],
+         klass="headless", cadence="weekly", enabled=True,
+         note="products.vtinfo.com/bbs — distributor product+package catalog w/ retail UPCs, no auth; "
+              "parameterized by VIP sourceCode (Columbia 01191 seed). Add distributors to DISTRIBUTORS."),
+    dict(id="sevenfifty", label="SevenFifty storefronts (distributor catalogs)",
+         code="import sevenfifty as m; m.pull()", tables=["sevenfifty_items"],
+         klass="headless", cadence="weekly", enabled=True,
+         note="<slug>.storefronts.site/search.json — distributor item master (SKUs), no auth (prices need "
+              "partner login); parameterized by storefront slug (johnsonbrothers seed). Add slugs to STOREFRONTS."),
     dict(id="naop", label="NAOP on-premise", code="import doordash_naop as m; m.run()",
          tables=["naop_accounts", "naop_beverages"], klass="headless", cadence="weekly", enabled=True, note="DoorDash menus"),
     dict(id="ttb", label="TTB COLA registry", code="import master_ttb as m; m.run()",
