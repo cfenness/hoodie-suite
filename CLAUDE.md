@@ -153,14 +153,20 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
 - `unifyd/hoodie_mdm.html` — the MDM control plane the agent serves. Reads `/api/*` when
   the agent is up, falls back to an embedded `const DATASETS` preview otherwise.
 - **Runtime is git-ignored:** `agent_state/`, `cola_out/`, `out/`, `__pycache__/`.
-- **Promoted to the suite:** `apps/mdm.html` is the canonical MDM surface. It is now a
-  **composite console** (same pattern as `sources.html`) with four tabs, each an existing
-  app iframed and lazy-mounted: **Master** (`apps/mdm-master.html` — the engine's
-  `hoodie_mdm.html` re-served under suite chrome + spine, `/api/*` with an embedded
-  `DATASETS` fallback), **Catalog** (`apps/catalog.html`), **Pulls** (`apps/pulls.html`),
-  **Ingestion** (`apps/ttb-ingestion.html`). Those four are surfaced only through
-  `mdm.html`, not as their own `APPS` tiles. `unifyd/hoodie_mdm.html` remains the engine's
-  local console (served by `server.py`); it and `mdm-master.html` share the `/api/*` contract.
+- **Promoted to the suite:** `apps/mdm.html` is the canonical MDM surface — a
+  **composite console** (same pattern as `sources.html`): an inline Overview plus a
+  sidebar of 14 sections, each an existing app iframed and lazy-mounted (most with
+  `?embed=1` so they hide their own chrome). **Manage:** Master
+  (`master-match.html`, the matching workbench), Steward (`steward.html`), Review
+  (`cluster-review.html`), Catalog (`mdm-catalog.html`), Outlets (`mdm-outlets.html`),
+  Coverage (`coverage-map.html`), Registrations (`product-registrations.html`),
+  Mapping (`field-mapping.html`), Dictionary (`mdm-dictionary.html`). **Sources:**
+  Sources (`mdm-sources.html`), Provenance (`mdm-provenance.html`), Source Spec
+  (`mdm-sourcespec.html`), Chains (`mdm-chains.html`). **Operate:** Active Runs
+  (`runs.html`). Those apps are surfaced only through `mdm.html`, not as their own
+  `APPS` tiles. `unifyd/hoodie_mdm.html` remains the engine's local, agent-backed
+  console (served by `server.py`); its old suite twin (`mdm-master.html`) was
+  superseded by the matching workbench and lives in `apps/_archive/`.
 
 ### Backend on-ramp (the engine is the first slice)
 The contract is designed so the message protocol does **not** change when a backend

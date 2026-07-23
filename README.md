@@ -13,18 +13,15 @@ an "Open full ↗" escape hatch). Pushing to `main` deploys the whole thing to S
 │   ├── dashboard.html         # Hoodie Intelligence (Prism)
 │   ├── crm.html               # Hoodie Relations — deal-qualification CRM (MEDDPICC/Gap)
 │   ├── presenter.html         # Speaker's workbench
-│   ├── estate-map.html        # Data & model layer map
-│   ├── mdm.html               # Hoodie MDM — one console (tabs: Master · Catalog · Pulls · Ingestion)
-│   ├── mdm-master.html        # Master tab — MDM control plane · /api + offline fallback (Unifyd)
-│   ├── ttb-ingestion.html     # Ingestion tab — TTB COLA ingestion view (Unifyd)
+│   ├── mdm.html               # Hoodie MDM — one console (14 sections: Master workbench · Steward · Catalog · Outlets · Sources · …)
+│   ├── ttb-ingestion.html     # TTB COLA ingestion view (Unifyd)
 │   ├── pulls.html             # Pulls tab — run & evaluate each scrape (Unifyd · /api/run + /api/runs)
 │   ├── training-suite.html    # The Bench — five training rooms
 │   ├── sales-tutorial.html    # The Long Game — sales room
 │   ├── roadmap.html           # Product roadmap
 │   ├── principles-hub.html    # Principles & Architecture KB
 │   ├── spine-adapter.html     # Reference: how apps join the spine
-│   ├── tasting-room.html
-│   └── perceptual-science-tutorial.html
+│   └── _archive/              # superseded surfaces (kept, not referenced — see its README)
 ├── spine/
 │   ├── spine.js               # the shared backbone (host + connect)
 │   └── hierarchy.sample.json  # canonical hierarchy (sample)
@@ -251,7 +248,7 @@ Here's the shape it grows into:
   (Amazon ECS Express Mode — chosen over Lambda to run `server.py` as-is, no
   rewrite), then add a **second CloudFront behavior**: path pattern `/api/*` → the
   container origin; everything else → S3. One domain, front *and* back, one TLS
-  cert, one auth gate. The MDM console's Master tab (`apps/mdm-master.html`) already speaks this contract.
+  cert, one auth gate. The engine's MDM console (`unifyd/hoodie_mdm.html`) already speaks this contract.
 
 - **Secrets and connection strings** go in **AWS SSM Parameter Store** or **Secrets
   Manager**, never in the repo. The container reads them at runtime.
