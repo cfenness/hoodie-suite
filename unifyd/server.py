@@ -87,7 +87,7 @@ app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progre
 
 VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
                "kroger", "walmart", "walmart-api", "target", "doordash", "google",
-               "ubereats", "postmates", "naop"} | set(socrata_outlets.VALID)
+               "ubereats", "postmates", "naop", "meijer"} | set(socrata_outlets.VALID)
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
@@ -209,7 +209,7 @@ def _std_run(conn, started, total=0, extracts=None, status="success", warnings=N
 # ubereats/postmates/naop were previously not runnable through the app at all. Enforced by dispatch_guard_test.
 _REGISTRY_CONN = {"abc-fws": "abc-fws", "specs": "specs", "binnys": "binnys", "walmart": "walmart",
                   "kroger": "kroger", "total-wine": "total-wine", "ubereats": "ubereats",
-                  "postmates": "postmates", "naop": "naop"}
+                  "postmates": "postmates", "naop": "naop", "meijer": "meijer"}
 
 
 def _run_via_registry(conn, body):
