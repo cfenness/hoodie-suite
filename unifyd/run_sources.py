@@ -156,6 +156,16 @@ def run_one(source, log=print, extra_env=None):
                     ts_start=int(t0), ts_end=int(time.time()), duration_s=0.0, status="no-creds",
                     rows_before=a, rows_after=a, delta=0, tables=",".join(source["tables"]),
                     error="missing env: " + ", ".join(missing), host=os.uname().nodename[:40])
+    # PREP: sources gated on an anti-bot cookie (Kroger Akamai, …) warm it in a real headful browser FIRST,
+    # then the pull subprocess inherits the fresh cookie env (see cookie_warm.apply_prep). Runs in-process on
+    # this box (which has Chrome+Xvfb — the ephemeral pull machine / the Mac). A warm failure doesn't abort:
+    # the pull just runs cookie-less and reports degraded/no-creds, honestly, instead of being skipped blind.
+    if source.get("cookie"):
+        try:
+            import cookie_warm
+            cookie_warm.apply_prep(source, log=log)
+        except Exception as e:
+            log("  %-16s cookie prep error: %s" % (sid, str(e)[:100]))
     before = _counts(source["tables"])
     code = ("import sys; sys.path.insert(0, %r); import kroger_api; kroger_api._load_creds(); %s"
             % (HERE, source["code"]))

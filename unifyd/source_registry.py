@@ -64,9 +64,13 @@ SOURCES = [
          tables=["target_products", "target_stores"], klass="headless", cadence="daily", enabled=True, note="RedSky API"),
     dict(id="kroger", label="Kroger (atlas inventory)", code="import kroger_atlas as m; m.main([])",
          tables=["kroger_atlas_products"], klass="mac", cadence="daily", enabled=True,
-         requires=["KROGER_STORE", "KROGER_FACILITY"],
-         note="INTERNAL atlas endpoint = exact per-store on-hand + dims + ABV; cookie AUTO-WARMED per run "
-              "(browser_warm — no manual paste), store from the x-laf-object header; cloud: warm-sources.yml"),
+         # PREP: warm the Akamai cookie in headful Chrome before the pull (cookie_warm), so the atlas API
+         # accepts the replay. requires=[] because KROGER_COOKIE is minted by the prep, not pre-set; the
+         # store/facility default to a real store via `static` (extend to enumeration later).
+         cookie={"host": "www.kroger.com", "env": "KROGER_COOKIE",
+                 "static": {"KROGER_STORE": "01100439", "KROGER_FACILITY": "14732"}},
+         note="INTERNAL atlas endpoint = exact per-store on-hand + dims + ABV; Akamai cookie AUTO-WARMED per "
+              "run (cookie_warm headful Chrome — no manual paste); store 01100439/fac 14732 default"),
     dict(id="kroger-api", label="Kroger (API UPC seed)", code="import kroger_api as m; m.main()",
          tables=["kroger_products"], klass="creds", cadence="weekly", enabled=True,
          requires=["KROGER_CLIENT_ID", "KROGER_CLIENT_SECRET"],

@@ -18,6 +18,9 @@ primary_region = 'iad'
   # For EPHEMERAL pull machines that launch headful Chrome — Chrome runs as root in a container and needs
   # --no-sandbox --disable-dev-shm-usage (browser_warm reads this). Harmless on the serving app (never launches Chrome).
   BROWSER_NO_SANDBOX = '1'
+  # Total Wine self-warms its own PerimeterX cookie via a local headful browser ($0, no BD Browser CDP) —
+  # 'direct' is the local-warm path, which now works on the ephemeral machine (Chrome+Xvfb + residential).
+  TW_FETCH = 'direct'
 
 # ── ONE process: the serving app. Data pulls DO NOT run here (they OOM-crashed the serving worker, and
 # every deploy killed in-flight crawls). Pulls now run as EPHEMERAL one-shot Fly Machines — `flyctl machine
