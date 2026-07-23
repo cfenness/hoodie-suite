@@ -61,6 +61,29 @@
   .pv td{font-size:11.5px;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;padding:4px 9px;border-bottom:1px solid var(--line2);font-variant-numeric:tabular-nums}
   .pv .mapped{background:var(--accent-soft)}
   .pv .more{color:var(--faint);font-size:11px;padding:5px 9px}
+  /* insight cards (synthetic backstop until POS lands) */
+  .demo-pill{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:650;color:var(--warn);background:var(--warn-soft);border:1px solid var(--warn);border-radius:999px;padding:3px 10px;letter-spacing:.02em}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:10px;margin-bottom:14px}
+  .icard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 14px;box-shadow:var(--shadow);cursor:pointer;transition:.12s}
+  .icard:hover{border-color:var(--accent)}
+  .icard.on{border-color:var(--accent);background:var(--accent-soft)}
+  .icard .kn{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.4px}
+  .icard .kt{font-size:12.5px;font-weight:700;margin-top:1px}
+  .icard .km{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.4}
+  .icard .kn .u{font-size:12px;font-weight:650;color:var(--muted);margin-left:4px}
+  .cardsbar{display:flex;align-items:center;gap:10px;margin-bottom:9px;flex-wrap:wrap}
+  .cardsbar .h{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:700}
+  .filterchip{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:650;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px;padding:4px 12px;cursor:pointer}
+  /* synthetic columns + rec chip */
+  .wos{font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px}
+  .wos.b{background:var(--bad);color:#fff}.wos.w{background:var(--warn-soft);color:var(--warn)}.wos.g{background:var(--good-soft);color:var(--good)}
+  .rec{border:1px dashed var(--accent);background:none;color:var(--accent);font:inherit;font-size:11.5px;font-weight:700;border-radius:7px;padding:3px 9px;cursor:pointer;white-space:nowrap}
+  .rec:hover{background:var(--accent-soft)} .rec.z{border-color:var(--line);color:var(--faint);cursor:default}
+  .subcell{font-size:10.5px;color:var(--faint)}
+  .newpill{font-size:9.5px;font-weight:800;letter-spacing:.05em;color:var(--good);border:1px solid var(--good);border-radius:5px;padding:1px 5px;margin-left:7px;vertical-align:1px}
+  .viewtog{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .viewtog button{border:none;background:var(--card);color:var(--muted);font:inherit;font-size:12px;font-weight:650;padding:7px 13px;cursor:pointer}
+  .viewtog button.on{background:var(--accent);color:#fff}
   /* store */
   .storebar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
   .search{flex:1;min-width:180px;font:inherit;font-size:13px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--ink)}
@@ -123,8 +146,16 @@
 
   <!-- STEP 2 -->
   <div class="panel" id="panel-store">
+    <div class="cardsbar">
+      <span class="h">Things to consider in this order</span>
+      <span class="demo-pill" title="Sales, on-hand and usual-price figures are a deterministic simulation seeded from each product — a stand-in until real POS / inventory data is connected. Availability and pricing come from the menus themselves.">◆ synthetic backstop · demo</span>
+      <span id="cardfilter"></span>
+    </div>
+    <div class="cards" id="cards"></div>
     <div class="storebar">
       <input class="search" id="search" placeholder="Search products across all menus…">
+      <div class="viewtog"><button id="v-menu" class="on">By menu</button><button id="v-all">All SKUs</button></div>
+      <button class="btn ghost" id="prefill" title="Fill every visible product with its suggested quantity (synthetic demo backstop). Respects the active card filter and search; never overwrites quantities you typed.">⚡ Prefill suggested</button>
       <button class="btn ghost" id="back-ingest">← Add / edit menus</button>
       <button class="btn" id="to-send">Review &amp; refill →</button>
     </div>
@@ -231,6 +262,29 @@ function buildProducts(f){
       pack: pki>=0 ? String(r[pki]||"").trim() : "",
       avail: avi>=0 ? num(r[avi]) : null});
   });
+  f.products.forEach(synth);
+}
+
+/* ---- synthetic backstop (DEMO) ----
+   Deterministic sales / inventory / order-history simulation, seeded from each product's name —
+   the same menu always shows the same figures. A stand-in until real POS + inventory data is
+   connected; everything derived from it is labeled "synthetic backstop · demo" in the UI.
+   Availability and pricing stay REAL (they come from the menu itself). */
+function synth(p){
+  var h=5381, s=p.name; for(var i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))>>>0;   // djb2
+  function rnd(){ h=(h+0x6D2B79F5)>>>0; var t=Math.imul(h^(h>>>15),1|h);                // mulberry32
+    t=(t+Math.imul(t^(t>>>7),61|t))^t; return ((t^(t>>>14))>>>0)/4294967296; }
+  var pricier = (p.price||20)>38;                                    // premium SKUs turn slower
+  var v = Math.max(1, Math.round((2+rnd()*26)*(pricier?0.45:1)));    // weekly units sold
+  var onHand = Math.round(v*(0.3+rnd()*4));                          // units at our stores
+  var wos = onHand/v;                                                // weeks of supply
+  var usual = (p.price!=null) ? +(p.price*(0.92+rnd()*0.16)).toFixed(2) : null;  // typical paid price
+  var isNew = rnd()<0.08;
+  var trend = +((rnd()-0.5)*0.6).toFixed(2);                         // ±30% vs prior 4wk
+  var TARGET_WKS = 3;
+  var rec = Math.max(0, Math.ceil(v*TARGET_WKS - onHand));           // reorder-point suggestion
+  if(p.avail!=null && p.avail>=0) rec = Math.min(rec, Math.floor(p.avail));   // can't order more than the distributor has (real)
+  p.syn = {v:v, onHand:onHand, wos:wos, usual:usual, isNew:isNew, trend:trend, rec:rec};
 }
 
 /* ---- brand product photography (public Lingo DAM portals) ---- */
@@ -336,13 +390,97 @@ function renderFiles(){
 }
 
 /* ---- store ---- */
+var VIEW="menu";          // "menu" = grouped by supplier file · "all" = one distributor-agnostic SKU list
+var CARDF=null;           // active insight-card filter: {id, label, keys:{"uid|ri":1}}
+function prodKey(f,p){ return f.uid+"|"+p.ri; }
+
+function computeCards(){
+  var all=[]; FILES.forEach(function(f,fi){ f.products.forEach(function(p){ all.push({f:f,fi:fi,p:p}); }); });
+  if(!all.length) return [];
+  function keysOf(xs){ var k={}; xs.forEach(function(x){k[prodKey(x.f,x.p)]=1;}); return k; }
+  var cards=[];
+  var run=all.filter(function(x){return x.p.syn.wos<1.5 && x.p.syn.rec>0;});
+  if(run.length){ var u=0,c=0; run.forEach(function(x){u+=x.p.syn.rec; c+=x.p.syn.rec*(x.p.price||0);});
+    cards.push({id:"run", n:run.length, unit:"SKUs", title:"Fast movers running dry",
+      move:"Under 1½ weeks of supply at your stores — suggested +"+u.toLocaleString()+" units (est. $"+Math.round(c).toLocaleString()+"). Lock them in first.", keys:keysOf(run)}); }
+  var deal=all.filter(function(x){return x.p.price!=null && x.p.syn.usual && x.p.price<x.p.syn.usual*0.95;});
+  if(deal.length){ var pct=Math.round(deal.reduce(function(s,x){return s+(1-x.p.price/x.p.syn.usual);},0)/deal.length*100);
+    cards.push({id:"deal", n:deal.length, unit:"SKUs", title:"Priced below your usual",
+      move:"Averaging "+pct+"% under what you typically pay — a good week to buy ahead on these.", keys:keysOf(deal)}); }
+  var tight=all.filter(function(x){return x.p.avail!=null && x.p.syn.rec>0 && x.p.avail<x.p.syn.rec*2;});
+  if(tight.length) cards.push({id:"tight", n:tight.length, unit:"SKUs", title:"Tight supply at the distributor",
+      move:"Menu availability is under 2× your suggested quantity — order these before they're gone.", keys:keysOf(tight)});
+  var nw=all.filter(function(x){return x.p.syn.isNew;});
+  if(nw.length) cards.push({id:"new", n:nw.length, unit:"SKUs", title:"New on the menus",
+      move:"First appearance this cycle — worth a trial quantity while they're fresh.", keys:keysOf(nw)});
+  return cards;
+}
+function renderCards(){
+  var box=document.getElementById("cards"), chip=document.getElementById("cardfilter");
+  var cards=computeCards();
+  box.innerHTML=cards.map(function(c){
+    return '<div class="icard'+(CARDF&&CARDF.id===c.id?' on':'')+'" data-card="'+c.id+'">'
+      +'<div class="kn">'+c.n.toLocaleString()+'<span class="u">'+c.unit+'</span></div>'
+      +'<div class="kt">'+esc(c.title)+'</div><div class="km">'+esc(c.move)+'</div></div>';
+  }).join("") || '<div class="empty" style="padding:10px">Add menus to see what to consider.</div>';
+  chip.innerHTML = CARDF ? '<span class="filterchip" id="clearcardf">Showing: '+esc(CARDF.label)+' ✕</span>' : '';
+  box.querySelectorAll("[data-card]").forEach(function(el){ el.onclick=function(){
+    var c=cards.filter(function(x){return x.id===el.dataset.card;})[0];
+    CARDF = (CARDF && CARDF.id===c.id) ? null : {id:c.id, label:c.title, keys:c.keys};
+    renderCards(); renderStore(); };});
+  var cl=document.getElementById("clearcardf"); if(cl) cl.onclick=function(){ CARDF=null; renderCards(); renderStore(); };
+}
+function stockCells(p){
+  var s=p.syn, cls=s.wos<1.5?"b":(s.wos<3?"w":"g");
+  return '<td class="num" title="synthetic demo — on hand · weekly sales">'+s.onHand+'<div class="subcell">'+s.v+'/wk</div></td>'
+    +'<td class="num"><span class="wos '+cls+'" title="synthetic demo — weeks of supply">'+(s.wos<9.95?s.wos.toFixed(1):"9+")+'w</span></td>';
+}
+function recCell(f,p){
+  var s=p.syn, slot=(landCols(f)[0]!=null?landCols(f)[0]:"x");
+  if(!s.rec) return '<td class="num"><span class="rec z">—</span></td>';
+  return '<td class="num"><button class="rec" title="apply the suggested quantity (synthetic demo backstop)" data-rk="'+f.uid+'|'+p.ri+'|'+slot+'" data-rq="'+s.rec+'">→ '+s.rec+'</button></td>';
+}
+function nameCell(f,p){
+  var thumb = p.thumb ? '<img class="pthumb" src="'+esc(p.thumb)+'" loading="lazy" alt="" onerror="this.style.visibility=\'hidden\'">'
+                      : (f.imaged ? '<span class="pthumb ph"></span>' : '');
+  var nm=esc(p.name)+(p.syn.isNew?'<span class="newpill">NEW</span>':'');
+  return thumb ? '<div class="pcell">'+thumb+'<span>'+nm+'</span></div>' : nm;
+}
+function keepProd(f,p){   // the store's visibility rule — search + active insight-card filter
+  var q=(document.getElementById("search").value||"").toLowerCase();
+  return (!q || p.name.toLowerCase().indexOf(q)>=0) && (!CARDF || CARDF.keys[prodKey(f,p)]);
+}
+function prefillRec(){    // fill every VISIBLE product's suggested qty; never clobber a typed quantity
+  FILES.forEach(function(f){ f.products.forEach(function(p){
+    if(!keepProd(f,p) || !p.syn.rec) return;
+    var slot=(landCols(f)[0]!=null?landCols(f)[0]:"x"), key=f.uid+"|"+p.ri+"|"+slot;
+    if(!ORDER[key]) ORDER[key]=p.syn.rec;
+  });});
+  renderStore(); refreshSummary();
+}
 function renderStore(){
   var q=(document.getElementById("search").value||"").toLowerCase();
   var box=document.getElementById("store");
   var any=FILES.some(function(f){return f.products.length;});
   if(!any){ box.innerHTML='<div class="empty">No products yet — add menus in step 1.</div>'; return; }
+  var keep=keepProd;
+  if(VIEW==="all"){
+    var rows=[]; FILES.forEach(function(f,fi){ f.products.forEach(function(p){ if(keep(f,p)) rows.push({f:f,fi:fi,p:p}); }); });
+    rows.sort(function(a,b){ return a.p.name.localeCompare(b.p.name); });
+    box.innerHTML = rows.length ? '<div class="sup"><div class="sh"><span class="snm">All SKUs — every menu, one list</span>'
+      +'<span class="sc">'+rows.length+' items</span></div>'
+      +'<div style="overflow-x:auto"><table><thead><tr><th>Product</th><th>Supplier</th><th>Pack</th><th class="num">Price</th><th class="num">Avail</th>'
+      +'<th class="num">On hand</th><th class="num">Supply</th><th class="num">Rec</th><th class="num">Order</th></tr></thead><tbody>'
+      +rows.map(function(x){ var f=x.f,p=x.p, slot=(landCols(f)[0]!=null?landCols(f)[0]:"x"), key=f.uid+"|"+p.ri+"|"+slot, v=ORDER[key]||"";
+        var extra=landCols(f).length>1?'<div class="subcell">+'+(landCols(f).length-1)+' more store cols in By menu</div>':'';
+        return '<tr class="'+(v?'ordered':'')+'"><td>'+nameCell(f,p)+'</td><td class="subcell">'+esc(f.filename.replace(/\.[^.]+$/,'').slice(0,24))+'</td>'
+          +'<td>'+esc(p.pack)+'</td><td class="num">'+(p.price!=null?"$"+p.price.toFixed(2):"—")+'</td>'
+          +'<td class="num">'+(p.avail!=null?p.avail:"—")+'</td>'+stockCells(p)+recCell(f,p)
+          +'<td class="num"><input class="qty'+(v?' set':'')+'" type="number" min="0" step="1" value="'+v+'" data-key="'+key+'">'+extra+'</td></tr>'; }).join("")
+      +'</tbody></table></div></div>' : '<div class="empty">Nothing matches.</div>';
+  }else{
   box.innerHTML = FILES.map(function(f,fi){
-    var prods=f.products.filter(function(p){return !q || p.name.toLowerCase().indexOf(q)>=0;});
+    var prods=f.products.filter(function(p){return keep(f,p);});
     if(!prods.length) return "";
     var slots=landCols(f); if(!slots.length) slots=["x"];       // one qty column per landing (store) column
     var stot=0; prods.forEach(function(p){ slots.forEach(function(s){ var v=ORDER[f.uid+"|"+p.ri+"|"+s]; if(v) stot+=v*(p.price||0); }); });
@@ -352,20 +490,21 @@ function renderStore(){
       var anyv=false;
       var qcells=slots.map(function(s){ var key=f.uid+"|"+p.ri+"|"+s, v=ORDER[key]||""; if(v)anyv=true;
         return '<td class="num"><input class="qty'+(v?' set':'')+'" type="number" min="0" step="1" value="'+v+'" data-key="'+key+'"></td>'; }).join("");
-      var thumb = p.thumb ? '<img class="pthumb" src="'+esc(p.thumb)+'" loading="lazy" alt="" onerror="this.style.visibility=\'hidden\'">'
-                          : (f.imaged ? '<span class="pthumb ph"></span>' : '');
-      var pcell = thumb ? '<div class="pcell">'+thumb+'<span>'+esc(p.name)+'</span></div>' : esc(p.name);
-      return '<tr class="'+(anyv?'ordered':'')+'"><td>'+pcell+'</td><td>'+esc(p.pack)+'</td>'
+      return '<tr class="'+(anyv?'ordered':'')+'"><td>'+nameCell(f,p)+'</td><td>'+esc(p.pack)+'</td>'
         +'<td class="num">'+(p.price!=null?"$"+p.price.toFixed(2):"—")+'</td>'
-        +'<td class="num">'+(p.avail!=null?p.avail:"—")+'</td>'+qcells+'</tr>';
+        +'<td class="num">'+(p.avail!=null?p.avail:"—")+'</td>'+stockCells(p)+recCell(f,p)+qcells+'</tr>';
     }).join("");
     return '<div class="sup"><div class="sh" data-sup="'+fi+'"><span class="snm">'+esc(f.filename.replace(/\.[^.]+$/,''))+'</span>'
       +'<span class="sc">'+prods.length+' items'+(slots[0]!=="x"?' · '+slots.length+' store col'+(slots.length>1?'s':''):'')+'</span><span class="stot">'+(stot?"$"+Math.round(stot).toLocaleString():"")+'</span></div>'
-      +'<div style="overflow-x:auto"><table><thead><tr><th>Product</th><th>Pack</th><th class="num">Price</th><th class="num">Avail</th>'+qhead+'</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+      +'<div style="overflow-x:auto"><table><thead><tr><th>Product</th><th>Pack</th><th class="num">Price</th><th class="num">Avail</th>'
+      +'<th class="num" title="synthetic demo backstop">On hand</th><th class="num" title="synthetic demo backstop">Supply</th><th class="num" title="suggested qty — synthetic demo backstop">Rec</th>'+qhead+'</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
   }).join("") || '<div class="empty">No products match "'+esc(q)+'".</div>';
+  }
   box.querySelectorAll(".qty").forEach(function(inp){ inp.oninput=function(){ var n=parseInt(inp.value,10);
     if(n>0) ORDER[inp.dataset.key]=n; else delete ORDER[inp.dataset.key];
     inp.classList.toggle("set", n>0); inp.closest("tr").classList.toggle("ordered", n>0); refreshSummary(); }; });
+  box.querySelectorAll(".rec[data-rk]").forEach(function(b){ b.onclick=function(){
+    ORDER[b.dataset.rk]=+b.dataset.rq; renderStore(); refreshSummary(); }; });
 }
 
 /* ---- summary + send ---- */
@@ -455,7 +594,7 @@ function go(step){ STEP=step;
   document.querySelectorAll(".step").forEach(function(s){s.setAttribute("aria-current", s.dataset.step===step);});
   document.querySelectorAll(".panel").forEach(function(p){p.classList.remove("on");});
   document.getElementById("panel-"+step).classList.add("on");
-  if(step==="store") renderStore(); if(step==="send") renderSend();
+  if(step==="store"){ renderCards(); renderStore(); } if(step==="send") renderSend();
   window.scrollTo(0,0);
 }
 document.querySelectorAll(".step").forEach(function(s){s.onclick=function(){go(s.dataset.step);};});
@@ -465,6 +604,9 @@ document.getElementById("to-send").onclick=function(){go("send");};
 document.getElementById("sum-send").onclick=function(){go("send");};
 document.getElementById("clear-order").onclick=function(){ORDER={};refreshSummary();if(STEP==="store")renderStore();if(STEP==="send")renderSend();};
 document.getElementById("search").oninput=function(){renderStore();};
+document.getElementById("v-menu").onclick=function(){VIEW="menu";this.classList.add("on");document.getElementById("v-all").classList.remove("on");renderStore();};
+document.getElementById("v-all").onclick=function(){VIEW="all";this.classList.add("on");document.getElementById("v-menu").classList.remove("on");renderStore();};
+document.getElementById("prefill").onclick=prefillRec;
 /* dropzone */
 var drop=document.getElementById("drop"), file=document.getElementById("file");
 drop.onclick=function(){file.click();};
