@@ -21,6 +21,9 @@ primary_region = 'iad'
   # Total Wine self-warms its own PerimeterX cookie via a local headful browser ($0, no BD Browser CDP) —
   # 'direct' is the local-warm path, which now works on the ephemeral machine (Chrome+Xvfb + residential).
   TW_FETCH = 'direct'
+  # specsonline.com 403-blocks product pages from datacenter IPs (the sitemap is open) — route specs
+  # through the flat-rate residential proxy. polite now prefers the RESI_PROXY_* (Webshare) pool.
+  SPECS_PROXY = '1'
 
 # ── ONE process: the serving app. Data pulls DO NOT run here (they OOM-crashed the serving worker, and
 # every deploy killed in-flight crawls). Pulls now run as EPHEMERAL one-shot Fly Machines — `flyctl machine

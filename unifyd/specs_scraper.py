@@ -323,7 +323,11 @@ def pull(sample=30, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
                 prod = parse_product(html, slug, url, stores=rows)   # full product-detail record
                 img = prod.get("image") or ""
                 # numeric per-store units via the inventory API (the count the variants block omits)
-                qmap = store_quantities(rows, prod.get("upc") or "", log=log)
+                # store_quantities hits the per-store inventory API once PER STORE per product — fine for a
+                # sample, ruinous for the 40k-product full crawl (it can't finish in the run timeout). Skip it
+                # on the full catalog sweep (SPECS_UNITS=1 to force); the per-store in/out + price still land.
+                qmap = (store_quantities(rows, prod.get("upc") or "", log=log)
+                        if (os.environ.get("SPECS_UNITS", "0") == "1" or not crawl_all) else {})
                 if qmap:
                     prod["units_total"] = sum(qmap.values())         # product headline: total on-hand across counted stores
                     prod["stores_tracked"] = len(qmap)
