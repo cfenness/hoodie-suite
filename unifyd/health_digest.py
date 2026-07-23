@@ -145,14 +145,21 @@ def build_digest(weekly=False):
                                      "%s declares table(s) that don't exist in the warehouse: %s" % (label, ", ".join(missing)),
                                      {"missing_tables": missing, "registry_tables": src.get("tables")}))
 
-        # 1) the run log's own verdict — authoritative, checked before freshness (a failed run EXPLAINS staleness)
-        if run_status in ("failed", "timeout", "error"):
-            newest = max((d.get("modified") or 0 for d in datasets), default=None) or None
+        # 1) the run log's own verdict — BUT the DATA is the ground truth (a run log can lie; the footer can't).
+        # A failed/timed-out LEDGER entry is only a REAL current break if it left the data STALE. If the source's
+        # data landed within its cadence window — from this path or any other — the source is healthy and the
+        # failed ledger row is a stale artifact (e.g. abc-fws logged a 403 attempt while abc-facets kept landing
+        # fresh data). Reporting that as a live CRITICAL is exactly what made the Console misleading. So gate the
+        # run-failed finding on the data actually being stale; otherwise fall through to the freshness checks
+        # (which will pass and emit nothing).
+        newest = max((d.get("modified") or 0 for d in datasets), default=None) or None
+        data_age = (now - newest) if newest else None
+        if run_status in ("failed", "timeout", "error") and (data_age is None or data_age > cadence * STALE_WARN_X):
             findings.append(_finding("run-failed", "critical", sid,
                                      "%s: last run %s%s" % (label, run_status, (" — " + run_err[:160]) if run_err else ""),
                                      {"run_status": run_status, "error": run_err, "run_at": run_ts,
                                       "run_ago": _ago(now - run_ts) if run_ts else None,
-                                      "data_age": _ago(now - newest) if newest else "never",
+                                      "data_age": _ago(data_age) if data_age is not None else "never",
                                       "tables": src.get("tables")}))
             continue  # don't ALSO report stale/no-change for the same source — one break, one finding
 
@@ -289,13 +296,26 @@ def _assemble(now, wh, manifest, findings, checked, weekly=False):
     for f in findings:
         counts[f["severity"]] += 1
 
-    # first_seen: carry forward from the previous digest so NEW breaks stand out from known ones
+    # first_seen: carry forward from the previous digest so NEW breaks stand out from known ones. The digest now
+    # runs in the CLOUD (GitHub Actions / a fresh Fly machine each tick), where there is NO local latest.json — so
+    # local-only carry-forward reset every finding's first_seen to "now" and marked them all `new`, which made
+    # known errors look brand-new on every run. Fall back to the WAREHOUSE-published digest (_health_digest.json)
+    # so first_seen persists across machines and a finding's true age is preserved.
     prev = {}
     try:
         with open(os.path.join(_OUT, "latest.json")) as fh:
             prev = {(f["code"], f["source"]): f.get("first_seen") for f in json.load(fh).get("findings", [])}
     except Exception:
         pass
+    if not prev:
+        try:
+            import warehouse
+            raw = warehouse.get_bytes("_health_digest.json")
+            if raw:
+                prev = {(f["code"], f["source"]): f.get("first_seen")
+                        for f in json.loads(raw).get("findings", [])}
+        except Exception:
+            pass
     for f in findings:
         f["first_seen"] = prev.get((f["code"], f["source"])) or round(now)
         f["new"] = f["first_seen"] == round(now)
