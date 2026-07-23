@@ -86,9 +86,21 @@ def _headers(extra=None):
 
 
 def _proxy_opener():
-    """A urllib opener routed through the Bright Data residential/unlocker proxy (rotating IPs + anti-bot).
-    The Unlocker MITMs HTTPS to solve challenges, so its cert won't chain to a public CA — we skip cert
-    verification on the proxied path (standard for the BD Unlocker proxy interface)."""
+    """A urllib opener routed through the residential proxy. PREFERS the flat-rate static-residential pool
+    (RESI_PROXY_* → Webshare: a clean CONNECT tunnel that chains to a public CA, so verify normally; unlimited
+    bandwidth, NO per-GB meter). Falls back to the metered Bright Data residential/unlocker proxy (which MITMs
+    HTTPS, so cert verification is skipped there), gated by resi.paygo_allowed()."""
+    # 1) flat-rate ISP pool (Webshare static residential) — a clean CONNECT tunnel, verify normally, unmetered.
+    #    resi.best_url() prefers the flat ISP pool; it's never gated by the per-GB cost guard.
+    try:
+        import resi
+        if resi.isp_enabled():
+            u = resi.best_url()
+            if u:
+                return urllib.request.build_opener(urllib.request.ProxyHandler({"http": u, "https": u}))
+    except Exception:
+        pass
+    # 2) metered Bright Data fallback (per-GB) — only when the flat pool isn't configured.
     try:                                               # per-GB COST GUARD: never open the metered tab when
         import resi                                     # it's forbidden (RESI_ISP_ONLY) or the monthly cap is hit
         if not resi.paygo_allowed():
