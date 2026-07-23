@@ -46,7 +46,8 @@ def main():
     print("run_ephemeral DONE %s status=%s rows_after=%s delta=%s err=%s"
           % (sid, rec.get("status"), rec.get("rows_after"), rec.get("delta"), (rec.get("error") or "")[:160]),
           flush=True)
-    return 0 if rec.get("status") in ("ok", "no-change", "success") else 1
+    # "current"/"no-change" = ran fine, nothing new to land; all non-failure outcomes exit 0.
+    return 0 if rec.get("status") in ("ok", "no-change", "success", "current") else 1
 
 
 if __name__ == "__main__":
