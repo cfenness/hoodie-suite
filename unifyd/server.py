@@ -6221,6 +6221,10 @@ def prism_shortcut():
 def hub_shortcut():
     return _suite_send("hub.html")                    # the four-bucket hub (also the homepage below)
 
+@app.get("/home")
+def home_console():
+    return _suite_send("hub.html")                    # same shell, "console" mode (AI landing + app-launcher + fav dock) — hub.html branches on pathname /home
+
 @app.get("/classic")
 @app.get("/launcher")
 def classic_launcher():
