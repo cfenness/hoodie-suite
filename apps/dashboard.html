@@ -5146,6 +5146,7 @@ body[data-active-view="connectors"] #hi-fab, body[data-active-view="connectors"]
   function openPop(){ pop.classList.add('open'); setTimeout(function(){ var i=document.getElementById('hi-pop-input'); if(i) i.focus(); },60); }
   function closePop(){ pop.classList.remove('open'); }
   window.hiAsk=function(seed){ var inp=document.getElementById('hi-pop-input'); if(inp){ inp.value=seed||''; } openPop(); setTimeout(function(){ if(inp){ try{ inp.setSelectionRange(inp.value.length, inp.value.length); }catch(e){} } }, 70); };
+  window.hiRun=function(q){ q=(q||'').trim(); if(q) runQuery(q); };   // feed a question straight into the HI analyst (used by the console homepage)
   fab.addEventListener('click', function(e){ e.stopPropagation(); pop.classList.contains('open')?closePop():openPop(); });
   var c=document.getElementById('hi-pop-close'); if(c) c.addEventListener('click', closePop);
   function go(fn){ closePop(); try{ if(typeof showView==='function') showView('ai'); }catch(e){} setTimeout(fn, 30); }

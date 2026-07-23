@@ -207,8 +207,26 @@
   .applauncher{display:none;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid var(--line);background:var(--card);color:var(--ink-2);border-radius:8px;cursor:pointer;flex:none}
   .applauncher:hover{border-color:var(--slate);color:var(--slate)}
   body.console .applauncher{display:inline-flex}
-  body.console #home{display:none}                          /* the grid lives in the launcher overlay, not the stage */
   body.console main{padding-bottom:56px}                     /* room for the fav dock */
+
+  /* Claude-style homepage (console landing) — calm, centered, a composer that feeds Hoodie Intelligence */
+  .askhome{max-width:720px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;justify-content:center;padding:40px 24px 90px;text-align:center}
+  .askhome .amark{width:40px;height:40px;border-radius:11px;background:var(--bk-intel);color:#fff;display:inline-flex;align-items:center;justify-content:center;margin:0 auto 20px;font-family:var(--disp);font-weight:700;font-size:16px;box-shadow:0 6px 18px -8px var(--bk-intel)}
+  .askhome h1{font-family:var(--serif);font-weight:400;font-size:clamp(28px,4vw,38px);letter-spacing:-.01em;color:var(--ink);margin:0;line-height:1.1}
+  .askhome h1 b{font-weight:600}
+  .askhome .asub{font-family:var(--serif);font-size:16px;color:var(--mut);margin:12px 0 30px}
+  .composer{display:flex;align-items:flex-end;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 12px 12px 18px;box-shadow:0 2px 4px rgba(27,30,36,.04),0 16px 40px -22px rgba(27,30,36,.5);transition:border-color .14s,box-shadow .14s}
+  .composer:focus-within{border-color:var(--bk-intel);box-shadow:0 2px 4px rgba(27,30,36,.05),0 20px 46px -22px color-mix(in srgb,var(--bk-intel) 50%,rgba(27,30,36,.5))}
+  .composer textarea{flex:1;border:0;background:transparent;outline:none;resize:none;color:var(--ink);font-family:var(--disp);font-size:16px;line-height:1.5;max-height:160px;padding:6px 0;min-height:26px}
+  .composer .ask-send{flex:none;width:36px;height:36px;border:0;border-radius:10px;background:var(--bk-intel);color:#fff;font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:opacity .12s,transform .12s}
+  .composer .ask-send:hover{transform:translateY(-1px)}
+  .composer .ask-send:disabled{opacity:.4;cursor:default;transform:none}
+  .askmeta{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;font-family:var(--mono);font-size:11px;color:var(--mut)}
+  .askmeta .led{width:6px;height:6px;border-radius:50%;background:var(--good);display:inline-block}
+  .suggests{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:26px}
+  .sugg{font-family:var(--serif);font-size:14px;color:var(--ink-2);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:8px 15px;cursor:pointer;transition:border-color .12s,color .12s}
+  .sugg:hover{border-color:var(--bk-intel);color:var(--ink)}
+  .sugg .sp{color:var(--bk-intel);margin-right:6px}
 
   .lx-scrim{position:fixed;inset:0;background:rgba(20,26,32,.42);display:none;z-index:60}
   .lx-scrim.show{display:block}
@@ -601,6 +619,50 @@
       sec.style.display=any?"":"none";
     });
   }
+
+  /* ============================ Claude-style homepage (console landing) → feeds Hoodie Intelligence ============================ */
+  var pendingAsk=null;
+  var SUGGESTS=[
+    "Where is Tito’s gaining distribution?",
+    "Which chains am I under-shelved in?",
+    "RTD vs Tequila — who’s accelerating?",
+    "Who’s winning in Florida this quarter?"
+  ];
+  function greeting(){ var h=new Date().getHours(); return h<12?"Good morning":(h<18?"Good afternoon":"Good evening"); }
+  function renderConsoleHome(){
+    var el=document.getElementById("home");
+    el.innerHTML =
+      '<div class="askhome">'+
+        '<div class="amark">HI</div>'+
+        '<h1>'+greeting()+'. <b>What do you want to know?</b></h1>'+
+        '<p class="asub">Ask Hoodie Intelligence about your book — a brand, a chain, a state, a trend.</p>'+
+        '<div class="composer">'+
+          '<textarea id="askInput" rows="1" placeholder="Ask about your book…" autocomplete="off"></textarea>'+
+          '<button class="ask-send" id="askSend" title="Ask Hoodie Intelligence" disabled>↑</button>'+
+        '</div>'+
+        '<div class="askmeta">'+(STATE.live?'<span class="led"></span>book synced · answers grounded in your warehouse':'Hoodie Intelligence · answers grounded in your warehouse')+'</div>'+
+        '<div class="suggests">'+SUGGESTS.map(function(s){ return '<button class="sugg" data-q="'+s.replace(/"/g,"&quot;")+'"><span class="sp">✦</span>'+s+'</button>'; }).join("")+'</div>'+
+      '</div>';
+    var ta=el.querySelector("#askInput"), send=el.querySelector("#askSend");
+    function sync(){ send.disabled=!ta.value.trim(); ta.style.height="auto"; ta.style.height=Math.min(ta.scrollHeight,160)+"px"; }
+    ta.addEventListener("input", sync);
+    ta.addEventListener("keydown", function(e){ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); submitAsk(ta.value); } });
+    send.onclick=function(){ submitAsk(ta.value); };
+    el.querySelectorAll(".sugg").forEach(function(b){ b.onclick=function(){ submitAsk(b.dataset.q); }; });
+    setTimeout(function(){ try{ ta.focus(); }catch(e){} }, 50);
+  }
+  function submitAsk(q){ q=(q||"").trim(); if(!q) return; pendingAsk=q;
+    if((location.hash||"")==="#dashboard"){ feedHI(); } else { location.hash="#dashboard"; }   // route() loads HI, then feeds it
+  }
+  function feedHI(){
+    if(!pendingAsk) return;
+    var q=pendingAsk, tries=0;
+    (function attempt(){
+      tries++;
+      try{ var w=frame.contentWindow; if(w && typeof w.hiRun==="function"){ w.hiRun(q); pendingAsk=null; return; } }catch(e){}
+      if(tries<50) setTimeout(attempt, 150);   // wait for the heavy HI app to define hiRun
+    })();
+  }
   function heroStat(){
     var nApps = APPS.filter(function(a){return a.bucket!=="utility";}).length;
     var live = STATE.live ? '<span class="chip"><span class="led" style="width:6px;height:6px;border-radius:50%;background:var(--good);display:inline-block;margin-right:6px"></span>warehouse live</span>'
@@ -660,7 +722,6 @@
     var h = location.hash || "";
     var isBucket = h.indexOf("#b/")===0;
     var id = isBucket ? "" : h.replace("#","");
-    if(!id && CONSOLE && !isBucket) id="dashboard";                                    // console mode lands in Hoodie Intelligence
     var curApp = byId[id] || null;
     if(appNav && (!curApp || appNav.app!==curApp.id)){ appNav=null; renderRail(); }   // left/switched app → rail back to buckets
     if(CONSOLE) renderDock();                                                          // keep the pinned-dock highlight in sync
@@ -687,15 +748,15 @@
       if(frame.getAttribute("src")!==app.file){
         flMark.textContent=app.mark||""; flTxt.textContent="Loading "+app.name+"…"; frameload.classList.add("show");
         frame.setAttribute("src", app.file);
-        frame.onload=function(){ frameload.classList.remove("show"); try{ spine.pushTo(frame.contentWindow); }catch(e){} };
-      } else { try{ spine.pushTo(frame.contentWindow); }catch(e){} }
+        frame.onload=function(){ frameload.classList.remove("show"); try{ spine.pushTo(frame.contentWindow); }catch(e){} if(id==="dashboard" && pendingAsk) feedHI(); };
+      } else { try{ spine.pushTo(frame.contentWindow); }catch(e){} if(id==="dashboard" && pendingAsk) feedHI(); }
       frame.classList.add("show"); home.style.display="none";
       ext.href=app.file; ext.classList.add("show");
       if(!appNav && app.bucket && !openGroups[app.bucket]){ openGroups[app.bucket]=true; renderRail(); markActive(id); }
     } else {
       frame.classList.remove("show"); frame.removeAttribute("src"); home.style.display="block";
       ext.classList.remove("show"); frameload.classList.remove("show");
-      setCrumb(""); renderHome(); markActive("");
+      setCrumb(""); if(CONSOLE) renderConsoleHome(); else renderHome(); markActive("");
     }
     document.body.classList.remove("nav-open");
   }
