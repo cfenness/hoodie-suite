@@ -49,3 +49,11 @@ jobs:
       - name: Dispatch due sources as ephemeral machines
         working-directory: unifyd
         run: python dispatch_ephemeral.py
+
+      # Refresh the health digest OFF-MAC too — it used to run only via the Mac's launchd (com.hoodie.health),
+      # so when the Mac was down the Console's Attention panel showed a days-old, pre-fix verdict. Recompute it
+      # every tick from the current warehouse state and push _health_digest.json (the Console reads it). Cheap,
+      # deterministic, no browser. `|| true` so a digest hiccup never fails the dispatch tick.
+      - name: Refresh health digest
+        working-directory: unifyd
+        run: python health_digest.py || true
