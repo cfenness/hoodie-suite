@@ -70,16 +70,66 @@ def parse_upload(filename, raw, scan=15):
                 n += 1
         return n
     hi = max(range(min(scan, len(grid))), key=lambda i: (_score(grid[i]), -i))
-    header = [str(c).strip() for c in grid[hi]]
-    keep = [j for j, h in enumerate(header) if h]        # drop columns with an empty header (trims blank margins)
-    header = [header[j] for j in keep]
+    raw_header = [str(c).strip() for c in grid[hi]]
+    # A blank header cell over a populated column is a NAMED column, not a margin (e.g. a menu whose
+    # product names sit under an untitled first column) — keep it and synthesize a name.
+    # Only header-less columns with no data below are margins to trim.
+    def _colname(j):
+        s = ""
+        j += 1
+        while j:
+            j, r = divmod(j - 1, 26)
+            s = chr(65 + r) + s
+        return s
+    body = grid[hi + 1:]
+    keep = [j for j, h in enumerate(raw_header)
+            if h or any(str(r[j]).strip() if j < len(r) else "" for r in body)]
+    # Column naming — general spreadsheet idioms, applied in order:
+    # 1. A blank header cell immediately after a labeled one is a merged span's continuation
+    #    (openpyxl yields the merged value once, then None) — inherit the label. A blank with
+    #    no adjacent label is "Column A"-style.
+    names = {}
+    for j in keep:
+        if raw_header[j]:
+            names[j] = raw_header[j]
+        elif j > 0 and raw_header[j - 1]:
+            names[j] = raw_header[j - 1]
+        else:
+            names[j] = "Column " + _colname(j)
+    # 2. Duplicated header labels under a sparse band row above are GROUPED columns
+    #    (e.g. a store name spanning a qty pair) — prefix each with its band label. A band
+    #    label only counts if it sits over the duplicated run (stray titles above don't leak in).
+    dupes = {h for h in raw_header if h and raw_header.count(h) > 1}
+    if dupes and hi > 0:
+        band = [str(c).strip() for c in grid[hi - 1]]
+        eligible = {j for j, b in enumerate(band) if b and j < len(raw_header) and raw_header[j] in dupes}
+        if eligible:
+            for j in keep:
+                if raw_header[j] in dupes:
+                    at = [g for g in eligible if g <= j]
+                    if at:
+                        names[j] = band[max(at)] + " · " + raw_header[j]
+    # 3. De-dup whatever names remain — mapping is name-keyed, so aliases are ambiguity.
+    seen = {}
+    header = []
+    for j in keep:
+        n = names[j]
+        seen[n] = seen.get(n, 0) + 1
+        header.append(n if seen[n] == 1 else "%s (%d)" % (n, seen[n]))
     rows = []
     row_src = []
-    for off, r in enumerate(grid[hi + 1:]):
+    for off, r in enumerate(body):
         vals = [str(r[j]).strip() if j < len(r) else "" for j in keep]
-        if any(vals):
-            rows.append(vals)
-            row_src.append(hi + 1 + off)          # physical 0-based grid row — for faithful write-back/refill
+        if not any(vals):
+            continue
+        # sectioned menus repeat their header block per group — a body row mostly echoing the
+        # header's own labels is a section separator, not data
+        nb = [(v, raw_header[keep[k]]) for k, v in enumerate(vals) if v]
+        echo = sum(1 for v, h in nb if h and v.lower() == h.lower())
+        if echo >= 2 and echo >= 0.6 * len(nb):
+            continue
+        rows.append(vals)
+        row_src.append(hi + 1 + off)          # physical 0-based grid row — for faithful write-back/refill
     return {"header": header, "rows": rows, "row_src": row_src, "col_src": keep,  # keep = parsed col → physical 0-based col
             "header_row": hi, "sheet": sheet}
 
