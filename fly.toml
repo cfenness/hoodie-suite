@@ -15,6 +15,10 @@ primary_region = 'iad'
   # Cap DuckDB so a big master query spills to disk instead of OOM-killing the worker (see warehouse.connect).
   DUCKDB_MEMORY_LIMIT = '1200MB'
   DUCKDB_THREADS = '2'
+  # Chrome runs as root inside the container → it needs --no-sandbox, and containers have a tiny /dev/shm
+  # → --disable-dev-shm-usage (else Chrome crashes). browser_warm reads this and adds those two args ONLY
+  # (no other overrides, so patchright's stealth is preserved). Harmless for the app group (never launches Chrome).
+  BROWSER_NO_SANDBOX = '1'
 
 # Two process groups from ONE image, so data pulls never run on the box that serves the site:
 #   app    — serves the public suite + /api (small, always-on, public).
@@ -25,8 +29,10 @@ primary_region = 'iad'
 #            it via the app's own /api/run (reached over Fly private networking / flyctl proxy).
 [processes]
   app = "gunicorn -w 1 --threads 24 --timeout 120 -b 0.0.0.0:8080 server:app"
+  # runner: start a virtual display FIRST (headful Chrome for the anti-bot sources needs one), then gunicorn.
   # --timeout 0: the runner's worker does long single-threaded crawls; never let the arbiter kill a busy worker.
-  runner = "gunicorn -w 1 --threads 8 --timeout 0 -b 0.0.0.0:8080 server:app"
+  # DISPLAY is exported so the scraper subprocesses (run_one) inherit it and Chrome renders to Xvfb.
+  runner = "sh -c 'Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & export DISPLAY=:99; exec gunicorn -w 1 --threads 8 --timeout 0 -b 0.0.0.0:8080 server:app'"
 
 [http_service]
   internal_port = 8080

@@ -91,16 +91,22 @@ class Warmer:
         suffix += os.environ.get("BROWSER_PROFILE_SUFFIX", "")   # distinct profile per parallel worker (sharded crawls)
         prof = os.path.join(_PROFILE_ROOT, self.domain.replace(".", "_") + suffix)
         os.makedirs(prof, exist_ok=True)
+        # In a container (Fly runner) Chrome runs as root with a tiny /dev/shm — it needs --no-sandbox +
+        # --disable-dev-shm-usage or it won't launch. These are the ONLY args we add (they don't touch the
+        # fingerprint), and only when BROWSER_NO_SANDBOX is set, so local/Mac stealth runs are unchanged.
+        _sbx = ["--no-sandbox", "--disable-dev-shm-usage"] if os.environ.get("BROWSER_NO_SANDBOX") else []
         if self.patchright:
             # patchright handles stealth itself — DON'T override UA/viewport/args or add init scripts (they undo it)
             kw = dict(channel=self.channel or "chrome", headless=(not self.headful), no_viewport=True)
+            if _sbx:
+                kw["args"] = _sbx
             if self.proxy:
                 kw["proxy"] = self.proxy
             self._ctx = self._pw.chromium.launch_persistent_context(prof, **kw)
         else:
             kw = dict(headless=(not self.headful), channel=self.channel, user_agent=self.ua,
                       viewport={"width": 1300, "height": 1400}, locale="en-US",
-                      args=["--disable-blink-features=AutomationControlled", "--no-first-run"])
+                      args=["--disable-blink-features=AutomationControlled", "--no-first-run"] + _sbx)
             if self.proxy:
                 kw["proxy"] = self.proxy
             self._ctx = self._pw.chromium.launch_persistent_context(prof, **kw)

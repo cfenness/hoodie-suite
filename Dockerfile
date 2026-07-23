@@ -17,23 +17,28 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
     && update-ca-certificates && rm -rf /var/lib/apt/lists/*
 
+# Headful Chrome + Xvfb — for the anti-bot sources that need a REAL browser to mint their token
+# (UberEats/Postmates botdefense, Kroger Akamai, Total Wine PerimeterX, Albertsons Kasada, Ahold
+# DataDome), then replay the chain's first-party API. Only the `runner` process group launches a
+# browser (under a virtual display, via fly.toml's runner command); the public `app` group never does.
+# The chrome .deb pulls its own runtime deps; xvfb gives headful Chrome a display on a headless box.
+RUN apt-get update && apt-get install -y --no-install-recommends wget gnupg xvfb fonts-liberation \
+    && wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && apt-get install -y --no-install-recommends /tmp/chrome.deb \
+    && rm -f /tmp/chrome.deb && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app/unifyd
 
-# deps first for layer caching (+ keep certifi current so `requests`-based gov scrapers verify certs)
+# deps first for layer caching (+ keep certifi current so `requests`-based gov scrapers verify certs).
+# patchright (stealth playwright) drives the system Google Chrome (channel="chrome") for the headful sources.
 COPY unifyd/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt gunicorn && pip install --no-cache-dir --upgrade certifi
-
-# Instacart is a browser source but a FREE one — its data is Instacart's own SearchResultsPlacements
-# GraphQL, driven by a self-hosted Chromium (NO Bright Data, NO proxy). The instacart-free-verify CI
-# matrix PROVED it lands products HEADLESS from a bare datacenter IP (no Xvfb needed) — so ship just the
-# bundled Chromium + its OS libs; the connector runs headless in-container (BROWSER_HEADFUL=0 below).
-RUN pip install --no-cache-dir playwright && playwright install --with-deps chromium
+RUN pip install --no-cache-dir -r requirements.txt gunicorn patchright && pip install --no-cache-dir --upgrade certifi
 
 # the whole repo: the engine (unifyd/) + the static suite (index.html, apps/, spine/, …)
 COPY . /app
 
 # SUITE_ROOT switches server.py into all-in-one mode (serve static + /api). PORT is injected by the host.
-ENV PORT=8080 SUITE_ROOT=/app BROWSER_HEADFUL=0
+ENV PORT=8080 SUITE_ROOT=/app
 EXPOSE 8080
 
 # ONE worker on purpose — state is in-process; a single worker keeps it coherent. But add THREADS so
@@ -42,4 +47,6 @@ EXPOSE 8080
 # mid-fetch (which surfaced in the client as a bogus "Analyzer is offline"). Threads are safe here:
 # the work is I/O-bound (network) so the GIL is released during waits; shared state stays in one process.
 # gunicorn runs from /app/unifyd (WORKDIR) so `server:app` resolves; it serves the suite from SUITE_ROOT=/app.
+# NOTE: this default CMD is the `app` (public) process group. The `runner` group overrides it in fly.toml
+# to start Xvfb first (headful Chrome needs a display).
 CMD ["sh", "-c", "gunicorn -w 1 --threads 24 --timeout 120 -b 0.0.0.0:${PORT:-8080} server:app"]
