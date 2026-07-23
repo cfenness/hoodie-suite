@@ -5320,38 +5320,62 @@ def refill_xlsx_ep():
     except Exception:
         data_rows = []
     try:
-        wb = openpyxl.load_workbook(io.BytesIO(f.read()))          # writable → preserves original formatting
-        ws = wb[wb.sheetnames[0]]
-        if 0 <= qty_col:
-            qcol = qty_col + 1                                     # land in the file's own column (header stays)
-            # Phantom-order guard: a pre-filled landing column (par/suggested quantities, or a
-            # re-uploaded prior order) must not survive as silent order lines the buyer never sees.
-            # Clear LITERAL values on every data row not ordered; leave formulas alone — they
-            # compute from their own inputs (e.g. =SUM(LOC1:LOC4)) and evaluate 0 when empty.
-            for r0 in data_rows:
-                try:
-                    r0 = int(r0)
-                except (TypeError, ValueError):
-                    continue
-                if str(r0) in orders:
-                    continue
-                cell = ws.cell(row=r0 + 1, column=qcol)
-                if cell.data_type != "f" and cell.value not in (None, ""):
-                    cell.value = None
-        else:
-            qcol = ws.max_column + 1                               # append the order column after the used range
-            ws.cell(row=header_row + 1, column=qcol, value=label)  # header at its physical (1-based) row
-        for k, v in orders.items():
+        orders_by_col = json.loads(request.form.get("orders_by_col") or "null")   # {phys_col: {phys_row: qty}}
+    except Exception:
+        orders_by_col = None
+
+    def _fill_col(ws, qcol, col_orders, clear_rows):
+        # Phantom-order guard: a pre-filled landing column (par/suggested quantities, or a
+        # re-uploaded prior order) must not survive as silent order lines the buyer never sees.
+        # Clear LITERAL values on every data row not ordered; leave formulas alone — they
+        # compute from their own inputs (e.g. =SUM(LOC1:LOC4)) and evaluate 0 when empty.
+        for r0 in clear_rows:
+            try:
+                r0 = int(r0)
+            except (TypeError, ValueError):
+                continue
+            if str(r0) in col_orders:
+                continue
+            cell = ws.cell(row=r0 + 1, column=qcol)
+            if cell.data_type != "f" and cell.value not in (None, ""):
+                cell.value = None
+        for k, v in col_orders.items():
             if v in (None, ""):
                 continue
-            if qty_col < 0 and v in (0, "0"):
-                continue                                           # append mode: blank already means no order
             try:
                 r0 = int(k)
                 q = int(v) if str(v).strip().lstrip("-").isdigit() else v
                 ws.cell(row=r0 + 1, column=qcol, value=q)
             except Exception:
                 pass
+
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(f.read()))          # writable → preserves original formatting
+        ws = wb[wb.sheetnames[0]]
+        if isinstance(orders_by_col, dict) and orders_by_col:
+            # multi-column landing: per-store order columns (Dispensary 1..N / LOC1..4 / MED·AU pairs),
+            # each written into its own physical column so the file's own totals compute per store
+            for cs, col_orders in orders_by_col.items():
+                try:
+                    qcol = int(cs) + 1
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(col_orders, dict):
+                    _fill_col(ws, qcol, col_orders, data_rows)
+        elif 0 <= qty_col:
+            _fill_col(ws, qty_col + 1, orders, data_rows)          # land in the file's own column (header stays)
+        else:
+            qcol = ws.max_column + 1                               # append the order column after the used range
+            ws.cell(row=header_row + 1, column=qcol, value=label)  # header at its physical (1-based) row
+            for k, v in orders.items():
+                if v in (None, "") or v in (0, "0"):
+                    continue                                       # append mode: blank already means no order
+                try:
+                    r0 = int(k)
+                    q = int(v) if str(v).strip().lstrip("-").isdigit() else v
+                    ws.cell(row=r0 + 1, column=qcol, value=q)
+                except Exception:
+                    pass
         out = io.BytesIO(); wb.save(out); out.seek(0)
     except Exception as e:
         return jsonify(error="refill-failed", detail=str(e)[:200]), 400
