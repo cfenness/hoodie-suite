@@ -157,6 +157,9 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   (`/api/distributors`, `distributor_contacts.json`) + `POST /api/orders/<id>/send` emails each
   distributor its PO-sheet CSV via SMTP (`SMTP_HOST/PORT/USER/PASS/FROM`, STARTTLS default on);
   unconfigured → returns `email-not-configured` and the UI falls back to download + copy-email.
+  **Order status:** `POST /api/orders/<id>/status` advances a forward-only lifecycle
+  (submitted → sent → confirmed → delivered, or cancelled) with a timestamped `status_history`;
+  the ordering page shows a status pill per order + advance/cancel controls in the order modal.
 - `unifyd/hoodie_mdm.html` — the MDM control plane the agent serves. Reads `/api/*` when
   the agent is up, falls back to an embedded `const DATASETS` preview otherwise.
 - **Runtime is git-ignored:** `agent_state/`, `cola_out/`, `out/`, `__pycache__/`.

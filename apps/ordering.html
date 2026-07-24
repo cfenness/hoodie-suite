@@ -75,6 +75,13 @@
   .dsheet .dn{font-weight:700;font-size:13px} .dsheet .dm{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px}
   button.snd{background:var(--accent);border:1px solid var(--accent-d);color:#fff;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer}
   button.snd:hover{background:var(--accent-d)} button.snd:disabled{opacity:.5;cursor:default}
+  .stp{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;border-radius:6px;padding:2px 8px;vertical-align:middle}
+  .stp.submitted{background:var(--accent-soft);color:#2E4C6D} .stp.sent{background:#e8eefb;color:#2b52a8}
+  .stp.confirmed{background:#fef3d9;color:#8a5a08} .stp.delivered{background:var(--good-soft);color:var(--good)}
+  .stp.cancelled{background:#f3e6e6;color:var(--bad)}
+  .statusrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:4px}
+  .steps{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .steps .step.on{color:var(--accent-d);font-weight:700} .steps .sep{margin:0 5px;color:var(--line)}
   .okpill{display:inline-block;background:var(--good-soft);color:var(--good);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;border-radius:6px;padding:3px 9px;margin-bottom:8px}
   .warnbox{background:var(--warn-soft);color:#7a4a10;border:1px solid #f0d3a8;border-radius:9px;padding:9px 12px;font-size:12.5px;margin:8px 0}
   .hist{margin-top:26px}
@@ -285,7 +292,7 @@ function showConfirmation(o){
   const box=document.getElementById('mbox');
   const sent=new Set((o.sent||[]).map(s=>s.distributor));
   box.innerHTML='<button class="x" onclick="closeModal()">×</button>'+
-    '<div class="okpill">Order submitted</div><h2>'+esc(o.id)+'</h2>'+
+    '<h2 style="margin-bottom:3px">'+esc(o.id)+' '+statusPill(o.status)+'</h2>'+
     '<div class="ms">'+esc(o.retailer)+' · '+fmt(o.units)+' units · '+money(o.total)+
     '. Send each distributor their PO sheet — auto-email where a contact is set, or download / copy-email.'+
     (SMTP_OK?'':' <b>Email isn\'t configured on this server yet</b>, so use download / copy-email for now.')+'</div>'+
@@ -307,10 +314,12 @@ function showConfirmation(o){
         'href="/api/orders/'+encodeURIComponent(o.id)+'/sheet?distributor='+encodeURIComponent(dn)+'">⇩ PO sheet</a>'+
       '<button class="ghost" data-copy="'+esc(dn)+'">Copy email</button>'+
       '</div></div>';
-    }).join('');
+    }).join('')+statusControls(o);
   box.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>copyEmail(o.id,b.dataset.copy));
   box.querySelectorAll('[data-send]').forEach(b=>b.onclick=()=>sendOne(o,b.dataset.send,b));
   box.querySelectorAll('[data-addemail]').forEach(b=>b.onclick=()=>addEmail(o,b.dataset.addemail));
+  const adv=box.querySelector('[data-adv]'); if(adv) adv.onclick=()=>setStatus(o,adv.dataset.adv);
+  const cx=box.querySelector('[data-cancel]'); if(cx) cx.onclick=()=>{ if(confirm('Cancel order '+o.id+'?')) setStatus(o,'cancelled'); };
   window.__order=o;
 }
 async function addEmail(o,dist){
@@ -347,6 +356,30 @@ function closeModal(){ document.getElementById('modal').classList.remove('show')
 document.getElementById('modal').addEventListener('click',e=>{ if(e.target.id==='modal') closeModal(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
 
+/* ── order status lifecycle ── */
+const FLOW=['submitted','sent','confirmed','delivered'];
+const statusPill=s=>{ s=s||'submitted'; return '<span class="stp '+esc(s)+'">'+esc(s)+'</span>'; };
+function statusControls(o){
+  if(o.status==='cancelled') return '<div class="statusrow"><span class="stp cancelled">cancelled</span></div>';
+  const i=FLOW.indexOf(o.status||'submitted');
+  const next=i>=0&&i<FLOW.length-1?FLOW[i+1]:null;
+  const steps=FLOW.map((s,k)=>'<span class="step'+(k<=i?' on':'')+'">'+s+'</span>').join('<span class="sep">›</span>');
+  return '<div class="osec">Status</div><div class="statusrow"><div class="steps">'+steps+'</div>'+
+    '<div style="display:flex;gap:7px">'+
+    (next?'<button class="snd" data-adv="'+esc(next)+'">Mark '+esc(next)+'</button>':'')+
+    (o.status!=='delivered'?'<button class="ghost" data-cancel="1">Cancel</button>':'')+
+    '</div></div>';
+}
+async function setStatus(o,status){
+  try{
+    const j=await (await fetch('/api/orders/'+encodeURIComponent(o.id)+'/status',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({status})})).json();
+    if(!j.ok){ alert(j.error||'could not update status'); return; }
+    const jj=await (await fetch('/api/orders/'+encodeURIComponent(o.id))).json();
+    if(jj.ok){ showConfirmation(jj.order); } loadHistory();
+  }catch(e){ alert('status update failed — engine offline?'); }
+}
+
 /* ── history ── */
 async function loadHistory(){
   try{
@@ -354,7 +387,7 @@ async function loadHistory(){
     const os=(j.orders||[]).slice(0,8);
     document.getElementById('hist').hidden=!os.length;
     document.getElementById('histRows').innerHTML=os.map(o=>
-      '<div class="hrow" data-id="'+esc(o.id)+'"><div><div class="hn">'+esc(o.id)+' — '+esc(o.retailer)+'</div>'+
+      '<div class="hrow" data-id="'+esc(o.id)+'"><div><div class="hn">'+esc(o.id)+' — '+esc(o.retailer)+' '+statusPill(o.status)+'</div>'+
       '<div class="hm">'+new Date(o.ts).toLocaleString()+' · '+o.lines+' lines · '+esc((o.distributors||[]).join(', '))+'</div></div>'+
       '<div class="ht">'+money(o.total)+'</div></div>').join('');
     document.querySelectorAll('.hrow').forEach(r=>r.onclick=async()=>{
