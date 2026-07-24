@@ -55,3 +55,4 @@ Tracked here so they're not forgotten:
 | Hemp per-store counts | `hemp_inventory.py` | — |
 | 7-Eleven | `sevennow_warm.py` | `sevennow.py` = library it wraps (keep) |
 | Instacart | `instacart.py` (free Playwright driver, aggregator base) | `instacart_scraper.py` = archived BD dataset (paid) |
+| Shopify | `off_premise.py` → `national_sweep("shopify")` / `shopify_catalog` (census-sweep recipe, registry id `shopify`) | `shopify_scraper.py` = standalone DTC scraper, folded into the census sweep 2026-07-24 (its brand seed → `off_premise.SHOPIFY_SEED`) |
