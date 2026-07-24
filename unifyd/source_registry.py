@@ -163,6 +163,14 @@ BUILDS = [
          code="import build_product_master as m; m.build()",
          tables=["dim_sku"], klass="build", interval_h=12, enabled=True,
          note="brand dict → stage → shred to dim_brand/product/item/sku + xwalk/coherence/identity clusters"),
+    # MOAT-PLAN Workstream V1 — the observation-quality error model over retail_observations. The
+    # instrument card every velocity number will cite: per-source qty semantics (real count vs
+    # status-bucket-in-disguise), cadence, diffability; per-cell jitter fingerprint. Cheap (~2min),
+    # rebuilt as observations accumulate. Substrate for V2 (delta decomposition) + fact_velocity.
+    dict(id="build-obs-quality", label="Observation quality (velocity substrate)",
+         code="import obs_quality as m; m.build()",
+         tables=["obs_quality_source", "obs_quality_cell"], klass="build", interval_h=12, enabled=True,
+         note="per-source instrument card + per-(store,sku) cell quality/jitter over retail_observations"),
     # Phase 4 — SipSource depletion feed (NRT-PLAN §1d): the ~500M-row raw grain (sip_raw, hive-
     # partitioned period=YYYYMM/market=XX) is NEVER served; this rolls it into small dimension-BOUNDED
     # marts the site reads. Wired but DISABLED until the real feed lands (no `sipsource-feed` source yet

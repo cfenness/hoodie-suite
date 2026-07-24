@@ -99,30 +99,37 @@ def ledger(rows):
 ledger([])
 ok("no landings -> no builds due", run_sources.due_builds(now=NOW) == [])
 
-# a source landed new rows 1h ago; builds never ran -> both due
-ledger([dict(run_id="s1", source="binnys", ts_start=NOW - 3700, ts_end=NOW - 3600, status="ok")])
-ok("fresh ok landing -> builds due",
-   {b["id"] for b in run_sources.due_builds(now=NOW)} == {"build-outlets", "build-product-master"})
+# Registry-derived so adding a build doesn't re-break these: the DEFAULT-triggered builds are the
+# enabled ones with no `after` (any source landing triggers them). Assertions compute from these.
+DEFBUILDS = [b for b in reg.BUILDS if b.get("enabled") and not b.get("after")]
+DEF_IDS = {b["id"] for b in DEFBUILDS}
 
-# build ran AFTER the landing -> not due; and a 'current' (no new rows) landing never triggers
-ledger([dict(run_id="s1", source="binnys", ts_start=NOW - 3700, ts_end=NOW - 3600, status="ok"),
-        dict(run_id="b1", source="build-outlets", ts_start=NOW - 3000, ts_end=NOW - 2900, status="ok"),
-        dict(run_id="b2", source="build-product-master", ts_start=NOW - 3000, ts_end=NOW - 2900, status="ok"),
-        dict(run_id="s2", source="specs", ts_start=NOW - 1000, ts_end=NOW - 900, status="current")])
+
+def build_runs(ago_s):
+    """A ledger row per default build, all having last run `ago_s` seconds ago."""
+    return [dict(run_id="b_%s" % b["id"], source=b["id"], ts_start=NOW - ago_s,
+                 ts_end=NOW - ago_s + 60, status="ok") for b in DEFBUILDS]
+
+
+# a source landed new rows 1h ago; builds never ran -> all default builds due
+ledger([dict(run_id="s1", source="binnys", ts_start=NOW - 3700, ts_end=NOW - 3600, status="ok")])
+ok("fresh ok landing -> builds due", {b["id"] for b in run_sources.due_builds(now=NOW)} == DEF_IDS)
+
+# builds ran AFTER the landing -> not due; and a 'current' (no new rows) landing never triggers
+ledger([dict(run_id="s1", source="binnys", ts_start=NOW - 3700, ts_end=NOW - 3600, status="ok")]
+       + build_runs(3000)
+       + [dict(run_id="s2", source="specs", ts_start=NOW - 1000, ts_end=NOW - 900, status="current")])
 ok("built after landing + only 'current' since -> not due", run_sources.due_builds(now=NOW) == [])
 
-# new ok landing since the build, but build ran 1h ago (< 6h min gap) -> throttled
-ledger([dict(run_id="b1", source="build-outlets", ts_start=NOW - 3600, ts_end=NOW - 3500, status="ok"),
-        dict(run_id="b2", source="build-product-master", ts_start=NOW - 3600, ts_end=NOW - 3500, status="ok"),
-        dict(run_id="s3", source="specs", ts_start=NOW - 600, ts_end=NOW - 500, status="ok")])
+# new ok landing since the build, but every build ran 1h ago (< its min gap) -> throttled
+ledger(build_runs(3600) + [dict(run_id="s3", source="specs", ts_start=NOW - 600, ts_end=NOW - 500, status="ok")])
 ok("min gap throttles rebuild", run_sources.due_builds(now=NOW) == [])
 
-# build ran 7h ago (> 6h gap for build-outlets, < 12h for product-master), landing 1h ago
-ledger([dict(run_id="b1", source="build-outlets", ts_start=NOW - 7 * 3600, ts_end=NOW - 7 * 3600 + 60, status="ok"),
-        dict(run_id="b2", source="build-product-master", ts_start=NOW - 7 * 3600, ts_end=NOW - 7 * 3600 + 60, status="ok"),
-        dict(run_id="s4", source="specs", ts_start=NOW - 3600, ts_end=NOW - 3500, status="ok")])
+# every build ran 7h ago, landing 1h ago -> exactly the builds whose interval_h <= 7 are due
+ledger(build_runs(7 * 3600) + [dict(run_id="s4", source="specs", ts_start=NOW - 3600, ts_end=NOW - 3500, status="ok")])
 ok("per-build min gaps respected",
-   {b["id"] for b in run_sources.due_builds(now=NOW)} == {"build-outlets"})
+   {b["id"] for b in run_sources.due_builds(now=NOW)}
+   == {b["id"] for b in DEFBUILDS if float(b.get("interval_h") or 6) <= 7})
 
 # after=[...] narrows the trigger
 b_out = next(b for b in reg.BUILDS if b["id"] == "build-outlets")
