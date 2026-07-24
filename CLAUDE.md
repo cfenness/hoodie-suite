@@ -146,8 +146,12 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   Surface: `apps/mdm-label-reader.html` (the **Label Reader** section in `apps/mdm.html`).
 - `unifyd/menu_ingest.py` — parse a DISTRIBUTOR WHOLESALE MENU file (xlsx/csv; cannabis
   Curaleaf NY is the reference shape) into normalized order lines. stdlib-only (xlsx = zipped
-  XML), heuristic header-row detection + column synonyms, brand-section context, Excel serial
-  dates, THC normalization. Lands `distributor_menu_items`; behind `apps/ordering.html`
+  XML), heuristic header-row detection + column synonyms, Excel serial dates, THC normalization.
+  **Inline sub-headers are parsed, not dropped:** a section/sub-header row (no price/batch/units/
+  thc/msrp) is classified brand-vs-product-family, its size/form/category are read off the header
+  and cascaded to the child rows, and a terse child (`Indica : Wedding Cake`) is composed into the
+  full product using its family header — which is often the ONLY place the product/size lives.
+  Lands `distributor_menu_items`; behind `apps/ordering.html`
   (Wholesale Ordering: all menus → one catalog → one order → per-distributor PO sheets via
   `/api/menus/*` + `/api/orders*`). **Auto-send:** a distributor contact book
   (`/api/distributors`, `distributor_contacts.json`) + `POST /api/orders/<id>/send` emails each
