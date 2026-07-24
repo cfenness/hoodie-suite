@@ -51,6 +51,13 @@ def _size_ml(name):
 # Long-term clean path = the Walmart I/O official API (no PX, no BD, no captcha) — see walmart-tracker memory.
 WALMART_COOKIE = os.environ.get("WALMART_COOKIE", "")
 
+# Warm-first: when a browser is available we open ONE warmed walmart.com session per crawl (browser_warm)
+# and route every fetch THROUGH the page, so the request inherits the trusted, auto-refreshing PX cookie +
+# the real TLS fingerprint — the method that cracked Walmart with no BD. This retires the manual
+# WALMART_COOKIE paste (which always goes stale). `_WARMER` is set by pull() for the life of the crawl and
+# consumed by `_get`; when it's None the existing cookie/mobile/resi path runs unchanged.
+_WARMER = None
+
 
 class Blocked(RuntimeError):
     pass
@@ -61,6 +68,14 @@ _DESK = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KH
 
 
 def _get(url, timeout=30, cookie=None):
+    # Warmed-browser path (preferred): fetch INSIDE the primed page so the PX token (fingerprint-bound)
+    # stays valid. Raises Blocked on a challenge so the caller's per-term backoff still applies.
+    w = _WARMER
+    if w is not None:
+        st, body = w.fetch(url, timeout_ms=int(timeout * 1000))
+        if not body or "px-captcha" in body or "Robot or human" in body[:2000]:
+            raise Blocked("PX challenge (warmed browser)")
+        return body
     cookie = cookie or WALMART_COOKIE
     if cookie:
         # a warmed PX cookie is minted by DESKTOP Chrome — replay it with a MATCHING desktop UA + full browser
@@ -324,18 +339,52 @@ def crawl(terms=None, max_pages=4, delay=1.2, log=print, land_each=False):
     return rows
 
 
-def pull(terms=None, max_pages=4, delay=1.2, detail_pages=False, detail_cap=400, out=".", log=print):
-    # land per-term so a long/throttled run persists progress incrementally (not all-or-nothing at the end)
-    rows = crawl(terms, max_pages, delay, log, land_each=not detail_pages)
-    if detail_pages:                             # enrich with the /ip/ spec vector + inventory (paced!)
-        n = min(len(rows), detail_cap)
-        for i, r in enumerate(rows[:n]):
-            if r.get("url"):
-                r.update(detail(r["url"], log))
-                time.sleep(max(delay, 1.6))      # detail pages throttle faster than search — slow down
-            if (i + 1) % 25 == 0:
-                log("  detail-enriched %d/%d" % (i + 1, n))
-        _land(rows, log)                         # single land after enrichment (rows now carry detail fields)
+def _warm_start(browse, log):
+    """Open ONE warmed walmart.com session for the crawl (sets the module `_WARMER`). Returns the Warmer to
+    close later, or None (warming off / no browser → the cookie/mobile/resi path runs). `browse` default:
+    on unless a cookie is configured, or forced with WALMART_BROWSE=1."""
+    global _WARMER
+    if browse is None:
+        browse = (os.environ.get("WALMART_BROWSE", "") == "1") or not WALMART_COOKIE
+    if not browse:
+        return None
+    try:
+        import browser_warm
+        w = browser_warm.Warmer("walmart.com", channel="chrome").__enter__()
+        # prime walmart.com so PX runs its JS challenge and mints the trusted _px3/pxvid; poll until the
+        # "Robot or human?" interstitial clears.
+        w.prime("https://www.walmart.com/", challenge_gone="!/Robot or human/i.test(document.title)")
+        _WARMER = w
+        log("[walmart] warmed a walmart.com session — fetching in-page (no manual cookie, no BD)")
+        return w
+    except Exception as e:
+        log("[walmart] warm unavailable (%s) — falling back to the cookie/mobile+proxy path" % str(e)[:70])
+        _WARMER = None
+        return None
+
+
+def pull(terms=None, max_pages=4, delay=1.2, detail_pages=False, detail_cap=400, out=".", log=print, browse=None):
+    global _WARMER
+    warmer = _warm_start(browse, log)
+    try:
+        # land per-term so a long/throttled run persists progress incrementally (not all-or-nothing at the end)
+        rows = crawl(terms, max_pages, delay, log, land_each=not detail_pages)
+        if detail_pages:                             # enrich with the /ip/ spec vector + inventory (paced!)
+            n = min(len(rows), detail_cap)
+            for i, r in enumerate(rows[:n]):
+                if r.get("url"):
+                    r.update(detail(r["url"], log))
+                    time.sleep(max(delay, 1.6))      # detail pages throttle faster than search — slow down
+                if (i + 1) % 25 == 0:
+                    log("  detail-enriched %d/%d" % (i + 1, n))
+            _land(rows, log)                         # single land after enrichment (rows now carry detail fields)
+    finally:
+        if warmer is not None:
+            try:
+                warmer.__exit__(None, None, None)
+            except Exception:
+                pass
+            _WARMER = None
     if not rows:                                 # NEVER clobber a good catalog with an empty/blocked crawl
         log("[walmart] 0 rows this crawl — NOT writing (would wipe the existing catalog)")
         return 0

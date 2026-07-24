@@ -33,28 +33,48 @@ SOURCES = [
          tables=["binnys_products"], klass="headless", cadence="daily", enabled=True, note="Algolia feed"),
     dict(id="specs", label="Spec's", code="import specs_scraper as m; m.pull(crawl_all=True)",
          tables=["specs_products"], klass="headless", cadence="daily", enabled=True, note="Next.js sitemap"),
+    dict(id="meijer", label="Meijer", code="import meijer as m; m.pull()",
+         tables=["meijer_products"], klass="headless", cadence="daily", enabled=True,
+         note="open storefront GraphQL (digital.meijer.com) — no auth/anti-bot; per-store alcohol sweep"),
+    dict(id="trader-joes", label="Trader Joe's", code="import trader_joes as m; m.pull()",
+         tables=["trader_joes_products"], klass="headless", cadence="weekly", enabled=True,
+         note="open storefront GraphQL + Brandify locator — no auth/anti-bot; SKU (no UPC), national pricing"),
     dict(id="abc-facets", label="ABC FW&S (facets)", code="import abc_facets as m; m.pull(cap=None)",
          tables=["abc_products", "source_taxonomy"], klass="headless", cadence="daily", enabled=True, note="SearchSpring"),
     dict(id="abc-catalog", label="ABC FW&S (catalog)", code="import abc_catalog as m; m.run()",
          tables=["abc_catalog"], klass="headless", cadence="weekly", enabled=True, note="BigCommerce sitemap"),
     dict(id="abc-fws", label="ABC FW&S (inventory)", code="import abc_fws_scraper as m; m.pull(crawl_all=True)",
-         tables=["abc_products"], klass="headless", cadence="daily", enabled=True, cost_class="proxy", note="per-store inventory"),
+         tables=["abc_products"], klass="headless", cadence="daily", enabled=True, cost_class="proxy",
+         note="per-store inventory",
+         # COVERAGE (coverage.py): item/store columns + the KNOWN universe, so a run that lands far fewer
+         # SKUs/stores than this reads `partial` instead of a silent stale merge. Omit expected_* to let
+         # coverage self-calibrate from the touched high-water-mark; set them when the universe is known.
+         item_col="sku", store_col="store", expected_items=13900, expected_stores=133),
     dict(id="haskells", label="Haskell's (MN)", code="import haskells as m; m.run(limit=None)",
          tables=["haskells_products"], klass="headless", cadence="daily", enabled=True, timeout=10800,
          note="first-party site; full-catalog crawl outgrew the 5400s default (timed out 07-18)"),
-    dict(id="total-wine", label="Total Wine", code="import total_wine_full as m; m.run()",
-         tables=["total_wine_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", note="PerimeterX — browser"),
+    dict(id="total-wine", label="Total Wine",
+         code="import os, total_wine_full as m; m.run(os.environ.get('TW_STORE','920'), state=os.environ.get('TW_STATE','FL'))",
+         tables=["total_wine_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac",
+         note="PerimeterX — browser. run() needs a storeId (national catalog, that store's price/stock); "
+              "920=Orlando Millenia is the documented default, override via TW_STORE/TW_STATE. (was run() -> TypeError)"),
 
     # ── Grocery / big-box ─────────────────────────────────────────────────────────────────────────────────────
     dict(id="walmart", label="Walmart", code="import walmart_direct as m; m.pull(detail_pages=True, detail_cap=600)",
-         tables=["walmart_products"], klass="mac", cadence="daily", enabled=True, cost_class="proxy",
-         requires=["WALMART_COOKIE"], note="__NEXT_DATA__ over stdlib HTTP, no BD — needs a warmed PX cookie"),
+         tables=["walmart_products"], klass="headless", cadence="daily", enabled=True, cost_class="proxy",
+         note="walmart_direct: IPRoyal residential exit + curl_cffi Chrome-JA3, $0 (no BD, no API). "
+              "A warmed WALMART_COOKIE is an OPTIONAL boost, NOT required — do not gate the run on it."),
     dict(id="target", label="Target", code="import target_scraper as m; m.run()",
          tables=["target_products", "target_stores"], klass="headless", cadence="daily", enabled=True, cost_class="bd", note="RedSky API"),
     dict(id="kroger", label="Kroger (atlas inventory)", code="import kroger_atlas as m; m.main([])",
          tables=["kroger_atlas_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac",
-         requires=["KROGER_COOKIE", "KROGER_STORE", "KROGER_FACILITY"],
-         note="INTERNAL atlas endpoint = exact per-store on-hand + dims + ABV; warmed cookie (anti-bot), Tier B"),
+         # PREP: warm the Akamai cookie in headful Chrome before the pull (cookie_warm), so the atlas API
+         # accepts the replay. requires=[] because KROGER_COOKIE is minted by the prep, not pre-set; the
+         # store/facility default to a real store via `static` (extend to enumeration later).
+         cookie={"host": "www.kroger.com", "env": "KROGER_COOKIE",
+                 "static": {"KROGER_STORE": "01100439", "KROGER_FACILITY": "14732"}},
+         note="INTERNAL atlas endpoint = exact per-store on-hand + dims + ABV; Akamai cookie AUTO-WARMED per "
+              "run (cookie_warm headful Chrome — no manual paste); store 01100439/fac 14732 default"),
     dict(id="kroger-api", label="Kroger (API UPC seed)", code="import kroger_api as m; m.main()",
          tables=["kroger_products"], klass="creds", cadence="weekly", enabled=True,
          requires=["KROGER_CLIENT_ID", "KROGER_CLIENT_SECRET"],
@@ -78,6 +98,9 @@ SOURCES = [
               "markets=sorted(set(re.sub(r'_offprem_census$','',d['name']) for d in warehouse.list_datasets() if d['name'].endswith('_offprem_census')));"
               "[m.run_census(market=x, platforms=('Shopify','WooCommerce','Wix','Squarespace')) for x in markets]",
          tables=["offprem_products"], klass="headless", cadence="daily", enabled=True, cost_class="proxy", note="22 markets, no-BD"),
+    dict(id="shopify", label="Shopify (national sweep)", code="import off_premise as m; m.national_sweep('shopify')",
+         tables=["national_shopify_products"], klass="headless", cadence="weekly", enabled=True,
+         note="census sweep's Shopify pass — SHOPIFY_SEED via open /products.json ($0); OFFPREM_SERP=1 adds BD SERP discovery. Replaced standalone shopify_scraper (archived)"),
     dict(id="bottlecapps", label="Bottlecapps network", code="import bottlecapps as m; m.national()",
          tables=["bottlecapps_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=62, note="DataDome — patchright"),
     dict(id="cityhive", label="City Hive network", code="import cityhive as m; m.national(max_stores=12)",

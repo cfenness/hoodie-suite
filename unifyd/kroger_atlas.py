@@ -209,6 +209,26 @@ def run(gtins, cookie, store_id, facility_id, modality="PICKUP", land=True, log=
     return recs
 
 
+def warm_cookie(log=print):
+    """Warm a FRESH kroger.com session cookie via browser_warm — the automatic replacement for the manual
+    `KROGER_COOKIE` paste (a pasted session cookie always goes stale; a warmed one is minted per run). Only
+    the COOKIE is warmed: the store comes from the x-laf-object header (--store/--facility), so it isn't
+    session-bound. The atlas token replays through urllib fine (it's not TLS-fingerprint-bound like PX), so
+    the warmed Cookie header is a drop-in. Returns '' if no browser is available → caller keeps the env
+    cookie. Runs in the cloud too: headless Chrome under Xvfb + an ISP proxy (BROWSER_PROXY) — see
+    .github/workflows/warm-sources.yml."""
+    try:
+        import browser_warm
+    except Exception as e:
+        log("[kroger_atlas] browser_warm unavailable (%s) — using KROGER_COOKIE env" % str(e)[:60])
+        return ""
+    log("[kroger_atlas] warming a kroger.com session (no manual cookie needed)…")
+    # channel='chrome' = the real installed Chrome (best trust); challenge_gone clears once the app shell is up.
+    return browser_warm.warm_cookie("kroger.com", "https://www.kroger.com/",
+                                    challenge_gone="!!document.querySelector('[data-testid],header,#content')",
+                                    channel="chrome", log=log)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Kroger internal atlas API — rich per-GTIN master + enrichment.")
     ap.add_argument("--cookie", default=os.environ.get("KROGER_COOKIE", ""))
@@ -217,7 +237,17 @@ def main(argv=None):
     ap.add_argument("--modality", default="PICKUP")
     ap.add_argument("--gtins", default="", help="comma-separated GTIN13s (default: bev-alc UPCs from the warehouse)")
     ap.add_argument("--limit", type=int, default=500)
+    ap.add_argument("--warm", dest="warm", action="store_true", default=None,
+                    help="warm a fresh cookie via browser_warm (default: auto when --cookie/KROGER_COOKIE is empty)")
+    ap.add_argument("--no-warm", dest="warm", action="store_false", help="never warm; use only the configured cookie")
     a = ap.parse_args(argv)
+    # WARM AS THE FIRST STEP: a session cookie is the thing that goes stale, so refresh it each run instead of
+    # relying on a pasted one. Default: warm iff no cookie was supplied (env KROGER_WARM=0 hard-disables).
+    warm = a.warm if a.warm is not None else (not a.cookie and os.environ.get("KROGER_WARM", "1") != "0")
+    if warm:
+        fresh = warm_cookie()
+        if fresh:
+            a.cookie = fresh
     gtins = [g.strip() for g in a.gtins.split(",") if g.strip()]
     if not gtins:                                              # default: our bev-alc UPC universe
         try:

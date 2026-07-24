@@ -202,6 +202,7 @@
   <div class="foot">Mockup · synthetic figures · every panel below is computable today from catalog + menu scrapes — no distributor depletions, no Nielsen/Circana scans.</div>
 </div>
 
+<script src="../spine/spine.js"></script>
 <script>
 const ICON = {
   price:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-5 4 3 7-8"/><path d="M16 4h5v5"/></svg>',
@@ -495,6 +496,13 @@ document.querySelectorAll('#lens button').forEach(b=> b.onclick=()=>{
   buildPick(); render();
 });
 buildPick(); render();
+
+/* shared-subject adoption: a global subject from the Retail Intelligence workspace drives the brand lens */
+try{ HoodieSpine.connect({name:"Retail Analytics", onContext:function(c){
+  var n = c && c.scope && c.scope.name; if(!n) return;
+  var k = n.toLowerCase().replace(/[^a-z0-9]/g,"");
+  if(DATA.brand && DATA.brand[k]){ LENS="brand"; KEY=k; buildPick(); render(); }
+}}); }catch(e){}
 </script>
 </body>
 </html>

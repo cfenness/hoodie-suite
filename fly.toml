@@ -15,7 +15,23 @@ primary_region = 'iad'
   # Cap DuckDB so a big master query spills to disk instead of OOM-killing the worker (see warehouse.connect).
   DUCKDB_MEMORY_LIMIT = '1200MB'
   DUCKDB_THREADS = '2'
+  # For EPHEMERAL pull machines that launch headful Chrome — Chrome runs as root in a container and needs
+  # --no-sandbox --disable-dev-shm-usage (browser_warm reads this). Harmless on the serving app (never launches Chrome).
+  BROWSER_NO_SANDBOX = '1'
+  # Total Wine self-warms its own PerimeterX cookie via a local headful browser ($0, no BD Browser CDP) —
+  # 'direct' is the local-warm path, which now works on the ephemeral machine (Chrome+Xvfb + residential).
+  TW_FETCH = 'direct'
+  # specsonline.com 403-blocks product pages from datacenter IPs (the sitemap is open) — route specs
+  # through the flat-rate residential proxy. polite now prefers the RESI_PROXY_* (Webshare) pool.
+  SPECS_PROXY = '1'
 
+# ── ONE process: the serving app. Data pulls DO NOT run here (they OOM-crashed the serving worker, and
+# every deploy killed in-flight crawls). Pulls now run as EPHEMERAL one-shot Fly Machines — `flyctl machine
+# run --rm <image> --command "bash /app/unifyd/run_ephemeral.sh <source>"` — each isolated on its own machine
+# that self-destroys when done. That gives: (1) a crashing/OOMing pull can't touch another pull, (2) adding a
+# source never disturbs a running one, (3) app deploys leave running crawls alone (ephemeral machines aren't a
+# process group, so `fly deploy` doesn't reconcile/restart them). The image still ships Chrome+Xvfb so those
+# ephemeral machines can drive the headful anti-bot sources.
 [http_service]
   internal_port = 8080
   force_https = true
@@ -31,9 +47,8 @@ primary_region = 'iad'
     path = '/api/health'
 
 [[vm]]
-  # 4 vCPU: 1 shared vCPU couldn't run the warehouse footer scans (list_datasets over 170+ Tigris files)
-  # without pegging the CPU and starving request/health threads — the machine crash-looped ("site stuck").
-  # 4 cores give the background DuckDB scans room while the worker keeps serving.
+  # 4 vCPU: the warehouse footer scans (list_datasets over 200+ Tigris files) peg 1 shared vCPU and starve
+  # the request/health threads (the machine crash-looped). 4 cores give the background DuckDB scans room.
   size = 'shared-cpu-4x'
   # 4gb: the master data outgrew 2gb as the warehouse ballooned; DuckDB queries need headroom.
   memory = '4gb'

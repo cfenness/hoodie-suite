@@ -25,8 +25,11 @@ import ttb_cola_scraper as cola   # the scraper you generated
 import abc_fws_scraper as abc      # ABC FWS directional inventory tracker (BigCommerce)
 import specs_scraper as specs      # Spec's directional tracker (Next.js, via Bright Data)
 import binnys_scraper as binnys    # Binny's directional tracker (Algolia feed, no Bright Data)
-import shopify_scraper as shopify  # DTC brands on Shopify (hemp + bev-alc) via public /products.json
-import instacart_scraper as instacart  # store-level Instacart via Bright Data managed dataset
+# shopify_scraper retired → Shopify runs INSIDE the census sweep (off_premise.national_sweep("shopify")),
+# conn 'shopify' routed through the registry. One Shopify code path, not a parallel app-side one.
+# Instacart: the FREE Playwright connector (instacart.Instacart) is the active source — no Bright Data,
+# no proxy (proven landing per instacart-free-verify CI). Imported lazily in instacart_pull so a slim
+# image without the browser lib doesn't break server import. The old BD dataset scraper is archived.
 import analyze                      # data-reader brain behind "Overlay your data"
 import planogram                    # benchmark + shelf-vision + pitch behind the Planogram app
 import hi_analyst                   # the real Claude analyst behind Hoodie Intelligence Q&A
@@ -83,27 +86,28 @@ class _JobLogHandler(logging.Handler):
 _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
-VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
-               "kroger", "walmart", "walmart-api", "target", "doordash", "google"} | set(socrata_outlets.VALID)
+VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
+               "kroger", "walmart", "walmart-api", "target", "doordash", "google",
+               "ubereats", "postmates", "naop", "meijer", "trader-joes"} | set(socrata_outlets.VALID)
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
 
 def _dispatch_pull(conn, body):
-    if conn in _CONN_PULL:                     # unified registry (kroger/walmart/target/doordash/google)
+    # SINGLE SOURCE OF TRUTH: sources the registry owns run THROUGH the registry entrypoint (run_one), never a
+    # hand-maintained *_pull copy — so a fix in source_registry can never be silently bypassed by the app path
+    # (the drift that made "we fixed it 100 times" literally true — see _REGISTRY_CONN / dispatch_guard_test).
+    if conn in _REGISTRY_CONN:
+        return _run_via_registry(conn, body)
+    if conn in _CONN_PULL:                     # legacy hand-wired pulls not yet in the registry (target/doordash/google)
         return _CONN_PULL[conn](body)
     return (cola_pull(body) if conn == "ttb-cola"
-            else abc_pull(body) if conn == "abc-fws"
-            else specs_pull(body) if conn == "specs"
-            else binnys_pull(body) if conn == "binnys"
-            else shopify_pull(body) if conn == "shopify-dtc"
             else instacart_pull(body) if conn == "instacart"
             else places_pull(body) if conn == "orlando-accounts"
             else census_pull(body) if conn == "census-acs"
             else tx_pull(body) if conn == "tx-tabc"
             else il_pull(body) if conn == "il-chicago"
             else ct_pull(body) if conn == "ct-dcp"
-            else total_wine_pull(body) if conn == "total-wine"
             else vtinfo_pull(body) if conn == "vtinfo"
             else ab_inbev_pull(body) if conn == "ab-inbev"
             else socrata_pull(conn, body) if conn in socrata_outlets.VALID
@@ -197,6 +201,39 @@ def _std_run(conn, started, total=0, extracts=None, status="success", warnings=N
             "degraded": status in ("degraded", "partial"), "warnings": warnings or [], "healed": [],
             "extracts": extracts or [], "note": note}
 
+
+# ── ONE dispatch path: app connId -> source_registry id ──────────────────────────────────────────────────────
+# For these, /api/run executes the REGISTRY entrypoint (run_sources.run_one) — the single source of truth the
+# scheduled path already uses — instead of a parallel *_pull function that drifts. This is the fix for scrapers
+# "regressing": a fix in source_registry now applies to the app path automatically and can't be bypassed.
+# ubereats/postmates/naop were previously not runnable through the app at all. Enforced by dispatch_guard_test.
+_REGISTRY_CONN = {"abc-fws": "abc-fws", "specs": "specs", "binnys": "binnys", "walmart": "walmart",
+                  "kroger": "kroger", "total-wine": "total-wine", "ubereats": "ubereats",
+                  "postmates": "postmates", "naop": "naop", "meijer": "meijer", "trader-joes": "trader-joes",
+                  "shopify": "shopify"}
+
+
+def _run_via_registry(conn, body):
+    """Run `conn` through its source_registry entrypoint via run_sources.run_one — the exact code the scheduled
+    path runs (isolated subprocess, creds-gated via `requires`, timeout-bounded, OOM-reported, warehouse-count
+    delta). Adapts run_one's record into the app run-record shape. This is what keeps the app from drifting."""
+    import source_registry as _reg
+    import run_sources as _rs
+    body = body or {}
+    rid = _REGISTRY_CONN[conn]
+    src = next((s for s in _reg.SOURCES if s["id"] == rid), None)
+    if not src:
+        return _std_run(conn, int(time.time() * 1000), status="failed",
+                        warnings=["no source_registry entry '%s'" % rid], trigger=body.get("trigger", "manual"))
+    rec = _rs.run_one(src, log=lambda m: app.logger.info("RUN[%s] %s", conn, m))
+    started = int(rec.get("ts_start", time.time()) * 1000)
+    app_status = {"ok": "success", "no-change": "success"}.get(rec.get("status"), rec.get("status", "failed"))
+    tables = [t.strip() for t in (rec.get("tables") or "").split(",") if t.strip()]
+    rows_after, delta = rec.get("rows_after", 0), rec.get("delta", 0)
+    return _std_run(conn, started, total=rows_after, status=app_status, trigger=body.get("trigger", "manual"),
+                    warnings=([rec["error"]] if rec.get("error") else []),
+                    extracts=[{"id": t, "rows": rows_after, "delta": delta, "status": app_status} for t in tables])
+
 def kroger_pull(body):
     """Kroger Developer API (OAuth2) → kroger_products + kroger_runs. Needs KROGER_CLIENT_ID/SECRET (env or
     body). First-class connector now; the old subprocess path (/api/connector/run) still works too."""
@@ -217,24 +254,24 @@ def kroger_pull(body):
                     extracts=[{"id": "kroger_products", "rows": n, "delta": 0, "status": "success"}])
 
 def walmart_pull(body):
-    """Walmart via Bright Data (discover + product pull) → walmart_products + walmart_runs. HEAVY (BD spend)."""
+    """Walmart via the DIRECT residential-proxy scraper (walmart_direct: IPRoyal residential exit + curl_cffi
+    Chrome-JA3 impersonation, paced rotation) → walmart_products + retail observations. $0 — NO Bright Data,
+    NO official API. This matches the source registry (walmart -> walmart_direct); the old Bright Data path
+    (walmart_scraper) is kept only for the standalone walmart_schedule.sh, not the app run path."""
     started = int(time.time() * 1000); body = body or {}
-    import walmart_scraper as wm
-    wm._load_creds()
-    per = int(body.get("per", 4))
-    queries = [q.strip() for q in (body.get("queries") or ",".join(wm.DEFAULT_QUERIES)).split(",") if q.strip()]
-    urls = wm.discover_urls(queries, per)
-    raw = []
-    for u in urls:
-        try: raw += wm.pull_product(u)
-        except Exception: pass
-    if not raw:
+    import walmart_direct as wd
+    before = _wh_count("walmart_products")
+    terms = [q.strip() for q in (body.get("queries") or "").split(",") if q.strip()] or None
+    n = wd.pull(terms=terms, max_pages=int(body.get("max_pages", 4)),
+                detail_pages=bool(body.get("detail", True)), detail_cap=int(body.get("detail_cap", 600)),
+                log=lambda m: app.logger.info("WALMART %s", m))
+    after = _wh_count("walmart_products")
+    if not n:
         return _std_run("walmart", started, status="degraded", trigger=body.get("trigger", "manual"),
-                        warnings=["no records pulled — Walmart may be blocking, or bdata is not logged in"])
-    wm.run(raw, note=body.get("note", ""))
-    n = _wh_count("walmart_products")
-    return _std_run("walmart", started, total=n, trigger=body.get("trigger", "manual"),
-                    extracts=[{"id": "walmart_products", "rows": n, "delta": 0, "status": "success"}])
+                        warnings=["0 products — PerimeterX may be blocking the residential exit; "
+                                  "check RESI_PROXY_* creds and curl_cffi availability"])
+    return _std_run("walmart", started, total=after, trigger=body.get("trigger", "manual"),
+                    extracts=[{"id": "walmart_products", "rows": after, "delta": after - before, "status": "success"}])
 
 def target_pull(body):
     """Target RedSky (Bright Data) → target_products + target_stores. body.scope=national|local. HEAVY."""
@@ -283,7 +320,9 @@ def walmart_api_pull(body):
     return _std_run("walmart-api", started, total=n, trigger=body.get("trigger", "manual"),
                     extracts=[{"id": "walmart_products", "rows": n, "delta": 0, "status": "success"}])
 
-_CONN_PULL = {"kroger": kroger_pull, "walmart": walmart_pull, "walmart-api": walmart_api_pull,
+# kroger + walmart moved to the registry path (_REGISTRY_CONN); their old *_pull functions are now dead code
+# (kept until a follow-up removes them) and MUST NOT be re-wired here — dispatch_guard_test enforces that.
+_CONN_PULL = {"walmart-api": walmart_api_pull,
               "target": target_pull, "doordash": doordash_pull, "google": google_pull}
 
 # The connector registry — ONE source of truth the Pulls console reads (/api/connectors): what sources exist,
@@ -293,7 +332,7 @@ CONNECTORS_META = [
     {"id": "abc-fws", "label": "ABC Fine Wine & Spirits (FL)", "group": "Retail chain", "runs": "abc_runs", "data": "abc_products"},
     {"id": "specs", "label": "Spec's (TX)", "group": "Retail chain", "runs": "specs_runs", "data": "specs_products"},
     {"id": "binnys", "label": "Binny's (IL)", "group": "Retail chain", "runs": "binnys_runs", "data": "binnys_products"},
-    {"id": "shopify-dtc", "label": "Shopify DTC", "group": "Off-premise", "runs": "shopify_runs", "data": "shopify_products"},
+    {"id": "shopify", "label": "Shopify (census sweep)", "group": "Off-premise", "runs": "shopify_runs", "data": "national_shopify_products"},
     {"id": "instacart", "label": "Instacart", "group": "Aggregator", "runs": None, "data": None},
     {"id": "kroger", "label": "Kroger", "group": "Grocery chain", "runs": "kroger_runs", "data": "kroger_products", "needs_creds": True},
     {"id": "walmart", "label": "Walmart (BD sample)", "group": "Grocery chain", "runs": "walmart_runs", "data": "walmart_products", "heavy": True},
@@ -757,26 +796,47 @@ def binnys_pull(params):
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
     return run
 
-def shopify_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = shopify.pull(
-        sample=params.get("sample"), crawl_all=bool(params.get("all")), limit=params.get("limit"),
-        out=os.path.join(STATE_DIR, "shopify"), state_dir=os.path.join(STATE_DIR, "shopify"),
-        domains=params.get("domains"), log=lambda m: app.logger.info("SHOPIFY %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
 def instacart_pull(params):
+    """FREE Instacart pull — self-hosted Playwright browser drives Instacart's own SearchResultsPlacements
+    GraphQL (no Bright Data, no proxy). Lands per-store product+price into instacart_products +
+    retail_observations via the aggregator base. Instacart is a browser source: this needs Chromium in the
+    image (it ships one) — if the browser can't launch it reports an HONEST failed run, never a 0-row pass."""
     started = int(time.time() * 1000)
-    ds, runs, _ = instacart.pull(out=os.path.join(STATE_DIR, "instacart"),
-        state_dir=os.path.join(STATE_DIR, "instacart"), urls=params.get("urls"),
-        log=lambda m: app.logger.info("INSTACART %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
+    zip_ = str(params.get("zip") or params.get("address") or "10001")
+    queries = params.get("queries") or ["milk", "vodka", "chips", "coffee", "eggs", "water",
+                                        "soda", "bread", "cheese", "beer"]
+    if isinstance(queries, str):
+        queries = [q.strip() for q in queries.split(",") if q.strip()]
+    pages = int(params.get("pages", 2))
+    rows, warnings, status = [], [], "success"
+    try:
+        from instacart import Instacart
+        rows = Instacart().pull(address=zip_, retailers=["grocery"], queries=queries,
+                                per_query_pages=pages, log=lambda m: app.logger.info("INSTACART %s", m))
+        if not rows:
+            status = "degraded"
+            warnings.append("Free browser reached Instacart but landed 0 products (membership wall / zone "
+                            "capture / anti-bot at this IP). It's a browser source — needs Chromium here or "
+                            "the residential executor.")
+    except ImportError as e:
+        status = "failed"
+        warnings.append("Instacart needs Playwright + Chromium (free, no bd) — this image should ship it: %s"
+                        % str(e)[:160])
+    except Exception as e:
+        status = "failed"
+        warnings.append("Instacart free pull failed: %s" % str(e)[:200])
+    if rows:                                          # keep the console preview populated (real data is in the warehouse)
+        header = ["Store", "Product", "Price", "In Stock"]
+        drows = [[r.get("store"), r.get("name"), r.get("price"), r.get("in_stock")] for r in rows]
+        DATASETS.update(_absorb({"instacart_products": {"header": header, "rows": drows[:800],
+                                 "total": len(rows), "stores": len({r.get("store_id") for r in rows})}}))
+        save()
+    finished = int(time.time() * 1000)
+    return {"id": "R-IC%05d" % (started % 100000), "connId": "instacart", "startedAt": started,
+            "finishedAt": finished, "durationMs": finished - started, "status": status,
+            "total": len(rows), "degraded": status == "degraded", "warnings": warnings, "healed": [],
+            "extracts": [{"id": "instacart_products", "rows": len(rows), "delta": len(rows),
+                          "status": status}], "trigger": params.get("trigger", "manual")}
 
 def total_wine_pull(params):
     started = int(time.time() * 1000)
@@ -828,7 +888,7 @@ def ab_inbev_pull(params):
 # ---------------- API ----------------
 @app.get("/api/health")
 def health():
-    return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "census-acs"],
+    return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola", "abc-fws", "specs", "binnys", "shopify", "instacart", "census-acs"],
                    datasets=len(DATASETS), runs=len(RUNS),
                    state=("s3:" + STATE_BUCKET) if STATE_BUCKET else "disk",
                    warehouse=("tigris:" + os.environ.get("BUCKET_NAME", "")) if warehouse.remote() else "local")
@@ -874,7 +934,7 @@ def locator():
 _SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlets",
               "ttb-cola": "TTB — COLA Labels", "abc-fws": "ABC FWS — Inventory",
               "specs": "Spec's — Inventory", "binnys": "Binny's — Inventory",
-              "shopify-dtc": "Hemp + DTC — Shopify", "instacart": "Instacart — Store-level",
+              "shopify": "Shopify — census sweep", "instacart": "Instacart — Store-level",
               "census-acs": "US Census — ACS demographics", "tx-tabc": "Texas TABC — licenses",
               "il-chicago": "Chicago — Liquor Licenses", "ct-dcp": "Connecticut — Liquor (DCP)",
               "ny-sla": "New York — SLA licenses", "co-led": "Colorado — Liquor licenses",
@@ -4250,6 +4310,312 @@ def runs():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Registry pipeline — EXECUTE the canonical source_registry sources IN THE APP.
+#
+# The point (owner, 2026-07-22): data operations should run in the deployed app, which holds the
+# secrets ONCE in its Fly config — not in a re-provisioned sandbox or re-added to CI every time. So
+# these endpoints run run_sources.run_one server-side using THIS process's environment (its secrets,
+# its warehouse creds, its proxy), land to the shared source_runs ledger, and report expected-vs-landed
+# COVERAGE. Behind the OIDC gate like every /api/* route. This is distinct from /api/run (the older
+# connId pull surface); it drives the 31-source canonical registry that run_sources + health use.
+# ─────────────────────────────────────────────────────────────────────────────
+_REG_JOBS = {}
+
+
+@app.get("/api/registry/sources")
+def registry_sources_ep():
+    """The canonical source list + each source's expected-vs-landed coverage + which creds are absent
+    HERE (so you can see what this executor can actually run). Reads the app's own warehouse/ledger."""
+    import source_registry as reg
+    import warehouse
+    try:
+        import coverage as cov
+    except Exception:
+        cov = None
+    def _cost_class(s):
+        # what a source actually needs: 'free' (direct HTTP / API / sitemap — $0), 'free-api-key' (a free
+        # key), or 'anti-bot' (the ONLY class that even tempts a paid proxy — and it should try the free
+        # local-browser / mobile-UA path first).
+        note = (s.get("note") or "").lower()
+        if s["klass"] == "mac" or any(w in note for w in
+                ("perimeterx", "imperva", "incapsula", "datadome", "cloudflare", "waf", "akamai", "forter")):
+            return "anti-bot"
+        return "free-api-key" if s["klass"] == "creds" else "free"
+    out = []
+    for s in reg.SOURCES:
+        try:
+            cv = cov.assess(s) if cov else None
+        except Exception:
+            cv = None
+        out.append({"id": s["id"], "label": s["label"], "klass": s["klass"], "cadence": s.get("cadence"),
+                    "enabled": bool(s.get("enabled")), "tables": s.get("tables"),
+                    "cost_class": _cost_class(s),
+                    "requires": s.get("requires") or [],
+                    "missing_creds": [e for e in (s.get("requires") or []) if not os.environ.get(e)],
+                    "coverage": cv})
+    n_free = sum(1 for x in out if x["cost_class"] != "anti-bot" and x["enabled"])
+    return jsonify(ok=True, count=len(out), free_or_keyed=n_free, remote=warehouse.remote(), sources=out)
+
+
+@app.get("/api/registry/coverage")
+def registry_coverage_ep():
+    """Expected-vs-landed store/item coverage for every source, from the app's coverage_log — the honest
+    'did the last run actually cover the catalog' read that a cumulative row-count can't give."""
+    import source_registry as reg
+    import coverage as cov
+    out = {}
+    for s in reg.SOURCES:
+        try:
+            out[s["id"]] = cov.assess(s)
+        except Exception as e:
+            out[s["id"]] = {"error": str(e)[:120]}
+    return jsonify(ok=True, coverage=out)
+
+
+def _reg_run_job(jid, ids):
+    import run_sources as rs
+    import source_registry as reg
+    job = _REG_JOBS[jid]
+
+    def _log(*a):
+        job["log"].append(" ".join(str(x) for x in a))
+        del job["log"][:-200]
+    for i in ids:
+        s = reg.by_id(i)
+        if not s:
+            continue
+        job["current"] = i
+        try:
+            rec = rs.run_one(s, log=_log)
+            rs._land_runs([rec], log=lambda *a: None)     # shared ledger → health + /api/runs see it
+        except Exception as e:
+            rec = {"source": i, "status": "failed", "error": str(e)[:300]}
+        job["records"].append(rec)
+    job["current"] = None
+    job["status"] = "done"
+    job["finishedAt"] = int(time.time() * 1000)
+
+
+@app.post("/api/registry/run")
+def registry_run_ep():
+    """Run registry source(s) SERVER-SIDE with the app's env/secrets. Body: {id} or {ids:[...]} or
+    {cadence}; {include_mac:true} to include the anti-bot browser sources (default: headless/creds only,
+    since a server without a warmed browser can't run them); {sync:true} to block for a single source
+    (else a background job → poll /api/registry/run/progress?id=)."""
+    import source_registry as reg
+    import run_sources as rs
+    body = request.get_json(silent=True) or {}
+    ids = body.get("ids") or ([body["id"]] if body.get("id") else None)
+    if not ids:
+        cad = body.get("cadence")
+        ok_klass = (lambda k: True) if body.get("include_mac") else (lambda k: k != "mac")
+        ids = [s["id"] for s in reg.SOURCES if s.get("enabled") and ok_klass(s["klass"])
+               and (not cad or s.get("cadence") == cad or cad == "all")]
+    ids = [i for i in ids if reg.by_id(i)]
+    if not ids:
+        return jsonify(ok=False, error="no matching enabled sources"), 400
+    if body.get("sync") and len(ids) == 1:
+        rec = rs.run_one(reg.by_id(ids[0]))
+        rs._land_runs([rec], log=lambda *a: None)
+        return jsonify(ok=True, sync=True, record=rec)
+    jid = "reg-%d" % int(time.time() * 1000)
+    _REG_JOBS[jid] = {"id": jid, "ids": ids, "status": "running", "current": None,
+                      "startedAt": int(time.time() * 1000), "finishedAt": None, "log": [], "records": []}
+    for old in sorted(_REG_JOBS, key=lambda k: _REG_JOBS[k]["startedAt"])[:-50]:
+        _REG_JOBS.pop(old, None)                              # keep the last ~50 jobs
+    threading.Thread(target=_reg_run_job, args=(jid, ids), daemon=True).start()
+    return jsonify(ok=True, jobId=jid, running=ids), 202
+
+
+@app.get("/api/registry/run/progress")
+def registry_run_progress_ep():
+    """Poll a background registry run: status, the source in flight, run records so far (with coverage),
+    and the recent log tail."""
+    jid = (request.args.get("id") or "").strip()
+    job = _REG_JOBS.get(jid)
+    if not job:
+        return jsonify(ok=False, error="unknown job"), 404
+    return jsonify(ok=True, id=job["id"], status=job["status"], current=job["current"],
+                   startedAt=job["startedAt"], finishedAt=job["finishedAt"],
+                   records=job["records"], log=job["log"][-60:])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# In-app SCHEDULER — the app runs due sources on their cadence, itself.
+#
+# So capture doesn't depend on GitHub Actions (which need secrets re-added and were dying mid-run) or a
+# human/CLI trigger: a daemon thread in the single gunicorn worker ticks every SCHEDULER_INTERVAL, asks
+# run_sources which sources are DUE (past their interval_h in the shared ledger), and runs them with the
+# app's own env/secrets — landing to the same ledger + coverage the rest of the pipeline reads. It takes
+# the SAME machine-global file lock run_sources' --due uses, so an in-app tick and a CLI/CI pass dedupe
+# instead of stacking. Default headless/creds only (a server has no warmed browser); SCHEDULER_MAC=1
+# opts the anti-bot browser sources in (only where the image actually has Chrome + a proxy).
+#
+# Env: SCHEDULER=1 auto-starts it at boot; SCHEDULER_INTERVAL (s, default 1800); SCHEDULER_MAC=1.
+# Runtime toggle without redeploy: POST /api/registry/scheduler {enabled, interval_s, run_now}.
+# ─────────────────────────────────────────────────────────────────────────────
+def _truthy(v):
+    return str(v or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+_SCHED = {"enabled": _truthy(os.environ.get("SCHEDULER")),
+          "interval_s": max(60, int(os.environ.get("SCHEDULER_INTERVAL", "1800") or 1800)),
+          "mac": _truthy(os.environ.get("SCHEDULER_MAC")),
+          "thread_started": False, "running": False, "ticks": 0,
+          "last_tick": None, "next_tick": None, "last_due": [], "last_skip": None,
+          "runs": [], "error": None}
+_SCHED_LOCK = threading.Lock()
+
+
+def _sched_tick():
+    """One dispatcher pass: run every DUE source once, land it, record the outcome. No-ops cleanly when
+    nothing is due or another pass holds the machine-global lock."""
+    import run_sources as rs
+    with _SCHED_LOCK:
+        if _SCHED["running"]:
+            return
+        _SCHED["running"] = True
+    lock = None
+    try:
+        lock = rs._acquire_lock()                    # dedupe with any CLI/CI --due pass on this host
+        if not lock:
+            _SCHED["last_skip"] = "lock held by another pass"
+            return
+        try:
+            due = rs.due_sources()
+        except Exception as e:
+            _SCHED["error"] = "due_sources: %s" % str(e)[:160]
+            due = []
+        if not _SCHED["mac"]:
+            due = [s for s in due if s["klass"] != "mac"]
+        _SCHED["last_due"] = [s["id"] for s in due]
+        # COST GUARD: an unattended tick forces per-GB residential OFF (flat ISP pool only) so the
+        # scheduler can never run up a metered proxy tab. Opt in deliberately with SCHEDULER_PAYGO=1.
+        overlay = {} if _truthy(os.environ.get("SCHEDULER_PAYGO")) else {"RESI_ISP_ONLY": "1"}
+        for s in due:
+            try:
+                rec = rs.run_one(s, extra_env=overlay)
+                rs._land_runs([rec], log=lambda *a: None)
+                _SCHED["runs"].insert(0, {"source": rec.get("source"), "status": rec.get("status"),
+                                          "delta": rec.get("delta"), "cov_items": rec.get("cov_items"),
+                                          "cov_stores": rec.get("cov_stores"), "at": int(time.time())})
+                del _SCHED["runs"][80:]
+            except Exception as e:
+                _SCHED["error"] = "%s: %s" % (s["id"], str(e)[:160])
+        _SCHED["ticks"] += 1
+        _SCHED["last_tick"] = int(time.time())
+    finally:
+        if lock:
+            try:
+                lock.close()                          # release the machine-global lock
+            except Exception:
+                pass
+        _SCHED["running"] = False
+
+
+def _scheduler_loop():
+    while True:
+        try:
+            if _SCHED["enabled"]:
+                _sched_tick()
+        except Exception as e:
+            _SCHED["error"] = "loop: %s" % str(e)[:160]
+        _SCHED["next_tick"] = int(time.time()) + _SCHED["interval_s"]
+        time.sleep(_SCHED["interval_s"])
+
+
+def _ensure_scheduler_thread():
+    """Start the single scheduler daemon (idempotent). Started at import when SCHEDULER=1, or on first
+    runtime enable via the API — so you can turn capture on without a redeploy."""
+    with _SCHED_LOCK:
+        if _SCHED["thread_started"]:
+            return
+        _SCHED["thread_started"] = True
+    threading.Thread(target=_scheduler_loop, name="hoodie-scheduler", daemon=True).start()
+
+
+@app.get("/api/registry/scheduler")
+def registry_scheduler_status_ep():
+    import run_sources as rs
+    try:
+        due = [s["id"] for s in rs.due_sources()]
+    except Exception:
+        due = []
+    try:
+        import resi
+        proxy = {"usage": resi.usage(), "scheduler_paygo": _truthy(os.environ.get("SCHEDULER_PAYGO"))}
+    except Exception:
+        proxy = None
+    return jsonify(ok=True, enabled=_SCHED["enabled"], interval_s=_SCHED["interval_s"], mac=_SCHED["mac"],
+                   running=_SCHED["running"], ticks=_SCHED["ticks"], last_tick=_SCHED["last_tick"],
+                   next_tick=_SCHED["next_tick"], thread_started=_SCHED["thread_started"],
+                   due_now=due, last_due=_SCHED["last_due"], last_skip=_SCHED["last_skip"],
+                   proxy=proxy, recent=_SCHED["runs"][:20], error=_SCHED["error"])
+
+
+@app.get("/api/registry/proxy")
+def registry_proxy_status_ep():
+    """Residential-proxy COST view: this month's per-GB session usage + the guard state (flat ISP pool
+    size, isp_only, monthly cap, whether per-GB is currently allowed). The ISP pool bills flat; only the
+    per-GB tier runs up a tab, and this is where you see/limit it."""
+    import resi
+    return jsonify(ok=True, usage=resi.usage(),
+                   env={"FETCH_POLICY": resi.fetch_policy(), "RESI_ISP_ONLY": resi.isp_only(),
+                        "RESI_MONTHLY_MAX_SESSIONS": resi.monthly_cap(),
+                        "SCHEDULER_PAYGO": _truthy(os.environ.get("SCHEDULER_PAYGO"))})
+
+
+@app.post("/api/registry/proxy")
+def registry_proxy_control_ep():
+    """Set the cost dial at runtime (in-memory; the env vars are the durable default). Body:
+    {policy:'free'|'flat'|'paid', isp_only:bool, max_sessions:int, reset:bool}. policy='free' spends
+    nothing (direct/browser only); 'flat' adds the fixed ISP pool; 'paid' opts into the per-GB tier."""
+    import resi
+    b = request.get_json(silent=True) or {}
+    if b.get("policy") in ("free", "flat", "paid"):
+        os.environ["FETCH_POLICY"] = b["policy"]
+        os.environ.pop("FETCH_FREE_ONLY", None)
+    if "isp_only" in b:
+        os.environ["RESI_ISP_ONLY"] = "1" if b["isp_only"] else "0"
+    if "max_sessions" in b:
+        try:
+            os.environ["RESI_MONTHLY_MAX_SESSIONS"] = str(max(0, int(b["max_sessions"])))
+        except (ValueError, TypeError):
+            pass
+    if b.get("reset"):
+        resi.reset_month()
+    return jsonify(ok=True, usage=resi.usage(),
+                   env={"FETCH_POLICY": resi.fetch_policy(), "RESI_ISP_ONLY": resi.isp_only(),
+                        "RESI_MONTHLY_MAX_SESSIONS": resi.monthly_cap()})
+
+
+@app.post("/api/registry/scheduler")
+def registry_scheduler_control_ep():
+    """Toggle/adjust the scheduler at runtime (in-memory; SCHEDULER env is the durable default). Body:
+    {enabled:bool, interval_s:int, mac:bool, run_now:bool}. run_now fires one tick immediately."""
+    b = request.get_json(silent=True) or {}
+    if "enabled" in b:
+        _SCHED["enabled"] = bool(b["enabled"])
+    if "mac" in b:
+        _SCHED["mac"] = bool(b["mac"])
+    if "interval_s" in b:
+        try:
+            _SCHED["interval_s"] = max(60, int(b["interval_s"]))
+        except (ValueError, TypeError):
+            pass
+    if _SCHED["enabled"]:
+        _ensure_scheduler_thread()
+    if b.get("run_now"):
+        threading.Thread(target=_sched_tick, name="hoodie-scheduler-kick", daemon=True).start()
+    return jsonify(ok=True, enabled=_SCHED["enabled"], interval_s=_SCHED["interval_s"], mac=_SCHED["mac"],
+                   thread_started=_SCHED["thread_started"], kicked=bool(b.get("run_now")))
+
+
+if _SCHED["enabled"]:                                 # auto-start under gunicorn when SCHEDULER=1
+    _ensure_scheduler_thread()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Service desk — data-quality reports (raised from the suite, tracked in the CRM)
 # ─────────────────────────────────────────────────────────────────────────────
 _SERVICE_STATES = ("open", "acknowledged", "reported", "resolved")
@@ -4944,38 +5310,62 @@ def refill_xlsx_ep():
     except Exception:
         data_rows = []
     try:
-        wb = openpyxl.load_workbook(io.BytesIO(f.read()))          # writable → preserves original formatting
-        ws = wb[wb.sheetnames[0]]
-        if 0 <= qty_col:
-            qcol = qty_col + 1                                     # land in the file's own column (header stays)
-            # Phantom-order guard: a pre-filled landing column (par/suggested quantities, or a
-            # re-uploaded prior order) must not survive as silent order lines the buyer never sees.
-            # Clear LITERAL values on every data row not ordered; leave formulas alone — they
-            # compute from their own inputs (e.g. =SUM(LOC1:LOC4)) and evaluate 0 when empty.
-            for r0 in data_rows:
-                try:
-                    r0 = int(r0)
-                except (TypeError, ValueError):
-                    continue
-                if str(r0) in orders:
-                    continue
-                cell = ws.cell(row=r0 + 1, column=qcol)
-                if cell.data_type != "f" and cell.value not in (None, ""):
-                    cell.value = None
-        else:
-            qcol = ws.max_column + 1                               # append the order column after the used range
-            ws.cell(row=header_row + 1, column=qcol, value=label)  # header at its physical (1-based) row
-        for k, v in orders.items():
+        orders_by_col = json.loads(request.form.get("orders_by_col") or "null")   # {phys_col: {phys_row: qty}}
+    except Exception:
+        orders_by_col = None
+
+    def _fill_col(ws, qcol, col_orders, clear_rows):
+        # Phantom-order guard: a pre-filled landing column (par/suggested quantities, or a
+        # re-uploaded prior order) must not survive as silent order lines the buyer never sees.
+        # Clear LITERAL values on every data row not ordered; leave formulas alone — they
+        # compute from their own inputs (e.g. =SUM(LOC1:LOC4)) and evaluate 0 when empty.
+        for r0 in clear_rows:
+            try:
+                r0 = int(r0)
+            except (TypeError, ValueError):
+                continue
+            if str(r0) in col_orders:
+                continue
+            cell = ws.cell(row=r0 + 1, column=qcol)
+            if cell.data_type != "f" and cell.value not in (None, ""):
+                cell.value = None
+        for k, v in col_orders.items():
             if v in (None, ""):
                 continue
-            if qty_col < 0 and v in (0, "0"):
-                continue                                           # append mode: blank already means no order
             try:
                 r0 = int(k)
                 q = int(v) if str(v).strip().lstrip("-").isdigit() else v
                 ws.cell(row=r0 + 1, column=qcol, value=q)
             except Exception:
                 pass
+
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(f.read()))          # writable → preserves original formatting
+        ws = wb[wb.sheetnames[0]]
+        if isinstance(orders_by_col, dict) and orders_by_col:
+            # multi-column landing: per-store order columns (Dispensary 1..N / LOC1..4 / MED·AU pairs),
+            # each written into its own physical column so the file's own totals compute per store
+            for cs, col_orders in orders_by_col.items():
+                try:
+                    qcol = int(cs) + 1
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(col_orders, dict):
+                    _fill_col(ws, qcol, col_orders, data_rows)
+        elif 0 <= qty_col:
+            _fill_col(ws, qty_col + 1, orders, data_rows)          # land in the file's own column (header stays)
+        else:
+            qcol = ws.max_column + 1                               # append the order column after the used range
+            ws.cell(row=header_row + 1, column=qcol, value=label)  # header at its physical (1-based) row
+            for k, v in orders.items():
+                if v in (None, "") or v in (0, "0"):
+                    continue                                       # append mode: blank already means no order
+                try:
+                    r0 = int(k)
+                    q = int(v) if str(v).strip().lstrip("-").isdigit() else v
+                    ws.cell(row=r0 + 1, column=qcol, value=q)
+                except Exception:
+                    pass
         out = io.BytesIO(); wb.save(out); out.seek(0)
     except Exception as e:
         return jsonify(error="refill-failed", detail=str(e)[:200]), 400
@@ -5843,12 +6233,21 @@ def prism_shortcut():
 
 @app.get("/hub")
 def hub_shortcut():
-    return _suite_send("hub.html")                    # the four-bucket IA shell — parallel to index.html (/)
+    return _suite_send("hub.html")                    # the four-bucket hub (also the homepage below)
+
+@app.get("/home")
+def home_console():
+    return _suite_send("hub.html")                    # same shell, "console" mode (AI landing + app-launcher + fav dock) — hub.html branches on pathname /home
+
+@app.get("/classic")
+@app.get("/launcher")
+def classic_launcher():
+    return _suite_send("index.html")                 # the previous flat-grid launcher — kept, one-line reversible
 
 @app.get("/")
 def index():
     if SUITE_ROOT:
-        return _suite_send("index.html")             # the launcher, not the MDM console
+        return _suite_send("hub.html")               # the four-bucket hub is now the homepage (was index.html; still at /classic)
     return send_file(HTML_PATH)
 
 @app.get("/<path:relpath>")

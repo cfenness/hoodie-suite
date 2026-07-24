@@ -89,7 +89,8 @@ Three roles, each on the cheapest hardware that does the job:
   adopt only when (a) request-path queries need cross-grain joins partition pruning can't
   serve, or (b) >2–3 concurrent heavy readers, or (c) worker builds exceed ~1h despite
   partitioning. Until then the Parquet layout above is deliberately Snowflake-loadable
-  (same partitioning maps to clustering keys), so migration is a load, not a rewrite.
+  (same partitioning maps to clustering keys), so migration is a load, not a rewrite —
+  that load is staged in `snowflake/` (registry-driven DDL + `COPY`; the seed to Unifyd).
 
 ---
 
