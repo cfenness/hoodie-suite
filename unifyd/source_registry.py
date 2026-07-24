@@ -117,9 +117,16 @@ SOURCES = [
          tables=["ca_outlets"], klass="mac", cadence="weekly", enabled=True, cost_class="proxy", note="WAF — browser headers"),
     dict(id="control-states", label="Control states (OR/UT/NC/MT/ME/AL/BC/MontMD)", code="import control_state as m; m.build_all()",
          tables=["or_pricing", "ut_pricing", "mont_sales"], klass="headless", cadence="weekly", enabled=True, note="per-state fetchers"),
-    dict(id="census", label="US Census ACS", code="import census_ref as m; m.build()",
+    # TWO distinct Census sources (NOT duplicates): `census` = supply-side business patterns (CBP/NES/PEP)
+    # by NAICS -> census_reference; `census-acs` = demand-side ACS demographics by county ->
+    # census_demographic/economic/housing. Different Census APIs, different tables — keep them separate.
+    dict(id="census", label="US Census — business patterns (CBP/NES/PEP)", code="import census_ref as m; m.build()",
          tables=["census_reference"], klass="creds", cadence="weekly", enabled=True,
-         requires=["CENSUS_API_KEY"], note="Census API (census_ref.build) — free key, re-derivable"),
+         requires=["CENSUS_API_KEY"], note="supply-side reference (census_ref.build) — CBP/Nonemployer/PEP by NAICS; free key, re-derivable"),
+    dict(id="census-acs", label="US Census — ACS demographics", code="import census as m; m.build()",
+         tables=["census_demographic", "census_economic", "census_housing"], klass="creds", cadence="weekly",
+         enabled=True, requires=["CENSUS_API_KEY"],
+         note="demand-side ACS5 by county (census.build) — population/income/housing packs; free key, re-derivable"),
     dict(id="tax-rates", label="Bev-alc tax RATES (TTB + state excise)", code="import tax_rates as m; m.build()",
          tables=["tax_rates"], klass="headless", cadence="weekly", enabled=True,
          note="federal CBMA schedule (encoded, TTB) + 51-jurisdiction state excise seed (Tax Foundation Jan 2026); "

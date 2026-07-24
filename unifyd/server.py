@@ -104,7 +104,6 @@ def _dispatch_pull(conn, body):
     return (cola_pull(body) if conn == "ttb-cola"
             else instacart_pull(body) if conn == "instacart"
             else places_pull(body) if conn == "orlando-accounts"
-            else census_pull(body) if conn == "census-acs"
             else tx_pull(body) if conn == "tx-tabc"
             else il_pull(body) if conn == "il-chicago"
             else ct_pull(body) if conn == "ct-dcp"
@@ -157,26 +156,11 @@ def places_pull(body):
     """Run the Orlando on-premise-accounts pull (FL ABT -> normalize -> filter -> Parquet)."""
     return places.pull(county=(body or {}).get("county", places.ORLANDO_COUNTY))
 
-def census_pull(body):
-    """Pull US Census ACS demographics by county → lands as the `census_acs` dataset (joinable
-    to outlets via county FIPS). Needs the free CENSUS_API_KEY; degrades with a clear warning
-    otherwise. `state` scopes it (FIPS, or 'us' for all counties); default = FL/TX/IL."""
-    started = int(time.time() * 1000)
-    # Honest creds gate (standing rule): a source gated on a credential we don't have reports
-    # `no-creds` (skipped), NOT `failed`. Without the key every fetch is refused and census.pull
-    # returns 0 counties → status "failed", which the health digest flags as a critical run-failed
-    # even though nothing is broken — it's just un-credentialed on this host.
-    if not os.environ.get("CENSUS_API_KEY", "").strip():
-        return _std_run("census-acs", started, status="no-creds",
-                        trigger=(body or {}).get("trigger", "manual"),
-                        warnings=["Census API key required — set CENSUS_API_KEY "
-                                  "(free at census.gov/developers/)"])
-    ds, runs, _ = census.pull(state=(body or {}).get("state"),
-                              log=lambda m: app.logger.info("CENSUS %s", m))
-    DATASETS.update(_absorb(ds)); save()
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = (body or {}).get("trigger", "manual")
-    return run
+# census-acs now runs through the REGISTRY path (_REGISTRY_CONN -> run_sources.run_one -> census.build()),
+# so it PERSISTS to the warehouse (census_demographic/economic/housing) with the registry's uniform
+# creds-gating (requires=[CENSUS_API_KEY] -> honest no-creds skip). The old census_pull only refreshed the
+# in-memory console preview and never landed — that gap is closed. NOTE: `census` (census_ref, business
+# patterns) and `census-acs` (ACS demographics) are DISTINCT sources, not a drift to merge.
 
 # ── Unified connector wrappers (kroger / walmart / target / doordash / google) ─────────────────────────────
 # These make five formerly out-of-band scrapers FIRST-CLASS connectors on the same /api/run path as every
@@ -208,7 +192,8 @@ def _std_run(conn, started, total=0, extracts=None, status="success", warnings=N
 _REGISTRY_CONN = {"abc-fws": "abc-fws", "specs": "specs", "binnys": "binnys", "walmart": "walmart",
                   "kroger": "kroger", "total-wine": "total-wine", "ubereats": "ubereats",
                   "postmates": "postmates", "naop": "naop", "meijer": "meijer", "trader-joes": "trader-joes",
-                  "shopify": "shopify", "vtinfo": "vtinfo", "ab-inbev": "ab-inbev"}
+                  "shopify": "shopify", "vtinfo": "vtinfo", "ab-inbev": "ab-inbev",
+                  "census-acs": "census-acs"}
 
 
 def _run_via_registry(conn, body):
@@ -339,7 +324,7 @@ CONNECTORS_META = [
     {"id": "doordash", "label": "DoorDash (market sweep)", "group": "Aggregator", "runs": None, "data": "orlando_merchants", "heavy": True, "toggle": True},
     {"id": "google", "label": "Google Maps (coverage)", "group": "Reference", "runs": None, "data": "orlando_outlet_hours", "heavy": True, "toggle": True},
     {"id": "orlando-accounts", "label": "Orlando on-premise", "group": "Market", "runs": None, "data": "orlando_accounts"},
-    {"id": "census-acs", "label": "US Census ACS", "group": "Reference", "runs": None, "data": "census_reference"},
+    {"id": "census-acs", "label": "US Census — ACS demographics", "group": "Reference", "runs": None, "data": "census_demographic"},
     {"id": "tx-tabc", "label": "Texas TABC", "group": "State", "runs": None, "data": "tx_outlets"},
     {"id": "il-chicago", "label": "Chicago", "group": "State", "runs": None, "data": "il_outlets"},
     {"id": "ct-dcp", "label": "Connecticut", "group": "State", "runs": None, "data": "ct_outlets"},

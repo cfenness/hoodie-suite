@@ -37,8 +37,6 @@ APP_ONLY_CONN = {
     "ttb-cola":         "live COLA runner; registry 'ttb' is the disabled weekly backfill (different id)",
     "instacart":        "parked recon, no registry entry (not reliably landing)",
     "orlando-accounts": "FL ABT on-premise accounts (places.py), no registry entry",
-    "census-acs":       "ACS demographics (census.py -> census_acs); registry 'census' is census_ref -> "
-                        "census_reference, a DIFFERENT dataset — reconcile before routing via the registry",
     "tx-tabc":          "TX TABC license portal (Socrata), no registry entry",
     "il-chicago":       "Chicago license portal (Socrata), no registry entry",
     "ct-dcp":           "CT DCP license portal (Socrata), no registry entry",
