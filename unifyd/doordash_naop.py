@@ -54,8 +54,31 @@ def _restaurant_name(html_text):
     return _html.unescape(t).split(" - ")[0].replace("Order ", "").strip()[:60]
 
 
-def run(stores=None, log=print):
-    stores = stores or DEFAULT_STORES
+def _due_stores(limit, log=print):
+    """The next batch of DoorDash store-ids to menu-fetch, drawn from the doordash_stores UNIVERSE (harvested
+    $0 by doordash_sitemap) minus the ones we've already captured (in naop_accounts). Each run advances
+    national on-premise coverage a bounded chunk; accumulate over runs → full. Falls back to the seed store
+    if the universe hasn't been harvested yet."""
+    try:
+        done = {str(r["store"]) for r in warehouse.query("naop_accounts", "SELECT DISTINCT store FROM t")}
+    except Exception:
+        done = set()
+    try:
+        universe = warehouse.query("doordash_stores",
+                                   "SELECT store_id FROM t WHERE store_id IS NOT NULL LIMIT 300000")
+    except Exception:
+        universe = []
+    todo = [str(r["store_id"]) for r in universe if str(r["store_id"]) not in done]
+    if not todo:
+        log("  [naop] doordash_stores empty/all-done — falling back to seed store")
+        return list(DEFAULT_STORES)
+    log("  [naop] universe=%d done=%d taking=%d" % (len(universe), len(done), min(limit, len(todo))))
+    return todo[:limit]
+
+
+def run(stores=None, limit=None, log=print):
+    limit = limit or int(os.environ.get("NAOP_LIMIT", "60"))     # menu pages are ~30s each through the ISP pool
+    stores = stores or _due_stores(limit, log=log)
     key = dd._api_key()
     run_id = "naop-" + time.strftime("%Y%m%d-%H%M%S")
     rows, accounts, unsure = [], [], []
