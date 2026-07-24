@@ -73,7 +73,7 @@ _SOURCE_DEFS = [
     (("cityhive",),        "cityhive",    "City Hive network",         "off-premise"),
     (("offprem",),         "offprem",     "Off-premise sweep",         "off-premise"),
     (("bevalc_chains", "bev_alc_chains"), "chains-catalog", "Chain reachability catalog", "reference"),
-    (("shopify",),         "shopify",     "Shopify DTC",               "off-premise"),
+    (("shopify", "national_shopify"), "shopify", "Shopify (census sweep)", "off-premise"),
     (("bottlecapps", "national_bottlecapps"), "bottlecapps", "Bottlecapps network", "off-premise"),
     (("bbg",),             "bbg",         "BBG e-commerce",            "off-premise"),
     (("winebow",),         "winebow",     "Winebow (distributor)",     "distributor"),
