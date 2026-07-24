@@ -303,3 +303,24 @@ sees the hard tail:
   its successor path; do not grow the Python loop toward 200M.
 - **Performance targets (scoreboard rows):** cold full re-master ≤ one weekend on one worker;
   daily incremental master cycle ≤ 10 min; both measured, not asserted.
+
+### 10c. Paid levers are pre-engineered, not forbidden (posture, 2026-07-24)
+
+Free-first is the operating posture for collection and current volumes — **not an ideology at
+scale**. At the trillion tier, paid DB/server levers are assumed available, priced into Hoodie's
+platform economics, and — the load-bearing part — **already seamed**, so pulling one is a config
+change or a load, never a re-architecture:
+
+- **Snowflake:** the full warehouse load is generated, staged SQL (`snowflake/build_snowflake_sql.py`
+  — RAW landing via INFER_SCHEMA so scraper drift flows through, the typed MASTER star, MART views;
+  `--live` resolves bucketed v2 tables through their manifests). The §2 promise ("migration is a
+  load, not a rewrite") is now built, not aspirational.
+- **Server side:** the worker rate is already an env in the cost ledger (`COST_WORKER_USD_PER_HR`);
+  adopting a paid 16–32 vCPU worker — or Snowflake warehouse-seconds — changes a *rate*, and the
+  scoreboard keeps pricing it honestly.
+
+So the decision gates in §2/§10a now read as **timing triggers with pre-built exits**: they decide
+*when* a lever gets pulled (per-period increment > ~6h; request-path joins beyond pruning;
+concurrency), not *whether* spending is allowed. The cost ledger's job is unchanged — keep the bill
+a number on a dashboard — but at SipSource-raw scale that number is expected to include paid DB and
+compute, and the architecture was built so that day is boring.
