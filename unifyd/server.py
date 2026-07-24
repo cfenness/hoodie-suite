@@ -25,7 +25,8 @@ import ttb_cola_scraper as cola   # the scraper you generated
 import abc_fws_scraper as abc      # ABC FWS directional inventory tracker (BigCommerce)
 import specs_scraper as specs      # Spec's directional tracker (Next.js, via Bright Data)
 import binnys_scraper as binnys    # Binny's directional tracker (Algolia feed, no Bright Data)
-import shopify_scraper as shopify  # DTC brands on Shopify (hemp + bev-alc) via public /products.json
+# shopify_scraper retired → Shopify runs INSIDE the census sweep (off_premise.national_sweep("shopify")),
+# conn 'shopify' routed through the registry. One Shopify code path, not a parallel app-side one.
 # Instacart: the FREE Playwright connector (instacart.Instacart) is the active source — no Bright Data,
 # no proxy (proven landing per instacart-free-verify CI). Imported lazily in instacart_pull so a slim
 # image without the browser lib doesn't break server import. The old BD dataset scraper is archived.
@@ -85,7 +86,7 @@ class _JobLogHandler(logging.Handler):
 _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
-VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
+VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
                "kroger", "walmart", "walmart-api", "target", "doordash", "google",
                "ubereats", "postmates", "naop", "meijer", "trader-joes"} | set(socrata_outlets.VALID)
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
@@ -101,7 +102,6 @@ def _dispatch_pull(conn, body):
     if conn in _CONN_PULL:                     # legacy hand-wired pulls not yet in the registry (target/doordash/google)
         return _CONN_PULL[conn](body)
     return (cola_pull(body) if conn == "ttb-cola"
-            else shopify_pull(body) if conn == "shopify-dtc"
             else instacart_pull(body) if conn == "instacart"
             else places_pull(body) if conn == "orlando-accounts"
             else census_pull(body) if conn == "census-acs"
@@ -209,7 +209,8 @@ def _std_run(conn, started, total=0, extracts=None, status="success", warnings=N
 # ubereats/postmates/naop were previously not runnable through the app at all. Enforced by dispatch_guard_test.
 _REGISTRY_CONN = {"abc-fws": "abc-fws", "specs": "specs", "binnys": "binnys", "walmart": "walmart",
                   "kroger": "kroger", "total-wine": "total-wine", "ubereats": "ubereats",
-                  "postmates": "postmates", "naop": "naop", "meijer": "meijer", "trader-joes": "trader-joes"}
+                  "postmates": "postmates", "naop": "naop", "meijer": "meijer", "trader-joes": "trader-joes",
+                  "shopify": "shopify"}
 
 
 def _run_via_registry(conn, body):
@@ -331,7 +332,7 @@ CONNECTORS_META = [
     {"id": "abc-fws", "label": "ABC Fine Wine & Spirits (FL)", "group": "Retail chain", "runs": "abc_runs", "data": "abc_products"},
     {"id": "specs", "label": "Spec's (TX)", "group": "Retail chain", "runs": "specs_runs", "data": "specs_products"},
     {"id": "binnys", "label": "Binny's (IL)", "group": "Retail chain", "runs": "binnys_runs", "data": "binnys_products"},
-    {"id": "shopify-dtc", "label": "Shopify DTC", "group": "Off-premise", "runs": "shopify_runs", "data": "shopify_products"},
+    {"id": "shopify", "label": "Shopify (census sweep)", "group": "Off-premise", "runs": "shopify_runs", "data": "national_shopify_products"},
     {"id": "instacart", "label": "Instacart", "group": "Aggregator", "runs": None, "data": None},
     {"id": "kroger", "label": "Kroger", "group": "Grocery chain", "runs": "kroger_runs", "data": "kroger_products", "needs_creds": True},
     {"id": "walmart", "label": "Walmart (BD sample)", "group": "Grocery chain", "runs": "walmart_runs", "data": "walmart_products", "heavy": True},
@@ -795,17 +796,6 @@ def binnys_pull(params):
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
     return run
 
-def shopify_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = shopify.pull(
-        sample=params.get("sample"), crawl_all=bool(params.get("all")), limit=params.get("limit"),
-        out=os.path.join(STATE_DIR, "shopify"), state_dir=os.path.join(STATE_DIR, "shopify"),
-        domains=params.get("domains"), log=lambda m: app.logger.info("SHOPIFY %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
 def instacart_pull(params):
     """FREE Instacart pull — self-hosted Playwright browser drives Instacart's own SearchResultsPlacements
     GraphQL (no Bright Data, no proxy). Lands per-store product+price into instacart_products +
@@ -898,7 +888,7 @@ def ab_inbev_pull(params):
 # ---------------- API ----------------
 @app.get("/api/health")
 def health():
-    return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "census-acs"],
+    return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola", "abc-fws", "specs", "binnys", "shopify", "instacart", "census-acs"],
                    datasets=len(DATASETS), runs=len(RUNS),
                    state=("s3:" + STATE_BUCKET) if STATE_BUCKET else "disk",
                    warehouse=("tigris:" + os.environ.get("BUCKET_NAME", "")) if warehouse.remote() else "local")
@@ -944,7 +934,7 @@ def locator():
 _SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlets",
               "ttb-cola": "TTB — COLA Labels", "abc-fws": "ABC FWS — Inventory",
               "specs": "Spec's — Inventory", "binnys": "Binny's — Inventory",
-              "shopify-dtc": "Hemp + DTC — Shopify", "instacart": "Instacart — Store-level",
+              "shopify": "Shopify — census sweep", "instacart": "Instacart — Store-level",
               "census-acs": "US Census — ACS demographics", "tx-tabc": "Texas TABC — licenses",
               "il-chicago": "Chicago — Liquor Licenses", "ct-dcp": "Connecticut — Liquor (DCP)",
               "ny-sla": "New York — SLA licenses", "co-led": "Colorado — Liquor licenses",

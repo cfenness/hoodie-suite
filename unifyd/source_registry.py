@@ -97,6 +97,9 @@ SOURCES = [
               "markets=sorted(set(re.sub(r'_offprem_census$','',d['name']) for d in warehouse.list_datasets() if d['name'].endswith('_offprem_census')));"
               "[m.run_census(market=x, platforms=('Shopify','WooCommerce','Wix','Squarespace')) for x in markets]",
          tables=["offprem_products"], klass="headless", cadence="daily", enabled=True, note="22 markets, no-BD"),
+    dict(id="shopify", label="Shopify (national sweep)", code="import off_premise as m; m.national_sweep('shopify')",
+         tables=["national_shopify_products"], klass="headless", cadence="weekly", enabled=True,
+         note="census sweep's Shopify pass — SHOPIFY_SEED via open /products.json ($0); OFFPREM_SERP=1 adds BD SERP discovery. Replaced standalone shopify_scraper (archived)"),
     dict(id="bottlecapps", label="Bottlecapps network", code="import bottlecapps as m; m.national()",
          tables=["bottlecapps_products"], klass="mac", cadence="daily", enabled=True, priority=62, note="DataDome — patchright"),
     dict(id="cityhive", label="City Hive network", code="import cityhive as m; m.national(max_stores=12)",
