@@ -130,10 +130,15 @@ def run(stores=None, limit=None, log=print):
         for r in new_rows:
             idx[keyf(r)] = r
         return list(idx.values())
+    # Key by STORE (the DoorDash store id = the physical outlet), NOT by account NAME — a chain has many
+    # locations (5 Total Wines, 100 Applebee's) and name-keying collapsed them to one row, so only ONE of a
+    # chain's store-ids ever got recorded 'done'. That made the batched sweep re-fetch every other chain
+    # location forever, never advancing past chains. Per-location is also the right on-premise grain (price is
+    # delivery-inflated and varies by store). Beverages keyed (store, name); accounts keyed store.
     if rows:
-        warehouse.write_parquet("naop_beverages", _merge("naop_beverages", rows, lambda r: (r.get("account"), r.get("name"))))
+        warehouse.write_parquet("naop_beverages", _merge("naop_beverages", rows, lambda r: (r.get("store"), r.get("name"))))
     if accounts:
-        warehouse.write_parquet("naop_accounts", _merge("naop_accounts", accounts, lambda r: r.get("account")))
+        warehouse.write_parquet("naop_accounts", _merge("naop_accounts", accounts, lambda r: r.get("store")))
         log("[naop] DONE %d beverages · %d accounts (%d serve alcohol) -> naop_beverages / naop_accounts"
             % (len(rows), len(accounts), sum(1 for a in accounts if a["serves_alcohol"])))
     return len(rows)
