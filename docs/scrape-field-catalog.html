@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoodie Suite — Scrape Field Catalog</title>
+<style>
+:root {
+  --ink:#1a1f2b; --ink2:#4a5568; --ink3:#6b7688; --paper:#ffffff; --panel:#f6f8fb;
+  --line:#e3e8f0; --line2:#eef2f7; --accent:#4E79A7; --accent-d:#3a5f88;
+  --good:#2f7d54; --good-bg:#e7f5ed; --warn:#9a6a00; --warn-bg:#fdf3df;
+  --rep:#7a5cc0; --rep-bg:#f0ebfb; --real:#2f7d54; --real-bg:#e7f5ed;
+  --mono:"SF Mono",ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink:#e8ecf3; --ink2:#b3bdcc; --ink3:#8a93a3; --paper:#12151c; --panel:#181c25;
+    --line:#2a3040; --line2:#222836; --accent:#7BA7D9; --accent-d:#9dc0e8;
+    --good:#5fcf8f; --good-bg:#16281e; --warn:#e0b45f; --warn-bg:#2a2412;
+    --rep:#b39cf0; --rep-bg:#221a33; --real:#5fcf8f; --real-bg:#16281e;
+  }
+}
+* { box-sizing:border-box; }
+html { scroll-behavior:smooth; scroll-padding-top:64px; }
+body { margin:0; font-family:var(--sans); color:var(--ink); background:var(--paper);
+  line-height:1.55; -webkit-font-smoothing:antialiased; }
+.wrap { max-width:1080px; margin:0 auto; padding:0 22px 80px; }
+a { color:var(--accent); text-decoration:none; }
+a:hover { text-decoration:underline; }
+code { font-family:var(--mono); font-size:.88em; background:var(--panel); border:1px solid var(--line2);
+  padding:.05em .38em; border-radius:5px; color:var(--ink); word-break:break-word; }
+h1 { font-size:1.9rem; margin:.2em 0 .1em; letter-spacing:-.02em; }
+h2 { font-size:1.5rem; margin:0; letter-spacing:-.02em; }
+h3 { font-size:1.02rem; margin:1.7em 0 .5em; color:var(--accent-d); letter-spacing:-.01em; }
+/* header */
+header.top { background:linear-gradient(180deg,var(--panel),var(--paper)); border-bottom:1px solid var(--line);
+  padding:34px 22px 26px; }
+header.top .wrap { padding-bottom:0; }
+.eyebrow { font-family:var(--mono); font-size:.72rem; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--accent); font-weight:600; }
+.sub { color:var(--ink2); font-size:1.02rem; max-width:70ch; }
+.meta { margin-top:14px; font-size:.82rem; color:var(--ink3); display:flex; gap:18px; flex-wrap:wrap; }
+.meta b { color:var(--ink2); font-weight:600; }
+/* sticky nav */
+nav.jump { position:sticky; top:0; z-index:20; background:color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
+nav.jump .wrap { padding:9px 22px; display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+nav.jump a { font-size:.8rem; padding:4px 9px; border-radius:6px; color:var(--ink2); white-space:nowrap; }
+nav.jump a:hover { background:var(--panel); text-decoration:none; color:var(--accent); }
+nav.jump .nlabel { font-family:var(--mono); font-size:.68rem; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--ink3); margin-right:4px; }
+/* legend */
+.legend { display:flex; gap:16px; flex-wrap:wrap; margin:18px 0 6px; font-size:.8rem; color:var(--ink2); }
+.legend .badge { pointer-events:none; }
+/* overview table */
+.ovwrap { overflow-x:auto; border:1px solid var(--line); border-radius:12px; margin-top:8px; }
+table.ov { border-collapse:collapse; width:100%; font-size:.85rem; min-width:820px; }
+table.ov th { text-align:left; background:var(--panel); color:var(--ink2); font-weight:600; padding:10px 12px;
+  border-bottom:1px solid var(--line); position:sticky; top:0; font-size:.74rem; text-transform:uppercase;
+  letter-spacing:.04em; }
+table.ov td { padding:9px 12px; border-bottom:1px solid var(--line2); vertical-align:top; }
+table.ov tr:last-child td { border-bottom:none; }
+table.ov td:first-child { font-weight:600; white-space:nowrap; }
+/* source sections */
+section.src { margin-top:40px; padding-top:26px; border-top:2px solid var(--line); scroll-margin-top:60px; }
+.src-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:12px 14px; }
+.src-head h2 { position:relative; padding-left:14px; }
+.src-head h2::before { content:""; position:absolute; left:0; top:.12em; bottom:.12em; width:5px;
+  border-radius:3px; background:var(--accent); }
+.lands { font-size:.78rem; color:var(--ink3); margin-left:auto; }
+.badges { display:flex; gap:6px; flex-wrap:wrap; }
+.badge { font-size:.68rem; font-weight:600; padding:2px 8px; border-radius:20px; letter-spacing:.02em;
+  border:1px solid transparent; white-space:nowrap; }
+.badge em { font-style:normal; font-weight:400; opacity:.8; }
+.b-mac { background:var(--warn-bg); color:var(--warn); border-color:color-mix(in srgb,var(--warn) 26%,transparent); }
+.b-head { background:var(--good-bg); color:var(--good); border-color:color-mix(in srgb,var(--good) 26%,transparent); }
+.b-live { background:var(--good-bg); color:var(--good); border-color:color-mix(in srgb,var(--good) 26%,transparent); }
+.b-counts { background:color-mix(in srgb,var(--accent) 15%,transparent); color:var(--accent-d);
+  border-color:color-mix(in srgb,var(--accent) 30%,transparent); }
+.b-recon { background:var(--warn-bg); color:var(--warn); border-color:color-mix(in srgb,var(--warn) 26%,transparent); }
+.b-cad,.b-info,.b-creds { background:var(--panel); color:var(--ink2); border-color:var(--line); }
+.mech { color:var(--ink2); font-size:.94rem; max-width:76ch; }
+.mech b { color:var(--ink); }
+/* levels */
+ol.levels { list-style:none; counter-reset:lv; padding:0; margin:.4em 0 0; }
+ol.levels li { position:relative; padding:0 0 16px 40px; margin:0; }
+ol.levels li::before { counter-increment:lv; content:counter(lv); position:absolute; left:0; top:0;
+  width:26px; height:26px; border-radius:50%; background:var(--accent); color:#fff; font-size:.82rem;
+  font-weight:700; display:flex; align-items:center; justify-content:center; }
+ol.levels li:not(:last-child)::after { content:""; position:absolute; left:12.5px; top:28px; bottom:2px;
+  width:1.5px; background:var(--line); }
+.lv-h { display:flex; gap:8px; align-items:baseline; }
+.lv-n { display:none; }
+.lv-name { font-weight:650; color:var(--ink); font-size:.96rem; }
+.ep { font-family:var(--mono); font-size:.76rem; color:var(--accent-d); background:var(--panel);
+  border:1px solid var(--line2); border-left:2px solid var(--accent); border-radius:0 6px 6px 0;
+  padding:5px 9px; margin:5px 0; overflow-x:auto; white-space:pre; }
+.lv-y { font-size:.88rem; color:var(--ink2); }
+.lv-y b { color:var(--ink); }
+/* callout */
+.callout { background:color-mix(in srgb,var(--accent) 7%,transparent);
+  border:1px solid color-mix(in srgb,var(--accent) 22%,transparent); border-radius:10px;
+  padding:12px 15px; font-size:.88rem; color:var(--ink2); margin:16px 0 4px; }
+.callout b { color:var(--ink); }
+/* field tables */
+table.fields { border-collapse:collapse; width:100%; font-size:.85rem; margin-top:4px; }
+table.fields th { text-align:left; background:var(--panel); color:var(--ink3); font-weight:600;
+  padding:7px 11px; border-bottom:1px solid var(--line); font-size:.7rem; text-transform:uppercase;
+  letter-spacing:.05em; }
+table.fields td { padding:7px 11px; border-bottom:1px solid var(--line2); vertical-align:top; }
+table.fields tr.grp td { background:color-mix(in srgb,var(--accent) 8%,transparent); color:var(--accent-d);
+  font-weight:650; font-size:.78rem; letter-spacing:.01em; padding:6px 11px; }
+table.fields tr.grp .hl { font-weight:500; color:var(--good); }
+td.fn { font-family:var(--mono); font-size:.82rem; color:var(--ink); white-space:nowrap; font-weight:600; }
+td.ft { font-family:var(--mono); font-size:.76rem; color:var(--ink3); white-space:nowrap; }
+td.fd { color:var(--ink2); min-width:280px; }
+td.fd b { color:var(--ink); }
+/* samples */
+.sample { margin:8px 0 4px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+.s-bar { padding:7px 12px; background:var(--panel); border-bottom:1px solid var(--line); }
+.s-real,.s-rep { font-size:.68rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  padding:2px 9px; border-radius:20px; }
+.s-real { background:var(--real-bg); color:var(--real); }
+.s-rep { background:var(--rep-bg); color:var(--rep); }
+.s-note { padding:9px 12px 0; font-size:.82rem; color:var(--ink2); }
+.sample pre { margin:0; padding:12px 14px; overflow-x:auto; font-family:var(--mono); font-size:.76rem;
+  line-height:1.5; color:var(--ink); background:var(--paper); }
+/* footer */
+footer { margin-top:56px; padding-top:20px; border-top:1px solid var(--line); font-size:.8rem;
+  color:var(--ink3); }
+@media (max-width:640px) {
+  .lands { margin-left:0; width:100%; }
+  h1 { font-size:1.5rem; }
+}
+@media print {
+  nav.jump { display:none; }
+  section.src { break-inside:avoid-page; }
+  .sample, table.fields, ol.levels li { break-inside:avoid; }
+  body { font-size:11px; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="eyebrow">Hoodie Suite · Unifyd engine</div>
+    <h1>Off-Premise Scrape — Field Catalog</h1>
+    <p class="sub">Exactly what we pull from each source, at every level of the pull, plus a sample record for each.
+      Field lists are copied verbatim from the live scrapers in <code>unifyd/</code>; nothing here is aspirational
+      unless a badge says so.</p>
+    <div class="meta">
+      <span><b>Sources:</b> Uber Eats · Postmates · Instacart · Kroger · Total Wine · ABC · Binny's · Spec's</span>
+      <span><b>Generated:</b> 2026-07-23</span>
+      <span><b>For:</b> Hoodie scraping team</span>
+    </div>
+  </div>
+</header>
+<nav class="jump"><div class="wrap"><span class="nlabel">Jump to</span><a href="#ubereats">Uber Eats</a><a href="#postmates">Postmates</a><a href="#instacart">Instacart</a><a href="#kroger">Kroger</a><a href="#total-wine">Total Wine</a><a href="#abc">ABC Fine Wine &amp; Spirits</a><a href="#binnys">Binny&#x27;s</a><a href="#specs">Spec&#x27;s</a></div></nav>
+<div class="wrap">
+
+  <div class="legend">
+    <span class="badge b-live">live <em>landing</em></span>
+    <span class="badge b-recon">recon <em>not landing yet</em></span>
+    <span class="badge b-counts">counts <em>real unit quantities</em></span>
+    <span class="badge b-mac">mac <em>anti-bot browser</em></span>
+    <span class="badge b-head">headless <em>direct/API</em></span>
+    <span class="s-real" style="margin-left:6px">real sample</span>
+    <span class="s-rep">representative sample</span>
+  </div>
+
+  <h3 style="margin-top:1.4em">All sources at a glance</h3>
+  <div class="ovwrap"><table class="ov">
+    <thead><tr><th>Source</th><th>Access</th><th>Anti-bot posture</th><th>Cadence</th><th>Grain</th>
+      <th>Inventory signal</th><th>Lands to</th></tr></thead>
+    <tbody><tr><td><a href="#ubereats">Uber Eats</a></td><td>Uber first-party BFF (our own Chrome)</td><td>Headful browser, residential IP</td><td>Daily</td><td>Item × store</td><td>Bounded proxy (max_qty)</td><td><code>ubereats_products</code></td></tr><tr><td><a href="#postmates">Postmates</a></td><td>Same Uber BFF (postmates.com)</td><td>Headful browser</td><td>Daily</td><td>Item × store</td><td>Bounded proxy (max_qty)</td><td><code>postmates_products</code></td></tr><tr><td><a href="#instacart">Instacart</a></td><td>Persisted GraphQL / BD managed dataset</td><td>BD Browser — not landing yet</td><td>—</td><td>Item × store</td><td>in/out (recon)</td><td><code>(not landing)</code></td></tr><tr><td><a href="#kroger">Kroger</a></td><td>Internal “atlas” product API</td><td>Warmed cookie + x-laf-object</td><td>Daily</td><td>GTIN × store</td><td>Exact on-hand (when populated)</td><td><code>kroger_atlas_products</code></td></tr><tr><td><a href="#total-wine">Total Wine</a></td><td>Own getProduct JSON API</td><td>PerimeterX (browser-warmed cookie)</td><td>Daily</td><td>SKU × store</td><td>Exact units + shelf</td><td><code>total_wine_products</code></td></tr><tr><td><a href="#abc">ABC FW&amp;S</a></td><td>BigCommerce page + storefront GraphQL</td><td>Polite stdlib, 10s crawl-delay</td><td>Daily</td><td>SKU × store</td><td>Exact per-store on-hand</td><td><code>retail_observations</code></td></tr><tr><td><a href="#binnys">Binny&#x27;s</a></td><td>Algolia public search API</td><td>None (public key)</td><td>Daily</td><td>SKU × store</td><td>Exact per-store units</td><td><code>binnys_products</code></td></tr><tr><td><a href="#specs">Spec&#x27;s</a></td><td>Embedded variants + inventory API</td><td>None (serves bots)</td><td>Daily</td><td>SKU × store</td><td>Exact per-store units</td><td><code>specs_products</code></td></tr></tbody>
+  </table></div>
+  <p style="font-size:.82rem;color:var(--ink3);margin-top:10px">
+    <b>How to read a source:</b> <em>Levels of pull</em> = the endpoint chain we walk (discovery → catalog → detail).
+    <em>Every field</em> = the exact columns we land, grouped, each tied to its source key. <em>Sample record</em> =
+    one real or representative row. Every source also carries a <code>raw_json</code> full-capture blob so nothing the
+    source served is lost, even fields we don't yet promote to a column.</p>
+
+  
+<section id="ubereats" class="src">
+  <div class="src-head">
+    <h2>Uber Eats</h2>
+    <div class="badges"><span class="badge b-mac">mac <em>headful browser</em></span><span class="badge b-cad">daily</span><span class="badge b-live">live <em>landing</em></span><span class="badge b-info">channel <em>aggregator markup</em></span></div>
+    <div class="lands">Lands to <code>ubereats_products</code></div>
+  </div>
+  <p class="mech">Our <b>own</b> real Chromium on the Mac's residential IP (no Bright Data, no manual cookie) loads the Uber first-party BFF <code>www.ubereats.com/_p/api/*</code>. A persistent profile keeps the delivery <b>zone</b> sticky. Because the retailer marks items up on the aggregator to cover the platform fee, every record carries <code>channel=ubereats</code> — paired with the retailer's direct price it yields the effective take-rate.</p>
+  <h3>Levels of pull</h3>
+  <ol class="levels"><li><div class="lv-h"><span class="lv-n">1</span><span class="lv-name">Zone feed (getFeedV1)</span></div><div class="ep">GET /feed?diningMode=DELIVERY&amp;pl=&lt;base64 location&gt;</div><div class="lv-y">Merchant discovery. Yields <b>slug, store uuid, merchant name, storefront href</b> from the <code>/store/&lt;slug&gt;/&lt;uuid&gt;</code> links, infinite-scrolled to load every merchant. Filtered to alcohol/grocery retailers.</div></li><li><div class="lv-h"><span class="lv-n">2</span><span class="lv-name">Store catalog (getStoreV1)</span></div><div class="ep">fires on trusted click-through into a store</div><div class="lv-y">The item list (lighter). Title + price live in flat keys; <b>list price, promo tag/uuid, the “SIZE • X% ABV” descriptor, and the stock-bucket label</b> live in nested rich-text + overlay tags. <b>No UPC / no quantity</b> at this level.</div></li><li><div class="lv-h"><span class="lv-n">3</span><span class="lv-name">Item detail (getMenuItemV1)</span></div><div class="ep">POST /_p/api/getMenuItemV1  (replayed per item)</div><div class="lv-y">The <b>richest</b> schema — see the callout below. Adds the <b>UPC/GTINs</b>, full promo mechanics, the <b>availability/quantity layer</b> (maxPermittedNumber), unit/measure, and every attribute. We learn the app's real request from one click, then replay it per item (~3/s) to upgrade the whole catalog.</div></li></ol>
+  <div class="callout"><b>What is <code>getMenuItemV1</code>?</b> It's Uber Eats' per-item detail endpoint — the call the app fires when you tap a product tile. It returns the single richest view of one item: identity + <b>productIdentifiers[]</b> (the GTIN/UPC), <b>itemPromotionV2</b> (promo %/flat/uuid), the <b>purchaseInfo.purchaseOptions[].quantityConstraintsV2</b> block whose <b>maxPermittedNumber</b> is <code>min(on-hand, purchase-limit)</code> — our closest read on real inventory — plus unit/measure, dietary labels, and media. getStoreV1 (the catalog list) is a lighter subset of the same fields with no barcode or quantity, so we capture one real getMenuItemV1 request per store and replay it item-by-item to enrich everything. <code>parse_item()</code> targets this schema.</div>
+  <h3>Every field we land (table <code>ubereats_products</code>, keyed by store_uuid + item_uuid)</h3>
+  <table class="fields"><thead><tr><th>Field</th><th>Type</th><th>What it is / where it comes from</th></tr></thead><tbody><tr class="grp"><td colspan="3">Identity</td></tr><tr><td class="fn">item_uuid</td><td class="ft">str</td><td class="fd">Uber's per-item id at this store.</td></tr><tr><td class="fn">product_uuid</td><td class="ft">str</td><td class="fd">productInfo.productUuid — stable product id shared across stores.</td></tr><tr><td class="fn">store_uuid</td><td class="ft">str</td><td class="fd">Merchant id (the storefront).</td></tr><tr><td class="fn">store_name</td><td class="ft">str</td><td class="fd">Merchant display name.</td></tr><tr><td class="fn">name</td><td class="ft">str</td><td class="fd">Item title.</td></tr><tr><td class="fn">section</td><td class="ft">str</td><td class="fd">Catalog section uuid (aisle).</td></tr><tr><td class="fn">subsection</td><td class="ft">str</td><td class="fd">Catalog subsection uuid.</td></tr><tr class="grp"><td colspan="3">Barcodes</td></tr><tr><td class="fn">upc</td><td class="ft">str</td><td class="fd">Best valid GTIN picked from <code>productIdentifiers[]</code> (digits only, check-digit sane).</td></tr><tr><td class="fn">gtins</td><td class="ft">str</td><td class="fd"><b>Every</b> GTIN on the item, pipe-joined — pack GTIN + unit GTIN + malformed twins. Full capture.</td></tr><tr class="grp"><td colspan="3">Price &amp;amp; promo mechanics</td></tr><tr><td class="fn">price</td><td class="ft">float $</td><td class="fd">Current price (converted from cents).</td></tr><tr><td class="fn">list_price</td><td class="ft">float $</td><td class="fd">Struck-through / was-price (from flat key or catalog rich-text STRIKE_THROUGH).</td></tr><tr><td class="fn">on_promo</td><td class="ft">bool</td><td class="fd">True if list&gt;price or any promo tag/uuid/type present.</td></tr><tr><td class="fn">discount</td><td class="ft">float $</td><td class="fd">list_price − price when on promo, else 0.</td></tr><tr><td class="fn">promo_text</td><td class="ft">str</td><td class="fd">Promo description/title (≤200 char).</td></tr><tr><td class="fn">promo_tag</td><td class="ft">str</td><td class="fd">Storefront promo badge text, e.g. “9% off”, “Deal”.</td></tr><tr><td class="fn">promo_type</td><td class="ft">str</td><td class="fd">Promotion type enum.</td></tr><tr><td class="fn">promo_pct</td><td class="ft">float</td><td class="fd">offerInfo.discountPercentage.</td></tr><tr><td class="fn">promo_flat</td><td class="ft">float $</td><td class="fd">offerInfo.discountFlatAmount (from cents).</td></tr><tr><td class="fn">promo_uuid</td><td class="ft">str</td><td class="fd">Applied/available promotion uuid.</td></tr><tr class="grp"><td colspan="3">Availability &amp;amp; quantity layer &lt;span class=&#x27;hl&#x27;&gt;(closest thing to inventory Uber exposes)&lt;/span&gt;</td></tr><tr><td class="fn">in_stock</td><td class="ft">bool</td><td class="fd">Not sold-out and not suspended.</td></tr><tr><td class="fn">is_sold_out</td><td class="ft">bool</td><td class="fd">isSoldOut or itemAvailabilityState ∈ {SOLD_OUT, UNAVAILABLE}.</td></tr><tr><td class="fn">suspend_reason</td><td class="ft">str</td><td class="fd">suspendReason (why the item is paused).</td></tr><tr><td class="fn">suspend_until</td><td class="ft">str</td><td class="fd">suspendUntil timestamp.</td></tr><tr><td class="fn">low_availability</td><td class="ft">str</td><td class="fd">lowAvailabilityLabel near stockout, e.g. “Only 3 left”.</td></tr><tr><td class="fn">avail_state</td><td class="ft">str</td><td class="fd">itemAvailabilityState.</td></tr><tr><td class="fn">stock_label</td><td class="ft">str</td><td class="fd">Qualitative bucket — “Many in stock” / “Few left” / “Out of stock”.</td></tr><tr><td class="fn">max_qty</td><td class="ft">int</td><td class="fd">maxPermittedNumber = min(on-hand, purchase-limit). For inventory-syncing retailers this <b>tracks on-hand</b>; a round default (100/250) means the retailer doesn't feed qty.</td></tr><tr><td class="fn">min_qty</td><td class="ft">int</td><td class="fd">minPermittedNumber.</td></tr><tr><td class="fn">increment_qty</td><td class="ft">int</td><td class="fd">incrementNumber (step).</td></tr><tr><td class="fn">default_qty</td><td class="ft">int</td><td class="fd">defaultQuantityNumber.</td></tr><tr><td class="fn">sold_by</td><td class="ft">str</td><td class="fd">soldByUnit measurement type (COUNT / WEIGHT / VOLUME).</td></tr><tr><td class="fn">priced_by</td><td class="ft">str</td><td class="fd">pricedByUnit measurement type.</td></tr><tr class="grp"><td colspan="3">Attributes</td></tr><tr><td class="fn">is_alcohol</td><td class="ft">bool</td><td class="fd">numAlcoholicItems&gt;0, a 21+ rule, or an alcohol analytics label; also set true in dedicated liquor stores / by bev-alc name match.</td></tr><tr><td class="fn">num_alcoholic</td><td class="ft">int</td><td class="fd">numAlcoholicItems.</td></tr><tr><td class="fn">age_rule</td><td class="ft">str</td><td class="fd">Age-restriction text (“21 or older…”).</td></tr><tr><td class="fn">abv</td><td class="ft">float</td><td class="fd">%% ABV parsed from nutritionalInfo / descriptor / title.</td></tr><tr><td class="fn">pack</td><td class="ft">int</td><td class="fd">Pack count (ct / pk / pack).</td></tr><tr><td class="fn">item_size</td><td class="ft">str</td><td class="fd">Size token (ml / L / fl oz / oz).</td></tr><tr><td class="fn">nutritional_info</td><td class="ft">str</td><td class="fd">nutritionalInfo or the “SIZE • X%% ABV” descriptor.</td></tr><tr><td class="fn">classifications</td><td class="ft">str</td><td class="fd">classifications[] pipe-joined.</td></tr><tr><td class="fn">dietary_labels</td><td class="ft">str</td><td class="fd">itemAttributeInfo.dietaryLabels pipe-joined.</td></tr><tr><td class="fn">endorsements</td><td class="ft">str</td><td class="fd">endorsementTags + overlay badges (“Popular”, promo badges).</td></tr><tr><td class="fn">description</td><td class="ft">str</td><td class="fd">itemDescription (≤400 char).</td></tr><tr class="grp"><td colspan="3">Media &amp;amp; provenance</td></tr><tr><td class="fn">image</td><td class="ft">str url</td><td class="fd">imageUrl.</td></tr><tr><td class="fn">image_count</td><td class="ft">int</td><td class="fd">Number of images on the item.</td></tr><tr><td class="fn">zone</td><td class="ft">str</td><td class="fd">Delivery market the feed was primed to (e.g. orlando).</td></tr><tr><td class="fn">raw_json</td><td class="ft">json str</td><td class="fd">The <b>whole</b> getMenuItemV1 item object, pruned only of unrelated upsell/cross-sell blocks (≤16k). Lossless capture of this item.</td></tr></tbody></table>
+  <h3>Sample record</h3>
+  <div class="sample"><div class="s-bar"><span class="s-rep">REPRESENTATIVE — real field names, illustrative values</span></div><div class="s-note">Illustrative bev-alc item after getStoreV1 + getMenuItemV1 enrichment. Field names and types are exactly the landed schema.</div><pre>{
+  &quot;item_uuid&quot;: &quot;b1e2f5a0-7c44-4a19-9d2e-3f0c1a8b6e21&quot;,
+  &quot;product_uuid&quot;: &quot;0a9f3c72-11d8-42aa-bd1e-6c4e2f9a0b53&quot;,
+  &quot;store_uuid&quot;: &quot;7f3c9d21-4e88-4b0a-9c1f-2a6b8d0e5f14&quot;,
+  &quot;store_name&quot;: &quot;ABC Fine Wine &amp; Spirits&quot;,
+  &quot;name&quot;: &quot;Tito&#x27;s Handmade Vodka 750 ml&quot;,
+  &quot;section&quot;: &quot;9c2a...&quot;,
+  &quot;subsection&quot;: &quot;5d71...&quot;,
+  &quot;upc&quot;: &quot;619947000027&quot;,
+  &quot;gtins&quot;: &quot;619947000027|00619947000027&quot;,
+  &quot;price&quot;: 24.99,
+  &quot;list_price&quot;: 27.99,
+  &quot;on_promo&quot;: true,
+  &quot;discount&quot;: 3.0,
+  &quot;promo_text&quot;: &quot;$3 off&quot;,
+  &quot;promo_tag&quot;: &quot;Deal&quot;,
+  &quot;promo_type&quot;: &quot;ITEM_PRICE_PROMOTION&quot;,
+  &quot;promo_pct&quot;: null,
+  &quot;promo_flat&quot;: 3.0,
+  &quot;promo_uuid&quot;: &quot;c4a1e8f0-2b33-4d90-8a11-7e5c9f2d1a04&quot;,
+  &quot;in_stock&quot;: true,
+  &quot;is_sold_out&quot;: false,
+  &quot;suspend_reason&quot;: &quot;&quot;,
+  &quot;suspend_until&quot;: &quot;&quot;,
+  &quot;low_availability&quot;: &quot;&quot;,
+  &quot;avail_state&quot;: &quot;AVAILABLE&quot;,
+  &quot;stock_label&quot;: &quot;Many in stock&quot;,
+  &quot;max_qty&quot;: 24,
+  &quot;min_qty&quot;: 1,
+  &quot;increment_qty&quot;: 1,
+  &quot;default_qty&quot;: 1,
+  &quot;sold_by&quot;: &quot;COUNT&quot;,
+  &quot;priced_by&quot;: &quot;COUNT&quot;,
+  &quot;is_alcohol&quot;: true,
+  &quot;num_alcoholic&quot;: 1,
+  &quot;age_rule&quot;: &quot;You must be 21 or older to purchase this item&quot;,
+  &quot;abv&quot;: 40.0,
+  &quot;pack&quot;: null,
+  &quot;item_size&quot;: &quot;750 ml&quot;,
+  &quot;nutritional_info&quot;: &quot;750 ml • 40% ABV&quot;,
+  &quot;classifications&quot;: &quot;Spirits|Vodka&quot;,
+  &quot;dietary_labels&quot;: &quot;&quot;,
+  &quot;endorsements&quot;: &quot;Popular&quot;,
+  &quot;description&quot;: &quot;Award-winning American vodka, distilled six times...&quot;,
+  &quot;image&quot;: &quot;https://tb-static.uber.com/prod/image-proc/....jpeg&quot;,
+  &quot;image_count&quot;: 3,
+  &quot;zone&quot;: &quot;orlando&quot;,
+  &quot;raw_json&quot;: &quot;{\&quot;uuid\&quot;:\&quot;b1e2f5a0-...\&quot;,\&quot;title\&quot;:\&quot;Tito&#x27;s Handmade Vodka 750 ml\&quot;,\&quot;price\&quot;:2499,\&quot;productIdentifiers\&quot;:[{\&quot;type\&quot;:\&quot;GTIN\&quot;,\&quot;value\&quot;:\&quot;619947000027\&quot;}],\&quot;purchaseInfo\&quot;:{...}}&quot;
+}</pre></div>
+</section>
+<section id="postmates" class="src">
+  <div class="src-head">
+    <h2>Postmates</h2>
+    <div class="badges"><span class="badge b-mac">mac <em>headful browser</em></span><span class="badge b-cad">daily</span><span class="badge b-live">live <em>landing</em></span><span class="badge b-info">same engine <em>Uber BFF</em></span></div>
+    <div class="lands">Lands to <code>postmates_products</code></div>
+  </div>
+  <p class="mech">Postmates runs on the <b>same Uber BFF</b> as Uber Eats — identical <code>getStoreV1</code> / <code>getMenuItemV1</code> schemas. The <b>only</b> difference is the domain (<code>postmates.com</code>) and feed base; the same base64 zone works on both. The entire recipe, parser and field set are reused; records just land to a separate channel table.</p>
+  <h3>Levels of pull</h3>
+  <ol class="levels"><li><div class="lv-h"><span class="lv-n">1</span><span class="lv-name">Zone feed</span></div><div class="ep">GET postmates.com/feed?diningMode=DELIVERY&amp;pl=&lt;base64 location&gt;</div><div class="lv-y">Same as Uber Eats level 1 — merchant slug/uuid/name/href.</div></li><li><div class="lv-h"><span class="lv-n">2</span><span class="lv-name">Store catalog (getStoreV1)</span></div><div class="ep">same schema as Uber Eats</div><div class="lv-y">Same catalog shape — title, price, list price, promo, descriptor, stock label.</div></li><li><div class="lv-h"><span class="lv-n">3</span><span class="lv-name">Item detail (getMenuItemV1)</span></div><div class="ep">same schema as Uber Eats</div><div class="lv-y">Same rich detail — UPC/GTINs, promo mechanics, quantity layer, attributes, media.</div></li></ol>
+  
+  <h3>Field set</h3>
+  <table class="fields"><thead><tr><th>Field</th><th>Type</th><th>What it is / where it comes from</th></tr></thead><tbody><tr class="grp"><td colspan="3">Identical to Uber Eats</td></tr><tr><td class="fn">—</td><td class="ft">—</td><td class="fd">Postmates lands the <b>exact same field set</b> as Uber Eats (see above), keyed by store_uuid + item_uuid, to table <code>postmates_products</code>. Refer to the Uber Eats field table for every column and meaning.</td></tr></tbody></table>
+  <h3>Sample record</h3>
+  <div class="sample"><div class="s-bar"><span class="s-rep">REPRESENTATIVE — real field names, illustrative values</span></div><div class="s-note">Same schema as Uber Eats; only store/channel differ. Shown abbreviated.</div><pre>{
+  &quot;item_uuid&quot;: &quot;a72f...&quot;,
+  &quot;product_uuid&quot;: &quot;3b81...&quot;,
+  &quot;store_uuid&quot;: &quot;e4c0...&quot;,
+  &quot;store_name&quot;: &quot;Total Wine &amp; More&quot;,
+  &quot;name&quot;: &quot;Josh Cellars Cabernet Sauvignon 750 ml&quot;,
+  &quot;upc&quot;: &quot;0083085918&quot;,
+  &quot;gtins&quot;: &quot;0083085918|00083085918&quot;,
+  &quot;price&quot;: 15.99,
+  &quot;list_price&quot;: 17.99,
+  &quot;on_promo&quot;: true,
+  &quot;discount&quot;: 2.0,
+  &quot;promo_tag&quot;: &quot;11% off&quot;,
+  &quot;in_stock&quot;: true,
+  &quot;is_sold_out&quot;: false,
+  &quot;stock_label&quot;: &quot;Many in stock&quot;,
+  &quot;max_qty&quot;: 100,
+  &quot;sold_by&quot;: &quot;COUNT&quot;,
+  &quot;is_alcohol&quot;: true,
+  &quot;num_alcoholic&quot;: 1,
+  &quot;abv&quot;: 13.5,
+  &quot;item_size&quot;: &quot;750 ml&quot;,
+  &quot;zone&quot;: &quot;orlando&quot;,
+  &quot;raw_json&quot;: &quot;{...}&quot;
+}</pre></div>
+</section>
+<section id="instacart" class="src">
+  <div class="src-head">
+    <h2>Instacart</h2>
+    <div class="badges"><span class="badge b-recon">recon <em>not yet landing</em></span><span class="badge b-mac">mac <em>BD Browser</em></span><span class="badge b-recon">alcohol-gated <em>needs age-verified login</em></span></div>
+    <div class="lands">Lands to <code>(not landing yet)</code></div>
+  </div>
+  <p class="mech"><b>Status: cracked, but not reliably landing data yet.</b> Instacart forbids scraping and is DataDome / Forter protected. Two routes are built. <b>(A)</b> the site's own persisted GraphQL <code>SearchResultsPlacements</code> op driven through a Bright Data Browser session — the API and anti-bot are solved, but the last mile (session automation) isn't hardened. Alcohol needs a logged-in, age-verified session (anonymous returns “alcohol isn't available”). <b>(B)</b> Bright Data's managed Instacart dataset (paid, ToS-gray), whose exact field names vary by dataset — the connector self-reports <code>degraded</code> and dumps the first batch to lock the mapping.</p>
+  <h3>Levels of pull</h3>
+  <ol class="levels"><li><div class="lv-h"><span class="lv-n">1</span><span class="lv-name">Open session + set zone</span></div><div class="ep">bdata browser open https://www.instacart.com/ --country us</div><div class="lv-y">A delivery zone auto-sets from the residential IP; the homepage lists real retailers.</div></li><li><div class="lv-h"><span class="lv-n">2</span><span class="lv-name">Enter a store, capture zone params</span></div><div class="ep">click a non-membership grocery → read {shopId, postalCode, zoneId}</div><div class="lv-y">Storefront context (shopId) + zone (postalCode, zoneId) scraped from a live <code>SearchResultsPlacements</code> request URL.</div></li><li><div class="lv-h"><span class="lv-n">3</span><span class="lv-name">Search → items</span></div><div class="ep">GET /graphql?operationName=SearchResultsPlacements&amp;variables={query,shopId,zoneId,…}</div><div class="lv-y">Clean JSON at <code>data.searchResultsPlacements.placements[]</code> → <code>Item*</code> nodes → name, price viewSection, size, image (see field table).</div></li></ol>
+  <div class="callout"><b>Why Instacart isn't in the daily registry:</b> the product API and anti-bot are proven, but membership walls, the enter-store-first requirement, per-request param scraping, and the alcohol login gate mean it doesn't yet land reliably. The fields below are <b>what the connector is built to capture</b> — present them to the team as the target schema, not a live feed.</div>
+  <h3>What each route is set up to capture</h3>
+  <table class="fields"><thead><tr><th>Field</th><th>Type</th><th>What it is / where it comes from</th></tr></thead><tbody><tr class="grp"><td colspan="3">Approach A — direct persisted-GraphQL (parse_item)</td></tr><tr><td class="fn">retailer</td><td class="ft">str</td><td class="fd">Retailer slug (the store storefront).</td></tr><tr><td class="fn">store</td><td class="ft">str</td><td class="fd">Same slug (store label).</td></tr><tr><td class="fn">store_id</td><td class="ft">str</td><td class="fd">shopId — per-retailer-per-zone shop id.</td></tr><tr><td class="fn">zone</td><td class="ft">str</td><td class="fd">zoneId — delivery zone (from the residential IP).</td></tr><tr><td class="fn">product_id</td><td class="ft">str</td><td class="fd">Item node id / legacyId.</td></tr><tr><td class="fn">upc</td><td class="ft">str</td><td class="fd">Empty at this level — SearchResultsPlacements cards don't carry a barcode.</td></tr><tr><td class="fn">brand</td><td class="ft">str</td><td class="fd">Empty (not on the card).</td></tr><tr><td class="fn">name</td><td class="ft">str</td><td class="fd">Item name.</td></tr><tr><td class="fn">category</td><td class="ft">str</td><td class="fd">Empty (search-scoped).</td></tr><tr><td class="fn">size</td><td class="ft">str</td><td class="fd">Item size string.</td></tr><tr><td class="fn">price</td><td class="ft">float $</td><td class="fd">First $x.xx parsed from the price viewSection (priceString/fullPriceString).</td></tr><tr><td class="fn">in_stock</td><td class="ft">bool</td><td class="fd">True (search returns purchasable cards).</td></tr><tr><td class="fn">image_url</td><td class="ft">str url</td><td class="fd">First product image.</td></tr><tr><td class="fn">url</td><td class="ft">str</td><td class="fd">Empty (not on the card).</td></tr><tr><td class="fn">raw_json</td><td class="ft">json str</td><td class="fd">The raw Item node (≤4k).</td></tr><tr class="grp"><td colspan="3">Approach B — Bright Data managed dataset (candidate field map, first-match-wins)</td></tr><tr><td class="fn">name</td><td class="ft">str</td><td class="fd">name / title / product_name / productName.</td></tr><tr><td class="fn">price</td><td class="ft">float $</td><td class="fd">price / current_price / sale_price / unit_price.</td></tr><tr><td class="fn">store</td><td class="ft">str</td><td class="fd">store / retailer / store_name / warehouse / location.</td></tr><tr><td class="fn">id</td><td class="ft">str</td><td class="fd">id / product_id / sku / item_id / upc / url.</td></tr><tr><td class="fn">availability</td><td class="ft">bool</td><td class="fd">availability / in_stock / available / stock_status.</td></tr></tbody></table>
+  <h3>Sample record</h3>
+  <div class="sample"><div class="s-bar"><span class="s-rep">REPRESENTATIVE — real field names, illustrative values</span></div><div class="s-note">Approach A (direct GraphQL) item shape. Non-alcohol proves the pipe; bev-alc needs an age-verified session.</div><pre>{
+  &quot;retailer&quot;: &quot;publix&quot;,
+  &quot;store&quot;: &quot;publix&quot;,
+  &quot;store_id&quot;: &quot;16278&quot;,
+  &quot;zone&quot;: &quot;1288&quot;,
+  &quot;product_id&quot;: &quot;items_29481756&quot;,
+  &quot;upc&quot;: &quot;&quot;,
+  &quot;brand&quot;: &quot;&quot;,
+  &quot;name&quot;: &quot;Tito&#x27;s Handmade Vodka&quot;,
+  &quot;category&quot;: &quot;&quot;,
+  &quot;size&quot;: &quot;750 ml&quot;,
+  &quot;price&quot;: 22.99,
+  &quot;in_stock&quot;: true,
+  &quot;image_url&quot;: &quot;https://www.instacart.com/image-server/....png&quot;,
+  &quot;url&quot;: &quot;&quot;,
+  &quot;raw_json&quot;: &quot;{\&quot;__typename\&quot;:\&quot;ItemUv2\&quot;,\&quot;id\&quot;:\&quot;items_29481756\&quot;,\&quot;name\&quot;:\&quot;Tito&#x27;s Handmade Vodka\&quot;,\&quot;size\&quot;:\&quot;750 ml\&quot;,\&quot;viewSection\&quot;:{\&quot;priceString\&quot;:\&quot;$22.99\&quot;}}&quot;
+}</pre></div>
+</section>
+<section id="kroger" class="src">
+  <div class="src-head">
+    <h2>Kroger</h2>
+    <div class="badges"><span class="badge b-mac">mac <em>warmed cookie</em></span><span class="badge b-cad">daily</span><span class="badge b-live">live <em>landing</em></span><span class="badge b-counts">counts <em>exact on-hand</em></span></div>
+    <div class="lands">Lands to <code>kroger_atlas_products</code></div>
+  </div>
+  <p class="mech">Kroger's <b>internal</b> “atlas” product API — the rich per-GTIN payload the site/app use, far deeper than the public developer API. One endpoint, batched ~20 GTINs/call, keyed by GTIN. Gated by the <code>x-laf-object</code> header (which carries the store) + a warmed session cookie. Returns master data, bottle dimensions, ABV, Kroger's commodity taxonomy, planogram, per-modality availability and — when the response carries populated inventory objects — an <b>exact per-store on-hand count</b>.</p>
+  <h3>Levels of pull</h3>
+  <ol class="levels"><li><div class="lv-h"><span class="lv-n">1</span><span class="lv-name">Seed the GTIN universe</span></div><div class="ep">from kroger_products (public API UPC seed) or --gtins</div><div class="lv-y">The list of GTIN13s to enrich (our bev-alc UPC universe by default).</div></li><li><div class="lv-h"><span class="lv-n">2</span><span class="lv-name">Atlas product fetch</span></div><div class="ep">GET /atlas/v1/product/v2/products?filter.gtin13s=…&amp;projections=items.full,offers.compact,nutrition.label,inventory.projected,variantGroupings.compact</div><div class="lv-y">One rich product per GTIN. The <b>projections</b> are the sub-levels of detail: <code>items.full</code> (master + dimensions + ABV + taxonomy + planogram), <code>offers.compact</code> (price/promo), <code>inventory.projected</code> (per-modality level + exact on-hand), <code>nutrition.label</code>, <code>variantGroupings.compact</code>.</div></li></ol>
+  <div class="callout"><b>Auth note:</b> the store is passed in the <code>x-laf-object</code> request header as <code>[{listingKeys:[storeId], modality:{type:PICKUP, handoffLocation:{facilityId, storeId}}}]</code> — the server reads <code>laf[0].modality.handoffLocation.storeId</code>. Needs <code>KROGER_COOKIE</code> + <code>KROGER_STORE</code> + <code>KROGER_FACILITY</code>.</div>
+  <h3>Every field we land (table <code>kroger_atlas_products</code>, keyed by GTIN)</h3>
+  <table class="fields"><thead><tr><th>Field</th><th>Type</th><th>What it is / where it comes from</th></tr></thead><tbody><tr class="grp"><td colspan="3">Identity</td></tr><tr><td class="fn">gtin14</td><td class="ft">str</td><td class="fd">14-digit GTIN (item.gtin14).</td></tr><tr><td class="fn">upc</td><td class="ft">str</td><td class="fd">item.upc (or the response id).</td></tr><tr><td class="fn">product_id</td><td class="ft">str</td><td class="fd">itemsV1.product.id.</td></tr><tr><td class="fn">name</td><td class="ft">str</td><td class="fd">item.description.</td></tr><tr><td class="fn">brand</td><td class="ft">str</td><td class="fd">brand.name.</td></tr><tr><td class="fn">brand_code</td><td class="ft">str</td><td class="fd">brand.code.</td></tr><tr><td class="fn">size</td><td class="ft">str</td><td class="fd">customerFacingSize.</td></tr><tr class="grp"><td colspan="3">Taxonomy (Kroger&#x27;s own commodity tree — dictionary gold)</td></tr><tr><td class="fn">category</td><td class="ft">str</td><td class="fd">categories[] names joined.</td></tr><tr><td class="fn">commodity</td><td class="ft">str</td><td class="fd">familyTree.commodity.name.</td></tr><tr><td class="fn">commodity_code</td><td class="ft">str</td><td class="fd">familyTree.commodity.code.</td></tr><tr><td class="fn">department</td><td class="ft">str</td><td class="fd">familyTree.department.name.</td></tr><tr><td class="fn">department_code</td><td class="ft">str</td><td class="fd">familyTree.department.code.</td></tr><tr><td class="fn">subcommodity</td><td class="ft">str</td><td class="fd">familyTree.subCommodity.name.</td></tr><tr><td class="fn">subcommodity_code</td><td class="ft">str</td><td class="fd">familyTree.subCommodity.code.</td></tr><tr class="grp"><td colspan="3">Bottle dimensions &lt;span class=&#x27;hl&#x27;&gt;(authoritative + free, keyed by GTIN)&lt;/span&gt;</td></tr><tr><td class="fn">height_mm</td><td class="ft">float</td><td class="fd">dimensions.height (“10.78 [in_i]” → mm).</td></tr><tr><td class="fn">width_mm</td><td class="ft">float</td><td class="fd">dimensions.width → mm.</td></tr><tr><td class="fn">length_mm</td><td class="ft">float</td><td class="fd">dimensions.length → mm.</td></tr><tr><td class="fn">diameter_mm</td><td class="ft">float</td><td class="fd">For a bottle width≈length≈diameter; set when they agree.</td></tr><tr class="grp"><td colspan="3">Attributes</td></tr><tr><td class="fn">abv</td><td class="ft">float</td><td class="fd">%% ABV parsed from romanceDescription (“8.5% alcohol by volume”) — a field TTB detail lacks.</td></tr><tr><td class="fn">alcohol_flag</td><td class="ft">bool</td><td class="fd">item.alcoholFlag.</td></tr><tr><td class="fn">age_restricted</td><td class="ft">bool</td><td class="fd">item.ageRestrictionFlag.</td></tr><tr><td class="fn">dsd_item</td><td class="ft">bool</td><td class="fd">Direct Store Delivery (supplier delivers direct).</td></tr><tr><td class="fn">temperature</td><td class="ft">str</td><td class="fd">temperatureIndicatorName (SHELF STABLE / REFRIGERATED / …).</td></tr><tr><td class="fn">snap_eligible</td><td class="ft">bool</td><td class="fd">snapEligible.</td></tr><tr><td class="fn">prop65</td><td class="ft">bool</td><td class="fd">prop65.required.</td></tr><tr><td class="fn">restriction_codes</td><td class="ft">str</td><td class="fd">restrictionGroupCodes[] codes.</td></tr><tr><td class="fn">avg_rating</td><td class="ft">float</td><td class="fd">ratingsAndReviewsAggregate.averageRating.</td></tr><tr><td class="fn">num_reviews</td><td class="ft">int</td><td class="fd">ratingsAndReviewsAggregate.numberOfReviews.</td></tr><tr class="grp"><td colspan="3">Planogram (may have multiple bays)</td></tr><tr><td class="fn">aisle</td><td class="ft">str</td><td class="fd">Primary location aisle description.</td></tr><tr><td class="fn">aisle_number</td><td class="ft">str</td><td class="fd">Aisle number.</td></tr><tr><td class="fn">facings</td><td class="ft">int/str</td><td class="fd">numOfFacings on the primary bay.</td></tr><tr><td class="fn">planogram_json</td><td class="ft">json str</td><td class="fd">The full locations[] list (main aisle + display), ≤1.5k.</td></tr><tr class="grp"><td colspan="3">Inventory (store-scoped) &lt;span class=&#x27;hl&#x27;&gt;— EXACT on-hand when populated&lt;/span&gt;</td></tr><tr><td class="fn">store_id</td><td class="ft">str</td><td class="fd">storeId (from x-laf-object).</td></tr><tr><td class="fn">facility_id</td><td class="ft">str</td><td class="fd">facilityId.</td></tr><tr><td class="fn">available_units</td><td class="ft">int</td><td class="fd"><b>EXACT on-hand</b> from inventorySummaries[].details[].availableToSell (fallback inventory.locations[].available). Present only when the response carries populated inventory objects — else None + only the HIGH/LOW enum.</td></tr><tr><td class="fn">pickup_level</td><td class="ft">str</td><td class="fd">PICKUP inventoryLevel enum (HIGH/LOW/OOS).</td></tr><tr><td class="fn">delivery_level</td><td class="ft">str</td><td class="fd">DELIVERY inventoryLevel.</td></tr><tr><td class="fn">instore_level</td><td class="ft">str</td><td class="fd">IN_STORE inventoryLevel.</td></tr><tr class="grp"><td colspan="3">Price &amp;amp; media &amp;amp; provenance</td></tr><tr><td class="fn">price</td><td class="ft">str</td><td class="fd">storePrices.regular.defaultDescription.</td></tr><tr><td class="fn">sale_price</td><td class="ft">str</td><td class="fd">storePrices.promo.defaultDescription.</td></tr><tr><td class="fn">sale_ends</td><td class="ft">str</td><td class="fd">promo.expirationDate.value.</td></tr><tr><td class="fn">image</td><td class="ft">str url</td><td class="fd">Front-perspective product image.</td></tr><tr><td class="fn">captured_at</td><td class="ft">int epoch</td><td class="fd">Fetch time.</td></tr><tr><td class="fn">source</td><td class="ft">str</td><td class="fd">“kroger_atlas”.</td></tr><tr><td class="fn">raw_json</td><td class="ft">json str</td><td class="fd">The whole atlas product object (≤8k).</td></tr></tbody></table>
+  <h3>Sample record</h3>
+  <div class="sample"><div class="s-bar"><span class="s-rep">REPRESENTATIVE — real field names, illustrative values</span></div><div class="s-note">Illustrative spirits GTIN. Every field name/type is the landed schema; dimensions/ABV/taxonomy shapes match real atlas responses.</div><pre>{
+  &quot;gtin14&quot;: &quot;00008660000618&quot;,
+  &quot;upc&quot;: &quot;008660000618&quot;,
+  &quot;product_id&quot;: &quot;0000866000061&quot;,
+  &quot;name&quot;: &quot;Buffalo Trace Kentucky Straight Bourbon Whiskey&quot;,
+  &quot;brand&quot;: &quot;Buffalo Trace&quot;,
+  &quot;brand_code&quot;: &quot;BFT&quot;,
+  &quot;size&quot;: &quot;750 ml&quot;,
+  &quot;category&quot;: &quot;Liquor, Bourbon&quot;,
+  &quot;commodity&quot;: &quot;LIQUOR&quot;,
+  &quot;commodity_code&quot;: &quot;27&quot;,
+  &quot;department&quot;: &quot;ADULT BEVERAGE&quot;,
+  &quot;department_code&quot;: &quot;09&quot;,
+  &quot;subcommodity&quot;: &quot;BOURBON/TENNESSEE WHISKEY&quot;,
+  &quot;subcommodity_code&quot;: &quot;2704&quot;,
+  &quot;height_mm&quot;: 273.7,
+  &quot;width_mm&quot;: 82.6,
+  &quot;length_mm&quot;: 82.6,
+  &quot;diameter_mm&quot;: 82.6,
+  &quot;abv&quot;: 45.0,
+  &quot;alcohol_flag&quot;: true,
+  &quot;age_restricted&quot;: true,
+  &quot;dsd_item&quot;: false,
+  &quot;temperature&quot;: &quot;SHELF STABLE&quot;,
+  &quot;snap_eligible&quot;: false,
+  &quot;prop65&quot;: false,
+  &quot;restriction_codes&quot;: &quot;ALC&quot;,
+  &quot;avg_rating&quot;: 4.8,
+  &quot;num_reviews&quot;: 512,
+  &quot;aisle&quot;: &quot;Liquor&quot;,
+  &quot;aisle_number&quot;: &quot;27&quot;,
+  &quot;facings&quot;: 4,
+  &quot;planogram_json&quot;: &quot;[{\&quot;aisle\&quot;:{\&quot;description\&quot;:\&quot;Liquor\&quot;,\&quot;number\&quot;:\&quot;27\&quot;},\&quot;numOfFacings\&quot;:4}]&quot;,
+  &quot;store_id&quot;: &quot;01100439&quot;,
+  &quot;facility_id&quot;: &quot;14732&quot;,
+  &quot;available_units&quot;: 37,
+  &quot;pickup_level&quot;: &quot;HIGH&quot;,
+  &quot;delivery_level&quot;: &quot;HIGH&quot;,
+  &quot;instore_level&quot;: &quot;HIGH&quot;,
+  &quot;price&quot;: &quot;$29.99&quot;,
+  &quot;sale_price&quot;: &quot;$26.99&quot;,
+  &quot;sale_ends&quot;: &quot;2026-07-31&quot;,
+  &quot;image&quot;: &quot;https://www.kroger.com/product/images/large/front/0000866000061.jpg&quot;,
+  &quot;captured_at&quot;: 1753286400,
+  &quot;source&quot;: &quot;kroger_atlas&quot;,
+  &quot;raw_json&quot;: &quot;{...full atlas product...}&quot;
+}</pre></div>
+</section>
+<section id="total-wine" class="src">
+  <div class="src-head">
+    <h2>Total Wine</h2>
+    <div class="badges"><span class="badge b-mac">mac <em>PerimeterX browser</em></span><span class="badge b-cad">daily</span><span class="badge b-live">live <em>landing</em></span><span class="badge b-counts">counts <em>exact units + shelf</em></span></div>
+    <div class="lands">Lands to <code>total_wine_products + retail_observations</code></div>
+  </div>
+  <p class="mech">Total Wine's <b>own</b> <code>getProduct</code> JSON API — the call its product pages use — keyed by storeId. Product universe comes from the published sitemap (<code>/p/&lt;productId&gt;</code>). Gives <b>exact unit counts + shelf position</b> (like ABC, but with the physical bay). PerimeterX binds the cookie to the IP, so warm + pull share one IP (<code>TW_FETCH=direct</code> = $0 local warm; <code>bdbrowser</code> = through a BD Browser session).</p>
+  <h3>Levels of pull</h3>
+  <ol class="levels"><li><div class="lv-h"><span class="lv-n">1</span><span class="lv-name">Product universe (sitemap)</span></div><div class="ep">GET /sitemap → /p/&lt;productId&gt;  →  skuId “&lt;productId&gt;-1”</div><div class="lv-y">Every product URL (each size variant is its own /p/ URL). robots-allowed; /search/ is never used.</div></li><li><div class="lv-h"><span class="lv-n">2</span><span class="lv-name">Per-store product detail (getProduct)</span></div><div class="ep">GET /product/api/product/product-detail/v1/getProduct/&lt;skuId&gt;?shoppingMethod=INSTORE_PICKUP&amp;state=US-&lt;ST&gt;&amp;attrConfig=true&amp;storeId=&lt;storeId&gt;</div><div class="lv-y">The full per-store record: <b>price, exact units on hand, ABV, physical bay/shelf/aisle, the geo categories (varietal/country/region), the finish/taste/body characteristics, reviews and awards</b>. Lands two grains — a dated per-store observation (with qty) + a <code>total_wine_products</code> catalog enrichment row.</div></li></ol>
+  <div class="callout"><b>No UPC:</b> Total Wine's getProduct carries no barcode field — <code>upc</code> stays empty by design. Identity is the skuId + brand/name/size/geo.</div>
+  <h3>Every field we capture (per-store observation grain — the richest)</h3>
+  <table class="fields"><thead><tr><th>Field</th><th>Type</th><th>What it is / where it comes from</th></tr></thead><tbody><tr class="grp"><td colspan="3">Store &amp;amp; identity</td></tr><tr><td class="fn">store_id</td><td class="ft">str</td><td class="fd">Total Wine storeId (e.g. 920 = Orlando Millenia).</td></tr><tr><td class="fn">store</td><td class="ft">str</td><td class="fd">Store label.</td></tr><tr><td class="fn">product_id / sku</td><td class="ft">str</td><td class="fd">skuId (“&lt;productId&gt;-1”).</td></tr><tr><td class="fn">upc</td><td class="ft">str</td><td class="fd"><b>Always empty</b> — getProduct exposes no UPC field (by design, not an oversight).</td></tr><tr><td class="fn">brand</td><td class="ft">str</td><td class="fd">brand.name.</td></tr><tr><td class="fn">brand_id</td><td class="ft">str</td><td class="fd">brand.id.</td></tr><tr><td class="fn">name</td><td class="ft">str</td><td class="fd">Product name.</td></tr><tr class="grp"><td colspan="3">Price &amp;amp; inventory &lt;span class=&#x27;hl&#x27;&gt;(exact unit counts)&lt;/span&gt;</td></tr><tr><td class="fn">price</td><td class="ft">float $</td><td class="fd">First price[].price.</td></tr><tr><td class="fn">price_type</td><td class="ft">str</td><td class="fd">price[].type (regular / sale).</td></tr><tr><td class="fn">in_stock</td><td class="ft">bool</td><td class="fd">digitalInStock or shippingInStock and not unavailableAtStore.</td></tr><tr><td class="fn">qty</td><td class="ft">int</td><td class="fd"><b>Exact units on hand</b> — stockLevel[0].stock (fallback digitalStoreQuantity).</td></tr><tr><td class="fn">store_qty</td><td class="ft">int</td><td class="fd">stockMessages.digitalStoreQuantity.</td></tr><tr><td class="fn">shipping_qty</td><td class="ft">int</td><td class="fd">stockMessages.shippingStoreQuantity.</td></tr><tr><td class="fn">purchase_limit</td><td class="ft">int</td><td class="fd">stockLevel[0].purchaseLimit.</td></tr><tr><td class="fn">stock_level</td><td class="ft">str</td><td class="fd">OOS / LIMITED / IN.</td></tr><tr class="grp"><td colspan="3">Attributes &amp;amp; planogram</td></tr><tr><td class="fn">size</td><td class="ft">str</td><td class="fd">packageDescription.</td></tr><tr><td class="fn">abv</td><td class="ft">float</td><td class="fd">alcoholPercentage.</td></tr><tr><td class="fn">bay</td><td class="ft">str</td><td class="fd">Physical bay.</td></tr><tr><td class="fn">shelf</td><td class="ft">str</td><td class="fd">Shelf.</td></tr><tr><td class="fn">aisle</td><td class="ft">str</td><td class="fd">location.</td></tr><tr><td class="fn">raw_location</td><td class="ft">str</td><td class="fd">Full multi-location planogram (lisaInfo).</td></tr><tr><td class="fn">finish / taste / body</td><td class="ft">str</td><td class="fd">itemCharacteristics (RNDC-style vector; TASTE1/2/3 joined).</td></tr><tr><td class="fn">style / varietal / origin / region</td><td class="ft">str</td><td class="fd">categories[] by type (PRODUCT_TYPE / VARIETAL_TYPE / COUNTRY_STATE / REGION).</td></tr><tr><td class="fn">tasting_notes</td><td class="ft">str</td><td class="fd">review text (≤800).</td></tr><tr><td class="fn">award</td><td class="ft">str</td><td class="fd">Medal/points parsed from the review (“94 points – Wine Spectator”).</td></tr><tr><td class="fn">pairings</td><td class="ft">str</td><td class="fd">pairingsConfig options joined.</td></tr><tr><td class="fn">rating</td><td class="ft">float</td><td class="fd">customerAverageRating.</td></tr><tr><td class="fn">reviews</td><td class="ft">int</td><td class="fd">customerReviewsCount.</td></tr><tr><td class="fn">department</td><td class="ft">str</td><td class="fd">department.</td></tr><tr><td class="fn">direct_ship</td><td class="ft">str</td><td class="fd">directType.</td></tr><tr><td class="fn">is_new</td><td class="ft">bool</td><td class="fd">“new” in merchBadges.</td></tr><tr class="grp"><td colspan="3">Media &amp;amp; provenance</td></tr><tr><td class="fn">url</td><td class="ft">str</td><td class="fd">productUrl / canonicalUrl.</td></tr><tr><td class="fn">image</td><td class="ft">str url</td><td class="fd">First image.</td></tr><tr><td class="fn">is_hemp</td><td class="ft">bool</td><td class="fd">Hemp classifier on name+style.</td></tr><tr><td class="fn">raw_json</td><td class="ft">json str</td><td class="fd">The whole getProduct object (≤6k).</td></tr></tbody></table>
+  <h3>Sample record</h3>
+  <div class="sample"><div class="s-bar"><span class="s-rep">REPRESENTATIVE — real field names, illustrative values</span></div><div class="s-note">Illustrative Napa cab at store 920. Field names/types are the exact parse_product schema; upc is empty because Total Wine never provides one.</div><pre>{
+  &quot;store_id&quot;: &quot;920&quot;,
+  &quot;store&quot;: &quot;Total Wine - Orlando&quot;,
+  &quot;product_id&quot;: &quot;223968750-1&quot;,
+  &quot;sku&quot;: &quot;223968750-1&quot;,
+  &quot;upc&quot;: &quot;&quot;,
+  &quot;brand&quot;: &quot;Caymus&quot;,
+  &quot;brand_id&quot;: &quot;12841&quot;,
+  &quot;name&quot;: &quot;Caymus Cabernet Sauvignon&quot;,
+  &quot;price&quot;: 89.99,
+  &quot;price_type&quot;: &quot;regular&quot;,
+  &quot;in_stock&quot;: true,
+  &quot;qty&quot;: 48,
+  &quot;store_qty&quot;: 48,
+  &quot;shipping_qty&quot;: 120,
+  &quot;purchase_limit&quot;: 12,
+  &quot;stock_level&quot;: &quot;IN&quot;,
+  &quot;size&quot;: &quot;750ml&quot;,
+  &quot;abv&quot;: 14.8,
+  &quot;bay&quot;: &quot;A12&quot;,
+  &quot;shelf&quot;: &quot;3&quot;,
+  &quot;aisle&quot;: &quot;Cabernet Sauvignon&quot;,
+  &quot;raw_location&quot;: &quot;A12-3; EndCap-2&quot;,
+  &quot;finish&quot;: &quot;Long&quot;,
+  &quot;taste&quot;: &quot;Black Cherry, Vanilla, Mocha&quot;,
+  &quot;body&quot;: &quot;Full&quot;,
+  &quot;tasting_notes&quot;: &quot;Rich and layered with dark fruit, baking spice and a supple, lingering finish...&quot;,
+  &quot;award&quot;: &quot;94 points - Wine Spectator&quot;,
+  &quot;pairings&quot;: &quot;Beef, Lamb, Hard Cheese&quot;,
+  &quot;rating&quot;: 4.7,
+  &quot;reviews&quot;: 1203,
+  &quot;department&quot;: &quot;Wine&quot;,
+  &quot;direct_ship&quot;: &quot;&quot;,
+  &quot;is_new&quot;: false,
+  &quot;url&quot;: &quot;https://www.totalwine.com/wine/red-wine/cabernet-sauvignon/caymus-cabernet/p/223968750&quot;,
+  &quot;image&quot;: &quot;https://www.totalwine.com/media/....png&quot;,
+  &quot;is_hemp&quot;: false,
+  &quot;raw_json&quot;: &quot;{...full getProduct...}&quot;,
+  &quot;style&quot;: &quot;Red Wine&quot;,
+  &quot;varietal&quot;: &quot;Cabernet Sauvignon&quot;,
+  &quot;origin&quot;: &quot;United States&quot;,
+  &quot;region&quot;: &quot;Napa Valley&quot;
+}</pre></div>
+</section>
+<section id="abc" class="src">
+  <div class="src-head">
+    <h2>ABC Fine Wine &amp; Spirits</h2>
+    <div class="badges"><span class="badge b-head">headless <em>stdlib</em></span><span class="badge b-cad">daily</span><span class="badge b-live">live <em>landing</em></span><span class="badge b-counts">counts <em>per-store on-hand</em></span><span class="badge b-info">polite <em>10s crawl-delay</em></span></div>
+    <div class="lands">Lands to <code>retail_observations (+ abc_products)</code></div>
+  </div>
+  <p class="mech">ABC FWS (abcfws.com) runs on <b>BigCommerce</b>. The store is a product option — each product page lists ~133 store options and <code>available_variant_values</code> names the in-stock ones, so we read <b>per-store in/out + the chain price</b> straight from the allowed product page (no robots-disallowed AJAX). For a <b>real unit count</b> we call the sanctioned storefront GraphQL API (JWT embedded in the page): each store is a variant carrying <code>inventory.aggregated.availableToSell</code>. Polite: robots 10s crawl-delay, product pages only, honest UA; self-reports <code>degraded</code> if the selectors drift.</p>
+  <h3>Levels of pull</h3>
+  <ol class="levels"><li><div class="lv-h"><span class="lv-n">1</span><span class="lv-name">Catalog (sitemap)</span></div><div class="ep">GET /xmlsitemap.php?type=products&amp;page=N</div><div class="lv-y">The whole catalog as (sku, product URL). Every product type — no category filter.</div></li><li><div class="lv-h"><span class="lv-n">2</span><span class="lv-name">Product page (HTML)</span></div><div class="ep">GET &lt;product URL&gt;</div><div class="lv-y">Per-store <b>binary in/out</b> (store = BigCommerce option, in-stock subset = <code>available_variant_values</code>) + the chain-level price. Fallback path.</div></li><li><div class="lv-h"><span class="lv-n">3</span><span class="lv-name">Storefront GraphQL (real qty)</span></div><div class="ep">POST /graphql  (Bearer = JWT from the page)  → variants[].inventory.aggregated.availableToSell</div><div class="lv-y">The <b>actual bottle count per store</b> + variant sku/upc/gtin/isInStock/price. Preferred path; the number the HTML omits.</div></li></ol>
+  <div class="callout">ABC is an <b>inventory tracker</b>, not a rich catalog source — it lands the dated per-store price+in/out+qty time-series (<code>retail_observations</code>). Day-over-day it surfaces price moves, OOS↔restock transitions, and assortment churn.</div>
+  <h3>Every field we capture per (product, store)</h3>
+  <table class="fields"><thead><tr><th>Field</th><th>Type</th><th>What it is / where it comes from</th></tr></thead><tbody><tr class="grp"><td colspan="3">Per-store cell (snapshot keyed sku|store; lands to retail_observations)</td></tr><tr><td class="fn">sku</td><td class="ft">str</td><td class="fd">BigCommerce product id (trailing id in the product URL).</td></tr><tr><td class="fn">store</td><td class="ft">str</td><td class="fd">Store label — a BigCommerce product option, e.g. “ABC #016 - Winter Garden” or “Online”.</td></tr><tr><td class="fn">price</td><td class="ft">float $</td><td class="fd">Chain-level price (one BigCommerce price across stores).</td></tr><tr><td class="fn">instock</td><td class="ft">bool</td><td class="fd">Per-store in/out. From <code>available_variant_values</code> (HTML) or <code>inventory.isInStock</code> (GraphQL).</td></tr><tr><td class="fn">qty</td><td class="ft">int</td><td class="fd"><b>Real per-store units on hand</b> via the storefront GraphQL <code>inventory.aggregated.availableToSell</code>. None when only the HTML in/out fallback was available.</td></tr><tr><td class="fn">upc</td><td class="ft">str</td><td class="fd">variant.upc (GraphQL path).</td></tr><tr><td class="fn">gtin</td><td class="ft">str</td><td class="fd">variant.gtin (GraphQL path).</td></tr></tbody></table>
+  <h3>Sample record</h3>
+  <div class="sample"><div class="s-bar"><span class="s-real">REAL — from a live snapshot</span></div><div class="s-note">REAL cell from the ABC snapshot — SKU 365270 at Winter Garden. The same SKU across the chain that run: Online 75 units, Winter Garden 25, Satellite Beach 21, W. Kennedy 26, Ormond Beach 20 in stock; several stores 0/out — all at the same $6.99 chain price.</div><pre>{
+  &quot;sku&quot;: &quot;365270&quot;,
+  &quot;store&quot;: &quot;ABC #016 - Winter Garden&quot;,
+  &quot;price&quot;: 6.99,
+  &quot;instock&quot;: true,
+  &quot;qty&quot;: 25,
+  &quot;upc&quot;: &quot;&quot;,
+  &quot;gtin&quot;: &quot;&quot;
+}</pre></div>
+</section>
+<section id="binnys" class="src">
+  <div class="src-head">
+    <h2>Binny&#x27;s</h2>
+    <div class="badges"><span class="badge b-head">headless <em>Algolia feed</em></span><span class="badge b-cad">daily</span><span class="badge b-live">live <em>landing</em></span><span class="badge b-counts">counts <em>per-store units</em></span></div>
+    <div class="lands">Lands to <code>binnys_products + retail_observations</code></div>
+  </div>
+  <p class="mech">Binny's runs on <b>Algolia</b> (public search key, client-exposed by design). We make the same query the site's search makes; each product record carries <code>storesPriceAndInventory</code> — a per-store array with a <b>numeric unit count</b> (<code>purchaseAvailability</code>) and per-store prices. So we get store-level price + inventory, and the day-over-day Δ of units ≈ directional units sold. No scraping, no Bright Data.</p>
+  <h3>Levels of pull</h3>
+  <ol class="levels"><li><div class="lv-h"><span class="lv-n">1</span><span class="lv-name">Algolia query (paginated)</span></div><div class="ep">POST https://&lt;appId&gt;-dsn.algolia.net/1/indexes/Products_Production/query  (1000 hits/page, ~31k products)</div><div class="lv-y">One rich hit per product — <b>57 source fields</b> (name, brand, varietal, region, proof, THC/CBD mg, case pack, ratings, deal/discount, descriptions) …</div></li><li><div class="lv-h"><span class="lv-n">2</span><span class="lv-name">Per-store fan-out</span></div><div class="ep">each hit&#x27;s storesPriceAndInventory[]  →  cell keyed sku|storeCode</div><div class="lv-y">… exploded into one cell per (product, store) carrying <b>per-store price + exact units on hand</b>. Lands <code>binnys_products</code> (keyed sku+store) + the dated observation series.</div></li></ol>
+  
+  <h3>Every field we land (table <code>binnys_products</code>, keyed by sku + store)</h3>
+  <table class="fields"><thead><tr><th>Field</th><th>Type</th><th>What it is / where it comes from</th></tr></thead><tbody><tr class="grp"><td colspan="3">Identity &amp;amp; classification</td></tr><tr><td class="fn">sku</td><td class="ft">str</td><td class="fd">Algolia objectID (product id).</td></tr><tr><td class="fn">store</td><td class="ft">str</td><td class="fd">Store code (per-store cell).</td></tr><tr><td class="fn">name</td><td class="ft">str</td><td class="fd">productName.</td></tr><tr><td class="fn">brand</td><td class="ft">str</td><td class="fd">productBrandName.</td></tr><tr><td class="fn">varietal</td><td class="ft">str</td><td class="fd">productVarietal.</td></tr><tr><td class="fn">region</td><td class="ft">str</td><td class="fd">region.</td></tr><tr><td class="fn">origin</td><td class="ft">str</td><td class="fd">country.</td></tr><tr><td class="fn">category</td><td class="ft">str</td><td class="fd">productType / gtmCategory.</td></tr><tr><td class="fn">department</td><td class="ft">str</td><td class="fd">productDepartment (Beer / Wine / Spirits …).</td></tr><tr class="grp"><td colspan="3">Pack &amp;amp; potency</td></tr><tr><td class="fn">item_size</td><td class="ft">str</td><td class="fd">itemSize (“750ML”, “4 x 16Z”).</td></tr><tr><td class="fn">unit_label</td><td class="ft">str</td><td class="fd">priceUnitLabel (“4 Pack of 16 oz Can”).</td></tr><tr><td class="fn">case_pack</td><td class="ft">int</td><td class="fd">casePack.</td></tr><tr><td class="fn">proof</td><td class="ft">float</td><td class="fd">proof.</td></tr><tr><td class="fn">abv</td><td class="ft">float</td><td class="fd">Derived as proof/2.</td></tr><tr><td class="fn">thc_mg</td><td class="ft">float</td><td class="fd">thcMgPerServing / PerUnit / PerSellPack — the hemp dose vendors are often null on.</td></tr><tr><td class="fn">cbd_mg</td><td class="ft">float</td><td class="fd">cbdMgPerServing / PerUnit / PerSellPack.</td></tr><tr class="grp"><td colspan="3">Price, inventory &amp;amp; ratings &lt;span class=&#x27;hl&#x27;&gt;(per store)&lt;/span&gt;</td></tr><tr><td class="fn">price</td><td class="ft">float $</td><td class="fd">Per-store price — salePrice when on sale, else regularPrice.</td></tr><tr><td class="fn">qty</td><td class="ft">int</td><td class="fd"><b>Numeric per-store units</b> — storesPriceAndInventory[].purchaseAvailability. Day-over-day Δ ≈ units sold.</td></tr><tr><td class="fn">rating</td><td class="ft">float</td><td class="fd">ratingNumber.</td></tr><tr><td class="fn">reviews</td><td class="ft">int</td><td class="fd">reviewsAmount.</td></tr><tr><td class="fn">discount_pct</td><td class="ft">float</td><td class="fd">pricePercentDiscount.</td></tr><tr><td class="fn">deal_of_week</td><td class="ft">bool</td><td class="fd">isDealOfTheWeek.</td></tr><tr><td class="fn">is_sold_out</td><td class="ft">bool</td><td class="fd">isSoldOut.</td></tr><tr><td class="fn">in_store_only</td><td class="ft">bool</td><td class="fd">isInStoreOnly.</td></tr><tr class="grp"><td colspan="3">Content &amp;amp; provenance</td></tr><tr><td class="fn">is_hemp</td><td class="ft">bool</td><td class="fd">Hemp classifier on name/type or any THC/CBD.</td></tr><tr><td class="fn">short_desc</td><td class="ft">str</td><td class="fd">shortDescription (≤500).</td></tr><tr><td class="fn">product_url</td><td class="ft">str</td><td class="fd">productUrl / productLink.</td></tr><tr><td class="fn">image</td><td class="ft">str url</td><td class="fd">imageUrl.</td></tr><tr><td class="fn">raw_json</td><td class="ft">json str</td><td class="fd">The <b>whole</b> Algolia hit minus _highlightResult (≤6k) — all 57 source fields.</td></tr></tbody></table>
+  <h3>Sample record</h3>
+  <div class="sample"><div class="s-bar"><span class="s-real">REAL — from a live snapshot</span></div><div class="s-note">REAL cell from the Binny's snapshot — a Saint-Émilion future at store 23: $32.00, 981 units on hand, 14.5% ABV (from proof 29). raw_json (truncated here) keeps all 57 Algolia fields.</div><pre>{
+  &quot;name&quot;: &quot;Chateau Tour Saint Christophe Saint Emilion (Futures) 2025&quot;,
+  &quot;brand&quot;: &quot;Chateau Tour St Christophe&quot;,
+  &quot;varietal&quot;: &quot;Red Bordeaux Blend&quot;,
+  &quot;region&quot;: &quot;Saint Emilion&quot;,
+  &quot;origin&quot;: &quot;France&quot;,
+  &quot;category&quot;: &quot;Red Wine&quot;,
+  &quot;department&quot;: &quot;Wine&quot;,
+  &quot;item_size&quot;: &quot;750ML&quot;,
+  &quot;unit_label&quot;: &quot;750 ml Bottle&quot;,
+  &quot;case_pack&quot;: 1,
+  &quot;image&quot;: &quot;https://www.binnys.com/globalassets/catalogs/binnys/17/1781/178144/178144.jpg?v=639135753380000000&quot;,
+  &quot;product_url&quot;: &quot;https://www.binnys.com/wine/red-wines/other-red-wines/chateau-tour-saint-christophe-saint-emilion-futures-178144/&quot;,
+  &quot;proof&quot;: 29.0,
+  &quot;abv&quot;: 14.5,
+  &quot;thc_mg&quot;: null,
+  &quot;cbd_mg&quot;: null,
+  &quot;rating&quot;: null,
+  &quot;reviews&quot;: null,
+  &quot;discount_pct&quot;: 0.0,
+  &quot;deal_of_week&quot;: false,
+  &quot;is_sold_out&quot;: false,
+  &quot;in_store_only&quot;: true,
+  &quot;short_desc&quot;: &quot;Chateau Tour Saint Christophe Saint Emilion (Futures) 2025&quot;,
+  &quot;is_hemp&quot;: false,
+  &quot;raw_json&quot;: &quot;{\&quot;pointsMax\&quot;:96,\&quot;objectID\&quot;:\&quot;178144\&quot;,\&quot;country\&quot;:\&quot;United States\&quot;,\&quot;gtmCategory\&quot;:\&quot;beer\&quot;,...}&quot;,
+  &quot;price&quot;: 32.0,
+  &quot;qty&quot;: 981,
+  &quot;store&quot;: &quot;23&quot;,
+  &quot;sku&quot;: &quot;178144&quot;
+}</pre></div>
+</section>
+<section id="specs" class="src">
+  <div class="src-head">
+    <h2>Spec&#x27;s</h2>
+    <div class="badges"><span class="badge b-head">headless <em>stdlib</em></span><span class="badge b-cad">daily</span><span class="badge b-live">live <em>landing</em></span><span class="badge b-counts">counts <em>per-store units</em></span></div>
+    <div class="lands">Lands to <code>specs_products + retail_observations</code></div>
+  </div>
+  <p class="mech">Spec's (specsonline.com) serves bots (200) and embeds a per-store <code>variants</code> object right in the product page — ~190 store variants, each with <code>inStock</code> + <code>unitPrice</code>, so per-store price + in/out comes in <b>one fetch</b>. The actual <b>unit count</b> is one hop away: the PDP calls <code>/api/products/stock/&lt;store&gt;-&lt;upc&gt;/</code> → {available:N, tracked}. So Spec's is a real counts source, not just in/out.</p>
+  <h3>Levels of pull</h3>
+  <ol class="levels"><li><div class="lv-h"><span class="lv-n">1</span><span class="lv-name">Catalog (sitemap)</span></div><div class="ep">GET /sitemap.xml → product child sitemaps (~41k products across 21 sitemaps)</div><div class="lv-y">Every product as (slug, URL).</div></li><li><div class="lv-h"><span class="lv-n">2</span><span class="lv-name">Product page (PDP)</span></div><div class="ep">GET &lt;product URL&gt;</div><div class="lv-y">The <b>full product detail</b> (type/brand/abv/region/varietal/vintage/tasting notes/pairs-with + ld+json name/description/price/image + <b>UPC parsed from the image filename</b>) <b>and</b> the embedded per-store variants block (store, sku, inStock, unitPrice).</div></li><li><div class="lv-h"><span class="lv-n">3</span><span class="lv-name">Inventory API (unit count)</span></div><div class="ep">GET /api/products/stock/&lt;storeCode&gt;-&lt;upc&gt;/  → {status, available:N, tracked}</div><div class="lv-y">The <b>numeric units on hand</b> per (in-stock store, product) — the count the variants block omits. Fanned out one call per in-stock store.</div></li></ol>
+  
+  <h3>Every field we capture (two grains: product detail + per-store cell)</h3>
+  <table class="fields"><thead><tr><th>Field</th><th>Type</th><th>What it is / where it comes from</th></tr></thead><tbody><tr class="grp"><td colspan="3">Product detail (table specs_products, keyed sku|slug)</td></tr><tr><td class="fn">sku</td><td class="ft">str</td><td class="fd">Product SKU (from attributes / ld+json).</td></tr><tr><td class="fn">slug</td><td class="ft">str</td><td class="fd">URL slug.</td></tr><tr><td class="fn">url</td><td class="ft">str</td><td class="fd">PDP URL.</td></tr><tr><td class="fn">name</td><td class="ft">str</td><td class="fd">Product name (ld+json).</td></tr><tr><td class="fn">brand</td><td class="ft">str</td><td class="fd">Brand.</td></tr><tr><td class="fn">type</td><td class="ft">str</td><td class="fd">Product type.</td></tr><tr><td class="fn">varietal</td><td class="ft">str</td><td class="fd">Varietal.</td></tr><tr><td class="fn">abv</td><td class="ft">str</td><td class="fd">ABV (as shown).</td></tr><tr><td class="fn">origin</td><td class="ft">str</td><td class="fd">Country, e.g. “United States”.</td></tr><tr><td class="fn">region</td><td class="ft">str</td><td class="fd">e.g. “Kentucky (KY)”.</td></tr><tr><td class="fn">state</td><td class="ft">str</td><td class="fd">2-letter state parsed from region.</td></tr><tr><td class="fn">vintage</td><td class="ft">str</td><td class="fd">Vintage.</td></tr><tr><td class="fn">tasting_notes</td><td class="ft">str</td><td class="fd">Tasting notes.</td></tr><tr><td class="fn">pairs_with</td><td class="ft">str</td><td class="fd">Food pairings.</td></tr><tr><td class="fn">description</td><td class="ft">str</td><td class="fd">ld+json description.</td></tr><tr><td class="fn">price</td><td class="ft">float $</td><td class="fd">ld+json offers.price (each-price).</td></tr><tr><td class="fn">upc</td><td class="ft">str</td><td class="fd"><b>Parsed from the product image filename</b> — Spec's names images by UPC.</td></tr><tr><td class="fn">image</td><td class="ft">str url</td><td class="fd">Product image.</td></tr><tr class="grp"><td colspan="3">Availability roll-up</td></tr><tr><td class="fn">in_stock_stores</td><td class="ft">int</td><td class="fd">Count of stores in stock (from the variants block).</td></tr><tr><td class="fn">store_count</td><td class="ft">int</td><td class="fd">Stores listed.</td></tr><tr><td class="fn">units_total</td><td class="ft">int</td><td class="fd">Total on-hand across counted stores (sum of the inventory-API counts).</td></tr><tr><td class="fn">stores_tracked</td><td class="ft">int</td><td class="fd">How many stores returned a tracked count.</td></tr><tr><td class="fn">raw_json</td><td class="ft">json str</td><td class="fd">The untouched attribute + offers blocks (≤8k).</td></tr><tr class="grp"><td colspan="3">Per-store cell (lands to retail_observations)</td></tr><tr><td class="fn">store</td><td class="ft">str</td><td class="fd">Store code.</td></tr><tr><td class="fn">price</td><td class="ft">float $</td><td class="fd">Per-store unitPrice (cents→$). Varies by store.</td></tr><tr><td class="fn">instock</td><td class="ft">bool</td><td class="fd">Per-store inStock from the embedded variants block.</td></tr><tr><td class="fn">qty</td><td class="ft">int</td><td class="fd"><b>Numeric units on hand</b> via <code>/api/products/stock/&lt;store&gt;-&lt;upc&gt;/</code> → available. None when the product isn't inventory-tracked at that store.</td></tr></tbody></table>
+  <h3>Sample records</h3>
+  <div class="sample"><div class="s-bar"><span class="s-real">REAL — from a live snapshot</span></div><div class="s-note">REAL product-level values (Blue Ice Huckleberry Vodka) — note the UPC recovered from the image filename. Availability roll-up counts are illustrative of the shape.</div><pre>{
+  &quot;sku&quot;: &quot;081519700328&quot;,
+  &quot;slug&quot;: &quot;blue-ice-vodka-huckleberry&quot;,
+  &quot;url&quot;: &quot;https://specsonline.com/....&quot;,
+  &quot;name&quot;: &quot;Blue Ice Vodka • Huckleberry&quot;,
+  &quot;brand&quot;: &quot;Blue Ice&quot;,
+  &quot;type&quot;: &quot;Vodka&quot;,
+  &quot;varietal&quot;: &quot;&quot;,
+  &quot;abv&quot;: &quot;40%&quot;,
+  &quot;origin&quot;: &quot;United States&quot;,
+  &quot;region&quot;: &quot;Idaho (ID)&quot;,
+  &quot;state&quot;: &quot;ID&quot;,
+  &quot;vintage&quot;: &quot;&quot;,
+  &quot;tasting_notes&quot;: &quot;...&quot;,
+  &quot;pairs_with&quot;: &quot;...&quot;,
+  &quot;description&quot;: &quot;...&quot;,
+  &quot;price&quot;: 20.99,
+  &quot;upc&quot;: &quot;081519700328&quot;,
+  &quot;image&quot;: &quot;https://specsonline.com/images/...081519700328.jpg&quot;,
+  &quot;in_stock_stores&quot;: 42,
+  &quot;store_count&quot;: 190,
+  &quot;units_total&quot;: 318,
+  &quot;stores_tracked&quot;: 42,
+  &quot;raw_json&quot;: &quot;{...}&quot;
+}</pre></div><div class="sample"><div class="s-bar"><span class="s-real">REAL — from a live snapshot</span></div><div class="s-note">REAL per-store cell (CUNE Riója Reserva, store 15) — $34.41 here vs $34.73 / $35.78 at other stores that run: Spec's prices vary by store. qty comes from the inventory API.</div><pre>{
+  &quot;store&quot;: &quot;15&quot;,
+  &quot;slug&quot;: &quot;c-v-n-e-...-vina-real-reserva-rioja&quot;,
+  &quot;sku&quot;: &quot;&quot;,
+  &quot;name&quot;: &quot;CUNE Viña Real Reserva Rioja&quot;,
+  &quot;price&quot;: 34.41,
+  &quot;instock&quot;: true,
+  &quot;qty&quot;: 6,
+  &quot;upc&quot;: &quot;&quot;,
+  &quot;brand&quot;: &quot;CUNE (C.V.N.E.)&quot;
+}</pre></div>
+</section>
+
+  <footer>
+    <p>Generated from the live scrapers: <code>ubereats.py</code>, <code>kroger_atlas.py</code>,
+    <code>total_wine_inventory.py</code>, <code>abc_fws_scraper.py</code>, <code>binnys_scraper.py</code>,
+    <code>specs_scraper.py</code>, <code>instacart.py</code> / <code>instacart_scraper.py</code>, and the canonical
+    <code>source_registry.py</code>. Real samples were extracted from the local snapshots
+    (<code>abc_snapshot.json</code>, <code>binnys_snapshot.json</code>, <code>specs_snapshot.json</code>).</p>
+    <p>Every field a scraper marks with <code>raw_json</code> retains the untouched source payload — the promoted
+    columns above are what we structure, not the limit of what we keep.</p>
+  </footer>
+</div>
+</body>
+</html>
