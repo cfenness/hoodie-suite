@@ -248,3 +248,58 @@ exists to prevent. Re-scope:
 All six phases above are built (2026-07-24). The machine runs itself; the next campaign makes what
 it produces the measured best of its peers — velocity engine calibrated against actual state sales,
 proven master precision, honest projection, survivability. See **MOAT-PLAN.md**.
+
+---
+
+## 10. Scale corrections — SipSource raw tiers & master fan-in (2026-07-24)
+
+Two corrected planning numbers, from the operator:
+- **300–600M rows is SipSource's MOST AGGREGATED tier.** The underlying raw runs to **trillions of
+  records**. Which tier we ingest depends on what we buy — the architecture must be sized for the
+  worst case, not the sample.
+- **Master intake: ~200–300M source item records → 800k–1.3M master items** (~240:1 fan-in).
+
+### 10a. The feed pyramid, at measured constants (~18.4 B/row zstd; 5M rows/s object-storage-bound)
+
+| Raw tier | Parquet | Tigris $/mo | Full pass (1 worker) | Monthly increment (1/37th) |
+|---|---|---|---|---|
+| 500M (aggregated — **proven**) | 9.2 GB | ~$0.18 | minutes | seconds |
+| 10B | 184 GB | ~$3.70 | 0.6 h | ~2 min |
+| 100B | 1.8 TB | ~$37 | 5.6 h | ~12 min |
+| 1T | 18.4 TB | ~$368 | 55.6 h | **1.5 h** |
+
+**The rules that make even the trillion tier survivable:**
+1. **No job ever passes over full raw.** Everything is per-period incremental; the monthly
+   increment at trillion-total is ~27B rows ≈ 1.5h on one worker — inside free Actions limits.
+2. **The one full-history pass (initial backfill) is DECOMPOSED by period** — ~37 jobs of ≤1.5–6h
+   each, run as an Actions matrix. Even a trillion-row backfill fits free compute; it is never one
+   big job on a big machine.
+3. **Three-layer pyramid, each bounded:** raw-as-delivered (cold archive, touched once per drop) →
+   **working grain** (item×market×month ≈ 0.2–2.4B rows, 4–45GB — worker-side drill-downs) →
+   serving marts (~9–50M, dimension-bounded — the ONLY thing the site reads). The 100M-row proof's
+   bounded-mart property is exactly what makes serving immune to raw-tier choice.
+4. **Gate updates:** Tigris leaves the free tier at ~250GB raw (~$5/mo — fine; $368/mo at 1T is a
+   real line item on the cost ledger, still incumbent-impossible). The Snowflake/ClickHouse gate
+   gains a concrete trigger: **a per-period increment exceeding ~6h on the largest viable worker.**
+
+### 10b. Master fan-in at ~240:1 — the staged collapse
+
+A couple hundred million item records are mostly **per-store/per-source repeats of the same ~1M
+items** — so the fan-in is dominated by deterministic keys, and the expensive machinery only ever
+sees the hard tail:
+
+| Stage | Mechanism | In → out (est.) | Cost class |
+|---|---|---|---|
+| 0 | SQL exact collapse on normalized UPC/GTIN (checkless-13 heals etc.) | 250M → ~30–80M residual | pure DuckDB, minutes |
+| 1 | Deterministic composite key (brand_norm + size_ml + class) | residual → ~5–15M clusters | pure DuckDB, minutes |
+| 2 | Blocked similarity within (brand, category, size-band); price-coherence + category-tree scorers auto-accept/reject | ambiguous band only → ≤1–2M pairs | SQL + batch LLM (one-time, ~$100s) |
+| 3 | Human exception queue, ranked impact × uncertainty | thousands, not millions | steward time |
+
+- **Boundary (ADR-001 unchanged):** stages 0–2 scoring are warehouse-side SQL pushdown in unifyd;
+  the durable identity engine for the hard tail is **hoodie-canon's charter**. unifyd hands canon
+  ~5–15M collapsed clusters — never 300M raws.
+- **Explicit flag:** today's `build_product_master.py` materializes source tables into Python row
+  loops — correct at current volumes, **below this scale by design**. The staged collapse above is
+  its successor path; do not grow the Python loop toward 200M.
+- **Performance targets (scoreboard rows):** cold full re-master ≤ one weekend on one worker;
+  daily incremental master cycle ≤ 10 min; both measured, not asserted.
