@@ -113,6 +113,16 @@ The skeleton is right (candidate blocks → Claude batch adjudication → human 
 crosswalks; price/category corroboration). What's missing is **proof**. "We have a matching engine"
 is good enough; "P=99.x% measured, every record carries confidence" is best.
 
+**Scale (corrected 2026-07-24, see NRT-PLAN §10b):** intake is ~200–300M source item records
+mastering to **800k–1.3M items** (~240:1 fan-in) — dominated by per-store repeats, so the collapse is
+staged: SQL exact-UPC (eats the bulk) → deterministic composite keys → blocked similarity with
+deterministic scorers → LLM only on the ambiguous ≤1–2M pairs → humans on thousands. Stages 0–2 are
+warehouse-side SQL pushdown; the hard-tail identity engine is hoodie-canon's charter, fed ~5–15M
+collapsed clusters, never 300M raws. Today's Python-loop `build_product_master.py` is explicitly
+below this scale — do not grow it toward 200M. **Added scoreboard rows:** cold full re-master ≤ one
+weekend on one worker; daily incremental master cycle ≤ 10 min. Gold-set strata (M1) must include
+fan-in bands (2-source items vs 200-source items fail differently).
+
 ### M1. Gold set
 - ~1,500 labeled pairs, stratified by category × source-pair × match-rule (UPC, name+size,
   price-corroborated, identity_resolve merges), plus deliberate hard negatives (same brand adjacent
