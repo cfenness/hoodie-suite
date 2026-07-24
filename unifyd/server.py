@@ -5876,6 +5876,33 @@ def order_send_ep(oid):
     return jsonify(ok=any(r["ok"] for r in results), results=results, order_status=o.get("status"))
 
 
+# Order lifecycle: submitted → sent → confirmed (distributor acknowledged) → delivered; cancellable
+# until delivered. A forward-only ladder (no going back a step) keeps the history a clean audit trail.
+_ORDER_FLOW = ["submitted", "sent", "confirmed", "delivered"]
+
+
+@app.post("/api/orders/<oid>/status")
+def order_status_ep(oid):
+    """Advance/set an order's status. Body: {status}. Allowed: submitted|sent|confirmed|delivered|
+    cancelled. Records a timestamped status_history so the lifecycle is auditable."""
+    o = next((o for o in ORDERS if o["id"] == oid), None)
+    if not o:
+        return jsonify(ok=False, error="not found"), 404
+    new = (request.get_json(force=True, silent=True) or {}).get("status", "").strip().lower()
+    if new not in _ORDER_FLOW and new != "cancelled":
+        return jsonify(ok=False, error="status must be one of: %s, cancelled" % ", ".join(_ORDER_FLOW)), 400
+    cur = o.get("status", "submitted")
+    if cur == "delivered" and new != "delivered":
+        return jsonify(ok=False, error="a delivered order is closed"), 409
+    if new != "cancelled" and cur in _ORDER_FLOW and new in _ORDER_FLOW and \
+            _ORDER_FLOW.index(new) < _ORDER_FLOW.index(cur):
+        return jsonify(ok=False, error="can't move an order backward (%s → %s)" % (cur, new)), 409
+    o["status"] = new
+    o.setdefault("status_history", []).append({"status": new, "at": int(time.time() * 1000)})
+    _save_json("orders.json", ORDERS)
+    return jsonify(ok=True, id=oid, status=new, status_history=o["status_history"])
+
+
 # ---- optional: serve the static suite from THIS app (all-in-one image, e.g. Fly.io) ----
 # When SUITE_ROOT is set, one gunicorn process serves BOTH /api/* and the public suite from a single
 # origin, so the apps' same-origin /api/* fetches work with no separate frontend host and no CORS.
