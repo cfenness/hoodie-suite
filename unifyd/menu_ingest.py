@@ -155,6 +155,52 @@ def _size(name):
     return m.group(1).replace(" ", "") if m else ""
 
 
+# Product-FORM words — their presence marks a header as a product-family sub-section (not a brand) and
+# lets us read category/form off a header row.
+_FORM_WORDS = re.compile(r"\b(packs?|pk|pre-?rolls?|prerolls?|blunts?|cartridges?|carts?|vapes?|briq2?|"
+                         r"cliq|pods?|disposables?|batteries|battery|chargers?|gummies|gummy|edibles?|"
+                         r"jellies|chocolates?|mints?|flower|prepack|smalls|popcorn|eighths?|quarters?|"
+                         r"diamonds?|rosin|resin|badder|budder|shatter|wax|rso|capsules?|tinctures?|"
+                         r"beverages?|drinks?|shots?|nano\s?bites?|squeeze|assortment|series|collection)\b", re.I)
+_VARIANT_LEAD = re.compile(r"^\s*(indica|sativa|hybrid|cbd|thca?|1\s*:\s*1|[:\-–])", re.I)
+
+
+def _brand_seed(text):
+    """Leading brand-ish words of a header, up to the first size/form token (e.g.
+    'Grassroots Diamond Preroll 5 Pack 2g' → 'Grassroots Diamond')."""
+    out = []
+    for w in (text or "").split():
+        if _FORM_WORDS.match(w) or re.match(r"^[0-9]", w) or w in ("-", "–", "|", ":"):
+            break
+        out.append(w)
+    return " ".join(out).strip(" -–|:") or (text or "").strip(" -–|:")
+
+
+def _section_info(text):
+    """Classify a header row. A header naming a size or a product form (3.5g / Preroll / Cartridge…) is a
+    SUB-section (product family) that carries data; a bare name is a brand header. Returns
+    {kind: 'brand'|'sub', brand_part, size, category}."""
+    size = _size(text)
+    cat = _category(text)
+    kind = "sub" if (size or cat or _FORM_WORDS.search(text or "")) else "brand"
+    return {"kind": kind, "brand_part": _brand_seed(text), "size": size, "category": cat}
+
+
+def _is_terse(name, brand, section, sec_size, sec_cat):
+    """True when a child row's text is just a variant/strain and the real product lives in the section
+    header above it — so we compose the full product_name from the header + the variant."""
+    if not section:
+        return False
+    low = (name or "").lower()
+    if brand and brand.lower() in low:
+        return False                                  # already carries the brand → it's a full name
+    if _VARIANT_LEAD.match(name or ""):
+        return True                                   # 'Indica : Triple Stack', ': Sugar Kushions', …
+    if not _size(name) and (sec_size or sec_cat):
+        return True                                   # no size of its own, sitting under a sized family
+    return False
+
+
 def _find_header(rows):
     """(row_index, {col_index: canon_field}) for the first row where ≥3 cells match column synonyms."""
     for i, row in enumerate(rows[:30]):
@@ -209,8 +255,9 @@ def parse(data, filename="menu.xlsx", distributor="", log=print):
             t = re.sub(r"^\s*\w+ \d{1,2}(st|nd|rd|th)?,? \d{4}\s*[-–]\s*", "", title)
             distributor = re.sub(r"\s*menu\s*$", "", t, flags=re.I).strip()
 
-        items, brand, sub = [], "", ""
-        name_j = next(j for j, c in colmap.items() if c == "product_name")
+        # Section context carried DOWN to child rows. `sec_size`/`sec_cat` are pulled off a sub-header so
+        # a size/form that lives ONLY in the header (e.g. 'Dark Heart - 3.5g') still reaches its items.
+        items, brand, section, sec_size, sec_cat = [], "", "", "", ""
         for ri, row in enumerate(rows[hi + 1:]):
             get = lambda canon: next((row[j] for j, c in colmap.items() if c == canon and j < len(row)), "")
             name = get("product_name")
@@ -219,22 +266,33 @@ def parse(data, filename="menu.xlsx", distributor="", log=print):
                     break                            # TOTALS = end of the item block
                 continue
             base, batch, units = _num(get("base_price")), get("batch"), get("units")
-            if base is None and not batch:
-                # section context: "Dark Heart" (brand) / "Dark Heart - 3.5g" (sub-section)
-                filled = [c for c in row if c and c not in ("Bin Size",)]
-                if len(filled) <= 2:
-                    if " - " in name:
-                        sub = name
-                    else:
-                        brand, sub = name.strip(), ""
-                    continue
+            msrp, thc = _num(get("msrp")), _thc(get("thc"))
+            # A row with NO price / batch / units / thc / msrp is a section or sub-header, not a sellable
+            # line — regardless of how many stray cells it has (the old len(filled)<=2 test missed some).
+            if not (base is not None or batch or _num(units) is not None or msrp is not None or thc is not None):
+                si = _section_info(name)
+                if si["kind"] == "brand":
+                    brand, section, sec_size, sec_cat = si["brand_part"] or name.strip(), "", "", ""
+                else:
+                    section, sec_size, sec_cat = name.strip(), si["size"], si["category"]
+                    if not brand and si["brand_part"]:
+                        brand = si["brand_part"]     # a family header can seed the brand when none's set yet
+                continue
+            # Compose a terse child ('Indica : Triple Stack') into the full product using its section
+            # header — that header is often the ONLY place the product/size/form is named.
+            terse = _is_terse(name, brand, section, sec_size, sec_cat)
+            variant = name.strip().lstrip(":-–| ").strip() if terse else ""   # 'Indica : X', ': X' → clean tail
+            full_name = ((section.rstrip(" -–|:") + " - " + variant).strip(" -–|:") if (terse and section)
+                         else name.strip())
             raw = {str(j): row[j] for j in range(len(row)) if row[j] and j not in colmap}
-            it = {"product_name": name, "brand": brand, "section": sub,
-                  "category": get("category") or _category(name), "size": get("size") or _size(name),
-                  "strain": get("strain"), "thc_pct": _thc(get("thc")), "cbd_pct": _thc(get("cbd")),
+            it = {"product_name": full_name, "brand": brand, "section": section,
+                  "category": get("category") or _category(name) or sec_cat,
+                  "size": get("size") or _size(name) or sec_size,
+                  "strain": get("strain") or variant,
+                  "thc_pct": thc, "cbd_pct": _thc(get("cbd")),
                   "batch": batch, "exp_date": _excel_date(get("exp_date")),
                   "bin_size": _num(get("bin_size")), "units_available": _num(units),
-                  "base_price": base, "msrp": _num(get("msrp")),
+                  "base_price": base, "msrp": msrp,
                   "raw_json": json.dumps(raw, separators=(",", ":")) if raw else ""}
             items.append(it)
         if items and (best is None or len(items) > len(best[1])):
