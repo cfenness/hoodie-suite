@@ -38,14 +38,41 @@ _TIMEOUT = {"headless": 5400, "creds": 5400, "mac": 14400,   # 1.5h headless, 4h
 
 
 def _rows(table):
-    """Current row count of one table — layout-aware via warehouse.row_count (single-file footer,
-    or the bucket manifest for v2 tables). None if the table doesn't exist yet."""
+    """Current row count of one table — layout-aware via warehouse.row_count_strict (single-file
+    footer, or the bucket manifest for v2 tables). None if the table genuinely doesn't exist yet.
+    RAISES warehouse.RowCountUnavailable on a transient/unknown storage read failure, so the caller
+    can tell 'unknown' from 'empty' and never fabricate a drop from a blip."""
     import warehouse
-    return warehouse.row_count(table) or None
+    return warehouse.row_count_strict(table) or None
 
 
 def _counts(tables):
-    return {t: _rows(t) for t in tables}
+    """BEFORE-run (or creds-skip) counts. A table we can't read is left UNKNOWN (None), never 0."""
+    import warehouse
+    out = {}
+    for t in tables:
+        try:
+            out[t] = _rows(t)
+        except warehouse.RowCountUnavailable:
+            out[t] = None
+    return out
+
+
+def _counts_after(tables, before, log=print):
+    """AFTER-run counts, hardened against a transient read blip. A table whose count can't be read is
+    assumed UNCHANGED (its before count), NEVER 0 — a guarded warehouse write cannot zero or shrink a
+    populated table, so a post-run '0' is a failed read, not a real clobber. Conflating the two is
+    what filled the ledger with false 'empty'/'-N clobber' records (haskells 10518->0 while the file
+    was intact) and made healthy pulls look like 'ran but didn't land'."""
+    import warehouse
+    out = {}
+    for t in tables:
+        try:
+            out[t] = _rows(t)
+        except warehouse.RowCountUnavailable as e:
+            out[t] = before.get(t)
+            log("  %-16s after-count unreadable (%s) — assuming UNCHANGED, not a clobber" % (t, str(e)[:70]))
+    return out
 
 
 def _interval_h(source):
@@ -214,7 +241,7 @@ def run_one(source, log=print, extra_env=None):
         status, error = "timeout", "exceeded %ds" % timeout_s
     except Exception as e:
         status, error = "failed", str(e)[:300]
-    after = _counts(source["tables"])
+    after = _counts_after(source["tables"], before, log=log)
     dur = round(time.time() - t0, 1)
 
     b = sum(v for v in before.values() if v) or 0
