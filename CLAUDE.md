@@ -151,6 +151,10 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   thc/msrp) is classified brand-vs-product-family, its size/form/category are read off the header
   and cascaded to the child rows, and a terse child (`Indica : Wedding Cake`) is composed into the
   full product using its family header — which is often the ONLY place the product/size lives.
+  **`parse_smart()` adds a Claude fallback** that fires ONLY when the deterministic pass fails or is
+  low-confidence (few lines / most lines unpriced): it hands the raw grid to Claude (forced tool call,
+  needs `ANTHROPIC_API_KEY`) to recover the same normalized lines — so an alien layout still lands, with
+  no LLM cost on menus that already parse cleanly (the `/api/menus/upload` endpoint uses it).
   Lands `distributor_menu_items`; behind `apps/ordering.html`
   (Wholesale Ordering: all menus → one catalog → one order → per-distributor PO sheets via
   `/api/menus/*` + `/api/orders*`). **Auto-send:** a distributor contact book

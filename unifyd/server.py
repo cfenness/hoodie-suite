@@ -5999,7 +5999,9 @@ def menus_upload_ep():
     if len(data) > 15 * 1024 * 1024:
         return jsonify(ok=False, error="file too large (15MB max)"), 400
     try:
-        parsed = menu_ingest.parse(data, filename=fn, distributor=(body.get("distributor") or "").strip())
+        # parse_smart = deterministic parse + a Claude fallback that only fires when that's
+        # low-confidence (odd layouts still land, no LLM cost on menus that already parse cleanly).
+        parsed = menu_ingest.parse_smart(data, filename=fn, distributor=(body.get("distributor") or "").strip())
     except Exception as e:
         return jsonify(ok=False, error="parse failed: %s" % str(e)[:200]), 500
     if not parsed.get("ok"):
@@ -6007,7 +6009,7 @@ def menus_upload_ep():
     n = menu_ingest.land(parsed)
     its = parsed["items"]
     return jsonify(ok=True, menu_id=parsed["menu_id"], distributor=parsed["distributor"],
-                   menu_date=parsed["menu_date"], license=parsed["license"], lines=n,
+                   menu_date=parsed["menu_date"], license=parsed["license"], lines=n, method=parsed.get("method"),
                    brands=sorted({i["brand"] for i in its if i["brand"]}),
                    warnings=parsed["warnings"])
 
