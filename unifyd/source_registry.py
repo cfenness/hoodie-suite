@@ -171,6 +171,15 @@ BUILDS = [
          code="import obs_quality as m; m.build()",
          tables=["obs_quality_source", "obs_quality_cell"], klass="build", interval_h=12, enabled=True,
          note="per-source instrument card + per-(store,sku) cell quality/jitter over retail_observations"),
+    # MOAT-PLAN Workstream V2/V3 — delta decomposition → implied sell-through. Reads obs_quality (the
+    # jitter fingerprint + tier) and the retail_observations time-series; classifies each observation
+    # pair SALE/RESTOCK/OOS/CENSORED/NOISE and lands fact_velocity (source×store×sku×week, +confidence)
+    # plus the dimension-bounded brand×week serving mart. The signal SipSource/Nielsen can't produce.
+    dict(id="build-velocity", label="Velocity (implied sell-through)",
+         code="import velocity as m; m.build()",
+         tables=["fact_velocity", "mart_velocity_brand_week"], klass="build", interval_h=12, enabled=True,
+         after=["build-obs-quality"],
+         note="inventory deltas → SALE units w/ noise-damp + confidence; count-tier sources only; brand×week mart"),
     # Phase 4 — SipSource depletion feed (NRT-PLAN §1d): the ~500M-row raw grain (sip_raw, hive-
     # partitioned period=YYYYMM/market=XX) is NEVER served; this rolls it into small dimension-BOUNDED
     # marts the site reads. Wired but DISABLED until the real feed lands (no `sipsource-feed` source yet

@@ -16,6 +16,7 @@ on:
       - "unifyd/sipsource_*.py"
       - "unifyd/cost_ledger*.py"
       - "unifyd/obs_quality*.py"
+      - "unifyd/velocity*.py"
   workflow_dispatch:
 
 jobs:
@@ -33,6 +34,7 @@ jobs:
       - run: python unifyd/sipsource_test.py
       - run: python unifyd/cost_ledger_test.py
       - run: python unifyd/obs_quality_test.py
+      - run: python unifyd/velocity_test.py
 
   # Anti-regression: the app's /api/run must dispatch through source_registry, never a drifted *_pull copy.
   dispatch-guard:

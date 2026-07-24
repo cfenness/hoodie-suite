@@ -99,16 +99,20 @@ def ledger(rows):
 ledger([])
 ok("no landings -> no builds due", run_sources.due_builds(now=NOW) == [])
 
-# Registry-derived so adding a build doesn't re-break these: the DEFAULT-triggered builds are the
-# enabled ones with no `after` (any source landing triggers them). Assertions compute from these.
-DEFBUILDS = [b for b in reg.BUILDS if b.get("enabled") and not b.get("after")]
+# Registry-derived so adding a build doesn't re-break these. DEFAULT-triggered builds = enabled, no
+# `after` (any source landing triggers them). CHAINED builds (with `after`) fire off another build's
+# landing, not a source's — so a bare source landing makes only DEFBUILDS due.
+ALLBUILDS = [b for b in reg.BUILDS if b.get("enabled")]
+DEFBUILDS = [b for b in ALLBUILDS if not b.get("after")]
 DEF_IDS = {b["id"] for b in DEFBUILDS}
 
 
 def build_runs(ago_s):
-    """A ledger row per default build, all having last run `ago_s` seconds ago."""
+    """A ledger row per ENABLED build (chained ones too), all having last run `ago_s` seconds ago —
+    so no build reads as spuriously never-run. A chained build's upstream then landed at the same
+    instant as its own run (not strictly after), so it is correctly not-due in these scenarios."""
     return [dict(run_id="b_%s" % b["id"], source=b["id"], ts_start=NOW - ago_s,
-                 ts_end=NOW - ago_s + 60, status="ok") for b in DEFBUILDS]
+                 ts_end=NOW - ago_s + 60, status="ok") for b in ALLBUILDS]
 
 
 # a source landed new rows 1h ago; builds never ran -> all default builds due
