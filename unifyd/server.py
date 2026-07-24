@@ -108,8 +108,6 @@ def _dispatch_pull(conn, body):
             else tx_pull(body) if conn == "tx-tabc"
             else il_pull(body) if conn == "il-chicago"
             else ct_pull(body) if conn == "ct-dcp"
-            else vtinfo_pull(body) if conn == "vtinfo"
-            else ab_inbev_pull(body) if conn == "ab-inbev"
             else socrata_pull(conn, body) if conn in socrata_outlets.VALID
             else fl_pull(conn) if conn in FL_CONN else None)
 
@@ -210,7 +208,7 @@ def _std_run(conn, started, total=0, extracts=None, status="success", warnings=N
 _REGISTRY_CONN = {"abc-fws": "abc-fws", "specs": "specs", "binnys": "binnys", "walmart": "walmart",
                   "kroger": "kroger", "total-wine": "total-wine", "ubereats": "ubereats",
                   "postmates": "postmates", "naop": "naop", "meijer": "meijer", "trader-joes": "trader-joes",
-                  "shopify": "shopify"}
+                  "shopify": "shopify", "vtinfo": "vtinfo", "ab-inbev": "ab-inbev"}
 
 
 def _run_via_registry(conn, body):
@@ -850,40 +848,12 @@ def total_wine_pull(params):
     run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
     return run
 
-def vtinfo_pull(params):
-    started = int(time.time() * 1000)
-    zips = params.get("zips") or ["33601"]
-    if isinstance(zips, str):
-        zips = [z.strip() for z in zips.split(",") if z.strip()]
-    ds, runs, _ = vtinfo.pull(
-        brand=params.get("brand", "titos"), zips=zips,
-        custID=params.get("custID"), uuid=params.get("uuid"), delay=float(params.get("delay", 1.0)),
-        out=os.path.join(STATE_DIR, "vtinfo"), state_dir=os.path.join(STATE_DIR, "vtinfo"),
-        log=lambda m: app.logger.info("VTINFO %s", m))
-    _to_warehouse(ds)
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-def ab_inbev_pull(params):
-    started = int(time.time() * 1000)
-    zips = params.get("zips") or ["32819"]
-    if isinstance(zips, str):
-        zips = [z.strip() for z in zips.split(",") if z.strip()]
-    brands = params.get("brands")
-    if isinstance(brands, str):
-        brands = [b.strip() for b in brands.split(",") if b.strip()]
-    ds, runs, _ = ab_locator.pull(
-        zips=zips, brands=brands or None, radius=float(params.get("radius", 25.0)),
-        delay=float(params.get("delay", 0.3)),
-        out=os.path.join(STATE_DIR, "ab"), state_dir=os.path.join(STATE_DIR, "ab"),
-        log=lambda m: app.logger.info("AB-INBEV %s", m))
-    _to_warehouse(ds)
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
+# vtinfo + ab-inbev now run through the REGISTRY path (_REGISTRY_CONN -> run_sources.run_one), so the app
+# runs exactly what the scheduler runs. Their old hand-wired *_pull copies were removed here because they had
+# DRIFTED: ab-inbev ran ab_locator.pull() in the app but ab_fill.run() in the registry (a different module and
+# a different table shape); vtinfo passed ad-hoc brand/zip params the scheduled run never uses. Re-adding a
+# *_pull for a registry-owned source is blocked by dispatch_guard_test. (abc/specs/binnys/total_wine already
+# route via the registry too; their remaining *_pull defs above are dead and safe to delete in a cleanup pass.)
 
 # ---------------- API ----------------
 @app.get("/api/health")
