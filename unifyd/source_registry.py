@@ -131,8 +131,12 @@ SOURCES = [
               "collections run live on the Mac (TTB TLS-blocked on Fly)"),
     dict(id="vtinfo", label="VTInfo locator", code="import vtinfo as m; m.pull()",
          tables=["vtinfo_titos"], klass="headless", cadence="weekly", enabled=True, note="where-to-buy GraphQL"),
+    dict(id="doordash-sitemap", label="DoorDash store universe", code="import doordash_sitemap as m; m.run()",
+         tables=["doordash_stores"], klass="headless", cadence="weekly", enabled=True, timeout=7200,
+         note="$0 national store spine from DoorDash's own sitemaps (curl_cffi+ISP); feeds naop + retail"),
     dict(id="naop", label="NAOP on-premise", code="import doordash_naop as m; m.run()",
-         tables=["naop_accounts", "naop_beverages"], klass="headless", cadence="weekly", enabled=True, note="DoorDash menus"),
+         tables=["naop_accounts", "naop_beverages"], klass="headless", cadence="daily", enabled=True, timeout=7200,
+         note="DoorDash on-premise menus, $0 (ISP pool); consumes doordash_stores in NAOP_LIMIT batches"),
     dict(id="ttb", label="TTB COLA registry", code="import master_ttb as m; m.run()",
          tables=["ttb_master"], klass="headless", cadence="weekly", enabled=False, note="huge backfill — refresh deliberately"),
 
