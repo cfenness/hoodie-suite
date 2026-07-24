@@ -7,10 +7,12 @@ is HEURISTIC, not positional: it finds the header row by column-name synonyms, m
 canonical line shape, and treats rows without a price/batch as brand-section context. Nothing is
 guessed — a field lands only if the sheet states it; the untouched cells ride along as raw_json.
 
-stdlib only (xlsx is just zipped XML — no openpyxl, per the scraper standard), so it runs anywhere
-the engine runs. Lands `distributor_menu_items` (accumulated, keyed by menu+line) — the combined
-catalog behind apps/ordering.html, where a retailer builds one order across every distributor and
-the order fans back out per distributor.
+The deterministic parser is stdlib only (xlsx is just zipped XML — no openpyxl, per the scraper
+standard) and pure/offline. `parse_smart()` wraps it with a Claude fallback that fires ONLY when the
+deterministic pass fails or is low-confidence (few lines / most lines unpriced) — so an odd layout still
+gets extracted, without adding per-menu LLM cost to menus that already parse cleanly. Lands
+`distributor_menu_items` (accumulated, keyed by menu+line) — the combined catalog behind
+apps/ordering.html, where a retailer builds one order across every distributor and it fans back out.
 
     python menu_ingest.py "7.20.26 - Curaleaf NY Menu.xlsx" --distributor "Curaleaf NY"
 """
@@ -317,6 +319,145 @@ def parse(data, filename="menu.xlsx", distributor="", log=print):
             "items": items, "warnings": warnings}
 
 
+# ── Claude fallback — the LLM safety net for menu layouts the heuristic can't map ──────────────────
+# The deterministic parser above covers the common shapes cheaply and offline. But "every distributor
+# formats differently", so when it FAILS (no header row found) or comes back LOW-CONFIDENCE (few lines,
+# or most lines missing a price), we hand the raw grid to Claude to extract the same normalized lines —
+# the "Claude where unsure" pattern (cf. menu_site / label_vision), gated on ANTHROPIC_API_KEY and only
+# on the low-confidence path so it never adds per-menu cost to a menu that already parsed cleanly.
+_MENU_MODEL = os.environ.get("MENU_LLM_MODEL", "claude-opus-4-8")
+_LINE_FIELDS = {
+    "product_name": "the FULL product name — if the row itself is only a strain/variant, compose it with "
+                    "the brand/size/form from the section header above it (that header is often the only "
+                    "place the product is named)",
+    "brand": "brand / producer", "category": "Flower / Vape / Preroll / Edible / Concentrate if inferable",
+    "size": "unit size e.g. 3.5g, 1g, 750ml", "strain": "strain / cultivar if present",
+    "thc_pct": "THC as a percent number (e.g. 28.5), null if absent",
+    "cbd_pct": "CBD percent number, null if absent", "batch": "batch / lot / METRC id",
+    "exp_date": "expiration date as printed", "bin_size": "units per case (number)",
+    "units_available": "quantity available (number)", "base_price": "WHOLESALE unit price (number)",
+    "msrp": "suggested retail price (number)"}
+_MENU_TOOL = {
+    "name": "menu_lines",
+    "description": "The sellable product lines from a distributor wholesale menu. One entry per ORDERABLE "
+                   "product; skip section/brand headers, totals and blank rows, but carry any brand/size/"
+                   "form named only in a header down onto the rows beneath it. Report only what the sheet "
+                   "states — null for anything absent, never guess.",
+    "input_schema": {"type": "object", "properties": {
+        "distributor": {"type": ["string", "null"], "description": "distributor / company name if stated"},
+        "license": {"type": ["string", "null"], "description": "license number if present"},
+        "items": {"type": "array", "items": {
+            "type": "object",
+            "properties": {k: {"type": (["number", "null"] if k.endswith(("_pct", "_size", "_available"))
+                                        or k in ("base_price", "msrp") else ["string", "null"]),
+                               "description": v} for k, v in _LINE_FIELDS.items()},
+            "required": ["product_name"]}}},
+        "required": ["items"]}}
+
+
+def _grid_text(rows, cap=400):
+    """Render the sheet as pipe-delimited rows for the model — compact, structure-preserving."""
+    out = []
+    for r in rows[:cap]:
+        if any((c or "").strip() for c in r):
+            out.append(" | ".join((c or "").strip() for c in r).rstrip(" |"))
+    return "\n".join(out)
+
+
+def _llm_available():
+    return bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()) and os.environ.get("MENU_NO_LLM") != "1"
+
+
+def claude_parse(data, filename="menu.xlsx", distributor="", log=print):
+    """Extract normalized menu lines with Claude (forced tool call). Returns the same
+    {ok, items, distributor, license, ...} shape as parse(), with method='claude'. Raises on API error."""
+    fn = os.path.basename(filename)
+    if fn.lower().endswith((".xlsx", ".xlsm")):
+        sheets = list(_xlsx_rows(data))
+    else:
+        sheets = [("csv", _csv_rows(data))]
+    grid = max((_grid_text(rows) for _, rows in sheets), key=len, default="")
+    if not grid.strip():
+        return {"ok": False, "error": "empty sheet", "items": []}
+    import anthropic
+    msg = anthropic.Anthropic().messages.create(
+        model=_MENU_MODEL, max_tokens=8000, tools=[_MENU_TOOL],
+        tool_choice={"type": "tool", "name": "menu_lines"},
+        messages=[{"role": "user", "content":
+                   "Extract every orderable line from this distributor wholesale menu via the `menu_lines` "
+                   "tool. Carry brand/size/form from section headers down onto the rows beneath them.\n\n"
+                   + grid}])
+    payload = next((b.input for b in msg.content if b.type == "tool_use"), None) or {}
+    raw_items = payload.get("items") or []
+    dist = distributor or (payload.get("distributor") or "").strip()
+    items = []
+    for it in raw_items:
+        name = (it.get("product_name") or "").strip()
+        if not name:
+            continue
+        items.append({"product_name": name, "brand": (it.get("brand") or "").strip(), "section": "",
+                      "category": (it.get("category") or "").strip() or _category(name),
+                      "size": (it.get("size") or "").strip() or _size(name),
+                      "strain": (it.get("strain") or "").strip(),
+                      "thc_pct": _thc(it.get("thc_pct")), "cbd_pct": _thc(it.get("cbd_pct")),
+                      "batch": (it.get("batch") or "").strip(), "exp_date": _excel_date(it.get("exp_date")),
+                      "bin_size": _num(it.get("bin_size")), "units_available": _num(it.get("units_available")),
+                      "base_price": _num(it.get("base_price")), "msrp": _num(it.get("msrp")), "raw_json": ""})
+    log("[menu_ingest] claude fallback extracted %d lines" % len(items))
+    return _finalize(items, data, fn, dist, (payload.get("license") or "").strip(),
+                     title="", sheet="claude", warnings=[], method="claude")
+
+
+def _menu_date(fn):
+    m = re.search(r"(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2,4})", fn)
+    if not m:
+        return ""
+    mm, dd, yy = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    yy += 2000 if yy < 100 else 0
+    try:
+        return datetime.date(yy, mm, dd).isoformat()
+    except Exception:
+        return ""
+
+
+def _finalize(items, data, fn, distributor, license_no, title, sheet, warnings, method):
+    """Stamp menu-level metadata onto items and build the result dict — shared by parse() and claude_parse()."""
+    menu_date = _menu_date(fn)
+    menu_id = "%s-%s" % (re.sub(r"[^a-z0-9]+", "-", (distributor or "menu").lower()).strip("-"),
+                         menu_date or hashlib.sha1(data).hexdigest()[:8])
+    for n, it in enumerate(items):
+        it.update(menu_id=menu_id, distributor=distributor or "Unknown", menu_date=menu_date,
+                  license=license_no, source_file=fn, line=n, ts=int(time.time()))
+    return {"ok": bool(items), "menu_id": menu_id, "distributor": distributor or "Unknown",
+            "menu_date": menu_date, "license": license_no, "title": title, "sheet": sheet,
+            "items": items, "warnings": warnings, "method": method}
+
+
+def parse_smart(data, filename="menu.xlsx", distributor="", use_llm=True, log=print):
+    """Deterministic parse first; fall back to Claude only when that fails or looks low-confidence
+    (few lines, or most lines missing a price). Returns the same shape + a `method` field."""
+    det = parse(data, filename, distributor, log)
+    det["method"] = "deterministic"
+    items = det.get("items") or []
+    priced = sum(1 for i in items if i.get("base_price") is not None)
+    low_conf = (not det.get("ok")) or len(items) < 3 or (items and priced < len(items) * 0.5)
+    if not (use_llm and low_conf and _llm_available()):
+        return det
+    log("[menu_ingest] deterministic parse low-confidence (%d lines, %d priced) — trying Claude" %
+        (len(items), priced))
+    try:
+        llm = claude_parse(data, filename, distributor, log)
+    except Exception as e:
+        det.setdefault("warnings", []).append("Claude fallback failed: %s" % str(e)[:120])
+        return det
+    # keep whichever recovered more usable (priced) lines
+    llm_priced = sum(1 for i in (llm.get("items") or []) if i.get("base_price") is not None)
+    if llm.get("ok") and llm_priced >= priced and len(llm["items"]) >= len(items):
+        llm.setdefault("warnings", []).append("Parsed by Claude fallback (deterministic parse was low-confidence).")
+        return llm
+    return det
+
+
 def land(parsed):
     """Persist a parsed menu → distributor_menu_items. A re-upload of the same menu_id replaces its
     lines (accumulate keyed by menu+line), so a corrected menu simply supersedes."""
@@ -333,12 +474,13 @@ def main(argv=None):
     ap.add_argument("path")
     ap.add_argument("--distributor", default="")
     ap.add_argument("--land", action="store_true", help="persist to distributor_menu_items")
+    ap.add_argument("--no-llm", action="store_true", help="deterministic only (no Claude fallback)")
     a = ap.parse_args(argv)
-    p = parse(open(a.path, "rb").read(), filename=a.path, distributor=a.distributor)
+    p = parse_smart(open(a.path, "rb").read(), filename=a.path, distributor=a.distributor, use_llm=not a.no_llm)
     if not p.get("ok"):
         print("ERROR:", p.get("error")); return
-    print("distributor: %s  ·  date: %s  ·  license: %s  ·  %d lines (sheet %r)"
-          % (p["distributor"], p["menu_date"], p["license"], len(p["items"]), p["sheet"]))
+    print("distributor: %s  ·  date: %s  ·  license: %s  ·  %d lines (via %s)"
+          % (p["distributor"], p["menu_date"], p["license"], len(p["items"]), p.get("method", "?")))
     for it in p["items"][:10]:
         print("  • %-52s %-14s thc %-6s $%-7s msrp $%-6s units %s"
               % (it["product_name"][:52], (it["brand"] or "")[:14], it["thc_pct"],
