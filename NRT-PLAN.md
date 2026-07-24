@@ -240,3 +240,11 @@ exists to prevent. Re-scope:
   `source_runs` — all sources green before the next migration step proceeds.
 - **Fly deploy order**: suite merge → Fly healthy (`/api/health`, dashboard loads) → then
   and only then the next table migration.
+
+---
+
+## 9. What comes after NRT
+
+All six phases above are built (2026-07-24). The machine runs itself; the next campaign makes what
+it produces the measured best of its peers — velocity engine calibrated against actual state sales,
+proven master precision, honest projection, survivability. See **MOAT-PLAN.md**.
