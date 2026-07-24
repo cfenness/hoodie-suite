@@ -44,7 +44,8 @@ SOURCES = [
     dict(id="abc-catalog", label="ABC FW&S (catalog)", code="import abc_catalog as m; m.run()",
          tables=["abc_catalog"], klass="headless", cadence="weekly", enabled=True, note="BigCommerce sitemap"),
     dict(id="abc-fws", label="ABC FW&S (inventory)", code="import abc_fws_scraper as m; m.pull(crawl_all=True)",
-         tables=["abc_products"], klass="headless", cadence="daily", enabled=True, note="per-store inventory",
+         tables=["abc_products"], klass="headless", cadence="daily", enabled=True, cost_class="proxy",
+         note="per-store inventory",
          # COVERAGE (coverage.py): item/store columns + the KNOWN universe, so a run that lands far fewer
          # SKUs/stores than this reads `partial` instead of a silent stale merge. Omit expected_* to let
          # coverage self-calibrate from the touched high-water-mark; set them when the universe is known.
@@ -54,19 +55,19 @@ SOURCES = [
          note="first-party site; full-catalog crawl outgrew the 5400s default (timed out 07-18)"),
     dict(id="total-wine", label="Total Wine",
          code="import os, total_wine_full as m; m.run(os.environ.get('TW_STORE','920'), state=os.environ.get('TW_STATE','FL'))",
-         tables=["total_wine_products"], klass="mac", cadence="daily", enabled=True,
+         tables=["total_wine_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac",
          note="PerimeterX — browser. run() needs a storeId (national catalog, that store's price/stock); "
               "920=Orlando Millenia is the documented default, override via TW_STORE/TW_STATE. (was run() -> TypeError)"),
 
     # ── Grocery / big-box ─────────────────────────────────────────────────────────────────────────────────────
     dict(id="walmart", label="Walmart", code="import walmart_direct as m; m.pull(detail_pages=True, detail_cap=600)",
-         tables=["walmart_products"], klass="headless", cadence="daily", enabled=True,
+         tables=["walmart_products"], klass="headless", cadence="daily", enabled=True, cost_class="proxy",
          note="walmart_direct: IPRoyal residential exit + curl_cffi Chrome-JA3, $0 (no BD, no API). "
               "A warmed WALMART_COOKIE is an OPTIONAL boost, NOT required — do not gate the run on it."),
     dict(id="target", label="Target", code="import target_scraper as m; m.run()",
-         tables=["target_products", "target_stores"], klass="headless", cadence="daily", enabled=True, note="RedSky API"),
+         tables=["target_products", "target_stores"], klass="headless", cadence="daily", enabled=True, cost_class="bd", note="RedSky API"),
     dict(id="kroger", label="Kroger (atlas inventory)", code="import kroger_atlas as m; m.main([])",
-         tables=["kroger_atlas_products"], klass="mac", cadence="daily", enabled=True,
+         tables=["kroger_atlas_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac",
          # PREP: warm the Akamai cookie in headful Chrome before the pull (cookie_warm), so the atlas API
          # accepts the replay. requires=[] because KROGER_COOKIE is minted by the prep, not pre-set; the
          # store/facility default to a real store via `static` (extend to enumeration later).
@@ -79,31 +80,31 @@ SOURCES = [
          requires=["KROGER_CLIENT_ID", "KROGER_CLIENT_SECRET"],
          note="thin public OAuth API — product/UPC seed that feeds the atlas GTIN universe (NOT real inventory)"),
     dict(id="publix", label="Publix", code="import publix as m; m.run()",
-         tables=["publix_products"], klass="headless", cadence="daily", enabled=True, note="weekly-ad API"),
+         tables=["publix_products"], klass="headless", cadence="daily", enabled=True, cost_class="bd", note="weekly-ad API"),
     dict(id="stop-and-shop", label="Stop & Shop", code="import stop_and_shop as m; m.main([])",
-         tables=["stop_and_shop_products"], klass="mac", cadence="daily", enabled=False, note="needs a warmed cookie — not headless"),
+         tables=["stop_and_shop_products"], klass="mac", cadence="daily", enabled=False, cost_class="mac", note="needs a warmed cookie — not headless"),
 
     # ── Aggregators / convenience (Mac headful — anti-bot) ────────────────────────────────────────────────────
     dict(id="ubereats", label="Uber Eats", code="import ubereats as m; m.main(['--site','ubereats','--max-stores','1000'])",
-         tables=["ubereats_products"], klass="mac", cadence="daily", enabled=True, priority=10, note="Uber BFF, all stores"),
+         tables=["ubereats_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=10, note="Uber BFF, all stores"),
     dict(id="postmates", label="Postmates", code="import ubereats as m; m.main(['--site','postmates','--max-stores','1000'])",
-         tables=["postmates_products"], klass="mac", cadence="daily", enabled=True, priority=11, note="Uber BFF, all stores"),
+         tables=["postmates_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=11, note="Uber BFF, all stores"),
     dict(id="sevennow", label="7-Eleven (7NOW)", code="import sevennow_warm as m; m.main()",
-         tables=["sevennow_products"], klass="mac", cadence="daily", enabled=True, priority=60, note="Incapsula — patchright"),
+         tables=["sevennow_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=60, note="Incapsula — patchright"),
 
     # ── Off-premise platforms ─────────────────────────────────────────────────────────────────────────────────
     dict(id="offprem-census", label="Off-premise census (Shopify/Woo/Wix/Sqsp)",
          code="import off_premise as m, warehouse, re;"
               "markets=sorted(set(re.sub(r'_offprem_census$','',d['name']) for d in warehouse.list_datasets() if d['name'].endswith('_offprem_census')));"
               "[m.run_census(market=x, platforms=('Shopify','WooCommerce','Wix','Squarespace')) for x in markets]",
-         tables=["offprem_products"], klass="headless", cadence="daily", enabled=True, note="22 markets, no-BD"),
+         tables=["offprem_products"], klass="headless", cadence="daily", enabled=True, cost_class="proxy", note="22 markets, no-BD"),
     dict(id="shopify", label="Shopify (national sweep)", code="import off_premise as m; m.national_sweep('shopify')",
          tables=["national_shopify_products"], klass="headless", cadence="weekly", enabled=True,
          note="census sweep's Shopify pass — SHOPIFY_SEED via open /products.json ($0); OFFPREM_SERP=1 adds BD SERP discovery. Replaced standalone shopify_scraper (archived)"),
     dict(id="bottlecapps", label="Bottlecapps network", code="import bottlecapps as m; m.national()",
-         tables=["bottlecapps_products"], klass="mac", cadence="daily", enabled=True, priority=62, note="DataDome — patchright"),
+         tables=["bottlecapps_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=62, note="DataDome — patchright"),
     dict(id="cityhive", label="City Hive network", code="import cityhive as m; m.national(max_stores=12)",
-         tables=["cityhive_products"], klass="mac", cadence="daily", enabled=True, priority=61, note="Cloudflare — patchright"),
+         tables=["cityhive_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=61, note="Cloudflare — patchright"),
     dict(id="bbg", label="BBG e-commerce", code="import bbg_salsify as m; m.pull()",
          tables=["bbg_products"], klass="headless", cadence="daily", enabled=True, note="Salsify API"),
 
@@ -113,7 +114,7 @@ SOURCES = [
     dict(id="ab-inbev", label="AB InBev locator", code="import ab_fill as m; m.run()",
          tables=["ab_outlets"], klass="headless", cadence="weekly", enabled=True, note="beertech GraphQL"),
     dict(id="ca-abc", label="California ABC", code="import ca_abc as m; m.run()",
-         tables=["ca_outlets"], klass="mac", cadence="weekly", enabled=True, note="WAF — browser headers"),
+         tables=["ca_outlets"], klass="mac", cadence="weekly", enabled=True, cost_class="proxy", note="WAF — browser headers"),
     dict(id="control-states", label="Control states (OR/UT/NC/MT/ME/AL/BC/MontMD)", code="import control_state as m; m.build_all()",
          tables=["or_pricing", "ut_pricing", "mont_sales"], klass="headless", cadence="weekly", enabled=True, note="per-state fetchers"),
     dict(id="census", label="US Census ACS", code="import census_ref as m; m.build()",
