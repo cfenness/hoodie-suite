@@ -35,7 +35,7 @@ Every claim gets a number, and every number gets a surface. No adjectives withou
 |---|---|---|---|
 | Freshest in category | per-source SLO age vs interval | Data Console dispatcher strip (live) | hot ≤4h, daily ≤24h (live today) |
 | Cheapest in category | est $/mo, measured machine-hours | Data Console cost strip (live) | ≤$100/mo at full fleet |
-| **Velocity you can trust** | MAPE of implied velocity vs ground-truth sales (Iowa + control states) at brand×market×month | Velocity tab + this doc | ≤15% v1, ≤10% v2 |
+| **Velocity you can trust** | *external:* MAPE vs ground-truth sales; *internal (live):* conservation ratio (implied sales ÷ restock, →1) | `velocity_calibration` + this doc | ext ≤15%→10%; internal 0.8–1.2 |
 | **Master you can trust** | precision / recall on a versioned gold set; % records carrying confidence | MDM workbench + CI gate | P ≥99%, R ≥95% @ item grain, 100% confidence coverage |
 | **Honest projection** | coverage % per market×channel cell; CI width; anchor-validation error | Coverage map + every market metric | 100% of cells labeled; validated cells within ±10% of anchors |
 | Survives its author | tested cold-start time; recipe MTTR | runbook + health digest | restore ≤1h; MTTR ≤72h |
@@ -90,6 +90,20 @@ This is the step none of the scraped-data shops do, and we can, because bev-alc 
   regression in MAPE = a red SLO, not a quiet drift.
 - **SipSource, when it arrives, is the third anchor — a corroborator, never the spine** (same
   doctrine as TTB-not-spine, VIP-not-spine).
+
+**BUILT (`velocity_calibrate.py`, 2026-07-24).** Two validators, honest about each:
+- **Conservation (internal, LIVE):** in steady state a store restocks what it sells, so implied
+  sales ÷ restock → 1. First reading: binny's **0.75** (2-day cadence censors sales between
+  restocks → velocity is a defensible LOWER bound), sevennow **1.47** (over-count flag — small-store
+  recount noise), total **0.77**. A real accuracy signal with direction, needing no external data.
+- **External MAPE (harness ready, PENDING overlap):** joins velocity→brand×market×period to a
+  ground-truth adapter (Montgomery MD `mont_sales`; Iowa BigQuery when landed), fits scale, reports
+  MAPE + coverage. **Today coverage=0 and it says so** — velocity is IL (binny's), the only sales
+  anchor is MD; OR/UT/NC are price lists, not volume. The harness math is proven (11.7% MAPE on a
+  synthetic overlapping fixture); it produces the real number the day a velocity source lands in an
+  anchor market OR Iowa is pulled. **The cheapest path to a real MAPE: run a national count source
+  (7-Eleven/sevennow, Target) in Iowa or Montgomery County, or land `iowa_bq`.**
+- Lands `velocity_calibration`; registry `build-velocity-calibrate` (after build-velocity).
 
 ### V5. Derived signals (what sales teams actually buy)
 - **Movers**: velocity leaderboards, accelerating/decelerating brands per market (positive framing:

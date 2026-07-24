@@ -180,6 +180,14 @@ BUILDS = [
          tables=["fact_velocity", "mart_velocity_brand_week"], klass="build", interval_h=12, enabled=True,
          after=["build-obs-quality"],
          note="inventory deltas → SALE units w/ noise-damp + confidence; count-tier sources only; brand×week mart"),
+    # MOAT-PLAN Workstream V4 — prove velocity is RIGHT. Internal CONSERVATION (implied sales vs restock,
+    # runs now) + external MAPE vs ground-truth actuals (Montgomery MD sales; Iowa when landed) — the
+    # latter reports coverage honestly (0 today: velocity is IL, anchors are MD; pending an overlap).
+    dict(id="build-velocity-calibrate", label="Velocity calibration (conservation + MAPE)",
+         code="import velocity_calibrate as m; m.build()",
+         tables=["velocity_calibration"], klass="build", interval_h=24, enabled=True,
+         after=["build-velocity"],
+         note="conservation ratio (sales≈restock) live; external MAPE pending an overlapping footprint"),
     # Phase 4 — SipSource depletion feed (NRT-PLAN §1d): the ~500M-row raw grain (sip_raw, hive-
     # partitioned period=YYYYMM/market=XX) is NEVER served; this rolls it into small dimension-BOUNDED
     # marts the site reads. Wired but DISABLED until the real feed lands (no `sipsource-feed` source yet
