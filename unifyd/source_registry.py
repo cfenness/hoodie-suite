@@ -151,12 +151,11 @@ SOURCES = [
          tables=["ttb_cola"], klass="headless", cadence="weekly", enabled=True, timeout=5400,
          note="$0 off-Mac incremental COLA scrape (last TTB_DAYS) → accumulate ttb_cola; ttbonline.gov verify=False, direct (no BD/browser)"),
     dict(id="ttb-enrich", label="TTB COLA enrich (detail+UPC)", code="import ttb_pull as m; m.run_enrich()",
-         tables=["ttb_cola_detail_v2"], klass="headless", cadence="daily", enabled=False, timeout=7200,
-         note="DISABLED — ttb_cola_detail (1.86M rows) + ttb_cola_labels ALREADY populated by the existing TTB "
-              "pipeline; ttb_master joins them → ttb_products. This reinvented it with a conflicting schema. "
-              "Table repointed to *_v2 so it can never clobber the real ttb_cola_detail. Reconcile with the "
-              "existing detail/label producer (get IT off-Mac) instead of running this. libzbar0+pyzbar image "
-              "stack stays — the real label/UPC producer needs it off-Mac."),
+         tables=["ttb_cola_detail", "ttb_cola_labels"], klass="headless", cadence="daily", enabled=True, timeout=7200,
+         note="$0 off-Mac producer that EXTENDS the existing ttb_cola_detail + ttb_cola_labels (accumulate by "
+              "ttb_id, snake_case schemas via ttb_enrich's validated parsers) for COLAs not yet detailed — new "
+              "COLAs from ttb-cola get detail + label-barcode UPC off-Mac. Gentle concurrency on the .gov site "
+              "(TTB_ENRICH_WORKERS=4); needs libzbar0+pyzbar+pillow (in the image)"),
     dict(id="ttb", label="TTB COLA master build", code="import master_ttb as m; m.run()",
          tables=["ttb_master"], klass="headless", cadence="weekly", enabled=False,
          note="MASTER BUILD (reads ttb_cola → ttb_master); huge — refresh deliberately. Scrape is ttb-cola"),
