@@ -137,6 +137,13 @@ SOURCES = [
     dict(id="naop", label="NAOP on-premise", code="import doordash_naop as m; m.run()",
          tables=["naop_accounts", "naop_beverages"], klass="headless", cadence="daily", enabled=True, timeout=7200,
          note="DoorDash on-premise menus, $0 (ISP pool); consumes doordash_stores in NAOP_LIMIT batches"),
+    dict(id="toast", label="Toast own-menus", code="import toast as m; m.run()",
+         tables=["toast_outlets", "toast_beverages", "toast_menu_accounts"], klass="headless", cadence="daily",
+         enabled=True, timeout=7200,
+         note="$0 restaurant OWN menus from toasttab.com sitemaps (~100k); harvest + TOAST_LIMIT menu batches"),
+    dict(id="outlet-union", label="Outlet pre-master", code="import outlet_union as m; m.run()",
+         tables=["outlet_master"], klass="headless", cadence="daily", enabled=True,
+         note="derived ($0): unions DoorDash/Toast outlet spines → mastered outlets + per-source menu freshness"),
     dict(id="ttb", label="TTB COLA registry", code="import master_ttb as m; m.run()",
          tables=["ttb_master"], klass="headless", cadence="weekly", enabled=False, note="huge backfill — refresh deliberately"),
 
