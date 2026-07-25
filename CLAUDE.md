@@ -164,6 +164,12 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   **Order status:** `POST /api/orders/<id>/status` advances a forward-only lifecycle
   (submitted → sent → confirmed → delivered, or cancelled) with a timestamped `status_history`;
   the ordering page shows a status pill per order + advance/cancel controls in the order modal.
+- `unifyd/menu_mailbox.py` — **auto-ingest emailed menus (IMAP)**: `POST /api/menus/poll` pulls the
+  spreadsheet attachments off unseen messages, runs each through `menu_ingest.parse_smart`, lands
+  them, and marks the mail seen — so the catalog stays current with no manual upload. Env-gated
+  (`MENU_IMAP_HOST/PORT/USER/PASS/FOLDER`, optional `MENU_IMAP_SENDERS` allowlist); unconfigured →
+  `mailbox-not-configured` and the ordering page hides its "Check email" button (`/api/menus/mailbox`
+  reports the state). Runnable on a cadence via `schedule_pull` / cron.
 - `unifyd/hoodie_mdm.html` — the MDM control plane the agent serves. Reads `/api/*` when
   the agent is up, falls back to an embedded `const DATASETS` preview otherwise.
 - **Runtime is git-ignored:** `agent_state/`, `cola_out/`, `out/`, `__pycache__/`.

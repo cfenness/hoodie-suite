@@ -6014,6 +6014,29 @@ def menus_upload_ep():
                    warnings=parsed["warnings"])
 
 
+@app.post("/api/menus/poll")
+def menus_poll_ep():
+    """Pull distributor menus straight from the mailbox (IMAP) → parse + land, no manual upload.
+    Needs MENU_IMAP_* env; returns mailbox-not-configured otherwise so the UI can hide the button."""
+    import menu_mailbox
+    body = request.get_json(silent=True) or {}
+    if not menu_mailbox.configured():
+        return jsonify(ok=False, error="mailbox-not-configured",
+                       note="Set MENU_IMAP_HOST/USER/PASS to auto-ingest emailed menus."), 200
+    try:
+        r = menu_mailbox.poll(limit=min(100, int(body.get("limit", 25))),
+                              dry_run=bool(body.get("dry_run")), log=app.logger.info)
+    except Exception as e:
+        return jsonify(ok=False, error="poll failed: %s" % str(e)[:200]), 502
+    return jsonify(r)
+
+
+@app.get("/api/menus/mailbox")
+def menus_mailbox_status_ep():
+    import menu_mailbox
+    return jsonify(ok=True, configured=menu_mailbox.configured())
+
+
 @app.get("/api/menus")
 def menus_list_ep():
     """Every ingested menu, newest first — plus which one is CURRENT per distributor (the ordering

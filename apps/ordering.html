@@ -102,6 +102,7 @@
         exactly their slice as a purchase-order sheet.</div></div>
     <div style="display:flex;gap:8px;align-items:center">
       <span id="uploadStatus"></span>
+      <button class="ghost" id="btnPoll" hidden>⤓ Check email</button>
       <button class="ghost" id="btnUpload">⇪ Upload menus</button>
       <input type="file" id="file" accept=".xlsx,.xlsm,.csv" multiple hidden>
     </div>
@@ -242,6 +243,23 @@ document.getElementById('file').addEventListener('change',async e=>{
   setTimeout(()=>{st.textContent='';},6000);
   loadItems();
 });
+// Mailbox auto-ingest — show the "Check email" button only when IMAP is configured on the server.
+async function initMailbox(){
+  try{ const j=await (await fetch('/api/menus/mailbox',{cache:'no-store'})).json();
+    document.getElementById('btnPoll').hidden=!(j&&j.configured);
+  }catch(e){}
+}
+document.getElementById('btnPoll').onclick=async()=>{
+  const st=document.getElementById('uploadStatus'), b=document.getElementById('btnPoll');
+  b.disabled=true; st.textContent='checking email for new menus…';
+  try{
+    const j=await (await fetch('/api/menus/poll',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+    if(j.error==='mailbox-not-configured'){ st.textContent='email ingest not configured'; b.hidden=true; }
+    else if(j.ok){ st.textContent='✓ '+j.scanned+' email(s) · '+j.landed+' lines landed'; if(j.scanned) loadItems(); }
+    else st.textContent='✗ '+(j.error||'poll failed');
+  }catch(e){ st.textContent='✗ poll failed'; }
+  b.disabled=false; setTimeout(()=>{st.textContent='';},8000);
+};
 
 /* ── review + submit ── */
 document.getElementById('btnClear').onclick=()=>{ CART={}; renderRows(); renderCart(); };
@@ -399,7 +417,7 @@ async function loadHistory(){
 
 let qt; ['q'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{clearTimeout(qt);qt=setTimeout(renderRows,250);}));
 ['fDist','fCat','fBrand','fStock'].forEach(id=>document.getElementById(id).addEventListener('change',renderRows));
-loadItems(); loadHistory(); loadDistributors();
+loadItems(); loadHistory(); loadDistributors(); initMailbox();
 </script>
 </body>
 </html>
