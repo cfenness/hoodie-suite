@@ -1275,6 +1275,60 @@ def _catalog_map():
         app.logger.warning("warehouse catalog failed: %s", e)
     return out
 
+@app.get("/api/velocity")
+def api_velocity():
+    """The velocity SURFACE payload (MOAT-PLAN V6). MARTS ONLY — signal_voids / signal_movers /
+    mart_velocity_brand_week + the calibration trust stamp — never the raw fact grain. Every section
+    carries confidence + as_of so nothing renders without proof of how trustworthy it is. Honest by
+    construction: movers split into CONFIRMED (both weeks full) vs early-read (partial); if no full
+    week exists yet the confirmed list is simply empty. Empty-safe on any missing table."""
+    import time as _t
+    import warehouse
+
+    def q(name, sql):
+        try:
+            return warehouse.query(name, sql)
+        except Exception:
+            return []
+
+    voids = q("signal_voids",
+              "SELECT brand, oos_stores, stores_seen, est_recoverable_units_wk, pct_stores_out, confidence "
+              "FROM t ORDER BY est_recoverable_units_wk DESC NULLS LAST LIMIT 100")
+    confw = q("signal_movers", "SELECT MAX(week) w FROM t WHERE NOT partial")
+    cw = confw[0]["w"] if confw and confw[0].get("w") else None
+    movers_up, movers_down = [], []
+    if cw:
+        movers_up = q("signal_movers",
+                      "SELECT brand, week, units, prev_units, pct_change, matched_cells, confidence FROM t "
+                      "WHERE NOT partial AND week = (SELECT MAX(week) FROM t WHERE NOT partial) AND pct_change > 0 "
+                      "ORDER BY pct_change DESC LIMIT 25")
+        movers_down = q("signal_movers",
+                        "SELECT brand, week, units, prev_units, pct_change, matched_cells, confidence FROM t "
+                        "WHERE NOT partial AND week = (SELECT MAX(week) FROM t WHERE NOT partial) AND pct_change < 0 "
+                        "ORDER BY pct_change ASC LIMIT 25")
+    n_partial = (q("signal_movers", "SELECT COUNT(*) n FROM t WHERE partial") or [{"n": 0}])[0].get("n", 0)
+    leaders = q("mart_velocity_brand_week",
+                "SELECT brand, week, implied_units, stores, avg_confidence FROM t "
+                "WHERE week = (SELECT MAX(week) FROM t) ORDER BY implied_units DESC NULLS LAST LIMIT 50")
+    cons = q("velocity_calibration",
+             "SELECT source, value FROM t WHERE kind='conservation' AND metric='sales_restock_ratio'")
+    mape = q("velocity_calibration",
+             "SELECT anchor, coverage, value FROM t WHERE kind='external_mape'")
+    return jsonify({
+        "as_of": _t.time(), "live": True,
+        "voids": voids,
+        "movers": {"confirmed_week": str(cw) if cw else None, "up": movers_up, "down": movers_down,
+                   "partial_flagged": n_partial,
+                   "note": None if cw else "No confirmed movers yet — needs two consecutive full "
+                                           "observation weeks. Early-read (partial-week) movers are staged."},
+        "leaders": leaders,
+        "calibration": {"conservation": cons,
+                        "external_mape": mape,
+                        "note": "conservation ratio → 1 is well-calibrated; external MAPE pending an "
+                                "overlapping ground-truth footprint"},
+    })
+
+
 @app.get("/api/catalog")
 def catalog_ep():
     """The estate model's 'whole thing' view (it polls this so new datasets appear on their own)."""
