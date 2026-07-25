@@ -131,6 +131,15 @@ This is the step none of the scraped-data shops do, and we can, because bev-alc 
 - `/api/velocity` (marts only, confidence + as_of on every payload) + a Velocity tab in the console
   and the Hoodie app. Nothing renders without its confidence.
 
+**BUILT (`/api/velocity` in server.py + `apps/velocity.html`, 2026-07-24).** Marts only (signal_voids,
+signal_movers, mart_velocity_brand_week, velocity_calibration) — never the raw fact grain; every
+section stamped confidence + as_of. The surface **leads with the win** (distribution voids to close
+now, recoverable-units bar per brand), then movers (confirmed-week table when two full weeks exist,
+else an explicit "no confirmed movers yet — early-read staged" banner — never a fake WoW), a
+velocity leaderboard, and the calibration trust stamp (conservation ratio per source). Registered in
+`APPS` under Signal Stack. Verified end-to-end against production (2,235 voids, Miller/Modelo/Michelob
+leaders, binny's 0.75 conservation) via the canonical warehouse path; smoke green.
+
 **Exit criteria:** MAPE ≤15% vs Iowa at brand×market×month on covered brands; ≥100k store×sku cells
 at confidence ≥0.7; the voids list generates with citable evidence per row.
 
