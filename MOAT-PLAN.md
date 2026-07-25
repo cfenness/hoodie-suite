@@ -37,7 +37,7 @@ Every claim gets a number, and every number gets a surface. No adjectives withou
 | Cheapest in category | est $/mo, measured machine-hours | Data Console cost strip (live) | ≤$100/mo at full fleet |
 | **Velocity you can trust** | *external:* MAPE vs ground-truth sales; *internal (live):* conservation ratio (implied sales ÷ restock, →1) | `velocity_calibration` + this doc | ext ≤15%→10%; internal 0.8–1.2 |
 | **Master you can trust** | precision / recall on a versioned gold set; % records carrying confidence | `master_quality` + CI gate | P ≥99%, R ≥95% @ item grain (**baseline measured 2026-07-24: P=1.000, R=0.285, F1=0.444** — precise but under-merges) |
-| **Honest projection** | coverage % per market×channel cell; CI width; anchor-validation error | Coverage map + every market metric | 100% of cells labeled; validated cells within ±10% of anchors |
+| **Honest projection** | coverage % per market×channel cell; CI width; anchor-validation error | `coverage_cells`/`market_projection` + every market metric | 100% of cells labeled (**live**; IL coverage 0.18% → all cells OBSERVED-only, projection self-activates as coverage grows); validated cells within ±10% of anchors |
 | Survives its author | tested cold-start time; recipe MTTR | runbook + health digest | restore ≤1h; MTTR ≤72h |
 
 Targets are v1 stakes-in-the-ground — re-baseline after the first calibration run, but only ever
@@ -232,6 +232,21 @@ The bridge from observation engine to market-truth engine. Never pretend a scrap
 
 **Exit criteria:** every market metric carries coverage% + CI; validated cells within ±10% of
 anchors; zero unlabeled projections anywhere in the suite.
+
+**BUILT (R1–R3, `representativeness.py`, 2026-07-24).** Coverage per state (observed outlets ÷
+`outlet_master` universe) + market metrics in OBSERVED (deterministic sum) vs PROJECTED (finite-
+population survey estimator: total = N·x̄, CI = N·(s/√n)·√FPC·1.96), with PROJECTED **suppressed below
+a coverage/obs floor and the reason shown**. Lands `coverage_cells` + `market_projection`; registry
+`build-representativeness` (after build-velocity).
+- **Live reading: IL coverage 0.18% (49 of 26,800 outlets) → all 5,921 brand cells OBSERVED-only**,
+  projection honestly withheld (0.18% ≪ the 2% floor). This is the framework working: it MEASURES the
+  gap and refuses to invent a market number the data can't support. Projection **self-activates** as
+  coverage grows (more sources/stores per state) — same posture as V4's pending MAPE and M's recall
+  baseline: build the rigorous machine, measure honestly, activate when the data earns it.
+- The OBSERVED-vs-PROJECTED split is the DETERMINISTIC-vs-INFERENCE doctrine extended to statistics;
+  nothing projected is ever shown unlabeled. R4 reuses velocity_calibrate's anchor spine (pending the
+  same footprint overlap).
+- 12-test suite proves the projection + CI math + suppression; duckdb 1.4.5 + 1.5.5.
 
 ---
 
