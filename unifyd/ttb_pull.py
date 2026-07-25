@@ -48,48 +48,96 @@ def pull(days=None, chunk_days=1, detail=False, out=None, log=print):
     return len(recs)
 
 
+DETAIL_TABLE = "ttb_cola_detail"
+_VIEW_URL = cola.BASE + "/viewColaDetails.do"
+
+
+def _detail_fields():
+    import ttb_enrich as te
+    return ["TTB ID"] + te.DETAIL_FIELDS + ["UPC", "alc_content", "abv", "proof", "n_labels"]
+
+
+def _enrich_one(s, tid):
+    """Full per-COLA enrichment via ttb_enrich's VALIDATED (current-USWDS-site) parsers: detail fields from
+    ?publicDisplaySearchBasic, alcohol + label filenames from ?publicFormDisplay, and the label-barcode UPC
+    from the attachment image. Returns a dict for ttb_cola_detail. Best-effort per field (a page/label miss
+    just leaves it empty), so one bad COLA never sinks the batch."""
+    import ttb_enrich as te
+    rec = {"TTB ID": tid}
+    try:
+        h2 = s.get(_VIEW_URL, params={"action": "publicDisplaySearchBasic", "ttbid": tid}, timeout=60).text
+        for k, v in te.parse_detail_fields(h2).items():
+            if k != "TTB ID":
+                rec[k] = v
+    except Exception:
+        pass
+    upc = ""
+    try:
+        h1 = s.get(_VIEW_URL, params={"action": "publicFormDisplay", "ttbid": tid}, timeout=60).text
+        alc = te.parse_alcohol(h1, rec.get("Class/Type Code", ""))
+        rec["alc_content"], rec["abv"], rec["proof"] = alc.get("content", ""), alc.get("abv", ""), alc.get("proof", "")
+        labs = te.label_filenames(h1)
+        rec["n_labels"] = len(labs)
+        try:
+            from ttb_cola_labels import extract_upc_from_label
+            for fn in labs[:3]:
+                img = s.get(cola.ATTACH_URL, params={"filename": fn, "filetype": "l"}, timeout=60).content
+                u = extract_upc_from_label(img)
+                if u:
+                    upc = u
+                    break
+        except Exception:
+            pass
+    except Exception:
+        pass
+    rec["UPC"] = upc
+    return rec
+
+
 def enrich_pass(limit=None, workers=None, log=print):
-    """DEEPEN un-enriched ttb_cola rows — detail fields (Net Contents / Approval Date / Status) + the
-    label-barcode UPC — CONCURRENTLY, and accumulate the completed rows back. Marker for 'un-enriched' is an
-    empty UPC. Covers BOTH freshly-scraped thin rows (from ttb-cola) and the historical backfill; bounded per
-    run (TTB_ENRICH_LIMIT) so it chips away over time. $0, off-Mac (detail + label images fetch from Fly with
-    verify=False; UPC needs libzbar0 + pyzbar + pillow on the image)."""
+    """DEEPEN COLA records not yet enriched — full detail fields + ABV + label-barcode UPC — CONCURRENTLY,
+    landing a rich ttb_cola_detail (keyed TTB ID) joined to ttb_cola. 'Un-enriched' = a ttb_cola TTB ID absent
+    from ttb_cola_detail, so it covers BOTH freshly-scraped thin rows and the ~1M backfill; bounded per run
+    (TTB_ENRICH_LIMIT). $0, off-Mac (verify=False direct; UPC needs libzbar0 + pyzbar + pillow on the image)."""
     import threading
     from concurrent.futures import ThreadPoolExecutor
     limit = limit if limit is not None else int(os.environ.get("TTB_ENRICH_LIMIT", "400"))
     workers = workers or int(os.environ.get("TTB_ENRICH_WORKERS", "8"))
     try:
-        thin = warehouse.query("ttb_cola",
-                               "SELECT * FROM t WHERE UPC IS NULL OR UPC = '' LIMIT %d" % limit)
+        done = {str(r["TTB ID"]) for r in warehouse.query(DETAIL_TABLE, 'SELECT "TTB ID" FROM t')}
+    except Exception:
+        done = set()
+    try:
+        allids = [str(r["TTB ID"]) for r in warehouse.query("ttb_cola", 'SELECT "TTB ID" FROM t')]
     except Exception as e:
         log("[ttb-enrich] ttb_cola query failed: %s" % str(e)[:80])
         return 0
-    if not thin:
-        log("[ttb-enrich] no un-enriched rows (all have a UPC)")
+    todo = [t for t in allids if t and t not in done][:limit]
+    if not todo:
+        log("[ttb-enrich] nothing to enrich (all %d COLAs already in %s)" % (len(allids), DETAIL_TABLE))
         return 0
-    args = type("A", (), {"ocr": True})()          # enrich() always does detail; ocr flag adds the label UPC
+    log("[ttb-enrich] %d COLAs, %d already enriched — enriching %d this pass" % (len(allids), len(done), len(todo)))
     s = cola.make_session()
-    done = [0]
-    lock = threading.Lock()
+    out, cnt, lock = [], [0], threading.Lock()
 
-    def _work(rec):
-        try:
-            cola.enrich(s, rec, args, log=lambda *a: None)     # mutates rec: Net Contents/Approval Date/Status/UPC
-        except Exception:
-            pass
+    def _work(tid):
+        rec = _enrich_one(s, tid)
         with lock:
-            done[0] += 1
-            if done[0] % 50 == 0:
-                log("  [ttb-enrich] %d/%d enriched" % (done[0], len(thin)))
+            out.append(rec)
+            cnt[0] += 1
+            if cnt[0] % 50 == 0:
+                log("  [ttb-enrich] %d/%d" % (cnt[0], len(todo)))
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        list(ex.map(_work, thin))
-    recs = [{h: r.get(h, "") for h in cola.COLA_HEADER} for r in thin if r.get("TTB ID")]
-    warehouse.write_accumulate("ttb_cola", recs, key=lambda r: r["TTB ID"], fields=cola.COLA_HEADER)
-    got_upc = sum(1 for r in thin if r.get("UPC"))
-    got_det = sum(1 for r in thin if r.get("Net Contents") or r.get("Status"))
-    log("[ttb-enrich] enriched %d rows (+%d UPC, +%d detail) → accumulated into ttb_cola"
-        % (len(recs), got_upc, got_det))
+        list(ex.map(_work, todo))
+    fields = _detail_fields()
+    recs = [{h: r.get(h, "") for h in fields} for r in out if r.get("TTB ID")]
+    warehouse.write_accumulate(DETAIL_TABLE, recs, key=lambda r: r["TTB ID"], fields=fields)
+    got_upc = sum(1 for r in out if r.get("UPC"))
+    got_det = sum(1 for r in out if r.get("Status") or r.get("Class/Type Code"))
+    got_abv = sum(1 for r in out if r.get("abv"))
+    log("[ttb-enrich] enriched %d → %s (+%d UPC, +%d detail, +%d abv)"
+        % (len(recs), DETAIL_TABLE, got_upc, got_det, got_abv))
     return len(recs)
 
 
