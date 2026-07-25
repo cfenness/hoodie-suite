@@ -62,8 +62,19 @@ unifyd engine. Building one would be the exact duplication we're avoiding.
   default `postgresql+psycopg://localhost/canon`).
 - **Canon is dev-scale (verified S2): 1,460 observations, specs-only, all resolved, 29 entities.** The
   head-to-head is proven on this sample; the **served** lift now hinges on loading the FULL observation
-  universe into canon (the Phase-1/2 ingest at scale) — that is the real blocker to S3+ (the cutover),
-  not the cascade or the scoring. Loading the universe is the next concrete step.
+  universe into canon.
+- **Ingest seam BUILT (`canon/src/acquire/bridge.py`).** Unifyd exports the retail identity universe
+  (`/tmp/canon_ingest_products.jsonl` — **90,384 distinct UPC'd products**); the bridge lands them as
+  observations with the UPC on `external_keys` so tier0 resolves them (idempotent; verified on a
+  3,000-row run + 1 test). This is the interim seam until canon's own acquire covers the retail
+  catalogs (strangler-fig).
+- **Resolving at scale is an OPERATIONAL step, not a code gap.** Running the cascade over the loaded
+  universe needs production infra the dev env lacks: `sentence-transformers` (tier2 embeddings,
+  ADR-004-deferred) + `ANTHROPIC_API_KEY` (tier3), with real LLM cost over ~90k novel products. The
+  recall LIFT is already proven (S2 + `canon.item_key` UNIQUE guarantees same-UPC merging); this scales
+  the data, not the proof. Next: provision embeddings + LLM, run `match.cascade.run_observations` over
+  the loaded batch, re-measure `match.quality` at scale, then S3 (freeze `item_identity` + export to
+  Tigris) → S4 (cut serving) → S5.
 - The `gold_matches` schema is the shared asset — canon reads it as its eval + review seed; keep it
   the one truth.
 
