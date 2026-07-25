@@ -52,9 +52,11 @@ def _get(url, tries=4, log=print):
         px = {"http": u, "https": u} if u else None
         try:
             r = cr.get(url, impersonate="safari17_0", proxies=px, timeout=45)
-            if r.status_code == 200 and len(r.text) > 500:
+            # sitemap INDEX is tiny (~200 bytes, 2 <loc>s); sub-sitemaps + menu pages are large. Accept any
+            # non-empty 200 (a block/challenge is either non-200 or empty) — a length floor rejected the index.
+            if r.status_code == 200 and len(r.text) > 80:
                 return r.text
-            last = "status %s" % r.status_code
+            last = "status %s len %d" % (r.status_code, len(r.text or ""))
         except Exception as e:
             last = str(e)[:70]
         time.sleep(1 + a)
