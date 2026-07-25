@@ -143,39 +143,64 @@ def _due_outlets(limit, log=print):
     return todo[:limit]
 
 
+def _pull_one(o, today):
+    """Fetch + parse ONE Toast own-menu. Returns (beverage_rows, account_row) or (None, None). Thread-safe:
+    no shared state, so it runs concurrently."""
+    guid, name, url = str(o["guid"]), o.get("name") or "", o.get("url") or ""
+    h = _get(url, log=lambda *a: None)
+    if not h:
+        return None, None
+    ident = outlet_ident.extract_toast(h)
+    state = ident.get("state") or ""
+    menu = parse_menu(h)
+    bevs, kept = [], 0
+    for it in menu:
+        b = ctx.classify_beverage(it["name"], it["description"])
+        if not (b["is_alcoholic"] or b["category"] == "mocktail"):
+            continue
+        bevs.append(dict(store=guid, account=name, name=it["name"], description=it["description"][:300],
+                         price=it["price"], category=b["category"], is_alcoholic=b["is_alcoholic"],
+                         root=b.get("root", ""), sub=b.get("sub", ""), base_spirit=b.get("base_spirit", ""),
+                         beer_style=b.get("beer_style", ""),
+                         is_hemp=observe.is_hemp(it["name"], it["description"]),
+                         source="toast", price_basis="menu", captured=today))
+        kept += 1
+    acct = dict(guid=guid, account=name, clean_name=ident.get("name") or name,
+                street=ident.get("street") or "", city=ident.get("city") or "", state=state,
+                phone=ident.get("phone") or "", lat=ident.get("lat"), lng=ident.get("lng"),
+                serves_alcohol=kept > 0, n_beverages=kept, source="toast", captured=today)
+    return bevs, acct
+
+
 def pull_menus(limit=None, log=print):
-    """Fetch the next batch of Toast own-menus → beverages into toast_beverages (source=toast)."""
-    limit = limit or int(os.environ.get("TOAST_LIMIT", "60"))
+    """Fetch the next batch of Toast own-menus CONCURRENTLY → beverages into toast_beverages (source=toast).
+    The page fetch (~30s through the ISP pool) dominates, so a thread pool over the ISP exits gives a big
+    throughput win — TOAST_WORKERS parallel fetches turn a 60/run trickle into hundreds/run."""
+    limit = limit or int(os.environ.get("TOAST_LIMIT", "250"))
+    workers = int(os.environ.get("TOAST_WORKERS", "10"))
     outlets = _due_outlets(limit, log=log)
     if not outlets:
         log("[toast] no un-pulled outlets (harvest first?)")
         return 0
     today = time.strftime("%Y-%m-%d")
-    bevs, accts, obs = [], [], []
-    for o in outlets:
-        guid, name, url = str(o["guid"]), o.get("name") or "", o.get("url") or ""
-        h = _get(url, log=log)
-        if not h:
-            continue
-        ident = outlet_ident.extract_toast(h)          # clean name, lat/lng, street, city, state, phone
-        state = ident.get("state") or ""
-        menu = parse_menu(h)
-        kept = 0
-        for it in menu:
-            b = ctx.classify_beverage(it["name"], it["description"])
-            if not (b["is_alcoholic"] or b["category"] == "mocktail"):
-                continue
-            bevs.append(dict(store=guid, account=name, name=it["name"], description=it["description"][:300],
-                             price=it["price"], category=b["category"], is_alcoholic=b["is_alcoholic"],
-                             root=b.get("root", ""), sub=b.get("sub", ""), base_spirit=b.get("base_spirit", ""),
-                             beer_style=b.get("beer_style", ""),
-                             is_hemp=observe.is_hemp(it["name"], it["description"]),
-                             source="toast", price_basis="menu", captured=today))
-            kept += 1
-        accts.append(dict(guid=guid, account=name, clean_name=ident.get("name") or name,
-                          street=ident.get("street") or "", city=ident.get("city") or "", state=state,
-                          phone=ident.get("phone") or "", lat=ident.get("lat"), lng=ident.get("lng"),
-                          serves_alcohol=kept > 0, n_beverages=kept, source="toast", captured=today))
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    bevs, accts, done = [], [], [0]
+    lock = threading.Lock()
+
+    def _work(o):
+        b, a = _pull_one(o, today)
+        with lock:
+            done[0] += 1
+            if b:
+                bevs.extend(b)
+            if a is not None:
+                accts.append(a)
+                if done[0] % 25 == 0:
+                    log("  [toast] %d/%d fetched (%d beverages so far)" % (done[0], len(outlets), len(bevs)))
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        list(ex.map(_work, outlets))
         log("  [toast] %-40s [%s] — %d items, %d beverages" % (name[:40], state or "?", len(menu), kept))
     if bevs:
         warehouse.write_accumulate("toast_beverages", bevs, key=lambda r: (r["store"], r["name"]), fields=BEV_FIELDS)
