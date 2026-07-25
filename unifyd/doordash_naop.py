@@ -17,6 +17,7 @@ import observe
 import doordash as dd
 import cocktail_taxonomy as ctx
 import cuisine as cui
+import outlet_ident
 
 # seed on-premise accounts (DoorDash restaurant store ids) — expandable via the SERP/setLocation discovery
 DEFAULT_STORES = ["122020"]                 # Applebee's Grill & Bar (Orlando)
@@ -104,6 +105,7 @@ def run(stores=None, limit=None, log=print):
         except Exception as e:
             log("  store %s failed: %s" % (sid, str(e)[:50])); continue
         rest = _restaurant_name(h)
+        ident = outlet_ident.extract_doordash(h)                            # street/city/state/phone for matching
         cz, czs, csrc = cui.classify(rest, h)                               # servesCuisine off the page
         menu = parse_menu(dd._rsc(h))
         kept = 0
@@ -121,7 +123,10 @@ def run(stores=None, limit=None, log=print):
                              is_hemp=observe.is_hemp(it["name"], it["description"]), run_id=run_id))
             kept += 1
         accounts.append(dict(store=str(sid), account=rest, cuisine=cz, cuisines="|".join(czs),
-                             cuisine_source=csrc, serves_alcohol=kept > 0, n_beverages=kept, run_id=run_id))
+                             cuisine_source=csrc, clean_name=ident.get("name") or rest,
+                             street=ident.get("street") or "", city=ident.get("city") or "",
+                             state=ident.get("state") or "", phone=ident.get("phone") or "",
+                             serves_alcohol=kept > 0, n_beverages=kept, run_id=run_id))
         if not cz:
             unsure.append(rest)
         log("  [naop] %-34s (%s) [%s] — %d menu items, %d beverages" % (rest, sid, cz or "?", len(menu), kept))

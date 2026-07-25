@@ -1,33 +1,30 @@
 #!/usr/bin/env python3
-"""outlet_union.py — PRE-MASTER the on-premise outlets from every source, then judge menu freshness per source.
+"""outlet_union.py — PRE-MASTER the on-premise outlets across every source, then judge menu freshness per source.
 
-The delivery aggregators (DoorDash, UberEats, Postmates) and the storefront platforms (Toast, …) each publish
-their own store universe. Unioned + deduped to the physical OUTLET, they become one mastered on-premise
-spine — and because every source stamps when we last captured that outlet's menu, the master can say, per
-outlet, WHICH sources have it and HOW FRESH each one is. That freshness map is what lets the pipeline pick the
-best/freshest menu per outlet and target re-pulls where a source has gone stale.
+Each source (DoorDash, Toast, soon UberEats/Postmates) publishes its own store universe; we union them and
+resolve the SAME physical outlet across sources via outlet_ident (phone / address / geo — the identity signals
+we capture on the page during the menu pull). The mastered outlet then carries, per source, WHICH has it and
+HOW FRESH its menu is — so the pipeline can pick the freshest source and target stale re-pulls.
 
-This is a DERIVED build (reads the source outlet/menu tables, writes `outlet_master`) — no network, $0.
-Matching is first-pass: normalized name + state (state enriched as menus are pulled); it establishes the
-spine + freshness structure and gets sharper as geo enrichment improves.
+CONSERVATIVE by design: only STRONG keys (phone/address/geo) collapse two records into one outlet — never
+name alone (a chain is a hundred bars). Unenriched sitemap outlets stay their own outlet until a page fetch
+gives them identity, so cross-source links grow as menu-pull coverage grows. Better to under-merge than to
+falsely fuse two different bars.
 
+DERIVED build ($0, no network). Reads the source outlet + menu-account tables, writes outlet_master.
     python outlet_union.py
 """
 import os
 import re
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
+import outlet_ident
 
-MASTER_FIELDS = ["outlet_key", "name", "state", "sources", "source_count",
-                 "doordash_id", "toast_guid", "ubereats_id", "postmates_id",
+MASTER_FIELDS = ["outlet_id", "name", "street", "city", "state", "phone", "lat", "lng",
+                 "sources", "source_count", "doordash_id", "toast_guid",
                  "doordash_menu_date", "toast_menu_date", "freshest_source", "freshest_date"]
-
-
-def _norm(name):
-    return re.sub(r"[^a-z0-9]", "", (name or "").lower())[:24]
 
 
 def _q(table, sql):
@@ -37,65 +34,91 @@ def _q(table, sql):
         return []
 
 
-def build_master(log=print):
-    """Union all source outlet tables → outlet_master, attaching each source's last menu-capture date."""
-    # per-source menu freshness: {source_id -> last captured date}. DoorDash (naop) stamps run_id
-    # ('naop-YYYYMMDD-HHMMSS') not a captured column, so derive the date from it; Toast stamps `captured`.
-    def _date_from_runid(rid):
-        m = re.search(r"(\d{4})(\d{2})(\d{2})", rid or "")
-        return "%s-%s-%s" % m.groups() if m else ""
-    dd_menu = {}
-    for r in _q("naop_accounts", "SELECT store, MAX(run_id) rid FROM t GROUP BY store"):
-        d = _date_from_runid(r.get("rid"))
-        if d:
-            dd_menu[str(r["store"])] = d
-    toast_menu = {str(r["guid"]): r["captured"] for r in _q("toast_menu_accounts", "SELECT guid, MAX(captured) captured FROM t GROUP BY guid") if r.get("captured")}
+def _date_from_runid(rid):
+    m = re.search(r"(\d{4})(\d{2})(\d{2})", rid or "")
+    return "%s-%s-%s" % m.groups() if m else ""
 
-    master = {}   # outlet_key -> record
 
-    def _slot(name, state):
-        key = "%s|%s" % (_norm(name), (state or "").lower())
-        r = master.get(key)
-        if r is None:
-            r = master[key] = dict(outlet_key=key, name=name, state=state or "", _srcs=set(),
-                                   doordash_id="", toast_guid="", ubereats_id="", postmates_id="",
-                                   doordash_menu_date="", toast_menu_date="")
-        elif state and not r["state"]:
-            r["state"] = state
-        return r
-
-    for r in _q("doordash_stores", "SELECT store_id, name, state FROM t WHERE store_id IS NOT NULL"):
+def _collect(log=print):
+    """One record per source-outlet: rid, source, source_id, identity fields (enriched from the menu-account
+    table where a page has been fetched, else the sitemap row), and this source's last menu-capture date."""
+    recs = []
+    naop = {}
+    for r in _q("naop_accounts", "SELECT * FROM t"):
+        sid = str(r.get("store"))
+        d = _date_from_runid(r.get("run_id"))
+        cur = naop.get(sid)
+        if cur is None or d > cur.get("_date", ""):
+            naop[sid] = dict(r, _date=d)
+    for r in _q("doordash_stores", "SELECT store_id, name, city, state FROM t WHERE store_id IS NOT NULL"):
         sid = str(r["store_id"])
-        rec = _slot(r.get("name"), r.get("state"))
-        rec["_srcs"].add("doordash"); rec["doordash_id"] = sid
-        if sid in dd_menu:
-            rec["doordash_menu_date"] = max(rec["doordash_menu_date"], dd_menu[sid])
+        e = naop.get(sid, {})
+        recs.append({"rid": "dd:" + sid, "source": "doordash", "source_id": sid,
+                     "name": e.get("clean_name") or r.get("name") or "",
+                     "street": e.get("street") or "", "city": e.get("city") or r.get("city") or "",
+                     "state": e.get("state") or r.get("state") or "", "phone": e.get("phone") or "",
+                     "lat": None, "lng": None, "menu_date": e.get("_date", "")})
+    tacct = {}
+    for r in _q("toast_menu_accounts", "SELECT * FROM t"):
+        g = str(r.get("guid"))
+        if g not in tacct or (r.get("captured") or "") > (tacct[g].get("captured") or ""):
+            tacct[g] = r
     for r in _q("toast_outlets", "SELECT guid, name, state FROM t"):
         g = str(r["guid"])
-        rec = _slot(r.get("name"), r.get("state"))
-        rec["_srcs"].add("toast"); rec["toast_guid"] = g
-        if g in toast_menu:
-            rec["toast_menu_date"] = max(rec["toast_menu_date"], toast_menu[g])
+        e = tacct.get(g, {})
+        recs.append({"rid": "toast:" + g, "source": "toast", "source_id": g,
+                     "name": e.get("clean_name") or r.get("name") or "",
+                     "street": e.get("street") or "", "city": e.get("city") or "",
+                     "state": e.get("state") or r.get("state") or "", "phone": e.get("phone") or "",
+                     "lat": e.get("lat"), "lng": e.get("lng"), "menu_date": e.get("captured") or ""})
+    log("[union] collected %d source-outlets (dd=%d, toast=%d)"
+        % (len(recs), sum(1 for x in recs if x["source"] == "doordash"),
+           sum(1 for x in recs if x["source"] == "toast")))
+    return recs
+
+
+def _pick(vals):
+    return next((v for v in vals if v), "")
+
+
+def build_master(log=print):
+    recs = _collect(log=log)
+    if not recs:
+        log("[union] no source outlets — nothing to master")
+        return []
+    clusters = outlet_ident.resolve(recs)                       # rid -> cluster_id (strong-key union-find)
+    by_id = {r["rid"]: r for r in recs}
+    groups = {}
+    for rid, cid in clusters.items():
+        groups.setdefault(cid, []).append(by_id[rid])
 
     rows = []
-    for rec in master.values():
-        dates = {"doordash": rec["doordash_menu_date"], "toast": rec["toast_menu_date"]}
+    for cid, members in groups.items():
+        srcs = sorted({m["source"] for m in members})
+        dd = next((m for m in members if m["source"] == "doordash"), {})
+        toast = next((m for m in members if m["source"] == "toast"), {})
+        dates = {"doordash": dd.get("menu_date", ""), "toast": toast.get("menu_date", "")}
         dated = {s: d for s, d in dates.items() if d}
-        fresh_src = max(dated, key=dated.get) if dated else ""
-        rows.append(dict(outlet_key=rec["outlet_key"], name=rec["name"], state=rec["state"],
-                         sources=",".join(sorted(rec["_srcs"])), source_count=len(rec["_srcs"]),
-                         doordash_id=rec["doordash_id"], toast_guid=rec["toast_guid"],
-                         ubereats_id=rec["ubereats_id"], postmates_id=rec["postmates_id"],
-                         doordash_menu_date=rec["doordash_menu_date"], toast_menu_date=rec["toast_menu_date"],
-                         freshest_source=fresh_src, freshest_date=(dated.get(fresh_src, "") if dated else "")))
+        fresh = max(dated, key=dated.get) if dated else ""
+        rows.append(dict(
+            outlet_id=cid,
+            name=_pick([m.get("name") for m in members]),
+            street=_pick([m.get("street") for m in members]),
+            city=_pick([m.get("city") for m in members]),
+            state=_pick([m.get("state") for m in members]),
+            phone=_pick([m.get("phone") for m in members]),
+            lat=next((m["lat"] for m in members if m.get("lat") is not None), None),
+            lng=next((m["lng"] for m in members if m.get("lng") is not None), None),
+            sources=",".join(srcs), source_count=len(srcs),
+            doordash_id=dd.get("source_id", ""), toast_guid=toast.get("source_id", ""),
+            doordash_menu_date=dates["doordash"], toast_menu_date=dates["toast"],
+            freshest_source=fresh, freshest_date=(dated.get(fresh, "") if dated else "")))
     if rows:
         warehouse.write_parquet("outlet_master", rows, fields=MASTER_FIELDS)
         multi = sum(1 for r in rows if r["source_count"] > 1)
         withmenu = sum(1 for r in rows if r["freshest_date"])
-        log("[union] %d mastered outlets (%d multi-source, %d with a captured menu) -> outlet_master"
+        log("[union] %d mastered outlets — %d MULTI-SOURCE (matched across sources), %d with a captured menu"
             % (len(rows), multi, withmenu))
-    else:
-        log("[union] no source outlets found — nothing to master")
     return rows
 
 
