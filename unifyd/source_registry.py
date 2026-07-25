@@ -147,8 +147,12 @@ SOURCES = [
     dict(id="outlet-union", label="Outlet pre-master", code="import outlet_union as m; m.run()",
          tables=["outlet_master"], klass="headless", cadence="daily", enabled=True,
          note="derived ($0): unions DoorDash/Toast outlet spines → mastered outlets + per-source menu freshness"),
-    dict(id="ttb", label="TTB COLA registry", code="import master_ttb as m; m.run()",
-         tables=["ttb_master"], klass="headless", cadence="weekly", enabled=False, note="huge backfill — refresh deliberately"),
+    dict(id="ttb-cola", label="TTB COLA scrape", code="import ttb_pull as m; m.run()",
+         tables=["ttb_cola"], klass="headless", cadence="weekly", enabled=True, timeout=5400,
+         note="$0 off-Mac incremental COLA scrape (last TTB_DAYS) → accumulate ttb_cola; ttbonline.gov verify=False, direct (no BD/browser)"),
+    dict(id="ttb", label="TTB COLA master build", code="import master_ttb as m; m.run()",
+         tables=["ttb_master"], klass="headless", cadence="weekly", enabled=False,
+         note="MASTER BUILD (reads ttb_cola → ttb_master); huge — refresh deliberately. Scrape is ttb-cola"),
 
     # ── Hemp ──────────────────────────────────────────────────────────────────────────────────────────────────
     dict(id="hemp-scan", label="Hemp products", code="import hemp_scan as m; m.main([])",
