@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import observe
 import cocktail_taxonomy as ctx
+import outlet_ident
 
 SITEMAP_INDEX = "https://www.toasttab.com/local/sitemaps/index.xml"
 _LOC = re.compile(r"<loc>([^<]+)</loc>")
@@ -35,7 +36,8 @@ _STATE = re.compile(r'"addressState":"([A-Z]{2})"|"state":"([A-Z]{2})"')
 OUTLET_FIELDS = ["guid", "name", "slug", "url", "state", "source"]
 BEV_FIELDS = ["store", "account", "name", "description", "price", "category", "is_alcoholic",
               "root", "sub", "base_spirit", "beer_style", "is_hemp", "source", "price_basis", "captured"]
-ACCT_FIELDS = ["guid", "account", "state", "serves_alcohol", "n_beverages", "source", "captured"]
+ACCT_FIELDS = ["guid", "account", "clean_name", "street", "city", "state", "phone", "lat", "lng",
+               "serves_alcohol", "n_beverages", "source", "captured"]
 
 
 def _get(url, tries=4, log=print):
@@ -155,8 +157,8 @@ def pull_menus(limit=None, log=print):
         h = _get(url, log=log)
         if not h:
             continue
-        sm = _STATE.search(h)
-        state = (sm.group(1) or sm.group(2)) if sm else ""
+        ident = outlet_ident.extract_toast(h)          # clean name, lat/lng, street, city, state, phone
+        state = ident.get("state") or ""
         menu = parse_menu(h)
         kept = 0
         for it in menu:
@@ -170,8 +172,10 @@ def pull_menus(limit=None, log=print):
                              is_hemp=observe.is_hemp(it["name"], it["description"]),
                              source="toast", price_basis="menu", captured=today))
             kept += 1
-        accts.append(dict(guid=guid, account=name, state=state, serves_alcohol=kept > 0,
-                          n_beverages=kept, source="toast", captured=today))
+        accts.append(dict(guid=guid, account=name, clean_name=ident.get("name") or name,
+                          street=ident.get("street") or "", city=ident.get("city") or "", state=state,
+                          phone=ident.get("phone") or "", lat=ident.get("lat"), lng=ident.get("lng"),
+                          serves_alcohol=kept > 0, n_beverages=kept, source="toast", captured=today))
         log("  [toast] %-40s [%s] — %d items, %d beverages" % (name[:40], state or "?", len(menu), kept))
     if bevs:
         warehouse.write_accumulate("toast_beverages", bevs, key=lambda r: (r["store"], r["name"]), fields=BEV_FIELDS)
