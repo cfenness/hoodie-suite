@@ -189,6 +189,15 @@ BUILDS = [
          tables=["master_quality"], klass="build", interval_h=24, enabled=True,
          after=["build-product-master"],
          note="deterministic UPC/brand gold → precision/recall/F1 of item_key merges + regression flag"),
+    # MOAT-PLAN Workstream R — representativeness. Coverage per state (observed outlets ÷ outlet_master
+    # universe) + market metrics in OBSERVED (deterministic) vs PROJECTED (survey estimator + CI,
+    # suppressed below a coverage/obs floor). Turns the observation engine into a market-truth engine —
+    # honestly (today IL coverage 0.18% → all cells OBSERVED-only; projection self-activates as coverage grows).
+    dict(id="build-representativeness", label="Representativeness (coverage + projection)",
+         code="import representativeness as m; m.build()",
+         tables=["coverage_cells", "market_projection"], klass="build", interval_h=24, enabled=True,
+         after=["build-velocity"],
+         note="state coverage + OBSERVED vs PROJECTED brand velocity w/ CIs; suppress below the floor"),
     # MOAT-PLAN Workstream V1 — the observation-quality error model over retail_observations. The
     # instrument card every velocity number will cite: per-source qty semantics (real count vs
     # status-bucket-in-disguise), cadence, diffability; per-cell jitter fingerprint. Cheap (~2min),
