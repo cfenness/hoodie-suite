@@ -48,8 +48,57 @@ def pull(days=None, chunk_days=1, detail=False, out=None, log=print):
     return len(recs)
 
 
+def enrich_pass(limit=None, workers=None, log=print):
+    """DEEPEN un-enriched ttb_cola rows — detail fields (Net Contents / Approval Date / Status) + the
+    label-barcode UPC — CONCURRENTLY, and accumulate the completed rows back. Marker for 'un-enriched' is an
+    empty UPC. Covers BOTH freshly-scraped thin rows (from ttb-cola) and the historical backfill; bounded per
+    run (TTB_ENRICH_LIMIT) so it chips away over time. $0, off-Mac (detail + label images fetch from Fly with
+    verify=False; UPC needs libzbar0 + pyzbar + pillow on the image)."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    limit = limit if limit is not None else int(os.environ.get("TTB_ENRICH_LIMIT", "400"))
+    workers = workers or int(os.environ.get("TTB_ENRICH_WORKERS", "8"))
+    try:
+        thin = warehouse.query("ttb_cola",
+                               "SELECT * FROM t WHERE UPC IS NULL OR UPC = '' LIMIT %d" % limit)
+    except Exception as e:
+        log("[ttb-enrich] ttb_cola query failed: %s" % str(e)[:80])
+        return 0
+    if not thin:
+        log("[ttb-enrich] no un-enriched rows (all have a UPC)")
+        return 0
+    args = type("A", (), {"ocr": True})()          # enrich() always does detail; ocr flag adds the label UPC
+    s = cola.make_session()
+    done = [0]
+    lock = threading.Lock()
+
+    def _work(rec):
+        try:
+            cola.enrich(s, rec, args, log=lambda *a: None)     # mutates rec: Net Contents/Approval Date/Status/UPC
+        except Exception:
+            pass
+        with lock:
+            done[0] += 1
+            if done[0] % 50 == 0:
+                log("  [ttb-enrich] %d/%d enriched" % (done[0], len(thin)))
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        list(ex.map(_work, thin))
+    recs = [{h: r.get(h, "") for h in cola.COLA_HEADER} for r in thin if r.get("TTB ID")]
+    warehouse.write_accumulate("ttb_cola", recs, key=lambda r: r["TTB ID"], fields=cola.COLA_HEADER)
+    got_upc = sum(1 for r in thin if r.get("UPC"))
+    got_det = sum(1 for r in thin if r.get("Net Contents") or r.get("Status"))
+    log("[ttb-enrich] enriched %d rows (+%d UPC, +%d detail) → accumulated into ttb_cola"
+        % (len(recs), got_upc, got_det))
+    return len(recs)
+
+
 def run(log=print):
     return pull(log=log)
+
+
+def run_enrich(log=print):
+    return enrich_pass(log=log)
 
 
 def main(argv=None):
@@ -58,7 +107,13 @@ def main(argv=None):
     ap.add_argument("--chunk-days", type=int, default=1)
     ap.add_argument("--detail", action="store_true", help="open each COLA detail page (slow; adds UPC/dates)")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--enrich", action="store_true", help="deepen un-enriched ttb_cola rows (detail + label UPC)")
+    ap.add_argument("--limit", type=int, default=None, help="--enrich: rows per pass")
     a = ap.parse_args(argv)
+    if a.enrich:
+        n = enrich_pass(limit=a.limit)
+        print("enriched %d ttb_cola rows" % n)
+        return 0 if n else 1
     n = pull(days=a.days, chunk_days=a.chunk_days, detail=a.detail, out=a.out)
     print("landed %d COLAs into ttb_cola" % n)
     return 0 if n else 1
