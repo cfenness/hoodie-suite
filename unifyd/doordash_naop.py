@@ -54,25 +54,41 @@ def _restaurant_name(html_text):
     return _html.unescape(t).split(" - ")[0].replace("Order ", "").strip()[:60]
 
 
+# Big RETAIL chains that also appear in DoorDash's store sitemap — they carry convenience/retail catalogs, not
+# an on-premise DRINK menu, and are already captured by the dedicated retail connectors. naop (on-premise:
+# restaurants + bars) skips them so its per-run budget buys real menu data, not 0-beverage retail fetches.
+_RETAIL_CHAINS = ("total wine", "cvs", "walgreens", "walmart", "7 eleven", "7-eleven", "circle k", "wawa",
+                  "target", "kroger", "safeway", "albertsons", "publix", "meijer", "costco", "sam s club",
+                  "bevmo", "abc fine wine", "binny", "duane reade", "rite aid", "dollar general",
+                  "family dollar", "sprouts", "whole foods", "trader joe", "gopuff", "sheetz", "quiktrip")
+
+
+def _is_retail(name):
+    n = (name or "").lower()
+    return any(c in n for c in _RETAIL_CHAINS)
+
+
 def _due_stores(limit, log=print):
     """The next batch of DoorDash store-ids to menu-fetch, drawn from the doordash_stores UNIVERSE (harvested
-    $0 by doordash_sitemap) minus the ones we've already captured (in naop_accounts). Each run advances
-    national on-premise coverage a bounded chunk; accumulate over runs → full. Falls back to the seed store
-    if the universe hasn't been harvested yet."""
+    $0 by doordash_sitemap) minus the ones we've already captured (in naop_accounts) and minus known RETAIL
+    chains (covered by the retail connectors). Each run advances national on-premise coverage a bounded chunk;
+    accumulate over runs → full. Falls back to the seed store if the universe hasn't been harvested yet."""
     try:
         done = {str(r["store"]) for r in warehouse.query("naop_accounts", "SELECT DISTINCT store FROM t")}
     except Exception:
         done = set()
     try:
         universe = warehouse.query("doordash_stores",
-                                   "SELECT store_id FROM t WHERE store_id IS NOT NULL LIMIT 300000")
+                                   "SELECT store_id, name FROM t WHERE store_id IS NOT NULL LIMIT 300000")
     except Exception:
         universe = []
-    todo = [str(r["store_id"]) for r in universe if str(r["store_id"]) not in done]
+    todo = [str(r["store_id"]) for r in universe
+            if str(r["store_id"]) not in done and not _is_retail(r.get("name"))]
     if not todo:
         log("  [naop] doordash_stores empty/all-done — falling back to seed store")
         return list(DEFAULT_STORES)
-    log("  [naop] universe=%d done=%d taking=%d" % (len(universe), len(done), min(limit, len(todo))))
+    log("  [naop] universe=%d done=%d taking=%d (retail chains skipped)"
+        % (len(universe), len(done), min(limit, len(todo))))
     return todo[:limit]
 
 
