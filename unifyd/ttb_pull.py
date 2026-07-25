@@ -103,20 +103,27 @@ def enrich_pass(limit=None, workers=None, log=print):
     from concurrent.futures import ThreadPoolExecutor
     limit = limit if limit is not None else int(os.environ.get("TTB_ENRICH_LIMIT", "400"))
     workers = workers or int(os.environ.get("TTB_ENRICH_WORKERS", "8"))
+    # Select un-enriched TTB IDs (in ttb_cola, absent from ttb_cola_detail) as a DuckDB ANTI-JOIN that returns
+    # only `limit` rows — never materialize all ~1M ids in Python (that OOM'd the shared box).
+    detail_rows = 0
     try:
-        done = {str(r["TTB ID"]) for r in warehouse.query(DETAIL_TABLE, 'SELECT "TTB ID" FROM t')}
+        detail_rows = warehouse.row_count(DETAIL_TABLE)
     except Exception:
-        done = set()
+        detail_rows = 0
+    if detail_rows:
+        sql = ('SELECT t."TTB ID" FROM t WHERE t."TTB ID" IS NOT NULL AND t."TTB ID" NOT IN '
+               "(SELECT \"TTB ID\" FROM read_parquet('%s')) LIMIT %d" % (warehouse.uri(DETAIL_TABLE), limit))
+    else:
+        sql = 'SELECT "TTB ID" FROM t WHERE "TTB ID" IS NOT NULL LIMIT %d' % limit
     try:
-        allids = [str(r["TTB ID"]) for r in warehouse.query("ttb_cola", 'SELECT "TTB ID" FROM t')]
+        todo = [str(r["TTB ID"]) for r in warehouse.query("ttb_cola", sql)]
     except Exception as e:
-        log("[ttb-enrich] ttb_cola query failed: %s" % str(e)[:80])
+        log("[ttb-enrich] un-enriched select failed: %s" % str(e)[:100])
         return 0
-    todo = [t for t in allids if t and t not in done][:limit]
     if not todo:
-        log("[ttb-enrich] nothing to enrich (all %d COLAs already in %s)" % (len(allids), DETAIL_TABLE))
+        log("[ttb-enrich] nothing to enrich (all COLAs already in %s)" % DETAIL_TABLE)
         return 0
-    log("[ttb-enrich] %d COLAs, %d already enriched — enriching %d this pass" % (len(allids), len(done), len(todo)))
+    log("[ttb-enrich] %d already enriched — enriching %d this pass" % (detail_rows, len(todo)))
     s = cola.make_session()
     out, cnt, lock = [], [0], threading.Lock()
 
