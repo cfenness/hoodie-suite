@@ -4721,6 +4721,26 @@ def _current_user():
     except Exception:
         return None
 
+def _managed_allowlist():
+    """UI-managed access list (durable admin_allowlist.json — same STATE_BUCKET path as admin_flags, so it
+    survives Fly redeploys). auth_gate merges this with the ALLOWED_EMAILS env bootstrap + the admins."""
+    d = load("admin_allowlist.json", {"emails": []})
+    return d.get("emails", []) if isinstance(d, dict) else []
+
+auth_gate.set_allowlist_provider(_managed_allowlist)   # effective allowlist = env bootstrap + this + admins
+
+import re as _re_admin
+_EMAIL_RE = _re_admin.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+def _require_admin():
+    """Guard for /api/admin/*. Returns a 403 response for non-admins, else None to proceed. When the gate
+    is OFF (local dev / pre-secrets) everything is open, matching auth_gate's 'unconfigured -> open'."""
+    if not auth_gate.enabled():
+        return None
+    if not auth_gate.is_admin(_current_user()):
+        return jsonify(ok=False, error="admin access required"), 403
+    return None
+
 def _save_json(name, obj):
     if STATE_BUCKET:
         try:
@@ -4767,10 +4787,14 @@ def usage_summary():
 
 @app.get("/api/admin/flags")
 def admin_flags_get():
+    g = _require_admin()
+    if g: return g
     return jsonify(ok=True, flags=FLAGS)
 
 @app.put("/api/admin/flags")
 def admin_flags_put():
+    g = _require_admin()
+    if g: return g
     b = request.get_json(force=True, silent=True) or {}
     if isinstance(b.get("apps"), dict):
         FLAGS["apps"] = b["apps"]
@@ -4781,16 +4805,60 @@ def admin_flags_put():
 
 @app.get("/api/admin/access")
 def admin_access():
+    g = _require_admin()
+    if g: return g
+    env_boot = sorted({e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()})
+    managed = sorted({str(e).strip().lower() for e in _managed_allowlist() if str(e).strip()})
+    admins = sorted(auth_gate._admin_emails())
+    seen = sorted({e.get("user") for e in USAGE if e.get("user")})
     try:
-        allow = auth_gate._allowed_emails()
+        allow = sorted(auth_gate._allowed_emails())
     except Exception:
         allow = []
-    users = sorted({e.get("user") for e in USAGE if e.get("user")})
     return jsonify(ok=True, gated=auth_gate.enabled(), currentUser=_current_user(),
-                   allowlist=sorted(allow), seenUsers=users)
+                   isAdmin=(auth_gate.is_admin(_current_user()) or not auth_gate.enabled()),
+                   admins=admins, bootstrap=env_boot, managed=managed,
+                   allowlist=allow, seenUsers=seen)
+
+@app.post("/api/admin/users")
+def admin_users_add():
+    """Add an email to the UI-managed allowlist (durable). Admin-only. Bootstrap (env) + admins are managed
+    elsewhere and are always allowed regardless."""
+    g = _require_admin()
+    if g: return g
+    b = request.get_json(force=True, silent=True) or {}
+    email = (b.get("email") or "").strip().lower()
+    if not _EMAIL_RE.match(email):
+        return jsonify(ok=False, error="enter a valid email address"), 400
+    d = load("admin_allowlist.json", {"emails": []})
+    emails = {str(e).strip().lower() for e in (d.get("emails") or []) if str(e).strip()}
+    emails.add(email)
+    _save_json("admin_allowlist.json", {"emails": sorted(emails)})
+    return jsonify(ok=True, added=email, managed=sorted(emails))
+
+@app.post("/api/admin/users/remove")
+def admin_users_remove():
+    """Remove an email from the UI-managed allowlist. Admin-only. Can't remove a bootstrap(env) email or an
+    admin here — those are edited via the ALLOWED_EMAILS / ADMIN_EMAILS secrets so a UI slip can't lock out."""
+    g = _require_admin()
+    if g: return g
+    b = request.get_json(force=True, silent=True) or {}
+    email = (b.get("email") or "").strip().lower()
+    boot = {e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()}
+    if email in boot:
+        return jsonify(ok=False, error="bootstrap email — remove it from the ALLOWED_EMAILS secret instead"), 400
+    if auth_gate.is_admin(email):
+        return jsonify(ok=False, error="admin — cannot be removed here"), 400
+    d = load("admin_allowlist.json", {"emails": []})
+    emails = {str(e).strip().lower() for e in (d.get("emails") or []) if str(e).strip()}
+    emails.discard(email)
+    _save_json("admin_allowlist.json", {"emails": sorted(emails)})
+    return jsonify(ok=True, removed=email, managed=sorted(emails))
 
 @app.get("/api/admin/overview")
 def admin_overview():
+    g = _require_admin()
+    if g: return g
     # book value (best-effort) + open service reports + run count + 7d usage
     book_val = None
     try:

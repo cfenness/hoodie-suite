@@ -406,7 +406,7 @@
     {id:'bev-icons',name:'Beverage Icons',desc:'Original category icon set · anonymous position grid',group:'Internal',status:'internal',file:'apps/bev-icons.html',mark:'BI'},
     {id:'prism',name:'Prism',desc:'Mobile · every cut of your book + the pulse feed (installable)',group:'Internal',status:'beta',file:'apps/prism.html',mark:'PM'},
     {id:'device-preview',name:'Device Preview',desc:'Render any app in phone/tablet frames (iOS/Android) · demo view',group:'Internal',status:'internal',file:'apps/device-preview.html',mark:'DP'},
-    {id:'admin',name:'Admin Console',desc:'Usage reporting · app registry & flags · access · data-ops',group:'Internal',status:'internal',file:'apps/admin.html',mark:'AD'},
+    {id:'admin',name:'Admin Console',desc:'Usage reporting · app registry & flags · access · data-ops',group:'Internal',status:'internal',file:'apps/admin.html',mark:'AD',adminOnly:true},
     {id:'spinedemo',name:'Spine Adapter',desc:'Reference · how apps join the spine',group:'Platform',status:'internal',file:'apps/spine-adapter.html',mark:'SP'}
   ];
   const GROUPS=['Signal Stack','Commercial','Presentation','Data Operations','Internal','Platform','Learning'];
@@ -480,7 +480,8 @@
 
   /* ============ admin: feature flags (app visibility) + usage beacon ============ */
   let APP_FLAGS={apps:{},features:{}};
-  const appHidden=a=>!!(a&&APP_FLAGS.apps[a.id]&&APP_FLAGS.apps[a.id].hidden);
+  let IS_ADMIN=false;   // set from /auth/me; admin-only tiles stay hidden until confirmed (never flash to non-admins)
+  const appHidden=a=>!!(a&&((APP_FLAGS.apps[a.id]&&APP_FLAGS.apps[a.id].hidden)||(a.adminOnly&&!IS_ADMIN)));
   const appStatus=a=>((APP_FLAGS.apps[a.id]&&APP_FLAGS.apps[a.id].status)||a.status);   // admin status override
   let lastLoggedApp=null;
   function logUsage(id){
@@ -948,12 +949,14 @@
     setTimeout(function(){ document.addEventListener('click',acctDoc,true); },0);
   }
   fetch('/auth/me').then(r=>r.json()).then(m=>{
+    IS_ADMIN = !!(m && (m.is_admin || !m.gated));   // gate off (local dev) -> show everything, incl. admin-only
     if(m && m.gated && m.email){
       var b=document.getElementById('acctBtn');
       b.textContent=acctInitials(m.email); b.style.display=''; b.title='Signed in as '+m.email;
       b.onclick=function(e){ e.stopPropagation(); openAcct(m.email); };
       document.getElementById('signout').style.display='none';   // the avatar replaces the text link
     }
+    renderNav(); renderGrid();   // re-render now that admin-only visibility is known
   }).catch(()=>{});
 </script>
 </body>
