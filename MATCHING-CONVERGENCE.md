@@ -50,8 +50,8 @@ unifyd engine. Building one would be the exact duplication we're avoiding.
 
 | Step | What | Repo | Status |
 |---|---|---|---|
-| **S1** | Land canon's in-flight **0011 real-data hardening** (UPC→external_keys so tier0 fires; one-open-review-per-observation). Verify its gate. | canon | preserved on `wip/observation-keys-review-dedup`; near-complete |
-| **S2** | Run canon's cascade over the real observation universe; **score canon subjects against the shared `gold_matches`** → canon P/R vs unifyd 1.000/0.285. | canon + shared | next |
+| **S1** | Land canon's in-flight **0011 real-data hardening** (UPC→external_keys so tier0 fires; one-open-review-per-observation). Verify its gate. | canon | **DONE** — completed the force-stopped edit (2 test-seed gaps); canon full suite 1020 green; landed on canon main. |
+| **S2** | Score canon's resolved identities on the same UPC signal as unifyd → the head-to-head. | canon + shared | **DONE** — `src/match/quality.py` (canon-side ruler): **canon P=1.000 R=1.000** vs **unifyd P=1.000 R=0.285**. Canon's tier0 exact-key fixes the under-merge. Honest caveat: dev-scale (28 same-UPC groups / 29 entities); full-scale needs the ingest loaded. |
 | **S3** | Freeze the `item_identity` contract; export canon's authoritative identity to Tigris so unifyd's serving path can read it. | both | |
 | **S4** | Cut velocity/dim_item/marts to read `item_identity` (canon supersedes unifyd `item_key`); `master_quality` scores the SERVED identity. | unifyd | |
 | **S5** | Retire unifyd matching to the deterministic pre-filter (or drop it); canon authoritative for all identity. | both | strangler-fig complete |
@@ -60,9 +60,10 @@ unifyd engine. Building one would be the exact duplication we're avoiding.
 
 - Canon needs its **PG16+pgvector dev DB** up to run migrations + the cascade (`CANON_DB__DSN`,
   default `postgresql+psycopg://localhost/canon`).
-- Confirm whether canon's cascade has run over the **real observation universe** yet or only gate
-  fixtures — S2 hinges on it. The observations come from unifyd's landed data via canon's Phase-1/2
-  ingest; verify that pipe is loaded.
+- **Canon is dev-scale (verified S2): 1,460 observations, specs-only, all resolved, 29 entities.** The
+  head-to-head is proven on this sample; the **served** lift now hinges on loading the FULL observation
+  universe into canon (the Phase-1/2 ingest at scale) — that is the real blocker to S3+ (the cutover),
+  not the cascade or the scoring. Loading the universe is the next concrete step.
 - The `gold_matches` schema is the shared asset — canon reads it as its eval + review seed; keep it
   the one truth.
 
