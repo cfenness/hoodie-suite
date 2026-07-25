@@ -39,8 +39,16 @@ def _q(table, sql):
 
 def build_master(log=print):
     """Union all source outlet tables → outlet_master, attaching each source's last menu-capture date."""
-    # per-source menu freshness: {source_id -> last captured date}
-    dd_menu = {str(r["store"]): r["captured"] for r in _q("naop_accounts", "SELECT store, MAX(captured) captured FROM t GROUP BY store") if r.get("captured")}
+    # per-source menu freshness: {source_id -> last captured date}. DoorDash (naop) stamps run_id
+    # ('naop-YYYYMMDD-HHMMSS') not a captured column, so derive the date from it; Toast stamps `captured`.
+    def _date_from_runid(rid):
+        m = re.search(r"(\d{4})(\d{2})(\d{2})", rid or "")
+        return "%s-%s-%s" % m.groups() if m else ""
+    dd_menu = {}
+    for r in _q("naop_accounts", "SELECT store, MAX(run_id) rid FROM t GROUP BY store"):
+        d = _date_from_runid(r.get("rid"))
+        if d:
+            dd_menu[str(r["store"])] = d
     toast_menu = {str(r["guid"]): r["captured"] for r in _q("toast_menu_accounts", "SELECT guid, MAX(captured) captured FROM t GROUP BY guid") if r.get("captured")}
 
     master = {}   # outlet_key -> record
