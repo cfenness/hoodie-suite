@@ -13,6 +13,10 @@ only manual input is APP_ONLY_CONN — the set of app connIds that legitimately 
 (state license portals, parked recon, affiliate APIs), each with the reason it's exempt. Adding an exemption is
 a conscious, reviewed decision; forgetting to classify a new conn fails the test.
 
+It also enforces COMPLETENESS (check 7): every ENABLED source_registry id must be runnable from the app —
+in VALID_CONNS and routed via the registry (the generic fallthrough in server._route). So a brand-new registry
+source is app-runnable the day its row lands, with no hand-wiring, and can't silently drift out of reach.
+
 Run: python3 unifyd/dispatch_guard_test.py   (exit 0 = clean, 1 = drift found). Also importable as test_*.
 Deterministic + offline: imports source_registry (light) and server (module-level only, no network).
 """
@@ -66,6 +70,13 @@ def main():
     legacy = set(getattr(server, "_CONN_PULL", {}))
     fails = []
 
+    # A conn "routes via the registry" if it dispatches through run_sources.run_one — either an explicit
+    # _REGISTRY_CONN entry OR the generic fallthrough for any other registry-owned id. server._route_kind is the
+    # authoritative classifier (built from the same dispatch tables), so this can't drift from _dispatch_pull.
+    route_kind = getattr(server, "_route_kind", None)
+    def _via_registry(cid):
+        return route_kind(cid) == "registry" if route_kind else (cid in conn_map)
+
     # 1. every source that must be registry-routed actually is
     for cid in sorted(MUST_ROUTE_VIA_REGISTRY):
         if cid not in conn_map:
@@ -83,14 +94,15 @@ def main():
         fails.append("'%s' is BOTH registry-routed and in _CONN_PULL — remove the legacy entry" % conn)
 
     # 4. STRUCTURAL anti-drift (the core check): any conn whose id is a source_registry id, and which the app
-    #    can run, MUST route through the registry — unless it's a documented APP_ONLY_CONN exception. This is
-    #    what catches the vtinfo/ab-inbev class (a registry-owned source hand-wired in the app else-chain) that
-    #    the hand-maintained MUST_ROUTE list silently missed.
+    #    can run, MUST route through the registry (explicit _REGISTRY_CONN or the generic fallthrough) — unless
+    #    it's a documented APP_ONLY_CONN exception. This catches the vtinfo/ab-inbev class (a registry-owned
+    #    source hand-wired in the app else-chain) that the hand-maintained MUST_ROUTE list silently missed: a
+    #    hand-wired copy makes _route_kind return 'explicit'/'legacy', not 'registry', and this fails.
     for cid in sorted(valid & reg_ids):
-        if cid not in conn_map and cid not in APP_ONLY_CONN:
+        if not _via_registry(cid) and cid not in APP_ONLY_CONN:
             fails.append("'%s' is a source_registry id the app can run, but it is NOT routed via the registry "
-                         "and NOT a documented app-only exception — dispatch drift (add it to _REGISTRY_CONN)"
-                         % cid)
+                         "(neither _REGISTRY_CONN nor the generic fallthrough) and NOT a documented app-only "
+                         "exception — dispatch drift" % cid)
 
     # 5. an APP_ONLY exception must be real: it must be a runnable conn and must NOT also be registry-routed.
     for cid in sorted(APP_ONLY_CONN):
@@ -99,20 +111,36 @@ def main():
         if cid not in valid:
             fails.append("APP_ONLY_CONN lists '%s' which is not a runnable conn (stale exemption)" % cid)
 
-    # 6. EXHAUSTIVENESS: every runnable conn is classified (registry-routed, documented app-only, or a Socrata
-    #    outlet feed). A new conn cannot be added to VALID_CONNS without a conscious routing decision.
-    classified = set(conn_map) | set(APP_ONLY_CONN) | socrata_valid
+    # 6. EXHAUSTIVENESS: every runnable conn is classified — registry-owned (routes via the registry, incl. the
+    #    generic fallthrough), a documented app-only exception, or a Socrata outlet feed. A NON-registry conn
+    #    cannot be added to VALID_CONNS without a conscious routing decision (_REGISTRY_CONN / APP_ONLY_CONN).
+    classified = set(conn_map) | set(APP_ONLY_CONN) | socrata_valid | reg_ids
     for cid in sorted(valid - classified):
         fails.append("'%s' is runnable (VALID_CONNS) but unclassified — add it to _REGISTRY_CONN (preferred) "
                      "or APP_ONLY_CONN with a reason" % cid)
+
+    # 7. COMPLETENESS (the fix for a NEW registry source being silently unrunnable from the app): every ENABLED
+    #    registry source must be runnable — in VALID_CONNS (the /api/run gate + UI 'runnable' flag accept it) and
+    #    routed via the registry (the generic fallthrough guarantees this). Drop the `| _REGISTRY_IDS` from
+    #    VALID_CONNS, or the generic fallthrough from server._route, and this fails — so a future distributor
+    #    recipe (vip-brandbuilder / sevenfifty) is app-runnable the day its source_registry row lands, no wiring.
+    enabled_ids = sorted(s["id"] for s in reg.SOURCES if s.get("enabled"))
+    for cid in enabled_ids:
+        if cid not in valid:
+            fails.append("enabled registry source '%s' is NOT runnable from the app (missing from VALID_CONNS) — "
+                         "restore `| _REGISTRY_IDS` on VALID_CONNS" % cid)
+        elif not _via_registry(cid) and cid not in APP_ONLY_CONN:
+            fails.append("enabled registry source '%s' is runnable but does NOT route via the registry — the "
+                         "generic fallthrough in server._route is missing" % cid)
 
     if fails:
         print("DISPATCH GUARD FAILED (%d):" % len(fails))
         for f in fails:
             print("  ✗ " + f)
         return 1
-    print("dispatch guard OK — %d conns route through the registry, %d documented app-only, no drift"
-          % (len(conn_map), len(APP_ONLY_CONN)))
+    print("dispatch guard OK — %d conns explicitly registry-routed, %d documented app-only, all %d enabled "
+          "registry sources app-runnable via the generic fallthrough, no drift"
+          % (len(conn_map), len(APP_ONLY_CONN), len(enabled_ids)))
     return 0
 
 

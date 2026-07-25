@@ -49,6 +49,7 @@ import ab_locator                    # Anheuser-Busch InBev retailer locator (be
 import warehouse                    # Parquet-on-Tigris (or local) queried by DuckDB
 import upc                          # UPC/EAN QC + owned prefix->owner crosswalk (deterministic + inference)
 import auth_gate                    # Google OIDC login gate (active only when configured)
+import source_registry             # THE canonical source list — /api/run dispatch is derived from it (no drift)
 
 APP_DIR   = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.join(APP_DIR, "agent_state"); os.makedirs(STATE_DIR, exist_ok=True)
@@ -86,30 +87,52 @@ class _JobLogHandler(logging.Handler):
 _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
+# Every source_registry id is a valid connId (the /api/run gate + UI 'runnable' flag accept it) — so a source
+# the registry owns is runnable from the app the day it lands, without editing this set. This is what the generic
+# dispatch fallthrough (_route) needs to be reachable; dispatch_guard_test asserts every enabled registry id is here.
+_REGISTRY_IDS = {s["id"] for s in source_registry.SOURCES}
 VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
                "kroger", "walmart", "walmart-api", "target", "doordash", "google",
-               "ubereats", "postmates", "naop", "meijer", "trader-joes"} | set(socrata_outlets.VALID)
+               "ubereats", "postmates", "naop", "meijer", "trader-joes"} | set(socrata_outlets.VALID) | _REGISTRY_IDS
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
 
+# SINGLE SOURCE OF TRUTH: sources the registry owns run THROUGH the registry entrypoint (run_one), never a
+# hand-maintained *_pull copy — so a fix in source_registry can never be silently bypassed by the app path
+# (the drift that made "we fixed it 100 times" literally true — see _REGISTRY_CONN / dispatch_guard_test).
+# _route() is the ONE place that decides how a connId dispatches; it returns (kind, thunk) so the guard can
+# classify every conn offline (via _route_kind) while dispatch stays a thin wrapper.
+def _route(conn, body):
+    """Return (kind, thunk) for `conn`, or (None, None) if unknown. kind ∈ registry|legacy|explicit|socrata|fl.
+    Building the thunk is side-effect-free (no execution, no network), so dispatch_guard_test classifies offline.
+    Order IS precedence: the explicit app paths win first, then a GENERIC registry fallthrough catches everything
+    else the registry owns — so a NEW registry source is app-runnable the day it lands, with no hand-wiring."""
+    if conn in _REGISTRY_CONN:                  # explicitly graduated (+ aliases) → run_sources.run_one
+        return "registry", lambda: _run_via_registry(conn, body)
+    if conn in _CONN_PULL:                       # legacy/app-only hand-wired pulls (target/doordash/google/walmart-api)
+        return "legacy", lambda: _CONN_PULL[conn](body)
+    if conn in _EXPLICIT_PULL:                   # bespoke in-process app-only pulls (ttb-cola, census-acs, tx/il/ct, …)
+        return "explicit", lambda: _EXPLICIT_PULL[conn](body)
+    if conn in socrata_outlets.VALID:            # generic per-state Socrata outlets (NY/CO/MO…)
+        return "socrata", lambda: socrata_pull(conn, body)
+    if conn in FL_CONN:                          # Florida DBPR/ABT CSV extracts
+        return "fl", lambda: fl_pull(conn)
+    if conn in _REGISTRY_IDS:                    # GENERIC fallthrough — the drift-killer: ANY other registry source
+        return "registry", lambda: _run_via_registry(conn, body)   # runs through its registry entrypoint (self-lands)
+    return None, None
+
+
+def _route_kind(conn):
+    """Which dispatch path handles `conn` (no execution): 'registry' (run_one — explicit OR generic fallthrough),
+    'legacy', 'explicit', 'socrata', 'fl', or None. dispatch_guard_test uses this to prove every registry-owned
+    runnable conn goes through the registry (or is a documented app-only exception)."""
+    return _route(conn, None)[0]
+
+
 def _dispatch_pull(conn, body):
-    # SINGLE SOURCE OF TRUTH: sources the registry owns run THROUGH the registry entrypoint (run_one), never a
-    # hand-maintained *_pull copy — so a fix in source_registry can never be silently bypassed by the app path
-    # (the drift that made "we fixed it 100 times" literally true — see _REGISTRY_CONN / dispatch_guard_test).
-    if conn in _REGISTRY_CONN:
-        return _run_via_registry(conn, body)
-    if conn in _CONN_PULL:                     # legacy hand-wired pulls not yet in the registry (target/doordash/google)
-        return _CONN_PULL[conn](body)
-    return (cola_pull(body) if conn == "ttb-cola"
-            else instacart_pull(body) if conn == "instacart"
-            else places_pull(body) if conn == "orlando-accounts"
-            else census_pull(body) if conn == "census-acs"
-            else tx_pull(body) if conn == "tx-tabc"
-            else il_pull(body) if conn == "il-chicago"
-            else ct_pull(body) if conn == "ct-dcp"
-            else socrata_pull(conn, body) if conn in socrata_outlets.VALID
-            else fl_pull(conn) if conn in FL_CONN else None)
+    _, thunk = _route(conn, body)
+    return thunk() if thunk else None
 
 def socrata_pull(conn, body):
     """Generic Socrata outlet pull (NY/CO/MO…) → <state>_outlets, normalised to one schema. NY/CO
@@ -218,7 +241,7 @@ def _run_via_registry(conn, body):
     import source_registry as _reg
     import run_sources as _rs
     body = body or {}
-    rid = _REGISTRY_CONN[conn]
+    rid = _REGISTRY_CONN.get(conn, conn)   # explicit alias if graduated; else the connId IS the registry id (generic fallthrough)
     src = next((s for s in _reg.SOURCES if s["id"] == rid), None)
     if not src:
         return _std_run(conn, int(time.time() * 1000), status="failed",
@@ -322,6 +345,21 @@ def walmart_api_pull(body):
 # (kept until a follow-up removes them) and MUST NOT be re-wired here — dispatch_guard_test enforces that.
 _CONN_PULL = {"walmart-api": walmart_api_pull,
               "target": target_pull, "doordash": doordash_pull, "google": google_pull}
+
+# Bespoke in-process pulls that are app-only (NOT registry-owned): the live COLA runner, the ACS census
+# connector, and the per-state license portals. Declarative (was a ternary in _dispatch_pull) so _route and the
+# guard read the SAME table — no drift. Lambdas defer the lookup (cola_pull/instacart_pull are defined lower).
+# vtinfo/ab-inbev/shopify are NOT here — they route through the registry (_REGISTRY_CONN); the dispatch guard's
+# APP_ONLY_CONN documents each key here as a real exception (id differs from / has no source_registry entry).
+_EXPLICIT_PULL = {
+    "ttb-cola":         lambda b: cola_pull(b),
+    "instacart":        lambda b: instacart_pull(b),
+    "orlando-accounts": lambda b: places_pull(b),
+    "census-acs":       lambda b: census_pull(b),
+    "tx-tabc":          lambda b: tx_pull(b),
+    "il-chicago":       lambda b: il_pull(b),
+    "ct-dcp":           lambda b: ct_pull(b),
+}
 
 # The connector registry — ONE source of truth the Pulls console reads (/api/connectors): what sources exist,
 # how they run, their warehouse data + <x>_runs table (for last-run), and whether they're enabled (on/off).
