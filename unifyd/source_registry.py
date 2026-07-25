@@ -181,6 +181,14 @@ BUILDS = [
          code="import build_product_master as m; m.build()",
          tables=["dim_sku"], klass="build", interval_h=12, enabled=True,
          note="brand dict → stage → shred to dim_brand/product/item/sku + xwalk/coherence/identity clusters"),
+    # MOAT-PLAN Workstream M — PROVE the master. Deterministic gold set (same-UPC positives / cross-
+    # brand negatives) scored against the master's item_key decision → P/R/F1 + a regression baseline.
+    # Reruns after the master rebuilds so quality is MEASURED every cycle, not asserted.
+    dict(id="build-master-quality", label="Master quality (P/R vs gold)",
+         code="import master_quality as m; m.build()",
+         tables=["master_quality"], klass="build", interval_h=24, enabled=True,
+         after=["build-product-master"],
+         note="deterministic UPC/brand gold → precision/recall/F1 of item_key merges + regression flag"),
     # MOAT-PLAN Workstream V1 — the observation-quality error model over retail_observations. The
     # instrument card every velocity number will cite: per-source qty semantics (real count vs
     # status-bucket-in-disguise), cadence, diffability; per-cell jitter fingerprint. Cheap (~2min),

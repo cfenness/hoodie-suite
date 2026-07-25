@@ -36,7 +36,7 @@ Every claim gets a number, and every number gets a surface. No adjectives withou
 | Freshest in category | per-source SLO age vs interval | Data Console dispatcher strip (live) | hot ≤4h, daily ≤24h (live today) |
 | Cheapest in category | est $/mo, measured machine-hours | Data Console cost strip (live) | ≤$100/mo at full fleet |
 | **Velocity you can trust** | *external:* MAPE vs ground-truth sales; *internal (live):* conservation ratio (implied sales ÷ restock, →1) | `velocity_calibration` + this doc | ext ≤15%→10%; internal 0.8–1.2 |
-| **Master you can trust** | precision / recall on a versioned gold set; % records carrying confidence | MDM workbench + CI gate | P ≥99%, R ≥95% @ item grain, 100% confidence coverage |
+| **Master you can trust** | precision / recall on a versioned gold set; % records carrying confidence | `master_quality` + CI gate | P ≥99%, R ≥95% @ item grain (**baseline measured 2026-07-24: P=1.000, R=0.285, F1=0.444** — precise but under-merges) |
 | **Honest projection** | coverage % per market×channel cell; CI width; anchor-validation error | Coverage map + every market metric | 100% of cells labeled; validated cells within ±10% of anchors |
 | Survives its author | tested cold-start time; recipe MTTR | runbook + health digest | restore ≤1h; MTTR ≤72h |
 
@@ -173,6 +173,25 @@ fan-in bands (2-source items vs 200-source items fail differently).
 - `master_quality.py`: precision / recall / F1 — overall, per category, per rule — against the gold
   set. Runs in CI on any matcher/blocking change; a drop beyond threshold blocks the merge (same
   pattern as the warehouse-compat gate).
+
+**BUILT (M1+M2, `master_quality.py`, 2026-07-24).** Deterministic gold set (no human/LLM needed for
+v1): POSITIVES = same normalized UPC (authoritative same-item → tests under-merge/recall); NEGATIVES
+= different normalized brand (definitely different → tests over-merge/precision, non-circular even
+when the matcher uses UPC). Scores the master's decision = "same `item_key` in xwalk_source_sku".
+Gold pairs land append-only + versioned in `gold_matches`; the score lands in `master_quality`.
+- **First measured baseline: P=1.000, R=0.285, F1=0.444 over 8,000 balanced pairs.** The master
+  **never over-merges** (0 false positives across 4,000 cross-brand pairs — a real, provable
+  strength) but **under-merges hard** (only 28.5% of same-UPC records unify under one item_key — the
+  "98.5% single-source" fragmentation, now a number). This is the baseline to RATCHET, not an
+  aspirational pass: the CI/build gate is **anti-regression** (P/R may not drop > MQ_REG_TOL vs the
+  last run), so matching work is measured as it lifts recall without sacrificing precision.
+- Registry `build-master-quality` (after build-product-master) rescores every cycle + flags
+  regressions. 11-test harness proves the P/R math (perfect / under-merge / over-merge / regression
+  fixtures); duckdb 1.4.5 + 1.5.5. **CI gate is currently harness-correctness** (offline math); wiring
+  the LIVE regression gate into `cloud-sources.yml` (needs Tigris creds in CI) is the next step.
+- **The recall gap is now the master's headline work item** — the raw material to lift it (owned
+  GS1-prefix crosswalk, UPC shape-heals, category-conditional blocking) already exists; M gives it a
+  measured target and a ratchet.
 
 ### M3. Per-record confidence
 - Every dim_item/dim_sku row gets `match_confidence` derived from rule strength + corroboration
