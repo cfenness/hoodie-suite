@@ -23,8 +23,9 @@ import warehouse
 import outlet_ident
 
 MASTER_FIELDS = ["outlet_id", "name", "street", "city", "state", "phone", "lat", "lng",
-                 "sources", "source_count", "doordash_id", "toast_guid",
-                 "doordash_menu_date", "toast_menu_date", "freshest_source", "freshest_date"]
+                 "sources", "source_count", "doordash_id", "toast_guid", "ubereats_id",
+                 "doordash_menu_date", "toast_menu_date", "ubereats_menu_date",
+                 "freshest_source", "freshest_date"]
 
 
 def _q(table, sql):
@@ -71,9 +72,24 @@ def _collect(log=print):
                      "street": e.get("street") or "", "city": e.get("city") or "",
                      "state": e.get("state") or r.get("state") or "", "phone": e.get("phone") or "",
                      "lat": e.get("lat"), "lng": e.get("lng"), "menu_date": e.get("captured") or ""})
-    log("[union] collected %d source-outlets (dd=%d, toast=%d)"
+    # UberEats: sitemap universe (+ menu-account enrichment once a $0 store-page pass populates address/phone/geo)
+    ueacct = {}
+    for r in _q("ubereats_accounts", "SELECT * FROM t"):
+        g = str(r.get("store_id") or r.get("store"))
+        if g not in ueacct or (r.get("captured") or "") > (ueacct[g].get("captured") or ""):
+            ueacct[g] = r
+    for r in _q("ubereats_outlets", "SELECT store_id, name FROM t"):
+        sid = str(r["store_id"])
+        e = ueacct.get(sid, {})
+        recs.append({"rid": "ue:" + sid, "source": "ubereats", "source_id": sid,
+                     "name": e.get("clean_name") or r.get("name") or "",
+                     "street": e.get("street") or "", "city": e.get("city") or "",
+                     "state": e.get("state") or "", "phone": e.get("phone") or "",
+                     "lat": e.get("lat"), "lng": e.get("lng"), "menu_date": e.get("captured") or ""})
+    log("[union] collected %d source-outlets (dd=%d, toast=%d, ubereats=%d)"
         % (len(recs), sum(1 for x in recs if x["source"] == "doordash"),
-           sum(1 for x in recs if x["source"] == "toast")))
+           sum(1 for x in recs if x["source"] == "toast"),
+           sum(1 for x in recs if x["source"] == "ubereats")))
     return recs
 
 
@@ -97,7 +113,9 @@ def build_master(log=print):
         srcs = sorted({m["source"] for m in members})
         dd = next((m for m in members if m["source"] == "doordash"), {})
         toast = next((m for m in members if m["source"] == "toast"), {})
-        dates = {"doordash": dd.get("menu_date", ""), "toast": toast.get("menu_date", "")}
+        ue = next((m for m in members if m["source"] == "ubereats"), {})
+        dates = {"doordash": dd.get("menu_date", ""), "toast": toast.get("menu_date", ""),
+                 "ubereats": ue.get("menu_date", "")}
         dated = {s: d for s, d in dates.items() if d}
         fresh = max(dated, key=dated.get) if dated else ""
         rows.append(dict(
@@ -111,7 +129,9 @@ def build_master(log=print):
             lng=next((m["lng"] for m in members if m.get("lng") is not None), None),
             sources=",".join(srcs), source_count=len(srcs),
             doordash_id=dd.get("source_id", ""), toast_guid=toast.get("source_id", ""),
+            ubereats_id=ue.get("source_id", ""),
             doordash_menu_date=dates["doordash"], toast_menu_date=dates["toast"],
+            ubereats_menu_date=dates["ubereats"],
             freshest_source=fresh, freshest_date=(dated.get(fresh, "") if dated else "")))
     if rows:
         warehouse.write_parquet("outlet_master", rows, fields=MASTER_FIELDS)

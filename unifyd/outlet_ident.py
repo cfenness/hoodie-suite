@@ -30,11 +30,37 @@ _DD_STATE = re.compile(r'\\?"state\\?":\\?"([A-Z]{2})\\?"')
 _DD_NAME = re.compile(r'\\?"(?:businessName|name)\\?":\\?"([^"\\]{3,60})')
 
 
+_UE_STREET = re.compile(r'"streetAddress":"([^"]+)"')
+_UE_CITY = re.compile(r'"addressLocality":"([^"]+)"')
+_UE_STATE = re.compile(r'"addressRegion":"([A-Z]{2})"')
+_UE_LAT = re.compile(r'"latitude":\s*(-?\d+\.\d+)')
+_UE_LNG = re.compile(r'"longitude":\s*(-?\d+\.\d+)')
+_UE_NAME = re.compile(r'"@type":"Restaurant"[^}]*?"name":"([^"]{3,60})"|"title":"([^"]{3,60})"')
+
+
 def _first(*groups):
     for g in groups:
         if g:
             return g
     return ""
+
+
+def extract_ubereats(html):
+    """UberEats store pages carry schema.org Restaurant JSON-LD (address + geo + phone) — fetchable $0."""
+    st = _UE_STREET.search(html)
+    ci = _UE_CITY.search(html)
+    stt = _UE_STATE.search(html)
+    la = _UE_LAT.search(html)
+    lo = _UE_LNG.search(html)
+    ph = _PHONE.search(html)
+    nm = _UE_NAME.search(html)
+    return {"name": _first(*(nm.groups() if nm else ())).strip(),
+            "lat": float(la.group(1)) if la else None,
+            "lng": float(lo.group(1)) if lo else None,
+            "street": (st.group(1) if st else "").strip(),
+            "city": (ci.group(1) if ci else "").strip(),
+            "state": (stt.group(1) if stt else "").strip(),
+            "phone": ("".join(ph.groups()) if ph else "")}
 
 
 def extract_toast(html):
