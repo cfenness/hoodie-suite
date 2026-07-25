@@ -53,17 +53,17 @@ def extract_toast(html):
 
 
 def extract_doordash(html):
-    ph = _PHONE.search(html)
+    # DoorDash's RSC address block is the reliable identity: street + city + state. The RSC has no usable
+    # phone (only a "Phone Number" label) and no per-store geo (US-centroid default), and the store NAME in
+    # the RSC is unreliable (telemetry keys match first) — the caller passes the real name it already parsed.
     st = _DD_STREET.search(html)
     ci = _DD_CITY.search(html)
     stt = _DD_STATE.search(html)
-    nm = _DD_NAME.search(html)
-    return {"name": (nm.group(1) if nm else "").strip(),
-            "lat": None, "lng": None,                                   # DoorDash ships a US-centroid default
+    return {"name": "", "lat": None, "lng": None,
             "street": (st.group(1) if st else "").strip(),
             "city": (ci.group(1) if ci else "").strip(),
             "state": (stt.group(1) if stt else "").strip(),
-            "phone": ("".join(ph.groups()) if ph else "")}
+            "phone": ""}
 
 
 # ── normalized match keys ────────────────────────────────────────────────────────────────────────────────
