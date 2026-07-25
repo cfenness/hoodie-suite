@@ -156,10 +156,16 @@ def run(stores=None, limit=None, log=print):
     # chain's store-ids ever got recorded 'done'. That made the batched sweep re-fetch every other chain
     # location forever, never advancing past chains. Per-location is also the right on-premise grain (price is
     # delivery-inflated and varies by store). Beverages keyed (store, name); accounts keyed store.
+    # EXPLICIT fields — the merge mixes old rows (pre-enrichment schema) with new ones; without a fixed field
+    # list write_parquet infers the schema from row[0] (an old row) and silently DROPS the new identity columns
+    # (clean_name/street/city/state/phone), which broke outlet matching.
     if rows:
         warehouse.write_parquet("naop_beverages", _merge("naop_beverages", rows, lambda r: (r.get("store"), r.get("name"))))
     if accounts:
-        warehouse.write_parquet("naop_accounts", _merge("naop_accounts", accounts, lambda r: r.get("store")))
+        warehouse.write_parquet("naop_accounts", _merge("naop_accounts", accounts, lambda r: r.get("store")),
+                                fields=["store", "account", "clean_name", "street", "city", "state", "phone",
+                                        "cuisine", "cuisines", "cuisine_source", "serves_alcohol",
+                                        "n_beverages", "run_id"])
         log("[naop] DONE %d beverages · %d accounts (%d serve alcohol) -> naop_beverages / naop_accounts"
             % (len(rows), len(accounts), sum(1 for a in accounts if a["serves_alcohol"])))
     return len(rows)
