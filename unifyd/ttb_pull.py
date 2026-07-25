@@ -49,39 +49,47 @@ def pull(days=None, chunk_days=1, detail=False, out=None, log=print):
 
 
 DETAIL_TABLE = "ttb_cola_detail"
+LABELS_TABLE = "ttb_cola_labels"
 _VIEW_URL = cola.BASE + "/viewColaDetails.do"
 
+# EXISTING table schemas (snake_case) — this producer EXTENDS these, never a parallel schema.
+DETAIL_COLS = ["ttb_id", "status", "vendor_code", "serial_number", "class_type_code", "class_type_desc",
+               "origin_code", "brand_name", "fanciful_name", "application_type", "for_sale_in", "net_contents",
+               "wine_vintage", "grape_varietal", "alcohol_content", "formula", "approval_date",
+               "qualifications", "plant_permit", "label_image_url", "other_json"]
+LABEL_COLS = ["ttb_id", "image_file", "upc", "abv", "net_contents", "claims", "gov_warning", "ocr_chars",
+              "front_label_url", "back_label_url", "label_urls"]
+# ttb_enrich (PascalCase, validated on the current site) field -> ttb_cola_detail snake_case column
+_DETAIL_MAP = {"status": "Status", "vendor_code": "Vendor Code", "serial_number": "Serial #",
+               "class_type_code": "Class/Type Code", "origin_code": "Origin Code", "brand_name": "Brand Name",
+               "fanciful_name": "Fanciful Name", "application_type": "Type of Application",
+               "for_sale_in": "For Sale In", "net_contents": "Total Bottle Capacity",
+               "wine_vintage": "Wine Vintage", "formula": "Formula", "approval_date": "Approval Date",
+               "qualifications": "Qualifications"}
 
-def _detail_fields():
+
+def _enrich_one(s, tid, class_type_desc=""):
+    """Enrich ONE COLA into (detail_row, label_row) matching the EXISTING snake_case ttb_cola_detail /
+    ttb_cola_labels schemas, via ttb_enrich's validated parsers. label_row is None if the COLA exposes no
+    label. Best-effort per field so one bad COLA never sinks the batch. (grape_varietal/plant_permit and the
+    text-OCR label fields — claims/gov_warning/ocr_chars — are left empty: the current stack decodes the
+    barcode UPC + reads ABV, not full text OCR.)"""
+    import json
     import ttb_enrich as te
-    return ["TTB ID"] + te.DETAIL_FIELDS + ["UPC", "alc_content", "abv", "proof", "n_labels"]
-
-
-def _enrich_one(s, tid):
-    """Full per-COLA enrichment via ttb_enrich's VALIDATED (current-USWDS-site) parsers: detail fields from
-    ?publicDisplaySearchBasic, alcohol + label filenames from ?publicFormDisplay, and the label-barcode UPC
-    from the attachment image. Returns a dict for ttb_cola_detail. Best-effort per field (a page/label miss
-    just leaves it empty), so one bad COLA never sinks the batch."""
-    import ttb_enrich as te
-    rec = {"TTB ID": tid}
+    df, alc, labs, upc = {}, {"content": "", "abv": ""}, [], ""
     try:
-        h2 = s.get(_VIEW_URL, params={"action": "publicDisplaySearchBasic", "ttbid": tid}, timeout=60).text
-        for k, v in te.parse_detail_fields(h2).items():
-            if k != "TTB ID":
-                rec[k] = v
+        h2 = s.get(_VIEW_URL, params={"action": "publicDisplaySearchBasic", "ttbid": tid}, timeout=45).text
+        df = te.parse_detail_fields(h2) or {}
     except Exception:
         pass
-    upc = ""
     try:
-        h1 = s.get(_VIEW_URL, params={"action": "publicFormDisplay", "ttbid": tid}, timeout=60).text
-        alc = te.parse_alcohol(h1, rec.get("Class/Type Code", ""))
-        rec["alc_content"], rec["abv"], rec["proof"] = alc.get("content", ""), alc.get("abv", ""), alc.get("proof", "")
+        h1 = s.get(_VIEW_URL, params={"action": "publicFormDisplay", "ttbid": tid}, timeout=45).text
+        alc = te.parse_alcohol(h1, df.get("Class/Type Code", ""))
         labs = te.label_filenames(h1)
-        rec["n_labels"] = len(labs)
         try:
             from ttb_cola_labels import extract_upc_from_label
-            for fn in labs[:3]:
-                img = s.get(cola.ATTACH_URL, params={"filename": fn, "filetype": "l"}, timeout=60).content
+            for fn in labs[:2]:
+                img = s.get(cola.ATTACH_URL, params={"filename": fn, "filetype": "l"}, timeout=45).content
                 u = extract_upc_from_label(img)
                 if u:
                     upc = u
@@ -90,62 +98,80 @@ def _enrich_one(s, tid):
             pass
     except Exception:
         pass
-    rec["UPC"] = upc
-    return rec
+    detail = {c: "" for c in DETAIL_COLS}
+    detail["ttb_id"] = tid
+    detail["class_type_desc"] = class_type_desc                      # ttb_cola's Class/Type (search field)
+    detail["alcohol_content"] = alc.get("content", "")
+    detail["label_image_url"] = labs[0] if labs else ""
+    for sc, pc in _DETAIL_MAP.items():
+        detail[sc] = df.get(pc, "") or ""
+    extra = {k: v for k, v in df.items() if k not in _DETAIL_MAP.values() and k != "TTB ID" and v}
+    detail["other_json"] = json.dumps(extra, separators=(",", ":")) if extra else ""
+    label = None
+    if labs or upc:
+        urls = [cola.ATTACH_URL + "?filename=" + fn + "&filetype=l" for fn in labs]
+        label = {c: "" for c in LABEL_COLS}
+        label.update(ttb_id=tid, image_file=(labs[0] if labs else ""), upc=upc, abv=alc.get("abv", ""),
+                     net_contents=df.get("Total Bottle Capacity", "") or "",
+                     front_label_url=(urls[0] if urls else ""),
+                     back_label_url=(urls[1] if len(urls) > 1 else ""), label_urls="|".join(urls))
+    return detail, label
 
 
 def enrich_pass(limit=None, workers=None, log=print):
-    """DEEPEN COLA records not yet enriched — full detail fields + ABV + label-barcode UPC — CONCURRENTLY,
-    landing a rich ttb_cola_detail (keyed TTB ID) joined to ttb_cola. 'Un-enriched' = a ttb_cola TTB ID absent
-    from ttb_cola_detail, so it covers BOTH freshly-scraped thin rows and the ~1M backfill; bounded per run
-    (TTB_ENRICH_LIMIT). $0, off-Mac (verify=False direct; UPC needs libzbar0 + pyzbar + pillow on the image)."""
+    """OFF-MAC producer for the detail + label/UPC layers — EXTENDS the existing ttb_cola_detail and
+    ttb_cola_labels tables (accumulate by ttb_id, never clobber) with COLAs not yet detailed. Un-enriched =
+    a ttb_cola id absent from ttb_cola_detail (DuckDB anti-join, memory-safe). Concurrent but GENTLE on the
+    .gov site (few workers). $0, verify=False direct; UPC needs libzbar0+pyzbar+pillow (in the image)."""
     import threading
     from concurrent.futures import ThreadPoolExecutor
-    limit = limit if limit is not None else int(os.environ.get("TTB_ENRICH_LIMIT", "400"))
-    workers = workers or int(os.environ.get("TTB_ENRICH_WORKERS", "8"))
-    # Select un-enriched TTB IDs (in ttb_cola, absent from ttb_cola_detail) as a DuckDB ANTI-JOIN that returns
-    # only `limit` rows — never materialize all ~1M ids in Python (that OOM'd the shared box).
+    limit = limit if limit is not None else int(os.environ.get("TTB_ENRICH_LIMIT", "300"))
+    workers = workers or int(os.environ.get("TTB_ENRICH_WORKERS", "4"))
     detail_rows = 0
     try:
         detail_rows = warehouse.row_count(DETAIL_TABLE)
     except Exception:
         detail_rows = 0
     if detail_rows:
-        sql = ('SELECT t."TTB ID" FROM t WHERE t."TTB ID" IS NOT NULL AND t."TTB ID" NOT IN '
-               "(SELECT \"TTB ID\" FROM read_parquet('%s')) LIMIT %d" % (warehouse.uri(DETAIL_TABLE), limit))
+        sql = ('SELECT t."TTB ID" tid, t."Class/Type" ctd FROM t WHERE t."TTB ID" IS NOT NULL AND t."TTB ID" '
+               "NOT IN (SELECT ttb_id FROM read_parquet('%s')) LIMIT %d" % (warehouse.uri(DETAIL_TABLE), limit))
     else:
-        sql = 'SELECT "TTB ID" FROM t WHERE "TTB ID" IS NOT NULL LIMIT %d' % limit
+        sql = 'SELECT "TTB ID" tid, "Class/Type" ctd FROM t WHERE "TTB ID" IS NOT NULL LIMIT %d' % limit
     try:
-        todo = [str(r["TTB ID"]) for r in warehouse.query("ttb_cola", sql)]
+        todo = [(str(r["tid"]), r.get("ctd") or "") for r in warehouse.query("ttb_cola", sql)]
     except Exception as e:
-        log("[ttb-enrich] un-enriched select failed: %s" % str(e)[:100])
+        log("[ttb-enrich] select failed: %s" % str(e)[:100])
         return 0
     if not todo:
-        log("[ttb-enrich] nothing to enrich (all COLAs already in %s)" % DETAIL_TABLE)
+        log("[ttb-enrich] nothing to enrich (all ttb_cola COLAs already in ttb_cola_detail)")
         return 0
-    log("[ttb-enrich] %d already enriched — enriching %d this pass" % (detail_rows, len(todo)))
+    log("[ttb-enrich] %d already detailed — enriching %d this pass (workers=%d)" % (detail_rows, len(todo), workers))
     s = cola.make_session()
-    out, cnt, lock = [], [0], threading.Lock()
+    details, labels, cnt, lock = [], [], [0], threading.Lock()
 
-    def _work(tid):
-        rec = _enrich_one(s, tid)
+    def _work(item):
+        tid, ctd = item
+        d, l = _enrich_one(s, tid, ctd)
         with lock:
-            out.append(rec)
+            details.append(d)
+            if l is not None:
+                labels.append(l)
             cnt[0] += 1
             if cnt[0] % 50 == 0:
                 log("  [ttb-enrich] %d/%d" % (cnt[0], len(todo)))
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         list(ex.map(_work, todo))
-    fields = _detail_fields()
-    recs = [{h: r.get(h, "") for h in fields} for r in out if r.get("TTB ID")]
-    warehouse.write_accumulate(DETAIL_TABLE, recs, key=lambda r: r["TTB ID"], fields=fields)
-    got_upc = sum(1 for r in out if r.get("UPC"))
-    got_det = sum(1 for r in out if r.get("Status") or r.get("Class/Type Code"))
-    got_abv = sum(1 for r in out if r.get("abv"))
-    log("[ttb-enrich] enriched %d → %s (+%d UPC, +%d detail, +%d abv)"
-        % (len(recs), DETAIL_TABLE, got_upc, got_det, got_abv))
-    return len(recs)
+    if details:
+        warehouse.write_accumulate(DETAIL_TABLE, details, key=lambda r: r["ttb_id"], fields=DETAIL_COLS)
+    if labels:
+        warehouse.write_accumulate(LABELS_TABLE, labels, key=lambda r: r["ttb_id"], fields=LABEL_COLS)
+    got_det = sum(1 for d in details if d.get("status"))
+    got_upc = sum(1 for l in labels if l.get("upc"))
+    got_abv = sum(1 for l in labels if l.get("abv"))
+    log("[ttb-enrich] +%d detail (%d w/ status) → ttb_cola_detail · +%d labels (%d UPC, %d ABV) → ttb_cola_labels"
+        % (len(details), got_det, len(labels), got_upc, got_abv))
+    return len(details)
 
 
 def run(log=print):
