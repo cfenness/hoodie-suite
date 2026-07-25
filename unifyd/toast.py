@@ -201,7 +201,6 @@ def pull_menus(limit=None, log=print):
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         list(ex.map(_work, outlets))
-        log("  [toast] %-40s [%s] — %d items, %d beverages" % (name[:40], state or "?", len(menu), kept))
     if bevs:
         warehouse.write_accumulate("toast_beverages", bevs, key=lambda r: (r["store"], r["name"]), fields=BEV_FIELDS)
     if accts:
