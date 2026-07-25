@@ -15,10 +15,10 @@ PyYAML>=6.0          # serve the OpenAPI spec at /api/openapi.json; lazy-importe
 # so kept off the default image until Iowa is turned on.
 # google-cloud-bigquery>=3.20
 
-# Optional — only needed for COLA label UPC OCR (--ocr).
-# Wires to your existing ttb_cola_labels.extract_upc_from_label.
-# pytesseract>=0.3.10
-# pillow>=10.0
+# COLA label UPC (--ocr / ttb-enrich): ttb_cola_labels.extract_upc_from_label decodes the label's BARCODE
+# (not text OCR). pyzbar binds the zbar system lib (Dockerfile installs libzbar0); pillow loads the image.
+pyzbar>=0.1.9
+pillow>=10.0
 cryptography
 openpyxl
 curl_cffi>=0.7        # Chrome-JA3 TLS impersonation for walmart_direct (PerimeterX reads urllib's TLS as a bot tell)
