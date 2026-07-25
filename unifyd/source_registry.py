@@ -192,6 +192,15 @@ BUILDS = [
          tables=["velocity_calibration"], klass="build", interval_h=24, enabled=True,
          after=["build-velocity"],
          note="conservation ratio (sales≈restock) live; external MAPE pending an overlapping footprint"),
+    # MOAT-PLAN Workstream V5 — the salable output. signal_movers (brand accel/decel, MATCHED-CELL
+    # week-over-week — coverage-proof; a partial start/current week is flagged, never shown as a fake
+    # trend) + signal_voids (OOS distribution opportunities → estimated recoverable units, positive
+    # framing). Voids ship now; movers self-activate once two full observation weeks exist.
+    dict(id="build-velocity-signals", label="Velocity signals (movers + voids)",
+         code="import velocity_signals as m; m.build()",
+         tables=["signal_movers", "signal_voids"], klass="build", interval_h=12, enabled=True,
+         after=["build-velocity"],
+         note="matched-cell WoW movers (partial-week flagged) + OOS void opportunities w/ recoverable units"),
     # Phase 4 — SipSource depletion feed (NRT-PLAN §1d): the ~500M-row raw grain (sip_raw, hive-
     # partitioned period=YYYYMM/market=XX) is NEVER served; this rolls it into small dimension-BOUNDED
     # marts the site reads. Wired but DISABLED until the real feed lands (no `sipsource-feed` source yet

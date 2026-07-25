@@ -112,6 +112,21 @@ This is the step none of the scraped-data shops do, and we can, because bev-alc 
   units. An actionable list with evidence, not a chart.
 - **Restock cadence** per store/chain → order-timing intelligence + promo-flip detection.
 
+**BUILT (`velocity_signals.py`, 2026-07-24).** `signal_movers` + `signal_voids`.
+- **Movers** use the **matched-cell** (same-store-sales) method — only cells observed in BOTH weeks
+  count, so a coverage change can't fake a trend. And a mover is **CONFIRMED only when both weeks are
+  full** (observed on ≥80% of the best week's calendar days): a partial start/current week skews the
+  WoW % in *either* direction (the data showed fake +7730% AND fake −100%). Live today: **0 confirmed
+  movers — the honest 'not yet'** (only one full observation week exists; all 1015 mover rows are
+  staged + flagged partial and self-activate once a second full week lands). Coverage is measured over
+  the velocity-feeding sources only, so a non-velocity source scraping a given day can't fake fullness.
+- **Voids ship now** (current-state, not WoW-dependent): brand OOS across N stores → estimated
+  recoverable units = the brand's own per-store velocity × out-stores. Live: Michelob out 32/49,
+  Miller 42/49, Modelo 30/49 — real chain-wide distribution opportunities, positive-framed.
+- Lands `signal_movers` / `signal_voids`; registry `build-velocity-signals` (after build-velocity).
+- **Restock cadence** deferred — needs the per-restock timing grain the weekly fact doesn't carry
+  (a follow-up reads the pair stream directly; `restock_units` from V4 is the first half).
+
 ### V6. Surfaces
 - `/api/velocity` (marts only, confidence + as_of on every payload) + a Velocity tab in the console
   and the Hoodie app. Nothing renders without its confidence.
