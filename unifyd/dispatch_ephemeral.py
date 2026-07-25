@@ -56,8 +56,10 @@ def running_sources():
     return out
 
 
-def spawn(sid, image, klass):
-    mem = "8192" if klass in _HEADFUL else "4096"
+def spawn(sid, image, klass, mem_hint=None):
+    # per-source `mem` override (a registry field) wins — a derived pass that accumulates into a huge table
+    # (e.g. ttb-enrich merging the 1.86M ttb_cola_detail) needs headroom the 4GB headless default can't give.
+    mem = str(mem_hint) if mem_hint else ("8192" if klass in _HEADFUL else "4096")
     r = _fly(["machine", "run", image, "-a", APP, "--rm", "--detach", "--restart", "no",
               "--vm-memory", mem, "--vm-cpu-kind", "shared", "--vm-cpus", "4",
               "--metadata", "role=ephemeral-pull", "--metadata", "source=" + sid,
@@ -82,7 +84,7 @@ def main():
           % (len(due), len(due) - len(todo), MAX_SPAWN, image.rsplit(":", 1)[-1]))
     spawned = []
     for s in todo[:MAX_SPAWN]:
-        if spawn(s["id"], image, s.get("klass")):
+        if spawn(s["id"], image, s.get("klass"), s.get("mem")):
             spawned.append(s["id"])
     deferred = [s["id"] for s in todo[MAX_SPAWN:]]
     print("dispatch: spawned=%s | skipped-running=%s | deferred-to-next-tick=%s"

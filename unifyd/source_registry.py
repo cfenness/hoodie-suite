@@ -151,7 +151,8 @@ SOURCES = [
          tables=["ttb_cola"], klass="headless", cadence="weekly", enabled=True, timeout=5400,
          note="$0 off-Mac incremental COLA scrape (last TTB_DAYS) → accumulate ttb_cola; ttbonline.gov verify=False, direct (no BD/browser)"),
     dict(id="ttb-enrich", label="TTB COLA enrich (detail+UPC)", code="import ttb_pull as m; m.run_enrich()",
-         tables=["ttb_cola_detail", "ttb_cola_labels"], klass="headless", cadence="daily", enabled=True, timeout=7200,
+         tables=["ttb_cola_detail", "ttb_cola_labels"], klass="headless", cadence="daily", enabled=True,
+         timeout=7200, mem=8192,   # accumulate merges the 1.86M-row ttb_cola_detail → needs >4GB headroom
          note="$0 off-Mac producer that EXTENDS the existing ttb_cola_detail + ttb_cola_labels (accumulate by "
               "ttb_id, snake_case schemas via ttb_enrich's validated parsers) for COLAs not yet detailed — new "
               "COLAs from ttb-cola get detail + label-barcode UPC off-Mac. Gentle concurrency on the .gov site "
