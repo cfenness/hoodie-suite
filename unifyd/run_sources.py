@@ -195,9 +195,24 @@ def run_one(source, log=print, extra_env=None):
                     ts_start=int(t0), ts_end=int(time.time()), duration_s=0.0, status="no-creds",
                     rows_before=a, rows_after=a, delta=0, tables=",".join(source["tables"]),
                     error="missing env: " + ", ".join(missing), host=os.uname().nodename[:40])
+    # HEADFUL on Fly MUST go through a RESIDENTIAL exit. The gates (Kroger Akamai, CityHive Cloudflare, PX)
+    # flag the Fly datacenter IP even with a real browser — which is why kroger never landed and cityhive went
+    # stale off-Mac. One STICKY exit per source (same session id → same IP) so the cookie warm and the pull that
+    # replays it share an IP (these cookies are IP-bound; a mismatch = instant reject). No-op if resi isn't
+    # configured or BROWSER_PROXY is already set. This is what lets the headful sources run off the Mac.
+    if source["klass"] == "mac" and not os.environ.get("BROWSER_PROXY"):
+        try:
+            import resi
+            if resi.enabled():
+                px = resi._session_url("hf-" + sid)
+                if px:
+                    os.environ["BROWSER_PROXY"] = px
+                    log("  %-16s headful → residential exit (sticky)" % sid)
+        except Exception as e:
+            log("  %-16s resi proxy unavailable: %s" % (sid, str(e)[:70]))
     # PREP: sources gated on an anti-bot cookie (Kroger Akamai, …) warm it in a real headful browser FIRST,
     # then the pull subprocess inherits the fresh cookie env (see cookie_warm.apply_prep). Runs in-process on
-    # this box (which has Chrome+Xvfb — the ephemeral pull machine / the Mac). A warm failure doesn't abort:
+    # this box (which has Chrome+Xvfb — the ephemeral pull machine). A warm failure doesn't abort:
     # the pull just runs cookie-less and reports degraded/no-creds, honestly, instead of being skipped blind.
     if source.get("cookie"):
         try:
