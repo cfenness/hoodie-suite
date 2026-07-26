@@ -52,8 +52,8 @@ unifyd engine. Building one would be the exact duplication we're avoiding.
 |---|---|---|---|
 | **S1** | Land canon's in-flight **0011 real-data hardening** (UPC→external_keys so tier0 fires; one-open-review-per-observation). Verify its gate. | canon | **DONE** — completed the force-stopped edit (2 test-seed gaps); canon full suite 1020 green; landed on canon main. |
 | **S2** | Score canon's resolved identities on the same UPC signal as unifyd → the head-to-head. | canon + shared | **DONE** — `src/match/quality.py` (canon-side ruler): **canon P=1.000 R=1.000** vs **unifyd P=1.000 R=0.285**. Canon's tier0 exact-key fixes the under-merge. Honest caveat: dev-scale (28 same-UPC groups / 29 entities); full-scale needs the ingest loaded. |
-| **S2.5** | Run the full retail universe through the cascade at scale; measure P/R; pull every free lever before the LLM. | canon | **DONE** — 91,841 obs → **89,715 entities** with ZERO model calls / ZERO embeddings (`max_tier=1`): **P=0.9977 R=0.9872 F1=0.9925** (vs unifyd R=0.285). Then wired the **free tier2 auto-accept lever** (cosine ≥ 0.95 auto-links, no LLM): with real MiniLM embeddings, **~29% of the 27,034 provisional mints have a ≥0.95 twin** → the paid-LLM band shrinks 29%→~20% of the universe for **$0**. Canon commits 34cbfed / 5c1e222 / 9ddbfaf; 1025 tests green. |
-| **S3** | Freeze the `item_identity` contract; export canon's authoritative identity to Tigris so unifyd's serving path can read it. | both | |
+| **S2.5** | Run the full retail universe through the cascade at scale; measure P/R; pull every free lever before the LLM. | canon | **DONE** — 91,841 obs → **89,715 entities** with ZERO model calls / ZERO embeddings (`max_tier=1`): **P=0.9977 R=0.9872 F1=0.9925** (vs unifyd R=0.285). Then wired the **free tier2 auto-accept lever** (cosine ≥ 0.95 auto-links, no LLM): with real MiniLM embeddings, **26.4% of the 27,034 provisional mints have a ≥0.95 twin**; converged the master would drop **89,715→73,892 entities (17.6%, $0)**. Canon commits 34cbfed / 5c1e222 / 9ddbfaf; 1025 tests green. |
+| **S3** | Freeze the `item_identity` contract; export canon's authoritative identity so unifyd's serving path can read it. | both | **IN PROGRESS** — contract FROZEN + canon-side export built (`canon/src/index/export_identity.py`, commit dc39d71): one JSONL record per source SKU (source, product_id, **canon_item_id**, attrs, upcs, status/merged_into, provenance). Full universe → **90,381 records / 89,686 items**. Next: unifyd ingests it → Tigris `item_identity` table. |
 | **S4** | Cut velocity/dim_item/marts to read `item_identity` (canon supersedes unifyd `item_key`); `master_quality` scores the SERVED identity. | unifyd | |
 | **S5** | Retire unifyd matching to the deterministic pre-filter (or drop it); canon authoritative for all identity. | both | strangler-fig complete |
 
@@ -77,9 +77,12 @@ unifyd engine. Building one would be the exact duplication we're avoiding.
   adds the **free local embedding lever** (tier2 auto-accept: cosine ≥ `match.tier2_auto_accept`=0.95
   auto-links with NO model call, $0); `max_tier=3` sends only the ambiguous residue to the paid Haiku
   adjudicator. At-scale tier mix (max_tier=1): **3.5% tier0 · 67.6% tier1 · 29.0% provisional mints** —
-  and with real MiniLM embeddings, **~29% of those provisional mints have a ≥0.95 twin** the free lever
-  auto-resolves, shrinking the paid-LLM band from 29%→~20% of the universe before a cent is spent.
+  and with real MiniLM embeddings (clean text), **26.4% of those provisional mints have a ≥0.95 twin**
+  the free lever auto-resolves; a converged merge would drop the master **89,715→73,892 (17.6%, $0)**.
   Tier2 = LOCAL + FREE (sentence-transformers, `uv sync --extra embeddings`); only tier3 costs money.
+  (The converged figure is a single-linkage upper bound — chaining through thin-name hubs is exactly the
+  gray zone the LLM/Gate-5 golden adjudicates; applying merges mutates the master and is precision-gated,
+  not automatic.)
 - The `gold_matches` schema is the shared asset — canon reads it as its eval + review seed; keep it
   the one truth.
 
