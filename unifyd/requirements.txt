@@ -15,9 +15,11 @@ PyYAML>=6.0          # serve the OpenAPI spec at /api/openapi.json; lazy-importe
 # so kept off the default image until Iowa is turned on.
 # google-cloud-bigquery>=3.20
 
-# COLA label UPC (--ocr / ttb-enrich): ttb_cola_labels.extract_upc_from_label decodes the label's BARCODE
-# (not text OCR). pyzbar binds the zbar system lib (Dockerfile installs libzbar0); pillow loads the image.
+# COLA label enrichment (ttb-enrich): pyzbar decodes the BARCODE → UPC; pytesseract reads the label TEXT →
+# gov warning / claims (ttb_cola_labels.read_label_text). Both bind system libs the Dockerfile installs
+# (libzbar0 / tesseract-ocr); pillow loads the image. All no-op cleanly if a lib is missing.
 pyzbar>=0.1.9
+pytesseract>=0.3.10
 pillow>=10.0
 cryptography
 openpyxl
