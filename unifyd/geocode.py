@@ -102,11 +102,12 @@ def geocode_src_outlets(limit=None, log=print):
     import warehouse
     import refresh_fast
     limit = limit if limit is not None else int(os.environ.get("GEOCODE_LIMIT", "9000"))
-    # lat is a DOUBLE column, so un-geocoded = lat IS NULL (not lat=''). county_fips is VARCHAR: '' = never
-    # tried, '00000' = tried-no-match (excluded so a bad address isn't geocoded forever).
+    # Pick up rows with an address that are either un-geocoded (lat IS NULL) OR only city-approximated
+    # (geo_precision='city') — the exact street geocode UPGRADES a city dot to a precise one. county_fips is
+    # VARCHAR: '' = never tried, '00000' = tried-no-match (excluded so a bad address isn't geocoded forever).
     rows = warehouse.query(
         "src_outlets",
-        "SELECT * FROM t WHERE lat IS NULL AND address IS NOT NULL AND address <> '' "
+        "SELECT * FROM t WHERE (lat IS NULL OR geo_precision = 'city') AND address IS NOT NULL AND address <> '' "
         "AND (county_fips IS NULL OR county_fips = '') LIMIT %d" % limit)
     if not rows:
         log("[geocode] no un-geocoded addressed src_outlets — done")
@@ -122,6 +123,7 @@ def geocode_src_outlets(limit=None, log=print):
             if nrow[li]:                                       # matched → real coords
                 d["lat"], d["lng"] = float(nrow[li]), float(nrow[gi])
                 d["county_fips"] = nrow[ci] or ""
+                d["geo_precision"] = "exact"                   # a real street-address geocode (upgrades 'city')
             else:
                 d["county_fips"] = "00000"                     # tried, no match — don't retry forever
         except (ValueError, TypeError):
