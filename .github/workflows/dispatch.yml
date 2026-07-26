@@ -11,7 +11,9 @@ name: dispatch-pulls
 
 on:
   schedule:
-    - cron: "*/30 * * * *"      # every 30 minutes
+    - cron: "0 */2 * * *"       # every 2 hours — sources are daily/weekly, so 30-min was ~8x overkill and
+                                # burned through the private-repo GitHub Actions free minutes (2000/mo). A due
+                                # daily source is now picked up within 2h; ephemeral pulls still self-schedule.
   workflow_dispatch:
     inputs:
       max:
