@@ -42,6 +42,8 @@ FIXTURE_CHECKS = [
          run="import json, cex_ref as c; rows, warns = c.parse([json.loads(html)]); result=(len(rows), {'warns': warns[:3]})"),
     dict(id="cpi", fixture="fixtures/cpi_bls_sample.json", min_rows=500,
          run="import json, cpi_ref as c; rows, warns = c.parse([json.loads(html)]); result=(len(rows), {'warns': warns[:3]})"),
+    dict(id="fred", fixture="fixtures/fred_sample.json", min_rows=100,
+         run="import json, fred_ref as f; rows = f.parse('MRTSSM4453USN', json.loads(html)); result=(len(rows), {})"),
 ]
 
 DOC_FILES = ["CLAUDE.md", "README.md", "SPINE.md"]

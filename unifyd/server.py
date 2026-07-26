@@ -6049,6 +6049,40 @@ def cpi_ep():
                        note="cpi_reference not landed yet (run the cpi source: cpi_ref.build)")
 
 
+@app.get("/api/fred")
+def fred_ep():
+    """FRED macro series. ?series=MRTSSM4453USN|liquor_store_sales&year=2026."""
+    import fred_ref
+    try:
+        yr = int(request.args["year"]) if request.args.get("year") else None
+        rows = fred_ref.query(series=request.args.get("series") or None, year=yr,
+                              limit=int(request.args.get("limit", 5000)))
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except ValueError as e:
+        return jsonify(ok=False, error="bad numeric param: %s" % e), 400
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="fred_reference not landed yet (run the fred source: fred_ref.build, needs FRED_API_KEY)")
+
+
+@app.get("/api/bea")
+def bea_ep():
+    """BEA regional income. ?metric=personal_income_per_capita&geo_level=county&geo_fips=12095&year=2023."""
+    import bea_ref
+    try:
+        yr = int(request.args["year"]) if request.args.get("year") else None
+        rows = bea_ref.query(metric=request.args.get("metric") or None,
+                             geo_level=request.args.get("geo_level") or None,
+                             geo_fips=request.args.get("geo_fips") or None, year=yr)
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except ValueError as e:
+        return jsonify(ok=False, error="bad numeric param: %s" % e), 400
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="bea_reference not landed yet (run the bea source: bea_ref.build — the BEA key "
+                            "must be activated via BEA's email link)")
+
+
 @app.get("/api/places")
 def places_ep():
     """Query the pulled on-premise accounts (Orlando) from the warehouse. Filters:

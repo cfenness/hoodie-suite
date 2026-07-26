@@ -130,6 +130,17 @@ SOURCES = [
          note="BLS CPI-U API (cpi_ref.build) — alcohol total/at-home/away + beer/spirits/wine sub-items, "
               "US + 4 regions, monthly + M13 annual; keyless OK; real_series() = alcohol rebased vs "
               "all-items (the deflator / price-index benchmark)"),
+    dict(id="fred", label="FRED macro pulse", code="import fred_ref as m; m.build()",
+         tables=["fred_reference"], klass="creds", cadence="weekly", enabled=True,
+         requires=["FRED_API_KEY"],
+         note="FRED API (fred_ref.build) — monthly liquor-store retail sales (MRTSSM4453USN, the national "
+              "off-prem pulse), food-service sales, real disposable income, consumer sentiment"),
+    dict(id="bea", label="BEA regional income", code="import bea_ref as m; m.build()",
+         tables=["bea_reference"], klass="creds", cadence="weekly", enabled=True,
+         requires=["BEA_API_KEY"],
+         note="BEA Regional API (bea_ref.build) — state disposable income (SAINC51) + county personal "
+              "income (CAINC1), annual; a fresh BEA key must be ACTIVATED via BEA's email link or the "
+              "API returns in-band Error 4 (reported degraded, never silent)"),
     dict(id="tax-rates", label="Bev-alc tax RATES (TTB + state excise)", code="import tax_rates as m; m.build()",
          tables=["tax_rates"], klass="headless", cadence="weekly", enabled=True,
          note="federal CBMA schedule (encoded, TTB) + 51-jurisdiction state excise seed (Tax Foundation Jan 2026); "
