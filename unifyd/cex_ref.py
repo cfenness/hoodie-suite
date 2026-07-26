@@ -257,6 +257,48 @@ def _cex_spend():
     return None, {}
 
 
+_ECN_LABEL = {"44532": "liquor_retail", "722410": "drinking_places",
+              "722511": "full_service_restaurants", "722": "food_service_all", "4248": "wholesalers"}
+
+
+def _observed(geo_fips, geo_level, modeled_home=None, modeled_away=None):
+    """Attach the Economic Census OBSERVED receipts for the same geo (county/state only — no ZCTA EC).
+    Observed includes VISITOR spend and per-NAICS channel slices, so the modeled-vs-observed ratios are
+    SIGNAL (tourism + CEX underreport), not error — the channel mismatches are stated in notes."""
+    import census_ref
+    if geo_level not in ("county", "state"):
+        return None
+    rows = census_ref.query(dataset="ecn", geo_level=geo_level, geo_fips=geo_fips, limit=100)
+    by = {}
+    for r in rows:
+        if not r.get("suppressed") and r.get("metric_value") is not None:
+            by.setdefault(r["naics_code"], {})[r["metric_name"]] = float(r["metric_value"])
+    if not by:
+        return None
+    obs = {"vintage": 2022, "unit": "USD"}
+    for code, label in _ECN_LABEL.items():
+        m = by.get(code)
+        if m and "rcptot" in m:
+            obs[label] = {"receipts_usd": round(m["rcptot"] * 1000),   # RCPTOT lands in $1,000s
+                          "establishments": m.get("estab")}
+    ratios = {}
+    lr = (obs.get("liquor_retail") or {}).get("receipts_usd")
+    dp = (obs.get("drinking_places") or {}).get("receipts_usd")
+    if lr and modeled_home:
+        ratios["observed_liquor_retail_vs_modeled_offprem"] = round(lr / modeled_home, 2)
+    if dp and modeled_away:
+        ratios["observed_bars_only_vs_modeled_onprem"] = round(dp / modeled_away, 2)
+    if ratios:
+        obs["ratios"] = ratios
+    obs["notes"] = [
+        "observed receipts include visitor/tourist spend; modeled demand is resident-only",
+        "liquor_retail (44532) excludes grocery/big-box alcohol; modeled off-prem covers all channels",
+        "drinking_places (722410) is bars only — restaurant alcohol sits inside full_service_restaurants "
+        "receipts mixed with food",
+    ]
+    return obs
+
+
 def demand_for(geo_fips, geo_level=None):
     """Trade-area alcohol demand $ for one geo: ACS B19001 households × CEX mean spend, by bracket.
     Levels: state (2-digit FIPS), county (5-digit FIPS), zcta (5-digit ZIP). A bare 5-digit id is
@@ -303,7 +345,9 @@ def demand_for(geo_fips, geo_level=None):
     natl = spend.get("ALCBEVG", {}).get("all")
     per_hh = out["ALCBEVG"] / hh_total
     acs_vintage = next((r["vintage_year"] for r in acs if r["metric_name"] in ACS_TO_CEX), None)
+    observed = _observed(geo_fips, geo_level, modeled_home=out.get("ALCHOME"), modeled_away=out.get("ALCAWAY"))
     return {
+        **({"observed": observed} if observed else {}),
         "ok": True, "geo_fips": geo_fips, "geo_level": geo_level,
         "acs_vintage": acs_vintage, "cex_vintage": cex_year, "households": round(hh_total),
         "demand_total_usd": round(out["ALCBEVG"]),

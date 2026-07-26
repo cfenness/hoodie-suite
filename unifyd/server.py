@@ -5995,6 +5995,38 @@ def census_demand_ep():
         return jsonify(ok=False, error=str(e)[:160]), 500
 
 
+@app.get("/api/census/demand/top")
+def census_demand_top_ep():
+    """Rank geos by trade-area demand (the demand.html leaderboard). ?geo_level=zcta|county|state
+    ?prefix=328 (geo_fips prefix — e.g. Orlando-area ZIPs) ?by=demand_total_usd|demand_per_hh_usd|
+    demand_index_vs_us|households ?limit=25 ?min_households=500 (floor keeps tiny-ZCTA noise out of
+    per-HH/index rankings)."""
+    import warehouse
+    lvl = request.args.get("geo_level") or "county"
+    by = request.args.get("by") or "demand_total_usd"
+    if by not in ("demand_total_usd", "demand_per_hh_usd", "demand_index_vs_us", "households"):
+        return jsonify(ok=False, error="bad ?by"), 400
+    if lvl not in ("zcta", "county", "state"):
+        return jsonify(ok=False, error="bad ?geo_level"), 400
+    try:
+        limit = max(1, min(500, int(request.args.get("limit", 25))))
+        min_hh = int(request.args.get("min_households", 500))
+    except ValueError:
+        return jsonify(ok=False, error="bad numeric param"), 400
+    where, params = ["geo_level = ?", "households >= ?"], [lvl, min_hh]
+    pref = (request.args.get("prefix") or "").strip()
+    if pref:
+        where.append("geo_fips LIKE ?"); params.append(pref + "%")
+    sql = ("SELECT * FROM t WHERE " + " AND ".join(where)
+           + " ORDER BY %s DESC LIMIT %d" % (by, limit))
+    try:
+        rows = warehouse.query("trade_area_demand", sql, params)
+        return jsonify(ok=True, count=len(rows), rows=rows)
+    except Exception:
+        return jsonify(ok=True, count=0, rows=[],
+                       note="trade_area_demand not landed yet (run cex_ref.build_demand)")
+
+
 @app.get("/api/places")
 def places_ep():
     """Query the pulled on-premise accounts (Orlando) from the warehouse. Filters:

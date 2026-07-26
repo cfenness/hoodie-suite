@@ -102,6 +102,32 @@ def pull_nonemp(year=NONEMP_YEAR, naics=NAICS):
 # Phase 2 if chain-vs-independent segmentation is needed: ingest the SUSB flat file separately.
 
 
+ECN_YEAR = 2022
+# Economic Census NAICS-2022 scope (the 2022 recode renamed 44531 -> 44532 Beer/Wine/Liquor RETAILERS):
+# retailers + wholesalers + food service total + drinking places + full-service restaurants.
+ECN_NAICS = ["44532", "4248", "722", "722410", "722511"]
+
+
+def pull_ecn(year=ECN_YEAR, naics=ECN_NAICS):
+    """Economic Census — OBSERVED receipts (the market-size denominator the modeled CEX×ACS demand is
+    checked against). RCPTOT/PAYANN are in $1,000s (Census convention — same as the govs AMOUNT gotcha
+    in tax_revenue.py); ESTAB/EMP are counts. Dataset 'ecn', county + state, every-5-years vintage
+    (2022 EC published 2024–26). Observed receipts include VISITOR spend — the resident-modeled vs
+    observed gap is signal (tourism + CEX underreport), not error."""
+    out, ts = [], int(time.time())
+    metrics = ["ESTAB", "EMP", "PAYANN", "RCPTOT"]
+    for n in naics:
+        for level, params in (("county", {"for": "county:*", "in": "state:*"}), ("state", {"for": "state:*"})):
+            try:
+                rows = _rows(_get("%d/ecnbasic" % year, dict(params, **{"get": ",".join(metrics), "NAICS2022": n})))
+            except Exception:
+                continue
+            for r in rows:
+                fips = r.get("state", "") + r.get("county", "") if level == "county" else r.get("state", "")
+                _emit(out, "ecn", year, n, level, fips, metrics, r, False, ts)
+    return out
+
+
 def pull_pep(year=PEP_YEAR):
     """Population Estimates — county + state population (per-capita denominator). Latest API vintage is
     2019 (newer PEP vintages aren't exposed via the API). Not NAICS-scoped."""
@@ -183,7 +209,8 @@ def build(log=print):
     pull returned nothing and landed as truth. An all-empty pull now raises instead of writing."""
     import warehouse
     rows = []
-    for name, fn in (("cbp", pull_cbp), ("nonemployer", pull_nonemp), ("pep", pull_pep), ("acs", pull_acs)):
+    for name, fn in (("cbp", pull_cbp), ("nonemployer", pull_nonemp), ("pep", pull_pep), ("acs", pull_acs),
+                     ("ecn", pull_ecn)):
         r = fn()
         log("census %s: %d rows" % (name, len(r)))
         rows.extend(r)
