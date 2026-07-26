@@ -33,7 +33,9 @@ _API = "https://api.machines.dev/v1"
 
 
 def _api(method, path, body=None, timeout=60):
-    tok = os.environ.get("FLY_API_TOKEN", "")
+    # .strip() — a secret pasted with a trailing newline/space breaks the Authorization header
+    # ("Invalid header value"), which HTTP forbids; the token itself keeps its internal 'FlyV1 ' space.
+    tok = os.environ.get("FLY_API_TOKEN", "").strip()
     req = urllib.request.Request(
         _API + path, method=method,
         data=(json.dumps(body).encode() if body is not None else None),
