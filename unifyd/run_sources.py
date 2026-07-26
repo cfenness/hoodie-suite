@@ -110,6 +110,18 @@ def due_sources(now=None, grace=0.98):
             and now - last.get(s["id"], 0) >= _interval_h(s) * 3600 * grace]
 
 
+def should_build(headless_only, mac_only, builds=False, no_builds=False):
+    """Does THIS --due host run the derived builds? (dim_* single-writer.) Explicit ``no_builds`` wins,
+    then explicit ``builds``, else the default: the plain host builds; --headless-only/--mac-only don't.
+    The override pair is how builds move to the cloud runner (cloud=--builds, Mac=--no-builds) with no
+    cross-host race even if both hosts tick."""
+    if no_builds:
+        return False
+    if builds:
+        return True
+    return not (headless_only or mac_only)
+
+
 def due_builds(now=None):
     """Derived master builds due (NRT-PLAN §4/Phase 3): an upstream source landed NEW rows
     (status 'ok' — delta moved, not just 'current') since the build's last attempt, and the
@@ -369,6 +381,12 @@ def main(argv=None):
     ap.add_argument("--mac-only", action="store_true")
     ap.add_argument("--workers", type=int, default=6, help="parallel headless workers (lower on RAM-limited cloud runners)")
     ap.add_argument("--due", action="store_true", help="SLO dispatcher: run only sources past their interval_h")
+    # Build-host gate (single writer for dim_* / derived tables). Default = the plain --due host builds; the
+    # --headless-only/--mac-only hosts don't. To MOVE builds off the Mac to the cloud runner: run the cloud
+    # tick with `--builds` and the Mac tick with `--no-builds` — explicit, so exactly one host builds even if
+    # both run --due (no cross-host race; the fcntl lock is per-host).
+    ap.add_argument("--builds", action="store_true", help="force derived builds ON this host (the single build writer, e.g. the cloud runner)")
+    ap.add_argument("--no-builds", action="store_true", help="force derived builds OFF this host (e.g. the Mac tick once the cloud runner owns builds)")
     a = ap.parse_args(argv)
     only = [x.strip() for x in a.only.split(",") if x.strip()] or None
     exclude = [x.strip() for x in a.exclude.split(",") if x.strip()] or None
@@ -393,10 +411,11 @@ def main(argv=None):
                     headless_only=headless_only, mac_only=a.mac_only, workers=a.workers)
         else:
             print("[run_sources] no sources due.")
-        # Derived master builds run AFTER the landings that triggered them — and only on the plain
-        # --due host (the Mac tick): the --headless-only cloud runner skips them so dim_* keeps a
-        # single writer. A build that misses this pass fires on the next tick via the ledger.
-        if not (a.headless_only or a.mac_only):
+        # Derived master builds run AFTER the landings that triggered them, on the SINGLE build-writer host
+        # (dim_* single-writer). Default: the plain --due host builds, the --headless-only/--mac-only hosts
+        # don't. `--builds`/`--no-builds` override that explicitly so builds can move to the cloud runner
+        # (cloud: --builds; Mac: --no-builds). A build that misses a pass fires on the next tick via the ledger.
+        if should_build(a.headless_only, a.mac_only, a.builds, a.no_builds):
             builds = due_builds()
             if builds:
                 print("[run_sources] builds due: " + ", ".join(b["id"] for b in builds))

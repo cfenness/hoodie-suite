@@ -37,6 +37,27 @@ _UE_LAT = re.compile(r'"latitude":\s*(-?\d+\.\d+)')
 _UE_LNG = re.compile(r'"longitude":\s*(-?\d+\.\d+)')
 _UE_NAME = re.compile(r'"@type":"Restaurant"[^}]*?"name":"([^"]{3,60})"|"title":"([^"]{3,60})"')
 
+# The store's getStoreV1 `location` object — the RELIABLE source (schema.org JSON-LD is often absent). It packs
+# exact geo + a full street address in one block: {"streetAddress":…,"city":…,"region":"FL","postalCode":…,
+# "latitude":…,"longitude":…}. We scope to a window after the `"location":{` anchor so the STORE's coords win
+# over any delivery-target/user-location lat/lng elsewhere on the page.
+_UE_LOC_ANCHOR = re.compile(r'"location"\s*:\s*\{')
+
+
+def _ue_location(html):
+    m = _UE_LOC_ANCHOR.search(html)
+    if not m:
+        return {}
+    win = html[m.end():m.end() + 1400]                     # the location object is small; bound the scan
+
+    def g(pat):
+        x = re.search(pat, win)
+        return x.group(1).strip() if x else ""
+    lat, lng = g(r'"latitude":\s*(-?\d+\.\d+)'), g(r'"longitude":\s*(-?\d+\.\d+)')
+    return {"street": g(r'"streetAddress":"([^"]+)"'), "city": g(r'"city":"([^"]+)"'),
+            "state": g(r'"region":"([A-Z]{2})"'), "zip": g(r'"postalCode":"([^"]+)"'),
+            "lat": float(lat) if lat else None, "lng": float(lng) if lng else None}
+
 
 def _first(*groups):
     for g in groups:
@@ -46,7 +67,9 @@ def _first(*groups):
 
 
 def extract_ubereats(html):
-    """UberEats store pages carry schema.org Restaurant JSON-LD (address + geo + phone) — fetchable $0."""
+    """UberEats/Postmates store pages embed the getStoreV1 `location` object (exact geo + full street address +
+    city/state/zip) — the primary source; schema.org Restaurant JSON-LD is the fallback. Fetchable $0."""
+    loc = _ue_location(html)
     st = _UE_STREET.search(html)
     ci = _UE_CITY.search(html)
     stt = _UE_STATE.search(html)
@@ -55,11 +78,12 @@ def extract_ubereats(html):
     ph = _PHONE.search(html)
     nm = _UE_NAME.search(html)
     return {"name": _first(*(nm.groups() if nm else ())).strip(),
-            "lat": float(la.group(1)) if la else None,
-            "lng": float(lo.group(1)) if lo else None,
-            "street": (st.group(1) if st else "").strip(),
-            "city": (ci.group(1) if ci else "").strip(),
-            "state": (stt.group(1) if stt else "").strip(),
+            "lat": loc.get("lat") if loc.get("lat") is not None else (float(la.group(1)) if la else None),
+            "lng": loc.get("lng") if loc.get("lng") is not None else (float(lo.group(1)) if lo else None),
+            "street": loc.get("street") or (st.group(1) if st else "").strip(),
+            "city": loc.get("city") or (ci.group(1) if ci else "").strip(),
+            "state": loc.get("state") or (stt.group(1) if stt else "").strip(),
+            "zip": loc.get("zip", ""),
             "phone": ("".join(ph.groups()) if ph else "")}
 
 

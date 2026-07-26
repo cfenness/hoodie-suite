@@ -117,9 +117,30 @@ SOURCES = [
          tables=["ca_outlets"], klass="mac", cadence="weekly", enabled=True, cost_class="proxy", note="WAF — browser headers"),
     dict(id="control-states", label="Control states (OR/UT/NC/MT/ME/AL/BC/MontMD)", code="import control_state as m; m.build_all()",
          tables=["or_pricing", "ut_pricing", "mont_sales"], klass="headless", cadence="weekly", enabled=True, note="per-state fetchers"),
-    dict(id="census", label="US Census ACS", code="import census_ref as m; m.build()",
+    dict(id="census", label="US Census (CBP · Nonemp · PEP · ACS)", code="import census_ref as m; m.build()",
          tables=["census_reference"], klass="creds", cadence="weekly", enabled=True,
-         requires=["CENSUS_API_KEY"], note="Census API (census_ref.build) — free key, re-derivable"),
+         requires=["CENSUS_API_KEY"], note="Census API (census_ref.build) — CBP/Nonemp/PEP supply-side + ACS demand-side demographics at state/county/ZCTA grain (~33k ZIPs) + Economic Census OBSERVED receipts (dataset ecn, $1000s); free key, re-derivable"),
+    dict(id="cex", label="BLS Consumer Expenditure (alcohol × income)", code="import cex_ref as m; m.build(); m.build_demand()",
+         tables=["cex_reference"], klass="headless", cadence="weekly", enabled=True,
+         note="BLS CEX API (cex_ref.build) — mean annual alcohol $ per CU (total / at-home / away) by "
+              "income-before-taxes bracket; keyless OK (BLS_API_KEY raises limits); build_demand derives "
+              "trade_area_demand = CEX × ACS B19001 (needs the census source's brackets landed)"),
+    dict(id="cpi", label="BLS CPI (alcoholic beverages)", code="import cpi_ref as m; m.build()",
+         tables=["cpi_reference"], klass="headless", cadence="weekly", enabled=True,
+         note="BLS CPI-U API (cpi_ref.build) — alcohol total/at-home/away + beer/spirits/wine sub-items, "
+              "US + 4 regions, monthly + M13 annual; keyless OK; real_series() = alcohol rebased vs "
+              "all-items (the deflator / price-index benchmark)"),
+    dict(id="fred", label="FRED macro pulse", code="import fred_ref as m; m.build()",
+         tables=["fred_reference"], klass="creds", cadence="weekly", enabled=True,
+         requires=["FRED_API_KEY"],
+         note="FRED API (fred_ref.build) — monthly liquor-store retail sales (MRTSSM4453USN, the national "
+              "off-prem pulse), food-service sales, real disposable income, consumer sentiment"),
+    dict(id="bea", label="BEA regional income", code="import bea_ref as m; m.build()",
+         tables=["bea_reference"], klass="creds", cadence="weekly", enabled=True,
+         requires=["BEA_API_KEY"],
+         note="BEA Regional API (bea_ref.build) — state disposable income (SAINC51) + county personal "
+              "income (CAINC1), annual; a fresh BEA key must be ACTIVATED via BEA's email link or the "
+              "API returns in-band Error 4 (reported degraded, never silent)"),
     dict(id="tax-rates", label="Bev-alc tax RATES (TTB + state excise)", code="import tax_rates as m; m.build()",
          tables=["tax_rates"], klass="headless", cadence="weekly", enabled=True,
          note="federal CBMA schedule (encoded, TTB) + 51-jurisdiction state excise seed (Tax Foundation Jan 2026); "
@@ -227,15 +248,25 @@ BUILDS = [
          tables=["master_quality"], klass="build", interval_h=24, enabled=True,
          after=["build-product-master"],
          note="deterministic UPC/brand gold → precision/recall/F1 of item_key merges + regression flag"),
-    # S4 convergence (MATCHING-CONVERGENCE.md) — score the SERVED CANON identity (item_identity.canon_item_id,
-    # what the serving overlay joins) on the SAME gold the item_key run just built. This makes the head-to-head
-    # that justifies the cutover MEASURED in-app every cycle instead of a manual one-off. Additive: lands
-    # master_quality_canon, never touches the item_key ratchet. Runs AFTER build-master-quality so both engines
-    # score identical gold pairs; inert (logs, no rows) until item_identity is ingested — then it self-activates.
+    # S4 convergence (MATCHING-CONVERGENCE.md) — the SERVED canon identity, computed IN-WAREHOUSE. The prod
+    # head-to-head proved the recall lift is UPC-deterministic (canon R=1.000 vs item_key 0.269 on the UPC
+    # gold), so item_identity = a group-by-UPC over the full mapped universe — no local Postgres, no canon
+    # cascade. canon_item_id = the UPC as bigint; two sources on one UPC → one identity (the lift), leading-zero
+    # variants collapse. The serving overlay (canon_identity.py) COALESCEs it onto item_key; UPC-less SKUs
+    # (absent here) keep item_key. Cross-UPC / no-UPC / fuzzy identity is hoodie-canon's cascade — a cloud
+    # engine for later; this owns item_identity for the deterministic core (single writer).
+    dict(id="build-item-identity", label="Item identity (served, in-warehouse UPC)",
+         code="import build_item_identity as m; m.build()",
+         tables=["item_identity"], klass="build", interval_h=12, enabled=True,
+         after=["build-product-master"],
+         note="distinct-UPC → canon_item_id over _stage_product+retail; the served identity the overlay joins"),
+    # …then score that SERVED canon identity against item_key on the SAME gold the item_key run built, so the
+    # head-to-head that justifies the cutover is MEASURED in-app every cycle. Additive: lands master_quality_canon,
+    # never touches the item_key ratchet. after build-master-quality (gold) + build-item-identity (fresh identity).
     dict(id="build-master-quality-canon", label="Master quality — served canon identity (head-to-head)",
          code="import master_quality as m; m.score_canon()",
          tables=["master_quality_canon"], klass="build", interval_h=24, enabled=True,
-         after=["build-master-quality"],
+         after=["build-master-quality", "build-item-identity"],
          note="canon_item_id vs item_key on the same gold → the served-identity P/R lift, measured every cycle"),
     # MOAT-PLAN Workstream R — representativeness. Coverage per state (observed outlets ÷ outlet_master
     # universe) + market metrics in OBSERVED (deterministic) vs PROJECTED (survey estimator + CI,
