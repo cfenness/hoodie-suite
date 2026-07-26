@@ -1,4 +1,4 @@
-"""census_ref.py — U.S. Census supply-side reference layer (CBP / Nonemployer / SUSB / PEP).
+"""census_ref.py — U.S. Census reference layer: CBP / Nonemployer / PEP (supply-side) + ACS (demand-side).
 
 A REFERENCE/dimension layer for the MDM: aggregate counts by geography + NAICS, joined to entity
 tables (permits, products, retailers, territories) at QUERY TIME by geo/NAICS — never a baked FK.
@@ -117,6 +117,40 @@ def pull_pep(year=PEP_YEAR):
     return out
 
 
+ACS_YEAR = 2022
+# ACS 5-year DEMAND-side variables: median HH income, median age, households, total population, and the
+# income-distribution brackets used to derive the $100k+ household share (B19001_014E..017E / _001E).
+ACS_VARS = ["B19013_001E", "B01002_001E", "B11001_001E", "B01003_001E",
+            "B19001_001E", "B19001_014E", "B19001_015E", "B19001_016E", "B19001_017E"]
+
+
+def pull_acs(year=ACS_YEAR):
+    """ACS 5-year consumer demographics (median household income, median age, households, population,
+    $100k+ household count) — county + state. The DEMAND-side complement to CBP/PEP: trade-area
+    enrichment an account/geo subject reads by geo_fips. Emits friendly metric names under dataset 'acs'."""
+    out, ts = [], int(time.time())
+    get = ",".join(["NAME"] + ACS_VARS)
+    for level, params in (("county", {"for": "county:*", "in": "state:*"}), ("state", {"for": "state:*"})):
+        try:
+            rows = _rows(_get("%d/acs/acs5" % year, dict(params, **{"get": get})))
+        except Exception:
+            continue
+        for r in rows:
+            fips = r.get("state", "") + r.get("county", "") if level == "county" else r.get("state", "")
+            base = _num(r.get("B19001_001E"))
+            brackets = [_num(r.get("B19001_%03dE" % b)) for b in (14, 15, 16, 17)]
+            hi = sum(v for v in brackets if v is not None) if base else None
+            cells = [("median_hh_income", _num(r.get("B19013_001E"))),
+                     ("median_age",       _num(r.get("B01002_001E"))),
+                     ("households",       _num(r.get("B11001_001E"))),
+                     ("population",       _num(r.get("B01003_001E"))),
+                     ("hh_income_base",   base),
+                     ("hh_100k_plus",     hi)]
+            for metric, val in cells:
+                out.append(["acs", year, "", level, fips, metric, val, val is None, ts])
+    return out
+
+
 def _cell_key(r):
     """The identity a re-pull REPLACES: one (dataset, vintage, naics, geo, metric) cell."""
     return (r["dataset"], r["vintage_year"], r["naics_code"], r["geo_level"], r["geo_fips"], r["metric_name"])
@@ -132,7 +166,7 @@ def build(log=print):
     pull returned nothing and landed as truth. An all-empty pull now raises instead of writing."""
     import warehouse
     rows = []
-    for name, fn in (("cbp", pull_cbp), ("nonemployer", pull_nonemp), ("pep", pull_pep)):
+    for name, fn in (("cbp", pull_cbp), ("nonemployer", pull_nonemp), ("pep", pull_pep), ("acs", pull_acs)):
         r = fn()
         log("census %s: %d rows" % (name, len(r)))
         rows.extend(r)
