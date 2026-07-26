@@ -55,14 +55,13 @@ def _ue_slug_map(sites=("ubereats", "postmates")):
 
 
 def enrich_geo(limit=None, workers=None, log=print):
-    # 800/run was a trickle against ~790k UE+PM. Bigger batch + more concurrency (the ISP pool rotates exits, so
-    # this stays polite per-IP) so a daily run makes real progress; a dedicated drain can pass AGG_GEO_LIMIT huge.
-    limit = limit if limit is not None else int(os.environ.get("AGG_GEO_LIMIT", "40000"))
-    workers = workers or int(os.environ.get("AGG_GEO_WORKERS", "20"))
     # doordash is handled by the city-centroid fast layer (it ships city+state) — not here. ubereats/postmates
-    # ship neither city nor address, only name+slug, so the store PAGE is the only geo source: fetch it. Skip
-    # rows already pinned exact or already tried-empty ('agg_miss'). geo_precision (VARCHAR) is the marker —
-    # NOT addr_valid, which is a BOOL (writing a string into it silently voided the whole prior write).
+    # ship only name+slug, so we hit getStoreV1 DIRECTLY (getstore.py): a light JSON POST, cold, that returns the
+    # store's exact geo + full street address. Far faster + more reliable than the store HTML page, so we can run
+    # heavy concurrency (the ISP pool rotates exits → polite per-IP) and approach ~1h for the whole ~790k.
+    # geo_precision (VARCHAR) is the marker — NOT addr_valid, a BOOL (writing a string into it voided the write).
+    limit = limit if limit is not None else int(os.environ.get("AGG_GEO_LIMIT", "800000"))
+    workers = workers or int(os.environ.get("AGG_GEO_WORKERS", "64"))
     gp = ("AND (geo_precision IS NULL OR geo_precision NOT IN ('exact', 'agg_miss')) "
           if warehouse.has_column("src_outlets", "geo_precision") else "")
     rows = warehouse.query(
@@ -70,9 +69,9 @@ def enrich_geo(limit=None, workers=None, log=print):
         "SELECT * FROM t WHERE lat IS NULL AND source IN ('ubereats', 'postmates') " + gp +
         "LIMIT %d" % limit)
     if not rows:
-        log("[agg-geo] no un-geocoded no-address aggregator outlets")
+        log("[agg-geo] no un-geocoded aggregator outlets")
         return 0
-    slugs = _ue_slug_map() if any(r["source"] in ("ubereats", "postmates") for r in rows) else {}
+    import getstore
     out, cnt, lock = [], [0], threading.Lock()
 
     def _work(r):
@@ -80,19 +79,15 @@ def enrich_geo(limit=None, workers=None, log=print):
         d = dict(r)
         d["geo_precision"] = "agg_miss"                          # tried marker (overwritten to 'exact' on a hit)
         try:
-            slug = slugs.get(sid, "")
-            base = "https://www.ubereats.com" if src == "ubereats" else "https://postmates.com"
-            h = _fetch("%s/store/%s/%s" % (base, slug, sid)) if slug else ""
-            if h:
-                e = outlet_ident.extract_ubereats(h)
-                if e.get("lat") is not None:
-                    d["lat"], d["lng"] = e["lat"], e["lng"]       # UberEats page carries PRECISE geo
-                    d["geo_precision"] = "exact"
-                if e.get("street"):                           # getStoreV1 location = full street address
-                    d["address"] = e["street"]
-                    d["city"] = e.get("city") or d.get("city") or ""
-                    d["state"] = e.get("state") or d.get("state") or ""
-                    d["zip"] = e.get("zip") or d.get("zip") or ""
+            e = getstore.store_geo(sid, session="ag%d" % (cnt[0] % 400), site=src)
+            if e.get("lat") is not None:
+                d["lat"], d["lng"] = e["lat"], e["lng"]           # getStoreV1 location = exact rooftop geo
+                d["geo_precision"] = "exact"
+            if e.get("street"):                                   # …plus the full street address
+                d["address"] = e["street"]
+                d["city"] = e.get("city") or d.get("city") or ""
+                d["state"] = e.get("state") or d.get("state") or ""
+                d["zip"] = e.get("zip") or d.get("zip") or ""
         except Exception:
             pass
         with lock:
