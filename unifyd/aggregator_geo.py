@@ -55,8 +55,10 @@ def _ue_slug_map(sites=("ubereats", "postmates")):
 
 
 def enrich_geo(limit=None, workers=None, log=print):
-    limit = limit if limit is not None else int(os.environ.get("AGG_GEO_LIMIT", "800"))
-    workers = workers or int(os.environ.get("AGG_GEO_WORKERS", "8"))
+    # 800/run was a trickle against ~790k UE+PM. Bigger batch + more concurrency (the ISP pool rotates exits, so
+    # this stays polite per-IP) so a daily run makes real progress; a dedicated drain can pass AGG_GEO_LIMIT huge.
+    limit = limit if limit is not None else int(os.environ.get("AGG_GEO_LIMIT", "40000"))
+    workers = workers or int(os.environ.get("AGG_GEO_WORKERS", "20"))
     # doordash is handled by the city-centroid fast layer (it ships city+state) — not here. ubereats/postmates
     # ship neither city nor address, only name+slug, so the store PAGE is the only geo source: fetch it. Skip
     # rows already pinned exact or already tried-empty ('agg_miss'). geo_precision (VARCHAR) is the marker —
@@ -86,10 +88,11 @@ def enrich_geo(limit=None, workers=None, log=print):
                 if e.get("lat") is not None:
                     d["lat"], d["lng"] = e["lat"], e["lng"]       # UberEats page carries PRECISE geo
                     d["geo_precision"] = "exact"
-                if e.get("street"):
+                if e.get("street"):                           # getStoreV1 location = full street address
                     d["address"] = e["street"]
                     d["city"] = e.get("city") or d.get("city") or ""
                     d["state"] = e.get("state") or d.get("state") or ""
+                    d["zip"] = e.get("zip") or d.get("zip") or ""
         except Exception:
             pass
         with lock:
