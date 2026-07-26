@@ -260,6 +260,14 @@ BUILDS = [
          tables=["item_identity"], klass="build", interval_h=12, enabled=True,
          after=["build-product-master"],
          note="distinct-UPC → canon_item_id over _stage_product+retail; the served identity the overlay joins"),
+    # …then score that SERVED canon identity against item_key on the SAME gold the item_key run built, so the
+    # head-to-head that justifies the cutover is MEASURED in-app every cycle. Additive: lands master_quality_canon,
+    # never touches the item_key ratchet. after build-master-quality (gold) + build-item-identity (fresh identity).
+    dict(id="build-master-quality-canon", label="Master quality — served canon identity (head-to-head)",
+         code="import master_quality as m; m.score_canon()",
+         tables=["master_quality_canon"], klass="build", interval_h=24, enabled=True,
+         after=["build-master-quality", "build-item-identity"],
+         note="canon_item_id vs item_key on the same gold → the served-identity P/R lift, measured every cycle"),
     # MOAT-PLAN Workstream R — representativeness. Coverage per state (observed outlets ÷ outlet_master
     # universe) + market metrics in OBSERVED (deterministic) vs PROJECTED (survey estimator + CI,
     # suppressed below a coverage/obs floor). Turns the observation engine into a market-truth engine —
