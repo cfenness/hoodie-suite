@@ -118,10 +118,18 @@ def pull_pep(year=PEP_YEAR):
 
 
 ACS_YEAR = 2022
+# The FULL ACS B19001 household-income distribution (16 brackets), landed under stable metric names so
+# cex_ref.py can join CEX mean-spend-by-income onto it for trade-area demand $ (ACS_TO_CEX keys on these).
+ACS_INC = [("hh_lt10k", "B19001_002E"), ("hh_10_15k", "B19001_003E"), ("hh_15_20k", "B19001_004E"),
+           ("hh_20_25k", "B19001_005E"), ("hh_25_30k", "B19001_006E"), ("hh_30_35k", "B19001_007E"),
+           ("hh_35_40k", "B19001_008E"), ("hh_40_45k", "B19001_009E"), ("hh_45_50k", "B19001_010E"),
+           ("hh_50_60k", "B19001_011E"), ("hh_60_75k", "B19001_012E"), ("hh_75_100k", "B19001_013E"),
+           ("hh_100_125k", "B19001_014E"), ("hh_125_150k", "B19001_015E"),
+           ("hh_150_200k", "B19001_016E"), ("hh_200k_plus", "B19001_017E")]
 # ACS 5-year DEMAND-side variables: median HH income, median age, households, total population, and the
-# income-distribution brackets used to derive the $100k+ household share (B19001_014E..017E / _001E).
+# income-distribution brackets (full B19001 set; _014E..017E also derive the $100k+ household share).
 ACS_VARS = ["B19013_001E", "B01002_001E", "B11001_001E", "B01003_001E",
-            "B19001_001E", "B19001_014E", "B19001_015E", "B19001_016E", "B19001_017E"]
+            "B19001_001E"] + [v for _, v in ACS_INC]
 
 
 def pull_acs(year=ACS_YEAR):
@@ -146,6 +154,7 @@ def pull_acs(year=ACS_YEAR):
                      ("population",       _num(r.get("B01003_001E"))),
                      ("hh_income_base",   base),
                      ("hh_100k_plus",     hi)]
+            cells += [(name, _num(r.get(var))) for name, var in ACS_INC]
             for metric, val in cells:
                 out.append(["acs", year, "", level, fips, metric, val, val is None, ts])
     return out

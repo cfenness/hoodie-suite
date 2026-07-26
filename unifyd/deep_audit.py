@@ -38,6 +38,8 @@ MIN_ROWS = 1000             # ignore tiny tables (fixtures, seeds — noise)
 FIXTURE_CHECKS = [
     dict(id="ttb-cola", fixture="fixtures/cola_debug.html", min_rows=20,
          run="import ttb_cola_scraper as t; recs, _n, diag = t.parse_results(html); result=(len(recs), diag)"),
+    dict(id="cex", fixture="fixtures/cex_bls_sample.json", min_rows=200,
+         run="import json, cex_ref as c; rows, warns = c.parse([json.loads(html)]); result=(len(rows), {'warns': warns[:3]})"),
 ]
 
 DOC_FILES = ["CLAUDE.md", "README.md", "SPINE.md"]

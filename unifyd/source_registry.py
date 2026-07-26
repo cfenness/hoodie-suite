@@ -120,6 +120,11 @@ SOURCES = [
     dict(id="census", label="US Census (CBP · Nonemp · PEP · ACS)", code="import census_ref as m; m.build()",
          tables=["census_reference"], klass="creds", cadence="weekly", enabled=True,
          requires=["CENSUS_API_KEY"], note="Census API (census_ref.build) — CBP/Nonemp/PEP supply-side + ACS demand-side demographics; free key, re-derivable"),
+    dict(id="cex", label="BLS Consumer Expenditure (alcohol × income)", code="import cex_ref as m; m.build(); m.build_demand()",
+         tables=["cex_reference"], klass="headless", cadence="weekly", enabled=True,
+         note="BLS CEX API (cex_ref.build) — mean annual alcohol $ per CU (total / at-home / away) by "
+              "income-before-taxes bracket; keyless OK (BLS_API_KEY raises limits); build_demand derives "
+              "trade_area_demand = CEX × ACS B19001 (needs the census source's brackets landed)"),
     dict(id="tax-rates", label="Bev-alc tax RATES (TTB + state excise)", code="import tax_rates as m; m.build()",
          tables=["tax_rates"], klass="headless", cadence="weekly", enabled=True,
          note="federal CBMA schedule (encoded, TTB) + 51-jurisdiction state excise seed (Tax Foundation Jan 2026); "

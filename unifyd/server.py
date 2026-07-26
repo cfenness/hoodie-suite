@@ -5964,6 +5964,36 @@ def census_reference_ep():
         return jsonify(ok=False, error=str(e)[:160]), 500
 
 
+@app.get("/api/cex/spend")
+def cex_spend_ep():
+    """BLS CEX mean annual alcohol $ per consumer unit by income bracket.
+    ?item=ALCBEVG|ALCHOME|ALCAWAY|TOTALEXP|INCBEFTX  ?bracket=21  ?year=2023"""
+    import cex_ref
+    try:
+        yr = int(request.args["year"]) if request.args.get("year") else None
+        rows = cex_ref.query(item=request.args.get("item") or None,
+                             bracket=request.args.get("bracket") or None, year=yr)
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="cex_reference not landed yet (run the cex source: cex_ref.build)")
+
+
+@app.get("/api/census/demand")
+def census_demand_ep():
+    """Trade-area alcohol demand $ for one geo — CEX mean spend × ACS B19001 households, with the
+    at-home (off-premise) / away (on-premise) split. ?geo_fips=12095[&geo_level=county|state].
+    Honest {ok:false, reason} until both cex_reference and the ACS brackets are landed."""
+    import cex_ref
+    fips = (request.args.get("geo_fips") or "").strip()
+    if not fips:
+        return jsonify(ok=False, error="geo_fips required (5-digit county or 2-digit state)"), 400
+    try:
+        return jsonify(**cex_ref.demand_for(fips, geo_level=request.args.get("geo_level") or None))
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:160]), 500
+
+
 @app.get("/api/places")
 def places_ep():
     """Query the pulled on-premise accounts (Orlando) from the warehouse. Filters:
