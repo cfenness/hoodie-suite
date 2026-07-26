@@ -227,6 +227,16 @@ BUILDS = [
          tables=["master_quality"], klass="build", interval_h=24, enabled=True,
          after=["build-product-master"],
          note="deterministic UPC/brand gold → precision/recall/F1 of item_key merges + regression flag"),
+    # S4 convergence (MATCHING-CONVERGENCE.md) — score the SERVED CANON identity (item_identity.canon_item_id,
+    # what the serving overlay joins) on the SAME gold the item_key run just built. This makes the head-to-head
+    # that justifies the cutover MEASURED in-app every cycle instead of a manual one-off. Additive: lands
+    # master_quality_canon, never touches the item_key ratchet. Runs AFTER build-master-quality so both engines
+    # score identical gold pairs; inert (logs, no rows) until item_identity is ingested — then it self-activates.
+    dict(id="build-master-quality-canon", label="Master quality — served canon identity (head-to-head)",
+         code="import master_quality as m; m.score_canon()",
+         tables=["master_quality_canon"], klass="build", interval_h=24, enabled=True,
+         after=["build-master-quality"],
+         note="canon_item_id vs item_key on the same gold → the served-identity P/R lift, measured every cycle"),
     # MOAT-PLAN Workstream R — representativeness. Coverage per state (observed outlets ÷ outlet_master
     # universe) + market metrics in OBSERVED (deterministic) vs PROJECTED (survey estimator + CI,
     # suppressed below a coverage/obs floor). Turns the observation engine into a market-truth engine —
