@@ -96,7 +96,7 @@
   <div id="hero"></div>
   <div class="subidx" id="subidx"></div>
   <div class="grid" id="grid"></div>
-  <div class="foot">Mockup · synthetic figures · a bev-alc CPI needs only observed shelf prices — the basket, category sub-indices, dispersion, promo intensity, and premiumization all compute without a single unit of sales.</div>
+  <div class="foot">Mockup · synthetic figures (except the LIVE BLS Benchmark card, served from cpi_reference) · a bev-alc CPI needs only observed shelf prices — the basket, category sub-indices, dispersion, promo intensity, and premiumization all compute without a single unit of sales.</div>
 </div>
 <script>
 const IC={
@@ -167,7 +167,42 @@ function render(){
     <div class="herochart">${line(e.series,600,120)}</div></div>`;
   document.getElementById('subidx').innerHTML=e.sub.map(s=>`<div class="si"><div class="k">${s.k}</div>
     <div class="v tnum">${s.v}</div><div class="c ${s.up?'up':'dn'}">${s.c} YoY</div><div class="mini">${line(s.s,180,26)}</div></div>`).join("");
-  document.getElementById('grid').innerHTML=basketCard(e)+dispCard(e)+promoCard(e)+premCard(e);
+  document.getElementById('grid').innerHTML=basketCard(e)+dispCard(e)+promoCard(e)+premCard(e)+benchCard();
+  loadBench();
+}
+function benchCard(){
+  return `<section class="card">
+    <div class="ch"><div class="ico">${IC.idx}</div><h2>BLS Benchmark</h2><span class="badge g" style="margin-left:8px">LIVE · cpi_reference</span></div>
+    <p class="csub">Official CPI-U alcoholic beverages rebased against all items — the yardstick our shelf-price index diverges from on purpose (assortment, promo depth, premiumization). The one live card on this page.</p>
+    <div id="benchbody" style="font-size:12.5px;color:var(--muted)">Loading BLS CPI…</div>
+    <div style="margin-top:11px"><span class="prov">BLS CPI-U (NSA) · /api/cpi?real=1 · region toggle maps National→US, Florida→South census region</span></div>
+  </section>`;
+}
+async function loadBench(){
+  const el=document.getElementById('benchbody'); if(!el) return;
+  const area = R==='fl' ? '0300' : '0000';
+  try{
+    const r = await (await fetch('/api/cpi?real=1&area='+area)).json();
+    if(!r.ok || !r.series || !r.series.length) throw 0;
+    const s=r.series, last=s[s.length-1];
+    let extra='';
+    try{
+      const [away, home] = await Promise.all([
+        (await fetch('/api/cpi?item=SEFX&area=0000&annual=1')).json(),
+        (await fetch('/api/cpi?item=SEFW&area=0000&annual=1')).json()]);
+      if(away.ok && away.rows.length && home.ok && home.rows.length){
+        const a=away.rows[away.rows.length-1], h=home.rows[home.rows.length-1];
+        extra=`<div style="margin-top:8px">On-prem alcohol CPI <b class="tnum">${a.metric_value.toFixed(0)}</b> vs off-prem <b class="tnum">${h.metric_value.toFixed(0)}</b> (${a.vintage_year}, US, same 1982-84 base) — away-from-home has inflated roughly 2× harder than at-home.</div>`;
+      }
+    }catch(e){}
+    el.innerHTML=`<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:8px">
+      <div style="font-size:34px;font-weight:800;letter-spacing:-1px" class="tnum">${last.real_relative}</div>
+      <span class="badge ${last.real_relative<100?'g':'w'}">alcohol vs all items · real terms · ${r.area} · base ${r.base_year}=100</span></div>
+      <div style="height:70px">${line(s.map(p=>p.real_relative),520,70,'var(--good)')}</div>
+      <div style="margin-top:8px">Alcohol is <b>${(100-last.real_relative).toFixed(1)}% cheaper in relative real terms</b> than in ${r.base_year} (${last.year}: alcohol CPI ${last.cpi.toFixed(1)} vs all-items ${last.all_items.toFixed(1)}) — the category has lagged economy-wide inflation.</div>${extra}`;
+  }catch(e){
+    el.innerHTML='Live benchmark needs the engine — /api/cpi unreachable (serve via the agent or the Fly deploy). The rest of this page is the synthetic mockup.';
+  }
 }
 function basketCard(e){
   const rows=e.basket.map(b=>{const t=b.up===null?'':(b.up?'up':'dn');

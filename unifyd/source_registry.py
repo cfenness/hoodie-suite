@@ -117,9 +117,30 @@ SOURCES = [
          tables=["ca_outlets"], klass="mac", cadence="weekly", enabled=True, cost_class="proxy", note="WAF — browser headers"),
     dict(id="control-states", label="Control states (OR/UT/NC/MT/ME/AL/BC/MontMD)", code="import control_state as m; m.build_all()",
          tables=["or_pricing", "ut_pricing", "mont_sales"], klass="headless", cadence="weekly", enabled=True, note="per-state fetchers"),
-    dict(id="census", label="US Census ACS", code="import census_ref as m; m.build()",
+    dict(id="census", label="US Census (CBP · Nonemp · PEP · ACS)", code="import census_ref as m; m.build()",
          tables=["census_reference"], klass="creds", cadence="weekly", enabled=True,
-         requires=["CENSUS_API_KEY"], note="Census API (census_ref.build) — free key, re-derivable"),
+         requires=["CENSUS_API_KEY"], note="Census API (census_ref.build) — CBP/Nonemp/PEP supply-side + ACS demand-side demographics at state/county/ZCTA grain (~33k ZIPs) + Economic Census OBSERVED receipts (dataset ecn, $1000s); free key, re-derivable"),
+    dict(id="cex", label="BLS Consumer Expenditure (alcohol × income)", code="import cex_ref as m; m.build(); m.build_demand()",
+         tables=["cex_reference"], klass="headless", cadence="weekly", enabled=True,
+         note="BLS CEX API (cex_ref.build) — mean annual alcohol $ per CU (total / at-home / away) by "
+              "income-before-taxes bracket; keyless OK (BLS_API_KEY raises limits); build_demand derives "
+              "trade_area_demand = CEX × ACS B19001 (needs the census source's brackets landed)"),
+    dict(id="cpi", label="BLS CPI (alcoholic beverages)", code="import cpi_ref as m; m.build()",
+         tables=["cpi_reference"], klass="headless", cadence="weekly", enabled=True,
+         note="BLS CPI-U API (cpi_ref.build) — alcohol total/at-home/away + beer/spirits/wine sub-items, "
+              "US + 4 regions, monthly + M13 annual; keyless OK; real_series() = alcohol rebased vs "
+              "all-items (the deflator / price-index benchmark)"),
+    dict(id="fred", label="FRED macro pulse", code="import fred_ref as m; m.build()",
+         tables=["fred_reference"], klass="creds", cadence="weekly", enabled=True,
+         requires=["FRED_API_KEY"],
+         note="FRED API (fred_ref.build) — monthly liquor-store retail sales (MRTSSM4453USN, the national "
+              "off-prem pulse), food-service sales, real disposable income, consumer sentiment"),
+    dict(id="bea", label="BEA regional income", code="import bea_ref as m; m.build()",
+         tables=["bea_reference"], klass="creds", cadence="weekly", enabled=True,
+         requires=["BEA_API_KEY"],
+         note="BEA Regional API (bea_ref.build) — state disposable income (SAINC51) + county personal "
+              "income (CAINC1), annual; a fresh BEA key must be ACTIVATED via BEA's email link or the "
+              "API returns in-band Error 4 (reported degraded, never silent)"),
     dict(id="tax-rates", label="Bev-alc tax RATES (TTB + state excise)", code="import tax_rates as m; m.build()",
          tables=["tax_rates"], klass="headless", cadence="weekly", enabled=True,
          note="federal CBMA schedule (encoded, TTB) + 51-jurisdiction state excise seed (Tax Foundation Jan 2026); "

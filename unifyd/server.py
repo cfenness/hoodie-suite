@@ -5964,6 +5964,125 @@ def census_reference_ep():
         return jsonify(ok=False, error=str(e)[:160]), 500
 
 
+@app.get("/api/cex/spend")
+def cex_spend_ep():
+    """BLS CEX mean annual alcohol $ per consumer unit by income bracket.
+    ?item=ALCBEVG|ALCHOME|ALCAWAY|TOTALEXP|INCBEFTX  ?bracket=21  ?year=2023"""
+    import cex_ref
+    try:
+        yr = int(request.args["year"]) if request.args.get("year") else None
+        rows = cex_ref.query(item=request.args.get("item") or None,
+                             bracket=request.args.get("bracket") or None, year=yr)
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="cex_reference not landed yet (run the cex source: cex_ref.build)")
+
+
+@app.get("/api/census/demand")
+def census_demand_ep():
+    """Trade-area alcohol demand $ for one geo — CEX mean spend × ACS B19001 households, with the
+    at-home (off-premise) / away (on-premise) split. ?geo_fips=12095[&geo_level=county|state|zcta].
+    Bare 5-digit ids try county then fall back to ZIP (they collide); pass geo_level=zcta to force ZIP.
+    Honest {ok:false, reason} until both cex_reference and the ACS brackets are landed."""
+    import cex_ref
+    fips = (request.args.get("geo_fips") or "").strip()
+    if not fips:
+        return jsonify(ok=False, error="geo_fips required (county FIPS, ZIP, or 2-digit state)"), 400
+    try:
+        return jsonify(**cex_ref.demand_for(fips, geo_level=request.args.get("geo_level") or None))
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:160]), 500
+
+
+@app.get("/api/census/demand/top")
+def census_demand_top_ep():
+    """Rank geos by trade-area demand (the demand.html leaderboard). ?geo_level=zcta|county|state
+    ?prefix=328 (geo_fips prefix — e.g. Orlando-area ZIPs) ?by=demand_total_usd|demand_per_hh_usd|
+    demand_index_vs_us|households ?limit=25 ?min_households=500 (floor keeps tiny-ZCTA noise out of
+    per-HH/index rankings)."""
+    import warehouse
+    lvl = request.args.get("geo_level") or "county"
+    by = request.args.get("by") or "demand_total_usd"
+    if by not in ("demand_total_usd", "demand_per_hh_usd", "demand_index_vs_us", "households"):
+        return jsonify(ok=False, error="bad ?by"), 400
+    if lvl not in ("zcta", "county", "state"):
+        return jsonify(ok=False, error="bad ?geo_level"), 400
+    try:
+        limit = max(1, min(500, int(request.args.get("limit", 25))))
+        min_hh = int(request.args.get("min_households", 500))
+    except ValueError:
+        return jsonify(ok=False, error="bad numeric param"), 400
+    where, params = ["geo_level = ?", "households >= ?"], [lvl, min_hh]
+    pref = (request.args.get("prefix") or "").strip()
+    if pref:
+        where.append("geo_fips LIKE ?"); params.append(pref + "%")
+    sql = ("SELECT * FROM t WHERE " + " AND ".join(where)
+           + " ORDER BY %s DESC LIMIT %d" % (by, limit))
+    try:
+        rows = warehouse.query("trade_area_demand", sql, params)
+        return jsonify(ok=True, count=len(rows), rows=rows)
+    except Exception:
+        return jsonify(ok=True, count=0, rows=[],
+                       note="trade_area_demand not landed yet (run cex_ref.build_demand)")
+
+
+@app.get("/api/cpi")
+def cpi_ep():
+    """BLS CPI-U alcohol series. ?item=SAF116&area=0000&year=2024&annual=1 — or ?real=1 for the
+    item rebased against all-items (relative real price, the deflator/premiumization read)."""
+    import cpi_ref
+    a = request.args
+    try:
+        if a.get("real") in ("1", "true", "yes"):
+            yr = int(a["base_year"]) if a.get("base_year") else None
+            return jsonify(**cpi_ref.real_series(item=a.get("item") or "SAF116",
+                                                 area=a.get("area") or "0000", base_year=yr))
+        yr = int(a["year"]) if a.get("year") else None
+        rows = cpi_ref.query(item=a.get("item") or None, area=a.get("area") or None, year=yr,
+                             annual=a.get("annual") in ("1", "true", "yes"))
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except ValueError as e:
+        return jsonify(ok=False, error="bad numeric param: %s" % e), 400
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="cpi_reference not landed yet (run the cpi source: cpi_ref.build)")
+
+
+@app.get("/api/fred")
+def fred_ep():
+    """FRED macro series. ?series=MRTSSM4453USN|liquor_store_sales&year=2026."""
+    import fred_ref
+    try:
+        yr = int(request.args["year"]) if request.args.get("year") else None
+        rows = fred_ref.query(series=request.args.get("series") or None, year=yr,
+                              limit=int(request.args.get("limit", 5000)))
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except ValueError as e:
+        return jsonify(ok=False, error="bad numeric param: %s" % e), 400
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="fred_reference not landed yet (run the fred source: fred_ref.build, needs FRED_API_KEY)")
+
+
+@app.get("/api/bea")
+def bea_ep():
+    """BEA regional income. ?metric=personal_income_per_capita&geo_level=county&geo_fips=12095&year=2023."""
+    import bea_ref
+    try:
+        yr = int(request.args["year"]) if request.args.get("year") else None
+        rows = bea_ref.query(metric=request.args.get("metric") or None,
+                             geo_level=request.args.get("geo_level") or None,
+                             geo_fips=request.args.get("geo_fips") or None, year=yr)
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except ValueError as e:
+        return jsonify(ok=False, error="bad numeric param: %s" % e), 400
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="bea_reference not landed yet (run the bea source: bea_ref.build — the BEA key "
+                            "must be activated via BEA's email link)")
+
+
 @app.get("/api/places")
 def places_ep():
     """Query the pulled on-premise accounts (Orlando) from the warehouse. Filters:
