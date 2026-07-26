@@ -6027,6 +6027,28 @@ def census_demand_top_ep():
                        note="trade_area_demand not landed yet (run cex_ref.build_demand)")
 
 
+@app.get("/api/cpi")
+def cpi_ep():
+    """BLS CPI-U alcohol series. ?item=SAF116&area=0000&year=2024&annual=1 — or ?real=1 for the
+    item rebased against all-items (relative real price, the deflator/premiumization read)."""
+    import cpi_ref
+    a = request.args
+    try:
+        if a.get("real") in ("1", "true", "yes"):
+            yr = int(a["base_year"]) if a.get("base_year") else None
+            return jsonify(**cpi_ref.real_series(item=a.get("item") or "SAF116",
+                                                 area=a.get("area") or "0000", base_year=yr))
+        yr = int(a["year"]) if a.get("year") else None
+        rows = cpi_ref.query(item=a.get("item") or None, area=a.get("area") or None, year=yr,
+                             annual=a.get("annual") in ("1", "true", "yes"))
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except ValueError as e:
+        return jsonify(ok=False, error="bad numeric param: %s" % e), 400
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="cpi_reference not landed yet (run the cpi source: cpi_ref.build)")
+
+
 @app.get("/api/places")
 def places_ep():
     """Query the pulled on-premise accounts (Orlando) from the warehouse. Filters:

@@ -125,6 +125,11 @@ SOURCES = [
          note="BLS CEX API (cex_ref.build) — mean annual alcohol $ per CU (total / at-home / away) by "
               "income-before-taxes bracket; keyless OK (BLS_API_KEY raises limits); build_demand derives "
               "trade_area_demand = CEX × ACS B19001 (needs the census source's brackets landed)"),
+    dict(id="cpi", label="BLS CPI (alcoholic beverages)", code="import cpi_ref as m; m.build()",
+         tables=["cpi_reference"], klass="headless", cadence="weekly", enabled=True,
+         note="BLS CPI-U API (cpi_ref.build) — alcohol total/at-home/away + beer/spirits/wine sub-items, "
+              "US + 4 regions, monthly + M13 annual; keyless OK; real_series() = alcohol rebased vs "
+              "all-items (the deflator / price-index benchmark)"),
     dict(id="tax-rates", label="Bev-alc tax RATES (TTB + state excise)", code="import tax_rates as m; m.build()",
          tables=["tax_rates"], klass="headless", cadence="weekly", enabled=True,
          note="federal CBMA schedule (encoded, TTB) + 51-jurisdiction state excise seed (Tax Foundation Jan 2026); "

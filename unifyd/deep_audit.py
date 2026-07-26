@@ -40,6 +40,8 @@ FIXTURE_CHECKS = [
          run="import ttb_cola_scraper as t; recs, _n, diag = t.parse_results(html); result=(len(recs), diag)"),
     dict(id="cex", fixture="fixtures/cex_bls_sample.json", min_rows=200,
          run="import json, cex_ref as c; rows, warns = c.parse([json.loads(html)]); result=(len(rows), {'warns': warns[:3]})"),
+    dict(id="cpi", fixture="fixtures/cpi_bls_sample.json", min_rows=500,
+         run="import json, cpi_ref as c; rows, warns = c.parse([json.loads(html)]); result=(len(rows), {'warns': warns[:3]})"),
 ]
 
 DOC_FILES = ["CLAUDE.md", "README.md", "SPINE.md"]
