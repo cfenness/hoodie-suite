@@ -248,6 +248,18 @@ BUILDS = [
          tables=["master_quality"], klass="build", interval_h=24, enabled=True,
          after=["build-product-master"],
          note="deterministic UPC/brand gold → precision/recall/F1 of item_key merges + regression flag"),
+    # S4 convergence (MATCHING-CONVERGENCE.md) — the SERVED canon identity, computed IN-WAREHOUSE. The prod
+    # head-to-head proved the recall lift is UPC-deterministic (canon R=1.000 vs item_key 0.269 on the UPC
+    # gold), so item_identity = a group-by-UPC over the full mapped universe — no local Postgres, no canon
+    # cascade. canon_item_id = the UPC as bigint; two sources on one UPC → one identity (the lift), leading-zero
+    # variants collapse. The serving overlay (canon_identity.py) COALESCEs it onto item_key; UPC-less SKUs
+    # (absent here) keep item_key. Cross-UPC / no-UPC / fuzzy identity is hoodie-canon's cascade — a cloud
+    # engine for later; this owns item_identity for the deterministic core (single writer).
+    dict(id="build-item-identity", label="Item identity (served, in-warehouse UPC)",
+         code="import build_item_identity as m; m.build()",
+         tables=["item_identity"], klass="build", interval_h=12, enabled=True,
+         after=["build-product-master"],
+         note="distinct-UPC → canon_item_id over _stage_product+retail; the served identity the overlay joins"),
     # MOAT-PLAN Workstream R — representativeness. Coverage per state (observed outlets ÷ outlet_master
     # universe) + market metrics in OBSERVED (deterministic) vs PROJECTED (survey estimator + CI,
     # suppressed below a coverage/obs floor). Turns the observation engine into a market-truth engine —
