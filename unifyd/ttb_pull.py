@@ -77,6 +77,7 @@ def _enrich_one(s, tid, class_type_desc=""):
     import json
     import ttb_enrich as te
     df, alc, labs, upc = {}, {"content": "", "abv": ""}, [], ""
+    ocr = {"ocr_chars": "", "gov_warning": "", "claims": ""}
     try:
         h2 = s.get(_VIEW_URL, params={"action": "publicDisplaySearchBasic", "ttbid": tid}, timeout=45).text
         df = te.parse_detail_fields(h2) or {}
@@ -87,13 +88,15 @@ def _enrich_one(s, tid, class_type_desc=""):
         alc = te.parse_alcohol(h1, df.get("Class/Type Code", ""))
         labs = te.label_filenames(h1)
         try:
-            from ttb_cola_labels import extract_upc_from_label
-            for fn in labs[:2]:
+            from ttb_cola_labels import extract_upc_from_label, read_label_text
+            for i, fn in enumerate(labs[:2]):
                 img = s.get(cola.ATTACH_URL, params={"filename": fn, "filetype": "l"}, timeout=45).content
-                u = extract_upc_from_label(img)
-                if u:
-                    upc = u
-                    break
+                if not upc:
+                    u = extract_upc_from_label(img)              # barcode → UPC
+                    if u:
+                        upc = u
+                if i == 0:
+                    ocr = read_label_text(img)                  # Tesseract OCR the FRONT label → text fields
         except Exception:
             pass
     except Exception:
@@ -113,6 +116,8 @@ def _enrich_one(s, tid, class_type_desc=""):
         label = {c: "" for c in LABEL_COLS}
         label.update(ttb_id=tid, image_file=(labs[0] if labs else ""), upc=upc, abv=alc.get("abv", ""),
                      net_contents=df.get("Total Bottle Capacity", "") or "",
+                     claims=ocr.get("claims", ""), gov_warning=ocr.get("gov_warning", ""),
+                     ocr_chars=ocr.get("ocr_chars", ""),
                      front_label_url=(urls[0] if urls else ""),
                      back_label_url=(urls[1] if len(urls) > 1 else ""), label_urls="|".join(urls))
     return detail, label

@@ -14,10 +14,11 @@ FROM python:3.12-slim
 # the slim image — "CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate" — even though
 # they work on a laptop. Refresh the system CA bundle (used by urllib → FL) so those roots/intermediates
 # are present; certifi (used by requests → TTB) is upgraded below.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libzbar0 \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libzbar0 tesseract-ocr \
     && update-ca-certificates && rm -rf /var/lib/apt/lists/*
-# libzbar0: the zbar system library pyzbar binds to, so the TTB enrich pass can decode the UPC barcode
-# off each COLA label image (ttb_cola_labels.extract_upc_from_label). Without it pyzbar imports but no-ops.
+# libzbar0: the zbar system library pyzbar binds to → decode the UPC BARCODE off each COLA label image.
+# tesseract-ocr: the OCR engine pytesseract binds to → read the label TEXT (government warning, claims) that
+# the barcode can't. Both feed ttb_cola_labels (extract_upc_from_label / read_label_text); no-op without them.
 
 # Headful Chrome + Xvfb — for the anti-bot sources that need a REAL browser to mint their token
 # (UberEats/Postmates botdefense, Kroger Akamai, Total Wine PerimeterX, Albertsons Kasada, Ahold
