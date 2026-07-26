@@ -218,7 +218,8 @@ Two standing tools exist so failures are loud, not quiet. Keep them passing and 
 - **Data health — `unifyd/health_digest.py`**: the daily deterministic verdict on every
   registry-enabled source (failed/degraded runs, staleness vs cadence, row-count collapse,
   honest no-creds skips). Every finding cites evidence and carries `first_seen` so new breaks
-  stand out. Runs via `unifyd/run_health_digest.sh` (launchd `com.hoodie.health`, 07:30 daily);
+  stand out. Runs **on Fly** — the hourly dispatcher (`dispatch_ephemeral._refresh_health`) recomputes it
+  each tick; there is **no Mac launchd** (see the "nothing runs locally" rule below). It
   writes `unifyd/agent_state/health/latest.{json,txt}` + an optional Claude triage in
   `latest_triage.md` (judgment layer only — it NEVER changes the verdict). Exit 2 = critical.
   Mondays (or `--weekly` / `HEALTH_WEEKLY=1`) add the **deep audit** (`unifyd/deep_audit.py`):
@@ -229,10 +230,15 @@ Two standing tools exist so failures are loud, not quiet. Keep them passing and 
   serves, no dangling ids/groups, every local src/href/iframe reference resolves, orphan app
   files are surfaced. The `/smoke` skill layers a browser runtime pass on top (console errors,
   blank renders, composite tabs). Run before "ship it" and after any shell/spine change.
-- **launchd gotcha (load-bearing)**: a LaunchAgent whose script argument lives under `~/Desktop`
-  fails at spawn with `Operation not permitted` (exit 126) — the job silently never runs. Use the
-  `bash -c 'exec bash "<script>"'` form (see `unifyd/launchd/*.plist`). This killed the entire
-  scheduled-scrape pipeline once; the health digest is what catches it if it regresses.
+- **NOTHING RUNS LOCALLY (hard rule)**: no scrape, pull, geo pass, backfill, health digest, or scheduled
+  tick runs on anyone's Mac — **all execution is on Fly**. Scheduling is the Fly hourly dispatcher
+  (`unifyd/dispatch_ephemeral.py`, a Fly scheduled machine): it reads the shared ledger, spawns an ephemeral
+  Fly machine per due source (headless on 4GB; **headful** — the `klass="mac"` sources, a legacy name for
+  "real browser": `kroger`/`ubereats`/`postmates`/`sevennow`/`bottlecapps`/`cityhive` — on 8GB with Xvfb +
+  system Chrome + patchright, see `run_ephemeral.sh`), and folds in the health digest. The old Mac launchd
+  agents (`com.hoodie.due`, `com.hoodie.health`) and their scripts (`run_due.sh`, `run_health_digest.sh`) are
+  **retired/removed** — the Fly dispatcher already runs the exact same set. Deploy via GitHub Actions (push to
+  `main`), never local `flyctl`; never tight-loop `flyctl` (it rate-blocks the home IP).
 
 ## Deploy
 
