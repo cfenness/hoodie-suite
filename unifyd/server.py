@@ -4482,9 +4482,19 @@ def _truthy(v):
     return str(v or "").strip().lower() in ("1", "true", "yes", "on")
 
 
-_SCHED = {"enabled": _truthy(os.environ.get("SCHEDULER")),
+# The cloud RUNNER process (fly.toml [processes].runner — 8gb, off the serving box) self-drives the
+# dispatcher so the whole pipeline runs in-cloud on cadence: NOTHING LOCAL. It runs headless/creds sources
+# AND the derived builds (the single dim_* writer), which used to run only on the Mac --due tick. The serving
+# 'app' process never schedules. SCHEDULER=0/1 still overrides explicitly (e.g. to pause the runner).
+_RUNNER = os.environ.get("FLY_PROCESS_GROUP") == "runner"
+_SCHED_ENV = os.environ.get("SCHEDULER")
+_SCHED = {"enabled": _truthy(_SCHED_ENV) if _SCHED_ENV is not None else _RUNNER,
           "interval_s": max(60, int(os.environ.get("SCHEDULER_INTERVAL", "1800") or 1800)),
           "mac": _truthy(os.environ.get("SCHEDULER_MAC")),
+          # run derived builds in the tick — on the build-writer host only (the runner), so builds move off
+          # the Mac. SCHEDULER_BUILDS=1 forces it on elsewhere; the shared source_runs ledger keeps a build
+          # from double-running across hosts during the Mac→cloud cutover.
+          "builds": _RUNNER or _truthy(os.environ.get("SCHEDULER_BUILDS")),
           "thread_started": False, "running": False, "ticks": 0,
           "last_tick": None, "next_tick": None, "last_due": [], "last_skip": None,
           "runs": [], "error": None}
@@ -4526,6 +4536,19 @@ def _sched_tick():
                 del _SCHED["runs"][80:]
             except Exception as e:
                 _SCHED["error"] = "%s: %s" % (s["id"], str(e)[:160])
+        # Derived master builds (dim_sku chain, master_quality, item_identity, the canon head-to-head) AFTER
+        # the source landings that trigger them — on the build-writer host only, so the cloud runner owns the
+        # builds that used to run on the Mac --due tick. Same run_one + ledger treatment as a source.
+        if _SCHED["builds"]:
+            try:
+                for b in rs.due_builds():
+                    rec = rs.run_one(b)
+                    rs._land_runs([rec], log=lambda *a: None)
+                    _SCHED["runs"].insert(0, {"source": rec.get("source"), "status": rec.get("status"),
+                                              "at": int(time.time())})
+                del _SCHED["runs"][80:]
+            except Exception as e:
+                _SCHED["error"] = "builds: %s" % str(e)[:160]
         _SCHED["ticks"] += 1
         _SCHED["last_tick"] = int(time.time())
     finally:
