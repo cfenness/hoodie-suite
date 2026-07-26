@@ -35,6 +35,8 @@ GOLD_PER_CLASS = int(os.environ.get("MQ_GOLD_PER_CLASS", "4000"))   # target pos
 MAX_PAIRS_PER_UPC = int(os.environ.get("MQ_MAX_PAIRS_PER_UPC", "3"))  # cap so a huge UPC group can't dominate
 REG_TOL = float(os.environ.get("MQ_REG_TOL", "0.03"))               # P/R may not drop > this vs baseline
 
+CANON_TABLE = "master_quality_canon"   # the SERVED-canon head-to-head, isolated from the item_key ratchet
+
 
 def _upc(col):
     return "regexp_replace(CAST(%s AS VARCHAR), '[^0-9]', '', 'g')" % col
@@ -157,6 +159,79 @@ def build(log=print):
     return rec
 
 
+def score_canon(log=print):
+    """Score the SERVED canon identity on the SAME gold the item_key run built — the head-to-head that
+    proves the S4 cutover (MATCHING-CONVERGENCE.md). Reads the latest ``gold_matches`` version and
+    re-resolves each pair's two source records to their ``canon_item_id`` via ``item_identity`` (what the
+    serving path would join). ``pred_same`` becomes "both resolve in canon AND to the same canon item".
+
+    Fully isolated from ``build()``: it never touches ``master_quality``/``gold_matches`` — it lands
+    ``master_quality_canon`` and reuses the existing gold, so the item_key ratchet is untouched and the two
+    engines are scored on IDENTICAL pairs. COVERAGE = share of gold pairs canon could resolve (both sides);
+    P/R are computed over the covered pairs (same honest posture as the item_key path)."""
+    import warehouse
+    con = warehouse.connect()
+    gg = ("s3://%s/%s/gold_matches/*.parquet" % (warehouse._bucket(), warehouse._prefix())) \
+        if warehouse.remote() else os.path.join(warehouse._LOCAL_DIR, "gold_matches", "*.parquet")
+    iu = warehouse.uri("item_identity").replace("'", "")
+    try:
+        con.execute("CREATE OR REPLACE VIEW g AS SELECT * FROM read_parquet('%s', union_by_name=true)"
+                    % gg.replace("'", ""))
+        con.execute("CREATE OR REPLACE VIEW ii AS SELECT * FROM read_parquet('%s')" % iu)
+        ver = con.execute("SELECT max(version) FROM g").fetchone()[0]
+    except Exception as e:
+        log("[master_quality/canon] gold_matches or item_identity unavailable (run build() + ingest "
+            "the canon export first): %s" % str(e)[:70])
+        return None
+    if ver is None:
+        log("[master_quality/canon] no gold yet — run build() (item_key) first")
+        return None
+
+    # resolve BOTH sides of every latest-version gold pair to a canon_item_id (NULL where canon can't reach it)
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE goldc AS
+        SELECT gm.label,
+               CAST(ca.canon_item_id AS VARCHAR) AS ka, CAST(cb.canon_item_id AS VARCHAR) AS kb
+        FROM g gm
+        LEFT JOIN ii ca ON ca.source = gm.sa AND ca.product_id = gm.pa
+        LEFT JOIN ii cb ON cb.source = gm.sb AND cb.product_id = gm.pb
+        WHERE gm.version = ?
+    """, [ver])
+    n_all = con.execute("SELECT COUNT(*) FROM goldc").fetchone()[0]
+    # score only the COVERED pairs (both sides resolved) — coverage reported separately, like item_key
+    m = con.execute("""
+        SELECT
+          SUM(CASE WHEN label='same' AND ka=kb THEN 1 ELSE 0 END) tp,
+          SUM(CASE WHEN label='diff' AND ka=kb THEN 1 ELSE 0 END) fp,
+          SUM(CASE WHEN label='same' AND ka<>kb THEN 1 ELSE 0 END) fn,
+          SUM(CASE WHEN label='diff' AND ka<>kb THEN 1 ELSE 0 END) tn,
+          COUNT(*) n_cov
+        FROM goldc WHERE ka IS NOT NULL AND kb IS NOT NULL
+    """).fetchone()
+    tp, fp, fn, tn, n_cov = [int(x or 0) for x in m]
+    precision = tp / (tp + fp) if (tp + fp) else None
+    recall = tp / (tp + fn) if (tp + fn) else None
+    f1 = (2 * precision * recall / (precision + recall)) if (precision and recall) else 0.0
+    coverage = (n_cov / n_all) if n_all else None
+
+    prior = _last_quality(CANON_TABLE)
+    version = max(int(time.time() * 1000), (int(prior.get("version") or 0) + 1) if prior else 0)
+    rec = dict(version=version, ts=version, identity="canon", gold_version=int(ver),
+               n_pairs=n_cov, n_all=n_all, tp=tp, fp=fp, fn=fn, tn=tn,
+               precision=round(precision, 4) if precision is not None else None,
+               recall=round(recall, 4) if recall is not None else None, f1=round(f1, 4),
+               coverage=round(coverage, 4) if coverage is not None else None)
+    warehouse.write_accumulate(CANON_TABLE, [rec], key=lambda r: r["version"], fields=list(rec.keys()))
+    log("[master_quality/canon] SERVED identity: P=%.3f R=%.3f F1=%.3f  coverage=%.3f  over %d covered "
+        "pairs (gold v%s)" % (rec["precision"] or 0, rec["recall"] or 0, rec["f1"], rec["coverage"] or 0,
+                              n_cov, ver))
+    ik = _last_quality()   # the item_key run on (near-)the same gold, for the head-to-head line
+    if ik and ik.get("recall") is not None and rec["recall"] is not None:
+        log("  ↳ head-to-head vs item_key: R %.3f→%.3f  P %.3f→%.3f (canon is the served identity)"
+            % (ik["recall"], rec["recall"], ik.get("precision") or 0, rec["precision"] or 0))
+    return rec
+
+
 def _land_gold(arrow):
     import pyarrow.parquet as pq
     import warehouse
@@ -172,10 +247,10 @@ def _land_gold(arrow):
         pq.write_table(arrow, p, compression="zstd")
 
 
-def _last_quality():
+def _last_quality(table="master_quality"):
     import warehouse
     try:
-        r = warehouse.query("master_quality", "SELECT * FROM t ORDER BY version DESC LIMIT 1")
+        r = warehouse.query(table, "SELECT * FROM t ORDER BY version DESC LIMIT 1")
         return r[0] if r else None
     except Exception:
         return None
@@ -194,8 +269,12 @@ def stats(log=print):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Measure master identity quality vs a deterministic gold set (MOAT M).")
     ap.add_argument("--stats", action="store_true")
+    ap.add_argument("--canon", action="store_true",
+                    help="ALSO score the served canon identity (item_identity) on the same gold — the S4 head-to-head")
     a = ap.parse_args(argv)
     build()
+    if a.canon:
+        score_canon()
     if a.stats:
         stats()
     return 0
