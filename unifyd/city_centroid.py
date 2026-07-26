@@ -103,16 +103,23 @@ def _load():
     except Exception:
         pass
     # last-token alias for slug-truncated cities: DoorDash's city is the FINAL slug token ('los-angeles' ->
-    # 'angeles'), so index each place by its own last token — but ONLY where that (state, token) is unambiguous
-    # (one place). 'angeles'/'francisco'/'vegas'/'jose' resolve; 'beach'/'city'/'park' stay ambiguous (skipped).
-    amb = {}
+    # 'angeles'). Index each place by its own last token, resolving collisions to the PRINCIPAL city — the one
+    # with the fewest name tokens ('Los Angeles' beats 'East Los Angeles'; 'Las Vegas' beats 'North Las Vegas').
+    # Alias only when that minimum is UNIQUE, so genuine ambiguities ('beach': Miami/Palm/Vero Beach) stay
+    # unmapped rather than snapping to a wrong dot.
+    groups = {}
     for (st, ck), ll in _CACHE.items():
-        tok = ck.split()[-1] if ck else ""
+        toks = ck.split()
+        tok = toks[-1] if toks else ""
         if not tok or (st, tok) in _CACHE:                 # a real place already owns this exact name — leave it
             continue
-        amb.setdefault((st, tok), set()).add(ll)
+        groups.setdefault((st, tok), []).append((len(toks), ll))
     _ALIAS.clear()
-    _ALIAS.update({k: next(iter(v)) for k, v in amb.items() if len(v) == 1})
+    for k, lst in groups.items():
+        m = min(n for n, _ in lst)
+        winners = {ll for n, ll in lst if n == m}
+        if len(winners) == 1:
+            _ALIAS[k] = next(iter(winners))
     return _CACHE
 
 
