@@ -15,7 +15,7 @@ import warehouse
 FLD = ["source", "store_id", "store_name", "chain", "is_chain", "f_beer", "f_wine", "f_spirits", "f_hemp",
        "f_cannabis", "f_rtd_spirits", "flag_basis", "license_conflict", "address", "city", "state", "zip",
        "lat", "lng", "phone", "addr_valid", "hoodie_outlet", "name_key", "phone_norm", "addr_key",
-       "geo_cell", "county_fips"]
+       "geo_cell", "county_fips", "geo_precision"]
 
 
 def _row(site, r):
@@ -52,6 +52,11 @@ def run(sites=("ubereats", "postmates"), log=print):
         except Exception as e:
             log("[refresh-fast] %s_geo: %s" % (site, str(e)[:80]))
     if rows:
+        try:                                               # geo at ingestion: never take in an outlet unplaced
+            import city_centroid
+            city_centroid.geo_enrich_rows(rows, log=log)
+        except Exception as e:
+            log("[refresh-fast] city-centroid enrich skipped: %s" % str(e)[:80])
         warehouse.write_accumulate("src_outlets", rows, key=lambda r: (r["source"], r["store_id"]), fields=FLD)
     log("[refresh-fast] merged %d %s outlets -> src_outlets in %.1fs" % (len(rows), "+".join(sites), time.time() - t0))
     return len(rows)
