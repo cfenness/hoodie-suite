@@ -145,11 +145,11 @@ SOURCES = [
          tables=["postmates_sitemap", "src_outlets"], klass="headless", cadence="weekly", enabled=True,
          timeout=10800, mem=8192, note="$0 US Postmates universe from its sitemaps → src_outlets (coverage book)"),
     dict(id="geocode", label="Geocode (Census, $0)", code="import geocode as m; m.run()",
-         tables=["src_outlets"], klass="headless", cadence="daily", enabled=True, timeout=5400, mem=16384,
+         tables=["src_outlets"], klass="headless", cadence="daily", enabled=False, timeout=5400, mem=16384,
          note="automate lat/lng: free US Census batch-geocodes addressed-but-ungeocoded src_outlets → maps on "
               "the Coverage page; unmatched marked county_fips=00000 so they aren't retried. GEOCODE_LIMIT/run"),
     dict(id="aggregator-geo", label="Aggregator geo (page-fetch)", code="import aggregator_geo as m; m.run()",
-         tables=["src_outlets"], klass="headless", cadence="daily", enabled=True, timeout=7200, mem=16384,
+         tables=["src_outlets"], klass="headless", cadence="daily", enabled=False, timeout=7200, mem=16384,
          note="$0 page-fetch PRECISE geo for the ~790k no-address ubereats/postmates outlets (schema.org "
               "lat/lng → geo_precision=exact; empty pages marked agg_miss). Big crawl — chips away, "
               "AGG_GEO_LIMIT/run. (doordash is mapped by the city-centroid fast layer, not here.)"),
@@ -159,10 +159,15 @@ SOURCES = [
          note="build the $0 Census Gazetteer place/township centroid reference (state|city → lat/lng) the fast "
               "geo layer joins against. Refresh yearly; static otherwise"),
     dict(id="fast-geo", label="Fast geo (city centroid, $0)", code="import city_centroid as m; m.run()",
-         tables=["src_outlets"], klass="headless", cadence="daily", enabled=True, timeout=5400, mem=16384,
+         tables=["src_outlets"], klass="headless", cadence="daily", enabled=False, timeout=5400, mem=16384,
          note="THE FAST LAYER: instantly city-centroid every un-geocoded src_outlet that ships a city+state "
               "(DoorDash: all 587k) → geo_precision=city, maps on Coverage immediately; the exact crawl upgrades "
               "city→exact. No fetch. FAST_GEO_LIMIT/run"),
+    dict(id="geo", label="Geo pipeline (all layers)", code="import geo_all as m; m.run()",
+         tables=["src_outlets"], klass="headless", cadence="daily", enabled=True, timeout=10800, mem=16384,
+         note="THE daily geo run: fast-geo → geocode → aggregator-geo IN SEQUENCE on one machine. They each "
+              "rewrite the whole src_outlets table, so running them concurrently would clobber each other — this "
+              "serializes them. The three stay registered (enabled=False) for targeted manual backfills."),
     dict(id="naop", label="NAOP on-premise", code="import doordash_naop as m; m.run()",
          tables=["naop_accounts", "naop_beverages"], klass="headless", cadence="daily", enabled=True, timeout=7200,
          note="DoorDash on-premise menus, $0 (ISP pool); consumes doordash_stores in NAOP_LIMIT batches"),

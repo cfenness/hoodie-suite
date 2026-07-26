@@ -34,6 +34,8 @@ _GAZ = {
 _REF_TABLE = "city_centroids"
 _CACHE = {}                                                # {(STATE, citykey): (lat, lng)} — module-global
 _ALIAS = {}                                                # {(STATE, last_token): (lat, lng)} — unambiguous only
+_STATE_CITIES = {}                                         # {STATE: set(citykey)} — for slug suffix-matching
+_MAXTOK = 4                                                # longest city name (in tokens) we'll suffix-match
 
 # strip the LSAD noise so "St. Louis city" / "Nashville-Davidson metropolitan government" match "st louis" etc.
 _SUFFIX = re.compile(r"\b(city|town|village|borough|municipality|cdp|township|charter|metropolitan|"
@@ -120,6 +122,11 @@ def _load():
         winners = {ll for n, ll in lst if n == m}
         if len(winners) == 1:
             _ALIAS[k] = next(iter(winners))
+    # per-state city-name set for slug suffix-matching (recover the FULL city from a store name that ends with
+    # it, e.g. 'taqueria los angeles' -> 'los angeles'; beats the truncated last-token city DoorDash ships).
+    _STATE_CITIES.clear()
+    for (st, ck) in _CACHE:
+        _STATE_CITIES.setdefault(st, set()).add(ck)
     return _CACHE
 
 
@@ -133,6 +140,39 @@ def centroid(city, state):
     return _CACHE.get((st, ck)) or _ALIAS.get((st, ck))
 
 
+def city_from_name(name, state):
+    """Recover the real city from a slug-derived store name that ENDS with it — DoorDash names are
+    'name…-<city>' with no delimiter ('taqueria los angeles'), and its city field is only the last token.
+    Match the LONGEST trailing token-run (up to _MAXTOK) that is a known city in `state`. Deterministic, $0."""
+    _load()
+    st = str(state).strip().upper()
+    toks = _norm(name).split()
+    cities = _STATE_CITIES.get(st)
+    if not toks or not cities:
+        return None
+    for L in range(min(_MAXTOK, len(toks)), 0, -1):        # longest match wins ('miami beach' over 'beach')
+        cand = " ".join(toks[-L:])
+        if cand in cities:
+            return cand
+    return None
+
+
+def best_centroid(row):
+    """(lat, lng) for an outlet row using the best available signal, or None. For DoorDash (city field is the
+    unreliable last slug token) prefer recovering the full city from the store name; otherwise use the city
+    field (+ last-token alias). One place both the ingestion hook and the batch pass call."""
+    st = (row.get("state") or "").strip().upper()
+    if not st:
+        return None
+    if row.get("source") == "doordash" and row.get("store_name"):
+        c = city_from_name(row["store_name"], st)
+        if c:
+            ll = _load().get((st, c))
+            if ll:
+                return ll
+    return centroid(row.get("city"), st)
+
+
 def geo_enrich_rows(rows, log=None):
     """INGESTION hook: for every row that has city+state but no lat, drop in the city centroid and stamp
     geo_precision='city' (misses stamped 'city_miss' so the exact crawl still knows they were seen). Mutates
@@ -142,12 +182,12 @@ def geo_enrich_rows(rows, log=None):
     for r in rows:
         if r.get("lat") not in (None, "") or r.get("geo_precision") in ("exact", "city"):
             continue
-        c = centroid(r.get("city"), r.get("state"))
+        c = best_centroid(r)
         if c:
             r["lat"], r["lng"] = c[0], c[1]
             r["geo_precision"] = "city"
             hit += 1
-        elif r.get("city"):
+        elif r.get("city") or r.get("store_name"):
             r["geo_precision"] = "city_miss"
     if log:
         log("[city-centroid] enriched %d/%d rows inline" % (hit, len(rows)))
@@ -177,7 +217,7 @@ def fast_geo_pass(limit=None, log=print):
     out = []
     for r in rows:
         d = dict(r)
-        c = centroid(d.get("city"), d.get("state"))
+        c = best_centroid(d)
         if c:
             d["lat"], d["lng"] = c[0], c[1]
             d["geo_precision"] = "city"
