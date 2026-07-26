@@ -5,7 +5,7 @@ personal income is an annual administrative-data figure, fresher and revised on 
 the cleaner year-over-year demand driver for trade-area work.
 
 Scope (BEA Regional API, free UserID key = BEA_API_KEY):
-  • SAINC51 (state) — disposable personal income: line 1 total ($K), 2 population, 3 per-capita ($).
+  • SAINC51 (state) — disposable personal income: line 51 total, 52 population, 53 per-capita ($).
   • CAINC1 (county) — personal income summary: line 1 total ($K), 2 population, 3 per-capita ($).
     (County-grain DISPOSABLE income is not published; per-capita personal income is the county driver.)
 
@@ -26,13 +26,15 @@ BEA_HEADER = ["dataset", "table_name", "line_code", "metric_name", "geo_level", 
               "vintage_year", "metric_value", "unit", "source_pulled_at"]
 
 # (table, line, geo) -> metric name + unit. BEA GeoFips: states are '<ss>000', counties '<ss><ccc>'.
+# LINE CODES ARE PER-TABLE, not positional (validated via GetParameterValuesFiltered): SAINC51 uses
+# 51/52/53, CAINC1 uses 1/2/3 — a wrong code returns top-level Error 40, not an empty result set.
 PULLS = [
-    ("SAINC51", "1", "STATE",  "disposable_income_total",     "USD_thousands"),
-    ("SAINC51", "2", "STATE",  "population",                  "persons"),
-    ("SAINC51", "3", "STATE",  "disposable_income_per_capita", "USD"),
-    ("CAINC1",  "1", "COUNTY", "personal_income_total",       "USD_thousands"),
-    ("CAINC1",  "2", "COUNTY", "population",                  "persons"),
-    ("CAINC1",  "3", "COUNTY", "personal_income_per_capita",  "USD"),
+    ("SAINC51", "51", "STATE",  "disposable_income_total",      "USD_millions"),
+    ("SAINC51", "52", "STATE",  "population",                   "persons"),
+    ("SAINC51", "53", "STATE",  "disposable_income_per_capita", "USD"),
+    ("CAINC1",  "1",  "COUNTY", "personal_income_total",        "USD_thousands"),
+    ("CAINC1",  "2",  "COUNTY", "population",                   "persons"),
+    ("CAINC1",  "3",  "COUNTY", "personal_income_per_capita",   "USD"),
 ]
 
 
@@ -63,10 +65,15 @@ def parse(payload, table, line, geo_level, metric, unit, ts=None):
     """One GetData payload -> rows. Returns (rows, error) — error carries BEA's in-band Error text
     (e.g. the not-yet-activated key) so build() can degrade with the real reason."""
     ts = ts or int(time.time())
-    res = (payload.get("BEAAPI") or {}).get("Results") or {}
-    err = res.get("Error")
+    api = payload.get("BEAAPI") or {}
+    res = api.get("Results") or {}
+    # BEA reports errors at TWO levels: Results.Error (e.g. inactive key) and top-level BEAAPI.Error
+    # (e.g. invalid LineCode) — missing the second silently yields 0 rows (hit live 2026-07).
+    err = res.get("Error") or api.get("Error")
     if err:
-        return [], "%s (code %s)" % (err.get("APIErrorDescription", "?"), err.get("APIErrorCode", "?"))
+        detail = (err.get("ErrorDetail") or {}).get("Description", "")
+        return [], "%s%s (code %s)" % (err.get("APIErrorDescription", "?"),
+                                       " — " + detail.strip() if detail else "", err.get("APIErrorCode", "?"))
     rows = []
     for d in res.get("Data") or []:
         fips = str(d.get("GeoFips", ""))
@@ -105,6 +112,9 @@ def build(years=None, log=print):
             if "not active" in err:
                 warns.append("BEA key exists but is NOT ACTIVATED — click the link in BEA's signup email, then re-run")
                 break                      # every further call fails identically; fail fast + loud
+            continue
+        if not r:
+            warns.append("%s L%s %s: 0 cells with no error object — response shape drift, verify" % (table, line, geo))
             continue
         rows += r
         log("bea %s L%s %s: %d cells" % (table, line, geo, len(r)))
