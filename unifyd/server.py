@@ -5982,12 +5982,13 @@ def cex_spend_ep():
 @app.get("/api/census/demand")
 def census_demand_ep():
     """Trade-area alcohol demand $ for one geo — CEX mean spend × ACS B19001 households, with the
-    at-home (off-premise) / away (on-premise) split. ?geo_fips=12095[&geo_level=county|state].
+    at-home (off-premise) / away (on-premise) split. ?geo_fips=12095[&geo_level=county|state|zcta].
+    Bare 5-digit ids try county then fall back to ZIP (they collide); pass geo_level=zcta to force ZIP.
     Honest {ok:false, reason} until both cex_reference and the ACS brackets are landed."""
     import cex_ref
     fips = (request.args.get("geo_fips") or "").strip()
     if not fips:
-        return jsonify(ok=False, error="geo_fips required (5-digit county or 2-digit state)"), 400
+        return jsonify(ok=False, error="geo_fips required (county FIPS, ZIP, or 2-digit state)"), 400
     try:
         return jsonify(**cex_ref.demand_for(fips, geo_level=request.args.get("geo_level") or None))
     except Exception as e:

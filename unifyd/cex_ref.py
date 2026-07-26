@@ -240,7 +240,7 @@ _CAVEATS = [
     "CEX consumer unit ~ ACS household (close, not identical)",
     "CEX means are NATIONAL — no regional cut applied yet",
     "ACS 60-75k bracket split 2/3:1/3 across the CEX 70k boundary (uniform assumption)",
-    "geo grain = the ACS geo pulled (county/state); ZIP/tract would sharpen",
+    "geo grain = state / county / ZCTA (ZCTA ~ ZIP, not exact neighborhood lines); tract would sharpen",
 ]
 
 
@@ -259,18 +259,30 @@ def _cex_spend():
 
 def demand_for(geo_fips, geo_level=None):
     """Trade-area alcohol demand $ for one geo: ACS B19001 households × CEX mean spend, by bracket.
-    Returns an honest {ok: False, reason} when either side isn't landed — never a guessed number."""
+    Levels: state (2-digit FIPS), county (5-digit FIPS), zcta (5-digit ZIP). A bare 5-digit id is
+    AMBIGUOUS — county FIPS and ZIPs collide (12095 = Orange Co FL and a Johnstown NY ZIP) — so an
+    unqualified 5-digit tries county first and falls back to zcta only when no county row exists;
+    pass geo_level="zcta" to force the ZIP read. Returns an honest {ok: False, reason} when either
+    side isn't landed — never a guessed number."""
     import census_ref
     geo_fips = str(geo_fips)
-    geo_level = geo_level or ("county" if len(geo_fips) == 5 else "state")
-    acs = census_ref.query(dataset="acs", geo_level=geo_level, geo_fips=geo_fips, limit=200)
-    metrics = {r["metric_name"]: float(r["metric_value"]) for r in acs
-               if not r.get("suppressed") and r.get("metric_value") is not None}
-    missing = [m for m in ACS_TO_CEX if m not in metrics]
+    if geo_level:
+        levels = [geo_level]
+    else:
+        levels = ["state"] if len(geo_fips) == 2 else ["county", "zcta"]
+    metrics, missing = {}, list(ACS_TO_CEX)
+    for geo_level in levels:
+        acs = census_ref.query(dataset="acs", geo_level=geo_level, geo_fips=geo_fips, limit=200)
+        metrics = {r["metric_name"]: float(r["metric_value"]) for r in acs
+                   if not r.get("suppressed") and r.get("metric_value") is not None}
+        missing = [m for m in ACS_TO_CEX if m not in metrics]
+        if not missing:
+            break
     if missing:
         return {"ok": False, "geo_fips": geo_fips, "geo_level": geo_level,
-                "reason": "ACS B19001 brackets not landed for this geo (%d missing, e.g. %s) — run the "
-                          "census source with CENSUS_API_KEY (census_ref.build) to land them" % (len(missing), missing[0])}
+                "reason": "ACS B19001 brackets not landed for this geo (%d missing, e.g. %s; levels tried: "
+                          "%s) — run the census source with CENSUS_API_KEY (census_ref.build) to land them"
+                          % (len(missing), missing[0], "/".join(levels))}
     cex_year, spend = _cex_spend()
     if not cex_year:
         return {"ok": False, "geo_fips": geo_fips, "geo_level": geo_level,

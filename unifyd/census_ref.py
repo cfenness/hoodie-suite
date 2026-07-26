@@ -26,13 +26,13 @@ def _key():
     return os.environ.get("CENSUS_API_KEY", "").strip()
 
 
-def _get(path, params):
+def _get(path, params, timeout=120):
     p = dict(params)
     if _key():
         p["key"] = _key()
     url = "https://api.census.gov/data/%s?%s" % (path, urllib.parse.urlencode(p))
     req = urllib.request.Request(url, headers={"User-Agent": "HoodieUnifyd/1.0 (+census reference)"})
-    with urllib.request.urlopen(req, timeout=120) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         body = r.read().decode("utf-8", "replace")
     if not body.strip() or body.lstrip().startswith("<"):
         raise RuntimeError("non-JSON (missing key?) from %s" % path)
@@ -134,17 +134,25 @@ ACS_VARS = ["B19013_001E", "B01002_001E", "B11001_001E", "B01003_001E",
 
 def pull_acs(year=ACS_YEAR):
     """ACS 5-year consumer demographics (median household income, median age, households, population,
-    $100k+ household count) — county + state. The DEMAND-side complement to CBP/PEP: trade-area
-    enrichment an account/geo subject reads by geo_fips. Emits friendly metric names under dataset 'acs'."""
+    $100k+ household count) — state + county + ZCTA (~33k ZIPs, the grain that separates Baldwin Park
+    from Pine Hills). The DEMAND-side complement to CBP/PEP: trade-area enrichment an account/geo
+    subject reads by geo_fips (ZCTA rows key on the 5-digit ZIP). Emits friendly metric names under
+    dataset 'acs'. ZCTAs are national in the 2020+ vintages (no state hierarchy needed); tiny ZCTAs
+    legitimately land suppressed medians — flagged, never zeroed."""
     out, ts = [], int(time.time())
     get = ",".join(["NAME"] + ACS_VARS)
-    for level, params in (("county", {"for": "county:*", "in": "state:*"}), ("state", {"for": "state:*"})):
+    for level, params in (("county", {"for": "county:*", "in": "state:*"}), ("state", {"for": "state:*"}),
+                          ("zcta", {"for": "zip code tabulation area:*"})):
         try:
-            rows = _rows(_get("%d/acs/acs5" % year, dict(params, **{"get": get})))
+            rows = _rows(_get("%d/acs/acs5" % year, dict(params, **{"get": get}),
+                              timeout=600 if level == "zcta" else 120))   # national ZCTA response is ~10MB
         except Exception:
             continue
         for r in rows:
-            fips = r.get("state", "") + r.get("county", "") if level == "county" else r.get("state", "")
+            if level == "zcta":
+                fips = r.get("zip code tabulation area", "")
+            else:
+                fips = r.get("state", "") + r.get("county", "") if level == "county" else r.get("state", "")
             base = _num(r.get("B19001_001E"))
             brackets = [_num(r.get("B19001_%03dE" % b)) for b in (14, 15, 16, 17)]
             hi = sum(v for v in brackets if v is not None) if base else None
