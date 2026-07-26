@@ -186,6 +186,15 @@ ok("real traceback keeps File-frame", "File \"" in crashed["error"] and "boom at
 bare = run_src("import sys; print('just some log output'); sys.exit(3)")
 ok("bare nonzero exit labeled honestly", "nonzero exit 3" in bare["error"] and "just some log" not in bare["error"])
 
+# ── build-host gate (single dim_* writer; how builds move to the cloud runner) ────────────────────
+sb = run_sources.should_build
+ok("default plain --due host builds", sb(False, False) is True)
+ok("--headless-only host skips builds (default)", sb(True, False) is False)
+ok("--mac-only host skips builds (default)", sb(False, True) is False)
+ok("--builds forces the cloud (headless) runner to build", sb(True, False, builds=True) is True)
+ok("--no-builds stops the Mac tick building", sb(False, False, no_builds=True) is False)
+ok("--no-builds wins over --builds (safe default off)", sb(False, False, builds=True, no_builds=True) is False)
+
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
