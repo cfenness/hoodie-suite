@@ -89,14 +89,22 @@ def _enrich_one(s, tid, class_type_desc=""):
         labs = te.label_filenames(h1)
         try:
             from ttb_cola_labels import extract_upc_from_label, read_label_text
-            for i, fn in enumerate(labs[:2]):
+            texts, claim_set = [], set()
+            for fn in labs[:2]:                                  # front + back — gov warning is usually on the BACK
                 img = s.get(cola.ATTACH_URL, params={"filename": fn, "filetype": "l"}, timeout=45).content
                 if not upc:
                     u = extract_upc_from_label(img)              # barcode → UPC
                     if u:
                         upc = u
-                if i == 0:
-                    ocr = read_label_text(img)                  # Tesseract OCR the FRONT label → text fields
+                t = read_label_text(img)                         # Tesseract OCR the label → text fields
+                if t.get("ocr_chars"):
+                    texts.append(t["ocr_chars"])
+                    if t.get("gov_warning") and not ocr["gov_warning"]:
+                        ocr["gov_warning"] = t["gov_warning"]
+                    claim_set.update(c for c in (t.get("claims") or "").split("|") if c)
+            if texts:
+                ocr["ocr_chars"] = " ".join(texts)[:2000]
+                ocr["claims"] = "|".join(sorted(claim_set))
         except Exception:
             pass
     except Exception:
