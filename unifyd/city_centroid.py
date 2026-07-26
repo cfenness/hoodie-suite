@@ -33,6 +33,7 @@ _GAZ = {
 }
 _REF_TABLE = "city_centroids"
 _CACHE = {}                                                # {(STATE, citykey): (lat, lng)} — module-global
+_ALIAS = {}                                                # {(STATE, last_token): (lat, lng)} — unambiguous only
 
 # strip the LSAD noise so "St. Louis city" / "Nashville-Davidson metropolitan government" match "st louis" etc.
 _SUFFIX = re.compile(r"\b(city|town|village|borough|municipality|cdp|township|charter|metropolitan|"
@@ -101,14 +102,28 @@ def _load():
             _CACHE[(r["state"], r["city"])] = (r["lat"], r["lng"])
     except Exception:
         pass
+    # last-token alias for slug-truncated cities: DoorDash's city is the FINAL slug token ('los-angeles' ->
+    # 'angeles'), so index each place by its own last token — but ONLY where that (state, token) is unambiguous
+    # (one place). 'angeles'/'francisco'/'vegas'/'jose' resolve; 'beach'/'city'/'park' stay ambiguous (skipped).
+    amb = {}
+    for (st, ck), ll in _CACHE.items():
+        tok = ck.split()[-1] if ck else ""
+        if not tok or (st, tok) in _CACHE:                 # a real place already owns this exact name — leave it
+            continue
+        amb.setdefault((st, tok), set()).add(ll)
+    _ALIAS.clear()
+    _ALIAS.update({k: next(iter(v)) for k, v in amb.items() if len(v) == 1})
     return _CACHE
 
 
 def centroid(city, state):
-    """(lat, lng) for a city+state, or None. State may be a 2-letter code; city is fuzzily normalized."""
+    """(lat, lng) for a city+state, or None. State may be a 2-letter code; city is fuzzily normalized. Falls
+    back to the unambiguous last-token alias (for slug-truncated aggregator cities like 'angeles' -> LA)."""
     if not city or not state:
         return None
-    return _load().get((str(state).strip().upper(), _norm(city)))
+    _load()
+    st, ck = str(state).strip().upper(), _norm(city)
+    return _CACHE.get((st, ck)) or _ALIAS.get((st, ck))
 
 
 def geo_enrich_rows(rows, log=None):
@@ -140,7 +155,9 @@ def fast_geo_pass(limit=None, log=print):
     import refresh_fast
     _load()
     # geo_precision is added by the geo layer's first write — guard against a src_outlets that predates it.
-    gp = ("AND (geo_precision IS NULL OR geo_precision NOT IN ('exact', 'city', 'city_miss')) "
+    # Retry 'city_miss' rows (exclude only 'exact'/'city'): the pass is $0/no-fetch, so re-checking a miss against
+    # an improved reference (e.g. new last-token aliases) self-heals it — the permanent misses just re-miss.
+    gp = ("AND (geo_precision IS NULL OR geo_precision NOT IN ('exact', 'city')) "
           if warehouse.has_column("src_outlets", "geo_precision") else "")
     rows = warehouse.query(
         "src_outlets",
