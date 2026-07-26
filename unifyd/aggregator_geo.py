@@ -59,10 +59,13 @@ def _ue_slug_map(sites=("ubereats", "postmates")):
 def enrich_geo(limit=None, workers=None, log=print):
     limit = limit if limit is not None else int(os.environ.get("AGG_GEO_LIMIT", "800"))
     workers = workers or int(os.environ.get("AGG_GEO_WORKERS", "8"))
+    # NOTE: doordash is EXCLUDED for now — its src_outlets store_id is the name-slug, not the numeric id the
+    # store URL needs; mapping it requires reconciling to doordash_stores (which has the numeric id) first.
+    # ubereats/postmates store_id IS the store uuid, and the *_sitemap slug completes the URL → precise geo.
     rows = warehouse.query(
         "src_outlets",
         "SELECT * FROM t WHERE lat IS NULL AND (address IS NULL OR address = '') "
-        "AND source IN ('doordash', 'ubereats', 'postmates') "
+        "AND source IN ('ubereats', 'postmates') "
         "AND (addr_valid IS NULL OR addr_valid <> 'agg') LIMIT %d" % limit)
     if not rows:
         log("[agg-geo] no un-geocoded no-address aggregator outlets")
