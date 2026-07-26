@@ -79,11 +79,14 @@ def spawn(sid, image, klass, mem_hint=None):
     # per-source `mem` override (a registry field) wins — a pass that accumulates into a huge table needs
     # headroom the 4GB headless default can't give (e.g. ttb-enrich). Headful (mac) klass → 8gb for Chrome.
     mem = int(mem_hint) if mem_hint else (8192 if klass in _HEADFUL else 4096)
+    # Fly caps shared-CPU RAM at 2 GB × cpus, so a big accumulate (src_outlets is 1.76M rows → the whole-table
+    # merge peaks past 8 GB) needs the cpu count scaled up to unlock the memory. 8 shared cpus → 16 GB ceiling.
+    cpus = max(4, min(8, -(-mem // 2048)))
     config = {
         "image": image,
         "auto_destroy": True,                                # == flyctl --rm: Fly removes it when the cmd exits
         "restart": {"policy": "no"},
-        "guest": {"cpu_kind": "shared", "cpus": 4, "memory_mb": mem},
+        "guest": {"cpu_kind": "shared", "cpus": cpus, "memory_mb": mem},
         "metadata": {"role": "ephemeral-pull", "source": sid},
         "init": {"cmd": ["bash", "/app/unifyd/run_ephemeral.sh", sid]},
     }
