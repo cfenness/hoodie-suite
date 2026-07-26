@@ -148,6 +148,11 @@ SOURCES = [
          tables=["src_outlets"], klass="headless", cadence="daily", enabled=True, timeout=5400, mem=8192,
          note="automate lat/lng: free US Census batch-geocodes addressed-but-ungeocoded src_outlets → maps on "
               "the Coverage page; unmatched marked county_fips=00000 so they aren't retried. GEOCODE_LIMIT/run"),
+    dict(id="aggregator-geo", label="Aggregator geo (page-fetch)", code="import aggregator_geo as m; m.run()",
+         tables=["src_outlets"], klass="headless", cadence="daily", enabled=True, timeout=7200, mem=8192,
+         note="$0 page-fetch geo for the ~1.1M no-address aggregator outlets (doordash addr→geocode pass; "
+              "ubereats/postmates precise lat/lng). Marked addr_valid=agg once tried. Big crawl — chips away, "
+              "AGG_GEO_LIMIT/run"),
     dict(id="naop", label="NAOP on-premise", code="import doordash_naop as m; m.run()",
          tables=["naop_accounts", "naop_beverages"], klass="headless", cadence="daily", enabled=True, timeout=7200,
          note="DoorDash on-premise menus, $0 (ISP pool); consumes doordash_stores in NAOP_LIMIT batches"),
