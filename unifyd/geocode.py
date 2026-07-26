@@ -105,10 +105,12 @@ def geocode_src_outlets(limit=None, log=print):
     # Pick up rows with an address that are either un-geocoded (lat IS NULL) OR only city-approximated
     # (geo_precision='city') — the exact street geocode UPGRADES a city dot to a precise one. county_fips is
     # VARCHAR: '' = never tried, '00000' = tried-no-match (excluded so a bad address isn't geocoded forever).
+    latcond = ("(lat IS NULL OR geo_precision = 'city')"
+               if warehouse.has_column("src_outlets", "geo_precision") else "lat IS NULL")
     rows = warehouse.query(
         "src_outlets",
-        "SELECT * FROM t WHERE (lat IS NULL OR geo_precision = 'city') AND address IS NOT NULL AND address <> '' "
-        "AND (county_fips IS NULL OR county_fips = '') LIMIT %d" % limit)
+        "SELECT * FROM t WHERE %s AND address IS NOT NULL AND address <> '' "
+        "AND (county_fips IS NULL OR county_fips = '') LIMIT %d" % (latcond, limit))
     if not rows:
         log("[geocode] no un-geocoded addressed src_outlets — done")
         return 0

@@ -139,11 +139,13 @@ def fast_geo_pass(limit=None, log=print):
     limit = limit if limit is not None else int(os.environ.get("FAST_GEO_LIMIT", "250000"))
     import refresh_fast
     _load()
+    # geo_precision is added by the geo layer's first write — guard against a src_outlets that predates it.
+    gp = ("AND (geo_precision IS NULL OR geo_precision NOT IN ('exact', 'city', 'city_miss')) "
+          if warehouse.has_column("src_outlets", "geo_precision") else "")
     rows = warehouse.query(
         "src_outlets",
         "SELECT * FROM t WHERE lat IS NULL AND city IS NOT NULL AND city <> '' "
-        "AND state IS NOT NULL AND state <> '' "
-        "AND (geo_precision IS NULL OR geo_precision NOT IN ('exact', 'city', 'city_miss')) "
+        "AND state IS NOT NULL AND state <> '' " + gp +
         "LIMIT %d" % limit)
     if not rows:
         log("[fast-geo] no un-geocoded city+state src_outlets — done")

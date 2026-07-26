@@ -136,6 +136,8 @@ def _preserve_exact_geo(out, log=print):
     Census batch) but that this rebuild can't re-derive — they key off (source, store_id), not a cacheable
     address, so without this a rebuild would blank them. Only 'exact' rows are carried; 'city' approximations
     are re-derived fresh by the centroid pass, so we let them go."""
+    if not warehouse.has_column("src_outlets", "geo_precision"):
+        return                                             # table predates the geo layer — nothing to preserve
     try:
         prev = warehouse.query("src_outlets",
                                "SELECT source, store_id, CAST(lat AS DOUBLE) lat, CAST(lng AS DOUBLE) lng, "

@@ -61,10 +61,12 @@ def enrich_geo(limit=None, workers=None, log=print):
     # ship neither city nor address, only name+slug, so the store PAGE is the only geo source: fetch it. Skip
     # rows already pinned exact or already tried-empty ('agg_miss'). geo_precision (VARCHAR) is the marker —
     # NOT addr_valid, which is a BOOL (writing a string into it silently voided the whole prior write).
+    gp = ("AND (geo_precision IS NULL OR geo_precision NOT IN ('exact', 'agg_miss')) "
+          if warehouse.has_column("src_outlets", "geo_precision") else "")
     rows = warehouse.query(
         "src_outlets",
-        "SELECT * FROM t WHERE lat IS NULL AND source IN ('ubereats', 'postmates') "
-        "AND (geo_precision IS NULL OR geo_precision NOT IN ('exact', 'agg_miss')) LIMIT %d" % limit)
+        "SELECT * FROM t WHERE lat IS NULL AND source IN ('ubereats', 'postmates') " + gp +
+        "LIMIT %d" % limit)
     if not rows:
         log("[agg-geo] no un-geocoded no-address aggregator outlets")
         return 0
