@@ -33,7 +33,11 @@ def main():
         pass
     import run_sources
     import source_registry
-    src = next((s for s in source_registry.SOURCES if s["id"] == sid), None)
+    # Resolve the id in SOURCES first, then BUILDS — so a derived build (dim_sku chain, master_quality,
+    # item_identity, the canon head-to-head) runs on its OWN ephemeral machine too, off the Mac. run_one
+    # handles both (a build's `code` is `import X; m.build()`); the ledger treatment is identical.
+    src = (next((s for s in source_registry.SOURCES if s["id"] == sid), None)
+           or next((b for b in getattr(source_registry, "BUILDS", []) if b["id"] == sid), None))
     if not src:
         print("run_ephemeral: no source_registry entry %r" % sid)
         return 2
