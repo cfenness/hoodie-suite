@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Brand Finder - Powered by VIP</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="author" content="Vermont Information Processing, LLC">
+        <meta name="copyright" content="Vermont Information Processing, LLC">
+        <meta name="description" content="The easiest way to find beverage retailers near you. Powered by VIP.">
+        <meta name="keywords" content="Vermont Information Processing, beer finder, wine finder, locator, product finder, brand finder, route accounting system, beverage">
+        <meta name="robots" content="index,follow">
+        <meta name="MSSmartTagsPreventParsing" content="true">
+        <link rel="icon" type="image/svg+xml" href="https://images.vtinfo.com/vip/common/VIP_icon_color.svg">
+        <link rel="icon" type="image/svg+xml" href="https://images.vtinfo.com/vip/common/VIP_icon_white.svg" media="(prefers-color-scheme: dark)">
+
+        <!-- Stylesheets-->
+        
+            <link     rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"/>
+            
+            <link rel="stylesheet" type="text/css" href="/finder/css/finder-version-3.css?20260702_220108"/>
+        
+        
+        
+
+        <!-- Custom CSS URL overrides by customer and optionally territory/category -->
+        
+
+        <script>
+            try {
+                var defaultBrandSelection = null,
+                    defaultDataFilter = "",
+                    defaultMileSelection = "10",
+                    defaultStoreType = null,
+                    geolocate = true,
+                    defaultPackageSelection = null,
+                    themeVersion = 3,
+                    showCaptcha = false,
+                    suppressFocus = false,
+                    triggerSearch = false,
+                    mapStyle = null,
+                    mapStyleCode = "68eba8b7581bbd01",
+                    toggleList = false,
+                    toggleFilters = false,
+                    defaultAddress = null,
+                    defaultZip = null,
+                    onPremDescription = null,
+                    offPremDescription = null,
+                    menuConfiguration = [{"apiPropertyName":"brand","columnName":"BFBRCD","description":"Brand","menuPosition":1,"values":null},{"apiPropertyName":"type","columnName":"BFPTYP","description":"Package Type","menuPosition":2,"values":null}],
+                    CSRFToken = "NmOF3BWKIHN8Yi8AzCBfJlgeNBhrxeoQ95cATaAiLiagsInIGdmRKM3NQjxeRjXhkgdglSkLYCY1U\/JWTuovV3OE2+AY9dEiRABWVsWKONd9tWZAdfexH3QJlrbj+jzR0IMri1E=,yFxPsxMXGfoWua3D",
+                    analytics = "GA",
+                    selectedOnPremMapIcon = null,
+                    selectedOffPremMapIcon = null,
+                    brandDescription = null,
+                    brandCode = null,
+                    useOnlineVendor = false;
+
+                // 1-indexed
+                var defaultCategorySelections = [];
+                defaultCategorySelections[1]  = null;
+                defaultCategorySelections[2]  = null;
+                defaultCategorySelections[3]  = null;
+                defaultCategorySelections[4]  = null;
+                defaultCategorySelections[5]  = null;
+                defaultCategorySelections[6]  = null;
+                defaultCategorySelections[7]  = null;
+                defaultCategorySelections[8]  = null;
+                defaultCategorySelections[9]  = null;
+                defaultCategorySelections[10] = null;
+                defaultCategorySelections[11] = null;
+                defaultCategorySelections[12] = null;
+                var defaultCatSelectionExists = defaultCategorySelections.filter(x => x).length;
+
+                var categoryFilters = [];
+                categoryFilters[1] = null
+                categoryFilters[2] = null
+                categoryFilters[3] = null
+                categoryFilters[4] = null
+                categoryFilters[5] = null
+                categoryFilters[6] = null
+                categoryFilters[7] = null
+                categoryFilters[8] = null
+                categoryFilters[9] = null
+                categoryFilters[10] = null
+                categoryFilters[11] = null
+                categoryFilters[12] = null
+                var categoryFilterExist = categoryFilters.filter(x => x).length;
+
+
+            } catch(err) {
+                console.error('unable to parse some Hosted input: ', err);
+            }
+        </script>
+
+        <!-- GA4 and UA - Events go direct to both accounts -->
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-EN680XYZL3"></script>
+        <script>
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config','G-EN680XYZL3');
+            gtag('config','UA-24683454-26');
+        </script>
+
+        <!-- Event forwarding to parent page. (For customers using GTM) More info at https://www.simoahava.com/analytics/cookieless-tracking-cross-site-iframes/ -->
+        
+
+        
+
+    </head>
+    <body id="finder_body" class="SUPP_SNB THEME_bs-default">
+
+        
+            <div id="finder_content" class="container-fluid d-flex flex-column">
+    <main id="finder_main" class="flex-grow-1 d-flex flex-column">
+        <section id="finder_cards" class="d-flex flex-column card shadow" aria-label="Product finder form and results container">
+
+            <!-- Search form -->
+            <form name="finder" id="finder_form" class="form-horizontal" aria-label="Brand finder search form">
+                <input type="hidden" name="custID"
+                       value="SNB"/>
+                <input type="hidden" name="action" value="results"/>
+
+                <!-- Address/Zip input -->
+                <div class="mb-3 form-group" id="form-group-near">
+                    <label class="control-label" for="finder_address">Near</label>
+                    <div class="input-group">
+                        <!-- geolocation button to find near me -->
+                        <button id="finder_geolocation_button"
+                                class="btn btn-secondary svg_icon_container svg_icon_small_container"
+                                type="button" title="Use my location" aria-label="Use my Location">
+                            <svg class="svg_icon icon_find_near_me" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+<path d="m176 256c0-44.2 35.8-80 80-80s80 35.8 80 80-35.8 80-80 80-80-35.8-80-80zm80-256c17.7 0 32 14.33 32 32v34.65c80.4 13.49 143.9 76.95 157.3 157.35h34.7c17.7 0 32 14.3 32 32s-14.3 32-32 32h-34.7c-13.4 80.4-76.9 143.9-157.3 157.3v34.7c0 17.7-14.3 32-32 32s-32-14.3-32-32v-34.7c-80.4-13.4-143.86-76.9-157.35-157.3h-34.65c-17.67 0-32-14.3-32-32s14.33-32 32-32h34.65c13.49-80.4 76.95-143.86 157.35-157.35v-34.65c0-17.67 14.3-32 32-32zm-128 256c0 70.7 57.3 128 128 128s128-57.3 128-128-57.3-128-128-128-128 57.3-128 128z"/>
+</svg>
+                        </button>
+
+                        <!-- If searchType == 'ZIP' -->
+                        
+
+                        <!-- If searchType == 'ADDR' -->
+                        <input id="finder_address" type="text" name="d"
+                               value="" size="25" class="form-control" maxlength="50"
+                               placeholder="Address or ZIP Code" aria-label="Address or ZIP Code" required="true" aria-required="true"/>
+                    </div>
+
+                    <input type="hidden" id="finder_coords_lat"/>
+                    <input type="hidden" id="finder_coords_lng"/>
+
+                </div>
+
+                <!-- Mile radius selector -->
+                <div class="mb-3 form-group" id="form-group-within">
+                    <label class="control-label" for="miles">Within</label><br>
+                    <div id="miles" class="btn-group" role="radiogroup" aria-label="Search radius">
+                        
+                        <input type="radio" class="btn-check" name="m" id="miles1" value="1" autocomplete="off" aria-label="1 mile">
+                        <label class="btn btn-outline-secondary" for="miles1">1 MI</label>
+
+                        <input type="radio" class="btn-check" name="m" id="miles5" value="5" autocomplete="off" aria-label="5 miles">
+                        <label class="btn btn-outline-secondary" for="miles5">5 MI</label>
+
+                        <input type="radio" class="btn-check" name="m" id="miles10" value="10" autocomplete="off" aria-label="10 miles" checked="checked">
+                        <label class="btn btn-outline-secondary" for="miles10">10 MI</label>
+
+                        <input type="radio" class="btn-check" name="m" id="miles50" value="50" autocomplete="off" aria-label="50 miles">
+                        <label class="btn btn-outline-secondary" for="miles50">50 MI</label>
+
+                        <input type="radio" class="btn-check" name="m" id="miles100" value="100" autocomplete="off" aria-label="100 miles">
+                        <label class="btn btn-outline-secondary" for="miles100">100 MI</label>
+                    </div>
+                </div>
+
+                <!-- Captcha -->
+                <div class="finder_captcha">
+                    <div class="h-captcha" data-theme="light" data-sitekey="0e5ebf48-ca12-4d81-9a68-5e62213c491a"></div>
+                </div>
+
+                <div class="form-group clearfix" id="form-group-submit">
+
+                    <!-- COT (location type) icon checkbox -->
+                    <div class="form-group btn-group float-start" id="form-group-at" role="group" aria-label="On or Off Premise">
+                        <input class="form-check-input btn-check" type="checkbox" name="storeType" value="on" aria-label="On Premise Checkbox"
+                               id="finder_bar_checkbox">
+                        
+                        <label class="cot_checkbox form-check-label btn btn-outline-secondary" for="finder_bar_checkbox" id="on_prem_toggle"
+                               title="Toggle Location Type: Bars and Restaurants">
+                            <div class="svg_icon_container svg_icon_small_container">
+                                
+                                <svg class="svg_icon on_prem_icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-labelledby="on_prem_toggle" aria-hidden="true" >
+<path d="m432 96h-48v-32c0-17.67-14.33-32-32-32h-288c-17.67 0-32 14.33-32 32v352c0 35.35 28.65 64 64 64h224c35.35 0 64-28.65 64-64v-32.08l80.66-35.94c28.84-12.88 47.34-41.48 47.34-72.98v-99c0-44.2-35.8-80-80-80zm-272 272c0 8.9-7.1 16-16 16s-16-7.1-16-16v-224c0-8.9 7.1-16 16-16s16 7.1 16 16v224zm64 0c0 8.9-7.1 16-16 16s-16-7.1-16-16v-224c0-8.9 7.1-16 16-16s16 7.1 16 16v224zm64 0c0 8.875-7.125 16-16 16s-16-7.1-16-16v-224c0-8.9 7.1-16 16-16s16 7.1 16 16v224zm160-93c0 6.25-3.75 12-9.5 14.62l-54.5 24.28v-153.9h48c8.9 0 16 7.1 16 16v99z"/>
+</svg>
+                            </div>
+                        </label>
+
+                        <input class="form-check-input btn-check" type="checkbox" name="storeType" value="off" aria-label="Off Premise Checkbox"
+                               id="finder_store_checkbox">
+                        
+                        <label class="cot_checkbox form-check-label btn btn-outline-secondary" for="finder_store_checkbox" id="off_prem_toggle"
+                               title="Toggle Location Type: Retail Stores">
+                            <div class="svg_icon_container svg_icon_small_container">
+                                <svg class="svg_icon icon_store" viewBox="0 0 640 512" xmlns="http://www.w3.org/2000/svg" aria-labelledby="off_prem_toggle" aria-hidden="true">
+<path d="m0 155.2c0-7.3 2.153-14.4 6.188-20.5l75.562-113.33c8.9-13.349 23.85-21.37 39.95-21.37h396.6c16.1 0 31 8.021 39.9 21.37l75.6 113.33c4 6.1 6.2 13.2 6.2 20.5 0 20.3-16.5 36.8-36.8 36.8h-566.36c-20.34 0-36.84-16.5-36.84-36.8h-3e-4zm64 68.8h64v160h192v-160h64v240c0 26.5-21.5 48-48 48h-224c-26.51 0-48-21.5-48-48v-240zm448 0h64v256c0 17.7-14.3 32-32 32s-32-14.3-32-32v-256z"/>
+</svg>
+                            </div>
+                        </label>
+                    </div>
+
+                    <!-- Filter and Search buttons -->
+                    <div class="float-end" id="filter_search">
+                        <input type="button" value="FILTER..." aria-label="Toggle additional filters" title="Toggle additional filters"
+                               aria-controls="finder_filters" class="search btn btn-raised btn-outline-primary" id="filterBtn" name="filterBtn"/>
+                        <!-- Input disabled attribute thymeleaf checks if a default address or zip is set and enables the search button on page load if true -->
+                        <input type="submit" value="SEARCH" aria-label="Search"
+                               class="search btn btn-raised btn-primary" id="submitBtn" name="submitBtn"
+                               disabled/>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div id="finder_filters" class="mt-3 d-none">
+                    <div class="mb-3 form-group form-floating" id="form-group-BFBRCD">
+                        
+                        <select name="brand"
+                                id="finder_BFBRCD"
+                                data-field="BFBRCD"
+                                data-menunumber="1"
+                                data-default="Any Brand"
+                                aria-label="Brand"
+                                class="form-control finder_dynamic_menu filter-options"
+                                title="Loading"
+                                disabled>
+                            <option value="">Any Brand</option>
+                            
+                        </select>
+                        <label for="finder_BFBRCD">Brand</label>
+                    </div>
+                    <div class="mb-3 form-group form-floating" id="form-group-BFPTYP">
+                        
+                        <select name="type"
+                                id="finder_BFPTYP"
+                                data-field="BFPTYP"
+                                data-menunumber="2"
+                                data-default="Any Package Type"
+                                aria-label="Package Type"
+                                class="form-control finder_dynamic_menu filter-options"
+                                title="Loading"
+                                disabled>
+                            <option value="">Any Package Type</option>
+                            
+                        </select>
+                        <label for="finder_BFPTYP">Package Type</label>
+                    </div>
+                    
+                    <!-- Apply/Clear filters -->
+                    <div id="form-group-apply" class="float-end">
+                        <div class="float-end">
+                            <input type="button" value="Clear All" aria-label="Reset filters" class="btn btn-link" id="resetBtn" name="resetBtn"/>
+                            <input type="submit" value="APPLY" aria-label="Apply filters" class="btn btn-raised btn-outline-primary" id="applyBtn" name="applyBtn" disabled/>
+                        </div>
+                    </div>
+                </div>
+            </form>
+
+            <hr id="form-results-divider" class="d-none"/>
+
+            <!-- Locations/Map/Online navigation -->
+            <nav>
+                <ul id="finder_results_nav_container" class="nav nav-tabs nav-fill d-none" role="tablist">
+                    <li id="finder_locations_tab" class="nav-item" role="presentation">
+                        <button id="locations_tab_button" class="nav-link secondary-nav" data-bs-toggle="tab"
+                                data-bs-target="#panel_search_results" type="button" role="tab"
+                                aria-label="Locations results list in order of increasing distance" aria-controls="panel_search_results"
+                                aria-selected="true">Locations</button>
+                    </li>
+                    <li id="finder_map_tab" class="nav-item" role="presentation">
+                        <button id="map_tab_button" class="nav-link secondary-nav active" data-bs-toggle="tab"
+                                data-bs-target="#map_tab_content" type="button" role="tab"
+                                aria-label="Locations results on map" aria-controls="map_tab_content"
+                                aria-selected="false">Map</button>
+                    </li>
+                    
+                </ul>
+            </nav>
+
+            <!-- Due to the behavior of Boostrap toggling the CSS display value on tab selection, this persistent
+            live-region element is needed to announce the number of results for screen readers -->
+            <div id="announceResults" class="visually-hidden" role="status" aria-live="polite" aria-relevant="all"></div>
+
+            <!-- Results -->
+            <section id="finder_results" class="tab-content d-none flex-grow-1" aria-label="Search results">
+                <!-- List results -->
+                <div id="panel_search_results" class="tab-pane fade" role="tabpanel" aria-labelledby="locations_tab_button"></div>
+                <!-- Map results (empty placeholder for bootstrap to toggle) -->
+                <div id="map_tab_content" class="tab-pane fade show active" role="tabpanel" aria-labelledby="map_tab_button"></div>
+                <!-- Online vendor results -->
+                
+            </section>
+        </section>
+
+        <!-- Map -->
+        <section id="map_canvas" class="flex-grow-1" aria-hidden="true"></section>
+    </main>
+    <!-- Footer - will be dynamically inserted into map on initialization -->
+    <div id="finder_footer" class="gm-style-cc vip-custom-footer" style="display: none;">
+        <span>
+    <a href="//public.vtinfo.com/?from=BRANDFINDER&amp;who=SNB" title="Provider of beverage industry solutions" target="_blank" rel="noopener noreferrer">
+        <img src="https://images.vtinfo.com/vip/common/VIP_icon_color.svg" alt="VIP Logo" height="12" width="12" class="finder_vip_logo">
+        Powered By VIP
+    </a>
+    ©<span>2026</span> &nbsp;
+    <a href ="https://www.vtinfo.com/documents/VIPWidgetPrivacyStatement.html" title="View our Privacy Policy" target="_blank" rel="noopener noreferrer">
+        Privacy Policy
+    </a>
+    &mdash;
+</span>
+    </div>
+</div>
+
+        
+        
+        
+
+        <!-- GA4/UA for customer -->
+        <script>
+            if ('' !== '' && ('GA' == 'GA')) {
+                gtag('config', '', {
+                    'linker': {
+                        'accept_incoming': true //cross-domain measurement
+                    },
+                    'custom_map': {
+                        'dimension15': 'Account',
+                        'dimension16': 'DataFilter',
+                        'dimension17': 'Territory'
+                    },
+                    'cookie_flags': 'secure;samesite=none',
+                    'anonymize_ip': true
+                });
+            }
+            gtag('event', 'dimensions', {
+                'Account': 'SNB',
+                'DataFilter': '',
+                'Territory': ''
+            });
+        </script>
+
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.1/jquery.min.js"></script>
+
+        
+            
+            <script src="/finder/js/bootstrap-5.1.3.bundle.min.js?20260702_220108"></script>
+            <script src="https://maps.googleapis.com/maps/api/js?v=quarterly&amp;key=AIzaSyAlvmeLYmrzjboc5BYtZ87uSO_416zneCY&amp;map_ids=68eba8b7581bbd01&amp;libraries=marker"></script>
+            <script>
+                try {
+                    // Last modified cache-busting dates for use in finder-version-3.js
+                    var whitePinDate = 20260727_123231,
+                        redPinDate = 20260727_123231,
+                        redBeerPinDate = 20260702_220108,
+                        redWinePinDate = 20260702_220108,
+                        redSpiritPinDate = 20260702_220108,
+                        redNonalcPinDate = 20260702_220108,
+                        whiteBeerPinDate = 20260702_220108,
+                        whiteWinePinDate = 20260702_220108,
+                        whiteSpiritPinDate = 20260702_220108,
+                        whiteNonalcPinDate = 20260702_220108;
+                } catch(err) {
+                    console.error('unable to parse some Hosted input: ', err);
+                }
+            </script>
+            <script src="/finder/js/finder-version-3-lib.js?20260702_220108"></script>
+            <script src="/finder/js/finder-version-3.js?20260702_220108"></script>
+        
+        
+    </body>
+</html>

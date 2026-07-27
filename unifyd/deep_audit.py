@@ -44,6 +44,15 @@ FIXTURE_CHECKS = [
          run="import json, cpi_ref as c; rows, warns = c.parse([json.loads(html)]); result=(len(rows), {'warns': warns[:3]})"),
     dict(id="fred", fixture="fixtures/fred_sample.json", min_rows=100,
          run="import json, fred_ref as f; rows = f.parse('MRTSSM4453USN', json.loads(html)); result=(len(rows), {})"),
+    # the whole census rests on one discriminator: a miss page carries "Invalid customer ID". If that
+    # sentinel ever moves, every id reads as a hit — so pin BOTH sides against frozen pages.
+    dict(id="vip-finder-hit", fixture="fixtures/vip_finder_snb.html", min_rows=1,
+         run=("import vip_finder_census as v; rec, tok = v.parse_tenant('snb', html); "
+              "result=(1 if (tok and '\\\\/' not in tok and rec['theme_version']) else 0, "
+              "{'theme': rec['theme_version'], 'menus': rec['menu_fields']})")),
+    dict(id="vip-finder-miss", fixture="fixtures/vip_finder_miss.html", min_rows=1,
+         run=("import vip_finder_census as v; "
+              "result=(1 if v.parse_tenant('zzz', html) is None else 0, {'sentinel': v.MISS_SENTINEL})")),
 ]
 
 DOC_FILES = ["CLAUDE.md", "README.md", "SPINE.md"]
