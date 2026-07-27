@@ -13,6 +13,11 @@ only manual input is APP_ONLY_CONN — the set of app connIds that legitimately 
 (state license portals, parked recon, affiliate APIs), each with the reason it's exempt. Adding an exemption is
 a conscious, reviewed decision; forgetting to classify a new conn fails the test.
 
+It also enforces COMPLETENESS (check 6): every ENABLED source_registry id must be runnable from the app — in
+VALID_CONNS (the `| _REGISTRY_IDS` union) and routed via the registry (server._dispatch_pull's universal rule:
+any conn that is a registry id runs through run_one). So a brand-new registry source is app-runnable the day
+its row lands, with no hand-wiring, and can't silently drift out of reach.
+
 Run: python3 unifyd/dispatch_guard_test.py   (exit 0 = clean, 1 = drift found). Also importable as test_*.
 Deterministic + offline: imports source_registry (light) and server (module-level only, no network).
 """
@@ -32,7 +37,7 @@ MUST_ROUTE_VIA_REGISTRY = {"abc-fws", "specs", "binnys", "walmart", "kroger", "t
 #   - app-only sources with NO source_registry entry (state license portals, parked recon, affiliate API);
 #   - a conn whose id is NOT a registry id, so there is nothing to drift against.
 # A registry-owned source id (one that appears in source_registry AND is runnable by the app) may NOT sit here
-# — it must route via the registry. The lone documented exception is target (see below), a real follow-up.
+# — it must route via the registry.
 APP_ONLY_CONN = {
     "instacart":        "parked recon, no registry entry (not reliably landing)",
     "orlando-accounts": "FL ABT on-premise accounts (places.py), no registry entry",
@@ -43,7 +48,7 @@ APP_ONLY_CONN = {
     "doordash":         "DoorDash geo merchant sweep, no registry entry",
     "google":           "Google Maps hours/coverage enrich, no registry entry",
     # NOTE: 'target' and 'ttb-cola' were removed here — they ARE registry ids and now route via the registry
-    # (server._dispatch_pull universal rule). Their old target_pull/cola_pull copies are dead and being deleted.
+    # (server._dispatch_pull universal rule). Their old target_pull/cola_pull copies are dead and deleted.
 }
 
 
@@ -106,13 +111,28 @@ def main():
             fails.append("'%s' is runnable (VALID_CONNS) but unclassified — it will route via the registry only "
                          "if it's a registry id; otherwise document it in APP_ONLY_CONN with a reason" % cid)
 
+    # 6. COMPLETENESS (the fix for a NEW registry source being silently unrunnable from the app): every ENABLED
+    #    registry source must be runnable — in VALID_CONNS (the `| _REGISTRY_IDS` union on server.VALID_CONNS)
+    #    and routed via the registry (guaranteed once it's a registry id — see routes_via_registry). Drop the
+    #    `| _REGISTRY_IDS` from VALID_CONNS and this fails — so a future distributor recipe (vip-brandbuilder /
+    #    sevenfifty) is app-runnable the day its source_registry row lands, with zero hand-wiring.
+    enabled_ids = sorted(s["id"] for s in reg.SOURCES if s.get("enabled"))
+    for cid in enabled_ids:
+        if cid not in valid:
+            fails.append("enabled registry source '%s' is NOT runnable from the app (missing from VALID_CONNS) — "
+                         "restore `| _REGISTRY_IDS` on VALID_CONNS" % cid)
+        elif not routes_via_registry(cid) and cid not in APP_ONLY_CONN:
+            fails.append("enabled registry source '%s' is runnable but does NOT route via the registry — "
+                         "the universal check in server._dispatch_pull is missing" % cid)
+
     if fails:
         print("DISPATCH GUARD FAILED (%d):" % len(fails))
         for f in fails:
             print("  ✗ " + f)
         return 1
-    print("dispatch guard OK — %d conns route through the registry, %d documented app-only, no drift"
-          % (len(conn_map), len(APP_ONLY_CONN)))
+    print("dispatch guard OK — %d conns explicitly registry-routed, %d documented app-only, all %d enabled "
+          "registry sources app-runnable via the universal registry route, no drift"
+          % (len(conn_map), len(APP_ONLY_CONN), len(enabled_ids)))
     return 0
 
 

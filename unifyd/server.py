@@ -49,6 +49,7 @@ import ab_locator                    # Anheuser-Busch InBev retailer locator (be
 import warehouse                    # Parquet-on-Tigris (or local) queried by DuckDB
 import upc                          # UPC/EAN QC + owned prefix->owner crosswalk (deterministic + inference)
 import auth_gate                    # Google OIDC login gate (active only when configured)
+import source_registry             # THE canonical source list — /api/run dispatch is derived from it (no drift)
 
 APP_DIR   = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.join(APP_DIR, "agent_state"); os.makedirs(STATE_DIR, exist_ok=True)
@@ -86,23 +87,34 @@ class _JobLogHandler(logging.Handler):
 _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
+# Every source_registry id is a valid connId (the /api/run gate + UI 'runnable' flag accept it) — so a source
+# the registry owns is runnable from the app the day it lands, without editing this set. This is what the
+# universal registry check in _dispatch_pull needs to be reachable; dispatch_guard_test asserts every enabled
+# registry id is here (check 6, COMPLETENESS).
+_REGISTRY_IDS = {s["id"] for s in source_registry.SOURCES}
 VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
                "kroger", "walmart", "walmart-api", "target", "doordash", "google",
                "ubereats", "postmates", "naop", "meijer", "trader-joes",
                # bounded, manual-trigger-only registry entries (source_registry.py, all enabled=False) —
                # reachable via /api/run for the one-off runs they're built for, never the automatic scan.
+               # (Also already covered by the `| _REGISTRY_IDS` union below — kept explicit for clarity/history.)
                "ubereats-full", "postmates-full", "doordash-full",
-               "instacart-bevalc"} | set(socrata_outlets.VALID)
+               "instacart-bevalc"} | set(socrata_outlets.VALID) | _REGISTRY_IDS
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
 
+# SINGLE SOURCE OF TRUTH: sources the registry owns run THROUGH the registry entrypoint (run_one), never a
+# hand-maintained *_pull copy — so a fix in source_registry can never be silently bypassed by the app path
+# (the drift that made "we fixed it 100 times" literally true — see _REGISTRY_CONN / dispatch_guard_test).
 def _dispatch_pull(conn, body):
     # SINGLE SOURCE OF TRUTH: **any** source that exists in source_registry runs THROUGH the registry entrypoint
     # (run_one) — never a hand-maintained *_pull copy. A fix in source_registry therefore applies to the app path
     # automatically and can NEVER be silently bypassed by a stale bespoke copy. This universal rule (not just the
     # _REGISTRY_CONN allowlist) is the real cure for "we fixed it N times and it reverted": the app can no longer
-    # run an old copy of a registry source. Enforced by dispatch_guard_test.
+    # run an old copy of a registry source — this is also what makes every newly enabled registry source
+    # app-runnable the day it lands, with zero hand-wiring (VALID_CONNS' `| _REGISTRY_IDS` union is the other
+    # half). Enforced by dispatch_guard_test.
     import source_registry as _reg
     if conn in _REGISTRY_CONN or _reg.by_id(conn):
         return _run_via_registry(conn, body)
@@ -259,8 +271,11 @@ def walmart_api_pull(body):
     return _std_run("walmart-api", started, total=n, trigger=body.get("trigger", "manual"),
                     extracts=[{"id": "walmart_products", "rows": n, "delta": 0, "status": "success"}])
 
-# _CONN_PULL holds ONLY non-registry conns. Registry sources (kroger/walmart/target/…) run via the registry
-# path — their old *_pull copies were DELETED, not just unwired. dispatch_guard_test blocks re-adding one.
+# _CONN_PULL holds ONLY non-registry conns. Registry sources (kroger/walmart/target/ttb-cola/…) run via the
+# registry path — their old *_pull copies were DELETED, not just unwired. dispatch_guard_test blocks re-adding
+# one. instacart/orlando-accounts/census-acs/tx-tabc/il-chicago/ct-dcp are NON-registry app-only pulls dispatched
+# directly by the ternary chain in _dispatch_pull (not a table here) — see APP_ONLY_CONN in dispatch_guard_test.py
+# for why each is exempt from the registry route.
 _CONN_PULL = {"walmart-api": walmart_api_pull,   # NON-registry conns only (target now routes via the registry)
               "doordash": doordash_pull, "google": google_pull}
 
