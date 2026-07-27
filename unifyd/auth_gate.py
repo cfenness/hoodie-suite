@@ -86,9 +86,46 @@ def enabled():
     return bool(cid and secret and sess)
 
 
-def _allowed_emails():
-    raw = os.environ.get("ALLOWED_EMAILS", "")
+# ── Access model ────────────────────────────────────────────────────────────────────────────────────
+# Two tiers: ADMINS (manage the allowlist + the admin console) and ALLOWED users (get in). The effective
+# allowlist is the UNION of three sources, so the admin UI can add users without a redeploy AND a bad edit
+# can never lock everyone out or open the gate:
+#   1. ALLOWED_EMAILS env  — the immutable "bootstrap" list (set via `flyctl secrets`).
+#   2. a runtime provider   — the UI-managed list server.py registers (durable admin_allowlist.json).
+#   3. the admins           — always allowed, so an admin can never lock themselves out.
+_DEFAULT_ADMIN = "chris.fennessey1@gmail.com"     # fail-safe owner: admin even if ADMIN_EMAILS is unset
+_allow_provider = None
+
+
+def _admin_emails():
+    """The admin set (manage users + admin console). ADMIN_EMAILS env override; defaults to the owner so
+    admin access can't be accidentally removed."""
+    raw = os.environ.get("ADMIN_EMAILS", "").strip()
+    if not raw:
+        return {_DEFAULT_ADMIN}
     return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def is_admin(email):
+    return bool(email) and str(email).strip().lower() in _admin_emails()
+
+
+def set_allowlist_provider(fn):
+    """server.py registers a 0-arg callable returning the UI-managed emails (durable state). A hook, so
+    auth_gate stays free of any warehouse/state dependency."""
+    global _allow_provider
+    _allow_provider = fn
+
+
+def _allowed_emails():
+    emails = {e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()}
+    if _allow_provider:
+        try:
+            emails |= {str(e).strip().lower() for e in (_allow_provider() or []) if str(e).strip()}
+        except Exception:
+            pass                                   # store unreachable -> env + admins (fail safe, never lock out)
+    emails |= _admin_emails()                       # admins are always allowed
+    return emails
 
 
 def _redirect_uri():
@@ -150,6 +187,11 @@ def init(app):
         p = request.path
         if p in _PUBLIC:
             return
+        print("AUTHDEBUG _gate: path=%r has_email=%r session_keys=%r cookie_present=%r ua=%r"
+              % (p, bool(session.get("email")), list(session.keys()),
+                 bool(request.cookies.get(app.config.get("SESSION_COOKIE_NAME", "session"))),
+                 request.headers.get("User-Agent", "")[:60]),
+              flush=True)
         if session.get("email"):
             return
         # mobile bearer token (native apps have no cookie)
@@ -159,6 +201,13 @@ def init(app):
         # data ingestion: any script can POST to /api/ingest/* with the shared INGEST_TOKEN
         _ingest = os.environ.get("INGEST_TOKEN", "")
         if p.startswith("/api/ingest/") and _ingest and auth == "Bearer " + _ingest:
+            return
+        # non-browser agent access: server.py's own AGENT_TOKEN check never runs today because this
+        # gate (registered first) already rejects the request before that later before_request fires.
+        # Honor it HERE instead, for the whole /api/* surface — matching server.py's own comment that
+        # AGENT_TOKEN "gates /api/* for non-browser callers."
+        _agent = os.environ.get("AGENT_TOKEN", "")
+        if p.startswith("/api/") and _agent and auth == "Bearer " + _agent:
             return
         if p.startswith("/api/"):
             return jsonify(ok=False, error="unauthorized"), 401
@@ -193,9 +242,14 @@ def init(app):
             abort(404)
         import requests
         err = request.args.get("error")
+        print("AUTHDEBUG callback: incoming state=%r session_had_state=%r cookie_present=%r"
+              % (request.args.get("state"), session.get("oauth_state"),
+                 bool(request.cookies.get(app.config.get("SESSION_COOKIE_NAME", "session")))), flush=True)
         if err:
+            print("AUTHDEBUG callback: google returned error=%r" % err, flush=True)
             return _deny("Google returned: %s" % err)
         if request.args.get("state") != session.pop("oauth_state", None):
+            print("AUTHDEBUG callback: STATE MISMATCH", flush=True)
             return _deny("state mismatch — please try signing in again.")
         code = request.args.get("code")
         if not code:
@@ -216,13 +270,16 @@ def init(app):
             email = verify_claims(claims, cid, _allowed_emails(),
                                   session.pop("oauth_nonce", None))
         except ValueError as e:
+            print("AUTHDEBUG callback: verify_claims/ValueError: %r" % str(e), flush=True)
             return _deny(str(e))
         except Exception as e:
+            print("AUTHDEBUG callback: exception: %r" % str(e), flush=True)
             return _deny("sign-in failed: %s" % (str(e)[:200]))
         session["email"] = email
         dest = session.pop("next", "/") or "/"
         if not dest.startswith("/"):
             dest = "/"                       # only ever redirect to our own paths
+        print("AUTHDEBUG callback: SUCCESS email=%r dest=%r" % (email, dest), flush=True)
         return redirect(dest)
 
     @app.get("/auth/logout")
@@ -232,9 +289,10 @@ def init(app):
 
     @app.get("/auth/me")
     def auth_me():
-        # Public: lets the UI decide whether to show a "Sign out" control. Reveals only
-        # the already-signed-in account's own email (or null); no info leak when gate is off.
-        return jsonify(gated=enabled(), email=session.get("email"))
+        # Public: lets the UI decide whether to show a "Sign out" control + admin-only tiles. Reveals only
+        # the already-signed-in account's own email + admin status (or null); no info leak when gate is off.
+        em = session.get("email")
+        return jsonify(gated=enabled(), email=em, is_admin=is_admin(em))
 
     @app.post("/api/auth/mobile")
     def auth_mobile():

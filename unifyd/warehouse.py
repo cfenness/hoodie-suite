@@ -90,18 +90,64 @@ def uri(name):
 
 def row_count(name):
     """Current row count of `<name>` — from the layout manifest when the table is bucketed (v2),
-    else via its Parquet FOOTER only (cheap — never reads data). 0 if absent/unreadable."""
+    else via its Parquet FOOTER only (cheap — never reads data). 0 when the table is genuinely
+    ABSENT.
+
+    A TRANSIENT read error (Tigris timeout / dropped part / 503) is RETRIED, not silently reported
+    as 0. A false 0 here poisons everything downstream: a healthy pull whose after-count blipped got
+    recorded 'empty' or a -N 'clobber' (e.g. haskells 10518->0 while the Parquet was intact — the
+    Mac's flakier S3 reads made this routine), and every console/health verdict is built on this
+    count. On a PERSISTENT non-absence read failure it raises RowCountUnavailable so callers can tell
+    'unknown' from 'empty' (run_sources then trusts the prior count instead of fabricating a drop)."""
     man = read_manifest(name)
     if man and man.get("layout") == "bucketed":
         return sum(int(p.get("rows") or 0) for p in (man.get("parts") or {}).values())
     import pyarrow.parquet as pq
-    try:
-        u = uri(name)
+    u = uri(name)
+    def _read():
         if u.startswith("s3://"):
             return pq.read_metadata(u[5:], filesystem=_s3fs()).num_rows
         return pq.read_metadata(u).num_rows
+    try:
+        return _retry(_read, "row_count %s" % name)
     except Exception:
-        return 0
+        return 0                                        # display-safe fallback (contract unchanged)
+
+
+class RowCountUnavailable(Exception):
+    """The row count could not be read (transient/unknown storage error) — NOT proof of an empty table."""
+
+
+def _is_absent(e):
+    """True when the storage error means the object genuinely does not exist (a real 0), vs a
+    transient/unknown failure (which must never be conflated with empty)."""
+    if isinstance(e, FileNotFoundError):
+        return True
+    m = str(e)
+    return any(s in m for s in ("404", "NoSuchKey", "does not exist", "Path does not exist",
+                                "NotFound", "No such file", "not found"))
+
+
+def row_count_strict(name):
+    """Like row_count but RAISES RowCountUnavailable on a persistent non-absence read failure instead
+    of returning 0 — so the run-ledger path can tell 'unknown' from 'empty' and never fabricate a
+    clobber/empty from a transient storage blip (the haskells 10518->0 false report). Genuine absence
+    still returns a real 0."""
+    man = read_manifest(name)
+    if man and man.get("layout") == "bucketed":
+        return sum(int(p.get("rows") or 0) for p in (man.get("parts") or {}).values())
+    import pyarrow.parquet as pq
+    u = uri(name)
+    def _read():
+        if u.startswith("s3://"):
+            return pq.read_metadata(u[5:], filesystem=_s3fs()).num_rows
+        return pq.read_metadata(u).num_rows
+    try:
+        return _retry(_read, "row_count %s" % name)
+    except Exception as e:
+        if _is_absent(e):
+            return 0
+        raise RowCountUnavailable("%s: %s" % (name, str(e)[:120]))
 
 
 def write_parquet(name, records, fields=None, allow_empty=False):
@@ -158,14 +204,23 @@ def write_accumulate(name, records, key, fields=None):
         return {"rows": 0, "uri": uri(name)}
     man = read_manifest(name)
     if man and man.get("layout") == "bucketed":
-        return _accumulate_bucketed(name, man, records)
+        res = _accumulate_bucketed(name, man, records)
+    else:
+        try:
+            existing = query(name, "SELECT * FROM t")
+        except Exception:
+            existing = []
+        ks = {key(r) for r in records}
+        merged = [e for e in existing if key(e) not in ks] + records
+        res = write_parquet(name, merged, fields=fields)
+    # Coverage telemetry: record how many distinct items/stores THIS write touched (the honest per-run
+    # signal a cumulative merge can't give). Best-effort AFTER the write — must never affect the landing.
     try:
-        existing = query(name, "SELECT * FROM t")
+        import coverage as _cov
+        _cov.record_write(name, records, key=key, result=res)
     except Exception:
-        existing = []
-    ks = {key(r) for r in records}
-    merged = [e for e in existing if key(e) not in ks] + records
-    return write_parquet(name, merged, fields=fields)
+        pass
+    return res
 
 
 def _s3fs():
@@ -345,6 +400,17 @@ def connect():
         if thr and str(thr).isdigit():
             con.execute("SET threads=%d;" % int(thr))
     return con
+
+
+def has_column(name, col):
+    """True if table `name` has column `col`. Cheap (reads the schema, LIMIT 0). Used to guard queries that
+    reference a newly-added column against tables written before that column existed (e.g. geo_precision on a
+    src_outlets that predates the geo layer — the column only appears after the first write that includes it)."""
+    try:
+        query(name, "SELECT %s FROM t LIMIT 0" % col)
+        return True
+    except Exception:
+        return False
 
 
 def query(name, sql=None, params=None):

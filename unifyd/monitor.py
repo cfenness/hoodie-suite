@@ -73,7 +73,7 @@ _SOURCE_DEFS = [
     (("cityhive",),        "cityhive",    "City Hive network",         "off-premise"),
     (("offprem",),         "offprem",     "Off-premise sweep",         "off-premise"),
     (("bevalc_chains", "bev_alc_chains"), "chains-catalog", "Chain reachability catalog", "reference"),
-    (("shopify",),         "shopify",     "Shopify DTC",               "off-premise"),
+    (("shopify", "national_shopify"), "shopify", "Shopify (census sweep)", "off-premise"),
     (("bottlecapps", "national_bottlecapps"), "bottlecapps", "Bottlecapps network", "off-premise"),
     (("bbg",),             "bbg",         "BBG e-commerce",            "off-premise"),
     (("winebow",),         "winebow",     "Winebow (distributor)",     "distributor"),
@@ -394,11 +394,23 @@ def build(record_history=True, hist_cap=60):
         # health status. Only PULL-cadence sources get a health verdict (is data coming in?). Derived outputs
         # (master dims, conformed grain, reference, run logs, staging) are marked "derived" — not a health signal.
         if grp in ("scrape", "accounts", "timeseries"):
-            if run and (run.get("status") in ("error", "failed") or run.get("degraded")):
-                status = "degraded" if run.get("degraded") and run.get("status") not in ("error", "failed") else "error"
+            # DATA FRESHNESS WINS. The ledger's last-run row is an ATTEMPT record, not the health verdict — a run
+            # can 403/timeout while the data landed fine within the cadence window (from that attempt or an earlier
+            # one). Marking such a source "error" because the newest ledger row failed is what made the console
+            # misleading (Uber Eats/Postmates/Off-premise sweep: hours-fresh data shown as failed). So: if the data
+            # is FRESH, the source is healthy — only surface "degraded" when the run itself flagged a partial parse
+            # (honest: e.g. specs coverage-shortfall). A failed run only becomes "error"/"stale" once the data has
+            # actually gone stale. run_status is still carried on the record for drill-down either way.
+            run_degraded = bool(run and run.get("degraded") and run.get("status") not in ("error", "failed"))
+            run_failed = bool(run and run.get("status") in ("error", "failed"))
+            fresh = age is not None and age <= STALE_S
+            if fresh:
+                status = "degraded" if run_degraded else "ok"
+            elif run_failed or run_degraded:
+                status = "degraded" if run_degraded else "error"
             elif age is not None and age > STALE_S:
                 status = "stale"
-            elif (run and run.get("status") in ("ok", "success")) or rows > 0:
+            elif rows > 0:
                 status = "ok"
             else:
                 status = "unknown"
@@ -513,6 +525,37 @@ def build(record_history=True, hist_cap=60):
         r["obs_rows"] = o["rows"]
         r["obs_latest"] = o["latest"]
 
+    # SOURCE-LEVEL verdict must agree with the freshness we DISPLAY for the source. Worst-of-datasets made a
+    # source "stale" the moment one old one-off sub-table existed, so the console showed "modified 4h ago" next
+    # to "stale" — the exact contradiction that eroded trust. Recompute each roster status from the source's
+    # freshest activity (its newest table OR its newest observation part) using the same freshness-first rule as
+    # the per-dataset verdict: fresh data ⟹ healthy (degraded only if a dataset flagged a partial parse); a
+    # failed/old run only downgrades to error/stale once the source's freshest data has itself gone stale.
+    import calendar as _cal
+    for r in roster.values():
+        mod = r.get("modified")
+        ol = r.get("obs_latest")
+        if ol:                                            # fold in the newest observation date as freshness too
+            try:
+                oe = _cal.timegm(time.strptime(ol, "%Y-%m-%d")) + 86400   # end-of-that-day
+                if mod is None or oe > mod:
+                    mod = oe
+            except Exception:
+                pass
+        age = (now - mod) if mod else None
+        was_degraded = r.get("status") == "degraded"      # a dataset flagged a partial parse (honest signal)
+        run_failed = (r.get("run_status") or "") in ("error", "failed")
+        if age is not None and age <= STALE_S:
+            r["status"] = "degraded" if was_degraded else "ok"
+        elif run_failed or was_degraded:
+            r["status"] = "degraded" if was_degraded else "error"
+        elif age is not None and age > STALE_S:
+            r["status"] = "stale"
+        elif r["rows"] > 0:
+            r["status"] = "ok"
+        else:
+            r["status"] = "unknown"
+
     roster = sorted(roster.values(), key=lambda r: (r["modified"] or 0), reverse=True)
     for r in roster:
         r["dataset_count"] = len(r["datasets"])
@@ -561,9 +604,25 @@ def build(record_history=True, hist_cap=60):
     except Exception as e:
         dispatcher = {"error": str(e)[:150]}
 
+    # ── cost ledger (NRT-PLAN §6): the recurring-bill-stays-near-zero claim, as a number. A compact
+    # summary rides in the snapshot; a failure here must never break the manifest. Computed inside the
+    # cached build (one grouped query over the ledger), so it's not paid per /api/monitor poll.
+    cost = {}
+    try:
+        import cost_ledger
+        rep = cost_ledger.report(window_days=30)
+        cost = {"total_usd_mo": rep["totals"]["total_usd_mo"], "compute_usd_mo": rep["totals"]["compute_usd"],
+                "infra_usd_mo": rep["totals"]["infra_usd"], "machine_hours": rep["totals"]["machine_hours"],
+                "by_class": rep["by_class"], "rates": rep["rates"],
+                "top": [{"source": r["source"], "cost_class": r["cost_class"], "total_usd_mo": r["total_usd_mo"],
+                         "machine_hours": r["machine_hours"], "runs": r["runs"], "rows_added": r["rows_added"]}
+                        for r in rep["sources"] if r["total_usd_mo"] > 0][:12]}
+    except Exception as e:
+        cost = {"error": str(e)[:150]}
+
     return {"as_of": now, "live": True, "warehouse": wh, "build_ms": round((time.time() - now) * 1000),
             "totals": totals, "connectors": connectors, "roster": roster, "sources": sources,
-            "dispatcher": dispatcher,
+            "dispatcher": dispatcher, "cost": cost,
             "observations": {k: {"rows": o["rows"], "latest": o["latest"], "table": o["table"],
                                  "parts": o["parts"]} for k, o in observations.items()}}
 

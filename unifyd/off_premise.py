@@ -24,6 +24,13 @@ import cocktail_taxonomy as ctx      # bev_category / beer_style
 STORES = {
     "haskells": {"name": "Haskell's", "base": "https://www.haskells.com", "platform": "bigcommerce"},
 }
+# Shopify brand/retailer domains run through the Shopify recipe (/products.json is open → $0). Migrated from
+# the retired standalone shopify_scraper.py so Shopify lives inside the census sweep, not as a parallel source.
+# National retailer discovery is the Maps census (run_census) + optional OFFPREM_SERP signature sweep; this
+# seed is the known-brand floor. SHOPIFY_DOMAINS env extends/overrides it.
+SHOPIFY_SEED = [d.strip() for d in os.environ.get(
+    "SHOPIFY_DOMAINS", "drinkbrez.com,drinkcann.com,cornbreadhemp.com,hopwtr.com,drinkolipop.com"
+).split(",") if d.strip()]
 
 _BC_TITLE = re.compile(r'"og:title"[^>]*content="([^"]+)"|property="og:title"[^>]*content="([^"]+)"', re.I)
 _BC_PRICE = re.compile(r'(?:og:price:amount|product:price:amount)"[^>]*content="([\d.]+)"', re.I)
@@ -825,12 +832,23 @@ def discover_stores(query, pages=4, log=print):
 
 
 def national_sweep(platform, log=print):
-    """Discover every store on a platform nationally (by signature) + run its recipe -> national_<platform>_products."""
+    """Run a platform's recipe across its national footprint -> national_<platform>_products.
+
+    Domains = a curated SEED (always; catalog endpoints like Shopify /products.json are open → $0) PLUS
+    optional SERP signature discovery (discover_stores → Bright Data, METERED) gated behind OFFPREM_SERP=1,
+    so the default run costs nothing. This is where the retired standalone shopify_scraper.py folded in:
+    Shopify is now part of the census sweep, seeded from SHOPIFY_SEED, not a parallel source."""
     key = _bd_key()
     sig = {"bottlecapps": '"powered by bottlecapps" OR "bottlecapps" liquor wine spirits order online',
-           "cityhive": '"powered by city hive" liquor wine spirits'}
-    domains = discover_stores(sig.get(platform, platform), log=log)
-    log("[national] %s: %d candidate store domains" % (platform, len(domains)))
+           "cityhive": '"powered by city hive" liquor wine spirits',
+           "shopify": '"powered by shopify" liquor OR wine OR beer OR spirits order online'}
+    seed = {"shopify": SHOPIFY_SEED}.get(platform, [])
+    serp_on = os.environ.get("OFFPREM_SERP") == "1"
+    serp = discover_stores(sig.get(platform, platform), log=log) if serp_on else []
+    domains = sorted(dict.fromkeys(
+        [(d if d.startswith("http") else "https://" + d) for d in seed] + serp))
+    log("[national] %s: %d store domains (%d seed + %d serp%s)"
+        % (platform, len(domains), len(seed), len(serp), "" if serp_on else "; SERP off — $0"))
     rows, hit = [], 0
     for d in domains:
         try:

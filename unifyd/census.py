@@ -106,6 +106,29 @@ def pull(state=None, log=print):
     log("census: %d counties across %s → 3 packs, status %s" % (n, states, st_status))
     return datasets, [run], {"sampled": n}
 
+def build(state=None, log=print):
+    """Land the ACS packs to the warehouse — census_demographic / census_economic / census_housing,
+    each county-keyed by geoid — so census-acs runs on the REGISTRY path (run_sources.run_one) like
+    every other source instead of only populating the in-memory console preview. Uses
+    write_accumulate (never write_parquet): a re-pull replaces each county's row and keeps the rest,
+    so a partial/errored per-state pull can't shrink a good table. An all-empty pull RAISES (missing/
+    invalid CENSUS_API_KEY or API down) rather than landing 0 rows over a populated table."""
+    import warehouse
+    datasets, _runs, _ = pull(state=state, log=log)
+    landed, total = [], 0
+    for did, d in datasets.items():
+        rows = [dict(zip(d["header"], r)) for r in d.get("_rows_full", [])]
+        if not rows:
+            continue
+        res = warehouse.write_accumulate(did, rows, key=lambda r: r["geoid"], fields=d["header"])
+        total += res["rows"]; landed.append(did)
+        log("%s: %d rows -> %s" % (did, res["rows"], res.get("uri", "")))
+    if not landed:
+        raise RuntimeError("census-acs build: 0 counties landed (missing/invalid CENSUS_API_KEY or the "
+                           "Census API is down) — refusing to land empty ACS tables")
+    return {"rows": total, "datasets": landed}
+
+
 def main(argv=None):
     ds, runs, _ = pull()
     print(json.dumps({k: v for k, v in runs[0].items() if k != "extracts"}, indent=2))

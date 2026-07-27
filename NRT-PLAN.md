@@ -89,7 +89,8 @@ Three roles, each on the cheapest hardware that does the job:
   adopt only when (a) request-path queries need cross-grain joins partition pruning can't
   serve, or (b) >2–3 concurrent heavy readers, or (c) worker builds exceed ~1h despite
   partitioning. Until then the Parquet layout above is deliberately Snowflake-loadable
-  (same partitioning maps to clustering keys), so migration is a load, not a rewrite.
+  (same partitioning maps to clustering keys), so migration is a load, not a rewrite —
+  that load is staged in `snowflake/` (registry-driven DDL + `COPY`; the seed to Unifyd).
 
 ---
 
@@ -169,7 +170,7 @@ cost proportional to **what changed**, not what exists.
 | **3** | Master builds wired to the dispatcher (§4 as re-scoped by §8c) — **BUILT** (`BUILDS` registry: build-outlets + build-product-master run when an upstream source lands new rows, min-gap throttled, Mac-tick only so dim_* keeps one writer; deep incrementalism stays hoodie-canon's) | master starts tracking sources automatically |
 | **4** | SipSource ingest + marts (§1d) — **SIMULATED & PROVEN** (`sipsource_sim.py` synthetic feed + `sipsource_ingest.py` marts; feed lands hive-partitioned period×market, raw NEVER served, dimension-BOUNDED marts). Proof at 50M→100M: raw doubles, serving mart stays 9.13M→9.24M (1.01×), conservation exact, scoped query ~30ms, 500M extrapolates to ~9.5GB raw / ~1–3min worker rebuild. `build-sipsource-marts` wired in the registry (disabled until the real feed lands). | lands on infrastructure already sized for it |
 | **5** | Hot-tier promotion (diff recipes hourly) + freshness UI (§3, §5) | the visible "near real time" payoff |
-| **6** | Cost ledger + SLO alerting (§6) | keeps the extended cost provably minimal |
+| **6** | Cost ledger + SLO alerting (§6) — **BUILT** (`cost_ledger.py`: MEASURED machine-hours + rows/run from the ledger, MODELED infra $ by registry `cost_class` env-rated; surfaced in the Data Console cost strip via `monitor.build().cost`). Live verdict: ~$49.50/mo, ALL infra ($0 compute on free Mac+Actions), concentrated in 4 bd/proxy sources — the near-zero principle made verifiable. SLO breaches already surface via §5's slo_counts. | keeps the extended cost provably minimal |
 
 **Standing decision gates:** Snowflake (§2 criteria) and any always-on compute >1 machine —
 both require the gate to be demonstrably hit, documented in this file, before spending.
@@ -239,3 +240,87 @@ exists to prevent. Re-scope:
   `source_runs` — all sources green before the next migration step proceeds.
 - **Fly deploy order**: suite merge → Fly healthy (`/api/health`, dashboard loads) → then
   and only then the next table migration.
+
+---
+
+## 9. What comes after NRT
+
+All six phases above are built (2026-07-24). The machine runs itself; the next campaign makes what
+it produces the measured best of its peers — velocity engine calibrated against actual state sales,
+proven master precision, honest projection, survivability. See **MOAT-PLAN.md**.
+
+---
+
+## 10. Scale corrections — SipSource raw tiers & master fan-in (2026-07-24)
+
+Two corrected planning numbers, from the operator:
+- **300–600M rows is SipSource's MOST AGGREGATED tier.** The underlying raw runs to **trillions of
+  records**. Which tier we ingest depends on what we buy — the architecture must be sized for the
+  worst case, not the sample.
+- **Master intake: ~200–300M source item records → 800k–1.3M master items** (~240:1 fan-in).
+
+### 10a. The feed pyramid, at measured constants (~18.4 B/row zstd; 5M rows/s object-storage-bound)
+
+| Raw tier | Parquet | Tigris $/mo | Full pass (1 worker) | Monthly increment (1/37th) |
+|---|---|---|---|---|
+| 500M (aggregated — **proven**) | 9.2 GB | ~$0.18 | minutes | seconds |
+| 10B | 184 GB | ~$3.70 | 0.6 h | ~2 min |
+| 100B | 1.8 TB | ~$37 | 5.6 h | ~12 min |
+| 1T | 18.4 TB | ~$368 | 55.6 h | **1.5 h** |
+
+**The rules that make even the trillion tier survivable:**
+1. **No job ever passes over full raw.** Everything is per-period incremental; the monthly
+   increment at trillion-total is ~27B rows ≈ 1.5h on one worker — inside free Actions limits.
+2. **The one full-history pass (initial backfill) is DECOMPOSED by period** — ~37 jobs of ≤1.5–6h
+   each, run as an Actions matrix. Even a trillion-row backfill fits free compute; it is never one
+   big job on a big machine.
+3. **Three-layer pyramid, each bounded:** raw-as-delivered (cold archive, touched once per drop) →
+   **working grain** (item×market×month ≈ 0.2–2.4B rows, 4–45GB — worker-side drill-downs) →
+   serving marts (~9–50M, dimension-bounded — the ONLY thing the site reads). The 100M-row proof's
+   bounded-mart property is exactly what makes serving immune to raw-tier choice.
+4. **Gate updates:** Tigris leaves the free tier at ~250GB raw (~$5/mo — fine; $368/mo at 1T is a
+   real line item on the cost ledger, still incumbent-impossible). The Snowflake/ClickHouse gate
+   gains a concrete trigger: **a per-period increment exceeding ~6h on the largest viable worker.**
+
+### 10b. Master fan-in at ~240:1 — the staged collapse
+
+A couple hundred million item records are mostly **per-store/per-source repeats of the same ~1M
+items** — so the fan-in is dominated by deterministic keys, and the expensive machinery only ever
+sees the hard tail:
+
+| Stage | Mechanism | In → out (est.) | Cost class |
+|---|---|---|---|
+| 0 | SQL exact collapse on normalized UPC/GTIN (checkless-13 heals etc.) | 250M → ~30–80M residual | pure DuckDB, minutes |
+| 1 | Deterministic composite key (brand_norm + size_ml + class) | residual → ~5–15M clusters | pure DuckDB, minutes |
+| 2 | Blocked similarity within (brand, category, size-band); price-coherence + category-tree scorers auto-accept/reject | ambiguous band only → ≤1–2M pairs | SQL + batch LLM (one-time, ~$100s) |
+| 3 | Human exception queue, ranked impact × uncertainty | thousands, not millions | steward time |
+
+- **Boundary (ADR-001 unchanged):** stages 0–2 scoring are warehouse-side SQL pushdown in unifyd;
+  the durable identity engine for the hard tail is **hoodie-canon's charter**. unifyd hands canon
+  ~5–15M collapsed clusters — never 300M raws.
+- **Explicit flag:** today's `build_product_master.py` materializes source tables into Python row
+  loops — correct at current volumes, **below this scale by design**. The staged collapse above is
+  its successor path; do not grow the Python loop toward 200M.
+- **Performance targets (scoreboard rows):** cold full re-master ≤ one weekend on one worker;
+  daily incremental master cycle ≤ 10 min; both measured, not asserted.
+
+### 10c. Paid levers are pre-engineered, not forbidden (posture, 2026-07-24)
+
+Free-first is the operating posture for collection and current volumes — **not an ideology at
+scale**. At the trillion tier, paid DB/server levers are assumed available, priced into Hoodie's
+platform economics, and — the load-bearing part — **already seamed**, so pulling one is a config
+change or a load, never a re-architecture:
+
+- **Snowflake:** the full warehouse load is generated, staged SQL (`snowflake/build_snowflake_sql.py`
+  — RAW landing via INFER_SCHEMA so scraper drift flows through, the typed MASTER star, MART views;
+  `--live` resolves bucketed v2 tables through their manifests). The §2 promise ("migration is a
+  load, not a rewrite") is now built, not aspirational.
+- **Server side:** the worker rate is already an env in the cost ledger (`COST_WORKER_USD_PER_HR`);
+  adopting a paid 16–32 vCPU worker — or Snowflake warehouse-seconds — changes a *rate*, and the
+  scoreboard keeps pricing it honestly.
+
+So the decision gates in §2/§10a now read as **timing triggers with pre-built exits**: they decide
+*when* a lever gets pulled (per-period increment > ~6h; request-path joins beyond pruning;
+concurrency), not *whether* spending is allowed. The cost ledger's job is unchanged — keep the bill
+a number on a dashboard — but at SipSource-raw scale that number is expected to include paid DB and
+compute, and the architecture was built so that day is boring.

@@ -261,15 +261,13 @@ counts, fill %, top values across every record) plus a browsable row sample.
 ## The MDM console and the suite app (decided)
 
 `hoodie_mdm.html` lives here as the engine's **local, agent-backed console** (served by
-`server.py`). It has also been **promoted into the suite** as `../apps/mdm-master.html` —
-the same control plane re-served under suite wiring (`../suite.css`, `../spine/spine.js`,
-`../suite-header.js`), reading `/api/*` with the embedded `DATASETS` as the offline
-fallback. It is the **Master** tab of the suite's MDM console (`../apps/mdm.html`, which
-also hosts Catalog · Pulls · Ingestion). That promotion replaced the old `apps/item-mdm.html`.
-
-The two surfaces share one `/api/*` contract: `apps/mdm-master.html` is the deployed suite view
-(offline fallback when no backend is up); `hoodie_mdm.html` here is the always-live local
-view the agent serves. Keep them in sync if you change the control-plane UI.
+`server.py`). It was once promoted into the suite as `apps/mdm-master.html` (the same
+control plane re-served under suite wiring), which served as the Master tab of the
+suite's MDM console (`../apps/mdm.html`). That copy has since been **superseded** by the
+matching workbench (`../apps/master-match.html`) as the console's Master page and is
+archived at `../apps/_archive/mdm-master.html`. `hoodie_mdm.html` here remains the
+always-live local view the agent serves; the suite's MDM console reads the same
+`/api/*` contract through its own section apps.
 
 ## Deploying the agent as the `/api/*` backend
 

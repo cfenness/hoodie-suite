@@ -1,0 +1,115 @@
+name: warm-sources
+
+# The browser-warmed anti-bot sources, IN THE CLOUD (retiring the Mac-only + manual-cookie path for these).
+# Kroger (internal atlas) and Walmart (PerimeterX) need a real browser to mint a trusted session; browser_warm
+# does that headless under Xvfb with real google-chrome-stable + an ISP-pool exit IP, so the cookie is warmed
+# FRESH each run instead of a human pasting KROGER_COOKIE / WALMART_COOKIE that then goes stale.
+#
+# Runs BEFORE the daily read so the morning Snowflake load sees fresh Kroger/Walmart data.
+#
+# Repo secrets used (Settings → Secrets and variables → Actions):
+#   TIGRIS_ACCESS_KEY_ID / TIGRIS_SECRET_ACCESS_KEY   warehouse (Parquet on Tigris) — required
+#   ISP_PROXIES        IPRoyal ISP pool, comma-separated host:port:user:pass — the residential exit IP
+#                      (a datacenter IP gets scored down by PX/Imperva). First entry → BROWSER_PROXY.
+#   KROGER_STORE / KROGER_FACILITY   which store's on-hand to pull (config, NOT stale) — Kroger skips
+#                      honestly if unset. WALMART needs no store (national search).
+# NO KROGER_COOKIE / WALMART_COOKIE secret needed anymore — that's the whole point; the cookie is warmed.
+
+# SCHEDULE REMOVED — the hourly Fly dispatcher (unifyd/dispatch_ephemeral.py) owns scheduling now;
+# the cookie-warming sources it covers are dispatched as klass="mac"/headful ephemeral machines.
+# This cron ran daily against a repo with no Actions minutes, so it only produced failures.
+# Kept dispatch-only as a manual escape hatch.
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "which to run (both | kroger | walmart)"
+        default: "both"
+
+concurrency:
+  group: warm-sources
+  cancel-in-progress: false
+
+env:
+  AWS_ENDPOINT_URL_S3: https://fly.storage.tigris.dev
+  BUCKET_NAME: hoodie-suite-warehouse
+  AWS_REGION: auto
+  AWS_ACCESS_KEY_ID: ${{ secrets.TIGRIS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.TIGRIS_SECRET_ACCESS_KEY }}
+  # browser_warm reads these: real Chrome, headful under Xvfb (best anti-bot trust on a datacenter host).
+  BROWSER_CHANNEL: chrome
+  BROWSER_HEADFUL: "1"
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: System deps — Chrome + Xvfb
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb wget gnupg
+          wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt-get install -y -qq ./google-chrome-stable_current_amd64.deb
+          google-chrome --version
+
+      - name: Python deps
+        run: pip install --quiet playwright pyarrow duckdb requests curl_cffi
+
+      # A persistent browser profile survives across runs → the site trusts the returning profile and
+      # challenges less (browser_warm builds trust in user_data_dir). Best-effort cache.
+      - name: Cache browser profiles
+        uses: actions/cache@v4
+        with:
+          path: ~/.hoodie_browser_profiles
+          key: hoodie-browser-profiles-${{ github.run_id }}
+          restore-keys: hoodie-browser-profiles-
+
+      - name: Guard — warehouse creds present
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::Tigris creds missing. Add TIGRIS_ACCESS_KEY_ID / TIGRIS_SECRET_ACCESS_KEY."
+            exit 1
+          fi
+
+      - name: Derive BROWSER_PROXY from the ISP pool (first entry)
+        env:
+          ISP_PROXIES: ${{ secrets.ISP_PROXIES }}
+        run: |
+          if [ -n "$ISP_PROXIES" ]; then
+            first="${ISP_PROXIES%%,*}"                         # host:port:user:pass
+            IFS=':' read -r h p u pw <<< "$first"
+            echo "BROWSER_PROXY=http://$u:$pw@$h:$p" >> "$GITHUB_ENV"
+            echo "using ISP exit IP $h:$p"
+          else
+            echo "::warning::ISP_PROXIES unset — warming from the datacenter IP (more likely to be challenged)."
+          fi
+
+      - name: Walmart (warm PX session, in-page fetch)
+        if: ${{ github.event.inputs.source == '' || contains('both walmart', github.event.inputs.source) }}
+        continue-on-error: true
+        working-directory: unifyd
+        run: |
+          xvfb-run -a python -u -c "import walmart_direct as m; m.pull(detail_pages=True, detail_cap=600, browse=True)"
+
+      - name: Kroger (warm session cookie, atlas per-store on-hand)
+        if: ${{ github.event.inputs.source == '' || contains('both kroger', github.event.inputs.source) }}
+        continue-on-error: true
+        working-directory: unifyd
+        env:
+          KROGER_STORE: ${{ secrets.KROGER_STORE }}
+          KROGER_FACILITY: ${{ secrets.KROGER_FACILITY }}
+        run: |
+          xvfb-run -a python -u -c "import kroger_atlas as m; m.main([])"
+
+      - name: Run summary
+        if: always()
+        working-directory: unifyd
+        run: |
+          python -c "import warehouse; [print('  %-24s %s rows' % (t, warehouse.row_count(t))) for t in ['walmart_products','kroger_atlas_products']]" || true

@@ -380,6 +380,7 @@
     {id:'menu-analytics',name:'Menu Analytics',desc:"On-premise menu intelligence — brand-call rates, cocktail classification & trends by region, from menu scrapes.",group:'Signal Stack',status:'beta',file:'apps/menu-analytics.html',mark:'MA'},
     {id:'price-index',name:'Price Index',desc:"A bev-alc CPI from shelf prices — basket, category sub-indices, dispersion, promo intensity & premiumization. No sales data.",group:'Signal Stack',status:'beta',file:'apps/price-index.html',mark:'PI'},
     {id:'market',name:'Market Intelligence',desc:"The whole outlet landscape of a metro — retail & on-premise vs Google coverage.",group:'Signal Stack',status:'beta',file:'apps/market.html',mark:'MI'},
+    {id:'demand',name:'Trade-Area Demand',desc:"Alcohol demand $ for any ZIP, county, or state — CEX spend-by-income × ACS households with the on/off-premise split, checked against Economic Census observed receipts. No sales data.",group:'Signal Stack',status:'beta',file:'apps/demand.html',mark:'TD'},
     {id:'planogram',name:'Planogram',desc:"Count a store's facings (or a photo) vs the market benchmark — voids & over-space.",group:'Signal Stack',status:'beta',file:'apps/planogram-repcount.html',mark:'PG'},
     {id:'planogram-shelf',name:'Planogram · Shelf',desc:'The market shelf by category · stretch / eye level / reach — visual reference',group:'Commercial',status:'beta',file:'apps/planogram-shelf.html',mark:'SH',parent:'planogram'},
     {id:'crm',name:'Hoodie Relations',desc:'Industry-associations CRM',group:'Commercial',status:'beta',file:'apps/crm.html',mark:'HR'},
@@ -389,6 +390,7 @@
     {id:'overlay',name:'Overlay Your Data',desc:"Drop a CSV — Claude reads it and surfaces what it is and what's worth pulling.",group:'Commercial',status:'beta',file:'apps/overlay.html',mark:'OV'},
     {id:'order-hub',name:'Order Hub',desc:"Ingest a pile of inbound supplier menus (any CSV/XLSX format) → one order page → refill each original file with the order & stage to send.",group:'Commercial',status:'beta',file:'apps/order-hub.html',mark:'OH'},
     {id:'presenter',name:'Presenter',desc:"Speaker's workbench · run a demo",group:'Presentation',status:'beta',file:'apps/presenter.html',mark:'PR'},
+    {id:'velocity',name:'Velocity',desc:"Implied sell-through from per-store inventory deltas — distribution voids to close now, brand movers, every number with its confidence. The signal SipSource can't produce.",group:'Signal Stack',status:'beta',file:'apps/velocity.html',mark:'VL'},
     {id:'data-console',name:'Data Console',desc:"Inspect everything we pull — every source, account & master dim with real counts, freshness & health, live from the warehouse.",group:'Data Operations',status:'beta',file:'apps/data-console.html',mark:'DC'},
     {id:'sources',name:'Sources',desc:"Discover & add new sources — Claude turns a URL into data + a reusable scrape recipe. Catalog = the sources you've added in Pulls.",group:'Data Operations',status:'beta',file:'apps/sources.html',mark:'SR'},
     {id:'estate3d',name:'Estate',desc:"The data estate as a 3D object — spin, fly, focus a node.",group:'Platform',status:'beta',file:'apps/estate-3d.html',mark:'3D'},
@@ -406,7 +408,7 @@
     {id:'bev-icons',name:'Beverage Icons',desc:'Original category icon set · anonymous position grid',group:'Internal',status:'internal',file:'apps/bev-icons.html',mark:'BI'},
     {id:'prism',name:'Prism',desc:'Mobile · every cut of your book + the pulse feed (installable)',group:'Internal',status:'beta',file:'apps/prism.html',mark:'PM'},
     {id:'device-preview',name:'Device Preview',desc:'Render any app in phone/tablet frames (iOS/Android) · demo view',group:'Internal',status:'internal',file:'apps/device-preview.html',mark:'DP'},
-    {id:'admin',name:'Admin Console',desc:'Usage reporting · app registry & flags · access · data-ops',group:'Internal',status:'internal',file:'apps/admin.html',mark:'AD'},
+    {id:'admin',name:'Admin Console',desc:'Usage reporting · app registry & flags · access · data-ops',group:'Internal',status:'internal',file:'apps/admin.html',mark:'AD',adminOnly:true},
     {id:'spinedemo',name:'Spine Adapter',desc:'Reference · how apps join the spine',group:'Platform',status:'internal',file:'apps/spine-adapter.html',mark:'SP'}
   ];
   const GROUPS=['Signal Stack','Commercial','Presentation','Data Operations','Internal','Platform','Learning'];
@@ -480,7 +482,8 @@
 
   /* ============ admin: feature flags (app visibility) + usage beacon ============ */
   let APP_FLAGS={apps:{},features:{}};
-  const appHidden=a=>!!(a&&APP_FLAGS.apps[a.id]&&APP_FLAGS.apps[a.id].hidden);
+  let IS_ADMIN=false;   // set from /auth/me; admin-only tiles stay hidden until confirmed (never flash to non-admins)
+  const appHidden=a=>!!(a&&((APP_FLAGS.apps[a.id]&&APP_FLAGS.apps[a.id].hidden)||(a.adminOnly&&!IS_ADMIN)));
   const appStatus=a=>((APP_FLAGS.apps[a.id]&&APP_FLAGS.apps[a.id].status)||a.status);   // admin status override
   let lastLoggedApp=null;
   function logUsage(id){
@@ -948,12 +951,14 @@
     setTimeout(function(){ document.addEventListener('click',acctDoc,true); },0);
   }
   fetch('/auth/me').then(r=>r.json()).then(m=>{
+    IS_ADMIN = !!(m && (m.is_admin || !m.gated));   // gate off (local dev) -> show everything, incl. admin-only
     if(m && m.gated && m.email){
       var b=document.getElementById('acctBtn');
       b.textContent=acctInitials(m.email); b.style.display=''; b.title='Signed in as '+m.email;
       b.onclick=function(e){ e.stopPropagation(); openAcct(m.email); };
       document.getElementById('signout').style.display='none';   // the avatar replaces the text link
     }
+    renderNav(); renderGrid();   // re-render now that admin-only visibility is known
   }).catch(()=>{});
 </script>
 </body>

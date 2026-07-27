@@ -1,4 +1,5 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!doctype html><html lang="en"><head>
+<script src="../spine/session-guard.js"></script><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Retail Intelligence</title>
 <style>
   :root{
@@ -136,4 +137,15 @@ async function doCompare(q){
       +'<td class="count">'+(r.stores||1)+'</td></tr>').join('')+'</tbody></table>';
 }
 render();
-</script></body></html>
+</script>
+<!-- shared-subject adoption: a global subject (e.g. "Tito's") from the Retail Intelligence workspace filters this app -->
+<script src="../spine/spine.js"></script>
+<script>
+try{ HoodieSpine.connect({name:"Retail Intelligence", onContext:function(c){
+  var n = c && c.scope && c.scope.name; if(!n) return;
+  try{ if(typeof setTab==="function") setTab("compare"); }catch(e){}
+  var el=document.getElementById("cq"); if(el) el.value=n;
+  try{ if(typeof doCompare==="function") doCompare(n); }catch(e){}
+}}); }catch(e){}
+</script>
+</body></html>

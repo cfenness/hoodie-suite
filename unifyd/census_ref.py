@@ -1,4 +1,4 @@
-"""census_ref.py — U.S. Census supply-side reference layer (CBP / Nonemployer / SUSB / PEP).
+"""census_ref.py — U.S. Census reference layer: CBP / Nonemployer / PEP (supply-side) + ACS (demand-side).
 
 A REFERENCE/dimension layer for the MDM: aggregate counts by geography + NAICS, joined to entity
 tables (permits, products, retailers, territories) at QUERY TIME by geo/NAICS — never a baked FK.
@@ -8,7 +8,9 @@ drinking places, for on-premise). Free Census API — no scrape — but now need
 ALL requests (keyless -> 302 missing_key). Stores to the warehouse (Parquet/DuckDB).
 
 Parses by HEADER NAME (array-of-arrays, header row first) so it survives Census's column reshuffles.
-build() runs the four datasets → long/tall rows; query() reads them back by dataset/geo/naics/metric.
+build() runs CBP/Nonemployer/PEP/ACS(featured)/Economic-Census → long/tall census_reference rows;
+query() reads them back by dataset/geo/naics/metric. build_acs() separately sweeps ALL ~1,193 ACS5
+detailed tables into census_acs; build_flows() lands county-to-county migration into census_migration.
 Suppression (cells Census withholds for confidentiality) is a flagged state, never treated as 0.
 """
 import os, re, sys, json, time, urllib.request, urllib.parse
@@ -21,15 +23,13 @@ CBP_YEAR, NONEMP_YEAR, PEP_YEAR = 2022, 2019, 2019
 REF_HEADER = ["dataset", "vintage_year", "naics_code", "geo_level", "geo_fips",
               "metric_name", "metric_value", "suppressed", "source_pulled_at"]
 
-# ── Market-size / demographics / momentum layers (keyless-verified 2026-07) ──────────────────────────────
-# Economic Census adds the SALES ($) axis CBP lacks; ACS adds trade-area demographics; Flows adds
-# migration momentum. EC folds into census_reference (same long/tall shape, NAICS-scoped); ACS + Flows get
-# their own tables (different shape / volume). All need CENSUS_API_KEY — validate LIVE on Fly like the rest.
-EC_YEAR, ACS5_YEAR, FLOWS_YEAR = 2022, 2023, 2022
-# Economic Census bev-alc NAICS (2022): off-prem retail, bev-alc wholesale, on-prem drinking places. The
-# connector skips any code the API doesn't carry, so listing both 4- and 6-digit is safe.
-EC_NAICS = ["4453", "445320", "4248", "424810", "424820", "7224", "722410"]
-EC_METRICS = ["ESTAB", "RCPTOT", "PAYANN", "EMP"]          # RCPTOT = sales/receipts ($1,000s); ESTAB/EMP = counts
+# ── Full ACS5 sweep (market-size breadth) / migration-momentum layers (keyless-verified 2026-07) ──────────
+# ACS5-full adds the complete detailed-table breadth the narrower `acs` pull below doesn't reach; Flows
+# adds migration momentum. Economic Census (the SALES $ axis) is already covered by pull_ecn above
+# (dataset 'ecn') — not duplicated here. ACS5-full + Flows are big/wide enough to want their OWN tables
+# (census_acs / census_migration), separate from census_reference's long/tall shape. Both need
+# CENSUS_API_KEY — validate LIVE on Fly like the rest.
+ACS5_YEAR, FLOWS_YEAR = 2023, 2022
 FLOW_METRICS = ["MOVEDIN", "MOVEDOUT", "MOVEDNET", "FROMABROAD"]
 # Featured ACS estimates promoted for the common bev-alc questions (landed at COUNTY grain alongside the
 # full state-level all-tables sweep). code -> friendly metric name.
@@ -50,13 +50,13 @@ def _key():
     return os.environ.get("CENSUS_API_KEY", "").strip()
 
 
-def _get(path, params):
+def _get(path, params, timeout=120):
     p = dict(params)
     if _key():
         p["key"] = _key()
     url = "https://api.census.gov/data/%s?%s" % (path, urllib.parse.urlencode(p))
     req = urllib.request.Request(url, headers={"User-Agent": "HoodieUnifyd/1.0 (+census reference)"})
-    with urllib.request.urlopen(req, timeout=120) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         body = r.read().decode("utf-8", "replace")
     if not body.strip() or body.lstrip().startswith("<"):
         raise RuntimeError("non-JSON (missing key?) from %s" % path)
@@ -126,6 +126,32 @@ def pull_nonemp(year=NONEMP_YEAR, naics=NAICS):
 # Phase 2 if chain-vs-independent segmentation is needed: ingest the SUSB flat file separately.
 
 
+ECN_YEAR = 2022
+# Economic Census NAICS-2022 scope (the 2022 recode renamed 44531 -> 44532 Beer/Wine/Liquor RETAILERS):
+# retailers + wholesalers + food service total + drinking places + full-service restaurants.
+ECN_NAICS = ["44532", "4248", "722", "722410", "722511"]
+
+
+def pull_ecn(year=ECN_YEAR, naics=ECN_NAICS):
+    """Economic Census — OBSERVED receipts (the market-size denominator the modeled CEX×ACS demand is
+    checked against). RCPTOT/PAYANN are in $1,000s (Census convention — same as the govs AMOUNT gotcha
+    in tax_revenue.py); ESTAB/EMP are counts. Dataset 'ecn', county + state, every-5-years vintage
+    (2022 EC published 2024–26). Observed receipts include VISITOR spend — the resident-modeled vs
+    observed gap is signal (tourism + CEX underreport), not error."""
+    out, ts = [], int(time.time())
+    metrics = ["ESTAB", "EMP", "PAYANN", "RCPTOT"]
+    for n in naics:
+        for level, params in (("county", {"for": "county:*", "in": "state:*"}), ("state", {"for": "state:*"})):
+            try:
+                rows = _rows(_get("%d/ecnbasic" % year, dict(params, **{"get": ",".join(metrics), "NAICS2022": n})))
+            except Exception:
+                continue
+            for r in rows:
+                fips = r.get("state", "") + r.get("county", "") if level == "county" else r.get("state", "")
+                _emit(out, "ecn", year, n, level, fips, metrics, r, False, ts)
+    return out
+
+
 def pull_pep(year=PEP_YEAR):
     """Population Estimates — county + state population (per-capita denominator). Latest API vintage is
     2019 (newer PEP vintages aren't exposed via the API). Not NAICS-scoped."""
@@ -141,29 +167,62 @@ def pull_pep(year=PEP_YEAR):
     return out
 
 
-def pull_ecn(year=EC_YEAR, naics=EC_NAICS, log=print):
-    """Economic Census (ecnbasic) — establishments + SALES/receipts (RCPTOT) + payroll + employment by
-    NAICS, at US/state/county. The market-SIZE ($) axis CBP lacks. Lands into census_reference (same
-    long/tall shape); dataset='ecnbasic'. RCPTOT/PAYANN are $1,000s; ESTAB/EMP are counts. Suppressed
-    cells (Census disclosure) land as None, never 0."""
+ACS_YEAR = 2022
+# The FULL ACS B19001 household-income distribution (16 brackets), landed under stable metric names so
+# cex_ref.py can join CEX mean-spend-by-income onto it for trade-area demand $ (ACS_TO_CEX keys on these).
+ACS_INC = [("hh_lt10k", "B19001_002E"), ("hh_10_15k", "B19001_003E"), ("hh_15_20k", "B19001_004E"),
+           ("hh_20_25k", "B19001_005E"), ("hh_25_30k", "B19001_006E"), ("hh_30_35k", "B19001_007E"),
+           ("hh_35_40k", "B19001_008E"), ("hh_40_45k", "B19001_009E"), ("hh_45_50k", "B19001_010E"),
+           ("hh_50_60k", "B19001_011E"), ("hh_60_75k", "B19001_012E"), ("hh_75_100k", "B19001_013E"),
+           ("hh_100_125k", "B19001_014E"), ("hh_125_150k", "B19001_015E"),
+           ("hh_150_200k", "B19001_016E"), ("hh_200k_plus", "B19001_017E")]
+# ACS 5-year DEMAND-side variables: median HH income, median age, households, total population, and the
+# income-distribution brackets (full B19001 set; _014E..017E also derive the $100k+ household share).
+ACS_VARS = ["B19013_001E", "B01002_001E", "B11001_001E", "B01003_001E",
+            "B19001_001E"] + [v for _, v in ACS_INC]
+
+
+def pull_acs(year=ACS_YEAR):
+    """ACS 5-year consumer demographics (median household income, median age, households, population,
+    $100k+ household count) — state + county + ZCTA (~33k ZIPs, the grain that separates Baldwin Park
+    from Pine Hills). The DEMAND-side complement to CBP/PEP: trade-area enrichment an account/geo
+    subject reads by geo_fips (ZCTA rows key on the 5-digit ZIP). Emits friendly metric names under
+    dataset 'acs'. ZCTAs are national in the 2020+ vintages (no state hierarchy needed); tiny ZCTAs
+    legitimately land suppressed medians — flagged, never zeroed."""
     out, ts = [], int(time.time())
-    get = ",".join(EC_METRICS)
-    for n in naics:
-        for level, params in (("us", {"for": "us:*"}), ("state", {"for": "state:*"}),
-                              ("county", {"for": "county:*", "in": "state:*"})):
-            try:
-                rows = _rows(_get("%d/ecnbasic" % year, dict(params, **{"get": get, "NAICS2022": n})))
-            except Exception:
-                continue
-            for r in rows:
-                fips = (r.get("state", "") + r.get("county", "")) if level == "county" \
-                    else (r.get("state", "") if level == "state" else "US")
-                _emit(out, "ecnbasic", year, n, level, fips, EC_METRICS, r, False, ts)
-    log("census ecnbasic: %d rows (%d NAICS)" % (len(out), len(naics)))
+    get = ",".join(["NAME"] + ACS_VARS)
+    for level, params in (("county", {"for": "county:*", "in": "state:*"}), ("state", {"for": "state:*"}),
+                          ("zcta", {"for": "zip code tabulation area:*"})):
+        try:
+            rows = _rows(_get("%d/acs/acs5" % year, dict(params, **{"get": get}),
+                              timeout=600 if level == "zcta" else 120))   # national ZCTA response is ~10MB
+        except Exception:
+            continue
+        for r in rows:
+            if level == "zcta":
+                fips = r.get("zip code tabulation area", "")
+            else:
+                fips = r.get("state", "") + r.get("county", "") if level == "county" else r.get("state", "")
+            base = _num(r.get("B19001_001E"))
+            brackets = [_num(r.get("B19001_%03dE" % b)) for b in (14, 15, 16, 17)]
+            hi = sum(v for v in brackets if v is not None) if base else None
+            cells = [("median_hh_income", _num(r.get("B19013_001E"))),
+                     ("median_age",       _num(r.get("B01002_001E"))),
+                     ("households",       _num(r.get("B11001_001E"))),
+                     ("population",       _num(r.get("B01003_001E"))),
+                     ("hh_income_base",   base),
+                     ("hh_100k_plus",     hi)]
+            cells += [(name, _num(r.get(var))) for name, var in ACS_INC]
+            for metric, val in cells:
+                out.append(["acs", year, "", level, fips, metric, val, val is None, ts])
     return out
 
 
-# ── ACS 5-year (all detailed tables @ state + featured @ county) ─────────────────────────────────────────
+# ── ACS 5-year FULL SWEEP (all ~1,193 detailed tables @ state + featured @ county) + migration flows ──────
+# Genuinely new breadth vs pull_acs above (which lands ~21 featured variables into census_reference):
+# pull_acs5 sweeps every B/C detailed table and lands into its own census_acs table; pull_flows lands
+# county-to-county migration momentum into census_migration. (Economic Census / market-SIZE $ is already
+# covered by pull_ecn above — dataset 'ecn' — so it is NOT re-added here.)
 def _get_json(url):
     """Fetch Census metadata JSON (variables/groups) — keyless, parsed by header name so it survives
     Census's periodic reshuffles."""
@@ -301,7 +360,8 @@ def build(log=print):
     pull returned nothing and landed as truth. An all-empty pull now raises instead of writing."""
     import warehouse
     rows = []
-    for name, fn in (("cbp", pull_cbp), ("nonemployer", pull_nonemp), ("pep", pull_pep), ("ecnbasic", pull_ecn)):
+    for name, fn in (("cbp", pull_cbp), ("nonemployer", pull_nonemp), ("pep", pull_pep), ("acs", pull_acs),
+                     ("ecn", pull_ecn)):
         r = fn()
         log("census %s: %d rows" % (name, len(r)))
         rows.extend(r)
@@ -353,7 +413,7 @@ def query(dataset=None, geo_level=None, geo_fips=None, naics=None, metric=None, 
 
 
 if __name__ == "__main__":
-    # `--plan` dry-runs the metadata (keyless): ACS table universe + resolved 21+ code + EC/flows scope.
+    # `--plan` dry-runs the metadata (keyless): ACS5-full table universe + resolved 21+ code + flows scope.
     # Without --plan, needs CENSUS_API_KEY and prints a small CBP sample.
     if "--plan" in sys.argv:
         y = ACS5_YEAR
@@ -361,7 +421,6 @@ if __name__ == "__main__":
         print("ACS5 %d: %d detailed tables (all landed @ state) + %d featured @ county" % (y, len(groups), len(ACS_FEATURED)))
         print("  21+ code resolved by label:", _acs_21plus_code(y))
         print("  est. rows ~= %d tables x 52 states x ~20 vars + featured x 3220 counties" % len(groups))
-        print("Economic Census %d: NAICS %s x {us,state,county} x %s -> census_reference" % (EC_YEAR, EC_NAICS, EC_METRICS))
         print("Flows %d: %d states x county-pairs x %s -> census_migration" % (FLOWS_YEAR, len(_FLOW_STATES), FLOW_METRICS))
         raise SystemExit
     os.environ.setdefault("CENSUS_API_KEY", "")

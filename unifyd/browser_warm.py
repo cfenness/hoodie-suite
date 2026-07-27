@@ -85,22 +85,32 @@ class Warmer:
         if self.patchright:
             from patchright.sync_api import sync_playwright
         else:
-            from playwright.sync_api import sync_playwright
+            try:
+                from playwright.sync_api import sync_playwright
+            except ImportError:      # the Fly runner image ships patchright (stealthier), not playwright — use it
+                from patchright.sync_api import sync_playwright
+                self.patchright = True   # take the stealth launch branch below (no UA/args/init-script overrides)
         self._pw = sync_playwright().start()
         suffix = ("_patchright" if self.patchright else "_chrome" if self.channel == "chrome" else "")
         suffix += os.environ.get("BROWSER_PROFILE_SUFFIX", "")   # distinct profile per parallel worker (sharded crawls)
         prof = os.path.join(_PROFILE_ROOT, self.domain.replace(".", "_") + suffix)
         os.makedirs(prof, exist_ok=True)
+        # In a container (Fly runner) Chrome runs as root with a tiny /dev/shm — it needs --no-sandbox +
+        # --disable-dev-shm-usage or it won't launch. These are the ONLY args we add (they don't touch the
+        # fingerprint), and only when BROWSER_NO_SANDBOX is set, so local/Mac stealth runs are unchanged.
+        _sbx = ["--no-sandbox", "--disable-dev-shm-usage"] if os.environ.get("BROWSER_NO_SANDBOX") else []
         if self.patchright:
             # patchright handles stealth itself — DON'T override UA/viewport/args or add init scripts (they undo it)
             kw = dict(channel=self.channel or "chrome", headless=(not self.headful), no_viewport=True)
+            if _sbx:
+                kw["args"] = _sbx
             if self.proxy:
                 kw["proxy"] = self.proxy
             self._ctx = self._pw.chromium.launch_persistent_context(prof, **kw)
         else:
             kw = dict(headless=(not self.headful), channel=self.channel, user_agent=self.ua,
                       viewport={"width": 1300, "height": 1400}, locale="en-US",
-                      args=["--disable-blink-features=AutomationControlled", "--no-first-run"])
+                      args=["--disable-blink-features=AutomationControlled", "--no-first-run"] + _sbx)
             if self.proxy:
                 kw["proxy"] = self.proxy
             self._ctx = self._pw.chromium.launch_persistent_context(prof, **kw)
@@ -209,6 +219,30 @@ class Warmer:
 
     def cookies(self):
         return self._ctx.cookies()
+
+
+def warm_cookie(domain, url, name_filter=None, challenge_gone=None, settle_ms=3000, log=None, **kw):
+    """One-call 'give me a FRESH cookie': open a warmed session for `domain`, load `url` so the anti-bot
+    JS mints the trusted cookie, and return it as a `Cookie:` header string (optionally filtered to
+    `name_filter`). This is the path for scrapers that REPLAY the cookie through requests/urllib — an
+    Incapsula/Imperva-style session token that isn't bound to the TLS fingerprint (Kroger's atlas), as
+    opposed to the fingerprint-bound PerimeterX case that must fetch in-page. `**kw` (channel, proxy,
+    headful, patchright) pass through to Warmer. Returns '' if a browser isn't available or warming
+    fails, so the caller can fall back to a configured cookie — warming is a strict upgrade, never a
+    hard dependency."""
+    try:
+        with Warmer(domain, **kw) as w:
+            w.prime(url, settle_ms=settle_ms, challenge_gone=challenge_gone)
+            ck = w.cookie_header(name_filter)
+        if log:
+            log("[browser_warm] %s cookie warmed (%d chars)" % (domain, len(ck)) if ck
+                else "[browser_warm] %s warmed but no cookies captured" % domain)
+        return ck
+    except Exception as e:
+        if log:
+            log("[browser_warm] %s warm failed (%s) — caller falls back to a configured cookie"
+                % (domain, str(e)[:70]))
+        return ""
 
 
 def probe(domain, url, blocked_re=r"Robot or human|captcha|Access Denied|Incapsula|/_Incapsula_|Pardon the",

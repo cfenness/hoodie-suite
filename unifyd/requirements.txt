@@ -15,9 +15,33 @@ PyYAML>=6.0          # serve the OpenAPI spec at /api/openapi.json; lazy-importe
 # so kept off the default image until Iowa is turned on.
 # google-cloud-bigquery>=3.20
 
-# Optional — only needed for COLA label UPC OCR (--ocr).
-# Wires to your existing ttb_cola_labels.extract_upc_from_label.
-# pytesseract>=0.3.10
-# pillow>=10.0
+# COLA label enrichment (ttb-enrich): pyzbar decodes the BARCODE → UPC; pytesseract reads the label TEXT →
+# gov warning / claims (ttb_cola_labels.read_label_text). Both bind system libs the Dockerfile installs
+# (libzbar0 / tesseract-ocr); pillow loads the image. All no-op cleanly if a lib is missing.
+pyzbar>=0.1.9
+pytesseract>=0.3.10
+pillow>=10.0
+# pylibdmtx: zbar does NOT implement DataMatrix (ZBarSymbol has no DATAMATRIX member — confirmed on the
+# deployed image), and GS1's Sunrise 2027 2D codes are QR *or* GS1 DataMatrix. pyzbar covers the QR half;
+# this covers the other. Binds to the libdmtx0 system lib (added in the Dockerfile alongside libzbar0).
+pylibdmtx>=0.1.10
+# setuptools is a HARD requirement of pylibdmtx on this image, not a build-time nicety: the runtime is
+# Python 3.12, which REMOVED distutils, and pylibdmtx/wrapper.py does `from distutils.version import
+# LooseVersion`. Without setuptools (which re-provides distutils via its shim) the import dies with
+# "No module named 'distutils'" — the system libdmtx.so.0 loads fine, so the failure is purely the
+# Python side and is invisible until it runs on the image. Verified live on Fly before pinning here.
+setuptools>=68
 cryptography
 openpyxl
+
+# Snowflake morning drop (registry build `snowflake-load` → snowflake/run_load.py): lazy-imported,
+# only used when the SNOWFLAKE_* secrets are set. Key-pair auth reuses `cryptography` above.
+snowflake-connector-python>=3.7
+curl_cffi>=0.7        # Chrome-JA3 TLS impersonation for walmart_direct (PerimeterX reads urllib's TLS as a bot tell)
+
+# Instacart (free, no bd): a self-hosted Chromium drives Instacart's own SearchResultsPlacements GraphQL.
+# The Docker image installs this + the bundled Chromium (see Dockerfile). Lazy-imported in instacart.py, so
+# it's optional for local dev — only needed to run the Instacart pull. Runs HEADLESS (BROWSER_HEADFUL=0),
+# proven to land data from a bare datacenter IP. Install locally with:
+#   pip install playwright && playwright install chromium
+# playwright>=1.40
