@@ -88,7 +88,11 @@ app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progre
 
 VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
                "kroger", "walmart", "walmart-api", "target", "doordash", "google",
-               "ubereats", "postmates", "naop", "meijer", "trader-joes"} | set(socrata_outlets.VALID)
+               "ubereats", "postmates", "naop", "meijer", "trader-joes",
+               # bounded, manual-trigger-only registry entries (source_registry.py, all enabled=False) —
+               # reachable via /api/run for the one-off runs they're built for, never the automatic scan.
+               "ubereats-full", "postmates-full", "doordash-full",
+               "instacart-bevalc"} | set(socrata_outlets.VALID)
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
