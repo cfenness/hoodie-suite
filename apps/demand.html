@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoodie Demand · trade-area alcohol demand $</title>
+<style>
+  html,body{margin:0}
+  :root{
+    --paper:#F5F7FA; --card:#FFFFFF; --ink:#1A2430; --muted:#5C6775; --faint:#8A94A2;
+    --line:#E3E8EF; --line2:#EDF1F6; --accent:#4E79A7; --accent-soft:#4E79A71e;
+    --good:#3F8F63; --good-soft:#3F8F6316; --warn:#B8862E; --warn-soft:#B8862E18;
+    --bad:#C1544A; --sales:#8A5FB0; --sales-soft:#8A5FB018;
+    --shadow:0 1px 2px #1a243008, 0 4px 16px #1a243010;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --paper:#0F141A; --card:#171E27; --ink:#E7ECF3; --muted:#95A1B1; --faint:#68727F;
+    --line:#26303B; --line2:#1E2731; --accent:#6E97C4; --accent-soft:#6E97C426;
+    --good:#5AAE7C; --good-soft:#5AAE7c22; --warn:#D0A445; --warn-soft:#d0a44522;
+    --bad:#D96A5F; --sales:#A986C8; --sales-soft:#A986C822;
+    --shadow:0 1px 2px #0006, 0 6px 20px #0004;}}
+  *{box-sizing:border-box}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.45;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1060px;margin:0 auto;padding:20px 18px 60px}
+  .top{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  .logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#2f5e8e);display:grid;place-items:center;color:#fff;font-weight:800;font-size:13px}
+  h1{font-size:15.5px;font-weight:750;letter-spacing:-.2px;margin:0}
+  h1 .sub{font-weight:400;color:var(--faint);font-size:11.5px;margin-left:8px}
+  .searchbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0;padding:11px 13px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+  .searchbar input{flex:1;min-width:170px;border:1.5px solid var(--line);border-radius:8px;padding:7px 11px;font-size:13.5px;background:var(--paper);color:var(--ink);font-family:var(--sans)}
+  .searchbar input:focus{outline:none;border-color:var(--accent)}
+  .lvl{font-size:12px;font-weight:600;padding:5px 11px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:var(--paper);cursor:pointer}
+  .lvl.on{border-color:var(--accent);background:var(--accent);color:#fff}
+  .go{font-size:12.5px;font-weight:700;padding:7px 16px;border-radius:8px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px 15px;box-shadow:var(--shadow);margin-bottom:13px}
+  .panel.hero{border-color:color-mix(in srgb,var(--good) 32%,var(--line))}
+  .ph{display:flex;align-items:center;gap:9px;margin-bottom:11px}
+  .ph h3{font-size:13px;margin:0;font-weight:700}
+  .ph .bk{font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+  .tag{margin-left:auto;font-family:var(--mono);font-size:9.5px;font-weight:700;text-transform:uppercase;padding:3px 9px;border-radius:20px;display:flex;align-items:center;gap:5px}
+  .tag .d{width:7px;height:7px;border-radius:50%}
+  .tag.landed{background:var(--good-soft);color:var(--good)} .tag.landed .d{background:var(--good)}
+  .tag.derived{background:var(--accent-soft);color:var(--accent)} .tag.derived .d{background:var(--accent)}
+  .stat{display:flex;gap:14px;flex-wrap:wrap}
+  .stat .s b{display:block;font-size:19px;font-weight:750;letter-spacing:-.4px;font-variant-numeric:tabular-nums}
+  .stat .s span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;font-weight:600}
+  .cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+  @media(max-width:720px){.cols{grid-template-columns:1fr}}
+  .bars{display:flex;flex-direction:column;gap:6px}
+  .bar{display:flex;align-items:center;gap:8px;font-size:11.5px}
+  .bar .bl{width:72px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .bar .bt{flex:1;height:10px;background:var(--paper);border:1px solid var(--line2);border-radius:5px;overflow:hidden}
+  .bar .bf{display:block;height:100%;background:var(--accent);border-radius:5px}
+  .bar.hi .bf{background:var(--good)}
+  .bar .bn{width:54px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  .note{margin-top:11px;font-size:11.5px;color:var(--muted);background:var(--paper);border:1px dashed var(--line);border-radius:8px;padding:8px 11px;line-height:1.5}
+  .note.blue{border-style:solid;border-color:color-mix(in srgb,var(--accent) 32%,var(--line));background:var(--accent-soft)}
+  .note b{color:var(--ink)}
+  dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:7px 12px;font-size:12.5px}
+  dl dt{color:var(--muted);font-size:11.5px;white-space:nowrap}
+  dl dd{margin:0;text-align:right;font-weight:500;font-variant-numeric:tabular-nums}
+  table.rank{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+  table.rank th{font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;text-align:right;padding:5px 7px;border-bottom:1px solid var(--line)}
+  table.rank th:first-child{text-align:left}
+  table.rank td{padding:5px 7px;text-align:right;border-bottom:1px dashed color-mix(in srgb,var(--line) 70%,transparent)}
+  table.rank td:first-child{text-align:left;font-family:var(--mono);font-weight:600;color:var(--accent);cursor:pointer}
+  .src{margin-top:10px;padding-top:8px;border-top:1px dashed color-mix(in srgb,var(--line) 75%,transparent);font-family:var(--mono);font-size:9.5px;color:var(--faint)}
+  .offline{margin:14px 0;padding:11px 13px;border:1px solid color-mix(in srgb,var(--warn) 40%,var(--line));background:var(--warn-soft);border-radius:10px;font-size:12.5px;color:var(--muted)}
+  .offline b{color:var(--ink)}
+  .rankctl{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+  .rankctl input{width:90px;border:1.5px solid var(--line);border-radius:7px;padding:5px 9px;font-size:12px;background:var(--paper);color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="logo">TD</div>
+    <h1>Hoodie Demand<span class="sub">trade-area alcohol demand $ — any ZIP, county, or state · CEX × ACS · no sales data</span></h1>
+  </div>
+
+  <div class="searchbar">
+    <input id="q" placeholder="ZIP (32801) · county FIPS (12095) · state FIPS (12)" value="12095">
+    <span class="lvl on" data-l="">Auto</span><span class="lvl" data-l="zcta">ZIP</span><span class="lvl" data-l="county">County</span><span class="lvl" data-l="state">State</span>
+    <button class="go" onclick="lookup()">Read demand</button>
+  </div>
+
+  <div id="out"></div>
+
+  <div class="panel">
+    <div class="ph"><h3>Demand leaderboard</h3><span class="bk">trade_area_demand · 36k geos</span><span class="tag derived"><span class="d"></span>Derived</span></div>
+    <div class="rankctl">
+      <span class="lvl rl on" data-rl="zcta">ZIPs</span><span class="lvl rl" data-rl="county">Counties</span><span class="lvl rl" data-rl="state">States</span>
+      <span class="lvl rb on" data-rb="demand_total_usd">Total $</span><span class="lvl rb" data-rb="demand_per_hh_usd">$ / HH</span><span class="lvl rb" data-rb="demand_index_vs_us">Index</span>
+      <input id="pref" placeholder="prefix e.g. 328">
+      <button class="go" style="padding:6px 13px" onclick="rank()">Rank</button>
+    </div>
+    <div id="rank"></div>
+    <div class="src">GET /api/census/demand/top · min 500 households (keeps tiny-ZCTA noise out of per-HH rankings) · click a geo to read it</div>
+  </div>
+
+  <div class="note">Modeled resident demand = ACS B19001 households per income bracket × BLS CEX mean alcohol $ per bracket (at-home = off-premise, away = on-premise). CEX self-reports understate absolute $ — treat dollars as a floor and the <b>index as the comparative signal</b>. County/state reads also carry the Economic Census <b>observed</b> receipts (visitor spend included) as a reality check.</div>
+</div>
+
+<script>
+let LEVEL = '', RL = 'zcta', RB = 'demand_total_usd';
+document.querySelectorAll('.lvl:not(.rl):not(.rb)').forEach(el => el.onclick = () => {
+  document.querySelectorAll('.lvl:not(.rl):not(.rb)').forEach(x => x.classList.remove('on'));
+  el.classList.add('on'); LEVEL = el.dataset.l;
+});
+document.querySelectorAll('.lvl.rl').forEach(el => el.onclick = () => {
+  document.querySelectorAll('.lvl.rl').forEach(x => x.classList.remove('on'));
+  el.classList.add('on'); RL = el.dataset.rl; rank();
+});
+document.querySelectorAll('.lvl.rb').forEach(el => el.onclick = () => {
+  document.querySelectorAll('.lvl.rb').forEach(x => x.classList.remove('on'));
+  el.classList.add('on'); RB = el.dataset.rb; rank();
+});
+document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') lookup(); });
+
+const fmtM = v => v >= 1e9 ? '$' + (v/1e9).toFixed(2) + 'B' : v >= 1e6 ? '$' + (v/1e6).toFixed(1) + 'M' : '$' + Math.round(v/1e3) + 'k';
+const fmtN = v => Number(v).toLocaleString('en-US');
+const LVL_LABEL = {zcta: 'ZIP', county: 'County', state: 'State'};
+
+async function api(path){
+  const r = await fetch(path);
+  if (!r.ok && r.status !== 200) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+async function lookup(fips){
+  if (fips) document.getElementById('q').value = fips;
+  const q = document.getElementById('q').value.trim();
+  const out = document.getElementById('out');
+  if (!q) return;
+  out.innerHTML = '<div class="panel"><div class="note" style="margin:0">Reading…</div></div>';
+  let d;
+  try { d = await api('/api/census/demand?geo_fips=' + encodeURIComponent(q) + (LEVEL ? '&geo_level=' + LEVEL : '')); }
+  catch (e) {
+    out.innerHTML = '<div class="offline"><b>Engine offline</b> — /api/census/demand unreachable. Serve via the agent (python unifyd/server.py) or the Fly deploy.</div>';
+    return;
+  }
+  if (!d.ok) { out.innerHTML = '<div class="offline"><b>No read:</b> ' + (d.reason || d.error || 'unknown') + '</div>'; return; }
+  const mx = Math.max(...d.brackets.map(b => b.demand_usd));
+  const obs = d.observed;
+  out.innerHTML = `
+  <div class="panel hero">
+    <div class="ph"><h3>${LVL_LABEL[d.geo_level] || d.geo_level} ${d.geo_fips}</h3>
+      <span class="bk">ACS ${d.acs_vintage} × CEX ${d.cex_vintage}</span>
+      <span class="tag landed"><span class="d"></span>Modeled · resident</span></div>
+    <div class="cols">
+      <div>
+        <div class="stat">
+          <div class="s"><b>${fmtM(d.demand_total_usd)}</b><span>Alcohol demand / yr</span></div>
+          <div class="s"><b>${fmtM(d.demand_away_usd)}</b><span>On-premise</span></div>
+          <div class="s"><b>${fmtM(d.demand_at_home_usd)}</b><span>Off-premise</span></div>
+          <div class="s"><b>$${Math.round(d.demand_per_hh_usd)}</b><span>Per household</span></div>
+          <div class="s"><b>${d.demand_index_vs_us ?? '—'}</b><span>Index vs US</span></div>
+        </div>
+        <div class="note blue" style="margin-top:12px"><b>${fmtN(d.households)} households.</b> ${d.demand_index_vs_us >= 100 ? 'Out-spends' : 'Spends below'} the US baseline (index ${d.demand_index_vs_us}); on-premise takes ${(100*d.demand_away_usd/d.demand_total_usd).toFixed(0)}% of the resident dollar.</div>
+        ${obs ? `
+        <div class="note" style="margin-top:10px"><b>Observed reality check — Economic Census ${obs.vintage} (visitor spend included):</b>
+          liquor retail ${obs.liquor_retail ? fmtM(obs.liquor_retail.receipts_usd) + ' / ' + obs.liquor_retail.establishments + ' stores' : 'suppressed'} ·
+          drinking places ${obs.drinking_places ? fmtM(obs.drinking_places.receipts_usd) + ' / ' + obs.drinking_places.establishments + ' bars' : 'suppressed'} ·
+          food service ${obs.food_service_all ? fmtM(obs.food_service_all.receipts_usd) : 'suppressed'}.
+          ${obs.ratios ? 'Observed/modeled: liquor-retail ' + (obs.ratios.observed_liquor_retail_vs_modeled_offprem ?? '—') + '× · bars-only ' + (obs.ratios.observed_bars_only_vs_modeled_onprem ?? '—') + '× — the gap is tourism + survey underreport, not error.' : ''}</div>` : ''}
+      </div>
+      <div>
+        <div class="bars">${d.brackets.map(b => `
+          <div class="bar${b.mean_spend_usd >= 838 ? ' hi' : ''}"><span class="bl">${b.bracket.replace(/_/g,' ').replace('lt 15k','<$15k').replace('plus','+')}</span><span class="bt"><span class="bf" style="width:${(100*b.demand_usd/mx).toFixed(0)}%"></span></span><span class="bn">${fmtM(b.demand_usd)}</span></div>`).join('')}
+        </div>
+      </div>
+    </div>
+    <div class="src">${d.method} · caveats: ${d.caveats.join(' · ')}</div>
+  </div>`;
+}
+
+async function rank(){
+  const el = document.getElementById('rank');
+  el.innerHTML = '<div class="note" style="margin:0">Ranking…</div>';
+  const pref = document.getElementById('pref').value.trim();
+  let d;
+  try { d = await api('/api/census/demand/top?geo_level=' + RL + '&by=' + RB + '&limit=20' + (pref ? '&prefix=' + encodeURIComponent(pref) : '')); }
+  catch (e) { el.innerHTML = '<div class="offline"><b>Engine offline</b> — leaderboard needs /api.</div>'; return; }
+  if (!d.rows || !d.rows.length) { el.innerHTML = '<div class="note" style="margin:0">' + (d.note || 'No rows.') + '</div>'; return; }
+  el.innerHTML = `<table class="rank">
+    <tr><th>${LVL_LABEL[RL]}</th><th>Households</th><th>Demand / yr</th><th>On-prem</th><th>$ / HH</th><th>Index</th></tr>
+    ${d.rows.map(r => `<tr><td onclick="lookup('${r.geo_fips}')">${r.geo_fips}</td><td>${fmtN(r.households)}</td><td>${fmtM(r.demand_total_usd)}</td><td>${r.demand_away_usd ? fmtM(r.demand_away_usd) : '—'}</td><td>$${Math.round(r.demand_per_hh_usd)}</td><td>${r.demand_index_vs_us ?? '—'}</td></tr>`).join('')}
+  </table>`;
+}
+
+/* spine adoption — inherit shared context; a scope change with a zip/fips could drive lookup later */
+try {
+  if (window.parent !== window) {
+    const s = window.HoodieSpine && HoodieSpine.connect && HoodieSpine.connect({name: 'demand', onContext: () => {}});
+  }
+} catch (e) {}
+
+lookup(); rank();
+</script>
+</body>
+</html>

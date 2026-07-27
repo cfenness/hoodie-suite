@@ -1,0 +1,147 @@
+<style>
+  :root{
+    --bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;
+    --accent:#4E79A7;--good:#5bb86e;--warn:#d99a3f;--bad:#e5636b;--derived:#6f7d90;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--sans:Inter,system-ui,-apple-system,sans-serif;
+  }
+  @media (prefers-color-scheme:light){:root{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}}
+  :root[data-theme="light"]{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}
+  :root[data-theme="dark"]{--bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px}
+  .bar{display:flex;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:6;flex-wrap:wrap}
+  h1{font-size:15px;margin:0;font-weight:650;letter-spacing:.2px;display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--good);animation:pulse 2.4s infinite}
+  .dot.off{background:var(--bad);animation:none}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(91,184,110,.5)}70%{box-shadow:0 0 0 6px rgba(91,184,110,0)}100%{box-shadow:0 0 0 0 rgba(91,184,110,0)}}
+  .spacer{flex:1}
+  .asof{font-family:var(--mono);font-size:11px;color:var(--mut)}
+  button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-size:13px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  .page{padding:16px 18px}
+  .sec{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--ink);margin:22px 0 4px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .sec::before{content:"";width:3px;height:12px;border-radius:2px;background:var(--accent)}
+  .sub{font-size:12px;color:var(--mut);margin:0 0 10px}
+  table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px}
+  thead th{position:sticky;top:47px;background:var(--panel2);color:var(--mut);text-align:left;padding:8px 11px;border-bottom:1px solid var(--line);white-space:nowrap;font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px}
+  thead th.num,tbody td.num{text-align:right}
+  tbody td{padding:7px 11px;border-bottom:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
+  tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--panel2) 45%,transparent)}
+  tbody td.name{font-family:var(--sans);color:var(--ink);font-weight:550}
+  .dpos{color:var(--good)}.dneg{color:var(--bad)}.dzero{color:var(--mut)}
+  .conf{display:inline-block;min-width:34px;text-align:center;font-size:10.5px;padding:1px 6px;border-radius:20px;font-weight:600}
+  .bar-cell{position:relative}
+  .bar-cell .fill{position:absolute;left:0;top:0;bottom:0;background:color-mix(in srgb,var(--accent) 18%,transparent);border-radius:3px;z-index:0}
+  .bar-cell span{position:relative;z-index:1}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:11px;margin:4px 0 8px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+  .card b{font-size:24px;font-family:var(--mono);font-variant-numeric:tabular-nums;display:block;line-height:1.1}
+  .card span{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);font-weight:600}
+  .card small{font-size:11px;color:var(--mut)}
+  .banner{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:11px 14px;margin:8px 0;font-size:13px;color:var(--mut);display:flex;gap:9px;align-items:flex-start}
+  .banner b{color:var(--ink)}
+  .msg{padding:30px;color:var(--mut);text-align:center}
+  .pill{font-family:var(--mono);font-size:10px;padding:1px 7px;border-radius:20px;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+  .win{color:var(--good);font-weight:600}
+</style>
+
+<div class="bar">
+  <h1><span id="dot" class="dot"></span>Velocity</h1>
+  <span class="asof" id="asof">—</span>
+  <div class="spacer"></div>
+  <button id="refresh">↻ refresh</button>
+</div>
+
+<div class="page" id="page"><div class="msg">loading velocity…</div></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const fmt=n=>n==null?'—':Number(n).toLocaleString();
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function conf(c){ if(c==null)return ''; const v=Number(c);
+  const col=v>=0.7?'--good':v>=0.4?'--warn':'--bad';
+  return `<span class="conf" style="background:color-mix(in srgb,var(${col}) 18%,transparent);color:var(${col})">${v.toFixed(2)}</span>`; }
+function ago(ts){ if(!ts)return '—'; const s=Date.now()/1000-ts; const h=s/3600,m=s/60;
+  return h>=1?h.toFixed(0)+'h ago':m>=1?m.toFixed(0)+'m ago':Math.round(s)+'s ago'; }
+
+async function load(){
+  let M;
+  try{ M=await (await fetch('/api/velocity')).json(); }
+  catch(e){ M={live:false,error:'backend unreachable'}; }
+  render(M);
+}
+
+function render(M){
+  const dot=$('#dot');
+  if(!M||!M.live){ dot.classList.add('off'); $('#asof').textContent='';
+    $('#page').innerHTML=`<div class="msg">Velocity backend unavailable${M&&M.error?': '+esc(M.error):''}. Nothing shown rather than guess.</div>`; return; }
+  dot.classList.remove('off');
+  $('#asof').textContent='as of '+ago(M.as_of);
+
+  // ── VOIDS: the actionable-now opportunities (lead with the win) ──
+  const voids=M.voids||[];
+  const maxRec=Math.max(1,...voids.map(v=>Number(v.est_recoverable_units_wk||0)));
+  const voidRows=voids.slice(0,40).map(v=>{
+    const rec=Number(v.est_recoverable_units_wk||0), w=(rec/maxRec*100).toFixed(0);
+    return `<tr>
+      <td class="name">${esc(v.brand)}</td>
+      <td class="num bar-cell"><div class="fill" style="width:${w}%"></div><span class="win">~${fmt(rec)}</span></td>
+      <td class="num">${v.oos_stores}/${v.stores_seen}</td>
+      <td class="num">${v.pct_stores_out}%</td>
+      <td class="num">${conf(v.confidence)}</td></tr>`;}).join('');
+
+  // ── MOVERS: confirmed vs early-read (the honesty) ──
+  const mv=M.movers||{}; let moversHtml;
+  if(mv.confirmed_week){
+    const row=(m,dir)=>`<tr><td class="name">${esc(m.brand)}</td>
+      <td class="num ${dir>0?'dpos':'dneg'}">${m.pct_change>0?'+':''}${m.pct_change}%</td>
+      <td class="num">${fmt(m.prev_units)}→${fmt(m.units)}</td>
+      <td class="num">${fmt(m.matched_cells)}</td><td class="num">${conf(m.confidence)}</td></tr>`;
+    const up=(mv.up||[]).map(m=>row(m,1)).join(''), down=(mv.down||[]).map(m=>row(m,-1)).join('');
+    moversHtml=`<div class="sub">Confirmed week <b>${esc(mv.confirmed_week)}</b> · matched-cell same-store, both weeks fully observed.</div>
+      <table><thead><tr><th>brand ↑ accelerating</th><th class="num">WoW</th><th class="num">units</th><th class="num">cells</th><th class="num">conf</th></tr></thead>
+      <tbody>${up||'<tr><td class="msg" colspan=5>none</td></tr>'}</tbody></table>
+      <div class="sub" style="margin-top:12px">Decelerating</div>
+      <table><thead><tr><th>brand ↓</th><th class="num">WoW</th><th class="num">units</th><th class="num">cells</th><th class="num">conf</th></tr></thead>
+      <tbody>${down||'<tr><td class="msg" colspan=5>none</td></tr>'}</tbody></table>`;
+  } else {
+    moversHtml=`<div class="banner">⏳&nbsp;<div><b>No confirmed movers yet.</b> ${esc(mv.note||'')} ${mv.partial_flagged?`(${fmt(mv.partial_flagged)} early-read rows staged; they confirm automatically once a second full observation week lands.)`:''}<br><span class="asof">We show nothing here rather than a week-over-week number the current coverage can't support.</span></div></div>`;
+  }
+
+  // ── LEADERS: top brands by observed velocity ──
+  const L=M.leaders||[];
+  const maxU=Math.max(1,...L.map(r=>Number(r.implied_units||0)));
+  const leadRows=L.slice(0,30).map(r=>{const u=Number(r.implied_units||0),w=(u/maxU*100).toFixed(0);
+    return `<tr><td class="name">${esc(r.brand)}</td>
+      <td class="num bar-cell"><div class="fill" style="width:${w}%"></div><span>${fmt(u)}</span></td>
+      <td class="num">${fmt(r.stores)}</td><td class="num">${conf(r.avg_confidence)}</td></tr>`;}).join('');
+
+  // ── TRUST STAMP: calibration ──
+  const cal=M.calibration||{}; const cons=cal.conservation||[];
+  const consCards=cons.map(c=>{const r=Number(c.value);
+    const col=r>=0.7&&r<=1.4?'--good':'--warn';
+    return `<div class="card"><b style="color:var(${col})">${r?r.toFixed(2):'—'}</b><span>${esc(c.source)} sales÷restock</span><br><small>${r>1.4?'over-count?':r<0.7?'under-count (censoring)':'well-calibrated'}</small></div>`;}).join('');
+  const mape=(cal.external_mape||[]).map(m=>`<div class="card"><b>${m.coverage?m.value+'%':'—'}</b><span>MAPE vs ${esc(m.anchor)}</span><br><small>${m.coverage?m.coverage+' cells':'pending overlap'}</small></div>`).join('');
+
+  $('#page').innerHTML=`
+    <div class="sec">Distribution opportunities <span class="pill">actionable now</span></div>
+    <p class="sub">Brands out of stock across the chain — estimated recoverable units/week if the void is closed. Lead with the win.</p>
+    <table><thead><tr><th>brand</th><th class="num">recoverable/wk</th><th class="num">out / seen</th><th class="num">% out</th><th class="num">conf</th></tr></thead>
+      <tbody>${voidRows||'<tr><td class="msg" colspan=5>no voids in window</td></tr>'}</tbody></table>
+
+    <div class="sec">Movers</div>
+    ${moversHtml}
+
+    <div class="sec">Top brands by observed velocity</div>
+    <p class="sub">Implied units from inventory decrements (latest week), across observed stores.</p>
+    <table><thead><tr><th>brand</th><th class="num">implied units</th><th class="num">stores</th><th class="num">conf</th></tr></thead>
+      <tbody>${leadRows||'<tr><td class="msg" colspan=4>none</td></tr>'}</tbody></table>
+
+    <div class="sec">Calibration <span class="pill">the trust stamp</span></div>
+    <p class="sub">${esc((cal||{}).note||'')}</p>
+    <div class="cards">${consCards||'<span class="msg">no conservation reading</span>'}${mape}</div>`;
+}
+
+$('#refresh').onclick=load;
+load(); setInterval(load,60000);
+</script>

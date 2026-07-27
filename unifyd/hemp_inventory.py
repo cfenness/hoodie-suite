@@ -103,13 +103,14 @@ def harvest(base, retailer="", state="", delay=0.5, log=print):
 
 
 def known_bases():
+    # was also reading `orlando_hemp_products` — a PHANTOM table no module produces (it silently except-passed,
+    # contributing nothing). Dropped. The only real base universe is the Shopify subset of offprem_products.
     bases = set()
-    for tbl, col in (("orlando_hemp_products", "base"), ("offprem_products", "base")):
-        try:
-            for r in warehouse.query(tbl, "SELECT DISTINCT %s b FROM t WHERE %s LIKE 'http%%'" % (col, col)):
-                bases.add(r["b"].rstrip("/"))
-        except Exception:
-            pass
+    try:
+        for r in warehouse.query("offprem_products", "SELECT DISTINCT base b FROM t WHERE base LIKE 'http%'"):
+            bases.add(r["b"].rstrip("/"))
+    except Exception:
+        pass
     return sorted(bases)
 
 

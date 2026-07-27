@@ -88,12 +88,18 @@ _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
 # Every source_registry id is a valid connId (the /api/run gate + UI 'runnable' flag accept it) — so a source
-# the registry owns is runnable from the app the day it lands, without editing this set. This is what the generic
-# dispatch fallthrough (_route) needs to be reachable; dispatch_guard_test asserts every enabled registry id is here.
+# the registry owns is runnable from the app the day it lands, without editing this set. This is what the
+# universal registry check in _dispatch_pull needs to be reachable; dispatch_guard_test asserts every enabled
+# registry id is here (check 6, COMPLETENESS).
 _REGISTRY_IDS = {s["id"] for s in source_registry.SOURCES}
 VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
                "kroger", "walmart", "walmart-api", "target", "doordash", "google",
-               "ubereats", "postmates", "naop", "meijer", "trader-joes"} | set(socrata_outlets.VALID) | _REGISTRY_IDS
+               "ubereats", "postmates", "naop", "meijer", "trader-joes",
+               # bounded, manual-trigger-only registry entries (source_registry.py, all enabled=False) —
+               # reachable via /api/run for the one-off runs they're built for, never the automatic scan.
+               # (Also already covered by the `| _REGISTRY_IDS` union below — kept explicit for clarity/history.)
+               "ubereats-full", "postmates-full", "doordash-full",
+               "instacart-bevalc"} | set(socrata_outlets.VALID) | _REGISTRY_IDS
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
@@ -101,38 +107,28 @@ OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonlin
 # SINGLE SOURCE OF TRUTH: sources the registry owns run THROUGH the registry entrypoint (run_one), never a
 # hand-maintained *_pull copy — so a fix in source_registry can never be silently bypassed by the app path
 # (the drift that made "we fixed it 100 times" literally true — see _REGISTRY_CONN / dispatch_guard_test).
-# _route() is the ONE place that decides how a connId dispatches; it returns (kind, thunk) so the guard can
-# classify every conn offline (via _route_kind) while dispatch stays a thin wrapper.
-def _route(conn, body):
-    """Return (kind, thunk) for `conn`, or (None, None) if unknown. kind ∈ registry|legacy|explicit|socrata|fl.
-    Building the thunk is side-effect-free (no execution, no network), so dispatch_guard_test classifies offline.
-    Order IS precedence: the explicit app paths win first, then a GENERIC registry fallthrough catches everything
-    else the registry owns — so a NEW registry source is app-runnable the day it lands, with no hand-wiring."""
-    if conn in _REGISTRY_CONN:                  # explicitly graduated (+ aliases) → run_sources.run_one
-        return "registry", lambda: _run_via_registry(conn, body)
-    if conn in _CONN_PULL:                       # legacy/app-only hand-wired pulls (target/doordash/google/walmart-api)
-        return "legacy", lambda: _CONN_PULL[conn](body)
-    if conn in _EXPLICIT_PULL:                   # bespoke in-process app-only pulls (ttb-cola, census-acs, tx/il/ct, …)
-        return "explicit", lambda: _EXPLICIT_PULL[conn](body)
-    if conn in socrata_outlets.VALID:            # generic per-state Socrata outlets (NY/CO/MO…)
-        return "socrata", lambda: socrata_pull(conn, body)
-    if conn in FL_CONN:                          # Florida DBPR/ABT CSV extracts
-        return "fl", lambda: fl_pull(conn)
-    if conn in _REGISTRY_IDS:                    # GENERIC fallthrough — the drift-killer: ANY other registry source
-        return "registry", lambda: _run_via_registry(conn, body)   # runs through its registry entrypoint (self-lands)
-    return None, None
-
-
-def _route_kind(conn):
-    """Which dispatch path handles `conn` (no execution): 'registry' (run_one — explicit OR generic fallthrough),
-    'legacy', 'explicit', 'socrata', 'fl', or None. dispatch_guard_test uses this to prove every registry-owned
-    runnable conn goes through the registry (or is a documented app-only exception)."""
-    return _route(conn, None)[0]
-
-
 def _dispatch_pull(conn, body):
-    _, thunk = _route(conn, body)
-    return thunk() if thunk else None
+    # SINGLE SOURCE OF TRUTH: **any** source that exists in source_registry runs THROUGH the registry entrypoint
+    # (run_one) — never a hand-maintained *_pull copy. A fix in source_registry therefore applies to the app path
+    # automatically and can NEVER be silently bypassed by a stale bespoke copy. This universal rule (not just the
+    # _REGISTRY_CONN allowlist) is the real cure for "we fixed it N times and it reverted": the app can no longer
+    # run an old copy of a registry source — this is also what makes every newly enabled registry source
+    # app-runnable the day it lands, with zero hand-wiring (VALID_CONNS' `| _REGISTRY_IDS` union is the other
+    # half). Enforced by dispatch_guard_test.
+    import source_registry as _reg
+    if conn in _REGISTRY_CONN or _reg.by_id(conn):
+        return _run_via_registry(conn, body)
+    # NON-registry connectors only (state Socrata feeds, places, census-acs sub-feed, legacy doordash/google):
+    if conn in _CONN_PULL:
+        return _CONN_PULL[conn](body)
+    return (instacart_pull(body) if conn == "instacart"
+            else places_pull(body) if conn == "orlando-accounts"
+            else census_pull(body) if conn == "census-acs"
+            else tx_pull(body) if conn == "tx-tabc"
+            else il_pull(body) if conn == "il-chicago"
+            else ct_pull(body) if conn == "ct-dcp"
+            else socrata_pull(conn, body) if conn in socrata_outlets.VALID
+            else fl_pull(conn) if conn in FL_CONN else None)
 
 def socrata_pull(conn, body):
     """Generic Socrata outlet pull (NY/CO/MO…) → <state>_outlets, normalised to one schema. NY/CO
@@ -241,8 +237,8 @@ def _run_via_registry(conn, body):
     import source_registry as _reg
     import run_sources as _rs
     body = body or {}
-    rid = _REGISTRY_CONN.get(conn, conn)   # explicit alias if graduated; else the connId IS the registry id (generic fallthrough)
-    src = next((s for s in _reg.SOURCES if s["id"] == rid), None)
+    rid = _REGISTRY_CONN.get(conn, conn)       # conn IS the registry id for the universal path; allowlist is legacy
+    src = _reg.by_id(rid) or next((s for s in _reg.SOURCES if s["id"] == rid), None)
     if not src:
         return _std_run(conn, int(time.time() * 1000), status="failed",
                         warnings=["no source_registry entry '%s'" % rid], trigger=body.get("trigger", "manual"))
@@ -254,57 +250,6 @@ def _run_via_registry(conn, body):
     return _std_run(conn, started, total=rows_after, status=app_status, trigger=body.get("trigger", "manual"),
                     warnings=([rec["error"]] if rec.get("error") else []),
                     extracts=[{"id": t, "rows": rows_after, "delta": delta, "status": app_status} for t in tables])
-
-def kroger_pull(body):
-    """Kroger Developer API (OAuth2) → kroger_products + kroger_runs. Needs KROGER_CLIENT_ID/SECRET (env or
-    body). First-class connector now; the old subprocess path (/api/connector/run) still works too."""
-    started = int(time.time() * 1000); body = body or {}
-    cid = body.get("client_id") or _CONN_CREDS.get("kroger", {}).get("id") or os.environ.get("KROGER_CLIENT_ID", "")
-    sec = body.get("client_secret") or _CONN_CREDS.get("kroger", {}).get("secret") or os.environ.get("KROGER_CLIENT_SECRET", "")
-    if not (cid and sec):
-        return _std_run("kroger", started, status="degraded", trigger=body.get("trigger", "manual"),
-                        warnings=["Kroger Client ID + Secret required (set KROGER_CLIENT_ID/SECRET or pass client_id/client_secret)"])
-    _CONN_CREDS["kroger"] = {"id": cid, "secret": sec}
-    os.environ["KROGER_CLIENT_ID"] = cid; os.environ["KROGER_CLIENT_SECRET"] = sec
-    import kroger_api
-    zips = [z.strip() for z in (body.get("zips") or ",".join(kroger_api.DEFAULT_ZIPS)).split(",") if z.strip()]
-    terms = [t.strip() for t in (body.get("terms") or ",".join(kroger_api.DEFAULT_TERMS)).split(",") if t.strip()]
-    kroger_api.run(zips, terms)
-    n = _wh_count("kroger_products")
-    return _std_run("kroger", started, total=n, trigger=body.get("trigger", "manual"),
-                    extracts=[{"id": "kroger_products", "rows": n, "delta": 0, "status": "success"}])
-
-def walmart_pull(body):
-    """Walmart via the DIRECT residential-proxy scraper (walmart_direct: IPRoyal residential exit + curl_cffi
-    Chrome-JA3 impersonation, paced rotation) → walmart_products + retail observations. $0 — NO Bright Data,
-    NO official API. This matches the source registry (walmart -> walmart_direct); the old Bright Data path
-    (walmart_scraper) is kept only for the standalone walmart_schedule.sh, not the app run path."""
-    started = int(time.time() * 1000); body = body or {}
-    import walmart_direct as wd
-    before = _wh_count("walmart_products")
-    terms = [q.strip() for q in (body.get("queries") or "").split(",") if q.strip()] or None
-    n = wd.pull(terms=terms, max_pages=int(body.get("max_pages", 4)),
-                detail_pages=bool(body.get("detail", True)), detail_cap=int(body.get("detail_cap", 600)),
-                log=lambda m: app.logger.info("WALMART %s", m))
-    after = _wh_count("walmart_products")
-    if not n:
-        return _std_run("walmart", started, status="degraded", trigger=body.get("trigger", "manual"),
-                        warnings=["0 products — PerimeterX may be blocking the residential exit; "
-                                  "check RESI_PROXY_* creds and curl_cffi availability"])
-    return _std_run("walmart", started, total=after, trigger=body.get("trigger", "manual"),
-                    extracts=[{"id": "walmart_products", "rows": after, "delta": after - before, "status": "success"}])
-
-def target_pull(body):
-    """Target RedSky (Bright Data) → target_products + target_stores. body.scope=national|local. HEAVY."""
-    started = int(time.time() * 1000); body = body or {}
-    import target_scraper as tg
-    if (body.get("scope") or "national") == "national":
-        tg.run_national(log=lambda m: app.logger.info("TARGET %s", m))
-    else:
-        tg.run(log=lambda m: app.logger.info("TARGET %s", m))
-    n = _wh_count("target_products")
-    return _std_run("target", started, total=n, trigger=body.get("trigger", "manual"),
-                    extracts=[{"id": "target_products", "rows": n, "delta": 0, "status": "success"}])
 
 def doordash_pull(body):
     """DoorDash geo merchant sweep → <market>_merchants (market intelligence). HEAVY (BD Browser). Toggleable."""
@@ -341,25 +286,13 @@ def walmart_api_pull(body):
     return _std_run("walmart-api", started, total=n, trigger=body.get("trigger", "manual"),
                     extracts=[{"id": "walmart_products", "rows": n, "delta": 0, "status": "success"}])
 
-# kroger + walmart moved to the registry path (_REGISTRY_CONN); their old *_pull functions are now dead code
-# (kept until a follow-up removes them) and MUST NOT be re-wired here — dispatch_guard_test enforces that.
-_CONN_PULL = {"walmart-api": walmart_api_pull,
-              "target": target_pull, "doordash": doordash_pull, "google": google_pull}
-
-# Bespoke in-process pulls that are app-only (NOT registry-owned): the live COLA runner, the ACS census
-# connector, and the per-state license portals. Declarative (was a ternary in _dispatch_pull) so _route and the
-# guard read the SAME table — no drift. Lambdas defer the lookup (cola_pull/instacart_pull are defined lower).
-# vtinfo/ab-inbev/shopify are NOT here — they route through the registry (_REGISTRY_CONN); the dispatch guard's
-# APP_ONLY_CONN documents each key here as a real exception (id differs from / has no source_registry entry).
-_EXPLICIT_PULL = {
-    "ttb-cola":         lambda b: cola_pull(b),
-    "instacart":        lambda b: instacart_pull(b),
-    "orlando-accounts": lambda b: places_pull(b),
-    "census-acs":       lambda b: census_pull(b),
-    "tx-tabc":          lambda b: tx_pull(b),
-    "il-chicago":       lambda b: il_pull(b),
-    "ct-dcp":           lambda b: ct_pull(b),
-}
+# _CONN_PULL holds ONLY non-registry conns. Registry sources (kroger/walmart/target/ttb-cola/…) run via the
+# registry path — their old *_pull copies were DELETED, not just unwired. dispatch_guard_test blocks re-adding
+# one. instacart/orlando-accounts/census-acs/tx-tabc/il-chicago/ct-dcp are NON-registry app-only pulls dispatched
+# directly by the ternary chain in _dispatch_pull (not a table here) — see APP_ONLY_CONN in dispatch_guard_test.py
+# for why each is exempt from the registry route.
+_CONN_PULL = {"walmart-api": walmart_api_pull,   # NON-registry conns only (target now routes via the registry)
+              "doordash": doordash_pull, "google": google_pull}
 
 # The connector registry — ONE source of truth the Pulls console reads (/api/connectors): what sources exist,
 # how they run, their warehouse data + <x>_runs table (for last-run), and whether they're enabled (on/off).
@@ -777,61 +710,8 @@ def fl_pull(conn_id):
             "status": status, "trigger": "manual", "total": sum(e["rows"] for e in exs),
             "degraded": status == "partial", "warnings": warns, "extracts": exs}
 
-# ---------------- COLA pull (embeds the scraper) ----------------
-def cola_pull(params):
-    today = datetime.date.today()
-    d_from = params.get("from") or (today - datetime.timedelta(days=params.get("days", 7))).strftime("%m/%d/%Y")
-    d_to   = params.get("to") or today.strftime("%m/%d/%Y")
-    args = cola.build_args([
-        "--from", d_from, "--to", d_to,
-        "--chunk-days", str(params.get("chunk_days", 1)),
-        "--out", os.path.join(STATE_DIR, "cola"),
-        "--resume",
-    ] + (["--detail"] if params.get("detail") else []) + (["--ocr"] if params.get("ocr") else []))
-    started = int(time.time() * 1000)
-    ds, runs, _ = cola.scrape(args, log=lambda m: app.logger.info("COLA %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-# ---------------- ABC FWS pull (directional inventory, embeds the scraper) ----------------
-def abc_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = abc.pull(
-        sample=params.get("sample", 40), crawl_all=bool(params.get("all")),
-        limit=params.get("limit"), out=os.path.join(STATE_DIR, "abc"),
-        state_dir=os.path.join(STATE_DIR, "abc"),
-        log=lambda m: app.logger.info("ABC %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-def specs_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = specs.pull(
-        sample=params.get("sample", 40), crawl_all=params.get("all", True),   # FULL catalog by default (was a 40-sample)
-        limit=params.get("limit"), out=os.path.join(STATE_DIR, "specs"),
-        state_dir=os.path.join(STATE_DIR, "specs"),
-        log=lambda m: app.logger.info("SPECS %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-def binnys_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = binnys.pull(
-        sample=params.get("sample", 300), crawl_all=params.get("all", True),   # FULL catalog by default (was a 300-sample)
-        limit=params.get("limit"), out=os.path.join(STATE_DIR, "binnys"),
-        state_dir=os.path.join(STATE_DIR, "binnys"),
-        log=lambda m: app.logger.info("BINNYS %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
+# NOTE: cola_pull / abc_pull / specs_pull / binnys_pull were removed — ttb-cola/abc-fws/specs/binnys all run
+# through the registry (run_one) now; those old DATASETS-preview copies were the drift that caused reversions.
 def instacart_pull(params):
     """FREE Instacart pull — self-hosted Playwright browser drives Instacart's own SearchResultsPlacements
     GraphQL (no Bright Data, no proxy). Lands per-store product+price into instacart_products +
@@ -874,24 +754,11 @@ def instacart_pull(params):
             "extracts": [{"id": "instacart_products", "rows": len(rows), "delta": len(rows),
                           "status": status}], "trigger": params.get("trigger", "manual")}
 
-def total_wine_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = total_wine.pull(
-        cap=int(params.get("cap", 400)), delay=float(params.get("delay", 1.0)),
-        out=os.path.join(STATE_DIR, "total_wine"), state_dir=os.path.join(STATE_DIR, "total_wine"),
-        log=lambda m: app.logger.info("TOTAL-WINE %s", m))
-    _to_warehouse(ds)
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-# vtinfo + ab-inbev now run through the REGISTRY path (_REGISTRY_CONN -> run_sources.run_one), so the app
-# runs exactly what the scheduler runs. Their old hand-wired *_pull copies were removed here because they had
-# DRIFTED: ab-inbev ran ab_locator.pull() in the app but ab_fill.run() in the registry (a different module and
-# a different table shape); vtinfo passed ad-hoc brand/zip params the scheduled run never uses. Re-adding a
-# *_pull for a registry-owned source is blocked by dispatch_guard_test. (abc/specs/binnys/total_wine already
-# route via the registry too; their remaining *_pull defs above are dead and safe to delete in a cleanup pass.)
+# EVERY registry-owned source runs through the REGISTRY path (server._dispatch_pull -> run_sources.run_one),
+# so the app runs EXACTLY what the scheduler runs. All the old hand-wired *_pull copies (kroger, walmart, target,
+# cola/ttb-cola, abc, specs, binnys, total_wine, vtinfo, ab-inbev) were DELETED — they were the drift that made
+# "we fixed it N times and it reverted" literally true (e.g. ab-inbev ran ab_locator.pull() in the app but
+# ab_fill.run() in the registry). Re-adding a *_pull for a registry-owned source is blocked by dispatch_guard_test.
 
 # ---------------- API ----------------
 @app.get("/api/health")
@@ -1312,6 +1179,60 @@ def _catalog_map():
     except Exception as e:
         app.logger.warning("warehouse catalog failed: %s", e)
     return out
+
+@app.get("/api/velocity")
+def api_velocity():
+    """The velocity SURFACE payload (MOAT-PLAN V6). MARTS ONLY — signal_voids / signal_movers /
+    mart_velocity_brand_week + the calibration trust stamp — never the raw fact grain. Every section
+    carries confidence + as_of so nothing renders without proof of how trustworthy it is. Honest by
+    construction: movers split into CONFIRMED (both weeks full) vs early-read (partial); if no full
+    week exists yet the confirmed list is simply empty. Empty-safe on any missing table."""
+    import time as _t
+    import warehouse
+
+    def q(name, sql):
+        try:
+            return warehouse.query(name, sql)
+        except Exception:
+            return []
+
+    voids = q("signal_voids",
+              "SELECT brand, oos_stores, stores_seen, est_recoverable_units_wk, pct_stores_out, confidence "
+              "FROM t ORDER BY est_recoverable_units_wk DESC NULLS LAST LIMIT 100")
+    confw = q("signal_movers", "SELECT MAX(week) w FROM t WHERE NOT partial")
+    cw = confw[0]["w"] if confw and confw[0].get("w") else None
+    movers_up, movers_down = [], []
+    if cw:
+        movers_up = q("signal_movers",
+                      "SELECT brand, week, units, prev_units, pct_change, matched_cells, confidence FROM t "
+                      "WHERE NOT partial AND week = (SELECT MAX(week) FROM t WHERE NOT partial) AND pct_change > 0 "
+                      "ORDER BY pct_change DESC LIMIT 25")
+        movers_down = q("signal_movers",
+                        "SELECT brand, week, units, prev_units, pct_change, matched_cells, confidence FROM t "
+                        "WHERE NOT partial AND week = (SELECT MAX(week) FROM t WHERE NOT partial) AND pct_change < 0 "
+                        "ORDER BY pct_change ASC LIMIT 25")
+    n_partial = (q("signal_movers", "SELECT COUNT(*) n FROM t WHERE partial") or [{"n": 0}])[0].get("n", 0)
+    leaders = q("mart_velocity_brand_week",
+                "SELECT brand, week, implied_units, stores, avg_confidence FROM t "
+                "WHERE week = (SELECT MAX(week) FROM t) ORDER BY implied_units DESC NULLS LAST LIMIT 50")
+    cons = q("velocity_calibration",
+             "SELECT source, value FROM t WHERE kind='conservation' AND metric='sales_restock_ratio'")
+    mape = q("velocity_calibration",
+             "SELECT anchor, coverage, value FROM t WHERE kind='external_mape'")
+    return jsonify({
+        "as_of": _t.time(), "live": True,
+        "voids": voids,
+        "movers": {"confirmed_week": str(cw) if cw else None, "up": movers_up, "down": movers_down,
+                   "partial_flagged": n_partial,
+                   "note": None if cw else "No confirmed movers yet — needs two consecutive full "
+                                           "observation weeks. Early-read (partial-week) movers are staged."},
+        "leaders": leaders,
+        "calibration": {"conservation": cons,
+                        "external_mape": mape,
+                        "note": "conservation ratio → 1 is well-calibrated; external MAPE pending an "
+                                "overlapping ground-truth footprint"},
+    })
+
 
 @app.get("/api/catalog")
 def catalog_ep():
@@ -4466,9 +4387,19 @@ def _truthy(v):
     return str(v or "").strip().lower() in ("1", "true", "yes", "on")
 
 
-_SCHED = {"enabled": _truthy(os.environ.get("SCHEDULER")),
+# The cloud RUNNER process (fly.toml [processes].runner — 8gb, off the serving box) self-drives the
+# dispatcher so the whole pipeline runs in-cloud on cadence: NOTHING LOCAL. It runs headless/creds sources
+# AND the derived builds (the single dim_* writer), which used to run only on the Mac --due tick. The serving
+# 'app' process never schedules. SCHEDULER=0/1 still overrides explicitly (e.g. to pause the runner).
+_RUNNER = os.environ.get("FLY_PROCESS_GROUP") == "runner"
+_SCHED_ENV = os.environ.get("SCHEDULER")
+_SCHED = {"enabled": _truthy(_SCHED_ENV) if _SCHED_ENV is not None else _RUNNER,
           "interval_s": max(60, int(os.environ.get("SCHEDULER_INTERVAL", "1800") or 1800)),
           "mac": _truthy(os.environ.get("SCHEDULER_MAC")),
+          # run derived builds in the tick — on the build-writer host only (the runner), so builds move off
+          # the Mac. SCHEDULER_BUILDS=1 forces it on elsewhere; the shared source_runs ledger keeps a build
+          # from double-running across hosts during the Mac→cloud cutover.
+          "builds": _RUNNER or _truthy(os.environ.get("SCHEDULER_BUILDS")),
           "thread_started": False, "running": False, "ticks": 0,
           "last_tick": None, "next_tick": None, "last_due": [], "last_skip": None,
           "runs": [], "error": None}
@@ -4510,6 +4441,19 @@ def _sched_tick():
                 del _SCHED["runs"][80:]
             except Exception as e:
                 _SCHED["error"] = "%s: %s" % (s["id"], str(e)[:160])
+        # Derived master builds (dim_sku chain, master_quality, item_identity, the canon head-to-head) AFTER
+        # the source landings that trigger them — on the build-writer host only, so the cloud runner owns the
+        # builds that used to run on the Mac --due tick. Same run_one + ledger treatment as a source.
+        if _SCHED["builds"]:
+            try:
+                for b in rs.due_builds():
+                    rec = rs.run_one(b)
+                    rs._land_runs([rec], log=lambda *a: None)
+                    _SCHED["runs"].insert(0, {"source": rec.get("source"), "status": rec.get("status"),
+                                              "at": int(time.time())})
+                del _SCHED["runs"][80:]
+            except Exception as e:
+                _SCHED["error"] = "builds: %s" % str(e)[:160]
         _SCHED["ticks"] += 1
         _SCHED["last_tick"] = int(time.time())
     finally:
@@ -4759,6 +4703,26 @@ def _current_user():
     except Exception:
         return None
 
+def _managed_allowlist():
+    """UI-managed access list (durable admin_allowlist.json — same STATE_BUCKET path as admin_flags, so it
+    survives Fly redeploys). auth_gate merges this with the ALLOWED_EMAILS env bootstrap + the admins."""
+    d = load("admin_allowlist.json", {"emails": []})
+    return d.get("emails", []) if isinstance(d, dict) else []
+
+auth_gate.set_allowlist_provider(_managed_allowlist)   # effective allowlist = env bootstrap + this + admins
+
+import re as _re_admin
+_EMAIL_RE = _re_admin.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+def _require_admin():
+    """Guard for /api/admin/*. Returns a 403 response for non-admins, else None to proceed. When the gate
+    is OFF (local dev / pre-secrets) everything is open, matching auth_gate's 'unconfigured -> open'."""
+    if not auth_gate.enabled():
+        return None
+    if not auth_gate.is_admin(_current_user()):
+        return jsonify(ok=False, error="admin access required"), 403
+    return None
+
 def _save_json(name, obj):
     if STATE_BUCKET:
         try:
@@ -4805,10 +4769,14 @@ def usage_summary():
 
 @app.get("/api/admin/flags")
 def admin_flags_get():
+    g = _require_admin()
+    if g: return g
     return jsonify(ok=True, flags=FLAGS)
 
 @app.put("/api/admin/flags")
 def admin_flags_put():
+    g = _require_admin()
+    if g: return g
     b = request.get_json(force=True, silent=True) or {}
     if isinstance(b.get("apps"), dict):
         FLAGS["apps"] = b["apps"]
@@ -4819,16 +4787,60 @@ def admin_flags_put():
 
 @app.get("/api/admin/access")
 def admin_access():
+    g = _require_admin()
+    if g: return g
+    env_boot = sorted({e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()})
+    managed = sorted({str(e).strip().lower() for e in _managed_allowlist() if str(e).strip()})
+    admins = sorted(auth_gate._admin_emails())
+    seen = sorted({e.get("user") for e in USAGE if e.get("user")})
     try:
-        allow = auth_gate._allowed_emails()
+        allow = sorted(auth_gate._allowed_emails())
     except Exception:
         allow = []
-    users = sorted({e.get("user") for e in USAGE if e.get("user")})
     return jsonify(ok=True, gated=auth_gate.enabled(), currentUser=_current_user(),
-                   allowlist=sorted(allow), seenUsers=users)
+                   isAdmin=(auth_gate.is_admin(_current_user()) or not auth_gate.enabled()),
+                   admins=admins, bootstrap=env_boot, managed=managed,
+                   allowlist=allow, seenUsers=seen)
+
+@app.post("/api/admin/users")
+def admin_users_add():
+    """Add an email to the UI-managed allowlist (durable). Admin-only. Bootstrap (env) + admins are managed
+    elsewhere and are always allowed regardless."""
+    g = _require_admin()
+    if g: return g
+    b = request.get_json(force=True, silent=True) or {}
+    email = (b.get("email") or "").strip().lower()
+    if not _EMAIL_RE.match(email):
+        return jsonify(ok=False, error="enter a valid email address"), 400
+    d = load("admin_allowlist.json", {"emails": []})
+    emails = {str(e).strip().lower() for e in (d.get("emails") or []) if str(e).strip()}
+    emails.add(email)
+    _save_json("admin_allowlist.json", {"emails": sorted(emails)})
+    return jsonify(ok=True, added=email, managed=sorted(emails))
+
+@app.post("/api/admin/users/remove")
+def admin_users_remove():
+    """Remove an email from the UI-managed allowlist. Admin-only. Can't remove a bootstrap(env) email or an
+    admin here — those are edited via the ALLOWED_EMAILS / ADMIN_EMAILS secrets so a UI slip can't lock out."""
+    g = _require_admin()
+    if g: return g
+    b = request.get_json(force=True, silent=True) or {}
+    email = (b.get("email") or "").strip().lower()
+    boot = {e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()}
+    if email in boot:
+        return jsonify(ok=False, error="bootstrap email — remove it from the ALLOWED_EMAILS secret instead"), 400
+    if auth_gate.is_admin(email):
+        return jsonify(ok=False, error="admin — cannot be removed here"), 400
+    d = load("admin_allowlist.json", {"emails": []})
+    emails = {str(e).strip().lower() for e in (d.get("emails") or []) if str(e).strip()}
+    emails.discard(email)
+    _save_json("admin_allowlist.json", {"emails": sorted(emails)})
+    return jsonify(ok=True, removed=email, managed=sorted(emails))
 
 @app.get("/api/admin/overview")
 def admin_overview():
+    g = _require_admin()
+    if g: return g
     # book value (best-effort) + open service reports + run count + 7d usage
     book_val = None
     try:
@@ -5878,6 +5890,125 @@ def census_reference_ep():
         return jsonify(ok=True, count=len(rows), rows=rows)
     except Exception as e:
         return jsonify(ok=False, error=str(e)[:160]), 500
+
+
+@app.get("/api/cex/spend")
+def cex_spend_ep():
+    """BLS CEX mean annual alcohol $ per consumer unit by income bracket.
+    ?item=ALCBEVG|ALCHOME|ALCAWAY|TOTALEXP|INCBEFTX  ?bracket=21  ?year=2023"""
+    import cex_ref
+    try:
+        yr = int(request.args["year"]) if request.args.get("year") else None
+        rows = cex_ref.query(item=request.args.get("item") or None,
+                             bracket=request.args.get("bracket") or None, year=yr)
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="cex_reference not landed yet (run the cex source: cex_ref.build)")
+
+
+@app.get("/api/census/demand")
+def census_demand_ep():
+    """Trade-area alcohol demand $ for one geo — CEX mean spend × ACS B19001 households, with the
+    at-home (off-premise) / away (on-premise) split. ?geo_fips=12095[&geo_level=county|state|zcta].
+    Bare 5-digit ids try county then fall back to ZIP (they collide); pass geo_level=zcta to force ZIP.
+    Honest {ok:false, reason} until both cex_reference and the ACS brackets are landed."""
+    import cex_ref
+    fips = (request.args.get("geo_fips") or "").strip()
+    if not fips:
+        return jsonify(ok=False, error="geo_fips required (county FIPS, ZIP, or 2-digit state)"), 400
+    try:
+        return jsonify(**cex_ref.demand_for(fips, geo_level=request.args.get("geo_level") or None))
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:160]), 500
+
+
+@app.get("/api/census/demand/top")
+def census_demand_top_ep():
+    """Rank geos by trade-area demand (the demand.html leaderboard). ?geo_level=zcta|county|state
+    ?prefix=328 (geo_fips prefix — e.g. Orlando-area ZIPs) ?by=demand_total_usd|demand_per_hh_usd|
+    demand_index_vs_us|households ?limit=25 ?min_households=500 (floor keeps tiny-ZCTA noise out of
+    per-HH/index rankings)."""
+    import warehouse
+    lvl = request.args.get("geo_level") or "county"
+    by = request.args.get("by") or "demand_total_usd"
+    if by not in ("demand_total_usd", "demand_per_hh_usd", "demand_index_vs_us", "households"):
+        return jsonify(ok=False, error="bad ?by"), 400
+    if lvl not in ("zcta", "county", "state"):
+        return jsonify(ok=False, error="bad ?geo_level"), 400
+    try:
+        limit = max(1, min(500, int(request.args.get("limit", 25))))
+        min_hh = int(request.args.get("min_households", 500))
+    except ValueError:
+        return jsonify(ok=False, error="bad numeric param"), 400
+    where, params = ["geo_level = ?", "households >= ?"], [lvl, min_hh]
+    pref = (request.args.get("prefix") or "").strip()
+    if pref:
+        where.append("geo_fips LIKE ?"); params.append(pref + "%")
+    sql = ("SELECT * FROM t WHERE " + " AND ".join(where)
+           + " ORDER BY %s DESC LIMIT %d" % (by, limit))
+    try:
+        rows = warehouse.query("trade_area_demand", sql, params)
+        return jsonify(ok=True, count=len(rows), rows=rows)
+    except Exception:
+        return jsonify(ok=True, count=0, rows=[],
+                       note="trade_area_demand not landed yet (run cex_ref.build_demand)")
+
+
+@app.get("/api/cpi")
+def cpi_ep():
+    """BLS CPI-U alcohol series. ?item=SAF116&area=0000&year=2024&annual=1 — or ?real=1 for the
+    item rebased against all-items (relative real price, the deflator/premiumization read)."""
+    import cpi_ref
+    a = request.args
+    try:
+        if a.get("real") in ("1", "true", "yes"):
+            yr = int(a["base_year"]) if a.get("base_year") else None
+            return jsonify(**cpi_ref.real_series(item=a.get("item") or "SAF116",
+                                                 area=a.get("area") or "0000", base_year=yr))
+        yr = int(a["year"]) if a.get("year") else None
+        rows = cpi_ref.query(item=a.get("item") or None, area=a.get("area") or None, year=yr,
+                             annual=a.get("annual") in ("1", "true", "yes"))
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except ValueError as e:
+        return jsonify(ok=False, error="bad numeric param: %s" % e), 400
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="cpi_reference not landed yet (run the cpi source: cpi_ref.build)")
+
+
+@app.get("/api/fred")
+def fred_ep():
+    """FRED macro series. ?series=MRTSSM4453USN|liquor_store_sales&year=2026."""
+    import fred_ref
+    try:
+        yr = int(request.args["year"]) if request.args.get("year") else None
+        rows = fred_ref.query(series=request.args.get("series") or None, year=yr,
+                              limit=int(request.args.get("limit", 5000)))
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except ValueError as e:
+        return jsonify(ok=False, error="bad numeric param: %s" % e), 400
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="fred_reference not landed yet (run the fred source: fred_ref.build, needs FRED_API_KEY)")
+
+
+@app.get("/api/bea")
+def bea_ep():
+    """BEA regional income. ?metric=personal_income_per_capita&geo_level=county&geo_fips=12095&year=2023."""
+    import bea_ref
+    try:
+        yr = int(request.args["year"]) if request.args.get("year") else None
+        rows = bea_ref.query(metric=request.args.get("metric") or None,
+                             geo_level=request.args.get("geo_level") or None,
+                             geo_fips=request.args.get("geo_fips") or None, year=yr)
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except ValueError as e:
+        return jsonify(ok=False, error="bad numeric param: %s" % e), 400
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="bea_reference not landed yet (run the bea source: bea_ref.build — the BEA key "
+                            "must be activated via BEA's email link)")
 
 
 @app.get("/api/places")

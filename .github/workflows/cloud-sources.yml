@@ -15,9 +15,11 @@ name: cloud-sources
 # BUCKET_NAME is not sensitive, so it's set inline below (no secret needed).
 # OPTIONAL (skipped honestly if absent): CENSUS_API_KEY → reference data.
 
+# SCHEDULE REMOVED — scheduling lives on Fly, not here. The hourly Fly dispatcher
+# (unifyd/dispatch_ephemeral.py, machine role=dispatcher) reads the same registry and spawns an
+# ephemeral machine per due source, so this cron was both redundant and a standing red X: the repo
+# has no Actions minutes, so every nightly run failed. Kept dispatch-only as a manual escape hatch.
 on:
-  schedule:
-    - cron: "0 9 * * *"          # 09:00 UTC daily
   workflow_dispatch:
     inputs:
       geofill_limit:

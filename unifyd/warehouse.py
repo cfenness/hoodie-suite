@@ -402,6 +402,17 @@ def connect():
     return con
 
 
+def has_column(name, col):
+    """True if table `name` has column `col`. Cheap (reads the schema, LIMIT 0). Used to guard queries that
+    reference a newly-added column against tables written before that column existed (e.g. geo_precision on a
+    src_outlets that predates the geo layer — the column only appears after the first write that includes it)."""
+    try:
+        query(name, "SELECT %s FROM t LIMIT 0" % col)
+        return True
+    except Exception:
+        return False
+
+
 def query(name, sql=None, params=None):
     """Query dataset `name` in place. `sql` may reference the view `t` (the Parquet).
     Defaults to `SELECT * FROM t`. Returns a list of dicts.
