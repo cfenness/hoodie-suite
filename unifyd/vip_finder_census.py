@@ -86,6 +86,9 @@ MISS_SENTINEL = "Invalid customer ID"
 
 STATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent_state")
 STATE_FILE = os.path.join(STATE_DIR, "vip_finder_census.json")
+# The checkpoint also lives in object storage: a CI runner's disk does not survive the run, so
+# without this every scheduled bite would restart the 46k keyspace from zero.
+STATE_KEY = "state/vip_finder_census.json"
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 
 TENANT_FIELDS = ["cust_id", "theme_version", "show_captcha", "brand_code", "brand_description",
@@ -323,23 +326,57 @@ class Sink:
 
 
 # ── state ─────────────────────────────────────────────────────────────────────────────────────
+def _blank():
+    return {"done": {}, "hits": {}, "brands": {}, "started": int(time.time() * 1000)}
+
+
+def _normalize(s):
+    s.setdefault("done", {}); s.setdefault("hits", {}); s.setdefault("brands", {})
+    return s
+
+
 def load_state():
+    """Checkpoint, preferring the WAREHOUSE copy. A CI runner's disk is ephemeral, so a purely
+    local checkpoint would make every scheduled run re-walk the 46k keyspace from zero; the
+    warehouse copy is what makes `--deadline`-bounded bites across separate runs actually add up.
+    Falls back to the local file (and merges it in) when object storage isn't configured."""
+    remote = {}
+    if warehouse is not None:
+        try:
+            raw = warehouse.get_bytes(STATE_KEY)
+            if raw:
+                remote = _normalize(json.loads(raw.decode("utf-8")))
+        except Exception:
+            remote = {}
+    local = {}
     if os.path.exists(STATE_FILE):
         try:
-            s = json.load(open(STATE_FILE, encoding="utf-8"))
-            s.setdefault("done", {}); s.setdefault("hits", {}); s.setdefault("brands", {})
-            return s
+            local = _normalize(json.load(open(STATE_FILE, encoding="utf-8")))
         except Exception:
-            pass
-    return {"done": {}, "hits": {}, "brands": {}, "started": int(time.time() * 1000)}
+            local = {}
+    if not remote and not local:
+        return _blank()
+    if not remote:
+        return local
+    if not local:
+        return remote
+    for k in ("done", "hits", "brands"):                 # union — neither copy is authoritative
+        remote[k].update(local[k])
+    return remote
 
 
 def save_state(state):
     os.makedirs(STATE_DIR, exist_ok=True)
+    blob = json.dumps(state).encode("utf-8")
     tmp = STATE_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(state, f)
+    with open(tmp, "wb") as f:
+        f.write(blob)
     os.replace(tmp, STATE_FILE)
+    if warehouse is not None and getattr(warehouse, "remote", lambda: False)():
+        try:
+            warehouse.put_bytes(STATE_KEY, blob)
+        except Exception:
+            pass                                         # a failed checkpoint push must not kill the sweep
 
 
 # ── sweep ─────────────────────────────────────────────────────────────────────────────────────
