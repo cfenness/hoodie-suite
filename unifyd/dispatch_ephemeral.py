@@ -70,18 +70,48 @@ def current_image():
     return None
 
 
+def image_tag(ref):
+    """Normalize a Fly image ref to the thing worth comparing — its release tag.
+
+    The SAME release is reported in different shapes depending on how a machine was configured:
+      registry.fly.io/app:deployment-XYZ                     (app machines, after a deploy)
+      registry.fly.io/app:deployment-XYZ@sha256:abc...       (a machine pinned by `machine update`)
+      registry.fly.io/app@sha256:abc...                      (pinned by digest only)
+    Comparing these as raw strings reports a permanent false STALE, so pull out `deployment-XYZ`
+    when a tag is present and fall back to the digest when it is not.
+    """
+    if not ref:
+        return ""
+    name = ref.rsplit("/", 1)[-1]                  # drop the registry host
+    tag = name.split("@", 1)[0]                    # drop any @sha256:... suffix
+    if ":" in tag:
+        return tag.split(":", 1)[1]                # → deployment-XYZ
+    return name.split("@", 1)[1] if "@" in name else name
+
+
 def _warn_if_stale(app_image):
     """The dispatcher machine is pinned at creation and `flyctl deploy` does NOT touch it (no
     process group). Stale here is not cosmetic: due-ness is computed from THIS machine's copy of
     source_registry, so a newly added source stays invisible until the machine is re-pinned.
     Make that loud rather than silent — see tools/repin_dispatcher.sh."""
-    mine = os.environ.get("FLY_IMAGE_REF", "")
+    mine = ""
+    mid = os.environ.get("FLY_MACHINE_ID", "")
+    if mid:                                        # read our OWN config from the same API as the
+        try:                                       # app's, so both refs come back in one shape
+            for m in _machines():
+                if m.get("id") == mid:
+                    mine = (m.get("config") or {}).get("image", "")
+                    break
+        except Exception:
+            return
+    if not mine:
+        mine = os.environ.get("FLY_IMAGE_REF", "")
     if not mine or not app_image:
         return
-    if mine.rsplit("/", 1)[-1] != app_image.rsplit("/", 1)[-1]:
+    if image_tag(mine) != image_tag(app_image):
         print("dispatch: WARNING — dispatcher image is STALE (self=%s app=%s). Its source_registry "
-              "may be older than the deployed one, so new sources will not dispatch. Re-pin with "
-              "tools/repin_dispatcher.sh." % (mine.rsplit(":", 1)[-1], app_image.rsplit(":", 1)[-1]))
+              "is older than the deployed one, so newly added sources will NOT dispatch. Re-pin "
+              "with tools/repin_dispatcher.sh." % (image_tag(mine), image_tag(app_image)))
 
 
 def running_sources():
