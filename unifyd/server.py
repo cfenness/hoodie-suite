@@ -94,15 +94,18 @@ VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify", "instacart",
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
 
 def _dispatch_pull(conn, body):
-    # SINGLE SOURCE OF TRUTH: sources the registry owns run THROUGH the registry entrypoint (run_one), never a
-    # hand-maintained *_pull copy — so a fix in source_registry can never be silently bypassed by the app path
-    # (the drift that made "we fixed it 100 times" literally true — see _REGISTRY_CONN / dispatch_guard_test).
-    if conn in _REGISTRY_CONN:
+    # SINGLE SOURCE OF TRUTH: **any** source that exists in source_registry runs THROUGH the registry entrypoint
+    # (run_one) — never a hand-maintained *_pull copy. A fix in source_registry therefore applies to the app path
+    # automatically and can NEVER be silently bypassed by a stale bespoke copy. This universal rule (not just the
+    # _REGISTRY_CONN allowlist) is the real cure for "we fixed it N times and it reverted": the app can no longer
+    # run an old copy of a registry source. Enforced by dispatch_guard_test.
+    import source_registry as _reg
+    if conn in _REGISTRY_CONN or _reg.by_id(conn):
         return _run_via_registry(conn, body)
-    if conn in _CONN_PULL:                     # legacy hand-wired pulls not yet in the registry (target/doordash/google)
+    # NON-registry connectors only (state Socrata feeds, places, census-acs sub-feed, legacy doordash/google):
+    if conn in _CONN_PULL:
         return _CONN_PULL[conn](body)
-    return (cola_pull(body) if conn == "ttb-cola"
-            else instacart_pull(body) if conn == "instacart"
+    return (instacart_pull(body) if conn == "instacart"
             else places_pull(body) if conn == "orlando-accounts"
             else census_pull(body) if conn == "census-acs"
             else tx_pull(body) if conn == "tx-tabc"
@@ -218,8 +221,8 @@ def _run_via_registry(conn, body):
     import source_registry as _reg
     import run_sources as _rs
     body = body or {}
-    rid = _REGISTRY_CONN[conn]
-    src = next((s for s in _reg.SOURCES if s["id"] == rid), None)
+    rid = _REGISTRY_CONN.get(conn, conn)       # conn IS the registry id for the universal path; allowlist is legacy
+    src = _reg.by_id(rid) or next((s for s in _reg.SOURCES if s["id"] == rid), None)
     if not src:
         return _std_run(conn, int(time.time() * 1000), status="failed",
                         warnings=["no source_registry entry '%s'" % rid], trigger=body.get("trigger", "manual"))
@@ -231,57 +234,6 @@ def _run_via_registry(conn, body):
     return _std_run(conn, started, total=rows_after, status=app_status, trigger=body.get("trigger", "manual"),
                     warnings=([rec["error"]] if rec.get("error") else []),
                     extracts=[{"id": t, "rows": rows_after, "delta": delta, "status": app_status} for t in tables])
-
-def kroger_pull(body):
-    """Kroger Developer API (OAuth2) → kroger_products + kroger_runs. Needs KROGER_CLIENT_ID/SECRET (env or
-    body). First-class connector now; the old subprocess path (/api/connector/run) still works too."""
-    started = int(time.time() * 1000); body = body or {}
-    cid = body.get("client_id") or _CONN_CREDS.get("kroger", {}).get("id") or os.environ.get("KROGER_CLIENT_ID", "")
-    sec = body.get("client_secret") or _CONN_CREDS.get("kroger", {}).get("secret") or os.environ.get("KROGER_CLIENT_SECRET", "")
-    if not (cid and sec):
-        return _std_run("kroger", started, status="degraded", trigger=body.get("trigger", "manual"),
-                        warnings=["Kroger Client ID + Secret required (set KROGER_CLIENT_ID/SECRET or pass client_id/client_secret)"])
-    _CONN_CREDS["kroger"] = {"id": cid, "secret": sec}
-    os.environ["KROGER_CLIENT_ID"] = cid; os.environ["KROGER_CLIENT_SECRET"] = sec
-    import kroger_api
-    zips = [z.strip() for z in (body.get("zips") or ",".join(kroger_api.DEFAULT_ZIPS)).split(",") if z.strip()]
-    terms = [t.strip() for t in (body.get("terms") or ",".join(kroger_api.DEFAULT_TERMS)).split(",") if t.strip()]
-    kroger_api.run(zips, terms)
-    n = _wh_count("kroger_products")
-    return _std_run("kroger", started, total=n, trigger=body.get("trigger", "manual"),
-                    extracts=[{"id": "kroger_products", "rows": n, "delta": 0, "status": "success"}])
-
-def walmart_pull(body):
-    """Walmart via the DIRECT residential-proxy scraper (walmart_direct: IPRoyal residential exit + curl_cffi
-    Chrome-JA3 impersonation, paced rotation) → walmart_products + retail observations. $0 — NO Bright Data,
-    NO official API. This matches the source registry (walmart -> walmart_direct); the old Bright Data path
-    (walmart_scraper) is kept only for the standalone walmart_schedule.sh, not the app run path."""
-    started = int(time.time() * 1000); body = body or {}
-    import walmart_direct as wd
-    before = _wh_count("walmart_products")
-    terms = [q.strip() for q in (body.get("queries") or "").split(",") if q.strip()] or None
-    n = wd.pull(terms=terms, max_pages=int(body.get("max_pages", 4)),
-                detail_pages=bool(body.get("detail", True)), detail_cap=int(body.get("detail_cap", 600)),
-                log=lambda m: app.logger.info("WALMART %s", m))
-    after = _wh_count("walmart_products")
-    if not n:
-        return _std_run("walmart", started, status="degraded", trigger=body.get("trigger", "manual"),
-                        warnings=["0 products — PerimeterX may be blocking the residential exit; "
-                                  "check RESI_PROXY_* creds and curl_cffi availability"])
-    return _std_run("walmart", started, total=after, trigger=body.get("trigger", "manual"),
-                    extracts=[{"id": "walmart_products", "rows": after, "delta": after - before, "status": "success"}])
-
-def target_pull(body):
-    """Target RedSky (Bright Data) → target_products + target_stores. body.scope=national|local. HEAVY."""
-    started = int(time.time() * 1000); body = body or {}
-    import target_scraper as tg
-    if (body.get("scope") or "national") == "national":
-        tg.run_national(log=lambda m: app.logger.info("TARGET %s", m))
-    else:
-        tg.run(log=lambda m: app.logger.info("TARGET %s", m))
-    n = _wh_count("target_products")
-    return _std_run("target", started, total=n, trigger=body.get("trigger", "manual"),
-                    extracts=[{"id": "target_products", "rows": n, "delta": 0, "status": "success"}])
 
 def doordash_pull(body):
     """DoorDash geo merchant sweep → <market>_merchants (market intelligence). HEAVY (BD Browser). Toggleable."""
@@ -318,10 +270,10 @@ def walmart_api_pull(body):
     return _std_run("walmart-api", started, total=n, trigger=body.get("trigger", "manual"),
                     extracts=[{"id": "walmart_products", "rows": n, "delta": 0, "status": "success"}])
 
-# kroger + walmart moved to the registry path (_REGISTRY_CONN); their old *_pull functions are now dead code
-# (kept until a follow-up removes them) and MUST NOT be re-wired here — dispatch_guard_test enforces that.
-_CONN_PULL = {"walmart-api": walmart_api_pull,
-              "target": target_pull, "doordash": doordash_pull, "google": google_pull}
+# _CONN_PULL holds ONLY non-registry conns. Registry sources (kroger/walmart/target/…) run via the registry
+# path — their old *_pull copies were DELETED, not just unwired. dispatch_guard_test blocks re-adding one.
+_CONN_PULL = {"walmart-api": walmart_api_pull,   # NON-registry conns only (target now routes via the registry)
+              "doordash": doordash_pull, "google": google_pull}
 
 # The connector registry — ONE source of truth the Pulls console reads (/api/connectors): what sources exist,
 # how they run, their warehouse data + <x>_runs table (for last-run), and whether they're enabled (on/off).
@@ -739,61 +691,8 @@ def fl_pull(conn_id):
             "status": status, "trigger": "manual", "total": sum(e["rows"] for e in exs),
             "degraded": status == "partial", "warnings": warns, "extracts": exs}
 
-# ---------------- COLA pull (embeds the scraper) ----------------
-def cola_pull(params):
-    today = datetime.date.today()
-    d_from = params.get("from") or (today - datetime.timedelta(days=params.get("days", 7))).strftime("%m/%d/%Y")
-    d_to   = params.get("to") or today.strftime("%m/%d/%Y")
-    args = cola.build_args([
-        "--from", d_from, "--to", d_to,
-        "--chunk-days", str(params.get("chunk_days", 1)),
-        "--out", os.path.join(STATE_DIR, "cola"),
-        "--resume",
-    ] + (["--detail"] if params.get("detail") else []) + (["--ocr"] if params.get("ocr") else []))
-    started = int(time.time() * 1000)
-    ds, runs, _ = cola.scrape(args, log=lambda m: app.logger.info("COLA %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-# ---------------- ABC FWS pull (directional inventory, embeds the scraper) ----------------
-def abc_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = abc.pull(
-        sample=params.get("sample", 40), crawl_all=bool(params.get("all")),
-        limit=params.get("limit"), out=os.path.join(STATE_DIR, "abc"),
-        state_dir=os.path.join(STATE_DIR, "abc"),
-        log=lambda m: app.logger.info("ABC %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-def specs_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = specs.pull(
-        sample=params.get("sample", 40), crawl_all=params.get("all", True),   # FULL catalog by default (was a 40-sample)
-        limit=params.get("limit"), out=os.path.join(STATE_DIR, "specs"),
-        state_dir=os.path.join(STATE_DIR, "specs"),
-        log=lambda m: app.logger.info("SPECS %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-def binnys_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = binnys.pull(
-        sample=params.get("sample", 300), crawl_all=params.get("all", True),   # FULL catalog by default (was a 300-sample)
-        limit=params.get("limit"), out=os.path.join(STATE_DIR, "binnys"),
-        state_dir=os.path.join(STATE_DIR, "binnys"),
-        log=lambda m: app.logger.info("BINNYS %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
+# NOTE: cola_pull / abc_pull / specs_pull / binnys_pull were removed — ttb-cola/abc-fws/specs/binnys all run
+# through the registry (run_one) now; those old DATASETS-preview copies were the drift that caused reversions.
 def instacart_pull(params):
     """FREE Instacart pull — self-hosted Playwright browser drives Instacart's own SearchResultsPlacements
     GraphQL (no Bright Data, no proxy). Lands per-store product+price into instacart_products +
@@ -836,24 +735,11 @@ def instacart_pull(params):
             "extracts": [{"id": "instacart_products", "rows": len(rows), "delta": len(rows),
                           "status": status}], "trigger": params.get("trigger", "manual")}
 
-def total_wine_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = total_wine.pull(
-        cap=int(params.get("cap", 400)), delay=float(params.get("delay", 1.0)),
-        out=os.path.join(STATE_DIR, "total_wine"), state_dir=os.path.join(STATE_DIR, "total_wine"),
-        log=lambda m: app.logger.info("TOTAL-WINE %s", m))
-    _to_warehouse(ds)
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-# vtinfo + ab-inbev now run through the REGISTRY path (_REGISTRY_CONN -> run_sources.run_one), so the app
-# runs exactly what the scheduler runs. Their old hand-wired *_pull copies were removed here because they had
-# DRIFTED: ab-inbev ran ab_locator.pull() in the app but ab_fill.run() in the registry (a different module and
-# a different table shape); vtinfo passed ad-hoc brand/zip params the scheduled run never uses. Re-adding a
-# *_pull for a registry-owned source is blocked by dispatch_guard_test. (abc/specs/binnys/total_wine already
-# route via the registry too; their remaining *_pull defs above are dead and safe to delete in a cleanup pass.)
+# EVERY registry-owned source runs through the REGISTRY path (server._dispatch_pull -> run_sources.run_one),
+# so the app runs EXACTLY what the scheduler runs. All the old hand-wired *_pull copies (kroger, walmart, target,
+# cola/ttb-cola, abc, specs, binnys, total_wine, vtinfo, ab-inbev) were DELETED — they were the drift that made
+# "we fixed it N times and it reverted" literally true (e.g. ab-inbev ran ab_locator.pull() in the app but
+# ab_fill.run() in the registry). Re-adding a *_pull for a registry-owned source is blocked by dispatch_guard_test.
 
 # ---------------- API ----------------
 @app.get("/api/health")
