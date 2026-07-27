@@ -27,6 +27,13 @@ FIELDS = ["brand", "brand_group", "product_name", "class_type", "core_name", "fl
           "origin", "country", "state", "bottled_in", "region", "sub_region", "appellation", "varietal", "image",
           "taste", "body", "food_pairing", "expert_rating", "finish",   # ecommerce PDP describing-fields
           "size_ml", "packsize", "container", "pack", "upc", "gtin", "vintage", "edition", "supplier",
+          # 2D carrier (GS1 Sunrise 2027). The GTIN is NOT replaced — it stays embedded as AI (01) —
+          # so these describe how the identifier is CARRIED, and `upc`/`gtin` remain the identity keys.
+          #   gs1_digital_link : the Digital Link URI (…/01/<gtin>/10/<lot>), item-grain template
+          #   code_type        : UPCA | EAN13 | QRCODE | DATAMATRIX — which symbol we actually read
+          # Instance-grain AIs (batch/lot (10), expiry (17), serial (21)) are per PHYSICAL UNIT and
+          # deliberately absent: they'd break item grain. upc.parse_2d returns them separately.
+          "gs1_digital_link", "code_type",
           "price"]   # shelf price (soft cross-source clustering signal via price_signal.py — never a key)
 
 # sources with a REAL brand column — used to seed the brand dictionary

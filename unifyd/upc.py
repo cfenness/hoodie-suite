@@ -183,6 +183,98 @@ def assess(code, applicant=None, crosswalk=None):
     return out
 
 
+# ── GS1 2D codes (QR / DataMatrix) — the "Sunrise 2027" carrier ────────────────────────────────────────────
+# GS1's Sunrise 2027 pushes retail POS to scan 2D codes. It does NOT replace the GTIN: the same
+# 12/13/14-digit number stays embedded, as AI (01). So a 2D code is a new CARRIER, not a new identity —
+# everything above (normalize/classify/brand_key/assess) still applies once the GTIN is extracted.
+#
+# GRAIN WARNING (load-bearing): only AI (01) is ITEM-grain. (10) batch/lot, (17) expiry and (21) serial
+# identify a PHYSICAL UNIT, not a product — they must never be written onto an item/SKU row. parse_2d()
+# therefore returns the gtin separately from `ais`, so a caller can't casually flatten them together.
+_AI_NAME = {"01": "gtin", "10": "batch_lot", "11": "production_date", "13": "packaging_date",
+            "15": "best_before", "17": "expiry", "21": "serial", "22": "consumer_variant",
+            "240": "additional_id", "30": "count", "414": "party_gln", "422": "country_of_origin"}
+# AIs whose value is a FIXED length (so an unparenthesized/FNC1 stream can be walked). Everything else is
+# variable-length and needs a separator, which is exactly why we don't guess at raw FNC1 streams below.
+_AI_FIXED = {"00": 18, "01": 14, "02": 14, "11": 6, "12": 6, "13": 6, "15": 6, "16": 6, "17": 6, "20": 2}
+_EL_RE = re.compile(r"\((\d{2,4})\)([^(]*)")
+
+
+def parse_element_string(s):
+    """Parse a PARENTHESIZED GS1 element string — '(01)00614141123452(10)LOT(21)SER' — to {ai: value}.
+
+    Also walks an unparenthesized stream while every AI it meets is fixed-length; it STOPS at the first
+    variable-length AI rather than guessing, because without an FNC1 separator the boundary is genuinely
+    ambiguous and a guess would silently invent a batch code."""
+    s = str(s or "").strip()
+    if not s:
+        return {}
+    if "(" in s:
+        return {m.group(1): m.group(2).strip() for m in _EL_RE.finditer(s) if m.group(2).strip()}
+    out, i = {}, 0
+    while i + 2 <= len(s):
+        ai = s[i:i + 2]
+        n = _AI_FIXED.get(ai)
+        if n is None:
+            break                                  # variable-length without a separator → stop, don't guess
+        val = s[i + 2:i + 2 + n]
+        if len(val) < n:
+            break
+        out[ai] = val
+        i += 2 + n
+    return out
+
+
+def parse_digital_link(uri):
+    """Parse a GS1 Digital Link URI to {ai: value}.
+
+    Shape: https://host/01/09521234543213/10/LOT/21/SER?17=270101
+    Path segments are AI/value pairs; query params carry further AIs. Alphabetic aliases ('gtin',
+    'lot', 'ser', 'cpv') are accepted because GS1 permits them in the human-readable form."""
+    s = str(uri or "").strip()
+    if "/" not in s:
+        return {}
+    alias = {"gtin": "01", "itip": "8006", "cpv": "22", "lot": "10", "ser": "21"}
+    path, _, query = s.partition("?")
+    path = path.split("://", 1)[-1]
+    segs = [p for p in path.split("/")[1:] if p]        # drop the host
+    out = {}
+    for i in range(len(segs) - 1):
+        key = alias.get(segs[i].lower(), segs[i])
+        if key.isdigit() and 2 <= len(key) <= 4:
+            out[key] = segs[i + 1]
+    for pair in query.split("&"):
+        k, _, v = pair.partition("=")
+        k = alias.get(k.lower(), k)
+        if v and k.isdigit() and 2 <= len(k) <= 4:
+            out[k] = v
+    return out
+
+
+def parse_2d(payload):
+    """Decode a 2D barcode payload → {format, gtin, gtin_status, ais, digital_link}.
+
+    `gtin` is the normalized, check-digit-verified item identifier ('' when the code carries none or
+    it doesn't validate). `ais` holds the REMAINING application identifiers, deliberately kept apart
+    from the GTIN because they are instance-grain (see the grain warning above)."""
+    s = str(payload or "").strip()
+    if not s:
+        return {"format": "", "gtin": "", "gtin_status": "none", "ais": {}, "digital_link": ""}
+    is_dl = s.lower().startswith(("http://", "https://"))
+    ais = parse_digital_link(s) if is_dl else parse_element_string(s)
+    if not ais and s.isdigit():                        # a bare number in a QR is just a GTIN
+        ais = {"01": s}
+    raw = ais.pop("01", "")
+    gtin = normalize(raw)
+    status = classify(raw) if raw else "none"
+    if status != "valid":
+        gtin = ""                                      # never promote a placeholder/bad-check code
+    return {"format": "digital_link" if is_dl else ("element_string" if ais or raw else ""),
+            "gtin": gtin, "gtin_status": status,
+            "ais": {_AI_NAME.get(k, k): v for k, v in ais.items()},
+            "digital_link": s if is_dl else ""}
+
+
 def _owner_match(a, b):
     if not a or not b:
         return False
@@ -226,6 +318,29 @@ def _selftest():
     assert a2["owner_agrees"] is False and a2["confidence"] == 0.35, a2
     a3 = assess("000000000000", applicant="ACME WINE CO", crosswalk=xw)
     assert a3["status"] == "placeholder" and a3["upc"] == "" and a3["confidence"] == 0.0
+
+    # ── GS1 2D (Sunrise 2027): the GTIN survives the carrier change, instance AIs stay separate ──
+    dl = parse_2d("https://example.com/01/00036000291452/10/LOT42/21/SER7?17=270101")
+    assert dl["format"] == "digital_link", dl
+    assert dl["gtin"] == "00036000291452", dl          # 14-digit GTIN-14 kept as-is
+    assert dl["ais"] == {"batch_lot": "LOT42", "serial": "SER7", "expiry": "270101"}, dl
+    assert "gtin" not in dl["ais"]                     # item-grain id never leaks into instance AIs
+    el = parse_2d("(01)00036000291452(10)LOT42(21)SER7")
+    assert el["format"] == "element_string" and el["gtin"] == "00036000291452", el
+    assert el["ais"]["batch_lot"] == "LOT42", el
+    # a 2D code carrying a plain UPC-A still resolves through the existing engine
+    bare = parse_2d("036000291452")
+    assert bare["gtin"] == "036000291452" and bare["gtin_status"] == "valid", bare
+    assert brand_key(bare["gtin"]) == "0360002"        # → same owner crosswalk as the 1D path
+    # a placeholder printed into a QR is caught exactly as it is on a 1D barcode
+    ph = parse_2d("https://example.com/01/00000000000000")
+    assert ph["gtin"] == "" and ph["gtin_status"] == "placeholder", ph
+    # alphabetic Digital Link aliases
+    assert parse_digital_link("https://ex.com/gtin/00036000291452/lot/L1")["10"] == "L1"
+    # unparenthesized stream: walk fixed-length AIs, then STOP rather than invent a lot code
+    assert parse_element_string("010003600029145217270101") == {"01": "00036000291452", "17": "270101"}
+    assert parse_element_string("010003600029145210LOT") == {"01": "00036000291452"}
+    assert parse_2d("")["gtin"] == "" and parse_2d(None)["format"] == ""
     print("upc.py self-test: OK")
 
 
