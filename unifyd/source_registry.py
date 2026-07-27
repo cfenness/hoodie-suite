@@ -159,8 +159,10 @@ SOURCES = [
     dict(id="vip-finder-census", label="VIP finder tenant census",
          code="import vip_finder_census as m; m.pull(argv=['--deadline', '3000'])",
          tables=["vip_finder_tenants", "vip_finder_brands"], klass="headless", cadence="weekly",
-         enabled=False, cost_class="proxy", timeout=3600,
-         note="enumerates custID 36^3; enable once --calibrate confirms a sustainable per-IP rate"),
+         enabled=True, cost_class="proxy", timeout=3600,
+         note="enumerates custID 36^3 through the ISP pool; each run takes a 50min resumable bite "
+              "(checkpoint in the warehouse) until the keyspace is walked. Pacing is adaptive — 1s/IP, "
+              "doubling on 429 — so it self-throttles; --calibrate only makes it faster"),
     dict(id="doordash-sitemap", label="DoorDash store universe", code="import doordash_sitemap as m; m.run()",
          tables=["doordash_stores"], klass="headless", cadence="weekly", enabled=True, timeout=7200,
          note="$0 national store spine from DoorDash's own sitemaps (curl_cffi+ISP); feeds naop + retail"),
