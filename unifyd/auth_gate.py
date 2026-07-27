@@ -187,11 +187,13 @@ def init(app):
         p = request.path
         if p in _PUBLIC:
             return
+        print("AUTHDEBUG _gate: path=%r has_email=%r session_keys=%r cookie_present=%r ua=%r"
+              % (p, bool(session.get("email")), list(session.keys()),
+                 bool(request.cookies.get(app.config.get("SESSION_COOKIE_NAME", "session"))),
+                 request.headers.get("User-Agent", "")[:60]),
+              flush=True)
         if session.get("email"):
             return
-        print("AUTHDEBUG _gate: no session email for path=%r session_keys=%r cookie_present=%r"
-              % (p, list(session.keys()), bool(request.cookies.get(app.config.get("SESSION_COOKIE_NAME", "session")))),
-              flush=True)
         # mobile bearer token (native apps have no cookie)
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Bearer ") and verify_mobile_token(auth[7:]):
