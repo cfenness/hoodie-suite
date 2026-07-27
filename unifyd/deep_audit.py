@@ -207,11 +207,85 @@ def docs_drift():
     return findings
 
 
+def undeclared_capabilities():
+    """A source gained an optional third-party dependency but did NOT declare it in `caps=[…]`.
+
+    Optional libs are imported behind `except: return []` guards, so a missing one degrades the data
+    silently — the run still reports clean. `caps=` is what turns that into a `degraded` run
+    (run_sources → capability.warnings_for). This check keeps the declaration honest as code changes:
+    it re-derives each source's capabilities from the actual IMPORT GRAPH and flags anything a source
+    now reaches but hasn't declared. Without it the mechanism rots the first time someone adds an
+    `import curl_cffi` to a shared helper.
+
+    `anthropic` is excluded on purpose: it's opt-in and gated on ANTHROPIC_API_KEY, so declaring it
+    would fire a permanent false 'degraded' — a warning that always fires is worse than none.
+    """
+    import ast
+    import source_registry as reg
+    root = _DIR
+    local = {f[:-3] for f in os.listdir(root) if f.endswith(".py")}
+    capmod = {"PIL": "pillow", "pyzbar": "pyzbar", "pylibdmtx": "pylibdmtx", "pytesseract": "pytesseract",
+              "curl_cffi": "curl_cffi", "patchright": "patchright", "bs4": "bs4"}
+    imports = {}
+    for f in os.listdir(root):
+        if not f.endswith(".py"):
+            continue
+        try:
+            tree = ast.parse(open(os.path.join(root, f), encoding="utf-8", errors="replace").read())
+        except Exception:
+            continue
+        loc, cap = set(), set()
+        for n in ast.walk(tree):
+            mods = []
+            if isinstance(n, ast.Import):
+                mods = [a.name for a in n.names]
+            elif isinstance(n, ast.ImportFrom) and n.module:
+                mods = [n.module]
+            for m in mods:
+                top = m.split(".")[0]
+                if top in capmod:
+                    cap.add(capmod[top])
+                elif top in local:
+                    loc.add(top)
+        imports[f[:-3]] = (loc, cap)
+
+    def reach(mod, depth=3, seen=None):
+        seen = seen if seen is not None else set()
+        if mod in seen or mod not in imports or depth < 0:
+            return set()
+        seen.add(mod)
+        loc, cap = imports[mod]
+        out = set(cap)
+        for l in loc:
+            out |= reach(l, depth - 1, seen)
+        return out
+
+    findings = []
+    for s in reg.SOURCES:
+        if not s.get("enabled"):
+            continue
+        m = re.search(r"import\s+([a-z_0-9]+)", s.get("code", ""))
+        if not m:
+            continue
+        derived = reach(m.group(1))
+        undeclared = sorted(derived - set(s.get("caps", [])))
+        if undeclared:
+            findings.append(_finding(
+                "capability-undeclared", "warn", s["id"],
+                "%s reaches optional lib(s) %s but doesn't declare them in caps=[…] — if one goes "
+                "missing the run reports CLEAN while producing worse data"
+                % (s["id"], ", ".join(undeclared)),
+                {"source": s["id"], "module": m.group(1), "undeclared": undeclared,
+                 "declared": s.get("caps", []), "fix": "add caps=%r to its source_registry entry"
+                 % sorted(derived)}))
+    return findings
+
+
 def run(manifest, now=None):
     """All weekly checks → findings list (same shape the daily digest emits)."""
     now = now or time.time()
     out = []
-    for fn in (lambda: field_drift(manifest, now), fixture_regression, docs_drift):
+    for fn in (lambda: field_drift(manifest, now), fixture_regression, docs_drift, undeclared_capabilities):
         try:
             out.extend(fn())
         except Exception as e:

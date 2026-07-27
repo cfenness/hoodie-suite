@@ -306,10 +306,30 @@ def run_one(source, log=print, extra_env=None):
                    cov_stores_pct=cv["stores"]["pct"], cov_stores=cv["stores"]["verdict"])
     except Exception:
         cv = None
+    # CAPABILITY: the source's optional libraries are imported behind `except: return []` guards so a
+    # partial install degrades instead of crashing — which means a MISSING one is otherwise invisible and
+    # the run reports clean while quietly producing worse data (pylibdmtx absent → every label read
+    # QR-only, reported as full 2D coverage). Declared per-source as `caps=[…]`, the exact mirror of the
+    # `requires=[env]` → "no-creds" convention. Nothing is skipped and no data is lost; the degradation
+    # just stops being silent. Best-effort — a probe failure must never fail a run.
+    caps_missing = []
+    try:
+        import capability as _cap
+        caps_missing = _cap.warnings_for(source.get("caps", []))
+        if caps_missing:
+            for w in caps_missing:
+                log("  %-16s %-9s %s" % (sid, "degraded", "| " + w))
+            if status in ("ok", "current"):
+                status = "degraded"
+            error = " | ".join([e for e in ([error] if error else []) + caps_missing])[:300]
+    except Exception:
+        pass
     rec = dict(run_id=run_token, source=sid, label=source["label"], klass=source["klass"],
                ts_start=int(t0), ts_end=int(time.time()), duration_s=dur, status=status,
                rows_before=b, rows_after=a, delta=delta, tables=",".join(source["tables"]),
-               error=error, host=os.uname().nodename[:40], **cov)
+               error=error, host=os.uname().nodename[:40],
+               caps_missing=",".join(sorted(_cap.missing(source.get("caps", [])))) if caps_missing else "",
+               **cov)
     covnote = ""
     if cv and (cv["items"]["verdict"] == "partial" or cv["stores"]["verdict"] == "partial"):
         covnote = " ⚠cov %s/%s items · %s/%s stores" % (cv["items"]["landed"], cv["items"]["expected"],
