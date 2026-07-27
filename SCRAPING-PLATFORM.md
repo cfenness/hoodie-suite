@@ -47,7 +47,8 @@ so most of the proxy capacity we already pay for sits idle.
 - Retire the Mac `--due` tick (`--no-builds` → unload `com.hoodie.due`). Nothing local.
 - **Open infra task:** the `runner` process group is in `fly.toml` but not registered on the deployed app
   (`scale count runner=1` → "unknown process group"); a full deploy of the runner process (not `--ha=false`)
-  or an explicit `flyctl machine run` registers + creates it. Auto-deploy is also off (no `FLY_API_TOKEN`).
+  or an explicit `flyctl machine run` registers + creates it. There is no auto-deploy at all — GitHub
+  Actions isn't used (variable cost); every deploy is a deliberate `flyctl deploy` (see CLAUDE.md § Deploy).
 
 ### P2 — Reliability & SLA: the layer that makes it *sellable* (mostly code, no infra)
 - **Per-source SLA in the registry** — a freshness target + a coverage target beside `interval_h`.

@@ -284,19 +284,29 @@ Two standing tools exist so failures are loud, not quiet. Keep them passing and 
 static suite **and** `/api` (see `DEPLOY-FLY.md`, `fly.toml`, `Dockerfile`). `main` is
 production; there is no staging branch.
 
-- **Auto-deploy (Fly):** push to `main` triggers `.github/workflows/deploy-fly.yml`
-  (`flyctl deploy --remote-only`). **It only runs when the `FLY_API_TOKEN` repo secret
-  is set** (`flyctl tokens create deploy` → add to GitHub → Settings → Secrets). Without
-  that secret the job skips, and deploys must be done by hand — the common gotcha:
-  merging a PR then finding the live site unchanged because nobody ran a deploy.
-- **Manual deploy (Fly):** `flyctl deploy --ha=false` from the repo root (flyctl at
-  `~/.fly/bin`). This is the fallback and how the site was updated before the workflow.
+- **THERE IS NO AUTO-DEPLOY. Merging does NOT ship.** Every deploy is run deliberately.
+  GitHub Actions is **not** used here (metered/variable cost — same reason scheduling
+  already moved to the Fly dispatcher). The deploy/scrape workflows were deleted; do not
+  re-add them, and do not treat Actions billing as a deploy blocker.
+- **The deploy command** — always from a *clean worktree of `origin/main`*, never the
+  local tree (a dirty/behind tree silently ships someone else's WIP or reverts a fix):
+
+  ```bash
+  git worktree add /tmp/deploy-main origin/main --detach
+  cd /tmp/deploy-main && ~/.fly/bin/flyctl deploy --ha=false --remote-only
+  ```
+
+  `--remote-only` builds on **Fly's** builder, so nothing compiles on the Mac.
+- **VERIFY THE DEPLOY LANDED — the output is not proof.** Concurrent sessions deploy this
+  same app; a later deploy of a *stale* tree silently reverts a fix that was already live
+  (this happened 2026-07-27 and cost hours). Confirm the running container actually has
+  your change: `flyctl ssh console -a hoodie-suite --machine <id> -C "grep -n <marker> /app/..."`,
+  plus `flyctl releases -a hoodie-suite` and a `curl` of `/api/health`.
 - **What ships:** the Dockerfile copies the repo; the engine (`unifyd/`, `*.py`, secrets,
   dotfiles) is present in the image but **never web-served** — the static file route
   enforces a `_SUITE_OK_TOP` allowlist on the resolved path.
-- **Legacy S3/CloudFront** (`deploy.yml`, `deploy.sh`, `cloudfront/`) is **DORMANT** —
-  kept for reference only; it does not run on push. Ignore it unless deliberately
-  resuming S3 serving.
+- **Legacy S3/CloudFront** (`deploy.sh`, `cloudfront/`) is **DORMANT** — kept for
+  reference only. Ignore it unless deliberately resuming S3 serving.
 
 **After merging suite changes, confirm they're live** (they don't ship until a Fly
 deploy runs): `curl -s https://hoodie-suite.fly.dev/robots.txt` and check the launcher
