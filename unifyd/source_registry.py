@@ -339,6 +339,23 @@ BUILDS = [
          tables=["mart_sip_brand_market_month"], klass="build", interval_h=24, enabled=False,
          after=["sipsource-feed"],
          note="raw 500M sip_raw → brand×market×month + supplier×cat + category marts (bounded, +YoY)"),
+    # The Snowflake morning drop (snowflake/README.md) — change-aware COPY of the warehouse into the
+    # UNIFYD database: RAW = one table per source, MASTER = the src_<grain> feeds + the dim_* star.
+    # First run against an empty account = the full seed; every run after touches only tables whose
+    # Parquet actually moved (load ledger at _snowflake/load_state.json). Deliberately NO `after`:
+    # due_builds' default upstream set (any enabled source landing new rows) triggers it, because
+    # pinning it to the dim builds could starve it on a delta=0 ("current") rebuild — and an "early"
+    # run is cheap, unmoved tables are skipped in SQL. requires= keeps ticks an honest no-creds skip
+    # until the SNOWFLAKE_* Fly secrets are set. timeout covers the seed (INFER_SCHEMA over ~200 RAW
+    # tables + an ~80M-row COPY on an XSMALL warehouse); mem is small — Snowflake does the compute,
+    # the machine only regenerates SQL (Parquet footer reads) and drives the connector.
+    dict(id="snowflake-load", label="Snowflake morning drop (RAW + MASTER mirror)",
+         code="import snowflake_load as m; m.run()",
+         tables=["snowflake_load_runs"], klass="build", interval_h=24, enabled=True,
+         mem=2048, timeout=14400,
+         requires=["SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER"],
+         note="change-aware COPY into UNIFYD (RAW per-source + src_ grains + star); verify-lands "
+              "snowflake_load_runs; needs SNOWFLAKE_ACCOUNT/USER + key or password as Fly secrets"),
 ]
 
 

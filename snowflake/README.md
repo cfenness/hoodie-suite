@@ -132,30 +132,75 @@ did we drop this morning" is answered by the load itself.
 the `--live` regen so only present, changed tables load, bucketed catalogs resolve to their active
 parts, and the counts are real.
 
-### On the Fly machine (no snowsql) — `run_load.py`
+### Scheduled on Fly — the registry build `snowflake-load` (canonical)
 
-The Fly image is `python:3.12-slim` with no `snowsql` binary, so the load runs there via
-**`run_load.py`** — the Python-connector twin of `load.sh` (same change-aware regen → load →
-commit-ledger flow, executed through `snowflake-connector-python`). It **reuses the Tigris creds the
-app already has** (`BUCKET_NAME`, `AWS_*`), so the only new secrets are the Snowflake ones:
+The repeatable program is a normal **registry BUILD**: `unifyd/source_registry.py` has a
+`snowflake-load` entry (`interval_h=24`) whose code calls `unifyd/snowflake_load.py` →
+`run_load.main()`. The hourly Fly dispatcher (`dispatch_ephemeral.py`) gives it its own throwaway
+machine like every other job, so it self-schedules — no cron, no standing machine, and the serving
+box is never touched. `run_load.py` is the Python-connector twin of `load.sh` (same change-aware
+regen → load → commit-ledger flow, no `snowsql` binary needed), and the connector is baked into the
+image via `unifyd/requirements.txt`.
 
-```bash
-fly secrets set -a hoodie-suite \
-  SNOWFLAKE_ACCOUNT=<acct> SNOWFLAKE_USER=<user> SNOWFLAKE_PASSWORD=<pw>   # or SNOWFLAKE_PRIVATE_KEY=<PEM>
-# optional: SNOWFLAKE_ROLE, SNOWFLAKE_WAREHOUSE (default UNIFYD_LOAD)
-```
+How it reports, honestly:
 
-Schedule it as its **own daily Fly Machine** (separate from the serving machine — the prod site is
-never touched), built from the same image:
+- After a successful drop the shim lands one row in the **`snowflake_load_runs`** warehouse table
+  (ts, duration, rows/tables per schema) — that row is what `run_one`'s verify-landing sees, so the
+  job shows `ok` in `source_runs_log` / the Data Console only when the drop actually completed.
+- Until the Snowflake secrets exist, ticks report **`no-creds`** (a declared `requires=` skip), not
+  a failure. A real failure raises and lands `failed` with the error.
+- `06_validate` + the per-schema row counts print in the ephemeral machine's log.
 
-```bash
-fly machine run -a hoodie-suite --schedule daily --vm-memory 2048 \
-  sh -lc "pip install -q snowflake-connector-python && python /app/snowflake/run_load.py"
-```
+#### Go-live runbook (one time)
 
-Run once by hand first to confirm creds/schema: `fly ssh console -a hoodie-suite -C \
-"sh -lc 'pip install -q snowflake-connector-python && python /app/snowflake/run_load.py --dry-run'"`,
-then drop `--dry-run`. It prints the total records loaded at the end.
+1. **In Snowflake** (Snowsight, as ACCOUNTADMIN or similar): create a service user + role that can
+   build the database. **Key-pair auth is the right choice for a headless service user** — Snowflake
+   enforces MFA on human password logins, which unattended jobs can't answer:
+
+   ```bash
+   openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out sf_hoodie_key.p8 -nocrypt
+   openssl rsa -in sf_hoodie_key.p8 -pubout -out sf_hoodie_key.pub
+   ```
+
+   ```sql
+   CREATE ROLE IF NOT EXISTS UNIFYD_LOADER;
+   GRANT CREATE DATABASE ON ACCOUNT TO ROLE UNIFYD_LOADER;
+   GRANT CREATE WAREHOUSE ON ACCOUNT TO ROLE UNIFYD_LOADER;
+   CREATE USER IF NOT EXISTS HOODIE_LOAD
+     TYPE = SERVICE DEFAULT_ROLE = UNIFYD_LOADER
+     RSA_PUBLIC_KEY = '<contents of sf_hoodie_key.pub, without the BEGIN/END lines>';
+   GRANT ROLE UNIFYD_LOADER TO USER HOODIE_LOAD;
+   ```
+
+2. **Set the Fly secrets** (the only new ones — Tigris creds are reused from the app's existing
+   `BUCKET_NAME` / `AWS_*`):
+
+   ```bash
+   fly secrets set -a hoodie-suite \
+     SNOWFLAKE_ACCOUNT=<org-account> SNOWFLAKE_USER=HOODIE_LOAD SNOWFLAKE_ROLE=UNIFYD_LOADER \
+     SNOWFLAKE_PRIVATE_KEY="$(cat sf_hoodie_key.p8)"
+   # password auth instead: SNOWFLAKE_PASSWORD=<pw>   (needs a user exempt from MFA)
+   # optional: SNOWFLAKE_WAREHOUSE (default UNIFYD_LOAD), SNOWFLAKE_DATABASE (default UNIFYD)
+   ```
+
+3. **Re-pin the dispatcher** so it can see the new registry entry — the dispatcher machine keeps
+   its pinned image across deploys, and due-ness is computed from *its* copy of
+   `source_registry.py` (see CLAUDE.md):
+
+   ```bash
+   tools/repin_dispatcher.sh
+   ```
+
+4. **Wait for the next hourly dispatcher tick.** First run (empty ledger) is the **full seed** —
+   it bootstraps the warehouse/database/schemas/stage itself, then COPYs everything. Watch the
+   `snowflake-load` row in the Data Console; check `UNIFYD.RAW` / `UNIFYD.MASTER` in Snowsight.
+   The morning after, the run should be a small delta pass (changed tables only), not a re-seed.
+
+Manual fallback (no dispatcher): the same program still runs as a one-off scheduled machine —
+`fly machine run -a hoodie-suite --schedule daily --vm-memory 2048 sh -lc "python /app/snowflake/run_load.py"` —
+or by hand first to confirm creds/schema:
+`fly ssh console -a hoodie-suite -C "python /app/snowflake/run_load.py --dry-run"`, then drop
+`--dry-run`. It prints the total records loaded at the end.
 
 ## Regenerate
 
@@ -193,7 +238,9 @@ prefer creating the stage under a controlled role and keep keys out of shared wo
 build_snowflake_sql.py   the generator (single source of truth for the build)
 load.sh                  the morning drop via snowsql — regenerate --live, load, commit ledger
 run_load.py              the morning drop via snowflake-connector-python (the Fly machine; no snowsql)
-requirements-load.txt    the one extra dep for run_load.py (snowflake-connector-python)
+                         (scheduled via the registry BUILD `snowflake-load` → unifyd/snowflake_load.py)
+requirements-load.txt    the run_load.py dep for a standalone host (on Fly it's baked in via
+                         unifyd/requirements.txt)
 sql/00_config.template.sql   account setup + how to fill the Tigris credentials
 sql/01_database.sql          database UNIFYD + schemas RAW / MASTER / MART
 sql/02_stage.sql             Parquet file format + external stage → Tigris (${...} placeholders)

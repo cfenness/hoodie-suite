@@ -26,6 +26,7 @@ Deps: snowflake-connector-python (pyarrow + duckdb are already in the engine, fo
 import os
 import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SQLDIR = os.path.join(HERE, "sql")
@@ -91,8 +92,12 @@ def _regen(*extra):
 
 
 def main():
+    """Run the drop. Returns the load stats ({rows_total, tables, per_schema, duration_s}) so a
+    programmatic caller (unifyd/snowflake_load.py, the registry BUILD) can verify-land them;
+    returns None on --dry-run."""
     args = set(sys.argv[1:])
     offline, dry = "--offline" in args, "--dry-run" in args
+    t0 = time.time()
     if not offline:
         print("→ regenerating build from the live warehouse (--live, change-aware)…")
         _regen("--live")
@@ -100,12 +105,14 @@ def main():
         print("→ using the committed offline build (sql/*.sql)")
     if dry:
         print("→ dry run: build staged in sql/. Not connecting to Snowflake.")
-        return
+        return None
 
     toks = _tigris_tokens()
     if not toks["TIGRIS_BUCKET"] or not toks["TIGRIS_KEY_ID"]:
         sys.exit("run_load: warehouse creds not in env (BUCKET_NAME / AWS_ACCESS_KEY_ID) — the stage can't resolve")
     con = _connect()
+    per_schema = {}
+    total = ntab_total = 0
     try:
         for fname in FILES:
             text = open(os.path.join(SQLDIR, fname)).read()
@@ -119,9 +126,10 @@ def main():
         cur.execute("SELECT TABLE_SCHEMA, COUNT(*), COALESCE(SUM(ROW_COUNT),0) "
                     "FROM UNIFYD.INFORMATION_SCHEMA.TABLES "
                     "WHERE TABLE_SCHEMA IN ('RAW','MASTER') AND TABLE_TYPE='BASE TABLE' GROUP BY 1 ORDER BY 1")
-        total = 0
         for schema, ntab, nrows in cur:
+            per_schema[schema] = {"tables": int(ntab), "rows": int(nrows or 0)}
             total += int(nrows or 0)
+            ntab_total += int(ntab)
             print("   %-8s %3d tables  %15s rows" % (schema, ntab, f"{int(nrows or 0):,}"))
         print("   %-8s %19s rows loaded" % ("TOTAL", f"{total:,}"))
     finally:
@@ -130,6 +138,8 @@ def main():
         print("→ committing load state (change ledger)…")
         _regen("--commit-state")
     print("✓ morning drop complete")
+    return {"rows_total": total, "tables": ntab_total, "per_schema": per_schema,
+            "duration_s": round(time.time() - t0, 1)}
 
 
 if __name__ == "__main__":
