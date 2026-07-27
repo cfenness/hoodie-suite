@@ -370,6 +370,12 @@ def _auth():
     p = request.path
     if p == "/api/health" or not p.startswith("/api/"):
         return
+    # A signed-in browser is already authorized by auth_gate (which runs first and only
+    # falls through to here when it ALLOWED the request). Without this, setting
+    # AGENT_TOKEN 401s every /api/* call from a logged-in browser — and session-guard.js
+    # reads that 401 as an expired session and bounces the user back to Google.
+    if session.get("email"):
+        return
     if request.headers.get("Authorization", "") == "Bearer " + AGENT_TOKEN \
        or request.headers.get("X-Agent-Token", "") == AGENT_TOKEN:
         return
