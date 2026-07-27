@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""doordash_chains.py — chain-attribution driver for doordash_full.py, at real (bounded) scale.
+"""doordash_chains.py — chain-attribution driver for doordash_full.py, at real national scale.
 
 doordash_full.py's own chain catalog (doordash.py's CHAINS dict) has only 6 hand-seeded TEST store
 ids total — nowhere near national. The store universe that DOES exist at scale, `doordash_stores`
@@ -10,14 +10,19 @@ doordash_naop.py's `_RETAIL_CHAINS`/`_is_retail` already use to EXCLUDE retail c
 on-premise sweep. This module inverts that: match FOR a curated list of major retail chains, then
 drive doordash_full.run() with the real matched store-id list instead of the 6-store placeholder.
 
-Deliberately ONE bounded run, not an incremental daily crawl (per the "no multi-day runs" rule):
-each chain is capped at DDFULL_STORES_PER_CHAIN stores (default 15) so total request volume — the
-category-tree walk is ~15-20+ requests per store — stays inside the registry entry's timeout. $0:
-doordash_full.py/doordash.py already fetch through the flat-rate ISP pool (Bright Data retired for
-DoorDash 2026-07-24), never a metered proxy.
+RESUMABLE BATCHES, not a one-shot capped run (learned the hard way — an artificial small cap on a
+"full"/master-data pull that never gets revisited is exactly how a pipeline silently drifts hundreds
+of thousands of records short of true coverage while everyone assumes it's complete). Each run, per
+chain: read how many stores are ALREADY landed in `<chain>_products_full` (doordash_full.run now
+`write_accumulate`s — see its own fix — so this is a real merge, not a table a later batch could
+wipe), subtract those from the full matched universe, take up to DDFULL_BATCH_PER_CHAIN of what's
+LEFT. Repeated triggers converge every matched chain to full coverage; nothing is silently capped
+forever, and matched/covered/remaining is printed AND landed every run so a coverage gap is always
+a visible, queryable fact — never discovered by surprise later. $0: doordash_full.py/doordash.py
+already fetch through the flat-rate ISP pool (Bright Data retired for DoorDash 2026-07-24).
 
-    python doordash_chains.py                 # sweep every TARGET_CHAINS match, capped per chain
-    python doordash_chains.py --chains cvs,totalwine --stores-per-chain 5   # a smaller manual test
+    python doordash_chains.py                                  # one batch, every matched chain
+    python doordash_chains.py --chains cvs,totalwine --batch 50 # a smaller manual slice
 """
 import argparse
 import os
@@ -50,8 +55,8 @@ TARGET_CHAINS = {
     "binnys":      ["binny"],
 }
 
-RUN_FIELDS = ["run_id", "ts", "chains_attempted", "chains_landed", "stores_attempted",
-              "items_landed", "per_chain", "duration_s"]
+RUN_FIELDS = ["run_id", "ts", "chains_attempted", "stores_landed_this_run", "items_landed_this_run",
+              "matched_total", "covered_total", "remaining_total", "per_chain", "duration_s"]
 
 
 def _match_chain(name):
@@ -63,10 +68,12 @@ def _match_chain(name):
 
 
 def bucket_stores(log=print):
-    """doordash_stores -> {chain_key: [store_id, ...]}, via the name-substring heuristic."""
+    """doordash_stores -> {chain_key: [store_id, ...]}, via the name-substring heuristic. This is
+    the TOTAL national universe per chain — not batch-limited; batching happens per-chain below
+    against what's already landed."""
     try:
         universe = warehouse.query("doordash_stores",
-                                   "SELECT store_id, name FROM t WHERE store_id IS NOT NULL LIMIT 300000")
+                                   "SELECT store_id, name FROM t WHERE store_id IS NOT NULL LIMIT 600000")
     except Exception as e:
         log("[doordash_chains] doordash_stores unreadable: %s" % str(e)[:140])
         return {}
@@ -80,44 +87,68 @@ def bucket_stores(log=print):
     return buckets
 
 
-def run(chains=None, stores_per_chain=None, log=print):
-    """ONE bounded sweep: bucket doordash_stores by chain, cap each chain's store list, drive
-    doordash_full.run() per matched chain. Lands a summary row to doordash_full_runs (the registry
-    entry's verify-landing table) via write_accumulate — single-file, so run_one's row-count check
-    sees a real delta (write_partition dirs are invisible to it)."""
+def _landed_stores(chain):
+    """Store ids already covered for this chain, read from its own <chain>_products_full table
+    (accumulate-merged by doordash_full.run — see that fix). Empty/unreadable = nothing landed yet,
+    never treated as an error (a chain's first run always starts from zero)."""
+    try:
+        rows = warehouse.query(chain + "_products_full", "SELECT DISTINCT store FROM t")
+        return {str(r["store"]) for r in rows}
+    except Exception:
+        return set()
+
+
+def run(chains=None, batch=None, log=print):
+    """ONE resumable batch: bucket doordash_stores by chain, take up to `batch` NOT-YET-LANDED
+    stores per matched chain, drive doordash_full.run() for just that increment. Repeated triggers
+    converge every chain to full national coverage — never a permanent small cap."""
     t0 = time.time()
-    cap = stores_per_chain or int(os.environ.get("DDFULL_STORES_PER_CHAIN", "15"))
+    cap = batch or int(os.environ.get("DDFULL_BATCH_PER_CHAIN", "200"))
     buckets = bucket_stores(log=log)
     if chains:
         buckets = {k: v for k, v in buckets.items() if k in set(chains)}
-    per_chain, total_items, landed = {}, 0, 0
+    per_chain = {}
+    stores_this_run = items_this_run = 0
+    matched_total = covered_total = 0
     for key, store_ids in sorted(buckets.items()):
-        picked = store_ids[:cap]
-        log("[doordash_chains] %s: %d matched, running %d" % (key, len(store_ids), len(picked)))
+        matched_total += len(store_ids)
+        already = _landed_stores(key)
+        covered_total += len(already)
+        todo = [s for s in store_ids if s not in already]
+        picked = todo[:cap]
+        log("[doordash_chains] %s: matched=%d covered=%d remaining=%d taking=%d"
+            % (key, len(store_ids), len(already), len(todo), len(picked)))
+        if not picked:
+            per_chain[key] = {"matched": len(store_ids), "covered": len(already), "taken": 0, "items": 0}
+            continue
         try:
             _run_id, n_items = doordash_full.run(key, stores=picked, log=log)
         except Exception as e:
             log("[doordash_chains] %s FAILED: %s" % (key, str(e)[:160]))
-            per_chain[key] = {"stores": len(picked), "items": 0, "error": str(e)[:160]}
+            per_chain[key] = {"matched": len(store_ids), "covered": len(already), "taken": len(picked),
+                              "items": 0, "error": str(e)[:160]}
             continue
-        per_chain[key] = {"stores": len(picked), "items": n_items or 0}
-        total_items += n_items or 0
-        if n_items:
-            landed += 1
+        per_chain[key] = {"matched": len(store_ids), "covered": len(already), "taken": len(picked),
+                          "items": n_items or 0}
+        stores_this_run += len(picked)
+        items_this_run += n_items or 0
+    remaining_total = matched_total - covered_total - stores_this_run
     run_id = "ddchains-" + time.strftime("%Y%m%d-%H%M%S")
-    rec = dict(run_id=run_id, ts=int(t0), chains_attempted=len(buckets), chains_landed=landed,
-              stores_attempted=sum(v["stores"] for v in per_chain.values()),
-              items_landed=total_items, per_chain=str(per_chain), duration_s=round(time.time() - t0, 1))
+    rec = dict(run_id=run_id, ts=int(t0), chains_attempted=len(buckets),
+              stores_landed_this_run=stores_this_run, items_landed_this_run=items_this_run,
+              matched_total=matched_total, covered_total=covered_total + stores_this_run,
+              remaining_total=max(0, remaining_total), per_chain=str(per_chain),
+              duration_s=round(time.time() - t0, 1))
     warehouse.write_accumulate("doordash_full_runs", [rec], key="run_id", fields=RUN_FIELDS)
-    log("[doordash_chains] DONE — %d/%d chains landed, %d items, %.0fs"
-        % (landed, len(buckets), total_items, rec["duration_s"]))
+    log("[doordash_chains] DONE — %d stores / %d items this run · national: %d/%d covered, %d remaining · %.0fs"
+        % (stores_this_run, items_this_run, rec["covered_total"], matched_total,
+           rec["remaining_total"], rec["duration_s"]))
     return rec
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--chains", default="", help="comma-separated chain keys (default: all matched)")
-    ap.add_argument("--stores-per-chain", type=int, default=None)
+    ap.add_argument("--batch", type=int, default=None, help="max NEW stores per chain this run")
     a = ap.parse_args()
-    run(chains=[c.strip() for c in a.chains.split(",") if c.strip()] or None,
-        stores_per_chain=a.stores_per_chain)
+    run(chains=[c.strip() for c in a.chains.split(",") if c.strip()] or None, batch=a.batch)

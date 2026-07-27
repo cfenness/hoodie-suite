@@ -266,15 +266,17 @@ SOURCES = [
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["naop_accounts", "naop_beverages"], klass="headless", cadence="daily", enabled=True, timeout=7200,
          note="DoorDash on-premise menus, $0 (ISP pool); consumes doordash_stores in NAOP_LIMIT batches"),
-    dict(id="doordash-full", label="DoorDash retail — full catalog (chain-attributed, bounded)",
+    dict(id="doordash-full", label="DoorDash retail — full catalog (chain-attributed, national)",
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          code="import doordash_chains as m; m.run()",
-         tables=["doordash_full_runs"], klass="headless", cadence="daily", enabled=False, timeout=14400,
+         tables=["doordash_full_runs"], klass="headless", cadence="daily", enabled=True, timeout=14400,
          cost_class="free",
-         note="ONE bounded sweep of a curated major-chain list via doordash_full.py's category-tree walk "
-              "(doordash_chains.py buckets doordash_stores by chain-name heuristic, same pattern as naop's "
-              "_RETAIL_CHAINS, inverted); $0 flat ISP pool (Bright Data retired for DoorDash 2026-07-24); "
-              "manual trigger only, not a recurring daily job"),
+         note="RESUMABLE national sweep of a curated major-chain list via doordash_full.py's category-tree "
+              "walk (doordash_chains.py buckets doordash_stores by chain-name heuristic, same pattern as "
+              "naop's _RETAIL_CHAINS, inverted). Each run advances every chain toward full coverage in "
+              "DDFULL_BATCH_PER_CHAIN batches (accumulate-merged, never overwrites a prior batch) and lands "
+              "matched/covered/remaining every time — no permanent cap, no silent coverage gap. $0 flat ISP "
+              "pool (Bright Data retired for DoorDash 2026-07-24)"),
     dict(id="toast", label="Toast own-menus", code="import toast as m; m.run()",
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["toast_outlets", "toast_beverages", "toast_menu_accounts"], klass="headless", cadence="daily",

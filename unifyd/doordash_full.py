@@ -138,12 +138,17 @@ def run(chain, stores=None, log=print):
         if outlet:
             outlet["source"] = chain; outlets.append(outlet)
     if all_rows:
-        warehouse.write_parquet(chain + "_products_full", all_rows)
+        # ACCUMULATE, not overwrite: a caller driving this across many runs (doordash_chains.py's
+        # resumable batches) passes a DIFFERENT store subset each time — write_parquet would replace
+        # the whole table with just that batch and silently erase every previously-landed store's
+        # rows. Key = (store, product_id), the same identity a re-pull of that store's item replaces.
+        warehouse.write_accumulate(chain + "_products_full", all_rows,
+                                   key=lambda r: (r["store"], r["product_id"]))
         observe.record(chain, [dict(store=r["store"], store_id=r["store_id"], product_id=r["product_id"],
                                     brand="", name=r["name"], price=r.get("price_value"),
                                     in_stock=True, qty=None, is_hemp=r.get("is_hemp")) for r in all_rows])
     if outlets:
-        warehouse.write_parquet(chain + "_outlets", outlets)
+        warehouse.write_accumulate(chain + "_outlets", outlets, key=lambda r: r.get("store") or r.get("store_id"))
     log("[%s] FULL DONE %d items across %d stores -> %s_products_full" % (chain, len(all_rows), len(stores), chain))
     return run_id, len(all_rows)
 
