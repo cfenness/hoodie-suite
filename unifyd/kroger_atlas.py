@@ -166,6 +166,23 @@ def _laf_header(store_id, facility_id, modality="PICKUP"):
                                      "handoffLocation": {"facilityId": facility_id, "storeId": store_id}}}])
 
 
+_OPENER = None
+
+
+def _opener():
+    """An opener bound to BROWSER_PROXY — the SAME sticky residential exit the Akamai cookie was warmed on
+    (run_sources sets it for headful/mac sources). Akamai session cookies are IP-bound: warm-on-A / replay-from-B
+    (the box's own datacenter IP) = instant reject, which is why the atlas fetch returned 0 and kroger never
+    landed. Routing the replay through the warm's exit is the fix. No proxy env → the default direct opener."""
+    global _OPENER
+    if _OPENER is not None:
+        return _OPENER
+    px = os.environ.get("BROWSER_PROXY") or os.environ.get("KROGER_PROXY") or ""
+    _OPENER = (urllib.request.build_opener(urllib.request.ProxyHandler({"http": px, "https": px}))
+               if px else urllib.request.build_opener())
+    return _OPENER
+
+
 def fetch(gtins, cookie, store_id, facility_id, modality="PICKUP", timeout=25):
     q = "&".join("filter.gtin13s=%s" % g for g in gtins)
     url = "%s?%s&filter.verified=true&projections=%s" % (API, q, urllib.parse.quote(PROJECTIONS))
@@ -173,7 +190,7 @@ def fetch(gtins, cookie, store_id, facility_id, modality="PICKUP", timeout=25):
         "User-Agent": UA, "Accept": "application/json", "Cookie": cookie,
         "x-laf-object": _laf_header(store_id, facility_id, modality),
         "Referer": "https://www.kroger.com/"})
-    body = urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "replace")
+    body = _opener().open(req, timeout=timeout).read().decode("utf-8", "replace")
     return ((json.loads(body).get("data") or {}).get("products")) or []
 
 
