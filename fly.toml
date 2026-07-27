@@ -50,5 +50,6 @@ primary_region = 'iad'
   # 4 vCPU: the warehouse footer scans (list_datasets over 200+ Tigris files) peg 1 shared vCPU and starve
   # the request/health threads (the machine crash-looped). 4 cores give the background DuckDB scans room.
   size = 'shared-cpu-4x'
-  # 4gb: the master data outgrew 2gb as the warehouse ballooned; DuckDB queries need headroom.
-  memory = '4gb'
+  # 8gb: 4gb was OOM-killing the worker under load (scrape runs + DuckDB scans + the site sharing
+  # one process) — bumped after a live OOM kill took down the machine mid-request on 2026-07-27.
+  memory = '8gb'
