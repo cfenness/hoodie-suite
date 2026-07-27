@@ -52,29 +52,37 @@ unifyd engine. Building one would be the exact duplication we're avoiding.
 |---|---|---|---|
 | **S1** | Land canon's in-flight **0011 real-data hardening** (UPC→external_keys so tier0 fires; one-open-review-per-observation). Verify its gate. | canon | **DONE** — completed the force-stopped edit (2 test-seed gaps); canon full suite 1020 green; landed on canon main. |
 | **S2** | Score canon's resolved identities on the same UPC signal as unifyd → the head-to-head. | canon + shared | **DONE** — `src/match/quality.py` (canon-side ruler): **canon P=1.000 R=1.000** vs **unifyd P=1.000 R=0.285**. Canon's tier0 exact-key fixes the under-merge. Honest caveat: dev-scale (28 same-UPC groups / 29 entities); full-scale needs the ingest loaded. |
-| **S3** | Freeze the `item_identity` contract; export canon's authoritative identity to Tigris so unifyd's serving path can read it. | both | |
-| **S4** | Cut velocity/dim_item/marts to read `item_identity` (canon supersedes unifyd `item_key`); `master_quality` scores the SERVED identity. | unifyd | |
+| **S2.5** | Run the full retail universe through the cascade at scale; measure P/R; pull every free lever before the LLM. | canon | **DONE** — 91,841 obs → **89,715 entities** with ZERO model calls / ZERO embeddings (`max_tier=1`): **P=0.9977 R=0.9872 F1=0.9925** (vs unifyd R=0.285). Then wired the **free tier2 auto-accept lever** (cosine ≥ 0.95 auto-links, no LLM): with real MiniLM embeddings, **26.4% of the 27,034 provisional mints have a ≥0.95 twin**; converged the master would drop **89,715→73,892 entities (17.6%, $0)**. Canon commits 34cbfed / 5c1e222 / 9ddbfaf; 1025 tests green. |
+| **S3** | Freeze the `item_identity` contract; export canon's authoritative identity so unifyd's serving path can read it. | both | **DONE** — contract FROZEN. Canon-side export (`canon/src/index/export_identity.py`, dc39d71): one JSONL record per source SKU (source, product_id, **canon_item_id**, attrs, upcs, status/merged_into, provenance). Unifyd-side ingest (`unifyd/ingest_canon_identity.py`, PR #592): lands it as the `item_identity` warehouse table. Verified end-to-end: **90,381 records / 89,686 items across 9 sources; 200 items span multiple retailers** (offprem+kroger etc.) — the cross-source identity `item_key` fragmented, now served under one `canon_item_id`. |
+| **S4** | Cut velocity/dim_item/marts to read `item_identity` (canon supersedes unifyd `item_key`); `master_quality` scores the SERVED identity. | unifyd | **Slice 1 DONE** (strategy A, overlay+score): `master_quality.score_canon()` scores the served `canon_item_id` against `item_key` on the SAME gold — `python master_quality.py --canon` (PR #596, additive, own `master_quality_canon` table, 18/18). Test proof: where item_key under-merges (R<0.5), canon lifts R→1.0 at P=1.0. **PROD HEAD-TO-HEAD DONE — GATE CLEARED:** ran live on Fly (item_identity landed in Tigris, 90,381 rows). On the same 8,000 gold pairs: **item_key R=0.269 → canon R=1.000, P=1.000, coverage=1.000** (tp=4000/fp=0/fn=0/tn=4000). Honest caveats: R=1.0 is expected (canon is UPC-anchored on a UPC gold — proves it serves the deterministic identity item_key fragments, not the harder no-UPC tail); coverage=1.0 is on the retail UPC universe canon ingested, so **slice 2 must be a coverage-aware overlay `COALESCE(canon_item_id, item_key)`, not a wholesale swap** (canon covers 9 retail sources vs xwalk's 1.33M). Next: slice 2 in `server.py`/`wb_views.py`. No live surface changed yet. |
 | **S5** | Retire unifyd matching to the deterministic pre-filter (or drop it); canon authoritative for all identity. | both | strangler-fig complete |
 
 ## Prerequisites / open checks
 
 - Canon needs its **PG16+pgvector dev DB** up to run migrations + the cascade (`CANON_DB__DSN`,
   default `postgresql+psycopg://localhost/canon`).
-- **Canon is dev-scale (verified S2): 1,460 observations, specs-only, all resolved, 29 entities.** The
-  head-to-head is proven on this sample; the **served** lift now hinges on loading the FULL observation
-  universe into canon.
-- **Ingest seam BUILT (`canon/src/acquire/bridge.py`).** Unifyd exports the retail identity universe
-  (`/tmp/canon_ingest_products.jsonl` — **90,384 distinct UPC'd products**); the bridge lands them as
-  observations with the UPC on `external_keys` so tier0 resolves them (idempotent; verified on a
-  3,000-row run + 1 test). This is the interim seam until canon's own acquire covers the retail
-  catalogs (strangler-fig).
-- **Resolving at scale is an OPERATIONAL step, not a code gap.** Running the cascade over the loaded
-  universe needs production infra the dev env lacks: `sentence-transformers` (tier2 embeddings,
-  ADR-004-deferred) + `ANTHROPIC_API_KEY` (tier3), with real LLM cost over ~90k novel products. The
-  recall LIFT is already proven (S2 + `canon.item_key` UNIQUE guarantees same-UPC merging); this scales
-  the data, not the proof. Next: provision embeddings + LLM, run `match.cascade.run_observations` over
-  the loaded batch, re-measure `match.quality` at scale, then S3 (freeze `item_identity` + export to
-  Tigris) → S4 (cut serving) → S5.
+- **Ingest seam BUILT + RUN AT SCALE (`canon/src/acquire/bridge.py`).** Unifyd exports the retail
+  identity universe (`/tmp/canon_ingest_products.jsonl` — **90,384 distinct UPC'd products**); the
+  bridge lands them as observations with the UPC on `external_keys` so tier0 resolves them (idempotent).
+  Loaded → **91,841 observations** in canon. This is the interim seam until canon's own acquire covers
+  the retail catalogs (strangler-fig).
+- **At-scale run DONE (S2.5) — the head-to-head now holds at scale, not just dev-scale.** The full
+  universe resolved to **89,715 master entities at P=0.9977 R=0.9872** (vs unifyd R=0.285 on the same
+  signal) — the recall lift is real and holds. Precision floor is conservative: the 204 multi-UPC
+  "over-merges" are tier1 same-brand+name+size auto-links across DIFFERENT UPCs (the deferred cross-UPC
+  question); 3 recall splits = UPC leading-zero variance.
+- **Levers before the LLM (the cost doctrine, per user 2026-07-26: "pull every lever before falling
+  back to LLM — better product AND cheaper").** The cascade is cost-ordered; `resolve()/run_observations`
+  now take **`max_tier`** to cap the descent. `max_tier=1` = deterministic (tiers 0-1, $0); `max_tier=2`
+  adds the **free local embedding lever** (tier2 auto-accept: cosine ≥ `match.tier2_auto_accept`=0.95
+  auto-links with NO model call, $0); `max_tier=3` sends only the ambiguous residue to the paid Haiku
+  adjudicator. At-scale tier mix (max_tier=1): **3.5% tier0 · 67.6% tier1 · 29.0% provisional mints** —
+  and with real MiniLM embeddings (clean text), **26.4% of those provisional mints have a ≥0.95 twin**
+  the free lever auto-resolves; a converged merge would drop the master **89,715→73,892 (17.6%, $0)**.
+  Tier2 = LOCAL + FREE (sentence-transformers, `uv sync --extra embeddings`); only tier3 costs money.
+  (The converged figure is a single-linkage upper bound — chaining through thin-name hubs is exactly the
+  gray zone the LLM/Gate-5 golden adjudicates; applying merges mutates the master and is precision-gated,
+  not automatic.)
 - The `gold_matches` schema is the shared asset — canon reads it as its eval + review seed; keep it
   the one truth.
 
