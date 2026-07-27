@@ -26,6 +26,7 @@ import os
 import subprocess
 import sys
 import time
+import types
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -192,10 +193,65 @@ def _acquire_lock():
     return lf
 
 
-def run_one(source, log=print, extra_env=None):
+def _exec(code, timeout_s, env, on_line=None):
+    """Run the source's entrypoint as a subprocess and return a subprocess.run-shaped result.
+
+    ONE execution path for every caller (dispatcher tick, CLI pass, Hoodie Collect) — deliberately not a
+    streaming fork alongside the original. Two code paths for "run a source" is precisely how the /api/run
+    handlers drifted from the registry and got the thin kroger_api run instead of the real atlas bypass;
+    this doesn't reintroduce that shape.
+
+    stdout and stderr are MERGED into one pipe so the captured output is in true interleaved order (a
+    console showing progress lines out of order relative to the traceback is worse than none). The merged
+    text is returned as `.stderr`, which is what run_one's crash-site extraction reads first — so outcome
+    classification behaves exactly as it did under capture_output=True.
+
+    `on_line` (optional) receives each line AS IT ARRIVES — the live console. It is wrapped here
+    regardless of its own error handling: telemetry must never be able to kill a pull.
+    """
+    import collections
+    proc = subprocess.Popen([PY, "-c", code], cwd=HERE, env=env, text=True, bufsize=1,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    # Bounded retention: enough tail to recover a traceback + crash site, without holding a multi-hundred-MB
+    # crawl log in RAM on a 4GB machine. The journal keeps its own (smaller) display tail.
+    tail = collections.deque(maxlen=4000)
+    deadline = time.time() + timeout_s
+    timed_out = False
+    try:
+        for line in proc.stdout:
+            tail.append(line)
+            if on_line:
+                try:
+                    on_line(line)
+                except Exception:
+                    pass
+            if time.time() > deadline:
+                timed_out = True
+                break
+    finally:
+        try:
+            proc.stdout.close()
+        except Exception:
+            pass
+    if timed_out:
+        proc.kill()
+        proc.wait()
+        raise subprocess.TimeoutExpired(cmd="run_one", timeout=timeout_s)
+    try:
+        proc.wait(timeout=max(1, deadline - time.time()))
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        raise
+    return types.SimpleNamespace(returncode=proc.returncode, stdout="", stderr="".join(tail))
+
+
+def run_one(source, log=print, extra_env=None, on_line=None):
     """Run one source in a subprocess, measure before/after row counts, classify the outcome.
     `extra_env` overlays the subprocess env (e.g. the scheduler forces RESI_ISP_ONLY=1 so an unattended
-    run can never open the per-GB residential-proxy tab)."""
+    run can never open the per-GB residential-proxy tab).
+    `on_line` streams the run's output line-by-line to a caller-supplied sink (Hoodie Collect's journal),
+    so a run's console survives the ephemeral machine it ran on."""
     sid = source["id"]
     t0 = time.time()
     # Skip-with-reason: a source gated on credentials we don't have must report honestly ("no-creds"),
@@ -250,8 +306,7 @@ def run_one(source, log=print, extra_env=None):
     run_token = "%s-%d" % (sid, int(t0))
     env = dict(os.environ, HOODIE_RUN_TOKEN=run_token, **(extra_env or {}))   # coverage stamp + optional overlays
     try:
-        r = subprocess.run([PY, "-c", code], cwd=HERE, timeout=timeout_s,
-                           capture_output=True, text=True, env=env)
+        r = _exec(code, timeout_s, env, on_line=on_line)
         if r.returncode != 0:
             status = "failed"
             # A NEGATIVE returncode = killed by a signal, NOT a Python exception (subprocess convention).

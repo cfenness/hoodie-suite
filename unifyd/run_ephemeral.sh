@@ -5,6 +5,10 @@
 # See run_ephemeral.py for the isolation contract.
 set -uo pipefail
 SRC="${1:?source id required}"
+shift
+# Everything after the source id is forwarded verbatim to run_ephemeral.py — that's how Hoodie Collect
+# passes --run-id (the journal to stream into) and --days/--all (the time window). Quoted "$@" so an
+# empty arg list stays empty instead of becoming one blank argument.
 
 # Headful Chrome (UberEats/Kroger/TotalWine/Albertsons/Ahold) needs a display + the container flags.
 # Harmless for headless sources (they never launch a browser). Xvfb backgrounds; DISPLAY is exported.
@@ -15,7 +19,7 @@ if command -v Xvfb >/dev/null 2>&1; then
 fi
 
 cd /app/unifyd
-python3 run_ephemeral.py "$SRC"
+python3 run_ephemeral.py "$SRC" "$@"
 CODE=$?
 echo "run_ephemeral.sh: $SRC exited $CODE"
 exit $CODE

@@ -25,6 +25,16 @@ Optional scheduling metadata (the --due dispatcher, NRT-PLAN.md §3):
                host just landed.
   priority   : Mac-queue order, lower first (default 50). Long aggregator sweeps run first; the
                contention-sensitive anti-bot trio last (was run_mac_queue.sh's hardcoded order).
+
+TIME-BOUND sources (Hoodie Collect's run controls):
+  window     : dict declaring that this source takes a LOOKBACK WINDOW, and the env knob that sets it:
+                 {"env": "TTB_DAYS", "unit": "days", "default": 14, "all": 13000,
+                  "note": "…what 'all' actually costs…"}
+               Hoodie Collect renders "last 7 days / custom / all" from this and passes the value through
+               run_ephemeral.py --days/--all → extra_env. A source WITHOUT a `window` REJECTS --days/--all
+               rather than accepting and ignoring them: a window that is silently dropped produces a run
+               labelled "all" that is really the default slice, which is the same class of lie as a silent
+               cap in a "full" pull. Only declare `window` once you've confirmed the entrypoint honours it.
 """
 
 SOURCES = [
@@ -318,7 +328,13 @@ SOURCES = [
     dict(id="outlet-union", label="Outlet pre-master", code="import outlet_union as m; m.run()",
          tables=["outlet_master"], klass="headless", cadence="daily", enabled=True,
          note="derived ($0): unions DoorDash/Toast outlet spines → mastered outlets + per-source menu freshness"),
+    # WINDOW verified against ttb_pull.pull(): `days` defaults to int(os.environ["TTB_DAYS"] or 14) and is
+    # applied as (today - days) → today, chunked a day at a time with --resume. `all` = ~36y back, which
+    # covers the public COLA registry to its start; it is a multi-day resumable crawl, not a click-and-wait.
     dict(id="ttb-cola", label="TTB COLA scrape", code="import ttb_pull as m; m.run()",
+         window={"env": "TTB_DAYS", "unit": "days", "default": 14, "all": 13000,
+                 "note": "'all' walks the registry back to ~1990 one day-chunk at a time (resumable). "
+                         "Expect days of wall-clock, not minutes."},
          caps=['bs4', 'pillow', 'pylibdmtx', 'pytesseract', 'pyzbar'],   # optional libs this source silently degrades without (capability.py)
          tables=["ttb_cola"], klass="headless", cadence="weekly", enabled=True, timeout=5400,
          note="$0 off-Mac incremental COLA scrape (last TTB_DAYS) → accumulate ttb_cola; ttbonline.gov verify=False, direct (no BD/browser)"),

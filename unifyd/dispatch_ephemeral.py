@@ -53,6 +53,17 @@ def _machines():
     return _api("GET", "/apps/%s/machines" % APP)
 
 
+def _journal_id(sid):
+    """A Hoodie Collect run id for a dispatcher-spawned run. Generated HERE (not on the pull machine) so
+    the id exists before the machine does — otherwise a machine that dies during boot leaves no journal
+    at all, which is exactly the blind spot the journal is meant to remove."""
+    try:
+        import run_journal
+        return run_journal.new_id(sid)
+    except Exception:
+        return None
+
+
 def current_image():
     """The image the SERVING app machine runs — ephemeral pulls use the exact same code.
 
@@ -125,27 +136,42 @@ def running_sources():
     return out
 
 
-def spawn(sid, image, klass, mem_hint=None):
+def spawn(sid, image, klass, mem_hint=None, run_id=None, days=None, want_all=False,
+          trigger="scheduled"):
+    """Create the ephemeral machine for one source. `run_id` attaches a Hoodie Collect journal so the
+    run is watchable while it executes; `days`/`want_all` set a time-bound source's window. Returns the
+    machine id (truthy) rather than a bare bool, so a caller can correlate the machine with the run."""
     # per-source `mem` override (a registry field) wins — a pass that accumulates into a huge table needs
     # headroom the 4GB headless default can't give (e.g. ttb-enrich). Headful (mac) klass → 8gb for Chrome.
     mem = int(mem_hint) if mem_hint else (8192 if klass in _HEADFUL else 4096)
     # Fly caps shared-CPU RAM at 2 GB × cpus, so a big accumulate (src_outlets is 1.76M rows → the whole-table
     # merge peaks past 8 GB) needs the cpu count scaled up to unlock the memory. 8 shared cpus → 16 GB ceiling.
     cpus = max(4, min(8, -(-mem // 2048)))
+    argv = ["bash", "/app/unifyd/run_ephemeral.sh", sid]
+    if run_id:
+        argv += ["--run-id", run_id]
+    if want_all:
+        argv += ["--all"]
+    elif days is not None:
+        argv += ["--days", str(int(days))]
+    argv += ["--trigger", trigger]
+    meta = {"role": "ephemeral-pull", "source": sid}
+    if run_id:
+        meta["run_id"] = run_id                              # lets the bench find the machine for a run
     config = {
         "image": image,
         "auto_destroy": True,                                # == flyctl --rm: Fly removes it when the cmd exits
         "restart": {"policy": "no"},
         "guest": {"cpu_kind": "shared", "cpus": cpus, "memory_mb": mem},
-        "metadata": {"role": "ephemeral-pull", "source": sid},
-        "init": {"cmd": ["bash", "/app/unifyd/run_ephemeral.sh", sid]},
+        "metadata": meta,
+        "init": {"cmd": argv},
     }
     try:
         r = _api("POST", "/apps/%s/machines" % APP, {"config": config})
-        return bool(r.get("id"))
+        return r.get("id")
     except Exception as e:
         print("  spawn %s FAILED: %s" % (sid, str(e)[:180]))
-        return False
+        return None
 
 
 def _refresh_health(log=print):
@@ -182,7 +208,11 @@ def main():
           % (len(due), len(due) - len(todo), MAX_SPAWN, image.rsplit(":", 1)[-1]))
     spawned = []
     for s in todo[:MAX_SPAWN]:
-        if spawn(s["id"], image, s.get("klass"), s.get("mem")):
+        # Every scheduled run gets a journal too, not just bench-triggered ones — so Hoodie Collect shows
+        # the dispatcher's own work live, and an overnight failure is inspectable the next morning instead
+        # of leaving only a one-line ledger verdict.
+        if spawn(s["id"], image, s.get("klass"), s.get("mem"),
+                 run_id=_journal_id(s["id"]), trigger="scheduled"):
             spawned.append(s["id"])
     deferred = [s["id"] for s in todo[MAX_SPAWN:]]
     print("dispatch: spawned=%s | skipped-running=%s | deferred-to-next-tick=%s"
@@ -198,7 +228,8 @@ def main():
     if remaining:
         due_b = [b for b in run_sources.due_builds() if b["id"] not in running]
         for b in due_b[:remaining]:
-            if spawn(b["id"], image, b.get("klass"), b.get("mem")):
+            if spawn(b["id"], image, b.get("klass"), b.get("mem"),
+                     run_id=_journal_id(b["id"]), trigger="scheduled"):
                 b_spawned.append(b["id"])
         if due_b:
             print("dispatch: builds due=%s spawned=%s deferred=%s"

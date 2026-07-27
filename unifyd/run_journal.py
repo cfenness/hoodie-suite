@@ -1,0 +1,262 @@
+#!/usr/bin/env python3
+"""run_journal.py — the LIVE record of a single run, written where anyone can read it.
+
+The gap this closes: a pull runs on its own ephemeral Fly machine and its stdout dies with the machine.
+Today the only trace left behind is one summary row in `source_runs_log` — so a run that lands nothing
+leaves `status="empty", error=""` and no way to ask *why* without a scraper happening to persist its own
+debug table (which is exactly how the kroger Akamai 403 stayed invisible for 9 consecutive runs).
+
+A journal is one small JSON doc per run, in the SHARED warehouse bucket:
+
+    _collect/runs/<run_id>.json
+
+The producer (the ephemeral machine, via run_sources.run_one) heartbeats into it while the run is in
+flight; the consumer (the app, serving Hoodie Collect) polls it. Same doc for a workbench-triggered run
+and a dispatcher-scheduled one — so the bench shows SCHEDULED runs live too, not just its own.
+
+Design rules, each one load-bearing:
+
+  - **The journal can never break the run.** Every public call is wrapped; a storage failure degrades to
+    a no-op and the pull continues. A telemetry layer that can fail the thing it observes is worse than
+    no telemetry (see the "quiet degrades" rule in CLAUDE.md — this one degrades LOUDLY, into `warnings`).
+  - **Writes are throttled, not per-line.** A chatty scraper emits thousands of lines; we hold the doc in
+    memory and flush at most every `_MIN_FLUSH_S`. Status transitions and close() always flush immediately.
+  - **Counts are labelled by provenance.** `rows_seen` is what the scraper CLAIMS mid-run (its own progress
+    lines); `rows_landed` is what the warehouse actually holds. They are different numbers and the bench
+    must never merge them.
+  - **Every count names the table it was measured against.** A source's `tables` gets edited over time
+    (kroger's ledger mixes counts of `kroger_products` (36,812) and `kroger_atlas_products` (0) under one
+    source id), so a bare number is not comparable across history. The journal always carries `tables`.
+
+Progress convention (opt-in, incremental — a scraper that never adopts it simply reports no `rows_seen`):
+a scraper may print a line
+
+    HOODIE_PROGRESS {"rows": 1234, "stage": "store 12/133", "pct": 9.0}
+
+and the streamer folds it into the journal. Anything else printed is captured as ordinary log tail.
+"""
+import json
+import os
+import re
+import time
+
+_PREFIX = "_collect/runs"
+_MIN_FLUSH_S = float(os.environ.get("JOURNAL_FLUSH_S", "3"))
+_LOG_TAIL = int(os.environ.get("JOURNAL_LOG_TAIL", "600"))       # lines kept in the doc
+_LINE_MAX = 2000                                                 # per-line clamp
+
+PROGRESS_RE = re.compile(r"HOODIE_PROGRESS\s+(\{.*\})\s*$")
+
+# run_id -> {"doc": {...}, "last_flush": ts}
+_OPEN = {}
+
+
+def _key(run_id):
+    return "%s/%s.json" % (_PREFIX, run_id)
+
+
+def new_id(source_id):
+    """A run id that sorts chronologically and names its source."""
+    return "%s-%d" % (source_id, int(time.time() * 1000))
+
+
+def _flush(run_id, force=False):
+    st = _OPEN.get(run_id)
+    if not st:
+        return False
+    now = time.time()
+    if not force and (now - st["last_flush"]) < _MIN_FLUSH_S:
+        return False
+    doc = st["doc"]
+    doc["updated_at"] = int(now)
+    try:
+        import warehouse
+        warehouse.put_bytes(_key(run_id), json.dumps(doc, default=str).encode())
+        st["last_flush"] = now
+        return True
+    except Exception as e:
+        # Never raise into the run. Record that telemetry itself is degraded, so the bench can say
+        # "this run's journal is incomplete" instead of silently showing a stale doc as current.
+        w = doc.setdefault("warnings", [])
+        msg = "journal write failed: %s" % str(e)[:120]
+        if msg not in w:
+            w.append(msg)
+        return False
+
+
+def open_run(run_id, source, label=None, klass=None, params=None, tables=None,
+             rows_before=None, host=None, trigger="manual"):
+    """Start a journal. `trigger` ∈ manual | scheduled | api — so the bench can tell a human-kicked run
+    from a dispatcher tick. `rows_before`/`tables` pin what any later delta is measured against."""
+    try:
+        doc = {
+            "run_id": run_id, "source": source, "label": label, "klass": klass,
+            "trigger": trigger, "params": params or {},
+            "status": "starting", "stage": None,
+            "started_at": int(time.time()), "updated_at": int(time.time()), "finished_at": None,
+            "host": host or (os.uname().nodename[:40] if hasattr(os, "uname") else None),
+            "machine_id": os.environ.get("FLY_MACHINE_ID"),
+            "tables": list(tables or []),
+            "rows_before": rows_before or {},      # {table: count|None}  None = UNKNOWN, never 0
+            "rows_landed": {},                     # {table: count|None}  observed in the warehouse
+            "rows_seen": None,                     # scraper's own claim (HOODIE_PROGRESS)
+            "pct": None,
+            "log": [], "log_lines_total": 0,
+            "exit_code": None, "error": None, "warnings": [],
+        }
+        _OPEN[run_id] = {"doc": doc, "last_flush": 0.0}
+        _flush(run_id, force=True)
+        return doc
+    except Exception:
+        return None
+
+
+def note(run_id, **patch):
+    """Merge fields into the doc (throttled flush). Status changes flush immediately."""
+    try:
+        st = _OPEN.get(run_id)
+        if not st:
+            return
+        st["doc"].update(patch)
+        _flush(run_id, force="status" in patch)
+    except Exception:
+        pass
+
+
+def log(run_id, line):
+    """Capture one output line. Folds a HOODIE_PROGRESS line into the counters instead of the tail."""
+    try:
+        st = _OPEN.get(run_id)
+        if not st:
+            return
+        doc = st["doc"]
+        line = (line or "").rstrip("\n")[:_LINE_MAX]
+        doc["log_lines_total"] += 1
+        m = PROGRESS_RE.search(line)
+        if m:
+            try:
+                p = json.loads(m.group(1))
+                if isinstance(p, dict):
+                    if p.get("rows") is not None:
+                        doc["rows_seen"] = p["rows"]
+                    if p.get("stage") is not None:
+                        doc["stage"] = str(p["stage"])[:120]
+                    if p.get("pct") is not None:
+                        doc["pct"] = p["pct"]
+                    _flush(run_id)
+                    return
+            except Exception:
+                pass                       # malformed progress line → keep it as ordinary output
+        doc["log"].append(line)
+        del doc["log"][:-_LOG_TAIL]
+        _flush(run_id)
+    except Exception:
+        pass
+
+
+def close_run(run_id, status=None, record=None, rows_landed=None, error=None, exit_code=None):
+    """Finalize. Always flushes. `record` is the run_sources run record, kept verbatim for the bench."""
+    try:
+        st = _OPEN.get(run_id)
+        if not st:
+            return None
+        doc = st["doc"]
+        doc["status"] = status or (record or {}).get("status") or "done"
+        doc["finished_at"] = int(time.time())
+        doc["duration_s"] = doc["finished_at"] - doc["started_at"]
+        if rows_landed is not None:
+            doc["rows_landed"] = rows_landed
+        if error is not None:
+            doc["error"] = str(error)[:600]
+        elif (record or {}).get("error"):
+            doc["error"] = str(record["error"])[:600]
+        if exit_code is not None:
+            doc["exit_code"] = exit_code
+        if record:
+            doc["record"] = record
+        _flush(run_id, force=True)
+        return dict(doc)
+    finally:
+        _OPEN.pop(run_id, None)
+
+
+# ── consumer side (the app) ──────────────────────────────────────────────────────────────────────
+def read(run_id):
+    """The journal doc for one run, or None."""
+    try:
+        import warehouse
+        raw = warehouse.get_bytes(_key(run_id))
+        return json.loads(raw) if raw else None
+    except Exception:
+        return None
+
+
+def _list_keys():
+    """Every journal key. Object-store listing, with a local-disk fallback for dev."""
+    import warehouse
+    if warehouse.remote():
+        from pyarrow import fs as pafs
+        fs = warehouse._s3fs()
+        sel = pafs.FileSelector("%s/%s" % (warehouse._bucket(), _PREFIX), recursive=True,
+                                allow_not_found=True)
+        return [i.path.split("/", 1)[1] for i in fs.get_file_info(sel) if i.path.endswith(".json")]
+    base = os.path.join(warehouse._LOCAL_DIR, _PREFIX)
+    if not os.path.isdir(base):
+        return []
+    return ["%s/%s" % (_PREFIX, f) for f in os.listdir(base) if f.endswith(".json")]
+
+
+def recent(limit=40, source=None, active_only=False):
+    """Recent journals, newest first. Cheap-ish (one listing + N small reads) — the bench polls the
+    ACTIVE ones, so keep `limit` tight when active_only is set."""
+    try:
+        keys = _list_keys()
+    except Exception:
+        return []
+    # run ids embed epoch-ms, so the key name sorts chronologically without reading anything
+    ids = sorted((k.rsplit("/", 1)[-1][:-5] for k in keys), key=_sort_key, reverse=True)
+    if source:
+        ids = [i for i in ids if i.rsplit("-", 1)[0] == source]
+    out = []
+    for rid in ids:
+        if len(out) >= limit:
+            break
+        d = read(rid)
+        if not d:
+            continue
+        if active_only and d.get("status") in ("ok", "done", "failed", "timeout", "empty",
+                                               "no-change", "current", "no-creds"):
+            continue
+        out.append(d)
+    return out
+
+
+def _sort_key(run_id):
+    try:
+        return int(run_id.rsplit("-", 1)[-1])
+    except Exception:
+        return 0
+
+
+def prune(keep_days=14):
+    """Drop journals older than keep_days. Journals are small but unbounded; the ledger is the
+    permanent record, the journal is the live/recent detail."""
+    cut = (time.time() - keep_days * 86400) * 1000
+    dropped = 0
+    try:
+        import warehouse
+        from pyarrow import fs as pafs                                   # noqa: F401  (remote only)
+        for k in _list_keys():
+            rid = k.rsplit("/", 1)[-1][:-5]
+            if _sort_key(rid) and _sort_key(rid) < cut:
+                try:
+                    if warehouse.remote():
+                        warehouse._s3fs().delete_file("%s/%s" % (warehouse._bucket(), k))
+                    else:
+                        os.remove(os.path.join(warehouse._LOCAL_DIR, k))
+                    dropped += 1
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return dropped
