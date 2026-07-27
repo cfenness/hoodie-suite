@@ -236,11 +236,11 @@ SOURCES = [
 BUILDS = [
     dict(id="build-outlets", label="Outlet shred → dim_outlet",
          code="import normalize as m; m.build(catalog=False, outlets=True, facts=False)",
-         tables=["src_outlets", "dim_outlet"], klass="build", interval_h=6, enabled=True,
-         note="src_outlets re-shred + cross-source geo-match consolidation (supersedes run_coverage_refresh.sh)"),
+         tables=["src_outlets", "dim_outlet"], klass="build", interval_h=6, enabled=True, mem=16384,
+         note="src_outlets re-shred + cross-source geo-match consolidation (1.76M-row whole-table merge peaks >8GB)"),
     dict(id="build-product-master", label="Product master (dim_sku chain)",
          code="import build_product_master as m; m.build()",
-         tables=["dim_sku"], klass="build", interval_h=12, enabled=True,
+         tables=["dim_sku"], klass="build", interval_h=12, enabled=True, mem=8192,
          note="brand dict → stage → shred to dim_brand/product/item/sku + xwalk/coherence/identity clusters"),
     # MOAT-PLAN Workstream M — PROVE the master. Deterministic gold set (same-UPC positives / cross-
     # brand negatives) scored against the master's item_key decision → P/R/F1 + a regression baseline.

@@ -136,6 +136,22 @@ def main():
     deferred = [s["id"] for s in todo[MAX_SPAWN:]]
     print("dispatch: spawned=%s | skipped-running=%s | deferred-to-next-tick=%s"
           % (spawned, sorted(running & {s["id"] for s in due}), deferred))
+
+    # Derived master builds (dim_sku chain, master_quality, item_identity, the canon head-to-head) run as
+    # their OWN ephemeral machines too — the same isolation as a source, off the Mac (nothing local). Each
+    # build is due only when its upstream landed + its interval passed (run_sources.due_builds, ledger + the
+    # `after` chain), so they self-sequence; running_sources() dedup keeps a build's dim_* write single. Share
+    # the per-tick cap with sources so one tick can't fan out unbounded.
+    remaining = max(0, MAX_SPAWN - len(spawned))
+    b_spawned = []
+    if remaining:
+        due_b = [b for b in run_sources.due_builds() if b["id"] not in running]
+        for b in due_b[:remaining]:
+            if spawn(b["id"], image, b.get("klass"), b.get("mem")):
+                b_spawned.append(b["id"])
+        if due_b:
+            print("dispatch: builds due=%s spawned=%s deferred=%s"
+                  % ([b["id"] for b in due_b], b_spawned, [b["id"] for b in due_b[remaining:]]))
     _refresh_health()
     return 0
 
