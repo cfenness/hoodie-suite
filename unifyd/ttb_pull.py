@@ -23,6 +23,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import ttb_cola_scraper as cola
+import upc as _upc
 
 
 def pull(days=None, chunk_days=1, detail=False, out=None, log=print):
@@ -58,7 +59,14 @@ DETAIL_COLS = ["ttb_id", "status", "vendor_code", "serial_number", "class_type_c
                "wine_vintage", "grape_varietal", "alcohol_content", "formula", "approval_date",
                "qualifications", "plant_permit", "label_image_url", "other_json"]
 LABEL_COLS = ["ttb_id", "image_file", "upc", "abv", "net_contents", "claims", "gov_warning", "ocr_chars",
-              "front_label_url", "back_label_url", "label_urls"]
+              "front_label_url", "back_label_url", "label_urls",
+              # GS1 2D carrier (Sunrise 2027), captured off the label art. EXTENDS the table (the standing
+              # pattern above) — additive columns, nothing renamed or dropped.
+              #   gtin14        GS1-canonical form of whatever encoding was scanned (upc.to_gtin14), so a
+              #                 1D UPC-A and a 2D GTIN-14 join as ONE item
+              #   code_symbols  EVERY symbol decoded, verbatim — a label can carry a barcode AND a QR
+              #   gs1_ais_json  every application identifier as read, incl. batch/lot, expiry, serial
+              "gtin14", "gs1_digital_link", "code_type", "code_symbols", "gs1_ais_json"]
 # ttb_enrich (PascalCase, validated on the current site) field -> ttb_cola_detail snake_case column
 _DETAIL_MAP = {"status": "Status", "vendor_code": "Vendor Code", "serial_number": "Serial #",
                "class_type_code": "Class/Type Code", "origin_code": "Origin Code", "brand_name": "Brand Name",
@@ -78,6 +86,8 @@ def _enrich_one(s, tid, class_type_desc=""):
     import ttb_enrich as te
     df, alc, labs, upc = {}, {"content": "", "abv": ""}, [], ""
     ocr = {"ocr_chars": "", "gov_warning": "", "claims": ""}
+    gs1 = {"gtin14": "", "gs1_digital_link": "", "code_type": ""}
+    gs1_symbols, gs1_ais = [], {}          # accumulate across the label images on this COLA
     try:
         h2 = s.get(_VIEW_URL, params={"action": "publicDisplaySearchBasic", "ttbid": tid}, timeout=45).text
         df = te.parse_detail_fields(h2) or {}
@@ -88,14 +98,27 @@ def _enrich_one(s, tid, class_type_desc=""):
         alc = te.parse_alcohol(h1, df.get("Class/Type Code", ""))
         labs = te.label_filenames(h1)
         try:
-            from ttb_cola_labels import extract_upc_from_label, read_label_text
+            from ttb_cola_labels import decode_any, read_label_text
             texts, claim_set = [], set()
             for fn in labs[:2]:                                  # front + back — gov warning is usually on the BACK
                 img = s.get(cola.ATTACH_URL, params={"filename": fn, "filetype": "l"}, timeout=45).content
-                if not upc:
-                    u = extract_upc_from_label(img)              # barcode → UPC
-                    if u:
-                        upc = u
+                # decode_any reads 1D *and* 2D (QR / DataMatrix) and returns EVERY symbol it found.
+                # Run it on both images even once a UPC is resolved — the other label often carries the
+                # 2D code, and we've already paid to fetch the image.
+                d = decode_any(img)
+                if not upc and d["gtin"]:
+                    upc = d["gtin"]                              # barcode/2D → UPC (unchanged rule)
+                if d["gtin14"] and not gs1["gtin14"]:
+                    gs1["gtin14"] = d["gtin14"]
+                if d["digital_link"] and not gs1["gs1_digital_link"]:
+                    gs1["gs1_digital_link"] = d["digital_link"]
+                if d["code_type"] and not gs1["code_type"]:
+                    gs1["code_type"] = d["code_type"]
+                for sym in d["symbols"]:                         # keep every symbol, verbatim
+                    if sym not in gs1_symbols:
+                        gs1_symbols.append(sym)
+                for k, v in d["ais"].items():                    # keep every AI, as read
+                    gs1_ais.setdefault(k, v)
                 t = read_label_text(img)                         # Tesseract OCR the label → text fields
                 if t.get("ocr_chars"):
                     texts.append(t["ocr_chars"])
@@ -128,6 +151,13 @@ def _enrich_one(s, tid, class_type_desc=""):
                      ocr_chars=ocr.get("ocr_chars", ""),
                      front_label_url=(urls[0] if urls else ""),
                      back_label_url=(urls[1] if len(urls) > 1 else ""), label_urls="|".join(urls))
+        # GS1 2D capture. gtin14 falls back to canonicalizing the 1D UPC, so every encoding of the
+        # same number lands on one key even when the label carries no 2D code at all.
+        label.update(gtin14=gs1["gtin14"] or _upc.to_gtin14(upc),
+                     gs1_digital_link=gs1["gs1_digital_link"], code_type=gs1["code_type"],
+                     code_symbols=(json.dumps(gs1_symbols, separators=(",", ":"))[:4000]
+                                   if gs1_symbols else ""),
+                     gs1_ais_json=(json.dumps(gs1_ais, separators=(",", ":"))[:2000] if gs1_ais else ""))
     return detail, label
 
 

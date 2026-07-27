@@ -158,6 +158,18 @@ def main():
     if want_labels:
         os.makedirs(ldir, exist_ok=True)
 
+    if out_exists:
+        # This writer APPENDS and only emits a header for a new file, so resuming onto a CSV written by
+        # an older build (fewer columns) would silently produce ragged rows that misalign for every
+        # downstream reader. Refuse instead — the data already written stays untouched and correct.
+        with open(a.out, newline="", encoding="utf-8") as f:
+            existing = next(csv.reader(f), [])
+        if existing and existing != OUT_HEADER:
+            missing = [c for c in OUT_HEADER if c not in existing]
+            sys.exit("%s was written with a different schema (%d cols vs %d).%s\nAppending would produce "
+                     "ragged rows. Write to a new --out and concatenate, or re-run without --resume into a "
+                     "fresh file." % (a.out, len(existing), len(OUT_HEADER),
+                                      (" New columns: " + ", ".join(missing)) if missing else ""))
     fout = open(a.out, "a", newline="", encoding="utf-8")
     w = csv.writer(fout)
     if not out_exists:
