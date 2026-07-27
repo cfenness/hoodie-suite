@@ -197,6 +197,13 @@ def init(app):
         _ingest = os.environ.get("INGEST_TOKEN", "")
         if p.startswith("/api/ingest/") and _ingest and auth == "Bearer " + _ingest:
             return
+        # non-browser agent access: server.py's own AGENT_TOKEN check never runs today because this
+        # gate (registered first) already rejects the request before that later before_request fires.
+        # Honor it HERE instead, for the whole /api/* surface — matching server.py's own comment that
+        # AGENT_TOKEN "gates /api/* for non-browser callers."
+        _agent = os.environ.get("AGENT_TOKEN", "")
+        if p.startswith("/api/") and _agent and auth == "Bearer " + _agent:
+            return
         if p.startswith("/api/"):
             return jsonify(ok=False, error="unauthorized"), 401
         # bounce browsers to Google, remembering where they were headed

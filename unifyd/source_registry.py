@@ -89,6 +89,42 @@ SOURCES = [
          tables=["ubereats_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=10, note="Uber BFF, all stores"),
     dict(id="postmates", label="Postmates", code="import ubereats as m; m.main(['--site','postmates','--max-stores','1000'])",
          tables=["postmates_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=11, note="Uber BFF, all stores"),
+    # Deep full-detail crawl (ue_crawl.py: getStoreV1+getMenuItemV1, full per-item UPC/price/recipe) —
+    # bounded to 5 major metros + capped stores/items so ONE run finishes in hours, not the multi-day
+    # national sweep the crawler is capable of. NO proxy: ue_crawl.py was proven from the operator's
+    # HOME residential IP; its own UE_PROXY=1 option routes through resi._session_url — the METERED
+    # per-GB tier — so we never set it. RESI_ISP_ONLY=1 is belt-and-suspenders (hard-forbids per-GB
+    # globally even if something downstream reached for it) — worst case this runs on the bare Fly IP
+    # with zero proxy, which is exactly the open question this run is meant to answer. enabled=False:
+    # manual trigger only, never joins the automatic hourly scan, until a real run proves it's not
+    # degraded (near-zero merchants is the known failure signature of a flagged/foreign exit IP).
+    dict(id="ubereats-full", label="Uber Eats — bounded full-detail crawl",
+         code="import os; os.environ['RESI_ISP_ONLY']='1'; import ue_crawl as m; "
+              "m.main(['--zones','New York, NY;Los Angeles, CA;Chicago, IL;Miami, FL;Houston, TX',"
+              "'--site','ubereats','--max-stores','60','--max-items-enrich','40'])",
+         tables=["ubereats_products"], klass="mac", cadence="daily", enabled=False,
+         timeout=10800, mem=8192, cost_class="free",
+         note="ONE bounded run (5 metros, capped stores/items), NO proxy (RESI_ISP_ONLY=1 forbids "
+              "metered spend) — validates the bare Fly IP before any wider run. Manual trigger only."),
+    dict(id="postmates-full", label="Postmates — bounded full-detail crawl",
+         code="import os; os.environ['RESI_ISP_ONLY']='1'; import ue_crawl as m; "
+              "m.main(['--zones','New York, NY;Los Angeles, CA;Chicago, IL;Miami, FL;Houston, TX',"
+              "'--site','postmates','--max-stores','60','--max-items-enrich','40'])",
+         tables=["postmates_products"], klass="mac", cadence="daily", enabled=False,
+         timeout=10800, mem=8192, cost_class="free",
+         note="Postmates twin of ubereats-full — same bounds, same $0/no-proxy posture, manual trigger only."),
+    # Instacart bev-alc is gated behind a logged-in, age-verified account session — anonymous gets
+    # "alcohol products aren't available." requires= keeps every tick an honest no-creds skip until
+    # INSTACART_SESSION_COOKIES is set (Chris's own account, injected via instacart.py's _launch()).
+    # ONE zone, a handful of alcohol terms — proving the gate lifts at all is the whole point of this
+    # first run, not a sweep. enabled=False: manual trigger only.
+    dict(id="instacart-bevalc", label="Instacart — bev-alc (session-gated)",
+         code="import instacart as m; r = m.Instacart().pull(address='10001', retailers=['grocery'], "
+              "queries=['vodka','wine','whiskey','beer','tequila'], per_query_pages=2); print(len(r))",
+         tables=["instacart_products"], klass="mac", cadence="daily", enabled=False,
+         requires=["INSTACART_SESSION_COOKIES"], cost_class="free",
+         note="ONE zone / a few alcohol terms — proves whether a plain logged-in session lifts the "
+              "anonymous alcohol gate. No proxy (free Playwright, per instacart.py). Manual trigger only."),
     dict(id="sevennow", label="7-Eleven (7NOW)", code="import sevennow_warm as m; m.main()",
          tables=["sevennow_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=60, note="Incapsula — patchright"),
 
@@ -206,6 +242,14 @@ SOURCES = [
     dict(id="naop", label="NAOP on-premise", code="import doordash_naop as m; m.run()",
          tables=["naop_accounts", "naop_beverages"], klass="headless", cadence="daily", enabled=True, timeout=7200,
          note="DoorDash on-premise menus, $0 (ISP pool); consumes doordash_stores in NAOP_LIMIT batches"),
+    dict(id="doordash-full", label="DoorDash retail — full catalog (chain-attributed, bounded)",
+         code="import doordash_chains as m; m.run()",
+         tables=["doordash_full_runs"], klass="headless", cadence="daily", enabled=False, timeout=14400,
+         cost_class="free",
+         note="ONE bounded sweep of a curated major-chain list via doordash_full.py's category-tree walk "
+              "(doordash_chains.py buckets doordash_stores by chain-name heuristic, same pattern as naop's "
+              "_RETAIL_CHAINS, inverted); $0 flat ISP pool (Bright Data retired for DoorDash 2026-07-24); "
+              "manual trigger only, not a recurring daily job"),
     dict(id="toast", label="Toast own-menus", code="import toast as m; m.run()",
          tables=["toast_outlets", "toast_beverages", "toast_menu_accounts"], klass="headless", cadence="daily",
          enabled=True, timeout=7200,
