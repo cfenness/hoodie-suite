@@ -34,7 +34,6 @@ MUST_ROUTE_VIA_REGISTRY = {"abc-fws", "specs", "binnys", "walmart", "kroger", "t
 # A registry-owned source id (one that appears in source_registry AND is runnable by the app) may NOT sit here
 # — it must route via the registry. The lone documented exception is target (see below), a real follow-up.
 APP_ONLY_CONN = {
-    "ttb-cola":         "live COLA runner; registry 'ttb' is the disabled weekly backfill (different id)",
     "instacart":        "parked recon, no registry entry (not reliably landing)",
     "orlando-accounts": "FL ABT on-premise accounts (places.py), no registry entry",
     "census-acs":       "ACS demographics (census.py -> census_acs); registry 'census' is census_ref -> "
@@ -43,10 +42,10 @@ APP_ONLY_CONN = {
     "il-chicago":       "Chicago license portal (Socrata), no registry entry",
     "ct-dcp":           "CT DCP license portal (Socrata), no registry entry",
     "walmart-api":      "Walmart I/O affiliate API; registry 'walmart' is the walmart_direct scraper (different id)",
-    "target":           "FOLLOW-UP: registry 'target' runs target_scraper.run(); the app path runs the national "
-                        "sweep. Reconcile onto the registry, then move target into _REGISTRY_CONN and delete this.",
     "doordash":         "DoorDash geo merchant sweep, no registry entry",
     "google":           "Google Maps hours/coverage enrich, no registry entry",
+    # NOTE: 'target' and 'ttb-cola' were removed here — they ARE registry ids and now route via the registry
+    # (server._dispatch_pull universal rule). Their old target_pull/cola_pull copies are dead and being deleted.
 }
 
 
@@ -66,10 +65,16 @@ def main():
     legacy = set(getattr(server, "_CONN_PULL", {}))
     fails = []
 
-    # 1. every source that must be registry-routed actually is
+    # Routing is now UNIVERSAL (server._dispatch_pull): a conn runs through the registry iff it is a registry id
+    # (or explicitly mapped in the legacy _REGISTRY_CONN allowlist). So bespoke drift can only exist as a stale
+    # ESCAPE HATCH — a registry source that ALSO has a *_pull copy or an app-only exemption. The checks hunt those.
+    def routes_via_registry(conn):
+        return conn in conn_map or reg.by_id(conn) is not None
+
+    # 1. the explicit floor still routes via registry
     for cid in sorted(MUST_ROUTE_VIA_REGISTRY):
-        if cid not in conn_map:
-            fails.append("'%s' must route via the registry (_REGISTRY_CONN) but doesn't — drift risk" % cid)
+        if not routes_via_registry(cid):
+            fails.append("'%s' must route via the registry but doesn't — drift risk" % cid)
 
     # 2. every _REGISTRY_CONN target resolves to a real registry id, and its key is a runnable conn
     for conn, rid in sorted(conn_map.items()):
@@ -78,33 +83,30 @@ def main():
         if conn not in valid:
             fails.append("_REGISTRY_CONN key '%s' is not in VALID_CONNS (unreachable)" % conn)
 
-    # 3. a registry-routed conn must NOT also be wired to a legacy *_pull (ambiguous dispatch = the drift bug)
-    for conn in sorted(set(conn_map) & legacy):
-        fails.append("'%s' is BOTH registry-routed and in _CONN_PULL — remove the legacy entry" % conn)
+    # 3. THE CORE ANTI-REVERSION CHECK: a registry source may NOT keep a bespoke escape hatch. Because every
+    #    registry id routes via run_one, ANY registry-id conn still found in _CONN_PULL (a *_pull copy) or in
+    #    APP_ONLY_CONN (a "skip the registry" exemption) is exactly the stale copy that let "we fixed it N times"
+    #    happen. It must be DELETED, not left dormant.
+    for cid in sorted(reg_ids & valid):
+        if cid in legacy:
+            fails.append("'%s' is a registry source but STILL wired in _CONN_PULL — delete the dead *_pull copy" % cid)
+        if cid in APP_ONLY_CONN:
+            fails.append("'%s' is a registry source but listed APP_ONLY_CONN — it routes via the registry; "
+                         "remove the stale exemption" % cid)
 
-    # 4. STRUCTURAL anti-drift (the core check): any conn whose id is a source_registry id, and which the app
-    #    can run, MUST route through the registry — unless it's a documented APP_ONLY_CONN exception. This is
-    #    what catches the vtinfo/ab-inbev class (a registry-owned source hand-wired in the app else-chain) that
-    #    the hand-maintained MUST_ROUTE list silently missed.
-    for cid in sorted(valid & reg_ids):
-        if cid not in conn_map and cid not in APP_ONLY_CONN:
-            fails.append("'%s' is a source_registry id the app can run, but it is NOT routed via the registry "
-                         "and NOT a documented app-only exception — dispatch drift (add it to _REGISTRY_CONN)"
-                         % cid)
-
-    # 5. an APP_ONLY exception must be real: it must be a runnable conn and must NOT also be registry-routed.
+    # 4. an APP_ONLY exemption must be a real NON-registry runnable conn (a registry id belongs on the registry path)
     for cid in sorted(APP_ONLY_CONN):
-        if cid in conn_map:
-            fails.append("'%s' is in APP_ONLY_CONN yet also registry-routed — remove one" % cid)
+        if reg.by_id(cid) is not None:
+            fails.append("APP_ONLY_CONN '%s' IS a registry id — it routes via the registry, not app-only" % cid)
         if cid not in valid:
             fails.append("APP_ONLY_CONN lists '%s' which is not a runnable conn (stale exemption)" % cid)
 
-    # 6. EXHAUSTIVENESS: every runnable conn is classified (registry-routed, documented app-only, or a Socrata
-    #    outlet feed). A new conn cannot be added to VALID_CONNS without a conscious routing decision.
-    classified = set(conn_map) | set(APP_ONLY_CONN) | socrata_valid
-    for cid in sorted(valid - classified):
-        fails.append("'%s' is runnable (VALID_CONNS) but unclassified — add it to _REGISTRY_CONN (preferred) "
-                     "or APP_ONLY_CONN with a reason" % cid)
+    # 5. EXHAUSTIVENESS: every runnable conn is classified — routes via registry, is a Socrata feed, or is a
+    #    documented NON-registry app-only conn. A new conn can't sneak in without a conscious routing decision.
+    for cid in sorted(valid):
+        if not (routes_via_registry(cid) or cid in APP_ONLY_CONN or cid in socrata_valid):
+            fails.append("'%s' is runnable (VALID_CONNS) but unclassified — it will route via the registry only "
+                         "if it's a registry id; otherwise document it in APP_ONLY_CONN with a reason" % cid)
 
     if fails:
         print("DISPATCH GUARD FAILED (%d):" % len(fails))
