@@ -153,35 +153,70 @@ How it reports, honestly:
 
 #### Go-live runbook (one time)
 
-1. **In Snowflake** (Snowsight, as ACCOUNTADMIN or similar): create a service user + role that can
-   build the database. **Key-pair auth is the right choice for a headless service user** — Snowflake
-   enforces MFA on human password logins, which unattended jobs can't answer:
+Two ways to authenticate the load. On a GOVERNED / ENTERPRISE account, service-user creation
+usually goes through the account's own provisioning process (platform/security team) rather than
+a self-service `CREATE USER` — use **Path A** to get running now under your own login, and file
+the service-account request separately if/when the platform team wants that separation.
 
-   ```bash
-   openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out sf_hoodie_key.p8 -nocrypt
-   openssl rsa -in sf_hoodie_key.p8 -pubout -out sf_hoodie_key.pub
-   ```
+**Path A — run as your own existing user (no new user/role, no Snowsight SQL)**
 
-   ```sql
-   CREATE ROLE IF NOT EXISTS UNIFYD_LOADER;
-   GRANT CREATE DATABASE ON ACCOUNT TO ROLE UNIFYD_LOADER;
-   GRANT CREATE WAREHOUSE ON ACCOUNT TO ROLE UNIFYD_LOADER;
-   CREATE USER IF NOT EXISTS HOODIE_LOAD
-     TYPE = SERVICE DEFAULT_ROLE = UNIFYD_LOADER
-     RSA_PUBLIC_KEY = '<contents of sf_hoodie_key.pub, without the BEGIN/END lines>';
-   GRANT ROLE UNIFYD_LOADER TO USER HOODIE_LOAD;
-   ```
+The load only needs `CREATE DATABASE ON ACCOUNT` + `CREATE WAREHOUSE ON ACCOUNT` (both
+`01_database.sql`/`00_config.template.sql` are `IF NOT EXISTS`, so this only bites on the first
+run — after the seed, ordinary `CREATE OR REPLACE TABLE` under the `UNIFYD` database is all it
+does). Most functional roles (`SYSADMIN` and similar) already carry both by default. Check first:
 
-2. **Set the Fly secrets** (the only new ones — Tigris creds are reused from the app's existing
-   `BUCKET_NAME` / `AWS_*`):
+```sql
+SHOW GRANTS TO ROLE <your_default_role>;      -- look for CREATE DATABASE / CREATE WAREHOUSE ON ACCOUNT
+```
 
-   ```bash
-   fly secrets set -a hoodie-suite \
-     SNOWFLAKE_ACCOUNT=<org-account> SNOWFLAKE_USER=HOODIE_LOAD SNOWFLAKE_ROLE=UNIFYD_LOADER \
-     SNOWFLAKE_PRIVATE_KEY="$(cat sf_hoodie_key.p8)"
-   # password auth instead: SNOWFLAKE_PASSWORD=<pw>   (needs a user exempt from MFA)
-   # optional: SNOWFLAKE_WAREHOUSE (default UNIFYD_LOAD), SNOWFLAKE_DATABASE (default UNIFYD)
-   ```
+If it's missing, ask whoever administers the account to grant those two privileges to your role
+(or to pre-create the `UNIFYD` database / `UNIFYD_LOAD` warehouse for you) — that's a narrower ask
+than provisioning a new user.
+
+Then just set the Fly secrets — no Snowsight step at all:
+
+```bash
+fly secrets set -a hoodie-suite \
+  SNOWFLAKE_ACCOUNT=<org-account> SNOWFLAKE_USER=<your_username> SNOWFLAKE_PASSWORD=<your_password>
+# optional: SNOWFLAKE_ROLE=<your_default_role if not already your login default>
+# optional: SNOWFLAKE_WAREHOUSE (default UNIFYD_LOAD), SNOWFLAKE_DATABASE (default UNIFYD)
+```
+
+Password auth is fine here as long as MFA isn't enforced on your login (`DESC USER <you>;` →
+`RSA_PUBLIC_KEY_FP` / `EXT_AUTHN_DUO` rows). If MFA *is* on, either add a personal RSA key to your
+own user (`ALTER USER <you> SET RSA_PUBLIC_KEY = '...'` — altering your own account's auth method
+is ordinarily self-service even when creating a *new* user isn't) and use
+`SNOWFLAKE_PRIVATE_KEY` instead of `SNOWFLAKE_PASSWORD`, or fall back to Path B.
+
+**Path B — dedicated service user** (once the platform team provisions it, or if self-service
+`CREATE USER` is allowed on this account): create a service user + role with key-pair auth —
+Snowflake enforces MFA on human password logins, which unattended jobs can't answer.
+
+```bash
+openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out sf_hoodie_key.p8 -nocrypt
+openssl rsa -in sf_hoodie_key.p8 -pubout -out sf_hoodie_key.pub
+```
+
+```sql
+CREATE ROLE IF NOT EXISTS UNIFYD_LOADER;
+GRANT CREATE DATABASE ON ACCOUNT TO ROLE UNIFYD_LOADER;
+GRANT CREATE WAREHOUSE ON ACCOUNT TO ROLE UNIFYD_LOADER;
+CREATE USER IF NOT EXISTS HOODIE_LOAD
+  TYPE = SERVICE DEFAULT_ROLE = UNIFYD_LOADER
+  RSA_PUBLIC_KEY = '<contents of sf_hoodie_key.pub, without the BEGIN/END lines>';
+GRANT ROLE UNIFYD_LOADER TO USER HOODIE_LOAD;
+```
+
+```bash
+fly secrets set -a hoodie-suite \
+  SNOWFLAKE_ACCOUNT=<org-account> SNOWFLAKE_USER=HOODIE_LOAD SNOWFLAKE_ROLE=UNIFYD_LOADER \
+  SNOWFLAKE_PRIVATE_KEY="$(cat sf_hoodie_key.p8)"
+```
+
+Switching from A to B later is just re-running `fly secrets set` with the new user/key — nothing
+else in the pipeline changes (`run_load.py` only reads env).
+
+**Then, either path:**
 
 3. **Re-pin the dispatcher** so it can see the new registry entry — the dispatcher machine keeps
    its pinned image across deploys, and due-ness is computed from *its* copy of
