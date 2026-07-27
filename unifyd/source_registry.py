@@ -32,18 +32,23 @@ SOURCES = [
     dict(id="binnys", label="Binny's", code="import binnys_scraper as m; m.pull(crawl_all=True)",
          tables=["binnys_products"], klass="headless", cadence="daily", enabled=True, note="Algolia feed"),
     dict(id="specs", label="Spec's", code="import specs_scraper as m; m.pull(crawl_all=True)",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["specs_products"], klass="headless", cadence="daily", enabled=True, note="Next.js sitemap"),
     dict(id="meijer", label="Meijer", code="import meijer as m; m.pull()",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["meijer_products"], klass="headless", cadence="daily", enabled=True,
          note="open storefront GraphQL (digital.meijer.com) — no auth/anti-bot; per-store alcohol sweep"),
     dict(id="trader-joes", label="Trader Joe's", code="import trader_joes as m; m.pull()",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["trader_joes_products"], klass="headless", cadence="weekly", enabled=True,
          note="open storefront GraphQL + Brandify locator — no auth/anti-bot; SKU (no UPC), national pricing"),
     dict(id="abc-facets", label="ABC FW&S (facets)", code="import abc_facets as m; m.pull(cap=None)",
          tables=["abc_products", "source_taxonomy"], klass="headless", cadence="daily", enabled=True, note="SearchSpring"),
     dict(id="abc-catalog", label="ABC FW&S (catalog)", code="import abc_catalog as m; m.run()",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["abc_catalog"], klass="headless", cadence="weekly", enabled=True, note="BigCommerce sitemap"),
     dict(id="abc-fws", label="ABC FW&S (inventory)", code="import abc_fws_scraper as m; m.pull(crawl_all=True)",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["retail_observations"], klass="headless", cadence="daily", enabled=True, cost_class="proxy",
          note="per-store inventory → lands retail_observations (NOT abc_products, which abc-facets owns/overwrites)",
          # COVERAGE (coverage.py): item/store columns + the KNOWN universe, so a run that lands far fewer
@@ -51,6 +56,7 @@ SOURCES = [
          # coverage self-calibrate from the touched high-water-mark; set them when the universe is known.
          item_col="sku", store_col="store", expected_items=13900, expected_stores=133),
     dict(id="haskells", label="Haskell's (MN)", code="import haskells as m; m.run(limit=None)",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["haskells_products"], klass="headless", cadence="daily", enabled=True, timeout=10800,
          note="first-party site; full-catalog crawl outgrew the 5400s default (timed out 07-18)"),
     dict(id="total-wine", label="Total Wine",
@@ -61,12 +67,15 @@ SOURCES = [
 
     # ── Grocery / big-box ─────────────────────────────────────────────────────────────────────────────────────
     dict(id="walmart", label="Walmart", code="import walmart_direct as m; m.pull(detail_pages=True, detail_cap=600)",
+         caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["walmart_products"], klass="headless", cadence="daily", enabled=True, cost_class="proxy",
          note="walmart_direct: IPRoyal residential exit + curl_cffi Chrome-JA3, $0 (no BD, no API). "
               "A warmed WALMART_COOKIE is an OPTIONAL boost, NOT required — do not gate the run on it."),
     dict(id="target", label="Target", code="import target_scraper as m; m.run()",
+         caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["target_products", "target_stores"], klass="headless", cadence="daily", enabled=True, cost_class="bd", note="RedSky API"),
     dict(id="kroger", label="Kroger (atlas inventory)", code="import kroger_atlas as m; m.main([])",
+         caps=['patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["kroger_atlas_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac",
          # PREP: warm the Akamai cookie in headful Chrome before the pull (cookie_warm), so the atlas API
          # accepts the replay. requires=[] because KROGER_COOKIE is minted by the prep, not pre-set; the
@@ -80,14 +89,17 @@ SOURCES = [
          requires=["KROGER_CLIENT_ID", "KROGER_CLIENT_SECRET"],
          note="thin public OAuth API — product/UPC seed that feeds the atlas GTIN universe (NOT real inventory)"),
     dict(id="publix", label="Publix", code="import publix as m; m.run()",
+         caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["publix_products"], klass="headless", cadence="daily", enabled=True, cost_class="bd", note="weekly-ad API"),
     dict(id="stop-and-shop", label="Stop & Shop", code="import stop_and_shop as m; m.main([])",
          tables=["stop_and_shop_products"], klass="mac", cadence="daily", enabled=False, cost_class="mac", note="needs a warmed cookie — not headless"),
 
     # ── Aggregators / convenience (Mac headful — anti-bot) ────────────────────────────────────────────────────
     dict(id="ubereats", label="Uber Eats", code="import ubereats as m; m.main(['--site','ubereats','--max-stores','1000'])",
+         caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["ubereats_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=10, note="Uber BFF, all stores"),
     dict(id="postmates", label="Postmates", code="import ubereats as m; m.main(['--site','postmates','--max-stores','1000'])",
+         caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["postmates_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=11, note="Uber BFF, all stores"),
     # Deep full-detail crawl (ue_crawl.py: getStoreV1+getMenuItemV1, full per-item UPC/price/recipe) —
     # bounded to 5 major metros + capped stores/items so ONE run finishes in hours, not the multi-day
@@ -126,20 +138,25 @@ SOURCES = [
          note="ONE zone / a few alcohol terms — proves whether a plain logged-in session lifts the "
               "anonymous alcohol gate. No proxy (free Playwright, per instacart.py). Manual trigger only."),
     dict(id="sevennow", label="7-Eleven (7NOW)", code="import sevennow_warm as m; m.main()",
+         caps=['patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["sevennow_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=60, note="Incapsula — patchright"),
 
     # ── Off-premise platforms ─────────────────────────────────────────────────────────────────────────────────
     dict(id="offprem-census", label="Off-premise census (Shopify/Woo/Wix/Sqsp)",
+         caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
          code="import off_premise as m, warehouse, re;"
               "markets=sorted(set(re.sub(r'_offprem_census$','',d['name']) for d in warehouse.list_datasets() if d['name'].endswith('_offprem_census')));"
               "[m.run_census(market=x, platforms=('Shopify','WooCommerce','Wix','Squarespace')) for x in markets]",
          tables=["offprem_products"], klass="headless", cadence="daily", enabled=True, cost_class="proxy", note="22 markets, no-BD"),
     dict(id="shopify", label="Shopify (national sweep)", code="import off_premise as m; m.national_sweep('shopify')",
+         caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["national_shopify_products"], klass="headless", cadence="weekly", enabled=True,
          note="census sweep's Shopify pass — SHOPIFY_SEED via open /products.json ($0); OFFPREM_SERP=1 adds BD SERP discovery. Replaced standalone shopify_scraper (archived)"),
     dict(id="bottlecapps", label="Bottlecapps network", code="import bottlecapps as m; m.national()",
+         caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["bottlecapps_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=62, note="DataDome — patchright"),
     dict(id="cityhive", label="City Hive network", code="import cityhive as m; m.national(max_stores=100)",
+         caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["cityhive_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=61, note="Cloudflare — patchright"),
     dict(id="bbg", label="BBG e-commerce", code="import bbg_salsify as m; m.pull()",
          tables=["bbg_products"], klass="headless", cadence="daily", enabled=True, note="Salsify API"),
@@ -196,6 +213,7 @@ SOURCES = [
     # deadline-bounded bite and the next resumes. cost_class=proxy — one IP 429s in seconds, so it
     # needs the ISP pool (it REFUSES to run direct without --allow-direct).
     dict(id="vip-finder-census", label="VIP finder tenant census",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          code="import vip_finder_census as m; m.pull(argv=['--deadline', '3000'])",
          tables=["vip_finder_tenants", "vip_finder_brands"], klass="headless", cadence="weekly",
          enabled=True, cost_class="proxy", timeout=3600,
@@ -203,15 +221,18 @@ SOURCES = [
               "(checkpoint in the warehouse) until the keyspace is walked. Pacing is adaptive — 1s/IP, "
               "doubling on 429 — so it self-throttles; --calibrate only makes it faster"),
     dict(id="doordash-sitemap", label="DoorDash store universe", code="import doordash_sitemap as m; m.run()",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["doordash_stores"], klass="headless", cadence="weekly", enabled=True, timeout=7200,
          note="$0 national store spine from DoorDash's own sitemaps (curl_cffi+ISP); feeds naop + retail"),
     dict(id="ubereats-sitemap", label="UberEats store universe",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          code="import ue_sitemap as m; m.pull('ubereats'); m.sitemap_to_src_outlets('ubereats')",
          tables=["ubereats_sitemap", "src_outlets"], klass="headless", cadence="weekly", enabled=True,
          timeout=10800, mem=8192,
          note="$0 US UberEats universe from its gzipped sitemaps (~285k) → src_outlets (the coverage book). "
               "Canonical UberEats harvester (ubereats_sitemap.py archived). accumulate into 995k src_outlets → 8gb"),
     dict(id="postmates-sitemap", label="Postmates store universe",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          code="import ue_sitemap as m; m.pull('postmates'); m.sitemap_to_src_outlets('postmates')",
          tables=["postmates_sitemap", "src_outlets"], klass="headless", cadence="weekly", enabled=True,
          timeout=10800, mem=8192, note="$0 US Postmates universe from its sitemaps → src_outlets (coverage book)"),
@@ -220,6 +241,7 @@ SOURCES = [
          note="automate lat/lng: free US Census batch-geocodes addressed-but-ungeocoded src_outlets → maps on "
               "the Coverage page; unmatched marked county_fips=00000 so they aren't retried. GEOCODE_LIMIT/run"),
     dict(id="aggregator-geo", label="Aggregator geo (page-fetch)", code="import aggregator_geo as m; m.run()",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["src_outlets"], klass="headless", cadence="daily", enabled=False, timeout=7200, mem=16384,
          note="$0 page-fetch PRECISE geo for the ~790k no-address ubereats/postmates outlets (schema.org "
               "lat/lng → geo_precision=exact; empty pages marked agg_miss). Big crawl — chips away, "
@@ -235,14 +257,17 @@ SOURCES = [
               "(DoorDash: all 587k) → geo_precision=city, maps on Coverage immediately; the exact crawl upgrades "
               "city→exact. No fetch. FAST_GEO_LIMIT/run"),
     dict(id="geo", label="Geo pipeline (all layers)", code="import geo_all as m; m.run()",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["src_outlets"], klass="headless", cadence="daily", enabled=True, timeout=10800, mem=16384,
          note="THE daily geo run: fast-geo → geocode → aggregator-geo IN SEQUENCE on one machine. They each "
               "rewrite the whole src_outlets table, so running them concurrently would clobber each other — this "
               "serializes them. The three stay registered (enabled=False) for targeted manual backfills."),
     dict(id="naop", label="NAOP on-premise", code="import doordash_naop as m; m.run()",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["naop_accounts", "naop_beverages"], klass="headless", cadence="daily", enabled=True, timeout=7200,
          note="DoorDash on-premise menus, $0 (ISP pool); consumes doordash_stores in NAOP_LIMIT batches"),
     dict(id="doordash-full", label="DoorDash retail — full catalog (chain-attributed, national)",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          code="import doordash_chains as m; m.run()",
          tables=["doordash_full_runs"], klass="headless", cadence="daily", enabled=True, timeout=14400,
          cost_class="free",
@@ -253,6 +278,7 @@ SOURCES = [
               "matched/covered/remaining every time — no permanent cap, no silent coverage gap. $0 flat ISP "
               "pool (Bright Data retired for DoorDash 2026-07-24)"),
     dict(id="toast", label="Toast own-menus", code="import toast as m; m.run()",
+         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["toast_outlets", "toast_beverages", "toast_menu_accounts"], klass="headless", cadence="daily",
          enabled=True, timeout=7200,
          note="$0 restaurant OWN menus from toasttab.com sitemaps (~100k); harvest + TOAST_LIMIT menu batches"),
@@ -260,9 +286,11 @@ SOURCES = [
          tables=["outlet_master"], klass="headless", cadence="daily", enabled=True,
          note="derived ($0): unions DoorDash/Toast outlet spines → mastered outlets + per-source menu freshness"),
     dict(id="ttb-cola", label="TTB COLA scrape", code="import ttb_pull as m; m.run()",
+         caps=['bs4', 'pillow', 'pylibdmtx', 'pytesseract', 'pyzbar'],   # optional libs this source silently degrades without (capability.py)
          tables=["ttb_cola"], klass="headless", cadence="weekly", enabled=True, timeout=5400,
          note="$0 off-Mac incremental COLA scrape (last TTB_DAYS) → accumulate ttb_cola; ttbonline.gov verify=False, direct (no BD/browser)"),
     dict(id="ttb-enrich", label="TTB COLA enrich (detail+UPC)", code="import ttb_pull as m; m.run_enrich()",
+         caps=['bs4', 'pillow', 'pylibdmtx', 'pytesseract', 'pyzbar'],   # optional libs this source silently degrades without (capability.py)
          tables=["ttb_cola_detail", "ttb_cola_labels"], klass="headless", cadence="daily", enabled=True,
          timeout=7200, mem=8192,   # accumulate merges the 1.86M-row ttb_cola_detail → needs >4GB headroom
          note="$0 off-Mac producer that EXTENDS the existing ttb_cola_detail + ttb_cola_labels (accumulate by "
