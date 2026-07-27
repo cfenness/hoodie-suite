@@ -252,16 +252,22 @@ def parse_digital_link(uri):
 
 
 def to_gtin14(code):
-    """Resolve ANY GS1 item code to its canonical GTIN-14 — the cross-encoding identity.
+    """Resolve ANY GS1 item code to its canonical GTIN-14 — the cross-encoding IDENTITY.
 
     UPC-A(12) / EAN-13(13) / EAN-8(8) / GTIN-14 are the same number in different encodings, so GS1's
     canonical form is simply zero-padded to 14. Doing this automatically is what lets a 1D UPC and a
     2D code carrying a GTIN-14 land on the SAME item instead of looking like two products. Matches
-    normalize._upc_norm's existing convention. '' only when the code isn't a usable GS1 code at all."""
-    c = normalize(code) or only_digits(code)
-    if not c or not (8 <= len(c) <= 14):
+    normalize._upc_norm's existing convention.
+
+    VALIDITY-GATED on purpose: this value is used as a JOIN KEY, so a placeholder ('000000000000') or
+    a bad-check code must never be canonicalized into one — otherwise every product carrying the same
+    dummy barcode would collapse into a single item, which is precisely what classify() exists to
+    prevent. Returns '' for anything classify() doesn't call 'valid'. Use only_digits/normalize
+    directly if you want the raw shape without the identity guarantee."""
+    if classify(code) != "valid":
         return ""
-    return c.zfill(14)
+    c = normalize(code)
+    return c.zfill(14) if c else ""
 
 
 GS1_CANONICAL_HOST = "https://id.gs1.org"
@@ -380,6 +386,11 @@ def _selftest():
     assert to_gtin14("00036000291452") == "00036000291452"    # already GTIN-14
     assert to_gtin14("36000291452") == "00036000291452"       # zero-stripped → healed, then resolved
     assert to_gtin14("") == "" and to_gtin14("abc") == ""
+    # a join key must never be minted from a code classify() rejects — otherwise every product sharing
+    # a dummy barcode would collapse into ONE item
+    assert to_gtin14("000000000000") == "", "placeholder must not become a canonical item key"
+    assert to_gtin14("36000291453") == "", "bad check digit must not become a canonical item key"
+    assert to_gtin14("123456789012") == ""                    # trivial ascending run = placeholder
 
     # ── DERIVE the Digital Link from a GTIN we already hold — round-trips through parse_2d ──
     assert digital_link("036000291452") == "https://id.gs1.org/01/00036000291452"

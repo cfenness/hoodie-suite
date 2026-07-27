@@ -20,6 +20,7 @@ import master_apply
 import precleanse as _precleanse
 import sku_match as _sku_match
 import placeholders as _placeholders
+import upc as _upc
 
 # origin = SOURCE of the juice (COO — where the liquid is from); bottled_in = where it was bottled (kept
 # SEPARATE — a Barbados rum bottled in the US is origin=Barbados, bottled_in=US).
@@ -37,7 +38,7 @@ FIELDS = ["brand", "brand_group", "product_name", "class_type", "core_name", "fl
           # The instance-grain AIs a 2D code carries (batch/lot, expiry, serial) ARE captured at the
           # source layer (ttb_enrich.gs1_ais_json) — they're just not item-grain, so they don't belong
           # on this row. Captured everywhere, modelled where it's correct.
-          "gtin14", "gs1_digital_link", "code_type",
+          "gtin14", "gs1_digital_link", "code_type", "gs1_link_source",
           "price"]   # shelf price (soft cross-source clustering signal via price_signal.py — never a key)
 
 # sources with a REAL brand column — used to seed the brand dictionary
@@ -421,6 +422,44 @@ def split_by_abv(staged, log=print):
     return staged
 
 
+def derive_gs1(staged, log=print):
+    """Mint the GS1 canonical identifier + Digital Link for every staged row that has a usable code.
+
+    This is the high-yield direction for the 2D transition (GS1 Sunrise 2027): a Digital Link is a URI
+    TEMPLATE over the identifier (`https://id.gs1.org/01/<gtin14>`), not data that has to be obtained —
+    so every valid UPC/GTIN we ALREADY hold gets its 2D payload deterministically, at $0 and full
+    coverage. Waiting to scrape one off a label would cover a rounding error of the catalog by
+    comparison.
+
+    Runs AFTER propagate_upcs so it benefits from codes propagated across matched item clusters.
+
+    PROVENANCE (the dq.js DETERMINISTIC-vs-INFERENCE discipline): `gs1_link_source` records how the
+    link got there — 'derived' (computed from the GTIN, always available) vs 'observed' (actually read
+    off a 2D code on a label). They must never be confused: a derived link says what the code WOULD be,
+    not that the brand has printed or registered one. An observed value is never overwritten.
+    """
+    minted = kept = no_code = 0
+    for r in staged:
+        code = r.get("upc") or r.get("gtin")
+        g14 = _upc.to_gtin14(code) if code else ""
+        if g14 and not r.get("gtin14"):
+            r["gtin14"] = g14
+        if r.get("gs1_digital_link"):                   # observed off a real label — never clobber
+            r.setdefault("gs1_link_source", "observed")
+            kept += 1
+            continue
+        link = _upc.digital_link(code) if code else ""  # '' for placeholder/bad-check — never minted
+        if link:
+            r["gs1_digital_link"] = link
+            r["gs1_link_source"] = "derived"
+            minted += 1
+        else:
+            no_code += 1
+    log("[master] gs1: %d derived, %d observed kept, %d rows with no usable code (%.1f%% covered)"
+        % (minted, kept, no_code, 100.0 * (minted + kept) / max(1, len(staged))))
+    return {"derived": minted, "observed": kept, "no_code": no_code}
+
+
 def build_source_xwalk(con, log=print):
     """(source, source_product_id) -> product_key / item_key / sku_key. Recomputes the SAME md5 identity keys
     master_apply.resolve_hierarchy assigns, but over _stage_product (which now carries _source + _source_id) —
@@ -691,6 +730,7 @@ def build(log=print):
     canonicalize(staged, log)                           # smarter matching: fold near-dup names before the shred
     split_by_abv(staged, log)                           # then un-merge distinct-proof expressions ABV separates
     _sku_match.propagate_upcs(staged, log)              # SKU-first: propagate UPCs across matched item clusters
+    derive_gs1(staged, log)                             # then mint GS1 canonical + Digital Link off those UPCs
     # TTB<->retail bridge: the class/type is a FIELD on the registry side, baked into the NAME on the retail side.
     # Extract a canonical class + a class/type-stripped name-core from the FINAL name, so the product KEY aligns
     # "Buffalo Trace" (TTB, category=bourbon) with "Buffalo Trace Kentucky Straight Bourbon Whiskey" (retail).
