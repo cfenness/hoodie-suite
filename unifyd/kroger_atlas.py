@@ -194,6 +194,14 @@ def fetch(gtins, cookie, store_id, facility_id, modality="PICKUP", timeout=25):
         print("[kroger DBG] http=%s store=%s fac=%s cookie_len=%d products=%s err=%s snippet=%r"
               % (r.status_code, store_id, facility_id, len(cookie or ""), nprod, err,
                  body[:200].replace("\n", " ")), file=sys.stderr, flush=True)
+        if _DBG[0] == 1:                                         # DURABLE capture (ephemeral logs are lost on reboot)
+            try:
+                warehouse.write_parquet("kroger_atlas_debug", [{
+                    "http": int(r.status_code), "products": nprod if isinstance(nprod, int) else -1,
+                    "store": str(store_id), "fac": str(facility_id), "cookie_len": len(cookie or ""),
+                    "err": json.dumps(err)[:300] if err else "", "snippet": body[:400]}], allow_empty=True)
+            except Exception as _e:
+                print("[kroger DBG] durable write failed: %s" % str(_e)[:80], file=sys.stderr, flush=True)
     return ((json.loads(body).get("data") or {}).get("products")) or []
 
 
