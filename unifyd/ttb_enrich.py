@@ -32,6 +32,11 @@ DETAIL_FIELDS = ["Status", "Vendor Code", "Serial #", "Class/Type Code", "Origin
                  "Total Bottle Capacity", "Wine Vintage", "Formula", "Approval Date",
                  "Qualifications", "Contact Information"]
 OUT_HEADER = ["TTB ID"] + DETAIL_FIELDS + ["UPC", "upc_raw", "upc_status",
+                                           # GS1 2D carrier (Sunrise 2027) read off the label art. Item-grain
+                                           # only: the Digital Link URI + which symbol we read. The instance-grain
+                                           # AIs a 2D code can carry (batch/lot, expiry, serial) are per PHYSICAL
+                                           # UNIT and are deliberately NOT persisted here — see upc.parse_2d.
+                                           "gs1_digital_link", "code_type",
                                            "alcohol_content", "abv", "proof", "label_files"]
 
 
@@ -175,6 +180,7 @@ def main():
             pass
         # --- form page (fetched once) → ABV/proof + labels + UPC ---
         saved, upc_raw, upc_status = [], "", "none"
+        digital_link, code_type = "", ""
         alc = {"content": "", "abv": "", "proof": ""}
         if need_form:
             try:
@@ -195,9 +201,16 @@ def main():
                             pass
                     if labels and upc_status != "valid":
                         try:
-                            raw, st = labels.decode_barcode(img)
+                            # decode_any reads 1D *and* 2D (QR / DataMatrix). The UPC promotion rule is
+                            # unchanged; we additionally keep the Digital Link + which symbol carried it.
+                            d = labels.decode_any(img)
+                            raw, st = d["payload"] if d["code_type"] in labels._1D else d["gtin"], d["status"]
                             if raw and (upc_status == "none" or st == "valid"):
                                 upc_raw, upc_status = raw, st
+                            if d["digital_link"] and not digital_link:
+                                digital_link = d["digital_link"]
+                            if d["code_type"] and not code_type:
+                                code_type = d["code_type"]
                         except Exception:
                             pass
                     time.sleep(a.delay * 0.4)
@@ -206,6 +219,8 @@ def main():
         rec["UPC"] = upc_raw if upc_status == "valid" else ""
         rec["upc_raw"] = upc_raw
         rec["upc_status"] = upc_status
+        rec["gs1_digital_link"] = digital_link
+        rec["code_type"] = code_type
         rec["alcohol_content"] = alc["content"]
         rec["abv"] = alc["abv"]
         rec["proof"] = alc["proof"]
