@@ -264,6 +264,37 @@ def to_gtin14(code):
     return c.zfill(14)
 
 
+GS1_CANONICAL_HOST = "https://id.gs1.org"
+
+
+def digital_link(code, domain=GS1_CANONICAL_HOST, ais=None):
+    """DERIVE the GS1 Digital Link for a GTIN. The inverse of parse_2d.
+
+    This is the high-yield direction: a Digital Link is a URI TEMPLATE over the identifier
+    (`<domain>/01/<gtin14>`), not data that has to be obtained from anywhere — so every valid GTIN we
+    already hold can be given its 2D payload deterministically, at zero cost and full coverage,
+    instead of waiting to scrape one off a label that probably doesn't carry a 2D code yet.
+
+    `domain` defaults to GS1's canonical resolver. What is NOT derivable is the brand owner's OWN
+    resolver domain (they register it with GS1) — that requires actually resolving the canonical URI,
+    which is a separate, genuinely-new-information step. Pass `domain` when a brand's resolver is known.
+
+    `ais` optionally appends instance-grain AIs ({'10': lot, '21': serial}) in GS1's specified order —
+    only meaningful for a physical unit, never for an item row. Returns '' for a non-valid GTIN, so a
+    placeholder or bad-check code can never be minted into an official-looking URI."""
+    if classify(code) != "valid":
+        return ""
+    g = to_gtin14(code)
+    if not g:
+        return ""
+    url = "%s/01/%s" % (str(domain or GS1_CANONICAL_HOST).rstrip("/"), g)
+    for ai in ("22", "10", "21"):                  # GS1's qualifier order: CPV → lot → serial
+        v = (ais or {}).get(ai)
+        if v:
+            url += "/%s/%s" % (ai, v)
+    return url
+
+
 def parse_2d(payload):
     """Decode a 2D barcode payload. CAPTURES EVERYTHING — nothing read off the code is thrown away.
 
@@ -349,6 +380,17 @@ def _selftest():
     assert to_gtin14("00036000291452") == "00036000291452"    # already GTIN-14
     assert to_gtin14("36000291452") == "00036000291452"       # zero-stripped → healed, then resolved
     assert to_gtin14("") == "" and to_gtin14("abc") == ""
+
+    # ── DERIVE the Digital Link from a GTIN we already hold — round-trips through parse_2d ──
+    assert digital_link("036000291452") == "https://id.gs1.org/01/00036000291452"
+    assert digital_link("0036000291452") == digital_link("036000291452")   # encoding-independent
+    assert digital_link("036000291452", domain="https://id.brand.com/") == \
+        "https://id.brand.com/01/00036000291452"
+    assert digital_link("036000291452", ais={"10": "L1", "21": "S9"}) == \
+        "https://id.gs1.org/01/00036000291452/10/L1/21/S9"
+    assert parse_2d(digital_link("036000291452"))["gtin14"] == "00036000291452"   # derive → parse
+    assert digital_link("000000000000") == ""      # a placeholder is never minted into a real URI
+    assert digital_link("36000291453") == "" and digital_link("") == ""
 
     # ── GS1 2D (Sunrise 2027): capture EVERYTHING; the GTIN survives the carrier change ──
     dl = parse_2d("https://example.com/01/00036000291452/10/LOT42/21/SER7?17=270101")
