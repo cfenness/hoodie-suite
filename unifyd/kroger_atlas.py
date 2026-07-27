@@ -183,6 +183,9 @@ def _opener():
     return _OPENER
 
 
+_DBG = [0]
+
+
 def fetch(gtins, cookie, store_id, facility_id, modality="PICKUP", timeout=25):
     q = "&".join("filter.gtin13s=%s" % g for g in gtins)
     url = "%s?%s&filter.verified=true&projections=%s" % (API, q, urllib.parse.quote(PROJECTIONS))
@@ -190,7 +193,20 @@ def fetch(gtins, cookie, store_id, facility_id, modality="PICKUP", timeout=25):
         "User-Agent": UA, "Accept": "application/json", "Cookie": cookie,
         "x-laf-object": _laf_header(store_id, facility_id, modality),
         "Referer": "https://www.kroger.com/"})
-    body = _opener().open(req, timeout=timeout).read().decode("utf-8", "replace")
+    resp = _opener().open(req, timeout=timeout)
+    body = resp.read().decode("utf-8", "replace")
+    if _DBG[0] < 3:                                              # instrument the first few atlas responses
+        _DBG[0] += 1
+        import sys
+        try:
+            d = json.loads(body)
+        except Exception:
+            d = None
+        keys = (list(d.keys())[:8] if isinstance(d, dict) else type(d).__name__)
+        nprod = len(((d.get("data") or {}).get("products")) or []) if isinstance(d, dict) else "?"
+        print("[kroger DBG] http=%s store=%s fac=%s cookie_len=%d body_len=%d keys=%s products=%s snippet=%r"
+              % (getattr(resp, "status", "?"), store_id, facility_id, len(cookie or ""), len(body),
+                 keys, nprod, body[:220].replace("\n", " ")), file=sys.stderr, flush=True)
     return ((json.loads(body).get("data") or {}).get("products")) or []
 
 
