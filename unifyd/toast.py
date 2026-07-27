@@ -211,12 +211,16 @@ def pull_menus(limit=None, log=print):
 
 
 def run(log=print):
-    """Registry entrypoint: harvest the universe if empty, then pull a menu batch."""
+    """Registry entrypoint: harvest the universe if it's empty OR suspiciously thin, then pull a menu batch."""
     try:
         have = warehouse.row_count("toast_outlets")
     except Exception:
         have = 0
-    if not have:
+    # was `if not have` — a broken/partial first harvest (it landed ~100 of the ~100k sitemap universe) then
+    # FROZE forever because have>0 and write_accumulate never clobbers. Re-harvest whenever the universe is far
+    # below its expected size so a bad harvest self-heals instead of permanently starving the menu pull.
+    if have < 10000:
+        log("[toast] outlets=%d (< 10k floor) — (re)harvesting the sitemap universe" % have)
         harvest_outlets(log=log)
     return pull_menus(log=log)
 

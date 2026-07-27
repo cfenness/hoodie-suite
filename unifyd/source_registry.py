@@ -151,8 +151,10 @@ SOURCES = [
          requires=["CENSUS_API_KEY"],
          note="Census govs STC (T10 alc sales tax, T20 alc license) per state — live; TTB federal commodity "
               "collections run live on the Mac (TTB TLS-blocked on Fly)"),
-    dict(id="vtinfo", label="VTInfo locator", code="import vtinfo as m; m.pull()",
-         tables=["vtinfo_titos"], klass="headless", cadence="weekly", enabled=True, note="where-to-buy GraphQL"),
+    dict(id="vtinfo", label="VTInfo locator", code="import vtinfo as m; m.run()",
+         tables=["vtinfo_titos"], klass="headless", cadence="weekly", enabled=True,
+         note="brand→retailer 'where to buy' (HTML-fragment POST, not GraphQL). m.run() LANDS it; m.pull() alone "
+              "returned rows but never wrote (the never-persisted bug)"),
     # The custID keyspace is 3 alnum chars (case-insensitive) = 46,656 — enumerable, so the VIP tenant
     # directory is a census, not a hand-harvested dict. Resumable + checkpointed: each run takes a
     # deadline-bounded bite and the next resumes. cost_class=proxy — one IP 429s in seconds, so it
@@ -232,8 +234,11 @@ SOURCES = [
          tables=["hemp_retailers"], klass="headless", cadence="weekly", enabled=True,
          note="retailer discovery — ALL 5 hemp brands (cann/wynk/trail-magic/uncle-arnies/crescent-9); run() alone was cann-only"),
     dict(id="hemp-inventory", label="Hemp per-store inventory", code="import hemp_inventory as m; m.main([])",
-         tables=["hemp_inventory"], klass="headless", cadence="daily", enabled=True,
-         note="per-store COUNTS from Shopify hemp retailers (cart-add trick) — distinct from hemp-scan listings"),
+         tables=["hemp_inventory"], klass="headless", cadence="daily", enabled=False,
+         note="PARKED (2026-07): its base universe was starved — it read a phantom orlando_hemp_products table "
+              "(now removed) + only the incidental Shopify subset of offprem_products; most rows had no count "
+              "(oversell). Hemp is covered by hemp-finder (retailers) + hemp-scan (listings). Re-enable once "
+              "pointed at a real Shopify hemp-store universe with a platform filter"),
 ]
 
 
