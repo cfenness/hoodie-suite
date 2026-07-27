@@ -171,9 +171,18 @@ SOURCES = [
          note="WAF — spoofed browser HEADERS on stdlib urllib (NOT a headful browser); klass was wrongly 'mac' → Mac queue"),
     dict(id="control-states", label="Control states (OR/UT/NC/MT/ME/AL/BC/MontMD)", code="import control_state as m; m.build_all()",
          tables=["or_pricing", "ut_pricing", "mont_sales"], klass="headless", cadence="weekly", enabled=True, note="per-state fetchers"),
+    # TWO distinct Census sources (NOT duplicates): `census` = census_ref.py's supply-side business
+    # patterns (CBP/NES/PEP) + ACS/Economic-Census demand-side additions -> census_reference (tall,
+    # metric-keyed); `census-acs` = census.py's separate demand-side ACS demographics by county ->
+    # census_demographic/economic/housing (wide, geoid-keyed, enrich.merge_census-joinable). Different
+    # Census API calls, different tables, different consumers — keep them registered separately.
     dict(id="census", label="US Census (CBP · Nonemp · PEP · ACS)", code="import census_ref as m; m.build()",
          tables=["census_reference"], klass="creds", cadence="weekly", enabled=True,
          requires=["CENSUS_API_KEY"], note="Census API (census_ref.build) — CBP/Nonemp/PEP supply-side + ACS demand-side demographics at state/county/ZCTA grain (~33k ZIPs) + Economic Census OBSERVED receipts (dataset ecn, $1000s); free key, re-derivable"),
+    dict(id="census-acs", label="US Census — ACS demographics", code="import census as m; m.build()",
+         tables=["census_demographic", "census_economic", "census_housing"], klass="creds", cadence="weekly",
+         enabled=True, requires=["CENSUS_API_KEY"],
+         note="demand-side ACS5 by county (census.build) — population/income/housing packs, wide + geoid-keyed for enrich.merge_census outlet joins; free key, re-derivable"),
     dict(id="cex", label="BLS Consumer Expenditure (alcohol × income)", code="import cex_ref as m; m.build(); m.build_demand()",
          tables=["cex_reference"], klass="headless", cadence="weekly", enabled=True,
          note="BLS CEX API (cex_ref.build) — mean annual alcohol $ per CU (total / at-home / away) by "
