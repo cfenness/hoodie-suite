@@ -74,6 +74,38 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   failed scrape, not a rebuild. Persistent catalogs use `write_accumulate` (merge).
 - **Creds-gated sources declare `requires=[env]`** in the registry; `run_sources.py`
   reports them `no-creds` (skipped, honest) instead of running them to failure.
+- **NEVER assert a paid path is REQUIRED without grounding it in the code (load-bearing — unsupported
+  "you have to pay for this" claims have wasted real money).** Before saying a paid proxy / API / service
+  is necessary, cite the specific evidence: the fetch code that has no direct/mobile-UA/local-browser
+  path, or an actual tested block *from a residential IP* — not a datacenter one. "It's blocked" is NOT
+  proof a paid path is required; a datacenter-IP block is an execution-PLACEMENT problem (run it on a
+  residential executor), and the default assumption is that a free path exists until the code proves it
+  cannot. If you can't ground the claim in code, don't make it — investigate first.
+- **FREE-FIRST — do NOT default to paid proxies (load-bearing, keeps getting reverted).**
+  Two proxy tiers: the flat-rate **ISP pool** (fixed per-IP, unlimited bandwidth) and the
+  **per-GB** rotating-residential / BD-Unlocker tier (the one that runs up a thousands-a-month
+  tab). `FETCH_POLICY` (default `flat`) is the dial: `free` = no proxies at all; `flat` = ISP
+  pool only; `paid` = per-GB **opt-in**. `resi.paygo_allowed()` is `False` unless `FETCH_POLICY=paid`,
+  and every per-GB seam (`resi.parts()` → url/browser/opener/…, plus `polite`'s BD path) honors it.
+  **~20 of ~29 sources need NO proxy** (direct HTTP / public API / sitemap); only the 9 `anti-bot`
+  sources even tempt one — see `cost_class` in `/api/registry/sources`. When you touch a scraper,
+  NEVER add a per-GB proxy as the default path or "to make it work" — try direct → mobile-UA →
+  a real **local browser** (patchright/playwright, no proxy) → the flat ISP pool, in that order.
+- **The anti-bot free method runs from a RESIDENTIAL IP, not the cloud.** The hard-won recipe
+  (e.g. `ubereats.py`: a real Chromium on a residential IP hitting the first-party BFF with the
+  app's own `x-uber-*` headers — NO Bright Data, NO cookie; `ue_geofill.py`: universe fetched
+  DIRECT from the home IP) only clears PerimeterX/Forter **because the exit IP is residential**.
+  On a datacenter host (Fly/CI) the datacenter IP is blocked, and the wrong reflex is "buy a
+  residential proxy." The RIGHT answer: run the `anti-bot` sources on the **residential executor**
+  (the Mac — `$0`) and keep the cloud for the ~20 free API sources. `ue_crawl.py`'s "proxy for
+  everything" path is opt-in scale (`FETCH_POLICY=paid`), never the default. Don't re-litigate this.
+  - **Not every `anti-bot` source needs the residential executor — test, don't assume.** `unifyd/instacart.py`
+    is the proven counter-example: a self-hosted **headless** Chromium (Playwright, NO Bright Data, NO proxy)
+    drives Instacart's own `SearchResultsPlacements` GraphQL and lands per-store product+price **from a bare
+    datacenter IP** — a CI matrix confirmed headless-no-Xvfb lands data, so the Fly image ships just the
+    bundled Chromium and the Instacart pull runs in-app for `$0`. The old BD managed-dataset scraper is
+    archived (`_archive/instacart_scraper.py`). Never re-add Bright Data to Instacart "to make it work";
+    if the datacenter path ever regresses, prove the block from a residential IP first (see the paid-path rule).
 
 - `unifyd/server.py` — a local Flask agent (`python unifyd/server.py`, port 8765) that
   serves `hoodie_mdm.html` and runs real pulls on `/api/run`. Endpoints: `/api/health`,
@@ -114,21 +146,47 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   Surface: `apps/mdm-label-reader.html` (the **Label Reader** section in `apps/mdm.html`).
 - `unifyd/menu_ingest.py` — parse a DISTRIBUTOR WHOLESALE MENU file (xlsx/csv; cannabis
   Curaleaf NY is the reference shape) into normalized order lines. stdlib-only (xlsx = zipped
-  XML), heuristic header-row detection + column synonyms, brand-section context, Excel serial
-  dates, THC normalization. Lands `distributor_menu_items`; behind `apps/ordering.html`
+  XML), heuristic header-row detection + column synonyms, Excel serial dates, THC normalization.
+  **Inline sub-headers are parsed, not dropped:** a section/sub-header row (no price/batch/units/
+  thc/msrp) is classified brand-vs-product-family, its size/form/category are read off the header
+  and cascaded to the child rows, and a terse child (`Indica : Wedding Cake`) is composed into the
+  full product using its family header — which is often the ONLY place the product/size lives.
+  **`parse_smart()` adds a Claude fallback** that fires ONLY when the deterministic pass fails or is
+  low-confidence (few lines / most lines unpriced): it hands the raw grid to Claude (forced tool call,
+  needs `ANTHROPIC_API_KEY`) to recover the same normalized lines — so an alien layout still lands, with
+  no LLM cost on menus that already parse cleanly (the `/api/menus/upload` endpoint uses it).
+  Lands `distributor_menu_items`; behind `apps/ordering.html`
   (Wholesale Ordering: all menus → one catalog → one order → per-distributor PO sheets via
-  `/api/menus/*` + `/api/orders*`).
+  `/api/menus/*` + `/api/orders*`). **Auto-send:** a distributor contact book
+  (`/api/distributors`, `distributor_contacts.json`) + `POST /api/orders/<id>/send` emails each
+  distributor its PO-sheet CSV via SMTP (`SMTP_HOST/PORT/USER/PASS/FROM`, STARTTLS default on);
+  unconfigured → returns `email-not-configured` and the UI falls back to download + copy-email.
+  **Order status:** `POST /api/orders/<id>/status` advances a forward-only lifecycle
+  (submitted → sent → confirmed → delivered, or cancelled) with a timestamped `status_history`;
+  the ordering page shows a status pill per order + advance/cancel controls in the order modal.
+- `unifyd/menu_mailbox.py` — **auto-ingest emailed menus (IMAP)**: `POST /api/menus/poll` pulls the
+  spreadsheet attachments off unseen messages, runs each through `menu_ingest.parse_smart`, lands
+  them, and marks the mail seen — so the catalog stays current with no manual upload. Env-gated
+  (`MENU_IMAP_HOST/PORT/USER/PASS/FOLDER`, optional `MENU_IMAP_SENDERS` allowlist); unconfigured →
+  `mailbox-not-configured` and the ordering page hides its "Check email" button (`/api/menus/mailbox`
+  reports the state). Runnable on a cadence via `schedule_pull` / cron.
 - `unifyd/hoodie_mdm.html` — the MDM control plane the agent serves. Reads `/api/*` when
   the agent is up, falls back to an embedded `const DATASETS` preview otherwise.
 - **Runtime is git-ignored:** `agent_state/`, `cola_out/`, `out/`, `__pycache__/`.
-- **Promoted to the suite:** `apps/mdm.html` is the canonical MDM surface. It is now a
-  **composite console** (same pattern as `sources.html`) with four tabs, each an existing
-  app iframed and lazy-mounted: **Master** (`apps/mdm-master.html` — the engine's
-  `hoodie_mdm.html` re-served under suite chrome + spine, `/api/*` with an embedded
-  `DATASETS` fallback), **Catalog** (`apps/catalog.html`), **Pulls** (`apps/pulls.html`),
-  **Ingestion** (`apps/ttb-ingestion.html`). Those four are surfaced only through
-  `mdm.html`, not as their own `APPS` tiles. `unifyd/hoodie_mdm.html` remains the engine's
-  local console (served by `server.py`); it and `mdm-master.html` share the `/api/*` contract.
+- **Promoted to the suite:** `apps/mdm.html` is the canonical MDM surface — a
+  **composite console** (same pattern as `sources.html`): an inline Overview plus a
+  sidebar of 14 sections, each an existing app iframed and lazy-mounted (most with
+  `?embed=1` so they hide their own chrome). **Manage:** Master
+  (`master-match.html`, the matching workbench), Steward (`steward.html`), Review
+  (`cluster-review.html`), Catalog (`mdm-catalog.html`), Outlets (`mdm-outlets.html`),
+  Coverage (`coverage-map.html`), Registrations (`product-registrations.html`),
+  Mapping (`field-mapping.html`), Dictionary (`mdm-dictionary.html`). **Sources:**
+  Sources (`mdm-sources.html`), Provenance (`mdm-provenance.html`), Source Spec
+  (`mdm-sourcespec.html`), Chains (`mdm-chains.html`). **Operate:** Active Runs
+  (`runs.html`). Those apps are surfaced only through `mdm.html`, not as their own
+  `APPS` tiles. `unifyd/hoodie_mdm.html` remains the engine's local, agent-backed
+  console (served by `server.py`); its old suite twin (`mdm-master.html`) was
+  superseded by the matching workbench and lives in `apps/_archive/`.
 
 ### Backend on-ramp (the engine is the first slice)
 The contract is designed so the message protocol does **not** change when a backend
@@ -138,6 +196,21 @@ inside. The intended shape is API Gateway + Lambda behind a `/api/*` CloudFront
 behavior on the same domain. See the "backend on-ramp" sections of `README.md` and
 `SPINE.md` before adding any server code.
 
+### Snowflake load — the seed to Unifyd (`snowflake/`)
+A staged SQL build that lands the whole warehouse in Snowflake — the Parquet layout was designed to be
+Snowflake-loadable (NRT-PLAN.md §2: "migration is a load, not a rewrite"), and this is that load. It's
+**generated, not hand-kept**: `snowflake/build_snowflake_sql.py` derives everything from the same
+sources of truth the engine uses — `source_registry.py` for the raw source list, the typed catalog in
+the generator (mirroring `build_product_master.py`/`normalize.py`/`dim_outlet.py`) for the canonical
+star. Three schemas: `RAW` (one landing table per source Parquet, **schema-agnostic** via Snowflake
+`INFER_SCHEMA` + `MATCH_BY_COLUMN_NAME` — scraper drift just flows through, same as the DuckDB
+`read_parquet` path), `MASTER` (the **typed** star `dim_brand/product/item/sku` + `dim_outlet` +
+`src_<grain>` + signal tables — the seed), `MART` (views). It stages SQL only — nothing connects to
+Snowflake or touches prod. `python snowflake/build_snowflake_sql.py [--live]` regenerates; `--live`
+reads the warehouse to include every present table and resolve bucketed (v2) tables to their manifest's
+active parts. `snowflake/` is engine/infra — never web-served (not in `_SUITE_OK_TOP`), like `unifyd/`.
+See `snowflake/README.md`.
+
 ## Health & smoke (keeping the served data trustworthy)
 
 Two standing tools exist so failures are loud, not quiet. Keep them passing and keep them honest.
@@ -145,7 +218,8 @@ Two standing tools exist so failures are loud, not quiet. Keep them passing and 
 - **Data health — `unifyd/health_digest.py`**: the daily deterministic verdict on every
   registry-enabled source (failed/degraded runs, staleness vs cadence, row-count collapse,
   honest no-creds skips). Every finding cites evidence and carries `first_seen` so new breaks
-  stand out. Runs via `unifyd/run_health_digest.sh` (launchd `com.hoodie.health`, 07:30 daily);
+  stand out. Runs **on Fly** — the hourly dispatcher (`dispatch_ephemeral._refresh_health`) recomputes it
+  each tick; there is **no Mac launchd** (see the "nothing runs locally" rule below). It
   writes `unifyd/agent_state/health/latest.{json,txt}` + an optional Claude triage in
   `latest_triage.md` (judgment layer only — it NEVER changes the verdict). Exit 2 = critical.
   Mondays (or `--weekly` / `HEALTH_WEEKLY=1`) add the **deep audit** (`unifyd/deep_audit.py`):
@@ -156,10 +230,26 @@ Two standing tools exist so failures are loud, not quiet. Keep them passing and 
   serves, no dangling ids/groups, every local src/href/iframe reference resolves, orphan app
   files are surfaced. The `/smoke` skill layers a browser runtime pass on top (console errors,
   blank renders, composite tabs). Run before "ship it" and after any shell/spine change.
-- **launchd gotcha (load-bearing)**: a LaunchAgent whose script argument lives under `~/Desktop`
-  fails at spawn with `Operation not permitted` (exit 126) — the job silently never runs. Use the
-  `bash -c 'exec bash "<script>"'` form (see `unifyd/launchd/*.plist`). This killed the entire
-  scheduled-scrape pipeline once; the health digest is what catches it if it regresses.
+- **NOTHING RUNS LOCALLY (hard rule)**: no scrape, pull, geo pass, backfill, health digest, or scheduled
+  tick runs on anyone's Mac — **all execution is on Fly**. Scheduling is the Fly hourly dispatcher
+  (`unifyd/dispatch_ephemeral.py`, a Fly scheduled machine): it reads the shared ledger, spawns an ephemeral
+  Fly machine per due source (headless on 4GB; **headful** — the `klass="mac"` sources, a legacy name for
+  "real browser": `kroger`/`ubereats`/`postmates`/`sevennow`/`bottlecapps`/`cityhive` — on 8GB with Xvfb +
+  system Chrome + patchright, see `run_ephemeral.sh`), and folds in the health digest. The old Mac launchd
+  agents (`com.hoodie.due`, `com.hoodie.health`) and their scripts (`run_due.sh`, `run_health_digest.sh`) are
+  **retired/removed** — the Fly dispatcher already runs the exact same set. Never tight-loop `flyctl`
+  (it rate-blocks the home IP).
+  - **Scheduling is NOT on GitHub Actions.** `cloud-sources.yml` / `scrape-runner.yml` /
+    `warm-sources.yml` are `workflow_dispatch`-only escape hatches — their crons were removed
+    (2026-07-27). The repo has no Actions minutes, so every scheduled run was a standing failure,
+    and the Fly dispatcher already covers the same registry. Don't re-add a `schedule:` to them.
+  - **RE-PIN THE DISPATCHER AFTER A DEPLOY THAT TOUCHES `source_registry.py`** —
+    `tools/repin_dispatcher.sh`. The dispatcher machine (metadata `role=dispatcher`) deliberately has
+    no process group, which also means `flyctl deploy` never updates it: it keeps running the image it
+    was pinned to. Because due-ness is computed from *its* copy of the registry, a newly added source
+    stays invisible to the scheduler until it's re-pinned. The dispatcher now logs a loud
+    `WARNING — dispatcher image is STALE` when this has happened. (Failure mode seen live: the machine
+    sat on `init.cmd=["bash"]`, so every hourly tick started, exited 0 in ~1s, and dispatched nothing.)
 
 ## Deploy
 

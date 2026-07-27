@@ -38,14 +38,41 @@ _TIMEOUT = {"headless": 5400, "creds": 5400, "mac": 14400,   # 1.5h headless, 4h
 
 
 def _rows(table):
-    """Current row count of one table — layout-aware via warehouse.row_count (single-file footer,
-    or the bucket manifest for v2 tables). None if the table doesn't exist yet."""
+    """Current row count of one table — layout-aware via warehouse.row_count_strict (single-file
+    footer, or the bucket manifest for v2 tables). None if the table genuinely doesn't exist yet.
+    RAISES warehouse.RowCountUnavailable on a transient/unknown storage read failure, so the caller
+    can tell 'unknown' from 'empty' and never fabricate a drop from a blip."""
     import warehouse
-    return warehouse.row_count(table) or None
+    return warehouse.row_count_strict(table) or None
 
 
 def _counts(tables):
-    return {t: _rows(t) for t in tables}
+    """BEFORE-run (or creds-skip) counts. A table we can't read is left UNKNOWN (None), never 0."""
+    import warehouse
+    out = {}
+    for t in tables:
+        try:
+            out[t] = _rows(t)
+        except warehouse.RowCountUnavailable:
+            out[t] = None
+    return out
+
+
+def _counts_after(tables, before, log=print):
+    """AFTER-run counts, hardened against a transient read blip. A table whose count can't be read is
+    assumed UNCHANGED (its before count), NEVER 0 — a guarded warehouse write cannot zero or shrink a
+    populated table, so a post-run '0' is a failed read, not a real clobber. Conflating the two is
+    what filled the ledger with false 'empty'/'-N clobber' records (haskells 10518->0 while the file
+    was intact) and made healthy pulls look like 'ran but didn't land'."""
+    import warehouse
+    out = {}
+    for t in tables:
+        try:
+            out[t] = _rows(t)
+        except warehouse.RowCountUnavailable as e:
+            out[t] = before.get(t)
+            log("  %-16s after-count unreadable (%s) — assuming UNCHANGED, not a clobber" % (t, str(e)[:70]))
+    return out
 
 
 def _interval_h(source):
@@ -76,11 +103,36 @@ def ledger_last():
 def due_sources(now=None, grace=0.98):
     """The enabled sources whose interval has lapsed — last attempt (ts_start of ANY status in
     the ledger) older than interval_h * grace. The 2% grace keeps a fixed tick (e.g. a 24h-interval
-    source checked every 30min) from slipping a full tick each day. Never-run sources are due."""
+    source checked every 30min) from slipping a full tick each day. Never-run sources are due.
+
+    SELF-HEAL: also includes FAILED sources whose escalating backoff has elapsed (selfheal.retry_due_ids),
+    so a transient failure retries in MINUTES instead of waiting a whole cadence — until it recovers or is
+    quarantined to a daily probe. Same shared ledger; degrades to interval-only if selfheal is unavailable."""
     now = now or time.time()
     last, _ = ledger_last()
-    return [s for s in reg.SOURCES if s.get("enabled")
-            and now - last.get(s["id"], 0) >= _interval_h(s) * 3600 * grace]
+    due = [s for s in reg.SOURCES if s.get("enabled")
+           and now - last.get(s["id"], 0) >= _interval_h(s) * 3600 * grace]
+    try:
+        import selfheal
+        retry = selfheal.retry_due_ids(now)
+    except Exception:
+        retry = set()
+    if retry:
+        have = {s["id"] for s in due}
+        due += [s for s in reg.SOURCES if s.get("enabled") and s["id"] in retry and s["id"] not in have]
+    return due
+
+
+def should_build(headless_only, mac_only, builds=False, no_builds=False):
+    """Does THIS --due host run the derived builds? (dim_* single-writer.) Explicit ``no_builds`` wins,
+    then explicit ``builds``, else the default: the plain host builds; --headless-only/--mac-only don't.
+    The override pair is how builds move to the cloud runner (cloud=--builds, Mac=--no-builds) with no
+    cross-host race even if both hosts tick."""
+    if no_builds:
+        return False
+    if builds:
+        return True
+    return not (headless_only or mac_only)
 
 
 def due_builds(now=None):
@@ -140,8 +192,10 @@ def _acquire_lock():
     return lf
 
 
-def run_one(source, log=print):
-    """Run one source in a subprocess, measure before/after row counts, classify the outcome."""
+def run_one(source, log=print, extra_env=None):
+    """Run one source in a subprocess, measure before/after row counts, classify the outcome.
+    `extra_env` overlays the subprocess env (e.g. the scheduler forces RESI_ISP_ONLY=1 so an unattended
+    run can never open the per-GB residential-proxy tab)."""
     sid = source["id"]
     t0 = time.time()
     # Skip-with-reason: a source gated on credentials we don't have must report honestly ("no-creds"),
@@ -154,6 +208,31 @@ def run_one(source, log=print):
                     ts_start=int(t0), ts_end=int(time.time()), duration_s=0.0, status="no-creds",
                     rows_before=a, rows_after=a, delta=0, tables=",".join(source["tables"]),
                     error="missing env: " + ", ".join(missing), host=os.uname().nodename[:40])
+    # HEADFUL on Fly MUST go through a RESIDENTIAL exit. The gates (Kroger Akamai, CityHive Cloudflare, PX)
+    # flag the Fly datacenter IP even with a real browser — which is why kroger never landed and cityhive went
+    # stale off-Mac. One STICKY exit per source (same session id → same IP) so the cookie warm and the pull that
+    # replays it share an IP (these cookies are IP-bound; a mismatch = instant reject). No-op if resi isn't
+    # configured or BROWSER_PROXY is already set. This is what lets the headful sources run off the Mac.
+    if source["klass"] == "mac" and not os.environ.get("BROWSER_PROXY"):
+        try:
+            import resi
+            if resi.enabled():
+                px = resi._session_url("hf-" + sid)
+                if px:
+                    os.environ["BROWSER_PROXY"] = px
+                    log("  %-16s headful → residential exit (sticky)" % sid)
+        except Exception as e:
+            log("  %-16s resi proxy unavailable: %s" % (sid, str(e)[:70]))
+    # PREP: sources gated on an anti-bot cookie (Kroger Akamai, …) warm it in a real headful browser FIRST,
+    # then the pull subprocess inherits the fresh cookie env (see cookie_warm.apply_prep). Runs in-process on
+    # this box (which has Chrome+Xvfb — the ephemeral pull machine). A warm failure doesn't abort:
+    # the pull just runs cookie-less and reports degraded/no-creds, honestly, instead of being skipped blind.
+    if source.get("cookie"):
+        try:
+            import cookie_warm
+            cookie_warm.apply_prep(source, log=log)
+        except Exception as e:
+            log("  %-16s cookie prep error: %s" % (sid, str(e)[:100]))
     before = _counts(source["tables"])
     code = ("import sys; sys.path.insert(0, %r); import kroger_api; kroger_api._load_creds(); %s"
             % (HERE, source["code"]))
@@ -165,9 +244,11 @@ def run_one(source, log=print):
                 pass
     status, error = "ok", ""
     timeout_s = source.get("timeout") or _TIMEOUT.get(source["klass"], 5400)   # registry per-source override
+    run_token = "%s-%d" % (sid, int(t0))
+    env = dict(os.environ, HOODIE_RUN_TOKEN=run_token, **(extra_env or {}))   # coverage stamp + optional overlays
     try:
         r = subprocess.run([PY, "-c", code], cwd=HERE, timeout=timeout_s,
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, env=env)
         if r.returncode != 0:
             status = "failed"
             # A NEGATIVE returncode = killed by a signal, NOT a Python exception (subprocess convention).
@@ -200,7 +281,7 @@ def run_one(source, log=print):
         status, error = "timeout", "exceeded %ds" % timeout_s
     except Exception as e:
         status, error = "failed", str(e)[:300]
-    after = _counts(source["tables"])
+    after = _counts_after(source["tables"], before, log=log)
     dur = round(time.time() - t0, 1)
 
     b = sum(v for v in before.values() if v) or 0
@@ -211,17 +292,58 @@ def run_one(source, log=print):
     # is EMPTY = "empty" (genuinely broken — nothing was ever captured). Only "empty" and errors are real problems.
     if status == "ok" and delta <= 0:
         status = "current" if a > 0 else "empty"
-    rec = dict(run_id="%s-%d" % (sid, int(t0)), source=sid, label=source["label"], klass=source["klass"],
+    # COVERAGE: how much of the source's universe THIS run actually touched (expected vs landed store/item
+    # counts) — the honest signal a cumulative merge can't give. A run can be 'current'/'ok' by row-count yet
+    # 'partial' by coverage (blocked mid-crawl); this is what surfaces that. Best-effort — never fails a run.
+    cov = {}
+    try:
+        import coverage as _cov
+        cv = _cov.assess(source)
+        cov = dict(cov_basis=cv["basis"],
+                   landed_items=cv["items"]["landed"], expected_items=cv["items"]["expected"],
+                   cov_items_pct=cv["items"]["pct"], cov_items=cv["items"]["verdict"],
+                   landed_stores=cv["stores"]["landed"], expected_stores=cv["stores"]["expected"],
+                   cov_stores_pct=cv["stores"]["pct"], cov_stores=cv["stores"]["verdict"])
+    except Exception:
+        cv = None
+    # CAPABILITY: the source's optional libraries are imported behind `except: return []` guards so a
+    # partial install degrades instead of crashing — which means a MISSING one is otherwise invisible and
+    # the run reports clean while quietly producing worse data (pylibdmtx absent → every label read
+    # QR-only, reported as full 2D coverage). Declared per-source as `caps=[…]`, the exact mirror of the
+    # `requires=[env]` → "no-creds" convention. Nothing is skipped and no data is lost; the degradation
+    # just stops being silent. Best-effort — a probe failure must never fail a run.
+    caps_missing = []
+    try:
+        import capability as _cap
+        caps_missing = _cap.warnings_for(source.get("caps", []))
+        if caps_missing:
+            for w in caps_missing:
+                log("  %-16s %-9s %s" % (sid, "degraded", "| " + w))
+            if status in ("ok", "current"):
+                status = "degraded"
+            error = " | ".join([e for e in ([error] if error else []) + caps_missing])[:300]
+    except Exception:
+        pass
+    rec = dict(run_id=run_token, source=sid, label=source["label"], klass=source["klass"],
                ts_start=int(t0), ts_end=int(time.time()), duration_s=dur, status=status,
                rows_before=b, rows_after=a, delta=delta, tables=",".join(source["tables"]),
-               error=error, host=os.uname().nodename[:40])
-    log("  %-16s %-9s Δ%-10s %5ss %s" % (sid, status, ("%+d" % delta if delta else "0"), dur,
-                                         ("| " + error) if error else ""))
+               error=error, host=os.uname().nodename[:40],
+               caps_missing=",".join(sorted(_cap.missing(source.get("caps", [])))) if caps_missing else "",
+               **cov)
+    covnote = ""
+    if cv and (cv["items"]["verdict"] == "partial" or cv["stores"]["verdict"] == "partial"):
+        covnote = " ⚠cov %s/%s items · %s/%s stores" % (cv["items"]["landed"], cv["items"]["expected"],
+                                                        cv["stores"]["landed"], cv["stores"]["expected"])
+    log("  %-16s %-9s Δ%-10s %5ss %s%s" % (sid, status, ("%+d" % delta if delta else "0"), dur,
+                                           ("| " + error) if error else "", covnote))
     return rec
 
 
 SR_FIELDS = ["run_id", "source", "label", "klass", "ts_start", "ts_end", "duration_s", "status",
-             "rows_before", "rows_after", "delta", "tables", "error", "host"]
+             "rows_before", "rows_after", "delta", "tables", "error", "host",
+             # coverage (expected vs landed store/item counts for THIS run — the partial-scrape signal)
+             "cov_basis", "landed_items", "expected_items", "cov_items_pct", "cov_items",
+             "landed_stores", "expected_stores", "cov_stores_pct", "cov_stores"]
 
 
 def _land_runs(records, log=print):
@@ -307,6 +429,12 @@ def main(argv=None):
     ap.add_argument("--mac-only", action="store_true")
     ap.add_argument("--workers", type=int, default=6, help="parallel headless workers (lower on RAM-limited cloud runners)")
     ap.add_argument("--due", action="store_true", help="SLO dispatcher: run only sources past their interval_h")
+    # Build-host gate (single writer for dim_* / derived tables). Default = the plain --due host builds; the
+    # --headless-only/--mac-only hosts don't. To MOVE builds off the Mac to the cloud runner: run the cloud
+    # tick with `--builds` and the Mac tick with `--no-builds` — explicit, so exactly one host builds even if
+    # both run --due (no cross-host race; the fcntl lock is per-host).
+    ap.add_argument("--builds", action="store_true", help="force derived builds ON this host (the single build writer, e.g. the cloud runner)")
+    ap.add_argument("--no-builds", action="store_true", help="force derived builds OFF this host (e.g. the Mac tick once the cloud runner owns builds)")
     a = ap.parse_args(argv)
     only = [x.strip() for x in a.only.split(",") if x.strip()] or None
     exclude = [x.strip() for x in a.exclude.split(",") if x.strip()] or None
@@ -331,10 +459,11 @@ def main(argv=None):
                     headless_only=headless_only, mac_only=a.mac_only, workers=a.workers)
         else:
             print("[run_sources] no sources due.")
-        # Derived master builds run AFTER the landings that triggered them — and only on the plain
-        # --due host (the Mac tick): the --headless-only cloud runner skips them so dim_* keeps a
-        # single writer. A build that misses this pass fires on the next tick via the ledger.
-        if not (a.headless_only or a.mac_only):
+        # Derived master builds run AFTER the landings that triggered them, on the SINGLE build-writer host
+        # (dim_* single-writer). Default: the plain --due host builds, the --headless-only/--mac-only hosts
+        # don't. `--builds`/`--no-builds` override that explicitly so builds can move to the cloud runner
+        # (cloud: --builds; Mac: --no-builds). A build that misses a pass fires on the next tick via the ledger.
+        if should_build(a.headless_only, a.mac_only, a.builds, a.no_builds):
             builds = due_builds()
             if builds:
                 print("[run_sources] builds due: " + ", ".join(b["id"] for b in builds))

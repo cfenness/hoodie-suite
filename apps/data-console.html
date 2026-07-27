@@ -273,6 +273,17 @@ function renderOverview(){
        <div class="hchip" title="${esc((D.builds_due||[]).join(', ')||'no builds due')}"><b>${(D.builds_due||[]).length}</b><span>builds due</span></div>
        ${(D.builds||[]).map(b=>`<div class="hchip" title="rebuilds when new rows land · min gap ${b.interval_h}h"><b>${b.age_h==null?'never':b.age_h+'h'}</b><span>${esc(b.label)}</span></div>`).join('')}
        ${['fresh','due','breach','never'].filter(k=>sc[k]).map(k=>`<div class="hchip"><span class="sq" style="background:var(${SLOC[k]})"></span><b>${sc[k]}</b><span>slo ${k}</span></div>`).join('')}`;
+  // the COST ledger — "recurring bill stays near zero", as a number (NRT §6). Measured machine-hours +
+  // modeled infra $, concentrated in the few BD/proxy sources; compute is $0 on the free Mac + Actions.
+  const C=M.cost||{};
+  const usd=n=>'$'+(Number(n||0)).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const cost = C.error ? `<span class="warnpill">cost ledger unavailable: ${esc(C.error)}</span>`
+    : `<div class="hchip" title="modeled monthly recurring spend (30-day window × rates)"><b>${usd(C.total_usd_mo)}</b><span>est / month</span></div>
+       <div class="hchip" title="machine-seconds are $0 on the owned Mac + free Actions minutes"><b>${usd(C.compute_usd_mo)}</b><span>compute</span></div>
+       <div class="hchip" title="Bright Data requests + residential-proxy GB — the only real lever"><b>${usd(C.infra_usd_mo)}</b><span>infra (bd+proxy)</span></div>
+       <div class="hchip" title="total measured run-time across all sources, 30d"><b>${(C.machine_hours||0).toFixed(1)}h</b><span>machine-hrs/30d</span></div>
+       ${Object.entries(C.by_class||{}).filter(([k,v])=>v>0).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="hchip"><b>${usd(v)}</b><span>${esc(k)}</span></div>`).join('')}`;
+  const costTop=(C.top||[]).length?`<table style="max-width:640px"><thead><tr><th>source</th><th>class</th><th class="num">runs/30d</th><th class="num">mach-hrs</th><th class="num">rows+</th><th class="num">est $/mo</th></tr></thead><tbody>${(C.top||[]).map(r=>`<tr><td class="name">${esc(r.source)}</td><td class="grp">${esc(r.cost_class)}</td><td class="num">${r.runs}</td><td class="num">${(r.machine_hours||0).toFixed(1)}</td><td class="num">${fmt(r.rows_added)}</td><td class="num">${usd(r.total_usd_mo)}</td></tr>`).join('')}</tbody></table>`:'<span class="msg">no paid-infra spend in window</span>';
   // the SOURCE roster — every source we have, rolled up (however its datasets are named / however it runs)
   const RUNC={ok:'--good',current:'--good','no-change':'--warn','no-creds':'--warn',empty:'--bad',failed:'--bad',timeout:'--bad'};
   const runCell=s=>{ if(!s.run_status)return '<span class="grp">—</span>';
@@ -304,6 +315,9 @@ function renderOverview(){
   $('#overview').innerHTML=`
     <div class="cards">${cards}</div>
     <div class="sec">Dispatcher — the near-real-time loop</div><div class="health">${disp}</div>
+    <div class="sec">Cost — recurring bill <span class="grp">(measured machine-hours + modeled infra $; compute is $0 on the owned Mac + free Actions)</span></div>
+    <div class="health">${cost}</div>
+    <div style="margin:10px 0 4px">${costTop}</div>
     <div class="sec">Pull health — is data coming in?</div><div class="health">${health}</div>
     <div class="sec">Sources <span class="grp">(every source we pull, bucketed by type — click to drill into its datasets &amp; accounts with inventory)</span></div>
     <table><thead><tr><th>source</th><th>status</th><th>slo</th><th class="num">rows</th><th class="num">datasets</th><th class="num">inventory · latest</th><th class="num">fresh</th><th>last run</th></tr></thead>

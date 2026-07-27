@@ -356,7 +356,15 @@ def crawl(zone_url=None, max_stores=8, retail_only=True, enrich=True, max_items_
     _CUR.update(base=cfg["base"], domain=cfg["domain"], source=site)
     zone_url = zone_url or cfg["zone"]
     captured = {"store": [], "items": [], "mi_req": None}
-    with browser_warm.Warmer(cfg["domain"], channel="chrome", headful=True) as w:
+    # Off the Mac (Fly headful runner) the datacenter IP fails UberEats botdefense — route the browser
+    # through the residential proxy. resi.browser() is None when unconfigured (Mac uses its own IP), so
+    # this is a no-op locally. Validated 2026-07-23: headful Chrome + Webshare residential → getFeedV1 200.
+    try:
+        import resi
+        _proxy = resi.browser()
+    except Exception:
+        _proxy = None
+    with browser_warm.Warmer(cfg["domain"], channel="chrome", headful=True, proxy=_proxy) as w:
         ctx = w._ctx
         p = w._page()
 

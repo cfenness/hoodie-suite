@@ -50,6 +50,41 @@
   .maprow label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:600;margin-bottom:3px}
   .maprow select{width:100%;font:inherit;font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink)}
   .rm{margin-left:auto;border:none;background:none;color:var(--faint);cursor:pointer;font-size:16px}
+  /* file preview — map roles by looking at the data */
+  .pvt{border:1px solid var(--line);background:var(--card);color:var(--muted);font:inherit;font-size:11px;font-weight:600;border-radius:7px;padding:3px 9px;cursor:pointer}
+  .pvt:hover{border-color:var(--accent);color:var(--accent)}
+  .pvwrap{margin-top:11px;border:1px solid var(--line);border-radius:9px;overflow:auto;max-height:320px;background:var(--card)}
+  .pv{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%}
+  .pv th{position:sticky;top:0;background:var(--line2);z-index:2;white-space:nowrap;padding:6px 9px;border-bottom:1px solid var(--line)}
+  .pv th .cn{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:650;margin-bottom:3px;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+  .pv select.role{font:inherit;font-size:10.5px;font-weight:600;padding:2px 4px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--faint);max-width:120px}
+  .pv select.role.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .pv td{font-size:11.5px;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;padding:4px 9px;border-bottom:1px solid var(--line2);font-variant-numeric:tabular-nums}
+  .pv .mapped{background:var(--accent-soft)}
+  .pv .more{color:var(--faint);font-size:11px;padding:5px 9px}
+  /* insight cards (synthetic backstop until POS lands) */
+  .demo-pill{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:650;color:var(--warn);background:var(--warn-soft);border:1px solid var(--warn);border-radius:999px;padding:3px 10px;letter-spacing:.02em}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:10px;margin-bottom:14px}
+  .icard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 14px;box-shadow:var(--shadow);cursor:pointer;transition:.12s}
+  .icard:hover{border-color:var(--accent)}
+  .icard.on{border-color:var(--accent);background:var(--accent-soft)}
+  .icard .kn{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.4px}
+  .icard .kt{font-size:12.5px;font-weight:700;margin-top:1px}
+  .icard .km{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.4}
+  .icard .kn .u{font-size:12px;font-weight:650;color:var(--muted);margin-left:4px}
+  .cardsbar{display:flex;align-items:center;gap:10px;margin-bottom:9px;flex-wrap:wrap}
+  .cardsbar .h{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:700}
+  .filterchip{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:650;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px;padding:4px 12px;cursor:pointer}
+  /* synthetic columns + rec chip */
+  .wos{font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px}
+  .wos.b{background:var(--bad);color:#fff}.wos.w{background:var(--warn-soft);color:var(--warn)}.wos.g{background:var(--good-soft);color:var(--good)}
+  .rec{border:1px dashed var(--accent);background:none;color:var(--accent);font:inherit;font-size:11.5px;font-weight:700;border-radius:7px;padding:3px 9px;cursor:pointer;white-space:nowrap}
+  .rec:hover{background:var(--accent-soft)} .rec.z{border-color:var(--line);color:var(--faint);cursor:default}
+  .subcell{font-size:10.5px;color:var(--faint)}
+  .newpill{font-size:9.5px;font-weight:800;letter-spacing:.05em;color:var(--good);border:1px solid var(--good);border-radius:5px;padding:1px 5px;margin-left:7px;vertical-align:1px}
+  .viewtog{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .viewtog button{border:none;background:var(--card);color:var(--muted);font:inherit;font-size:12px;font-weight:650;padding:7px 13px;cursor:pointer}
+  .viewtog button.on{background:var(--accent);color:#fff}
   /* store */
   .storebar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
   .search{flex:1;min-width:180px;font:inherit;font-size:13px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--ink)}
@@ -105,15 +140,23 @@
       <div class="t">Drop supplier menus here (CSV or XLSX), or click to choose</div>
       <div class="s">Any layout — Hoodie parses each on its own terms (header auto-detected past title rows). Drop 50 at once.</div>
     </div>
-    <input type="file" id="file" accept=".csv,.tsv,text/csv,.xlsx,.xlsm">
+    <input type="file" id="file" accept=".csv,.tsv,text/csv,.xlsx,.xlsm" multiple>
     <div id="files" style="margin-top:14px"></div>
     <div id="ingest-actions" style="display:none;margin-top:6px"><button class="btn" id="to-store">Build the order page →</button></div>
   </div>
 
   <!-- STEP 2 -->
   <div class="panel" id="panel-store">
+    <div class="cardsbar">
+      <span class="h">Things to consider in this order</span>
+      <span class="demo-pill" title="Sales, on-hand and usual-price figures are a deterministic simulation seeded from each product — a stand-in until real POS / inventory data is connected. Availability and pricing come from the menus themselves.">◆ synthetic backstop · demo</span>
+      <span id="cardfilter"></span>
+    </div>
+    <div class="cards" id="cards"></div>
     <div class="storebar">
       <input class="search" id="search" placeholder="Search products across all menus…">
+      <div class="viewtog"><button id="v-menu" class="on">By menu</button><button id="v-all">All SKUs</button></div>
+      <button class="btn ghost" id="prefill" title="Fill every visible product with its suggested quantity (synthetic demo backstop). Respects the active card filter and search; never overwrites quantities you typed.">⚡ Prefill suggested</button>
       <button class="btn ghost" id="back-ingest">← Add / edit menus</button>
       <button class="btn" id="to-send">Review &amp; refill →</button>
     </div>
@@ -142,43 +185,67 @@
 </div>
 
 <script>
-var FILES = [];          // {uid, filename, header, rows, map:{product,price,pack,avail,land}, products:[{ri,name,price,pack,avail}]}
+var FILES = [];          // {uid, filename, header, rows, map:{product,price,pack,avail,lands:[ci..]}, products:[{ri,name,price,pack,avail}]}
 var UIDC = 0;            // per-file uid — ORDER keys + async callbacks bind to it, so removing a file never shifts another's orders
-var ORDER = {};          // "fileIdx|ri" -> qty
+var ORDER = {};          // "uid|ri|slot" -> qty; slot = landing parsed-col index, or "x" for the appended ORDER QTY column
 var STEP = "ingest";
 
 /* ---- column auto-mapping ---- */
 function guessMap(header, profile){
   var H = header.map(function(h){return (h||"").toLowerCase();});
-  var AVAIL_MARKS = ["avail","on hand","on-hand","qoh","stock","inventory","in stock"];
+  var AVAIL_MARKS = ["avail","on hand","on-hand","qoh","stock","inventory","in stock","remaining","allocated"];
   function find(res, opts){   // PATTERN-major: an earlier (more specific) pattern beats an earlier column
     opts = opts || {};
     for(var k=0;k<res.length;k++){ for(var i=0;i<H.length;i++){
       if(H[i].indexOf(res[k])<0) continue;
-      if(opts.numeric){ var p=(profile.columns||[])[i]; if(p && p.type!=="number" && p.type!=="int" && p.type!=="float") continue; }
+      var p=(profile.columns||[])[i];
+      // a nearly-empty column is never the right guess, whatever its header says
+      // (sectioned menus carry vestigial columns — blank on every product row)
+      if(p && p.null_rate!=null && p.null_rate>0.95) continue;
+      if(opts.numeric){ if(p && p.type!=="number" && p.type!=="int" && p.type!=="float") continue; }
+      if(opts.text){ if(p && p.type!=="string") continue; }   // e.g. "Total Products" must not read as the product column
+      if(opts.not && opts.not.indexOf(header[i])>=0) continue;
       if(opts.excludeMarks && opts.excludeMarks.some(function(m){return H[i].indexOf(m)>=0;})) continue;
       return header[i];
     } }
     return "";
   }
-  var product = find(["product name","product","item name","item","description","sku name","strain","name"]) || header[0];
-  var price = find(["base $","price","msrp","cost","unit price","wholesale","case price","$"], {numeric:true});
-  var pack = find(["pack","size","bin size","case","uom","unit size","count","bottle"]);
+  // product: header vocabulary first; else the densest most-distinct TEXT column — a product-name
+  // column is near-unique text, and that shape survives menus whose header row doubles as a section
+  // band or leaves the product column untitled
+  function bestTextCol(){
+    var best="", score=-1;
+    (profile.columns||[]).forEach(function(p,i){
+      if(!p || p.type!=="string") return;
+      if(p.null_rate!=null && p.null_rate>0.5) return;
+      if((p.distinct||0)>score){ score=p.distinct||0; best=header[i]; }
+    });
+    return best;
+  }
+  // no "strain" in the vocabulary: on pure flower menus the strain column IS the densest distinct
+  // text column (bestTextCol finds it), while on mixed menus a strain ATTRIBUTE column must lose
+  // to the real product column
+  var product = find(["product name","product","item name","item","description","sku name","name"], {text:true}) || bestTextCol() || header[0];
+  // wholesale price beats retail: msrp is the LAST resort, after any $-column. "total"-marked
+  // columns are computed outputs (Total Cost / Total $), never the unit price
+  var price = find(["base $","price","cost","wholesale","case price","$","msrp"], {numeric:true, excludeMarks:["total"]});
+  var pack = find(["pack","size","bin size","case","uom","unit size","count","bottle"], {not:[product], excludeMarks:["avail","stock","inventory","remaining"]});
   // availability = on-hand style markers — NEVER the order write target
   var avail = find(AVAIL_MARKS, {numeric:true});
   // where the order lands: the file's own order-entry column (e.g. Curaleaf "Total Units", which its
   // Base Total $ formula multiplies). Specific order-entry names first; bare units/qty tokens only for
   // headers with NO availability marker — a stock column ("Qty Available", "Units On Hand") must never
-  // become the write target. "" = no such column → append ORDER QTY on refill.
-  var land = find(["number of units","total units","order qty","order quantity","qty to order","units to order","order units"], {excludeMarks:AVAIL_MARKS})
+  // become the write target. [] = no such column → append ORDER QTY on refill. Menus with per-store
+  // order columns (Dispensary 1..N, LOC1..4) take extra landing columns via the preview role pickers.
+  var land = find(["number of units","total units","ordered","order qty","order quantity","qty to order","units to order","order units"], {excludeMarks:AVAIL_MARKS})
           || find(["units","qty","quantity"], {excludeMarks:AVAIL_MARKS});
   if (land && land === avail) land = "";   // paranoia: on any residual collision, availability wins
-  // land is stored as a parsed-column INDEX string — bare names alias under duplicate headers,
-  // and the landing column is a WRITE target, so it must address one exact column
-  return {product:product, price:price, pack:pack, avail:avail, land: land ? String(header.indexOf(land)) : ""};
+  // lands are parsed-column INDICES — bare names alias under duplicate headers, and landing
+  // columns are WRITE targets, so each must address one exact column
+  return {product:product, price:price, pack:pack, avail:avail, lands: land ? [header.indexOf(land)] : []};
 }
 function colIdx(header,name){ return name?header.indexOf(name):-1; }
-function landIdx(f){ var v=f.map.land; return (v===""||v==null)?-1:+v; }  // land is stored as a parsed-col index
+function landCols(f){ return (f.map.lands||[]); }        // landing parsed-col indices (0..n)
 function num(v){ var n=parseFloat(String(v==null?"":v).replace(/[,$]/g,"")); return isNaN(n)?null:n; }
 
 function buildProducts(f){
@@ -189,12 +256,36 @@ function buildProducts(f){
     var name = pi>=0 ? String(r[pi]||"").trim() : "";
     if(!name) return;
     var price = pri>=0 ? num(r[pri]) : null;
-    // sellable = has a name AND a price (filters group-header / section rows that have a name but no price)
-    if(price==null) return;
+    // when a price column exists, sellable = has a name AND a price (filters group-header / section
+    // rows). A menu with NO price column (some offer sheets) still lists all its named rows.
+    if(pri>=0 && price==null) return;
     f.products.push({ri:ri, name:name, price:price,
       pack: pki>=0 ? String(r[pki]||"").trim() : "",
       avail: avi>=0 ? num(r[avi]) : null});
   });
+  f.products.forEach(synth);
+}
+
+/* ---- synthetic backstop (DEMO) ----
+   Deterministic sales / inventory / order-history simulation, seeded from each product's name —
+   the same menu always shows the same figures. A stand-in until real POS + inventory data is
+   connected; everything derived from it is labeled "synthetic backstop · demo" in the UI.
+   Availability and pricing stay REAL (they come from the menu itself). */
+function synth(p){
+  var h=5381, s=p.name; for(var i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))>>>0;   // djb2
+  function rnd(){ h=(h+0x6D2B79F5)>>>0; var t=Math.imul(h^(h>>>15),1|h);                // mulberry32
+    t=(t+Math.imul(t^(t>>>7),61|t))^t; return ((t^(t>>>14))>>>0)/4294967296; }
+  var pricier = (p.price||20)>38;                                    // premium SKUs turn slower
+  var v = Math.max(1, Math.round((2+rnd()*26)*(pricier?0.45:1)));    // weekly units sold
+  var onHand = Math.round(v*(0.3+rnd()*4));                          // units at our stores
+  var wos = onHand/v;                                                // weeks of supply
+  var usual = (p.price!=null) ? +(p.price*(0.92+rnd()*0.16)).toFixed(2) : null;  // typical paid price
+  var isNew = rnd()<0.08;
+  var trend = +((rnd()-0.5)*0.6).toFixed(2);                         // ±30% vs prior 4wk
+  var TARGET_WKS = 3;
+  var rec = Math.max(0, Math.ceil(v*TARGET_WKS - onHand));           // reorder-point suggestion
+  if(p.avail!=null && p.avail>=0) rec = Math.min(rec, Math.floor(p.avail));   // can't order more than the distributor has (real)
+  p.syn = {v:v, onHand:onHand, wos:wos, usual:usual, isNew:isNew, trend:trend, rec:rec};
 }
 
 /* ---- brand product photography (public Lingo DAM portals) ---- */
@@ -231,6 +322,34 @@ function ingest(fileList){
       .catch(function(e){ f.loading=false; f.error=String(e); renderFiles(); });
   });
 }
+var ROLES=[["","—"],["product","Product"],["price","Price"],["pack","Pack / size"],["avail","Available"],["land","Order lands in"]];
+function roleOf(f,ci){          // which role column ci currently holds (display precedence order)
+  if(colIdx(f.header,f.map.product)===ci) return "product";
+  if(colIdx(f.header,f.map.price)===ci) return "price";
+  if(colIdx(f.header,f.map.pack)===ci) return "pack";
+  if(colIdx(f.header,f.map.avail)===ci) return "avail";
+  if(landCols(f).indexOf(ci)>=0) return "land";
+  return "";
+}
+function setRole(f,ci,role){    // single-column roles steal from their previous column; landing is MULTI
+  ["product","price","pack","avail"].forEach(function(r){ if(colIdx(f.header,f.map[r])===ci) f.map[r]=""; });
+  f.map.lands=(f.map.lands||[]).filter(function(c){return c!==ci;});
+  if(role==="land"){ f.map.lands.push(ci); f.map.lands.sort(function(a,b){return a-b;}); }
+  else if(role) f.map[role]=f.header[ci];
+  f.imaged=false; buildProducts(f); renderFiles(); refreshCounts(); attachImages(f);
+}
+function previewHtml(f,i){
+  if(f.pv===false) return "";
+  var N=8, rows=f.rows.slice(0,N);
+  var roleSel=function(ci){ var cur=roleOf(f,ci);
+    return '<select class="role'+(cur?' on':'')+'" data-f="'+i+'" data-c="'+ci+'">'
+      +ROLES.map(function(r){return '<option value="'+r[0]+'"'+(r[0]===cur?' selected':'')+'>'+r[1]+'</option>';}).join('')+'</select>'; };
+  var head=f.header.map(function(h,ci){ return '<th class="'+(roleOf(f,ci)?'mapped':'')+'"><span class="cn" title="'+esc(h)+'">'+esc(h)+'</span>'+roleSel(ci)+'</th>'; }).join("");
+  var body=rows.map(function(r){ return '<tr>'+f.header.map(function(h,ci){ var v=ci<r.length?r[ci]:"";
+    return '<td class="'+(roleOf(f,ci)?'mapped':'')+'" title="'+esc(v)+'">'+esc(v)+'</td>'; }).join("")+'</tr>'; }).join("");
+  var more=f.rows.length>N?'<div class="more">… '+(f.rows.length-N).toLocaleString()+' more rows</div>':'';
+  return '<div class="pvwrap"><table class="pv"><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table>'+more+'</div>';
+}
 function renderFiles(){
   var box=document.getElementById("files");
   if(!FILES.length){ box.innerHTML=""; document.getElementById("ingest-actions").style.display="none"; return; }
@@ -240,10 +359,14 @@ function renderFiles(){
     var opts=function(sel){return '<option value="">— none —</option>'+f.header.map(function(h){return '<option'+(h===sel?' selected':'')+'>'+esc(h)+'</option>';}).join('');};
     var imgBadge = f.imaging ? '<span class="badge i">matching images…</span>'
       : (f.imaged && f.imgCount ? '<span class="badge i">🖼 '+f.imgCount+' images · '+esc(f.imgBrand||"")+'</span>' : '');
-    var landOpts='<option value="">— append new column —</option>'+f.header.map(function(h,ci){return '<option value="'+ci+'"'+(String(ci)===f.map.land?' selected':'')+'>'+esc(h)+'</option>';}).join('');
+    var L=landCols(f);
+    var landOpts=(L.length>1?'<option value="__multi" selected>— '+L.length+' store columns (see preview) —</option>':'')
+      +'<option value=""'+(L.length?'':' selected')+'>— append new column —</option>'
+      +f.header.map(function(h,ci){return '<option value="'+ci+'"'+(L.length===1&&L[0]===ci?' selected':'')+'>'+esc(h)+'</option>';}).join('');
     return '<div class="file"><div class="fh"><span class="fn">'+esc(f.filename)+'</span>'
       +'<span class="badge g">'+f.products.length+' products</span>'+imgBadge
       +'<span class="meta">'+f.rows.length+' rows · '+f.header.length+' cols'+(f.header_row?'':'')+'</span>'
+      +'<button class="pvt" data-pv="'+i+'">'+(f.pv===false?'Preview ▸':'Preview ▾')+'</button>'
       +'<button class="rm" data-rm="'+i+'">✕</button></div>'
       +'<div class="maprow">'
       +'<div><label>Product</label><select data-map="product" data-f="'+i+'">'+opts(f.map.product)+'</select></div>'
@@ -251,52 +374,147 @@ function renderFiles(){
       +'<div><label>Pack / size</label><select data-map="pack" data-f="'+i+'">'+opts(f.map.pack)+'</select></div>'
       +'<div><label>Available</label><select data-map="avail" data-f="'+i+'">'+opts(f.map.avail)+'</select></div>'
       +'<div><label>Order lands in</label><select data-map="land" data-f="'+i+'">'+landOpts+'</select></div>'
-      +'</div></div>';
+      +'</div>'
+      +previewHtml(f,i)+'</div>';
   }).join("");
   box.querySelectorAll("[data-rm]").forEach(function(b){b.onclick=function(){
     var f=FILES[+b.dataset.rm]; FILES.splice(+b.dataset.rm,1);
     if(f) Object.keys(ORDER).forEach(function(k){ if(+k.split("|")[0]===f.uid) delete ORDER[k]; });  // its orders go with it
     renderFiles();refreshCounts();};});
-  box.querySelectorAll("select[data-map]").forEach(function(s){s.onchange=function(){var f=FILES[+s.dataset.f];f.map[s.dataset.map]=s.value;f.imaged=false;buildProducts(f);renderFiles();refreshCounts();attachImages(f);};});
+  box.querySelectorAll("select[data-map]").forEach(function(s){s.onchange=function(){var f=FILES[+s.dataset.f];
+    if(s.dataset.map==="land"){ if(s.value==="__multi") return; f.map.lands = s.value===""?[]:[+s.value]; }
+    else f.map[s.dataset.map]=s.value;
+    f.imaged=false;buildProducts(f);renderFiles();refreshCounts();attachImages(f);};});
+  box.querySelectorAll("[data-pv]").forEach(function(b){b.onclick=function(){var f=FILES[+b.dataset.pv];f.pv=(f.pv!==false)?false:true;renderFiles();};});
+  box.querySelectorAll("select.role").forEach(function(s){s.onchange=function(){setRole(FILES[+s.dataset.f], +s.dataset.c, s.value);};});
   document.getElementById("ingest-actions").style.display = FILES.some(function(f){return f.products.length;}) ? "block":"none";
 }
 
 /* ---- store ---- */
+var VIEW="menu";          // "menu" = grouped by supplier file · "all" = one distributor-agnostic SKU list
+var CARDF=null;           // active insight-card filter: {id, label, keys:{"uid|ri":1}}
+function prodKey(f,p){ return f.uid+"|"+p.ri; }
+
+function computeCards(){
+  var all=[]; FILES.forEach(function(f,fi){ f.products.forEach(function(p){ all.push({f:f,fi:fi,p:p}); }); });
+  if(!all.length) return [];
+  function keysOf(xs){ var k={}; xs.forEach(function(x){k[prodKey(x.f,x.p)]=1;}); return k; }
+  var cards=[];
+  var run=all.filter(function(x){return x.p.syn.wos<1.5 && x.p.syn.rec>0;});
+  if(run.length){ var u=0,c=0; run.forEach(function(x){u+=x.p.syn.rec; c+=x.p.syn.rec*(x.p.price||0);});
+    cards.push({id:"run", n:run.length, unit:"SKUs", title:"Fast movers running dry",
+      move:"Under 1½ weeks of supply at your stores — suggested +"+u.toLocaleString()+" units (est. $"+Math.round(c).toLocaleString()+"). Lock them in first.", keys:keysOf(run)}); }
+  var deal=all.filter(function(x){return x.p.price!=null && x.p.syn.usual && x.p.price<x.p.syn.usual*0.95;});
+  if(deal.length){ var pct=Math.round(deal.reduce(function(s,x){return s+(1-x.p.price/x.p.syn.usual);},0)/deal.length*100);
+    cards.push({id:"deal", n:deal.length, unit:"SKUs", title:"Priced below your usual",
+      move:"Averaging "+pct+"% under what you typically pay — a good week to buy ahead on these.", keys:keysOf(deal)}); }
+  var tight=all.filter(function(x){return x.p.avail!=null && x.p.syn.rec>0 && x.p.avail<x.p.syn.rec*2;});
+  if(tight.length) cards.push({id:"tight", n:tight.length, unit:"SKUs", title:"Tight supply at the distributor",
+      move:"Menu availability is under 2× your suggested quantity — order these before they're gone.", keys:keysOf(tight)});
+  var nw=all.filter(function(x){return x.p.syn.isNew;});
+  if(nw.length) cards.push({id:"new", n:nw.length, unit:"SKUs", title:"New on the menus",
+      move:"First appearance this cycle — worth a trial quantity while they're fresh.", keys:keysOf(nw)});
+  return cards;
+}
+function renderCards(){
+  var box=document.getElementById("cards"), chip=document.getElementById("cardfilter");
+  var cards=computeCards();
+  box.innerHTML=cards.map(function(c){
+    return '<div class="icard'+(CARDF&&CARDF.id===c.id?' on':'')+'" data-card="'+c.id+'">'
+      +'<div class="kn">'+c.n.toLocaleString()+'<span class="u">'+c.unit+'</span></div>'
+      +'<div class="kt">'+esc(c.title)+'</div><div class="km">'+esc(c.move)+'</div></div>';
+  }).join("") || '<div class="empty" style="padding:10px">Add menus to see what to consider.</div>';
+  chip.innerHTML = CARDF ? '<span class="filterchip" id="clearcardf">Showing: '+esc(CARDF.label)+' ✕</span>' : '';
+  box.querySelectorAll("[data-card]").forEach(function(el){ el.onclick=function(){
+    var c=cards.filter(function(x){return x.id===el.dataset.card;})[0];
+    CARDF = (CARDF && CARDF.id===c.id) ? null : {id:c.id, label:c.title, keys:c.keys};
+    renderCards(); renderStore(); };});
+  var cl=document.getElementById("clearcardf"); if(cl) cl.onclick=function(){ CARDF=null; renderCards(); renderStore(); };
+}
+function stockCells(p){
+  var s=p.syn, cls=s.wos<1.5?"b":(s.wos<3?"w":"g");
+  return '<td class="num" title="synthetic demo — on hand · weekly sales">'+s.onHand+'<div class="subcell">'+s.v+'/wk</div></td>'
+    +'<td class="num"><span class="wos '+cls+'" title="synthetic demo — weeks of supply">'+(s.wos<9.95?s.wos.toFixed(1):"9+")+'w</span></td>';
+}
+function recCell(f,p){
+  var s=p.syn, slot=(landCols(f)[0]!=null?landCols(f)[0]:"x");
+  if(!s.rec) return '<td class="num"><span class="rec z">—</span></td>';
+  return '<td class="num"><button class="rec" title="apply the suggested quantity (synthetic demo backstop)" data-rk="'+f.uid+'|'+p.ri+'|'+slot+'" data-rq="'+s.rec+'">→ '+s.rec+'</button></td>';
+}
+function nameCell(f,p){
+  var thumb = p.thumb ? '<img class="pthumb" src="'+esc(p.thumb)+'" loading="lazy" alt="" onerror="this.style.visibility=\'hidden\'">'
+                      : (f.imaged ? '<span class="pthumb ph"></span>' : '');
+  var nm=esc(p.name)+(p.syn.isNew?'<span class="newpill">NEW</span>':'');
+  return thumb ? '<div class="pcell">'+thumb+'<span>'+nm+'</span></div>' : nm;
+}
+function keepProd(f,p){   // the store's visibility rule — search + active insight-card filter
+  var q=(document.getElementById("search").value||"").toLowerCase();
+  return (!q || p.name.toLowerCase().indexOf(q)>=0) && (!CARDF || CARDF.keys[prodKey(f,p)]);
+}
+function prefillRec(){    // fill every VISIBLE product's suggested qty; never clobber a typed quantity
+  FILES.forEach(function(f){ f.products.forEach(function(p){
+    if(!keepProd(f,p) || !p.syn.rec) return;
+    var slot=(landCols(f)[0]!=null?landCols(f)[0]:"x"), key=f.uid+"|"+p.ri+"|"+slot;
+    if(!ORDER[key]) ORDER[key]=p.syn.rec;
+  });});
+  renderStore(); refreshSummary();
+}
 function renderStore(){
   var q=(document.getElementById("search").value||"").toLowerCase();
   var box=document.getElementById("store");
   var any=FILES.some(function(f){return f.products.length;});
   if(!any){ box.innerHTML='<div class="empty">No products yet — add menus in step 1.</div>'; return; }
+  var keep=keepProd;
+  if(VIEW==="all"){
+    var rows=[]; FILES.forEach(function(f,fi){ f.products.forEach(function(p){ if(keep(f,p)) rows.push({f:f,fi:fi,p:p}); }); });
+    rows.sort(function(a,b){ return a.p.name.localeCompare(b.p.name); });
+    box.innerHTML = rows.length ? '<div class="sup"><div class="sh"><span class="snm">All SKUs — every menu, one list</span>'
+      +'<span class="sc">'+rows.length+' items</span></div>'
+      +'<div style="overflow-x:auto"><table><thead><tr><th>Product</th><th>Supplier</th><th>Pack</th><th class="num">Price</th><th class="num">Avail</th>'
+      +'<th class="num">On hand</th><th class="num">Supply</th><th class="num">Rec</th><th class="num">Order</th></tr></thead><tbody>'
+      +rows.map(function(x){ var f=x.f,p=x.p, slot=(landCols(f)[0]!=null?landCols(f)[0]:"x"), key=f.uid+"|"+p.ri+"|"+slot, v=ORDER[key]||"";
+        var extra=landCols(f).length>1?'<div class="subcell">+'+(landCols(f).length-1)+' more store cols in By menu</div>':'';
+        return '<tr class="'+(v?'ordered':'')+'"><td>'+nameCell(f,p)+'</td><td class="subcell">'+esc(f.filename.replace(/\.[^.]+$/,'').slice(0,24))+'</td>'
+          +'<td>'+esc(p.pack)+'</td><td class="num">'+(p.price!=null?"$"+p.price.toFixed(2):"—")+'</td>'
+          +'<td class="num">'+(p.avail!=null?p.avail:"—")+'</td>'+stockCells(p)+recCell(f,p)
+          +'<td class="num"><input class="qty'+(v?' set':'')+'" type="number" min="0" step="1" value="'+v+'" data-key="'+key+'">'+extra+'</td></tr>'; }).join("")
+      +'</tbody></table></div></div>' : '<div class="empty">Nothing matches.</div>';
+  }else{
   box.innerHTML = FILES.map(function(f,fi){
-    var prods=f.products.filter(function(p){return !q || p.name.toLowerCase().indexOf(q)>=0;});
+    var prods=f.products.filter(function(p){return keep(f,p);});
     if(!prods.length) return "";
-    var stot=0; prods.forEach(function(p){var v=ORDER[f.uid+"|"+p.ri]; if(v) stot+=v*(p.price||0);});
+    var slots=landCols(f); if(!slots.length) slots=["x"];       // one qty column per landing (store) column
+    var stot=0; prods.forEach(function(p){ slots.forEach(function(s){ var v=ORDER[f.uid+"|"+p.ri+"|"+s]; if(v) stot+=v*(p.price||0); }); });
+    var qhead=slots.map(function(s){ var nm=s==="x"?"Order":String(f.header[s]||"Order");
+      return '<th class="num" title="'+esc(nm)+'">'+esc(nm.length>14?nm.slice(0,13)+"…":nm)+'</th>'; }).join("");
     var rows=prods.map(function(p){
-      var key=f.uid+"|"+p.ri, v=ORDER[key]||"";
-      var thumb = p.thumb ? '<img class="pthumb" src="'+esc(p.thumb)+'" loading="lazy" alt="" onerror="this.style.visibility=\'hidden\'">'
-                          : (f.imaged ? '<span class="pthumb ph"></span>' : '');
-      var pcell = thumb ? '<div class="pcell">'+thumb+'<span>'+esc(p.name)+'</span></div>' : esc(p.name);
-      return '<tr class="'+(v?'ordered':'')+'"><td>'+pcell+'</td><td>'+esc(p.pack)+'</td>'
+      var anyv=false;
+      var qcells=slots.map(function(s){ var key=f.uid+"|"+p.ri+"|"+s, v=ORDER[key]||""; if(v)anyv=true;
+        return '<td class="num"><input class="qty'+(v?' set':'')+'" type="number" min="0" step="1" value="'+v+'" data-key="'+key+'"></td>'; }).join("");
+      return '<tr class="'+(anyv?'ordered':'')+'"><td>'+nameCell(f,p)+'</td><td>'+esc(p.pack)+'</td>'
         +'<td class="num">'+(p.price!=null?"$"+p.price.toFixed(2):"—")+'</td>'
-        +'<td class="num">'+(p.avail!=null?p.avail:"—")+'</td>'
-        +'<td class="num"><input class="qty'+(v?' set':'')+'" type="number" min="0" step="1" value="'+v+'" data-key="'+key+'"></td></tr>';
+        +'<td class="num">'+(p.avail!=null?p.avail:"—")+'</td>'+stockCells(p)+recCell(f,p)+qcells+'</tr>';
     }).join("");
     return '<div class="sup"><div class="sh" data-sup="'+fi+'"><span class="snm">'+esc(f.filename.replace(/\.[^.]+$/,''))+'</span>'
-      +'<span class="sc">'+prods.length+' items</span><span class="stot">'+(stot?"$"+Math.round(stot).toLocaleString():"")+'</span></div>'
-      +'<table><thead><tr><th>Product</th><th>Pack</th><th class="num">Price</th><th class="num">Avail</th><th class="num">Order</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+      +'<span class="sc">'+prods.length+' items'+(slots[0]!=="x"?' · '+slots.length+' store col'+(slots.length>1?'s':''):'')+'</span><span class="stot">'+(stot?"$"+Math.round(stot).toLocaleString():"")+'</span></div>'
+      +'<div style="overflow-x:auto"><table><thead><tr><th>Product</th><th>Pack</th><th class="num">Price</th><th class="num">Avail</th>'
+      +'<th class="num" title="synthetic demo backstop">On hand</th><th class="num" title="synthetic demo backstop">Supply</th><th class="num" title="suggested qty — synthetic demo backstop">Rec</th>'+qhead+'</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
   }).join("") || '<div class="empty">No products match "'+esc(q)+'".</div>';
+  }
   box.querySelectorAll(".qty").forEach(function(inp){ inp.oninput=function(){ var n=parseInt(inp.value,10);
     if(n>0) ORDER[inp.dataset.key]=n; else delete ORDER[inp.dataset.key];
     inp.classList.toggle("set", n>0); inp.closest("tr").classList.toggle("ordered", n>0); refreshSummary(); }; });
+  box.querySelectorAll(".rec[data-rk]").forEach(function(b){ b.onclick=function(){
+    ORDER[b.dataset.rk]=+b.dataset.rq; renderStore(); refreshSummary(); }; });
 }
 
 /* ---- summary + send ---- */
 function orderStats(){
-  var lines=0,units=0,cost=0,sups={};
-  Object.keys(ORDER).forEach(function(k){ var q=ORDER[k]; if(!q)return; var uid=+k.split("|")[0], ri=+k.split("|")[1];
+  var units=0,cost=0,sups={},lineSet={};
+  Object.keys(ORDER).forEach(function(k){ var q=ORDER[k]; if(!q)return; var pp=k.split("|"), uid=+pp[0], ri=+pp[1];
     var f=FILES.filter(function(x){return x.uid===uid;})[0]; var p=f&&f.products.filter(function(x){return x.ri===ri;})[0]; if(!p)return;
-    lines++; units+=q; cost+=q*(p.price||0); sups[FILES.indexOf(f)]=1; });  // consumers read s.sups as FILES indices
-  return {lines:lines,units:units,cost:cost,sups:Object.keys(sups)};
+    lineSet[uid+"|"+ri]=1; units+=q; cost+=q*(p.price||0); sups[FILES.indexOf(f)]=1; });  // consumers read s.sups as FILES indices
+  return {lines:Object.keys(lineSet).length,units:units,cost:cost,sups:Object.keys(sups)};
 }
 function refreshSummary(){
   var s=orderStats();
@@ -319,8 +537,8 @@ function renderSend(){
   var box=document.getElementById("send"); var s=orderStats();
   if(!s.lines){ box.innerHTML='<div class="empty">No order yet — set quantities in the store (step 2).</div>'; document.getElementById("send-actions").innerHTML=""; return; }
   box.innerHTML = s.sups.map(function(fi){ fi=+fi; var f=FILES[fi];
-    var lines=0,units=0,cost=0;
-    f.products.forEach(function(p){var q=ORDER[f.uid+"|"+p.ri]; if(q){lines++;units+=q;cost+=q*(p.price||0);}});
+    var lines=0,units=0,cost=0,slots=landCols(f); if(!slots.length)slots=["x"];
+    f.products.forEach(function(p){ var any=false; slots.forEach(function(sl){var q=ORDER[f.uid+"|"+p.ri+"|"+sl]; if(q){any=true;units+=q;cost+=q*(p.price||0);}}); if(any)lines++; });
     return '<div class="sendcard"><div><div class="snm">'+esc(f.filename)+'</div>'
       +'<div class="sd">'+lines+' items · '+units.toLocaleString()+' units · est. $'+Math.round(cost).toLocaleString()+'</div></div>'
       +'<div class="status"><button class="btn ghost" data-dl="'+fi+'">↓ Download filled order</button></div></div>';
@@ -336,15 +554,21 @@ function exportSupplier(fi){
   var base=f.filename.replace(/\.[^.]+$/,"")+" - ORDER";
   // XLSX source → refill the ORIGINAL file WITH ITS FORMATTING (server-side openpyxl), quantities written in.
   if(/\.(xlsx|xlsm)$/i.test(f.filename||"") && f.file){
-    var orders={};
-    Object.keys(ORDER).forEach(function(k){ var p=k.split("|"); if(+p[0]!==f.uid) return; var src=(f.row_src||[])[+p[1]]; if(src!=null) orders[src]=ORDER[k]; });
-    var fd=new FormData(); fd.append("file",f.file); fd.append("orders",JSON.stringify(orders)); fd.append("header_row",String(f.header_row||0));
-    // land quantities in the file's own units column (its formulas compute off it) when one is selected.
-    // f.map.land is a parsed-column INDEX (string) — names alias under duplicate headers.
-    var li=landIdx(f);
-    if(li>=0 && (f.col_src||[])[li]!=null){
-      fd.append("qty_col", String(f.col_src[li]));
+    var L=landCols(f);
+    var fd=new FormData(); fd.append("file",f.file); fd.append("header_row",String(f.header_row||0));
+    if(L.length){
+      // land quantities in the file's OWN columns (per-store order columns, or its single units
+      // column — its formulas compute off them). Keyed by physical col/row from col_src/row_src.
+      var byCol={};
+      Object.keys(ORDER).forEach(function(k){ var p=k.split("|"); if(+p[0]!==f.uid||p[2]==="x") return;
+        var pc=(f.col_src||[])[+p[2]], pr=(f.row_src||[])[+p[1]];
+        if(pc!=null&&pr!=null){ (byCol[pc]=byCol[pc]||{})[pr]=ORDER[k]; } });
+      fd.append("orders_by_col", JSON.stringify(byCol));
       fd.append("rows", JSON.stringify(f.row_src||[]));   // clearing scope for the phantom-order guard
+    }else{
+      var orders={};
+      Object.keys(ORDER).forEach(function(k){ var p=k.split("|"); if(+p[0]!==f.uid) return; var src=(f.row_src||[])[+p[1]]; if(src!=null) orders[src]=ORDER[k]; });
+      fd.append("orders", JSON.stringify(orders));
     }
     fetch("/api/refill-xlsx",{method:"POST",body:fd})
       .then(function(r){ if(!r.ok) return r.text().then(function(t){ throw t; }); return r.blob(); })
@@ -356,13 +580,13 @@ function exportSupplier(fi){
 }
 function exportCsv(fi){
   var f=FILES[fi];
-  var li=landIdx(f);                              // landing column: write qty in place instead of appending
-  var lines=[(li>=0?f.header:f.header.concat(["ORDER QTY"])).map(csvCell).join(",")];
-  f.rows.forEach(function(r,ri){ var q=ORDER[f.uid+"|"+ri]||"";
-    // landing mode overwrites the column on EVERY row — pre-filled par/prior-order values
+  var L=landCols(f);                              // landing columns: write qty in place instead of appending
+  var lines=[(L.length?f.header:f.header.concat(["ORDER QTY"])).map(csvCell).join(",")];
+  f.rows.forEach(function(r,ri){
+    // landing mode overwrites the columns on EVERY row — pre-filled par/prior-order values
     // must not survive as phantom order lines the buyer never saw
-    if(li>=0){ var row=r.slice(); row[li]=q; lines.push(row.map(csvCell).join(",")); }
-    else lines.push(r.concat([q]).map(csvCell).join(",")); });
+    if(L.length){ var row=r.slice(); L.forEach(function(ci){ row[ci]=ORDER[f.uid+"|"+ri+"|"+ci]||""; }); lines.push(row.map(csvCell).join(",")); }
+    else lines.push(r.concat([ORDER[f.uid+"|"+ri+"|x"]||""]).map(csvCell).join(",")); });
   dl(new Blob([lines.join("\r\n")],{type:"text/csv"}), f.filename.replace(/\.[^.]+$/,"")+" - ORDER.csv");
 }
 
@@ -371,7 +595,7 @@ function go(step){ STEP=step;
   document.querySelectorAll(".step").forEach(function(s){s.setAttribute("aria-current", s.dataset.step===step);});
   document.querySelectorAll(".panel").forEach(function(p){p.classList.remove("on");});
   document.getElementById("panel-"+step).classList.add("on");
-  if(step==="store") renderStore(); if(step==="send") renderSend();
+  if(step==="store"){ renderCards(); renderStore(); } if(step==="send") renderSend();
   window.scrollTo(0,0);
 }
 document.querySelectorAll(".step").forEach(function(s){s.onclick=function(){go(s.dataset.step);};});
@@ -381,6 +605,9 @@ document.getElementById("to-send").onclick=function(){go("send");};
 document.getElementById("sum-send").onclick=function(){go("send");};
 document.getElementById("clear-order").onclick=function(){ORDER={};refreshSummary();if(STEP==="store")renderStore();if(STEP==="send")renderSend();};
 document.getElementById("search").oninput=function(){renderStore();};
+document.getElementById("v-menu").onclick=function(){VIEW="menu";this.classList.add("on");document.getElementById("v-all").classList.remove("on");renderStore();};
+document.getElementById("v-all").onclick=function(){VIEW="all";this.classList.add("on");document.getElementById("v-menu").classList.remove("on");renderStore();};
+document.getElementById("prefill").onclick=prefillRec;
 /* dropzone */
 var drop=document.getElementById("drop"), file=document.getElementById("file");
 drop.onclick=function(){file.click();};

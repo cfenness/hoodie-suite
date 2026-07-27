@@ -16,6 +16,8 @@ The checks (each finding carries code / severity / evidence):
   run-failed        CRIT  a registry-enabled source's latest run failed / timed out / errored
   run-degraded      WARN  a run self-reported degraded (parser drift caught by the scraper's own selectors)
   rows-collapsed    CRIT  a pull table's count fell >COLLAPSE_PCT vs its previous point (or to zero)
+  coverage-shortfall C/W  last run touched far fewer stores/items than expected — a partial scrape a
+                          cumulative merge hides (table didn't shrink, so collapse/staleness can't see it)
   pull-stale        C/W   a registry-enabled source's data is older than its cadence allows
   run-no-change     WARN  a run "succeeded" but landed zero delta (run_sources' own bad-smell status)
   table-missing     WARN  a registry-enabled source's declared table doesn't exist in the warehouse
@@ -42,6 +44,7 @@ STALE_WARN_X = 2.0            # data older than 2× cadence  → WARN  (one miss
 STALE_CRIT_X = 4.0            # data older than 4× cadence  → CRIT  (the source is down, not late)
 COLLAPSE_PCT = 0.40           # count fell by >40% vs previous point → CRIT (partial scrape landed as truth)
 COLLAPSE_MIN_ROWS = 1000      # ignore collapse on tiny tables (noise, fixtures, seeds)
+SLA_MIN_PCT = float(os.environ.get("SLA_MIN_PCT", "95"))   # sellable floor: WARN if <this% of sources within freshness SLA
 
 
 def _sev_rank(s):
@@ -143,14 +146,21 @@ def build_digest(weekly=False):
                                      "%s declares table(s) that don't exist in the warehouse: %s" % (label, ", ".join(missing)),
                                      {"missing_tables": missing, "registry_tables": src.get("tables")}))
 
-        # 1) the run log's own verdict — authoritative, checked before freshness (a failed run EXPLAINS staleness)
-        if run_status in ("failed", "timeout", "error"):
-            newest = max((d.get("modified") or 0 for d in datasets), default=None) or None
+        # 1) the run log's own verdict — BUT the DATA is the ground truth (a run log can lie; the footer can't).
+        # A failed/timed-out LEDGER entry is only a REAL current break if it left the data STALE. If the source's
+        # data landed within its cadence window — from this path or any other — the source is healthy and the
+        # failed ledger row is a stale artifact (e.g. abc-fws logged a 403 attempt while abc-facets kept landing
+        # fresh data). Reporting that as a live CRITICAL is exactly what made the Console misleading. So gate the
+        # run-failed finding on the data actually being stale; otherwise fall through to the freshness checks
+        # (which will pass and emit nothing).
+        newest = max((d.get("modified") or 0 for d in datasets), default=None) or None
+        data_age = (now - newest) if newest else None
+        if run_status in ("failed", "timeout", "error") and (data_age is None or data_age > cadence * STALE_WARN_X):
             findings.append(_finding("run-failed", "critical", sid,
                                      "%s: last run %s%s" % (label, run_status, (" — " + run_err[:160]) if run_err else ""),
                                      {"run_status": run_status, "error": run_err, "run_at": run_ts,
                                       "run_ago": _ago(now - run_ts) if run_ts else None,
-                                      "data_age": _ago(now - newest) if newest else "never",
+                                      "data_age": _ago(data_age) if data_age is not None else "never",
                                       "tables": src.get("tables")}))
             continue  # don't ALSO report stale/no-change for the same source — one break, one finding
 
@@ -160,6 +170,32 @@ def build_digest(weekly=False):
             findings.append(_finding("run-degraded", "warn", sid,
                                      "%s: run self-reported DEGRADED (parser drift) on %s" % (label, ", ".join(degraded)),
                                      {"datasets": degraded, "warnings": warns}))
+
+        # 1b) COVERAGE — expected vs landed store/item counts for the last run. A cumulative merge never
+        # shrinks, so freshness and collapse are BLIND to a blocked/partial scrape: the table stays full and
+        # the run reads 'current'/'ok'. Coverage is the only signal that catches "it ran, it 'landed', but it
+        # only touched 3% of the catalog." Severe shortfall (<50% of expected) = critical, else warn.
+        try:
+            import coverage as _cov
+            cv = _cov.assess(src)
+        except Exception:
+            cv = None
+        # Only when the source ACTUALLY recorded a run's coverage (last_ts>0). A source with a registry
+        # `expected_*` but no coverage history yet would otherwise read 0/expected = "partial" and double-
+        # report the existing never-landed/stale critical — that's noise, not a second failure.
+        if cv and cv.get("last_ts"):
+            short = [(dim, cv[dim]) for dim in ("items", "stores") if cv[dim].get("verdict") == "partial"]
+            if short:
+                pcts = [d["pct"] for _, d in short if d.get("pct") is not None]
+                worst = min(pcts) if pcts else 0
+                it, stx = cv["items"], cv["stores"]
+                findings.append(_finding("coverage-shortfall", "critical" if worst < 50 else "warn", sid,
+                    "%s: last run covered %s/%s items, %s/%s stores (%.0f%% of expected — partial scrape; the "
+                    "table didn't shrink, so coverage is the ONLY signal)" % (
+                        label, it["landed"], it["expected"], stx["landed"], stx["expected"], worst),
+                    {"landed_items": it["landed"], "expected_items": it["expected"], "items_pct": it["pct"],
+                     "landed_stores": stx["landed"], "expected_stores": stx["expected"], "stores_pct": stx["pct"],
+                     "basis": cv["basis"]}))
 
         # 2) freshness vs the cadence CONTRACT — data mtime is the truth (a run log can lie; the footer can't)
         newest = max((d.get("modified") or 0 for d in datasets), default=None) or None
@@ -247,6 +283,27 @@ def build_digest(weekly=False):
                                   "run_ago": _ago(now - c["run_ts"]) if c.get("run_ts") else None,
                                   "trigger": c.get("trigger")}))
 
+    # SLA ROLL-UP — the sellable "reliable enough to sell" headline (SCRAPING-PLATFORM.md P2): the share of
+    # sources within their freshness CONTRACT right now. The per-source detail is the pull-stale findings
+    # above; this is the ONE number a buyer's contract rests on, tracked in the daily verdict. WARN (not
+    # crit — the per-source breaks already carry the crit) once it dips below SLA_MIN_PCT.
+    try:
+        import sla
+        ss = sla.summary(now=now)
+        if ss.get("sources"):
+            sev = "info" if (ss.get("within_pct") or 0) >= SLA_MIN_PCT else "warn"
+            findings.append(_finding(
+                "sla-rollup", sev, "platform",
+                "%s%% of sources within freshness SLA (%d/%d) — %d breach, %d never, %d at-risk" % (
+                    ss["within_pct"], ss["within_sla"], ss["sources"],
+                    len(ss["breach"]), len(ss["never"]), len(ss["at_risk"])),
+                {"within_pct": ss["within_pct"], "within_sla": ss["within_sla"], "sources": ss["sources"],
+                 "min_pct": SLA_MIN_PCT, "breach": ss["breach"][:20], "never": ss["never"][:20],
+                 "at_risk": ss["at_risk"][:20]}))
+    except Exception as e:
+        findings.append(_finding("sla-rollup", "info", "platform",
+                                 "SLA roll-up unavailable: %s" % str(e)[:120], {}))
+
     # weekly deep audit (Mondays / --weekly): field-drift, fixture regression, docs drift — see deep_audit.py
     if weekly:
         import deep_audit
@@ -261,13 +318,26 @@ def _assemble(now, wh, manifest, findings, checked, weekly=False):
     for f in findings:
         counts[f["severity"]] += 1
 
-    # first_seen: carry forward from the previous digest so NEW breaks stand out from known ones
+    # first_seen: carry forward from the previous digest so NEW breaks stand out from known ones. The digest now
+    # runs in the CLOUD (GitHub Actions / a fresh Fly machine each tick), where there is NO local latest.json — so
+    # local-only carry-forward reset every finding's first_seen to "now" and marked them all `new`, which made
+    # known errors look brand-new on every run. Fall back to the WAREHOUSE-published digest (_health_digest.json)
+    # so first_seen persists across machines and a finding's true age is preserved.
     prev = {}
     try:
         with open(os.path.join(_OUT, "latest.json")) as fh:
             prev = {(f["code"], f["source"]): f.get("first_seen") for f in json.load(fh).get("findings", [])}
     except Exception:
         pass
+    if not prev:
+        try:
+            import warehouse
+            raw = warehouse.get_bytes("_health_digest.json")
+            if raw:
+                prev = {(f["code"], f["source"]): f.get("first_seen")
+                        for f in json.loads(raw).get("findings", [])}
+        except Exception:
+            pass
     for f in findings:
         f["first_seen"] = prev.get((f["code"], f["source"])) or round(now)
         f["new"] = f["first_seen"] == round(now)

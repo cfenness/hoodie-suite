@@ -81,19 +81,19 @@
       "parent": null
     },
     {
-      "id": "estate",
-      "name": "Estate Map",
-      "desc": "Data & model layer · the whole estate",
+      "id": "estate3d",
+      "name": "Estate",
+      "desc": "The data estate as a 3D object — spin, fly, focus a node.",
       "group": "Platform",
       "status": "beta",
-      "file": "apps/estate-map.html",
-      "mark": "EM",
+      "file": "apps/estate-3d.html",
+      "mark": "3D",
       "parent": null
     },
     {
       "id": "mdm",
       "name": "Hoodie MDM",
-      "desc": "One console — Master · Catalog · Pulls · Ingestion",
+      "desc": "The master — own the data: sources, catalog, outlets, registrations, dictionary.",
       "group": "Data Operations",
       "status": "beta",
       "file": "apps/mdm.html",
