@@ -205,8 +205,13 @@ the generator (mirroring `build_product_master.py`/`normalize.py`/`dim_outlet.py
 star. Three schemas: `RAW` (one landing table per source Parquet, **schema-agnostic** via Snowflake
 `INFER_SCHEMA` + `MATCH_BY_COLUMN_NAME` — scraper drift just flows through, same as the DuckDB
 `read_parquet` path), `MASTER` (the **typed** star `dim_brand/product/item/sku` + `dim_outlet` +
-`src_<grain>` + signal tables — the seed), `MART` (views). It stages SQL only — nothing connects to
-Snowflake or touches prod. `python snowflake/build_snowflake_sql.py [--live]` regenerates; `--live`
+`src_<grain>` + signal tables — the seed), `MART` (views). The generator stages SQL only;
+**the load itself is the registry BUILD `snowflake-load`** (`unifyd/snowflake_load.py` →
+`snowflake/run_load.py`, `snowflake-connector-python`): the hourly dispatcher runs it daily on its
+own ephemeral machine, change-aware (only tables whose Parquet moved reload; ledger at
+`_snowflake/load_state.json`), verify-landing one row per run in `snowflake_load_runs`. It reports
+`no-creds` until the `SNOWFLAKE_*` Fly secrets are set (go-live runbook in `snowflake/README.md`).
+`python snowflake/build_snowflake_sql.py [--live]` regenerates; `--live`
 reads the warehouse to include every present table and resolve bucketed (v2) tables to their manifest's
 active parts. `snowflake/` is engine/infra — never web-served (not in `_SUITE_OK_TOP`), like `unifyd/`.
 See `snowflake/README.md`.

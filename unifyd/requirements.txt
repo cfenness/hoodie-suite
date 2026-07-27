@@ -33,6 +33,10 @@ pylibdmtx>=0.1.10
 setuptools>=68
 cryptography
 openpyxl
+
+# Snowflake morning drop (registry build `snowflake-load` → snowflake/run_load.py): lazy-imported,
+# only used when the SNOWFLAKE_* secrets are set. Key-pair auth reuses `cryptography` above.
+snowflake-connector-python>=3.7
 curl_cffi>=0.7        # Chrome-JA3 TLS impersonation for walmart_direct (PerimeterX reads urllib's TLS as a bot tell)
 
 # Instacart (free, no bd): a self-hosted Chromium drives Instacart's own SearchResultsPlacements GraphQL.
