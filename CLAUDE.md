@@ -132,6 +132,28 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   `degraded` if the store-option / `available_variant_values` selectors drift. Validated
   live (~13.9k products via sitemap). `unifyd/schedule_pull.py` runs any connId on a cadence
   locally (`python unifyd/schedule_pull.py abc-fws --every 24h`).
+- `unifyd/vtinfo_bbs.py` — VIP **Brand Builder** distributor catalog (connId `vip-brandbuilder`).
+  Distinct from `vtinfo.py` (that's `finder.vtinfo.com` where-to-buy carriage); this is
+  `products.vtinfo.com/bbs/v1/distributor/<sourceCode>/{info,brands,products}` — an **open JSON
+  API** (no auth/cookie/token, CORS `*`) behind the Angular UI at `/brandbuilder/<sourceCode>/`.
+  One recipe per **platform**: point it at any VIP sourceCode → that distributor's whole book,
+  at **package grain** (product × pack) with `dist_item_code` + **retail UPC** (zero-padded to 12
+  the way the app does) + ABV/style/supplier + category (from the brand-group join). Snapshot per
+  distributor (keyed `dist_item_code`) → new/dropped; self-reports `degraded` if `product_packages`
+  yields 0 rows or UPC fill collapses. Lands `vip_brandbuilder_items` (`write_accumulate`, key
+  `distributor_id|dist_item_code`). Seed = Columbia Distributing WA `01191` (6,756 items); grow the
+  `DISTRIBUTORS` map (`--discover <distributor-url>` harvests a sourceCode). stdlib-only, headless.
+- `unifyd/sevenfifty.py` — SevenFifty/Provi distributor **storefront** catalog (connId `sevenfifty`).
+  `<slug>.storefronts.site/search.json?page&per_page=100` — an **open JSON search API** (no auth;
+  only partner PRICING is login-gated, so this is an **item-master** pull, not a price pull).
+  One recipe per **platform**: any storefront slug → that distributor's full item book at **SKU
+  grain** (the distributor's real item numbers) with producer/supplier/type/style/appellation/
+  country/size/case/image/token. Paginates on `meta.total_pages`, dedupes by SKU, snapshot per
+  storefront → new/dropped; self-reports `degraded` if the API reports items but 0 parse. Lands
+  `sevenfifty_items` (`write_accumulate`, key `storefront|sku`). Seed = Johnson Brothers
+  `johnsonbrothers` (25,590 items); grow the `STOREFRONTS` map. stdlib-only, headless. Together
+  with `vip-brandbuilder` these two platform recipes are the fast path to the major distributors'
+  catalogs (Reyes, Breakthru, RNDC, …) — one sourceCode / slug at a time.
 - `unifyd/pull_sources.py` — agent-less batch pull (Florida is live/tested; COLA needs
   `requests`+`bs4`). Emits `out/datasets.js` + `out/runs.json`.
 - `unifyd/label_reader.py` — read ONE product-page/label URL into clean MDM fields,

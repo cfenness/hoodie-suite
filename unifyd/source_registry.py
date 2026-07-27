@@ -217,6 +217,17 @@ SOURCES = [
          tables=["vtinfo_titos"], klass="headless", cadence="weekly", enabled=True,
          note="brand→retailer 'where to buy' (HTML-fragment POST, not GraphQL). m.run() LANDS it; m.pull() alone "
               "returned rows but never wrote (the never-persisted bug)"),
+    # ── Distributor catalogs (open JSON APIs — one recipe per PLATFORM, keyed by distributor id/slug) ──
+    dict(id="vip-brandbuilder", label="VIP Brand Builder (distributor catalogs)",
+         code="import vtinfo_bbs as m; m.pull()", tables=["vip_brandbuilder_items"],
+         klass="headless", cadence="weekly", enabled=True,
+         note="products.vtinfo.com/bbs — distributor product+package catalog w/ retail UPCs, no auth; "
+              "parameterized by VIP sourceCode (Columbia 01191 seed). Add distributors to DISTRIBUTORS."),
+    dict(id="sevenfifty", label="SevenFifty storefronts (distributor catalogs)",
+         code="import sevenfifty as m; m.pull()", tables=["sevenfifty_items"],
+         klass="headless", cadence="weekly", enabled=True,
+         note="<slug>.storefronts.site/search.json — distributor item master (SKUs), no auth (prices need "
+              "partner login); parameterized by storefront slug (johnsonbrothers seed). Add slugs to STOREFRONTS."),
     # The custID keyspace is 3 alnum chars (case-insensitive) = 46,656 — enumerable, so the VIP tenant
     # directory is a census, not a hand-harvested dict. Resumable + checkpointed: each run takes a
     # deadline-bounded bite and the next resumes. cost_class=proxy — one IP 429s in seconds, so it
