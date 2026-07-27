@@ -8,10 +8,12 @@ drinking places, for on-premise). Free Census API — no scrape — but now need
 ALL requests (keyless -> 302 missing_key). Stores to the warehouse (Parquet/DuckDB).
 
 Parses by HEADER NAME (array-of-arrays, header row first) so it survives Census's column reshuffles.
-build() runs the four datasets → long/tall rows; query() reads them back by dataset/geo/naics/metric.
+build() runs CBP/Nonemployer/PEP/ACS(featured)/Economic-Census → long/tall census_reference rows;
+query() reads them back by dataset/geo/naics/metric. build_acs() separately sweeps ALL ~1,193 ACS5
+detailed tables into census_acs; build_flows() lands county-to-county migration into census_migration.
 Suppression (cells Census withholds for confidentiality) is a flagged state, never treated as 0.
 """
-import os, json, time, urllib.request, urllib.parse
+import os, re, sys, json, time, urllib.request, urllib.parse
 
 NAICS = ["4248", "44531", "722"]
 # Vintages validated LIVE on Fly (Census now requires a key for all requests):
@@ -20,6 +22,28 @@ NAICS = ["4248", "44531", "722"]
 CBP_YEAR, NONEMP_YEAR, PEP_YEAR = 2022, 2019, 2019
 REF_HEADER = ["dataset", "vintage_year", "naics_code", "geo_level", "geo_fips",
               "metric_name", "metric_value", "suppressed", "source_pulled_at"]
+
+# ── Full ACS5 sweep (market-size breadth) / migration-momentum layers (keyless-verified 2026-07) ──────────
+# ACS5-full adds the complete detailed-table breadth the narrower `acs` pull below doesn't reach; Flows
+# adds migration momentum. Economic Census (the SALES $ axis) is already covered by pull_ecn above
+# (dataset 'ecn') — not duplicated here. ACS5-full + Flows are big/wide enough to want their OWN tables
+# (census_acs / census_migration), separate from census_reference's long/tall shape. Both need
+# CENSUS_API_KEY — validate LIVE on Fly like the rest.
+ACS5_YEAR, FLOWS_YEAR = 2023, 2022
+FLOW_METRICS = ["MOVEDIN", "MOVEDOUT", "MOVEDNET", "FROMABROAD"]
+# Featured ACS estimates promoted for the common bev-alc questions (landed at COUNTY grain alongside the
+# full state-level all-tables sweep). code -> friendly metric name.
+ACS_FEATURED = {
+    "B01003_001E": "total_population", "B19013_001E": "median_household_income",
+    "B19301_001E": "per_capita_income", "B19025_001E": "aggregate_household_income",
+    "B11001_001E": "total_households", "B25001_001E": "housing_units",
+    "B03002_001E": "race_ethnicity_universe", "B03002_012E": "hispanic_or_latino",
+}
+ACS_HEADER = ["dataset", "vintage_year", "table_id", "variable", "label",
+              "geo_level", "geo_fips", "estimate", "suppressed", "source_pulled_at"]
+FLOW_HEADER = ["vintage_year", "geo_fips", "geo_name", "other_fips", "other_name",
+               "metric_name", "metric_value", "source_pulled_at"]
+_EST_RE = re.compile(r"_\d+E$")           # ACS estimate columns (…_001E), not margins/annotations
 
 
 def _key():
@@ -194,6 +218,133 @@ def pull_acs(year=ACS_YEAR):
     return out
 
 
+# ── ACS 5-year FULL SWEEP (all ~1,193 detailed tables @ state + featured @ county) + migration flows ──────
+# Genuinely new breadth vs pull_acs above (which lands ~21 featured variables into census_reference):
+# pull_acs5 sweeps every B/C detailed table and lands into its own census_acs table; pull_flows lands
+# county-to-county migration momentum into census_migration. (Economic Census / market-SIZE $ is already
+# covered by pull_ecn above — dataset 'ecn' — so it is NOT re-added here.)
+def _get_json(url):
+    """Fetch Census metadata JSON (variables/groups) — keyless, parsed by header name so it survives
+    Census's periodic reshuffles."""
+    req = urllib.request.Request(url, headers={"User-Agent": "HoodieUnifyd/1.0 (+census reference)"})
+    with urllib.request.urlopen(req, timeout=180) as r:
+        return json.loads(r.read().decode("utf-8", "replace"))
+
+
+_ACS_LABEL_CACHE = {}
+def _acs_labels(year):
+    """{estimate_code: label} across ACS5 detailed tables — fetched once per vintage."""
+    if year in _ACS_LABEL_CACHE:
+        return _ACS_LABEL_CACHE[year]
+    m = {}
+    try:
+        v = _get_json("https://api.census.gov/data/%d/acs/acs5/variables.json" % year).get("variables", {})
+        for code, meta in v.items():
+            if _EST_RE.search(code):
+                m[code] = (meta.get("label", "") or "").replace("!!", " ").strip()
+    except Exception:
+        pass
+    _ACS_LABEL_CACHE[year] = m
+    return m
+
+
+def _acs_groups(year):
+    """All ACS5 detailed-table ids (B/C tables) — the 'all ACS' universe (~1,193)."""
+    try:
+        g = _get_json("https://api.census.gov/data/%d/acs/acs5/groups.json" % year).get("groups", [])
+        return sorted(x["name"] for x in g if x.get("name", "")[:1] in ("B", "C"))
+    except Exception:
+        return []
+
+
+def _acs_21plus_code(year):
+    """Resolve the DP05 '21 years and over' estimate code by LABEL — profile line numbers shift by vintage,
+    so we never hardcode DP05_00xxE."""
+    try:
+        v = _get_json("https://api.census.gov/data/%d/acs/acs5/profile/groups/DP05.json" % year).get("variables", {})
+        for code, meta in sorted(v.items()):
+            if _EST_RE.search(code) and (meta.get("label", "") or "").rstrip("!").endswith("21 years and over"):
+                return code
+    except Exception:
+        pass
+    return None
+
+
+def pull_acs5(year=ACS5_YEAR, log=print):
+    """ALL ~1,193 ACS5 detailed tables at STATE grain (full breadth, ~1.2M cells — bounded so the single
+    in-memory write can't OOM) + the FEATURED bev-alc estimates at COUNTY grain (the granular signals).
+    One group() call per table. Long/tall into census_acs with code + human label. (Full all-tables×county
+    and tract/block-group is a deliberate PARTITIONED/bulk follow-up — 78M+ cells, not a one-shot write.)"""
+    labels, ts, out = _acs_labels(year), int(time.time()), []
+    groups = _acs_groups(year)
+    for i, g in enumerate(groups):                                   # all detailed tables @ state
+        try:
+            data = _get("%d/acs/acs5" % year, {"get": "group(%s)" % g, "for": "state:*"})
+        except Exception:
+            continue
+        hdr = data[0]; est = [c for c in hdr if _EST_RE.search(c)]
+        for row in data[1:]:
+            r = dict(zip(hdr, row)); fips = r.get("state", "")
+            for c in est:
+                val = _num(r.get(c))
+                out.append(["acs5", year, g, c, labels.get(c, ""), "state", fips, val, val is None, ts])
+        if i % 250 == 0:
+            log("census acs5 state: %d/%d tables (%d rows)" % (i, len(groups), len(out)))
+        time.sleep(0.03)                                             # politeness
+    feat = list(ACS_FEATURED)                                       # featured @ county (chunked <=45/call)
+    for j in range(0, len(feat), 45):
+        chunk = feat[j:j + 45]
+        try:
+            data = _get("%d/acs/acs5" % year, {"get": ",".join(chunk), "for": "county:*", "in": "state:*"})
+        except Exception:
+            continue
+        hdr = data[0]
+        for row in data[1:]:
+            r = dict(zip(hdr, row)); fips = r.get("state", "") + r.get("county", "")
+            for c in chunk:
+                val = _num(r.get(c))
+                out.append(["acs5", year, c.split("_")[0], c, ACS_FEATURED[c], "county", fips, val, val is None, ts])
+    tp = _acs_21plus_code(year)                                     # 21+ (legal drinking age) @ county
+    if tp:
+        try:
+            data = _get("%d/acs/acs5/profile" % year, {"get": tp, "for": "county:*", "in": "state:*"})
+            hdr = data[0]
+            for row in data[1:]:
+                r = dict(zip(hdr, row)); fips = r.get("state", "") + r.get("county", "")
+                val = _num(r.get(tp))
+                out.append(["acs5", year, "DP05", tp, "population_21_plus", "county", fips, val, val is None, ts])
+        except Exception:
+            log("census acs5: 21+ profile pull failed (kept everything else)")
+    log("census acs5: %d rows (%d tables @ state + featured @ county)" % (len(out), len(groups)))
+    return out
+
+
+def pull_flows(year=FLOWS_YEAR, log=print):
+    """ACS county-to-county Migration Flows — MOVEDIN/MOVEDOUT/MOVEDNET (+ FROMABROAD) per county-pair. The
+    market-MOMENTUM signal (which trade areas are growing vs shrinking) that a static snapshot misses."""
+    out, ts = [], int(time.time())
+    get = ",".join(FLOW_METRICS + ["GEOID1", "GEOID2", "FULL1_NAME", "FULL2_NAME"])
+    for st in _FLOW_STATES:
+        try:
+            rows = _rows(_get("%d/acs/flows" % year, {"get": get, "for": "county:*", "in": "state:%s" % st}))
+        except Exception:
+            continue
+        for r in rows:
+            f1, f2 = r.get("GEOID1", ""), r.get("GEOID2", "")
+            for m in FLOW_METRICS:
+                val = _num(r.get(m))
+                if val is None:
+                    continue
+                out.append([year, f1, r.get("FULL1_NAME", ""), f2, r.get("FULL2_NAME", ""), m.lower(), val, ts])
+    log("census flows: %d county-pair rows" % len(out))
+    return out
+
+
+_FLOW_STATES = ["%02d" % s for s in (1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45, 46, 47,
+                48, 49, 50, 51, 53, 54, 55, 56)]
+
+
 def _cell_key(r):
     """The identity a re-pull REPLACES: one (dataset, vintage, naics, geo, metric) cell."""
     return (r["dataset"], r["vintage_year"], r["naics_code"], r["geo_level"], r["geo_fips"], r["metric_name"])
@@ -223,6 +374,29 @@ def build(log=print):
     return {"rows": res["rows"], "uri": res["uri"]}
 
 
+def build_acs(log=print):
+    """ALL ACS5 detailed tables @ state + featured bev-alc estimates @ county → census_acs (full snapshot,
+    write_parquet — the empty-write guard refuses to clobber a good table with a keyless 0-row pull)."""
+    import warehouse
+    rows = pull_acs5(log=log)
+    if not rows:
+        raise RuntimeError("census acs5: 0 rows (missing CENSUS_API_KEY or API down) — refusing empty write")
+    res = warehouse.write_parquet("census_acs", [dict(zip(ACS_HEADER, r)) for r in rows], fields=ACS_HEADER)
+    log("census_acs: %d rows -> %s" % (res["rows"], res["uri"]))
+    return {"rows": res["rows"], "uri": res["uri"]}
+
+
+def build_flows(log=print):
+    """ACS county-to-county migration flows → census_migration (full snapshot)."""
+    import warehouse
+    rows = pull_flows(log=log)
+    if not rows:
+        raise RuntimeError("census flows: 0 rows (missing CENSUS_API_KEY or API down) — refusing empty write")
+    res = warehouse.write_parquet("census_migration", [dict(zip(FLOW_HEADER, r)) for r in rows], fields=FLOW_HEADER)
+    log("census_migration: %d rows -> %s" % (res["rows"], res["uri"]))
+    return {"rows": res["rows"], "uri": res["uri"]}
+
+
 def query(dataset=None, geo_level=None, geo_fips=None, naics=None, metric=None, vintage=None, limit=5000):
     """Read census_reference by any combination (the territory.html join helper). Non-suppressed only
     unless you ask for a specific cell. All matching handled in DuckDB against the Parquet."""
@@ -239,8 +413,17 @@ def query(dataset=None, geo_level=None, geo_fips=None, naics=None, metric=None, 
 
 
 if __name__ == "__main__":
-    # requires CENSUS_API_KEY in env; prints a small CBP sample
+    # `--plan` dry-runs the metadata (keyless): ACS5-full table universe + resolved 21+ code + flows scope.
+    # Without --plan, needs CENSUS_API_KEY and prints a small CBP sample.
+    if "--plan" in sys.argv:
+        y = ACS5_YEAR
+        groups = _acs_groups(y)
+        print("ACS5 %d: %d detailed tables (all landed @ state) + %d featured @ county" % (y, len(groups), len(ACS_FEATURED)))
+        print("  21+ code resolved by label:", _acs_21plus_code(y))
+        print("  est. rows ~= %d tables x 52 states x ~20 vars + featured x 3220 counties" % len(groups))
+        print("Flows %d: %d states x county-pairs x %s -> census_migration" % (FLOWS_YEAR, len(_FLOW_STATES), FLOW_METRICS))
+        raise SystemExit
     os.environ.setdefault("CENSUS_API_KEY", "")
     if not _key():
-        print("set CENSUS_API_KEY to test"); raise SystemExit
+        print("set CENSUS_API_KEY to test (or run with --plan for a keyless dry-run)"); raise SystemExit
     print("cbp sample:", pull_cbp()[:3])
