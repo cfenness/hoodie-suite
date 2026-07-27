@@ -168,10 +168,30 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   Surface: `apps/mdm-label-reader.html` (the **Label Reader** section in `apps/mdm.html`).
 - `unifyd/menu_ingest.py` — parse a DISTRIBUTOR WHOLESALE MENU file (xlsx/csv; cannabis
   Curaleaf NY is the reference shape) into normalized order lines. stdlib-only (xlsx = zipped
-  XML), heuristic header-row detection + column synonyms, brand-section context, Excel serial
-  dates, THC normalization. Lands `distributor_menu_items`; behind `apps/ordering.html`
+  XML), heuristic header-row detection + column synonyms, Excel serial dates, THC normalization.
+  **Inline sub-headers are parsed, not dropped:** a section/sub-header row (no price/batch/units/
+  thc/msrp) is classified brand-vs-product-family, its size/form/category are read off the header
+  and cascaded to the child rows, and a terse child (`Indica : Wedding Cake`) is composed into the
+  full product using its family header — which is often the ONLY place the product/size lives.
+  **`parse_smart()` adds a Claude fallback** that fires ONLY when the deterministic pass fails or is
+  low-confidence (few lines / most lines unpriced): it hands the raw grid to Claude (forced tool call,
+  needs `ANTHROPIC_API_KEY`) to recover the same normalized lines — so an alien layout still lands, with
+  no LLM cost on menus that already parse cleanly (the `/api/menus/upload` endpoint uses it).
+  Lands `distributor_menu_items`; behind `apps/ordering.html`
   (Wholesale Ordering: all menus → one catalog → one order → per-distributor PO sheets via
-  `/api/menus/*` + `/api/orders*`).
+  `/api/menus/*` + `/api/orders*`). **Auto-send:** a distributor contact book
+  (`/api/distributors`, `distributor_contacts.json`) + `POST /api/orders/<id>/send` emails each
+  distributor its PO-sheet CSV via SMTP (`SMTP_HOST/PORT/USER/PASS/FROM`, STARTTLS default on);
+  unconfigured → returns `email-not-configured` and the UI falls back to download + copy-email.
+  **Order status:** `POST /api/orders/<id>/status` advances a forward-only lifecycle
+  (submitted → sent → confirmed → delivered, or cancelled) with a timestamped `status_history`;
+  the ordering page shows a status pill per order + advance/cancel controls in the order modal.
+- `unifyd/menu_mailbox.py` — **auto-ingest emailed menus (IMAP)**: `POST /api/menus/poll` pulls the
+  spreadsheet attachments off unseen messages, runs each through `menu_ingest.parse_smart`, lands
+  them, and marks the mail seen — so the catalog stays current with no manual upload. Env-gated
+  (`MENU_IMAP_HOST/PORT/USER/PASS/FOLDER`, optional `MENU_IMAP_SENDERS` allowlist); unconfigured →
+  `mailbox-not-configured` and the ordering page hides its "Check email" button (`/api/menus/mailbox`
+  reports the state). Runnable on a cadence via `schedule_pull` / cron.
 - `unifyd/hoodie_mdm.html` — the MDM control plane the agent serves. Reads `/api/*` when
   the agent is up, falls back to an embedded `const DATASETS` preview otherwise.
 - **Runtime is git-ignored:** `agent_state/`, `cola_out/`, `out/`, `__pycache__/`.
@@ -207,8 +227,13 @@ the generator (mirroring `build_product_master.py`/`normalize.py`/`dim_outlet.py
 star. Three schemas: `RAW` (one landing table per source Parquet, **schema-agnostic** via Snowflake
 `INFER_SCHEMA` + `MATCH_BY_COLUMN_NAME` — scraper drift just flows through, same as the DuckDB
 `read_parquet` path), `MASTER` (the **typed** star `dim_brand/product/item/sku` + `dim_outlet` +
-`src_<grain>` + signal tables — the seed), `MART` (views). It stages SQL only — nothing connects to
-Snowflake or touches prod. `python snowflake/build_snowflake_sql.py [--live]` regenerates; `--live`
+`src_<grain>` + signal tables — the seed), `MART` (views). The generator stages SQL only;
+**the load itself is the registry BUILD `snowflake-load`** (`unifyd/snowflake_load.py` →
+`snowflake/run_load.py`, `snowflake-connector-python`): the hourly dispatcher runs it daily on its
+own ephemeral machine, change-aware (only tables whose Parquet moved reload; ledger at
+`_snowflake/load_state.json`), verify-landing one row per run in `snowflake_load_runs`. It reports
+`no-creds` until the `SNOWFLAKE_*` Fly secrets are set (go-live runbook in `snowflake/README.md`).
+`python snowflake/build_snowflake_sql.py [--live]` regenerates; `--live`
 reads the warehouse to include every present table and resolve bucketed (v2) tables to their manifest's
 active parts. `snowflake/` is engine/infra — never web-served (not in `_SUITE_OK_TOP`), like `unifyd/`.
 See `snowflake/README.md`.
@@ -220,7 +245,8 @@ Two standing tools exist so failures are loud, not quiet. Keep them passing and 
 - **Data health — `unifyd/health_digest.py`**: the daily deterministic verdict on every
   registry-enabled source (failed/degraded runs, staleness vs cadence, row-count collapse,
   honest no-creds skips). Every finding cites evidence and carries `first_seen` so new breaks
-  stand out. Runs via `unifyd/run_health_digest.sh` (launchd `com.hoodie.health`, 07:30 daily);
+  stand out. Runs **on Fly** — the hourly dispatcher (`dispatch_ephemeral._refresh_health`) recomputes it
+  each tick; there is **no Mac launchd** (see the "nothing runs locally" rule below). It
   writes `unifyd/agent_state/health/latest.{json,txt}` + an optional Claude triage in
   `latest_triage.md` (judgment layer only — it NEVER changes the verdict). Exit 2 = critical.
   Mondays (or `--weekly` / `HEALTH_WEEKLY=1`) add the **deep audit** (`unifyd/deep_audit.py`):
@@ -231,10 +257,26 @@ Two standing tools exist so failures are loud, not quiet. Keep them passing and 
   serves, no dangling ids/groups, every local src/href/iframe reference resolves, orphan app
   files are surfaced. The `/smoke` skill layers a browser runtime pass on top (console errors,
   blank renders, composite tabs). Run before "ship it" and after any shell/spine change.
-- **launchd gotcha (load-bearing)**: a LaunchAgent whose script argument lives under `~/Desktop`
-  fails at spawn with `Operation not permitted` (exit 126) — the job silently never runs. Use the
-  `bash -c 'exec bash "<script>"'` form (see `unifyd/launchd/*.plist`). This killed the entire
-  scheduled-scrape pipeline once; the health digest is what catches it if it regresses.
+- **NOTHING RUNS LOCALLY (hard rule)**: no scrape, pull, geo pass, backfill, health digest, or scheduled
+  tick runs on anyone's Mac — **all execution is on Fly**. Scheduling is the Fly hourly dispatcher
+  (`unifyd/dispatch_ephemeral.py`, a Fly scheduled machine): it reads the shared ledger, spawns an ephemeral
+  Fly machine per due source (headless on 4GB; **headful** — the `klass="mac"` sources, a legacy name for
+  "real browser": `kroger`/`ubereats`/`postmates`/`sevennow`/`bottlecapps`/`cityhive` — on 8GB with Xvfb +
+  system Chrome + patchright, see `run_ephemeral.sh`), and folds in the health digest. The old Mac launchd
+  agents (`com.hoodie.due`, `com.hoodie.health`) and their scripts (`run_due.sh`, `run_health_digest.sh`) are
+  **retired/removed** — the Fly dispatcher already runs the exact same set. Never tight-loop `flyctl`
+  (it rate-blocks the home IP).
+  - **Scheduling is NOT on GitHub Actions.** `cloud-sources.yml` / `scrape-runner.yml` /
+    `warm-sources.yml` are `workflow_dispatch`-only escape hatches — their crons were removed
+    (2026-07-27). The repo has no Actions minutes, so every scheduled run was a standing failure,
+    and the Fly dispatcher already covers the same registry. Don't re-add a `schedule:` to them.
+  - **RE-PIN THE DISPATCHER AFTER A DEPLOY THAT TOUCHES `source_registry.py`** —
+    `tools/repin_dispatcher.sh`. The dispatcher machine (metadata `role=dispatcher`) deliberately has
+    no process group, which also means `flyctl deploy` never updates it: it keeps running the image it
+    was pinned to. Because due-ness is computed from *its* copy of the registry, a newly added source
+    stays invisible to the scheduler until it's re-pinned. The dispatcher now logs a loud
+    `WARNING — dispatcher image is STALE` when this has happened. (Failure mode seen live: the machine
+    sat on `init.cmd=["bash"]`, so every hourly tick started, exited 0 in ~1s, and dispatched nothing.)
 
 ## Deploy
 

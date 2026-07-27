@@ -25,7 +25,8 @@ import ttb_cola_scraper as cola   # the scraper you generated
 import abc_fws_scraper as abc      # ABC FWS directional inventory tracker (BigCommerce)
 import specs_scraper as specs      # Spec's directional tracker (Next.js, via Bright Data)
 import binnys_scraper as binnys    # Binny's directional tracker (Algolia feed, no Bright Data)
-import shopify_scraper as shopify  # DTC brands on Shopify (hemp + bev-alc) via public /products.json
+# shopify_scraper retired → Shopify runs INSIDE the census sweep (off_premise.national_sweep("shopify")),
+# conn 'shopify' routed through the registry. One Shopify code path, not a parallel app-side one.
 # Instacart: the FREE Playwright connector (instacart.Instacart) is the active source — no Bright Data,
 # no proxy (proven landing per instacart-free-verify CI). Imported lazily in instacart_pull so a slim
 # image without the browser lib doesn't break server import. The old BD dataset scraper is archived.
@@ -85,31 +86,35 @@ class _JobLogHandler(logging.Handler):
 _jh = _JobLogHandler(); _jh.setLevel(logging.INFO)
 app.logger.addHandler(_jh); app.logger.setLevel(logging.INFO)   # INFO so progress lines flow
 
-VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
+VALID_CONNS = {"ttb-cola", "abc-fws", "specs", "binnys", "shopify", "instacart", "orlando-accounts", "census-acs", "tx-tabc", "il-chicago", "ct-dcp", "total-wine", "vtinfo", "ab-inbev",
                "kroger", "walmart", "walmart-api", "target", "doordash", "google",
-               "ubereats", "postmates", "naop", "meijer", "trader-joes"} | set(socrata_outlets.VALID)
+               "ubereats", "postmates", "naop", "meijer", "trader-joes",
+               # bounded, manual-trigger-only registry entries (source_registry.py, all enabled=False) —
+               # reachable via /api/run for the one-off runs they're built for, never the automatic scan.
+               "ubereats-full", "postmates-full", "doordash-full",
+               "instacart-bevalc"} | set(socrata_outlets.VALID)
 # Hosts served by an OWNED, dedicated scraper (search-form / bespoke) — not readable by the
 # generalized Source Analyzer. If one is analyzed, we point the user to Pulls instead.
 OWNED_HOSTS = {"ttbonline.gov": "ttb-cola", "abcfws.com": "abc-fws", "specsonline.com": "specs"}
 
 def _dispatch_pull(conn, body):
-    # SINGLE SOURCE OF TRUTH: sources the registry owns run THROUGH the registry entrypoint (run_one), never a
-    # hand-maintained *_pull copy — so a fix in source_registry can never be silently bypassed by the app path
-    # (the drift that made "we fixed it 100 times" literally true — see _REGISTRY_CONN / dispatch_guard_test).
-    if conn in _REGISTRY_CONN:
+    # SINGLE SOURCE OF TRUTH: **any** source that exists in source_registry runs THROUGH the registry entrypoint
+    # (run_one) — never a hand-maintained *_pull copy. A fix in source_registry therefore applies to the app path
+    # automatically and can NEVER be silently bypassed by a stale bespoke copy. This universal rule (not just the
+    # _REGISTRY_CONN allowlist) is the real cure for "we fixed it N times and it reverted": the app can no longer
+    # run an old copy of a registry source. Enforced by dispatch_guard_test.
+    import source_registry as _reg
+    if conn in _REGISTRY_CONN or _reg.by_id(conn):
         return _run_via_registry(conn, body)
-    if conn in _CONN_PULL:                     # legacy hand-wired pulls not yet in the registry (target/doordash/google)
+    # NON-registry connectors only (state Socrata feeds, places, census-acs sub-feed, legacy doordash/google):
+    if conn in _CONN_PULL:
         return _CONN_PULL[conn](body)
-    return (cola_pull(body) if conn == "ttb-cola"
-            else shopify_pull(body) if conn == "shopify-dtc"
-            else instacart_pull(body) if conn == "instacart"
+    return (instacart_pull(body) if conn == "instacart"
             else places_pull(body) if conn == "orlando-accounts"
             else census_pull(body) if conn == "census-acs"
             else tx_pull(body) if conn == "tx-tabc"
             else il_pull(body) if conn == "il-chicago"
             else ct_pull(body) if conn == "ct-dcp"
-            else vtinfo_pull(body) if conn == "vtinfo"
-            else ab_inbev_pull(body) if conn == "ab-inbev"
             else socrata_pull(conn, body) if conn in socrata_outlets.VALID
             else fl_pull(conn) if conn in FL_CONN else None)
 
@@ -209,7 +214,8 @@ def _std_run(conn, started, total=0, extracts=None, status="success", warnings=N
 # ubereats/postmates/naop were previously not runnable through the app at all. Enforced by dispatch_guard_test.
 _REGISTRY_CONN = {"abc-fws": "abc-fws", "specs": "specs", "binnys": "binnys", "walmart": "walmart",
                   "kroger": "kroger", "total-wine": "total-wine", "ubereats": "ubereats",
-                  "postmates": "postmates", "naop": "naop", "meijer": "meijer", "trader-joes": "trader-joes"}
+                  "postmates": "postmates", "naop": "naop", "meijer": "meijer", "trader-joes": "trader-joes",
+                  "shopify": "shopify", "vtinfo": "vtinfo", "ab-inbev": "ab-inbev"}
 
 
 def _run_via_registry(conn, body):
@@ -219,8 +225,8 @@ def _run_via_registry(conn, body):
     import source_registry as _reg
     import run_sources as _rs
     body = body or {}
-    rid = _REGISTRY_CONN[conn]
-    src = next((s for s in _reg.SOURCES if s["id"] == rid), None)
+    rid = _REGISTRY_CONN.get(conn, conn)       # conn IS the registry id for the universal path; allowlist is legacy
+    src = _reg.by_id(rid) or next((s for s in _reg.SOURCES if s["id"] == rid), None)
     if not src:
         return _std_run(conn, int(time.time() * 1000), status="failed",
                         warnings=["no source_registry entry '%s'" % rid], trigger=body.get("trigger", "manual"))
@@ -232,57 +238,6 @@ def _run_via_registry(conn, body):
     return _std_run(conn, started, total=rows_after, status=app_status, trigger=body.get("trigger", "manual"),
                     warnings=([rec["error"]] if rec.get("error") else []),
                     extracts=[{"id": t, "rows": rows_after, "delta": delta, "status": app_status} for t in tables])
-
-def kroger_pull(body):
-    """Kroger Developer API (OAuth2) → kroger_products + kroger_runs. Needs KROGER_CLIENT_ID/SECRET (env or
-    body). First-class connector now; the old subprocess path (/api/connector/run) still works too."""
-    started = int(time.time() * 1000); body = body or {}
-    cid = body.get("client_id") or _CONN_CREDS.get("kroger", {}).get("id") or os.environ.get("KROGER_CLIENT_ID", "")
-    sec = body.get("client_secret") or _CONN_CREDS.get("kroger", {}).get("secret") or os.environ.get("KROGER_CLIENT_SECRET", "")
-    if not (cid and sec):
-        return _std_run("kroger", started, status="degraded", trigger=body.get("trigger", "manual"),
-                        warnings=["Kroger Client ID + Secret required (set KROGER_CLIENT_ID/SECRET or pass client_id/client_secret)"])
-    _CONN_CREDS["kroger"] = {"id": cid, "secret": sec}
-    os.environ["KROGER_CLIENT_ID"] = cid; os.environ["KROGER_CLIENT_SECRET"] = sec
-    import kroger_api
-    zips = [z.strip() for z in (body.get("zips") or ",".join(kroger_api.DEFAULT_ZIPS)).split(",") if z.strip()]
-    terms = [t.strip() for t in (body.get("terms") or ",".join(kroger_api.DEFAULT_TERMS)).split(",") if t.strip()]
-    kroger_api.run(zips, terms)
-    n = _wh_count("kroger_products")
-    return _std_run("kroger", started, total=n, trigger=body.get("trigger", "manual"),
-                    extracts=[{"id": "kroger_products", "rows": n, "delta": 0, "status": "success"}])
-
-def walmart_pull(body):
-    """Walmart via the DIRECT residential-proxy scraper (walmart_direct: IPRoyal residential exit + curl_cffi
-    Chrome-JA3 impersonation, paced rotation) → walmart_products + retail observations. $0 — NO Bright Data,
-    NO official API. This matches the source registry (walmart -> walmart_direct); the old Bright Data path
-    (walmart_scraper) is kept only for the standalone walmart_schedule.sh, not the app run path."""
-    started = int(time.time() * 1000); body = body or {}
-    import walmart_direct as wd
-    before = _wh_count("walmart_products")
-    terms = [q.strip() for q in (body.get("queries") or "").split(",") if q.strip()] or None
-    n = wd.pull(terms=terms, max_pages=int(body.get("max_pages", 4)),
-                detail_pages=bool(body.get("detail", True)), detail_cap=int(body.get("detail_cap", 600)),
-                log=lambda m: app.logger.info("WALMART %s", m))
-    after = _wh_count("walmart_products")
-    if not n:
-        return _std_run("walmart", started, status="degraded", trigger=body.get("trigger", "manual"),
-                        warnings=["0 products — PerimeterX may be blocking the residential exit; "
-                                  "check RESI_PROXY_* creds and curl_cffi availability"])
-    return _std_run("walmart", started, total=after, trigger=body.get("trigger", "manual"),
-                    extracts=[{"id": "walmart_products", "rows": after, "delta": after - before, "status": "success"}])
-
-def target_pull(body):
-    """Target RedSky (Bright Data) → target_products + target_stores. body.scope=national|local. HEAVY."""
-    started = int(time.time() * 1000); body = body or {}
-    import target_scraper as tg
-    if (body.get("scope") or "national") == "national":
-        tg.run_national(log=lambda m: app.logger.info("TARGET %s", m))
-    else:
-        tg.run(log=lambda m: app.logger.info("TARGET %s", m))
-    n = _wh_count("target_products")
-    return _std_run("target", started, total=n, trigger=body.get("trigger", "manual"),
-                    extracts=[{"id": "target_products", "rows": n, "delta": 0, "status": "success"}])
 
 def doordash_pull(body):
     """DoorDash geo merchant sweep → <market>_merchants (market intelligence). HEAVY (BD Browser). Toggleable."""
@@ -319,10 +274,10 @@ def walmart_api_pull(body):
     return _std_run("walmart-api", started, total=n, trigger=body.get("trigger", "manual"),
                     extracts=[{"id": "walmart_products", "rows": n, "delta": 0, "status": "success"}])
 
-# kroger + walmart moved to the registry path (_REGISTRY_CONN); their old *_pull functions are now dead code
-# (kept until a follow-up removes them) and MUST NOT be re-wired here — dispatch_guard_test enforces that.
-_CONN_PULL = {"walmart-api": walmart_api_pull,
-              "target": target_pull, "doordash": doordash_pull, "google": google_pull}
+# _CONN_PULL holds ONLY non-registry conns. Registry sources (kroger/walmart/target/…) run via the registry
+# path — their old *_pull copies were DELETED, not just unwired. dispatch_guard_test blocks re-adding one.
+_CONN_PULL = {"walmart-api": walmart_api_pull,   # NON-registry conns only (target now routes via the registry)
+              "doordash": doordash_pull, "google": google_pull}
 
 # The connector registry — ONE source of truth the Pulls console reads (/api/connectors): what sources exist,
 # how they run, their warehouse data + <x>_runs table (for last-run), and whether they're enabled (on/off).
@@ -331,7 +286,7 @@ CONNECTORS_META = [
     {"id": "abc-fws", "label": "ABC Fine Wine & Spirits (FL)", "group": "Retail chain", "runs": "abc_runs", "data": "abc_products"},
     {"id": "specs", "label": "Spec's (TX)", "group": "Retail chain", "runs": "specs_runs", "data": "specs_products"},
     {"id": "binnys", "label": "Binny's (IL)", "group": "Retail chain", "runs": "binnys_runs", "data": "binnys_products"},
-    {"id": "shopify-dtc", "label": "Shopify DTC", "group": "Off-premise", "runs": "shopify_runs", "data": "shopify_products"},
+    {"id": "shopify", "label": "Shopify (census sweep)", "group": "Off-premise", "runs": "shopify_runs", "data": "national_shopify_products"},
     {"id": "instacart", "label": "Instacart", "group": "Aggregator", "runs": None, "data": None},
     {"id": "kroger", "label": "Kroger", "group": "Grocery chain", "runs": "kroger_runs", "data": "kroger_products", "needs_creds": True},
     {"id": "walmart", "label": "Walmart (BD sample)", "group": "Grocery chain", "runs": "walmart_runs", "data": "walmart_products", "heavy": True},
@@ -740,72 +695,8 @@ def fl_pull(conn_id):
             "status": status, "trigger": "manual", "total": sum(e["rows"] for e in exs),
             "degraded": status == "partial", "warnings": warns, "extracts": exs}
 
-# ---------------- COLA pull (embeds the scraper) ----------------
-def cola_pull(params):
-    today = datetime.date.today()
-    d_from = params.get("from") or (today - datetime.timedelta(days=params.get("days", 7))).strftime("%m/%d/%Y")
-    d_to   = params.get("to") or today.strftime("%m/%d/%Y")
-    args = cola.build_args([
-        "--from", d_from, "--to", d_to,
-        "--chunk-days", str(params.get("chunk_days", 1)),
-        "--out", os.path.join(STATE_DIR, "cola"),
-        "--resume",
-    ] + (["--detail"] if params.get("detail") else []) + (["--ocr"] if params.get("ocr") else []))
-    started = int(time.time() * 1000)
-    ds, runs, _ = cola.scrape(args, log=lambda m: app.logger.info("COLA %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-# ---------------- ABC FWS pull (directional inventory, embeds the scraper) ----------------
-def abc_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = abc.pull(
-        sample=params.get("sample", 40), crawl_all=bool(params.get("all")),
-        limit=params.get("limit"), out=os.path.join(STATE_DIR, "abc"),
-        state_dir=os.path.join(STATE_DIR, "abc"),
-        log=lambda m: app.logger.info("ABC %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-def specs_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = specs.pull(
-        sample=params.get("sample", 40), crawl_all=params.get("all", True),   # FULL catalog by default (was a 40-sample)
-        limit=params.get("limit"), out=os.path.join(STATE_DIR, "specs"),
-        state_dir=os.path.join(STATE_DIR, "specs"),
-        log=lambda m: app.logger.info("SPECS %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-def binnys_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = binnys.pull(
-        sample=params.get("sample", 300), crawl_all=params.get("all", True),   # FULL catalog by default (was a 300-sample)
-        limit=params.get("limit"), out=os.path.join(STATE_DIR, "binnys"),
-        state_dir=os.path.join(STATE_DIR, "binnys"),
-        log=lambda m: app.logger.info("BINNYS %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-def shopify_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = shopify.pull(
-        sample=params.get("sample"), crawl_all=bool(params.get("all")), limit=params.get("limit"),
-        out=os.path.join(STATE_DIR, "shopify"), state_dir=os.path.join(STATE_DIR, "shopify"),
-        domains=params.get("domains"), log=lambda m: app.logger.info("SHOPIFY %s", m))
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
+# NOTE: cola_pull / abc_pull / specs_pull / binnys_pull were removed — ttb-cola/abc-fws/specs/binnys all run
+# through the registry (run_one) now; those old DATASETS-preview copies were the drift that caused reversions.
 def instacart_pull(params):
     """FREE Instacart pull — self-hosted Playwright browser drives Instacart's own SearchResultsPlacements
     GraphQL (no Bright Data, no proxy). Lands per-store product+price into instacart_products +
@@ -848,57 +739,16 @@ def instacart_pull(params):
             "extracts": [{"id": "instacart_products", "rows": len(rows), "delta": len(rows),
                           "status": status}], "trigger": params.get("trigger", "manual")}
 
-def total_wine_pull(params):
-    started = int(time.time() * 1000)
-    ds, runs, _ = total_wine.pull(
-        cap=int(params.get("cap", 400)), delay=float(params.get("delay", 1.0)),
-        out=os.path.join(STATE_DIR, "total_wine"), state_dir=os.path.join(STATE_DIR, "total_wine"),
-        log=lambda m: app.logger.info("TOTAL-WINE %s", m))
-    _to_warehouse(ds)
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-def vtinfo_pull(params):
-    started = int(time.time() * 1000)
-    zips = params.get("zips") or ["33601"]
-    if isinstance(zips, str):
-        zips = [z.strip() for z in zips.split(",") if z.strip()]
-    ds, runs, _ = vtinfo.pull(
-        brand=params.get("brand", "titos"), zips=zips,
-        custID=params.get("custID"), uuid=params.get("uuid"), delay=float(params.get("delay", 1.0)),
-        out=os.path.join(STATE_DIR, "vtinfo"), state_dir=os.path.join(STATE_DIR, "vtinfo"),
-        log=lambda m: app.logger.info("VTINFO %s", m))
-    _to_warehouse(ds)
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
-
-def ab_inbev_pull(params):
-    started = int(time.time() * 1000)
-    zips = params.get("zips") or ["32819"]
-    if isinstance(zips, str):
-        zips = [z.strip() for z in zips.split(",") if z.strip()]
-    brands = params.get("brands")
-    if isinstance(brands, str):
-        brands = [b.strip() for b in brands.split(",") if b.strip()]
-    ds, runs, _ = ab_locator.pull(
-        zips=zips, brands=brands or None, radius=float(params.get("radius", 25.0)),
-        delay=float(params.get("delay", 0.3)),
-        out=os.path.join(STATE_DIR, "ab"), state_dir=os.path.join(STATE_DIR, "ab"),
-        log=lambda m: app.logger.info("AB-INBEV %s", m))
-    _to_warehouse(ds)
-    DATASETS.update(_absorb(ds))
-    run = runs[0]; run["startedAt"] = started; run["finishedAt"] = int(time.time() * 1000)
-    run["durationMs"] = run["finishedAt"] - started; run["trigger"] = params.get("trigger", "manual")
-    return run
+# EVERY registry-owned source runs through the REGISTRY path (server._dispatch_pull -> run_sources.run_one),
+# so the app runs EXACTLY what the scheduler runs. All the old hand-wired *_pull copies (kroger, walmart, target,
+# cola/ttb-cola, abc, specs, binnys, total_wine, vtinfo, ab-inbev) were DELETED — they were the drift that made
+# "we fixed it N times and it reverted" literally true (e.g. ab-inbev ran ab_locator.pull() in the app but
+# ab_fill.run() in the registry). Re-adding a *_pull for a registry-owned source is blocked by dispatch_guard_test.
 
 # ---------------- API ----------------
 @app.get("/api/health")
 def health():
-    return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola", "abc-fws", "specs", "binnys", "shopify-dtc", "instacart", "census-acs"],
+    return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola", "abc-fws", "specs", "binnys", "shopify", "instacart", "census-acs"],
                    datasets=len(DATASETS), runs=len(RUNS),
                    state=("s3:" + STATE_BUCKET) if STATE_BUCKET else "disk",
                    warehouse=("tigris:" + os.environ.get("BUCKET_NAME", "")) if warehouse.remote() else "local")
@@ -944,7 +794,7 @@ def locator():
 _SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlets",
               "ttb-cola": "TTB — COLA Labels", "abc-fws": "ABC FWS — Inventory",
               "specs": "Spec's — Inventory", "binnys": "Binny's — Inventory",
-              "shopify-dtc": "Hemp + DTC — Shopify", "instacart": "Instacart — Store-level",
+              "shopify": "Shopify — census sweep", "instacart": "Instacart — Store-level",
               "census-acs": "US Census — ACS demographics", "tx-tabc": "Texas TABC — licenses",
               "il-chicago": "Chicago — Liquor Licenses", "ct-dcp": "Connecticut — Liquor (DCP)",
               "ny-sla": "New York — SLA licenses", "co-led": "Colorado — Liquor licenses",
@@ -1314,6 +1164,60 @@ def _catalog_map():
     except Exception as e:
         app.logger.warning("warehouse catalog failed: %s", e)
     return out
+
+@app.get("/api/velocity")
+def api_velocity():
+    """The velocity SURFACE payload (MOAT-PLAN V6). MARTS ONLY — signal_voids / signal_movers /
+    mart_velocity_brand_week + the calibration trust stamp — never the raw fact grain. Every section
+    carries confidence + as_of so nothing renders without proof of how trustworthy it is. Honest by
+    construction: movers split into CONFIRMED (both weeks full) vs early-read (partial); if no full
+    week exists yet the confirmed list is simply empty. Empty-safe on any missing table."""
+    import time as _t
+    import warehouse
+
+    def q(name, sql):
+        try:
+            return warehouse.query(name, sql)
+        except Exception:
+            return []
+
+    voids = q("signal_voids",
+              "SELECT brand, oos_stores, stores_seen, est_recoverable_units_wk, pct_stores_out, confidence "
+              "FROM t ORDER BY est_recoverable_units_wk DESC NULLS LAST LIMIT 100")
+    confw = q("signal_movers", "SELECT MAX(week) w FROM t WHERE NOT partial")
+    cw = confw[0]["w"] if confw and confw[0].get("w") else None
+    movers_up, movers_down = [], []
+    if cw:
+        movers_up = q("signal_movers",
+                      "SELECT brand, week, units, prev_units, pct_change, matched_cells, confidence FROM t "
+                      "WHERE NOT partial AND week = (SELECT MAX(week) FROM t WHERE NOT partial) AND pct_change > 0 "
+                      "ORDER BY pct_change DESC LIMIT 25")
+        movers_down = q("signal_movers",
+                        "SELECT brand, week, units, prev_units, pct_change, matched_cells, confidence FROM t "
+                        "WHERE NOT partial AND week = (SELECT MAX(week) FROM t WHERE NOT partial) AND pct_change < 0 "
+                        "ORDER BY pct_change ASC LIMIT 25")
+    n_partial = (q("signal_movers", "SELECT COUNT(*) n FROM t WHERE partial") or [{"n": 0}])[0].get("n", 0)
+    leaders = q("mart_velocity_brand_week",
+                "SELECT brand, week, implied_units, stores, avg_confidence FROM t "
+                "WHERE week = (SELECT MAX(week) FROM t) ORDER BY implied_units DESC NULLS LAST LIMIT 50")
+    cons = q("velocity_calibration",
+             "SELECT source, value FROM t WHERE kind='conservation' AND metric='sales_restock_ratio'")
+    mape = q("velocity_calibration",
+             "SELECT anchor, coverage, value FROM t WHERE kind='external_mape'")
+    return jsonify({
+        "as_of": _t.time(), "live": True,
+        "voids": voids,
+        "movers": {"confirmed_week": str(cw) if cw else None, "up": movers_up, "down": movers_down,
+                   "partial_flagged": n_partial,
+                   "note": None if cw else "No confirmed movers yet — needs two consecutive full "
+                                           "observation weeks. Early-read (partial-week) movers are staged."},
+        "leaders": leaders,
+        "calibration": {"conservation": cons,
+                        "external_mape": mape,
+                        "note": "conservation ratio → 1 is well-calibrated; external MAPE pending an "
+                                "overlapping ground-truth footprint"},
+    })
+
 
 @app.get("/api/catalog")
 def catalog_ep():
@@ -4468,9 +4372,19 @@ def _truthy(v):
     return str(v or "").strip().lower() in ("1", "true", "yes", "on")
 
 
-_SCHED = {"enabled": _truthy(os.environ.get("SCHEDULER")),
+# The cloud RUNNER process (fly.toml [processes].runner — 8gb, off the serving box) self-drives the
+# dispatcher so the whole pipeline runs in-cloud on cadence: NOTHING LOCAL. It runs headless/creds sources
+# AND the derived builds (the single dim_* writer), which used to run only on the Mac --due tick. The serving
+# 'app' process never schedules. SCHEDULER=0/1 still overrides explicitly (e.g. to pause the runner).
+_RUNNER = os.environ.get("FLY_PROCESS_GROUP") == "runner"
+_SCHED_ENV = os.environ.get("SCHEDULER")
+_SCHED = {"enabled": _truthy(_SCHED_ENV) if _SCHED_ENV is not None else _RUNNER,
           "interval_s": max(60, int(os.environ.get("SCHEDULER_INTERVAL", "1800") or 1800)),
           "mac": _truthy(os.environ.get("SCHEDULER_MAC")),
+          # run derived builds in the tick — on the build-writer host only (the runner), so builds move off
+          # the Mac. SCHEDULER_BUILDS=1 forces it on elsewhere; the shared source_runs ledger keeps a build
+          # from double-running across hosts during the Mac→cloud cutover.
+          "builds": _RUNNER or _truthy(os.environ.get("SCHEDULER_BUILDS")),
           "thread_started": False, "running": False, "ticks": 0,
           "last_tick": None, "next_tick": None, "last_due": [], "last_skip": None,
           "runs": [], "error": None}
@@ -4512,6 +4426,19 @@ def _sched_tick():
                 del _SCHED["runs"][80:]
             except Exception as e:
                 _SCHED["error"] = "%s: %s" % (s["id"], str(e)[:160])
+        # Derived master builds (dim_sku chain, master_quality, item_identity, the canon head-to-head) AFTER
+        # the source landings that trigger them — on the build-writer host only, so the cloud runner owns the
+        # builds that used to run on the Mac --due tick. Same run_one + ledger treatment as a source.
+        if _SCHED["builds"]:
+            try:
+                for b in rs.due_builds():
+                    rec = rs.run_one(b)
+                    rs._land_runs([rec], log=lambda *a: None)
+                    _SCHED["runs"].insert(0, {"source": rec.get("source"), "status": rec.get("status"),
+                                              "at": int(time.time())})
+                del _SCHED["runs"][80:]
+            except Exception as e:
+                _SCHED["error"] = "builds: %s" % str(e)[:160]
         _SCHED["ticks"] += 1
         _SCHED["last_tick"] = int(time.time())
     finally:
@@ -4761,6 +4688,26 @@ def _current_user():
     except Exception:
         return None
 
+def _managed_allowlist():
+    """UI-managed access list (durable admin_allowlist.json — same STATE_BUCKET path as admin_flags, so it
+    survives Fly redeploys). auth_gate merges this with the ALLOWED_EMAILS env bootstrap + the admins."""
+    d = load("admin_allowlist.json", {"emails": []})
+    return d.get("emails", []) if isinstance(d, dict) else []
+
+auth_gate.set_allowlist_provider(_managed_allowlist)   # effective allowlist = env bootstrap + this + admins
+
+import re as _re_admin
+_EMAIL_RE = _re_admin.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+def _require_admin():
+    """Guard for /api/admin/*. Returns a 403 response for non-admins, else None to proceed. When the gate
+    is OFF (local dev / pre-secrets) everything is open, matching auth_gate's 'unconfigured -> open'."""
+    if not auth_gate.enabled():
+        return None
+    if not auth_gate.is_admin(_current_user()):
+        return jsonify(ok=False, error="admin access required"), 403
+    return None
+
 def _save_json(name, obj):
     if STATE_BUCKET:
         try:
@@ -4807,10 +4754,14 @@ def usage_summary():
 
 @app.get("/api/admin/flags")
 def admin_flags_get():
+    g = _require_admin()
+    if g: return g
     return jsonify(ok=True, flags=FLAGS)
 
 @app.put("/api/admin/flags")
 def admin_flags_put():
+    g = _require_admin()
+    if g: return g
     b = request.get_json(force=True, silent=True) or {}
     if isinstance(b.get("apps"), dict):
         FLAGS["apps"] = b["apps"]
@@ -4821,16 +4772,60 @@ def admin_flags_put():
 
 @app.get("/api/admin/access")
 def admin_access():
+    g = _require_admin()
+    if g: return g
+    env_boot = sorted({e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()})
+    managed = sorted({str(e).strip().lower() for e in _managed_allowlist() if str(e).strip()})
+    admins = sorted(auth_gate._admin_emails())
+    seen = sorted({e.get("user") for e in USAGE if e.get("user")})
     try:
-        allow = auth_gate._allowed_emails()
+        allow = sorted(auth_gate._allowed_emails())
     except Exception:
         allow = []
-    users = sorted({e.get("user") for e in USAGE if e.get("user")})
     return jsonify(ok=True, gated=auth_gate.enabled(), currentUser=_current_user(),
-                   allowlist=sorted(allow), seenUsers=users)
+                   isAdmin=(auth_gate.is_admin(_current_user()) or not auth_gate.enabled()),
+                   admins=admins, bootstrap=env_boot, managed=managed,
+                   allowlist=allow, seenUsers=seen)
+
+@app.post("/api/admin/users")
+def admin_users_add():
+    """Add an email to the UI-managed allowlist (durable). Admin-only. Bootstrap (env) + admins are managed
+    elsewhere and are always allowed regardless."""
+    g = _require_admin()
+    if g: return g
+    b = request.get_json(force=True, silent=True) or {}
+    email = (b.get("email") or "").strip().lower()
+    if not _EMAIL_RE.match(email):
+        return jsonify(ok=False, error="enter a valid email address"), 400
+    d = load("admin_allowlist.json", {"emails": []})
+    emails = {str(e).strip().lower() for e in (d.get("emails") or []) if str(e).strip()}
+    emails.add(email)
+    _save_json("admin_allowlist.json", {"emails": sorted(emails)})
+    return jsonify(ok=True, added=email, managed=sorted(emails))
+
+@app.post("/api/admin/users/remove")
+def admin_users_remove():
+    """Remove an email from the UI-managed allowlist. Admin-only. Can't remove a bootstrap(env) email or an
+    admin here — those are edited via the ALLOWED_EMAILS / ADMIN_EMAILS secrets so a UI slip can't lock out."""
+    g = _require_admin()
+    if g: return g
+    b = request.get_json(force=True, silent=True) or {}
+    email = (b.get("email") or "").strip().lower()
+    boot = {e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()}
+    if email in boot:
+        return jsonify(ok=False, error="bootstrap email — remove it from the ALLOWED_EMAILS secret instead"), 400
+    if auth_gate.is_admin(email):
+        return jsonify(ok=False, error="admin — cannot be removed here"), 400
+    d = load("admin_allowlist.json", {"emails": []})
+    emails = {str(e).strip().lower() for e in (d.get("emails") or []) if str(e).strip()}
+    emails.discard(email)
+    _save_json("admin_allowlist.json", {"emails": sorted(emails)})
+    return jsonify(ok=True, removed=email, managed=sorted(emails))
 
 @app.get("/api/admin/overview")
 def admin_overview():
+    g = _require_admin()
+    if g: return g
     # book value (best-effort) + open service reports + run count + 7d usage
     book_val = None
     try:
@@ -5882,6 +5877,125 @@ def census_reference_ep():
         return jsonify(ok=False, error=str(e)[:160]), 500
 
 
+@app.get("/api/cex/spend")
+def cex_spend_ep():
+    """BLS CEX mean annual alcohol $ per consumer unit by income bracket.
+    ?item=ALCBEVG|ALCHOME|ALCAWAY|TOTALEXP|INCBEFTX  ?bracket=21  ?year=2023"""
+    import cex_ref
+    try:
+        yr = int(request.args["year"]) if request.args.get("year") else None
+        rows = cex_ref.query(item=request.args.get("item") or None,
+                             bracket=request.args.get("bracket") or None, year=yr)
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="cex_reference not landed yet (run the cex source: cex_ref.build)")
+
+
+@app.get("/api/census/demand")
+def census_demand_ep():
+    """Trade-area alcohol demand $ for one geo — CEX mean spend × ACS B19001 households, with the
+    at-home (off-premise) / away (on-premise) split. ?geo_fips=12095[&geo_level=county|state|zcta].
+    Bare 5-digit ids try county then fall back to ZIP (they collide); pass geo_level=zcta to force ZIP.
+    Honest {ok:false, reason} until both cex_reference and the ACS brackets are landed."""
+    import cex_ref
+    fips = (request.args.get("geo_fips") or "").strip()
+    if not fips:
+        return jsonify(ok=False, error="geo_fips required (county FIPS, ZIP, or 2-digit state)"), 400
+    try:
+        return jsonify(**cex_ref.demand_for(fips, geo_level=request.args.get("geo_level") or None))
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:160]), 500
+
+
+@app.get("/api/census/demand/top")
+def census_demand_top_ep():
+    """Rank geos by trade-area demand (the demand.html leaderboard). ?geo_level=zcta|county|state
+    ?prefix=328 (geo_fips prefix — e.g. Orlando-area ZIPs) ?by=demand_total_usd|demand_per_hh_usd|
+    demand_index_vs_us|households ?limit=25 ?min_households=500 (floor keeps tiny-ZCTA noise out of
+    per-HH/index rankings)."""
+    import warehouse
+    lvl = request.args.get("geo_level") or "county"
+    by = request.args.get("by") or "demand_total_usd"
+    if by not in ("demand_total_usd", "demand_per_hh_usd", "demand_index_vs_us", "households"):
+        return jsonify(ok=False, error="bad ?by"), 400
+    if lvl not in ("zcta", "county", "state"):
+        return jsonify(ok=False, error="bad ?geo_level"), 400
+    try:
+        limit = max(1, min(500, int(request.args.get("limit", 25))))
+        min_hh = int(request.args.get("min_households", 500))
+    except ValueError:
+        return jsonify(ok=False, error="bad numeric param"), 400
+    where, params = ["geo_level = ?", "households >= ?"], [lvl, min_hh]
+    pref = (request.args.get("prefix") or "").strip()
+    if pref:
+        where.append("geo_fips LIKE ?"); params.append(pref + "%")
+    sql = ("SELECT * FROM t WHERE " + " AND ".join(where)
+           + " ORDER BY %s DESC LIMIT %d" % (by, limit))
+    try:
+        rows = warehouse.query("trade_area_demand", sql, params)
+        return jsonify(ok=True, count=len(rows), rows=rows)
+    except Exception:
+        return jsonify(ok=True, count=0, rows=[],
+                       note="trade_area_demand not landed yet (run cex_ref.build_demand)")
+
+
+@app.get("/api/cpi")
+def cpi_ep():
+    """BLS CPI-U alcohol series. ?item=SAF116&area=0000&year=2024&annual=1 — or ?real=1 for the
+    item rebased against all-items (relative real price, the deflator/premiumization read)."""
+    import cpi_ref
+    a = request.args
+    try:
+        if a.get("real") in ("1", "true", "yes"):
+            yr = int(a["base_year"]) if a.get("base_year") else None
+            return jsonify(**cpi_ref.real_series(item=a.get("item") or "SAF116",
+                                                 area=a.get("area") or "0000", base_year=yr))
+        yr = int(a["year"]) if a.get("year") else None
+        rows = cpi_ref.query(item=a.get("item") or None, area=a.get("area") or None, year=yr,
+                             annual=a.get("annual") in ("1", "true", "yes"))
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except ValueError as e:
+        return jsonify(ok=False, error="bad numeric param: %s" % e), 400
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="cpi_reference not landed yet (run the cpi source: cpi_ref.build)")
+
+
+@app.get("/api/fred")
+def fred_ep():
+    """FRED macro series. ?series=MRTSSM4453USN|liquor_store_sales&year=2026."""
+    import fred_ref
+    try:
+        yr = int(request.args["year"]) if request.args.get("year") else None
+        rows = fred_ref.query(series=request.args.get("series") or None, year=yr,
+                              limit=int(request.args.get("limit", 5000)))
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except ValueError as e:
+        return jsonify(ok=False, error="bad numeric param: %s" % e), 400
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="fred_reference not landed yet (run the fred source: fred_ref.build, needs FRED_API_KEY)")
+
+
+@app.get("/api/bea")
+def bea_ep():
+    """BEA regional income. ?metric=personal_income_per_capita&geo_level=county&geo_fips=12095&year=2023."""
+    import bea_ref
+    try:
+        yr = int(request.args["year"]) if request.args.get("year") else None
+        rows = bea_ref.query(metric=request.args.get("metric") or None,
+                             geo_level=request.args.get("geo_level") or None,
+                             geo_fips=request.args.get("geo_fips") or None, year=yr)
+        return jsonify(ok=True, landed=True, count=len(rows), rows=rows)
+    except ValueError as e:
+        return jsonify(ok=False, error="bad numeric param: %s" % e), 400
+    except Exception:
+        return jsonify(ok=True, landed=False, count=0, rows=[],
+                       note="bea_reference not landed yet (run the bea source: bea_ref.build — the BEA key "
+                            "must be activated via BEA's email link)")
+
+
 @app.get("/api/places")
 def places_ep():
     """Query the pulled on-premise accounts (Orlando) from the warehouse. Filters:
@@ -6039,7 +6153,9 @@ def menus_upload_ep():
     if len(data) > 15 * 1024 * 1024:
         return jsonify(ok=False, error="file too large (15MB max)"), 400
     try:
-        parsed = menu_ingest.parse(data, filename=fn, distributor=(body.get("distributor") or "").strip())
+        # parse_smart = deterministic parse + a Claude fallback that only fires when that's
+        # low-confidence (odd layouts still land, no LLM cost on menus that already parse cleanly).
+        parsed = menu_ingest.parse_smart(data, filename=fn, distributor=(body.get("distributor") or "").strip())
     except Exception as e:
         return jsonify(ok=False, error="parse failed: %s" % str(e)[:200]), 500
     if not parsed.get("ok"):
@@ -6047,9 +6163,32 @@ def menus_upload_ep():
     n = menu_ingest.land(parsed)
     its = parsed["items"]
     return jsonify(ok=True, menu_id=parsed["menu_id"], distributor=parsed["distributor"],
-                   menu_date=parsed["menu_date"], license=parsed["license"], lines=n,
+                   menu_date=parsed["menu_date"], license=parsed["license"], lines=n, method=parsed.get("method"),
                    brands=sorted({i["brand"] for i in its if i["brand"]}),
                    warnings=parsed["warnings"])
+
+
+@app.post("/api/menus/poll")
+def menus_poll_ep():
+    """Pull distributor menus straight from the mailbox (IMAP) → parse + land, no manual upload.
+    Needs MENU_IMAP_* env; returns mailbox-not-configured otherwise so the UI can hide the button."""
+    import menu_mailbox
+    body = request.get_json(silent=True) or {}
+    if not menu_mailbox.configured():
+        return jsonify(ok=False, error="mailbox-not-configured",
+                       note="Set MENU_IMAP_HOST/USER/PASS to auto-ingest emailed menus."), 200
+    try:
+        r = menu_mailbox.poll(limit=min(100, int(body.get("limit", 25))),
+                              dry_run=bool(body.get("dry_run")), log=app.logger.info)
+    except Exception as e:
+        return jsonify(ok=False, error="poll failed: %s" % str(e)[:200]), 502
+    return jsonify(r)
+
+
+@app.get("/api/menus/mailbox")
+def menus_mailbox_status_ep():
+    import menu_mailbox
+    return jsonify(ok=True, configured=menu_mailbox.configured())
 
 
 @app.get("/api/menus")
@@ -6169,20 +6308,14 @@ def order_get_ep(oid):
     return (jsonify(ok=True, order=o) if o else (jsonify(ok=False, error="not found"), 404))
 
 
-@app.get("/api/orders/<oid>/sheet")
-def order_sheet_ep(oid):
-    """The per-distributor order sheet — ?distributor=X → a CSV of exactly that distributor's slice
-    (the artifact that goes back to them). This is the 'return the order to the right distributor'
-    leg: today a download/email attachment; the auto-send hook goes here when SMTP lands."""
+def _po_csv(o, dist):
+    """Build the per-distributor PO sheet → (filename, csv_text). Shared by the download + the
+    auto-send attachment so both are byte-identical. `dist`='' → the whole order."""
     import csv as _csv
     import io as _io
-    o = next((o for o in ORDERS if o["id"] == oid), None)
-    if not o:
-        return jsonify(ok=False, error="not found"), 404
-    dist = (request.args.get("distributor") or "").strip()
     lines = [l for l in o["lines"] if not dist or l["distributor"] == dist]
     if not lines:
-        return jsonify(ok=False, error="no lines for that distributor"), 404
+        return None, None
     buf = _io.StringIO()
     w = _csv.writer(buf)
     w.writerow(["Purchase Order", o["id"]])
@@ -6196,9 +6329,169 @@ def order_sheet_ep(oid):
     w.writerow([])
     w.writerow(["", "", "", "", "", "TOTAL", sum(l["qty"] for l in lines), "",
                 round(sum(l["line_total"] or 0 for l in lines), 2)])
-    fn = "%s_%s.csv" % (oid, re.sub(r"[^A-Za-z0-9]+", "_", dist or "all"))
-    return Response(buf.getvalue(), mimetype="text/csv; charset=utf-8",
+    fn = "%s_%s.csv" % (o["id"], re.sub(r"[^A-Za-z0-9]+", "_", dist or "all"))
+    return fn, buf.getvalue()
+
+
+@app.get("/api/orders/<oid>/sheet")
+def order_sheet_ep(oid):
+    """The per-distributor order sheet — ?distributor=X → a CSV of exactly that distributor's slice
+    (the artifact that goes back to them). Download form of the same file /api/orders/<id>/send emails."""
+    o = next((o for o in ORDERS if o["id"] == oid), None)
+    if not o:
+        return jsonify(ok=False, error="not found"), 404
+    fn, csv_text = _po_csv(o, (request.args.get("distributor") or "").strip())
+    if csv_text is None:
+        return jsonify(ok=False, error="no lines for that distributor"), 404
+    return Response(csv_text, mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": 'attachment; filename="%s"' % fn})
+
+
+# ── Distributor contact book — where each distributor's order goes back to ──
+DISTRIBUTOR_CONTACTS = load("distributor_contacts.json", {})    # {distributor: {email, contact, cc}}
+
+
+@app.get("/api/distributors")
+def distributors_ep():
+    """Every distributor we have a menu from, merged with its saved order-contact — so the ordering
+    page can show who's ready to auto-send and who still needs an email."""
+    known = []
+    try:
+        known = [r["distributor"] for r in warehouse.query(
+            "distributor_menu_items", "SELECT DISTINCT distributor FROM t ORDER BY 1")]
+    except Exception:
+        known = []
+    for d in DISTRIBUTOR_CONTACTS:
+        if d not in known:
+            known.append(d)
+    out = []
+    for d in known:
+        c = DISTRIBUTOR_CONTACTS.get(d, {})
+        out.append({"distributor": d, "email": c.get("email", ""), "contact": c.get("contact", ""),
+                    "cc": c.get("cc", ""), "has_email": bool(c.get("email"))})
+    return jsonify(ok=True, distributors=out, smtp_configured=bool(os.environ.get("SMTP_HOST", "").strip()))
+
+
+@app.post("/api/distributors")
+def distributor_save_ep():
+    """Save/update one distributor's order contact. Body: {distributor, email, contact?, cc?}."""
+    b = request.get_json(force=True, silent=True) or {}
+    d = (b.get("distributor") or "").strip()
+    email = (b.get("email") or "").strip()
+    if not d:
+        return jsonify(ok=False, error="distributor required"), 400
+    if email and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        return jsonify(ok=False, error="that doesn't look like a valid email"), 400
+    DISTRIBUTOR_CONTACTS[d] = {"email": email, "contact": (b.get("contact") or "").strip()[:80],
+                              "cc": (b.get("cc") or "").strip()[:200]}
+    _save_json("distributor_contacts.json", DISTRIBUTOR_CONTACTS)
+    return jsonify(ok=True, distributor=d, **DISTRIBUTOR_CONTACTS[d])
+
+
+def _smtp_cfg():
+    h = os.environ.get("SMTP_HOST", "").strip()
+    if not h:
+        return None
+    return {"host": h, "port": int(os.environ.get("SMTP_PORT", "587") or 587),
+            "user": os.environ.get("SMTP_USER", "").strip(), "pass": os.environ.get("SMTP_PASS", ""),
+            "from": os.environ.get("SMTP_FROM", "").strip() or os.environ.get("SMTP_USER", "").strip(),
+            "starttls": os.environ.get("SMTP_STARTTLS", "1").strip() not in ("0", "false", "no")}
+
+
+def _send_po_email(cfg, to, cc, subject, body, fn, csv_text):
+    import smtplib
+    from email.message import EmailMessage
+    msg = EmailMessage()
+    msg["From"] = cfg["from"]; msg["To"] = to
+    if cc:
+        msg["Cc"] = cc
+    msg["Subject"] = subject
+    msg.set_content(body)
+    # Attach as str (not bytes) so the part declares charset=utf-8 — otherwise accented chars /
+    # em-dashes in retailer or product names arrive mojibake'd. A str routes through
+    # set_text_content(), which takes `subtype` but not `maintype` (text/* is implied).
+    msg.add_attachment(csv_text, subtype="csv", filename=fn)
+    rcpts = [to] + ([c.strip() for c in cc.split(",") if c.strip()] if cc else [])
+    with smtplib.SMTP(cfg["host"], cfg["port"], timeout=30) as s:
+        if cfg["starttls"]:
+            s.starttls()
+        if cfg["user"]:
+            s.login(cfg["user"], cfg["pass"])
+        s.send_message(msg, from_addr=cfg["from"], to_addrs=rcpts)
+
+
+@app.post("/api/orders/<oid>/send")
+def order_send_ep(oid):
+    """Email the PO sheet back to each distributor on the order (or just ?distributor=/body distributor).
+    Needs SMTP_* env + a saved contact email per distributor. Returns per-distributor results; the UI
+    falls back to download + copy-email for any that aren't send-ready. Records sends on the order."""
+    o = next((o for o in ORDERS if o["id"] == oid), None)
+    if not o:
+        return jsonify(ok=False, error="not found"), 404
+    b = request.get_json(force=True, silent=True) or {}
+    only = (b.get("distributor") or "").strip()
+    dists = [d["distributor"] for d in o.get("distributors", []) if not only or d["distributor"] == only]
+    if not dists:
+        return jsonify(ok=False, error="no matching distributor on this order"), 400
+    cfg = _smtp_cfg()
+    if not cfg:
+        return jsonify(ok=False, error="email-not-configured",
+                       note="Set SMTP_HOST/PORT/USER/PASS/FROM to enable auto-send. Until then use the "
+                            "PO-sheet download + copy-email.",
+                       needs_contact=[d for d in dists if not DISTRIBUTOR_CONTACTS.get(d, {}).get("email")]), 200
+    results, sent_log = [], o.get("sent", [])
+    for d in dists:
+        c = DISTRIBUTOR_CONTACTS.get(d, {})
+        to = c.get("email", "")
+        if not to:
+            results.append({"distributor": d, "ok": False, "reason": "no-contact"})
+            continue
+        fn, csv_text = _po_csv(o, d)
+        dtot = next((x for x in o["distributors"] if x["distributor"] == d), {})
+        body = ("Purchase order %s from %s%s.\n\n%s lines · %s units · $%s.\n\nThe PO sheet is attached "
+                "as a CSV.%s\n\n— sent via Hoodie Suite Wholesale Ordering" % (
+                    o["id"], o["retailer"], (" (%s)" % o["license"]) if o.get("license") else "",
+                    dtot.get("lines", "?"), dtot.get("units", "?"), dtot.get("total", "?"),
+                    ("\n\nNotes: " + o["notes"]) if o.get("notes") else ""))
+        try:
+            _send_po_email(cfg, to, c.get("cc", ""), "PO %s — %s" % (o["id"], o["retailer"]), body, fn, csv_text)
+            rec = {"distributor": d, "to": to, "at": int(time.time() * 1000)}
+            sent_log = [s for s in sent_log if s.get("distributor") != d] + [rec]
+            results.append({"distributor": d, "ok": True, "to": to})
+        except Exception as e:
+            results.append({"distributor": d, "ok": False, "reason": str(e)[:160]})
+    o["sent"] = sent_log
+    if any(r["ok"] for r in results):
+        o["status"] = "sent" if all(r["ok"] for r in results) else "partially-sent"
+    _save_json("orders.json", ORDERS)
+    return jsonify(ok=any(r["ok"] for r in results), results=results, order_status=o.get("status"))
+
+
+# Order lifecycle: submitted → sent → confirmed (distributor acknowledged) → delivered; cancellable
+# until delivered. A forward-only ladder (no going back a step) keeps the history a clean audit trail.
+_ORDER_FLOW = ["submitted", "sent", "confirmed", "delivered"]
+
+
+@app.post("/api/orders/<oid>/status")
+def order_status_ep(oid):
+    """Advance/set an order's status. Body: {status}. Allowed: submitted|sent|confirmed|delivered|
+    cancelled. Records a timestamped status_history so the lifecycle is auditable."""
+    o = next((o for o in ORDERS if o["id"] == oid), None)
+    if not o:
+        return jsonify(ok=False, error="not found"), 404
+    new = (request.get_json(force=True, silent=True) or {}).get("status", "").strip().lower()
+    if new not in _ORDER_FLOW and new != "cancelled":
+        return jsonify(ok=False, error="status must be one of: %s, cancelled" % ", ".join(_ORDER_FLOW)), 400
+    cur = o.get("status", "submitted")
+    if cur == "delivered" and new != "delivered":
+        return jsonify(ok=False, error="a delivered order is closed"), 409
+    if new != "cancelled" and cur in _ORDER_FLOW and new in _ORDER_FLOW and \
+            _ORDER_FLOW.index(new) < _ORDER_FLOW.index(cur):
+        return jsonify(ok=False, error="can't move an order backward (%s → %s)" % (cur, new)), 409
+    o["status"] = new
+    o.setdefault("status_history", []).append({"status": new, "at": int(time.time() * 1000)})
+    _save_json("orders.json", ORDERS)
+    return jsonify(ok=True, id=oid, status=new, status_history=o["status_history"])
 
 
 # ---- optional: serve the static suite from THIS app (all-in-one image, e.g. Fly.io) ----

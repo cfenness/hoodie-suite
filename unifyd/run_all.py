@@ -32,7 +32,7 @@ def _load_creds():
 
 # site scrapers that write a local snapshot (re-run with --scrape, then land) — modules in unifyd/
 SITE_SCRAPERS = {"abc": "abc_fws_scraper", "specs": "specs_scraper",
-                 "binnys": "binnys_scraper", "shopify": "shopify_scraper"}
+                 "binnys": "binnys_scraper"}   # shopify folded into the census sweep (off_premise.national_sweep)
 
 
 def step(name, fn):

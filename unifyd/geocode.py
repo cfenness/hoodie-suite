@@ -91,6 +91,56 @@ def geocode_outlets(header, rows, colmap=None, log=print, cap=200000):
     return new_header, new_rows, {"matched": matched, "requested": len(recs)}
 
 
+def geocode_src_outlets(limit=None, log=print):
+    """AUTOMATED lat/lng for the coverage map: Census-geocode ($0, no key) the next batch of src_outlets that
+    HAVE a street address but no lat/lng, and write lat/lng/county_fips back (accumulate by source|store_id).
+    Unmatched rows get county_fips='00000' as a TRIED marker so a bad address isn't retried forever — so the
+    pass steadily drains the addressed-but-ungeocoded pool run over run. Bounded (GEOCODE_LIMIT, default 9000 =
+    one Census chunk). NOTE: aggregator outlets (doordash/ubereats) have NO address — they're geo-enriched from
+    their store page separately, not here."""
+    import os
+    import warehouse
+    import refresh_fast
+    limit = limit if limit is not None else int(os.environ.get("GEOCODE_LIMIT", "9000"))
+    # Pick up rows with an address that are either un-geocoded (lat IS NULL) OR only city-approximated
+    # (geo_precision='city') — the exact street geocode UPGRADES a city dot to a precise one. county_fips is
+    # VARCHAR: '' = never tried, '00000' = tried-no-match (excluded so a bad address isn't geocoded forever).
+    latcond = ("(lat IS NULL OR geo_precision = 'city')"
+               if warehouse.has_column("src_outlets", "geo_precision") else "lat IS NULL")
+    rows = warehouse.query(
+        "src_outlets",
+        "SELECT * FROM t WHERE %s AND address IS NOT NULL AND address <> '' "
+        "AND (county_fips IS NULL OR county_fips = '') LIMIT %d" % (latcond, limit))
+    if not rows:
+        log("[geocode] no un-geocoded addressed src_outlets — done")
+        return 0
+    header = list(rows[0].keys())
+    listrows = [[r.get(h) for h in header] for r in rows]
+    nh, nr, stats = geocode_outlets(header, listrows, log=log)
+    li, gi, ci = nh.index("latitude"), nh.index("longitude"), nh.index("county_fips")
+    out = []
+    for orig, nrow in zip(rows, nr):
+        d = dict(orig)
+        try:
+            if nrow[li]:                                       # matched → real coords
+                d["lat"], d["lng"] = float(nrow[li]), float(nrow[gi])
+                d["county_fips"] = nrow[ci] or ""
+                d["geo_precision"] = "exact"                   # a real street-address geocode (upgrades 'city')
+            else:
+                d["county_fips"] = "00000"                     # tried, no match — don't retry forever
+        except (ValueError, TypeError):
+            d["county_fips"] = "00000"
+        out.append({k: d.get(k) for k in refresh_fast.FLD})
+    warehouse.write_accumulate("src_outlets", out, key=lambda r: (r["source"], r["store_id"]),
+                               fields=refresh_fast.FLD)
+    log("[geocode] +%d geocoded of %d attempted -> src_outlets" % (stats["matched"], stats["requested"]))
+    return stats["matched"]
+
+
+def run(log=print):
+    return geocode_src_outlets(log=log)
+
+
 def main():
     # smoke test against the live Census geocoder
     recs = [("1", "233 S Wacker Dr", "Chicago", "IL", "60606"),

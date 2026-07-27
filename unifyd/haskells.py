@@ -160,6 +160,18 @@ def run(limit=None, land=True, log=print):
     ts = int(time.time())
     token_cache, snap, obs = {}, [], []
     errs = 0
+    tot = {"landed": 0, "counted": 0, "hemp": 0}
+
+    def _flush():                                   # INCREMENTAL land: persist each batch so a run that hits the
+        if land and snap:                           # timeout mid-catalog keeps everything crawled so far (the
+            warehouse.write_accumulate("haskells_products", snap,   # single end-of-loop write meant a timeout
+                                       key=lambda r: r["sku"] or r["url"], fields=PROD_FIELDS)  # landed NOTHING)
+            observe.record("haskells", obs, log=log)
+        tot["landed"] += len(snap)
+        tot["counted"] += sum(1 for r in snap if r["qty"] is not None)
+        tot["hemp"] += sum(1 for r in snap if r["is_hemp"])
+        snap.clear(); obs.clear()
+
     for i, (slug, url) in enumerate(catalog):
         try:                                        # one bad URL (e.g. a 301 redirect loop) must NOT kill the
             g = fetch_product(slug, url, token_cache, log=log)   # whole crawl + lose everything landed after it
@@ -179,15 +191,12 @@ def run(limit=None, land=True, log=print):
                     "in_stock": g["in_stock"], "qty": g["qty"], "stock_level": "", "is_hemp": g["is_hemp"]})
         if (i + 1) % 100 == 0:
             log("  %d/%d …" % (i + 1, len(catalog)))
-    if land and snap:
-        warehouse.write_accumulate("haskells_products", snap,
-                                   key=lambda r: r["sku"] or r["url"], fields=PROD_FIELDS)
-        observe.record("haskells", obs, log=log)
-    counted = sum(1 for r in snap if r["qty"] is not None)
-    hemp = sum(1 for r in snap if r["is_hemp"])
+        if (i + 1) % 500 == 0:                      # flush a batch every 500 products
+            _flush()
+    _flush()                                        # final partial batch
     log("[haskells] DONE: %d products -> haskells_products (%d with an exact count, %d hemp, %d skipped)"
-        % (len(snap), counted, hemp, errs))
-    return snap
+        % (tot["landed"], tot["counted"], tot["hemp"], errs))
+    return tot["landed"]
 
 
 def main(argv=None):

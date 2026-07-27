@@ -37,27 +37,44 @@ _CONT_RE = re.compile(r'\b(Cans?|Bottles?|Carton|Tetra|Box|Keg|Pouch|Growler)\b'
 
 
 def _api_key():
-    k = os.environ.get("BRIGHTDATA_API_KEY")
-    if k:
-        return k.strip()
-    return json.load(open(os.path.expanduser(
-        "~/Library/Application Support/brightdata-cli/credentials.json")))["api_key"]
+    return None    # Bright Data RETIRED — DoorDash is fetched $0 via the flat ISP pool (see _fetch). Kept for
+                   # caller compat: `key` is threaded through _unlock but ignored. (No metered spend — user rule.)
 
 
-def _unlock(url, key, retries=2):
-    body = json.dumps({"zone": "cli_unlocker", "url": url, "format": "raw"}).encode()
+def _fetch(url, retries=4, log=None):
+    """$0 DoorDash fetch — curl_cffi Safari-17 TLS impersonation through the flat-rate residential ISP pool.
+    Safari impersonation clears DoorDash's Forter where Chrome AND plain-HTTP get 403 (verified 2026-07-24:
+    200 + the full RSC menu/retail payload). Rotates the ISP exit each try. NO Bright Data — replaces the old
+    api.brightdata.com Unlocker. If no ISP pool is configured there is no paid fallback: it returns '' (skip),
+    never spends. resi.best_url()==None then."""
+    import resi
+    try:
+        from curl_cffi import requests as cr
+    except Exception as e:
+        if log:
+            log("  [dd] curl_cffi unavailable: %s" % str(e)[:60])
+        return ""
     last = ""
-    for a in range(retries + 1):
+    for a in range(retries):
+        u = resi.isp_url() if resi.isp_enabled() else None      # round-robin exit; a fresh IP each retry
+        px = {"http": u, "https": u} if u else None
         try:
-            req = urllib.request.Request("https://api.brightdata.com/request", data=body,
-                                         headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
-            last = urllib.request.urlopen(req, timeout=90).read().decode("utf-8", "replace")
-            if "__next_f" in last:
-                return last
-        except Exception:
-            pass
-        time.sleep(2 + a * 2)
-    return last
+            r = cr.get(url, impersonate="safari17_0", proxies=px, timeout=60)
+            if r.status_code == 200 and "__next_f" in r.text:
+                return r.text
+            last = "status %s" % r.status_code
+        except Exception as e:
+            last = str(e)[:80]
+        time.sleep(1 + a)
+    if log:
+        log("  [dd] ISP fetch failed after %d tries (%s): %s" % (retries, last, url[:60]))
+    return ""
+
+
+def _unlock(url, key=None, retries=2):
+    """Back-compatible shim — DoorDash now fetches $0 through the ISP pool (_fetch); `key` (the old Bright Data
+    token) is ignored. Kept so doordash_naop and other callers don't have to change."""
+    return _fetch(url, retries=max(3, retries + 1))
 
 
 def _rsc(html):

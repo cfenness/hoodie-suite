@@ -44,6 +44,7 @@ STALE_WARN_X = 2.0            # data older than 2× cadence  → WARN  (one miss
 STALE_CRIT_X = 4.0            # data older than 4× cadence  → CRIT  (the source is down, not late)
 COLLAPSE_PCT = 0.40           # count fell by >40% vs previous point → CRIT (partial scrape landed as truth)
 COLLAPSE_MIN_ROWS = 1000      # ignore collapse on tiny tables (noise, fixtures, seeds)
+SLA_MIN_PCT = float(os.environ.get("SLA_MIN_PCT", "95"))   # sellable floor: WARN if <this% of sources within freshness SLA
 
 
 def _sev_rank(s):
@@ -281,6 +282,27 @@ def build_digest(weekly=False):
                                  {"run_status": c.get("run_status"), "run_at": c.get("run_ts"),
                                   "run_ago": _ago(now - c["run_ts"]) if c.get("run_ts") else None,
                                   "trigger": c.get("trigger")}))
+
+    # SLA ROLL-UP — the sellable "reliable enough to sell" headline (SCRAPING-PLATFORM.md P2): the share of
+    # sources within their freshness CONTRACT right now. The per-source detail is the pull-stale findings
+    # above; this is the ONE number a buyer's contract rests on, tracked in the daily verdict. WARN (not
+    # crit — the per-source breaks already carry the crit) once it dips below SLA_MIN_PCT.
+    try:
+        import sla
+        ss = sla.summary(now=now)
+        if ss.get("sources"):
+            sev = "info" if (ss.get("within_pct") or 0) >= SLA_MIN_PCT else "warn"
+            findings.append(_finding(
+                "sla-rollup", sev, "platform",
+                "%s%% of sources within freshness SLA (%d/%d) — %d breach, %d never, %d at-risk" % (
+                    ss["within_pct"], ss["within_sla"], ss["sources"],
+                    len(ss["breach"]), len(ss["never"]), len(ss["at_risk"])),
+                {"within_pct": ss["within_pct"], "within_sla": ss["within_sla"], "sources": ss["sources"],
+                 "min_pct": SLA_MIN_PCT, "breach": ss["breach"][:20], "never": ss["never"][:20],
+                 "at_risk": ss["at_risk"][:20]}))
+    except Exception as e:
+        findings.append(_finding("sla-rollup", "info", "platform",
+                                 "SLA roll-up unavailable: %s" % str(e)[:120], {}))
 
     # weekly deep audit (Mondays / --weekly): field-drift, fixture regression, docs drift — see deep_audit.py
     if weekly:

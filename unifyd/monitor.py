@@ -73,7 +73,7 @@ _SOURCE_DEFS = [
     (("cityhive",),        "cityhive",    "City Hive network",         "off-premise"),
     (("offprem",),         "offprem",     "Off-premise sweep",         "off-premise"),
     (("bevalc_chains", "bev_alc_chains"), "chains-catalog", "Chain reachability catalog", "reference"),
-    (("shopify",),         "shopify",     "Shopify DTC",               "off-premise"),
+    (("shopify", "national_shopify"), "shopify", "Shopify (census sweep)", "off-premise"),
     (("bottlecapps", "national_bottlecapps"), "bottlecapps", "Bottlecapps network", "off-premise"),
     (("bbg",),             "bbg",         "BBG e-commerce",            "off-premise"),
     (("winebow",),         "winebow",     "Winebow (distributor)",     "distributor"),
@@ -604,9 +604,25 @@ def build(record_history=True, hist_cap=60):
     except Exception as e:
         dispatcher = {"error": str(e)[:150]}
 
+    # ── cost ledger (NRT-PLAN §6): the recurring-bill-stays-near-zero claim, as a number. A compact
+    # summary rides in the snapshot; a failure here must never break the manifest. Computed inside the
+    # cached build (one grouped query over the ledger), so it's not paid per /api/monitor poll.
+    cost = {}
+    try:
+        import cost_ledger
+        rep = cost_ledger.report(window_days=30)
+        cost = {"total_usd_mo": rep["totals"]["total_usd_mo"], "compute_usd_mo": rep["totals"]["compute_usd"],
+                "infra_usd_mo": rep["totals"]["infra_usd"], "machine_hours": rep["totals"]["machine_hours"],
+                "by_class": rep["by_class"], "rates": rep["rates"],
+                "top": [{"source": r["source"], "cost_class": r["cost_class"], "total_usd_mo": r["total_usd_mo"],
+                         "machine_hours": r["machine_hours"], "runs": r["runs"], "rows_added": r["rows_added"]}
+                        for r in rep["sources"] if r["total_usd_mo"] > 0][:12]}
+    except Exception as e:
+        cost = {"error": str(e)[:150]}
+
     return {"as_of": now, "live": True, "warehouse": wh, "build_ms": round((time.time() - now) * 1000),
             "totals": totals, "connectors": connectors, "roster": roster, "sources": sources,
-            "dispatcher": dispatcher,
+            "dispatcher": dispatcher, "cost": cost,
             "observations": {k: {"rows": o["rows"], "latest": o["latest"], "table": o["table"],
                                  "parts": o["parts"]} for k, o in observations.items()}}
 

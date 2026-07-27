@@ -15,9 +15,11 @@ name: warm-sources
 #                      honestly if unset. WALMART needs no store (national search).
 # NO KROGER_COOKIE / WALMART_COOKIE secret needed anymore — that's the whole point; the cookie is warmed.
 
+# SCHEDULE REMOVED — the hourly Fly dispatcher (unifyd/dispatch_ephemeral.py) owns scheduling now;
+# the cookie-warming sources it covers are dispatched as klass="mac"/headful ephemeral machines.
+# This cron ran daily against a repo with no Actions minutes, so it only produced failures.
+# Kept dispatch-only as a manual escape hatch.
 on:
-  schedule:
-    - cron: "0 8 * * *"          # 08:00 UTC daily — ahead of the morning read
   workflow_dispatch:
     inputs:
       source:

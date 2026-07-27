@@ -234,6 +234,32 @@ def pull(brand="titos", zips=None, custID=None, uuid=None, delay=1.0, out=".", s
     return ds, [run], {"sampled": len(cur), "changed": changed, "dropped": dropped}
 
 
+_LAND_FIELDS = ["brand", "account", "street", "city", "state", "zip", "phone", "miles",
+                "lat", "lng", "store_type", "source", "zip_searched"]
+
+
+def run(brands=("titos",), zips=None, log=print):
+    """THE registry entrypoint — pull() returns rows but never persisted them, so the scheduled run always
+    landed nothing (the 399-row 'vtinfo_titos' was a frozen relic of the removed /api/run copy). This sweeps
+    each brand and WRITES to the warehouse. write_accumulate projects every row onto _LAND_FIELDS, so it merges
+    cleanly onto the old table regardless of its legacy schema."""
+    import warehouse
+    allrows = []
+    for b in brands:
+        try:
+            ds, _runs, _stats = pull(brand=b, zips=zips, log=log)
+            for _name, d in ds.items():
+                allrows.extend(d.get("_rows_full") or [])
+        except Exception as e:
+            log("vtinfo/%s: %s" % (b, str(e)[:120]))
+    if allrows:
+        warehouse.write_accumulate("vtinfo_titos", allrows,
+                                   key=lambda r: (r.get("brand"), r.get("account"), r.get("zip_searched")),
+                                   fields=_LAND_FIELDS)
+    log("[vtinfo] landed %d rows across %d brand(s) -> vtinfo_titos" % (len(allrows), len(brands)))
+    return len(allrows)
+
+
 def _run(brand, n, changed, status, warnings, started, dropped=0):
     return {"id": "R-VT" + hashlib.sha1((brand + str(n)).encode()).hexdigest()[:3].upper(),
             "connId": "vtinfo", "startedAt": started, "finishedAt": int(time.time() * 1000),

@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signal Stack · Subject × Instrument Readiness</title>
+<style>
+  html,body{margin:0}
+  :root{
+    --paper:#F5F7FA; --card:#FFFFFF; --ink:#1A2430; --muted:#5C6775; --faint:#8A94A2;
+    --line:#E3E8EF; --line2:#EDF1F6; --accent:#4E79A7; --accent-soft:#4E79A71e;
+    --good:#3F8F63; --good-soft:#3F8F6316; --warn:#B8862E; --warn-soft:#B8862E18;
+    --bad:#C1544A; --bad-soft:#C1544A16; --shadow:0 1px 2px #1a243008, 0 4px 16px #1a243010;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --paper:#0F141A; --card:#171E27; --ink:#E7ECF3; --muted:#95A1B1; --faint:#68727F;
+    --line:#26303B; --line2:#1E2731; --accent:#6E97C4; --accent-soft:#6E97C426;
+    --good:#5AAE7C; --good-soft:#5AAE7c22; --warn:#D0A445; --warn-soft:#d0a44522;
+    --bad:#D96A5F; --bad-soft:#d96a5f22; --shadow:0 1px 2px #0006, 0 6px 20px #0004;}}
+  :root[data-theme="light"]{--paper:#F5F7FA;--card:#FFF;--ink:#1A2430;--muted:#5C6775;--faint:#8A94A2;--line:#E3E8EF;--line2:#EDF1F6;--accent:#4E79A7;--accent-soft:#4E79A71e;--good:#3F8F63;--good-soft:#3F8F6316;--warn:#B8862E;--warn-soft:#B8862E18;--bad:#C1544A;--bad-soft:#C1544A16;--shadow:0 1px 2px #1a243008,0 4px 16px #1a243010;}
+  :root[data-theme="dark"]{--paper:#0F141A;--card:#171E27;--ink:#E7ECF3;--muted:#95A1B1;--faint:#68727F;--line:#26303B;--line2:#1E2731;--accent:#6E97C4;--accent-soft:#6E97C426;--good:#5AAE7C;--good-soft:#5AAE7c22;--warn:#D0A445;--warn-soft:#d0a44522;--bad:#D96A5F;--bad-soft:#d96a5f22;--shadow:0 1px 2px #0006,0 6px 20px #0004;}
+  :root{--sales:#8A5FB0;--sales-soft:#8A5FB018}
+  @media(prefers-color-scheme:dark){:root{--sales:#A986C8;--sales-soft:#A986C822}}
+  :root[data-theme="light"]{--sales:#8A5FB0;--sales-soft:#8A5FB018}
+  :root[data-theme="dark"]{--sales:#A986C8;--sales-soft:#A986C822}
+  *{box-sizing:border-box}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.45;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1200px;margin:0 auto;padding:24px 20px 72px}
+  /* header */
+  .brandmark{display:flex;align-items:center;gap:11px;margin-bottom:4px}
+  .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#2f5e8e);display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;box-shadow:var(--shadow)}
+  h1{font-size:18px;font-weight:750;letter-spacing:-.2px;margin:0}
+  .sub{font-size:12.5px;color:var(--faint);letter-spacing:.02em;text-transform:uppercase;margin-top:1px}
+  .lede{font-size:13.5px;color:var(--muted);max-width:820px;margin:14px 0 4px}
+  .lede b{color:var(--ink);font-weight:600}
+  /* spine chips */
+  .spines{display:flex;flex-wrap:wrap;gap:9px;margin:16px 0 4px}
+  .spine{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:9px 13px;font-size:12.5px;box-shadow:var(--shadow)}
+  .spine .k{width:9px;height:9px;border-radius:50%;flex:none}
+  .spine b{font-weight:650} .spine span{color:var(--muted)}
+  .k.sku{background:var(--good)} .k.outlet{background:var(--accent)} .k.census{background:var(--warn)}
+  /* legend */
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin:22px 0 10px;font-size:12px;color:var(--muted)}
+  .legend .li{display:flex;align-items:center;gap:7px}
+  .dot{width:12px;height:12px;border-radius:50%;flex:none;border:1px solid #0002}
+  .dot.real{background:var(--good)} .dot.partial{background:var(--warn)} .dot.derived{background:var(--accent)} .dot.sales{background:var(--sales)} .dot.gap{background:transparent;border:1.5px dashed var(--faint)}
+  /* matrix */
+  .mwrap{overflow-x:auto;border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow);background:var(--card)}
+  table{border-collapse:separate;border-spacing:0;width:100%;min-width:940px}
+  th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line);border-right:1px solid var(--line2)}
+  thead th{position:sticky;top:0;background:var(--card);z-index:3;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;white-space:nowrap}
+  thead th .bk{display:block;font-size:8.5px;color:var(--faint);font-weight:600;letter-spacing:.06em;margin-top:2px}
+  th.corner{z-index:4;color:var(--ink);font-size:11px}
+  th.rowh{position:sticky;left:0;background:var(--card);z-index:2;min-width:172px;border-right:1px solid var(--line)}
+  th.rowh .nm{font-size:13.5px;font-weight:700;letter-spacing:-.1px;text-transform:none;color:var(--ink)}
+  th.rowh .sp{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--muted);font-weight:600;margin-top:3px;text-transform:none;letter-spacing:0}
+  th.rowh .sp .k{width:7px;height:7px;border-radius:50%}
+  td .cell{display:flex;flex-direction:column;gap:5px}
+  td .cd{display:flex;align-items:center;gap:6px}
+  td .cd .dot{width:10px;height:10px}
+  td .cd .lv{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  td .src{font-size:10.5px;color:var(--muted);font-family:var(--mono);line-height:1.3}
+  td.real{background:var(--good-soft)} td.partial{background:var(--warn-soft)} td.derived{background:var(--accent-soft)} td.sales{background:var(--sales-soft)} td.gap{background:transparent}
+  .lv.real{color:var(--good)} .lv.partial{color:var(--warn)} .lv.derived{color:var(--accent)} .lv.sales{color:var(--sales)} .lv.gap{color:var(--faint)}
+  tbody tr:last-child td,tbody tr:last-child th{border-bottom:0}
+  /* dossier cards */
+  .sec{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink);font-weight:750;margin:30px 0 12px;display:flex;align-items:center;gap:9px}
+  .sec::before{content:"";width:3px;height:13px;border-radius:2px;background:var(--accent)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:13px}
+  .dcard{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:15px 16px;box-shadow:var(--shadow)}
+  .dcard h3{font-size:14.5px;margin:0 0 2px;font-weight:700;letter-spacing:-.1px}
+  .dcard .sp{font-size:10.5px;color:var(--muted);font-weight:600;display:inline-flex;align-items:center;gap:5px;margin-bottom:9px}
+  .dcard .sp .k{width:7px;height:7px;border-radius:50%}
+  .dcard .verdict{font-size:12.5px;color:var(--muted);line-height:1.5}
+  .dcard .verdict b{color:var(--ink);font-weight:600}
+  .dcard .rings{display:flex;flex-wrap:wrap;gap:5px;margin-top:11px}
+  .ring{font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--muted);display:flex;align-items:center;gap:5px}
+  .ring .d{width:7px;height:7px;border-radius:50%}
+  .ring.real{border-color:color-mix(in srgb,var(--good) 40%,var(--line));color:var(--good)} .ring.real .d{background:var(--good)}
+  .ring.thin{border-color:color-mix(in srgb,var(--warn) 35%,var(--line));color:var(--warn)} .ring.thin .d{background:var(--warn)}
+  /* the read */
+  .read{margin-top:26px;background:var(--card);border:1px solid var(--accent);border-radius:14px;padding:17px 19px;box-shadow:var(--shadow)}
+  .read h2{font-size:14px;margin:0 0 9px;font-weight:750;display:flex;align-items:center;gap:8px}
+  .read h2 svg{width:16px;height:16px;color:var(--accent)}
+  .read p{font-size:13px;color:var(--muted);line-height:1.55;margin:0 0 9px}
+  .read p:last-child{margin-bottom:0}
+  .read b{color:var(--ink);font-weight:600}
+  .read .rec{border-left:3px solid var(--accent);padding-left:12px;margin-top:12px}
+  .foot{margin-top:24px;font-size:11px;color:var(--faint);text-align:center;line-height:1.5}
+  .foot code{font-family:var(--mono);color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brandmark"><div class="logo">S</div>
+    <div><h1>Signal Stack · Subject × Instrument Readiness</h1>
+      <div class="sub">What a total-analysis dossier can actually show — grounded, honest about the gaps</div></div>
+  </div>
+  <p class="lede">Signal Stack centers a <b>subject</b>, and every instrument reads it off <b>one identity spine</b>. Products resolve to the Canon <b>SKU identity</b>; accounts, chains and geos resolve to <b>outlet identity</b>; <b>census/ACS</b> is the enrichment ring around the place side. This map is the design input we said we were missing: for each subject type, which instruments have <b>real landed data</b> vs. what's coverage-thin, derived, or a gap — so we can see where a real panel is warranted before building the mock.</p>
+
+  <div class="spines">
+    <div class="spine"><span class="k sku"></span><b>SKU identity</b>&nbsp;<span>· dim_item / canon cascade → product subjects</span></div>
+    <div class="spine"><span class="k outlet"></span><b>Outlet identity</b>&nbsp;<span>· dim_outlet (hoodie_outlet + match keys) → account · chain · geo</span></div>
+    <div class="spine"><span class="k census"></span><b>Census ring</b>&nbsp;<span>· ACS enrich on the place side</span></div>
+  </div>
+
+  <div class="legend" id="legend"></div>
+  <div class="mwrap"><table id="matrix"></table></div>
+
+  <div class="sec">Today's dossier, per subject</div>
+  <div class="cards" id="cards"></div>
+
+  <div class="read">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z"/></svg>The read</h2>
+    <p><b>Product</b> is the mature subject — a real menu→shelf→distribution→price funnel over canon identity. That's what Signal Stack shows today; it's just retail-only.</p>
+    <p><b>Account is buildable now — but for a specific reason.</b> Its <b>identity</b>, <b>commercial</b> (territory · relations · locator · banner), and <b>census</b> rings are all real, so an account dossier answers <b>who / where / who-they-are</b> from landed data on day one. What's thin is the <b>outcome</b> signal — what the account actually sells — which is coverage-bound and fills in as the DoorDash / Toast / first-party pulls widen. Census is precisely what makes an account subject valuable <i>before</i> that outcome data arrives.</p>
+    <p><b>Zip / geo</b> and <b>demographic segment</b> are census-led: strong as an enrichment lens and a way <i>into</i> the account layer, not standalone dossiers yet. <b>Chain / chain-parent</b> has real footprint + reachability + banner identity, with aggregate assortment filling in chain-by-chain.</p>
+    <p><b>The keystone we don't have yet is sales.</b> Depletions / POS turns inferred velocity into real velocity and — the piece worth calling out — lights the <b>brand ↔ demographics bridge</b>: sales-weighted outlets crossed with their trade-area census reveal which demographics over-index on a brand, and the inverse (which brands over-index in a segment). That's <b style="color:var(--sales)">sales-gated</b> in the grid, not a gap — the method is ready, it's waiting on the data.</p>
+    <div class="rec"><p style="margin:0"><b>So the v1 mock should center the ACCOUNT subject</b> — light its real rings (identity, commercial, census) fully, honestly stub the thin ones (assortment/velocity), and let the census enrichment carry the value. That proves the polymorphic subject on the data we actually have.</p></div>
+  </div>
+
+  <div class="foot">Grounded design map · <b>not a wired app</b>. Every <code>source</code> named is a real table, app, or connector in the suite; every gap is honest. Readiness reflects landed-data maturity, not ambition.</div>
+</div>
+
+<script>
+const INSTR=[
+  {k:'identity',label:'Identity',bk:'Master'},
+  {k:'menu',label:'Menu',bk:'Retail · on-prem'},
+  {k:'shelf',label:'Shelf',bk:'Retail'},
+  {k:'dist',label:'Distribution',bk:'Retail'},
+  {k:'price',label:'Price',bk:'Retail'},
+  {k:'commercial',label:'Commercial',bk:'Commercial'},
+  {k:'demo',label:'Demographics',bk:'Census'},
+  {k:'fresh',label:'Freshness',bk:'Data Ops'},
+];
+const LV={real:'Landed',partial:'Partial',derived:'Derived',sales:'Sales-gated',gap:'Gap'};
+// each cell: [level, source]
+const SUBJ=[
+  {k:'product',label:'Brand / SKU / Category',spine:'sku',spineLabel:'SKU identity',cells:{
+    identity:['real','dim_item · canon cascade'], menu:['real','menu-analytics · naop/Toast'],
+    shelf:['partial','retail-analytics planogram'], dist:['partial','retail.html · off-prem recipes'],
+    price:['real','price-index · retail_observations'], commercial:['partial','order-hub · deal break-even'],
+    demo:['sales','buyer profile — needs depletions'], fresh:['real','monitor · health_digest'] }},
+  {k:'account',label:'Account (outlet)',spine:'outlet',spineLabel:'Outlet identity',cells:{
+    identity:['real','dim_outlet · src_outlets 101k · Google'], menu:['partial','DoorDash/Toast/naop where covered'],
+    shelf:['partial','City Hive · TW per-store where scraped'], dist:['partial','own assortment where pulled'],
+    price:['partial','per-store price (TW · 7NOW)'], commercial:['real','territory · relations · locator · banner'],
+    demo:['real','census ACS — tract/zip trade-area'], fresh:['real','per-source last-seen · data-console'] }},
+  {k:'geo',label:'Zip / Geo',spine:'outlet',spineLabel:'Geo key',cells:{
+    identity:['derived','geo key — accounts roll up'], menu:['gap','coverage too sparse'],
+    shelf:['gap','coverage too sparse'], dist:['partial','outlet density · coverage-map'],
+    price:['derived','sparse account roll-up'], commercial:['partial','coverage vs universe'],
+    demo:['real','census ACS — full profile'], fresh:['partial','representativeness cells'] }},
+  {k:'chain',label:'Chain / Chain-parent',spine:'outlet',spineLabel:'Outlet identity',cells:{
+    identity:['real','mdm-chains · chains.html · banners'], menu:['derived','aggregate where scraped'],
+    shelf:['partial','aggregate assortment where pulled'], dist:['partial','footprint · doors'],
+    price:['partial','chain price where scraped'], commercial:['real','reachability · method · footprint'],
+    demo:['derived','footprint-weighted ACS'], fresh:['real','per-chain scrape health'] }},
+  {k:'demoseg',label:'Demographic segment',spine:'census',spineLabel:'Census-defined',cells:{
+    identity:['real','ACS-defined segment'], menu:['gap','via selected accounts'],
+    shelf:['gap','—'], dist:['derived','accounts in matching zips'],
+    price:['gap','—'], commercial:['derived','accounts matching profile'],
+    demo:['real','census native'], fresh:['partial','coverage-bound'] }},
+];
+const VERDICT={
+  product:'The mature subject — a real menu→shelf→distribution→price funnel over canon identity, retail-only today. Its demographics cell is sales-gated: a real buyer profile (which zips/segments over-index on the brand) needs depletions.',
+  account:'Rich on <b>who/where/who-they-are</b> — identity, commercial and census are all real. Thin on <b>what-it-sells</b> until per-account coverage grows. A genuine dossier is buildable now if the assortment panels are honestly stubbed.',
+  geo:'Census-led by nature — a strong demographic + density profile, with outcome signal only as sparse account roll-ups. Best as an enrichment lens, not a standalone dossier yet.',
+  chain:'Footprint, reachability and banner identity are real; aggregate assortment/price fill in chain-by-chain as you pull them. A useful chain-parent rollup today.',
+  demoseg:'An entry lens, not a dossier: census-native selection of zips/accounts that then inherit their (thin) signals. Powerful as the way <i>into</i> the account layer.',
+};
+const spineDot=s=>s==='sku'?'var(--good)':s==='census'?'var(--warn)':'var(--accent)';
+
+// legend
+document.getElementById('legend').innerHTML=['real','partial','derived','sales','gap']
+  .map(l=>`<span class="li"><span class="dot ${l}"></span>${LV[l]}${l==='derived'?' (census / roll-up)':l==='partial'?' (coverage-dependent)':l==='sales'?' (needs depletions/POS)':''}</span>`).join('');
+
+// matrix
+let h='<thead><tr><th class="corner rowh">Subject ↓ &nbsp; Instrument →</th>'+
+  INSTR.map(i=>`<th>${i.label}<span class="bk">${i.bk}</span></th>`).join('')+'</tr></thead><tbody>';
+SUBJ.forEach(s=>{
+  h+=`<tr><th class="rowh"><span class="nm">${s.label}</span><br><span class="sp"><span class="k" style="background:${spineDot(s.spine)}"></span>${s.spineLabel}</span></th>`;
+  INSTR.forEach(i=>{ const [lv,src]=s.cells[i.k];
+    h+=`<td class="${lv}"><div class="cell"><div class="cd"><span class="dot ${lv}"></span><span class="lv ${lv}">${LV[lv]}</span></div><div class="src">${src}</div></div></td>`; });
+  h+='</tr>';
+});
+h+='</tbody>';
+document.getElementById('matrix').innerHTML=h;
+
+// dossier cards
+document.getElementById('cards').innerHTML=SUBJ.map(s=>{
+  const real=INSTR.filter(i=>s.cells[i.k][0]==='real').map(i=>i.label);
+  const thin=INSTR.filter(i=>['partial','derived','sales','gap'].includes(s.cells[i.k][0])).map(i=>i.label);
+  const rings=real.map(r=>`<span class="ring real"><span class="d"></span>${r}</span>`).join('')
+    +(thin.length?`<span class="ring thin"><span class="d"></span>${thin.length} thin/derived</span>`:'');
+  return `<div class="dcard"><h3>${s.label}</h3>
+    <div class="sp"><span class="k" style="background:${spineDot(s.spine)}"></span>${s.spineLabel}</div>
+    <div class="verdict">${VERDICT[s.k]}</div>
+    <div class="rings">${rings}</div></div>`;
+}).join('');
+</script>
+</body>
+</html>

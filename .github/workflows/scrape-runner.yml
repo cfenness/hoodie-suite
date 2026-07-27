@@ -10,9 +10,10 @@ name: scrape-runner
 #   BRIGHTDATA_API_KEY                                 for bdata (retail pulls); optional for API/Socrata jobs
 #   KROGER_CLIENT_ID / KROGER_CLIENT_SECRET            when the Kroger connector lands (optional until then)
 
+# SCHEDULE REMOVED — the hourly Fly dispatcher (unifyd/dispatch_ephemeral.py) owns scheduling now.
+# This cron ran every 12h against a repo with no Actions minutes, so it only produced failures.
+# Kept dispatch-only as a manual escape hatch.
 on:
-  schedule:
-    - cron: "0 */12 * * *"      # every 12 hours
   workflow_dispatch:
     inputs:
       connector:
