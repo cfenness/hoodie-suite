@@ -189,6 +189,9 @@ def init(app):
             return
         if session.get("email"):
             return
+        print("AUTHDEBUG _gate: no session email for path=%r session_keys=%r cookie_present=%r"
+              % (p, list(session.keys()), bool(request.cookies.get(app.config.get("SESSION_COOKIE_NAME", "session")))),
+              flush=True)
         # mobile bearer token (native apps have no cookie)
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Bearer ") and verify_mobile_token(auth[7:]):
@@ -237,9 +240,14 @@ def init(app):
             abort(404)
         import requests
         err = request.args.get("error")
+        print("AUTHDEBUG callback: incoming state=%r session_had_state=%r cookie_present=%r"
+              % (request.args.get("state"), session.get("oauth_state"),
+                 bool(request.cookies.get(app.config.get("SESSION_COOKIE_NAME", "session")))), flush=True)
         if err:
+            print("AUTHDEBUG callback: google returned error=%r" % err, flush=True)
             return _deny("Google returned: %s" % err)
         if request.args.get("state") != session.pop("oauth_state", None):
+            print("AUTHDEBUG callback: STATE MISMATCH", flush=True)
             return _deny("state mismatch — please try signing in again.")
         code = request.args.get("code")
         if not code:
@@ -260,13 +268,16 @@ def init(app):
             email = verify_claims(claims, cid, _allowed_emails(),
                                   session.pop("oauth_nonce", None))
         except ValueError as e:
+            print("AUTHDEBUG callback: verify_claims/ValueError: %r" % str(e), flush=True)
             return _deny(str(e))
         except Exception as e:
+            print("AUTHDEBUG callback: exception: %r" % str(e), flush=True)
             return _deny("sign-in failed: %s" % (str(e)[:200]))
         session["email"] = email
         dest = session.pop("next", "/") or "/"
         if not dest.startswith("/"):
             dest = "/"                       # only ever redirect to our own paths
+        print("AUTHDEBUG callback: SUCCESS email=%r dest=%r" % (email, dest), flush=True)
         return redirect(dest)
 
     @app.get("/auth/logout")
