@@ -166,31 +166,42 @@ def _laf_header(store_id, facility_id, modality="PICKUP"):
                                      "handoffLocation": {"facilityId": facility_id, "storeId": store_id}}}])
 
 
-_OPENER = None
-
-
-def _opener():
-    """An opener bound to BROWSER_PROXY — the SAME sticky residential exit the Akamai cookie was warmed on
-    (run_sources sets it for headful/mac sources). Akamai session cookies are IP-bound: warm-on-A / replay-from-B
-    (the box's own datacenter IP) = instant reject, which is why the atlas fetch returned 0 and kroger never
-    landed. Routing the replay through the warm's exit is the fix. No proxy env → the default direct opener."""
-    global _OPENER
-    if _OPENER is not None:
-        return _OPENER
-    px = os.environ.get("BROWSER_PROXY") or os.environ.get("KROGER_PROXY") or ""
-    _OPENER = (urllib.request.build_opener(urllib.request.ProxyHandler({"http": px, "https": px}))
-               if px else urllib.request.build_opener())
-    return _OPENER
+_DBG = [0]
 
 
 def fetch(gtins, cookie, store_id, facility_id, modality="PICKUP", timeout=25):
+    # curl_cffi through the ISP proxy — NOT urllib. urllib's ProxyHandler HTTPS-tunnels through the ISP proxy
+    # unreliably (it TIMED OUT every batch → the run came back 'empty' with no products). curl_cffi is the proven
+    # proxy path (the DoorDash/UE cracks). Same BROWSER_PROXY the cookie was warmed on so the fetch shares the IP.
+    from curl_cffi import requests as cr
     q = "&".join("filter.gtin13s=%s" % g for g in gtins)
     url = "%s?%s&filter.verified=true&projections=%s" % (API, q, urllib.parse.quote(PROJECTIONS))
-    req = urllib.request.Request(url, headers={
-        "User-Agent": UA, "Accept": "application/json", "Cookie": cookie,
-        "x-laf-object": _laf_header(store_id, facility_id, modality),
-        "Referer": "https://www.kroger.com/"})
-    body = _opener().open(req, timeout=timeout).read().decode("utf-8", "replace")
+    headers = {"User-Agent": UA, "Accept": "application/json", "Cookie": cookie,
+               "x-laf-object": _laf_header(store_id, facility_id, modality), "Referer": "https://www.kroger.com/"}
+    px = os.environ.get("BROWSER_PROXY") or os.environ.get("KROGER_PROXY") or ""
+    proxies = {"http": px, "https": px} if px else None
+    r = cr.get(url, headers=headers, impersonate="chrome", proxies=proxies, timeout=timeout)
+    body = r.text
+    if _DBG[0] < 3:                                              # instrument the first few atlas responses
+        _DBG[0] += 1
+        import sys
+        try:
+            d = json.loads(body)
+        except Exception:
+            d = None
+        nprod = len(((d.get("data") or {}).get("products")) or []) if isinstance(d, dict) else "?"
+        err = (d or {}).get("errors") if isinstance(d, dict) else None
+        print("[kroger DBG] http=%s store=%s fac=%s cookie_len=%d products=%s err=%s snippet=%r"
+              % (r.status_code, store_id, facility_id, len(cookie or ""), nprod, err,
+                 body[:200].replace("\n", " ")), file=sys.stderr, flush=True)
+        if _DBG[0] == 1:                                         # DURABLE capture (ephemeral logs are lost on reboot)
+            try:
+                warehouse.write_parquet("kroger_atlas_debug", [{
+                    "http": int(r.status_code), "products": nprod if isinstance(nprod, int) else -1,
+                    "store": str(store_id), "fac": str(facility_id), "cookie_len": len(cookie or ""),
+                    "err": json.dumps(err)[:300] if err else "", "snippet": body[:400]}], allow_empty=True)
+            except Exception as _e:
+                print("[kroger DBG] durable write failed: %s" % str(_e)[:80], file=sys.stderr, flush=True)
     return ((json.loads(body).get("data") or {}).get("products")) or []
 
 
