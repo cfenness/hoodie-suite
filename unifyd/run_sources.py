@@ -103,11 +103,24 @@ def ledger_last():
 def due_sources(now=None, grace=0.98):
     """The enabled sources whose interval has lapsed — last attempt (ts_start of ANY status in
     the ledger) older than interval_h * grace. The 2% grace keeps a fixed tick (e.g. a 24h-interval
-    source checked every 30min) from slipping a full tick each day. Never-run sources are due."""
+    source checked every 30min) from slipping a full tick each day. Never-run sources are due.
+
+    SELF-HEAL: also includes FAILED sources whose escalating backoff has elapsed (selfheal.retry_due_ids),
+    so a transient failure retries in MINUTES instead of waiting a whole cadence — until it recovers or is
+    quarantined to a daily probe. Same shared ledger; degrades to interval-only if selfheal is unavailable."""
     now = now or time.time()
     last, _ = ledger_last()
-    return [s for s in reg.SOURCES if s.get("enabled")
-            and now - last.get(s["id"], 0) >= _interval_h(s) * 3600 * grace]
+    due = [s for s in reg.SOURCES if s.get("enabled")
+           and now - last.get(s["id"], 0) >= _interval_h(s) * 3600 * grace]
+    try:
+        import selfheal
+        retry = selfheal.retry_due_ids(now)
+    except Exception:
+        retry = set()
+    if retry:
+        have = {s["id"] for s in due}
+        due += [s for s in reg.SOURCES if s.get("enabled") and s["id"] in retry and s["id"] not in have]
+    return due
 
 
 def should_build(headless_only, mac_only, builds=False, no_builds=False):
