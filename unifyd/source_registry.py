@@ -153,6 +153,17 @@ SOURCES = [
               "collections run live on the Mac (TTB TLS-blocked on Fly)"),
     dict(id="vtinfo", label="VTInfo locator", code="import vtinfo as m; m.pull()",
          tables=["vtinfo_titos"], klass="headless", cadence="weekly", enabled=True, note="where-to-buy GraphQL"),
+    # The custID keyspace is 3 alnum chars (case-insensitive) = 46,656 — enumerable, so the VIP tenant
+    # directory is a census, not a hand-harvested dict. Resumable + checkpointed: each run takes a
+    # deadline-bounded bite and the next resumes. cost_class=proxy — one IP 429s in seconds, so it
+    # needs the ISP pool (it REFUSES to run direct without --allow-direct).
+    dict(id="vip-finder-census", label="VIP finder tenant census",
+         code="import vip_finder_census as m; m.pull(argv=['--deadline', '3000'])",
+         tables=["vip_finder_tenants", "vip_finder_brands"], klass="headless", cadence="weekly",
+         enabled=True, cost_class="proxy", timeout=3600,
+         note="enumerates custID 36^3 through the ISP pool; each run takes a 50min resumable bite "
+              "(checkpoint in the warehouse) until the keyspace is walked. Pacing is adaptive — 1s/IP, "
+              "doubling on 429 — so it self-throttles; --calibrate only makes it faster"),
     dict(id="doordash-sitemap", label="DoorDash store universe", code="import doordash_sitemap as m; m.run()",
          tables=["doordash_stores"], klass="headless", cadence="weekly", enabled=True, timeout=7200,
          note="$0 national store spine from DoorDash's own sitemaps (curl_cffi+ISP); feeds naop + retail"),
