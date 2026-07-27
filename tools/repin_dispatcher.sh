@@ -28,9 +28,23 @@ DISPATCH_CMD="python3 -u /app/unifyd/dispatch_ephemeral.py"
 
 command -v "$FLYCTL" >/dev/null 2>&1 || { echo "flyctl not found at $FLYCTL" >&2; exit 1; }
 
-read -r DISPATCHER APP_IMAGE DISPATCHER_IMAGE <<EOF
+read -r DISPATCHER APP_IMAGE DISPATCHER_TAG APP_TAG <<EOF
 $("$FLYCTL" machines list -a "$APP" --json | python3 -c '
-import json, sys
+import json, sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(".")), "unifyd"))
+
+def image_tag(ref):
+    """Same normalization as dispatch_ephemeral.image_tag — the SAME release comes back as
+    `:deployment-XYZ` on an app machine but `:deployment-XYZ@sha256:...` on a pinned one, so a raw
+    string compare would re-pin forever (or, worse, look stale when it is not)."""
+    if not ref:
+        return ""
+    name = ref.rsplit("/", 1)[-1]
+    tag = name.split("@", 1)[0]
+    if ":" in tag:
+        return tag.split(":", 1)[1]
+    return name.split("@", 1)[1] if "@" in name else name
+
 ms = json.load(sys.stdin)
 dispatcher = app_image = dispatcher_image = ""
 for m in ms:
@@ -40,15 +54,15 @@ for m in ms:
         dispatcher, dispatcher_image = m["id"], cfg.get("image", "")
     elif md.get("fly_process_group") == "app" and m.get("state") == "started":
         app_image = cfg.get("image", "")
-print(dispatcher or "-", app_image or "-", dispatcher_image or "-")
+print(dispatcher or "-", app_image or "-", image_tag(dispatcher_image) or "-", image_tag(app_image) or "-")
 ')
 EOF
 
 [ "$DISPATCHER" = "-" ] && { echo "no machine tagged role=dispatcher on $APP" >&2; exit 1; }
 [ "$APP_IMAGE" = "-" ] && { echo "no started machine in the 'app' process group on $APP" >&2; exit 1; }
 
-if [ "$DISPATCHER_IMAGE" = "$APP_IMAGE" ]; then
-  echo "dispatcher $DISPATCHER already on the current image (${APP_IMAGE##*:}) — nothing to do"
+if [ "$DISPATCHER_TAG" = "$APP_TAG" ]; then
+  echo "dispatcher $DISPATCHER already on the current release ($APP_TAG) — nothing to do"
   exit 0
 fi
 
