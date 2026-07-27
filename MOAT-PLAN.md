@@ -35,9 +35,9 @@ Every claim gets a number, and every number gets a surface. No adjectives withou
 |---|---|---|---|
 | Freshest in category | per-source SLO age vs interval | Data Console dispatcher strip (live) | hot ≤4h, daily ≤24h (live today) |
 | Cheapest in category | est $/mo, measured machine-hours | Data Console cost strip (live) | ≤$100/mo at full fleet |
-| **Velocity you can trust** | MAPE of implied velocity vs ground-truth sales (Iowa + control states) at brand×market×month | Velocity tab + this doc | ≤15% v1, ≤10% v2 |
-| **Master you can trust** | precision / recall on a versioned gold set; % records carrying confidence | MDM workbench + CI gate | P ≥99%, R ≥95% @ item grain, 100% confidence coverage |
-| **Honest projection** | coverage % per market×channel cell; CI width; anchor-validation error | Coverage map + every market metric | 100% of cells labeled; validated cells within ±10% of anchors |
+| **Velocity you can trust** | *external:* MAPE vs ground-truth sales; *internal (live):* conservation ratio (implied sales ÷ restock, →1) | `velocity_calibration` + this doc | ext ≤15%→10%; internal 0.8–1.2 |
+| **Master you can trust** | precision / recall on a versioned gold set; % records carrying confidence | `master_quality` + CI gate | P ≥99%, R ≥95% @ item grain (**baseline measured 2026-07-24: P=1.000, R=0.285, F1=0.444** — precise but under-merges) |
+| **Honest projection** | coverage % per market×channel cell; CI width; anchor-validation error | `coverage_cells`/`market_projection` + every market metric | 100% of cells labeled (**live**; IL coverage 0.18% → all cells OBSERVED-only, projection self-activates as coverage grows); validated cells within ±10% of anchors |
 | Survives its author | tested cold-start time; recipe MTTR | runbook + health digest | restore ≤1h; MTTR ≤72h |
 
 Targets are v1 stakes-in-the-ground — re-baseline after the first calibration run, but only ever
@@ -91,6 +91,20 @@ This is the step none of the scraped-data shops do, and we can, because bev-alc 
 - **SipSource, when it arrives, is the third anchor — a corroborator, never the spine** (same
   doctrine as TTB-not-spine, VIP-not-spine).
 
+**BUILT (`velocity_calibrate.py`, 2026-07-24).** Two validators, honest about each:
+- **Conservation (internal, LIVE):** in steady state a store restocks what it sells, so implied
+  sales ÷ restock → 1. First reading: binny's **0.75** (2-day cadence censors sales between
+  restocks → velocity is a defensible LOWER bound), sevennow **1.47** (over-count flag — small-store
+  recount noise), total **0.77**. A real accuracy signal with direction, needing no external data.
+- **External MAPE (harness ready, PENDING overlap):** joins velocity→brand×market×period to a
+  ground-truth adapter (Montgomery MD `mont_sales`; Iowa BigQuery when landed), fits scale, reports
+  MAPE + coverage. **Today coverage=0 and it says so** — velocity is IL (binny's), the only sales
+  anchor is MD; OR/UT/NC are price lists, not volume. The harness math is proven (11.7% MAPE on a
+  synthetic overlapping fixture); it produces the real number the day a velocity source lands in an
+  anchor market OR Iowa is pulled. **The cheapest path to a real MAPE: run a national count source
+  (7-Eleven/sevennow, Target) in Iowa or Montgomery County, or land `iowa_bq`.**
+- Lands `velocity_calibration`; registry `build-velocity-calibrate` (after build-velocity).
+
 ### V5. Derived signals (what sales teams actually buy)
 - **Movers**: velocity leaderboards, accelerating/decelerating brands per market (positive framing:
   lead with the win + the next move).
@@ -98,9 +112,33 @@ This is the step none of the scraped-data shops do, and we can, because bev-alc 
   units. An actionable list with evidence, not a chart.
 - **Restock cadence** per store/chain → order-timing intelligence + promo-flip detection.
 
+**BUILT (`velocity_signals.py`, 2026-07-24).** `signal_movers` + `signal_voids`.
+- **Movers** use the **matched-cell** (same-store-sales) method — only cells observed in BOTH weeks
+  count, so a coverage change can't fake a trend. And a mover is **CONFIRMED only when both weeks are
+  full** (observed on ≥80% of the best week's calendar days): a partial start/current week skews the
+  WoW % in *either* direction (the data showed fake +7730% AND fake −100%). Live today: **0 confirmed
+  movers — the honest 'not yet'** (only one full observation week exists; all 1015 mover rows are
+  staged + flagged partial and self-activate once a second full week lands). Coverage is measured over
+  the velocity-feeding sources only, so a non-velocity source scraping a given day can't fake fullness.
+- **Voids ship now** (current-state, not WoW-dependent): brand OOS across N stores → estimated
+  recoverable units = the brand's own per-store velocity × out-stores. Live: Michelob out 32/49,
+  Miller 42/49, Modelo 30/49 — real chain-wide distribution opportunities, positive-framed.
+- Lands `signal_movers` / `signal_voids`; registry `build-velocity-signals` (after build-velocity).
+- **Restock cadence** deferred — needs the per-restock timing grain the weekly fact doesn't carry
+  (a follow-up reads the pair stream directly; `restock_units` from V4 is the first half).
+
 ### V6. Surfaces
 - `/api/velocity` (marts only, confidence + as_of on every payload) + a Velocity tab in the console
   and the Hoodie app. Nothing renders without its confidence.
+
+**BUILT (`/api/velocity` in server.py + `apps/velocity.html`, 2026-07-24).** Marts only (signal_voids,
+signal_movers, mart_velocity_brand_week, velocity_calibration) — never the raw fact grain; every
+section stamped confidence + as_of. The surface **leads with the win** (distribution voids to close
+now, recoverable-units bar per brand), then movers (confirmed-week table when two full weeks exist,
+else an explicit "no confirmed movers yet — early-read staged" banner — never a fake WoW), a
+velocity leaderboard, and the calibration trust stamp (conservation ratio per source). Registered in
+`APPS` under Signal Stack. Verified end-to-end against production (2,235 voids, Miller/Modelo/Michelob
+leaders, binny's 0.75 conservation) via the canonical warehouse path; smoke green.
 
 **Exit criteria:** MAPE ≤15% vs Iowa at brand×market×month on covered brands; ≥100k store×sku cells
 at confidence ≥0.7; the voids list generates with citable evidence per row.
@@ -135,6 +173,25 @@ fan-in bands (2-source items vs 200-source items fail differently).
 - `master_quality.py`: precision / recall / F1 — overall, per category, per rule — against the gold
   set. Runs in CI on any matcher/blocking change; a drop beyond threshold blocks the merge (same
   pattern as the warehouse-compat gate).
+
+**BUILT (M1+M2, `master_quality.py`, 2026-07-24).** Deterministic gold set (no human/LLM needed for
+v1): POSITIVES = same normalized UPC (authoritative same-item → tests under-merge/recall); NEGATIVES
+= different normalized brand (definitely different → tests over-merge/precision, non-circular even
+when the matcher uses UPC). Scores the master's decision = "same `item_key` in xwalk_source_sku".
+Gold pairs land append-only + versioned in `gold_matches`; the score lands in `master_quality`.
+- **First measured baseline: P=1.000, R=0.285, F1=0.444 over 8,000 balanced pairs.** The master
+  **never over-merges** (0 false positives across 4,000 cross-brand pairs — a real, provable
+  strength) but **under-merges hard** (only 28.5% of same-UPC records unify under one item_key — the
+  "98.5% single-source" fragmentation, now a number). This is the baseline to RATCHET, not an
+  aspirational pass: the CI/build gate is **anti-regression** (P/R may not drop > MQ_REG_TOL vs the
+  last run), so matching work is measured as it lifts recall without sacrificing precision.
+- Registry `build-master-quality` (after build-product-master) rescores every cycle + flags
+  regressions. 11-test harness proves the P/R math (perfect / under-merge / over-merge / regression
+  fixtures); duckdb 1.4.5 + 1.5.5. **CI gate is currently harness-correctness** (offline math); wiring
+  the LIVE regression gate into `cloud-sources.yml` (needs Tigris creds in CI) is the next step.
+- **The recall gap is now the master's headline work item** — the raw material to lift it (owned
+  GS1-prefix crosswalk, UPC shape-heals, category-conditional blocking) already exists; M gives it a
+  measured target and a ratchet.
 
 ### M3. Per-record confidence
 - Every dim_item/dim_sku row gets `match_confidence` derived from rule strength + corroboration
@@ -175,6 +232,21 @@ The bridge from observation engine to market-truth engine. Never pretend a scrap
 
 **Exit criteria:** every market metric carries coverage% + CI; validated cells within ±10% of
 anchors; zero unlabeled projections anywhere in the suite.
+
+**BUILT (R1–R3, `representativeness.py`, 2026-07-24).** Coverage per state (observed outlets ÷
+`outlet_master` universe) + market metrics in OBSERVED (deterministic sum) vs PROJECTED (finite-
+population survey estimator: total = N·x̄, CI = N·(s/√n)·√FPC·1.96), with PROJECTED **suppressed below
+a coverage/obs floor and the reason shown**. Lands `coverage_cells` + `market_projection`; registry
+`build-representativeness` (after build-velocity).
+- **Live reading: IL coverage 0.18% (49 of 26,800 outlets) → all 5,921 brand cells OBSERVED-only**,
+  projection honestly withheld (0.18% ≪ the 2% floor). This is the framework working: it MEASURES the
+  gap and refuses to invent a market number the data can't support. Projection **self-activates** as
+  coverage grows (more sources/stores per state) — same posture as V4's pending MAPE and M's recall
+  baseline: build the rigorous machine, measure honestly, activate when the data earns it.
+- The OBSERVED-vs-PROJECTED split is the DETERMINISTIC-vs-INFERENCE doctrine extended to statistics;
+  nothing projected is ever shown unlabeled. R4 reuses velocity_calibrate's anchor spine (pending the
+  same footprint overlap).
+- 12-test suite proves the projection + CI math + suppression; duckdb 1.4.5 + 1.5.5.
 
 ---
 

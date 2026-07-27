@@ -17,6 +17,7 @@ import observe
 import doordash as dd
 import cocktail_taxonomy as ctx
 import cuisine as cui
+import outlet_ident
 
 # seed on-premise accounts (DoorDash restaurant store ids) — expandable via the SERP/setLocation discovery
 DEFAULT_STORES = ["122020"]                 # Applebee's Grill & Bar (Orlando)
@@ -54,38 +55,104 @@ def _restaurant_name(html_text):
     return _html.unescape(t).split(" - ")[0].replace("Order ", "").strip()[:60]
 
 
-def run(stores=None, log=print):
-    stores = stores or DEFAULT_STORES
-    key = dd._api_key()
+# Big RETAIL chains that also appear in DoorDash's store sitemap — they carry convenience/retail catalogs, not
+# an on-premise DRINK menu, and are already captured by the dedicated retail connectors. naop (on-premise:
+# restaurants + bars) skips them so its per-run budget buys real menu data, not 0-beverage retail fetches.
+_RETAIL_CHAINS = ("total wine", "cvs", "walgreens", "walmart", "7 eleven", "7-eleven", "circle k", "wawa",
+                  "target", "kroger", "safeway", "albertsons", "publix", "meijer", "costco", "sam s club",
+                  "bevmo", "abc fine wine", "binny", "duane reade", "rite aid", "dollar general",
+                  "family dollar", "sprouts", "whole foods", "trader joe", "gopuff", "sheetz", "quiktrip")
+
+
+def _is_retail(name):
+    n = (name or "").lower()
+    return any(c in n for c in _RETAIL_CHAINS)
+
+
+def _due_stores(limit, log=print):
+    """The next batch of DoorDash store-ids to menu-fetch, drawn from the doordash_stores UNIVERSE (harvested
+    $0 by doordash_sitemap) minus the ones we've already captured (in naop_accounts) and minus known RETAIL
+    chains (covered by the retail connectors). Each run advances national on-premise coverage a bounded chunk;
+    accumulate over runs → full. Falls back to the seed store if the universe hasn't been harvested yet."""
+    try:
+        done = {str(r["store"]) for r in warehouse.query("naop_accounts", "SELECT DISTINCT store FROM t")}
+    except Exception:
+        done = set()
+    try:
+        universe = warehouse.query("doordash_stores",
+                                   "SELECT store_id, name FROM t WHERE store_id IS NOT NULL LIMIT 300000")
+    except Exception:
+        universe = []
+    todo = [str(r["store_id"]) for r in universe
+            if str(r["store_id"]) not in done and not _is_retail(r.get("name"))]
+    if not todo:
+        log("  [naop] doordash_stores empty/all-done — falling back to seed store")
+        return list(DEFAULT_STORES)
+    log("  [naop] universe=%d done=%d taking=%d (retail chains skipped)"
+        % (len(universe), len(done), min(limit, len(todo))))
+    return todo[:limit]
+
+
+def _pull_one(sid, run_id):
+    """Fetch + parse ONE DoorDash store menu. Returns (beverage_rows, account_row) or (None, None).
+    Thread-safe: no shared state → runs concurrently. The page fetch dominates, so a thread pool is a big win."""
+    try:
+        h = dd._unlock("https://www.doordash.com/store/%s" % sid, key=None)
+    except Exception:
+        return None, None
+    if not h:
+        return None, None
+    rest = _restaurant_name(h)
+    ident = outlet_ident.extract_doordash(h)
+    cz, czs, csrc = cui.classify(rest, h)
+    menu = parse_menu(dd._rsc(h))
+    rows, kept = [], 0
+    for it in menu:
+        if _FOOD.search(it["name"]):
+            continue
+        b = ctx.classify_beverage(it["name"], it["description"])
+        if not (b["is_alcoholic"] or b["category"] == "mocktail"):
+            continue
+        rows.append(dict(store=str(sid), account=rest, cuisine=cz, cuisines="|".join(czs),
+                         name=it["name"], description=it["description"][:300], price=it["price"],
+                         price_basis="doordash_delivery", category=b["category"],
+                         is_alcoholic=b["is_alcoholic"], root=b.get("root", ""), sub=b.get("sub", ""),
+                         base_spirit=b.get("base_spirit", ""), beer_style=b.get("beer_style", ""),
+                         is_hemp=observe.is_hemp(it["name"], it["description"]), run_id=run_id))
+        kept += 1
+    acct = dict(store=str(sid), account=rest, cuisine=cz, cuisines="|".join(czs),
+                cuisine_source=csrc, clean_name=ident.get("name") or rest,
+                street=ident.get("street") or "", city=ident.get("city") or "",
+                state=ident.get("state") or "", phone=ident.get("phone") or "",
+                serves_alcohol=kept > 0, n_beverages=kept, run_id=run_id)
+    return rows, acct
+
+
+def run(stores=None, limit=None, log=print):
+    limit = limit or int(os.environ.get("NAOP_LIMIT", "250"))     # concurrent now — pages are ~30s each via ISP
+    workers = int(os.environ.get("NAOP_WORKERS", "10"))
+    stores = stores or _due_stores(limit, log=log)
     run_id = "naop-" + time.strftime("%Y%m%d-%H%M%S")
-    rows, accounts, unsure = [], [], []
-    for sid in stores:
-        try:
-            h = dd._unlock("https://www.doordash.com/store/%s" % sid, key)
-        except Exception as e:
-            log("  store %s failed: %s" % (sid, str(e)[:50])); continue
-        rest = _restaurant_name(h)
-        cz, czs, csrc = cui.classify(rest, h)                               # servesCuisine off the page
-        menu = parse_menu(dd._rsc(h))
-        kept = 0
-        for it in menu:
-            if _FOOD.search(it["name"]):                                    # it's a dish, not a drink
-                continue
-            b = ctx.classify_beverage(it["name"], it["description"])
-            if not (b["is_alcoholic"] or b["category"] == "mocktail"):     # keep alcoholic + mocktails
-                continue
-            rows.append(dict(store=str(sid), account=rest, cuisine=cz, cuisines="|".join(czs),
-                             name=it["name"], description=it["description"][:300], price=it["price"],
-                             price_basis="doordash_delivery", category=b["category"],
-                             is_alcoholic=b["is_alcoholic"], root=b.get("root", ""), sub=b.get("sub", ""),
-                             base_spirit=b.get("base_spirit", ""), beer_style=b.get("beer_style", ""),
-                             is_hemp=observe.is_hemp(it["name"], it["description"]), run_id=run_id))
-            kept += 1
-        accounts.append(dict(store=str(sid), account=rest, cuisine=cz, cuisines="|".join(czs),
-                             cuisine_source=csrc, serves_alcohol=kept > 0, n_beverages=kept, run_id=run_id))
-        if not cz:
-            unsure.append(rest)
-        log("  [naop] %-34s (%s) [%s] — %d menu items, %d beverages" % (rest, sid, cz or "?", len(menu), kept))
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    rows, accounts, unsure, done = [], [], [], [0]
+    lock = threading.Lock()
+
+    def _work(sid):
+        r, a = _pull_one(sid, run_id)
+        with lock:
+            done[0] += 1
+            if r:
+                rows.extend(r)
+            if a is not None:
+                accounts.append(a)
+                if not a["cuisine"]:
+                    unsure.append(a["account"])
+                if done[0] % 25 == 0:
+                    log("  [naop] %d/%d fetched (%d beverages so far)" % (done[0], len(stores), len(rows)))
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        list(ex.map(_work, stores))
     if unsure:                                                             # Claude fallback for the nameless
         guess = cui.claude_cuisine(unsure)
         for coll in (rows, accounts):
@@ -107,10 +174,21 @@ def run(stores=None, log=print):
         for r in new_rows:
             idx[keyf(r)] = r
         return list(idx.values())
+    # Key by STORE (the DoorDash store id = the physical outlet), NOT by account NAME — a chain has many
+    # locations (5 Total Wines, 100 Applebee's) and name-keying collapsed them to one row, so only ONE of a
+    # chain's store-ids ever got recorded 'done'. That made the batched sweep re-fetch every other chain
+    # location forever, never advancing past chains. Per-location is also the right on-premise grain (price is
+    # delivery-inflated and varies by store). Beverages keyed (store, name); accounts keyed store.
+    # EXPLICIT fields — the merge mixes old rows (pre-enrichment schema) with new ones; without a fixed field
+    # list write_parquet infers the schema from row[0] (an old row) and silently DROPS the new identity columns
+    # (clean_name/street/city/state/phone), which broke outlet matching.
     if rows:
-        warehouse.write_parquet("naop_beverages", _merge("naop_beverages", rows, lambda r: (r.get("account"), r.get("name"))))
+        warehouse.write_parquet("naop_beverages", _merge("naop_beverages", rows, lambda r: (r.get("store"), r.get("name"))))
     if accounts:
-        warehouse.write_parquet("naop_accounts", _merge("naop_accounts", accounts, lambda r: r.get("account")))
+        warehouse.write_parquet("naop_accounts", _merge("naop_accounts", accounts, lambda r: r.get("store")),
+                                fields=["store", "account", "clean_name", "street", "city", "state", "phone",
+                                        "cuisine", "cuisines", "cuisine_source", "serves_alcohol",
+                                        "n_beverages", "run_id"])
         log("[naop] DONE %d beverages · %d accounts (%d serve alcohol) -> naop_beverages / naop_accounts"
             % (len(rows), len(accounts), sum(1 for a in accounts if a["serves_alcohol"])))
     return len(rows)

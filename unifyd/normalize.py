@@ -131,6 +131,34 @@ def _apply_geocode(out, log=print):
     log("[normalize] geocode cache filled %d outlets (of %d entries)" % (n, len(cache)))
 
 
+def _preserve_exact_geo(out, log=print):
+    """Restore exact coords that the async precise crawl wrote straight to src_outlets (aggregator page-fetch,
+    Census batch) but that this rebuild can't re-derive — they key off (source, store_id), not a cacheable
+    address, so without this a rebuild would blank them. Only 'exact' rows are carried; 'city' approximations
+    are re-derived fresh by the centroid pass, so we let them go."""
+    if not warehouse.has_column("src_outlets", "geo_precision"):
+        return                                             # table predates the geo layer — nothing to preserve
+    try:
+        prev = warehouse.query("src_outlets",
+                               "SELECT source, store_id, CAST(lat AS DOUBLE) lat, CAST(lng AS DOUBLE) lng, "
+                               "county_fips FROM t WHERE geo_precision = 'exact' AND lat IS NOT NULL")
+    except Exception:
+        return
+    idx = {(str(r["source"]), str(r["store_id"])): r for r in prev}
+    n = 0
+    for o in out.values():
+        if o["lat"] is not None:
+            continue
+        p = idx.get((str(o["source"]), str(o["store_id"])))
+        if p and p["lat"] is not None:
+            o["lat"], o["lng"] = p["lat"], p["lng"]
+            o["county_fips"] = o["county_fips"] or (p.get("county_fips") or "")
+            o["addr_valid"], o["geo_precision"] = True, "exact"
+            o["geo_cell"] = "%.3f,%.3f" % (o["lat"], o["lng"])
+            n += 1
+    log("[normalize] preserved %d exact async geocodes across rebuild" % n)
+
+
 def _platform_map():
     """offprem sku -> platform (Shopify/WooCommerce/…) so the offprem feed reads by SYSTEM, not by metro."""
     m = {}
@@ -433,7 +461,7 @@ def normalize_outlets(log=print):
            "f_cannabis", "f_rtd_spirits", "flag_basis", "license_conflict", "address", "city", "state", "zip",
            "lat", "lng", "phone", "addr_valid", "hoodie_outlet",
            # ── match keys (for consolidating the same real outlet across sources → dim_outlet) ──
-           "name_key", "phone_norm", "addr_key", "geo_cell", "county_fips"]
+           "name_key", "phone_norm", "addr_key", "geo_cell", "county_fips", "geo_precision"]
     # observation/chain sources whose source-tag IS the banner (the store rows are all that chain)
     SOURCE_CHAIN = {"target": "Target", "kroger": "Kroger", "binnys": "Binny's", "specs": "Spec's",
                     "abc": "ABC Fine Wine", "total-wine": "Total Wine", "totalwine": "Total Wine",
@@ -518,8 +546,18 @@ def normalize_outlets(log=print):
                 _put(site, r["store_uuid"], r["store_name"], address=r.get("address"), city=r.get("city"),
                      state=r.get("state"), zip=r.get("postal_code"), lat=r.get("lat"), lng=r.get("lng"),
                      phone=r.get("phone"))
+            # …plus the full sitemap universe (name+slug only, no geo) — the ~495k UberEats / ~269k Postmates the
+            # crawl hasn't deep-captured. _put skips uuids already added above, so the geo'd _stores rows win;
+            # these get placed by the aggregator page-fetch (exact) — see aggregator_geo. Without this a full
+            # rebuild would drop the sitemap universe (the _stores table is only the deep-captured subset).
+            try:
+                for r in warehouse.query("%s_sitemap" % site,
+                                         "SELECT store_uuid, store_name FROM t WHERE store_name <> ''"):
+                    _put(site, r["store_uuid"], r["store_name"])
+            except Exception as e:
+                log("  [normalize] %s_sitemap: %s" % (site, str(e)[:60]))
             if len(out) > n0:
-                log("  [normalize] %s stores +%d" % (site, len(out) - n0))
+                log("  [normalize] %s stores+sitemap +%d" % (site, len(out) - n0))
         except Exception as e:
             log("  [normalize] %s stores: %s" % (site, str(e)[:60]))
 
@@ -585,6 +623,17 @@ def normalize_outlets(log=print):
         if o["lat"] is not None:
             o["addr_valid"] = True
             o["geo_cell"] = "%.3f,%.3f" % (o["lat"], o["lng"])
+            o["geo_precision"] = "exact"          # source-shipped / geocode-cache / borrowed = a real point
+    # 6a) durable precise geo — a full rebuild must NOT downgrade an outlet the async exact crawl (Census batch,
+    #     aggregator page-fetch) already pinned but that has no cacheable address. Restore those coords here.
+    _preserve_exact_geo(out, log)
+    # 6b) FAST layer — city-centroid every still-unplaced outlet that carries a city+state (DoorDash: all 587k).
+    #     Deterministic from city+state, so it re-applies on every rebuild; the exact crawl upgrades 'city'→'exact'.
+    try:
+        import city_centroid
+        city_centroid.geo_enrich_rows(list(out.values()), log=log)
+    except Exception as e:
+        log("[normalize] city-centroid enrich skipped: %s" % str(e)[:100])
     # 6) product-carried flags — an account that CARRIES wine sells wine (Barefoot → wine), even if its license
     #    row didn't say so. OR the categories of everything each store stocks into its flags.
     _apply_product_flags(out, log)

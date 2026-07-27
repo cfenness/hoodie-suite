@@ -56,3 +56,8 @@ Tracked here so they're not forgotten:
 | 7-Eleven | `sevennow_warm.py` | `sevennow.py` = library it wraps (keep) |
 | Instacart | `instacart.py` (free Playwright driver, aggregator base) | `instacart_scraper.py` = archived BD dataset (paid) |
 | Shopify | `off_premise.py` → `national_sweep("shopify")` / `shopify_catalog` (census-sweep recipe, registry id `shopify`) | `shopify_scraper.py` = standalone DTC scraper, folded into the census sweep 2026-07-24 (its brand seed → `off_premise.SHOPIFY_SEED`) |
+
+- `walmart_scraper.py` — superseded Bright Data `walmart_product` path. Replaced by `walmart_direct.py`
+  (IPRoyal residential + curl_cffi Chrome-JA3, $0). Archived 2026-07 during the source sweep.
+- `hemp_chains.py` — orphan (never registered), read the phantom `orlando_hemp_products` table that no
+  module produces. hemp coverage is served by hemp-finder + hemp-scan. Archived 2026-07 during the source sweep.

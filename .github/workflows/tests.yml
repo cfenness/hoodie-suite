@@ -15,6 +15,12 @@ on:
       - "unifyd/dispatch_guard_test.py"
       - "unifyd/sipsource_*.py"
       - "unifyd/cost_ledger*.py"
+      - "unifyd/obs_quality*.py"
+      - "unifyd/velocity*.py"
+      - "unifyd/velocity_calibrate*.py"
+      - "unifyd/velocity_signals*.py"
+      - "unifyd/master_quality*.py"
+      - "unifyd/representativeness*.py"
   workflow_dispatch:
 
 jobs:
@@ -31,6 +37,12 @@ jobs:
       - run: python unifyd/run_sources_due_test.py
       - run: python unifyd/sipsource_test.py
       - run: python unifyd/cost_ledger_test.py
+      - run: python unifyd/obs_quality_test.py
+      - run: python unifyd/velocity_test.py
+      - run: python unifyd/velocity_calibrate_test.py
+      - run: python unifyd/velocity_signals_test.py
+      - run: python unifyd/master_quality_test.py
+      - run: python unifyd/representativeness_test.py
 
   # Anti-regression: the app's /api/run must dispatch through source_registry, never a drifted *_pull copy.
   dispatch-guard:

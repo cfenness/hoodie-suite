@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script src="../spine/session-guard.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Admin Console — Hoodie Suite</title>
@@ -189,39 +190,57 @@
       emptyText:"No apps." });
   }
 
-  /* ---------- Access ---------- */
+  /* ---------- Access & users (live allowlist management) ---------- */
   function renderAccess(){
     page.innerHTML='<div class="card" id="acc"><div class="em">Loading…</div></div>';
     getJSON("/api/admin/access").then(function(a){
-      var allow=a.allowlist||[], seen=a.seenUsers||[];
+      var managed=a.managed||[], boot=a.bootstrap||[], admins=a.admins||[], seen=a.seenUsers||[];
+      var allowSet={}; (a.allowlist||[]).forEach(function(e){allowSet[e]=1;});
+      var rm=function(e){return '<button title="Remove" data-rm="'+esc(e)+'" style="margin-left:7px;border:0;background:transparent;color:#b4232a;cursor:pointer;font-weight:800;font-size:13px;line-height:1">×</button>';};
       document.getElementById("acc").innerHTML=
-        '<h2>Access &amp; users <span style="flex:1"></span><button class="btn" id="add-user-help">＋ How to add a user</button></h2>'
-        +'<div class="fld"><span class="k">Login gate</span><span class="v"><span class="pill '+(a.gated?"on":"off")+'">'+(a.gated?"active":"open (dev)")+'</span></span></div>'
-        +'<div class="fld"><span class="k">You are</span><span class="v">'+esc(a.currentUser||"— (ungated)")+'</span></div>'
-        +'<div class="fld" style="border:0"><span class="k">Allowlist</span><span class="v">'+(allow.length?'<span class="chips">'+allow.map(function(e){return '<span class="pill on">'+esc(e)+'</span>';}).join("")+'</span>':'<span class="muted">none set — everyone allowed. Set <code>ALLOWED_EMAILS</code> to lock it down.</span>')+'</span></div>'
-        +'<h2 style="margin-top:16px">Seen users <span class="s">· from usage</span></h2>'
-        +(seen.length?'<div class="chips">'+seen.map(function(u){return '<span class="pill off">'+esc(u)+'</span>';}).join("")+'</div>':'<div class="muted">No sign-ins recorded yet.</div>')
-        +'<div class="muted" style="font-size:11.5px;margin-top:14px">The allowlist is set server-side via the <code>ALLOWED_EMAILS</code> secret — edit it with <code>fly secrets set</code> (kept out of the browser by design). Need the steps? Hit <b>How to add a user</b>.</div>';
-      var help=document.getElementById("add-user-help"); if(help)help.onclick=function(){ showAddUser(a); };
-    }).catch(function(){ document.getElementById("acc").innerHTML='<div class="em">Access store offline — start the engine.</div>'; });
+        '<h2>Access &amp; users <span style="flex:1"></span><span class="pill '+(a.gated?"on":"off")+'">'+(a.gated?"login gate active":"gate open (dev)")+'</span></h2>'
+        +'<div class="fld"><span class="k">You are</span><span class="v">'+esc(a.currentUser||"— (ungated)")+' '+(a.isAdmin?'<span class="pill on">admin</span>':'')+'</span></div>'
+        // add a user
+        +'<h2 style="margin-top:18px">Add a user</h2>'
+        +'<div style="display:flex;gap:8px;max-width:540px;flex-wrap:wrap">'
+        +'  <input id="nu" type="email" autocomplete="off" placeholder="person@company.com" style="flex:1;min-width:240px;padding:9px 11px;border:1px solid var(--line,#D7DDDB);border-radius:8px;font-size:13px">'
+        +'  <button class="btn brand" id="nu-add">＋ Add user</button></div>'
+        +'<div class="muted" style="font-size:11.5px;margin-top:7px">Takes effect immediately — no redeploy. They sign in at <code>hoodie-suite.fly.dev</code> with that <b>Google</b> account (Gmail or Google Workspace; 2FA rides their Google login).</div>'
+        // managed users
+        +'<h2 style="margin-top:18px">Managed users <span class="s">· added here · removable</span></h2>'
+        +(managed.length?'<div class="chips">'+managed.map(function(e){return '<span class="pill on">'+esc(e)+rm(e)+'</span>';}).join("")+'</div>':'<div class="muted">None yet — add someone above.</div>')
+        // admins
+        +'<h2 style="margin-top:16px">Admins <span class="s">· full control incl. this console</span></h2>'
+        +'<div class="chips">'+admins.map(function(e){return '<span class="pill on">'+esc(e)+'</span>';}).join("")+'</div>'
+        +'<div class="muted" style="font-size:11.5px;margin-top:6px">Edited via the <code>ADMIN_EMAILS</code> secret (kept out of the browser so admin can’t be granted from the UI).</div>'
+        // bootstrap
+        +'<h2 style="margin-top:16px">Bootstrap <span class="s">· ALLOWED_EMAILS secret · read-only</span></h2>'
+        +(boot.length?'<div class="chips">'+boot.map(function(e){return '<span class="pill off">'+esc(e)+'</span>';}).join("")+'</div>':'<div class="muted">None — the managed list + admins are the whole allowlist.</div>')
+        // seen
+        +'<h2 style="margin-top:16px">Seen users <span class="s">· from usage · click ＋ to allow</span></h2>'
+        +(seen.length?'<div class="chips">'+seen.map(function(u){return '<span class="pill off">'+esc(u)+(allowSet[String(u).toLowerCase()]?'':' <button title="Add to allowlist" data-add="'+esc(u)+'" style="margin-left:6px;border:0;background:transparent;color:#15803d;cursor:pointer;font-weight:800">＋</button>')+'</span>';}).join("")+'</div>':'<div class="muted">No sign-ins recorded yet.</div>');
+      var add=document.getElementById("nu-add"), nu=document.getElementById("nu");
+      if(add)add.onclick=function(){ acAdd((nu.value||"").trim()); };
+      if(nu)nu.onkeydown=function(e){ if(e.key==="Enter"){ acAdd((nu.value||"").trim()); } };
+      page.querySelectorAll("[data-rm]").forEach(function(b){ b.onclick=function(){ acRemove(b.getAttribute("data-rm")); }; });
+      page.querySelectorAll("[data-add]").forEach(function(b){ b.onclick=function(){ acAdd(b.getAttribute("data-add")); }; });
+    }).catch(function(e){
+      var m=String(e&&e.message)==="403"?'You need <b>admin</b> access for this console.':'Access store offline — start the engine.';
+      document.getElementById("acc").innerHTML='<div class="em">'+m+'</div>';
+    });
   }
-  function showAddUser(a){
-    var cur=(a&&a.allowlist&&a.allowlist.length)?a.allowlist.join(","):"you@company.com";
-    openModal(
-      '<div class="bh"><h3>Add a user to the suite</h3></div>'+
-      '<div class="bb"><p class="muted" style="margin:2px 0 10px">Access is a Google-login allowlist. Adding someone = adding their Google email to the <code>ALLOWED_EMAILS</code> secret, then they sign in with Google.</p>'+
-      '<ol>'+
-        '<li><b>Get their Google email</b> — the address they’ll sign in with (Gmail or Google Workspace).</li>'+
-        '<li><b>Add it to the allowlist secret</b> — comma-separated, no spaces:'+
-          '<div class="cmd">fly secrets set ALLOWED_EMAILS="'+esc(cur)+',newperson@company.com"</div>'+
-          'This redeploys the app with the new allowlist.</li>'+
-        '<li><b>Tell them to sign in</b> at <code>hoodie-suite.fly.dev</code> with that Google account. First visit bounces to Google; approved emails land in the suite.</li>'+
-        '<li><b>2FA is automatic</b> — it rides their Google account. Ask them to have 2-Step Verification / a passkey on in Google.</li>'+
-      '</ol>'+
-      '<div class="note">To remove someone, re-run the command without their email. Whole-domain access isn’t supported — list emails explicitly.</div>'+
-      '</div>'+
-      '<div class="bf"><button class="btn brand" data-mclose>Got it</button></div>'
-    );
+  function acAdd(email){
+    if(!email){ toast("Enter an email"); return; }
+    fetch(API+"/api/admin/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:email})})
+      .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+      .then(function(x){ if(!x.ok||!x.j.ok){ toast((x.j&&x.j.error)||"Add failed"); return; } toast(email+" added"); renderAccess(); })
+      .catch(function(){ toast("Add failed — is the engine live?"); });
+  }
+  function acRemove(email){
+    fetch(API+"/api/admin/users/remove",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:email})})
+      .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+      .then(function(x){ if(!x.ok||!x.j.ok){ toast((x.j&&x.j.error)||"Remove failed"); return; } toast(email+" removed"); renderAccess(); })
+      .catch(function(){ toast("Remove failed"); });
   }
 
   /* ---------- Service (data-quality reports — moved here from the CRM) ---------- */

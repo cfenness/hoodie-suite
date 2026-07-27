@@ -86,6 +86,17 @@ class Instacart(AggregatorConnector):
             raise RuntimeError("could not launch a free browser (channel chrome/bundled): %s" % last)
         self._ctx = self._browser.new_context(locale="en-US", user_agent=UA)
         self._ctx.add_init_script(_STEALTH)
+        # Bev-alc needs a logged-in, age-verified session — anonymous gets "alcohol products aren't
+        # available" (see the module docstring). We never log in ourselves; INSTACART_SESSION_COOKIES
+        # is a JSON array of {name, value, domain, path} exported from a real human login, injected
+        # here BEFORE any navigation so the first request already carries it. Malformed/expired/absent
+        # all fall through silently to the existing anonymous path — this never blocks non-alc pulls.
+        raw = os.environ.get("INSTACART_SESSION_COOKIES", "")
+        if raw:
+            try:
+                self._ctx.add_cookies(json.loads(raw))
+            except Exception:
+                pass
         self._page = self._ctx.new_page()
         self._page.on("request", lambda r: self._gql.append(r.url) if "/graphql" in r.url else None)
 
