@@ -44,8 +44,8 @@ SOURCES = [
     dict(id="abc-catalog", label="ABC FW&S (catalog)", code="import abc_catalog as m; m.run()",
          tables=["abc_catalog"], klass="headless", cadence="weekly", enabled=True, note="BigCommerce sitemap"),
     dict(id="abc-fws", label="ABC FW&S (inventory)", code="import abc_fws_scraper as m; m.pull(crawl_all=True)",
-         tables=["abc_products"], klass="headless", cadence="daily", enabled=True, cost_class="proxy",
-         note="per-store inventory",
+         tables=["retail_observations"], klass="headless", cadence="daily", enabled=True, cost_class="proxy",
+         note="per-store inventory → lands retail_observations (NOT abc_products, which abc-facets owns/overwrites)",
          # COVERAGE (coverage.py): item/store columns + the KNOWN universe, so a run that lands far fewer
          # SKUs/stores than this reads `partial` instead of a silent stale merge. Omit expected_* to let
          # coverage self-calibrate from the touched high-water-mark; set them when the universe is known.
@@ -103,7 +103,7 @@ SOURCES = [
          note="census sweep's Shopify pass — SHOPIFY_SEED via open /products.json ($0); OFFPREM_SERP=1 adds BD SERP discovery. Replaced standalone shopify_scraper (archived)"),
     dict(id="bottlecapps", label="Bottlecapps network", code="import bottlecapps as m; m.national()",
          tables=["bottlecapps_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=62, note="DataDome — patchright"),
-    dict(id="cityhive", label="City Hive network", code="import cityhive as m; m.national(max_stores=12)",
+    dict(id="cityhive", label="City Hive network", code="import cityhive as m; m.national(max_stores=100)",
          tables=["cityhive_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=61, note="Cloudflare — patchright"),
     dict(id="bbg", label="BBG e-commerce", code="import bbg_salsify as m; m.pull()",
          tables=["bbg_products"], klass="headless", cadence="daily", enabled=True, note="Salsify API"),
@@ -114,7 +114,8 @@ SOURCES = [
     dict(id="ab-inbev", label="AB InBev locator", code="import ab_fill as m; m.run()",
          tables=["ab_outlets"], klass="headless", cadence="weekly", enabled=True, note="beertech GraphQL"),
     dict(id="ca-abc", label="California ABC", code="import ca_abc as m; m.run()",
-         tables=["ca_outlets"], klass="mac", cadence="weekly", enabled=True, cost_class="proxy", note="WAF — browser headers"),
+         tables=["ca_outlets"], klass="headless", cadence="weekly", enabled=True, cost_class="proxy",
+         note="WAF — spoofed browser HEADERS on stdlib urllib (NOT a headful browser); klass was wrongly 'mac' → Mac queue"),
     dict(id="control-states", label="Control states (OR/UT/NC/MT/ME/AL/BC/MontMD)", code="import control_state as m; m.build_all()",
          tables=["or_pricing", "ut_pricing", "mont_sales"], klass="headless", cadence="weekly", enabled=True, note="per-state fetchers"),
     dict(id="census", label="US Census (CBP · Nonemp · PEP · ACS)", code="import census_ref as m; m.build()",
@@ -216,8 +217,9 @@ SOURCES = [
     # ── Hemp ──────────────────────────────────────────────────────────────────────────────────────────────────
     dict(id="hemp-scan", label="Hemp products", code="import hemp_scan as m; m.main([])",
          tables=["hemp_products"], klass="headless", cadence="daily", enabled=True, note="hemp-bev feed"),
-    dict(id="hemp-finder", label="Hemp retailers", code="import hemp_finder as m; m.run()",
-         tables=["hemp_retailers"], klass="headless", cadence="weekly", enabled=True, note="retailer discovery"),
+    dict(id="hemp-finder", label="Hemp retailers", code="import hemp_finder as m, vtinfo; m.run(brands=vtinfo.HEMP_BRANDS)",
+         tables=["hemp_retailers"], klass="headless", cadence="weekly", enabled=True,
+         note="retailer discovery — ALL 5 hemp brands (cann/wynk/trail-magic/uncle-arnies/crescent-9); run() alone was cann-only"),
     dict(id="hemp-inventory", label="Hemp per-store inventory", code="import hemp_inventory as m; m.main([])",
          tables=["hemp_inventory"], klass="headless", cadence="daily", enabled=True,
          note="per-store COUNTS from Shopify hemp retailers (cart-add trick) — distinct from hemp-scan listings"),
