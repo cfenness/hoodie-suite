@@ -18,6 +18,32 @@ _1D = ("EAN13", "UPCA", "UPCE", "EAN8")
 _2D = ("QRCODE", "DATAMATRIX")
 
 
+def decoder_status():
+    """Which barcode decoders are actually LIVE → {'pyzbar': str, 'pylibdmtx': str, 'symbologies': [...]}.
+
+    _symbols() deliberately swallows import errors so a partial install degrades instead of failing —
+    which means a missing decoder is otherwise INVISIBLE and we'd silently under-read labels forever.
+    (That is exactly what happened: pylibdmtx imported fine locally but died on the image with
+    "No module named 'distutils'" — Python 3.12 removed it and pylibdmtx imports it — while
+    libdmtx.so.0 loaded fine. QR-only coverage, reported as 2D coverage.) Call this to state the real
+    capability rather than assume it."""
+    st = {"pyzbar": "", "pylibdmtx": "", "symbologies": []}
+    try:
+        from pyzbar.pyzbar import ZBarSymbol
+        have = [n for n in _1D + _2D if getattr(ZBarSymbol, n, None) is not None]
+        st["pyzbar"] = "ok"
+        st["symbologies"] += have
+    except Exception as e:
+        st["pyzbar"] = "%s: %s" % (type(e).__name__, str(e)[:80])
+    try:
+        from pylibdmtx.pylibdmtx import decode as _dm       # noqa: F401
+        st["pylibdmtx"] = "ok"
+        st["symbologies"].append("DATAMATRIX")
+    except Exception as e:
+        st["pylibdmtx"] = "%s: %s" % (type(e).__name__, str(e)[:80])
+    return st
+
+
 def _symbols(img_bytes):
     """[(symbol_type, payload)] for every readable 1D *and* 2D symbol on the label, or [].
 

@@ -168,6 +168,17 @@ def enrich_pass(limit=None, workers=None, log=print):
     .gov site (few workers). $0, verify=False direct; UPC needs libzbar0+pyzbar+pillow (in the image)."""
     import threading
     from concurrent.futures import ThreadPoolExecutor
+    # State the REAL decode capability up front. A missing decoder degrades silently by design, so
+    # without this line a run that reads no DataMatrix looks identical to a run where none existed.
+    try:
+        import ttb_cola_labels as _lbl
+        st = _lbl.decoder_status()
+        log("[ttb-enrich] decoders: pyzbar=%s pylibdmtx=%s | symbologies=%s"
+            % (st["pyzbar"], st["pylibdmtx"], ",".join(st["symbologies"]) or "NONE"))
+        if st["pylibdmtx"] != "ok":
+            log("[ttb-enrich] WARNING: no DataMatrix decoder — GS1 2D coverage is QR-ONLY this run")
+    except Exception as e:
+        log("[ttb-enrich] decoder status unavailable: %s" % str(e)[:80])
     limit = limit if limit is not None else int(os.environ.get("TTB_ENRICH_LIMIT", "300"))
     workers = workers or int(os.environ.get("TTB_ENRICH_WORKERS", "4"))
     detail_rows = 0
