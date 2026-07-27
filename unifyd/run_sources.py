@@ -208,21 +208,24 @@ def run_one(source, log=print, extra_env=None):
                     ts_start=int(t0), ts_end=int(time.time()), duration_s=0.0, status="no-creds",
                     rows_before=a, rows_after=a, delta=0, tables=",".join(source["tables"]),
                     error="missing env: " + ", ".join(missing), host=os.uname().nodename[:40])
-    # HEADFUL on Fly MUST go through a RESIDENTIAL exit. The gates (Kroger Akamai, CityHive Cloudflare, PX)
-    # flag the Fly datacenter IP even with a real browser — which is why kroger never landed and cityhive went
-    # stale off-Mac. One STICKY exit per source (same session id → same IP) so the cookie warm and the pull that
-    # replays it share an IP (these cookies are IP-bound; a mismatch = instant reject). No-op if resi isn't
-    # configured or BROWSER_PROXY is already set. This is what lets the headful sources run off the Mac.
+    # HEADFUL on Fly needs a non-datacenter exit — the gates (Kroger Akamai, CityHive Cloudflare, PX) flag the
+    # Fly datacenter IP even with a real browser. FREE-FIRST (CLAUDE.md): use the flat-rate ISP pool (fixed
+    # per-IP, unlimited bandwidth — the tier that already clears the DoorDash/UE cracks), NOT the per-GB
+    # residential session, which is paygo-gated OFF unless FETCH_POLICY=paid. One STICKY exit per source
+    # (isp_url key) so the cookie warm and the pull that replays it share an IP — anti-bot cookies are IP-bound.
+    # No pool AND no paid opt-in → run bare (may be blocked; that's the honest state, not a silent paid tab).
     if source["klass"] == "mac" and not os.environ.get("BROWSER_PROXY"):
         try:
             import resi
-            if resi.enabled():
-                px = resi._session_url("hf-" + sid)
-                if px:
-                    os.environ["BROWSER_PROXY"] = px
-                    log("  %-16s headful → residential exit (sticky)" % sid)
+            px = (resi.isp_url("hf-" + sid) if resi.isp_enabled()
+                  else (resi._session_url("hf-" + sid) if resi.enabled() else ""))
+            if px:
+                os.environ["BROWSER_PROXY"] = px
+                log("  %-16s headful → %s exit (sticky)" % (sid, "ISP-pool" if resi.isp_enabled() else "residential(paid)"))
+            else:
+                log("  %-16s headful: no ISP pool + paid off → bare datacenter IP (may be blocked)" % sid)
         except Exception as e:
-            log("  %-16s resi proxy unavailable: %s" % (sid, str(e)[:70]))
+            log("  %-16s proxy setup error: %s" % (sid, str(e)[:70]))
     # PREP: sources gated on an anti-bot cookie (Kroger Akamai, …) warm it in a real headful browser FIRST,
     # then the pull subprocess inherits the fresh cookie env (see cookie_warm.apply_prep). Runs in-process on
     # this box (which has Chrome+Xvfb — the ephemeral pull machine). A warm failure doesn't abort:
