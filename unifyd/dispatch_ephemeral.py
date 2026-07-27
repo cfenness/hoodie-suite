@@ -54,14 +54,34 @@ def _machines():
 
 
 def current_image():
-    """The image the SERVING app machine runs — ephemeral pulls use the exact same code."""
+    """The image the SERVING app machine runs — ephemeral pulls use the exact same code.
+
+    Select the `app` PROCESS GROUP explicitly. The old test ("any started machine that isn't an
+    ephemeral pull") also matched THIS dispatcher machine, which is `started` while the tick runs —
+    and the dispatcher is not updated by `flyctl deploy` (it has no process group), so on an
+    unlucky API ordering it handed its own STALE image to every pull it spawned.
+    """
     for m in _machines():
-        md = ((m.get("config") or {}).get("metadata") or {})
-        if md.get("role") != "ephemeral-pull" and m.get("state") == "started":
-            img = (m.get("config") or {}).get("image")
-            if img:
-                return img
+        cfg = m.get("config") or {}
+        md = cfg.get("metadata") or {}
+        if md.get("fly_process_group") == "app" and m.get("state") == "started":
+            if cfg.get("image"):
+                return cfg["image"]
     return None
+
+
+def _warn_if_stale(app_image):
+    """The dispatcher machine is pinned at creation and `flyctl deploy` does NOT touch it (no
+    process group). Stale here is not cosmetic: due-ness is computed from THIS machine's copy of
+    source_registry, so a newly added source stays invisible until the machine is re-pinned.
+    Make that loud rather than silent — see tools/repin_dispatcher.sh."""
+    mine = os.environ.get("FLY_IMAGE_REF", "")
+    if not mine or not app_image:
+        return
+    if mine.rsplit("/", 1)[-1] != app_image.rsplit("/", 1)[-1]:
+        print("dispatch: WARNING — dispatcher image is STALE (self=%s app=%s). Its source_registry "
+              "may be older than the deployed one, so new sources will not dispatch. Re-pin with "
+              "tools/repin_dispatcher.sh." % (mine.rsplit(":", 1)[-1], app_image.rsplit(":", 1)[-1]))
 
 
 def running_sources():
@@ -122,8 +142,9 @@ def main():
     import run_sources
     image = current_image()
     if not image:
-        print("dispatch: could not resolve current image via the Machines API")
+        print("dispatch: could not resolve the app machine's image via the Machines API")
         return 1
+    _warn_if_stale(image)
     due = run_sources.due_sources()
     running = running_sources()
     todo = [s for s in due if s["id"] not in running]

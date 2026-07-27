@@ -237,8 +237,19 @@ Two standing tools exist so failures are loud, not quiet. Keep them passing and 
   "real browser": `kroger`/`ubereats`/`postmates`/`sevennow`/`bottlecapps`/`cityhive` — on 8GB with Xvfb +
   system Chrome + patchright, see `run_ephemeral.sh`), and folds in the health digest. The old Mac launchd
   agents (`com.hoodie.due`, `com.hoodie.health`) and their scripts (`run_due.sh`, `run_health_digest.sh`) are
-  **retired/removed** — the Fly dispatcher already runs the exact same set. Deploy via GitHub Actions (push to
-  `main`), never local `flyctl`; never tight-loop `flyctl` (it rate-blocks the home IP).
+  **retired/removed** — the Fly dispatcher already runs the exact same set. Never tight-loop `flyctl`
+  (it rate-blocks the home IP).
+  - **Scheduling is NOT on GitHub Actions.** `cloud-sources.yml` / `scrape-runner.yml` /
+    `warm-sources.yml` are `workflow_dispatch`-only escape hatches — their crons were removed
+    (2026-07-27). The repo has no Actions minutes, so every scheduled run was a standing failure,
+    and the Fly dispatcher already covers the same registry. Don't re-add a `schedule:` to them.
+  - **RE-PIN THE DISPATCHER AFTER A DEPLOY THAT TOUCHES `source_registry.py`** —
+    `tools/repin_dispatcher.sh`. The dispatcher machine (metadata `role=dispatcher`) deliberately has
+    no process group, which also means `flyctl deploy` never updates it: it keeps running the image it
+    was pinned to. Because due-ness is computed from *its* copy of the registry, a newly added source
+    stays invisible to the scheduler until it's re-pinned. The dispatcher now logs a loud
+    `WARNING — dispatcher image is STALE` when this has happened. (Failure mode seen live: the machine
+    sat on `init.cmd=["bash"]`, so every hourly tick started, exited 0 in ~1s, and dispatched nothing.)
 
 ## Deploy
 
