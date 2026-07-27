@@ -19,39 +19,56 @@ _2D = ("QRCODE", "DATAMATRIX")
 
 
 def _symbols(img_bytes):
-    """[(symbol_type, payload)] for every readable 1D *and* 2D symbol on the label, or []."""
+    """[(symbol_type, payload)] for every readable 1D *and* 2D symbol on the label, or [].
+
+    TWO decoders, because no single one covers GS1's 2D pair: **zbar does not implement DataMatrix**
+    (its ZBarSymbol enum has no DATAMATRIX member), so pyzbar gives us the 1D symbologies + QR, and
+    pylibdmtx (libdmtx) gives us GS1 DataMatrix. Each is independently optional and no-ops when its
+    system lib is absent, so a partial install degrades to fewer symbol types rather than failing."""
     if not img_bytes or len(img_bytes) < 64:
         return []
     try:
         import io
         from PIL import Image
-        from pyzbar.pyzbar import decode, ZBarSymbol
     except Exception:
-        return []            # pyzbar / Pillow / zbar not installed — no-op
+        return []            # Pillow absent — nothing can be decoded
     try:
         im = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     except Exception:
         return []
-    wanted = []
-    for n in _1D + _2D:
-        sym = getattr(ZBarSymbol, n, None)   # older zbar builds lack DATAMATRIX — skip, don't crash
-        if sym is not None:
-            wanted.append(sym)
-    try:
-        syms = decode(im, symbols=wanted) if wanted else decode(im)
-    except Exception:
-        try:
-            syms = decode(im)
-        except Exception:
-            return []
     out = []
-    for d in syms:
+
+    try:                                     # ── pyzbar: 1D + QR ──
+        from pyzbar.pyzbar import decode, ZBarSymbol
+        wanted = [s for s in (getattr(ZBarSymbol, n, None) for n in _1D + _2D) if s is not None]
         try:
-            data = d.data.decode("utf-8", "ignore").strip()
+            syms = decode(im, symbols=wanted) if wanted else decode(im)
         except Exception:
-            continue
-        if data:
-            out.append((getattr(d, "type", "") or "", data))
+            syms = decode(im)
+        for d in syms:
+            try:
+                data = d.data.decode("utf-8", "ignore").strip()
+            except Exception:
+                continue
+            if data:
+                out.append((getattr(d, "type", "") or "", data))
+    except Exception:
+        pass                                 # pyzbar / libzbar0 missing — fall through to DataMatrix
+
+    try:                                     # ── pylibdmtx: GS1 DataMatrix (zbar can't) ──
+        from pylibdmtx.pylibdmtx import decode as dm_decode
+        seen = {p for _, p in out}
+        # timeout so a busy label can't stall the enrich pass; max_count keeps it bounded.
+        for d in dm_decode(im, timeout=5000, max_count=4):
+            try:
+                data = d.data.decode("utf-8", "ignore").strip()
+            except Exception:
+                continue
+            if data and data not in seen:
+                seen.add(data)
+                out.append(("DATAMATRIX", data))
+    except Exception:
+        pass                                 # pylibdmtx / libdmtx0b missing — QR-only coverage
     return out
 
 
