@@ -113,7 +113,11 @@ def _walk_nonalc(store, key, log=print, max_pages=30):
     return out
 
 
-def run(chain, stores=None, log=print):
+def run(chain, stores=None, log=print, on_store=None):
+    """on_store(i, n_stores_total_in_this_call), called after EACH store finishes — the hook a
+    caller driving many chains/stores in one job (doordash_chains.py) uses to feed real per-store
+    progress into runlog.track(), instead of only knowing something happened once the whole chain
+    is done."""
     cfg = dd.CHAINS.get(chain, {"name": chain, "stores": []})
     stores = stores or cfg["stores"]
     if not stores:
@@ -121,7 +125,7 @@ def run(chain, stores=None, log=print):
     key = dd._api_key()
     run_id = "%sfull-%s" % (chain, time.strftime("%Y%m%d-%H%M%S"))
     all_rows, outlets = [], []
-    for store in stores:
+    for i, store in enumerate(stores):
         items, outlet = full_catalog(store, key, log=log)
         rows = []
         for it in items:
@@ -137,6 +141,11 @@ def run(chain, stores=None, log=print):
         log("  [%s] store %s — %d items (%d alcohol, %d non-alc/zero-proof)" % (chain, store, len(rows), len(rows) - na, na))
         if outlet:
             outlet["source"] = chain; outlets.append(outlet)
+        if on_store:
+            try:
+                on_store(i + 1, len(stores))
+            except Exception:
+                pass
     if all_rows:
         # ACCUMULATE, not overwrite: a caller driving this across many runs (doordash_chains.py's
         # resumable batches) passes a DIFFERENT store subset each time — write_parquet would replace

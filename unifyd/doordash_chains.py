@@ -101,37 +101,62 @@ def _landed_stores(chain):
 def run(chains=None, batch=None, log=print):
     """ONE resumable batch: bucket doordash_stores by chain, take up to `batch` NOT-YET-LANDED
     stores per matched chain, drive doordash_full.run() for just that increment. Repeated triggers
-    converge every chain to full national coverage — never a permanent small cap."""
+    converge every chain to full national coverage — never a permanent small cap.
+
+    Wrapped in runlog.track() — the SAME live-progress mechanism abc_catalog.py/specs_scraper.py/
+    total_wine_full.py already use (writes to the shared scrape_runs table from inside this
+    subprocess, so it's visible in /api/jobs regardless of when the parent's stdout capture
+    happens to flush). Without this a "full" pull just shows 'running' with no signal for
+    however many minutes it takes — exactly the kind of invisible-until-it's-done job that made
+    the earlier cap silently unnoticeable."""
     t0 = time.time()
     cap = batch or int(os.environ.get("DDFULL_BATCH_PER_CHAIN", "200"))
     buckets = bucket_stores(log=log)
     if chains:
         buckets = {k: v for k, v in buckets.items() if k in set(chains)}
-    per_chain = {}
-    stores_this_run = items_this_run = 0
-    matched_total = covered_total = 0
+
+    # PLAN first (read-only): every chain's picked batch, so the total store count for THIS run is
+    # known before work starts — runlog.track needs total up front for pct/ETA to mean anything.
+    plan, matched_total, covered_total = {}, 0, 0
     for key, store_ids in sorted(buckets.items()):
         matched_total += len(store_ids)
         already = _landed_stores(key)
         covered_total += len(already)
         todo = [s for s in store_ids if s not in already]
         picked = todo[:cap]
+        plan[key] = {"matched": len(store_ids), "covered": len(already), "picked": picked}
         log("[doordash_chains] %s: matched=%d covered=%d remaining=%d taking=%d"
             % (key, len(store_ids), len(already), len(todo), len(picked)))
-        if not picked:
-            per_chain[key] = {"matched": len(store_ids), "covered": len(already), "taken": 0, "items": 0}
-            continue
-        try:
-            _run_id, n_items = doordash_full.run(key, stores=picked, log=log)
-        except Exception as e:
-            log("[doordash_chains] %s FAILED: %s" % (key, str(e)[:160]))
-            per_chain[key] = {"matched": len(store_ids), "covered": len(already), "taken": len(picked),
-                              "items": 0, "error": str(e)[:160]}
-            continue
-        per_chain[key] = {"matched": len(store_ids), "covered": len(already), "taken": len(picked),
-                          "items": n_items or 0}
-        stores_this_run += len(picked)
-        items_this_run += n_items or 0
+    total_picked = sum(len(p["picked"]) for p in plan.values())
+
+    import runlog
+    per_chain = {}
+    stores_this_run = items_this_run = 0
+    with runlog.track("doordash-full", total=total_picked) as r:
+        done_so_far = 0
+        for key, p in plan.items():
+            picked = p["picked"]
+            if not picked:
+                per_chain[key] = {"matched": p["matched"], "covered": p["covered"], "taken": 0, "items": 0}
+                continue
+
+            def _tick(i, n, _base=done_so_far):    # cumulative across chains, not per-chain
+                r.progress(_base + i, total_picked)
+
+            try:
+                _run_id, n_items = doordash_full.run(key, stores=picked, log=log, on_store=_tick)
+            except Exception as e:
+                log("[doordash_chains] %s FAILED: %s" % (key, str(e)[:160]))
+                per_chain[key] = {"matched": p["matched"], "covered": p["covered"], "taken": len(picked),
+                                  "items": 0, "error": str(e)[:160]}
+                done_so_far += len(picked)
+                continue
+            per_chain[key] = {"matched": p["matched"], "covered": p["covered"], "taken": len(picked),
+                              "items": n_items or 0}
+            stores_this_run += len(picked)
+            items_this_run += n_items or 0
+            done_so_far += len(picked)
+
     remaining_total = matched_total - covered_total - stores_this_run
     run_id = "ddchains-" + time.strftime("%Y%m%d-%H%M%S")
     rec = dict(run_id=run_id, ts=int(t0), chains_attempted=len(buckets),

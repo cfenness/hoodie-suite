@@ -70,6 +70,11 @@ def main():
         import doordash_chains
         if not callable(getattr(doordash_chains, "run", None)):
             fails.append("doordash_chains.run missing — the registry code string calls m.run()")
+        src = open(os.path.join(HERE, "doordash_chains.py")).read()
+        if "runlog.track" not in src:
+            fails.append("doordash_chains.py no longer uses runlog.track — a 'full' pull with no "
+                         "live progress signal is exactly the invisible-until-done shape that let "
+                         "the earlier silent cap go unnoticed; see [[no-silent-caps-in-full-pulls]]")
     except Exception as e:
         fails.append("import doordash_chains failed: %s" % e)
 
