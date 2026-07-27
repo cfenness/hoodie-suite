@@ -21,6 +21,10 @@ PyYAML>=6.0          # serve the OpenAPI spec at /api/openapi.json; lazy-importe
 pyzbar>=0.1.9
 pytesseract>=0.3.10
 pillow>=10.0
+# pylibdmtx: zbar does NOT implement DataMatrix (ZBarSymbol has no DATAMATRIX member — confirmed on the
+# deployed image), and GS1's Sunrise 2027 2D codes are QR *or* GS1 DataMatrix. pyzbar covers the QR half;
+# this covers the other. Binds to the libdmtx0 system lib (added in the Dockerfile alongside libzbar0).
+pylibdmtx>=0.1.10
 cryptography
 openpyxl
 curl_cffi>=0.7        # Chrome-JA3 TLS impersonation for walmart_direct (PerimeterX reads urllib's TLS as a bot tell)
