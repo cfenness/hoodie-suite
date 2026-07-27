@@ -64,31 +64,50 @@ def _decode(img_bytes):
 
 
 def decode_any(img_bytes):
-    """Read BOTH carriers off a label → {code_type, payload, gtin, status, digital_link, ais}.
+    """Read EVERY carrier off a label and keep all of it.
 
     GS1's Sunrise 2027 moves retail POS to 2D codes (QR carrying a GS1 Digital Link, or DataMatrix),
-    but the GTIN stays embedded as AI (01) — so a 2D code is a new carrier for an identifier we
-    already model, not a new identity. The 1D barcode is preferred when present because it is the
-    long-proven path; a 2D code is used to fill in when there is no readable 1D symbol.
+    but the GTIN stays embedded as AI (01) — a 2D code is a new carrier for an identifier we already
+    model, not a new identity. `gtin14` resolves whatever encoding was scanned to the GS1 canonical
+    form, so a 1D UPC-A and a 2D GTIN-14 land on the SAME item instead of looking like two products.
 
-    `ais` is INSTANCE-grain (batch/lot, expiry, serial — per physical unit) and must NOT be written
-    onto an item/SKU row; only `gtin` and `digital_link` are item-grain.
+    Returns {symbols, code_type, payload, gtin, gtin_raw, gtin14, status, digital_link, ais}:
+      symbols   EVERY symbol decoded, as [{type, payload}] — a label can carry a 1D barcode AND a QR,
+                and both are retained verbatim rather than the first match winning and the rest being
+                dropped. `code_type`/`payload` just name whichever symbol resolved the identifier.
+      ais       every application identifier found across the 2D codes, captured as read.
+    1D is preferred to RESOLVE the identifier (long-proven path); 2D fills in when no 1D is readable.
     """
-    blank = {"code_type": "", "payload": "", "gtin": "", "status": "none", "digital_link": "", "ais": {}}
     syms = _symbols(img_bytes)
+    out = {"symbols": [{"type": t, "payload": d} for t, d in syms],
+           "code_type": "", "payload": "", "gtin": "", "gtin_raw": "", "gtin14": "",
+           "status": "none", "digital_link": "", "ais": {}}
     if not syms:
-        return blank
+        return out
+    # capture every 2D payload's AIs + the first Digital Link, independent of what resolves the GTIN
+    for typ, data in syms:
+        if typ in _2D:
+            p = _upc.parse_2d(data)
+            for k, v in p["ais"].items():
+                out["ais"].setdefault(k, v)
+            if p["digital_link"] and not out["digital_link"]:
+                out["digital_link"] = p["digital_link"]
     for typ, data in syms:                       # 1D first — the proven path
         if typ in _1D and data.isdigit() and len(data) in (8, 12, 13, 14):
             st = _upc.classify(data)
-            return {"code_type": typ, "payload": data, "gtin": data if st == "valid" else "",
-                    "status": st, "digital_link": "", "ais": {}}
+            out.update({"code_type": typ, "payload": data, "gtin_raw": data, "status": st,
+                        "gtin": data if st == "valid" else "",
+                        "gtin14": _upc.to_gtin14(data) if st == "valid" else ""})
+            return out
     for typ, data in syms:                       # then 2D — extract the embedded GTIN
         if typ in _2D:
             p = _upc.parse_2d(data)
-            return {"code_type": typ, "payload": data, "gtin": p["gtin"],
-                    "status": p["gtin_status"], "digital_link": p["digital_link"], "ais": p["ais"]}
-    return blank
+            out.update({"code_type": typ, "payload": data, "gtin": p["gtin"],
+                        "gtin_raw": p["gtin_raw"], "gtin14": p["gtin14"], "status": p["gtin_status"]})
+            return out
+    # symbols were read but none carried an identifier — still return them, never silently empty
+    out["code_type"], out["payload"] = syms[0][0], syms[0][1]
+    return out
 
 
 def decode_barcode(img_bytes):

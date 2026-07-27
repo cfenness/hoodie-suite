@@ -251,27 +251,51 @@ def parse_digital_link(uri):
     return out
 
 
-def parse_2d(payload):
-    """Decode a 2D barcode payload → {format, gtin, gtin_status, ais, digital_link}.
+def to_gtin14(code):
+    """Resolve ANY GS1 item code to its canonical GTIN-14 — the cross-encoding identity.
 
-    `gtin` is the normalized, check-digit-verified item identifier ('' when the code carries none or
-    it doesn't validate). `ais` holds the REMAINING application identifiers, deliberately kept apart
-    from the GTIN because they are instance-grain (see the grain warning above)."""
+    UPC-A(12) / EAN-13(13) / EAN-8(8) / GTIN-14 are the same number in different encodings, so GS1's
+    canonical form is simply zero-padded to 14. Doing this automatically is what lets a 1D UPC and a
+    2D code carrying a GTIN-14 land on the SAME item instead of looking like two products. Matches
+    normalize._upc_norm's existing convention. '' only when the code isn't a usable GS1 code at all."""
+    c = normalize(code) or only_digits(code)
+    if not c or not (8 <= len(c) <= 14):
+        return ""
+    return c.zfill(14)
+
+
+def parse_2d(payload):
+    """Decode a 2D barcode payload. CAPTURES EVERYTHING — nothing read off the code is thrown away.
+
+    Returns {raw, format, ais, gtin_raw, gtin, gtin14, gtin_status, digital_link}:
+      raw        the payload exactly as scanned, always kept verbatim
+      ais        EVERY application identifier found, including (01) and any AI we don't have a name
+                 for (kept under its numeric AI) — an unrecognized AI is still data
+      gtin_raw   the item code as read, kept even when it fails validation
+      gtin       the same code once validated ('' if placeholder/bad-check)
+      gtin14     the GS1-canonical GTIN-14, resolved automatically
+      gtin_status  why gtin is or isn't populated
+
+    The instance-grain AIs (batch/lot, expiry, serial) are returned for capture; what they must NOT do
+    is get written onto an item/SKU ROW, which is a modelling decision at the master, not a reason to
+    drop them on the floor here."""
     s = str(payload or "").strip()
     if not s:
-        return {"format": "", "gtin": "", "gtin_status": "none", "ais": {}, "digital_link": ""}
+        return {"raw": "", "format": "", "ais": {}, "gtin_raw": "", "gtin": "", "gtin14": "",
+                "gtin_status": "none", "digital_link": ""}
     is_dl = s.lower().startswith(("http://", "https://"))
     ais = parse_digital_link(s) if is_dl else parse_element_string(s)
     if not ais and s.isdigit():                        # a bare number in a QR is just a GTIN
         ais = {"01": s}
-    raw = ais.pop("01", "")
-    gtin = normalize(raw)
-    status = classify(raw) if raw else "none"
-    if status != "valid":
-        gtin = ""                                      # never promote a placeholder/bad-check code
-    return {"format": "digital_link" if is_dl else ("element_string" if ais or raw else ""),
-            "gtin": gtin, "gtin_status": status,
+    raw_gtin = ais.get("01", "")                       # NOT popped — (01) stays in the captured AIs
+    status = classify(raw_gtin) if raw_gtin else "none"
+    return {"raw": s,
+            "format": "digital_link" if is_dl else ("element_string" if ais else ""),
             "ais": {_AI_NAME.get(k, k): v for k, v in ais.items()},
+            "gtin_raw": raw_gtin,
+            "gtin": normalize(raw_gtin) if status == "valid" else "",
+            "gtin14": to_gtin14(raw_gtin) if status == "valid" else "",
+            "gtin_status": status,
             "digital_link": s if is_dl else ""}
 
 
@@ -319,22 +343,35 @@ def _selftest():
     a3 = assess("000000000000", applicant="ACME WINE CO", crosswalk=xw)
     assert a3["status"] == "placeholder" and a3["upc"] == "" and a3["confidence"] == 0.0
 
-    # ── GS1 2D (Sunrise 2027): the GTIN survives the carrier change, instance AIs stay separate ──
+    # ── GS1 canonical resolution: every encoding of the same number → one GTIN-14 ──
+    assert to_gtin14("036000291452") == "00036000291452"      # UPC-A
+    assert to_gtin14("0036000291452") == "00036000291452"     # EAN-13 (zero-padded UPC-A)
+    assert to_gtin14("00036000291452") == "00036000291452"    # already GTIN-14
+    assert to_gtin14("36000291452") == "00036000291452"       # zero-stripped → healed, then resolved
+    assert to_gtin14("") == "" and to_gtin14("abc") == ""
+
+    # ── GS1 2D (Sunrise 2027): capture EVERYTHING; the GTIN survives the carrier change ──
     dl = parse_2d("https://example.com/01/00036000291452/10/LOT42/21/SER7?17=270101")
     assert dl["format"] == "digital_link", dl
-    assert dl["gtin"] == "00036000291452", dl          # 14-digit GTIN-14 kept as-is
-    assert dl["ais"] == {"batch_lot": "LOT42", "serial": "SER7", "expiry": "270101"}, dl
-    assert "gtin" not in dl["ais"]                     # item-grain id never leaks into instance AIs
+    assert dl["raw"].startswith("https://"), dl               # payload kept verbatim
+    assert dl["gtin"] == "00036000291452" and dl["gtin14"] == "00036000291452", dl
+    # every AI captured, INCLUDING (01) — nothing read off the code is discarded
+    assert dl["ais"] == {"gtin": "00036000291452", "batch_lot": "LOT42",
+                         "serial": "SER7", "expiry": "270101"}, dl
     el = parse_2d("(01)00036000291452(10)LOT42(21)SER7")
-    assert el["format"] == "element_string" and el["gtin"] == "00036000291452", el
-    assert el["ais"]["batch_lot"] == "LOT42", el
-    # a 2D code carrying a plain UPC-A still resolves through the existing engine
+    assert el["format"] == "element_string" and el["gtin14"] == "00036000291452", el
+    assert el["ais"]["batch_lot"] == "LOT42" and el["ais"]["serial"] == "SER7", el
+    # an AI we have no name for is still kept, under its numeric AI
+    assert parse_2d("(01)00036000291452(91)INTERNAL")["ais"]["91"] == "INTERNAL"
+    # a 2D code carrying a plain UPC-A resolves through the existing engine AND to GS1 canonical form
     bare = parse_2d("036000291452")
     assert bare["gtin"] == "036000291452" and bare["gtin_status"] == "valid", bare
-    assert brand_key(bare["gtin"]) == "0360002"        # → same owner crosswalk as the 1D path
-    # a placeholder printed into a QR is caught exactly as it is on a 1D barcode
+    assert bare["gtin14"] == "00036000291452", bare           # 1D and 2D land on the SAME item
+    assert brand_key(bare["gtin"]) == "0360002"               # → same owner crosswalk as the 1D path
+    # a placeholder printed into a QR is caught — but the raw code is still RETAINED, not dropped
     ph = parse_2d("https://example.com/01/00000000000000")
-    assert ph["gtin"] == "" and ph["gtin_status"] == "placeholder", ph
+    assert ph["gtin"] == "" and ph["gtin14"] == "" and ph["gtin_status"] == "placeholder", ph
+    assert ph["gtin_raw"] == "00000000000000" and ph["raw"], ph
     # alphabetic Digital Link aliases
     assert parse_digital_link("https://ex.com/gtin/00036000291452/lot/L1")["10"] == "L1"
     # unparenthesized stream: walk fixed-length AIs, then STOP rather than invent a lot code

@@ -19,9 +19,10 @@ Run on the Mac AFTER the index finishes, e.g.:
         --ocr --resume --delay 0.3
 Fields-only (fastest, 1 fetch/record) = drop --labels/--ocr.
 """
-import argparse, csv, os, re, sys, time
+import argparse, csv, json, os, re, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ttb_cola_scraper as cola
+import upc as _upc
 
 VIEW = "https://www.ttbonline.gov/colasonline/viewColaDetails.do"
 ATTACH = "https://www.ttbonline.gov/colasonline/publicViewAttachment.do"
@@ -32,11 +33,18 @@ DETAIL_FIELDS = ["Status", "Vendor Code", "Serial #", "Class/Type Code", "Origin
                  "Total Bottle Capacity", "Wine Vintage", "Formula", "Approval Date",
                  "Qualifications", "Contact Information"]
 OUT_HEADER = ["TTB ID"] + DETAIL_FIELDS + ["UPC", "upc_raw", "upc_status",
-                                           # GS1 2D carrier (Sunrise 2027) read off the label art. Item-grain
-                                           # only: the Digital Link URI + which symbol we read. The instance-grain
-                                           # AIs a 2D code can carry (batch/lot, expiry, serial) are per PHYSICAL
-                                           # UNIT and are deliberately NOT persisted here — see upc.parse_2d.
-                                           "gs1_digital_link", "code_type",
+                                           # GS1 2D carrier (Sunrise 2027), captured as read off the label art.
+                                           #   gtin14           the GS1-canonical form of whatever encoding was
+                                           #                    scanned — auto-resolved so a 1D UPC-A and a 2D
+                                           #                    GTIN-14 land on the SAME item
+                                           #   gs1_digital_link the Digital Link URI
+                                           #   code_type        which symbol resolved the identifier
+                                           #   code_symbols     EVERY symbol decoded, verbatim (a label can carry
+                                           #                    both a barcode and a QR — keep both)
+                                           #   gs1_ais_json     every application identifier found, as read,
+                                           #                    including batch/lot, expiry and serial
+                                           "gtin14", "gs1_digital_link", "code_type",
+                                           "code_symbols", "gs1_ais_json",
                                            "alcohol_content", "abv", "proof", "label_files"]
 
 
@@ -180,7 +188,8 @@ def main():
             pass
         # --- form page (fetched once) → ABV/proof + labels + UPC ---
         saved, upc_raw, upc_status = [], "", "none"
-        digital_link, code_type = "", ""
+        digital_link, code_type, gtin14 = "", "", ""
+        code_symbols, gs1_ais = [], {}          # accumulate across every label image on the filing
         alc = {"content": "", "abv": "", "proof": ""}
         if need_form:
             try:
@@ -199,18 +208,28 @@ def main():
                             open(p, "wb").write(img); saved.append(os.path.basename(p))
                         except Exception:
                             pass
-                    if labels and upc_status != "valid":
+                    # NOTE: run the decode on EVERY label image, not only until a valid UPC is found —
+                    # a filing's other images can carry the 2D code even once the barcode is resolved,
+                    # and skipping them would discard data we already paid to fetch.
+                    if labels:
                         try:
-                            # decode_any reads 1D *and* 2D (QR / DataMatrix). The UPC promotion rule is
-                            # unchanged; we additionally keep the Digital Link + which symbol carried it.
+                            # decode_any reads 1D *and* 2D (QR / DataMatrix) and returns every symbol.
+                            # The UPC promotion rule is unchanged; everything else is captured alongside.
                             d = labels.decode_any(img)
-                            raw, st = d["payload"] if d["code_type"] in labels._1D else d["gtin"], d["status"]
-                            if raw and (upc_status == "none" or st == "valid"):
+                            raw, st = d["gtin_raw"], d["status"]
+                            if raw and upc_status != "valid" and (upc_status == "none" or st == "valid"):
                                 upc_raw, upc_status = raw, st
+                            if d["gtin14"] and not gtin14:
+                                gtin14 = d["gtin14"]
                             if d["digital_link"] and not digital_link:
                                 digital_link = d["digital_link"]
                             if d["code_type"] and not code_type:
                                 code_type = d["code_type"]
+                            for s in d["symbols"]:              # keep every symbol, verbatim
+                                if s not in code_symbols:
+                                    code_symbols.append(s)
+                            for k, v in d["ais"].items():       # keep every AI, as read
+                                gs1_ais.setdefault(k, v)
                         except Exception:
                             pass
                     time.sleep(a.delay * 0.4)
@@ -219,8 +238,13 @@ def main():
         rec["UPC"] = upc_raw if upc_status == "valid" else ""
         rec["upc_raw"] = upc_raw
         rec["upc_status"] = upc_status
+        # GS1-canonical fallback: if only a 1D/plain UPC resolved, still land its GTIN-14 so every
+        # encoding of the same number joins on one key.
+        rec["gtin14"] = gtin14 or (_upc.to_gtin14(upc_raw) if upc_status == "valid" else "")
         rec["gs1_digital_link"] = digital_link
         rec["code_type"] = code_type
+        rec["code_symbols"] = json.dumps(code_symbols, separators=(",", ":"))[:4000] if code_symbols else ""
+        rec["gs1_ais_json"] = json.dumps(gs1_ais, separators=(",", ":"))[:2000] if gs1_ais else ""
         rec["alcohol_content"] = alc["content"]
         rec["abv"] = alc["abv"]
         rec["proof"] = alc["proof"]
