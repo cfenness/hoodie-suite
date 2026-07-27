@@ -47,6 +47,12 @@ def _is_alcohol(path):
 
 
 def full_catalog(store, key, log=print, max_pages=120):
+    # ONE persistent connection for this store's ENTIRE walk (~166 fetches across the alcohol tree,
+    # term-search union, and non-alc tree) instead of a fresh TLS handshake + proxy connection on every
+    # single page — measured live: that reconnect overhead, not the politeness sleep, was the dominant
+    # per-store cost (~4-5 min/store). Falls back to per-call connections (dd._session returns None) if
+    # curl_cffi/the ISP pool aren't available — same behavior as before, just slower.
+    session = dd._session(store)
     root = "/convenience/store/%s/category/alcohol-1024" % store
     items, outlet, seen_cat, pages = {}, None, set(), 0
     queue = [root]
@@ -56,7 +62,7 @@ def full_catalog(store, key, log=print, max_pages=120):
             continue
         seen_cat.add(path); pages += 1
         try:
-            html = dd._unlock("https://www.doordash.com" + path, key)
+            html = dd._unlock("https://www.doordash.com" + path, key, session=session)
         except Exception as e:
             log("  cat %s failed: %s" % (path.split("/category/")[1][:24], str(e)[:40])); continue
         blob = dd._rsc(html)
@@ -73,21 +79,24 @@ def full_catalog(store, key, log=print, max_pages=120):
     log("  [%s] tree walk: %d categories, %d items" % (store, pages, len(items)))
     # UNION with the term-search — catches items not in the browsable tree (esp. small c-store catalogs
     # where the category tree is shallow but search still finds SKUs). Free on top of the walk.
+    # (search_store was referenced here but never implemented until now — every call silently
+    # AttributeError'd, caught by the bare except below, paying the sleep for zero completeness benefit.)
     for term in dd.ALCOHOL_TERMS:
         try:
-            for it in dd.search_store(store, term, key):
+            for it in dd.search_store(store, term, key, session=session):
                 items.setdefault(it["name"], dict(it, department="alcohol"))
         except Exception:
             pass
         time.sleep(0.4)
     log("  [%s] + term-search union -> %d distinct items" % (store, len(items)))
-    for name, it in _walk_nonalc(store, key, log).items():     # non-alc / zero-proof department
+    for name, it in _walk_nonalc(store, key, log, session=session).items():   # non-alc / zero-proof dept
         items.setdefault(name, it)
     return list(items.values()), outlet
 
 
-def _walk_nonalc(store, key, log=print, max_pages=30):
+def _walk_nonalc(store, key, log=print, max_pages=30, session=None):
     """Walk the non-alcoholic-1516 category tree; keep only the zero-proof / N-A beverages of interest."""
+    session = session or dd._session(store)
     root = "/convenience/store/%s/category/non-alcoholic-1516" % store
     out, seen, pages = {}, set(), 0
     queue = [root]
@@ -97,7 +106,7 @@ def _walk_nonalc(store, key, log=print, max_pages=30):
             continue
         seen.add(path); pages += 1
         try:
-            html = dd._unlock("https://www.doordash.com" + path, key)
+            html = dd._unlock("https://www.doordash.com" + path, key, session=session)
         except Exception:
             continue
         for it in dd._parse_items(dd._rsc(html)):

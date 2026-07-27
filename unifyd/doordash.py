@@ -41,12 +41,34 @@ def _api_key():
                    # caller compat: `key` is threaded through _unlock but ignored. (No metered spend — user rule.)
 
 
-def _fetch(url, retries=4, log=None):
+def _session(key=None):
+    """A persistent curl_cffi Session bound to ONE proxy exit for the life of the session — the fix for a
+    store's full_catalog() walk paying a fresh TLS handshake + proxy connection on EVERY one of its ~166
+    page fetches (measured ~4-5 MIN/store; connection reuse via keep-alive is the dominant lever, well
+    before worker-count tuning matters). `key` (e.g. the store id) picks a deterministic exit so retries
+    within one store's walk stay on the same IP a real browsing session would use; None round-robins.
+    Returns None if curl_cffi/the ISP pool aren't available — callers fall back to the ad-hoc _fetch path."""
+    import resi
+    try:
+        from curl_cffi import requests as cr
+    except Exception:
+        return None
+    if not resi.isp_enabled():
+        return None
+    u = resi.isp_url(key)
+    px = {"http": u, "https": u} if u else None
+    return cr.Session(impersonate="safari17_0", proxies=px, timeout=60)
+
+
+def _fetch(url, retries=4, log=None, session=None):
     """$0 DoorDash fetch — curl_cffi Safari-17 TLS impersonation through the flat-rate residential ISP pool.
     Safari impersonation clears DoorDash's Forter where Chrome AND plain-HTTP get 403 (verified 2026-07-24:
-    200 + the full RSC menu/retail payload). Rotates the ISP exit each try. NO Bright Data — replaces the old
-    api.brightdata.com Unlocker. If no ISP pool is configured there is no paid fallback: it returns '' (skip),
-    never spends. resi.best_url()==None then."""
+    200 + the full RSC menu/retail payload). NO Bright Data — replaces the old api.brightdata.com Unlocker.
+    If no ISP pool is configured there is no paid fallback: it returns '' (skip), never spends.
+
+    `session` (from _session()) reuses one connection/exit across many calls — pass it for any multi-request
+    walk (full_catalog's ~166 fetches/store). Without it, each call opens its own connection + picks a fresh
+    round-robin exit (fine for a one-off fetch like doordash_naop's single menu page)."""
     import resi
     try:
         from curl_cffi import requests as cr
@@ -56,10 +78,13 @@ def _fetch(url, retries=4, log=None):
         return ""
     last = ""
     for a in range(retries):
-        u = resi.isp_url() if resi.isp_enabled() else None      # round-robin exit; a fresh IP each retry
-        px = {"http": u, "https": u} if u else None
         try:
-            r = cr.get(url, impersonate="safari17_0", proxies=px, timeout=60)
+            if session is not None:
+                r = session.get(url)
+            else:
+                u = resi.isp_url() if resi.isp_enabled() else None      # round-robin exit; a fresh IP each retry
+                px = {"http": u, "https": u} if u else None
+                r = cr.get(url, impersonate="safari17_0", proxies=px, timeout=60)
             if r.status_code == 200 and "__next_f" in r.text:
                 return r.text
             last = "status %s" % r.status_code
@@ -71,10 +96,22 @@ def _fetch(url, retries=4, log=None):
     return ""
 
 
-def _unlock(url, key=None, retries=2):
+def _unlock(url, key=None, retries=2, session=None):
     """Back-compatible shim — DoorDash now fetches $0 through the ISP pool (_fetch); `key` (the old Bright Data
     token) is ignored. Kept so doordash_naop and other callers don't have to change."""
-    return _fetch(url, retries=max(3, retries + 1))
+    return _fetch(url, retries=max(3, retries + 1), session=session)
+
+
+def search_store(store, term, key=None, session=None):
+    """/convenience/store/<id>/search/<term> — server-rendered search results, same RSC shape as a category
+    page (see the module docstring). Was documented but never implemented (full_catalog referenced this by
+    name for the completeness union; every call silently AttributeError'd, caught by a bare except, wasting
+    a fetch+sleep per term for nothing and never actually catching the off-tree items it was meant to)."""
+    url = "https://www.doordash.com/convenience/store/%s/search/%s" % (store, urllib.parse.quote(term))
+    html = _fetch(url, session=session)
+    if not html:
+        return []
+    return _parse_items(_rsc(html))
 
 
 def _rsc(html):
