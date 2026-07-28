@@ -15,9 +15,12 @@ abc.harvest_ids = lambda log=print: (CATALOG, False)
 
 
 def fake_fetch_product(sku, url, log=print):
-    rows = [{"store": s, "instock": True, "price": 9.99, "qty": 5, "upc": "0" + sku,
+    rows = [{"store": s, "instock": True, "price": 9.99, "qty": 5, "upc": "0" + sku, "gtin": "0" + sku,
              "name": "Product " + sku, "brand": "Brand " + sku[-1]} for s in STORES]
-    return sku, rows, True
+    detail = {"sku": sku, "name": "Product " + sku, "brand": "Brand " + sku[-1], "upc": "0" + sku,
+              "gtin": "0" + sku, "price": 9.99, "size": "750ml", "image": "", "description": "",
+              "url": url, "raw_json": "{}"}
+    return sku, rows, True, detail
 
 
 abc.fetch_product = fake_fetch_product
@@ -32,7 +35,15 @@ class FakeObserve:
         LANDED.append((part, len(rows)))
 
 
+ITEMS = []
+
+
 class FakeWarehouse:
+    @staticmethod
+    def write_accumulate(name, rows, key=None, fields=None):
+        ITEMS.append((name, len(rows)))
+        return {"rows": len(rows)}
+
     @staticmethod
     def get_bytes(k):
         return BUCKET.get(k)
@@ -66,7 +77,12 @@ snap_cells = json.loads(BUCKET["_collect/snapshots/abc-fws.json"])["cells"]
 assert len(snap_cells) == 30, "snapshot should hold 30 cells, got %d" % len(snap_cells)
 one = next(iter(snap_cells.values()))
 assert one["name"] and one["brand"], "name/brand missing from landed cell: %r" % one
-print("PASS run 1: %d batches, %d cells, unique parts, snapshot saved" % (len(LANDED), total_cells))
+# ITEM MASTER from the SAME crawl — abc-catalog used to re-fetch these pages a second time.
+assert ITEMS, "the item master must be landed from the same fetch (abc_catalog)"
+assert all(n == "abc_catalog" for n, _ in ITEMS), ITEMS
+assert sum(c for _, c in ITEMS) >= 10, "all 10 products should reach the item master: %r" % ITEMS
+print("PASS run 1: %d batches, %d cells, unique parts, snapshot saved; item master %d rows -> abc_catalog"
+      % (len(LANDED), total_cells, sum(c for _, c in ITEMS)))
 
 print()
 print("=== RUN 2: resume — checkpoint says all 10 done, so nothing should be re-fetched ===")

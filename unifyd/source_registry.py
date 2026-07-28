@@ -54,9 +54,16 @@ SOURCES = [
          note="open storefront GraphQL + Brandify locator — no auth/anti-bot; SKU (no UPC), national pricing"),
     dict(id="abc-facets", label="ABC FW&S (facets)", code="import abc_facets as m; m.pull(cap=None)",
          tables=["abc_products", "source_taxonomy"], klass="headless", cadence="daily", enabled=True, note="SearchSpring"),
-    dict(id="abc-catalog", label="ABC FW&S (catalog)", code="import abc_catalog as m; m.run()",
+    # SUPERSEDED by abc-fws, which now parses the item master out of the SAME product-page fetch it
+    # already makes for per-store availability. Running both meant crawling ~14k identical pages twice
+    # (two ~4h sweeps, double the load on a live retailer) for data present in one response — and left
+    # the item row and the store row describing states hours apart. Disabled rather than deleted; the
+    # module stays until abc-fws has proven the merged output in the bench.
+    dict(id="abc-catalog", label="ABC FW&S (catalog) — superseded by abc-fws",
+         code="import abc_catalog as m; m.run()", enabled_note="merged into abc-fws",
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
-         tables=["abc_catalog"], klass="headless", cadence="weekly", enabled=True, note="BigCommerce sitemap"),
+         tables=["abc_catalog"], klass="headless", cadence="weekly", enabled=False,
+         note="SUPERSEDED — abc-fws lands abc_catalog from the same crawl (one fetch, both layers)"),
     dict(id="abc-fws", label="ABC FW&S (inventory)", code="import abc_fws_scraper as m; m.pull(crawl_all=True)",
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          # TIMEOUT: the full sweep is ~13.9k product pages paced by `polite` at ~1 req/s (ABC_MIN_INTERVAL
@@ -65,7 +72,8 @@ SOURCES = [
          # 6h leaves headroom. The crawl now lands per batch and checkpoints, so even a kill keeps its work
          # and the next run resumes — the timeout is a backstop, no longer a data-loss event.
          timeout=21600, mem=8192,
-         tables=["retail_observations"], klass="headless", cadence="daily", enabled=True, cost_class="proxy",
+         tables=["retail_observations", "abc_catalog"], klass="headless", cadence="daily", enabled=True,
+         cost_class="proxy",
          note="per-store inventory → lands retail_observations (NOT abc_products, which abc-facets owns/overwrites)",
          # COVERAGE (coverage.py): item/store columns + the KNOWN universe, so a run that lands far fewer
          # SKUs/stores than this reads `partial` instead of a silent stale merge. Omit expected_* to let

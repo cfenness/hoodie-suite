@@ -44,8 +44,8 @@ NON_ALC_BRANDS = re.compile(
 # between, so they are not the same moment and must not be presented as one. `observed_at` (unix
 # seconds) carries the true instant per row. Older partitions lack the column; query_parts reads with
 # union_by_name=true, so they simply return null for it rather than breaking.
-OBS_FIELDS = ["date", "observed_at", "source", "store", "store_id", "product_id", "upc", "brand", "name",
-              "price", "promo", "on_promo", "in_stock", "qty", "stock_level", "is_hemp"]
+OBS_FIELDS = ["date", "observed_at", "source", "store", "store_id", "product_id", "upc", "gtin",
+              "brand", "name", "price", "promo", "on_promo", "in_stock", "qty", "stock_level", "is_hemp"]
 
 
 def is_hemp(*texts):
@@ -77,6 +77,7 @@ def record(source, rows, date=None, log=print, part=None):
         out.append({"date": date, "observed_at": int(r.get("observed_at") or now), "source": source,
                     "store": r.get("store", ""), "store_id": str(r.get("store_id", "") or ""),
                     "product_id": str(r.get("product_id", "") or ""), "upc": str(r.get("upc", "") or ""),
+                    "gtin": str(r.get("gtin", "") or ""),
                     "brand": r.get("brand", ""), "name": r.get("name", ""),
                     "price": r.get("price"), "promo": r.get("promo"),
                     "on_promo": bool(r.get("on_promo")), "in_stock": bool(r.get("in_stock")),

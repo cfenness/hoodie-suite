@@ -39,7 +39,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import polite
 
 # safe-scrape knobs (per-host rate/backoff/breaker live in polite; proxy = Tier-2 rotating residential IPs)
-ABC_MIN_INT = float(os.environ.get("ABC_MIN_INTERVAL", "0.6"))
+# THROUGHPUT. `polite` serializes per HOST, so the 12 workers all queue on one slot: effective rate is
+# 1/min_interval regardless of worker count. At 0.6s that is ~1.4 req/s → a ~14k-page sweep takes about
+# 4 hours and overruns its window. 0.25s puts it near 4 req/s (~1 hour) — still an order of magnitude
+# gentler than an unthrottled crawler, on a BigCommerce storefront serving cached product pages.
+# This is the ban-risk dial, so it stays a single env knob: ABC's WAF trips on VOLUME (the 403 wall the
+# fetch() fallback already handles by switching to the proxy) and `polite`'s circuit breaker still backs
+# off on repeated failures. Raise it back toward 0.6 if 403s start appearing mid-sweep.
+ABC_MIN_INT = float(os.environ.get("ABC_MIN_INTERVAL", "0.25"))
 ABC_PROXY   = os.environ.get("ABC_PROXY", "0") == "1"
 # The direct crawl periodically hits a volume-triggered 403 wall (WAF) partway through the daily full sweep —
 # single probes still return 200, so it's rate-based, not a UA/robots block. When that happens mid-run we flip
@@ -215,8 +222,70 @@ def graphql_stores(path, token, host):
         return [], False
 
 
+# The product page carries the ITEM MASTER (name/brand/size/upc/price/image/desc) *and* the per-store
+# availability. abc_catalog.py used to crawl these same ~14k pages a SECOND time purely to collect the
+# item fields, because this scraper left name/brand blank. It no longer does, so a separate crawl is
+# 14k redundant requests against a live retailer for data already in the response we just read.
+# Parsed here, landed alongside the observations, from ONE fetch — which also guarantees the item row
+# and the store row describe the same page at the same instant, rather than two states hours apart.
+_C_NAME  = re.compile(r'property="og:title"\s+content="([^"]+)"|"og:title"[^>]*content="([^"]+)"', re.I)
+_C_BRAND = re.compile(r'"brand":\s*\{[^}]*"name":\s*"([^"]+)"|itemprop="brand"[^>]*content="([^"]+)"', re.I)
+_C_SIZE  = re.compile(r'(\d+(?:\.\d+)?)\s?(ml|l|liter|litre|oz)\b', re.I)
+_C_UPC   = re.compile(r'"gtin1?[234]?":\s*"?(\d{8,14})"?|itemprop="gtin\d*"[^>]*content="(\d{8,14})"', re.I)
+_C_IMG   = re.compile(r'(?:og:image|twitter:image)"[^>]*content="([^"]+)"', re.I)
+_C_DESC  = re.compile(r'(?:og:description|"description")"[^>]*content="([^"]+)"', re.I)
+
+
+def _first(m):
+    return next((g for g in m.groups() if g), None) if m else None
+
+
+_LD_JSON = re.compile(r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>', re.I | re.S)
+_META_ALL = re.compile(r'<meta[^>]+(?:property|name)="([^"]+)"[^>]+content="([^"]*)"', re.I)
+
+
+def item_detail(sku, url, body):
+    """The store-agnostic item row, parsed from the page we already fetched.
+
+    DISCARD NOTHING. The named columns below are the ones we model; `raw_json` carries the page's FULL
+    schema.org JSON-LD plus every og:/meta pair, including fields nobody has named yet. Deciding a field
+    is worthless is a business call, not a scraper's — and re-deriving a dropped field means re-crawling
+    14k pages of a live site whose values have since moved. Capture wide, model later.
+    """
+    import html as _html
+    import json as _json
+    nm = _first(_C_NAME.search(body))
+    if not nm:
+        return None
+    name = _html.unescape(nm).split(" | ")[0].strip()
+    pm = PRICE_RE.search(body) or PRICE_TXT.search(body)
+    im, dm = _C_IMG.search(body), _C_DESC.search(body)
+    sm = _C_SIZE.search(name)
+
+    # everything the page states about itself, kept verbatim
+    blobs = []
+    for m in _LD_JSON.finditer(body):
+        try:
+            blobs.append(_json.loads(m.group(1).strip()))
+        except Exception:
+            blobs.append({"_unparsed": m.group(1).strip()[:4000]})
+    metas = {k: _html.unescape(v) for k, v in _META_ALL.findall(body)}
+    raw = _json.dumps({"ld_json": blobs, "meta": metas}, default=str)
+
+    return {"sku": sku, "name": name,
+            "brand": _html.unescape(_first(_C_BRAND.search(body)) or "").strip(),
+            "size": (sm.group(0) if sm else ""),
+            "upc": _first(_C_UPC.search(body)) or "",
+            "gtin": _first(_C_UPC.search(body)) or "",
+            "price": (float(pm.group(1).replace(",", "")) if pm else None),
+            "image": (im.group(1) if im else ""),
+            "description": (_html.unescape(dm.group(1)) if dm else ""),   # NOT truncated
+            "url": url, "raw_json": raw}
+
+
 def fetch_product(sku, url, log=print):
     body, _ = fetch(url)
+    detail = item_detail(sku, url, body)
     if WANT_QTY:
         m = TOKEN_RE.search(body)
         if m:
@@ -224,9 +293,9 @@ def fetch_product(sku, url, log=print):
             path = "/" + url.split("//", 1)[-1].split("/", 1)[-1]
             gql_rows, gok = graphql_stores(path, m.group(0), host)
             if gok:
-                return sku, gql_rows, True          # real per-store quantities
+                return sku, gql_rows, True, detail   # real per-store quantities
     rows, ok = parse_stores(body)                    # fallback: binary in/out from HTML
-    return sku, rows, ok
+    return sku, rows, ok, detail
 
 
 # ---------------- deterministic sample: same SKUs every run, spread across catalog ----------------
@@ -321,7 +390,7 @@ def _land(day, batch_idx, cells, log=print):
         import observe
         observe.record("abc-fws",
                        [dict(source="abc-fws", store_id=str(v["store"]), store=str(v["store"]),
-                             product_id=str(v["sku"]), upc=v.get("upc", ""),
+                             product_id=str(v["sku"]), upc=v.get("upc", ""), gtin=v.get("gtin", ""),
                              brand=v.get("brand", ""), name=v.get("name", ""),
                              price=v["price"], on_promo=False, in_stock=bool(v.get("instock")),
                              qty=v.get("qty"), stock_level="", is_hemp=False)
@@ -330,6 +399,24 @@ def _land(day, batch_idx, cells, log=print):
         return len(cells)
     except Exception as e:
         log("  [abc] batch %d land FAILED: %s" % (batch_idx, str(e)[:120]))
+        return 0
+
+
+def _land_items(items, log=print):
+    """Merge the item master gathered so far into `abc_catalog`. write_accumulate (NOT write_parquet):
+    the catalog is a persistent table keyed by sku, so a partial pass must ADD to it, never replace it
+    with the subset this run happened to reach."""
+    if not items:
+        return 0
+    try:
+        import warehouse
+        rows = list(items.values())
+        warehouse.write_accumulate("abc_catalog", rows, key="sku")
+        log("  [abc] item master: merged %d products into abc_catalog" % len(rows))
+        items.clear()
+        return len(rows)
+    except Exception as e:
+        log("  [abc] item-master merge failed: %s" % str(e)[:120])
         return 0
 
 
@@ -363,6 +450,7 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
 
     cur, ok_n = {}, 0   # cur keyed `sku|store` -> per-store {price, instock, qty, store, sku}
     pending = []        # cells awaiting their batch write
+    items = {}          # sku -> item-master row (the store-agnostic catalog, same fetch)
     landed_cells = landed_products = since_flush = 0
     lock = threading.Lock()
 
@@ -374,6 +462,7 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
             return
         batch_idx += 1
         landed_cells += _land(day, batch_idx, pending, log=log)
+        _land_items(items, log=log)
         log(f"  [abc] landed batch {batch_idx}: {len(pending):,} cells "
             f"({landed_products:,}/{len(todo):,} products, {landed_cells:,} cells this run)")
         pending = []
@@ -384,9 +473,11 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
         nonlocal ok_n, landed_products, since_flush
         sku, url = t
         try:
-            _, rows, ok = fetch_product(sku, url, log=log)
+            _, rows, ok, detail = fetch_product(sku, url, log=log)
             with lock:
                 ok_n += ok
+                if detail:
+                    items[sku] = detail
                 for r in rows:
                     # key on the store LABEL (present in both GraphQL + HTML modes); qty is the
                     # real bottle count (GraphQL) or None (HTML in/out fallback).
@@ -420,6 +511,7 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
         # batching is that no fetched row is thrown away.
         with lock:
             _flush(force=True)
+            _land_items(items, log=log)
     # ── RE-HARVEST: the site is the source of truth and it keeps moving ─────────────────────────
     # A full sweep takes hours, so the catalog we measured completeness against at the start is stale
     # by the end — ABC adds and drops products while we crawl. Comparing our count to a denominator
