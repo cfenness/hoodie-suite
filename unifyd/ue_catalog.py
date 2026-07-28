@@ -253,10 +253,25 @@ def _land(site, day, idx, shard, items, log=print):
     if not items:
         return 0
     tbl = "%s_products" % site
+    # THE PAYLOAD IS AN EVENT, NOT AN ATTRIBUTE. raw_json goes to the append-only raw_payloads table, and
+    # the catalog carries only modelled columns. write_accumulate merges by rewriting the WHOLE table, so
+    # a payload column is re-read and re-written on every flush — memory scaling with the table instead of
+    # the batch, and getting worse the more the crawl succeeds. Nothing is discarded: the full payload is
+    # kept, in the place whose cost is O(batch) forever. It also becomes history rather than a value that
+    # the next pull overwrites.
+    try:
+        import raw_capture
+        raw_capture.record(site, day, "s%02d_b%04d" % (shard, idx),
+                           [{"kind": "item", "entity_id": it.get("item_uuid"),
+                             "parent_id": it.get("store_uuid"), "raw_json": it.get("raw_json")}
+                            for it in items], log=log)
+    except Exception as e:
+        log("  [ue] raw capture failed: %s" % str(e)[:110])
+    lean = [k for k in PRODUCT_FIELDS if k != "raw_json"]
     try:
         warehouse.write_accumulate(
-            tbl, [{k: it.get(k) for k in PRODUCT_FIELDS} for it in items],
-            key=("store_uuid", "item_uuid"), fields=PRODUCT_FIELDS)
+            tbl, [{k: it.get(k) for k in lean} for it in items],
+            key=("store_uuid", "item_uuid"), fields=lean)
     except Exception as e:
         log("  [ue] %s land failed: %s" % (tbl, str(e)[:110]))
         return 0

@@ -34,6 +34,7 @@ TESTS=(
   self_report_test             # a run is graded against its JOB, never against its own watermark
   taxonomy_test                # the retailer's own category tree is captured, not discarded
   journal_metrics_test         # the journal keeps every metric a run reports about itself
+  raw_capture_test             # payloads kept in full, kept OUT of the whole-table merge path
   sipsource_test
   cost_ledger_test
   obs_quality_test
