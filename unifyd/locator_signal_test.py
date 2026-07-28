@@ -11,6 +11,7 @@ The load-bearing assertions, the ones that encode rules we argued for and would 
   • brand render-mode never ships a negative verdict or a "wait for the promo" nudge
 """
 import os
+import statistics
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -193,9 +194,12 @@ print("\n  RULE 2 — a pool must be FORMAT-homogeneous, not merely unit-normali
 # Real shape from the live Orlando pull: large formats are cheaper PER 750ml than small ones.
 # Mixing them drags the median down and libels every 750ml as overpriced.
 MIXED_ROWS = (
-    [{"name": "X 1.75L", "price": p * (1750 / 750.0)} for p in (13.4, 13.8, 14.2, 15.0, 15.4)] +
-    [{"name": "X 1L", "price": p * (1000 / 750.0)} for p in (22.0, 23.0, 23.6)] +
-    [{"name": "X 750ml", "price": p} for p in (22.9, 23.5, 24.2, 25.0, 26.9)]
+    [{"source": "s", "store_id": "L%d" % i, "name": "X 1.75L", "price": p * (1750 / 750.0)}
+     for i, p in enumerate((13.4, 13.8, 14.2, 15.0, 15.4))] +
+    [{"source": "s", "store_id": "M%d" % i, "name": "X 1L", "price": p * (1000 / 750.0)}
+     for i, p in enumerate((22.0, 23.0, 23.6))] +
+    [{"source": "s", "store_id": "S%d" % i, "name": "X 750ml", "price": p}
+     for i, p in enumerate((22.9, 23.5, 24.2, 25.0, 26.9))]
 )
 pools = ls.reference_pools(MIXED_ROWS)
 eq("pools split by format", sorted(pools.keys()), [750, 1000, 1750])
@@ -264,10 +268,35 @@ ok("the merged card records the other source it was seen on", "postmates" in (ab
 eq("the fresher observation won", abc["observed_on"], "2026-07-27")
 
 print("\n  and a duplicate no longer double-votes in the pool")
-dupe_rows = [{"name": "X 750ml", "price": 20.0}] * 4 + [{"name": "X 750ml", "price": 30.0}]
-eq("reference_pools counts every observation it is given", len(ls.reference_pools(dupe_rows)[750]), 5)
-ok("dedupe is what prevents the double-vote reaching the pool — offers are deduped pre-rank",
+same_store = [{"source": "s", "store_id": "A", "name": "X 750ml", "price": p}
+              for p in (20.0, 20.0, 20.0, 20.0, 30.0)]
+eq("five scrapes of one store are ONE vote", len(ls.reference_pools(same_store)[750]), 1)
+two_stores = same_store + [{"source": "s", "store_id": "B", "name": "X 750ml", "price": 25.0}]
+eq("a second store adds a second vote", len(ls.reference_pools(two_stores)[750]), 2)
+ok("and offers are deduped before ranking, so a mirrored feed can't take two slots",
    len(ls.dedupe(d)) == len(d))
+
+print("\n  RULE 3b — the pool counts STORES, not scrapes")
+# Cadence must not masquerade as consensus. One store scraped 30 times is one opinion.
+CADENCE = ([{"source": "daily", "store_id": "A", "name": "X 750ml", "price": 26.99}] * 30 +
+           [{"source": "rare", "store_id": "B", "name": "X 750ml", "price": 19.99}] +
+           [{"source": "rare", "store_id": "C", "name": "X 750ml", "price": 20.99}] +
+           [{"source": "rare", "store_id": "D", "name": "X 750ml", "price": 21.99}])
+pooled = ls.reference_pools(CADENCE)[750]
+eq("33 observations from 4 stores make a pool of 4", len(pooled), 4)
+ok("the daily-scraped store gets ONE vote, not 30", pooled.count(26.99) == 1)
+raw = sorted(u for r in CADENCE for u in [ls.unit_prices(r)[1]])
+ok("pooling raw scrapes would have put the median at the over-scraped store (%.2f)"
+   % statistics.median(raw), statistics.median(raw) == 26.99)
+ok("...one-vote-per-store puts it where the market actually is (%.2f)"
+   % statistics.median(pooled), statistics.median(pooled) < 26.99)
+one_store = ls.reference_pools([{"source": "s", "store_id": "A", "name": "X 750ml",
+                                 "price": 20.0 + i} for i in range(20)])[750]
+eq("20 scrapes of ONE store is a pool of one — MIN_REF now means what it says", len(one_store), 1)
+eq("no band on a one-store pool", ls.price_verdict(21.0, one_store)["reason"], "thin-pool")
+eq("a store's own vote is its median, robust to a one-day spike",
+   ls.reference_pools([{"source": "s", "store_id": "A", "name": "X 750ml", "price": p}
+                       for p in (22.0, 22.0, 22.0, 40.0)])[750], [22.0])
 
 print("\n  RULE 2b — a ranked list may not MIX formats")
 # Within-format percentiles are not comparable across formats. Live proof: a 375ml at $13.63 was

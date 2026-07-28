@@ -123,19 +123,37 @@ def size_label(ml):
     return ("%g L" % (b / 1000.0)) if b >= 1000 else ("%d ml" % b)
 
 
-def reference_pools(rows):
-    """{format → [unit price]} for a set of observations. One pool per bottle format, because a
-    verdict is only meaningful against its own format. Rows whose size can't be parsed contribute
-    to no pool (they also never get a band — see price_verdict's `no-size`)."""
-    pools = {}
+def reference_pools(rows, per_store=True):
+    """{format → [unit price]} — the reference distributions, ONE VOTE PER STORE by default.
+
+    The pool answers "what do stores around here charge", so the unit of observation is a STORE,
+    not a scrape. Pooling raw observations lets cadence masquerade as consensus: a store scraped
+    daily for 90 days outvotes one scraped twice, and binnys (7.3M observations across 49 stores)
+    would swamp any pool it entered. Live symptom that exposed this: a 750ml pool reported n=72
+    with median == max, because a handful of stores at $26.99 were each counted dozens of times.
+
+    It also restores MIN_REF's meaning — the floor is supposed to say "enough STORES priced this
+    to have an opinion", and against observation counts it was passing on a single store.
+
+    Each store contributes the median of its own trailing unit prices, which is robust to a
+    one-day promo spike without needing the promo flag.
+    """
+    by_store = {}
     for r in rows:
         ml = r.get("size_ml") or size_ml(r.get("name"))
         b = size_bucket(ml)
         if not b:
             continue
         u = unit_prices(r)[1]
-        if u:
-            pools.setdefault(b, []).append(u)
+        if not u:
+            continue
+        if not per_store:
+            by_store.setdefault((b, id(r)), []).append(u)
+            continue
+        by_store.setdefault((b, r.get("source", ""), str(r.get("store_id", "") or "")), []).append(u)
+    pools = {}
+    for key, us in by_store.items():
+        pools.setdefault(key[0], []).append(round(statistics.median(us), 2))
     return pools
 
 
