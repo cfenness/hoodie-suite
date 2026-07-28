@@ -31,6 +31,7 @@ TESTS=(
   abc_fws_test                 # ABC: batch landing, resume, partial-vs-drift completeness
   selfheal_classes_test        # failure classes keep their point of view (structural, not prose-matched)
   run_stream_test              # the live console must actually stream, not dump at exit
+  self_report_test             # a run is graded against its JOB, never against its own watermark
   sipsource_test
   cost_ledger_test
   obs_quality_test
@@ -53,6 +54,18 @@ for t in "${TESTS[@]}"; do
     echo "FAIL"; echo "$out" | tail -8 | sed 's/^/    /'; fail=$((fail+1)); failed+=("$t")
   fi
 done
+
+# A curated list means a new test file can sit there never running — indistinguishable from a test that
+# passes. Name the unlisted ones out loud rather than letting the suite quietly under-report itself.
+if [ -z "$FILTER" ]; then
+  unlisted=()
+  for f in unifyd/*_test.py; do
+    n=$(basename "$f" .py)
+    printf '%s\n' "${TESTS[@]}" | grep -qx "$n" || unlisted+=("$n")
+  done
+  [ ${#unlisted[@]} -eq 0 ] || printf "\n   note: %d test file(s) not in the suite list: %s\n" \
+    "${#unlisted[@]}" "${unlisted[*]}"
+fi
 
 echo
 echo "── $pass passed, $fail failed"

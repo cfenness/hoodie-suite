@@ -58,6 +58,7 @@ import warehouse
 # TOTAL is about pool_size x PER_IP — and when N shards run at once they share those same IPs, so each
 # shard may use only its share. 8 shards x 24 workers over 20 IPs was ~10/IP and threw 96% empties.
 PER_IP = float(os.environ.get("UE_PER_IP", "3"))
+_last_beat = [0.0]                                         # wall-clock of the last heartbeat emitted
 
 
 def auto_workers(nshard=1, log=print):
@@ -168,6 +169,7 @@ def enrich_items(su, store_name, items, idx, site="ubereats", known=None):
 def _progress(**kw):
     """Machine-readable progress for Hoodie Collect's live counters."""
     try:
+        _last_beat[0] = time.time()
         print("HOODIE_PROGRESS " + json.dumps(kw), flush=True)
     except Exception:
         pass
@@ -322,7 +324,12 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
             else:
                 n_empty += 1
             n_seen = len(done)
-            if n_seen % 200 == 0:
+            # HEARTBEAT ON A CLOCK, not only on a counter. Every-200-stores was the sole signal, so a
+            # deliberately slow shard (7 workers is ~1/s) could go many minutes without a word — and the
+            # journal marks a silent run `lost` after 900s. A healthy shard being reported dead is the
+            # same misinformation as a dead one reported healthy, just in the other direction.
+            if n_seen % 200 == 0 or (time.time() - _last_beat[0]) > 60:
+                _last_beat[0] = time.time()
                 _progress(rows=n_items + len(pending),
                           stage="%s/%s stores" % (f"{n_seen:,}", f"{len(mine):,}"),
                           pct=round(100.0 * n_seen / max(1, len(mine)), 1))

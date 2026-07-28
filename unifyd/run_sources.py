@@ -60,6 +60,60 @@ def _counts(tables):
     return out
 
 
+def _self_report(out):
+    """What the SCRAPER said about its OWN run, as structured data.
+
+    A crawler knows two things the outside cannot infer: the size of the universe it was asked to
+    cover, and how much of it it actually reached. `coverage.assess` otherwise falls back to a
+    HIGH-WATER-MARK — expected = the most this source has ever landed — which is self-calibrating and
+    therefore blind in exactly the wrong direction: a run that collapses to 0.1% sets a tiny watermark
+    and then measures 100% against it. That is how a shard that reached 74 of 62,938 stores and printed
+    `"status": "degraded"` closed as `ok / complete`.
+
+    Prefer an explicit `HOODIE_RESULT {...}` marker; fall back to the last JSON object in the output
+    carrying a "status" key (most scrapers already end with a summary block). Best-effort: unparseable
+    output just means no self-report, never a crash.
+    """
+    if not out:
+        return {}
+    m = None
+    for m in re.finditer(r"HOODIE_RESULT\s+(\{.*?\})", out, re.S):
+        pass
+    if m:
+        try:
+            return json.loads(m.group(1)) or {}
+        except Exception:
+            pass
+    # Scan balanced braces from each line-initial "{" — a summary may be pretty-printed across lines or
+    # collapsed onto one, and a regex that assumes either shape silently misses the other.
+    best = {}
+    for i, ch in enumerate(out):
+        if ch != "{" or (i and out[i - 1] not in "\n\r"):
+            continue
+        depth, instr, esc = 0, False, False
+        for j in range(i, min(len(out), i + 20000)):
+            c = out[j]
+            if instr:
+                instr = False if (c == '"' and not esc) else instr
+                esc = (c == "\\" and not esc)
+                continue
+            if c == '"':
+                instr, esc = True, False
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        d = json.loads(out[i:j + 1])
+                        if isinstance(d, dict) and ("status" in d or "stores_total" in d):
+                            best = d                      # keep scanning: the LAST report is the verdict
+                    except Exception:
+                        pass
+                    break
+    return best
+
+
 def _counts_after(tables, before, log=print):
     """AFTER-run counts, hardened against a transient read blip. A table whose count can't be read is
     assumed UNCHANGED (its before count), NEVER 0 — a guarded warehouse write cannot zero or shrink a
@@ -409,6 +463,7 @@ def run_one(source, log=print, extra_env=None, on_line=None):
     # `incomplete`, which selfheal treats as retryable: the source is re-dispatched on the escalating
     # backoff and, because long crawls now checkpoint and resume, each retry CONTINUES rather than
     # restarting. Nothing stops on incompleteness — it keeps going until the catalog is actually covered.
+    sr = _self_report((r.stderr if r is not None else "") or "")
     cov = {}
     try:
         import coverage as _cov
@@ -442,6 +497,26 @@ def run_one(source, log=print, extra_env=None, on_line=None):
             error = " | ".join([e for e in ([error] if error else []) + caps_missing])[:300]
     except Exception:
         pass
+    # THE SCRAPER'S OWN DENOMINATOR OUTRANKS THE WATERMARK. If the run told us how big its universe was,
+    # that is the completeness denominator — measured against the job it was given, not against its own
+    # best previous day. This is the difference between "we landed everything we managed to land" and
+    # "we landed everything there is", and only the second one is sellable.
+    if sr:
+        tot, done = sr.get("stores_total"), sr.get("stores_done")
+        if tot and done is not None:
+            pct = round(100.0 * done / tot, 1)
+            verdict = "complete" if pct >= 99.5 else ("partial" if done else "empty")
+            cov.update(cov_basis="self-reported", landed_stores=done, expected_stores=tot,
+                       cov_stores_pct=pct, cov_stores=verdict)
+            if verdict != "complete" and status in ("ok", "current"):
+                status = "incomplete"
+                fail_class = fail_class or "incomplete"
+        # A scraper that DECLARES itself degraded is never a success, whatever the row delta says. The
+        # tripwire firing means the pass was abandoned; rows landed before it fired don't redeem the run.
+        declared = str(sr.get("status") or "")
+        if declared in ("degraded", "incomplete", "partial", "blocked") and status in ("ok", "current"):
+            status = "incomplete"
+            fail_class = fail_class or declared
     if status == "empty" and not fail_class:
         fail_class = "empty"
     rec = dict(run_id=run_token, source=sid, label=source["label"], klass=source["klass"],
