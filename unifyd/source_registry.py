@@ -108,10 +108,18 @@ SOURCES = [
                  "static": {"KROGER_STORE": "01100439", "KROGER_FACILITY": "14732"}},
          note="INTERNAL atlas endpoint = exact per-store on-hand + dims + ABV; Akamai cookie AUTO-WARMED per "
               "run (cookie_warm headful Chrome — no manual paste); store 01100439/fac 14732 default"),
-    dict(id="kroger-api", label="Kroger (API UPC seed)", code="import kroger_api as m; m.main()",
-         tables=["kroger_products"], klass="creds", cadence="weekly", enabled=True,
+    # DELIBERATELY OFF — do not "fix" this by adding the creds. The public Kroger API carries NO
+    # INVENTORY, which is the only reason we scrape Kroger at all (the atlas endpoint gives exact
+    # per-store on-hand). Left enabled with requires=[], it sat in every triage as a permanent
+    # "no-creds, just set the secrets!" prompt and got proposed as a free win more than once. It is
+    # not a free win; it is a source we chose not to run. Re-enable ONLY if the UPC seed is wanted
+    # for the atlas GTIN universe, and never as a substitute for inventory.
+    dict(id="kroger-api", label="Kroger (API UPC seed) — OFF: no inventory",
+         code="import kroger_api as m; m.main()",
+         tables=["kroger_products"], klass="creds", cadence="weekly", enabled=False,
          requires=["KROGER_CLIENT_ID", "KROGER_CLIENT_SECRET"],
-         note="thin public OAuth API — product/UPC seed that feeds the atlas GTIN universe (NOT real inventory)"),
+         note="OFF BY CHOICE — public OAuth API has NO inventory. Inventory comes from kroger (atlas). "
+              "Do not enable to clear a no-creds warning."),
     dict(id="publix", label="Publix", code="import publix as m; m.run()",
          caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["publix_products"], klass="headless", cadence="daily", enabled=True, cost_class="bd", note="weekly-ad API"),

@@ -30,7 +30,37 @@ USE SCHEMA UNIFYD.RAW;
 
 -- ── time-series fact partitions (load the whole prefix; union_by_name) ──
 
+-- retail_observations
+--   Dated per-store price + inventory observations (the fact spine; union_by_name)
+CREATE TABLE IF NOT EXISTS UNIFYD.RAW.RETAIL_OBSERVATIONS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/retail_observations/', FILE_FORMAT => 'PARQUET_FMT',
+                            IGNORE_CASE => TRUE)));
+COPY INTO UNIFYD.RAW.RETAIL_OBSERVATIONS
+  FROM '@WH/retail_observations/'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  PATTERN = '.*[.]parquet'
+  ON_ERROR = CONTINUE;
+
+
 -- ── source catalogs ──
+
+-- ab_outlets   [FULL — priority seed]
+--   AB InBev — national retailer locator (where their beer is sold)
+--   registry source(s): ab-inbev
+CREATE OR REPLACE TABLE UNIFYD.RAW.AB_OUTLETS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/ab_outlets.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.AB_OUTLETS
+  FROM '@WH/ab_outlets.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
 
 -- abc_catalog   [FULL — priority seed]
 --   ABC FW&S — BigCommerce catalog (UPC)
@@ -62,6 +92,36 @@ COPY INTO UNIFYD.RAW.ABC_PRODUCTS
   ON_ERROR = ABORT_STATEMENT;
 
 
+-- kroger_atlas_products   [FULL — priority seed]
+--   Kroger — per-store on-hand + dims + ABV (internal atlas)
+--   registry source(s): kroger
+CREATE OR REPLACE TABLE UNIFYD.RAW.KROGER_ATLAS_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/kroger_atlas_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.KROGER_ATLAS_PRODUCTS
+  FROM '@WH/kroger_atlas_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- kroger_products   [FULL — priority seed]
+--   Kroger — public API product/UPC seed (atlas GTIN universe)
+--   registry source(s): kroger-api
+CREATE OR REPLACE TABLE UNIFYD.RAW.KROGER_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/kroger_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.KROGER_PRODUCTS
+  FROM '@WH/kroger_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
 -- source_taxonomy   [FULL — priority seed]
 --   ABC FW&S — retailer drill-path taxonomy
 --   registry source(s): abc-facets
@@ -71,6 +131,948 @@ CREATE OR REPLACE TABLE UNIFYD.RAW.SOURCE_TAXONOMY
     FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/source_taxonomy.parquet', FILE_FORMAT => 'PARQUET_FMT')));
 COPY INTO UNIFYD.RAW.SOURCE_TAXONOMY
   FROM '@WH/source_taxonomy.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- total_wine_products   [FULL — priority seed]
+--   Total Wine — full catalog (PerimeterX browser crawl)
+--   registry source(s): total-wine
+CREATE OR REPLACE TABLE UNIFYD.RAW.TOTAL_WINE_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/total_wine_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.TOTAL_WINE_PRODUCTS
+  FROM '@WH/total_wine_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- vtinfo_titos   [FULL — priority seed]
+--   Tito's — where-to-buy outlet locator
+--   registry source(s): vtinfo
+CREATE OR REPLACE TABLE UNIFYD.RAW.VTINFO_TITOS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/vtinfo_titos.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.VTINFO_TITOS
+  FROM '@WH/vtinfo_titos.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- bbg_products
+--   Salsify API
+--   registry source(s): bbg
+CREATE OR REPLACE TABLE UNIFYD.RAW.BBG_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/bbg_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.BBG_PRODUCTS
+  FROM '@WH/bbg_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- bea_reference
+--   BEA Regional API (bea_ref.build) — state disposable income (SAINC51) + county personal income (CAINC1), annual; a fresh BEA key must be ACTIVATED via BEA's email link or the API returns in-band Error 4 (reported degraded, never silent)
+--   registry source(s): bea
+CREATE OR REPLACE TABLE UNIFYD.RAW.BEA_REFERENCE
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/bea_reference.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.BEA_REFERENCE
+  FROM '@WH/bea_reference.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- binnys_products
+--   Algolia feed
+--   registry source(s): binnys
+CREATE OR REPLACE TABLE UNIFYD.RAW.BINNYS_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/binnys_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.BINNYS_PRODUCTS
+  FROM '@WH/binnys_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- bottlecapps_products
+--   DataDome — patchright
+--   registry source(s): bottlecapps
+CREATE OR REPLACE TABLE UNIFYD.RAW.BOTTLECAPPS_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/bottlecapps_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.BOTTLECAPPS_PRODUCTS
+  FROM '@WH/bottlecapps_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- ca_outlets
+--   WAF — spoofed browser HEADERS on stdlib urllib (NOT a headful browser); klass was wrongly 'mac' → Mac queue
+--   registry source(s): ca-abc
+CREATE OR REPLACE TABLE UNIFYD.RAW.CA_OUTLETS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/ca_outlets.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CA_OUTLETS
+  FROM '@WH/ca_outlets.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- census_acs
+--   ALL ~1,193 ACS5 detailed tables @ state + featured bev-alc metrics (21+, income, households) @ county; ~1,193 group() calls. Full all-tables×county + tract/block-group is a partitioned/bulk follow-up
+--   registry source(s): census-acs5
+CREATE OR REPLACE TABLE UNIFYD.RAW.CENSUS_ACS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/census_acs.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CENSUS_ACS
+  FROM '@WH/census_acs.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- census_demographic
+--   demand-side ACS5 by county (census.build) — population/income/housing packs, wide + geoid-keyed for enrich.merge_census outlet joins; free key, re-derivable
+--   registry source(s): census-acs
+CREATE OR REPLACE TABLE UNIFYD.RAW.CENSUS_DEMOGRAPHIC
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/census_demographic.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CENSUS_DEMOGRAPHIC
+  FROM '@WH/census_demographic.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- census_economic
+--   demand-side ACS5 by county (census.build) — population/income/housing packs, wide + geoid-keyed for enrich.merge_census outlet joins; free key, re-derivable
+--   registry source(s): census-acs
+CREATE OR REPLACE TABLE UNIFYD.RAW.CENSUS_ECONOMIC
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/census_economic.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CENSUS_ECONOMIC
+  FROM '@WH/census_economic.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- census_housing
+--   demand-side ACS5 by county (census.build) — population/income/housing packs, wide + geoid-keyed for enrich.merge_census outlet joins; free key, re-derivable
+--   registry source(s): census-acs
+CREATE OR REPLACE TABLE UNIFYD.RAW.CENSUS_HOUSING
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/census_housing.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CENSUS_HOUSING
+  FROM '@WH/census_housing.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- census_migration
+--   ACS county-to-county flows (MOVEDIN/OUT/NET + FROMABROAD) — market-momentum signal for trade areas
+--   registry source(s): census-migration
+CREATE OR REPLACE TABLE UNIFYD.RAW.CENSUS_MIGRATION
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/census_migration.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CENSUS_MIGRATION
+  FROM '@WH/census_migration.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- census_reference
+--   Census API (census_ref.build) — CBP/Nonemp/PEP supply-side + ACS demand-side demographics at state/county/ZCTA grain (~33k ZIPs) + Economic Census OBSERVED receipts (dataset ecn, $1000s); free key, re-derivable
+--   registry source(s): census
+CREATE OR REPLACE TABLE UNIFYD.RAW.CENSUS_REFERENCE
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/census_reference.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CENSUS_REFERENCE
+  FROM '@WH/census_reference.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- cex_reference
+--   BLS CEX API (cex_ref.build) — mean annual alcohol $ per CU (total / at-home / away) by income-before-taxes bracket; keyless OK (BLS_API_KEY raises limits); build_demand derives trade_area_demand = CEX × ACS B19001 (needs the census source's brackets landed)
+--   registry source(s): cex
+CREATE OR REPLACE TABLE UNIFYD.RAW.CEX_REFERENCE
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/cex_reference.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CEX_REFERENCE
+  FROM '@WH/cex_reference.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- city_centroids
+--   build the $0 Census Gazetteer place/township centroid reference (state|city → lat/lng) the fast geo layer joins against. Refresh yearly; static otherwise
+--   registry source(s): city-centroid-build
+CREATE OR REPLACE TABLE UNIFYD.RAW.CITY_CENTROIDS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/city_centroids.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CITY_CENTROIDS
+  FROM '@WH/city_centroids.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- cityhive_products
+--   Cloudflare — patchright
+--   registry source(s): cityhive
+CREATE OR REPLACE TABLE UNIFYD.RAW.CITYHIVE_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/cityhive_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CITYHIVE_PRODUCTS
+  FROM '@WH/cityhive_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- cpi_reference
+--   BLS CPI-U API (cpi_ref.build) — alcohol total/at-home/away + beer/spirits/wine sub-items, US + 4 regions, monthly + M13 annual; keyless OK; real_series() = alcohol rebased vs all-items (the deflator / price-index benchmark)
+--   registry source(s): cpi
+CREATE OR REPLACE TABLE UNIFYD.RAW.CPI_REFERENCE
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/cpi_reference.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CPI_REFERENCE
+  FROM '@WH/cpi_reference.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- doordash_full_runs
+--   RESUMABLE national sweep of a curated major-chain list via doordash_full.py's category-tree walk (doordash_chains.py buckets doordash_stores by chain-name heuristic, same pattern as naop's _RETAIL_CHAINS, inverted). Each run advances every chain toward full coverage in DDFULL_BATCH_PER_CHAIN batches (accumulate-merged, never overwrites a prior batch) and lands matched/covered/remaining every time — no permanent cap, no silent coverage gap. $0 flat ISP pool (Bright Data retired for DoorDash 2026-07-24)
+--   registry source(s): doordash-full
+CREATE OR REPLACE TABLE UNIFYD.RAW.DOORDASH_FULL_RUNS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/doordash_full_runs.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.DOORDASH_FULL_RUNS
+  FROM '@WH/doordash_full_runs.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- doordash_stores
+--   $0 national store spine from DoorDash's own sitemaps (curl_cffi+ISP); feeds naop + retail
+--   registry source(s): doordash-sitemap
+CREATE OR REPLACE TABLE UNIFYD.RAW.DOORDASH_STORES
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/doordash_stores.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.DOORDASH_STORES
+  FROM '@WH/doordash_stores.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- fred_reference
+--   FRED API (fred_ref.build) — monthly liquor-store retail sales (MRTSSM4453USN, the national off-prem pulse), food-service sales, real disposable income, consumer sentiment
+--   registry source(s): fred
+CREATE OR REPLACE TABLE UNIFYD.RAW.FRED_REFERENCE
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/fred_reference.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.FRED_REFERENCE
+  FROM '@WH/fred_reference.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- geocode_cache
+--   Address → lat/lng/county_fips cache (persistent)
+CREATE OR REPLACE TABLE UNIFYD.RAW.GEOCODE_CACHE
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/geocode_cache.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.GEOCODE_CACHE
+  FROM '@WH/geocode_cache.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- haskells_products
+--   first-party site; full-catalog crawl outgrew the 5400s default (timed out 07-18)
+--   registry source(s): haskells
+CREATE OR REPLACE TABLE UNIFYD.RAW.HASKELLS_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/haskells_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.HASKELLS_PRODUCTS
+  FROM '@WH/haskells_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- hemp_inventory
+--   PARKED (2026-07): its base universe was starved — it read a phantom orlando_hemp_products table (now removed) + only the incidental Shopify subset of offprem_products; most rows had no count (oversell). Hemp is covered by hemp-finder (retailers) + hemp-scan (listings). Re-enable once pointed at a real Shopify hemp-store universe with a platform filter
+--   registry source(s): hemp-inventory
+CREATE OR REPLACE TABLE UNIFYD.RAW.HEMP_INVENTORY
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/hemp_inventory.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.HEMP_INVENTORY
+  FROM '@WH/hemp_inventory.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- hemp_products
+--   hemp-bev feed
+--   registry source(s): hemp-scan
+CREATE OR REPLACE TABLE UNIFYD.RAW.HEMP_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/hemp_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.HEMP_PRODUCTS
+  FROM '@WH/hemp_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- hemp_retailers
+--   retailer discovery — ALL 5 hemp brands (cann/wynk/trail-magic/uncle-arnies/crescent-9); run() alone was cann-only
+--   registry source(s): hemp-finder
+CREATE OR REPLACE TABLE UNIFYD.RAW.HEMP_RETAILERS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/hemp_retailers.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.HEMP_RETAILERS
+  FROM '@WH/hemp_retailers.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- instacart_products
+--   ONE zone / a few alcohol terms — proves whether a plain logged-in session lifts the anonymous alcohol gate. No proxy (free Playwright, per instacart.py). Manual trigger only.
+--   registry source(s): instacart-bevalc
+CREATE OR REPLACE TABLE UNIFYD.RAW.INSTACART_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/instacart_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.INSTACART_PRODUCTS
+  FROM '@WH/instacart_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- meijer_products
+--   open storefront GraphQL (digital.meijer.com) — no auth/anti-bot; per-store alcohol sweep
+--   registry source(s): meijer
+CREATE OR REPLACE TABLE UNIFYD.RAW.MEIJER_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/meijer_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.MEIJER_PRODUCTS
+  FROM '@WH/meijer_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- mont_sales
+--   per-state fetchers
+--   registry source(s): control-states
+CREATE OR REPLACE TABLE UNIFYD.RAW.MONT_SALES
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/mont_sales.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.MONT_SALES
+  FROM '@WH/mont_sales.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- naop_accounts
+--   DoorDash on-premise menus, $0 (ISP pool); consumes doordash_stores in NAOP_LIMIT batches
+--   registry source(s): naop
+CREATE OR REPLACE TABLE UNIFYD.RAW.NAOP_ACCOUNTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/naop_accounts.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.NAOP_ACCOUNTS
+  FROM '@WH/naop_accounts.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- naop_beverages
+--   DoorDash on-premise menus, $0 (ISP pool); consumes doordash_stores in NAOP_LIMIT batches
+--   registry source(s): naop
+CREATE OR REPLACE TABLE UNIFYD.RAW.NAOP_BEVERAGES
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/naop_beverages.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.NAOP_BEVERAGES
+  FROM '@WH/naop_beverages.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- national_shopify_products
+--   census sweep's Shopify pass — SHOPIFY_SEED via open /products.json ($0); OFFPREM_SERP=1 adds BD SERP discovery. Replaced standalone shopify_scraper (archived)
+--   registry source(s): shopify
+CREATE OR REPLACE TABLE UNIFYD.RAW.NATIONAL_SHOPIFY_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/national_shopify_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.NATIONAL_SHOPIFY_PRODUCTS
+  FROM '@WH/national_shopify_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- offprem_products
+--   22 markets, no-BD
+--   registry source(s): offprem-census
+CREATE OR REPLACE TABLE UNIFYD.RAW.OFFPREM_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/offprem_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.OFFPREM_PRODUCTS
+  FROM '@WH/offprem_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- or_pricing
+--   per-state fetchers
+--   registry source(s): control-states
+CREATE OR REPLACE TABLE UNIFYD.RAW.OR_PRICING
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/or_pricing.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.OR_PRICING
+  FROM '@WH/or_pricing.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- outlet_master
+--   derived ($0): unions DoorDash/Toast outlet spines → mastered outlets + per-source menu freshness
+--   registry source(s): outlet-union
+CREATE OR REPLACE TABLE UNIFYD.RAW.OUTLET_MASTER
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/outlet_master.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.OUTLET_MASTER
+  FROM '@WH/outlet_master.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- postmates_products
+--   Uber BFF, all stores
+--   registry source(s): postmates, postmates-full
+CREATE OR REPLACE TABLE UNIFYD.RAW.POSTMATES_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/postmates_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.POSTMATES_PRODUCTS
+  FROM '@WH/postmates_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- postmates_sitemap
+--   $0 US Postmates universe from its sitemaps → src_outlets (coverage book)
+--   registry source(s): postmates-sitemap
+CREATE OR REPLACE TABLE UNIFYD.RAW.POSTMATES_SITEMAP
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/postmates_sitemap.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.POSTMATES_SITEMAP
+  FROM '@WH/postmates_sitemap.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- postmates_stores
+--   Postmates — geocoded delivery merchants (from ue_crawl)
+CREATE OR REPLACE TABLE UNIFYD.RAW.POSTMATES_STORES
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/postmates_stores.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.POSTMATES_STORES
+  FROM '@WH/postmates_stores.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- publix_products
+--   weekly-ad API
+--   registry source(s): publix
+CREATE OR REPLACE TABLE UNIFYD.RAW.PUBLIX_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/publix_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.PUBLIX_PRODUCTS
+  FROM '@WH/publix_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- sevenfifty_items
+--   <slug>.storefronts.site/search.json — distributor item master (SKUs), no auth (prices need partner login); parameterized by storefront slug (johnsonbrothers seed). Add slugs to STOREFRONTS.
+--   registry source(s): sevenfifty
+CREATE OR REPLACE TABLE UNIFYD.RAW.SEVENFIFTY_ITEMS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/sevenfifty_items.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.SEVENFIFTY_ITEMS
+  FROM '@WH/sevenfifty_items.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- sevennow_products
+--   Incapsula — patchright
+--   registry source(s): sevennow
+CREATE OR REPLACE TABLE UNIFYD.RAW.SEVENNOW_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/sevennow_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.SEVENNOW_PRODUCTS
+  FROM '@WH/sevennow_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- specs_products
+--   Next.js sitemap
+--   registry source(s): specs
+CREATE OR REPLACE TABLE UNIFYD.RAW.SPECS_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/specs_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.SPECS_PRODUCTS
+  FROM '@WH/specs_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- stop_and_shop_products
+--   needs a warmed cookie — not headless
+--   registry source(s): stop-and-shop
+CREATE OR REPLACE TABLE UNIFYD.RAW.STOP_AND_SHOP_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/stop_and_shop_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.STOP_AND_SHOP_PRODUCTS
+  FROM '@WH/stop_and_shop_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- target_products
+--   RedSky API
+--   registry source(s): target
+CREATE OR REPLACE TABLE UNIFYD.RAW.TARGET_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/target_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.TARGET_PRODUCTS
+  FROM '@WH/target_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- target_stores
+--   RedSky API
+--   registry source(s): target
+CREATE OR REPLACE TABLE UNIFYD.RAW.TARGET_STORES
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/target_stores.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.TARGET_STORES
+  FROM '@WH/target_stores.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- tax_rates
+--   federal CBMA schedule (encoded, TTB) + 51-jurisdiction state excise seed (Tax Foundation Jan 2026); effective-dated ref, landed_cost.py reads it — verify state cells vs DOR to promote seed->verified
+--   registry source(s): tax-rates
+CREATE OR REPLACE TABLE UNIFYD.RAW.TAX_RATES
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/tax_rates.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.TAX_RATES
+  FROM '@WH/tax_rates.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- tax_revenue
+--   Census govs STC (T10 alc sales tax, T20 alc license) per state — live; TTB federal commodity collections run live on the Mac (TTB TLS-blocked on Fly)
+--   registry source(s): tax-revenue
+CREATE OR REPLACE TABLE UNIFYD.RAW.TAX_REVENUE
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/tax_revenue.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.TAX_REVENUE
+  FROM '@WH/tax_revenue.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- toast_beverages
+--   $0 restaurant OWN menus from toasttab.com sitemaps (~100k); harvest + TOAST_LIMIT menu batches
+--   registry source(s): toast
+CREATE OR REPLACE TABLE UNIFYD.RAW.TOAST_BEVERAGES
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/toast_beverages.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.TOAST_BEVERAGES
+  FROM '@WH/toast_beverages.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- toast_menu_accounts
+--   $0 restaurant OWN menus from toasttab.com sitemaps (~100k); harvest + TOAST_LIMIT menu batches
+--   registry source(s): toast
+CREATE OR REPLACE TABLE UNIFYD.RAW.TOAST_MENU_ACCOUNTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/toast_menu_accounts.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.TOAST_MENU_ACCOUNTS
+  FROM '@WH/toast_menu_accounts.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- toast_outlets
+--   $0 restaurant OWN menus from toasttab.com sitemaps (~100k); harvest + TOAST_LIMIT menu batches
+--   registry source(s): toast
+CREATE OR REPLACE TABLE UNIFYD.RAW.TOAST_OUTLETS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/toast_outlets.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.TOAST_OUTLETS
+  FROM '@WH/toast_outlets.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- trader_joes_products
+--   open storefront GraphQL + Brandify locator — no auth/anti-bot; SKU (no UPC), national pricing
+--   registry source(s): trader-joes
+CREATE OR REPLACE TABLE UNIFYD.RAW.TRADER_JOES_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/trader_joes_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.TRADER_JOES_PRODUCTS
+  FROM '@WH/trader_joes_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- ttb_cola
+--   $0 off-Mac incremental COLA scrape (last TTB_DAYS) → accumulate ttb_cola; ttbonline.gov verify=False, direct (no BD/browser)
+--   registry source(s): ttb-cola
+CREATE OR REPLACE TABLE UNIFYD.RAW.TTB_COLA
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/ttb_cola.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.TTB_COLA
+  FROM '@WH/ttb_cola.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- ttb_cola_detail
+--   $0 off-Mac producer that EXTENDS the existing ttb_cola_detail + ttb_cola_labels (accumulate by ttb_id, snake_case schemas via ttb_enrich's validated parsers) for COLAs not yet detailed — new COLAs from ttb-cola get detail + label-barcode UPC off-Mac. Gentle concurrency on the .gov site (TTB_ENRICH_WORKERS=4); needs libzbar0+pyzbar+pillow (in the image)
+--   registry source(s): ttb-enrich
+CREATE OR REPLACE TABLE UNIFYD.RAW.TTB_COLA_DETAIL
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/ttb_cola_detail.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.TTB_COLA_DETAIL
+  FROM '@WH/ttb_cola_detail.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- ttb_cola_labels
+--   $0 off-Mac producer that EXTENDS the existing ttb_cola_detail + ttb_cola_labels (accumulate by ttb_id, snake_case schemas via ttb_enrich's validated parsers) for COLAs not yet detailed — new COLAs from ttb-cola get detail + label-barcode UPC off-Mac. Gentle concurrency on the .gov site (TTB_ENRICH_WORKERS=4); needs libzbar0+pyzbar+pillow (in the image)
+--   registry source(s): ttb-enrich
+CREATE OR REPLACE TABLE UNIFYD.RAW.TTB_COLA_LABELS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/ttb_cola_labels.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.TTB_COLA_LABELS
+  FROM '@WH/ttb_cola_labels.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- ttb_master
+--   MASTER BUILD (reads ttb_cola → ttb_master); huge — refresh deliberately. Scrape is ttb-cola
+--   registry source(s): ttb
+CREATE OR REPLACE TABLE UNIFYD.RAW.TTB_MASTER
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/ttb_master.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.TTB_MASTER
+  FROM '@WH/ttb_master.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- ubereats_products
+--   Uber BFF, all stores
+--   registry source(s): ubereats, ubereats-full
+CREATE OR REPLACE TABLE UNIFYD.RAW.UBEREATS_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/ubereats_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.UBEREATS_PRODUCTS
+  FROM '@WH/ubereats_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- ubereats_sitemap
+--   $0 US UberEats universe from its gzipped sitemaps (~285k) → src_outlets (the coverage book). Canonical UberEats harvester (ubereats_sitemap.py archived). accumulate into 995k src_outlets → 8gb
+--   registry source(s): ubereats-sitemap
+CREATE OR REPLACE TABLE UNIFYD.RAW.UBEREATS_SITEMAP
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/ubereats_sitemap.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.UBEREATS_SITEMAP
+  FROM '@WH/ubereats_sitemap.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- ubereats_stores
+--   Uber Eats — geocoded delivery merchants (from ue_crawl)
+CREATE OR REPLACE TABLE UNIFYD.RAW.UBEREATS_STORES
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/ubereats_stores.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.UBEREATS_STORES
+  FROM '@WH/ubereats_stores.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- ut_pricing
+--   per-state fetchers
+--   registry source(s): control-states
+CREATE OR REPLACE TABLE UNIFYD.RAW.UT_PRICING
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/ut_pricing.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.UT_PRICING
+  FROM '@WH/ut_pricing.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- vip_brandbuilder_items
+--   products.vtinfo.com/bbs — distributor product+package catalog w/ retail UPCs, no auth; parameterized by VIP sourceCode (Columbia 01191 seed). Add distributors to DISTRIBUTORS.
+--   registry source(s): vip-brandbuilder
+CREATE OR REPLACE TABLE UNIFYD.RAW.VIP_BRANDBUILDER_ITEMS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/vip_brandbuilder_items.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.VIP_BRANDBUILDER_ITEMS
+  FROM '@WH/vip_brandbuilder_items.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- vip_finder_brands
+--   enumerates custID 36^3 through the ISP pool; each run takes a 50min resumable bite (checkpoint in the warehouse) until the keyspace is walked. Pacing is adaptive — 1s/IP, doubling on 429 — so it self-throttles; --calibrate only makes it faster
+--   registry source(s): vip-finder-census
+CREATE OR REPLACE TABLE UNIFYD.RAW.VIP_FINDER_BRANDS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/vip_finder_brands.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.VIP_FINDER_BRANDS
+  FROM '@WH/vip_finder_brands.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- vip_finder_tenants
+--   enumerates custID 36^3 through the ISP pool; each run takes a 50min resumable bite (checkpoint in the warehouse) until the keyspace is walked. Pacing is adaptive — 1s/IP, doubling on 429 — so it self-throttles; --calibrate only makes it faster
+--   registry source(s): vip-finder-census
+CREATE OR REPLACE TABLE UNIFYD.RAW.VIP_FINDER_TENANTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/vip_finder_tenants.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.VIP_FINDER_TENANTS
+  FROM '@WH/vip_finder_tenants.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- walmart_products
+--   walmart_direct: IPRoyal residential exit + curl_cffi Chrome-JA3, $0 (no BD, no API). A warmed WALMART_COOKIE is an OPTIONAL boost, NOT required — do not gate the run on it.
+--   registry source(s): walmart
+CREATE OR REPLACE TABLE UNIFYD.RAW.WALMART_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/walmart_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.WALMART_PRODUCTS
+  FROM '@WH/walmart_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- winebow_brands
+--   portfolio
+--   registry source(s): winebow
+CREATE OR REPLACE TABLE UNIFYD.RAW.WINEBOW_BRANDS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/winebow_brands.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.WINEBOW_BRANDS
+  FROM '@WH/winebow_brands.parquet'
   FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
   MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
   FORCE = TRUE
