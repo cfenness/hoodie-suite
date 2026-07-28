@@ -415,6 +415,16 @@ SOURCES = [
 # Builds run ONLY on the plain `--due` host (the Mac tick today) — the --headless-only cloud runner skips them —
 # so the single-writer rule holds for dim_* tables.
 BUILDS = [
+    # THE SHARDS CANNOT MERGE. write_accumulate is read-modify-write with no lock, so eight concurrent
+    # shards silently drop each other's rows (seen live: ubereats_products fluctuating wildly while the
+    # fleet ran). Shards therefore append parts, and this is the SINGLE writer that folds them into the
+    # canonical catalog — latest observation per (store_uuid, item_uuid) wins. Without it the parts
+    # accumulate and the catalog never updates, so it is a registered build, not a manual step.
+    dict(id="build-ue-catalog", label="UberEats catalog consolidate (shard parts → catalog)",
+         code="import ue_catalog as m; m.consolidate('ubereats'); m.consolidate('postmates')",
+         tables=["ubereats_products", "postmates_products"], klass="build", interval_h=6, enabled=True,
+         mem=8192, after=["ubereats"],
+         note="single-writer fold of append-only shard parts; shards must never merge (lost updates)"),
     dict(id="build-outlets", label="Outlet shred → dim_outlet",
          code="import normalize as m; m.build(catalog=False, outlets=True, facts=False)",
          tables=["src_outlets", "dim_outlet"], klass="build", interval_h=6, enabled=True, mem=16384,
