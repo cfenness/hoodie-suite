@@ -736,6 +736,15 @@ def migrate_to_bucketed(name, key_cols, hex_len=2):
         _part_delete(rel)
     out_dir = (("s3://%s/%s/%s" % (_bucket(), _prefix(), name)) if remote()
                else os.path.join(_LOCAL_DIR, name)).replace("'", "")
+    # A PARTITIONED COPY MUST NOT BUFFER THE TABLE. By default DuckDB preserves insertion order, which
+    # for a PARTITION_BY write means holding rows back to emit them in order — so peak memory scales with
+    # the TABLE, and the migration inherits the exact whole-table memory problem it exists to remove.
+    # Measured: splitting 33,250 ubereats_products rows blew a 1.1GB limit, because every row carries a
+    # full raw_json payload. Nothing downstream depends on row order within a bucket (identity is the
+    # key columns), so ordering is not worth buying. Single-threaded for the same reason: parallel
+    # writers each hold their own buffers.
+    con.execute("SET preserve_insertion_order=false")
+    con.execute("SET threads=1")
     con.execute("COPY (SELECT *, substr(md5(%s), 1, %d) AS __b FROM read_parquet('%s')) TO '%s' "
                 "(FORMAT PARQUET, PARTITION_BY (__b), COMPRESSION ZSTD)" % (ks, hex_len, src, out_dir))
     parts, total = {}, 0
