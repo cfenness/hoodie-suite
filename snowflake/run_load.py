@@ -233,8 +233,25 @@ def main():
             text = open(os.path.join(SQLDIR, fname)).read()
             if fname == "02_stage.sql":
                 text = _substitute(text, toks)          # inject the stage creds in-memory
-            for _cur in con.execute_string(text, remove_comments=False):
-                pass
+            # GRANTS ARE BEST-EFFORT. Read access is a convenience; the load is the payload, and a
+            # convenience must never be able to destroy it. The loader OWNS its objects but granting to
+            # OTHER roles needs MANAGE GRANTS on the account, which a narrowly-scoped load role should
+            # not hold — so on a least-privilege account this step legitimately cannot succeed, and
+            # failing the whole mirror over it (as it did once) is the wrong trade. Report it loudly
+            # with the exact SQL an admin should run, and carry on.
+            optional = fname == "07_grants.sql"
+            try:
+                for _cur in con.execute_string(text, remove_comments=False):
+                    pass
+            except Exception as e:
+                if not optional:
+                    raise
+                print("!! %s could not be applied: %s" % (fname, str(e).strip().splitlines()[-1][:160]))
+                print("!! The data IS loaded but may not be READABLE by your roles. Run this once as "
+                      "SECURITYADMIN (or grant MANAGE GRANTS to the loader role):")
+                for ln in [l for l in text.splitlines() if l.strip().upper().startswith("GRANT")]:
+                    print("!!   %s" % ln.strip())
+                continue
             print("→ ran %s" % fname)
             if fname == "02_stage.sql" and _stage_mode() != "external":
                 print("→ uploading Parquet to the internal stage (endpoint not allowlisted for s3compat)…")
