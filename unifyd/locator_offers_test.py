@@ -165,6 +165,18 @@ eq("exact UPC finds the same stores", len(by_upc["offers"]), 4)
 ref_max = by_upc["reference"].get("max") or 0
 ok("the 1.75L did not pollute the pool as a $34.99 outlier (max=%.2f)" % ref_max, ref_max < 30)
 
+print("\nstores with no coordinates are REPORTED, not silently dropped")
+warehouse.write_parquet("src_outlets", warehouse.query("src_outlets", "SELECT * FROM t") + [
+    {"source": "ghost", "store_id": "G1", "store_name": "Ungeocoded Liquor",
+     "address": "", "city": "", "state": "", "lat": None, "lng": None}])
+warehouse.write_partition("retail_observations", "%s_ghost" % DAYS[-1],
+                          [obs(DAYS[-1], "ghost", "G1", 18.49)], OBS_FIELDS)
+g = ls.offers("Tito's", center=HOUSTON, radius_mi=15, log=lambda m: None)
+eq("the ungeocoded store is counted", g.get("omitted_no_geo"), 1)
+ok("and named in degraded (%r)" % g.get("degraded"), "no coordinates" in (g.get("degraded") or ""))
+ok("it does not appear as an offer", all(o["source"] != "ghost" for o in g["offers"]))
+ok("the placeable stores still render", len(g["offers"]) >= 4)
+
 print("\ndegrade paths")
 empty = ls.offers("nothing-matches-this", center=HOUSTON, log=lambda m: None)
 eq("an unknown product returns empty, not an error", empty["offers"], [])

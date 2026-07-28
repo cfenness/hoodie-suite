@@ -53,6 +53,13 @@ TRAIL_DAYS = int(os.environ.get("LOC_TRAIL_DAYS", "90"))   # reference window
 FLAT_TOL = float(os.environ.get("LOC_FLAT_TOL", "0.04"))   # p10→p90 spread under this ⇒ flat market
 LOW_SUPPLY_DAYS = float(os.environ.get("LOC_LOW_SUPPLY_DAYS", "3"))   # days-of-supply ⇒ "selling out"
 VEL_CONF_FLOOR = float(os.environ.get("VEL_CONF_FLOOR", "0.2"))       # mirrors velocity.py
+# Past this, we no longer claim the price or the stock is still true — we only report when we saw
+# it. Sources go quiet for all sorts of reasons (kroger's last observation is 16 days old), and an
+# old reading rendered identically to this morning's is a false claim by omission.
+STALE_DAYS = int(os.environ.get("LOC_STALE_DAYS", "14"))
+# A count must be a plausible count. sevennow lands values as low as -232; whatever that is, it is
+# not shelf stock, and "-232 in stock" must never reach a shopper.
+QTY_MAX = float(os.environ.get("LOC_QTY_MAX", "10000"))
 
 # percentile cutoffs for the band. Lower percentile = cheaper relative to the local pool.
 BANDS = ((0.10, "great"), (0.30, "good"), (0.70, "typical"))          # else "high"
@@ -290,7 +297,14 @@ def _days(a, b):
         return None
 
 
-def stock_signal(row, tier, velocity=None):
+def observed_age(row, today=None):
+    """Whole days between an observation's date and today. None when undated."""
+    import datetime
+    d = row.get("date") or row.get("observed_on")
+    return _days(d, today or datetime.date.today().isoformat()) if d else None
+
+
+def stock_signal(row, tier, velocity=None, age=None):
     """What we can honestly say about availability at this store.
 
     COUNT-tier sources give real on-hand, so they can carry a count and — paired with
@@ -298,18 +312,25 @@ def stock_signal(row, tier, velocity=None):
     they say "in stock" and stop; inventing a count we never observed is exactly the failure
     obs_quality.py exists to prevent.
 
-    Returns {in_stock, qty, tier, days_of_supply, urgency, units_per_week, confidence}.
+    A STALE observation asserts nothing. We know what we saw and when; we do not know it is still
+    true, so `in_stock` goes false and `stale` carries the age. Reporting yesterday's shelf as
+    today's is the same class of false claim as inventing a count.
+
+    Returns {in_stock, qty, tier, days_of_supply, urgency, units_per_week, confidence, stale,
+    days_ago}.
     """
-    out = {"in_stock": bool(row.get("in_stock")), "qty": None, "tier": tier,
-           "days_of_supply": None, "urgency": None, "units_per_week": None, "confidence": None}
-    if tier != "count":
+    stale = age is not None and age > STALE_DAYS
+    out = {"in_stock": bool(row.get("in_stock")) and not stale, "qty": None, "tier": tier,
+           "days_of_supply": None, "urgency": None, "units_per_week": None, "confidence": None,
+           "stale": stale, "days_ago": age}
+    if tier != "count" or stale:
         return out
     try:
         qty = float(row.get("qty")) if row.get("qty") is not None else None
     except (TypeError, ValueError):
         qty = None
-    if qty is None:
-        return out
+    if qty is None or qty < 0 or qty > QTY_MAX:
+        return out                      # not a plausible shelf count — report nothing, not nonsense
     out["qty"] = int(qty)
     out["in_stock"] = qty > 0
     if not velocity:
@@ -426,7 +447,7 @@ def rank(offers):
 
 
 def build_offers(latest, reference, geo=None, tiers=None, velocity=None, history=None,
-                 center=None, series=None):
+                 center=None, series=None, today=None):
     """Assemble the ranked offer list — the pure core of `/api/locator/offers`.
 
     latest     [obs row]                 most recent observation per (source, store_id)
@@ -454,12 +475,19 @@ def build_offers(latest, reference, geo=None, tiers=None, velocity=None, history
         bucket = size_bucket(ml)
         # geo and velocity are per STORE; promo history and the price line are per store+FORMAT.
         sig_key = (key[0], key[1], bucket)
+        age = observed_age(row, today=today)
         # Score against this offer's OWN format pool. A dict picks the pool; a bare list is the
         # legacy single-pool path. No format ⇒ no peer group ⇒ no band, stated as `no-size`.
         pool = reference.get(bucket, []) if isinstance(reference, dict) else (reference or [])
-        verdict = (price_verdict(effective_u, pool) if bucket
-                   else {"band": None, "percentile": None, "median": None, "delta": None,
-                         "pct_off_median": None, "n": 0, "reason": "no-size"})
+        if age is not None and age > STALE_DAYS:
+            # We can still SHOW the price we saw — we just can't call it good or bad today.
+            verdict = {"band": None, "percentile": None, "median": None, "delta": None,
+                       "pct_off_median": None, "n": 0, "reason": "stale"}
+        elif bucket:
+            verdict = price_verdict(effective_u, pool)
+        else:
+            verdict = {"band": None, "percentile": None, "median": None, "delta": None,
+                       "pct_off_median": None, "n": 0, "reason": "no-size"}
         o = {
             "source": row.get("source", ""), "store_id": key[1],
             "store": clean_store_name(g.get("store_name") or row.get("store", "")),
@@ -472,9 +500,9 @@ def build_offers(latest, reference, geo=None, tiers=None, velocity=None, history
             "on_promo": promo is not None,
             "discount_pct": round((shelf - promo) / shelf, 3) if (promo and shelf) else None,
             "unit_price": effective_u,
-            "observed_on": row.get("date"),
+            "observed_on": row.get("date"), "observed_days_ago": age,
             "verdict": verdict,
-            "stock": stock_signal(row, tier, velocity.get(key)),
+            "stock": stock_signal(row, tier, velocity.get(key), age=age),
             "promo_outlook": promo_signal(history.get(sig_key, history.get(key))),
             "price_history": [{"date": d, "price": p}
                               for d, p in sorted(series.get(sig_key, series.get(key, []))) if p],
@@ -572,12 +600,30 @@ def offers(query, center=None, radius_mi=15.0, mode="consumer", trail_days=TRAIL
     # prints it.
     degraded = []
     geo = _geo_for(obs, log=log, degraded=degraded)
+    # A store we can't place is not the same as a store that's far away, and neither may vanish
+    # quietly — a locator that shows 6 of 300 stores without saying so is lying by omission.
+    # 96% of the price-observing stores currently have no coordinates at all (a geo-backfill gap,
+    # not a filter decision), so this count is the difference between "nothing near you" and
+    # "we can't put these on a map yet".
+    no_geo = set()
     if center:
-        obs = [r for r in obs
-               if _within(geo.get((r.get("source", ""), str(r.get("store_id", "") or ""))),
-                          center, radius_mi)]
+        kept = []
+        for r in obs:
+            k = (r.get("source", ""), str(r.get("store_id", "") or ""))
+            g = geo.get(k)
+            if not g or g.get("lat") is None or g.get("lng") is None:
+                no_geo.add(k)
+            elif _within(g, center, radius_mi):
+                kept.append(r)
+        obs = kept
+        if no_geo:
+            degraded.append("%d store(s) omitted: no coordinates" % len(no_geo))
         if not obs:
-            return {"offers": [], "reference": {"n": 0}, "trade_area": None, "mode": mode}
+            out = {"offers": [], "reference": {"n": 0}, "trade_area": None, "mode": mode,
+                   "omitted_no_geo": len(no_geo)}
+            if degraded:
+                out["degraded"] = ", ".join(degraded)
+            return out
 
     pools = reference_pools(obs)          # one reference distribution PER BOTTLE FORMAT
     # Key EVERYTHING by (source, store, FORMAT). Keying "latest" by store alone silently drops a
@@ -618,6 +664,7 @@ def offers(query, center=None, radius_mi=15.0, mode="consumer", trail_days=TRAIL
     out = {"offers": for_render_mode(rank(scoped), mode), "reference": st,
            "size": want, "reference_size": size_label(want) if want else "",
            "formats": formats, "unsized_offers": len(unsized),
+           "omitted_no_geo": len(no_geo),
            "trade_area": _trade_area_label(latest, geo), "mode": mode}
     if degraded:
         out["degraded"] = ", ".join(degraded)

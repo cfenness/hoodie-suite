@@ -317,5 +317,35 @@ ok("...and would outrank the 750ml if formats were mixed", small["score"] >= big
 ok("which is exactly why it is a different list: per-drop it is far worse value (%.2f vs %.2f)"
    % (small["unit_price"], big["unit_price"]), small["unit_price"] > big["unit_price"])
 
+print("\nSTALENESS — an old reading may be shown, never asserted")
+FRESH = {"source": "s", "store_id": "1", "name": "X 750ml", "price": 19.99, "qty": 8,
+         "in_stock": True, "date": "2026-07-27"}
+OLD = dict(FRESH, store_id="2", date="2026-06-01", price=21.99)
+POOL750 = {750: [19.5, 20.5, 21.5, 22.5, 23.5]}
+b = ls.build_offers([FRESH, OLD], POOL750, tiers={"s": "count"}, today="2026-07-28")
+fr = [o for o in b if o["store_id"] == "1"][0]
+ol = [o for o in b if o["store_id"] == "2"][0]
+eq("fresh observation is one day old", fr["observed_days_ago"], 1)
+ok("fresh gets a real verdict (%r)" % fr["verdict"]["band"], fr["verdict"]["band"] is not None)
+eq("fresh reports its count", fr["stock"]["qty"], 8)
+eq("stale observation age carried", ol["observed_days_ago"], 57)
+eq("stale gets NO band", ol["verdict"]["band"], None)
+eq("...and says why", ol["verdict"]["reason"], "stale")
+eq("stale asserts no stock", ol["stock"]["in_stock"], False)
+eq("stale reports no count", ol["stock"]["qty"], None)
+ok("stale is flagged as such", ol["stock"]["stale"])
+ok("but the price we saw is still shown", ol["effective_price"] == 21.99)
+
+print("\nQTY SANITY — a count must be a plausible count")
+neg = ls.stock_signal({"in_stock": True, "qty": -232}, "count", age=0)
+eq("a negative count is not stock (sevennow lands -232)", neg["qty"], None)
+huge = ls.stock_signal({"in_stock": True, "qty": 999999}, "count", age=0)
+eq("an absurd count is rejected too", huge["qty"], None)
+zero = ls.stock_signal({"in_stock": True, "qty": 0}, "count", age=0)
+eq("zero is a legitimate count — out of stock", zero["qty"], 0)
+eq("...and it means not in stock", zero["in_stock"], False)
+good = ls.stock_signal({"in_stock": True, "qty": 12}, "count", age=0)
+eq("a plausible count passes", good["qty"], 12)
+
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
