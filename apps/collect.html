@@ -205,6 +205,8 @@ function verdict(s){
   // `incomplete` = it ran, but landed only SOME of the outlets/items. Holding part of a catalog is a
   // defective product, so it reads as a failure — with the shortfall shown, not a bare red light.
   if (last.status === 'incomplete')     return {k:'incomplete', c:'var(--bad)', t:'incomplete'};
+  // the machine vanished mid-run and never wrote a terminal status — not "still running"
+  if (last.status === 'lost')           return {k:'fail', c:'var(--bad)', t:'lost (no heartbeat)'};
   // the kroger shape: nothing landed AND there is nothing there to have landed into. The ledger calls
   // this `empty` with no error text, which reads as benign; with a long zero streak it is a source that
   // has never once worked, and that distinction is the whole point of this page.
@@ -607,7 +609,8 @@ function watch(runId){
     if (!d || !d.ok) return;
     renderRun(d.run);
     if (++TICKS % 4 === 0) loadSample(true);        // ~every 12s while the run is in flight
-    const done = ['ok','failed','timeout','empty','no-change','current','degraded','no-creds','done'].includes(d.run?.status);
+    const done = ['ok','failed','timeout','empty','no-change','current','degraded','no-creds','done',
+                  'lost','incomplete'].includes(d.run?.status);
     if (done){ stopPoll(); loadSample(true); loadAll(); }
   };
   tick();
@@ -624,8 +627,10 @@ function renderRun(r){
     <span class="k">seen <b>${r.rows_seen == null ? '—' : fmt(r.rows_seen)}</b></span>
     <span class="k">landed <b>${landed || '—'}</b></span>
     <span class="k">lines <b>${fmt(r.log_lines_total)}</b></span>
+    <span class="k">heartbeat <b>${r.heartbeat_age_s == null ? '—' : r.heartbeat_age_s + 's ago'}</b></span>
     <span class="k">${esc(r.trigger||'')} · ${r.machine_id ? 'machine '+esc(r.machine_id) : ''}</span>
-    ${(r.warnings||[]).length ? `<span class="k" style="color:var(--warn)">⚠ ${esc(r.warnings.join('; '))}</span>` : ''}`;
+    ${(r.warnings||[]).length ? `<span class="k" style="color:var(--warn)">⚠ ${esc(r.warnings.join('; '))}</span>` : ''}
+    ${r.stale ? `<span class="k" style="color:var(--bad)">✕ ${esc(r.error||'no heartbeat')}</span>` : ''}`;
   const c = document.getElementById('console');
   const stick = c.scrollTop + c.clientHeight >= c.scrollHeight - 40;
   c.innerHTML = (r.log || []).map(l => {

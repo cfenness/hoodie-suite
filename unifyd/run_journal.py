@@ -181,12 +181,38 @@ def close_run(run_id, status=None, record=None, rows_landed=None, error=None, ex
 
 
 # ── consumer side (the app) ──────────────────────────────────────────────────────────────────────
+# A run whose machine dies — destroyed, OOM-killed, evicted — never gets to write a terminal status, so
+# its journal is frozen mid-flight saying "running". Read back naively that is a run which appears to be
+# working forever: the exact lying status this bench exists to remove. Heartbeats are cheap and frequent
+# (throttled to ~3s, and every landed batch writes), so silence well past that means nobody is home.
+STALE_AFTER_S = float(os.environ.get("JOURNAL_STALE_AFTER_S", "900"))    # 15 min of no heartbeat
+_LIVE = ("queued", "starting", "running")
+
+
+def _mark_liveness(doc):
+    """Annotate a doc with heartbeat age and, when it has gone quiet mid-run, say so instead of
+    repeating a status the run can no longer be updating."""
+    if not doc:
+        return doc
+    age = time.time() - (doc.get("updated_at") or doc.get("started_at") or 0)
+    doc["heartbeat_age_s"] = int(age)
+    if doc.get("status") in _LIVE and age > STALE_AFTER_S:
+        doc["stale"] = True
+        doc["reported_status"] = doc["status"]      # what it last claimed, kept for the record
+        doc["status"] = "lost"
+        doc["error"] = (doc.get("error") or "") or (
+            "no heartbeat for %dm — the machine is gone (destroyed, OOM-killed or evicted) and the run "
+            "never wrote a final status. Work already landed is kept; a rerun resumes from the "
+            "checkpoint." % (age / 60))
+    return doc
+
+
 def read(run_id):
-    """The journal doc for one run, or None."""
+    """The journal doc for one run, or None. Liveness-checked: see _mark_liveness."""
     try:
         import warehouse
         raw = warehouse.get_bytes(_key(run_id))
-        return json.loads(raw) if raw else None
+        return _mark_liveness(json.loads(raw)) if raw else None
     except Exception:
         return None
 
@@ -224,8 +250,8 @@ def recent(limit=40, source=None, active_only=False):
         d = read(rid)
         if not d:
             continue
-        if active_only and d.get("status") in ("ok", "done", "failed", "timeout", "empty",
-                                               "no-change", "current", "no-creds"):
+        if active_only and d.get("status") in ("ok", "done", "failed", "timeout", "empty", "lost",
+                                               "no-change", "current", "incomplete", "no-creds"):
             continue
         out.append(d)
     return out
