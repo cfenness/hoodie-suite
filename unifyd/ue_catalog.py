@@ -53,11 +53,22 @@ import warehouse
 # returns empty FAST, so the higher counts look 3x quicker while collecting nothing. 64 came from
 # aggregator_geo (a geo-only sweep with far smaller payloads) and does not transfer.
 # Throughput comes from SHARDS across machines, not threads on one.
-# CONCURRENCY IS DERIVED FROM THE POOL, not guessed. Measured on this endpoint: a single exit IP
-# tolerates only ~3-5 concurrent requests before it starts returning EMPTY fast (no 429). So the safe
-# TOTAL is about pool_size x PER_IP — and when N shards run at once they share those same IPs, so each
-# shard may use only its share. 8 shards x 24 workers over 20 IPs was ~10/IP and threw 96% empties.
-PER_IP = float(os.environ.get("UE_PER_IP", "3"))
+# CONCURRENCY IS DERIVED FROM THE POOL, not guessed — and the number is MEASURED, then re-measured.
+#
+# History, because the first number was wrong in a way worth remembering: 3/IP came from a run where
+# the endpoint was already refusing us (8 shards x 24 workers = ~10/IP, 96% empty responses). Calibrating
+# a ceiling while being throttled reads the floor of the failure, not the top of the healthy range, so
+# it was far too conservative and quietly cost throughput for every run since.
+#
+# Re-measured 2026-07-28 with a deliberate probe: one machine at 40 workers alongside a healthy 8-shard
+# fleet (~96 concurrent, ~4.8/IP). unreachable stayed 0 on BOTH the probe and every fleet shard — no
+# throttling anywhere near the old limit. Raised to 6/IP, a graduated step past what is proven rather
+# than a jump to the probe's implied ceiling.
+#
+# Scaling is SUB-LINEAR: the probe's 5.7x workers bought 3.6x throughput (per-worker efficiency fell
+# ~40%). So more concurrency still pays, but do not extrapolate linearly — that arithmetic has been
+# wrong every time today. Raise it, measure `unreachable`, and let the tripwire catch an overshoot.
+PER_IP = float(os.environ.get("UE_PER_IP", "6"))
 _last_beat = [0.0]                                         # wall-clock of the last heartbeat emitted
 
 
