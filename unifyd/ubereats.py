@@ -273,6 +273,9 @@ def parse_item(d, store_uuid=None, store_name=None):
         item_uuid=d.get("uuid") or "", name=title,
         product_uuid=(_dig(d, "productInfo", "productUuid") or d.get("productUuid") or ""),
         section=d.get("sectionUuid") or "", subsection=d.get("subsectionUuid") or "",
+        # the retailer's OWN category labels — a maintained product hierarchy, free with the crawl
+        section_name=d.get("sectionName") or "", subsection_name=d.get("subsectionName") or "",
+        category_path=" > ".join([x for x in (d.get("sectionName"), d.get("subsectionName")) if x]),
         # barcodes (best valid + everything)
         upc=_best_gtin(d.get("productIdentifiers")),
         gtins="|".join(_all_gtins(d.get("productIdentifiers"))),
@@ -506,22 +509,44 @@ def _iter_item_objs(node):
 
 
 def _catalog_index(payloads):
-    """From getStoreV1 payloads build item_uuid → {section, subsection} by tracking the enclosing section/subsection
-    uuids while descending. getMenuItemV1 needs that context in its request body; the catalog carries it."""
+    """From getStoreV1 payloads build item_uuid → {section, subsection, section_name, subsection_name}.
+
+    The uuids are what getMenuItemV1 needs in its request body. The NAMES are the free product hierarchy:
+    this walk already descends the retailer's own category tree ("Beer / Craft IPA"), and until now it
+    kept the opaque uuids and threw the labels away — paying the whole traversal cost to discard the one
+    part a human or a model can use. A breadcrumb is a taxonomy the retailer maintains for us; dropping
+    it is the same discard-nothing violation as dropping a field.
+    """
     idx = {}
+    names = {}                                             # uuid → title, for resolving section refs
+
+    def collect_names(node):
+        if isinstance(node, dict):
+            u, t = node.get("uuid"), node.get("title")
+            if u and t and not isinstance(node.get("price"), (int, float)):
+                names.setdefault(u, t)                     # a titled node that isn't a priced item = a section
+            for v in node.values():
+                collect_names(v)
+        elif isinstance(node, list):
+            for v in node:
+                collect_names(v)
 
     def walk(node, section="", subsection=""):
         if isinstance(node, dict):
             sec = node.get("sectionUuid") or section        # inherit the nearest enclosing section/subsection
             sub = node.get("subsectionUuid") or subsection
             if node.get("uuid") and node.get("title") and isinstance(node.get("price"), (int, float)):
-                idx.setdefault(node["uuid"], {"section": sec, "subsection": sub})
+                idx.setdefault(node["uuid"], {"section": sec, "subsection": sub,
+                                              "section_name": names.get(sec, ""),
+                                              "subsection_name": names.get(sub, "")})
             for v in node.values():
                 walk(v, sec, sub)
         elif isinstance(node, list):
             for v in node:
                 walk(v, section, subsection)
 
+    for pl in payloads:
+        collect_names(pl)                                  # names first — a section may appear after its items
     for pl in payloads:
         walk(pl)
     return idx
@@ -600,6 +625,7 @@ def enrich_store(w, store_uuid, store_name, catalog_recs, template, known, max_i
 
 
 UE_FIELDS = ["item_uuid", "product_uuid", "store_uuid", "store_name", "name", "section", "subsection",
+             "section_name", "subsection_name", "category_path",
              "upc", "gtins", "price", "list_price", "on_promo", "discount", "promo_text", "promo_tag",
              "promo_type", "promo_pct", "promo_flat", "promo_uuid", "in_stock", "is_sold_out", "suspend_reason",
              "suspend_until", "low_availability", "avail_state", "stock_label", "max_qty", "min_qty",

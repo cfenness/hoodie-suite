@@ -348,10 +348,22 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
             items = ubereats._items_from_store([data], su, sname)
         except Exception:
             items = []
+        # THE CATEGORY PATH IS FREE — stamp it on every item whether or not enrichment runs. The index is
+        # built from the catalog we already have in hand, so the retailer's own hierarchy
+        # ("Beer > Craft IPA") costs nothing extra and lands even when the detail call is skipped.
+        idx = {}
+        try:
+            idx = ubereats._catalog_index([data])
+            for it in items:
+                c = idx.get(it.get("item_uuid")) or {}
+                sn, bn = c.get("section_name") or "", c.get("subsection_name") or ""
+                it["section_name"], it["subsection_name"] = sn, bn
+                it["category_path"] = " > ".join([x for x in (sn, bn) if x])
+        except Exception:
+            pass
         if items and ENRICH:
             try:
-                items = enrich_items(su, sname, items, ubereats._catalog_index([data]),
-                                     site=site, known=KNOWN)
+                items = enrich_items(su, sname, items, idx, site=site, known=KNOWN)
             except Exception:
                 pass                      # enrichment must never cost us the catalog we already have
         with lock:
