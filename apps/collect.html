@@ -93,6 +93,13 @@
   .note{font-size:12px;color:var(--mut);margin:6px 0 0;line-height:1.5}
   /* MANUAL-ONLY — nothing auto-dispatches; every job is a human pressing Run now. Shown in the top
      bar because it changes what the whole page means: no green source is being kept fresh by itself. */
+  /* Mirroring to Snowflake is a PIPELINE action, not a per-source one — it belongs beside the global
+     controls, not buried as one row among 74. It is also the manual stand-in for the auto-trampoline,
+     so it should sit where you would reach for that. */
+  .sf{font-family:var(--mono);font-size:11px;font-weight:700;border-color:var(--accent);
+      background:color-mix(in srgb,var(--accent) 14%,transparent)}
+  .sf.busy{opacity:.6;cursor:progress}
+  .sf.bad{border-color:var(--bad);color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,transparent)}
   .mode{font-family:var(--mono);font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:6px;cursor:pointer;
         border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--ink)}
   .mode.auto{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,transparent)}
@@ -122,6 +129,8 @@
   <span class="spacer"></span>
   <span class="asof" id="asof"></span>
   <span id="modepill"></span>
+  <button id="sfbtn" class="sf" onclick="mirrorToSnowflake()" title="Mirror the warehouse to Snowflake">
+    \u2912 Snowflake</button>
   <button onclick="loadAll(true)">Refresh</button>
 </div>
 
@@ -629,6 +638,37 @@ async function diagnose(){
   } catch(e){ el.innerHTML = '<p class="note">diagnose failed: ' + esc(e.message) + '</p>'; }
 }
 
+/* ── mirror to Snowflake — the global pipeline action ─────────────────────────────────────────
+   Kicks the same snowflake-load BUILD the row does; this is purely a shortcut to the thing you
+   actually want after a scrape lands, and the stand-in for the trampoline until that exists. */
+const SF_ID = 'snowflake-load';
+
+function sfLabel(){
+  const btn = document.getElementById('sfbtn'); if (!btn) return;
+  const live = LIVE[SF_ID], last = LAST[SF_ID];
+  btn.className = 'sf' + (live ? ' busy' : (last && ['failed','timeout','empty','incomplete'].includes(last.status) ? ' bad' : ''));
+  btn.textContent = live
+    ? '\u2912 mirroring' + (live.pct != null ? ' ' + live.pct + '%' : '\u2026')
+    : '\u2912 Snowflake' + (last ? ' \u00b7 ' + ago(last.ts_start) : '');
+  btn.title = live ? 'A mirror is running — click to open it'
+    : (last ? 'Last mirror: ' + last.status + ' ' + ago(last.ts_start) + '. Click to mirror now.'
+            : 'Mirror the warehouse to Snowflake');
+}
+
+async function mirrorToSnowflake(){
+  if (LIVE[SF_ID]) { await select(SF_ID); return; }        // already running → just go watch it
+  if (!confirm('Mirror the warehouse to Snowflake?\n\nRuns the snowflake-load build on its own '
+             + 'machine and uploads every table that changed since the last successful load.')) return;
+  try {
+    const r = await fetch('/api/collect/run', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id: SF_ID, trigger: 'manual'})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'refused');
+    await select(SF_ID);                                    // open it so the console is right there
+    watch(j.run_id);
+  } catch(e){ alert('could not start the mirror: ' + e.message); }
+}
+
 /* ── run + watch ─────────────────────────────────────────────────────────── */
 async function startRun(){
   const s = SRC.find(x => x.id === SEL);
@@ -735,6 +775,7 @@ async function loadAll(force){
     const nconf = Object.keys(STATE.confirmed).length, narch = Object.keys(STATE.archived).length;
     document.getElementById('asof').textContent =
       `${SRC.length} sources · ${nconf} confirmed · ${narch} archived · counts ${mon.cached ? mon.cache_age_s + 's old' : 'live'}${mon.building ? ' · building…' : ''}`;
+    sfLabel();
     renderList();
     if (SEL) renderDetail();
   } catch(e){
