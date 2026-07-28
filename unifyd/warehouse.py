@@ -241,6 +241,20 @@ def write_parquet(name, records, fields=None, allow_empty=False):
     return {"rows": len(records), "uri": uri(name)}
 
 
+def _as_key_fn(key):
+    """Normalise a `key` into a callable. Accepts a callable (used as-is), a column NAME, or a
+    sequence of column names for a composite key."""
+    if callable(key):
+        return key
+    if isinstance(key, str):
+        return lambda r: r.get(key)
+    if isinstance(key, (list, tuple)):
+        cols = tuple(key)
+        return lambda r: tuple(r.get(c) for c in cols)
+    raise TypeError("write_accumulate(key=...) must be a callable, a column name, or a sequence of "
+                    "column names; got %r" % type(key).__name__)
+
+
 def write_accumulate(name, records, key, fields=None):
     """MERGE `records` into the existing `<name>` table instead of overwriting it: drop existing rows whose
     `key` is being re-written, keep the rest, append `records`. So a small/partial/different-scope run GROWS a
@@ -255,6 +269,12 @@ def write_accumulate(name, records, key, fields=None):
     records = list(records or [])
     if not records:
         return {"rows": 0, "uri": uri(name)}
+    # KEY MAY BE A COLUMN NAME, not just a callable. `key="ts"` reads as obviously correct and has now
+    # been written three separate times (snowflake_load, abc_fws, and again by hand) — each time
+    # blowing up at runtime with "TypeError: 'str' object is not callable", and each time only AFTER
+    # the expensive work was already done. An API whose natural-looking usage is a latent crash is the
+    # defect; accept the natural form instead of collecting more instances of the same bug.
+    key = _as_key_fn(key)
     man = read_manifest(name)
     if man and man.get("layout") == "bucketed":
         res = _accumulate_bucketed(name, man, records)
