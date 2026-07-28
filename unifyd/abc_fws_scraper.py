@@ -413,7 +413,10 @@ def _land_items(items, log=print):
         rows = list(items.values())
         # key is a CALLABLE (row -> identity), not a column name. Same expression abc_catalog.py used,
         # so the merged output keys identically to the table's existing 13,999 rows.
-        warehouse.write_accumulate("abc_catalog", rows,
+        # coverage=False: this is the ITEM MASTER, not the per-store fact grain. Recording it would
+        # overwrite the observation coverage for this source with a row set that has no `store`
+        # column — which is exactly how a 13,986/13,986 crawl came to report 0 of 133 stores.
+        warehouse.write_accumulate("abc_catalog", rows, coverage=False,
                                    key=lambda r: r.get("sku") or r.get("upc") or r.get("url"))
         log("  [abc] item master: merged %d products into abc_catalog" % len(rows))
         items.clear()

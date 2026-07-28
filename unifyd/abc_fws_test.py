@@ -40,7 +40,11 @@ ITEMS = []
 
 class FakeWarehouse:
     @staticmethod
-    def write_accumulate(name, rows, key=None, fields=None):
+    def write_accumulate(name, rows, key=None, fields=None, coverage=True):
+        # coverage=False is expected for the item master: it is not the per-store fact grain, and
+        # recording it would overwrite this source's store coverage with a row set that has no store.
+        assert coverage is False, ("the item master must NOT record coverage — it would clobber the "
+                                   "per-store signal (got coverage=%r)" % coverage)
         # Enforce the REAL contract: warehouse.write_accumulate calls key(row). A fake that accepts a
         # column name silently blesses a call that fails in production with
         # "'str' object is not callable" — which is exactly what shipped before this assertion existed.

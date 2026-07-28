@@ -255,7 +255,7 @@ def _as_key_fn(key):
                     "column names; got %r" % type(key).__name__)
 
 
-def write_accumulate(name, records, key, fields=None):
+def write_accumulate(name, records, key, fields=None, coverage=True):
     """MERGE `records` into the existing `<name>` table instead of overwriting it: drop existing rows whose
     `key` is being re-written, keep the rest, append `records`. So a small/partial/different-scope run GROWS a
     persistent catalog rather than clobbering a bigger prior run (`write_parquet` is a full overwrite — there
@@ -288,11 +288,18 @@ def write_accumulate(name, records, key, fields=None):
         res = write_parquet(name, merged, fields=fields)
     # Coverage telemetry: record how many distinct items/stores THIS write touched (the honest per-run
     # signal a cumulative merge can't give). Best-effort AFTER the write — must never affect the landing.
-    try:
-        import coverage as _cov
-        _cov.record_write(name, records, key=key, result=res)
-    except Exception:
-        pass
+    #
+    # `coverage=False` for a write that is NOT the source's fact grain. Coverage keeps one reading per
+    # source, so with several tables the LAST write wins — and when abc-fws began landing its item
+    # master (13,986 rows keyed by sku, no `store` column) after its per-store observations, that
+    # catalog write overwrote the real signal: stores read 0 of 133 and a verified 100% crawl was
+    # recorded `incomplete`. A catalog write should not be measured against a per-store universe.
+    if coverage:
+        try:
+            import coverage as _cov
+            _cov.record_write(name, records, key=key, result=res)
+        except Exception:
+            pass
     return res
 
 
