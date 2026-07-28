@@ -745,6 +745,18 @@ def migrate_to_bucketed(name, key_cols, hex_len=2):
     # writers each hold their own buffers.
     con.execute("SET preserve_insertion_order=false")
     con.execute("SET threads=1")
+    # BOUND THE OPEN PARTITION BUFFERS. hex_len=2 means 256 output partitions, and a PARTITION_BY write
+    # keeps a buffer open per partition — so peak memory is (open partitions x buffered rows), and with a
+    # fat raw_json column that blows a gigabyte on a 33k-row table. Ordering was not the cost; breadth
+    # was. Cap how many partitions are open at once and flush each sooner: the write becomes several
+    # bounded passes instead of one wide one. Wrapped because these pragmas are version-dependent, and a
+    # DuckDB without them should still do the migration, just hungrier.
+    for pragma in ("SET partitioned_write_max_open_files=8",
+                   "SET partitioned_write_flush_threshold=4096"):
+        try:
+            con.execute(pragma)
+        except Exception:
+            pass
     con.execute("COPY (SELECT *, substr(md5(%s), 1, %d) AS __b FROM read_parquet('%s')) TO '%s' "
                 "(FORMAT PARQUET, PARTITION_BY (__b), COMPRESSION ZSTD)" % (ks, hex_len, src, out_dir))
     parts, total = {}, 0
