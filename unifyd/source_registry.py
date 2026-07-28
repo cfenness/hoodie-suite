@@ -136,8 +136,28 @@ SOURCES = [
     # Sharding is the day budget: --shard i/N splits the universe by stable hash, one ephemeral machine
     # per shard. Start at 8; the run logs the observed rate and the shard-hours the universe needs, so
     # the count is set by measurement rather than guesswork.
-    dict(id="ubereats", label="Uber Eats (catalog + UPC, sharded)",
-         code="import ue_catalog as m; m.main(['--site','ubereats','--shard',__import__('os').environ.get('UE_SHARD','0/8')])",
+    # SWEEP AND ENRICH ARE DIFFERENT JOBS ON DIFFERENT CLOCKS.
+    # The sweep is ONE request per store: 502,212 requests, ~30 minutes across the fleet. Enrichment is
+    # one request per NEW item — measured at ~82 items/store, so inline it turns a 502k-request job into
+    # a ~41.7M-request job, and it ran SERIALLY inside each store's thread (~18.5s/store, matching the
+    # observed rate exactly). That is a 30-minute pull wearing a 46-hour coat.
+    #
+    # They are separable because they answer different questions: UPC/brand/size/ABV are STATIC per item
+    # (fetch once, ever), while price and stock are volatile and come from the catalog call we already
+    # make. So the sweep runs fast and complete on a daily clock, and enrichment drains the backlog of
+    # genuinely-new items continuously — converging, then costing almost nothing in steady state.
+    # `shards` makes the SCHEDULER dispatch the fleet too; without it an unattended run was one machine.
+    # The other half of the split: drains the STATIC-attribute backlog (UPC/GTIN/brand/size/ABV) that the
+    # sweep no longer carries. Sharded and append-only like the sweep. Day one is a real backfill; after
+    # that only genuinely-new items cost anything, because a resolved item is never re-fetched.
+    dict(id="ubereats-enrich", label="Uber Eats item enrichment (UPC backfill)", shards=8,
+         code="import ue_enrich as m; m.main(['--site','ubereats','--shard',__import__('os').environ.get('UE_SHARD','0/8')])",
+         caps=['curl_cffi'],
+         tables=["ubereats_products"], klass="headless", cadence="daily",
+         enabled=True, cost_class="free", timeout=21600, mem=4096, priority=11,
+         note="separate clock from the sweep: static per-item attributes, fetched once ever"),
+    dict(id="ubereats", label="Uber Eats (catalog + UPC, sharded)", shards=8,
+         code="import ue_catalog as m; m.main(['--site','ubereats','--shard',__import__('os').environ.get('UE_SHARD','0/8'),'--no-enrich'])",
          caps=['curl_cffi'],
          tables=["ubereats_products", "retail_observations"], klass="headless", cadence="daily",
          enabled=True, cost_class="free", timeout=21600, mem=4096, priority=10,

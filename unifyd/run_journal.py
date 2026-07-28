@@ -336,6 +336,47 @@ def archived_ids():
         return set()
 
 
+def reconcile_live(live_machine_ids, log=print):
+    """Flip runs whose MACHINE NO LONGER EXISTS to `lost`, immediately.
+
+    A journal is written by the pull machine, so a machine that is destroyed (killed, OOM-reaped, or
+    stopped by hand) never closes its own run — the doc sits at `running` until the staleness timer
+    trips 15 minutes later. For that whole window the bench reports dead work as live, and "is it
+    running?" is the first question anyone asks it. Observed: 8 stopped shards plus a stopped probe
+    still reading `running` while a fresh fleet was already up, giving 17 live runs when 8 existed.
+
+    Liveness is a fact about MACHINES, so ask the machine list rather than inferring from a heartbeat.
+    Runs with no machine_id (never spawned, or a local run) are left alone — absence of an id is not
+    evidence of death.
+    """
+    live = {str(m) for m in (live_machine_ids or []) if m}
+    if not live:
+        return 0                          # an empty/failed machine list must not mark everything dead
+    n = 0
+    for rid in _list_keys():
+        try:
+            doc = read(rid)
+            if not doc or doc.get("status") not in _LIVE:
+                continue
+            mid = doc.get("machine_id")
+            if not mid or str(mid) in live:
+                continue
+            doc["reported_status"] = doc.get("status")
+            doc["status"] = "lost"
+            doc["stale"] = True
+            doc["error"] = doc.get("error") or "machine %s no longer exists — run did not close" % mid
+            doc["finished_at"] = doc.get("finished_at") or int(time.time())
+            doc["updated_at"] = int(time.time())
+            import warehouse
+            warehouse.put_bytes(_key(rid), json.dumps(doc, default=str).encode())
+            n += 1
+        except Exception:
+            continue
+    if n:
+        log("journal: reconciled %d run(s) whose machine is gone -> lost" % n)
+    return n
+
+
 def prune(keep_days=14):
     """Drop journals older than keep_days. Journals are small but unbounded; the ledger is the
     permanent record, the journal is the live/recent detail."""

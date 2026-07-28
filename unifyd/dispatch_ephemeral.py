@@ -215,6 +215,23 @@ def main():
           % (len(due), len(due) - len(todo), MAX_SPAWN, image.rsplit(":", 1)[-1]))
     spawned = []
     for s in todo[:MAX_SPAWN]:
+        # A SHARDED SOURCE MUST DISPATCH AS A FLEET, unattended. The registry can declare `shards: N`;
+        # without this the scheduler spawned ONE machine for a source whose whole design is N machines
+        # splitting the universe by a stable hash — so a hand-kicked run was 8x faster than the same
+        # source running on its own schedule, and nobody would see why. Each shard is one machine with
+        # one env var; they need no coordination because the split is deterministic.
+        nsh = int(s.get("shards") or 1)
+        if nsh > 1:
+            ids = []
+            for i in range(nsh):
+                mid = spawn(s["id"], image, s.get("klass"), s.get("mem"),
+                            run_id=_journal_id(s["id"]), trigger="scheduled",
+                            env={"UE_SHARD": "%d/%d" % (i, nsh), "HOODIE_SHARD": "%d/%d" % (i, nsh)})
+                if mid:
+                    ids.append(mid)
+            if ids:
+                spawned.append("%s x%d" % (s["id"], len(ids)))
+            continue
         # Every scheduled run gets a journal too, not just bench-triggered ones — so Hoodie Collect shows
         # the dispatcher's own work live, and an overnight failure is inspectable the next morning instead
         # of leaving only a one-line ledger verdict.
@@ -241,6 +258,15 @@ def main():
         if due_b:
             print("dispatch: builds due=%s spawned=%s deferred=%s"
                   % ([b["id"] for b in due_b], b_spawned, [b["id"] for b in due_b[remaining:]]))
+    # RECONCILE LIVENESS AGAINST MACHINES. A destroyed machine never closes its own journal, so the
+    # bench would show dead runs as `running` until the staleness timer trips 15 minutes later. We are
+    # already holding the authoritative machine list here — use it.
+    try:
+        import run_journal
+        run_journal.reconcile_live([m.get("id") for m in _machines()
+                                    if m.get("state") in ("created", "starting", "started", "replacing")])
+    except Exception as e:
+        print("dispatch: liveness reconcile skipped: %s" % str(e)[:100])
     _refresh_health()
     return 0
 
