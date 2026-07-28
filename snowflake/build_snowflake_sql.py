@@ -794,14 +794,30 @@ GRANT SELECT ON FUTURE VIEWS   IN DATABASE {db} TO ROLE {r};
 
 
 def emit_validate():
-    # Only assert on what THIS build loaded. A scoped run asserting a table it deliberately skipped
-    # would fail on a table that does not exist — turning an honest partial slice into a false alarm.
+    # Assert via INFORMATION_SCHEMA, never SELECT COUNT(*) FROM <table>.
+    #
+    # A change-aware load emits DDL only for tables that MOVED, so on any incremental run most priority
+    # tables are absent from this build — and one that has never been loaded at all does not exist in
+    # Snowflake. `SELECT COUNT(*)` against a missing table is a COMPILE error (002003), which aborts the
+    # whole validation instead of reporting the very thing validation exists to report. Reading the
+    # catalog cannot fail that way: a missing table reports MISSING, an empty one EMPTY, and the run
+    # still finishes and prints its counts.
     only = _scope()
     checked = [t for t in PRIORITY if not only or t in only]
-    priority_checks = "\nUNION ALL\n".join(
-        "SELECT '%s' AS table_name, COUNT(*) AS n_rows, IFF(COUNT(*) > 0, 'OK', 'EMPTY — investigate') AS status "
-        "FROM %s" % (t, _fqtn(SCHEMA_RAW, t)) for t in checked) or (
-        "SELECT 'no priority source in this scope' AS table_name, 0 AS n_rows, 'SKIPPED' AS status")
+    lst = ", ".join("'%s'" % t.upper() for t in checked) or "''"
+    priority_checks = """
+WITH want AS (SELECT COLUMN1 AS table_name FROM VALUES {vals}),
+     have AS (SELECT TABLE_NAME, ROW_COUNT FROM {db}.INFORMATION_SCHEMA.TABLES
+              WHERE TABLE_SCHEMA = '{raw}' AND TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME IN ({lst}))
+SELECT w.table_name,
+       COALESCE(h.ROW_COUNT, 0) AS n_rows,
+       CASE WHEN h.TABLE_NAME IS NULL THEN 'MISSING — never loaded'
+            WHEN COALESCE(h.ROW_COUNT, 0) = 0 THEN 'EMPTY — investigate'
+            ELSE 'OK' END AS status
+FROM want w LEFT JOIN have h ON h.TABLE_NAME = w.table_name
+ORDER BY status, w.table_name""".format(
+        vals=", ".join("('%s')" % t.upper() for t in checked) or "('NONE')",
+        db=DB, raw=SCHEMA_RAW, lst=lst)
     return _BANNER + """--
 -- 06_validate.sql — post-load assertions. The named "full" sources MUST be non-empty; the star must
 -- have landed; the joins must resolve. Run after 03/04. Eyeball the STATUS column.

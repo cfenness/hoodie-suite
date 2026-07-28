@@ -23,21 +23,17 @@ WHERE TABLE_SCHEMA IN ('RAW', 'MASTER') AND TABLE_TYPE = 'BASE TABLE'
 ORDER BY ROW_COUNT DESC NULLS LAST;
 
 -- 1) Named priority sources — every one must be > 0 rows (an EMPTY here = a failed load, not a rebuild).
-SELECT 'total_wine_products' AS table_name, COUNT(*) AS n_rows, IFF(COUNT(*) > 0, 'OK', 'EMPTY — investigate') AS status FROM UNIFYD.RAW.TOTAL_WINE_PRODUCTS
-UNION ALL
-SELECT 'kroger_atlas_products' AS table_name, COUNT(*) AS n_rows, IFF(COUNT(*) > 0, 'OK', 'EMPTY — investigate') AS status FROM UNIFYD.RAW.KROGER_ATLAS_PRODUCTS
-UNION ALL
-SELECT 'kroger_products' AS table_name, COUNT(*) AS n_rows, IFF(COUNT(*) > 0, 'OK', 'EMPTY — investigate') AS status FROM UNIFYD.RAW.KROGER_PRODUCTS
-UNION ALL
-SELECT 'abc_products' AS table_name, COUNT(*) AS n_rows, IFF(COUNT(*) > 0, 'OK', 'EMPTY — investigate') AS status FROM UNIFYD.RAW.ABC_PRODUCTS
-UNION ALL
-SELECT 'abc_catalog' AS table_name, COUNT(*) AS n_rows, IFF(COUNT(*) > 0, 'OK', 'EMPTY — investigate') AS status FROM UNIFYD.RAW.ABC_CATALOG
-UNION ALL
-SELECT 'source_taxonomy' AS table_name, COUNT(*) AS n_rows, IFF(COUNT(*) > 0, 'OK', 'EMPTY — investigate') AS status FROM UNIFYD.RAW.SOURCE_TAXONOMY
-UNION ALL
-SELECT 'ab_outlets' AS table_name, COUNT(*) AS n_rows, IFF(COUNT(*) > 0, 'OK', 'EMPTY — investigate') AS status FROM UNIFYD.RAW.AB_OUTLETS
-UNION ALL
-SELECT 'vtinfo_titos' AS table_name, COUNT(*) AS n_rows, IFF(COUNT(*) > 0, 'OK', 'EMPTY — investigate') AS status FROM UNIFYD.RAW.VTINFO_TITOS
+
+WITH want AS (SELECT COLUMN1 AS table_name FROM VALUES ('TOTAL_WINE_PRODUCTS'), ('KROGER_ATLAS_PRODUCTS'), ('KROGER_PRODUCTS'), ('ABC_PRODUCTS'), ('ABC_CATALOG'), ('SOURCE_TAXONOMY'), ('AB_OUTLETS'), ('VTINFO_TITOS')),
+     have AS (SELECT TABLE_NAME, ROW_COUNT FROM UNIFYD.INFORMATION_SCHEMA.TABLES
+              WHERE TABLE_SCHEMA = 'RAW' AND TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME IN ('TOTAL_WINE_PRODUCTS', 'KROGER_ATLAS_PRODUCTS', 'KROGER_PRODUCTS', 'ABC_PRODUCTS', 'ABC_CATALOG', 'SOURCE_TAXONOMY', 'AB_OUTLETS', 'VTINFO_TITOS'))
+SELECT w.table_name,
+       COALESCE(h.ROW_COUNT, 0) AS n_rows,
+       CASE WHEN h.TABLE_NAME IS NULL THEN 'MISSING — never loaded'
+            WHEN COALESCE(h.ROW_COUNT, 0) = 0 THEN 'EMPTY — investigate'
+            ELSE 'OK' END AS status
+FROM want w LEFT JOIN have h ON h.TABLE_NAME = w.table_name
+ORDER BY status, w.table_name
 ORDER BY table_name;
 
 -- 2) The canonical star landed.
