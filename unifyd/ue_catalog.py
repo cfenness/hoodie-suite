@@ -128,8 +128,15 @@ def known_items(site="ubereats", log=print):
             "%s_products" % site,
             "SELECT DISTINCT item_uuid FROM t WHERE item_uuid IS NOT NULL "
             "AND (COALESCE(upc,'') <> '' OR COALESCE(gtin,'') <> '')")
-        known = {r["item_uuid"] for r in rows if r.get("item_uuid")}
-        log("[ue] %s items already resolved (enrichment will skip them)" % f"{len(known):,}")
+        # A COMPACT set, not a Python one. At full coverage this corpus is ~9.5M ids, which costs 1,078MB
+        # as a set of strings on a 4GB box that has already given DuckDB half its memory — the same
+        # "memory scales with the corpus" failure that killed three fleets, just one order of magnitude
+        # out. Sorted 64-bit digests + binary search: 72MB for the same answer. See idset.py for the
+        # collision trade (vanishingly rare, and it fails toward keeping data we already have).
+        import idset
+        known = idset.IdSet.from_ids(r["item_uuid"] for r in rows if r.get("item_uuid"))
+        log("[ue] %s items already resolved (enrichment will skip them; index %s MB)"
+            % (f"{len(known):,}", f"{known.bytes() // 1048576:,}"))
         return known
     except Exception as e:
         # No table yet (first run) or an unreadable read: enrich everything. Failing OPEN costs

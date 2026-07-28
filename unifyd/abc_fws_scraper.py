@@ -411,6 +411,22 @@ def _land_items(items, log=print):
     try:
         import warehouse
         rows = list(items.values())
+        # SAME SHAPE THAT KILLED THE UBEREATS FLEET. write_accumulate rewrites the WHOLE table on every
+        # merge, so a full-page `raw_json` per row is re-read and re-written each time — memory scales
+        # with the catalog rather than the batch, and the cost grows as the crawl succeeds. Payloads are
+        # EVENTS: they go append-only to raw_payloads, in full, and the catalog keeps modelled columns.
+        # Nothing is discarded; the payload also stops being overwritten by the next pull.
+        try:
+            import raw_capture
+            import time as _t
+            raw_capture.record("abc-fws", _t.strftime("%Y-%m-%d"), "items",
+                               [{"kind": "product", "entity_id": r.get("sku") or r.get("upc") or "",
+                                 "url": r.get("url") or "", "raw_json": r.get("raw_json")}
+                                for r in rows], log=log)
+        except Exception as e:
+            log("  [abc] raw capture failed: %s" % str(e)[:100])
+        for r in rows:
+            r["raw_json"] = ""            # keep the column (schema stability), drop it from the merge
         # key is a CALLABLE (row -> identity), not a column name. Same expression abc_catalog.py used,
         # so the merged output keys identically to the table's existing 13,999 rows.
         # coverage=False: this is the ITEM MASTER, not the per-store fact grain. Recording it would
