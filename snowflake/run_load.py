@@ -39,7 +39,7 @@ STAGE = "WH"
 # (see _connect), so running it added nothing except a hard requirement that the loader role hold
 # CREATE WAREHOUSE ON ACCOUNT — which is a privilege a data-loading role has no business holding.
 FILES = ["01_database.sql", "02_stage.sql", "03_raw_tables.sql",
-         "04_master.sql", "05_marts.sql", "06_validate.sql"]
+         "04_master.sql", "05_marts.sql", "07_grants.sql", "06_validate.sql"]
 GEN = os.path.join(HERE, "build_snowflake_sql.py")
 
 

@@ -756,6 +756,43 @@ def _assert_no_empty_statements(name, sql):
                              "Offending line: %s" % (name, tail[-1].strip()[:100]))
 
 
+
+def emit_grants(layout=None, dirty=None):
+    """Read access for the humans and BI tools, emitted as part of the build.
+
+    The loader role OWNS everything it creates, and Snowflake grants nothing to anyone else by
+    default — so a completed load is invisible: the catalog lists the tables, and every Data Preview
+    fails with "Insufficient privileges to operate on table ... must have SELECT granted". Data that
+    cannot be read is not landed data, so the grants belong in the build rather than in a runbook
+    somebody has to remember after each new source.
+
+    FUTURE grants matter as much as current ones: every new source adds a RAW table, and without them
+    each one would silently arrive unreadable and need a manual grant nobody knows to run.
+
+    Roles come from SNOWFLAKE_READER_ROLES (comma list, default SYSADMIN). Empty disables the section.
+    """
+    roles = [r.strip() for r in os.environ.get("SNOWFLAKE_READER_ROLES", "SYSADMIN").split(",")
+             if r.strip()]
+    body = ""
+    for r in roles:
+        body += """
+GRANT USAGE  ON DATABASE {db} TO ROLE {r};
+GRANT USAGE  ON ALL SCHEMAS IN DATABASE {db} TO ROLE {r};
+GRANT SELECT ON ALL TABLES  IN DATABASE {db} TO ROLE {r};
+GRANT SELECT ON ALL VIEWS   IN DATABASE {db} TO ROLE {r};
+GRANT USAGE  ON FUTURE SCHEMAS IN DATABASE {db} TO ROLE {r};
+GRANT SELECT ON FUTURE TABLES  IN DATABASE {db} TO ROLE {r};
+GRANT SELECT ON FUTURE VIEWS   IN DATABASE {db} TO ROLE {r};
+""".format(db=DB, r=r)
+    if not body:
+        body = "\nSELECT 'no reader roles configured (SNOWFLAKE_READER_ROLES empty)' AS grants_note;\n"
+    return _BANNER + """--
+-- 07_grants.sql — read access for humans/BI. The loader owns every object it creates and Snowflake
+-- grants nothing implicitly, so without this a successful load is unreadable in the UI.
+-- Roles: SNOWFLAKE_READER_ROLES (default SYSADMIN).
+""" + body
+
+
 def emit_validate():
     # Only assert on what THIS build loaded. A scoped run asserting a table it deliberately skipped
     # would fail on a table that does not exist — turning an honest partial slice into a false alarm.
@@ -820,6 +857,9 @@ FILES = [
     ("03_raw_tables.sql", lambda layout, dirty: emit_raw(layout, dirty)),
     ("04_master.sql", lambda layout, dirty: emit_master(layout, dirty)),
     ("05_marts.sql", lambda layout, dirty: emit_marts()),
+    # Grants run BEFORE validate: 06 reads the tables it asserts on, and more importantly a load that
+    # finishes "successfully" but unreadable is not finished.
+    ("07_grants.sql", lambda layout, dirty: emit_grants(layout, dirty)),
     ("06_validate.sql", lambda layout, dirty: emit_validate()),
 ]
 
