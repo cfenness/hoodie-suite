@@ -33,7 +33,6 @@ SELECT w.table_name,
             WHEN COALESCE(h.ROW_COUNT, 0) = 0 THEN 'EMPTY — investigate'
             ELSE 'OK' END AS status
 FROM want w LEFT JOIN have h ON h.TABLE_NAME = w.table_name
-ORDER BY status, w.table_name
 ORDER BY table_name;
 
 -- 2) The canonical star landed.

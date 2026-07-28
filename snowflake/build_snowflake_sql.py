@@ -814,8 +814,7 @@ SELECT w.table_name,
        CASE WHEN h.TABLE_NAME IS NULL THEN 'MISSING — never loaded'
             WHEN COALESCE(h.ROW_COUNT, 0) = 0 THEN 'EMPTY — investigate'
             ELSE 'OK' END AS status
-FROM want w LEFT JOIN have h ON h.TABLE_NAME = w.table_name
-ORDER BY status, w.table_name""".format(
+FROM want w LEFT JOIN have h ON h.TABLE_NAME = w.table_name""".format(
         vals=", ".join("('%s')" % t.upper() for t in checked) or "('NONE')",
         db=DB, raw=SCHEMA_RAW, lst=lst)
     return _BANNER + """--
