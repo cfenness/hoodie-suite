@@ -34,6 +34,13 @@ def eq(name, got, want):
     ok("%s (got %r)" % (name, got), got == want)
 
 
+def pool(pools, bucket, family="bottle"):
+    """Fetch a pool by format regardless of which variant key it hangs off — the tests below use
+    one synthetic product, so exactly one key per (family, bucket)."""
+    hits = [v for k, v in pools.items() if k.endswith("|%s|%s" % (family, bucket))]
+    return hits[0] if hits else []
+
+
 print("size / pack parsing")
 eq("1.75L", ls.size_ml("Tito's Handmade Vodka 1.75L"), 1750.0)
 eq("750ml", ls.size_ml("Tito's Handmade Vodka 750ML"), 750.0)
@@ -202,12 +209,12 @@ MIXED_ROWS = (
      for i, p in enumerate((22.9, 23.5, 24.2, 25.0, 26.9))]
 )
 pools = ls.reference_pools(MIXED_ROWS)
-eq("pools split by format", sorted(pools.keys()), [750, 1000, 1750])
-eq("the 750 pool has only 750s", len(pools[750]), 5)
+eq("pools split by format", sorted(k.split("|")[-1] for k in pools), ["1000", "1750", "750"])
+eq("the 750 pool has only 750s", len(pool(pools, 750)), 5)
 flat = [u for v in pools.values() for u in v]
 fair_750 = 23.5                      # a mid-of-market 750ml
 mixed_verdict = ls.price_verdict(fair_750, flat)
-fair_verdict = ls.price_verdict(fair_750, pools[750])
+fair_verdict = ls.price_verdict(fair_750, pool(pools, 750))
 # The claim under test is the PENALTY, not a particular band: the identical bottle at the
 # identical price must score strictly worse once large formats are allowed into its pool. (A band
 # assertion would depend on how extreme the fixture is; live Orlando data — $13.37 for a 1.75L vs
@@ -270,9 +277,9 @@ eq("the fresher observation won", abc["observed_on"], "2026-07-27")
 print("\n  and a duplicate no longer double-votes in the pool")
 same_store = [{"source": "s", "store_id": "A", "name": "X 750ml", "price": p}
               for p in (20.0, 20.0, 20.0, 20.0, 30.0)]
-eq("five scrapes of one store are ONE vote", len(ls.reference_pools(same_store)[750]), 1)
+eq("five scrapes of one store are ONE vote", len(pool(ls.reference_pools(same_store), 750)), 1)
 two_stores = same_store + [{"source": "s", "store_id": "B", "name": "X 750ml", "price": 25.0}]
-eq("a second store adds a second vote", len(ls.reference_pools(two_stores)[750]), 2)
+eq("a second store adds a second vote", len(pool(ls.reference_pools(two_stores), 750)), 2)
 ok("and offers are deduped before ranking, so a mirrored feed can't take two slots",
    len(ls.dedupe(d)) == len(d))
 
@@ -282,7 +289,7 @@ CADENCE = ([{"source": "daily", "store_id": "A", "name": "X 750ml", "price": 26.
            [{"source": "rare", "store_id": "B", "name": "X 750ml", "price": 19.99}] +
            [{"source": "rare", "store_id": "C", "name": "X 750ml", "price": 20.99}] +
            [{"source": "rare", "store_id": "D", "name": "X 750ml", "price": 21.99}])
-pooled = ls.reference_pools(CADENCE)[750]
+pooled = pool(ls.reference_pools(CADENCE), 750)
 eq("33 observations from 4 stores make a pool of 4", len(pooled), 4)
 ok("the daily-scraped store gets ONE vote, not 30", pooled.count(26.99) == 1)
 raw = sorted(u for r in CADENCE for u in [ls.unit_prices(r)[1]])
@@ -290,13 +297,13 @@ ok("pooling raw scrapes would have put the median at the over-scraped store (%.2
    % statistics.median(raw), statistics.median(raw) == 26.99)
 ok("...one-vote-per-store puts it where the market actually is (%.2f)"
    % statistics.median(pooled), statistics.median(pooled) < 26.99)
-one_store = ls.reference_pools([{"source": "s", "store_id": "A", "name": "X 750ml",
-                                 "price": 20.0 + i} for i in range(20)])[750]
+one_store = pool(ls.reference_pools([{"source": "s", "store_id": "A", "name": "X 750ml",
+                                      "price": 20.0 + i} for i in range(20)]), 750)
 eq("20 scrapes of ONE store is a pool of one — MIN_REF now means what it says", len(one_store), 1)
 eq("no band on a one-store pool", ls.price_verdict(21.0, one_store)["reason"], "thin-pool")
 eq("a store's own vote is its median, robust to a one-day spike",
-   ls.reference_pools([{"source": "s", "store_id": "A", "name": "X 750ml", "price": p}
-                       for p in (22.0, 22.0, 22.0, 40.0)])[750], [22.0])
+   pool(ls.reference_pools([{"source": "s", "store_id": "A", "name": "X 750ml", "price": p}
+                            for p in (22.0, 22.0, 22.0, 40.0)]), 750), [22.0])
 
 print("\n  RULE 2b — a ranked list may not MIX formats")
 # Within-format percentiles are not comparable across formats. Live proof: a 375ml at $13.63 was
@@ -346,6 +353,55 @@ eq("zero is a legitimate count — out of stock", zero["qty"], 0)
 eq("...and it means not in stock", zero["in_stock"], False)
 good = ls.stock_signal({"in_stock": True, "qty": 12}, "count", age=0)
 eq("a plausible count passes", good["qty"], 12)
+
+print("\n  RULE 2c — one pool is one PRODUCT, not one brand")
+# Live shape: a single "Jack Daniel's" 750ml pool held Old No.7, Honey, Fire, Winter Jack, a gift
+# flask and a collectible — $4.39 to $1,599.99, median $59.99. Every real bottle then scored
+# "great price" against a median that no bottle on the shelf had.
+JD = [
+    {"source": "s", "store_id": "1", "name": "Jack Daniel's Tennessee Honey 750ml", "price": 21.99},
+    {"source": "s", "store_id": "2", "name": "Jack Daniels Tennessee Honey 70 Proof Original Recipe Whiskey 750ml", "price": 22.99},
+    {"source": "s", "store_id": "3", "name": "Jack Daniel's Tennessee Honey 750 ML", "price": 23.99},
+    {"source": "s", "store_id": "4", "name": "Jack Daniels Tennessee Honey 750ml", "price": 24.99},
+    {"source": "s", "store_id": "5", "name": "Jack Daniel's Tennessee Fire Cinnamon Spice Liqueur 750ml", "price": 21.99},
+    {"source": "s", "store_id": "6", "name": "Jack Daniels Winter Jack 750ml", "price": 16.99},
+    {"source": "s", "store_id": "7", "name": "Jack Daniel Sinatra Select Collectible 750ml", "price": 1599.99},
+    {"source": "s", "store_id": "8", "name": "JACK DANIELS TENNESSEE HONEY 750 ML", "price": 25.99},
+    {"source": "s", "store_id": "9", "name": "Jack Daniel Sinatra Century Collectible 750ml", "price": 899.99},
+]
+jd = ls.reference_pools(JD)
+ok("the brand splits into separate product pools (%d)" % len(jd), len(jd) >= 4)
+honey = [v for k, v in jd.items() if "honey" in k]
+eq("all five Honey listings land in ONE pool despite different phrasing", len(honey[0]), 5)
+ok("the $1,599 collectible is in its own pool, not Honey's", 1599.99 not in honey[0])
+ok("Winter Jack is not in Honey's pool", 16.99 not in honey[0])
+flat = sorted(u for v in jd.values() for u in v)
+ok("pooled as ONE brand the spread would be absurd ($%.2f-$%.2f)" % (flat[0], flat[-1]),
+   flat[-1] / flat[0] > 50)
+honey_v = ls.price_verdict(21.99, honey[0])
+brand_v = ls.price_verdict(21.99, flat)
+eq("against its own product the cheapest Honey reads correctly", honey_v["band"], "great")
+# Assert the STRUCTURE, not a derived magnitude: whether a mixed median lands high or low is an
+# accident of which products a fixture happens to contain. The defect is that a brand-wide pool
+# scores this bottle against prices belonging to OTHER products at all.
+foreign = [u for u in flat if u not in honey[0]]
+ok("a brand-wide pool would price Honey against %d prices from other products" % len(foreign),
+   len(foreign) >= 3)
+ok("...including a collectible %.0fx the cheapest Honey" % (max(foreign) / min(honey[0])),
+   max(foreign) > 50 * min(honey[0]))
+ok("the per-product pool contains only that product's prices",
+   all(u in [21.99, 22.99, 23.99, 24.99, 25.99] for u in honey[0]))
+
+print("\n  CANS ARE NOT BOTTLES")
+eq("a 24oz can is a can", ls.format_family("Jack Daniel Southern Peach 24oz Can"), "can")
+eq("...and buckets in the can family", ls.size_bucket(709.76, "can"), 710)
+eq("...labelled as a can", ls.size_label(709.76, "can"), "24 oz can")
+ok("709ml would otherwise have snapped into the 750ml BOTTLE bucket",
+   ls.size_bucket(709.76, "bottle") == 750)
+mixed = ls.reference_pools([
+    {"source": "s", "store_id": "1", "name": "Brand X 24oz Can", "price": 4.39},
+    {"source": "s", "store_id": "2", "name": "Brand X 750ml", "price": 21.99}])
+eq("the can and the bottle never share a pool", len(mixed), 2)
 
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

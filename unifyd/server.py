@@ -806,6 +806,7 @@ def locator_offers():
     try:
         out = locator_signal.offers(q, center=center, radius_mi=radius, mode=mode,
                                     size=request.args.get("size"),
+                                    variant=request.args.get("variant"),
                                     log=lambda m: app.logger.info("LOCATOR %s", m))
     except Exception as e:                     # noqa: BLE001
         app.logger.info("LOCATOR offers error %s", e)

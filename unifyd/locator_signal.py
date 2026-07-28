@@ -70,7 +70,12 @@ BANDS = ((0.10, "great"), (0.30, "good"), (0.70, "typical"))          # else "hi
 # 750ml read "high". Measured live in Orlando: unit price ran $13.37 (1.75L) → $27.26 (375ml), a
 # ~2x spread that is pure format and nothing to do with deal quality. Rule 2 was necessary but not
 # sufficient; this is the other half of it.
-FORMATS = (50, 100, 187, 200, 375, 500, 750, 1000, 1500, 1750, 3000, 3785)
+# Two FAMILIES, never pooled together. A 24oz RTD can is 709ml, which lands inside 6% of 750ml —
+# so `Jack Daniel Southern Peach 24oz Can` at $4.39 was being priced against 750ml whiskey bottles.
+# The declared UNIT is the signal: oz means a can/RTD, ml/L means a bottle. Snapping across the two
+# is never right, however close the volumes are.
+BOTTLE_FORMATS = (50, 100, 187, 200, 375, 500, 750, 1000, 1500, 1750, 3000, 3785)
+CAN_FORMATS = (222, 250, 330, 355, 440, 473, 568, 710)         # 7.5/8.4/11.2/12/14.9/16/19.2/24 oz
 FORMAT_TOL = float(os.environ.get("LOC_FORMAT_TOL", "0.06"))   # 1.7L and 1.75L are one format
 
 _ML = {"ml": 1.0, "l": 1000.0, "lt": 1000.0, "ltr": 1000.0, "liter": 1000.0, "litre": 1000.0,
@@ -109,25 +114,44 @@ def pack_count(name):
     return n if 1 < n <= 48 else None
 
 
-def size_bucket(ml):
-    """Snap a parsed size to its canonical format (1700 and 1750 → 1750). None when unparsed —
-    an offer with no format can't be scored against a format pool, and won't be."""
+def format_family(name):
+    """'can' when the size is declared in ounces, 'bottle' when in ml/L, None when unstated.
+    The unit the retailer chose is a better container signal than the volume itself."""
+    m = _SIZE_RE.search(name or "")
+    if not m:
+        return None
+    unit = re.sub(r"[^a-z]", "", m.group(2).lower())
+    return "can" if unit.endswith("oz") else "bottle"
+
+
+def size_bucket(ml, family="bottle"):
+    """Snap a parsed size to its canonical format WITHIN ITS FAMILY (1700 and 1750 → 1750).
+    None when unparsed or off-format — an offer with no format is never scored."""
     try:
         v = float(ml)
     except (TypeError, ValueError):
         return None
     if v <= 0:
         return None
-    best = min(FORMATS, key=lambda f: abs(f - v))
+    formats = CAN_FORMATS if family == "can" else BOTTLE_FORMATS
+    best = min(formats, key=lambda f: abs(f - v))
     return best if abs(best - v) <= best * FORMAT_TOL else None
 
 
-def size_label(ml):
-    """'750 ml' / '1.75 L' for display — the shopper has to see WHICH bottle we priced."""
-    b = size_bucket(ml)
+def size_label(ml, family="bottle"):
+    """'750 ml' / '1.75 L' / '12 oz can' — the shopper has to see WHICH pack we priced."""
+    b = size_bucket(ml, family)
     if not b:
         return ""
+    if family == "can":
+        return "%g oz can" % round(b / 29.5735, 1)
     return ("%g L" % (b / 1000.0)) if b >= 1000 else ("%d ml" % b)
+
+
+def pool_key(variant, family, bucket):
+    """A pool is one PRODUCT, in one container family, at one format. All three or it isn't a
+    comparable set."""
+    return "%s|%s|%s" % (variant or "", family or "", bucket or "")
 
 
 def reference_pools(rows, per_store=True):
@@ -147,21 +171,63 @@ def reference_pools(rows, per_store=True):
     """
     by_store = {}
     for r in rows:
+        fam = r.get("family") or format_family(r.get("name")) or "bottle"
         ml = r.get("size_ml") or size_ml(r.get("name"))
-        b = size_bucket(ml)
+        b = size_bucket(ml, fam)
         if not b:
             continue
         u = unit_prices(r)[1]
         if not u:
             continue
-        if not per_store:
-            by_store.setdefault((b, id(r)), []).append(u)
-            continue
-        by_store.setdefault((b, r.get("source", ""), str(r.get("store_id", "") or "")), []).append(u)
+        pk = pool_key(r.get("variant") or variant_key(r.get("name"), r.get("brand")), fam, b)
+        who = (r.get("source", ""), str(r.get("store_id", "") or "")) if per_store else (id(r),)
+        by_store.setdefault((pk,) + who, []).append(u)
     pools = {}
     for key, us in by_store.items():
         pools.setdefault(key[0], []).append(round(statistics.median(us), 2))
     return pools
+
+
+# Words that carry no product identity in bev-alc naming, so they must not decide whether two
+# listings are the same thing. Deliberately conservative: category and marketing words only. A word
+# that could distinguish two SKUs (a flavour, an age statement, a cask type) is never in here.
+_NOISE = set("""
+whiskey whisky whiskies vodka gin rum tequila mezcal bourbon rye scotch brandy cognac liqueur
+liquor spirit spirits wine beer ale lager cider seltzer hard blended blend straight original
+recipe premium reserve select classic bottle bottles can cans pack pk case ct count nv
+proof abv alcohol distilled craft small batch handmade fine the a of and with w
+""".split())
+_STRIP_RE = re.compile(r"(\d+(?:\.\d+)?\s*(?:ml|lt?r?|liters?|litres?|fl\.?\s*oz|oz|%|proof)|"
+                       r"\d+\s*(?:-|\s)?\s*(?:pk|pack|ct|count)s?|\[\d+\]|\(.*?\))", re.I)
+
+
+def variant_key(name, brand=""):
+    """A deterministic key for "which product is this", from the listing name alone.
+
+    Format bucketing stopped a 1.75L polluting a 750ml pool, but it does nothing about a brand
+    selling many PRODUCTS at the same size. Measured live, one "Jack Daniel's" 750ml pool spanned
+    $4.39 to $1,599.99 (median $59.99) because Old No.7, Honey, Fire, Winter Jack, a gift flask and
+    a collectible were all one distribution — so every real bottle scored "great price" against a
+    median no bottle had.
+
+    This is NOT fuzzy matching, and deliberately so — that problem belongs to canon/item_identity,
+    not here. Size, pack, parentheticals and generic category words are removed; the remaining
+    tokens are lightly de-pluralised and compared as a SET, so word order and retailer phrasing
+    don't split a product. Anything it can't merge stays SPLIT, which thins the pool and trips the
+    thin-pool suppression — the safe direction to be wrong in.
+    """
+    t = (name or "").lower()
+    t = _STRIP_RE.sub(" ", t)
+    toks = [w.strip("'’.-") for w in re.split(r"[^a-z0-9']+", t) if w.strip("'’.-")]
+    keep = []
+    for w in toks:
+        w = w.replace("'", "").replace("\u2019", "")
+        if not w or w in _NOISE or w.isdigit():
+            continue
+        if len(w) > 3 and w.endswith("s"):
+            w = w[:-1]                      # daniels/daniel, seltzers/seltzer
+        keep.append(w)
+    return " ".join(sorted(set(keep)))
 
 
 def shelf_and_promo(row):
@@ -471,14 +537,26 @@ def build_offers(latest, reference, geo=None, tiers=None, velocity=None, history
         shelf, promo = shelf_and_promo(row)
         g = geo.get(key, {})
         tier = tiers.get(row.get("source", ""), "state")
+        fam = row.get("family") or format_family(row.get("name")) or "bottle"
         ml = row.get("size_ml") or size_ml(row.get("name"))
-        bucket = size_bucket(ml)
+        bucket = size_bucket(ml, fam)
+        # canon_item_id is AUTHORITATIVE where the master covers this listing (16% of observations
+        # today, ~0% on the aggregator sources) — it merges variants the name-normalizer splits.
+        # Everywhere else the deterministic key stands in.
+        variant = row.get("canon_item_id") or variant_key(row.get("name"), row.get("brand"))
         # geo and velocity are per STORE; promo history and the price line are per store+FORMAT.
         sig_key = (key[0], key[1], bucket)
         age = observed_age(row, today=today)
         # Score against this offer's OWN format pool. A dict picks the pool; a bare list is the
         # legacy single-pool path. No format ⇒ no peer group ⇒ no band, stated as `no-size`.
-        pool = reference.get(bucket, []) if isinstance(reference, dict) else (reference or [])
+        if isinstance(reference, dict):
+            # Prefer the full product|family|format pool; fall back to a bare bucket key so the
+            # simpler fixtures in the unit tests keep working.
+            pool = reference.get(pool_key(variant, fam, bucket))
+            if pool is None:
+                pool = reference.get(bucket, [])
+        else:
+            pool = reference or []
         if age is not None and age > STALE_DAYS:
             # We can still SHOW the price we saw — we just can't call it good or bad today.
             verdict = {"band": None, "percentile": None, "median": None, "delta": None,
@@ -491,7 +569,8 @@ def build_offers(latest, reference, geo=None, tiers=None, velocity=None, history
         o = {
             "source": row.get("source", ""), "store_id": key[1],
             "store": clean_store_name(g.get("store_name") or row.get("store", "")),
-            "size_ml": ml, "size_bucket": bucket, "size_label": size_label(ml),
+            "size_ml": ml, "size_bucket": bucket, "size_label": size_label(ml, fam),
+            "family": fam, "variant": variant,
             "also_seen": [],
             "address": g.get("address", ""), "city": g.get("city", ""), "state": g.get("state", ""),
             "lat": g.get("lat"), "lng": g.get("lng"),
@@ -554,7 +633,7 @@ def for_render_mode(offers, mode="consumer"):
 
 # --- warehouse-backed entry point -----------------------------------------------------------
 def offers(query, center=None, radius_mi=15.0, mode="consumer", trail_days=TRAIL_DAYS,
-           size=None, log=print):
+           size=None, variant=None, log=print):
     """Live offers for an item near a point. Reads retail_observations (latest per store +
     trailing reference), src_outlets (geo), obs_quality_source (tier) and fact_velocity.
 
@@ -648,23 +727,43 @@ def offers(query, center=None, radius_mi=15.0, mode="consumer", trail_days=TRAIL
                          tiers=_tiers(log=log, degraded=degraded),
                          velocity=_velocity(latest, log=log, degraded=degraded),
                          history=hist, series=series, center=center)
-    # Every format present, with how many stores back it — the caller renders these as tabs.
-    formats = [{"bucket": b, "label": size_label(b), "pool": len(pools.get(b, [])),
-                "offers": sum(1 for o in built if o.get("size_bucket") == b)}
-               for b in sorted({o.get("size_bucket") for o in built} - {None})]
-    # Scope to ONE format. Default = deepest pool, which is both the best-evidenced verdict and
-    # almost always the format a shopper means.
+    # A query names a BRAND far more often than a product, so first choose WHICH PRODUCT. Label
+    # each variant with its shortest observed listing name — the least retailer-embellished one.
+    vgroups = {}
+    for o in built:
+        vgroups.setdefault(o.get("variant") or "", []).append(o)
+    variants = []
+    for vk, os_ in vgroups.items():
+        pool_n = sum(len(v) for k, v in pools.items() if k.startswith(vk + "|"))
+        label = min((o.get("name") or "" for o in os_), key=lambda n: (len(n), n)) or vk
+        variants.append({"key": vk, "label": label, "offers": len(os_), "pool": pool_n})
+    # Deterministic ordering: deepest evidence first, then most offers, then the shortest label
+    # (the least retailer-embellished name). A dict-order tie-break would make the default product
+    # — and therefore the headline verdict — vary run to run.
+    variants.sort(key=lambda v: (-v["pool"], -v["offers"], len(v["label"]), v["label"]))
+    want_v = variant if variant in vgroups else (variants[0]["key"] if variants else None)
+    in_variant = vgroups.get(want_v, built)
+
+    # Then ONE format within it.
+    formats = [{"bucket": b, "label": size_label(b, next((o["family"] for o in in_variant
+                                                          if o.get("size_bucket") == b), "bottle")),
+                "pool": len(pools.get(pool_key(want_v, next((o["family"] for o in in_variant
+                                                             if o.get("size_bucket") == b), "bottle"), b), [])),
+                "offers": sum(1 for o in in_variant if o.get("size_bucket") == b)}
+               for b in sorted({o.get("size_bucket") for o in in_variant} - {None})]
     want = size_bucket(size) if size else None
     if want is None and formats:
         want = max(formats, key=lambda f: (f["pool"], f["offers"]))["bucket"]
-    scoped = [o for o in built if o.get("size_bucket") == want] if want else built
+    scoped = [o for o in in_variant if o.get("size_bucket") == want] if want else in_variant
     unsized = [o for o in built if o.get("size_bucket") is None]
 
-    st = price_signal.cluster_stats(pools.get(want, [])) or {"n": 0}
+    fam = next((o["family"] for o in scoped), "bottle")
+    st = price_signal.cluster_stats(pools.get(pool_key(want_v, fam, want), [])) or {"n": 0}
     out = {"offers": for_render_mode(rank(scoped), mode), "reference": st,
-           "size": want, "reference_size": size_label(want) if want else "",
-           "formats": formats, "unsized_offers": len(unsized),
-           "omitted_no_geo": len(no_geo),
+           "size": want, "reference_size": size_label(want, fam) if want else "",
+           "formats": formats, "variants": variants[:12], "variant": want_v,
+           "variant_label": next((v["label"] for v in variants if v["key"] == want_v), ""),
+           "unsized_offers": len(unsized), "omitted_no_geo": len(no_geo),
            "trade_area": _trade_area_label(latest, geo), "mode": mode}
     if degraded:
         out["degraded"] = ", ".join(degraded)

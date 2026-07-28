@@ -168,6 +168,7 @@
       <div class="rhead">
         <div class="n"><b id="count">0</b> <span id="unit">places</span> near you</div>
         <div class="refline" id="refline"></div>
+        <div class="sortrow" id="variants"></div>
         <div class="sortrow" id="formats"></div>
         <div class="sortrow" id="sortrow">
           <button class="tab on" data-sort="best">Best</button>
@@ -211,7 +212,7 @@ const ONPREM=new Set(['bar','restaurant','hotel']);
    It is what the page falls back to when the engine is down, and it is labelled as such. */
 const SAMPLE=[{"name":"Hotel Flor","street":"905 N Florida Ave","city":"Tampa","state":"FL","lat":27.952085,"lng":-82.458414,"source":"sales"},{"name":"Le Meridien Hotels","street":"601 N Florida Ave","city":"Tampa","state":"FL","lat":27.949991,"lng":-82.457428,"source":"sales"},{"name":"Siam Thaimerican Restaurant","street":"713 N Franklin St","city":"Tampa","state":"FL","lat":27.95054,"lng":-82.458888,"source":"sales"},{"name":"Lit Cigar & Martini Lounge","street":"908 N Franklin St","city":"Tampa","state":"FL","lat":27.951644,"lng":-82.459989,"source":"sales"},{"name":"Echo Downtown","street":"914 N Franklin St","city":"Tampa","state":"FL","lat":27.951872,"lng":-82.460097,"source":"sales"},{"name":"Cws Gin Joint","street":"633 N Franklin St","city":"Tampa","state":"FL","lat":27.949679,"lng":-82.458734,"source":"sales"},{"name":"Duckweed Urban Grocery","street":"803 N Tampa St","city":"Tampa","state":"FL","lat":27.950607,"lng":-82.459989,"source":"sales"},{"name":"Paddy Wagon Irish Pub","street":"813 N Tampa St","city":"Tampa","state":"FL","lat":27.950568,"lng":-82.460015,"source":"sales"},{"name":"Dio Modern Mediterranean","street":"519 N Franklin St","city":"Tampa","state":"FL","lat":27.949059,"lng":-82.458372,"source":"sales"},{"name":"Springhill Suites","street":"1105 N Tampa St","city":"Tampa","state":"FL","lat":27.953049,"lng":-82.460724,"source":"sales"},{"name":"Courtyard By Marriott","street":"102 E Cass St","city":"Tampa","state":"FL","lat":27.951193,"lng":-82.460946,"source":"sales"},{"name":"Tampa Burgers & Pirates","street":"777 N Ashley Dr Ste D1","city":"Tampa","state":"FL","lat":27.950064,"lng":-82.460318,"source":"sales"},{"name":"Anchor Bar Ii","street":"514 N Franklin St Ste 104","city":"Tampa","state":"FL","lat":27.948798,"lng":-82.458941,"source":"sales"}];
 
-let MAP,MARKERS={},ALL=[],VIEW=[],SEL=null,CENTER=[29.7604,-95.3698],SORT='best',MODE='consumer',PRICED=false,SIZE=null,SEQ=0;
+let MAP,MARKERS={},ALL=[],VIEW=[],SEL=null,CENTER=[29.7604,-95.3698],SORT='best',MODE='consumer',PRICED=false,SIZE=null,VARIANT=null,SEQ=0;
 
 function miles(a,b){
   const R=3959,dLat=(b[0]-a[0])*Math.PI/180,dLng=(b[1]-a[1])*Math.PI/180;
@@ -405,6 +406,7 @@ async function search(){
   const rad=+document.querySelector('input[name=rad]:checked').value||50;
   const p=new URLSearchParams({q,mode:MODE,radius:rad});
   if(SIZE)p.set('size',SIZE);
+  if(VARIANT)p.set('variant',VARIANT);
   if(loc.city){p.set('city',loc.city);p.set('state',loc.state||'');}
   p.set('lat',CENTER[0]);p.set('lng',CENTER[1]);
   try{
@@ -413,7 +415,8 @@ async function search(){
     if(j&&j.offers&&j.offers.length){
       if(j.center&&j.center.length===2)CENTER=j.center;
       document.getElementById('title').textContent=q+' — Locator';
-      SIZE=j.size||null; renderFormats(j); refline.innerHTML=refLine(j);
+      SIZE=j.size||null; VARIANT=j.variant||null;
+      renderVariants(j); renderFormats(j); refline.innerHTML=refLine(j);
       document.getElementById('src').innerHTML='Live · <b>'+j.offers.length+'</b> priced stores from our own observations'+
         (j.omitted_no_geo?' · <b>'+j.omitted_no_geo+'</b> more carry it but have no coordinates yet':'')+
         (j.degraded?' · <b>degraded:</b> '+esc(j.degraded):'');
@@ -423,6 +426,18 @@ async function search(){
   }catch(e){}
   if(stale())return;
   await fallbackAccounts(q,loc,locStr,stale);
+}
+function renderVariants(j){
+  // A query names a BRAND far more often than a product, and one brand's products are not one
+  // price distribution — live, a single "Jack Daniel's" pool ran $4.39 to $1,599.99. So pick the
+  // product first; switching is a new query, not a client-side filter.
+  const V=document.getElementById('variants'), vs=j.variants||[];
+  if(vs.length<2){ V.innerHTML=''; return; }
+  V.innerHTML='<label style="font-size:11px;color:var(--muted);margin-right:2px">Product</label>'+
+    vs.map(v=>'<button class="tab'+(v.key===j.variant?' on':'')+'" data-v="'+esc(v.key)+'" title="'+
+      esc(v.label)+'">'+esc(v.label.length>34?v.label.slice(0,33)+'…':v.label)+
+      ' <span style="opacity:.6">'+v.offers+'</span></button>').join('');
+  V.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{ VARIANT=b.dataset.v; SIZE=null; search(); });
 }
 function renderFormats(j){
   // One bottle format at a time. A within-format percentile can't be compared across formats, so
@@ -437,7 +452,8 @@ function renderFormats(j){
 function refLine(j){
   const r=j.reference||{}, ta=j.trade_area?esc(j.trade_area):'this area', sz=esc(j.reference_size||'');
   if(!r.n) return 'No priced comparison pool yet for '+ta+' — showing what we can verify.';
-  return (sz?'<b>'+sz+'</b> prices in ':'Prices in ')+'<b>'+ta+'</b> · median <b>$'+
+  const vl=j.variant_label?esc(j.variant_label)+' · ':'';
+  return vl+(sz?'<b>'+sz+'</b> prices in ':'Prices in ')+'<b>'+ta+'</b> · median <b>$'+
          (r.median||0).toFixed(2)+'</b> per 750ml equivalent across <b>'+r.n+'</b> observations'+
          (r.min&&r.max?' · range $'+r.min.toFixed(2)+'–$'+r.max.toFixed(2):'');
 }
