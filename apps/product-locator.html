@@ -10,6 +10,8 @@
   :root{
     --ink:#2B3138; --paper:#F1F3F5; --panel:#fff; --muted:#7A828B; --line:#E4E7EB;
     --accent:#4E79A7; --accent-deep:#2E4C6D; --accent-soft:#EAF0F6; --good:#3f9668; --gold:#9a7100;
+    --great:#1f7a4d; --great-soft:#e6f4ec; --ok:#3f9668; --typ:#7A828B; --typ-soft:#eef0f2;
+    --high:#a8503f; --high-soft:#f8ecea; --promo:#9a7100; --promo-soft:#fbf3df;
     --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
     --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
@@ -17,23 +19,25 @@
   html,body{height:100%}
   body{background:var(--paper);color:var(--ink);font-family:var(--font);font-size:14px;display:flex;flex-direction:column;height:100vh;overflow:hidden}
 
-  /* ---- hero (borrowed from the Grey Goose finder: deep band + location search) ---- */
-  .hero{background:linear-gradient(160deg,var(--accent-deep),var(--accent));color:#fff;padding:26px 30px 22px;flex:0 0 auto}
+  .hero{background:linear-gradient(160deg,var(--accent-deep),var(--accent));color:#fff;padding:24px 30px 20px;flex:0 0 auto}
   .hero h1{font-size:23px;font-weight:800;letter-spacing:-.02em}
-  .hero p{font-size:13px;opacity:.85;margin-top:5px;max-width:640px;line-height:1.5}
-  .finder{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center}
-  .finder select,.finder input{font-family:var(--font);font-size:14px;border:none;border-radius:9px;padding:11px 14px;outline:none;color:var(--ink)}
-  .finder select{background:#fff;font-weight:600;min-width:210px;cursor:pointer}
-  .finder .loc{background:#fff;display:flex;align-items:center;gap:8px;border-radius:9px;padding:0 6px 0 13px}
-  .finder .loc svg{width:16px;height:16px;color:var(--accent);flex:0 0 auto}
+  .hero p{font-size:13px;opacity:.85;margin-top:5px;max-width:660px;line-height:1.5}
+  .finder{display:flex;gap:10px;margin-top:15px;flex-wrap:wrap;align-items:center}
+  .finder input,.finder select{font-family:var(--font);font-size:14px;border:none;border-radius:9px;padding:11px 14px;outline:none;color:var(--ink)}
+  .finder .loc,.finder .prod{background:#fff;display:flex;align-items:center;gap:8px;border-radius:9px;padding:0 6px 0 13px}
+  .finder svg{width:16px;height:16px;color:var(--accent);flex:0 0 auto}
   .finder .loc input{padding:11px 8px;min-width:180px}
+  .finder .prod input{padding:11px 8px;min-width:230px;font-weight:600}
   .finder button{background:#fff;color:var(--accent-deep);font-weight:700;border:none;border-radius:9px;padding:11px 20px;cursor:pointer;font-size:14px}
   .finder button:hover{background:var(--accent-soft)}
   .finder .ghost{background:rgba(255,255,255,.14);color:#fff;font-weight:600}
   .finder .ghost:hover{background:rgba(255,255,255,.24)}
+  .modebar{margin-top:11px;display:flex;align-items:center;gap:9px;font-size:11.5px;opacity:.9}
+  .modebar .seg{display:flex;background:rgba(255,255,255,.16);border-radius:7px;overflow:hidden}
+  .modebar .seg button{background:none;border:none;color:#fff;font:inherit;font-weight:600;padding:5px 11px;cursor:pointer;opacity:.7}
+  .modebar .seg button.on{background:#fff;color:var(--accent-deep);opacity:1}
 
-  /* ---- three panels: filters · results · map ---- */
-  .stage{flex:1 1 auto;display:grid;grid-template-columns:212px 380px 1fr;min-height:0}
+  .stage{flex:1 1 auto;display:grid;grid-template-columns:212px 420px 1fr;min-height:0}
   .filters{border-right:1px solid var(--line);background:var(--panel);padding:20px 18px;overflow-y:auto}
   .filters h3{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 10px}
   .fgroup{margin-bottom:22px}
@@ -43,31 +47,59 @@
   .reset{background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;padding:0}
 
   .results{border-right:1px solid var(--line);background:var(--paper);display:flex;flex-direction:column;min-height:0}
-  .rhead{padding:15px 18px 12px;border-bottom:1px solid var(--line);background:var(--panel);flex:0 0 auto}
+  .rhead{padding:14px 18px 12px;border-bottom:1px solid var(--line);background:var(--panel);flex:0 0 auto}
   .rhead .n{font-weight:800;font-size:15px;letter-spacing:-.01em}
   .rhead .n b{color:var(--accent)}
-  .rhead .sortrow{display:flex;align-items:center;gap:8px;margin-top:10px}
-  .rhead label{font-size:11px;color:var(--muted)}
-  .rhead select{font-family:var(--font);font-size:12.5px;border:1px solid var(--line);border-radius:7px;padding:5px 9px;color:var(--ink);background:var(--panel);cursor:pointer;outline:none}
+  .refline{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.45}
+  .refline b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .sortrow{display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap}
+  .sortrow .tab{background:var(--paper);border:1px solid var(--line);border-radius:7px;font:inherit;font-size:12px;font-weight:600;color:var(--muted);padding:5px 10px;cursor:pointer}
+  .sortrow .tab.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-deep)}
   .rlist{overflow-y:auto;flex:1 1 auto;padding:8px}
   .empty{color:var(--muted);font-size:13px;text-align:center;padding:40px 20px;line-height:1.6}
 
-  /* ---- the account card WITH THUMBNAIL (the piece the design borrows) ---- */
   .acct{display:flex;gap:12px;padding:12px;border-radius:12px;cursor:pointer;border:1px solid transparent;transition:background .12s,border-color .12s}
   .acct:hover{background:var(--panel)}
   .acct.sel{background:var(--panel);border-color:var(--accent)}
-  .thumb{width:62px;height:62px;border-radius:10px;flex:0 0 auto;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center}
+  .thumb{width:56px;height:56px;border-radius:10px;flex:0 0 auto;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center}
   .thumb img{width:100%;height:100%;object-fit:cover;display:block}
-  .thumb svg{width:26px;height:26px;color:#fff;opacity:.95}
+  .thumb svg{width:24px;height:24px;color:#fff;opacity:.95}
   .thumb .mono{position:absolute;right:4px;bottom:3px;font-family:var(--mono);font-size:8px;color:rgba(255,255,255,.7);font-weight:700}
   .acct .body{min-width:0;flex:1}
   .acct .nm{font-weight:700;font-size:13.5px;line-height:1.25;letter-spacing:-.01em}
   .acct .meta{display:flex;align-items:center;gap:7px;margin-top:3px;flex-wrap:wrap}
   .acct .cat{font-size:10.5px;color:var(--muted);text-transform:capitalize}
+  .acct .cat.fmt{text-transform:none;font-weight:700;color:var(--ink)}
   .acct .dist{font-family:var(--mono);font-size:10.5px;color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
   .acct .addr{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .acct .badge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--accent-soft);color:var(--accent-deep);margin-top:6px}
   .acct .badge.dep{background:#eaf4ee;color:var(--good)}
+
+  /* ---- the offer card: price verdict, history, stock, cadence ---- */
+  .pricerow{display:flex;align-items:baseline;gap:8px;margin-top:5px;flex-wrap:wrap}
+  .px{font-size:19px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .was{font-size:12px;color:var(--muted);text-decoration:line-through;font-variant-numeric:tabular-nums}
+  .verdict{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:3px 7px;border-radius:5px}
+  .verdict.great{background:var(--great-soft);color:var(--great)}
+  .verdict.good{background:#eaf4ee;color:var(--ok)}
+  .verdict.typical{background:var(--typ-soft);color:var(--typ)}
+  .verdict.high{background:var(--high-soft);color:var(--high)}
+  .verdict.none{background:var(--typ-soft);color:var(--muted);font-weight:700;text-transform:none;letter-spacing:0}
+  .sig{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.45;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .sig b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .sig .dot{color:var(--line)}
+  .chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px}
+  .chip.promo{background:var(--promo-soft);color:var(--promo)}
+  .chip.urgent{background:var(--high-soft);color:var(--high)}
+  .chip.stock{background:#eaf4ee;color:var(--good)}
+  .chip.oos{background:var(--typ-soft);color:var(--muted)}
+  .chip.wait{background:var(--accent-soft);color:var(--accent-deep)}
+  .chip.stale{background:var(--typ-soft);color:var(--muted)}
+  .chip.age{background:var(--typ-soft);color:var(--muted)}
+  .spark{display:block;margin-top:6px;overflow:visible}
+  .spark path{fill:none;stroke:var(--accent);stroke-width:1.5;stroke-linejoin:round}
+  .spark .fill{fill:var(--accent-soft);stroke:none}
+  .spark circle{fill:var(--accent)}
 
   #map{width:100%;height:100%;background:#e8ecef}
   .leaflet-container{font-family:var(--font)}
@@ -75,25 +107,38 @@
   .leaflet-popup-content b{color:var(--ink)}
   .pin{background:var(--accent);width:16px;height:16px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}
   .pin.sel{background:var(--gold);width:22px;height:22px}
+  .pin.great{background:var(--great)}
+  .pin.high{background:var(--high)}
 
   .note{font-size:11px;color:var(--muted);padding:9px 18px;border-top:1px solid var(--line);background:var(--panel);flex:0 0 auto;line-height:1.5}
   .note b{color:var(--ink)}
-  @media(max-width:900px){.stage{grid-template-columns:1fr;grid-template-rows:auto 300px 320px}.filters{display:none}}
+  @media(max-width:900px){.stage{grid-template-columns:1fr;grid-template-rows:auto 320px 300px}.filters{display:none}}
 </style>
 </head>
 <body>
   <div class="hero">
     <h1 id="title">Product Locator</h1>
-    <p>Find every account carrying a brand near a location — bars, restaurants, hotels and stores — from our
-       depletion &amp; distribution feeds. Search by product and ZIP.</p>
+    <p>Not just who carries it — <b>why go here</b>. Verified stock, the everyday vs. promo price,
+       whether it's a good price for this neighborhood, and whether it's worth waiting for the next ad.</p>
     <div class="finder">
-      <select id="brand" aria-label="Product / brand"></select>
+      <div class="prod">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="q" placeholder="Product or brand — e.g. Tito's 750ml" value="Tito's">
+      </div>
       <div class="loc">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-        <input id="zip" placeholder="City or ZIP code" value="Tampa, FL 33602">
+        <input id="zip" placeholder="City, ST or ZIP" value="Houston, TX">
       </div>
       <button id="go">Search</button>
       <button id="near" class="ghost">Use my location</button>
+    </div>
+    <div class="modebar">
+      <span>Render mode</span>
+      <div class="seg">
+        <button data-mode="consumer" class="on">Consumer</button>
+        <button data-mode="brand">Brand widget</button>
+      </div>
+      <span id="modehint">Full verdict — including “high price”.</span>
     </div>
   </div>
 
@@ -107,7 +152,9 @@
       </div>
       <div class="fgroup">
         <h3>Signal</h3>
-        <label class="opt"><input type="checkbox" id="depOnly">Depletion-confirmed only <span class="ct" id="ctDep"></span></label>
+        <label class="opt"><input type="checkbox" id="stockOnly">Verified in stock <span class="ct" id="ctStock"></span></label>
+        <label class="opt"><input type="checkbox" id="promoOnly">On ad now <span class="ct" id="ctPromo"></span></label>
+        <label class="opt"><input type="checkbox" id="dealOnly">Good price only <span class="ct" id="ctDeal"></span></label>
       </div>
       <div class="fgroup">
         <h3>Radius</h3>
@@ -119,10 +166,15 @@
 
     <section class="results">
       <div class="rhead">
-        <div class="n"><b id="count">0</b> <span id="unit">accounts</span> near you</div>
-        <div class="sortrow">
-          <label for="sort">Sort by</label>
-          <select id="sort"><option value="dist">Distance</option><option value="name">Name</option><option value="cat">Type</option></select>
+        <div class="n"><b id="count">0</b> <span id="unit">places</span> near you</div>
+        <div class="refline" id="refline"></div>
+        <div class="sortrow" id="variants"></div>
+        <div class="sortrow" id="formats"></div>
+        <div class="sortrow" id="sortrow">
+          <button class="tab on" data-sort="best">Best</button>
+          <button class="tab" data-sort="price">Cheapest</button>
+          <button class="tab" data-sort="dist">Closest</button>
+          <button class="tab" data-sort="stock">Verified stock</button>
         </div>
       </div>
       <div class="rlist" id="list"></div>
@@ -136,8 +188,6 @@
 <script>
 if(new URLSearchParams(location.search).has('embed')) document.querySelector('.hero p').style.display='none';
 
-/* ---- venue classification → the thumbnail (stands in for a Google Places photo) ----
-   When we resolve an account's place_id, acct.photo carries the real image and replaces this tile. */
 const ICONS={
   hotel:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 20h20v-2H2v2zM4 8h4v3H4V8zm0 5h16v3H4v-3zm12-5h4v3h-4V8zM4 4h16v3H4V4z"/></svg>',
   bar:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 3l9 9v6H8v2h8v-2h-4v-6l9-9H3zm4.8 2h8.4L14 7H8.8L7.8 5z"/></svg>',
@@ -152,68 +202,161 @@ function classify(name){
   if(/hotel|suites|resort|inn|marriott|hilton|meridien|hyatt|sheraton|lodge/.test(n))return 'hotel';
   if(/bar|lounge|tavern|pub|saloon|club|joint|cantina|cocktail|brew|ale|gin/.test(n))return 'bar';
   if(/restaurant|grill|kitchen|cuisine|cafe|bistro|steak|thai|pizza|mediterran|grille|eatery|diner|burger/.test(n))return 'restaurant';
-  if(/liquor|wine|spirit|package|abc fine|total wine|bottle|cellar/.test(n))return 'liquor';
-  if(/grocery|market|deli|food|publix|walmart|dollar|7 eleven|7-eleven|shell|walgreens|cvs|circle k|convenien/.test(n))return 'store';
+  if(/liquor|wine|spirit|package|abc fine|total wine|bottle|cellar|binny|spec/.test(n))return 'liquor';
+  if(/grocery|market|deli|food|publix|walmart|dollar|7 eleven|7-eleven|shell|walgreens|cvs|circle k|convenien|kroger|meijer/.test(n))return 'store';
   return 'place';
 }
 const ONPREM=new Set(['bar','restaurant','hotel']);
 
-/* ---- sample fallback: real Tito's accounts near Tampa (from our VTInfo pull) ---- */
+/* Sample: real Tito's accounts near Tampa (VTInfo pull) — the distribution-only shape, no prices.
+   It is what the page falls back to when the engine is down, and it is labelled as such. */
 const SAMPLE=[{"name":"Hotel Flor","street":"905 N Florida Ave","city":"Tampa","state":"FL","lat":27.952085,"lng":-82.458414,"source":"sales"},{"name":"Le Meridien Hotels","street":"601 N Florida Ave","city":"Tampa","state":"FL","lat":27.949991,"lng":-82.457428,"source":"sales"},{"name":"Siam Thaimerican Restaurant","street":"713 N Franklin St","city":"Tampa","state":"FL","lat":27.95054,"lng":-82.458888,"source":"sales"},{"name":"Lit Cigar & Martini Lounge","street":"908 N Franklin St","city":"Tampa","state":"FL","lat":27.951644,"lng":-82.459989,"source":"sales"},{"name":"Echo Downtown","street":"914 N Franklin St","city":"Tampa","state":"FL","lat":27.951872,"lng":-82.460097,"source":"sales"},{"name":"Cws Gin Joint","street":"633 N Franklin St","city":"Tampa","state":"FL","lat":27.949679,"lng":-82.458734,"source":"sales"},{"name":"Duckweed Urban Grocery","street":"803 N Tampa St","city":"Tampa","state":"FL","lat":27.950607,"lng":-82.459989,"source":"sales"},{"name":"Paddy Wagon Irish Pub","street":"813 N Tampa St","city":"Tampa","state":"FL","lat":27.950568,"lng":-82.460015,"source":"sales"},{"name":"Dio Modern Mediterranean","street":"519 N Franklin St","city":"Tampa","state":"FL","lat":27.949059,"lng":-82.458372,"source":"sales"},{"name":"Springhill Suites","street":"1105 N Tampa St","city":"Tampa","state":"FL","lat":27.953049,"lng":-82.460724,"source":"sales"},{"name":"Courtyard By Marriott","street":"102 E Cass St","city":"Tampa","state":"FL","lat":27.951193,"lng":-82.460946,"source":"sales"},{"name":"Tampa Burgers & Pirates","street":"777 N Ashley Dr Ste D1","city":"Tampa","state":"FL","lat":27.950064,"lng":-82.460318,"source":"sales"},{"name":"Anchor Bar Ii","street":"514 N Franklin St Ste 104","city":"Tampa","state":"FL","lat":27.948798,"lng":-82.458941,"source":"sales"}];
-const BRANDS_FALLBACK=[{id:'titos',name:"Tito's Handmade Vodka"},{id:'fl-distributing',name:'Florida Distributing Co. (full book)'}];
 
-let MAP, MARKERS={}, ALL=[], VIEW=[], SEL=null, CENTER=[27.9506,-82.4572], LIVE=false;
+let MAP,MARKERS={},ALL=[],VIEW=[],SEL=null,CENTER=[29.7604,-95.3698],SORT='best',MODE='consumer',PRICED=false,SIZE=null,VARIANT=null,SEQ=0;
 
-function miles(a,b){ // haversine
+function miles(a,b){
   const R=3959,dLat=(b[0]-a[0])*Math.PI/180,dLng=(b[1]-a[1])*Math.PI/180;
   const s=Math.sin(dLat/2)**2+Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLng/2)**2;
   return 2*R*Math.asin(Math.sqrt(s));
 }
-function prep(rows){
+function esc(s){return (s==null?'':''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function money(v){return v==null?'':'$'+(+v).toFixed(2);}
+
+/* ---- offers (priced) ---- */
+function prepOffers(offers){
+  PRICED=true;
+  ALL=offers.filter(o=>o.lat&&o.lng).map((o,i)=>{
+    const cat=classify(o.store);
+    return Object.assign({},o,{i,cat,onprem:ONPREM.has(cat),ll:[+o.lat,+o.lng],
+      dist:o.distance_mi!=null?o.distance_mi:miles(CENTER,[+o.lat,+o.lng]),
+      band:(o.verdict||{}).band||null});
+  });
+  counts(); apply();
+}
+/* ---- accounts (distribution only, the legacy shape) ---- */
+function prepAccounts(rows){
+  PRICED=false;
   ALL=rows.filter(r=>r.lat&&r.lng).map((r,i)=>{
     const cat=classify(r.name);
-    return {...r,i,cat,onprem:ONPREM.has(cat),ll:[+r.lat,+r.lng],
-            dist:miles(CENTER,[+r.lat,+r.lng]),
-            dep:(r.source||'').toLowerCase()==='sales'};
+    return Object.assign({},r,{i,cat,store:r.name,onprem:ONPREM.has(cat),ll:[+r.lat,+r.lng],
+      dist:miles(CENTER,[+r.lat,+r.lng]),verdict:null,stock:null,band:null,
+      dep:(r.source||'').toLowerCase()==='sales'});
   });
-  counts(); render();
+  counts(); apply();
 }
 function counts(){
-  const c=s=>ALL.filter(s).length;
+  const c=f=>ALL.filter(f).length;
   ctAll.textContent=ALL.length; ctOn.textContent=c(a=>a.onprem); ctOff.textContent=c(a=>!a.onprem);
-  ctDep.textContent=c(a=>a.dep);
+  ctStock.textContent=c(a=>a.stock&&a.stock.in_stock);
+  ctPromo.textContent=c(a=>a.on_promo);
+  ctDeal.textContent=c(a=>a.band==='great'||a.band==='good');
 }
 function apply(){
   const venue=document.querySelector('input[name=venue]:checked').value;
   const rad=+document.querySelector('input[name=rad]:checked').value;
-  const dep=depOnly.checked, sort=document.getElementById('sort').value;
   VIEW=ALL.filter(a=>{
     if(venue==='on'&&!a.onprem)return false;
     if(venue==='off'&&a.onprem)return false;
-    if(dep&&!a.dep)return false;
+    if(stockOnly.checked&&!(a.stock&&a.stock.in_stock))return false;
+    if(promoOnly.checked&&!a.on_promo)return false;
+    if(dealOnly.checked&&!(a.band==='great'||a.band==='good'))return false;
     if(rad&&a.dist>rad)return false;
     return true;
   });
-  VIEW.sort((x,y)=> sort==='name'?x.name.localeCompare(y.name):sort==='cat'?x.cat.localeCompare(y.cat)||x.dist-y.dist:x.dist-y.dist);
+  VIEW.sort((x,y)=>{
+    if(SORT==='price')return (x.effective_price??9e9)-(y.effective_price??9e9)||x.dist-y.dist;
+    if(SORT==='dist') return x.dist-y.dist;
+    if(SORT==='stock')return (stockRank(y)-stockRank(x))||x.dist-y.dist;
+    return (y.score??0)-(x.score??0)||x.dist-y.dist;      // Best = the blended score
+  });
   render();
 }
+function stockRank(a){const s=a.stock||{};return s.qty?2:(s.in_stock?1:0);}
+
 function thumbHTML(a){
-  if(a.photo) return '<div class="thumb"><img src="'+a.photo+'" alt="" loading="lazy"></div>';
+  if(a.photo) return '<div class="thumb"><img src="'+esc(a.photo)+'" alt="" loading="lazy"></div>';
   return '<div class="thumb" style="background:linear-gradient(150deg,'+TINT[a.cat]+',rgba(0,0,0,.22))">'+ICONS[a.cat]+
-         '<span class="mono">'+a.name.replace(/[^A-Za-z]/g,'').slice(0,2).toUpperCase()+'</span></div>';
+         '<span class="mono">'+esc((a.store||'').replace(/[^A-Za-z]/g,'').slice(0,2).toUpperCase())+'</span></div>';
+}
+const BAND_LABEL={great:'Great price',good:'Good price',typical:'Typical price',high:'High price'};
+const NO_BAND={'stale':'Price last seen a while ago — not confirmed today',
+               'thin-pool':'Too few priced stores nearby to call it',
+               'flat-market':'Prices are uniform here — no deal to chase',
+               'no-price':'No comparable price',
+               'suppressed-brand-mode':''};
+function verdictHTML(a){
+  const v=a.verdict||{};
+  if(v.band) return '<span class="verdict '+v.band+'">'+BAND_LABEL[v.band]+'</span>';
+  const t=NO_BAND[v.reason]; return t?'<span class="verdict none">'+esc(t)+'</span>':'';
+}
+function sparkHTML(a){
+  const h=(a.price_history||[]).filter(p=>p.price);
+  if(h.length<3) return '';
+  const W=150,H=26,xs=h.map(p=>+p.price),lo=Math.min(...xs),hi=Math.max(...xs),rng=(hi-lo)||1;
+  const pt=i=>[ (i/(h.length-1))*W, H-((xs[i]-lo)/rng)*(H-4)-2 ];
+  const d=xs.map((_,i)=>{const [x,y]=pt(i);return (i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1);}).join(' ');
+  const [lx,ly]=pt(h.length-1);
+  return '<svg class="spark" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" aria-hidden="true">'+
+         '<path class="fill" d="'+d+' L'+W+' '+H+' L0 '+H+' Z"/><path d="'+d+'"/>'+
+         '<circle cx="'+lx.toFixed(1)+'" cy="'+ly.toFixed(1)+'" r="2.5"/></svg>';
+}
+function ageHTML(a){
+  const d=a.observed_days_ago;
+  if(d==null) return '';
+  if((a.stock||{}).stale) return '<span class="chip stale">Last seen '+d+'d ago</span>';
+  return d<=1?'' : '<span class="chip age">Seen '+d+'d ago</span>';
+}
+function stockHTML(a){
+  const s=a.stock||{};
+  if(s.stale) return '';               // a stale reading asserts nothing about stock
+  if(s.qty!=null) return '<span class="chip '+(s.urgency?'urgent':'stock')+'">'+s.qty+' in stock'+
+    (s.urgency?' · selling out':'')+'</span>';
+  if(s.in_stock) return '<span class="chip stock">In stock</span>';
+  if(PRICED) return '<span class="chip oos">Not seen in stock</span>';
+  return '';
+}
+function promoHTML(a){
+  const bits=[];
+  if(a.on_promo) bits.push('<span class="chip promo">On ad'+(a.discount_pct?' · '+Math.round(a.discount_pct*100)+'% off':'')+'</span>');
+  const p=a.promo_outlook||{};
+  if(!a.on_promo&&p.likely_soon&&p.period_days)
+    bits.push('<span class="chip wait">Cut about every '+p.period_days+'d · due</span>');
+  return bits.join(' ');
+}
+function deltaHTML(a){
+  const v=a.verdict||{};
+  if(v.delta==null||v.median==null) return '';
+  const d=Math.abs(v.delta).toFixed(2);
+  if(Math.abs(v.delta)<0.01) return 'right at the local median';
+  return (v.delta<0?'<b>$'+d+' below</b> ':'<b>$'+d+' above</b> ')+'the local median';
 }
 function render(){
-  count.textContent=VIEW.length; unit.textContent=VIEW.length===1?'account':'accounts';
+  count.textContent=VIEW.length;
+  unit.textContent=(PRICED?'store':'account')+(VIEW.length===1?'':'s');
   const L=document.getElementById('list');
-  if(!VIEW.length){ L.innerHTML='<div class="empty">No accounts match these filters.<br>Widen the radius or clear the signal filter.</div>'; drawPins(); return; }
-  L.innerHTML=VIEW.map(a=>
-    '<div class="acct" data-i="'+a.i+'">'+thumbHTML(a)+
-      '<div class="body"><div class="nm">'+esc(a.name)+'</div>'+
+  if(!VIEW.length){
+    L.innerHTML='<div class="empty">Nothing matches these filters.<br>Widen the radius or clear a signal filter.</div>';
+    drawPins(); return;
+  }
+  L.innerHTML=VIEW.map(a=>{
+    const priced=PRICED&&a.effective_price!=null;
+    return '<div class="acct" data-i="'+a.i+'">'+thumbHTML(a)+
+      '<div class="body">'+
+        '<div class="nm">'+esc(a.store||a.name||'')+'</div>'+
         '<div class="meta"><span class="cat">'+a.cat+'</span>'+
+          (a.size_label?'<span class="cat fmt">'+esc(a.size_label)+'</span>':'')+
           (a.dist?'<span class="dist">'+a.dist.toFixed(1)+' mi</span>':'')+'</div>'+
-        '<div class="addr">'+esc(a.street||'')+(a.city?', '+esc(a.city):'')+' '+esc(a.state||'')+'</div>'+
-        '<span class="badge '+(a.dep?'dep':'')+'">'+(a.dep?'Depletion-confirmed':'Distribution')+'</span>'+
-      '</div></div>').join('');
+        (priced
+          ? '<div class="pricerow"><span class="px">'+money(a.effective_price)+'</span>'+
+              (a.on_promo?'<span class="was">'+money(a.everyday_price)+'</span>':'')+
+              verdictHTML(a)+'</div>'+
+            (deltaHTML(a)?'<div class="sig">'+deltaHTML(a)+'</div>':'')+
+            sparkHTML(a)+
+            '<div class="sig">'+[stockHTML(a),promoHTML(a),ageHTML(a)].filter(Boolean).join(' ')+'</div>'
+          : '<div class="addr">'+esc(a.address||a.street||'')+(a.city?', '+esc(a.city):'')+' '+esc(a.state||'')+'</div>'+
+            '<span class="badge '+(a.dep?'dep':'')+'">'+(a.dep?'Depletion-confirmed':'Distribution')+'</span>')+
+      '</div></div>';
+  }).join('');
   L.querySelectorAll('.acct').forEach(el=>{
     el.onclick=()=>select(+el.dataset.i,true);
     el.onmouseenter=()=>hoverPin(+el.dataset.i,true);
@@ -225,10 +368,14 @@ function drawPins(){
   Object.values(MARKERS).forEach(m=>MAP.removeLayer(m)); MARKERS={};
   const grp=[];
   VIEW.forEach(a=>{
-    const icon=L.divIcon({className:'',html:'<div class="pin'+(SEL===a.i?' sel':'')+'"></div>',iconSize:[16,16],iconAnchor:[8,16]});
+    const cls='pin'+(SEL===a.i?' sel':'')+(a.band==='great'?' great':a.band==='high'?' high':'');
+    const icon=L.divIcon({className:'',html:'<div class="'+cls+'"></div>',iconSize:[16,16],iconAnchor:[8,16]});
     const m=L.marker(a.ll,{icon}).addTo(MAP);
-    m.bindPopup('<b>'+esc(a.name)+'</b><br>'+esc(a.street||'')+'<br>'+esc(a.city||'')+', '+esc(a.state||'')+
-                '<br><span style="color:var(--accent)">'+a.cat+' · '+(a.dep?'depletion-confirmed':'distribution')+'</span>');
+    const line=(PRICED&&a.effective_price!=null)
+      ? money(a.effective_price)+(a.on_promo?' (on ad)':'')+((a.verdict||{}).band?' · '+BAND_LABEL[a.verdict.band]:'')
+      : a.cat+' · '+(a.dep?'depletion-confirmed':'distribution');
+    m.bindPopup('<b>'+esc(a.store||a.name||'')+'</b><br>'+esc(a.address||a.street||'')+'<br>'+
+                esc(a.city||'')+', '+esc(a.state||'')+'<br><span style="color:var(--accent)">'+esc(line)+'</span>');
     m.on('click',()=>select(a.i,false));
     MARKERS[a.i]=m; grp.push(a.ll);
   });
@@ -241,58 +388,125 @@ function select(i,fly){
   drawPins();
   if(MARKERS[i]){ if(fly)MAP.setView(a.ll,15,{animate:true}); MARKERS[i].openPopup(); }
 }
-function hoverPin(i,on){ const m=MARKERS[i]; if(m){ const el=m.getElement(); if(el)el.querySelector('.pin').style.transform=on?'rotate(-45deg) scale(1.4)':'rotate(-45deg)'; } }
-function esc(s){return (s==null?'':''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function hoverPin(i,on){const m=MARKERS[i];if(m){const el=m.getElement();if(el){const p=el.querySelector('div');if(p)p.style.transform=on?'rotate(-45deg) scale(1.4)':'rotate(-45deg)';}}}
 
-/* ---- data: engine when up, sample otherwise ---- */
-async function loadBrands(){
-  const sel=document.getElementById('brand');
-  try{
-    const j=await (await fetch('/api/locator/brands',{cache:'no-store'})).json();
-    if(j&&j.brands&&j.brands.length){ fill(sel,j.brands); return; }
-  }catch(e){}
-  fill(sel,BRANDS_FALLBACK);
+/* ---- data ---- */
+function parseLoc(s){
+  const m=/^\s*([^,]+?)\s*,\s*([A-Za-z]{2})\s*(\d{5})?\s*$/.exec(s||'');
+  if(m) return {city:m[1],state:m[2].toUpperCase()};
+  const z=/(\d{5})/.exec(s||''); return z?{zip:z[1]}:{};
 }
-function fill(sel,brands){ sel.innerHTML=brands.map(b=>'<option value="'+b.id+'">'+esc(b.name)+'</option>').join(''); }
 async function search(){
-  const brand=document.getElementById('brand').value, zip=document.getElementById('zip').value.trim();
+  // Warehouse queries can take minutes, so two searches CAN be in flight at once. Without a
+  // sequence guard the slower/earlier one lands last and silently replaces the newer results —
+  // hit live: a stale Houston query overwrote an Orlando one and the page showed the wrong city.
+  const seq=++SEQ, stale=()=>seq!==SEQ;
+  const q=document.getElementById('q').value.trim();
+  const locStr=document.getElementById('zip').value.trim(), loc=parseLoc(locStr);
+  const rad=+document.querySelector('input[name=rad]:checked').value||50;
+  const p=new URLSearchParams({q,mode:MODE,radius:rad});
+  if(SIZE)p.set('size',SIZE);
+  if(VARIANT)p.set('variant',VARIANT);
+  if(loc.city){p.set('city',loc.city);p.set('state',loc.state||'');}
+  p.set('lat',CENTER[0]);p.set('lng',CENTER[1]);
   try{
-    const j=await (await fetch('/api/locator?brand='+encodeURIComponent(brand)+'&zip='+encodeURIComponent(zip),{cache:'no-store'})).json();
+    const j=await (await fetch('/api/locator/offers?'+p,{cache:'no-store'})).json();
+    if(stale())return;                       // a newer search has already started
+    if(j&&j.offers&&j.offers.length){
+      if(j.center&&j.center.length===2)CENTER=j.center;
+      document.getElementById('title').textContent=q+' — Locator';
+      SIZE=j.size||null; VARIANT=j.variant||null;
+      renderVariants(j); renderFormats(j); refline.innerHTML=refLine(j);
+      document.getElementById('src').innerHTML='Live · <b>'+j.offers.length+'</b> priced stores from our own observations'+
+        (j.omitted_no_geo?' · <b>'+j.omitted_no_geo+'</b> more carry it but have no coordinates yet':'')+
+        (j.degraded?' · <b>degraded:</b> '+esc(j.degraded):'');
+      prepOffers(j.offers); return;
+    }
+    if(j&&j.degraded) document.getElementById('src').innerHTML='<b>Degraded:</b> '+esc(j.degraded);
+  }catch(e){}
+  if(stale())return;
+  await fallbackAccounts(q,loc,locStr,stale);
+}
+function renderVariants(j){
+  // A query names a BRAND far more often than a product, and one brand's products are not one
+  // price distribution — live, a single "Jack Daniel's" pool ran $4.39 to $1,599.99. So pick the
+  // product first; switching is a new query, not a client-side filter.
+  const V=document.getElementById('variants'), vs=j.variants||[];
+  if(vs.length<2){ V.innerHTML=''; return; }
+  V.innerHTML='<label style="font-size:11px;color:var(--muted);margin-right:2px">Product</label>'+
+    vs.map(v=>'<button class="tab'+(v.key===j.variant?' on':'')+'" data-v="'+esc(v.key)+'" title="'+
+      esc(v.label)+'">'+esc(v.label.length>34?v.label.slice(0,33)+'…':v.label)+
+      ' <span style="opacity:.6">'+v.offers+'</span></button>').join('');
+  V.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{ VARIANT=b.dataset.v; SIZE=null; search(); });
+}
+function renderFormats(j){
+  // One bottle format at a time. A within-format percentile can't be compared across formats, so
+  // switching size is a new query, not a client-side filter.
+  const F=document.getElementById('formats'), fs=j.formats||[];
+  if(fs.length<2){ F.innerHTML=''; return; }
+  F.innerHTML='<label style="font-size:11px;color:var(--muted);margin-right:2px">Size</label>'+
+    fs.map(f=>'<button class="tab'+(f.bucket===j.size?' on':'')+'" data-size="'+f.bucket+'">'+
+      esc(f.label)+' <span style="opacity:.6">'+f.offers+'</span></button>').join('');
+  F.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{ SIZE=b.dataset.size; search(); });
+}
+function refLine(j){
+  const r=j.reference||{}, ta=j.trade_area?esc(j.trade_area):'this area', sz=esc(j.reference_size||'');
+  if(!r.n) return 'No priced comparison pool yet for '+ta+' — showing what we can verify.';
+  const vl=j.variant_label?esc(j.variant_label)+' · ':'';
+  return vl+(sz?'<b>'+sz+'</b> prices in ':'Prices in ')+'<b>'+ta+'</b> · median <b>$'+
+         (r.median||0).toFixed(2)+'</b> per 750ml equivalent across <b>'+r.n+'</b> observations'+
+         (r.min&&r.max?' · range $'+r.min.toFixed(2)+'–$'+r.max.toFixed(2):'');
+}
+async function fallbackAccounts(q,loc,locStr,stale){
+  stale=stale||(()=>false);
+  try{
+    const j=await (await fetch('/api/locator?brand='+encodeURIComponent(q.toLowerCase().replace(/[^a-z]/g,''))+
+                               '&zip='+encodeURIComponent(locStr),{cache:'no-store'})).json();
+    if(stale())return;
     if(j&&j.accounts&&j.accounts.length){
-      LIVE=true; if(j.center)CENTER=j.center;
-      document.getElementById('src').innerHTML='Live · <b>'+j.accounts.length+'</b> accounts from <b>'+esc(j.label||brand)+'</b>';
-      document.getElementById('title').textContent=(j.label||'Product')+' — Locator';
-      prep(j.accounts); return;
+      if(j.center)CENTER=j.center;
+      refline.textContent='Distribution only — we know these accounts carry it, but have no priced observations here yet.';
+      document.getElementById('src').innerHTML='Live · <b>'+j.accounts.length+'</b> accounts from <b>'+esc(j.label||q)+'</b> (no price signal)';
+      prepAccounts(j.accounts); return;
     }
   }catch(e){}
-  // fallback
+  refline.textContent='Sample data — the engine is not reachable from here.';
   document.getElementById('src').innerHTML='Showing <b>sample</b> (Tito’s · Tampa) — connect the engine for live pulls.';
-  prep(SAMPLE);
+  CENTER=[27.9506,-82.4572]; prepAccounts(SAMPLE);
 }
 
-MAP=L.map('map',{zoomControl:true,scrollWheelZoom:true}).setView(CENTER,13);
+MAP=L.map('map',{zoomControl:true,scrollWheelZoom:true}).setView(CENTER,12);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
   {attribution:'© OpenStreetMap © CARTO',subdomains:'abcd',maxZoom:19}).addTo(MAP);
 
 document.getElementById('go').onclick=search;
-document.getElementById('zip').addEventListener('keydown',e=>{if(e.key==='Enter')search();});
-document.getElementById('brand').onchange=search;
-document.getElementById('sort').onchange=apply;
-document.getElementById('reset').onclick=()=>{document.querySelector('input[name=venue][value=""]').checked=true;depOnly.checked=false;document.querySelector('input[name=rad][value="15"]').checked=true;apply();};
-document.querySelectorAll('input[name=venue],input[name=rad],#depOnly').forEach(el=>el.onchange=apply);
+['q','zip'].forEach(id=>document.getElementById(id).addEventListener('keydown',e=>{if(e.key==='Enter')search();}));
+document.querySelectorAll('#sortrow .tab').forEach(b=>b.onclick=()=>{
+  SORT=b.dataset.sort;
+  document.querySelectorAll('#sortrow .tab').forEach(x=>x.classList.toggle('on',x===b));
+  apply();
+});
+document.querySelectorAll('.modebar .seg button').forEach(b=>b.onclick=()=>{
+  MODE=b.dataset.mode;
+  document.querySelectorAll('.modebar .seg button').forEach(x=>x.classList.toggle('on',x===b));
+  modehint.textContent = MODE==='brand'
+    ? 'Positive claims only — no “high price”, no “wait for the ad”. Filtered server-side.'
+    : 'Full verdict — including “high price”.';
+  search();
+});
+document.getElementById('reset').onclick=()=>{
+  document.querySelector('input[name=venue][value=""]').checked=true;
+  stockOnly.checked=promoOnly.checked=dealOnly.checked=false;
+  document.querySelector('input[name=rad][value="15"]').checked=true; apply();
+};
+document.querySelectorAll('input[name=venue],input[name=rad],#stockOnly,#promoOnly,#dealOnly')
+  .forEach(el=>el.addEventListener('change',apply));
 document.getElementById('near').onclick=()=>{
   if(!navigator.geolocation)return;
-  navigator.geolocation.getCurrentPosition(p=>{CENTER=[p.coords.latitude,p.coords.longitude];ALL.forEach(a=>a.dist=miles(CENTER,a.ll));MAP.setView(CENTER,13);apply();});
+  navigator.geolocation.getCurrentPosition(p=>{CENTER=[p.coords.latitude,p.coords.longitude];MAP.setView(CENTER,12);search();});
 };
-// wire filter controls to apply (after prep counts exist)
-['depOnly'].forEach(id=>document.getElementById(id));
-document.querySelectorAll('input[name=venue],input[name=rad]').forEach(el=>el.addEventListener('change',apply));
-depOnly.addEventListener('change',apply);
-document.getElementById('sort').addEventListener('change',apply);
 
-loadBrands().then(search);
-// re-run filters after each prep
-const _prep=prep; window.prep=function(r){_prep(r);apply();};
+search();
 </script>
 </body>
 </html>
