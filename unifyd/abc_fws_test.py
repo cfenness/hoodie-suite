@@ -101,12 +101,49 @@ ds3, runs3, mv3 = abc.pull(crawl_all=True, out=out, log=lambda *a: None)
 print("status:", runs3[0]["status"])
 print("warnings:", runs3[0].get("warnings"))
 assert runs3[0]["status"] == "degraded", "partial pass must be degraded, got %r" % runs3[0]["status"]
-assert any("Incomplete pass" in w for w in runs3[0].get("warnings") or []), \
+assert any("Incomplete" in w for w in runs3[0].get("warnings") or []), \
     "partial pass must warn about remaining products: %r" % runs3[0].get("warnings")
 assert BUCKET["_collect/snapshots/abc-fws.json"] == before_snap, \
     "PARTIAL pass overwrote the shared snapshot — would fake an assortment collapse"
 assert sum(n for _, n in LANDED) == 5 * 3, "partial run should still LAND what it fetched, got %r" % LANDED
 print("PASS run 3: partial pass landed %d cells, reported degraded, snapshot preserved"
       % sum(n for _, n in LANDED))
+print()
+print("=== RUN 4: LIVE-CATALOG DRIFT — the site changes during a multi-hour crawl ===")
+for k in list(BUCKET):
+    if k.startswith("_collect/resume/"):
+        del BUCKET[k]
+LANDED.clear()
+abc.fetch_product = fake_fetch_product
+
+# The catalog GROWS mid-crawl: re-harvest returns the original 10 plus 2 new products, minus 1 dropped.
+GROWN = CATALOG[1:] + [("2001", "https://abcfws.com/p/2001/"), ("2002", "https://abcfws.com/p/2002/")]
+calls = {"n": 0}
+
+
+def drifting_harvest(log=print):
+    calls["n"] += 1
+    return (CATALOG, False) if calls["n"] == 1 else (GROWN, False)
+
+
+abc.harvest_ids = drifting_harvest
+ds4, runs4, mv4 = abc.pull(crawl_all=True, out=out, log=lambda *a: None)
+d = runs4[0].get("drift") or {}
+print("drift:", d)
+assert d.get("catalog_start") == 10, d
+assert d.get("catalog_end") == 11, d
+assert d.get("added_during_crawl") == 2, "should see the 2 products added mid-crawl: %r" % d
+assert d.get("removed_during_crawl") == 1, "should see the 1 product dropped mid-crawl: %r" % d
+assert d.get("missing_vs_live") == 2, "the 2 new products are uncaptured vs the LIVE catalog: %r" % d
+# THE POINT: we crawled every product we were given, so this is a SUCCESS. The 2 that appeared
+# mid-crawl are normal drift on a live catalog, reported but not a failure — otherwise a source on an
+# active site is permanently degraded and the status stops carrying information.
+assert runs4[0]["status"] == "success", \
+    "products published mid-crawl are drift, not our failure: %r / %r" % (
+        runs4[0]["status"], runs4[0].get("warnings"))
+assert not any("Incomplete crawl" in w for w in runs4[0].get("warnings") or []), \
+    "must not blame the crawl for products that did not exist when it started: %r" % runs4[0].get("warnings")
+print("PASS run 4: drift measured and reported; a fully-crawled pass is not degraded by mid-crawl additions")
+
 print()
 print("ALL ASSERTIONS PASSED")

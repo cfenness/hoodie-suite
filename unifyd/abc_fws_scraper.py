@@ -420,6 +420,35 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
         # batching is that no fetched row is thrown away.
         with lock:
             _flush(force=True)
+    # ── RE-HARVEST: the site is the source of truth and it keeps moving ─────────────────────────
+    # A full sweep takes hours, so the catalog we measured completeness against at the start is stale
+    # by the end — ABC adds and drops products while we crawl. Comparing our count to a denominator
+    # captured 4 hours ago would let us claim "complete" against a catalog that no longer exists.
+    # Re-walk the sitemap and reconcile against the CURRENT catalog, reporting drift explicitly.
+    drift = {}
+    if crawl_all:
+        try:
+            log("[abc] re-harvesting sitemap to reconcile against the live catalog…")
+            catalog2, _ = harvest_ids(log=lambda *a: None)
+            now_ids, then_ids = {t[0] for t in catalog2}, {t[0] for t in catalog}
+            added, removed = now_ids - then_ids, then_ids - now_ids
+            missing_now = now_ids - done                       # in the live catalog, not captured
+            drift = {"catalog_start": len(then_ids), "catalog_end": len(now_ids),
+                     "added_during_crawl": len(added), "removed_during_crawl": len(removed),
+                     "captured": len(done & now_ids), "missing_vs_live": len(missing_now)}
+            log("[abc] DRIFT start=%d end=%d (+%d/-%d during crawl) | captured %d of the live %d"
+                % (len(then_ids), len(now_ids), len(added), len(removed),
+                   len(done & now_ids), len(now_ids)))
+            # Products that appeared mid-crawl were never in `targets`; they are NOT in `done`, so the
+            # next run picks them up automatically. Say so rather than counting them as a failure.
+            if added:
+                log("[abc] %d products appeared during the crawl — the next run collects them "
+                    "(resume checkpoint does not mark them done)" % len(added))
+        except Exception as e:
+            log("[abc] re-harvest failed (%s) — completeness is measured against the START catalog"
+                % str(e)[:90])
+            drift = {"error": str(e)[:120]}
+
     # Did this pass actually finish the catalog? `done` accumulates across resumed runs, so compare it
     # to the FULL target list, not just this pass's remainder.
     todo_incomplete = crawl_all and len({t[0] for t in targets} - done) > 0
@@ -467,11 +496,27 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
     remaining = len({t[0] for t in targets} - done) if crawl_all else 0
     if crawl_all:
         covered = len(targets) - remaining
-        log(f"[abc] COVERAGE {covered:,}/{len(targets):,} products "
-            f"({100.0*covered/max(1,len(targets)):.1f}%); {remaining:,} remaining")
+        # Judge against the LIVE catalog when the re-harvest succeeded — that is the source of truth,
+        # and it is what a completeness claim has to be measured against.
+        live_total = drift.get("catalog_end") or len(targets)
+        live_missing = drift.get("missing_vs_live", remaining)
+        appeared = drift.get("added_during_crawl", 0)
+        log(f"[abc] COVERAGE {covered:,}/{len(targets):,} of the start catalog "
+            f"({100.0*covered/max(1,len(targets)):.1f}%); vs LIVE catalog: "
+            f"{live_total - live_missing:,}/{live_total:,} "
+            f"({100.0*(live_total-live_missing)/max(1,live_total):.1f}%)")
+        # WHY it is incomplete decides whether this is a failure. Products we were given at the start
+        # and never fetched are OUR miss — degrade. Products the retailer published *after* we harvested
+        # the sitemap were never crawlable this pass; against a live catalog that is normal drift, and
+        # the next run collects them (they are absent from the resume checkpoint). Degrading on those
+        # would leave every source on an active site permanently red, which is how a status stops
+        # meaning anything — the precise failure this rework exists to undo.
         if remaining:
-            warnings.append(f"Incomplete pass: {covered:,}/{len(targets):,} products captured, "
-                            f"{remaining:,} remaining — rerun to resume (checkpointed).")
+            warnings.append(f"Incomplete crawl: {covered:,}/{len(targets):,} products captured from the "
+                            f"start catalog, {remaining:,} never fetched — rerun to resume (checkpointed).")
+        if appeared:
+            log(f"[abc] NOTE {appeared:,} products were published during the crawl and are not in this "
+                f"pass — expected drift on a live catalog; the next run collects them.")
     status = "failed" if not cur else ("degraded" if warnings else "success")
 
     snap = {"__ts__": int(time.time() * 1000), "cells": cur}
@@ -501,6 +546,9 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
     json.dump(datasets, open(os.path.join(out, "datasets.json"), "w"), indent=2)
     datasets["abc_store_cells"]["_rows_full"] = rows   # full set for export (in-memory return only)
     run = run_record(movement, n_products, status, warnings)
+    if drift:
+        run["drift"] = drift          # live-catalog reconciliation, for the bench
+
     log(f"done: {n_products} products × stores = {len(cur)} cells; "
         + (f"{movement['changed']} store-cells moved since last run" if prev else "baseline"))
     return datasets, [run], movement
