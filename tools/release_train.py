@@ -68,11 +68,15 @@ def checker_python():
 
 # --- plumbing --------------------------------------------------------------------------------
 def git(*args, cwd=ROOT, check=False):
-    """Run git and return (rc, stdout). Never raises on a non-zero rc unless check=True."""
+    """Run git and return (rc, stdout+stderr). Git puts plenty of useful failure detail on stderr,
+    and dropping it made a worktree failure report a harmless tracking notice as its cause."""
     p = subprocess.run(["git"] + list(args), cwd=cwd, capture_output=True, text=True)
     if check and p.returncode:
         raise RuntimeError("git %s failed: %s" % (" ".join(args), (p.stderr or "").strip()[:400]))
-    return p.returncode, (p.stdout or "").strip()
+    out = (p.stdout or "").strip()
+    if p.returncode and (p.stderr or "").strip():
+        out = (out + "\n" + p.stderr.strip()).strip()
+    return p.returncode, out
 
 
 def sh(cmd, cwd=ROOT, timeout=900):
@@ -94,6 +98,18 @@ def primary_worktree():
     """
     d = common_git_dir()
     return os.path.dirname(d) if os.path.basename(d) == ".git" else ROOT
+
+
+def scratch(name):
+    """Path for a throwaway worktree, always under the PRIMARY checkout.
+
+    Anchoring these to ROOT put them inside whichever worktree invoked the tool, so a run from a
+    feature worktree nested them at <worktree>/.claude/worktrees/_integration — invisible to a
+    cleanup run from the primary checkout, and left behind as an untracked directory that then
+    blocked the next `git worktree add`. Same reasoning as the lock living in the common git dir:
+    shared state belongs somewhere all the sessions agree on.
+    """
+    return os.path.join(primary_worktree(), ".claude", "worktrees", name)
 
 
 def default_branch():
@@ -428,7 +444,7 @@ def attribute(base, prs, names, py):
     Only the already-failing checks are re-run, so this costs a few seconds, not another full sweep.
     """
     out = {}
-    probe = os.path.join(ROOT, ".claude", "worktrees", "_attribute")
+    probe = scratch("_attribute")
     for p in prs:
         if os.path.isdir(probe):
             git("worktree", "remove", "--force", probe)
@@ -447,7 +463,7 @@ def attribute(base, prs, names, py):
                 rc = 1
             if rc != 0:
                 # Also broken on the PR's own tip? Then it is theirs, not a merge artefact.
-                tip = os.path.join(ROOT, ".claude", "worktrees", "_tip")
+                tip = scratch("_tip")
                 own = None
                 if os.path.isdir(tip):
                     git("worktree", "remove", "--force", tip)
@@ -475,7 +491,7 @@ def baseline_failures(base, names, py):
     """
     if not names:
         return set()
-    probe = os.path.join(ROOT, ".claude", "worktrees", "_baseline")
+    probe = scratch("_baseline")
     if os.path.isdir(probe):
         git("worktree", "remove", "--force", probe)
     rc, _ = git("worktree", "add", "--detach", probe, base)
@@ -526,7 +542,7 @@ def integrate(args):
             git("branch", "-D", b)
 
         branch = INTEGRATION_PREFIX + time.strftime("%Y%m%d-%H%M%S")
-        wt = os.path.join(ROOT, ".claude", "worktrees", "_integration")
+        wt = scratch("_integration")
         if os.path.isdir(wt):
             git("worktree", "remove", "--force", wt)
         rc, out = git("worktree", "add", "-b", branch, wt, base)
@@ -625,7 +641,7 @@ def deploy(args):
         return 2
     try:
         git("fetch", "--quiet", "origin")
-        wt = os.path.join(ROOT, DEPLOY_WT)
+        wt = scratch("_deploy")
         if os.path.isdir(wt):
             git("worktree", "remove", "--force", wt)
         rc, out = git("worktree", "add", "--detach", wt, base)
