@@ -321,6 +321,16 @@ production; there is no staging branch.
 - **What ships:** the Dockerfile copies the repo; the engine (`unifyd/`, `*.py`, secrets,
   dotfiles) is present in the image but **never web-served** — the static file route
   enforces a `_SUITE_OK_TOP` allowlist on the resolved path.
+- **NO GITHUB ACTIONS, EVER — variable cost (hard rule).** The repo now has **zero** workflows.
+  The deploy/scrape ones were removed earlier; the last survivor, `tests.yml` (warehouse-compat +
+  dispatch-guard), went on 2026-07-28 — it was failing 6/6 on environment issues while both suites
+  passed locally, i.e. billing minutes to produce noise, and it never ran the guard that actually
+  caught a real break. **Nothing auto-deploys — merging a PR ships nothing.**
+  The replacement is free, local, and strictly broader:
+  `python3 tools/release_train.py integrate` runs `smoke_check` plus **every** `unifyd/*_test.py`
+  (not a path-triggered subset), labels each failure introduced-vs-pre-existing, and attributes it
+  to the PR that broke it. Ship with `python3 tools/release_train.py deploy` (or a manual
+  `flyctl deploy --remote-only` from a clean `origin/main`). **Never re-add a workflow.**
 - **Legacy S3/CloudFront** (`deploy.sh`, `cloudfront/`) is **DORMANT** — kept for
   reference only. Ignore it unless deliberately resuming S3 serving.
 
