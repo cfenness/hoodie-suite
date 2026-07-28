@@ -332,7 +332,15 @@ def run_one(source, log=print, extra_env=None, on_line=None):
     status, error = "ok", ""
     timeout_s = source.get("timeout") or _TIMEOUT.get(source["klass"], 5400)   # registry per-source override
     run_token = "%s-%d" % (sid, int(t0))
-    env = dict(os.environ, HOODIE_RUN_TOKEN=run_token, **(extra_env or {}))   # coverage stamp + optional overlays
+    # PYTHONUNBUFFERED is what makes the live console actually live. The child writes to a PIPE, not a
+    # tty, so CPython block-buffers its stdout (~8KB): every plain `print()` in a scraper sits in that
+    # buffer and reaches the streamer only when the buffer fills or the process EXITS. Measured: three
+    # lines printed 0.6s apart all arrived together at exit. For a 4-hour crawl that means a console
+    # that stays empty for four hours and then dumps everything — the exact opposite of watching a run.
+    # (HOODIE_PROGRESS lines used flush=True and so leaked through, which would have made the counters
+    # look like they worked while the log stayed blank — a confusing half-broken state.)
+    env = dict(os.environ, HOODIE_RUN_TOKEN=run_token, PYTHONUNBUFFERED="1",
+               **(extra_env or {}))                                          # coverage stamp + overlays
     try:
         r = _exec(code, timeout_s, env, on_line=on_line)
         if r.returncode != 0:

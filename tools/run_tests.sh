@@ -30,6 +30,7 @@ TESTS=(
   dispatch_guard_test          # /api/run must dispatch through source_registry, never a drifted copy
   abc_fws_test                 # ABC: batch landing, resume, partial-vs-drift completeness
   selfheal_classes_test        # failure classes keep their point of view (structural, not prose-matched)
+  run_stream_test              # the live console must actually stream, not dump at exit
   sipsource_test
   cost_ledger_test
   obs_quality_test
