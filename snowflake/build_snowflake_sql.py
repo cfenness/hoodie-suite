@@ -115,6 +115,13 @@ def raw_catalog():
         note = PRIORITY.get(t) or e["note"] or ""
         rows.append((t, note, sorted(set(e["srcs"])), t in PRIORITY))
     rows.sort(key=lambda r: (not r[3], r[0]))     # priority first, then alphabetical
+    # SCOPE. SNOWFLAKE_ONLY restricts the whole build to a comma list of tables — the generator is the
+    # right place for it, because 03's CREATE runs INFER_SCHEMA against the staged file: emitting DDL
+    # for a table nobody uploaded fails the run. Scoping the upload alone would produce exactly that.
+    # A scoped build is a deliberate slice (prove the path, or land one source fast), never the default.
+    only = _scope()
+    if only:
+        rows = [r for r in rows if r[0] in only]
     return rows
 
 
@@ -420,11 +427,26 @@ CREATE SCHEMA IF NOT EXISTS {db}.{mart}
 
 
 def emit_stage():
-    return _BANNER + """--
--- 02_stage.sql — the Parquet file format + the external stage → Tigris (S3-compatible).
---
--- The ${{...}} tokens are placeholders — substitute them before running (see 00_config: `envsubst`
--- or edit inline). Snowflake DDL can't take session vars here, so these must become real literals.
+    """The Parquet file format + the stage the COPYs read from.
+
+    TWO MODES, one stage NAME — so every INFER_SCHEMA/COPY in 03/04 references @WH/<path> and does not
+    care which is in play:
+
+      internal (DEFAULT) — a Snowflake-managed internal stage. run_load.py downloads each Parquet from
+        Tigris and PUTs it to the SAME @WH/<path>. Slower (bytes transit the loader) but it works on
+        ANY account with no vendor involvement.
+      external — the zero-copy s3compat:// stage pointing straight at Tigris. Strictly better when it
+        is available, but Snowflake does NOT enable arbitrary S3-compatible endpoints: per their docs
+        only `r2.cloudflarestorage.com` is on by default and everything else must be allowlisted by
+        Snowflake Support. `fly.storage.tigris.dev` is not, which fails at CREATE STAGE with
+        "Endpoint fly.storage.tigris.dev not allowed" — hence internal being the default.
+
+    Flip with SNOWFLAKE_STAGE_MODE=external once Support has allowlisted the endpoint; nothing else
+    in the build changes.
+    """
+    mode = os.environ.get("SNOWFLAKE_STAGE_MODE", "internal").strip().lower()
+    head = _BANNER + """--
+-- 02_stage.sql — the Parquet file format + the stage the COPY statements read from.
 USE SCHEMA {db}.{raw};
 
 CREATE FILE FORMAT IF NOT EXISTS {fmt}
@@ -433,21 +455,32 @@ CREATE FILE FORMAT IF NOT EXISTS {fmt}
   BINARY_AS_TEXT = FALSE          -- keep parquet BYTE_ARRAY strings as text, don't hex them
   TRIM_SPACE = FALSE
   COMMENT = 'Parquet as written by unifyd/warehouse.py (zstd/snappy, DuckDB/pyarrow).';
+""".format(db=DB, raw=SCHEMA_RAW, fmt=FMT)
 
--- S3-compatible external stage. s3compat:// + ENDPOINT is Snowflake's supported path for non-AWS S3
--- stores like Tigris. Credentials are the Tigris (AWS_*) key pair the engine uses (unifyd/warehouse.py).
--- Defaults: TIGRIS_PREFIX=warehouse, TIGRIS_ENDPOINT=fly.storage.tigris.dev.
+    if mode == "external":
+        return head + """
+-- EXTERNAL: zero-copy, Snowflake reads Tigris directly. Requires the endpoint to be allowlisted by
+-- Snowflake Support (only r2.cloudflarestorage.com is enabled by default).
 CREATE OR REPLACE STAGE {stage}
   URL = 's3compat://${{TIGRIS_BUCKET}}/${{TIGRIS_PREFIX}}/'
   ENDPOINT = '${{TIGRIS_ENDPOINT}}'
   CREDENTIALS = ( AWS_KEY_ID = '${{TIGRIS_KEY_ID}}'  AWS_SECRET_KEY = '${{TIGRIS_SECRET}}' )
   FILE_FORMAT = {fmt}
-  COMMENT = 'Hoodie warehouse Parquet (warehouse/ prefix in the Tigris bucket).';
+  COMMENT = 'Hoodie warehouse Parquet, read in place from Tigris.';
 
 -- Smoke: list a couple of the named "full" sources so a bad cred/endpoint fails HERE, loudly.
 LIST @{stage}/total_wine_products.parquet;
 LIST @{stage}/ab_outlets.parquet;
-""".format(db=DB, raw=SCHEMA_RAW, fmt=FMT, stage=STAGE)
+""".format(fmt=FMT, stage=STAGE)
+
+    return head + """
+-- INTERNAL: Snowflake-managed. run_load.py PUTs each Parquet to @{stage}/<same path the COPYs use>,
+-- so 03/04 are byte-identical between the two modes. NOT `CREATE OR REPLACE` — replacing an internal
+-- stage DROPS every file already staged in it, which would silently discard prior uploads on a rerun.
+CREATE STAGE IF NOT EXISTS {stage}
+  FILE_FORMAT = {fmt}
+  COMMENT = 'Hoodie warehouse Parquet, uploaded by run_load.py (internal stage).';
+""".format(fmt=FMT, stage=STAGE)
 
 
 def _raw_block(table, note, srcs, priority, files=None, rows=None):
@@ -520,7 +553,11 @@ USE SCHEMA {db}.{raw};
 
     # time-series prefix loads first (special: whole partition set → one table, clustered by date)
     parts.append("\n-- ── time-series fact partitions (load the whole prefix; union_by_name) ──")
-    for t, note in TIMESERIES.items():
+    # TIMESERIES is a separate dict from raw_catalog(), so the SNOWFLAKE_ONLY filter applied there
+    # does NOT reach it — a scoped build would silently emit DDL for a table the upload skipped, and
+    # its INFER_SCHEMA would fail against an unstaged path. Apply the same scope here.
+    _only = _scope()
+    for t, note in ((k, v) for k, v in TIMESERIES.items() if not _only or k in _only):
         fqtn = _fqtn(SCHEMA_RAW, t)
         rows = (layout.get(t, {}) or {}).get("rows") if layout else None
         hdr = "\n-- %s\n--   %s\n" % (t, note)
@@ -671,10 +708,21 @@ ORDER BY outlets DESC;
 """.format(db=DB, master=SCHEMA_MASTER, mart=SCHEMA_MART)
 
 
+def _scope():
+    """The SNOWFLAKE_ONLY table allowlist as a set, or None for the full build."""
+    v = (os.environ.get("SNOWFLAKE_ONLY") or "").strip()
+    return {t.strip() for t in v.split(",") if t.strip()} or None if v else None
+
+
 def emit_validate():
+    # Only assert on what THIS build loaded. A scoped run asserting a table it deliberately skipped
+    # would fail on a table that does not exist — turning an honest partial slice into a false alarm.
+    only = _scope()
+    checked = [t for t in PRIORITY if not only or t in only]
     priority_checks = "\nUNION ALL\n".join(
         "SELECT '%s' AS table_name, COUNT(*) AS n_rows, IFF(COUNT(*) > 0, 'OK', 'EMPTY — investigate') AS status "
-        "FROM %s" % (t, _fqtn(SCHEMA_RAW, t)) for t in PRIORITY)
+        "FROM %s" % (t, _fqtn(SCHEMA_RAW, t)) for t in checked) or (
+        "SELECT 'no priority source in this scope' AS table_name, 0 AS n_rows, 'SKIPPED' AS status")
     return _BANNER + """--
 -- 06_validate.sql — post-load assertions. The named "full" sources MUST be non-empty; the star must
 -- have landed; the joins must resolve. Run after 03/04. Eyeball the STATUS column.
@@ -761,7 +809,8 @@ def main():
     if snapshot is not None:                          # stash the plan for --commit-state (post-load)
         with open(_PENDING, "w") as f:
             json.dump(snapshot, f)
-    n_raw = len(raw_catalog()) + len(TIMESERIES)
+    _o = _scope()
+    n_raw = len(raw_catalog()) + len([k for k in TIMESERIES if not _o or k in _o])
     if dirty is not None:
         n_dirty = sum(1 for v in dirty.values() if v)
         print("\nchange-aware: %d of %d present tables changed since the last load → refresh; rest skipped"
