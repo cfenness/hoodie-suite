@@ -4261,15 +4261,32 @@ def registry_sources_ep():
                 ("perimeterx", "imperva", "incapsula", "datadome", "cloudflare", "waf", "akamai", "forter")):
             return "anti-bot"
         return "free-api-key" if s["klass"] == "creds" else "free"
+    # Which declared tables have MORE THAN ONE declared writer. A row-count delta on a shared table is not
+    # attributable to any single source, so Hoodie Collect has to say so rather than show the number as if
+    # it were this source's work. (Note this only catches REGISTRY-declared sharing; a table written through
+    # a helper — observe.record → retail_observations, ~28 callers — is shared far more widely than the
+    # registry admits, which is itself a finding the bench surfaces.)
+    _owners = {}
+    for s in reg.SOURCES:
+        for t in s.get("tables") or []:
+            _owners.setdefault(t, []).append(s["id"])
+
+    # COVERAGE IS OPT-IN (?coverage=1). cov.assess() reads the coverage_log from object storage PER SOURCE;
+    # across 62 sources that measured >400s, which made this endpoint unusable as a page load. The workbench
+    # loads the list without it and fetches coverage for the ONE source you select (/api/collect/coverage).
+    want_cov = request.args.get("coverage") == "1"
     out = []
     for s in reg.SOURCES:
         try:
-            cv = cov.assess(s) if cov else None
+            cv = cov.assess(s) if (cov and want_cov) else None
         except Exception:
             cv = None
         out.append({"id": s["id"], "label": s["label"], "klass": s["klass"], "cadence": s.get("cadence"),
                     "enabled": bool(s.get("enabled")), "tables": s.get("tables"),
                     "cost_class": _cost_class(s),
+                    "interval_h": s.get("interval_h"),
+                    "window": s.get("window"),          # time-bound run controls (None = not time-bound)
+                    "shared_tables": [t for t in (s.get("tables") or []) if len(_owners.get(t, [])) > 1],
                     "requires": s.get("requires") or [],
                     "missing_creds": [e for e in (s.get("requires") or []) if not os.environ.get(e)],
                     "coverage": cv})
@@ -4345,6 +4362,171 @@ def registry_run_ep():
         _REG_JOBS.pop(old, None)                              # keep the last ~50 jobs
     threading.Thread(target=_reg_run_job, args=(jid, ids), daemon=True).start()
     return jsonify(ok=True, jobId=jid, running=ids), 202
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Hoodie Collect — the scrape workbench.
+#
+# One surface to inspect and drive every source. Runs go to an EPHEMERAL Fly machine (the same path the
+# hourly dispatcher uses — isolation, right-sized memory, headful-capable, never on the serving box) and
+# stream their console + counts back through a run JOURNAL in the shared bucket, so a run is watchable
+# while it executes on a machine the app has no other channel to.
+#
+# Deliberately NOT a second execution path: this spawns exactly what dispatch_ephemeral spawns. The bench
+# and the scheduler run sources identically; only the trigger differs.
+# ─────────────────────────────────────────────────────────────────────────────
+@app.post("/api/collect/run")
+def collect_run_ep():
+    """Start ONE source on its own ephemeral machine. Body: {id, days?, all?, trigger?}.
+    Returns {run_id} immediately — poll /api/collect/run?id=<run_id> for live status/console."""
+    import source_registry as reg
+    import dispatch_ephemeral as disp
+    import run_journal
+    body = request.get_json(silent=True) or {}
+    sid = (body.get("id") or "").strip()
+    src = reg.by_id(sid) or next((b for b in getattr(reg, "BUILDS", []) if b["id"] == sid), None)
+    if not src:
+        return jsonify(ok=False, error="unknown source %r" % sid), 404
+
+    # Refuse a window this source can't honour, rather than accepting and dropping it — a run labelled
+    # "all history" that silently ran the 14-day default is worse than a rejected request.
+    days, want_all = body.get("days"), bool(body.get("all"))
+    if (days is not None or want_all) and not src.get("window"):
+        return jsonify(ok=False, error="%s declares no `window` in source_registry — it is not time-bound, "
+                                       "so --days/--all would be silently ignored" % sid), 400
+
+    if not os.environ.get("FLY_API_TOKEN"):
+        return jsonify(ok=False, error="FLY_API_TOKEN is not set on this host, so no ephemeral machine can "
+                                       "be spawned. Runs are NOT silently redirected to this process."), 503
+    try:
+        image = disp.current_image()
+    except Exception as e:
+        return jsonify(ok=False, error="could not resolve the app image: %s" % str(e)[:180]), 502
+    if not image:
+        return jsonify(ok=False, error="could not resolve the app image via the Machines API"), 502
+
+    run_id = run_journal.new_id(sid)
+    mid = disp.spawn(sid, image, src.get("klass"), src.get("mem"), run_id=run_id,
+                     days=days, want_all=want_all, trigger=body.get("trigger") or "manual")
+    if not mid:
+        return jsonify(ok=False, error="Fly refused to create the machine (see server log)"), 502
+    # Seed the journal from HERE so the bench has something to show immediately — a machine takes seconds
+    # to boot, and an empty poll response is indistinguishable from a failed launch.
+    try:
+        run_journal.open_run(run_id, sid, label=src.get("label"), klass=src.get("klass"),
+                             params={"days": days, "all": want_all}, tables=src.get("tables"),
+                             trigger=body.get("trigger") or "manual")
+        run_journal.note(run_id, status="queued", stage="ephemeral machine %s booting" % mid,
+                         machine_id=mid)
+    except Exception:
+        pass
+    return jsonify(ok=True, run_id=run_id, machine_id=mid, source=sid,
+                   params={"days": days, "all": want_all}), 202
+
+
+@app.get("/api/collect/run")
+def collect_run_status_ep():
+    """The live journal for one run: status, stage, streamed console tail, rows seen vs rows landed."""
+    import run_journal
+    rid = (request.args.get("id") or "").strip()
+    if not rid:
+        return jsonify(ok=False, error="id required"), 400
+    doc = run_journal.read(rid)
+    if not doc:
+        return jsonify(ok=False, error="no journal for %r (the machine may not have booted yet)" % rid), 404
+    return jsonify(ok=True, run=doc)
+
+
+_COLLECT_LEDGER = {"at": 0, "data": None, "building": False}
+_COLLECT_LEDGER_TTL = int(os.environ.get("COLLECT_LEDGER_TTL", "120"))
+
+
+def _collect_ledger_build():
+    """Last run + recent history per source, from the SHARED ledger — not from this process's in-memory
+    RUNS list (which /api/runs serves and which is empty on a freshly-booted machine, making every source
+    read 'never run' when the ledger in fact has years of history)."""
+    import warehouse
+    hist, last = {}, {}
+    sql = ("SELECT source, status, ts_start, ts_end, rows_before, rows_after, delta, error, tables, host "
+           "FROM t ORDER BY ts_start DESC")
+    for fn, nm in ((warehouse.query_parts, "source_runs_log"), (warehouse.query, "source_runs")):
+        try:
+            for r in fn(nm, sql):
+                sid = r.get("source")
+                if not sid:
+                    continue
+                h = hist.setdefault(sid, [])
+                if len(h) < 15:
+                    r["ledger"] = nm
+                    h.append(r)
+                if not last.get(sid) or (r.get("ts_start") or 0) > (last[sid].get("ts_start") or 0):
+                    last[sid] = dict(r, ledger=nm)
+        except Exception:
+            pass
+    # zero-delta streak: how many consecutive most-recent runs landed nothing. One 'empty' is a bad day;
+    # nine in a row (kroger) is a source that has never worked, and the bench must be able to tell them apart.
+    streak = {}
+    for sid, rows in hist.items():
+        n = 0
+        for r in rows:
+            if (r.get("delta") or 0) != 0:
+                break
+            n += 1
+        streak[sid] = n
+    return {"last": last, "history": hist, "zero_streak": streak, "at": int(time.time())}
+
+
+def _collect_ledger(force=False):
+    now = time.time()
+    if not force and _COLLECT_LEDGER["data"] is not None and (now - _COLLECT_LEDGER["at"]) < _COLLECT_LEDGER_TTL:
+        return _COLLECT_LEDGER["data"]
+    if _COLLECT_LEDGER["building"] and _COLLECT_LEDGER["data"] is not None:
+        return _COLLECT_LEDGER["data"]                 # serve stale rather than stampede object storage
+    _COLLECT_LEDGER["building"] = True
+    try:
+        d = _collect_ledger_build()
+        _COLLECT_LEDGER.update(at=now, data=d)
+        return d
+    finally:
+        _COLLECT_LEDGER["building"] = False
+
+
+@app.get("/api/collect/status")
+def collect_status_ep():
+    """Last run + recent history + zero-delta streak per source, from the shared ledger. Cached."""
+    d = _collect_ledger(force=request.args.get("fresh") == "1")
+    sid = (request.args.get("id") or "").strip()
+    if sid:
+        return jsonify(ok=True, id=sid, last=d["last"].get(sid), history=d["history"].get(sid, []),
+                       zero_streak=d["zero_streak"].get(sid, 0), as_of=d["at"])
+    return jsonify(ok=True, last=d["last"], zero_streak=d["zero_streak"], as_of=d["at"],
+                   age_s=round(time.time() - d["at"]))
+
+
+@app.get("/api/collect/coverage")
+def collect_coverage_ep():
+    """Expected-vs-landed for ONE source, on demand. Split out of /api/registry/sources because assessing
+    all 62 takes minutes — the bench pays this cost only for the source you actually opened."""
+    import source_registry as reg
+    import coverage as cov
+    sid = (request.args.get("id") or "").strip()
+    src = reg.by_id(sid)
+    if not src:
+        return jsonify(ok=False, error="unknown source %r" % sid), 404
+    try:
+        return jsonify(ok=True, id=sid, coverage=cov.assess(src))
+    except Exception as e:
+        return jsonify(ok=False, id=sid, error=str(e)[:200]), 200
+
+
+@app.get("/api/collect/runs")
+def collect_runs_ep():
+    """Recent run journals — bench-triggered AND dispatcher-scheduled, since both write journals."""
+    import run_journal
+    return jsonify(ok=True, runs=run_journal.recent(
+        limit=min(int(request.args.get("limit", 25) or 25), 60),
+        source=(request.args.get("source") or "").strip() or None,
+        active_only=request.args.get("active") == "1"))
 
 
 @app.get("/api/registry/run/progress")

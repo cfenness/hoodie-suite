@@ -391,6 +391,7 @@
     {id:'order-hub',name:'Order Hub',desc:"Ingest a pile of inbound supplier menus (any CSV/XLSX format) → one order page → refill each original file with the order & stage to send.",group:'Commercial',status:'beta',file:'apps/order-hub.html',mark:'OH'},
     {id:'presenter',name:'Presenter',desc:"Speaker's workbench · run a demo",group:'Presentation',status:'beta',file:'apps/presenter.html',mark:'PR'},
     {id:'velocity',name:'Velocity',desc:"Implied sell-through from per-store inventory deltas — distribution voids to close now, brand movers, every number with its confidence. The signal SipSource can't produce.",group:'Signal Stack',status:'beta',file:'apps/velocity.html',mark:'VL'},
+    {id:'collect',name:'Hoodie Collect',desc:"The scrape workbench — inspect every source, run it on demand (last 7 days, a custom window, or all history), and watch the live console, record counts and percent-collected as it lands.",group:'Collect',status:'beta',file:'apps/collect.html',mark:'HC'},
     {id:'data-console',name:'Data Console',desc:"Inspect everything we pull — every source, account & master dim with real counts, freshness & health, live from the warehouse.",group:'Data Operations',status:'beta',file:'apps/data-console.html',mark:'DC'},
     {id:'sources',name:'Sources',desc:"Discover & add new sources — Claude turns a URL into data + a reusable scrape recipe. Catalog = the sources you've added in Pulls.",group:'Data Operations',status:'beta',file:'apps/sources.html',mark:'SR'},
     {id:'estate3d',name:'Estate',desc:"The data estate as a 3D object — spin, fly, focus a node.",group:'Platform',status:'beta',file:'apps/estate-3d.html',mark:'3D'},
@@ -411,7 +412,7 @@
     {id:'admin',name:'Admin Console',desc:'Usage reporting · app registry & flags · access · data-ops',group:'Internal',status:'internal',file:'apps/admin.html',mark:'AD',adminOnly:true},
     {id:'spinedemo',name:'Spine Adapter',desc:'Reference · how apps join the spine',group:'Platform',status:'internal',file:'apps/spine-adapter.html',mark:'SP'}
   ];
-  const GROUPS=['Signal Stack','Commercial','Presentation','Data Operations','Internal','Platform','Learning'];
+  const GROUPS=['Signal Stack','Commercial','Presentation','Collect','Data Operations','Internal','Platform','Learning'];
   const byId=Object.fromEntries(APPS.map(a=>[a.id,a]));
 
   /* per-app glyphs — monoline, inherit icon color via currentColor */

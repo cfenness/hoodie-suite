@@ -1,0 +1,485 @@
+<script src="../spine/session-guard.js"></script>
+<style>
+  :root{
+    --bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;
+    --accent:#4E79A7;--good:#5bb86e;--warn:#d99a3f;--bad:#e5636b;--derived:#6f7d90;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--sans:Inter,system-ui,-apple-system,sans-serif;
+  }
+  @media (prefers-color-scheme:light){:root{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}}
+  :root[data-theme="light"]{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}
+  :root[data-theme="dark"]{--bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  .bar{display:flex;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--panel);flex:0 0 auto;flex-wrap:wrap}
+  h1{font-size:15px;margin:0;font-weight:650;letter-spacing:.2px;display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--good);animation:pulse 2.4s infinite}
+  .dot.off{background:var(--bad);animation:none}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(91,184,110,.5)}70%{box-shadow:0 0 0 6px rgba(91,184,110,0)}100%{box-shadow:0 0 0 0 rgba(91,184,110,0)}}
+  .spacer{flex:1}
+  button,select,input{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-family:var(--sans);font-size:13px}
+  button{cursor:pointer}button:hover:not(:disabled){border-color:var(--accent)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  button.danger{border-color:var(--bad);color:var(--bad)}
+  .wh{font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:6px;display:flex;align-items:center;gap:6px;font-weight:600}
+  .wh.prod{background:rgba(91,184,110,.14);color:var(--good);border:1px solid rgba(91,184,110,.4)}
+  .wh.local{background:rgba(229,99,107,.14);color:var(--bad);border:1px solid rgba(229,99,107,.5)}
+  .asof{font-family:var(--mono);font-size:11px;color:var(--mut)}
+
+  /* ── two-pane shell ─────────────────────────────────────────────────────── */
+  .wrap{flex:1;display:flex;min-height:0}
+  .side{width:330px;flex:0 0 auto;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+  .sfilter{padding:9px 11px;border-bottom:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap}
+  .sfilter input{flex:1;min-width:120px;font-size:12.5px}
+  .slist{overflow:auto;flex:1}
+  .srow{padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;align-items:center;gap:9px}
+  .srow:hover{background:color-mix(in srgb,var(--accent) 9%,var(--panel))}
+  .srow.on{background:color-mix(in srgb,var(--accent) 16%,var(--panel));box-shadow:inset 3px 0 0 var(--accent)}
+  .srow .nm{flex:1;min-width:0}
+  .srow .nm b{display:block;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .srow .nm span{font-family:var(--mono);font-size:10.5px;color:var(--mut)}
+  .sq{width:9px;height:9px;border-radius:2px;flex:0 0 auto}
+  .grphead{padding:6px 12px;background:var(--panel2);font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--mut);font-weight:700;position:sticky;top:0;z-index:2}
+
+  .main{flex:1;overflow:auto;min-width:0;padding:16px 20px}
+  .sec{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--ink);margin:20px 0 9px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .sec::before{content:"";width:3px;height:12px;border-radius:2px;background:var(--accent)}
+  .sec:first-child{margin-top:0}
+
+  .stat-pill{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+  table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px}
+  thead th{background:var(--panel2);color:var(--mut);text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap;font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px}
+  thead th.num,tbody td.num{text-align:right}
+  tbody td{padding:6px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;vertical-align:top}
+  tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--panel2) 45%,transparent)}
+  .dpos{color:var(--good)}.dneg{color:var(--bad)}.dzero{color:var(--mut)}
+  .mut{color:var(--mut)}
+  .mono{font-family:var(--mono)}
+
+  /* claimed-vs-observed: disagreement is the finding, so it gets its own colour */
+  .disagree{background:color-mix(in srgb,var(--bad) 13%,transparent)!important}
+  .disagree td:first-child::before{content:"\26A0\FE0E";color:var(--bad);margin-right:6px}
+
+  /* completeness meter */
+  .meter{height:9px;border-radius:5px;background:var(--panel2);overflow:hidden;border:1px solid var(--line);min-width:120px}
+  .meter i{display:block;height:100%;background:var(--good)}
+  .meter i.partial{background:var(--warn)}
+  .meter i.bad{background:var(--bad)}
+  .cov{display:flex;gap:20px;flex-wrap:wrap}
+  .cov .c{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 15px;min-width:210px}
+  .cov .c b{font-family:var(--mono);font-size:22px;font-variant-numeric:tabular-nums;display:block;line-height:1.1}
+  .cov .c span{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);font-weight:600}
+  .cov .c small{display:block;font-family:var(--mono);font-size:11px;color:var(--mut);margin-top:5px}
+
+  /* run controls */
+  .runbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 14px}
+  .winbox{display:flex;gap:6px;align-items:center;padding-left:12px;border-left:1px solid var(--line)}
+  .winbox input{width:74px;font-family:var(--mono)}
+  .warnbox{background:color-mix(in srgb,var(--warn) 14%,transparent);border:1px solid var(--warn);color:var(--ink);border-radius:9px;padding:9px 12px;font-size:12.5px;margin-top:9px}
+
+  /* console */
+  .console{background:#0a0d11;color:#cfe3f5;font-family:var(--mono);font-size:11.5px;line-height:1.5;border:1px solid var(--line);
+           border-radius:10px;padding:11px 13px;height:340px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+  :root[data-theme="light"] .console{background:#11161c;color:#cfe3f5}
+  .console .err{color:#ff9aa2}
+  .console .ok{color:#8fe0a0}
+  .console .warnl{color:#f0c274}
+  .runhead{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+  .runhead .k{font-family:var(--mono);font-size:11.5px;color:var(--mut)}
+  .runhead .k b{color:var(--ink)}
+  .msg{padding:44px;color:var(--mut);text-align:center}
+  .note{font-size:12px;color:var(--mut);margin:6px 0 0;line-height:1.5}
+  .tag{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid var(--line);color:var(--mut)}
+</style>
+
+<div class="bar" id="chrome">
+  <h1><span class="dot" id="dot"></span> Hoodie Collect</h1>
+  <span class="wh" id="wh">…</span>
+  <span class="spacer"></span>
+  <span class="asof" id="asof"></span>
+  <button onclick="loadAll(true)">Refresh</button>
+</div>
+
+<div class="wrap">
+  <div class="side">
+    <div class="sfilter">
+      <input id="q" placeholder="filter sources…" oninput="renderList()">
+      <select id="fstatus" onchange="renderList()">
+        <option value="">all states</option>
+        <option value="bad">needs attention</option>
+        <option value="ok">healthy</option>
+        <option value="off">disabled</option>
+      </select>
+    </div>
+    <div class="slist" id="slist"><div class="msg">loading…</div></div>
+  </div>
+  <div class="main" id="main"><div class="msg">Select a source.</div></div>
+</div>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────────────
+   Hoodie Collect — the scrape workbench.
+
+   ONE rule governs this page: nothing here renders a CLAIM as a FACT. The registry
+   declares what a source writes, how often, and how big its universe is; the
+   warehouse and the run ledger say what actually happened. Where those disagree,
+   the disagreement is the finding and gets rendered as such — it is never smoothed
+   over into a single reassuring number. (Kroger reported "fine" for 9 consecutive
+   runs that landed zero rows into a table that does not exist.)
+   ───────────────────────────────────────────────────────────────────────────── */
+const EMBED = new URLSearchParams(location.search).get('embed') === '1';
+if (EMBED) document.getElementById('chrome').style.display = 'none';
+
+let SRC = [];            // registry-declared sources (+ coverage) from /api/registry/sources
+let TABLES = {};         // observed table -> rows, from /api/monitor
+let LAST = {};           // source id -> its most recent ledger run
+let STREAK = {};         // source id -> consecutive most-recent runs that landed nothing
+let HIST = {};           // source id -> recent ledger history (loaded on select)
+let SEL = null;          // selected source id
+let POLL = null;         // journal poll timer
+let ACTIVE_RUN = null;   // run_id currently being watched
+
+const fmt = n => (n === null || n === undefined) ? '—' : Number(n).toLocaleString();
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function ago(ts){
+  if (!ts) return 'never';
+  const s = Date.now()/1000 - ts;
+  if (s < 90) return Math.round(s)+'s ago';
+  if (s < 5400) return Math.round(s/60)+'m ago';
+  if (s < 172800) return (s/3600).toFixed(1)+'h ago';
+  return (s/86400).toFixed(1)+'d ago';
+}
+
+async function jget(u){ const r = await fetch(u); if(!r.ok) throw new Error(u+' → '+r.status); return r.json(); }
+
+/* ── the verdict ─────────────────────────────────────────────────────────────
+   Derived HERE from observed data, deliberately NOT taken from the ledger's own
+   status string. `empty` in the ledger means "ran, landed nothing" and reads as
+   benign; if the target table also doesn't exist and the streak is long, that is
+   a source that has NEVER worked and it must say so. */
+function verdict(s){
+  const tabs = (s.tables || []).map(t => ({ name: t, rows: TABLES[t] }));
+  const known = tabs.filter(t => t.rows !== undefined);
+  const anyMissing = tabs.some(t => TABLES[t.name] === undefined);
+  const total = known.reduce((a,t) => a + (t.rows || 0), 0);
+  const last = LAST[s.id];
+
+  if (!s.enabled)                       return {k:'off',   c:'var(--derived)', t:'disabled'};
+  if ((s.missing_creds||[]).length)     return {k:'nocreds',c:'var(--derived)',t:'no creds'};
+  if (!last)                            return {k:'unknown',c:'var(--mut)',   t:'never run'};
+  if (last.status === 'failed')         return {k:'fail',  c:'var(--bad)',    t:'failed'};
+  if (last.status === 'timeout')        return {k:'fail',  c:'var(--bad)',    t:'timeout'};
+  // the kroger shape: nothing landed AND there is nothing there to have landed into. The ledger calls
+  // this `empty` with no error text, which reads as benign; with a long zero streak it is a source that
+  // has never once worked, and that distinction is the whole point of this page.
+  const streak = STREAK[s.id] || 0;
+  if (total === 0 && (anyMissing || known.length))
+                                        return {k:'never', c:'var(--bad)',
+                                                t: streak > 1 ? `never landed ×${streak}` : 'never landed'};
+  // The ledger says nothing landed while the warehouse says the table is full — that is a broken counter,
+  // not a stalled source, and calling it "stalled" would be inventing a diagnosis from a bad instrument.
+  if (Number(last.rows_after) === 0 && total > 0)
+                                        return {k:'unmeas', c:'var(--warn)',  t:'unmeasured'};
+  if (streak >= 3)                      return {k:'stalled',c:'var(--warn)',  t:`no new rows ×${streak}`};
+  if (last.status === 'degraded')       return {k:'degr',  c:'var(--warn)',   t:'degraded'};
+  const cov = s.coverage || {};
+  if (cov.items?.verdict === 'partial' || cov.stores?.verdict === 'partial')
+                                        return {k:'partial',c:'var(--warn)',  t:'partial'};
+  const iv = s.interval_h || (s.cadence === 'weekly' ? 168 : 24);
+  if (last.ts_start && (Date.now()/1000 - last.ts_start) > iv*3600*1.5)
+                                        return {k:'stale', c:'var(--warn)',   t:'overdue'};
+  return {k:'ok', c:'var(--good)', t:'healthy'};
+}
+
+/* ── is this source's landing verification even working? ─────────────────────
+   run_sources verifies a run landed by diffing warehouse.row_count_strict() before and after. That
+   counter reads a single-file Parquet footer and returns 0 for a PARTITIONED table — retail_observations
+   holds 15.1M rows and counts as 0. A source writing a partitioned table therefore records
+   before=0/after=0/delta=0 on every run forever, which forces its status to `empty` no matter how much
+   it really landed. The bench reads partition-aware counts, so it can see the contradiction the ledger
+   cannot: ledger says the table is empty, the warehouse says it isn't. That contradiction IS the bug. */
+function brokenVerify(s, last){
+  if (!last) return '';
+  const observed = (s.tables || []).map(t => TABLES[t]).filter(n => typeof n === 'number');
+  const obsTotal = observed.reduce((a,b) => a + b, 0);
+  if (!(Number(last.rows_after) === 0 && obsTotal > 0)) return '';
+  return `<div class="warnbox" style="border-color:var(--bad);background:color-mix(in srgb,var(--bad) 13%,transparent)">
+    <b>Landing verification is not working for this source.</b>
+    The last run recorded <span class="mono">rows_after = 0</span>, but the warehouse holds
+    <span class="mono">${fmt(obsTotal)}</span> rows across ${esc((s.tables||[]).join(', '))}.
+    The verifier counts a single-file Parquet footer and reads a <b>partitioned</b> table as 0, so this
+    source's <span class="mono">delta</span> is always 0 and its status is forced to
+    <span class="mono">empty</span> regardless of what it actually landed.
+    Treat its run history as <b>unmeasured</b>, not as evidence of failure.</div>`;
+}
+
+/* ── left rail ───────────────────────────────────────────────────────────── */
+function renderList(){
+  const q = (document.getElementById('q').value || '').toLowerCase();
+  const f = document.getElementById('fstatus').value;
+  const rows = SRC.filter(s => {
+    if (q && !(s.id+' '+(s.label||'')).toLowerCase().includes(q)) return false;
+    const v = verdict(s);
+    if (f === 'bad') return ['fail','never','unmeas','stalled','degr','partial','stale'].includes(v.k);
+    if (f === 'ok')  return v.k === 'ok';
+    if (f === 'off') return ['off','nocreds'].includes(v.k);
+    return true;
+  });
+  // needs-attention first — the bench should open on what's broken, not alphabetically
+  const rank = {fail:0, never:1, unmeas:2, stalled:3, degr:4, partial:5, stale:6, unknown:7, ok:8, nocreds:9, off:10};
+  rows.sort((a,b) => (rank[verdict(a).k] - rank[verdict(b).k]) || a.id.localeCompare(b.id));
+  const el = document.getElementById('slist');
+  if (!rows.length){ el.innerHTML = '<div class="msg">no sources match</div>'; return; }
+  el.innerHTML = rows.map(s => {
+    const v = verdict(s);
+    const last = LAST[s.id];
+    return `<div class="srow ${s.id===SEL?'on':''}" onclick="select('${esc(s.id)}')">
+      <span class="sq" style="background:${v.c}"></span>
+      <span class="nm"><b>${esc(s.label || s.id)}</b><span>${esc(v.t)} · ${ago(last?.ts_start)}</span></span>
+    </div>`;
+  }).join('');
+}
+
+/* Coverage is fetched PER SOURCE, on selection — assessing all 62 up front measured >400s, which is
+   what made the old registry endpoint unusable as a page load. COV caches per id for the session. */
+const COV = {};
+async function select(id){
+  SEL = id;
+  stopPoll();
+  // Mark BOTH as pending before the first paint. Otherwise the initial render sees "not fetched yet" and
+  // shows "no coverage assessment for this source" — asserting an absence that is really a pending request.
+  // Saying "none" while you are still looking is the same failure mode this whole page exists to prevent.
+  const needCov = !(id in COV), needHist = !(id in HIST);
+  if (needCov) COV[id] = null;
+  renderList();
+  renderDetail();
+  await Promise.all([
+    needHist && jget('/api/collect/status?id=' + encodeURIComponent(id))
+      .then(d => { HIST[id] = d.history || []; })
+      .catch(() => { HIST[id] = []; })
+      .then(() => { if (SEL === id) renderDetail(); }),
+    needCov && jget('/api/collect/coverage?id=' + encodeURIComponent(id))
+      .then(d => { COV[id] = d.ok ? d.coverage : {error: d.error}; })
+      .catch(e => { COV[id] = {error: e.message}; })
+      .then(() => { if (SEL === id) renderDetail(); }),
+  ].filter(Boolean));
+}
+
+/* ── detail ──────────────────────────────────────────────────────────────── */
+function renderDetail(){
+  const s = SRC.find(x => x.id === SEL);
+  const el = document.getElementById('main');
+  if (!s){ el.innerHTML = '<div class="msg">Select a source.</div>'; return; }
+  const v = verdict(s);
+  const last = LAST[s.id];
+  const win = s.window;
+
+  // claimed vs observed — the trust panel
+  const tabRows = (s.tables || []).map(t => {
+    const obs = TABLES[t];
+    const missing = obs === undefined;
+    const empty = obs === 0;
+    return `<tr class="${missing||empty?'disagree':''}">
+      <td>${esc(t)}</td>
+      <td class="num">${missing ? '<span class="dneg">does not exist</span>' : fmt(obs)}</td>
+      <td>${missing ? '<span class="dneg">registry claims this table; the warehouse has no such object</span>'
+                    : empty ? '<span class="dneg">exists but holds zero rows</span>'
+                    : '<span class="dzero">present</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  const cov = COV[s.id] || s.coverage || {};
+  const covPending = (s.id in COV) && COV[s.id] === null;
+  const covCard = (label, d) => {
+    if (!d || d.verdict === 'n/a') return '';
+    if (!d.expected) return `<div class="c"><span>${label}</span><b>${fmt(d.landed)}</b>
+      <small>no declared universe — percent collected is UNKNOWN, not 100%</small></div>`;
+    const pct = d.pct ?? 0;
+    const cls = pct >= 80 ? '' : (pct >= 40 ? 'partial' : 'bad');
+    return `<div class="c"><span>${label}</span><b>${pct}%</b>
+      <div class="meter"><i class="${cls}" style="width:${Math.min(100,pct)}%"></i></div>
+      <small>${fmt(d.landed)} of ${fmt(d.expected)} · basis ${esc(cov.basis||'?')}</small></div>`;
+  };
+
+  el.innerHTML = `
+    <div class="runhead">
+      <h2 style="margin:0;font-size:16px">${esc(s.label || s.id)}</h2>
+      <span class="stat-pill" style="background:${v.c}22;color:${v.c};border:1px solid ${v.c}66">${esc(v.t)}</span>
+      <span class="tag">${esc(s.klass)}</span>
+      <span class="tag">${esc(s.cadence)}</span>
+      <span class="tag">${esc(s.cost_class||'')}</span>
+      <span class="k">last run <b>${ago(last?.ts_start)}</b></span>
+    </div>
+
+    <div class="sec">Run</div>
+    <div class="runbar">
+      <button class="primary" id="btnrun" onclick="startRun()">Run now</button>
+      ${win ? `<div class="winbox">
+          <label class="mut" style="font-size:12px">window</label>
+          <select id="winmode" onchange="onWin()">
+            <option value="default">default (${win.default} ${esc(win.unit||'days')})</option>
+            <option value="7">last 7 days</option>
+            <option value="custom">custom…</option>
+            <option value="all">all history</option>
+          </select>
+          <input id="windays" type="number" min="1" value="7" style="display:none">
+        </div>` :
+        `<span class="mut" style="font-size:12px">not time-bound — this source declares no window</span>`}
+      <span class="spacer"></span>
+      <span class="mut mono" style="font-size:11px">runs on its own ephemeral Fly machine</span>
+    </div>
+    <div id="winwarn"></div>
+    ${(s.missing_creds||[]).length ? `<div class="warnbox">Missing credentials: <b>${s.missing_creds.map(esc).join(', ')}</b> —
+       this source will report an honest <span class="mono">no-creds</span> skip rather than run and fail.</div>` : ''}
+
+    <div class="sec">Console</div>
+    <div id="runmeta" class="runhead"><span class="k mut">no run being watched — press Run now, or pick one from history</span></div>
+    <div class="console" id="console">—</div>
+
+    ${brokenVerify(s, last)}
+
+    <div class="sec">Claimed vs observed</div>
+    <table><thead><tr><th>table the registry claims</th><th class="num">rows observed</th><th>reading</th></tr></thead>
+      <tbody>${tabRows || '<tr><td colspan="3" class="mut">registry declares no tables for this source</td></tr>'}</tbody></table>
+    ${s.shared_tables?.length ? `<p class="note">⚠︎ <b>${s.shared_tables.map(esc).join(', ')}</b> is written by more than one
+      source, so this source's row delta is not attributable to it alone.</p>` : ''}
+
+    <div class="sec">Expected completeness</div>
+    <div class="cov">
+      ${covPending ? '<p class="note">assessing coverage…</p>' : ''}
+      ${covCard('items', cov.items) || ''}
+      ${covCard('stores', cov.stores) || ''}
+      ${(!covPending && !cov.items && !cov.stores)
+        ? `<p class="note">No coverage assessment for this source${cov.error ? ' — ' + esc(cov.error) : ''}.</p>` : ''}
+    </div>
+    ${cov.basis === 'high-water-mark' ? `<p class="note">Basis is <b>high-water-mark</b>, not a known universe —
+       "expected" is the most this source has ever captured, so a run that never worked reads as 0 of 0.
+       Declare <span class="mono">expected_items</span>/<span class="mono">expected_stores</span> in the registry
+       to get a real percentage.</p>` : ''}
+
+    <div class="sec">Recent runs (ledger)</div>
+    <table><thead><tr><th>when</th><th>status</th><th class="num">delta</th><th class="num">rows after</th><th>measured against</th><th>error</th></tr></thead>
+      <tbody>${(HIST[s.id]||[]).slice(0,12).map(r => `
+        <tr><td>${ago(r.ts_start)}</td>
+            <td><span class="stat-pill" style="background:${r.status==='ok'?'var(--good)':(r.status==='failed'||r.status==='empty')?'var(--bad)':'var(--warn)'}22">${esc(r.status)}</span></td>
+            <td class="num ${r.delta>0?'dpos':r.delta<0?'dneg':'dzero'}">${r.delta>0?'+':''}${fmt(r.delta)}</td>
+            <td class="num">${fmt(r.rows_after)}</td>
+            <td class="mut">${esc(r.tables||'—')}</td>
+            <td class="mut">${esc((r.error||'').slice(0,90))}</td></tr>`).join('')
+        || `<tr><td colspan="6" class="mut">${(s.id in HIST) ? 'no runs in the ledger for this source' : 'loading history…'}</td></tr>`}
+      </tbody></table>
+    <p class="note">"measured against" is the table list the run recorded at the time. A source whose
+      <span class="mono">tables</span> was edited has history measured against different objects — those deltas are
+      not comparable to today's.</p>
+  `;
+}
+
+function onWin(){
+  const m = document.getElementById('winmode').value;
+  document.getElementById('windays').style.display = m === 'custom' ? '' : 'none';
+  const s = SRC.find(x => x.id === SEL);
+  const w = document.getElementById('winwarn');
+  w.innerHTML = (m === 'all' && s?.window?.note)
+    ? `<div class="warnbox"><b>All history.</b> ${esc(s.window.note)}</div>` : '';
+}
+
+/* ── run + watch ─────────────────────────────────────────────────────────── */
+async function startRun(){
+  const s = SRC.find(x => x.id === SEL);
+  if (!s) return;
+  const btn = document.getElementById('btnrun');
+  btn.disabled = true; btn.textContent = 'starting…';
+  const body = { id: s.id, trigger: 'manual' };
+  const wm = document.getElementById('winmode');
+  if (wm){
+    if (wm.value === 'all') body.all = true;
+    else if (wm.value === '7') body.days = 7;
+    else if (wm.value === 'custom') body.days = parseInt(document.getElementById('windays').value || '7', 10);
+  }
+  try {
+    const r = await fetch('/api/collect/run', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'run refused');
+    watch(j.run_id);
+  } catch(e){
+    document.getElementById('console').innerHTML = '<span class="err">could not start run: '+esc(e.message)+'</span>';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Run now';
+  }
+}
+
+function stopPoll(){ if (POLL) { clearInterval(POLL); POLL = null; } ACTIVE_RUN = null; }
+
+function watch(runId){
+  stopPoll();
+  ACTIVE_RUN = runId;
+  const tick = async () => {
+    let d;
+    try { d = await jget('/api/collect/run?id=' + encodeURIComponent(runId)); }
+    catch(e){ return; }
+    if (!d || !d.ok) return;
+    renderRun(d.run);
+    const done = ['ok','failed','timeout','empty','no-change','current','degraded','no-creds','done'].includes(d.run?.status);
+    if (done){ stopPoll(); loadAll(); }
+  };
+  tick();
+  POLL = setInterval(tick, 3000);
+}
+
+function renderRun(r){
+  if (!r) return;
+  const meta = document.getElementById('runmeta');
+  const landed = Object.entries(r.rows_landed || {}).map(([t,n]) => `${t} ${fmt(n)}`).join(' · ');
+  meta.innerHTML = `
+    <span class="k">status <b>${esc(r.status)}</b></span>
+    ${r.stage ? `<span class="k">stage <b>${esc(r.stage)}</b></span>` : ''}
+    <span class="k">seen <b>${r.rows_seen == null ? '—' : fmt(r.rows_seen)}</b></span>
+    <span class="k">landed <b>${landed || '—'}</b></span>
+    <span class="k">lines <b>${fmt(r.log_lines_total)}</b></span>
+    <span class="k">${esc(r.trigger||'')} · ${r.machine_id ? 'machine '+esc(r.machine_id) : ''}</span>
+    ${(r.warnings||[]).length ? `<span class="k" style="color:var(--warn)">⚠ ${esc(r.warnings.join('; '))}</span>` : ''}`;
+  const c = document.getElementById('console');
+  const stick = c.scrollTop + c.clientHeight >= c.scrollHeight - 40;
+  c.innerHTML = (r.log || []).map(l => {
+    const cls = /error|traceback|denied|403|refus|fail/i.test(l) ? 'err'
+              : /warn|degrad/i.test(l) ? 'warnl'
+              : /\bok\b|landed|wrote|\+\d+/i.test(l) ? 'ok' : '';
+    return cls ? `<span class="${cls}">${esc(l)}</span>` : esc(l);
+  }).join('\n') || '(no output yet)';
+  if (stick) c.scrollTop = c.scrollHeight;
+}
+
+/* ── load ────────────────────────────────────────────────────────────────── */
+async function loadAll(force){
+  try {
+    // Run history comes from the shared LEDGER (/api/collect/status), not /api/runs — the latter is this
+    // process's in-memory list, which is empty on a freshly-booted machine and makes every source read
+    // "never run" while the ledger holds the real history.
+    const [reg, mon, led] = await Promise.all([
+      jget('/api/registry/sources'),
+      jget('/api/monitor' + (force ? '?fresh=1' : '')),
+      jget('/api/collect/status' + (force ? '?fresh=1' : '')).catch(() => ({last:{}, zero_streak:{}})),
+    ]);
+    SRC = reg.sources || [];
+    TABLES = {};
+    (mon.sources || []).forEach(x => { TABLES[x.name] = x.rows; });
+    LAST = led.last || {};
+    STREAK = led.zero_streak || {};
+    document.getElementById('dot').className = 'dot';
+    const prod = mon.warehouse?.remote ?? reg.remote;
+    document.getElementById('wh').className = 'wh ' + (prod ? 'prod' : 'local');
+    document.getElementById('wh').textContent = prod ? 'warehouse: remote' : 'warehouse: LOCAL';
+    document.getElementById('asof').textContent =
+      `${SRC.length} sources · counts ${mon.cached ? mon.cache_age_s + 's old' : 'live'}${mon.building ? ' · building…' : ''}`;
+    renderList();
+    if (SEL) renderDetail();
+  } catch(e){
+    document.getElementById('dot').className = 'dot off';
+    document.getElementById('slist').innerHTML = '<div class="msg">could not load: ' + esc(e.message) + '</div>';
+  }
+}
+
+loadAll();
+setInterval(() => { if (!ACTIVE_RUN) loadAll(); }, 60000);
+</script>
