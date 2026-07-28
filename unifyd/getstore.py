@@ -16,6 +16,7 @@ import uuid as _uuid
 
 API = "https://www.ubereats.com/_p/api/getStoreV1"
 _TL = threading.local()                                    # one primed curl_cffi session PER worker thread
+_RR, _RR_LOCK = [0], threading.Lock()                      # even round-robin over the ISP pool
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36")
 _H = {"accept": "*/*", "accept-language": "en-US,en;q=0.9", "content-type": "application/json",
@@ -58,7 +59,12 @@ def _session(site):
     except Exception:
         pool = []
     if pool:
-        px = pool[(threading.get_ident() // 8) % len(pool)]     # sticky per thread, spread across the pool
+        # ROUND-ROBIN by an explicit counter, not by thread ident. Thread ids are arbitrary values, so
+        # `ident % len(pool)` distributes unevenly — several workers can land on one IP while others go
+        # unused, which concentrates load exactly where the limit is and looks like a smaller pool.
+        with _RR_LOCK:
+            _RR[0] += 1
+            px = pool[_RR[0] % len(pool)]
     else:
         px = resi._session_url("ag%d" % (threading.get_ident() % 400)) if resi.enabled() else None
     s = cr.Session(impersonate="chrome", proxies={"http": px, "https": px} if px else None, timeout=30)

@@ -53,6 +53,30 @@ import warehouse
 # returns empty FAST, so the higher counts look 3x quicker while collecting nothing. 64 came from
 # aggregator_geo (a geo-only sweep with far smaller payloads) and does not transfer.
 # Throughput comes from SHARDS across machines, not threads on one.
+# CONCURRENCY IS DERIVED FROM THE POOL, not guessed. Measured on this endpoint: a single exit IP
+# tolerates only ~3-5 concurrent requests before it starts returning EMPTY fast (no 429). So the safe
+# TOTAL is about pool_size x PER_IP — and when N shards run at once they share those same IPs, so each
+# shard may use only its share. 8 shards x 24 workers over 20 IPs was ~10/IP and threw 96% empties.
+PER_IP = float(os.environ.get("UE_PER_IP", "3"))
+
+
+def auto_workers(nshard=1, log=print):
+    """Workers for THIS shard: (pool_size * PER_IP) / shards, floored at 4. An explicit UE_WORKERS
+    still wins, but the default now scales with the resource that actually binds — exit IPs."""
+    env = os.environ.get("UE_WORKERS")
+    if env:
+        return int(env)
+    try:
+        import resi
+        pool = len(resi.isp_pool()) or 1
+    except Exception:
+        pool = 1
+    w = max(4, int(pool * PER_IP / max(1, nshard)))
+    log("[ue] workers=%d (pool=%d IPs x %.1f/IP / %d shards) — the exit-IP budget, not a guess"
+        % (w, pool, PER_IP, nshard))
+    return w
+
+
 WORKERS = int(os.environ.get("UE_WORKERS", "24"))
 BATCH_STORES = int(os.environ.get("UE_BATCH", "400"))  # stores per landed batch + checkpoint
 PRODUCT_FIELDS = ["store_uuid", "store_name", "source", "item_uuid", "name", "brand", "upc", "gtin",
@@ -232,7 +256,7 @@ def _land(site, day, idx, shard, items, log=print):
 
 def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
     """Sweep this shard of the universe. Returns a run record. NO cap: the only bound is the shard."""
-    workers = workers or WORKERS
+    workers = workers or auto_workers(nshard, log=log)
     day = time.strftime("%Y-%m-%d")
     uni = universe(site, log=log)
     if not uni:
