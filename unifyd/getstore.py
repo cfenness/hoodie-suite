@@ -44,8 +44,23 @@ def _session(site):
         return s
     from curl_cffi import requests as cr
     import resi
-    # sticky proxy exit per thread (rotates across threads); prime cookies once
-    px = resi._session_url("ag%d" % (threading.get_ident() % 400)) if resi.enabled() else None
+    # EXIT IP per thread. The FLAT-RATE ISP pool first: fixed price per IP, unlimited bandwidth, no
+    # variable cost. This is what makes a full daily sweep possible — the BFF throttles PER IP, and
+    # measured on a single exit it stops answering above ~32 concurrent workers (returning empty fast,
+    # with no 429). Spreading threads across the pool multiplies the ceiling without buying bandwidth.
+    #
+    # _session_url() (the metered per-GB rotating tier) is deliberately NOT used: paygo_allowed() is
+    # False by default, so it returns None anyway, and every thread then shares the one Fly egress —
+    # which is precisely the throttle we measured. Flat-rate IPs, never per-GB.
+    pool = []
+    try:
+        pool = resi.isp_pool()
+    except Exception:
+        pool = []
+    if pool:
+        px = pool[(threading.get_ident() // 8) % len(pool)]     # sticky per thread, spread across the pool
+    else:
+        px = resi._session_url("ag%d" % (threading.get_ident() % 400)) if resi.enabled() else None
     s = cr.Session(impersonate="chrome", proxies={"http": px, "https": px} if px else None, timeout=30)
     try:
         s.get(_base(site))
