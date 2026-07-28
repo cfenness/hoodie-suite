@@ -166,6 +166,22 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   fills what the HTML doesn't structure, per-field provenance = structured vs vision. Reads land
   in `label_reads`. Endpoints: `POST /api/label/read {url, vision?}`, `GET /api/label/reads`.
   Surface: `apps/mdm-label-reader.html` (the **Label Reader** section in `apps/mdm.html`).
+- `unifyd/locator_signal.py` — the **"why go here"** layer under the Product Locator. `/api/locator`
+  answers WHO CARRIES IT from the distributor feed (vtinfo); `/api/locator/offers` answers why go
+  *here*, from data we already land: verified stock + on-hand (`retail_observations`), everyday vs.
+  promo price, sell-through (`fact_velocity`), instrument tier (`obs_quality_source`) and geo
+  (`src_outlets`, joined on `(source, store_id)`). The price primitive is **Google-Flights-shaped** —
+  not "cheapest" but "is this a GOOD price", scored against the trailing local distribution — plus a
+  wait-or-buy read off the store's own promo cadence. **Three rules are load-bearing and tested:**
+  (1) rank by price PERCENTILE, never by % off — a deep cut on an inflated everyday can still sit
+  above the area median; (2) compare only per-750ml equivalents (`price_signal.unit_price`) so a
+  1.75L can't pollute a 750ml pool; (3) below `MIN_REF` priced stores, or in a FLAT market, emit no
+  band and say why — which is also why there's no hardcoded control-state list (uniform state pricing
+  *is* a flat distribution, so it falls out of the data). Two render modes, filtered **server-side**:
+  `consumer` gets the full verdict, `mode=brand` strips every negative claim (a brand-embedded widget
+  pointing at the brand's own accounts must not badge them "high price"). Surface:
+  `apps/product-locator.html`. Tests: `locator_signal_test.py` (pure, stdlib-only) +
+  `locator_offers_test.py` (seeded local warehouse — needs duckdb, skips cleanly without it).
 - `unifyd/menu_ingest.py` — parse a DISTRIBUTOR WHOLESALE MENU file (xlsx/csv; cannabis
   Curaleaf NY is the reference shape) into normalized order lines. stdlib-only (xlsx = zipped
   XML), heuristic header-row detection + column synonyms, Excel serial dates, THC normalization.

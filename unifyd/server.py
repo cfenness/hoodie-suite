@@ -767,6 +767,49 @@ def _titlecase(s):
 def locator_brands():
     return jsonify(brands=[{"id": k, "name": v.get("name", k)} for k, v in vtinfo.BRANDS.items()])
 
+@app.get("/api/locator/offers")
+def locator_offers():
+    """The "why go here" layer: priced, ranked offers for an item near a point.
+
+    `/api/locator` answers WHO CARRIES IT from the distributor feed. This answers WHY GO HERE
+    from our own observations — verified stock, the everyday-vs-promo price, a Google-Flights
+    style "is this a good price" verdict against the local trailing distribution, and a
+    wait-or-buy read off the store's promo cadence. All of it in unifyd/locator_signal.py.
+
+    Params: q (brand / product / UPC), lat+lng or city+state, radius (mi), mode.
+    `mode=brand` strips every claim a brand-embedded widget may not make (see
+    locator_signal.for_render_mode) — the filtering is server-side on purpose.
+    """
+    import locator_signal
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify(offers=[], error="missing q"), 200
+    center = None
+    try:
+        if request.args.get("lat") and request.args.get("lng"):
+            center = (float(request.args["lat"]), float(request.args["lng"]))
+        elif request.args.get("city"):
+            import city_centroid
+            c = city_centroid.centroid(request.args["city"], request.args.get("state", ""))
+            if c:
+                center = (c[0], c[1]) if isinstance(c, (list, tuple)) else (c["lat"], c["lng"])
+    except Exception as e:                     # noqa: BLE001 — a bad center is not a 500
+        app.logger.info("LOCATOR offers center error %s", e)
+    try:
+        radius = float(request.args.get("radius", 15))
+    except (TypeError, ValueError):
+        radius = 15.0
+    mode = "brand" if request.args.get("mode") == "brand" else "consumer"
+    try:
+        out = locator_signal.offers(q, center=center, radius_mi=radius, mode=mode,
+                                    log=lambda m: app.logger.info("LOCATOR %s", m))
+    except Exception as e:                     # noqa: BLE001
+        app.logger.info("LOCATOR offers error %s", e)
+        return jsonify(offers=[], error=str(e)[:160], degraded="offers-failed"), 200
+    out["center"] = list(center) if center else None
+    out["radius_mi"] = radius
+    return jsonify(**out)
+
 @app.get("/api/locator")
 def locator():
     """Live account list for a brand near a ZIP, shaped for the locator UI. Bounded (max_pages)
