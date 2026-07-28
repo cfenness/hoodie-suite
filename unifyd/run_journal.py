@@ -251,6 +251,28 @@ def bench_state():
         return {}
 
 
+def manual_only():
+    """True when NOTHING may auto-dispatch — the only way a job runs is a human pressing Run now in
+    Hoodie Collect.
+
+    The point is stability before automation: a source is proven by hand, watched end to end, and
+    CONFIRMED in the bench; only then is it worth a scheduler. Automating sources whose reliability
+    nobody has verified is how the pipeline filled with runs that reported clean while landing nothing.
+    Once each source is known-good by hand, the scheduler is a small step rather than a leap of faith.
+
+    Reads the bench state (togglable from the workbench) with a COLLECT_MANUAL_ONLY env override.
+    FAILS OPEN — unreadable state means scheduling continues as before, because silently freezing all
+    capture on a storage blip is far worse than one unattended run.
+    """
+    env = os.environ.get("COLLECT_MANUAL_ONLY")
+    if env is not None:
+        return str(env).strip().lower() in ("1", "true", "yes", "on")
+    try:
+        return bool(bench_state().get("manual_only"))
+    except Exception:
+        return False
+
+
 def archived_ids():
     """Source ids ARCHIVED in the workbench — deduped away and taken off the active list, so the
     dispatcher stops scheduling them.

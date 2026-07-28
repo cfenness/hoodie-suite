@@ -4536,7 +4536,35 @@ def _bench_state_save(d):
 
 @app.get("/api/collect/state")
 def collect_state_ep():
-    return jsonify(ok=True, **_bench_state(force=request.args.get("fresh") == "1"))
+    import run_journal
+    d = dict(_bench_state(force=request.args.get("fresh") == "1"))
+    d["manual_only"] = run_journal.manual_only()
+    d["manual_only_locked"] = os.environ.get("COLLECT_MANUAL_ONLY") is not None
+    return jsonify(ok=True, **d)
+
+
+@app.post("/api/collect/manual-only")
+def collect_manual_only_ep():
+    """Toggle MANUAL-ONLY: when on, nothing auto-dispatches and the only way a job runs is a human
+    pressing Run now here. Body: {enabled: bool}.
+
+    This is the stability-before-automation rule: prove each source by hand, confirm it in the bench,
+    and only then let a scheduler drive it. Run now and the scheduler are the SAME code path
+    (spawn -> run_ephemeral -> run_one) and differ only in the `trigger` field, so a source proven by
+    hand is a source whose automated path is already proven."""
+    body = request.get_json(silent=True) or {}
+    if os.environ.get("COLLECT_MANUAL_ONLY") is not None:
+        return jsonify(ok=False, error="COLLECT_MANUAL_ONLY is set in the environment and overrides "
+                                       "this toggle — unset the secret to control it from here"), 409
+    d = _bench_state(force=True)
+    d["manual_only"] = bool(body.get("enabled"))
+    d["manual_only_at"] = int(time.time())
+    d["manual_only_by"] = (session.get("email") if hasattr(session, "get") else None) or "unknown"
+    try:
+        _bench_state_save(d)
+    except Exception as e:
+        return jsonify(ok=False, error="could not persist: %s" % str(e)[:160]), 502
+    return jsonify(ok=True, manual_only=d["manual_only"])
 
 
 @app.post("/api/collect/confirm")

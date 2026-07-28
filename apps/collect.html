@@ -91,6 +91,11 @@
   .runhead .k b{color:var(--ink)}
   .msg{padding:44px;color:var(--mut);text-align:center}
   .note{font-size:12px;color:var(--mut);margin:6px 0 0;line-height:1.5}
+  /* MANUAL-ONLY — nothing auto-dispatches; every job is a human pressing Run now. Shown in the top
+     bar because it changes what the whole page means: no green source is being kept fresh by itself. */
+  .mode{font-family:var(--mono);font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:6px;cursor:pointer;
+        border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--ink)}
+  .mode.auto{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,transparent)}
   .tag{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid var(--line);color:var(--mut)}
   /* CONFIRMED — a human watched this run in the bench and vouched for it. Deliberately a different
      visual language from the derived status pill: one is measured, the other is an opinion. */
@@ -116,6 +121,7 @@
   <span class="wh" id="wh">…</span>
   <span class="spacer"></span>
   <span class="asof" id="asof"></span>
+  <span id="modepill"></span>
   <button onclick="loadAll(true)">Refresh</button>
 </div>
 
@@ -160,6 +166,7 @@ let STATE = {confirmed:{}, archived:{}};  // human opinion, kept apart from deri
 let SAMPLE = {};         // source id -> inbound-data sample (refreshed while a run is live)
 let SHOW_ARCHIVED = false;
 let TICKS = 0;
+let MANUAL = false, MANUAL_LOCKED = false;
 let SEL = null;          // selected source id
 let POLL = null;         // journal poll timer
 let ACTIVE_RUN = null;   // run_id currently being watched
@@ -545,6 +552,24 @@ async function loadState(){
   if (SEL) renderDetail();
 }
 
+async function toggleManual(){
+  if (MANUAL_LOCKED){
+    alert('COLLECT_MANUAL_ONLY is set in the environment and overrides this toggle.');
+    return;
+  }
+  const to = !MANUAL;
+  if (!confirm(to
+      ? 'Switch to MANUAL ONLY?\n\nNothing will auto-dispatch. Every job becomes you pressing Run now.'
+      : 'Re-enable AUTO-DISPATCH?\n\nThe dispatcher will run due sources on their cadence again.')) return;
+  try {
+    const r = await fetch('/api/collect/manual-only', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({enabled: to})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'refused');
+    await loadAll(false);
+  } catch(e){ alert('could not change mode: ' + e.message); }
+}
+
 /* ── run + watch ─────────────────────────────────────────────────────────── */
 async function startRun(){
   const s = SRC.find(x => x.id === SEL);
@@ -634,6 +659,14 @@ async function loadAll(force){
     const prod = mon.warehouse?.remote ?? reg.remote;
     document.getElementById('wh').className = 'wh ' + (prod ? 'prod' : 'local');
     document.getElementById('wh').textContent = prod ? 'warehouse: remote' : 'warehouse: LOCAL';
+    MANUAL = !!st.manual_only; MANUAL_LOCKED = !!st.manual_only_locked;
+    const mp = document.getElementById('modepill');
+    mp.className = 'mode' + (MANUAL ? '' : ' auto');
+    mp.textContent = MANUAL ? 'MANUAL ONLY' : 'AUTO-DISPATCH ON';
+    mp.title = MANUAL
+      ? 'Nothing runs on its own — every job is you pressing Run now. Click to re-enable the scheduler.'
+      : 'The dispatcher runs due sources on their cadence. Click to switch to manual-only.';
+    mp.onclick = toggleManual;
     const nconf = Object.keys(STATE.confirmed).length, narch = Object.keys(STATE.archived).length;
     document.getElementById('asof').textContent =
       `${SRC.length} sources · ${nconf} confirmed · ${narch} archived · counts ${mon.cached ? mon.cache_age_s + 's old' : 'live'}${mon.building ? ' · building…' : ''}`;

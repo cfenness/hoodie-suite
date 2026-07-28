@@ -19,6 +19,7 @@
     --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
     --sans:var(--disp);
     --bk-intel:#C2622C; --bk-retail:#2F4A7A; --bk-ops:#2FA24C; --bk-master:#8A5FB0; --bk-comm:#8A3345;
+    --bk-collect:#4B9CD3;   /* Carolina blue — Hoodie Collect's section colour */
     --rail-w:250px;
   }
   @media (prefers-color-scheme:dark){:root{
@@ -27,6 +28,7 @@
     --chip:#232C35; --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 30px rgba(0,0,0,.34);
     --good:#5FB58E; --good-bg:#1A2C25; --warn:#D0A14A; --warn-bg:#2C2618; --bad:#DB7C6E; --bad-bg:#2E1F1D;
     --bk-intel:#D8814A; --bk-retail:#6E90CC; --bk-ops:#4CBE6C; --bk-master:#A986C8; --bk-comm:#CB7185;
+    --bk-collect:#6FB3DE;   /* Carolina blue, lifted for the dark palette */
   }}
   :root[data-theme="dark"]{
     --paper:#12161B; --card:#1A2027; --ink:#E7ECF1; --ink-2:#C4CDD6; --mut:#8A98A5;
@@ -34,6 +36,7 @@
     --chip:#232C35; --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 30px rgba(0,0,0,.34);
     --good:#5FB58E; --good-bg:#1A2C25; --warn:#D0A14A; --warn-bg:#2C2618; --bad:#DB7C6E; --bad-bg:#2E1F1D;
     --bk-intel:#D8814A; --bk-retail:#6E90CC; --bk-ops:#4CBE6C; --bk-master:#A986C8; --bk-comm:#CB7185;
+    --bk-collect:#6FB3DE;   /* Carolina blue, lifted for the dark palette */
   }
   :root[data-theme="light"]{
     --paper:#F1F3F5; --card:#FFFFFF; --ink:#2B3138; --ink-2:#4A535C; --mut:#7A828B;
@@ -325,6 +328,7 @@
   var BUCKETS = [
     {id:"intel",     name:"Hoodie Intelligence", role:"Report & present — QBRs, decks, the signal read", color:"var(--bk-intel)"},
     {id:"retail",    name:"Retail Intelligence", role:"One subject, every instrument — menu · price · shelf · market", color:"var(--bk-retail)"},
+    {id:"collect",   name:"Hoodie Collect",     role:"Run & prove every scrape — one workbench", color:"var(--bk-collect)"},
     {id:"ops",       name:"Data Operations",     role:"Run the machine — acquisition & health",     color:"var(--bk-ops)"},
     {id:"master",    name:"Master Data",         role:"Own the master — matching & review",          color:"var(--bk-master)"},
     {id:"commercial",name:"Commercial Apps",     role:"Act on it — the tools you work in",           color:"var(--bk-comm)"}
@@ -346,6 +350,9 @@
     {id:"market",     bucket:"retail",         mark:"MI", name:"Market Intelligence", desc:"The outlet landscape of a metro vs Google coverage.", file:"apps/market.html"},
 
     // Data Operations
+    // Hoodie Collect — the scrape workbench (deprecates the older per-source tracking surfaces)
+    {id:"collect",    bucket:"collect", star:1, nav:1, mark:"HC", name:"Hoodie Collect", desc:"Inspect every source, run it on demand, and watch the console, record counts & percent-collected as it lands.", file:"apps/collect.html", healthSource:1},
+
     {id:"data-console",bucket:"ops",  star:1,  mark:"DC", name:"Data Console", desc:"Every source, account & master dim with real counts, freshness & health — live from the warehouse.", file:"apps/data-console.html", healthSource:1},
     {id:"connectors", bucket:"ops",            mark:"PU", name:"Pulls", desc:"Every source that feeds the master — running, last-run, on/off, pull now.", file:"apps/connectors.html"},
     {id:"sources",    bucket:"ops",            mark:"SR", name:"Sources", desc:"Discover & add new sources — a URL becomes data + a reusable recipe.", file:"apps/sources.html"},

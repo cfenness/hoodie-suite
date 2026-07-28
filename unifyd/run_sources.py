@@ -23,6 +23,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -121,17 +122,25 @@ def due_sources(now=None, grace=0.98):
     if retry:
         have = {s["id"] for s in due}
         due += [s for s in reg.SOURCES if s.get("enabled") and s["id"] in retry and s["id"] not in have]
-    # ARCHIVED in Hoodie Collect = deduped away and taken OFF THE ACTIVE LIST, so the dispatcher stops
-    # scheduling it. This is the operational half of the bench's archive action — without it, "archived"
-    # would only mean "hidden", and a retired duplicate would keep burning machines every tick.
-    # archived_ids() fails OPEN (empty set) so an unreadable state can never halt the whole pipeline.
     try:
         import run_journal
+        # MANUAL-ONLY: nothing is due, because the only way a job runs is a human pressing Run now in
+        # Hoodie Collect. Enforced HERE, at the single place due-ness is decided, so every scheduler
+        # (the hourly Fly dispatcher, the in-app tick, a --due CLI pass) is covered by one switch
+        # rather than three that can drift apart. A manual run does not consult due_sources at all, so
+        # it is unaffected. selfheal's retry backoff also stops proposing work — under this rule an
+        # `incomplete` source waits for a human to press Run now again, and resume makes that continue
+        # from the checkpoint rather than restart.
+        if run_journal.manual_only():
+            return []
+        # ARCHIVED in Hoodie Collect = deduped away and taken OFF THE ACTIVE LIST, so the dispatcher
+        # stops scheduling it. Without this, "archived" would only mean "hidden" and a retired
+        # duplicate would keep burning machines every tick.
         arch = run_journal.archived_ids()
         if arch:
             due = [s for s in due if s["id"] not in arch]
     except Exception:
-        pass
+        pass                      # fails OPEN — unreadable state must never halt the whole pipeline
     return due
 
 
@@ -312,6 +321,14 @@ def run_one(source, log=print, extra_env=None, on_line=None):
                 os.remove(lk)
             except Exception:
                 pass
+    # FAIL CLASS is STRUCTURAL, not inferred. This function already knows exactly what happened — the
+    # signal that killed the child, whether the timeout fired, what coverage said — so it records the
+    # class as a fact rather than leaving selfheal to regex it back out of a prose error string later.
+    # A scraper that knows something we cannot see (an HTTP 403 wall) declares it on stdout with a
+    # `HOODIE_FAIL {"class": "..."}` line, which is read below. Inference is the LEGACY fallback for
+    # ledger rows written before this field existed, not the mechanism.
+    fail_class = None
+    r = None                      # bound even if _exec raises, so the scan below is safe
     status, error = "ok", ""
     timeout_s = source.get("timeout") or _TIMEOUT.get(source["klass"], 5400)   # registry per-source override
     run_token = "%s-%d" % (sid, int(t0))
@@ -333,6 +350,8 @@ def run_one(source, log=print, extra_env=None, on_line=None):
                     nm = "SIG%d" % (-r.returncode)
                 error = "killed by %s (%d)%s" % (nm, -r.returncode,
                                                  " — OOM likely; reduce crawl memory/concurrency" if -r.returncode == 9 else "")
+                if -r.returncode == 9:
+                    fail_class = "oom"        # SIGKILL under a big crawl IS the OOM killer — not a guess
             else:
                 # Real nonzero EXIT: keep the CRASH SITE — the last traceback 'File "…", line N' frame plus the
                 # final message line. Only trust a message line when there IS a traceback; otherwise a caught,
@@ -348,8 +367,20 @@ def run_one(source, log=print, extra_env=None, on_line=None):
                     error = "nonzero exit %d (no traceback — see run log)" % r.returncode
     except subprocess.TimeoutExpired:
         status, error = "timeout", "exceeded %ds" % timeout_s
+        fail_class = "timeout"
     except Exception as e:
         status, error = "failed", str(e)[:300]
+    # A scraper may DECLARE its failure class — it is the only thing that saw the HTTP status behind an
+    # anti-bot wall. Structural: an explicit statement from the run, not a pattern matched against prose.
+    if not fail_class:
+        m = re.search(r'HOODIE_FAIL\s+(\{.*?\})', (r.stderr if r is not None else "") or "", re.S)
+        if m:
+            try:
+                k = (json.loads(m.group(1)) or {}).get("class")
+                if k:
+                    fail_class = str(k)[:24]
+            except Exception:
+                pass
     after = _counts_after(source["tables"], before, log=log)
     dur = round(time.time() - t0, 1)
 
@@ -377,6 +408,7 @@ def run_one(source, log=print, extra_env=None, on_line=None):
         if status in ("ok", "current") and (cv["items"]["verdict"] == "partial"
                                             or cv["stores"]["verdict"] == "partial"):
             status = "incomplete"
+            fail_class = fail_class or "incomplete"
         cov = dict(cov_basis=cv["basis"],
                    landed_items=cv["items"]["landed"], expected_items=cv["items"]["expected"],
                    cov_items_pct=cv["items"]["pct"], cov_items=cv["items"]["verdict"],
@@ -402,10 +434,12 @@ def run_one(source, log=print, extra_env=None, on_line=None):
             error = " | ".join([e for e in ([error] if error else []) + caps_missing])[:300]
     except Exception:
         pass
+    if status == "empty" and not fail_class:
+        fail_class = "empty"
     rec = dict(run_id=run_token, source=sid, label=source["label"], klass=source["klass"],
                ts_start=int(t0), ts_end=int(time.time()), duration_s=dur, status=status,
                rows_before=b, rows_after=a, delta=delta, tables=",".join(source["tables"]),
-               error=error, host=os.uname().nodename[:40],
+               error=error, fail_class=fail_class or "", host=os.uname().nodename[:40],
                caps_missing=",".join(sorted(_cap.missing(source.get("caps", [])))) if caps_missing else "",
                **cov)
     covnote = ""
