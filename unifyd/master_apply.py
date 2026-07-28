@@ -120,11 +120,20 @@ def _keyexprs(mnames):
         keys[g] = "md5(%s)" % ("||'|'||".join(cum) if cum else "''")
     return keys
 
-def resolve_hierarchy(master_fields, dim_uri, con, built_by="SYS", built_at=None, log=print):
+def resolve_hierarchy(master_fields, dim_uri, con, built_by="SYS", built_at=None, log=print,
+                      resolved_xwalk_uri=None):
     """Shred the wide dim_product into dim_brand / dim_product / dim_item / dim_sku (each = distinct rows
     at its grain, with a stable key + its parent's key + that grain's attributes), plus dim_supplier as a
     brand↔supplier association with active/inactive dates. Every level's attributes are aggregated with
-    any_value; provenance (sources/source_list) carried through."""
+    any_value; provenance (sources/source_list) carried through.
+
+    `resolved_xwalk_uri` (optional): a Parquet of {item_key -> resolved_id} from the identity union-find
+    ([[discriminator-identity-model]]). When given, dim_item and dim_sku carry a `resolved_id` column — the
+    RESOLVED identity that collapses the md5 hard-key's ambiguous over-splits (Macallan-12 stated on one
+    source only keyed apart, reunited here). The md5 keys stay the structural spine (referential integrity
+    for xwalk_source_sku / price_coherence / hoodie_ids / wb_views); resolved_id is the count-distinct grain
+    the workbench groups on. A 1:1 join (xwalk is unique per item_key), so source_rows/sources are unchanged.
+    Absent the xwalk, behavior is byte-identical to before (other callers pass nothing)."""
     import time as _t
     built_at = built_at or int(_t.time())
     import warehouse
@@ -150,10 +159,16 @@ def resolve_hierarchy(master_fields, dim_uri, con, built_by="SYS", built_at=None
             cols += ", any_value(%s) AS %s_key" % (keys[HIERARCHY[i - 1]], HIERARCHY[i - 1])
         if attrs:
             cols += ", " + ", ".join("any_value(%s) AS %s" % (derive.col(a), derive.col(a)) for a in attrs)
+        # RESOLVED identity (item + sku grains only): join the union-find xwalk on the item key. Unmatched
+        # rows fall back to their own item_key, so resolved_id is always populated. 1:1 join → no fan-out.
+        rjoin = rcol = ""
+        if resolved_xwalk_uri and g in ("item", "sku"):
+            rjoin = " LEFT JOIN read_parquet('%s') x ON x.item_key = %s" % (resolved_xwalk_uri, keys["item"])
+            rcol = ", any_value(coalesce(x.resolved_id, %s)) AS resolved_id" % keys["item"]
         sql = ("WITH b AS (SELECT * FROM read_parquet('%s')%s) "
-               "SELECT %s, count(*) AS source_rows, count(DISTINCT _source) AS sources, "
-               "list_distinct(list(_source)) AS source_list, %s FROM b GROUP BY %s"
-               % (dim_uri, gate, cols, audit, keys[g]))
+               "SELECT %s%s, count(*) AS source_rows, count(DISTINCT _source) AS sources, "
+               "list_distinct(list(_source)) AS source_list, %s FROM b%s GROUP BY %s"
+               % (dim_uri, gate, cols, rcol, audit, rjoin, keys[g]))
         rtable = "dim_%s" % g
         rdst = warehouse.uri(rtable).replace("'", "")
         con.execute("COPY (%s) TO '%s' (FORMAT PARQUET)" % (sql, rdst))
