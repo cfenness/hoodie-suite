@@ -59,6 +59,12 @@ SOURCES = [
          tables=["abc_catalog"], klass="headless", cadence="weekly", enabled=True, note="BigCommerce sitemap"),
     dict(id="abc-fws", label="ABC FW&S (inventory)", code="import abc_fws_scraper as m; m.pull(crawl_all=True)",
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
+         # TIMEOUT: the full sweep is ~13.9k product pages paced by `polite` at ~1 req/s (ABC_MIN_INTERVAL
+         # 0.6 + jitter, per-host serialized — the 12 workers do NOT multiply throughput). That is ~4h, so
+         # the old 5400s default killed every run mid-crawl; the ledger shows an unbroken TIMEOUT streak.
+         # 6h leaves headroom. The crawl now lands per batch and checkpoints, so even a kill keeps its work
+         # and the next run resumes — the timeout is a backstop, no longer a data-loss event.
+         timeout=21600, mem=8192,
          tables=["retail_observations"], klass="headless", cadence="daily", enabled=True, cost_class="proxy",
          note="per-store inventory → lands retail_observations (NOT abc_products, which abc-facets owns/overwrites)",
          # COVERAGE (coverage.py): item/store columns + the KNOWN universe, so a run that lands far fewer

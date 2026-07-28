@@ -69,6 +69,9 @@ ID_RE       = re.compile(r'/(\d+)/?$')
 # the product page (no robots-disallowed AJAX needed).
 STORE_LBL   = re.compile(r'data-product-attribute-value="(\d+)"[^>]*>\s*([^<]{1,80}?)\s*<')
 AVAIL2_RE   = re.compile(r'available_variant_values"\s*:\s*\[([\d,]*)\]', re.I)
+OG_TITLE    = re.compile(r'<meta[^>]+property="og:title"[^>]+content="([^"]{1,300})"', re.I)
+H1_TITLE    = re.compile(r'<h1[^>]*class="[^"]*productView-title[^"]*"[^>]*>\s*([^<]{1,300}?)\s*<', re.I)
+OG_BRAND    = re.compile(r'<meta[^>]+property="product:brand"[^>]+content="([^"]{1,120})"', re.I)
 
 
 # ---------------- fetch (via polite: rate-limit + backoff + circuit breaker + optional BD proxy) ----------
@@ -91,29 +94,42 @@ def fetch(url, timeout=30):
 
 
 # ---------------- sitemap → stable (sku, url) catalog ----------------
-def harvest_ids(max_pages=30, log=print):
+def harvest_ids(max_pages=None, log=print):
     """Walk the product sitemaps, returning [(sku, url)] with sku = the trailing id.
     `type=products` = the WHOLE catalog, every product type (no category filter — ABC FWS
     is a chain, not a control store; whatever it lists is captured). Stops at the first
-    empty/missing page, so max_pages is just a safety ceiling on a complete harvest."""
+    empty/missing page, so max_pages is only a runaway guard, never an intended limit.
+
+    The ceiling used to be 30 pages with no signal on reaching it, which is a silent cap on a "full"
+    harvest — if the catalog ever outgrew 30 pages we would quietly crawl a prefix and report success.
+    It is now high, and HITTING it is reported as a warning by the caller rather than passing silently."""
+    max_pages = max_pages or int(os.environ.get("ABC_MAX_PAGES", "500"))
     out, seen = [], set()
+    hit_ceiling = True
     for page in range(1, max_pages + 1):
         try:
             body, _ = fetch(SITEMAP.format(page))
         except urllib.error.HTTPError as e:
             if e.code == 404:
+                hit_ceiling = False
                 break
-            log(f"sitemap page {page}: HTTP {e.code}"); break
+            log(f"sitemap page {page}: HTTP {e.code}")
+            hit_ceiling = False
+            break
         locs = LOC_RE.findall(body)
         prod = [(m.group(1), loc) for loc in locs for m in [ID_RE.search(loc)] if m]
         if not prod:
+            hit_ceiling = False
             break
         for sku, loc in prod:
             if sku not in seen:
                 seen.add(sku); out.append((sku, loc))
         log(f"sitemap page {page}: {len(prod)} products (total {len(out)})")
         time.sleep(DELAY)
-    return out
+    if hit_ceiling:
+        log(f"  !! sitemap walk stopped at the {max_pages}-page ceiling — the catalog may be LARGER "
+            f"than the {len(out)} products harvested. Raise ABC_MAX_PAGES.")
+    return out, hit_ceiling
 
 
 # ---------------- product page → {price, in-stock, upc} (best-effort, self-reporting) ----------------
@@ -130,12 +146,19 @@ def parse_stores(html):
         except ValueError: price = None
     av = AVAIL2_RE.search(html)
     avail = set(av.group(1).split(",")) if (av and av.group(1)) else set()
+    # Product identity from the page itself, so the HTML fallback doesn't silently reintroduce the
+    # blank-name/brand gap the GraphQL path just fixed. og:title is present on every BigCommerce PDP.
+    mn = OG_TITLE.search(html) or H1_TITLE.search(html)
+    pname = re.sub(r"\s+", " ", (mn.group(1) if mn else "")).strip()
+    mb = OG_BRAND.search(html)
+    pbrand = (mb.group(1).strip() if mb else "")
     rows = []
     for val, lbl in STORE_LBL.findall(html):
         lbl = lbl.strip()
         if not (lbl.startswith("ABC #") or lbl.lower() == "online"):
             continue   # store options only — skip any non-store attribute values
-        rows.append({"store_val": val, "store": lbl, "instock": val in avail, "price": price})
+        rows.append({"store_val": val, "store": lbl, "instock": val in avail, "price": price,
+                     "name": pname, "brand": pbrand})
     return rows, bool(rows) and price is not None
 
 
@@ -148,9 +171,13 @@ def parse_stores(html):
 TOKEN_RE = re.compile(r'eyJ0eXAiOiJKV1Qi[A-Za-z0-9_.-]{60,}')
 WANT_QTY = os.environ.get("ABC_QTY", "1") == "1"
 GQL_Q = ('{ site { route(path: "%s") { node { ... on Product { '
+         'name brand { name } '                      # product identity — see the note below
          'prices { price { value } } '
          'variants(first: 200) { edges { node { sku upc gtin inventory { isInStock aggregated { availableToSell } } '
          'options { edges { node { values { edges { node { label } } } } } } } } } } } } } }')
+# `name`/`brand` were absent from this query and hardcoded to "" at the observe.record call, so every
+# ABC observation landed with NO product identity — 0% fill on name/brand across 5,327 rows, joinable to
+# the master by nothing but ABC's internal product_id. They come free in the same request.
 
 
 def graphql_stores(path, token, host):
@@ -167,6 +194,8 @@ def graphql_stores(path, token, host):
         price = None
         try: price = float(node["prices"]["price"]["value"])
         except Exception: pass
+        pname = node.get("name") or ""
+        pbrand = ((node.get("brand") or {}) or {}).get("name") or ""
         rows = []
         for e in ((node.get("variants") or {}).get("edges") or []):
             n = e["node"]; inv = n.get("inventory") or {}; agg = inv.get("aggregated") or {}
@@ -179,6 +208,7 @@ def graphql_stores(path, token, host):
                 continue
             rows.append({"store": label, "sku": n.get("sku", ""), "qty": agg.get("availableToSell"),
                          "upc": n.get("upc") or "", "gtin": n.get("gtin") or "",
+                         "name": pname, "brand": pbrand,
                          "instock": bool(inv.get("isInStock")), "price": price})
         return rows, bool(rows)
     except Exception:
@@ -238,16 +268,85 @@ def run_record(movement, n_products, status, warnings):
             "movement": movement}
 
 
+def _progress(**kw):
+    """Emit a machine-readable progress line for Hoodie Collect's live counters (run_journal folds
+    HOODIE_PROGRESS lines into rows_seen / stage / pct). Harmless noise anywhere else."""
+    try:
+        print("HOODIE_PROGRESS " + json.dumps(kw), flush=True)
+    except Exception:
+        pass
+
+
+# ── resume + incremental landing ────────────────────────────────────────────────────────────────────
+# A full ABC sweep is ~13.9k product pages paced by `polite` at ~1 req/s — hours, not minutes. The old
+# shape held every cell in memory and wrote ONCE at the end, so a timeout (which is what happened on
+# every run for 5+ days) threw away the entire crawl and landed nothing. Now each batch lands as its own
+# retail_observations partition and the completed SKUs are checkpointed to the shared bucket, so:
+#   • a killed run KEEPS everything it had already fetched, and
+#   • the next run RESUMES instead of restarting from zero.
+# Landing per batch also makes the bench's live record counter real rather than 0-until-the-end.
+_RESUME_KEY = "_collect/resume/abc-fws_%s.json"
+BATCH = int(os.environ.get("ABC_BATCH", "400"))            # products per landed partition
+
+
+def _resume_load(day, log=print):
+    try:
+        import warehouse
+        raw = warehouse.get_bytes(_RESUME_KEY % day)
+        d = json.loads(raw) if raw else {}
+        done = set(d.get("done") or [])
+        if done:
+            log(f"  [abc] resuming — {len(done):,} products already captured today")
+        return done, int(d.get("batch") or 0)
+    except Exception:
+        return set(), 0
+
+
+def _resume_save(day, done, batch):
+    try:
+        import warehouse
+        warehouse.put_bytes(_RESUME_KEY % day,
+                            json.dumps({"done": sorted(done), "batch": batch,
+                                        "at": int(time.time())}).encode())
+    except Exception:
+        pass                                                # checkpointing must never fail the crawl
+
+
+def _land(day, batch_idx, cells, log=print):
+    """Land ONE batch of per-store cells as its own dated partition. Distinct part names per batch so
+    batches accumulate instead of overwriting each other (write_partition is idempotent per part)."""
+    if not cells:
+        return 0
+    try:
+        import observe
+        observe.record("abc-fws",
+                       [dict(source="abc-fws", store_id=str(v["store"]), store=str(v["store"]),
+                             product_id=str(v["sku"]), upc=v.get("upc", ""),
+                             brand=v.get("brand", ""), name=v.get("name", ""),
+                             price=v["price"], on_promo=False, in_stock=bool(v.get("instock")),
+                             qty=v.get("qty"), stock_level="", is_hemp=False)
+                        for v in cells],
+                       date=day, part="%s_abc-fws_b%04d" % (day, batch_idx), log=log)
+        return len(cells)
+    except Exception as e:
+        log("  [abc] batch %d land FAILED: %s" % (batch_idx, str(e)[:120]))
+        return 0
+
+
 def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=print):
-    """One run: harvest ids → fetch (sample or all) → diff vs prior snapshot → persist.
+    """One run: harvest ids → fetch (sample or all) → land incrementally → diff vs prior snapshot.
     Returns (datasets, [run_record], movement)."""
     state_dir = state_dir or out
     os.makedirs(out, exist_ok=True)
-    catalog = harvest_ids(log=log)
+    day = time.strftime("%Y-%m-%d")
+    catalog, hit_ceiling = harvest_ids(log=log)
     if not catalog:
         run = run_record(diff_snapshots({}, {}), 0, "failed",
                          ["No products found in sitemap — site structure may have changed."])
         return {}, [run], run["movement"]
+    # The catalog size IS the completeness denominator — state it before crawling so "N of M" is
+    # answerable from the first log line, and comparable against what the site itself reports.
+    log(f"[abc] catalog harvested from sitemap: {len(catalog):,} products (the completeness denominator)")
 
     targets = (catalog if limit is None else catalog[:limit]) if crawl_all else pick_sample(catalog, sample)
     # FAST: fetch product pages concurrently (plain HTTP, no anti-bot) instead of serial 10s crawl-delay.
@@ -256,10 +355,33 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
     eta = int(len(targets) * jitter / max(1, workers))
     log(f"catalog {len(catalog)} products; pulling {len(targets)} ({workers} workers, {jitter}s jitter) ~{eta}s")
 
+    # RESUME: skip products already captured today, so a killed run continues instead of restarting.
+    done, batch_idx = (_resume_load(day, log=log) if crawl_all else (set(), 0))
+    todo = [t for t in targets if t[0] not in done]
+    if done:
+        log(f"[abc] {len(todo):,} of {len(targets):,} products remaining this pass")
+
     cur, ok_n = {}, 0   # cur keyed `sku|store` -> per-store {price, instock, qty, store, sku}
+    pending = []        # cells awaiting their batch write
+    landed_cells = landed_products = since_flush = 0
     lock = threading.Lock()
+
+    def _flush(force=False):
+        """Land a batch and checkpoint. Called under `lock`. BATCH counts PRODUCTS, not cells — one
+        product yields ~133 cells (one per store), so thresholding on cells would batch ~133x too late."""
+        nonlocal pending, batch_idx, landed_cells, since_flush
+        if not pending or (not force and since_flush < BATCH):
+            return
+        batch_idx += 1
+        landed_cells += _land(day, batch_idx, pending, log=log)
+        log(f"  [abc] landed batch {batch_idx}: {len(pending):,} cells "
+            f"({landed_products:,}/{len(todo):,} products, {landed_cells:,} cells this run)")
+        pending = []
+        since_flush = 0
+        _resume_save(day, done, batch_idx)
+
     def _one(t):
-        nonlocal ok_n
+        nonlocal ok_n, landed_products, since_flush
         sku, url = t
         try:
             _, rows, ok = fetch_product(sku, url, log=log)
@@ -268,46 +390,109 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
                 for r in rows:
                     # key on the store LABEL (present in both GraphQL + HTML modes); qty is the
                     # real bottle count (GraphQL) or None (HTML in/out fallback).
-                    cur[f"{sku}|{r['store']}"] = {"price": r["price"], "instock": r["instock"],
-                                                  "qty": r.get("qty"), "store": r["store"], "sku": sku,
-                                                  "upc": r.get("upc", ""), "gtin": r.get("gtin", "")}
+                    cell = {"price": r["price"], "instock": r["instock"],
+                            "qty": r.get("qty"), "store": r["store"], "sku": sku,
+                            "upc": r.get("upc", ""), "gtin": r.get("gtin", ""),
+                            "name": r.get("name", ""), "brand": r.get("brand", "")}
+                    cur[f"{sku}|{r['store']}"] = cell
+                    pending.append(cell)
+                done.add(sku)
+                landed_products += 1
+                since_flush += 1
+                if landed_products % 25 == 0:
+                    _progress(rows=len(cur), stage="%s/%s products" % (f"{landed_products:,}", f"{len(todo):,}"),
+                              pct=round(100.0 * landed_products / max(1, len(todo)), 1))
+                _flush()
         except Exception as e:
             log(f"  {sku}: {e}")
         if jitter:
             time.sleep(jitter)
-    if workers > 1:
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            for _ in ex.map(_one, targets):
-                pass
-    else:
-        for t in targets:
-            _one(t)
+    try:
+        if workers > 1:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                for _ in ex.map(_one, todo):
+                    pass
+        else:
+            for t in todo:
+                _one(t)
+    finally:
+        # Land whatever is in hand even if the crawl raised or is being torn down — the whole point of
+        # batching is that no fetched row is thrown away.
+        with lock:
+            _flush(force=True)
+    # Did this pass actually finish the catalog? `done` accumulates across resumed runs, so compare it
+    # to the FULL target list, not just this pass's remainder.
+    todo_incomplete = crawl_all and len({t[0] for t in targets} - done) > 0
+    _progress(rows=len(cur), stage="crawl complete" if not todo_incomplete else "partial pass", pct=100.0)
 
+    # SNAPSHOT for the day-over-day diff. This used to be a file in the run's output dir — which on an
+    # ephemeral Fly machine is destroyed with the machine, so `prev` was ALWAYS empty and every run
+    # reported "baseline" movement. It lives in the shared bucket now, with the local file kept as a
+    # fallback for CLI use. Movement is the entire point of a directional tracker, so a diff that can
+    # never fire is the feature silently not existing.
     prev = {}
     snap_path = os.path.join(state_dir, SNAP_FILE)
-    if os.path.exists(snap_path):
+    try:
+        import warehouse
+        raw = warehouse.get_bytes("_collect/snapshots/abc-fws.json")
+        if raw:
+            prev = json.loads(raw).get("cells", {})
+            log(f"  [abc] prior snapshot: {len(prev):,} cells (shared bucket)")
+    except Exception:
+        pass
+    if not prev and os.path.exists(snap_path):
         try: prev = json.load(open(snap_path)).get("cells", {})
         except Exception: prev = {}
     movement = diff_snapshots(prev, cur)
 
+    # NOTHING LEFT TO DO is not a failure. A resumed run that finds every product already captured
+    # today has an empty `cur` — which the "not cur => failed" test below would otherwise report as a
+    # broken scrape, turning a completed catalog into a red alert every subsequent run of the day.
+    if crawl_all and not todo:
+        log(f"[abc] already complete for {day}: {len(done):,}/{len(targets):,} products captured")
+        run = run_record(diff_snapshots({}, {}), len(done), "success",
+                         [] if len(done) >= len(targets) else
+                         [f"{len(targets) - len(done):,} products still missing for {day}"])
+        return {}, [run], run["movement"]
+
     warnings = []
-    if not cur or ok_n / max(1, len(targets)) < 0.5:
-        warnings.append(f"Per-store options parsed on only {ok_n}/{len(targets)} pages — confirm the "
+    if not cur or ok_n / max(1, len(todo)) < 0.5:
+        warnings.append(f"Per-store options parsed on only {ok_n}/{len(todo)} pages — confirm the "
                         "store-option / available_variant_values selectors against a live page.")
+    if hit_ceiling:
+        warnings.append(f"Sitemap walk hit the {os.environ.get('ABC_MAX_PAGES','500')}-page ceiling — the "
+                        "catalog may be larger than what was harvested.")
+    # COMPLETENESS, stated plainly: a full crawl that covered only part of the catalog is `degraded`,
+    # never `success`. Reporting a partial sweep as a clean run is the exact lie this rework removes.
+    remaining = len({t[0] for t in targets} - done) if crawl_all else 0
+    if crawl_all:
+        covered = len(targets) - remaining
+        log(f"[abc] COVERAGE {covered:,}/{len(targets):,} products "
+            f"({100.0*covered/max(1,len(targets)):.1f}%); {remaining:,} remaining")
+        if remaining:
+            warnings.append(f"Incomplete pass: {covered:,}/{len(targets):,} products captured, "
+                            f"{remaining:,} remaining — rerun to resume (checkpointed).")
     status = "failed" if not cur else ("degraded" if warnings else "success")
 
-    json.dump({"__ts__": int(time.time() * 1000), "cells": cur}, open(snap_path, "w"), indent=2)
-    # Store the daily price+inventory time-series (qty = real per-store units via GraphQL availableToSell) so
-    # ABC feeds retail_observations like the other Counts sources — the whole point of a daily pull.
-    try:
-        import observe
-        observe.record("abc-fws", [dict(source="abc-fws", store_id=str(v["store"]), store=str(v["store"]),
-                                        product_id=str(v["sku"]), upc=v.get("upc", ""), brand="", name="",
-                                        price=v["price"], on_promo=False, in_stock=bool(v.get("instock")),
-                                        qty=v.get("qty"), stock_level="", is_hemp=False)
-                                   for v in cur.values()], log=log)
-    except Exception as e:
-        log("  [abc] observe skipped: %s" % str(e)[:80])
+    snap = {"__ts__": int(time.time() * 1000), "cells": cur}
+    json.dump(snap, open(snap_path, "w"), indent=2)
+    # Only a COMPLETE pass may replace the shared snapshot. A partial (resumed/killed) run holds a
+    # fraction of the catalog, and writing that as the new baseline would make tomorrow's diff report
+    # every un-crawled SKU as "disappeared" — a fabricated assortment collapse.
+    if crawl_all and not todo_incomplete:
+        try:
+            import warehouse
+            warehouse.put_bytes("_collect/snapshots/abc-fws.json", json.dumps(snap).encode())
+        except Exception as e:
+            log("  [abc] snapshot save skipped: %s" % str(e)[:80])
+    elif crawl_all:
+        log("  [abc] partial pass — shared snapshot NOT replaced (would fake an assortment collapse)")
+    # NOTE: observations already landed INCREMENTALLY, one dated partition per batch (see _land). The
+    # single end-of-run observe.record that used to live here would now re-write the same cells as a
+    # second partition — double-counting every row — so it is deliberately gone. A sampled run
+    # (crawl_all=False) still lands here, since it never batches.
+    if not crawl_all and cur:
+        _land(day, 1, list(cur.values()), log=log)
     header = ["SKU", "Store", "Price", "In Stock"]
     rows = [[v["sku"], v["store"], v["price"], v["instock"]] for k, v in sorted(cur.items())]
     n_products = len({v["sku"] for v in cur.values()})
