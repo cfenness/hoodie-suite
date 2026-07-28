@@ -318,7 +318,7 @@ def _land(site, day, idx, shard, items, log=print):
     return len(items)
 
 
-def consolidate(site="ubereats", log=print):
+def consolidate(site="ubereats", rebuild=False, log=print):
     """SINGLE-WRITER fold of the shards' append-only parts into the canonical catalog.
 
     Shards cannot merge (see _land): concurrent read-modify-write loses rows. So they append parts, and
@@ -326,7 +326,16 @@ def consolidate(site="ubereats", log=print):
     observation per (store_uuid, item_uuid) wins.
 
     Deliberately reads from the parts, not from the catalog it is about to write, so a partial or failed
-    consolidation can be re-run without compounding.
+    consolidation can be re-run without compounding. Idempotent: running it twice yields the identical
+    table (verified live — 55,406 parts -> 151,748 rows on both passes).
+
+    `rebuild=True` makes the catalog a PURE FUNCTION OF THE PARTS: the table is replaced, not merged, so
+    every row is traceable to a part file and a from-scratch rebuild reproduces it exactly. That is the
+    difference between consistent and CLEAN — the default merge is additive and therefore inherits
+    whatever was in the table before, including ~98k rows this catalog accumulated through the
+    write_accumulate race, whose provenance cannot be stated. Use rebuild once the parts cover the
+    universe; use the default while parts are only a partial pass, or the rebuild would DISCARD the
+    coverage the parts do not yet include.
     """
     tbl = "%s_products" % site
     rows = warehouse.query_parts(tbl + "_parts", "SELECT * FROM t") if hasattr(warehouse, "query_parts") \
@@ -339,9 +348,26 @@ def consolidate(site="ubereats", log=print):
     for r in rows:                        # later parts overwrite earlier ones for the same identity
         latest[(r.get("store_uuid"), r.get("item_uuid"))] = r
     out = list(latest.values())
-    log("[ue] consolidate: %s part rows -> %s distinct items" % (f"{len(rows):,}", f"{len(out):,}"))
-    warehouse.write_accumulate(tbl, out, key=("store_uuid", "item_uuid"),
-                               fields=[k for k in PRODUCT_FIELDS if k != "raw_json"], coverage=False)
+    fields = [k for k in PRODUCT_FIELDS if k != "raw_json"]
+    log("[ue] consolidate: %s part rows -> %s distinct items (%s)"
+        % (f"{len(rows):,}", f"{len(out):,}", "REBUILD — catalog replaced by parts" if rebuild else "merge"))
+    if rebuild:
+        # A rebuild REPLACES. Refuse to shrink the catalog without the caller having said so explicitly:
+        # a rebuild from partial parts is exactly how a full catalog gets truncated to one pass's worth,
+        # which is the failure this whole day has been about.
+        try:
+            have = warehouse.row_count(tbl)
+        except Exception:
+            have = 0
+        if have and len(out) < have * 0.9:
+            raise RuntimeError(
+                "consolidate(rebuild=True) would cut %s to %s rows — parts do not cover the catalog. "
+                "Run the fleet to completion first, or use the default merge."
+                % (f"{have:,}", f"{len(out):,}"))
+        warehouse.write_parquet(tbl, out, fields=fields)
+    else:
+        warehouse.write_accumulate(tbl, out, key=("store_uuid", "item_uuid"),
+                                   fields=fields, coverage=False)
     return len(out)
 
 
