@@ -83,6 +83,15 @@ def evacuate(table, source, key_col, parent_col=None, day=None, log=print):
     Run from the writer host with no scrape in flight, same constraint as bucketize.
     """
     day = day or time.strftime("%Y-%m-%d")
+    # A table with no payload column is ALREADY lean — that is success, not an error. abc_catalog
+    # predates raw_json, and crashing on it would read as "the migration is broken" when the correct
+    # report is "nothing to do".
+    try:
+        if not warehouse.has_column(table, "raw_json"):
+            log("evacuate: %s has no raw_json column — already lean, nothing to move" % table)
+            return 0
+    except Exception:
+        pass                              # can't tell → fall through and let the query decide
     # query(name, sql) exposes the table as the view `t` and returns a list of DICTS (not tuples).
     rows = warehouse.query(
         table,
