@@ -24,7 +24,11 @@ import warehouse
 # retryable failures vs a real success (which resets the counter). `no-creds` is HONEST, not transient —
 # retrying won't conjure a missing key — so it neither counts as a failure nor resets (the source is simply
 # skipped by run_one until the cred lands). Unknown statuses are ignored the same way.
-FAIL = {"failed", "timeout", "empty"}
+# `incomplete` = the run worked but covered only PART of the source's outlets/items. That is a failure
+# of the product, not a warning, so it belongs here — and being retryable is the point: each retry
+# resumes from the checkpoint rather than restarting, so the backoff schedule drives the crawl to full
+# coverage on its own instead of leaving a half-captured catalog sitting until tomorrow's cadence.
+FAIL = {"failed", "timeout", "empty", "incomplete"}
 BENIGN = {"ok", "current", "no-change", "success"}
 
 BACKOFF_BASE_S = float(os.environ.get("HEAL_BACKOFF_BASE_S", "300"))          # first retry ~5 min after a fail

@@ -195,6 +195,9 @@ function verdict(s){
   if (!last)                            return {k:'unknown',c:'var(--mut)',   t:'never run'};
   if (last.status === 'failed')         return {k:'fail',  c:'var(--bad)',    t:'failed'};
   if (last.status === 'timeout')        return {k:'fail',  c:'var(--bad)',    t:'timeout'};
+  // `incomplete` = it ran, but landed only SOME of the outlets/items. Holding part of a catalog is a
+  // defective product, so it reads as a failure — with the shortfall shown, not a bare red light.
+  if (last.status === 'incomplete')     return {k:'incomplete', c:'var(--bad)', t:'incomplete'};
   // the kroger shape: nothing landed AND there is nothing there to have landed into. The ledger calls
   // this `empty` with no error text, which reads as benign; with a long zero streak it is a source that
   // has never once worked, and that distinction is the whole point of this page.
@@ -249,7 +252,7 @@ function renderList(){
     if (STATE.archived[s.id] && !SHOW_ARCHIVED && f !== 'archived') return false;
     if (q && !(s.id+' '+(s.label||'')).toLowerCase().includes(q)) return false;
     const v = verdict(s);
-    if (f === 'bad') return ['fail','never','unmeas','stalled','degr','partial','stale'].includes(v.k);
+    if (f === 'bad') return ['fail','never','incomplete','unmeas','stalled','degr','partial','stale'].includes(v.k);
     if (f === 'ok')  return v.k === 'ok';
     if (f === 'off') return ['off','nocreds'].includes(v.k);
     if (f === 'confirmed') return !!STATE.confirmed[s.id];
@@ -257,7 +260,7 @@ function renderList(){
     return true;
   });
   // needs-attention first — the bench should open on what's broken, not alphabetically
-  const rank = {fail:0, never:1, unmeas:2, stalled:3, degr:4, partial:5, stale:6, unknown:7, ok:8, nocreds:9, off:10};
+  const rank = {fail:0, never:1, incomplete:2, unmeas:3, stalled:4, degr:5, partial:6, stale:7, unknown:8, ok:9, nocreds:10, off:11};
   rows.sort((a,b) => (rank[verdict(a).k] - rank[verdict(b).k]) || a.id.localeCompare(b.id));
   const el = document.getElementById('slist');
   if (!rows.length){ el.innerHTML = '<div class="msg">no sources match</div>'; return; }
@@ -424,7 +427,7 @@ function renderDetail(){
     <table><thead><tr><th>when</th><th>status</th><th class="num">delta</th><th class="num">rows after</th><th>measured against</th><th>error</th></tr></thead>
       <tbody>${(HIST[s.id]||[]).slice(0,12).map(r => `
         <tr><td>${ago(r.ts_start)}</td>
-            <td><span class="stat-pill" style="background:${r.status==='ok'?'var(--good)':(r.status==='failed'||r.status==='empty')?'var(--bad)':'var(--warn)'}22">${esc(r.status)}</span></td>
+            <td><span class="stat-pill" style="background:${r.status==='ok'?'var(--good)':(r.status==='failed'||r.status==='empty'||r.status==='incomplete')?'var(--bad)':'var(--warn)'}22">${esc(r.status)}</span></td>
             <td class="num ${r.delta>0?'dpos':r.delta<0?'dneg':'dzero'}">${r.delta>0?'+':''}${fmt(r.delta)}</td>
             <td class="num">${fmt(r.rows_after)}</td>
             <td class="mut">${esc(r.tables||'—')}</td>

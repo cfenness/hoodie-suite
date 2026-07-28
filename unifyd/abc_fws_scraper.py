@@ -505,18 +505,19 @@ def pull(sample=40, crawl_all=False, limit=None, out=".", state_dir=None, log=pr
             f"({100.0*covered/max(1,len(targets)):.1f}%); vs LIVE catalog: "
             f"{live_total - live_missing:,}/{live_total:,} "
             f"({100.0*(live_total-live_missing)/max(1,live_total):.1f}%)")
-        # WHY it is incomplete decides whether this is a failure. Products we were given at the start
-        # and never fetched are OUR miss — degrade. Products the retailer published *after* we harvested
-        # the sitemap were never crawlable this pass; against a live catalog that is normal drift, and
-        # the next run collects them (they are absent from the resume checkpoint). Degrading on those
-        # would leave every source on an active site permanently red, which is how a status stops
-        # meaning anything — the precise failure this rework exists to undo.
+        # ANY shortfall against the live catalog is a failure — holding *some* of the items is a
+        # defective product, not a partial success. The CAUSE still matters for diagnosis, so it is
+        # spelled out in the warning, but neither cause earns a clean status. The run is retried on the
+        # selfheal backoff and resumes from the checkpoint, so this drives itself to full coverage.
         if remaining:
-            warnings.append(f"Incomplete crawl: {covered:,}/{len(targets):,} products captured from the "
-                            f"start catalog, {remaining:,} never fetched — rerun to resume (checkpointed).")
+            warnings.append(f"INCOMPLETE: {covered:,}/{len(targets):,} products captured from the start "
+                            f"catalog, {remaining:,} never fetched — retry resumes from the checkpoint.")
         if appeared:
-            log(f"[abc] NOTE {appeared:,} products were published during the crawl and are not in this "
-                f"pass — expected drift on a live catalog; the next run collects them.")
+            warnings.append(f"INCOMPLETE: {appeared:,} products were published during the crawl and are "
+                            f"not in this pass — the retry collects them (not in the checkpoint).")
+        if live_missing:
+            log(f"[abc] INCOMPLETE — {live_missing:,} of the live catalog's {live_total:,} products are "
+                f"not captured. This is a failure; the source will be retried and will resume.")
     status = "failed" if not cur else ("degraded" if warnings else "success")
 
     snap = {"__ts__": int(time.time() * 1000), "cells": cur}

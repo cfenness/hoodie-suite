@@ -364,10 +364,19 @@ def run_one(source, log=print, extra_env=None, on_line=None):
     # COVERAGE: how much of the source's universe THIS run actually touched (expected vs landed store/item
     # counts) — the honest signal a cumulative merge can't give. A run can be 'current'/'ok' by row-count yet
     # 'partial' by coverage (blocked mid-crawl); this is what surfaces that. Best-effort — never fails a run.
+    # PARTIAL COVERAGE IS A FAILURE. Landing *some* of the outlets and items is not a successful pull —
+    # a customer buying this data gets a catalog with holes in it, and a run that reports `ok` on 60% of
+    # the shelf is the product lying about itself. So a partial coverage verdict downgrades the run to
+    # `incomplete`, which selfheal treats as retryable: the source is re-dispatched on the escalating
+    # backoff and, because long crawls now checkpoint and resume, each retry CONTINUES rather than
+    # restarting. Nothing stops on incompleteness — it keeps going until the catalog is actually covered.
     cov = {}
     try:
         import coverage as _cov
         cv = _cov.assess(source)
+        if status in ("ok", "current") and (cv["items"]["verdict"] == "partial"
+                                            or cv["stores"]["verdict"] == "partial"):
+            status = "incomplete"
         cov = dict(cov_basis=cv["basis"],
                    landed_items=cv["items"]["landed"], expected_items=cv["items"]["expected"],
                    cov_items_pct=cv["items"]["pct"], cov_items=cv["items"]["verdict"],

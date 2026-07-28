@@ -101,7 +101,7 @@ ds3, runs3, mv3 = abc.pull(crawl_all=True, out=out, log=lambda *a: None)
 print("status:", runs3[0]["status"])
 print("warnings:", runs3[0].get("warnings"))
 assert runs3[0]["status"] == "degraded", "partial pass must be degraded, got %r" % runs3[0]["status"]
-assert any("Incomplete" in w for w in runs3[0].get("warnings") or []), \
+assert any("INCOMPLETE" in w for w in runs3[0].get("warnings") or []), \
     "partial pass must warn about remaining products: %r" % runs3[0].get("warnings")
 assert BUCKET["_collect/snapshots/abc-fws.json"] == before_snap, \
     "PARTIAL pass overwrote the shared snapshot — would fake an assortment collapse"
@@ -135,15 +135,16 @@ assert d.get("catalog_end") == 11, d
 assert d.get("added_during_crawl") == 2, "should see the 2 products added mid-crawl: %r" % d
 assert d.get("removed_during_crawl") == 1, "should see the 1 product dropped mid-crawl: %r" % d
 assert d.get("missing_vs_live") == 2, "the 2 new products are uncaptured vs the LIVE catalog: %r" % d
-# THE POINT: we crawled every product we were given, so this is a SUCCESS. The 2 that appeared
-# mid-crawl are normal drift on a live catalog, reported but not a failure — otherwise a source on an
-# active site is permanently degraded and the status stops carrying information.
-assert runs4[0]["status"] == "success", \
-    "products published mid-crawl are drift, not our failure: %r / %r" % (
-        runs4[0]["status"], runs4[0].get("warnings"))
-assert not any("Incomplete crawl" in w for w in runs4[0].get("warnings") or []), \
-    "must not blame the crawl for products that did not exist when it started: %r" % runs4[0].get("warnings")
-print("PASS run 4: drift measured and reported; a fully-crawled pass is not degraded by mid-crawl additions")
+# SOME IS A FAILURE. We crawled every product we were handed, but the LIVE catalog has 2 we do not
+# hold — a catalog with holes is a defective product, so this must NOT report clean. The cause is
+# still spelled out (drift, not a crawl miss) because that decides what to do about it.
+assert runs4[0]["status"] != "success", \
+    "an incomplete catalog must not report success: %r" % runs4[0]["status"]
+assert any("INCOMPLETE" in w for w in runs4[0].get("warnings") or []), \
+    "the shortfall must be stated: %r" % runs4[0].get("warnings")
+assert any("published during the crawl" in w for w in runs4[0].get("warnings") or []), \
+    "the CAUSE (drift, not a crawl miss) must survive: %r" % runs4[0].get("warnings")
+print("PASS run 4: incomplete vs the live catalog is a failure, with the cause preserved")
 
 print()
 print("ALL ASSERTIONS PASSED")
