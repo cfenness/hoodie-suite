@@ -1,8 +1,10 @@
 <script src="../spine/session-guard.js"></script>
 <style>
+  /* Carolina blue is Hoodie Collect's section colour — it identifies the whole Collect bucket, so it
+     deliberately overrides the suite's default slate accent rather than inheriting it. */
   :root{
     --bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;
-    --accent:#4E79A7;--good:#5bb86e;--warn:#d99a3f;--bad:#e5636b;--derived:#6f7d90;
+    --accent:#4B9CD3;--good:#5bb86e;--warn:#d99a3f;--bad:#e5636b;--derived:#6f7d90;
     --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--sans:Inter,system-ui,-apple-system,sans-serif;
   }
   @media (prefers-color-scheme:light){:root{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}}
@@ -90,6 +92,23 @@
   .msg{padding:44px;color:var(--mut);text-align:center}
   .note{font-size:12px;color:var(--mut);margin:6px 0 0;line-height:1.5}
   .tag{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid var(--line);color:var(--mut)}
+  /* CONFIRMED — a human watched this run in the bench and vouched for it. Deliberately a different
+     visual language from the derived status pill: one is measured, the other is an opinion. */
+  .conf{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;font-weight:700;
+        padding:1px 7px;border-radius:20px;background:rgba(91,184,110,.18);color:var(--good);
+        border:1px solid rgba(91,184,110,.55);white-space:nowrap}
+  .srow.arch{opacity:.5}
+  .srow.arch .nm b{text-decoration:line-through}
+  /* field fill — an empty column is the failure a row count cannot show */
+  .fill{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}
+  .fp{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:5px;border:1px solid var(--line);
+      background:color-mix(in srgb,var(--good) 12%,transparent);color:var(--ink);white-space:nowrap}
+  .fp.lo{background:color-mix(in srgb,var(--warn) 18%,transparent);border-color:var(--warn)}
+  .fp.z{background:color-mix(in srgb,var(--bad) 18%,transparent);border-color:var(--bad);font-weight:700}
+  .dtbl{max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:9px}
+  .dtbl table{font-size:11px}
+  .dtbl thead th{position:sticky;top:0;z-index:1}
+  .dtbl td{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 
 <div class="bar" id="chrome">
@@ -109,6 +128,8 @@
         <option value="bad">needs attention</option>
         <option value="ok">healthy</option>
         <option value="off">disabled</option>
+        <option value="confirmed">confirmed</option>
+        <option value="archived">archived</option>
       </select>
     </div>
     <div class="slist" id="slist"><div class="msg">loading…</div></div>
@@ -135,6 +156,10 @@ let TABLES = {};         // observed table -> rows, from /api/monitor
 let LAST = {};           // source id -> its most recent ledger run
 let STREAK = {};         // source id -> consecutive most-recent runs that landed nothing
 let HIST = {};           // source id -> recent ledger history (loaded on select)
+let STATE = {confirmed:{}, archived:{}};  // human opinion, kept apart from derived status
+let SAMPLE = {};         // source id -> inbound-data sample (refreshed while a run is live)
+let SHOW_ARCHIVED = false;
+let TICKS = 0;
 let SEL = null;          // selected source id
 let POLL = null;         // journal poll timer
 let ACTIVE_RUN = null;   // run_id currently being watched
@@ -219,11 +244,16 @@ function renderList(){
   const q = (document.getElementById('q').value || '').toLowerCase();
   const f = document.getElementById('fstatus').value;
   const rows = SRC.filter(s => {
+    // ARCHIVED is out of sight by default — that is the whole point of the dedupe action. Still
+    // reachable via the filter, because hiding something forever is how it gets silently forgotten.
+    if (STATE.archived[s.id] && !SHOW_ARCHIVED && f !== 'archived') return false;
     if (q && !(s.id+' '+(s.label||'')).toLowerCase().includes(q)) return false;
     const v = verdict(s);
     if (f === 'bad') return ['fail','never','unmeas','stalled','degr','partial','stale'].includes(v.k);
     if (f === 'ok')  return v.k === 'ok';
     if (f === 'off') return ['off','nocreds'].includes(v.k);
+    if (f === 'confirmed') return !!STATE.confirmed[s.id];
+    if (f === 'archived')  return !!STATE.archived[s.id];
     return true;
   });
   // needs-attention first — the bench should open on what's broken, not alphabetically
@@ -234,9 +264,12 @@ function renderList(){
   el.innerHTML = rows.map(s => {
     const v = verdict(s);
     const last = LAST[s.id];
-    return `<div class="srow ${s.id===SEL?'on':''}" onclick="select('${esc(s.id)}')">
+    const cf = STATE.confirmed[s.id];
+    const ar = STATE.archived[s.id];
+    return `<div class="srow ${s.id===SEL?'on':''} ${ar?'arch':''}" onclick="select('${esc(s.id)}')">
       <span class="sq" style="background:${v.c}"></span>
       <span class="nm"><b>${esc(s.label || s.id)}</b><span>${esc(v.t)} · ${ago(last?.ts_start)}</span></span>
+      ${cf ? '<span class="conf" title="confirmed '+esc(cf.by||'')+' '+ago(cf.at)+'">\u2713 CONF</span>' : ''}
     </div>`;
   }).join('');
 }
@@ -254,6 +287,7 @@ async function select(id){
   if (needCov) COV[id] = null;
   renderList();
   renderDetail();
+  loadSample();
   await Promise.all([
     needHist && jget('/api/collect/status?id=' + encodeURIComponent(id))
       .then(d => { HIST[id] = d.history || []; })
@@ -310,7 +344,14 @@ function renderDetail(){
       <span class="tag">${esc(s.cadence)}</span>
       <span class="tag">${esc(s.cost_class||'')}</span>
       <span class="k">last run <b>${ago(last?.ts_start)}</b></span>
+      ${STATE.confirmed[s.id] ? `<span class="conf">\u2713 CONFIRMED ${esc(STATE.confirmed[s.id].by||'')} · ${ago(STATE.confirmed[s.id].at)}</span>` : ''}
+      ${STATE.archived[s.id] ? `<span class="stat-pill" style="background:var(--derived)22;color:var(--derived);border:1px solid var(--derived)">archived</span>` : ''}
     </div>
+    ${STATE.archived[s.id] ? `<div class="warnbox">Archived by ${esc(STATE.archived[s.id].by||'?')} ${ago(STATE.archived[s.id].at)}${STATE.archived[s.id].reason ? ' — ' + esc(STATE.archived[s.id].reason) : ''}${STATE.archived[s.id].superseded_by ? '. Superseded by <b>'+esc(STATE.archived[s.id].superseded_by)+'</b>' : ''}.
+      <br>It is hidden from the bench <b>and off the active list</b> — the dispatcher no longer schedules it.
+      No data is deleted and <span class="mono">source_registry.py</span> is unchanged, so this is fully
+      reversible; retiring it permanently is still a code change (repoint the registry, <span class="mono">git mv</span>
+      the module to <span class="mono">_archive/</span>).</div>` : ''}
 
     <div class="sec">Run</div>
     <div class="runbar">
@@ -329,6 +370,16 @@ function renderDetail(){
       <span class="spacer"></span>
       <span class="mut mono" style="font-size:11px">runs on its own ephemeral Fly machine</span>
     </div>
+    <div class="runbar" style="margin-top:9px">
+      <button onclick="confirmSource(${STATE.confirmed[s.id] ? 'true' : 'false'})">
+        ${STATE.confirmed[s.id] ? 'Un-confirm' : '\u2713 Confirm this source'}</button>
+      <span class="mut" style="font-size:12px">${STATE.confirmed[s.id]
+        ? esc(STATE.confirmed[s.id].note || 'confirmed through the bench')
+        : 'mark it verified once you have watched a run land correct data'}</span>
+      <span class="spacer"></span>
+      <button class="danger" onclick="archiveSource(${STATE.archived[s.id] ? 'true' : 'false'})">
+        ${STATE.archived[s.id] ? 'Restore' : 'Archive scrape'}</button>
+    </div>
     <div id="winwarn"></div>
     ${(s.missing_creds||[]).length ? `<div class="warnbox">Missing credentials: <b>${s.missing_creds.map(esc).join(', ')}</b> —
        this source will report an honest <span class="mono">no-creds</span> skip rather than run and fail.</div>` : ''}
@@ -336,6 +387,10 @@ function renderDetail(){
     <div class="sec">Console</div>
     <div id="runmeta" class="runhead"><span class="k mut">no run being watched — press Run now, or pick one from history</span></div>
     <div class="console" id="console">—</div>
+
+    <div class="sec">Inbound data
+      <button style="padding:2px 8px;font-size:11px" onclick="loadSample(true)">reload</button></div>
+    <div id="sample">${renderSample(s)}</div>
 
     ${brokenVerify(s, last)}
 
@@ -384,6 +439,102 @@ function onWin(){
     ? `<div class="warnbox"><b>All history.</b> ${esc(s.window.note)}</div>` : '';
 }
 
+/* ── inbound data ────────────────────────────────────────────────────────────
+   Real rows, not a row count. A count can be right while the contents are junk — nulls where a price
+   should be, a store column that never varies, a name that is really a category header. Watching the
+   actual rows arrive is the only way to confirm a scrape at the moment it lands. */
+function renderSample(s){
+  const d = SAMPLE[s.id];
+  if (d === undefined) return '<p class="note">not loaded yet.</p>';
+  if (d === null)      return '<p class="note">reading…</p>';
+  if (d.error)         return `<p class="note">could not read: ${esc(d.error)}</p>`;
+  return (d.tables || []).map(t => {
+    const cols = t.columns || [];
+    return `<div style="margin-bottom:12px">
+      <div class="mono" style="font-size:11.5px;margin-bottom:5px">
+        <b>${esc(t.table)}</b>${t.partition ? ' <span class="mut">· ' + esc(t.partition) + '</span>' : ''}
+        <span class="mut">— ${esc(t.note || '')}</span></div>
+      ${t.fill_pct ? `<div class="fill">${cols.map(c => {
+          const p = t.fill_pct[c];
+          if (p === null || p === undefined) return '';
+          const cls = p === 0 ? 'z' : p < 50 ? 'lo' : '';
+          return `<span class="fp ${cls}" title="${esc(c)}: ${p}% of ${fmt(t.fill_basis_rows)} rows populated">${esc(c)} ${p}%</span>`;
+        }).join('')}</div>
+        <p class="note">Field fill across the whole partition (${fmt(t.fill_basis_rows)} rows). Empty string
+        counts as unfilled — a scraper writing "" is no more useful than writing null.</p>` : ''}
+      ${cols.length ? `<div class="dtbl"><table>
+        <thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+        <tbody>${(t.rows||[]).map(r => `<tr>${cols.map(c =>
+          `<td class="${r[c] === null || r[c] === undefined ? 'mut' : ''}">${
+            r[c] === null || r[c] === undefined ? '∅' : esc(String(r[c]).slice(0,120))}</td>`).join('')}</tr>`).join('')}
+        </tbody></table></div>` : '<p class="note">no rows returned.</p>'}
+    </div>`;
+  }).join('') || '<p class="note">this source declares no tables.</p>';
+}
+
+async function loadSample(force){
+  const id = SEL;
+  if (!id) return;
+  if (!force && SAMPLE[id] !== undefined) return;
+  SAMPLE[id] = null;
+  const el = document.getElementById('sample');
+  if (el) el.innerHTML = renderSample(SRC.find(x => x.id === id) || {});
+  try {
+    const d = await jget('/api/collect/sample?id=' + encodeURIComponent(id));
+    SAMPLE[id] = d.ok ? d : {error: d.error};
+  } catch(e){ SAMPLE[id] = {error: e.message}; }
+  if (SEL === id){
+    const e2 = document.getElementById('sample');
+    if (e2) e2.innerHTML = renderSample(SRC.find(x => x.id === id) || {});
+  }
+}
+
+/* ── confirm / archive — the two human judgements the bench records ────────── */
+async function confirmSource(undo){
+  const s = SRC.find(x => x.id === SEL); if (!s) return;
+  let note = '';
+  if (!undo){
+    note = prompt('Confirm "' + (s.label || s.id) + '".\n\nWhat did you verify? (optional)', '') ?? null;
+    if (note === null) return;                       // cancelled — do not record a confirmation
+  }
+  try {
+    const r = await fetch('/api/collect/confirm', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id: s.id, note, undo: !!undo, run_id: ACTIVE_RUN})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'refused');
+    await loadState();
+  } catch(e){ alert('could not record: ' + e.message); }
+}
+
+async function archiveSource(undo){
+  const s = SRC.find(x => x.id === SEL); if (!s) return;
+  let reason = '', sup = null;
+  if (!undo){
+    reason = prompt('Archive "' + (s.label || s.id) + '" (dedupe).\n\n'
+      + 'It goes out of sight AND off the active list — the dispatcher stops scheduling it.\n'
+      + 'No data is deleted and the registry is unchanged, so this is reversible.\n\n'
+      + 'Why are you archiving it?', '') ?? null;
+    if (reason === null) return;
+    sup = prompt('Superseded by which source id? (optional)', '') || null;
+  }
+  try {
+    const r = await fetch('/api/collect/archive', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id: s.id, reason, superseded_by: sup, undo: !!undo})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'refused');
+    await loadState();
+  } catch(e){ alert('could not record: ' + e.message); }
+}
+
+async function loadState(){
+  try {
+    const d = await jget('/api/collect/state?fresh=1');
+    STATE = {confirmed: d.confirmed || {}, archived: d.archived || {}};
+  } catch(e){ /* keep whatever we had — an unreadable opinion store must not blank the bench */ }
+  renderList();
+  if (SEL) renderDetail();
+}
+
 /* ── run + watch ─────────────────────────────────────────────────────────── */
 async function startRun(){
   const s = SRC.find(x => x.id === SEL);
@@ -420,8 +571,9 @@ function watch(runId){
     catch(e){ return; }
     if (!d || !d.ok) return;
     renderRun(d.run);
+    if (++TICKS % 4 === 0) loadSample(true);        // ~every 12s while the run is in flight
     const done = ['ok','failed','timeout','empty','no-change','current','degraded','no-creds','done'].includes(d.run?.status);
-    if (done){ stopPoll(); loadAll(); }
+    if (done){ stopPoll(); loadSample(true); loadAll(); }
   };
   tick();
   POLL = setInterval(tick, 3000);
@@ -456,11 +608,13 @@ async function loadAll(force){
     // Run history comes from the shared LEDGER (/api/collect/status), not /api/runs — the latter is this
     // process's in-memory list, which is empty on a freshly-booted machine and makes every source read
     // "never run" while the ledger holds the real history.
-    const [reg, mon, led] = await Promise.all([
+    const [reg, mon, led, st] = await Promise.all([
       jget('/api/registry/sources'),
       jget('/api/monitor' + (force ? '?fresh=1' : '')),
       jget('/api/collect/status' + (force ? '?fresh=1' : '')).catch(() => ({last:{}, zero_streak:{}})),
+      jget('/api/collect/state').catch(() => ({confirmed:{}, archived:{}})),
     ]);
+    STATE = {confirmed: st.confirmed || {}, archived: st.archived || {}};
     SRC = reg.sources || [];
     TABLES = {};
     (mon.sources || []).forEach(x => { TABLES[x.name] = x.rows; });
@@ -470,8 +624,9 @@ async function loadAll(force){
     const prod = mon.warehouse?.remote ?? reg.remote;
     document.getElementById('wh').className = 'wh ' + (prod ? 'prod' : 'local');
     document.getElementById('wh').textContent = prod ? 'warehouse: remote' : 'warehouse: LOCAL';
+    const nconf = Object.keys(STATE.confirmed).length, narch = Object.keys(STATE.archived).length;
     document.getElementById('asof').textContent =
-      `${SRC.length} sources · counts ${mon.cached ? mon.cache_age_s + 's old' : 'live'}${mon.building ? ' · building…' : ''}`;
+      `${SRC.length} sources · ${nconf} confirmed · ${narch} archived · counts ${mon.cached ? mon.cache_age_s + 's old' : 'live'}${mon.building ? ' · building…' : ''}`;
     renderList();
     if (SEL) renderDetail();
   } catch(e){

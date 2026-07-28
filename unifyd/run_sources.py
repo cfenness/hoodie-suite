@@ -121,6 +121,17 @@ def due_sources(now=None, grace=0.98):
     if retry:
         have = {s["id"] for s in due}
         due += [s for s in reg.SOURCES if s.get("enabled") and s["id"] in retry and s["id"] not in have]
+    # ARCHIVED in Hoodie Collect = deduped away and taken OFF THE ACTIVE LIST, so the dispatcher stops
+    # scheduling it. This is the operational half of the bench's archive action — without it, "archived"
+    # would only mean "hidden", and a retired duplicate would keep burning machines every tick.
+    # archived_ids() fails OPEN (empty set) so an unreadable state can never halt the whole pipeline.
+    try:
+        import run_journal
+        arch = run_journal.archived_ids()
+        if arch:
+            due = [s for s in due if s["id"] not in arch]
+    except Exception:
+        pass
     return due
 
 

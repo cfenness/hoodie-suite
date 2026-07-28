@@ -238,6 +238,33 @@ def _sort_key(run_id):
         return 0
 
 
+_BENCH_STATE_KEY = "_collect/bench_state.json"
+
+
+def bench_state():
+    """The workbench's human-set state (confirmed / archived), from the shared bucket. {} if unreadable."""
+    try:
+        import warehouse
+        raw = warehouse.get_bytes(_BENCH_STATE_KEY)
+        return json.loads(raw) if raw else {}
+    except Exception:
+        return {}
+
+
+def archived_ids():
+    """Source ids ARCHIVED in the workbench — deduped away and taken off the active list, so the
+    dispatcher stops scheduling them.
+
+    FAILS OPEN by design: if the state can't be read we return an empty set and everything keeps running.
+    The opposite (treating an unreadable state as "archive everything") would silently halt the entire
+    pipeline on a transient storage blip, which is far worse than one extra run of a retired source.
+    """
+    try:
+        return set((bench_state().get("archived") or {}).keys())
+    except Exception:
+        return set()
+
+
 def prune(keep_days=14):
     """Drop journals older than keep_days. Journals are small but unbounded; the ledger is the
     permanent record, the journal is the live/recent detail."""

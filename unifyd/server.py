@@ -4503,6 +4503,177 @@ def collect_status_ep():
                    age_s=round(time.time() - d["at"]))
 
 
+# ── bench state: what a HUMAN has confirmed, and what has been archived ──────────────────────────
+# Held in the shared bucket (not this machine's disk) so the verdict survives redeploys and is the same
+# for every viewer. This is the one place the bench stores an OPINION rather than an observation, so it
+# is kept strictly separate from the derived status and always carries who/when.
+_COLLECT_STATE_KEY = "_collect/bench_state.json"
+_COLLECT_STATE = {"at": 0, "data": None}
+
+
+def _bench_state(force=False):
+    if not force and _COLLECT_STATE["data"] is not None and (time.time() - _COLLECT_STATE["at"]) < 20:
+        return _COLLECT_STATE["data"]
+    d = {"confirmed": {}, "archived": {}}
+    try:
+        import warehouse
+        raw = warehouse.get_bytes(_COLLECT_STATE_KEY)
+        if raw:
+            d = json.loads(raw)
+            d.setdefault("confirmed", {})
+            d.setdefault("archived", {})
+    except Exception:
+        pass
+    _COLLECT_STATE.update(at=time.time(), data=d)
+    return d
+
+
+def _bench_state_save(d):
+    import warehouse
+    warehouse.put_bytes(_COLLECT_STATE_KEY, json.dumps(d, default=str).encode())
+    _COLLECT_STATE.update(at=time.time(), data=d)
+
+
+@app.get("/api/collect/state")
+def collect_state_ep():
+    return jsonify(ok=True, **_bench_state(force=request.args.get("fresh") == "1"))
+
+
+@app.post("/api/collect/confirm")
+def collect_confirm_ep():
+    """Mark a source CONFIRMED — a human watched it run in the bench and believes its output. Body:
+    {id, note?, run_id?, undo?}. Records who and when; a confirmation with no observer is worthless."""
+    body = request.get_json(silent=True) or {}
+    sid = (body.get("id") or "").strip()
+    import source_registry as reg
+    if not reg.by_id(sid):
+        return jsonify(ok=False, error="unknown source %r" % sid), 404
+    d = _bench_state(force=True)
+    if body.get("undo"):
+        d["confirmed"].pop(sid, None)
+    else:
+        d["confirmed"][sid] = {
+            "at": int(time.time()),
+            "by": (session.get("email") if hasattr(session, "get") else None) or "unknown",
+            "note": (body.get("note") or "")[:400],
+            "run_id": body.get("run_id"),
+        }
+    try:
+        _bench_state_save(d)
+    except Exception as e:
+        return jsonify(ok=False, error="could not persist: %s" % str(e)[:160]), 502
+    return jsonify(ok=True, confirmed=d["confirmed"].get(sid))
+
+
+@app.post("/api/collect/archive")
+def collect_archive_ep():
+    """ARCHIVE a scrape (the dedupe action) — reversible, and deliberately NOT a delete. It hides the
+    source from the bench and records why/when/who. It does not touch source_registry.py, does not stop
+    the dispatcher, and does not remove a single row of data: the standing rule is archive-don't-delete,
+    because a superseded scraper is expensive to re-derive. Retiring a source for real is still a code
+    change (repoint the registry + git mv the module to _archive/), which this marks as pending.
+    Body: {id, reason?, superseded_by?, undo?}."""
+    body = request.get_json(silent=True) or {}
+    sid = (body.get("id") or "").strip()
+    import source_registry as reg
+    if not reg.by_id(sid):
+        return jsonify(ok=False, error="unknown source %r" % sid), 404
+    d = _bench_state(force=True)
+    if body.get("undo"):
+        d["archived"].pop(sid, None)
+    else:
+        d["archived"][sid] = {
+            "at": int(time.time()),
+            "by": (session.get("email") if hasattr(session, "get") else None) or "unknown",
+            "reason": (body.get("reason") or "")[:400],
+            "superseded_by": body.get("superseded_by"),
+        }
+    try:
+        _bench_state_save(d)
+    except Exception as e:
+        return jsonify(ok=False, error="could not persist: %s" % str(e)[:160]), 502
+    return jsonify(ok=True, archived=d["archived"].get(sid))
+
+
+@app.get("/api/collect/sample")
+def collect_sample_ep():
+    """The INBOUND DATA for one source — real rows, so you can watch what a run is actually landing
+    rather than trusting a row count. Partition-aware: for a per-(date,source) table like
+    retail_observations it reads only THIS source's newest partition files, so the read stays cheap
+    even though the table holds 15M+ rows."""
+    import source_registry as reg
+    import warehouse
+    sid = (request.args.get("id") or "").strip()
+    src = reg.by_id(sid)
+    if not src:
+        return jsonify(ok=False, error="unknown source %r" % sid), 404
+    import monitor
+    limit = min(int(request.args.get("limit", 25) or 25), 100)
+    snap = monitor.snapshot()
+    byname = {x["name"]: x for x in (snap.get("sources") or [])}
+    out = []
+    for t in (src.get("tables") or [])[:3]:
+        rows, note, part, prows, fill, n = [], None, None, None, None, None
+        meta = byname.get(t) or {}
+        # A write_partition table is one file per (date, source) — so THIS source's own newest part file
+        # is both the cheapest read and the only one attributable to it. monitor's `observations` block is
+        # already keyed by source with its part list (the per-source `sources[]` entry drops `parts`), so
+        # no object-store listing is needed here.
+        parts = None
+        if meta.get("partitioned"):
+            parts = []
+            for o in (snap.get("observations") or {}).values():
+                if o.get("table") == t:
+                    parts += o.get("parts") or []
+        try:
+            if parts:
+                # part names are "<YYYY-MM-DD>_<source>"; match the source segment exactly so `abc-fws`
+                # can't pick up a part belonging to some other source that merely ends the same way.
+                mine = sorted([p for p in parts
+                               if p.get("part", "").split("_", 1)[-1] in (sid, sid.replace("-", "_"))],
+                              key=lambda p: p.get("date") or "")
+                if mine:
+                    part, prows = mine[-1]["part"], mine[-1].get("rows")
+                    con = warehouse.connect()
+                    base = ("s3://%s/%s" % (warehouse._bucket(), warehouse._prefix())) \
+                        if warehouse.remote() else warehouse._LOCAL_DIR
+                    path = ("%s/%s/%s.parquet" % (base, t, part)).replace("'", "")
+                    cur = con.execute("SELECT * FROM read_parquet('%s') LIMIT %d" % (path, limit))
+                    cols = [c[0] for c in cur.description]
+                    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+                    note = "newest partition written by this source (%s rows in it)" % f"{prows:,}" \
+                        if prows is not None else "newest partition written by this source"
+                    # FIELD FILL over the whole partition. A row count can be perfect while the contents
+                    # are unusable — abc-fws lands per-store price and stock with name/upc/brand empty on
+                    # every row, which no count would ever reveal. Empty string counts as NOT filled:
+                    # a scraper writing "" is not meaningfully different from writing null.
+                    try:
+                        exprs = ", ".join(
+                            "SUM(CASE WHEN %s IS NULL OR CAST(%s AS VARCHAR)='' THEN 0 ELSE 1 END) AS %s"
+                            % ('"%s"' % c, '"%s"' % c, '"%s"' % c) for c in cols)
+                        fr = con.execute("SELECT COUNT(*) AS _n, %s FROM read_parquet('%s')"
+                                         % (exprs, path)).fetchone()
+                        n = fr[0] or 0
+                        fill = {c: (round(100.0 * (fr[i + 1] or 0) / n, 1) if n else None)
+                                for i, c in enumerate(cols)}
+                    except Exception:
+                        n, fill = None, None
+                else:
+                    note = ("partitioned table with %d parts, but NONE named for %r — this source has "
+                            "never landed here under its own name" % (len(parts), sid))
+            else:
+                rows = warehouse.query(t, "SELECT * FROM t LIMIT %d" % limit)
+                note = "whole-table sample — this table is not partitioned by source, so these rows are " \
+                       "not attributable to this source alone"
+        except Exception as e:
+            note = "read failed: %s" % str(e)[:160]
+        out.append({"table": t, "partition": part, "partition_rows": prows, "note": note,
+                    "partitioned": bool(meta.get("partitioned")), "table_rows": meta.get("rows"),
+                    "fill_pct": fill, "fill_basis_rows": n,
+                    "columns": list(rows[0].keys()) if rows else [], "rows": rows})
+    return jsonify(ok=True, id=sid, tables=out)
+
+
 @app.get("/api/collect/coverage")
 def collect_coverage_ep():
     """Expected-vs-landed for ONE source, on demand. Split out of /api/registry/sources because assessing
