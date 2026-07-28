@@ -41,6 +41,12 @@ ITEMS = []
 class FakeWarehouse:
     @staticmethod
     def write_accumulate(name, rows, key=None, fields=None):
+        # Enforce the REAL contract: warehouse.write_accumulate calls key(row). A fake that accepts a
+        # column name silently blesses a call that fails in production with
+        # "'str' object is not callable" — which is exactly what shipped before this assertion existed.
+        assert callable(key), "write_accumulate(key=) must be a callable, got %r" % (key,)
+        for r in rows:
+            assert key(r), "key(row) must produce an identity for every row: %r" % (r,)
         ITEMS.append((name, len(rows)))
         return {"rows": len(rows)}
 

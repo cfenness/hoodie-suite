@@ -411,7 +411,10 @@ def _land_items(items, log=print):
     try:
         import warehouse
         rows = list(items.values())
-        warehouse.write_accumulate("abc_catalog", rows, key="sku")
+        # key is a CALLABLE (row -> identity), not a column name. Same expression abc_catalog.py used,
+        # so the merged output keys identically to the table's existing 13,999 rows.
+        warehouse.write_accumulate("abc_catalog", rows,
+                                   key=lambda r: r.get("sku") or r.get("upc") or r.get("url"))
         log("  [abc] item master: merged %d products into abc_catalog" % len(rows))
         items.clear()
         return len(rows)
