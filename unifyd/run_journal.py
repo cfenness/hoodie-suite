@@ -33,6 +33,10 @@ a scraper may print a line
 
     HOODIE_PROGRESS {"rows": 1234, "stage": "store 12/133", "pct": 9.0}
 
+    rows/stage/pct populate the named counters; ANY other key is kept under `metrics` (rss_mb, ok,
+    empty, unreachable, ...) so a run can report whatever it measures without the journal deciding
+    for it what matters.
+
 and the streamer folds it into the journal. Anything else printed is captured as ordinary log tail.
 """
 import json
@@ -46,6 +50,7 @@ _LOG_TAIL = int(os.environ.get("JOURNAL_LOG_TAIL", "600"))       # lines kept in
 _LINE_MAX = 2000                                                 # per-line clamp
 
 PROGRESS_RE = re.compile(r"HOODIE_PROGRESS\s+(\{.*\})\s*$")
+_METRIC_MAX = 40                          # bound the per-run metric set; a runaway emitter can't bloat the doc
 
 # run_id -> {"doc": {...}, "last_flush": ts}
 _OPEN = {}
@@ -143,6 +148,19 @@ def log(run_id, line):
                         doc["stage"] = str(p["stage"])[:120]
                     if p.get("pct") is not None:
                         doc["pct"] = p["pct"]
+                    # KEEP EVERY OTHER METRIC. This handler used to whitelist rows/stage/pct and drop
+                    # the rest — then return, so the extras did not survive as log text either. A run
+                    # reporting MORE about itself had that detail discarded twice over, silently. That
+                    # cost two blind rounds of OOM debugging: ue_catalog emitted rss_mb/ok/empty/
+                    # unreachable in every heartbeat and none of it ever reached the journal. Same
+                    # discard-nothing rule as the scrapers: the reporter does not get to decide that a
+                    # field the run bothered to measure is uninteresting.
+                    extra = {k: v for k, v in p.items() if k not in ("rows", "stage", "pct")}
+                    if extra:
+                        met = doc.setdefault("metrics", {})
+                        for k, v in list(extra.items())[:_METRIC_MAX]:
+                            met[str(k)[:40]] = v if isinstance(v, (int, float, bool, type(None))) \
+                                else str(v)[:200]
                     _flush(run_id)
                     return
             except Exception:
