@@ -411,6 +411,15 @@ function renderDetail(){
           <input id="windays" type="number" min="1" value="7" style="display:none">
         </div>` :
         `<span class="mut" style="font-size:12px">not time-bound — this source declares no window</span>`}
+      ${s.id === 'ubereats' || s.id === 'postmates' ? `<div class="winbox">
+          <label class="mut" style="font-size:12px">shards</label>
+          <select id="shards">
+            <option value="1">1 (single machine)</option>
+            <option value="4">4</option>
+            <option value="8" selected>8</option>
+            <option value="16">16</option>
+          </select>
+        </div>` : ''}
       <span class="spacer"></span>
       <span class="mut mono" style="font-size:11px">runs on its own ephemeral Fly machine</span>
     </div>
@@ -676,6 +685,8 @@ async function startRun(){
   const btn = document.getElementById('btnrun');
   btn.disabled = true; btn.textContent = 'starting…';
   const body = { id: s.id, trigger: 'manual' };
+  const sh = document.getElementById('shards');
+  if (sh && +sh.value > 1) body.shards = +sh.value;   // fleet: N machines, one deterministic slice each
   const wm = document.getElementById('winmode');
   if (wm){
     if (wm.value === 'all') body.all = true;
@@ -686,6 +697,9 @@ async function startRun(){
     const r = await fetch('/api/collect/run', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'run refused');
+    if (j.fleet) alert('Launched ' + j.launched.length + ' of ' + j.shards + ' shards.\n\n'
+      + j.launched.map(l => '  shard ' + l.shard + ' -> ' + l.machine).join('\n')
+      + '\n\nEach shard journals separately; watching the first.');
     watch(j.run_id);
   } catch(e){
     document.getElementById('console').innerHTML = '<span class="err">could not start run: '+esc(e.message)+'</span>';

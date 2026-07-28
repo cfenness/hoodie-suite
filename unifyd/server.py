@@ -4413,6 +4413,34 @@ def collect_run_ep():
     if not image:
         return jsonify(ok=False, error="could not resolve the app image via the Machines API"), 502
 
+    # FLEET: `shards: N` launches N machines, each owning a deterministic slice (UE_SHARD=i/N). This is
+    # how a universe too large for one machine still completes inside a day — the answer to "too slow"
+    # is parallelism, never a cap. Shards need no coordination: the split is a stable hash of the store
+    # id, so they cannot overlap or leave a gap, and each carries its own resume checkpoint.
+    shards = int(body.get("shards") or 1)
+    if shards > 1:
+        launched, run_ids = [], []
+        for i in range(shards):
+            rid = run_journal.new_id("%s-s%d" % (sid, i))
+            mid = disp.spawn(sid, image, src.get("klass"), src.get("mem"), run_id=rid,
+                             days=days, want_all=want_all, trigger=body.get("trigger") or "manual",
+                             env={"UE_SHARD": "%d/%d" % (i, shards)})
+            if mid:
+                launched.append({"machine": mid, "shard": "%d/%d" % (i, shards), "run_id": rid})
+                run_ids.append(rid)
+                try:
+                    run_journal.open_run(rid, sid, label="%s [shard %d/%d]" % (src.get("label"), i, shards),
+                                         klass=src.get("klass"), params={"shard": "%d/%d" % (i, shards)},
+                                         tables=src.get("tables"), trigger=body.get("trigger") or "manual")
+                    run_journal.note(rid, status="queued", machine_id=mid,
+                                     stage="shard %d/%d booting" % (i, shards))
+                except Exception:
+                    pass
+        if not launched:
+            return jsonify(ok=False, error="Fly refused to create any shard machine"), 502
+        return jsonify(ok=True, fleet=True, shards=shards, launched=launched,
+                       run_id=run_ids[0], source=sid), 202
+
     run_id = run_journal.new_id(sid)
     mid = disp.spawn(sid, image, src.get("klass"), src.get("mem"), run_id=run_id,
                      days=days, want_all=want_all, trigger=body.get("trigger") or "manual")

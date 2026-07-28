@@ -137,7 +137,7 @@ def running_sources():
 
 
 def spawn(sid, image, klass, mem_hint=None, run_id=None, days=None, want_all=False,
-          trigger="scheduled"):
+          trigger="scheduled", env=None):
     """Create the ephemeral machine for one source. `run_id` attaches a Hoodie Collect journal so the
     run is watchable while it executes; `days`/`want_all` set a time-bound source's window. Returns the
     machine id (truthy) rather than a bare bool, so a caller can correlate the machine with the run."""
@@ -158,6 +158,8 @@ def spawn(sid, image, klass, mem_hint=None, run_id=None, days=None, want_all=Fal
     meta = {"role": "ephemeral-pull", "source": sid}
     if run_id:
         meta["run_id"] = run_id                              # lets the bench find the machine for a run
+    if env and env.get("UE_SHARD"):
+        meta["shard"] = env["UE_SHARD"]                      # so a fleet is legible in the machine list
     config = {
         "image": image,
         "auto_destroy": True,                                # == flyctl --rm: Fly removes it when the cmd exits
@@ -166,6 +168,11 @@ def spawn(sid, image, klass, mem_hint=None, run_id=None, days=None, want_all=Fal
         "metadata": meta,
         "init": {"cmd": argv},
     }
+    # Per-machine env is what makes a FLEET possible: identical image, identical command, one variable
+    # (UE_SHARD=i/N) telling each machine which slice of the universe it owns. Shards need no
+    # coordination because the split is a stable hash, so they cannot overlap or leave a gap.
+    if env:
+        config["env"] = {str(k): str(v) for k, v in env.items()}
     try:
         r = _api("POST", "/apps/%s/machines" % APP, {"config": config})
         return r.get("id")
