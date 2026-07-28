@@ -48,7 +48,12 @@ import observe
 import ubereats
 import warehouse
 
-WORKERS = int(os.environ.get("UE_WORKERS", "64"))     # aggregator_geo runs this endpoint at 64; proven
+# MEASURED, not inherited. A 240-store calibration on this endpoint: 32 workers -> 132 stores with a
+# catalog and 10,677 items; 64 -> ZERO; 128 -> 1; 192 -> 1. Above ~32 the BFF stops answering and
+# returns empty FAST, so the higher counts look 3x quicker while collecting nothing. 64 came from
+# aggregator_geo (a geo-only sweep with far smaller payloads) and does not transfer.
+# Throughput comes from SHARDS across machines, not threads on one.
+WORKERS = int(os.environ.get("UE_WORKERS", "24"))
 BATCH_STORES = int(os.environ.get("UE_BATCH", "400"))  # stores per landed batch + checkpoint
 PRODUCT_FIELDS = ["store_uuid", "store_name", "source", "item_uuid", "name", "brand", "upc", "gtin",
                   "price", "list_price", "promo", "size", "abv", "in_stock", "stock_label", "category",
@@ -266,9 +271,13 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
             return
         data = getstore.fetch_store(su, site=site)
         if not data:
+            # DO NOT mark it done. Measured: above ~32 workers this endpoint stops answering and returns
+            # EMPTY fast — no 429, no error, just nothing. Marking a store done on a null response would
+            # let a throttled sweep race through 502k stores in minutes, land zero items, and report
+            # complete. That is the exact "succeeded and lied" failure this whole workbench exists to
+            # remove, and it would be invisible: fast, green, and empty.
             with lock:
                 n_fail += 1
-                done.add(url_id)          # a store that will not answer is DONE for today, not retried forever
             return
         sname = data.get("title") or name
         try:
@@ -295,11 +304,22 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
                           pct=round(100.0 * n_seen / max(1, len(mine)), 1))
             _flush()
 
+    # THROTTLE TRIPWIRE. A sustained run of null responses means we are being rate-limited, not that
+    # the stores are gone. Abort the pass rather than burn the universe against a closed door — the
+    # checkpoint keeps what landed and the next run resumes.
+    def _tripped():
+        seen = n_ok + n_empty + n_fail
+        return seen >= 300 and n_fail > seen * 0.9
+
     t0 = time.time()
     try:
         with ThreadPoolExecutor(max_workers=workers) as ex:
             for _ in ex.map(_one, todo):
-                pass
+                if _tripped():
+                    log("[ue] !! THROTTLED — %s of %s responses empty. Stopping this pass; lower "
+                        "UE_WORKERS (measured: ~32 works, 64+ returns empty) or add shards."
+                        % (f"{n_fail:,}", f"{n_ok + n_empty + n_fail:,}"))
+                    break
     finally:
         with lock:
             _flush(force=True)
