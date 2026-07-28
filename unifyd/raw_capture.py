@@ -99,7 +99,26 @@ def evacuate(table, source, key_col, parent_col=None, day=None, log=print):
     if moved != len(rows):
         log("evacuate: ABORT — kept %d of %d payloads; leaving %s untouched" % (moved, len(rows), table))
         return 1
-    log("evacuate: %s payloads safe in %s — catalog can now be rewritten lean" % ("{:,}".format(moved), TABLE))
+    log("evacuate: %s payloads safe in %s — clearing the column" % ("{:,}".format(moved), TABLE))
+    # ONLY NOW is the catalog rewritten, and only after the copy above was verified row-for-row. Order
+    # matters more than elegance here: today's bugs were repeatedly "bookkeeping destroyed the payload it
+    # described", so the destructive step never runs until the preserved copy is confirmed landed.
+    # EXCLUDE keeps the payloads from being read back into memory just to be thrown away — the whole
+    # point is to stop touching that column.
+    try:
+        lean = warehouse.query(table, "SELECT * EXCLUDE (raw_json), '' AS raw_json FROM t")
+    except Exception as e:
+        log("evacuate: payloads are SAFE in %s but the lean read failed (%s) — catalog left as-is"
+            % (TABLE, str(e)[:90]))
+        return 1
+    lean = list(lean or [])
+    if len(lean) != warehouse.row_count(table):
+        log("evacuate: lean read returned %d of %d rows — refusing to overwrite the catalog"
+            % (len(lean), warehouse.row_count(table)))
+        return 1
+    warehouse.write_parquet(table, lean, fields=list(lean[0].keys()))
+    log("evacuate: %s rewritten lean (%s rows); payloads live in %s"
+        % (table, "{:,}".format(len(lean)), TABLE))
     return 0
 
 
