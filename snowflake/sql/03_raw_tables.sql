@@ -64,7 +64,7 @@ COPY INTO UNIFYD.RAW.AB_OUTLETS
 
 -- abc_catalog   [FULL — priority seed]
 --   ABC FW&S — BigCommerce catalog (UPC)
---   registry source(s): abc-catalog
+--   registry source(s): abc-catalog, abc-fws
 CREATE OR REPLACE TABLE UNIFYD.RAW.ABC_CATALOG
   USING TEMPLATE (
     SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
@@ -242,6 +242,81 @@ COPY INTO UNIFYD.RAW.CA_OUTLETS
   ON_ERROR = ABORT_STATEMENT;
 
 
+-- census_acs
+--   ALL ~1,193 ACS5 detailed tables @ state + featured bev-alc metrics (21+, income, households) @ county; ~1,193 group() calls. Full all-tables×county + tract/block-group is a partitioned/bulk follow-up
+--   registry source(s): census-acs5
+CREATE OR REPLACE TABLE UNIFYD.RAW.CENSUS_ACS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/census_acs.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CENSUS_ACS
+  FROM '@WH/census_acs.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- census_demographic
+--   demand-side ACS5 by county (census.build) — population/income/housing packs, wide + geoid-keyed for enrich.merge_census outlet joins; free key, re-derivable
+--   registry source(s): census-acs
+CREATE OR REPLACE TABLE UNIFYD.RAW.CENSUS_DEMOGRAPHIC
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/census_demographic.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CENSUS_DEMOGRAPHIC
+  FROM '@WH/census_demographic.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- census_economic
+--   demand-side ACS5 by county (census.build) — population/income/housing packs, wide + geoid-keyed for enrich.merge_census outlet joins; free key, re-derivable
+--   registry source(s): census-acs
+CREATE OR REPLACE TABLE UNIFYD.RAW.CENSUS_ECONOMIC
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/census_economic.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CENSUS_ECONOMIC
+  FROM '@WH/census_economic.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- census_housing
+--   demand-side ACS5 by county (census.build) — population/income/housing packs, wide + geoid-keyed for enrich.merge_census outlet joins; free key, re-derivable
+--   registry source(s): census-acs
+CREATE OR REPLACE TABLE UNIFYD.RAW.CENSUS_HOUSING
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/census_housing.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CENSUS_HOUSING
+  FROM '@WH/census_housing.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- census_migration
+--   ACS county-to-county flows (MOVEDIN/OUT/NET + FROMABROAD) — market-momentum signal for trade areas
+--   registry source(s): census-migration
+CREATE OR REPLACE TABLE UNIFYD.RAW.CENSUS_MIGRATION
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/census_migration.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.CENSUS_MIGRATION
+  FROM '@WH/census_migration.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
 -- census_reference
 --   Census API (census_ref.build) — CBP/Nonemp/PEP supply-side + ACS demand-side demographics at state/county/ZCTA grain (~33k ZIPs) + Economic Census OBSERVED receipts (dataset ecn, $1000s); free key, re-derivable
 --   registry source(s): census
@@ -311,6 +386,21 @@ CREATE OR REPLACE TABLE UNIFYD.RAW.CPI_REFERENCE
     FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/cpi_reference.parquet', FILE_FORMAT => 'PARQUET_FMT')));
 COPY INTO UNIFYD.RAW.CPI_REFERENCE
   FROM '@WH/cpi_reference.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- doordash_full_runs
+--   RESUMABLE national sweep of a curated major-chain list via doordash_full.py's category-tree walk (doordash_chains.py buckets doordash_stores by chain-name heuristic, same pattern as naop's _RETAIL_CHAINS, inverted). Each run advances every chain toward full coverage in DDFULL_BATCH_PER_CHAIN batches (accumulate-merged, never overwrites a prior batch) and lands matched/covered/remaining every time — no permanent cap, no silent coverage gap. $0 flat ISP pool (Bright Data retired for DoorDash 2026-07-24)
+--   registry source(s): doordash-full
+CREATE OR REPLACE TABLE UNIFYD.RAW.DOORDASH_FULL_RUNS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/doordash_full_runs.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.DOORDASH_FULL_RUNS
+  FROM '@WH/doordash_full_runs.parquet'
   FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
   MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
   FORCE = TRUE
@@ -415,6 +505,21 @@ CREATE OR REPLACE TABLE UNIFYD.RAW.HEMP_RETAILERS
     FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/hemp_retailers.parquet', FILE_FORMAT => 'PARQUET_FMT')));
 COPY INTO UNIFYD.RAW.HEMP_RETAILERS
   FROM '@WH/hemp_retailers.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- instacart_products
+--   ONE zone / a few alcohol terms — proves whether a plain logged-in session lifts the anonymous alcohol gate. No proxy (free Playwright, per instacart.py). Manual trigger only.
+--   registry source(s): instacart-bevalc
+CREATE OR REPLACE TABLE UNIFYD.RAW.INSTACART_PRODUCTS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/instacart_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.INSTACART_PRODUCTS
+  FROM '@WH/instacart_products.parquet'
   FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
   MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
   FORCE = TRUE
@@ -543,7 +648,7 @@ COPY INTO UNIFYD.RAW.OUTLET_MASTER
 
 -- postmates_products
 --   Uber BFF, all stores
---   registry source(s): postmates
+--   registry source(s): postmates, postmates-full
 CREATE OR REPLACE TABLE UNIFYD.RAW.POSTMATES_PRODUCTS
   USING TEMPLATE (
     SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
@@ -594,6 +699,21 @@ CREATE OR REPLACE TABLE UNIFYD.RAW.PUBLIX_PRODUCTS
     FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/publix_products.parquet', FILE_FORMAT => 'PARQUET_FMT')));
 COPY INTO UNIFYD.RAW.PUBLIX_PRODUCTS
   FROM '@WH/publix_products.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- sevenfifty_items
+--   <slug>.storefronts.site/search.json — distributor item master (SKUs), no auth (prices need partner login); parameterized by storefront slug (johnsonbrothers seed). Add slugs to STOREFRONTS.
+--   registry source(s): sevenfifty
+CREATE OR REPLACE TABLE UNIFYD.RAW.SEVENFIFTY_ITEMS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/sevenfifty_items.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.SEVENFIFTY_ITEMS
+  FROM '@WH/sevenfifty_items.parquet'
   FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
   MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
   FORCE = TRUE
@@ -827,7 +947,7 @@ COPY INTO UNIFYD.RAW.TTB_MASTER
 
 -- ubereats_products
 --   Uber BFF, all stores
---   registry source(s): ubereats
+--   registry source(s): ubereats, ubereats-full
 CREATE OR REPLACE TABLE UNIFYD.RAW.UBEREATS_PRODUCTS
   USING TEMPLATE (
     SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
@@ -878,6 +998,21 @@ CREATE OR REPLACE TABLE UNIFYD.RAW.UT_PRICING
     FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/ut_pricing.parquet', FILE_FORMAT => 'PARQUET_FMT')));
 COPY INTO UNIFYD.RAW.UT_PRICING
   FROM '@WH/ut_pricing.parquet'
+  FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+  FORCE = TRUE
+  ON_ERROR = ABORT_STATEMENT;
+
+
+-- vip_brandbuilder_items
+--   products.vtinfo.com/bbs — distributor product+package catalog w/ retail UPCs, no auth; parameterized by VIP sourceCode (Columbia 01191 seed). Add distributors to DISTRIBUTORS.
+--   registry source(s): vip-brandbuilder
+CREATE OR REPLACE TABLE UNIFYD.RAW.VIP_BRANDBUILDER_ITEMS
+  USING TEMPLATE (
+    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+    FROM TABLE(INFER_SCHEMA(LOCATION => '@WH/vip_brandbuilder_items.parquet', FILE_FORMAT => 'PARQUET_FMT')));
+COPY INTO UNIFYD.RAW.VIP_BRANDBUILDER_ITEMS
+  FROM '@WH/vip_brandbuilder_items.parquet'
   FILE_FORMAT = (FORMAT_NAME = 'PARQUET_FMT')
   MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
   FORCE = TRUE

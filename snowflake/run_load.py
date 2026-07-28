@@ -30,7 +30,11 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SQLDIR = os.path.join(HERE, "sql")
-FILES = ["00_config.template.sql", "01_database.sql", "02_stage.sql", "03_raw_tables.sql",
+# 00_config.template.sql is NOT here on purpose: it is one-time admin documentation, and its only
+# executable statements were CREATE/USE WAREHOUSE. The connection already selects warehouse+database
+# (see _connect), so running it added nothing except a hard requirement that the loader role hold
+# CREATE WAREHOUSE ON ACCOUNT — which is a privilege a data-loading role has no business holding.
+FILES = ["01_database.sql", "02_stage.sql", "03_raw_tables.sql",
          "04_master.sql", "05_marts.sql", "06_validate.sql"]
 GEN = os.path.join(HERE, "build_snowflake_sql.py")
 
