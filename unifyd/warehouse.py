@@ -88,10 +88,49 @@ def uri(name):
     return ("s3://%s/%s" % (_bucket(), _s3_key(name))) if remote() else _local_path(name)
 
 
+def _partition_files(name):
+    """Every part of the DATE-PARTITIONED layout: <prefix>/<name>/*.parquet (written by
+    write_partition, one file per date×source). Empty list when `name` is not partitioned.
+
+    This layout was invisible to the row counters: they resolved `uri(name)` → <name>.parquet, which
+    for a partitioned table does not exist, so the 404 was classified as genuine absence and the table
+    counted 0. retail_observations — 15.1M rows across ~200 parts — read as EMPTY to every caller,
+    including run_sources' landing verification. Any source writing a partitioned table therefore
+    recorded rows_before=0/rows_after=0/delta=0 on every run and had its status forced to `empty`
+    regardless of what it actually landed."""
+    rel = "%s/%s" % (_prefix(), name)
+    try:
+        if remote():
+            from pyarrow import fs as pafs
+            sel = pafs.FileSelector("%s/%s" % (_bucket(), rel), recursive=False, allow_not_found=True)
+            return [i.path for i in _s3fs().get_file_info(sel) if i.path.endswith(".parquet")]
+        d = os.path.join(_LOCAL_DIR, name)
+        if not os.path.isdir(d):
+            return []
+        return [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".parquet")]
+    except Exception:
+        return []
+
+
+def _partition_rows(paths):
+    """Sum the row counts of the given part files from their FOOTERS only (never reads data).
+    Concurrent because a partitioned table can have hundreds of parts and each footer is a round trip.
+    Raises if ANY part fails to read — a partial sum is a wrong number, and a wrong number here is
+    exactly what this whole fix exists to stop."""
+    import pyarrow.parquet as pq
+    from concurrent.futures import ThreadPoolExecutor
+    fsys = _s3fs() if remote() else None
+
+    def _one(p):
+        return pq.read_metadata(p, filesystem=fsys).num_rows if fsys else pq.read_metadata(p).num_rows
+    with ThreadPoolExecutor(max_workers=min(16, max(4, len(paths)))) as ex:
+        return sum(ex.map(_one, paths))
+
+
 def row_count(name):
-    """Current row count of `<name>` — from the layout manifest when the table is bucketed (v2),
-    else via its Parquet FOOTER only (cheap — never reads data). 0 when the table is genuinely
-    ABSENT.
+    """Current row count of `<name>` — from the layout manifest when the table is bucketed (v2), by
+    summing part footers when it is date-partitioned, else via its Parquet FOOTER only (cheap — never
+    reads data). 0 when the table is genuinely ABSENT.
 
     A TRANSIENT read error (Tigris timeout / dropped part / 503) is RETRIED, not silently reported
     as 0. A false 0 here poisons everything downstream: a healthy pull whose after-count blipped got
@@ -102,6 +141,12 @@ def row_count(name):
     man = read_manifest(name)
     if man and man.get("layout") == "bucketed":
         return sum(int(p.get("rows") or 0) for p in (man.get("parts") or {}).values())
+    parts = _partition_files(name)
+    if parts:
+        try:
+            return _retry(lambda: _partition_rows(parts), "row_count(parts) %s" % name)
+        except Exception:
+            return 0                                    # display-safe fallback (contract unchanged)
     import pyarrow.parquet as pq
     u = uri(name)
     def _read():
@@ -136,6 +181,14 @@ def row_count_strict(name):
     man = read_manifest(name)
     if man and man.get("layout") == "bucketed":
         return sum(int(p.get("rows") or 0) for p in (man.get("parts") or {}).values())
+    parts = _partition_files(name)
+    if parts:
+        # A partitioned table that we CAN see parts for but cannot read is UNKNOWN, never 0 — the same
+        # rule the single-file path already follows, for the same reason.
+        try:
+            return _retry(lambda: _partition_rows(parts), "row_count(parts) %s" % name)
+        except Exception as e:
+            raise RowCountUnavailable("%s (partitioned, %d parts): %s" % (name, len(parts), str(e)[:100]))
     import pyarrow.parquet as pq
     u = uri(name)
     def _read():

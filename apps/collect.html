@@ -327,8 +327,15 @@ function renderDetail(){
   const covPending = (s.id in COV) && COV[s.id] === null;
   const covCard = (label, d) => {
     if (!d || d.verdict === 'n/a') return '';
+    // `unknown` (nothing expected AND nothing landed) is a red state, not a quiet one — it means we
+    // have no evidence this source has ever captured anything. `baseline` means it landed something
+    // and is establishing its own high-water mark, which is genuinely fine.
+    if (d.verdict === 'unknown') return `<div class="c" style="border-color:var(--bad)">
+      <span>${label}</span><b style="color:var(--bad)">none</b>
+      <small>nothing landed and no declared universe — there is no evidence this source has ever
+      captured ${esc(label)}. Declare <span class="mono">expected_${esc(label)}</span> to get a real target.</small></div>`;
     if (!d.expected) return `<div class="c"><span>${label}</span><b>${fmt(d.landed)}</b>
-      <small>no declared universe — percent collected is UNKNOWN, not 100%</small></div>`;
+      <small>landed, but no declared universe — percent collected is UNKNOWN, not 100%</small></div>`;
     const pct = d.pct ?? 0;
     const cls = pct >= 80 ? '' : (pct >= 40 ? 'partial' : 'bad');
     return `<div class="c"><span>${label}</span><b>${pct}%</b>
