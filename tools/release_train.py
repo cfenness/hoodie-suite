@@ -291,6 +291,110 @@ def survey(args):
     return 1 if hazards else 0
 
 
+# --- reconcile -------------------------------------------------------------------------------
+# Branch-name shapes that are scaffolding by intent rather than work worth reviving. Matching the
+# NAME only proposes a category — the report still shows the diff so a human decides. Nothing here
+# ever deletes anything.
+_SCAFFOLD = ("debug/", "tmp/", "scratch/", "wip/", "test/")
+
+
+def branch_facts(b, base):
+    """Everything needed to judge one branch in a few seconds."""
+    state = content_in_main(b, base)
+    _, cnt = git("rev-list", "--count", "%s..%s" % (base, b))
+    _, last = git("log", "-1", "--format=%cs", b)
+    _, who = git("log", "-1", "--format=%an", b)
+    _, subj = git("log", "-1", "--format=%s", b)
+    _, files = git("diff", "--name-only", "%s...%s" % (base, b))
+    fl = [f for f in files.splitlines() if f.strip()]
+    # Do the files it touches still exist upstream? All-missing usually means the area was
+    # restructured or removed, which is a strong hint the branch is obsolete rather than pending.
+    alive = 0
+    for f in fl:
+        if git("cat-file", "-e", "%s:%s" % (base, f))[0] == 0:
+            alive += 1
+    _, pr = sh(["gh", "pr", "list", "--head", b, "--state", "all", "--limit", "1",
+                "--json", "number,state"])
+    try:
+        prinfo = (json.loads(pr) or [None])[0]
+    except Exception:                                         # noqa: BLE001
+        prinfo = None
+    return {"branch": b, "state": state, "commits": int(cnt or 0), "last": last, "author": who,
+            "subject": subj, "files": fl, "alive": alive, "pr": prinfo}
+
+
+def classify(f):
+    """A recommendation, always conservative: never propose deleting unrecovered content."""
+    if f["state"] == "merged":
+        return ("ABSORBED", "content is already in the base — safe to delete")
+    if f["pr"] and f["pr"].get("state") == "OPEN":
+        return ("IN FLIGHT", "open PR #%s — leave to its session" % f["pr"]["number"])
+    if any(f["branch"].startswith(p) for p in _SCAFFOLD):
+        return ("SCAFFOLD", "named as throwaway — confirm, then delete")
+    if f["files"] and f["alive"] == 0:
+        return ("OBSOLETE?", "every file it touches is gone from the base — likely restructured away")
+    if f["state"] == "conflicts":
+        return ("CONFLICTED", "real content, but drifted — rebase or cherry-pick, do not merge")
+    return ("REVIVABLE", "real content, still applies cleanly — could open a PR today")
+
+
+def reconcile(args):
+    base = "origin/" + default_branch()
+    git("fetch", "--quiet", "origin")
+    _, refs = git("for-each-ref", "--format=%(refname:short)", "refs/heads/")
+    branches = [r for r in refs.splitlines() if r.strip() and not r.startswith(INTEGRATION_PREFIX)]
+
+    facts = []
+    for b in branches:
+        rc, cnt = git("rev-list", "--count", "%s..%s" % (base, b))
+        if not cnt or cnt == "0":
+            continue
+        facts.append(branch_facts(b, base))
+
+    buckets = {}
+    for f in facts:
+        cat, why = classify(f)
+        f["why"] = why
+        buckets.setdefault(cat, []).append(f)
+
+    print("RECONCILE — %d branch(es) ahead of %s\n" % (len(facts), base) + "=" * 78)
+    order = ["IN FLIGHT", "REVIVABLE", "CONFLICTED", "OBSOLETE?", "SCAFFOLD", "ABSORBED"]
+    for cat in order:
+        rows = buckets.get(cat, [])
+        if not rows:
+            continue
+        print("\n%s — %d  (%s)" % (cat, len(rows), rows[0]["why"]))
+        for f in sorted(rows, key=lambda x: x["last"], reverse=True):
+            print("  %-46s %2d commit(s)  %s  %s"
+                  % (f["branch"][:46], f["commits"], f["last"], f["author"][:18]))
+            print("      %s" % f["subject"][:88])
+            if args.files and f["files"]:
+                shown = ", ".join(f["files"][:5])
+                print("      touches %d file(s): %s%s"
+                      % (len(f["files"]), shown[:96], " …" if len(f["files"]) > 5 else ""))
+
+    print("\n" + "=" * 78)
+    print("SUGGESTED ORDER OF OPERATIONS")
+    if buckets.get("ABSORBED"):
+        print("  1. delete the %d ABSORBED branches — their content is provably in %s:"
+              % (len(buckets["ABSORBED"]), base))
+        print("     git branch -D %s"
+              % " ".join(f["branch"] for f in buckets["ABSORBED"][:6])
+              + (" …" if len(buckets["ABSORBED"]) > 6 else ""))
+    if buckets.get("SCAFFOLD"):
+        print("  2. confirm and delete the %d SCAFFOLD branches" % len(buckets["SCAFFOLD"]))
+    if buckets.get("REVIVABLE"):
+        print("  3. the %d REVIVABLE branches still apply cleanly — decide keep or drop while that"
+              % len(buckets["REVIVABLE"]))
+        print("     is still true; every day of base drift turns one of these into a CONFLICTED one")
+    if buckets.get("CONFLICTED"):
+        print("  4. the %d CONFLICTED ones need a human per branch. Cheapest triage is to read the"
+              % len(buckets["CONFLICTED"]))
+        print("     subject line and decide whether the work still matters BEFORE resolving anything")
+    print("\n  Nothing here has been changed. This command only reads.")
+    return 0
+
+
 # --- integrate -------------------------------------------------------------------------------
 def checks(cwd, py=None):
     """Everything that can be proven without credentials. A suite that can't run for want of an
@@ -580,6 +684,9 @@ def main():
     i.add_argument("--only", help="comma-separated PR numbers")
     i.add_argument("--verbose", action="store_true")
     i.set_defaults(fn=integrate)
+    r = sub.add_parser("reconcile", help="classify every branch ahead of base and recommend an action")
+    r.add_argument("--files", action="store_true", help="also list the files each branch touches")
+    r.set_defaults(fn=reconcile)
     d = sub.add_parser("deploy", help="deploy origin/<default> from a clean checkout")
     d.add_argument("--dry-run", action="store_true")
     d.set_defaults(fn=deploy)

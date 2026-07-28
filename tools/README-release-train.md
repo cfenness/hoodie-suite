@@ -82,6 +82,33 @@ The only command that can affect production, and it is always explicit.
   run that guard. The baseline check then showed it fails on that PR's own branch tip too, so it is
   the PR's own defect rather than an integration problem.
 
+```bash
+python3 tools/release_train.py reconcile [--files]
+```
+
+Classifies every branch ahead of the base and recommends an action. Read-only; it never deletes.
+
+| Bucket | Meaning |
+|---|---|
+| `IN FLIGHT` | has an open PR — leave it to its session |
+| `REVIVABLE` | real content that still applies cleanly — decide now, while that is still true |
+| `CONFLICTED` | real content that has drifted — rebase or cherry-pick, never merge |
+| `OBSOLETE?` | every file it touches is gone from the base — the area was probably restructured away |
+| `SCAFFOLD` | named `debug/`, `tmp/`, `wip/`… — throwaway by intent, confirm then delete |
+| `ABSORBED` | content is provably already in the base — safe to delete |
+
+A branch is only ever proposed for deletion when its content is provably in the base or its name
+declares it disposable. Everything else is surfaced with its subject line so a human can judge in
+seconds whether the work still matters — which is much cheaper than resolving a conflict first and
+discovering afterwards that nobody wanted it.
+
+## Read config from the base, not from a working tree
+
+The first time this tool was used, its own author reported a false "policy contradiction" after
+listing `.github/workflows/` in the primary checkout — which was 31 commits behind and still had
+six workflow files that `main` had long since deleted. Use `git show origin/main:<path>`. The whole
+point of the survey is that a working tree is not the truth.
+
 ## Locking
 
 `survey` is lock-free. `integrate` and `deploy` take an exclusive lock in the **common git dir**,
