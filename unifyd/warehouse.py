@@ -702,6 +702,17 @@ def create_bucketed(name, key_cols, fields, hex_len=2):
     return man
 
 
+def _avg_row_bytes(src):
+    """Rough bytes-per-row of a parquet file, from its footer — no data read. Used to decide how wide a
+    partitioned write may go: fat rows need few open buffers, lean rows can use many."""
+    try:
+        import pyarrow.parquet as pq
+        md = pq.read_metadata(src[5:], filesystem=_s3fs()) if src.startswith("s3://") else pq.read_metadata(src)
+        return int(md.serialized_size / max(1, md.num_rows)) if md.num_rows else 0
+    except Exception:
+        return 4096                      # unknown → assume fat and stay conservative
+
+
 def migrate_to_bucketed(name, key_cols, hex_len=2):
     """One-time, VERIFIED migration of an existing single-file table to the bucketed layout.
 
@@ -751,7 +762,13 @@ def migrate_to_bucketed(name, key_cols, hex_len=2):
     # was. Cap how many partitions are open at once and flush each sooner: the write becomes several
     # bounded passes instead of one wide one. Wrapped because these pragmas are version-dependent, and a
     # DuckDB without them should still do the migration, just hungrier.
-    for pragma in ("SET partitioned_write_max_open_files=8",
+    # The cap trades MEMORY for ROUND TRIPS: fewer open partitions means several sequential passes, each
+    # writing to object storage. That was the right trade when rows carried fat payloads (8 open files was
+    # the difference between finishing and being OOM-killed). With payloads moved to raw_payloads the rows
+    # are lean, memory is no longer the binding constraint, and a low cap just makes the write slow for
+    # nothing. Scale it to the actual row weight instead of pinning it to the worst case that used to be.
+    _open_files = 8 if _avg_row_bytes(src) > 2048 else 64
+    for pragma in ("SET partitioned_write_max_open_files=%d" % _open_files,
                    "SET partitioned_write_flush_threshold=4096"):
         try:
             con.execute(pragma)
