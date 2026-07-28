@@ -142,6 +142,23 @@ ok("...but is still in stock", (kr.get("stock") or {}).get("in_stock"))
 ok("ranked — best first", res["offers"][0]["score"] >= res["offers"][-1]["score"])
 eq("the promo store ranks first", res["offers"][0]["source"], "total-wine")
 
+print("\nboth formats at ONE store survive (regression: `latest` was keyed by store only)")
+# specs store 2 sells a 750ml AND a 1.75L. Keying the latest-observation map by (source, store)
+# alone dropped whichever landed first, silently deleting a real offer.
+big = ls.offers("Tito's", center=HOUSTON, radius_mi=15, size="1750", log=lambda m: None)
+eq("the 1.75L list is its own scope", big["reference_size"], "1.75 L")
+ok("specs shows up with its 1.75L", any(o["source"] == "specs" for o in big["offers"]))
+eq("every card in the list is that format",
+   sorted({o["size_label"] for o in big["offers"]}), ["1.75 L"])
+small = ls.offers("Tito's", center=HOUSTON, radius_mi=15, size="750", log=lambda m: None)
+ok("and specs still shows its 750ml in the 750 scope",
+   any(o["source"] == "specs" for o in small["offers"]))
+ok("the two scopes price the same store differently, as they must",
+   [o for o in big["offers"] if o["source"] == "specs"][0]["effective_price"]
+   != [o for o in small["offers"] if o["source"] == "specs"][0]["effective_price"])
+eq("formats are advertised for tabbing", sorted(f["label"] for f in small["formats"]),
+   ["1.75 L", "750 ml"])
+
 print("\nUPC lookup + normalization")
 by_upc = ls.offers("000850001234", center=HOUSTON, radius_mi=15, log=lambda m: None)
 eq("exact UPC finds the same stores", len(by_upc["offers"]), 4)

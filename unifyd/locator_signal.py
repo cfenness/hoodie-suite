@@ -20,8 +20,11 @@ all load-bearing:
   1. RANK BY PERCENTILE, NOT % OFF. A 40%-off cut on an inflated everyday price can still sit
      above the area median (the mattress-store problem). Discount depth is a secondary badge;
      it is NEVER the sort key.
-  2. NORMALIZE BEFORE COMPARING. Everything is scored as a per-750ml single-bottle equivalent
-     (price_signal.unit_price), so a 1.75L can't pollute a 750ml distribution.
+  2. COMPARE LIKE WITH LIKE. Everything is scored as a per-750ml single-bottle equivalent
+     (price_signal.unit_price) AND only against its own bottle FORMAT. Normalizing alone is not
+     enough: a 1.75L is genuinely cheaper per unit than a 750ml, so one mixed pool drags the
+     median down and makes every 750ml read "high". Measured live: $13.37 (1.75L) → $27.26
+     (375ml) on the same brand in the same city. See reference_pools().
   3. SUPPRESS, DON'T GUESS. Under MIN_REF priced stores the verdict is None with a `reason` —
      we show the price and drop the superlative. Same discipline as velocity.CONF_FLOOR and
      the representativeness floor. Google Flights declines a verdict on thin routes; so do we.
@@ -53,6 +56,15 @@ VEL_CONF_FLOOR = float(os.environ.get("VEL_CONF_FLOOR", "0.2"))       # mirrors 
 
 # percentile cutoffs for the band. Lower percentile = cheaper relative to the local pool.
 BANDS = ((0.10, "great"), (0.30, "good"), (0.70, "typical"))          # else "high"
+
+# Canonical bottle formats. A reference pool MUST be size-homogeneous. Normalizing to a per-750ml
+# equivalent makes formats arithmetically comparable but NOT economically comparable — a 1.75L is
+# genuinely cheaper per unit than a 750ml, so a mixed pool drags the median down and makes every
+# 750ml read "high". Measured live in Orlando: unit price ran $13.37 (1.75L) → $27.26 (375ml), a
+# ~2x spread that is pure format and nothing to do with deal quality. Rule 2 was necessary but not
+# sufficient; this is the other half of it.
+FORMATS = (50, 100, 187, 200, 375, 500, 750, 1000, 1500, 1750, 3000, 3785)
+FORMAT_TOL = float(os.environ.get("LOC_FORMAT_TOL", "0.06"))   # 1.7L and 1.75L are one format
 
 _ML = {"ml": 1.0, "l": 1000.0, "lt": 1000.0, "ltr": 1000.0, "liter": 1000.0, "litre": 1000.0,
        "oz": 29.5735, "fl": 29.5735}
@@ -88,6 +100,43 @@ def pack_count(name):
     except (TypeError, ValueError):
         return None
     return n if 1 < n <= 48 else None
+
+
+def size_bucket(ml):
+    """Snap a parsed size to its canonical format (1700 and 1750 → 1750). None when unparsed —
+    an offer with no format can't be scored against a format pool, and won't be."""
+    try:
+        v = float(ml)
+    except (TypeError, ValueError):
+        return None
+    if v <= 0:
+        return None
+    best = min(FORMATS, key=lambda f: abs(f - v))
+    return best if abs(best - v) <= best * FORMAT_TOL else None
+
+
+def size_label(ml):
+    """'750 ml' / '1.75 L' for display — the shopper has to see WHICH bottle we priced."""
+    b = size_bucket(ml)
+    if not b:
+        return ""
+    return ("%g L" % (b / 1000.0)) if b >= 1000 else ("%d ml" % b)
+
+
+def reference_pools(rows):
+    """{format → [unit price]} for a set of observations. One pool per bottle format, because a
+    verdict is only meaningful against its own format. Rows whose size can't be parsed contribute
+    to no pool (they also never get a band — see price_verdict's `no-size`)."""
+    pools = {}
+    for r in rows:
+        ml = r.get("size_ml") or size_ml(r.get("name"))
+        b = size_bucket(ml)
+        if not b:
+            continue
+        u = unit_prices(r)[1]
+        if u:
+            pools.setdefault(b, []).append(u)
+    return pools
 
 
 def shelf_and_promo(row):
@@ -139,11 +188,15 @@ def price_verdict(u, reference):
     """Is `u` (a per-750ml unit price) a good price against `reference` (the trailing unit
     prices for this item in this trade area)?
 
+    `reference` must already be FORMAT-HOMOGENEOUS — see reference_pools(). Scoring a 750ml
+    against a pool containing 1.75Ls is the bug this signature exists to prevent.
+
     Returns {band, percentile, median, delta, pct_off_median, n, reason}. `band` is None —
     with a reason — whenever a claim would be unsupported:
       thin-pool     fewer than MIN_REF priced stores
       flat-market   p10→p90 spread inside FLAT_TOL (uniform pricing; nothing here is a deal)
       no-price      the offer itself has no comparable unit price
+      no-size       the product name carries no parseable size, so it has no peer group
     """
     xs = sorted(float(x) for x in (reference or []) if isinstance(x, (int, float)) and x > 0)
     out = {"band": None, "percentile": None, "median": None, "delta": None,
@@ -255,6 +308,79 @@ def stock_signal(row, tier, velocity=None):
     return out
 
 
+def clean_store_name(s):
+    """Store names arrive percent- and entity-encoded from the aggregator feeds — live example:
+    'Abc Fine Wine %26 Spirits Oran'. Decode before display AND before keying, or the same store
+    fails to match itself across two sources."""
+    import html
+    import urllib.parse
+    t = (s or "").strip()
+    if "%" in t:
+        try:
+            t = urllib.parse.unquote(t)
+        except Exception:                       # noqa: BLE001 — a bad escape is not fatal
+            pass
+    return " ".join(html.unescape(t).split())
+
+
+def _name_key(s, n=14):
+    """Leading alphanumerics of a cleaned store name. Truncated to a prefix because the feeds also
+    truncate: 'ABC Fine Wine & Spirits' vs 'Abc Fine Wine %26 Spirits Oran' agree on the first 14
+    and disagree after."""
+    return "".join(ch for ch in clean_store_name(s).lower() if ch.isalnum())[:n]
+
+
+def outlet_key(o):
+    """Identity of one PHYSICAL store selling one FORMAT.
+
+    Format belongs in the key. The live Orlando pull showed Total Wine twice — $23.49 and $31.49 —
+    and those were not duplicates, they were a 750ml and a 1L at the same store. Keying on the
+    store alone would have deleted a real offer and called it deduplication.
+
+    Geo is rounded to ~110m and paired with a name prefix, because two aggregators geocoding the
+    same storefront agree closely but rarely exactly. With no coordinates we can only trust the
+    feed's own key.
+    """
+    b = o.get("size_bucket")
+    if o.get("lat") is not None and o.get("lng") is not None:
+        return ("geo", round(float(o["lat"]), 3), round(float(o["lng"]), 3),
+                _name_key(o.get("store")), b)
+    return ("src", o.get("source", ""), o.get("store_id", ""), b)
+
+
+def _pick(a, b):
+    """Which of two observations of the same store+format to show: freshest first, then the source
+    that actually counts units, then the better price for the shopper."""
+    def rankable(o):
+        return (o.get("observed_on") or "",
+                1 if (o.get("stock") or {}).get("tier") == "count" else 0,
+                -(o.get("effective_price") or 9e9))
+    return a if rankable(a) >= rankable(b) else b
+
+
+def dedupe(offers):
+    """Collapse cross-source duplicates of the same store+format into one card.
+
+    This is not cosmetic: every duplicate is also a duplicated vote in the reference pool, so
+    double-counting a chain that happens to be on two aggregators skews the median the whole
+    product is scored against.
+    """
+    keep = {}
+    for o in offers:
+        k = outlet_key(o)
+        if k in keep:
+            winner = _pick(keep[k], o)
+            merged = dict(winner)
+            merged["also_seen"] = sorted(set((keep[k].get("also_seen") or [])
+                                             + (o.get("also_seen") or [])
+                                             + [keep[k]["source"], o["source"]])
+                                         - {winner["source"]})
+            keep[k] = merged
+        else:
+            keep[k] = o
+    return list(keep.values())
+
+
 # Blended "Best" rank, mirroring Google Flights' Best tab (which is price + duration + stops,
 # not price alone). Weights are explicit so they can be argued with rather than reverse-engineered.
 W_PRICE, W_DIST, W_STOCK = 0.5, 0.3, 0.2
@@ -286,7 +412,10 @@ def build_offers(latest, reference, geo=None, tiers=None, velocity=None, history
     """Assemble the ranked offer list — the pure core of `/api/locator/offers`.
 
     latest     [obs row]                 most recent observation per (source, store_id)
-    reference  [unit price]              trailing unit prices for this item in the trade area
+    reference  {format: [unit price]}    per-FORMAT trailing pools (reference_pools). A bare list
+                                         is still accepted and treated as one pool for every
+                                         format — convenient in tests, wrong against real data,
+                                         which is why offers() always passes pools.
     geo        {(source, store_id): {lat,lng,store_name,city,state,address}}
     tiers      {source: qual_tier}       from obs_quality_source
     velocity   {(source, store_id): {units_per_week, confidence}}
@@ -303,9 +432,21 @@ def build_offers(latest, reference, geo=None, tiers=None, velocity=None, history
         shelf, promo = shelf_and_promo(row)
         g = geo.get(key, {})
         tier = tiers.get(row.get("source", ""), "state")
+        ml = row.get("size_ml") or size_ml(row.get("name"))
+        bucket = size_bucket(ml)
+        # geo and velocity are per STORE; promo history and the price line are per store+FORMAT.
+        sig_key = (key[0], key[1], bucket)
+        # Score against this offer's OWN format pool. A dict picks the pool; a bare list is the
+        # legacy single-pool path. No format ⇒ no peer group ⇒ no band, stated as `no-size`.
+        pool = reference.get(bucket, []) if isinstance(reference, dict) else (reference or [])
+        verdict = (price_verdict(effective_u, pool) if bucket
+                   else {"band": None, "percentile": None, "median": None, "delta": None,
+                         "pct_off_median": None, "n": 0, "reason": "no-size"})
         o = {
             "source": row.get("source", ""), "store_id": key[1],
-            "store": g.get("store_name") or row.get("store", ""),
+            "store": clean_store_name(g.get("store_name") or row.get("store", "")),
+            "size_ml": ml, "size_bucket": bucket, "size_label": size_label(ml),
+            "also_seen": [],
             "address": g.get("address", ""), "city": g.get("city", ""), "state": g.get("state", ""),
             "lat": g.get("lat"), "lng": g.get("lng"),
             "name": row.get("name", ""), "brand": row.get("brand", ""), "upc": row.get("upc", ""),
@@ -314,17 +455,18 @@ def build_offers(latest, reference, geo=None, tiers=None, velocity=None, history
             "discount_pct": round((shelf - promo) / shelf, 3) if (promo and shelf) else None,
             "unit_price": effective_u,
             "observed_on": row.get("date"),
-            "verdict": price_verdict(effective_u, reference),
+            "verdict": verdict,
             "stock": stock_signal(row, tier, velocity.get(key)),
-            "promo_outlook": promo_signal(history.get(key)),
+            "promo_outlook": promo_signal(history.get(sig_key, history.get(key))),
             "price_history": [{"date": d, "price": p}
-                              for d, p in sorted(series.get(key, [])) if p],
+                              for d, p in sorted(series.get(sig_key, series.get(key, []))) if p],
             "distance_mi": None,
         }
         if center and g.get("lat") is not None and g.get("lng") is not None:
             o["distance_mi"] = round(haversine_mi(center, (g["lat"], g["lng"])), 1)
         out.append(o)
-    return rank(out)
+    # Dedupe BEFORE ranking so a chain on two aggregators occupies one slot, not two.
+    return rank(dedupe(out))
 
 
 def haversine_mi(a, b):
@@ -365,13 +507,23 @@ def for_render_mode(offers, mode="consumer"):
 
 
 # --- warehouse-backed entry point -----------------------------------------------------------
-def offers(query, center=None, radius_mi=15.0, mode="consumer", trail_days=TRAIL_DAYS, log=print):
+def offers(query, center=None, radius_mi=15.0, mode="consumer", trail_days=TRAIL_DAYS,
+           size=None, log=print):
     """Live offers for an item near a point. Reads retail_observations (latest per store +
     trailing reference), src_outlets (geo), obs_quality_source (tier) and fact_velocity.
 
-    `query` matches brand or product name (case-insensitive substring) or an exact UPC. Returns
-    {offers, reference, trade_area, mode}. Every warehouse read is guarded — a missing table
-    degrades one signal, it does not fail the request.
+    `query` matches brand or product name (case-insensitive substring) or an exact UPC.
+
+    THE RESULT IS SCOPED TO ONE BOTTLE FORMAT, like Google Flights scopes to a cabin class. A
+    percentile is only meaningful inside its own pool, so percentiles from different formats
+    cannot be ranked against each other: measured live, a 375ml at $13.63 scored "great" (it is
+    the cheapest 375ml in town) and outranked a 750ml at $23.49 — while being far worse value per
+    drop. Mixing formats in one ranked list is therefore wrong even when every individual verdict
+    is right. `size` picks the format; the default is the format with the deepest pool, and every
+    available format is returned in `formats` so the caller can offer tabs.
+
+    Returns {offers, reference, reference_size, formats, size, trade_area, mode}. Every warehouse
+    read is guarded — a missing table degrades one signal, it does not fail the request.
     """
     import warehouse
     q = (query or "").strip()
@@ -409,24 +561,45 @@ def offers(query, center=None, radius_mi=15.0, mode="consumer", trail_days=TRAIL
         if not obs:
             return {"offers": [], "reference": {"n": 0}, "trade_area": None, "mode": mode}
 
-    reference = [u for u in (unit_prices(r)[1] for r in obs) if u]
-    latest = list({(r.get("source", ""), str(r.get("store_id", "") or "")): r
-                   for r in sorted(obs, key=lambda r: r.get("date") or "")}.values())
+    pools = reference_pools(obs)          # one reference distribution PER BOTTLE FORMAT
+    # Key EVERYTHING by (source, store, FORMAT). Keying "latest" by store alone silently drops a
+    # real offer whenever one store sells two formats — live, Total Wine listed both a 750ml and a
+    # 1L and only one would have survived. The promo history and the sparkline are per-format for
+    # the same reason: a 750ml's price line must not contain 1.75L prices.
+    def _k(r):
+        return (r.get("source", ""), str(r.get("store_id", "") or ""),
+                size_bucket(r.get("size_ml") or size_ml(r.get("name"))))
+
+    latest = list({_k(r): r for r in sorted(obs, key=lambda r: r.get("date") or "")}.values())
     hist, series = {}, {}
     for r in obs:
-        k = (r.get("source", ""), str(r.get("store_id", "") or ""))
+        k = _k(r)
         hist.setdefault(k, []).append((r.get("date"), bool(r.get("on_promo"))))
         eff = shelf_and_promo(r)
         px = eff[1] if eff[1] is not None else eff[0]
         if r.get("date") and px:
             series.setdefault(k, []).append((r["date"], px))
 
-    built = build_offers(latest, reference, geo=geo,
+    built = build_offers(latest, pools, geo=geo,
                          tiers=_tiers(log=log, degraded=degraded),
                          velocity=_velocity(latest, log=log, degraded=degraded),
                          history=hist, series=series, center=center)
-    st = price_signal.cluster_stats(reference) or {"n": 0}
-    out = {"offers": for_render_mode(built, mode), "reference": st,
+    # Every format present, with how many stores back it — the caller renders these as tabs.
+    formats = [{"bucket": b, "label": size_label(b), "pool": len(pools.get(b, [])),
+                "offers": sum(1 for o in built if o.get("size_bucket") == b)}
+               for b in sorted({o.get("size_bucket") for o in built} - {None})]
+    # Scope to ONE format. Default = deepest pool, which is both the best-evidenced verdict and
+    # almost always the format a shopper means.
+    want = size_bucket(size) if size else None
+    if want is None and formats:
+        want = max(formats, key=lambda f: (f["pool"], f["offers"]))["bucket"]
+    scoped = [o for o in built if o.get("size_bucket") == want] if want else built
+    unsized = [o for o in built if o.get("size_bucket") is None]
+
+    st = price_signal.cluster_stats(pools.get(want, [])) or {"n": 0}
+    out = {"offers": for_render_mode(rank(scoped), mode), "reference": st,
+           "size": want, "reference_size": size_label(want) if want else "",
+           "formats": formats, "unsized_offers": len(unsized),
            "trade_area": _trade_area_label(latest, geo), "mode": mode}
     if degraded:
         out["degraded"] = ", ".join(degraded)

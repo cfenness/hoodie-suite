@@ -776,7 +776,10 @@ def locator_offers():
     style "is this a good price" verdict against the local trailing distribution, and a
     wait-or-buy read off the store's promo cadence. All of it in unifyd/locator_signal.py.
 
-    Params: q (brand / product / UPC), lat+lng or city+state, radius (mi), mode.
+    Params: q (brand / product / UPC), lat+lng or city+state, radius (mi), mode, size.
+    Results are scoped to ONE bottle format (`size`, default = deepest pool) because a
+    within-format percentile can't be ranked against another format's — `formats` lists the
+    alternatives so the UI can tab between them.
     `mode=brand` strips every claim a brand-embedded widget may not make (see
     locator_signal.for_render_mode) — the filtering is server-side on purpose.
     """
@@ -802,6 +805,7 @@ def locator_offers():
     mode = "brand" if request.args.get("mode") == "brand" else "consumer"
     try:
         out = locator_signal.offers(q, center=center, radius_mi=radius, mode=mode,
+                                    size=request.args.get("size"),
                                     log=lambda m: app.logger.info("LOCATOR %s", m))
     except Exception as e:                     # noqa: BLE001
         app.logger.info("LOCATOR offers error %s", e)

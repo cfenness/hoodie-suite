@@ -177,5 +177,116 @@ ok("no wait-for-the-promo nudge in brand mode",
 consumer = ls.for_render_mode(built, "consumer")
 ok("consumer mode is untouched", consumer[0]["verdict"]["band"] == "great")
 
+print("\nbottle FORMAT bucketing")
+eq("1.75L snaps to 1750", ls.size_bucket(1750), 1750)
+eq("1.7L is the same format as 1.75L", ls.size_bucket(1700), 1750)
+eq("750 is its own format", ls.size_bucket(750), 750)
+eq("1L is its own format", ls.size_bucket(1000), 1000)
+eq("375 is its own format", ls.size_bucket(375), 375)
+eq("an off-format size gets no bucket", ls.size_bucket(900), None)
+eq("unparsed size gets no bucket", ls.size_bucket(None), None)
+eq("label for display", ls.size_label(1750), "1.75 L")
+eq("label for ml", ls.size_label(750), "750 ml")
+
+BAND_ORDER = ["great", "good", "typical", "high"]   # worse = higher index
+print("\n  RULE 2 — a pool must be FORMAT-homogeneous, not merely unit-normalized")
+# Real shape from the live Orlando pull: large formats are cheaper PER 750ml than small ones.
+# Mixing them drags the median down and libels every 750ml as overpriced.
+MIXED_ROWS = (
+    [{"name": "X 1.75L", "price": p * (1750 / 750.0)} for p in (13.4, 13.8, 14.2, 15.0, 15.4)] +
+    [{"name": "X 1L", "price": p * (1000 / 750.0)} for p in (22.0, 23.0, 23.6)] +
+    [{"name": "X 750ml", "price": p} for p in (22.9, 23.5, 24.2, 25.0, 26.9)]
+)
+pools = ls.reference_pools(MIXED_ROWS)
+eq("pools split by format", sorted(pools.keys()), [750, 1000, 1750])
+eq("the 750 pool has only 750s", len(pools[750]), 5)
+flat = [u for v in pools.values() for u in v]
+fair_750 = 23.5                      # a mid-of-market 750ml
+mixed_verdict = ls.price_verdict(fair_750, flat)
+fair_verdict = ls.price_verdict(fair_750, pools[750])
+# The claim under test is the PENALTY, not a particular band: the identical bottle at the
+# identical price must score strictly worse once large formats are allowed into its pool. (A band
+# assertion would depend on how extreme the fixture is; live Orlando data — $13.37 for a 1.75L vs
+# $27.26 for a 375ml — is far more extreme than this and pushes it all the way to "high".)
+ok("a mixed pool penalises the identical bottle (mixed pct %.2f > own-format pct %.2f)"
+   % (mixed_verdict["percentile"], fair_verdict["percentile"]),
+   mixed_verdict["percentile"] > fair_verdict["percentile"])
+ok("...costing it at least a band (%r vs %r)" % (mixed_verdict["band"], fair_verdict["band"]),
+   BAND_ORDER.index(mixed_verdict["band"]) > BAND_ORDER.index(fair_verdict["band"]))
+ok("because the mixed median is dragged below the real 750 median (%.2f < %.2f)"
+   % (mixed_verdict["median"], fair_verdict["median"]),
+   mixed_verdict["median"] < fair_verdict["median"])
+
+print("\n  a product with no parseable size gets no band, and says so")
+nosize = ls.build_offers([{"source": "s", "store_id": "1", "name": "Tito's Handmade Vodka",
+                           "price": 21.99, "in_stock": True, "date": "2026-07-27"}],
+                         pools)
+eq("no format ⇒ no band", nosize[0]["verdict"]["band"], None)
+eq("...and it says why", nosize[0]["verdict"]["reason"], "no-size")
+
+print("\nstore-name decoding (the feeds send it encoded)")
+eq("percent-encoded ampersand", ls.clean_store_name("Abc Fine Wine %26 Spirits"),
+   "Abc Fine Wine & Spirits")
+eq("html entity", ls.clean_store_name("Total Wine &amp; More"), "Total Wine & More")
+eq("whitespace tidied", ls.clean_store_name("  ABC   Fine  "), "ABC Fine")
+ok("a truncated feed name still keys to the same store",
+   ls._name_key("Abc Fine Wine %26 Spirits Oran") == ls._name_key("ABC Fine Wine & Spirits"))
+
+print("\nDEDUPE — one card per physical store PER FORMAT")
+DUPES = [
+    # the same ABC store, 1.75L, seen by two aggregators — one duplicate
+    {"source": "ubereats", "store_id": "u1", "name": "Tito's Handmade Vodka (1.75 L)",
+     "price": 31.20, "in_stock": True, "date": "2026-07-27"},
+    {"source": "postmates", "store_id": "p1", "name": "Tito's Handmade Vodka (1.75 L)",
+     "price": 31.20, "in_stock": True, "date": "2026-07-26"},
+    # the same Total Wine store at TWO formats — NOT duplicates
+    {"source": "ubereats", "store_id": "u2", "name": "Tito's Handmade Vodka (750 ml)",
+     "price": 23.49, "in_stock": True, "date": "2026-07-27"},
+    {"source": "postmates", "store_id": "p2", "name": "Tito's Handmade Vodka (1 L)",
+     "price": 31.49, "in_stock": True, "date": "2026-07-27"},
+]
+DUPE_GEO = {
+    ("ubereats", "u1"): {"store_name": "Abc Fine Wine %26 Spirits Oran", "lat": 28.50, "lng": -81.40},
+    ("postmates", "p1"): {"store_name": "ABC Fine Wine & Spirits", "lat": 28.5001, "lng": -81.4001},
+    ("ubereats", "u2"): {"store_name": "Total Wine & More", "lat": 28.46, "lng": -81.43},
+    ("postmates", "p2"): {"store_name": "Total Wine & More", "lat": 28.46, "lng": -81.43},
+}
+d = ls.build_offers(DUPES, pools, geo=DUPE_GEO)
+names = sorted((o["store"], o["size_label"]) for o in d)
+eq("four rows collapse to three offers", len(d), 3)
+ok("the ABC duplicate merged once (%r)" % (names,),
+   sum(1 for n, _ in names if n.startswith("ABC") or n.startswith("Abc")) == 1)
+ok("both Total Wine FORMATS survive — they are different products, not dupes",
+   sorted(s for n, s in names if n == "Total Wine & More") == ["1 L", "750 ml"])
+abc = [o for o in d if "bc" in o["store"]][0]
+eq("the store name is decoded for display", abc["store"], "Abc Fine Wine & Spirits Oran")
+ok("the merged card records the other source it was seen on", "postmates" in (abc["also_seen"] or []))
+eq("the fresher observation won", abc["observed_on"], "2026-07-27")
+
+print("\n  and a duplicate no longer double-votes in the pool")
+dupe_rows = [{"name": "X 750ml", "price": 20.0}] * 4 + [{"name": "X 750ml", "price": 30.0}]
+eq("reference_pools counts every observation it is given", len(ls.reference_pools(dupe_rows)[750]), 5)
+ok("dedupe is what prevents the double-vote reaching the pool — offers are deduped pre-rank",
+   len(ls.dedupe(d)) == len(d))
+
+print("\n  RULE 2b — a ranked list may not MIX formats")
+# Within-format percentiles are not comparable across formats. Live proof: a 375ml at $13.63 was
+# the cheapest 375ml in Orlando, scored "great", and outranked a 750ml at $23.49 — while being far
+# worse value per drop. So a list is scoped to one format, chosen by deepest pool.
+SCOPE_POOLS = {750: [22.9, 23.5, 24.2, 25.0, 26.9], 375: [27.5, 28.0, 28.4, 29.0]}
+SCOPE_ROWS = [
+    {"source": "a", "store_id": "1", "name": "X 375ml", "price": 13.63, "in_stock": True,
+     "date": "2026-07-27"},
+    {"source": "b", "store_id": "2", "name": "X 750ml", "price": 23.49, "in_stock": True,
+     "date": "2026-07-27"},
+]
+sc = ls.build_offers(SCOPE_ROWS, SCOPE_POOLS)
+small = [o for o in sc if o["size_bucket"] == 375][0]
+big = [o for o in sc if o["size_bucket"] == 750][0]
+eq("the 375ml really does score well IN ITS OWN pool", small["verdict"]["band"], "great")
+ok("...and would outrank the 750ml if formats were mixed", small["score"] >= big["score"])
+ok("which is exactly why it is a different list: per-drop it is far worse value (%.2f vs %.2f)"
+   % (small["unit_price"], big["unit_price"]), small["unit_price"] > big["unit_price"])
+
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

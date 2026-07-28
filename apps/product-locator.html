@@ -165,6 +165,7 @@
       <div class="rhead">
         <div class="n"><b id="count">0</b> <span id="unit">places</span> near you</div>
         <div class="refline" id="refline"></div>
+        <div class="sortrow" id="formats"></div>
         <div class="sortrow" id="sortrow">
           <button class="tab on" data-sort="best">Best</button>
           <button class="tab" data-sort="price">Cheapest</button>
@@ -207,7 +208,7 @@ const ONPREM=new Set(['bar','restaurant','hotel']);
    It is what the page falls back to when the engine is down, and it is labelled as such. */
 const SAMPLE=[{"name":"Hotel Flor","street":"905 N Florida Ave","city":"Tampa","state":"FL","lat":27.952085,"lng":-82.458414,"source":"sales"},{"name":"Le Meridien Hotels","street":"601 N Florida Ave","city":"Tampa","state":"FL","lat":27.949991,"lng":-82.457428,"source":"sales"},{"name":"Siam Thaimerican Restaurant","street":"713 N Franklin St","city":"Tampa","state":"FL","lat":27.95054,"lng":-82.458888,"source":"sales"},{"name":"Lit Cigar & Martini Lounge","street":"908 N Franklin St","city":"Tampa","state":"FL","lat":27.951644,"lng":-82.459989,"source":"sales"},{"name":"Echo Downtown","street":"914 N Franklin St","city":"Tampa","state":"FL","lat":27.951872,"lng":-82.460097,"source":"sales"},{"name":"Cws Gin Joint","street":"633 N Franklin St","city":"Tampa","state":"FL","lat":27.949679,"lng":-82.458734,"source":"sales"},{"name":"Duckweed Urban Grocery","street":"803 N Tampa St","city":"Tampa","state":"FL","lat":27.950607,"lng":-82.459989,"source":"sales"},{"name":"Paddy Wagon Irish Pub","street":"813 N Tampa St","city":"Tampa","state":"FL","lat":27.950568,"lng":-82.460015,"source":"sales"},{"name":"Dio Modern Mediterranean","street":"519 N Franklin St","city":"Tampa","state":"FL","lat":27.949059,"lng":-82.458372,"source":"sales"},{"name":"Springhill Suites","street":"1105 N Tampa St","city":"Tampa","state":"FL","lat":27.953049,"lng":-82.460724,"source":"sales"},{"name":"Courtyard By Marriott","street":"102 E Cass St","city":"Tampa","state":"FL","lat":27.951193,"lng":-82.460946,"source":"sales"},{"name":"Tampa Burgers & Pirates","street":"777 N Ashley Dr Ste D1","city":"Tampa","state":"FL","lat":27.950064,"lng":-82.460318,"source":"sales"},{"name":"Anchor Bar Ii","street":"514 N Franklin St Ste 104","city":"Tampa","state":"FL","lat":27.948798,"lng":-82.458941,"source":"sales"}];
 
-let MAP,MARKERS={},ALL=[],VIEW=[],SEL=null,CENTER=[29.7604,-95.3698],SORT='best',MODE='consumer',PRICED=false;
+let MAP,MARKERS={},ALL=[],VIEW=[],SEL=null,CENTER=[29.7604,-95.3698],SORT='best',MODE='consumer',PRICED=false,SIZE=null;
 
 function miles(a,b){
   const R=3959,dLat=(b[0]-a[0])*Math.PI/180,dLng=(b[1]-a[1])*Math.PI/180;
@@ -331,6 +332,7 @@ function render(){
       '<div class="body">'+
         '<div class="nm">'+esc(a.store||a.name||'')+'</div>'+
         '<div class="meta"><span class="cat">'+a.cat+'</span>'+
+          (a.size_label?'<span class="cat" style="font-weight:700;color:var(--ink)">'+esc(a.size_label)+'</span>':'')+
           (a.dist?'<span class="dist">'+a.dist.toFixed(1)+' mi</span>':'')+'</div>'+
         (priced
           ? '<div class="pricerow"><span class="px">'+money(a.effective_price)+'</span>'+
@@ -387,6 +389,7 @@ async function search(){
   const locStr=document.getElementById('zip').value.trim(), loc=parseLoc(locStr);
   const rad=+document.querySelector('input[name=rad]:checked').value||50;
   const p=new URLSearchParams({q,mode:MODE,radius:rad});
+  if(SIZE)p.set('size',SIZE);
   if(loc.city){p.set('city',loc.city);p.set('state',loc.state||'');}
   p.set('lat',CENTER[0]);p.set('lng',CENTER[1]);
   try{
@@ -394,7 +397,7 @@ async function search(){
     if(j&&j.offers&&j.offers.length){
       if(j.center&&j.center.length===2)CENTER=j.center;
       document.getElementById('title').textContent=q+' — Locator';
-      refline.innerHTML=refLine(j);
+      SIZE=j.size||null; renderFormats(j); refline.innerHTML=refLine(j);
       document.getElementById('src').innerHTML='Live · <b>'+j.offers.length+'</b> priced stores from our own observations'+
         (j.degraded?' · <b>degraded:</b> '+esc(j.degraded):'');
       prepOffers(j.offers); return;
@@ -403,10 +406,21 @@ async function search(){
   }catch(e){}
   await fallbackAccounts(q,loc,locStr);
 }
+function renderFormats(j){
+  // One bottle format at a time. A within-format percentile can't be compared across formats, so
+  // switching size is a new query, not a client-side filter.
+  const F=document.getElementById('formats'), fs=j.formats||[];
+  if(fs.length<2){ F.innerHTML=''; return; }
+  F.innerHTML='<label style="font-size:11px;color:var(--muted);margin-right:2px">Size</label>'+
+    fs.map(f=>'<button class="tab'+(f.bucket===j.size?' on':'')+'" data-size="'+f.bucket+'">'+
+      esc(f.label)+' <span style="opacity:.6">'+f.offers+'</span></button>').join('');
+  F.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{ SIZE=b.dataset.size; search(); });
+}
 function refLine(j){
-  const r=j.reference||{}, ta=j.trade_area?esc(j.trade_area):'this area';
+  const r=j.reference||{}, ta=j.trade_area?esc(j.trade_area):'this area', sz=esc(j.reference_size||'');
   if(!r.n) return 'No priced comparison pool yet for '+ta+' — showing what we can verify.';
-  return 'Prices in <b>'+ta+'</b> · median <b>$'+(r.median||0).toFixed(2)+'</b> per 750ml across <b>'+r.n+'</b> observations'+
+  return (sz?'<b>'+sz+'</b> prices in ':'Prices in ')+'<b>'+ta+'</b> · median <b>$'+
+         (r.median||0).toFixed(2)+'</b> per 750ml equivalent across <b>'+r.n+'</b> observations'+
          (r.min&&r.max?' · range $'+r.min.toFixed(2)+'–$'+r.max.toFixed(2):'');
 }
 async function fallbackAccounts(q,loc,locStr){
