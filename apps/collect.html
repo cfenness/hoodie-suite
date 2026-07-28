@@ -179,6 +179,10 @@ let SHOW_ARCHIVED = false;
 let TICKS = 0;
 let MANUAL = false, MANUAL_LOCKED = false;
 let LIVE = {};           // source id -> its IN-FLIGHT journal (outranks the ledger, which lags a run)
+let ORDER = [], ORDER_KEY = '';   // frozen row order — recomputed on membership change, not on status
+let GEN = 0;             // load generation: a late response must never overwrite a newer one
+let INFLIGHT = 0;        // ms timestamp of the in-flight poll (0 = idle); expires so it can't wedge
+let FEED_STALE = {};     // feed -> true when its last fetch failed (shown, never silently blanked)
 let SEL = null;          // selected source id
 let POLL = null;         // journal poll timer
 let ACTIVE_RUN = null;   // run_id currently being watched
@@ -195,7 +199,19 @@ function ago(ts){
   return (s/86400).toFixed(1)+'d ago';
 }
 
-async function jget(u){ const r = await fetch(u); if(!r.ok) throw new Error(u+' → '+r.status); return r.json(); }
+// EVERY request is bounded. A fetch with no timeout can stay pending forever, and since loadAll holds
+// an INFLIGHT lock while it waits, one hung request would freeze the whole bench — permanently, and
+// silently, because the last good data stays on screen looking healthy. A stuck page that looks fine is
+// worse than one that flickers, so nothing here is allowed to wait without end.
+async function jget(u, ms){
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), ms || 20000);
+  try {
+    const r = await fetch(u, {signal: ac.signal});
+    if(!r.ok) throw new Error(u+' → '+r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
 
 /* ── the verdict ─────────────────────────────────────────────────────────────
    Derived HERE from observed data, deliberately NOT taken from the ledger's own
@@ -289,12 +305,23 @@ function renderList(){
     if (f === 'archived')  return !!STATE.archived[s.id];
     return true;
   });
-  // needs-attention first — the bench should open on what's broken, not alphabetically
+  // needs-attention first — the bench should open on what's broken, not alphabetically.
+  // BUT the order is FROZEN between renders. Sorting by a live verdict on every 15s poll makes rows
+  // leap around as statuses change under you: a source you were reading jumps three positions and
+  // reads as "disappeared". Position is recomputed only when the SET of visible ids changes (filter,
+  // archive, a new source) — not when a status does. Same information, no motion.
   const rank = {live:-1, fail:0, never:1, incomplete:2, unmeas:3, stalled:4, degr:5, partial:6, stale:7, unknown:8, ok:9, nocreds:10, off:11};
-  rows.sort((a,b) => (rank[verdict(a).k] - rank[verdict(b).k]) || a.id.localeCompare(b.id));
+  const key = rows.map(s => s.id).sort().join(',');
+  if (key !== ORDER_KEY){
+    rows.sort((a,b) => (rank[verdict(a).k] - rank[verdict(b).k]) || a.id.localeCompare(b.id));
+    ORDER_KEY = key; ORDER = rows.map(s => s.id);
+  } else {
+    const pos = {}; ORDER.forEach((id,i) => pos[id] = i);
+    rows.sort((a,b) => (pos[a.id] ?? 1e6) - (pos[b.id] ?? 1e6));
+  }
   const el = document.getElementById('slist');
   if (!rows.length){ el.innerHTML = '<div class="msg">no sources match</div>'; return; }
-  el.innerHTML = rows.map(s => {
+  const html = rows.map(s => {
     const v = verdict(s);
     const last = LAST[s.id];
     const cf = STATE.confirmed[s.id];
@@ -306,6 +333,12 @@ function renderList(){
       ${cf ? '<span class="conf" title="confirmed '+esc(cf.by||'')+' '+ago(cf.at)+'">\u2713 CONF</span>' : ''}
     </div>`;
   }).join('');
+  // Repaint ONLY on change. Reassigning innerHTML every poll rebuilds every node even when the markup
+  // is byte-identical — which drops hover, collapses selection, and flickers. Nothing moves unless
+  // something actually became different.
+  if (el.__sig === html) return;
+  el.__sig = html;
+  el.innerHTML = html;
 }
 
 /* Coverage is fetched PER SOURCE, on selection — assessing all 62 up front measured >400s, which is
@@ -755,30 +788,56 @@ function renderRun(r){
 
 /* ── load ────────────────────────────────────────────────────────────────── */
 async function loadAll(force){
+  // MERGE, NEVER REPLACE. Every feed here used to degrade to an EMPTY object on failure
+  // (`.catch(() => ({last:{}}))`), and the result was assigned straight over global state. So one slow
+  // or failed /api/collect/status set LAST = {} and every source instantly read "never run" — then the
+  // next tick restored it. That is the data blinking in and out: absence of an ANSWER was being
+  // rendered as absence of DATA. A failed read now changes nothing except a staleness flag.
+  // The lock EXPIRES. Every request above is already bounded, but a lock with no upper bound is a
+  // single-point freeze waiting to happen: any future code path that can hang would stop the bench
+  // updating for the rest of the session with no visible symptom. Belt and braces, deliberately.
+  if (INFLIGHT && (Date.now() - INFLIGHT) < 45000) return;
+  INFLIGHT = Date.now();
+  const gen = ++GEN;
   try {
     // Run history comes from the shared LEDGER (/api/collect/status), not /api/runs — the latter is this
     // process's in-memory list, which is empty on a freshly-booted machine and makes every source read
     // "never run" while the ledger holds the real history.
-    const [reg, mon, led, st, act] = await Promise.all([
+    const r = await Promise.allSettled([
       jget('/api/registry/sources'),
       jget('/api/monitor' + (force ? '?fresh=1' : '')),
-      jget('/api/collect/status' + (force ? '?fresh=1' : '')).catch(() => ({last:{}, zero_streak:{}})),
-      jget('/api/collect/state').catch(() => ({confirmed:{}, archived:{}})),
-      jget('/api/collect/runs?active=1&limit=25').catch(() => ({runs: []})),
+      jget('/api/collect/status' + (force ? '?fresh=1' : '')),
+      jget('/api/collect/state'),
+      jget('/api/collect/runs?active=1&limit=25'),
     ]);
-    STATE = {confirmed: st.confirmed || {}, archived: st.archived || {}};
-    LIVE = {};
-    (act.runs || []).forEach(r => { if (r && r.source) LIVE[r.source] = r; });
-    SRC = reg.sources || [];
-    TABLES = {};
-    (mon.sources || []).forEach(x => { TABLES[x.name] = x.rows; });
-    LAST = led.last || {};
-    STREAK = led.zero_streak || {};
-    document.getElementById('dot').className = 'dot';
-    const prod = mon.warehouse?.remote ?? reg.remote;
-    document.getElementById('wh').className = 'wh ' + (prod ? 'prod' : 'local');
-    document.getElementById('wh').textContent = prod ? 'warehouse: remote' : 'warehouse: LOCAL';
-    MANUAL = !!st.manual_only; MANUAL_LOCKED = !!st.manual_only_locked;
+    if (gen !== GEN) return;               // a newer load already landed; this one is stale by definition
+    const [reg, mon, led, st, act] = r;
+    const ok = x => x.status === 'fulfilled' ? x.value : null;
+    let anyFail = false;
+    const take = (res, name, apply) => {
+      const v = ok(res);
+      if (v){ FEED_STALE[name] = false; apply(v); }
+      else { FEED_STALE[name] = true; anyFail = true; }   // KEEP what we had
+    };
+
+    take(reg, 'reg', v => { if (v.sources && v.sources.length) SRC = v.sources; });
+    // Partial /api/monitor responses (it returns a subset while its cache rebuilds) must MERGE into the
+    // known counts, not replace them — otherwise row counts vanish for whatever is missing this tick.
+    take(mon, 'mon', v => (v.sources || []).forEach(x => { TABLES[x.name] = x.rows; }));
+    take(led, 'led', v => { LAST = v.last || LAST; STREAK = v.zero_streak || STREAK;
+                            MANUAL = !!v.manual_only; MANUAL_LOCKED = !!v.manual_only_locked; });
+    take(st,  'state', v => { STATE = {confirmed: v.confirmed || {}, archived: v.archived || {}}; });
+    // LIVE is the exception that must still clear: a run that ENDED has to leave the live list, or the
+    // bench shows a finished job as forever in-flight. Only rebuild it when the fetch actually answered.
+    take(act, 'runs', v => { LIVE = {}; (v.runs || []).forEach(x => { if (x && x.source) LIVE[x.source] = x; }); });
+
+    document.getElementById('dot').className = 'dot' + (anyFail ? ' warn' : '');
+    const m = ok(mon);
+    if (m){
+      const prod = m.warehouse?.remote ?? (ok(reg) || {}).remote;
+      document.getElementById('wh').className = 'wh ' + (prod ? 'prod' : 'local');
+      document.getElementById('wh').textContent = prod ? 'warehouse: remote' : 'warehouse: LOCAL';
+    }
     const mp = document.getElementById('modepill');
     mp.className = 'mode' + (MANUAL ? '' : ' auto');
     mp.textContent = MANUAL ? 'MANUAL ONLY' : 'AUTO-DISPATCH ON';
@@ -787,18 +846,27 @@ async function loadAll(force){
       : 'The dispatcher runs due sources on their cadence. Click to switch to manual-only.';
     mp.onclick = toggleManual;
     const nconf = Object.keys(STATE.confirmed).length, narch = Object.keys(STATE.archived).length;
+    const stale = Object.keys(FEED_STALE).filter(k => FEED_STALE[k]);
     document.getElementById('asof').textContent =
-      `${SRC.length} sources · ${nconf} confirmed · ${narch} archived · counts ${mon.cached ? mon.cache_age_s + 's old' : 'live'}${mon.building ? ' · building…' : ''}`;
+      `${SRC.length} sources · ${nconf} confirmed · ${narch} archived · counts ${m ? (m.cached ? m.cache_age_s + 's old' : 'live') : 'held'}${m && m.building ? ' · building…' : ''}`
+      + (stale.length ? ` · ${stale.join('/')} unreachable — showing last known` : '');
     sfLabel();
     renderList();
     if (SEL) renderDetail();
   } catch(e){
+    // Only a genuine render crash lands here now. Say so WITHOUT destroying the list that is on screen.
     document.getElementById('dot').className = 'dot off';
-    document.getElementById('slist').innerHTML = '<div class="msg">could not load: ' + esc(e.message) + '</div>';
-  }
+    const a = document.getElementById('asof');
+    if (a) a.textContent = 'refresh failed: ' + e.message + ' — showing last known';
+  } finally { INFLIGHT = 0; }
 }
 
 loadAll();
-setInterval(() => { if (!ACTIVE_RUN) loadAll(); }, 60000);
-setInterval(() => { if (!ACTIVE_RUN && Object.keys(LIVE).length) loadAll(); }, 15000);
+// ONE timer. Two overlapping intervals (60s + 15s) both called loadAll with no guard, so a slow
+// response could land after a fast one and overwrite fresh state with stale — values visibly jumping
+// backwards. The single loop polls faster only while something is actually live.
+setInterval(() => {
+  if (ACTIVE_RUN) return;                        // the run poller owns the screen during a run
+  if (Object.keys(LIVE).length || (++TICKS % 4) === 0) loadAll();
+}, 15000);
 </script>
