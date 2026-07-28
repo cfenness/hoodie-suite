@@ -61,6 +61,20 @@ PER_IP = float(os.environ.get("UE_PER_IP", "3"))
 _last_beat = [0.0]                                         # wall-clock of the last heartbeat emitted
 
 
+def _rss_mb():
+    """This process's resident memory, MB. Reported in every heartbeat so an OOM kill is diagnosable
+    from the journal alone — the last beat before SIGKILL says how much was held and at what stage.
+    Two OOM'd fleets were spent guessing at this; the run should simply state it."""
+    try:
+        with open("/proc/self/status") as f:
+            for ln in f:
+                if ln.startswith("VmRSS:"):
+                    return int(ln.split()[1]) // 1024
+    except Exception:
+        pass
+    return None
+
+
 def auto_workers(nshard=1, log=print):
     """Workers for THIS shard: (pool_size * PER_IP) / shards, floored at 4. An explicit UE_WORKERS
     still wins, but the default now scales with the resource that actually binds — exit IPs."""
@@ -296,6 +310,19 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
         pend_bytes[0] = 0
         _ck_save(day, site, shard, nshard, done, batch_idx)
 
+    def _beat():
+        """Liveness that does not require SUCCESS. The heartbeat used to live only in the branch where a
+        store came back with items, so a shard failing every single request emitted nothing at all — and
+        we read that silence twice as "no data yet" when it was the whole story. A run that is failing is
+        still a run that is alive, and it must say so, with its failure count visible."""
+        if (time.time() - _last_beat[0]) <= 60:
+            return
+        _progress(rows=n_items + len(pending),
+                  stage="%s/%s stores" % (f"{len(done):,}", f"{len(mine):,}"),
+                  pct=round(100.0 * len(done) / max(1, len(mine)), 1),
+                  ok=n_ok, empty=n_empty, unreachable=n_fail,
+                  rss_mb=_rss_mb())
+
     def _one(t):
         nonlocal n_ok, n_empty, n_fail
         url_id, name = t
@@ -303,6 +330,7 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
         if not su:
             with lock:
                 n_fail += 1
+                _beat()
             return
         data = getstore.fetch_store(su, site=site)
         if not data:
@@ -313,6 +341,7 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
             # remove, and it would be invisible: fast, green, and empty.
             with lock:
                 n_fail += 1
+                _beat()
             return
         sname = data.get("title") or name
         try:
@@ -340,11 +369,9 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
             # deliberately slow shard (7 workers is ~1/s) could go many minutes without a word — and the
             # journal marks a silent run `lost` after 900s. A healthy shard being reported dead is the
             # same misinformation as a dead one reported healthy, just in the other direction.
-            if n_seen % 200 == 0 or (time.time() - _last_beat[0]) > 60:
-                _last_beat[0] = time.time()
-                _progress(rows=n_items + len(pending),
-                          stage="%s/%s stores" % (f"{n_seen:,}", f"{len(mine):,}"),
-                          pct=round(100.0 * n_seen / max(1, len(mine)), 1))
+            if n_seen % 200 == 0:
+                _last_beat[0] = 0            # force the beat below
+            _beat()
             _flush()
 
     # THROTTLE TRIPWIRE. A sustained run of null responses means we are being rate-limited, not that

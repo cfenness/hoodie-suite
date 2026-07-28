@@ -18,6 +18,19 @@ if command -v Xvfb >/dev/null 2>&1; then
   sleep 1
 fi
 
+# DUCKDB MEMORY CEILING — the server sets DUCKDB_MEMORY_LIMIT, ephemeral machines never did. Unset,
+# DuckDB sizes its buffer pool at ~80% of system RAM (3.2GB of a 4GB box) and, with no temp_directory,
+# cannot spill — so it takes the memory Python needs and the kernel OOM-kills the pull. That is a
+# whole-fleet defect, not an UberEats one: EVERY ephemeral source has been running unbounded.
+# Give DuckDB half the box and somewhere to spill; leave the rest for the scraper itself.
+if [ -z "${DUCKDB_MEMORY_LIMIT:-}" ]; then
+  MEM_MB=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 4096)
+  export DUCKDB_MEMORY_LIMIT="$((MEM_MB / 2))MB"
+fi
+export DUCKDB_TEMP_DIR="${DUCKDB_TEMP_DIR:-/tmp/duckdb}"
+mkdir -p "$DUCKDB_TEMP_DIR"
+echo "[ephemeral] duckdb memory_limit=$DUCKDB_MEMORY_LIMIT spill=$DUCKDB_TEMP_DIR"
+
 cd /app/unifyd
 python3 run_ephemeral.py "$SRC" "$@"
 CODE=$?

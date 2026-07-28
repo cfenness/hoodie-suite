@@ -88,7 +88,10 @@ def fetch_store(store_uuid, session="gs", site="ubereats", target=None):
         H["x-uber-device-location-latitude"] = str(target[0]); H["x-uber-device-location-longitude"] = str(target[1])
     body = {"storeUuid": store_uuid, "diningMode": "DELIVERY", "time": {"asap": True}, "cbType": "EATER_ENDORSED"}
     try:
-        return ((s.post(api, json=body, headers=H).json()) or {}).get("data")
+        # TIMEOUT IS NOT OPTIONAL. Without one a stalled socket parks this worker permanently: with 7
+        # workers, seven silent hangs are a dead shard that still looks alive. The enrich path already
+        # bounded its POST; this one never did.
+        return ((s.post(api, json=body, headers=H, timeout=30).json()) or {}).get("data")
     except Exception:
         return None
 
