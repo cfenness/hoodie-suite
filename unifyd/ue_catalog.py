@@ -55,13 +55,40 @@ PRODUCT_FIELDS = ["store_uuid", "store_name", "source", "item_uuid", "name", "br
                   "raw_json"]
 MENU_API = "https://www.ubereats.com/_p/api/getMenuItemV1"
 ENRICH = os.environ.get("UE_ENRICH", "1") == "1"     # per-item UPC/GTIN detail — ON by default
+KNOWN = set()                                        # items already resolved; enrichment skips these
 
 
 def _menu_api(site):
     return MENU_API if site == "ubereats" else MENU_API.replace("www.ubereats.com", "postmates.com")
 
 
-def enrich_items(su, store_name, items, idx, site="ubereats"):
+def known_items(site="ubereats", log=print):
+    """item_uuids already carrying a UPC/GTIN — the set enrichment can SKIP.
+
+    This is what makes a daily run possible. UPC, GTIN, brand, size, ABV and classifications are
+    STATIC per item; price, promo and stock are the volatile fields, and those come from the catalog
+    call we make anyway. Re-enriching a resolved item every day would spend ~30M requests re-learning
+    immutable facts, which is precisely what would make a full daily pass impossible.
+
+    So: day one is a backfill, and steady state is (every store's catalog) + (only genuinely NEW
+    items). A store adding a product is cheap; a store that has not changed costs one call.
+    """
+    try:
+        rows = warehouse.query(
+            "%s_products" % site,
+            "SELECT DISTINCT item_uuid FROM t WHERE item_uuid IS NOT NULL "
+            "AND (COALESCE(upc,'') <> '' OR COALESCE(gtin,'') <> '')")
+        known = {r["item_uuid"] for r in rows if r.get("item_uuid")}
+        log("[ue] %s items already resolved (enrichment will skip them)" % f"{len(known):,}")
+        return known
+    except Exception as e:
+        # No table yet (first run) or an unreadable read: enrich everything. Failing OPEN costs
+        # requests; failing closed would silently skip enrichment and quietly ship UPC-less data.
+        log("[ue] no prior item book (%s) — enriching all items this pass" % str(e)[:70])
+        return set()
+
+
+def enrich_items(su, store_name, items, idx, site="ubereats", known=None):
     """Upgrade catalog items (title+price, NO upc) to full getMenuItemV1 detail — UPC/GTIN plus
     classifications, itemAttributeInfo, customizations, promos, images.
 
@@ -79,10 +106,11 @@ def enrich_items(su, store_name, items, idx, site="ubereats"):
     s = getstore._session(site)
     H = dict(getstore._H)
     api = _menu_api(site)
+    known = known or set()
     for rec in items:
         iu = rec.get("item_uuid")
-        if not iu:
-            continue
+        if not iu or iu in known:
+            continue                      # already resolved — its UPC/dimensions cannot have changed
         ctx = idx.get(iu) or {}
         body = {"storeUuid": su, "menuItemUuid": iu, "sectionUuid": ctx.get("section", ""),
                 "subsectionUuid": ctx.get("subsection", ""), "cbType": "EATER_ENDORSED"}
@@ -209,6 +237,8 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
     log("[ue] universe %s stores; shard %s/%s owns %s (the completeness denominator)"
         % (f"{len(uni):,}", shard, nshard, f"{len(mine):,}"))
 
+    global KNOWN
+    KNOWN = known_items(site, log=log) if ENRICH else set()
     done = _ck_load(day, site, shard, nshard, log=log)
     todo = [(u, n) for (u, n) in mine if u not in done]
     log("[ue] %s remaining this pass (%s workers)" % (f"{len(todo):,}", workers))
@@ -247,7 +277,8 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
             items = []
         if items and ENRICH:
             try:
-                items = enrich_items(su, sname, items, ubereats._catalog_index([data]), site=site)
+                items = enrich_items(su, sname, items, ubereats._catalog_index([data]),
+                                     site=site, known=KNOWN)
             except Exception:
                 pass                      # enrichment must never cost us the catalog we already have
         with lock:
