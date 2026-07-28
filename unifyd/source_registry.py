@@ -127,12 +127,32 @@ SOURCES = [
          tables=["stop_and_shop_products"], klass="mac", cadence="daily", enabled=False, cost_class="mac", note="needs a warmed cookie — not headless"),
 
     # ── Aggregators / convenience (Mac headful — anti-bot) ────────────────────────────────────────────────────
-    dict(id="ubereats", label="Uber Eats", code="import ubereats as m; m.main(['--site','ubereats','--max-stores','1000'])",
-         caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
-         tables=["ubereats_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=10, note="Uber BFF, all stores"),
-    dict(id="postmates", label="Postmates", code="import ubereats as m; m.main(['--site','postmates','--max-stores','1000'])",
-         caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
-         tables=["postmates_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=11, note="Uber BFF, all stores"),
+    # THE UBEREATS SOURCE. Headless, list-driven, sharded — replaces the headful zone crawler that ran
+    # max_stores=1000 against a 502,212-store universe (0.2%, with the cap hidden in the registry).
+    # Both the catalog (getStoreV1) and the per-item UPC/detail (getMenuItemV1) answer COLD to plain
+    # curl_cffi — proven live from a Fly datacenter IP — so no browser, no proxy, no Bright Data, $0.
+    # One pass does BOTH layers because the item's section context is only in hand while we hold the
+    # catalog; a second sweep for UPC would repeat the abc-catalog mistake.
+    # Sharding is the day budget: --shard i/N splits the universe by stable hash, one ephemeral machine
+    # per shard. Start at 8; the run logs the observed rate and the shard-hours the universe needs, so
+    # the count is set by measurement rather than guesswork.
+    dict(id="ubereats", label="Uber Eats (catalog + UPC, sharded)",
+         code="import ue_catalog as m; m.main(['--site','ubereats','--shard',__import__('os').environ.get('UE_SHARD','0/8')])",
+         caps=['curl_cffi'],
+         tables=["ubereats_products", "retail_observations"], klass="headless", cadence="daily",
+         enabled=True, cost_class="free", timeout=21600, mem=4096, priority=10,
+         item_col="item_uuid", store_col="store_uuid",
+         note="COLD getStoreV1 + getMenuItemV1 over the 502k-store sitemap universe; shardable "
+              "(UE_SHARD=i/N), resumable, no caps. Headful ubereats.py archived as the zone crawler."),
+    # Postmates is the SAME Uber BFF on a different domain, so it is the identical recipe — one code
+    # path, not a parallel copy that can drift.
+    dict(id="postmates", label="Postmates (catalog + UPC, sharded)",
+         code="import ue_catalog as m; m.main(['--site','postmates','--shard',__import__('os').environ.get('UE_SHARD','0/8')])",
+         caps=['curl_cffi'],
+         tables=["postmates_products", "retail_observations"], klass="headless", cadence="daily",
+         enabled=True, cost_class="free", timeout=21600, mem=4096, priority=11,
+         item_col="item_uuid", store_col="store_uuid",
+         note="same cold Uber BFF recipe as ubereats, postmates.com domain"),
     # Deep full-detail crawl (ue_crawl.py: getStoreV1+getMenuItemV1, full per-item UPC/price/recipe) —
     # bounded to 5 major metros + capped stores/items so ONE run finishes in hours, not the multi-day
     # national sweep the crawler is capable of. NO proxy: ue_crawl.py was proven from the operator's

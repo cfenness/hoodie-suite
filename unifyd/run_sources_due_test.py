@@ -159,10 +159,15 @@ os.environ["MAC_HOURS"] = "garbage"
 ok("bad spec falls back to default", not run_sources.mac_window_open(at_hour(14)))
 os.environ.pop("MAC_HOURS", None)
 
-# 8) mac ordering: priorities put aggregators first, anti-bot trio last
+# 8) mac ordering: the Mac queue is priority-ordered, anti-bot trio last.
+# ubereats/postmates are deliberately NO LONGER here: both getStoreV1 and getMenuItemV1 answer cold to
+# curl_cffi, so they moved to klass="headless" (sharded, no browser, no proxy). The "aggregators first"
+# assertion described a queue they have left — asserting it still would pin them to a slow headful path
+# we proved unnecessary. What the ordering rule still has to guarantee is that the contention-sensitive
+# anti-bot sources run LAST, which is the part that matters.
 mac = sorted([s for s in enabled if s["klass"] == "mac"], key=lambda s: s.get("priority", 50))
 ids = [s["id"] for s in mac]
-ok("aggregators first", ids[:2] == ["ubereats", "postmates"])
+ok("aggregators are no longer headful", "ubereats" not in ids and "postmates" not in ids)
 ok("anti-bot trio last", ids[-3:] == ["sevennow", "cityhive", "bottlecapps"])
 
 # 9) crash-site capture: a SIGKILL is reported as a signal (not a mislabeled stdout line — the specs

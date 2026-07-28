@@ -51,7 +51,61 @@ import warehouse
 WORKERS = int(os.environ.get("UE_WORKERS", "64"))     # aggregator_geo runs this endpoint at 64; proven
 BATCH_STORES = int(os.environ.get("UE_BATCH", "400"))  # stores per landed batch + checkpoint
 PRODUCT_FIELDS = ["store_uuid", "store_name", "source", "item_uuid", "name", "brand", "upc", "gtin",
-                  "price", "list_price", "promo", "size", "abv", "in_stock", "stock_label", "category"]
+                  "price", "list_price", "promo", "size", "abv", "in_stock", "stock_label", "category",
+                  "raw_json"]
+MENU_API = "https://www.ubereats.com/_p/api/getMenuItemV1"
+ENRICH = os.environ.get("UE_ENRICH", "1") == "1"     # per-item UPC/GTIN detail — ON by default
+
+
+def _menu_api(site):
+    return MENU_API if site == "ubereats" else MENU_API.replace("www.ubereats.com", "postmates.com")
+
+
+def enrich_items(su, store_name, items, idx, site="ubereats"):
+    """Upgrade catalog items (title+price, NO upc) to full getMenuItemV1 detail — UPC/GTIN plus
+    classifications, itemAttributeInfo, customizations, promos, images.
+
+    COLD. Proven live: getMenuItemV1 answers HTTP 200 with real UPCs using the same minimal header set
+    as getStoreV1 — no browser, no captured x-uber-* headers, no proxy (Food Lion 00037700322286,
+    Walgreens 00073854008089). The headful enrich_store() with its learned-header replay and
+    max_items=250 exists only because nobody tested the cold path.
+
+    Done in the SAME pass as the catalog, not a second sweep: we already hold each item's section
+    context here, so re-crawling 502k stores later purely to add UPC would repeat the abc-catalog
+    mistake — two full crawls of identical pages for data present in one visit.
+
+    NO per-store item cap: every item the store lists gets enriched.
+    """
+    s = getstore._session(site)
+    H = dict(getstore._H)
+    api = _menu_api(site)
+    for rec in items:
+        iu = rec.get("item_uuid")
+        if not iu:
+            continue
+        ctx = idx.get(iu) or {}
+        body = {"storeUuid": su, "menuItemUuid": iu, "sectionUuid": ctx.get("section", ""),
+                "subsectionUuid": ctx.get("subsection", ""), "cbType": "EATER_ENDORSED"}
+        try:
+            r = s.post(api, json=body, headers=H, timeout=25)
+            data = ubereats._menu_item_data(r.json()) if r.content else None
+        except Exception:
+            continue
+        if not data:
+            continue
+        try:
+            full = ubereats.parse_item(data, su, store_name)
+        except Exception:
+            continue
+        # DISCARD NOTHING: keep every modelled field the detail adds, and the whole payload beside it.
+        for k, v in (full or {}).items():
+            if v not in (None, "", []) and k in PRODUCT_FIELDS:
+                rec[k] = v
+        try:
+            rec["raw_json"] = json.dumps(data, default=str)
+        except Exception:
+            pass
+    return items
 
 
 def _progress(**kw):
@@ -186,10 +240,16 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
                 n_fail += 1
                 done.add(url_id)          # a store that will not answer is DONE for today, not retried forever
             return
+        sname = data.get("title") or name
         try:
-            items = ubereats._items_from_store([data], su, data.get("title") or name)
+            items = ubereats._items_from_store([data], su, sname)
         except Exception:
             items = []
+        if items and ENRICH:
+            try:
+                items = enrich_items(su, sname, items, ubereats._catalog_index([data]), site=site)
+            except Exception:
+                pass                      # enrichment must never cost us the catalog we already have
         with lock:
             done.add(url_id)
             if items:
@@ -243,7 +303,11 @@ def main(argv=None):
     ap.add_argument("--site", default="ubereats", choices=("ubereats", "postmates"))
     ap.add_argument("--shard", default="0/1", help="i/N — this shard of the universe (default whole)")
     ap.add_argument("--workers", type=int, default=None)
+    ap.add_argument("--no-enrich", action="store_true",
+                    help="catalog only — skip the per-item getMenuItemV1 UPC/detail pass")
     a = ap.parse_args(argv)
+    if a.no_enrich:
+        globals()["ENRICH"] = False
     i, n = (a.shard.split("/") + ["1"])[:2]
     rec = run(site=a.site, shard=int(i), nshard=int(n), workers=a.workers)
     print(json.dumps(rec, indent=2))
