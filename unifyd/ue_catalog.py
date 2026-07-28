@@ -80,6 +80,12 @@ def auto_workers(nshard=1, log=print):
 
 WORKERS = int(os.environ.get("UE_WORKERS", "24"))
 BATCH_STORES = int(os.environ.get("UE_BATCH", "400"))  # stores per landed batch + checkpoint
+# FLUSH ON BYTES, NOT ON COUNT. Every enriched item carries its full `raw_json` payload (DISCARD
+# NOTHING), so item count says nothing about memory: 8,000 thin items is a few MB, 8,000 fat ones is
+# gigabytes. Bounding the buffer by rows while paying for it in bytes is what OOM-killed the first
+# un-throttled fleet — the shards finally got far enough to accumulate real volume. This caps the
+# buffer by what actually consumes RAM, so the ceiling holds however fat the payloads turn out to be.
+FLUSH_BYTES = int(os.environ.get("UE_FLUSH_MB", "192")) * 1024 * 1024
 PRODUCT_FIELDS = ["store_uuid", "store_name", "source", "item_uuid", "name", "brand", "upc", "gtin",
                   "price", "list_price", "promo", "size", "abv", "in_stock", "stock_label", "category",
                   "raw_json"]
@@ -275,16 +281,19 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
     log("[ue] %s remaining this pass (%s workers)" % (f"{len(todo):,}", workers))
 
     pending, batch_idx, n_items, n_ok, n_empty, n_fail = [], 0, 0, 0, 0, 0
+    pend_bytes = [0]                                   # approx heap held by `pending`, for the size cap
     import threading
     lock = threading.Lock()
 
     def _flush(force=False):
         nonlocal pending, batch_idx, n_items
-        if not pending or (not force and len(pending) < BATCH_STORES * 20):
+        if not pending or (not force and len(pending) < BATCH_STORES * 20
+                           and pend_bytes[0] < FLUSH_BYTES):
             return
         batch_idx += 1
         n_items += _land(site, day, batch_idx, shard, pending, log=log)
         pending = []
+        pend_bytes[0] = 0
         _ck_save(day, site, shard, nshard, done, batch_idx)
 
     def _one(t):
@@ -321,6 +330,9 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
             if items:
                 n_ok += 1
                 pending.extend(items)
+                # `raw_json` dominates; measuring it is enough to track the buffer without walking
+                # every field of every record on the hot path.
+                pend_bytes[0] += sum(len(it.get("raw_json") or "") + 512 for it in items)
             else:
                 n_empty += 1
             n_seen = len(done)

@@ -460,6 +460,12 @@ def connect():
     """A DuckDB connection, configured for the Tigris endpoint when in remote mode."""
     import duckdb
     con = duckdb.connect()
+    # No ANSI progress bars. Scraper stdout IS the live console in Hoodie Collect, and a redrawing
+    # bar arrives down a pipe as dozens of junk lines that bury the run's actual messages.
+    try:
+        con.execute("SET enable_progress_bar=false")
+    except Exception:
+        pass
     if remote():
         host = _endpoint().replace("https://", "").replace("http://", "")
         con.execute("INSTALL httpfs; LOAD httpfs;")
