@@ -167,6 +167,7 @@ let SAMPLE = {};         // source id -> inbound-data sample (refreshed while a 
 let SHOW_ARCHIVED = false;
 let TICKS = 0;
 let MANUAL = false, MANUAL_LOCKED = false;
+let LIVE = {};           // source id -> its IN-FLIGHT journal (outranks the ledger, which lags a run)
 let SEL = null;          // selected source id
 let POLL = null;         // journal poll timer
 let ACTIVE_RUN = null;   // run_id currently being watched
@@ -191,6 +192,13 @@ async function jget(u){ const r = await fetch(u); if(!r.ok) throw new Error(u+' 
    benign; if the target table also doesn't exist and the streak is long, that is
    a source that has NEVER worked and it must say so. */
 function verdict(s){
+  // A LIVE run outranks everything below. The ledger only gains a row when a run FINISHES, so during a
+  // run it still describes the PREVIOUS one — which is how this page came to show "timeout · 22.8h ago"
+  // beside a console streaming "running · heartbeat 14s ago". A stale claim next to live evidence is the
+  // exact failure this page exists to remove, so the live journal wins.
+  const lv = LIVE[s.id];
+  if (lv) return {k:'live', c:'var(--accent)', live:true,
+                  t: lv.pct != null ? ('running ' + lv.pct + '%') : 'running'};
   const tabs = (s.tables || []).map(t => ({ name: t, rows: TABLES[t] }));
   const known = tabs.filter(t => t.rows !== undefined);
   const anyMissing = tabs.some(t => TABLES[t.name] === undefined);
@@ -269,7 +277,7 @@ function renderList(){
     return true;
   });
   // needs-attention first — the bench should open on what's broken, not alphabetically
-  const rank = {fail:0, never:1, incomplete:2, unmeas:3, stalled:4, degr:5, partial:6, stale:7, unknown:8, ok:9, nocreds:10, off:11};
+  const rank = {live:-1, fail:0, never:1, incomplete:2, unmeas:3, stalled:4, degr:5, partial:6, stale:7, unknown:8, ok:9, nocreds:10, off:11};
   rows.sort((a,b) => (rank[verdict(a).k] - rank[verdict(b).k]) || a.id.localeCompare(b.id));
   const el = document.getElementById('slist');
   if (!rows.length){ el.innerHTML = '<div class="msg">no sources match</div>'; return; }
@@ -280,7 +288,8 @@ function renderList(){
     const ar = STATE.archived[s.id];
     return `<div class="srow ${s.id===SEL?'on':''} ${ar?'arch':''}" onclick="select('${esc(s.id)}')">
       <span class="sq" style="background:${v.c}"></span>
-      <span class="nm"><b>${esc(s.label || s.id)}</b><span>${esc(v.t)} · ${ago(last?.ts_start)}</span></span>
+      <span class="nm"><b>${esc(s.label || s.id)}</b><span>${esc(v.t)} · ${
+        v.live ? ('heartbeat ' + (LIVE[s.id].heartbeat_age_s ?? 0) + 's') : ago(last?.ts_start)}</span></span>
       ${cf ? '<span class="conf" title="confirmed '+esc(cf.by||'')+' '+ago(cf.at)+'">\u2713 CONF</span>' : ''}
     </div>`;
   }).join('');
@@ -362,7 +371,9 @@ function renderDetail(){
       <span class="tag">${esc(s.klass)}</span>
       <span class="tag">${esc(s.cadence)}</span>
       <span class="tag">${esc(s.cost_class||'')}</span>
-      <span class="k">last run <b>${ago(last?.ts_start)}</b></span>
+      <span class="k">${v.live
+        ? 'running now <b>' + ago(LIVE[s.id].started_at) + '</b> · prior run ' + esc(last?.status || '—') + ' ' + ago(last?.ts_start)
+        : 'last run <b>' + ago(last?.ts_start) + '</b>'}</span>
       ${STATE.confirmed[s.id] ? `<span class="conf">\u2713 CONFIRMED ${esc(STATE.confirmed[s.id].by||'')} · ${ago(STATE.confirmed[s.id].at)}</span>` : ''}
       ${STATE.archived[s.id] ? `<span class="stat-pill" style="background:var(--derived)22;color:var(--derived);border:1px solid var(--derived)">archived</span>` : ''}
     </div>
@@ -648,13 +659,16 @@ async function loadAll(force){
     // Run history comes from the shared LEDGER (/api/collect/status), not /api/runs — the latter is this
     // process's in-memory list, which is empty on a freshly-booted machine and makes every source read
     // "never run" while the ledger holds the real history.
-    const [reg, mon, led, st] = await Promise.all([
+    const [reg, mon, led, st, act] = await Promise.all([
       jget('/api/registry/sources'),
       jget('/api/monitor' + (force ? '?fresh=1' : '')),
       jget('/api/collect/status' + (force ? '?fresh=1' : '')).catch(() => ({last:{}, zero_streak:{}})),
       jget('/api/collect/state').catch(() => ({confirmed:{}, archived:{}})),
+      jget('/api/collect/runs?active=1&limit=25').catch(() => ({runs: []})),
     ]);
     STATE = {confirmed: st.confirmed || {}, archived: st.archived || {}};
+    LIVE = {};
+    (act.runs || []).forEach(r => { if (r && r.source) LIVE[r.source] = r; });
     SRC = reg.sources || [];
     TABLES = {};
     (mon.sources || []).forEach(x => { TABLES[x.name] = x.rows; });
@@ -685,4 +699,5 @@ async function loadAll(force){
 
 loadAll();
 setInterval(() => { if (!ACTIVE_RUN) loadAll(); }, 60000);
+setInterval(() => { if (!ACTIVE_RUN && Object.keys(LIVE).length) loadAll(); }, 15000);
 </script>

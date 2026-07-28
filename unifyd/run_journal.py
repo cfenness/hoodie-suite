@@ -243,8 +243,13 @@ def recent(limit=40, source=None, active_only=False):
     ids = sorted((k.rsplit("/", 1)[-1][:-5] for k in keys), key=_sort_key, reverse=True)
     if source:
         ids = [i for i in ids if i.rsplit("-", 1)[0] == source]
+    # SCAN BOUND. active_only skips terminal runs but still has to READ each doc to know, so an
+    # unbounded scan gets slower every day as journals accumulate — and this is on the bench's main
+    # page load. Ids sort newest-first by embedded epoch-ms, and a run in flight is by definition
+    # recent, so looking past the newest `scan` docs cannot find a live one.
+    scan = int(os.environ.get("JOURNAL_SCAN_MAX", "60"))
     out = []
-    for rid in ids:
+    for rid in ids[:max(scan, limit)]:
         if len(out) >= limit:
             break
         d = read(rid)
