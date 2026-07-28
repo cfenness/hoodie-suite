@@ -204,6 +204,15 @@ def main():
     args = set(sys.argv[1:])
     offline, dry = "--offline" in args, "--dry-run" in args
     t0 = time.time()
+    # A SCOPED run must announce itself. SNOWFLAKE_ONLY was set as a Fly SECRET to bound the first
+    # proving run, which means it silently bounds EVERY run — including the nightly build — until
+    # somebody remembers to unset it. A global flag that quietly narrows a "full" mirror is the same
+    # silent-truncation shape as a hardcoded cap in a "full" pull. It is loud now, and it is recorded
+    # on the run row, so a partial mirror can never be mistaken for a complete one.
+    _scope_env = (os.environ.get("SNOWFLAKE_ONLY") or "").strip()
+    if _scope_env:
+        print("!! SCOPED RUN — SNOWFLAKE_ONLY is set, so this mirrors ONLY: %s" % _scope_env)
+        print("!! This is NOT a full mirror. Unset SNOWFLAKE_ONLY for the complete build.")
     if not offline:
         print("→ regenerating build from the live warehouse (--live, change-aware)…")
         _regen("--live")
@@ -248,7 +257,7 @@ def main():
         _regen("--commit-state")
     print("✓ morning drop complete")
     return {"rows_total": total, "tables": ntab_total, "per_schema": per_schema,
-            "duration_s": round(time.time() - t0, 1)}
+            "scope": _scope_env or "full", "duration_s": round(time.time() - t0, 1)}
 
 
 if __name__ == "__main__":

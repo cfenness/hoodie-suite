@@ -27,7 +27,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "snowflake"))
 
 FIELDS = ["ts", "duration_s", "rows_total", "tables", "raw_tables", "raw_rows",
-          "master_tables", "master_rows", "host"]
+          "master_tables", "master_rows", "scope", "host"]   # scope: 'full' or the SNOWFLAKE_ONLY list
 
 
 def run():
@@ -46,6 +46,8 @@ def run():
         "raw_rows": int(per.get("RAW", {}).get("rows") or 0),
         "master_tables": int(per.get("MASTER", {}).get("tables") or 0),
         "master_rows": int(per.get("MASTER", {}).get("rows") or 0),
+        # Recorded so the ledger can never present a deliberately partial mirror as a complete one.
+        "scope": str(stats.get("scope") or "full")[:200],
         "host": os.environ.get("FLY_MACHINE_ID") or os.uname().nodename,
     }
     warehouse.write_accumulate("snowflake_load_runs", [rec], key="ts", fields=FIELDS)
