@@ -279,6 +279,20 @@ def write_accumulate(name, records, key, fields=None, coverage=True):
     if man and man.get("layout") == "bucketed":
         res = _accumulate_bucketed(name, man, records)
     else:
+        # READ-MODIFY-WRITE, AND THEREFORE SINGLE-WRITER ONLY. This reads the whole table, drops the
+        # keys being replaced, and OVERWRITES. Two callers at once = a lost update: the second writer
+        # silently discards everything the first landed. That is not theoretical — an 8-shard UberEats
+        # fleet drove ubereats_products from 33,250 rows DOWN to 8,798 the first time the shards lived
+        # long enough to overlap. Sharded writers must append parts and let ONE process consolidate.
+        #
+        # A shard cannot always know it is one, so refuse structurally rather than trusting callers:
+        # HOODIE_SHARD is set per-machine for every fleet member.
+        _shard = os.environ.get("HOODIE_SHARD") or os.environ.get("UE_SHARD")
+        if _shard and str(_shard).split("/")[-1] not in ("1", ""):
+            raise RuntimeError(
+                "write_accumulate(%r) called from shard %s — concurrent merge would LOSE ROWS. "
+                "Shards must write append-only parts (write_partition) and a single writer must "
+                "consolidate." % (name, _shard))
         try:
             existing = query(name, "SELECT * FROM t")
         except Exception:

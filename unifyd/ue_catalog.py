@@ -275,10 +275,19 @@ def _land(site, day, idx, shard, items, log=print):
     except Exception as e:
         log("  [ue] raw capture failed: %s" % str(e)[:110])
     lean = [k for k in PRODUCT_FIELDS if k != "raw_json"]
+    # NEVER MERGE FROM A SHARD. write_accumulate is read-modify-write with no lock: it reads the whole
+    # table, drops the keys it is replacing, and OVERWRITES. Two shards doing that at once is a lost
+    # update — the second writer silently discards everything the first just landed. Observed live the
+    # moment the fleet got healthy enough to overlap: ubereats_products went 33,250 -> 8,798 DOWN while
+    # eight shards were writing. It was always broken; shards used to die before they could collide.
+    #
+    # Shards write their own append-only PART instead — no read, no overwrite, no race, the same shape
+    # that has never lost a row in raw_payloads or retail_observations. A single-writer consolidation
+    # (consolidate(), run as a build) folds the parts into the canonical catalog afterwards.
     try:
-        warehouse.write_accumulate(
-            tbl, [{k: it.get(k) for k in lean} for it in items],
-            key=("store_uuid", "item_uuid"), fields=lean)
+        warehouse.write_partition(
+            tbl + "_parts", "%s_s%02d_b%04d" % (day, shard, idx),
+            [{k: it.get(k) for k in lean} for it in items], fields=lean)
     except Exception as e:
         log("  [ue] %s land failed: %s" % (tbl, str(e)[:110]))
         return 0
@@ -296,6 +305,33 @@ def _land(site, day, idx, shard, items, log=print):
     except Exception as e:
         log("  [ue] observe failed: %s" % str(e)[:110])
     return len(items)
+
+
+def consolidate(site="ubereats", log=print):
+    """SINGLE-WRITER fold of the shards' append-only parts into the canonical catalog.
+
+    Shards cannot merge (see _land): concurrent read-modify-write loses rows. So they append parts, and
+    exactly one process — this one, run as a build after the fleet finishes — does the merge. Latest
+    observation per (store_uuid, item_uuid) wins.
+
+    Deliberately reads from the parts, not from the catalog it is about to write, so a partial or failed
+    consolidation can be re-run without compounding.
+    """
+    tbl = "%s_products" % site
+    rows = warehouse.query_parts(tbl + "_parts", "SELECT * FROM t") if hasattr(warehouse, "query_parts") \
+        else warehouse.query(tbl + "_parts", "SELECT * FROM t")
+    rows = list(rows or [])
+    if not rows:
+        log("[ue] consolidate: no parts to fold")
+        return 0
+    latest = {}
+    for r in rows:                        # later parts overwrite earlier ones for the same identity
+        latest[(r.get("store_uuid"), r.get("item_uuid"))] = r
+    out = list(latest.values())
+    log("[ue] consolidate: %s part rows -> %s distinct items" % (f"{len(rows):,}", f"{len(out):,}"))
+    warehouse.write_accumulate(tbl, out, key=("store_uuid", "item_uuid"),
+                               fields=[k for k in PRODUCT_FIELDS if k != "raw_json"], coverage=False)
+    return len(out)
 
 
 def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
