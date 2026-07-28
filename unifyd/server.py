@@ -4266,8 +4266,14 @@ def registry_sources_ep():
     # it were this source's work. (Note this only catches REGISTRY-declared sharing; a table written through
     # a helper — observe.record → retail_observations, ~28 callers — is shared far more widely than the
     # registry admits, which is itself a finding the bench surfaces.)
+    # SOURCES *and* BUILDS. A build (snowflake-load, the dim_* chain, master_quality) is a job the bench
+    # must be able to show and run. Leaving BUILDS out is exactly why the Snowflake drop had to be kicked
+    # over ssh instead of from the workbench — the surface that is supposed to be the only way jobs run
+    # could not see half the pipeline.
+    _all = ([dict(x, _kind="source") for x in reg.SOURCES]
+            + [dict(b, _kind="build") for b in getattr(reg, "BUILDS", [])])
     _owners = {}
-    for s in reg.SOURCES:
+    for s in _all:
         for t in s.get("tables") or []:
             _owners.setdefault(t, []).append(s["id"])
 
@@ -4276,12 +4282,13 @@ def registry_sources_ep():
     # loads the list without it and fetches coverage for the ONE source you select (/api/collect/coverage).
     want_cov = request.args.get("coverage") == "1"
     out = []
-    for s in reg.SOURCES:
+    for s in _all:
         try:
             cv = cov.assess(s) if (cov and want_cov) else None
         except Exception:
             cv = None
         out.append({"id": s["id"], "label": s["label"], "klass": s["klass"], "cadence": s.get("cadence"),
+                    "kind": s.get("_kind", "source"), "after": s.get("after"),
                     "enabled": bool(s.get("enabled")), "tables": s.get("tables"),
                     "cost_class": _cost_class(s),
                     "interval_h": s.get("interval_h"),
@@ -4291,7 +4298,8 @@ def registry_sources_ep():
                     "missing_creds": [e for e in (s.get("requires") or []) if not os.environ.get(e)],
                     "coverage": cv})
     n_free = sum(1 for x in out if x["cost_class"] != "anti-bot" and x["enabled"])
-    return jsonify(ok=True, count=len(out), free_or_keyed=n_free, remote=warehouse.remote(), sources=out)
+    return jsonify(ok=True, count=len(out), free_or_keyed=n_free, remote=warehouse.remote(),
+                   builds=sum(1 for x in out if x["kind"] == "build"), sources=out)
 
 
 @app.get("/api/registry/coverage")
@@ -4701,6 +4709,90 @@ def collect_sample_ep():
                     "columns": list(rows[0].keys()) if rows else [], "rows": rows})
     return jsonify(ok=True, id=sid, tables=out)
 
+
+
+@app.get("/api/collect/diagnose")
+def collect_diagnose_ep():
+    """Everything you need to explain ONE job's state, in a single call.
+
+    This is the throwaway-scaffolding problem made permanent. Diagnosing kroger's silent failure and
+    the Snowflake chain both took a pile of one-off ssh probes — claimed-vs-observed tables, the last
+    ledger errors, whether a machine was already running it, whether a resume checkpoint was stale,
+    which required env vars were actually present. Every one of those scripts died with its session,
+    so the next person starts from nothing. The bench should answer it.
+
+    Deliberately READ-ONLY and cheap: no run, no write, no coverage scan.
+    """
+    import source_registry as reg
+    import warehouse
+    sid = (request.args.get("id") or "").strip()
+    src = (reg.by_id(sid)
+           or next((b for b in getattr(reg, "BUILDS", []) if b["id"] == sid), None))
+    if not src:
+        return jsonify(ok=False, error="unknown job %r" % sid), 404
+
+    d = {"id": sid, "label": src.get("label"), "klass": src.get("klass"),
+         "kind": "build" if not reg.by_id(sid) else "source",
+         "enabled": bool(src.get("enabled")), "code": src.get("code"),
+         "note": src.get("note"), "after": src.get("after")}
+
+    # 1. CLAIMED vs OBSERVED — the registry says it writes these; does the warehouse agree?
+    tables = []
+    for t in src.get("tables") or []:
+        row = {"table": t}
+        try:
+            row["rows"] = warehouse.row_count_strict(t)
+        except Exception as e:
+            row["rows"] = None
+            row["read_error"] = str(e)[:120]
+        try:
+            row["partitions"] = len(warehouse._partition_files(t))
+        except Exception:
+            row["partitions"] = 0
+        row["exists"] = bool(row.get("rows")) or row["partitions"] > 0
+        tables.append(row)
+    d["tables"] = tables
+
+    # 2. WHAT THE ENV CAN ACTUALLY RUN — a required var that is absent is the whole story sometimes.
+    d["requires"] = {k: bool(os.environ.get(k)) for k in (src.get("requires") or [])}
+    d["caps"] = src.get("caps") or []
+
+    # 3. RECENT LEDGER + the failure story, classified structurally where the run recorded it.
+    hist = _collect_ledger().get("history", {}).get(sid, [])[:8]
+    d["history"] = [{k: r.get(k) for k in
+                     ("status", "ts_start", "delta", "rows_after", "error", "fail_class", "host")}
+                    for r in hist]
+    try:
+        import selfheal
+        st = selfheal.states().get(sid) or {}
+        d["heal"] = {k: st.get(k) for k in
+                     ("consecutive_failures", "klass", "story", "auto", "quarantined",
+                      "retry_due", "next_retry_in_s")}
+    except Exception as e:
+        d["heal"] = {"error": str(e)[:100]}
+
+    # 4. PREFLIGHT — is it already running, and is there a resume checkpoint that would make a
+    #    "full" run actually a partial one? Both cost a wasted run when missed.
+    try:
+        import dispatch_ephemeral as disp
+        live = []
+        for m in disp._machines():
+            md = (m.get("config") or {}).get("metadata") or {}
+            if md.get("source") == sid and m.get("state") in ("started", "created", "starting"):
+                live.append({"machine": m.get("id"), "state": m.get("state"),
+                             "run_id": md.get("run_id")})
+        d["running_machines"] = live
+    except Exception as e:
+        d["running_machines"] = {"error": str(e)[:100]}
+    ck = "_collect/resume/%s_%s.json" % (sid, time.strftime("%Y-%m-%d"))
+    try:
+        raw = warehouse.get_bytes(ck)
+        d["resume_checkpoint"] = ({"done": len(json.loads(raw).get("done") or []), "key": ck}
+                                  if raw else None)
+    except Exception:
+        d["resume_checkpoint"] = None
+
+    return jsonify(ok=True, diagnosis=d)
 
 @app.get("/api/collect/coverage")
 def collect_coverage_ep():

@@ -136,6 +136,8 @@
         <option value="off">disabled</option>
         <option value="confirmed">confirmed</option>
         <option value="archived">archived</option>
+        <option value="builds">derived builds</option>
+        <option value="scrapes">scrapes only</option>
       </select>
     </div>
     <div class="slist" id="slist"><div class="msg">loading…</div></div>
@@ -272,6 +274,8 @@ function renderList(){
     if (f === 'bad') return ['fail','never','incomplete','unmeas','stalled','degr','partial','stale'].includes(v.k);
     if (f === 'ok')  return v.k === 'ok';
     if (f === 'off') return ['off','nocreds'].includes(v.k);
+    if (f === 'builds') return s.kind === 'build';
+    if (f === 'scrapes') return s.kind !== 'build';
     if (f === 'confirmed') return !!STATE.confirmed[s.id];
     if (f === 'archived')  return !!STATE.archived[s.id];
     return true;
@@ -368,6 +372,7 @@ function renderDetail(){
     <div class="runhead">
       <h2 style="margin:0;font-size:16px">${esc(s.label || s.id)}</h2>
       <span class="stat-pill" style="background:${v.c}22;color:${v.c};border:1px solid ${v.c}66">${esc(v.t)}</span>
+      ${s.kind === 'build' ? '<span class="tag" style="border-color:var(--accent);color:var(--accent)">BUILD</span>' : ''}
       <span class="tag">${esc(s.klass)}</span>
       <span class="tag">${esc(s.cadence)}</span>
       <span class="tag">${esc(s.cost_class||'')}</span>
@@ -407,12 +412,15 @@ function renderDetail(){
         ? esc(STATE.confirmed[s.id].note || 'confirmed through the bench')
         : 'mark it verified once you have watched a run land correct data'}</span>
       <span class="spacer"></span>
+      <button onclick="diagnose()">\u2699 Diagnose</button>
       <button class="danger" onclick="archiveSource(${STATE.archived[s.id] ? 'true' : 'false'})">
         ${STATE.archived[s.id] ? 'Restore' : 'Archive scrape'}</button>
     </div>
     <div id="winwarn"></div>
     ${(s.missing_creds||[]).length ? `<div class="warnbox">Missing credentials: <b>${s.missing_creds.map(esc).join(', ')}</b> —
        this source will report an honest <span class="mono">no-creds</span> skip rather than run and fail.</div>` : ''}
+
+    <div id="diag"></div>
 
     <div class="sec">Console</div>
     <div id="runmeta" class="runhead"><span class="k mut">no run being watched — press Run now, or pick one from history</span></div>
@@ -581,6 +589,44 @@ async function toggleManual(){
     if (!j.ok) throw new Error(j.error || 'refused');
     await loadAll(false);
   } catch(e){ alert('could not change mode: ' + e.message); }
+}
+
+async function diagnose(){
+  const id = SEL; if (!id) return;
+  const el = document.getElementById('diag');
+  el.innerHTML = '<p class="note">diagnosing…</p>';
+  try {
+    const r = await jget('/api/collect/diagnose?id=' + encodeURIComponent(id));
+    const d = r.diagnosis || {};
+    const tabs = (d.tables || []).map(t => `<tr class="${t.exists ? '' : 'disagree'}">
+        <td>${esc(t.table)}</td><td class="num">${t.rows == null ? '—' : fmt(t.rows)}</td>
+        <td class="num">${t.partitions || 0}</td>
+        <td>${t.exists ? 'present' : '<span class="dneg">absent</span>'}${
+          t.read_error ? ' <span class="dneg">' + esc(t.read_error) + '</span>' : ''}</td></tr>`).join('');
+    const reqs = Object.entries(d.requires || {}).map(([k, v]) =>
+      `<span class="fp ${v ? '' : 'z'}">${esc(k)} ${v ? 'set' : 'MISSING'}</span>`).join('');
+    const heal = d.heal || {};
+    const runningNow = Array.isArray(d.running_machines) ? d.running_machines : [];
+    el.innerHTML = `
+      <div class="sec">Diagnosis</div>
+      ${runningNow.length ? `<div class="warnbox">Already running on ${runningNow.length} machine(s):
+        ${runningNow.map(m => esc(m.machine)).join(', ')} — starting another would double-crawl.</div>` : ''}
+      ${d.resume_checkpoint ? `<div class="warnbox">Resume checkpoint for today holds
+        <b>${fmt(d.resume_checkpoint.done)}</b> completed items — the next run RESUMES, it is not a full pass.
+        Clear it if you want a clean sweep.</div>` : ''}
+      ${heal.story ? `<p class="note"><b>${esc(heal.klass || 'failure')}</b> \u00d7${heal.consecutive_failures}
+        — ${esc(heal.story)}${heal.auto === false ? ' <b>Will NOT auto-retry; needs a fix.</b>' : ''}</p>` : ''}
+      ${reqs ? `<div class="fill">${reqs}</div>` : ''}
+      <table><thead><tr><th>table</th><th class="num">rows</th><th class="num">parts</th><th>state</th></tr></thead>
+        <tbody>${tabs || '<tr><td colspan="4" class="mut">declares no tables</td></tr>'}</tbody></table>
+      <p class="note mono" style="font-size:11px">${esc(d.code || '')}</p>
+      <div class="sec">Recent ledger</div>
+      <table><thead><tr><th>when</th><th>status</th><th>class</th><th class="num">delta</th><th>error</th></tr></thead>
+        <tbody>${(d.history || []).map(h => `<tr><td>${ago(h.ts_start)}</td><td>${esc(h.status)}</td>
+          <td>${esc(h.fail_class || '')}</td><td class="num">${fmt(h.delta)}</td>
+          <td class="mut">${esc((h.error || '').slice(0, 110))}</td></tr>`).join('')
+          || '<tr><td colspan="5" class="mut">no ledger history</td></tr>'}</tbody></table>`;
+  } catch(e){ el.innerHTML = '<p class="note">diagnose failed: ' + esc(e.message) + '</p>'; }
 }
 
 /* ── run + watch ─────────────────────────────────────────────────────────── */
