@@ -360,7 +360,9 @@ SOURCES = [
          # partition in agg_shard_test.py). Merge is last-write-wins by staged_at, so a re-run cannot
          # re-apply an old staged row over a newer exact geo.
          shards=6,
-         tables=["src_outlets"], klass="headless", cadence="daily", enabled=False, timeout=7200, mem=16384,
+         # ENABLED as its own dispatched FLEET (6 shards). geo_all no longer runs the aggregator
+         # in-process — it would duplicate this work on a 7th machine — it only merges the stage.
+         tables=["src_outlets"], klass="headless", cadence="daily", enabled=True, timeout=7200, mem=16384,
          note="$0 page-fetch PRECISE geo for the ~790k no-address ubereats/postmates outlets (schema.org "
               "lat/lng → geo_precision=exact; empty pages marked agg_miss). Big crawl — chips away, "
               "AGG_GEO_LIMIT/run. (doordash is mapped by the city-centroid fast layer, not here.)"),
