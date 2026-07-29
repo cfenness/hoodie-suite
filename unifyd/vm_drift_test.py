@@ -58,5 +58,18 @@ eq("...by exactly the observed amount", (running_mem, declared_mem), (8192, 4096
 # and after they pinned it:
 ok("pinning fly.toml to 8gb removes the drift", rt.mem_mb("8gb") == running_mem)
 
+print("\nPARSES WITHOUT tomllib (the venv is python 3.9)")
+root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+fb = rt._vm_block_fallback(os.path.join(root, "fly.toml"))
+ok("the fallback parser found the block", fb is not None)
+if fb:
+    eq("size, comments stripped", fb.get("size"), "shared-cpu-4x")
+    eq("memory, quotes stripped", fb.get("memory"), "8gb")
+    eq("...and normalises the same", rt.mem_mb(fb.get("memory")), 8192)
+eq("missing file -> None", rt._vm_block_fallback("/tmp/definitely-no-fly.toml"), None)
+import sys as _s
+ok("declared_vm agrees on this interpreter (tomllib=%s)" % (_s.version_info >= (3, 11)),
+   (rt.declared_vm(root) or {}).get("memory_mb") == 8192)
+
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
