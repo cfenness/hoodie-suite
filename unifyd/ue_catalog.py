@@ -719,8 +719,37 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
     except Exception as e:
         log("[ue] field QA skipped: %s" % str(e)[:100])
 
+    # VALUE-LEVEL RULES. Fill rates can be perfect while every value is confident nonsense — a price
+    # column that starts carrying the case price, an ABV of 900 from a moved decimal, a UPC missing its
+    # last digit. Right type, wrong number, and nothing upstream notices. Findings are FLAGGED, never
+    # corrected: landed data is not rewritten, and silently repairing a value would destroy the evidence
+    # that the parser is broken.
+    try:
+        import value_rules
+        vr = value_rules.batch_rates(qa_rows)
+        if vr:
+            vbase = extract_qa.baseline_for(site, "%s_valuerules" % site, log=lambda *_: None) \
+                if "extract_qa" in dir() else {}
+            vbad = value_rules.assess(vr, vbase, rows=len(qa_rows))
+            qa["value_rules"] = vr
+            if vbad:
+                qa["value_violations"] = sorted(vbad)
+                log("[ue] !! VALUE RULES firing above baseline: %s" % value_rules.summary(vbad))
+            else:
+                log("[ue] value rules: %d rule(s) seen, none above baseline" % len(vr))
+            try:
+                extract_qa.record(site, "%s_valuerules" % site,
+                                  {r: {"rows": len(qa_rows),
+                                       "filled": int(rate * len(qa_rows) / 1000.0),
+                                       "fill_pct": rate} for r, rate in vr.items()},
+                                  day=day, log=lambda *_: None)
+            except Exception:
+                pass
+    except Exception as e:
+        log("[ue] value rules skipped: %s" % str(e)[:100])
+
     status = "success" if not remaining else "degraded"
-    if qa.get("drifted"):
+    if qa.get("drifted") or qa.get("value_violations"):
         status = "degraded"
     rec = {"status": status, "site": site, "shard": "%s/%s" % (shard, nshard),
            "stores_total": len(mine), "stores_done": len(mine) - remaining, "remaining": remaining,

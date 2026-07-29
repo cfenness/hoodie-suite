@@ -81,7 +81,10 @@ check("fill_pct for empty field", st["b"]["fill_pct"], 0.0)
 
 # ── and it must actually gate the run, not just log ──────────────────────────────────────────────
 src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ue_catalog.py")).read()
-check("drift downgrades the run", 'if qa.get("drifted"):' in src, True)
+# Match the CONDITION, not the whole line — the gate legitimately gained a second clause
+# (value_violations) and an exact-line assertion broke on a change that made the check stronger. A test
+# that fails when the code improves trains people to edit the test without reading it.
+check("drift downgrades the run", 'qa.get("drifted")' in src and 'status = "degraded"' in src, True)
 check("QA result lands in the record", 'rec["field_qa"] = qa' in src, True)
 
 if fails:
