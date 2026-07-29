@@ -256,7 +256,8 @@ def bottlecapps_store_id(base, key):
 
 
 def bottlecapps_catalog(base, store_id, key, max_cats=12, scrolls=8, log=print):
-    from playwright.sync_api import sync_playwright
+    import browser_warm
+    sync_playwright = browser_warm.sync_playwright_api()   # patchright on the image; NEVER import playwright
     base = base.rstrip("/")
     prods = {}
     with sync_playwright() as p:

@@ -72,16 +72,12 @@ def _sync_playwright():
     `playwright` is not, so importing playwright directly is a ModuleNotFoundError at runtime — the
     port compiled, tested and deployed clean and would still have failed on its first real pin.
 
-    patchright is a drop-in playwright fork with the same sync_api surface, so this is an import
-    swap, not a rewrite. Try it first (it is the hardened one), fall back to playwright for a dev box
-    that only has the upstream package.
+    The resolution itself now lives in ONE place (`browser_warm.sync_playwright_api`), because this
+    same break was later found in six other modules that each imported playwright directly. A local
+    copy per module is a per-module chance to get it wrong; this delegates instead.
     """
-    try:
-        from patchright.sync_api import sync_playwright
-        return sync_playwright
-    except ImportError:
-        from playwright.sync_api import sync_playwright
-        return sync_playwright
+    import browser_warm
+    return browser_warm.sync_playwright_api()
 
 
 def _launch(pw, log=print):

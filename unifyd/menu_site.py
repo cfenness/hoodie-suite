@@ -116,7 +116,8 @@ def render_menu_assets(site, key, log=print, max_items=8, max_pages=8):
     """BD Browser walks the drink/menu nav TWO levels deep (menus nest: /menu -> COCKTAILS/BOTTLES ->
     the list, often a PDF). HTML/JS pages -> viewport screenshots; PDF menus -> raw bytes (Claude reads PDFs
     natively). -> [{'kind':'image'|'pdf','data':bytes,'url':str}] — the uniform substrate for any menu format."""
-    from playwright.sync_api import sync_playwright
+    import browser_warm
+    sync_playwright = browser_warm.sync_playwright_api()   # patchright on the image; NEVER import playwright
     auth = _browser_auth()
     base = re.match(r"https?://[^/]+", site).group(0)
     items, visited, pages = [], set(), 0

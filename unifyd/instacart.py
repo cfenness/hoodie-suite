@@ -1,6 +1,6 @@
 """instacart.py — Instacart connector on the aggregator harness (see aggregator.py).
 
-STATUS (2026-07-22): FREE PATH. The browser DRIVER is now a self-hosted Playwright Chromium — NO Bright Data,
+STATUS (2026-07-22): FREE PATH. The browser DRIVER is now a self-hosted Chromium — NO Bright Data,
 NO proxy. A cloud probe (`instacart_free_probe.py`, run on a bare datacenter runner) proved a real Chromium
 reaches Instacart's homepage → a grocery storefront → the product GraphQL with no anti-bot block and no paid
 layer (home=True blocked=False store=True search_gql=True products=76). The data is Instacart's own persisted
@@ -20,7 +20,10 @@ The recipe (unchanged from the BD era — only the driver changed):
     "alcohol products aren't available". NON-alcohol browses anonymously, so the free anon path is the
     proof-of-pipe + the whole non-alc long tail; bev-alc later needs an account session injected here.
 
-Driver notes (free Playwright):
+Driver notes (free self-hosted browser):
+  • DRIVER RESOLUTION: never `from playwright...` — the Fly image installs patchright and NOT playwright, so a
+    direct import is a ModuleNotFoundError on the first real run (it was exactly that, latently, here). _launch
+    goes through `browser_warm.sync_playwright_api()`, the one shared resolver. See browser_driver_test.py.
   • Headful by default under Xvfb (BROWSER_HEADFUL unset → headless=False) — matches the probe; the toughest
     fingerprinting sometimes needs a real window, and a datacenter Xvfb window cleared Instacart in the probe.
     Set BROWSER_HEADFUL=0 to force headless.
@@ -70,7 +73,8 @@ class Instacart(AggregatorConnector):
 
     # ---- free browser lifecycle (no BD, no proxy) ----
     def _launch(self):
-        from playwright.sync_api import sync_playwright
+        import browser_warm
+        sync_playwright = browser_warm.sync_playwright_api()   # patchright on the image; NEVER import playwright
         headful = os.environ.get("BROWSER_HEADFUL", "1") != "0"
         self._pw = sync_playwright().start()
         last = None

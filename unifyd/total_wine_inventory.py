@@ -163,7 +163,8 @@ def _pull_bdbrowser(store_id, state, skuids, log):
     """Pull THROUGH one live BD Browser session — an in-page fetch() reuses the session's IP + warmed PX
     cookie, so every getProduct returns JSON. One session serves the whole batch (amortized BD)."""
     import menu_site as ms
-    from playwright.sync_api import sync_playwright
+    import browser_warm
+    sync_playwright = browser_warm.sync_playwright_api()   # patchright on the image; NEVER import playwright
     auth = ms._browser_auth()
     warm = "https://www.totalwine.com/wine/red-wine/cabernet-sauvignon/caymus-cabernet/p/223968750?s=%s" % store_id
     rows = []
@@ -203,7 +204,8 @@ def _pull_bdbrowser(store_id, state, skuids, log):
 def _pull_direct(store_id, state, skuids, log):
     """$0 path: warm a PX cookie in a LOCAL browser once, then requests-style direct (same IP). Use on a
     clean IP (the Fly box). BD-free."""
-    from playwright.sync_api import sync_playwright
+    import browser_warm
+    sync_playwright = browser_warm.sync_playwright_api()   # patchright on the image; NEVER import playwright
     warm = "https://www.totalwine.com/wine/red-wine/cabernet-sauvignon/caymus-cabernet/p/223968750?s=%s" % store_id
     with sync_playwright() as p:
         b = p.chromium.launch(headless=True)

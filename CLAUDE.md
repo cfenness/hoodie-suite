@@ -100,12 +100,31 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   (the Mac — `$0`) and keep the cloud for the ~20 free API sources. `ue_crawl.py`'s "proxy for
   everything" path is opt-in scale (`FETCH_POLICY=paid`), never the default. Don't re-litigate this.
   - **Not every `anti-bot` source needs the residential executor — test, don't assume.** `unifyd/instacart.py`
-    is the proven counter-example: a self-hosted **headless** Chromium (Playwright, NO Bright Data, NO proxy)
-    drives Instacart's own `SearchResultsPlacements` GraphQL and lands per-store product+price **from a bare
-    datacenter IP** — a CI matrix confirmed headless-no-Xvfb lands data, so the Fly image ships just the
-    bundled Chromium and the Instacart pull runs in-app for `$0`. The old BD managed-dataset scraper is
-    archived (`_archive/instacart_scraper.py`). Never re-add Bright Data to Instacart "to make it work";
-    if the datacenter path ever regresses, prove the block from a residential IP first (see the paid-path rule).
+    is the proven counter-example: a self-hosted Chromium (NO Bright Data, NO proxy) drives Instacart's own
+    `SearchResultsPlacements` GraphQL and lands per-store product+price **from a bare datacenter IP** — a cloud
+    probe on a bare datacenter runner cleared the anti-bot with no paid layer. That datacenter-IP finding is the
+    load-bearing lesson and it stands. The old BD managed-dataset scraper is archived
+    (`_archive/instacart_scraper.py`). Never re-add Bright Data to Instacart "to make it work"; if the
+    datacenter path ever regresses, prove the block from a residential IP first (see the paid-path rule).
+    **Operational status is narrower than the capability** (don't read the paragraph above as "it's running"):
+    the only registry entry is `instacart-bevalc`, `enabled=False`, `requires=["INSTACART_SESSION_COOKIES"]`,
+    **manual trigger only** — because bev-alc specifically needs a logged-in, age-verified session (anonymous
+    gets "alcohol products aren't available"). The dispatcher therefore never runs Instacart; nothing pulls
+    on a cadence today. The free anonymous path covers NON-alcohol only. Also: the driver is **patchright**,
+    not playwright (the image ships only patchright — see the browser-driver rule below), and the connector
+    defaults **headful** under Xvfb (`BROWSER_HEADFUL` unset → `headless=False`, registry `klass="mac"`), not
+    headless.
+- **NEVER import playwright directly — resolve the driver (load-bearing, shipped broken 7×).** The Fly image
+  installs **`patchright` and NOT `playwright`** (`unifyd/requirements.txt` has `playwright>=1.40` commented
+  out; the Dockerfile pip line adds only patchright). Because every such import is *function-local*, a module
+  that reaches for playwright imports fine, compiles, passes its own tests, and deploys green — then
+  `ModuleNotFoundError`s the first time that path actually runs in production, where no check we own can see
+  it. Use the one shared resolver:
+  `import browser_warm; sync_playwright = browser_warm.sync_playwright_api()`. This was fixed once for
+  DoorDash (PR #688) and later found in **six more** modules, two of them `enabled=True` daily (`publix`
+  hard-failed every tick; `total-wine` failed inside a per-batch `try/except` and reported runs COMPLETE
+  having landed 0 rows — a quiet degrade that looks like success). `unifyd/browser_driver_test.py` is the
+  mechanical ratchet; it names the offending file:line. Don't add playwright to the image to "fix" this.
 
 - `unifyd/server.py` — a local Flask agent (`python unifyd/server.py`, port 8765) that
   serves `hoodie_mdm.html` and runs real pulls on `/api/run`. Endpoints: `/api/health`,
