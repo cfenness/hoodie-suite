@@ -118,6 +118,20 @@ score_new, n_new = r._score(("10.0.0.9", "c"), now=2.0)
 check("an untried pair (%.3f) scores ABOVE a proven-bad, well-sampled one (%.3f)"
       % (score_new, score_bad), score_new > score_bad)
 
+print("cold start: N threads racing to prime BEFORE any outcome returns must NOT all collide on one "
+      "exit (real bug found live 2026-07-29 — 10 of 13 total picks landed on one pair in a 400-request "
+      "run and it died: 0% across 20 outcomes, because hotness only counted record()'d outcomes, which "
+      "arrive a full round-trip after the picks that caused the collision)")
+r = R.Router()
+picks = [r.pick(pool(10), ["c"], now=0.0) for _ in range(10)]   # simulates 10 threads' first prime,
+                                                                  # same instant, zero outcomes yet
+exits_used = [px for px, _c in picks]
+check("at least HOT_MAX+1 distinct exits were used, not one (%d distinct of %d picks)"
+      % (len(set(exits_used)), len(exits_used)), len(set(exits_used)) >= R.HOT_MAX + 1)
+check("no single exit took more than HOT_MAX of the 10 picks (%s)"
+      % {e: exits_used.count(e) for e in set(exits_used)},
+      max(exits_used.count(e) for e in set(exits_used)) <= R.HOT_MAX)
+
 print("empty pool or costume list returns (None, None) rather than raising")
 check("empty pool", R.get().pick([], ["c"]), (None, None))
 check("empty costumes", R.get().pick(["u@10.0.0.1:1"], []), (None, None))

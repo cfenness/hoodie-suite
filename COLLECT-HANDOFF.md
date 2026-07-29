@@ -177,10 +177,51 @@ pairs same as a bad exit) rather than needing `ladder.rotate_profile()`'s coarse
 escalation to notice first. The two mechanisms coexist: `ladder` still escalates the RUNG (e.g. to the
 browser fallback) if the router can't find anything usable at all.
 
-**Status: built and unit-tested (`identity_router_test.py`, 21 checks, pure logic — no network). NOT
-YET LIVE-VALIDATED for actual throughput improvement.** The next thing to do with it is a real fleet
-run comparing router-on vs router-off at the same target rate, with DISJOINT exit sets this time — see
-§7.
+**Status: live-validated once, found and fixed a real bug, needs one more clean run.**
+
+First live test (router=ON, fresh pool half): **85.8% usable**, best number of the whole day. But the
+comparison was confounded (ON and OFF used different pool halves; a repeat of ON on the SAME exits
+minutes later collapsed to 0.5%) — see §1d for the full account and the bug that repeat exposed.
+
+**The bug, found and fixed same day:** `_hot()` only counted `record()`'d outcomes — i.e., only after a
+full request round-trip. At cold start, N worker threads all call `pick()` before any of them has heard
+back from a single request, so all N see identical empty state and a deterministic tie-break sent every
+one of them to the SAME exit — the exact 10-on-1-IP concentration disaster from §1b, self-inflicted by
+the router meant to prevent it. Measured directly: one pair took 10 of 13 total picks in a 400-request
+run and died (0% across 20 outcomes). **Fixed**: `pick()` now stamps its own choice as activity
+immediately, under the same lock that already serializes concurrent callers, so the second thread in
+any race sees the first thread's pick before either has sent a byte. `identity_router_test.py` reproduces
+the exact collision (confirmed: fails 1-distinct-exit-of-10 against the pre-fix code, passes
+10-distinct-of-10 after) and covers it as a permanent regression case.
+
+**Still needed:** a clean live comparison with the fix in place. Today's attempt at a same-time,
+same-pool, disjoint-confound-free A/B (two processes launched simultaneously) lost its OFF process to an
+unexplained infra hiccup (no crash trace, no deploy, no OOM signature — just gone) before a comparison
+number came back. Worth one more try — see §7.
+
+Unit-tested throughout (`identity_router_test.py`, 23 checks, pure logic — no network).
+
+### 1d. The live-validation attempts, in full — two confounded, one bug found, one lost to infra
+
+**Attempt 1** (`costume_probe`-style, sequential arms): ON on pool-half-A (85.8%), OFF on pool-half-B
+(11.2%), ON again on pool-half-A (0.5%). Confounded two ways: A and B are different halves of a patchy
+pool (§1's binary-clean-vs-dead finding means "which half" alone could explain most of the gap), and the
+third arm reused the first arm's exact exits — the same reuse-as-your-own-control mistake as §1b, again.
+
+**Attempt 2** (two processes, `IDENTITY_ROUTER=1`/`=0`, launched simultaneously against the full shared
+pool — the right design: same addresses, same moment, same ambient drift for both). The ON process
+finished (58.8% usable) and its own internal stats immediately surfaced the concentration bug fixed
+above. **The OFF process vanished with no log file ever created and no error** — checked for a
+concurrent deploy (none), an OOM kill or kernel panic (none in `dmesg`), a code exception (would have
+printed to its own log via `-u` unbuffered; nothing did). Machine load was very high (15+ on 4 vCPUs)
+running two Python/curl_cffi processes at once, which is the leading suspect, but this is unconfirmed —
+flag it if it recurs.
+
+**Net effect:** no clean router-on-vs-off number exists yet, but the exercise was not wasted — it found
+and fixed a real concentration bug that a synthetic-only test suite had no way to surface (it requires
+genuine thread-scheduling races against live latency, which unit tests correctly don't try to
+reproduce). The next attempt should reuse Attempt 2's design (simultaneous processes, shared pool) now
+that the router itself doesn't self-collide at cold start.
 
 ---
 
@@ -357,12 +398,12 @@ costume — are **all done**. The last three didn't resolve individually; they d
 (§1): exit and costume health both drift substantially within an hour, in either direction, for a cause
 not yet identified. That finding is what drives the list below.
 
-1. **Live-validate `identity_router.py` (§1c) with real fleet traffic.** It's built, wired into
-   `getstore._session()`, and unit-tested — but never run against the actual target. The next session
-   should run a real comparison: `IDENTITY_ROUTER=1` vs `IDENTITY_ROUTER=0`, same target rate, same
-   costume candidates, over enough volume to see whether usable stores/s actually improves — and this
-   time use DISJOINT exit sets per arm (both of today's rate-scope attempts got this wrong via an
-   overlapping-prefix or worker-count confound; don't repeat it a third time).
+1. **Get a clean router-on-vs-off number (§1d).** The design is right — two processes, launched
+   simultaneously, `IDENTITY_ROUTER=1`/`=0`, hitting the SAME shared pool at the SAME moment so ambient
+   drift can't confound the comparison. It just needs to actually finish this time: the OFF process
+   vanished mid-run with no diagnosable cause. Retry with each process's own heartbeat/liveness log line
+   on a short interval, so a silent death is caught within seconds rather than discovered as a missing
+   file at the end.
 2. **If the router helps, retest the "don't buy proxies" decision (§5) properly.** It's now finally
    answerable — hold costume and pin behavior constant, use the router's live health signal instead of a
    snapshot, and see whether more identities move the needle now that concentration and drift are being
@@ -389,9 +430,14 @@ not yet identified. That finding is what drives the list below.
   O(n²) in universe size. Wasteful, not incorrect. Delta checkpoints are the fix.
 - **16+ test files exist that the curated runner never ran.** They pass now, but the runner's list is
   hand-maintained and will drift again; it prints unlisted files as a warning.
-- **`identity_router.py` is unvalidated against live traffic.** Unit tests cover the selection logic in
-  isolation (quarantine, exploration, concentration-avoidance) with zero network calls. Whether it
-  actually raises usable stores/s on the real target is unmeasured — see §7 item 1.
+- **`identity_router.py` has no clean router-on-vs-off number yet (§1d).** One real bug was found and
+  fixed live (cold-start pick collision) and is covered by a regression test; the actual throughput
+  question — does it raise usable stores/s over plain round-robin — is still open. See §7 item 1.
+- **Two Fly ssh/process-launch failure modes were newly seen today, beyond the three already logged in
+  §6.** A combined `cmd1 & cmd2 & sleep 1; ...` single-shell launch left one of the two backgrounded
+  processes never starting (no log file, no crash trace) under high load (15+ on 4 vCPUs) — cause
+  unconfirmed. Prefer launching concurrent processes via separate `ssh console` calls, and always add a
+  cheap early heartbeat line to the log so a silent death is visible within seconds, not just at the end.
 - **The concentration-avoidance window (`HOT_WINDOW_S=15`, `HOT_MAX=2`) and quarantine constants
   (`QUARANTINE_STREAK=3`, base 60s, capped 900s) are informed guesses, not learned values.** They're
   consistent with the day's evidence (10-on-1-exit collapsed in ~3 min; a 3-throttle streak is the same
