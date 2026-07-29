@@ -680,19 +680,50 @@ def mem_mb(v):
         return None
 
 
-def declared_vm(wt):
+def _vm_block_fallback(path, log=print):
+    """Parse just the [[vm]] block without tomllib.
+
+    tomllib is stdlib only from 3.11, and this repo's venv is 3.9 — so on the interpreter the check
+    sweep actually uses, the tomllib path raised, declared_vm returned None, and the drift check
+    SILENTLY DID NOTHING. A guard that quietly stops guarding is the failure mode this codebase has
+    a standing rule against, so it now degrades to a small hand parser instead of to nothing.
+    """
+    vm, in_block = {}, False
+    try:
+        with open(path, "r") as f:
+            for raw in f:
+                line = raw.split("#", 1)[0].strip()
+                if not line:
+                    continue
+                if line.startswith("["):
+                    in_block = line.replace(" ", "") in ("[[vm]]", "[vm]")
+                    continue
+                if in_block and "=" in line:
+                    k, _, v = line.partition("=")
+                    vm[k.strip()] = v.strip().strip("'\"")
+    except OSError as e:
+        log("  [vm-drift] cannot read %s: %s" % (path, str(e)[:60]))
+        return None
+    return vm or None
+
+
+def declared_vm(wt, log=print):
     """The [[vm]] the deploy would apply. None when fly.toml declares none."""
     path = os.path.join(wt, "fly.toml")
     if not os.path.exists(path):
         return None
+    vm = None
     try:
         import tomllib
         with open(path, "rb") as f:
             cfg = tomllib.load(f)
-    except Exception:                             # noqa: BLE001
-        return None
-    vms = cfg.get("vm")
-    vm = (vms[0] if isinstance(vms, list) and vms else vms) or None
+        vms = cfg.get("vm")
+        vm = (vms[0] if isinstance(vms, list) and vms else vms) or None
+    except ImportError:
+        vm = _vm_block_fallback(path, log)        # python < 3.11
+    except Exception as e:                        # noqa: BLE001 — malformed toml
+        log("  [vm-drift] fly.toml did not parse (%s) — falling back" % str(e)[:60])
+        vm = _vm_block_fallback(path, log)
     if not isinstance(vm, dict):
         return None
     size = str(vm.get("size", "")).strip().lower()
