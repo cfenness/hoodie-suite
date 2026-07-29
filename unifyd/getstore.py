@@ -51,6 +51,14 @@ def _base(site):
 # decays back down afterwards. In-page fetches serialize behind the lock, and that is correct — the
 # whole point of this rung is to be quiet, not parallel.
 _BR = {"w": None, "site": None}
+_LOGGED = set()
+
+
+def _log_once(msg):
+    if msg not in _LOGGED:
+        _LOGGED.add(msg)
+        print("[getstore] " + msg, flush=True)
+
 _BR_LOCK = threading.Lock()
 
 
@@ -85,6 +93,14 @@ def _browser(site):
         # of the process deliberately: the persistent profile is the point, since a returning profile
         # accumulates trust and gets challenged less each run.
         w.__enter__()
+        # PRIME IT. _page() returns a BLANK page; prime() navigates to the origin so the anti-bot JS
+        # runs and mints the trusted cookie. Without this the in-page POST is cross-origin from
+        # about:blank and returns status 0 — which classifies as soft_block and looks exactly like the
+        # thing we escalated here to escape. Warming is the entire point of the module's name.
+        try:
+            w.prime(_base(site) + "/", settle_ms=4000)
+        except Exception as e:
+            _log_once("browser prime failed: %s" % str(e)[:90])
         _BR["w"] = w
         _BR["site"] = site
         return _BR["w"]
