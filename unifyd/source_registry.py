@@ -150,13 +150,13 @@ SOURCES = [
     # The other half of the split: drains the STATIC-attribute backlog (UPC/GTIN/brand/size/ABV) that the
     # sweep no longer carries. Sharded and append-only like the sweep. Day one is a real backfill; after
     # that only genuinely-new items cost anything, because a resolved item is never re-fetched.
-    dict(id="ubereats-enrich", label="Uber Eats item enrichment (UPC backfill)", shards=8,
+    dict(id="ubereats-enrich", label="Uber Eats item UPC/GTIN backfill (sharded)", shards=8,
          code="import ue_enrich as m; m.main(['--site','ubereats','--shard',__import__('os').environ.get('UE_SHARD','0/8')])",
          caps=['curl_cffi'],
          tables=["ubereats_products"], klass="headless", cadence="daily",
          enabled=True, cost_class="free", timeout=21600, mem=4096, priority=11,
          note="separate clock from the sweep: static per-item attributes, fetched once ever"),
-    dict(id="ubereats", label="Uber Eats (catalog + UPC, sharded)", shards=8,
+    dict(id="ubereats", label="Uber Eats store catalog (sharded)", shards=8,
          code="import ue_catalog as m; m.main(['--site','ubereats','--shard',__import__('os').environ.get('UE_SHARD','0/8'),'--no-enrich'])",
          caps=['curl_cffi'],
          tables=["ubereats_products", "retail_observations"], klass="headless", cadence="daily",
