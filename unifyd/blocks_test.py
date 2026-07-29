@@ -87,6 +87,33 @@ check("success counts ok+empty", f["isp.success_pct"], 80.0)
 check("methods are separate", f["direct.success_pct"], 100.0)
 check("summary names the top cause", "isp/ok" in t.summary(), True)
 
+# ── the per-exit VERDICT: which fix does this distribution call for? ─────────────────────────────
+# A pool average cannot tell "retire six addresses" from "the addresses were never the problem", and
+# acting on the wrong one costs either a month of proxy spend or a day of fingerprint work.
+t2 = B.Tally()
+for i in range(200):
+    ip = "10.0.0.%d" % (i % 10)
+    burned = (i % 10) in (0, 1)                      # two dead exits, eight healthy
+    t2.record(B.CAPTCHA if burned else B.OK, "isp", exit=ip)
+v = t2.exit_verdict()
+check("a burned subset is named", v["pattern"], "burned_subset")
+check("and the exits are named", sorted(v["below_median_25pp"]), ["10.0.0.0", "10.0.0.1"])
+check("worst-first ordering for the log", v["worst"][0]["pct"], 0.0)
+
+t3 = B.Tally()
+for i in range(200):
+    # Outcome independent of exit — a genuinely even decline across the whole pool.
+    t3.record(B.OK if ((i * 2654435761) % 97) < 48 else B.CAPTCHA, "isp", exit="10.0.0.%d" % (i % 10))
+check("an even decline is named uniform", t3.exit_verdict()["pattern"], "uniform")
+
+t4 = B.Tally()
+for i in range(6):
+    t4.record(B.OK, "isp", exit="10.0.0.%d" % i)
+check("too little per exit is 'insufficient', never 'uniform'",
+      t4.exit_verdict()["pattern"], "insufficient")
+check("a tally with no exit attribution does not invent one",
+      t.exit_verdict()["pattern"], "insufficient")
+
 if fails:
     print("\n".join("  FAIL " + f for f in fails))
     print("-- %d failed" % len(fails))
