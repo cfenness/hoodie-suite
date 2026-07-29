@@ -61,9 +61,19 @@ check("priced node is not a section",
       ubereats._catalog_index([{"items": [{"uuid": "i-3", "title": "Thing", "price": 1,
                                            "sectionUuid": "i-3"}]}]).get("i-3", {}).get("section_name"), "")
 
-# The landed schema must actually carry the columns, or the capture never reaches the warehouse.
+# THE WRITE SCHEMA, NOT THE PARSE LIST. This assertion originally checked ubereats.UE_FIELDS — the
+# fields the PARSER produces — and passed while the catalog write projected through
+# ue_catalog.PRODUCT_FIELDS, which did not contain them. So every breadcrumb was computed and dropped
+# at the write, with a green test. Assert on the list the write actually uses, or the test only proves
+# we parsed something we then threw away.
+import ue_catalog  # noqa: E402
 for col in ("section_name", "subsection_name", "category_path"):
-    check("schema carries " + col, col in ubereats.UE_FIELDS, True)
+    check("parser produces " + col, col in ubereats.UE_FIELDS, True)
+    check("WRITE schema carries " + col, col in ue_catalog.PRODUCT_FIELDS, True)
+# The request context enrichment needs must survive to the table too, or the enrich job has no section
+# to ask getMenuItemV1 with.
+for col in ("section", "subsection"):
+    check("WRITE schema carries " + col, col in ue_catalog.PRODUCT_FIELDS, True)
 
 if fails:
     print("\n".join("  FAIL " + f for f in fails))

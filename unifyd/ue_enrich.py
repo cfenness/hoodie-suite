@@ -43,11 +43,27 @@ def backlog(site="ubereats", shard=0, nshard=1, log=print):
     """Items still missing an identifier. The work-list is derived, never capped — if it is large, that
     is the honest size of the job, and the answer is more shards, not a smaller query."""
     tbl = "%s_products" % site
+    # SELECT WHAT THE TABLE ACTUALLY HAS. section/subsection were added to the write schema after this
+    # catalog was first written, and a hard reference to them fails the whole job with a BinderException
+    # (caught in pre-flight before it could crash all 8 shards). Missing context is survivable —
+    # getMenuItemV1 accepts empty section ids — so degrade to '' instead of refusing to run.
+    have = set()
+    for c in ("section", "subsection"):
+        try:
+            if warehouse.has_column(tbl, c):
+                have.add(c)
+        except Exception:
+            pass
+    sec = "section" if "section" in have else "'' AS section"
+    sub = "subsection" if "subsection" in have else "'' AS subsection"
+    if len(have) < 2:
+        log("[enrich] catalog predates %s — enriching without section context"
+            % ", ".join(sorted({"section", "subsection"} - have)))
     rows = warehouse.query(
         tbl,
-        "SELECT store_uuid, item_uuid, store_name, section, subsection FROM t "
+        "SELECT store_uuid, item_uuid, store_name, %s, %s FROM t "
         "WHERE COALESCE(upc,'') = '' AND COALESCE(gtin,'') = '' "
-        "AND item_uuid IS NOT NULL AND store_uuid IS NOT NULL")
+        "AND item_uuid IS NOT NULL AND store_uuid IS NOT NULL" % (sec, sub))
     rows = [r for r in (rows or []) if ue_catalog._shard_of(r["item_uuid"], nshard) == shard] \
         if nshard > 1 else list(rows or [])
     log("[enrich] %s unresolved items in shard %d/%d (the completeness denominator)"

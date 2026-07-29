@@ -113,6 +113,13 @@ BATCH_STORES = int(os.environ.get("UE_BATCH", "400"))  # stores per landed batch
 FLUSH_BYTES = int(os.environ.get("UE_FLUSH_MB", "192")) * 1024 * 1024
 PRODUCT_FIELDS = ["store_uuid", "store_name", "source", "item_uuid", "name", "brand", "upc", "gtin",
                   "price", "list_price", "promo", "size", "abv", "in_stock", "stock_label", "category",
+                  # THE WRITE SCHEMA IS THE ONLY SCHEMA THAT MATTERS. Parsing a field and not listing it
+                  # here means it is computed and then silently dropped at the write — which is exactly
+                  # what happened to the category path: captured in ubereats.UE_FIELDS, absent here, so
+                  # every breadcrumb was thrown away while a test asserting on the PARSE list passed.
+                  # section/subsection are the getMenuItemV1 request context enrichment needs; the *_name
+                  # pair and category_path are the retailer's own hierarchy.
+                  "section", "subsection", "section_name", "subsection_name", "category_path",
                   "raw_json"]
 MENU_API = "https://www.ubereats.com/_p/api/getMenuItemV1"
 ENRICH = os.environ.get("UE_ENRICH", "1") == "1"     # per-item UPC/GTIN detail — ON by default
