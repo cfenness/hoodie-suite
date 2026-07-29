@@ -39,6 +39,66 @@ def _check(entry, timeout=15):
         return {"entry": host, "ok": False, "error": "%s: %s" % (type(e).__name__, str(e)[:60])}
 
 
+def live_fire(n=6, site="ubereats", log=print):
+    """Fire N REAL target requests through EACH exit, one exit at a time, and report success per IP.
+
+    Attribution by construction rather than by inference: the pool deliberately holds identities that
+    have been hammered for hours alongside freshly issued ones, same provider and same country, so this
+    separates the two hypotheses that no amount of rate tuning could:
+
+      fresh clean / burned challenged -> IP REPUTATION. Rotation and a larger pool are the fix, and the
+                                         spend is justified.
+      both challenged equally         -> our TLS/header FINGERPRINT. More addresses buy nothing and the
+                                         money belongs in browser-fingerprint work instead.
+
+    Deliberately sequential and small: this is a measurement, not a scrape, and hammering to measure
+    would burn the very identities being measured.
+    """
+    import blocks
+    import getstore
+    import resi
+    import ue_catalog
+    pool = resi.isp_pool()
+    uni = ue_catalog.universe(site, log=lambda *_: None)
+    if not pool or not uni:
+        log("live_fire: need both a pool (%d) and a universe (%d)" % (len(pool), len(uni)))
+        return 1
+    ids = [u for (u, _n) in uni[:n * len(pool) * 2]]
+    log("live fire: %d exits x %d requests against %s" % (len(pool), n, site))
+    rows = []
+    k = 0
+    for px in pool:
+        host = px.split("@")[-1].split(":")[0]
+        # Pin this thread to ONE exit for the whole sample, so every outcome is attributable.
+        getstore._TL.s = None
+        getstore._TL.exit = host
+        good = bad = 0
+        for _ in range(n):
+            uid = ids[k % len(ids)]
+            k += 1
+            su = getstore.url_id_to_uuid(uid)
+            if not su:
+                continue
+            try:
+                data = getstore.fetch_store(su, site=site)
+            except Exception:
+                data = None
+            cls = blocks.classify(status=200, has_payload=ue_catalog.has_catalog(data))
+            if blocks.is_throttle(cls):
+                bad += 1
+            else:
+                good += 1
+        rows.append((host, good, bad))
+        log("  %-16s %d ok / %d blocked" % (host, good, bad))
+    tot_g = sum(g for _, g, _ in rows)
+    tot_b = sum(b for _, _, b in rows)
+    log("")
+    log("TOTAL: %d ok / %d blocked (%.0f%% usable)" % (tot_g, tot_b, 100.0 * tot_g / max(1, tot_g + tot_b)))
+    clean = [h for h, g, b in rows if g > b]
+    log("exits mostly usable: %d/%d" % (len(clean), len(rows)))
+    return 0
+
+
 def run(log=print):
     import resi
     pool = resi.isp_pool()
@@ -69,4 +129,9 @@ def run(log=print):
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--fire", type=int, default=0, help="real requests per exit (0 = geo/reachability only)")
+    ap.add_argument("--site", default="ubereats")
+    a = ap.parse_args()
+    sys.exit(live_fire(a.fire, a.site) if a.fire else run())
