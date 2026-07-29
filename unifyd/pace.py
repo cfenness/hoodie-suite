@@ -46,6 +46,13 @@ EMPTY_TRIP = float(os.environ.get("UE_EMPTY_TRIP", "0"))      # 0 = derive it; >
 TRIP_MARGIN = float(os.environ.get("UE_TRIP_MARGIN", "0.25"))  # how far above baseline is "throttled"
 TRIP_FLOOR = float(os.environ.get("UE_TRIP_FLOOR", "0.5"))     # never trip below this, whatever baseline
 BASELINE_WINDOWS = int(os.environ.get("UE_BASELINE_WINDOWS", "3"))
+# A LEARNED BASELINE NEEDS A CEILING, or calibrating during a block teaches the controller that being
+# blocked is normal. Observed live: a run began at 82% challenged, learned 0.82 as its background, set
+# the trip at 0.82+0.25 = 1.07, and became mathematically incapable of ever firing — the rate CLIMBED
+# to 6.65/s while 82% of responses were CAPTCHAs. This is the same error as calibrating 3/IP during a
+# throttle, which the code above explicitly warns about; the warning was written and then not applied
+# to the calibration itself. Above this, we are not measuring a background, we are measuring a wall.
+BASELINE_MAX = float(os.environ.get("UE_BASELINE_MAX", "0.35"))
 # THE WINDOW MUST BE SMALL ENOUGH TO ADAPT WITHIN A RUN. At 200 outcomes and ~1.4 stores/s per shard, a
 # control decision happened only every ~2.3 minutes — so after the pre-rotation collapse drove the rate
 # from 5.0 to 1.25, climbing back took half an hour and the run read 11h ETA while succeeding at 90%+.
@@ -122,7 +129,12 @@ class Pacer:
                     # exactly how 3/IP got measured during a throttle and came out far too low.
                     self._n = self._empty = 0
                     return
-                self.empty_trip = max(TRIP_FLOOR, self._baseline + TRIP_MARGIN)
+                if self._baseline is not None and self._baseline > BASELINE_MAX:
+                    # Calibration happened under duress. Refuse the learned value and fall back to the
+                    # fixed floor, so the controller can still act instead of being talked out of it.
+                    self.empty_trip = TRIP_FLOOR
+                else:
+                    self.empty_trip = max(TRIP_FLOOR, (self._baseline or 0.0) + TRIP_MARGIN)
             if ratio >= self.empty_trip:
                 # MULTIPLICATIVE DECREASE — back off hard and immediately.
                 self.rate = max(self.min_rate, self.rate * 0.5)
