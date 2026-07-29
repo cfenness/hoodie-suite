@@ -895,13 +895,17 @@ def deploy(args):
         # Record what we just deployed ON PURPOSE. Anything deployed another way will not update
         # this, so the hourly drift check sees the live app stop matching and says so. We cannot
         # prevent a deploy from elsewhere; we can refuse to be unaware of it.
-        try:
-            sys.path.insert(0, os.path.join(wt, "unifyd"))
-            import deploy_drift
-            deploy_drift.record(head, root=wt)
-        except Exception as e:                     # noqa: BLE001
-            print("  [drift] baseline NOT recorded (%s) — the next check will report "
-                  "'no baseline' rather than passing quietly" % str(e)[:70])
+        # Run the record step under a pyarrow-capable interpreter, not whichever python happens to
+        # be running this tool. warehouse.put_bytes goes through pyarrow.fs.S3FileSystem; the
+        # system python here (3.14) has no pyarrow, and the venv (3.9) has no tomllib — the two
+        # interpreters have disjoint capabilities, so importing in-process is wrong either way.
+        rc, out = sh([checker_python(), os.path.join(wt, "unifyd", "deploy_drift.py"),
+                      "record", head, wt], cwd=wt, timeout=300)
+        for line in (out or "").splitlines()[-3:]:
+            print("  %s" % line.strip())
+        if rc != 0:
+            print("  [drift] baseline NOT recorded — the next check will report 'no baseline' "
+                  "rather than passing quietly")
         if registry_moved:
             print("\nsource_registry.py moved in this range — re-pinning the dispatcher")
             rc, out = sh(["bash", os.path.join("tools", "repin_dispatcher.sh")], cwd=wt, timeout=600)

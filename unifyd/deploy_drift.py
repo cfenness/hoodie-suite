@@ -187,6 +187,16 @@ def findings(log=print):
 
 def main(argv):
     cmd = argv[0] if argv else "check"
+    if cmd == "record":
+        # Invoked as a SUBPROCESS by release_train under a pyarrow-capable interpreter. warehouse's
+        # put_bytes goes through pyarrow.fs.S3FileSystem, which the system python does not have —
+        # and the two interpreters on this machine have DISJOINT capabilities (venv 3.9: pyarrow +
+        # duckdb, no tomllib; system 3.14: tomllib, no pyarrow), so "just use python3" is wrong
+        # whichever one you mean.
+        if len(argv) < 2:
+            print("usage: deploy_drift.py record <git_sha> [root]", file=sys.stderr)
+            return 1
+        return 0 if record(argv[1], root=(argv[2] if len(argv) > 2 else None)) else 1
     if cmd == "fingerprint":
         fp = fingerprint(argv[1] if len(argv) > 1 else None)
         print("%s  (%d files)" % (fp["sha256"], fp["files"]))
