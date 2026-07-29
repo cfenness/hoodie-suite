@@ -84,7 +84,7 @@ def _sync_playwright():
         return sync_playwright
 
 
-def _launch(pw):
+def _launch(pw, log=print):
     """(browser, proxy_label). Real Chrome first, bundled Chromium second."""
     import resi
     px = None
@@ -109,15 +109,31 @@ def _launch(pw):
         except Exception:
             proxy = {"server": px}
     headful = os.environ.get("BROWSER_HEADFUL", "0") != "0"
+    # BUNDLED CHROMIUM FIRST — channel="chrome" is opt-in via DD_GEO_CHANNEL now.
+    #
+    # Measured across three ephemeral runs: the sweep produced NO output at all, headful or headless,
+    # with a 90s and then a 25s nav timeout. Nothing in run() logs before _launch returns, so the hang
+    # was provably inside launch — and the `for ch in ("chrome", None)` fallback could never save it,
+    # because it catches EXCEPTIONS and a blocked launch never raises one. /usr/bin/google-chrome
+    # exists on the image, so the attempt was made and simply never came back.
+    #
+    # Each attempt is now announced BEFORE it runs. A hang that prints nothing is indistinguishable
+    # from a hang that prints which browser it was trying — and the second one is diagnosable.
+    chans = [c for c in os.environ.get("DD_GEO_CHANNEL", "").split(",") if c] or [None]
     last = None
-    for ch in ("chrome", None):
+    for ch in chans:
+        label = ch or "bundled-chromium"
+        log("  [dd-geo] launching %s (headful=%s, proxy=%s)…"
+            % (label, headful, "yes" if proxy else "no"))
         try:
             kw = {"headless": not headful, "args": ["--no-sandbox"], "proxy": proxy}
             b = pw.chromium.launch(channel=ch, **kw) if ch else pw.chromium.launch(**kw)
+            log("  [dd-geo] %s launched" % label)
             return b, (px.split("@")[-1].split(":")[0] if px else "direct")
         except Exception as e:
             last = e
-    raise RuntimeError("could not launch a free browser (chrome/bundled): %s" % last)
+            log("  [dd-geo] %s failed: %s" % (label, str(e)[:120]))
+    raise RuntimeError("could not launch a browser (%s): %s" % (",".join(str(c) for c in chans), last))
 
 
 def _set_location(ctx, pg, lat, lon):
@@ -187,12 +203,17 @@ def run(market="orlando", points=None, log=print):
     if points:
         grid = grid[:points]
     merchants = {}
+    # Announce the driver too. If the run still goes silent, this separates "the patchright driver
+    # never started" from "the browser never launched" — two different fixes that looked identical
+    # when neither printed anything.
+    log("  [dd-geo] %s: %d grid points — starting driver…" % (market, len(grid)))
     with sync_playwright() as p:
+        log("  [dd-geo] driver up")
         # ONE browser for the whole grid, a fresh CONTEXT per point. The BD version reconnected a
         # remote browser at every pin — ~90s of setup per point, which is what made a full metro grid
         # an overnight job. A context is cheap and still gives each point a clean cookie jar, so the
         # geolocation override is the only thing that carries between pins.
-        browser, exit_label = _launch(p)
+        browser, exit_label = _launch(p, log=log)
         log("  [dd-geo] free browser up (egress=%s) — no Bright Data" % exit_label)
         try:
             for i, (lat, lon) in enumerate(grid):
