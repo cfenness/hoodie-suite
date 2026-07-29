@@ -106,6 +106,24 @@ for i in range(200):
     t3.record(B.OK if ((i * 2654435761) % 97) < 48 else B.CAPTCHA, "isp", exit="10.0.0.%d" % (i % 10))
 check("an even decline is named uniform", t3.exit_verdict()["pattern"], "uniform")
 
+# The mirror case: most of the pool is dead and a few exits still work. Nothing can sit 25 points below
+# a median of zero, so the burned-subset rule goes silent here — this is the one that has to name the
+# SURVIVORS, because they are the only lead left.
+t5 = B.Tally()
+for i in range(200):
+    ip = "10.0.0.%d" % (i % 10)
+    alive = (i % 10) in (0, 1)                       # eight dead exits, two healthy
+    t5.record(B.OK if alive else B.CAPTCHA, "isp", exit=ip)
+v5 = t5.exit_verdict()
+check("a surviving subset is named", v5["pattern"], "surviving_subset")
+check("and the survivors are named", sorted(v5["above_median_25pp"]), ["10.0.0.0", "10.0.0.1"])
+check("a dead median does not read as a burned subset", v5["below_median_25pp"], [])
+
+t6 = B.Tally()
+for i in range(200):
+    t6.record(B.CAPTCHA, "isp", exit="10.0.0.%d" % (i % 10))
+check("a uniformly dead pool is uniform, not a subset", t6.exit_verdict()["pattern"], "uniform")
+
 t4 = B.Tally()
 for i in range(6):
     t4.record(B.OK, "isp", exit="10.0.0.%d" % i)
