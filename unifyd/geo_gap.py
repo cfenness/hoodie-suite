@@ -39,7 +39,10 @@ def survey(log=print):
     # One pass, one GROUP BY: classify every row by the pass that could reach it. Doing this as four
     # separate COUNT queries would let the table move between them and produce a set of numbers that
     # never coexisted.
-    cls = ("CASE WHEN try_cast(lat AS DOUBLE) IS NOT NULL THEN 'geocoded' "
+    # lat/lng of exactly 0 is Null Island — a sentinel some scrapers write instead of NULL. Counting
+    # it as geocoded inflates coverage AND drops a pin in the Atlantic, so it is treated as missing.
+    cls = ("CASE WHEN try_cast(lat AS DOUBLE) IS NOT NULL AND NOT "
+           "(try_cast(lat AS DOUBLE) = 0 AND try_cast(lng AS DOUBLE) = 0) THEN 'geocoded' "
            "     WHEN city IS NOT NULL AND city <> '' AND state IS NOT NULL AND state <> '' "
            "       THEN 'fast-geo' "
            "     WHEN address IS NOT NULL AND address <> '' THEN 'geocode' "

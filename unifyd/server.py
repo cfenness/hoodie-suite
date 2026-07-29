@@ -4336,7 +4336,11 @@ def master_outlets_geo_ep():
 
 def _outlets_geo_data(bb, st, q):
     import warehouse
-    where = ["try_cast(lat AS DOUBLE) IS NOT NULL", "try_cast(lng AS DOUBLE) IS NOT NULL"]
+    # Exclude Null Island (0,0) — a sentinel some scrapers write instead of NULL. Measured live on
+    # ubereats/postmates; left in, the coverage map draws pins in the Atlantic and the auto-fit
+    # stretches the viewport across the ocean, which is part of why those sources "render wrong".
+    where = ["try_cast(lat AS DOUBLE) IS NOT NULL", "try_cast(lng AS DOUBLE) IS NOT NULL",
+             "NOT (try_cast(lat AS DOUBLE) = 0 AND try_cast(lng AS DOUBLE) = 0)"]
     params = []
     if bb:
         try:
