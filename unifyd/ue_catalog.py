@@ -796,6 +796,14 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
                 log("[ue] exits: %s (%s rated)" % (_ev.get("pattern"), _ev.get("rated")))
     except Exception:
         pass
+    try:
+        import identity_router
+        rec["identity_router"] = identity_router.stats()
+        log("[ue] identity_router: %d pairs tracked, %d quarantined, %d picks"
+            % (rec["identity_router"]["pairs_tracked"], rec["identity_router"]["quarantined"],
+               rec["identity_router"]["total_picks"]))
+    except Exception:
+        pass
     return rec
 
 
