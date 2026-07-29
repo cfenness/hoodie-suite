@@ -449,6 +449,14 @@ def consolidate(site="ubereats", rebuild=False, log=print):
 def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
     """Sweep this shard of the universe. Returns a run record. NO cap: the only bound is the shard."""
     workers = workers or auto_workers(nshard, log=log)
+    # RATE IS THE REAL BUDGET; workers just decide how many can be in flight while we wait for tokens.
+    try:
+        import pace
+        _pacer = pace.install(pace.shard_rate(nshard))
+        log("[ue] paced at %.2f req/s for this shard (fleet %.0f/s across %d shards) — AIMD from here"
+            % (_pacer.rate, pace.FLEET_RATE, nshard))
+    except Exception as e:
+        log("[ue] pacing unavailable (%s) — running unpaced" % str(e)[:60])
     day = time.strftime("%Y-%m-%d")
     uni = universe(site, log=log)
     if not uni:
@@ -602,10 +610,20 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
     _progress(rows=n_items, stage="shard complete" if not remaining else "partial", pct=100.0)
 
     status = "success" if not remaining else "degraded"
-    return {"status": status, "site": site, "shard": "%s/%s" % (shard, nshard),
-            "stores_total": len(mine), "stores_done": len(mine) - remaining, "remaining": remaining,
-            "items": n_items, "with_catalog": n_ok, "empty": n_empty, "unreachable": n_fail,
-            "stores_per_sec": round(rate, 2), "duration_s": round(dur, 1)}
+    rec = {"status": status, "site": site, "shard": "%s/%s" % (shard, nshard),
+           "stores_total": len(mine), "stores_done": len(mine) - remaining, "remaining": remaining,
+           "items": n_items, "with_catalog": n_ok, "empty": n_empty, "unreachable": n_fail,
+           "stores_per_sec": round(rate, 2), "duration_s": round(dur, 1)}
+    # REPORT THE RATE THE ENDPOINT ALLOWED. This is the number we kept guessing at and getting wrong;
+    # once a run states where AIMD settled, the next run starts from evidence instead of a constant.
+    try:
+        import pace
+        _pc = pace.get()
+        if _pc:
+            rec["pace"] = _pc.stats()
+    except Exception:
+        pass
+    return rec
 
 
 def main(argv=None):

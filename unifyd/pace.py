@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""pace.py — pace requests by RATE, and let the endpoint tell us what the rate is.
+
+WHY RATE AND NOT WORKERS. We tuned concurrency three times today and were wrong three times, because
+worker count is a proxy that breaks whenever the work per worker changes. The clearest measurement:
+120 workers spread over 20 ISP IPs — 6 per IP, modest by any reading — collapsed after **5,578 requests
+in 85 seconds (~59 req/s)**, with 5,025 of those responses empty. If the limit were per-IP, twenty IPs
+would have absorbed that easily. It is the aggregate REQUEST RATE that gets throttled, which also means
+buying more IPs would not have bought throughput.
+
+WHY IT SELF-TUNES. Every fixed number we have picked has been wrong within a day: 3/IP was calibrated
+during a throttle (too low), 6/IP was calibrated with enrichment padding each worker's think-time (too
+high the moment the sweep got lean). A constant cannot track a limit that moves with time of day, recent
+history, and how hot the exit IPs are. So the pacer runs AIMD — the same control law TCP uses:
+
+  * ADDITIVE INCREASE: while responses look healthy, creep the rate up. Finds headroom without lunging.
+  * MULTIPLICATIVE DECREASE: the moment the empty ratio crosses the threshold, halve it. Backs off fast,
+    because the cost of overshooting (a poisoned pass) is far higher than the cost of running slow.
+
+That asymmetry is deliberate: slow is recoverable, throttled-and-lying is not.
+
+WHAT IT RECORDS. The rate it settles on is the measurement we have been guessing at. `stats()` reports
+it so a run can print the sustainable rate it found, and the next run can start there instead of
+rediscovering it.
+
+    pacer = pace.Pacer(rate=5.0)          # this shard's share of the fleet budget
+    pacer.acquire()                       # blocks until a token is free
+    pacer.report(ok=bool(data))           # feed the outcome back
+"""
+import os
+import threading
+import time
+
+# Fleet-wide request budget, split across shards. Deliberately conservative: the measured collapse was
+# ~59 req/s aggregate, so we start well under it and let additive increase find the real ceiling.
+FLEET_RATE = float(os.environ.get("UE_FLEET_RATE", "40"))
+EMPTY_TRIP = float(os.environ.get("UE_EMPTY_TRIP", "0.25"))   # empty ratio that triggers a backoff
+WINDOW = int(os.environ.get("UE_PACE_WINDOW", "200"))         # outcomes per control decision
+
+
+def shard_rate(nshard=1, fleet_rate=None):
+    """This shard's share of the fleet budget. Shards do not coordinate — the split is arithmetic, the
+    same way the universe split is a stable hash."""
+    return max(0.2, (fleet_rate if fleet_rate is not None else FLEET_RATE) / max(1, int(nshard)))
+
+
+class Pacer:
+    """Token bucket + AIMD controller. Thread-safe; one instance shared by all workers in a process."""
+
+    def __init__(self, rate, min_rate=0.5, max_rate=None, window=WINDOW, empty_trip=EMPTY_TRIP):
+        self.rate = float(rate)
+        self.min_rate = float(min_rate)
+        # Never let increase run away past a sane multiple of where we started.
+        self.max_rate = float(max_rate if max_rate is not None else rate * 4)
+        self.window = int(window)
+        self.empty_trip = float(empty_trip)
+        self._tokens = 1.0
+        self._last = time.time()
+        self._lock = threading.Lock()
+        self._n = self._empty = 0
+        self.backoffs = 0
+        self.increases = 0
+        self._floor_hits = 0
+
+    def acquire(self):
+        """Block until a token is available. The wait happens OUTSIDE the lock so workers don't serialize
+        on each other — holding a mutex through a sleep would turn the pool into a single thread."""
+        while True:
+            with self._lock:
+                now = time.time()
+                self._tokens = min(self.rate, self._tokens + (now - self._last) * self.rate)
+                self._last = now
+                if self._tokens >= 1.0:
+                    self._tokens -= 1.0
+                    return
+                need = (1.0 - self._tokens) / max(0.001, self.rate)
+            time.sleep(min(need, 1.0))
+
+    def report(self, ok):
+        """Feed one outcome back. `ok` False means the response came back empty/unusable — the signal
+        that we are over the line."""
+        with self._lock:
+            self._n += 1
+            if not ok:
+                self._empty += 1
+            if self._n < self.window:
+                return
+            ratio = self._empty / float(self._n)
+            if ratio >= self.empty_trip:
+                # MULTIPLICATIVE DECREASE — back off hard and immediately.
+                self.rate = max(self.min_rate, self.rate * 0.5)
+                self.backoffs += 1
+                if self.rate <= self.min_rate:
+                    self._floor_hits += 1
+            else:
+                # ADDITIVE INCREASE — creep, don't lunge.
+                self.rate = min(self.max_rate, self.rate + 0.5)
+                self.increases += 1
+            self._n = self._empty = 0
+
+    def stats(self):
+        with self._lock:
+            return {"rate": round(self.rate, 2), "backoffs": self.backoffs,
+                    "increases": self.increases, "at_floor": self._floor_hits}
+
+
+_GLOBAL = {"pacer": None}
+
+
+def install(rate):
+    """Install the process-wide pacer every request path consults."""
+    _GLOBAL["pacer"] = Pacer(rate)
+    return _GLOBAL["pacer"]
+
+
+def get():
+    return _GLOBAL["pacer"]
