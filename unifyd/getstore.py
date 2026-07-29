@@ -11,12 +11,15 @@ The sitemap gives the URL id ('PXfwbCKPUgKVU4_0jnXzcg'); getStoreV1 wants the da
 (verified against a live capture). That's what lets us call getStoreV1 for all ~495k sitemap stores directly.
 """
 import base64
+import os
 import threading
 import uuid as _uuid
 
 API = "https://www.ubereats.com/_p/api/getStoreV1"
 _TL = threading.local()                                    # one primed curl_cffi session PER worker thread
 _RR, _RR_LOCK = [0], threading.Lock()                      # even round-robin over the ISP pool
+# Requests per primed session before re-priming. Set below the ~50 where collapse was observed.
+SESSION_BUDGET = int(os.environ.get("UE_SESSION_BUDGET", "40"))
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36")
 _H = {"accept": "*/*", "accept-language": "en-US,en;q=0.9", "content-type": "application/json",
@@ -40,8 +43,30 @@ def _session(site):
     """A curl_cffi session primed once for THIS worker thread — the homepage GET (cookie prime) happens once,
     then every getStoreV1 POST reuses it. This is what makes a high-concurrency sweep near ~1h instead of
     paying a homepage round-trip per store."""
+    # ROTATE THE SESSION ON A REQUEST BUDGET. Measured across three runs, the endpoint stops answering
+    # after roughly the same NUMBER of requests rather than after a period of time:
+    #
+    #   unpaced, 120 workers   healthy ~60s, ~5,578 requests   (~46 per session)
+    #   paced at 40 req/s      healthy ~60s, ~7,000 requests   (~58 per session)
+    #
+    # Both collapsed at a similar request COUNT, and halving the rate bought only a longer wait for the
+    # same wall — which is what a QUOTA looks like, not a rate limit. It also explains why 20 exit IPs
+    # never helped (the quota is not per-IP) and why every rate model we fitted was wrong. The session
+    # was primed once per thread and reused forever, so its cookie carried the whole budget.
+    #
+    # Re-priming costs one homepage GET and resets that budget. Set SESSION_BUDGET=0 to disable and get
+    # the old behaviour back if this turns out to be the wrong read.
+    n = getattr(_TL, "n", 0)
     s = getattr(_TL, "s", None)
+    if s is not None and SESSION_BUDGET and n >= SESSION_BUDGET:
+        try:
+            s.close()
+        except Exception:
+            pass
+        s, _TL.s = None, None             # fall through and prime a fresh one
+        _TL.n = 0
     if s is not None:
+        _TL.n = n + 1
         return s
     from curl_cffi import requests as cr
     import resi
@@ -73,6 +98,7 @@ def _session(site):
     except Exception:
         pass
     _TL.s = s
+    _TL.n = 1
     return s
 
 

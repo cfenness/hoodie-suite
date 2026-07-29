@@ -38,6 +38,7 @@ TESTS=(
   idset_test                   # full-universe membership stays bounded (8 bytes/id, not 1GB)
   coverage_guard_test          # a throttled 200 must never count as a covered store
   pace_test                    # pace by RATE, back off hard, creep up slow
+  session_rotate_test          # the limit is a per-session QUOTA — re-prime on a request budget
   sipsource_test
   cost_ledger_test
   obs_quality_test
