@@ -852,6 +852,17 @@ def deploy(args):
 
         rc, rel = sh([fly, "releases", "-a", os.environ.get("FLY_APP", "hoodie-suite")], timeout=120)
         print("\nreleases:\n%s" % "\n".join(rel.splitlines()[:4]))
+
+        # Record what we just deployed ON PURPOSE. Anything deployed another way will not update
+        # this, so the hourly drift check sees the live app stop matching and says so. We cannot
+        # prevent a deploy from elsewhere; we can refuse to be unaware of it.
+        try:
+            sys.path.insert(0, os.path.join(wt, "unifyd"))
+            import deploy_drift
+            deploy_drift.record(head, root=wt)
+        except Exception as e:                     # noqa: BLE001
+            print("  [drift] baseline NOT recorded (%s) — the next check will report "
+                  "'no baseline' rather than passing quietly" % str(e)[:70])
         if registry_moved:
             print("\nsource_registry.py moved in this range — re-pinning the dispatcher")
             rc, out = sh(["bash", os.path.join("tools", "repin_dispatcher.sh")], cwd=wt, timeout=600)
