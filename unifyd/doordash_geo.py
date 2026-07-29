@@ -67,6 +67,23 @@ _CHAINS = re.compile(
 #
 # Egress goes through the flat-rate ISP pool (fixed per-IP, unlimited bandwidth) — never the per-GB
 # rotating tier, which stays gated behind FETCH_POLICY=paid.
+def _sync_playwright():
+    """The driver that is ACTUALLY installed. Measured on the Fly image: `patchright` is present and
+    `playwright` is not, so importing playwright directly is a ModuleNotFoundError at runtime — the
+    port compiled, tested and deployed clean and would still have failed on its first real pin.
+
+    patchright is a drop-in playwright fork with the same sync_api surface, so this is an import
+    swap, not a rewrite. Try it first (it is the hardened one), fall back to playwright for a dev box
+    that only has the upstream package.
+    """
+    try:
+        from patchright.sync_api import sync_playwright
+        return sync_playwright
+    except ImportError:
+        from playwright.sync_api import sync_playwright
+        return sync_playwright
+
+
 def _launch(pw):
     """(browser, proxy_label). Real Chrome first, bundled Chromium second."""
     import resi
@@ -131,7 +148,7 @@ def _point_harvest(pg, cdp, lat, lon):
 
 
 def run(market="orlando", points=None, log=print):
-    from playwright.sync_api import sync_playwright
+    sync_playwright = _sync_playwright()
     grid = MARKETS[market]
     if points:
         grid = grid[:points]
