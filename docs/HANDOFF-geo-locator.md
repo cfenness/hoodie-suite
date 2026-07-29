@@ -27,26 +27,33 @@ PRs: #666, #668, #670, #672, #673, #676, #678, #680, #682, #683, #685, #687, #68
 
 ---
 
-## 2. OPEN — `source_runs` is empty; the health digest may be blind
+## 2. FIXED — the health digest was reading the wrong ledger
 
-**This matters more than Texas.** Measured:
+**Was ranked above Texas, and it was right to be.** Confirmed and fixed — but the original diagnosis
+above was measured against a local warehouse, and production says something slightly different.
+Measured on the app machine (`8609e5ceedd258`) 2026-07-29:
 
 ```
-source_runs_log: 313 rows
-source_runs:       0 rows
+source_runs      42 rows   17 of 53 enabled sources   newest ts_end 8.0 DAYS old
+source_runs_log 316 rows   53 of 53 enabled sources   newest ts_end current
 ```
 
-`health_digest._latest_source_runs()` queries **`source_runs`**. If that table is genuinely empty in
-production, then every run-outcome check in the daily verdict — `run-failed`, `run-degraded`,
-`run-no-change` — is evaluating an empty set and can never fire. The digest would look healthy because
-it has nothing to judge, which is the same failure class as everything else in this session.
+So `source_runs` was **not empty** — which is worse than empty, because a stale non-empty table reads
+as a real answer. `health_digest._latest_source_runs()` queried it alone, so `run-failed`,
+`run-degraded` and `run-no-change` were judging a third of the fleet on a week-old snapshot and the
+other two thirds not at all. Seven enabled sources sat `failed`/`timeout` in the log, invisible to the
+digest: `cityhive`, `doordash-full`, `geo`, `outlet-union`, `sevennow`, `tax-rates`, `ubereats-enrich`.
 
-**Do first:**
-1. Confirm on Fly: `warehouse.query_parts("source_runs", "SELECT count(*) FROM t")`.
-2. If 0, find who writes each table — `run_sources.py` logs `-> source_runs_log`, but the digest reads
-   `source_runs`. One of the two names is wrong, or a rename left the reader behind.
-3. Do **not** "fix" it by pointing the digest at `source_runs_log` until you know which table is
-   authoritative — the schemas differ (`source_runs_log` has no `fail_class`, which the digest uses).
+**Root cause:** `_land_runs` moved to the append-only `source_runs_log` partitions on 2026-07-21, and
+every other consumer — `ledger_last`, `monitor`, `selfheal`, `cost_ledger` — was given the dual-read.
+The digest was the one reader that got left behind.
+
+**Fix:** union both ledgers with newest-`ts_end`-wins, the same idiom as the other four. The schema
+caution recorded here originally does not apply — the digest reads only `status`, `error` and `ts_end`,
+all three in `SR_FIELDS`, and `fail_class` appears **zero** times in `health_digest.py`.
+
+Pinned by `unifyd/health_digest_runs_test.py` (stdlib-only, always runs): 6 of its 10 checks fail
+against the pre-fix code.
 
 ---
 
@@ -81,7 +88,7 @@ Progress made, in order — each fix revealed the next:
 Fix 5 turned an infinite hang into a **14.7s clean exit**. That is real progress: the failure is now
 fast and therefore debuggable.
 
-### The immediate bug — and it is mine
+### The immediate bug — and it is mine — FIXED, and there were two
 
 `doordash_geo.run_group()`:
 
@@ -101,11 +108,26 @@ I fixed exactly this shape one level down (`_point_harvest` now raises when all 
 and reintroduced it one level up. The per-market reasons *were* logged — into subprocess stdout that
 `run_sources` captures and discards when there is no error.
 
+**A second defect was hiding behind the first**, same swallow, and it inverted the report outright:
+
+```python
+total += (run(m, points=points, log=log) or 0)     # run() returns the ROW LIST, not a count
+```
+
+`total` is an `int` and `run()` returns a `list`, so `int += list` raised `TypeError` — caught by that
+same `except` and logged as `market <m> failed`. So a metro that **worked** was reported failed, while
+a metro that found **nothing** fell through `[] or 0` and was counted fine. Exactly backwards, and it
+would have made the first real successful sweep look like a total failure. The new test measures it:
+against the pre-fix code, five markets each returning three merchants totalled **0**.
+
+**Both fixed:** `len(run(...) or [])` for the count, and `run_group` now raises when every market
+fails (mirroring `_point_harvest`), so the reason reaches `source_runs_log.error` — where the digest,
+now that §2 is fixed, can actually see it. Pinned by 5 new checks in `unifyd/doordash_geo_test.py`
+(4 fail against the pre-fix code); the stub keeps it offline, so no browser or proxy is involved.
+
 **Do next:**
-1. Make `run_group` raise when **every** market fails (mirror `_point_harvest`). Then the error field
-   carries the actual reason and this stops being invisible.
-2. Re-run and read `source_runs_log.error` for `doordash-geo-tx`.
-3. Only then run the full 240-pin grid.
+1. Re-run and read `source_runs_log.error` for `doordash-geo-tx` — it will now carry the real reason.
+2. Only then run the full 240-pin grid.
 
 Likely cause once visible: the page loads but renders no tiles because DoorDash wants an **address set
 through the UI**, not just a geolocation override. `_set_location()` grants the permission and sets

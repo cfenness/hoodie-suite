@@ -84,6 +84,53 @@ def main():
     step = round(sorted({round(abs(a - b), 4) for a, b in zip(lats, lats[1:])} - {0.0})[0], 4)
     check("grid step stays <= 0.07 deg (~4-5 mi, under a delivery radius)", step <= 0.0701, step)
 
+    # --- 4. run_group REPORTS what happened -------------------------------------------------------
+    # Two defects lived here, both of the "reported success while doing nothing" class this file
+    # exists to catch, and neither could fail a run:
+    #   a) run() returns the ROW LIST, so `total += run(...)` raised TypeError on every market that
+    #      actually found merchants — caught by the same except and logged as FAILED. A market that
+    #      worked read failed; one that found nothing fell through `[] or 0` and read fine. Inverted.
+    #   b) with every market failing, it returned 0 and exited clean, so the harness recorded
+    #      status='current' delta=0 error='' — a dead sweep indistinguishable from an empty state.
+    # Stub run() so this stays offline: no browser, no network, no proxy.
+    real_run, quiet = D.run, lambda *a, **k: None
+    n_tx = len(D.MARKET_GROUPS["texas"])
+    try:
+        D.run = lambda m, points=None, log=print: [{"store_id": "%s-%d" % (m, i)} for i in range(3)]
+        total = D.run_group("texas", log=quiet)
+        check("counts rows across markets instead of adding a list to an int",
+              total == 3 * n_tx, "got %r, want %d" % (total, 3 * n_tx))
+
+        D.run = lambda m, points=None, log=print: []
+        check("an every-market-empty sweep still returns 0 without raising",
+              D.run_group("texas", log=quiet) == 0)
+
+        def boom(m, points=None, log=print):
+            raise RuntimeError("proxy auth failed at %s" % m)
+
+        D.run = boom
+        raised = None
+        try:
+            D.run_group("texas", log=quiet)
+        except Exception as e:                                    # noqa: BLE001
+            raised = e
+        check("an every-market-FAILED sweep raises instead of exiting clean", raised is not None,
+              "returned normally — the harness would record status='current' delta=0 error=''")
+        check("the raised error carries a real per-market reason",
+              raised is not None and "proxy auth failed" in str(raised), str(raised)[:120])
+
+        # One bad metro must still not abort the other four — that part of the intent was right.
+        def one_bad(m, points=None, log=print):
+            if m == D.MARKET_GROUPS["texas"][0]:
+                raise RuntimeError("nope")
+            return [{"store_id": m}]
+
+        D.run = one_bad
+        check("a partial failure does NOT raise and counts the survivors",
+              D.run_group("texas", log=quiet) == n_tx - 1)
+    finally:
+        D.run = real_run
+
     print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
     return 1 if FAILED else 0
 
