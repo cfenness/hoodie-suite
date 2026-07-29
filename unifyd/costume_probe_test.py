@@ -73,6 +73,22 @@ check("the 16-worker arm is the one flagged",
       [r["workers"] for r in v["concurrency"]["arms"] if r["significant"]] == [16])
 check("prescription is pacing, not rotation", "pace" in (v["prescription"] or ""))
 
+print("ground truth: STEP CHANGE at CONSTANT concurrency (the mislabeling bug found 2026-07-29)")
+# Real numbers off a `2,2,2,2` run: every arm at 2 workers, run specifically to hold concurrency at
+# zero variation. usable% still stepped from ~97% to ~26% mid-run. The interior arms carry no
+# concurrency information — nothing on this plan ever touched worker count — so this must never
+# surface as "concurrency", and it did before this fix.
+v = P.analyse([arm(2, 400, 97.5), arm(2, 400, 96.8), arm(2, 400, 31.0), arm(2, 400, 26.2)])["verdict"]
+check("verdict is cumulative", v["hypothesis"] == "cumulative", v["hypothesis"])
+check("NO interior arm is filed as a concurrency effect (concurrency never varied on this plan)",
+      not any(r["significant"] for r in v["concurrency"]["arms"]), str(v["concurrency"]["arms"]))
+check("the step shows up as a trajectory finding instead",
+      bool(v.get("trajectory") and any(r["significant"] for r in v["trajectory"]["arms"])),
+      str(v.get("trajectory")))
+check("evidence describes a step", any("step" in e.lower() for e in v["evidence"]), str(v["evidence"]))
+check("evidence never uses the concurrency-arm phrasing (that arm type is empty here)",
+      not any("time-adjusted baseline" in e for e in v["evidence"]), str(v["evidence"]))
+
 print("ground truth: pure CUMULATIVE (monotone decline, worker count irrelevant)")
 v = P.analyse([arm(2, 200, 95), arm(8, 200, 75), arm(16, 200, 55), arm(2, 200, 35)])["verdict"]
 check("verdict is cumulative", v["hypothesis"] == "cumulative", v["hypothesis"])

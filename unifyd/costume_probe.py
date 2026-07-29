@@ -176,7 +176,16 @@ def verdict(summaries):
     """Read the arms and say which hypothesis the evidence supports — or that it supports neither.
 
     `summaries` is the ordered list from arm_summary(). The first and last arms must share a worker
-    count; that pair is the control."""
+    count; that pair is the control.
+
+    AN INTERIOR ARM ONLY CARRIES CONCURRENCY EVIDENCE IF ITS WORKER COUNT DIFFERS FROM THE CONTROL'S.
+    Measured 2026-07-29 on a `2,2,2,2` plan — every arm at 2 workers, run specifically to isolate
+    cumulative decay from concurrency by holding concurrency at zero variation throughout — usable%
+    still fell 71 pp arm-to-arm, and the deviation-from-linear-trend test filed that under
+    "concurrency" because it does not check whether concurrency actually varied on that arm. It hadn't:
+    the plan never touched worker count. A same-worker interior arm deviating from a straight line
+    between the two control endpoints is evidence the DECLINE IS NON-LINEAR — a step, not a ramp — which
+    is still a fact about cumulative volume, not about concurrency. It is reported separately."""
     out = {"hypothesis": "inconclusive", "control": None, "concurrency": None, "evidence": [],
            "caveats": []}
     if len(summaries) < 2:
@@ -210,8 +219,9 @@ def verdict(summaries):
     p_start = (first["usable_pct"] or 0) / 100.0
     p_end = (last["usable_pct"] or 0) / 100.0
 
+    control_workers = first["workers"] if control_valid else None
     interior = [(i, s) for i, s in enumerate(summaries) if 0 < i < len(summaries) - 1]
-    conc_rows = []
+    conc_rows, traj_rows = [], []
     for i, s in interior:
         if not s["n"]:
             continue
@@ -222,13 +232,29 @@ def verdict(summaries):
         expect = min(0.999, max(0.001, expect))
         z = one_prop_z(s["usable"], s["n"], expect)
         delta = round((s["usable_pct"] or 0) - 100.0 * expect, 1)
-        conc_rows.append({"workers": s["workers"], "usable_pct": s["usable_pct"],
-                          "expected_pct": round(100.0 * expect, 1), "delta_pp": delta,
-                          "z": (round(z, 2) if z is not None else None), "p": p_value(z),
-                          "significant": bool(z is not None and z < -ALPHA_Z and -delta >= MIN_EFFECT_PP)})
+        row = {"workers": s["workers"], "usable_pct": s["usable_pct"],
+              "expected_pct": round(100.0 * expect, 1), "delta_pp": delta,
+              "z": (round(z, 2) if z is not None else None), "p": p_value(z),
+              "significant": bool(z is not None and z < -ALPHA_Z and -delta >= MIN_EFFECT_PP)}
+        # SORT BY WHETHER THIS ARM ACTUALLY VARIED CONCURRENCY. An arm run at the control's own worker
+        # count contributes nothing to the concurrency question no matter how far it falls off the
+        # interpolated line — it goes to `traj_rows` instead, and is never allowed to set the
+        # "concurrency" hypothesis or print under that name.
+        if control_valid and s["workers"] == control_workers:
+            traj_rows.append(row)
+        else:
+            conc_rows.append(row)
     conc_sig = any(r["significant"] for r in conc_rows)
+    traj_sig = any(r["significant"] for r in traj_rows)
     out["concurrency"] = {"baseline": "interpolated between control arms" if control_valid else
                           "first arm (no control replicate)", "arms": conc_rows}
+    if traj_rows:
+        out["trajectory"] = {
+            "note": "interior arms held at the control's OWN worker count (%s) — a deviation here means "
+                    "the decline has a STEP in it, not that it is smooth. Never evidence about "
+                    "concurrency: nothing varied it on these arms." % control_workers,
+            "arms": traj_rows,
+        }
 
     decay_sig = [s["workers"] for s in summaries if s["internal_decay"]["significant"]]
     if decay_sig:
@@ -247,6 +273,13 @@ def verdict(summaries):
         out["hypothesis"] = "cumulative"
         out["evidence"].append("arm averages are flat but usable% falls WITHIN arms — a short-horizon "
                                "quota that recovers between arms")
+    elif traj_sig:
+        # No control drift caught this (or there was no valid control) but a same-worker interior arm
+        # still stepped off the trend. Still a volume story, never a concurrency one.
+        out["hypothesis"] = "cumulative"
+        out["evidence"].append("a same-worker-count interior arm stepped %s pp below the trend line "
+                               "between the control arms — the decline is not smooth"
+                               % max(-r["delta_pp"] for r in traj_rows if r["significant"]))
     else:
         out["hypothesis"] = "no_effect_detected"
         mdd = [r for r in (min_detectable_pp(s["n"], s["n"]) for s in summaries) if r]
@@ -262,6 +295,11 @@ def verdict(summaries):
     for r in conc_rows:
         if r["significant"]:
             out["evidence"].append("workers=%s ran %s pp below its time-adjusted baseline"
+                                   % (r["workers"], -r["delta_pp"]))
+    for r in traj_rows:
+        if r["significant"]:
+            out["evidence"].append("a %s-worker interior arm (same as the control) fell %s pp below the "
+                                   "trend line — a step in the decline, not a concurrency effect"
                                    % (r["workers"], -r["delta_pp"]))
 
     out["prescription"] = {
