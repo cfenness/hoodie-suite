@@ -110,6 +110,11 @@ def check(cwd):
         problems.append("%d uncommitted change(s) — a deploy ships them" % n)
 
     if not problems:
+        # State the pass. Silence here would be indistinguishable from the guard not running at
+        # all — which this guard has already done once, when a missing script exited 2 and was read
+        # as a refusal.
+        print("deploy-guard: OK — HEAD is origin/%s (%s) and the tree is clean."
+              % (base, head[:8]), file=sys.stderr)
         return 0
 
     print("", file=sys.stderr)
