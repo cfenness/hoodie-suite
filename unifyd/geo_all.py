@@ -21,15 +21,26 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def run(log=print):
     total = {}
-    for name, fn in (("fast", _fast), ("geocode", _geocode), ("aggregator", _agg)):
+    # `backfill` runs FIRST and costs nothing: it carries geo fields an outlet is missing here but
+    # that we already hold in a sibling table (measured: 42,585 DoorDash outlets had a city, an empty
+    # state, and their state sitting in doordash_stores — so every pass below skipped them and they
+    # were counted unreachable). Filling those first means fast-geo can place them on the same run.
+    for name, fn in (("backfill", _backfill), ("fast", _fast), ("geocode", _geocode),
+                     ("aggregator", _agg)):
         try:
             total[name] = fn(log)
         except Exception as e:
             log("[geo] %s pass failed: %s" % (name, str(e)[:140]))
             total[name] = 0
-    log("[geo] done — fast=%(fast)s geocode=%(geocode)s aggregator=%(aggregator)s" % {
-        "fast": total.get("fast", 0), "geocode": total.get("geocode", 0), "aggregator": total.get("aggregator", 0)})
+    log("[geo] done — backfill=%(backfill)s fast=%(fast)s geocode=%(geocode)s aggregator=%(aggregator)s" % {
+        "backfill": total.get("backfill", 0), "fast": total.get("fast", 0),
+        "geocode": total.get("geocode", 0), "aggregator": total.get("aggregator", 0)})
     return sum(total.values())
+
+
+def _backfill(log):
+    import mappability
+    return mappability.run(log=log)
 
 
 def _fast(log):
