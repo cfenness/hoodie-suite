@@ -495,11 +495,26 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
         still a run that is alive, and it must say so, with its failure count visible."""
         if (time.time() - _last_beat[0]) <= 60:
             return
+        # THE LIVE PACING RATE, not just the one we started with. The startup log says what the pacer was
+        # INITIALISED to; AIMD moves it continuously, and until now that trajectory was only visible in
+        # the end-of-run record. That is the same blind spot that had me reporting a 60-second-stale
+        # success rate as a headline: an instrument that only reports at the end cannot tell you what is
+        # happening now. Convergence should be watchable while it converges.
+        _pc = {}
+        try:
+            import pace
+            _p = pace.get()
+            if _p:
+                _pc = _p.stats()
+        except Exception:
+            pass
         _progress(rows=n_items + len(pending),
                   stage="%s/%s stores" % (f"{len(done):,}", f"{len(mine):,}"),
                   pct=round(100.0 * len(done) / max(1, len(mine)), 1),
                   ok=n_ok, empty=n_empty, unreachable=n_fail,
-                  rss_mb=_rss_mb())
+                  rss_mb=_rss_mb(),
+                  pace_rate=_pc.get("rate"), pace_backoffs=_pc.get("backoffs"),
+                  pace_increases=_pc.get("increases"), pace_at_floor=_pc.get("at_floor"))
 
     def _one(t):
         nonlocal n_ok, n_empty, n_fail
