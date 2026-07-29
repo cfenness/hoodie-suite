@@ -211,6 +211,32 @@ def enrich_items(su, store_name, items, idx, site="ubereats", known=None):
     return items
 
 
+# A THROTTLED RESPONSE IS NOT AN EMPTY STORE. Under load the BFF returns a well-formed 200 with no
+# catalog in it — not None, so the `if not data` guard sails straight past, the store is marked done,
+# and the checkpoint records coverage for a store we never actually read. Measured on the first
+# catalog-only fleet: 242,503 stores marked done, 10,040 with any items. 4%. The sweep was "fast"
+# because it was mostly recording nothing at 390 stores/sec.
+#
+# The discriminator is STRUCTURAL: a real store response carries the catalog container (even when the
+# store legitimately has nothing in it), while a throttled one has no catalog structure at all. So a
+# store with a container and zero items is genuinely empty and counts as covered; a store with no
+# container is unreachable and must be retried, never checkpointed.
+_CATALOG_KEYS = ("catalogSectionsMap", "catalog", "sections", "catalogSections", "menuItems")
+
+
+def has_catalog(data):
+    """True if this payload actually contains a catalog structure (however empty)."""
+    if not isinstance(data, dict):
+        return False
+    if any(k in data for k in _CATALOG_KEYS):
+        return True
+    # nested one level — the container is not always at the root
+    for v in data.values():
+        if isinstance(v, dict) and any(k in v for k in _CATALOG_KEYS):
+            return True
+    return False
+
+
 def _progress(**kw):
     """Machine-readable progress for Hoodie Collect's live counters."""
     try:
@@ -323,6 +349,48 @@ def _land(site, day, idx, shard, items, log=print):
     except Exception as e:
         log("  [ue] observe failed: %s" % str(e)[:110])
     return len(items)
+
+
+def repair_checkpoints(site="ubereats", day=None, nshard=8, log=print):
+    """Rebuild today's checkpoints from WHAT ACTUALLY LANDED, dropping phantom coverage.
+
+    A checkpoint is a claim ("we've done these stores"); the parts table is evidence. When those two
+    disagree the evidence wins — otherwise the claim silently becomes truth on the next run, because a
+    checkpointed store is SKIPPED. Measured after the first catalog-only fleet: 242,503 stores
+    checkpointed, 10,040 with any landed rows. Left alone, the next sweep would skip a quarter of a
+    million stores it never read and report high coverage over them, compounding the lie instead of
+    correcting it.
+
+    So: keep a store only if it produced rows today. Everything else returns to the work-list. This is
+    deliberately lossy in the safe direction — a genuinely-empty store gets re-fetched, which costs one
+    request; a phantom left in place costs us the store entirely, silently, forever.
+    """
+    day = day or time.strftime("%Y-%m-%d")
+    tbl = "%s_products_parts" % site
+    try:
+        rows = warehouse.query_parts(tbl, "SELECT DISTINCT store_uuid FROM t")
+    except Exception as e:
+        log("[repair] cannot read %s (%s) — refusing to touch checkpoints" % (tbl, str(e)[:80]))
+        return 1
+    landed = {r["store_uuid"] for r in (rows or []) if r.get("store_uuid")}
+    log("[repair] %s stores have landed rows" % f"{len(landed):,}")
+    if not landed:
+        log("[repair] no landed rows at all — refusing to blank every checkpoint")
+        return 1
+    before = after = 0
+    for sh in range(nshard):
+        done = _ck_load(day, site, sh, nshard, log=lambda *_: None)
+        if not done:
+            continue
+        keep = {u for u in done if getstore.url_id_to_uuid(u) in landed}
+        before += len(done)
+        after += len(keep)
+        _ck_save(day, site, sh, nshard, keep, 0)
+        log("[repair] shard %d/%d: %s -> %s (dropped %s phantom)"
+            % (sh, nshard, f"{len(done):,}", f"{len(keep):,}", f"{len(done)-len(keep):,}"))
+    log("[repair] TOTAL %s -> %s checkpointed (%s phantom stores returned to the work-list)"
+        % (f"{before:,}", f"{after:,}", f"{before-after:,}"))
+    return 0
 
 
 def consolidate(site="ubereats", rebuild=False, log=print):
@@ -441,6 +509,13 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
             # let a throttled sweep race through 502k stores in minutes, land zero items, and report
             # complete. That is the exact "succeeded and lied" failure this whole workbench exists to
             # remove, and it would be invisible: fast, green, and empty.
+            with lock:
+                n_fail += 1
+                _beat()
+            return
+        # STRUCTURAL COVERAGE CHECK — see has_catalog(). Without this a throttled 200 counts as a
+        # covered store, and the checkpoint bakes the lie in so the NEXT run skips it too.
+        if not has_catalog(data):
             with lock:
                 n_fail += 1
                 _beat()

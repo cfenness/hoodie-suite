@@ -36,6 +36,7 @@ TESTS=(
   journal_metrics_test         # the journal keeps every metric a run reports about itself
   raw_capture_test             # payloads kept in full, kept OUT of the whole-table merge path
   idset_test                   # full-universe membership stays bounded (8 bytes/id, not 1GB)
+  coverage_guard_test          # a throttled 200 must never count as a covered store
   sipsource_test
   cost_ledger_test
   obs_quality_test
