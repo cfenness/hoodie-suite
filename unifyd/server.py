@@ -6887,16 +6887,42 @@ except Exception:
 
 # ---------------------------------------------------------------- item resolution
 
-def _resolve_index():
-    """(candidates, token_index) over dim_brand + dim_item, built once and cached.
+def _observed_item_keys():
+    """item_keys with at least one real shelf observation.
 
-    WHY AN INDEX: dim_item is ~871k rows. Scoring every row per query would make a
-    single lookup a full-table scan in Python, and the caller resolves several product
-    mentions per visit. The token index narrows to rows sharing a word (or a phonetic
-    word) with the query, which is typically a few hundred.
+    Measured live: normalising and phonetically keying all ~871k dim_item rows in pure
+    Python ran past 15 minutes and never finished — not viable as a cache-warming step.
+    A rep only ever names a product that exists on a real shelf, so the fix is not a
+    faster index, it's a SMALLER one: keep just the items retail_observations has actually
+    seen (measured ~145k distinct UPCs against a ~874k-row dim_sku), plus every brand.
+
+    retail_observations is a time-series table (~200 partitions, ~17M rows) — a single
+    `read_parquet` on one path 404s, so it MUST go through warehouse.query_parts, not
+    the single-file `warehouse.query` that `_wq`/`_wq_cached` wrap. Getting this wrong
+    silently returns [] instead of raising, so a caller who used the wrong helper here
+    would see an empty observed-set and quietly fall back to brands-only with no error.
+    """
+    obs = warehouse.query_parts("retail_observations", "SELECT DISTINCT upc FROM t WHERE upc <> ''")
+    upcs = {str(r.get("upc")) for r in obs if r.get("upc")}
+    if not upcs:
+        return set()
+    sku_rows = _wq_cached("dim_sku", "SELECT upc, item_key FROM t WHERE upc <> ''")
+    return {r["item_key"] for r in sku_rows if str(r.get("upc")) in upcs and r.get("item_key")}
+
+
+def _resolve_index():
+    """(candidates, token_index) over dim_brand + OBSERVED dim_item rows, cached.
+
+    WHY NOT ALL OF dim_item: see _observed_item_keys — the full ~871k-row walk does not
+    complete in a usable time. Narrowing to observed items is not just faster, it is a
+    better candidate set: a mention that resolved to a SKU nobody has ever stocked would
+    be a confident-looking wrong answer, worse than staying unmatched.
 
     Reuses _wb_maps() so the underlying name maps are shared with the workbench rather
-    than loaded a second time.
+    than loaded a second time. If the observed-set lookup fails for any reason, this
+    degrades to brands-only rather than raising — a partial index beats none, and every
+    unresolved item mention still surfaces honestly as `none`/`ambiguous` to the caller,
+    never as a false negative claiming the product doesn't exist.
     """
     from item_resolve import norm, phon
     brands, prodmap, itemmap = _wb_maps()
@@ -6905,7 +6931,17 @@ def _resolve_index():
     for bkey, bname in brands.items():
         if bname:
             cands.append({"id": bkey, "name": bname, "grain": "brand"})
-    for ikey, (pkey, size_ml, container) in itemmap.items():
+
+    try:
+        keys = _observed_item_keys()
+    except Exception:
+        keys = set()
+
+    for ikey in keys:
+        it = itemmap.get(ikey)
+        if not it:
+            continue
+        pkey, size_ml, container = it
         pname, bkey = prodmap.get(pkey, (None, None))
         if not pname:
             continue
