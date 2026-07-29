@@ -42,9 +42,19 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 #   table  : sibling table holding the richer record
 #   key    : (src_outlets column, sibling column) to join on
 #   fields : which columns to carry across when empty here and present there
-SIBLINGS = {
-    "doordash": {"table": "doordash_stores", "key": ("store_id", "store_id"),
-                 "fields": ("city", "state")},
+# NOTE ON DOORDASH — a declaration that looked obvious and does NOT work, kept documented so the next
+# person doesn't re-derive it. src_outlets' doordash rows are keyed by a NAME SLUG
+# ("mcdonald's warrawong") for all 587,249 rows; doordash_stores is keyed by NUMERIC id ("23605779").
+# They come from different pipelines and share no key, so the join matches zero rows — which the
+# backfill reports rather than papering over. A bridge (slug <-> numeric) has to exist before a
+# doordash entry here means anything; matching on name+city would be fuzzy, and fuzzy joins do not
+# belong in the outlet spine.
+SIBLINGS = {}
+
+# Declared-but-unusable, surfaced by report() so it stays visible instead of being quietly forgotten.
+NEEDS_KEY_BRIDGE = {
+    "doordash": {"table": "doordash_stores", "have": "slug store_id",
+                 "sibling_has": "numeric store_id", "fields": ("city", "state")},
 }
 
 _AGG = ("ubereats", "postmates")
@@ -141,7 +151,14 @@ def backfill(source="doordash", limit=None, log=print):
             out.append({k: d.get(k) for k in refresh_fast.FLD})
             filled += 1
     if not out:
-        log("[mappability] %s: sibling matched nothing — no fields carried" % source)
+        # Say WHY nothing matched. "matched nothing" alone reads as "there was nothing to do", when
+        # the real cause is usually that the two tables don't share a key space at all — which is a
+        # different problem needing a different fix, and must not look like a completed backfill.
+        sk = list(sib)[:1]
+        rk_sample = str(rows[0].get(lk))
+        log("[mappability] %s: sibling matched NOTHING — key spaces differ? src_outlets.%s=%r vs "
+            "%s.%s=%r. No fields carried; this is NOT a no-op backfill."
+            % (source, lk, rk_sample[:40], cfg["table"], rk, (sk[0] if sk else "?")[:40]))
         return 0
     warehouse.write_accumulate("src_outlets", out, key=lambda r: (r["source"], r["store_id"]),
                                fields=refresh_fast.FLD)
