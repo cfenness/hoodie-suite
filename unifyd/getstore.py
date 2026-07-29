@@ -87,12 +87,34 @@ def fetch_store(store_uuid, session="gs", site="ubereats", target=None):
         H["x-uber-target-location-latitude"] = str(target[0]); H["x-uber-target-location-longitude"] = str(target[1])
         H["x-uber-device-location-latitude"] = str(target[0]); H["x-uber-device-location-longitude"] = str(target[1])
     body = {"storeUuid": store_uuid, "diningMode": "DELIVERY", "time": {"asap": True}, "cbType": "EATER_ENDORSED"}
+    # PACE BEFORE THE REQUEST, not after. The limit we hit is an aggregate REQUEST RATE (measured:
+    # ~59 req/s collapsed the fleet even at 6 concurrent per IP across 20 IPs), so the control point has
+    # to be requests-per-second, not worker count — the proxy we have now guessed wrong three times.
+    _p = None
+    try:
+        import pace
+        _p = pace.get()
+        if _p:
+            _p.acquire()
+    except Exception:
+        _p = None                          # pacing must never be the reason a scrape cannot run
     try:
         # TIMEOUT IS NOT OPTIONAL. Without one a stalled socket parks this worker permanently: with 7
         # workers, seven silent hangs are a dead shard that still looks alive. The enrich path already
         # bounded its POST; this one never did.
-        return ((s.post(api, json=body, headers=H, timeout=30).json()) or {}).get("data")
+        data = ((s.post(api, json=body, headers=H, timeout=30).json()) or {}).get("data")
+        if _p:
+            # An empty/structureless response IS the throttle signal — feed it back so the controller
+            # can back off before the tripwire has to abort the whole pass.
+            try:
+                import ue_catalog
+                _p.report(ue_catalog.has_catalog(data))
+            except Exception:
+                _p.report(bool(data))
+        return data
     except Exception:
+        if _p:
+            _p.report(False)
         return None
 
 
