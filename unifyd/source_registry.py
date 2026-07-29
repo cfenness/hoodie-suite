@@ -156,7 +156,11 @@ SOURCES = [
          tables=["ubereats_products"], klass="headless", cadence="daily",
          enabled=True, cost_class="free", timeout=21600, mem=4096, priority=11,
          note="separate clock from the sweep: static per-item attributes, fetched once ever"),
-    dict(id="ubereats", label="Uber Eats store catalog (sharded)", shards=8,
+    # session_budget: requests one primed cookie may serve before re-priming. Measured ~50 on this
+    # source (collapse tracked request COUNT, not time, across three runs); 40 leaves margin, and
+    # sessions.py corrects it from observed burns. Session lifecycle is a per-DOMAIN property like the
+    # parser and the rate policy, so it belongs in the playbook, not hard-coded in a fetcher.
+    dict(id="ubereats", label="Uber Eats store catalog (sharded)", shards=8, session_budget=40,
          code="import ue_catalog as m; m.main(['--site','ubereats','--shard',__import__('os').environ.get('UE_SHARD','0/8'),'--no-enrich'])",
          caps=['curl_cffi'],
          tables=["ubereats_products", "retail_observations"], klass="headless", cadence="daily",
