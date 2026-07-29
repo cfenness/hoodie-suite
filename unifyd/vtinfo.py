@@ -162,16 +162,29 @@ def _parse_rows(resp, brand, zip_searched):
     return rows
 
 
-def search_zip(custID, uuid, zip_code, delay=1.0, max_pages=40, m="5", theme="1", log=print):
-    """All accounts carrying (custID) near zip_code, across every result page."""
+def search_zip(custID, uuid, zip_code, delay=1.0, max_pages=40, m="5", theme="1", log=print,
+               stats=None):
+    """All accounts carrying (custID) near zip_code, across every result page.
+
+    Pass `stats` (a dict) to learn whether the walk was COMPLETE: it is filled with
+    {available_pages, walked_pages, truncated}. Callers that render a count need this — `/api/locator`
+    ran with max_pages=3 and displayed the resulting 150 as "150 accounts near you", which is a cap
+    presented as a census. The server knows the real page count from its own probe; returning only a
+    list threw that away and left the caller guessing from `len(rows)`.
+    """
     iframe, fields = _session(custID, uuid, m=m, theme=theme)
     fields = {**fields, "z": str(zip_code)}
     # probe page 0 → server tells us the page range: "between 1 and N"
     probe = _fetch(SEARCH, {**fields, "page": "0"}, referer=iframe)
     npages = 1
+    avail = None
     mm = re.search(r'between 1 and (\d+)', probe)
     if mm:
-        npages = min(int(mm.group(1)), max_pages)
+        avail = int(mm.group(1))
+        npages = min(avail, max_pages)
+    if stats is not None:
+        stats.update({"available_pages": avail, "walked_pages": npages,
+                      "truncated": bool(avail and avail > npages)})
     out, seen = [], set()
     for p in range(1, npages + 1):
         try:

@@ -457,16 +457,64 @@ function refLine(j){
          (r.median||0).toFixed(2)+'</b> per 750ml equivalent across <b>'+r.n+'</b> observations'+
          (r.min&&r.max?' · range $'+r.min.toFixed(2)+'–$'+r.max.toFixed(2):'');
 }
+// OUR accounts, from src_outlets (~1.76M), tried BEFORE the VIP passthrough. The locator used to
+// show 150 accounts — not because we hold 150, but because the list was a third party's ZIP-keyed
+// page walk while the national universe we acquire sat unused. `total` vs `shown` are rendered
+// separately: how many accounts match, and how many pins a map can usefully draw, are not the
+// same number and must never be printed as if they were.
+async function ourAccounts(q,loc,locStr,stale){
+  const p=new URLSearchParams();
+  if(loc&&loc.length===2){p.set('lat',loc[0]);p.set('lng',loc[1]);}
+  else p.set('where',locStr||'');
+  // "Any distance" is value 0 — send a wide radius rather than 0, which would match nothing.
+  p.set('radius',(+document.querySelector('input[name=rad]:checked').value)||50);
+  try{
+    const j=await (await fetch('/api/locator/accounts?'+p,{cache:'no-store'})).json();
+    if(stale())return false;
+    if(j&&j.error){ refline.textContent=j.error; return false; }
+    if(!(j&&j.accounts&&j.accounts.length))return false;
+    if(j.center)CENTER=j.center;
+    const src=(j.by_source||[]).slice(0,4).map(s=>esc(s.source)+' '+s.n.toLocaleString()).join(' · ');
+    refline.textContent='Accounts we hold near here — distribution footprint, not per-bottle stock. '+
+      'Add a product above for verified stock and price.';
+    document.getElementById('src').innerHTML=
+      '<b>'+j.total.toLocaleString()+'</b> accounts within '+j.radius_mi+' mi'+
+      (j.truncated?' · showing the nearest <b>'+j.shown.toLocaleString()+'</b>':'')+
+      (src?' · '+src:'');
+    prepAccounts(j.accounts.map(a=>({name:a.store_name||a.chain||'',street:a.address||'',
+      city:a.city||'',state:a.state||'',lat:a.lat,lng:a.lng,source:a.source||'',
+      type:a.chain||''})));
+    return true;
+  }catch(e){ return false; }
+}
+
 async function fallbackAccounts(q,loc,locStr,stale){
   stale=stale||(()=>false);
+  if(await ourAccounts(q,loc,locStr,stale))return;
+  if(stale())return;
   try{
     const j=await (await fetch('/api/locator?brand='+encodeURIComponent(q.toLowerCase().replace(/[^a-z]/g,''))+
                                '&zip='+encodeURIComponent(locStr),{cache:'no-store'})).json();
     if(stale())return;
+    // An unresolvable location is shown, not papered over. The old code substituted a default ZIP
+    // server-side, so a search for Houston rendered Tampa with full confidence.
+    if(j&&j.error&&j.degraded==='location-unresolved'){
+      refline.textContent=j.error;
+      document.getElementById('src').innerHTML='No location resolved — nothing searched.';
+      prepAccounts([]); return;
+    }
     if(j&&j.accounts&&j.accounts.length){
       if(j.center)CENTER=j.center;
+      const rz=j.resolved||{};
+      // Name the place we actually searched. When a typed city was turned into a ZIP, say which ZIP
+      // and how far its centre is, so the user can see the hop rather than infer it from the pins.
+      const where=rz.how==='city'&&rz.zip_distance_mi!=null
+        ? esc(rz.label)+' (nearest ZIP '+esc(j.zip)+', '+rz.zip_distance_mi+' mi from centre)'
+        : esc(rz.label||j.zip||locStr);
       refline.textContent='Distribution only — we know these accounts carry it, but have no priced observations here yet.';
-      document.getElementById('src').innerHTML='Live · <b>'+j.accounts.length+'</b> accounts from <b>'+esc(j.label||q)+'</b> (no price signal)';
+      document.getElementById('src').innerHTML='Live · <b>'+j.accounts.length+'</b> accounts from <b>'+
+        esc(j.label||q)+'</b> near <b>'+where+'</b> (no price signal)'+
+        (j.truncated?' · <b>capped</b> — showing '+j.pages+' of '+j.available_pages+' pages':'');
       prepAccounts(j.accounts); return;
     }
   }catch(e){}
