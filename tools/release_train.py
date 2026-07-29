@@ -733,27 +733,34 @@ def declared_vm(wt, log=print):
 
 
 def vm_drift(app, wt, log=print):
-    """[(machine, field, running, declared)] for machines this deploy would RESIZE.
+    """(drift, what_was_inspected) for machines this deploy would RESIZE.
+
+    Returns the inspection summary as well as the findings, because SILENCE ON A PASS IS
+    INDISTINGUISHABLE FROM NOT HAVING RUN. This check has already been silently inert once — the
+    tomllib import failed on python 3.9 and it reported "no drift" for every deploy. A check that
+    cannot tell "I ran and found nothing" from "I didn't run" converts an open question into false
+    confidence, so it now states what it compared.
 
     Compared against the RUNNING machines, not the previous fly.toml — the drift is created outside
     git (`flyctl machine update`), so git cannot see it. Only machines in a process group are
     considered: those are what a deploy touches. The dispatcher deliberately has none, which is why
     it needs a separate re-pin.
     """
-    want = declared_vm(wt)
-    if not want or not want.get("memory_mb"):
-        return []
+    want = declared_vm(wt, log=log)
+    if not want:
+        return [], "NOT CHECKED — fly.toml declares no [[vm]] block"
+    if not want.get("memory_mb"):
+        return [], "NOT CHECKED — could not read a memory value from [[vm]]"
     fly = os.path.expanduser("~/.fly/bin/flyctl")
     fly = fly if os.path.exists(fly) else "flyctl"
     rc, out = sh([fly, "machines", "list", "-a", app, "--json"], timeout=180)
     if rc != 0:
-        log("  [vm-drift] could not list machines — skipping the check")
-        return []
+        return [], "NOT CHECKED — could not list machines for %s" % app
     try:
         machines = json.loads(out)
     except Exception:                             # noqa: BLE001
-        return []
-    drift = []
+        return [], "NOT CHECKED — machine list did not parse"
+    drift, inspected = [], []
     for m in machines:
         cfg = m.get("config", {}) or {}
         if not (cfg.get("metadata", {}) or {}).get("fly_process_group"):
@@ -761,11 +768,16 @@ def vm_drift(app, wt, log=print):
         if m.get("state") != "started":
             continue
         g = cfg.get("guest", {}) or {}
+        inspected.append("%s %sMB/%scpu vs declared %sMB/%scpu"
+                         % (m["id"], g.get("memory_mb"), g.get("cpus"),
+                            want["memory_mb"], want["cpus"]))
         if want["memory_mb"] and g.get("memory_mb") and g["memory_mb"] != want["memory_mb"]:
             drift.append((m["id"], "memory_mb", g["memory_mb"], want["memory_mb"]))
         if want["cpus"] and g.get("cpus") and g["cpus"] != want["cpus"]:
             drift.append((m["id"], "cpus", g["cpus"], want["cpus"]))
-    return drift
+    if not inspected:
+        return [], "NOT CHECKED — no started process-group machines to compare"
+    return drift, "compared %d machine(s): %s" % (len(inspected), "; ".join(inspected))
 
 
 # --- deploy ----------------------------------------------------------------------------------
@@ -799,8 +811,13 @@ def deploy(args):
         print("deploying %s @ %s\n  %s" % (base, head[:8], subject))
 
         app = os.environ.get("FLY_APP", "hoodie-suite")
-        drift = vm_drift(app, wt)
+        drift, inspected = vm_drift(app, wt)
+        # Always say what was inspected. A guard that only speaks up when it finds something is
+        # indistinguishable from a guard that isn't running.
+        print("\n  [[vm]] check: %s" % inspected)
         shrink = [d for d in drift if d[3] < d[2]]
+        if not drift and not inspected.startswith("NOT CHECKED"):
+            print("  [[vm]] check: no resize — the deploy leaves machine sizing unchanged")
         if drift:
             print("\n  fly.toml [[vm]] would RESIZE running machines:")
             for mid, field, running, declared in drift:

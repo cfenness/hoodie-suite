@@ -43,3 +43,9 @@ unifyd/full_out/
 unifyd/specs_out/
 unifyd/walmart_raw/
 unifyd/full_pull_out/
+
+# Scraper state snapshots — runtime, not source. .dockerignore has excluded these since the image
+# was first built (`**/*_snapshot.json`), but .gitignore did not, so they sat untracked and
+# committable: unifyd/binnys_snapshot.json alone is 11GB. One `git add -A` would have put it in the
+# history permanently. Mirror the dockerignore rule.
+unifyd/*_snapshot.json
