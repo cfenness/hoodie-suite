@@ -44,6 +44,7 @@ TESTS=(
   extract_qa_test              # validate the OUTPUT — a 200 that is wrong is worse than a 403
   value_rules_test             # plausible-but-wrong values: right type, wrong number
   ladder_test                  # a closed rung escalates itself; a closed store does not
+  browser_rung_test            # the ladder has somewhere to escalate TO
   sipsource_test
   cost_ledger_test
   obs_quality_test
