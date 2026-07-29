@@ -39,8 +39,13 @@ NON_ALC_BRANDS = re.compile(
     r"gruvi|surely|st\.?\s*agrestis|hop wtr|for bitter for worse|three spirit|sipsmith freeglider)\b", re.I)
 
 # lean, dated time-series columns (the FULL raw record + images live in each <conn>_products snapshot)
-OBS_FIELDS = ["date", "source", "store", "store_id", "product_id", "upc", "brand", "name",
-              "price", "promo", "on_promo", "in_stock", "qty", "stock_level", "is_hemp"]
+# `date` is DAY granularity, which is too coarse for a sweep that runs for hours against a LIVE site:
+# the first product and the 13,900th are observed ~4h apart and the retailer changes price/stock in
+# between, so they are not the same moment and must not be presented as one. `observed_at` (unix
+# seconds) carries the true instant per row. Older partitions lack the column; query_parts reads with
+# union_by_name=true, so they simply return null for it rather than breaking.
+OBS_FIELDS = ["date", "observed_at", "source", "store", "store_id", "product_id", "upc", "gtin",
+              "brand", "name", "price", "promo", "on_promo", "in_stock", "qty", "stock_level", "is_hemp"]
 
 
 def is_hemp(*texts):
@@ -66,11 +71,13 @@ def record(source, rows, date=None, log=print, part=None):
     if not rows:
         return 0
     date = date or time.strftime("%Y-%m-%d")
+    now = int(time.time())
     out = []
     for r in rows:
-        out.append({"date": date, "source": source,
+        out.append({"date": date, "observed_at": int(r.get("observed_at") or now), "source": source,
                     "store": r.get("store", ""), "store_id": str(r.get("store_id", "") or ""),
                     "product_id": str(r.get("product_id", "") or ""), "upc": str(r.get("upc", "") or ""),
+                    "gtin": str(r.get("gtin", "") or ""),
                     "brand": r.get("brand", ""), "name": r.get("name", ""),
                     "price": r.get("price"), "promo": r.get("promo"),
                     "on_promo": bool(r.get("on_promo")), "in_stock": bool(r.get("in_stock")),

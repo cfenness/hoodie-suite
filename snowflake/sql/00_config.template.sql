@@ -26,11 +26,18 @@
 -- SECRET, or run the whole build under a role whose stage already exists. Never paste keys into a
 -- shared worksheet history.
 
--- ── one-time account setup ───────────────────────────────────────────────────────────────────────
--- Compute to run the load with (XS is plenty for the seed; it auto-suspends):
-CREATE WAREHOUSE IF NOT EXISTS UNIFYD_LOAD
-  WAREHOUSE_SIZE = XSMALL AUTO_SUSPEND = 60 AUTO_RESUME = TRUE
-  COMMENT = 'Ephemeral compute for the Hoodie → Unifyd Snowflake load.';
-USE WAREHOUSE UNIFYD_LOAD;
+-- ── compute: ONE-TIME ADMIN SETUP, not part of the automated load ────────────────────────────────
+-- Nothing below executes. run_load.py selects the warehouse and database through the CONNECTION
+-- (SNOWFLAKE_WAREHOUSE / SNOWFLAKE_DATABASE), so the load never needs to issue DDL against the
+-- account. This block used to run CREATE WAREHOUSE, which forced the loader role to hold
+-- CREATE WAREHOUSE ON ACCOUNT — and Snowflake checks that privilege BEFORE the IF NOT EXISTS, so it
+-- failed even when the warehouse already existed. Provisioning compute is an admin act performed
+-- once; a role that loads data should not be able to create infrastructure on every run.
+--
+-- Run once, as an admin, if you do not already have a warehouse:
+--   CREATE WAREHOUSE IF NOT EXISTS UNIFYD_LOAD
+--     WAREHOUSE_SIZE = XSMALL AUTO_SUSPEND = 60 AUTO_RESUME = TRUE;
+--   GRANT USAGE, OPERATE ON WAREHOUSE <warehouse> TO ROLE <loader_role>;
+--   GRANT CREATE DATABASE ON ACCOUNT TO ROLE <loader_role>;   -- or pre-create + GRANT OWNERSHIP
 
 -- Then run, in order:  01_database → 02_stage (substituted) → 03_raw → 04_master → 05_marts → 06_validate

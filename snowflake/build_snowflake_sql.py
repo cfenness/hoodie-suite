@@ -115,6 +115,13 @@ def raw_catalog():
         note = PRIORITY.get(t) or e["note"] or ""
         rows.append((t, note, sorted(set(e["srcs"])), t in PRIORITY))
     rows.sort(key=lambda r: (not r[3], r[0]))     # priority first, then alphabetical
+    # SCOPE. SNOWFLAKE_ONLY restricts the whole build to a comma list of tables — the generator is the
+    # right place for it, because 03's CREATE runs INFER_SCHEMA against the staged file: emitting DDL
+    # for a table nobody uploaded fails the run. Scoping the upload alone would produce exactly that.
+    # A scoped build is a deliberate slice (prove the path, or land one source fast), never the default.
+    only = _scope()
+    if only:
+        rows = [r for r in rows if r[0] in only]
     return rows
 
 
@@ -386,12 +393,19 @@ def emit_config():
 -- SECRET, or run the whole build under a role whose stage already exists. Never paste keys into a
 -- shared worksheet history.
 
--- ── one-time account setup ───────────────────────────────────────────────────────────────────────
--- Compute to run the load with (XS is plenty for the seed; it auto-suspends):
-CREATE WAREHOUSE IF NOT EXISTS UNIFYD_LOAD
-  WAREHOUSE_SIZE = XSMALL AUTO_SUSPEND = 60 AUTO_RESUME = TRUE
-  COMMENT = 'Ephemeral compute for the Hoodie → Unifyd Snowflake load.';
-USE WAREHOUSE UNIFYD_LOAD;
+-- ── compute: ONE-TIME ADMIN SETUP, not part of the automated load ────────────────────────────────
+-- Nothing below executes. run_load.py selects the warehouse and database through the CONNECTION
+-- (SNOWFLAKE_WAREHOUSE / SNOWFLAKE_DATABASE), so the load never needs to issue DDL against the
+-- account. This block used to run CREATE WAREHOUSE, which forced the loader role to hold
+-- CREATE WAREHOUSE ON ACCOUNT — and Snowflake checks that privilege BEFORE the IF NOT EXISTS, so it
+-- failed even when the warehouse already existed. Provisioning compute is an admin act performed
+-- once; a role that loads data should not be able to create infrastructure on every run.
+--
+-- Run once, as an admin, if you do not already have a warehouse:
+--   CREATE WAREHOUSE IF NOT EXISTS UNIFYD_LOAD
+--     WAREHOUSE_SIZE = XSMALL AUTO_SUSPEND = 60 AUTO_RESUME = TRUE;
+--   GRANT USAGE, OPERATE ON WAREHOUSE <warehouse> TO ROLE <loader_role>;
+--   GRANT CREATE DATABASE ON ACCOUNT TO ROLE <loader_role>;   -- or pre-create + GRANT OWNERSHIP
 
 -- Then run, in order:  01_database → 02_stage (substituted) → 03_raw → 04_master → 05_marts → 06_validate
 """
@@ -413,11 +427,26 @@ CREATE SCHEMA IF NOT EXISTS {db}.{mart}
 
 
 def emit_stage():
-    return _BANNER + """--
--- 02_stage.sql — the Parquet file format + the external stage → Tigris (S3-compatible).
---
--- The ${{...}} tokens are placeholders — substitute them before running (see 00_config: `envsubst`
--- or edit inline). Snowflake DDL can't take session vars here, so these must become real literals.
+    """The Parquet file format + the stage the COPYs read from.
+
+    TWO MODES, one stage NAME — so every INFER_SCHEMA/COPY in 03/04 references @WH/<path> and does not
+    care which is in play:
+
+      internal (DEFAULT) — a Snowflake-managed internal stage. run_load.py downloads each Parquet from
+        Tigris and PUTs it to the SAME @WH/<path>. Slower (bytes transit the loader) but it works on
+        ANY account with no vendor involvement.
+      external — the zero-copy s3compat:// stage pointing straight at Tigris. Strictly better when it
+        is available, but Snowflake does NOT enable arbitrary S3-compatible endpoints: per their docs
+        only `r2.cloudflarestorage.com` is on by default and everything else must be allowlisted by
+        Snowflake Support. `fly.storage.tigris.dev` is not, which fails at CREATE STAGE with
+        "Endpoint fly.storage.tigris.dev not allowed" — hence internal being the default.
+
+    Flip with SNOWFLAKE_STAGE_MODE=external once Support has allowlisted the endpoint; nothing else
+    in the build changes.
+    """
+    mode = os.environ.get("SNOWFLAKE_STAGE_MODE", "internal").strip().lower()
+    head = _BANNER + """--
+-- 02_stage.sql — the Parquet file format + the stage the COPY statements read from.
 USE SCHEMA {db}.{raw};
 
 CREATE FILE FORMAT IF NOT EXISTS {fmt}
@@ -426,21 +455,32 @@ CREATE FILE FORMAT IF NOT EXISTS {fmt}
   BINARY_AS_TEXT = FALSE          -- keep parquet BYTE_ARRAY strings as text, don't hex them
   TRIM_SPACE = FALSE
   COMMENT = 'Parquet as written by unifyd/warehouse.py (zstd/snappy, DuckDB/pyarrow).';
+""".format(db=DB, raw=SCHEMA_RAW, fmt=FMT)
 
--- S3-compatible external stage. s3compat:// + ENDPOINT is Snowflake's supported path for non-AWS S3
--- stores like Tigris. Credentials are the Tigris (AWS_*) key pair the engine uses (unifyd/warehouse.py).
--- Defaults: TIGRIS_PREFIX=warehouse, TIGRIS_ENDPOINT=fly.storage.tigris.dev.
+    if mode == "external":
+        return head + """
+-- EXTERNAL: zero-copy, Snowflake reads Tigris directly. Requires the endpoint to be allowlisted by
+-- Snowflake Support (only r2.cloudflarestorage.com is enabled by default).
 CREATE OR REPLACE STAGE {stage}
   URL = 's3compat://${{TIGRIS_BUCKET}}/${{TIGRIS_PREFIX}}/'
   ENDPOINT = '${{TIGRIS_ENDPOINT}}'
   CREDENTIALS = ( AWS_KEY_ID = '${{TIGRIS_KEY_ID}}'  AWS_SECRET_KEY = '${{TIGRIS_SECRET}}' )
   FILE_FORMAT = {fmt}
-  COMMENT = 'Hoodie warehouse Parquet (warehouse/ prefix in the Tigris bucket).';
+  COMMENT = 'Hoodie warehouse Parquet, read in place from Tigris.';
 
 -- Smoke: list a couple of the named "full" sources so a bad cred/endpoint fails HERE, loudly.
 LIST @{stage}/total_wine_products.parquet;
 LIST @{stage}/ab_outlets.parquet;
-""".format(db=DB, raw=SCHEMA_RAW, fmt=FMT, stage=STAGE)
+""".format(fmt=FMT, stage=STAGE)
+
+    return head + """
+-- INTERNAL: Snowflake-managed. run_load.py PUTs each Parquet to @{stage}/<same path the COPYs use>,
+-- so 03/04 are byte-identical between the two modes. NOT `CREATE OR REPLACE` — replacing an internal
+-- stage DROPS every file already staged in it, which would silently discard prior uploads on a rerun.
+CREATE STAGE IF NOT EXISTS {stage}
+  FILE_FORMAT = {fmt}
+  COMMENT = 'Hoodie warehouse Parquet, uploaded by run_load.py (internal stage).';
+""".format(fmt=FMT, stage=STAGE)
 
 
 def _raw_block(table, note, srcs, priority, files=None, rows=None):
@@ -512,8 +552,17 @@ USE SCHEMA {db}.{raw};
                       if layout else ""))]
 
     # time-series prefix loads first (special: whole partition set → one table, clustered by date)
-    parts.append("\n-- ── time-series fact partitions (load the whole prefix; union_by_name) ──")
-    for t, note in TIMESERIES.items():
+    # TIMESERIES is a separate dict from raw_catalog(), so the SNOWFLAKE_ONLY filter applied there
+    # does NOT reach it — a scoped build would silently emit DDL for a table the upload skipped, and
+    # its INFER_SCHEMA would fail against an unstaged path. Apply the same scope here.
+    _only = _scope()
+    _ts = [(k, v) for k, v in TIMESERIES.items() if not _only or k in _only]
+    # Emit the section header ONLY if the section has content. An orphaned header is a comment-only
+    # region between two semicolons, which the Snowflake connector sends as a statement and rejects
+    # with "000900 (42601): Empty SQL statement" — a failure whose text points nowhere near the cause.
+    if _ts:
+        parts.append("\n-- ── time-series fact partitions (load the whole prefix; union_by_name) ──")
+    for t, note in _ts:
         fqtn = _fqtn(SCHEMA_RAW, t)
         rows = (layout.get(t, {}) or {}).get("rows") if layout else None
         hdr = "\n-- %s\n--   %s\n" % (t, note)
@@ -551,7 +600,10 @@ USE SCHEMA {db}.{raw};
         parts.append("\n" + _raw_block(table, note, srcs, priority,
                                        files=info.get("files"), rows=info.get("rows")))
     if layout is not None:
-        parts.append("\n-- change-aware: %d catalog(s) refreshed, %d unchanged, %d not-yet-present (skipped)."
+        # NOT a bare trailing comment: a file that ENDS in one makes the connector emit an empty
+        # final statement ("000900: Empty SQL statement"). As a SELECT it stays visible in Snowflake's
+        # query history, which is a better place for it anyway.
+        parts.append("\nSELECT 'change-aware: %d catalog(s) refreshed, %d unchanged, %d not-yet-present (skipped)' AS build_note;"
                      % (len(cat) - unchanged - absent, unchanged, absent))
     return "\n".join(parts)
 
@@ -615,7 +667,7 @@ USE SCHEMA {db}.{master};
                 continue
         parts.append("\n" + _create_table(SCHEMA_MASTER, spec) + _copy_master(SCHEMA_MASTER, spec, layout))
     if layout is not None:
-        parts.append("\n-- change-aware: %d master table(s) refreshed, %d unchanged, %d not-yet-present (skipped)."
+        parts.append("\nSELECT 'change-aware: %d master table(s) refreshed, %d unchanged, %d not-yet-present (skipped)' AS build_note;"
                      % (len(MASTER) - unchanged - absent, unchanged, absent))
     return "\n".join(parts)
 
@@ -664,10 +716,107 @@ ORDER BY outlets DESC;
 """.format(db=DB, master=SCHEMA_MASTER, mart=SCHEMA_MART)
 
 
+def _scope():
+    """The SNOWFLAKE_ONLY table allowlist as a set, or None for the full build."""
+    v = (os.environ.get("SNOWFLAKE_ONLY") or "").strip()
+    return {t.strip() for t in v.split(",") if t.strip()} or None if v else None
+
+
+
+def _assert_no_empty_statements(name, sql):
+    """Refuse to write SQL containing a statement that is empty once comments are removed.
+
+    The connector splits on statement boundaries and sends such a region as a statement, which
+    Snowflake rejects with "000900 (42601): Empty SQL statement" — an error naming no table, no file
+    and no line, so it costs a debugging cycle every time. It is produced by an orphaned section
+    header: a heading whose rows were all filtered out (e.g. by SNOWFLAKE_ONLY).
+
+    Comments are stripped BEFORE splitting, because the prose in these headers contains semicolons
+    ("A UPC is its global identity; vintage/edition are attributes") and splitting first reports every
+    one of them as a bug. A linter that cries wolf on its own documentation gets switched off.
+    """
+    if name.startswith("00_config"):      # documentation, never executed; its example SQL has semicolons
+        return
+    bare = "\n".join(l.split("--", 1)[0] if l.strip().startswith("--") else l
+                      for l in sql.splitlines())
+    chunks = bare.split(";")
+    for c in chunks[:-1]:
+        if not c.strip():
+            raise SystemExit("build_snowflake_sql: %s would contain an EMPTY SQL statement — an "
+                             "orphaned comment/section header with no statement after it." % name)
+    # THE TRAILING REGION. Anything after the final ';' that is comment-only is returned by the
+    # connector as a last statement with an empty body — the actual cause of the 000900 failure, and
+    # the case the first version of this guard skipped by only checking chunks[:-1].
+    if sql.rstrip().splitlines() and not chunks[-1].strip():
+        tail = [l for l in sql.rstrip().splitlines() if l.strip()]
+        if tail and tail[-1].strip().startswith("--"):
+            raise SystemExit("build_snowflake_sql: %s ENDS in a bare comment after the last "
+                             "statement — the connector sends that as an empty statement. Make it a "
+                             "real statement (e.g. SELECT ... AS build_note) or move it above. "
+                             "Offending line: %s" % (name, tail[-1].strip()[:100]))
+
+
+
+def emit_grants(layout=None, dirty=None):
+    """Read access for the humans and BI tools, emitted as part of the build.
+
+    The loader role OWNS everything it creates, and Snowflake grants nothing to anyone else by
+    default — so a completed load is invisible: the catalog lists the tables, and every Data Preview
+    fails with "Insufficient privileges to operate on table ... must have SELECT granted". Data that
+    cannot be read is not landed data, so the grants belong in the build rather than in a runbook
+    somebody has to remember after each new source.
+
+    FUTURE grants matter as much as current ones: every new source adds a RAW table, and without them
+    each one would silently arrive unreadable and need a manual grant nobody knows to run.
+
+    Roles come from SNOWFLAKE_READER_ROLES (comma list, default SYSADMIN). Empty disables the section.
+    """
+    roles = [r.strip() for r in os.environ.get("SNOWFLAKE_READER_ROLES", "SYSADMIN").split(",")
+             if r.strip()]
+    body = ""
+    for r in roles:
+        body += """
+GRANT USAGE  ON DATABASE {db} TO ROLE {r};
+GRANT USAGE  ON ALL SCHEMAS IN DATABASE {db} TO ROLE {r};
+GRANT SELECT ON ALL TABLES  IN DATABASE {db} TO ROLE {r};
+GRANT SELECT ON ALL VIEWS   IN DATABASE {db} TO ROLE {r};
+GRANT USAGE  ON FUTURE SCHEMAS IN DATABASE {db} TO ROLE {r};
+GRANT SELECT ON FUTURE TABLES  IN DATABASE {db} TO ROLE {r};
+GRANT SELECT ON FUTURE VIEWS   IN DATABASE {db} TO ROLE {r};
+""".format(db=DB, r=r)
+    if not body:
+        body = "\nSELECT 'no reader roles configured (SNOWFLAKE_READER_ROLES empty)' AS grants_note;\n"
+    return _BANNER + """--
+-- 07_grants.sql — read access for humans/BI. The loader owns every object it creates and Snowflake
+-- grants nothing implicitly, so without this a successful load is unreadable in the UI.
+-- Roles: SNOWFLAKE_READER_ROLES (default SYSADMIN).
+""" + body
+
+
 def emit_validate():
-    priority_checks = "\nUNION ALL\n".join(
-        "SELECT '%s' AS table_name, COUNT(*) AS n_rows, IFF(COUNT(*) > 0, 'OK', 'EMPTY — investigate') AS status "
-        "FROM %s" % (t, _fqtn(SCHEMA_RAW, t)) for t in PRIORITY)
+    # Assert via INFORMATION_SCHEMA, never SELECT COUNT(*) FROM <table>.
+    #
+    # A change-aware load emits DDL only for tables that MOVED, so on any incremental run most priority
+    # tables are absent from this build — and one that has never been loaded at all does not exist in
+    # Snowflake. `SELECT COUNT(*)` against a missing table is a COMPILE error (002003), which aborts the
+    # whole validation instead of reporting the very thing validation exists to report. Reading the
+    # catalog cannot fail that way: a missing table reports MISSING, an empty one EMPTY, and the run
+    # still finishes and prints its counts.
+    only = _scope()
+    checked = [t for t in PRIORITY if not only or t in only]
+    lst = ", ".join("'%s'" % t.upper() for t in checked) or "''"
+    priority_checks = """
+WITH want AS (SELECT COLUMN1 AS table_name FROM VALUES {vals}),
+     have AS (SELECT TABLE_NAME, ROW_COUNT FROM {db}.INFORMATION_SCHEMA.TABLES
+              WHERE TABLE_SCHEMA = '{raw}' AND TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME IN ({lst}))
+SELECT w.table_name,
+       COALESCE(h.ROW_COUNT, 0) AS n_rows,
+       CASE WHEN h.TABLE_NAME IS NULL THEN 'MISSING — never loaded'
+            WHEN COALESCE(h.ROW_COUNT, 0) = 0 THEN 'EMPTY — investigate'
+            ELSE 'OK' END AS status
+FROM want w LEFT JOIN have h ON h.TABLE_NAME = w.table_name""".format(
+        vals=", ".join("('%s')" % t.upper() for t in checked) or "('NONE')",
+        db=DB, raw=SCHEMA_RAW, lst=lst)
     return _BANNER + """--
 -- 06_validate.sql — post-load assertions. The named "full" sources MUST be non-empty; the star must
 -- have landed; the joins must resolve. Run after 03/04. Eyeball the STATUS column.
@@ -723,6 +872,9 @@ FILES = [
     ("03_raw_tables.sql", lambda layout, dirty: emit_raw(layout, dirty)),
     ("04_master.sql", lambda layout, dirty: emit_master(layout, dirty)),
     ("05_marts.sql", lambda layout, dirty: emit_marts()),
+    # Grants run BEFORE validate: 06 reads the tables it asserts on, and more importantly a load that
+    # finishes "successfully" but unreadable is not finished.
+    ("07_grants.sql", lambda layout, dirty: emit_grants(layout, dirty)),
     ("06_validate.sql", lambda layout, dirty: emit_validate()),
 ]
 
@@ -748,13 +900,16 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     for fname, fn in FILES:
         path = os.path.join(a.out, fname)
+        sql = fn(layout, dirty)
+        _assert_no_empty_statements(fname, sql)     # fail HERE, not mid-load against a live account
         with open(path, "w") as f:
-            f.write(fn(layout, dirty))
+            f.write(sql)
         print("wrote %s" % os.path.relpath(path, os.path.dirname(HERE)))
     if snapshot is not None:                          # stash the plan for --commit-state (post-load)
         with open(_PENDING, "w") as f:
             json.dump(snapshot, f)
-    n_raw = len(raw_catalog()) + len(TIMESERIES)
+    _o = _scope()
+    n_raw = len(raw_catalog()) + len([k for k in TIMESERIES if not _o or k in _o])
     if dirty is not None:
         n_dirty = sum(1 for v in dirty.values() if v)
         print("\nchange-aware: %d of %d present tables changed since the last load → refresh; rest skipped"

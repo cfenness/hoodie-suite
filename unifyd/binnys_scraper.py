@@ -13,7 +13,7 @@ connId: `binnys`. Snapshot is keyed by `sku|storeCode`; the run's headline delta
 Algolia app id / index / key are env-overridable (`BINNYS_ALGOLIA_*`; defaults discovered
 on binnys.com). Self-reports `degraded` if the key rotates or the per-store schema changes.
 """
-import argparse, hashlib, json, os, sys, time, urllib.request
+import argparse, gzip, hashlib, json, os, sys, time, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
@@ -42,18 +42,23 @@ def query(page=0, hits=1000):
 
 
 def fetch_records(sample=300, crawl_all=False, log=print):
+    """(records, complete). `complete` is False when pagination stopped early — a full crawl that
+    lost a page is NOT the whole catalog, and the caller must not treat it as a rebuild."""
     if not crawl_all:
-        return query(0, min(sample, 1000)).get("hits", [])
+        return query(0, min(sample, 1000)).get("hits", []), False
     first = query(0, 1000)
     out = list(first.get("hits", []))
     pages = min(first.get("nbPages", 1), 100)   # was 40 — don't truncate the full Algolia catalog
+    complete = True
     for p in range(1, pages):
         try:
             out += query(p, 1000).get("hits", [])
         except Exception as e:
-            log(f"page {p}: {e}"); break
+            log(f"page {p}: {e}")
+            complete = False
+            break
         log(f"page {p + 1}/{pages}: {len(out)} records")
-    return out
+    return out, complete
 
 
 def _store_price(sp):
@@ -71,6 +76,53 @@ def _num(v):
         return float(v) if v not in (None, "") else None
     except (TypeError, ValueError):
         return None
+
+
+
+# ── day-over-day snapshot ────────────────────────────────────────────────────────────────────────
+# Lives in the SHARED bucket, gzipped, compact. Three things were wrong with a local pretty-printed
+# file, and each one bit:
+#   1. DISK. 1.5M cells at indent=2 is multiple GB of whitespace-padded JSON. On an ephemeral machine
+#      that is `OSError: [Errno 28] No space left on device` — the actual cause of every recent
+#      binnys failure.
+#   2. EPHEMERALITY. The file died with the machine, so `prev` was always empty and every run
+#      reported "baseline (no prior snapshot)". Movement — the entire point of a directional tracker
+#      — has never once been computed in the cloud.
+#   3. ORDER. It was written BEFORE the warehouse land, so a failure here discarded a completed
+#      fetch. Bookkeeping must never be able to destroy the payload.
+_SNAP_KEY = "_collect/snapshots/binnys.json.gz"
+
+
+def _snap_load(state_dir, log=print):
+    """Prior snapshot cells: shared bucket first, local file as the CLI fallback. {} if neither."""
+    try:
+        import warehouse
+        raw = warehouse.get_bytes(_SNAP_KEY)
+        if raw:
+            cells = json.loads(gzip.decompress(raw)).get("cells", {})
+            log("  [binnys] prior snapshot: %s cells (shared bucket)" % f"{len(cells):,}")
+            return cells
+    except Exception as e:
+        log("  [binnys] snapshot read skipped: %s" % str(e)[:80])
+    fp = os.path.join(state_dir, SNAP)
+    if os.path.exists(fp):
+        try:
+            return json.load(open(fp)).get("cells", {})
+        except Exception:
+            pass
+    return {}
+
+
+def _snap_save(cells, log=print):
+    """Persist the snapshot compactly (no indent) and gzipped, to the shared bucket."""
+    try:
+        import warehouse
+        blob = gzip.compress(json.dumps({"__ts__": int(time.time() * 1000), "cells": cells},
+                                        separators=(",", ":")).encode())
+        warehouse.put_bytes(_SNAP_KEY, blob)
+        log("  [binnys] snapshot saved: %s cells, %.1f MB gz" % (f"{len(cells):,}", len(blob) / 1e6))
+    except Exception as e:
+        log("  [binnys] snapshot save skipped: %s" % str(e)[:100])
 
 
 def to_snapshot(records):
@@ -91,7 +143,7 @@ def to_snapshot(records):
                 "origin": h.get("country") or "", "category": h.get("productType") or h.get("gtmCategory") or "",
                 "department": h.get("productDepartment") or "",
                 "item_size": h.get("itemSize") or "", "unit_label": h.get("priceUnitLabel") or "",
-                "case_pack": h.get("casePack"), "image": h.get("imageUrl") or "",
+                "case_pack": _num(h.get("casePack")), "image": h.get("imageUrl") or "",
                 "product_url": h.get("productUrl") or h.get("productLink") or "",
                 "proof": proof, "abv": (round(proof / 2, 1) if proof else None),
                 "thc_mg": thc, "cbd_mg": cbd,
@@ -146,11 +198,30 @@ def run_record(movement, n_products, status, warnings):
             "movement": movement}
 
 
+REPLACE_FLOOR = float(os.environ.get("BINNYS_REPLACE_FLOOR", "0.9"))
+
+
+def _safe_to_replace(n_new, log=print):
+    """May a full crawl REPLACE the landed catalog? Only if it isn't materially smaller than what is
+    already there. A shrink means the crawl came up short, not that Binny's delisted 90% of its range."""
+    try:
+        prior = warehouse.row_count("binnys_products")
+    except Exception as e:                       # noqa: BLE001 — can't verify ⇒ don't replace
+        log("  [binnys] cannot read prior row count (%s) — accumulating instead of replacing" % str(e)[:60])
+        return False
+    if prior and n_new < prior * REPLACE_FLOOR:
+        log("  [binnys] REFUSING to replace catalog: %d new rows vs %d landed (floor %.0f%%) — "
+            "accumulating instead" % (n_new, prior, REPLACE_FLOOR * 100))
+        return False
+    return True
+
+
 def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=print):
     state_dir = state_dir or out
     os.makedirs(out, exist_ok=True)
+    crawl_complete = False
     try:
-        records = fetch_records(sample=sample, crawl_all=crawl_all, log=log)
+        records, crawl_complete = fetch_records(sample=sample, crawl_all=crawl_all, log=log)
     except Exception as e:
         run = run_record(diff_store({}, {}), 0, "failed",
                          [f"Algolia query failed: {str(e)[:120]} — the public search key may have "
@@ -158,17 +229,14 @@ def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=p
         return {}, [run], run["movement"]
     if limit:
         records = records[:limit]
+        crawl_complete = False          # an explicit truncation is not a complete catalog
     cur, parsed_qty = to_snapshot(records)
     if not cur:
         run = run_record(diff_store({}, {}), 0, "failed",
                          ["Algolia returned no per-store inventory (storesPriceAndInventory schema changed)."])
         return {}, [run], run["movement"]
 
-    prev = {}
-    snap_path = os.path.join(state_dir, SNAP)
-    if os.path.exists(snap_path):
-        try: prev = json.load(open(snap_path)).get("cells", {})
-        except Exception: prev = {}
+    prev = _snap_load(state_dir, log=log)
     movement = diff_store(prev, cur)
 
     warnings = []
@@ -177,13 +245,23 @@ def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=p
                         "Binny's storesPriceAndInventory schema may have changed.")
     status = "degraded" if warnings else "success"
 
-    json.dump({"__ts__": int(time.time() * 1000), "cells": cur}, open(snap_path, "w"), indent=2)
     # land the rich per-store cells to the warehouse (the master + hemp views read binnys_products) + the
     # dated observation time-series (qty = exact on-hand; the whole reason Binny's is a Counts source).
     try:
         recs = [{k: v.get(k) for k in PRODUCT_FIELDS} for v in cur.values()]
-        warehouse.write_accumulate("binnys_products", recs, key=lambda r: (r["sku"], r["store"]),
-                                   fields=PRODUCT_FIELDS)
+        # a COMPLETE full crawl is the whole catalog -> OVERWRITE (a clean, consistently-typed schema);
+        # merging into the old narrower table with write_accumulate hits a pyarrow type conflict (old
+        # string cols vs new numeric). Anything else accumulates so it grows rather than clobbers.
+        #
+        # `crawl_all` alone is NOT sufficient authority to replace a catalog: pagination breaks out on a
+        # page error and --limit truncates, so a full crawl can return a few hundred rows of a 29,787-SKU
+        # table. That write would not be EMPTY, so warehouse's empty-write guard would not catch it. Hence
+        # both a completeness flag and a row-count floor.
+        if crawl_all and crawl_complete and _safe_to_replace(len(recs), log):
+            warehouse.write_parquet("binnys_products", recs, fields=PRODUCT_FIELDS)
+        else:
+            warehouse.write_accumulate("binnys_products", recs, key=lambda r: (r["sku"], r["store"]),
+                                       fields=PRODUCT_FIELDS)
         observe.record("binnys", [{"source": "binnys", "store_id": v["store"], "store": "Binny's #%s" % v["store"],
                                    "product_id": v["sku"], "upc": "", "brand": v["brand"], "name": v["name"],
                                    "price": v["price"], "on_promo": bool(v.get("deal_of_week") or v.get("discount_pct")),
@@ -192,6 +270,9 @@ def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=p
                        log=log)
     except Exception as e:
         log("  [binnys] warehouse land skipped: %s" % str(e)[:80])
+    # Snapshot LAST — after the data is safely landed, so a snapshot failure costs tomorrow's diff
+    # rather than today's catalog.
+    _snap_save(cur, log=log)
     # browsable rollup: one row per (product, store) with price + on-hand units
     header = ["SKU", "Product", "Store", "Price", "Units on hand"]
     rows = [[v["sku"], v["name"], v["store"], v["price"], v["qty"]]

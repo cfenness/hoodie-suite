@@ -95,10 +95,49 @@ def uri(name):
     return ("s3://%s/%s" % (_bucket(), _s3_key(name))) if remote() else _local_path(name)
 
 
+def _partition_files(name):
+    """Every part of the DATE-PARTITIONED layout: <prefix>/<name>/*.parquet (written by
+    write_partition, one file per date×source). Empty list when `name` is not partitioned.
+
+    This layout was invisible to the row counters: they resolved `uri(name)` → <name>.parquet, which
+    for a partitioned table does not exist, so the 404 was classified as genuine absence and the table
+    counted 0. retail_observations — 15.1M rows across ~200 parts — read as EMPTY to every caller,
+    including run_sources' landing verification. Any source writing a partitioned table therefore
+    recorded rows_before=0/rows_after=0/delta=0 on every run and had its status forced to `empty`
+    regardless of what it actually landed."""
+    rel = "%s/%s" % (_prefix(), name)
+    try:
+        if remote():
+            from pyarrow import fs as pafs
+            sel = pafs.FileSelector("%s/%s" % (_bucket(), rel), recursive=False, allow_not_found=True)
+            return [i.path for i in _s3fs().get_file_info(sel) if i.path.endswith(".parquet")]
+        d = os.path.join(_LOCAL_DIR, name)
+        if not os.path.isdir(d):
+            return []
+        return [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".parquet")]
+    except Exception:
+        return []
+
+
+def _partition_rows(paths):
+    """Sum the row counts of the given part files from their FOOTERS only (never reads data).
+    Concurrent because a partitioned table can have hundreds of parts and each footer is a round trip.
+    Raises if ANY part fails to read — a partial sum is a wrong number, and a wrong number here is
+    exactly what this whole fix exists to stop."""
+    import pyarrow.parquet as pq
+    from concurrent.futures import ThreadPoolExecutor
+    fsys = _s3fs() if remote() else None
+
+    def _one(p):
+        return pq.read_metadata(p, filesystem=fsys).num_rows if fsys else pq.read_metadata(p).num_rows
+    with ThreadPoolExecutor(max_workers=min(16, max(4, len(paths)))) as ex:
+        return sum(ex.map(_one, paths))
+
+
 def row_count(name):
-    """Current row count of `<name>` — from the layout manifest when the table is bucketed (v2),
-    else via its Parquet FOOTER only (cheap — never reads data). 0 when the table is genuinely
-    ABSENT.
+    """Current row count of `<name>` — from the layout manifest when the table is bucketed (v2), by
+    summing part footers when it is date-partitioned, else via its Parquet FOOTER only (cheap — never
+    reads data). 0 when the table is genuinely ABSENT.
 
     A TRANSIENT read error (Tigris timeout / dropped part / 503) is RETRIED, not silently reported
     as 0. A false 0 here poisons everything downstream: a healthy pull whose after-count blipped got
@@ -109,6 +148,12 @@ def row_count(name):
     man = read_manifest(name)
     if man and man.get("layout") == "bucketed":
         return sum(int(p.get("rows") or 0) for p in (man.get("parts") or {}).values())
+    parts = _partition_files(name)
+    if parts:
+        try:
+            return _retry(lambda: _partition_rows(parts), "row_count(parts) %s" % name)
+        except Exception:
+            return 0                                    # display-safe fallback (contract unchanged)
     import pyarrow.parquet as pq
     u = uri(name)
     def _read():
@@ -143,6 +188,14 @@ def row_count_strict(name):
     man = read_manifest(name)
     if man and man.get("layout") == "bucketed":
         return sum(int(p.get("rows") or 0) for p in (man.get("parts") or {}).values())
+    parts = _partition_files(name)
+    if parts:
+        # A partitioned table that we CAN see parts for but cannot read is UNKNOWN, never 0 — the same
+        # rule the single-file path already follows, for the same reason.
+        try:
+            return _retry(lambda: _partition_rows(parts), "row_count(parts) %s" % name)
+        except Exception as e:
+            raise RowCountUnavailable("%s (partitioned, %d parts): %s" % (name, len(parts), str(e)[:100]))
     import pyarrow.parquet as pq
     u = uri(name)
     def _read():
@@ -195,7 +248,21 @@ def write_parquet(name, records, fields=None, allow_empty=False):
     return {"rows": len(records), "uri": uri(name)}
 
 
-def write_accumulate(name, records, key, fields=None):
+def _as_key_fn(key):
+    """Normalise a `key` into a callable. Accepts a callable (used as-is), a column NAME, or a
+    sequence of column names for a composite key."""
+    if callable(key):
+        return key
+    if isinstance(key, str):
+        return lambda r: r.get(key)
+    if isinstance(key, (list, tuple)):
+        cols = tuple(key)
+        return lambda r: tuple(r.get(c) for c in cols)
+    raise TypeError("write_accumulate(key=...) must be a callable, a column name, or a sequence of "
+                    "column names; got %r" % type(key).__name__)
+
+
+def write_accumulate(name, records, key, fields=None, coverage=True):
     """MERGE `records` into the existing `<name>` table instead of overwriting it: drop existing rows whose
     `key` is being re-written, keep the rest, append `records`. So a small/partial/different-scope run GROWS a
     persistent catalog rather than clobbering a bigger prior run (`write_parquet` is a full overwrite — there
@@ -209,10 +276,30 @@ def write_accumulate(name, records, key, fields=None):
     records = list(records or [])
     if not records:
         return {"rows": 0, "uri": uri(name)}
+    # KEY MAY BE A COLUMN NAME, not just a callable. `key="ts"` reads as obviously correct and has now
+    # been written three separate times (snowflake_load, abc_fws, and again by hand) — each time
+    # blowing up at runtime with "TypeError: 'str' object is not callable", and each time only AFTER
+    # the expensive work was already done. An API whose natural-looking usage is a latent crash is the
+    # defect; accept the natural form instead of collecting more instances of the same bug.
+    key = _as_key_fn(key)
     man = read_manifest(name)
     if man and man.get("layout") == "bucketed":
         res = _accumulate_bucketed(name, man, records)
     else:
+        # READ-MODIFY-WRITE, AND THEREFORE SINGLE-WRITER ONLY. This reads the whole table, drops the
+        # keys being replaced, and OVERWRITES. Two callers at once = a lost update: the second writer
+        # silently discards everything the first landed. That is not theoretical — an 8-shard UberEats
+        # fleet drove ubereats_products from 33,250 rows DOWN to 8,798 the first time the shards lived
+        # long enough to overlap. Sharded writers must append parts and let ONE process consolidate.
+        #
+        # A shard cannot always know it is one, so refuse structurally rather than trusting callers:
+        # HOODIE_SHARD is set per-machine for every fleet member.
+        _shard = os.environ.get("HOODIE_SHARD") or os.environ.get("UE_SHARD")
+        if _shard and str(_shard).split("/")[-1] not in ("1", ""):
+            raise RuntimeError(
+                "write_accumulate(%r) called from shard %s — concurrent merge would LOSE ROWS. "
+                "Shards must write append-only parts (write_partition) and a single writer must "
+                "consolidate." % (name, _shard))
         try:
             existing = query(name, "SELECT * FROM t")
         except Exception:
@@ -222,11 +309,18 @@ def write_accumulate(name, records, key, fields=None):
         res = write_parquet(name, merged, fields=fields)
     # Coverage telemetry: record how many distinct items/stores THIS write touched (the honest per-run
     # signal a cumulative merge can't give). Best-effort AFTER the write — must never affect the landing.
-    try:
-        import coverage as _cov
-        _cov.record_write(name, records, key=key, result=res)
-    except Exception:
-        pass
+    #
+    # `coverage=False` for a write that is NOT the source's fact grain. Coverage keeps one reading per
+    # source, so with several tables the LAST write wins — and when abc-fws began landing its item
+    # master (13,986 rows keyed by sku, no `store` column) after its per-store observations, that
+    # catalog write overwrote the real signal: stores read 0 of 133 and a verified 100% crawl was
+    # recorded `incomplete`. A catalog write should not be measured against a per-store universe.
+    if coverage:
+        try:
+            import coverage as _cov
+            _cov.record_write(name, records, key=key, result=res)
+        except Exception:
+            pass
     return res
 
 
@@ -406,6 +500,12 @@ def connect():
     """A DuckDB connection, configured for the Tigris endpoint when in remote mode."""
     import duckdb
     con = duckdb.connect()
+    # No ANSI progress bars. Scraper stdout IS the live console in Hoodie Collect, and a redrawing
+    # bar arrives down a pipe as dozens of junk lines that bury the run's actual messages.
+    try:
+        con.execute("SET enable_progress_bar=false")
+    except Exception:
+        pass
     if remote():
         host = _endpoint().replace("https://", "").replace("http://", "")
         con.execute("INSTALL httpfs; LOAD httpfs;")
@@ -642,6 +742,17 @@ def create_bucketed(name, key_cols, fields, hex_len=2):
     return man
 
 
+def _avg_row_bytes(src):
+    """Rough bytes-per-row of a parquet file, from its footer — no data read. Used to decide how wide a
+    partitioned write may go: fat rows need few open buffers, lean rows can use many."""
+    try:
+        import pyarrow.parquet as pq
+        md = pq.read_metadata(src[5:], filesystem=_s3fs()) if src.startswith("s3://") else pq.read_metadata(src)
+        return int(md.serialized_size / max(1, md.num_rows)) if md.num_rows else 0
+    except Exception:
+        return 4096                      # unknown → assume fat and stay conservative
+
+
 def migrate_to_bucketed(name, key_cols, hex_len=2):
     """One-time, VERIFIED migration of an existing single-file table to the bucketed layout.
 
@@ -676,6 +787,33 @@ def migrate_to_bucketed(name, key_cols, hex_len=2):
         _part_delete(rel)
     out_dir = (("s3://%s/%s/%s" % (_bucket(), _prefix(), name)) if remote()
                else os.path.join(_LOCAL_DIR, name)).replace("'", "")
+    # A PARTITIONED COPY MUST NOT BUFFER THE TABLE. By default DuckDB preserves insertion order, which
+    # for a PARTITION_BY write means holding rows back to emit them in order — so peak memory scales with
+    # the TABLE, and the migration inherits the exact whole-table memory problem it exists to remove.
+    # Measured: splitting 33,250 ubereats_products rows blew a 1.1GB limit, because every row carries a
+    # full raw_json payload. Nothing downstream depends on row order within a bucket (identity is the
+    # key columns), so ordering is not worth buying. Single-threaded for the same reason: parallel
+    # writers each hold their own buffers.
+    con.execute("SET preserve_insertion_order=false")
+    con.execute("SET threads=1")
+    # BOUND THE OPEN PARTITION BUFFERS. hex_len=2 means 256 output partitions, and a PARTITION_BY write
+    # keeps a buffer open per partition — so peak memory is (open partitions x buffered rows), and with a
+    # fat raw_json column that blows a gigabyte on a 33k-row table. Ordering was not the cost; breadth
+    # was. Cap how many partitions are open at once and flush each sooner: the write becomes several
+    # bounded passes instead of one wide one. Wrapped because these pragmas are version-dependent, and a
+    # DuckDB without them should still do the migration, just hungrier.
+    # The cap trades MEMORY for ROUND TRIPS: fewer open partitions means several sequential passes, each
+    # writing to object storage. That was the right trade when rows carried fat payloads (8 open files was
+    # the difference between finishing and being OOM-killed). With payloads moved to raw_payloads the rows
+    # are lean, memory is no longer the binding constraint, and a low cap just makes the write slow for
+    # nothing. Scale it to the actual row weight instead of pinning it to the worst case that used to be.
+    _open_files = 8 if _avg_row_bytes(src) > 2048 else 64
+    for pragma in ("SET partitioned_write_max_open_files=%d" % _open_files,
+                   "SET partitioned_write_flush_threshold=4096"):
+        try:
+            con.execute(pragma)
+        except Exception:
+            pass
     con.execute("COPY (SELECT *, substr(md5(%s), 1, %d) AS __b FROM read_parquet('%s')) TO '%s' "
                 "(FORMAT PARQUET, PARTITION_BY (__b), COMPRESSION ZSTD)" % (ks, hex_len, src, out_dir))
     parts, total = {}, 0

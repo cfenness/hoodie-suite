@@ -64,8 +64,13 @@ def main():
 
     # the run row the shim lands must carry exactly the declared schema (stable Parquet columns)
     if snowflake_load is not None:
+        # `scope` records whether the drop was 'full' or the SNOWFLAKE_ONLY subset — added when scoped
+        # loads shipped, and genuinely built by run(). This expectation is hardcoded ON PURPOSE: adding a
+        # column to a landed table should require someone to look at it, not slip through. That makes a
+        # stale expectation a code-review job, not a bug — but it must be updated in the same change,
+        # which is what was missed here.
         rec_keys = {"ts", "duration_s", "rows_total", "tables", "raw_tables", "raw_rows",
-                    "master_tables", "master_rows", "host"}
+                    "master_tables", "master_rows", "scope", "host"}
         if set(snowflake_load.FIELDS) != rec_keys:
             fails.append("snowflake_load.FIELDS drifted from the record run() builds")
 

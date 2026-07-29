@@ -331,6 +331,16 @@ production; there is no staging branch.
   (not a path-triggered subset), labels each failure introduced-vs-pre-existing, and attributes it
   to the PR that broke it. Ship with `python3 tools/release_train.py deploy` (or a manual
   `flyctl deploy --remote-only` from a clean `origin/main`). **Never re-add a workflow.**
+- **DEPLOY GUARD (installed, mechanical).** `flyctl deploy` ships the WORKING TREE, not a branch,
+  and with several sessions in separate worktrees that is a live clobber — on 2026-07-28 a merged
+  feature was deployed and then silently wiped from the running container by a later deploy from a
+  stale worktree, while every release read `complete`. `tools/deploy_guard.py` installs a shim at
+  `~/.fly/bin/flyctl` that refuses `deploy` unless the tree is a **clean origin/main**; every other
+  subcommand passes through untouched, and it **fails open** on any error it can't resolve.
+  `HOODIE_DEPLOY_OK=1` bypasses it deliberately; `python3 tools/deploy_guard.py uninstall` removes it.
+  **The supported way to ship is `python3 tools/release_train.py deploy`** — it builds its own clean
+  checkout at origin/main, verifies it, deploys, confirms the release landed, and re-pins the
+  dispatcher when `source_registry.py` moved.
 - **Legacy S3/CloudFront** (`deploy.sh`, `cloudfront/`) is **DORMANT** — kept for
   reference only. Ignore it unless deliberately resuming S3 serving.
 
