@@ -77,8 +77,15 @@ def _browser(site):
         # bundled Chromium, so a default launch would look for a browser that is not there. Using the
         # real Chrome is also the better fingerprint: genuine build, genuine GPU strings, which is the
         # entire reason this rung exists.
-        _BR["w"] = browser_warm.Warmer(dom, proxy=proxy, patchright=True,
-                                       channel=os.environ.get("BROWSER_CHANNEL", "chrome"))
+        w = browser_warm.Warmer(dom, proxy=proxy, patchright=True,
+                                channel=os.environ.get("BROWSER_CHANNEL", "chrome"))
+        # Warmer is a CONTEXT MANAGER — __enter__ is what actually launches Chrome and builds the
+        # persistent context. Constructing it only sets fields, so calling post_json on an un-entered
+        # Warmer fails with "'NoneType' object has no attribute 'pages'". We hold it open for the life
+        # of the process deliberately: the persistent profile is the point, since a returning profile
+        # accumulates trust and gets challenged less each run.
+        w.__enter__()
+        _BR["w"] = w
         _BR["site"] = site
         return _BR["w"]
 
