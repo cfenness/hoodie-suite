@@ -73,7 +73,12 @@ def _browser(site):
         except Exception:
             proxy = None
         dom = _base(site).replace("https://", "").replace("http://", "")
-        _BR["w"] = browser_warm.Warmer(dom, proxy=proxy, patchright=True)
+        # channel="chrome" — the Fly image ships the REAL Google Chrome at /usr/bin/google-chrome and no
+        # bundled Chromium, so a default launch would look for a browser that is not there. Using the
+        # real Chrome is also the better fingerprint: genuine build, genuine GPU strings, which is the
+        # entire reason this rung exists.
+        _BR["w"] = browser_warm.Warmer(dom, proxy=proxy, patchright=True,
+                                       channel=os.environ.get("BROWSER_CHANNEL", "chrome"))
         _BR["site"] = site
         return _BR["w"]
 
