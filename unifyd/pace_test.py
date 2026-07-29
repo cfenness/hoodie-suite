@@ -130,6 +130,29 @@ t0 = time.time()
 floored.acquire()
 check("a floored pacer never deadlocks", time.time() - t0 < 6.0, True)
 
+# ── CALIBRATING UNDER DURESS: a learned baseline needs a ceiling ─────────────────────────────────
+# Observed live: a run began 82% CAPTCHA-challenged, learned 0.82 as its "normal" background, set the
+# trip at 0.82+0.25 = 1.07, and became mathematically incapable of firing — the rate CLIMBED to 6.65/s
+# while 82% of responses were challenges. This is the same error as calibrating 3/IP during a throttle,
+# which pace.py's own comment warns about; the warning existed and was not applied to the calibration.
+# Above BASELINE_MAX we are not measuring a background, we are measuring a wall.
+blocked = pace.Pacer(rate=5.0, window=10)
+for _ in range(6):
+    for i in range(10):
+        blocked.report(ok=(i >= 8))          # 80% blocked from the very first window
+check("a run starting blocked still trips", blocked.stats()["backoffs"] > 0, True)
+check("...and backs the rate down", blocked.rate < 5.0, True)
+check("...using the fixed floor, not the learned wall", blocked.empty_trip, pace.TRIP_FLOOR)
+
+# and the healthy case must be unaffected — it still learns its own background and climbs
+healthy2 = pace.Pacer(rate=5.0, window=10)
+for _ in range(6):
+    for i in range(10):
+        healthy2.report(ok=(i >= 3))         # 30% dead-store background
+check("healthy background still climbs", healthy2.rate > 5.0, True)
+check("healthy background never trips", healthy2.stats()["backoffs"], 0)
+check("healthy trip sits above its baseline", healthy2.empty_trip > 0.5, True)
+
 if fails:
     print("\n".join("  FAIL " + f for f in fails))
     print("── %d failed" % len(fails))
