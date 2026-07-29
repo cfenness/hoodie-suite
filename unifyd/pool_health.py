@@ -70,8 +70,10 @@ def live_fire(n=6, site="ubereats", log=print):
     for px in pool:
         host = px.split("@")[-1].split(":")[0]
         # Pin this thread to ONE exit for the whole sample, so every outcome is attributable.
-        getstore._TL.s = None
-        getstore._TL.exit = host
+        # This USED to assign `_TL.exit` directly, which `_session` overwrote with its own round-robin
+        # pick — so the loop below counted each result against an exit that never carried the request,
+        # and the burned-vs-fresh comparison this function exists for was reading mislabelled data.
+        host = getstore.pin_exit(px) or host
         good = bad = 0
         for _ in range(n):
             uid = ids[k % len(ids)]
@@ -90,6 +92,7 @@ def live_fire(n=6, site="ubereats", log=print):
                 good += 1
         rows.append((host, good, bad))
         log("  %-16s %d ok / %d blocked" % (host, good, bad))
+    getstore.unpin()                      # leave the thread on round-robin, not stuck on the last exit
     tot_g = sum(g for _, g, _ in rows)
     tot_b = sum(b for _, _, b in rows)
     log("")

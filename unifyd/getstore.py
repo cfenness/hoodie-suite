@@ -159,6 +159,39 @@ def rotate_profile(site, log=print):
 _TL_RESET = [0]
 
 
+def pin_exit(entry):
+    """Force THIS thread's requests through one pool entry, and say which exit that is.
+
+    THE BUG THIS FIXES. `pool_health.live_fire` documented itself as pinning a thread to one exit so
+    outcomes would be "attributable by construction", and did it by assigning `_TL.exit` directly — which
+    `_session` then overwrote with its own round-robin pick on the very next call. Every result was
+    counted against an address that had not carried the request. An instrument built specifically to
+    answer "burned identity or blown fingerprint" was answering it from mislabelled data, which is worse
+    than not having measured at all: a wrong attribution still looks like evidence.
+
+    Returns the exit IP now pinned. `unpin()` restores round-robin."""
+    _TL.pin = entry
+    try:
+        _TL.s.close()
+    except Exception:
+        pass
+    _TL.s, _TL.n = None, 0                # the next request builds a session on the pinned proxy
+    try:
+        _TL.exit = entry.split("@")[-1].split(":")[0]
+    except Exception:
+        _TL.exit = None
+    return _TL.exit
+
+
+def unpin():
+    _TL.pin = None
+    try:
+        _TL.s.close()
+    except Exception:
+        pass
+    _TL.s, _TL.n = None, 0
+
+
 def _exit_ip():
     """The exit this thread's session is pinned to, so an outcome can be attributed to the identity that
     produced it rather than to the pool as a whole."""
@@ -231,7 +264,17 @@ def _session(site):
         pool = resi.isp_pool()
     except Exception:
         pool = []
-    if pool:
+    pin = getattr(_TL, "pin", None)
+    if pin:
+        # A MEASUREMENT PINNED THIS THREAD. Round-robin is right for production and fatal for
+        # attribution: a caller that wants "N requests through THIS exit" must actually get this exit,
+        # or every outcome is filed against an address that never carried it.
+        px = pin
+        try:
+            _TL.exit = px.split("@")[-1].split(":")[0]
+        except Exception:
+            _TL.exit = None
+    elif pool:
         # ROUND-ROBIN by an explicit counter, not by thread ident. Thread ids are arbitrary values, so
         # `ident % len(pool)` distributes unevenly — several workers can land on one IP while others go
         # unused, which concentrates load exactly where the limit is and looks like a smaller pool.

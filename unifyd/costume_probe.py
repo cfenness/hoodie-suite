@@ -308,14 +308,41 @@ class _ProbeTally(object):
         return getattr(self.inner, k)
 
 
-def _run_arm(workers, ids, costume, site, log):
+def _run_arm(workers, ids, costume, site, log, exit_offset=0):
     import blocks
     import getstore
+    import resi
     getstore._PROF[site] = costume
     getstore._TL_RESET[0] += 1            # every thread re-primes on this costume
     inner = blocks.install()
     probe = _ProbeTally(inner)
     blocks._GLOBAL["tally"] = probe
+
+    # PIN ONE EXIT PER WORKER, and start each arm at a different offset in the pool.
+    #
+    # Unpinned, the exit a request uses is chosen round-robin AT SESSION PRIME, so a 2-worker arm touches
+    # ~2 addresses and a 16-worker arm touches ~16 — which makes exit identity a function of worker count
+    # and puts the per-exit marginal beyond rescue. The first run of this probe hit exactly that: 50 exits
+    # ranging 0-100%, none of it attributable, because the clean arm and the burned arm had not been
+    # through the same addresses.
+    #
+    # The offset matters as much as the pin. Without it every arm would reuse the SAME first W exits, so
+    # a later arm would inherit the damage done to them by an earlier one and the control replicate would
+    # measure those addresses' recovery rather than the pool's.
+    try:
+        pool = resi.isp_pool() or []
+    except Exception:
+        pool = []
+    seat = [0]
+    seat_lock = threading.Lock()
+
+    def _seat_worker():
+        if not pool:
+            return
+        with seat_lock:
+            i = seat[0]
+            seat[0] += 1
+        getstore.pin_exit(pool[(exit_offset + i) % len(pool)])
 
     def _one(url_id):
         su = getstore.url_id_to_uuid(url_id)
@@ -327,10 +354,11 @@ def _run_arm(workers, ids, costume, site, log):
             pass                          # the tally already recorded the classified failure
 
     t0 = time.time()
-    with cf.ThreadPoolExecutor(max_workers=workers) as ex:
+    with cf.ThreadPoolExecutor(max_workers=workers, initializer=_seat_worker) as ex:
         list(ex.map(_one, ids))
     el = round(time.time() - t0, 1)
-    arm = {"workers": workers, "costume": costume, "elapsed_s": el, "records": list(probe.records)}
+    arm = {"workers": workers, "costume": costume, "elapsed_s": el, "exit_offset": exit_offset,
+           "records": list(probe.records)}
     s = arm_summary(arm)
     log("  workers=%-3d n=%-4d %5.1f%% usable  %5.1fs  %.1f req/s  %s"
         % (workers, s["n"], s["usable_pct"] or 0.0, el, s["req_per_s"] or 0.0,
@@ -360,10 +388,12 @@ def run(plan, per_arm, costumes, site="ubereats", log=print):
         for costume in costumes:
             log("costume %s:" % costume)
             arms = []
+            off = 0
             for w in plan:
                 chunk = [ids[(k + i) % len(ids)] for i in range(per_arm)]
                 k += per_arm
-                arms.append(_run_arm(w, chunk, costume, site, log))
+                arms.append(_run_arm(w, chunk, costume, site, log, exit_offset=off))
+                off += w                  # the next arm starts on addresses this one did not touch
             out["costumes"][costume] = analyse(arms)
             v = out["costumes"][costume]["verdict"]
             log("  -> %s" % v["hypothesis"].upper())

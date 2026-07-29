@@ -197,16 +197,24 @@ def exit_pattern(agg, min_per_exit=8):
     mid = len(pcts) // 2
     median = pcts[mid] if len(pcts) % 2 else round((pcts[mid - 1] + pcts[mid]) / 2.0, 1)
     bad = [k for k, v in usable.items() if v["pct"] < median - 25]
+    good = [k for k, v in usable.items() if v["pct"] > median + 25]
     spread = round(pcts[-1] - pcts[0], 1)
-    if bad and len(bad) <= max(1, len(usable) // 3) and median >= 70:
+    minority = max(1, len(usable) // 3)
+    if bad and len(bad) <= minority and median >= 70:
         pattern = "burned_subset"
+    elif good and len(good) <= minority and median <= 30:
+        # THE MIRROR CASE, and the one the first version could not name. Once the median collapses to 0
+        # nothing can sit 25 points BELOW it, so `bad` is empty and the finding went silent exactly when
+        # the pool was worst. The informative fact there is not who died — it is who SURVIVED, because
+        # those addresses are the lead: find what they have in common and that is the way back.
+        pattern = "surviving_subset"
     elif spread <= 20:
         pattern = "uniform"
     else:
         pattern = "mixed"
     return {"pattern": pattern, "exits": len(agg), "rated": len(usable), "median_pct": median,
             "best_pct": pcts[-1], "worst_pct": pcts[0], "spread_pp": spread,
-            "below_median_25pp": sorted(bad)}
+            "below_median_25pp": sorted(bad), "above_median_25pp": sorted(good)}
 
 
 _GLOBAL = {"tally": None}

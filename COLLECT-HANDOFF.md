@@ -19,19 +19,47 @@ it says otherwise.
 **The goal was not met and is not close on current evidence.** But nothing structural blocks it: at
 46.5/s the fleet asks only ~2.3 req/s per exit IP and ~0.9 session primes/s, neither aggressive.
 
-### The open problem, stated precisely
+### The open problem — ANSWERED 2026-07-29, and the answer is a third thing
 
-`impersonate="safari17_0"` returns **4/4 usable** on a single sequential probe and **51% usable** under
-8-shard fleet load. So the costume works but degrades with concurrency or volume. That is the next
-thing to characterise, and the obvious experiments are:
+Run it yourself with `costume_probe.py` (see §6). Four arms, 400 requests each, equal volume, on
+`safari17_0`, with every controller frozen so nothing adapted under the measurement:
 
-1. Does usable% fall with **concurrency** (workers/shard) or with **cumulative requests** (a quota)?
-   Run one shard at 2, 8, 15 workers and compare. This is a 20-minute experiment and it decides
-   whether the answer is pacing or rotation.
-2. Do **different costumes degrade differently**? `pool_health.py`-style sweep but under load, not
-   single requests. `firefox133` and `edge101` were also 2/2 clean and are untested at scale.
-3. Is degradation **per exit IP**? `blocks.Tally.by_exit()` already attributes outcomes to individual
-   IPs — surface it in the run record and look for a burned subset rather than a uniform decline.
+| arm | workers | usable | rate | **usable/s** | within the arm |
+|---|---|---|---|---|---|
+| 1 | 2 | **84.0%** | 3.7/s | **3.09** | 97.0% → 56.4% (decaying, z=7.8) |
+| 2 | 8 | 10.0% | 30.3/s | **3.03** | — |
+| 3 | 16 | 0.2% | 70.2/s | 0.18 | — |
+| 4 = control | 2 | 8.2% | 7.9/s | 0.65 | 0.0% → **24.8%** (recovering) |
+
+Control replicate fell **75.8 pp** (z=21.5). Arms 2 and 3 ran **45.6** and **36.4 pp** below their
+time-adjusted baselines. Verdict: **BOTH** — but the useful finding is the shape, not the label.
+
+- **Concurrency is the dominant immediate variable.** 84% → 10% → 0.2% across 2 → 8 → 16 workers, one
+  process, one machine.
+- **The damage outlives the load.** Arm 4 was back at 2 workers and opened at **0%**.
+- **It is NOT a consumed quota.** Arm 4 climbed to 24.8% *within* the arm, and a follow-up probe read
+  27.5% two minutes later. A quota does not recover. This is a **penalty with a recovery constant** —
+  a third model, and neither of the two hypotheses above named it.
+- **There is wear even at 2 workers.** The first arm, on a rested pool, fell 97% → 56% over 400
+  requests. That component is independent of the bursts.
+- **The number that governs the 3-hour goal:** arms 1 and 2 delivered *identical usable data* — 3.09 vs
+  3.03 stores/s — across an 8× difference in request rate. Going 2 → 8 workers bought **nothing**; 16
+  destroyed it. Failures were almost entirely `captcha` (359/400, then 399/400), not 429s.
+
+**So the ceiling is identity capacity, not pacing.** More workers per identity is a ~1:1 trade of
+success rate for request rate. Reaching 46.5/s needs roughly 15× more *independent* identity capacity,
+not a better rate controller — which also retires the framing in §1 that "nothing structural blocks it".
+
+**What is still open**, in priority order:
+
+1. **Volume-wear vs burst-damage are not yet separated.** The control replicate sits at the END, so it
+   inherits whatever arms 2 and 3 did. Run `--arms 2,2,2,2 --per-arm 400` **on a rested pool**: if the
+   decline reproduces with no high-concurrency arm, it is volume; if not, the bursts caused it.
+2. **The recovery constant is unmeasured and looks long.** 24.8% → 27.5% over ~2.5 minutes against an
+   84% rested baseline. That constant sets the real cadence for any fleet design, and nothing else can
+   be sized until it is known. Probe at intervals after a burn.
+3. **Do different costumes degrade differently?** `firefox133` and `edge101` were 2/2 clean and remain
+   untested at scale. `costume_probe.py --costumes` runs the same plan per costume.
 
 ---
 
@@ -49,6 +77,8 @@ Every one of these came from a specific failure. The failures matter more than t
 | `value_rules.py` | plausible-but-wrong values — UPC check digit, ABV range, price sanity, cross-field | right type + wrong number survives every other check |
 | `raw_capture.py` | full payloads, append-only | payloads inside an accumulating catalog made memory scale with the TABLE |
 | `pool_health.py` | what every proxy exit actually is (geo, ISP, reachability) + live-fire per exit | production ran on an unaccounted pool; 26 of 50 exits were non-US |
+| `adapt.py` | one switch that holds `pace`, `sessions` and `ladder` still | you cannot measure a system that adapts to your measurement — a ladder rotating costume mid-arm hands back a clean result for a reason the experiment never recorded |
+| `costume_probe.py` | whether degradation tracks concurrency or accumulated volume | four models had been fitted to a blended signal, each disproved only by the next run |
 
 ### The design rules these share
 
@@ -77,9 +107,15 @@ Nearly every bug this session was **a system reporting itself healthy while doin
 - a hung fleet kept its last metrics and read as alive (**8 shards, 0 progress, 4 minutes**)
 - a pacer **climbed** while 82% of responses were CAPTCHAs
 - three tests asserted one layer away from where the bug lived, and passed while the feature did nothing
+- `pool_health.live_fire` documented itself as pinning one thread to one exit "so every outcome is
+  attributable", and pinned nothing: it assigned `_TL.exit` directly and `_session` overwrote it with
+  its own round-robin pick on the next call. **Every result was filed against an address that had not
+  carried the request** — in the one instrument built to tell a burned identity from a blown
+  fingerprint. Fixed 2026-07-29 (`getstore.pin_exit`); any per-exit reading taken before that is void.
 
 **If a number looks good, check what would have to be true for it to be false.** The instrumentation
-lying was consistently more expensive than the scrapers breaking.
+lying was consistently more expensive than the scrapers breaking. Note the shape of the entry above:
+the docstring asserted the property, and nothing checked that the property held.
 
 ---
 
@@ -131,6 +167,16 @@ flyctl ssh console -a hoodie-suite -C "python3 /app/unifyd/pool_health.py"
 # fire real requests per exit — burned vs fresh identity comparison
 flyctl ssh console -a hoodie-suite -C "python3 /app/unifyd/pool_health.py --fire 4"
 
+# concurrency vs cumulative — arms of equal volume, last arm repeats the first as the control.
+# Every controller is frozen for the duration; a null result reports what it could have detected.
+flyctl ssh console -a hoodie-suite -C \
+  "python3 /app/unifyd/costume_probe.py --arms 2,8,16,2 --per-arm 400 --out /tmp/probe.json"
+
+# RUN IT ON A RESTED POOL. A probe fired straight after a burn measures the burn: the pool was at
+# 27.5% two minutes after the run above, against an 84% rested baseline. Check with a cheap
+# single arm first and only proceed when it is back near baseline.
+flyctl ssh console -a hoodie-suite -C "python3 /app/unifyd/costume_probe.py --arms 2 --per-arm 40"
+
 # rebuild coverage from landed evidence after a bad run
 flyctl ssh console -a hoodie-suite -C "python3 -c \"
 import sys; sys.path.insert(0,'/app/unifyd'); import ue_catalog as U; U.repair_checkpoints('ubereats')\""
@@ -143,14 +189,22 @@ import sys; sys.path.insert(0,'/app/unifyd'); import ue_catalog as U; U.repair_c
 
 ## 7. What I'd do next, in order
 
-1. **Characterise the 51% degradation** (§1). Concurrency vs cumulative — 20 minutes, decides everything.
-2. **Surface `by_exit()` in the run record.** The attribution exists but isn't reported; a burned subset
-   looks identical to a uniform decline without it.
-3. **Prove `ue_enrich` end-to-end.** It has never completed a run — it died on a schema bug every time,
+Items 1 and 2 of the previous list are **done** — see §1 for the measured answer and the run record now
+carrying `exit_verdict`. What that answer opened up:
+
+1. **Measure the recovery constant.** Everything downstream is sized by it, and it is currently one
+   data point (24.8% → 27.5% over ~2.5 min against an 84% baseline). Burn the pool, then probe at
+   intervals until it is back. Until this number exists, no fleet design can be justified.
+2. **Separate volume-wear from burst-damage** — `--arms 2,2,2,2` on a rested pool (§1).
+3. **Stop trying to buy throughput with workers.** 2 and 8 workers deliver the same usable stores/s.
+   The lever is independent identity capacity; the next design question is what an identity actually
+   is here (exit IP, session cookie, TLS costume, or a combination), because that determines what has
+   to be multiplied 15×.
+4. **Prove `ue_enrich` end-to-end.** It has never completed a run — it died on a schema bug every time,
    so everything past its first query is unexercised. UPC backfill is unproven.
-4. **`pool_health` on a schedule.** A pool silently drifting to 52% foreign looked exactly like "the
+5. **`pool_health` on a schedule.** A pool silently drifting to 52% foreign looked exactly like "the
    target got harder". That should page, not wait for someone to check.
-5. **Then** revisit the 3-hour target. The arithmetic works; the costume stability is the blocker.
+6. **Then** revisit the 3-hour target — but note §1 retires the old framing. It is not a pacing problem.
 
 ---
 
@@ -162,3 +216,10 @@ import sys; sys.path.insert(0,'/app/unifyd'); import ue_catalog as U; U.repair_c
   O(n²) in universe size. Wasteful, not incorrect. Delta checkpoints are the fix.
 - **16+ test files exist that the curated runner never ran.** They pass now, but the runner's list is
   hand-maintained and will drift again; it prints unlisted files as a warning.
+- **Per-exit findings from before 2026-07-29 are void** — `pool_health.live_fire` was attributing to
+  the wrong address (§3). The pin is real now, but nothing has been re-measured through it, so the
+  question it exists to answer — burned identity or blown fingerprint — is still formally open.
+- **The probe's first run could not read its own per-exit marginal.** Exits were chosen round-robin at
+  session prime, so a 2-worker arm touched ~2 addresses and a 16-worker arm ~16: exit identity was a
+  function of worker count. Arms now pin one exit per worker and start at a different pool offset, but
+  that pooled reading is only trustworthy from the next run onward.
