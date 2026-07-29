@@ -33,7 +33,19 @@ MARKETS = {
     # (lat, lon) lattice ~4-5 mi spacing across the metro + suburbs
     "orlando": _grid(28.36, 28.72, -81.52, -81.16, 0.07),   # + Winter Park / Kissimmee / Sanford / UCF / Lake Nona
     "miami":   _grid(25.60, 26.05, -80.45, -80.12, 0.07),
+    # TEXAS — the state DoorDash's own sitemap cannot give us. sitemap-doordash-tx-stores.xml serves a
+    # 270-byte stub with ONE store (California's has 103,811) and there is no alternate URL: tx-1,
+    # texas, .gz, hou and dal all 403. Their feed is broken, so the only route to Texas is to sweep it
+    # geographically. These four metros are ~2/3 of the state's population.
+    "houston":     _grid(29.55, 30.11, -95.79, -95.06, 0.07),
+    "dallas":      _grid(32.60, 33.05, -97.05, -96.55, 0.07),   # Dallas proper + Irving / Plano edge
+    "fortworth":   _grid(32.63, 32.92, -97.45, -97.10, 0.07),
+    "austin":      _grid(30.13, 30.51, -97.94, -97.57, 0.07),
+    "sanantonio":  _grid(29.30, 29.65, -98.70, -98.30, 0.07),
 }
+
+# Convenience: sweep the whole Texas set in one run rather than remembering five market names.
+MARKET_GROUPS = {"texas": ["houston", "dallas", "fortworth", "austin", "sanantonio"]}
 
 # known chain name-stems -> chain vs independent
 _CHAINS = re.compile(
@@ -43,17 +55,62 @@ _CHAINS = re.compile(
     r"yard house|hooters|wingstop|bar louie|cheddar'?s|longhorn|red lobster|bahama breeze|kona grill", re.I)
 
 
-def _browser_auth():
-    k = json.load(open(os.path.expanduser(
-        "~/Library/Application Support/brightdata-cli/credentials.json")))["api_key"]
-    r = urllib.request.Request("https://api.brightdata.com/zone/passwords?zone=cli_browser",
-                               headers={"Authorization": "Bearer " + k})
-    return "brd-customer-hl_32bcfbaa-zone-cli_browser:%s" % json.loads(
-        urllib.request.urlopen(r, timeout=30).read())["passwords"][0]
+# ── FREE BROWSER — no Bright Data ────────────────────────────────────────────────────────────────
+# This used to connect to BD Browser over CDP (wss://brd.superproxy.io:9222), the metered per-GB tier,
+# with credentials read from ~/Library/Application Support/brightdata-cli/ — a path that only exists on
+# one Mac, so the sweep could not run on Fly at all. Two substitutions kill both problems:
+#
+#   1. A LOCAL Chromium (real Chrome, bundled Chromium fallback) — the instacart.py pattern, proven to
+#      clear anti-bot from a bare datacenter IP with no BD and no proxy.
+#   2. `Emulation.setGeolocationOverride`, which is STANDARD CDP, in place of BD's proprietary
+#      `Proxy.setLocation`. Both pin the browser's location; only one costs per-GB.
+#
+# Egress goes through the flat-rate ISP pool (fixed per-IP, unlimited bandwidth) — never the per-GB
+# rotating tier, which stays gated behind FETCH_POLICY=paid.
+def _launch(pw):
+    """(browser, proxy_label). Real Chrome first, bundled Chromium second."""
+    import resi
+    px = None
+    try:
+        if resi.isp_enabled():
+            px = resi.isp_url()
+    except Exception:
+        px = None
+    proxy = {"server": px} if px else None
+    headful = os.environ.get("BROWSER_HEADFUL", "0") != "0"
+    last = None
+    for ch in ("chrome", None):
+        try:
+            kw = {"headless": not headful, "args": ["--no-sandbox"], "proxy": proxy}
+            b = pw.chromium.launch(channel=ch, **kw) if ch else pw.chromium.launch(**kw)
+            return b, (px.split("@")[-1].split(":")[0] if px else "direct")
+        except Exception as e:
+            last = e
+    raise RuntimeError("could not launch a free browser (chrome/bundled): %s" % last)
+
+
+def _set_location(ctx, pg, lat, lon):
+    """Pin the browser's geolocation. Standard CDP, so it needs no vendor.
+
+    BD's `Proxy.setLocation` moved the EXIT IP as well; this moves only the reported coordinates, so
+    the permission grant matters — without it DoorDash's own geolocation call is denied and the page
+    silently falls back to a default market, which would look like a market with no stores rather
+    than a sweep that never moved.
+    """
+    ctx.grant_permissions(["geolocation"], origin="https://www.doordash.com")
+    ctx.set_geolocation({"latitude": float(lat), "longitude": float(lon), "accuracy": 50})
+    cdp = ctx.new_cdp_session(pg)
+    try:
+        cdp.send("Emulation.setGeolocationOverride",
+                 {"latitude": float(lat), "longitude": float(lon), "accuracy": 50})
+    except Exception:
+        pass                                   # context-level geolocation already applied above
+    return cdp
 
 
 def _point_harvest(pg, cdp, lat, lon):
-    cdp.send("Proxy.setLocation", {"lat": lat, "lon": lon, "distance": 30, "strict": True})
+    # Location is pinned by _set_location() before this runs (standard CDP). The old
+    # `Proxy.setLocation` here was Bright Data's own command and 404s on any other browser.
     found = {}
     for term in ALCOHOL_TERMS:
         try:
@@ -78,30 +135,45 @@ def run(market="orlando", points=None, log=print):
     grid = MARKETS[market]
     if points:
         grid = grid[:points]
-    auth = _browser_auth()
     merchants = {}
     with sync_playwright() as p:
-        for i, (lat, lon) in enumerate(grid):
+        # ONE browser for the whole grid, a fresh CONTEXT per point. The BD version reconnected a
+        # remote browser at every pin — ~90s of setup per point, which is what made a full metro grid
+        # an overnight job. A context is cheap and still gives each point a clean cookie jar, so the
+        # geolocation override is the only thing that carries between pins.
+        browser, exit_label = _launch(p)
+        log("  [dd-geo] free browser up (egress=%s) — no Bright Data" % exit_label)
+        try:
+            for i, (lat, lon) in enumerate(grid):
+                ctx = None
+                try:
+                    ctx = browser.new_context(locale="en-US")
+                    pg = ctx.new_page()
+                    cdp = _set_location(ctx, pg, lat, lon)
+                    pts = _point_harvest(pg, cdp, lat, lon)
+                except Exception as e:
+                    log("  pt %d (%.3f,%.3f) failed: %s" % (i, lat, lon, str(e)[:60])); continue
+                finally:
+                    if ctx is not None:
+                        try: ctx.close()
+                        except Exception: pass
+                new = 0
+                for k, v in pts.items():
+                    if k not in merchants:
+                        is_chain = bool(_CHAINS.search(v["name"]))
+                        # provisional cuisine from the name (restaurants); the pull upgrades it to page servesCuisine
+                        cz = cui.from_name(v["name"]) if v["type"] == "restaurant" else ""
+                        merchants[k] = dict(store_id=k, name=v["name"], type=v["type"], is_chain=is_chain,
+                                            chain=(v["name"] if is_chain else ""), cuisine=cz,
+                                            cuisine_source=("name" if cz else ""), market=market)
+                        new += 1
+                log("  [%s] pt %d/%d (%.3f,%.3f) — +%d new (total %d)"
+                    % (market, i + 1, len(grid), lat, lon, new, len(merchants)))
+        finally:
             try:
-                b = p.chromium.connect_over_cdp("wss://%s@brd.superproxy.io:9222" % auth, timeout=90000)
-                ctx = b.contexts[0] if b.contexts else b.new_context()
-                pg = ctx.pages[0] if ctx.pages else ctx.new_page()
-                cdp = ctx.new_cdp_session(pg)
-                pts = _point_harvest(pg, cdp, lat, lon)
-                b.close()
-            except Exception as e:
-                log("  pt %d (%.3f,%.3f) failed: %s" % (i, lat, lon, str(e)[:40])); continue
-            new = 0
-            for k, v in pts.items():
-                if k not in merchants:
-                    is_chain = bool(_CHAINS.search(v["name"]))
-                    # provisional cuisine from the name (restaurants); the pull upgrades it to page servesCuisine
-                    cz = cui.from_name(v["name"]) if v["type"] == "restaurant" else ""
-                    merchants[k] = dict(store_id=k, name=v["name"], type=v["type"], is_chain=is_chain,
-                                        chain=(v["name"] if is_chain else ""), cuisine=cz,
-                                        cuisine_source=("name" if cz else ""), market=market)
-                    new += 1
-            log("  [%s] pt %d/%d (%.3f,%.3f) — +%d new (total %d)" % (market, i + 1, len(grid), lat, lon, new, len(merchants)))
+                browser.close()
+            except Exception:
+                pass
     unsure = [m["name"] for m in merchants.values() if m["type"] == "restaurant" and not m["cuisine"]]
     if unsure:                                                     # Claude fallback for name-only unknowns
         guess = cui.claude_cuisine(unsure)
@@ -119,9 +191,37 @@ def run(market="orlando", points=None, log=print):
     return rows
 
 
+def run_group(group="texas", points=None, log=print):
+    """Sweep every market in a group (e.g. all five Texas metros) in one process.
+
+    Sequential on purpose: the markets share one endpoint's quota, so running them concurrently would
+    just spend the same budget faster and trip the throttle that the per-point pacing avoids.
+    """
+    names = MARKET_GROUPS.get(group) or [group]
+    total = 0
+    for m in names:
+        if m not in MARKETS:
+            log("  [dd-geo] unknown market %r — skipped" % m)
+            continue
+        try:
+            total += (run(m, points=points, log=log) or 0)
+        except Exception as e:                                # noqa: BLE001 — one metro must not
+            log("  [dd-geo] market %s failed: %s" % (m, str(e)[:120]))   # abort the rest
+    return total
+
+
+def run_texas(log=print):
+    """Registry entrypoint. Texas exists as its own source because DoorDash's TX sitemap is broken
+    (one store statewide), so the geographic sweep is the ONLY route to those outlets."""
+    return run_group("texas", log=log)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--market", default="orlando")
+    ap.add_argument("--market", default="orlando", help="a market name, or a group like 'texas'")
     ap.add_argument("--points", type=int, default=0)
     a = ap.parse_args()
-    run(a.market, points=a.points or None)
+    if a.market in MARKET_GROUPS:
+        run_group(a.market, points=a.points or None)
+    else:
+        run(a.market, points=a.points or None)
