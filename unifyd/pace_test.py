@@ -108,6 +108,28 @@ for _ in range(2):
 check("a real throttle still backs off", c.rate < warm, True)
 check("and is counted", c.stats()["backoffs"] >= 1, True)
 
+# ── THE DEADLOCK: a rate below 1.0/s must still issue tokens ─────────────────────────────────────
+# The bucket capacity was `self.rate`, so below 1.0/s tokens could never reach the 1.0 needed to issue
+# a request. acquire() spun forever, and since the heartbeat only fires when a store completes, the run
+# FROZE while still reporting itself alive: 8 shards, zero progress for 4 minutes, every counter static.
+# min_rate is 0.5, so one backoff to the floor hung a shard permanently.
+#
+# The original acquire() test used rate=20 — comfortably above 1.0 — so it never touched the region
+# where the bug lived. A test aimed away from the failure is how this shipped.
+slow = pace.Pacer(rate=0.5)
+t0 = time.time()
+slow.acquire(); slow.acquire()
+el = time.time() - t0
+check("sub-1.0 rate still issues tokens", el < 6.0, True)
+check("...and is actually rate-limited", el > 1.0, True)
+
+floored = pace.Pacer(rate=0.5, min_rate=0.5, window=10)
+for _ in range(400):
+    floored.report(ok=False)          # drive it to the floor
+t0 = time.time()
+floored.acquire()
+check("a floored pacer never deadlocks", time.time() - t0 < 6.0, True)
+
 if fails:
     print("\n".join("  FAIL " + f for f in fails))
     print("── %d failed" % len(fails))

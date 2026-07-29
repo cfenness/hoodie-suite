@@ -89,7 +89,14 @@ class Pacer:
         while True:
             with self._lock:
                 now = time.time()
-                self._tokens = min(self.rate, self._tokens + (now - self._last) * self.rate)
+                # CAPACITY IS AT LEAST ONE TOKEN. Capping the bucket at `self.rate` deadlocks every
+                # worker the moment the rate drops below 1.0/s: tokens can never reach the 1.0 needed to
+                # issue a request, acquire() spins forever, and because the heartbeat only fires when a
+                # store completes, the run FREEZES while still reporting itself alive — 8 shards, zero
+                # progress for 4 minutes, every counter static. min_rate is 0.5, so a single backoff to
+                # the floor was enough to hang a shard permanently.
+                self._tokens = min(max(1.0, self.rate),
+                                   self._tokens + (now - self._last) * self.rate)
                 self._last = now
                 if self._tokens >= 1.0:
                     self._tokens -= 1.0
