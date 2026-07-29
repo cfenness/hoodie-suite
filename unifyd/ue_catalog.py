@@ -519,6 +519,7 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
     pending, batch_idx, n_items, n_ok, n_empty, n_fail = [], 0, 0, 0, 0, 0
     pend_bytes = [0]                                   # approx heap held by `pending`, for the size cap
     misses = []                                        # url_ids that returned no catalog this pass
+    qa_rows = []                                       # sample of landed rows, for output validation
     import threading
     lock = threading.Lock()
 
@@ -629,6 +630,11 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
                 # `raw_json` dominates; measuring it is enough to track the buffer without walking
                 # every field of every record on the hot path.
                 pend_bytes[0] += sum(len(it.get("raw_json") or "") + 512 for it in items)
+                # Keep a bounded sample for field-level QA. Bounded because this is about DETECTING a
+                # parser break, which a few thousand rows settles as well as a million — and an
+                # unbounded QA buffer would re-create the memory bug we just spent the day removing.
+                if len(qa_rows) < 5000:
+                    qa_rows.extend(items[:max(0, 5000 - len(qa_rows))])
             else:
                 n_empty += 1
             n_seen = len(done)
@@ -689,7 +695,33 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
                 fields=["day", "url_id", "shard"])
         except Exception as e:
             log("  [ue] miss log failed: %s" % str(e)[:90])
+    # OUTPUT VALIDATION. Everything above proves we got the bytes; this asks whether the parser is still
+    # extracting what it extracted yesterday. A target can redesign its payload, return 200 on every
+    # request, and leave every counter green while the corpus fills with nulls — the failure that is
+    # normally found weeks later by whoever consumes the data.
+    qa = {}
+    try:
+        import extract_qa
+        _lean = [k for k in PRODUCT_FIELDS if k != "raw_json"]
+        st = extract_qa.field_stats(qa_rows, fields=_lean)
+        if st:
+            base = extract_qa.baseline_for(site, "%s_products" % site, log=log)
+            vd = extract_qa.assess(st, base)
+            bad = extract_qa.drifted(vd)
+            qa = {"fields": len(st), "drifted": bad,
+                  "fill": {f: st[f]["fill_pct"] for f in sorted(st)[:40]}}
+            extract_qa.record(site, "%s_products" % site, st, day=day, log=log)
+            if bad:
+                # A parser break is not a successful run, however many rows it landed.
+                log("[ue] !! FIELD DRIFT vs %d-day baseline: %s" % (7, extract_qa.summary(st, vd)))
+            else:
+                log("[ue] field QA: %d fields checked, no drift vs baseline" % len(st))
+    except Exception as e:
+        log("[ue] field QA skipped: %s" % str(e)[:100])
+
     status = "success" if not remaining else "degraded"
+    if qa.get("drifted"):
+        status = "degraded"
     rec = {"status": status, "site": site, "shard": "%s/%s" % (shard, nshard),
            "stores_total": len(mine), "stores_done": len(mine) - remaining, "remaining": remaining,
            "items": n_items, "with_catalog": n_ok, "empty": n_empty, "unreachable": n_fail,
@@ -703,6 +735,8 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
             rec["pace"] = _pc.stats()
     except Exception:
         pass
+    if qa:
+        rec["field_qa"] = qa
     # WHY the failures happened, not just how many. `unreachable` alone cost a day of wrong models.
     try:
         import blocks
