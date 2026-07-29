@@ -32,7 +32,12 @@ mkdir -p "$DUCKDB_TEMP_DIR"
 echo "[ephemeral] duckdb memory_limit=$DUCKDB_MEMORY_LIMIT spill=$DUCKDB_TEMP_DIR"
 
 cd /app/unifyd
-python3 run_ephemeral.py "$SRC" "$@"
+# -u (unbuffered): a long pull writes progress to a PIPE, so Python block-buffers stdout and nothing
+# reaches `flyctl logs` until the process exits. A 6h run is therefore invisible for 6h, and one that
+# is SIGKILLed loses its buffer entirely — which is exactly how an aggregator-geo OOM presented as
+# "started, then silence, then failed" with no clue what it had been doing. Streaming the output is
+# what made that diagnosable; make it the default so the next long run is observable while it runs.
+python3 -u run_ephemeral.py "$SRC" "$@"
 CODE=$?
 echo "run_ephemeral.sh: $SRC exited $CODE"
 exit $CODE

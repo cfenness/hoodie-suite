@@ -64,6 +64,27 @@ def enrich_geo(limit=None, workers=None, log=print):
     workers = workers or int(os.environ.get("AGG_GEO_WORKERS", "64"))
     gp = ("AND (geo_precision IS NULL OR geo_precision NOT IN ('exact', 'agg_miss')) "
           if warehouse.has_column("src_outlets", "geo_precision") else "")
+    # SHARDING — 6 machines, one universe, no coordination.
+    # Measured: ~450 rows/min at 64 workers, so a ~770k backlog is ~28h of fetching. That does not fit
+    # one nightly window, and the answer is not a bigger cap (see the no-caps rule) but more machines.
+    # The dispatcher spawns `shards: N` from the registry and hands each machine UE_SHARD=i/N; the split
+    # is a stable hash, so shards cannot overlap or leave a gap and never need to talk to each other.
+    #
+    # A DIFFERENT SALT from the bucket split below. Both are `hash(...) % n` over the same key, so
+    # reusing the expression would correlate them — a shard could draw its rows overwhelmingly from a
+    # few buckets and leave the rest empty, silently doing a fraction of the work it reported.
+    shard_sql, shard_lbl = "", "1/1"
+    try:
+        _sh = os.environ.get("UE_SHARD", "").strip()
+        if _sh and "/" in _sh:
+            _i, _n = (int(x) for x in _sh.split("/", 1))
+            if _n > 1 and 0 <= _i < _n:
+                shard_sql = ("AND (hash(CAST(source AS VARCHAR) || '|' || CAST(store_id AS VARCHAR) "
+                             "|| '#shard') %% %d) = %d " % (_n, _i))
+                shard_lbl = "%d/%d" % (_i + 1, _n)
+    except Exception:                                            # noqa: BLE001 — a bad shard spec must
+        shard_sql, shard_lbl = "", "1/1"                         # run the WHOLE universe, never none
+    gp = gp + shard_sql
     # MEMORY MUST SCALE WITH THE CHUNK, NOT THE BACKLOG.
     #
     # This used to be one `SELECT * ... LIMIT 800000`, materialising up to 800k full 27-column rows as
@@ -89,7 +110,8 @@ def enrich_geo(limit=None, workers=None, log=print):
         return 0
     target = min(int(backlog), int(limit))
     nb = max(1, -(-int(backlog) // chunk))                       # ceil — buckets over the WHOLE backlog
-    log("[agg-geo] backlog %d; %d buckets of ~%d (target this run: %d)" % (backlog, nb, chunk, target))
+    log("[agg-geo] shard %s — backlog %d; %d buckets of ~%d (target this run: %d)"
+        % (shard_lbl, backlog, nb, chunk, target))
     import getstore
     out, cnt, lock = [], [0], threading.Lock()
     cur = [0]                                                    # rows in the bucket being worked
