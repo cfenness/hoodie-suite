@@ -63,7 +63,11 @@ def query(center, radius_mi=15.0, category=None, chains_only=None, q=None,
     lat, lng = center
     s, n, w, e = _bbox(lat, lng, radius_mi)
 
+    # NOT (0,0): Null Island. Some scrapers write 0.0 rather than NULL for "no location" — measured
+    # live on ubereats and postmates, whose lat range starts at exactly 0.000. Left in, those rows
+    # count as geocoded and drop pins in the Atlantic.
     where = ["try_cast(lat AS DOUBLE) IS NOT NULL", "try_cast(lng AS DOUBLE) IS NOT NULL",
+             "NOT (try_cast(lat AS DOUBLE) = 0 AND try_cast(lng AS DOUBLE) = 0)",
              "try_cast(lat AS DOUBLE) BETWEEN ? AND ?", "try_cast(lng AS DOUBLE) BETWEEN ? AND ?"]
     params = [s, n, w, e]
     if category:
