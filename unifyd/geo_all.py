@@ -54,16 +54,19 @@ def _geocode(log):
 
 
 def _agg(log):
+    """MERGE ONLY — the fetching moved to the `aggregator-geo` shard fleet.
+
+    This used to call aggregator_geo.run() in-process, which was right when one machine did the whole
+    pass. Now that aggregator-geo dispatches as 6 sharded machines, running it here too would fetch
+    the same universe a 7th time, on one unsharded machine, competing with its own fleet.
+
+    So this pass is the single SERIALIZED point where the fleet's staged parts become src_outlets.
+    Shards deliberately never merge (concurrent write_accumulate is the clobber the staging exists to
+    prevent), which means if this step is ever removed the fleet still runs, still costs full network,
+    and silently lands nothing.
+    """
     import aggregator_geo
-    n = aggregator_geo.run(log=log)
-    # Fold in whatever the SHARD FLEET staged since the last pass. Shards write disjoint parquet parts
-    # and deliberately do not merge (concurrent write_accumulate is the clobber this all exists to
-    # avoid); this is the single serialized point where the stage becomes src_outlets.
-    try:
-        aggregator_geo.merge_stage(log=log)
-    except Exception as e:                                    # noqa: BLE001
-        log("[geo] stage merge failed: %s" % str(e)[:120])
-    return n
+    return aggregator_geo.merge_stage(log=log)
 
 
 if __name__ == "__main__":
