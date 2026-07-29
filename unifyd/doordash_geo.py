@@ -93,7 +93,21 @@ def _launch(pw):
             px = resi.isp_url()
     except Exception:
         px = None
-    proxy = {"server": px} if px else None
+    # SPLIT THE CREDENTIALS. resi.isp_url() returns http://user:pass@host:port, and Chromium IGNORES
+    # credentials embedded in a proxy URL — Playwright wants username/password as separate keys.
+    # Passing the whole URL as `server` produced ERR_INVALID_AUTH_CREDENTIALS on every navigation,
+    # which _point_harvest swallowed per-term, so a totally failed sweep reported "0 merchants" and
+    # looked like a market with no stores.
+    proxy = None
+    if px:
+        try:
+            u = urllib.parse.urlparse(px)
+            proxy = {"server": "%s://%s:%s" % (u.scheme or "http", u.hostname, u.port or 80)}
+            if u.username:
+                proxy["username"] = urllib.parse.unquote(u.username)
+                proxy["password"] = urllib.parse.unquote(u.password or "")
+        except Exception:
+            proxy = {"server": px}
     headful = os.environ.get("BROWSER_HEADFUL", "0") != "0"
     last = None
     for ch in ("chrome", None):
@@ -128,7 +142,7 @@ def _set_location(ctx, pg, lat, lon):
 def _point_harvest(pg, cdp, lat, lon):
     # Location is pinned by _set_location() before this runs (standard CDP). The old
     # `Proxy.setLocation` here was Bright Data's own command and 404s on any other browser.
-    found = {}
+    found, ok, errs = {}, 0, []
     for term in ALCOHOL_TERMS:
         try:
             pg.goto("https://www.doordash.com/search/store/%s/" % urllib.parse.quote(term),
@@ -142,8 +156,14 @@ def _point_harvest(pg, cdp, lat, lon):
                 if(t&&(!m[id]||t.length>(m[id].name||'').length)) m[id]={name:t, type:typ}; }); return m; }""")
             for k, v in tiles.items():
                 found.setdefault(k, v)
-        except Exception:
-            pass
+            ok += 1
+        except Exception as e:                               # noqa: BLE001
+            errs.append(str(e)[:80])
+    # A pin where EVERY term failed is not an empty market — it is a failed pin, and the two must not
+    # look alike. Reporting 0 merchants for a broken proxy is how a dead sweep passed for a real
+    # measurement of Houston.
+    if ok == 0 and errs:
+        raise RuntimeError("all %d search terms failed at this pin: %s" % (len(errs), errs[0]))
     return found
 
 
