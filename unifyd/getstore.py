@@ -69,13 +69,22 @@ def _session(site):
     # the old behaviour back if this turns out to be the wrong read.
     n = getattr(_TL, "n", 0)
     s = getattr(_TL, "s", None)
-    if s is not None and SESSION_BUDGET and n >= SESSION_BUDGET:
+    _pol = None
+    try:
+        import sessions
+        _pol = sessions.policy_for(site)
+    except Exception:
+        _pol = None
+    _spent = _pol.spent(n) if _pol else (SESSION_BUDGET and n >= SESSION_BUDGET)
+    if s is not None and _spent:
         try:
             s.close()
         except Exception:
             pass
         s, _TL.s = None, None             # fall through and prime a fresh one
         _TL.n = 0
+        if _pol:
+            _pol.note_retire()
     if s is not None:
         _TL.n = n + 1
         return s
@@ -110,6 +119,11 @@ def _session(site):
         pass
     _TL.s = s
     _TL.n = 1
+    try:
+        import sessions
+        sessions.policy_for(site).note_prime()
+    except Exception:
+        pass
     return s
 
 
@@ -152,6 +166,11 @@ def fetch_store(store_uuid, session="gs", site="ubereats", target=None):
             t = blocks.get()
             if t:
                 t.record(cls, method=_method())
+            try:
+                import sessions
+                sessions.policy_for(site).report(cls, getattr(_TL, "n", 0))
+            except Exception:
+                pass
             if _p:
                 _p.report(not blocks.is_throttle(cls))
         except Exception:

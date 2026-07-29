@@ -40,6 +40,7 @@ TESTS=(
   pace_test                    # pace by RATE, back off hard, creep up slow
   session_rotate_test          # the limit is a per-session QUOTA — re-prime on a request budget
   blocks_test                  # name WHY a fetch failed; a closed store is not a block
+  sessions_test                # session budget is per-source policy, learned from real burns
   sipsource_test
   cost_ledger_test
   obs_quality_test
