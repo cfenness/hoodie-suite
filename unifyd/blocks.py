@@ -107,17 +107,40 @@ class Tally:
     direct / isp / browser / resi — so success rates are attributable to a METHOD, which is what an
     escalation router needs to decide anything."""
 
-    __slots__ = ("_c", "_lock")
+    __slots__ = ("_c", "_e", "_lock")
 
     def __init__(self):
         self._c = {}
+        self._e = {}                      # (exit_ip, class) — attribution to an INDIVIDUAL identity
         self._lock = threading.Lock()
 
-    def record(self, cls, method="direct"):
+    def record(self, cls, method="direct", exit=None):
+        """`exit` is the exit IP this request went out on. Per-METHOD tells you which rung of the ladder
+        is healthy; per-EXIT tells you which identities are spent — the difference between "the ISP pool
+        is failing" and "these six IPs are burned and the rest are fine". Without it, a pool half made of
+        exhausted identities reads as a uniformly degraded pool, and the fix looks like "buy a different
+        product" rather than "retire six addresses"."""
         with self._lock:
             k = (method, cls)
             self._c[k] = self._c.get(k, 0) + 1
+            if exit:
+                ke = (exit, cls)
+                self._e[ke] = self._e.get(ke, 0) + 1
         return cls
+
+    def by_exit(self):
+        """Per-IP success rate: {exit: {'good': n, 'total': n, 'pct': f}}. This is what retires a hot
+        identity, and what makes a burned-vs-fresh comparison readable."""
+        with self._lock:
+            out = {}
+            for (ip, cls), n in self._e.items():
+                d = out.setdefault(ip, {"good": 0, "total": 0})
+                d["total"] += n
+                if cls in (OK, EMPTY):
+                    d["good"] += n
+            for ip, d in out.items():
+                d["pct"] = round(100.0 * d["good"] / max(1, d["total"]), 1)
+            return out
 
     def counts(self):
         with self._lock:

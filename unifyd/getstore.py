@@ -39,6 +39,12 @@ def _base(site):
     return "https://postmates.com" if site == "postmates" else "https://www.ubereats.com"
 
 
+def _exit_ip():
+    """The exit this thread's session is pinned to, so an outcome can be attributed to the identity that
+    produced it rather than to the pool as a whole."""
+    return getattr(_TL, "exit", None)
+
+
 def _method():
     """Which rung of the ladder this request goes out on. Today it is the flat-rate ISP pool or bare
     egress; naming it now is what makes per-method success rates — and therefore an escalation router —
@@ -110,6 +116,10 @@ def _session(site):
         with _RR_LOCK:
             _RR[0] += 1
             px = pool[_RR[0] % len(pool)]
+        try:
+            _TL.exit = px.split("@")[-1].split(":")[0]
+        except Exception:
+            _TL.exit = None
     else:
         px = resi._session_url("ag%d" % (threading.get_ident() % 400)) if resi.enabled() else None
     s = cr.Session(impersonate="chrome", proxies={"http": px, "https": px} if px else None, timeout=30)
@@ -165,7 +175,7 @@ def fetch_store(store_uuid, session="gs", site="ubereats", target=None):
                                   has_payload=ue_catalog.has_catalog(data))
             t = blocks.get()
             if t:
-                t.record(cls, method=_method())
+                t.record(cls, method=_method(), exit=_exit_ip())
             try:
                 import sessions
                 sessions.policy_for(site).report(cls, getattr(_TL, "n", 0))
@@ -183,7 +193,7 @@ def fetch_store(store_uuid, session="gs", site="ubereats", target=None):
             cls = blocks.classify(exc=e)
             t = blocks.get()
             if t:
-                t.record(cls, method=_method())
+                t.record(cls, method=_method(), exit=_exit_ip())
             if _p:
                 _p.report(not blocks.is_throttle(cls))
         except Exception:
