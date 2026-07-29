@@ -4309,20 +4309,45 @@ def registry_sources_ep():
                 ("perimeterx", "imperva", "incapsula", "datadome", "cloudflare", "waf", "akamai", "forter")):
             return "anti-bot"
         return "free-api-key" if s["klass"] == "creds" else "free"
+    # Which declared tables have MORE THAN ONE declared writer. A row-count delta on a shared table is not
+    # attributable to any single source, so Hoodie Collect has to say so rather than show the number as if
+    # it were this source's work. (Note this only catches REGISTRY-declared sharing; a table written through
+    # a helper — observe.record → retail_observations, ~28 callers — is shared far more widely than the
+    # registry admits, which is itself a finding the bench surfaces.)
+    # SOURCES *and* BUILDS. A build (snowflake-load, the dim_* chain, master_quality) is a job the bench
+    # must be able to show and run. Leaving BUILDS out is exactly why the Snowflake drop had to be kicked
+    # over ssh instead of from the workbench — the surface that is supposed to be the only way jobs run
+    # could not see half the pipeline.
+    _all = ([dict(x, _kind="source") for x in reg.SOURCES]
+            + [dict(b, _kind="build") for b in getattr(reg, "BUILDS", [])])
+    _owners = {}
+    for s in _all:
+        for t in s.get("tables") or []:
+            _owners.setdefault(t, []).append(s["id"])
+
+    # COVERAGE IS OPT-IN (?coverage=1). cov.assess() reads the coverage_log from object storage PER SOURCE;
+    # across 62 sources that measured >400s, which made this endpoint unusable as a page load. The workbench
+    # loads the list without it and fetches coverage for the ONE source you select (/api/collect/coverage).
+    want_cov = request.args.get("coverage") == "1"
     out = []
-    for s in reg.SOURCES:
+    for s in _all:
         try:
-            cv = cov.assess(s) if cov else None
+            cv = cov.assess(s) if (cov and want_cov) else None
         except Exception:
             cv = None
         out.append({"id": s["id"], "label": s["label"], "klass": s["klass"], "cadence": s.get("cadence"),
+                    "kind": s.get("_kind", "source"), "after": s.get("after"),
                     "enabled": bool(s.get("enabled")), "tables": s.get("tables"),
                     "cost_class": _cost_class(s),
+                    "interval_h": s.get("interval_h"),
+                    "window": s.get("window"),          # time-bound run controls (None = not time-bound)
+                    "shared_tables": [t for t in (s.get("tables") or []) if len(_owners.get(t, [])) > 1],
                     "requires": s.get("requires") or [],
                     "missing_creds": [e for e in (s.get("requires") or []) if not os.environ.get(e)],
                     "coverage": cv})
     n_free = sum(1 for x in out if x["cost_class"] != "anti-bot" and x["enabled"])
-    return jsonify(ok=True, count=len(out), free_or_keyed=n_free, remote=warehouse.remote(), sources=out)
+    return jsonify(ok=True, count=len(out), free_or_keyed=n_free, remote=warehouse.remote(),
+                   builds=sum(1 for x in out if x["kind"] == "build"), sources=out)
 
 
 @app.get("/api/registry/coverage")
@@ -4393,6 +4418,482 @@ def registry_run_ep():
         _REG_JOBS.pop(old, None)                              # keep the last ~50 jobs
     threading.Thread(target=_reg_run_job, args=(jid, ids), daemon=True).start()
     return jsonify(ok=True, jobId=jid, running=ids), 202
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Hoodie Collect — the scrape workbench.
+#
+# One surface to inspect and drive every source. Runs go to an EPHEMERAL Fly machine (the same path the
+# hourly dispatcher uses — isolation, right-sized memory, headful-capable, never on the serving box) and
+# stream their console + counts back through a run JOURNAL in the shared bucket, so a run is watchable
+# while it executes on a machine the app has no other channel to.
+#
+# Deliberately NOT a second execution path: this spawns exactly what dispatch_ephemeral spawns. The bench
+# and the scheduler run sources identically; only the trigger differs.
+# ─────────────────────────────────────────────────────────────────────────────
+@app.post("/api/collect/run")
+def collect_run_ep():
+    """Start ONE source on its own ephemeral machine. Body: {id, days?, all?, trigger?}.
+    Returns {run_id} immediately — poll /api/collect/run?id=<run_id> for live status/console."""
+    import source_registry as reg
+    import dispatch_ephemeral as disp
+    import run_journal
+    body = request.get_json(silent=True) or {}
+    sid = (body.get("id") or "").strip()
+    src = reg.by_id(sid) or next((b for b in getattr(reg, "BUILDS", []) if b["id"] == sid), None)
+    if not src:
+        return jsonify(ok=False, error="unknown source %r" % sid), 404
+
+    # Refuse a window this source can't honour, rather than accepting and dropping it — a run labelled
+    # "all history" that silently ran the 14-day default is worse than a rejected request.
+    days, want_all = body.get("days"), bool(body.get("all"))
+    if (days is not None or want_all) and not src.get("window"):
+        return jsonify(ok=False, error="%s declares no `window` in source_registry — it is not time-bound, "
+                                       "so --days/--all would be silently ignored" % sid), 400
+
+    if not os.environ.get("FLY_API_TOKEN"):
+        return jsonify(ok=False, error="FLY_API_TOKEN is not set on this host, so no ephemeral machine can "
+                                       "be spawned. Runs are NOT silently redirected to this process."), 503
+    try:
+        image = disp.current_image()
+    except Exception as e:
+        return jsonify(ok=False, error="could not resolve the app image: %s" % str(e)[:180]), 502
+    if not image:
+        return jsonify(ok=False, error="could not resolve the app image via the Machines API"), 502
+
+    # FLEET: `shards: N` launches N machines, each owning a deterministic slice (UE_SHARD=i/N). This is
+    # how a universe too large for one machine still completes inside a day — the answer to "too slow"
+    # is parallelism, never a cap. Shards need no coordination: the split is a stable hash of the store
+    # id, so they cannot overlap or leave a gap, and each carries its own resume checkpoint.
+    shards = int(body.get("shards") or 1)
+    if shards > 1:
+        launched, run_ids = [], []
+        for i in range(shards):
+            rid = run_journal.new_id("%s-s%d" % (sid, i))
+            mid = disp.spawn(sid, image, src.get("klass"), src.get("mem"), run_id=rid,
+                             days=days, want_all=want_all, trigger=body.get("trigger") or "manual",
+                             env={"UE_SHARD": "%d/%d" % (i, shards)})
+            if mid:
+                launched.append({"machine": mid, "shard": "%d/%d" % (i, shards), "run_id": rid})
+                run_ids.append(rid)
+                try:
+                    run_journal.open_run(rid, sid, label="%s [shard %d/%d]" % (src.get("label"), i, shards),
+                                         klass=src.get("klass"), params={"shard": "%d/%d" % (i, shards)},
+                                         tables=src.get("tables"), trigger=body.get("trigger") or "manual")
+                    run_journal.note(rid, status="queued", machine_id=mid,
+                                     stage="shard %d/%d booting" % (i, shards))
+                except Exception:
+                    pass
+        if not launched:
+            return jsonify(ok=False, error="Fly refused to create any shard machine"), 502
+        return jsonify(ok=True, fleet=True, shards=shards, launched=launched,
+                       run_id=run_ids[0], source=sid), 202
+
+    run_id = run_journal.new_id(sid)
+    mid = disp.spawn(sid, image, src.get("klass"), src.get("mem"), run_id=run_id,
+                     days=days, want_all=want_all, trigger=body.get("trigger") or "manual")
+    if not mid:
+        return jsonify(ok=False, error="Fly refused to create the machine (see server log)"), 502
+    # Seed the journal from HERE so the bench has something to show immediately — a machine takes seconds
+    # to boot, and an empty poll response is indistinguishable from a failed launch.
+    try:
+        run_journal.open_run(run_id, sid, label=src.get("label"), klass=src.get("klass"),
+                             params={"days": days, "all": want_all}, tables=src.get("tables"),
+                             trigger=body.get("trigger") or "manual")
+        run_journal.note(run_id, status="queued", stage="ephemeral machine %s booting" % mid,
+                         machine_id=mid)
+    except Exception:
+        pass
+    return jsonify(ok=True, run_id=run_id, machine_id=mid, source=sid,
+                   params={"days": days, "all": want_all}), 202
+
+
+@app.get("/api/collect/run")
+def collect_run_status_ep():
+    """The live journal for one run: status, stage, streamed console tail, rows seen vs rows landed."""
+    import run_journal
+    rid = (request.args.get("id") or "").strip()
+    if not rid:
+        return jsonify(ok=False, error="id required"), 400
+    doc = run_journal.read(rid)
+    if not doc:
+        return jsonify(ok=False, error="no journal for %r (the machine may not have booted yet)" % rid), 404
+    return jsonify(ok=True, run=doc)
+
+
+_COLLECT_LEDGER = {"at": 0, "data": None, "building": False}
+_COLLECT_LEDGER_TTL = int(os.environ.get("COLLECT_LEDGER_TTL", "120"))
+
+
+def _collect_ledger_build():
+    """Last run + recent history per source, from the SHARED ledger — not from this process's in-memory
+    RUNS list (which /api/runs serves and which is empty on a freshly-booted machine, making every source
+    read 'never run' when the ledger in fact has years of history)."""
+    import warehouse
+    hist, last = {}, {}
+    sql = ("SELECT source, status, ts_start, ts_end, rows_before, rows_after, delta, error, tables, host "
+           "FROM t ORDER BY ts_start DESC")
+    for fn, nm in ((warehouse.query_parts, "source_runs_log"), (warehouse.query, "source_runs")):
+        try:
+            for r in fn(nm, sql):
+                sid = r.get("source")
+                if not sid:
+                    continue
+                h = hist.setdefault(sid, [])
+                if len(h) < 15:
+                    r["ledger"] = nm
+                    h.append(r)
+                if not last.get(sid) or (r.get("ts_start") or 0) > (last[sid].get("ts_start") or 0):
+                    last[sid] = dict(r, ledger=nm)
+        except Exception:
+            pass
+    # zero-delta streak: how many consecutive most-recent runs landed nothing. One 'empty' is a bad day;
+    # nine in a row (kroger) is a source that has never worked, and the bench must be able to tell them apart.
+    streak = {}
+    for sid, rows in hist.items():
+        n = 0
+        for r in rows:
+            if (r.get("delta") or 0) != 0:
+                break
+            n += 1
+        streak[sid] = n
+    return {"last": last, "history": hist, "zero_streak": streak, "at": int(time.time())}
+
+
+def _collect_ledger(force=False):
+    now = time.time()
+    if not force and _COLLECT_LEDGER["data"] is not None and (now - _COLLECT_LEDGER["at"]) < _COLLECT_LEDGER_TTL:
+        return _COLLECT_LEDGER["data"]
+    if _COLLECT_LEDGER["building"] and _COLLECT_LEDGER["data"] is not None:
+        return _COLLECT_LEDGER["data"]                 # serve stale rather than stampede object storage
+    _COLLECT_LEDGER["building"] = True
+    try:
+        d = _collect_ledger_build()
+        _COLLECT_LEDGER.update(at=now, data=d)
+        return d
+    finally:
+        _COLLECT_LEDGER["building"] = False
+
+
+@app.get("/api/collect/status")
+def collect_status_ep():
+    """Last run + recent history + zero-delta streak per source, from the shared ledger. Cached."""
+    d = _collect_ledger(force=request.args.get("fresh") == "1")
+    sid = (request.args.get("id") or "").strip()
+    if sid:
+        return jsonify(ok=True, id=sid, last=d["last"].get(sid), history=d["history"].get(sid, []),
+                       zero_streak=d["zero_streak"].get(sid, 0), as_of=d["at"])
+    return jsonify(ok=True, last=d["last"], zero_streak=d["zero_streak"], as_of=d["at"],
+                   age_s=round(time.time() - d["at"]))
+
+
+# ── bench state: what a HUMAN has confirmed, and what has been archived ──────────────────────────
+# Held in the shared bucket (not this machine's disk) so the verdict survives redeploys and is the same
+# for every viewer. This is the one place the bench stores an OPINION rather than an observation, so it
+# is kept strictly separate from the derived status and always carries who/when.
+_COLLECT_STATE_KEY = "_collect/bench_state.json"
+_COLLECT_STATE = {"at": 0, "data": None}
+
+
+def _bench_state(force=False):
+    if not force and _COLLECT_STATE["data"] is not None and (time.time() - _COLLECT_STATE["at"]) < 20:
+        return _COLLECT_STATE["data"]
+    d = {"confirmed": {}, "archived": {}}
+    try:
+        import warehouse
+        raw = warehouse.get_bytes(_COLLECT_STATE_KEY)
+        if raw:
+            d = json.loads(raw)
+            d.setdefault("confirmed", {})
+            d.setdefault("archived", {})
+    except Exception:
+        pass
+    _COLLECT_STATE.update(at=time.time(), data=d)
+    return d
+
+
+def _bench_state_save(d):
+    import warehouse
+    warehouse.put_bytes(_COLLECT_STATE_KEY, json.dumps(d, default=str).encode())
+    _COLLECT_STATE.update(at=time.time(), data=d)
+
+
+@app.get("/api/collect/state")
+def collect_state_ep():
+    import run_journal
+    d = dict(_bench_state(force=request.args.get("fresh") == "1"))
+    d["manual_only"] = run_journal.manual_only()
+    d["manual_only_locked"] = os.environ.get("COLLECT_MANUAL_ONLY") is not None
+    return jsonify(ok=True, **d)
+
+
+@app.post("/api/collect/manual-only")
+def collect_manual_only_ep():
+    """Toggle MANUAL-ONLY: when on, nothing auto-dispatches and the only way a job runs is a human
+    pressing Run now here. Body: {enabled: bool}.
+
+    This is the stability-before-automation rule: prove each source by hand, confirm it in the bench,
+    and only then let a scheduler drive it. Run now and the scheduler are the SAME code path
+    (spawn -> run_ephemeral -> run_one) and differ only in the `trigger` field, so a source proven by
+    hand is a source whose automated path is already proven."""
+    body = request.get_json(silent=True) or {}
+    if os.environ.get("COLLECT_MANUAL_ONLY") is not None:
+        return jsonify(ok=False, error="COLLECT_MANUAL_ONLY is set in the environment and overrides "
+                                       "this toggle — unset the secret to control it from here"), 409
+    d = _bench_state(force=True)
+    d["manual_only"] = bool(body.get("enabled"))
+    d["manual_only_at"] = int(time.time())
+    d["manual_only_by"] = (session.get("email") if hasattr(session, "get") else None) or "unknown"
+    try:
+        _bench_state_save(d)
+    except Exception as e:
+        return jsonify(ok=False, error="could not persist: %s" % str(e)[:160]), 502
+    return jsonify(ok=True, manual_only=d["manual_only"])
+
+
+@app.post("/api/collect/confirm")
+def collect_confirm_ep():
+    """Mark a source CONFIRMED — a human watched it run in the bench and believes its output. Body:
+    {id, note?, run_id?, undo?}. Records who and when; a confirmation with no observer is worthless."""
+    body = request.get_json(silent=True) or {}
+    sid = (body.get("id") or "").strip()
+    import source_registry as reg
+    if not reg.by_id(sid):
+        return jsonify(ok=False, error="unknown source %r" % sid), 404
+    d = _bench_state(force=True)
+    if body.get("undo"):
+        d["confirmed"].pop(sid, None)
+    else:
+        d["confirmed"][sid] = {
+            "at": int(time.time()),
+            "by": (session.get("email") if hasattr(session, "get") else None) or "unknown",
+            "note": (body.get("note") or "")[:400],
+            "run_id": body.get("run_id"),
+        }
+    try:
+        _bench_state_save(d)
+    except Exception as e:
+        return jsonify(ok=False, error="could not persist: %s" % str(e)[:160]), 502
+    return jsonify(ok=True, confirmed=d["confirmed"].get(sid))
+
+
+@app.post("/api/collect/archive")
+def collect_archive_ep():
+    """ARCHIVE a scrape (the dedupe action) — reversible, and deliberately NOT a delete. It hides the
+    source from the bench and records why/when/who. It does not touch source_registry.py, does not stop
+    the dispatcher, and does not remove a single row of data: the standing rule is archive-don't-delete,
+    because a superseded scraper is expensive to re-derive. Retiring a source for real is still a code
+    change (repoint the registry + git mv the module to _archive/), which this marks as pending.
+    Body: {id, reason?, superseded_by?, undo?}."""
+    body = request.get_json(silent=True) or {}
+    sid = (body.get("id") or "").strip()
+    import source_registry as reg
+    if not reg.by_id(sid):
+        return jsonify(ok=False, error="unknown source %r" % sid), 404
+    d = _bench_state(force=True)
+    if body.get("undo"):
+        d["archived"].pop(sid, None)
+    else:
+        d["archived"][sid] = {
+            "at": int(time.time()),
+            "by": (session.get("email") if hasattr(session, "get") else None) or "unknown",
+            "reason": (body.get("reason") or "")[:400],
+            "superseded_by": body.get("superseded_by"),
+        }
+    try:
+        _bench_state_save(d)
+    except Exception as e:
+        return jsonify(ok=False, error="could not persist: %s" % str(e)[:160]), 502
+    return jsonify(ok=True, archived=d["archived"].get(sid))
+
+
+@app.get("/api/collect/sample")
+def collect_sample_ep():
+    """The INBOUND DATA for one source — real rows, so you can watch what a run is actually landing
+    rather than trusting a row count. Partition-aware: for a per-(date,source) table like
+    retail_observations it reads only THIS source's newest partition files, so the read stays cheap
+    even though the table holds 15M+ rows."""
+    import source_registry as reg
+    import warehouse
+    sid = (request.args.get("id") or "").strip()
+    src = reg.by_id(sid)
+    if not src:
+        return jsonify(ok=False, error="unknown source %r" % sid), 404
+    import monitor
+    limit = min(int(request.args.get("limit", 25) or 25), 100)
+    snap = monitor.snapshot()
+    byname = {x["name"]: x for x in (snap.get("sources") or [])}
+    out = []
+    for t in (src.get("tables") or [])[:3]:
+        rows, note, part, prows, fill, n = [], None, None, None, None, None
+        meta = byname.get(t) or {}
+        # A write_partition table is one file per (date, source) — so THIS source's own newest part file
+        # is both the cheapest read and the only one attributable to it. monitor's `observations` block is
+        # already keyed by source with its part list (the per-source `sources[]` entry drops `parts`), so
+        # no object-store listing is needed here.
+        parts = None
+        if meta.get("partitioned"):
+            parts = []
+            for o in (snap.get("observations") or {}).values():
+                if o.get("table") == t:
+                    parts += o.get("parts") or []
+        try:
+            if parts:
+                # part names are "<YYYY-MM-DD>_<source>"; match the source segment exactly so `abc-fws`
+                # can't pick up a part belonging to some other source that merely ends the same way.
+                mine = sorted([p for p in parts
+                               if p.get("part", "").split("_", 1)[-1] in (sid, sid.replace("-", "_"))],
+                              key=lambda p: p.get("date") or "")
+                if mine:
+                    part, prows = mine[-1]["part"], mine[-1].get("rows")
+                    con = warehouse.connect()
+                    base = ("s3://%s/%s" % (warehouse._bucket(), warehouse._prefix())) \
+                        if warehouse.remote() else warehouse._LOCAL_DIR
+                    path = ("%s/%s/%s.parquet" % (base, t, part)).replace("'", "")
+                    cur = con.execute("SELECT * FROM read_parquet('%s') LIMIT %d" % (path, limit))
+                    cols = [c[0] for c in cur.description]
+                    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+                    note = "newest partition written by this source (%s rows in it)" % f"{prows:,}" \
+                        if prows is not None else "newest partition written by this source"
+                    # FIELD FILL over the whole partition. A row count can be perfect while the contents
+                    # are unusable — abc-fws lands per-store price and stock with name/upc/brand empty on
+                    # every row, which no count would ever reveal. Empty string counts as NOT filled:
+                    # a scraper writing "" is not meaningfully different from writing null.
+                    try:
+                        exprs = ", ".join(
+                            "SUM(CASE WHEN %s IS NULL OR CAST(%s AS VARCHAR)='' THEN 0 ELSE 1 END) AS %s"
+                            % ('"%s"' % c, '"%s"' % c, '"%s"' % c) for c in cols)
+                        fr = con.execute("SELECT COUNT(*) AS _n, %s FROM read_parquet('%s')"
+                                         % (exprs, path)).fetchone()
+                        n = fr[0] or 0
+                        fill = {c: (round(100.0 * (fr[i + 1] or 0) / n, 1) if n else None)
+                                for i, c in enumerate(cols)}
+                    except Exception:
+                        n, fill = None, None
+                else:
+                    note = ("partitioned table with %d parts, but NONE named for %r — this source has "
+                            "never landed here under its own name" % (len(parts), sid))
+            else:
+                rows = warehouse.query(t, "SELECT * FROM t LIMIT %d" % limit)
+                note = "whole-table sample — this table is not partitioned by source, so these rows are " \
+                       "not attributable to this source alone"
+        except Exception as e:
+            note = "read failed: %s" % str(e)[:160]
+        out.append({"table": t, "partition": part, "partition_rows": prows, "note": note,
+                    "partitioned": bool(meta.get("partitioned")), "table_rows": meta.get("rows"),
+                    "fill_pct": fill, "fill_basis_rows": n,
+                    "columns": list(rows[0].keys()) if rows else [], "rows": rows})
+    return jsonify(ok=True, id=sid, tables=out)
+
+
+
+@app.get("/api/collect/diagnose")
+def collect_diagnose_ep():
+    """Everything you need to explain ONE job's state, in a single call.
+
+    This is the throwaway-scaffolding problem made permanent. Diagnosing kroger's silent failure and
+    the Snowflake chain both took a pile of one-off ssh probes — claimed-vs-observed tables, the last
+    ledger errors, whether a machine was already running it, whether a resume checkpoint was stale,
+    which required env vars were actually present. Every one of those scripts died with its session,
+    so the next person starts from nothing. The bench should answer it.
+
+    Deliberately READ-ONLY and cheap: no run, no write, no coverage scan.
+    """
+    import source_registry as reg
+    import warehouse
+    sid = (request.args.get("id") or "").strip()
+    src = (reg.by_id(sid)
+           or next((b for b in getattr(reg, "BUILDS", []) if b["id"] == sid), None))
+    if not src:
+        return jsonify(ok=False, error="unknown job %r" % sid), 404
+
+    d = {"id": sid, "label": src.get("label"), "klass": src.get("klass"),
+         "kind": "build" if not reg.by_id(sid) else "source",
+         "enabled": bool(src.get("enabled")), "code": src.get("code"),
+         "note": src.get("note"), "after": src.get("after")}
+
+    # 1. CLAIMED vs OBSERVED — the registry says it writes these; does the warehouse agree?
+    tables = []
+    for t in src.get("tables") or []:
+        row = {"table": t}
+        try:
+            row["rows"] = warehouse.row_count_strict(t)
+        except Exception as e:
+            row["rows"] = None
+            row["read_error"] = str(e)[:120]
+        try:
+            row["partitions"] = len(warehouse._partition_files(t))
+        except Exception:
+            row["partitions"] = 0
+        row["exists"] = bool(row.get("rows")) or row["partitions"] > 0
+        tables.append(row)
+    d["tables"] = tables
+
+    # 2. WHAT THE ENV CAN ACTUALLY RUN — a required var that is absent is the whole story sometimes.
+    d["requires"] = {k: bool(os.environ.get(k)) for k in (src.get("requires") or [])}
+    d["caps"] = src.get("caps") or []
+
+    # 3. RECENT LEDGER + the failure story, classified structurally where the run recorded it.
+    hist = _collect_ledger().get("history", {}).get(sid, [])[:8]
+    d["history"] = [{k: r.get(k) for k in
+                     ("status", "ts_start", "delta", "rows_after", "error", "fail_class", "host")}
+                    for r in hist]
+    try:
+        import selfheal
+        st = selfheal.states().get(sid) or {}
+        d["heal"] = {k: st.get(k) for k in
+                     ("consecutive_failures", "klass", "story", "auto", "quarantined",
+                      "retry_due", "next_retry_in_s")}
+    except Exception as e:
+        d["heal"] = {"error": str(e)[:100]}
+
+    # 4. PREFLIGHT — is it already running, and is there a resume checkpoint that would make a
+    #    "full" run actually a partial one? Both cost a wasted run when missed.
+    try:
+        import dispatch_ephemeral as disp
+        live = []
+        for m in disp._machines():
+            md = (m.get("config") or {}).get("metadata") or {}
+            if md.get("source") == sid and m.get("state") in ("started", "created", "starting"):
+                live.append({"machine": m.get("id"), "state": m.get("state"),
+                             "run_id": md.get("run_id")})
+        d["running_machines"] = live
+    except Exception as e:
+        d["running_machines"] = {"error": str(e)[:100]}
+    ck = "_collect/resume/%s_%s.json" % (sid, time.strftime("%Y-%m-%d"))
+    try:
+        raw = warehouse.get_bytes(ck)
+        d["resume_checkpoint"] = ({"done": len(json.loads(raw).get("done") or []), "key": ck}
+                                  if raw else None)
+    except Exception:
+        d["resume_checkpoint"] = None
+
+    return jsonify(ok=True, diagnosis=d)
+
+@app.get("/api/collect/coverage")
+def collect_coverage_ep():
+    """Expected-vs-landed for ONE source, on demand. Split out of /api/registry/sources because assessing
+    all 62 takes minutes — the bench pays this cost only for the source you actually opened."""
+    import source_registry as reg
+    import coverage as cov
+    sid = (request.args.get("id") or "").strip()
+    src = reg.by_id(sid)
+    if not src:
+        return jsonify(ok=False, error="unknown source %r" % sid), 404
+    try:
+        return jsonify(ok=True, id=sid, coverage=cov.assess(src))
+    except Exception as e:
+        return jsonify(ok=False, id=sid, error=str(e)[:200]), 200
+
+
+@app.get("/api/collect/runs")
+def collect_runs_ep():
+    """Recent run journals — bench-triggered AND dispatcher-scheduled, since both write journals."""
+    import run_journal
+    return jsonify(ok=True, runs=run_journal.recent(
+        limit=min(int(request.args.get("limit", 25) or 25), 60),
+        source=(request.args.get("source") or "").strip() or None,
+        active_only=request.args.get("active") == "1"))
 
 
 @app.get("/api/registry/run/progress")

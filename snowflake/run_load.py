@@ -24,14 +24,22 @@ Deps: snowflake-connector-python (pyarrow + duckdb are already in the engine, fo
   python snowflake/run_load.py --dry-run  # regenerate + print the plan, connect to nothing
 """
 import os
+import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SQLDIR = os.path.join(HERE, "sql")
-FILES = ["00_config.template.sql", "01_database.sql", "02_stage.sql", "03_raw_tables.sql",
-         "04_master.sql", "05_marts.sql", "06_validate.sql"]
+STAGE = "WH"
+# 00_config.template.sql is NOT here on purpose: it is one-time admin documentation, and its only
+# executable statements were CREATE/USE WAREHOUSE. The connection already selects warehouse+database
+# (see _connect), so running it added nothing except a hard requirement that the loader role hold
+# CREATE WAREHOUSE ON ACCOUNT — which is a privilege a data-loading role has no business holding.
+FILES = ["01_database.sql", "02_stage.sql", "03_raw_tables.sql",
+         "04_master.sql", "05_marts.sql", "07_grants.sql", "06_validate.sql"]
 GEN = os.path.join(HERE, "build_snowflake_sql.py")
 
 
@@ -91,6 +99,104 @@ def _regen(*extra):
     subprocess.check_call([sys.executable, GEN, *extra])
 
 
+
+def _stage_mode():
+    return os.environ.get("SNOWFLAKE_STAGE_MODE", "internal").strip().lower()
+
+
+def _wanted_tables():
+    """Which RAW tables to upload. SNOWFLAKE_ONLY scopes a run to a comma list — the first proving
+    run should be a meaningful SLICE, not 235 tables and 80M rows shovelled through one machine."""
+    only = (os.environ.get("SNOWFLAKE_ONLY") or "").strip()
+    return [t.strip() for t in only.split(",") if t.strip()] if only else None
+
+
+def _staged_paths():
+    """Every @WH/<path> the generated SQL actually reads, parsed FROM THE SQL.
+
+    Deriving the upload list from the emitted statements (rather than keeping a parallel list of
+    tables) makes drift structurally impossible: whatever 03/04 COPY from is exactly what gets staged.
+    A second hand-maintained list is how a scoped build ends up emitting DDL for a file nobody
+    uploaded — which fails at INFER_SCHEMA, not at something legible.
+
+    Returns [(name, is_dir)] — a trailing slash means a partitioned prefix (a directory of parts).
+    """
+    pat = re.compile(r"@(?:[A-Z_]+\.[A-Z_]+\.)?WH/([A-Za-z0-9_]+)(/|\.parquet)")
+    seen, out = set(), []
+    for fname in FILES:
+        fp = os.path.join(SQLDIR, fname)
+        if not os.path.exists(fp):
+            continue
+        for name, tail in pat.findall(open(fp).read()):
+            key = (name, tail == "/")
+            if key not in seen:
+                seen.add(key)
+                out.append(key)
+    return out
+
+
+def _upload_to_internal_stage(con):
+    """Download each Parquet the SQL needs from Tigris and PUT it to the internal stage at the SAME
+    @WH/<path>, so 03/04 are byte-identical between stage modes.
+
+    Why push instead of Snowflake pulling: Snowflake does not permit arbitrary S3-compatible
+    endpoints. Per their docs only `r2.cloudflarestorage.com` is enabled by default; anything else
+    must be allowlisted by Snowflake Support, and an un-allowlisted one fails at CREATE STAGE with
+    "Endpoint … not allowed". Pushing costs bandwidth through this machine but needs nobody's
+    approval. Flip to SNOWFLAKE_STAGE_MODE=external once the endpoint is approved.
+    """
+    sys.path.insert(0, os.path.join(os.path.dirname(HERE), "unifyd"))
+    import warehouse
+
+    targets = _staged_paths()
+    print("→ staging %d object(s) the SQL reads" % len(targets))
+    tmp = tempfile.mkdtemp(prefix="sfload_")
+    staged = skipped = 0
+    try:
+        for name, is_dir in targets:
+            try:
+                if is_dir:
+                    parts = warehouse._partition_files(name)
+                    if not parts:
+                        print("   skip   %-30s (no partitions)" % name); skipped += 1; continue
+                    d = os.path.join(tmp, name)
+                    os.makedirs(d, exist_ok=True)
+                    n_ok = 0
+                    for rel in parts:
+                        fn = rel.rsplit("/", 1)[-1]
+                        raw = warehouse.get_bytes("%s/%s/%s" % (warehouse._prefix(), name, fn))
+                        if raw:
+                            open(os.path.join(d, fn), "wb").write(raw); n_ok += 1
+                    if not n_ok:
+                        print("   skip   %-30s (unreadable parts)" % name); skipped += 1; continue
+                    # AUTO_COMPRESS=FALSE: Parquet is already compressed; letting Snowflake gzip it
+                    # leaves files the PARQUET file format cannot read.
+                    con.cursor().execute("PUT 'file://%s/*.parquet' @%s/%s AUTO_COMPRESS=FALSE OVERWRITE=TRUE"
+                                         % (d, STAGE, name))
+                    shutil.rmtree(d, ignore_errors=True)
+                    print("   staged %-30s %3d parts" % (name, n_ok))
+                else:
+                    raw = warehouse.get_bytes("%s/%s.parquet" % (warehouse._prefix(), name))
+                    if not raw:
+                        print("   skip   %-30s (absent)" % name); skipped += 1; continue
+                    fp = os.path.join(tmp, "%s.parquet" % name)
+                    open(fp, "wb").write(raw)
+                    con.cursor().execute("PUT 'file://%s' @%s AUTO_COMPRESS=FALSE OVERWRITE=TRUE"
+                                         % (fp, STAGE))
+                    os.remove(fp)
+                    print("   staged %-30s %8.1f MB" % (name, len(raw) / 1e6))
+                staged += 1
+            except Exception as e:
+                # One unstageable object must not abort the drop — the rest still lands, and the
+                # COPY for a missing file is a no-op rather than a failure.
+                print("   FAIL   %-30s %s" % (name, str(e)[:100]))
+                skipped += 1
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("→ staged %d, skipped %d" % (staged, skipped))
+    return staged
+
+
 def main():
     """Run the drop. Returns the load stats ({rows_total, tables, per_schema, duration_s}) so a
     programmatic caller (unifyd/snowflake_load.py, the registry BUILD) can verify-land them;
@@ -98,6 +204,15 @@ def main():
     args = set(sys.argv[1:])
     offline, dry = "--offline" in args, "--dry-run" in args
     t0 = time.time()
+    # A SCOPED run must announce itself. SNOWFLAKE_ONLY was set as a Fly SECRET to bound the first
+    # proving run, which means it silently bounds EVERY run — including the nightly build — until
+    # somebody remembers to unset it. A global flag that quietly narrows a "full" mirror is the same
+    # silent-truncation shape as a hardcoded cap in a "full" pull. It is loud now, and it is recorded
+    # on the run row, so a partial mirror can never be mistaken for a complete one.
+    _scope_env = (os.environ.get("SNOWFLAKE_ONLY") or "").strip()
+    if _scope_env:
+        print("!! SCOPED RUN — SNOWFLAKE_ONLY is set, so this mirrors ONLY: %s" % _scope_env)
+        print("!! This is NOT a full mirror. Unset SNOWFLAKE_ONLY for the complete build.")
     if not offline:
         print("→ regenerating build from the live warehouse (--live, change-aware)…")
         _regen("--live")
@@ -118,9 +233,29 @@ def main():
             text = open(os.path.join(SQLDIR, fname)).read()
             if fname == "02_stage.sql":
                 text = _substitute(text, toks)          # inject the stage creds in-memory
-            for _cur in con.execute_string(text, remove_comments=False):
-                pass
+            # GRANTS ARE BEST-EFFORT. Read access is a convenience; the load is the payload, and a
+            # convenience must never be able to destroy it. The loader OWNS its objects but granting to
+            # OTHER roles needs MANAGE GRANTS on the account, which a narrowly-scoped load role should
+            # not hold — so on a least-privilege account this step legitimately cannot succeed, and
+            # failing the whole mirror over it (as it did once) is the wrong trade. Report it loudly
+            # with the exact SQL an admin should run, and carry on.
+            optional = fname == "07_grants.sql"
+            try:
+                for _cur in con.execute_string(text, remove_comments=False):
+                    pass
+            except Exception as e:
+                if not optional:
+                    raise
+                print("!! %s could not be applied: %s" % (fname, str(e).strip().splitlines()[-1][:160]))
+                print("!! The data IS loaded but may not be READABLE by your roles. Run this once as "
+                      "SECURITYADMIN (or grant MANAGE GRANTS to the loader role):")
+                for ln in [l for l in text.splitlines() if l.strip().upper().startswith("GRANT")]:
+                    print("!!   %s" % ln.strip())
+                continue
             print("→ ran %s" % fname)
+            if fname == "02_stage.sql" and _stage_mode() != "external":
+                print("→ uploading Parquet to the internal stage (endpoint not allowlisted for s3compat)…")
+                _upload_to_internal_stage(con)
         # the headline: total records loaded, straight from INFORMATION_SCHEMA (no scan)
         cur = con.cursor()
         cur.execute("SELECT TABLE_SCHEMA, COUNT(*), COALESCE(SUM(ROW_COUNT),0) "
@@ -139,7 +274,7 @@ def main():
         _regen("--commit-state")
     print("✓ morning drop complete")
     return {"rows_total": total, "tables": ntab_total, "per_schema": per_schema,
-            "duration_s": round(time.time() - t0, 1)}
+            "scope": _scope_env or "full", "duration_s": round(time.time() - t0, 1)}
 
 
 if __name__ == "__main__":

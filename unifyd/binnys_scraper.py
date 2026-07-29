@@ -13,7 +13,7 @@ connId: `binnys`. Snapshot is keyed by `sku|storeCode`; the run's headline delta
 Algolia app id / index / key are env-overridable (`BINNYS_ALGOLIA_*`; defaults discovered
 on binnys.com). Self-reports `degraded` if the key rotates or the per-store schema changes.
 """
-import argparse, hashlib, json, os, sys, time, urllib.request
+import argparse, gzip, hashlib, json, os, sys, time, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
@@ -76,6 +76,53 @@ def _num(v):
         return float(v) if v not in (None, "") else None
     except (TypeError, ValueError):
         return None
+
+
+
+# ── day-over-day snapshot ────────────────────────────────────────────────────────────────────────
+# Lives in the SHARED bucket, gzipped, compact. Three things were wrong with a local pretty-printed
+# file, and each one bit:
+#   1. DISK. 1.5M cells at indent=2 is multiple GB of whitespace-padded JSON. On an ephemeral machine
+#      that is `OSError: [Errno 28] No space left on device` — the actual cause of every recent
+#      binnys failure.
+#   2. EPHEMERALITY. The file died with the machine, so `prev` was always empty and every run
+#      reported "baseline (no prior snapshot)". Movement — the entire point of a directional tracker
+#      — has never once been computed in the cloud.
+#   3. ORDER. It was written BEFORE the warehouse land, so a failure here discarded a completed
+#      fetch. Bookkeeping must never be able to destroy the payload.
+_SNAP_KEY = "_collect/snapshots/binnys.json.gz"
+
+
+def _snap_load(state_dir, log=print):
+    """Prior snapshot cells: shared bucket first, local file as the CLI fallback. {} if neither."""
+    try:
+        import warehouse
+        raw = warehouse.get_bytes(_SNAP_KEY)
+        if raw:
+            cells = json.loads(gzip.decompress(raw)).get("cells", {})
+            log("  [binnys] prior snapshot: %s cells (shared bucket)" % f"{len(cells):,}")
+            return cells
+    except Exception as e:
+        log("  [binnys] snapshot read skipped: %s" % str(e)[:80])
+    fp = os.path.join(state_dir, SNAP)
+    if os.path.exists(fp):
+        try:
+            return json.load(open(fp)).get("cells", {})
+        except Exception:
+            pass
+    return {}
+
+
+def _snap_save(cells, log=print):
+    """Persist the snapshot compactly (no indent) and gzipped, to the shared bucket."""
+    try:
+        import warehouse
+        blob = gzip.compress(json.dumps({"__ts__": int(time.time() * 1000), "cells": cells},
+                                        separators=(",", ":")).encode())
+        warehouse.put_bytes(_SNAP_KEY, blob)
+        log("  [binnys] snapshot saved: %s cells, %.1f MB gz" % (f"{len(cells):,}", len(blob) / 1e6))
+    except Exception as e:
+        log("  [binnys] snapshot save skipped: %s" % str(e)[:100])
 
 
 def to_snapshot(records):
@@ -189,11 +236,7 @@ def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=p
                          ["Algolia returned no per-store inventory (storesPriceAndInventory schema changed)."])
         return {}, [run], run["movement"]
 
-    prev = {}
-    snap_path = os.path.join(state_dir, SNAP)
-    if os.path.exists(snap_path):
-        try: prev = json.load(open(snap_path)).get("cells", {})
-        except Exception: prev = {}
+    prev = _snap_load(state_dir, log=log)
     movement = diff_store(prev, cur)
 
     warnings = []
@@ -202,7 +245,6 @@ def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=p
                         "Binny's storesPriceAndInventory schema may have changed.")
     status = "degraded" if warnings else "success"
 
-    json.dump({"__ts__": int(time.time() * 1000), "cells": cur}, open(snap_path, "w"), indent=2)
     # land the rich per-store cells to the warehouse (the master + hemp views read binnys_products) + the
     # dated observation time-series (qty = exact on-hand; the whole reason Binny's is a Counts source).
     try:
@@ -228,6 +270,9 @@ def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=p
                        log=log)
     except Exception as e:
         log("  [binnys] warehouse land skipped: %s" % str(e)[:80])
+    # Snapshot LAST — after the data is safely landed, so a snapshot failure costs tomorrow's diff
+    # rather than today's catalog.
+    _snap_save(cur, log=log)
     # browsable rollup: one row per (product, store) with price + on-hand units
     header = ["SKU", "Product", "Store", "Price", "Units on hand"]
     rows = [[v["sku"], v["name"], v["store"], v["price"], v["qty"]]

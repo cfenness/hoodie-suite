@@ -23,9 +23,11 @@ import argparse
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 import time
+import types
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -56,6 +58,60 @@ def _counts(tables):
         except warehouse.RowCountUnavailable:
             out[t] = None
     return out
+
+
+def _self_report(out):
+    """What the SCRAPER said about its OWN run, as structured data.
+
+    A crawler knows two things the outside cannot infer: the size of the universe it was asked to
+    cover, and how much of it it actually reached. `coverage.assess` otherwise falls back to a
+    HIGH-WATER-MARK — expected = the most this source has ever landed — which is self-calibrating and
+    therefore blind in exactly the wrong direction: a run that collapses to 0.1% sets a tiny watermark
+    and then measures 100% against it. That is how a shard that reached 74 of 62,938 stores and printed
+    `"status": "degraded"` closed as `ok / complete`.
+
+    Prefer an explicit `HOODIE_RESULT {...}` marker; fall back to the last JSON object in the output
+    carrying a "status" key (most scrapers already end with a summary block). Best-effort: unparseable
+    output just means no self-report, never a crash.
+    """
+    if not out:
+        return {}
+    m = None
+    for m in re.finditer(r"HOODIE_RESULT\s+(\{.*?\})", out, re.S):
+        pass
+    if m:
+        try:
+            return json.loads(m.group(1)) or {}
+        except Exception:
+            pass
+    # Scan balanced braces from each line-initial "{" — a summary may be pretty-printed across lines or
+    # collapsed onto one, and a regex that assumes either shape silently misses the other.
+    best = {}
+    for i, ch in enumerate(out):
+        if ch != "{" or (i and out[i - 1] not in "\n\r"):
+            continue
+        depth, instr, esc = 0, False, False
+        for j in range(i, min(len(out), i + 20000)):
+            c = out[j]
+            if instr:
+                instr = False if (c == '"' and not esc) else instr
+                esc = (c == "\\" and not esc)
+                continue
+            if c == '"':
+                instr, esc = True, False
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        d = json.loads(out[i:j + 1])
+                        if isinstance(d, dict) and ("status" in d or "stores_total" in d):
+                            best = d                      # keep scanning: the LAST report is the verdict
+                    except Exception:
+                        pass
+                    break
+    return best
 
 
 def _counts_after(tables, before, log=print):
@@ -120,6 +176,25 @@ def due_sources(now=None, grace=0.98):
     if retry:
         have = {s["id"] for s in due}
         due += [s for s in reg.SOURCES if s.get("enabled") and s["id"] in retry and s["id"] not in have]
+    try:
+        import run_journal
+        # MANUAL-ONLY: nothing is due, because the only way a job runs is a human pressing Run now in
+        # Hoodie Collect. Enforced HERE, at the single place due-ness is decided, so every scheduler
+        # (the hourly Fly dispatcher, the in-app tick, a --due CLI pass) is covered by one switch
+        # rather than three that can drift apart. A manual run does not consult due_sources at all, so
+        # it is unaffected. selfheal's retry backoff also stops proposing work — under this rule an
+        # `incomplete` source waits for a human to press Run now again, and resume makes that continue
+        # from the checkpoint rather than restart.
+        if run_journal.manual_only():
+            return []
+        # ARCHIVED in Hoodie Collect = deduped away and taken OFF THE ACTIVE LIST, so the dispatcher
+        # stops scheduling it. Without this, "archived" would only mean "hidden" and a retired
+        # duplicate would keep burning machines every tick.
+        arch = run_journal.archived_ids()
+        if arch:
+            due = [s for s in due if s["id"] not in arch]
+    except Exception:
+        pass                      # fails OPEN — unreadable state must never halt the whole pipeline
     return due
 
 
@@ -192,10 +267,65 @@ def _acquire_lock():
     return lf
 
 
-def run_one(source, log=print, extra_env=None):
+def _exec(code, timeout_s, env, on_line=None):
+    """Run the source's entrypoint as a subprocess and return a subprocess.run-shaped result.
+
+    ONE execution path for every caller (dispatcher tick, CLI pass, Hoodie Collect) — deliberately not a
+    streaming fork alongside the original. Two code paths for "run a source" is precisely how the /api/run
+    handlers drifted from the registry and got the thin kroger_api run instead of the real atlas bypass;
+    this doesn't reintroduce that shape.
+
+    stdout and stderr are MERGED into one pipe so the captured output is in true interleaved order (a
+    console showing progress lines out of order relative to the traceback is worse than none). The merged
+    text is returned as `.stderr`, which is what run_one's crash-site extraction reads first — so outcome
+    classification behaves exactly as it did under capture_output=True.
+
+    `on_line` (optional) receives each line AS IT ARRIVES — the live console. It is wrapped here
+    regardless of its own error handling: telemetry must never be able to kill a pull.
+    """
+    import collections
+    proc = subprocess.Popen([PY, "-c", code], cwd=HERE, env=env, text=True, bufsize=1,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    # Bounded retention: enough tail to recover a traceback + crash site, without holding a multi-hundred-MB
+    # crawl log in RAM on a 4GB machine. The journal keeps its own (smaller) display tail.
+    tail = collections.deque(maxlen=4000)
+    deadline = time.time() + timeout_s
+    timed_out = False
+    try:
+        for line in proc.stdout:
+            tail.append(line)
+            if on_line:
+                try:
+                    on_line(line)
+                except Exception:
+                    pass
+            if time.time() > deadline:
+                timed_out = True
+                break
+    finally:
+        try:
+            proc.stdout.close()
+        except Exception:
+            pass
+    if timed_out:
+        proc.kill()
+        proc.wait()
+        raise subprocess.TimeoutExpired(cmd="run_one", timeout=timeout_s)
+    try:
+        proc.wait(timeout=max(1, deadline - time.time()))
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        raise
+    return types.SimpleNamespace(returncode=proc.returncode, stdout="", stderr="".join(tail))
+
+
+def run_one(source, log=print, extra_env=None, on_line=None):
     """Run one source in a subprocess, measure before/after row counts, classify the outcome.
     `extra_env` overlays the subprocess env (e.g. the scheduler forces RESI_ISP_ONLY=1 so an unattended
-    run can never open the per-GB residential-proxy tab)."""
+    run can never open the per-GB residential-proxy tab).
+    `on_line` streams the run's output line-by-line to a caller-supplied sink (Hoodie Collect's journal),
+    so a run's console survives the ephemeral machine it ran on."""
     sid = source["id"]
     t0 = time.time()
     # Skip-with-reason: a source gated on credentials we don't have must report honestly ("no-creds"),
@@ -245,13 +375,28 @@ def run_one(source, log=print, extra_env=None):
                 os.remove(lk)
             except Exception:
                 pass
+    # FAIL CLASS is STRUCTURAL, not inferred. This function already knows exactly what happened — the
+    # signal that killed the child, whether the timeout fired, what coverage said — so it records the
+    # class as a fact rather than leaving selfheal to regex it back out of a prose error string later.
+    # A scraper that knows something we cannot see (an HTTP 403 wall) declares it on stdout with a
+    # `HOODIE_FAIL {"class": "..."}` line, which is read below. Inference is the LEGACY fallback for
+    # ledger rows written before this field existed, not the mechanism.
+    fail_class = None
+    r = None                      # bound even if _exec raises, so the scan below is safe
     status, error = "ok", ""
     timeout_s = source.get("timeout") or _TIMEOUT.get(source["klass"], 5400)   # registry per-source override
     run_token = "%s-%d" % (sid, int(t0))
-    env = dict(os.environ, HOODIE_RUN_TOKEN=run_token, **(extra_env or {}))   # coverage stamp + optional overlays
+    # PYTHONUNBUFFERED is what makes the live console actually live. The child writes to a PIPE, not a
+    # tty, so CPython block-buffers its stdout (~8KB): every plain `print()` in a scraper sits in that
+    # buffer and reaches the streamer only when the buffer fills or the process EXITS. Measured: three
+    # lines printed 0.6s apart all arrived together at exit. For a 4-hour crawl that means a console
+    # that stays empty for four hours and then dumps everything — the exact opposite of watching a run.
+    # (HOODIE_PROGRESS lines used flush=True and so leaked through, which would have made the counters
+    # look like they worked while the log stayed blank — a confusing half-broken state.)
+    env = dict(os.environ, HOODIE_RUN_TOKEN=run_token, PYTHONUNBUFFERED="1",
+               **(extra_env or {}))                                          # coverage stamp + overlays
     try:
-        r = subprocess.run([PY, "-c", code], cwd=HERE, timeout=timeout_s,
-                           capture_output=True, text=True, env=env)
+        r = _exec(code, timeout_s, env, on_line=on_line)
         if r.returncode != 0:
             status = "failed"
             # A NEGATIVE returncode = killed by a signal, NOT a Python exception (subprocess convention).
@@ -267,6 +412,8 @@ def run_one(source, log=print, extra_env=None):
                     nm = "SIG%d" % (-r.returncode)
                 error = "killed by %s (%d)%s" % (nm, -r.returncode,
                                                  " — OOM likely; reduce crawl memory/concurrency" if -r.returncode == 9 else "")
+                if -r.returncode == 9:
+                    fail_class = "oom"        # SIGKILL under a big crawl IS the OOM killer — not a guess
             else:
                 # Real nonzero EXIT: keep the CRASH SITE — the last traceback 'File "…", line N' frame plus the
                 # final message line. Only trust a message line when there IS a traceback; otherwise a caught,
@@ -282,8 +429,20 @@ def run_one(source, log=print, extra_env=None):
                     error = "nonzero exit %d (no traceback — see run log)" % r.returncode
     except subprocess.TimeoutExpired:
         status, error = "timeout", "exceeded %ds" % timeout_s
+        fail_class = "timeout"
     except Exception as e:
         status, error = "failed", str(e)[:300]
+    # A scraper may DECLARE its failure class — it is the only thing that saw the HTTP status behind an
+    # anti-bot wall. Structural: an explicit statement from the run, not a pattern matched against prose.
+    if not fail_class:
+        m = re.search(r'HOODIE_FAIL\s+(\{.*?\})', (r.stderr if r is not None else "") or "", re.S)
+        if m:
+            try:
+                k = (json.loads(m.group(1)) or {}).get("class")
+                if k:
+                    fail_class = str(k)[:24]
+            except Exception:
+                pass
     after = _counts_after(source["tables"], before, log=log)
     dur = round(time.time() - t0, 1)
 
@@ -298,10 +457,21 @@ def run_one(source, log=print, extra_env=None):
     # COVERAGE: how much of the source's universe THIS run actually touched (expected vs landed store/item
     # counts) — the honest signal a cumulative merge can't give. A run can be 'current'/'ok' by row-count yet
     # 'partial' by coverage (blocked mid-crawl); this is what surfaces that. Best-effort — never fails a run.
+    # PARTIAL COVERAGE IS A FAILURE. Landing *some* of the outlets and items is not a successful pull —
+    # a customer buying this data gets a catalog with holes in it, and a run that reports `ok` on 60% of
+    # the shelf is the product lying about itself. So a partial coverage verdict downgrades the run to
+    # `incomplete`, which selfheal treats as retryable: the source is re-dispatched on the escalating
+    # backoff and, because long crawls now checkpoint and resume, each retry CONTINUES rather than
+    # restarting. Nothing stops on incompleteness — it keeps going until the catalog is actually covered.
+    sr = _self_report((r.stderr if r is not None else "") or "")
     cov = {}
     try:
         import coverage as _cov
         cv = _cov.assess(source)
+        if status in ("ok", "current") and (cv["items"]["verdict"] == "partial"
+                                            or cv["stores"]["verdict"] == "partial"):
+            status = "incomplete"
+            fail_class = fail_class or "incomplete"
         cov = dict(cov_basis=cv["basis"],
                    landed_items=cv["items"]["landed"], expected_items=cv["items"]["expected"],
                    cov_items_pct=cv["items"]["pct"], cov_items=cv["items"]["verdict"],
@@ -327,10 +497,32 @@ def run_one(source, log=print, extra_env=None):
             error = " | ".join([e for e in ([error] if error else []) + caps_missing])[:300]
     except Exception:
         pass
+    # THE SCRAPER'S OWN DENOMINATOR OUTRANKS THE WATERMARK. If the run told us how big its universe was,
+    # that is the completeness denominator — measured against the job it was given, not against its own
+    # best previous day. This is the difference between "we landed everything we managed to land" and
+    # "we landed everything there is", and only the second one is sellable.
+    if sr:
+        tot, done = sr.get("stores_total"), sr.get("stores_done")
+        if tot and done is not None:
+            pct = round(100.0 * done / tot, 1)
+            verdict = "complete" if pct >= 99.5 else ("partial" if done else "empty")
+            cov.update(cov_basis="self-reported", landed_stores=done, expected_stores=tot,
+                       cov_stores_pct=pct, cov_stores=verdict)
+            if verdict != "complete" and status in ("ok", "current"):
+                status = "incomplete"
+                fail_class = fail_class or "incomplete"
+        # A scraper that DECLARES itself degraded is never a success, whatever the row delta says. The
+        # tripwire firing means the pass was abandoned; rows landed before it fired don't redeem the run.
+        declared = str(sr.get("status") or "")
+        if declared in ("degraded", "incomplete", "partial", "blocked") and status in ("ok", "current"):
+            status = "incomplete"
+            fail_class = fail_class or declared
+    if status == "empty" and not fail_class:
+        fail_class = "empty"
     rec = dict(run_id=run_token, source=sid, label=source["label"], klass=source["klass"],
                ts_start=int(t0), ts_end=int(time.time()), duration_s=dur, status=status,
                rows_before=b, rows_after=a, delta=delta, tables=",".join(source["tables"]),
-               error=error, host=os.uname().nodename[:40],
+               error=error, fail_class=fail_class or "", host=os.uname().nodename[:40],
                caps_missing=",".join(sorted(_cap.missing(source.get("caps", [])))) if caps_missing else "",
                **cov)
     covnote = ""

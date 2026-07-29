@@ -49,7 +49,9 @@ def one(sku, url):
 
 def run(limit=None, workers=12, log=print):
     import runlog
-    cat = abc.harvest_ids(log=log)                              # [(sku, url)] from the product sitemaps
+    cat, hit_ceiling = abc.harvest_ids(log=log)                 # [(sku, url)] from the product sitemaps
+    if hit_ceiling:
+        log("[abc-cat] !! sitemap ceiling reached — this catalog may be incomplete (raise ABC_MAX_PAGES)")
     if limit:
         cat = cat[:limit]
     log("[abc-cat] crawling %d products (%d workers)…" % (len(cat), workers))

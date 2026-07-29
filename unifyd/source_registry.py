@@ -25,6 +25,16 @@ Optional scheduling metadata (the --due dispatcher, NRT-PLAN.md §3):
                host just landed.
   priority   : Mac-queue order, lower first (default 50). Long aggregator sweeps run first; the
                contention-sensitive anti-bot trio last (was run_mac_queue.sh's hardcoded order).
+
+TIME-BOUND sources (Hoodie Collect's run controls):
+  window     : dict declaring that this source takes a LOOKBACK WINDOW, and the env knob that sets it:
+                 {"env": "TTB_DAYS", "unit": "days", "default": 14, "all": 13000,
+                  "note": "…what 'all' actually costs…"}
+               Hoodie Collect renders "last 7 days / custom / all" from this and passes the value through
+               run_ephemeral.py --days/--all → extra_env. A source WITHOUT a `window` REJECTS --days/--all
+               rather than accepting and ignoring them: a window that is silently dropped produces a run
+               labelled "all" that is really the default slice, which is the same class of lie as a silent
+               cap in a "full" pull. Only declare `window` once you've confirmed the entrypoint honours it.
 """
 
 SOURCES = [
@@ -44,12 +54,26 @@ SOURCES = [
          note="open storefront GraphQL + Brandify locator — no auth/anti-bot; SKU (no UPC), national pricing"),
     dict(id="abc-facets", label="ABC FW&S (facets)", code="import abc_facets as m; m.pull(cap=None)",
          tables=["abc_products", "source_taxonomy"], klass="headless", cadence="daily", enabled=True, note="SearchSpring"),
-    dict(id="abc-catalog", label="ABC FW&S (catalog)", code="import abc_catalog as m; m.run()",
+    # SUPERSEDED by abc-fws, which now parses the item master out of the SAME product-page fetch it
+    # already makes for per-store availability. Running both meant crawling ~14k identical pages twice
+    # (two ~4h sweeps, double the load on a live retailer) for data present in one response — and left
+    # the item row and the store row describing states hours apart. Disabled rather than deleted; the
+    # module stays until abc-fws has proven the merged output in the bench.
+    dict(id="abc-catalog", label="ABC FW&S (catalog) — superseded by abc-fws",
+         code="import abc_catalog as m; m.run()", enabled_note="merged into abc-fws",
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
-         tables=["abc_catalog"], klass="headless", cadence="weekly", enabled=True, note="BigCommerce sitemap"),
+         tables=["abc_catalog"], klass="headless", cadence="weekly", enabled=False,
+         note="SUPERSEDED — abc-fws lands abc_catalog from the same crawl (one fetch, both layers)"),
     dict(id="abc-fws", label="ABC FW&S (inventory)", code="import abc_fws_scraper as m; m.pull(crawl_all=True)",
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
-         tables=["retail_observations"], klass="headless", cadence="daily", enabled=True, cost_class="proxy",
+         # TIMEOUT: the full sweep is ~13.9k product pages paced by `polite` at ~1 req/s (ABC_MIN_INTERVAL
+         # 0.6 + jitter, per-host serialized — the 12 workers do NOT multiply throughput). That is ~4h, so
+         # the old 5400s default killed every run mid-crawl; the ledger shows an unbroken TIMEOUT streak.
+         # 6h leaves headroom. The crawl now lands per batch and checkpoints, so even a kill keeps its work
+         # and the next run resumes — the timeout is a backstop, no longer a data-loss event.
+         timeout=21600, mem=8192,
+         tables=["retail_observations", "abc_catalog"], klass="headless", cadence="daily", enabled=True,
+         cost_class="proxy",
          note="per-store inventory → lands retail_observations (NOT abc_products, which abc-facets owns/overwrites)",
          # COVERAGE (coverage.py): item/store columns + the KNOWN universe, so a run that lands far fewer
          # SKUs/stores than this reads `partial` instead of a silent stale merge. Omit expected_* to let
@@ -84,10 +108,18 @@ SOURCES = [
                  "static": {"KROGER_STORE": "01100439", "KROGER_FACILITY": "14732"}},
          note="INTERNAL atlas endpoint = exact per-store on-hand + dims + ABV; Akamai cookie AUTO-WARMED per "
               "run (cookie_warm headful Chrome — no manual paste); store 01100439/fac 14732 default"),
-    dict(id="kroger-api", label="Kroger (API UPC seed)", code="import kroger_api as m; m.main()",
-         tables=["kroger_products"], klass="creds", cadence="weekly", enabled=True,
+    # DELIBERATELY OFF — do not "fix" this by adding the creds. The public Kroger API carries NO
+    # INVENTORY, which is the only reason we scrape Kroger at all (the atlas endpoint gives exact
+    # per-store on-hand). Left enabled with requires=[], it sat in every triage as a permanent
+    # "no-creds, just set the secrets!" prompt and got proposed as a free win more than once. It is
+    # not a free win; it is a source we chose not to run. Re-enable ONLY if the UPC seed is wanted
+    # for the atlas GTIN universe, and never as a substitute for inventory.
+    dict(id="kroger-api", label="Kroger (API UPC seed) — OFF: no inventory",
+         code="import kroger_api as m; m.main()",
+         tables=["kroger_products"], klass="creds", cadence="weekly", enabled=False,
          requires=["KROGER_CLIENT_ID", "KROGER_CLIENT_SECRET"],
-         note="thin public OAuth API — product/UPC seed that feeds the atlas GTIN universe (NOT real inventory)"),
+         note="OFF BY CHOICE — public OAuth API has NO inventory. Inventory comes from kroger (atlas). "
+              "Do not enable to clear a no-creds warning."),
     dict(id="publix", label="Publix", code="import publix as m; m.run()",
          caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["publix_products"], klass="headless", cadence="daily", enabled=True, cost_class="bd", note="weekly-ad API"),
@@ -95,12 +127,52 @@ SOURCES = [
          tables=["stop_and_shop_products"], klass="mac", cadence="daily", enabled=False, cost_class="mac", note="needs a warmed cookie — not headless"),
 
     # ── Aggregators / convenience (Mac headful — anti-bot) ────────────────────────────────────────────────────
-    dict(id="ubereats", label="Uber Eats", code="import ubereats as m; m.main(['--site','ubereats','--max-stores','1000'])",
-         caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
-         tables=["ubereats_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=10, note="Uber BFF, all stores"),
-    dict(id="postmates", label="Postmates", code="import ubereats as m; m.main(['--site','postmates','--max-stores','1000'])",
-         caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
-         tables=["postmates_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=11, note="Uber BFF, all stores"),
+    # THE UBEREATS SOURCE. Headless, list-driven, sharded — replaces the headful zone crawler that ran
+    # max_stores=1000 against a 502,212-store universe (0.2%, with the cap hidden in the registry).
+    # Both the catalog (getStoreV1) and the per-item UPC/detail (getMenuItemV1) answer COLD to plain
+    # curl_cffi — proven live from a Fly datacenter IP — so no browser, no proxy, no Bright Data, $0.
+    # One pass does BOTH layers because the item's section context is only in hand while we hold the
+    # catalog; a second sweep for UPC would repeat the abc-catalog mistake.
+    # Sharding is the day budget: --shard i/N splits the universe by stable hash, one ephemeral machine
+    # per shard. Start at 8; the run logs the observed rate and the shard-hours the universe needs, so
+    # the count is set by measurement rather than guesswork.
+    # SWEEP AND ENRICH ARE DIFFERENT JOBS ON DIFFERENT CLOCKS.
+    # The sweep is ONE request per store: 502,212 requests, ~30 minutes across the fleet. Enrichment is
+    # one request per NEW item — measured at ~82 items/store, so inline it turns a 502k-request job into
+    # a ~41.7M-request job, and it ran SERIALLY inside each store's thread (~18.5s/store, matching the
+    # observed rate exactly). That is a 30-minute pull wearing a 46-hour coat.
+    #
+    # They are separable because they answer different questions: UPC/brand/size/ABV are STATIC per item
+    # (fetch once, ever), while price and stock are volatile and come from the catalog call we already
+    # make. So the sweep runs fast and complete on a daily clock, and enrichment drains the backlog of
+    # genuinely-new items continuously — converging, then costing almost nothing in steady state.
+    # `shards` makes the SCHEDULER dispatch the fleet too; without it an unattended run was one machine.
+    # The other half of the split: drains the STATIC-attribute backlog (UPC/GTIN/brand/size/ABV) that the
+    # sweep no longer carries. Sharded and append-only like the sweep. Day one is a real backfill; after
+    # that only genuinely-new items cost anything, because a resolved item is never re-fetched.
+    dict(id="ubereats-enrich", label="Uber Eats item UPC/GTIN backfill (sharded)", shards=8,
+         code="import ue_enrich as m; m.main(['--site','ubereats','--shard',__import__('os').environ.get('UE_SHARD','0/8')])",
+         caps=['curl_cffi'],
+         tables=["ubereats_products"], klass="headless", cadence="daily",
+         enabled=True, cost_class="free", timeout=21600, mem=4096, priority=11,
+         note="separate clock from the sweep: static per-item attributes, fetched once ever"),
+    dict(id="ubereats", label="Uber Eats store catalog (sharded)", shards=8,
+         code="import ue_catalog as m; m.main(['--site','ubereats','--shard',__import__('os').environ.get('UE_SHARD','0/8'),'--no-enrich'])",
+         caps=['curl_cffi'],
+         tables=["ubereats_products", "retail_observations"], klass="headless", cadence="daily",
+         enabled=True, cost_class="free", timeout=21600, mem=4096, priority=10,
+         item_col="item_uuid", store_col="store_uuid",
+         note="COLD getStoreV1 + getMenuItemV1 over the 502k-store sitemap universe; shardable "
+              "(UE_SHARD=i/N), resumable, no caps. Headful ubereats.py archived as the zone crawler."),
+    # Postmates is the SAME Uber BFF on a different domain, so it is the identical recipe — one code
+    # path, not a parallel copy that can drift.
+    dict(id="postmates", label="Postmates (catalog + UPC, sharded)",
+         code="import ue_catalog as m; m.main(['--site','postmates','--shard',__import__('os').environ.get('UE_SHARD','0/8')])",
+         caps=['curl_cffi'],
+         tables=["postmates_products", "retail_observations"], klass="headless", cadence="daily",
+         enabled=True, cost_class="free", timeout=21600, mem=4096, priority=11,
+         item_col="item_uuid", store_col="store_uuid",
+         note="same cold Uber BFF recipe as ubereats, postmates.com domain"),
     # Deep full-detail crawl (ue_crawl.py: getStoreV1+getMenuItemV1, full per-item UPC/price/recipe) —
     # bounded to 5 major metros + capped stores/items so ONE run finishes in hours, not the multi-day
     # national sweep the crawler is capable of. NO proxy: ue_crawl.py was proven from the operator's
@@ -318,7 +390,13 @@ SOURCES = [
     dict(id="outlet-union", label="Outlet pre-master", code="import outlet_union as m; m.run()",
          tables=["outlet_master"], klass="headless", cadence="daily", enabled=True,
          note="derived ($0): unions DoorDash/Toast outlet spines → mastered outlets + per-source menu freshness"),
+    # WINDOW verified against ttb_pull.pull(): `days` defaults to int(os.environ["TTB_DAYS"] or 14) and is
+    # applied as (today - days) → today, chunked a day at a time with --resume. `all` = ~36y back, which
+    # covers the public COLA registry to its start; it is a multi-day resumable crawl, not a click-and-wait.
     dict(id="ttb-cola", label="TTB COLA scrape", code="import ttb_pull as m; m.run()",
+         window={"env": "TTB_DAYS", "unit": "days", "default": 14, "all": 13000,
+                 "note": "'all' walks the registry back to ~1990 one day-chunk at a time (resumable). "
+                         "Expect days of wall-clock, not minutes."},
          caps=['bs4', 'pillow', 'pylibdmtx', 'pytesseract', 'pyzbar'],   # optional libs this source silently degrades without (capability.py)
          tables=["ttb_cola"], klass="headless", cadence="weekly", enabled=True, timeout=5400,
          note="$0 off-Mac incremental COLA scrape (last TTB_DAYS) → accumulate ttb_cola; ttbonline.gov verify=False, direct (no BD/browser)"),
@@ -357,6 +435,21 @@ SOURCES = [
 # Builds run ONLY on the plain `--due` host (the Mac tick today) — the --headless-only cloud runner skips them —
 # so the single-writer rule holds for dim_* tables.
 BUILDS = [
+    # THE SHARDS CANNOT MERGE. write_accumulate is read-modify-write with no lock, so eight concurrent
+    # shards silently drop each other's rows (seen live: ubereats_products fluctuating wildly while the
+    # fleet ran). Shards therefore append parts, and this is the SINGLE writer that folds them into the
+    # canonical catalog — latest observation per (store_uuid, item_uuid) wins. Without it the parts
+    # accumulate and the catalog never updates, so it is a registered build, not a manual step.
+    dict(id="build-ue-catalog", label="UberEats catalog consolidate (shard parts → catalog)",
+         # NOTHING-TO-DO IS NOT A FAILURE. Folding ubereats' 451,821 part rows succeeded while postmates
+         # simply had no parts yet, and the build reported `incomplete` — a green job reading as broken
+         # teaches you to ignore the colour, which is the same trust defect as a broken job reading green.
+         # Report the total folded so the run is graded on what it actually did.
+         code=("import ue_catalog as m; n = m.consolidate('ubereats') + m.consolidate('postmates'); "
+               "print('HOODIE_RESULT {\"status\": \"ok\", \"items_done\": %d, \"items_total\": %d}' % (n, n))"),
+         tables=["ubereats_products", "postmates_products"], klass="build", interval_h=6, enabled=True,
+         mem=8192, after=["ubereats"],
+         note="single-writer fold of append-only shard parts; shards must never merge (lost updates)"),
     dict(id="build-outlets", label="Outlet shred → dim_outlet",
          code="import normalize as m; m.build(catalog=False, outlets=True, facts=False)",
          tables=["src_outlets", "dim_outlet"], klass="build", interval_h=6, enabled=True, mem=16384,

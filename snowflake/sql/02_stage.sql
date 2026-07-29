@@ -5,10 +5,7 @@
 -- generator (canonical star). See snowflake/README.md.
 -- ===================================================================================
 --
--- 02_stage.sql — the Parquet file format + the external stage → Tigris (S3-compatible).
---
--- The ${...} tokens are placeholders — substitute them before running (see 00_config: `envsubst`
--- or edit inline). Snowflake DDL can't take session vars here, so these must become real literals.
+-- 02_stage.sql — the Parquet file format + the stage the COPY statements read from.
 USE SCHEMA UNIFYD.RAW;
 
 CREATE FILE FORMAT IF NOT EXISTS PARQUET_FMT
@@ -18,16 +15,9 @@ CREATE FILE FORMAT IF NOT EXISTS PARQUET_FMT
   TRIM_SPACE = FALSE
   COMMENT = 'Parquet as written by unifyd/warehouse.py (zstd/snappy, DuckDB/pyarrow).';
 
--- S3-compatible external stage. s3compat:// + ENDPOINT is Snowflake's supported path for non-AWS S3
--- stores like Tigris. Credentials are the Tigris (AWS_*) key pair the engine uses (unifyd/warehouse.py).
--- Defaults: TIGRIS_PREFIX=warehouse, TIGRIS_ENDPOINT=fly.storage.tigris.dev.
-CREATE OR REPLACE STAGE WH
-  URL = 's3compat://${TIGRIS_BUCKET}/${TIGRIS_PREFIX}/'
-  ENDPOINT = '${TIGRIS_ENDPOINT}'
-  CREDENTIALS = ( AWS_KEY_ID = '${TIGRIS_KEY_ID}'  AWS_SECRET_KEY = '${TIGRIS_SECRET}' )
+-- INTERNAL: Snowflake-managed. run_load.py PUTs each Parquet to @WH/<same path the COPYs use>,
+-- so 03/04 are byte-identical between the two modes. NOT `CREATE OR REPLACE` — replacing an internal
+-- stage DROPS every file already staged in it, which would silently discard prior uploads on a rerun.
+CREATE STAGE IF NOT EXISTS WH
   FILE_FORMAT = PARQUET_FMT
-  COMMENT = 'Hoodie warehouse Parquet (warehouse/ prefix in the Tigris bucket).';
-
--- Smoke: list a couple of the named "full" sources so a bad cred/endpoint fails HERE, loudly.
-LIST @WH/total_wine_products.parquet;
-LIST @WH/ab_outlets.parquet;
+  COMMENT = 'Hoodie warehouse Parquet, uploaded by run_load.py (internal stage).';

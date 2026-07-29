@@ -172,7 +172,15 @@ def assess(source):
         if not applicable:
             return {"expected": None, "landed": None, "pct": None, "verdict": "n/a"}
         if not expected:
-            return {"expected": 0, "landed": landed or 0, "pct": None, "verdict": "baseline"}
+            # NOTHING expected and NOTHING landed is not a baseline — it is the absence of any
+            # evidence at all, and calling it `baseline` made a source that has never once worked
+            # read as a benign first run. Kroger sat at "baseline" through 12 consecutive zero-row
+            # runs into a table that does not exist, because a self-calibrating high-water-mark of 0
+            # divided by a landed count of 0 looks like a clean start. `baseline` now means what it
+            # says: we have landed something and are establishing the mark from it.
+            if not landed:
+                return {"expected": 0, "landed": 0, "pct": None, "verdict": "unknown"}
+            return {"expected": 0, "landed": landed, "pct": None, "verdict": "baseline"}
         pct = round(100.0 * (landed or 0) / expected, 1)
         verdict = "complete" if (landed or 0) >= expected * PARTIAL_FLOOR else "partial"
         return {"expected": expected, "landed": landed or 0, "pct": pct, "verdict": verdict}
