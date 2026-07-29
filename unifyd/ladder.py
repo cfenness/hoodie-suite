@@ -89,6 +89,15 @@ class SourceLadder:
     def report(self, cls):
         """Feed one classified outcome. Returns the rung to use next — usually the current one."""
         try:
+            import adapt
+            if adapt.frozen():
+                # A measurement is running. Rotating costume or escalating a rung mid-experiment would
+                # change the very variable being measured, and the arm would come back clean for a
+                # reason the experiment never recorded. Observe, don't act.
+                return self.rung
+        except Exception:
+            pass
+        try:
             import blocks
             blocked = blocks.is_throttle(cls)
         except Exception:

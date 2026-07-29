@@ -560,6 +560,12 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
             _t = blocks.get()
             if _t:
                 _bk = _t.flat()           # {'isp.soft_block': 12, 'isp.success_pct': 93.1, ...}
+                # TWO SCALARS, not the whole per-exit map — a heartbeat carrying 50 exits every beat is
+                # noise nobody reads. These two are enough to tell, live, whether a falling success rate
+                # is a handful of burned addresses or the whole pool, which are different emergencies.
+                _ev = _t.exit_verdict()
+                _bk["exit_pattern"] = _ev.get("pattern")
+                _bk["exits_burned"] = len(_ev.get("below_median_25pp") or [])
         except Exception:
             pass
         _progress(rows=n_items + len(pending),
@@ -773,6 +779,21 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
         if _t:
             rec["blocks"] = _t.counts_json() if hasattr(_t, "counts_json") else _t.flat()
             log("[ue] fetch outcomes: %s" % _t.summary())
+            # WHICH IDENTITIES, not just how many failures. The attribution has existed since the tally
+            # was written and was never reported, so every run on file records a pool average — under
+            # which "six addresses are burned" and "the fingerprint is blown" are the same number.
+            rec["blocks_by_exit"] = _t.by_exit()
+            rec["exit_verdict"] = _t.exit_verdict()
+            _ev = rec["exit_verdict"]
+            if _ev.get("pattern") == "burned_subset":
+                log("[ue] exits: %d of %d rated far below a healthy median (%.0f%%) — retire %s, the "
+                    "pool is not the problem" % (len(_ev["below_median_25pp"]), _ev["rated"],
+                                                 _ev["median_pct"], ", ".join(_ev["below_median_25pp"])))
+            elif _ev.get("pattern") == "uniform":
+                log("[ue] exits: every rated exit within %.0f pp of the others — the addresses are NOT "
+                    "the variable. More IPs buy nothing here." % _ev["spread_pp"])
+            else:
+                log("[ue] exits: %s (%s rated)" % (_ev.get("pattern"), _ev.get("rated")))
     except Exception:
         pass
     return rec

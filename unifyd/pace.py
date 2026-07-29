@@ -120,6 +120,16 @@ class Pacer:
                 self._empty += 1
             if self._n < self.window:
                 return
+            try:
+                import adapt
+                if adapt.frozen():
+                    # Measuring: keep counting, but hold the rate still. A pacer that backs off during
+                    # an experiment turns "how does the target respond at rate R" into "how does the
+                    # target respond at whatever rate we drifted to".
+                    self._n = self._empty = 0
+                    return
+            except Exception:
+                pass
             ratio = self._empty / float(self._n)
             if self._derive:
                 self._seen_windows += 1
