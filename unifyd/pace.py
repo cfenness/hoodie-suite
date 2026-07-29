@@ -46,7 +46,12 @@ EMPTY_TRIP = float(os.environ.get("UE_EMPTY_TRIP", "0"))      # 0 = derive it; >
 TRIP_MARGIN = float(os.environ.get("UE_TRIP_MARGIN", "0.25"))  # how far above baseline is "throttled"
 TRIP_FLOOR = float(os.environ.get("UE_TRIP_FLOOR", "0.5"))     # never trip below this, whatever baseline
 BASELINE_WINDOWS = int(os.environ.get("UE_BASELINE_WINDOWS", "3"))
-WINDOW = int(os.environ.get("UE_PACE_WINDOW", "200"))         # outcomes per control decision
+# THE WINDOW MUST BE SMALL ENOUGH TO ADAPT WITHIN A RUN. At 200 outcomes and ~1.4 stores/s per shard, a
+# control decision happened only every ~2.3 minutes — so after the pre-rotation collapse drove the rate
+# from 5.0 to 1.25, climbing back took half an hour and the run read 11h ETA while succeeding at 90%+.
+# The endpoint was no longer the limiter; the controller's own reaction time was. 50 outcomes keeps the
+# ratio statistically meaningful while making both backoff AND recovery four times more responsive.
+WINDOW = int(os.environ.get("UE_PACE_WINDOW", "50"))          # outcomes per control decision
 
 
 def shard_rate(nshard=1, fleet_rate=None):
@@ -118,8 +123,11 @@ class Pacer:
                 if self.rate <= self.min_rate:
                     self._floor_hits += 1
             else:
-                # ADDITIVE INCREASE — creep, don't lunge.
-                self.rate = min(self.max_rate, self.rate + 0.5)
+                # ADDITIVE INCREASE — creep, don't lunge. The step is proportional to the CURRENT rate
+                # so recovery from a deep backoff isn't a flat crawl: at 1.25/s a fixed +0.5 needs ~8
+                # windows to reach 5/s, which is how a healthy run stayed slow for half an hour. Still
+                # additive (never doubling), so it cannot lunge back into the wall it just found.
+                self.rate = min(self.max_rate, self.rate + max(0.5, self.rate * 0.1))
                 self.increases += 1
             self._n = self._empty = 0
 
