@@ -4,9 +4,10 @@
 `classify()` decides whether an outlet can go on a map and, if not, which resolver fixes it. It is
 pure on purpose so the routing rules are testable without touching 1.77M rows.
 
-The anchor case is the one that was measured and missed: a DoorDash row with a city, an EMPTY state,
-and no address fell through all three geo passes and was reported as permanently unreachable — while
-`doordash_stores` held its state all along. That must route to `backfill`, never to `none`.
+Grounded in a measured investigation: 42,585 DoorDash outlets sit unmappable with a city and an EMPTY
+state. They look like a free join against doordash_stores — and are not, because src_outlets keys
+doordash by NAME SLUG and doordash_stores by NUMERIC id. The tests pin both halves: the backfill route
+works when a sibling is genuinely declared, and doordash must NOT claim it without a key bridge.
 
     python3 unifyd/mappability_test.py
 """
@@ -60,30 +61,42 @@ def main():
     _, res, _ = M.classify(row(source="ubereats", store_id="9"))
     check("aggregator with nothing else -> fetch", res == "fetch")
 
-    # --- THE ANCHOR: city, no state, sibling has it ------------------------------------------------
-    r = row(city="Houston", state="")
-    st, res, why = M.classify(r)
-    check("city + empty state with NO sibling is unreachable", res == "none", (st, res, why))
+    # --- THE BACKFILL ROUTE: city, no state, and a DECLARED sibling that has it -------------------
+    # Exercised through a temporary declaration rather than a real source, so the rule is tested even
+    # while no production source currently has a usable key bridge (see NEEDS_KEY_BRIDGE below).
+    M.SIBLINGS["demo"] = {"table": "demo_stores", "key": ("store_id", "store_id"),
+                          "fields": ("city", "state")}
+    try:
+        r = row(source="demo", city="Houston", state="")
+        st, res, why = M.classify(r)
+        check("city + empty state with NO sibling is unreachable", res == "none", (st, res, why))
 
-    st, res, why = M.classify(r, sibling={"store_id": "1", "city": "Houston", "state": "TX"})
-    check("city + empty state WITH a sibling routes to backfill", res == "backfill", (st, res, why))
-    check("the reason names the sibling table", "doordash_stores" in why, why)
-    check("the reason names the missing field", "state" in why, why)
+        st, res, why = M.classify(r, sibling={"store_id": "1", "city": "Houston", "state": "TX"})
+        check("city + empty state WITH a declared sibling routes to backfill",
+              res == "backfill", (st, res, why))
+        check("the reason names the sibling table", "demo_stores" in why, why)
+        check("the reason names the missing field", "state" in why, why)
 
-    # A sibling that adds nothing must not manufacture a resolver.
-    _, res, _ = M.classify(row(city="Houston", state=""),
-                           sibling={"store_id": "1", "city": "Houston", "state": ""})
-    check("an empty sibling field does not route to backfill", res == "none")
+        # A sibling that adds nothing must not manufacture a resolver.
+        _, res, _ = M.classify(row(source="demo", city="Houston", state=""),
+                               sibling={"store_id": "1", "city": "Houston", "state": ""})
+        check("an empty sibling field does not route to backfill", res == "none")
 
-    # Backfill must never be preferred over data we already hold.
-    _, res, _ = M.classify(row(city="Houston", state="TX"),
-                           sibling={"store_id": "1", "city": "Dallas", "state": "TX"})
-    check("a complete row ignores the sibling entirely", res == "centroid")
+        # Backfill must never be preferred over data we already hold.
+        _, res, _ = M.classify(row(source="demo", city="Houston", state="TX"),
+                               sibling={"store_id": "1", "city": "Dallas", "state": "TX"})
+        check("a complete row ignores the sibling entirely", res == "centroid")
+    finally:
+        M.SIBLINGS.pop("demo", None)
 
     # A source with no SIBLINGS entry can't backfill, however rich the sibling looks.
     _, res, _ = M.classify(row(source="ca-abc", city="Napa", state=""),
                            sibling={"store_id": "1", "city": "Napa", "state": "CA"})
     check("undeclared source does not backfill", res == "none")
+    # doordash is undeclared for the same reason — no shared key — so it must route to `none` too.
+    _, res, _ = M.classify(row(source="doordash", city="Warrawong", state=""),
+                           sibling={"store_id": "1", "city": "Warrawong", "state": "NSW"})
+    check("doordash without a key bridge does not claim backfill", res == "none")
 
     # --- genuinely unreachable ---------------------------------------------------------------------
     st, res, why = M.classify(row(source="ca-abc"))
@@ -92,8 +105,12 @@ def main():
     check("and lists the missing fields", "city" in why and "state" in why, why)
 
     # --- the declaration itself --------------------------------------------------------------------
-    check("doordash declares a sibling", "doordash" in M.SIBLINGS)
-    check("the sibling carries state", "state" in M.SIBLINGS["doordash"]["fields"])
+    # doordash is deliberately NOT in SIBLINGS: src_outlets keys it by name slug, doordash_stores by
+    # numeric id, so the join matches zero rows. It lives in NEEDS_KEY_BRIDGE so the gap stays visible.
+    check("doordash is not claimed as joinable", "doordash" not in M.SIBLINGS)
+    check("doordash is recorded as needing a key bridge", "doordash" in M.NEEDS_KEY_BRIDGE)
+    check("every declared sibling names its fields",
+          all("fields" in v and v["fields"] for v in M.SIBLINGS.values()))
 
     print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
     return 1 if FAILED else 0
