@@ -42,18 +42,23 @@ def query(page=0, hits=1000):
 
 
 def fetch_records(sample=300, crawl_all=False, log=print):
+    """(records, complete). `complete` is False when pagination stopped early — a full crawl that
+    lost a page is NOT the whole catalog, and the caller must not treat it as a rebuild."""
     if not crawl_all:
-        return query(0, min(sample, 1000)).get("hits", [])
+        return query(0, min(sample, 1000)).get("hits", []), False
     first = query(0, 1000)
     out = list(first.get("hits", []))
     pages = min(first.get("nbPages", 1), 100)   # was 40 — don't truncate the full Algolia catalog
+    complete = True
     for p in range(1, pages):
         try:
             out += query(p, 1000).get("hits", [])
         except Exception as e:
-            log(f"page {p}: {e}"); break
+            log(f"page {p}: {e}")
+            complete = False
+            break
         log(f"page {p + 1}/{pages}: {len(out)} records")
-    return out
+    return out, complete
 
 
 def _store_price(sp):
@@ -138,7 +143,7 @@ def to_snapshot(records):
                 "origin": h.get("country") or "", "category": h.get("productType") or h.get("gtmCategory") or "",
                 "department": h.get("productDepartment") or "",
                 "item_size": h.get("itemSize") or "", "unit_label": h.get("priceUnitLabel") or "",
-                "case_pack": h.get("casePack"), "image": h.get("imageUrl") or "",
+                "case_pack": _num(h.get("casePack")), "image": h.get("imageUrl") or "",
                 "product_url": h.get("productUrl") or h.get("productLink") or "",
                 "proof": proof, "abv": (round(proof / 2, 1) if proof else None),
                 "thc_mg": thc, "cbd_mg": cbd,
@@ -193,11 +198,30 @@ def run_record(movement, n_products, status, warnings):
             "movement": movement}
 
 
+REPLACE_FLOOR = float(os.environ.get("BINNYS_REPLACE_FLOOR", "0.9"))
+
+
+def _safe_to_replace(n_new, log=print):
+    """May a full crawl REPLACE the landed catalog? Only if it isn't materially smaller than what is
+    already there. A shrink means the crawl came up short, not that Binny's delisted 90% of its range."""
+    try:
+        prior = warehouse.row_count("binnys_products")
+    except Exception as e:                       # noqa: BLE001 — can't verify ⇒ don't replace
+        log("  [binnys] cannot read prior row count (%s) — accumulating instead of replacing" % str(e)[:60])
+        return False
+    if prior and n_new < prior * REPLACE_FLOOR:
+        log("  [binnys] REFUSING to replace catalog: %d new rows vs %d landed (floor %.0f%%) — "
+            "accumulating instead" % (n_new, prior, REPLACE_FLOOR * 100))
+        return False
+    return True
+
+
 def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=print):
     state_dir = state_dir or out
     os.makedirs(out, exist_ok=True)
+    crawl_complete = False
     try:
-        records = fetch_records(sample=sample, crawl_all=crawl_all, log=log)
+        records, crawl_complete = fetch_records(sample=sample, crawl_all=crawl_all, log=log)
     except Exception as e:
         run = run_record(diff_store({}, {}), 0, "failed",
                          [f"Algolia query failed: {str(e)[:120]} — the public search key may have "
@@ -205,6 +229,7 @@ def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=p
         return {}, [run], run["movement"]
     if limit:
         records = records[:limit]
+        crawl_complete = False          # an explicit truncation is not a complete catalog
     cur, parsed_qty = to_snapshot(records)
     if not cur:
         run = run_record(diff_store({}, {}), 0, "failed",
@@ -224,8 +249,19 @@ def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=p
     # dated observation time-series (qty = exact on-hand; the whole reason Binny's is a Counts source).
     try:
         recs = [{k: v.get(k) for k in PRODUCT_FIELDS} for v in cur.values()]
-        warehouse.write_accumulate("binnys_products", recs, key=lambda r: (r["sku"], r["store"]),
-                                   fields=PRODUCT_FIELDS)
+        # a COMPLETE full crawl is the whole catalog -> OVERWRITE (a clean, consistently-typed schema);
+        # merging into the old narrower table with write_accumulate hits a pyarrow type conflict (old
+        # string cols vs new numeric). Anything else accumulates so it grows rather than clobbers.
+        #
+        # `crawl_all` alone is NOT sufficient authority to replace a catalog: pagination breaks out on a
+        # page error and --limit truncates, so a full crawl can return a few hundred rows of a 29,787-SKU
+        # table. That write would not be EMPTY, so warehouse's empty-write guard would not catch it. Hence
+        # both a completeness flag and a row-count floor.
+        if crawl_all and crawl_complete and _safe_to_replace(len(recs), log):
+            warehouse.write_parquet("binnys_products", recs, fields=PRODUCT_FIELDS)
+        else:
+            warehouse.write_accumulate("binnys_products", recs, key=lambda r: (r["sku"], r["store"]),
+                                       fields=PRODUCT_FIELDS)
         observe.record("binnys", [{"source": "binnys", "store_id": v["store"], "store": "Binny's #%s" % v["store"],
                                    "product_id": v["sku"], "upc": "", "brand": v["brand"], "name": v["name"],
                                    "price": v["price"], "on_promo": bool(v.get("deal_of_week") or v.get("discount_pct")),

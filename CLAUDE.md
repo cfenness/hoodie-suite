@@ -166,6 +166,22 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   fills what the HTML doesn't structure, per-field provenance = structured vs vision. Reads land
   in `label_reads`. Endpoints: `POST /api/label/read {url, vision?}`, `GET /api/label/reads`.
   Surface: `apps/mdm-label-reader.html` (the **Label Reader** section in `apps/mdm.html`).
+- `unifyd/locator_signal.py` — the **"why go here"** layer under the Product Locator. `/api/locator`
+  answers WHO CARRIES IT from the distributor feed (vtinfo); `/api/locator/offers` answers why go
+  *here*, from data we already land: verified stock + on-hand (`retail_observations`), everyday vs.
+  promo price, sell-through (`fact_velocity`), instrument tier (`obs_quality_source`) and geo
+  (`src_outlets`, joined on `(source, store_id)`). The price primitive is **Google-Flights-shaped** —
+  not "cheapest" but "is this a GOOD price", scored against the trailing local distribution — plus a
+  wait-or-buy read off the store's own promo cadence. **Three rules are load-bearing and tested:**
+  (1) rank by price PERCENTILE, never by % off — a deep cut on an inflated everyday can still sit
+  above the area median; (2) compare only per-750ml equivalents (`price_signal.unit_price`) so a
+  1.75L can't pollute a 750ml pool; (3) below `MIN_REF` priced stores, or in a FLAT market, emit no
+  band and say why — which is also why there's no hardcoded control-state list (uniform state pricing
+  *is* a flat distribution, so it falls out of the data). Two render modes, filtered **server-side**:
+  `consumer` gets the full verdict, `mode=brand` strips every negative claim (a brand-embedded widget
+  pointing at the brand's own accounts must not badge them "high price"). Surface:
+  `apps/product-locator.html`. Tests: `locator_signal_test.py` (pure, stdlib-only) +
+  `locator_offers_test.py` (seeded local warehouse — needs duckdb, skips cleanly without it).
 - `unifyd/menu_ingest.py` — parse a DISTRIBUTOR WHOLESALE MENU file (xlsx/csv; cannabis
   Curaleaf NY is the reference shape) into normalized order lines. stdlib-only (xlsx = zipped
   XML), heuristic header-row detection + column synonyms, Excel serial dates, THC normalization.
@@ -305,6 +321,26 @@ production; there is no staging branch.
 - **What ships:** the Dockerfile copies the repo; the engine (`unifyd/`, `*.py`, secrets,
   dotfiles) is present in the image but **never web-served** — the static file route
   enforces a `_SUITE_OK_TOP` allowlist on the resolved path.
+- **NO GITHUB ACTIONS, EVER — variable cost (hard rule).** The repo now has **zero** workflows.
+  The deploy/scrape ones were removed earlier; the last survivor, `tests.yml` (warehouse-compat +
+  dispatch-guard), went on 2026-07-28 — it was failing 6/6 on environment issues while both suites
+  passed locally, i.e. billing minutes to produce noise, and it never ran the guard that actually
+  caught a real break. **Nothing auto-deploys — merging a PR ships nothing.**
+  The replacement is free, local, and strictly broader:
+  `python3 tools/release_train.py integrate` runs `smoke_check` plus **every** `unifyd/*_test.py`
+  (not a path-triggered subset), labels each failure introduced-vs-pre-existing, and attributes it
+  to the PR that broke it. Ship with `python3 tools/release_train.py deploy` (or a manual
+  `flyctl deploy --remote-only` from a clean `origin/main`). **Never re-add a workflow.**
+- **DEPLOY GUARD (installed, mechanical).** `flyctl deploy` ships the WORKING TREE, not a branch,
+  and with several sessions in separate worktrees that is a live clobber — on 2026-07-28 a merged
+  feature was deployed and then silently wiped from the running container by a later deploy from a
+  stale worktree, while every release read `complete`. `tools/deploy_guard.py` installs a shim at
+  `~/.fly/bin/flyctl` that refuses `deploy` unless the tree is a **clean origin/main**; every other
+  subcommand passes through untouched, and it **fails open** on any error it can't resolve.
+  `HOODIE_DEPLOY_OK=1` bypasses it deliberately; `python3 tools/deploy_guard.py uninstall` removes it.
+  **The supported way to ship is `python3 tools/release_train.py deploy`** — it builds its own clean
+  checkout at origin/main, verifies it, deploys, confirms the release landed, and re-pins the
+  dispatcher when `source_registry.py` moved.
 - **Legacy S3/CloudFront** (`deploy.sh`, `cloudfront/`) is **DORMANT** — kept for
   reference only. Ignore it unless deliberately resuming S3 serving.
 

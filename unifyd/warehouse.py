@@ -51,24 +51,31 @@ def remote():
     return bool(_endpoint() and _bucket())
 
 
+# Transient remote failures worth retrying — network, not data. The httpfs READ strings were added
+# after a measured false zero: DuckDB surfaced a dropped part-file footer read as
+# "IO Error: Failed to read connection error for HTTP GET to 'https://fly.storage.tigris.dev/…'",
+# which matched none of the write-side markers, so a read blip went straight to the caller as [].
+_TRANSIENT = ("curlCode: 28", "NETWORK_CONNECTION", "Timeout was reached", "timed out",
+              "Connection reset", "SlowDown", "503", "InternalError", "RequestTimeout",
+              "Failed to read connection", "connection error for HTTP", "Connection refused",
+              "Unable to connect", "Could not establish connection", "HTTP GET error")
+
+
 def _retry(fn, what="s3 write"):
-    """Run a remote write with bounded exponential backoff. Tigris multipart uploads occasionally
-    time out mid-part (curlCode 28 / AWS NETWORK_CONNECTION during UploadPart) — a transient
-    network blip, not a data problem — and that was surfacing as a whole failed pull (e.g.
+    """Run a remote read/write with bounded exponential backoff. Tigris multipart uploads
+    occasionally time out mid-part (curlCode 28 / AWS NETWORK_CONNECTION during UploadPart) — a
+    transient network blip, not a data problem — and that was surfacing as a whole failed pull (e.g.
     offprem-census losing a 5000s crawl to one dropped part). Retrying the write is safe: every
     warehouse write is a full-object PUT or a fresh part file, so a re-run overwrites cleanly and
-    is idempotent. Local-disk writes don't come through here. Env: WAREHOUSE_WRITE_RETRIES (default 4)."""
+    is idempotent. Reads are trivially safe to retry. Local-disk I/O doesn't come through here.
+    Env: WAREHOUSE_WRITE_RETRIES (default 4)."""
     import time as _t
     tries = max(1, int(os.environ.get("WAREHOUSE_WRITE_RETRIES", "4")))
     for i in range(tries):
         try:
             return fn()
         except Exception as e:
-            msg = str(e)
-            transient = any(s in msg for s in ("curlCode: 28", "NETWORK_CONNECTION", "Timeout was reached",
-                                               "timed out", "Connection reset", "SlowDown", "503",
-                                               "InternalError", "RequestTimeout"))
-            if i == tries - 1 or not transient:
+            if i == tries - 1 or not any(s in str(e) for s in _TRANSIENT):
                 raise
             _t.sleep(min(2 ** i, 30))          # 1s, 2s, 4s, 8s … capped 30s
 
@@ -372,19 +379,38 @@ def write_partition(name, part, records, fields=None):
     return {"rows": len(records), "part": part}
 
 
+_NO_FILES = ("No files found matching", "no files found matching", "IO Error: No files",
+             "does not exist")
+
+
 def query_parts(name, sql=None, params=None):
     """Query ALL partitions of a time-series table (warehouse/<name>/*.parquet) as view `t`. Schemas
-    may differ across sources, so union_by_name. Empty-safe (returns [] if no partitions yet)."""
-    import duckdb
+    may differ across sources, so union_by_name. Empty-safe (returns [] if no partitions yet).
+
+    A TRANSIENT READ IS NOT AN EMPTY TABLE. This used to be a bare `except: return []`, which
+    turned a dropped Tigris connection into a result set indistinguishable from "there is no
+    data" — the same false-zero class that has already faked empty runs elsewhere, and exactly
+    the quiet degrade that is worse than a crash. Measured live: the identical query returned []
+    twice and 6,696 rows on the third try, because one part file's footer read blipped.
+
+    So: retry transients with backoff (the same `_retry` the write path uses), return [] ONLY when
+    the glob genuinely matches no files, and RAISE anything else so the caller can degrade loudly.
+    """
     con = connect()
     glob = ("s3://%s/%s/%s/*.parquet" % (_bucket(), _prefix(), name)) if remote() \
         else os.path.join(_LOCAL_DIR, name, "*.parquet")
-    try:
+
+    def _mkview():
         con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM "
                     "read_parquet('%s', union_by_name=true)" % glob)
-    except Exception:
-        return []
-    cur = con.execute(sql or "SELECT * FROM t", params or [])
+    try:
+        _retry(_mkview, what="parquet view %s" % name)
+    except Exception as e:
+        if any(s in str(e) for s in _NO_FILES):
+            return []                       # genuinely no partitions yet — the documented case
+        raise
+    cur = _retry(lambda: con.execute(sql or "SELECT * FROM t", params or []),
+                 what="parquet scan %s" % name)
     cols = [d[0] for d in cur.description]
     return [dict(zip(cols, row)) for row in cur.fetchall()]
 
