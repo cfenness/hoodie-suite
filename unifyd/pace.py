@@ -34,7 +34,18 @@ import time
 # Fleet-wide request budget, split across shards. Deliberately conservative: the measured collapse was
 # ~59 req/s aggregate, so we start well under it and let additive increase find the real ceiling.
 FLEET_RATE = float(os.environ.get("UE_FLEET_RATE", "40"))
-EMPTY_TRIP = float(os.environ.get("UE_EMPTY_TRIP", "0.25"))   # empty ratio that triggers a backoff
+# TRIP ON A RISE ABOVE THE BASELINE, NOT AN ABSOLUTE RATIO. A fixed 0.25 was the fourth constant in this
+# system to be wrong, and it was wrong in the most damaging way: ~25% of stores return no catalog because
+# they are CLOSED OR DELISTED — a permanent property of the universe, not a signal about our request rate.
+# So every window tripped, AIMD halved every time, and the controller walked itself to the floor: the
+# paced run fell to ~2 stores/s (a 35-hour projection) while being throttled by nothing but itself.
+#
+# The two states separate cleanly in the measurements: healthy sits near 25% empty, a real throttle hit
+# 90% (5,025 of 5,578). So learn the baseline from early windows and trip well above it.
+EMPTY_TRIP = float(os.environ.get("UE_EMPTY_TRIP", "0"))      # 0 = derive it; >0 pins it explicitly
+TRIP_MARGIN = float(os.environ.get("UE_TRIP_MARGIN", "0.25"))  # how far above baseline is "throttled"
+TRIP_FLOOR = float(os.environ.get("UE_TRIP_FLOOR", "0.5"))     # never trip below this, whatever baseline
+BASELINE_WINDOWS = int(os.environ.get("UE_BASELINE_WINDOWS", "3"))
 WINDOW = int(os.environ.get("UE_PACE_WINDOW", "200"))         # outcomes per control decision
 
 
@@ -48,6 +59,11 @@ class Pacer:
     """Token bucket + AIMD controller. Thread-safe; one instance shared by all workers in a process."""
 
     def __init__(self, rate, min_rate=0.5, max_rate=None, window=WINDOW, empty_trip=EMPTY_TRIP):
+        # empty_trip <= 0 means DERIVE it: watch the first BASELINE_WINDOWS windows, take the best
+        # (lowest) ratio seen as the universe's dead-store background, and trip above that.
+        self._derive = (empty_trip or 0) <= 0
+        self._baseline = None
+        self._seen_windows = 0
         self.rate = float(rate)
         self.min_rate = float(min_rate)
         # Never let increase run away past a sane multiple of where we started.
@@ -86,6 +102,15 @@ class Pacer:
             if self._n < self.window:
                 return
             ratio = self._empty / float(self._n)
+            if self._derive:
+                self._seen_windows += 1
+                self._baseline = ratio if self._baseline is None else min(self._baseline, ratio)
+                if self._seen_windows <= BASELINE_WINDOWS:
+                    # Still learning the background — do not act on it yet. Acting during calibration is
+                    # exactly how 3/IP got measured during a throttle and came out far too low.
+                    self._n = self._empty = 0
+                    return
+                self.empty_trip = max(TRIP_FLOOR, self._baseline + TRIP_MARGIN)
             if ratio >= self.empty_trip:
                 # MULTIPLICATIVE DECREASE — back off hard and immediately.
                 self.rate = max(self.min_rate, self.rate * 0.5)
@@ -101,7 +126,9 @@ class Pacer:
     def stats(self):
         with self._lock:
             return {"rate": round(self.rate, 2), "backoffs": self.backoffs,
-                    "increases": self.increases, "at_floor": self._floor_hits}
+                    "increases": self.increases, "at_floor": self._floor_hits,
+                    "trip": round(self.empty_trip, 3),
+                    "baseline": (round(self._baseline, 3) if self._baseline is not None else None)}
 
 
 _GLOBAL = {"pacer": None}

@@ -83,6 +83,31 @@ inst = pace.install(3.0)
 check("install returns the pacer", pace.get() is inst, True)
 check("installed rate", inst.rate, 3.0)
 
+# ── the BASELINE case that broke the first paced run ─────────────────────────────────────────────
+# ~25% of stores return no catalog because they are closed/delisted. That is a property of the
+# universe, not a signal about our request rate — and a fixed 0.25 trip read it as constant overload,
+# halving every window until the controller floored itself at ~2 stores/s (a 35-hour projection) while
+# nothing was throttling it. A steady background must let the rate CLIMB.
+b = pace.Pacer(rate=5.0, window=10)
+for _ in range(12):
+    for i in range(10):
+        b.report(ok=(i >= 3))            # a steady 30% empty background
+check("steady background does not back off", b.stats()["backoffs"], 0)
+check("steady background lets rate climb", b.rate > 5.0, True)
+check("trip derived above the baseline", b.stats()["trip"] > 0.3, True)
+
+# ...and a REAL throttle (90% empty, as measured: 5,025 of 5,578) must still trip hard.
+c = pace.Pacer(rate=5.0, window=10)
+for _ in range(4):
+    for i in range(10):
+        c.report(ok=(i >= 3))            # calibrate on the same background
+warm = c.rate
+for _ in range(2):
+    for i in range(10):
+        c.report(ok=(i >= 9))            # then 90% empty
+check("a real throttle still backs off", c.rate < warm, True)
+check("and is counted", c.stats()["backoffs"] >= 1, True)
+
 if fails:
     print("\n".join("  FAIL " + f for f in fails))
     print("── %d failed" % len(fails))
