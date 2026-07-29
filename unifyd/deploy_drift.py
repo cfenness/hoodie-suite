@@ -92,9 +92,19 @@ def record(git_sha, fp=None, root=None, log=print):
     fp = fp or fingerprint(root)
     payload = {"git_sha": git_sha, "fingerprint": fp["sha256"], "files": fp["files"],
                "recorded_at": int(time.time())}
+    # The baseline is only useful if the CHECKER can read it, and the checker runs on Fly against
+    # the shared warehouse. Writing to the local fallback "succeeds" and is useless — worse than
+    # useless, because it logs success. This shipped once: release_train ran without warehouse
+    # creds, wrote into its own throwaway deploy worktree, said "recorded", and the next check
+    # reported no baseline at all.
+    if not warehouse.remote():
+        log("  [drift] NOT recorded — no shared warehouse configured (creds absent), so the "
+            "baseline would go to a local path the hourly check cannot read. Drift detection "
+            "stays OFF until this deploy runs somewhere with warehouse credentials.")
+        return None
     try:
         warehouse.put_bytes(STATE_KEY, json.dumps(payload).encode())
-        log("  [drift] recorded expected build %s (%d files, fp %s…)"
+        log("  [drift] recorded expected build %s (%d files, fp %s…) -> shared warehouse"
             % (git_sha[:8], fp["files"], fp["sha256"][:12]))
         return payload
     except Exception as e:                                    # noqa: BLE001
