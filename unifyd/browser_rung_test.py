@@ -51,9 +51,10 @@ check("residential exit pinned", "resi.isp_pool()" in SRC.split("def _browser")[
 # ── and the ladder actually WOULD escalate on today's signal ─────────────────────────────────────
 ladder.reset()
 ladder.current("t-src", default=ladder.IMPERSONATE)
-for _ in range(ladder.WINDOW):
+# Costumes are tried first (a free TLS profile change), so reaching the browser takes several rounds.
+for _ in range(ladder.WINDOW * (ladder.MAX_COSTUMES + 1)):
     ladder.report("t-src", blocks.CAPTCHA)
-check("today's CAPTCHA storm reaches browser", ladder.current("t-src"), ladder.BROWSER)
+check("a persistent block eventually reaches browser", ladder.current("t-src"), ladder.BROWSER)
 # ...and that a healthy source is never sent to one
 ladder.reset()
 ladder.current("ok-src", default=ladder.IMPERSONATE)

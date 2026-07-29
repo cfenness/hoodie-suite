@@ -55,6 +55,9 @@ WINDOW = int(os.environ.get("LADDER_WINDOW", "40"))
 BLOCK_FRAC = float(os.environ.get("LADDER_BLOCK_FRAC", "0.5"))
 # How long before a promoted source retests the rung below it.
 DECAY_S = float(os.environ.get("LADDER_DECAY_S", str(6 * 3600)))
+# How many TLS costumes to try before conceding the rung. Bounded so a permanently closed path cannot
+# spin through profiles forever instead of escalating.
+MAX_COSTUMES = int(os.environ.get("LADDER_MAX_COSTUMES", "3"))
 
 
 def allowed_rungs():
@@ -71,7 +74,7 @@ def allowed_rungs():
 class SourceLadder:
     """One source's position on the ladder, plus the evidence for it."""
 
-    __slots__ = ("source", "rung", "_ok", "_bad", "_since", "_lock", "history")
+    __slots__ = ("source", "rung", "_ok", "_bad", "_since", "_lock", "history", "_costumes")
 
     def __init__(self, source, rung=None):
         import threading
@@ -80,6 +83,7 @@ class SourceLadder:
         self._ok = self._bad = 0
         self._since = time.time()
         self.history = []
+        self._costumes = 0
         self._lock = threading.Lock()
 
     def report(self, cls):
@@ -100,6 +104,21 @@ class SourceLadder:
             frac = self._bad / float(n)
             self._ok = self._bad = 0
             if frac >= BLOCK_FRAC:
+                # TRY A NEW COSTUME BEFORE PAYING FOR A BROWSER. Today proved the cheapest possible
+                # fix — one TLS profile string — was the entire answer, after a day spent modelling
+                # rate limits and IP reputation. A profile rotation costs one string and nothing else;
+                # the browser rung costs 10-50x throughput and a Chromium per process. Exhaust the free
+                # move first, and only escalate if changing costume does not help either.
+                if self.rung == IMPERSONATE and self._costumes < MAX_COSTUMES:
+                    self._costumes += 1
+                    try:
+                        import getstore
+                        getstore.rotate_profile(self.source)
+                        self.history.append((self.rung, "%s(costume %d)" % (self.rung, self._costumes),
+                                             round(frac, 2), int(time.time())))
+                        return self.rung
+                    except Exception:
+                        pass
                 nxt = self._next_rung()
                 if nxt != self.rung:
                     self.history.append((self.rung, nxt, round(frac, 2), int(time.time())))
