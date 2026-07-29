@@ -6956,12 +6956,18 @@ def items_resolve_ep():
     if not q:
         return jsonify(ok=True, q="", verdict="none", candidates=[]), 200
 
+    # _ttl is stale-while-revalidate and NEVER blocks — on a cold call it returns `cold`
+    # immediately and builds in the background. So the first request after a restart gets
+    # an empty index, and that is WARMING, not "no such product". Conflating the two would
+    # tell a rep their product does not exist because the server had just booted.
     try:
-        cands, idx = _ttl("item_resolve_index", 900, _resolve_index)
+        cands, idx = _ttl("item_resolve_index", 900, _resolve_index, cold=([], {}))
     except Exception as e:
-        # Honest failure: the master is not loaded, which is NOT the same as "no match".
         return jsonify(ok=False, q=q, verdict="none", candidates=[],
                        error="item master unavailable: %s" % str(e)[:140]), 200
+    if not cands:
+        return jsonify(ok=True, q=q, verdict="warming", candidates=[], scanned=0,
+                       message="Item master index is still building — retry shortly."), 200
 
     hits = set()
     for t in (set(norm(q).split()) | set(phon(q).split())):
