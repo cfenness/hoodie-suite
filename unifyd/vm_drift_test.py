@@ -71,5 +71,20 @@ import sys as _s
 ok("declared_vm agrees on this interpreter (tomllib=%s)" % (_s.version_info >= (3, 11)),
    (rt.declared_vm(root) or {}).get("memory_mb") == 8192)
 
+print("\nA CHECK MUST SAY WHAT IT INSPECTED (silence == didn't run)")
+# vm_drift returns (drift, inspected). Every early return must explain ITSELF, so a pass can never
+# be confused with a no-op — the failure this check already had once, on python 3.9.
+import tempfile
+empty = tempfile.mkdtemp()
+d, why = rt.vm_drift("hoodie-suite", empty)
+eq("no fly.toml -> no drift", d, [])
+ok("...and says it did NOT check (%r)" % why, why.startswith("NOT CHECKED"))
+notoml = tempfile.mkdtemp()
+open(os.path.join(notoml, "fly.toml"), "w").write("app = 'x'\n")
+d, why = rt.vm_drift("hoodie-suite", notoml)
+ok("fly.toml with no [[vm]] also says NOT CHECKED (%r)" % why, why.startswith("NOT CHECKED"))
+d, why = rt.vm_drift("no-such-app-xyz", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ok("an unlistable app says NOT CHECKED, not 'no drift' (%r)" % why[:40], why.startswith("NOT CHECKED"))
+
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
