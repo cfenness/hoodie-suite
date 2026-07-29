@@ -54,6 +54,49 @@ def _ue_slug_map(sites=("ubereats", "postmates")):
     return out
 
 
+STAGE = "agg_geo_stage"
+
+
+def _stage(rows, shard_i, bucket):
+    """Land one shard's bucket as its OWN parquet part. Concurrency-safe by construction: each writer
+    owns a distinct path, so there is no read-modify-write for two machines to interleave."""
+    import time as _t
+    stamp = int(_t.time())
+    recs = [dict(r, staged_at=stamp) for r in rows]
+    warehouse.write_partition(STAGE, "s%02d_b%04d" % (shard_i, bucket), recs,
+                              fields=refresh_fast.FLD + ["staged_at"])
+
+
+def merge_stage(log=print):
+    """Fold every staged part into src_outlets in ONE write_accumulate. Run serialized (geo_all does).
+
+    Last-write-wins by `staged_at`, not by whichever part DuckDB happens to read last. Parts persist
+    after a merge (there is no delete in the warehouse API), so a re-run would otherwise be able to
+    re-apply an OLD staged row over a newer exact geo — a silent regression that would look like the
+    geocoder losing accuracy for no reason.
+    """
+    try:
+        rows = warehouse.query_parts(STAGE, "SELECT * FROM t")
+    except Exception as e:                                       # noqa: BLE001
+        log("[agg-geo] stage unreadable: %s" % str(e)[:100])
+        return 0
+    if not rows:
+        log("[agg-geo] stage empty — nothing to merge")
+        return 0
+    best = {}
+    for r in rows:
+        k = (r.get("source"), r.get("store_id"))
+        cur = best.get(k)
+        if cur is None or (r.get("staged_at") or 0) >= (cur.get("staged_at") or 0):
+            best[k] = r
+    out = [{k: r.get(k) for k in refresh_fast.FLD} for r in best.values()]
+    warehouse.write_accumulate("src_outlets", out, key=lambda r: (r["source"], r["store_id"]),
+                               fields=refresh_fast.FLD)
+    log("[agg-geo] merged %d staged rows (%d parts-worth, deduped from %d) -> src_outlets"
+        % (len(out), len(best), len(rows)))
+    return len(out)
+
+
 def enrich_geo(limit=None, workers=None, log=print):
     # doordash is handled by the city-centroid fast layer (it ships city+state) — not here. ubereats/postmates
     # ship only name+slug, so we hit getStoreV1 DIRECTLY (getstore.py): a light JSON POST, cold, that returns the
@@ -73,7 +116,7 @@ def enrich_geo(limit=None, workers=None, log=print):
     # A DIFFERENT SALT from the bucket split below. Both are `hash(...) % n` over the same key, so
     # reusing the expression would correlate them — a shard could draw its rows overwhelmingly from a
     # few buckets and leave the rest empty, silently doing a fraction of the work it reported.
-    shard_sql, shard_lbl = "", "1/1"
+    shard_sql, shard_lbl, shard_i = "", "1/1", 0
     try:
         _sh = os.environ.get("UE_SHARD", "").strip()
         if _sh and "/" in _sh:
@@ -81,9 +124,9 @@ def enrich_geo(limit=None, workers=None, log=print):
             if _n > 1 and 0 <= _i < _n:
                 shard_sql = ("AND (hash(CAST(source AS VARCHAR) || '|' || CAST(store_id AS VARCHAR) "
                              "|| '#shard') %% %d) = %d " % (_n, _i))
-                shard_lbl = "%d/%d" % (_i + 1, _n)
+                shard_lbl, shard_i = "%d/%d" % (_i + 1, _n), _i
     except Exception:                                            # noqa: BLE001 — a bad shard spec must
-        shard_sql, shard_lbl = "", "1/1"                         # run the WHOLE universe, never none
+        shard_sql, shard_lbl, shard_i = "", "1/1", 0                         # run the WHOLE universe, never none
     gp = gp + shard_sql
     # MEMORY MUST SCALE WITH THE CHUNK, NOT THE BACKLOG.
     #
@@ -171,8 +214,13 @@ def enrich_geo(limit=None, workers=None, log=print):
             list(ex.map(_work, part))
         if not out:
             continue
-        warehouse.write_accumulate("src_outlets", out, key=lambda r: (r["source"], r["store_id"]),
-                                   fields=refresh_fast.FLD)
+        # STAGE, DO NOT MERGE. write_accumulate rewrites the WHOLE src_outlets table (read -> merge ->
+        # write), so N shards doing it concurrently clobber each other and the last writer silently
+        # drops the rest — the hazard geo_all exists to serialize away, and the reason sharding was
+        # declared but left off. write_partition lands ONE file per (shard, bucket) instead: disjoint
+        # paths, no read-modify-write, so shards cannot collide by construction. merge_stage() folds
+        # the whole stage into src_outlets in a single serialized pass afterwards.
+        _stage(out, shard_i, b)
         got_addr += sum(1 for o in out if o.get("address"))
         got_geo += sum(1 for o in out if o.get("lat") is not None)
         landed += len(out)
@@ -182,6 +230,14 @@ def enrich_geo(limit=None, workers=None, log=print):
         % (got_addr, got_geo, landed))
     # The remaining backlog is stated every run. A pass that drains 40k of 500k must not read the
     # same as one that finished — that ambiguity is why this went unnoticed for so long.
+    # A SHARD MUST NEVER MERGE. If each of N shards folded the stage into src_outlets itself, we would
+    # have re-created the exact concurrent read-modify-write this staging exists to prevent. Only an
+    # unsharded run merges its own work; the fleet's stage is merged once, serialized, by geo_all.
+    if shard_lbl == "1/1":
+        merge_stage(log=log)
+    else:
+        log("[agg-geo] shard %s staged its work; geo_all merges the fleet's stage serially" % shard_lbl)
+
     left = int(backlog) - landed
     if left > 0:
         log("[agg-geo] %d aggregator outlets still un-geocoded; run again to continue draining" % left)
