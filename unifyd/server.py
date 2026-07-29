@@ -368,7 +368,10 @@ def _auth():
     if not AGENT_TOKEN:
         return
     p = request.path
-    if p == "/api/health" or not p.startswith("/api/"):
+    # NOTE: there are TWO gates. auth_gate._PUBLIC is not enough on its own — this AGENT_TOKEN
+    # check runs as well, and exempting a route from one but not the other still 401s it. That is
+    # exactly how /api/version shipped unreachable: _PUBLIC listed it, this did not.
+    if p in ("/api/health", "/api/version") or not p.startswith("/api/"):
         return
     # A signed-in browser is already authorized by auth_gate (which runs first and only
     # falls through to here when it ALLOWED the request). Without this, setting
@@ -752,6 +755,19 @@ def instacart_pull(params):
 # ab_fill.run() in the registry). Re-adding a *_pull for a registry-owned source is blocked by dispatch_guard_test.
 
 # ---------------- API ----------------
+@app.get("/api/version")
+def version():
+    """What code is this container actually running?
+
+    Deliberately public and deliberately boring: a content fingerprint and a file count, nothing
+    identifying. It exists because `flyctl releases` reports that a deploy SUCCEEDED, not what it
+    deployed — and twice in one day production silently stopped matching main while every release
+    read `complete`. deploy_drift.py compares this against the build we last deployed on purpose.
+    """
+    import deploy_drift
+    fp = deploy_drift.fingerprint()
+    return jsonify(fingerprint=fp["sha256"], files=fp["files"], computed_at=int(time.time()))
+
 @app.get("/api/health")
 def health():
     return jsonify(ok=True, agent="unifyd-local", sources=list(FL_CONN) + ["ttb-cola", "abc-fws", "specs", "binnys", "shopify", "instacart", "census-acs"],
@@ -815,18 +831,82 @@ def locator_offers():
     out["radius_mi"] = radius
     return jsonify(**out)
 
+@app.get("/api/locator/serves")
+def locator_serves():
+    """The ON-PREMISE half: where can I DRINK this near here — and which one should I go to?
+
+    `/api/locator/offers` finds the bottle; this finds the pour. Backed by `menu_beverages`
+    (cocktail_taxonomy's root/sub/base_spirit + the BUILD in `description`) joined to the outlet
+    spine by name. See unifyd/serve_locator.py — a venue we cannot pin to one branch is returned
+    as a COUNT, never as a pin, because sending someone to the wrong Beef O'Brady's is worse than
+    admitting we don't know which one.
+
+    Params: q (drink / family / base spirit), lat+lng, radius (mi), state, recommend=1.
+
+    `recommend=1` adds a Claude pass (unifyd/serve_advisor.py) that picks the most interesting
+    builds and says how each departs from the classic — grounded ONLY in the menu description and
+    price, and re-verified against these same rows before it is returned. It carries no review or
+    popularity claim because we hold no review text; when it is unavailable the reason is stated
+    rather than the field quietly going missing.
+    """
+    import serve_locator
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify(serves=[], error="missing q"), 200
+    center = None
+    try:
+        if request.args.get("lat") and request.args.get("lng"):
+            center = (float(request.args["lat"]), float(request.args["lng"]))
+    except (TypeError, ValueError) as e:
+        app.logger.info("SERVES center error %s", e)
+    try:
+        radius = float(request.args.get("radius", 25))
+    except (TypeError, ValueError):
+        radius = 25.0
+    try:
+        out = serve_locator.serves(q, center=center, radius_mi=radius,
+                                   state=(request.args.get("state") or "").strip().upper() or None,
+                                   log=lambda m: app.logger.info("SERVES %s", m))
+    except Exception as e:                     # noqa: BLE001
+        app.logger.info("SERVES error %s", e)
+        return jsonify(serves=[], error=str(e)[:160], degraded="serves-failed"), 200
+    if request.args.get("recommend") == "1":
+        import serve_advisor
+        out["recommendations"] = serve_advisor.recommend(
+            q, out["serves"], log=lambda m: app.logger.info("ADVISOR %s", m))
+    out["center"] = list(center) if center else None
+    out["radius_mi"] = radius
+    return jsonify(**out)
+
 @app.get("/api/locator")
 def locator():
     """Live account list for a brand near a ZIP, shaped for the locator UI. Bounded (max_pages)
     so it stays responsive; the map centers on the mean of returned coordinates."""
     brand = request.args.get("brand", "titos")
-    zc = re.sub(r"[^0-9]", "", request.args.get("zip", "")) or "33602"
     b = vtinfo.BRANDS.get(brand)
     if not b:
         return jsonify(accounts=[], error="unknown brand"), 200
+    # Resolve the typed location HONESTLY. This previously read
+    #     zc = re.sub(r"[^0-9]", "", request.args.get("zip","")) or "33602"
+    # so "Houston, TX" — which has no digits — silently became 33602, i.e. TAMPA. The user searched
+    # one city and got a confident map of another, with nothing on screen saying so. There is now no
+    # default at all: unresolvable input is an error the UI shows, never a substituted city.
+    import zcta
+    loc = zcta.resolve(request.args.get("zip", ""), log=lambda m: app.logger.info("LOCATOR %s", m))
+    if loc.get("error"):
+        return jsonify(accounts=[], error=loc["error"], degraded="location-unresolved"), 200
+    zc = loc["zip"]
+    # `pages` bounded the VIP page walk at 3 (=150 accounts) while the UI rendered the result as
+    # "150 accounts near you" — a truncation presented as a census. Walk the whole result set by
+    # default and report `truncated` when a cap is actually applied, per the no-silent-caps rule.
+    try:
+        pages = max(1, int(request.args.get("pages", 40)))
+    except (TypeError, ValueError):
+        pages = 40
+    walk = {}
     try:
         rows = vtinfo.search_zip(b["custID"], b.get("uuid", ""), zc, delay=0.15,
-                                 max_pages=int(request.args.get("pages", 3)),
+                                 max_pages=pages, stats=walk,
                                  m=b.get("m", "5"), theme=b.get("theme", "1"),
                                  log=lambda m: app.logger.info("LOCATOR %s", m))
     except Exception as e:
@@ -842,7 +922,14 @@ def locator():
                       "city": _titlecase(r["city"]), "state": r["state"], "lat": lat, "lng": lng,
                       "source": r.get("source", ""), "type": r.get("store_type", "")})
     center = [sum(lats) / len(lats), sum(lngs) / len(lngs)] if lats else None
-    return jsonify(label=b.get("name", brand), accounts=accts, center=center, zip=zc)
+    # `resolved` tells the UI WHICH place it actually searched and how it got there, so a ZIP derived
+    # from a typed city is visible rather than implied. `truncated` is true only when the page cap
+    # actually bit — an unbounded walk that finished must not look like a capped one.
+    return jsonify(label=b.get("name", brand), accounts=accts, center=center, zip=zc,
+                   resolved={"label": loc.get("label", zc), "how": loc.get("how"),
+                             "zip_distance_mi": loc.get("zip_distance_mi")},
+                   truncated=bool(walk.get("truncated")), pages=walk.get("walked_pages", pages),
+                   available_pages=walk.get("available_pages"))
 
 # Source labels + a first-cut scope tree derived from the pulled data.
 _SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlets",

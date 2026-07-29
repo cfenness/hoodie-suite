@@ -463,10 +463,25 @@ async function fallbackAccounts(q,loc,locStr,stale){
     const j=await (await fetch('/api/locator?brand='+encodeURIComponent(q.toLowerCase().replace(/[^a-z]/g,''))+
                                '&zip='+encodeURIComponent(locStr),{cache:'no-store'})).json();
     if(stale())return;
+    // An unresolvable location is shown, not papered over. The old code substituted a default ZIP
+    // server-side, so a search for Houston rendered Tampa with full confidence.
+    if(j&&j.error&&j.degraded==='location-unresolved'){
+      refline.textContent=j.error;
+      document.getElementById('src').innerHTML='No location resolved — nothing searched.';
+      prepAccounts([]); return;
+    }
     if(j&&j.accounts&&j.accounts.length){
       if(j.center)CENTER=j.center;
+      const rz=j.resolved||{};
+      // Name the place we actually searched. When a typed city was turned into a ZIP, say which ZIP
+      // and how far its centre is, so the user can see the hop rather than infer it from the pins.
+      const where=rz.how==='city'&&rz.zip_distance_mi!=null
+        ? esc(rz.label)+' (nearest ZIP '+esc(j.zip)+', '+rz.zip_distance_mi+' mi from centre)'
+        : esc(rz.label||j.zip||locStr);
       refline.textContent='Distribution only — we know these accounts carry it, but have no priced observations here yet.';
-      document.getElementById('src').innerHTML='Live · <b>'+j.accounts.length+'</b> accounts from <b>'+esc(j.label||q)+'</b> (no price signal)';
+      document.getElementById('src').innerHTML='Live · <b>'+j.accounts.length+'</b> accounts from <b>'+
+        esc(j.label||q)+'</b> near <b>'+where+'</b> (no price signal)'+
+        (j.truncated?' · <b>capped</b> — showing '+j.pages+' of '+j.available_pages+' pages':'');
       prepAccounts(j.accounts); return;
     }
   }catch(e){}
