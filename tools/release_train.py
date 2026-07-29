@@ -527,6 +527,29 @@ def baseline_failures(base, names, py):
     return bad
 
 
+def merge_failure(wt, out):
+    """Why did `git merge` fail — a CONTENT CONFLICT, or something else entirely?
+
+    These need completely different responses and the tool used to conflate them, reporting every
+    non-zero merge as "CONFLICT" and then listing the unmerged paths — which is an empty list when
+    the failure was not a conflict at all. It printed "CONFLICT ... 0 file(s)", which sent me
+    looking for a conflict that did not exist; the real cause was stale worktree state. Zero
+    conflicting files is not a conflict, and the tool should say so rather than making the reader
+    notice.
+
+    Returns ("conflict", [paths]) or ("failed", "git's own error").
+    """
+    _, files = git("diff", "--name-only", "--diff-filter=U", cwd=wt)
+    paths = [f for f in files.splitlines() if f.strip()]
+    if paths:
+        return "conflict", paths
+    # A merge stopped mid-flight leaves MERGE_HEAD. Without it AND without unmerged paths, the
+    # merge never started — a bad ref, a dirty tree, a rejected hook.
+    if git("rev-parse", "--verify", "--quiet", "MERGE_HEAD", cwd=wt)[0] == 0:
+        return "conflict", ["(merge in progress, but git reported no unmerged paths)"]
+    return "failed", (out or "").strip() or "git merge returned non-zero with no output"
+
+
 def integrate(args):
     base = "origin/" + default_branch()
     got, why = acquire_lock("integrate")
@@ -563,17 +586,33 @@ def integrate(args):
             return 2
         print("integration branch %s (from %s)\n" % (branch, base))
 
-        merged, conflicted = [], None
+        merged, conflicted, failed = [], None, None
         for p in prs:
             ref = "origin/" + p["headRefName"]
             rc, out = git("merge", "--no-ff", "-m", "integrate #%d %s" % (p["number"], p["title"]),
                           ref, cwd=wt)
             if rc != 0:
-                _, files = git("diff", "--name-only", "--diff-filter=U", cwd=wt)
-                conflicted = (p, [f for f in files.splitlines() if f.strip()])
+                kind, detail = merge_failure(wt, out)
+                if kind == "conflict":
+                    conflicted = (p, detail)
+                else:
+                    failed = (p, detail)
                 break
             merged.append(p)
             print("  merged  #%-5s %s" % (p["number"], p["title"][:60]))
+
+        if failed:
+            p, err = failed
+            print("\n!! MERGE FAILED integrating #%d (%s) — this is NOT a content conflict"
+                  % (p["number"], p["headRefName"]))
+            print("   git said:")
+            for line in err.splitlines()[:8]:
+                print("     %s" % line[:110])
+            print("\n   No files are in conflict, so there is nothing to resolve by hand. Usual")
+            print("   causes: leftover state in %s, an unfetched ref, or a rejected hook." % wt)
+            print("   Try: git -C '%s' status, then re-run integrate." % wt)
+            print("   Nothing has touched %s." % default_branch())
+            return 3
 
         if conflicted:
             p, files = conflicted

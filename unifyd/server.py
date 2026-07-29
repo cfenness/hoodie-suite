@@ -368,7 +368,10 @@ def _auth():
     if not AGENT_TOKEN:
         return
     p = request.path
-    if p == "/api/health" or not p.startswith("/api/"):
+    # NOTE: there are TWO gates. auth_gate._PUBLIC is not enough on its own — this AGENT_TOKEN
+    # check runs as well, and exempting a route from one but not the other still 401s it. That is
+    # exactly how /api/version shipped unreachable: _PUBLIC listed it, this did not.
+    if p in ("/api/health", "/api/version") or not p.startswith("/api/"):
         return
     # A signed-in browser is already authorized by auth_gate (which runs first and only
     # falls through to here when it ALLOWED the request). Without this, setting

@@ -79,6 +79,28 @@ ok("...and says how to set it", "release_train" in d[0][3])
 d = dd.check(live={"files": 3}, exp=EXP)
 eq("a live payload with no fingerprint REPORTS", d[0][0], "drift-unreachable")
 
+print("\nrecord() must not write a baseline the checker cannot read")
+import types
+fake_local = types.SimpleNamespace(remote=lambda: False, put_bytes=lambda *a: (_ for _ in ()).throw(
+    AssertionError("must not write when the warehouse is local")))
+saved = sys.modules.get("warehouse")
+sys.modules["warehouse"] = fake_local
+msgs = []
+eq("a local-only warehouse records NOTHING", dd.record("abc123", fp={"sha256":"f"*64,"files":9},
+                                                       log=msgs.append), None)
+ok("...and says drift detection stays OFF (%r)" % (msgs[0][:48] if msgs else ""),
+   any("stays OFF" in m for m in msgs))
+wrote = {}
+fake_remote = types.SimpleNamespace(remote=lambda: True,
+                                    put_bytes=lambda k, v: wrote.update({k: v}))
+sys.modules["warehouse"] = fake_remote
+msgs = []
+r = dd.record("abc123", fp={"sha256":"f"*64,"files":9}, log=msgs.append)
+ok("a shared warehouse DOES record", r is not None and dd.STATE_KEY in wrote)
+ok("...and says so", any("shared warehouse" in m for m in msgs))
+if saved is not None: sys.modules["warehouse"] = saved
+else: sys.modules.pop("warehouse", None)
+
 print("\nhealth_digest shape")
 f = dd.findings(log=lambda *_a, **_k: None)
 ok("findings() returns digest-shaped dicts", all(
