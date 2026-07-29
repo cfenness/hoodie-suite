@@ -6885,6 +6885,103 @@ except Exception:
     pass
 
 
+# ---------------------------------------------------------------- item resolution
+
+def _resolve_index():
+    """(candidates, token_index) over dim_brand + dim_item, built once and cached.
+
+    WHY AN INDEX: dim_item is ~871k rows. Scoring every row per query would make a
+    single lookup a full-table scan in Python, and the caller resolves several product
+    mentions per visit. The token index narrows to rows sharing a word (or a phonetic
+    word) with the query, which is typically a few hundred.
+
+    Reuses _wb_maps() so the underlying name maps are shared with the workbench rather
+    than loaded a second time.
+    """
+    from item_resolve import norm, phon
+    brands, prodmap, itemmap = _wb_maps()
+
+    cands = []
+    for bkey, bname in brands.items():
+        if bname:
+            cands.append({"id": bkey, "name": bname, "grain": "brand"})
+    for ikey, (pkey, size_ml, container) in itemmap.items():
+        pname, bkey = prodmap.get(pkey, (None, None))
+        if not pname:
+            continue
+        # Same naming rule the workbench uses, so a resolved name matches what the rest
+        # of the app displays for that item.
+        parts = [pname.strip(), _wb_size_label(size_ml), (container or "")]
+        cands.append({
+            "id": ikey, "name": " · ".join([x for x in parts if x]), "grain": "item",
+            "product_key": pkey, "brand": brands.get(bkey) or "", "size_ml": size_ml,
+        })
+
+    idx = {}
+    for i, c in enumerate(cands):
+        toks = set(norm(c["name"]).split()) | set(phon(c["name"]).split())
+        for t in toks:
+            if len(t) >= 3:
+                idx.setdefault(t, []).append(i)
+    return cands, idx
+
+
+@app.get("/api/items/resolve")
+def items_resolve_ep():
+    """Resolve a spoken/garbled product name against the item master.
+
+    Built for Hoodie Relations' voice visit form: speech-to-text has no product
+    vocabulary and spells brands phonetically ("Chivas 18" -> "Chivas shoes"), so the
+    tags a visit produces are corrupted unless something maps them back to real rows.
+
+    Deterministic on purpose — an LLM asked the same question corrects inconsistently
+    between runs, and a rep cannot trust a layer that behaves that way.
+
+      q      the heard text
+      grain  brand | item | auto (default auto)
+      limit  max candidates (default 5)
+
+    Returns {ok, q, verdict, candidates:[{id, name, grain, score, ...}]}.
+    verdict is exact | fuzzy | ambiguous | none. AMBIGUOUS returns every near-tied
+    candidate and picks none: a wrong item link is worse than no link, because
+    everything downstream would silently be about the wrong product.
+    """
+    from item_resolve import norm, phon, resolve as _resolve
+    q = (request.args.get("q") or "").strip()
+    grain = (request.args.get("grain") or "auto").strip().lower()
+    try:
+        limit = max(1, min(int(request.args.get("limit") or 5), 25))
+    except Exception:
+        limit = 5
+    if not q:
+        return jsonify(ok=True, q="", verdict="none", candidates=[]), 200
+
+    # _ttl is stale-while-revalidate and NEVER blocks — on a cold call it returns `cold`
+    # immediately and builds in the background. So the first request after a restart gets
+    # an empty index, and that is WARMING, not "no such product". Conflating the two would
+    # tell a rep their product does not exist because the server had just booted.
+    try:
+        cands, idx = _ttl("item_resolve_index", 900, _resolve_index, cold=([], {}))
+    except Exception as e:
+        return jsonify(ok=False, q=q, verdict="none", candidates=[],
+                       error="item master unavailable: %s" % str(e)[:140]), 200
+    if not cands:
+        return jsonify(ok=True, q=q, verdict="warming", candidates=[], scanned=0,
+                       message="Item master index is still building — retry shortly."), 200
+
+    hits = set()
+    for t in (set(norm(q).split()) | set(phon(q).split())):
+        if len(t) >= 3:
+            hits.update(idx.get(t, ()))
+    pool = [cands[i] for i in hits]
+    if grain in ("brand", "item"):
+        pool = [c for c in pool if c.get("grain") == grain]
+
+    ranked, verdict = _resolve(q, pool, limit=limit)
+    return jsonify(ok=True, q=q, grain=grain, verdict=verdict,
+                   scanned=len(pool), candidates=ranked), 200
+
+
 if __name__ == "__main__":
     _port = int(os.environ.get("PORT", "8765"))          # PORT override lets a second dev agent run beside 8765
     print("Unifyd agent on http://127.0.0.1:%d  (Ctrl-C to stop)" % _port)

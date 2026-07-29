@@ -142,6 +142,17 @@ class Tally:
                 d["pct"] = round(100.0 * d["good"] / max(1, d["total"]), 1)
             return out
 
+    def exit_verdict(self, min_per_exit=8, top=8):
+        """The per-exit distribution reduced to something a run record can carry and a human can read.
+
+        `by_exit()` has held this attribution for a while and nothing reported it, which left the two
+        explanations for a mediocre average indistinguishable in every run we have on file."""
+        agg = self.by_exit()
+        v = exit_pattern(agg, min_per_exit=min_per_exit)
+        v["worst"] = [{"exit": k, "pct": d["pct"], "n": d["total"]}
+                      for k, d in sorted(agg.items(), key=lambda x: (x[1]["pct"], -x[1]["total"]))[:top]]
+        return v
+
     def counts(self):
         with self._lock:
             return dict(self._c)
@@ -166,6 +177,36 @@ class Tally:
         tot = sum(c.values()) or 1
         parts = sorted(((n, "%s/%s" % (mth, cls)) for (mth, cls), n in c.items()), reverse=True)
         return " ".join("%s=%d(%.0f%%)" % (name, n, 100.0 * n / tot) for n, name in parts[:6])
+
+
+def exit_pattern(agg, min_per_exit=8):
+    """Name the SHAPE of a per-exit distribution — the difference between two fixes.
+
+    A pool at 60% usable is either a handful of burned addresses dragging a healthy median down (retire
+    them; the pool is fine) or every exit sitting at 60% (the addresses were never the problem — it is
+    our fingerprint, and buying more IPs buys nothing). Both produce 60%. Only the distribution tells
+    them apart, and a 200-request run through 50 exits has too few per exit to say anything at all —
+    which is `insufficient`, not `uniform`.
+
+    Takes {exit: {'good','total','pct'}} — the shape `Tally.by_exit()` returns."""
+    usable = {k: v for k, v in agg.items() if v.get("total", 0) >= min_per_exit}
+    if len(usable) < 3:
+        return {"pattern": "insufficient", "exits": len(agg), "rated": len(usable),
+                "why": "fewer than 3 exits with >=%d requests — no distribution to read" % min_per_exit}
+    pcts = sorted(v["pct"] for v in usable.values())
+    mid = len(pcts) // 2
+    median = pcts[mid] if len(pcts) % 2 else round((pcts[mid - 1] + pcts[mid]) / 2.0, 1)
+    bad = [k for k, v in usable.items() if v["pct"] < median - 25]
+    spread = round(pcts[-1] - pcts[0], 1)
+    if bad and len(bad) <= max(1, len(usable) // 3) and median >= 70:
+        pattern = "burned_subset"
+    elif spread <= 20:
+        pattern = "uniform"
+    else:
+        pattern = "mixed"
+    return {"pattern": pattern, "exits": len(agg), "rated": len(usable), "median_pct": median,
+            "best_pct": pcts[-1], "worst_pct": pcts[0], "spread_pp": spread,
+            "below_median_25pp": sorted(bad)}
 
 
 _GLOBAL = {"tally": None}

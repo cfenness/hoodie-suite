@@ -63,6 +63,12 @@ class SessionPolicy:
         the health of our identity, and treating it as evidence is how a controller talks itself into
         the floor."""
         try:
+            import adapt
+            if adapt.frozen():
+                return False              # measuring: the budget must not move under the experiment
+        except Exception:
+            pass
+        try:
             import blocks
             burned = blocks.is_throttle(cls)
         except Exception:
