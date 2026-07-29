@@ -85,16 +85,39 @@ replication (§7).
   lever nobody was spending. It plausibly explains why buying more proxies tested as useless (§5) —
   worth relitigating now that the tooling is trustworthy.
 
-**What is still open**, in priority order:
+**All three items above were run down 2026-07-29 and DISSOLVED rather than resolved individually — the
+answer to all three turned out to be the same fact:**
 
-1. **Are the 8 survivor exits durably clean, or just not-yet-exhausted at n=4?** Two readings fit
-   the data equally. Decide it with ~12 requests through one survivor and watch whether it dies
-   partway — cheap, and it determines whether "we have 8 good IPs" means anything.
-2. **Replicate the step-change finding.** Does a second `edge101` `2,2,2,2` trip at the same request
-   count, the same wall-clock offset, or neither? That distinguishes a volume trigger from a
-   time-window trigger, which have different fixes.
-3. **Is the step-change global or per-costume?** Run `2,2,2,2` on `safari17_0` and on `edge101`
-   back-to-back and compare where each trips.
+**Survivor durability (item 1): REFUTED "not-yet-exhausted".** 14 requests through each of the 7
+confirmed-present survivors: `9.142.197.10` 14/14, `64.52.29.9` 13/14, `9.142.199.221` 14/14 — no cliff
+anywhere in 14 requests. `193.160.82.111`, `9.142.23.133`, `138.226.89.232`, `63.246.153.143` — **0/14,
+dead from request #1**, no gradual decay. Not a spent budget: **4 of 7 addresses that scored 4/4 an hour
+earlier were now fully dead**, with no partial state in between. No concurrent UberEats production run
+was found to explain it (the ephemeral machines running at the time were `ttb-enrich`, `abc-fws`,
+`bottlecapps`, `doordash-full` — a different site each).
+
+**Step-change replication (item 2): DID NOT REPRODUCE.** A second `edge101` `2,2,2,2` (rested pool, same
+plan) came back 64.0% → 62.2% → 56.8% → 57.0% — a mild decline, control drop 7.0pp, **not significant**
+(under the 10pp bar). No cliff. `costume_probe`'s own `concurrency arms: []` on this run confirms the
+#700 fix behaved correctly — nothing here was ever mislabeled.
+
+**Global vs per-costume (item 3): the comparison is confounded by drift, and that IS the finding.** The
+follow-up `safari17_0` `2,2,2,2` — the costume flagged as bad all day — came back 62.8% → 62.0% → 79.5%
+→ **97.0%**, ending clean. One interior arm dipped significantly below trend along the way (correctly
+filed as `trajectory`, never as `concurrency` — the #700 fix again behaving as intended), but the run
+as a whole *improved*. Meanwhile the "clean" costume (`edge101`) had just posted its worst run of the
+day. The two costumes did not hold still long enough between measurements to compare.
+
+**The actual conclusion:** there is no stable fact of the form "exit X is good," "costume Y is safe," or
+"the block trips at N requests." **Exit health and costume health are both continuously volatile on an
+hour timescale, in both directions, for a cause not yet identified.** A discrete trigger would look like
+a one-way step that persists; what's actually here is noise that can improve as easily as it degrades.
+
+**What this changes going forward:** stop trying to characterise a fixed threshold or cache a "good
+identity" list — by the time either is acted on, a meaningful fraction of it has already flipped. The
+next concrete step is a **live health check in the routing path** (recent-window success rate for the
+exact exit×costume pair about to be used, checked at request time), not a bigger one-time map. That
+replaces items 1–3 as the priority item in §7.
 
 ---
 
@@ -187,15 +210,16 @@ minutes, before any modelling.
 
 ## 5. Decisions banked (don't re-litigate)
 
-- **Do NOT buy more proxies** — *stated with less confidence as of 2026-07-29, worth relitigating.*
+- **Do NOT buy more proxies** — *stated with even less confidence after the volatility finding in §1.*
   200 requests through 50 fresh, correctly-geolocated US residential IPs returned **zero** successes
   while the cold path was blocked; the conclusion drawn was that addresses were never the problem. That
   number (n=200, 50 exits) is the same shape as today's `pool_health --fire 4` map, which on the
   now-fixed pin returned **31/200 (16%)**, not zero — and which costume the earlier run used is not
-  recorded here. If it ran on the blocked desktop-Chrome family (§4's finding predates it), a uniform
-  zero is exactly what a wrong costume produces regardless of address quality, and the conclusion about
-  addresses would be confounded rather than clean. The $178/month 1000-IP plan may still be the right
-  call, but re-run the test with a known-good costume and the real pin before trusting it again.
+  recorded here. But re-testing this cleanly may not even be possible in the way originally proposed:
+  §1 found that exit and costume health both drift substantially within an hour, so a single "known-good
+  costume, real pin" re-run would itself be one more noisy sample, not a clean answer. Don't spend money
+  on this decision either way without a health-check mechanism (§1's proposed next step) that can tell
+  a persistent problem from an hour's noise.
 - **The IPRoyal subscription (15 Canadian ISP proxies, order #77366284) is unused** — zero traffic
   since 2026-07-26, not referenced by production. Cancel or repurpose.
 - Production runs on a **Webshare** pool in the `ISP_PROXIES` Fly secret (50 entries, 49 US + 1 CA).
@@ -257,30 +281,33 @@ and write intermediate results somewhere that survives a restart if the run is e
 
 ## 7. What I'd do next, in order
 
-The original §1 items (concurrency-vs-cumulative, surface per-exit attribution) are **done**. So is
-separating volume-wear from burst-damage. What that work opened up, current as of the second probe run:
+The original §1 items — concurrency-vs-cumulative, surface per-exit attribution, separate volume-wear
+from burst-damage, and (as of later the same day) survivor durability / step replication / global-vs-
+costume — are **all done**. The last three didn't resolve individually; they dissolved into one finding
+(§1): exit and costume health both drift substantially within an hour, in either direction, for a cause
+not yet identified. That finding is what drives the list below.
 
-1. **Are the 8 survivor exits durably clean, or just not-yet-exhausted at n=4?** The fire map used 4
-   requests per exit; if each address is actually good for ~5–6 before dying (which would also explain
-   the earlier session-budget sweep — 9 primes bought no more successes than 2 did), "we have 8 good
-   IPs" is false. ~12 requests through one survivor, watching for where it drops off, settles it.
-2. **Replicate the step-change finding on `edge101`.** One `2,2,2,2` run found a mid-run step that
-   caught freshly-introduced exits too — looks like an aggregate trigger, not per-identity exhaustion.
-   One run is a lead. Run it again and check whether it trips at the same request count (volume
-   trigger) or the same wall-clock offset (time trigger) — those want different fixes.
-3. **Is the step global or per-costume?** Back-to-back `2,2,2,2` on `safari17_0` and `edge101` and
-   compare where each trips. If costumes are independently rate-limited, rotating costume (not just
-   exit) is a real throughput lever no one is using yet.
-4. **Re-check the "don't buy proxies" decision (§5)** now that costume and pin are both known-controlled
-   variables — it may still be right, but it wasn't tested holding those constant.
-5. **Stop trying to buy throughput with workers.** 2 and 8 workers deliver the same usable stores/s.
+1. **Build a live health check into the routing path**, not another one-time map. Before a session picks
+   an exit×costume pair, check its recent-window success rate (the data already exists in `blocks.Tally`
+   — this is a consumption problem, not a new-data problem) and route around anything trending bad RIGHT
+   NOW. A cached "good identity" list from even an hour ago is demonstrably unsafe (§1). This replaces
+   the three now-closed items as the top priority.
+2. **Find out WHY health drifts on an hour timescale.** Not required to ship item 1, but worth knowing:
+   is it the target's own reputation scoring cycling, interference from other Hoodie traffic sharing the
+   pool, or genuine randomness in their defense? Correlating drift timestamps against dispatcher activity
+   logs (other sources' scheduled runs) is the cheapest first cut.
+3. **Re-check the "don't buy proxies" decision (§5)** — but note it may not be answerable with a
+   single clean test anymore; it needs the health-check mechanism from item 1 to distinguish a real
+   problem from an hour's noise.
+4. **Stop trying to buy throughput with workers.** 2 and 8 workers deliver the same usable stores/s.
    The lever is independent identity capacity — exit × costume, on current evidence — and reaching
    46.5/s needs roughly 15× more of it, not a better rate controller.
-6. **Prove `ue_enrich` end-to-end.** It has never completed a run — it died on a schema bug every time,
+5. **Prove `ue_enrich` end-to-end.** It has never completed a run — it died on a schema bug every time,
    so everything past its first query is unexercised. UPC backfill is unproven.
-7. **`pool_health` on a schedule.** A pool silently drifting to 52% foreign looked exactly like "the
-   target got harder". That should page, not wait for someone to check.
-8. **Then** revisit the 3-hour target — but note §1 retires the old framing. It is not a pacing problem.
+6. **`pool_health` on a schedule.** A pool silently drifting to 52% foreign looked exactly like "the
+   target got harder". That should page, not wait for someone to check — and given §1, a schedule alone
+   isn't enough; whatever consumes its output needs to treat an hour-old reading as stale, not current.
+7. **Then** revisit the 3-hour target — but note §1 retires the old framing. It is not a pacing problem.
 
 ---
 
@@ -292,10 +319,17 @@ separating volume-wear from burst-damage. What that work opened up, current as o
   O(n²) in universe size. Wasteful, not incorrect. Delta checkpoints are the fix.
 - **16+ test files exist that the curated runner never ran.** They pass now, but the runner's list is
   hand-maintained and will drift again; it prints unlisted files as a warning.
-- **Per-exit findings from before 2026-07-29 are void** — `pool_health.live_fire` was attributing to
-  the wrong address (§3). The pin is real now, but nothing has been re-measured through it, so the
-  question it exists to answer — burned identity or blown fingerprint — is still formally open.
-- **The probe's first run could not read its own per-exit marginal.** Exits were chosen round-robin at
-  session prime, so a 2-worker arm touched ~2 addresses and a 16-worker arm ~16: exit identity was a
-  function of worker count. Arms now pin one exit per worker and start at a different pool offset, but
-  that pooled reading is only trustworthy from the next run onward.
+- **Per-exit findings from before 2026-07-29's pin fix are void** — `pool_health.live_fire` was
+  attributing to the wrong address. Fixed and re-measured the same day (§1): the pool is binary at n=4,
+  and separately volatile hour-to-hour, so even the fixed instrument's readings expire fast.
+- **The `decay_sig` branch's evidence string can be factually wrong.** It always prints "arm averages
+  are flat but usable% falls WITHIN arms" whenever it fires, but on the `safari17_0` replication (§1)
+  the arm averages clearly trended UP (62.8% → 97.0%), not flat. Cosmetic — it doesn't affect the
+  hypothesis or the trajectory/concurrency split, only the printed wording — but worth tightening in
+  `costume_probe.py` if that branch gets touched again.
+- **The exit-health-drift mechanism (§1) is unexplained.** Ruled out same-process production
+  interference (checked concurrent ephemeral machines: none were UberEats). Not ruled out: the target's
+  own scoring, or interference from other Fly-hosted traffic sharing the same proxy pool.
+- **A `pool_health --fire` run over ~200 requests can itself take 10+ minutes when the costume is
+  mostly blocked** (soft_block/captcha round-trips are not fast failures) — budget for that when
+  scheduling it (§7 item 6), and detach long runs per §6's guidance rather than holding an ssh session.
