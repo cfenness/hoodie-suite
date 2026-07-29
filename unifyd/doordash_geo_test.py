@@ -51,6 +51,12 @@ def main():
     # --- 2. it can run somewhere other than one Mac -----------------------------------------------
     check("no ~/Library path anywhere", "Library/Application Support" not in code)
     check("launches a local browser instead", hasattr(D, "_launch"))
+    # The Fly image ships patchright, NOT playwright — importing playwright directly compiles, tests
+    # and deploys clean, then ModuleNotFoundErrors on the first real pin. Pin the driver resolution.
+    check("resolves the driver rather than importing playwright directly",
+          hasattr(D, "_sync_playwright"))
+    check("prefers patchright (what the image actually has)",
+          code.index("patchright.sync_api") < code.index("playwright.sync_api"))
     check("pins location via standard CDP", hasattr(D, "_set_location"))
     check("uses Emulation.setGeolocationOverride", "Emulation.setGeolocationOverride" in code)
     # Egress must come from the FLAT-rate ISP pool, never the per-GB rotating tier.
