@@ -160,7 +160,11 @@ SOURCES = [
     # source (collapse tracked request COUNT, not time, across three runs); 40 leaves margin, and
     # sessions.py corrects it from observed burns. Session lifecycle is a per-DOMAIN property like the
     # parser and the rate policy, so it belongs in the playbook, not hard-coded in a fetcher.
+    # impersonate: measured 2026-07-29 — this target blocks the desktop-Chrome TLS family specifically
+    # (chrome/chrome124/chrome131 all challenged) while safari/firefox/edge/android all returned real
+    # catalogs on the same IPs at the same moment. The costume is a per-domain property, like the parser.
     dict(id="ubereats", label="Uber Eats store catalog (sharded)", shards=8, session_budget=40,
+         impersonate="safari17_0",
          code="import ue_catalog as m; m.main(['--site','ubereats','--shard',__import__('os').environ.get('UE_SHARD','0/8'),'--no-enrich'])",
          caps=['curl_cffi'],
          tables=["ubereats_products", "retail_observations"], klass="headless", cadence="daily",

@@ -41,15 +41,28 @@ def feed(src, cls, n):
 # ── the event: a rung closes, and the system moves without being told ────────────────────────────
 L.reset()
 check("starts on the declared rung", L.current("s1", default=L.IMPERSONATE), L.IMPERSONATE)
+# COSTUMES FIRST. A TLS profile change is free; the browser rung costs 10-50x throughput and a Chromium
+# per process. Today proved the cheap move was the entire answer — UberEats blocked the desktop-Chrome
+# family and every other profile worked — so the ladder must exhaust costumes before it escalates.
 feed("s1", B.CAPTCHA, L.WINDOW)
-check("a CAPTCHA storm escalates", L.current("s1"), L.BROWSER)
-check("the move is recorded", len(L._L["s1"].stats()["moves"]), 1)
-check("...with the evidence", L._L["s1"].stats()["moves"][0]["from"], L.IMPERSONATE)
+check("first block rotates the costume, not the rung", L.current("s1"), L.IMPERSONATE)
+check("costume was tried", L._L["s1"]._costumes, 1)
+feed("s1", B.CAPTCHA, L.WINDOW * L.MAX_COSTUMES)
+check("only after costumes run out does it escalate", L.current("s1"), L.BROWSER)
+check("costumes are bounded", L._L["s1"]._costumes, L.MAX_COSTUMES)
+# History records BOTH costume changes and rung moves — the costume entries are the cheap attempts
+# that preceded the expensive one, and they are exactly what you want in the record when asking later
+# "what did we try before we started paying for browsers?".
+_mv = L._L["s1"].stats()["moves"]
+check("attempts are recorded", len(_mv) >= 1, True)
+check("...with the evidence", _mv[0]["from"], L.IMPERSONATE)
+check("costume attempts are visible", any("costume" in str(m["to"]) for m in _mv), True)
+check("and the rung move too", any(m["to"] == L.BROWSER for m in _mv), True)
 
 # soft blocks are the quieter version of the same event and must also escalate
 L.reset(); L.current("s2", default=L.IMPERSONATE)
-feed("s2", B.SOFT_BLOCK, L.WINDOW)
-check("hollow 200s escalate too", L.current("s2"), L.BROWSER)
+feed("s2", B.SOFT_BLOCK, L.WINDOW * (L.MAX_COSTUMES + 1))
+check("hollow 200s escalate too, after costumes", L.current("s2"), L.BROWSER)
 
 # ── what must NOT move a source ──────────────────────────────────────────────────────────────────
 L.reset(); L.current("s3", default=L.IMPERSONATE)
@@ -83,6 +96,7 @@ check("paid is last", L.RUNGS[-1], L.PAID)
 
 # ── escalation is stepwise, not a leap to the top ────────────────────────────────────────────────
 L.reset(); L.current("s7", default=L.DIRECT)
+# from DIRECT there is no costume to change, so it steps immediately
 feed("s7", B.HTTP_BLOCK, L.WINDOW)
 check("one step at a time", L.current("s7"), L.MOBILE)
 

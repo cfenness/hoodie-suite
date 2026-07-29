@@ -114,6 +114,51 @@ def _fetch_browser(site, api, body, headers):
     return status, ((obj or {}).get("data") if isinstance(obj, dict) else None)
 
 
+# Ordered by how well they have historically survived: non-Chrome first, since Chrome is the family
+# most often fingerprinted (it is the one worth the defender's effort).
+PROFILES = [p.strip() for p in os.environ.get(
+    "IMPERSONATE_PROFILES",
+    "safari17_0,firefox133,safari17_2_ios,edge101,chrome99_android,safari18_0,chrome131").split(",") if p.strip()]
+_PROF = {}
+
+
+def _profile(site):
+    """The TLS costume for this source. Registry-declared if present, else the first profile that has
+    not been retired for this site."""
+    if site in _PROF:
+        return _PROF[site]
+    prof = None
+    try:
+        import source_registry
+        for s_ in getattr(source_registry, "SOURCES", []):
+            if s_.get("id") == site:
+                prof = s_.get("impersonate")
+                break
+    except Exception:
+        prof = None
+    _PROF[site] = prof or PROFILES[0]
+    return _PROF[site]
+
+
+def rotate_profile(site, log=print):
+    """Retire the current costume and take the next. Called when a source is being blocked — cheaper to
+    test than any other hypothesis, and today it was the whole answer."""
+    cur = _profile(site)
+    try:
+        i = PROFILES.index(cur)
+    except ValueError:
+        i = -1
+    nxt = PROFILES[(i + 1) % len(PROFILES)]
+    _PROF[site] = nxt
+    with _BR_LOCK:
+        _TL_RESET[0] += 1                 # force every thread to re-prime on the new profile
+    log("[getstore] %s: TLS profile %s -> %s" % (site, cur, nxt))
+    return nxt
+
+
+_TL_RESET = [0]
+
+
 def _exit_ip():
     """The exit this thread's session is pinned to, so an outcome can be attributed to the identity that
     produced it rather than to the pool as a whole."""
@@ -150,6 +195,8 @@ def _session(site):
     # the old behaviour back if this turns out to be the wrong read.
     n = getattr(_TL, "n", 0)
     s = getattr(_TL, "s", None)
+    if getattr(_TL, "gen", -1) != _TL_RESET[0]:
+        s, _TL.s, _TL.n, _TL.gen = None, None, 0, _TL_RESET[0]   # profile changed under us
     _pol = None
     try:
         import sessions
@@ -197,7 +244,16 @@ def _session(site):
             _TL.exit = None
     else:
         px = resi._session_url("ag%d" % (threading.get_ident() % 400)) if resi.enabled() else None
-    s = cr.Session(impersonate="chrome", proxies={"http": px, "https": px} if px else None, timeout=30)
+    # THE TLS PROFILE IS A ROTATABLE IDENTITY, NOT A CONSTANT. Measured 2026-07-29: UberEats blocks the
+    # desktop-Chrome family specifically — chrome / chrome124 / chrome131 all challenged, while
+    # safari17_0, safari18_0, safari17_2_ios, firefox133, edge101 and chrome99_android all returned real
+    # catalogs on the same IPs, same rate, same moment. A full day was spent modelling rate limits,
+    # session quotas and IP reputation for what was one string.
+    #
+    # So it rotates on a classified block, the same way sessions and rungs do. A target that fingerprints
+    # one browser family has not blocked us; it has blocked one costume, and we own several.
+    s = cr.Session(impersonate=_profile(site), proxies={"http": px, "https": px} if px else None,
+                   timeout=30)
     try:
         s.get(_base(site))
     except Exception:
