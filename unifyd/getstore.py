@@ -39,6 +39,53 @@ def _base(site):
     return "https://postmates.com" if site == "postmates" else "https://www.ubereats.com"
 
 
+# ── THE BROWSER RUNG ─────────────────────────────────────────────────────────────────────────────
+# What the ladder escalates INTO when the cold path closes. browser_warm already solves the hard part,
+# and its own docstring names today's adversary: PerimeterX binds _px3 to the TLS FINGERPRINT, so a
+# requests/curl_cffi session carrying a warmed cookie gets re-challenged — which is exactly the failure
+# we spent today watching. Running the fetch INSIDE the page means the request inherits the real
+# fingerprint and the auto-refreshing token together, so there is nothing to re-challenge.
+#
+# ONE browser per process, not per thread. A Chromium instance is RAM-heavy and this rung is 10-50x
+# slower than a raw fetch; the ladder knows that, which is why it only climbs here under duress and
+# decays back down afterwards. In-page fetches serialize behind the lock, and that is correct — the
+# whole point of this rung is to be quiet, not parallel.
+_BR = {"w": None, "site": None}
+_BR_LOCK = threading.Lock()
+
+
+def _browser(site):
+    """The warmed browser for this site, launched on first use and reused for the life of the process.
+    Pinned to a residential exit: the proven recipe for this target is a real browser on a residential
+    IP — a real browser on a datacenter IP is still a datacenter IP."""
+    with _BR_LOCK:
+        if _BR["w"] is not None and _BR["site"] == site:
+            return _BR["w"]
+        import browser_warm
+        proxy = None
+        try:
+            import resi
+            pool = resi.isp_pool()
+            if pool:
+                with _RR_LOCK:
+                    _RR[0] += 1
+                    proxy = pool[_RR[0] % len(pool)]
+        except Exception:
+            proxy = None
+        dom = _base(site).replace("https://", "").replace("http://", "")
+        _BR["w"] = browser_warm.Warmer(dom, proxy=proxy, patchright=True)
+        _BR["site"] = site
+        return _BR["w"]
+
+
+def _fetch_browser(site, api, body, headers):
+    """One getStoreV1 POST through the warmed page. Returns (status, data-or-None)."""
+    w = _browser(site)
+    with _BR_LOCK:
+        status, obj = w.post_json(api, body, headers=headers)
+    return status, ((obj or {}).get("data") if isinstance(obj, dict) else None)
+
+
 def _exit_ip():
     """The exit this thread's session is pinned to, so an outcome can be attributed to the identity that
     produced it rather than to the pool as a whole."""
@@ -163,8 +210,19 @@ def fetch_store(store_uuid, session="gs", site="ubereats", target=None):
         # TIMEOUT IS NOT OPTIONAL. Without one a stalled socket parks this worker permanently: with 7
         # workers, seven silent hangs are a dead shard that still looks alive. The enrich path already
         # bounded its POST; this one never did.
-        r = s.post(api, json=body, headers=H, timeout=30)
-        data = ((r.json() if r.content else None) or {}).get("data")
+        rung = None
+        try:
+            import ladder
+            rung = ladder.current(site)
+        except Exception:
+            rung = None
+        if rung == "browser":
+            # The escalated path. Same body, same headers, issued from inside a trusted page.
+            st, data = _fetch_browser(site, api, body, H)
+            r = type("R", (), {"status_code": st, "text": "", "content": b"1"})()
+        else:
+            r = s.post(api, json=body, headers=H, timeout=30)
+            data = ((r.json() if r.content else None) or {}).get("data")
         # CLASSIFY, then feed the controller only REAL pushback. Reporting every no-data response as a
         # throttle is what had the pacer backing off on permanently-closed stores — a condition no
         # amount of slowing down can improve, and the reason a healthy run walked itself to a standstill.
@@ -179,6 +237,11 @@ def fetch_store(store_uuid, session="gs", site="ubereats", target=None):
             try:
                 import sessions
                 sessions.policy_for(site).report(cls, getattr(_TL, "n", 0))
+            except Exception:
+                pass
+            try:
+                import ladder
+                ladder.report(site, cls)      # a closed rung escalates itself from here
             except Exception:
                 pass
             if _p:
