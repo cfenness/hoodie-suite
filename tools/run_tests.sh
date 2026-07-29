@@ -42,6 +42,7 @@ TESTS=(
   blocks_test                  # name WHY a fetch failed; a closed store is not a block
   sessions_test                # session budget is per-source policy, learned from real burns
   extract_qa_test              # validate the OUTPUT — a 200 that is wrong is worse than a 403
+  value_rules_test             # plausible-but-wrong values: right type, wrong number
   sipsource_test
   cost_ledger_test
   obs_quality_test
