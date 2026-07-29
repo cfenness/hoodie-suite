@@ -143,7 +143,27 @@ def spawn(sid, image, klass, mem_hint=None, run_id=None, days=None, want_all=Fal
     machine id (truthy) rather than a bare bool, so a caller can correlate the machine with the run."""
     # per-source `mem` override (a registry field) wins — a pass that accumulates into a huge table needs
     # headroom the 4GB headless default can't give (e.g. ttb-enrich). Headful (mac) klass → 8gb for Chrome.
-    mem = int(mem_hint) if mem_hint else (8192 if klass in _HEADFUL else 4096)
+    #
+    # THE REGISTRY IS CONSULTED HERE, not only by the caller. The dispatcher does pass s.get("mem") at
+    # every call site, but any OTHER caller — a manual kick, a backfill script, a future tool — that
+    # omitted the hint silently got the generic 4GB default even though the source declares 16384. Not a
+    # theoretical gap: aggregator-geo (mem=16384) was hand-spawned without a hint, landed on 4GB, and was
+    # OOM-killed by the kernel with delta=0 and no error the caller could see. Resolving the declared
+    # value inside spawn() makes the registry authoritative on EVERY path, so sizing cannot depend on a
+    # caller remembering to look it up.
+    declared = None
+    try:
+        from source_registry import SOURCES
+        declared = next((int(x["mem"]) for x in SOURCES
+                         if x.get("id") == sid and x.get("mem")), None)
+    except Exception:                                        # noqa: BLE001 — sizing must never block a spawn
+        pass
+    mem = int(mem_hint) if mem_hint else (declared or (8192 if klass in _HEADFUL else 4096))
+    if declared and mem < declared:
+        # An explicit hint still wins (a deliberately smaller run is legitimate), but say so — an
+        # undersized machine dies as an OOM SIGKILL, which reads as "the source is broken".
+        print("  spawn %s: mem %dMB is BELOW the registry's declared %dMB — expect an OOM kill if this "
+              "source needs the headroom" % (sid, mem, declared))
     # Fly caps shared-CPU RAM at 2 GB × cpus, so a big accumulate (src_outlets is 1.76M rows → the whole-table
     # merge peaks past 8 GB) needs the cpu count scaled up to unlock the memory. 8 shared cpus → 16 GB ceiling.
     cpus = max(4, min(8, -(-mem // 2048)))
