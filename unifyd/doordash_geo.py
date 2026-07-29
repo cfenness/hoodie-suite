@@ -93,7 +93,21 @@ def _launch(pw):
             px = resi.isp_url()
     except Exception:
         px = None
-    proxy = {"server": px} if px else None
+    # SPLIT THE CREDENTIALS. resi.isp_url() returns http://user:pass@host:port, and Chromium IGNORES
+    # credentials embedded in a proxy URL — Playwright wants username/password as separate keys.
+    # Passing the whole URL as `server` produced ERR_INVALID_AUTH_CREDENTIALS on every navigation,
+    # which _point_harvest swallowed per-term, so a totally failed sweep reported "0 merchants" and
+    # looked like a market with no stores.
+    proxy = None
+    if px:
+        try:
+            u = urllib.parse.urlparse(px)
+            proxy = {"server": "%s://%s:%s" % (u.scheme or "http", u.hostname, u.port or 80)}
+            if u.username:
+                proxy["username"] = urllib.parse.unquote(u.username)
+                proxy["password"] = urllib.parse.unquote(u.password or "")
+        except Exception:
+            proxy = {"server": px}
     headful = os.environ.get("BROWSER_HEADFUL", "0") != "0"
     last = None
     for ch in ("chrome", None):
@@ -125,15 +139,25 @@ def _set_location(ctx, pg, lat, lon):
     return cdp
 
 
-def _point_harvest(pg, cdp, lat, lon):
+_NAV_MS = int(os.environ.get("DD_GEO_NAV_MS", "25000"))
+_SETTLE_S = float(os.environ.get("DD_GEO_SETTLE_S", "4"))
+_VERBOSE = os.environ.get("DD_GEO_VERBOSE", "1") != "0"
+
+
+def _point_harvest(pg, cdp, lat, lon, log=print):
     # Location is pinned by _set_location() before this runs (standard CDP). The old
     # `Proxy.setLocation` here was Bright Data's own command and 404s on any other browser.
-    found = {}
+    found, ok, errs = {}, 0, []
     for term in ALCOHOL_TERMS:
         try:
+            # 25s, not 90s. At 90s a pin whose navigations all hang takes ~9 minutes before it says
+            # ANYTHING — measured live: a Texas sweep sat 20 minutes without reporting a single pin,
+            # so there was no way to tell a slow crawl from a wedged one. A page that has not reached
+            # domcontentloaded in 25s is not going to produce tiles; failing fast turns a silent hang
+            # into a diagnosable error.
             pg.goto("https://www.doordash.com/search/store/%s/" % urllib.parse.quote(term),
-                    wait_until="domcontentloaded", timeout=90000)
-            time.sleep(6)
+                    wait_until="domcontentloaded", timeout=_NAV_MS)
+            time.sleep(_SETTLE_S)
             tiles = pg.evaluate(r"""() => { const m={}; document.querySelectorAll('a[href*="/store/"]').forEach(a=>{
                 const href=a.getAttribute('href')||''; const mm=href.match(/\/(convenience\/store|store)\/(?:[\w%'-]*?-)?(\d{4,9})/);
                 if(!mm) return; const id=mm[2], typ=(mm[1]==='convenience/store')?'retail':'restaurant';
@@ -142,8 +166,18 @@ def _point_harvest(pg, cdp, lat, lon):
                 if(t&&(!m[id]||t.length>(m[id].name||'').length)) m[id]={name:t, type:typ}; }); return m; }""")
             for k, v in tiles.items():
                 found.setdefault(k, v)
-        except Exception:
-            pass
+            ok += 1
+            if _VERBOSE:
+                log("      term %-16s -> %d tiles" % (term, len(tiles)))
+        except Exception as e:                               # noqa: BLE001
+            errs.append("%s: %s" % (term, str(e)[:70]))
+            if _VERBOSE:
+                log("      term %-16s FAILED %s" % (term, str(e)[:70]))
+    # A pin where EVERY term failed is not an empty market — it is a failed pin, and the two must not
+    # look alike. Reporting 0 merchants for a broken proxy is how a dead sweep passed for a real
+    # measurement of Houston.
+    if ok == 0 and errs:
+        raise RuntimeError("all %d search terms failed at this pin: %s" % (len(errs), errs[0]))
     return found
 
 
@@ -167,7 +201,7 @@ def run(market="orlando", points=None, log=print):
                     ctx = browser.new_context(locale="en-US")
                     pg = ctx.new_page()
                     cdp = _set_location(ctx, pg, lat, lon)
-                    pts = _point_harvest(pg, cdp, lat, lon)
+                    pts = _point_harvest(pg, cdp, lat, lon, log=log)
                 except Exception as e:
                     log("  pt %d (%.3f,%.3f) failed: %s" % (i, lat, lon, str(e)[:60])); continue
                 finally:

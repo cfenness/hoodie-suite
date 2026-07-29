@@ -353,6 +353,23 @@ SOURCES = [
          tables=["src_outlets"], klass="headless", cadence="daily", enabled=False, timeout=5400, mem=16384,
          note="automate lat/lng: free US Census batch-geocodes addressed-but-ungeocoded src_outlets → maps on "
               "the Coverage page; unmatched marked county_fips=00000 so they aren't retried. GEOCODE_LIMIT/run"),
+    # TEXAS BY GEOGRAPHY — the only route to a state DoorDash's own feed will not serve.
+    # sitemap-doordash-tx-stores.xml returns a 270-byte stub with ONE store (California's carries
+    # 103,811) and there is no alternate URL: tx-1 / texas / .gz / hou / dal all 403. So Texas cannot
+    # be harvested from the sitemap at all, and the grid sweep is what replaces it. Ported off Bright
+    # Data (#687): local Chromium + standard CDP geolocation + the flat ISP pool, $0.
+    # klass="mac" for the 8GB headful guest — run_ephemeral.sh provides Xvfb and system Chrome.
+    # enabled=False: hand-kicked until a full Texas run is proven, so it cannot burn a nightly slot
+    # on an unvalidated sweep.
+    dict(id="doordash-geo-tx", label="DoorDash geo sweep — Texas",
+         code="import doordash_geo as m; m.run_texas()",
+         caps=['patchright'],
+         tables=["doordash_stores"], klass="mac", cadence="weekly", enabled=False,
+         timeout=21600, mem=8192, cost_class="free",
+         note="240-point lattice across Houston/Dallas/Fort Worth/Austin/San Antonio at 0.07 deg "
+              "(~4-5 mi, inside a delivery radius so the grid has no holes). Replaces the broken TX "
+              "sitemap; a pin where every search term fails now RAISES rather than reporting an "
+              "empty market."),
     dict(id="aggregator-geo", label="Aggregator geo (page-fetch)", code="import aggregator_geo as m; m.run()",
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          # SHARDED AND LIVE. The write is now shard-safe: each shard write_partitions its own parquet
