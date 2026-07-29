@@ -55,7 +55,15 @@ def _geocode(log):
 
 def _agg(log):
     import aggregator_geo
-    return aggregator_geo.run(log=log)
+    n = aggregator_geo.run(log=log)
+    # Fold in whatever the SHARD FLEET staged since the last pass. Shards write disjoint parquet parts
+    # and deliberately do not merge (concurrent write_accumulate is the clobber this all exists to
+    # avoid); this is the single serialized point where the stage becomes src_outlets.
+    try:
+        aggregator_geo.merge_stage(log=log)
+    except Exception as e:                                    # noqa: BLE001
+        log("[geo] stage merge failed: %s" % str(e)[:120])
+    return n
 
 
 if __name__ == "__main__":
