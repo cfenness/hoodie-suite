@@ -457,8 +457,41 @@ function refLine(j){
          (r.median||0).toFixed(2)+'</b> per 750ml equivalent across <b>'+r.n+'</b> observations'+
          (r.min&&r.max?' · range $'+r.min.toFixed(2)+'–$'+r.max.toFixed(2):'');
 }
+// OUR accounts, from src_outlets (~1.76M), tried BEFORE the VIP passthrough. The locator used to
+// show 150 accounts — not because we hold 150, but because the list was a third party's ZIP-keyed
+// page walk while the national universe we acquire sat unused. `total` vs `shown` are rendered
+// separately: how many accounts match, and how many pins a map can usefully draw, are not the
+// same number and must never be printed as if they were.
+async function ourAccounts(q,loc,locStr,stale){
+  const p=new URLSearchParams();
+  if(loc&&loc.length===2){p.set('lat',loc[0]);p.set('lng',loc[1]);}
+  else p.set('where',locStr||'');
+  // "Any distance" is value 0 — send a wide radius rather than 0, which would match nothing.
+  p.set('radius',(+document.querySelector('input[name=rad]:checked').value)||50);
+  try{
+    const j=await (await fetch('/api/locator/accounts?'+p,{cache:'no-store'})).json();
+    if(stale())return false;
+    if(j&&j.error){ refline.textContent=j.error; return false; }
+    if(!(j&&j.accounts&&j.accounts.length))return false;
+    if(j.center)CENTER=j.center;
+    const src=(j.by_source||[]).slice(0,4).map(s=>esc(s.source)+' '+s.n.toLocaleString()).join(' · ');
+    refline.textContent='Accounts we hold near here — distribution footprint, not per-bottle stock. '+
+      'Add a product above for verified stock and price.';
+    document.getElementById('src').innerHTML=
+      '<b>'+j.total.toLocaleString()+'</b> accounts within '+j.radius_mi+' mi'+
+      (j.truncated?' · showing the nearest <b>'+j.shown.toLocaleString()+'</b>':'')+
+      (src?' · '+src:'');
+    prepAccounts(j.accounts.map(a=>({name:a.store_name||a.chain||'',street:a.address||'',
+      city:a.city||'',state:a.state||'',lat:a.lat,lng:a.lng,source:a.source||'',
+      type:a.chain||''})));
+    return true;
+  }catch(e){ return false; }
+}
+
 async function fallbackAccounts(q,loc,locStr,stale){
   stale=stale||(()=>false);
+  if(await ourAccounts(q,loc,locStr,stale))return;
+  if(stale())return;
   try{
     const j=await (await fetch('/api/locator?brand='+encodeURIComponent(q.toLowerCase().replace(/[^a-z]/g,''))+
                                '&zip='+encodeURIComponent(locStr),{cache:'no-store'})).json();

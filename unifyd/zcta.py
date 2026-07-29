@@ -107,6 +107,20 @@ def nearest(lat, lng):
     return (best, round(bestd, 1)) if best else None
 
 
+def center_of(zip_code):
+    """(lat, lng) for a 5-digit ZIP, or None when the reference isn't built / the ZIP is unknown.
+
+    The account layer needs a POINT to measure a radius from, so a resolve() that returns only a ZIP
+    string can't drive it. None here must stay None at the caller — an unknown ZIP that quietly
+    became a default point is the same bug this module was written to kill, one layer up.
+    """
+    z = (zip_code or "").strip().zfill(5)
+    for zz, la, lo in _load():
+        if zz == z:
+            return (la, lo)
+    return None
+
+
 _ZIP_RE = re.compile(r"\b(\d{5})(?:-\d{4})?\b")
 
 

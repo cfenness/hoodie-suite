@@ -97,6 +97,29 @@ def build_digest(weekly=False):
     now = time.time()
     findings = []
 
+    # Is production actually running what we deployed? `flyctl releases` reports that a deploy
+    # succeeded, not what it deployed — production silently stopped matching main twice in one day
+    # and was found only by hand. Cheap, and it fails LOUD: an unreachable app or a missing
+    # baseline are both reported, never treated as "no drift".
+    try:
+        import deploy_drift
+        findings.extend(deploy_drift.findings(log=lambda *_a, **_k: None))
+    except Exception as e:                        # noqa: BLE001
+        findings.append(_finding("drift-check-failed", "warn", "deploy",
+                                 "the deploy-drift check itself did not run",
+                                 str(e)[:120]))
+
+    # An outlet with no lat/lng is invisible everywhere — no map pin, no radius hit, no locator row —
+    # and nothing errors when it happens. The geo passes each have an entry condition, so an account
+    # matching none of them is stranded silently and forever. Surface the count, per source.
+    try:
+        import geo_gap
+        findings.extend(geo_gap.findings(log=lambda *_a, **_k: None))
+    except Exception as e:                        # noqa: BLE001
+        findings.append(_finding("geo-gap-check-failed", "warn", "geo",
+                                 "the outlet geo-coverage survey did not run",
+                                 str(e)[:120]))
+
     # creds first (same as monitor's __main__): otherwise we'd silently read the LOCAL fallback warehouse and
     # every freshness verdict below would be about the wrong data.
     try:

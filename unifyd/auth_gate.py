@@ -32,7 +32,7 @@ _GOOGLE_ISS  = {"accounts.google.com", "https://accounts.google.com"}
 
 # Paths reachable WITHOUT a session. Everything else is gated.
 _PUBLIC = {"/api/health", "/auth/login", "/auth/callback", "/auth/logout",
-           "/auth/me", "/api/auth/mobile", "/favicon.ico", "/robots.txt"}
+           "/auth/me", "/api/auth/mobile", "/favicon.ico", "/robots.txt", "/api/version",}
 
 # Mobile bearer tokens: RN has no cookie jar, so native apps authenticate by exchanging a
 # Google ID token (POST /api/auth/mobile) for one of OUR signed tokens, sent as a Bearer.
