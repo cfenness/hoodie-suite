@@ -17,6 +17,7 @@ doordash_discover fans from.
     python doordash_sitemap.py --cap 500       # cap stores/state (smoke)
 """
 import argparse
+import json
 import os
 import re
 import sys
@@ -65,9 +66,42 @@ def _city_from_slug(slug, state):
     return (toks[-1] if toks else "")
 
 
+# US states + DC. Canadian provinces/territories ride the same index (YT legitimately has ~60 stores),
+# so the plausibility floor below must not be applied to them or it cries wolf every run.
+_US = {"AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA", "HI", "ID", "IL", "IN", "IA",
+       "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM",
+       "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA",
+       "WV", "WI", "WY"}
+# The thinnest real US states measured live are VT 747 / WY 938 / AK 957. 300 sits well below the
+# genuine floor, so anything under it is a broken feed, not a small state.
+THIN_FLOOR = int(os.environ.get("DD_STATE_FLOOR", "300"))
+REGRESSION_PCT = 0.25          # harvested < 25% of what we already hold for that state = collapse
+
+
+def _stored_state_counts():
+    """{STATE: n} already in doordash_stores — the yardstick for "did this state just collapse"."""
+    try:
+        rows = warehouse.query(
+            "doordash_stores",
+            "SELECT upper(CAST(state AS VARCHAR)) st, count(*) n FROM t GROUP BY 1")
+        return {r["st"]: int(r["n"] or 0) for r in rows if r["st"]}
+    except Exception:                                          # noqa: BLE001 — no baseline is not fatal
+        return {}
+
+
 def harvest(states=None, cap_per_state=None, log=print):
     """Read the store index → per-state sub-sitemaps → {store_id, name, city, state, url} rows. Lands
-    doordash_stores (accumulate). Returns the rows harvested this run."""
+    doordash_stores (accumulate). Returns the rows harvested this run.
+
+    SELF-REPORTS a per-state plausibility verdict. It previously did not, and the cost was measured:
+    DoorDash's own `sitemap-doordash-tx-stores.xml` serves a stub containing ONE store (California's
+    has 103,811). We harvested that 1, landed it, and reported success — so Texas sat at a single
+    outlet while every other state carried tens of thousands, and nothing anywhere said so. A locator
+    search in Houston returned nothing from DoorDash and looked like a coverage fact rather than a
+    broken feed.
+
+    A state that fetches but yields an implausible count is now a `degraded` run with the state named.
+    """
     idx = _get(STORE_INDEX, log=log)
     subs = _LOC.findall(idx)
     if states:
@@ -75,11 +109,16 @@ def harvest(states=None, cap_per_state=None, log=print):
         subs = [s for s in subs if (_STATE.search(s) and _STATE.search(s).group(1).lower() in want)]
     log("[dd-sitemap] %d state sub-sitemaps%s" % (len(subs), (" (filtered)" if states else "")))
     rows, seen = [], set()
+    per_state, fetch_failed = {}, []
     for si, sub in enumerate(subs):
         m = _STATE.search(sub)
         state = m.group(1).upper() if m else ""
         body = _get(sub, log=log)
         if not body:
+            # Was `continue` alone: a state whose sub-sitemap failed every retry vanished from the run
+            # with no counter, no status change and no summary line. Record it so a partial harvest
+            # can never again be indistinguishable from a complete one.
+            fetch_failed.append(state or sub.split("/")[-1])
             continue
         n = 0
         for url in _LOC.findall(body):
@@ -97,6 +136,7 @@ def harvest(states=None, cap_per_state=None, log=print):
             n += 1
             if cap_per_state and n >= cap_per_state:
                 break
+        per_state[state] = per_state.get(state, 0) + n
         log("  %s: %d stores (%d/%d sub-sitemaps)" % (state or "??", n, si + 1, len(subs)))
     if rows:
         warehouse.write_accumulate("doordash_stores", rows, key=lambda r: r.get("store_id"),
@@ -104,6 +144,33 @@ def harvest(states=None, cap_per_state=None, log=print):
         log("[dd-sitemap] landed %d stores -> doordash_stores" % len(rows))
     else:
         log("[dd-sitemap] no stores harvested (fetch blocked?) — nothing landed")
+
+    # ── plausibility, stated out loud ───────────────────────────────────────────────────────────
+    prev = _stored_state_counts()
+    warnings = []
+    if fetch_failed:
+        warnings.append("sub-sitemap fetch failed for %d region(s): %s"
+                        % (len(fetch_failed), ", ".join(sorted(set(fetch_failed))[:12])))
+    thin = sorted(st for st, n in per_state.items()
+                  if st in _US and n < THIN_FLOOR and not (cap_per_state and n >= cap_per_state))
+    if thin:
+        warnings.append("US state(s) below the %d-store floor — the feed is broken, not the market: %s"
+                        % (THIN_FLOOR, ", ".join("%s=%d" % (s, per_state[s]) for s in thin)))
+    collapsed = sorted(st for st, n in per_state.items()
+                       if prev.get(st, 0) >= THIN_FLOOR and n < REGRESSION_PCT * prev[st])
+    if collapsed:
+        warnings.append("state(s) collapsed vs what we already hold: "
+                        + ", ".join("%s %d→%d" % (s, prev[s], per_state[s]) for s in collapsed))
+
+    # The scraper knows its own denominator; say it, so coverage.assess can't fall back to a
+    # high-water mark that a collapsed run would quietly reset.
+    expected = sum(max(per_state.get(st, 0), prev.get(st, 0)) for st in set(per_state) | set(prev))
+    result = {"status": "degraded" if warnings else "success",
+              "stores_total": expected, "stores_done": len(rows),
+              "states": len(per_state), "warnings": warnings}
+    for w in warnings:
+        log("  [dd-sitemap] DEGRADED — %s" % w)
+    sys.stderr.write("HOODIE_RESULT %s\n" % json.dumps(result))
     return rows
 
 
