@@ -64,15 +64,35 @@ def enrich_geo(limit=None, workers=None, log=print):
     workers = workers or int(os.environ.get("AGG_GEO_WORKERS", "64"))
     gp = ("AND (geo_precision IS NULL OR geo_precision NOT IN ('exact', 'agg_miss')) "
           if warehouse.has_column("src_outlets", "geo_precision") else "")
-    rows = warehouse.query(
-        "src_outlets",
-        "SELECT * FROM t WHERE lat IS NULL AND source IN ('ubereats', 'postmates') " + gp +
-        "LIMIT %d" % limit)
-    if not rows:
+    # MEMORY MUST SCALE WITH THE CHUNK, NOT THE BACKLOG.
+    #
+    # This used to be one `SELECT * ... LIMIT 800000`, materialising up to 800k full 27-column rows as
+    # Python dicts before a single fetch happened. On a 4GB ephemeral (duckdb capped at ~1.9GB of it)
+    # that stalls or dies before doing any work — which is exactly what was observed: two runs that
+    # produced no output past "starting aggregator-geo" and landed nothing, with no error to explain
+    # it. Chunking the WRITE was necessary but not sufficient; the READ was the wall.
+    #
+    # Hash buckets rather than LIMIT/OFFSET: OFFSET re-scans the whole table for every page, and there
+    # is no stable sort key to page on. hash(source|store_id) % n is deterministic, evenly spread, and
+    # each bucket is an independent query holding only its own slice.
+    chunk = int(os.environ.get("AGG_GEO_CHUNK", "40000"))
+    try:
+        backlog = warehouse.query(
+            "src_outlets",
+            "SELECT count(*) n FROM t WHERE lat IS NULL AND source IN ('ubereats', 'postmates') "
+            + gp)[0]["n"]
+    except Exception as e:                                       # noqa: BLE001
+        log("[agg-geo] could not size the backlog: %s" % str(e)[:100])
+        return 0
+    if not backlog:
         log("[agg-geo] no un-geocoded aggregator outlets")
         return 0
+    target = min(int(backlog), int(limit))
+    nb = max(1, -(-int(backlog) // chunk))                       # ceil — buckets over the WHOLE backlog
+    log("[agg-geo] backlog %d; %d buckets of ~%d (target this run: %d)" % (backlog, nb, chunk, target))
     import getstore
     out, cnt, lock = [], [0], threading.Lock()
+    cur = [0]                                                    # rows in the bucket being worked
 
     def _work(r):
         sid, src = str(r["store_id"]), r["source"]
@@ -94,7 +114,7 @@ def enrich_geo(limit=None, workers=None, log=print):
             out.append({k: d.get(k) for k in refresh_fast.FLD})
             cnt[0] += 1
             if cnt[0] % 100 == 0:
-                log("  [agg-geo] %d/%d" % (cnt[0], len(rows)))
+                log("  [agg-geo] %d/%d in bucket" % (cnt[0], cur[0]))
 
     # CHECKPOINT IN CHUNKS — do not hold 800k rows of work hostage to a single write at the end.
     #
@@ -108,10 +128,22 @@ def enrich_geo(limit=None, workers=None, log=print):
     # daily runs actually advance because the rows written are no longer re-selected (lat IS NULL).
     # Chunk size trades write amplification (write_accumulate rewrites the whole table) against how
     # much a kill throws away — 40k is ~20 writes for the full backlog.
-    chunk = int(os.environ.get("AGG_GEO_CHUNK", "40000"))
     got_addr = got_geo = landed = 0
-    for i in range(0, len(rows), chunk):
-        part = rows[i:i + chunk]
+    for b in range(nb):
+        if landed >= target:
+            break
+        try:
+            part = warehouse.query(
+                "src_outlets",
+                "SELECT * FROM t WHERE lat IS NULL AND source IN ('ubereats', 'postmates') " + gp +
+                "AND (hash(CAST(source AS VARCHAR) || '|' || CAST(store_id AS VARCHAR)) %% %d) = %d"
+                % (nb, b))
+        except Exception as e:                                   # noqa: BLE001
+            log("  [agg-geo] bucket %d/%d read failed: %s" % (b + 1, nb, str(e)[:90]))
+            continue
+        if not part:
+            continue
+        cur[0], cnt[0] = len(part), 0
         del out[:]
         with ThreadPoolExecutor(max_workers=workers) as ex:
             list(ex.map(_work, part))
@@ -122,15 +154,15 @@ def enrich_geo(limit=None, workers=None, log=print):
         got_addr += sum(1 for o in out if o.get("address"))
         got_geo += sum(1 for o in out if o.get("lat") is not None)
         landed += len(out)
-        log("  [agg-geo] checkpoint %d/%d rows — +%d geo, +%d address (landed, durable)"
-            % (min(i + chunk, len(rows)), len(rows), got_geo, got_addr))
+        log("  [agg-geo] bucket %d/%d — %d landed so far (+%d geo, +%d address) — durable"
+            % (b + 1, nb, landed, got_geo, got_addr))
     log("[agg-geo] +%d address (→ geocode pass), +%d direct geo of %d fetched -> src_outlets"
         % (got_addr, got_geo, landed))
     # The remaining backlog is stated every run. A pass that drains 40k of 500k must not read the
     # same as one that finished — that ambiguity is why this went unnoticed for so long.
-    left = len(rows) - landed
+    left = int(backlog) - landed
     if left > 0:
-        log("[agg-geo] %d of this batch not landed; run again to continue draining" % left)
+        log("[agg-geo] %d aggregator outlets still un-geocoded; run again to continue draining" % left)
     return landed
 
 
