@@ -39,6 +39,7 @@ TESTS=(
   coverage_guard_test          # a throttled 200 must never count as a covered store
   pace_test                    # pace by RATE, back off hard, creep up slow
   session_rotate_test          # the limit is a per-session QUOTA — re-prime on a request budget
+  blocks_test                  # name WHY a fetch failed; a closed store is not a block
   sipsource_test
   cost_ledger_test
   obs_quality_test
