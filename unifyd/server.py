@@ -831,18 +831,149 @@ def locator_offers():
     out["radius_mi"] = radius
     return jsonify(**out)
 
+@app.get("/api/locator/accounts")
+def locator_accounts():
+    """Accounts near a point, from OUR outlet spine (`src_outlets`, ~1.76M rows).
+
+    The locator's account list used to be a live passthrough to VIP's brand locator — a third
+    party's ZIP-keyed page walk capped at 150 rows — while the national outlet universe we acquire
+    sat unused. This is that universe.
+
+    Params: lat+lng or `where` (ZIP / "City, ST"), radius (mi), category
+    (spirits|beer|wine|hemp|cannabis|rtd_spirits), chains (1/0), q, limit.
+
+    `total` is how many accounts match in the warehouse; `shown` is how many pins were shipped.
+    They are reported separately on purpose — conflating them is how "150" came to look like an
+    answer. An account row says WHERE a store is and what categories it carries, never that it
+    stocks a specific bottle; `/api/locator/offers` is the product-level layer.
+    """
+    import outlet_locator
+    center = None
+    resolved = None
+    try:
+        if request.args.get("lat") and request.args.get("lng"):
+            center = (float(request.args["lat"]), float(request.args["lng"]))
+    except (TypeError, ValueError):
+        center = None
+    if center is None and request.args.get("where"):
+        import zcta
+        loc = zcta.resolve(request.args["where"])
+        if loc.get("error"):
+            return jsonify(accounts=[], total=0, shown=0, error=loc["error"],
+                           degraded="location-unresolved"), 200
+        # A city resolves straight to a centroid; a typed ZIP only gives us the ZIP string, so look
+        # up that ZCTA's own centre. If neither yields a point we say so — we never fall back to a
+        # default location, which is the bug that made a Houston search render Tampa.
+        if loc.get("lat") is not None:
+            center, resolved = (loc["lat"], loc["lng"]), loc
+        else:
+            z = zcta.center_of(loc.get("zip"))
+            if z:
+                center, resolved = z, loc
+            else:
+                return jsonify(accounts=[], total=0, shown=0,
+                               error="couldn't place ZIP %s — ZIP reference may not be built"
+                                     % loc.get("zip"),
+                               degraded="location-unresolved"), 200
+    if center is None:
+        return jsonify(accounts=[], total=0, shown=0, error="need lat+lng or where",
+                       degraded="location-unresolved"), 200
+    try:
+        radius = float(request.args.get("radius", 15))
+    except (TypeError, ValueError):
+        radius = 15.0
+    chains = request.args.get("chains")
+    try:
+        limit = int(request.args.get("limit", outlet_locator.MAX_POINTS))
+    except (TypeError, ValueError):
+        limit = outlet_locator.MAX_POINTS
+    out = outlet_locator.query(center, radius_mi=radius,
+                               category=(request.args.get("category") or "").strip() or None,
+                               chains_only=(None if chains in (None, "") else chains == "1"),
+                               q=(request.args.get("q") or "").strip() or None, limit=limit,
+                               log=lambda m: app.logger.info("ACCOUNTS %s", m))
+    out["center"] = list(center)
+    out["radius_mi"] = radius
+    if resolved:
+        out["resolved"] = {"label": resolved.get("label"), "how": resolved.get("how")}
+    return jsonify(**out)
+
+@app.get("/api/locator/serves")
+def locator_serves():
+    """The ON-PREMISE half: where can I DRINK this near here — and which one should I go to?
+
+    `/api/locator/offers` finds the bottle; this finds the pour. Backed by `menu_beverages`
+    (cocktail_taxonomy's root/sub/base_spirit + the BUILD in `description`) joined to the outlet
+    spine by name. See unifyd/serve_locator.py — a venue we cannot pin to one branch is returned
+    as a COUNT, never as a pin, because sending someone to the wrong Beef O'Brady's is worse than
+    admitting we don't know which one.
+
+    Params: q (drink / family / base spirit), lat+lng, radius (mi), state, recommend=1.
+
+    `recommend=1` adds a Claude pass (unifyd/serve_advisor.py) that picks the most interesting
+    builds and says how each departs from the classic — grounded ONLY in the menu description and
+    price, and re-verified against these same rows before it is returned. It carries no review or
+    popularity claim because we hold no review text; when it is unavailable the reason is stated
+    rather than the field quietly going missing.
+    """
+    import serve_locator
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify(serves=[], error="missing q"), 200
+    center = None
+    try:
+        if request.args.get("lat") and request.args.get("lng"):
+            center = (float(request.args["lat"]), float(request.args["lng"]))
+    except (TypeError, ValueError) as e:
+        app.logger.info("SERVES center error %s", e)
+    try:
+        radius = float(request.args.get("radius", 25))
+    except (TypeError, ValueError):
+        radius = 25.0
+    try:
+        out = serve_locator.serves(q, center=center, radius_mi=radius,
+                                   state=(request.args.get("state") or "").strip().upper() or None,
+                                   log=lambda m: app.logger.info("SERVES %s", m))
+    except Exception as e:                     # noqa: BLE001
+        app.logger.info("SERVES error %s", e)
+        return jsonify(serves=[], error=str(e)[:160], degraded="serves-failed"), 200
+    if request.args.get("recommend") == "1":
+        import serve_advisor
+        out["recommendations"] = serve_advisor.recommend(
+            q, out["serves"], log=lambda m: app.logger.info("ADVISOR %s", m))
+    out["center"] = list(center) if center else None
+    out["radius_mi"] = radius
+    return jsonify(**out)
+
 @app.get("/api/locator")
 def locator():
     """Live account list for a brand near a ZIP, shaped for the locator UI. Bounded (max_pages)
     so it stays responsive; the map centers on the mean of returned coordinates."""
     brand = request.args.get("brand", "titos")
-    zc = re.sub(r"[^0-9]", "", request.args.get("zip", "")) or "33602"
     b = vtinfo.BRANDS.get(brand)
     if not b:
         return jsonify(accounts=[], error="unknown brand"), 200
+    # Resolve the typed location HONESTLY. This previously read
+    #     zc = re.sub(r"[^0-9]", "", request.args.get("zip","")) or "33602"
+    # so "Houston, TX" — which has no digits — silently became 33602, i.e. TAMPA. The user searched
+    # one city and got a confident map of another, with nothing on screen saying so. There is now no
+    # default at all: unresolvable input is an error the UI shows, never a substituted city.
+    import zcta
+    loc = zcta.resolve(request.args.get("zip", ""), log=lambda m: app.logger.info("LOCATOR %s", m))
+    if loc.get("error"):
+        return jsonify(accounts=[], error=loc["error"], degraded="location-unresolved"), 200
+    zc = loc["zip"]
+    # `pages` bounded the VIP page walk at 3 (=150 accounts) while the UI rendered the result as
+    # "150 accounts near you" — a truncation presented as a census. Walk the whole result set by
+    # default and report `truncated` when a cap is actually applied, per the no-silent-caps rule.
+    try:
+        pages = max(1, int(request.args.get("pages", 40)))
+    except (TypeError, ValueError):
+        pages = 40
+    walk = {}
     try:
         rows = vtinfo.search_zip(b["custID"], b.get("uuid", ""), zc, delay=0.15,
-                                 max_pages=int(request.args.get("pages", 3)),
+                                 max_pages=pages, stats=walk,
                                  m=b.get("m", "5"), theme=b.get("theme", "1"),
                                  log=lambda m: app.logger.info("LOCATOR %s", m))
     except Exception as e:
@@ -858,7 +989,14 @@ def locator():
                       "city": _titlecase(r["city"]), "state": r["state"], "lat": lat, "lng": lng,
                       "source": r.get("source", ""), "type": r.get("store_type", "")})
     center = [sum(lats) / len(lats), sum(lngs) / len(lngs)] if lats else None
-    return jsonify(label=b.get("name", brand), accounts=accts, center=center, zip=zc)
+    # `resolved` tells the UI WHICH place it actually searched and how it got there, so a ZIP derived
+    # from a typed city is visible rather than implied. `truncated` is true only when the page cap
+    # actually bit — an unbounded walk that finished must not look like a capped one.
+    return jsonify(label=b.get("name", brand), accounts=accts, center=center, zip=zc,
+                   resolved={"label": loc.get("label", zc), "how": loc.get("how"),
+                             "zip_distance_mi": loc.get("zip_distance_mi")},
+                   truncated=bool(walk.get("truncated")), pages=walk.get("walked_pages", pages),
+                   available_pages=walk.get("available_pages"))
 
 # Source labels + a first-cut scope tree derived from the pulled data.
 _SRC_LABEL = {"fl-items": "Florida — Items", "fl-outlets": "Florida — Outlets",
@@ -4198,7 +4336,11 @@ def master_outlets_geo_ep():
 
 def _outlets_geo_data(bb, st, q):
     import warehouse
-    where = ["try_cast(lat AS DOUBLE) IS NOT NULL", "try_cast(lng AS DOUBLE) IS NOT NULL"]
+    # Exclude Null Island (0,0) — a sentinel some scrapers write instead of NULL. Measured live on
+    # ubereats/postmates; left in, the coverage map draws pins in the Atlantic and the auto-fit
+    # stretches the viewport across the ocean, which is part of why those sources "render wrong".
+    where = ["try_cast(lat AS DOUBLE) IS NOT NULL", "try_cast(lng AS DOUBLE) IS NOT NULL",
+             "NOT (try_cast(lat AS DOUBLE) = 0 AND try_cast(lng AS DOUBLE) = 0)"]
     params = []
     if bb:
         try:
@@ -4213,13 +4355,40 @@ def _outlets_geo_data(bb, st, q):
         where.append("(lower(CAST(store_name AS VARCHAR)) LIKE ? OR lower(CAST(city AS VARCHAR)) LIKE ?)")
         qq = "%" + q + "%"; params += [qq, qq]
     wsql = " WHERE " + " AND ".join(where)
+    cap = 20000
+    # WHY THIS IS NOT A BARE `LIMIT 20000` ANY MORE.
+    # It used to be, with no ORDER BY — so against a 1.76M-row src_outlets DuckDB returned whichever
+    # 20k rows the first Parquet parts happened to hold. Parts are grouped by source, so the map
+    # showed a handful of sources at full density and silently omitted the rest: that is why UberEats
+    # "doesn't render correctly" in coverage. The count shipped was len(rows), i.e. the cap itself, so
+    # a truncated map reported a complete-looking footprint and nothing anywhere said 1.74M points
+    # had been dropped.
+    #
+    # Two fixes: report the TRUE total, and make the sample uniform across the whole matched set
+    # instead of positional. hash(outlet_key) % m is deterministic (same viewport → same points, so
+    # the map doesn't shimmer on refresh) and independent of storage order, so every source lands in
+    # the sample in proportion to its real size.
+    try:
+        total = warehouse.query("src_outlets", "SELECT count(*) n FROM t%s" % wsql, params)[0]["n"]
+    except Exception as e:
+        return dict(ok=True, landed=False, error=str(e)[:140], points=[])
+    stride = 1 if total <= cap else -(-total // cap)          # ceil
+    samp = ("" if stride <= 1 else
+            " AND (hash(CAST(source AS VARCHAR)||'|'||CAST(store_id AS VARCHAR)) %% %d) = 0" % stride)
     try:
         rows = warehouse.query("src_outlets",
             "SELECT source||'|'||store_id outlet_key, try_cast(lat AS DOUBLE) AS lat, try_cast(lng AS DOUBLE) AS lng, "
-            "CAST(store_name AS VARCHAR) AS \"name\", CAST(state AS VARCHAR) AS state FROM t%s LIMIT 20000" % wsql, params)
+            "CAST(store_name AS VARCHAR) AS \"name\", CAST(state AS VARCHAR) AS state, "
+            "CAST(source AS VARCHAR) AS source FROM t%s%s LIMIT %d" % (wsql, samp, cap), params)
+        # Per-source truth, so a source that is under-drawn on the map is visibly under-drawn in the
+        # numbers rather than being mistaken for a source we don't hold.
+        by_src = warehouse.query("src_outlets",
+            "SELECT CAST(source AS VARCHAR) AS source, count(*) n FROM t%s GROUP BY 1 ORDER BY 2 DESC" % wsql,
+            params)
     except Exception as e:
         return dict(ok=True, landed=False, error=str(e)[:140], points=[])
-    return dict(ok=True, landed=True, count=len(rows), points=rows)
+    return dict(ok=True, landed=True, count=len(rows), total=total,
+                sampled=stride > 1, stride=stride, sources=by_src, points=rows)
 
 @app.post("/api/master/fact/apply")
 def fact_apply_ep():
