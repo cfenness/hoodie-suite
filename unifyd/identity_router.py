@@ -80,6 +80,14 @@ class Router(object):
             self._exit_ts.clear()
             self._total_picks = 0
 
+    def _touch(self, exit_ip, now):
+        """Caller already holds `self._lock`. Stamp one unit of activity on this exit — from either an
+        outcome (`record`) OR a pick itself (see `pick`'s comment for why the second one is required)."""
+        ts = self._exit_ts.setdefault(exit_ip, [])
+        ts.append(now)
+        if len(ts) > 4 * HOT_MAX + 8:              # bounded; hot() only ever looks at a short window
+            del ts[: len(ts) // 2]
+
     def record(self, exit_ip, costume, cls, now=None):
         """Feed one classified outcome. `cls` is a `blocks` class name."""
         if not exit_ip:
@@ -89,11 +97,7 @@ class Router(object):
         good = cls in (blocks.OK, blocks.EMPTY)
         throttled = blocks.is_throttle(cls)
         with self._lock:
-            ts = self._exit_ts.setdefault(exit_ip, [])
-            ts.append(now)
-            if len(ts) > 4 * HOT_MAX + 8:          # bounded; hot() only ever looks at a short window
-                del ts[: len(ts) // 2]
-
+            self._touch(exit_ip, now)
             p = self._pairs.setdefault((exit_ip, costume), _Pair())
             p.recent.append((now, good))
             if len(p.recent) > RECENT_MAXLEN:
@@ -132,7 +136,19 @@ class Router(object):
         """Choose (exit_entry, costume) for a new session prime. `pool` is a list of raw proxy entries
         (same shape as `resi.isp_pool()`); `costumes` a list of candidate TLS profile names. Returns
         (None, None) if either is empty. Never returns nothing when data exists — a fully-quarantined
-        or fully-hot pool still returns its LEAST-bad option rather than deadlocking a fleet."""
+        or fully-hot pool still returns its LEAST-bad option rather than deadlocking a fleet.
+
+        THE PICK ITSELF COUNTS AS ACTIVITY, immediately — not only once an outcome comes back. Measured
+        2026-07-29: with an empty router, N threads racing to prime their FIRST session all see the same
+        empty state and identical scores, so a deterministic tie-break sent every one of them to the same
+        exit — 10 concurrent sessions on 1 IP, the exact concentration disaster this router exists to
+        prevent, self-inflicted (one pair took 10 of 13 total picks in a 400-request run and died: 0%
+        across 20 outcomes). `_hot()` previously only counted `record()` calls, which arrive only after a
+        full request round-trip — a blind spot lasting exactly as long as it takes the FIRST of several
+        racing threads to hear back, which is precisely when the collision happens. Stamping activity here
+        closes it: this method holds `self._lock` for its whole body, so concurrent callers are serialized
+        anyway, and the second caller in that serialized order now sees the first caller's pick already
+        counted against that exit's hotness — before either has sent a single byte on the wire."""
         if not pool or not costumes:
             return None, None
         now = time.time() if now is None else now
@@ -161,6 +177,7 @@ class Router(object):
                     if self._hot(key[0], now) < self._hot(best_key[0], now):
                         best_key = key
             ip, costume = best_key
+            self._touch(ip, now)              # count immediately — see the docstring above
             self._pairs.setdefault(best_key, _Pair()).picks += 1
             self._total_picks += 1
             return entries[ip], costume
