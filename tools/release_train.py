@@ -28,6 +28,7 @@ refuses to run from a dirty or non-origin/main tree.
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -98,6 +99,20 @@ def primary_worktree():
     """
     d = common_git_dir()
     return os.path.dirname(d) if os.path.basename(d) == ".git" else ROOT
+
+
+def reset_scratch(path):
+    """Make `path` usable for `git worktree add`, whatever state it is in.
+
+    `git worktree remove` only handles a REGISTERED worktree. An orphan directory — left by an
+    interrupted run, or by a remove issued against a differently-resolved path — is not registered,
+    so remove fails and the directory survives to block the next `worktree add` with
+    "already exists". Prune, then remove the tree outright.
+    """
+    git("worktree", "remove", "--force", path)
+    git("worktree", "prune")
+    if os.path.exists(path):
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def scratch(name):
@@ -465,8 +480,7 @@ def attribute(base, prs, names, py):
                 # Also broken on the PR's own tip? Then it is theirs, not a merge artefact.
                 tip = scratch("_tip")
                 own = None
-                if os.path.isdir(tip):
-                    git("worktree", "remove", "--force", tip)
+                reset_scratch(tip)
                 if git("worktree", "add", "--detach", tip, "origin/" + p["headRefName"])[0] == 0:
                     if os.path.exists(os.path.join(tip, path)):
                         try:
@@ -492,8 +506,7 @@ def baseline_failures(base, names, py):
     if not names:
         return set()
     probe = scratch("_baseline")
-    if os.path.isdir(probe):
-        git("worktree", "remove", "--force", probe)
+    reset_scratch(probe)
     rc, _ = git("worktree", "add", "--detach", probe, base)
     if rc != 0:
         return set()
@@ -543,8 +556,7 @@ def integrate(args):
 
         branch = INTEGRATION_PREFIX + time.strftime("%Y%m%d-%H%M%S")
         wt = scratch("_integration")
-        if os.path.isdir(wt):
-            git("worktree", "remove", "--force", wt)
+        reset_scratch(wt)
         rc, out = git("worktree", "add", "-b", branch, wt, base)
         if rc != 0:
             print("!! could not create integration worktree: %s" % out)
@@ -642,8 +654,7 @@ def deploy(args):
     try:
         git("fetch", "--quiet", "origin")
         wt = scratch("_deploy")
-        if os.path.isdir(wt):
-            git("worktree", "remove", "--force", wt)
+        reset_scratch(wt)
         rc, out = git("worktree", "add", "--detach", wt, base)
         if rc != 0:
             print("!! could not create the deploy checkout: %s" % out)
