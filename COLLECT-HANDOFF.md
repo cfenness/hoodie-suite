@@ -119,6 +119,69 @@ next concrete step is a **live health check in the routing path** (recent-window
 exact exit×costume pair about to be used, checked at request time), not a bigger one-time map. That
 replaces items 1–3 as the priority item in §7.
 
+### 1b. Is the rate ceiling global or per-identity? Confounded twice, but the actionable answer emerged anyway
+
+Before building anything, the decisive question was: does spreading the SAME aggregate request rate
+across more exits raise usable%, or is the ceiling global (same regardless of source diversity)? Two
+attempts, both confounded, one real conclusion that doesn't depend on resolving it:
+
+- **v1** tied worker-thread count to exit count (`min(16, n_exits, ...)`), so achieved rate scaled WITH
+  exit count — the observed pattern (98%→96%→36% as exits went 1→5→20) is fully explained by achieved
+  rate alone and says nothing about exit diversity.
+- **v2** fixed worker count at 10 and used `pool[:n_exits]` — but that's an overlapping PREFIX, not
+  disjoint sets, so `pool[0]` rode every arm and took ~681 of the ~1500 requests across the whole run.
+  By the final control-repeat arm (`exits=1`, same address as the first arm) it was 0/300 dead, having
+  been 20% usable at the start of the SAME run — burned out in under 3 minutes of concentrated use, not
+  the hour-scale ambient drift measured in §1's cold sampling. This is the same shape of mistake as the
+  `exit_offset=0` bug earlier in the day, in a new form: reusing an identity as its own "before" and
+  "after" baseline contaminates the comparison.
+
+**What v2 DID show cleanly, because it doesn't depend on the confound:** piling 10 concurrent sessions
+onto 1 exit collapsed usable% to 20% (then to 0% by the time that address was reused); spreading the
+same 10 sessions across 5 exits reached 67%. Concentration — many simultaneous connections on one
+address — is itself a strong, fast bot signal, separate from and probably faster-acting than whatever
+drives the hour-scale drift in §1.
+
+**No fourth experiment was run to get a clean global-vs-per-identity answer, deliberately.** The
+prescription is identical either way: if the ceiling is global, concentrating load still wastes it (a
+burned identity returns unusable garbage that still counts against the rate budget); if it's
+per-identity, spreading raises the ceiling directly. Both point at the same fix, so it was built instead
+of chasing a fifth confound.
+
+### 1c. `identity_router.py` — pick the (exit, costume) that's healthy right now
+
+Built and wired into `getstore._session()` in place of the plain round-robin. Two independent
+mechanisms, matching the two things §1b actually proved:
+
+- **Concentration avoidance** — a short time-windowed count of recent activity PER EXIT (not per pair);
+  a fresh session prime avoids adding load to an exit already busy in the last `HOT_WINDOW_S` (15s).
+  This is deliberately about the bare IP, not the (exit, costume) pair, because concentration degraded
+  the same exit regardless of costume in the v2 data.
+- **Health-based selection** — a smoothed recent success rate per (exit, costume) pair (Beta-prior so an
+  untried pair scores neutral, never 0%) plus a UCB-style exploration bonus so pairs with little
+  evidence get periodically re-tried — necessary because §1 proved health recovers as often as it
+  degrades, so nothing here is a permanent blacklist. A pair quarantines itself after
+  `QUARANTINE_STREAK` (3) consecutive THROTTLE-classified outcomes (never on `not_found`/`timeout`,
+  same rule `ladder`/`sessions`/`pace` already enforce), with an AIMD-style doubling cooldown capped at
+  `QUARANTINE_MAX_S` — and a genuine success immediately earns back the fast cooldown.
+
+**Never consulted for a pinned thread** — `getstore.pin_exit()` (used by `pool_health`/`costume_probe`)
+short-circuits before the router is reached, by construction, so a controlled measurement's identity is
+never silently swapped out from under it. **Kill switch:** `IDENTITY_ROUTER=0` disables it and falls
+back to the original round-robin + single process-wide costume — a broken or disabled router can never
+be the reason a scrape cannot run, same pattern as `pace`/`sessions`/`ladder`'s own fallbacks.
+
+**Costume candidates are the full `PROFILES` list** (all ~7 impersonation strings), not just the single
+registry-declared one — the router discovers a bad costume from data (it'll quarantine `chrome131`'s
+pairs same as a bad exit) rather than needing `ladder.rotate_profile()`'s coarser sustained-block
+escalation to notice first. The two mechanisms coexist: `ladder` still escalates the RUNG (e.g. to the
+browser fallback) if the router can't find anything usable at all.
+
+**Status: built and unit-tested (`identity_router_test.py`, 21 checks, pure logic — no network). NOT
+YET LIVE-VALIDATED for actual throughput improvement.** The next thing to do with it is a real fleet
+run comparing router-on vs router-off at the same target rate, with DISJOINT exit sets this time — see
+§7.
+
 ---
 
 ## 2. What got built today, and why each piece exists
@@ -137,6 +200,7 @@ Every one of these came from a specific failure. The failures matter more than t
 | `pool_health.py` | what every proxy exit actually is (geo, ISP, reachability) + live-fire per exit | production ran on an unaccounted pool; 26 of 50 exits were non-US |
 | `adapt.py` | one switch that holds `pace`, `sessions` and `ladder` still | you cannot measure a system that adapts to your measurement — a ladder rotating costume mid-arm hands back a clean result for a reason the experiment never recorded |
 | `costume_probe.py` | whether degradation tracks concurrency or accumulated volume | four models had been fitted to a blended signal, each disproved only by the next run |
+| `identity_router.py` | which (exit, costume) is healthy RIGHT NOW, replacing round-robin | a cached "good identity" list is stale within the hour (§1); concentrating load on one exit burns it out in minutes (§1b) |
 
 ### The design rules these share
 
@@ -255,14 +319,20 @@ pool_health.live_fire(4, 'ubereats')\""
 flyctl ssh console -a hoodie-suite -C \
   "python3 /app/unifyd/costume_probe.py --arms 2,8,16,2 --per-arm 400 --out /tmp/probe.json"
 
-# LONG RUNS: detach, don't pipe through `tail`. Two failures hit this exact shape on 2026-07-29 —
-# an ssh session dropped mid-run and killed the process (another session's deploy restarted the
-# machine; /tmp does not survive that), and separately `| tail -N` swallowed a hard failure and the
-# harness reported exit code 0 for a command that never finished. Detach, and check the LOG for
-# completion, not the exit code of the pipe:
-flyctl ssh console -a hoodie-suite -C "sh -c 'cd /tmp && nohup python3 /app/unifyd/costume_probe.py \
-  --arms 2,8,16,2 --per-arm 400 --out /tmp/probe.json > /tmp/probe.log 2>&1 & echo started pid=\$!'"
+# LONG RUNS: detach with setsid, don't pipe through `tail`. Three failures hit this shape on
+# 2026-07-29 — an ssh session dropped mid-run and killed the process (another session's deploy
+# restarted the machine; /tmp does not survive that); `| tail -N` swallowed a hard failure and the
+# harness reported exit code 0 for a command that never finished; and a plain `(...) & disown` launch
+# left the launching shell holding the ssh pty open until timeout even though the child had detached
+# fine — `setsid nohup ... </dev/null >log 2>&1 &` returns immediately and is the more reliable form.
+# Check the LOG for completion, not the exit code of the launch command:
+flyctl ssh console -a hoodie-suite -C "sh -c 'setsid nohup python3 -u /app/unifyd/costume_probe.py \
+  --arms 2,8,16,2 --per-arm 400 --out /tmp/probe.json </dev/null >/tmp/probe.log 2>&1 &'"
 flyctl ssh console -a hoodie-suite -C "tail -20 /tmp/probe.log"     # poll this, not the launch command
+
+# identity_router status. NOTE: state is in-process memory, not persisted — a fresh `python3 -c` here
+# starts a NEW router with nothing tracked. To see a real scrape's routing decisions, read
+# rec["identity_router"] off its run record (ue_catalog wires this in), not a standalone query.
 
 # rebuild coverage from landed evidence after a bad run
 flyctl ssh console -a hoodie-suite -C "python3 -c \"
@@ -287,27 +357,27 @@ costume — are **all done**. The last three didn't resolve individually; they d
 (§1): exit and costume health both drift substantially within an hour, in either direction, for a cause
 not yet identified. That finding is what drives the list below.
 
-1. **Build a live health check into the routing path**, not another one-time map. Before a session picks
-   an exit×costume pair, check its recent-window success rate (the data already exists in `blocks.Tally`
-   — this is a consumption problem, not a new-data problem) and route around anything trending bad RIGHT
-   NOW. A cached "good identity" list from even an hour ago is demonstrably unsafe (§1). This replaces
-   the three now-closed items as the top priority.
-2. **Find out WHY health drifts on an hour timescale.** Not required to ship item 1, but worth knowing:
-   is it the target's own reputation scoring cycling, interference from other Hoodie traffic sharing the
-   pool, or genuine randomness in their defense? Correlating drift timestamps against dispatcher activity
-   logs (other sources' scheduled runs) is the cheapest first cut.
-3. **Re-check the "don't buy proxies" decision (§5)** — but note it may not be answerable with a
-   single clean test anymore; it needs the health-check mechanism from item 1 to distinguish a real
-   problem from an hour's noise.
-4. **Stop trying to buy throughput with workers.** 2 and 8 workers deliver the same usable stores/s.
-   The lever is independent identity capacity — exit × costume, on current evidence — and reaching
-   46.5/s needs roughly 15× more of it, not a better rate controller.
-5. **Prove `ue_enrich` end-to-end.** It has never completed a run — it died on a schema bug every time,
+1. **Live-validate `identity_router.py` (§1c) with real fleet traffic.** It's built, wired into
+   `getstore._session()`, and unit-tested — but never run against the actual target. The next session
+   should run a real comparison: `IDENTITY_ROUTER=1` vs `IDENTITY_ROUTER=0`, same target rate, same
+   costume candidates, over enough volume to see whether usable stores/s actually improves — and this
+   time use DISJOINT exit sets per arm (both of today's rate-scope attempts got this wrong via an
+   overlapping-prefix or worker-count confound; don't repeat it a third time).
+2. **If the router helps, retest the "don't buy proxies" decision (§5) properly.** It's now finally
+   answerable — hold costume and pin behavior constant, use the router's live health signal instead of a
+   snapshot, and see whether more identities move the needle now that concentration and drift are being
+   routed around instead of blindly walked into.
+3. **Find out WHY health drifts on an hour timescale.** Not required for the router to help, but worth
+   knowing: is it the target's own reputation scoring cycling, interference from other Hoodie traffic
+   sharing the pool, or genuine randomness in their defense? Correlating drift timestamps against
+   dispatcher activity logs (other sources' scheduled runs) is the cheapest first cut.
+4. **Prove `ue_enrich` end-to-end.** It has never completed a run — it died on a schema bug every time,
    so everything past its first query is unexercised. UPC backfill is unproven.
-6. **`pool_health` on a schedule.** A pool silently drifting to 52% foreign looked exactly like "the
+5. **`pool_health` on a schedule.** A pool silently drifting to 52% foreign looked exactly like "the
    target got harder". That should page, not wait for someone to check — and given §1, a schedule alone
    isn't enough; whatever consumes its output needs to treat an hour-old reading as stale, not current.
-7. **Then** revisit the 3-hour target — but note §1 retires the old framing. It is not a pacing problem.
+6. **Then** revisit the 3-hour target with real router-on throughput numbers in hand, not the pre-router
+   ceiling. §1 already retires the old "it's a pacing problem" framing.
 
 ---
 
@@ -319,6 +389,19 @@ not yet identified. That finding is what drives the list below.
   O(n²) in universe size. Wasteful, not incorrect. Delta checkpoints are the fix.
 - **16+ test files exist that the curated runner never ran.** They pass now, but the runner's list is
   hand-maintained and will drift again; it prints unlisted files as a warning.
+- **`identity_router.py` is unvalidated against live traffic.** Unit tests cover the selection logic in
+  isolation (quarantine, exploration, concentration-avoidance) with zero network calls. Whether it
+  actually raises usable stores/s on the real target is unmeasured — see §7 item 1.
+- **The concentration-avoidance window (`HOT_WINDOW_S=15`, `HOT_MAX=2`) and quarantine constants
+  (`QUARANTINE_STREAK=3`, base 60s, capped 900s) are informed guesses, not learned values.** They're
+  consistent with the day's evidence (10-on-1-exit collapsed in ~3 min; a 3-throttle streak is the same
+  threshold `ladder`/`pace` already use elsewhere) but nothing has tuned them against real router-on
+  traffic yet. If §7 item 1's validation run shows the router being too twitchy or too slow to react,
+  these are the first knobs to revisit — they're already env-shaped constants in spirit, just not yet
+  wired to actual env vars the way `SESSION_BUDGET`/`LADDER_WINDOW` are.
+- **Two rate-scope experiments today were confounded by shared-identity reuse across arms** (§1b) — the
+  same mistake as the `exit_offset=0` bug earlier, in two new shapes. Any future experiment reusing a
+  pool slice across arms needs to check explicitly whether those slices overlap.
 - **Per-exit findings from before 2026-07-29's pin fix are void** — `pool_health.live_fire` was
   attributing to the wrong address. Fixed and re-measured the same day (§1): the pool is binary at n=4,
   and separately volatile hour-to-hour, so even the fixed instrument's readings expire fast.

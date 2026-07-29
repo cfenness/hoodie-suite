@@ -198,6 +198,14 @@ def _exit_ip():
     return getattr(_TL, "exit", None)
 
 
+def _costume(site):
+    """The TLS costume actually riding THIS thread's current session — `identity_router`'s live pick if
+    one was made, else the process-wide fallback. Never re-derives independently of what `_session()`
+    actually built the connection with, or a report would be filed against a costume that never sent
+    the request."""
+    return getattr(_TL, "costume", None) or _profile(site)
+
+
 def _method():
     """Which rung of the ladder this request goes out on. Today it is the flat-rate ISP pool or bare
     egress; naming it now is what makes per-method success rates — and therefore an escalation router —
@@ -265,22 +273,44 @@ def _session(site):
     except Exception:
         pool = []
     pin = getattr(_TL, "pin", None)
+    _TL.costume = None                        # default: _profile(site) governs unless the router picks
     if pin:
         # A MEASUREMENT PINNED THIS THREAD. Round-robin is right for production and fatal for
         # attribution: a caller that wants "N requests through THIS exit" must actually get this exit,
-        # or every outcome is filed against an address that never carried it.
+        # or every outcome is filed against an address that never carried it. The router is never
+        # consulted for a pinned thread, by construction — a controlled experiment's identity must not
+        # be silently swapped out from under it.
         px = pin
         try:
             _TL.exit = px.split("@")[-1].split(":")[0]
         except Exception:
             _TL.exit = None
     elif pool:
-        # ROUND-ROBIN by an explicit counter, not by thread ident. Thread ids are arbitrary values, so
-        # `ident % len(pool)` distributes unevenly — several workers can land on one IP while others go
-        # unused, which concentrates load exactly where the limit is and looks like a smaller pool.
-        with _RR_LOCK:
-            _RR[0] += 1
-            px = pool[_RR[0] % len(pool)]
+        px = None
+        if os.environ.get("IDENTITY_ROUTER", "1").strip().lower() not in ("0", "false", "no", "off"):
+            # PICK THE (EXIT, COSTUME) THAT'S HEALTHY RIGHT NOW, not a cached "good identity" list.
+            # Measured 2026-07-29: exit and costume health both drift substantially within an hour, in
+            # either direction, and piling many concurrent sessions on one exit burns it out in minutes
+            # (10 workers on 1 IP: 20% usable collapsing to 0% in 3 minutes; the same 10 spread over 5
+            # IPs: 67%). A round-robin counter reacts to neither fact. See identity_router.py.
+            try:
+                import identity_router
+                px, chosen = identity_router.pick(pool, PROFILES)
+                if px:
+                    _TL.costume = chosen
+            except Exception:
+                px = None
+        if px is None:
+            # Router unavailable, disabled, or returned nothing — the ORIGINAL round-robin, so a broken
+            # or disabled router can never be the reason a scrape cannot run.
+            #
+            # ROUND-ROBIN by an explicit counter, not by thread ident. Thread ids are arbitrary values,
+            # so `ident % len(pool)` distributes unevenly — several workers can land on one IP while
+            # others go unused, which concentrates load exactly where the limit is and looks like a
+            # smaller pool.
+            with _RR_LOCK:
+                _RR[0] += 1
+                px = pool[_RR[0] % len(pool)]
         try:
             _TL.exit = px.split("@")[-1].split(":")[0]
         except Exception:
@@ -294,9 +324,11 @@ def _session(site):
     # session quotas and IP reputation for what was one string.
     #
     # So it rotates on a classified block, the same way sessions and rungs do. A target that fingerprints
-    # one browser family has not blocked us; it has blocked one costume, and we own several.
-    s = cr.Session(impersonate=_profile(site), proxies={"http": px, "https": px} if px else None,
-                   timeout=30)
+    # one browser family has not blocked us; it has blocked one costume, and we own several. When the
+    # router made a live pick above, `_TL.costume` carries it; otherwise this falls back to the single
+    # process-wide costume ladder.rotate_profile() escalates on a sustained block.
+    s = cr.Session(impersonate=(_TL.costume or _profile(site)),
+                   proxies={"http": px, "https": px} if px else None, timeout=30)
     try:
         s.get(_base(site))
     except Exception:
@@ -362,6 +394,11 @@ def fetch_store(store_uuid, session="gs", site="ubereats", target=None):
             if t:
                 t.record(cls, method=_method(), exit=_exit_ip())
             try:
+                import identity_router
+                identity_router.record(_exit_ip(), _costume(site), cls)
+            except Exception:
+                pass
+            try:
                 import sessions
                 sessions.policy_for(site).report(cls, getattr(_TL, "n", 0))
             except Exception:
@@ -384,6 +421,11 @@ def fetch_store(store_uuid, session="gs", site="ubereats", target=None):
             t = blocks.get()
             if t:
                 t.record(cls, method=_method(), exit=_exit_ip())
+            try:
+                import identity_router
+                identity_router.record(_exit_ip(), _costume(site), cls)
+            except Exception:
+                pass
             if _p:
                 _p.report(not blocks.is_throttle(cls))
         except Exception:
