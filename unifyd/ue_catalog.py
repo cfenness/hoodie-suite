@@ -482,6 +482,11 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
     workers = workers or auto_workers(nshard, log=log)
     # RATE IS THE REAL BUDGET; workers just decide how many can be in flight while we wait for tokens.
     try:
+        import blocks
+        blocks.install()                  # per-(method, class) counts for this run
+    except Exception:
+        pass
+    try:
         import pace
         _pacer = pace.install(pace.shard_rate(nshard))
         log("[ue] paced at %.2f req/s for this shard (fleet %.0f/s across %d shards) — AIMD from here"
@@ -548,13 +553,22 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
                 _pc = _p.stats()
         except Exception:
             pass
+        _bk = {}
+        try:
+            import blocks
+            _t = blocks.get()
+            if _t:
+                _bk = _t.flat()           # {'isp.soft_block': 12, 'isp.success_pct': 93.1, ...}
+        except Exception:
+            pass
         _progress(rows=n_items + len(pending),
                   stage="%s/%s stores" % (f"{len(done):,}", f"{len(mine):,}"),
                   pct=round(100.0 * len(done) / max(1, len(mine)), 1),
                   ok=n_ok, empty=n_empty, unreachable=n_fail,
                   rss_mb=_rss_mb(),
                   pace_rate=_pc.get("rate"), pace_backoffs=_pc.get("backoffs"),
-                  pace_increases=_pc.get("increases"), pace_at_floor=_pc.get("at_floor"))
+                  pace_increases=_pc.get("increases"), pace_at_floor=_pc.get("at_floor"),
+                  **_bk)
 
     def _one(t):
         nonlocal n_ok, n_empty, n_fail
@@ -687,6 +701,15 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
         _pc = pace.get()
         if _pc:
             rec["pace"] = _pc.stats()
+    except Exception:
+        pass
+    # WHY the failures happened, not just how many. `unreachable` alone cost a day of wrong models.
+    try:
+        import blocks
+        _t = blocks.get()
+        if _t:
+            rec["blocks"] = _t.counts_json() if hasattr(_t, "counts_json") else _t.flat()
+            log("[ue] fetch outcomes: %s" % _t.summary())
     except Exception:
         pass
     return rec

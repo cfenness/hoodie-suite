@@ -39,6 +39,17 @@ def _base(site):
     return "https://postmates.com" if site == "postmates" else "https://www.ubereats.com"
 
 
+def _method():
+    """Which rung of the ladder this request goes out on. Today it is the flat-rate ISP pool or bare
+    egress; naming it now is what makes per-method success rates — and therefore an escalation router —
+    possible later without re-instrumenting the fetch path."""
+    try:
+        import resi
+        return "isp" if resi.isp_pool() else "direct"
+    except Exception:
+        return "direct"
+
+
 def _session(site):
     """A curl_cffi session primed once for THIS worker thread — the homepage GET (cookie prime) happens once,
     then every getStoreV1 POST reuses it. This is what makes a high-concurrency sweep near ~1h instead of
@@ -128,19 +139,37 @@ def fetch_store(store_uuid, session="gs", site="ubereats", target=None):
         # TIMEOUT IS NOT OPTIONAL. Without one a stalled socket parks this worker permanently: with 7
         # workers, seven silent hangs are a dead shard that still looks alive. The enrich path already
         # bounded its POST; this one never did.
-        data = ((s.post(api, json=body, headers=H, timeout=30).json()) or {}).get("data")
-        if _p:
-            # An empty/structureless response IS the throttle signal — feed it back so the controller
-            # can back off before the tripwire has to abort the whole pass.
-            try:
-                import ue_catalog
-                _p.report(ue_catalog.has_catalog(data))
-            except Exception:
+        r = s.post(api, json=body, headers=H, timeout=30)
+        data = ((r.json() if r.content else None) or {}).get("data")
+        # CLASSIFY, then feed the controller only REAL pushback. Reporting every no-data response as a
+        # throttle is what had the pacer backing off on permanently-closed stores — a condition no
+        # amount of slowing down can improve, and the reason a healthy run walked itself to a standstill.
+        try:
+            import blocks, ue_catalog
+            cls = blocks.classify(status=getattr(r, "status_code", None),
+                                  body=(r.text[:4000] if getattr(r, "text", None) else ""),
+                                  has_payload=ue_catalog.has_catalog(data))
+            t = blocks.get()
+            if t:
+                t.record(cls, method=_method())
+            if _p:
+                _p.report(not blocks.is_throttle(cls))
+        except Exception:
+            if _p:
                 _p.report(bool(data))
         return data
-    except Exception:
-        if _p:
-            _p.report(False)
+    except Exception as e:
+        try:
+            import blocks
+            cls = blocks.classify(exc=e)
+            t = blocks.get()
+            if t:
+                t.record(cls, method=_method())
+            if _p:
+                _p.report(not blocks.is_throttle(cls))
+        except Exception:
+            if _p:
+                _p.report(False)
         return None
 
 
