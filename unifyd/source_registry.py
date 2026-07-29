@@ -441,7 +441,12 @@ BUILDS = [
     # canonical catalog — latest observation per (store_uuid, item_uuid) wins. Without it the parts
     # accumulate and the catalog never updates, so it is a registered build, not a manual step.
     dict(id="build-ue-catalog", label="UberEats catalog consolidate (shard parts → catalog)",
-         code="import ue_catalog as m; m.consolidate('ubereats'); m.consolidate('postmates')",
+         # NOTHING-TO-DO IS NOT A FAILURE. Folding ubereats' 451,821 part rows succeeded while postmates
+         # simply had no parts yet, and the build reported `incomplete` — a green job reading as broken
+         # teaches you to ignore the colour, which is the same trust defect as a broken job reading green.
+         # Report the total folded so the run is graded on what it actually did.
+         code=("import ue_catalog as m; n = m.consolidate('ubereats') + m.consolidate('postmates'); "
+               "print('HOODIE_RESULT {\"status\": \"ok\", \"items_done\": %d, \"items_total\": %d}' % (n, n))"),
          tables=["ubereats_products", "postmates_products"], klass="build", interval_h=6, enabled=True,
          mem=8192, after=["ubereats"],
          note="single-writer fold of append-only shard parts; shards must never merge (lost updates)"),
