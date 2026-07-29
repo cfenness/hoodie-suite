@@ -270,15 +270,28 @@ def run_group(group="texas", points=None, log=print):
     just spend the same budget faster and trip the throttle that the per-point pacing avoids.
     """
     names = MARKET_GROUPS.get(group) or [group]
-    total = 0
+    total, ok, errs = 0, 0, []
     for m in names:
         if m not in MARKETS:
             log("  [dd-geo] unknown market %r — skipped" % m)
             continue
         try:
-            total += (run(m, points=points, log=log) or 0)
+            # len(), not +=: run() returns the ROW LIST, so `total += run(...)` raised TypeError on
+            # every market that actually found merchants — and the except below caught it and logged
+            # the market as FAILED. A market that worked reported failed; a market that found nothing
+            # fell through `[] or 0` and reported fine. The report was exactly inverted.
+            total += len(run(m, points=points, log=log) or [])
+            ok += 1
         except Exception as e:                                # noqa: BLE001 — one metro must not
-            log("  [dd-geo] market %s failed: %s" % (m, str(e)[:120]))   # abort the rest
+            errs.append("%s: %s" % (m, str(e)[:120]))         # abort the rest
+            log("  [dd-geo] market %s failed: %s" % (m, str(e)[:120]))
+    # Same rule as _point_harvest one level down: a sweep where EVERY market failed is not an empty
+    # state, it is a failed sweep, and the two must not look alike. Swallowing them all returned 0 and
+    # exited clean, so run_sources recorded status='current' delta=0 error='' — the per-market reasons
+    # went to stdout, which the harness discards when there is no error. Raise so the reason reaches
+    # `source_runs_log.error`, where the health digest (now dual-reading) can actually see it.
+    if ok == 0 and errs:
+        raise RuntimeError("all %d markets failed in group %r: %s" % (len(errs), group, "; ".join(errs[:3])))
     return total
 
 

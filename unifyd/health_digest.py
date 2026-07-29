@@ -66,17 +66,35 @@ def _finding(code, severity, source, summary, evidence):
 
 
 def _latest_source_runs():
-    """Newest source_runs record per source id (run_sources.py's authoritative outcome log)."""
+    """Newest run record per source id, unioned from BOTH ledgers — same idiom as `ledger_last`,
+    `monitor`, `selfheal` and `cost_ledger`.
+
+    This function used to read the legacy `source_runs` table ALONE, and it was the last consumer
+    that never got the dual-read when `_land_runs` moved to the append-only `source_runs_log`
+    partitions (2026-07-21). Measured in production 2026-07-29: legacy held 42 rows covering 17 of
+    53 enabled sources with a newest `ts_end` 8.0 DAYS old, while the log held 316 rows covering all
+    53 and was current. So every run-outcome check in the daily verdict — `run-failed`,
+    `run-degraded`, `run-no-change` — was judging a third of the fleet on a week-old snapshot and
+    the other two thirds not at all: 7 enabled sources sat `failed`/`timeout` in the log
+    (cityhive, doordash-full, geo, outlet-union, sevennow, tax-rates, ubereats-enrich) and the
+    digest could not see any of them. A verdict with nothing to judge reports healthy, which is the
+    exact failure class this digest exists to catch.
+
+    Union, don't switch: the legacy table is real history for sources that predate the log, and
+    newest-`ts_end`-wins means a live log row supersedes its stale legacy twin. Safe on schema —
+    the digest reads only `status`, `error` and `ts_end`, all three in `SR_FIELDS`."""
     import warehouse
-    try:
-        runs = warehouse.query("source_runs", "SELECT * FROM t")
-    except Exception:
-        return {}
     latest = {}
-    for r in runs:
-        sid = r.get("source")
-        if sid and (sid not in latest or (r.get("ts_end") or 0) > (latest[sid].get("ts_end") or 0)):
-            latest[sid] = r
+    for fn, name in ((warehouse.query, "source_runs"),            # legacy table (history)
+                     (warehouse.query_parts, "source_runs_log")):  # append-only log (authoritative now)
+        try:
+            runs = fn(name, "SELECT * FROM t")
+        except Exception:
+            continue
+        for r in runs:
+            sid = r.get("source")
+            if sid and (sid not in latest or (r.get("ts_end") or 0) > (latest[sid].get("ts_end") or 0)):
+                latest[sid] = r
     return latest
 
 
