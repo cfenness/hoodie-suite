@@ -96,15 +96,42 @@ def enrich_geo(limit=None, workers=None, log=print):
             if cnt[0] % 100 == 0:
                 log("  [agg-geo] %d/%d" % (cnt[0], len(rows)))
 
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        list(ex.map(_work, rows))
-    warehouse.write_accumulate("src_outlets", out, key=lambda r: (r["source"], r["store_id"]),
-                               fields=refresh_fast.FLD)
-    got_addr = sum(1 for o in out if o.get("address"))
-    got_geo = sum(1 for o in out if o.get("lat") is not None)
+    # CHECKPOINT IN CHUNKS — do not hold 800k rows of work hostage to a single write at the end.
+    #
+    # This used to run the whole batch through the pool and write ONCE, after. The `geo` registry
+    # entry has timeout=10800 (3h); a full pass over the ~770k aggregator backlog does not finish in
+    # that window, so the process was killed before the write and EVERY fetched row was discarded —
+    # every day, at full network cost, landing nothing. Measured effect: ubereats sat at 28,861 of
+    # 529,646 geocoded (5.5%) with a 500,790-row backlog that never moved.
+    #
+    # Writing per chunk makes progress durable: a timeout now costs at most one chunk, and successive
+    # daily runs actually advance because the rows written are no longer re-selected (lat IS NULL).
+    # Chunk size trades write amplification (write_accumulate rewrites the whole table) against how
+    # much a kill throws away — 40k is ~20 writes for the full backlog.
+    chunk = int(os.environ.get("AGG_GEO_CHUNK", "40000"))
+    got_addr = got_geo = landed = 0
+    for i in range(0, len(rows), chunk):
+        part = rows[i:i + chunk]
+        del out[:]
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            list(ex.map(_work, part))
+        if not out:
+            continue
+        warehouse.write_accumulate("src_outlets", out, key=lambda r: (r["source"], r["store_id"]),
+                                   fields=refresh_fast.FLD)
+        got_addr += sum(1 for o in out if o.get("address"))
+        got_geo += sum(1 for o in out if o.get("lat") is not None)
+        landed += len(out)
+        log("  [agg-geo] checkpoint %d/%d rows — +%d geo, +%d address (landed, durable)"
+            % (min(i + chunk, len(rows)), len(rows), got_geo, got_addr))
     log("[agg-geo] +%d address (→ geocode pass), +%d direct geo of %d fetched -> src_outlets"
-        % (got_addr, got_geo, len(out)))
-    return len(out)
+        % (got_addr, got_geo, landed))
+    # The remaining backlog is stated every run. A pass that drains 40k of 500k must not read the
+    # same as one that finished — that ambiguity is why this went unnoticed for so long.
+    left = len(rows) - landed
+    if left > 0:
+        log("[agg-geo] %d of this batch not landed; run again to continue draining" % left)
+    return landed
 
 
 def run(log=print):

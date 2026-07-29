@@ -367,7 +367,10 @@ SOURCES = [
               "city→exact. No fetch. FAST_GEO_LIMIT/run"),
     dict(id="geo", label="Geo pipeline (all layers)", code="import geo_all as m; m.run()",
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
-         tables=["src_outlets"], klass="headless", cadence="daily", enabled=True, timeout=10800, mem=16384,
+         tables=["src_outlets"], klass="headless", cadence="daily", enabled=True, timeout=21600, mem=16384,
+         # 3h was not enough to walk the ~770k aggregator backlog, and aggregator_geo wrote only at the
+         # very end — so the kill discarded the entire run's fetches, every day, and the backlog never
+         # moved. The write is now chunked (durable per 40k), and this gives one pass room to finish.
          note="THE daily geo run: fast-geo → geocode → aggregator-geo IN SEQUENCE on one machine. They each "
               "rewrite the whole src_outlets table, so running them concurrently would clobber each other — this "
               "serializes them. The three stay registered (enabled=False) for targeted manual backfills."),
