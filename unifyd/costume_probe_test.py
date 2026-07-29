@@ -126,7 +126,16 @@ v = P.analyse([arm(2, 300, 95, decay=45), arm(8, 300, 95, decay=45),
                arm(2, 300, 95, decay=45)])["verdict"]
 check("flat arms + internal decay still reads as cumulative", v["hypothesis"] == "cumulative",
       v["hypothesis"])
-check("...and says why", any("WITHIN arms" in e for e in v["evidence"]), str(v["evidence"]))
+check("...and says why", any("WITHIN individual arms" in e for e in v["evidence"]), str(v["evidence"]))
+
+print("the within-arm-decay message stays true when the control TRENDS UP, not flat (real bug fixed "
+      "2026-07-29 — a live safari17_0 replication went 62.8% -> 97.0% and the old wording, hard-coded "
+      "'arm averages are flat', was false)")
+v = P.analyse([arm(2, 400, 63, decay=None), arm(2, 400, 62, decay=45), arm(2, 400, 80, decay=None),
+              arm(2, 400, 97, decay=None)])["verdict"]
+check("still reads as cumulative", v["hypothesis"] == "cumulative", v["hypothesis"])
+check("evidence never claims the arms are flat when they trended up",
+      not any("are flat" in e for e in v["evidence"]), str(v["evidence"]))
 
 print("a missing control replicate is declared, not papered over")
 v = P.analyse([arm(2, 200, 95), arm(8, 200, 90), arm(16, 200, 60)])["verdict"]

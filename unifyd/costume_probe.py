@@ -268,11 +268,15 @@ def verdict(summaries):
     elif conc_sig:
         out["hypothesis"] = "concurrency"
     elif decay_sig and control_valid:
-        # No arm-level signal, but usable% falls inside arms — a quota short enough to be visible within
-        # a single arm, and recovered by the time the next arm starts.
+        # The control pair (first vs last arm) did not register as a significant DROP — drift_sig only
+        # fires on a decrease, so this branch is also reached when the control arms are noisy or even
+        # trending UP (measured 2026-07-29: a `safari17_0` replication went 62.8% -> 97.0%) — but usable%
+        # still falls within individual arms: a quota short enough to be visible within one arm, and
+        # recovered by the time the next arm starts. Worded to be true regardless of the control's own
+        # direction, not just the "flat" case this branch was originally written for.
         out["hypothesis"] = "cumulative"
-        out["evidence"].append("arm averages are flat but usable% falls WITHIN arms — a short-horizon "
-                               "quota that recovers between arms")
+        out["evidence"].append("no significant drop between the control arms, but usable% still falls "
+                               "WITHIN individual arms — a short-horizon quota that recovers between arms")
     elif traj_sig:
         # No control drift caught this (or there was no valid control) but a same-worker interior arm
         # still stepped off the trend. Still a volume story, never a concurrency one.
