@@ -28,6 +28,7 @@ refuses to run from a dirty or non-origin/main tree.
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -98,6 +99,20 @@ def primary_worktree():
     """
     d = common_git_dir()
     return os.path.dirname(d) if os.path.basename(d) == ".git" else ROOT
+
+
+def reset_scratch(path):
+    """Make `path` usable for `git worktree add`, whatever state it is in.
+
+    `git worktree remove` only handles a REGISTERED worktree. An orphan directory — left by an
+    interrupted run, or by a remove issued against a differently-resolved path — is not registered,
+    so remove fails and the directory survives to block the next `worktree add` with
+    "already exists". Prune, then remove the tree outright.
+    """
+    git("worktree", "remove", "--force", path)
+    git("worktree", "prune")
+    if os.path.exists(path):
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def scratch(name):
@@ -465,8 +480,7 @@ def attribute(base, prs, names, py):
                 # Also broken on the PR's own tip? Then it is theirs, not a merge artefact.
                 tip = scratch("_tip")
                 own = None
-                if os.path.isdir(tip):
-                    git("worktree", "remove", "--force", tip)
+                reset_scratch(tip)
                 if git("worktree", "add", "--detach", tip, "origin/" + p["headRefName"])[0] == 0:
                     if os.path.exists(os.path.join(tip, path)):
                         try:
@@ -492,8 +506,7 @@ def baseline_failures(base, names, py):
     if not names:
         return set()
     probe = scratch("_baseline")
-    if os.path.isdir(probe):
-        git("worktree", "remove", "--force", probe)
+    reset_scratch(probe)
     rc, _ = git("worktree", "add", "--detach", probe, base)
     if rc != 0:
         return set()
@@ -543,8 +556,7 @@ def integrate(args):
 
         branch = INTEGRATION_PREFIX + time.strftime("%Y%m%d-%H%M%S")
         wt = scratch("_integration")
-        if os.path.isdir(wt):
-            git("worktree", "remove", "--force", wt)
+        reset_scratch(wt)
         rc, out = git("worktree", "add", "-b", branch, wt, base)
         if rc != 0:
             print("!! could not create integration worktree: %s" % out)
@@ -630,6 +642,132 @@ def integrate(args):
         release_lock()
 
 
+# --- fly.toml [[vm]] drift -------------------------------------------------------------------
+# `flyctl deploy` re-applies the [[vm]] block, so a `flyctl machine update` scale-up performed
+# outside git is silently reverted by the next unrelated deploy. Reported by the Hoodie Relations
+# session with a real case: a machine raised to shared-cpu-4x/8192MB to stop `next build` being
+# OOM-killed was put back to shared-cpu-2x/4096MB by a deploy shipping an entrypoint change. The
+# deploy reported success and said nothing. The symptom was "server unreachable", so the time went
+# on flyctl rate-limits and WireGuard before `free -m` reading 3916MB gave it away.
+#
+# On a multi-machine app a silent downsize is a performance regression. On a single machine with
+# --ha=false it is an outage. Same blind spot as the file clobber: releases green, runtime wrong.
+_SIZE_CPUS = {"shared-cpu-1x": (1, "shared"), "shared-cpu-2x": (2, "shared"),
+              "shared-cpu-4x": (4, "shared"), "shared-cpu-8x": (8, "shared"),
+              "performance-1x": (1, "performance"), "performance-2x": (2, "performance"),
+              "performance-4x": (4, "performance"), "performance-8x": (8, "performance"),
+              "performance-16x": (16, "performance")}
+
+
+def mem_mb(v):
+    """fly.toml memory -> MB. THE UNIT MISMATCH IS THE WHOLE TRAP: fly.toml writes `8gb`, the CLI
+    and machine listing report `8192`. Compare those as strings and the check cries drift on every
+    single deploy, which means it gets ignored inside a day and is worse than not existing."""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return int(v)
+    t = str(v).strip().lower().replace(" ", "")
+    try:
+        if t.endswith("gb"):
+            return int(float(t[:-2]) * 1024)
+        if t.endswith("mb"):
+            return int(float(t[:-2]))
+        if t.endswith("g"):
+            return int(float(t[:-1]) * 1024)
+        return int(float(t))                      # bare number = MB, as the CLI reports it
+    except ValueError:
+        return None
+
+
+def _vm_block_fallback(path, log=print):
+    """Parse just the [[vm]] block without tomllib.
+
+    tomllib is stdlib only from 3.11, and this repo's venv is 3.9 — so on the interpreter the check
+    sweep actually uses, the tomllib path raised, declared_vm returned None, and the drift check
+    SILENTLY DID NOTHING. A guard that quietly stops guarding is the failure mode this codebase has
+    a standing rule against, so it now degrades to a small hand parser instead of to nothing.
+    """
+    vm, in_block = {}, False
+    try:
+        with open(path, "r") as f:
+            for raw in f:
+                line = raw.split("#", 1)[0].strip()
+                if not line:
+                    continue
+                if line.startswith("["):
+                    in_block = line.replace(" ", "") in ("[[vm]]", "[vm]")
+                    continue
+                if in_block and "=" in line:
+                    k, _, v = line.partition("=")
+                    vm[k.strip()] = v.strip().strip("'\"")
+    except OSError as e:
+        log("  [vm-drift] cannot read %s: %s" % (path, str(e)[:60]))
+        return None
+    return vm or None
+
+
+def declared_vm(wt, log=print):
+    """The [[vm]] the deploy would apply. None when fly.toml declares none."""
+    path = os.path.join(wt, "fly.toml")
+    if not os.path.exists(path):
+        return None
+    vm = None
+    try:
+        import tomllib
+        with open(path, "rb") as f:
+            cfg = tomllib.load(f)
+        vms = cfg.get("vm")
+        vm = (vms[0] if isinstance(vms, list) and vms else vms) or None
+    except ImportError:
+        vm = _vm_block_fallback(path, log)        # python < 3.11
+    except Exception as e:                        # noqa: BLE001 — malformed toml
+        log("  [vm-drift] fly.toml did not parse (%s) — falling back" % str(e)[:60])
+        vm = _vm_block_fallback(path, log)
+    if not isinstance(vm, dict):
+        return None
+    size = str(vm.get("size", "")).strip().lower()
+    cpus, kind = _SIZE_CPUS.get(size, (vm.get("cpus"), vm.get("cpu_kind")))
+    return {"size": size, "cpus": cpus, "cpu_kind": kind,
+            "memory_mb": mem_mb(vm.get("memory") or vm.get("memory_mb"))}
+
+
+def vm_drift(app, wt, log=print):
+    """[(machine, field, running, declared)] for machines this deploy would RESIZE.
+
+    Compared against the RUNNING machines, not the previous fly.toml — the drift is created outside
+    git (`flyctl machine update`), so git cannot see it. Only machines in a process group are
+    considered: those are what a deploy touches. The dispatcher deliberately has none, which is why
+    it needs a separate re-pin.
+    """
+    want = declared_vm(wt)
+    if not want or not want.get("memory_mb"):
+        return []
+    fly = os.path.expanduser("~/.fly/bin/flyctl")
+    fly = fly if os.path.exists(fly) else "flyctl"
+    rc, out = sh([fly, "machines", "list", "-a", app, "--json"], timeout=180)
+    if rc != 0:
+        log("  [vm-drift] could not list machines — skipping the check")
+        return []
+    try:
+        machines = json.loads(out)
+    except Exception:                             # noqa: BLE001
+        return []
+    drift = []
+    for m in machines:
+        cfg = m.get("config", {}) or {}
+        if not (cfg.get("metadata", {}) or {}).get("fly_process_group"):
+            continue                              # not a deploy target
+        if m.get("state") != "started":
+            continue
+        g = cfg.get("guest", {}) or {}
+        if want["memory_mb"] and g.get("memory_mb") and g["memory_mb"] != want["memory_mb"]:
+            drift.append((m["id"], "memory_mb", g["memory_mb"], want["memory_mb"]))
+        if want["cpus"] and g.get("cpus") and g["cpus"] != want["cpus"]:
+            drift.append((m["id"], "cpus", g["cpus"], want["cpus"]))
+    return drift
+
+
 # --- deploy ----------------------------------------------------------------------------------
 def deploy(args):
     """The only command that can affect production. Refuses anything but a clean origin/main."""
@@ -642,8 +780,7 @@ def deploy(args):
     try:
         git("fetch", "--quiet", "origin")
         wt = scratch("_deploy")
-        if os.path.isdir(wt):
-            git("worktree", "remove", "--force", wt)
+        reset_scratch(wt)
         rc, out = git("worktree", "add", "--detach", wt, base)
         if rc != 0:
             print("!! could not create the deploy checkout: %s" % out)
@@ -660,6 +797,22 @@ def deploy(args):
             return 2
         _, subject = git("log", "-1", "--format=%h %an %cs %s", cwd=wt)
         print("deploying %s @ %s\n  %s" % (base, head[:8], subject))
+
+        app = os.environ.get("FLY_APP", "hoodie-suite")
+        drift = vm_drift(app, wt)
+        shrink = [d for d in drift if d[3] < d[2]]
+        if drift:
+            print("\n  fly.toml [[vm]] would RESIZE running machines:")
+            for mid, field, running, declared in drift:
+                arrow = "SHRINK" if declared < running else "grow"
+                print("    %-6s %s  %s: %s -> %s" % (arrow, mid, field, running, declared))
+        if shrink and not args.allow_resize:
+            print("\n  REFUSING: this deploy would SHRINK a running machine.")
+            print("  `flyctl deploy` re-applies [[vm]], so a scale-up done with `flyctl machine")
+            print("  update` is reverted silently — on a single-machine app that is an outage, and")
+            print("  nothing in `flyctl releases` will show it.")
+            print("  Either pin the intended size in fly.toml, or re-run with --allow-resize.")
+            return 2
 
         # Did the registry move? If so the hourly dispatcher must be re-pinned afterwards or it
         # keeps running a stale image and never dispatches the new source.
@@ -705,6 +858,8 @@ def main():
     r.set_defaults(fn=reconcile)
     d = sub.add_parser("deploy", help="deploy origin/<default> from a clean checkout")
     d.add_argument("--dry-run", action="store_true")
+    d.add_argument("--allow-resize", action="store_true",
+                   help="proceed even if fly.toml would shrink a running machine")
     d.set_defaults(fn=deploy)
     args = ap.parse_args()
     return args.fn(args)

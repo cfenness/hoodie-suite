@@ -16,11 +16,23 @@ ONLY on a positive determination that the tree is unsafe; any internal error, an
 anything it cannot establish, and it allows the command through with a warning. A guard that breaks
 your tooling gets uninstalled, and then it is guarding nothing.
 
-    python3 tools/deploy_guard.py check [cwd]     # exit 0 = safe, 2 = refuse, 1 = could not tell
+    python3 tools/deploy_guard.py check [cwd]     # exit 0 = safe, 3 = refuse, 1 = could not tell
     python3 tools/deploy_guard.py install         # install the shim at ~/.fly/bin/flyctl
     python3 tools/deploy_guard.py uninstall       # put the original back
 
 Escape hatch: HOODIE_DEPLOY_OK=1 bypasses the check for one invocation (and says so loudly).
+
+TWO THINGS HERE EXIST BECAUSE THE FIRST VERSION FAILED CLOSED — caught and reported by the Hoodie
+Relations session before it bit anyone:
+
+  1. EXIT 3, NOT 2, MEANS REFUSED. python3 exits **2** when it cannot open the script at all, so
+     using 2 for "refused" made a MISSING GUARD indistinguishable from a policy decision. The shim
+     would have blocked every deploy on the machine — including an emergency one — and reported it
+     as a refusal.
+  2. INSTALL COPIES ITSELF NEXT TO THE SHIM. The first version baked __file__ into the shim, which
+     pointed inside a `.claude/worktrees/...` worktree that Claude Code removes on session exit.
+     The guard now lives at ~/.fly/bin/hoodie_deploy_guard.py, so it depends on no checkout, no
+     branch, and no session. The shim also `test -f`s it and allows if it is gone.
 """
 import os
 import subprocess
@@ -39,10 +51,16 @@ REAL="%(real)s"
 if [ "$1" = "deploy" ]; then
   if [ -n "$HOODIE_DEPLOY_OK" ]; then
     echo "deploy-guard: BYPASSED via HOODIE_DEPLOY_OK — you are shipping this working tree." >&2
+  elif [ ! -f "$GUARD" ]; then
+    # The guard script is gone (repo moved, worktree pruned). ALLOW — a guard that cannot run must
+    # never be mistaken for a guard that said no.
+    echo "deploy-guard: guard script missing at $GUARD — allowing. Reinstall:" >&2
+    echo "  python3 tools/deploy_guard.py install" >&2
   else
     python3 "$GUARD" check "$PWD"
-    rc=$?
-    [ $rc -eq 2 ] && exit 1
+    # ONLY 3 means refused. Python exits 2 when it cannot open the script, 1 for an unhandled
+    # error — neither is a policy decision, and both must fall through to the real binary.
+    [ $? -eq 3 ] && exit 1
   fi
 fi
 exec "$REAL" "$@"
@@ -55,7 +73,10 @@ def sh(cmd, cwd=None):
 
 
 def check(cwd):
-    """0 = safe to deploy, 2 = refuse, 1 = could not determine (caller must allow)."""
+    """0 = safe to deploy, 3 = refuse, 1 = could not determine (caller must allow).
+
+    3 rather than 2 because python3 itself exits 2 on "can't open file" — see the module docstring.
+    """
     rc, top, _ = sh(["git", "rev-parse", "--show-toplevel"], cwd=cwd)
     if rc != 0 or not top:
         print("deploy-guard: not a git repo — allowing (cannot judge what you're shipping).",
@@ -109,12 +130,21 @@ def check(cwd):
     print("", file=sys.stderr)
     print("  Deliberately shipping this tree anyway:  HOODIE_DEPLOY_OK=1 flyctl deploy ...", file=sys.stderr)
     print("", file=sys.stderr)
-    return 2
+    return 3
+
+
+INSTALLED_GUARD = os.path.join(FLY_DIR, "hoodie_deploy_guard.py")
 
 
 def install():
-    here = os.path.dirname(os.path.abspath(__file__))
-    guard = os.path.join(here, "deploy_guard.py")
+    """Copy this script next to the shim and point the shim at the COPY.
+
+    Never reference the repo: the installing session is usually in a `.claude/worktrees/...`
+    worktree that gets removed on exit, and the primary checkout may be on a branch that predates
+    this file. A guard whose own path can vanish is a guard that will one day refuse everything.
+    """
+    import shutil
+    src = os.path.abspath(__file__)
     if not os.path.exists(SHIM):
         print("no flyctl at %s — nothing to wrap" % SHIM)
         return 1
@@ -122,10 +152,14 @@ def install():
         print("already installed (%s exists); refreshing the shim" % REAL)
     else:
         os.rename(SHIM, REAL)
+    shutil.copyfile(src, INSTALLED_GUARD)
+    os.chmod(INSTALLED_GUARD, 0o755)
     with open(SHIM, "w") as f:
-        f.write(SHIM_SRC % {"guard": guard, "real": REAL})
+        f.write(SHIM_SRC % {"guard": INSTALLED_GUARD, "real": REAL})
     os.chmod(SHIM, 0o755)
-    print("installed: %s now guards deploys, real binary at %s" % (SHIM, REAL))
+    print("installed: %s now guards deploys" % SHIM)
+    print("  guard copy : %s  (no repo/worktree dependency)" % INSTALLED_GUARD)
+    print("  real binary: %s" % REAL)
     print("uninstall: python3 tools/deploy_guard.py uninstall")
     return 0
 
@@ -136,6 +170,10 @@ def uninstall():
         return 1
     os.replace(REAL, SHIM)
     os.chmod(SHIM, 0o755)
+    try:
+        os.unlink(INSTALLED_GUARD)
+    except OSError:
+        pass
     print("uninstalled: %s restored" % SHIM)
     return 0
 
