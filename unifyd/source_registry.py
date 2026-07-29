@@ -351,6 +351,15 @@ SOURCES = [
               "the Coverage page; unmatched marked county_fips=00000 so they aren't retried. GEOCODE_LIMIT/run"),
     dict(id="aggregator-geo", label="Aggregator geo (page-fetch)", code="import aggregator_geo as m; m.run()",
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
+         # SHARDS DECLARED, DELIBERATELY NOT YET DISPATCHED — enabled=False below.
+         # Measured ~450 rows/min at 64 workers => a ~770k backlog is ~28h of fetching, which does not
+         # fit one window, so the read is sharded 6 ways by stable hash (UE_SHARD=i/N, verified a total
+         # partition in agg_shard_test.py). The WRITE is not shard-safe yet: every pass write_accumulates
+         # the WHOLE src_outlets table (read -> merge -> rewrite), so 6 concurrent machines would clobber
+         # each other and the last writer would silently drop the others' work — the exact hazard geo_all
+         # was created to serialize away. Turning this on before the write lands per-shard (staging table
+         # + one merge, or a partitioned write) would LOSE data while appearing to run 6x faster.
+         shards=6,
          tables=["src_outlets"], klass="headless", cadence="daily", enabled=False, timeout=7200, mem=16384,
          note="$0 page-fetch PRECISE geo for the ~790k no-address ubereats/postmates outlets (schema.org "
               "lat/lng → geo_precision=exact; empty pages marked agg_miss). Big crawl — chips away, "
