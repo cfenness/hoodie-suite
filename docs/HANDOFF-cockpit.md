@@ -1,7 +1,7 @@
 # Handoff — Hoodie Cockpit
 
-**Branch:** `feat/hoodie-cockpit` · **PR:** [#708](https://github.com/cfenness/hoodie-suite/pull/708)
-· 7 commits · **416 checks passing** · not deployed (merging ships nothing here)
+**Branch:** `feat/hoodie-cockpit` · **PR:** [#712](https://github.com/cfenness/hoodie-suite/pull/712)
+· current HEAD `9c02e3c` · not deployed (merging ships nothing here)
 
 The surface built around one operator: route a task to the right model, answer from stored findings
 instead of re-deriving them, run a role crew when the work earns it, and make concurrent chats
@@ -44,16 +44,25 @@ the lever.** Model routing alone is worth ~58.5% token-weighted.
 | `agent_chats.py` | claims, deploy lease, anti-clobber, chat transcripts | 57 |
 | `agent_roles.py` | PM / engineer / QA / lead-reviewer crews | 63 |
 | `agent_checks.py` | the deterministic checker | 43 |
-| `agent_exec.py` | the Claude Code CLI seam + run ledger | 48 |
+| `agent_exec.py` | the Claude Code CLI seam + run ledger | 58 |
 | `agent_import_chat.py` | scoped claude.ai export intake | 34 |
 | `agent_mine.py` | mine stated rules from transcripts | 38 |
+| `agent_tickets.py` | ticket lifecycle: PM draft → editable criteria → crew run → docs; forward-only status | 54 |
 
-Surface: `apps/cockpit.html` · endpoints `/api/cockpit/*` in `unifyd/server.py` · agent definitions
+`agent_tickets.derive_title()` treats a model's own markdown headings as section labels, never a
+title: it prefers the prose under a heading named `outcome`, then an inline `Outcome:` label, then
+the first non-heading line — found live on the first two real tickets created through the panel,
+not in a fixture.
+
+Surface: `apps/cockpit.html` · `apps/md-viewer.html` (live-updating ticket body viewer) · endpoints
+`/api/cockpit/*` plus the 7 ticket routes `/api/cockpit/tickets`, `/api/cockpit/tickets/<id>`,
+`/api/cockpit/tickets/<id>/raw`, `/api/cockpit/tickets/<id>/run`, `/api/cockpit/tickets/<id>/docs`
+(create/list/get/raw/patch/run/docs, `server.py:7364–7494`) in `unifyd/server.py` · agent definitions
 `.claude/agents/hoodie-{pm,qa,reviewer}.md` (generated — see below).
 
 ---
 
-## The three things that are load-bearing
+## The four things that are load-bearing
 
 **1. Subscription rail, never metered.** The engine is `claude -p` driven headlessly, authenticating
 from the OAuth login in `~/.claude.json` (token itself in the macOS Keychain, service
@@ -79,6 +88,13 @@ give awareness, not correctness.
 **3. Nothing is served without a verdict.** Every fact hashes the file it came from; a changed file
 reads `stale`, a missing one `unverifiable`, and neither is ever a hit. Written-back model answers are
 `inferred`, never dressed as declared truth.
+
+**4. A failed dispatch is never a quiet miss.** `agent_exec.dispatch()` sets `rec["error"]` for a
+non-JSON payload, a non-zero exit, or the CLI's own `is_error` flag — from the actual stderr/stdout,
+never a placeholder — and never reports a result alongside it. Callers decide success by
+`rec.get("error")` alone (`run_crew()` stops at the first failing stage; `api_cockpit_chat` sets
+`answered`/`error`), so before this a real failure read as an ordinary empty answer and a crew ran
+straight past a stage that had actually died.
 
 ---
 
@@ -117,7 +133,7 @@ now have suites.
 |---|---|
 | 8 legacy modules untested | `publix`, `instacart`, `browser_warm`, `menu_site`, `off_premise`, `doordash_discover`, `server`, `source_registry`. Pre-existing; separate lane. |
 | Ask is model-or-facts, not both | On a hit the model is never consulted. Fine for lookups; a hybrid may be better for judgement questions. |
-| Crew stages are manual | `crew_for()` plans and prices; running the stages is still hand-driven. The agent definitions make it scriptable either way. |
+| Ticket runs are operator-triggered | `POST /api/cockpit/tickets/<id>/run` dispatches engineer/QA/reviewer via `run_crew()` (`server.py:7460`) end-to-end, but nothing schedules it — a human still clicks Run Crew from the ticket panel. The PM stage is deliberately skipped there (a human already filled that role by editing the criteria). |
 | Third-party checkers | Deliberately not built. Recommendation: wire **GPT alone first**, instrument finding-attribution, and read the overlap rate after ~10 reviews before adding Gemini — turn "do we need two?" into a number. Both are metered, so it's a deliberate exception to the no-variable-cost rule, defensible scoped to `correctness=max` lanes. |
 | Export was `batch-0000` | Check for further batches from the claude.ai data export. |
 
