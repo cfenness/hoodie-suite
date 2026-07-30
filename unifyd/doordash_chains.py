@@ -70,10 +70,14 @@ def _match_chain(name):
 def bucket_stores(log=print):
     """doordash_stores -> {chain_key: [store_id, ...]}, via the name-substring heuristic. This is
     the TOTAL national universe per chain — not batch-limited; batching happens per-chain below
-    against what's already landed."""
+    against what's already landed. NO LIMIT here: doordash_stores has grown past 600k (767,716 as of
+    2026-07-30) and a capped read here silently drops whatever chain-matched stores sit past the cap
+    every single run, forever — exactly the "we fixed it and it never got revisited" undercount this
+    module's own docstring warns about for the batching below. Two string columns across ~1M rows is
+    trivial for DuckDB; there is no cost reason to cap it."""
     try:
         universe = warehouse.query("doordash_stores",
-                                   "SELECT store_id, name FROM t WHERE store_id IS NOT NULL LIMIT 600000")
+                                   "SELECT store_id, name FROM t WHERE store_id IS NOT NULL")
     except Exception as e:
         log("[doordash_chains] doordash_stores unreadable: %s" % str(e)[:140])
         return {}
@@ -108,8 +112,16 @@ def run(chains=None, batch=None, log=print):
     subprocess, so it's visible in /api/jobs regardless of when the parent's stdout capture
     happens to flush). Without this a "full" pull just shows 'running' with no signal for
     however many minutes it takes — exactly the kind of invisible-until-it's-done job that made
-    the earlier cap silently unnoticeable."""
+    the earlier cap silently unnoticeable.
+
+    ONE tally for the WHOLE call (installed here, not per-chain inside doordash_full.run) — chains
+    process sequentially, and a fresh tally per chain would erase the previous chain's numbers on
+    every switch. doordash.py's _fetch() records into whatever tally is installed and periodically
+    heartbeats it (HOODIE_DD_PROGRESS), so a "why is this slow" question is answerable from the log
+    stream instead of inferring it from log-line timestamps."""
     t0 = time.time()
+    import blocks
+    blocks.install()
     cap = batch or int(os.environ.get("DDFULL_BATCH_PER_CHAIN", "200"))
     buckets = bucket_stores(log=log)
     if chains:

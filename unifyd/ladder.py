@@ -61,14 +61,27 @@ MAX_COSTUMES = int(os.environ.get("LADDER_MAX_COSTUMES", "3"))
 
 
 def allowed_rungs():
-    """Free rungs always; the metered rung only when explicitly opted in."""
+    """Free rungs always; the metered rung only when explicitly opted in.
+
+    LADDER_MAX_RUNG caps escalation at or below a named rung — e.g. LADDER_MAX_RUNG=impersonate to
+    forbid the browser rung entirely. Grounded in a real incident: UberEats escalated to `browser` on
+    an isolated Fly machine (a datacenter host), where getstore.py's own docstring says the recipe is
+    ONLY proven on a residential exit ("a real browser on a datacenter IP is still a datacenter IP") —
+    and 6+ concurrent Chromium instances (10-50x the cost of the plain HTTP rung, per this module's own
+    comment) also exhausted the machine's memory/CPU, which is very likely what actually caused the
+    SSH-unresponsive stall, independent of whether the IP-masking held."""
+    allow = RUNGS
     try:
         import resi
-        if resi.paygo_allowed():
-            return RUNGS
+        if not resi.paygo_allowed():
+            allow = FREE_RUNGS
     except Exception:
-        pass
-    return FREE_RUNGS
+        allow = FREE_RUNGS
+    cap = os.environ.get("LADDER_MAX_RUNG", "").strip().lower()
+    if cap in RUNGS:
+        i = RUNGS.index(cap)
+        allow = tuple(r for r in allow if RUNGS.index(r) <= i)
+    return allow
 
 
 class SourceLadder:
@@ -164,10 +177,19 @@ _L = {}
 
 
 def current(source, default=None):
-    """The rung to use now. Reads a persisted choice on first touch so a restart does not re-learn."""
+    """The rung to use now. Reads a persisted choice on first touch so a restart does not re-learn.
+
+    The loaded/declared rung is clamped to allowed_rungs() — without this, a source that had
+    persisted its way up to `browser` before LADDER_MAX_RUNG was set would boot straight back into it
+    on the very next process, since _load() reads history and was never filtered through what's
+    currently permitted. Verified live 2026-07-30: this was exactly the gap that would have silently
+    undone capping the ladder at `impersonate`."""
     if source in _L:
         return _L[source].rung
     rung = default or _load(source) or _declared(source) or IMPERSONATE
+    allow = allowed_rungs()
+    if rung not in allow:
+        rung = allow[-1] if allow else IMPERSONATE
     _L[source] = SourceLadder(source, rung)
     return _L[source].rung
 

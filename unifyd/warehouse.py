@@ -382,15 +382,35 @@ def get_bytes(key):
         return None
 
 
-def write_partition(name, part, records, fields=None):
+def write_partition(name, part, records, fields=None, dtypes=None):
     """Append a TIME-SERIES partition: warehouse/<name>/<part>.parquet (e.g. part='2026-07-10_kroger').
     Daily runs land one file per (date, source) so history accumulates instead of overwriting — the
-    spine for tracking price + inventory over time. Idempotent per (name, part). Query with query_parts()."""
+    spine for tracking price + inventory over time. Idempotent per (name, part). Query with query_parts().
+
+    `dtypes` ({field: pyarrow type}) pins a column's type explicitly instead of letting
+    pa.Table.from_pylist infer it from THIS batch's data alone. Without it, a field that happens to be
+    all-None in one batch infers as a null/int64 column, while another batch with real string values
+    for the SAME field infers VARCHAR — and query_parts()'s union_by_name across all partitions then has
+    to reconcile VARCHAR against INTEGER for one column, which corrupts the read (an invalid-UTF8
+    decode error, not a clean type error) rather than failing loudly. Measured live 2026-07-30:
+    ubereats_products_parts had 5 distinct per-file schemas from this exact cause, and the registered
+    consolidation build (and every ad-hoc query) had been silently broken since — 'no accounts landing'
+    traced back to a write-time schema bug, not a scheduling gap. Declare the type for any field that
+    can legitimately be all-null in a batch; the caller knows its own schema, inference should never
+    have to guess it from whatever happened to be in one batch."""
     import pyarrow as pa
     import pyarrow.parquet as pq
     if fields:
         records = [{k: r.get(k) for k in fields} for r in records]
-    table = pa.Table.from_pylist(records) if records else pa.table({f: [] for f in (fields or ["_"])})
+    schema = None
+    if dtypes and fields:
+        schema = pa.schema([(f, dtypes.get(f, pa.string())) for f in fields])
+    if records:
+        table = pa.Table.from_pylist(records, schema=schema)
+    elif schema is not None:
+        table = pa.table({f: pa.array([], type=t) for f, t in zip(schema.names, schema.types)})
+    else:
+        table = pa.table({f: [] for f in (fields or ["_"])})
     rel = "%s/%s/%s.parquet" % (_prefix(), name, part)
     if remote():
         _retry(lambda: pq.write_table(table, "%s/%s" % (_bucket(), rel), filesystem=_s3fs()),

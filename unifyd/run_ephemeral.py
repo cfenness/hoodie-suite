@@ -73,6 +73,36 @@ def main():
     if not src:
         print("run_ephemeral: no source_registry entry %r" % sid)
         return 2
+
+    # HARD STOP against duplicate concurrent runs of the SAME source — enforced HERE, not only by the
+    # dispatcher's own running_sources() check, because this is the one place every launch path
+    # (scheduled dispatch, a manual UI trigger, or a stray direct `flyctl machine run`) funnels through
+    # before doing real work. See dispatch_ephemeral.conflicting_machine for the sharded-vs-unsharded
+    # rule. Exits clean (0) rather than failing — refusing to pile onto an already-running source is the
+    # correct outcome, not an error.
+    self_id = os.environ.get("FLY_MACHINE_ID")
+    shard = os.environ.get("HOODIE_SHARD") or os.environ.get("UE_SHARD")
+    conflict = None
+    try:
+        import dispatch_ephemeral
+        conflict = dispatch_ephemeral.conflicting_machine(sid, shard=shard, self_id=self_id)
+    except Exception as e:
+        print("run_ephemeral: concurrency check unavailable (%s) — proceeding without it" % str(e)[:100],
+              flush=True)
+    if conflict:
+        msg = ("%s is already running on machine %s%s — refusing to start a duplicate"
+               % (sid, conflict, (" (shard %s)" % shard) if shard else ""))
+        print("run_ephemeral: REFUSING — %s" % msg, flush=True)
+        if a.run_id:
+            try:
+                import run_journal
+                run_journal.open_run(a.run_id, sid, label=src.get("label"), klass=src.get("klass"),
+                                     params={"trigger": a.trigger}, tables=src.get("tables"))
+                run_journal.close_run(a.run_id, status="skipped", record={"status": "skipped", "note": msg})
+            except Exception:
+                pass
+        return 0
+
     overlay = _window_env(src, a.days, a.all)
     print("run_ephemeral: starting %s (%s, klass=%s)%s"
           % (sid, src.get("label"), src.get("klass"),

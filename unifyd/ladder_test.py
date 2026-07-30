@@ -100,8 +100,44 @@ L.reset(); L.current("s7", default=L.DIRECT)
 feed("s7", B.HTTP_BLOCK, L.WINDOW)
 check("one step at a time", L.current("s7"), L.MOBILE)
 
+# ── LADDER_MAX_RUNG: forbid escalating past a named rung ─────────────────────────────────────────
+# Grounded in a real incident: UberEats escalated to `browser` (real Chromium) on an isolated Fly
+# machine — a datacenter host, where the browser recipe is only proven from a residential exit — and
+# 6+ concurrent Chromium instances exhausted the machine. LADDER_MAX_RUNG=impersonate is the fix: cap
+# escalation at the plain HTTP rung, never reaching browser at all.
+try:
+    os.environ["LADDER_MAX_RUNG"] = "impersonate"
+    check("browser is excluded from allowed_rungs() when capped",
+          L.BROWSER in L.allowed_rungs(), False)
+    check("impersonate itself stays allowed (the cap is inclusive)",
+          L.IMPERSONATE in L.allowed_rungs(), True)
+    check("everything below the cap stays allowed",
+          L.DIRECT in L.allowed_rungs() and L.MOBILE in L.allowed_rungs(), True)
+
+    L.reset(); L.current("s8", default=L.IMPERSONATE)
+    feed("s8", B.CAPTCHA, L.WINDOW * (L.MAX_COSTUMES + 2))   # exhaust every costume rotation too
+    check("capped at impersonate, sustained blocks cannot climb to browser",
+          L.current("s8"), L.IMPERSONATE)
+
+    # THE GAP THAT WOULD HAVE SILENTLY UNDONE THE CAP: a source that already escalated to `browser`
+    # and PERSISTED that choice (ladder_state) must not boot straight back into it on the next
+    # process just because _load() predates the cap being set.
+    L.reset()
+    real_load = L._load
+    L._load = lambda source: L.BROWSER    # simulate: this is what persisted state says
+    try:
+        check("a persisted `browser` choice is clamped down to what's currently allowed",
+              L.current("s9"), L.IMPERSONATE)
+    finally:
+        L._load = real_load               # restore the module's real _load for anything after this
+finally:
+    os.environ.pop("LADDER_MAX_RUNG", None)
+
+check("without the cap, browser is reachable again (no leftover global state)",
+      L.BROWSER in L.allowed_rungs(), True)
+
 if fails:
     print("\n".join("  FAIL " + f for f in fails))
     print("-- %d failed" % len(fails))
     sys.exit(1)
-print("-- ladder: a closed rung escalates itself, a closed store does not (17 checks)")
+print("-- ladder: a closed rung escalates itself, a closed store does not (23 checks)")

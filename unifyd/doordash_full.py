@@ -62,7 +62,7 @@ def full_catalog(store, key, log=print, max_pages=120):
             continue
         seen_cat.add(path); pages += 1
         try:
-            html = dd._unlock("https://www.doordash.com" + path, key, session=session)
+            html = dd._unlock("https://www.doordash.com" + path, key, session=session, log=log)
         except Exception as e:
             log("  cat %s failed: %s" % (path.split("/category/")[1][:24], str(e)[:40])); continue
         blob = dd._rsc(html)
@@ -83,7 +83,7 @@ def full_catalog(store, key, log=print, max_pages=120):
     # AttributeError'd, caught by the bare except below, paying the sleep for zero completeness benefit.)
     for term in dd.ALCOHOL_TERMS:
         try:
-            for it in dd.search_store(store, term, key, session=session):
+            for it in dd.search_store(store, term, key, session=session, log=log):
                 items.setdefault(it["name"], dict(it, department="alcohol"))
         except Exception:
             pass
@@ -106,7 +106,7 @@ def _walk_nonalc(store, key, log=print, max_pages=30, session=None):
             continue
         seen.add(path); pages += 1
         try:
-            html = dd._unlock("https://www.doordash.com" + path, key, session=session)
+            html = dd._unlock("https://www.doordash.com" + path, key, session=session, log=log)
         except Exception:
             continue
         for it in dd._parse_items(dd._rsc(html)):
@@ -144,11 +144,44 @@ def run(chain, stores=None, log=print, on_store=None):
 
     import threading
     from concurrent.futures import ThreadPoolExecutor
+    import pyarrow as pa
     all_rows, outlets, done = [], [], [0]
     lock = threading.Lock()
 
+    # ITEM FIELDS pinned explicitly (string vs numeric vs bool) — see warehouse.write_partition's
+    # docstring: a field that's all-null for one store's items infers a different type than the SAME
+    # field with real values for another store, and unioning those per-store parts later corrupts the
+    # read exactly the way ubereats_products_parts did live on 2026-07-30.
+    _numeric = {"unit_size": pa.float64(), "pack_count": pa.float64(), "total_size": pa.float64(),
+               "price_value": pa.float64()}
+    _bool = {"is_alcoholic": pa.bool_(), "is_hemp": pa.bool_()}
+    ITEM_FIELDS = ["name", "price", "image_url", "container", "unit_size", "size_uom", "pack_count",
+                  "total_size", "store", "store_id", "product_id", "price_value", "source", "department",
+                  "is_alcoholic", "bev_category", "beer_style", "is_hemp", "run_id"]
+    ITEM_DTYPES = {f: _numeric.get(f, _bool.get(f, pa.string())) for f in ITEM_FIELDS}
+    OUTLET_FIELDS = ["store_id", "source", "chain", "street", "city", "state", "zip", "lat", "lon"]
+    OUTLET_DTYPES = {f: pa.string() for f in OUTLET_FIELDS}
+
     def _work(store):
-        items, outlet = full_catalog(store, key, log=log)
+        # ONE STORE'S UNEXPECTED FAILURE MUST NEVER ABORT THE BATCH. full_catalog() already catches
+        # its own per-page network errors, but anything else raised for THIS store (a parse edge case,
+        # a KeyError from unexpected HTML shape) used to propagate straight out of ex.map()'s result
+        # iterator and kill list(ex.map(...)) entirely — abandoning every other in-flight store, not
+        # just this one. Verified live in doordash_full_persist_test.py: an unhandled exception for one
+        # store took down the whole run() call. Caught here so ONE bad store degrades to zero items for
+        # itself, not a dead batch for everyone.
+        try:
+            items, outlet = full_catalog(store, key, log=log)
+        except Exception as e:
+            log("  [%s] store %s FAILED (not blocking the rest): %s" % (chain, store, str(e)[:150]))
+            with lock:
+                done[0] += 1
+                if on_store:
+                    try:
+                        on_store(done[0], len(stores))
+                    except Exception:
+                        pass
+            return
         rows = []
         for it in items:
             dept = it.get("department", "alcohol")
@@ -160,10 +193,32 @@ def run(chain, stores=None, log=print, on_store=None):
                              run_id=run_id, **dd._parse_pack(it["name"])))
         na = sum(1 for r in rows if r["department"] == "non-alcoholic")
         log("  [%s] store %s — %d items (%d alcohol, %d non-alc/zero-proof)" % (chain, store, len(rows), len(rows) - na, na))
+        # WRITE THIS STORE NOW — an append-only per-store PART, not accumulated in memory for one
+        # write at the very end. Grounded in a real incident: a 123-store chain batch (the SMALLEST of
+        # 12 queued chains) ran for 90+ minutes with the SAME 16 stores in flight the whole time, zero
+        # completions, and the old design wrote NOTHING until every one of the 123 finished — meaning a
+        # slow or stuck store (timeouts, an unusually deep category tree) silently blocked every other
+        # store's already-landed data from ever reaching the warehouse. Parts are safe from 16 workers
+        # writing concurrently (no read-modify-write, no lost-update race — the same reason ue_catalog's
+        # shards write parts instead of accumulating); a consolidation fold (mirroring
+        # ue_catalog.consolidate) later merges them into the canonical accumulate table.
+        if rows:
+            try:
+                warehouse.write_partition(chain + "_products_full_parts", "%s_s%s" % (run_id, store),
+                                          rows, fields=ITEM_FIELDS, dtypes=ITEM_DTYPES)
+            except Exception as e:
+                log("  [%s] store %s part write failed: %s" % (chain, store, str(e)[:120]))
+        if outlet:
+            outlet["source"] = chain
+            try:
+                warehouse.write_partition(chain + "_outlets_parts", "%s_s%s" % (run_id, store),
+                                          [outlet], fields=OUTLET_FIELDS, dtypes=OUTLET_DTYPES)
+            except Exception as e:
+                log("  [%s] store %s outlet part write failed: %s" % (chain, store, str(e)[:120]))
         with lock:
             all_rows.extend(rows)
             if outlet:
-                outlet["source"] = chain; outlets.append(outlet)
+                outlets.append(outlet)
             done[0] += 1
             if on_store:
                 try:
@@ -178,6 +233,8 @@ def run(chain, stores=None, log=print, on_store=None):
         # resumable batches) passes a DIFFERENT store subset each time — write_parquet would replace
         # the whole table with just that batch and silently erase every previously-landed store's
         # rows. Key = (store, product_id), the same identity a re-pull of that store's item replaces.
+        # This end-of-run fold is now a CONVENIENCE for the common case (the whole batch finished) —
+        # the per-store parts above are the durable landing zone even if the run never reaches here.
         warehouse.write_accumulate(chain + "_products_full", all_rows,
                                    key=lambda r: (r["store"], r["product_id"]))
         observe.record(chain, [dict(store=r["store"], store_id=r["store_id"], product_id=r["product_id"],
@@ -187,6 +244,32 @@ def run(chain, stores=None, log=print, on_store=None):
         warehouse.write_accumulate(chain + "_outlets", outlets, key=lambda r: r.get("store") or r.get("store_id"))
     log("[%s] FULL DONE %d items across %d stores -> %s_products_full" % (chain, len(all_rows), len(stores), chain))
     return run_id, len(all_rows)
+
+
+def consolidate(chain, log=print):
+    """Fold `<chain>_products_full_parts`/`_outlets_parts` (per-store, append-only, written the moment
+    each store finishes — see run()) into the canonical accumulate tables. Single writer, same shape as
+    ue_catalog.consolidate: parts are safe under concurrent writers, the accumulate fold is not, so only
+    ONE thing ever runs this. Makes already-landed stores visible even while a chain's batch is still
+    in flight, instead of waiting for every store in the batch to finish."""
+    n_items = n_outlets = 0
+    try:
+        rows = warehouse.query_parts(chain + "_products_full_parts", "SELECT * FROM t")
+        if rows:
+            warehouse.write_accumulate(chain + "_products_full", rows,
+                                       key=lambda r: (r["store"], r["product_id"]))
+            n_items = len(rows)
+    except Exception as e:
+        log("[%s] consolidate items failed: %s" % (chain, str(e)[:150]))
+    try:
+        orows = warehouse.query_parts(chain + "_outlets_parts", "SELECT * FROM t")
+        if orows:
+            warehouse.write_accumulate(chain + "_outlets", orows, key=lambda r: r.get("store_id"))
+            n_outlets = len(orows)
+    except Exception as e:
+        log("[%s] consolidate outlets failed: %s" % (chain, str(e)[:150]))
+    log("[%s] consolidate: %d item parts, %d outlet parts folded" % (chain, n_items, n_outlets))
+    return n_items
 
 
 if __name__ == "__main__":
