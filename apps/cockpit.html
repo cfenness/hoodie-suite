@@ -528,9 +528,10 @@ async function loadDeployTile(){
   if (placeholder) placeholder.outerHTML = deployTileHtml(dep);
 }
 async function loadBusinessHealth(){
-  const [master, steward, coverage, monitor, health] = (await Promise.allSettled([
+  const [master, steward, coverage, monitor, health, dq] = (await Promise.allSettled([
     getJSON('/api/master/workbench/summary'), getJSON('/api/master/steward/summary'),
     getJSON('/api/coverage'), getJSON('/api/monitor'), getJSON('/api/cockpit/health-digest'),
+    getJSON('/api/cockpit/dq-aggregate'),
   ])).map(r => r.status === 'fulfilled' ? r.value : null);
 
   const cells = [];
@@ -578,6 +579,21 @@ async function loadBusinessHealth(){
   } else {
     cells.push(stat('data health', '—', 'digest not available (agent offline, or none run yet)'));
     $('#health-needs').innerHTML = '';
+  }
+
+  // Data quality — dq_aggregate.py's warehouse-wide score (null-blowout + exact-duplicate scan
+  // across every master/conformed/accounts/timeseries/scrape table), distinct from "data health"
+  // above (is data still COMING IN) and from dq.js (a deep per-table profile you run interactively
+  // in the dashboard/HI apps, never warehouse-wide). Computed weekly, so a stale score is expected
+  // between Mondays, not a bug — the date makes that visible rather than hiding it.
+  if (dq && dq.available && dq.score != null){
+    cells.push(stat('data quality', dq.score+'%',
+      dq.tables_clean+'/'+dq.tables_checked+' tables clean'+
+        (dq.as_of ? ' · '+new Date(dq.as_of*1000).toLocaleDateString() : ''),
+      dq.ok ? 'ok' : ((dq.counts||{}).critical ? 'alert' : 'warn'),
+      'data-console.html'));
+  } else {
+    cells.push(stat('data quality', '—', 'aggregate not available (runs weekly — none published yet)'));
   }
 
   $('#bizhealth').innerHTML = cells.join('') ||
