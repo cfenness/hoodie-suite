@@ -139,7 +139,16 @@ JACCARD = 0.55        # token-set overlap at which two clauses count as the same
 
 
 def _toks(text):
-    return {w for w in re.findall(r"[a-z][a-z0-9_./-]{2,}", (text or "").lower()) if w not in _STOP}
+    # The char class allows '.', '/', '-' so a path or version stays one token instead of shredding
+    # (`unifyd/publix.py`, `v2.1`). Side effect: a clause-final period glues onto whatever word ends
+    # the sentence, so "...for scraping." (sentence-final) and "...for scraping," (mid-sentence, comma
+    # not in the class) tokenize as two DIFFERENT words — "scraping." vs "scraping" — which silently
+    # lost the Jaccard match between two restatements of the same rule that just happened to fall at
+    # different points in their sentences. A trailing dot is never part of a real identifier (paths
+    # end in an extension, versions end in a digit), so it's dropped after matching, not excluded from
+    # the class itself — the class still needs '.' mid-token for `publix.py`.
+    return {w for w in (m.rstrip(".") for m in re.findall(r"[a-z][a-z0-9_./-]{2,}", (text or "").lower()))
+            if w and w not in _STOP}
 
 
 def cluster(items, threshold=JACCARD):
@@ -276,13 +285,16 @@ def write_facts(clusters, min_count=3, db=None, limit=None):
             continue
         sample = c["samples"][0] if c["samples"] else ""
         # Subject is a short stable slug so the fact is addressable and re-mining supersedes rather
-        # than duplicating; the claim carries the human-readable shape.
+        # than duplicating. The claim text must stay FIXED across re-mines too — remember() upserts
+        # on (subject, claim), so a claim that embeds the count/family (both of which change as more
+        # transcripts accrue) would defeat that key and insert a fresh row every re-mine instead of
+        # updating the existing one. The mutable shape (count, families) goes in `value`, which is
+        # exactly the column the upsert is meant to refresh.
         slug = "candidate:" + hashlib.sha256(c["key"].encode()).hexdigest()[:10]
         fams = ",".join(sorted(c["families"]))
         M.remember(slug,
-                   "UNREVIEWED candidate rule (%s, seen %dx) — confirm or reject before relying on it"
-                   % (fams, c["count"]),
-                   sample,
+                   "UNREVIEWED candidate rule — confirm or reject before relying on it",
+                   "%s  [%s, seen %dx]" % (sample, fams, c["count"]),
                    kind=M.INFERRED,
                    evidence_cmd="transcripts: " + "; ".join(c["where"][:3]),
                    db=db)
