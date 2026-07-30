@@ -18,12 +18,24 @@ import argparse, gzip, hashlib, json, os, sys, time, urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import observe
+import raw_capture
 
-# binnys_products snapshot columns (the rich per-store cell → the master + hemp views read these)
+# binnys_products snapshot columns (the rich per-store cell → the master + hemp views read these).
+# raw_json stays in the FULL shape (recs/PRODUCT_FIELDS) so nothing the source gives us is lost, but it
+# does NOT land in the catalog write — see CATALOG_FIELDS below.
 PRODUCT_FIELDS = ["sku", "store", "name", "brand", "varietal", "region", "origin", "category", "department",
                   "item_size", "unit_label", "case_pack", "proof", "abv", "thc_mg", "cbd_mg", "rating",
                   "reviews", "discount_pct", "deal_of_week", "is_sold_out", "in_store_only", "is_hemp",
                   "short_desc", "product_url", "image", "price", "qty", "raw_json"]
+# What actually lands in binnys_products (write_accumulate AND write_full_rebuild). raw_json (up to 6KB,
+# the whole Algolia hit) does NOT belong here: write_accumulate merges by rewriting the WHOLE table, so a
+# fat payload column gets re-read and re-written on every flush, and gets more expensive as the crawl
+# succeeds — the same "payload as a mutable catalog column" mistake raw_capture.py exists to fix,
+# previously seen on ubereats_products and offprem_products. It's the reason a bucketize.py migration of
+# this table (1.53M rows) was still producing tens of thousands of tiny partition files hours in — DuckDB's
+# own fat-row heuristic throttles concurrency hard when rows are this wide. raw_capture keeps the payload,
+# fully recoverable, just never re-read on a merge.
+CATALOG_FIELDS = [f for f in PRODUCT_FIELDS if f != "raw_json"]
 
 APP_ID  = os.environ.get("BINNYS_ALGOLIA_APP", "Z25A2A928M")
 API_KEY = os.environ.get("BINNYS_ALGOLIA_KEY", "88b6125855a0bbd845447e35de8d51c5")  # public search-only key
@@ -249,6 +261,11 @@ def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=p
     # dated observation time-series (qty = exact on-hand; the whole reason Binny's is a Counts source).
     try:
         recs = [{k: v.get(k) for k in PRODUCT_FIELDS} for v in cur.values()]
+        # raw_json goes to the append-only capture, never the catalog write (see CATALOG_FIELDS above).
+        raw_capture.record("binnys", time.strftime("%Y-%m-%d"), "products",
+                           [{"entity_id": "%s|%s" % (r.get("sku"), r.get("store")), "parent_id": r.get("sku"),
+                             "raw_json": r.get("raw_json")} for r in recs], log=log)
+        lean = [{k: v for k, v in r.items() if k != "raw_json"} for r in recs]
         # a COMPLETE full crawl is the whole catalog -> OVERWRITE (a clean, consistently-typed schema);
         # merging into the old narrower table with write_accumulate hits a pyarrow type conflict (old
         # string cols vs new numeric). Anything else accumulates so it grows rather than clobbers.
@@ -261,10 +278,10 @@ def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=p
             # write_full_rebuild, not write_parquet: binnys_products is bucketed (the OOM fix — the
             # accumulate branch below was read-modify-writing all 1.5M rows on every incremental flush,
             # and that cost grows every run) — a plain write_parquet would raise on this branch instead.
-            warehouse.write_full_rebuild("binnys_products", recs, fields=PRODUCT_FIELDS)
+            warehouse.write_full_rebuild("binnys_products", lean, fields=CATALOG_FIELDS)
         else:
-            warehouse.write_accumulate("binnys_products", recs, key=lambda r: (r["sku"], r["store"]),
-                                       fields=PRODUCT_FIELDS)
+            warehouse.write_accumulate("binnys_products", lean, key=lambda r: (r["sku"], r["store"]),
+                                       fields=CATALOG_FIELDS)
         observe.record("binnys", [{"source": "binnys", "store_id": v["store"], "store": "Binny's #%s" % v["store"],
                                    "product_id": v["sku"], "upc": "", "brand": v["brand"], "name": v["name"],
                                    "price": v["price"], "on_promo": bool(v.get("deal_of_week") or v.get("discount_pct")),
