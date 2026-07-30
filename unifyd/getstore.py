@@ -158,6 +158,48 @@ def rotate_profile(site, log=print):
 
 _TL_RESET = [0]
 
+# ── FLEET SHARDING: disjoint exit slices, not shared ────────────────────────────────────────────
+# WHY. Measured 2026-07-29 (COLLECT-HANDOFF.md §1e): identity_router's concentration-avoidance is
+# per-PROCESS (`_GLOBAL` singleton in identity_router.py) — running N independent shard processes
+# against the SAME pool means N routers, each blind to the other N-1's picks. A single-shard control
+# (one router, full HOT_MAX/quarantine logic) ran 95-100% usable; the same code as the real 8-shard
+# fleet ran near-0%, because shards silently piled onto the same exits with no way to know it. Fixed
+# live that day by giving each shard its own slice of the pool; this makes that the permanent default
+# instead of a manual patch.
+_SHARD = {"i": 0, "n": 1}
+
+PARTITION_POOL = os.environ.get("UE_PARTITION_POOL", "1").strip().lower() not in ("0", "false", "no", "off")
+
+
+def set_shard(shard, nshard):
+    """Tell every worker thread in THIS process which disjoint slice of the exit pool it owns. Call once
+    at process start (`ue_catalog.run()` does). Never called => shard 0/1 => the full pool, unchanged
+    behaviour for every other caller (pool_health, costume_probe, single-shard runs) — sharding is
+    additive, never the reason a scrape cannot run."""
+    _SHARD["i"], _SHARD["n"] = int(shard), max(1, int(nshard))
+
+
+def _shard_pool(pool):
+    """This process's disjoint slice of `pool` — see `set_shard`. Interleaved (`pool[i::n]`), not a
+    contiguous block, so a shard's slice isn't tied to whatever order the pool happens to be in.
+    identity_router's own concentration/health logic still applies IN FULL within the slice, unchanged
+    — this only shrinks which exits a given process ever offers it, it doesn't touch how it picks among
+    them.
+
+    Falls back to the FULL pool (old, shared behaviour) if partitioning is disabled (`UE_PARTITION_POOL`),
+    there's only one shard, or the pool is too small to give every shard a distinct entry — a shard that
+    got zero exits could never run at all, and a broken/degenerate partition must never be the reason a
+    scrape cannot run."""
+    n, i = _SHARD["n"], _SHARD["i"]
+    if not PARTITION_POOL or n <= 1 or not pool:
+        return pool
+    if len(pool) < n:
+        _log_once("pool has %d exits for %d shards — too few to partition; sharing the full pool "
+                   "(expect cross-shard concentration, see COLLECT-HANDOFF.md §1e)" % (len(pool), n))
+        return pool
+    mine = pool[i::n]
+    return mine or pool
+
 
 def pin_exit(entry):
     """Force THIS thread's requests through one pool entry, and say which exit that is.
@@ -272,6 +314,7 @@ def _session(site):
         pool = resi.isp_pool()
     except Exception:
         pool = []
+    pool = _shard_pool(pool)          # this process's disjoint slice, if sharded — see set_shard()
     pin = getattr(_TL, "pin", None)
     _TL.costume = None                        # default: _profile(site) governs unless the router picks
     if pin:
