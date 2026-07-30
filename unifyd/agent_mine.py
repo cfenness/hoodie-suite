@@ -304,6 +304,45 @@ def write_facts(clusters, min_count=3, db=None, limit=None):
     return n
 
 
+def list_candidates(db=None):
+    """All still-UNREVIEWED candidates, ordered by subject — a stable order across calls (as long as
+    nothing is confirmed/rejected in between), which is what lets `--review`'s printed index line up
+    with a later `--confirm`/`--reject` in the same sitting."""
+    import agent_memory as M
+    c = M._conn(db)
+    rows = c.execute("""SELECT subject, claim, value, evidence_cmd FROM facts
+                        WHERE subject LIKE 'candidate:%' AND claim LIKE 'UNREVIEWED%'
+                        ORDER BY subject""").fetchall()
+    return [dict(r) for r in rows]
+
+
+def confirm_candidate(subject, db=None):
+    """Promote one candidate from mined guess to human-confirmed. Kind stays `inferred` — it's still
+    text mined from prose, not derived from code — but the subject drops the `candidate:` prefix and
+    the claim drops UNREVIEWED, which is the only signal recall()/answer() have that a human actually
+    looked at this one. The old candidate row is removed so a stale duplicate can never out-rank the
+    confirmed fact on a shared query. Returns False if the subject wasn't a live candidate (already
+    reviewed, or never existed) rather than silently no-op'ing."""
+    import agent_memory as M
+    c = M._conn(db)
+    row = c.execute("SELECT * FROM facts WHERE subject=? AND claim LIKE 'UNREVIEWED%'",
+                     (subject,)).fetchone()
+    if not row:
+        return False
+    M.remember("rule:" + subject.split(":", 1)[1],
+               "CONFIRMED — stated by the operator, kept on review",
+               row["value"], kind=M.INFERRED, evidence_cmd=row["evidence_cmd"], db=db)
+    M.forget(subject, db=db)
+    return True
+
+
+def reject_candidate(subject, db=None):
+    """Discard one candidate outright — pasted material, a one-off, or simply wrong. Returns False if
+    there was nothing to remove, so a caller can tell a real reject from a no-op."""
+    import agent_memory as M
+    return M.forget(subject, db=db) > 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Mine stated rules from local Claude transcripts.")
     ap.add_argument("--scan", action="store_true")
@@ -312,7 +351,33 @@ def main(argv=None):
     ap.add_argument("--min-score", type=int, default=4)
     ap.add_argument("--top", type=int, default=25)
     ap.add_argument("--files", type=int, default=None, help="limit files (for a fast look)")
+    ap.add_argument("--review", action="store_true", help="list stored UNREVIEWED candidates")
+    ap.add_argument("--confirm", help="comma-separated --review indices to confirm")
+    ap.add_argument("--reject", help="comma-separated --review indices to reject")
     a = ap.parse_args(argv)
+
+    if a.review or a.confirm or a.reject:
+        cands = list_candidates()
+        if a.review:
+            if not cands:
+                print("no unreviewed candidates")
+            for i, c in enumerate(cands, 1):
+                print("  [%2d] %s" % (i, re.sub(r"\s+", " ", c["value"]).strip()[:160]))
+        for flag, fn, verb in ((a.confirm, confirm_candidate, "confirmed"),
+                               (a.reject, reject_candidate, "rejected")):
+            if not flag:
+                continue
+            for tok in flag.split(","):
+                tok = tok.strip()
+                if not tok:
+                    continue
+                i = int(tok)
+                if not (1 <= i <= len(cands)):
+                    print("  [%2d] out of range (1-%d)" % (i, len(cands)))
+                    continue
+                ok = fn(cands[i - 1]["subject"])
+                print("  [%2d] %s -> %s" % (i, verb, "ok" if ok else "already gone"))
+        return 0
 
     res = scan(min_score=a.min_score, limit_files=a.files)
     cl = res["clusters"]

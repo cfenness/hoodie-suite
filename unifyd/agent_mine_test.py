@@ -179,6 +179,49 @@ def main():
     n2 = A.write_facts(many, min_count=3, db=db2, limit=2)
     check("limit caps the number of facts written", n2 == 2, n2)
 
+    # --- 8. review flow: confirm/reject on top of what write_facts landed ---------------------------
+    db3 = os.path.join(tmp, "facts3.db")
+    a1 = dict(key="a1", count=3, score=15, rank=39, families={"directive": 1},
+              samples=["never commit directly to main"], where=["g.jsonl:1"])
+    a2 = dict(key="a2", count=4, score=20, rank=52, families={"prohibition": 1},
+              samples=["do not default to a paid proxy"], where=["h.jsonl:1"])
+    A.write_facts([a1, a2], min_count=3, db=db3)
+
+    cands = A.list_candidates(db=db3)
+    check("list_candidates surfaces exactly the unreviewed rows", len(cands) == 2, cands)
+    check("list_candidates is ordered by subject (stable across calls)",
+          [c["subject"] for c in cands] == sorted(c["subject"] for c in cands), cands)
+
+    keep, drop = cands[0], cands[1]
+    ok = A.confirm_candidate(keep["subject"], db=db3)
+    check("confirm_candidate reports success on a live candidate", ok is True, ok)
+    ok2 = A.reject_candidate(drop["subject"], db=db3)
+    check("reject_candidate reports success on a live candidate", ok2 is True, ok2)
+
+    remaining = A.list_candidates(db=db3)
+    check("both reviewed candidates leave the unreviewed list", remaining == [], remaining)
+
+    all_rows = [dict(r) for r in M._conn(db3).execute("SELECT * FROM facts").fetchall()]
+    confirmed = [r for r in all_rows if r["subject"] == "rule:" + keep["subject"].split(":", 1)[1]]
+    check("confirmed fact lands under its new rule: subject, same hash suffix",
+          len(confirmed) == 1, all_rows)
+    if confirmed:
+        check("confirmed fact carries the original candidate's value forward",
+              confirmed[0]["value"] == keep["value"], (confirmed[0], keep))
+        check("confirmed fact's claim no longer says UNREVIEWED",
+              "UNREVIEWED" not in confirmed[0]["claim"], confirmed[0]["claim"])
+        check("confirmed fact stays kind=inferred (mined text, not code-derived)",
+              confirmed[0]["kind"] == M.INFERRED, confirmed[0])
+    check("the old candidate: row for the confirmed one is gone (no stale duplicate)",
+          not any(r["subject"] == keep["subject"] for r in all_rows), all_rows)
+    check("rejected candidate is gone from the store entirely, not just hidden",
+          not any(r["subject"] == drop["subject"] for r in all_rows), all_rows)
+
+    check("confirming an already-reviewed subject reports False, not a silent no-op",
+          A.confirm_candidate(keep["subject"], db=db3) is False)
+    check("rejecting an already-reviewed subject reports False, not a silent no-op",
+          A.reject_candidate(drop["subject"], db=db3) is False)
+
     print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
     return 1 if FAILED else 0
 

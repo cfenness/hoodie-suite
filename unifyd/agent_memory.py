@@ -135,6 +135,18 @@ def remember(subject, claim, value, kind=DETERMINISTIC, evidence_path=None,
     return row["id"] if row else None
 
 
+def forget(subject, db=None):
+    """Delete every fact for a subject. The FTS trigger keeps the index in lockstep (see facts_ad).
+
+    Exists for the reject side of a human review (agent_mine's candidate facts): a rejected
+    candidate must actually disappear, not linger as an inferred fact nobody meant to keep. Returns
+    the number of rows removed, so a caller can tell a no-op reject from a real one."""
+    c = _conn(db)
+    with c:
+        n = c.execute("DELETE FROM facts WHERE subject=?", (str(subject),)).rowcount
+    return n
+
+
 def verdict(fact):
     """fresh | stale | unverifiable for one fact row. The ONLY way a fact is labelled."""
     path, was = fact.get("evidence_path"), fact.get("file_sha")
