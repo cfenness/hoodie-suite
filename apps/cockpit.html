@@ -109,6 +109,8 @@
   .pill.ready{color:var(--good);border-color:rgba(91,184,110,.45)}
   .pill.blocked{color:var(--bad);border-color:rgba(229,99,107,.45)}
 
+  table.crew{margin-top:var(--s2)}
+  table.crew th, table.crew td{padding:5px var(--s2)}
   .rgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(124px,1fr));gap:var(--s2);margin-top:var(--s3)}
   .rcell{background:var(--panel2);border:1px solid var(--line);border-radius:var(--rs);padding:var(--s2) var(--s3)}
   .rcell .lab{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);line-height:1}
@@ -381,6 +383,28 @@ function renderRoute(r, argv){
   if (argv) h += '<div class="cmd">'+esc(argv)+'</div>';
   return h;
 }
+
+/* The crew is shown only when it is WORTH it. Rendering four roles next to a lookup would be noise
+   arguing for its own expense — the router already knows the answer, so respect it. */
+function renderCrew(c){
+  if (!c || !c.stages) return '';
+  const head = c.recommended
+    ? 'Crew recommended — ' + c.multiple + 'x the solo route'
+    : 'Crew not worth it here — ' + c.multiple + 'x the solo route';
+  let h = '<div class="verdict '+(c.recommended?'v-hit':'v-miss')+'">'
+        + '<div class="vhead">'+esc(head)+'</div><div class="vbody">';
+  h += '<div class="note" style="margin:0 0 var(--s2)">'+esc(c.recommendation_why)+'</div>';
+  h += '<table class="crew"><thead><tr><th>Role</th><th>Model</th><th>Effort</th>'
+     + '<th class="r">Burn</th><th>Produces</th></tr></thead><tbody>';
+  for (const s of c.stages)
+    h += '<tr><td>'+esc(s.label)+'</td><td class="m">'+esc(s.model)+'</td>'
+      +  '<td class="m">'+esc(s.effort)+'</td><td class="r">'+s.burn_index.toFixed(1)+'</td>'
+      +  '<td>'+esc(s.produces)+(s.note&&s.note.indexOf('floored')>=0
+            ? ' <span class="pill">'+esc(s.note)+'</span>' : '')+'</td></tr>';
+  h += '</tbody></table>';
+  for (const w of (c.why||[])) h += '<div class="note">! '+esc(w)+'</div>';
+  return h + '</div></div>';
+}
 /* ── ongoing chat state ───────────────────────────────────────────────────── */
 let CHAT = null;          // active chat id (null = a new, unstarted chat)
 let CHATS = [];
@@ -427,8 +451,11 @@ async function ask(routeOnly){
     $('#out').innerHTML = '<div class="note">routing…</div>';
     let rt = null;
     try { rt = await (await fetch('/api/cockpit/route?q='+encodeURIComponent(q))).json(); } catch(e){}
-    $('#out').innerHTML = rt && rt.route ? renderRoute(rt.route, rt.argv_display)
-      : '<div class="note">Agent offline — start it to route and dispatch.</div>';
+    let cw = null;
+    try { cw = await (await fetch('/api/cockpit/crew?q='+encodeURIComponent(q))).json(); } catch(e){}
+    $('#out').innerHTML = (rt && rt.route ? renderRoute(rt.route, rt.argv_display)
+      : '<div class="note">Agent offline — start it to route and dispatch.</div>')
+      + (cw && !cw.error ? renderCrew(cw) : '');
     return;
   }
   /* Optimistic echo so the conversation feels continuous while the turn runs. */

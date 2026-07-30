@@ -7000,7 +7000,7 @@ def _cockpit_mods():
     # unavailable", the page rendered "Agent offline", and the standing band silently dropped the
     # chats / ready / would-revert cells — while the agent was plainly running and answering every
     # other route. A dependency list that goes stale as modules are added is its own failure mode.
-    for name in ("agent_router", "agent_exec", "agent_memory", "agent_chats", "agent_mine"):
+    for name in ("agent_router", "agent_exec", "agent_memory", "agent_chats", "agent_mine", "agent_roles"):
         try:
             out[name] = importlib.import_module(name)
         except Exception as e:
@@ -7144,6 +7144,31 @@ def api_cockpit_ledger():
         return jsonify(m["agent_exec"].ledger(limit=int(request.args.get("limit") or 100))), 200
     except Exception:
         return jsonify([]), 200
+
+
+@app.get("/api/cockpit/crew")
+def api_cockpit_crew():
+    """The crew for a task: PM -> engineer -> QA -> lead reviewer, each with its own model.
+
+    Read-only and free — it prices the crew against the solo route so the trade is visible BEFORE
+    anything runs. Most work should not use a crew; `recommended` says so, and on a lookup the
+    multiple is deliberately damning (>10x)."""
+    m = _cockpit_mods()
+    if not m.get("agent_roles"):
+        return jsonify(error="agent_roles unavailable", detail=m.get("errors")), 200
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify(error="q is required"), 400
+    try:
+        c = m["agent_roles"].crew_for(
+            q, cls=request.args.get("class", "auto"),
+            budget_pressure=float(request.args.get("budget_pressure") or 0))
+    except Exception as e:
+        return jsonify(error=str(e)[:300]), 200
+    # Briefs are long and already live in the agent definitions; the page needs the shape, not the prose.
+    for s in c.get("stages", []):
+        s.pop("system", None)
+    return jsonify(c), 200
 
 
 @app.get("/api/cockpit/chats")
