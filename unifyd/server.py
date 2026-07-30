@@ -6982,6 +6982,312 @@ def items_resolve_ep():
                    scanned=len(pool), candidates=ranked), 200
 
 
+# ── Hoodie Cockpit ───────────────────────────────────────────────────────────────────────────────
+# Agent routing + the fact store behind apps/cockpit.html.
+#
+# LOCAL-ONLY BY CONSTRUCTION. `/api/cockpit/run` shells out to the `claude` CLI, which authenticates
+# from the OAuth login in ~/.claude.json — a personal credential that exists on the Mac and nowhere
+# else. On the Fly-served instance there is no such login, so a dispatch there could only ever
+# either fail or (worse, if someone later set a key as a "fix") quietly bill the metered API. So the
+# execute route REFUSES when FLY_APP_NAME is set rather than depending on that never happening.
+# The read-only routes are safe anywhere and degrade to honest emptiness without the modules.
+def _cockpit_mods():
+    """Import the cockpit modules lazily. They're stdlib-only, but a missing module must degrade to a
+    clear message instead of 500-ing the whole server at import time."""
+    import importlib
+    out = {}
+    # agent_chats was missing here initially: /api/cockpit/fleet then reported "agent_chats
+    # unavailable", the page rendered "Agent offline", and the standing band silently dropped the
+    # chats / ready / would-revert cells — while the agent was plainly running and answering every
+    # other route. A dependency list that goes stale as modules are added is its own failure mode.
+    for name in ("agent_router", "agent_exec", "agent_memory", "agent_chats", "agent_mine"):
+        try:
+            out[name] = importlib.import_module(name)
+        except Exception as e:
+            out[name] = None
+            out.setdefault("errors", {})[name] = str(e)[:200]
+    return out
+
+
+def _on_fly():
+    return bool(os.environ.get("FLY_APP_NAME") or os.environ.get("FLY_MACHINE_ID"))
+
+
+@app.get("/api/cockpit/auth")
+def api_cockpit_auth():
+    """Which billing rail a dispatch would actually use. Never returns a secret value — only the
+    MODE, plus a warning when a stray ANTHROPIC_API_KEY would silently move spend onto the metered
+    API. Reports configuration, not token liveness (an expired OAuth token only shows up on a run)."""
+    m = _cockpit_mods()
+    if not m.get("agent_exec"):
+        return jsonify(mode="unavailable", warning="agent_exec did not import",
+                       api_key_in_env=bool(os.environ.get("ANTHROPIC_API_KEY"))), 200
+    a = m["agent_exec"].auth_mode()
+    if _on_fly():
+        a["mode"] = "read-only (served from Fly — dispatch disabled)"
+        a["warning"] = "Dispatch runs only on the Mac, where the OAuth login lives."
+    return jsonify(a), 200
+
+
+@app.get("/api/cockpit/route")
+def api_cockpit_route():
+    """Dry-run the routing decision for a task. Never spends anything — this is the cheap moment to
+    disagree with the router, which is the whole reason the Cockpit shows it before running."""
+    m = _cockpit_mods()
+    if not m.get("agent_exec"):
+        return jsonify(error="agent_exec unavailable", detail=m.get("errors")), 200
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify(error="q is required"), 400
+    try:
+        rec = m["agent_exec"].run(
+            q, cls=request.args.get("class", "auto"),
+            thread_id=request.args.get("thread_id") or None,
+            context_used=float(request.args.get("context_used") or 0),
+            budget_pressure=float(request.args.get("budget_pressure") or 0),
+            branching=(request.args.get("branching") == "1"),
+            carries_context=(False if request.args.get("no_context") == "1" else None),
+            dry_run=True)
+    except Exception as e:
+        return jsonify(error=str(e)[:300]), 200
+    return jsonify(route=rec.get("route"), argv_display=rec.get("argv_display"),
+                   auth=rec.get("auth"), error=rec.get("error")), 200
+
+
+@app.get("/api/cockpit/ask")
+def api_cockpit_ask():
+    """Answer from STORED FINDINGS if we can — the free path. Returns status hit | stale | miss.
+
+    `stale` is deliberately not a hit: matched facts exist but the files they were read from have
+    changed, so the honest move is to re-verify rather than serve a confident wrong answer."""
+    m = _cockpit_mods()
+    if not m.get("agent_memory"):
+        return jsonify(status="miss", facts=[], guidance="fact store unavailable"), 200
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify(error="q is required"), 400
+    try:
+        return jsonify(m["agent_memory"].answer(q, k=int(request.args.get("k") or 5))), 200
+    except Exception as e:
+        return jsonify(status="miss", facts=[], guidance="fact store error: %s" % str(e)[:200]), 200
+
+
+@app.get("/api/cockpit/memory")
+def api_cockpit_memory():
+    """Fact-store rollup, including the fresh/stale/unverifiable split."""
+    m = _cockpit_mods()
+    if not m.get("agent_memory"):
+        return jsonify(facts=0, subjects=0, verdicts={}), 200
+    try:
+        return jsonify(m["agent_memory"].stats()), 200
+    except Exception as e:
+        return jsonify(facts=0, subjects=0, verdicts={}, error=str(e)[:200]), 200
+
+
+@app.post("/api/cockpit/harvest")
+def api_cockpit_harvest():
+    """Seed the fact store from source_registry.py — the repo's own declared truth.
+
+    Seeding is what makes the FIRST ask of a triage question cheap; without it every question is a
+    first-time question and pays the full re-derivation loop once."""
+    m = _cockpit_mods()
+    if not m.get("agent_memory"):
+        return jsonify(ok=False, error="fact store unavailable"), 200
+    try:
+        return jsonify(ok=True, seeded=m["agent_memory"].harvest_registry()), 200
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:300]), 200
+
+
+_COCKPIT_FLEET = {"ts": 0.0, "rows": None}
+
+
+@app.get("/api/cockpit/fleet")
+def api_cockpit_fleet():
+    """Deploy readiness for every known chat — the "2 of 57 could ship safely" view.
+
+    CACHED, because honesty about cost applies to this surface too: the check runs `git merge-base`
+    per worktree and there are 57 of them, so an uncached call would stall the page for tens of
+    seconds every load. The response carries `computed_at` so a stale answer is visibly stale rather
+    than quietly old — pass ?refresh=1 to force a recompute."""
+    m = _cockpit_mods()
+    if not m.get("agent_chats"):
+        return jsonify(rows=[], computed_at=None, error="agent_chats unavailable"), 200
+    C = m["agent_chats"]
+    fresh = request.args.get("refresh") == "1"
+    if request.args.get("sync") == "1":
+        try:
+            C.sync_worktrees()
+        except Exception:
+            pass
+    age = time.time() - (_COCKPIT_FLEET["ts"] or 0)
+    if fresh or _COCKPIT_FLEET["rows"] is None or age > 60:
+        try:
+            _COCKPIT_FLEET["rows"] = C.fleet_readiness()
+            _COCKPIT_FLEET["ts"] = time.time()
+        except Exception as e:
+            return jsonify(rows=[], computed_at=None, error=str(e)[:200]), 200
+    rows = _COCKPIT_FLEET["rows"] or []
+    ready = [r for r in rows if r.get("ready")]
+    return jsonify(rows=rows, total=len(rows), ready=len(ready),
+                   at_risk=len(rows) - len(ready), computed_at=_COCKPIT_FLEET["ts"],
+                   lease=C.lease_state()), 200
+
+
+@app.get("/api/cockpit/ledger")
+def api_cockpit_ledger():
+    """Run history — the measured counterpart to the router's estimates."""
+    m = _cockpit_mods()
+    if not m.get("agent_exec"):
+        return jsonify([]), 200
+    try:
+        return jsonify(m["agent_exec"].ledger(limit=int(request.args.get("limit") or 100))), 200
+    except Exception:
+        return jsonify([]), 200
+
+
+@app.get("/api/cockpit/chats")
+def api_cockpit_chats():
+    """Chats you've actually talked to, for the switcher. NOT all 57 worktrees — a worktree you've
+    never spoken to is a deploy-safety subject, not a conversation."""
+    m = _cockpit_mods()
+    if not m.get("agent_chats"):
+        return jsonify(chats=[]), 200
+    C = m["agent_chats"]
+    cid = request.args.get("chat_id")
+    if cid:
+        return jsonify(chat_id=cid, messages=C.transcript(cid)), 200
+    return jsonify(chats=C.recent_chats()), 200
+
+
+@app.post("/api/cockpit/chat")
+def api_cockpit_chat():
+    """ONE TURN of an ongoing chat: facts first, model only on a miss.
+
+    The order is the whole point. A hit answers from a stored finding with a citation and spends
+    nothing — measured, that's the 66.9% of cost currently going to re-derived quick answers. Only a
+    miss reaches the model, and then the router decides continue / fork / new so the context carried
+    is a deliberate choice rather than whatever the last session happened to hold."""
+    if _on_fly():
+        return jsonify(error="Chat dispatch is disabled on the Fly-served instance — the OAuth login "
+                             "that bills your subscription exists only on the Mac."), 403
+    m = _cockpit_mods()
+    C, X, M = m.get("agent_chats"), m.get("agent_exec"), m.get("agent_memory")
+    if not (C and X):
+        return jsonify(error="cockpit modules unavailable", detail=m.get("errors")), 200
+    body = request.get_json(silent=True) or {}
+    q = (body.get("q") or "").strip()
+    if not q:
+        return jsonify(error="q is required"), 400
+    # Mint a stable chat id up front so EVERY conversation has an identity — including one answered
+    # entirely from the fact store, which never gets a CLI session. Without this, all such chats piled
+    # into one shared "unassigned" transcript and two unrelated conversations merged (observed).
+    chat_id = body.get("chat_id") or None
+    ch = C.get(chat_id) if chat_id else None
+    if not chat_id:
+        chat_id = C.new_chat_id()
+        ch = C.upsert(chat_id, subject=q[:70], worktree=body.get("cwd") or None)
+    C.add_message(chat_id, "user", q)
+
+    # 1. FREE PATH — already known?
+    facts = None
+    if M and not body.get("force_model"):
+        try:
+            facts = M.answer(q)
+        except Exception:
+            facts = None
+    if facts and facts.get("status") == "hit":
+        lines = ["%s %s = %s   [%s]" % (f["subject"], f["claim"], f["value"],
+                                        f.get("evidence_path") or f.get("evidence_cmd") or "no evidence")
+                 for f in facts["facts"]]
+        text = "\n".join(lines)
+        C.add_message(chat_id, "assistant", text, source="facts", tokens=0)
+        C.upsert(chat_id, bump=True)
+        return jsonify(status="hit", facts=facts, answer=text, chat_id=chat_id, spent=False), 200
+
+    # 2. MISS -> route and dispatch, carrying this chat's thread state.
+    # The chat's id IS the CLI session id for any chat created by a dispatch, so it is what --resume
+    # takes. There is no separate session_id column and adding one would just be two names for it.
+    rec = X.run(q,
+                cls=body.get("class", "auto"),
+                thread_id=(ch or {}).get("session_id"),
+                thread_subject=(ch or {}).get("subject") or "",
+                context_used=float(body.get("context_used") or 0),
+                carries_context=(False if body.get("no_context") else None),
+                branching=bool(body.get("branching")),
+                budget_pressure=float(body.get("budget_pressure") or 0),
+                cwd=(ch or {}).get("worktree") or None,
+                dry_run=bool(body.get("dry_run")))
+    route = rec.get("route") or {}
+    if rec.get("dry_run"):
+        return jsonify(status="dry-run", route=route, argv_display=rec.get("argv_display"),
+                       chat_id=chat_id, spent=False), 200
+    sid = rec.get("session_id")
+    if sid:
+        # The CLI's session id becomes the chat's identity so the next turn can --resume it.
+        C.upsert(sid, subject=(ch or {}).get("subject") or q[:70],
+                 worktree=(ch or {}).get("worktree"), bump=True)
+    answer = rec.get("result") or rec.get("error") or rec.get("stdout_raw") or "(no result)"
+    u = rec.get("usage") or {}
+    C.add_message(chat_id, "assistant", answer,
+                  route=route, source=("error" if rec.get("error") else "model"),
+                  tokens=(u.get("input_tokens") or 0) + (u.get("output_tokens") or 0))
+    return jsonify(status=("error" if rec.get("error") else "answered"),
+                   answer=answer, route=route, chat_id=chat_id, session_id=sid,
+                   needs_auth=bool(rec.get("needs_auth")), error=rec.get("error"),
+                   usage=u, argv_display=rec.get("argv_display"), spent=not rec.get("error")), 200
+
+
+@app.post("/api/cockpit/lease")
+def api_cockpit_lease():
+    """Take or release the deploy lease. Acquiring is a GATE — it refuses a tree that would revert
+    anyone, and returns the readiness verdict so the page can say exactly why."""
+    m = _cockpit_mods()
+    if not m.get("agent_chats"):
+        return jsonify(ok=False, error="agent_chats unavailable"), 200
+    C = m["agent_chats"]
+    body = request.get_json(silent=True) or {}
+    cid, action = body.get("chat_id"), (body.get("action") or "acquire")
+    if not cid:
+        return jsonify(ok=False, error="chat_id is required"), 400
+    try:
+        if action == "release":
+            return jsonify(C.release_deploy_lease(cid)), 200
+        return jsonify(C.acquire_deploy_lease(cid, note=body.get("note"))), 200
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:300]), 200
+
+
+@app.post("/api/cockpit/run")
+def api_cockpit_run():
+    """ACTUALLY dispatch a task to Claude Code. Spends real subscription budget, so it is POST-only
+    and never reachable from the Fly-served instance (see the module note above)."""
+    if _on_fly():
+        return jsonify(error="Dispatch is disabled on the Fly-served instance — the OAuth login "
+                             "that bills your subscription exists only on the Mac. Run "
+                             "`python unifyd/server.py` locally to dispatch."), 403
+    m = _cockpit_mods()
+    if not m.get("agent_exec"):
+        return jsonify(error="agent_exec unavailable", detail=m.get("errors")), 200
+    body = request.get_json(silent=True) or {}
+    q = (body.get("q") or "").strip()
+    if not q:
+        return jsonify(error="q is required"), 400
+    try:
+        rec = m["agent_exec"].run(
+            q, cls=body.get("class", "auto"), thread_id=body.get("thread_id") or None,
+            context_used=float(body.get("context_used") or 0),
+            budget_pressure=float(body.get("budget_pressure") or 0),
+            branching=bool(body.get("branching")),
+            carries_context=(False if body.get("no_context") else None),
+            cwd=body.get("cwd") or None, dry_run=False,
+            timeout=int(body.get("timeout") or 900))
+    except Exception as e:
+        return jsonify(error=str(e)[:300]), 200
+    rec.pop("argv", None)          # holds the full prompt text; the display form is already present
+    return jsonify(rec), 200
+
+
 if __name__ == "__main__":
     _port = int(os.environ.get("PORT", "8765"))          # PORT override lets a second dev agent run beside 8765
     print("Unifyd agent on http://127.0.0.1:%d  (Ctrl-C to stop)" % _port)
