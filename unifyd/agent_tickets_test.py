@@ -32,6 +32,56 @@ def main():
     print("agent_tickets — forward-only lifecycle for real acceptance criteria")
     import agent_tickets as A
 
+    # --- 0. derive_title: robust to the model wrapping its answer in its OWN headings -------------
+    # Real draft observed live: asked for "the outcome in one sentence first", the model opened with
+    # "## Acceptance criteria" instead and put the actual outcome sentence under a LATER "## Outcome"
+    # heading. A naive first-line grab returned the literal word "Outcome" as the ticket's title.
+    real_draft = (
+        "## Acceptance criteria\n\n"
+        "## Outcome\n\n"
+        "Add a standalone `unifyd/browser_warm_test.py` unit-test suite covering the module's pure "
+        "logic.\n\n"
+        "## Acceptance criteria\n\n"
+        "1. it exists\n2. it passes\n")
+    t0 = A.derive_title(real_draft, "fallback")
+    check("finds the sentence under a LATER '## Outcome' heading, not the first heading it sees",
+          t0.startswith("Add a standalone"), t0)
+    check("strips the backtick-code markup from the title", "`" not in t0, t0)
+    check("title is never just the word 'Outcome' (the bug this exists to fix)",
+          t0.strip().lower() != "outcome", t0)
+
+    check("plain prose with no headings at all just uses the first line",
+          A.derive_title("Fix the publix parse.\n\nMore detail below.", "fb") == "Fix the publix parse.")
+    # A heading is ALWAYS a section label in this domain (Outcome / Acceptance Criteria / Out of
+    # Scope / Risk, per ROLES[PM]'s own requested structure) — never the title itself. So a draft
+    # that opens with a heading skips straight past it to the first real prose underneath, rather
+    # than using the heading text as the title.
+    check("a heading is skipped even when it's the very first line — the prose under it wins",
+          A.derive_title("# Ship the new connector\n\nDetails.", "fb") == "Details.")
+    check("**bold** markup is stripped from the title",
+          A.derive_title("**Fix the retry loop**\n\nrest", "fb") == "Fix the retry loop")
+
+    # A second real draft (same session, different dispatch): no "## Outcome" heading at all, the
+    # outcome sentence sits inline under "## Acceptance criteria" labeled with a bold "**Outcome:**"
+    # prefix instead. Not hypothetical — this is the literal shape a real dispatch produced.
+    real_draft_2 = ("## Acceptance criteria\n\n"
+                    "**Outcome:** Add a test suite for `unifyd/browser_warm.py` that would have "
+                    "caught each of the 7 prior breaks.\n\n"
+                    "**Acceptance criteria:**\n1. it exists\n")
+    t2 = A.derive_title(real_draft_2, "fb")
+    check("an inline '**Outcome:**' label (no heading) is stripped, not left as a prefix",
+          t2.startswith("Add a test suite"), t2)
+    check("...and the label word 'Outcome' doesn't survive anywhere in the title",
+          "outcome" not in t2.lower(), t2)
+    check("blank/empty draft falls back rather than returning an empty title",
+          A.derive_title("", "fallback title") == "fallback title")
+    check("a draft that's ONLY headings, no prose anywhere, falls back rather than returning ''",
+          A.derive_title("## Acceptance criteria\n## Outcome\n## Scope", "fallback title")
+          == "fallback title")
+    long_line = "x" * 200
+    check("title is capped at 120 chars, not left to grow unbounded",
+          len(A.derive_title(long_line, "fb")) == 120, A.derive_title(long_line, "fb"))
+
     tmp = tempfile.mkdtemp(prefix="tickets-")
     old_state, old_dir, old_index = A.STATE, A.TICKETS_DIR, A.INDEX
     A.STATE = tmp
