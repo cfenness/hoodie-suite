@@ -186,6 +186,29 @@ def main():
         check("...with the ROUTE's task text as its subject (not truncated, not blank)",
               saved["s-mocked"]["subject"] == "what does the mocked dispatch prove", saved["s-mocked"])
 
+    # --- 8. a non-JSON / non-zero-exit dispatch MUST set rec["error"] -----------------------------
+    # Found live while wiring agent_roles.run_crew() to a real endpoint: a stage whose CLI call
+    # exited non-zero with plain-text (not JSON) stdout got NO rec["error"] at all — only the 401
+    # special-case and the auth-refusal/timeout paths ever set it. A caller that only checks
+    # rec.get("error") to decide whether a dispatch succeeded (run_crew's "stop at the first failing
+    # stage", api_cockpit_chat's status=answered/error) saw neither an error nor a result and treated
+    # a real failure as an ordinary quiet miss. Missing the error is worse than a generic one: it
+    # looks like nothing went wrong.
+    class _BadProc:
+        returncode = 1
+        stdout = "not json, a real CLI error"
+        stderr = "boom"
+    old_run2 = X.subprocess.run
+    X.subprocess.run = lambda *a, **kw: _BadProc()
+    try:
+        rec_bad = X.run("anything", dry_run=False)
+    finally:
+        X.subprocess.run = old_run2
+    check("a non-JSON, non-zero-exit response sets rec[error]", bool(rec_bad.get("error")), rec_bad)
+    check("...using the actual stderr as the error text, not a generic placeholder",
+          "boom" in rec_bad["error"], rec_bad)
+    check("...and no result is reported alongside it (never both)", rec_bad.get("result") is None, rec_bad)
+
     print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
     return 1 if FAILED else 0
 
