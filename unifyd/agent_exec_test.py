@@ -11,8 +11,10 @@ as a prompt argument" — an error naming the prompt while the actual cause was 
 
     python3 unifyd/agent_exec_test.py
 """
+import json
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -135,6 +137,54 @@ def main():
           "stdin" in rec["argv_display"], rec["argv_display"])
     check("dry_run defaults to True (a function that spends by default spends by accident)",
           X.run("x").get("dry_run") is True)
+
+    # --- 7. a full (mocked) dispatch — the ONLY path everything above deliberately never exercises --
+    # Every check above avoids a real subprocess on purpose (that's what protects the test suite from
+    # spending real budget). But that leaves the success path — result parsing, ledger write, thread
+    # save — with zero coverage, and `dispatch()`'s split from `run()` moved code that referenced the
+    # route dict's own `task` field; a plain rename slip there (`task` instead of `r["task"]`) would
+    # NameError on every real, non-dry-run success and nothing above would catch it. Mock the one
+    # thing that actually costs money (subprocess.run) and let everything else run for real.
+    tmp_state = tempfile.mkdtemp(prefix="exec-state-")
+    tmp_ledger, tmp_threads = os.path.join(tmp_state, "ledger.jsonl"), os.path.join(tmp_state, "threads.json")
+    old_state, old_ledger, old_threads = X.STATE, X.LEDGER, X.THREADS
+    X.STATE, X.LEDGER, X.THREADS = tmp_state, tmp_ledger, tmp_threads
+    old_subprocess_run = X.subprocess.run
+
+    class _FakeProc:
+        returncode = 0
+        stdout = json.dumps(dict(result="mocked answer", session_id="s-mocked",
+                                 usage=dict(input_tokens=10, output_tokens=5),
+                                 total_cost_usd=0.001, num_turns=1, is_error=False))
+        stderr = ""
+
+    def _fake_run(*a, **kw):
+        return _FakeProc()
+
+    X.subprocess.run = _fake_run
+    try:
+        rec = X.run("what does the mocked dispatch prove", dry_run=False)
+    finally:
+        X.subprocess.run = old_subprocess_run
+        X.STATE, X.LEDGER, X.THREADS = old_state, old_ledger, old_threads
+
+    check("a mocked success parses the result", rec.get("result") == "mocked answer", rec)
+    check("...and the session id", rec.get("session_id") == "s-mocked", rec)
+    check("...and usage", rec.get("usage", {}).get("input_tokens") == 10, rec)
+    check("no error on a clean mocked success", not rec.get("error"), rec)
+
+    with open(tmp_ledger, encoding="utf-8") as fh:
+        ledger_lines = [json.loads(l) for l in fh if l.strip()]
+    check("a real dispatch appends one ledger line", len(ledger_lines) == 1, ledger_lines)
+
+    with open(tmp_threads, encoding="utf-8") as fh:
+        saved = json.load(fh)
+    check("the thread is saved under the mocked session id", "s-mocked" in saved, saved)
+    if "s-mocked" in saved:
+        # This is the exact line dispatch()'s split from run() nearly broke: it used to read the
+        # bare local `task`, which only existed in run()'s own scope, not dispatch()'s.
+        check("...with the ROUTE's task text as its subject (not truncated, not blank)",
+              saved["s-mocked"]["subject"] == "what does the mocked dispatch prove", saved["s-mocked"])
 
     print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
     return 1 if FAILED else 0

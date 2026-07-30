@@ -31,6 +31,8 @@ def main():
     print("agent_roles — a crew, not one model wearing four hats")
     import agent_roles as A
     import agent_router as R
+    import agent_exec as X_module
+    X_available = bool(X_module._which_claude())
 
     # --- 1. THE GUARANTEE: no checker below the author ------------------------------------------
     # `master` routes the author to opus, while QA's role default is sonnet. QA must be lifted.
@@ -145,6 +147,76 @@ def main():
         check("%s is marked generated" % role, "GENERATED from" in txt, role)
         check("%s declares no write tool" % role,
               not re.search(r"^tools:.*\b(Write|Edit)\b", txt, re.M), role)
+
+    # --- 7. _stage_prompt: threading between stages, testable without a single dispatch ------------
+    # A dry run never produces a `result` for any stage, so run_crew()'s own dry-run mode can never
+    # exercise this threading — it has to be pinned directly.
+    task = "fix the publix parse"
+    check("PM sees the bare task, nothing to thread in yet",
+          A._stage_prompt(task, A.PM, {}) == task)
+    check("engineer with no PM output yet just gets the task",
+          A._stage_prompt(task, A.ENGINEER, {}) == task)
+    eng_prompt = A._stage_prompt(task, A.ENGINEER, {A.PM: "must handle a missing selector cleanly"})
+    check("engineer gets the PM's definition of done", "missing selector" in eng_prompt, eng_prompt)
+    check("...and the original task, so the brief doesn't replace it", task in eng_prompt, eng_prompt)
+
+    qa_prompt = A._stage_prompt(task, A.QA, {A.PM: "must handle X", A.ENGINEER: "changed publix.py"})
+    check("QA sees the PM's definition of done", "must handle X" in qa_prompt, qa_prompt)
+    check("QA sees the engineer's own report", "changed publix.py" in qa_prompt, qa_prompt)
+    check("QA is told to verify against the tree, not trust the report",
+          "verify" in qa_prompt.lower() and "git diff" in qa_prompt, qa_prompt)
+    qa_prompt_bare = A._stage_prompt(task, A.QA, {})
+    check("QA degrades gracefully with nothing to thread (subset crew, no PM/engineer ran)",
+          task in qa_prompt_bare and "git diff" in qa_prompt_bare, qa_prompt_bare)
+
+    rev_prompt = A._stage_prompt(task, A.REVIEWER, {A.QA: "found an off-by-one in the retry count"})
+    check("reviewer sees what QA found", "off-by-one" in rev_prompt, rev_prompt)
+    check("reviewer is told to verify independently, not trust QA",
+          "not against what qa" in rev_prompt.lower(), rev_prompt)
+
+    # --- 8. run_crew(): the scriptable orchestration itself -----------------------------------------
+    if not X_available:
+        print("  claude CLI not found — run_crew dispatch tests need it to resolve a path")
+    else:
+        res = A.run_crew("fix the publix parse", cls="scrape", dry_run=True)
+        check("one result per planned stage", len(res["results"]) == len(res["plan"]["stages"]),
+              (len(res["results"]), len(res["plan"]["stages"])))
+        check("stages run in the plan's own order",
+              [r["role"] for r in res["results"]] == [s["role"] for s in res["plan"]["stages"]],
+              [r["role"] for r in res["results"]])
+        by_role = {r["role"]: r for r in res["results"]}
+        check("each stage's dispatched model matches its planned model",
+              all(by_role[s["role"]]["route"]["model"] == s["model"] for s in res["plan"]["stages"]),
+              {r: by_role[r]["route"]["model"] for r in by_role})
+        check("each stage's dispatched effort matches its planned effort",
+              all(by_role[s["role"]]["route"]["effort"] == s["effort"] for s in res["plan"]["stages"]))
+        check("PM/QA/reviewer's argv actually carries --allowedTools (a mechanical tool restriction)",
+              all("--allowedTools" in by_role[r]["argv_display"] for r in (A.PM, A.QA, A.REVIEWER)),
+              {r: by_role[r]["argv_display"][:120] for r in (A.PM, A.QA, A.REVIEWER)})
+        check("dry run spends nothing (no stage produces a result)",
+              all(r.get("result") is None for r in res["results"]), res["results"])
+        check("ok is true when every stage's argv built cleanly", res["ok"] is True, res)
+        check("run_crew defaults to dry_run (spending 3-4x by accident is worse than 1x)",
+              A.run_crew("x", cls="triage").get("results", [{}])[0].get("dry_run") is True)
+
+        # A subset crew must still dispatch only the requested roles, in order.
+        sub_res = A.run_crew("dedup upc", cls="master", roles=[A.ENGINEER, A.REVIEWER], dry_run=True)
+        check("a subset crew only runs the requested roles",
+              [r["role"] for r in sub_res["results"]] == ["engineer", "reviewer"],
+              [r["role"] for r in sub_res["results"]])
+
+        # A broken stage (build_argv can't resolve `claude`) must stop the crew, not silently continue.
+        old_which = X_module._which_claude
+        X_module._which_claude = lambda: None
+        try:
+            broken = A.run_crew("fix the publix parse", cls="scrape", dry_run=True)
+        finally:
+            X_module._which_claude = old_which
+        check("a stage that fails to build stops the crew rather than continuing past it",
+              len(broken["results"]) < len(broken["plan"]["stages"]), broken["results"])
+        check("...and is reported as an error, not silently skipped",
+              bool(broken["results"][-1].get("error")), broken["results"][-1])
+        check("ok is False when a stage errors", broken["ok"] is False, broken)
 
     print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
     return 1 if FAILED else 0

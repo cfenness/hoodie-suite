@@ -239,7 +239,7 @@ def build_argv(route_dict, cwd=None, session_id=None, resume_id=None, allowed_to
 def run(task, cls="auto", thread_id=None, thread_subject="", context_used=0.0,
         carries_context=None, branching=False, budget_pressure=0.0, tactics=None,
         cwd=None, dry_run=True, timeout=900):
-    """Route then (optionally) execute. Returns a record that is ALSO the ledger line.
+    """Route then execute. Returns a record that is ALSO the ledger line.
 
     dry_run=True is the default on purpose: this spends real subscription budget, and a function
     that runs by default is one that runs by accident."""
@@ -251,13 +251,25 @@ def run(task, cls="auto", thread_id=None, thread_subject="", context_used=0.0,
     r = router.route(task, cls=cls, thread=th, context_used=context_used,
                      carries_context=carries_context, branching=branching,
                      budget_pressure=budget_pressure, tactics=tactics)
+    return dispatch(r, thread_id=thread_id, cwd=cwd, dry_run=dry_run, timeout=timeout)
 
+
+def dispatch(r, thread_id=None, cwd=None, dry_run=True, timeout=900, allowed_tools=None):
+    """Execute an ALREADY-ROUTED task. `run()` is this plus a `router.route()` call in front of it —
+    split apart so a caller with its own routing decision can reuse the same argv-build / subprocess /
+    ledger machinery instead of a second copy of it drifting alongside.
+
+    That caller is agent_roles' crew stages: a stage's model/effort/tools come from `crew_for()`
+    (author-tier floor, role-scoped tool lists), not from agent_router's class-based policy, so it
+    can't go through `run()` — but it still needs everything `run()` does after routing: the
+    auth-rail refusal, the argv shape, the JSON/non-JSON result handling, the ledger line."""
     rec = dict(ts=time.time(), route=r, auth=auth_mode(), dry_run=bool(dry_run),
                cwd=cwd or os.getcwd())
     action = r["thread"]["action"]
     new_id = str(uuid.uuid4()) if action == "new" else None
     try:
-        rec["argv"] = build_argv(r, cwd=cwd, session_id=new_id, resume_id=thread_id)
+        rec["argv"] = build_argv(r, cwd=cwd, session_id=new_id, resume_id=thread_id,
+                                 allowed_tools=allowed_tools)
     except RuntimeError as e:
         rec["error"] = str(e)
         return rec
@@ -315,7 +327,7 @@ def run(task, cls="auto", thread_id=None, thread_subject="", context_used=0.0,
 
     sid = rec.get("session_id") or new_id
     if sid:
-        _save_thread(sid, task[:160], meta=dict(
+        _save_thread(sid, r["task"][:160], meta=dict(
             last_class=r["task_class"], last_model=r["model"], last_action=action))
     _append_ledger(rec)
     return rec
