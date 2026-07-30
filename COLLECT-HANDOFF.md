@@ -223,6 +223,31 @@ genuine thread-scheduling races against live latency, which unit tests correctly
 reproduce). The next attempt should reuse Attempt 2's design (simultaneous processes, shared pool) now
 that the router itself doesn't self-collide at cold start.
 
+### 1e. The fleet-scale replay: 8 shards, near-0% — a bug no single shard's metrics could see
+
+The fix in §1c was validated single-process. Running the actual fleet — 8 independent shard processes
+against the shared 50-IP pool, each its own `python3` interpreter — hit a failure mode invisible to
+§1d's two-process A/B and to `identity_router_test.py`'s cold-start regression test alike: **`Router`
+state lives in one process's memory** (`_GLOBAL = {"router": Router()}`, module-level). Eight shards
+means eight routers, each blind to the other seven's picks. Shard 3's `_hot()` check only ever sees
+shard 3's own activity; it has no way to know shard 7 primed a session on the same exit ten seconds ago.
+That is the exact concentration disaster `identity_router` exists to prevent (§1b/1c), recreated one
+level up — across processes instead of within one.
+
+Measured: a small-scale control test (one shard, one router, full `HOT_MAX`/quarantine logic intact)
+ran **95–100% usable**. The same code, same pool, same costume, run as the real 8-shard fleet:
+**near-0%**. No single shard's own metrics explained it — `blocks.flat()`, `pace.stats()`, and each
+shard's own `identity_router.stats()` all read as locally reasonable; the collision only became visible
+by holding the control number and the fleet number side by side. Diagnosed and patched live by giving
+each shard a disjoint slice of the exit pool (static partition at launch, no shared state needed) — the
+same prescription as §1b's "spread load across exits," applied one level higher.
+
+**This was a visibility problem, not a modeling problem.** No component in the fleet had a fleet-wide
+view, so no per-shard rule — human-authored or otherwise — could have caught it from inside a single
+shard. §9 covers what that implies for automated detection of this class of issue, and why the durable
+fix is architectural (shared router state or permanent static partitioning), not a smarter watchdog
+bolted on after the fact.
+
 ---
 
 ## 2. What got built today, and why each piece exists
@@ -396,28 +421,40 @@ The original §1 items — concurrency-vs-cumulative, surface per-exit attributi
 from burst-damage, and (as of later the same day) survivor durability / step replication / global-vs-
 costume — are **all done**. The last three didn't resolve individually; they dissolved into one finding
 (§1): exit and costume health both drift substantially within an hour, in either direction, for a cause
-not yet identified. That finding is what drives the list below.
+not yet identified. That finding drives most of the list below. **One item jumped the queue the same
+day**: running the real 8-shard fleet surfaced a visibility bug the single/two-process validation
+couldn't (§1e) — that's now first, ahead of the router-on-vs-off number, because it's cheaper, more
+certain, and the on/off number means nothing at fleet scale until it's fixed anyway.
 
-1. **Get a clean router-on-vs-off number (§1d).** The design is right — two processes, launched
+1. **Fix the router's per-process blindness (§1e).** Either give `identity_router` shared state across
+   the shards on one machine (a small local coordinator — socket or HTTP — behind the same `pick()`/
+   `record()` calls, replacing the per-process `_GLOBAL` singleton) or make disjoint exit partitioning
+   the permanent launch-time default instead of tonight's live patch. Deterministic, $0, and removes the
+   failure class structurally rather than detecting it after the fact — do this before item 3.
+2. **Prototype the Layer-1 fleet aggregator from §9** — the cross-sectional hot-exit-overlap check. Cheap
+   to add (one new field on the existing `_beat()` heartbeat: each shard's current top-N hot exits) and
+   worth having even after item 1 ships, as the thing that would have caught tonight's collision in
+   minutes instead of an offline control-vs-fleet comparison.
+3. **Get a clean router-on-vs-off number (§1d).** The design is right — two processes, launched
    simultaneously, `IDENTITY_ROUTER=1`/`=0`, hitting the SAME shared pool at the SAME moment so ambient
    drift can't confound the comparison. It just needs to actually finish this time: the OFF process
    vanished mid-run with no diagnosable cause. Retry with each process's own heartbeat/liveness log line
    on a short interval, so a silent death is caught within seconds rather than discovered as a missing
    file at the end.
-2. **If the router helps, retest the "don't buy proxies" decision (§5) properly.** It's now finally
+4. **If the router helps, retest the "don't buy proxies" decision (§5) properly.** It's now finally
    answerable — hold costume and pin behavior constant, use the router's live health signal instead of a
    snapshot, and see whether more identities move the needle now that concentration and drift are being
    routed around instead of blindly walked into.
-3. **Find out WHY health drifts on an hour timescale.** Not required for the router to help, but worth
+5. **Find out WHY health drifts on an hour timescale.** Not required for the router to help, but worth
    knowing: is it the target's own reputation scoring cycling, interference from other Hoodie traffic
    sharing the pool, or genuine randomness in their defense? Correlating drift timestamps against
    dispatcher activity logs (other sources' scheduled runs) is the cheapest first cut.
-4. **Prove `ue_enrich` end-to-end.** It has never completed a run — it died on a schema bug every time,
+6. **Prove `ue_enrich` end-to-end.** It has never completed a run — it died on a schema bug every time,
    so everything past its first query is unexercised. UPC backfill is unproven.
-5. **`pool_health` on a schedule.** A pool silently drifting to 52% foreign looked exactly like "the
+7. **`pool_health` on a schedule.** A pool silently drifting to 52% foreign looked exactly like "the
    target got harder". That should page, not wait for someone to check — and given §1, a schedule alone
    isn't enough; whatever consumes its output needs to treat an hour-old reading as stale, not current.
-6. **Then** revisit the 3-hour target with real router-on throughput numbers in hand, not the pre-router
+8. **Then** revisit the 3-hour target with real router-on throughput numbers in hand, not the pre-router
    ceiling. §1 already retires the old "it's a pacing problem" framing.
 
 ---
@@ -462,3 +499,114 @@ not yet identified. That finding is what drives the list below.
 - **A `pool_health --fire` run over ~200 requests can itself take 10+ minutes when the costume is
   mostly blocked** (soft_block/captcha round-trips are not fast failures) — budget for that when
   scheduling it (§7 item 6), and detach long runs per §6's guidance rather than holding an ssh session.
+
+---
+
+## 9. Proposed: a fleet-scale watchdog (design only — NOT built, nothing below is measured)
+
+Scoped in response to §1e: could something have caught the 8-shard collision autonomously, and taken a
+bounded corrective action, instead of needing a human to compare a control run against the fleet run by
+hand? Investigated, not implemented. Two conclusions came out of looking at it, and the second is the
+one worth building first.
+
+### 9a. Reframe: §1e was a visibility bug, not a modeling bug — fix that first, for free
+
+Before designing any detection layer, it's worth being honest that §1e didn't need one. The router
+missed the collision because **no process had a fleet-wide view**, not because the health/concentration
+math was wrong — `identity_router`'s own logic, given a correct view of the whole pool, already does the
+right thing (that's what the 95–100% single-shard control proved). Two deterministic fixes remove the
+failure class outright, no model involved, no telemetry to watch:
+
+- **Shared router state.** Replace the per-process `_GLOBAL = {"router": Router()}` singleton with calls
+  into one shared coordinator (a small local socket/HTTP server, since all 8 shards run on the same
+  ephemeral machine) so `pick()`/`record()` see every shard's activity, not just their own. `_hot()` and
+  the quarantine logic don't change at all — they just start seeing the truth.
+- **Permanent disjoint partitioning.** Make tonight's live patch (give each shard its own exit slice) the
+  default at launch, not a manual intervention. Cheaper than the coordinator, slightly less efficient
+  (a shard can't borrow a neighbor's idle exit), but zero new moving parts.
+
+Either one is a same-day, $0 build, and **should happen regardless of §9b below** — an LLM diagnosing
+this failure after the fact is strictly worse than a fleet that structurally can't produce it. §7 item 1
+tracks this.
+
+### 9b. Where an LLM layer earns its keep: the *next* failure, not this one
+
+The actual candidate for automation isn't "catch this exact bug" — 9a already does that for free — it's
+the triage work in §1 that a human did by hand: forming a hypothesis, running a control comparison,
+retracting the hypothesis when the comparison turns out confounded (§1's `exit_offset=0` retraction, the
+`costume_probe` mislabeling, the global-vs-per-costume confound), and only then landing on a real
+mechanism. That process is exactly what would be needed for the *next* fleet-scale anomaly that isn't
+this one — a shard silently wedged at 0 progress, a mid-run deploy that restarted the machine under one
+shard's feet, a costume family going bad only on the fleet's specific exit slice. Nothing watches for
+that class of thing today except a human noticing the numbers look wrong.
+
+**Two-layer design**, following a pattern already trusted in this codebase (`health_digest.py` +
+`self_heal.py`: a deterministic verdict, with an LLM triage layer that **never changes the verdict** —
+see `unifyd/health_digest.py`'s `latest_triage.md`).
+
+**Layer 1 — deterministic fleet aggregator. Build this whether or not Layer 2 ever happens.**
+A sidecar process on the *same ephemeral machine* as the shards (co-located, not the hourly dispatcher —
+that ticks once/hour; an in-flight multi-hour pull needs sub-minute reaction). It tails each shard's
+`HOODIE_PROGRESS` stdout (`ue_catalog._progress`/`_beat`, unifyd/ue_catalog.py:271-278,542-578) and
+computes one new check that §1e's collision would have tripped in the first few minutes: **cross-shard
+hot-exit overlap, right now**. This needs one new, cheap heartbeat field — each shard's current top-N hot
+exits (`identity_router` already tracks per-exit recency internally; `_beat()` deliberately omits it
+today, "a heartbeat carrying 50 exits every beat is noise nobody reads" — top-3 is not that). The
+aggregator flags the moment two-plus shards' hot sets intersect.
+
+This is deliberately **cross-sectional, not trend-based**. Every trend-based read in §1 got confounded by
+ambient hour-scale drift and had to be retracted or re-run (the `exit_offset=0` artifact, the
+`costume_probe` concurrency-vs-trajectory mislabeling, the global-vs-per-costume comparison that
+"dissolved" because the two costumes never held still long enough to compare). "Two shards are touching
+the same exit in the same 15-second window" doesn't care whether the pool is drifting — it's true or
+false at that instant. Prefer this shape over "success rate fell 40pp," which is exactly the shape that
+kept turning out to mean something else.
+
+**Layer 2 — LLM triage, triggered, not polled.** When Layer 1 flags an overlap it can't fully explain (or
+periodically, every 5–10 min, as a second opinion during an active run — not continuously, to keep this
+cheap), bundle a compact snapshot — recent heartbeats across all shards, `blocks.flat()`, `pace.stats()`,
+aggregated `identity_router.stats()`, and the Layer-1 flag itself — into a forced-tool-call Claude
+request, the same shape as `self_heal.py`'s column-recovery fallback. Output is a structured verdict
+against a small fixed taxonomy (cross-shard collision / costume-family block / pool-wide degrade /
+stalled shard / deploy-interrupted run / unknown-alert-only) plus **at most one proposed action, from a
+hardcoded allowlist**, never free-form code or shell access:
+
+- propose a disjoint exit re-partition across shards
+- propose pausing N shards (reduce aggregate concurrency)
+- propose a `ladder` rung/costume escalation (already a free, existing lever — see `ladder.py`)
+- alert-only, take no action — the default whenever confidence is low or the finding doesn't fit the
+  taxonomy
+
+### 9c. Guardrails — every one of these matches a rule this codebase already enforces elsewhere
+
+- **Never auto-escalate into spend.** Hard-blocked from ever touching `FETCH_POLICY`, proxy tier, or
+  `ISP_PROXIES` — full stop, no exception path. If the model's output "recommends" a paid proxy, that
+  string is logged for a human and nothing executes it, mirroring the hard `False` `resi.paygo_allowed()`
+  returns unless a human sets `FETCH_POLICY=paid`.
+- **Propose-only at first, matching `latest_triage.md`'s "judgment layer, never changes the verdict."**
+  Earn trust across several real incidents alert-only before any auto-apply is allowed at all, and even
+  then scope auto-apply to the single provably-reversible, provably-free action (re-partition) —
+  pausing shards or escalating the ladder stay propose-to-a-human indefinitely, since they trade off
+  against the day's throughput budget in ways a $0 partition change doesn't.
+- **Bounded action executor, not an agent with shell access.** The model emits a JSON decision; a small,
+  separately unit-tested Python function is the only thing that ever touches production — same pattern
+  as `menu_ingest.parse_smart`'s forced-tool-call fallback, never the model executing arbitrary code.
+- **Its own kill switch** (`FLEET_WATCHDOG=0`), and the fleet must run identically with it off — every
+  other controller here (`adapt`, `ladder`, `identity_router`) already follows this rule; a watchdog that
+  can become the reason a scrape can't run would violate the one principle every other module here was
+  built to satisfy.
+- **Triggered, not continuous — the actual "minimize dollars" lever.** Layer 1 does the constant
+  watching for free (pure Python, no API calls). Layer 2 only fires on a Layer-1 flag or a coarse
+  cadence during an active run, never per-request and never against a quiet fleet.
+- **Idempotent, with a cooldown.** A proposed re-partition shouldn't reapply every triage tick if nothing
+  changed — same AIMD-style cooldown shape `identity_router`'s own quarantine already uses.
+
+### 9d. Recommendation
+
+Build §9a now — it's cheap, certain, and fixes §1e regardless of anything below it (tracked as §7 item
+1). Layer 1 (§9b) is the next highest-value, zero-marginal-cost build and justifies itself even with no
+LLM ever attached to it (§7 item 2). Layer 2 is the speculative piece: real value against failure shapes
+nobody's characterized yet, but given how many of *today's own* findings turned out to be confounded
+measurements that needed retracting (§1, §3), it should run alert-only against several real incidents
+before it's trusted to propose anything, and it should never be positioned as something a scrape depends
+on to run.
