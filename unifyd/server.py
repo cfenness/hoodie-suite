@@ -7162,6 +7162,58 @@ def api_cockpit_health_digest():
                   for f in worst]), 200
 
 
+def _git(args, cwd, timeout=30):
+    """Run git and return (rc, stdout+stderr) — same shape tools/release_train.py's own `git()`
+    uses, so a failure carries stderr instead of dropping the one line that says why."""
+    try:
+        p = subprocess.run(["git"] + list(args), cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    except Exception as e:
+        return 1, str(e)[:300]
+    out = (p.stdout or "").strip()
+    if p.returncode and (p.stderr or "").strip():
+        out = (out + "\n" + p.stderr.strip()).strip()
+    return p.returncode, out
+
+
+@app.get("/api/cockpit/deploy-status")
+def api_cockpit_deploy_status():
+    """Has main moved past what's actually deployed? A DIFFERENT question from deploy_drift.py's
+    own check (already folded into the health digest): that answers "does live match what we
+    recorded at the LAST deploy" and stays clean forever once nobody deploys again, no matter how
+    much lands on main in the meantime. This answers the question that actually matters day to
+    day — "is there real work sitting merged and unshipped" — which needs a live git checkout to
+    answer. The deployed container deliberately has none (deploy_drift.py's own docstring: no
+    `.git`, private repo, can't ask GitHub what main is), so — like ticket dispatch — this only
+    works where a real checkout exists: local-only."""
+    if _on_fly():
+        return jsonify(available=False, reason="needs a local git checkout — Mac-only, same as ticket dispatch"), 200
+    exp = None
+    try:
+        import deploy_drift
+        exp = deploy_drift.expected()
+    except Exception:
+        exp = None
+    if not exp or not exp.get("git_sha"):
+        return jsonify(available=False, reason="no recorded deploy expectation — deploy once with "
+                       "tools/release_train.py to set the baseline"), 200
+
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _git(["fetch", "--quiet", "origin", "main"], cwd=repo)
+    rc, main_sha = _git(["rev-parse", "origin/main"], cwd=repo)
+    if rc != 0:
+        return jsonify(available=False, reason="git unreachable: %s" % main_sha[:200]), 200
+    main_sha = main_sha.strip()
+    deployed_sha = exp["git_sha"]
+
+    if deployed_sha == main_sha:
+        return jsonify(available=True, behind=0, deployed_sha=deployed_sha, main_sha=main_sha,
+                       recorded_at=exp.get("recorded_at")), 200
+    rc2, count_out = _git(["rev-list", "--count", "%s..%s" % (deployed_sha, main_sha)], cwd=repo)
+    behind = int(count_out.strip()) if rc2 == 0 and count_out.strip().isdigit() else None
+    return jsonify(available=True, behind=behind, deployed_sha=deployed_sha, main_sha=main_sha,
+                   recorded_at=exp.get("recorded_at")), 200
+
+
 @app.post("/api/cockpit/harvest")
 def api_cockpit_harvest():
     """Seed the fact store from source_registry.py — the repo's own declared truth.
