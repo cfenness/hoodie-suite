@@ -496,12 +496,42 @@ async function loadStanding(){
 /* Every number here already exists somewhere else in the suite (MDM workbench, steward, coverage,
    the cost monitor) — this doesn't re-derive anything, it just answers "how is the business doing"
    without a context switch, per the one-surface rule. Each tile deep-links to the real page. */
+/* One tile's source is genuinely, unavoidably slower than the rest: deploy-status runs a real
+   `git fetch` over the network, which measured well over a second even locally (GitHub round-
+   trip), against the other five reading a local warehouse/JSON in milliseconds. Fetched together
+   with Promise.allSettled, THAT ONE call still gated every already-resolved tile off the screen
+   for as long as it took — parallel fetch doesn't help when you still wait for all of them before
+   rendering any. So it's dispatched separately and appended once it lands, instead of joining the
+   batch the other five render from; the fast tiles show immediately, Deploy pops in after. */
+async function getJSON(url){
+  try { return await (await fetch(url)).json(); } catch(e){ return null; }
+}
+function deployTileHtml(dep){
+  // A raw .stat/.stat.link string, exactly what stat() itself returns — no wrapper element, so it
+  // stays a direct child of #bizhealth's CSS grid (a <span> around it would become the grid item
+  // instead of the tile, breaking the row). data-tile marks it for the later swap-in.
+  const html = (dep && dep.available)
+    ? stat('deploy', dep.behind === 0 ? 'up to date' : (dep.behind==null ? '?' : dep.behind+' behind'),
+        dep.deployed_sha ? 'deployed '+dep.deployed_sha.slice(0,8)
+          + (dep.recorded_at ? ' · '+new Date(dep.recorded_at*1000).toLocaleDateString() : '') : '',
+        dep.behind === 0 ? 'ok' : (dep.behind && dep.behind >= 10 ? 'alert' : (dep.behind ? 'warn' : null)))
+    : stat('deploy', dep ? '—' : '…', dep ? (dep.reason || 'status unavailable') : 'checking…');
+  return html.replace(/^<(div|a)\b/, '<$1 data-tile="deploy"');
+}
+async function loadDeployTile(){
+  $('#bizhealth').insertAdjacentHTML('beforeend', deployTileHtml(null));
+  const dep = await getJSON('/api/cockpit/deploy-status');
+  // Re-select rather than trust a captured reference: loadBusinessHealth() rebuilding #bizhealth
+  // from scratch while this fetch was in flight would detach the placeholder node entirely, and
+  // this quietly no-ops instead of writing into a tile that's no longer on the page.
+  const placeholder = $('#bizhealth [data-tile="deploy"]');
+  if (placeholder) placeholder.outerHTML = deployTileHtml(dep);
+}
 async function loadBusinessHealth(){
-  let master=null, steward=null, coverage=null, monitor=null;
-  try { master   = await (await fetch('/api/master/workbench/summary')).json(); } catch(e){}
-  try { steward  = await (await fetch('/api/master/steward/summary')).json(); } catch(e){}
-  try { coverage = await (await fetch('/api/coverage')).json(); } catch(e){}
-  try { monitor  = await (await fetch('/api/monitor')).json(); } catch(e){}
+  const [master, steward, coverage, monitor, health] = (await Promise.allSettled([
+    getJSON('/api/master/workbench/summary'), getJSON('/api/master/steward/summary'),
+    getJSON('/api/coverage'), getJSON('/api/monitor'), getJSON('/api/cockpit/health-digest'),
+  ])).map(r => r.status === 'fulfilled' ? r.value : null);
 
   const cells = [];
   if (master && master.ok){
@@ -532,8 +562,6 @@ async function loadBusinessHealth(){
   }
 
   // Data health — health_digest.py's daily verdict, previously a JSON file nobody opened.
-  let health = null;
-  try { health = await (await fetch('/api/cockpit/health-digest')).json(); } catch(e){}
   if (health && health.available){
     const c = health.counts || {};
     const bad = (c.critical||0) + (c.warn||0);
@@ -554,6 +582,8 @@ async function loadBusinessHealth(){
 
   $('#bizhealth').innerHTML = cells.join('') ||
     '<div class="note" style="margin:0">Agent offline, or nothing built yet — these read live from the MDM/coverage/monitor surfaces.</div>';
+  loadDeployTile();   // deliberately not awaited — the real git fetch behind it must never hold up
+                       // the five tiles that just rendered; it appends itself when it lands.
 }
 
 /* ── ASK ──────────────────────────────────────────────────────────────────── */
