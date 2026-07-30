@@ -41,7 +41,8 @@ def rekey_stores(site="ubereats"):
 def drop_doublecounts():
     allrows = warehouse.query("src_outlets", "SELECT * FROM t")
     keep = [r for r in allrows if not (r.get("source") in ("ubereats", "postmates") and UUID.match(r.get("store_id") or ""))]
-    warehouse.write_parquet("src_outlets", keep, refresh_fast.FLD)
+    # write_full_rebuild, not write_parquet: a plain write_parquet raises once src_outlets is bucketed.
+    warehouse.write_full_rebuild("src_outlets", keep, refresh_fast.FLD)
     print("[reconcile] src_outlets %d -> %d (dropped %d storeUuid double-counts)" % (len(allrows), len(keep), len(allrows) - len(keep)))
 
 

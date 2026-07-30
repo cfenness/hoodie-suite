@@ -258,7 +258,10 @@ def pull(sample=300, crawl_all=False, limit=None, out=".", state_dir=None, log=p
         # table. That write would not be EMPTY, so warehouse's empty-write guard would not catch it. Hence
         # both a completeness flag and a row-count floor.
         if crawl_all and crawl_complete and _safe_to_replace(len(recs), log):
-            warehouse.write_parquet("binnys_products", recs, fields=PRODUCT_FIELDS)
+            # write_full_rebuild, not write_parquet: binnys_products is bucketed (the OOM fix — the
+            # accumulate branch below was read-modify-writing all 1.5M rows on every incremental flush,
+            # and that cost grows every run) — a plain write_parquet would raise on this branch instead.
+            warehouse.write_full_rebuild("binnys_products", recs, fields=PRODUCT_FIELDS)
         else:
             warehouse.write_accumulate("binnys_products", recs, key=lambda r: (r["sku"], r["store"]),
                                        fields=PRODUCT_FIELDS)
