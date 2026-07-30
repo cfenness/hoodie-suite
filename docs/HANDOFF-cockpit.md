@@ -46,7 +46,7 @@ the lever.** Model routing alone is worth ~58.5% token-weighted.
 | `agent_checks.py` | the deterministic checker | 43 |
 | `agent_exec.py` | the Claude Code CLI seam + run ledger | 48 |
 | `agent_import_chat.py` | scoped claude.ai export intake | 34 |
-| `agent_mine.py` | mine stated rules from transcripts | **none — see Open** |
+| `agent_mine.py` | mine stated rules from transcripts | 38 |
 
 Surface: `apps/cockpit.html` · endpoints `/api/cockpit/*` in `unifyd/server.py` · agent definitions
 `.claude/agents/hoodie-{pm,qa,reviewer}.md` (generated — see below).
@@ -115,7 +115,6 @@ now have suites.
 
 | item | note |
 |---|---|
-| **`agent_mine.py` has no paired test** | Flagged by the checker. The clustering and scope logic are pure and testable. |
 | 8 legacy modules untested | `publix`, `instacart`, `browser_warm`, `menu_site`, `off_premise`, `doordash_discover`, `server`, `source_registry`. Pre-existing; separate lane. |
 | Ask is model-or-facts, not both | On a hit the model is never consulted. Fine for lookups; a hybrid may be better for judgement questions. |
 | Crew stages are manual | `crew_for()` plans and prices; running the stages is still hand-driven. The agent definitions make it scriptable either way. |
