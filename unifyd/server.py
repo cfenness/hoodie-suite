@@ -7393,7 +7393,7 @@ def api_cockpit_tickets_create():
     if rec.get("error") or not rec.get("result"):
         return jsonify(error=rec.get("error") or "draft dispatch produced no result"), 200
     draft = rec["result"]
-    title = draft.strip().split("\n", 1)[0].strip("# ").strip()[:120] or ("Ticket from " + chat_id)
+    title = T.derive_title(draft, "Ticket from " + chat_id)
     body_md = "## Acceptance criteria\n\n%s\n\n## Source conversation\n\n%s" % (draft, convo)
     t = T.create(title, body_md, source_chat_id=chat_id)
     return jsonify(t), 200

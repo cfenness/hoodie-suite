@@ -35,6 +35,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 
@@ -117,6 +118,51 @@ def list_tickets(status=None, db=None):
     rows = _rows(db)
     out = [r for r in rows if not status or r.get("status") == status]
     return sorted(out, key=lambda r: -r.get("updated", 0))
+
+
+_HEADING = re.compile(r"^#{1,6}\s*(.*)$")
+
+
+def _clean_title_line(line):
+    """Strip markdown formatting from one line so it reads as a plain title, not a fragment of
+    markup: leading heading hashes/bullets/numbering, **bold**/`code` markers.
+
+    Bullet/number stripping requires the trailing whitespace ("- ", "1. ") rather than a bare
+    character class — a bare `[-*>\\d.\\s]+` also eats the leading `**` of a bolded first line
+    (no space after it), leaving the bold-strip regex below with only a trailing `**` and nothing
+    to pair it with, so the closing asterisks never got removed. Found via a test that used a
+    genuinely bold first line, not a hypothetical."""
+    line = _HEADING.sub(r"\1", line).strip()
+    line = re.sub(r"^\d+\.\s+", "", line)
+    line = re.sub(r"^[-*+>]\s+", "", line)
+    line = re.sub(r"\*\*([^*]+)\*\*", r"\1", line)
+    line = re.sub(r"`([^`]+)`", r"\1", line)
+    # Observed on a second real draft: no "## Outcome" heading at all, just an inline "**Outcome:**"
+    # label leading the paragraph — the bold-strip above unwraps the ** but leaves the literal label
+    # text sitting in front of the actual sentence.
+    line = re.sub(r"^(?:the\s+)?outcome\s*:\s*", "", line, flags=re.I)
+    return line.strip()
+
+
+def derive_title(draft, fallback):
+    """Pull a real title out of a PM draft, robust to the model wrapping its answer in its OWN
+    markdown headings rather than leading with plain prose. Observed live: asked for "the outcome
+    in one sentence first", a real draft instead opened with a "## Acceptance criteria" heading and
+    put the outcome sentence under a LATER "## Outcome" heading — a naive first-line grab returned
+    the word "Outcome" as the title. Two-pass fix: prefer the paragraph under a heading literally
+    named "outcome" wherever it landed structurally; otherwise fall back to the first real line of
+    prose, skipping headings and blank lines rather than assuming line 1 is ever the title."""
+    lines = [l.strip() for l in (draft or "").splitlines()]
+    for i, l in enumerate(lines):
+        m = _HEADING.match(l)
+        if m and m.group(1).strip().lower().startswith("outcome"):
+            for after in lines[i + 1:]:
+                if after and not _HEADING.match(after):
+                    return _clean_title_line(after)[:120] or fallback
+    for l in lines:
+        if l and not _HEADING.match(l):
+            return _clean_title_line(l)[:120] or fallback
+    return fallback
 
 
 def create(title, body_md, source_chat_id=None, requires_docs=False, db=None):
