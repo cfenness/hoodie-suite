@@ -264,6 +264,20 @@ def main():
     check("...and cites source_registry.py",
           "source_registry.py" in (hit["facts"][0]["evidence_path"] or ""), hit["facts"][0])
 
+    # --- 9. synthesis_prompt: the hybrid path's grounding, not a second answer() ---------------------
+    check("no facts -> no prompt (an ungrounded call must never wear this function's name)",
+          M.synthesis_prompt("why does this matter", []) is None)
+    check("...same for None", M.synthesis_prompt("q", None) is None)
+
+    facts = M.answer("is abc-fws enabled", db=db2)["facts"]
+    p = M.synthesis_prompt("should I trust abc-fws right now", facts)
+    check("prompt is grounded in the actual fact text", "abc-fws" in p, p)
+    check("prompt carries the question verbatim", "should I trust abc-fws right now" in p, p)
+    check("prompt forbids tool use (there's nothing left to explore)", "do not use any tools" in p, p)
+    check("prompt tells the model not to re-derive what's already known", "re-derive" in p, p)
+    check("prompt surfaces the evidence citation, not just the bare value",
+          "source_registry.py" in p, p)
+
     print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
     return 1 if FAILED else 0
 

@@ -42,10 +42,18 @@ PASS, FAIL, SKIP = "pass", "fail", "skipped"
 
 
 def _run(cmd, cwd=None, timeout=900):
-    """Run a command; return (returncode, combined output). Never raises."""
+    """Run a command; return (returncode, combined output). Never raises.
+
+    rstrip only, never lstrip: `changed_paths()` parses `git status --porcelain` lines by FIXED
+    OFFSET (`line[3:]`, the 2-char status code + a space). Porcelain's unstaged-only status is a
+    literal leading space (" M", not "M "), so a blanket `.strip()` here ate that space off the
+    front of the FIRST line whenever it happened to be an unstaged-only change — silently chopping
+    one character off that one path (`unifyd/agent_memory.py` -> `nifyd/agent_memory.py`), which then
+    failed every `os.path.exists()` filter downstream and made that module vanish from every check
+    with no failure reported at all. Found live: it ate agent_memory.py itself out of this exact run."""
     try:
         p = subprocess.run(cmd, cwd=cwd or REPO, capture_output=True, text=True, timeout=timeout)
-        return p.returncode, ((p.stdout or "") + (p.stderr or "")).strip()
+        return p.returncode, ((p.stdout or "") + (p.stderr or "")).rstrip()
     except subprocess.TimeoutExpired:
         return None, "timed out after %ss" % timeout
     except Exception as e:

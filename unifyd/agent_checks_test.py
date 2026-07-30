@@ -76,6 +76,40 @@ def main():
     finally:
         C.REPO = old
 
+    # --- 2b. changed_paths() must not corrupt the FIRST porcelain line -----------------------------
+    # Found live, not hypothesized: git status --porcelain's unstaged-only status is a literal
+    # leading space (" M path", not "M path"), and a blanket .strip() on the combined subprocess
+    # output ate exactly that space off the front of the first line, shifting changed_paths()'s
+    # fixed-offset `line[3:]` slice one character into the path. The corrupted path then failed
+    # every os.path.exists() filter downstream, so the module silently vanished from every check —
+    # no failure, no skip, just absence. Reproduce with a REAL git repo (not a mocked porcelain
+    # string) so a future change to the git-status parsing path is what this actually protects.
+    repo = tempfile.mkdtemp(prefix="checks-git-")
+    C._run(["git", "init", "-q"], cwd=repo)
+    C._run(["git", "config", "user.email", "t@example.com"], cwd=repo)
+    C._run(["git", "config", "user.name", "t"], cwd=repo)
+    # Name it so it sorts FIRST in porcelain output (alphabetically ahead of anything else changed) —
+    # that's the position the corruption landed on.
+    target = os.path.join(repo, "aaa_module.py")
+    with open(target, "w") as fh:
+        fh.write("x = 1\n")
+    C._run(["git", "add", "aaa_module.py"], cwd=repo)
+    C._run(["git", "commit", "-q", "-m", "init"], cwd=repo)
+    with open(target, "w") as fh:
+        fh.write("x = 2\n")          # unstaged-only modification -> porcelain status " M", not "M "
+    old_repo, old_cwd = C.REPO, os.getcwd()
+    C.REPO = repo
+    os.chdir(repo)
+    try:
+        found = C.changed_paths(base="HEAD")
+    finally:
+        C.REPO = old_repo
+        os.chdir(old_cwd)
+    check("an unstaged-only change (leading-space porcelain status) keeps its full path",
+          "aaa_module.py" in found, found)
+    check("...not truncated to a substring of the real path",
+          not any(p != "aaa_module.py" and p.endswith("aa_module.py") for p in found), found)
+
     # --- 3. missing coverage is a FINDING, not silence -------------------------------------------
     # This is the check that flagged three of my own untested modules. It has to fail loudly, because
     # "no test file" is otherwise indistinguishable from "nothing to run".

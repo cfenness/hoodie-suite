@@ -405,6 +405,33 @@ def answer(query, k=5, db=None):
                          "re-derive if it matters.")
 
 
+def synthesis_prompt(query, facts):
+    """The hybrid path: a hit that still consults the model, for SYNTHESIS over what's already known
+    rather than exploration. `answer()`'s plain hit just dumps the matched rows — fine when the
+    question IS "what's the value of X", but a judgement question ("should I use X or Y", "why did we
+    pick X over Y") needs someone to reason across several facts, not just read them back. That
+    reasoning is still cheap: no tool use, no re-derivation, so it belongs on the cheapest model lane
+    (the caller should force cls="triage" when dispatching this), not whatever class the raw question
+    text would otherwise route to.
+
+    Returns None when there's nothing to ground on — a synthesis prompt built from zero facts would
+    just be an ungrounded model call wearing this function's name, defeating the reason it exists."""
+    if not facts:
+        return None
+    lines = ["- %s %s = %s  (%s, %s)"
+              % (f["subject"], f["claim"], f["value"], f.get("verdict", "unverifiable"),
+                 f.get("evidence_path") or f.get("evidence_cmd") or "no evidence")
+             for f in facts]
+    return (
+        "Known facts (already verified — do not re-derive or second-guess these):\n%s\n\n"
+        "Question: %s\n\n"
+        "Answer using ONLY the facts above and reason across them if the question needs comparison "
+        "or judgement. Cite which fact(s) you used. If they don't actually answer the question, say "
+        "so plainly instead of guessing — do not use any tools; there is nothing here a tool call "
+        "would find that isn't already listed." % ("\n".join(lines), query)
+    )
+
+
 # ── SEEDING: harvest the repo's own source of truth ──────────────────────────────────────────────
 # Seeding matters because an empty cache makes the FIRST ask of every question expensive, and the
 # measurement says triage questions are 73% of prompts. source_registry.py is the single highest-value

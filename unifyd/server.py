@@ -7272,6 +7272,29 @@ def api_cockpit_chat():
         except Exception:
             facts = None
     if facts and facts.get("status") == "hit":
+        # HYBRID PATH (opt-in): a judgement question ("should I trust X", "why did we pick X over Y")
+        # gets more value from the model reasoning ACROSS the matched facts than from reading them
+        # back verbatim — but that's the caller's call to make, not a heuristic guess here, so it's
+        # gated on an explicit flag rather than sniffed from the question text. Forced onto the
+        # cheapest lane (cls="triage") because this is synthesis over what's already known, never
+        # exploration — there's nothing left for a tool call to find.
+        if body.get("hybrid") and X:
+            prompt = M.synthesis_prompt(q, facts["facts"])
+            rec = X.run(prompt, cls="triage", dry_run=bool(body.get("dry_run")))
+            if rec.get("dry_run"):
+                return jsonify(status="dry-run", route=rec.get("route"),
+                               argv_display=rec.get("argv_display"), chat_id=chat_id,
+                               spent=False), 200
+            synthesized = rec.get("result") or rec.get("error") or rec.get("stdout_raw")
+            if synthesized and not rec.get("error"):
+                u = rec.get("usage") or {}
+                C.add_message(chat_id, "assistant", synthesized, source="hybrid",
+                              tokens=(u.get("input_tokens") or 0) + (u.get("output_tokens") or 0))
+                C.upsert(chat_id, bump=True)
+                return jsonify(status="hit-synthesized", facts=facts, answer=synthesized,
+                               chat_id=chat_id, spent=True), 200
+            # Synthesis failed (dispatch error) — fall through to the plain fact dump below rather
+            # than surface an error when a perfectly good answer was sitting right there.
         lines = ["%s %s = %s   [%s]" % (f["subject"], f["claim"], f["value"],
                                         f.get("evidence_path") or f.get("evidence_cmd") or "no evidence")
                  for f in facts["facts"]]
