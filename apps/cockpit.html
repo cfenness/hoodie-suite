@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hoodie Cockpit</title>
+<style>
+  /* ── tokens ──────────────────────────────────────────────────────────────────
+     ONE SPACING SCALE, declared once and referenced everywhere. Arbitrary pixel
+     values are how a layout drifts a little at a time until something sits 3px
+     off; a named scale makes that impossible to do by accident. Same reason the
+     numeric columns are tabular-nums — proportional digits make a right-aligned
+     column shimmer as values change, which reads as a glitch even when the
+     alignment is technically correct. */
+  :root{
+    --bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;
+    --accent:#4B9CD3;--good:#5bb86e;--warn:#d99a3f;--bad:#e5636b;--derived:#6f7d90;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--sans:Inter,system-ui,-apple-system,sans-serif;
+    --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+    --r:10px;--rs:8px;--pad:var(--s4);
+  }
+  @media (prefers-color-scheme:light){:root{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}}
+  :root[data-theme="light"]{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}
+  :root[data-theme="dark"]{--bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto;padding:var(--s5) var(--s4) var(--s6)}
+  h1{font-size:19px;margin:0;letter-spacing:-.01em;line-height:1.3}
+  .sub{color:var(--mut);font-size:12.5px;margin:var(--s1) 0 0;line-height:1.45}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--mut);
+     margin:var(--s5) 0 var(--s3);font-weight:600;line-height:1}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:var(--pad)}
+  .mono{font-family:var(--mono)}
+  .num{font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+  /* ── STANDING: where you are, before you ask ───────────────────────────────── */
+  .standing{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));
+            gap:var(--s2);margin-top:var(--s4)}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--rs);
+        padding:var(--s3);display:flex;flex-direction:column;gap:var(--s1);min-height:74px;
+        justify-content:center}
+  .stat .lab{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);line-height:1}
+  .stat .val{font-size:20px;line-height:1.1;font-variant-numeric:tabular-nums}
+  .stat .hint{font-size:11px;color:var(--mut);line-height:1.3}
+  .stat.alert{border-color:rgba(229,99,107,.5)}
+  .stat.alert .val{color:var(--bad)}
+  .stat.ok .val{color:var(--good)}
+  .stat.warn{border-color:rgba(217,154,63,.45)}
+  .stat.warn .val{color:var(--warn)}
+
+  .needs{margin-top:var(--s2);display:flex;flex-direction:column;gap:var(--s2)}
+  .need{display:flex;gap:var(--s3);align-items:flex-start;padding:var(--s3);
+        border:1px solid rgba(217,154,63,.45);border-radius:var(--rs);
+        background:rgba(217,154,63,.08);font-size:12.5px;line-height:1.45}
+  .need.bad{border-color:rgba(229,99,107,.5);background:rgba(229,99,107,.08)}
+  .need .what{font-weight:600}
+  .need .fix{color:var(--mut);display:block;margin-top:var(--s1)}
+
+  /* ── CHAT ─────────────────────────────────────────────────────────────────── */
+  /* Several conversations live in ONE surface rather than separate pages or windows: switching
+     surfaces pulls him away from the model, so the tab strip stays inside the same page. */
+  .chatbar{display:flex;gap:var(--s2);align-items:center;margin-bottom:var(--s3)}
+  .tabs{display:flex;gap:var(--s1);overflow-x:auto;flex:1;min-width:0;padding-bottom:2px}
+  .tab{flex:0 0 auto;background:var(--panel2);border:1px solid var(--line);color:var(--mut);
+       border-radius:var(--rs);padding:6px var(--s3);font:500 11.5px var(--sans);cursor:pointer;
+       max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.4}
+  .tab.on{border-color:var(--accent);color:var(--ink)}
+  .tab .n{color:var(--derived);font-variant-numeric:tabular-nums}
+  .log{display:flex;flex-direction:column;gap:var(--s2);max-height:340px;overflow-y:auto;
+       margin-bottom:var(--s3)}
+  .log:empty{display:none}
+  .msg{display:grid;grid-template-columns:64px 1fr;gap:var(--s3);font-size:13px;line-height:1.5}
+  .msg .who{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);
+            padding-top:3px;line-height:1.4}
+  .msg .body{white-space:pre-wrap;word-break:break-word;min-width:0}
+  .msg.u .body{color:var(--ink)}
+  .msg.a .body{color:var(--ink)}
+  .msg .tag{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--derived);
+            margin-top:var(--s1)}
+  .msg.free .who{color:var(--good)}
+
+  /* ── ASK ──────────────────────────────────────────────────────────────────── */
+  .askrow{display:flex;gap:var(--s2)}
+  .askrow input{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    border-radius:var(--rs);padding:var(--s3);font:14px var(--sans);min-width:0}
+  .askrow input:focus{outline:none;border-color:var(--accent)}
+  button{background:var(--accent);color:#08151f;border:0;border-radius:var(--rs);
+    padding:var(--s3) var(--s4);font:600 13px var(--sans);cursor:pointer;white-space:nowrap;line-height:1.2}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  button.sm{padding:6px 10px;font-size:11.5px}
+  button:disabled{opacity:.45;cursor:default}
+
+  .verdict{margin-top:var(--s3);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+  .vhead{padding:var(--s3) var(--pad);font-size:12.5px;font-weight:600;line-height:1.3}
+  .v-hit .vhead{background:rgba(91,184,110,.13);color:var(--good)}
+  .v-stale .vhead{background:rgba(217,154,63,.13);color:var(--warn)}
+  .v-miss .vhead{background:rgba(139,152,169,.12);color:var(--mut)}
+  .vbody{padding:var(--s3) var(--pad);background:var(--panel)}
+  .fact{padding:var(--s2) 0;border-top:1px solid var(--line);font-size:13px;line-height:1.45}
+  .fact:first-child{border-top:0;padding-top:0}
+  .fact .k{color:var(--mut)}
+  .cite{font-family:var(--mono);font-size:11.5px;color:var(--derived);margin-top:var(--s1)}
+  .pill{display:inline-block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;
+    padding:2px var(--s2);border-radius:20px;border:1px solid var(--line);color:var(--mut);
+    line-height:1.6;vertical-align:1px}
+  .pill.fresh{color:var(--good);border-color:rgba(91,184,110,.45)}
+  .pill.stale{color:var(--warn);border-color:rgba(217,154,63,.45)}
+  .pill.ready{color:var(--good);border-color:rgba(91,184,110,.45)}
+  .pill.blocked{color:var(--bad);border-color:rgba(229,99,107,.45)}
+
+  table.crew{margin-top:var(--s2)}
+  table.crew th, table.crew td{padding:5px var(--s2)}
+  .rgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(124px,1fr));gap:var(--s2);margin-top:var(--s3)}
+  .rcell{background:var(--panel2);border:1px solid var(--line);border-radius:var(--rs);padding:var(--s2) var(--s3)}
+  .rcell .lab{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);line-height:1}
+  .rcell .val{font-family:var(--mono);font-size:13px;margin-top:var(--s1);line-height:1.3;word-break:break-word}
+  .why{margin:var(--s3) 0 0;padding-left:var(--s4);font-size:12px;color:var(--mut);line-height:1.5}
+  .cmd{margin-top:var(--s3);background:#0b0f14;border:1px solid var(--line);border-radius:var(--rs);
+    padding:var(--s3);font-family:var(--mono);font-size:11.5px;color:#9fd0ef;
+    overflow-x:auto;white-space:pre;line-height:1.5}
+  :root[data-theme="light"] .cmd{background:#11161c;color:#cfe3f5}
+
+  /* ── FLEET ────────────────────────────────────────────────────────────────── */
+  .fleet{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);
+     font-weight:600;padding:var(--s2) var(--s3);border-bottom:1px solid var(--line);white-space:nowrap;line-height:1}
+  td{padding:var(--s2) var(--s3);border-bottom:1px solid var(--line);vertical-align:top;line-height:1.45}
+  tr:last-child td{border-bottom:0}
+  td.m{font-family:var(--mono);font-size:11.5px}
+  td.r{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:11.5px}
+  /* EVERY ROW THE SAME HEIGHT. Measured before this rule, the fleet rows came out 39 / 50 / 53px
+     because long worktree names and branch names wrapped. The data was correct and the columns were
+     aligned, but the vertical rhythm broke and a table with three row heights reads as broken.
+     Truncate with an ellipsis and put the full value in `title`, so nothing is lost — just not
+     allowed to reflow the row. Fixed widths on the identifier columns keep the ellipsis predictable
+     rather than dependent on content. */
+  /* table-layout:fixed, NOT max-width:0. With auto layout the declared widths are only hints: adding
+     the sixth (action) column pushed the total past the container, the browser redistributed
+     proportionally, and `max-width:0` let every fixed column collapse — the headers rendered as
+     "Cl Br S1 Rl". Fixed layout makes the declared widths authoritative and the last column absorb
+     the remainder, so a new column can never squeeze the others. */
+  #fleet{table-layout:fixed;width:100%}
+  #fleet td, #fleet th{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #fleet td:nth-child(1), #fleet th:nth-child(1){width:168px}
+  #fleet td:nth-child(2), #fleet th:nth-child(2){width:186px}
+  #fleet td:nth-child(3), #fleet th:nth-child(3){width:76px}
+  #fleet td:nth-child(4), #fleet th:nth-child(4){width:62px}
+  #fleet td:nth-child(6), #fleet th:nth-child(6){width:96px}
+  #fleet td.act{overflow:visible;text-align:right}
+  #fleet tbody tr{height:34px}
+  .note{font-size:12px;color:var(--mut);margin-top:var(--s2);line-height:1.5}
+
+  /* ── SPEND ────────────────────────────────────────────────────────────────── */
+  .bars{display:flex;flex-direction:column;gap:6px}
+  /* Label column is wide enough for the longest label at this font size, and wrapping is disabled.
+     "context re-read" wrapped to two lines at 84px, which made that one row taller than its
+     siblings — the bars stayed correct but the rhythm broke, and an uneven row reads as a glitch
+     even when nothing is misaligned. Fixed width + nowrap keeps every row on the same baseline. */
+  .bar{display:grid;grid-template-columns:112px 1fr 52px;align-items:center;gap:var(--s3);
+       font-size:12.5px;min-height:20px}
+  .bar > div:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar .track{height:8px;background:var(--panel2);border-radius:var(--s1);overflow:hidden}
+  .bar .fill{height:100%;border-radius:var(--s1);background:var(--accent)}
+  .bar .fill.hot{background:var(--bad)}
+  .bar .pct{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:11.5px;color:var(--mut)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)}
+
+  /* mechanism, available not imposed */
+  details{margin-top:var(--s2)}
+  summary{cursor:pointer;font-size:11px;text-transform:uppercase;letter-spacing:.09em;
+          color:var(--mut);font-weight:600;padding:var(--s2) 0;line-height:1}
+  summary::marker{color:var(--line)}
+  @media (max-width:820px){
+    .grid2{grid-template-columns:1fr}
+    .bar{grid-template-columns:72px 1fr 46px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div>
+    <h1>Hoodie Cockpit</h1>
+    <p class="sub">Where you stand, what needs you, and one place to act.</p>
+  </div>
+
+  <!-- STANDING — answers "where am I" before anything is asked of you -->
+  <div class="standing" id="standing"></div>
+  <div class="needs" id="needs"></div>
+
+  <!-- CHAT — ongoing, several at once, all in this one surface -->
+  <h2>Chat</h2>
+  <div class="card">
+    <div class="chatbar">
+      <div class="tabs" id="tabs"></div>
+      <button class="ghost sm" id="newchat">New</button>
+    </div>
+    <div class="log" id="log"></div>
+    <div class="askrow">
+      <input id="q" placeholder="is the abc-fws scraper still enabled" autocomplete="off">
+      <button id="ask">Send</button>
+      <button id="route" class="ghost">Route only</button>
+    </div>
+    <div id="out"></div>
+  </div>
+
+  <!-- FLEET — your concurrent work, ordered by what needs you first -->
+  <h2>Your chats</h2>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:var(--s3);
+                margin-bottom:var(--s3)">
+      <div class="note" id="fleetnote" style="margin:0">loading…</div>
+      <button class="ghost sm" id="refleet">Re-check</button>
+    </div>
+    <div class="fleet">
+      <table id="fleet"><thead><tr>
+        <th>Chat</th><th>Branch</th><th>State</th><th class="r">Reverts</th><th>Blocker</th><th></th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <!-- SPEND — your measured numbers, the reason any of this exists -->
+  <h2>Where your spend goes</h2>
+  <div class="grid2">
+    <div class="card">
+      <div class="note" style="margin:0 0 var(--s3)">By task class, attributed to the prompt that
+        started each agentic loop.</div>
+      <div class="bars" id="classbars"></div>
+      <div class="note" id="measnote"></div>
+    </div>
+    <div class="card">
+      <div class="note" style="margin:0 0 var(--s3)">Within that spend, what the tokens were doing.</div>
+      <div class="bars" id="compbars"></div>
+      <div class="note">Context handling is <strong>89.6%</strong>. Output is 10.3%; what you type is
+        0.2%. That is why retrieval beats a cheaper model.</div>
+    </div>
+  </div>
+
+  <!-- MECHANISM — on demand -->
+  <details>
+    <summary>Routing policy &amp; tactics</summary>
+    <div class="card" style="padding:var(--s1) var(--s2)">
+      <table id="policy"><thead><tr>
+        <th>Class</th><th>Model</th><th>Effort</th><th>Tactics</th><th>Why this lane</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+    <div class="card" style="padding:var(--s1) var(--s2);margin-top:var(--s2)">
+      <table id="tactics"><thead><tr>
+        <th>Tactic</th><th>Does</th><th>Side</th></tr></thead><tbody></tbody></table>
+    </div>
+  </details>
+
+  <details>
+    <summary>Run ledger</summary>
+    <div class="card" style="padding:var(--s1) var(--s2)">
+      <table id="ledger"><thead><tr>
+        <th>When</th><th>Class</th><th>Model</th><th>Thread</th><th class="r">Tokens</th><th>Result</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </details>
+
+</div>
+
+<script>
+/* Hoodie Cockpit.
+   ORIENTATION FIRST: the page opens with where you stand and what needs you. Policy and tactics are
+   mechanism — real, but behind a disclosure, because leading with a config table hands the reader
+   the formatting work. Measured figures are baked in as FALLBACK and date-stamped so they can't
+   silently age when the agent is offline. */
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const AS_OF = '2026-07-29';
+const FALLBACK = {
+  classes: [['triage',66.9],['master',9.0],['surface',8.1],['scrape',7.9],
+            ['ops',3.7],['analysis',2.7],['review',0.9],['docs',0.8]],
+  components: [['context re-read',62.7],['cache writes',26.9],['output',10.3],['fresh input',0.2]],
+  policy: [
+    ['design','fable','max','spec, evidence, scope','a wrong architecture is expensive forever'],
+    ['triage','haiku','low','caveman, terse','quick lookup — cheap by default'],
+    ['docs','haiku','low','caveman, terse, scope','short, low blast radius'],
+    ['surface','sonnet','medium','scope, terse','visually verifiable, errors surface fast'],
+    ['analysis','sonnet','high','evidence, terse','deterministic vs inferred stays split'],
+    ['review','opus','high','evidence, terse','recall matters more than brevity'],
+    ['ops','opus','high','evidence, scope, terse','short but hard to reverse'],
+    ['scrape','opus','xhigh','spec, evidence, scope','the scrapers are the product'],
+    ['master','opus','xhigh','spec, evidence, scope','wrong merges are expensive to unwind']],
+  tactics: [
+    ['Caveman','strips filler to telegraphic imperative','input'],
+    ['Full spec','asks for the whole plan up front','input'],
+    ['Terse output','caps response verbosity','output'],
+    ['Cite evidence','every claim carries file:line','quality'],
+    ['Scope lock','deliver the ask, no adjacent tidying','output'],
+    ['Drop verify','removes self-check scaffolding','output']]
+};
+
+function stat(lab, val, hint, cls){
+  return '<div class="stat '+(cls||'')+'"><div class="lab">'+esc(lab)+'</div>'
+       + '<div class="val">'+esc(val)+'</div>'
+       + (hint ? '<div class="hint">'+esc(hint)+'</div>' : '') + '</div>';
+}
+function need(what, fix, bad){
+  return '<div class="need'+(bad?' bad':'')+'"><div><span class="what">'+esc(what)+'</span>'
+       + '<span class="fix">'+esc(fix)+'</span></div></div>';
+}
+
+/* ── STANDING ─────────────────────────────────────────────────────────────── */
+async function loadStanding(){
+  let auth=null, mem=null, fleet=null;
+  try { auth = await (await fetch('/api/cockpit/auth')).json(); } catch(e){}
+  try { mem  = await (await fetch('/api/cockpit/memory')).json(); } catch(e){}
+  try { fleet= await (await fetch('/api/cockpit/fleet')).json(); } catch(e){}
+
+  const cells = [];
+  if (auth) {
+    const metered = !!auth.api_key_in_env;
+    cells.push(stat('billing rail', metered ? 'metered' : 'subscription',
+      metered ? 'ANTHROPIC_API_KEY is set' : 'runs on your plan', metered ? 'alert' : 'ok'));
+  } else {
+    cells.push(stat('billing rail', 'offline', 'agent not running'));
+  }
+  if (fleet && fleet.total != null) {
+    cells.push(stat('chats', fleet.total, 'worktrees adopted'));
+    cells.push(stat('ready to ship', fleet.ready, 'contain origin/main + siblings',
+                    fleet.ready ? 'ok' : 'warn'));
+    cells.push(stat('would revert', fleet.at_risk, 'blocked from deploying',
+                    fleet.at_risk ? 'alert' : 'ok'));
+  }
+  if (mem && mem.facts != null) {
+    const v = mem.verdicts || {};
+    cells.push(stat('facts', mem.facts, (v.fresh||0)+' fresh / '+(v.stale||0)+' stale'));
+  }
+  $('#standing').innerHTML = cells.join('');
+
+  const needs = [];
+  if (auth && auth.warning) needs.push(need(auth.mode, auth.warning, !!auth.api_key_in_env));
+  if (fleet && fleet.lease && fleet.lease.held)
+    needs.push(need('Deploy lease held by ' + fleet.lease.holder,
+      'No one else can ship until it is released or expires.'));
+  if (!auth) needs.push(need('Agent offline',
+    'Start it locally to ask, route and dispatch. Figures below are measured as of ' + AS_OF + '.'));
+  $('#needs').innerHTML = needs.join('');
+}
+
+/* ── ASK ──────────────────────────────────────────────────────────────────── */
+function renderFacts(res){
+  const cls = {hit:'v-hit', stale:'v-stale', miss:'v-miss'}[res.status] || 'v-miss';
+  const head = {hit:'Answered from stored findings — no model call, no spend',
+                stale:'Findings matched, but their evidence changed — re-verify',
+                miss:'Nothing stored for this yet'}[res.status];
+  let h = '<div class="verdict '+cls+'"><div class="vhead">'+esc(head)+'</div><div class="vbody">';
+  if (!res.facts || !res.facts.length){
+    h += '<div class="note" style="margin:0">'+esc(res.guidance||'')+'</div>';
+  } else {
+    for (const f of res.facts){
+      const cite = f.evidence_path ? (f.evidence_path + (f.evidence_line ? ':'+f.evidence_line : ''))
+                                   : (f.evidence_cmd || 'no evidence');
+      h += '<div class="fact"><span class="pill '+esc(f.verdict)+'">'+esc(f.verdict)+'</span> '
+        +  '<strong class="mono">'+esc(f.subject)+'</strong> <span class="k">'+esc(f.claim)+'</span> = '
+        +  esc(f.value) + '<div class="cite">'+esc(cite)+'</div></div>';
+    }
+    h += '<div class="note">'+esc(res.guidance||'')+'</div>';
+  }
+  return h + '</div></div>';
+}
+function renderRoute(r, argv){
+  const cells = [['class',r.task_class],['model',r.model],['effort',r.effort],
+                 ['thread',r.thread&&r.thread.action],['burn index',(r.burn_index||0).toFixed(1)],
+                 ['tactics',(r.tactics||[]).join(', ')]];
+  let h = '<div class="rgrid">';
+  for (const [lab,val] of cells)
+    h += '<div class="rcell"><div class="lab">'+esc(lab)+'</div><div class="val">'+esc(val)+'</div></div>';
+  h += '</div>';
+  if (r.filler_removed) h += '<div class="note">caveman removed '+r.filler_removed
+    + ' filler words → <span class="mono">'+esc(r.prompt)+'</span></div>';
+  h += '<ul class="why">';
+  for (const w of (r.why||[])) h += '<li>'+esc(w)+'</li>';
+  if (r.thread && r.thread.why) h += '<li>thread: '+esc(r.thread.why)+'</li>';
+  h += '</ul>';
+  if (argv) h += '<div class="cmd">'+esc(argv)+'</div>';
+  return h;
+}
+
+/* The crew is shown only when it is WORTH it. Rendering four roles next to a lookup would be noise
+   arguing for its own expense — the router already knows the answer, so respect it. */
+function renderCrew(c){
+  if (!c || !c.stages) return '';
+  const head = c.recommended
+    ? 'Crew recommended — ' + c.multiple + 'x the solo route'
+    : 'Crew not worth it here — ' + c.multiple + 'x the solo route';
+  let h = '<div class="verdict '+(c.recommended?'v-hit':'v-miss')+'">'
+        + '<div class="vhead">'+esc(head)+'</div><div class="vbody">';
+  h += '<div class="note" style="margin:0 0 var(--s2)">'+esc(c.recommendation_why)+'</div>';
+  h += '<table class="crew"><thead><tr><th>Role</th><th>Model</th><th>Effort</th>'
+     + '<th class="r">Burn</th><th>Produces</th></tr></thead><tbody>';
+  for (const s of c.stages)
+    h += '<tr><td>'+esc(s.label)+'</td><td class="m">'+esc(s.model)+'</td>'
+      +  '<td class="m">'+esc(s.effort)+'</td><td class="r">'+s.burn_index.toFixed(1)+'</td>'
+      +  '<td>'+esc(s.produces)+(s.note&&s.note.indexOf('floored')>=0
+            ? ' <span class="pill">'+esc(s.note)+'</span>' : '')+'</td></tr>';
+  h += '</tbody></table>';
+  for (const w of (c.why||[])) h += '<div class="note">! '+esc(w)+'</div>';
+  return h + '</div></div>';
+}
+/* ── ongoing chat state ───────────────────────────────────────────────────── */
+let CHAT = null;          // active chat id (null = a new, unstarted chat)
+let CHATS = [];
+
+function renderTabs(){
+  const t = CHATS.map(c =>
+      '<button class="tab'+(c.chat_id===CHAT?' on':'')+'" data-id="'+esc(c.chat_id)+'" '
+    + 'title="'+esc(c.subject||c.chat_id)+'">'+esc((c.subject||c.chat_id).slice(0,42))
+    + ' <span class="n">'+c.turns+'</span></button>').join('');
+  $('#tabs').innerHTML = t || '<span class="note" style="margin:0">No chats yet — send a message.</span>';
+  [...document.querySelectorAll('.tab')].forEach(b =>
+    b.addEventListener('click', () => { CHAT = b.dataset.id; renderTabs(); loadLog(); }));
+}
+function renderLog(msgs){
+  $('#log').innerHTML = (msgs||[]).map(m => {
+    const free = m.source === 'facts';
+    const tag = free ? 'from stored findings — no spend'
+              : (m.route ? [m.route.model, m.route.effort, (m.route.thread||{}).action]
+                            .filter(Boolean).join(' · ') : '');
+    return '<div class="msg '+(m.role==='user'?'u':'a')+(free?' free':'')+'">'
+      + '<div class="who">'+(m.role==='user'?'you':(free?'stored':'claude'))+'</div>'
+      + '<div class="body">'+esc(m.text)
+      + (tag ? '<div class="tag">'+esc(tag)+'</div>' : '') + '</div></div>';
+  }).join('');
+  $('#log').scrollTop = $('#log').scrollHeight;
+}
+async function loadChats(){
+  try { CHATS = (await (await fetch('/api/cockpit/chats')).json()).chats || []; } catch(e){ CHATS = []; }
+  if (!CHAT && CHATS.length) CHAT = CHATS[0].chat_id;
+  renderTabs();
+}
+async function loadLog(){
+  if (!CHAT){ renderLog([]); return; }
+  try {
+    const d = await (await fetch('/api/cockpit/chats?chat_id='+encodeURIComponent(CHAT))).json();
+    renderLog(d.messages || []);
+  } catch(e){ renderLog([]); }
+}
+
+async function ask(routeOnly){
+  const q = $('#q').value.trim();
+  if (!q) return;
+  if (routeOnly){
+    $('#out').innerHTML = '<div class="note">routing…</div>';
+    let rt = null;
+    try { rt = await (await fetch('/api/cockpit/route?q='+encodeURIComponent(q))).json(); } catch(e){}
+    let cw = null;
+    try { cw = await (await fetch('/api/cockpit/crew?q='+encodeURIComponent(q))).json(); } catch(e){}
+    $('#out').innerHTML = (rt && rt.route ? renderRoute(rt.route, rt.argv_display)
+      : '<div class="note">Agent offline — start it to route and dispatch.</div>')
+      + (cw && !cw.error ? renderCrew(cw) : '');
+    return;
+  }
+  /* Optimistic echo so the conversation feels continuous while the turn runs. */
+  const log = $('#log');
+  log.insertAdjacentHTML('beforeend',
+    '<div class="msg u"><div class="who">you</div><div class="body">'+esc(q)+'</div></div>'
+    + '<div class="msg a" id="pending"><div class="who">…</div><div class="body">working…</div></div>');
+  log.scrollTop = log.scrollHeight;
+  $('#q').value = '';
+  $('#ask').disabled = true;
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/chat', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({q, chat_id: CHAT})})).json();
+  } catch(e){ r = {error:'agent offline'}; }
+  $('#ask').disabled = false;
+  const p = document.getElementById('pending'); if (p) p.remove();
+  if (r && r.chat_id) CHAT = r.chat_id;
+  $('#out').innerHTML = (r && r.route) ? renderRoute(r.route, r.argv_display) : '';
+  if (r && r.error) $('#out').insertAdjacentHTML('afterbegin',
+    '<div class="need bad"><div><span class="what">'+esc(r.error)+'</span>'
+    + (r.needs_auth ? '<span class="fix">Run <code>claude</code> once interactively to '
+      + 're-authenticate. No budget was spent.</span>' : '') + '</div></div>');
+  await loadChats(); await loadLog(); loadStanding();
+}
+
+/* ── FLEET ────────────────────────────────────────────────────────────────── */
+async function loadFleet(refresh){
+  const tb = $('#fleet tbody');
+  $('#fleetnote').textContent = refresh ? 're-checking every worktree…' : 'loading…';
+  let f = null;
+  try {
+    f = await (await fetch('/api/cockpit/fleet' + (refresh ? '?refresh=1&sync=1' : ''))).json();
+  } catch(e){}
+  if (!f || !f.rows){
+    $('#fleetnote').textContent = 'Agent offline — chats are discovered from your git worktrees.';
+    tb.innerHTML = '<tr><td colspan="5" class="note">—</td></tr>';
+    return;
+  }
+  const when = f.computed_at ? new Date(f.computed_at*1000).toLocaleTimeString() : 'unknown';
+  $('#fleetnote').innerHTML = '<strong>'+f.ready+'</strong> of <strong>'+f.total
+    + '</strong> could ship without reverting anyone &nbsp;·&nbsp; checked '+esc(when);
+  /* Ordered by what needs you: most destructive first, then blocked, then ready. */
+  const rows = f.rows.slice().sort((a,b) =>
+    (b.reverts||0)-(a.reverts||0) || (a.ready?1:0)-(b.ready?1:0));
+  const held = (f.lease && f.lease.held) ? f.lease.holder : null;
+  tb.innerHTML = rows.slice(0,40).map(r => {
+    /* Ship is offered ONLY on a ready row. Acquiring the lease is itself gated server-side, but
+       showing a button that is certain to be refused is its own kind of sloppiness. */
+    const act = r.ready
+      ? (held === r.chat_id
+          ? '<button class="ghost sm" data-rel="'+esc(r.chat_id)+'">Release</button>'
+          : '<button class="sm" data-lease="'+esc(r.chat_id)+'">Take lease</button>')
+      : '';
+    return '<tr><td class="m" title="'+esc(r.chat_id||'')+'">'
+    + esc((r.chat_id||'').replace(/^wt:/,''))+'</td>'
+    + '<td class="m" title="'+esc(r.branch||'')+'">'+esc(r.branch||'')+'</td>'
+    + '<td><span class="pill '+(r.ready?'ready':'blocked')+'">'+(r.ready?'ready':'blocked')+'</span></td>'
+    + '<td class="r">'+(r.reverts||0)+'</td>'
+    + '<td title="'+esc((r.blockers||[]).join(' | '))+'">'
+    + esc((r.blockers&&r.blockers[0])||'')+'</td>'
+    + '<td class="act">'+act+'</td></tr>';
+  }).join('');
+  [...document.querySelectorAll('[data-lease]')].forEach(b =>
+    b.addEventListener('click', () => lease(b.dataset.lease, 'acquire')));
+  [...document.querySelectorAll('[data-rel]')].forEach(b =>
+    b.addEventListener('click', () => lease(b.dataset.rel, 'release')));
+}
+
+async function lease(chatId, action){
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/lease', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({chat_id: chatId, action})})).json();
+  } catch(e){ r = {ok:false, error:'agent offline'}; }
+  if (r && !r.ok){
+    /* Surface the readiness verdict verbatim — a refusal that doesn't say what it wants is a
+       refusal you argue with instead of fix. */
+    const why = r.reason || r.error || 'refused';
+    const blockers = (r.readiness && r.readiness.blockers) || [];
+    $('#fleetnote').innerHTML = '<span style="color:var(--bad)">'+esc(why)+'</span>'
+      + (blockers.length ? ' — '+esc(blockers[0]) : '');
+    return;
+  }
+  await loadFleet(true); loadStanding();
+}
+
+/* ── bars & tables ────────────────────────────────────────────────────────── */
+function bars(el, rows, hot){
+  const max = Math.max.apply(null, rows.map(r=>r[1])) || 1;
+  el.innerHTML = rows.map((r,i) =>
+      '<div class="bar"><div>'+esc(r[0])+'</div>'
+    + '<div class="track"><div class="fill'+(hot&&i===0?' hot':'')+'" style="width:'
+    + (100*r[1]/max).toFixed(1)+'%"></div></div>'
+    + '<div class="pct">'+r[1].toFixed(1)+'%</div></div>').join('');
+}
+function table(sel, rows, rightCols){
+  $(sel+' tbody').innerHTML = rows.map(r => '<tr>' + r.map((c,i) =>
+    '<td'+((rightCols||[]).indexOf(i)>=0?' class="r"':(i>0&&i<4?' class="m"':''))+'>'
+    + esc(c)+'</td>').join('') + '</tr>').join('');
+}
+async function loadLedger(){
+  let rows=null;
+  try { rows = await (await fetch('/api/cockpit/ledger')).json(); } catch(e){}
+  const tb = $('#ledger tbody');
+  if (!rows || !rows.length){
+    tb.innerHTML = '<tr><td colspan="6" class="note">No runs recorded yet.</td></tr>'; return;
+  }
+  tb.innerHTML = rows.slice(0,40).map(r => {
+    const rt=r.route||{}, u=r.usage||{};
+    const tk=(u.input_tokens||0)+(u.output_tokens||0)+(u.cache_read_input_tokens||0);
+    const res=r.error?r.error:(r.dry_run?'dry run':(r.result||'').slice(0,80));
+    return '<tr><td class="m">'+esc(new Date((r.ts||0)*1000).toLocaleString())+'</td>'
+      + '<td class="m">'+esc(rt.task_class||'')+'</td><td class="m">'+esc(rt.model||'')+'</td>'
+      + '<td class="m">'+esc((rt.thread||{}).action||'')+'</td>'
+      + '<td class="r">'+(tk?tk.toLocaleString():'—')+'</td>'
+      + '<td>'+esc(res)+'</td></tr>';
+  }).join('');
+}
+
+bars($('#classbars'), FALLBACK.classes, true);
+bars($('#compbars'), FALLBACK.components, true);
+$('#measnote').innerHTML = 'Measured '+AS_OF+' over 228 sessions / 34.5B tokens. '
+  + '<strong>triage</strong> is 73% of prompts and 66.9% of cost — 27.6 assistant messages per '
+  + 'quick question, because the answer is re-derived every time.';
+table('#policy', FALLBACK.policy);
+table('#tactics', FALLBACK.tactics);
+$('#ask').addEventListener('click', ()=>ask(false));
+$('#route').addEventListener('click', ()=>ask(true));
+$('#refleet').addEventListener('click', ()=>loadFleet(true));
+$('#newchat').addEventListener('click', ()=>{ CHAT=null; renderTabs(); renderLog([]);
+  $('#out').innerHTML=''; $('#q').focus(); });
+$('#q').addEventListener('keydown', e=>{ if(e.key==='Enter') ask(false); });
+loadStanding(); loadFleet(false); loadLedger();
+loadChats().then(loadLog);
+</script>
+</body>
+</html>
