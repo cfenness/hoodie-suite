@@ -282,6 +282,7 @@
          re-derived here. Each tile deep-links to the real surface for the full picture. -->
     <h2>Business health</h2>
     <div class="standing" id="bizhealth"></div>
+    <div class="needs" id="health-needs"></div>
   </div>
 
   <div class="zone">
@@ -529,6 +530,28 @@ async function loadBusinessHealth(){
     cells.push(stat('infra / month', '$'+usd.toFixed(0), 'compute + storage + proxy',
       usd > 200 ? 'warn' : 'ok'));
   }
+
+  // Data health — health_digest.py's daily verdict, previously a JSON file nobody opened.
+  let health = null;
+  try { health = await (await fetch('/api/cockpit/health-digest')).json(); } catch(e){}
+  if (health && health.available){
+    const c = health.counts || {};
+    const bad = (c.critical||0) + (c.warn||0);
+    cells.push(stat('data health', health.ok ? 'clear' : (c.critical ? c.critical+' critical' : c.warn+' warn'),
+      health.sources_checked!=null ? health.sources_checked+' sources checked'+
+        (health.as_of ? ' · '+new Date(health.as_of*1000).toLocaleDateString() : '') : 'no sources checked yet',
+      health.ok ? 'ok' : (c.critical ? 'alert' : 'warn')));
+    // Criticals are exactly as much a "needs you" item as an expired token or a held deploy lease
+    // — surfaced in their own block so a real health-digest fetch never races loadStanding()'s
+    // own render of #needs (both run concurrently on page load).
+    const worst = (health.findings||[]).filter(f => f.severity === 'critical').slice(0,3);
+    $('#health-needs').innerHTML = worst.map(f =>
+      need((f.new?'NEW — ':'')+f.source+': '+f.code, f.summary||'', true)).join('');
+  } else {
+    cells.push(stat('data health', '—', 'digest not available (agent offline, or none run yet)'));
+    $('#health-needs').innerHTML = '';
+  }
+
   $('#bizhealth').innerHTML = cells.join('') ||
     '<div class="note" style="margin:0">Agent offline, or nothing built yet — these read live from the MDM/coverage/monitor surfaces.</div>';
 }
