@@ -200,6 +200,58 @@
   .tflags input{cursor:pointer}
   #tframe{width:100%;height:480px;border:1px solid var(--line);border-radius:var(--rs);margin-top:var(--s3);background:var(--panel)}
 
+  /* ── ZONES ────────────────────────────────────────────────────────────────── */
+  /* One page, still — a spatial-thinker's "one surface" isn't a tidiness call, it's cognitive: a
+     new tab/page is a context switch that pulls the model out of his head. So this doesn't split
+     into more pages as the surface grows — it groups what's already a flat list of <h2> sections
+     into labeled zones with a bit more air between them, all still one scroll. */
+  .zone{margin-top:var(--s6);padding-top:var(--s5);border-top:1px solid var(--line)}
+  .zone:first-of-type{margin-top:var(--s5);padding-top:0;border-top:0}
+  .zlabel{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--derived);
+          font-weight:700;margin-bottom:var(--s1)}
+  .zone h2:first-of-type{margin-top:0}
+
+  /* ── BUSINESS HEALTH ──────────────────────────────────────────────────────── */
+  .stat.link{cursor:pointer}
+  .stat.link:hover{border-color:var(--accent)}
+  .stat .go{font-size:10.5px;color:var(--accent);margin-top:var(--s1)}
+
+  /* ── LIVE PREVIEW: watch it update while the work happens ────────────────────
+     The idea, in his own words: watch a site update live while AI is working on it. Two halves,
+     side by side above ~760px: the RENDERED page (an iframe, refreshed on a timer) and the ACTUAL
+     activity that's changing it (the run ledger, filtered to the window since the preview opened) —
+     so the "why did it just change" question always has an answer three feet away, not a separate
+     tab you have to go check. */
+  .pvrow{display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap}
+  .pvrow input[type=url]{flex:1;min-width:220px;background:var(--panel2);border:1px solid var(--line);
+    color:var(--ink);border-radius:var(--rs);padding:var(--s3);font:13px var(--sans)}
+  .pvrow input[type=url]:focus{outline:none;border-color:var(--accent)}
+  .pvrow select{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    border-radius:var(--rs);padding:var(--s3) var(--s2);font:12.5px var(--sans)}
+  .pvsplit{display:grid;grid-template-columns:1.4fr 1fr;gap:var(--s3);margin-top:var(--s3);align-items:start}
+  @media (max-width:900px){.pvsplit{grid-template-columns:1fr}}
+  .pvframe-wrap{position:relative;border:1px solid var(--line);border-radius:var(--rs);overflow:hidden;
+    background:var(--panel2);min-height:420px}
+  .pvframe-wrap iframe{width:100%;height:420px;border:0;display:block;background:#fff}
+  .pvframe-wrap iframe[hidden]{display:none}
+  .pvempty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:var(--mut);font-size:12.5px;text-align:center;padding:var(--s4)}
+  .pvfeed{max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:var(--s2)}
+  .pvfeed:empty::after{content:"No activity yet — dispatch something and watch it land here.";
+    color:var(--mut);font-size:12px}
+  .pvitem{border:1px solid var(--line);border-radius:var(--rs);padding:var(--s2) var(--s3);font-size:12px}
+  .pvitem .pvwhen{color:var(--mut);font-family:var(--mono);font-size:10.5px}
+  .pvitem .pvclass{color:var(--accent);font-weight:600}
+  .pvitem .pvresult{margin-top:var(--s1);color:var(--ink);line-height:1.4;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .pvitem.err{border-color:rgba(229,99,107,.45)}
+  .pvitem.err .pvresult{color:var(--bad)}
+  .live{display:none;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;
+    letter-spacing:.06em;text-transform:uppercase;color:var(--good);margin-left:auto}
+  .live.on{display:inline-flex}
+  .live .dot{width:7px;height:7px;border-radius:50%;background:var(--good);animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.35} 50%{opacity:1}}
+
   /* mechanism, available not imposed */
   details{margin-top:var(--s2)}
   summary{cursor:pointer;font-size:11px;text-transform:uppercase;letter-spacing:.09em;
@@ -219,91 +271,138 @@
     <p class="sub">Where you stand, what needs you, and one place to act.</p>
   </div>
 
-  <!-- STANDING — answers "where am I" before anything is asked of you -->
-  <div class="standing" id="standing"></div>
-  <div class="needs" id="needs"></div>
+  <div class="zone">
+    <div class="zlabel">Where you stand</div>
+    <!-- STANDING — answers "where am I" before anything is asked of you -->
+    <div class="standing" id="standing"></div>
+    <div class="needs" id="needs"></div>
 
-  <!-- CHAT — ongoing, several at once, all in this one surface -->
-  <h2>Chat</h2>
-  <div class="card">
-    <div class="chatbar">
-      <div class="tabs" id="tabs"></div>
-      <button class="ghost sm" id="mkticket" title="Draft a ticket from this conversation's acceptance criteria">Create ticket</button>
-      <button class="ghost sm" id="newchat">New</button>
-    </div>
-    <div class="log" id="log"></div>
-    <div class="askrow">
-      <input id="q" placeholder="is the abc-fws scraper still enabled" autocomplete="off">
-      <button id="ask">Send</button>
-      <button id="route" class="ghost">Route only</button>
-    </div>
-    <div id="out"></div>
+    <!-- BUSINESS HEALTH — the numbers that actually run the business, pulled from the surfaces
+         that already produce them (MDM workbench, steward, coverage, the cost monitor) rather than
+         re-derived here. Each tile deep-links to the real surface for the full picture. -->
+    <h2>Business health</h2>
+    <div class="standing" id="bizhealth"></div>
+    <div class="needs" id="health-needs"></div>
   </div>
 
-  <!-- FLEET — your concurrent work, ordered by what needs you first -->
-  <h2>Your chats</h2>
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:var(--s3);
-                margin-bottom:var(--s3)">
-      <div class="note" id="fleetnote" style="margin:0">loading…</div>
-      <button class="ghost sm" id="refleet">Re-check</button>
-    </div>
-    <div class="fleet">
-      <table id="fleet"><thead><tr>
-        <th>Chat</th><th>Branch</th><th>State</th><th class="r">Reverts</th><th>Blocker</th><th></th>
-      </tr></thead><tbody></tbody></table>
-    </div>
-  </div>
-
-  <!-- TICKETS — real acceptance criteria, not a chat transcript standing in for one -->
-  <h2>Tickets</h2>
-  <div class="card">
-    <div class="note" id="ticketsnote" style="margin:0 0 var(--s3)">loading…</div>
-    <table id="tickets"><thead><tr>
-      <th>Title</th><th>Status</th><th>Updated</th>
-    </tr></thead><tbody></tbody></table>
-    <div class="tdetail" id="tdetail"></div>
-  </div>
-
-  <!-- SPEND — your measured numbers, the reason any of this exists -->
-  <h2>Where your spend goes</h2>
-  <div class="grid2">
+  <div class="zone">
+    <div class="zlabel">Work</div>
+    <!-- CHAT — ongoing, several at once, all in this one surface -->
+    <h2>Chat</h2>
     <div class="card">
-      <div class="note" style="margin:0 0 var(--s3)">By task class, attributed to the prompt that
-        started each agentic loop.</div>
-      <div class="bars" id="classbars"></div>
-      <div class="note" id="measnote"></div>
+      <div class="chatbar">
+        <div class="tabs" id="tabs"></div>
+        <button class="ghost sm" id="mkticket" title="Draft a ticket from this conversation's acceptance criteria">Create ticket</button>
+        <button class="ghost sm" id="newchat">New</button>
+      </div>
+      <div class="log" id="log"></div>
+      <div class="askrow">
+        <input id="q" placeholder="is the abc-fws scraper still enabled" autocomplete="off">
+        <button id="ask">Send</button>
+        <button id="route" class="ghost">Route only</button>
+      </div>
+      <div id="out"></div>
     </div>
+
+    <!-- TICKETS — real acceptance criteria, not a chat transcript standing in for one -->
+    <h2>Tickets</h2>
     <div class="card">
-      <div class="note" style="margin:0 0 var(--s3)">Within that spend, what the tokens were doing.</div>
-      <div class="bars" id="compbars"></div>
-      <div class="note">Context handling is <strong>89.6%</strong>. Output is 10.3%; what you type is
-        0.2%. That is why retrieval beats a cheaper model.</div>
+      <div class="note" id="ticketsnote" style="margin:0 0 var(--s3)">loading…</div>
+      <table id="tickets"><thead><tr>
+        <th>Title</th><th>Status</th><th>Updated</th>
+      </tr></thead><tbody></tbody></table>
+      <div class="tdetail" id="tdetail"></div>
+    </div>
+
+    <!-- FLEET — your concurrent work, ordered by what needs you first -->
+    <h2>Your chats</h2>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:var(--s3);
+                  margin-bottom:var(--s3)">
+        <div class="note" id="fleetnote" style="margin:0">loading…</div>
+        <button class="ghost sm" id="refleet">Re-check</button>
+      </div>
+      <div class="fleet">
+        <table id="fleet"><thead><tr>
+          <th>Chat</th><th>Branch</th><th>State</th><th class="r">Reverts</th><th>Blocker</th><th></th>
+        </tr></thead><tbody></tbody></table>
+      </div>
     </div>
   </div>
 
-  <!-- MECHANISM — on demand -->
-  <details>
-    <summary>Routing policy &amp; tactics</summary>
-    <div class="card" style="padding:var(--s1) var(--s2)">
-      <table id="policy"><thead><tr>
-        <th>Class</th><th>Model</th><th>Effort</th><th>Tactics</th><th>Why this lane</th>
-      </tr></thead><tbody></tbody></table>
+  <div class="zone">
+    <div class="zlabel">Watch it happen</div>
+    <!-- LIVE PREVIEW — "I've always kind of wanted to watch a website update live while AI is
+         working on it." Two halves: the rendered page on a refresh timer, and the actual run
+         ledger next to it — so what just changed and why it changed sit three feet apart, not in
+         a separate tab. -->
+    <h2>Live preview</h2>
+    <div class="card">
+      <div class="pvrow">
+        <input type="url" id="pvurl" placeholder="http://localhost:3000 — or any URL" autocomplete="off">
+        <button id="pvwatch">Watch</button>
+        <select id="pvinterval" title="How often to reload the preview">
+          <option value="0">Manual refresh</option>
+          <option value="3000">Every 3s</option>
+          <option value="5000" selected>Every 5s</option>
+          <option value="15000">Every 15s</option>
+        </select>
+        <span class="live" id="pvlive"><span class="dot"></span> watching</span>
+      </div>
+      <div class="pvsplit">
+        <div class="pvframe-wrap">
+          <iframe id="pvframe" title="Live preview" hidden></iframe>
+          <div class="pvempty" id="pvempty">Paste a URL and hit Watch. The page reloads on the
+            interval you pick — every dispatch you run in the meantime shows up in the feed on the
+            right the moment it lands, so you can watch the two line up.</div>
+        </div>
+        <div class="pvfeed" id="pvfeed"></div>
+      </div>
     </div>
-    <div class="card" style="padding:var(--s1) var(--s2);margin-top:var(--s2)">
-      <table id="tactics"><thead><tr>
-        <th>Tactic</th><th>Does</th><th>Side</th></tr></thead><tbody></tbody></table>
-    </div>
-  </details>
+  </div>
 
-  <details>
-    <summary>Run ledger</summary>
-    <div class="card" style="padding:var(--s1) var(--s2)">
-      <table id="ledger"><thead><tr>
-        <th>When</th><th>Class</th><th>Model</th><th>Thread</th><th class="r">Tokens</th><th>Result</th>
-      </tr></thead><tbody></tbody></table>
+  <div class="zone">
+    <div class="zlabel">Mechanism</div>
+    <!-- SPEND — your measured numbers, the reason any of this exists -->
+    <h2>Where your spend goes</h2>
+    <div class="grid2">
+      <div class="card">
+        <div class="note" style="margin:0 0 var(--s3)">By task class, attributed to the prompt that
+          started each agentic loop.</div>
+        <div class="bars" id="classbars"></div>
+        <div class="note" id="measnote"></div>
+      </div>
+      <div class="card">
+        <div class="note" style="margin:0 0 var(--s3)">Within that spend, what the tokens were doing.</div>
+        <div class="bars" id="compbars"></div>
+        <div class="note">Context handling is <strong>89.6%</strong>. Output is 10.3%; what you type is
+          0.2%. That is why retrieval beats a cheaper model.</div>
+      </div>
     </div>
-  </details>
+
+    <!-- on demand -->
+    <details>
+      <summary>Routing policy &amp; tactics</summary>
+      <div class="card" style="padding:var(--s1) var(--s2)">
+        <table id="policy"><thead><tr>
+          <th>Class</th><th>Model</th><th>Effort</th><th>Tactics</th><th>Why this lane</th>
+        </tr></thead><tbody></tbody></table>
+      </div>
+      <div class="card" style="padding:var(--s1) var(--s2);margin-top:var(--s2)">
+        <table id="tactics"><thead><tr>
+          <th>Tactic</th><th>Does</th><th>Side</th></tr></thead><tbody></tbody></table>
+      </div>
+    </details>
+
+    <details>
+      <summary>Run ledger</summary>
+      <div class="card" style="padding:var(--s1) var(--s2)">
+        <table id="ledger"><thead><tr>
+          <th>When</th><th>Class</th><th>Model</th><th>Thread</th><th class="r">Tokens</th><th>Result</th>
+        </tr></thead><tbody></tbody></table>
+      </div>
+    </details>
+  </div>
 
 </div>
 
@@ -341,10 +440,14 @@ const FALLBACK = {
     ['Drop verify','removes self-check scaffolding','output']]
 };
 
-function stat(lab, val, hint, cls){
-  return '<div class="stat '+(cls||'')+'"><div class="lab">'+esc(lab)+'</div>'
+function stat(lab, val, hint, cls, href){
+  const inner = '<div class="lab">'+esc(lab)+'</div>'
        + '<div class="val">'+esc(val)+'</div>'
-       + (hint ? '<div class="hint">'+esc(hint)+'</div>' : '') + '</div>';
+       + (hint ? '<div class="hint">'+esc(hint)+'</div>' : '')
+       + (href ? '<div class="go">open →</div>' : '');
+  return href
+    ? '<a class="stat link '+(cls||'')+'" href="'+esc(href)+'" style="text-decoration:none;color:inherit">'+inner+'</a>'
+    : '<div class="stat '+(cls||'')+'">'+inner+'</div>';
 }
 function need(what, fix, bad){
   return '<div class="need'+(bad?' bad':'')+'"><div><span class="what">'+esc(what)+'</span>'
@@ -387,6 +490,70 @@ async function loadStanding(){
   if (!auth) needs.push(need('Agent offline',
     'Start it locally to ask, route and dispatch. Figures below are measured as of ' + AS_OF + '.'));
   $('#needs').innerHTML = needs.join('');
+}
+
+/* ── BUSINESS HEALTH ──────────────────────────────────────────────────────── */
+/* Every number here already exists somewhere else in the suite (MDM workbench, steward, coverage,
+   the cost monitor) — this doesn't re-derive anything, it just answers "how is the business doing"
+   without a context switch, per the one-surface rule. Each tile deep-links to the real page. */
+async function loadBusinessHealth(){
+  let master=null, steward=null, coverage=null, monitor=null;
+  try { master   = await (await fetch('/api/master/workbench/summary')).json(); } catch(e){}
+  try { steward  = await (await fetch('/api/master/steward/summary')).json(); } catch(e){}
+  try { coverage = await (await fetch('/api/coverage')).json(); } catch(e){}
+  try { monitor  = await (await fetch('/api/monitor')).json(); } catch(e){}
+
+  const cells = [];
+  if (master && master.ok){
+    const total = (master.confirmed||0) + (master.review||0) + (master.quarantine||0);
+    cells.push(stat('master items', master.master ?? total, master.master ? 'confirmed products'
+      : 'no master built yet', null, 'mdm.html#master'));
+    cells.push(stat('needs review', master.review||0, 'sitting in the match queue',
+      (master.review||0) > 0 ? 'warn' : 'ok', 'mdm.html#review'));
+    cells.push(stat('quarantined', master.quarantine||0, 'failed a hard rule, held out',
+      (master.quarantine||0) > 0 ? 'alert' : 'ok', 'mdm.html#review'));
+  }
+  if (steward && steward.fields && steward.fields.length){
+    const totalF = steward.fields.reduce((a,f)=>a+(f.total||0),0);
+    const filledF = steward.fields.reduce((a,f)=>a+(f.filled||0),0);
+    const pct = totalF ? Math.round(100*filledF/totalF) : null;
+    cells.push(stat('field completeness', pct!=null ? pct+'%' : '—',
+      'across '+steward.fields.length+' stewarded fields', pct!=null && pct < 60 ? 'warn' : 'ok',
+      'mdm.html#steward'));
+  }
+  if (coverage && coverage.ok){
+    cells.push(stat('outlets tracked', coverage.total||0,
+      coverage.note || (coverage.by_state||[]).length+' states', null, 'mdm.html#coverage'));
+  }
+  if (monitor && monitor.cost){
+    const usd = monitor.cost.total_usd_mo || 0;
+    cells.push(stat('infra / month', '$'+usd.toFixed(0), 'compute + storage + proxy',
+      usd > 200 ? 'warn' : 'ok'));
+  }
+
+  // Data health — health_digest.py's daily verdict, previously a JSON file nobody opened.
+  let health = null;
+  try { health = await (await fetch('/api/cockpit/health-digest')).json(); } catch(e){}
+  if (health && health.available){
+    const c = health.counts || {};
+    const bad = (c.critical||0) + (c.warn||0);
+    cells.push(stat('data health', health.ok ? 'clear' : (c.critical ? c.critical+' critical' : c.warn+' warn'),
+      health.sources_checked!=null ? health.sources_checked+' sources checked'+
+        (health.as_of ? ' · '+new Date(health.as_of*1000).toLocaleDateString() : '') : 'no sources checked yet',
+      health.ok ? 'ok' : (c.critical ? 'alert' : 'warn')));
+    // Criticals are exactly as much a "needs you" item as an expired token or a held deploy lease
+    // — surfaced in their own block so a real health-digest fetch never races loadStanding()'s
+    // own render of #needs (both run concurrently on page load).
+    const worst = (health.findings||[]).filter(f => f.severity === 'critical').slice(0,3);
+    $('#health-needs').innerHTML = worst.map(f =>
+      need((f.new?'NEW — ':'')+f.source+': '+f.code, f.summary||'', true)).join('');
+  } else {
+    cells.push(stat('data health', '—', 'digest not available (agent offline, or none run yet)'));
+    $('#health-needs').innerHTML = '';
+  }
+
+  $('#bizhealth').innerHTML = cells.join('') ||
+    '<div class="note" style="margin:0">Agent offline, or nothing built yet — these read live from the MDM/coverage/monitor surfaces.</div>';
 }
 
 /* ── ASK ──────────────────────────────────────────────────────────────────── */
@@ -724,6 +891,52 @@ async function createTicketFromChat(){
   if (r && r.id) openTicket(r.id);
 }
 
+/* ── LIVE PREVIEW ─────────────────────────────────────────────────────────── */
+/* Watch a page update while the work happens: the iframe reloads on a timer, the feed below it
+   polls the same run ledger the Spend/Ledger sections already read — no new backend, just a second
+   view onto data that already exists, next to the thing it's changing. */
+let PV_TIMER = null, PV_FEED_TIMER = null, PV_STARTED_AT = 0, PV_BASE_URL = '';
+
+function pvBust(url){
+  const sep = url.indexOf('?') >= 0 ? '&' : '?';
+  return url + sep + '_cb=' + Date.now();
+}
+function startPreview(){
+  const raw = $('#pvurl').value.trim();
+  if (!raw) return;
+  PV_BASE_URL = /^https?:\/\//i.test(raw) ? raw : 'http://' + raw;
+  PV_STARTED_AT = Date.now() / 1000;
+  const frame = $('#pvframe');
+  frame.hidden = false;
+  $('#pvempty').style.display = 'none';
+  frame.src = pvBust(PV_BASE_URL);
+
+  if (PV_TIMER) clearInterval(PV_TIMER);
+  const ms = parseInt($('#pvinterval').value, 10);
+  $('#pvlive').classList.toggle('on', ms > 0);
+  if (ms > 0) PV_TIMER = setInterval(() => { frame.src = pvBust(PV_BASE_URL); }, ms);
+
+  if (PV_FEED_TIMER) clearInterval(PV_FEED_TIMER);
+  loadPreviewFeed();
+  PV_FEED_TIMER = setInterval(loadPreviewFeed, 4000);
+}
+async function loadPreviewFeed(){
+  let rows = null;
+  try { rows = await (await fetch('/api/cockpit/ledger')).json(); } catch(e){}
+  if (!rows) return;
+  const since = rows.filter(r => (r.ts||0) >= PV_STARTED_AT - 1);
+  const shown = (since.length ? since : rows).slice(0, 12);
+  $('#pvfeed').innerHTML = shown.map(r => {
+    const rt = r.route || {};
+    const text = r.error ? r.error : (r.dry_run ? 'dry run' : (r.result || '(no result)'));
+    return '<div class="pvitem'+(r.error?' err':'')+'">'
+      + '<span class="pvwhen">'+esc(new Date((r.ts||0)*1000).toLocaleTimeString())+'</span> '
+      + '<span class="pvclass">'+esc(rt.task_class||'')+'</span>'
+      + (rt.model ? ' <span class="mono" style="color:var(--mut)">'+esc(rt.model)+'</span>' : '')
+      + '<div class="pvresult">'+esc(text)+'</div></div>';
+  }).join('');
+}
+
 /* ── bars & tables ────────────────────────────────────────────────────────── */
 function bars(el, rows, hot){
   const max = Math.max.apply(null, rows.map(r=>r[1])) || 1;
@@ -771,7 +984,10 @@ $('#newchat').addEventListener('click', ()=>{ CHAT=null; renderTabs(); renderLog
   $('#out').innerHTML=''; $('#q').focus(); });
 $('#q').addEventListener('keydown', e=>{ if(e.key==='Enter') ask(false); });
 $('#mkticket').addEventListener('click', createTicketFromChat);
-loadStanding(); loadFleet(false); loadLedger(); loadTickets();
+$('#pvwatch').addEventListener('click', startPreview);
+$('#pvurl').addEventListener('keydown', e=>{ if(e.key==='Enter') startPreview(); });
+$('#pvinterval').addEventListener('change', ()=>{ if (PV_BASE_URL) startPreview(); });
+loadStanding(); loadBusinessHealth(); loadFleet(false); loadLedger(); loadTickets();
 loadChats().then(loadLog);
 </script>
 </body>

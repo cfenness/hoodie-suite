@@ -7121,6 +7121,47 @@ def api_cockpit_memory():
         return jsonify(facts=0, subjects=0, verdicts={}, error=str(e)[:200]), 200
 
 
+@app.get("/api/cockpit/health-digest")
+def api_cockpit_health_digest():
+    """The daily source-health verdict (unifyd/health_digest.py) — failed/degraded/stale sources,
+    row-count collapses, honest no-creds skips — in one place instead of a JSON file nobody opens.
+
+    health_digest.py runs on the Fly dispatcher machine, not this one, and publishes its result to
+    the shared warehouse (`warehouse.put_bytes("_health_digest.json", ...)`) for exactly that
+    reason: no serving machine can assume it ran the digest itself. Same fallback order the
+    digest's own first_seen carry-forward already uses — a local file first (only ever present
+    when running this locally), the warehouse-published copy otherwise."""
+    d = None
+    local = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent_state", "health", "latest.json")
+    try:
+        with open(local) as fh:
+            d = json.load(fh)
+    except Exception:
+        d = None
+    if d is None:
+        try:
+            import warehouse
+            raw = warehouse.get_bytes("_health_digest.json")
+            if raw:
+                d = json.loads(raw)
+        except Exception:
+            d = None
+    if d is None:
+        return jsonify(available=False), 200
+
+    findings = d.get("findings") or []
+    # The page needs the summary plus the worst few findings, not the whole list with full
+    # evidence blobs — critical first (already the digest's own sort order), capped so a bad day
+    # can't blow out the payload.
+    worst = [f for f in findings if f.get("severity") in ("critical", "warn")][:10]
+    return jsonify(
+        available=True, as_of=d.get("as_of"), weekly=bool(d.get("weekly")), ok=bool(d.get("ok")),
+        counts=d.get("counts") or {}, sources_checked=d.get("sources_checked"),
+        new_criticals=d.get("new_criticals"), warehouse=(d.get("warehouse") or {}).get("label"),
+        findings=[{k: f.get(k) for k in ("code", "severity", "source", "summary", "new")}
+                  for f in worst]), 200
+
+
 @app.post("/api/cockpit/harvest")
 def api_cockpit_harvest():
     """Seed the fact store from source_registry.py — the repo's own declared truth.
