@@ -182,6 +182,22 @@ class Router(object):
             self._total_picks += 1
             return entries[ip], costume
 
+    def hot_exits(self, top=8, now=None):
+        """Exits THIS process has touched within HOT_WINDOW_S, busiest first — the same window `_hot()`
+        checks before every pick. Small and cheap by construction (bounded by however many exits are
+        actually in play right now, not the whole pool), meant to ride along on a heartbeat.
+
+        This is the piece a fleet-level aggregator needs and no single process has: two processes
+        reporting the SAME exit here at the SAME moment is the cross-shard concentration collision
+        (COLLECT-HANDOFF.md §1e) that neither one can see from inside its own `identity_router`, because
+        each only ever sees its own picks."""
+        now = time.time() if now is None else now
+        with self._lock:
+            rows = [(ip, sum(1 for t in ts if now - t <= HOT_WINDOW_S)) for ip, ts in self._exit_ts.items()]
+        rows = [r for r in rows if r[1] > 0]
+        rows.sort(key=lambda r: -r[1])
+        return rows[:top]
+
     def stats(self, top=8):
         with self._lock:
             now = time.time()
@@ -215,6 +231,10 @@ def pick(pool, costumes, now=None):
 
 def stats():
     return get().stats()
+
+
+def hot_exits(top=8):
+    return get().hot_exits(top=top)
 
 
 def reset():

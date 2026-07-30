@@ -479,6 +479,17 @@ def consolidate(site="ubereats", rebuild=False, log=print):
 
 def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
     """Sweep this shard of the universe. Returns a run record. NO cap: the only bound is the shard."""
+    # GIVE THIS SHARD ITS OWN EXIT SLICE before anything else runs. Measured 2026-07-29 (§1e): with
+    # nshard independent processes all drawing from the same pool, identity_router's per-process
+    # concentration-avoidance can't see across processes — shards silently collide on the same exits.
+    # set_shard makes every getstore._session() call in this process draw only from its own disjoint
+    # slice, so the collision can't happen structurally. A no-op for nshard=1 (single-shard runs,
+    # pool_health, costume_probe — none of which call this).
+    try:
+        import getstore
+        getstore.set_shard(shard, nshard)
+    except Exception:
+        pass
     workers = workers or auto_workers(nshard, log=log)
     # RATE IS THE REAL BUDGET; workers just decide how many can be in flight while we wait for tokens.
     try:
@@ -568,6 +579,16 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
                 _bk["exits_burned"] = len(_ev.get("below_median_25pp") or [])
         except Exception:
             pass
+        # TOP-3 hot exits, not the whole map — same "two scalars, not 50" discipline as _bk above. This
+        # is the field a fleet-level aggregator needs and no single shard has any use for on its own: two
+        # shards' heartbeats naming the SAME exit at the SAME moment is the cross-shard concentration
+        # collision (COLLECT-HANDOFF.md §1e) that neither shard's own metrics can see.
+        _hot = []
+        try:
+            import identity_router
+            _hot = [ip for ip, _n in identity_router.hot_exits(top=3)]
+        except Exception:
+            pass
         _progress(rows=n_items + len(pending),
                   stage="%s/%s stores" % (f"{len(done):,}", f"{len(mine):,}"),
                   pct=round(100.0 * len(done) / max(1, len(mine)), 1),
@@ -575,6 +596,7 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
                   rss_mb=_rss_mb(),
                   pace_rate=_pc.get("rate"), pace_backoffs=_pc.get("backoffs"),
                   pace_increases=_pc.get("increases"), pace_at_floor=_pc.get("at_floor"),
+                  hot_exits=_hot,
                   **_bk)
 
     def _one(t):
