@@ -360,9 +360,21 @@ def _land(site, day, idx, shard, items, log=print):
     # that has never lost a row in raw_payloads or retail_observations. A single-writer consolidation
     # (consolidate(), run as a build) folds the parts into the canonical catalog afterwards.
     try:
+        import pyarrow as pa
+        # Pin every field's type explicitly. Without this, a batch where e.g. `brand` happens to be
+        # None for every item in THIS batch infers as an int64/null column, while another batch with
+        # real brand strings infers VARCHAR for the same field — and query_parts()'s union_by_name
+        # across all partitions then has to reconcile VARCHAR against INTEGER for one column, which
+        # corrupts the read (an invalid-UTF8 decode error) instead of failing loudly. Measured live
+        # 2026-07-30: exactly this, across 5 distinct per-file schemas in ubereats_products_parts — the
+        # registered consolidation build had been silently broken, "no accounts landing" traced back to
+        # a write-time schema bug, not a scheduling gap.
+        _numeric = {"price": pa.float64(), "list_price": pa.float64(), "abv": pa.float64()}
+        _bool = {"in_stock": pa.bool_()}
+        dtypes = {f: _numeric.get(f, _bool.get(f, pa.string())) for f in lean}
         warehouse.write_partition(
             tbl + "_parts", "%s_s%02d_b%04d" % (day, shard, idx),
-            [{k: it.get(k) for k in lean} for it in items], fields=lean)
+            [{k: it.get(k) for k in lean} for it in items], fields=lean, dtypes=dtypes)
     except Exception as e:
         log("  [ue] %s land failed: %s" % (tbl, str(e)[:110]))
         return 0

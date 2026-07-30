@@ -132,6 +132,29 @@ check("no single exit took more than HOT_MAX of the 10 picks (%s)"
       % {e: exits_used.count(e) for e in set(exits_used)},
       max(exits_used.count(e) for e in set(exits_used)) <= R.HOT_MAX)
 
+print("cross-PROCESS cold start: independent fresh routers (one per shard process, not one per thread) "
+      "collide on the IDENTICAL first pick unless the caller shuffles its own pool copy first (real bug "
+      "found live 2026-07-30 — 8 concurrently-launched shard processes each starting a fresh module-level "
+      "Router() all picked the SAME exit+costume simultaneously; the in-process fix above only serializes "
+      "picks that share one Router instance and its lock — it has no effect across processes, since each "
+      "gets its own empty Router with identical initial scores and a deterministic tie-break). Fixed at "
+      "the CALLER (getstore.py shuffles its pool copy before calling pick(), leaving the router's own "
+      "tie-break deterministic for its own tests) — verified here at the router level: an unshuffled pool "
+      "collides every time, a shuffled-per-instance pool mostly doesn't.")
+import random
+fleet_pool = pool(50)
+unshuffled_picks = [R.Router().pick(fleet_pool, ["c"], now=0.0)[0] for _ in range(8)]
+check("without a per-process shuffle, 8 fresh routers collide onto ONE exit (%d distinct of 8)"
+      % len(set(unshuffled_picks)), len(set(unshuffled_picks)) == 1)
+rnd = random.Random(20260730)   # fixed seed — deterministic like every other test here, not a live draw
+shuffled_picks = []
+for _ in range(8):
+    copy = list(fleet_pool)
+    rnd.shuffle(copy)
+    shuffled_picks.append(R.Router().pick(copy, ["c"], now=0.0)[0])
+check("with each process shuffling its own pool copy, most of the 8 diverge (%d distinct of 8)"
+      % len(set(shuffled_picks)), len(set(shuffled_picks)) >= 5)
+
 print("empty pool or costume list returns (None, None) rather than raising")
 check("empty pool", R.get().pick([], ["c"]), (None, None))
 check("empty costumes", R.get().pick(["u@10.0.0.1:1"], []), (None, None))

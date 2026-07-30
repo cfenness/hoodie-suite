@@ -337,8 +337,27 @@ def _session(site):
             # (10 workers on 1 IP: 20% usable collapsing to 0% in 3 minutes; the same 10 spread over 5
             # IPs: 67%). A round-robin counter reacts to neither fact. See identity_router.py.
             try:
+                import random
                 import identity_router
-                px, chosen = identity_router.pick(pool, PROFILES)
+                # SHUFFLE before handing to the router — a FRESH router (module-level state, so every
+                # separate shard PROCESS starts with its own empty one) scores every untried candidate
+                # identically, and its tie-break is deliberately deterministic ("no randomness, so this
+                # stays reproducible under test" — see identity_router.py). That fix serializes picks
+                # WITHIN one process via a shared lock, so that process's own workers correctly diverge
+                # after the first pick. It does nothing ACROSS processes: verified live 2026-07-30 that
+                # 8 independent fresh Router() instances (one per shard process) all pick the IDENTICAL
+                # first (exit, costume) — the same list, same order, same tie-break, every time,
+                # regardless of pool size. A fleet of N shard processes launching together concentrates
+                # their first several picks onto a handful of exits at the exact moment the router has no
+                # history to route around it — the same "many sessions on one IP" burn identity_router
+                # exists to prevent, just recreated at the fleet level instead of within one process.
+                # Shuffling the CALLER's copy (not the router's tie-break) fixes this without touching
+                # the router's own determinism, which its tests rely on: each process's `random` is
+                # already independently OS-seeded at interpreter start, so this list simply differs
+                # process to process.
+                shuffled = list(pool)
+                random.shuffle(shuffled)
+                px, chosen = identity_router.pick(shuffled, PROFILES)
                 if px:
                     _TL.costume = chosen
             except Exception:

@@ -136,6 +136,34 @@ def running_sources():
     return out
 
 
+def conflicting_machine(sid, shard=None, self_id=None):
+    """The id of another live machine that a NEW launch of `sid` (this `shard`, if sharded) would
+    collide with — or None if it's safe to proceed. This is the check `run_ephemeral.py` runs on EVERY
+    launch, not just the dispatcher's own scheduled tick, because a manual UI click or a stray direct
+    `flyctl machine run` bypasses running_sources() entirely — only a check enforced at the point a
+    machine actually starts doing work can catch every launch path. Learned the hard way: 4 duplicate
+    manual `ubereats` machines ran concurrently against the same 12-hour-rested proxy pool on
+    2026-07-30, burning through it before the isolated run they were supposed to leave alone finished.
+
+    An UNSHARDED launch (shard=None) reserves the WHOLE source — it conflicts with any other running
+    machine for `sid`, sharded or not (a second full sweep would redundantly re-cover the same universe
+    the sharded fleet is dividing). A SHARDED launch only reserves its own slice — it conflicts with
+    another running machine for the same (sid, shard), or with an unsharded run of `sid` (which claims
+    the whole source), but coexists fine with sibling shards at other indices."""
+    for m in _machines():
+        if self_id and m.get("id") == self_id:
+            continue
+        if m.get("state") not in ("created", "starting", "started", "replacing"):
+            continue
+        md = ((m.get("config") or {}).get("metadata") or {})
+        if md.get("role") != "ephemeral-pull" or md.get("source") != sid:
+            continue
+        other_shard = md.get("shard")
+        if shard is None or other_shard is None or other_shard == shard:
+            return m.get("id")
+    return None
+
+
 def spawn(sid, image, klass, mem_hint=None, run_id=None, days=None, want_all=False,
           trigger="scheduled", env=None):
     """Create the ephemeral machine for one source. `run_id` attaches a Hoodie Collect journal so the
