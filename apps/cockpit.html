@@ -167,6 +167,39 @@
   .bar .pct{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:11.5px;color:var(--mut)}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)}
 
+  /* ── TICKETS ──────────────────────────────────────────────────────────────── */
+  /* Real acceptance criteria, not a chat transcript standing in for one — see agent_tickets.py.
+     Status stepper ported from apps/ordering.html's order-lifecycle pattern (forward-only ladder,
+     one "Mark {next}" button, a persistent Cancel) rather than inventing a second one. */
+  #tickets{table-layout:fixed;width:100%}
+  #tickets td, #tickets th{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tickets td:nth-child(1), #tickets th:nth-child(1){width:auto}
+  #tickets td:nth-child(2), #tickets th:nth-child(2){width:104px}
+  #tickets td:nth-child(3), #tickets th:nth-child(3){width:150px}
+  #tickets tbody tr{height:34px;cursor:pointer}
+  #tickets tbody tr:hover td{background:var(--panel2)}
+  .pill.draft{color:var(--mut);border-color:var(--line)}
+  .pill.accepted, .pill.in_progress{color:var(--accent);border-color:var(--accent)}
+  .pill.testing{color:var(--warn);border-color:rgba(217,154,63,.45)}
+  .pill.done{color:var(--good);border-color:rgba(91,184,110,.45)}
+  .pill.blocked, .pill.cancelled{color:var(--bad);border-color:rgba(229,99,107,.45)}
+
+  .tdetail{margin-top:var(--s3)}
+  .tdetail:empty{display:none}
+  .thead{display:flex;justify-content:space-between;align-items:baseline;gap:var(--s3);margin-bottom:var(--s2)}
+  .ttitle{font-size:15px;font-weight:600;letter-spacing:-.01em}
+  .steps{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+  .steps .step.on{color:var(--accent);font-weight:700}
+  .steps .sep{margin:0 5px;color:var(--line)}
+  .statusrow{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);flex-wrap:wrap;margin:var(--s2) 0 var(--s3)}
+  .actrow{display:flex;gap:var(--s2);flex-wrap:wrap}
+  .criteria{width:100%;min-height:120px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    border-radius:var(--rs);padding:var(--s3);font:12.5px/1.5 var(--mono);resize:vertical}
+  .criteria:focus{outline:none;border-color:var(--accent)}
+  .tflags{display:flex;align-items:center;gap:var(--s2);font-size:12.5px;color:var(--mut);margin-top:var(--s2)}
+  .tflags input{cursor:pointer}
+  #tframe{width:100%;height:480px;border:1px solid var(--line);border-radius:var(--rs);margin-top:var(--s3);background:var(--panel)}
+
   /* mechanism, available not imposed */
   details{margin-top:var(--s2)}
   summary{cursor:pointer;font-size:11px;text-transform:uppercase;letter-spacing:.09em;
@@ -195,6 +228,7 @@
   <div class="card">
     <div class="chatbar">
       <div class="tabs" id="tabs"></div>
+      <button class="ghost sm" id="mkticket" title="Draft a ticket from this conversation's acceptance criteria">Create ticket</button>
       <button class="ghost sm" id="newchat">New</button>
     </div>
     <div class="log" id="log"></div>
@@ -219,6 +253,16 @@
         <th>Chat</th><th>Branch</th><th>State</th><th class="r">Reverts</th><th>Blocker</th><th></th>
       </tr></thead><tbody></tbody></table>
     </div>
+  </div>
+
+  <!-- TICKETS — real acceptance criteria, not a chat transcript standing in for one -->
+  <h2>Tickets</h2>
+  <div class="card">
+    <div class="note" id="ticketsnote" style="margin:0 0 var(--s3)">loading…</div>
+    <table id="tickets"><thead><tr>
+      <th>Title</th><th>Status</th><th>Updated</th>
+    </tr></thead><tbody></tbody></table>
+    <div class="tdetail" id="tdetail"></div>
   </div>
 
   <!-- SPEND — your measured numbers, the reason any of this exists -->
@@ -545,6 +589,141 @@ async function lease(chatId, action){
   await loadFleet(true); loadStanding();
 }
 
+/* ── TICKETS ──────────────────────────────────────────────────────────────── */
+/* Real acceptance criteria, not a chat transcript standing in for one — see agent_tickets.py.
+   OPEN_TICKET tracks which row's detail is expanded so a background loadTickets() refresh (the
+   list re-polls after any action) doesn't collapse the panel out from under you mid-edit. */
+const TICKET_FLOW = ['draft','accepted','in_progress','testing','done'];
+let OPEN_TICKET = null;
+let TICKETS = [];
+
+function statusLadder(status){
+  if (status === 'blocked' || status === 'cancelled')
+    return '<span class="pill '+esc(status)+'">'+esc(status)+'</span>';
+  const i = TICKET_FLOW.indexOf(status);
+  return '<span class="steps">' + TICKET_FLOW.map((s,k) =>
+    '<span class="step'+(k<=i?' on':'')+'">'+esc(s)+'</span>').join('<span class="sep">›</span>')
+    + '</span>';
+}
+function nextStatus(status){
+  const i = TICKET_FLOW.indexOf(status);
+  return (i >= 0 && i < TICKET_FLOW.length-1) ? TICKET_FLOW[i+1] : null;
+}
+
+async function loadTickets(){
+  let d = null;
+  try { d = await (await fetch('/api/cockpit/tickets')).json(); } catch(e){}
+  TICKETS = (d && d.tickets) || [];
+  const tb = $('#tickets tbody');
+  if (!TICKETS.length){
+    $('#ticketsnote').textContent = 'No tickets yet — create one from a chat above.';
+    tb.innerHTML = '<tr><td colspan="3" class="note">—</td></tr>';
+  } else {
+    $('#ticketsnote').innerHTML = '<strong>'+TICKETS.length+'</strong> ticket'+(TICKETS.length===1?'':'s');
+    tb.innerHTML = TICKETS.map(t =>
+      '<tr data-tid="'+esc(t.id)+'"><td title="'+esc(t.title)+'">'+esc(t.title)+'</td>'
+      + '<td><span class="pill '+esc(t.status)+'">'+esc(t.status)+'</span></td>'
+      + '<td class="m">'+esc(new Date(t.updated).toLocaleString())+'</td></tr>').join('');
+    [...tb.querySelectorAll('tr[data-tid]')].forEach(tr =>
+      tr.addEventListener('click', () => openTicket(tr.dataset.tid)));
+  }
+  // Keep an already-open detail panel in sync with whatever the list just re-fetched.
+  if (OPEN_TICKET && TICKETS.some(t => t.id === OPEN_TICKET)) renderTicketDetail(OPEN_TICKET);
+}
+
+async function openTicket(tid){
+  OPEN_TICKET = tid;
+  await renderTicketDetail(tid);
+}
+
+async function renderTicketDetail(tid){
+  let t = null;
+  try { t = await (await fetch('/api/cockpit/tickets/'+encodeURIComponent(tid))).json(); } catch(e){}
+  if (!t || t.error){ $('#tdetail').innerHTML = ''; return; }
+  const next = nextStatus(t.status);
+  const isSink = t.status === 'blocked' || t.status === 'cancelled';
+  $('#tdetail').innerHTML =
+      '<div class="thead"><div class="ttitle">'+esc(t.title)+'</div>'
+    + '<button class="ghost sm" id="tclose">Close</button></div>'
+    + '<div class="statusrow">' + statusLadder(t.status)
+    + '<div class="actrow">'
+    + (next ? '<button class="sm" data-adv="'+esc(next)+'">Mark '+esc(next)+'</button>' : '')
+    + (t.status !== 'done' && !isSink ? '<button class="ghost sm" data-adv="blocked">Blocked</button>' : '')
+    + (t.status !== 'done' ? '<button class="ghost sm" data-adv="cancelled">Cancel</button>' : '')
+    + '<button class="sm" id="tsave">Save criteria</button>'
+    + '<button class="sm" id="trun"'+(t.status==='done'?' disabled':'')+'>Run crew</button>'
+    + '<button class="ghost sm" id="tdocs">'+(t.docs_done?'Docs updated ✓':'Requires documentation')+'</button>'
+    + '</div></div>'
+    + '<textarea class="criteria" id="tbody">'+esc(t.body_md||'')+'</textarea>'
+    + '<div class="tflags"><label><input type="checkbox" id="treqdocs"'
+    + (t.requires_docs?' checked':'')+'> requires documentation'
+    + (t.source_chat_id ? ' &nbsp;·&nbsp; from chat <span class="mono">'+esc(t.source_chat_id)+'</span>' : '')
+    + '</label></div>'
+    + '<iframe id="tframe" title="Ticket body, live" src="md-viewer.html?embed=1&ticket='+encodeURIComponent(tid)+'"></iframe>';
+
+  $('#tclose').addEventListener('click', () => { OPEN_TICKET = null; $('#tdetail').innerHTML = ''; });
+  $('#tsave').addEventListener('click', () => saveCriteria(tid));
+  [...document.querySelectorAll('[data-adv]')].forEach(b =>
+    b.addEventListener('click', () => advanceTicket(tid, b.dataset.adv)));
+  $('#trun').addEventListener('click', () => runCrewOnTicket(tid));
+  $('#tdocs').addEventListener('click', () => runDocsOnTicket(tid));
+  $('#treqdocs').addEventListener('change', e =>
+    patchTicket(tid, {requires_docs: e.target.checked}));
+}
+
+async function patchTicket(tid, patch){
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/tickets/'+encodeURIComponent(tid), {method:'PATCH',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(patch)})).json();
+  } catch(e){ r = {ok:false, error:'agent offline'}; }
+  return r;
+}
+async function saveCriteria(tid){
+  const btn = $('#tsave'); btn.disabled = true; btn.textContent = 'Saving…';
+  await patchTicket(tid, {body_md: $('#tbody').value});
+  btn.disabled = false; btn.textContent = 'Save criteria';
+  await loadTickets();
+}
+async function advanceTicket(tid, status){
+  const r = await patchTicket(tid, {status});
+  if (!r.ok) { alert(r.error || 'could not change status'); return; }
+  await loadTickets();
+}
+async function runCrewOnTicket(tid){
+  const btn = $('#trun'); btn.disabled = true; btn.textContent = 'Running crew…';
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/tickets/'+encodeURIComponent(tid)+'/run',
+      {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})).json();
+  } catch(e){ r = {error:'agent offline'}; }
+  if (r && r.error) alert(r.error);
+  await loadTickets(); loadStanding();
+}
+async function runDocsOnTicket(tid){
+  const btn = $('#tdocs'); btn.disabled = true; btn.textContent = 'Writing docs…';
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/tickets/'+encodeURIComponent(tid)+'/docs',
+      {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})).json();
+  } catch(e){ r = {error:'agent offline'}; }
+  if (r && r.error) alert(r.error);
+  await loadTickets();
+}
+async function createTicketFromChat(){
+  if (!CHAT){ alert('Send at least one message in a chat before turning it into a ticket.'); return; }
+  const btn = $('#mkticket'); btn.disabled = true; btn.textContent = 'Drafting…';
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/tickets', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({chat_id: CHAT})})).json();
+  } catch(e){ r = {error:'agent offline'}; }
+  btn.disabled = false; btn.textContent = 'Create ticket';
+  if (r && r.error) { alert(r.error); return; }
+  await loadTickets();
+  if (r && r.id) openTicket(r.id);
+}
+
 /* ── bars & tables ────────────────────────────────────────────────────────── */
 function bars(el, rows, hot){
   const max = Math.max.apply(null, rows.map(r=>r[1])) || 1;
@@ -591,7 +770,8 @@ $('#refleet').addEventListener('click', ()=>loadFleet(true));
 $('#newchat').addEventListener('click', ()=>{ CHAT=null; renderTabs(); renderLog([]);
   $('#out').innerHTML=''; $('#q').focus(); });
 $('#q').addEventListener('keydown', e=>{ if(e.key==='Enter') ask(false); });
-loadStanding(); loadFleet(false); loadLedger();
+$('#mkticket').addEventListener('click', createTicketFromChat);
+loadStanding(); loadFleet(false); loadLedger(); loadTickets();
 loadChats().then(loadLog);
 </script>
 </body>
