@@ -321,6 +321,16 @@ def dispatch(r, thread_id=None, cwd=None, dry_run=True, timeout=900, allowed_too
             rec["needs_auth"] = True
             rec["error"] = ("Claude Code's OAuth token has expired — run `claude` once "
                             "interactively (or /login) to re-authenticate. No budget was spent.")
+        elif payload is None or proc.returncode != 0 or (payload or {}).get("is_error"):
+            # A non-JSON body, a non-zero exit, or the CLI's own is_error flag are all real failures
+            # — found live via a crew-stage test that made one stage fail non-JSON: with no `error`
+            # set here, a caller that only checks `rec.get("error")` to decide whether a dispatch
+            # succeeded (agent_roles.run_crew's "stop at the first failing stage", api_cockpit_chat's
+            # status=answered/error) saw neither an error nor a result and treated it as a quiet,
+            # ordinary miss — the crew kept running past a stage that had actually failed. A missing
+            # error is worse than a wrong one: it looks like nothing went wrong at all.
+            rec["error"] = (rec.get("stderr") or rec.get("stdout_raw")
+                           or "dispatch failed (exit %s, no parseable result)" % proc.returncode)[:500]
     except subprocess.TimeoutExpired:
         rec["error"] = "timed out after %ss" % timeout
         rec["seconds"] = round(time.time() - t0, 2)

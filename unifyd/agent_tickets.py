@@ -153,6 +153,20 @@ def append_section(tid, heading, text, db=None):
     return True
 
 
+def edit_body(tid, body_md, db=None):
+    """A human (or a UI) REPLACING the body outright — editing the acceptance criteria — as opposed
+    to `append_section`, which only ever adds. Bumps `updated` so a live viewer's poll notices,
+    same as every other mutator here."""
+    rows = _rows(db)
+    rec = next((r for r in rows if r["id"] == tid), None)
+    if not rec:
+        return False
+    write_body(tid, body_md)
+    rec["updated"] = _now_ms()
+    _persist(rows, db)
+    return True
+
+
 def advance_status(tid, new_status, db=None):
     """Forward-only, byte-for-byte the same ladder logic as server.py's order_status_ep: `new_status`
     must be a known flow step or a sink; a closed ticket (`done`) refuses anything but itself;

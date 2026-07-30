@@ -7036,7 +7036,8 @@ def _cockpit_mods():
     # unavailable", the page rendered "Agent offline", and the standing band silently dropped the
     # chats / ready / would-revert cells — while the agent was plainly running and answering every
     # other route. A dependency list that goes stale as modules are added is its own failure mode.
-    for name in ("agent_router", "agent_exec", "agent_memory", "agent_chats", "agent_mine", "agent_roles", "agent_checks"):
+    for name in ("agent_router", "agent_exec", "agent_memory", "agent_chats", "agent_mine", "agent_roles",
+                "agent_checks", "agent_tickets"):
         try:
             out[name] = importlib.import_module(name)
         except Exception as e:
@@ -7344,6 +7345,191 @@ def api_cockpit_chat():
                    needs_auth=bool(rec.get("needs_auth")), error=rec.get("error"),
                    usage=u, argv_display=rec.get("argv_display"), spent=not rec.get("error"),
                    learned=bool(wrote)), 200
+
+
+# ── Tickets: real acceptance criteria, not a chat transcript standing in for one ───────────────────
+# A ticket is a chat turned into something a human edits once and everything downstream is held to —
+# see unifyd/agent_tickets.py's own docstring for the full reasoning. These routes are the HTTP shape
+# of that module; the module itself has no Flask dependency and is fully unit-tested on its own.
+def _ticket_route(task, task_class, model, effort, system):
+    """Minimal route dict for a one-off dispatch OUTSIDE agent_router's class-based policy — same
+    shape agent_roles.run_crew() builds per stage, just for a single ad-hoc call (drafting a ticket,
+    writing its docs update) rather than a whole crew. Always a fresh session: a ticket's dispatches
+    don't thread onto any prior chat's context."""
+    return dict(task=task, task_class=task_class, model=model, effort=effort,
+               append_system=system or "", prompt=task,
+               thread=dict(action="new", why="ticket dispatch", overlap=0.0))
+
+
+@app.post("/api/cockpit/tickets")
+def api_cockpit_tickets_create():
+    """Turn a chat into a ticket. One synthesis dispatch, using the PM role's own framing
+    (agent_roles.ROLES[PM] — "a gradeable definition of done"), drafts acceptance criteria from the
+    transcript. The transcript is SNAPSHOTTED into the ticket body rather than held as a live
+    reference: chat_id can get silently re-keyed to a CLI session id after a dispatch
+    (api_cockpit_chat's own comment on this), so a ticket that depended on chat_id staying stable
+    could go stale invisibly. Body: {chat_id, cwd?}."""
+    if _on_fly():
+        return jsonify(error="Ticket creation dispatches a model — Mac-only, same as chat."), 403
+    m = _cockpit_mods()
+    T, C, X, roles_mod = m.get("agent_tickets"), m.get("agent_chats"), m.get("agent_exec"), m.get("agent_roles")
+    if not (T and C and X and roles_mod):
+        return jsonify(error="cockpit modules unavailable", detail=m.get("errors")), 200
+    body = request.get_json(silent=True) or {}
+    chat_id = (body.get("chat_id") or "").strip()
+    if not chat_id:
+        return jsonify(error="chat_id is required"), 400
+    msgs = C.transcript(chat_id)
+    if not msgs:
+        return jsonify(error="no messages found for that chat_id"), 404
+    convo = "\n\n".join("%s: %s" % (x["role"], x["text"]) for x in msgs)
+    pm = roles_mod.ROLES[roles_mod.PM]
+    task = ("Draft a ticket from this conversation — the outcome in one sentence first (that becomes "
+            "the title), then the PM brief below.\n\nConversation:\n%s" % convo)
+    r = _ticket_route(task, "ticket:draft", pm["tier"], pm["effort"], pm["system"])
+    rec = X.dispatch(r, cwd=body.get("cwd") or None, dry_run=bool(body.get("dry_run")))
+    if rec.get("dry_run"):
+        return jsonify(status="dry-run", argv_display=rec.get("argv_display")), 200
+    if rec.get("error") or not rec.get("result"):
+        return jsonify(error=rec.get("error") or "draft dispatch produced no result"), 200
+    draft = rec["result"]
+    title = draft.strip().split("\n", 1)[0].strip("# ").strip()[:120] or ("Ticket from " + chat_id)
+    body_md = "## Acceptance criteria\n\n%s\n\n## Source conversation\n\n%s" % (draft, convo)
+    t = T.create(title, body_md, source_chat_id=chat_id)
+    return jsonify(t), 200
+
+
+@app.get("/api/cockpit/tickets")
+def api_cockpit_tickets_list():
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(tickets=[]), 200
+    return jsonify(tickets=m["agent_tickets"].list_tickets(status=request.args.get("status"))), 200
+
+
+@app.get("/api/cockpit/tickets/<tid>")
+def api_cockpit_ticket_get(tid):
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    rec = T.get(tid)
+    if not rec:
+        return jsonify(error="not found"), 404
+    out = dict(rec)
+    out["body_md"] = T.read_body(tid)
+    return jsonify(out), 200
+
+
+@app.get("/api/cockpit/tickets/<tid>/raw")
+def api_cockpit_ticket_raw(tid):
+    """Just the body + its freshness stamp — what apps/md-viewer.html polls every 2s."""
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    rec = T.get(tid)
+    if not rec:
+        return jsonify(error="not found"), 404
+    return jsonify(body_md=T.read_body(tid) or "", updated=rec.get("updated")), 200
+
+
+@app.patch("/api/cockpit/tickets/<tid>")
+def api_cockpit_ticket_patch(tid):
+    """Edit acceptance criteria (`body_md`), flip `requires_docs`, or advance `status` — the last one
+    goes through the SAME forward-only ladder agent_tickets.advance_status enforces everywhere else,
+    so a UI can't walk a ticket backward any more than a direct call could."""
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(ok=False, error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    if not T.get(tid):
+        return jsonify(ok=False, error="not found"), 404
+    body = request.get_json(silent=True) or {}
+    if "body_md" in body:
+        T.edit_body(tid, body["body_md"])
+    if "requires_docs" in body:
+        T.set_requires_docs(tid, bool(body["requires_docs"]))
+    if "status" in body:
+        res = T.advance_status(tid, body["status"])
+        if not res.get("ok"):
+            return jsonify(res), 409
+    return jsonify(ok=True, ticket=T.get(tid)), 200
+
+
+@app.post("/api/cockpit/tickets/<tid>/run")
+def api_cockpit_ticket_run(tid):
+    """Work the ticket: agent_roles.run_crew()'s first real caller. Runs against the ticket's OWN
+    acceptance criteria — engineer/QA/reviewer only, skipping the PM stage, because a human already
+    filled that role by editing the criteria (re-deriving "done" from scratch would just overwrite
+    the judgment call the whole ticket exists to capture). Each stage's report is appended to the
+    ticket body as it completes — the literal mechanism for "embed test reports as the process goes."
+    """
+    if _on_fly():
+        return jsonify(error="Crew dispatch is Mac-only, same as chat."), 403
+    m = _cockpit_mods()
+    T, roles_mod = m.get("agent_tickets"), m.get("agent_roles")
+    if not (T and roles_mod):
+        return jsonify(error="cockpit modules unavailable", detail=m.get("errors")), 200
+    rec = T.get(tid)
+    if not rec:
+        return jsonify(error="not found"), 404
+    if rec["status"] == "done":
+        return jsonify(error="a done ticket is closed"), 409
+    body = request.get_json(silent=True) or {}
+    criteria = T.read_body(tid) or ""
+    T.advance_status(tid, "in_progress")
+    res = roles_mod.run_crew(criteria, roles=[roles_mod.ENGINEER, roles_mod.QA, roles_mod.REVIEWER],
+                             cwd=body.get("cwd") or None, dry_run=bool(body.get("dry_run")))
+    if res.get("results") and res["results"][0].get("dry_run"):
+        return jsonify(status="dry-run", stages=[r.get("argv_display") for r in res["results"]]), 200
+    for r in res["results"]:
+        T.append_section(tid, "%s report" % r["role"].title(), r.get("result") or r.get("error") or "(no output)")
+    T.advance_status(tid, "testing" if res["ok"] else "blocked")
+    if res["ok"]:
+        T.advance_status(tid, "done")
+    return jsonify(ok=res["ok"], ticket=T.get(tid), stages=[r["role"] for r in res["results"]]), 200
+
+
+@app.post("/api/cockpit/tickets/<tid>/docs")
+def api_cockpit_ticket_docs(tid):
+    """"Requires Documentation": a purpose-written docs stage, grounded in the ticket's own final body
+    (acceptance criteria + every stage's appended report already IS its evidence trail) — updates the
+    repo's docs to match what actually shipped, not what was planned. Dispatched at sonnet/medium:
+    "highly accurate" was explicit, and this is the same reasoning agent_roles.ROLES[PM] uses for its
+    own tier — worth a real one, not the cheapest, for a decision future sessions will trust."""
+    if _on_fly():
+        return jsonify(error="Docs dispatch is Mac-only, same as chat."), 403
+    m = _cockpit_mods()
+    T, X = m.get("agent_tickets"), m.get("agent_exec")
+    if not (T and X):
+        return jsonify(error="cockpit modules unavailable", detail=m.get("errors")), 200
+    rec = T.get(tid)
+    if not rec:
+        return jsonify(error="not found"), 404
+    body = request.get_json(silent=True) or {}
+    ticket_text = T.read_body(tid) or ""
+    system = (
+        "You are updating this repository's documentation (CLAUDE.md, README, or the relevant app's "
+        "own docs) to accurately reflect a change that just shipped. Do NOT implement or change "
+        "behavior — only documentation.\n"
+        "Ground every claim in the ticket text below (its acceptance criteria plus the engineer/QA/"
+        "reviewer reports already appended to it) AND in the actual current state of the repo (read "
+        "the files, check git log/diff) — write what actually happened, not what was planned. If the "
+        "ticket's own reports contradict what you find in the repo, say so rather than picking one "
+        "silently.\n"
+        "Cite the file:line you changed. Keep it as short as the truth allows.")
+    task = "Ticket:\n%s\n\nUpdate the appropriate docs to reflect this." % ticket_text
+    r = _ticket_route(task, "ticket:docs", "sonnet", "medium", system)
+    dispatch_rec = X.dispatch(r, cwd=body.get("cwd") or None, dry_run=bool(body.get("dry_run")),
+                              allowed_tools=X.TOOLS_FOR["docs"])
+    if dispatch_rec.get("dry_run"):
+        return jsonify(status="dry-run", argv_display=dispatch_rec.get("argv_display")), 200
+    if dispatch_rec.get("error"):
+        return jsonify(ok=False, error=dispatch_rec["error"]), 200
+    T.append_section(tid, "Documentation update", dispatch_rec.get("result") or "(no output)")
+    T.mark_docs_done(tid)
+    return jsonify(ok=True, ticket=T.get(tid)), 200
 
 
 @app.post("/api/cockpit/lease")

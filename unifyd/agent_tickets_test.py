@@ -134,6 +134,18 @@ def main():
         check("append_section(db=list) also sees the isolated record (no crash, no false miss)",
               rows[0]["updated"] > 0, rows)
 
+        # --- 6b. edit_body: REPLACES, unlike append_section which only ever adds ---------------------
+        t9 = A.create("edit test", "original criteria")
+        before9 = A.get(t9["id"])["updated"]
+        ok9 = A.edit_body(t9["id"], "revised criteria")
+        check("edit_body reports success", ok9 is True)
+        check("edit_body replaces the content outright", A.read_body(t9["id"]) == "revised criteria")
+        check("...the original text is gone, not appended alongside",
+              "original" not in A.read_body(t9["id"]))
+        check("edit_body bumps `updated` like every other mutator", A.get(t9["id"])["updated"] >= before9)
+        check("edit_body on an unknown ticket returns False, not a crash",
+              A.edit_body("ticket:doesnotexist", "x") is False)
+
         # --- 7. atomic write: a crash mid-write must never corrupt the real file ---------------------
         t8 = A.create("atomicity", "v1")
         A.write_body(t8["id"], "v2")
