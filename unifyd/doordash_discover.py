@@ -62,7 +62,8 @@ def serp_ids(chain_name, key, pages=3):
 
 def market_ids(chain_key, chain_name, metros, auth, log=print):
     """Sweep metros via setLocation; return {store_id: name_text} filtered to THIS chain by tile name."""
-    from playwright.sync_api import sync_playwright
+    import browser_warm
+    sync_playwright = browser_warm.sync_playwright_api()   # patchright on the image; NEVER import playwright
     q = urllib.parse.quote(chain_name)
     rx = _CHAIN_MATCH.get(chain_key, re.escape(chain_name))
     out = {}

@@ -94,7 +94,8 @@ def run(markets=None, browser_auth=None, use_isp=None):
         browser context's geolocation — flat-rate, replaces BD Browser. $0 marginal per market.
       • BD Browser (fallback): remote CDP + Proxy.setLocation (metered)."""
     import resi
-    from playwright.sync_api import sync_playwright
+    import browser_warm
+    sync_playwright = browser_warm.sync_playwright_api()   # patchright on the image; NEVER import playwright
     markets = markets or MARKETS
     isp_on = resi.isp_enabled() if use_isp is None else use_isp
     auth = None if isp_on else (browser_auth or _browser_auth())

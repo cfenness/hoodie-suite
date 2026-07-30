@@ -216,7 +216,8 @@ SOURCES = [
          tables=["instacart_products"], klass="mac", cadence="daily", enabled=False,
          requires=["INSTACART_SESSION_COOKIES"], cost_class="free",
          note="ONE zone / a few alcohol terms — proves whether a plain logged-in session lifts the "
-              "anonymous alcohol gate. No proxy (free Playwright, per instacart.py). Manual trigger only."),
+              "anonymous alcohol gate. No proxy (free self-hosted browser, per instacart.py; the driver is "
+              "patchright — the image has no playwright). Manual trigger only."),
     dict(id="sevennow", label="7-Eleven (7NOW)", code="import sevennow_warm as m; m.main()",
          caps=['patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["sevennow_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=60, note="Incapsula — patchright"),

@@ -39,6 +39,37 @@ window.chrome = window.chrome || { runtime: {} };
 """
 
 
+def sync_playwright_api():
+    """THE one place that resolves which browser driver is actually installed. Import this instead of
+    importing playwright directly:
+
+        import browser_warm
+        sync_playwright = browser_warm.sync_playwright_api()
+        with sync_playwright() as p: ...
+
+    WHY this exists (measured, not theoretical): the Fly image installs `patchright` and NOT
+    `playwright` — requirements.txt has `playwright>=1.40` commented out and the Dockerfile's pip line
+    adds only patchright. So `from playwright.sync_api import sync_playwright` compiles, imports at
+    module level fine (these are all function-local imports), passes tests on a dev box that happens to
+    have upstream playwright, deploys clean — and then ModuleNotFoundErrors the first time the code path
+    actually runs in production. That failure mode is invisible to every check we have, which is exactly
+    why it shipped seven times.
+
+    patchright is a drop-in playwright fork exposing the same sync_api surface, so preferring it is an
+    import swap and not a rewrite. Try patchright first (it is the hardened one and the one the image
+    has), fall back to playwright for a dev box that only has upstream.
+
+    Resolution lives HERE, once, rather than being copy-pasted per module: a second copy is a second
+    thing to forget, and the seven direct imports this replaced are the proof.
+    """
+    try:
+        from patchright.sync_api import sync_playwright
+        return sync_playwright
+    except ImportError:
+        from playwright.sync_api import sync_playwright
+        return sync_playwright
+
+
 def _parse_proxy(p):
     """Normalize a proxy to Playwright's dict form. Accepts a dict, a 'http://user:pass@host:port' URL, or
     'host:port'. Returns None when unset. Provider-agnostic — this is NOT Bright Data-specific."""

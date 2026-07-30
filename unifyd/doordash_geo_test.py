@@ -55,8 +55,12 @@ def main():
     # and deploys clean, then ModuleNotFoundErrors on the first real pin. Pin the driver resolution.
     check("resolves the driver rather than importing playwright directly",
           hasattr(D, "_sync_playwright"))
-    check("prefers patchright (what the image actually has)",
-          code.index("patchright.sync_api") < code.index("playwright.sync_api"))
+    # Resolution is shared now (browser_warm.sync_playwright_api) — six other modules had the identical
+    # break, so a per-module copy was itself the hazard. Assert delegation, not a local try/except: the
+    # ordering check this replaced read the literal import strings, which no longer appear here at all.
+    check("delegates to the one shared resolver", "sync_playwright_api" in code)
+    check("no direct playwright import left in the code path",
+          "from playwright" not in code and "import playwright" not in code)
     check("pins location via standard CDP", hasattr(D, "_set_location"))
     check("uses Emulation.setGeolocationOverride", "Emulation.setGeolocationOverride" in code)
     # Egress must come from the FLAT-rate ISP pool, never the per-GB rotating tier.
