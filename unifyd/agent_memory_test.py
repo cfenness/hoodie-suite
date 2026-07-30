@@ -162,6 +162,85 @@ def main():
     check("every returned fact carries matched_on",
           all("matched_on" in f for f in M.recall("naop", db=db)))
 
+    # --- 6c. the tokenizer must not defeat the gate ----------------------------------------------
+    # Observed: `_tokens` splits on non-word chars, so the subject "stop-and-shop" became
+    # ['and','shop','stop'] and ANY question containing the word "and" scored a SUBJECT match against
+    # it. "what does unifyd/deploy_guard.py refuse to do and why?" came back as a confident hit on
+    # stop-and-shop facts, matched entirely on "and". The gate was correct; its input was not.
+    check("stopwords are not tokens", "and" not in M._tokens("stop-and-shop"),
+          M._tokens("stop-and-shop"))
+    check("2-letter identifier fragments are dropped", "py" not in M._tokens("deploy_guard.py"),
+          M._tokens("deploy_guard.py"))
+    check("real identifier survives tokenizing",
+          "deploy_guard" in M._tokens("unifyd/deploy_guard.py"), M._tokens("unifyd/deploy_guard.py"))
+    M.remember("stop-and-shop", "enabled", "False", evidence_path=ev3, db=db)
+    r4 = M.answer("what does deploy_guard refuse to do and why", db=db)
+    check("a question sharing only 'and' with a subject is a MISS",
+          r4["status"] == "miss", (r4["status"], [f["subject"] for f in r4.get("related") or []]))
+    r5 = M.answer("is stop-and-shop enabled", db=db)
+    check("...but a genuine subject match on the same fact still HITS",
+          r5["status"] == "hit" and r5["facts"][0]["subject"] == "stop-and-shop", r5["status"])
+
+    # --- 6d. write-back: the loop that makes this a cache, not a lookup table --------------------
+    wq = "what does unifyd/warehouse.py write_accumulate do differently"
+    wa = "`write_accumulate` merges rows, while unifyd/warehouse.py write_parquet overwrites."
+    wid = M.remember_answer(wq, wa, chat_id="chat:test", db=db)
+    check("a model answer is written back", bool(wid), wid)
+    back = M.answer("what does write_accumulate do", db=db)
+    check("the same question is now a HIT", back["status"] == "hit", back["status"])
+    f0 = back["facts"][0]
+    check("a written-back answer is INFERRED, never deterministic", f0["kind"] == M.INFERRED, f0["kind"])
+    check("...and is anchored to the file the answer cited, so it can go stale",
+          f0["evidence_path"] == "unifyd/warehouse.py", f0["evidence_path"])
+    check("...and records that a model produced it", "model answer" in (f0["evidence_cmd"] or ""),
+          f0["evidence_cmd"])
+    # Guards: nothing worth retrieving, nothing written.
+    check("no identifiable subject -> nothing stored",
+          M.remember_answer("what is the best approach here", "some prose", db=db) is None)
+    check("empty answer -> nothing stored", M.remember_answer("about x_y_z", "", db=db) is None)
+    check("trivial answer -> nothing stored", M.remember_answer("about x_y_z", "yes", db=db) is None)
+
+    # --- 6e. the crew's blocker: a lone generic word is not identification ----------------------
+    # Found by an independent QA+review pass, not by me. Both reproductions come straight from that
+    # review, and both defeated the previous fix — which is the point: `_TOK_STOP` was
+    # patch-by-observation, so it only ever contained the words that had already burned us.
+    M.remember("data-console", "purpose", "the one trustworthy data-inspection surface",
+               evidence_path=ev3, db=db)
+    M.remember("total-wine", "note", "PerimeterX — browser required", evidence_path=ev3, db=db)
+    for i in range(12):          # make `note` common, as harvest_registry makes it in the real store
+        M.remember("src-%d" % i, "note", "some free text about a source", evidence_path=ev3, db=db)
+
+    r6 = M.answer("what format does this csv data use", db=db)
+    check("a lone generic SUBJECT token ('data') is not a hit", r6["status"] == "miss", r6["status"])
+    r7 = M.answer("leave a quick note about lunch", db=db)
+    check("a lone CLAIM token ('note') with no subject is not a hit",
+          r7["status"] == "miss", r7["status"])
+    check("...and the reason is stated, not silent",
+          "identifies nothing" in (r7["guidance"] + str(r7.get("related"))) or r7["facts"] == [],
+          r7["guidance"])
+    # The real lookups must survive all of it.
+    for q in ("total-wine note", "data-console purpose"):
+        check("a subject+property question still hits: %r" % q,
+              M.answer(q, db=db)["status"] == "hit", M.answer(q, db=db)["status"])
+    check("genericness is measured from the store, not a word list",
+          callable(getattr(M, "_df", None)) and callable(getattr(M, "_qualifies", None)))
+    df, n = M._df(db)
+    check("df counts every fact", n >= 14, n)
+    check("'note' is measured as common", df.get("note", 0) >= 13, df.get("note"))
+
+    # --- 6f. crew finding D1: unverifiable must not be described as stale -----------------------
+    # Both are un-servable, but they need different action — one re-verifies against a file, the other
+    # has no file to verify against. Reporting one as the other told you to go re-check something that
+    # never existed.
+    dbu = os.path.join(tmp, "unv.db")
+    M.remember("lonely_subject", "some property", "a value with no evidence at all", db=dbu)
+    ru = M.answer("lonely_subject some property", db=dbu)
+    check("an evidence-less match is 'unverifiable', not 'stale'",
+          ru["status"] == "unverifiable", ru["status"])
+    check("...and is never a hit", ru["status"] != "hit")
+    check("its guidance does NOT claim a file changed",
+          "changed" not in ru["guidance"], ru["guidance"])
+
     # --- 7. stats -----------------------------------------------------------------------------
     st = M.stats(db=db)
     check("stats counts facts", st["facts"] >= 3, st)

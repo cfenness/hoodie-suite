@@ -7253,6 +7253,15 @@ def api_cockpit_chat():
         C.upsert(sid, subject=(ch or {}).get("subject") or q[:70],
                  worktree=(ch or {}).get("worktree"), bump=True)
     answer = rec.get("result") or rec.get("error") or rec.get("stdout_raw") or "(no result)"
+    # WRITE-BACK: a miss that the model answered becomes a fact, so the same question is free next
+    # time. Stored as `inferred` with the answer's own cited file as the staleness anchor — never as
+    # declared truth. Errors are never written: caching a failure would serve it back as knowledge.
+    wrote = None
+    if M and not rec.get("error") and rec.get("result"):
+        try:
+            wrote = M.remember_answer(q, rec["result"], chat_id=chat_id)
+        except Exception:
+            wrote = None
     u = rec.get("usage") or {}
     C.add_message(chat_id, "assistant", answer,
                   route=route, source=("error" if rec.get("error") else "model"),
@@ -7260,7 +7269,8 @@ def api_cockpit_chat():
     return jsonify(status=("error" if rec.get("error") else "answered"),
                    answer=answer, route=route, chat_id=chat_id, session_id=sid,
                    needs_auth=bool(rec.get("needs_auth")), error=rec.get("error"),
-                   usage=u, argv_display=rec.get("argv_display"), spent=not rec.get("error")), 200
+                   usage=u, argv_display=rec.get("argv_display"), spent=not rec.get("error"),
+                   learned=bool(wrote)), 200
 
 
 @app.post("/api/cockpit/lease")

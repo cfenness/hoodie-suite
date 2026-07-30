@@ -139,7 +139,10 @@ def verdict(fact):
     """fresh | stale | unverifiable for one fact row. The ONLY way a fact is labelled."""
     path, was = fact.get("evidence_path"), fact.get("file_sha")
     if not path:
-        return UNVERIFIABLE if not fact.get("evidence_cmd") else UNVERIFIABLE
+        # No file to hash. An evidence_cmd records HOW the fact was produced but is not re-runnable
+        # here, so it cannot establish freshness either. (Was a ternary with identical branches — a
+        # dead expression that read as if the two cases differed. Crew finding D4.)
+        return UNVERIFIABLE
     now = _sha(path)
     if now is None:
         return UNVERIFIABLE          # file gone or unreadable — cannot assert freshness
@@ -166,11 +169,85 @@ def _fts_query(q):
     return " OR ".join(out)
 
 
+# Words that carry no identifying information. WITHOUT this filter the relevance gate is defeated by
+# its own tokenizer: `_tokens` splits on non-word characters, so the subject `stop-and-shop` becomes
+# ['and', 'shop', 'stop'] — and any question containing the word "and" then scored a SUBJECT match
+# against it. Observed: "what does unifyd/deploy_guard.py refuse to do and why?" returned stop-and-shop
+# facts as a confident hit, matched entirely on the word "and".
+#
+# The 3-character floor does the rest: splitting `unifyd/deploy_guard.py` yields a useful `deploy_guard`
+# plus a useless `py`, and 2-letter fragments of identifiers match everything.
+_TOK_STOP = set("the a an and or but not for with from into per via out off top all any one two "
+                "does did was are is be been has have had can could should would will what when "
+                "which who how why this that these those you your our its it in on at to of as if "
+                "do done make made get got use used run ran new old sentence short long same other "
+                "more most much many some such then than also only very just about here there".split())
+
+
 def _tokens(s):
-    return [t for t in re.split(r"[^\w]+", (s or "").lower()) if t]
+    """Content tokens for relevance matching: split on non-word chars, then drop noise.
+
+    Both filters are load-bearing — see _TOK_STOP above for the false hit that motivated them."""
+    return [t for t in re.split(r"[^\w]+", (s or "").lower())
+            if len(t) >= 3 and t not in _TOK_STOP]
 
 
-def matched_on(row, query):
+GENERIC_DF = 0.25       # a token in >25% of facts identifies nothing
+
+
+def _df(db=None, _cache={}):
+    """Document frequency of every token across all subjects and claims.
+
+    THE STRUCTURAL FIX for what a stopword list could never solve. `_TOK_STOP` is patch-by-observation:
+    `and` was added only after a live false hit, and the next two — `data` (subject `data-console`
+    matching "what format does this csv data use") and `note` (EVERY harvested source carries a literal
+    `note` claim, so any question containing the ordinary word "note" hit an unrelated source) — were
+    not in it and could not have been predicted. A hand-maintained list of generic words is always one
+    incident behind.
+
+    Genericness is a property of THIS store's contents, so measure it instead of guessing: a token
+    appearing in a quarter of all facts distinguishes nothing, whatever the word happens to be. That
+    adapts as the store grows and needs no maintenance."""
+    key = db or DB
+    c = _conn(db)
+    n = c.execute("SELECT COUNT(*) AS n FROM facts").fetchone()["n"] or 0
+    hit = _cache.get(key)
+    if hit and hit[0] == n:
+        return hit[1], n
+    df = {}
+    for r in c.execute("SELECT subject, claim FROM facts").fetchall():
+        for t in set(_tokens(r["subject"])) | set(_tokens(r["claim"])):
+            df[t] = df.get(t, 0) + 1
+    _cache[key] = (n, df)
+    return df, n
+
+
+def _qualifies(shared, whole, db=None):
+    """Does the query name ENOUGH of `whole` to identify it? Returns (bool, why).
+
+    COVERAGE, not frequency. My first fix measured how common a token is across the store, and that is
+    the wrong quantity twice over: in a one-fact store every token is 100% frequent so nothing
+    qualifies, and in a twenty-fact store `data` looks rare and distinctive. The verdict changed with
+    the size of the database rather than with the question — a rule you cannot reason about.
+
+    What actually distinguishes a real lookup from an accident is whether the asker named the subject
+    or merely collided with a fragment of it. `data-console` shatters into {data, console}; a question
+    about "csv data" supplies one of the two and has not named the subject. `abc-fws` shatters into
+    {abc, fws} and a question containing `abc-fws` supplies both. So: match at least two of the
+    subject's tokens, or all of them when it only has one.
+
+    This is independent of store size, needs no maintained word list, and states its reason."""
+    if not shared:
+        return False, "no overlap"
+    need = min(2, len(whole)) or 1
+    if len(shared) >= need:
+        return True, "named %d of %d token(s)" % (len(shared), len(whole))
+    missing = sorted(whole - shared)
+    return False, ("only %s of %d tokens matched — %s not named, so the subject was not identified"
+                   % (sorted(shared), len(whole), missing))
+
+
+def matched_on(row, query, db=None):
     """WHERE the match landed: 'subject' | 'claim' | 'prose'. This is the relevance gate.
 
     THE BUG THIS EXISTS TO KILL (found end-to-end, and it was the worst one):
@@ -185,10 +262,29 @@ def matched_on(row, query):
     fact is ABOUT (its subject) or the property being asked for (its claim) — prose-only matches are
     demoted to related-reading, never served as the answer."""
     qt = set(_tokens(query))
-    if qt & set(_tokens(row.get("subject"))):
+    subj = set(_tokens(row.get("subject")))
+    ok, why = _qualifies(qt & subj, subj, db)
+    if ok:
+        row["match_why"] = "subject: " + why
         return "subject"
-    if qt & set(_tokens(row.get("claim"))):
+    # A CLAIM ALONE IS NOT AN ANSWER, and the df threshold could not express this.
+    # The claim is a PROPERTY; the subject is what the property belongs to. Matching only the claim
+    # tells you someone's `note` / `cadence` / `enabled` — but not whose, so it cannot answer anything.
+    # That is why "leave a quick note about lunch" hit `total-wine note` and survived the frequency
+    # rule: `note` sits on ~14% of facts, under any threshold loose enough to keep real hits.
+    # Requiring 2+ shared claim tokens shuts that door without touching the real cases, because a
+    # question that genuinely targets a property by name says more than one word about it
+    # ("warehouse tables written"), while every legitimate lookup here also names its subject.
+    claim_toks = set(_tokens(row.get("claim")))
+    claim_shared = qt & claim_toks
+    ok, why = _qualifies(claim_shared, claim_toks, db)
+    if ok and len(claim_shared) >= 2:
+        row["match_why"] = "claim: " + why
         return "claim"
+    if ok:
+        why = ("only the property %r matched and no subject did — a property with no subject "
+               "identifies nothing" % next(iter(claim_shared)))
+    row["match_why"] = why
     return "prose"
 
 
@@ -243,7 +339,7 @@ def recall(query, k=5, db=None, include_stale=True):
     for r in _rerank([dict(x) for x in rows], query):
         d = dict(r)
         d["verdict"] = verdict(d)
-        d["matched_on"] = matched_on(d, query)
+        d["matched_on"] = matched_on(d, query, db)
         if d["verdict"] == STALE and not include_stale:
             continue
         out.append(d)
@@ -281,9 +377,20 @@ def answer(query, k=5, db=None):
         return dict(status="hit", query=query, facts=fresh, related=weak[:2],
                     guidance="Answer from these facts and cite evidence_path:evidence_line.")
     got = relevant
-    return dict(status="stale", query=query, facts=got, related=weak[:2],
-                guidance="Matched facts exist but their evidence files have changed since they were "
-                         "recorded. Re-verify against the cited paths, then remember() the update.")
+    # D1 (found by the crew): STALE and UNVERIFIABLE were both reported as "stale", with guidance
+    # telling you to re-check a file that in the unverifiable case never existed. Never safe to serve
+    # either as an answer, but they need different action — one re-verifies, the other has nothing to
+    # verify against — and describing one as the other is the same dishonesty the verdict exists to
+    # prevent, just quieter.
+    if any(f["verdict"] == STALE for f in got):
+        return dict(status="stale", query=query, facts=got, related=weak[:2],
+                    guidance="Matched facts exist but their evidence files have changed since they "
+                             "were recorded. Re-verify against the cited paths, then remember() the "
+                             "update.")
+    return dict(status="unverifiable", query=query, facts=got, related=weak[:2],
+                guidance="Matched facts have no checkable evidence (no file recorded, or the file is "
+                         "gone). They cannot be confirmed — treat as a lead, not an answer, and "
+                         "re-derive if it matters.")
 
 
 # ── SEEDING: harvest the repo's own source of truth ──────────────────────────────────────────────
@@ -319,6 +426,67 @@ def harvest_registry(db=None, path=None):
             remember(sid, claim, val, kind=DETERMINISTIC, evidence_path=rel, db=db)
             n += 1
     return n
+
+
+# ── WRITE-BACK: the loop that makes this a cache instead of a lookup table ───────────────────────
+# Without this, every question stays a first-time question forever and the store only ever knows what
+# was seeded. The measured prize is large: `triage` is 66.9% of spend at 27.6 assistant messages per
+# question, and each of those answers is thrown away the moment it's read.
+#
+# THE HONESTY CONSTRAINT, and it's the whole reason this isn't three lines:
+# A model's answer is NOT a registry value. It is `inferred`, and it must never read back with the same
+# authority as a fact parsed out of source_registry.py — otherwise the store slowly fills with
+# plausible recollections wearing the same citation format as declared truth.
+# So: kind=INFERRED always, and the evidence is a FILE THE ANSWER CITED. That last part is what makes
+# it self-correcting — if the answer says "warehouse.py merges rows" and warehouse.py later changes,
+# the hash moves and the fact goes `stale` instead of confidently repeating itself.
+
+# Identifier-shaped tokens: snake_case, dotted paths, hyphenated source ids. In this domain the subject
+# of a question is almost always one of these, which is why lexical extraction is enough and an extra
+# model turn to "identify the subject" would be paying to learn something already on the page.
+_IDENT = re.compile(r"\b[a-z][a-z0-9_]*_[a-z0-9_]+\b|\b[a-z][\w.]*\.(?:py|html|json|md)\b"
+                    r"|\b[a-z][a-z0-9]*-[a-z0-9-]+\b|\b[a-z_]+\.[a-z_]+\(\)")
+_PATH = re.compile(r"\b((?:unifyd|apps|tools|spine|snowflake)/[\w./-]+\.\w+)\b")
+
+
+def _subject_of(question):
+    """Pick the fact's subject from the question. Longest identifier wins — the most specific token is
+    the one a future question about the same thing will also contain."""
+    cands = _IDENT.findall(question or "")
+    cands = [c for c in cands if len(c) > 3]
+    return max(cands, key=len) if cands else None
+
+
+def _cited_file(text):
+    """First repo-relative path mentioned in the answer that actually exists. That file becomes the
+    staleness anchor, so the fact expires when the code it describes moves."""
+    root = os.path.dirname(HERE)
+    for m in _PATH.finditer(text or ""):
+        if os.path.exists(os.path.join(root, m.group(1))):
+            return m.group(1)
+    return None
+
+
+def remember_answer(question, answer, chat_id=None, db=None):
+    """Store a model answer so the same question is free next time. Returns the fact id, or None.
+
+    Returns None (writes nothing) when there is no identifiable subject, because a fact with no subject
+    can only ever be retrieved by prose match — and prose matches are exactly what the relevance gate
+    refuses to serve. Storing one would be adding a row that can never legitimately answer anything."""
+    q = (question or "").strip()
+    a = (answer or "").strip()
+    if not q or not a or len(a) < 8:
+        return None
+    subject = _subject_of(q)
+    if not subject:
+        return None
+    # The claim is the question itself, trimmed — so a later ask matches on claim even if the wording
+    # drifts. Capped because the claim is half the retrieval surface, not a place for an essay.
+    claim = re.sub(r"\s+", " ", q).strip(" ?.!")[:180]
+    return remember(subject, claim, a[:4000], kind=INFERRED,
+                    evidence_path=_cited_file(a),
+                    evidence_cmd="model answer%s" % (" via %s" % chat_id if chat_id else ""),
+                    db=db)
 
 
 def stats(db=None):
