@@ -200,6 +200,80 @@ def estimate_burn(task, cls=None, **kw):
                 recommended=c["recommended"], why=c["recommendation_why"])
 
 
+def _stage_prompt(task, role, prior):
+    """What each stage actually reads. Pure and separately testable — the threading between stages is
+    the one part of `run_crew()` a dry run can never exercise (a dry run never produces a `result` for
+    any stage, so `prior` is always empty there).
+
+    Only PM's and the ENGINEER's own text gets relayed forward; QA and the reviewer are pointed at the
+    real working tree (they have `Bash(git diff:*)` etc.) rather than trusting a summary, because a
+    report of what changed is not the same evidence as the change itself — this codebase's own
+    verify-don't-guess rule applies here as much as anywhere else it's stated."""
+    if role == PM:
+        return task
+    if role == ENGINEER:
+        pm_out = prior.get(PM)
+        if not pm_out:
+            return task
+        return ("Definition of done, from the PM review below — build to satisfy it, not just the "
+                "one-line task:\n%s\n\nTask: %s" % (pm_out, task))
+    if role == QA:
+        parts = []
+        if prior.get(PM):
+            parts.append("Definition of done:\n%s" % prior[PM])
+        if prior.get(ENGINEER):
+            parts.append("The engineer reports:\n%s" % prior[ENGINEER])
+        header = "\n\n".join(parts) + "\n\n" if parts else ""
+        return ("%sTry to break what was just built for: %s\n\nDo not trust the report above — verify "
+                "against the actual working tree (git diff, git log, run the tests) and say what you "
+                "found, not what you were told." % (header, task))
+    if role == REVIEWER:
+        header = "QA found:\n%s\n\n" % prior[QA] if prior.get(QA) else ""
+        return ("%sLead review of the changes made in this working tree for: %s\n\nConfirm or flag "
+                "blockers, verified against git diff / git log yourself, not against what QA or the "
+                "engineer reported." % (header, task))
+    return task
+
+
+def run_crew(task, cls=None, roles=None, budget_pressure=0.0, cwd=None, dry_run=True, timeout=900,
+             **route_kw):
+    """The scriptable counterpart to `crew_for()`'s plan: actually dispatch each stage, in order, in
+    the given working tree. This is what turns "hand-run each stage yourself" into one call.
+
+    Each stage is a FRESH session — separate context per role is what makes the check real (see the
+    module docstring's whole argument against one model wearing four hats), so nothing here ever
+    resumes or forks a prior stage's thread. A stage's model/effort/tools come from `crew_for()`'s
+    plan, never agent_router's class-based policy, which is why this goes through agent_exec.dispatch()
+    (an already-routed task) rather than agent_exec.run() (which would re-derive them from a class).
+
+    Stops at the first stage that errors: a PM stage that failed to run leaves nothing for the
+    engineer to build against, and an engineer stage that failed leaves nothing for QA to inspect —
+    continuing past a broken stage would silently skip the role you were relying on.
+
+    dry_run=True is the default for the same reason it is everywhere else in this module: a crew is
+    3-4 dispatches, not one, so an accidental real run costs proportionally more."""
+    import agent_exec as X
+    plan = crew_for(task, cls=cls, roles=roles, budget_pressure=budget_pressure, **route_kw)
+    results, prior = [], {}
+    for stage in plan["stages"]:
+        role = stage["role"]
+        prompt = _stage_prompt(task, role, prior)
+        r = dict(
+            task=prompt, task_class="crew:%s" % role, model=stage["model"],
+            model_weight=R.MODELS[stage["model"]]["weight"], effort=stage["effort"], tactics=[],
+            prompt=prompt, filler_removed=0, append_system=stage["system"] or "",
+            thread=R.thread_action(prompt), why=[stage["note"]], burn_index=stage["burn_index"],
+        )
+        rec = X.dispatch(r, cwd=cwd, dry_run=dry_run, timeout=timeout, allowed_tools=stage["tools"])
+        rec["role"] = role
+        results.append(rec)
+        if rec.get("error"):
+            break
+        prior[role] = rec.get("result")
+    ok = len(results) == len(plan["stages"]) and not any(x.get("error") for x in results)
+    return dict(plan=plan, results=results, ok=ok)
+
+
 # ── AGENT DEFINITIONS — the same roles, usable agentically ───────────────────────────────────────
 # ORCHESTRATED vs AGENTIC is not either/or, and writing the roles as `.claude/agents/*.md` gets both:
 #
@@ -272,6 +346,13 @@ def main(argv=None):
     ap.add_argument("--budget-pressure", type=float, default=0.0)
     ap.add_argument("--roles", default=None, help="comma-separated subset (default: all four)")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--run", action="store_true",
+                    help="actually dispatch the crew (default is plan-only, like the rest of this CLI)")
+    g = ap.add_mutually_exclusive_group()
+    g.add_argument("--dry-run", dest="dry_run", action="store_true", default=True,
+                   help="with --run: show the argv per stage, dispatch nothing (default)")
+    g.add_argument("--go", dest="dry_run", action="store_false",
+                   help="with --run: actually dispatch (spends budget)")
     a = ap.parse_args(argv)
     if not a.write_agents and not a.task:
         ap.error("--task is required (or use --write-agents)")
@@ -279,8 +360,20 @@ def main(argv=None):
         for path in write_agent_defs():
             print("wrote %s" % os.path.relpath(path, os.path.dirname(HERE)))
         return 0
-    c = crew_for(a.task, cls=a.cls, budget_pressure=a.budget_pressure,
-                 roles=(a.roles.split(",") if a.roles else None))
+    roles = a.roles.split(",") if a.roles else None
+    if a.run:
+        res = run_crew(a.task, cls=a.cls, budget_pressure=a.budget_pressure, roles=roles,
+                       dry_run=a.dry_run)
+        if a.json:
+            print(json.dumps(res, indent=2))
+            return 0
+        for rec in res["results"]:
+            print("  %-10s %-6s / %-5s  %s"
+                  % (rec["role"], rec["route"]["model"], rec["route"]["effort"],
+                     rec.get("error") or rec.get("argv_display") or rec.get("result", "")[:80]))
+        print("\nok: %s" % res["ok"])
+        return 0 if res["ok"] else 1
+    c = crew_for(a.task, cls=a.cls, budget_pressure=a.budget_pressure, roles=roles)
     if a.json:
         print(json.dumps(c, indent=2))
         return 0
