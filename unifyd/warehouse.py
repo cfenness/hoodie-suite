@@ -248,6 +248,29 @@ def write_parquet(name, records, fields=None, allow_empty=False):
     return {"rows": len(records), "uri": uri(name)}
 
 
+def write_full_rebuild(name, records, fields=None, allow_empty=False):
+    """Write a COMPLETE, from-scratch replacement of `name` — a re-shred, a verified-complete crawl —
+    preserving its bucketed layout if it has one.
+
+    `write_parquet` REFUSES outright on a bucketed table ("a flat overwrite would shadow it"), which is
+    correct for an accidental caller but wrong for the deliberate full-rebuild case: normalize.py's
+    src_outlets re-shred and binnys_scraper's verified-complete-crawl overwrite are BOTH real, scheduled,
+    already-working full replacements of tables this fix bucketizes. Without this, the moment either
+    table migrates, its next full rebuild would raise instead of landing.
+
+    So: drop to flat, write, re-migrate with the SAME key_cols/hex_len the table already had — the table
+    lands back in the layout it was found in, and a plain (never-bucketed) table is untouched by any of
+    this (write_parquet, same as always)."""
+    man = read_manifest(name)
+    if not man:
+        return write_parquet(name, records, fields=fields, allow_empty=allow_empty)
+    keys, hexlen = man["key_cols"], int(man["hex_len"])
+    rollback_to_single(name)
+    res = write_parquet(name, records, fields=fields, allow_empty=allow_empty)
+    migrate_to_bucketed(name, keys, hex_len=hexlen)
+    return res
+
+
 def _as_key_fn(key):
     """Normalise a `key` into a callable. Accepts a callable (used as-is), a column NAME, or a
     sequence of column names for a composite key."""

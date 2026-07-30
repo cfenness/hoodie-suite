@@ -427,8 +427,13 @@ SOURCES = [
          enabled=True, timeout=7200,
          note="$0 restaurant OWN menus from toasttab.com sitemaps (~100k); harvest + TOAST_LIMIT menu batches"),
     dict(id="outlet-union", label="Outlet pre-master", code="import outlet_union as m; m.run()",
-         tables=["outlet_master"], klass="headless", cadence="daily", enabled=True,
-         note="derived ($0): unions DoorDash/Toast outlet spines → mastered outlets + per-source menu freshness"),
+         tables=["outlet_master"], klass="headless", cadence="daily", enabled=True, mem=8192,
+         note="derived ($0): unions DoorDash/Toast outlet spines → mastered outlets + per-source menu freshness. "
+              "mem was unset (defaults to 4096) — undersized for a national union-find that materializes "
+              "doordash_stores + toast_outlets + toast_menu_accounts + naop_accounts fully in Python before "
+              "resolving; OOM-killed 2026-07-29. Root cause is the join shape (no fat column to trim — the "
+              "account tables are already lean), so this is a right-size, not a workaround; escalate to 16384 "
+              "(geo's ceiling for a comparable-scale join) if this still OOMs."),
     # WINDOW verified against ttb_pull.pull(): `days` defaults to int(os.environ["TTB_DAYS"] or 14) and is
     # applied as (today - days) → today, chunked a day at a time with --resume. `all` = ~36y back, which
     # covers the public COLA registry to its start; it is a multi-day resumable crawl, not a click-and-wait.

@@ -41,23 +41,36 @@ CATALOGS = {
     "ubereats_products": (["store_uuid", "item_uuid"], 2),
     "postmates_products": (["store_uuid", "item_uuid"], 2),
     "abc_catalog": (["sku"], 1),
+    # Added fixing the 2026-07-29 OOM triage: geo (mem=16384) and binnys (default mem) both died in
+    # write_accumulate's v1 read-modify-write on tables at 1.5-1.8M rows — the exact shape this module
+    # exists for. Both keys are the identity write_accumulate already merges on at every call site
+    # (verified — changing key_cols here would silently redefine "already have this row").
+    "src_outlets": (["source", "store_id"], 2),      # key used by 6 write_accumulate call sites (geo_all's
+                                                      # stages, refresh_fast, ue_sitemap) — all consistent
+    "binnys_products": (["sku", "store"], 2),
 }
 
-# The source that writes each catalog, so an active run can be detected before touching the layout.
-WRITER = {"ubereats_products": "ubereats", "postmates_products": "postmates", "abc_catalog": "abc-fws"}
+# The source(s) that write each catalog, so an active run can be detected before touching the layout.
+# A table may have more than one writer (src_outlets: fast-geo/geocode/aggregator-geo run inside "geo",
+# plus refresh_fast/ue_sitemap/naop/build-outlets write it directly) — a list checks all of them.
+WRITER = {"ubereats_products": "ubereats", "postmates_products": "postmates", "abc_catalog": "abc-fws",
+          "src_outlets": ["geo", "fast-geo", "geocode", "naop", "build-outlets"],
+          "binnys_products": "binnys"}
 
 
 def _live(table):
-    """True if the source that writes `table` has a run in flight. A migration racing a writer is the
+    """True if any source that writes `table` has a run in flight. A migration racing a writer is the
     one way this operation can lose data, so it is checked rather than assumed."""
-    sid = WRITER.get(table)
-    if not sid:
+    sids = WRITER.get(table)
+    if not sids:
         return False
+    sids = [sids] if isinstance(sids, str) else sids
     try:
         import run_journal
-        for d in run_journal.recent(limit=40, source=sid):
-            if d.get("status") in ("queued", "starting", "running"):
-                return d.get("run_id")
+        for sid in sids:
+            for d in run_journal.recent(limit=40, source=sid):
+                if d.get("status") in ("queued", "starting", "running"):
+                    return "%s:%s" % (sid, d.get("run_id"))
     except Exception:
         pass                              # journal unreadable → fall through to the caller's judgement
     return False

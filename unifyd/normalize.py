@@ -645,7 +645,10 @@ def normalize_outlets(log=print):
                                   and (o["f_beer"] or o["f_wine"]) and not o["f_spirits"])
         o.pop("_lic", None)
 
-    warehouse.write_parquet("src_outlets", list(out.values()), FLD)
+    # write_full_rebuild, not write_parquet: this is a full re-shred of src_outlets, and once the table
+    # is bucketed (the OOM fix — the accumulate-path read-modify-write was peaking >8GB at 1.77M rows
+    # even here at mem=16384) a plain write_parquet would raise rather than land.
+    warehouse.write_full_rebuild("src_outlets", list(out.values()), FLD)
     geo = sum(1 for v in out.values() if v["lat"] is not None)
     fl = {k: sum(1 for v in out.values() if v[k]) for k in ("f_beer", "f_wine", "f_spirits", "f_hemp", "f_rtd_spirits")}
     log("[normalize] src_outlets=%d (%d geocoded) · flags %s" % (len(out), geo, fl))

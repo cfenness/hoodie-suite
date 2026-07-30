@@ -16,6 +16,7 @@ import argparse, html as _html, json, os, re, sys, time, urllib.parse, urllib.re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import observe
+import raw_capture
 import doordash as dd                # reuse _parse_pack (container/size)
 import cocktail_taxonomy as ctx      # bev_category / beer_style
 
@@ -945,11 +946,23 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
             rows.append(rec)
         log("  [off] %-26s (%s) -> %d products" % (s["account"][:26], s["platform"], len(items)))
     if rows:
+        # DON'T LAND raw_json IN THE ACCUMULATE PATH. write_accumulate merges by rewriting the WHOLE
+        # table — read every existing row, drop the replaced ones, append the batch — so a fat raw_json
+        # column (each up to 6-12KB, per off_premise's own JSON-LD/product dumps) is re-read and
+        # re-written on EVERY flush, forever, and gets more expensive as the catalog succeeds. This is
+        # the exact "payloads are events" mistake raw_capture.py exists to fix (its docstring names the
+        # identical UberEats OOM this pattern caused). A payload is an event — what a source said at this
+        # moment — not a mutable product attribute, so it goes to the append-only raw_payloads table
+        # instead, where it's still fully recoverable, just never re-read on a merge.
+        raw_capture.record("off-premise", time.strftime("%Y-%m-%d"), "%s_%s" % (market, run_id),
+                           [{"entity_id": r.get("sku") or r.get("name"), "parent_id": r.get("base"),
+                             "raw_json": r.get("raw_json")} for r in rows], log=log)
+        lean = [{k: v for k, v in r.items() if k != "raw_json"} for r in rows]
         # ACCUMULATE — `out` is per-market but filled by a PLATFORM-filtered subset; running for one platform
         # then another into the same table must not wipe the first platform's products.
         # variant-safe identity: a product's sizes are distinct SKUs — key on sku/variant-id/size, NOT bare name,
         # or per-variant rows would collapse back to one.
-        warehouse.write_accumulate(out, rows, key=lambda r: (
+        warehouse.write_accumulate(out, lean, key=lambda r: (
             (r.get("account") or r.get("store")),
             r.get("sku") or r.get("item_code") or ((r.get("name") or "") + "|" + str(r.get("size_opt") or r.get("size_ml") or ""))))
         # feed the FACTS: independent-retailer price + in/out over time. unique part per market -> no clobber.
@@ -959,7 +972,7 @@ def run_census(market="orlando", platforms=("Shopify", "WooCommerce", "Bottlecap
                     in_stock=r.get("in_stock"), is_hemp=r.get("is_hemp")) for r in rows]
         observe.record("offprem", obs, part="%s_offprem_%s" % (time.strftime("%Y-%m-%d"), market))
         # feed the MASTER: one consolidated catalog table (in _CFG) so independent products join the master.
-        warehouse.write_accumulate("offprem_products", rows,
+        warehouse.write_accumulate("offprem_products", lean,
                                    key=lambda r: ((r.get("base") or ""),
                                                   r.get("sku") or r.get("item_code")
                                                   or ((r.get("name") or "") + "|" + str(r.get("size_opt") or r.get("size_ml") or ""))))
