@@ -7000,7 +7000,7 @@ def _cockpit_mods():
     # unavailable", the page rendered "Agent offline", and the standing band silently dropped the
     # chats / ready / would-revert cells — while the agent was plainly running and answering every
     # other route. A dependency list that goes stale as modules are added is its own failure mode.
-    for name in ("agent_router", "agent_exec", "agent_memory", "agent_chats", "agent_mine", "agent_roles"):
+    for name in ("agent_router", "agent_exec", "agent_memory", "agent_chats", "agent_mine", "agent_roles", "agent_checks"):
         try:
             out[name] = importlib.import_module(name)
         except Exception as e:
@@ -7165,6 +7165,20 @@ def api_cockpit_crew():
             budget_pressure=float(request.args.get("budget_pressure") or 0))
     except Exception as e:
         return jsonify(error=str(e)[:300]), 200
+    # DETERMINISTIC FIRST. The checks are free and share none of a model's blind spots, so they run
+    # before any stage is priced — and their brief is handed to the crew so the expensive reasoning
+    # starts from facts instead of rediscovering them. Opt out with ?checks=0 when you only want the
+    # routing shape.
+    if request.args.get("checks") != "0" and m.get("agent_checks"):
+        try:
+            rep = m["agent_checks"].run_all()
+            c["checks"] = dict(counts=rep["counts"], ok=rep["ok"], seconds=rep["seconds"],
+                               paths=len(rep["paths"]),
+                               findings=[{k: f[k] for k in ("id", "label", "status", "proves",
+                                                            "evidence")} for f in rep["findings"]])
+            c["checks_brief"] = m["agent_checks"].as_brief(rep)
+        except Exception as e:
+            c["checks"] = dict(error=str(e)[:200])
     # Briefs are long and already live in the agent definitions; the page needs the shape, not the prose.
     for s in c.get("stages", []):
         s.pop("system", None)
