@@ -128,6 +128,40 @@ def main():
           "remember" in miss["guidance"], miss["guidance"])
     check("miss returns no facts", miss["facts"] == [])
 
+    # --- 6b. RELEVANCE GATE: a shared word is not an answer --------------------------------------
+    # The bug this pins, found end-to-end: asking about `write_accumulate` returned three unrelated
+    # sources whose long `note` shared common words, and answer() called it a HIT — so it answered
+    # wrongly AND suppressed the model that would have answered correctly. A false hit is strictly
+    # worse than a miss: a miss falls through and gets the right answer.
+    ev3 = os.path.join(tmp, "e3.py")
+    with open(ev3, "w") as fh:
+        fh.write("x = 1\n")
+    M.remember("naop", "note", "DoorDash on-premise menus, consumes doordash stores in batches",
+               evidence_path=ev3, db=db)
+    M.remember("write_accumulate", "behaviour", "merges instead of overwriting",
+               evidence_path=ev3, db=db)
+
+    # Words appear only inside another fact's prose -> must be a MISS, with the weak matches demoted.
+    r = M.answer("what does the batches process consume for menus on premise", db=db)
+    check("prose-only overlap is a MISS, not a hit", r["status"] == "miss", r["status"])
+    check("...and the weak matches come back as `related`, not as the answer",
+          len(r.get("related") or []) >= 1 and r["facts"] == [], r)
+    check("miss guidance says why (incidental overlap, not an answer)",
+          "overlap" in r["guidance"] or "subject" in r["guidance"], r["guidance"])
+
+    # A subject match still answers.
+    r2 = M.answer("write_accumulate behaviour", db=db)
+    check("a SUBJECT match is a real hit", r2["status"] == "hit", r2["status"])
+    check("the hit is the right fact", r2["facts"][0]["subject"] == "write_accumulate", r2["facts"][0])
+    check("hits report where the match landed",
+          r2["facts"][0]["matched_on"] in ("subject", "claim"), r2["facts"][0].get("matched_on"))
+
+    # A CLAIM match answers too (asking for a property by name).
+    r3 = M.answer("naop note", db=db)
+    check("a CLAIM match is a real hit", r3["status"] == "hit", r3["status"])
+    check("every returned fact carries matched_on",
+          all("matched_on" in f for f in M.recall("naop", db=db)))
+
     # --- 7. stats -----------------------------------------------------------------------------
     st = M.stats(db=db)
     check("stats counts facts", st["facts"] >= 3, st)

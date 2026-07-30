@@ -170,6 +170,28 @@ def _tokens(s):
     return [t for t in re.split(r"[^\w]+", (s or "").lower()) if t]
 
 
+def matched_on(row, query):
+    """WHERE the match landed: 'subject' | 'claim' | 'prose'. This is the relevance gate.
+
+    THE BUG THIS EXISTS TO KILL (found end-to-end, and it was the worst one):
+    asked "what does write_accumulate do differently from write_parquet", the store returned
+    `naop note`, `abc-catalog note` and `kroger-api note` — three unrelated sources whose long free-text
+    `note` happened to share common words — and `answer()` reported it as a HIT. So it confidently
+    answered a question it has no answer to AND suppressed the model that could have answered properly.
+    A false hit is strictly worse than a miss: a miss falls through to the expensive path and gets the
+    right answer, while a false hit gets a wrong one for free and stops there.
+
+    Sharing a word with a paragraph is not knowing the answer. A real hit has to match the thing the
+    fact is ABOUT (its subject) or the property being asked for (its claim) — prose-only matches are
+    demoted to related-reading, never served as the answer."""
+    qt = set(_tokens(query))
+    if qt & set(_tokens(row.get("subject"))):
+        return "subject"
+    if qt & set(_tokens(row.get("claim"))):
+        return "claim"
+    return "prose"
+
+
 def _rerank(rows, query):
     """Re-rank bm25 hits by WHERE the match landed. Measured need, not theory.
 
@@ -221,6 +243,7 @@ def recall(query, k=5, db=None, include_stale=True):
     for r in _rerank([dict(x) for x in rows], query):
         d = dict(r)
         d["verdict"] = verdict(d)
+        d["matched_on"] = matched_on(d, query)
         if d["verdict"] == STALE and not include_stale:
             continue
         out.append(d)
@@ -239,14 +262,26 @@ def answer(query, k=5, db=None):
     re-verify rather than let it serve a confident wrong answer."""
     got = recall(query, k=k, db=db)
     if not got:
-        return dict(status="miss", query=query, facts=[],
+        return dict(status="miss", query=query, facts=[], related=[],
                     guidance="No stored fact matched. Run the expensive path once, then call "
                              "remember() with the evidence so this question is cheap next time.")
-    fresh = [f for f in got if f["verdict"] == FRESH]
+    # RELEVANCE GATE. A fact only answers the question if the match landed on its subject (what it is
+    # about) or its claim (the property asked for). A prose-only match — a shared word inside somebody's
+    # long `note` — is related reading, not an answer, and serving it as a hit both misinforms and
+    # suppresses the model that would have got it right. See matched_on() for the observed failure.
+    relevant = [f for f in got if f["matched_on"] in ("subject", "claim")]
+    weak = [f for f in got if f["matched_on"] == "prose"]
+    if not relevant:
+        return dict(status="miss", query=query, facts=[], related=weak[:3],
+                    guidance="Nothing stored matched on subject or property — only incidental word "
+                             "overlap in prose, which is not an answer. Run the expensive path, then "
+                             "remember() the result so this becomes cheap.")
+    fresh = [f for f in relevant if f["verdict"] == FRESH]
     if fresh:
-        return dict(status="hit", query=query, facts=fresh,
+        return dict(status="hit", query=query, facts=fresh, related=weak[:2],
                     guidance="Answer from these facts and cite evidence_path:evidence_line.")
-    return dict(status="stale", query=query, facts=got,
+    got = relevant
+    return dict(status="stale", query=query, facts=got, related=weak[:2],
                 guidance="Matched facts exist but their evidence files have changed since they were "
                          "recorded. Re-verify against the cited paths, then remember() the update.")
 
