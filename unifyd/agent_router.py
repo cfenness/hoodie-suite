@@ -43,8 +43,15 @@ MODELS = {
     "haiku":  dict(id="haiku",  weight=1,  note="lookups, mechanical edits, classification"),
     "sonnet": dict(id="sonnet", weight=4,  note="most real work; near-Opus on coding/agentic"),
     "opus":   dict(id="opus",   weight=12, note="long-horizon, correctness-critical, deep reasoning"),
+    # Fable is the top of the ladder and roughly 2x Opus per token, so it is reserved for ONE thing:
+    # the up-front architecture/workflow design of something new, where the cost of a wrong structural
+    # decision is paid back over every hour of building on it. It is a bad default for execution work
+    # — the ladder demotes to opus under budget pressure, and `--fallback-model opus` covers the case
+    # where the plan doesn't grant Fable at all (entitlement is unverified; the CLI documents the
+    # alias, which is not the same as having access).
+    "fable":  dict(id="fable",  weight=24, note="up-front architecture & workflow design; top tier"),
 }
-LADDER = ["haiku", "sonnet", "opus"]
+LADDER = ["haiku", "sonnet", "opus", "fable"]
 EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 
 
@@ -55,6 +62,20 @@ EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 # tools:       tool-call intensity. Heavy tool use favors higher effort (measured: higher effort
 #              produces substantially more tool usage in agentic/search work).
 CLASSES = {
+    # THE CLASS THIS SET WAS MISSING, and its absence was the worst routing bug in the file: designing
+    # the architecture and workflow for something new is the most reasoning-intensive work here, and
+    # with no lane for it the phrase "design the app" matched `surface` on the words app/page and
+    # routed to sonnet/medium. The single highest-leverage decision in a project was going to a mid
+    # tier at mid effort.
+    #
+    # `prefer` names the model/effort explicitly instead of deriving them, because this lane is not
+    # "max correctness" in the same sense as a merge — a wrong merge is expensive to unwind, whereas a
+    # wrong architecture is expensive FOREVER, paid back over every hour built on top of it. That
+    # asymmetry justifies the top of the ladder for one up-front pass.
+    "design": dict(
+        horizon="long", correctness="max", tools="medium", prefer=("fable", "max"),
+        note="up-front architecture / workflow / data-model design for something new. One expensive "
+             "pass at the start, not a lane for the building that follows."),
     "scrape": dict(
         horizon="long", correctness="high", tools="heavy",
         note="scraper build/fix. The scrapers ARE the product — full-capture bar, no caps."),
@@ -95,6 +116,13 @@ CLASSES = {
 _CLASS_HINTS = [
     ("triage",   r"\bis\b.*\bstill\b|\bdoes\b.*\bexist\b|check whether|\bquick\b|look ?up"
                  r"|confirm that|\bstill (?:enabled|live|active|true|running|there)\b"),
+    # Placed above `surface` and `ops` on purpose: "architect the workflow for a new app" contains
+    # `app`, and "design the deploy pipeline" contains `deploy`. Kept narrow — an up-front structural
+    # ask, not any sentence containing the word "design" (a design TWEAK is `surface`).
+    ("design",   r"\barchitect(?:ure|ing)?\b|\bdesign the (?:system|architecture|workflow|schema|"
+                 r"data model|pipeline|flow)\b|\bfrom scratch\b|\bgreenfield\b|"
+                 r"\bhow should (?:we|i) (?:structure|model|architect|design)\b|"
+                 r"\b(?:workflow|schema|data.?model) design\b|\bground.?up (?:re)?(?:build|design)\b"),
     ("ops",      r"deploy|dispatch|re-?pin|fly|flyctl|release|secret|launchd|cron|rate.?limit"),
     ("master",   r"match|identity|dim_|master|canon|dedup|upc|gtin|merge|entity|cluster"),
     ("review",   r"review|audit|bug|vulnerab|regress|security|smell|refactor.*safe"),
@@ -179,6 +207,7 @@ TACTICS = {
 
 # Which tactics each class gets by default. Composable — a route can carry several.
 _CLASS_TACTICS = {
+    "design":   ["spec", "evidence", "scope"],
     "scrape":   ["spec", "evidence", "scope"],
     "master":   ["spec", "evidence", "scope"],
     "review":   ["evidence", "terse"],
@@ -328,7 +357,11 @@ def _model_for(cls, budget_pressure):
     spec = CLASSES[cls]
     horizon, correctness = spec["horizon"], spec["correctness"]
 
-    if correctness == "max":
+    if spec.get("prefer"):
+        # An explicit lane. Still subject to budget demotion below — a preference is not an exemption.
+        want, effort = spec["prefer"]
+        floor = "opus" if want == "fable" else "sonnet"
+    elif correctness == "max":
         want, effort, floor = "opus", ("xhigh" if horizon == "long" else "high"), "sonnet"
     elif horizon == "long":
         want, effort, floor = "opus", "xhigh", "sonnet"

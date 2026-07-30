@@ -138,6 +138,35 @@ def main():
           R.topic_overlap("publix selector", "census tract geocode") == 0.0)
     check("topic_overlap handles empty input", R.topic_overlap("", "abc") == 0.0)
 
+    # --- 6b. the design lane: the class that was missing -----------------------------------------
+    # Before this class existed, "design the architecture for a new app" matched `surface` on the words
+    # app/page and routed to sonnet/medium — the most reasoning-intensive work in the project going to
+    # a mid tier. These pin the fix, and pin that it can't over-trigger.
+    for text in ("design the architecture for the new ordering app",
+                 "how should we structure the depletion data model",
+                 "rebuild relations from scratch",
+                 "architect the workflow for the ordering flow"):
+        got, _ = R.classify(text)
+        check("design lane catches %r" % text[:44], got == "design", got)
+    d = R.route("design the architecture for a new app")
+    check("design routes to the top of the ladder", d["model"] == "fable", d["model"])
+    check("design runs at max effort", d["effort"] == "max", d["effort"])
+    check("design uses the full-spec tactic (not caveman)",
+          "spec" in d["tactics"] and "caveman" not in d["tactics"], d["tactics"])
+    # Over-triggering a 24x-weight lane is the expensive direction, so a design TWEAK must not match.
+    for text in ("the sidebar layout is stacking on the collect page",
+                 "move the button and tweak the design of the header"):
+        got, _ = R.classify(text)
+        check("design lane does NOT swallow %r" % text[:40], got != "design", got)
+    check("fable sits above opus on the ladder",
+          R.LADDER.index("fable") > R.LADDER.index("opus"))
+    check("fable is the heaviest burn", max(R.MODELS, key=lambda m: R.MODELS[m]["weight"]) == "fable")
+    # A preference is not an exemption: pressure still demotes, but never below the floor.
+    hp = R.route("design the architecture for a new app", budget_pressure=0.95)
+    check("design demotes to opus under pressure", hp["model"] == "opus", hp["model"])
+    check("...and not below opus", hp["model"] != "sonnet", hp["model"])
+    check("the demotion is recorded", any("demoted" in w for w in hp["why"]), hp["why"])
+
     # --- 7. every route is inspectable -------------------------------------------------------------
     r = R.route("fix the kroger parse", cls="auto")
     for field in ("task_class", "model", "effort", "tactics", "prompt", "append_system",

@@ -52,15 +52,54 @@ THREADS = os.path.join(STATE, "threads.json")
 # Model aliases the CLI accepts. The router speaks in tiers (haiku/sonnet/opus) on purpose: tiers are
 # a stable policy vocabulary, while concrete ids churn every release. Mapping happens HERE, once, so
 # a model launch is a one-line edit and never a policy rewrite.
-CLI_MODEL = {"haiku": "haiku", "sonnet": "sonnet", "opus": "opus"}
+CLI_MODEL = {"haiku": "haiku", "sonnet": "sonnet", "opus": "opus", "fable": "fable"}
 
-# Tool allowlist per class. Cheap lanes get read-only tools — a `triage` lookup that can Write is a
-# lookup that can surprise you, and the whole reason triage is cheap is that it isn't doing that.
-READ_ONLY = ["Read", "Grep", "Glob", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status)"]
+# Tiers whose availability depends on the plan, mapped to what to fall back to. The CLI documents
+# `fable` as a first-class alias (`--model` help lists 'fable', 'opus', 'sonnet'), but a documented
+# alias is NOT proof of entitlement — and a `design` route is the worst possible place to discover
+# that, because it's the one turn you most wanted to land. `--fallback-model` makes the CLI switch
+# rather than fail, so an unentitled plan degrades to Opus instead of erroring out.
+FALLBACK_MODEL = {"fable": "opus"}
+
+# ── CAPABILITY PROFILE PER CLASS ─────────────────────────────────────────────────────────────────
+# An allowlist is a two-edged thing and the first version of this only used one edge. Restricting a
+# cheap lane to read-only is right — a `triage` lookup that can Write is a lookup that can surprise
+# you. But the same list SUBTRACTS everything not named, and the original omitted web access from
+# triage and review: "is this still true on the live site" then couldn't reach the live site, so the
+# model either guessed or spent turns grepping for something that isn't in the repo at all.
+#
+# THE FREE-MONEY POINT, measured rather than assumed: a headless `claude -p` run on this machine has
+# NO MCP servers configured and NO plugins installed (`claude mcp list` / `claude plugin list` are
+# both empty). The connectors available in an interactive session come from the app's plugin layer and
+# the subprocess does not inherit them. So the only capabilities the Cockpit can actually count on are
+# the CLI's built-ins — which makes it worth naming them deliberately per lane instead of leaving a
+# default set to chance. WebSearch/WebFetch in particular are already paid for and answer questions
+# that would otherwise be re-derived, which is the same lever as the fact store.
+#
+# Deliberately NOT added: any per-call metered connector (Bright Data's per-GB tier and similar).
+# "Maximize the tools available" does not extend to a tool that bills per use — that would trade the
+# free-first rule for convenience.
+READ = ["Read", "Grep", "Glob"]
+GIT_READ = ["Bash(git log:*)", "Bash(git show:*)", "Bash(git status)", "Bash(git diff:*)"]
+WEB = ["WebSearch", "WebFetch"]
+EDIT = ["Edit", "Write"]
+
 TOOLS_FOR = {
-    "triage": READ_ONLY,
-    "docs":   READ_ONLY + ["Edit", "Write"],
-    "review": READ_ONLY,
+    # Lookups: read the repo, read git history, and check the live world — but never mutate.
+    "triage":   READ + GIT_READ + WEB,
+    # Docs may write, and needs the web to verify a link or a claim before it's committed to prose.
+    "docs":     READ + GIT_READ + WEB + EDIT,
+    # Review reads everything and reaches out for CVE/API/version facts, but does not fix in place —
+    # a reviewer that edits stops being a reviewer.
+    "review":   READ + GIT_READ + WEB,
+    # Analysis needs the warehouse CLI plus reference lookups; still no writes.
+    "analysis": READ + GIT_READ + WEB + ["Bash(python3:*)", "Bash(duckdb:*)"],
+    # Design is reading and thinking, not building — it produces a plan, and letting it edit invites
+    # it to start implementing before the structure has been agreed.
+    "design":   READ + GIT_READ + WEB,
+    # scrape / master / surface / ops intentionally have NO entry: they get the CLI's full default
+    # tool set, because constraining a build lane to a list I guessed at is how you discover a missing
+    # tool halfway through a long agentic run.
 }
 
 
@@ -169,6 +208,9 @@ def build_argv(route_dict, cwd=None, session_id=None, resume_id=None, allowed_to
     action = route_dict["thread"]["action"]
     argv = [claude, "-p", "--output-format", "json"]
     argv += ["--model", CLI_MODEL[route_dict["model"]]]
+    fb = FALLBACK_MODEL.get(route_dict["model"])
+    if fb:
+        argv += ["--fallback-model", CLI_MODEL[fb]]
     argv += ["--effort", route_dict["effort"]]
 
     if action == "continue" and resume_id:
