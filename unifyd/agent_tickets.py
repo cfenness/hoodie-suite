@@ -233,16 +233,41 @@ def read_body(tid, db=None):
     return render_markdown(rec) if rec is not None else None
 
 
-def add_activity(tid, kind, role_label, text, usage=None, db=None):
+_VERDICT_FENCE = re.compile(r"```json\s*(\{.*?\})\s*```", re.S)
+
+
+def extract_verdict_json(text):
+    """Pull the LAST fenced ```json block out of a role's report and parse it — the structured
+    verdict ROLES[QA]/ROLES[REVIEWER]'s system prompts are now asked to end with (pass/fail per
+    criterion with evidence; ship/ship-with-followups/blocked with named blockers). The prose
+    report is the source of truth either way — this is purely an additive structured read of it,
+    so ANY failure to find or parse a clean block returns None rather than raising. The LAST block
+    (not the first) wins because a report can legitimately show example JSON shapes earlier in its
+    reasoning before the real, final one."""
+    if not text:
+        return None
+    matches = _VERDICT_FENCE.findall(text)
+    if not matches:
+        return None
+    try:
+        return json.loads(matches[-1])
+    except Exception:
+        return None
+
+
+def add_activity(tid, kind, role_label, text, usage=None, verdict=None, db=None):
     """Append one structured entry to the ticket's activity log — the mechanism behind "embed test
     reports as the process goes." Returns False (does nothing) for an unknown ticket, same as before.
     `usage` (an {input_tokens, output_tokens} dict off a dispatch record) rolls into the ticket's
-    running cost total when given — nearly free, since every dispatch already carries it."""
+    running cost total when given — nearly free, since every dispatch already carries it. `verdict`
+    (typically `extract_verdict_json(text)`'s result) is stored alongside the full prose, never
+    instead of it — a dev reviewing the ticket gets both the structured pass/fail and the reasoning
+    behind it, with nothing summarized away."""
     rec = get(tid, db=db)
     if not rec:
         return False
     rec.setdefault("activity", []).append(dict(
-        ts=_now_ms(), kind=kind, role=role_label, text_md=text, usage=usage or {}))
+        ts=_now_ms(), kind=kind, role=role_label, text_md=text, usage=usage or {}, verdict=verdict))
     if usage:
         cost = rec.setdefault("cost", dict(input_tokens=0, output_tokens=0, by_stage={}))
         cost["input_tokens"] = cost.get("input_tokens", 0) + int(usage.get("input_tokens") or 0)

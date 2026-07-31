@@ -88,7 +88,15 @@ ROLES = {
             "For each finding give the evidence, your confidence, and an estimated severity.\n"
             "Actively try to break it: the empty input, the duplicate, the stale cache, the second "
             "run, the concurrent run. A guard that degrades quietly is indistinguishable from success "
-            "— look for exactly that."),
+            "— look for exactly that.\n"
+            "End your response with a fenced ```json code block, after all your prose, containing "
+            "EXACTLY this shape, one entry per acceptance criterion: "
+            '{"criteria":[{"text":"<criterion, verbatim or paraphrased>",'
+            '"status":"pass|fail|untested","evidence":"<file:line or the actual command output>",'
+            '"severity":"minor|major|blocker|null"}],"verdict":"pass|fail"}. '
+            "This block is machine-parsed to render a structured verdict on the ticket — it is "
+            "IN ADDITION to your prose report, never a replacement for it; do not shorten or drop "
+            "findings to make them fit the JSON."),
     ),
     REVIEWER: dict(
         label="Lead engineer",
@@ -103,7 +111,13 @@ ROLES = {
             "diff back; say what is wrong, what is risky, and what is fine.\n"
             "Give a verdict: ship, ship-with-followups, or blocked — and if blocked, the specific "
             "thing that must change. Do not approve work you could not verify; say what you could not "
-            "check instead."),
+            "check instead.\n"
+            "End your response with a fenced ```json code block, after all your prose, containing "
+            'EXACTLY this shape: {"verdict":"ship|ship-with-followups|blocked",'
+            '"blockers":["<specific, named blocker>", ...],"summary":"<one line>"} — an empty '
+            'blockers list when verdict is "ship". This block is machine-parsed to render a '
+            "structured verdict on the ticket — it is IN ADDITION to your prose review, never a "
+            "replacement for it."),
     ),
 }
 

@@ -7693,7 +7693,12 @@ def api_cockpit_ticket_run(tid):
     for r in res["results"]:
         kind = "%s_report" % r["role"]
         result_text = r.get("result") or r.get("error") or "(no output)"
-        T.add_activity(tid, kind, "%s report" % r["role"].title(), result_text, usage=r.get("usage"))
+        # QA/reviewer reports end with a machine-parsed JSON verdict block (agent_roles.ROLES[qa/
+        # reviewer]'s system prompts ask for it); engineer reports never have one, so this is just
+        # None for that stage. Never blocks landing the prose report if parsing finds nothing.
+        verdict = T.extract_verdict_json(result_text) if not r.get("error") else None
+        T.add_activity(tid, kind, "%s report" % r["role"].title(), result_text,
+                       usage=r.get("usage"), verdict=verdict)
         # WRITE-BACK: a ticket's crew findings become facts, same mechanism /api/cockpit/chat already
         # uses on every model-answered miss (agent_memory.remember_answer) — without this, a ticket's
         # findings vanished the moment it closed and the next similar ticket re-derived everything.
