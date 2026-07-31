@@ -54,6 +54,11 @@ THREADS = os.path.join(STATE, "threads.json")
 # a model launch is a one-line edit and never a policy rewrite.
 CLI_MODEL = {"haiku": "haiku", "sonnet": "sonnet", "opus": "opus", "fable": "fable"}
 
+# Real Anthropic model ids, for the API-fallback path only (dispatch_via_api below) — the CLI
+# resolves its own aliases above, but a direct SDK call needs the concrete id.
+API_MODEL = {"haiku": "claude-haiku-4-5-20251001", "sonnet": "claude-sonnet-5",
+            "opus": "claude-opus-5", "fable": "claude-fable-5"}
+
 # Tiers whose availability depends on the plan, mapped to what to fall back to. The CLI documents
 # `fable` as a first-class alias (`--model` help lists 'fable', 'opus', 'sonnet'), but a documented
 # alias is NOT proof of entitlement — and a `design` route is the worst possible place to discover
@@ -128,8 +133,22 @@ def auth_mode():
         pass
     if out["api_key_in_env"]:
         out["mode"] = "api-key (METERED)"
-        out["warning"] = ("ANTHROPIC_API_KEY is set and takes precedence over the OAuth login — "
-                          "runs will bill the metered API, not your subscription. Unset it.")
+        if out["cli"]:
+            # The CLI IS present (this is a Mac dev box) — a key here is almost certainly an
+            # accident, since ANTHROPIC_API_KEY takes precedence over the OAuth login in every
+            # Anthropic client and would silently move spend onto the metered rail. dispatch()
+            # refuses outright in this shape (see there) rather than trusting this warning alone.
+            out["warning"] = ("ANTHROPIC_API_KEY is set and takes precedence over the OAuth login — "
+                              "runs will bill the metered API, not your subscription. Unset it.")
+        else:
+            # No CLI at all — this IS the Fly-served instance, where an OAuth session can never
+            # exist by construction. Here the key isn't a mistake to warn away from, it's the ONLY
+            # way dispatch can work at all — dispatch_via_api() runs text-only single-turn
+            # completions through it (no tool use, no crew orchestration; those need the CLI's
+            # agentic loop and stay Mac-only).
+            out["warning"] = ("No claude CLI here (expected on the Fly-served instance) — dispatch "
+                              "runs on the metered API key instead of a subscription. Text-only: no "
+                              "tool use, no crew/ticket dispatch.")
     elif out["oauth"]:
         # HONEST LABEL: this reads CONFIGURATION, not liveness. An `oauthAccount` in ~/.claude.json
         # only proves a login happened once — the access token expires, and a run then fails with
@@ -238,11 +257,16 @@ def build_argv(route_dict, cwd=None, session_id=None, resume_id=None, allowed_to
 
 def run(task, cls="auto", thread_id=None, thread_subject="", context_used=0.0,
         carries_context=None, branching=False, budget_pressure=0.0, tactics=None,
-        cwd=None, dry_run=True, timeout=900):
+        cwd=None, dry_run=True, timeout=900, history=None):
     """Route then execute. Returns a record that is ALSO the ledger line.
 
     dry_run=True is the default on purpose: this spends real subscription budget, and a function
-    that runs by default is one that runs by accident."""
+    that runs by default is one that runs by accident.
+
+    `history` (optional [{role, text}, ...], oldest first — agent_chats.transcript()'s own shape) is
+    only used by the API-fallback path (dispatch_via_api) to carry prior turns into the completion,
+    since that path has no CLI session file to --resume. The CLI path ignores it — --resume already
+    IS the thread's continuity there."""
     known = _threads()
     if thread_id and not thread_subject:
         thread_subject = (known.get(thread_id) or {}).get("subject", "")
@@ -251,10 +275,10 @@ def run(task, cls="auto", thread_id=None, thread_subject="", context_used=0.0,
     r = router.route(task, cls=cls, thread=th, context_used=context_used,
                      carries_context=carries_context, branching=branching,
                      budget_pressure=budget_pressure, tactics=tactics)
-    return dispatch(r, thread_id=thread_id, cwd=cwd, dry_run=dry_run, timeout=timeout)
+    return dispatch(r, thread_id=thread_id, cwd=cwd, dry_run=dry_run, timeout=timeout, history=history)
 
 
-def dispatch(r, thread_id=None, cwd=None, dry_run=True, timeout=900, allowed_tools=None):
+def dispatch(r, thread_id=None, cwd=None, dry_run=True, timeout=900, allowed_tools=None, history=None):
     """Execute an ALREADY-ROUTED task. `run()` is this plus a `router.route()` call in front of it —
     split apart so a caller with its own routing decision can reuse the same argv-build / subprocess /
     ledger machinery instead of a second copy of it drifting alongside.
@@ -265,6 +289,21 @@ def dispatch(r, thread_id=None, cwd=None, dry_run=True, timeout=900, allowed_too
     auth-rail refusal, the argv shape, the JSON/non-JSON result handling, the ledger line."""
     rec = dict(ts=time.time(), route=r, auth=auth_mode(), dry_run=bool(dry_run),
                cwd=cwd or os.getcwd())
+
+    # API-key FALLBACK — only when the claude CLI genuinely does not exist on this machine. That is
+    # a narrower, different condition than "a key happens to be set": the refusal below
+    # (auth["api_key_in_env"]) still fires whenever the CLI IS present, so a stray key on the Mac
+    # still refuses exactly as before — this branch can only ever engage on a machine (the
+    # Fly-served instance) where an OAuth session could never have existed in the first place.
+    # Text-only single-turn completion, no tool use, no crew orchestration — those need the CLI's
+    # own agentic loop and stay Mac-only until there's a real tool-execution path to run them
+    # through here.
+    if not _which_claude():
+        if not rec["auth"]["api_key_in_env"]:
+            rec["error"] = "no claude CLI found, and no ANTHROPIC_API_KEY — nothing can dispatch here"
+            return rec
+        return _dispatch_via_api(r, rec, thread_id=thread_id, history=history, timeout=timeout)
+
     action = r["thread"]["action"]
     new_id = str(uuid.uuid4()) if action == "new" else None
     try:
@@ -339,6 +378,69 @@ def dispatch(r, thread_id=None, cwd=None, dry_run=True, timeout=900, allowed_too
     if sid:
         _save_thread(sid, r["task"][:160], meta=dict(
             last_class=r["task_class"], last_model=r["model"], last_action=action))
+    _append_ledger(rec)
+    return rec
+
+
+def _dispatch_via_api(r, rec, thread_id=None, history=None, timeout=900):
+    """The API-fallback path — see dispatch()'s call site for when this engages. A direct
+    anthropic SDK completion, same pattern hi_analyst.py already uses elsewhere in this repo
+    (thinking=adaptive + output_config effort), just without its JSON-schema constraint since a chat
+    answer is free text, not a structured record.
+
+    No CLI session file exists here, so there is no --resume: continuity instead comes from
+    `history` (agent_chats.transcript()'s own [{role, text}, ...] shape, oldest first) — every prior
+    turn except the just-added current one becomes a message, and `r["prompt"]` (the router's own,
+    possibly caveman-stripped text) becomes the final user turn, so the routing decision's own
+    prompt-shaping is respected rather than re-fetching the raw stored question."""
+    model = API_MODEL.get(r["model"], API_MODEL["sonnet"])
+    rec["argv_display"] = "<api mode: %s, effort=%s — no claude CLI on this machine>" % (model, r["effort"])
+    if rec["dry_run"]:
+        rec["result"] = None
+        return rec
+
+    messages = [{"role": h["role"], "content": h["text"]} for h in (history or [])[:-1]
+               if h.get("role") in ("user", "assistant") and (h.get("text") or "").strip()]
+    messages.append({"role": "user", "content": r["prompt"]})
+
+    t0 = time.time()
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        kw = dict(model=model, max_tokens=4096, messages=messages)
+        if r.get("append_system"):
+            kw["system"] = [{"type": "text", "text": r["append_system"]}]
+        # thinking=adaptive + output_config.effort isn't uniformly supported across every tier —
+        # measured live: haiku rejects "adaptive thinking is not supported on this model" while
+        # sonnet/opus/fable accept it. Rather than hardcode a per-model capability table (which goes
+        # stale the moment a new tier ships), try the richer call first and fall back to a plain one
+        # on exactly that error — every other failure (auth, rate limit, network) still raises
+        # straight to the outer handler below, unchanged.
+        try:
+            msg = client.messages.create(
+                thinking={"type": "adaptive"}, output_config={"effort": r["effort"]}, **kw)
+        except anthropic.BadRequestError as e:
+            if "thinking is not supported" not in str(e):
+                raise
+            msg = client.messages.create(**kw)
+        rec["seconds"] = round(time.time() - t0, 2)
+        text = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
+        u = msg.usage
+        rec["usage"] = {"input_tokens": getattr(u, "input_tokens", None),
+                        "output_tokens": getattr(u, "output_tokens", None)}
+        if text:
+            rec["result"] = text
+            rec["session_id"] = thread_id or str(uuid.uuid4())
+        else:
+            rec["error"] = "empty response from the API"
+    except Exception as e:                                    # noqa: BLE001
+        rec["seconds"] = round(time.time() - t0, 2)
+        rec["error"] = str(e)[:400]
+
+    sid = rec.get("session_id") or thread_id
+    if sid:
+        _save_thread(sid, r["task"][:160], meta=dict(
+            last_class=r["task_class"], last_model=r["model"], last_action=r["thread"]["action"]))
     _append_ledger(rec)
     return rec
 
