@@ -255,6 +255,116 @@ def main():
         check("add_activity(verdict=...) stores the exact dict passed, verbatim",
               rec6b_v["activity"][-1]["verdict"] == qa_verdict_payload, rec6b_v["activity"][-1])
 
+        # --- 4b. _route_receipt / add_activity(route=) / ticket_receipt: the cost-receipt layer -------
+        route_full = dict(model="claude-sonnet-5", effort="high", tactics=["tdd", "subagent"],
+                           task_class="engineer", burn_index=7,
+                           prompt="do the thing", append_system="extra sys instructions",
+                           why="because the criteria said so", thread=[dict(role="user", text="hi")])
+        trimmed = A._route_receipt(route_full)
+        # route_full has no filler_removed key, so it trims to None for that field — a route missing
+        # the key (e.g. a crew stage, which never carries filler_removed at all) is exactly this case.
+        check("_route_receipt trims a full route dict to exactly the expected keys/values",
+              trimmed == dict(model="claude-sonnet-5", effort="high", tactics=["tdd", "subagent"],
+                               task_class="engineer", burn_index=7, filler_removed=None), trimmed)
+        check("_route_receipt result has EXACTLY A._ROUTE_FIELDS's keys, nothing more",
+              set(trimmed.keys()) == set(A._ROUTE_FIELDS), trimmed.keys())
+
+        route_caveman = dict(model="claude-haiku-4-5", effort="low", tactics=["caveman"],
+                             task_class="triage", burn_index=1, filler_removed=9,
+                             prompt="stripped prompt")
+        trimmed_cm = A._route_receipt(route_caveman)
+        check("_route_receipt carries a real filler_removed count through when the route has one",
+              trimmed_cm["filler_removed"] == 9, trimmed_cm)
+        for dropped in ("prompt", "append_system", "why", "thread"):
+            check("_route_receipt genuinely drops '%s', not just leaves it unchecked" % dropped,
+                  dropped not in trimmed, trimmed)
+        check("_route_receipt(None) returns None", A._route_receipt(None) is None)
+        check("_route_receipt({}) returns None", A._route_receipt({}) is None)
+
+        t7 = A.create("route test", "criteria")
+        route_payload = dict(model="claude-opus-5", effort="med", tactics=["review"],
+                              task_class="qa", burn_index=3,
+                              prompt="secret prompt text", why="rationale that shouldn't be stored")
+        A.add_activity(t7["id"], "qa", "QA", "checked stuff", route=route_payload)
+        act7 = A.get(t7["id"])["activity"][-1]
+        check("add_activity(route=...) stores the TRIMMED dict on the entry, not the raw input",
+              act7["route"] == dict(model="claude-opus-5", effort="med", tactics=["review"],
+                                     task_class="qa", burn_index=3, filler_removed=None), act7["route"])
+        check("...proving trimming happened at the storage layer: 'prompt' didn't survive",
+              "prompt" not in act7["route"], act7["route"])
+        check("...and 'why' didn't survive either",
+              "why" not in act7["route"], act7["route"])
+
+        A.add_activity(t7["id"], "note", "Note", "plain note, no route given")
+        act7b = A.get(t7["id"])["activity"][-1]
+        check("add_activity with route omitted stores the key 'route' present and None",
+              "route" in act7b and act7b["route"] is None, act7b)
+
+        # ticket_receipt: build a ticket with a route+usage stage, a usage-only stage, and a
+        # route/usage-less append_section note, then check the itemized receipt
+        t12 = A.create("receipt test", "criteria")
+        route_engineer = dict(model="claude-sonnet-5", effort="high", tactics=["tdd"],
+                               task_class="engineer", burn_index=5, filler_removed=12,
+                               prompt="engineer prompt", why="engineer why")
+        A.add_activity(t12["id"], "engineer", "Engineer", "did the engineering work",
+                        usage=dict(input_tokens=200, output_tokens=80), route=route_engineer)
+        A.add_activity(t12["id"], "qa", "QA", "qa checked it",
+                        usage=dict(input_tokens=50, output_tokens=20), route=None)
+        A.append_section(t12["id"], "Manual note", "just a manual note, nothing structured")
+
+        rec12 = A.get(t12["id"])
+        check("ticket has all 3 activity entries before receipting",
+              len(rec12["activity"]) == 3, rec12["activity"])
+        receipt12 = A.ticket_receipt(rec12)
+        check("ticket_receipt skips the route-less/usage-less append_section entry: 2 stages, not 3",
+              len(receipt12["stages"]) == 2, receipt12["stages"])
+
+        stage_eng = receipt12["stages"][0]
+        check("stage 1 (route+usage) role/kind carried through",
+              stage_eng["role"] == "Engineer" and stage_eng["kind"] == "engineer", stage_eng)
+        check("stage 1 model/effort/tactics/burn_index come from its route",
+              stage_eng["model"] == "claude-sonnet-5" and stage_eng["effort"] == "high" and
+              stage_eng["tactics"] == ["tdd"] and stage_eng["burn_index"] == 5, stage_eng)
+        check("stage 1 input/output tokens come from its usage",
+              stage_eng["input_tokens"] == 200 and stage_eng["output_tokens"] == 80, stage_eng)
+
+        stage_qa = receipt12["stages"][1]
+        check("stage 2 (usage but route=None) is INCLUDED, not skipped, since usage alone qualifies it",
+              stage_qa["role"] == "QA" and stage_qa["kind"] == "qa", stage_qa)
+        check("stage 2 with no route defaults model/effort/tactics/burn_index to None",
+              stage_qa["model"] is None and stage_qa["effort"] is None and
+              stage_qa["tactics"] is None and stage_qa["burn_index"] is None, stage_qa)
+        check("stage 2 input/output tokens still come from its usage despite no route",
+              stage_qa["input_tokens"] == 50 and stage_qa["output_tokens"] == 20, stage_qa)
+
+        check("ticket_receipt input_tokens matches the ticket's own accumulated cost, read off the record",
+              receipt12["input_tokens"] == rec12["cost"]["input_tokens"],
+              (receipt12["input_tokens"], rec12["cost"]))
+        check("ticket_receipt output_tokens matches the ticket's own accumulated cost, read off the record",
+              receipt12["output_tokens"] == rec12["cost"]["output_tokens"],
+              (receipt12["output_tokens"], rec12["cost"]))
+        check("burn_index_total sums the stages' burn_index, treating the route-less stage's None as 0",
+              receipt12["burn_index_total"] == 5, receipt12)
+        check("stage 1's filler_removed comes through from its route",
+              stage_eng["filler_removed"] == 12, stage_eng)
+        check("stage 2 (route=None) defaults filler_removed to None too",
+              stage_qa["filler_removed"] is None, stage_qa)
+        check("filler_words_removed_total sums the stages' filler_removed, treating None as 0 "
+              "(exact, since cavemanize()'s count is deterministic, never an estimate)",
+              receipt12["filler_words_removed_total"] == 12, receipt12)
+
+        # edge cases: no crash, sane empty-ish shape
+        receipt_none = A.ticket_receipt(None)
+        check("ticket_receipt(None) doesn't crash and returns an empty-ish shape",
+              receipt_none == dict(stages=[], input_tokens=0, output_tokens=0, burn_index_total=0,
+                                    filler_words_removed_total=0),
+              receipt_none)
+        receipt_empty = A.ticket_receipt({})
+        check("ticket_receipt({}) (no 'activity' key at all) also returns an empty-ish shape",
+              receipt_empty == dict(stages=[], input_tokens=0, output_tokens=0, burn_index_total=0,
+                                     filler_words_removed_total=0),
+              receipt_empty)
+
         # --- 5. edit_body: REPLACES, unlike append_section which only ever adds ------------------------
         t9 = A.create("edit test", "original criteria")
         before9 = A.get(t9["id"])["updated"]

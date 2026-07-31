@@ -255,7 +255,7 @@ def extract_verdict_json(text):
         return None
 
 
-_ROUTE_FIELDS = ("model", "effort", "tactics", "task_class", "burn_index")
+_ROUTE_FIELDS = ("model", "effort", "tactics", "task_class", "burn_index", "filler_removed")
 
 
 def _route_receipt(route):
@@ -311,12 +311,15 @@ def ticket_receipt(rec):
         stages.append(dict(
             role=a.get("role"), kind=a.get("kind"), ts=a.get("ts"),
             model=route.get("model"), effort=route.get("effort"), tactics=route.get("tactics"),
-            burn_index=route.get("burn_index"),
+            burn_index=route.get("burn_index"), filler_removed=route.get("filler_removed"),
             input_tokens=usage.get("input_tokens") or 0, output_tokens=usage.get("output_tokens") or 0))
     cost = (rec or {}).get("cost") or {}
     return dict(stages=stages, input_tokens=cost.get("input_tokens", 0),
                output_tokens=cost.get("output_tokens", 0),
-               burn_index_total=sum(s.get("burn_index") or 0 for s in stages))
+               burn_index_total=sum(s.get("burn_index") or 0 for s in stages),
+               # Exact, not estimated — cavemanize() strips filler words deterministically before
+               # send, so this is the real count, same honesty bar as the rest of this receipt.
+               filler_words_removed_total=sum(s.get("filler_removed") or 0 for s in stages))
 
 
 def append_section(tid, heading, text, db=None):

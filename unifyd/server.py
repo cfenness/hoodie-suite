@@ -7376,6 +7376,22 @@ def api_cockpit_ledger():
         return jsonify([]), 200
 
 
+@app.get("/api/cockpit/tactics-savings")
+def api_cockpit_tactics_savings():
+    """What caveman/terse/etc. actually saved, read back off what was stored per chat turn — see
+    agent_chats.tactics_savings()'s own docstring for exactly what is and isn't claimed here (an
+    exact word count for caveman, usage counts only for the rest — never a fabricated per-turn
+    number for tactics with no deterministic before/after)."""
+    m = _cockpit_mods()
+    if not m.get("agent_chats"):
+        return jsonify(turns_with_route=0, filler_words_removed=0, tactic_counts={}), 200
+    try:
+        return jsonify(m["agent_chats"].tactics_savings()), 200
+    except Exception as e:
+        return jsonify(turns_with_route=0, filler_words_removed=0, tactic_counts={},
+                       error=str(e)[:200]), 200
+
+
 @app.get("/api/cockpit/crew")
 def api_cockpit_crew():
     """The crew for a task: PM -> engineer -> QA -> lead reviewer, each with its own model.

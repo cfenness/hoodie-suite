@@ -165,6 +165,35 @@ def recent_chats(limit=12, db=None):
     return out
 
 
+def tactics_savings(db=None, limit=5000):
+    """What the caveman/terse/etc. tactics actually saved, read back off what was ACTUALLY stored per
+    turn (`add_message`'s `route` snapshot) — not a fresh estimate. Deliberately narrow about what it
+    claims: `cavemanize()`'s `filler_removed` is an exact word count (real, no approximation needed),
+    so that's summed and reported as-is. The other tactics (terse/scope/evidence/noverify) don't
+    strip anything deterministic pre-send — their effect is on the MODEL's output shape, not
+    measurable per turn — so this only reports how often each was applied (`tactic_counts`), never a
+    fabricated per-turn savings number for them. agent_router.py's own docstring already carries the
+    one honest AGGREGATE claim that exists for `terse` ("~20% output trim in measurement") — that's a
+    separate, already-labeled historical figure, not something recomputed here."""
+    c = _conn(db)
+    rows = c.execute("SELECT route FROM messages WHERE route IS NOT NULL ORDER BY id DESC LIMIT ?",
+                     (int(limit),)).fetchall()
+    turns_with_route, filler_words_removed, tactic_counts = 0, 0, {}
+    for r in rows:
+        try:
+            rt = json.loads(r["route"])
+        except Exception:
+            continue
+        if not isinstance(rt, dict):
+            continue
+        turns_with_route += 1
+        filler_words_removed += int(rt.get("filler_removed") or 0)
+        for t in (rt.get("tactics") or []):
+            tactic_counts[t] = tactic_counts.get(t, 0) + 1
+    return dict(turns_with_route=turns_with_route, filler_words_removed=filler_words_removed,
+               tactic_counts=tactic_counts)
+
+
 # ── chats ────────────────────────────────────────────────────────────────────────────────────────
 def new_chat_id():
     """Mint a stable conversation id. Ours, not the CLI's — see the schema note on `session_id`."""
