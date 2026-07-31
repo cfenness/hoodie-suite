@@ -535,6 +535,14 @@ async function loadBusinessHealth(){
   ])).map(r => r.status === 'fulfilled' ? r.value : null);
 
   const cells = [];
+  // Revenue-facing, so it leads: Hoodie Relations (apps/crm.html) has never been linked from
+  // Cockpit at all — everything else here answers "is the DATA healthy", this is the one tile that
+  // answers "is the BUSINESS moving". No live count: crm.html's accounts/MEDDPICC scores are
+  // seeded fresh in the browser on every load (`persists` is permanently false there — nothing
+  // server-side to query yet), so a number here would either be hardcoded (drifts silently the
+  // moment someone edits crm.html's seed list) or fabricated. Static and honest beats a stale stat.
+  cells.push(stat('relations', 'Hoodie Relations', 'MEDDPICC deal tracking — accounts, Gap, qualification score',
+    null, 'crm.html'));
   if (master && master.ok){
     const total = (master.confirmed||0) + (master.review||0) + (master.quarantine||0);
     cells.push(stat('master items', master.master ?? total, master.master ? 'confirmed products'
