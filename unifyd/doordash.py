@@ -20,6 +20,12 @@ ALCOHOL_TERMS = ["beer", "wine", "seltzer", "liquor", "vodka", "whiskey", "tequi
                  "bourbon", "gin", "malt beverage", "hard cider", "champagne", "prosecco",
                  "canned cocktail", "wine spritzer"]
 
+# Per-attempt fetch timeout. Was a hardcoded 60s — with retries=4 that's up to 240s of pure waiting on a
+# single genuinely-dead request, against an observed 3000+ accumulated timeouts on 2026-07-30/31. A
+# real, successful fetch measured ~8s; 20s gives ample margin for a slow-but-alive response while
+# failing dead ones 3x faster, which is the whole point of a bounded retry loop.
+FETCH_TIMEOUT_S = float(os.environ.get("DDFULL_FETCH_TIMEOUT_S", "20"))
+
 # chain key -> {name, stores[]}. Store ids are DoorDash store ids (discover via the site search by market).
 CHAINS = {
     "circlek":   {"name": "Circle K",          "stores": ["1696295", "1695349"]},
@@ -59,7 +65,7 @@ def _session(key=None):
         return None
     u = resi.isp_url(key)
     px = {"http": u, "https": u} if u else None
-    return cr.Session(impersonate="safari17_0", proxies=px, timeout=60)
+    return cr.Session(impersonate="safari17_0", proxies=px, timeout=FETCH_TIMEOUT_S)
 
 
 def _exit_of(session_or_url):
@@ -130,7 +136,7 @@ def _fetch(url, retries=4, log=None, session=None):
                 u = resi.isp_url() if resi.isp_enabled() else None      # round-robin exit; a fresh IP each retry
                 exit_ip = _exit_of(u)
                 px = {"http": u, "https": u} if u else None
-                r = cr.get(url, impersonate="safari17_0", proxies=px, timeout=60)
+                r = cr.get(url, impersonate="safari17_0", proxies=px, timeout=FETCH_TIMEOUT_S)
             el = time.time() - t0
             has_payload = "__next_f" in r.text
             # has_items is left None (unknown) here — this is the raw-page fetch, not the item parse,

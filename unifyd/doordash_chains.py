@@ -27,11 +27,22 @@ already fetch through the flat-rate ISP pool (Bright Data retired for DoorDash 2
 import argparse
 import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 import doordash_full
+
+# Chains process CONCURRENTLY, not sequentially — measured live 2026-07-30: with 12 chains run
+# one-at-a-time (each internally parallel across DDFULL_WORKERS stores), the SMALLEST chain
+# (abcfinewine, 123 stores) alone took 11.9 hours and was still not done — the full 24,919-store
+# national universe projected to ~119 days at that rate. Sequential chains cap total concurrency at
+# DDFULL_WORKERS regardless of how many chains are queued; running chains themselves concurrently
+# multiplies that. Concurrency is free on the flat-rate ISP pool (same reasoning doordash_full.py's
+# own per-store concurrency already uses) — the constraint was never cost, it was this loop.
+CHAIN_CONCURRENCY = int(os.environ.get("DDFULL_CHAIN_CONCURRENCY", "4"))
 
 # chain key (becomes the `<key>_products_full` table doordash_full.run writes) -> lowercase name
 # substrings to match against doordash_stores.name. Reuses doordash_naop.py's _RETAIL_CHAINS list
@@ -114,11 +125,17 @@ def run(chains=None, batch=None, log=print):
     however many minutes it takes — exactly the kind of invisible-until-it's-done job that made
     the earlier cap silently unnoticeable.
 
-    ONE tally for the WHOLE call (installed here, not per-chain inside doordash_full.run) — chains
-    process sequentially, and a fresh tally per chain would erase the previous chain's numbers on
-    every switch. doordash.py's _fetch() records into whatever tally is installed and periodically
-    heartbeats it (HOODIE_DD_PROGRESS), so a "why is this slow" question is answerable from the log
-    stream instead of inferring it from log-line timestamps."""
+    ONE tally for the WHOLE call (installed here, not per-chain inside doordash_full.run) — with
+    chains now running concurrently, a fresh tally per chain would race (each chain's own start
+    clobbering the others'). doordash.py's _fetch() records into whatever tally is installed and
+    periodically heartbeats it (HOODIE_DD_PROGRESS), so a "why is this slow" question is answerable
+    from the log stream instead of inferring it from log-line timestamps.
+
+    CHAINS RUN CONCURRENTLY (up to DDFULL_CHAIN_CONCURRENCY at once, default 4) — see the module
+    docstring for why: sequential chains capped total concurrency at DDFULL_WORKERS regardless of
+    how many chains were queued. Progress is tracked per-chain (`chain_done`) and summed under a
+    lock, since runlog.progress() needs one cumulative total but multiple chains now advance it at
+    once from different threads."""
     t0 = time.time()
     import blocks
     blocks.install()
@@ -144,30 +161,40 @@ def run(chains=None, batch=None, log=print):
     import runlog
     per_chain = {}
     stores_this_run = items_this_run = 0
+    active = [(key, p) for key, p in plan.items() if p["picked"]]
+    for key, p in plan.items():
+        if not p["picked"]:
+            per_chain[key] = {"matched": p["matched"], "covered": p["covered"], "taken": 0, "items": 0}
+
     with runlog.track("doordash-full", total=total_picked) as r:
-        done_so_far = 0
-        for key, p in plan.items():
+        progress_lock = threading.Lock()
+        chain_done = {}    # key -> stores completed so far in THAT chain, summed for the cumulative total
+
+        def make_tick(key):
+            def _tick(i, n):
+                with progress_lock:
+                    chain_done[key] = i
+                    r.progress(sum(chain_done.values()), total_picked)
+            return _tick
+
+        def _run_one(key, p):
             picked = p["picked"]
-            if not picked:
-                per_chain[key] = {"matched": p["matched"], "covered": p["covered"], "taken": 0, "items": 0}
-                continue
-
-            def _tick(i, n, _base=done_so_far):    # cumulative across chains, not per-chain
-                r.progress(_base + i, total_picked)
-
             try:
-                _run_id, n_items = doordash_full.run(key, stores=picked, log=log, on_store=_tick)
+                _run_id, n_items = doordash_full.run(key, stores=picked, log=log, on_store=make_tick(key))
+                return key, {"matched": p["matched"], "covered": p["covered"], "taken": len(picked),
+                            "items": n_items or 0}, len(picked), (n_items or 0)
             except Exception as e:
                 log("[doordash_chains] %s FAILED: %s" % (key, str(e)[:160]))
-                per_chain[key] = {"matched": p["matched"], "covered": p["covered"], "taken": len(picked),
-                                  "items": 0, "error": str(e)[:160]}
-                done_so_far += len(picked)
-                continue
-            per_chain[key] = {"matched": p["matched"], "covered": p["covered"], "taken": len(picked),
-                              "items": n_items or 0}
-            stores_this_run += len(picked)
-            items_this_run += n_items or 0
-            done_so_far += len(picked)
+                return key, {"matched": p["matched"], "covered": p["covered"], "taken": len(picked),
+                            "items": 0, "error": str(e)[:160]}, 0, 0
+
+        with ThreadPoolExecutor(max_workers=max(1, CHAIN_CONCURRENCY)) as ex:
+            futures = [ex.submit(_run_one, key, p) for key, p in active]
+            for fut in as_completed(futures):
+                key, result, taken, items = fut.result()
+                per_chain[key] = result
+                stores_this_run += taken
+                items_this_run += items
 
     remaining_total = matched_total - covered_total - stores_this_run
     run_id = "ddchains-" + time.strftime("%Y%m%d-%H%M%S")

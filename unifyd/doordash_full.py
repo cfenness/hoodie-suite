@@ -34,6 +34,18 @@ _NON_ALCOHOL = ("grocery", "household", "meat", "snack", "candy", "frozen", "med
                 "bar accessories", "party supplies", "produce", "dairy", "baby", "cleaning", "beauty", "tobacco",
                 "nicotine")
 
+# Politeness delay between fetches. Was a blanket, non-adaptive 0.4s regardless of observed site health —
+# at ~166 fetches/store that's 66+s of pure sleep, more than half of an observed ~2min/store, while ISP
+# success held 77-86% the whole time (no sign the site was reacting to our pace). Cut, not eliminated —
+# still paces every request, just not at a cost that dwarfs actual network time.
+POLITE_SLEEP_S = float(os.environ.get("DDFULL_POLITE_SLEEP_S", "0.15"))
+
+# Skip the 16-fetch term-search union once the tree walk already found a real catalog. The union exists
+# (see its comment below) specifically for shallow trees / small c-store catalogs; measured live on
+# abcfinewine-scale stores (100+ categories already walked) it adds ~0 new items — pure wasted fetches
+# + sleeps on a catalog the tree walk already covers.
+TERM_SEARCH_MIN_ITEMS = int(os.environ.get("DDFULL_TERM_SEARCH_MIN_ITEMS", "40"))
+
 
 def _cat_paths(html, store):
     """Every /category/... and /category/.../sub-category/... path for this store in the page."""
@@ -75,20 +87,25 @@ def full_catalog(store, key, log=print, max_pages=120):
                 queue.append(c)
         if pages % 8 == 0:
             log("  [%s] walked %d categories · %d items" % (store, pages, len(items)))
-        time.sleep(0.4)
+        time.sleep(POLITE_SLEEP_S)
     log("  [%s] tree walk: %d categories, %d items" % (store, pages, len(items)))
     # UNION with the term-search — catches items not in the browsable tree (esp. small c-store catalogs
-    # where the category tree is shallow but search still finds SKUs). Free on top of the walk.
+    # where the category tree is shallow but search still finds SKUs). SKIPPED once the tree walk already
+    # found a real catalog (>= TERM_SEARCH_MIN_ITEMS) — see the module-level comment for why.
     # (search_store was referenced here but never implemented until now — every call silently
     # AttributeError'd, caught by the bare except below, paying the sleep for zero completeness benefit.)
-    for term in dd.ALCOHOL_TERMS:
-        try:
-            for it in dd.search_store(store, term, key, session=session, log=log):
-                items.setdefault(it["name"], dict(it, department="alcohol"))
-        except Exception:
-            pass
-        time.sleep(0.4)
-    log("  [%s] + term-search union -> %d distinct items" % (store, len(items)))
+    if len(items) < TERM_SEARCH_MIN_ITEMS:
+        for term in dd.ALCOHOL_TERMS:
+            try:
+                for it in dd.search_store(store, term, key, session=session, log=log):
+                    items.setdefault(it["name"], dict(it, department="alcohol"))
+            except Exception:
+                pass
+            time.sleep(POLITE_SLEEP_S)
+        log("  [%s] + term-search union -> %d distinct items" % (store, len(items)))
+    else:
+        log("  [%s] tree walk already found %d items (>= %d) — skipping term-search union"
+            % (store, len(items), TERM_SEARCH_MIN_ITEMS))
     for name, it in _walk_nonalc(store, key, log, session=session).items():   # non-alc / zero-proof dept
         items.setdefault(name, it)
     return list(items.values()), outlet
@@ -117,7 +134,7 @@ def _walk_nonalc(store, key, log=print, max_pages=30, session=None):
             if c not in seen and ("non-alcoholic" in slug or "1516" in c or
                                   re.search(r"zero|mock|alcohol.free|de-?alc|\bna\b", slug)):
                 queue.append(c)
-        time.sleep(0.4)
+        time.sleep(POLITE_SLEEP_S)
     log("  [%s] non-alc dept -> %d zero-proof / N-A items" % (store, len(out)))
     return out
 
