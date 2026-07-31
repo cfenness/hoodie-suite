@@ -72,13 +72,22 @@ def record(source, day, part, rows, log=print):
         return 0
 
 
-def evacuate(table, source, key_col, parent_col=None, day=None, log=print):
+def evacuate(table, source, key_col, parent_col=None, day=None, chunk_rows=50000, log=print):
     """ONE-TIME: move an existing fat `raw_json` column out of an accumulating catalog into raw_payloads.
 
     The forward fix stops NEW payloads landing in the catalog, but rows already written still carry theirs
     and still cost a full re-read on every merge until they happen to be replaced. This copies them into
     the append-only table first (so nothing is lost — the copy is verified before the source is cleared),
     then blanks the column in place.
+
+    STREAMED both directions — never materializes the whole table in Python. The original version called
+    `warehouse.query()`, whose `fetchall()` builds the FULL result as tuples, then a SECOND full pass builds
+    a list of dicts on top — for a table like binnys_products (1.53M rows, raw_json up to 6KB each), that's
+    two ~9GB+ Python structures alive at once. Measured: OOM-killed an 8GB machine, then a 16GB machine,
+    before any write happened — the exact "materializes the whole table" bug this tool exists to fix
+    elsewhere, just on evacuate's own READ side. Now: DuckDB's `to_arrow_reader` streams the extraction in
+    bounded batches (default 50k rows), and the lean rewrite is a native `COPY ... TO` (out-of-core, the
+    same idiom `migrate_to_bucketed` already uses) instead of a Python round-trip.
 
     Run from the writer host with no scrape in flight, same constraint as bucketize.
     """
@@ -92,42 +101,65 @@ def evacuate(table, source, key_col, parent_col=None, day=None, log=print):
             return 0
     except Exception:
         pass                              # can't tell → fall through and let the query decide
-    # query(name, sql) exposes the table as the view `t` and returns a list of DICTS (not tuples).
-    rows = warehouse.query(
-        table,
-        "SELECT %s AS k, %s AS p, raw_json FROM t WHERE raw_json IS NOT NULL AND raw_json <> ''"
-        % (key_col, (parent_col or "''")))
-    rows = list(rows or [])
-    if not rows:
+
+    con = warehouse.connect()
+    src = warehouse.uri(table).replace("'", "")
+    con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet('%s')" % src)
+    ks, ps = key_col, (parent_col or "''")
+
+    have = moved = 0
+    reader = con.execute(
+        "SELECT %s AS k, %s AS p, raw_json FROM t WHERE raw_json IS NOT NULL AND raw_json <> ''" % (ks, ps)
+    ).to_arrow_reader(batch_size=chunk_rows)
+    for i, batch in enumerate(reader):
+        cols = batch.schema.names
+        py = {c: batch.column(c).to_pylist() for c in cols}
+        chunk = [dict(zip(cols, vals)) for vals in zip(*[py[c] for c in cols])]
+        if not chunk:
+            continue
+        have += len(chunk)
+        # part MUST be unique per chunk — write_partition is "idempotent per (name, part)", i.e. a
+        # REPEAT of the same part string overwrites the prior file rather than appending. A fixed
+        # "evacuate" part here silently kept only the LAST chunk and dropped every earlier one — a
+        # 500-row/5-chunk run reported 500 moved but landed 100. Caught by the test, not by the run.
+        moved += record(source, day, "evacuate_%05d" % i,
+                        [{"kind": "item", "entity_id": r.get("k"), "parent_id": r.get("p"),
+                          "raw_json": r.get("raw_json")} for r in chunk], log=log)
+    if have == 0:
         log("evacuate: %s has no payloads to move" % table)
         return 0
-    log("evacuate: moving %s payloads out of %s" % ("{:,}".format(len(rows)), table))
-    moved = record(source, day, "evacuate",
-                   [{"kind": "item", "entity_id": r.get("k"), "parent_id": r.get("p"),
-                     "raw_json": r.get("raw_json")} for r in rows], log=log)
-    if moved != len(rows):
-        log("evacuate: ABORT — kept %d of %d payloads; leaving %s untouched" % (moved, len(rows), table))
+    if moved != have:
+        log("evacuate: ABORT — kept %d of %d payloads; leaving %s untouched" % (moved, have, table))
         return 1
     log("evacuate: %s payloads safe in %s — clearing the column" % ("{:,}".format(moved), TABLE))
+
     # ONLY NOW is the catalog rewritten, and only after the copy above was verified row-for-row. Order
     # matters more than elegance here: today's bugs were repeatedly "bookkeeping destroyed the payload it
     # described", so the destructive step never runs until the preserved copy is confirmed landed.
-    # EXCLUDE keeps the payloads from being read back into memory just to be thrown away — the whole
-    # point is to stop touching that column.
+    before = warehouse.row_count(table)
+    # Write the lean rewrite to a SEPARATE object first, never in-place: a single COPY that reads FROM and
+    # writes TO the same live path is a self-referential read/write with no ordering guarantee (the parquet
+    # writer could truncate the very file the reader is still streaming). Verify the temp file independently,
+    # then a second cheap streaming COPY (temp -> real path) commits it — still zero Python materialization.
+    tmp_uri = warehouse.uri(table + "__evac_tmp").replace("'", "")
     try:
-        lean = warehouse.query(table, "SELECT * EXCLUDE (raw_json), '' AS raw_json FROM t")
+        con.execute("COPY (SELECT * EXCLUDE (raw_json), '' AS raw_json FROM t) TO '%s' (FORMAT PARQUET)" % tmp_uri)
+        tmp_rows = con.execute("SELECT COUNT(*) FROM read_parquet('%s')" % tmp_uri).fetchone()[0]
     except Exception as e:
-        log("evacuate: payloads are SAFE in %s but the lean read failed (%s) — catalog left as-is"
+        log("evacuate: payloads are SAFE in %s but the lean rewrite failed (%s) — catalog left as-is"
             % (TABLE, str(e)[:90]))
         return 1
-    lean = list(lean or [])
-    if len(lean) != warehouse.row_count(table):
-        log("evacuate: lean read returned %d of %d rows — refusing to overwrite the catalog"
-            % (len(lean), warehouse.row_count(table)))
+    if tmp_rows != before:
+        log("evacuate: lean rewrite produced %d rows, catalog has %d — refusing to overwrite %s "
+            "(left inspectable at %s__evac_tmp)" % (tmp_rows, before, table, table))
         return 1
-    warehouse.write_parquet(table, lean, fields=list(lean[0].keys()))
+    con.execute("COPY (SELECT * FROM read_parquet('%s')) TO '%s' (FORMAT PARQUET)" % (tmp_uri, src))
+    after = warehouse.row_count(table)
+    if after != before:
+        log("evacuate: WARNING — row count moved (%s -> %s) after the lean rewrite" % (before, after))
+        return 1
     log("evacuate: %s rewritten lean (%s rows); payloads live in %s"
-        % (table, "{:,}".format(len(lean)), TABLE))
+        % (table, "{:,}".format(after), TABLE))
     return 0
 
 
