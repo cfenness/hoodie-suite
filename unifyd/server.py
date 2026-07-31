@@ -7615,6 +7615,7 @@ def api_cockpit_ticket_get(tid):
         return jsonify(error="not found"), 404
     out = dict(rec)
     out["body_md"] = T.read_body(tid)
+    out["receipt"] = T.ticket_receipt(rec)
     return jsonify(out), 200
 
 
@@ -7698,7 +7699,7 @@ def api_cockpit_ticket_run(tid):
         # None for that stage. Never blocks landing the prose report if parsing finds nothing.
         verdict = T.extract_verdict_json(result_text) if not r.get("error") else None
         T.add_activity(tid, kind, "%s report" % r["role"].title(), result_text,
-                       usage=r.get("usage"), verdict=verdict)
+                       usage=r.get("usage"), verdict=verdict, route=r.get("route"))
         # WRITE-BACK: a ticket's crew findings become facts, same mechanism /api/cockpit/chat already
         # uses on every model-answered miss (agent_memory.remember_answer) — without this, a ticket's
         # findings vanished the moment it closed and the next similar ticket re-derived everything.
@@ -7749,7 +7750,11 @@ def api_cockpit_ticket_docs(tid):
         return jsonify(status="dry-run", argv_display=dispatch_rec.get("argv_display")), 200
     if dispatch_rec.get("error"):
         return jsonify(ok=False, error=dispatch_rec["error"]), 200
-    T.append_section(tid, "Documentation update", dispatch_rec.get("result") or "(no output)")
+    # add_activity (not append_section) so this stage's tokens/route land in the ticket's cost
+    # receipt too — a docs run spends real subscription burn same as any other stage.
+    T.add_activity(tid, "documentation_update", "Documentation update",
+                   dispatch_rec.get("result") or "(no output)",
+                   usage=dispatch_rec.get("usage"), route=dispatch_rec.get("route"))
     T.mark_docs_done(tid)
     return jsonify(ok=True, ticket=T.get(tid)), 200
 

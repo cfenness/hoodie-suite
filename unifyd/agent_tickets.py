@@ -255,19 +255,34 @@ def extract_verdict_json(text):
         return None
 
 
-def add_activity(tid, kind, role_label, text, usage=None, verdict=None, db=None):
+_ROUTE_FIELDS = ("model", "effort", "tactics", "task_class", "burn_index")
+
+
+def _route_receipt(route):
+    """Trim a full agent_router route dict down to what a cost receipt actually needs — drops the
+    prompt text, system-prompt injection, and routing rationale (already have a home: the prose
+    report), keeps only the itemizable facts: which model, at what effort, with which tactics, and
+    the router's own relative `burn_index`. Not dollars — see `ticket_receipt`'s docstring for why."""
+    if not route:
+        return None
+    return {k: route.get(k) for k in _ROUTE_FIELDS}
+
+
+def add_activity(tid, kind, role_label, text, usage=None, verdict=None, route=None, db=None):
     """Append one structured entry to the ticket's activity log — the mechanism behind "embed test
     reports as the process goes." Returns False (does nothing) for an unknown ticket, same as before.
     `usage` (an {input_tokens, output_tokens} dict off a dispatch record) rolls into the ticket's
     running cost total when given — nearly free, since every dispatch already carries it. `verdict`
     (typically `extract_verdict_json(text)`'s result) is stored alongside the full prose, never
     instead of it — a dev reviewing the ticket gets both the structured pass/fail and the reasoning
-    behind it, with nothing summarized away."""
+    behind it, with nothing summarized away. `route` (a dispatch record's own `route` dict) is stored
+    trimmed via `_route_receipt` — the itemized line this stage contributes to `ticket_receipt()`."""
     rec = get(tid, db=db)
     if not rec:
         return False
     rec.setdefault("activity", []).append(dict(
-        ts=_now_ms(), kind=kind, role=role_label, text_md=text, usage=usage or {}, verdict=verdict))
+        ts=_now_ms(), kind=kind, role=role_label, text_md=text, usage=usage or {}, verdict=verdict,
+        route=_route_receipt(route)))
     if usage:
         cost = rec.setdefault("cost", dict(input_tokens=0, output_tokens=0, by_stage={}))
         cost["input_tokens"] = cost.get("input_tokens", 0) + int(usage.get("input_tokens") or 0)
@@ -276,6 +291,32 @@ def add_activity(tid, kind, role_label, text, usage=None, verdict=None, db=None)
     rec["updated"] = _now_ms()
     _save(tid, rec, db)
     return True
+
+
+def ticket_receipt(rec):
+    """The itemized cost receipt T-2.3 of the v2 spec asks for — honestly reframed. agent_router.py
+    is explicit that this engine runs on a flat-fee Claude subscription, not per-token API billing
+    ("the objective is NOT minimize dollars" — the scarce resource is the subscription window, not
+    currency), so a receipt that invented a dollar figure would be exactly the kind of unsupported
+    claim this repo's own standing rules forbid. What's real and worth itemizing per stage: which
+    model ran it, at what effort, with which tactics, the actual input/output tokens, and the
+    router's own relative `burn_index` (orders routes against each other; not a currency, not a
+    prediction — agent_router.route()'s own docstring on that field). Stages with neither a route
+    nor usage (e.g. a manually `append_section`-ed note) are skipped — nothing to itemize."""
+    stages = []
+    for a in (rec or {}).get("activity") or []:
+        route, usage = a.get("route") or {}, a.get("usage") or {}
+        if not route and not usage:
+            continue
+        stages.append(dict(
+            role=a.get("role"), kind=a.get("kind"), ts=a.get("ts"),
+            model=route.get("model"), effort=route.get("effort"), tactics=route.get("tactics"),
+            burn_index=route.get("burn_index"),
+            input_tokens=usage.get("input_tokens") or 0, output_tokens=usage.get("output_tokens") or 0))
+    cost = (rec or {}).get("cost") or {}
+    return dict(stages=stages, input_tokens=cost.get("input_tokens", 0),
+               output_tokens=cost.get("output_tokens", 0),
+               burn_index_total=sum(s.get("burn_index") or 0 for s in stages))
 
 
 def append_section(tid, heading, text, db=None):
