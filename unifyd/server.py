@@ -7245,6 +7245,75 @@ def api_cockpit_deploy_status():
                    recorded_at=exp.get("recorded_at")), 200
 
 
+@app.post("/api/cockpit/preview-snapshot")
+def api_cockpit_preview_snapshot():
+    """Take a screenshot of the URL Live Preview is watching, right now, and store it (unifyd/
+    preview_shot.py). This is what turns Live Preview from "current state only" into "before and
+    after" — the last item on the Cockpit gap list. A real headless Chrome launch (~1-4s), so this
+    is a manual button click, not something polled."""
+    import preview_shot
+    body = request.get_json(force=True, silent=True) or {}
+    url = (body.get("url") or "").strip()
+    if not url:
+        return jsonify(ok=False, error="url required"), 400
+    ok, reason = preview_shot.ok_preview_url(url)
+    if not ok:
+        return jsonify(ok=False, error=reason), 400
+    try:
+        png = preview_shot.capture(url)
+        rec = preview_shot.save(url, png)
+    except Exception as e:                                    # noqa: BLE001
+        return jsonify(ok=False, error=str(e)[:200]), 502
+    return jsonify(ok=True, ts=rec["ts"], key=rec["key"]), 200
+
+
+@app.get("/api/cockpit/preview-snapshots")
+def api_cockpit_preview_snapshots():
+    """The stored snapshot history for a URL, newest first — populates the before/after picker."""
+    import preview_shot
+    url = (request.args.get("url") or "").strip()
+    if not url:
+        return jsonify(ok=False, error="url required"), 400
+    return jsonify(ok=True, snapshots=preview_shot.list_snapshots(url)), 200
+
+
+@app.get("/api/cockpit/preview-shot")
+def api_cockpit_preview_shot():
+    """Serve a stored screenshot PNG. `key` is validated against preview_shot.valid_key() before
+    ever touching warehouse.get_bytes — the only thing standing between an authenticated Cockpit
+    user and reading an arbitrary warehouse key by name (same reasoning as ttb_label_ep's id regex)."""
+    import preview_shot
+    key = request.args.get("key") or ""
+    if not preview_shot.valid_key(key):
+        return ("bad key", 400)
+    data = preview_shot.load_shot(key)
+    if not data:
+        return ("not found", 404)
+    return Response(data, headers={"Content-Type": "image/png", "Cache-Control": "private, max-age=3600"})
+
+
+@app.post("/api/cockpit/preview-diff")
+def api_cockpit_preview_diff():
+    """Diff two stored snapshots (unifyd/preview_shot.py — PIL.ImageChops, no new dependency).
+    Returns the diff % + a red-highlighted overlay image as base64 so the frontend can render it
+    directly in an <img src="data:...">, no extra round-trip."""
+    import base64
+    import preview_shot
+    body = request.get_json(force=True, silent=True) or {}
+    a_key, b_key = body.get("a_key") or "", body.get("b_key") or ""
+    if not preview_shot.valid_key(a_key) or not preview_shot.valid_key(b_key):
+        return jsonify(ok=False, error="bad key"), 400
+    png_a, png_b = preview_shot.load_shot(a_key), preview_shot.load_shot(b_key)
+    if not png_a or not png_b:
+        return jsonify(ok=False, error="one or both snapshots not found"), 404
+    try:
+        d = preview_shot.diff(png_a, png_b)
+    except Exception as e:                                    # noqa: BLE001
+        return jsonify(ok=False, error=str(e)[:200]), 500
+    overlay_b64 = base64.b64encode(d.pop("overlay_png")).decode()
+    return jsonify(ok=True, overlay_png_b64=overlay_b64, **d), 200
+
+
 @app.post("/api/cockpit/harvest")
 def api_cockpit_harvest():
     """Seed the fact store from source_registry.py — the repo's own declared truth.
