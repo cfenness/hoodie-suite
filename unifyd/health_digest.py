@@ -432,9 +432,18 @@ def render_text(d):
         age = "" if f["new"] else "  (since %s)" % time.strftime("%m-%d", time.localtime(f["first_seen"]))
         star = "NEW " if f["new"] and f["severity"] != "info" else "    "
         lines.append("  [%s] %s%s%s" % (tag, star, f["summary"], age))
-        ev = {k: v for k, v in f["evidence"].items() if v not in (None, "", [])}
-        if ev:
-            lines.append("         evidence: " + json.dumps(ev, default=str)[:240])
+        # evidence isn't always a dict — deploy_drift.findings() and every "the check itself did
+        # not run" fallback (drift/geo-gap/dq, this file's own except-clauses) hand back a plain
+        # string. That mismatch crashed main() outright ('str' object has no attribute 'items'),
+        # which is how the digest went stale for 47+ hours in production without a single loud
+        # failure — main() never got far enough to write even a degraded latest.json.
+        raw_ev = f["evidence"]
+        if isinstance(raw_ev, dict):
+            ev = {k: v for k, v in raw_ev.items() if v not in (None, "", [])}
+            if ev:
+                lines.append("         evidence: " + json.dumps(ev, default=str)[:240])
+        elif raw_ev:
+            lines.append("         evidence: " + str(raw_ev)[:240])
     return "\n".join(lines) + "\n"
 
 
