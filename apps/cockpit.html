@@ -174,15 +174,69 @@
   #tickets{table-layout:fixed;width:100%}
   #tickets td, #tickets th{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   #tickets td:nth-child(1), #tickets th:nth-child(1){width:auto}
-  #tickets td:nth-child(2), #tickets th:nth-child(2){width:104px}
-  #tickets td:nth-child(3), #tickets th:nth-child(3){width:150px}
+  #tickets td:nth-child(2), #tickets th:nth-child(2){width:78px}
+  #tickets td:nth-child(3), #tickets th:nth-child(3){width:68px}
+  #tickets td:nth-child(4), #tickets th:nth-child(4){width:52px}
+  #tickets td:nth-child(5), #tickets th:nth-child(5){width:130px}
+  #tickets td:nth-child(6), #tickets th:nth-child(6){width:104px}
+  #tickets td:nth-child(7), #tickets th:nth-child(7){width:150px}
   #tickets tbody tr{height:34px;cursor:pointer}
   #tickets tbody tr:hover td{background:var(--panel2)}
-  .pill.draft{color:var(--mut);border-color:var(--line)}
+  #tickets tbody tr:focus-visible td, #epics tbody tr:focus-visible td{outline:2px solid var(--accent);
+    outline-offset:-2px;background:var(--panel2)}
+  #epics tbody tr{cursor:pointer}
+  #epics tbody tr:hover td{background:var(--panel2)}
+  .pill.draft, .pill.open{color:var(--mut);border-color:var(--line)}
   .pill.accepted, .pill.in_progress{color:var(--accent);border-color:var(--accent)}
   .pill.testing{color:var(--warn);border-color:rgba(217,154,63,.45)}
   .pill.done{color:var(--good);border-color:rgba(91,184,110,.45)}
   .pill.blocked, .pill.cancelled{color:var(--bad);border-color:rgba(229,99,107,.45)}
+  /* ticket meta badges — reuse .pill exactly, add only color modifiers, never a new shape */
+  .dash{color:var(--mut)}
+  .pill.prio-highest, .pill.prio-high{color:var(--bad);border-color:rgba(229,99,107,.45)}
+  .pill.prio-medium{color:var(--warn);border-color:rgba(217,154,63,.45)}
+  .pill.prio-low, .pill.prio-lowest{color:var(--mut);border-color:var(--line)}
+  .pill.type-bug{color:var(--bad);border-color:rgba(229,99,107,.45)}
+  .pill.type-story, .pill.type-task, .pill.type-chore{color:var(--mut);border-color:var(--line)}
+  .pill.pts{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .pill.epic{color:var(--derived);border-color:var(--line);max-width:100%;display:inline-block;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top}
+
+  /* ticket detail — epic/type/priority/points/labels editors, same field language as .rcell */
+  .tmeta{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:var(--s2);margin:var(--s2) 0 var(--s3)}
+  .tmeta label{display:flex;flex-direction:column;gap:3px;font-size:10.5px;text-transform:uppercase;
+    letter-spacing:.07em;color:var(--mut)}
+  .tmeta select, .tmeta input{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    border-radius:var(--rs);padding:6px var(--s2);font:12.5px var(--sans);width:100%}
+  .tmeta select:focus, .tmeta input:focus{outline:none;border-color:var(--accent)}
+  .tepic-inline{display:flex;gap:var(--s2);margin-top:var(--s2)}
+  .tepic-inline input{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    border-radius:var(--rs);padding:6px var(--s2);font:12.5px var(--sans)}
+  .tepic-inline input:focus{outline:none;border-color:var(--accent)}
+
+  /* PR panel */
+  .tprbox{border:1px solid var(--line);border-radius:var(--rs);padding:var(--s3);font-size:12.5px;margin:var(--s2) 0 var(--s3)}
+  .tprlink{color:var(--accent);text-decoration:none;font-weight:600}
+  .tprlink:hover{text-decoration:underline}
+  .tprmanual{display:flex;gap:var(--s2);flex-wrap:wrap;margin-top:var(--s2)}
+  .tprmanual input{background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:var(--rs);
+    padding:6px var(--s2);font:12.5px var(--sans);flex:1;min-width:140px}
+  .tprmanual input:focus{outline:none;border-color:var(--accent)}
+  .tprerr{color:var(--bad);font-size:12px;margin-top:var(--s2)}
+
+  /* export menu — same disclosure shape as <details>/.menu is new but tokens are not */
+  .menu-wrap{position:relative}
+  .menu{position:absolute;right:0;top:calc(100% + 4px);background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--rs);padding:var(--s1);display:flex;flex-direction:column;min-width:180px;z-index:20;
+    box-shadow:0 6px 20px rgba(0,0,0,.25)}
+  .menu[hidden]{display:none}
+  .menuitem{display:block;width:100%;text-align:left;background:transparent;border:0;color:var(--ink);
+    padding:var(--s2) var(--s3);font:500 12.5px var(--sans);cursor:pointer;border-radius:var(--rs);
+    text-decoration:none;line-height:1.4;box-sizing:border-box}
+  .menuitem:hover, .menuitem:focus-visible{background:var(--panel2);outline:none}
+
+  /* epics sub-view */
+  #epicfilternote:empty{display:none}
 
   .tdetail{margin-top:var(--s3)}
   .tdetail:empty{display:none}
@@ -281,9 +335,29 @@
     .grid2{grid-template-columns:1fr}
     .bar{grid-template-columns:72px 1fr 46px}
   }
+
+  /* ── TOASTS — non-blocking replacement for alert()/confirm() ────────────────
+     Same tokens as everything else (panel/line/ink/bad/accent), just a floating card instead of a
+     native dialog: native alert()/confirm() can't be zoomed, styled, or read predictably by a
+     screen reader mid-flow, and it blocks the whole tab. This is inert until something happens,
+     dismissable, and self-clears. */
+  #toasts{position:fixed;right:var(--s4);bottom:var(--s4);display:flex;flex-direction:column;
+    gap:var(--s2);z-index:1000;max-width:340px;width:calc(100% - var(--s5))}
+  .toast{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--line);
+    border-radius:var(--rs);padding:var(--s3);font-size:12.5px;line-height:1.45;
+    box-shadow:0 6px 20px rgba(0,0,0,.3);display:flex;gap:var(--s2);align-items:flex-start;
+    animation:toast-in .15s ease-out}
+  .toast.error{border-left-color:var(--bad)}
+  .toast.info{border-left-color:var(--accent)}
+  .toast .ttext{flex:1;color:var(--ink);word-break:break-word}
+  .toast .tdismiss{background:transparent;border:0;color:var(--mut);cursor:pointer;padding:0 2px;
+    font-size:15px;line-height:1;flex:0 0 auto}
+  .toast .tdismiss:hover{color:var(--ink)}
+  @keyframes toast-in{from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)}}
 </style>
 </head>
 <body>
+<div id="toasts" aria-relevant="additions"></div>
 <div class="wrap">
 
   <div>
@@ -327,10 +401,33 @@
     <!-- TICKETS — real acceptance criteria, not a chat transcript standing in for one -->
     <h2>Tickets</h2>
     <div class="card">
-      <div class="note" id="ticketsnote" style="margin:0 0 var(--s3)">loading…</div>
-      <table id="tickets"><thead><tr>
-        <th>Title</th><th>Status</th><th>Updated</th>
-      </tr></thead><tbody></tbody></table>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:var(--s3);
+                  flex-wrap:wrap;margin-bottom:var(--s3)">
+        <div class="tabs" id="ticketview-tabs" style="flex:0 0 auto">
+          <button class="tab on" type="button" data-view="tickets">Tickets</button>
+          <button class="tab" type="button" data-view="epics">Epics</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:var(--s2)">
+          <div class="note" id="ticketsnote" style="margin:0">loading…</div>
+          <div class="menu-wrap" id="exportmenu-wrap">
+            <button class="ghost sm" id="exportbtn" type="button" aria-haspopup="menu" aria-expanded="false">Export ▾</button>
+            <div class="menu" id="exportmenu" role="menu" hidden>
+              <a class="menuitem" id="exportcsv" role="menuitem" href="/api/cockpit/tickets/export?format=jira-csv">Export as Jira CSV</a>
+              <button class="menuitem" id="exportjson" role="menuitem" type="button">Export as JSON</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="epicfilternote"></div>
+
+      <div id="ticketsview">
+        <table id="tickets"><thead><tr>
+          <th>Title</th><th>Priority</th><th>Type</th><th>Pts</th><th>Epic</th><th>Status</th><th>Updated</th>
+        </tr></thead><tbody></tbody></table>
+      </div>
+      <div id="epicsview" hidden></div>
+
       <div class="tdetail" id="tdetail"></div>
     </div>
 
@@ -841,13 +938,40 @@ async function lease(chatId, action){
   await loadFleet(true); loadStanding();
 }
 
+/* ── TOASTS ───────────────────────────────────────────────────────────────── */
+/* One reusable, in-surface, non-blocking replacement for every alert()/confirm() in this file —
+   see the #toasts CSS block for why. kind: 'error' (role=alert, stays longer) | 'info' (role=status,
+   auto-clears). Always dismissable by mouse or keyboard; never the only way to notice it fired. */
+let TOAST_SEQ = 0;
+function showToast(message, kind){
+  kind = kind === 'error' ? 'error' : 'info';
+  const el = document.createElement('div');
+  el.className = 'toast ' + kind;
+  el.id = 'toast' + (++TOAST_SEQ);
+  el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+  el.setAttribute('aria-live', kind === 'error' ? 'assertive' : 'polite');
+  el.innerHTML = '<div class="ttext">' + esc(message) + '</div>'
+    + '<button type="button" class="tdismiss" aria-label="Dismiss">×</button>';
+  const dismiss = () => { el.remove(); };
+  el.querySelector('.tdismiss').addEventListener('click', dismiss);
+  $('#toasts').appendChild(el);
+  setTimeout(dismiss, kind === 'error' ? 9000 : 5000);
+  return dismiss;
+}
+
 /* ── TICKETS ──────────────────────────────────────────────────────────────── */
 /* Real acceptance criteria, not a chat transcript standing in for one — see agent_tickets.py.
    OPEN_TICKET tracks which row's detail is expanded so a background loadTickets() refresh (the
    list re-polls after any action) doesn't collapse the panel out from under you mid-edit. */
 const TICKET_FLOW = ['draft','accepted','in_progress','testing','done'];
+const ISSUE_TYPES = ['story','bug','task','chore'];
+const PRIORITIES = ['lowest','low','medium','high','highest'];
 let OPEN_TICKET = null;
 let TICKETS = [];
+let EPICS = [];            // [{epic, ticket_count, counts, story_points}, ...] — GET /api/cockpit/epics
+let EPICS_LOADED = false;
+let EPIC_FILTER = null;    // epic id the Tickets view is filtered to, or null
+let TICKET_VIEW = 'tickets'; // 'tickets' | 'epics'
 
 function statusLadder(status){
   if (status === 'blocked' || status === 'cancelled')
@@ -862,23 +986,170 @@ function nextStatus(status){
   return (i >= 0 && i < TICKET_FLOW.length-1) ? TICKET_FLOW[i+1] : null;
 }
 
+/* ── epics ─────────────────────────────────────────────────────────────────
+   Loaded once and cached (EPICS_LOADED) so ticket-list badges never render an epic name, then
+   flip to another one a moment later — resolve epic_id against a list that's already in hand,
+   same way loadTickets() already awaits this before its first render. */
+async function loadEpics(force){
+  if (EPICS_LOADED && !force) return EPICS;
+  let d = null;
+  try { d = await (await fetch('/api/cockpit/epics')).json(); } catch(e){}
+  EPICS = (d && d.epics) || [];
+  EPICS_LOADED = true;
+  return EPICS;
+}
+function epicById(id){
+  if (!id) return null;
+  const row = EPICS.find(r => r.epic && r.epic.id === id);
+  return row ? row.epic : null;
+}
+
+/* ── ticket list ───────────────────────────────────────────────────────────
+   Badges follow the same .pill language the status column already uses — no new visual
+   vocabulary. Every field renders something (a colored pill or a muted em-dash) synchronously,
+   from data that's already loaded by the time this runs, so nothing pops in after the row paints. */
+function ticketBadges(t){
+  const prio = t.priority
+    ? '<span class="pill prio-'+esc(t.priority)+'">'+esc(t.priority)+'</span>'
+    : '<span class="dash">—</span>';
+  const type = t.issue_type
+    ? '<span class="pill type-'+esc(t.issue_type)+'">'+esc(t.issue_type)+'</span>'
+    : '<span class="dash">—</span>';
+  const pts = (t.story_points != null && t.story_points !== '')
+    ? '<span class="pill pts">'+esc(t.story_points)+'</span>'
+    : '<span class="dash">—</span>';
+  const ep = epicById(t.epic_id);
+  const epic = ep
+    ? '<span class="pill epic" title="'+esc(ep.title)+'">'+esc(ep.title)+'</span>'
+    : '<span class="dash">—</span>';
+  return {prio, type, pts, epic};
+}
+function visibleTickets(){
+  return EPIC_FILTER ? TICKETS.filter(t => t.epic_id === EPIC_FILTER) : TICKETS;
+}
+function renderEpicFilterNote(){
+  const el = $('#epicfilternote');
+  if (!EPIC_FILTER){ el.innerHTML = ''; return; }
+  const ep = epicById(EPIC_FILTER);
+  el.innerHTML = '<div class="note" style="display:flex;align-items:center;gap:var(--s2);margin:0 0 var(--s3)">'
+    + 'Filtered by epic: <strong>'+esc(ep ? ep.title : EPIC_FILTER)+'</strong>'
+    + '<button class="ghost sm" id="clearepicfilter" type="button">Clear</button></div>';
+  $('#clearepicfilter').addEventListener('click', () => {
+    EPIC_FILTER = null; renderTicketList(); updateExportLinks();
+  });
+}
+function updateExportLinks(){
+  const q = EPIC_FILTER ? '&epic_id=' + encodeURIComponent(EPIC_FILTER) : '';
+  $('#exportcsv').href = '/api/cockpit/tickets/export?format=jira-csv' + q;
+}
+function rowKeydown(openFn, id){
+  return e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openFn(id); } };
+}
+function renderTicketList(){
+  renderEpicFilterNote();
+  const tb = $('#tickets tbody');
+  if (!TICKETS.length){
+    $('#ticketsnote').textContent = 'No tickets yet — create one from a chat above.';
+    tb.innerHTML = '<tr><td colspan="7" class="note">No tickets yet — create one from a chat above.</td></tr>';
+    return;
+  }
+  const list = visibleTickets();
+  if (!list.length){
+    $('#ticketsnote').innerHTML = '<strong>0</strong> tickets in this epic';
+    tb.innerHTML = '<tr><td colspan="7" class="note">No tickets in this epic yet.</td></tr>';
+    return;
+  }
+  $('#ticketsnote').innerHTML = '<strong>'+list.length+'</strong> ticket'+(list.length===1?'':'s')
+    + (EPIC_FILTER ? ' in this epic' : '');
+  tb.innerHTML = list.map(t => {
+    const b = ticketBadges(t);
+    return '<tr data-tid="'+esc(t.id)+'" tabindex="0" role="button" aria-label="Open ticket '+esc(t.title)+'">'
+      + '<td title="'+esc(t.title)+'">'+esc(t.title)+'</td>'
+      + '<td>'+b.prio+'</td>'
+      + '<td>'+b.type+'</td>'
+      + '<td>'+b.pts+'</td>'
+      + '<td>'+b.epic+'</td>'
+      + '<td><span class="pill '+esc(t.status)+'">'+esc(t.status)+'</span></td>'
+      + '<td class="m">'+esc(new Date(t.updated).toLocaleString())+'</td></tr>';
+  }).join('');
+  [...tb.querySelectorAll('tr[data-tid]')].forEach(tr => {
+    tr.addEventListener('click', () => openTicket(tr.dataset.tid));
+    tr.addEventListener('keydown', rowKeydown(openTicket, tr.dataset.tid));
+  });
+}
+
+/* ── epics sub-view ───────────────────────────────────────────────────────── */
+function setTicketView(view){
+  TICKET_VIEW = view;
+  [...document.querySelectorAll('#ticketview-tabs .tab')].forEach(b =>
+    b.classList.toggle('on', b.dataset.view === view));
+  $('#ticketsview').hidden = view !== 'tickets';
+  $('#epicsview').hidden = view !== 'epics';
+  if (view === 'epics') renderEpicsView();
+}
+function filterByEpic(epicId){
+  EPIC_FILTER = epicId;
+  setTicketView('tickets');
+  renderTicketList();
+  updateExportLinks();
+}
+async function renderEpicsView(){
+  await loadEpics();
+  const wrap = $('#epicsview');
+  const rows = EPICS;
+  const body = rows.length ? rows.map(row => {
+    const e = row.epic;
+    const counts = row.counts || {};
+    const chips = Object.keys(counts).filter(k => counts[k]).map(k =>
+      '<span class="pill '+esc(k)+'">'+esc(k)+' '+counts[k]+'</span>').join(' ');
+    return '<tr data-eid="'+esc(e.id)+'" tabindex="0" role="button" aria-label="Filter tickets by epic '+esc(e.title)+'">'
+      + '<td title="'+esc(e.title)+'">'+esc(e.title)+'</td>'
+      + '<td><span class="pill '+esc(e.status)+'">'+esc(e.status)+'</span></td>'
+      + '<td class="r">'+(row.ticket_count||0)+'</td>'
+      + '<td class="r">'+(row.story_points!=null ? row.story_points : '—')+'</td>'
+      + '<td>'+(chips || '<span class="dash">—</span>')+'</td></tr>';
+  }).join('') : '<tr><td colspan="5" class="note">No epics yet — create one below to start grouping tickets.</td></tr>';
+  wrap.innerHTML =
+      '<table id="epics"><thead><tr><th>Title</th><th>Status</th><th class="r">Tickets</th>'
+    + '<th class="r">Points</th><th>By status</th></tr></thead><tbody>'+body+'</tbody></table>'
+    + '<div class="card" style="margin-top:var(--s3);padding:var(--s3)">'
+    + '<h2 style="margin-top:0">New epic</h2>'
+    + '<div style="display:flex;flex-direction:column;gap:var(--s2)">'
+    + '<input type="text" id="newepictitle" placeholder="Epic title" autocomplete="off">'
+    + '<textarea id="newepicdesc" class="criteria" style="min-height:60px" placeholder="Optional description / acceptance criteria"></textarea>'
+    + '<div><button class="sm" id="createepic" type="button">Create epic</button></div>'
+    + '</div></div>';
+  [...wrap.querySelectorAll('tr[data-eid]')].forEach(tr => {
+    tr.addEventListener('click', () => filterByEpic(tr.dataset.eid));
+    tr.addEventListener('keydown', rowKeydown(filterByEpic, tr.dataset.eid));
+  });
+  $('#createepic').addEventListener('click', createEpic);
+}
+async function createEpic(){
+  const title = $('#newepictitle').value.trim();
+  if (!title){ showToast('Give the epic a title first.', 'info'); return; }
+  const btn = $('#createepic'); btn.disabled = true; btn.textContent = 'Creating…';
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/epics', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({title, description_md: $('#newepicdesc').value.trim() || undefined})})).json();
+  } catch(e){ r = {error:'agent offline'}; }
+  btn.disabled = false; btn.textContent = 'Create epic';
+  if (!r || r.error || !r.id){ showToast((r && r.error) || 'Could not create epic — agent offline?', 'error'); return; }
+  await loadEpics(true);
+  renderEpicsView();
+  showToast('Epic created.', 'info');
+}
+
 async function loadTickets(){
   let d = null;
   try { d = await (await fetch('/api/cockpit/tickets')).json(); } catch(e){}
   TICKETS = (d && d.tickets) || [];
-  const tb = $('#tickets tbody');
-  if (!TICKETS.length){
-    $('#ticketsnote').textContent = 'No tickets yet — create one from a chat above.';
-    tb.innerHTML = '<tr><td colspan="3" class="note">—</td></tr>';
-  } else {
-    $('#ticketsnote').innerHTML = '<strong>'+TICKETS.length+'</strong> ticket'+(TICKETS.length===1?'':'s');
-    tb.innerHTML = TICKETS.map(t =>
-      '<tr data-tid="'+esc(t.id)+'"><td title="'+esc(t.title)+'">'+esc(t.title)+'</td>'
-      + '<td><span class="pill '+esc(t.status)+'">'+esc(t.status)+'</span></td>'
-      + '<td class="m">'+esc(new Date(t.updated).toLocaleString())+'</td></tr>').join('');
-    [...tb.querySelectorAll('tr[data-tid]')].forEach(tr =>
-      tr.addEventListener('click', () => openTicket(tr.dataset.tid)));
-  }
+  await loadEpics();
+  renderTicketList();
+  updateExportLinks();
+  if (TICKET_VIEW === 'epics') renderEpicsView();
   // Keep an already-open detail panel in sync with whatever the list just re-fetched.
   if (OPEN_TICKET && TICKETS.some(t => t.id === OPEN_TICKET)) renderTicketDetail(OPEN_TICKET);
 }
@@ -888,12 +1159,48 @@ async function openTicket(tid){
   await renderTicketDetail(tid);
 }
 
+function selectOptions(list, current){
+  return list.map(v => '<option value="'+esc(v)+'"'+(v===current?' selected':'')+'>'+esc(v)+'</option>').join('');
+}
+async function epicSelectOptions(t){
+  await loadEpics();
+  let opts = '<option value=""'+(!t.epic_id?' selected':'')+'>— none —</option>';
+  opts += EPICS.map(row => '<option value="'+esc(row.epic.id)+'"'
+    + (row.epic.id===t.epic_id?' selected':'')+'>'+esc(row.epic.title)+'</option>').join('');
+  opts += '<option value="__new__">+ New epic…</option>';
+  return opts;
+}
+function prPanelHtml(t){
+  const pr = t.pr || {};
+  if (pr.number){
+    const stateCls = pr.state === 'merged' ? 'done' : (pr.state === 'closed' ? 'cancelled' : 'accepted');
+    return '<div class="tprbox">'
+      + '<span class="pill '+esc(stateCls)+'">'+esc(pr.state||'open')+'</span> '
+      + (pr.url ? '<a class="tprlink" href="'+esc(pr.url)+'" target="_blank" rel="noopener">PR #'+esc(pr.number)+'</a>'
+                : '<strong>PR #'+esc(pr.number)+'</strong>')
+      + (pr.branch ? ' <span class="mono" style="color:var(--mut)">'+esc(pr.branch)+'</span>' : '')
+      + (pr.repo ? ' <span class="note" style="margin:0;display:inline">'+esc(pr.repo)+'</span>' : '')
+      + '</div>';
+  }
+  return '<div class="tprbox">'
+    + '<div class="note" style="margin:0 0 var(--s2)">No PR linked yet.</div>'
+    + '<button class="ghost sm" id="tprlink" type="button">Link PR (auto-detect)</button> '
+    + '<button class="ghost sm" id="tprmanualtoggle" type="button">Enter manually</button>'
+    + '<div class="tprerr" id="tprerr"></div>'
+    + '<div class="tprmanual" id="tprmanualform" hidden>'
+    + '<input type="text" id="tprurl" placeholder="PR URL" aria-label="PR URL">'
+    + '<input type="text" id="tprbranch" placeholder="branch name" aria-label="PR branch">'
+    + '<input type="number" id="tprnumber" placeholder="#" aria-label="PR number" style="max-width:80px">'
+    + '<button class="sm" id="tprmanualsave" type="button">Save</button>'
+    + '</div></div>';
+}
 async function renderTicketDetail(tid){
   let t = null;
   try { t = await (await fetch('/api/cockpit/tickets/'+encodeURIComponent(tid))).json(); } catch(e){}
   if (!t || t.error){ $('#tdetail').innerHTML = ''; return; }
   const next = nextStatus(t.status);
   const isSink = t.status === 'blocked' || t.status === 'cancelled';
+  const epicOpts = await epicSelectOptions(t);
   $('#tdetail').innerHTML =
       '<div class="thead"><div class="ttitle">'+esc(t.title)+'</div>'
     + '<button class="ghost sm" id="tclose">Close</button></div>'
@@ -906,7 +1213,16 @@ async function renderTicketDetail(tid){
     + '<button class="sm" id="trun"'+(t.status==='done'?' disabled':'')+'>Run crew</button>'
     + '<button class="ghost sm" id="tdocs">'+(t.docs_done?'Docs updated ✓':'Requires documentation')+'</button>'
     + '</div></div>'
-    + '<textarea class="criteria" id="tbody">'+esc(t.body_md||'')+'</textarea>'
+    + '<div class="tmeta">'
+    + '<label>Epic<select id="tepic">'+epicOpts+'</select></label>'
+    + '<label>Type<select id="tissuetype">'+selectOptions(ISSUE_TYPES, t.issue_type || 'task')+'</select></label>'
+    + '<label>Priority<select id="tpriority">'+selectOptions(PRIORITIES, t.priority || 'medium')+'</select></label>'
+    + '<label>Points<input type="number" id="tpoints" min="0" step="0.5" value="'+esc(t.story_points ?? '')+'"></label>'
+    + '<label>Labels<input type="text" id="tlabels" placeholder="e.g. backend, urgent" value="'+esc((t.labels||[]).join(', '))+'"></label>'
+    + '</div>'
+    + '<div id="tepic-newepic"></div>'
+    + prPanelHtml(t)
+    + '<textarea class="criteria" id="tbody">'+esc(t.description_md ?? t.body_md ?? '')+'</textarea>'
     + '<div class="tflags"><label><input type="checkbox" id="treqdocs"'
     + (t.requires_docs?' checked':'')+'> requires documentation'
     + (t.source_chat_id ? ' &nbsp;·&nbsp; from chat <span class="mono">'+esc(t.source_chat_id)+'</span>' : '')
@@ -921,6 +1237,96 @@ async function renderTicketDetail(tid){
   $('#tdocs').addEventListener('click', () => runDocsOnTicket(tid));
   $('#treqdocs').addEventListener('change', e =>
     patchTicket(tid, {requires_docs: e.target.checked}));
+
+  $('#tepic').addEventListener('change', async e => {
+    const val = e.target.value;
+    if (val === '__new__'){ e.target.value = t.epic_id || ''; showNewEpicInline(tid); return; }
+    const r = await patchTicket(tid, {epic_id: val || null});
+    if (!r.ok){ showToast(r.error || 'Could not update epic.', 'error'); return; }
+    await loadEpics(true); await loadTickets();
+  });
+  $('#tissuetype').addEventListener('change', async e => {
+    const r = await patchTicket(tid, {issue_type: e.target.value});
+    if (!r.ok) showToast(r.error || 'Could not update type.', 'error'); else await loadTickets();
+  });
+  $('#tpriority').addEventListener('change', async e => {
+    const r = await patchTicket(tid, {priority: e.target.value});
+    if (!r.ok) showToast(r.error || 'Could not update priority.', 'error'); else await loadTickets();
+  });
+  $('#tpoints').addEventListener('change', async e => {
+    const v = e.target.value.trim();
+    const r = await patchTicket(tid, {story_points: v === '' ? null : Number(v)});
+    if (!r.ok) showToast(r.error || 'Could not update points.', 'error'); else await loadTickets();
+  });
+  $('#tlabels').addEventListener('change', async e => {
+    const labels = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+    const r = await patchTicket(tid, {labels});
+    if (!r.ok) showToast(r.error || 'Could not update labels.', 'error'); else await loadTickets();
+  });
+
+  if (!t.pr || !t.pr.number){
+    $('#tprlink').addEventListener('click', () => linkPr(tid));
+    $('#tprmanualtoggle').addEventListener('click', () => {
+      const f = $('#tprmanualform'); f.hidden = !f.hidden;
+    });
+    $('#tprmanualsave').addEventListener('click', () => savePrManual(tid));
+  }
+}
+function showNewEpicInline(tid){
+  const holder = $('#tepic-newepic');
+  holder.innerHTML = '<div class="tepic-inline">'
+    + '<input type="text" id="tepic-newtitle" placeholder="New epic title" autocomplete="off" aria-label="New epic title">'
+    + '<button class="sm" id="tepic-newsave" type="button">Create &amp; assign</button>'
+    + '<button class="ghost sm" id="tepic-newcancel" type="button">Cancel</button></div>';
+  $('#tepic-newtitle').focus();
+  $('#tepic-newcancel').addEventListener('click', () => { holder.innerHTML = ''; });
+  $('#tepic-newsave').addEventListener('click', async () => {
+    const title = $('#tepic-newtitle').value.trim();
+    if (!title){ showToast('Give the epic a title first.', 'info'); return; }
+    let r = null;
+    try {
+      r = await (await fetch('/api/cockpit/epics', {method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify({title})})).json();
+    } catch(e){ r = {error:'agent offline'}; }
+    if (!r || r.error || !r.id){ showToast((r && r.error) || 'Could not create epic.', 'error'); return; }
+    await patchTicket(tid, {epic_id: r.id});
+    holder.innerHTML = '';
+    await loadEpics(true);
+    await loadTickets();
+    await renderTicketDetail(tid);
+  });
+}
+async function linkPr(tid){
+  const btn = $('#tprlink'); btn.disabled = true; btn.textContent = 'Linking…';
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/tickets/'+encodeURIComponent(tid)+'/link-pr',
+      {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})).json();
+  } catch(e){ r = {ok:false, error:'agent offline'}; }
+  if (!r || !r.ok){
+    const msg = (r && r.error) || 'Could not auto-detect the PR.';
+    $('#tprerr').textContent = msg + ' — fill it in manually below.';
+    $('#tprmanualform').hidden = false;
+    if (btn){ btn.disabled = false; btn.textContent = 'Link PR (auto-detect)'; }
+    showToast(msg, 'error');
+    return;
+  }
+  await loadTickets();
+  await renderTicketDetail(tid);
+}
+async function savePrManual(tid){
+  const url = $('#tprurl').value.trim();
+  const branch = $('#tprbranch').value.trim();
+  const numberRaw = $('#tprnumber').value.trim();
+  if (!url && !branch && !numberRaw){ showToast('Enter at least a PR URL, branch, or number.', 'info'); return; }
+  const pr = {};
+  if (url) pr.url = url;
+  if (branch) pr.branch = branch;
+  if (numberRaw) pr.number = Number(numberRaw);
+  const r = await patchTicket(tid, {pr});
+  if (!r.ok){ showToast(r.error || 'Could not save PR details.', 'error'); return; }
+  await loadTickets();
+  await renderTicketDetail(tid);
 }
 
 async function patchTicket(tid, patch){
@@ -939,7 +1345,7 @@ async function saveCriteria(tid){
 }
 async function advanceTicket(tid, status){
   const r = await patchTicket(tid, {status});
-  if (!r.ok) { alert(r.error || 'could not change status'); return; }
+  if (!r.ok) { showToast(r.error || 'Could not change status.', 'error'); return; }
   await loadTickets();
 }
 async function runCrewOnTicket(tid){
@@ -949,7 +1355,7 @@ async function runCrewOnTicket(tid){
     r = await (await fetch('/api/cockpit/tickets/'+encodeURIComponent(tid)+'/run',
       {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})).json();
   } catch(e){ r = {error:'agent offline'}; }
-  if (r && r.error) alert(r.error);
+  if (r && r.error) showToast(r.error, 'error');
   await loadTickets(); loadStanding();
 }
 async function runDocsOnTicket(tid){
@@ -959,11 +1365,11 @@ async function runDocsOnTicket(tid){
     r = await (await fetch('/api/cockpit/tickets/'+encodeURIComponent(tid)+'/docs',
       {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})).json();
   } catch(e){ r = {error:'agent offline'}; }
-  if (r && r.error) alert(r.error);
+  if (r && r.error) showToast(r.error, 'error');
   await loadTickets();
 }
 async function createTicketFromChat(){
-  if (!CHAT){ alert('Send at least one message in a chat before turning it into a ticket.'); return; }
+  if (!CHAT){ showToast('Send at least one message in a chat before turning it into a ticket.', 'info'); return; }
   const btn = $('#mkticket'); btn.disabled = true; btn.textContent = 'Drafting…';
   let r = null;
   try {
@@ -971,7 +1377,7 @@ async function createTicketFromChat(){
       headers:{'Content-Type':'application/json'}, body: JSON.stringify({chat_id: CHAT})})).json();
   } catch(e){ r = {error:'agent offline'}; }
   btn.disabled = false; btn.textContent = 'Create ticket';
-  if (r && r.error) { alert(r.error); return; }
+  if (r && r.error) { showToast(r.error, 'error'); return; }
   await loadTickets();
   if (r && r.id) openTicket(r.id);
 }
@@ -1019,7 +1425,7 @@ function startPreview(){
 let PV_SEL = [];   // up to 2 selected snapshot keys; a 3rd pick evicts the oldest
 
 async function pvSnapshot(){
-  if (!PV_BASE_URL) { alert('Watch a URL first.'); return; }
+  if (!PV_BASE_URL) { showToast('Watch a URL first.', 'info'); return; }
   const btn = $('#pvsnap');
   btn.disabled = true; const was = btn.textContent; btn.textContent = 'capturing…';
   try {
@@ -1027,9 +1433,9 @@ async function pvSnapshot(){
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({url: PV_BASE_URL})
     })).json();
-    if (!r.ok) alert('Snapshot failed: ' + (r.error || 'unknown error'));
+    if (!r.ok) showToast('Snapshot failed: ' + (r.error || 'unknown error'), 'error');
     else await loadPvSnapshots();
-  } catch(e) { alert('Snapshot failed: ' + e); }
+  } catch(e) { showToast('Snapshot failed: ' + e, 'error'); }
   btn.disabled = false; btn.textContent = was;
 }
 
@@ -1137,6 +1543,40 @@ $('#newchat').addEventListener('click', ()=>{ CHAT=null; renderTabs(); renderLog
   $('#out').innerHTML=''; $('#q').focus(); });
 $('#q').addEventListener('keydown', e=>{ if(e.key==='Enter') ask(false); });
 $('#mkticket').addEventListener('click', createTicketFromChat);
+[...document.querySelectorAll('#ticketview-tabs .tab')].forEach(b =>
+  b.addEventListener('click', () => setTicketView(b.dataset.view)));
+$('#exportbtn').addEventListener('click', () => {
+  const opening = $('#exportmenu').hidden;
+  $('#exportmenu').hidden = !opening;
+  $('#exportbtn').setAttribute('aria-expanded', String(opening));
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('#exportmenu-wrap')){
+    $('#exportmenu').hidden = true; $('#exportbtn').setAttribute('aria-expanded', 'false');
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('#exportmenu').hidden){
+    $('#exportmenu').hidden = true; $('#exportbtn').setAttribute('aria-expanded', 'false');
+    $('#exportbtn').focus();
+  }
+});
+$('#exportcsv').addEventListener('click', () => {
+  $('#exportmenu').hidden = true; $('#exportbtn').setAttribute('aria-expanded', 'false');
+});
+$('#exportjson').addEventListener('click', async () => {
+  $('#exportmenu').hidden = true; $('#exportbtn').setAttribute('aria-expanded', 'false');
+  const q = EPIC_FILTER ? '&epic_id=' + encodeURIComponent(EPIC_FILTER) : '';
+  let data = null;
+  try { data = await (await fetch('/api/cockpit/tickets/export?format=json' + q)).json(); } catch(e){}
+  if (!data){ showToast('Export failed — agent offline or endpoint unavailable.', 'error'); return; }
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'tickets-export.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(a.href);
+});
 $('#pvwatch').addEventListener('click', startPreview);
 $('#pvurl').addEventListener('keydown', e=>{ if(e.key==='Enter') startPreview(); });
 $('#pvinterval').addEventListener('change', ()=>{ if (PV_BASE_URL) startPreview(); });
