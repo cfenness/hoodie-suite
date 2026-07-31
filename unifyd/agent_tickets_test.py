@@ -4,12 +4,17 @@
 The whole point of a ticket over a chat is that its status_history is an honest audit trail — if a
 ticket could quietly step backward, "done" would stop meaning anything, the same reason
 server.py's order lifecycle (which this module's ladder logic is a byte-for-byte copy of) refuses a
-backward move. Everything else here is the supporting cast: atomic writes so a live-refreshing
-viewer never sees a half-written file, and append_section's ordering since it's the literal
-mechanism behind "embed test reports as the process goes."
+backward move. Everything else here is the supporting cast: atomic per-ticket writes so a
+live-refreshing viewer never sees a half-written file, append_section's ordering since it's the
+literal mechanism behind "embed test reports as the process goes", db= isolation now that storage
+is a dict-of-records rather than a list, and the Jira-parity surface (issue_type/priority/labels/
+story_points/epic_id, set_pr/set_jira, epics + rollup, jira_csv) added in the durable-storage
+rewrite.
 
     python3 unifyd/agent_tickets_test.py
 """
+import csv
+import io
 import os
 import sys
 import tempfile
@@ -32,10 +37,7 @@ def main():
     print("agent_tickets — forward-only lifecycle for real acceptance criteria")
     import agent_tickets as A
 
-    # --- 0. derive_title: robust to the model wrapping its answer in its OWN headings -------------
-    # Real draft observed live: asked for "the outcome in one sentence first", the model opened with
-    # "## Acceptance criteria" instead and put the actual outcome sentence under a LATER "## Outcome"
-    # heading. A naive first-line grab returned the literal word "Outcome" as the ticket's title.
+    # --- 0. derive_title: UNCHANGED by the rewrite, same cases as before ---------------------------
     real_draft = (
         "## Acceptance criteria\n\n"
         "## Outcome\n\n"
@@ -52,18 +54,11 @@ def main():
 
     check("plain prose with no headings at all just uses the first line",
           A.derive_title("Fix the publix parse.\n\nMore detail below.", "fb") == "Fix the publix parse.")
-    # A heading is ALWAYS a section label in this domain (Outcome / Acceptance Criteria / Out of
-    # Scope / Risk, per ROLES[PM]'s own requested structure) — never the title itself. So a draft
-    # that opens with a heading skips straight past it to the first real prose underneath, rather
-    # than using the heading text as the title.
     check("a heading is skipped even when it's the very first line — the prose under it wins",
           A.derive_title("# Ship the new connector\n\nDetails.", "fb") == "Details.")
     check("**bold** markup is stripped from the title",
           A.derive_title("**Fix the retry loop**\n\nrest", "fb") == "Fix the retry loop")
 
-    # A second real draft (same session, different dispatch): no "## Outcome" heading at all, the
-    # outcome sentence sits inline under "## Acceptance criteria" labeled with a bold "**Outcome:**"
-    # prefix instead. Not hypothetical — this is the literal shape a real dispatch produced.
     real_draft_2 = ("## Acceptance criteria\n\n"
                     "**Outcome:** Add a test suite for `unifyd/browser_warm.py` that would have "
                     "caught each of the 7 prior breaks.\n\n"
@@ -83,22 +78,22 @@ def main():
           len(A.derive_title(long_line, "fb")) == 120, A.derive_title(long_line, "fb"))
 
     tmp = tempfile.mkdtemp(prefix="tickets-")
-    old_state, old_dir, old_index = A.STATE, A.TICKETS_DIR, A.INDEX
+    old_state, old_tdir, old_edir = A.STATE, A.TICKETS_DIR, A.EPICS_DIR
     A.STATE = tmp
     A.TICKETS_DIR = os.path.join(tmp, "tickets")
-    A.INDEX = os.path.join(tmp, "tickets.json")
+    A.EPICS_DIR = os.path.join(tmp, "epics")
 
     try:
-        # --- 1. create: file + index row, status draft ---------------------------------------------
+        # --- 1. create: file-per-ticket, status draft ------------------------------------------------
         t = A.create("Fix the publix parse", "## Acceptance criteria\n- parses cleanly\n")
-        check("create returns an id", t["id"].startswith("ticket:"), t)
+        check("create returns an id starting ticket:", t["id"].startswith("ticket:"), t)
         check("new ticket starts at draft", t["status"] == "draft", t)
         check("status_history seeded with the initial status",
               t["status_history"] == [dict(status="draft", at=t["created"])], t["status_history"])
         body = A.read_body(t["id"])
-        check("the body file is readable and matches what was written",
-              "Acceptance criteria" in body, body)
-        check("get() finds it on the real (unmocked-db) index", A.get(t["id"])["id"] == t["id"])
+        check("read_body/render_markdown produces a real markdown string with description_md",
+              "Acceptance criteria" in body and "parses cleanly" in body, body)
+        check("get() finds it on the real (unmocked-db) store", A.get(t["id"])["id"] == t["id"])
         check("list_tickets() surfaces it", any(x["id"] == t["id"] for x in A.list_tickets()))
 
         # --- 2. forward-only: the rule this module exists to protect --------------------------------
@@ -134,13 +129,18 @@ def main():
         check("a done ticket cannot be blocked/cancelled either — it is CLOSED, not just forward-only",
               A.advance_status(t5["id"], "blocked")["ok"] is False)
 
-        # --- 4. append_section: the "embed reports as it goes" mechanism ----------------------------
+        # --- 4. add_activity / append_section: the "embed reports as it goes" mechanism ---------------
         t6 = A.create("crew test", "## Acceptance criteria\ncriteria text")
         before = A.get(t6["id"])["updated"]
         ok = A.append_section(t6["id"], "Engineer report", "changed publix.py:97")
         check("append_section reports success", ok is True)
-        body6 = A.read_body(t6["id"])
-        check("original body survives, nothing clobbered", "criteria text" in body6, body6)
+        rec6 = A.get(t6["id"])
+        check("description_md is untouched, nothing clobbered",
+              rec6["description_md"] == "## Acceptance criteria\ncriteria text", rec6["description_md"])
+        check("activity got a new structured entry", len(rec6["activity"]) == 1, rec6["activity"])
+        body6 = A.render_markdown(rec6)
+        check("original body survives in rendered markdown, nothing clobbered",
+              "criteria text" in body6, body6)
         check("the new section is appended, in a real heading", "## Engineer report" in body6, body6)
         check("the appended text is present verbatim", "changed publix.py:97" in body6, body6)
         idx_criteria = body6.index("criteria text")
@@ -148,7 +148,7 @@ def main():
         check("the report comes AFTER the original criteria, not prepended",
               idx_report > idx_criteria, (idx_report, idx_criteria))
         A.append_section(t6["id"], "Qa report", "no regressions found")
-        body6b = A.read_body(t6["id"])
+        body6b = A.render_markdown(A.get(t6["id"]))
         check("a second append doesn't overwrite the first",
               "Engineer report" in body6b and "Qa report" in body6b, body6b)
         check("second section comes after the first",
@@ -157,54 +157,196 @@ def main():
         check("append_section on an unknown ticket returns False, not a crash",
               A.append_section("ticket:doesnotexist", "x", "y") is False)
 
-        # --- 5. requires_docs / docs_done flags -------------------------------------------------------
-        t7 = A.create("docs flag test", "criteria")
-        check("requires_docs defaults false", A.get(t7["id"])["requires_docs"] is False)
-        A.set_requires_docs(t7["id"], True)
-        check("set_requires_docs flips it", A.get(t7["id"])["requires_docs"] is True)
-        check("docs_done defaults false", A.get(t7["id"])["docs_done"] is False)
-        A.mark_docs_done(t7["id"])
-        check("mark_docs_done flips it", A.get(t7["id"])["docs_done"] is True)
+        # usage -> cost rollup
+        t6b = A.create("cost rollup test", "criteria")
+        A.add_activity(t6b["id"], "engineer", "Engineer", "did stuff",
+                        usage=dict(input_tokens=100, output_tokens=40))
+        A.add_activity(t6b["id"], "qa", "QA", "checked stuff",
+                        usage=dict(input_tokens=30, output_tokens=10))
+        cost6b = A.get(t6b["id"])["cost"]
+        check("usage input_tokens rolls into ticket cost total",
+              cost6b["input_tokens"] == 130, cost6b)
+        check("usage output_tokens rolls into ticket cost total",
+              cost6b["output_tokens"] == 50, cost6b)
+        check("cost.by_stage records the per-kind usage",
+              cost6b["by_stage"].get("engineer", {}).get("input_tokens") == 100, cost6b)
 
-        # --- 6. db= isolation: mutate-then-read must see the SAME list, not a stale reload ----------
-        # The bug this protects against: get()/append_section()/advance_status() each independently
-        # re-loading the index would mean a mutation made through one call is invisible to the next
-        # call in the same test (or the same real request), even though both claim to operate on
-        # "the" ticket store.
-        rows = []
-        r = A.create("isolated", "body", db=rows)
-        check("create(db=list) appends to the SAME list object", len(rows) == 1 and rows[0]["id"] == r["id"],
-              rows)
-        check("...and does NOT touch the real on-disk index",
-              not any(x["id"] == r["id"] for x in A._load_index()), "leaked to real index")
-        A.advance_status(r["id"], "accepted", db=rows)
-        check("advance_status(db=list) mutates that same list's record",
-              rows[0]["status"] == "accepted", rows)
-        A.append_section(r["id"], "note", "text", db=rows)
-        check("append_section(db=list) also sees the isolated record (no crash, no false miss)",
-              rows[0]["updated"] > 0, rows)
-
-        # --- 6b. edit_body: REPLACES, unlike append_section which only ever adds ---------------------
+        # --- 5. edit_body: REPLACES, unlike append_section which only ever adds ------------------------
         t9 = A.create("edit test", "original criteria")
         before9 = A.get(t9["id"])["updated"]
         ok9 = A.edit_body(t9["id"], "revised criteria")
         check("edit_body reports success", ok9 is True)
-        check("edit_body replaces the content outright", A.read_body(t9["id"]) == "revised criteria")
+        check("edit_body replaces description_md outright",
+              A.get(t9["id"])["description_md"] == "revised criteria")
         check("...the original text is gone, not appended alongside",
-              "original" not in A.read_body(t9["id"]))
+              "original" not in A.get(t9["id"])["description_md"])
         check("edit_body bumps `updated` like every other mutator", A.get(t9["id"])["updated"] >= before9)
         check("edit_body on an unknown ticket returns False, not a crash",
               A.edit_body("ticket:doesnotexist", "x") is False)
 
-        # --- 7. atomic write: a crash mid-write must never corrupt the real file ---------------------
+        # --- 6. db= isolation: now a DICT keyed by ticket id, not a list --------------------------------
+        rows = {}
+        r = A.create("isolated", "body", db=rows)
+        check("create(db=dict) populates the SAME dict, keyed by id",
+              len(rows) == 1 and rows.get(r["id"], {}).get("id") == r["id"], rows)
+        check("...and does NOT touch the real on-disk store",
+              A.get(r["id"], db=None) is None, "leaked to real store")
+        A.advance_status(r["id"], "accepted", db=rows)
+        check("advance_status(db=dict) mutates that same dict's record",
+              rows[r["id"]]["status"] == "accepted", rows)
+        A.add_activity(r["id"], "note", "Note", "text", db=rows)
+        check("add_activity(db=dict) also sees the isolated record (no crash, no false miss)",
+              rows[r["id"]]["updated"] > 0, rows)
+
+        # --- 7. atomic write: no leftover .tmp file after a normal save ---------------------------------
         t8 = A.create("atomicity", "v1")
-        A.write_body(t8["id"], "v2")
-        check("write_body actually replaced the content", A.read_body(t8["id"]) == "v2")
-        check("no leftover .tmp file after a normal write",
-              not os.path.exists(A._body_path(t8["id"]) + ".tmp"))
+        A.edit_body(t8["id"], "v2")
+        check("edit_body actually replaced the content", A.get(t8["id"])["description_md"] == "v2")
+        check("no leftover .tmp file after a normal create/edit",
+              not os.path.exists(A._tpath(t8["id"]) + ".tmp"))
+
+        # --- 8. set_fields: Jira-parity fields, invalid enums rejected, labels=[] clears ---------------
+        t10 = A.create("fields test", "criteria")
+        e10 = A.create_epic("some epic")
+        ok10 = A.set_fields(t10["id"], epic_id=e10["id"], issue_type="bug", priority="high",
+                             labels=["a", "b"], story_points=5)
+        check("set_fields reports success", ok10 is True)
+        rec10 = A.get(t10["id"])
+        check("set_fields patches epic_id", rec10["epic_id"] == e10["id"], rec10)
+        check("set_fields patches issue_type", rec10["issue_type"] == "bug", rec10)
+        check("set_fields patches priority", rec10["priority"] == "high", rec10)
+        check("set_fields patches labels", rec10["labels"] == ["a", "b"], rec10)
+        check("set_fields patches story_points", rec10["story_points"] == 5, rec10)
+
+        A.set_fields(t10["id"], issue_type="not-a-real-type", priority="not-a-real-priority")
+        rec10b = A.get(t10["id"])
+        check("an invalid issue_type is rejected/ignored, not corrupting the record",
+              rec10b["issue_type"] == "bug", rec10b["issue_type"])
+        check("an invalid priority is rejected/ignored, not corrupting the record",
+              rec10b["priority"] == "high", rec10b["priority"])
+
+        A.set_fields(t10["id"], labels=[])
+        rec10c = A.get(t10["id"])
+        check("an explicit empty labels=[] actually clears labels (not-provided vs provided-empty)",
+              rec10c["labels"] == [], rec10c["labels"])
+
+        check("set_fields on an unknown ticket returns False",
+              A.set_fields("ticket:doesnotexist", priority="high") is False)
+
+        # --- 9. set_pr / set_jira: partial updates only touch given fields ------------------------------
+        t11 = A.create("pr/jira test", "criteria")
+        A.set_pr(t11["id"], number=42, url="https://example.com/pr/42")
+        rec11 = A.get(t11["id"])
+        check("set_pr sets number", rec11["pr"]["number"] == 42, rec11["pr"])
+        check("set_pr sets url", rec11["pr"]["url"] == "https://example.com/pr/42", rec11["pr"])
+        check("set_pr leaves untouched fields alone (branch still None)",
+              rec11["pr"]["branch"] is None, rec11["pr"])
+        A.set_pr(t11["id"], branch="feat/x")
+        rec11b = A.get(t11["id"])
+        check("a second, partial set_pr call only touches the field given",
+              rec11b["pr"]["branch"] == "feat/x" and rec11b["pr"]["number"] == 42, rec11b["pr"])
+        check("set_pr on an unknown ticket returns False", A.set_pr("ticket:nope", number=1) is False)
+
+        A.set_jira(t11["id"], key="ABC-1")
+        rec11c = A.get(t11["id"])
+        check("set_jira sets key", rec11c["jira"]["key"] == "ABC-1", rec11c["jira"])
+        check("set_jira leaves url untouched when not given", rec11c["jira"]["url"] is None, rec11c["jira"])
+        A.set_jira(t11["id"], url="https://jira.example.com/ABC-1")
+        rec11d = A.get(t11["id"])
+        check("a second, partial set_jira call only touches the field given",
+              rec11d["jira"]["url"] == "https://jira.example.com/ABC-1" and
+              rec11d["jira"]["key"] == "ABC-1", rec11d["jira"])
+        check("set_jira on an unknown ticket returns False", A.set_jira("ticket:nope", key="X-1") is False)
+
+        # --- 10. epics: create/list/edit/rollup ----------------------------------------------------------
+        epic = A.create_epic("Rollup epic")
+        check("create_epic returns an id starting epic:", epic["id"].startswith("epic:"), epic)
+        check("new epic starts at status open", epic["status"] == "open", epic)
+
+        import time as _time
+        epic_old = A.create_epic("older epic")
+        _time.sleep(0.01)
+        A.edit_epic(epic_old["id"], title="older epic touched")
+        epics_sorted = A.list_epics()
+        check("list_epics sorts newest-updated first",
+              epics_sorted[0]["id"] == epic_old["id"], [e["id"] for e in epics_sorted])
+
+        ok_edit = A.edit_epic(epic["id"], title="Rollup epic v2", status="in_progress",
+                               story_points_planned=13)
+        check("edit_epic reports success", ok_edit is True)
+        recE = A.get_epic(epic["id"])
+        check("edit_epic patches title", recE["title"] == "Rollup epic v2", recE)
+        check("edit_epic patches status", recE["status"] == "in_progress", recE)
+        check("edit_epic patches story_points_planned", recE["story_points_planned"] == 13, recE)
+
+        A.edit_epic(epic["id"], status="not-a-real-status")
+        recE2 = A.get_epic(epic["id"])
+        check("edit_epic rejects an invalid status the same way set_fields rejects invalid enums",
+              recE2["status"] == "in_progress", recE2["status"])
+        check("edit_epic on an unknown epic returns False", A.edit_epic("epic:nope", title="x") is False)
+
+        ra = A.create("rollup a", "c")
+        rb = A.create("rollup b", "c")
+        rc = A.create("rollup c", "c")
+        A.set_fields(ra["id"], epic_id=epic["id"], story_points=3)
+        A.set_fields(rb["id"], epic_id=epic["id"], story_points=5)
+        A.set_fields(rc["id"], epic_id=epic["id"], story_points=2)
+        A.advance_status(ra["id"], "accepted")
+        A.advance_status(rb["id"], "accepted")
+        A.advance_status(rb["id"], "in_progress")
+        roll = A.epic_rollup(epic["id"])
+        check("epic_rollup ticket_count matches the tickets assigned to it",
+              roll["ticket_count"] == 3, roll)
+        check("epic_rollup counts-by-status is correct",
+              roll["counts"] == dict(accepted=1, in_progress=1, draft=1), roll["counts"])
+        check("epic_rollup story_points sums the assigned tickets",
+              roll["story_points"] == 10, roll)
+
+        # --- 11. list_tickets(epic_id=...) filter, alone and combined with status= ----------------------
+        by_epic = A.list_tickets(epic_id=epic["id"])
+        check("list_tickets(epic_id=) filters to only that epic's tickets",
+              {x["id"] for x in by_epic} == {ra["id"], rb["id"], rc["id"]}, by_epic)
+        by_epic_and_status = A.list_tickets(epic_id=epic["id"], status="accepted")
+        check("list_tickets(epic_id=, status=) combines both filters",
+              {x["id"] for x in by_epic_and_status} == {ra["id"]}, by_epic_and_status)
+
+        # --- 12. jira_csv_rows / jira_csv -----------------------------------------------------------------
+        jt1 = A.create("Jira export ticket one", "desc one")
+        A.set_fields(jt1["id"], issue_type="story", priority="highest", labels=["urgent", "web"],
+                     story_points=8, epic_id=epic["id"])
+        jt2 = A.create("Jira export ticket two", "desc two")
+        A.set_fields(jt2["id"], issue_type="chore", priority="lowest")  # no epic assigned
+
+        epics_by_id = {epic["id"]: A.get_epic(epic["id"])}
+        rows_out = A.jira_csv_rows([A.get(jt1["id"]), A.get(jt2["id"])], epics_by_id=epics_by_id)
+        check("jira_csv_rows header has exactly 8 columns in order",
+              rows_out[0] == ["Summary", "Issue Type", "Priority", "Labels", "Epic Link",
+                              "Story Points", "Description", "Status"], rows_out[0])
+        check("jira_csv_rows produces one data row per ticket", len(rows_out) == 3, rows_out)
+
+        row1 = rows_out[1]
+        check("Issue Type is Title-cased via _JIRA_ISSUE_TYPE ('story' -> 'Story')",
+              row1[1] == A._JIRA_ISSUE_TYPE["story"] == "Story", row1)
+        check("Priority is Title-cased via _JIRA_PRIORITY ('highest' -> 'Highest')",
+              row1[2] == A._JIRA_PRIORITY["highest"] == "Highest", row1)
+        check("Labels are space-joined", row1[3] == "urgent web", row1)
+        check("Epic Link resolves to the epic's title", row1[4] == "Rollup epic v2", row1)
+        check("Story Points is stringified", row1[5] == "8", row1)
+
+        row2 = rows_out[2]
+        check("a ticket with no epic assigned gets an empty Epic Link, not a crash", row2[4] == "", row2)
+        check("chore maps to Task, lowest maps to Lowest",
+              row2[1] == "Task" and row2[2] == "Lowest", row2)
+
+        csv_text = A.jira_csv([A.get(jt1["id"]), A.get(jt2["id"])], epics_by_id=epics_by_id)
+        parsed = list(csv.reader(io.StringIO(csv_text)))
+        check("jira_csv produces valid, round-trippable CSV text (row count matches)",
+              len(parsed) == len(rows_out), (len(parsed), len(rows_out)))
+        check("...and column count matches too",
+              all(len(r) == 8 for r in parsed), parsed)
 
     finally:
-        A.STATE, A.TICKETS_DIR, A.INDEX = old_state, old_dir, old_index
+        A.STATE, A.TICKETS_DIR, A.EPICS_DIR = old_state, old_tdir, old_edir
 
     print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
     return 1 if FAILED else 0
