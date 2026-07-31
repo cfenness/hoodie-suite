@@ -7162,6 +7162,37 @@ def api_cockpit_health_digest():
                   for f in worst]), 200
 
 
+@app.get("/api/cockpit/dq-aggregate")
+def api_cockpit_dq_aggregate():
+    """The warehouse-wide DQ score (unifyd/dq_aggregate.py) — % of master/conformed/accounts/
+    timeseries/scrape tables with zero DETERMINISTIC findings (null-blowout, exact duplicates), vs
+    dq.js's per-table interactive profile which only ever looks at one already-loaded table.
+
+    Computed weekly on the Fly dispatcher (rides health_digest.py's --weekly pass, same reasoning
+    as deep_audit: real full-table scans, too heavy for the daily tick) and published to the shared
+    warehouse — same local-file-then-warehouse fallback order as /api/cockpit/health-digest, for the
+    same reason: no serving machine can assume it computed the score itself."""
+    d = None
+    try:
+        import warehouse
+        raw = warehouse.get_bytes("_dq_aggregate.json")
+        if raw:
+            d = json.loads(raw)
+    except Exception:
+        d = None
+    if d is None:
+        return jsonify(available=False), 200
+
+    findings = d.get("findings") or []
+    worst = [f for f in findings if f.get("severity") in ("critical", "warn")][:10]
+    return jsonify(
+        available=True, as_of=d.get("as_of"), ok=bool(d.get("ok")), score=d.get("score"),
+        tables_checked=d.get("tables_checked"), tables_clean=d.get("tables_clean"),
+        counts=d.get("counts") or {},
+        findings=[{k: f.get(k) for k in ("code", "severity", "source", "summary")}
+                  for f in worst]), 200
+
+
 def _git(args, cwd, timeout=30):
     """Run git and return (rc, stdout+stderr) — same shape tools/release_train.py's own `git()`
     uses, so a failure carries stderr instead of dropping the one line that says why."""

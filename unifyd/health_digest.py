@@ -350,6 +350,20 @@ def build_digest(weekly=False):
         import deep_audit
         findings.extend(deep_audit.run(manifest, now))
 
+        # warehouse-wide DQ score (null-blowout + exact-duplicate scan across every master/conformed/
+        # accounts/timeseries/scrape table) — same weekly-only cadence as deep_audit for the same
+        # reason: real full-table scans, too heavy for the daily pass. Findings ride into this digest
+        # like everything else above; the score itself is ALSO published separately to
+        # `_dq_aggregate.json` so Cockpit can read a single number without parsing the whole digest.
+        try:
+            import dq_aggregate
+            dqd = dq_aggregate.build(now=now)
+            dq_aggregate.write(built=dqd, log=lambda *_a, **_k: None)
+            findings.extend(dqd["findings"])
+        except Exception as e:                                # noqa: BLE001
+            findings.append(_finding("dq-check-failed", "warn", "dq",
+                                     "the warehouse DQ aggregate did not run", str(e)[:120]))
+
     return _assemble(now, wh, manifest, findings, checked=len(enabled), weekly=weekly)
 
 
