@@ -252,6 +252,26 @@
   .live .dot{width:7px;height:7px;border-radius:50%;background:var(--good);animation:pulse 1.4s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:.35} 50%{opacity:1}}
 
+  /* before/after — snapshot history strip + diff overlay */
+  .pvsnaps{display:flex;gap:var(--s2);flex-wrap:wrap;margin-top:var(--s3)}
+  .pvsnaps:empty::after{content:"No snapshots yet — hit Snapshot above to start a before/after history.";
+    color:var(--mut);font-size:12px}
+  .pvsnap{border:2px solid var(--line);border-radius:var(--rs);overflow:hidden;cursor:pointer;
+    width:96px;background:var(--panel2);position:relative}
+  .pvsnap img{width:100%;height:64px;object-fit:cover;display:block}
+  .pvsnap .pvsnapwhen{font-size:9.5px;color:var(--mut);font-family:var(--mono);text-align:center;padding:2px}
+  .pvsnap.sel-a{border-color:var(--accent)}
+  .pvsnap.sel-b{border-color:var(--good)}
+  .pvsnap .pvsnaptag{position:absolute;top:2px;left:2px;font-size:9px;font-weight:700;padding:1px 4px;
+    border-radius:4px;color:#fff}
+  .pvsnap.sel-a .pvsnaptag{background:var(--accent)}
+  .pvsnap.sel-b .pvsnaptag{background:var(--good)}
+  .pvdiffwrap{margin-top:var(--s3);border:1px solid var(--line);border-radius:var(--rs);padding:var(--s3);
+    background:var(--panel2)}
+  .pvdiffhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--s2);
+    font-size:12.5px}
+  .pvdiffwrap img{width:100%;border-radius:var(--rs);display:block}
+
   /* mechanism, available not imposed */
   details{margin-top:var(--s2)}
   summary{cursor:pointer;font-size:11px;text-transform:uppercase;letter-spacing:.09em;
@@ -341,6 +361,7 @@
       <div class="pvrow">
         <input type="url" id="pvurl" placeholder="http://localhost:3000 — or any URL" autocomplete="off">
         <button id="pvwatch">Watch</button>
+        <button id="pvsnap" type="button" title="Screenshot the current preview and add it to history">📸 Snapshot</button>
         <select id="pvinterval" title="How often to reload the preview">
           <option value="0">Manual refresh</option>
           <option value="3000">Every 3s</option>
@@ -357,6 +378,16 @@
             right the moment it lands, so you can watch the two line up.</div>
         </div>
         <div class="pvfeed" id="pvfeed"></div>
+      </div>
+      <!-- Before/after — the literal gap this closes: Live Preview only ever showed CURRENT state.
+           Snapshot stores a real screenshot; pick any two to see a red-highlighted diff overlay. -->
+      <div class="pvsnaps" id="pvsnaps"></div>
+      <div class="pvdiffwrap" id="pvdiffwrap" hidden>
+        <div class="pvdiffhead">
+          <span id="pvdiffpct"></span>
+          <button id="pvdiffclear" type="button">clear selection</button>
+        </div>
+        <img id="pvdiffimg" alt="diff overlay — changed pixels highlighted red">
       </div>
     </div>
   </div>
@@ -949,6 +980,74 @@ function startPreview(){
   if (PV_FEED_TIMER) clearInterval(PV_FEED_TIMER);
   loadPreviewFeed();
   PV_FEED_TIMER = setInterval(loadPreviewFeed, 4000);
+
+  PV_SEL = [];
+  $('#pvdiffwrap').hidden = true;
+  loadPvSnapshots();
+}
+
+/* ── before/after ─────────────────────────────────────────────────────────
+   The gap this closes: Live Preview only ever showed CURRENT state, live — no way to see what
+   actually changed between two points while watching a rebuild happen. Snapshot takes a real
+   screenshot server-side (unifyd/preview_shot.py, headless Chrome) and stores it; picking any two
+   thumbnails renders a red-highlighted diff overlay + %. No number here is fabricated — diff_pct
+   and the overlay both come straight back from the diff endpoint. */
+let PV_SEL = [];   // up to 2 selected snapshot keys; a 3rd pick evicts the oldest
+
+async function pvSnapshot(){
+  if (!PV_BASE_URL) { alert('Watch a URL first.'); return; }
+  const btn = $('#pvsnap');
+  btn.disabled = true; const was = btn.textContent; btn.textContent = 'capturing…';
+  try {
+    const r = await (await fetch('/api/cockpit/preview-snapshot', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: PV_BASE_URL})
+    })).json();
+    if (!r.ok) alert('Snapshot failed: ' + (r.error || 'unknown error'));
+    else await loadPvSnapshots();
+  } catch(e) { alert('Snapshot failed: ' + e); }
+  btn.disabled = false; btn.textContent = was;
+}
+
+async function loadPvSnapshots(){
+  if (!PV_BASE_URL) { $('#pvsnaps').innerHTML = ''; return; }
+  let r = null;
+  try { r = await (await fetch('/api/cockpit/preview-snapshots?url=' + encodeURIComponent(PV_BASE_URL))).json(); }
+  catch(e){}
+  const snaps = (r && r.ok) ? r.snapshots : [];
+  $('#pvsnaps').innerHTML = snaps.map(s => {
+    const sel = PV_SEL.indexOf(s.key);
+    const cls = sel === 0 ? 'sel-a' : (sel === 1 ? 'sel-b' : '');
+    const tag = sel === 0 ? '<span class="pvsnaptag">A</span>' : (sel === 1 ? '<span class="pvsnaptag">B</span>' : '');
+    return '<div class="pvsnap '+cls+'" data-key="'+esc(s.key)+'">'+tag
+      + '<img src="/api/cockpit/preview-shot?key='+encodeURIComponent(s.key)+'" loading="lazy">'
+      + '<div class="pvsnapwhen">'+esc(new Date(s.ts*1000).toLocaleTimeString())+'</div></div>';
+  }).join('');
+}
+
+async function pvToggleSnap(key){
+  const i = PV_SEL.indexOf(key);
+  if (i >= 0) PV_SEL.splice(i, 1);
+  else { PV_SEL.push(key); if (PV_SEL.length > 2) PV_SEL.shift(); }
+  await loadPvSnapshots();
+  if (PV_SEL.length === 2) await pvRunDiff(PV_SEL[0], PV_SEL[1]);
+  else $('#pvdiffwrap').hidden = true;
+}
+
+async function pvRunDiff(aKey, bKey){
+  $('#pvdiffpct').textContent = 'comparing…';
+  $('#pvdiffwrap').hidden = false;
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/preview-diff', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({a_key: aKey, b_key: bKey})
+    })).json();
+  } catch(e){}
+  if (!r || !r.ok) { $('#pvdiffpct').textContent = 'diff failed: ' + ((r && r.error) || 'unknown error'); return; }
+  $('#pvdiffpct').textContent = r.diff_pct + '% changed'
+    + (r.resized ? ' (sizes differed — compared over the shared region)' : '');
+  $('#pvdiffimg').src = 'data:image/png;base64,' + r.overlay_png_b64;
 }
 async function loadPreviewFeed(){
   let rows = null;
@@ -1017,6 +1116,9 @@ $('#mkticket').addEventListener('click', createTicketFromChat);
 $('#pvwatch').addEventListener('click', startPreview);
 $('#pvurl').addEventListener('keydown', e=>{ if(e.key==='Enter') startPreview(); });
 $('#pvinterval').addEventListener('change', ()=>{ if (PV_BASE_URL) startPreview(); });
+$('#pvsnap').addEventListener('click', pvSnapshot);
+$('#pvsnaps').addEventListener('click', e=>{ const el = e.target.closest('.pvsnap'); if (el) pvToggleSnap(el.dataset.key); });
+$('#pvdiffclear').addEventListener('click', ()=>{ PV_SEL = []; loadPvSnapshots(); $('#pvdiffwrap').hidden = true; });
 loadStanding(); loadBusinessHealth(); loadFleet(false); loadLedger(); loadTickets();
 loadChats().then(loadLog);
 </script>

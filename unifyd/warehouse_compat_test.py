@@ -139,6 +139,14 @@ def flaky(n_fail, exc):
 ok("retry: succeeds after transient blips",
    warehouse._retry(flaky(2, OSError("AWS Error NETWORK_CONNECTION ... curlCode: 28"))) == "ok" and calls["n"] == 3)
 
+# Live occurrence (Cockpit preview-snapshot, 2026-07-30): the FIRST-EVER write to a brand-new small
+# key failed outright with zero retries — "NO_SUCH_UPLOAD during CompleteMultipartUpload" matched
+# none of the existing markers, same failure shape as the read-side gap this file already documents.
+ok("retry: NO_SUCH_UPLOAD (first-write multipart race) is now retried",
+   warehouse._retry(flaky(2, OSError(
+       "When completing multiple part upload for key 'x/index.json' in bucket 'y': "
+       "AWS Error NO_SUCH_UPLOAD during CompleteMultipartUpload"))) == "ok" and calls["n"] == 3)
+
 try:
     warehouse._retry(flaky(9, OSError("curlCode: 28, Timeout was reached")))
     ok("retry: gives up after the cap", False)

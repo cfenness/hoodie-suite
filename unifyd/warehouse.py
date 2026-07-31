@@ -55,10 +55,15 @@ def remote():
 # after a measured false zero: DuckDB surfaced a dropped part-file footer read as
 # "IO Error: Failed to read connection error for HTTP GET to 'https://fly.storage.tigris.dev/…'",
 # which matched none of the write-side markers, so a read blip went straight to the caller as [].
+# NO_SUCH_UPLOAD was added after a live occurrence building Cockpit's preview-snapshot feature: the
+# FIRST-ever write to a brand-new small key ("...NO_SUCH_UPLOAD during CompleteMultipartUpload...")
+# failed outright with zero retries, because the string matched none of the markers below either —
+# same failure SHAPE as the read-side gap this comment already documents, just on the write side.
 _TRANSIENT = ("curlCode: 28", "NETWORK_CONNECTION", "Timeout was reached", "timed out",
               "Connection reset", "SlowDown", "503", "InternalError", "RequestTimeout",
               "Failed to read connection", "connection error for HTTP", "Connection refused",
-              "Unable to connect", "Could not establish connection", "HTTP GET error")
+              "Unable to connect", "Could not establish connection", "HTTP GET error",
+              "NO_SUCH_UPLOAD", "NoSuchUpload")
 
 
 def _retry(fn, what="s3 write"):
