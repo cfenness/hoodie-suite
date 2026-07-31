@@ -77,6 +77,73 @@ def main():
     check("title is capped at 120 chars, not left to grow unbounded",
           len(A.derive_title(long_line, "fb")) == 120, A.derive_title(long_line, "fb"))
 
+    # --- 0b. extract_verdict_json: pure function, finds the LAST fenced ```json block --------------
+    qa_report = (
+        "I walked each acceptance criterion and tried to break it.\n\n"
+        "1. Parses cleanly on a fresh input — PASS, ran `python3 publix_test.py`, 12/12 checks ok.\n"
+        "2. Handles the empty-cart edge case — FAIL, raises KeyError on empty rows.\n\n"
+        "```json\n"
+        '{"criteria":[{"text":"Parses cleanly on a fresh input","status":"pass",'
+        '"evidence":"publix_test.py:12/12 checks ok","severity":null},'
+        '{"text":"Handles the empty-cart edge case","status":"fail",'
+        '"evidence":"KeyError at publix.py:97 on empty rows","severity":"major"}],'
+        '"verdict":"fail"}\n'
+        "```\n")
+    qa_verdict = A.extract_verdict_json(qa_report)
+    check("extract_verdict_json parses a realistic QA-shaped report to the exact expected dict",
+          qa_verdict == dict(criteria=[
+              dict(text="Parses cleanly on a fresh input", status="pass",
+                   evidence="publix_test.py:12/12 checks ok", severity=None),
+              dict(text="Handles the empty-cart edge case", status="fail",
+                   evidence="KeyError at publix.py:97 on empty rows", severity="major"),
+          ], verdict="fail"), qa_verdict)
+
+    reviewer_report = (
+        "I reviewed the diff against the acceptance criteria and against what they missed.\n\n"
+        "The parser change at publix.py:97 is correct and covered by a test. The empty-cart path "
+        "is not handled and there is no test for it — that is a real gap.\n\n"
+        "```json\n"
+        '{"verdict":"ship-with-followups","blockers":[],'
+        '"summary":"Core parse fix is solid; empty-cart handling should follow up separately."}\n'
+        "```\n")
+    reviewer_verdict = A.extract_verdict_json(reviewer_report)
+    check("extract_verdict_json parses a realistic REVIEWER-shaped report to the exact expected dict",
+          reviewer_verdict == dict(
+              verdict="ship-with-followups", blockers=[],
+              summary="Core parse fix is solid; empty-cart handling should follow up separately."),
+          reviewer_verdict)
+
+    check("no fenced json block at all returns None",
+          A.extract_verdict_json("Just prose, no code block here.") is None)
+
+    invalid_block = (
+        "Some reasoning first.\n\n"
+        "```json\n"
+        '{"verdict": "ship", blockers: [],}\n'
+        "```\n")
+    check("a fenced block with invalid JSON (unquoted key, trailing comma) returns None, not a raise",
+          A.extract_verdict_json(invalid_block) is None)
+
+    two_blocks = (
+        "Here's the shape I'll fill in, for reference:\n\n"
+        "```json\n"
+        '{"verdict":"ship","blockers":[],"summary":"example shape, not the real answer"}\n'
+        "```\n\n"
+        "Having now actually reviewed it, here's my real verdict.\n\n"
+        "```json\n"
+        '{"verdict":"blocked","blockers":["publix.py:97 empty-cart KeyError"],'
+        '"summary":"Blocked on the empty-cart crash."}\n'
+        "```\n")
+    two_blocks_verdict = A.extract_verdict_json(two_blocks)
+    check("two fenced json blocks: parses the LAST one, not the first",
+          two_blocks_verdict == dict(verdict="blocked",
+                                      blockers=["publix.py:97 empty-cart KeyError"],
+                                      summary="Blocked on the empty-cart crash."),
+          two_blocks_verdict)
+
+    check("empty string input returns None", A.extract_verdict_json("") is None)
+    check("None input returns None", A.extract_verdict_json(None) is None)
+
     tmp = tempfile.mkdtemp(prefix="tickets-")
     old_state, old_tdir, old_edir = A.STATE, A.TICKETS_DIR, A.EPICS_DIR
     A.STATE = tmp
@@ -143,6 +210,10 @@ def main():
               "criteria text" in body6, body6)
         check("the new section is appended, in a real heading", "## Engineer report" in body6, body6)
         check("the appended text is present verbatim", "changed publix.py:97" in body6, body6)
+        check("append_section (3-arg compat wrapper) still stores verdict=None, wasn't broken by "
+              "the new verdict param",
+              "verdict" in rec6["activity"][0] and rec6["activity"][0]["verdict"] is None,
+              rec6["activity"][0])
         idx_criteria = body6.index("criteria text")
         idx_report = body6.index("Engineer report")
         check("the report comes AFTER the original criteria, not prepended",
@@ -170,6 +241,19 @@ def main():
               cost6b["output_tokens"] == 50, cost6b)
         check("cost.by_stage records the per-kind usage",
               cost6b["by_stage"].get("engineer", {}).get("input_tokens") == 100, cost6b)
+
+        # verdict storage: add_activity's new keyword param, default vs explicit
+        act6b0 = A.get(t6b["id"])["activity"][0]
+        check("add_activity with no verdict arg stores verdict=None on the entry "
+              "(key present, not omitted)",
+              "verdict" in act6b0 and act6b0["verdict"] is None, act6b0)
+
+        qa_verdict_payload = dict(criteria=[dict(text="parses cleanly", status="pass",
+                                                   evidence="ok", severity=None)], verdict="pass")
+        A.add_activity(t6b["id"], "qa", "QA", "final check passed", verdict=qa_verdict_payload)
+        rec6b_v = A.get(t6b["id"])
+        check("add_activity(verdict=...) stores the exact dict passed, verbatim",
+              rec6b_v["activity"][-1]["verdict"] == qa_verdict_payload, rec6b_v["activity"][-1])
 
         # --- 5. edit_body: REPLACES, unlike append_section which only ever adds ------------------------
         t9 = A.create("edit test", "original criteria")
