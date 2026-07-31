@@ -254,6 +254,32 @@
   .tflags input{cursor:pointer}
   #tframe{width:100%;height:480px;border:1px solid var(--line);border-radius:var(--rs);margin-top:var(--s3);background:var(--panel)}
 
+  /* ticket activity — the evidence trail: engineer/QA/reviewer/docs reports "Run crew" and
+     "Requires documentation" append to the ticket. Structured verdict up front, reusing .pill
+     exactly (same done/testing/blocked color language as the status pills above), full prose
+     always reachable so nothing a model wrote is ever thrown away. */
+  .tactivity{margin-top:var(--s3)}
+  .actempty{border:1px dashed var(--line);border-radius:var(--rs);padding:var(--s3);
+    color:var(--mut);font-size:12.5px;line-height:1.5}
+  .actentry{border:1px solid var(--line);border-radius:var(--rs);padding:var(--s3);margin-top:var(--s2)}
+  .actentry:first-child{margin-top:0}
+  .ahead{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;font-size:12.5px}
+  .ahead .arole{font-weight:600}
+  .ahead .atime{color:var(--mut);font-family:var(--mono);font-size:11px;margin-left:auto}
+  .acrit{display:flex;align-items:flex-start;gap:var(--s2);padding:var(--s2) 0;
+    border-top:1px solid var(--line);font-size:12.5px;line-height:1.45}
+  .acrit:first-child{border-top:0}
+  .acrit .atext{flex:1;min-width:0}
+  .acrit .aev{display:block;margin-top:3px;color:var(--mut);font-size:11px;word-break:break-word}
+  .asummary{font-size:12.5px;margin:var(--s2) 0;color:var(--ink)}
+  .ablockers{margin:var(--s2) 0 0;padding-left:var(--s4);font-size:12.5px;line-height:1.55}
+  .ablockers li{color:var(--bad);margin-top:2px}
+  .actentry details{margin-top:var(--s2)}
+  .actentry summary{padding:var(--s1) 0}
+  .aprose{white-space:pre-wrap;word-break:break-word;font-size:12.5px;line-height:1.55;
+    color:var(--ink);margin-top:var(--s2)}
+  .actentry > .aprose{margin-top:var(--s2)}
+
   /* ── ZONES ────────────────────────────────────────────────────────────────── */
   /* One page, still — a spatial-thinker's "one surface" isn't a tidiness call, it's cognitive: a
      new tab/page is a context switch that pulls the model out of his head. So this doesn't split
@@ -1170,6 +1196,64 @@ async function epicSelectOptions(t){
   opts += '<option value="__new__">+ New epic…</option>';
   return opts;
 }
+/* ── ticket activity (evidence trail) ────────────────────────────────────────
+   t.activity is chronological, oldest first — rendered in stored order, never reversed.
+   verdict is null for engineer_report/documentation_update always, and CAN be null for
+   qa_report/reviewer_report too (the model's report didn't end with a parseable JSON block) —
+   text_md is the full report either way, so every entry always has a sane render. */
+function actVerdictPill(cat, verdict){
+  if (!verdict) return '';
+  const maps = {
+    qa: {pass:['done','Pass'], fail:['blocked','Fail']},
+    reviewer: {ship:['done','Ship'], 'ship-with-followups':['testing','Ship w/ followups'], blocked:['blocked','Blocked']}
+  };
+  const hit = (maps[cat] || {})[verdict];
+  return hit ? ' <span class="pill '+esc(hit[0])+'">'+esc(hit[1])+'</span>' : '';
+}
+function critRow(c){
+  c = c || {};
+  const stCls = {pass:'done', fail:'blocked', untested:'testing'}[c.status] || '';
+  // '' (minor) is a valid, falsy class value — so presence is checked against the known set of
+  // severities, not truthiness of the mapped class, or "minor" would silently never render.
+  const knownSev = c.severity === 'blocker' || c.severity === 'major' || c.severity === 'minor';
+  const sevCls = c.severity === 'blocker' ? 'blocked' : (c.severity === 'major' ? 'testing' : '');
+  return '<div class="acrit"><span class="pill '+esc(stCls)+'">'+esc(c.status || '?')+'</span>'
+    + '<div class="atext">'+esc(c.text || '')
+    + (c.evidence ? '<span class="mono aev">'+esc(c.evidence)+'</span>' : '') + '</div>'
+    + (knownSev ? '<span class="pill '+esc(sevCls)+'">'+esc(c.severity)+'</span>' : '')
+    + '</div>';
+}
+function renderActivityEntry(a){
+  a = a || {};
+  const v = a.verdict;
+  const time = a.ts ? esc(new Date(a.ts).toLocaleString()) : '';
+  let vpill = '', structured = '';
+  if (v && Array.isArray(v.criteria)){
+    vpill = actVerdictPill('qa', v.verdict);
+    structured = v.criteria.map(critRow).join('');
+  } else if (v && Array.isArray(v.blockers)){
+    vpill = actVerdictPill('reviewer', v.verdict);
+    structured = (v.summary ? '<div class="asummary">'+esc(v.summary)+'</div>' : '')
+      + (v.blockers.length ? '<ul class="ablockers">'
+         + v.blockers.map(b => '<li>'+esc(b)+'</li>').join('') + '</ul>' : '');
+  }
+  const prose = '<div class="aprose">'+esc(a.text_md || '(no output)')+'</div>';
+  // Structured summary is the default view; the full report is never hidden, just collapsed
+  // behind <details> when a summary already stands in for it. Nothing to summarize (engineer
+  // reports, docs updates, unparsed verdicts) shows the prose straight — never behind a click.
+  const body = structured
+    ? structured + '<details><summary>Full report</summary>'+prose+'</details>'
+    : prose;
+  return '<div class="actentry"><div class="ahead">'
+    + '<span class="arole">'+esc(a.role || a.kind || 'Update')+'</span>' + vpill
+    + '<span class="atime">'+time+'</span></div>' + body + '</div>';
+}
+function renderActivity(activity){
+  if (!activity || !activity.length)
+    return '<div class="actempty">No activity yet — run the crew to generate engineer/QA/review reports.</div>';
+  return activity.map(renderActivityEntry).join('');
+}
+
 function prPanelHtml(t){
   const pr = t.pr || {};
   if (pr.number){
@@ -1227,6 +1311,8 @@ async function renderTicketDetail(tid){
     + (t.requires_docs?' checked':'')+'> requires documentation'
     + (t.source_chat_id ? ' &nbsp;·&nbsp; from chat <span class="mono">'+esc(t.source_chat_id)+'</span>' : '')
     + '</label></div>'
+    + '<h2>Activity</h2>'
+    + '<div class="tactivity">'+renderActivity(t.activity)+'</div>'
     + '<iframe id="tframe" title="Ticket body, live" src="md-viewer.html?embed=1&ticket='+encodeURIComponent(tid)+'"></iframe>';
 
   $('#tclose').addEventListener('click', () => { OPEN_TICKET = null; $('#tdetail').innerHTML = ''; });
