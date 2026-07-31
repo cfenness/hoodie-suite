@@ -7588,7 +7588,11 @@ def api_cockpit_tickets_create():
     draft = rec["result"]
     title = T.derive_title(draft, "Ticket from " + chat_id)
     body_md = "## Acceptance criteria\n\n%s\n\n## Source conversation\n\n%s" % (draft, convo)
-    t = T.create(title, body_md, source_chat_id=chat_id)
+    t = T.create(title, body_md, source_chat_id=chat_id,
+                issue_type=body.get("issue_type") or "task",
+                priority=body.get("priority") or "medium",
+                labels=body.get("labels"), story_points=body.get("story_points"),
+                epic_id=body.get("epic_id"))
     return jsonify(t), 200
 
 
@@ -7643,6 +7647,16 @@ def api_cockpit_ticket_patch(tid):
         T.edit_body(tid, body["body_md"])
     if "requires_docs" in body:
         T.set_requires_docs(tid, bool(body["requires_docs"]))
+    # Jira-parity fields — additive, each applied only when present so a caller can patch just one.
+    if any(k in body for k in ("epic_id", "issue_type", "priority", "labels", "story_points")):
+        T.set_fields(tid, epic_id=body.get("epic_id"), issue_type=body.get("issue_type"),
+                    priority=body.get("priority"), labels=body.get("labels"),
+                    story_points=body.get("story_points"))
+    if "pr" in body and isinstance(body["pr"], dict):
+        T.set_pr(tid, **{k: v for k, v in body["pr"].items()
+                         if k in ("number", "url", "branch", "state", "repo")})
+    if "jira" in body and isinstance(body["jira"], dict):
+        T.set_jira(tid, key=body["jira"].get("key"), url=body["jira"].get("url"))
     if "status" in body:
         res = T.advance_status(tid, body["status"])
         if not res.get("ok"):
@@ -7661,7 +7675,7 @@ def api_cockpit_ticket_run(tid):
     if _on_fly():
         return jsonify(error="Crew dispatch is Mac-only, same as chat."), 403
     m = _cockpit_mods()
-    T, roles_mod = m.get("agent_tickets"), m.get("agent_roles")
+    T, roles_mod, M = m.get("agent_tickets"), m.get("agent_roles"), m.get("agent_memory")
     if not (T and roles_mod):
         return jsonify(error="cockpit modules unavailable", detail=m.get("errors")), 200
     rec = T.get(tid)
@@ -7677,7 +7691,17 @@ def api_cockpit_ticket_run(tid):
     if res.get("results") and res["results"][0].get("dry_run"):
         return jsonify(status="dry-run", stages=[r.get("argv_display") for r in res["results"]]), 200
     for r in res["results"]:
-        T.append_section(tid, "%s report" % r["role"].title(), r.get("result") or r.get("error") or "(no output)")
+        kind = "%s_report" % r["role"]
+        result_text = r.get("result") or r.get("error") or "(no output)"
+        T.add_activity(tid, kind, "%s report" % r["role"].title(), result_text, usage=r.get("usage"))
+        # WRITE-BACK: a ticket's crew findings become facts, same mechanism /api/cockpit/chat already
+        # uses on every model-answered miss (agent_memory.remember_answer) — without this, a ticket's
+        # findings vanished the moment it closed and the next similar ticket re-derived everything.
+        if M and not r.get("error") and r.get("result"):
+            try:
+                M.remember_answer("%s — %s" % (rec["title"], r["role"]), r["result"], chat_id=tid)
+            except Exception:
+                pass
     T.advance_status(tid, "testing" if res["ok"] else "blocked")
     if res["ok"]:
         T.advance_status(tid, "done")
@@ -7722,6 +7746,116 @@ def api_cockpit_ticket_docs(tid):
         return jsonify(ok=False, error=dispatch_rec["error"]), 200
     T.append_section(tid, "Documentation update", dispatch_rec.get("result") or "(no output)")
     T.mark_docs_done(tid)
+    return jsonify(ok=True, ticket=T.get(tid)), 200
+
+
+# ── Epics: rollup grouping for tickets ─────────────────────────────────────────────────────────────
+@app.post("/api/cockpit/epics")
+def api_cockpit_epics_create():
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    body = request.get_json(silent=True) or {}
+    title = (body.get("title") or "").strip()
+    if not title:
+        return jsonify(error="title is required"), 400
+    rec = T.create_epic(title, description_md=body.get("description_md") or "",
+                        story_points_planned=body.get("story_points_planned"))
+    return jsonify(rec), 200
+
+
+@app.get("/api/cockpit/epics")
+def api_cockpit_epics_list():
+    """Each row includes its ticket-count/status rollup — the Epics sub-view's whole point is
+    reading epic health at a glance, not one more click per epic to see how many tickets are done."""
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(epics=[]), 200
+    T = m["agent_tickets"]
+    return jsonify(epics=[T.epic_rollup(e["id"]) for e in T.list_epics()]), 200
+
+
+@app.get("/api/cockpit/epics/<eid>")
+def api_cockpit_epic_get(eid):
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    if not T.get_epic(eid):
+        return jsonify(error="not found"), 404
+    return jsonify(T.epic_rollup(eid)), 200
+
+
+@app.patch("/api/cockpit/epics/<eid>")
+def api_cockpit_epic_patch(eid):
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(ok=False, error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    if not T.get_epic(eid):
+        return jsonify(ok=False, error="not found"), 404
+    body = request.get_json(silent=True) or {}
+    ok = T.edit_epic(eid, title=body.get("title"), description_md=body.get("description_md"),
+                     status=body.get("status"), story_points_planned=body.get("story_points_planned"))
+    return jsonify(ok=ok, epic=T.get_epic(eid)), 200
+
+
+# ── Export: the bridge until EPIC-4's real Jira sync exists ─────────────────────────────────────────
+@app.get("/api/cockpit/tickets/export")
+def api_cockpit_tickets_export():
+    """`format=jira-csv` is a direct drag-and-drop into Jira's bulk CSV importer; `format=json` is
+    the full-fidelity record set — the same shape a live sync (EPIC-4 T-4.2) would eventually push,
+    by design, so the export path and that future sync payload converge on one function
+    (agent_tickets.jira_csv / list_tickets) instead of drifting apart."""
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    fmt = (request.args.get("format") or "json").strip().lower()
+    epic_id = request.args.get("epic_id") or None
+    tickets = T.list_tickets(epic_id=epic_id)
+    if fmt == "jira-csv":
+        epics_by_id = {e["id"]: e for e in T.list_epics()}
+        csv_text = T.jira_csv(tickets, epics_by_id)
+        return Response(csv_text, headers={
+            "Content-Type": "text/csv",
+            "Content-Disposition": "attachment; filename=cockpit-tickets.csv"})
+    return jsonify(tickets=tickets), 200
+
+
+@app.post("/api/cockpit/tickets/<tid>/link-pr")
+def api_cockpit_ticket_link_pr(tid):
+    """Best-effort auto-detect via `gh pr view` in the ticket's own worktree — needs a real git
+    checkout and local `gh` auth, so it's Mac-only, same reasoning as every other dispatch-adjacent
+    route (`_on_fly()`). Falls back to a clear 'not linked' rather than erroring the whole ticket;
+    PATCH .../tickets/<id> with a `pr` object always works as the manual path."""
+    if _on_fly():
+        return jsonify(ok=False, error="PR lookup needs a local git checkout — Mac-only."), 403
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(ok=False, error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    if not T.get(tid):
+        return jsonify(ok=False, error="not found"), 404
+    import shutil
+    if not shutil.which("gh"):
+        return jsonify(ok=False, error="gh CLI not found — set pr fields manually via PATCH instead"), 200
+    body = request.get_json(silent=True) or {}
+    cwd = body.get("cwd") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        p = subprocess.run(["gh", "pr", "view", "--json", "number,url,headRefName,state"],
+                           cwd=cwd, capture_output=True, text=True, timeout=15)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:200]), 200
+    if p.returncode != 0:
+        return jsonify(ok=False, error=(p.stderr or "no PR found for this branch").strip()[:200]), 200
+    try:
+        info = json.loads(p.stdout)
+    except Exception:
+        return jsonify(ok=False, error="gh returned unparseable output"), 200
+    T.set_pr(tid, number=info.get("number"), url=info.get("url"),
+            branch=info.get("headRefName"), state=info.get("state"))
     return jsonify(ok=True, ticket=T.get(tid)), 200
 
 
