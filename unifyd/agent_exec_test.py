@@ -13,6 +13,7 @@ as a prompt argument" — an error naming the prompt while the actual cause was 
 """
 import json
 import os
+import shutil
 import sys
 import tempfile
 
@@ -102,29 +103,79 @@ def main():
 
     # --- 5. the billing rail must be reported honestly -------------------------------------------
     a = X.auth_mode()
-    for f in ("cli", "api_key_in_env", "mode"):
+    for f in ("cli", "api_key_in_env", "metered_allowed", "mode"):
         check("auth_mode exposes %s" % f, f in a, sorted(a))
     check("auth_mode never returns a secret value",
           not any(isinstance(v, str) and v.startswith("sk-") for v in a.values()), "leaked")
     check("mode is labelled as unverified, not asserted live",
           "unverified" in a["mode"] or a["api_key_in_env"] or "no claude" in a["mode"], a["mode"])
 
-    # A stray API key must WARN, because it silently moves spend onto the metered rail.
+    # --- 5b. metered_allowed()/set_metered_allowed(): the explicit opt-in, fully isolated ----------
+    # `path=` on every call here — never the real machine-local settings file, so this suite can
+    # never leave metered billing switched on for whoever runs it next.
+    tmp_settings_dir = tempfile.mkdtemp(prefix="exec-settings-")
+    tmp_settings = os.path.join(tmp_settings_dir, "exec_settings.json")
+    check("metered_allowed() defaults to False when the settings file doesn't exist yet",
+          X.metered_allowed(path=tmp_settings) is False)
+    X.set_metered_allowed(True, path=tmp_settings)
+    check("set_metered_allowed(True) persists", X.metered_allowed(path=tmp_settings) is True)
+    X.set_metered_allowed(False, path=tmp_settings)
+    check("set_metered_allowed(False) persists too — it's a real toggle, not one-way",
+          X.metered_allowed(path=tmp_settings) is False)
+
+    # --- 5c. ambient ANTHROPIC_API_KEY must never change behavior by itself ------------------------
+    # Isolated via auth_mode(settings_path=tmp_settings) so exercising the METERED-enabled branch
+    # never touches, or persists into, the real machine-local setting.
     had = os.environ.get("ANTHROPIC_API_KEY")
     os.environ["ANTHROPIC_API_KEY"] = "sk-ant-not-a-real-key"
     try:
-        a2 = X.auth_mode()
-        check("a stray API key is detected", a2["api_key_in_env"] is True)
-        check("...and reported as METERED", "METERED" in a2["mode"], a2["mode"])
-        check("...with a warning naming the variable", "ANTHROPIC_API_KEY" in (a2["warning"] or ""),
-              a2["warning"])
-        rec = X.run("anything", dry_run=False)
-        check("a run REFUSES rather than billing the metered rail", bool(rec.get("error")), rec)
+        X.set_metered_allowed(False, path=tmp_settings)
+        a_off = X.auth_mode(settings_path=tmp_settings)
+        check("a stray API key is detected", a_off["api_key_in_env"] is True)
+        check("...but with metered NOT explicitly allowed, mode says it's IGNORED, not METERED",
+              "ignored" in a_off["mode"].lower() and "METERED" not in a_off["mode"], a_off["mode"])
+        check("...and this is NOT surfaced as a `warning` (a handled state, not a problem)",
+              a_off["warning"] is None, a_off["warning"])
+        check("...it IS surfaced as a low-key `note` instead, naming the variable",
+              a_off.get("note") and "ANTHROPIC_API_KEY" in a_off["note"], a_off.get("note"))
+
+        X.set_metered_allowed(True, path=tmp_settings)
+        a_on = X.auth_mode(settings_path=tmp_settings)
+        check("with metered explicitly allowed, mode DOES say METERED", "METERED" in a_on["mode"],
+              a_on["mode"])
+        check("...and this DOES get a `warning` naming the variable — real spend is now possible",
+              a_on["warning"] and "ANTHROPIC_API_KEY" in a_on["warning"], a_on.get("warning"))
+
+        # --- 5d. _dispatch_env(): the pure function dispatch() actually calls — no subprocess ------
+        # This module's own standing rule is "nothing dispatches" in tests (see the file docstring);
+        # _dispatch_env is a pure environment-in/environment-out function specifically so this policy
+        # is testable without ever approaching subprocess.run.
+        synthetic_env = {"PATH": "/usr/bin", "ANTHROPIC_API_KEY": "sk-ant-not-a-real-key",
+                         "HOME": "/home/x"}
+        env_off = X._dispatch_env(dict(api_key_in_env=True, metered_allowed=False),
+                                  base_env=synthetic_env)
+        check("metered NOT allowed: _dispatch_env strips ANTHROPIC_API_KEY from a COPY",
+              env_off is not None and "ANTHROPIC_API_KEY" not in env_off, env_off)
+        check("...but keeps everything else untouched", env_off.get("PATH") == "/usr/bin"
+              and env_off.get("HOME") == "/home/x", env_off)
+        check("...and never mutates the caller's dict (a copy, not the original)",
+              "ANTHROPIC_API_KEY" in synthetic_env, synthetic_env)
+
+        env_on = X._dispatch_env(dict(api_key_in_env=True, metered_allowed=True),
+                                 base_env=synthetic_env)
+        check("metered explicitly allowed: _dispatch_env returns None (inherit unchanged, "
+              "let the CLI's own precedence apply)", env_on is None, env_on)
+
+        env_no_key = X._dispatch_env(dict(api_key_in_env=False, metered_allowed=False),
+                                     base_env=synthetic_env)
+        check("no key present at all: _dispatch_env returns None regardless of metered_allowed",
+              env_no_key is None, env_no_key)
     finally:
         if had is None:
             os.environ.pop("ANTHROPIC_API_KEY", None)
         else:
             os.environ["ANTHROPIC_API_KEY"] = had
+        shutil.rmtree(tmp_settings_dir, ignore_errors=True)
 
     # --- 6. dry run spends nothing ---------------------------------------------------------------
     rec = X.run("is abc-fws enabled", dry_run=True)

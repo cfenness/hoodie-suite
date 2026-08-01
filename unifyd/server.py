@@ -7066,6 +7066,23 @@ def api_cockpit_auth():
     return jsonify(a), 200
 
 
+@app.post("/api/cockpit/metered")
+def api_cockpit_metered_set():
+    """The explicit opt-in switch for metered API billing — see agent_exec.py's own module notes on
+    why this exists as a real toggle rather than an ambient ANTHROPIC_API_KEY fallback. Body:
+    {metered_allowed: bool}. Persists locally (unifyd/agent_state/cockpit/exec_settings.json,
+    machine-local like everything else in that directory) and takes effect on the very next
+    dispatch — no restart needed."""
+    m = _cockpit_mods()
+    if not m.get("agent_exec"):
+        return jsonify(ok=False, error="agent_exec unavailable"), 200
+    body = request.get_json(silent=True) or {}
+    if "metered_allowed" not in body:
+        return jsonify(ok=False, error="metered_allowed is required"), 400
+    val = m["agent_exec"].set_metered_allowed(bool(body["metered_allowed"]))
+    return jsonify(ok=True, metered_allowed=val), 200
+
+
 @app.get("/api/cockpit/route")
 def api_cockpit_route():
     """Dry-run the routing decision for a task. Never spends anything — this is the cheap moment to
