@@ -268,7 +268,8 @@ def _route_receipt(route):
     return {k: route.get(k) for k in _ROUTE_FIELDS}
 
 
-def add_activity(tid, kind, role_label, text, usage=None, verdict=None, route=None, db=None):
+def add_activity(tid, kind, role_label, text, usage=None, verdict=None, route=None,
+                 attachment=None, db=None):
     """Append one structured entry to the ticket's activity log — the mechanism behind "embed test
     reports as the process goes." Returns False (does nothing) for an unknown ticket, same as before.
     `usage` (an {input_tokens, output_tokens} dict off a dispatch record) rolls into the ticket's
@@ -276,13 +277,17 @@ def add_activity(tid, kind, role_label, text, usage=None, verdict=None, route=No
     (typically `extract_verdict_json(text)`'s result) is stored alongside the full prose, never
     instead of it — a dev reviewing the ticket gets both the structured pass/fail and the reasoning
     behind it, with nothing summarized away. `route` (a dispatch record's own `route` dict) is stored
-    trimmed via `_route_receipt` — the itemized line this stage contributes to `ticket_receipt()`."""
+    trimmed via `_route_receipt` — the itemized line this stage contributes to `ticket_receipt()`.
+    `attachment` is a plain dict reference to evidence that lives elsewhere (a preview_shot.py
+    snapshot key, or a pair of keys + the diff_pct for a visual diff) — this module stores it
+    verbatim and has no opinion on its shape; the caller (server.py) and the renderer (cockpit.html)
+    own that contract, same as `verdict`'s role-specific shapes."""
     rec = get(tid, db=db)
     if not rec:
         return False
     rec.setdefault("activity", []).append(dict(
         ts=_now_ms(), kind=kind, role=role_label, text_md=text, usage=usage or {}, verdict=verdict,
-        route=_route_receipt(route)))
+        route=_route_receipt(route), attachment=attachment))
     if usage:
         cost = rec.setdefault("cost", dict(input_tokens=0, output_tokens=0, by_stage={}))
         cost["input_tokens"] = cost.get("input_tokens", 0) + int(usage.get("input_tokens") or 0)

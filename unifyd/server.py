@@ -7264,6 +7264,16 @@ def api_cockpit_preview_snapshot():
         rec = preview_shot.save(url, png)
     except Exception as e:                                    # noqa: BLE001
         return jsonify(ok=False, error=str(e)[:200]), 502
+    # T-2.2: link this snapshot to the ticket it's evidence FOR, when the caller names one — the
+    # ticket's activity log is where "why this was captured" lives; preview_shot.py itself stays a
+    # plain URL->snapshot store with no ticket awareness of its own.
+    ticket_id = (body.get("ticket_id") or "").strip()
+    if ticket_id:
+        m = _cockpit_mods()
+        if m.get("agent_tickets"):
+            m["agent_tickets"].add_activity(
+                ticket_id, "snapshot", "Snapshot", url,
+                attachment=dict(key=rec["key"], ts=rec["ts"], url=url))
     return jsonify(ok=True, ts=rec["ts"], key=rec["key"]), 200
 
 
@@ -7311,6 +7321,19 @@ def api_cockpit_preview_diff():
     except Exception as e:                                    # noqa: BLE001
         return jsonify(ok=False, error=str(e)[:200]), 500
     overlay_b64 = base64.b64encode(d.pop("overlay_png")).decode()
+    # T-2.2: land the diff's METADATA on the ticket (the two keys + diff_pct), not the overlay image
+    # itself — re-deriving the overlay later is one more POST to this same endpoint with the same
+    # a_key/b_key, so nothing new needs to be stored to keep this evidence reproducible.
+    ticket_id = (body.get("ticket_id") or "").strip()
+    if ticket_id:
+        m = _cockpit_mods()
+        if m.get("agent_tickets"):
+            label = body.get("url") or ""
+            text = ("%s — %.1f%% changed" % (label, d.get("diff_pct") or 0)) if label \
+                else "%.1f%% changed" % (d.get("diff_pct") or 0)
+            m["agent_tickets"].add_activity(
+                ticket_id, "visual_diff", "Visual diff", text,
+                attachment=dict(a_key=a_key, b_key=b_key, diff_pct=d.get("diff_pct"), url=label))
     return jsonify(ok=True, overlay_png_b64=overlay_b64, **d), 200
 
 
