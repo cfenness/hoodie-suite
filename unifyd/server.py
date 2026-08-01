@@ -7037,7 +7037,7 @@ def _cockpit_mods():
     # chats / ready / would-revert cells — while the agent was plainly running and answering every
     # other route. A dependency list that goes stale as modules are added is its own failure mode.
     for name in ("agent_router", "agent_exec", "agent_memory", "agent_chats", "agent_mine", "agent_roles",
-                "agent_checks", "agent_tickets"):
+                "agent_checks", "agent_tickets", "registry"):
         try:
             out[name] = importlib.import_module(name)
         except Exception as e:
@@ -7448,6 +7448,138 @@ def api_cockpit_tactics_savings():
     except Exception as e:
         return jsonify(turns_with_route=0, filler_words_removed=0, tactic_counts={},
                        error=str(e)[:200]), 200
+
+
+# ── The Registry: standing rules across every repo (EPIC-1) ─────────────────────────────────────────
+# Reads are always honest about WHICH machine's ~/.claude/ they're reading — on Fly that's the
+# container's own throwaway filesystem, not the operator's Mac, so it's real data (usually empty)
+# but not the data that matters. Mutations refuse on Fly outright, same reasoning and same pattern
+# as ticket dispatch/docs/link-pr: writing a "law" entry into a container that gets destroyed would
+# look like it worked while never actually reaching a real Claude Code session.
+@app.get("/api/cockpit/registry")
+def api_cockpit_registry_list():
+    m = _cockpit_mods()
+    if not m.get("registry"):
+        return jsonify(entries=[], available=False), 200
+    R = m["registry"]
+    return jsonify(entries=R.list_entries(domain=request.args.get("domain"),
+                                          status=request.args.get("status")),
+                   available=True, on_fly=_on_fly()), 200
+
+
+@app.post("/api/cockpit/registry")
+def api_cockpit_registry_create():
+    if _on_fly():
+        return jsonify(ok=False, error="The Registry only makes sense on your Mac — writing here "
+                       "would land in a container that gets destroyed, never a real session."), 403
+    m = _cockpit_mods()
+    if not m.get("registry"):
+        return jsonify(ok=False, error="registry unavailable"), 200
+    R = m["registry"]
+    body = request.get_json(silent=True) or {}
+    rule_text = (body.get("rule_text") or "").strip()
+    if not rule_text:
+        return jsonify(ok=False, error="rule_text is required"), 400
+    rec = R.create_entry(rule_text, domain=body.get("domain"), scope=body.get("scope") or "global",
+                         status=body.get("status") or "proposed", provenance=body.get("provenance"))
+    return jsonify(rec), 200
+
+
+@app.get("/api/cockpit/registry/<eid>")
+def api_cockpit_registry_get(eid):
+    m = _cockpit_mods()
+    if not m.get("registry"):
+        return jsonify(error="registry unavailable"), 200
+    rec = m["registry"].get_entry(eid)
+    if not rec:
+        return jsonify(error="not found"), 404
+    return jsonify(rec), 200
+
+
+@app.patch("/api/cockpit/registry/<eid>")
+def api_cockpit_registry_patch(eid):
+    if _on_fly():
+        return jsonify(ok=False, error="The Registry only makes sense on your Mac."), 403
+    m = _cockpit_mods()
+    if not m.get("registry"):
+        return jsonify(ok=False, error="registry unavailable"), 200
+    R = m["registry"]
+    if not R.get_entry(eid):
+        return jsonify(ok=False, error="not found"), 404
+    body = request.get_json(silent=True) or {}
+    if any(k in body for k in ("rule_text", "domain", "scope", "provenance")):
+        R.edit_entry(eid, rule_text=body.get("rule_text"), domain=body.get("domain"),
+                     scope=body.get("scope"), provenance=body.get("provenance"))
+    return jsonify(ok=True, entry=R.get_entry(eid)), 200
+
+
+def _registry_status_route(eid, fn):
+    if _on_fly():
+        return jsonify(ok=False, error="The Registry only makes sense on your Mac."), 403
+    m = _cockpit_mods()
+    if not m.get("registry"):
+        return jsonify(ok=False, error="registry unavailable"), 200
+    R = m["registry"]
+    if not R.get_entry(eid):
+        return jsonify(ok=False, error="not found"), 404
+    body = request.get_json(silent=True) or {}
+    res = fn(R, eid, body)
+    status = 200 if res.get("ok") else 409
+    return jsonify(res), status
+
+
+@app.post("/api/cockpit/registry/<eid>/approve")
+def api_cockpit_registry_approve(eid):
+    """proposed -> law, and this is also where a human sets the domain a mined proposal couldn't
+    classify itself — see registry.py's own docstring on why that's never auto-guessed."""
+    return _registry_status_route(eid, lambda R, i, b: R.approve_entry(
+        i, domain=b.get("domain"), scope=b.get("scope")))
+
+
+@app.post("/api/cockpit/registry/<eid>/reject")
+def api_cockpit_registry_reject(eid):
+    return _registry_status_route(eid, lambda R, i, b: R.reject_entry(i))
+
+
+@app.post("/api/cockpit/registry/<eid>/retire")
+def api_cockpit_registry_retire(eid):
+    return _registry_status_route(eid, lambda R, i, b: R.retire_entry(i))
+
+
+@app.post("/api/cockpit/registry/<eid>/reinstate")
+def api_cockpit_registry_reinstate(eid):
+    return _registry_status_route(eid, lambda R, i, b: R.reinstate_entry(i))
+
+
+@app.post("/api/cockpit/registry/mine")
+def api_cockpit_registry_mine():
+    """Run agent_mine's transcript scan and land recurring clusters as proposed entries — see
+    registry.mine_proposals()'s own docstring. Reads ~/.claude/projects, so it's as Mac-only as
+    every other local-filesystem-dependent route here."""
+    if _on_fly():
+        return jsonify(ok=False, error="Mining reads your local transcripts — Mac-only."), 403
+    m = _cockpit_mods()
+    if not m.get("registry"):
+        return jsonify(ok=False, error="registry unavailable"), 200
+    body = request.get_json(silent=True) or {}
+    try:
+        min_count = int(body.get("min_count") or 3)
+    except (TypeError, ValueError):
+        min_count = 3
+    res = m["registry"].mine_proposals(min_count=min_count)
+    return jsonify(ok=True, **res), 200
+
+
+@app.post("/api/cockpit/registry/sync")
+def api_cockpit_registry_sync():
+    """Manual re-sync of ~/.claude/rules/ from current law entries — approve/retire/reinstate
+    already do this automatically; this is the safety valve for "the files look stale, force it"."""
+    if _on_fly():
+        return jsonify(ok=False, error="The Registry only makes sense on your Mac."), 403
+    m = _cockpit_mods()
+    if not m.get("registry"):
+        return jsonify(ok=False, error="registry unavailable"), 200
+    return jsonify(ok=True, **m["registry"].sync_rules_dir()), 200
 
 
 @app.get("/api/cockpit/crew")
