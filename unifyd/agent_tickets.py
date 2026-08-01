@@ -76,6 +76,28 @@ ISSUE_TYPES = ("story", "bug", "task", "chore")
 PRIORITIES = ("lowest", "low", "medium", "high", "highest")
 EPIC_STATUSES = ("open", "in_progress", "done", "cancelled")
 
+# ── ticket-to-ticket links: auto-detected, always overridable ──────────────────────────────────
+# A link always has two sides (Jira issue-links shape): `blocks` on one ticket mirrors
+# `blocked_by` on the other; `relates_to` mirrors itself. LINK_TYPES is the vocabulary the API
+# surface (server.py, cockpit.html) is allowed to use.
+LINK_TYPES = ("blocks", "blocked_by", "relates_to")
+_INVERSE_LINK = {"blocks": "blocked_by", "blocked_by": "blocks", "relates_to": "relates_to"}
+
+# Deliberately explicit, fixed phrasing rather than fuzzy NLP guessing — "a very sharp automated
+# process" means a human can predict exactly what will and won't link before typing it. Checked in
+# this order so "blocked by"/"depends on" are consumed before the plainer "blocks" pattern gets a
+# chance to (it wouldn't match "blocked" anyway — \bblocks?\s+ needs a space right after the verb —
+# but keeping the specific phrasings first makes that non-overlap a design choice, not an accident).
+_LINK_PATTERNS = [
+    (re.compile(r"\bblocked\s*-?\s*by\s+(T-\d+)\b", re.I), "blocked_by"),
+    (re.compile(r"\bdepends?\s+on\s+(T-\d+)\b", re.I), "blocked_by"),
+    (re.compile(r"\bdependent\s+on\s+(T-\d+)\b", re.I), "blocked_by"),
+    (re.compile(r"\bblocks?\s+(T-\d+)\b", re.I), "blocks"),
+    (re.compile(r"\brelates?\s+to\s+(T-\d+)\b", re.I), "relates_to"),
+    (re.compile(r"\brelated\s+to\s+(T-\d+)\b", re.I), "relates_to"),
+    (re.compile(r"\bsee\s+also\s+(T-\d+)\b", re.I), "relates_to"),
+]
+
 _JIRA_ISSUE_TYPE = dict(story="Story", bug="Bug", task="Task", chore="Task")
 _JIRA_PRIORITY = dict(lowest="Lowest", low="Low", medium="Medium", high="High", highest="Highest")
 
@@ -138,6 +160,172 @@ def list_tickets(status=None, epic_id=None, db=None):
     return sorted(rows, key=lambda r: -r.get("updated", 0))
 
 
+_KEY_RE = re.compile(r"^T-(\d+)$")
+
+
+def find_by_key(key, db=None):
+    """Resolve a short display key ('T-7') to its ticket record — case/whitespace-insensitive so a
+    human typing 't-7' in a comment still resolves. Returns None for anything that isn't a real,
+    known key, including garbage input (never raises on a malformed key)."""
+    key = (key or "").strip().upper()
+    if not _KEY_RE.match(key):
+        return None
+    for rec in list_tickets(db=db):
+        if (rec.get("key") or "").upper() == key:
+            return rec
+    return None
+
+
+def _next_key(db=None):
+    """Sequential 'T-N' display key, derived by scanning existing tickets rather than a separate
+    counter file — this module deliberately avoids any shared-mutable-file contention besides the
+    per-ticket files themselves (see the module docstring's ONE FILE PER TICKET section), and
+    ticket creation is rare enough that a directory scan is cheap."""
+    n = 0
+    for rec in list_tickets(db=db):
+        m = _KEY_RE.match(rec.get("key") or "")
+        if m:
+            n = max(n, int(m.group(1)))
+    return "T-%d" % (n + 1)
+
+
+def parse_link_directives(text):
+    """Deterministic scan for explicit link syntax ('blocks T-12', 'blocked by T-7', 'depends on
+    T-9', 'relates to T-3', 'see also T-3') — see _LINK_PATTERNS' docstring comment for why this is
+    fixed phrasing, not fuzzy matching. Returns [(type, key), ...] in LINK_TYPES order of first
+    appearance, deduplicated within this one text."""
+    seen, out = set(), []
+    for pat, ltype in _LINK_PATTERNS:
+        for m in pat.finditer(text or ""):
+            key = m.group(1).upper()
+            if (ltype, key) not in seen:
+                seen.add((ltype, key))
+                out.append((ltype, key))
+    return out
+
+
+def _has_link(rec, ltype, other_id):
+    return any(l.get("type") == ltype and l.get("ticket_id") == other_id
+              for l in (rec or {}).get("links") or [])
+
+
+def _is_dismissed(rec, ltype, other_id):
+    return any(d.get("type") == ltype and d.get("ticket_id") == other_id
+              for d in (rec or {}).get("dismissed_links") or [])
+
+
+def _resolve_ticket_ref(ref, db=None):
+    """`ref` may be a full ticket id or a display key ('T-7') — resolve either shape to a record."""
+    return get(ref, db=db) or find_by_key(ref, db=db)
+
+
+def add_link(tid, other_ref, ltype, source="manual", db=None):
+    """Link `tid` -> `other_ref` (type `ltype`), and the mirrored inverse on the other ticket
+    (blocks <-> blocked_by, relates_to <-> relates_to) — a link always has two sides, same as a
+    Jira issue link, so either ticket's detail view shows the relationship without a second lookup.
+
+    `other_ref` may be a display key ('T-7') or a full ticket id. An explicit add — manual or a
+    fresh auto-detection — always clears any prior dismissal of this exact pair: if a human
+    relinks something they'd previously removed, or the text says it again, that means they want
+    it linked, not still suppressed."""
+    if ltype not in LINK_TYPES:
+        return dict(ok=False, error="type must be one of: %s" % ", ".join(LINK_TYPES))
+    rec = get(tid, db=db)
+    if not rec:
+        return dict(ok=False, error="not found")
+    other = _resolve_ticket_ref(other_ref, db=db)
+    if not other:
+        return dict(ok=False, error="no ticket matches %r" % (other_ref,))
+    if other["id"] == rec["id"]:
+        return dict(ok=False, error="a ticket cannot link to itself")
+    inv = _INVERSE_LINK[ltype]
+    # The one direct contradiction worth refusing: A blocks B and B blocks A can't both be true.
+    # (Longer cycles across 3+ tickets aren't checked — that's real scope creep for what "sharp"
+    # needs to mean here; the two-ticket case is the one that's cheap and unambiguous to catch.)
+    if ltype != "relates_to" and _has_link(other, ltype, rec["id"]):
+        return dict(ok=False, error="%s already %s %s — can't also %s it back"
+                    % (other.get("key") or other["id"], ltype, rec.get("key") or tid, ltype))
+    now = _now_ms()
+    if not _has_link(rec, ltype, other["id"]):
+        rec.setdefault("links", []).append(dict(type=ltype, ticket_id=other["id"],
+                                                 key=other.get("key"), title=other.get("title"),
+                                                 source=source, at=now))
+        rec["updated"] = now
+    if not _has_link(other, inv, rec["id"]):
+        other.setdefault("links", []).append(dict(type=inv, ticket_id=rec["id"],
+                                                   key=rec.get("key"), title=rec.get("title"),
+                                                   source=source, at=now))
+        other["updated"] = now
+    rec["dismissed_links"] = [d for d in rec.get("dismissed_links") or []
+                              if not (d.get("type") == ltype and d.get("ticket_id") == other["id"])]
+    other["dismissed_links"] = [d for d in other.get("dismissed_links") or []
+                                if not (d.get("type") == inv and d.get("ticket_id") == rec["id"])]
+    _save(rec["id"], rec, db)
+    _save(other["id"], other, db)
+    return dict(ok=True, ticket=rec)
+
+
+def remove_link(tid, other_ref, ltype, db=None):
+    """Remove the link on both sides and remember the removal (`dismissed_links`, on BOTH tickets,
+    for both directions) so a later auto-scan of either ticket's text never silently re-adds what a
+    human explicitly took off — the entire point of 'manual override' is that it sticks."""
+    if ltype not in LINK_TYPES:
+        return dict(ok=False, error="type must be one of: %s" % ", ".join(LINK_TYPES))
+    rec = get(tid, db=db)
+    if not rec:
+        return dict(ok=False, error="not found")
+    other = _resolve_ticket_ref(other_ref, db=db)
+    if not other:
+        return dict(ok=False, error="no ticket matches %r" % (other_ref,))
+    inv = _INVERSE_LINK[ltype]
+    now = _now_ms()
+    before = len(rec.get("links") or [])
+    rec["links"] = [l for l in rec.get("links") or []
+                    if not (l.get("type") == ltype and l.get("ticket_id") == other["id"])]
+    other["links"] = [l for l in other.get("links") or []
+                      if not (l.get("type") == inv and l.get("ticket_id") == rec["id"])]
+    rec.setdefault("dismissed_links", []).append(dict(type=ltype, ticket_id=other["id"], at=now))
+    other.setdefault("dismissed_links", []).append(dict(type=inv, ticket_id=rec["id"], at=now))
+    rec["updated"] = now
+    other["updated"] = now
+    _save(rec["id"], rec, db)
+    _save(other["id"], other, db)
+    return dict(ok=True, removed=before != len(rec["links"]))
+
+
+def _apply_auto_links(tid, text, db=None):
+    """Scan `text` for explicit directive syntax (see parse_link_directives) and add any real
+    matches as auto-sourced links — skipping a ticket referencing its own key, an unknown key, and
+    any pair a human already dismissed on this ticket. Called after every write that can introduce
+    new link text: create(), edit_body(), add_activity()/append_section()."""
+    for ltype, key in parse_link_directives(text):
+        rec = get(tid, db=db)
+        if not rec or (rec.get("key") or "").upper() == key:
+            continue
+        other = find_by_key(key, db=db)
+        if not other or other["id"] == rec["id"] or _is_dismissed(rec, ltype, other["id"]):
+            continue
+        add_link(tid, other["id"], ltype, source="auto", db=db)
+
+
+def blocking_status(tid, db=None):
+    """Whether `tid` is currently blocked by an OPEN blocking ticket — 'open' meaning not `done`
+    and not `cancelled`, so a blocker that ships or gets cancelled stops counting the moment it
+    resolves, with no manual cleanup needed on the blocked ticket's side."""
+    rec = get(tid, db=db)
+    if not rec:
+        return dict(blocked=False, by=[])
+    by = []
+    for l in rec.get("links") or []:
+        if l.get("type") != "blocked_by":
+            continue
+        other = get(l.get("ticket_id"), db=db)
+        if other and other.get("status") not in ("done", "cancelled"):
+            by.append(dict(id=other["id"], key=other.get("key"), title=other.get("title"),
+                          status=other.get("status")))
+    return dict(blocked=bool(by), by=by)
+
+
 _HEADING = re.compile(r"^#{1,6}\s*(.*)$")
 
 
@@ -195,11 +383,12 @@ def create(title, description_md, source_chat_id=None, requires_docs=False,
     tid = "ticket:" + hashlib.sha256(("%s%r" % (time.time(), title)).encode()).hexdigest()[:12]
     now = _now_ms()
     rec = dict(
-        id=tid, title=title, status="draft",
+        id=tid, key=_next_key(db=db), title=title, status="draft",
         status_history=[dict(status="draft", at=now)],
         issue_type=issue_type, priority=priority, labels=list(labels or []),
         story_points=story_points, epic_id=epic_id,
         description_md=description_md, activity=[],
+        links=[], dismissed_links=[],
         source_chat_id=source_chat_id, requires_docs=bool(requires_docs), docs_done=False,
         pr=dict(number=None, url=None, branch=None, state=None, repo=None),
         jira=dict(key=None, url=None, last_synced_at=None),
@@ -207,7 +396,11 @@ def create(title, description_md, source_chat_id=None, requires_docs=False,
         created=now, updated=now,
     )
     _save(tid, rec, db)
-    return rec
+    # Auto-link off the description text itself — a PM draft that opens with "blocks T-9" links
+    # immediately, no separate step. Re-fetches below because _apply_auto_links may have mutated
+    # `rec` (and the OTHER ticket's file) via add_link()'s own save.
+    _apply_auto_links(tid, description_md, db=db)
+    return get(tid, db=db)
 
 
 def render_markdown(rec):
@@ -295,6 +488,7 @@ def add_activity(tid, kind, role_label, text, usage=None, verdict=None, route=No
         cost.setdefault("by_stage", {})[kind] = usage
     rec["updated"] = _now_ms()
     _save(tid, rec, db)
+    _apply_auto_links(tid, text, db=db)
     return True
 
 
@@ -345,14 +539,22 @@ def edit_body(tid, body_md, db=None):
     rec["description_md"] = body_md
     rec["updated"] = _now_ms()
     _save(tid, rec, db)
+    _apply_auto_links(tid, body_md, db=db)
     return True
 
 
-def advance_status(tid, new_status, db=None):
+def advance_status(tid, new_status, db=None, override_block=False):
     """Forward-only, byte-for-byte the same ladder logic as server.py's order_status_ep: `new_status`
     must be a known flow step or a sink; a closed ticket (`done`) refuses anything but itself;
     stepping backward within the flow is rejected. Returns {ok, status, status_history} either way —
-    the caller decides what an ok=False means (an HTTP 409, a CLI error), this module doesn't."""
+    the caller decides what an ok=False means (an HTTP 409, a CLI error), this module doesn't.
+
+    BLOCKING GATE: a forward move (anything in TICKET_FLOW — the `blocked`/`cancelled` sinks stay
+    reachable regardless, same as always) refuses while `blocking_status` reports an open blocker,
+    unless `override_block=True`. An override still lands (this is manual override, not a hard
+    stop) but is recorded in `status_history` alongside which tickets were blocking at the time —
+    so "why did this move while blocked" is always answerable from the ticket's own audit trail,
+    never a silent bypass."""
     rec = get(tid, db=db)
     if not rec:
         return dict(ok=False, error="not found")
@@ -366,8 +568,17 @@ def advance_status(tid, new_status, db=None):
     if new_status not in SINKS and cur in TICKET_FLOW and new_status in TICKET_FLOW and \
             TICKET_FLOW.index(new_status) < TICKET_FLOW.index(cur):
         return dict(ok=False, error="can't move a ticket backward (%s -> %s)" % (cur, new_status))
+    blocking = blocking_status(tid, db=db)
+    if new_status in TICKET_FLOW and blocking["blocked"] and not override_block:
+        return dict(ok=False, blocked_by=blocking["by"],
+                    error="blocked by %s — override to proceed anyway"
+                    % ", ".join(b.get("key") or b["id"] for b in blocking["by"]))
     rec["status"] = new_status
-    rec.setdefault("status_history", []).append(dict(status=new_status, at=_now_ms()))
+    entry = dict(status=new_status, at=_now_ms())
+    if new_status in TICKET_FLOW and blocking["blocked"] and override_block:
+        entry["override_block"] = True
+        entry["blocked_by"] = blocking["by"]
+    rec.setdefault("status_history", []).append(entry)
     rec["updated"] = _now_ms()
     _save(tid, rec, db)
     return dict(ok=True, status=new_status, status_history=rec["status_history"])

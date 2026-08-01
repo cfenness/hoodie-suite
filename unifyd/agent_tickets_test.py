@@ -609,6 +609,130 @@ def main():
               vel_empty["tickets_done"] == 0 and vel_empty["story_points"] == 0
               and vel_empty["window_days"] == 7 and vel_empty["epic_id"] is None, vel_empty)
 
+        # --- 10. parse_link_directives: fixed phrasing, not fuzzy (auto-link + manual override) -------
+        d1 = A.parse_link_directives("This blocks T-9 and is blocked by T-3.")
+        check("'blocks T-9' parses as ('blocks', 'T-9')", ("blocks", "T-9") in d1, d1)
+        check("'blocked by T-3' parses as ('blocked_by', 'T-3'), NOT also matched by the blocks pattern",
+              ("blocked_by", "T-3") in d1 and ("blocks", "T-3") not in d1, d1)
+        d2 = A.parse_link_directives("Depends on T-5. Also relates to T-6 — see also T-7.")
+        check("'depends on' maps to blocked_by",
+              ("blocked_by", "T-5") in d2, d2)
+        check("'relates to' and 'see also' both map to relates_to",
+              ("relates_to", "T-6") in d2 and ("relates_to", "T-7") in d2, d2)
+        d3 = A.parse_link_directives("blocks T-1 blocks T-1 blocks T-1")
+        check("repeated identical directives dedupe to one entry",
+              d3.count(("blocks", "T-1")) == 1, d3)
+        d4 = A.parse_link_directives("this is unblocked and works fine, no directive here")
+        check("plain prose with no exact phrasing produces nothing — not fuzzy-matched",
+              d4 == [], d4)
+
+        ldb = {}
+        l1 = A.create("link ticket one", "first", db=ldb)
+        l2 = A.create("link ticket two", "second", db=ldb)
+        check("create() assigns sequential display keys", l1["key"] == "T-1" and l2["key"] == "T-2",
+              (l1["key"], l2["key"]))
+
+        # --- 11. auto-link on create(): description text alone links two real tickets ------------------
+        l3 = A.create("link ticket three", "this blocks %s" % l1["key"], db=ldb)
+        l1_after = A.get(l1["id"], db=ldb)
+        check("auto-link on create(): the NEW ticket got a 'blocks' link to the referenced key",
+              A.get(l3["id"], db=ldb)["links"] == [dict(type="blocks", ticket_id=l1["id"],
+                    key=l1["key"], title=l1["title"], source="auto",
+                    at=A.get(l3["id"], db=ldb)["links"][0]["at"])])
+        check("...and the mirror ('blocked_by') landed on the REFERENCED ticket automatically",
+              any(l["type"] == "blocked_by" and l["ticket_id"] == l3["id"] and l["source"] == "auto"
+                  for l in l1_after["links"]), l1_after["links"])
+
+        # --- 12. auto-link on add_activity()/edit_body(): not just create() ----------------------------
+        A.add_activity(l2["id"], "note", "Note", "actually this relates to %s" % l1["key"], db=ldb)
+        check("auto-link fires from add_activity() text too",
+              any(l["type"] == "relates_to" and l["ticket_id"] == l1["id"]
+                  for l in A.get(l2["id"], db=ldb)["links"]), A.get(l2["id"], db=ldb)["links"])
+        A.edit_body(l2["id"], "revised criteria — blocked by %s" % l3["key"], db=ldb)
+        check("auto-link fires from edit_body() text too",
+              any(l["type"] == "blocked_by" and l["ticket_id"] == l3["id"]
+                  for l in A.get(l2["id"], db=ldb)["links"]), A.get(l2["id"], db=ldb)["links"])
+
+        # --- 13. manual add_link/remove_link: symmetric, self/contradiction refused --------------------
+        mdb = {}
+        m1 = A.create("m1", "c", db=mdb)
+        m2 = A.create("m2", "c", db=mdb)
+        r_self = A.add_link(m1["id"], m1["key"], "blocks", db=mdb)
+        check("a ticket cannot link to itself", not r_self["ok"], r_self)
+        r_bad_type = A.add_link(m1["id"], m2["key"], "nope", db=mdb)
+        check("an unknown link type is refused", not r_bad_type["ok"], r_bad_type)
+        r_add = A.add_link(m1["id"], m2["key"], "blocks", source="manual", db=mdb)
+        check("manual add_link succeeds", r_add["ok"], r_add)
+        check("manual link is tagged source=manual (distinct from auto)",
+              A.get(m1["id"], db=mdb)["links"][0]["source"] == "manual",
+              A.get(m1["id"], db=mdb)["links"])
+        r_contra = A.add_link(m2["id"], m1["key"], "blocks", db=mdb)
+        check("the direct 2-ticket contradiction (B blocks A when A already blocks B) is refused",
+              not r_contra["ok"], r_contra)
+        r_relates_both_ways = A.add_link(m2["id"], m1["key"], "relates_to", db=mdb)
+        check("relates_to has no directional contradiction — both tickets can relate to each other",
+              r_relates_both_ways["ok"], r_relates_both_ways)
+
+        r_rm = A.remove_link(m1["id"], m2["key"], "blocks", db=mdb)
+        check("remove_link succeeds and reports something was actually removed", r_rm["ok"] and r_rm["removed"], r_rm)
+        check("removal cleared the link on BOTH sides",
+              not A.get(m1["id"], db=mdb)["links"] or all(l["type"] != "blocks" for l in A.get(m1["id"], db=mdb)["links"])
+              , A.get(m1["id"], db=mdb)["links"])
+        check("...and the mirrored 'blocked_by' is gone from the other ticket too",
+              all(l["type"] != "blocked_by" for l in A.get(m2["id"], db=mdb)["links"]),
+              A.get(m2["id"], db=mdb)["links"])
+
+        # --- 14. dismissal sticks: a manual removal is not silently re-added by a later auto-scan ------
+        A.edit_body(m1["id"], "reminder: this blocks %s" % m2["key"], db=mdb)
+        check("re-editing the body with the SAME directive text does NOT resurrect the manually "
+              "removed 'blocks' link (the unrelated relates_to link from the contradiction test above "
+              "is still legitimately there, so this checks the specific dismissed type, not 'any link')",
+              all(not (l["type"] == "blocks" and l["ticket_id"] == m2["id"])
+                  for l in A.get(m1["id"], db=mdb)["links"]),
+              A.get(m1["id"], db=mdb)["links"])
+
+        # --- 15. blocking_status + advance_status's blocking gate (with manual override) ---------------
+        bdb = {}
+        blocker = A.create("blocker ticket", "c", db=bdb)
+        blocked = A.create("blocked ticket", "c", db=bdb)
+        A.add_link(blocked["id"], blocker["key"], "blocked_by", db=bdb)
+        bs = A.blocking_status(blocked["id"], db=bdb)
+        check("blocking_status reports blocked while the blocker is open",
+              bs["blocked"] and bs["by"][0]["id"] == blocker["id"], bs)
+
+        adv_refused = A.advance_status(blocked["id"], "accepted", db=bdb)
+        check("advance_status refuses to move a blocked ticket forward without override",
+              not adv_refused["ok"] and adv_refused.get("blocked_by"), adv_refused)
+        check("...and the still-draft ticket's status did not change",
+              A.get(blocked["id"], db=bdb)["status"] == "draft")
+
+        adv_override = A.advance_status(blocked["id"], "accepted", db=bdb, override_block=True)
+        check("override_block=True lets the SAME move through",
+              adv_override["ok"] and adv_override["status"] == "accepted", adv_override)
+        hist = A.get(blocked["id"], db=bdb)["status_history"][-1]
+        check("the override is recorded in status_history, not silent",
+              hist.get("override_block") is True and hist.get("blocked_by"), hist)
+
+        # once the blocker resolves, blocking_status clears and a NEW ticket's forward move needs no override
+        A.advance_status(blocker["id"], "accepted", db=bdb)
+        A.advance_status(blocker["id"], "in_progress", db=bdb)
+        A.advance_status(blocker["id"], "testing", db=bdb)
+        A.advance_status(blocker["id"], "done", db=bdb)
+        bs_after = A.blocking_status(blocked["id"], db=bdb)
+        check("a done blocker stops counting — blocking_status clears with no cleanup on the blocked side",
+              not bs_after["blocked"], bs_after)
+        adv_clear = A.advance_status(blocked["id"], "in_progress", db=bdb)
+        check("advance_status now succeeds without override once the blocker is done",
+              adv_clear["ok"], adv_clear)
+
+        # find_by_key: case/whitespace-insensitive, garbage-safe
+        check("find_by_key resolves lowercase/whitespace variants",
+              A.find_by_key(" t-1 ", db=ldb) is not None
+              and A.find_by_key(" t-1 ", db=ldb)["id"] == l1["id"])
+        check("find_by_key returns None for garbage, never raises",
+              A.find_by_key("not-a-key", db=ldb) is None and A.find_by_key("", db=ldb) is None
+              and A.find_by_key(None, db=ldb) is None)
+
     finally:
         A.STATE, A.TICKETS_DIR, A.EPICS_DIR = old_state, old_tdir, old_edir
 
