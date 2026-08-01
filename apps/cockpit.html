@@ -137,6 +137,11 @@
 
   /* ── FLEET ────────────────────────────────────────────────────────────────── */
   .fleet{overflow-x:auto}
+  /* Same reasoning as .fleet above: #tickets is 7 fixed-width columns (582px+ before Title's own
+     content), and .card/.wrap don't clip — without this, a narrow viewport doesn't just crop the
+     table, it pushes the WHOLE page into horizontal body scroll. #epicsview gets the same
+     treatment for consistency even though its 5 columns are less likely to overflow. */
+  #ticketsview, #epicsview{overflow-x:auto}
   table{width:100%;border-collapse:collapse;font-size:12.5px}
   th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);
      font-weight:600;padding:var(--s2) var(--s3);border-bottom:1px solid var(--line);white-space:nowrap;line-height:1}
