@@ -20,6 +20,7 @@
     --sans:var(--disp);
     --bk-intel:#C2622C; --bk-retail:#2F4A7A; --bk-ops:#2FA24C; --bk-master:#8A5FB0; --bk-comm:#8A3345;
     --bk-collect:#4B9CD3;   /* Carolina blue — Hoodie Collect's section colour */
+    --bk-cockpit:#B8860B;   /* gold — Hoodie Cockpit's own section colour, distinct from every other bucket */
     --rail-w:250px;
   }
   @media (prefers-color-scheme:dark){:root{
@@ -29,6 +30,7 @@
     --good:#5FB58E; --good-bg:#1A2C25; --warn:#D0A14A; --warn-bg:#2C2618; --bad:#DB7C6E; --bad-bg:#2E1F1D;
     --bk-intel:#D8814A; --bk-retail:#6E90CC; --bk-ops:#4CBE6C; --bk-master:#A986C8; --bk-comm:#CB7185;
     --bk-collect:#6FB3DE;   /* Carolina blue, lifted for the dark palette */
+    --bk-cockpit:#D4AF37;   /* gold, lifted for the dark palette */
   }}
   :root[data-theme="dark"]{
     --paper:#12161B; --card:#1A2027; --ink:#E7ECF1; --ink-2:#C4CDD6; --mut:#8A98A5;
@@ -37,6 +39,7 @@
     --good:#5FB58E; --good-bg:#1A2C25; --warn:#D0A14A; --warn-bg:#2C2618; --bad:#DB7C6E; --bad-bg:#2E1F1D;
     --bk-intel:#D8814A; --bk-retail:#6E90CC; --bk-ops:#4CBE6C; --bk-master:#A986C8; --bk-comm:#CB7185;
     --bk-collect:#6FB3DE;   /* Carolina blue, lifted for the dark palette */
+    --bk-cockpit:#D4AF37;   /* gold, lifted for the dark palette */
   }
   :root[data-theme="light"]{
     --paper:#F1F3F5; --card:#FFFFFF; --ink:#2B3138; --ink-2:#4A535C; --mut:#7A828B;
@@ -326,6 +329,7 @@
   /* Parallel to index.html's APPS — this shell owns its own bucket map.
      bucket ∈ intel | retail | ops | master | commercial | utility. star = bucket front door. */
   var BUCKETS = [
+    {id:"cockpit",   name:"Hoodie Cockpit",      role:"Where you stand, what needs you, one place to act", color:"var(--bk-cockpit)"},
     {id:"intel",     name:"Hoodie Intelligence", role:"Report & present — QBRs, decks, the signal read", color:"var(--bk-intel)"},
     {id:"retail",    name:"Retail Intelligence", role:"One subject, every instrument — menu · price · shelf · market", color:"var(--bk-retail)"},
     {id:"collect",   name:"Hoodie Collect",     role:"Run & prove every scrape — one workbench", color:"var(--bk-collect)"},
@@ -336,6 +340,9 @@
   var UTIL = {id:"utility", name:"Utility", role:"Present, learn, admin", color:"var(--mut)"};
 
   var APPS = [
+    // Hoodie Cockpit — the personal ops home base: model routing, the fact store, one place to act
+    {id:"cockpit",    bucket:"cockpit", star:1, nav:1, mark:"CP", name:"Hoodie Cockpit", desc:"Where you stand, what needs you, and one place to act.", file:"apps/cockpit.html"},
+
     // Hoodie Intelligence
     {id:"dashboard",  bucket:"intel", star:1, nav:1, mark:"HI", name:"Hoodie Intelligence", desc:"Market intelligence & QBR briefs.", file:"apps/dashboard.html"},
     {id:"signal-stack",bucket:"intel",         mark:"SS", name:"Signal Stack", desc:"Menu → Basket → Store → Price on one subject, with a cross-signal verdict.", file:"apps/signal-stack.html"},
