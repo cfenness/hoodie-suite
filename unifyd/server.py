@@ -7781,10 +7781,17 @@ def api_cockpit_tickets_create():
     reference: chat_id can get silently re-keyed to a CLI session id after a dispatch
     (api_cockpit_chat's own comment on this), so a ticket that depended on chat_id staying stable
     could go stale invisibly. Body: {chat_id, cwd?}."""
-    if _on_fly():
-        return jsonify(error="Ticket creation dispatches a model — Mac-only, same as chat."), 403
     m = _cockpit_mods()
     T, C, X, roles_mod = m.get("agent_tickets"), m.get("agent_chats"), m.get("agent_exec"), m.get("agent_roles")
+    # This refusal used to be unconditional, predating #725's API-key fallback for text-only
+    # dispatch — left stale here even after chat's own copy was updated, so "Create ticket" kept
+    # reporting Mac-only long after chat started working on Fly. Drafting a ticket is a pure text
+    # synthesis (the whole conversation is already embedded in the prompt string below; the model
+    # never touches the filesystem), so it's exactly what dispatch_via_api() already supports —
+    # same condition as /api/cockpit/chat: refuse only when NEITHER rail can work.
+    if _on_fly() and X and not X.auth_mode().get("api_key_in_env"):
+        return jsonify(error="Ticket creation is unavailable here — no OAuth session (Fly-served) "
+                             "and no ANTHROPIC_API_KEY configured either."), 403
     if not (T and C and X and roles_mod):
         return jsonify(error="cockpit modules unavailable", detail=m.get("errors")), 200
     body = request.get_json(silent=True) or {}
