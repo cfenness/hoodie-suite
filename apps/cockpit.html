@@ -71,6 +71,17 @@
   .need .what{font-weight:600}
   .need .fix{color:var(--mut);display:block;margin-top:var(--s1)}
 
+  /* The metered-API opt-in control — same visual bar language as .need (border+tint card), neutral
+     tint when off (the safe default, nothing to flag), alert tint only once it's actually on and
+     real spend is possible. */
+  .metctl{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+    flex-wrap:wrap;padding:var(--s3);border:1px solid var(--line);border-radius:var(--rs);
+    background:var(--panel2);font-size:12.5px;margin:var(--s3) 0}
+  .metctl.on{border-color:rgba(229,99,107,.5);background:rgba(229,99,107,.08)}
+  .metctl .mlab{font-weight:600}
+  .metctl .mhint{color:var(--mut);display:block;margin-top:2px;line-height:1.45}
+  .metctl .mrow{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
+
   /* ── CHAT ─────────────────────────────────────────────────────────────────── */
   /* Several conversations live in ONE surface rather than separate pages or windows: switching
      surfaces pulls him away from the model, so the tab strip stays inside the same page. */
@@ -423,6 +434,7 @@
     <div class="zlabel">Where you stand</div>
     <!-- STANDING — answers "where am I" before anything is asked of you -->
     <div class="standing" id="standing"></div>
+    <div id="meteredctl"></div>
     <div class="needs" id="needs"></div>
 
     <!-- BUSINESS HEALTH — the numbers that actually run the business, pulled from the surfaces
@@ -655,9 +667,13 @@ async function loadStanding(){
 
   const cells = [];
   if (auth) {
-    const metered = !!auth.api_key_in_env;
-    cells.push(stat('billing rail', metered ? 'metered' : 'subscription',
-      metered ? 'ANTHROPIC_API_KEY is set' : 'runs on your plan', metered ? 'alert' : 'ok'));
+    // Metered is only EVER active when explicitly allowed — an ambient ANTHROPIC_API_KEY alone
+    // no longer means anything (dispatch() strips it unless metered_allowed is on), so this tile
+    // must key off metered_allowed, not api_key_in_env, or it lies about what's actually billing.
+    const active = !!(auth.api_key_in_env && auth.metered_allowed);
+    const hint = active ? 'explicitly enabled — bills per token'
+      : (auth.api_key_in_env ? 'ANTHROPIC_API_KEY present but ignored' : 'runs on your plan');
+    cells.push(stat('billing rail', active ? 'metered' : 'subscription', hint, active ? 'alert' : 'ok'));
   } else {
     cells.push(stat('billing rail', 'offline', 'agent not running'));
   }
@@ -690,6 +706,7 @@ async function loadStanding(){
       top || (tac.turns_with_route+' turn'+(tac.turns_with_route===1?'':'s')+' tracked')));
   }
   $('#standing').innerHTML = cells.join('');
+  renderMeteredCtl(auth);
 
   const needs = [];
   if (auth && auth.warning) needs.push(need(auth.mode, auth.warning, !!auth.api_key_in_env));
@@ -699,6 +716,53 @@ async function loadStanding(){
   if (!auth) needs.push(need('Agent offline',
     'Start it locally to ask, route and dispatch. Figures below are measured as of ' + AS_OF + '.'));
   $('#needs').innerHTML = needs.join('');
+}
+
+/* ── METERED API OPT-IN ───────────────────────────────────────────────────── *
+ * Metered billing is a switch someone flips, never an ambient ANTHROPIC_API_KEY fallback — see
+ * agent_exec.py's own module notes. Turning it OFF is always the safe direction and applies
+ * immediately; turning it ON reveals an inline confirm first (no native confirm() — this file's
+ * standing rule, same reasoning as showToast's own comment). */
+function meteredCtlHtml(auth){
+  if (!auth) return '';
+  const on = !!auth.metered_allowed;
+  return '<div class="metctl'+(on?' on':'')+'" id="metctlbox">'
+    + '<div><span class="mlab">Metered API '+(on?'ON':'Off')+'</span>'
+    + '<span class="mhint">'+esc(on
+        ? 'Explicitly enabled — dispatches bill ANTHROPIC_API_KEY per token, not your subscription.'
+        : 'Default. Any ambient ANTHROPIC_API_KEY is ignored; every dispatch runs on your subscription.')
+      + '</span></div>'
+    + '<div class="mrow" id="metctlaction">'
+    + (on ? '<button class="ghost sm" id="metoff">Turn off</button>'
+          : '<button class="ghost sm" id="meton">Allow metered API</button>')
+    + '</div></div>';
+}
+function renderMeteredCtl(auth){
+  $('#meteredctl').innerHTML = meteredCtlHtml(auth);
+  if (!auth) return;
+  if (auth.metered_allowed){
+    $('#metoff').addEventListener('click', () => setMetered(false));
+  } else {
+    $('#meton').addEventListener('click', () => {
+      $('#metctlaction').innerHTML =
+          '<span class="mhint" style="margin:0">Bill ANTHROPIC_API_KEY per token instead of your subscription?</span>'
+        + '<button class="sm" id="metconfirm">Confirm</button>'
+        + '<button class="ghost sm" id="metcancel">Cancel</button>';
+      $('#metconfirm').addEventListener('click', () => setMetered(true));
+      $('#metcancel').addEventListener('click', () => renderMeteredCtl(auth));
+    });
+  }
+}
+async function setMetered(val){
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/metered', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({metered_allowed: val})})).json();
+  } catch(e){ r = {ok:false, error:'agent offline'}; }
+  if (!r || !r.ok){ showToast((r && r.error) || 'Could not update the metered setting.', 'error'); return; }
+  showToast(val ? 'Metered API enabled.' : 'Metered API turned off — back on your subscription.', 'info');
+  loadStanding();
 }
 
 /* ── BUSINESS HEALTH ──────────────────────────────────────────────────────── */
