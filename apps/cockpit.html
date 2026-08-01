@@ -1254,6 +1254,16 @@ async function openTicket(tid){
   OPEN_TICKET = tid;
   await renderTicketDetail(tid);
 }
+function closeTicketDetail(){
+  if (!OPEN_TICKET) return;
+  // Return focus to the row that opened this panel — closing shouldn't strand a keyboard user's
+  // focus on a node that just got removed from the page.
+  const row = document.querySelector('#tickets tbody tr[data-tid="'+CSS.escape(OPEN_TICKET)+'"]');
+  OPEN_TICKET = null;
+  $('#tdetail').innerHTML = '';
+  if (row) row.focus();   // row may be gone (e.g. filtered out by an epic switch) — that's fine,
+                          // the browser falls back to <body> rather than erroring on a null focus.
+}
 
 function selectOptions(list, current){
   return list.map(v => '<option value="'+esc(v)+'"'+(v===current?' selected':'')+'>'+esc(v)+'</option>').join('');
@@ -1425,7 +1435,11 @@ async function renderTicketDetail(tid){
     + '<div class="treceipt">'+renderReceipt(t.receipt)+'</div>'
     + '<iframe id="tframe" title="Ticket body, live" src="md-viewer.html?embed=1&ticket='+encodeURIComponent(tid)+'"></iframe>';
 
-  $('#tclose').addEventListener('click', () => { OPEN_TICKET = null; $('#tdetail').innerHTML = ''; });
+  $('#tclose').addEventListener('click', closeTicketDetail);
+  // Focus moves INTO the panel on open (keyboard/screen-reader users land somewhere real, not
+  // wherever the page happened to leave focus) — Close, since it's the one control every ticket
+  // detail always has regardless of status.
+  $('#tclose').focus();
   $('#tsave').addEventListener('click', () => saveCriteria(tid));
   [...document.querySelectorAll('[data-adv]')].forEach(b =>
     b.addEventListener('click', () => advanceTicket(tid, b.dataset.adv)));
@@ -1752,9 +1766,14 @@ document.addEventListener('click', e => {
   }
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && !$('#exportmenu').hidden){
+  if (e.key !== 'Escape') return;
+  // The export menu is the more transient/local overlay, so it closes first if both happen to be
+  // open — same "closest thing first" order a native <dialog> stack would give you.
+  if (!$('#exportmenu').hidden){
     $('#exportmenu').hidden = true; $('#exportbtn').setAttribute('aria-expanded', 'false');
     $('#exportbtn').focus();
+  } else if (OPEN_TICKET){
+    closeTicketDetail();
   }
 });
 $('#exportcsv').addEventListener('click', () => {
