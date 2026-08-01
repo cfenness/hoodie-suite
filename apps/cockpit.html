@@ -619,10 +619,12 @@ function need(what, fix, bad){
 
 /* ── STANDING ─────────────────────────────────────────────────────────────── */
 async function loadStanding(){
-  let auth=null, mem=null, fleet=null;
+  let auth=null, mem=null, fleet=null, vel=null, tac=null;
   try { auth = await (await fetch('/api/cockpit/auth')).json(); } catch(e){}
   try { mem  = await (await fetch('/api/cockpit/memory')).json(); } catch(e){}
   try { fleet= await (await fetch('/api/cockpit/fleet')).json(); } catch(e){}
+  try { vel  = await (await fetch('/api/cockpit/velocity?window_days=7')).json(); } catch(e){}
+  try { tac  = await (await fetch('/api/cockpit/tactics-savings')).json(); } catch(e){}
 
   const cells = [];
   if (auth) {
@@ -642,6 +644,23 @@ async function loadStanding(){
   if (mem && mem.facts != null) {
     const v = mem.verdicts || {};
     cells.push(stat('facts', mem.facts, (v.fresh||0)+' fresh / '+(v.stale||0)+' stale'));
+  }
+  // Velocity/tactic-savings were computed server-side and reachable by URL, but never rendered
+  // anywhere — same "landing, not shown" gap the Activity panel fixed for ticket reports.
+  if (vel && vel.overall) {
+    const o = vel.overall;
+    cells.push(stat('velocity (7d)', o.story_points+' pts',
+      o.tickets_done+' ticket'+(o.tickets_done===1?'':'s')+' done'));
+  }
+  if (tac && tac.turns_with_route != null) {
+    const counts = tac.tactic_counts || {};
+    const top = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]).slice(0,3)
+      .map(k => k+' '+counts[k]).join(' · ');
+    // "words", never "tokens" or "$" — cavemanize()'s count is exact but pre-send and word-shaped;
+    // converting it to an estimated token or dollar figure would be a precision this repo's own
+    // standing rules don't allow (see agent_chats.tactics_savings()'s own docstring).
+    cells.push(stat('filler stripped', tac.filler_words_removed+' words',
+      top || (tac.turns_with_route+' turn'+(tac.turns_with_route===1?'':'s')+' tracked')));
   }
   $('#standing').innerHTML = cells.join('');
 
