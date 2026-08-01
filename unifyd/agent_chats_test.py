@@ -258,6 +258,20 @@ def main():
           (lambda: (C.record_deploy("chat:ghost", "deadbeefdeadbeef", db=db, cwd=junk),
                     C.verify_survival(db=db))[1]["verdict"] == "unknown")())
 
+    # --- 9. tactics_savings: reads back what was ACTUALLY stored per turn, no fresh estimate ------
+    C.add_message("chat:tac1", "assistant", "answer one",
+                  route=dict(tactics=["caveman", "terse"], filler_removed=7), db=db)
+    C.add_message("chat:tac2", "assistant", "answer two",
+                  route=dict(tactics=["terse", "scope"], filler_removed=0), db=db)
+    C.add_message("chat:tac3", "assistant", "answer three", route=None, db=db)   # no route: ignored
+    sav = C.tactics_savings(db=db)
+    check("counts only messages that carry a route", sav["turns_with_route"] == 2, sav)
+    check("filler_words_removed is an exact sum, not an estimate", sav["filler_words_removed"] == 7, sav)
+    check("tactic_counts tallies every tactic across turns",
+          sav["tactic_counts"] == {"caveman": 1, "terse": 2, "scope": 1}, sav["tactic_counts"])
+    check("a tactic never applied in this run is simply absent, not zero-filled",
+          "evidence" not in sav["tactic_counts"], sav["tactic_counts"])
+
     shutil.rmtree(root, ignore_errors=True)
     print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
     return 1 if FAILED else 0

@@ -7037,7 +7037,7 @@ def _cockpit_mods():
     # chats / ready / would-revert cells — while the agent was plainly running and answering every
     # other route. A dependency list that goes stale as modules are added is its own failure mode.
     for name in ("agent_router", "agent_exec", "agent_memory", "agent_chats", "agent_mine", "agent_roles",
-                "agent_checks", "agent_tickets"):
+                "agent_checks", "agent_tickets", "registry"):
         try:
             out[name] = importlib.import_module(name)
         except Exception as e:
@@ -7068,6 +7068,23 @@ def api_cockpit_auth():
         a["mode"] = "read-only (served from Fly — dispatch disabled)"
         a["warning"] = "No OAuth session possible here, and no ANTHROPIC_API_KEY configured either."
     return jsonify(a), 200
+
+
+@app.post("/api/cockpit/metered")
+def api_cockpit_metered_set():
+    """The explicit opt-in switch for metered API billing — see agent_exec.py's own module notes on
+    why this exists as a real toggle rather than an ambient ANTHROPIC_API_KEY fallback. Body:
+    {metered_allowed: bool}. Persists locally (unifyd/agent_state/cockpit/exec_settings.json,
+    machine-local like everything else in that directory) and takes effect on the very next
+    dispatch — no restart needed."""
+    m = _cockpit_mods()
+    if not m.get("agent_exec"):
+        return jsonify(ok=False, error="agent_exec unavailable"), 200
+    body = request.get_json(silent=True) or {}
+    if "metered_allowed" not in body:
+        return jsonify(ok=False, error="metered_allowed is required"), 400
+    val = m["agent_exec"].set_metered_allowed(bool(body["metered_allowed"]))
+    return jsonify(ok=True, metered_allowed=val), 200
 
 
 @app.get("/api/cockpit/route")
@@ -7268,6 +7285,16 @@ def api_cockpit_preview_snapshot():
         rec = preview_shot.save(url, png)
     except Exception as e:                                    # noqa: BLE001
         return jsonify(ok=False, error=str(e)[:200]), 502
+    # T-2.2: link this snapshot to the ticket it's evidence FOR, when the caller names one — the
+    # ticket's activity log is where "why this was captured" lives; preview_shot.py itself stays a
+    # plain URL->snapshot store with no ticket awareness of its own.
+    ticket_id = (body.get("ticket_id") or "").strip()
+    if ticket_id:
+        m = _cockpit_mods()
+        if m.get("agent_tickets"):
+            m["agent_tickets"].add_activity(
+                ticket_id, "snapshot", "Snapshot", url,
+                attachment=dict(key=rec["key"], ts=rec["ts"], url=url))
     return jsonify(ok=True, ts=rec["ts"], key=rec["key"]), 200
 
 
@@ -7315,6 +7342,19 @@ def api_cockpit_preview_diff():
     except Exception as e:                                    # noqa: BLE001
         return jsonify(ok=False, error=str(e)[:200]), 500
     overlay_b64 = base64.b64encode(d.pop("overlay_png")).decode()
+    # T-2.2: land the diff's METADATA on the ticket (the two keys + diff_pct), not the overlay image
+    # itself — re-deriving the overlay later is one more POST to this same endpoint with the same
+    # a_key/b_key, so nothing new needs to be stored to keep this evidence reproducible.
+    ticket_id = (body.get("ticket_id") or "").strip()
+    if ticket_id:
+        m = _cockpit_mods()
+        if m.get("agent_tickets"):
+            label = body.get("url") or ""
+            text = ("%s — %.1f%% changed" % (label, d.get("diff_pct") or 0)) if label \
+                else "%.1f%% changed" % (d.get("diff_pct") or 0)
+            m["agent_tickets"].add_activity(
+                ticket_id, "visual_diff", "Visual diff", text,
+                attachment=dict(a_key=a_key, b_key=b_key, diff_pct=d.get("diff_pct"), url=label))
     return jsonify(ok=True, overlay_png_b64=overlay_b64, **d), 200
 
 
@@ -7378,6 +7418,172 @@ def api_cockpit_ledger():
         return jsonify(m["agent_exec"].ledger(limit=int(request.args.get("limit") or 100))), 200
     except Exception:
         return jsonify([]), 200
+
+
+@app.get("/api/cockpit/velocity")
+def api_cockpit_velocity():
+    """Story points DONE in the trailing window, overall and per epic (v2 spec T-3.2) — reads
+    agent_tickets.velocity()'s own docstring for exactly what "done in the window" means (the
+    ticket's own status_history, not `updated`)."""
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    try:
+        window_days = float(request.args.get("window_days") or 7)
+    except ValueError:
+        window_days = 7
+    overall = T.velocity(window_days=window_days)
+    return jsonify(window_days=window_days, as_of=overall["as_of"], overall=overall,
+                   by_epic=T.velocity_by_epic(window_days=window_days)), 200
+
+
+@app.get("/api/cockpit/tactics-savings")
+def api_cockpit_tactics_savings():
+    """What caveman/terse/etc. actually saved, read back off what was stored per chat turn — see
+    agent_chats.tactics_savings()'s own docstring for exactly what is and isn't claimed here (an
+    exact word count for caveman, usage counts only for the rest — never a fabricated per-turn
+    number for tactics with no deterministic before/after)."""
+    m = _cockpit_mods()
+    if not m.get("agent_chats"):
+        return jsonify(turns_with_route=0, filler_words_removed=0, tactic_counts={}), 200
+    try:
+        return jsonify(m["agent_chats"].tactics_savings()), 200
+    except Exception as e:
+        return jsonify(turns_with_route=0, filler_words_removed=0, tactic_counts={},
+                       error=str(e)[:200]), 200
+
+
+# ── The Registry: standing rules across every repo (EPIC-1) ─────────────────────────────────────────
+# Reads are always honest about WHICH machine's ~/.claude/ they're reading — on Fly that's the
+# container's own throwaway filesystem, not the operator's Mac, so it's real data (usually empty)
+# but not the data that matters. Mutations refuse on Fly outright, same reasoning and same pattern
+# as ticket dispatch/docs/link-pr: writing a "law" entry into a container that gets destroyed would
+# look like it worked while never actually reaching a real Claude Code session.
+@app.get("/api/cockpit/registry")
+def api_cockpit_registry_list():
+    m = _cockpit_mods()
+    if not m.get("registry"):
+        return jsonify(entries=[], available=False), 200
+    R = m["registry"]
+    return jsonify(entries=R.list_entries(domain=request.args.get("domain"),
+                                          status=request.args.get("status")),
+                   available=True, on_fly=_on_fly()), 200
+
+
+@app.post("/api/cockpit/registry")
+def api_cockpit_registry_create():
+    if _on_fly():
+        return jsonify(ok=False, error="The Registry only makes sense on your Mac — writing here "
+                       "would land in a container that gets destroyed, never a real session."), 403
+    m = _cockpit_mods()
+    if not m.get("registry"):
+        return jsonify(ok=False, error="registry unavailable"), 200
+    R = m["registry"]
+    body = request.get_json(silent=True) or {}
+    rule_text = (body.get("rule_text") or "").strip()
+    if not rule_text:
+        return jsonify(ok=False, error="rule_text is required"), 400
+    rec = R.create_entry(rule_text, domain=body.get("domain"), scope=body.get("scope") or "global",
+                         status=body.get("status") or "proposed", provenance=body.get("provenance"))
+    return jsonify(rec), 200
+
+
+@app.get("/api/cockpit/registry/<eid>")
+def api_cockpit_registry_get(eid):
+    m = _cockpit_mods()
+    if not m.get("registry"):
+        return jsonify(error="registry unavailable"), 200
+    rec = m["registry"].get_entry(eid)
+    if not rec:
+        return jsonify(error="not found"), 404
+    return jsonify(rec), 200
+
+
+@app.patch("/api/cockpit/registry/<eid>")
+def api_cockpit_registry_patch(eid):
+    if _on_fly():
+        return jsonify(ok=False, error="The Registry only makes sense on your Mac."), 403
+    m = _cockpit_mods()
+    if not m.get("registry"):
+        return jsonify(ok=False, error="registry unavailable"), 200
+    R = m["registry"]
+    if not R.get_entry(eid):
+        return jsonify(ok=False, error="not found"), 404
+    body = request.get_json(silent=True) or {}
+    if any(k in body for k in ("rule_text", "domain", "scope", "provenance")):
+        R.edit_entry(eid, rule_text=body.get("rule_text"), domain=body.get("domain"),
+                     scope=body.get("scope"), provenance=body.get("provenance"))
+    return jsonify(ok=True, entry=R.get_entry(eid)), 200
+
+
+def _registry_status_route(eid, fn):
+    if _on_fly():
+        return jsonify(ok=False, error="The Registry only makes sense on your Mac."), 403
+    m = _cockpit_mods()
+    if not m.get("registry"):
+        return jsonify(ok=False, error="registry unavailable"), 200
+    R = m["registry"]
+    if not R.get_entry(eid):
+        return jsonify(ok=False, error="not found"), 404
+    body = request.get_json(silent=True) or {}
+    res = fn(R, eid, body)
+    status = 200 if res.get("ok") else 409
+    return jsonify(res), status
+
+
+@app.post("/api/cockpit/registry/<eid>/approve")
+def api_cockpit_registry_approve(eid):
+    """proposed -> law, and this is also where a human sets the domain a mined proposal couldn't
+    classify itself — see registry.py's own docstring on why that's never auto-guessed."""
+    return _registry_status_route(eid, lambda R, i, b: R.approve_entry(
+        i, domain=b.get("domain"), scope=b.get("scope")))
+
+
+@app.post("/api/cockpit/registry/<eid>/reject")
+def api_cockpit_registry_reject(eid):
+    return _registry_status_route(eid, lambda R, i, b: R.reject_entry(i))
+
+
+@app.post("/api/cockpit/registry/<eid>/retire")
+def api_cockpit_registry_retire(eid):
+    return _registry_status_route(eid, lambda R, i, b: R.retire_entry(i))
+
+
+@app.post("/api/cockpit/registry/<eid>/reinstate")
+def api_cockpit_registry_reinstate(eid):
+    return _registry_status_route(eid, lambda R, i, b: R.reinstate_entry(i))
+
+
+@app.post("/api/cockpit/registry/mine")
+def api_cockpit_registry_mine():
+    """Run agent_mine's transcript scan and land recurring clusters as proposed entries — see
+    registry.mine_proposals()'s own docstring. Reads ~/.claude/projects, so it's as Mac-only as
+    every other local-filesystem-dependent route here."""
+    if _on_fly():
+        return jsonify(ok=False, error="Mining reads your local transcripts — Mac-only."), 403
+    m = _cockpit_mods()
+    if not m.get("registry"):
+        return jsonify(ok=False, error="registry unavailable"), 200
+    body = request.get_json(silent=True) or {}
+    try:
+        min_count = int(body.get("min_count") or 3)
+    except (TypeError, ValueError):
+        min_count = 3
+    res = m["registry"].mine_proposals(min_count=min_count)
+    return jsonify(ok=True, **res), 200
+
+
+@app.post("/api/cockpit/registry/sync")
+def api_cockpit_registry_sync():
+    """Manual re-sync of ~/.claude/rules/ from current law entries — approve/retire/reinstate
+    already do this automatically; this is the safety valve for "the files look stale, force it"."""
+    if _on_fly():
+        return jsonify(ok=False, error="The Registry only makes sense on your Mac."), 403
+    m = _cockpit_mods()
+    if not m.get("registry"):
+        return jsonify(ok=False, error="registry unavailable"), 200
+    return jsonify(ok=True, **m["registry"].sync_rules_dir()), 200
 
 
 @app.get("/api/cockpit/crew")
@@ -7601,16 +7807,24 @@ def api_cockpit_tickets_create():
     draft = rec["result"]
     title = T.derive_title(draft, "Ticket from " + chat_id)
     body_md = "## Acceptance criteria\n\n%s\n\n## Source conversation\n\n%s" % (draft, convo)
-    t = T.create(title, body_md, source_chat_id=chat_id)
+    t = T.create(title, body_md, source_chat_id=chat_id,
+                issue_type=body.get("issue_type") or "task",
+                priority=body.get("priority") or "medium",
+                labels=body.get("labels"), story_points=body.get("story_points"),
+                epic_id=body.get("epic_id"))
     return jsonify(t), 200
 
 
 @app.get("/api/cockpit/tickets")
 def api_cockpit_tickets_list():
     m = _cockpit_mods()
+    # `available` is the signal the UI needs to tell "the module is genuinely unavailable" apart
+    # from "there are legitimately zero tickets" — both used to read as an identical `{tickets:[]}`,
+    # which meant a designed offline state and an honest empty state were indistinguishable.
     if not m.get("agent_tickets"):
-        return jsonify(tickets=[]), 200
-    return jsonify(tickets=m["agent_tickets"].list_tickets(status=request.args.get("status"))), 200
+        return jsonify(tickets=[], available=False, error="agent_tickets unavailable"), 200
+    return jsonify(tickets=m["agent_tickets"].list_tickets(status=request.args.get("status")),
+                   available=True), 200
 
 
 @app.get("/api/cockpit/tickets/<tid>")
@@ -7624,6 +7838,7 @@ def api_cockpit_ticket_get(tid):
         return jsonify(error="not found"), 404
     out = dict(rec)
     out["body_md"] = T.read_body(tid)
+    out["receipt"] = T.ticket_receipt(rec)
     return jsonify(out), 200
 
 
@@ -7656,6 +7871,16 @@ def api_cockpit_ticket_patch(tid):
         T.edit_body(tid, body["body_md"])
     if "requires_docs" in body:
         T.set_requires_docs(tid, bool(body["requires_docs"]))
+    # Jira-parity fields — additive, each applied only when present so a caller can patch just one.
+    if any(k in body for k in ("epic_id", "issue_type", "priority", "labels", "story_points")):
+        T.set_fields(tid, epic_id=body.get("epic_id"), issue_type=body.get("issue_type"),
+                    priority=body.get("priority"), labels=body.get("labels"),
+                    story_points=body.get("story_points"))
+    if "pr" in body and isinstance(body["pr"], dict):
+        T.set_pr(tid, **{k: v for k, v in body["pr"].items()
+                         if k in ("number", "url", "branch", "state", "repo")})
+    if "jira" in body and isinstance(body["jira"], dict):
+        T.set_jira(tid, key=body["jira"].get("key"), url=body["jira"].get("url"))
     if "status" in body:
         res = T.advance_status(tid, body["status"])
         if not res.get("ok"):
@@ -7674,7 +7899,7 @@ def api_cockpit_ticket_run(tid):
     if _on_fly():
         return jsonify(error="Crew dispatch is Mac-only, same as chat."), 403
     m = _cockpit_mods()
-    T, roles_mod = m.get("agent_tickets"), m.get("agent_roles")
+    T, roles_mod, M = m.get("agent_tickets"), m.get("agent_roles"), m.get("agent_memory")
     if not (T and roles_mod):
         return jsonify(error="cockpit modules unavailable", detail=m.get("errors")), 200
     rec = T.get(tid)
@@ -7690,7 +7915,22 @@ def api_cockpit_ticket_run(tid):
     if res.get("results") and res["results"][0].get("dry_run"):
         return jsonify(status="dry-run", stages=[r.get("argv_display") for r in res["results"]]), 200
     for r in res["results"]:
-        T.append_section(tid, "%s report" % r["role"].title(), r.get("result") or r.get("error") or "(no output)")
+        kind = "%s_report" % r["role"]
+        result_text = r.get("result") or r.get("error") or "(no output)"
+        # QA/reviewer reports end with a machine-parsed JSON verdict block (agent_roles.ROLES[qa/
+        # reviewer]'s system prompts ask for it); engineer reports never have one, so this is just
+        # None for that stage. Never blocks landing the prose report if parsing finds nothing.
+        verdict = T.extract_verdict_json(result_text) if not r.get("error") else None
+        T.add_activity(tid, kind, "%s report" % r["role"].title(), result_text,
+                       usage=r.get("usage"), verdict=verdict, route=r.get("route"))
+        # WRITE-BACK: a ticket's crew findings become facts, same mechanism /api/cockpit/chat already
+        # uses on every model-answered miss (agent_memory.remember_answer) — without this, a ticket's
+        # findings vanished the moment it closed and the next similar ticket re-derived everything.
+        if M and not r.get("error") and r.get("result"):
+            try:
+                M.remember_answer("%s — %s" % (rec["title"], r["role"]), r["result"], chat_id=tid)
+            except Exception:
+                pass
     T.advance_status(tid, "testing" if res["ok"] else "blocked")
     if res["ok"]:
         T.advance_status(tid, "done")
@@ -7733,8 +7973,122 @@ def api_cockpit_ticket_docs(tid):
         return jsonify(status="dry-run", argv_display=dispatch_rec.get("argv_display")), 200
     if dispatch_rec.get("error"):
         return jsonify(ok=False, error=dispatch_rec["error"]), 200
-    T.append_section(tid, "Documentation update", dispatch_rec.get("result") or "(no output)")
+    # add_activity (not append_section) so this stage's tokens/route land in the ticket's cost
+    # receipt too — a docs run spends real subscription burn same as any other stage.
+    T.add_activity(tid, "documentation_update", "Documentation update",
+                   dispatch_rec.get("result") or "(no output)",
+                   usage=dispatch_rec.get("usage"), route=dispatch_rec.get("route"))
     T.mark_docs_done(tid)
+    return jsonify(ok=True, ticket=T.get(tid)), 200
+
+
+# ── Epics: rollup grouping for tickets ─────────────────────────────────────────────────────────────
+@app.post("/api/cockpit/epics")
+def api_cockpit_epics_create():
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    body = request.get_json(silent=True) or {}
+    title = (body.get("title") or "").strip()
+    if not title:
+        return jsonify(error="title is required"), 400
+    rec = T.create_epic(title, description_md=body.get("description_md") or "",
+                        story_points_planned=body.get("story_points_planned"))
+    return jsonify(rec), 200
+
+
+@app.get("/api/cockpit/epics")
+def api_cockpit_epics_list():
+    """Each row includes its ticket-count/status rollup — the Epics sub-view's whole point is
+    reading epic health at a glance, not one more click per epic to see how many tickets are done."""
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(epics=[]), 200
+    T = m["agent_tickets"]
+    return jsonify(epics=[T.epic_rollup(e["id"]) for e in T.list_epics()]), 200
+
+
+@app.get("/api/cockpit/epics/<eid>")
+def api_cockpit_epic_get(eid):
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    if not T.get_epic(eid):
+        return jsonify(error="not found"), 404
+    return jsonify(T.epic_rollup(eid)), 200
+
+
+@app.patch("/api/cockpit/epics/<eid>")
+def api_cockpit_epic_patch(eid):
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(ok=False, error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    if not T.get_epic(eid):
+        return jsonify(ok=False, error="not found"), 404
+    body = request.get_json(silent=True) or {}
+    ok = T.edit_epic(eid, title=body.get("title"), description_md=body.get("description_md"),
+                     status=body.get("status"), story_points_planned=body.get("story_points_planned"))
+    return jsonify(ok=ok, epic=T.get_epic(eid)), 200
+
+
+# ── Export: the bridge until EPIC-4's real Jira sync exists ─────────────────────────────────────────
+@app.get("/api/cockpit/tickets/export")
+def api_cockpit_tickets_export():
+    """`format=jira-csv` is a direct drag-and-drop into Jira's bulk CSV importer; `format=json` is
+    the full-fidelity record set — the same shape a live sync (EPIC-4 T-4.2) would eventually push,
+    by design, so the export path and that future sync payload converge on one function
+    (agent_tickets.jira_csv / list_tickets) instead of drifting apart."""
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    fmt = (request.args.get("format") or "json").strip().lower()
+    epic_id = request.args.get("epic_id") or None
+    tickets = T.list_tickets(epic_id=epic_id)
+    if fmt == "jira-csv":
+        epics_by_id = {e["id"]: e for e in T.list_epics()}
+        csv_text = T.jira_csv(tickets, epics_by_id)
+        return Response(csv_text, headers={
+            "Content-Type": "text/csv",
+            "Content-Disposition": "attachment; filename=cockpit-tickets.csv"})
+    return jsonify(tickets=tickets), 200
+
+
+@app.post("/api/cockpit/tickets/<tid>/link-pr")
+def api_cockpit_ticket_link_pr(tid):
+    """Best-effort auto-detect via `gh pr view` in the ticket's own worktree — needs a real git
+    checkout and local `gh` auth, so it's Mac-only, same reasoning as every other dispatch-adjacent
+    route (`_on_fly()`). Falls back to a clear 'not linked' rather than erroring the whole ticket;
+    PATCH .../tickets/<id> with a `pr` object always works as the manual path."""
+    if _on_fly():
+        return jsonify(ok=False, error="PR lookup needs a local git checkout — Mac-only."), 403
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(ok=False, error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    if not T.get(tid):
+        return jsonify(ok=False, error="not found"), 404
+    import shutil
+    if not shutil.which("gh"):
+        return jsonify(ok=False, error="gh CLI not found — set pr fields manually via PATCH instead"), 200
+    body = request.get_json(silent=True) or {}
+    cwd = body.get("cwd") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        p = subprocess.run(["gh", "pr", "view", "--json", "number,url,headRefName,state"],
+                           cwd=cwd, capture_output=True, text=True, timeout=15)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:200]), 200
+    if p.returncode != 0:
+        return jsonify(ok=False, error=(p.stderr or "no PR found for this branch").strip()[:200]), 200
+    try:
+        info = json.loads(p.stdout)
+    except Exception:
+        return jsonify(ok=False, error="gh returned unparseable output"), 200
+    T.set_pr(tid, number=info.get("number"), url=info.get("url"),
+            branch=info.get("headRefName"), state=info.get("state"))
     return jsonify(ok=True, ticket=T.get(tid)), 200
 
 

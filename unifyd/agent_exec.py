@@ -115,15 +115,51 @@ def _which_claude():
     return p if p and os.path.exists(p) else None
 
 
-def auth_mode():
-    """Report which billing rail the CLI will actually use — never prints or returns secret values.
+# ── metered opt-in — an explicit switch, never an ambient fallback ─────────────────────────────────
+# ANTHROPIC_API_KEY takes precedence over an OAuth profile in every Anthropic client, so its MERE
+# PRESENCE in the shell — set by some unrelated tool, a sourced .env, whatever — used to be enough to
+# silently move spend onto the metered rail (or, in an earlier version of this module, to hard-refuse
+# every run until the operator went and unset it by hand). Neither is right: the operator should never
+# have to notice and clean up an ambient variable they didn't set for this purpose. So the variable's
+# presence, by itself, now changes NOTHING — dispatch() strips it from the subprocess environment
+# unless this flag is explicitly on. Metered billing is an action someone takes, not a state the
+# environment can drift into.
+EXEC_SETTINGS = os.path.join(STATE, "exec_settings.json")
+
+
+def metered_allowed(path=None):
+    """Defaults to False. Read fresh on every call (not cached) — a change should take effect on the
+    very next dispatch, not after a restart."""
+    p = path or EXEC_SETTINGS
+    try:
+        with open(p, encoding="utf-8") as fh:
+            return bool(json.load(fh).get("metered_allowed", False))
+    except Exception:
+        return False
+
+
+def set_metered_allowed(val, path=None):
+    """Persist the switch. `path` lets tests point this at a tempfile instead of the real
+    machine-local settings file — same isolation convention agent_tickets.py's `db=` uses."""
+    p = path or EXEC_SETTINGS
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(dict(metered_allowed=bool(val)), fh)
+    os.replace(tmp, p)
+    return bool(val)
+
+
+def auth_mode(settings_path=None):
+    """Report which billing rail a run will actually use — never prints or returns secret values.
 
     Surfaced in the Cockpit because 'am I on the subscription or am I burning API credit' is exactly
-    the question that must never be a guess. ANTHROPIC_API_KEY takes precedence over an OAuth
-    profile in every Anthropic client, so a stray exported key silently moves spend onto the metered
-    rail while everything still appears to work. That is the failure this function exists to catch."""
+    the question that must never be a guess. `settings_path` overrides where the metered_allowed()
+    switch is read from — tests point this at a tempfile so exercising the METERED-enabled branch
+    never touches (or persists) the real machine-local setting."""
     out = dict(cli=_which_claude(), api_key_in_env=bool(os.environ.get("ANTHROPIC_API_KEY")),
-               oauth=False, mode="unknown", warning=None)
+               metered_allowed=metered_allowed(settings_path), oauth=False, mode="unknown",
+               warning=None, note=None)
     try:
         cfg = os.path.expanduser("~/.claude.json")
         if os.path.exists(cfg):
@@ -131,24 +167,31 @@ def auth_mode():
                 out["oauth"] = bool(json.load(fh).get("oauthAccount"))
     except Exception:
         pass
-    if out["api_key_in_env"]:
-        out["mode"] = "api-key (METERED)"
-        if out["cli"]:
-            # The CLI IS present (this is a Mac dev box) — a key here is almost certainly an
-            # accident, since ANTHROPIC_API_KEY takes precedence over the OAuth login in every
-            # Anthropic client and would silently move spend onto the metered rail. dispatch()
-            # refuses outright in this shape (see there) rather than trusting this warning alone.
-            out["warning"] = ("ANTHROPIC_API_KEY is set and takes precedence over the OAuth login — "
-                              "runs will bill the metered API, not your subscription. Unset it.")
-        else:
-            # No CLI at all — this IS the Fly-served instance, where an OAuth session can never
-            # exist by construction. Here the key isn't a mistake to warn away from, it's the ONLY
-            # way dispatch can work at all — dispatch_via_api() runs text-only single-turn
-            # completions through it (no tool use, no crew orchestration; those need the CLI's
-            # agentic loop and stay Mac-only).
-            out["warning"] = ("No claude CLI here (expected on the Fly-served instance) — dispatch "
-                              "runs on the metered API key instead of a subscription. Text-only: no "
-                              "tool use, no crew/ticket dispatch.")
+    if out["api_key_in_env"] and out["metered_allowed"]:
+        out["mode"] = "api-key (METERED — explicitly enabled)"
+        out["warning"] = ("Metered billing is explicitly enabled and ANTHROPIC_API_KEY is set — "
+                          "runs will bill the metered API, not your subscription. Turn it off in "
+                          "Cockpit if that's no longer what you want.")
+    elif out["api_key_in_env"] and not out["cli"]:
+        # No CLI at all — this IS the Fly-served instance, where an OAuth session can never exist
+        # by construction. Here the key isn't a mistake to warn away from, it's the ONLY way
+        # dispatch can work at all — dispatch_via_api() runs text-only single-turn completions
+        # through it (no tool use, no crew orchestration; those need the CLI's agentic loop and
+        # stay Mac-only). Not gated behind metered_allowed: on this shape there is no other rail.
+        out["mode"] = "api-key (METERED — no claude CLI on this machine)"
+        out["note"] = ("No claude CLI here (expected on the Fly-served instance) — dispatch runs "
+                       "on the metered API key instead of a subscription. Text-only: no tool use, "
+                       "no crew/ticket dispatch.")
+    elif out["api_key_in_env"]:
+        # Ambient key, metered NOT opted into, CLI present (a Mac dev box): dispatch() strips
+        # ANTHROPIC_API_KEY from the subprocess environment before every run, so this can never
+        # silently bill the metered rail. Deliberately does NOT set `warning` — the Cockpit
+        # surfaces `warning` as a "needs your attention" item, and this is a handled,
+        # working-as-intended state, not a problem. `note` carries the same information for a
+        # low-key hint instead.
+        out["mode"] = "subscription (ANTHROPIC_API_KEY present but ignored)"
+        out["note"] = ("ANTHROPIC_API_KEY is set in this environment, but metered billing is OFF, "
+                       "so every dispatch ignores it and runs on your subscription.")
     elif out["oauth"]:
         # HONEST LABEL: this reads CONFIGURATION, not liveness. An `oauthAccount` in ~/.claude.json
         # only proves a login happened once — the access token expires, and a run then fails with
@@ -278,6 +321,23 @@ def run(task, cls="auto", thread_id=None, thread_subject="", context_used=0.0,
     return dispatch(r, thread_id=thread_id, cwd=cwd, dry_run=dry_run, timeout=timeout, history=history)
 
 
+def _dispatch_env(auth, base_env=None):
+    """The subprocess environment a dispatch will actually run with. Pure function of `auth` (an
+    auth_mode()-shaped dict) and `base_env` (defaults to the real os.environ, injectable for tests)
+    — no I/O, no subprocess, safe to unit-test directly.
+
+    Returns None ("inherit the caller's environment unchanged") except on the one path that must
+    remove something: ANTHROPIC_API_KEY present AND metered billing not explicitly allowed. There,
+    it returns a full copy of `base_env` with that one key removed — not unset in THIS process, just
+    never handed to the child, so the CLI's own OAuth-vs-API-key precedence never even sees it and
+    can't silently pick the metered rail because some unrelated tool happened to export the variable
+    into this shell."""
+    if auth.get("api_key_in_env") and not auth.get("metered_allowed"):
+        src = base_env if base_env is not None else os.environ
+        return {k: v for k, v in src.items() if k != "ANTHROPIC_API_KEY"}
+    return None
+
+
 def dispatch(r, thread_id=None, cwd=None, dry_run=True, timeout=900, allowed_tools=None, history=None):
     """Execute an ALREADY-ROUTED task. `run()` is this plus a `router.route()` call in front of it —
     split apart so a caller with its own routing decision can reuse the same argv-build / subprocess /
@@ -323,16 +383,16 @@ def dispatch(r, thread_id=None, cwd=None, dry_run=True, timeout=900, allowed_too
         rec["result"] = None
         return rec
 
-    if rec["auth"]["api_key_in_env"]:
-        # Refuse rather than silently bill the metered rail — the entire premise of this surface is
-        # that runs land on the subscription.
-        rec["error"] = rec["auth"]["warning"]
-        return rec
+    # Never let the ambient ANTHROPIC_API_KEY decide the billing rail — see _dispatch_env's own
+    # docstring. Pulled out as its own pure function (env in, env out) specifically so this policy
+    # is unit-testable without ever going near subprocess.run — this module's own standing rule
+    # ("nothing dispatches" in tests) would otherwise make the metered-opt-in behavior untestable.
+    env = _dispatch_env(rec["auth"])
 
     t0 = time.time()
     try:
         proc = subprocess.run(rec["argv"], capture_output=True, text=True,
-                              input=r["prompt"], timeout=timeout, cwd=cwd or os.getcwd())
+                              input=r["prompt"], timeout=timeout, cwd=cwd or os.getcwd(), env=env)
         rec["exit"] = proc.returncode
         rec["seconds"] = round(time.time() - t0, 2)
         raw = (proc.stdout or "").strip()
