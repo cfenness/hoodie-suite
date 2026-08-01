@@ -7839,6 +7839,7 @@ def api_cockpit_ticket_get(tid):
     out = dict(rec)
     out["body_md"] = T.read_body(tid)
     out["receipt"] = T.ticket_receipt(rec)
+    out["blocking"] = T.blocking_status(tid)
     return jsonify(out), 200
 
 
@@ -7882,10 +7883,53 @@ def api_cockpit_ticket_patch(tid):
     if "jira" in body and isinstance(body["jira"], dict):
         T.set_jira(tid, key=body["jira"].get("key"), url=body["jira"].get("url"))
     if "status" in body:
-        res = T.advance_status(tid, body["status"])
+        res = T.advance_status(tid, body["status"], override_block=bool(body.get("override_block")))
         if not res.get("ok"):
             return jsonify(res), 409
     return jsonify(ok=True, ticket=T.get(tid)), 200
+
+
+@app.post("/api/cockpit/tickets/<tid>/links")
+def api_cockpit_ticket_add_link(tid):
+    """Manual link add — same function auto-linking calls (agent_tickets.add_link), just with
+    source='manual' and driven by an explicit UI action instead of a text scan. Body: {ticket, type}
+    where `ticket` is the OTHER ticket's display key ('T-7') or full id, and `type` is one of
+    agent_tickets.LINK_TYPES."""
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(ok=False, error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    if not T.get(tid):
+        return jsonify(ok=False, error="not found"), 404
+    body = request.get_json(silent=True) or {}
+    other = (body.get("ticket") or "").strip()
+    ltype = (body.get("type") or "").strip()
+    if not other or ltype not in T.LINK_TYPES:
+        return jsonify(ok=False, error="ticket and a valid type are required (%s)"
+                       % ", ".join(T.LINK_TYPES)), 400
+    res = T.add_link(tid, other, ltype, source="manual")
+    return jsonify(res), (200 if res.get("ok") else 409)
+
+
+@app.delete("/api/cockpit/tickets/<tid>/links")
+def api_cockpit_ticket_remove_link(tid):
+    """Manual override, the other direction: remove a link (auto- or manually-sourced, doesn't
+    matter which) and remember it as dismissed on both tickets so a later auto-scan can't silently
+    put it back — see agent_tickets.remove_link's own docstring. Same body shape as the POST."""
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(ok=False, error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    if not T.get(tid):
+        return jsonify(ok=False, error="not found"), 404
+    body = request.get_json(silent=True) or {}
+    other = (body.get("ticket") or "").strip()
+    ltype = (body.get("type") or "").strip()
+    if not other or ltype not in T.LINK_TYPES:
+        return jsonify(ok=False, error="ticket and a valid type are required (%s)"
+                       % ", ".join(T.LINK_TYPES)), 400
+    res = T.remove_link(tid, other, ltype)
+    return jsonify(res), (200 if res.get("ok") else 409)
 
 
 @app.post("/api/cockpit/tickets/<tid>/run")
@@ -7909,7 +7953,13 @@ def api_cockpit_ticket_run(tid):
         return jsonify(error="a done ticket is closed"), 409
     body = request.get_json(silent=True) or {}
     criteria = T.read_body(tid) or ""
-    T.advance_status(tid, "in_progress")
+    # advance_status's blocking gate (T-linked "sharp automated blocking" work) can now genuinely
+    # refuse this move — previously the return value was ignored, so a blocked ticket's crew would
+    # run anyway while the ticket's own status silently stayed put. Respect the refusal the same
+    # way the PATCH route does, with the same override_block escape hatch.
+    adv = T.advance_status(tid, "in_progress", override_block=bool(body.get("override_block")))
+    if not adv.get("ok"):
+        return jsonify(adv), 409
     res = roles_mod.run_crew(criteria, roles=[roles_mod.ENGINEER, roles_mod.QA, roles_mod.REVIEWER],
                              cwd=body.get("cwd") or None, dry_run=bool(body.get("dry_run")))
     if res.get("results") and res["results"][0].get("dry_run"):

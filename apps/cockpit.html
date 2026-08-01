@@ -32,6 +32,7 @@
      margin:var(--s5) 0 var(--s3);font-weight:600;line-height:1}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:var(--pad)}
   .mono{font-family:var(--mono)}
+  .tkey{color:var(--mut);font-size:11.5px}
   .num{font-variant-numeric:tabular-nums;font-family:var(--mono)}
 
   /* Motion is purposeful and rare, and reduced-motion is respected everywhere in this file at
@@ -203,6 +204,10 @@
      one "Mark {next}" button, a persistent Cancel) rather than inventing a second one. */
   #tickets{table-layout:fixed;width:100%}
   #tickets td, #tickets th{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* The status cell can carry a status pill PLUS a "blocked by" pill — that must never silently
+     truncate into the ellipsis above (a real blocking condition disappearing as "…" is worse than
+     a slightly taller row), so it opts back into wrapping in its own nested block. */
+  .statuscell{white-space:normal;overflow:visible;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
   #tickets td:nth-child(1), #tickets th:nth-child(1){width:auto}
   #tickets td:nth-child(2), #tickets th:nth-child(2){width:78px}
   #tickets td:nth-child(3), #tickets th:nth-child(3){width:68px}
@@ -283,6 +288,21 @@
   .tflags{display:flex;align-items:center;gap:var(--s2);font-size:12.5px;color:var(--mut);margin-top:var(--s2)}
   .tflags input{cursor:pointer}
   #tframe{width:100%;height:480px;border:1px solid var(--line);border-radius:var(--rs);margin-top:var(--s3);background:var(--panel)}
+
+  /* ticket links — blocks/blocked_by/relates_to, auto-detected from text OR added manually here;
+     'auto' badge is the only visual difference, since removing either kind works the same way
+     (manual override always sticks — see agent_tickets.remove_link's dismissed_links). */
+  .tlinks{display:flex;flex-direction:column;gap:var(--s2)}
+  .linkgroup{display:flex;flex-direction:column;gap:var(--s1)}
+  .linkgrouplabel{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut)}
+  .linkrow{display:flex;align-items:center;gap:var(--s2);font-size:12.5px;padding:var(--s1) 0}
+  .linktitle{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .linksrc{font-size:10px;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:1px 6px}
+  .linkadd{display:flex;gap:var(--s2);margin-top:var(--s1)}
+  .linkadd select, .linkadd input{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    border-radius:var(--rs);padding:6px 8px;font-size:12.5px}
+  .linkadd input{flex:1}
+  .need.bad .actrow{margin-top:var(--s2)}
 
   /* ticket activity — the evidence trail: engineer/QA/reviewer/docs reports "Run crew" and
      "Requires documentation" append to the ticket. Structured verdict up front, reusing .pill
@@ -1180,6 +1200,11 @@ const ISSUE_TYPES = ['story','bug','task','chore'];
 const PRIORITIES = ['lowest','low','medium','high','highest'];
 let OPEN_TICKET = null;
 let TICKETS = [];
+// {tid, status} of a status move the server refused as blocked, waiting on an explicit override
+// click — never auto-retried, and cleared the moment the detail panel opens on a different ticket.
+let PENDING_OVERRIDE = null;
+const LINK_TYPES = ['blocks', 'blocked_by', 'relates_to'];
+const LINK_LABEL = {blocks: 'Blocks', blocked_by: 'Blocked by', relates_to: 'Relates to'};
 let TICKETS_OFFLINE = false; // true only when the /tickets fetch itself failed — distinct from a
                               // genuinely empty list, so the two get different designed empty states
 let EPICS = [];            // [{epic, ticket_count, counts, story_points}, ...] — GET /api/cockpit/epics
@@ -1241,6 +1266,21 @@ function ticketBadges(t){
 function visibleTickets(){
   return EPIC_FILTER ? TICKETS.filter(t => t.epic_id === EPIC_FILTER) : TICKETS;
 }
+function ticketsById(){
+  const map = {};
+  TICKETS.forEach(t => { map[t.id] = t; });
+  return map;
+}
+// Client-side mirror of agent_tickets.blocking_status: a 'blocked_by' link only counts while the
+// referenced ticket is itself still open (not done, not cancelled) — computed from data the list
+// endpoint already ships (t.links + every other ticket's status), no extra round trip per row.
+function isBlocked(t, byId){
+  return (t.links || []).some(l => {
+    if (l.type !== 'blocked_by') return false;
+    const other = byId[l.ticket_id];
+    return other && other.status !== 'done' && other.status !== 'cancelled';
+  });
+}
 function renderEpicFilterNote(){
   const el = $('#epicfilternote');
   if (!EPIC_FILTER){ el.innerHTML = ''; return; }
@@ -1281,15 +1321,21 @@ function renderTicketList(){
   }
   $('#ticketsnote').innerHTML = '<strong>'+list.length+'</strong> ticket'+(list.length===1?'':'s')
     + (EPIC_FILTER ? ' in this epic' : '');
+  const byId = ticketsById();
   tb.innerHTML = list.map(t => {
     const b = ticketBadges(t);
+    // isBlocked is deliberately independent of t.status ('blocked' is a SINK a ticket is manually
+    // moved into; this is "an open blocking ticket exists right now", visible even on a ticket
+    // that's still in draft) — so both pills can legitimately show at once.
+    const blockedPill = (t.status !== 'blocked' && isBlocked(t, byId))
+      ? ' <span class="pill blocked" title="Has an open blocking ticket">blocked by</span>' : '';
     return '<tr data-tid="'+esc(t.id)+'" tabindex="0" role="button" aria-label="Open ticket '+esc(t.title)+'">'
-      + '<td title="'+esc(t.title)+'">'+esc(t.title)+'</td>'
+      + '<td title="'+esc(t.title)+'"><span class="mono tkey">'+esc(t.key || '')+'</span> '+esc(t.title)+'</td>'
       + '<td>'+b.prio+'</td>'
       + '<td>'+b.type+'</td>'
       + '<td>'+b.pts+'</td>'
       + '<td>'+b.epic+'</td>'
-      + '<td><span class="pill '+esc(t.status)+'">'+esc(t.status)+'</span></td>'
+      + '<td><div class="statuscell"><span class="pill '+esc(t.status)+'">'+esc(t.status)+'</span>'+blockedPill+'</div></td>'
       + '<td class="m">'+esc(new Date(t.updated).toLocaleString())+'</td></tr>';
   }).join('');
   [...tb.querySelectorAll('tr[data-tid]')].forEach(tr => {
@@ -1388,6 +1434,7 @@ function closeTicketDetail(){
   // focus on a node that just got removed from the page.
   const row = document.querySelector('#tickets tbody tr[data-tid="'+CSS.escape(OPEN_TICKET)+'"]');
   OPEN_TICKET = null;
+  PENDING_OVERRIDE = null;
   $('#tdetail').innerHTML = '';
   if (row) row.focus();   // row may be gone (e.g. filtered out by an epic switch) — that's fine,
                           // the browser falls back to <body> rather than erroring on a null focus.
@@ -1524,15 +1571,63 @@ function prPanelHtml(t){
     + '<button class="sm" id="tprmanualsave" type="button">Save</button>'
     + '</div></div>';
 }
+function linkTicketRef(l){
+  // l.key can be absent only on data older than this feature — never crash the render over it.
+  return esc(l.key || l.ticket_id);
+}
+function renderLinksPanel(t){
+  const links = t.links || [];
+  const groups = LINK_TYPES.map(lt => {
+    const rows = links.filter(l => l.type === lt);
+    if (!rows.length) return '';
+    return '<div class="linkgroup"><div class="linkgrouplabel">'+esc(LINK_LABEL[lt])+'</div>'
+      + rows.map(l => '<div class="linkrow">'
+        + '<span class="pill draft mono">'+linkTicketRef(l)+'</span>'
+        + '<span class="linktitle" title="'+esc(l.title||'')+'">'+esc(l.title||l.ticket_id)+'</span>'
+        + (l.source === 'auto' ? '<span class="linksrc" title="Auto-detected from ticket text, e.g. &quot;'
+           + esc(LINK_LABEL[lt].toLowerCase()) + ' ' + linkTicketRef(l) + '&quot;">auto</span>' : '')
+        + '<button class="ghost sm" data-rmlink="'+esc(l.type)+'|'+esc(l.ticket_id)+'" type="button" '
+        + 'aria-label="Remove '+esc(LINK_LABEL[lt].toLowerCase())+' link to '+esc(l.title||l.ticket_id)+'">×</button>'
+        + '</div>').join('')
+      + '</div>';
+  }).join('');
+  return (groups || '<div class="dash">No links yet.</div>')
+    + '<div class="linkadd">'
+    + '<select id="tlinktype" aria-label="Link type">' + LINK_TYPES.map(lt =>
+      '<option value="'+lt+'">'+esc(LINK_LABEL[lt])+'</option>').join('') + '</select>'
+    + '<input type="text" id="tlinkkey" placeholder="T-7" autocomplete="off" aria-label="Ticket key to link">'
+    + '<button class="sm" id="tlinkadd" type="button">Add link</button>'
+    + '</div>';
+}
+function renderBlockingBanner(t){
+  const blocking = t.blocking;
+  if (!blocking || !blocking.blocked) return '';
+  const names = blocking.by.map(b => esc(b.key || b.id) + ' — ' + esc(b.title || '')).join(', ');
+  const pending = PENDING_OVERRIDE && PENDING_OVERRIDE.tid === t.id;
+  const pendingLabel = pending
+    ? (PENDING_OVERRIDE.run ? 'Override &amp; run crew' : 'Override &amp; mark '+esc(PENDING_OVERRIDE.status))
+    : '';
+  return '<div class="need bad"><div><span class="what">Blocked by '+names+'</span>'
+    + '<span class="fix">Open blocking ticket'+(blocking.by.length>1?'s':'')+' must reach Done first — '
+    + 'or override to proceed anyway. Every override is recorded on this ticket’s own history, '
+    + 'never silent.</span>'
+    + (pending ? '<div class="actrow"><button class="sm" id="toverride">'+pendingLabel+'</button></div>' : '')
+    + '</div></div>';
+}
 async function renderTicketDetail(tid){
   let t = null;
   try { t = await (await fetch('/api/cockpit/tickets/'+encodeURIComponent(tid))).json(); } catch(e){}
   if (!t || t.error){ $('#tdetail').innerHTML = ''; return; }
+  // A pending override only makes sense against the ticket that produced it — switching to a
+  // different ticket's detail (or reopening this one after the override already went through)
+  // drops any stale "Override & mark X" affordance rather than showing it against the wrong ticket.
+  if (PENDING_OVERRIDE && PENDING_OVERRIDE.tid !== tid) PENDING_OVERRIDE = null;
   const next = nextStatus(t.status);
   const isSink = t.status === 'blocked' || t.status === 'cancelled';
   const epicOpts = await epicSelectOptions(t);
   $('#tdetail').innerHTML =
-      '<div class="thead"><div class="ttitle">'+esc(t.title)+'</div>'
+      '<div class="thead"><div class="ttitle"><span class="mono tkey">'+esc(t.key||'')+'</span> '
+      +esc(t.title)+'</div>'
     + '<button class="ghost sm" id="tclose">Close</button></div>'
     + '<div class="statusrow">' + statusLadder(t.status)
     + '<div class="actrow">'
@@ -1543,6 +1638,7 @@ async function renderTicketDetail(tid){
     + '<button class="sm" id="trun"'+(t.status==='done'?' disabled':'')+'>Run crew</button>'
     + '<button class="ghost sm" id="tdocs">'+(t.docs_done?'Docs updated ✓':'Requires documentation')+'</button>'
     + '</div></div>'
+    + renderBlockingBanner(t)
     + '<div class="tmeta">'
     + '<label>Epic<select id="tepic">'+epicOpts+'</select></label>'
     + '<label>Type<select id="tissuetype">'+selectOptions(ISSUE_TYPES, t.issue_type || 'task')+'</select></label>'
@@ -1557,6 +1653,8 @@ async function renderTicketDetail(tid){
     + (t.requires_docs?' checked':'')+'> requires documentation'
     + (t.source_chat_id ? ' &nbsp;·&nbsp; from chat <span class="mono">'+esc(t.source_chat_id)+'</span>' : '')
     + '</label></div>'
+    + '<h2>Links</h2>'
+    + '<div class="tlinks">'+renderLinksPanel(t)+'</div>'
     + '<h2>Activity</h2>'
     + '<div class="tactivity">'+renderActivity(t.activity)+'</div>'
     + '<h2>Receipt</h2>'
@@ -1575,6 +1673,13 @@ async function renderTicketDetail(tid){
   $('#tdocs').addEventListener('click', () => runDocsOnTicket(tid));
   $('#treqdocs').addEventListener('change', e =>
     patchTicket(tid, {requires_docs: e.target.checked}));
+  if ($('#toverride')) $('#toverride').addEventListener('click', overrideAdvance);
+  $('#tlinkadd').addEventListener('click', () => addLink(tid));
+  $('#tlinkkey').addEventListener('keydown', e => { if (e.key === 'Enter') addLink(tid); });
+  [...document.querySelectorAll('[data-rmlink]')].forEach(b => {
+    const [ltype, other] = b.dataset.rmlink.split('|');
+    b.addEventListener('click', () => removeLink(tid, other, ltype));
+  });
 
   $('#tepic').addEventListener('change', async e => {
     const val = e.target.value;
@@ -1683,8 +1788,66 @@ async function saveCriteria(tid){
 }
 async function advanceTicket(tid, status){
   const r = await patchTicket(tid, {status});
-  if (!r.ok) { showToast(r.error || 'Could not change status.', 'error'); return; }
+  if (!r.ok){
+    // blocked_by only appears on the specific refusal the blocking gate produces (see
+    // agent_tickets.advance_status) — every other failure (backward move, done-closed, unknown
+    // status) still just toasts, same as before this feature existed.
+    if (r.blocked_by && r.blocked_by.length){
+      PENDING_OVERRIDE = {tid, status};
+      showToast(r.error || 'Blocked.', 'error');
+      await renderTicketDetail(tid);
+      return;
+    }
+    showToast(r.error || 'Could not change status.', 'error');
+    return;
+  }
+  if (PENDING_OVERRIDE && PENDING_OVERRIDE.tid === tid) PENDING_OVERRIDE = null;
   await loadTickets();
+}
+async function overrideAdvance(){
+  if (!PENDING_OVERRIDE) return;
+  const {tid, status, run} = PENDING_OVERRIDE;
+  PENDING_OVERRIDE = null;
+  if (run){
+    const btn = $('#trun'); if (btn){ btn.disabled = true; btn.textContent = 'Running crew…'; }
+    let r = null;
+    try {
+      r = await (await fetch('/api/cockpit/tickets/'+encodeURIComponent(tid)+'/run',
+        {method:'POST', headers:{'Content-Type':'application/json'},
+         body: JSON.stringify({override_block: true})})).json();
+    } catch(e){ r = {error:'agent offline'}; }
+    if (r && r.error) showToast(r.error, 'error');
+    await loadTickets(); loadStanding();
+    return;
+  }
+  const r = await patchTicket(tid, {status, override_block: true});
+  if (!r.ok){ showToast(r.error || 'Could not change status.', 'error'); await renderTicketDetail(tid); return; }
+  await loadTickets();
+}
+async function addLink(tid){
+  const type = $('#tlinktype').value;
+  const key = $('#tlinkkey').value.trim();
+  if (!key){ showToast('Enter the other ticket’s key (e.g. T-7).', 'info'); return; }
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/tickets/'+encodeURIComponent(tid)+'/links',
+      {method:'POST', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({ticket: key, type})})).json();
+  } catch(e){ r = {ok:false, error:'agent offline'}; }
+  if (!r || !r.ok){ showToast((r && r.error) || 'Could not add link.', 'error'); return; }
+  await loadTickets();
+  await renderTicketDetail(tid);
+}
+async function removeLink(tid, other, type){
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/tickets/'+encodeURIComponent(tid)+'/links',
+      {method:'DELETE', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({ticket: other, type})})).json();
+  } catch(e){ r = {ok:false, error:'agent offline'}; }
+  if (!r || !r.ok){ showToast((r && r.error) || 'Could not remove link.', 'error'); return; }
+  await loadTickets();
+  await renderTicketDetail(tid);
 }
 async function runCrewOnTicket(tid){
   const btn = $('#trun'); btn.disabled = true; btn.textContent = 'Running crew…';
@@ -1693,6 +1856,12 @@ async function runCrewOnTicket(tid){
     r = await (await fetch('/api/cockpit/tickets/'+encodeURIComponent(tid)+'/run',
       {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})).json();
   } catch(e){ r = {error:'agent offline'}; }
+  if (r && r.blocked_by && r.blocked_by.length){
+    PENDING_OVERRIDE = {tid, run: true};
+    showToast(r.error || 'Blocked.', 'error');
+    await renderTicketDetail(tid);
+    return;
+  }
   if (r && r.error) showToast(r.error, 'error');
   await loadTickets(); loadStanding();
 }
