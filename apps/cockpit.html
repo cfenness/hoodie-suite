@@ -292,6 +292,31 @@
   .actempty{border:1px dashed var(--line);border-radius:var(--rs);padding:var(--s3);
     color:var(--mut);font-size:12.5px;line-height:1.5}
   .actentry{border:1px solid var(--line);border-radius:var(--rs);padding:var(--s3);margin-top:var(--s2)}
+
+  /* ── REGISTRY — standing rules that apply in every repo, not just this one. Same card language
+     as .actentry (border+radius+padding), same .pill/.tabs vocabulary as everywhere else — new
+     status colors reuse the existing --good/--warn/--bad/--mut tokens, no new hex values. */
+  .regentry{border:1px solid var(--line);border-radius:var(--rs);padding:var(--s3);margin-top:var(--s2)}
+  .regentry:first-child{margin-top:0}
+  .rehead{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;font-size:12.5px;margin-bottom:var(--s2)}
+  .rehead .rtime{color:var(--mut);font-family:var(--mono);font-size:11px;margin-left:auto}
+  .pill.proposed{color:var(--warn);border-color:rgba(217,154,63,.45)}
+  .pill.law{color:var(--good);border-color:rgba(91,184,110,.45)}
+  .pill.rejected{color:var(--bad);border-color:rgba(229,99,107,.45)}
+  .pill.retired{color:var(--mut);border-color:var(--line)}
+  /* .retext is applied to EITHER a plain <div> (read-only rule text) or a <textarea> (law, editable)
+     — kept as one class name in the markup, split here so the textarea-specific box styling only
+     ever targets the element that's actually a textarea. */
+  .retext{font-size:13px;line-height:1.5;color:var(--ink)}
+  textarea.retext{width:100%;min-height:60px;background:var(--panel2);border:1px solid var(--line);
+    color:var(--ink);border-radius:var(--rs);padding:var(--s2);font:13px/1.5 var(--sans);resize:vertical}
+  textarea.retext:focus{outline:none;border-color:var(--accent)}
+  .reprov{margin-top:var(--s2)}
+  .reprov summary{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.07em;cursor:pointer}
+  .reprov .mono{color:var(--mut);font-size:11px;margin-top:var(--s1);word-break:break-word}
+  .reactions{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;margin-top:var(--s2)}
+  .reactions select{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    border-radius:var(--rs);padding:5px var(--s2);font:12px var(--sans)}
   .actentry:first-child{margin-top:0}
   .ahead{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;font-size:12.5px}
   .ahead .arole{font-weight:600}
@@ -517,6 +542,45 @@
           <tr><td><span class="sk" style="width:55%"></span></td><td><span class="sk" style="width:65%"></span></td><td><span class="sk" style="width:44px"></span></td><td><span class="sk" style="width:14px"></span></td><td><span class="sk" style="width:40%"></span></td><td></td></tr>
           <tr><td><span class="sk" style="width:62%"></span></td><td><span class="sk" style="width:72%"></span></td><td><span class="sk" style="width:44px"></span></td><td><span class="sk" style="width:14px"></span></td><td><span class="sk" style="width:48%"></span></td><td></td></tr>
         </tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="zone">
+    <div class="zlabel">How you work</div>
+    <!-- REGISTRY — the personal decision layer. Rules here apply in EVERY repo, not just this
+         one — see unifyd/registry.py's own module docstring for the ~/.claude/registry vs
+         ~/.claude/rules split and why. -->
+    <h2>Registry</h2>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:var(--s3);
+                  flex-wrap:wrap;margin-bottom:var(--s2)">
+        <div class="tabs" id="regdomain-tabs">
+          <button class="tab on" type="button" data-domain="">All domains</button>
+          <button class="tab" type="button" data-domain="design">Design</button>
+          <button class="tab" type="button" data-domain="hierarchy">Hierarchy</button>
+          <button class="tab" type="button" data-domain="communication">Communication</button>
+          <button class="tab" type="button" data-domain="process">Process</button>
+        </div>
+        <button class="ghost sm" id="regmine">Scan for new rules</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:var(--s3);
+                  flex-wrap:wrap;margin-bottom:var(--s3)">
+        <div class="tabs" id="regstatus-tabs">
+          <button class="tab on" type="button" data-status="proposed">Proposed</button>
+          <button class="tab" type="button" data-status="law">Law</button>
+          <button class="tab" type="button" data-status="retired">Retired</button>
+          <button class="tab" type="button" data-status="rejected">Rejected</button>
+        </div>
+        <div class="note" id="regnote" style="margin:0">loading…</div>
+      </div>
+      <div id="registrylist" aria-hidden="true">
+        <div class="regentry"><div class="rehead"><span class="sk" style="width:70px"></span>
+          <span class="sk" style="width:60px"></span></div>
+          <div class="retext"><span class="sk" style="width:80%;height:14px"></span></div></div>
+        <div class="regentry"><div class="rehead"><span class="sk" style="width:70px"></span>
+          <span class="sk" style="width:60px"></span></div>
+          <div class="retext"><span class="sk" style="width:64%;height:14px"></span></div></div>
       </div>
     </div>
   </div>
@@ -1656,6 +1720,166 @@ async function createTicketFromChat(){
   if (r && r.id) openTicket(r.id);
 }
 
+/* ── REGISTRY ─────────────────────────────────────────────────────────────── *
+ * The personal decision layer — standing rules that apply in every repo. See unifyd/registry.py's
+ * module docstring for the ~/.claude/registry (source of truth) vs ~/.claude/rules (what Claude
+ * Code actually auto-loads) split. Domain/status filtering happens SERVER-side (the API takes
+ * both as query params) rather than client-side over a fully-loaded list — the registry is meant
+ * to grow across every repo an operator works in, so filtering at the source scales better than
+ * loading everything and hiding rows. */
+const REG_DOMAINS = ['design', 'hierarchy', 'communication', 'process'];
+let REG_DOMAIN = '';          // '' = all domains
+let REG_STATUS = 'proposed';  // the tab that's likely to need action first
+let REGISTRY_OFFLINE = false; // same distinction TICKETS_OFFLINE draws: agent-down vs genuinely-empty
+
+function regStatusLabel(s){
+  return {proposed:'Proposed', law:'Law', rejected:'Rejected', retired:'Retired'}[s] || s;
+}
+function regEmptyMessage(){
+  if (REGISTRY_OFFLINE) return 'Agent offline — start it locally to browse or edit the Registry.';
+  const dom = REG_DOMAIN ? ' in ' + REG_DOMAIN : '';
+  if (REG_STATUS === 'proposed') return 'No proposals waiting on you' + dom + '. "Scan for new rules" '
+    + 'looks for corrections you’ve repeated across sessions.';
+  return 'No ' + regStatusLabel(REG_STATUS).toLowerCase() + ' entries' + dom + ' yet.';
+}
+function regDomainSelectOptions(current){
+  let opts = '<option value=""'+(!current?' selected':'')+'>— set domain —</option>';
+  opts += REG_DOMAINS.map(d => '<option value="'+d+'"'+(d===current?' selected':'')+'>'
+    + d[0].toUpperCase()+d.slice(1)+'</option>').join('');
+  return opts;
+}
+function renderRegistryEntry(e){
+  const time = e.updated ? esc(new Date(e.updated).toLocaleString()) : '';
+  // .pill.draft is already the neutral gray pill (reused from the ticket status column) — no new
+  // color needed for a plain domain badge that isn't itself a status signal.
+  const domainPill = e.domain ? '<span class="pill draft">' + esc(e.domain) + '</span>'
+    : '<span class="dash">no domain</span>';
+  let body, actions;
+  if (e.status === 'law'){
+    body = '<textarea class="retext" id="retext-'+esc(e.id)+'">'+esc(e.rule_text||'')+'</textarea>';
+    actions = '<div class="reactions">'
+      + '<button class="sm" data-re-save="'+esc(e.id)+'">Save edit</button>'
+      + '<button class="ghost sm" data-re-retire="'+esc(e.id)+'">Retire</button>'
+      + '</div>';
+  } else {
+    body = '<div class="retext">'+esc(e.rule_text||'')+'</div>';
+    if (e.status === 'proposed'){
+      actions = '<div class="reactions">'
+        + '<select id="redomain-'+esc(e.id)+'">'+regDomainSelectOptions(e.domain)+'</select>'
+        + '<button class="sm" data-re-approve="'+esc(e.id)+'">Approve as law</button>'
+        + '<button class="ghost sm" data-re-reject="'+esc(e.id)+'">Reject</button>'
+        + '</div>';
+    } else if (e.status === 'retired'){
+      actions = '<div class="reactions"><button class="sm" data-re-reinstate="'+esc(e.id)+'">Reinstate</button></div>';
+    } else {
+      actions = '';   // rejected is terminal — nothing to do but see it happened
+    }
+  }
+  const prov = e.provenance ? '<details class="reprov"><summary>Provenance</summary>'
+    + '<div class="mono">'+esc(e.provenance)+'</div></details>' : '';
+  return '<div class="regentry" data-reg-id="'+esc(e.id)+'">'
+    + '<div class="rehead"><span class="pill '+esc(e.status)+'">'+esc(regStatusLabel(e.status))+'</span>'
+    + domainPill
+    + '<span class="rtime">'+time+'</span></div>'
+    + body + prov + actions + '</div>';
+}
+async function loadRegistry(){
+  $('#registrylist').setAttribute('aria-hidden', 'true');
+  let d = null;
+  try {
+    const q = new URLSearchParams();
+    if (REG_DOMAIN) q.set('domain', REG_DOMAIN);
+    if (REG_STATUS) q.set('status', REG_STATUS);
+    d = await (await fetch('/api/cockpit/registry?' + q.toString())).json();
+  } catch(e){}
+  REGISTRY_OFFLINE = !d || d.available === false;
+  const entries = (d && d.entries) || [];
+  $('#registrylist').removeAttribute('aria-hidden');
+  if (!entries.length){
+    $('#regnote').textContent = '0 entries';
+    $('#registrylist').innerHTML = '<div class="actempty">'+esc(regEmptyMessage())+'</div>';
+    return;
+  }
+  $('#regnote').innerHTML = '<strong>'+entries.length+'</strong> '+(entries.length===1?'entry':'entries');
+  $('#registrylist').innerHTML = entries.map(renderRegistryEntry).join('');
+  [...document.querySelectorAll('[data-re-approve]')].forEach(b =>
+    b.addEventListener('click', () => approveRegistryEntry(b.dataset.reApprove)));
+  [...document.querySelectorAll('[data-re-reject]')].forEach(b =>
+    b.addEventListener('click', () => regStatusAction(b.dataset.reReject, 'reject', 'Rejected.')));
+  [...document.querySelectorAll('[data-re-retire]')].forEach(b =>
+    b.addEventListener('click', () => regStatusAction(b.dataset.reRetire, 'retire', 'Retired.')));
+  [...document.querySelectorAll('[data-re-reinstate]')].forEach(b =>
+    b.addEventListener('click', () => regStatusAction(b.dataset.reReinstate, 'reinstate', 'Reinstated as law.')));
+  [...document.querySelectorAll('[data-re-save]')].forEach(b =>
+    b.addEventListener('click', () => saveRegistryEdit(b.dataset.reSave)));
+}
+async function regStatusAction(eid, action, okMsg){
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/registry/'+encodeURIComponent(eid)+'/'+action,
+      {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})).json();
+  } catch(e){ r = {ok:false, error:'agent offline'}; }
+  if (!r || !r.ok){ showToast((r && r.error) || 'Could not update that entry.', 'error'); return; }
+  showToast(okMsg, 'info');
+  await loadRegistry();
+}
+async function approveRegistryEntry(eid){
+  const sel = $('#redomain-'+eid);
+  const domain = sel ? sel.value : '';
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/registry/'+encodeURIComponent(eid)+'/approve',
+      {method:'POST', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify(domain ? {domain} : {})})).json();
+  } catch(e){ r = {ok:false, error:'agent offline'}; }
+  if (!r || !r.ok){ showToast((r && r.error) || 'Could not approve that entry.', 'error'); return; }
+  showToast('Approved — now law in every repo.', 'info');
+  await loadRegistry();
+}
+async function saveRegistryEdit(eid){
+  const ta = $('#retext-'+eid);
+  if (!ta) return;
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/registry/'+encodeURIComponent(eid), {method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({rule_text: ta.value})})).json();
+  } catch(e){ r = {ok:false, error:'agent offline'}; }
+  if (!r || !r.ok){ showToast((r && r.error) || 'Could not save that edit.', 'error'); return; }
+  showToast('Saved.', 'info');
+  await loadRegistry();
+}
+async function mineRegistry(){
+  const btn = $('#regmine'); btn.disabled = true; const was = btn.textContent; btn.textContent = 'Scanning…';
+  let r = null;
+  try {
+    r = await (await fetch('/api/cockpit/registry/mine', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:'{}'})).json();
+  } catch(e){ r = {ok:false, error:'agent offline'}; }
+  btn.disabled = false; btn.textContent = was;
+  if (!r || !r.ok){ showToast((r && r.error) || 'Could not scan for new rules.', 'error'); return; }
+  showToast(r.proposals_created
+    ? r.proposals_created+' new proposal'+(r.proposals_created===1?'':'s')+' from '+r.turns_scanned+' turns scanned.'
+    : 'Scanned '+r.turns_scanned+' turns — nothing new recurs enough to propose yet.', 'info');
+  if (r.proposals_created && REG_STATUS !== 'proposed'){
+    REG_STATUS = 'proposed';
+    [...document.querySelectorAll('#regstatus-tabs .tab')].forEach(b =>
+      b.classList.toggle('on', b.dataset.status === 'proposed'));
+  }
+  await loadRegistry();
+}
+[...document.querySelectorAll('#regdomain-tabs .tab')].forEach(b => b.addEventListener('click', () => {
+  REG_DOMAIN = b.dataset.domain;
+  [...document.querySelectorAll('#regdomain-tabs .tab')].forEach(x => x.classList.toggle('on', x===b));
+  loadRegistry();
+}));
+[...document.querySelectorAll('#regstatus-tabs .tab')].forEach(b => b.addEventListener('click', () => {
+  REG_STATUS = b.dataset.status;
+  [...document.querySelectorAll('#regstatus-tabs .tab')].forEach(x => x.classList.toggle('on', x===b));
+  loadRegistry();
+}));
+$('#regmine').addEventListener('click', mineRegistry);
+
 /* ── LIVE PREVIEW ─────────────────────────────────────────────────────────── */
 /* Watch a page update while the work happens: the iframe reloads on a timer, the feed below it
    polls the same run ledger the Spend/Ledger sections already read — no new backend, just a second
@@ -1862,7 +2086,7 @@ $('#pvinterval').addEventListener('change', ()=>{ if (PV_BASE_URL) startPreview(
 $('#pvsnap').addEventListener('click', pvSnapshot);
 $('#pvsnaps').addEventListener('click', e=>{ const el = e.target.closest('.pvsnap'); if (el) pvToggleSnap(el.dataset.key); });
 $('#pvdiffclear').addEventListener('click', ()=>{ PV_SEL = []; loadPvSnapshots(); $('#pvdiffwrap').hidden = true; });
-loadStanding(); loadBusinessHealth(); loadFleet(false); loadLedger(); loadTickets();
+loadStanding(); loadBusinessHealth(); loadFleet(false); loadLedger(); loadTickets(); loadRegistry();
 loadChats().then(loadLog);
 </script>
 </body>
