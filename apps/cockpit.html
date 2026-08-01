@@ -280,6 +280,15 @@
     color:var(--ink);margin-top:var(--s2)}
   .actentry > .aprose{margin-top:var(--s2)}
 
+  /* ticket receipt — the itemized burn per stage. Deliberately reuses the fleet/ledger table
+     vocabulary (plain table/th/td, td.m for mono identifiers, td.r for right-aligned tabular-nums
+     numbers — same class the ledger table already uses for token counts) and .dash for a stage
+     whose route info wasn't captured, so this table introduces zero new visual language. The
+     totals row is the same colors, just heavier — a top border + bold — to read as a sum, not
+     another stage. */
+  .treceipt{margin-top:var(--s3)}
+  tr.rtotal td{border-top:2px solid var(--line);font-weight:700}
+
   /* ── ZONES ────────────────────────────────────────────────────────────────── */
   /* One page, still — a spatial-thinker's "one surface" isn't a tidiness call, it's cognitive: a
      new tab/page is a context switch that pulls the model out of his head. So this doesn't split
@@ -1254,6 +1263,44 @@ function renderActivity(activity){
   return activity.map(renderActivityEntry).join('');
 }
 
+/* ── ticket receipt (per-stage burn) ─────────────────────────────────────────
+   /api/cockpit/tickets/<id> ships `receipt` (see agent_tickets.ticket_receipt): one row per
+   stage with route + usage, in the same chronological order as activity — never reversed.
+   No dollar figure anywhere: this engine runs on a flat-fee subscription, not per-token API
+   billing, so `burn_index` (a relative, already-computed router figure) is the honest stand-in
+   for cost — see agent_router.py's own docstring on that field. */
+function fmtTokens(n){
+  n = Number(n) || 0;
+  if (n >= 1000) return (n/1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  return String(n);
+}
+function fmtBurn(b){
+  return (b === null || b === undefined || b === '') ? '—' : Number(b).toFixed(2);
+}
+function receiptStageRow(s){
+  s = s || {};
+  const tactics = (Array.isArray(s.tactics) && s.tactics.length)
+    ? esc(s.tactics.join(', ')) : '<span class="dash">—</span>';
+  return '<tr><td>'+esc(s.role || s.kind || 'Stage')+'</td>'
+    + '<td class="m">'+(s.model ? esc(s.model) : '<span class="dash">—</span>')+'</td>'
+    + '<td class="m">'+(s.effort ? esc(s.effort) : '<span class="dash">—</span>')+'</td>'
+    + '<td>'+tactics+'</td>'
+    + '<td class="r">'+esc(fmtTokens(s.input_tokens)+' in / '+fmtTokens(s.output_tokens)+' out')+'</td>'
+    + '<td class="r">'+esc(fmtBurn(s.burn_index))+'</td></tr>';
+}
+function renderReceipt(receipt){
+  const r = receipt || {};
+  const stages = r.stages || [];
+  if (!stages.length)
+    return '<div class="actempty">No billable activity yet — run the crew to see per-stage cost here.</div>';
+  const totals = '<tr class="rtotal"><td colspan="4">Total</td>'
+    + '<td class="r">'+esc(fmtTokens(r.input_tokens)+' in / '+fmtTokens(r.output_tokens)+' out')+'</td>'
+    + '<td class="r">'+esc(fmtBurn(r.burn_index_total))+'</td></tr>';
+  return '<table><thead><tr><th>Role</th><th>Model</th><th>Effort</th><th>Tactics</th>'
+    + '<th>Tokens</th><th>Burn</th></tr></thead><tbody>'
+    + stages.map(receiptStageRow).join('') + totals + '</tbody></table>';
+}
+
 function prPanelHtml(t){
   const pr = t.pr || {};
   if (pr.number){
@@ -1313,6 +1360,8 @@ async function renderTicketDetail(tid){
     + '</label></div>'
     + '<h2>Activity</h2>'
     + '<div class="tactivity">'+renderActivity(t.activity)+'</div>'
+    + '<h2>Receipt</h2>'
+    + '<div class="treceipt">'+renderReceipt(t.receipt)+'</div>'
     + '<iframe id="tframe" title="Ticket body, live" src="md-viewer.html?embed=1&ticket='+encodeURIComponent(tid)+'"></iframe>';
 
   $('#tclose').addEventListener('click', () => { OPEN_TICKET = null; $('#tdetail').innerHTML = ''; });
