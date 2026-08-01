@@ -41,13 +41,13 @@ the lever.** Model routing alone is worth ~58.5% token-weighted.
 |---|---|---|
 | `agent_router.py` | task → model / effort / tactic / thread action | 95 |
 | `agent_memory.py` | SQLite FTS5 fact store: staleness + relevance gate + write-back | 76 |
-| `agent_chats.py` | claims, deploy lease, anti-clobber, chat transcripts | 57 |
+| `agent_chats.py` | claims, deploy lease, anti-clobber, chat transcripts, tactic-savings rollup | 61 |
 | `agent_roles.py` | PM / engineer / QA / lead-reviewer crews | 63 |
 | `agent_checks.py` | the deterministic checker | 43 |
 | `agent_exec.py` | the Claude Code CLI seam + run ledger | 58 |
 | `agent_import_chat.py` | scoped claude.ai export intake | 34 |
 | `agent_mine.py` | mine stated rules from transcripts | 38 |
-| `agent_tickets.py` | ticket + epic lifecycle: PM draft → editable criteria → crew run → docs; forward-only status; Jira-parity export | 99 |
+| `agent_tickets.py` | ticket + epic lifecycle: PM draft → editable criteria → crew run → docs; forward-only status; Jira-parity export; structured verdicts; cost receipt; evidence attachments | 138 |
 
 `agent_tickets.derive_title()` treats a model's own markdown headings as section labels, never a
 title: it prefers the prose under a heading named `outcome`, then an inline `Outcome:` label, then
@@ -66,9 +66,9 @@ Surface: `apps/cockpit.html` · `apps/md-viewer.html` (live-updating ticket body
 `/api/cockpit/tickets/<id>` (GET / PATCH), `/api/cockpit/tickets/<id>/raw`,
 `/api/cockpit/tickets/<id>/run`, `/api/cockpit/tickets/<id>/docs`, `/api/cockpit/tickets/<id>/link-pr`,
 `/api/cockpit/tickets/export?format=json|jira-csv`, plus the epic routes `/api/cockpit/epics`
-(POST create / GET list-with-rollup), `/api/cockpit/epics/<id>` (GET / PATCH) — all in
-`unifyd/server.py:7557–7857` · agent definitions `.claude/agents/hoodie-{pm,qa,reviewer}.md`
-(generated — see below).
+(POST create / GET list-with-rollup), `/api/cockpit/epics/<id>` (GET / PATCH), plus
+`/api/cockpit/tactics-savings` (below) — all in `unifyd/server.py:7557–7900+` · agent definitions
+`.claude/agents/hoodie-{pm,qa,reviewer}.md` (generated — see below).
 
 ---
 
@@ -105,6 +105,43 @@ real git checkout and local `gh` auth, so it's Mac-only (`_on_fly()`-gated, same
 crew dispatch), and it fails to a plain "not linked" rather than erroring the ticket. `agent_tickets.py`
 itself has no network or git access of its own (stdlib-only, unit-tested standalone) — `set_pr`/
 `set_jira` just write the fields server.py's routes hand them.
+
+**Structured verdicts + the Activity panel (T-2.1).** `agent_tickets.extract_verdict_json()` pulls
+the LAST fenced ```` ```json ```` block out of a QA/reviewer report and parses it — `ROLES[qa]`/
+`ROLES[reviewer]` in `agent_roles.py` now end their system prompts asking for one (QA: pass/fail/
+untested per criterion + evidence + severity; reviewer: ship/ship-with-followups/blocked + named
+blockers), **in addition to** the full prose report, never instead of it. `add_activity(verdict=...)`
+stores it on the activity entry; a missing or unparseable block just means `verdict: None` — the
+prose still lands either way, nothing is ever silently dropped. `apps/cockpit.html`'s ticket detail
+renders this as an **Activity** section (fixing a real gap: reports were landing in `t.activity` but
+the panel never rendered that array) — verdict pills, per-criterion QA rows, reviewer blockers, and
+the full report always one click away behind "Full report" rather than hidden.
+
+**Cost receipt (T-2.3) — tokens and burn, deliberately not dollars.** `agent_tickets.
+ticket_receipt(rec)` itemizes every stage that spent real subscription burn: model, effort, tactics,
+actual input/output tokens, and the router's own relative `burn_index`. It does **not** report a
+dollar figure — `agent_router.py`'s own docstring is explicit that this engine runs on a flat-fee
+Claude subscription, not per-token API billing ("the objective is NOT minimize dollars"), so
+inventing one would be exactly the kind of unsupported claim this repo's standing rules forbid.
+`GET /api/cockpit/tickets/<id>` includes the computed `receipt`.
+
+**Tactic savings, read back not re-estimated.** `agent_chats.tactics_savings()` (`GET
+/api/cockpit/tactics-savings`) sums `filler_removed` — `cavemanize()`'s exact, deterministic word
+count — off every stored chat turn's `route` snapshot, and tallies how often each tactic (caveman/
+terse/scope/evidence/noverify) was applied. It reports usage counts only for the non-caveman
+tactics, never a fabricated per-turn savings number for them, since they shape the model's output
+rather than stripping anything measurable pre-send. The same `filler_removed` field now flows
+through the ticket cost receipt too, though it's currently always 0 there — `run_crew()`'s stages
+build their own route dicts with `tactics=[]` (crew stages use role-based system prompts, not the
+class-based tactic system), so this is a real-but-currently-empty field, wired for when/if that
+changes.
+
+**Evidence attachments (T-2.2).** `add_activity(attachment=...)` stores a plain, caller-owned dict
+referencing evidence that lives elsewhere. `server.py`'s `preview-snapshot` and `preview-diff` routes
+accept an optional `ticket_id` and, when given, land a `snapshot` (the `preview_shot.py` key) or
+`visual_diff` (both keys + `diff_pct`) activity entry — `preview_shot.py` itself stays a plain
+URL-keyed store with no ticket awareness; the association lives entirely on the ticket. Diffs store
+metadata only, not the overlay image — re-deriving it is one more POST with the same two keys.
 
 **Crew findings now write back to memory.** `POST /api/cockpit/tickets/<id>/run` calls
 `agent_memory.remember_answer()` for each stage's result (`server.py:7697–7704`) — the *same*
