@@ -262,7 +262,15 @@ def run(brands=("titos",), zips=None, log=print):
         try:
             ds, _runs, _stats = pull(brand=b, zips=zips, log=log)
             for _name, d in ds.items():
-                allrows.extend(d.get("_rows_full") or [])
+                # _rows_full is the codebase-wide convention (ab_locator/chicago/tx_tabc/census/…):
+                # a list of ROW ARRAYS positionally matching `header`, never a list of dicts — do not
+                # "fix" this by changing pull()'s _rows_full shape instead, server.py's own generic
+                # full-row export (_absorb) and every other scraper depend on that staying a plain
+                # list. write_accumulate's key/fields need DICTS, so zip it back against _LAND_FIELDS
+                # here (same reconstruction census.py:120 already does) — not r.get(...) on a bare
+                # list, which is exactly what crashed every run since 07-31 ('list' object has no
+                # attribute 'get').
+                allrows.extend(dict(zip(_LAND_FIELDS, r)) for r in (d.get("_rows_full") or []))
         except Exception as e:
             log("vtinfo/%s: %s" % (b, str(e)[:120]))
     if allrows:
