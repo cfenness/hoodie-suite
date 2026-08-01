@@ -539,6 +539,76 @@ def main():
         check("...and column count matches too",
               all(len(r) == 8 for r in parsed), parsed)
 
+        # --- 8. add_activity(attachment=...): evidence linkage (T-2.2) --------------------------------
+        t13 = A.create("attachment test", "criteria")
+        snap = dict(key="shot:abc123:1700000000", ts=1700000000, url="https://example.com/x")
+        A.add_activity(t13["id"], "snapshot", "Snapshot", "https://example.com/x", attachment=snap)
+        act13 = A.get(t13["id"])["activity"][-1]
+        check("add_activity(attachment=...) stores the dict verbatim, no transformation",
+              act13["attachment"] == snap, act13["attachment"])
+        check("attachment is independent of verdict/route — both stay their own defaults",
+              act13["verdict"] is None and act13["route"] is None, act13)
+
+        A.add_activity(t13["id"], "note", "Note", "no attachment given")
+        act13b = A.get(t13["id"])["activity"][-1]
+        check("add_activity with attachment omitted stores the key present and None",
+              "attachment" in act13b and act13b["attachment"] is None, act13b)
+
+        diffatt = dict(a_key="shot:aaa:1", b_key="shot:bbb:2", diff_pct=12.5, url="https://example.com/x")
+        A.add_activity(t13["id"], "visual_diff", "Visual diff", "12.5% changed", attachment=diffatt)
+        act13c = A.get(t13["id"])["activity"][-1]
+        check("a visual_diff attachment (two keys + diff_pct) round-trips exactly too",
+              act13c["attachment"] == diffatt, act13c["attachment"])
+
+        # --- 9. velocity / velocity_by_epic: story points DONE in a trailing window (T-3.2) -----------
+        vdb, vedb = {}, {}
+        ve = A.create_epic("Velocity Epic", db=vedb)
+        v1 = A.create("v1", "crit", story_points=5, epic_id=ve["id"], db=vdb)
+        v2 = A.create("v2", "crit", story_points=3, epic_id=ve["id"], db=vdb)
+        v3 = A.create("v3", "crit", story_points=8, db=vdb)          # no epic
+        v4 = A.create("v4", "crit", story_points=13, epic_id=ve["id"], db=vdb)   # left in draft
+
+        for vid in (v1["id"], v2["id"], v3["id"]):
+            for step in ("accepted", "in_progress", "testing", "done"):
+                A.advance_status(vid, step, db=vdb)
+
+        check("a ticket never moved to done contributes nothing to velocity",
+              A.get(v4["id"], db=vdb)["status"] == "draft")
+
+        vel = A.velocity(window_days=7, db=vdb)
+        check("velocity(): tickets_done counts every ticket done within the window, any epic or none",
+              vel["tickets_done"] == 3, vel)
+        check("velocity(): story_points sums only the done tickets' points (5+3+8, not the draft's 13)",
+              vel["story_points"] == 16, vel)
+        check("velocity() carries the window_days and epic_id it was asked for",
+              vel["window_days"] == 7 and vel["epic_id"] is None, vel)
+
+        vel_epic = A.velocity(window_days=7, epic_id=ve["id"], db=vdb)
+        check("velocity(epic_id=...) scopes to just that epic's done tickets (v1+v2, not v3)",
+              vel_epic["tickets_done"] == 2 and vel_epic["story_points"] == 8, vel_epic)
+
+        # backdate v3's done transition outside the window — proves the cutoff is real, not a no-op
+        old_done_at = A.get(v3["id"], db=vdb)["status_history"][-1]["at"]
+        A.get(v3["id"], db=vdb)["status_history"][-1]["at"] = old_done_at - int(30 * 86400 * 1000)
+        vel_after_backdate = A.velocity(window_days=7, db=vdb)
+        check("backdating a ticket's done transition outside the window drops it from velocity",
+              vel_after_backdate["tickets_done"] == 2 and vel_after_backdate["story_points"] == 8,
+              vel_after_backdate)
+        vel_wide = A.velocity(window_days=60, db=vdb)
+        check("...but a wide-enough window still counts it",
+              vel_wide["tickets_done"] == 3 and vel_wide["story_points"] == 16, vel_wide)
+
+        vbe = A.velocity_by_epic(window_days=7, db=vdb, epic_db=vedb)
+        check("velocity_by_epic() returns one row per real epic", len(vbe) == 1, vbe)
+        check("velocity_by_epic() row carries the full epic object plus its own done-count/points",
+              vbe[0]["epic"]["id"] == ve["id"] and vbe[0]["tickets_done"] == 2
+              and vbe[0]["story_points"] == 8, vbe[0])
+
+        vel_empty = A.velocity(window_days=7, db={})
+        check("velocity() on a ticket store with nothing done yet returns zeros, not a crash",
+              vel_empty["tickets_done"] == 0 and vel_empty["story_points"] == 0
+              and vel_empty["window_days"] == 7 and vel_empty["epic_id"] is None, vel_empty)
+
     finally:
         A.STATE, A.TICKETS_DIR, A.EPICS_DIR = old_state, old_tdir, old_edir
 
