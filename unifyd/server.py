@@ -7656,9 +7656,13 @@ def api_cockpit_tickets_create():
 @app.get("/api/cockpit/tickets")
 def api_cockpit_tickets_list():
     m = _cockpit_mods()
+    # `available` is the signal the UI needs to tell "the module is genuinely unavailable" apart
+    # from "there are legitimately zero tickets" — both used to read as an identical `{tickets:[]}`,
+    # which meant a designed offline state and an honest empty state were indistinguishable.
     if not m.get("agent_tickets"):
-        return jsonify(tickets=[]), 200
-    return jsonify(tickets=m["agent_tickets"].list_tickets(status=request.args.get("status"))), 200
+        return jsonify(tickets=[], available=False, error="agent_tickets unavailable"), 200
+    return jsonify(tickets=m["agent_tickets"].list_tickets(status=request.args.get("status")),
+                   available=True), 200
 
 
 @app.get("/api/cockpit/tickets/<tid>")

@@ -34,6 +34,20 @@
   .mono{font-family:var(--mono)}
   .num{font-variant-numeric:tabular-nums;font-family:var(--mono)}
 
+  /* Motion is purposeful and rare, and reduced-motion is respected everywhere in this file at
+     once — one blanket rule rather than an opt-out on each animation, so a new animation added
+     later is covered automatically instead of silently missing this. */
+  @media (prefers-reduced-motion:reduce){
+    *, *::before, *::after{animation-duration:.01ms !important; animation-iteration-count:1 !important;
+      transition-duration:.01ms !important; scroll-behavior:auto !important}
+  }
+
+  /* Loading skeleton — a measured placeholder shaped like the real row, never raw "loading…" text
+     next to an empty table (the layout-shift-on-arrival cobble tell). Reuses the existing `pulse`
+     keyframe (defined further down, shared with the live-preview dot) rather than a second one. */
+  .sk{display:inline-block;height:11px;border-radius:3px;background:var(--line);
+    animation:pulse 1.4s ease-in-out infinite}
+
   /* ── STANDING: where you are, before you ask ───────────────────────────────── */
   .standing{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));
             gap:var(--s2);margin-top:var(--s4)}
@@ -459,7 +473,11 @@
       <div id="ticketsview">
         <table id="tickets"><thead><tr>
           <th>Title</th><th>Priority</th><th>Type</th><th>Pts</th><th>Epic</th><th>Status</th><th>Updated</th>
-        </tr></thead><tbody></tbody></table>
+        </tr></thead><tbody aria-hidden="true">
+          <tr><td><span class="sk" style="width:60%"></span></td><td><span class="sk" style="width:44px"></span></td><td><span class="sk" style="width:40px"></span></td><td><span class="sk" style="width:18px"></span></td><td><span class="sk" style="width:70px"></span></td><td><span class="sk" style="width:56px"></span></td><td><span class="sk" style="width:72px"></span></td></tr>
+          <tr><td><span class="sk" style="width:44%"></span></td><td><span class="sk" style="width:44px"></span></td><td><span class="sk" style="width:40px"></span></td><td><span class="sk" style="width:18px"></span></td><td><span class="sk" style="width:70px"></span></td><td><span class="sk" style="width:56px"></span></td><td><span class="sk" style="width:72px"></span></td></tr>
+          <tr><td><span class="sk" style="width:52%"></span></td><td><span class="sk" style="width:44px"></span></td><td><span class="sk" style="width:40px"></span></td><td><span class="sk" style="width:18px"></span></td><td><span class="sk" style="width:70px"></span></td><td><span class="sk" style="width:56px"></span></td><td><span class="sk" style="width:72px"></span></td></tr>
+        </tbody></table>
       </div>
       <div id="epicsview" hidden></div>
 
@@ -477,7 +495,11 @@
       <div class="fleet">
         <table id="fleet"><thead><tr>
           <th>Chat</th><th>Branch</th><th>State</th><th class="r">Reverts</th><th>Blocker</th><th></th>
-        </tr></thead><tbody></tbody></table>
+        </tr></thead><tbody aria-hidden="true">
+          <tr><td><span class="sk" style="width:70%"></span></td><td><span class="sk" style="width:80%"></span></td><td><span class="sk" style="width:44px"></span></td><td><span class="sk" style="width:14px"></span></td><td><span class="sk" style="width:60%"></span></td><td></td></tr>
+          <tr><td><span class="sk" style="width:55%"></span></td><td><span class="sk" style="width:65%"></span></td><td><span class="sk" style="width:44px"></span></td><td><span class="sk" style="width:14px"></span></td><td><span class="sk" style="width:40%"></span></td><td></td></tr>
+          <tr><td><span class="sk" style="width:62%"></span></td><td><span class="sk" style="width:72%"></span></td><td><span class="sk" style="width:44px"></span></td><td><span class="sk" style="width:14px"></span></td><td><span class="sk" style="width:48%"></span></td><td></td></tr>
+        </tbody></table>
       </div>
     </div>
   </div>
@@ -940,7 +962,10 @@ async function loadFleet(refresh){
   } catch(e){}
   if (!f || !f.rows){
     $('#fleetnote').textContent = 'Agent offline — chats are discovered from your git worktrees.';
-    tb.innerHTML = '<tr><td colspan="5" class="note">—</td></tr>';
+    // A designed degraded state, not a bare dash: names what's unavailable and how to restore it
+    // (the Zoom Test bar — "Degraded" — every touched panel gets this, not just the happy path).
+    tb.innerHTML = '<tr><td colspan="6" class="note">Start the local agent to see worktree'
+      + ' readiness here (<span class="mono">.claude/launch.json</span> → cockpit-verify, port 8918).</td></tr>';
     return;
   }
   const when = f.computed_at ? new Date(f.computed_at*1000).toLocaleTimeString() : 'unknown';
@@ -1022,6 +1047,8 @@ const ISSUE_TYPES = ['story','bug','task','chore'];
 const PRIORITIES = ['lowest','low','medium','high','highest'];
 let OPEN_TICKET = null;
 let TICKETS = [];
+let TICKETS_OFFLINE = false; // true only when the /tickets fetch itself failed — distinct from a
+                              // genuinely empty list, so the two get different designed empty states
 let EPICS = [];            // [{epic, ticket_count, counts, story_points}, ...] — GET /api/cockpit/epics
 let EPICS_LOADED = false;
 let EPIC_FILTER = null;    // epic id the Tickets view is filtered to, or null
@@ -1103,8 +1130,14 @@ function renderTicketList(){
   renderEpicFilterNote();
   const tb = $('#tickets tbody');
   if (!TICKETS.length){
-    $('#ticketsnote').textContent = 'No tickets yet — create one from a chat above.';
-    tb.innerHTML = '<tr><td colspan="7" class="note">No tickets yet — create one from a chat above.</td></tr>';
+    // Offline and genuinely-empty read identically as "no rows" unless told apart explicitly — an
+    // offline agent showing "create one from a chat above" is actively wrong, since that CTA needs
+    // the very agent that's down. Two distinct designed states, not one empty-table catch-all.
+    const msg = TICKETS_OFFLINE
+      ? 'Agent offline — start it locally to load, create, or run tickets.'
+      : 'No tickets yet — create one from a chat above.';
+    $('#ticketsnote').textContent = msg;
+    tb.innerHTML = '<tr><td colspan="7" class="note">'+esc(msg)+'</td></tr>';
     return;
   }
   const list = visibleTickets();
@@ -1199,6 +1232,10 @@ async function createEpic(){
 async function loadTickets(){
   let d = null;
   try { d = await (await fetch('/api/cockpit/tickets')).json(); } catch(e){}
+  // Both a failed fetch (network/server down) and a server-reported `available:false` (the
+  // cockpit modules didn't import) mean the same thing to the operator: the ticket system itself
+  // is down, not "there happen to be zero tickets" — see the `available` field server.py now sends.
+  TICKETS_OFFLINE = !d || d.available === false;
   TICKETS = (d && d.tickets) || [];
   await loadEpics();
   renderTicketList();
