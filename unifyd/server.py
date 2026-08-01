@@ -7060,9 +7060,13 @@ def api_cockpit_auth():
         return jsonify(mode="unavailable", warning="agent_exec did not import",
                        api_key_in_env=bool(os.environ.get("ANTHROPIC_API_KEY"))), 200
     a = m["agent_exec"].auth_mode()
-    if _on_fly():
+    # An OAuth session can never exist on Fly, but ANTHROPIC_API_KEY does (it's a standing secret,
+    # used by ~17 other unifyd modules already) — auth_mode() already reports that correctly as
+    # "api-key (METERED)" with its own Fly-aware warning text, so only override to "disabled" when
+    # NEITHER rail is actually available.
+    if _on_fly() and not a.get("api_key_in_env"):
         a["mode"] = "read-only (served from Fly — dispatch disabled)"
-        a["warning"] = "Dispatch runs only on the Mac, where the OAuth login lives."
+        a["warning"] = "No OAuth session possible here, and no ANTHROPIC_API_KEY configured either."
     return jsonify(a), 200
 
 
@@ -7643,13 +7647,17 @@ def api_cockpit_chat():
     nothing — measured, that's the 66.9% of cost currently going to re-derived quick answers. Only a
     miss reaches the model, and then the router decides continue / fork / new so the context carried
     is a deliberate choice rather than whatever the last session happened to hold."""
-    if _on_fly():
-        return jsonify(error="Chat dispatch is disabled on the Fly-served instance — the OAuth login "
-                             "that bills your subscription exists only on the Mac."), 403
     m = _cockpit_mods()
     C, X, M = m.get("agent_chats"), m.get("agent_exec"), m.get("agent_memory")
     if not (C and X):
         return jsonify(error="cockpit modules unavailable", detail=m.get("errors")), 200
+    # No OAuth session can ever exist on Fly, but agent_exec.dispatch() itself now falls back to the
+    # metered API key when the CLI is genuinely absent (only true here) — so refuse only when
+    # NEITHER rail can work, not unconditionally. When the fallback DOES engage it's text-only (no
+    # tool use, no crew orchestration), which the miss-path below already is.
+    if _on_fly() and not X.auth_mode().get("api_key_in_env"):
+        return jsonify(error="Chat dispatch is unavailable here — no OAuth session (Fly-served) and "
+                             "no ANTHROPIC_API_KEY configured either."), 403
     body = request.get_json(silent=True) or {}
     q = (body.get("q") or "").strip()
     if not q:
@@ -7715,7 +7723,12 @@ def api_cockpit_chat():
                 branching=bool(body.get("branching")),
                 budget_pressure=float(body.get("budget_pressure") or 0),
                 cwd=(ch or {}).get("worktree") or None,
-                dry_run=bool(body.get("dry_run")))
+                dry_run=bool(body.get("dry_run")),
+                # Only load-bearing for the API-fallback path (no CLI session file to --resume there
+                # — the CLI path ignores this entirely, --resume already IS its continuity). Includes
+                # the just-added current turn on purpose: dispatch_via_api() drops the last entry and
+                # uses the router's own (possibly caveman-stripped) prompt for it instead.
+                history=C.transcript(chat_id))
     route = rec.get("route") or {}
     if rec.get("dry_run"):
         return jsonify(status="dry-run", route=route, argv_display=rec.get("argv_display"),

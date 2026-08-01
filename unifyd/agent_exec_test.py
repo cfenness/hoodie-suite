@@ -260,6 +260,161 @@ def main():
           "boom" in rec_bad["error"], rec_bad)
     check("...and no result is reported alongside it (never both)", rec_bad.get("result") is None, rec_bad)
 
+    # --- 9. the API-fallback path — ONLY engages when the CLI genuinely does not exist -----------
+    # This is the Fly-served instance's only possible dispatch path (no OAuth session can ever exist
+    # there). It must be a NARROWER condition than "a key is set": section 5 above already proved a
+    # stray key still refuses whenever the CLI IS present — everything here forces _which_claude()
+    # to None first, simulating the one machine shape where this branch is allowed to fire at all.
+    tmp_state9 = tempfile.mkdtemp(prefix="exec-state-api-")
+    tmp_ledger9 = os.path.join(tmp_state9, "ledger.jsonl")
+    tmp_threads9 = os.path.join(tmp_state9, "threads.json")
+    old_state9, old_ledger9, old_threads9 = X.STATE, X.LEDGER, X.THREADS
+    old_which = X._which_claude
+    X.STATE, X.LEDGER, X.THREADS = tmp_state9, tmp_ledger9, tmp_threads9
+    X._which_claude = lambda: None
+
+    had9 = os.environ.get("ANTHROPIC_API_KEY")
+    try:
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        rec9 = X.run("anything", dry_run=False)
+        check("no CLI + no key -> a clear refusal, not a crash",
+              bool(rec9.get("error")) and rec9.get("result") is None, rec9)
+
+        os.environ["ANTHROPIC_API_KEY"] = "sk-ant-test-key"
+        rec9 = X.run("is abc-fws enabled", dry_run=True)
+        check("no CLI + key + dry_run -> API-mode argv_display, no spend",
+              "api mode" in (rec9.get("argv_display") or "") and rec9.get("result") is None, rec9)
+
+        import types as _types
+        captured = {}
+
+        class _Block:
+            type = "text"
+            text = "mocked api answer"
+
+        class _Usage:
+            input_tokens = 42
+            output_tokens = 7
+
+        class _Msg:
+            content = [_Block()]
+            usage = _Usage()
+
+        class _FakeBadRequestError(Exception):
+            pass
+
+        class _FakeAnthropic:
+            def __init__(self):
+                pass
+
+            class messages:
+                @staticmethod
+                def create(**kw):
+                    captured.update(kw)
+                    return _Msg()
+
+        fake_mod = _types.SimpleNamespace(Anthropic=_FakeAnthropic, BadRequestError=_FakeBadRequestError)
+        old_anthropic_mod = sys.modules.get("anthropic")
+        sys.modules["anthropic"] = fake_mod
+        try:
+            history = [{"role": "user", "text": "earlier question"},
+                      {"role": "assistant", "text": "earlier answer"},
+                      {"role": "user", "text": "is abc-fws enabled"}]   # the just-added current turn
+            rec9 = X.run("is abc-fws enabled", dry_run=False, history=history)
+        finally:
+            if old_anthropic_mod is not None:
+                sys.modules["anthropic"] = old_anthropic_mod
+            else:
+                sys.modules.pop("anthropic", None)
+
+        check("a mocked API success parses the result", rec9.get("result") == "mocked api answer", rec9)
+        check("...and usage", rec9.get("usage", {}).get("input_tokens") == 42, rec9)
+        check("...and mints a session id (no CLI session file exists to reuse)",
+              bool(rec9.get("session_id")), rec9)
+        check("no error on a clean mocked success", not rec9.get("error"), rec9)
+        check("prior history became prior messages",
+              captured.get("messages", [{}])[0] == {"role": "user", "content": "earlier question"},
+              captured.get("messages"))
+        check("the CURRENT turn is NOT duplicated from history — the router's own prompt is used once",
+              len(captured.get("messages", [])) == 3, captured.get("messages"))
+        check("...as the final message", captured["messages"][-1]["role"] == "user",
+              captured["messages"][-1])
+
+        with open(tmp_ledger9, encoding="utf-8") as fh:
+            lines9 = [json.loads(l) for l in fh if l.strip()]
+        check("a real API dispatch appends a ledger line (the dry_run before it correctly logs nothing)",
+              len(lines9) == 1, lines9)
+
+        # thinking=adaptive isn't supported on every tier (measured live: haiku rejects it) — the
+        # richer call must fall back to a plain one on EXACTLY that error, transparently.
+        calls = []
+
+        class _FallbackAnthropic:
+            class messages:
+                @staticmethod
+                def create(**kw):
+                    calls.append(kw)
+                    if "thinking" in kw:
+                        raise _FakeBadRequestError("adaptive thinking is not supported on this model")
+                    return _Msg()
+
+        sys.modules["anthropic"] = _types.SimpleNamespace(
+            Anthropic=_FallbackAnthropic, BadRequestError=_FakeBadRequestError)
+        try:
+            rec9 = X.run("anything", dry_run=False)
+        finally:
+            if old_anthropic_mod is not None:
+                sys.modules["anthropic"] = old_anthropic_mod
+            else:
+                sys.modules.pop("anthropic", None)
+        check("thinking=adaptive rejected -> falls back to a plain call, no error surfaced",
+              not rec9.get("error") and rec9.get("result") == "mocked api answer", rec9)
+        check("...tried the richer call first", "thinking" in calls[0], calls)
+        check("...then retried without it", len(calls) == 2 and "thinking" not in calls[1], calls)
+
+        # any OTHER BadRequestError (or any other exception entirely) must NOT be swallowed as a
+        # fallback trigger — only the exact "thinking not supported" shape gets retried.
+        class _OtherBadRequest:
+            class messages:
+                @staticmethod
+                def create(**kw):
+                    raise _FakeBadRequestError("model not found: bogus-model-id")
+        sys.modules["anthropic"] = _types.SimpleNamespace(
+            Anthropic=_OtherBadRequest, BadRequestError=_FakeBadRequestError)
+        try:
+            rec9 = X.run("anything", dry_run=False)
+        finally:
+            if old_anthropic_mod is not None:
+                sys.modules["anthropic"] = old_anthropic_mod
+            else:
+                sys.modules.pop("anthropic", None)
+        check("a DIFFERENT BadRequestError is NOT treated as the thinking-fallback case",
+              "model not found" in (rec9.get("error") or ""), rec9)
+
+        # SDK failure must surface as rec["error"], never crash the caller.
+        class _BoomAnthropic:
+            class messages:
+                @staticmethod
+                def create(**kw):
+                    raise RuntimeError("rate limited")
+        sys.modules["anthropic"] = _types.SimpleNamespace(
+            Anthropic=_BoomAnthropic, BadRequestError=_FakeBadRequestError)
+        try:
+            rec9 = X.run("anything", dry_run=False)
+        finally:
+            if old_anthropic_mod is not None:
+                sys.modules["anthropic"] = old_anthropic_mod
+            else:
+                sys.modules.pop("anthropic", None)
+        check("an SDK exception sets rec[error], not a crash", "rate limited" in (rec9.get("error") or ""), rec9)
+    finally:
+        X._which_claude = old_which
+        X.STATE, X.LEDGER, X.THREADS = old_state9, old_ledger9, old_threads9
+        if had9 is None:
+            os.environ.pop("ANTHROPIC_API_KEY", None)
+        else:
+            os.environ["ANTHROPIC_API_KEY"] = had9
+
     print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
     return 1 if FAILED else 0
 
