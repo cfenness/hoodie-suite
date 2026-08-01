@@ -44,7 +44,7 @@ the lever.** Model routing alone is worth ~58.5% token-weighted.
 | `agent_chats.py` | claims, deploy lease, anti-clobber, chat transcripts, tactic-savings rollup | 61 |
 | `agent_roles.py` | PM / engineer / QA / lead-reviewer crews | 63 |
 | `agent_checks.py` | the deterministic checker | 43 |
-| `agent_exec.py` | the Claude Code CLI seam + run ledger | 58 |
+| `agent_exec.py` | the Claude Code CLI seam + run ledger; explicit metered-API opt-in | 69 |
 | `agent_import_chat.py` | scoped claude.ai export intake | 34 |
 | `agent_mine.py` | mine stated rules from transcripts | 38 |
 | `agent_tickets.py` | ticket + epic lifecycle: PM draft → editable criteria → crew run → docs; forward-only status; Jira-parity export; structured verdicts; cost receipt; evidence attachments | 138 |
@@ -154,12 +154,33 @@ same subject can hit the fact store instead of re-deriving what the crew already
 
 ## The four things that are load-bearing
 
-**1. Subscription rail, never metered.** The engine is `claude -p` driven headlessly, authenticating
-from the OAuth login in `~/.claude.json` (token itself in the macOS Keychain, service
-`Claude Code-credentials`). This is a *different billing rail* from the ~17 `unifyd/` modules that use
-`anthropic` + `ANTHROPIC_API_KEY`. `agent_exec` **refuses to run** if it sees a stray API key rather
-than silently switching rails. Dispatch is local-only — `/api/cockpit/run` and `/chat` refuse when
-`FLY_APP_NAME` is set, because the credential exists only on the Mac.
+**1. Subscription rail, never metered — an explicit opt-in, not an ambient fallback.** The engine is
+`claude -p` driven headlessly, authenticating from the OAuth login in `~/.claude.json` (token itself
+in the macOS Keychain, service `Claude Code-credentials`). This is a *different billing rail* from
+the ~17 `unifyd/` modules that use `anthropic` + `ANTHROPIC_API_KEY`. Dispatch is local-only —
+`/api/cockpit/run` and `/chat` refuse when `FLY_APP_NAME` is set, because the credential exists only
+on the Mac.
+
+An earlier version of this point made `agent_exec` **hard-refuse** every dispatch whenever
+`ANTHROPIC_API_KEY` was merely *present* in the environment — which punished the wrong thing: any
+unrelated tool exporting that variable into the shell blocked every run until someone noticed and
+unset it by hand, and it was never actually a deliberate safeguard (working around the refusal to
+use the key on purpose defeated its own point). The real fix is `agent_exec.metered_allowed()`
+(`unifyd/agent_state/cockpit/exec_settings.json`, machine-local, **defaults False**) — the ONE thing
+that decides behavior now:
+- **Off (default):** `dispatch()`'s `_dispatch_env()` strips `ANTHROPIC_API_KEY` from the *subprocess*
+  environment before invoking `claude` — the run proceeds normally on the subscription regardless of
+  what's ambiently set. `auth_mode()` reports this as `subscription (ANTHROPIC_API_KEY present but
+  ignored)` with a low-key `note`, deliberately not a `warning` (the Cockpit only surfaces `warning`
+  as a "needs your attention" item, and this is a handled, working state).
+- **On:** the environment is left untouched, the CLI's own normal OAuth-vs-API-key precedence
+  applies, and `auth_mode()` reports `api-key (METERED — explicitly enabled)` *with* a `warning` —
+  real spend is now possible. Toggle via the Cockpit UI (Standing panel, below the tiles) or
+  `POST /api/cockpit/metered {metered_allowed: bool}`.
+
+`_dispatch_env(auth, base_env=None)` is a pure function (env in, env out, no subprocess) specifically
+so this policy is unit-tested without this module's test suite ever dispatching for real — see its
+own docstring and `agent_exec_test.py`'s "5c/5d" sections.
 
 > **Auth gotcha, cost ~45 min:** `claude auth status` reports `loggedIn: true` from the mere *presence*
 > of a credential, so a stale one makes plain `/login` skip the browser flow entirely. Recovery is
