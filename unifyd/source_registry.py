@@ -411,17 +411,23 @@ SOURCES = [
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["naop_accounts", "naop_beverages"], klass="headless", cadence="daily", enabled=True, timeout=7200,
          note="DoorDash on-premise menus, $0 (ISP pool); consumes doordash_stores in NAOP_LIMIT batches"),
-    dict(id="doordash-full", label="DoorDash retail — full catalog (chain-attributed, national)",
+    dict(id="doordash-full", label="DoorDash retail — full catalog (national, all beverage alcohol)",
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          code="import doordash_chains as m; m.run()",
-         tables=["doordash_full_runs"], klass="headless", cadence="daily", enabled=True, timeout=14400,
+         tables=["doordash_full_runs", "doordash_products_full", "doordash_outlets_full"],
+         klass="headless", cadence="daily", enabled=True, timeout=14400,
          cost_class="free",
-         note="RESUMABLE national sweep of a curated major-chain list via doordash_full.py's category-tree "
-              "walk (doordash_chains.py buckets doordash_stores by chain-name heuristic, same pattern as "
-              "naop's _RETAIL_CHAINS, inverted). Each run advances every chain toward full coverage in "
-              "DDFULL_BATCH_PER_CHAIN batches (accumulate-merged, never overwrites a prior batch) and lands "
-              "matched/covered/remaining every time — no permanent cap, no silent coverage gap. $0 flat ISP "
-              "pool (Bright Data retired for DoorDash 2026-07-24)"),
+         note="RESUMABLE national sweep of the FULL doordash_stores sitemap universe (767k+) via "
+              "doordash_full.py's category-tree walk — NO curated chain list (a prior version matched "
+              "only ~15 hand-picked banners against ~25k of the 767k stores; removed as a self-imposed "
+              "scope limit, not a real constraint — the sitemap carries no chain/vertical field, so a "
+              "non-retail store just costs one wasted fetch before the tree walk empties out). Lands one "
+              "unified doordash_products_full/doordash_outlets_full table with per-store real-name "
+              "attribution, not a per-chain table. shard/nshard partitions the remaining stores for "
+              "running multiple machines concurrently at this scale. DDFULL_BATCH caps stores per run "
+              "(accumulate-merged, never overwrites a prior batch, covered check unions the new table "
+              "with every legacy per-chain table so nothing already scraped gets redone) — no permanent "
+              "cap, no silent coverage gap. $0 flat ISP pool (Bright Data retired for DoorDash 2026-07-24)"),
     dict(id="toast", label="Toast own-menus", code="import toast as m; m.run()",
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["toast_outlets", "toast_beverages", "toast_menu_accounts"], klass="headless", cadence="daily",

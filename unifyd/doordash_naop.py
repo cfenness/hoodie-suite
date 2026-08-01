@@ -129,30 +129,37 @@ def _pull_one(sid, run_id):
 
 
 def run(stores=None, limit=None, log=print):
+    """Wrapped in runlog.track() — the SAME live-progress mechanism doordash_chains.py/abc_catalog.py/
+    total_wine_full.py already use (writes to the shared scrape_runs table). Before this, naop had ZERO
+    entries in scrape_runs despite being registry-enabled on a daily cadence — invisible to /api/jobs
+    and to due-ness bookkeeping, indistinguishable from "never actually runs" even when it does."""
     limit = limit or int(os.environ.get("NAOP_LIMIT", "250"))     # concurrent now — pages are ~30s each via ISP
     workers = int(os.environ.get("NAOP_WORKERS", "10"))
     stores = stores or _due_stores(limit, log=log)
     run_id = "naop-" + time.strftime("%Y%m%d-%H%M%S")
     import threading
     from concurrent.futures import ThreadPoolExecutor
+    import runlog
     rows, accounts, unsure, done = [], [], [], [0]
     lock = threading.Lock()
 
-    def _work(sid):
-        r, a = _pull_one(sid, run_id)
-        with lock:
-            done[0] += 1
-            if r:
-                rows.extend(r)
-            if a is not None:
-                accounts.append(a)
-                if not a["cuisine"]:
-                    unsure.append(a["account"])
+    with runlog.track("naop", total=len(stores)) as r:
+        def _work(sid):
+            res, a = _pull_one(sid, run_id)
+            with lock:
+                done[0] += 1
+                if res:
+                    rows.extend(res)
+                if a is not None:
+                    accounts.append(a)
+                    if not a["cuisine"]:
+                        unsure.append(a["account"])
+                r.progress(done[0], len(stores))
                 if done[0] % 25 == 0:
                     log("  [naop] %d/%d fetched (%d beverages so far)" % (done[0], len(stores), len(rows)))
 
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        list(ex.map(_work, stores))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            list(ex.map(_work, stores))
     if unsure:                                                             # Claude fallback for the nameless
         guess = cui.claude_cuisine(unsure)
         for coll in (rows, accounts):

@@ -20,11 +20,11 @@ ALCOHOL_TERMS = ["beer", "wine", "seltzer", "liquor", "vodka", "whiskey", "tequi
                  "bourbon", "gin", "malt beverage", "hard cider", "champagne", "prosecco",
                  "canned cocktail", "wine spritzer"]
 
-# Per-attempt fetch timeout. Was a hardcoded 60s — with retries=4 that's up to 240s of pure waiting on a
-# single genuinely-dead request, against an observed 3000+ accumulated timeouts on 2026-07-30/31. A
-# real, successful fetch measured ~8s; 20s gives ample margin for a slow-but-alive response while
-# failing dead ones 3x faster, which is the whole point of a bounded retry loop.
-FETCH_TIMEOUT_S = float(os.environ.get("DDFULL_FETCH_TIMEOUT_S", "20"))
+# Per-attempt fetch timeout. Kept at the original 60s — a shorter timeout risks giving up on a
+# legitimately-slow-but-real response before it completes, which is a completeness risk (a dropped
+# category/item), not just a speed one. Not worth cutting without concrete proof of zero data loss;
+# reverted after an earlier attempt at 20s here that was never actually validated for that.
+FETCH_TIMEOUT_S = float(os.environ.get("DDFULL_FETCH_TIMEOUT_S", "60"))
 
 # chain key -> {name, stores[]}. Store ids are DoorDash store ids (discover via the site search by market).
 CHAINS = {
@@ -86,7 +86,12 @@ def _beat(log, tally):
     (>60s since the last one) so a chain of 16 concurrent workers doesn't spam 16x. Without this, the
     only way to tell "the crawl is slow" from "the crawl is degraded" was reading item counts off
     per-store log lines and doing the arithmetic by hand — which is exactly what made a real slowdown
-    look identical to a deep-but-healthy category tree live on 2026-07-30."""
+    look identical to a deep-but-healthy category tree live on 2026-07-30.
+
+    Also reports the LIVE pacer rate (not just what it started at) — same reasoning as
+    ue_catalog.py's own beat: AIMD moves the rate continuously, and a number that only prints at
+    startup can't tell you what the controller has converged to right now, which is the whole point
+    of running it instead of a fixed constant."""
     if not tally or not log:
         return
     if (time.time() - _last_beat[0]) <= 60:
@@ -94,8 +99,16 @@ def _beat(log, tally):
     _last_beat[0] = time.time()
     flat = tally.flat()
     v = tally.exit_verdict()
-    log("HOODIE_DD_PROGRESS %s exit_pattern=%s worst=%s"
-        % (flat, v.get("pattern"), v.get("worst")))
+    pc = {}
+    try:
+        import pace
+        p = pace.get()
+        if p:
+            pc = p.stats()
+    except Exception:
+        pass
+    log("HOODIE_DD_PROGRESS %s exit_pattern=%s worst=%s pace=%s"
+        % (flat, v.get("pattern"), v.get("worst"), pc))
 
 
 def _fetch(url, retries=4, log=None, session=None):
@@ -114,7 +127,15 @@ def _fetch(url, retries=4, log=None, session=None):
     timestamps and doing the arithmetic by hand — exactly the gap that made a real slowdown
     indistinguishable from "just a deep category tree" live on 2026-07-30. Also logs any single attempt
     slower than SLOW_FETCH_S directly, so a stalled-feeling crawl shows ITS OWN evidence in the log
-    instead of requiring an external timing probe to notice."""
+    instead of requiring an external timing probe to notice.
+
+    PACED via pace.py (the same self-tuning AIMD controller ue_catalog.py's getstore.py already uses)
+    if a caller has installed one (doordash_chains.py does). DoorDash never had this: concurrency was
+    gated only by worker COUNT and a flat sleep, no adaptation, no fleet-wide rate budget — the exact
+    "worker count is a proxy that breaks whenever the work per worker changes" problem pace.py's own
+    docstring documents from UberEats' history. Pacing is opt-in and best-effort (a caller that never
+    installs one gets today's unpaced behavior unchanged) so this never becomes the reason a fetch
+    can't run."""
     import resi
     import blocks
     SLOW_FETCH_S = 15.0
@@ -125,8 +146,18 @@ def _fetch(url, retries=4, log=None, session=None):
             log("  [dd] curl_cffi unavailable: %s" % str(e)[:60])
         return ""
     tally = blocks.get()
+    try:
+        import pace
+        pacer = pace.get()
+    except Exception:
+        pacer = None
     last = ""
     for a in range(retries):
+        if pacer:
+            try:
+                pacer.acquire()
+            except Exception:
+                pass
         t0 = time.time()
         exit_ip = _exit_of(session) if session is not None else None
         try:
@@ -145,6 +176,11 @@ def _fetch(url, retries=4, log=None, session=None):
             if tally:
                 tally.record(cls, method="isp", exit=exit_ip)
                 _beat(log, tally)
+            if pacer:
+                try:
+                    pacer.report(cls == blocks.OK)
+                except Exception:
+                    pass
             if el >= SLOW_FETCH_S and log:
                 log("  [dd] slow fetch: %.1fs status=%s cls=%s exit=%s %s"
                     % (el, r.status_code, cls, exit_ip, url[:70]))
@@ -157,6 +193,11 @@ def _fetch(url, retries=4, log=None, session=None):
             if tally:
                 tally.record(cls, method="isp", exit=exit_ip)
                 _beat(log, tally)
+            if pacer:
+                try:
+                    pacer.report(not blocks.is_throttle(cls))
+                except Exception:
+                    pass
             if el >= SLOW_FETCH_S and log:
                 log("  [dd] slow fetch: %.1fs exc cls=%s exit=%s %s" % (el, cls, exit_ip, url[:70]))
             last = str(e)[:80]
