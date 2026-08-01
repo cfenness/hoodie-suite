@@ -7399,6 +7399,24 @@ def api_cockpit_ledger():
         return jsonify([]), 200
 
 
+@app.get("/api/cockpit/velocity")
+def api_cockpit_velocity():
+    """Story points DONE in the trailing window, overall and per epic (v2 spec T-3.2) — reads
+    agent_tickets.velocity()'s own docstring for exactly what "done in the window" means (the
+    ticket's own status_history, not `updated`)."""
+    m = _cockpit_mods()
+    if not m.get("agent_tickets"):
+        return jsonify(error="agent_tickets unavailable"), 200
+    T = m["agent_tickets"]
+    try:
+        window_days = float(request.args.get("window_days") or 7)
+    except ValueError:
+        window_days = 7
+    overall = T.velocity(window_days=window_days)
+    return jsonify(window_days=window_days, as_of=overall["as_of"], overall=overall,
+                   by_epic=T.velocity_by_epic(window_days=window_days)), 200
+
+
 @app.get("/api/cockpit/tactics-savings")
 def api_cockpit_tactics_savings():
     """What caveman/terse/etc. actually saved, read back off what was stored per chat turn — see

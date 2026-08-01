@@ -517,6 +517,37 @@ def epic_rollup(eid, db=None, ticket_db=None):
                story_points=sum(t.get("story_points") or 0 for t in tickets))
 
 
+def velocity(window_days=7, epic_id=None, db=None):
+    """Story points DONE within the trailing `window_days` — the input a weekly cadence brief needs
+    (v2 spec T-3.2). Reads each ticket's OWN `status_history` for when it actually transitioned to
+    `done`, not `updated` — a later edit (relabeling, patching a typo) bumps `updated` long after a
+    ticket really closed, which would silently inflate a later week's velocity with old work. `done`
+    is a terminal status (advance_status refuses anything but `done` once there), so a ticket has at
+    most one transition into it — the first one found is the only one there is."""
+    now = _now_ms()
+    cutoff = now - int(window_days * 86400 * 1000)
+    tickets_done, points = 0, 0
+    for t in list_tickets(epic_id=epic_id, db=db):
+        done_at = next((h.get("at") for h in (t.get("status_history") or [])
+                        if h.get("status") == "done"), None)
+        if done_at is not None and done_at >= cutoff:
+            tickets_done += 1
+            points += t.get("story_points") or 0
+    return dict(window_days=window_days, epic_id=epic_id, tickets_done=tickets_done,
+               story_points=points, as_of=now)
+
+
+def velocity_by_epic(window_days=7, db=None, epic_db=None):
+    """One `velocity()` reading per epic — the per-epic half of T-3.2's roll-up, `epic_rollup()`'s
+    sibling (status-counts vs. done-in-window). Deliberately re-derives from `velocity()` rather than
+    a separate aggregation pass, so the two never drift on what "done in the window" means."""
+    out = []
+    for e in list_epics(db=epic_db):
+        v = velocity(window_days=window_days, epic_id=e["id"], db=db)
+        out.append(dict(epic=e, tickets_done=v["tickets_done"], story_points=v["story_points"]))
+    return out
+
+
 # ── Jira export — the bridge until EPIC-4's real sync exists ──────────────────────────────────────
 def jira_csv_rows(tickets, epics_by_id=None):
     """Header row + one row per ticket, in Jira's standard bulk-CSV-importer column names. Pure data
