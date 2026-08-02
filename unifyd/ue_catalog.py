@@ -689,6 +689,10 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
                   rss_mb=_rss_mb(),
                   pace_rate=_pc.get("rate"), pace_backoffs=_pc.get("backoffs"),
                   pace_increases=_pc.get("increases"), pace_at_floor=_pc.get("at_floor"),
+                  # IS THE BUDGET BEING SPENT? pace_rate alone is a ceiling; these say whether we are
+                  # anywhere near it, and therefore whether concurrency is even the right dial.
+                  pace_achieved=_pc.get("achieved"), pace_utilization=_pc.get("utilization"),
+                  pace_wait_ms=_pc.get("wait_ms"),
                   hot_exits=_hot, ladder_rung=_rung,
                   **_bk)
         # Bank reputation on a SLOWER cadence than the beat. This is a warehouse round trip per shard,

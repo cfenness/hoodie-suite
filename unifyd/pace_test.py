@@ -180,6 +180,43 @@ check("restored default after reload", pace.Pacer(rate=5.0).max_rate, 20.0)
 # an explicit max_rate= still wins over the multiplier, same as before this change
 check("explicit max_rate overrides the multiplier", pace.Pacer(rate=5.0, max_rate=9.0).max_rate, 9.0)
 
+# ── utilization meter: does it tell WORKER-bound apart from PACER-bound? ─────────────────────────
+# This is the whole reason the meter exists. If it can't distinguish "the budget is going unspent"
+# from "the ceiling is the constraint", it cannot answer whether adding concurrency would help — and
+# that question has been answered by guesswork twice already (see pace.py's own header).
+# Simulating SLOW WORKERS, not a slow pacer: the ceiling is generous and demand arrives with gaps, so
+# tokens are always already waiting. (Acquiring back-to-back would NOT model this — an empty bucket
+# blocks at the refill rate no matter how high the ceiling, which reads as pacer-bound and is exactly
+# the confusion this meter exists to resolve.)
+u = pace.Pacer(rate=50.0)
+for _ in range(5):
+    u.acquire()
+    time.sleep(0.05)                 # think-time between requests — the worker is the slow part
+s_u = u.stats()
+check("an unused budget still counts its tokens", s_u["achieved"] > 0, True)
+check("...and reads far below the ceiling", s_u["utilization"] < 0.5, True)
+check("...with nobody waiting: the pacer was not the constraint", s_u["wait_ms"] <= 1, True)
+
+# The opposite case: a tight ceiling with back-to-back demand must read as pacer-bound.
+b_u = pace.Pacer(rate=2.0)
+t0 = time.time()
+for _ in range(4):
+    b_u.acquire()
+el_u = time.time() - t0
+s_b = b_u.stats()
+check("a saturated budget actually blocks", el_u > 0.4, True)
+check("...and the wait is visible in the meter", s_b["wait_ms"] > 0, True)
+check("...with achieved tracking the ceiling, not demand", s_b["achieved"] <= b_u.rate * 1.5, True)
+
+# The window resets on read so a heartbeat sees NOW; cumulative counters must not.
+c_u = pace.Pacer(rate=50.0)
+c_u.acquire()
+first_u = c_u.stats()
+second_u = c_u.stats()
+check("a fresh window reports less traffic than the one before it",
+      second_u["achieved"] < first_u["achieved"], True)
+check("backoffs stay cumulative across reads", second_u["backoffs"], first_u["backoffs"])
+
 if fails:
     print("\n".join("  FAIL " + f for f in fails))
     print("── %d failed" % len(fails))
