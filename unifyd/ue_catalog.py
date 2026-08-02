@@ -37,6 +37,7 @@ restarting. A sweep that can only land at the end throws away hours on any inter
 import argparse
 import hashlib
 import json
+import math
 import os
 import sys
 import time
@@ -88,9 +89,38 @@ def _rss_mb():
     return None
 
 
+# How long one paced request occupies a worker, end to end: the BFF round trip plus this store's
+# enrichment fetches. Measured 2026-08-02 from the utilization meter — five established shards ran
+# 6 workers at 1.91-2.93 req/s achieved, i.e. ~2.0-3.1s of occupancy per worker per request. 2.4s is
+# the middle of that. Deliberately an env knob: it is the one number here that moves with how fat the
+# average store is, and the next honest measurement should be able to correct it without a deploy.
+SERVICE_S = float(os.environ.get("UE_SERVICE_S", "2.4"))
+WORKER_HEADROOM = float(os.environ.get("UE_WORKER_HEADROOM", "1.25"))
+
+
 def auto_workers(nshard=1, log=print):
-    """Workers for THIS shard: (pool_size * PER_IP) / shards, floored at 4. An explicit UE_WORKERS
-    still wins, but the default now scales with the resource that actually binds — exit IPs."""
+    """Workers for THIS shard, sized by LITTLE'S LAW against the rate budget, capped by what the exit
+    pool can bear. An explicit UE_WORKERS still wins.
+
+    WHY THIS CHANGED. The old formula was (pool_size * PER_IP) / shards — it sized off exit IPs alone,
+    which answers "how much concurrency can the addresses absorb" and not "how much concurrency does
+    it take to spend the rate budget". Those are different questions with different answers, and on
+    2026-08-02 the utilization meter finally measured the gap: with `--workers 6` pinned, five shards
+    were achieving 1.91-2.93 req/s against a 5.0 req/s ceiling — 38-59% utilization, i.e. roughly half
+    the permitted budget going unspent while wait_ms stayed low enough to rule out token starvation.
+    Six workers simply could not keep a 5/s bucket fed.
+
+    The old formula would have said 37 for that same fleet (50 IPs x 6/IP / 8 shards). That is not a
+    fix, it is the opposite error: 37 workers against a 5/s ceiling is ~25 threads parked in
+    acquire(), which buys nothing and makes bursts worse. The binding constraint here is the PACER,
+    so the sizing has to start there:
+
+        concurrency = throughput x latency        (Little's Law)
+                    = shard_rate x SERVICE_S
+
+    then take the MIN with the exit-pool allowance, because needing 12 workers does not mean the IPs
+    can carry 12. Need sets the target; the pool sets the ceiling; the floor of 4 keeps a tiny pool
+    from stalling a shard."""
     env = os.environ.get("UE_WORKERS")
     if env:
         return int(env)
@@ -99,9 +129,21 @@ def auto_workers(nshard=1, log=print):
         pool = len(resi.isp_pool()) or 1
     except Exception:
         pool = 1
-    w = max(4, int(pool * PER_IP / max(1, nshard)))
-    log("[ue] workers=%d (pool=%d IPs x %.1f/IP / %d shards) — the exit-IP budget, not a guess"
-        % (w, pool, PER_IP, nshard))
+    try:
+        import pace
+        rate = pace.shard_rate(nshard)
+    except Exception:
+        rate = 5.0
+    need = int(math.ceil(rate * SERVICE_S * WORKER_HEADROOM))   # enough to actually spend the budget
+    # floored at 1, NOT allowed to fall through: pool*PER_IP/nshard truncates to 0 for a small pool
+    # split many ways (1 IP across 8 shards), and treating that as "no ceiling" would hand a lone
+    # address the full Little's-Law number — the exact concentration that took one IP from 20% usable
+    # to 0% in three minutes. A degenerate ceiling is still a ceiling; the max(4) below is the floor.
+    bear = max(1, int(pool * PER_IP / max(1, nshard)))           # what the exits can absorb
+    w = max(4, min(need, bear))
+    log("[ue] workers=%d — need %d to spend %.1f req/s at ~%.1fs/req (Little's Law x%.2f headroom); "
+        "pool allows %d (%d IPs x %.1f/IP / %d shards)"
+        % (w, need, rate, SERVICE_S, WORKER_HEADROOM, bear, pool, PER_IP, nshard))
     return w
 
 
