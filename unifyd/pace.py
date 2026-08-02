@@ -99,10 +99,23 @@ class Pacer:
         self.backoffs = 0
         self.increases = 0
         self._floor_hits = 0
+        # ── UTILIZATION: is the budget we are permitted actually being SPENT? ──────────────────────
+        # `self.rate` is a CEILING, and until now nothing measured the floor beneath it. That left the
+        # most consequential tuning question unanswerable from the outside: when a shard is slow, is it
+        # slow because the pacer is holding it back, or because six workers cannot keep a 5/s bucket
+        # fed? Those have opposite fixes — the first says leave concurrency alone, the second says the
+        # budget is going unspent and more workers is free throughput. Guessing between them is how
+        # PER_IP got calibrated wrong twice (see the header). So: count granted tokens and the time
+        # workers spend BLOCKED waiting for one. High wait = token-starved = pacer-bound, more workers
+        # only queue. Near-zero wait with achieved << rate = worker-bound, and the gap is dead time.
+        self._acq_n = 0
+        self._acq_wait_s = 0.0
+        self._acq_since = time.time()
 
     def acquire(self):
         """Block until a token is available. The wait happens OUTSIDE the lock so workers don't serialize
         on each other — holding a mutex through a sleep would turn the pool into a single thread."""
+        t0 = time.time()
         while True:
             with self._lock:
                 now = time.time()
@@ -117,6 +130,10 @@ class Pacer:
                 self._last = now
                 if self._tokens >= 1.0:
                     self._tokens -= 1.0
+                    # Booked inside the lock we already hold — one add, no new contention on the
+                    # hottest path in the fleet.
+                    self._acq_n += 1
+                    self._acq_wait_s += (now - t0)
                     return
                 need = (1.0 - self._tokens) / max(0.001, self.rate)
             time.sleep(min(need, 1.0))
@@ -171,11 +188,33 @@ class Pacer:
             self._n = self._empty = 0
 
     def stats(self):
+        """Controller state plus the utilization meter.
+
+        The utilization fields are WINDOWED and reset on read, so a caller polling on a cadence (the
+        shard heartbeat) gets "what happened since the last beat" rather than a lifetime average that
+        buries the present under the past. The cumulative counters (backoffs/increases/at_floor) are
+        untouched by the reset and stay cumulative.
+
+        Reading it:
+          achieved ~= rate                    -> pacer-bound; more workers only queue on acquire()
+          achieved << rate AND wait_ms ~= 0   -> worker-bound; the budget is going unspent (dead time)
+          achieved << rate AND wait_ms high   -> pacer-bound and starving; the ceiling is the problem
+        """
         with self._lock:
-            return {"rate": round(self.rate, 2), "backoffs": self.backoffs,
-                    "increases": self.increases, "at_floor": self._floor_hits,
-                    "trip": round(self.empty_trip, 3),
-                    "baseline": (round(self._baseline, 3) if self._baseline is not None else None)}
+            now = time.time()
+            span = max(1e-6, now - self._acq_since)
+            achieved = self._acq_n / span
+            avg_wait_ms = (self._acq_wait_s / self._acq_n * 1000.0) if self._acq_n else 0.0
+            out = {"rate": round(self.rate, 2), "backoffs": self.backoffs,
+                   "increases": self.increases, "at_floor": self._floor_hits,
+                   "trip": round(self.empty_trip, 3),
+                   "baseline": (round(self._baseline, 3) if self._baseline is not None else None),
+                   "achieved": round(achieved, 2),
+                   "utilization": round(achieved / self.rate, 2) if self.rate > 0 else None,
+                   "wait_ms": round(avg_wait_ms),
+                   "window_s": round(span, 1)}
+            self._acq_n, self._acq_wait_s, self._acq_since = 0, 0.0, now
+            return out
 
 
 _GLOBAL = {"pacer": None}
