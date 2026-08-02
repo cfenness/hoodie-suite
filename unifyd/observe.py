@@ -44,7 +44,19 @@ NON_ALC_BRANDS = re.compile(
 # between, so they are not the same moment and must not be presented as one. `observed_at` (unix
 # seconds) carries the true instant per row. Older partitions lack the column; query_parts reads with
 # union_by_name=true, so they simply return null for it rather than breaking.
-OBS_FIELDS = ["date", "observed_at", "source", "store", "store_id", "product_id", "upc", "gtin",
+#
+# `chain` is the SUBTAG for a source that sweeps multiple retail banners under one connector identity —
+# e.g. doordash_full.py prices Walmart/Target/etc through DoorDash's own storefront. That source used to
+# tag rows `source=<chain>` (e.g. "walmart"), which is exactly the table/tag proliferation this schema
+# exists to prevent: it invents a new identity per retailer instead of using the one DoorDash is already
+# known as everywhere else in the suite ("doordash"), and it makes DoorDash's own contribution
+# unrecoverable — blended into whatever else also writes source="walmart" with no way to tell them
+# apart. `source` is now always "doordash" for this connector (matching its own identity, the way every
+# other source uses ITS OWN name); `chain` optionally names which banner within that sweep this row
+# belongs to, empty for any source that only ever covers one retailer. `WHERE source = 'doordash'` now
+# answers "everything this connector landed, across every chain it touched" in one query — no per-chain
+# special-casing needed by a generic reader.
+OBS_FIELDS = ["date", "observed_at", "source", "chain", "store", "store_id", "product_id", "upc", "gtin",
               "brand", "name", "price", "promo", "on_promo", "in_stock", "qty", "stock_level", "is_hemp"]
 
 
@@ -75,6 +87,7 @@ def record(source, rows, date=None, log=print, part=None):
     out = []
     for r in rows:
         out.append({"date": date, "observed_at": int(r.get("observed_at") or now), "source": source,
+                    "chain": r.get("chain", ""),
                     "store": r.get("store", ""), "store_id": str(r.get("store_id", "") or ""),
                     "product_id": str(r.get("product_id", "") or ""), "upc": str(r.get("upc", "") or ""),
                     "gtin": str(r.get("gtin", "") or ""),

@@ -3050,8 +3050,7 @@ def scrape_dataset_ep():
     """Full-dataset read for a scraped source — distinct accounts, total rows, avg items/store, and today's
     delta — as opposed to a run doc's tick log, which only tracks one invocation's own in-memory counters
     (reset on every process restart, so it understates a multi-day sweep's real cumulative size). Scoped by
-    ?source= (a source_registry id whose canonical table is named '<source>_products', e.g. ubereats,
-    postmates)."""
+    ?source= (a source_registry id, e.g. ubereats, walmart, target, publix)."""
     site = (request.args.get("source") or "ubereats").strip()
     if not site.replace("_", "").isalnum():
         return jsonify(ok=False, error="invalid source"), 400
@@ -3059,59 +3058,63 @@ def scrape_dataset_ep():
 
 
 def _scrape_dataset_data(site):
+    """READ retail_observations, NOT a per-source catalog table. Every scraper checked (walmart, target,
+    publix, specs, ue_catalog, doordash_full, ...) already lands into this ONE shared, consistently-shaped
+    time-series (observe.py's OBS_FIELDS: store_id/product_id/date/source) via observe.record() — it is
+    already the closest thing this codebase has to a universal storage convention, it just wasn't being
+    used here. The alternative (each source's own "<source>_products"-shaped catalog table) is exactly
+    the divergence that broke this endpoint for doordash-full: that source has no single catalog table at
+    all — doordash_chains.py lands PER-CHAIN (walmart_products_full, target_products_full, ...), a
+    genuinely different shape a source-name-based lookup can't paper over. Reading the shared observation
+    layer instead means this endpoint generalizes to every source that already follows the existing
+    convention, with no per-source special-casing and no further migration required.
+
+    One real gap this does NOT solve: doordash_full.py tags its observations by the underlying retail
+    CHAIN (observe.record(chain, ...) — e.g. "walmart"), not literally "doordash", because that's the
+    real-world retailer being priced. So `source='doordash-full'` here reads back empty — not because
+    nothing landed, but because DoorDash's contribution is blended into each chain's own observations
+    with no field distinguishing "direct" vs "DoorDash-sourced" for the same chain. That is a genuine
+    data-modeling gap (a `channel`/`via` tag is the real fix), not something a read-side change can paper
+    over — tracked separately rather than guessed at here.
+    """
     import time as _t
     import warehouse
-    # READ THE PARTS, NOT THE CONSOLIDATED TABLE. `<site>_products` is only as fresh as the last
-    # consolidate() build (a periodic, registry-scheduled fold — see ue_catalog.consolidate()), which
-    # can lag a live multi-day sweep by however long since its last successful run. Measured live during
-    # this exact sweep: the consolidated table read 7,034 accounts / 597k rows while the sweep's own
-    # checkpoint had already landed 240k+ stores — a stale-by-orders-of-magnitude answer to the very
-    # question ("what do we actually have") this endpoint exists to answer honestly. `_parts` is what
-    # every shard appends to in real time, so it's always current; count(DISTINCT item_uuid) per store
-    # dedupes the same item re-observed across days the same way consolidate() would, without waiting
-    # for that build to run.
-    tbl_parts = "%s_products_parts" % site
-    # RETRY ON A READ-DURING-WRITE RACE. A live sweep's shards keep landing new part files under this
-    # exact table while this query is scanning it; DuckDB's S3 reader captures a file's ETag when it
-    # lists the directory and can find it changed by the time it actually reads that file — an
-    # eventual-consistency hiccup on the object store, not a real fault, but a genuinely long scan (this
-    # table can span thousands of part files across many days) has real odds of touching one mid-write
-    # on any given attempt while a sweep is active. `_ttl`'s caller retries this whole function again on
-    # its own 180s cycle regardless, so a failure here is not fatal to the endpoint ever landing — it
-    # just means "not yet" rather than "broken."
-    counts, last_err = None, None
+    today = _t.strftime("%Y-%m-%d")
+    # RETRY ON A READ-DURING-WRITE RACE. A live sweep keeps landing new date partitions under this table
+    # while this query scans it; DuckDB's S3 reader can catch a file mid-write (eventual-consistency
+    # hiccup on the object store, not a real fault). `_ttl`'s caller retries this whole function again on
+    # its own 180s cycle regardless, so a failure here means "not yet", not "broken".
+    agg, last_err = None, None
     for attempt in range(4):
         try:
-            counts = warehouse.query_parts(
-                tbl_parts, "SELECT store_uuid, count(DISTINCT item_uuid) n FROM t GROUP BY store_uuid")
+            agg = warehouse.query_parts(
+                "retail_observations",
+                "SELECT count(DISTINCT store_id) accounts, "
+                "count(DISTINCT store_id || '|' || product_id) items, "
+                "count(DISTINCT CASE WHEN date = ? THEN store_id END) changed_today "
+                "FROM t WHERE source = ?", [today, site])
             break
         except Exception as e:
             last_err = e
             _t.sleep(3 * (attempt + 1))
-    if counts is None:
+    if agg is None:
         return dict(ok=False, error=str(last_err)[:160])
-    total_accounts = len(counts)
-    total_rows = sum(r["n"] for r in counts)
+    agg = (agg or [{}])[0]
+    total_accounts, total_rows = agg.get("accounts") or 0, agg.get("items") or 0
     avg_items = round(total_rows / total_accounts, 1) if total_accounts else None
+    changed_today = agg.get("changed_today")
 
-    changed_today = None
-    try:
-        today = _t.strftime("%Y-%m-%d")
-        r = warehouse.query_parts("retail_observations",
-                                  "SELECT count(DISTINCT store_id) n FROM t WHERE source = ? AND date = ?",
-                                  [site, today])
-        changed_today = (r or [{}])[0].get("n")
-    except Exception:
-        pass
-
-    # PREMISE SPLIT IS A NAME-MATCHED HEURISTIC, not a scraped field — UberEats/Postmates don't return an
-    # on/off-premise flag, so this only classifies accounts whose resolved chain matches the bevalc_chains
-    # registry (known off-premise retail/grocery/liquor banners). Everything else defaults to on-premise
-    # (independent restaurant), which is this source's core business — that default is a coverage gap in
-    # the classifier, not a verified fact, hence the note carried alongside every response. Reuses `counts`
-    # from above rather than a second full-table scan.
+    # PREMISE SPLIT IS A NAME-MATCHED HEURISTIC, not a scraped field — most of these sources don't return
+    # an on/off-premise flag, so this only classifies accounts whose resolved chain matches the
+    # bevalc_chains registry (known off-premise retail/grocery/liquor banners). Everything else defaults
+    # to on-premise, which is a coverage gap in the classifier, not a verified fact — hence the note
+    # carried alongside every response.
     premise = None
     try:
+        counts = warehouse.query_parts(
+            "retail_observations",
+            "SELECT store_id, count(DISTINCT product_id) n FROM t WHERE source = ? GROUP BY store_id",
+            [site])
         chain_premise = {r["name"].strip().lower(): r.get("premise")
                          for r in warehouse.query("bevalc_chains", "SELECT name, premise FROM t") if r.get("name")}
         store_chain = {r["store_id"]: (r.get("chain") or "").strip().lower()
@@ -3120,7 +3123,7 @@ def _scrape_dataset_data(site):
                            [site])}
         off_acc = off_rows = on_acc = on_rows = 0
         for r in counts:
-            chain = store_chain.get(r["store_uuid"])
+            chain = store_chain.get(r["store_id"])
             p = chain_premise.get(chain) if chain else None
             if p == "off":
                 off_acc += 1; off_rows += r["n"]
@@ -3136,7 +3139,10 @@ def _scrape_dataset_data(site):
 
     return dict(ok=True, source=site, total_accounts=total_accounts, total_rows=total_rows,
                 avg_items_per_store=avg_items, accounts_changed_today=changed_today,
-                premise=premise, as_of=int(_t.time()))
+                premise=premise, as_of=int(_t.time()),
+                note="read from retail_observations (the shared cross-source time-series), not a "
+                     "per-source catalog table — a source that doesn't call observe.record() under "
+                     "this exact source id will read as zero here even if it lands data elsewhere")
 
 
 @app.get("/api/master/workbench/matches")
