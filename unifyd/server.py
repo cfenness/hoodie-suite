@@ -3496,6 +3496,28 @@ def ttb_label_ep(ttbid):
         headers["Content-Disposition"] = 'attachment; filename="ttb_%s.jpg"' % tid
     return Response(data, headers=headers)
 
+@app.get("/api/scrape-progress/<sid>")
+def scrape_progress_ep(sid):
+    """The tick-progress log for a long-running scrape run (Scrape Run Tracker's main table). The
+    doc is written locally by tools/poll_ue_progress.py, tailing an isolated Fly machine over SSH —
+    that script only runs on the operator's Mac, so `docs/<sid>-*.md` never exists on THIS box in
+    production. It mirrors the doc to the warehouse each tick (_scrape_progress/<sid>.md) purely as
+    a carrier so a Fly-served page can show the SAME progress the Mac is watching. Local-first (no
+    warehouse round trip when the doc happens to sit right next to this process, e.g. local dev)."""
+    import warehouse, re, glob
+    key = re.sub(r"[^a-z0-9_-]", "", (sid or "").lower())[:40]
+    if not key:
+        return ("bad id", 400)
+    root = SUITE_ROOT or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    matches = glob.glob(os.path.join(root, "docs", "%s-*.md" % key))
+    if matches:
+        with open(sorted(matches)[-1], "r", errors="replace") as f:
+            return Response(f.read(), mimetype="text/markdown")
+    raw = warehouse.get_bytes("_scrape_progress/%s.md" % key)
+    if raw is None:
+        return ("no progress doc for %r yet — the local poller hasn't pushed one" % key, 404)
+    return Response(raw, mimetype="text/markdown")
+
 @app.get("/api/scrape/<sid>/rows")
 def scrape_rows_ep(sid):
     """A sample of the actual rows for ANY tracked scrape, straight from its warehouse table — so the

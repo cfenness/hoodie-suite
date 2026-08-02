@@ -486,21 +486,39 @@ function incrementalRenderTable(rows, newCount){
   if(prevScrollTop>4){ scroller.scrollTop=prevScrollTop+addedHeight; }
 }
 
+// Prefer the backend: /api/scrape-progress/<id> reads docs/<id>-*.md directly when it happens to
+// sit next to the process (local dev), else the warehouse mirror the Mac-side poller pushes every
+// tick (tools/poll_ue_progress.py) — so a Fly-served page can show the SAME progress the operator's
+// Mac is watching, without exposing that Mac's filesystem. Falls back to the raw docs/ path only
+// for a bare static file server with no backend at all (python3 -m http.server, no /api/*).
+async function fetchDoc(src){
+  try{
+    const r=await fetch(`/api/scrape-progress/${encodeURIComponent(src.id)}?_=`+Date.now(), {cache:"no-store"});
+    const ct=r.headers.get("content-type")||"";
+    if(r.ok && ct.includes("text/markdown")) return await r.text();
+  }catch(e){ /* no backend at this origin at all — fall through to the raw path below */ }
+  const r2=await fetch(src.path+"?_="+Date.now(), {cache:"no-store"});
+  if(!r2.ok) throw new Error("HTTP "+r2.status);
+  return await r2.text();
+}
+
 async function load(){
   const src=SOURCES.find(s=>s.id===sel.value)||SOURCES[0];
   const switchingSource=state.srcId!==src.id;
   $("#live").innerHTML=`<span class="dot"></span>${switchingSource?"loading":"tracking"} ${esc(src.label)}…`;
   let text;
   try{
-    const r=await fetch(src.path+"?_="+Date.now(), {cache:"no-store"});
-    if(!r.ok) throw new Error("HTTP "+r.status);
-    text=await r.text();
+    text=await fetchDoc(src);
   }catch(e){
-    $("#tbl tbody").innerHTML=`<tr><td class="err">Could not load ${esc(src.path)} — ${esc(e.message)}.
-      Serve the suite over HTTP (python3 -m http.server) rather than opening via file://.</td></tr>`;
+    // Neither the backend NOR the raw docs/ path had anything — most likely the Mac-side poller
+    // (tools/poll_ue_progress.py) for this source isn't running right now, or hasn't ticked since
+    // this app deployed. Not a page bug, so no red/"unreachable" badge.
+    $("#tbl tbody").innerHTML=`<tr><td class="err">No progress data for ${esc(src.label)} yet — ${esc(e.message)}. `+
+      `The Mac-side poller (tools/poll_ue_progress.py) may not be running for this source. `+
+      `Live Data (real scraped rows) works independently of this.</td></tr>`;
     $("#metaLine").textContent="—";
     $("#statsGrid").innerHTML="";
-    $("#live").innerHTML=`<span class="dot" style="background:var(--bad);animation:none"></span>unreachable`;
+    $("#live").innerHTML=`<span class="dot" style="background:var(--warn);animation:none"></span>no progress data yet`;
     return;
   }
 
@@ -558,7 +576,7 @@ async function loadDataset(){
     const ct=r.headers.get("content-type")||"";
     if(!ct.includes("application/json")) throw new Error("no /api at this origin");
     d=await r.json();
-    if(!r.ok || d.ok===false) throw new Error(d.error||("HTTP "+r.status));
+    if(!r.ok) throw new Error("HTTP "+r.status);
   }catch(e){
     if(mySeq!==datasetSeq) return;
     $("#datasetMeta").textContent="—";
@@ -570,6 +588,19 @@ async function loadDataset(){
     return;
   }
   if(mySeq!==datasetSeq) return;
+
+  // COLD CACHE: the backend is there but hasn't finished its first (expensive, full-table) read yet
+  // — /api/scrape/dataset returns bare `null` while it computes in a background thread rather than
+  // block the request (same stale-while-revalidate pattern as /api/coverage). Distinct from a
+  // genuinely unreachable backend, which throws above instead of returning valid JSON `null`.
+  if(d===null || d.ok===false){
+    $("#datasetMeta").textContent="—";
+    $("#datasetGrid").innerHTML=`<div class="dataset-offline">${d && d.error ? esc(d.error) :
+      "Computing the full-dataset read (first pass over a large table can take a minute)…"}</div>`;
+    $("#premiseRow").style.display="none"; $("#premiseNote").style.display="none";
+    $("#mapEmbed").style.display="none";
+    return;
+  }
 
   $("#datasetMeta").innerHTML=`<b>${esc(src.label)}</b> · cumulative, as of ${new Date(d.as_of*1000).toLocaleTimeString()}`;
   $("#datasetGrid").innerHTML=[
@@ -606,9 +637,9 @@ async function loadDataset(){
 // (unifyd/server.py) that queries the warehouse directly and returns newest-first rows. This only
 // works when the page is served by the real backend (`python unifyd/server.py`, or the Fly deploy)
 // — a bare `python3 -m http.server` has no /api at all, so we fail loud with the exact fix. ────────
-let dg={ open:false, table:null, header:[], rows:[], totalCount:0, isNum:null, search:"", timer:null, seq:0 };
+let dg={ open:false, table:null, header:[], rows:[], totalCount:0, isNum:null, search:"", timer:null, seq:0, inFlight:false };
 const DG_MAX_ROWS=500;
-const DG_POLL_MS=6000;
+const DG_POLL_MS=25000;   // measured ~16s for a plain LIMIT scan against a 597k-row table — must exceed that
 
 function dgLooksNumeric(rows, key){
   let hits=0, checked=0;
@@ -653,54 +684,65 @@ function dgRender(){
 }
 
 async function dgFetch(){
+  // NEVER start a new poll while one is still in flight — the underlying warehouse scan can take
+  // 10-20s on a large table (measured: ~16s against ubereats_products' 597k rows), well past the
+  // poll interval. Without this guard, every response arrives after a NEWER request has already
+  // started, the mySeq!==dg.seq check discards it as stale, and the modal is stuck on "loading…"
+  // forever — every single response silently dropped, never an error, never a render.
+  if(dg.inFlight) return;
   const table=SOURCES.find(s=>s.id===sel.value)?.dataTable;
   if(!table) return;
+  dg.inFlight=true;
   const mySeq=++dg.seq;
-  $("#modalLive").innerHTML='<span class="dot"></span>loading…';
+  $("#modalLive").innerHTML='<span class="dot"></span>loading (can take up to ~20s on large tables)…';
   const NO_BACKEND_MSG=`This page has no backend at this origin — it's a plain static file server, `+
     `so /api/source doesn't exist here. To see real scraped rows: run "python unifyd/server.py" `+
     `from the unifyd/ folder (it serves both the suite AND /api on one port) and open this page `+
     `from ITS port instead, or view this on the deployed Fly app.`;
-  let d, r;
   try{
-    r=await fetch(`/api/source?name=${encodeURIComponent(table)}&limit=${DG_MAX_ROWS}`, {cache:"no-store"});
-  }catch(e){
+    let d, r;
+    try{
+      r=await fetch(`/api/source?name=${encodeURIComponent(table)}&limit=${DG_MAX_ROWS}`, {cache:"no-store"});
+    }catch(e){
+      if(mySeq!==dg.seq) return;
+      dg.header=[]; dg.rows=Object.assign([], {__err:NO_BACKEND_MSG});
+      dgRender();
+      $("#modalLive").innerHTML='<span class="dot" style="background:var(--bad);animation:none"></span>unreachable';
+      return;
+    }
+    const ct=r.headers.get("content-type")||"";
+    if(!ct.includes("application/json")){
+      if(mySeq!==dg.seq) return;
+      dg.header=[]; dg.rows=Object.assign([], {__err:NO_BACKEND_MSG});
+      dgRender();
+      $("#modalLive").innerHTML='<span class="dot" style="background:var(--bad);animation:none"></span>unreachable';
+      return;
+    }
+    try{
+      d=await r.json();
+      if(!r.ok) throw new Error(d.error || ("HTTP "+r.status));
+    }catch(e){
+      if(mySeq!==dg.seq) return;
+      dg.header=[]; dg.rows=Object.assign([], {__err:`/api/source error — ${e.message}`});
+      dgRender();
+      $("#modalLive").innerHTML='<span class="dot" style="background:var(--bad);animation:none"></span>unreachable';
+      return;
+    }
     if(mySeq!==dg.seq) return;
-    dg.header=[]; dg.rows=Object.assign([], {__err:NO_BACKEND_MSG});
+    if(d.error){
+      dg.header=[]; dg.rows=Object.assign([], {__err:`${table}: ${d.error}`});
+      dgRender();
+      $("#modalLive").innerHTML='<span class="dot" style="background:var(--bad);animation:none"></span>error';
+      return;
+    }
+    dg.table=table; dg.rows=d.rows||[]; dg.totalCount=d.count||0;
+    dg.header=d.columns||(dg.rows[0]?Object.keys(dg.rows[0]):[]);
+    dg.isNum=Object.fromEntries(dg.header.map(h=>[h, dgLooksNumeric(dg.rows, h)]));
     dgRender();
-    $("#modalLive").innerHTML='<span class="dot" style="background:var(--bad);animation:none"></span>unreachable';
-    return;
+    $("#modalLive").innerHTML=`<span class="dot"></span>updated ${new Date().toLocaleTimeString()}`;
+  } finally {
+    dg.inFlight=false;
   }
-  const ct=r.headers.get("content-type")||"";
-  if(!ct.includes("application/json")){
-    if(mySeq!==dg.seq) return;
-    dg.header=[]; dg.rows=Object.assign([], {__err:NO_BACKEND_MSG});
-    dgRender();
-    $("#modalLive").innerHTML='<span class="dot" style="background:var(--bad);animation:none"></span>unreachable';
-    return;
-  }
-  try{
-    d=await r.json();
-    if(!r.ok) throw new Error(d.error || ("HTTP "+r.status));
-  }catch(e){
-    if(mySeq!==dg.seq) return;
-    dg.header=[]; dg.rows=Object.assign([], {__err:`/api/source error — ${e.message}`});
-    dgRender();
-    $("#modalLive").innerHTML='<span class="dot" style="background:var(--bad);animation:none"></span>unreachable';
-    return;
-  }
-  if(mySeq!==dg.seq) return;
-  if(d.error){
-    dg.header=[]; dg.rows=Object.assign([], {__err:`${table}: ${d.error}`});
-    dgRender();
-    $("#modalLive").innerHTML='<span class="dot" style="background:var(--bad);animation:none"></span>error';
-    return;
-  }
-  dg.table=table; dg.rows=d.rows||[]; dg.totalCount=d.count||0;
-  dg.header=d.columns||(dg.rows[0]?Object.keys(dg.rows[0]):[]);
-  dg.isNum=Object.fromEntries(dg.header.map(h=>[h, dgLooksNumeric(dg.rows, h)]));
-  dgRender();
-  $("#modalLive").innerHTML=`<span class="dot"></span>updated ${new Date().toLocaleTimeString()}`;
 }
 
 $("#dgSearch").addEventListener("input", e=>{ dg.search=e.target.value; dgRender(); });
