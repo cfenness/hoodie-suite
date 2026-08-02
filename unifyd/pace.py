@@ -59,6 +59,16 @@ BASELINE_MAX = float(os.environ.get("UE_BASELINE_MAX", "0.35"))
 # The endpoint was no longer the limiter; the controller's own reaction time was. 50 outcomes keeps the
 # ratio statistically meaningful while making both backoff AND recovery four times more responsive.
 WINDOW = int(os.environ.get("UE_PACE_WINDOW", "50"))          # outcomes per control decision
+# HOW FAR ADDITIVE INCREASE MAY CLIMB ABOVE THE STARTING SEED. Separate from FLEET_RATE on purpose: the
+# seed stays conservative (a cold start should creep, never lunge), but the ceiling it can creep TOWARD
+# is a different question — how much headroom AIMD is allowed to discover before we've actually measured
+# a real wall. Observed live on the 2026-07-30 UberEats sweep: 2 of 8 shards ran pinned at exactly
+# rate*4 (seed 5.0 -> ceiling 20.0) for the run's full multi-day duration, and those two shards had the
+# BEST success rates in the fleet (not the worst) — the tell that this was our own hardcoded multiplier,
+# not the target's real throttle point. Raising FLEET_RATE would have moved the (already-conservative)
+# start too, risking a lunge on a cold shard; this only widens how far a shard that's ALREADY healthy is
+# permitted to climb.
+MAX_RATE_MULT = float(os.environ.get("UE_PACE_MAX_MULT", "4"))
 
 
 def shard_rate(nshard=1, fleet_rate=None):
@@ -79,7 +89,7 @@ class Pacer:
         self.rate = float(rate)
         self.min_rate = float(min_rate)
         # Never let increase run away past a sane multiple of where we started.
-        self.max_rate = float(max_rate if max_rate is not None else rate * 4)
+        self.max_rate = float(max_rate if max_rate is not None else rate * MAX_RATE_MULT)
         self.window = int(window)
         self.empty_trip = float(empty_trip)
         self._tokens = 1.0

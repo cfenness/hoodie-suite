@@ -153,8 +153,26 @@ check("healthy background still climbs", healthy2.rate > 5.0, True)
 check("healthy background never trips", healthy2.stats()["backoffs"], 0)
 check("healthy trip sits above its baseline", healthy2.empty_trip > 0.5, True)
 
+# ── UE_PACE_MAX_MULT decouples the climb ceiling from the starting seed ──────────────────────────
+# Observed live on the 2026-07-30 UberEats sweep: 2 of 8 shards sat pinned at exactly rate*4 for the
+# run's full multi-day duration, with the BEST success rates in the fleet — evidence the ceiling was
+# our own hardcoded multiplier, not a real target wall. Default (no env var) must stay 4, so an
+# existing deployment's behavior is unchanged unless it opts in.
+check("default multiplier is unchanged", pace.Pacer(rate=5.0).max_rate, 20.0)
+
+os.environ["UE_PACE_MAX_MULT"] = "8"
+import importlib
+importlib.reload(pace)
+check("env override widens the ceiling", pace.Pacer(rate=5.0).max_rate, 40.0)
+del os.environ["UE_PACE_MAX_MULT"]
+importlib.reload(pace)          # restore default for anything imported after this module
+check("restored default after reload", pace.Pacer(rate=5.0).max_rate, 20.0)
+
+# an explicit max_rate= still wins over the multiplier, same as before this change
+check("explicit max_rate overrides the multiplier", pace.Pacer(rate=5.0, max_rate=9.0).max_rate, 9.0)
+
 if fails:
     print("\n".join("  FAIL " + f for f in fails))
     print("── %d failed" % len(fails))
     sys.exit(1)
-print("── pace: rate-limited, backs off hard, creeps up slow (16 checks)")
+print("── pace: rate-limited, backs off hard, creeps up slow (20 checks)")
