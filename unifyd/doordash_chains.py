@@ -100,12 +100,19 @@ def run(batch=None, shard=None, nshard=None, log=print):
     # we'd guess trouble starts) and additive-increase finds the real ceiling empirically instead of
     # us guessing a worker count again. shard/nshard (when running multiple machines concurrently)
     # split this same budget the way UberEats' shards already do.
+    # DD_FLEET_MAX_RATE (default 500, well above anything observed) overrides Pacer's own rate*4
+    # default — measured live 2026-08-02: two separate runs (starting at 20 and 40 req/s) each
+    # converged EXACTLY at 4x their starting rate with zero backoffs the whole time, meaning that
+    # ceiling came from this multiplier, not from DoorDash pushing back. Without an explicit cap,
+    # every restart just plateaus at whatever 4x the guess happened to be instead of ever finding
+    # where the target itself actually trips.
     try:
         import pace
         _rate = pace.shard_rate(nshard or 1, fleet_rate=float(os.environ.get("DD_FLEET_RATE", "20")))
-        pace.install(_rate)
-        log("[doordash_chains] paced at %.2f req/s (fleet %.0f/s across %d shard(s)) — AIMD from here"
-            % (_rate, float(os.environ.get("DD_FLEET_RATE", "20")), nshard or 1))
+        _max_rate = float(os.environ.get("DD_FLEET_MAX_RATE", "500"))
+        pace.install(_rate, max_rate=_max_rate)
+        log("[doordash_chains] paced at %.2f req/s (fleet %.0f/s across %d shard(s), cap %.0f/s) — AIMD from here"
+            % (_rate, float(os.environ.get("DD_FLEET_RATE", "20")), nshard or 1, _max_rate))
     except Exception as e:
         log("[doordash_chains] pacing unavailable (%s) — running unpaced" % str(e)[:60])
     cap = batch or int(os.environ.get("DDFULL_BATCH", "5000"))

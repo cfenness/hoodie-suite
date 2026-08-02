@@ -82,6 +82,15 @@ check("and is not absurdly slow", el < 3.0, True)
 inst = pace.install(3.0)
 check("install returns the pacer", pace.get() is inst, True)
 check("installed rate", inst.rate, 3.0)
+check("install's default max_rate is still rate*4 (unchanged for existing callers)",
+      inst.max_rate, 12.0)
+
+# an explicit max_rate must reach the Pacer, not just the default rate*4 — observed live 2026-08-02:
+# two DoorDash runs (starting at 20 and 40 req/s) each converged EXACTLY at 4x their own starting
+# rate with zero backoffs, because nothing overrode this default; the target's real ceiling was
+# never actually found.
+inst2 = pace.install(20.0, max_rate=500.0)
+check("explicit max_rate reaches the pacer instead of defaulting to rate*4", inst2.max_rate, 500.0)
 
 # ── the BASELINE case that broke the first paced run ─────────────────────────────────────────────
 # ~25% of stores return no catalog because they are closed/delisted. That is a property of the

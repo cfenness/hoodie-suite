@@ -71,9 +71,10 @@ def main():
     real_pace_install = pace.install
     installed = {}
 
-    def spy_install(rate):
+    def spy_install(rate, max_rate=None):
         installed["rate"] = rate
-        return real_pace_install(rate)
+        installed["max_rate"] = max_rate
+        return real_pace_install(rate, max_rate=max_rate)
 
     pace.install = spy_install
     real_all_stores = ddc.all_stores
@@ -88,13 +89,22 @@ def main():
         check("a pacer was installed at all", "rate" in installed, installed)
         check("single-shard run gets the FULL fleet rate (30), not a fraction",
               installed.get("rate") == 30.0, installed)
+        check("an explicit max_rate is passed — NOT left to Pacer's own rate*4 default, which "
+              "measured live converged with zero backoffs (the ceiling was the multiplier, not "
+              "DoorDash pushing back)", installed.get("max_rate") == 500.0, installed)
 
         installed.clear()
         ddc.run(shard=0, nshard=3, log=lambda *a: None)
         check("a 3-shard run gets a THIRD of the fleet rate (10), splitting the same budget "
               "UberEats' shards already split", installed.get("rate") == 10.0, installed)
+
+        installed.clear()
+        os.environ["DD_FLEET_MAX_RATE"] = "50"
+        ddc.run(log=lambda *a: None)
+        check("DD_FLEET_MAX_RATE overrides the default cap", installed.get("max_rate") == 50.0, installed)
     finally:
         os.environ.pop("DD_FLEET_RATE", None)
+        os.environ.pop("DD_FLEET_MAX_RATE", None)
         pace.install = real_pace_install
         ddc.all_stores = real_all_stores
         ddc._landed_stores = real_landed
