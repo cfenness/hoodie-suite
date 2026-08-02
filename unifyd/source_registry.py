@@ -150,8 +150,19 @@ SOURCES = [
     # The other half of the split: drains the STATIC-attribute backlog (UPC/GTIN/brand/size/ABV) that the
     # sweep no longer carries. Sharded and append-only like the sweep. Day one is a real backfill; after
     # that only genuinely-new items cost anything, because a resolved item is never re-fetched.
+    # LADDER_MAX_RUNG=impersonate: forbids ladder.py from auto-escalating this recipe to the `browser`
+    # rung. Grounded in the 2026-07-29 incident ladder.py's own docstring documents: UberEats escalated
+    # to `browser` on an isolated (datacenter) Fly machine — a rung only proven on a residential exit —
+    # and 6+ concurrent Chromium instances also exhausted the machine's memory, causing an SSH-unresponsive
+    # stall. Setting the env var here (not just on a hand-run machine) matters because ladder.current()
+    # PERSISTS its rung choice in the warehouse across processes: a fresh ephemeral dispatch that never
+    # sets this cap would read back a previously-persisted `browser` choice and boot straight into it,
+    # silently undoing the fix the moment a normal dispatcher tick spawns a headless (non-browser-capable)
+    # machine for this source. All three entries share the same cold getstore.py fetch path (getStoreV1 /
+    # getMenuItemV1), so all three need the cap.
     dict(id="ubereats-enrich", label="Uber Eats item UPC/GTIN backfill (sharded)", shards=8,
-         code="import ue_enrich as m; m.main(['--site','ubereats','--shard',__import__('os').environ.get('UE_SHARD','0/8')])",
+         code="import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_enrich as m; "
+              "m.main(['--site','ubereats','--shard',os.environ.get('UE_SHARD','0/8')])",
          caps=['curl_cffi'],
          tables=["ubereats_products"], klass="headless", cadence="daily",
          enabled=True, cost_class="free", timeout=21600, mem=4096, priority=11,
@@ -165,7 +176,8 @@ SOURCES = [
     # catalogs on the same IPs at the same moment. The costume is a per-domain property, like the parser.
     dict(id="ubereats", label="Uber Eats store catalog (sharded)", shards=8, session_budget=40,
          impersonate="safari17_0",
-         code="import ue_catalog as m; m.main(['--site','ubereats','--shard',__import__('os').environ.get('UE_SHARD','0/8'),'--no-enrich'])",
+         code="import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_catalog as m; "
+              "m.main(['--site','ubereats','--shard',os.environ.get('UE_SHARD','0/8'),'--no-enrich'])",
          caps=['curl_cffi'],
          tables=["ubereats_products", "retail_observations"], klass="headless", cadence="daily",
          enabled=True, cost_class="free", timeout=21600, mem=4096, priority=10,
@@ -175,7 +187,8 @@ SOURCES = [
     # Postmates is the SAME Uber BFF on a different domain, so it is the identical recipe — one code
     # path, not a parallel copy that can drift.
     dict(id="postmates", label="Postmates (catalog + UPC, sharded)",
-         code="import ue_catalog as m; m.main(['--site','postmates','--shard',__import__('os').environ.get('UE_SHARD','0/8')])",
+         code="import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_catalog as m; "
+              "m.main(['--site','postmates','--shard',os.environ.get('UE_SHARD','0/8')])",
          caps=['curl_cffi'],
          tables=["postmates_products", "retail_observations"], klass="headless", cadence="daily",
          enabled=True, cost_class="free", timeout=21600, mem=4096, priority=11,
