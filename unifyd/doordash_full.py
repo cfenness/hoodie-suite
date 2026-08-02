@@ -34,6 +34,13 @@ _NON_ALCOHOL = ("grocery", "household", "meat", "snack", "candy", "frozen", "med
                 "bar accessories", "party supplies", "produce", "dairy", "baby", "cleaning", "beauty", "tobacco",
                 "nicotine")
 
+# Politeness delay between fetches. Was a blanket, non-adaptive 0.4s regardless of observed site health —
+# at ~166 fetches/store that's 66+s of pure sleep, more than half of an observed ~2min/store, while ISP
+# success held 77-86% the whole time (no sign the site was reacting to our pace). Cut, not eliminated —
+# still paces every request, just not at a cost that dwarfs actual network time.
+POLITE_SLEEP_S = float(os.environ.get("DDFULL_POLITE_SLEEP_S", "0.15"))
+
+
 
 def _cat_paths(html, store):
     """Every /category/... and /category/.../sub-category/... path for this store in the page."""
@@ -75,10 +82,27 @@ def full_catalog(store, key, log=print, max_pages=120):
                 queue.append(c)
         if pages % 8 == 0:
             log("  [%s] walked %d categories · %d items" % (store, pages, len(items)))
-        time.sleep(0.4)
+        time.sleep(POLITE_SLEEP_S)
     log("  [%s] tree walk: %d categories, %d items" % (store, pages, len(items)))
+    # A store id with NO alcohol category at all (the root fetch found zero sub-categories AND zero
+    # items — pages never got past 1) is almost certainly not a convenience/retail account in the first
+    # place (most DoorDash store ids are restaurants, which don't have this taxonomy). Only THIS zero-
+    # signal case skips the term-search union and non-alc walk — a completely different, much safer
+    # heuristic than an earlier, reverted one that skipped once the tree walk already found "enough"
+    # items (that was a real completeness risk: more real items could still exist for a store that DOES
+    # carry alcohol). Here, if the store shows ANY signal at all — even one category or one item — it
+    # still gets the full treatment below, unconditionally. Zero signal is not a sample; it's why this
+    # exists: attempting the FULL, uncurated 767k-store universe (no chain list — see doordash_chains.py)
+    # means most attempts are restaurants, and paying 16 term-search fetches + a non-alc walk to convince
+    # ourselves of what the very first fetch already showed is real, avoidable waste, not lost coverage.
+    if pages <= 1 and not items:
+        log("  [%s] no alcohol category found at all — skipping term-search + non-alc walk" % store)
+        return list(items.values()), outlet
     # UNION with the term-search — catches items not in the browsable tree (esp. small c-store catalogs
-    # where the category tree is shallow but search still finds SKUs). Free on top of the walk.
+    # where the category tree is shallow but search still finds SKUs). Runs whenever the tree walk found
+    # ANY signal at all, regardless of how much — "the tree walk probably already covers it" is a
+    # completeness ASSUMPTION, not a proven fact for every store's catalog shape, and the standing rule
+    # here is no truncation of a real capture path (shard/scale instead — see CLAUDE.md's "no caps" rule).
     # (search_store was referenced here but never implemented until now — every call silently
     # AttributeError'd, caught by the bare except below, paying the sleep for zero completeness benefit.)
     for term in dd.ALCOHOL_TERMS:
@@ -87,7 +111,7 @@ def full_catalog(store, key, log=print, max_pages=120):
                 items.setdefault(it["name"], dict(it, department="alcohol"))
         except Exception:
             pass
-        time.sleep(0.4)
+        time.sleep(POLITE_SLEEP_S)
     log("  [%s] + term-search union -> %d distinct items" % (store, len(items)))
     for name, it in _walk_nonalc(store, key, log, session=session).items():   # non-alc / zero-proof dept
         items.setdefault(name, it)
@@ -117,16 +141,22 @@ def _walk_nonalc(store, key, log=print, max_pages=30, session=None):
             if c not in seen and ("non-alcoholic" in slug or "1516" in c or
                                   re.search(r"zero|mock|alcohol.free|de-?alc|\bna\b", slug)):
                 queue.append(c)
-        time.sleep(0.4)
+        time.sleep(POLITE_SLEEP_S)
     log("  [%s] non-alc dept -> %d zero-proof / N-A items" % (store, len(out)))
     return out
 
 
-def run(chain, stores=None, log=print, on_store=None):
+def run(chain, stores=None, store_names=None, log=print, on_store=None):
     """on_store(i, n_stores_total_in_this_call), called after EACH store finishes — the hook a
-    caller driving many chains/stores in one job (doordash_chains.py) uses to feed real per-store
-    progress into runlog.track(), instead of only knowing something happened once the whole chain
+    caller driving many stores in one job (doordash_chains.py) uses to feed real per-store
+    progress into runlog.track(), instead of only knowing something happened once the whole batch
     is done.
+
+    `chain` now names the TABLE/run-id namespace only (doordash_chains.py always passes "doordash" —
+    one unified table for the whole national sweep, no more one table per curated chain). `store_names`
+    (store_id -> real sitemap name) is optional; when given, each row's `source`/outlet `chain` field
+    uses THAT store's own real name instead of the blanket `chain` value, so a caller sweeping the full
+    undifferentiated store universe still gets per-store attribution without needing a curated list.
 
     CONCURRENT across stores — same pattern as doordash_naop.py's ThreadPoolExecutor (DDFULL_WORKERS,
     default 10, matching NAOP_WORKERS). A serial per-store walk (the category tree is ~15-30+ page
@@ -136,6 +166,7 @@ def run(chain, stores=None, log=print, on_store=None):
     cost, so concurrency is free throughput, not spend."""
     cfg = dd.CHAINS.get(chain, {"name": chain, "stores": []})
     stores = stores or cfg["stores"]
+    store_names = store_names or {}
     if not stores:
         log("[%s] no store ids" % chain); return None, 0
     key = dd._api_key()
@@ -182,15 +213,43 @@ def run(chain, stores=None, log=print, on_store=None):
                     except Exception:
                         pass
             return
+        source = store_names.get(str(store)) or chain
         rows = []
         for it in items:
             dept = it.get("department", "alcohol")
             b = ctx.classify_beverage(it["name"])
+            pack = dd._parse_pack(it["name"])
+            # RETAIL PACKAGING SIGNAL — a retail beverage almost always names its container (can/
+            # bottle/carton/keg/...) and a volume (fl oz/mL/L), the way "BuzzBallz ... Cocktail Bottle
+            # (1.5 L)" or "Twisted Tea ... Cans (16 fl oz x 4 ct)" already do. cocktail_taxonomy was
+            # built for RESTAURANT MENU items (named cocktails, wine varietals, recognized beer/liqueur
+            # brands) and does not know retail RTD brand names like BuzzBallz/Twisted Tea/BeatBox —
+            # verified live: applying ONLY the taxonomy check here silently dropped a real BuzzBallz
+            # cocktail alongside the real hardware it was meant to catch. A container+volume match is
+            # independent evidence a real hardware SKU won't produce (dowels/brackets/tile don't carry
+            # fl-oz/mL/L packaging), so either signal alone is enough to call something real beverage
+            # content; neither alone is complete.
+            has_pack_signal = bool(pack.get("container")) or (
+                pack.get("unit_size") is not None and (pack.get("size_uom") or "").lower() in
+                ("fl oz", "oz", "ml", "l", "liter", "litre"))
+            # REAL CONTENT CHECK for anything found under the alcohol tree/term-search — "which
+            # category page this was discovered under" is not proof of what it actually is.
+            # _is_alcohol()'s category-name exclude-list can't enumerate every retailer's OTHER
+            # departments (hardware, crafts, home goods, ...), so a category-tree walk that strays
+            # off the true alcohol section still gets crawled. Verified live 2026-08-01: real Lowe's/
+            # Michaels stores landed 4,000+ wood-dowel/steel-bracket/craft-supply SKUs all tagged
+            # is_alcoholic=True purely because they were reached from the alcohol-1024 root. Items
+            # from _walk_nonalc (department="non-alcoholic") already passed its own _NA_INTEREST
+            # name filter on the way in, so they are not re-gated here — this only guards the
+            # alcohol-tagged path, which trusted its source page and nothing else.
+            is_bev = b["is_alcoholic"] or b["category"] == "mocktail" or has_pack_signal
+            if dept == "alcohol" and not is_bev:
+                continue
             rows.append(dict(it, store=str(store), store_id=str(store), product_id=it["name"][:90],
-                             price_value=dd._price_val(it.get("price", "")), source=chain, department=dept,
-                             is_alcoholic=(dept == "alcohol"), bev_category=b["category"],
+                             price_value=dd._price_val(it.get("price", "")), source=source, department=dept,
+                             is_alcoholic=is_bev, bev_category=b["category"],
                              beer_style=b.get("beer_style", ""), is_hemp=observe.is_hemp(it["name"]),
-                             run_id=run_id, **dd._parse_pack(it["name"])))
+                             run_id=run_id, **pack))
         na = sum(1 for r in rows if r["department"] == "non-alcoholic")
         log("  [%s] store %s — %d items (%d alcohol, %d non-alc/zero-proof)" % (chain, store, len(rows), len(rows) - na, na))
         # WRITE THIS STORE NOW — an append-only per-store PART, not accumulated in memory for one
@@ -209,7 +268,7 @@ def run(chain, stores=None, log=print, on_store=None):
             except Exception as e:
                 log("  [%s] store %s part write failed: %s" % (chain, store, str(e)[:120]))
         if outlet:
-            outlet["source"] = chain
+            outlet["source"] = source
             try:
                 warehouse.write_partition(chain + "_outlets_parts", "%s_s%s" % (run_id, store),
                                           [outlet], fields=OUTLET_FIELDS, dtypes=OUTLET_DTYPES)

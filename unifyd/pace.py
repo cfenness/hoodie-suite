@@ -181,9 +181,13 @@ class Pacer:
 _GLOBAL = {"pacer": None}
 
 
-def install(rate):
-    """Install the process-wide pacer every request path consults."""
-    _GLOBAL["pacer"] = Pacer(rate)
+def install(rate, max_rate=None):
+    """Install the process-wide pacer every request path consults. max_rate defaults to Pacer's own
+    rate*4 ceiling — pass one explicitly for a target whose real ceiling hasn't been measured yet, or
+    additive increase plateaus at whatever the starting rate's 4x happens to be (observed live on
+    DoorDash: converged at exactly rate*4 with ZERO backoffs twice in a row — an artificial ceiling
+    from this default, not a real one the target pushed back on)."""
+    _GLOBAL["pacer"] = Pacer(rate, max_rate=max_rate)
     return _GLOBAL["pacer"]
 
 
