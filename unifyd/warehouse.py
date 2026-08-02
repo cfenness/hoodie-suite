@@ -59,11 +59,18 @@ def remote():
 # FIRST-ever write to a brand-new small key ("...NO_SUCH_UPLOAD during CompleteMultipartUpload...")
 # failed outright with zero retries, because the string matched none of the markers below either —
 # same failure SHAPE as the read-side gap this comment already documents, just on the write side.
+# "Server returned nothing" was added after a live occurrence on query_parts("scrape_runs", ...):
+# one glob'd partition among hundreds hit "IO Error: Server returned nothing (no headers, no data)
+# error for HTTP GET" — a one-off Tigris blip (the SAME file read clean on the very next attempt,
+# seconds later) — but the string matched none of the markers below, so ONE partition among many
+# raised past the caller and the server's /api/jobs board silently showed 0 running/0 recent for
+# EVERY source, not just the one flaky read. The retry loop this list feeds is the whole fix; the
+# gap was always just an unrecognized message shape, same as every entry above it.
 _TRANSIENT = ("curlCode: 28", "NETWORK_CONNECTION", "Timeout was reached", "timed out",
               "Connection reset", "SlowDown", "503", "InternalError", "RequestTimeout",
               "Failed to read connection", "connection error for HTTP", "Connection refused",
               "Unable to connect", "Could not establish connection", "HTTP GET error",
-              "NO_SUCH_UPLOAD", "NoSuchUpload")
+              "NO_SUCH_UPLOAD", "NoSuchUpload", "Server returned nothing")
 
 
 def _retry(fn, what="s3 write"):

@@ -106,5 +106,14 @@ con = run([None, TRANSIENT, None])                 # view ok, scan blips once, t
 got = warehouse.query_parts("t5", "SELECT count(*) c FROM t")
 ok("scan retried and returned rows (got %r)" % got, got == [{"c": 42}])
 
+print("\n6. 'Server returned nothing' (live 2026-08-02: one bad glob'd partition blanked the whole "
+      "Active Runs board) is retried, not treated as non-transient")
+NO_HEADERS = ("IO Error: Server returned nothing (no headers, no data) error for HTTP GET to "
+              "'https://fly.storage.tigris.dev/hoodie-suite-warehouse/warehouse/scrape_runs/x.parquet'")
+con = run([NO_HEADERS, None, None])
+got = warehouse.query_parts("t6", "SELECT count(*) c FROM t")
+ok("rows came back after retry (got %r)" % got, got == [{"c": 42}])
+ok("it actually retried (execute called %d times)" % con.calls, con.calls >= 2)
+
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
