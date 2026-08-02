@@ -70,6 +70,8 @@ import warehouse
 # wrong every time today. Raise it, measure `unreachable`, and let the tripwire catch an overshoot.
 PER_IP = float(os.environ.get("UE_PER_IP", "6"))
 _last_beat = [0.0]                                         # wall-clock of the last heartbeat emitted
+_last_rep_save = [0.0]                                     # wall-clock of the last reputation bank
+REP_SAVE_S = float(os.environ.get("UE_REP_SAVE_S", "300"))  # how often exit reputation is persisted
 
 
 def _rss_mb():
@@ -575,6 +577,15 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
             % (_pacer.rate, pace.FLEET_RATE, nshard))
     except Exception as e:
         log("[ue] pacing unavailable (%s) — running unpaced" % str(e)[:60])
+    # INHERIT WHAT THE LAST RUN PAID TO LEARN. Exit reputation used to die with the process, so every
+    # restart re-probed addresses the fleet already knew were burned — which does not merely waste the
+    # request, it re-flags the address. Reading EVERY shard's file (not just our own) is deliberate:
+    # what shard 2 spent requests learning is equally true for shard 5.
+    try:
+        import identity_router
+        identity_router.load(site, nshard, log=log)
+    except Exception as e:
+        log("[ue] reputation carry-over unavailable (%s) — starting cold" % str(e)[:60])
     day = time.strftime("%Y-%m-%d")
     uni = universe(site, log=log)
     if not uni:
@@ -680,6 +691,16 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
                   pace_increases=_pc.get("increases"), pace_at_floor=_pc.get("at_floor"),
                   hot_exits=_hot, ladder_rung=_rung,
                   **_bk)
+        # Bank reputation on a SLOWER cadence than the beat. This is a warehouse round trip per shard,
+        # and the thing it protects against is losing hours of learning to a kill -9 — not losing the
+        # last thirty seconds of it.
+        if (time.time() - _last_rep_save[0]) > REP_SAVE_S:
+            _last_rep_save[0] = time.time()
+            try:
+                import identity_router
+                identity_router.save(site, shard, nshard)
+            except Exception:
+                pass
 
     def _one(t):
         nonlocal n_ok, n_empty, n_fail
@@ -857,6 +878,17 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
                 pass
     except Exception as e:
         log("[ue] value rules skipped: %s" % str(e)[:100])
+
+    # BANK REPUTATION AT THE END, unconditionally — this is the moment the process knows the most, and
+    # a run that ends `degraded` (throttled, half-covered) is carrying the MOST valuable evidence of
+    # all: precisely which exits went bad. Losing that is what made every restart start over.
+    try:
+        import identity_router
+        n_rep = identity_router.save(site, shard, nshard, log=log)
+        if n_rep:
+            log("[ue] banked reputation for %d (exit, costume) pair(s) — the next run inherits it" % n_rep)
+    except Exception:
+        pass
 
     status = "success" if not remaining else "degraded"
     if qa.get("drifted") or qa.get("value_violations"):

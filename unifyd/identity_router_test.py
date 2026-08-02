@@ -184,6 +184,83 @@ R.reset()
 R.record("10.0.0.1", "c", B.OK, now=1.0)
 check("global router recorded it", ("10.0.0.1", "c") in R.get()._pairs)
 
+# ── earned concurrency (the warm-up ramp) ────────────────────────────────────────────────────────
+print("a cold exit is allowed ONE slot, not the full HOT_MAX, until it proves itself")
+r = R.Router()
+check("unknown exit caps at RAMP_MIN", r._caps(now=0).get("10.0.0.1", R.RAMP_MIN), R.RAMP_MIN)
+for i in range(R.RAMP_STEP):                       # RAMP_STEP successes buys exactly one more slot
+    r.record("10.0.0.1", "c", B.OK, now=1.0 + i)
+check("capacity is earned with recent successes", r._caps(now=5.0)["10.0.0.1"], R.RAMP_MIN + 1)
+check("earned capacity never exceeds HOT_MAX",
+      r._caps(now=5.0)["10.0.0.1"] <= R.HOT_MAX, True)
+
+print("successes age out of the ramp window — capacity is recent, not historical")
+check("old successes stop counting",
+      r._caps(now=R.RAMP_WINDOW_S + 100.0).get("10.0.0.1", R.RAMP_MIN), R.RAMP_MIN)
+
+print("a quarantined exit drops to the floor and re-earns AFTER the penalty shadow")
+r = R.Router()
+for i in range(R.RAMP_STEP * 3):                   # plenty of credit built up first
+    r.record("10.0.0.2", "c", B.OK, now=1.0 + i)
+earned = r._caps(now=10.0)["10.0.0.2"]
+check("earned more than the floor before the burn", earned > R.RAMP_MIN, True)
+for i in range(R.QUARANTINE_STREAK):
+    r.record("10.0.0.2", "c", B.CAPTCHA, now=20.0 + i)
+check("quarantined exit is back to the floor", r._caps(now=25.0)["10.0.0.2"], R.RAMP_MIN)
+q_end = r._pairs[("10.0.0.2", "c")].quarantined_until
+check("still at the floor inside the post-quarantine penalty shadow",
+      r._caps(now=q_end + R.RAMP_PENALTY_S / 2)["10.0.0.2"], R.RAMP_MIN)
+
+# ── reputation persistence: the expensive thing this router learns must survive the process ──────
+print("snapshot()/merge() carry reputation across a restart")
+r = R.Router()
+r.record("10.0.0.1", "c", B.OK, now=1000.0)
+r.record("10.0.0.1", "c", B.OK, now=1001.0)
+snap = r.snapshot(now=1002.0)
+check("snapshot carries the pair", len(snap["pairs"]), 1)
+check("hotness is deliberately NOT exported", "exit_ts" in snap, False)
+
+r2 = R.Router()                                     # a fresh process
+check("fresh router knows nothing", len(r2._pairs), 0)
+check("merge reports what it took", r2.merge(snap, now=1002.0), 1)
+check("the successor inherited the evidence", len(r2._pairs[("10.0.0.1", "c")].recent), 2)
+
+print("merging is idempotent — re-reading our own file cannot inflate the evidence")
+r2.merge(snap, now=1002.0)
+check("no duplicate outcomes after a second merge",
+      len(r2._pairs[("10.0.0.1", "c")].recent), 2)
+
+print("STALE verdicts are dropped, never believed — health flips within the hour, both directions")
+r3 = R.Router()
+check("nothing merges once past the TTL",
+      r3.merge(snap, now=1002.0 + R.REPUTATION_TTL_S + 1), 0)
+check("no stale pair was created", len(r3._pairs), 0)
+
+print("an EXPIRED quarantine is not served twice")
+r = R.Router()
+for i in range(R.QUARANTINE_STREAK):
+    r.record("10.0.0.3", "c", B.CAPTCHA, now=100.0 + i)
+q_snap = r.snapshot(now=105.0)
+q_end = r._pairs[("10.0.0.3", "c")].quarantined_until
+r4 = R.Router()
+r4.merge(q_snap, now=q_end + 1.0)                   # quarantine ran out while nothing was running
+check("expired quarantine is not re-imposed",
+      r4._pairs.get(("10.0.0.3", "c")) is None
+      or r4._pairs[("10.0.0.3", "c")].quarantined_until <= q_end + 1.0, True)
+r5 = R.Router()
+r5.merge(q_snap, now=q_end - 10.0)                  # still inside it, though — that IS honored
+check("a still-live quarantine survives the restart",
+      r5._pairs[("10.0.0.3", "c")].quarantined_until > q_end - 10.0, True)
+
+print("cross-SHARD merge is additive — what one shard paid to learn, the others get free")
+shard_a, shard_b = R.Router(), R.Router()
+shard_a.record("10.0.0.1", "c", B.OK, now=2000.0)
+shard_b.record("10.0.0.2", "c", B.OK, now=2000.0)
+fleet = R.Router()
+fleet.merge(shard_a.snapshot(now=2001.0), now=2001.0)
+fleet.merge(shard_b.snapshot(now=2001.0), now=2001.0)
+check("one process now holds both shards' evidence", len(fleet._pairs), 2)
+
 if fails:
     print("-- %d failed" % len(fails))
     sys.exit(1)

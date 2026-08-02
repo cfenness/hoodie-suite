@@ -55,6 +55,26 @@ QUARANTINE_STREAK = 3          # consecutive throttle outcomes before a pair is 
 QUARANTINE_BASE_S = 60.0
 QUARANTINE_MAX_S = 900.0       # capped, same reasoning as pace.py's rate floor: don't calibrate into an outage
 
+# ── EARNED CONCURRENCY (the warm-up ramp) ────────────────────────────────────────────────────────
+# HOT_MAX used to be a flat allowance every exit got for free, including one we had never sent a byte
+# to and one that just came off quarantine. The concentration experiment above measured what a cold
+# exit costs when you guess wrong (10 workers on 1 IP: 20% usable -> 0% in three minutes), so handing
+# full concurrency to an unproven address is paying that price on purpose. Capacity is now EARNED:
+# every exit starts at RAMP_MIN and buys its way up to HOT_MAX with recent successes. An exit leaving
+# quarantine goes back to the floor and re-earns, because "it stopped being throttled" is not the same
+# evidence as "it is working."
+RAMP_MIN = 1                   # slots for a cold, unproven, or freshly-burned exit
+RAMP_WINDOW_S = 600.0          # successes older than this stop counting toward earned capacity
+RAMP_STEP = 3                  # recent successes needed to earn each slot above RAMP_MIN
+RAMP_PENALTY_S = 120.0         # stay at the floor this long AFTER a quarantine expires
+
+# ── REPUTATION PERSISTENCE ───────────────────────────────────────────────────────────────────────
+# Health is volatile on an HOUR timescale in BOTH directions (see the module docstring) — so a
+# persisted verdict is evidence with a shelf life, never a blacklist. Anything older than this is
+# dropped on load rather than believed: re-learning that a recovered IP is fine costs a few requests,
+# while benching a recovered IP on stale evidence costs the whole exit for as long as the file lives.
+REPUTATION_TTL_S = 7200.0      # 2h — outcomes older than this are not loaded at all
+
 
 class _Pair(object):
     __slots__ = ("recent", "streak", "quarantined_until", "quarantine_s", "picks")
@@ -118,6 +138,34 @@ class Router(object):
             return 0
         return sum(1 for t in ts if now - t <= HOT_WINDOW_S)
 
+    def _caps(self, now):
+        """exit -> concurrent slots it has EARNED right now.
+
+        Computed ONCE per pick() and handed to the usable() filter, not recomputed per candidate: a
+        50-IP pool against 7 costumes is 350 candidates, and a per-candidate scan of every tracked
+        pair would make picking quadratic in the size of the thing it exists to protect.
+
+        An exit absent from the returned map has no history at all and is treated as cold (RAMP_MIN)
+        by the caller's `.get(ip, RAMP_MIN)` — a new address is unproven, not trusted."""
+        goods, burned = {}, set()
+        for (ip, _c), p in self._pairs.items():
+            # In quarantine, or inside the penalty shadow just after one — either way, back to the
+            # floor. Coming off quarantine means "stopped failing", which is not "known good".
+            # The `> 0` guard is not defensive noise: a never-quarantined pair carries 0.0, and
+            # `0.0 > now - RAMP_PENALTY_S` is TRUE for the first RAMP_PENALTY_S seconds of any clock,
+            # which branded every healthy exit as burned and pinned the whole pool to RAMP_MIN.
+            if p.quarantined_until > 0 and p.quarantined_until > now - RAMP_PENALTY_S:
+                burned.add(ip)
+            g = goods.get(ip, 0)
+            for t, ok in p.recent:
+                if ok and now - t <= RAMP_WINDOW_S:
+                    g += 1
+            goods[ip] = g
+        caps = {}
+        for ip in set(goods) | burned:
+            caps[ip] = RAMP_MIN if ip in burned else min(HOT_MAX, RAMP_MIN + goods.get(ip, 0) // RAMP_STEP)
+        return caps
+
     def _score(self, key, now):
         # UCB-style: exploit the smoothed success rate, explore proportional to 1/sqrt(evidence+1).
         # The exploration term is keyed on EVIDENCE (len(recent)), not on how many times pick() chose
@@ -155,13 +203,14 @@ class Router(object):
         with self._lock:
             entries = {(e.split("@")[-1].split(":")[0]): e for e in pool}
             candidates = [(ip, c) for ip in entries for c in costumes]
+            caps = self._caps(now)          # earned concurrency, computed once — see _caps()
 
             def usable(key):
                 ip, _c = key
                 p = self._pairs.get(key)
                 if p is not None and p.quarantined_until > now:
                     return False
-                return self._hot(ip, now) < HOT_MAX
+                return self._hot(ip, now) < caps.get(ip, RAMP_MIN)
 
             pool_ok = [k for k in candidates if usable(k)]
             search = pool_ok if pool_ok else candidates   # never deadlock: degrade to "least bad"
@@ -197,6 +246,70 @@ class Router(object):
         rows = [r for r in rows if r[1] > 0]
         rows.sort(key=lambda r: -r[1])
         return rows[:top]
+
+    def snapshot(self, now=None):
+        """Exportable reputation: the (exit, costume) health this process paid real requests to learn.
+
+        `_exit_ts` is deliberately NOT exported. Hotness answers "how loaded is this exit RIGHT NOW",
+        which is meaningless once the process holding those sockets is gone — persisting it would
+        make a restarted fleet believe it was already busy and refuse to pick anything."""
+        now = time.time() if now is None else now
+        with self._lock:
+            out = []
+            for (ip, costume), p in self._pairs.items():
+                recent = [[round(t, 1), bool(g)] for t, g in p.recent]
+                if not recent and p.quarantined_until <= now:
+                    continue                   # nothing worth carrying for this pair
+                out.append({"exit": ip, "costume": costume, "recent": recent,
+                            "quarantined_until": round(p.quarantined_until, 1),
+                            "quarantine_s": p.quarantine_s})
+            return {"at": round(now, 1), "pairs": out}
+
+    def merge(self, snap, now=None, ttl_s=REPUTATION_TTL_S):
+        """Fold a persisted snapshot back in. Returns how many pairs contributed anything.
+
+        TWO RULES, both load-bearing:
+
+        1. STALE OUTCOMES ARE DROPPED, NOT BELIEVED. Exit health flips in both directions within an
+           hour, so an old verdict is not weak evidence — it is potentially inverted evidence. Loading
+           a 6-hour-old "this IP is bad" would bench an address that has since recovered, for free,
+           with no request ever proving it. Re-learning costs a few requests; a stale bench costs the
+           whole exit for as long as the file survives.
+        2. AN EXPIRED QUARANTINE IS NOT RE-IMPOSED. `quarantined_until` is an absolute timestamp, so a
+           quarantine that ran out while nothing was running has simply ended. Only a still-future
+           deadline is honored — otherwise a restart could serve a sentence twice.
+
+        Merging is additive across shards: eight processes each learned something different about the
+        same 50 addresses, and the union is the point. Outcomes are de-duplicated by (ts, good) so
+        re-reading our own file after a crash-restart cannot inflate the evidence count."""
+        now = time.time() if now is None else now
+        pairs = (snap or {}).get("pairs") or []
+        n_merged = 0
+        with self._lock:
+            for row in pairs:
+                ip, costume = row.get("exit"), row.get("costume")
+                if not ip:
+                    continue
+                fresh = [(float(t), bool(g)) for t, g in (row.get("recent") or [])
+                         if now - float(t) <= ttl_s]
+                q_until = float(row.get("quarantined_until") or 0.0)
+                q_live = q_until > now
+                if not fresh and not q_live:
+                    continue                   # nothing survives the TTL — treat as no evidence
+                p = self._pairs.setdefault((ip, costume), _Pair())
+                seen = set(p.recent)
+                for item in fresh:
+                    if item not in seen:
+                        p.recent.append(item)
+                        seen.add(item)
+                p.recent.sort(key=lambda r: r[0])
+                if len(p.recent) > RECENT_MAXLEN:
+                    del p.recent[: len(p.recent) - RECENT_MAXLEN]
+                if q_live:
+                    p.quarantined_until = max(p.quarantined_until, q_until)
+                    p.quarantine_s = max(p.quarantine_s, float(row.get("quarantine_s") or QUARANTINE_BASE_S))
+                n_merged += 1
+        return n_merged
 
     def stats(self, top=8):
         with self._lock:
@@ -239,3 +352,70 @@ def hot_exits(top=8):
 
 def reset():
     get().reset()
+
+
+# ── cross-run, cross-shard reputation ────────────────────────────────────────────────────────────
+# Exit reputation was the most expensive thing this router produced and the only thing it threw away:
+# every state here lived in memory and died with the process. Measured cost, 2026-08-02: one session
+# restarted an 8-shard fleet five times, and on every restart all eight shards re-discovered the same
+# burned addresses from scratch — spending real requests to re-learn what the previous process already
+# knew. That is worse than waste. Re-probing an address the target has already flagged does not just
+# cost a request, it deepens the flag; some of that day's "the whole pool is uniformly burned" was
+# plausibly self-inflicted by exactly that loop.
+#
+# ONE FILE PER SHARD, NEVER A SHARED ONE. Eight writers merging into a single key is the read-modify-
+# write lost update this codebase has already been bitten by (see ue_catalog._land: two shards
+# accumulating at once took ubereats_products from 33,250 rows DOWN to 8,798). Each shard owns its own
+# key and readers union the set — the same append-only shape that has never lost a row.
+#
+# READING EVERY SHARD'S FILE IS THE POINT, not a side effect: what shard 2 paid to learn about an
+# address is equally true for shard 5, and eight processes independently re-buying the same fact is
+# dead time in the most literal sense.
+def _rep_key(site, shard, nshard):
+    return "_collect/reputation/%s_%s-%s.json" % (site, shard, nshard)
+
+
+def save(site, shard, nshard, log=None):
+    """Persist THIS shard's reputation. Best-effort by construction — a warehouse hiccup must never be
+    the reason a scrape stops, exactly as `_ck_save` treats checkpointing."""
+    try:
+        import json
+        import warehouse
+        snap = get().snapshot()
+        if not snap.get("pairs"):
+            return 0
+        warehouse.put_bytes(_rep_key(site, shard, nshard), json.dumps(snap).encode())
+        return len(snap["pairs"])
+    except Exception as e:
+        if log:
+            log("[rep] save skipped: %s" % str(e)[:90])
+        return 0
+
+
+def load(site, nshard, log=None):
+    """Merge every shard's persisted reputation into this process. Returns (files_read, pairs_merged).
+
+    Absent files are the normal first-run case, not an error — a fleet that has never run has nothing
+    to remember, and a shard that has not written yet simply contributes nothing."""
+    files, merged = 0, 0
+    try:
+        import json
+        import warehouse
+        r = get()
+        for i in range(max(1, int(nshard))):
+            try:
+                raw = warehouse.get_bytes(_rep_key(site, i, nshard))
+            except Exception:
+                raw = None
+            if not raw:
+                continue
+            files += 1
+            merged += r.merge(json.loads(raw))
+    except Exception as e:
+        if log:
+            log("[rep] load skipped: %s" % str(e)[:90])
+        return files, merged
+    if log and files:
+        log("[rep] reputation carried over: %d pair(s) from %d shard file(s) — not re-learning these"
+            % (merged, files))
+    return files, merged
