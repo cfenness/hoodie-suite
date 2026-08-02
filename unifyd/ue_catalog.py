@@ -177,6 +177,13 @@ def enrich_items(su, store_name, items, idx, site="ubereats", known=None):
     mistake — two full crawls of identical pages for data present in one visit.
 
     NO per-store item cap: every item the store lists gets enriched.
+
+    PACED AND CLASSIFIED, same as fetch_store — this loop used to issue its own POST directly, with
+    no pace.acquire()/report() and no blocks.classify()/identity_router.record()/ladder.report().
+    That made real per-shard request rate an unmeasured multiple of the intended 5 req/s (proportional
+    to unresolved items per store) and invisible to every health signal the fleet reacts to — a shard
+    could be silently driving its exits well past the pacer's target while every diagnostic field
+    (pace_rate, isp.success_pct) kept describing only the catalog call next to it.
     """
     s = getstore._session(site)
     H = dict(getstore._H)
@@ -189,11 +196,63 @@ def enrich_items(su, store_name, items, idx, site="ubereats", known=None):
         ctx = idx.get(iu) or {}
         body = {"storeUuid": su, "menuItemUuid": iu, "sectionUuid": ctx.get("section", ""),
                 "subsectionUuid": ctx.get("subsection", ""), "cbType": "EATER_ENDORSED"}
+        # PACE BEFORE THE REQUEST — same control point as fetch_store (aggregate rate, not worker
+        # count, is what the endpoint actually caps).
+        _p = None
+        try:
+            import pace
+            _p = pace.get()
+            if _p:
+                _p.acquire()
+        except Exception:
+            _p = None
         try:
             r = s.post(api, json=body, headers=H, timeout=25)
             data = ubereats._menu_item_data(r.json()) if r.content else None
-        except Exception:
+        except Exception as e:
+            try:
+                import blocks
+                cls = blocks.classify(exc=e)
+                t = blocks.get()
+                if t:
+                    t.record(cls, method=getstore._method(), exit=getstore._exit_ip())
+                try:
+                    import identity_router
+                    identity_router.record(getstore._exit_ip(), getstore._costume(site), cls)
+                except Exception:
+                    pass
+                if _p:
+                    _p.report(not blocks.is_throttle(cls))
+            except Exception:
+                if _p:
+                    _p.report(False)
             continue
+        # CLASSIFY, then feed the controller only REAL pushback — an item with no detail (e.g. 86'd,
+        # or the endpoint legitimately has nothing more to add) is not itself a throttle signal; the
+        # response's status/body is what tells blocks.classify() which one actually happened.
+        try:
+            import blocks
+            cls = blocks.classify(status=getattr(r, "status_code", None),
+                                  body=(r.text[:4000] if getattr(r, "text", None) else ""),
+                                  has_payload=bool(data))
+            t = blocks.get()
+            if t:
+                t.record(cls, method=getstore._method(), exit=getstore._exit_ip())
+            try:
+                import identity_router
+                identity_router.record(getstore._exit_ip(), getstore._costume(site), cls)
+            except Exception:
+                pass
+            try:
+                import ladder
+                ladder.report(site, cls)
+            except Exception:
+                pass
+            if _p:
+                _p.report(not blocks.is_throttle(cls))
+        except Exception:
+            if _p:
+                _p.report(bool(data))
         if not data:
             continue
         try:
@@ -601,6 +660,17 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
             _hot = [ip for ip, _n in identity_router.hot_exits(top=3)]
         except Exception:
             pass
+        # WHICH RUNG THIS SHARD IS ACTUALLY ON — a shard silently escalated to `browser` (serialized,
+        # unproven from a datacenter IP, see getstore._fetch_browser/ladder.py) looks identical to a
+        # healthy shard on every OTHER field in this heartbeat except a collapsed pace_rate; nothing
+        # said WHY. Missing this was the gap that made a burned-exit-slice theory and a bad-rung theory
+        # indistinguishable from the outside.
+        _rung = None
+        try:
+            import ladder
+            _rung = ladder.current(site)
+        except Exception:
+            pass
         _progress(rows=n_items + len(pending),
                   stage="%s/%s stores" % (f"{len(done):,}", f"{len(mine):,}"),
                   pct=round(100.0 * len(done) / max(1, len(mine)), 1),
@@ -608,7 +678,7 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
                   rss_mb=_rss_mb(),
                   pace_rate=_pc.get("rate"), pace_backoffs=_pc.get("backoffs"),
                   pace_increases=_pc.get("increases"), pace_at_floor=_pc.get("at_floor"),
-                  hot_exits=_hot,
+                  hot_exits=_hot, ladder_rung=_rung,
                   **_bk)
 
     def _one(t):
