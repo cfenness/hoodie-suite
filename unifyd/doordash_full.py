@@ -218,11 +218,38 @@ def run(chain, stores=None, store_names=None, log=print, on_store=None):
         for it in items:
             dept = it.get("department", "alcohol")
             b = ctx.classify_beverage(it["name"])
+            pack = dd._parse_pack(it["name"])
+            # RETAIL PACKAGING SIGNAL — a retail beverage almost always names its container (can/
+            # bottle/carton/keg/...) and a volume (fl oz/mL/L), the way "BuzzBallz ... Cocktail Bottle
+            # (1.5 L)" or "Twisted Tea ... Cans (16 fl oz x 4 ct)" already do. cocktail_taxonomy was
+            # built for RESTAURANT MENU items (named cocktails, wine varietals, recognized beer/liqueur
+            # brands) and does not know retail RTD brand names like BuzzBallz/Twisted Tea/BeatBox —
+            # verified live: applying ONLY the taxonomy check here silently dropped a real BuzzBallz
+            # cocktail alongside the real hardware it was meant to catch. A container+volume match is
+            # independent evidence a real hardware SKU won't produce (dowels/brackets/tile don't carry
+            # fl-oz/mL/L packaging), so either signal alone is enough to call something real beverage
+            # content; neither alone is complete.
+            has_pack_signal = bool(pack.get("container")) or (
+                pack.get("unit_size") is not None and (pack.get("size_uom") or "").lower() in
+                ("fl oz", "oz", "ml", "l", "liter", "litre"))
+            # REAL CONTENT CHECK for anything found under the alcohol tree/term-search — "which
+            # category page this was discovered under" is not proof of what it actually is.
+            # _is_alcohol()'s category-name exclude-list can't enumerate every retailer's OTHER
+            # departments (hardware, crafts, home goods, ...), so a category-tree walk that strays
+            # off the true alcohol section still gets crawled. Verified live 2026-08-01: real Lowe's/
+            # Michaels stores landed 4,000+ wood-dowel/steel-bracket/craft-supply SKUs all tagged
+            # is_alcoholic=True purely because they were reached from the alcohol-1024 root. Items
+            # from _walk_nonalc (department="non-alcoholic") already passed its own _NA_INTEREST
+            # name filter on the way in, so they are not re-gated here — this only guards the
+            # alcohol-tagged path, which trusted its source page and nothing else.
+            is_bev = b["is_alcoholic"] or b["category"] == "mocktail" or has_pack_signal
+            if dept == "alcohol" and not is_bev:
+                continue
             rows.append(dict(it, store=str(store), store_id=str(store), product_id=it["name"][:90],
                              price_value=dd._price_val(it.get("price", "")), source=source, department=dept,
-                             is_alcoholic=(dept == "alcohol"), bev_category=b["category"],
+                             is_alcoholic=is_bev, bev_category=b["category"],
                              beer_style=b.get("beer_style", ""), is_hemp=observe.is_hemp(it["name"]),
-                             run_id=run_id, **dd._parse_pack(it["name"])))
+                             run_id=run_id, **pack))
         na = sum(1 for r in rows if r["department"] == "non-alcoholic")
         log("  [%s] store %s — %d items (%d alcohol, %d non-alc/zero-proof)" % (chain, store, len(rows), len(rows) - na, na))
         # WRITE THIS STORE NOW — an append-only per-store PART, not accumulated in memory for one
