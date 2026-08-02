@@ -63,7 +63,13 @@ _TRANSIENT = ("curlCode: 28", "NETWORK_CONNECTION", "Timeout was reached", "time
               "Connection reset", "SlowDown", "503", "InternalError", "RequestTimeout",
               "Failed to read connection", "connection error for HTTP", "Connection refused",
               "Unable to connect", "Could not establish connection", "HTTP GET error",
-              "NO_SUCH_UPLOAD", "NoSuchUpload")
+              "NO_SUCH_UPLOAD", "NoSuchUpload",
+              # Added after a live occurrence: 6 of 8 UberEats shards restarting at once each issued
+              # their own universe() read of the same large single-file table in the same instant —
+              # a thundering herd against Tigris — and got "Server returned nothing (no headers, no
+              # data)" back. Same shape as every other entry here: a dropped/empty response from the
+              # object store, not a real absence of data.
+              "Server returned nothing")
 
 
 def _retry(fn, what="s3 write"):
@@ -592,19 +598,35 @@ def query(name, sql=None, params=None):
     Defaults to `SELECT * FROM t`. Returns a list of dicts.
 
     Dual-read: a bucketed (v2) table resolves to its manifest's ACTIVE part files; everything
-    else reads the single `<name>.parquet` exactly as before."""
+    else reads the single `<name>.parquet` exactly as before.
+
+    A TRANSIENT READ IS NOT AN EMPTY TABLE — same rule query_parts() already applies, extended
+    here after a live occurrence: query_parts() retries its view-creation and scan, but this
+    single-file path never did, so callers of the FAR more common plain query() had zero
+    protection against exactly the failure query_parts()'s own docstring already names as the
+    worst kind of quiet degrade. Observed live: 6 of 8 UberEats shards independently called
+    universe() (this function, on `ubereats_sitemap`) within the same instant on a restart — a
+    thundering herd against Tigris — and each got a transient empty/dropped response back,
+    which universe() then reported as "0 stores" and the whole shard exited as failed. Retrying
+    here means a blip costs seconds, not a shard's whole run."""
     con = connect()
     man = read_manifest(name)
-    if man and man.get("layout") == "bucketed":
-        files = [f for p in (man.get("parts") or {}).values() for f in (p.get("files") or [])]
-        if not files:
-            return []
-        lst = ", ".join("'%s'" % _part_sql_path(f).replace("'", "") for f in files)
-        con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet([%s], union_by_name=true)" % lst)
-    else:
-        src = uri(name).replace("'", "")
-        con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet('%s')" % src)
-    cur = con.execute(sql or "SELECT * FROM t", params or [])
+
+    def _mkview():
+        if man and man.get("layout") == "bucketed":
+            files = [f for p in (man.get("parts") or {}).values() for f in (p.get("files") or [])]
+            if not files:
+                return False
+            lst = ", ".join("'%s'" % _part_sql_path(f).replace("'", "") for f in files)
+            con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet([%s], union_by_name=true)" % lst)
+        else:
+            src = uri(name).replace("'", "")
+            con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet('%s')" % src)
+        return True
+
+    if not _retry(_mkview, what="parquet view %s" % name):
+        return []
+    cur = _retry(lambda: con.execute(sql or "SELECT * FROM t", params or []), what="parquet scan %s" % name)
     cols = [d[0] for d in cur.description]
     return [dict(zip(cols, row)) for row in cur.fetchall()]
 

@@ -3045,6 +3045,100 @@ def coverage_at_ep():
     return jsonify(ok=True, account=(rows[0] if rows else None))
 
 
+@app.get("/api/scrape/dataset")
+def scrape_dataset_ep():
+    """Full-dataset read for a scraped source — distinct accounts, total rows, avg items/store, and today's
+    delta — as opposed to a run doc's tick log, which only tracks one invocation's own in-memory counters
+    (reset on every process restart, so it understates a multi-day sweep's real cumulative size). Scoped by
+    ?source= (a source_registry id whose canonical table is named '<source>_products', e.g. ubereats,
+    postmates)."""
+    site = (request.args.get("source") or "ubereats").strip()
+    if not site.replace("_", "").isalnum():
+        return jsonify(ok=False, error="invalid source"), 400
+    return jsonify(_ttl("scrape_dataset_%s" % site, 180, lambda: _scrape_dataset_data(site)))
+
+
+def _scrape_dataset_data(site):
+    import time as _t
+    import warehouse
+    # READ THE PARTS, NOT THE CONSOLIDATED TABLE. `<site>_products` is only as fresh as the last
+    # consolidate() build (a periodic, registry-scheduled fold — see ue_catalog.consolidate()), which
+    # can lag a live multi-day sweep by however long since its last successful run. Measured live during
+    # this exact sweep: the consolidated table read 7,034 accounts / 597k rows while the sweep's own
+    # checkpoint had already landed 240k+ stores — a stale-by-orders-of-magnitude answer to the very
+    # question ("what do we actually have") this endpoint exists to answer honestly. `_parts` is what
+    # every shard appends to in real time, so it's always current; count(DISTINCT item_uuid) per store
+    # dedupes the same item re-observed across days the same way consolidate() would, without waiting
+    # for that build to run.
+    tbl_parts = "%s_products_parts" % site
+    # RETRY ON A READ-DURING-WRITE RACE. A live sweep's shards keep landing new part files under this
+    # exact table while this query is scanning it; DuckDB's S3 reader captures a file's ETag when it
+    # lists the directory and can find it changed by the time it actually reads that file — an
+    # eventual-consistency hiccup on the object store, not a real fault, but a genuinely long scan (this
+    # table can span thousands of part files across many days) has real odds of touching one mid-write
+    # on any given attempt while a sweep is active. `_ttl`'s caller retries this whole function again on
+    # its own 180s cycle regardless, so a failure here is not fatal to the endpoint ever landing — it
+    # just means "not yet" rather than "broken."
+    counts, last_err = None, None
+    for attempt in range(4):
+        try:
+            counts = warehouse.query_parts(
+                tbl_parts, "SELECT store_uuid, count(DISTINCT item_uuid) n FROM t GROUP BY store_uuid")
+            break
+        except Exception as e:
+            last_err = e
+            _t.sleep(3 * (attempt + 1))
+    if counts is None:
+        return dict(ok=False, error=str(last_err)[:160])
+    total_accounts = len(counts)
+    total_rows = sum(r["n"] for r in counts)
+    avg_items = round(total_rows / total_accounts, 1) if total_accounts else None
+
+    changed_today = None
+    try:
+        today = _t.strftime("%Y-%m-%d")
+        r = warehouse.query_parts("retail_observations",
+                                  "SELECT count(DISTINCT store_id) n FROM t WHERE source = ? AND date = ?",
+                                  [site, today])
+        changed_today = (r or [{}])[0].get("n")
+    except Exception:
+        pass
+
+    # PREMISE SPLIT IS A NAME-MATCHED HEURISTIC, not a scraped field — UberEats/Postmates don't return an
+    # on/off-premise flag, so this only classifies accounts whose resolved chain matches the bevalc_chains
+    # registry (known off-premise retail/grocery/liquor banners). Everything else defaults to on-premise
+    # (independent restaurant), which is this source's core business — that default is a coverage gap in
+    # the classifier, not a verified fact, hence the note carried alongside every response. Reuses `counts`
+    # from above rather than a second full-table scan.
+    premise = None
+    try:
+        chain_premise = {r["name"].strip().lower(): r.get("premise")
+                         for r in warehouse.query("bevalc_chains", "SELECT name, premise FROM t") if r.get("name")}
+        store_chain = {r["store_id"]: (r.get("chain") or "").strip().lower()
+                       for r in warehouse.query("src_outlets",
+                           "SELECT store_id, chain FROM t WHERE source = ? AND chain IS NOT NULL AND trim(chain) != ''",
+                           [site])}
+        off_acc = off_rows = on_acc = on_rows = 0
+        for r in counts:
+            chain = store_chain.get(r["store_uuid"])
+            p = chain_premise.get(chain) if chain else None
+            if p == "off":
+                off_acc += 1; off_rows += r["n"]
+            else:
+                on_acc += 1; on_rows += r["n"]
+        premise = dict(
+            off=dict(accounts=off_acc, rows=off_rows, avg_items=round(off_rows / off_acc, 1) if off_acc else None),
+            on=dict(accounts=on_acc, rows=on_rows, avg_items=round(on_rows / on_acc, 1) if on_acc else None),
+            note="heuristic: known off-premise retail/grocery/liquor chains only (bevalc_chains registry); "
+                 "unmatched accounts default to on-premise, not verified")
+    except Exception:
+        pass
+
+    return dict(ok=True, source=site, total_accounts=total_accounts, total_rows=total_rows,
+                avg_items_per_store=avg_items, accounts_changed_today=changed_today,
+                premise=premise, as_of=int(_t.time()))
+
+
 @app.get("/api/master/workbench/matches")
 def mwb_matches_ep():
     """Dedup candidates at EVERY grain — brand / product / item / supplier — that the Hoodie ID mnemonic blocks

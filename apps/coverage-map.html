@@ -77,6 +77,9 @@
   .legend{position:fixed;right:16px;bottom:16px;z-index:5;font-family:var(--mono);font-size:10px;color:#6f938a;text-align:right;line-height:1.8;pointer-events:none;background:rgba(14,22,19,.6);padding:7px 11px;border-radius:9px}
   .legend b{color:#a9c9c0}
   @media (max-width:760px){ .panel{width:210px} .detail{width:210px} }
+  body.embed .panel,body.embed .legend,body.embed .srch{display:none}
+  body.embed .top{padding:10px 12px}
+  body.embed .brand h1{font-size:14px}
 </style>
 </head>
 <body>
@@ -133,6 +136,15 @@ L.control.attribution({prefix:false}).addAttribution('© OpenStreetMap · © CAR
 
 let DATA=null, srcColor={}, active=new Set();
 let ALLPTS=[], DOTSRC=[];   // every geocoded outlet [lat,lng,srcIdx] + the source-name index
+
+// ?source=ubereats scopes the map to one source on load (still client-side — same `active` Set the
+// sidebar toggles use, see DotLayer._draw below) — for embedding this map inside a single-source
+// surface like the scrape run tracker without re-deriving a whole new map component.
+// ?embed=1 drops the sidebar/legend chrome for a tight iframe.
+const URLP=new URLSearchParams(location.search);
+const FILTER_SOURCE=(URLP.get('source')||'').trim();
+const EMBED=URLP.get('embed')==='1';
+if(EMBED) document.body.classList.add('embed');
 function fmt(n){ return (n||0).toLocaleString(); }
 function colOf(s){ return srcColor[s]||'#8aa39d'; }
 
@@ -167,7 +179,13 @@ async function load(){
   if(!d||!d.ok||!d.by_source){ if(L0)L0.textContent='engine offline — coverage needs the backend'; return; }
   DATA=d;
   (d.by_source||[]).forEach((s,i)=>{ srcColor[s.source]=PAL[i%PAL.length]; active.add(s.source); });
-  document.getElementById('tot').innerHTML='<b>'+fmt(d.total)+'</b> accounts · '+(d.by_source||[]).length+' sources · '+fmt(d.geocoded||0)+' geocoded';
+  const scoped=FILTER_SOURCE && (d.by_source||[]).find(s=>s.source===FILTER_SOURCE);
+  if(scoped){
+    active=new Set([FILTER_SOURCE]);
+    document.getElementById('tot').innerHTML='<b>'+fmt(scoped.n)+'</b> '+esc(FILTER_SOURCE)+' accounts · '+fmt(scoped.geo||0)+' geocoded';
+  } else {
+    document.getElementById('tot').innerHTML='<b>'+fmt(d.total)+'</b> accounts · '+(d.by_source||[]).length+' sources · '+fmt(d.geocoded||0)+' geocoded';
+  }
   renderSources(); loadDots();
   if(L0)L0.remove();
 }
@@ -184,6 +202,9 @@ let dotReq=0;
 async function loadDots(){
   const my=++dotReq;
   const params=new URLSearchParams(); if(sellFlag) params.set('sells',sellFlag); if(multiOnly) params.set('multi','1');
+  if(FILTER_SOURCE) params.set('source',FILTER_SOURCE);   // scoped fetch, not just a client-side draw filter —
+                                                            // otherwise the shared 220k reservoir sample can
+                                                            // under-represent one source relative to its true share
   const d=await fetch('/api/coverage/dots?'+params,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
   if(my!==dotReq || !d || !d.points) return;
   ALLPTS=d.points; DOTSRC=d.sources||[];
