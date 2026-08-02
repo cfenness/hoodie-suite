@@ -237,9 +237,16 @@ def run(chain, stores=None, log=print, on_store=None):
         # the per-store parts above are the durable landing zone even if the run never reaches here.
         warehouse.write_accumulate(chain + "_products_full", all_rows,
                                    key=lambda r: (r["store"], r["product_id"]))
-        observe.record(chain, [dict(store=r["store"], store_id=r["store_id"], product_id=r["product_id"],
-                                    brand="", name=r["name"], price=r.get("price_value"),
-                                    in_stock=True, qty=None, is_hemp=r.get("is_hemp")) for r in all_rows])
+        # source is "doordash" (this connector's own identity, not the retailer's — see observe.py's
+        # OBS_FIELDS comment), chain is the subtag. part MUST be unique per chain: run() is called once
+        # PER CHAIN per day, and observe.record()'s default part is '<date>_<source>' — with source now
+        # fixed at "doordash" instead of naturally-unique-per-call chain names, every chain's call would
+        # otherwise collide on the same file for that day and silently overwrite each other's rows.
+        observe.record("doordash", [dict(chain=chain, store=r["store"], store_id=r["store_id"],
+                                         product_id=r["product_id"], brand="", name=r["name"],
+                                         price=r.get("price_value"), in_stock=True, qty=None,
+                                         is_hemp=r.get("is_hemp")) for r in all_rows],
+                       part="%s_doordash_%s" % (time.strftime("%Y-%m-%d"), chain))
     if outlets:
         warehouse.write_accumulate(chain + "_outlets", outlets, key=lambda r: r.get("store") or r.get("store_id"))
     log("[%s] FULL DONE %d items across %d stores -> %s_products_full" % (chain, len(all_rows), len(stores), chain))
