@@ -5,13 +5,22 @@ attributed to a place.
 THE GAP (measured 2026-08-03). retail_observations and outlet_geography are both keyed
 `source|store_id`, but the ids are not the same ids:
 
+    ubereats   the SAME id in TWO ENCODINGS — the sitemap holds it base64url
+               ('3GYoBDgAU6-me98dDz_kSw'), the catalog hex-dashed
+               ('dc662804-3800-53af-a67b-df1d0f3fe44b'). 208,624 observed stores, 15 matched.
     doordash   observations '1748913' (numeric)   vs geography 'blue jay coffees milwaukie' (a NAME)
     target     observations '1001'                vs geography 'Birmingham 280 Corridor'
-    ubereats   both UUIDs, but different SETS — 208,624 observed vs 29,845 geocoded, overlap 2,069
     18 of the 22 sources that land observations have NO rows in outlet_geography at all
 
 So obs_metro_rollup could place only ~990 (cbsa, zcta) cells out of a 211,690-store rollup, and the
 metro reports have no price or assortment depth. This module is the missing join.
+
+A CORRECTION WORTH KEEPING. The UberEats case first read as a catastrophic capture gap — "~188k
+observed stores were never landed as outlets" — and it was nothing of the kind: every one of them is
+in the sitemap, spelled differently. Decoding takes the match from 15 to 208,599 (100.0% of observed
+UberEats stores) with no re-scraping at all. The tell was the UUID version nibble; see ue_ids.py.
+Before concluding that a source failed to capture something, check that both sides spell the id the
+same way.
 
 DESIGN — A SIDE TABLE, AND STRATEGIES THAT MEASURE THEMSELVES.
 It writes `outlet_xref` and touches neither source table. src_outlets already has three writers that
@@ -59,7 +68,12 @@ ID_MAPS = {
     "doordash": ("doordash_stores", "store_id", "name"),
 }
 
-CONFIDENCE = {"direct": 1.00, "id_map": 0.95, "name": 0.70}
+CONFIDENCE = {"direct": 1.00, "encoding": 1.00, "id_map": 0.95, "name": 0.70}
+
+# Sources whose two sides spell the SAME id differently. `encoding` is confidence 1.00 because a
+# base64url token is a lossless re-encoding of a UUID (22 chars == 16 bytes), not a heuristic — see
+# ue_ids.py. This single strategy took UberEats from 15 matched stores to 208,599.
+ENCODED_ID_SOURCES = ("ubereats", "postmates")
 
 # A rebuild that maps far fewer stores than the last one is a broken read, not a shrinking universe.
 MIN_KEEP_FRAC = float(os.environ.get("XREF_MIN_KEEP", "0.80"))
@@ -103,8 +117,34 @@ def build(dry=False, log=print):
     n_direct = con.execute("SELECT COUNT(*) FROM m_direct").fetchone()[0]
     log("[xref]   direct  : %d" % n_direct)
 
-    # ── strategy 2: id_map — the source's own store directory resolves id -> name ────────────────
-    parts = []
+    # ── strategy 2: encoding — the two sides spell the same id differently ───────────────────────
+    # UberEats store URLs carry the id base64url-encoded ('3GYoBDgAU6-me98dDz_kSw'), while the
+    # catalog/BFF report it hex-dashed ('dc662804-3800-53af-a67b-df1d0f3fe44b'). Same value, two
+    # spellings, so every join between them missed and it read as a 188k-store capture gap.
+    # Normalising BOTH sides to canonical form is exact, not a guess.
+    import ue_ids
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE m_enc AS
+        SELECT s.source AS obs_source, s.store_id AS obs_store_id,
+               g.source AS geo_source, g.store_id AS geo_store_id,
+               ANY_VALUE(g.hoodie_outlet) AS hoodie_outlet,
+               ANY_VALUE(g.cbsa_code) AS cbsa_code, ANY_VALUE(g.cbsa_name) AS cbsa_name,
+               ANY_VALUE(g.zcta) AS zcta, ANY_VALUE(g.county_fips) AS county_fips,
+               'encoding' AS method
+        FROM s JOIN g
+          ON g.source = s.source
+         AND %s = %s
+        WHERE s.source IN %s
+          AND g.store_id <> s.store_id          -- direct already covers the equal case
+        GROUP BY 1,2,3,4""" % (ue_ids.sql_canonical("g.store_id"),
+                               ue_ids.sql_canonical("s.store_id"),
+                               str(tuple(ENCODED_ID_SOURCES))))
+    n_enc = con.execute("SELECT COUNT(*) FROM m_enc").fetchone()[0]
+    log("[xref]   encoding: %d" % n_enc)
+    extra = ["m_enc"]
+
+    # ── strategy 3: id_map — the source's own store directory resolves id -> name ────────────────
+    parts = list(extra)
     for src, (tbl, id_col, name_col) in ID_MAPS.items():
         try:
             _attach(con, tbl, "d")
@@ -167,11 +207,13 @@ def build(dry=False, log=print):
         CREATE OR REPLACE TEMP TABLE xref AS
         SELECT obs_source, obs_store_id, geo_source, geo_store_id, hoodie_outlet,
                cbsa_code, cbsa_name, zcta, county_fips, method,
-               CASE method WHEN 'direct' THEN 1.00 WHEN 'id_map' THEN 0.95 ELSE 0.70 END AS confidence
+               CASE method WHEN 'direct' THEN 1.00 WHEN 'encoding' THEN 1.00
+                    WHEN 'id_map' THEN 0.95 ELSE 0.70 END AS confidence
         FROM (%s)
         QUALIFY ROW_NUMBER() OVER (
             PARTITION BY obs_source, obs_store_id
-            ORDER BY CASE method WHEN 'direct' THEN 0 WHEN 'id_map' THEN 1 ELSE 2 END,
+            ORDER BY CASE method WHEN 'direct' THEN 0 WHEN 'encoding' THEN 1
+                          WHEN 'id_map' THEN 2 ELSE 3 END,
                      geo_store_id) = 1""" % union)
 
     n_x = con.execute("SELECT COUNT(*) FROM xref").fetchone()[0]

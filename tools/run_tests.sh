@@ -61,6 +61,7 @@ TESTS=(
   geo_resolve_test             # lat/lng -> county/CBSA/ZCTA: border points, rural gaps, degrade floor
   metro_analytics_test         # metro claims: unknown != independent, median not mean
   outlet_xref_test             # one observation store maps to at most ONE outlet
+  ue_ids_test                  # UberEats ids come in two encodings of the same value
 )
 
 FILTER="${1:-}"

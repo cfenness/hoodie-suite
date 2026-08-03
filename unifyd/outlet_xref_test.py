@@ -101,7 +101,11 @@ def test_confidence_tiers_are_ordered():
     c = x.CONFIDENCE
     ok("direct is the strongest", c["direct"] > c["id_map"] > c["name"])
     ok("name is explicitly weak", c["name"] < 0.8)
-    ok("every method has a confidence", set(c) == {"direct", "id_map", "name"})
+    ok("every method has a confidence", set(c) == {"direct", "encoding", "id_map", "name"})
+    # `encoding` is a lossless re-spelling of the same id (base64url <-> hex-dashed), not a guess,
+    # so it must rank with `direct` and not be discounted like the heuristics.
+    eq("encoding is exact, like direct", c["encoding"], c["direct"])
+    ok("encoding outranks the heuristics", c["encoding"] > c["id_map"] > c["name"])
     src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "outlet_xref.py")).read()
     ok("confidence lands on every row", '"confidence"' in src or "confidence" in x.FIELDS)
     ok("method lands on every row", "method" in x.FIELDS)
