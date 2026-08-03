@@ -44,17 +44,28 @@ _LEGACY_CHAIN_TABLES = ["abcfinewine", "albertsons", "binnys", "circlek", "costc
                         "totalwine"]
 
 
-def all_stores(log=print):
+def all_stores(log=print, metro=None):
     """The FULL doordash_stores universe — store_id -> name. NO filtering by name/chain. NO LIMIT:
-    two string columns across ~1M rows is trivial for DuckDB."""
+    two string columns across ~1M rows is trivial for DuckDB.
+
+    `metro`, when given, is a set of (city_lower, STATE) pairs from city_centroid.metro_cities() —
+    a geographic scope (an anchor city + radius, e.g. "Orlando, FL" pulls in Windermere/Winter Garden
+    too), not a literal city-name allowlist. doordash_stores carries no lat/lng of its own, so this
+    filters by matching its own city/state text against that reference-side scope, normalized the
+    same way city_centroid's lookups are (city_centroid._norm) so a raw DoorDash city string like
+    "Winter Garden" matches the same key the metro scope was built from."""
     try:
-        rows = warehouse.query("doordash_stores",
-                               "SELECT store_id, name FROM t WHERE store_id IS NOT NULL")
+        cols = "store_id, name, city, state" if metro else "store_id, name"
+        rows = warehouse.query("doordash_stores", "SELECT %s FROM t WHERE store_id IS NOT NULL" % cols)
     except Exception as e:
         log("[doordash_chains] doordash_stores unreadable: %s" % str(e)[:140])
         return {}
+    if metro:
+        import city_centroid as cc
+        rows = [r for r in rows if (cc._norm(r.get("city") or ""), str(r.get("state") or "").strip().upper()) in metro]
     names = {str(r["store_id"]): (r.get("name") or "") for r in rows}
-    log("[doordash_chains] universe=%d stores (full sitemap, no chain filter)" % len(names))
+    log("[doordash_chains] universe=%d stores (%s)"
+        % (len(names), "metro-scoped, %d city/state pairs" % len(metro) if metro else "full sitemap, no chain filter"))
     return names
 
 
@@ -82,11 +93,15 @@ def _shard_of(store_id, nshard):
     return int(hashlib.md5(store_id.encode()).hexdigest(), 16) % nshard
 
 
-def run(batch=None, shard=None, nshard=None, log=print):
-    """ONE resumable batch against the FULL national universe. shard/nshard (both required together)
-    partition the store-id space deterministically so N machines can each take a disjoint slice and run
-    concurrently without double-scraping the same stores — see CLAUDE.md's "too slow => shard across
-    machines, never truncate" rule."""
+def run(batch=None, shard=None, nshard=None, log=print, metro=None):
+    """ONE resumable batch against the FULL national universe, or a metro-scoped subset of it. shard/
+    nshard (both required together) partition the store-id space deterministically so N machines can
+    each take a disjoint slice and run concurrently without double-scraping the same stores — see
+    CLAUDE.md's "too slow => shard across machines, never truncate" rule.
+
+    `metro`, when given, is a set of (city_lower, STATE) pairs from city_centroid.metro_cities() —
+    restricts the universe to a geographic scope (anchor cities + radius) instead of every
+    doordash_stores row nationally. Passed straight through to all_stores()."""
     t0 = time.time()
     import blocks
     blocks.install()
@@ -117,7 +132,7 @@ def run(batch=None, shard=None, nshard=None, log=print):
         log("[doordash_chains] pacing unavailable (%s) — running unpaced" % str(e)[:60])
     cap = batch or int(os.environ.get("DDFULL_BATCH", "5000"))
 
-    names = all_stores(log=log)
+    names = all_stores(log=log, metro=metro)
     universe_total = len(names)
     covered = _landed_stores(log=log)
     covered_total = sum(1 for s in names if s in covered)
@@ -168,10 +183,26 @@ def run(batch=None, shard=None, nshard=None, log=print):
               stores_landed_this_run=stores_this_run, items_landed_this_run=items_this_run,
               duration_s=round(time.time() - t0, 1))
     warehouse.write_accumulate("doordash_full_runs", [rec], key="run_id", fields=RUN_FIELDS)
-    log("[doordash_chains] DONE — %d stores / %d items this run · national: %d/%d covered, %d remaining · %.0fs"
-        % (stores_this_run, items_this_run, rec["covered_total"], universe_total,
-           rec["remaining_total"], rec["duration_s"]))
+    log("[doordash_chains] DONE — %d stores / %d items this run · %s: %d/%d covered, %d remaining · %.0fs"
+        % (stores_this_run, items_this_run, "metro scope" if metro else "national",
+           rec["covered_total"], universe_total, rec["remaining_total"], rec["duration_s"]))
     return rec
+
+
+def _parse_metro(spec, radius_mi):
+    """'--metro' CLI value: ';'-separated "City,ST" anchors -> city_centroid.metro_cities() scope."""
+    import city_centroid as cc
+    anchors = []
+    for part in spec.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        city, _, state = part.rpartition(",")
+        anchors.append((city.strip(), state.strip()))
+    scope = cc.metro_cities(anchors, radius_mi=radius_mi)
+    if not scope:
+        raise SystemExit("--metro matched no known cities — check the city,ST spelling: %r" % spec)
+    return scope
 
 
 if __name__ == "__main__":
@@ -179,5 +210,10 @@ if __name__ == "__main__":
     ap.add_argument("--batch", type=int, default=None, help="max NEW stores this run")
     ap.add_argument("--shard", type=int, default=None)
     ap.add_argument("--nshard", type=int, default=None)
+    ap.add_argument("--metro", default="",
+                    help="';'-separated 'City,ST' anchors, e.g. 'Orlando,FL;Miami,FL' — restricts the "
+                         "universe to a radius around each anchor (suburbs included) instead of national")
+    ap.add_argument("--metro-radius-mi", type=float, default=30)
     a = ap.parse_args()
-    run(batch=a.batch, shard=a.shard, nshard=a.nshard)
+    metro = _parse_metro(a.metro, a.metro_radius_mi) if a.metro else None
+    run(batch=a.batch, shard=a.shard, nshard=a.nshard, metro=metro)
