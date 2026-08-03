@@ -140,6 +140,46 @@ def centroid(city, state):
     return _CACHE.get((st, ck)) or _ALIAS.get((st, ck))
 
 
+def _haversine_mi(lat1, lng1, lat2, lng2):
+    import math
+    R = 3958.8   # earth radius, miles
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = math.radians(lat2 - lat1), math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+def metro_cities(anchors, radius_mi=30):
+    """Every (city, state) this reference KNOWS OF within `radius_mi` of any anchor (city, state) pair —
+    a metro-area scope for a source with only city+state text (no lat/lng of its own), built once
+    against the free static reference rather than a hand-curated suburb list. Anchor "Orlando, FL" at the
+    default 30mi correctly pulls in Windermere/Winter Garden/Kissimmee/etc. without naming any of them.
+
+    Returns a set of (city_lower, STATE) pairs — city already run through the same _norm() every other
+    lookup in this module uses, so a caller matching against it should apply the same normalization to
+    whatever city text it has (see doordash_chains.py's use for the pattern).
+
+    This is a REFERENCE-side scope (which places EXIST near an anchor), not a per-source query — it
+    costs one full scan of the loaded centroid cache (a few hundred thousand entries, in-memory, no
+    network) regardless of how large the source's own store table is, so it is cheap to recompute per
+    run rather than caching a source-specific result."""
+    _load()
+    anchor_pts = []
+    for city, state in anchors:
+        c = centroid(city, state)
+        if c:
+            anchor_pts.append(c)
+    if not anchor_pts:
+        return set()
+    out = set()
+    for (st, ck), (lat, lng) in _CACHE.items():
+        for alat, alng in anchor_pts:
+            if _haversine_mi(lat, lng, alat, alng) <= radius_mi:
+                out.add((ck, st))
+                break
+    return out
+
+
 def city_from_name(name, state):
     """Recover the real city from a slug-derived store name that ENDS with it — DoorDash names are
     'name…-<city>' with no delimiter ('taqueria los angeles'), and its city field is only the last token.
