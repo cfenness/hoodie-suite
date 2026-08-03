@@ -349,13 +349,19 @@ SOURCES = [
     # hand-kept dict — that dict had one entry while the directory held 338 catalogs, so the weekly
     # pass was refreshing Columbia alone and 337 books sat frozen with nothing reporting it.
     # mem: 630k+ rows accumulate into one table, and write_accumulate materializes the whole thing.
+    # DAILY, and the cadence is measured rather than assumed: the full 338-book pass ran in
+    # 8m07s end to end (2026-08-03, 4 CPU / 8 GB ephemeral), which is ~1,014 requests against an
+    # open no-auth API — a rounding error on a daily budget. The pass landed delta=38 new rows in
+    # the ~24h since the previous sweep, so there IS daily movement to catch; weekly would just
+    # mean a new distributor item waits up to a week to become matchable. The per-distributor
+    # snapshot diff (new/dropped) also only means something at the cadence it runs at.
     # No `after` on purpose — it is a BUILDS-only key (due_builds reads it; due_sources does not),
     # so declaring it here would read as enforced sequencing that nothing enforces. Ordering is
     # not needed anyway: the pull uses whatever the directory holds, and a directory a week old is
     # correct — distributors do not appear hourly.
     dict(id="vip-brandbuilder", label="VIP Brand Builder (distributor catalogs)",
          code="import vtinfo_bbs as m; m.pull()", tables=["vip_brandbuilder_items"],
-         klass="headless", cadence="weekly", enabled=True, mem=8192, timeout=5400,
+         klass="headless", cadence="daily", enabled=True, mem=8192, timeout=5400,
          note="products.vtinfo.com/bbs — distributor product+package catalog w/ retail UPCs, no auth. "
               "Distributor list = vip_brandbuilder_directory (status='confirmed'), populated by "
               "vip-brandbuilder-census over the full 00000-99999 sourceCode keyspace. This is the "
