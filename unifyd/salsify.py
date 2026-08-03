@@ -664,6 +664,7 @@ def crawl_catalog(catalog_id=None, org=None, site=None, pages=None, workers=12, 
     day = time.strftime("%Y-%m-%d", time.gmtime())
     now = int(time.time())
     rows, failed, changed, prop_rows_total, part = [], 0, 0, 0, 0
+    land_fails = []
 
     for i in range(0, len(todo), chunk):
         batch, prop_rows = [], []
@@ -686,7 +687,7 @@ def crawl_catalog(catalog_id=None, org=None, site=None, pages=None, workers=12, 
         prop_rows_total += len(prop_rows)
         if land and batch:
             part += 1
-            _land(batch, prop_rows, cat["catalog_id"], day, part, log)
+            land_fails.extend(_land(batch, prop_rows, cat["catalog_id"], day, part, log))
             try:
                 json.dump(fps, open(fp_path, "w"))
             except Exception:
@@ -707,6 +708,29 @@ def crawl_catalog(catalog_id=None, org=None, site=None, pages=None, workers=12, 
                                        fields=CAT_FIELDS)
         except Exception as e:
             log("[salsify] %s update skipped: %s" % (CAT_TABLE, str(e)[:110]))
+
+    # A landing failure is a DATA LOSS, not a log line — degrade the run so it is visible where it
+    # happened rather than a week later in a row-count discrepancy nobody was looking for.
+    warns.extend(land_fails[:8])
+    if len(land_fails) > 8:
+        warns.append("... and %d more landing failures" % (len(land_fails) - 8))
+
+    # VERIFY WHAT WE FETCHED IS WHAT THE TABLE HOLDS. Row-count verify-landing cannot see this: a chunk
+    # that vanishes mid-crawl is masked by later chunks growing the table past its previous size. Only
+    # comparing the fetched set against the landed set catches a hole, which is exactly how 800 BBG
+    # products stayed invisible through a run that reported `ok`.
+    if land and rows:
+        try:
+            import warehouse
+            got = warehouse.query(TABLE, "SELECT count(*) AS n FROM t WHERE catalog_id = ?",
+                                  [cat["catalog_id"]])[0]["n"]
+            expected = len(done) + len(rows)
+            if got < expected:
+                warns.append("landed %d of %d expected products for %s — %d rows did not survive the "
+                             "merge (re-run to backfill; the crawl is resumable)"
+                             % (got, expected, cat["catalog_id"], expected - got))
+        except Exception as e:
+            warns.append("could not verify landed row count: %s" % str(e)[:90])
 
     if todo and failed / float(len(todo)) > 0.2:
         warns.append("%d/%d detail fetches failed (%d%%)"
@@ -742,20 +766,39 @@ def _safe(base, bid, t):
 
 
 def _land(rows, prop_rows, catalog_id, day, part, log=print):
+    """Land one chunk. Returns the list of failures — the CALLER must surface them, because a swallowed
+    landing failure is indistinguishable from success.
+
+    This swallowed its exception and logged. On 2026-08-03 two of BBG's 139 chunks failed to merge
+    (p0005, p0068) while their property partitions landed: 800 products were lost, the run reported
+    `ok` with no warnings, and the only evidence was the tall table holding 55,580 products against the
+    wide table's 54,780. A retry per chunk plus an honest degrade is the difference between a hole you
+    find in a week and one you find in the run that made it."""
     import warehouse
-    try:
-        warehouse.write_accumulate(TABLE, rows,
-                                   key=lambda r: "%s|%s" % (r["catalog_id"], r["product_id"]),
-                                   fields=FIELDS)
-    except Exception as e:
-        log("[salsify] %s land failed: %s" % (TABLE, str(e)[:120]))
+    fails = []
+    for attempt in range(3):
+        try:
+            warehouse.write_accumulate(TABLE, rows,
+                                       key=lambda r: "%s|%s" % (r["catalog_id"], r["product_id"]),
+                                       fields=FIELDS)
+            break
+        except Exception as e:
+            if attempt == 2:
+                fails.append("chunk p%04d: %s land failed after 3 tries: %s"
+                             % (part, TABLE, str(e)[:110]))
+                log("[salsify] %s land FAILED (chunk p%04d, %d rows): %s"
+                    % (TABLE, part, len(rows), str(e)[:120]))
+            else:
+                time.sleep(2 * (attempt + 1))
     if not prop_rows:
-        return
+        return fails
     try:                                      # append-only, date-partitioned: never merged, never re-read
         warehouse.write_partition(PROPS_TABLE, "%s_%s_p%04d" % (day, catalog_id.replace(":", "-"), part),
                                   prop_rows, fields=PROP_FIELDS)
     except Exception as e:
+        fails.append("chunk p%04d: %s capture failed: %s" % (part, PROPS_TABLE, str(e)[:110]))
         log("[salsify] %s capture failed: %s" % (PROPS_TABLE, str(e)[:120]))
+    return fails
 
 
 # ── entrypoints ──────────────────────────────────────────────────────────────────────────────────
