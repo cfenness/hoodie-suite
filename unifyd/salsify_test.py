@@ -236,5 +236,8 @@ ok("a product with NO property capture is re-fetched, not skipped by resume",
 ok("...and that repair read is opt-in, so the daily tick doesn't pay for it",
    "if repair_properties and land:" in _src)
 
+ok("a repaired hole also FORGETS its fingerprint, or nothing is re-emitted",
+   "for pid in holes:" in _src and "fps.pop(pid, None)" in _src)
+
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
