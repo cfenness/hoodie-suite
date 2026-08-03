@@ -197,6 +197,22 @@ def main(argv):
             print("usage: deploy_drift.py record <git_sha> [root]", file=sys.stderr)
             return 1
         return 0 if record(argv[1], root=(argv[2] if len(argv) > 2 else None)) else 1
+    if cmd == "record-fp":
+        # Record a fingerprint computed ELSEWHERE. This exists so the baseline can be written from
+        # a machine that has warehouse credentials while still describing the tree we INTENDED to
+        # ship: release_train computes the fingerprint over its clean origin/main checkout, then
+        # has this run on Fly to persist it. Recording the running container's own fingerprint
+        # instead would bless whatever is live — including a clobber — which is the exact thing
+        # drift detection exists to catch.
+        if len(argv) < 4:
+            print("usage: deploy_drift.py record-fp <git_sha> <sha256> <files>", file=sys.stderr)
+            return 1
+        try:
+            fp = {"sha256": argv[2], "files": int(argv[3])}
+        except ValueError:
+            print("record-fp: <files> must be an integer", file=sys.stderr)
+            return 1
+        return 0 if record(argv[1], fp=fp) else 1
     if cmd == "fingerprint":
         fp = fingerprint(argv[1] if len(argv) > 1 else None)
         print("%s  (%d files)" % (fp["sha256"], fp["files"]))

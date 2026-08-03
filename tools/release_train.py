@@ -28,6 +28,7 @@ refuses to run from a dirty or non-origin/main tree.
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -904,8 +905,30 @@ def deploy(args):
         for line in (out or "").splitlines()[-3:]:
             print("  %s" % line.strip())
         if rc != 0:
-            print("  [drift] baseline NOT recorded — the next check will report 'no baseline' "
-                  "rather than passing quietly")
+            # The usual cause is running from a laptop with no warehouse credentials: the baseline
+            # would go to a local path the Fly-side checker cannot read, so record() refuses. Fly
+            # HAS the credentials, so persist it there — but persist the fingerprint of the CLEAN
+            # CHECKOUT we just shipped, computed here, never the running container's own. Recording
+            # what is live would bless a concurrent session's clobber as the expectation, which is
+            # precisely the failure drift detection exists to catch.
+            print("  [drift] local record failed (usually: no warehouse creds here) — "
+                  "recording on Fly instead")
+            rc_fp, fp_out = sh([checker_python(), os.path.join(wt, "unifyd", "deploy_drift.py"),
+                                "fingerprint", wt], cwd=wt, timeout=300)
+            m = re.match(r"([0-9a-f]{64})\s+\((\d+) files\)", (fp_out or "").strip())
+            if rc_fp != 0 or not m:
+                print("  [drift] could not fingerprint the deploy checkout — baseline NOT recorded; "
+                      "the next check reports 'no baseline' rather than passing quietly")
+            else:
+                sha256, nfiles = m.group(1), m.group(2)
+                rc2, out2 = sh([fly, "ssh", "console", "-a", app, "-C",
+                                "python3 /app/unifyd/deploy_drift.py record-fp %s %s %s"
+                                % (head, sha256, nfiles)], timeout=300)
+                for line in (out2 or "").splitlines()[-2:]:
+                    print("  %s" % line.strip())
+                if rc2 != 0:
+                    print("  [drift] on-Fly record FAILED too — baseline NOT recorded; the next "
+                          "check reports 'no baseline' rather than passing quietly")
         if registry_moved:
             print("\nsource_registry.py moved in this range — re-pinning the dispatcher")
             rc, out = sh(["bash", os.path.join("tools", "repin_dispatcher.sh")], cwd=wt, timeout=600)
