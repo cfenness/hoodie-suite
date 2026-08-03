@@ -5818,7 +5818,8 @@ def overlay_run_ep():
     master, obs, xw = _overlay_deps()
     try:
         res = overlay.run(name, raw, tier=tier if tier in overlay.CAPS else "free", mode=mode,
-                          master=master, obs=obs, crosswalk=xw, log=app.logger.info)
+                          master=master, obs=obs, crosswalk=xw, log=app.logger.info,
+                          distributor=request.values.get("distributor") or None)
     except Exception as e:
         app.logger.exception("overlay run failed")
         return jsonify(error="overlay-failed", detail=str(e)[:200]), 500
@@ -5842,7 +5843,8 @@ def overlay_workbook_ep():
     master, obs, xw = _overlay_deps()
     try:
         res = overlay.run(name, raw, tier=tier if tier in overlay.CAPS else "free", mode=mode,
-                          master=master, obs=obs, crosswalk=xw, log=app.logger.info)
+                          master=master, obs=obs, crosswalk=xw, log=app.logger.info,
+                          distributor=request.values.get("distributor") or None)
         if res.get("error"):
             return jsonify(res), 400
         prov = _overlay_provenance()

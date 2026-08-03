@@ -283,7 +283,7 @@ def enrich_columns(tier="free"):
 # ── the run ────────────────────────────────────────────────────────────────────────────────────
 
 def run(filename, raw, tier="free", mode="consumer", master=None, obs=None, crosswalk=None,
-        log=None):
+        log=None, distributor=None):
     """The whole pipeline. Returns the result dict the UI renders and the workbook is built from.
 
     `master` / `obs` are injected so the pipeline is testable end-to-end with no warehouse; in
@@ -329,7 +329,10 @@ def run(filename, raw, tier="free", mode="consumer", master=None, obs=None, cros
 
     # ── S3 identity ──
     master = master if master is not None else overlay_match.WarehouseMaster()
-    mres = overlay_match.resolve(mapped, fields, master, log=log)
+    # `distributor` pins Tier 3. Unset, the resolver infers it from the file — a bare item code is
+    # ambiguous across books (36% of keys collide on the live crosswalk), so this is what makes
+    # "we matched on your own item numbers" true rather than aspirational.
+    mres = overlay_match.resolve(mapped, fields, master, log=log, distributor=distributor)
     matches, agg = mres["matches"], mres["aggregate"]
     stages.append({"stage": "match", **{k: v for k, v in agg.items() if k != "master_status"}})
 
@@ -501,6 +504,10 @@ def workbook(result, master_build=None, quality=None, xwalk=None):
         ("Match — inference (tier 4)", "%s%%" % result["match"]["inference_pct"]),
         ("Match — unmatched (tier 5)", "%s%%" % result["match"]["unmatched_pct"]),
     ]
+    dn = result["match"].get("distributor")
+    if dn:
+        facts.append(("Distributor (Tier-3 scope)",
+                      "%s — %s" % (dn.get("distributor_id") or "not identified", dn.get("basis"))))
     for w in result["match"].get("why") or []:
         facts.append(("  unmatched: %s" % w["reason"], w["rows"]))
     if quality:
