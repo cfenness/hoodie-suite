@@ -209,6 +209,18 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   `dam_dna_test.py` scans the package's source and fails if one does. Lands `dam_assets`
   (pointer rows carrying `retention` / `phash` / `embedding_ref` / `withheld_reason` / `rights_ref`,
   so the row shows what was withheld and why) and `brand_events` (the dated product-event feed).
+  **Reading press releases for facts** is a SECOND, separate chokepoint — `dam.document_text()`,
+  gated on `fetch_document_facts`, which is ungated by scope because facts are uncopyrightable and a
+  press release exists to be read. Four things keep it from being a hole in `fetch_asset`, all
+  enforced: **text document types only** (an image is refused *before* the request), **bytes are
+  transient** (never written or cached), **the prose never lands** (`land()` refuses any event field
+  over 500 chars, so expression cannot ride into the warehouse inside a "fact" column), and it is
+  **logged separately**. It is staleness-sensitive — it touches their server — while cataloguing what
+  we already hold is not. Dates/markets/prices come from the **dateline and marked retail prices**,
+  read verbatim; an unmarked currency amount is not a price point (a $1M donation is not an SRP).
+  PDF text needs the optional `pypdf` cap: without it PDF releases contribute no facts and the run
+  SAYS so, because 0-of-91-PDFs-read must never look like a source with no PDFs.
+
   Honesty contract: every derived field is labelled **DETERMINISTIC or INFERENCE** in
   `field_provenance` — brand match is deterministic *unless* the alias is also a common word
   (MARTINI, BOMBAY, PATRON → INFERENCE), event_type/market are always inference. **A DAM's

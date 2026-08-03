@@ -145,6 +145,278 @@ def asset_bytes(rec, asset, timeout=60, max_bytes=25_000_000):
         return r.read(max_bytes)
 
 
+# ── the SECOND chokepoint: reading a text document for its facts ──────────────────────────────────
+# Deliberately a separate function from `asset_bytes`, not a flag on it. Same reason the actions are
+# separate in rights.py: one of these may run under a record that forbids the other, so they must not
+# share a code path that a future edit could accidentally merge.
+MAX_DOC_BYTES = 8_000_000
+# Body prose is the copyrightable expression; the facts extracted FROM it are not. Nothing longer
+# than this may appear in a landed event field — `land()` refuses the write. (`title` is capped at
+# 400 by derive_events, so this floor sits above every legitimate value.)
+MAX_LANDED_FIELD_CHARS = 500
+
+
+def document_text(rec, asset, timeout=60, log=print):
+    """Fetch a TEXT document transiently and return its text, for fact extraction only.
+
+    Three refusals, in order, because the type check must happen BEFORE the network call — a gate
+    that fetches first and validates after has already done the thing it was meant to prevent:
+      1. not a text-bearing document type  → RightsViolation (this is not a second door to images)
+      2. `fetch_document_facts` not allowed → RightsViolation (stale record, robots, …)
+      3. oversized payload                  → truncated at MAX_DOC_BYTES
+
+    The bytes are never returned, written, or cached. The caller gets text and is expected to reduce
+    it to facts; `land()` enforces that the prose itself never reaches the warehouse."""
+    ext = (asset.get("extension") or "").lower().lstrip(".")
+    url = asset.get("asset_url") or asset.get("url")
+    if ext not in rights.DOCUMENT_EXTENSIONS:
+        raise rights.RightsViolation(
+            "document_text refused %r (.%s): only text documents %s may be read for facts — an "
+            "image or video must go through the gated asset path"
+            % (url, ext or "?", "/".join(rights.DOCUMENT_EXTENSIONS)))
+    rights.require(rec, "fetch_document_facts", url)
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": rights.UA})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        data = r.read(MAX_DOC_BYTES)
+    rights._log_emission(rec, "fetch_document_facts", url, True,
+                         "text document read for facts (transient, prose not retained)",
+                         surface="brand_events")
+    text = _text_from(data, ext, log=log)
+    del data
+    return text
+
+
+def _text_from(data, ext, log=print):
+    """Bytes → text. DOCX is stdlib (a zip of XML, same technique menu_ingest uses for xlsx); PDF
+    needs `pypdf`, which is OPTIONAL and probed by capability.py — a missing lib is a loud degrade
+    (the run reports it), never a silent 'that press release had no text'."""
+    if ext in ("txt", "md"):
+        return data.decode("utf-8", "replace")
+    if ext in ("docx", "odt"):
+        import io
+        import zipfile
+        member = "word/document.xml" if ext == "docx" else "content.xml"
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                xml = z.read(member).decode("utf-8", "replace")
+        except Exception as e:
+            log("  docx parse failed: %s" % str(e)[:100])
+            return ""
+        xml = re.sub(r"</(w:p|text:p)>", "\n", xml)
+        xml = re.sub(r"<[^>]+>", "", xml)
+        import html as _html
+        return re.sub(r"[ \t]+", " ", _html.unescape(xml))
+    if ext == "pdf":
+        try:
+            import io
+            import pypdf
+        except ImportError:
+            log("  pypdf missing — PDF press releases contribute no facts (declared cap 'pypdf')")
+            return ""
+        # pypdf logs a line per malformed xref entry ("Ignoring wrong pointing object …"), and real
+        # press-release PDFs are full of them — dozens of lines per file, drowning the run log that
+        # a degraded verdict has to be readable in. Recoverable parse noise, not our signal.
+        import logging
+        logging.getLogger("pypdf").setLevel(logging.ERROR)
+        try:
+            rdr = pypdf.PdfReader(io.BytesIO(data))
+            return "\n".join((p.extract_text() or "") for p in rdr.pages)
+        except Exception as e:
+            log("  pdf parse failed: %s" % str(e)[:100])
+            return ""
+    return ""
+
+
+# ── deterministic fact extraction from a press-release body ───────────────────────────────────────
+_MONTHS = ("January February March April May June July August September October November December"
+           ).split()
+_MON_IDX = {m.lower(): i + 1 for i, m in enumerate(_MONTHS)}
+_MON_IDX.update({m[:3].lower(): i + 1 for i, m in enumerate(_MONTHS)})
+_MON_RE = "|".join(list(_MONTHS) + [m[:3] for m in _MONTHS])
+
+# A press release opens with a DATELINE: "MIAMI, FL – August 12, 2021" / "LONDON, 12 August 2021".
+# That is the publication date stated by the publisher, read verbatim — deterministic, and the one
+# place a full-precision date legitimately comes from (a DAM's created_on is the upload stamp).
+# Dateline shapes, all measured on real Bacardi releases rather than assumed:
+#   MIAMI, FL – August 12, 2021        dash separator, region
+#   LONDON, 12 August 2021             COMMA separator (requiring the dash demoted these to a weak
+#                                      body-scan match)
+#   [LONDON, UK, 9th OCTOBER 2025]     BRACKETED, and an ORDINAL day — the ST-Germain × Glassette
+#                                      release, which yielded no date at all until both were handled
+_ORD = r"\d{1,2}(?:st|nd|rd|th)?"
+_DATELINE = re.compile(
+    r"(?:^|\n)\s*[\[(]?\s*(?P<city>[A-Z][A-Za-z.\-' ]{2,28}?)"
+    r"(?:\s*,\s*(?P<region>[A-Z][A-Za-z.\- ]{1,20}?))?\s*"
+    r"[,–—\-−:]\s*(?P<date>(?:%s)\s+%s,?\s+\d{4}|%s\s+(?:%s),?\s+\d{4})" % (_MON_RE, _ORD, _ORD, _MON_RE),
+    re.I)
+_ANYDATE = re.compile(r"\b(?:(?P<m1>%s)\s+(?P<d1>%s),?\s+(?P<y1>\d{4})"
+                      r"|(?P<d2>%s)\s+(?P<m2>%s),?\s+(?P<y2>\d{4}))\b" % (_MON_RE, _ORD, _ORD, _MON_RE),
+                      re.I)
+# A price is a PRICE POINT only next to a retail marker. Without one, a currency amount in a press
+# release is as likely to be a donation or a revenue figure — the trap that already forced the same
+# rule on headlines. The marker may FOLLOW the amount as well as precede it: "…Tablescape Edit,
+# curated by Laura Jackson, £150 / Available from: glassette.com" is a price, and a leading-marker-
+# only rule read it as no price at all.
+_SRP = re.compile(r"(?:SRP|MSRP|RRP|RSP|suggested retail(?: price)?|retail(?:s|ing)? (?:for|at)"
+                  r"|priced at|available for)\D{0,24}?([$£€])\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", re.I)
+_SRP_TRAILING = re.compile(r"([$£€])\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*[\s\n]{0,4}"
+                           r"(?:available (?:from|at|now|in)|on sale|buy (?:it )?(?:from|at))", re.I)
+_ABV = re.compile(r"(\d{1,2}(?:\.\d)?)\s*%\s*(?:ABV|alc(?:ohol)?(?:\.|\s)*(?:by|/)\s*vol)", re.I)
+
+
+def _iso(y, mon, d):
+    try:
+        mi = _MON_IDX[mon.lower()]
+        y, d = int(y), int(re.sub(r"(?i)(?:st|nd|rd|th)$", "", str(d)))   # "9th" -> 9
+        if 1900 <= y <= 2100 and 1 <= d <= 31:
+            return "%04d-%02d-%02d" % (y, mi, d)
+    except Exception:
+        pass
+    return None
+
+
+def extract_facts(text, markets=None):
+    """Press-release body → the deterministic facts. PURE. Returns a dict with only what was
+    actually found; a field the document doesn't state is simply absent, never inferred.
+
+    Every value here is read VERBATIM out of the document (a dateline date, a marked retail price,
+    a stated ABV), which is what makes them DETERMINISTIC. The narrative read — what kind of event
+    this is — stays INFERENCE and stays with the headline classifier."""
+    out = {}
+    if not text or not text.strip():
+        return out
+    head = text[:1200]                      # the dateline lives at the top, by convention
+
+    m = _DATELINE.search(head)
+    if m:
+        d = m.group("date")
+        a = _ANYDATE.search(d)
+        if a:
+            iso = (_iso(a.group("y1"), a.group("m1"), a.group("d1")) if a.group("m1")
+                   else _iso(a.group("y2"), a.group("m2"), a.group("d2")))
+            if iso:
+                out["event_date"] = iso
+                out["event_date_precision"] = "day"
+                out["date_source"] = "dateline"
+        city = (m.group("city") or "").strip()
+        if city:
+            out["dateline_place"] = city
+            for name, rx in _MARKET_RE:
+                if rx.search(city):
+                    out["market"] = name
+                    out["market_source"] = "dateline"
+                    break
+    if "event_date" not in out:
+        a = _ANYDATE.search(head)
+        if a:
+            iso = (_iso(a.group("y1"), a.group("m1"), a.group("d1")) if a.group("m1")
+                   else _iso(a.group("y2"), a.group("m2"), a.group("d2")))
+            if iso:
+                out["event_date"] = iso
+                out["event_date_precision"] = "day"
+                out["date_source"] = "body-date"
+
+    p, src = _SRP.search(text), "srp-marker"
+    if not p:
+        p, src = _SRP_TRAILING.search(text), "availability-marker"
+    if p:
+        try:
+            out["price"] = float(p.group(2).replace(",", ""))
+            out["currency"] = _CURRENCY.get(p.group(1), p.group(1))
+            out["price_source"] = src
+        except ValueError:
+            pass
+    a = _ABV.search(text)
+    if a:
+        try:
+            out["abv"] = float(a.group(1))
+        except ValueError:
+            pass
+    if "market" not in out:
+        for name, rx in _MARKET_RE:
+            if rx.search(head):
+                out["market"] = name
+                out["market_source"] = "body"
+                break
+    return out
+
+
+def enrich_events_from_documents(rec, events, assets, limit=None, log=print):
+    """Upgrade events with the facts stated in their own press-release documents.
+
+    Coverage is REPORTED, never silently truncated ([[no-silent-caps-in-full-pulls]]): the return
+    value carries matched / covered / remaining, and `limit` (DAM_DOC_LIMIT) is an explicit operator
+    bound whose leftovers are named in the log, not a cap baked into a 'full' run."""
+    by_id = {a.get("asset_id"): a for a in assets}
+    todo = []
+    for e in events:
+        ids = [i for i in (e.get("source_asset_ids") or "").split(",") if i]
+        docs = [by_id.get(int(i)) for i in ids if i.isdigit()]
+        docs = [d for d in docs
+                if d and (d.get("extension") or "").lower() in rights.DOCUMENT_EXTENSIONS]
+        if docs:
+            todo.append((e, docs[0]))
+
+    matched, remaining = len(todo), 0
+    if limit and len(todo) > limit:
+        remaining = len(todo) - limit
+        todo = todo[:limit]
+
+    covered, upgraded, failures, unparsed = 0, 0, 0, 0
+    for e, doc in todo:
+        try:
+            text = document_text(rec, doc, log=log)
+        except rights.RightsViolation:
+            raise
+        except Exception as ex:
+            failures += 1
+            log("  doc %s: fetch failed: %s" % (doc.get("asset_id"), str(ex)[:90]))
+            continue
+        covered += 1
+        # A document we FETCHED but could not parse is not a document that said nothing. Counted
+        # separately, because folding the two together is how "we read all 86" comes to mean "we read
+        # 84 and shrugged at 2".
+        if not (text or "").strip():
+            unparsed += 1
+        facts = extract_facts(text)
+        del text
+        if not facts:
+            continue
+        prov = json.loads(e["field_provenance"])
+        changed = False
+        if facts.get("event_date"):
+            e["event_date"] = facts["event_date"]
+            e["event_date_precision"] = facts["event_date_precision"]
+            prov["event_date"] = DETERMINISTIC
+            prov["event_date_source"] = facts.get("date_source")
+            changed = True
+        if facts.get("market"):
+            e["market"] = facts["market"]
+            # A DATELINE place is stated by the publisher — deterministic. A place name spotted
+            # elsewhere in the body is still just a keyword hit, so it stays INFERENCE.
+            prov["market"] = DETERMINISTIC if facts.get("market_source") == "dateline" else INFERENCE
+            changed = True
+        if facts.get("price") is not None:
+            e["price"] = facts["price"]
+            e["currency"] = facts.get("currency")
+            prov["price"] = DETERMINISTIC
+            changed = True
+        if changed:
+            e["field_provenance"] = json.dumps(prov)
+            upgraded += 1
+        time.sleep(0.4)                     # someone's server; pace it
+
+    cov = {"documents_matched": matched, "documents_read": covered,
+           "documents_remaining": remaining, "documents_unparsed": unparsed,
+           "events_upgraded": upgraded, "read_failures": failures}
+    log("  documents: read %d/%d, upgraded %d event(s)%s%s"
+        % (covered, matched, upgraded,
+           ", %d unparsable" % unparsed if unparsed else "",
+           ", %d NOT read (DAM_DOC_LIMIT)" % remaining if remaining else ""))
+    return cov
+
+
 def derive_cv_reference(rec, asset, data=None, log=print):
     """Perceptual hash + embedding for the CV reference gallery, gated on `derive_hash` /
     `derive_embedding`. Returns (phash, embedding_ref, withheld_reason).
@@ -199,6 +471,21 @@ def asset_row(rec, vendor, drive, folder_path, f, pulled_at):
 _UUID_PREFIX = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-", re.I)
 _EXT = re.compile(r"\.(pdf|docx?|jpe?g|png|mp4|mov|zip|tif+|svg|webp)\s*$", re.I)
 _VARIANT = re.compile(r"[\s,]*\(\s*\d+\s*\)\s*$")
+
+
+def display_title(t):
+    """The human-readable event label: the filename with the upload artefacts taken off, but case,
+    punctuation and words intact. `_norm_title` destroys those to build a comparison key — showing
+    that key to a person would be a different bug from the one it fixes, and leaving DNA's raw
+    `<uuid>-PRESS RELEASE - … .docx` on the event is a third. The untouched filename is still on the
+    asset row, which is where provenance belongs."""
+    t = _UUID_PREFIX.sub("", (t or "").strip())
+    for _ in range(3):
+        prev = t
+        t = _VARIANT.sub("", _EXT.sub("", t)).strip(" -–—_,")
+        if t == prev:
+            break
+    return t or (_UUID_PREFIX.sub("", (t or "").strip()))
 
 
 def _norm_title(t):
@@ -343,7 +630,7 @@ def derive_events(rec, assets, brands, folder_years=None, log=print):
             "event_date": ("%s-01-01" % year) if year else None,
             "event_date_precision": "year" if year else "unknown",
             "market": market, "price": price, "currency": currency,
-            "title": s["title"][:400], "asset_count": len(s["ids"]),
+            "title": display_title(s["title"])[:400], "asset_count": len(s["ids"]),
             "source": rec.get("source_id"), "source_id": rec.get("source_id"),
             "source_asset_ids": ",".join(str(i) for i in sorted(s["ids"])[:50]),
             "source_url": (s["urls"] or [None])[0],
@@ -378,9 +665,26 @@ def folder_paths(folders, root_id):
 
 
 # ── landing ───────────────────────────────────────────────────────────────────────────────────────
+def assert_no_prose(events):
+    """The other half of the fetch-for-facts bargain: FACTS may land, the PROSE they came from may
+    not. `document_text` hands a whole press release to the extractor, so the failure mode to design
+    against is a body paragraph quietly ending up in a column — at which point we would be storing
+    the copyrightable expression while calling it a fact. Enforced at the landing boundary, on the
+    data, rather than trusted to every future extractor."""
+    for e in events:
+        for k, v in e.items():
+            if isinstance(v, str) and len(v) > MAX_LANDED_FIELD_CHARS:
+                raise rights.RightsViolation(
+                    "event %s field %r carries %d chars — over the %d-char prose ceiling. Facts may "
+                    "land; the document body may not." % (e.get("event_id"), k, len(v),
+                                                          MAX_LANDED_FIELD_CHARS))
+    return True
+
+
 def land(rec, assets, events, log=print):
     """Land both outputs + the rights ledger. Persistent catalogs, so `write_accumulate`
     ([[scraper-write-accumulate]]) — a re-pull of one drive must grow the book, never clobber it."""
+    assert_no_prose(events)
     n_a = n_e = 0
     try:
         import warehouse

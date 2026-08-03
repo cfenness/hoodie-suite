@@ -57,6 +57,26 @@ def fake_get(url, timeout=45, as_json=True):
 
 db._get = fake_get
 
+# `dam.document_text` opens urllib DIRECTLY (it is its own chokepoint, deliberately not routed through
+# the connector's page fetcher), so patching db._get alone would let this suite make REAL requests to
+# a live media server — and the "zero asset fetches" assertion below would not even see them. Spy on
+# it instead, and make the spy REFUSE anything that is not a text document, so the suite proves the
+# type gate rather than assuming it.
+DOC_READS = []
+_PRESS = ("HOST WITH FLAIR: A NEW EDIT\n\nPriced at £150\nAvailable from: example.com\n\n"
+          "[LONDON, UK, 9th OCTOBER 2025]  ST~GERMAIN, the French Elderflower Liqueur, has partnered.")
+
+
+def fake_document_text(rec, asset, timeout=60, log=print):
+    ext = (asset.get("extension") or "").lower()
+    if ext not in rights.DOCUMENT_EXTENSIONS:
+        raise AssertionError("document_text was handed a non-document (.%s)" % ext)
+    DOC_READS.append(asset.get("asset_id"))
+    return _PRESS
+
+
+dam.document_text = fake_document_text
+
 
 class FakeWarehouse:
     written = {}
@@ -153,10 +173,13 @@ check(all(p["brand"] == dam.INFERENCE for _e, p in amb),
 check(all(p.get("event_type") == dam.INFERENCE for p in prov),
       "event_type is labelled INFERENCE (a keyword read of free text)")
 dated = [e for e in events if e["event_date"]]
-check(dated and all(e["event_date_precision"] == "year" for e in dated),
-      "dates derived from year folders carry precision=year")
+check(dated and all(e["event_date_precision"] in ("year", "day") for e in dated),
+      "every dated event states its precision as year (folder) or day (document)")
 check(all(json.loads(e["field_provenance"]).get("event_date") == dam.DETERMINISTIC for e in dated),
-      "a folder-derived date is DETERMINISTIC")
+      "every date — folder-derived or document-derived — is DETERMINISTIC")
+year_only = [e for e in events if e["event_date_precision"] == "year"]
+check(year_only and all(e["event_date"].endswith("-01-01") for e in year_only),
+      "a folder-derived date is the year boundary, not a fabricated day")
 undated = [e for e in events if not e["event_date"]]
 check(all(e["event_date_precision"] == "unknown" for e in undated),
       "an event with no year folder is precision=unknown, NOT back-filled from the upload stamp")
@@ -172,6 +195,29 @@ multi = [e for e in events if e["asset_count"] > 1]
 check(multi, "stories with several assets report asset_count > 1 (%d such)" % len(multi))
 
 # ── the gate refuses the byte path ────────────────────────────────────────────────────────────────
+print("\nfacts read from the documents (under a record that forbids every image action):")
+check(DOC_READS, "press-release documents were read (%d)" % len(DOC_READS))
+by_id = {a["asset_id"]: a for a in assets}
+check(all((by_id[i]["extension"] or "").lower() in rights.DOCUMENT_EXTENSIONS for i in DOC_READS),
+      "every document read was a text type — the image assets were never offered to it")
+day = [e for e in events if e["event_date_precision"] == "day"]
+check(day, "documents upgraded events to DAY precision (%d)" % len(day))
+check(all(json.loads(e["field_provenance"]).get("event_date_source") == "dateline" for e in day),
+      "a day-precision date cites the dateline it was read from")
+priced = [e for e in events if e["price"] is not None]
+check(priced and all(json.loads(e["field_provenance"]).get("price") == dam.DETERMINISTIC
+                     for e in priced),
+      "a price read out of a document body is DETERMINISTIC (%d priced)" % len(priced))
+check(not ASSET_FETCHES, "reading documents fetched ZERO image/video assets")
+
+print("\nprose never lands:")
+check(dam.assert_no_prose(events), "no landed event field carries body-length text")
+long_field = max((len(v) for e in events for v in e.values() if isinstance(v, str)), default=0)
+check(long_field <= dam.MAX_LANDED_FIELD_CHARS,
+      "longest landed string is %d chars, under the %d ceiling" % (long_field, dam.MAX_LANDED_FIELD_CHARS))
+check(not any(_PRESS[40:120] in str(v) for e in events for v in e.values()),
+      "no fragment of the press-release body appears in any landed field")
+
 print("\nthe chokepoint:")
 sample = dict(assets[0])
 try:

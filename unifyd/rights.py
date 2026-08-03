@@ -92,6 +92,26 @@ _SCOPE_RANK = {s: i for i, s in enumerate(SCOPES)}
 ACTIONS = {
     "catalog_metadata":   "none",                       # filename, size, timestamps, folder path
     "catalog_pointer":    "none",                       # the asset URL as a reference (no bytes)
+    # READ A TEXT DOCUMENT TO EXTRACT FACTS FROM IT — ungated, and narrow on purpose.
+    #
+    # Facts are uncopyrightable, and a press release exists to be read: the launch date, the market
+    # and the price point are exactly what the supplier is publishing. Without this the fact feed can
+    # only ever see filenames, which is why the ST-Germain × Glassette launch landed with a brand and
+    # no date while its own press release sat unread in the same folder.
+    #
+    # What keeps it from being a hole in `fetch_asset`, all enforced in `dam.document_text()`:
+    #   • TEXT-BEARING DOCUMENT TYPES ONLY (pdf/doc/docx/txt/rtf/odt). An image or a video is refused
+    #     here, so this is not a second door to the pixels `fetch_asset` guards.
+    #   • THE BYTES ARE TRANSIENT. Nothing is written to disk or to the warehouse; the function
+    #     returns text and drops the payload.
+    #   • THE PROSE NEVER LANDS. Only the extracted FACTS are persisted — `dam.land()` refuses any
+    #     event field long enough to be body text, so the copyrightable expression cannot ride along
+    #     inside a "fact" column.
+    #   • IT IS LOGGED SEPARATELY, so "we only read documents, and only these" is auditable rather
+    #     than asserted.
+    # It remains staleness-sensitive (see `_STALE_SENSITIVE`): it touches the source's server, and a
+    # ToS that moved may have changed the terms of access itself.
+    "fetch_document_facts": "none",
     "fetch_asset":        "internal_only",              # pull the bytes at all
     "retain_asset":       "internal_only",              # store the bytes
     "derive_hash":        "internal_only",              # perceptual hash (a derivative work)
@@ -100,6 +120,15 @@ ACTIONS = {
     "serve_editorial":    "editorial_press",            # press/editorial contexts
     "redistribute":       "commercial_redistribution",  # resale / customer-facing redistribution
 }
+
+# Actions that reach out to the SOURCE'S SERVER, as opposed to operating on data we already hold.
+# A stale record (terms moved since review) denies these even when they need no scope, because the
+# terms that changed may be the terms of access. Cataloguing what we already have is unaffected.
+_STALE_SENSITIVE = {"fetch_document_facts", "fetch_asset", "retain_asset", "derive_hash",
+                    "derive_embedding", "serve_internal", "serve_editorial", "redistribute"}
+
+# Text-bearing document types `fetch_document_facts` may touch. Enforced in dam.document_text().
+DOCUMENT_EXTENSIONS = ("pdf", "doc", "docx", "txt", "rtf", "odt", "md")
 
 
 def _sha(text):
@@ -363,11 +392,18 @@ def may(rec, action):
     if action not in ACTIONS:
         return False, "unknown action %r (deny-by-default)" % action
     need = ACTIONS[action]
+    stale = rec.get("status") == "stale" or rec.get("review_state") == "stale"
+    # Staleness is checked BEFORE the 0-scope shortcut, so a server-touching action that needs no
+    # scope (fetch_document_facts) still stops when the terms have moved.
+    if stale and action in _STALE_SENSITIVE:
+        return False, "rights record is STALE — terms moved since review; re-review before %s" % action
     if _SCOPE_RANK[need] == 0:
-        return True, "facts and pointers are ungated"
+        return True, ("reading a text document for FACTS is ungated (facts are uncopyrightable; "
+                      "bytes are transient and prose never lands)"
+                      if action == "fetch_document_facts" else "facts and pointers are ungated")
 
     perms = rec.get("permissions") or {}
-    if rec.get("status") == "stale" or rec.get("review_state") == "stale":
+    if stale:
         return False, "rights record is STALE — terms moved since review; re-review before any asset use"
     use = perms.get("image_use", "silent")
     if use == "silent":

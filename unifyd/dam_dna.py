@@ -309,6 +309,23 @@ def pull(tenant_name="bacardi", land=True, state_dir=None, log=print):
                             f, pulled_at) for f in raw]
     events = dam.derive_events(rec, assets, t["brands"], folder_years=years, log=log)
 
+    # Read the press releases for the facts they state. Gated on `fetch_document_facts` — text
+    # documents only, bytes transient, prose never landed — so this runs even under a record that
+    # forbids every image action, which is the whole point: facts always flow. DAM_DOCS=0 disables;
+    # DAM_DOC_LIMIT bounds a run and REPORTS what it left ([[no-silent-caps-in-full-pulls]]).
+    doc_cov = {}
+    if os.environ.get("DAM_DOCS", "1") != "0":
+        _lim = int(os.environ.get("DAM_DOC_LIMIT") or 0) or None
+        doc_cov = dam.enrich_events_from_documents(rec, events, assets, limit=_lim, log=log)
+        coverage.update(doc_cov)
+        if doc_cov.get("documents_remaining"):
+            warns.append("%d document(s) not read (DAM_DOC_LIMIT=%s) — event dates/prices for those "
+                         "stories stay at folder-year precision"
+                         % (doc_cov["documents_remaining"], _lim))
+        if doc_cov.get("documents_matched") and not doc_cov.get("documents_read"):
+            warns.append("%d documents matched but NONE could be read — press-release facts are "
+                         "silently absent (pypdf missing? fetch blocked?)" % doc_cov["documents_matched"])
+
     # Honesty checks — a run that lands nothing usable must not read as success.
     if len(assets) < t["min_assets"]:
         warns.append("only %d assets (floor %d) — bootstrap/tree parse likely drifted"
