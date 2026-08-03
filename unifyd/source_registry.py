@@ -574,6 +574,17 @@ BUILDS = [
     # …then score that SERVED canon identity against item_key on the SAME gold the item_key run built, so the
     # head-to-head that justifies the cutover is MEASURED in-app every cycle. Additive: lands master_quality_canon,
     # never touches the item_key ratchet. after build-master-quality (gold) + build-item-identity (fresh identity).
+    # The Overlay's Tier-3 match spine (OVERLAY-DESIGN §6). Uploaded files are DISTRIBUTOR-shaped —
+    # their own item numbers, not always a retail UPC — so `dist_item_code → canon_item_id` is the
+    # tier that lands hardest with a distributor buyer ("we matched on your own item numbers").
+    # Reads the landed distributor catalogs (VIP Brand Builder, Salsify tenants); adding a
+    # distributor is a scrape upstream, not a change here. after build-item-identity so the canon
+    # ids it resolves against are the fresh ones.
+    dict(id="build-dist-xwalk", label="Distributor item crosswalk (Overlay Tier-3 spine)",
+         code="import dist_xwalk as m; m.build()",
+         tables=["dist_item_xwalk"], klass="build", interval_h=24, enabled=True,
+         after=["build-item-identity"],
+         note="dist_item_code|retail_upc → canon_item_id from vip_brandbuilder_items + bbg_products"),
     dict(id="build-master-quality-canon", label="Master quality — served canon identity (head-to-head)",
          code="import master_quality as m; m.score_canon()",
          tables=["master_quality_canon"], klass="build", interval_h=24, enabled=True,

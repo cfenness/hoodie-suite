@@ -205,6 +205,44 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   fills what the HTML doesn't structure, per-field provenance = structured vs vision. Reads land
   in `label_reads`. Endpoints: `POST /api/label/read {url, vision?}`, `GET /api/label/reads`.
   Surface: `apps/mdm-label-reader.html` (the **Label Reader** section in `apps/mdm.html`).
+- **Overlay Your Data** (`unifyd/overlay*.py`) — upload → match → cleanse → derive → diagnose →
+  report, in one pass, on an arbitrary customer file. `apps/overlay.html` is the surface;
+  `docs/OVERLAY-DESIGN.md` is the full design. `overlay.py` orchestrates and writes the artifact;
+  the stages are separate modules so each is testable alone, and each is INJECTED with its data
+  source (`MemoryMaster`/`MemoryObs` in tests, `WarehouseMaster`/`WarehouseObs` in production) —
+  which is why the whole pipeline tests with no DuckDB and no network (`overlay_test.py`, 45 checks).
+  - `overlay_map.py` — their columns → master fields, **values before headers**: a column whose
+    values pass GS1 classification IS an identifier regardless of its header (this is how "your UPC
+    field is actually GTIN" gets caught). Header-only mappings are INFERENCE, never fact. Every
+    column lands in `mapped | derivable | proprietary | pii` — the three-way count ("of your 140
+    fields: 100 cleansed, 20 derived, 20 yours") is a headline stat, and the PII bucket is excluded
+    from every downstream stage **by construction** (it never enters the mapped view) and publishes
+    no statistics about itself.
+  - `overlay_match.py` — the genuinely new pass: five tiers (UPC exact → zero-strip heal →
+    `dist_item_code` → signature cluster → unmatched-with-a-why-histogram), reported **by tier,
+    never blended**, because the deterministic share is the number that matters. Bulk lookups over
+    distinct keys, so 25k rows resolve in <1s. A tier whose table is unreadable disables only
+    itself and says so — a missing table must never read as a low match rate.
+  - `overlay_detect.py` + `overlay_bands.json` — the **detector registry** (14 today). Three gates:
+    `requires` (fields absent ⇒ silent skip), the **precision gate** (structural rules are proofs and
+    pass by construction; a heuristic with no measured precision in `overlay_precision.json` RUNS
+    SILENTLY rather than optimistically), and dq.js's misfire suppression (>5% of eligible rows at
+    flat confidence ⇒ withheld + one meta-card, unless each hit is individually proven). Findings
+    carry a ROOT CAUSE and the arithmetic, never a symptom. `backtest()` is what moves a heuristic
+    from silent to visible. ABV bands + state quirks are versioned DATA, not code.
+  - `overlay_market.py` — the join to our own observations, bar-gated: every claim carries n,
+    geography, freshness and method, and **a block below its bar is absent, not padded**.
+    `mode="brand"` strips negative claims server-side (a brand-embedded widget must not badge that
+    brand's own accounts). Price is a PERCENTILE against the observed distribution, never a % off.
+  - `dist_xwalk.py` → `dist_item_xwalk` — the Tier-3 spine (registry build `build-dist-xwalk`),
+    from `vip_brandbuilder_items` + `bbg_products`. Adding a distributor is a scrape upstream.
+  - `xlsx_write.py` — stdlib .xlsx writer. The returned workbook is THE deliverable (it gets
+    forwarded internally), so its writer has no dependency risk. Five sheets: their data annotated
+    (originals **never modified**, `clean_*` alongside), the field map, findings, the join report,
+    provenance (run stamp, registry version, measured P/R, what we withheld and why).
+  - Endpoints: `POST /api/overlay/run`, `POST /api/overlay/workbook` (re-runs rather than caching —
+    that is what keeps the ephemerality statement on the page true), `GET /api/overlay/registry`
+    (the catalog, published on purpose), `GET /api/overlay/provenance`.
 - `unifyd/locator_signal.py` — the **"why go here"** layer under the Product Locator. `/api/locator`
   answers WHO CARRIES IT from the distributor feed (vtinfo); `/api/locator/offers` answers why go
   *here*, from data we already land: verified stock + on-hand (`retail_observations`), everyday vs.

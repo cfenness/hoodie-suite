@@ -31,6 +31,7 @@ import binnys_scraper as binnys    # Binny's directional tracker (Algolia feed, 
 # no proxy (proven landing per instacart-free-verify CI). Imported lazily in instacart_pull so a slim
 # image without the browser lib doesn't break server import. The old BD dataset scraper is archived.
 import analyze                      # data-reader brain behind "Overlay your data"
+import overlay                      # the Overlay pipeline: upload → match → cleanse → diagnose → report
 import planogram                    # benchmark + shelf-vision + pitch behind the Planogram app
 import hi_analyst                   # the real Claude analyst behind Hoodie Intelligence Q&A
 import prism                        # data contract behind the Prism mobile app
@@ -5706,6 +5707,137 @@ def ai_read_ep():
     if "error" not in result:
         return jsonify(result)
     return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
+
+
+# ── Overlay Your Data — upload → match → cleanse → derive → diagnose → report ─────────────
+# The pipeline lives in overlay.py; these endpoints are transport only. Two properties are
+# enforced HERE because they're properties of the request, not of the pipeline:
+#   · EPHEMERALITY. The uploaded bytes exist for the request and are not written anywhere. That
+#     is why the workbook endpoint takes the file again instead of us caching the run — a cache
+#     would make the promise on the page false, and the second pass costs about a second.
+#   · The heavy master/observation handles are built PER REQUEST so one slow table can't poison
+#     a later run, and their availability is reported in the response rather than swallowed.
+
+def _overlay_deps():
+    """(master, observations, crosswalk) for a run. Each is independently degradable."""
+    import overlay_market
+    import overlay_match
+    # UPC_XWALK is the prefix→brand-owner map built from COLA filings. Empty until one is
+    # uploaded, and that is fine: it activates the owner-agreement detector and nothing else.
+    return overlay_match.WarehouseMaster(), overlay_market.WarehouseObs(), (UPC_XWALK or None)
+
+
+def _overlay_input():
+    """The uploaded file, from multipart `file` or a JSON/form `text` paste. Returns (name, bytes)."""
+    f = request.files.get("file")
+    if f:
+        return (f.filename or "upload.csv"), f.read()
+    body = request.get_json(force=True, silent=True) or {}
+    text = body.get("text") or request.form.get("text") or ""
+    if str(text).strip():
+        return (body.get("filename") or request.form.get("filename") or "pasted.csv"), \
+               str(text).encode("utf-8")
+    return None, None
+
+
+@app.post("/api/overlay/run")
+def overlay_run_ep():
+    """Run the whole pipeline over an uploaded file and return the read.
+
+    `tier` = free | suite (caps + how much enrichment is unlocked); `mode` = consumer | brand
+    (brand mode strips every negative market claim, server-side). Row data is echoed back capped —
+    the full annotated file is the workbook, not this payload."""
+    name, raw = _overlay_input()
+    if raw is None:
+        return jsonify(error="no file", detail="send a `file` (multipart) or `text` (JSON)"), 400
+    tier = request.values.get("tier") or (request.get_json(silent=True) or {}).get("tier") or "free"
+    mode = request.values.get("mode") or (request.get_json(silent=True) or {}).get("mode") or "consumer"
+    master, obs, xw = _overlay_deps()
+    try:
+        res = overlay.run(name, raw, tier=tier if tier in overlay.CAPS else "free", mode=mode,
+                          master=master, obs=obs, crosswalk=xw, log=app.logger.info)
+    except Exception as e:
+        app.logger.exception("overlay run failed")
+        return jsonify(error="overlay-failed", detail=str(e)[:200]), 500
+    if res.get("error"):
+        return jsonify(res), (413 if res.get("engagement") else 400)
+    preview = res.pop("_rows", [])[:200]
+    res["preview"] = {"rows": preview, "of": res["parse"]["row_count"]}
+    res["provenance"] = _overlay_provenance()
+    return jsonify(res)
+
+
+@app.post("/api/overlay/workbook")
+def overlay_workbook_ep():
+    """The returned workbook — their file back, annotated. Same input as /run; the pipeline is
+    re-run rather than cached, which is what keeps the ephemerality statement on the page true."""
+    name, raw = _overlay_input()
+    if raw is None:
+        return jsonify(error="no file"), 400
+    tier = request.values.get("tier") or "free"
+    mode = request.values.get("mode") or "consumer"
+    master, obs, xw = _overlay_deps()
+    try:
+        res = overlay.run(name, raw, tier=tier if tier in overlay.CAPS else "free", mode=mode,
+                          master=master, obs=obs, crosswalk=xw, log=app.logger.info)
+        if res.get("error"):
+            return jsonify(res), 400
+        prov = _overlay_provenance()
+        data = overlay.workbook(res, master_build=prov.get("master_build"),
+                                quality=prov.get("match_quality"), xwalk=prov.get("tier3_crosswalk"))
+    except Exception as e:
+        app.logger.exception("overlay workbook failed")
+        return jsonify(error="workbook-failed", detail=str(e)[:200]), 500
+    out = re.sub(r"\.[A-Za-z0-9]+$", "", os.path.basename(name or "overlay")) + " — Hoodie overlay.xlsx"
+    return Response(data, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="%s"' % out})
+
+
+@app.get("/api/overlay/registry")
+def overlay_registry_ep():
+    """The detector registry as data — what we check, how we know, and which detectors are
+    currently SILENT because their precision isn't measured. Published on purpose: a catalog you
+    can read is the opposite of a black box."""
+    import overlay_detect
+    return jsonify(overlay_detect.catalog())
+
+
+def _overlay_provenance():
+    """Master build date, measured matcher P/R, and Tier-3 crosswalk coverage. Every one of these
+    is READ, never asserted — a number we can't read comes back absent, not guessed."""
+    out = {"pipeline_version": overlay.PIPELINE_VERSION}
+    try:
+        import overlay_detect
+        out["registry_version"] = overlay_detect.REGISTRY_VERSION
+        out["bands_version"] = overlay_detect.BANDS_VERSION
+    except Exception:
+        pass
+    try:
+        rows = warehouse.query("item_identity", "SELECT count(*) AS n, "
+                                                "count(DISTINCT canon_item_id) AS items FROM t")
+        out["item_identity"] = {"rows": int(rows[0]["n"]), "items": int(rows[0]["items"])} if rows else None
+    except Exception as e:
+        out["item_identity"] = {"unavailable": str(e)[:100]}
+    try:
+        q = warehouse.query("master_quality", "SELECT * FROM t ORDER BY run_at DESC LIMIT 1")
+        if q:
+            out["match_quality"] = {k: v for k, v in q[0].items()
+                                    if k in ("precision", "recall", "f1", "run_at", "gold_pairs")}
+    except Exception:
+        pass
+    try:
+        import dist_xwalk
+        cov = dist_xwalk.coverage()
+        if cov.get("available"):
+            out["tier3_crosswalk"] = {k: v for k, v in cov.items() if k != "available"}
+    except Exception:
+        pass
+    return out
+
+
+@app.get("/api/overlay/provenance")
+def overlay_provenance_ep():
+    return jsonify(_overlay_provenance())
 
 
 @app.post("/api/parse-upload")
