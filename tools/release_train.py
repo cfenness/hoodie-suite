@@ -133,6 +133,71 @@ def default_branch():
     return out.split("/")[-1] if rc == 0 and out else "main"
 
 
+# --- staleness -------------------------------------------------------------------------------
+# A deploy tool is only as good as the guards IN it, and those guards live in this file. Running a
+# copy that is behind origin/main silently deploys with whatever protections that older copy had —
+# which is not a hypothetical: the drift-baseline fallback (#763) was merged, deployed, and then
+# skipped on the very next deploy because the invocation came from a shared working directory
+# sitting 12 commits back. Every release still read `complete`, and drift stayed off.
+#
+# The distinction that keeps this from being annoying: BEHIND is a refusal, DIFFERENT is not.
+# Someone iterating on release_train from a feature branch has a legitimately different file and
+# must not be blocked; a checkout strictly behind origin/main is running yesterday's guards.
+STALE_OK_ENV = "HOODIE_RT_STALE_OK"
+
+
+def tool_staleness():
+    """(state, detail) — state is 'current' | 'behind' | 'diverged' | 'unknown'.
+
+    'unknown' never blocks: a guard that cannot resolve its own question must say so and get out
+    of the way, the same way the deploy shim fails open. It is still printed, because a check that
+    goes quiet when it fails to run is indistinguishable from one that ran and found nothing.
+    """
+    rel = os.path.relpath(os.path.abspath(__file__), ROOT).replace(os.sep, "/")
+    base = "origin/" + default_branch()
+    rc, _ = git("fetch", "--quiet", "origin")
+    if rc != 0:
+        return "unknown", "could not fetch origin"
+    rc, theirs = git("show", "%s:%s" % (base, rel))
+    if rc != 0:
+        return "unknown", "%s has no %s" % (base, rel)
+    try:
+        with open(os.path.abspath(__file__), "r", encoding="utf-8") as fh:
+            mine = fh.read()
+    except OSError as e:
+        return "unknown", "could not read %s (%s)" % (rel, e)
+    if mine.strip() == theirs.strip():
+        return "current", "%s matches %s" % (rel, base)
+    rc, behind = git("rev-list", "--count", "HEAD..%s" % base)
+    n = int(behind) if rc == 0 and behind.isdigit() else 0
+    rc2, _ = git("merge-base", "--is-ancestor", "HEAD", base)
+    # STRICTLY behind — 0 commits behind with a differing file is uncommitted local work on an
+    # up-to-date checkout (someone editing release_train itself), which must never be blocked.
+    if rc2 == 0 and n > 0:
+        return "behind", ("this checkout is %d commit%s behind %s and %s differs — it is running "
+                          "OLDER guards" % (n, "" if n == 1 else "s", base, rel))
+    return "diverged", ("%s differs from %s but this checkout is not behind it — local work on "
+                        "the tool itself" % (rel, base))
+
+
+def enforce_current_tool(what):
+    """Refuse `what` when this copy of the tool is behind origin. Returns True to proceed."""
+    state, detail = tool_staleness()
+    print("  [tool] %s: %s" % (state, detail))
+    if state != "behind":
+        return True
+    if os.environ.get(STALE_OK_ENV) == "1":
+        print("  [tool] %s=1 — proceeding with a stale tool deliberately" % STALE_OK_ENV)
+        return True
+    print("\n  REFUSING to %s with a stale release_train." % what)
+    print("  The guards that run during a deploy live in THIS file, so an old copy deploys with")
+    print("  old protections and says nothing. Update this checkout, or run from a fresh one:")
+    print("      git -C %s pull --ff-only" % ROOT)
+    print("      # or: git worktree add /tmp/rt origin/%s --detach && cd /tmp/rt" % default_branch())
+    print("  Deliberate override: %s=1" % STALE_OK_ENV)
+    return False
+
+
 # --- lock ------------------------------------------------------------------------------------
 def lock_path():
     return os.path.join(common_git_dir(), LOCK_NAME)
@@ -825,6 +890,8 @@ def deploy(args):
     """The only command that can affect production. Refuses anything but a clean origin/main."""
     base_name = default_branch()
     base = "origin/" + base_name
+    if not enforce_current_tool("deploy"):
+        return 2
     got, why = acquire_lock("deploy")
     if not got:
         print("!! another release train is running: %s" % why)
