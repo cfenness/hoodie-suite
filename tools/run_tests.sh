@@ -60,6 +60,7 @@ TESTS=(
   repair_partitions_test       # canonicalising a drifted table is lossless
   geo_resolve_test             # lat/lng -> county/CBSA/ZCTA: border points, rural gaps, degrade floor
   metro_analytics_test         # metro claims: unknown != independent, median not mean
+  outlet_xref_test             # one observation store maps to at most ONE outlet
 )
 
 FILTER="${1:-}"
