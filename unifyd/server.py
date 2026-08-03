@@ -302,7 +302,37 @@ CONNECTORS_META = [
     {"id": "total-wine", "label": "Total Wine", "group": "Retail chain", "runs": None, "data": "total_wine_products"},
     {"id": "vtinfo", "label": "VTInfo locator", "group": "Reference", "runs": None, "data": "vtinfo_titos"},
     {"id": "ab-inbev", "label": "AB InBev locator", "group": "Reference", "runs": None, "data": None},
+    {"id": "bbg", "label": "Breakthru Beverage (Salsify catalog)", "group": "Distributor", "runs": None,
+     "data": "salsify_products", "heavy": True},
+    {"id": "salsify", "label": "Salsify Sites (public catalog platform)", "group": "Distributor",
+     "runs": None, "data": "salsify_catalogs", "heavy": True},
 ]
+
+# CONNECTORS_META is a CURATED list — nice labels, real groups, hand-set heavy/creds flags. It is not the
+# source of truth for WHAT EXISTS, and treating it as one is the same drift that _dispatch_pull already
+# paid down on the run side: a source the registry owns was runnable via /api/run yet INVISIBLE in the
+# Pulls console until someone remembered to add a row here. Measured 2026-08-03: 40 of 54 enabled registry
+# sources were missing — including both distributor platform recipes (vip-brandbuilder, sevenfifty). So the
+# listing derives from the registry too, and the curated rows become overrides on top of that floor. A new
+# registry row is now runnable AND visible the day it lands.
+_KLASS_GROUP = {"mac": "Browser (anti-bot)", "creds": "Credentialed", "headless": "Registry source"}
+
+
+def _registry_conn_rows():
+    """Every enabled registry source the curated list doesn't already cover."""
+    have = {m["id"] for m in CONNECTORS_META}
+    rows = []
+    for s in source_registry.SOURCES:
+        if not s.get("enabled") or s["id"] in have:
+            continue
+        tables = s.get("tables") or []
+        rows.append({"id": s["id"], "label": s.get("label") or s["id"],
+                     "group": _KLASS_GROUP.get(s.get("klass"), "Registry source"),
+                     "runs": None, "data": tables[0] if tables else None,
+                     "heavy": s.get("klass") == "mac",
+                     "needs_creds": bool(s.get("requires"))})
+    return rows
+
 
 def _conn_enabled():
     return (load("connectors.json", {}) or {}).get("enabled", {})
@@ -1992,6 +2022,15 @@ def _walmart_concern_count():
             pass
     return n
 
+# The long runs that have a hand-written tick-progress doc under docs/ (rendered per-tick by the Scrape
+# Run Tracker). Everything else the tracker can show comes from the registry — see /api/runs/docs.
+_RUN_DOCS = [
+    {"id": "ubereats", "label": "UberEats — fresh-IP catalog run",
+     "path": "../docs/ubereats-fresh-ip-run-2026-07-30.md", "dataTable": "ubereats_products"},
+    {"id": "doordash", "label": "DoorDash — full-catalog chain run",
+     "path": "../docs/doordash-full-run-2026-07-30.md", "dataTable": "doordash_stores"},
+]
+
 # ── Scrape/crawl tracker — every active pull that lands in the warehouse, with freshness + concerns. ──
 _SCRAPES = [
     {"id": "ttb-crawl",  "name": "TTB COLA · crawl (index)",  "kind": "crawl",  "source": "ttbonline.gov",
@@ -2019,6 +2058,14 @@ _SCRAPES = [
      "table": "shopify_products", "feeds": "pricing + inventory", "detail": None},
     {"id": "publix",     "name": "Publix · weekly ad (BOGO)",   "kind": "promo",   "source": "publix.com (FL/GA/SC)",
      "table": "publix_products", "feeds": "pricing + promotions", "detail": None},
+    {"id": "bbg",        "name": "Breakthru Beverage · Salsify catalog", "kind": "product",
+     "source": "sites.salsify.com (BBG public master)", "table": "salsify_products",
+     "feeds": "distributor item master",
+     "detail": "dist item code (SAP Material ID), their own item description, supplier, size, ABV, UPC"},
+    {"id": "salsify",    "name": "Salsify Sites · public catalog directory", "kind": "crawl",
+     "source": "sites.salsify.com/sitemap_index.xml", "table": "salsify_catalogs",
+     "feeds": "which catalogs exist to pull",
+     "detail": "org/site ids, catalog name, product count, sitemap availability"},
     # NOTE: the bev-alc chains registry is a source *catalog*, not a scrape — it lives on its own
     # Bev-Alc Chains page, not here.
 ]
@@ -3052,7 +3099,10 @@ def scrape_dataset_ep():
     (reset on every process restart, so it understates a multi-day sweep's real cumulative size). Scoped by
     ?source= (a source_registry id, e.g. ubereats, walmart, target, publix)."""
     site = (request.args.get("source") or "ubereats").strip()
-    if not site.replace("_", "").isalnum():
+    # Registry ids are kebab-case (trader-joes, abc-fws, ca-abc, heaven-hill) — the old alnum+underscore
+    # check 400'd every one of them. Harmless while the tracker's list was two hardcoded entries; a real
+    # break now that the list is registry-derived.
+    if not site.replace("_", "").replace("-", "").isalnum():
         return jsonify(ok=False, error="invalid source"), 400
     return jsonify(_ttl("scrape_dataset_%s" % site, 180, lambda: _scrape_dataset_data(site)))
 
@@ -3555,14 +3605,15 @@ def connectors_list():
     across warehouse <x>_runs, the runs log, and live data counts. The Pulls console renders off this."""
     en = _conn_enabled()
     out = []
-    for m in CONNECTORS_META:
+    for m in CONNECTORS_META + _registry_conn_rows():
         out.append({"id": m["id"], "label": m.get("label"), "group": m.get("group"),
                     "heavy": bool(m.get("heavy")), "needs_creds": bool(m.get("needs_creds")),
                     "toggle": bool(m.get("toggle")), "data": m.get("data"),
                     "enabled": en.get(m["id"], True),
                     "runnable": m["id"] in VALID_CONNS,
                     "last_run": _conn_last_run(m)})
-    return jsonify(ok=True, connectors=out, groups=sorted({m.get("group", "") for m in CONNECTORS_META}))
+    return jsonify(ok=True, connectors=out,
+                   groups=sorted({c.get("group") or "" for c in out}))
 
 
 @app.post("/api/connectors/toggle")
@@ -3595,6 +3646,41 @@ def ttb_label_ep(ttbid):
     if request.args.get("download"):
         headers["Content-Disposition"] = 'attachment; filename="ttb_%s.jpg"' % tid
     return Response(data, headers=headers)
+
+@app.get("/api/runs/docs")
+def runs_docs_ep():
+    """The Scrape Run Tracker's source directory — the live listing its hardcoded SOURCES array was
+    always a placeholder for ("a future /api/runs/docs endpoint can replace this").
+
+    Two kinds of entry, both real:
+      * doc-backed  — a long run with a tick-progress markdown doc (`docs/<id>-*.md`, or the
+                      warehouse mirror the Mac-side poller pushes). These get the per-tick table.
+      * registry    — every enabled source_registry entry. No tick doc, but a landing table, so the
+                      tracker's Live Data panel works and the run is at least SELECTABLE. Before
+                      this, a source was untrackable until someone hand-added it to three separate
+                      lists; a scrape you can't see is indistinguishable from one that isn't running.
+    `dataTable` is the FLAT table /api/scrape/dataset can read — date-partitioned tables are skipped
+    (the reader opens a single <name>.parquet and 404s on a partitioned one), so we never hand the UI
+    a table it will fail on."""
+    import glob
+    root = SUITE_ROOT or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    local_docs = {os.path.basename(p).split("-")[0] for p in glob.glob(os.path.join(root, "docs", "*.md"))}
+    scrape_tables = {s["id"]: s["table"] for s in _SCRAPES}
+    out, seen = [], set()
+    for d in _RUN_DOCS:                                    # curated, doc-backed long runs
+        out.append(dict(d, kind="doc", hasDoc=True))
+        seen.add(d["id"])
+    for s in source_registry.SOURCES:
+        if not s.get("enabled") or s["id"] in seen:
+            continue
+        tables = [t for t in (s.get("tables") or []) if not t.endswith("_parts")]
+        out.append({"id": s["id"], "label": s.get("label") or s["id"], "kind": "registry",
+                    "dataTable": scrape_tables.get(s["id"]) or (tables[0] if tables else None),
+                    "path": None, "hasDoc": s["id"] in local_docs,
+                    "cadence": s.get("cadence"), "klass": s.get("klass")})
+        seen.add(s["id"])
+    return jsonify(ok=True, sources=out)
+
 
 @app.get("/api/scrape-progress/<sid>")
 def scrape_progress_ep(sid):
