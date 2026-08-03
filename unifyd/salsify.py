@@ -638,7 +638,7 @@ def _run(catalog_id, n, new, changed, status, warnings, started):
 
 
 def crawl_catalog(catalog_id=None, org=None, site=None, pages=None, workers=12, chunk=400,
-                  land=True, resume=True, state_dir=None, log=print):
+                  land=True, resume=True, state_dir=None, log=print, repair_properties=False):
     """Full capture of one Salsify catalog. Returns (rows, warnings, stats)."""
     cat = dict(CATALOGS.get(catalog_id) or {})
     org = org or cat.get("org")
@@ -684,6 +684,24 @@ def crawl_catalog(catalog_id=None, org=None, site=None, pages=None, workers=12, 
                     fps[r["product_id"]] = r["properties_hash"]
         except Exception:
             done, fps = set(), {}
+    # A product in the wide table but with NO property rows is a HOLE, not a completed product — resume
+    # must re-fetch it rather than skip it forever. (Holes exist because same-day reruns used to
+    # overwrite each other's property partitions; the run-stamped part name stops new ones.) This costs
+    # one extra read and is opt-in, because `count(DISTINCT product_id)` over every partition is minutes
+    # of scan on a table this size — a daily tick should not pay for a repair it almost never needs.
+    if repair_properties and land:
+        try:
+            import warehouse
+            have_props = {r["product_id"] for r in warehouse.query_parts(
+                PROPS_TABLE, "SELECT DISTINCT product_id FROM t WHERE catalog_id = ?",
+                [cat["catalog_id"]])}
+            holes = done - have_props
+            if holes:
+                log("[salsify] %d products have no property capture — re-fetching them" % len(holes))
+                done = done - holes
+        except Exception as e:
+            warns.append("property-hole check skipped: %s" % str(e)[:90])
+
     todo = [(pid, slug) for pid, slug in ids if pid not in done]
     log("[salsify] %d listed · %d already detailed · %d to fetch" % (len(ids), len(done), len(todo)))
 
@@ -794,7 +812,23 @@ def _safe(base, bid, t):
         return None
 
 
-def _land(rows, prop_rows, catalog_id, day, part, log=print):
+# PART NAMES MUST BE UNIQUE PER RUN, NOT PER DAY. write_partition is idempotent per (table, part) — by
+# design, so re-running the same slice doesn't duplicate. But the sequence number is positional: it
+# counts chunks of THIS run's todo list, which differs between runs. So a second run on the same day
+# reused p0001, p0002… and OVERWROTE the first run's parts with entirely different products.
+#
+# Measured live 2026-08-03: three runs in one day left salsify_properties at 1,660,264 rows, DOWN from
+# 1,700,185 — an append-only table shrinking. The backfill's 800 products overwrote bbg p0001-p0002,
+# and the slug repair's 106 + 1 overwrote sazerac/heaven-hill p0001, so ~1,500 products silently lost
+# their property capture while the wide table stayed complete.
+#
+# The run stamp makes the part name unique per process, so a re-run APPENDS (which is what an
+# append-only event log should do) instead of replacing a slice it never wrote.
+_RUN_STAMP = time.strftime("%H%M%S", time.gmtime())
+
+
+def _land(rows, prop_rows, catalog_id, day, part, log=print, run_stamp=None):
+    run_stamp = run_stamp or _RUN_STAMP
     """Land one chunk. Returns the list of failures — the CALLER must surface them, because a swallowed
     landing failure is indistinguishable from success.
 
@@ -822,7 +856,8 @@ def _land(rows, prop_rows, catalog_id, day, part, log=print):
     if not prop_rows:
         return fails
     try:                                      # append-only, date-partitioned: never merged, never re-read
-        warehouse.write_partition(PROPS_TABLE, "%s_%s_p%04d" % (day, catalog_id.replace(":", "-"), part),
+        warehouse.write_partition(PROPS_TABLE, "%s_%s_%s_p%04d"
+                                  % (day, catalog_id.replace(":", "-"), run_stamp, part),
                                   prop_rows, fields=PROP_FIELDS)
     except Exception as e:
         fails.append("chunk p%04d: %s capture failed: %s" % (part, PROPS_TABLE, str(e)[:110]))
@@ -836,7 +871,7 @@ def seeds(exclude=()):
 
 
 def pull(catalog="bbg", catalogs=None, org=None, site=None, pages=None, workers=12,
-         land=True, state_dir=None, log=print):
+         land=True, state_dir=None, log=print, repair_properties=False):
     """Pull one or more catalogs. Registry entrypoint — `pull(catalog='bbg')` replaces bbg_salsify."""
     started = int(time.time() * 1000)
     targets = catalogs or [catalog]
@@ -844,7 +879,8 @@ def pull(catalog="bbg", catalogs=None, org=None, site=None, pages=None, workers=
     for cid in targets:
         try:
             rows, warns, st = crawl_catalog(cid, org=org, site=site, pages=pages, workers=workers,
-                                            land=land, state_dir=state_dir, log=log)
+                                            land=land, state_dir=state_dir, log=log,
+                                            repair_properties=repair_properties)
         except Exception as e:
             runs.append(_run(cid, 0, 0, 0, "failed", ["crawl failed: %s" % str(e)[:140]], started))
             log("[salsify] %s: crawl FAILED: %s" % (cid, str(e)[:140]))
@@ -866,7 +902,7 @@ def pull(catalog="bbg", catalogs=None, org=None, site=None, pages=None, workers=
     return ds, runs, mv
 
 
-def platform_pass(pages=None, land=True, log=print):
+def platform_pass(pages=None, land=True, log=print, repair_properties=False):
     """The daily platform sweep and THE ONLY registry entrypoint that writes salsify_products: refresh the
     public-catalog directory, then pull every seeded catalog — bbg included — sequentially in this one
     process.
@@ -879,7 +915,8 @@ def platform_pass(pages=None, land=True, log=print):
         discover(land=land, log=log)
     except Exception as e:
         log("[salsify] discover skipped: %s" % str(e)[:140])
-    return pull(catalogs=seeds(), pages=pages, land=land, log=log)
+    return pull(catalogs=seeds(), pages=pages, land=land, log=log,
+                repair_properties=repair_properties)
 
 
 def main(argv=None):
@@ -894,6 +931,8 @@ def main(argv=None):
     ap.add_argument("--limit", type=int, help="with --discover: only the first N sites")
     ap.add_argument("--list", action="store_true", help="show seeded catalogs and exit")
     ap.add_argument("--no-land", action="store_true", help="parse only, don't write to the warehouse")
+    ap.add_argument("--repair-properties", action="store_true",
+                    help="re-fetch products that have no property capture (fills holes)")
     a = ap.parse_args(argv)
 
     if a.list:
@@ -910,7 +949,7 @@ def main(argv=None):
 
     cid = a.catalog or ("%s:%s" % (a.org[:8], a.site[:8]) if a.org and a.site else "bbg")
     ds, runs, mv = pull(catalog=cid, org=a.org, site=a.site, pages=a.pages, workers=a.workers,
-                        land=not a.no_land)
+                        land=not a.no_land, repair_properties=a.repair_properties)
     for row in ds[TABLE]["rows"][:15]:
         print("  •", row[1], "|", str(row[2])[:40], "|", str(row[4])[:18], "|", row[6], "|", row[8])
     print("runs:", [(r["extracts"][0]["id"], r["status"], r["total"]) for r in runs])
