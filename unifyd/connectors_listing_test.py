@@ -93,6 +93,21 @@ ok("kebab-case registry ids are accepted by /api/scrape/dataset",
    'site.replace("_", "").replace("-", "").isalnum()' in src,
    "dashed ids like trader-joes / abc-fws would 400")
 
+# The tracker must never depend on a Mac-side poller. Progress comes from the scraper's own
+# HOODIE_PROGRESS heartbeat → run_journal (shared warehouse) → /api/runs/live.
+print("\nProgress path (no Mac in the loop)")
+ok("the live-journal endpoint exists", '@app.get("/api/runs/live")' in src)
+ok("it reads the shared warehouse journal, not a local file",
+   "import run_journal" in src and "run_journal.recent(" in src and "run_journal.read(" in src)
+salsify_src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "salsify.py")).read()
+ok("salsify heartbeats its own progress from its Fly machine",
+   "HOODIE_PROGRESS" in salsify_src and "_progress(" in salsify_src)
+ok("…and the heartbeat can never fail the crawl",
+   re.search(r"def _progress\(\*\*kw\):.*?try:.*?except Exception:\s*pass", salsify_src, re.S) is not None)
+ok("registry sources are listed BEFORE the legacy doc-backed pair",
+   src.index("for s in source_registry.SOURCES:\n        if not s.get(\"enabled\") or s[\"id\"] in seen:")
+   < src.index("for d in _RUN_DOCS:                                    # legacy"))
+
 tracker_html = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                             "apps", "scrape-run-tracker.html")
 if os.path.exists(tracker_html):
@@ -102,6 +117,14 @@ if os.path.exists(tracker_html):
        "loadSourceDirectory" in html and 'id:"ubereats"' in html)
     ok("a source with no tick doc is explained, not 404'd against undefined",
        "if(!src.path) throw" in html)
+    ok("the tracker reads the live journal for registry sources",
+       "/api/runs/live" in html and "renderJournal" in html)
+    ok("claimed vs landed rows are labelled separately, never merged",
+       "Claimed rows (scraper)" in html and "Landed · " in html)
+    ok("the legacy Mac-poller docs are labelled as legacy",
+       "Legacy run docs (Mac poller)" in html)
+    ok("a legacy doc still renders when a source has no journal yet",
+       "if(src.path){ /* fall through to the markdown path below */ }" in html)
 
 print("\n%d listed (%d curated + %d derived) of %d enabled registry sources"
       % (len(listed), len(curated), len(fallthrough), len(enabled_ids)))

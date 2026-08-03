@@ -626,6 +626,8 @@ def crawl_catalog(catalog_id=None, org=None, site=None, pages=None, workers=12, 
         % (cat["catalog_id"], meta["catalog_name"], bid, meta["total_products"], meta["total_pages"]))
 
     ids, how = enumerate_products(org, site, meta, pages=pages, log=log)
+    _progress(rows=0, stage="%s enumerated %d products (%s)" % (cat["catalog_id"], len(ids), how),
+              pct=0.0, catalog=cat["catalog_id"], listed=len(ids), reported=meta["total_products"])
     warns = []
     if meta["total_products"] > 0 and not ids:
         warns.append("site reports %d products but 0 enumerated (%s) — routing drift"
@@ -678,8 +680,11 @@ def crawl_catalog(catalog_id=None, org=None, site=None, pages=None, workers=12, 
                 json.dump(fps, open(fp_path, "w"))
             except Exception:
                 pass
-        log("[salsify] %d/%d products (+%d properties)"
-            % (min(i + chunk, len(todo)), len(todo), len(prop_rows)))
+        seen = min(i + chunk, len(todo))
+        log("[salsify] %d/%d products (+%d properties)" % (seen, len(todo), len(prop_rows)))
+        _progress(rows=len(rows), stage="%s %d/%d products" % (cat["catalog_id"], seen, len(todo)),
+                  pct=round(100.0 * seen / max(1, len(todo)), 1), catalog=cat["catalog_id"],
+                  properties=prop_rows_total, failed=failed, listed=len(ids))
 
     if land:                                  # record how this catalog actually enumerates
         try:
@@ -705,6 +710,17 @@ def crawl_catalog(catalog_id=None, org=None, site=None, pages=None, workers=12, 
     return rows, warns, {"listed": len(ids), "fetched": len(rows), "failed": failed,
                          "changed": changed, "properties": prop_rows_total, "how": how,
                          "reported": meta["total_products"], "catalog_name": meta["catalog_name"]}
+
+
+def _progress(**kw):
+    """Heartbeat into the run journal (`_collect/runs/<id>.json` in the shared bucket) so a crawl running
+    on its own ephemeral Fly machine is watchable WHILE it runs. run_sources.run_one folds these lines in;
+    printed anywhere else they're harmless noise. This is the whole reason the tracker needs no Mac-side
+    poller — the scraper on Fly reports its own progress to the warehouse."""
+    try:
+        print("HOODIE_PROGRESS " + json.dumps(kw), flush=True)
+    except Exception:
+        pass
 
 
 def _safe(base, bid, t):
