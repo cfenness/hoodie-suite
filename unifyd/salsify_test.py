@@ -143,7 +143,21 @@ ok("site pairs parse out of the platform sitemap index",
        "d28396be-a4b8-4891-9533-c40780422895/sitemap_1.xml</loc>")
    == [("1cb19d26-0728-4fb1-afe0-3b8c309b6180", "d28396be-a4b8-4891-9533-c40780422895")])
 ok("seeded catalogs are addressable by id",
-   set(salsify.seeds(exclude=["bbg"])) == {"sazerac", "heaven-hill"})
+   set(salsify.seeds()) == {"bbg", "sazerac", "heaven-hill"}
+   and set(salsify.seeds(exclude=["bbg"])) == {"sazerac", "heaven-hill"})
+
+# ONE WRITER. salsify_products is merged with write_accumulate (read-modify-write), so two processes
+# merging it at once lose each other's rows — observed live: a run journalled 8,200 landed, the table
+# held 1,574 afterwards, because `bbg` and `salsify` were separate registry sources and the dispatcher
+# gave each its own machine.
+import source_registry as _reg
+_writers = [s for s in _reg.SOURCES if s.get("enabled") and "salsify_products" in (s.get("tables") or [])]
+ok("exactly ONE enabled registry source writes salsify_products",
+   len(_writers) == 1, [s["id"] for s in _writers])
+ok("…and it is the platform pass", _writers and _writers[0]["id"] == "salsify")
+ok("the platform pass covers every seeded catalog, bbg included",
+   "pull(catalogs=seeds()," in open(
+       os.path.join(os.path.dirname(os.path.abspath(__file__)), "salsify.py")).read())
 ok("every seeded catalog has org + site ids",
    all(c.get("org") and c.get("site") for c in salsify.CATALOGS.values()))
 

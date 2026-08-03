@@ -173,9 +173,13 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   `johnsonbrothers` (25,590 items); grow the `STOREFRONTS` map. stdlib-only, headless. Together
   with `vip-brandbuilder` these two platform recipes are the fast path to the major distributors'
   catalogs (Reyes, Breakthru, RNDC, …) — one sourceCode / slug at a time.
-- `unifyd/salsify.py` — **Salsify Sites**: every public catalog on `sites.salsify.com` (registry ids
-  `bbg` = Breakthru's master catalog daily, `salsify` = the weekly platform sweep). The third platform
-  recipe, and **the URL loops it**: `sites.salsify.com/robots.txt` publishes `sitemap_index.xml`, a live
+- `unifyd/salsify.py` — **Salsify Sites**: every public catalog on `sites.salsify.com`. **Registry id
+  `salsify` (daily) is the ONE writer** — it refreshes the directory then pulls every seeded catalog
+  (bbg, sazerac, heaven-hill) sequentially in one process. `bbg` exists as a disabled registry entry for
+  history + manual BBG-only runs; do NOT re-enable it as its own source. `salsify_products` is merged
+  with `write_accumulate` (read-modify-write, single-writer), so two sources writing it get their own
+  dispatcher machines and silently lose each other's rows — observed 2026-08-03: a run journalled 8,200
+  landed and the table held 1,574 afterwards. The third platform recipe, and **the URL loops it**: `sites.salsify.com/robots.txt` publishes `sitemap_index.xml`, a live
   directory of every PUBLIC catalog on the platform (519 sites / 118 orgs at 2026-08-03) — `discover()`
   walks it, probes each root, lands `salsify_catalogs`, and any row there is pullable by org/site uuid.
   Route shape (same for every site): root `__NEXT_DATA__` → live `buildId` + name/size/facets;

@@ -638,18 +638,29 @@ def crawl_catalog(catalog_id=None, org=None, site=None, pages=None, workers=12, 
             warns.append("enumerated %d of %d reported products (%d%%)"
                          % (len(ids), meta["total_products"], round(got * 100)))
 
-    done = set()
+    # RESUME + the property fingerprints come from the WAREHOUSE, in one read. The fingerprints used to
+    # live in agent_state/ — local disk on a machine Fly destroys at the end of every run, so the
+    # "only re-emit properties that MOVED" rule never survived a single tick. Measured live: 1,574
+    # sazerac products had landed 721,358 property rows, ~5x the ~96/product they actually expose,
+    # because each retry re-emitted the whole catalog into an append-only table. `properties_hash` is
+    # already a column on salsify_products, which IS shared state — read it from there.
+    done, fps = set(), {}
     if resume and land:
         try:
             import warehouse
-            done = {r["product_id"] for r in warehouse.query(
-                TABLE, "SELECT product_id FROM t WHERE catalog_id = ?", [cat["catalog_id"]])}
+            for r in warehouse.query(TABLE, "SELECT product_id, properties_hash FROM t "
+                                            "WHERE catalog_id = ?", [cat["catalog_id"]]):
+                done.add(r["product_id"])
+                if r.get("properties_hash"):
+                    fps[r["product_id"]] = r["properties_hash"]
         except Exception:
-            done = set()
+            done, fps = set(), {}
     todo = [(pid, slug) for pid, slug in ids if pid not in done]
     log("[salsify] %d listed · %d already detailed · %d to fetch" % (len(ids), len(done), len(todo)))
 
-    fp_path, fps = _snapshot(cat["catalog_id"], state_dir)
+    fp_path, local_fps = _snapshot(cat["catalog_id"], state_dir)
+    if not fps:
+        fps = local_fps                       # local/no-warehouse runs keep the on-disk snapshot
     day = time.strftime("%Y-%m-%d", time.gmtime())
     now = int(time.time())
     rows, failed, changed, prop_rows_total, part = [], 0, 0, 0, 0
@@ -784,13 +795,19 @@ def pull(catalog="bbg", catalogs=None, org=None, site=None, pages=None, workers=
 
 
 def platform_pass(pages=None, land=True, log=print):
-    """The weekly platform sweep: refresh the public-catalog directory, then pull every seeded catalog
-    that isn't already on its own registry cadence (`bbg`)."""
+    """The daily platform sweep and THE ONLY registry entrypoint that writes salsify_products: refresh the
+    public-catalog directory, then pull every seeded catalog — bbg included — sequentially in this one
+    process.
+
+    Sequential and single-process is the point, not an implementation detail. `write_accumulate` is
+    read-modify-write, so two processes merging this table at once silently lose each other's rows; when
+    `bbg` and `salsify` were separate registry sources the dispatcher gave them a machine each and a run
+    that journalled 8,200 landed rows left 1,574 behind. One writer, always."""
     try:
         discover(land=land, log=log)
     except Exception as e:
         log("[salsify] discover skipped: %s" % str(e)[:140])
-    return pull(catalogs=seeds(exclude=["bbg"]), pages=pages, land=land, log=log)
+    return pull(catalogs=seeds(), pages=pages, land=land, log=log)
 
 
 def main(argv=None):
