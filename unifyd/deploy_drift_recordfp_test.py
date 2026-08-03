@@ -51,5 +51,17 @@ out = subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspa
 m = re.match(r"([0-9a-f]{64})\s+\((\d+) files\)", out)
 check("the regex release_train uses matches the CLI it parses", bool(m), out[:80])
 
+print("\nthe caller pins the record to the machine it just deployed")
+_rt = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "tools", "release_train.py")).read()
+_call = _rt[_rt.index("record-fp %s %s %s") - 400:_rt.index("record-fp %s %s %s") + 200]
+check("the ssh fallback pins -g app", '"-g", "app"' in _call, _call[-200:])
+# Why this matters: without -g, flyctl picks ANY machine in the app — including a long-lived
+# ephemeral scrape machine on a pre-deploy image. An older deploy_drift.py does not ERROR on the
+# unknown `record-fp` subcommand; main() falls through to `check`. So the baseline goes unrecorded
+# while the deploy log shows a drift check's output, which reads like it worked. Seen live on v743.
+check("exit 0 alone is not accepted as proof the record landed",
+      'recorded expected build' in _rt and 'rc2 = 1' in _rt, "missing the confirmation-line guard")
+
 print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
 sys.exit(1 if FAILED else 0)
