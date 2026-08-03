@@ -3648,6 +3648,34 @@ def ttb_label_ep(ttbid):
         headers["Content-Disposition"] = 'attachment; filename="ttb_%s.jpg"' % tid
     return Response(data, headers=headers)
 
+@app.get("/api/runs/live")
+def runs_live_ep():
+    """LIVE run progress, read from the shared warehouse — the Mac-free path the Scrape Run Tracker
+    should use for every source.
+
+    A pull runs on its own ephemeral Fly machine and heartbeats a journal to `_collect/runs/<id>.json`
+    (run_journal.py, fed by the scraper's own `HOODIE_PROGRESS` lines). That is already written for every
+    registry run, scheduled or manual — nothing was SERVING it, which is why the tracker still leaned on
+    markdown docs produced by a Mac-side poller tailing Fly over SSH. That poller is legacy: it dies with
+    the terminal, needs a tunnel per shard, and keeps state in a local file. This endpoint replaces it.
+
+    `?source=` scopes to one registry id; `?id=` reads one run; `?active=1` returns only runs in flight.
+    """
+    import run_journal
+    rid = (request.args.get("id") or "").strip()
+    if rid:
+        doc = run_journal.read(rid)
+        return (jsonify(ok=True, run=doc) if doc else (jsonify(ok=False, error="unknown run"), 404))
+    source = (request.args.get("source") or "").strip() or None
+    try:
+        limit = max(1, min(60, int(request.args.get("limit", "12"))))
+    except ValueError:
+        limit = 12
+    runs = run_journal.recent(limit=limit, source=source,
+                              active_only=request.args.get("active") in ("1", "true"))
+    return jsonify(ok=True, runs=runs)
+
+
 @app.get("/api/runs/docs")
 def runs_docs_ep():
     """The Scrape Run Tracker's source directory — the live listing its hardcoded SOURCES array was
@@ -3667,19 +3695,27 @@ def runs_docs_ep():
     root = SUITE_ROOT or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     local_docs = {os.path.basename(p).split("-")[0] for p in glob.glob(os.path.join(root, "docs", "*.md"))}
     scrape_tables = {s["id"]: s["table"] for s in _SCRAPES}
+    by_doc = {d["id"]: d for d in _RUN_DOCS}
     out, seen = [], set()
-    for d in _RUN_DOCS:                                    # curated, doc-backed long runs
-        out.append(dict(d, kind="doc", hasDoc=True))
-        seen.add(d["id"])
+    # Registry sources FIRST: they heartbeat a journal to the warehouse from their own Fly machine,
+    # which is the target architecture. The doc-backed pair is legacy (a Mac-side poller) and sorts last.
     for s in source_registry.SOURCES:
         if not s.get("enabled") or s["id"] in seen:
             continue
         tables = [t for t in (s.get("tables") or []) if not t.endswith("_parts")]
+        # A registry source that ALSO has a legacy run doc (ubereats) keeps the doc as a fallback: the
+        # tracker reads the journal first and only falls through when a run predates journalling. Losing
+        # the view of an in-flight run to a migration would be a worse bug than the one being fixed.
+        doc = by_doc.get(s["id"]) or {}
         out.append({"id": s["id"], "label": s.get("label") or s["id"], "kind": "registry",
-                    "dataTable": scrape_tables.get(s["id"]) or (tables[0] if tables else None),
-                    "path": None, "hasDoc": s["id"] in local_docs,
+                    "dataTable": (doc.get("dataTable") or scrape_tables.get(s["id"])
+                                  or (tables[0] if tables else None)),
+                    "path": doc.get("path"), "hasDoc": bool(doc) or s["id"] in local_docs,
                     "cadence": s.get("cadence"), "klass": s.get("klass")})
         seen.add(s["id"])
+    for d in _RUN_DOCS:                                    # legacy, Mac-poller-backed long runs
+        if d["id"] not in seen:
+            out.append(dict(d, kind="doc", hasDoc=True))
     return jsonify(ok=True, sources=out)
 
 
