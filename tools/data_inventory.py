@@ -167,6 +167,86 @@ def _families(reg):
     return fam
 
 
+def classify(tables, concrete, shared):
+    """Bucket each concrete table by STRUCTURAL trust risk — mechanical, from the write path only.
+
+    This says nothing about whether the values are right; it says whether the write path can lose
+    or corrupt rows without saying so. That is the distinction that matters when the question is
+    "what can I build on today": a table with one writer doing a full rebuild is reproducible by
+    construction, whatever else is wrong upstream.
+    """
+    out = {"corruptible": [], "lossy": [], "unprovable": [], "unverifiable": [], "sound": []}
+    for t in sorted(concrete):
+        v = tables[t]
+        ws = v["writers"]
+        if not ws:
+            out["unverifiable"].append((t, "declared by %s; no traceable writer"
+                                        % ", ".join(v["declared_by"]) or "nothing"))
+            continue
+        mods = {w["module"] for w in ws}
+        kinds = {w["writer"] for w in ws}
+        unpinned = [w for w in ws if w["pins_dtypes"] is False]
+        if unpinned:
+            out["corruptible"].append(
+                (t, "write_partition without dtypes at %s — batch-inferred schema; a union read "
+                    "across partitions corrupts rather than fails"
+                 % ", ".join(sorted("%s:%d" % (w["module"], w["line"]) for w in unpinned))))
+        elif "write_accumulate" in kinds and len(mods) > 1:
+            out["lossy"].append(
+                (t, "write_accumulate (read-modify-write, no lock) from %d modules: %s — concurrent "
+                    "writers silently drop each other's rows" % (len(mods), ", ".join(sorted(mods)))))
+        elif "write_accumulate" in kinds:
+            out["unprovable"].append((t, ", ".join(sorted(mods))))
+        else:
+            out["sound"].append(
+                (t, "%s from %s — deterministic rebuild, reproducible from its inputs"
+                 % ("/".join(sorted(kinds)), ", ".join(sorted(mods)))))
+    return out
+
+
+def trust_section(inv, tables, concrete, shared):
+    c = classify(tables, concrete, shared)
+    L = []
+    A = L.append
+    A("## Structural trust — what can be built on today\n")
+    A("Mechanical classification from the WRITE PATH only. It does not judge whether values are")
+    A("correct; it judges whether the write path can lose or corrupt rows without saying so. A")
+    A("table can be structurally sound and still hold bad data from a broken scraper.\n")
+    A("| tier | tables | meaning |")
+    A("|---|---:|---|")
+    A("| corruptible | %d | unpinned `write_partition` — the class that has already made two tables unreadable |" % len(c["corruptible"]))
+    A("| lossy | %d | multiple `write_accumulate` modules — silent lost updates |" % len(c["lossy"]))
+    A("| accumulating | %d | single-writer merge — WORKING AS DESIGNED; not rebuildable from scratch |" % len(c["unprovable"]))
+    A("| unverifiable | %d | declared but no traceable writer — landing check is blind |" % len(c["unverifiable"]))
+    A("| **sound** | **%d** | **single-writer full rebuild — reproducible by construction** |" % len(c["sound"]))
+    A("")
+    A("**The fix-first set is %d tables** (corruptible + lossy), not the whole warehouse. Those are"
+      % (len(c["corruptible"]) + len(c["lossy"])))
+    A("the paths that can lose or corrupt rows *without saying so*. Everything else is either")
+    A("reproducible or working as intended.\n")
+    for tier, hdr in (("corruptible", "Corruptible — fix before trusting"),
+                      ("lossy", "Lossy — concurrent merge can silently drop rows")):
+        if c[tier]:
+            A("### %s\n" % hdr)
+            for t, why in c[tier]:
+                A("- `%s` — %s" % (t, why))
+            A("")
+    if c["unprovable"]:
+        A("### Accumulating — working as designed\n")
+        A("`write_accumulate` from a single module is the INTENDED pattern for a persistent catalog")
+        A("(CLAUDE.md: \"Persistent catalogs use `write_accumulate` (merge)\"). These are not broken.")
+        A("The one real limitation: a merge inherits every prior run, so the table is not a pure")
+        A("function of current inputs — a row landed by a since-changed parser is indistinguishable")
+        A("from one landed today. That matters for restatement, not for day-to-day correctness.\n")
+        A(", ".join("`%s`" % t for t, _ in c["unprovable"]) + "\n")
+    if c["sound"]:
+        A("### Sound — deterministic, reproducible from inputs\n")
+        A("These are rebuilt wholesale by one writer. A re-run reproduces them; there is no")
+        A("accumulated history whose provenance cannot be stated.\n")
+        A(", ".join("`%s`" % t for t, _ in c["sound"]) + "\n")
+    return "\n".join(L)
+
+
 def report(inv):
     reg, tables, writes = inv["registry"], inv["tables"], inv["writes"]
     L = []
@@ -287,6 +367,7 @@ def report(inv):
             A("- `%s` → declares %s" % (sid, ", ".join("`%s`" % t for t in decl)))
         A("")
 
+    A(trust_section(inv, tables, concrete, shared))
     A("## Registry families\n")
     A("Grouping is by leading id token because the registry has no family field — which is why")
     A("`build-ue-catalog` does not group with `ubereats`.\n")

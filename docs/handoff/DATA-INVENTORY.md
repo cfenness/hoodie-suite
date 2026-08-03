@@ -206,6 +206,62 @@ signal at all.
 - `ttb` → declares `ttb_master`
 - `walmart` → declares `walmart_products`
 
+## Structural trust — what can be built on today
+
+Mechanical classification from the WRITE PATH only. It does not judge whether values are
+correct; it judges whether the write path can lose or corrupt rows without saying so. A
+table can be structurally sound and still hold bad data from a broken scraper.
+
+| tier | tables | meaning |
+|---|---:|---|
+| corruptible | 10 | unpinned `write_partition` — the class that has already made two tables unreadable |
+| lossy | 5 | multiple `write_accumulate` modules — silent lost updates |
+| accumulating | 55 | single-writer merge — WORKING AS DESIGNED; not rebuildable from scratch |
+| unverifiable | 22 | declared but no traceable writer — landing check is blind |
+| **sound** | **54** | **single-writer full rebuild — reproducible by construction** |
+
+**The fix-first set is 15 tables** (corruptible + lossy), not the whole warehouse. Those are
+the paths that can lose or corrupt rows *without saying so*. Everything else is either
+reproducible or working as intended.
+
+### Corruptible — fix before trusting
+
+- `agg_geo_stage` — write_partition without dtypes at aggregator_geo.py:66 — batch-inferred schema; a union read across partitions corrupts rather than fails
+- `coverage_log` — write_partition without dtypes at coverage.py:111 — batch-inferred schema; a union read across partitions corrupts rather than fails
+- `fact_inventory` — write_partition without dtypes at facts.py:152 — batch-inferred schema; a union read across partitions corrupts rather than fails
+- `fact_price` — write_partition without dtypes at facts.py:154 — batch-inferred schema; a union read across partitions corrupts rather than fails
+- `field_stats` — write_partition without dtypes at extract_qa.py:128 — batch-inferred schema; a union read across partitions corrupts rather than fails
+- `ladder_state` — write_partition without dtypes at ladder.py:234 — batch-inferred schema; a union read across partitions corrupts rather than fails
+- `raw_payloads` — write_partition without dtypes at raw_capture.py:68 — batch-inferred schema; a union read across partitions corrupts rather than fails
+- `salsify_properties` — write_partition without dtypes at salsify.py:867 — batch-inferred schema; a union read across partitions corrupts rather than fails
+- `scrape_runs` — write_partition without dtypes at runlog.py:63 — batch-inferred schema; a union read across partitions corrupts rather than fails
+- `source_runs_log` — write_partition without dtypes at run_sources.py:555 — batch-inferred schema; a union read across partitions corrupts rather than fails
+
+### Lossy — concurrent merge can silently drop rows
+
+- `abc_catalog` — write_accumulate (read-modify-write, no lock) from 2 modules: abc_catalog.py, abc_fws_scraper.py — concurrent writers silently drop each other's rows
+- `doordash_stores` — write_accumulate (read-modify-write, no lock) from 2 modules: doordash_discover.py, doordash_sitemap.py — concurrent writers silently drop each other's rows
+- `src_outlets` — write_accumulate (read-modify-write, no lock) from 8 modules: aggregator_geo.py, city_centroid.py, geocode.py, mappability.py, normalize.py, reconcile_ue_ids.py, refresh_fast.py, ue_sitemap.py — concurrent writers silently drop each other's rows
+- `total_wine_products` — write_accumulate (read-modify-write, no lock) from 3 modules: total_wine.py, total_wine_full.py, total_wine_inventory.py — concurrent writers silently drop each other's rows
+- `walmart_products` — write_accumulate (read-modify-write, no lock) from 2 modules: walmart_api.py, walmart_direct.py — concurrent writers silently drop each other's rows
+
+### Accumulating — working as designed
+
+`write_accumulate` from a single module is the INTENDED pattern for a persistent catalog
+(CLAUDE.md: "Persistent catalogs use `write_accumulate` (merge)"). These are not broken.
+The one real limitation: a merge inherits every prior run, so the table is not a pure
+function of current inputs — a row landed by a since-changed parser is indistinguishable
+from one landed today. That matters for restatement, not for day-to-day correctness.
+
+`account_logos`, `bea_reference`, `binnys_products`, `bottlecapps_products`, `census_reference`, `cex_reference`, `cityhive_chain_products`, `cityhive_products`, `cpi_reference`, `cv_reads`, `dim_store`, `distributor_menu_items`, `doordash_full_runs`, `fred_reference`, `haskells_products`, `hemp_inventory`, `hemp_retailers`, `img_vec`, `kroger_atlas_products`, `label_extract`, `label_reads`, `master_quality`, `master_quality_canon`, `match_dict`, `meijer_products`, `menu_beverages`, `menu_files`, `offprem_products`, `planogram_placements`, `publix_products`, `salsify_catalogs`, `salsify_products`, `sevenfifty_items`, `sevennow_products`, `snowflake_load_runs`, `source_taxonomy`, `specs_products`, `stop_and_shop_products`, `target_products`, `target_stores`, `tax_rates`, `tax_revenue`, `toast_beverages`, `toast_menu_accounts`, `toast_outlets`, `trader_joes_products`, `ttb_cola`, `ttb_cola_detail`, `ttb_cola_labels`, `vip_brandbuilder_directory`, `vip_brandbuilder_items`, `vip_brandbuilder_sellsheet_packages`, `vip_finder_brands`, `vip_finder_tenants`, `vtinfo_titos`
+
+### Sound — deterministic, reproducible from inputs
+
+These are rebuilt wholesale by one writer. A re-run reproduces them; there is no
+accumulated history whose provenance cannot be stated.
+
+`_stage_product`, `ab_outlets`, `abc_products`, `bevalc_chains`, `ca_outlets`, `category_cluster`, `census_acs`, `census_migration`, `city_centroids`, `cola_cluster`, `cola_cluster_membership`, `coverage_cells`, `dim_outlet`, `dim_product_type`, `dist_item_xwalk`, `geo_cbsa_ref`, `hemp_products`, `hoodie_ids`, `identity_cluster`, `img_matches`, `item_identity`, `kroger_atlas_debug`, `kroger_products`, `kroger_runs`, `market_projection`, `master_decisions`, `master_overrides`, `naop_accounts`, `naop_beverages`, `normalization_findings`, `outlet_geography`, `outlet_master`, `price_coherence`, `retail_observations`, `src_brands`, `src_items`, `src_products`, `src_skus`, `src_summary`, `trade_area_demand`, `ttb_master`, `ttb_quarantine_summary`, `ttb_review`, `velocity_calibration`, `walmart_runs`, `wb_master`, `wb_matches`, `wb_merges`, `wb_queue`, `wb_summary`, `winebow_brands`, `xwalk_item_identity`, `xwalk_source_sku`, `zcta_centroids`
+
 ## Registry families
 
 Grouping is by leading id token because the registry has no family field — which is why
