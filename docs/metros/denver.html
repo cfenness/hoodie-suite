@@ -1,0 +1,182 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Hoodie Intelligence · Denver Market Report</title><style>
+html,body{margin:0}
+:root{--paper:#F5F7FA;--card:#FFF;--ink:#1A2430;--muted:#5C6775;--faint:#8A94A2;--line:#E3E8EF;
+--line2:#EDF1F6;--accent:#4E79A7;--accent-soft:#4E79A71e;--good:#3F8F63;--good-soft:#3F8F6316;
+--warn:#B8862E;--warn-soft:#B8862E18;--bad:#C1544A;--bad-soft:#C1544A16;
+--shadow:0 1px 2px #1a243008,0 4px 16px #1a243010;
+--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+--sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial}
+@media (prefers-color-scheme:dark){:root{--paper:#0F141A;--card:#171E27;--ink:#E7ECF3;--muted:#95A1B1;
+--faint:#68727F;--line:#26303B;--line2:#1E2731;--accent:#6E97C4;--accent-soft:#6E97C426;
+--good:#5AAE7C;--good-soft:#5AAE7c22;--warn:#D0A445;--warn-soft:#d0a44522;--bad:#D96A5F;
+--bad-soft:#d96a5f22;--shadow:0 1px 2px #0006,0 6px 20px #0004}}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.45;
+-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:22px 20px 68px}
+.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#2f5e8e);
+display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px}
+h1{font-size:16px;font-weight:750;letter-spacing:-.2px;margin:0}
+h1 .sub{font-weight:400;color:var(--faint);font-size:12px;margin-left:8px}
+.spacer{flex:1}
+.livebadge{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--good);
+background:var(--good-soft);border:1px solid color-mix(in srgb,var(--good) 40%,var(--line));
+border-radius:20px;padding:4px 10px;display:flex;align-items:center;gap:6px}
+.livebadge .d{width:7px;height:7px;border-radius:50%;background:var(--good)}
+.verdict{display:flex;gap:12px;align-items:flex-start;background:var(--accent-soft);
+border:1px solid var(--accent);border-radius:13px;padding:14px 16px;margin:16px 0}
+.verdict .vi{flex:none;width:34px;height:34px;border-radius:9px;background:var(--accent);color:#fff;
+display:grid;place-items:center;font-size:17px;font-weight:800}
+.verdict b{font-weight:700;font-size:14px}
+.verdict div.t{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.55}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:15px 16px;
+box-shadow:var(--shadow);min-width:0}
+.panel.wide{grid-column:1/-1}
+.ph{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.ph h3{font-size:13.5px;margin:0;font-weight:700;letter-spacing:-.1px}
+.ph .bk{font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.tag{margin-left:auto;font-family:var(--mono);font-size:9.5px;font-weight:700;text-transform:uppercase;
+letter-spacing:.04em;padding:3px 9px;border-radius:20px;display:flex;align-items:center;gap:5px}
+.tag .d{width:7px;height:7px;border-radius:50%}
+.tag.landed{background:var(--good-soft);color:var(--good)}.tag.landed .d{background:var(--good)}
+.tag.derived{background:var(--accent-soft);color:var(--accent)}.tag.derived .d{background:var(--accent)}
+.stat{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:4px}
+.stat .s b{display:block;font-size:20px;font-weight:750;letter-spacing:-.4px;font-variant-numeric:tabular-nums}
+.stat .s span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;font-weight:600}
+.note{margin-top:12px;font-size:12px;color:var(--muted);background:var(--paper);
+border:1px dashed var(--line);border-radius:8px;padding:9px 12px;line-height:1.55}
+.note.blue{border-style:solid;border-color:color-mix(in srgb,var(--accent) 32%,var(--line));
+background:var(--accent-soft)}
+.note b{color:var(--ink)}
+.src{margin-top:12px;padding-top:10px;border-top:1px dashed color-mix(in srgb,var(--line) 75%,transparent);
+font-family:var(--mono);font-size:10px;color:var(--faint)}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table.demand{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+table.demand th{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;
+text-align:right;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.demand th:first-child{text-align:left}
+table.demand td{padding:7px 8px;text-align:right;
+border-bottom:1px dashed color-mix(in srgb,var(--line) 70%,transparent);white-space:nowrap}
+table.demand td:first-child{text-align:left;font-weight:600}
+table.demand tr.total td{border-top:1.5px solid var(--line);border-bottom:0;font-weight:700;
+background:var(--good-soft)}
+.idx{display:inline-flex;align-items:center;gap:6px;justify-content:flex-end}
+.idx .track{width:52px;height:7px;background:var(--paper);border:1px solid var(--line2);
+border-radius:4px;overflow:hidden;display:inline-block}
+.idx .fill{height:100%;background:var(--accent);display:block}
+.bars{display:flex;flex-direction:column;gap:6px}
+.bar{display:flex;align-items:center;gap:9px;font-size:12px}
+.bar .bl{width:84px;color:var(--muted);font-variant-numeric:tabular-nums;overflow:hidden;
+text-overflow:ellipsis;white-space:nowrap}
+.bar .bt{flex:1;height:11px;background:var(--paper);border:1px solid var(--line2);border-radius:5px;
+overflow:hidden}
+.bar .bf{display:block;height:100%;background:var(--accent);border-radius:5px}
+.bar .bn{width:62px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.chips2{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.c2{font-size:11px;font-family:var(--mono);padding:3px 9px;border-radius:20px;background:var(--paper);
+border:1px solid var(--line);color:var(--muted)}
+.c2 b{color:var(--ink)}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:13px}
+dl dt{color:var(--muted);font-size:12px}
+dl dd{margin:0;text-align:right;font-weight:500;font-variant-numeric:tabular-nums}
+.foot{margin-top:22px;font-size:11px;color:var(--faint);text-align:center;line-height:1.7}
+.foot code{font-family:var(--mono);color:var(--muted)}
+</style></head><body>
+<div class="wrap">
+ <div class="top"><div class="logo">H</div>
+  <h1>Hoodie Intelligence · Denver-Aurora-Centennial, CO<span class="sub">resident demand · account universe · neighbourhood coverage</span></h1>
+  <div class="spacer"></div><div class="livebadge"><span class="d"></span>LIVE · WAREHOUSE DATA</div></div>
+
+ <div class="verdict"><div class="vi">◆</div><div><b>The market in one line</b>
+  <div class="t">Denver residents spend an estimated <b>$910.5M a year</b> on alcohol — 55% of it on-premise. Against that demand we hold <b>8,023 accounts mapped to 113 ZIP codes</b> in this metro, 2,830 of which already carry a confirmed beer, wine or spirits signal.</div></div></div>
+
+ <div class="grid">
+  <div class="panel">
+   <div class="ph"><h3>Resident alcohol demand</h3><span class="bk">BLS CEX × ACS</span>
+    <span class="tag derived"><span class="d"></span>Derived</span></div>
+   <div class="stat">
+    <div class="s"><b>$910.5M</b><span>per year</span></div>
+    <div class="s"><b>1,180,016</b><span>households</span></div>
+    <div class="s"><b>$772</b><span>per household</span></div>
+   </div>
+   <dl style="margin-top:14px">
+    <dt>On-premise (bars, restaurants)</dt><dd>$502.7M</dd>
+    <dt>Off-premise (retail)</dt><dd>$407.5M</dd>
+    <dt>Counties in metro</dt><dd>10</dd>
+   </dl>
+   <div class="note">Built bracket-by-bracket from each county's income distribution (ACS 2022)
+    × national mean spend per income bracket (BLS CEX 2023). A modelled estimate of resident
+    spending — <b>not</b> a sales feed.</div>
+  </div>
+
+  <div class="panel">
+   <div class="ph"><h3>Account universe</h3><span class="bk">observed coverage</span>
+    <span class="tag landed"><span class="d"></span>Landed</span></div>
+   <div class="stat">
+    <div class="s"><b>8,023</b><span>accounts mapped</span></div>
+    <div class="s"><b>2,830</b><span>alcohol-flagged</span></div>
+    <div class="s"><b>113</b><span>ZIP codes</span></div>
+   </div>
+   <dl style="margin-top:14px">
+    <dt>Matched to a known chain</dt><dd>742</dd>
+    <dt>No chain match</dt><dd>7,281 (91%)</dd>
+    <dt>Not yet classified</dt><dd>0</dd>
+    <dt>ZIPs with at least one account</dt><dd>113</dd>
+   </dl>
+   <div class="chips2"><span class="c2"><b>doordash</b> 4,601</span><span class="c2"><b>ab-inbev</b> 2,803</span><span class="c2"><b>ubereats</b> 561</span><span class="c2"><b>ca-abc</b> 28</span><span class="c2"><b>target</b> 27</span><span class="c2"><b>postmates</b> 3</span></div>
+   <div class="note"><b>This is a floor, not a census.</b> These are the accounts we hold and have
+    resolved to this metro by point-in-polygon — coverage varies by source, so read it as observed
+    reach rather than every licensed door in the market. <b>"No chain match" is not the same as
+    "verified independent"</b>: chain status is decided by matching the account name against a known
+    chain list, so the figure is a reliable ceiling on independents rather than a count of them.</div>
+  </div>
+
+  <div class="panel wide">
+   <div class="ph"><h3>Neighbourhood breakdown — top 25 ZIPs by resident demand</h3>
+    <span class="bk">ZCTA grain</span>
+    <span class="tag derived"><span class="d"></span>Demand derived · accounts landed</span></div>
+   <div class="scroll"><table class="demand">
+    <tr><th>ZIP</th><th>Households</th><th>Demand / yr</th><th>Off-premise</th><th>Accounts</th>
+     <th>Demand per door<br>vs metro median</th></tr>
+    <tr><td>80134</td><td>27,062</td><td>$25.7M</td><td>$11.1M</td><td>224</td><td><span class="idx"><span class="track"><span class="fill" style="width:29%"></span></span>57</span></td></tr><tr><td>80016</td><td>22,537</td><td>$22.5M</td><td>$9.6M</td><td>65</td><td><span class="idx"><span class="track"><span class="fill" style="width:86%"></span></span>172</span></td></tr><tr><td>80015</td><td>24,481</td><td>$21.2M</td><td>$9.4M</td><td>39</td><td><span class="idx"><span class="track"><span class="fill" style="width:100%"></span></span>271</span></td></tr><tr><td>80013</td><td>25,691</td><td>$18.3M</td><td>$8.4M</td><td>32</td><td><span class="idx"><span class="track"><span class="fill" style="width:100%"></span></span>285</span></td></tr><tr><td>80020</td><td>20,795</td><td>$17.5M</td><td>$7.8M</td><td>242</td><td><span class="idx"><span class="track"><span class="fill" style="width:18%"></span></span>36</span></td></tr><tr><td>80126</td><td>15,642</td><td>$16.7M</td><td>$7.1M</td><td>124</td><td><span class="idx"><span class="track"><span class="fill" style="width:34%"></span></span>67</span></td></tr><tr><td>80127</td><td>16,997</td><td>$16.3M</td><td>$7.1M</td><td>37</td><td><span class="idx"><span class="track"><span class="fill" style="width:100%"></span></span>220</span></td></tr><tr><td>80211</td><td>18,950</td><td>$15.9M</td><td>$7.0M</td><td>49</td><td><span class="idx"><span class="track"><span class="fill" style="width:81%"></span></span>162</span></td></tr><tr><td>80123</td><td>19,084</td><td>$15.2M</td><td>$6.8M</td><td>56</td><td><span class="idx"><span class="track"><span class="fill" style="width:68%"></span></span>136</span></td></tr><tr><td>80210</td><td>16,803</td><td>$14.7M</td><td>$6.4M</td><td>38</td><td><span class="idx"><span class="track"><span class="fill" style="width:97%"></span></span>193</span></td></tr><tr><td>80401</td><td>16,865</td><td>$14.0M</td><td>$6.2M</td><td>122</td><td><span class="idx"><span class="track"><span class="fill" style="width:29%"></span></span>57</span></td></tr><tr><td>80602</td><td>13,196</td><td>$13.2M</td><td>$5.7M</td><td>13</td><td><span class="idx"><span class="track"><span class="fill" style="width:100%"></span></span>505</span></td></tr><tr><td>80220</td><td>16,560</td><td>$13.1M</td><td>$5.8M</td><td>37</td><td><span class="idx"><span class="track"><span class="fill" style="width:88%"></span></span>177</span></td></tr><tr><td>80022</td><td>18,433</td><td>$13.1M</td><td>$6.0M</td><td>139</td><td><span class="idx"><span class="track"><span class="fill" style="width:24%"></span></span>47</span></td></tr><tr><td>80112</td><td>15,927</td><td>$13.0M</td><td>$5.8M</td><td>226</td><td><span class="idx"><span class="track"><span class="fill" style="width:14%"></span></span>29</span></td></tr><tr><td>80205</td><td>16,818</td><td>$12.5M</td><td>$5.6M</td><td>65</td><td><span class="idx"><span class="track"><span class="fill" style="width:48%"></span></span>96</span></td></tr><tr><td>80219</td><td>22,245</td><td>$12.4M</td><td>$5.9M</td><td>48</td><td><span class="idx"><span class="track"><span class="fill" style="width:64%"></span></span>129</span></td></tr><tr><td>80108</td><td>11,491</td><td>$12.4M</td><td>$5.2M</td><td>45</td><td><span class="idx"><span class="track"><span class="fill" style="width:69%"></span></span>137</span></td></tr><tr><td>80021</td><td>15,984</td><td>$12.3M</td><td>$5.6M</td><td>62</td><td><span class="idx"><span class="track"><span class="fill" style="width:50%"></span></span>99</span></td></tr><tr><td>80516</td><td>12,171</td><td>$12.3M</td><td>$5.3M</td><td>1</td><td>—</td></tr><tr><td>80228</td><td>14,814</td><td>$12.3M</td><td>$5.4M</td><td>24</td><td><span class="idx"><span class="track"><span class="fill" style="width:100%"></span></span>255</span></td></tr><tr><td>80111</td><td>12,822</td><td>$12.2M</td><td>$5.2M</td><td>157</td><td><span class="idx"><span class="track"><span class="fill" style="width:19%"></span></span>39</span></td></tr><tr><td>80209</td><td>14,099</td><td>$12.1M</td><td>$5.3M</td><td>37</td><td><span class="idx"><span class="track"><span class="fill" style="width:82%"></span></span>163</span></td></tr><tr><td>80128</td><td>14,319</td><td>$12.0M</td><td>$5.3M</td><td>22</td><td><span class="idx"><span class="track"><span class="fill" style="width:100%"></span></span>272</span></td></tr><tr><td>80138</td><td>12,012</td><td>$11.6M</td><td>$5.0M</td><td>20</td><td><span class="idx"><span class="track"><span class="fill" style="width:100%"></span></span>290</span></td></tr>
+   </table></div>
+   <div class="note">Index compares each ZIP's demand-per-mapped-account against this metro's own
+    <b>median</b>, not its mean — a handful of ZIPs with a single account and large demand would drag
+    a mean upward and make ordinary neighbourhoods look under-served. Above 100 = more resident
+    dollars per door we can see than the typical neighbourhood here.</div>
+   <div class="src">outlet_geography (TIGER 2023 point-in-polygon) ⋈ trade_area_demand · geo_level=zcta</div>
+  </div>
+
+  <div class="panel">
+   <div class="ph"><h3>Thinnest coverage</h3><span class="bk">most demand per door</span>
+    <span class="tag derived"><span class="d"></span>Derived</span></div>
+   <div class="bars"><div class="bar"><span class="bl">80130</span><span class="bt"><span class="bf" style="width:100%;background:var(--good)"></span></span><span class="bn">$1.2M</span></div><div class="bar"><span class="bl">80403</span><span class="bt"><span class="bf" style="width:89%;background:var(--good)"></span></span><span class="bn">$1.0M</span></div><div class="bar"><span class="bl">80602</span><span class="bt"><span class="bf" style="width:88%;background:var(--good)"></span></span><span class="bn">$1.0M</span></div><div class="bar"><span class="bl">80121</span><span class="bt"><span class="bf" style="width:83%;background:var(--good)"></span></span><span class="bn">$957k</span></div><div class="bar"><span class="bl">80230</span><span class="bt"><span class="bf" style="width:61%;background:var(--good)"></span></span><span class="bn">$708k</span></div><div class="bar"><span class="bl">80138</span><span class="bt"><span class="bf" style="width:50%;background:var(--good)"></span></span><span class="bn">$581k</span></div><div class="bar"><span class="bl">80109</span><span class="bt"><span class="bf" style="width:50%;background:var(--good)"></span></span><span class="bn">$575k</span></div><div class="bar"><span class="bl">80013</span><span class="bt"><span class="bf" style="width:50%;background:var(--good)"></span></span><span class="bn">$572k</span></div><div class="bar"><span class="bl">80128</span><span class="bt"><span class="bf" style="width:47%;background:var(--good)"></span></span><span class="bn">$546k</span></div><div class="bar"><span class="bl">80015</span><span class="bt"><span class="bf" style="width:47%;background:var(--good)"></span></span><span class="bn">$544k</span></div><div class="bar"><span class="bl">80207</span><span class="bt"><span class="bf" style="width:46%;background:var(--good)"></span></span><span class="bn">$535k</span></div><div class="bar"><span class="bl">80640</span><span class="bt"><span class="bf" style="width:45%;background:var(--good)"></span></span><span class="bn">$515k</span></div></div>
+   <div class="note">Highest resident demand per mapped account. Read as <b>where to look next</b> —
+    either genuine white space, or a neighbourhood our collection under-covers. Both are actionable;
+    they are not the same claim.</div>
+  </div>
+
+  <div class="panel">
+   <div class="ph"><h3>Densest coverage</h3><span class="bk">least demand per door</span>
+    <span class="tag derived"><span class="d"></span>Derived</span></div>
+   <div class="bars"><div class="bar"><span class="bl">80436</span><span class="bt"><span class="bf" style="width:13%"></span></span><span class="bn">$8k</span></div><div class="bar"><span class="bl">80238</span><span class="bt"><span class="bf" style="width:13%"></span></span><span class="bn">$8k</span></div><div class="bar"><span class="bl">80018</span><span class="bt"><span class="bf" style="width:15%"></span></span><span class="bn">$8k</span></div><div class="bar"><span class="bl">80427</span><span class="bt"><span class="bf" style="width:39%"></span></span><span class="bn">$22k</span></div><div class="bar"><span class="bl">80226</span><span class="bt"><span class="bf" style="width:50%"></span></span><span class="bn">$28k</span></div><div class="bar"><span class="bl">80110</span><span class="bt"><span class="bf" style="width:57%"></span></span><span class="bn">$32k</span></div><div class="bar"><span class="bl">80120</span><span class="bt"><span class="bf" style="width:61%"></span></span><span class="bn">$35k</span></div><div class="bar"><span class="bl">80023</span><span class="bt"><span class="bf" style="width:74%"></span></span><span class="bn">$42k</span></div><div class="bar"><span class="bl">80241</span><span class="bt"><span class="bf" style="width:93%"></span></span><span class="bn">$53k</span></div><div class="bar"><span class="bl">80005</span><span class="bt"><span class="bf" style="width:98%"></span></span><span class="bn">$56k</span></div><div class="bar"><span class="bl">80452</span><span class="bt"><span class="bf" style="width:100%"></span></span><span class="bn">$57k</span></div><div class="bar"><span class="bl">80104</span><span class="bt"><span class="bf" style="width:100%"></span></span><span class="bn">$57k</span></div></div>
+   <div class="note">The most heavily-served neighbourhoods in the metro — most competition per
+    resident dollar.</div>
+  </div>
+ </div>
+
+ <div class="foot">
+  Hoodie Intelligence · Denver-Aurora-Centennial, CO · generated 2026-08-03<br>
+  Every figure computed from the warehouse. <code>demand</code> = ACS 2022 household income
+  distribution × BLS CEX 2023 mean spend per bracket (derived).
+  <code>accounts</code> = distinct outlets resolved to this metro via Census TIGER 2023
+  point-in-polygon (observed).<br>
+  Account counts are observed coverage and are a floor, not a licensed-premises census.
+ </div>
+</div></body></html>

@@ -1,0 +1,182 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Hoodie Intelligence · Minneapolis Market Report</title><style>
+html,body{margin:0}
+:root{--paper:#F5F7FA;--card:#FFF;--ink:#1A2430;--muted:#5C6775;--faint:#8A94A2;--line:#E3E8EF;
+--line2:#EDF1F6;--accent:#4E79A7;--accent-soft:#4E79A71e;--good:#3F8F63;--good-soft:#3F8F6316;
+--warn:#B8862E;--warn-soft:#B8862E18;--bad:#C1544A;--bad-soft:#C1544A16;
+--shadow:0 1px 2px #1a243008,0 4px 16px #1a243010;
+--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+--sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial}
+@media (prefers-color-scheme:dark){:root{--paper:#0F141A;--card:#171E27;--ink:#E7ECF3;--muted:#95A1B1;
+--faint:#68727F;--line:#26303B;--line2:#1E2731;--accent:#6E97C4;--accent-soft:#6E97C426;
+--good:#5AAE7C;--good-soft:#5AAE7c22;--warn:#D0A445;--warn-soft:#d0a44522;--bad:#D96A5F;
+--bad-soft:#d96a5f22;--shadow:0 1px 2px #0006,0 6px 20px #0004}}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.45;
+-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:22px 20px 68px}
+.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#2f5e8e);
+display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px}
+h1{font-size:16px;font-weight:750;letter-spacing:-.2px;margin:0}
+h1 .sub{font-weight:400;color:var(--faint);font-size:12px;margin-left:8px}
+.spacer{flex:1}
+.livebadge{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--good);
+background:var(--good-soft);border:1px solid color-mix(in srgb,var(--good) 40%,var(--line));
+border-radius:20px;padding:4px 10px;display:flex;align-items:center;gap:6px}
+.livebadge .d{width:7px;height:7px;border-radius:50%;background:var(--good)}
+.verdict{display:flex;gap:12px;align-items:flex-start;background:var(--accent-soft);
+border:1px solid var(--accent);border-radius:13px;padding:14px 16px;margin:16px 0}
+.verdict .vi{flex:none;width:34px;height:34px;border-radius:9px;background:var(--accent);color:#fff;
+display:grid;place-items:center;font-size:17px;font-weight:800}
+.verdict b{font-weight:700;font-size:14px}
+.verdict div.t{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.55}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:15px 16px;
+box-shadow:var(--shadow);min-width:0}
+.panel.wide{grid-column:1/-1}
+.ph{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.ph h3{font-size:13.5px;margin:0;font-weight:700;letter-spacing:-.1px}
+.ph .bk{font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.tag{margin-left:auto;font-family:var(--mono);font-size:9.5px;font-weight:700;text-transform:uppercase;
+letter-spacing:.04em;padding:3px 9px;border-radius:20px;display:flex;align-items:center;gap:5px}
+.tag .d{width:7px;height:7px;border-radius:50%}
+.tag.landed{background:var(--good-soft);color:var(--good)}.tag.landed .d{background:var(--good)}
+.tag.derived{background:var(--accent-soft);color:var(--accent)}.tag.derived .d{background:var(--accent)}
+.stat{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:4px}
+.stat .s b{display:block;font-size:20px;font-weight:750;letter-spacing:-.4px;font-variant-numeric:tabular-nums}
+.stat .s span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;font-weight:600}
+.note{margin-top:12px;font-size:12px;color:var(--muted);background:var(--paper);
+border:1px dashed var(--line);border-radius:8px;padding:9px 12px;line-height:1.55}
+.note.blue{border-style:solid;border-color:color-mix(in srgb,var(--accent) 32%,var(--line));
+background:var(--accent-soft)}
+.note b{color:var(--ink)}
+.src{margin-top:12px;padding-top:10px;border-top:1px dashed color-mix(in srgb,var(--line) 75%,transparent);
+font-family:var(--mono);font-size:10px;color:var(--faint)}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table.demand{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+table.demand th{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;
+text-align:right;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.demand th:first-child{text-align:left}
+table.demand td{padding:7px 8px;text-align:right;
+border-bottom:1px dashed color-mix(in srgb,var(--line) 70%,transparent);white-space:nowrap}
+table.demand td:first-child{text-align:left;font-weight:600}
+table.demand tr.total td{border-top:1.5px solid var(--line);border-bottom:0;font-weight:700;
+background:var(--good-soft)}
+.idx{display:inline-flex;align-items:center;gap:6px;justify-content:flex-end}
+.idx .track{width:52px;height:7px;background:var(--paper);border:1px solid var(--line2);
+border-radius:4px;overflow:hidden;display:inline-block}
+.idx .fill{height:100%;background:var(--accent);display:block}
+.bars{display:flex;flex-direction:column;gap:6px}
+.bar{display:flex;align-items:center;gap:9px;font-size:12px}
+.bar .bl{width:84px;color:var(--muted);font-variant-numeric:tabular-nums;overflow:hidden;
+text-overflow:ellipsis;white-space:nowrap}
+.bar .bt{flex:1;height:11px;background:var(--paper);border:1px solid var(--line2);border-radius:5px;
+overflow:hidden}
+.bar .bf{display:block;height:100%;background:var(--accent);border-radius:5px}
+.bar .bn{width:62px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.chips2{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.c2{font-size:11px;font-family:var(--mono);padding:3px 9px;border-radius:20px;background:var(--paper);
+border:1px solid var(--line);color:var(--muted)}
+.c2 b{color:var(--ink)}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:13px}
+dl dt{color:var(--muted);font-size:12px}
+dl dd{margin:0;text-align:right;font-weight:500;font-variant-numeric:tabular-nums}
+.foot{margin-top:22px;font-size:11px;color:var(--faint);text-align:center;line-height:1.7}
+.foot code{font-family:var(--mono);color:var(--muted)}
+</style></head><body>
+<div class="wrap">
+ <div class="top"><div class="logo">H</div>
+  <h1>Hoodie Intelligence · Minneapolis-St. Paul-Bloomington, MN-WI<span class="sub">resident demand · account universe · neighbourhood coverage</span></h1>
+  <div class="spacer"></div><div class="livebadge"><span class="d"></span>LIVE · WAREHOUSE DATA</div></div>
+
+ <div class="verdict"><div class="vi">◆</div><div><b>The market in one line</b>
+  <div class="t">Minneapolis residents spend an estimated <b>$1.09B a year</b> on alcohol — 55% of it on-premise. Against that demand we hold <b>7,516 accounts mapped to 224 ZIP codes</b> in this metro, 2,698 of which already carry a confirmed beer, wine or spirits signal.</div></div></div>
+
+ <div class="grid">
+  <div class="panel">
+   <div class="ph"><h3>Resident alcohol demand</h3><span class="bk">BLS CEX × ACS</span>
+    <span class="tag derived"><span class="d"></span>Derived</span></div>
+   <div class="stat">
+    <div class="s"><b>$1.09B</b><span>per year</span></div>
+    <div class="s"><b>1,439,408</b><span>households</span></div>
+    <div class="s"><b>$754</b><span>per household</span></div>
+   </div>
+   <dl style="margin-top:14px">
+    <dt>On-premise (bars, restaurants)</dt><dd>$596.9M</dd>
+    <dt>Off-premise (retail)</dt><dd>$488.2M</dd>
+    <dt>Counties in metro</dt><dd>15</dd>
+   </dl>
+   <div class="note">Built bracket-by-bracket from each county's income distribution (ACS 2022)
+    × national mean spend per income bracket (BLS CEX 2023). A modelled estimate of resident
+    spending — <b>not</b> a sales feed.</div>
+  </div>
+
+  <div class="panel">
+   <div class="ph"><h3>Account universe</h3><span class="bk">observed coverage</span>
+    <span class="tag landed"><span class="d"></span>Landed</span></div>
+   <div class="stat">
+    <div class="s"><b>7,516</b><span>accounts mapped</span></div>
+    <div class="s"><b>2,698</b><span>alcohol-flagged</span></div>
+    <div class="s"><b>224</b><span>ZIP codes</span></div>
+   </div>
+   <dl style="margin-top:14px">
+    <dt>Matched to a known chain</dt><dd>477</dd>
+    <dt>No chain match</dt><dd>7,039 (94%)</dd>
+    <dt>Not yet classified</dt><dd>0</dd>
+    <dt>ZIPs with at least one account</dt><dd>224</dd>
+   </dl>
+   <div class="chips2"><span class="c2"><b>doordash</b> 4,765</span><span class="c2"><b>ab-inbev</b> 2,665</span><span class="c2"><b>target</b> 33</span><span class="c2"><b>ubereats</b> 28</span><span class="c2"><b>ca-abc</b> 19</span><span class="c2"><b>postmates</b> 6</span></div>
+   <div class="note"><b>This is a floor, not a census.</b> These are the accounts we hold and have
+    resolved to this metro by point-in-polygon — coverage varies by source, so read it as observed
+    reach rather than every licensed door in the market. <b>"No chain match" is not the same as
+    "verified independent"</b>: chain status is decided by matching the account name against a known
+    chain list, so the figure is a reliable ceiling on independents rather than a count of them.</div>
+  </div>
+
+  <div class="panel wide">
+   <div class="ph"><h3>Neighbourhood breakdown — top 25 ZIPs by resident demand</h3>
+    <span class="bk">ZCTA grain</span>
+    <span class="tag derived"><span class="d"></span>Demand derived · accounts landed</span></div>
+   <div class="scroll"><table class="demand">
+    <tr><th>ZIP</th><th>Households</th><th>Demand / yr</th><th>Off-premise</th><th>Accounts</th>
+     <th>Demand per door<br>vs metro median</th></tr>
+    <tr><td>55044</td><td>21,080</td><td>$19.9M</td><td>$8.6M</td><td>119</td><td><span class="idx"><span class="track"><span class="fill" style="width:49%"></span></span>98</span></td></tr><tr><td>55124</td><td>21,311</td><td>$16.3M</td><td>$7.4M</td><td>98</td><td><span class="idx"><span class="track"><span class="fill" style="width:49%"></span></span>98</span></td></tr><tr><td>55125</td><td>17,644</td><td>$15.0M</td><td>$6.6M</td><td>133</td><td><span class="idx"><span class="track"><span class="fill" style="width:33%"></span></span>66</span></td></tr><tr><td>55304</td><td>16,762</td><td>$15.0M</td><td>$6.6M</td><td>58</td><td><span class="idx"><span class="track"><span class="fill" style="width:76%"></span></span>152</span></td></tr><tr><td>55303</td><td>19,383</td><td>$14.6M</td><td>$6.6M</td><td>83</td><td><span class="idx"><span class="track"><span class="fill" style="width:52%"></span></span>103</span></td></tr><tr><td>55416</td><td>17,702</td><td>$14.4M</td><td>$6.4M</td><td>24</td><td><span class="idx"><span class="track"><span class="fill" style="width:100%"></span></span>352</span></td></tr><tr><td>55379</td><td>17,095</td><td>$13.6M</td><td>$6.1M</td><td>125</td><td><span class="idx"><span class="track"><span class="fill" style="width:32%"></span></span>64</span></td></tr><tr><td>55311</td><td>13,812</td><td>$13.6M</td><td>$5.8M</td><td>10</td><td><span class="idx"><span class="track"><span class="fill" style="width:100%"></span></span>799</span></td></tr><tr><td>55337</td><td>19,062</td><td>$12.9M</td><td>$5.9M</td><td>141</td><td><span class="idx"><span class="track"><span class="fill" style="width:27%"></span></span>54</span></td></tr><tr><td>55113</td><td>18,048</td><td>$12.8M</td><td>$5.8M</td><td>100</td><td><span class="idx"><span class="track"><span class="fill" style="width:38%"></span></span>75</span></td></tr><tr><td>55369</td><td>15,416</td><td>$12.7M</td><td>$5.7M</td><td>187</td><td><span class="idx"><span class="track"><span class="fill" style="width:20%"></span></span>40</span></td></tr><tr><td>55330</td><td>15,715</td><td>$12.5M</td><td>$5.6M</td><td>102</td><td><span class="idx"><span class="track"><span class="fill" style="width:36%"></span></span>72</span></td></tr><tr><td>55112</td><td>17,134</td><td>$12.4M</td><td>$5.6M</td><td>79</td><td><span class="idx"><span class="track"><span class="fill" style="width:46%"></span></span>92</span></td></tr><tr><td>55347</td><td>11,692</td><td>$12.3M</td><td>$5.2M</td><td>110</td><td><span class="idx"><span class="track"><span class="fill" style="width:33%"></span></span>66</span></td></tr><tr><td>55082</td><td>13,995</td><td>$11.9M</td><td>$5.2M</td><td>115</td><td><span class="idx"><span class="track"><span class="fill" style="width:31%"></span></span>61</span></td></tr><tr><td>55110</td><td>15,389</td><td>$11.7M</td><td>$5.3M</td><td>96</td><td><span class="idx"><span class="track"><span class="fill" style="width:36%"></span></span>72</span></td></tr><tr><td>55104</td><td>18,392</td><td>$11.6M</td><td>$5.4M</td><td>20</td><td><span class="idx"><span class="track"><span class="fill" style="width:100%"></span></span>341</span></td></tr><tr><td>55406</td><td>16,560</td><td>$11.6M</td><td>$5.3M</td><td>13</td><td><span class="idx"><span class="track"><span class="fill" style="width:100%"></span></span>524</span></td></tr><tr><td>55372</td><td>12,089</td><td>$11.5M</td><td>$5.0M</td><td>41</td><td><span class="idx"><span class="track"><span class="fill" style="width:83%"></span></span>165</span></td></tr><tr><td>55016</td><td>13,058</td><td>$11.3M</td><td>$5.0M</td><td>44</td><td><span class="idx"><span class="track"><span class="fill" style="width:76%"></span></span>151</span></td></tr><tr><td>55446</td><td>10,474</td><td>$11.1M</td><td>$4.7M</td><td>6</td><td><span class="idx"><span class="track"><span class="fill" style="width:100%"></span></span>1090</span></td></tr><tr><td>55419</td><td>11,587</td><td>$11.1M</td><td>$4.7M</td><td>10</td><td><span class="idx"><span class="track"><span class="fill" style="width:100%"></span></span>652</span></td></tr><tr><td>54016</td><td>13,003</td><td>$10.7M</td><td>$4.8M</td><td>101</td><td><span class="idx"><span class="track"><span class="fill" style="width:31%"></span></span>63</span></td></tr><tr><td>55129</td><td>10,563</td><td>$10.6M</td><td>$4.6M</td><td>5</td><td><span class="idx"><span class="track"><span class="fill" style="width:100%"></span></span>1252</span></td></tr><tr><td>55423</td><td>15,932</td><td>$10.6M</td><td>$4.9M</td><td>51</td><td><span class="idx"><span class="track"><span class="fill" style="width:61%"></span></span>123</span></td></tr>
+   </table></div>
+   <div class="note">Index compares each ZIP's demand-per-mapped-account against this metro's own
+    <b>median</b>, not its mean — a handful of ZIPs with a single account and large demand would drag
+    a mean upward and make ordinary neighbourhoods look under-served. Above 100 = more resident
+    dollars per door we can see than the typical neighbourhood here.</div>
+   <div class="src">outlet_geography (TIGER 2023 point-in-polygon) ⋈ trade_area_demand · geo_level=zcta</div>
+  </div>
+
+  <div class="panel">
+   <div class="ph"><h3>Thinnest coverage</h3><span class="bk">most demand per door</span>
+    <span class="tag derived"><span class="d"></span>Derived</span></div>
+   <div class="bars"><div class="bar"><span class="bl">55129</span><span class="bt"><span class="bf" style="width:100%;background:var(--good)"></span></span><span class="bn">$2.1M</span></div><div class="bar"><span class="bl">55446</span><span class="bt"><span class="bf" style="width:87%;background:var(--good)"></span></span><span class="bn">$1.9M</span></div><div class="bar"><span class="bl">55311</span><span class="bt"><span class="bf" style="width:64%;background:var(--good)"></span></span><span class="bn">$1.4M</span></div><div class="bar"><span class="bl">55417</span><span class="bt"><span class="bf" style="width:62%;background:var(--good)"></span></span><span class="bn">$1.3M</span></div><div class="bar"><span class="bl">55419</span><span class="bt"><span class="bf" style="width:52%;background:var(--good)"></span></span><span class="bn">$1.1M</span></div><div class="bar"><span class="bl">55119</span><span class="bt"><span class="bf" style="width:48%;background:var(--good)"></span></span><span class="bn">$1.0M</span></div><div class="bar"><span class="bl">55406</span><span class="bt"><span class="bf" style="width:42%;background:var(--good)"></span></span><span class="bn">$892k</span></div><div class="bar"><span class="bl">55407</span><span class="bt"><span class="bf" style="width:39%;background:var(--good)"></span></span><span class="bn">$834k</span></div><div class="bar"><span class="bl">55411</span><span class="bt"><span class="bf" style="width:38%;background:var(--good)"></span></span><span class="bn">$818k</span></div><div class="bar"><span class="bl">55438</span><span class="bt"><span class="bf" style="width:38%;background:var(--good)"></span></span><span class="bn">$803k</span></div><div class="bar"><span class="bl">55105</span><span class="bt"><span class="bf" style="width:36%;background:var(--good)"></span></span><span class="bn">$761k</span></div><div class="bar"><span class="bl">55408</span><span class="bt"><span class="bf" style="width:35%;background:var(--good)"></span></span><span class="bn">$735k</span></div></div>
+   <div class="note">Highest resident demand per mapped account. Read as <b>where to look next</b> —
+    either genuine white space, or a neighbourhood our collection under-covers. Both are actionable;
+    they are not the same claim.</div>
+  </div>
+
+  <div class="panel">
+   <div class="ph"><h3>Densest coverage</h3><span class="bk">least demand per door</span>
+    <span class="tag derived"><span class="d"></span>Derived</span></div>
+   <div class="bars"><div class="bar"><span class="bl">55111</span><span class="bt"><span class="bf" style="width:6%"></span></span><span class="bn">$4k</span></div><div class="bar"><span class="bl">55404</span><span class="bt"><span class="bf" style="width:10%"></span></span><span class="bn">$6k</span></div><div class="bar"><span class="bl">55402</span><span class="bt"><span class="bf" style="width:17%"></span></span><span class="bn">$10k</span></div><div class="bar"><span class="bl">55102</span><span class="bt"><span class="bf" style="width:19%"></span></span><span class="bn">$12k</span></div><div class="bar"><span class="bl">54750</span><span class="bt"><span class="bf" style="width:46%"></span></span><span class="bn">$29k</span></div><div class="bar"><span class="bl">54761</span><span class="bt"><span class="bf" style="width:65%"></span></span><span class="bn">$41k</span></div><div class="bar"><span class="bl">54723</span><span class="bt"><span class="bf" style="width:73%"></span></span><span class="bn">$46k</span></div><div class="bar"><span class="bl">55431</span><span class="bt"><span class="bf" style="width:75%"></span></span><span class="bn">$47k</span></div><div class="bar"><span class="bl">56028</span><span class="bt"><span class="bf" style="width:88%"></span></span><span class="bn">$55k</span></div><div class="bar"><span class="bl">54014</span><span class="bt"><span class="bf" style="width:92%"></span></span><span class="bn">$58k</span></div><div class="bar"><span class="bl">54011</span><span class="bt"><span class="bf" style="width:99%"></span></span><span class="bn">$62k</span></div><div class="bar"><span class="bl">54740</span><span class="bt"><span class="bf" style="width:100%"></span></span><span class="bn">$63k</span></div></div>
+   <div class="note">The most heavily-served neighbourhoods in the metro — most competition per
+    resident dollar.</div>
+  </div>
+ </div>
+
+ <div class="foot">
+  Hoodie Intelligence · Minneapolis-St. Paul-Bloomington, MN-WI · generated 2026-08-03<br>
+  Every figure computed from the warehouse. <code>demand</code> = ACS 2022 household income
+  distribution × BLS CEX 2023 mean spend per bracket (derived).
+  <code>accounts</code> = distinct outlets resolved to this metro via Census TIGER 2023
+  point-in-polygon (observed).<br>
+  Account counts are observed coverage and are a floor, not a licensed-premises census.
+ </div>
+</div></body></html>
