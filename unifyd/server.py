@@ -2058,7 +2058,16 @@ _RUN_DOCS = [
      "path": "../docs/ubereats-fresh-ip-run-2026-07-30.md", "dataTable": "ubereats_products"},
     {"id": "doordash", "label": "DoorDash — full-catalog chain run",
      "path": "../docs/doordash-full-run-2026-07-30.md", "dataTable": "doordash_stores"},
+    {"id": "doordash-regional", "label": "DoorDash — Southeast metro sweep (regional)",
+     "path": "../docs/doordash-regional-run-2026-08-03.md", "dataTable": "doordash_products_full"},
 ]
+
+# A run doc's id is DECLARED above, never inferred from its filename. Both places that used to
+# infer it split on the first dash, which silently collapsed "doordash-regional-run-*.md" onto
+# "doordash" — so the regional run was unreachable AND the full-catalog entry served whichever doc
+# sorted last (alphabetically "regional" beats "full"). One prefix, two runs, no error.
+_DOC_BY_FILE = {os.path.basename(d["path"]): d["id"] for d in _RUN_DOCS if d.get("path")}
+_DOC_PATH_BY_ID = {d["id"]: os.path.basename(d["path"]) for d in _RUN_DOCS if d.get("path")}
 
 # ── Scrape/crawl tracker — every active pull that lands in the warehouse, with freshness + concerns. ──
 _SCRAPES = [
@@ -3735,7 +3744,9 @@ def runs_docs_ep():
     a table it will fail on."""
     import glob
     root = SUITE_ROOT or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    local_docs = {os.path.basename(p).split("-")[0] for p in glob.glob(os.path.join(root, "docs", "*.md"))}
+    local_docs = {_DOC_BY_FILE[os.path.basename(p)]
+                  for p in glob.glob(os.path.join(root, "docs", "*.md"))
+                  if os.path.basename(p) in _DOC_BY_FILE}
     scrape_tables = {s["id"]: s["table"] for s in _SCRAPES}
     by_doc = {d["id"]: d for d in _RUN_DOCS}
     out, seen = [], set()
@@ -3769,15 +3780,20 @@ def scrape_progress_ep(sid):
     production. It mirrors the doc to the warehouse each tick (_scrape_progress/<sid>.md) purely as
     a carrier so a Fly-served page can show the SAME progress the Mac is watching. Local-first (no
     warehouse round trip when the doc happens to sit right next to this process, e.g. local dev)."""
-    import warehouse, re, glob
+    import warehouse, re
     key = re.sub(r"[^a-z0-9_-]", "", (sid or "").lower())[:40]
     if not key:
         return ("bad id", 400)
     root = SUITE_ROOT or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    matches = glob.glob(os.path.join(root, "docs", "%s-*.md" % key))
-    if matches:
-        with open(sorted(matches)[-1], "r", errors="replace") as f:
-            return Response(f.read(), mimetype="text/markdown")
+    # EXACT declared filename, not a "<key>-*.md" glob: the glob matched every doc sharing a dash
+    # prefix, so asking for `doordash` returned the REGIONAL doc (sorted last) instead of the
+    # full-catalog one it names — a wrong answer that looked like a right one.
+    fname = _DOC_PATH_BY_ID.get(key)
+    if fname:
+        local = os.path.join(root, "docs", fname)
+        if os.path.isfile(local):
+            with open(local, "r", errors="replace") as f:
+                return Response(f.read(), mimetype="text/markdown")
     raw = warehouse.get_bytes("_scrape_progress/%s.md" % key)
     if raw is None:
         return ("no progress doc for %r yet — the local poller hasn't pushed one" % key, 404)
