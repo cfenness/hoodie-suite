@@ -344,6 +344,21 @@ SOURCES = [
          klass="headless", cadence="weekly", enabled=True,
          note="products.vtinfo.com/bbs — distributor product+package catalog w/ retail UPCs, no auth; "
               "parameterized by VIP sourceCode (Columbia 01191 seed). Add distributors to DISTRIBUTORS."),
+    # sourceCode is a 5-digit numeric id (00000-99999) — the SAME identifier space as vtinfo.py's
+    # finder-side distributor custID (verified live 2026-08-02: Florida Distributing's finder
+    # custID 00177 is ALSO a valid Brand Builder sourceCode). That makes the whole 100k space
+    # enumerable instead of hand-harvested one distributor at a time. No proxy pool needed — this
+    # backend does not rate-limit the way finder.vtinfo.com does (measured: 200 req @ 60 threads,
+    # zero 429s, ~20 req/s ceiling looks server-side). Every /info hit is confirmed against
+    # /products before counting as a find — a VIP record existing does not mean a populated
+    # catalog exists (see vip_brandbuilder_census.py's module docstring).
+    dict(id="vip-brandbuilder-census", label="VIP Brand Builder distributor census",
+         code="import vip_brandbuilder_census as m; m.pull(argv=['--deadline', '3000'])",
+         tables=["vip_brandbuilder_directory"], klass="headless", cadence="weekly", enabled=True,
+         timeout=3600,
+         note="enumerates sourceCode 00000-99999 (100k), confirming each /info hit against /products "
+              "before counting it — resumable, checkpointed bite per run. Smoke-tested live 2026-08-02: "
+              "18 confirmed distributor catalogs found in just the first 200 codes probed."),
     dict(id="sevenfifty", label="SevenFifty storefronts (distributor catalogs)",
          code="import sevenfifty as m; m.pull()", tables=["sevenfifty_items"],
          klass="headless", cadence="weekly", enabled=True,
