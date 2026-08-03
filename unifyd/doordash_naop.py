@@ -9,7 +9,7 @@ sub-family/base_spirit or beer_style, and price — TAGGED delivery-inflated (re
 
     python doordash_naop.py --stores 122020        # Applebee's (Orlando)
 """
-import argparse, html as _html, os, re, sys, time
+import argparse, html as _html, os, re, sys, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
@@ -93,11 +93,29 @@ def _due_stores(limit, log=print):
     return todo[:limit]
 
 
+_TLOCAL = threading.local()
+
+
+def _thread_session():
+    """One persistent curl_cffi Session PER WORKER THREAD, created once and reused across every store
+    that thread ever pulls — not a fresh session per fetch. Measured live: a fresh session/connection
+    per single-page fetch serializes concurrent workers almost completely (10 threads landed 1 real
+    completion in the time budget that should have finished all 10) — the same "fresh TLS handshake +
+    proxy CONNECT on every fetch" cost doordash.py's own _session() docstring already documents for a
+    single store's 166-fetch walk, just showing up across threads instead of within one. `dd._unlock`
+    was written believing session=None was "fine for a one-off fetch like doordash_naop's single menu
+    page" — true per-request, false once N of those one-off fetches run concurrently."""
+    if not hasattr(_TLOCAL, "session"):
+        _TLOCAL.session = dd._session(key=threading.get_ident())
+    return _TLOCAL.session
+
+
 def _pull_one(sid, run_id):
     """Fetch + parse ONE DoorDash store menu. Returns (beverage_rows, account_row) or (None, None).
-    Thread-safe: no shared state → runs concurrently. The page fetch dominates, so a thread pool is a big win."""
+    Thread-safe: no shared mutable state, and each thread reuses its own session (see _thread_session)
+    → runs genuinely concurrently. The page fetch dominates, so a thread pool is a big win."""
     try:
-        h = dd._unlock("https://www.doordash.com/store/%s" % sid, key=None)
+        h = dd._unlock("https://www.doordash.com/store/%s" % sid, key=None, session=_thread_session())
     except Exception:
         return None, None
     if not h:
@@ -137,11 +155,41 @@ def run(stores=None, limit=None, log=print):
     workers = int(os.environ.get("NAOP_WORKERS", "10"))
     stores = stores or _due_stores(limit, log=log)
     run_id = "naop-" + time.strftime("%Y%m%d-%H%M%S")
-    import threading
     from concurrent.futures import ThreadPoolExecutor
     import runlog
     rows, accounts, unsure, done = [], [], [], [0]
     lock = threading.Lock()
+
+    # ACCUMULATE (naop_* are GLOBAL, not per-market) — merge this sweep into the existing tables so a run
+    # for one metro doesn't wipe another's on-premise menus. Dedup beverages by (account, name), accounts by account.
+    def _merge(name, new_rows, keyf):
+        try:
+            existing = warehouse.query(name, "SELECT * FROM t")
+        except Exception:
+            existing = []
+        idx = {keyf(r): r for r in existing}
+        for r in new_rows:
+            idx[keyf(r)] = r
+        return list(idx.values())
+
+    # CHECKPOINT EVERY 100 STORES — a large metro sweep (thousands of stores at ~10 concurrent, one page
+    # each) is a multi-hour run, and this used to hold every fetched row in memory until the very end
+    # (nothing written to naop_accounts/naop_beverages until run() returned). Interrupted at any point —
+    # a crash, a restart, a killed machine — meant losing 100% of the real street/city/state identity
+    # already fetched, the exact "hours of work discarded because the write only happens at the end"
+    # failure aggregator_geo.py's own docstring documents. Writing periodically makes progress durable:
+    # a kill now costs at most one checkpoint's worth of stores, not the whole run.
+    CHECKPOINT_EVERY = int(os.environ.get("NAOP_CHECKPOINT_EVERY", "100"))
+
+    def _checkpoint():
+        if rows:
+            warehouse.write_parquet("naop_beverages",
+                                    _merge("naop_beverages", rows, lambda r: (r.get("store"), r.get("name"))))
+        if accounts:
+            warehouse.write_parquet("naop_accounts", _merge("naop_accounts", accounts, lambda r: r.get("store")),
+                                    fields=["store", "account", "clean_name", "street", "city", "state", "phone",
+                                            "cuisine", "cuisines", "cuisine_source", "serves_alcohol",
+                                            "n_beverages", "run_id"])
 
     with runlog.track("naop", total=len(stores)) as r:
         def _work(sid):
@@ -157,6 +205,12 @@ def run(stores=None, limit=None, log=print):
                 r.progress(done[0], len(stores))
                 if done[0] % 25 == 0:
                     log("  [naop] %d/%d fetched (%d beverages so far)" % (done[0], len(stores), len(rows)))
+                if done[0] % CHECKPOINT_EVERY == 0:
+                    try:
+                        _checkpoint()
+                        log("  [naop] checkpoint at %d/%d — durable" % (done[0], len(stores)))
+                    except Exception as e:
+                        log("  [naop] checkpoint failed (will retry at next interval): %s" % str(e)[:150])
 
         with ThreadPoolExecutor(max_workers=workers) as ex:
             list(ex.map(_work, stores))
@@ -170,17 +224,6 @@ def run(stores=None, limit=None, log=print):
                         r["cuisine_source"] = "claude"
         if guess:
             log("  [naop] Claude cuisine filled %d/%d unsure accounts" % (len(guess), len(unsure)))
-    # ACCUMULATE (naop_* are GLOBAL, not per-market) — merge this sweep into the existing tables so a run
-    # for one metro doesn't wipe another's on-premise menus. Dedup beverages by (account, name), accounts by account.
-    def _merge(name, new_rows, keyf):
-        try:
-            existing = warehouse.query(name, "SELECT * FROM t")
-        except Exception:
-            existing = []
-        idx = {keyf(r): r for r in existing}
-        for r in new_rows:
-            idx[keyf(r)] = r
-        return list(idx.values())
     # Key by STORE (the DoorDash store id = the physical outlet), NOT by account NAME — a chain has many
     # locations (5 Total Wines, 100 Applebee's) and name-keying collapsed them to one row, so only ONE of a
     # chain's store-ids ever got recorded 'done'. That made the batched sweep re-fetch every other chain
@@ -189,13 +232,8 @@ def run(stores=None, limit=None, log=print):
     # EXPLICIT fields — the merge mixes old rows (pre-enrichment schema) with new ones; without a fixed field
     # list write_parquet infers the schema from row[0] (an old row) and silently DROPS the new identity columns
     # (clean_name/street/city/state/phone), which broke outlet matching.
-    if rows:
-        warehouse.write_parquet("naop_beverages", _merge("naop_beverages", rows, lambda r: (r.get("store"), r.get("name"))))
-    if accounts:
-        warehouse.write_parquet("naop_accounts", _merge("naop_accounts", accounts, lambda r: r.get("store")),
-                                fields=["store", "account", "clean_name", "street", "city", "state", "phone",
-                                        "cuisine", "cuisines", "cuisine_source", "serves_alcohol",
-                                        "n_beverages", "run_id"])
+    _checkpoint()
+    if rows or accounts:
         log("[naop] DONE %d beverages · %d accounts (%d serve alcohol) -> naop_beverages / naop_accounts"
             % (len(rows), len(accounts), sum(1 for a in accounts if a["serves_alcohol"])))
     return len(rows)
