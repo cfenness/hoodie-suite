@@ -13,8 +13,17 @@ Contract this pins:
   2. transient read, then success   → the rows    (retried, not swallowed)
   3. transient every time           → RAISES      (loud; the caller degrades explicitly)
   4. non-transient error            → RAISES      (never a false zero)
+  5. the scan is covered, not just the view creation
+  6. a blipped LISTING behaves the same way       (added 2026-08-03)
 
-Fake connection, no duckdb, no network — stdlib only.
+Case 6 exists because query_parts no longer hands DuckDB a `<dir>/*.parquet` glob — that path
+corrupts the read on a large partition set (retail_observations: 3,824 files, reproduced 4/4, raw
+Parquet bytes returned where a string was expected). It now resolves the file list itself and passes
+an explicit list. That moves the read's first step onto a LIST call, which is a NEW false-zero
+surface: a dropped Tigris listing would read as "this table has no data". So the listing is retried
+and raises, exactly like the scan.
+
+Fake connection + a real temp partition dir, no duckdb, no network — stdlib only.
 """
 import os
 import sys
@@ -65,9 +74,15 @@ class FakeCon:
         return FakeCursor()
 
 
-def run(errors):
+def run(errors, files=("p1.parquet", "p2.parquet")):
+    """Point query_parts at a fake connection AND a non-empty partition listing.
+
+    The listing has to be non-empty or query_parts short-circuits to [] before it ever touches the
+    connection — which is correct behaviour for a table with no partitions, but would make cases
+    2-5 vacuous."""
     con = FakeCon(errors)
     warehouse.connect = lambda: con
+    warehouse._partition_files_strict = lambda name: list(files)
     return con
 
 
@@ -76,7 +91,7 @@ NO_FILES = "IO Error: No files found matching the pattern"
 REAL_BUG = "Binder Error: Referenced column \"nope\" not found in FROM clause!"
 
 print("1. genuinely no partitions → [] (documented empty-safe case)")
-run([NO_FILES])
+run([NO_FILES], files=())
 ok("returns empty, does not raise", warehouse.query_parts("t1", "SELECT 1") == [])
 
 print("\n2. transient read then success → the rows, not a false zero")
@@ -105,6 +120,55 @@ print("\n5. the SCAN is covered too, not just the view creation")
 con = run([None, TRANSIENT, None])                 # view ok, scan blips once, then ok
 got = warehouse.query_parts("t5", "SELECT count(*) c FROM t")
 ok("scan retried and returned rows (got %r)" % got, got == [{"c": 42}])
+
+print("\n6. a blipped LISTING is retried, and never becomes a false zero")
+
+
+class FlakyList:
+    def __init__(self, fails):
+        self.fails, self.calls = fails, 0
+
+    def __call__(self, name):
+        self.calls += 1
+        if self.calls <= self.fails:
+            raise Exception(TRANSIENT)
+        return ["p1.parquet"]
+
+
+con = run([None, None])
+fl = FlakyList(2)
+warehouse._partition_files_strict = fl
+got = warehouse.query_parts("t6", "SELECT count(*) c FROM t")
+ok("listing retried then returned rows (got %r)" % got, got == [{"c": 42}])
+ok("it actually retried the listing (%d calls)" % fl.calls, fl.calls >= 3)
+
+run([None, None])
+warehouse._partition_files_strict = FlakyList(99)
+try:
+    warehouse.query_parts("t7", "SELECT 1")
+    ok("a permanently failing listing should RAISE, not return []", False)
+except Exception as e:
+    ok("raised instead of a false zero (%s…)" % str(e)[:34], "Failed to read connection" in str(e))
+
+# The whole point of the change: no glob is ever handed to DuckDB.
+run([None, None])
+warehouse._partition_files_strict = lambda name: ["a.parquet", "b.parquet"]
+sqls = []
+_orig_con = warehouse.connect
+
+
+class Recorder(FakeCon):
+    def execute(self, sql, params=None):
+        sqls.append(sql)
+        return super().execute(sql, params)
+
+
+rec = Recorder([None, None])
+warehouse.connect = lambda: rec
+warehouse.query_parts("t8", "SELECT 1")
+view_sql = next((s for s in sqls if "CREATE OR REPLACE VIEW" in s), "")
+ok("the view reads an explicit LIST", "read_parquet([" in view_sql)
+ok("the view does NOT glob", "*.parquet" not in view_sql)
 
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

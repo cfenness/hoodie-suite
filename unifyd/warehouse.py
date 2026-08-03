@@ -116,18 +116,28 @@ def _partition_files(name):
     including run_sources' landing verification. Any source writing a partitioned table therefore
     recorded rows_before=0/rows_after=0/delta=0 on every run and had its status forced to `empty`
     regardless of what it actually landed."""
-    rel = "%s/%s" % (_prefix(), name)
     try:
-        if remote():
-            from pyarrow import fs as pafs
-            sel = pafs.FileSelector("%s/%s" % (_bucket(), rel), recursive=False, allow_not_found=True)
-            return [i.path for i in _s3fs().get_file_info(sel) if i.path.endswith(".parquet")]
-        d = os.path.join(_LOCAL_DIR, name)
-        if not os.path.isdir(d):
-            return []
-        return [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".parquet")]
+        return _partition_files_strict(name)
     except Exception:
         return []
+
+
+def _partition_files_strict(name):
+    """`_partition_files` but RAISING on a listing failure instead of returning [].
+
+    The swallowing version is fine for callers that only want a best-effort count, but it is a
+    false-zero waiting to happen for anyone who treats "no files" as "no data": a dropped Tigris
+    LIST would read as an empty table. query_parts() reads through this one, under _retry, so a
+    blipped listing is retried and then raised — never quietly turned into zero rows."""
+    rel = "%s/%s" % (_prefix(), name)
+    if remote():
+        from pyarrow import fs as pafs
+        sel = pafs.FileSelector("%s/%s" % (_bucket(), rel), recursive=False, allow_not_found=True)
+        return [i.path for i in _s3fs().get_file_info(sel) if i.path.endswith(".parquet")]
+    d = os.path.join(_LOCAL_DIR, name)
+    if not os.path.isdir(d):
+        return []
+    return [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".parquet")]
 
 
 def _partition_rows(paths):
@@ -451,22 +461,83 @@ def query_parts(name, sql=None, params=None):
     the glob genuinely matches no files, and RAISE anything else so the caller can degrade loudly.
     """
     con = connect()
-    glob = ("s3://%s/%s/%s/*.parquet" % (_bucket(), _prefix(), name)) if remote() \
-        else os.path.join(_LOCAL_DIR, name, "*.parquet")
+
+    # PASS AN EXPLICIT FILE LIST, NEVER A GLOB. Handing DuckDB `<dir>/*.parquet` corrupts the read on
+    # a large partition set: it returns raw Parquet page bytes where a string is expected, so the
+    # Python client dies with `'utf-8' codec can't decode byte 0xca in position 3` — an error that
+    # names nothing and masks DuckDB's own message (decoding those bytes yields a dictionary page of
+    # product names, not a message).
+    #
+    # Measured on retail_observations 2026-08-03, 3,824 partitions / 51.7M rows, reproduced 4/4 on a
+    # fresh connection, with `union_by_name` both true and false:
+    #     read_parquet('<dir>/*.parquet')  -> FAILS
+    #     read_parquet([<the same files>]) -> OK, 2,686,515 rows
+    # The two listings are byte-identical (DuckDB's own glob() returns exactly the files
+    # _partition_files() returns — 3,824 vs 3,824, no extras, no zero-byte objects), every file reads
+    # correctly on its own, and reversing the list order changes nothing. The data was never the
+    # problem; only the glob path is. The whole table had been unreadable to every aggregate query
+    # while row_count() cheerfully reported 51,735,402 from the footers.
+    # The listing is retried and RAISES on failure — resolving files ourselves moves the read's
+    # first step off DuckDB and onto a LIST call, which would otherwise become a brand-new
+    # false-zero surface (a dropped Tigris LIST reading as "this table is empty").
+    files = _retry(lambda: _partition_files_strict(name), what="list partitions %s" % name)
+    if not files:
+        return []                           # genuinely no partitions yet — the documented case
+    src = ["s3://%s" % f for f in files] if remote() else files
 
     def _mkview():
+        lst = ", ".join("'%s'" % p.replace("'", "") for p in src)
         con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM "
-                    "read_parquet('%s', union_by_name=true)" % glob)
+                    "read_parquet([%s], union_by_name=true)" % lst)
     try:
         _retry(_mkview, what="parquet view %s" % name)
     except Exception as e:
         if any(s in str(e) for s in _NO_FILES):
-            return []                       # genuinely no partitions yet — the documented case
+            return []
         raise
-    cur = _retry(lambda: con.execute(sql or "SELECT * FROM t", params or []),
-                 what="parquet scan %s" % name)
+    try:
+        cur = _retry(lambda: con.execute(sql or "SELECT * FROM t", params or []),
+                     what="parquet scan %s" % name)
+    except UnicodeDecodeError as e:
+        raise PartitionSchemaError(_schema_drift_msg(name, e)) from None
     cols = [d[0] for d in cur.description]
-    return [dict(zip(cols, row)) for row in cur.fetchall()]
+    try:
+        rows = cur.fetchall()
+    except UnicodeDecodeError as e:
+        raise PartitionSchemaError(_schema_drift_msg(name, e)) from None
+    return [dict(zip(cols, row)) for row in rows]
+
+
+class PartitionSchemaError(Exception):
+    """Partitions of one table disagree on a column's type, and the union read is returning garbage."""
+
+
+def _schema_drift_msg(name, e):
+    """Turn the least diagnosable error in this codebase into an actionable one.
+
+    When partitions of a table disagree on a column's type, the union_by_name read does not raise a
+    clean type error — it hands the Python client raw Parquet page bytes where a string is expected,
+    so the ONLY thing the caller sees is `'utf-8' codec can't decode byte 0xca in position 3`. That
+    names neither the table, nor the column, nor the cause, and it masks DuckDB's own message
+    (the "message" the bytes decode to is a dictionary page of product names).
+
+    Measured live 2026-08-03 on retail_observations: 13 distinct per-file schemas across 3,622
+    partitions left the whole 51.7M-row table unreadable to every aggregate query, while each file
+    read fine on its own and row_count() happily reported 51,735,402 — a table that looked healthy
+    from every angle except actually querying it.
+    """
+    raw = getattr(e, "object", b"")
+    peek = raw[:80].decode("utf-8", "replace") if raw else ""
+    return (
+        "%s: partitions disagree on a column type, so the union read returned raw Parquet bytes "
+        "instead of values (the underlying decode error is masked and unusable). This is a WRITE-side "
+        "schema drift: write_partition() infers each file's schema from that batch alone unless "
+        "`dtypes` is pinned, so a column that is all-None in one run lands as `null` and as "
+        "int64/double/string elsewhere.\n"
+        "  diagnose: python3 tools/repair_partitions.py --table %s --audit\n"
+        "  repair:   python3 tools/repair_partitions.py --table %s --apply\n"
+        "  prevent:  pass dtypes= to warehouse.write_partition for every writer of this table\n"
+        "  raw bytes seen where a string was expected: %r" % (name, name, name, peek))
 
 
 def list_datasets():
