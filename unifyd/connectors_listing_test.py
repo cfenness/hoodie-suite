@@ -99,15 +99,18 @@ ok("kebab-case registry ids are accepted by /api/scrape/dataset",
 # at 62 rows the two-query-per-row version hung /api/connectors past 30s on the live app.
 print("\nBoard cost")
 ok("/api/connectors batches its warehouse reads",
-   "counts = {d[\"name\"]: d.get(\"rows\") for d in warehouse.list_datasets()}" in src
+   'counts = {d["name"]: d.get("rows") for d in warehouse.list_datasets()}' in src
    and "_rs.ledger_last()" in src)
 ok("…and passes them into the per-row lookup",
    "_conn_last_run(m, counts=counts, ledger=ledger)" in src)
 ok("the per-connector fallback still exists for single-connector callers",
    "def _conn_last_run(meta, counts=None, ledger=None):" in src
-   and "else _wh_count(meta[\"data\"])" in src)
-ok("a failed batch read degrades to a board without last-run, never a timeout",
-   src.count("except Exception:\n        counts = {}") == 1 and "ledger = None" in src)
+   and 'else _wh_count(meta["data"])' in src)
+ok("the batch reads are cached OFF the request thread (ledger_last is 24.5s live)",
+   '_ttl("conn_board_reads", 300, _conn_board_reads_now, cold=({}, None))' in src)
+ok("a cold cache renders a board without last-run instead of blocking",
+   "cold=({}, None)" in src and "or ({}, None)" in src)
+ok("a failed batch read still yields a usable board", 'return counts, None' in src)
 
 print("\nProgress path (no Mac in the loop)")
 ok("the live-journal endpoint exists", '@app.get("/api/runs/live")' in src)
