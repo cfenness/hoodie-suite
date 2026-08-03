@@ -85,5 +85,16 @@
   "reviewed_by": "hoodie-suite/feat-dam-harvest-bacardi (machine classification, human review pending)",
   "reviewed_at": "2026-08-03T19:50:02Z",
   "escalation": "ToS s.13: 'If you wish to make any use of Material on our Site other than that set out above, please address your request for the attention of our Digital Director as specified in section 20' — Bacardi-Martini B.V., Weena 505, 3013 AL, Rotterdam, NL. Any widening of scope beyond pointer+metadata requires that written permission, recorded here as a new record revision with counsel_cleared=true.",
-  "dam_platform": "DNA (dna.online)"
+  "dam_platform": "DNA (dna.online)",
+  "escalation_request": {
+    "draft": "docs/bacardi-media-permission-request.md",
+    "status": "drafted — NOT SENT",
+    "asks_for": "internal_only (CV reference use, no redistribution)",
+    "routes": [
+      "https://contact.bacardilimited.com/",
+      "bacardilimited.com/media/ (Get in touch)",
+      "post: Bacardi-Martini B.V., Weena 505, 3013 AL, Rotterdam, NL (ToS s.20)"
+    ],
+    "note": "A granted reply becomes a NEW revision of this record with counsel_cleared set. Until then the gate denies every asset action, drafted request or not."
+  }
 }
