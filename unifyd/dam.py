@@ -196,10 +196,27 @@ def asset_row(rec, vendor, drive, folder_path, f, pulled_at):
 
 
 # ── brand events ──────────────────────────────────────────────────────────────────────────────────
+_UUID_PREFIX = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-", re.I)
+_EXT = re.compile(r"\.(pdf|docx?|jpe?g|png|mp4|mov|zip|tif+|svg|webp)\s*$", re.I)
+_VARIANT = re.compile(r"[\s,]*\(\s*\d+\s*\)\s*$")
+
+
 def _norm_title(t):
-    """Collapse a headline to a comparison key. Four assets of one story (a PDF, a DOCX and two
-    crops) are ONE event, so the key strips punctuation, case and trailing file extensions."""
-    t = re.sub(r"\.(pdf|docx?|jpe?g|png|mp4|mov|zip|tif|svg)$", "", (t or "").strip(), flags=re.I)
+    """Collapse a headline to a comparison key, so the assets of ONE story become ONE event.
+
+    Three normalizations, each earned from the live drive rather than guessed:
+      • a leading upload UUID — DNA prefixes re-uploaded files with a fresh uuid, so five copies of
+        one press kit differ ONLY by that prefix and fragmented into five events;
+      • repeated/trailing extensions — the drive really does contain "… Hero Image.jpg.jpg";
+      • a trailing "(n)" variant counter — "Fleuriste St-Germain Aug 12 (7)" is the seventh frame of
+        one shoot, not the seventh launch.
+    Applied in a loop because they stack (a UUID-prefixed ".jpg.jpg" needs two extension passes)."""
+    t = _UUID_PREFIX.sub("", (t or "").strip())
+    for _ in range(3):
+        prev = t
+        t = _VARIANT.sub("", _EXT.sub("", t)).strip()
+        if t == prev:
+            break
     t = re.sub(r"[^a-z0-9 ]+", " ", t.lower())
     return re.sub(r"\s+", " ", t).strip()
 

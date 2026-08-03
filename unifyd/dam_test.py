@@ -124,6 +124,25 @@ bac = by_brand["BACARDÍ"]
 check(bac["event_date"] is None and bac["event_date_precision"] == "unknown",
       "an asset outside a year folder gets NO date rather than an invented one")
 
+print("\nstory grain (upload-artefact normalization):")
+# All five are the SAME story on the live drive; they fragmented into five events until _norm_title
+# learned to strip DNA's re-upload UUID prefix, doubled extensions, and the "(n)" variant counter.
+SAME = [
+    "PRESS RELEASE - ST-GERMAIN x GLASSETTE - Final.docx",
+    "345b729b-c2c9-4599-8835-6617573011c4-PRESS RELEASE - ST-GERMAIN x GLASSETTE - Final.docx",
+    "1dc10aa7-8b4f-4d87-a52d-39f857514260-PRESS RELEASE - ST-GERMAIN x GLASSETTE - Final.docx",
+    "PRESS RELEASE - ST-GERMAIN x GLASSETTE - Final",
+    "PRESS RELEASE - ST-GERMAIN x GLASSETTE - Final (2).docx",
+]
+keys = {dam._norm_title(s) for s in SAME}
+check(len(keys) == 1, "one story's upload variants collapse to a single key (got %d)" % len(keys))
+check(dam._norm_title("de3c924d-79cd-4b18-af2c-589ff267c96f-Hero Image.jpg.jpg")
+      == dam._norm_title("Hero Image"), "a doubled extension behind a UUID prefix is stripped")
+check(dam._norm_title("Fleuriste St-Germain Aug 12 (7).jpg")
+      == dam._norm_title("Fleuriste St-Germain Aug 12"), "a '(n)' frame counter is stripped")
+check(dam._norm_title("BACARDI LAUNCHES 8 YEAR") != dam._norm_title("BACARDI LAUNCHES 4 YEAR"),
+      "normalization does NOT collapse genuinely different stories")
+
 print("\nprovenance:")
 p_gg = json.loads(gg["field_provenance"])
 check(p_gg["brand"] == dam.DETERMINISTIC, "an unambiguous brand match is DETERMINISTIC")
