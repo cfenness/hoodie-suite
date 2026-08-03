@@ -3573,10 +3573,16 @@ def connector_creds():
     return jsonify(ok=True, have=have)
 
 
-def _conn_last_run(meta):
+def _conn_last_run(meta, counts=None, ledger=None):
     """The last run for a connector, from the SINGLE most authoritative source available: the connector's own
-    <x>_runs warehouse table first, then the in-process RUNS log, then (last resort) a live data-table count
-    that proves we HAVE data even when run history is missing. This is what makes 'what's running' legible."""
+    <x>_runs warehouse table first, then the in-process RUNS log, then the shared registry ledger, then (last
+    resort) a live data-table count that proves we HAVE data even when run history is missing.
+
+    `counts` / `ledger` are the BATCH forms — one warehouse listing and one ledger read for the whole board,
+    passed in by the caller. Without them this falls back to per-connector queries, which is O(connectors)
+    remote round-trips: fine for a curated dozen, a page-load timeout once the board derives from the
+    registry (measured: /api/connectors hung past 30s at 62 rows). Kept as a fallback so a single-connector
+    caller still works."""
     rt = meta.get("runs")
     if rt:
         try:
@@ -3593,8 +3599,15 @@ def _conn_last_run(meta):
     if r:
         return {"run_id": r.get("id"), "at": r.get("finishedAt"), "status": r.get("status"),
                 "count": r.get("total"), "source": "runs.json"}
+    if ledger:
+        last, last_ok = ledger
+        ts = last.get(meta["id"])
+        if ts:
+            n = (counts or {}).get(meta.get("data")) if counts else None
+            return {"run_id": None, "at": int(ts * 1000), "source": "source_runs_log", "count": n,
+                    "status": "ok" if last_ok.get(meta["id"]) == ts else "ran"}
     if meta.get("data"):
-        n = _wh_count(meta["data"])
+        n = (counts or {}).get(meta["data"]) if counts is not None else _wh_count(meta["data"])
         if n:
             return {"run_id": None, "at": None, "status": "data-present", "count": n, "source": meta["data"]}
     return None
@@ -3605,6 +3618,20 @@ def connectors_list():
     """ONE board for every source: what exists, whether it's enabled (on/off), and its true last run — merged
     across warehouse <x>_runs, the runs log, and live data counts. The Pulls console renders off this."""
     en = _conn_enabled()
+    # TWO batch reads for the WHOLE board instead of two per connector. list_datasets() reads Parquet
+    # footers in parallel (never the data); ledger_last() is one grouped read of the shared run ledger.
+    # Both are best-effort — a board that renders without last-run beats one that times out.
+    counts, ledger = {}, None
+    try:
+        import warehouse
+        counts = {d["name"]: d.get("rows") for d in warehouse.list_datasets()}
+    except Exception:
+        counts = {}
+    try:
+        import run_sources as _rs
+        ledger = _rs.ledger_last()
+    except Exception:
+        ledger = None
     out = []
     for m in CONNECTORS_META + _registry_conn_rows():
         out.append({"id": m["id"], "label": m.get("label"), "group": m.get("group"),
@@ -3612,7 +3639,7 @@ def connectors_list():
                     "toggle": bool(m.get("toggle")), "data": m.get("data"),
                     "enabled": en.get(m["id"], True),
                     "runnable": m["id"] in VALID_CONNS,
-                    "last_run": _conn_last_run(m)})
+                    "last_run": _conn_last_run(m, counts=counts, ledger=ledger)})
     return jsonify(ok=True, connectors=out,
                    groups=sorted({c.get("group") or "" for c in out}))
 
