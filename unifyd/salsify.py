@@ -585,11 +585,40 @@ def enumerate_products(org, site, meta, pages=None, workers=8, log=print):
     return ids, "pages"
 
 
+# THE SITEMAP AND THE DATA ROUTE DISAGREE ABOUT `&`. Salsify slugifies the HTML-ESCAPED title when it
+# writes sitemap_1.xml, so "Lemonade & Lime" becomes `Lemonade-andamp-Lime` ("and" for &, plus a
+# stray "amp") — but their data route resolves the slug built from the RAW title, `Lemonade-and-Lime`.
+# The sitemap therefore publishes a slug their own route 403s on. Measured on Sazerac 2026-08-03: 106
+# of 107 unfetchable products contained `andamp`, and 0 of the 7,573 that fetched did. Verified by
+# replaying one id across variants — only `andamp` -> `and` resolves.
+_SLUG_REPAIRS = [("andamp", "and")]
+
+
+def _slug_variants(slug):
+    """The slug as published, then the known sitemap-vs-route repairs. Order matters: never rewrite a
+    slug that already works, only one that the route has actually rejected."""
+    seen = [slug]
+    for bad, good in _SLUG_REPAIRS:
+        if bad in slug:
+            cand = slug.replace(bad, good)
+            if cand not in seen:
+                seen.append(cand)
+    return seen
+
+
 def detail(base, bid, pid, slug):
-    q = urllib.parse.urlencode({"id": pid, "title": slug})
-    d = _data(base, bid, "product/%s/%s.json?%s" % (urllib.parse.quote(str(pid), safe=""),
-                                                    urllib.parse.quote(str(slug), safe=""), q))
-    return d["pageProps"]["product"]
+    last = None
+    for cand in _slug_variants(str(slug)):
+        q = urllib.parse.urlencode({"id": pid, "title": cand})
+        try:
+            d = _data(base, bid, "product/%s/%s.json?%s" % (urllib.parse.quote(str(pid), safe=""),
+                                                            urllib.parse.quote(cand, safe=""), q))
+            return d["pageProps"]["product"]
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code not in (403, 404):      # only a routing rejection is worth another slug
+                raise
+    raise last
 
 
 def _snapshot(catalog_id, state_dir):
