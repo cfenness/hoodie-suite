@@ -70,12 +70,28 @@ def canonical(v):
 
 
 # ── SQL forms, for joins that must stay in DuckDB rather than round-trip through Python ──────────
+TOKEN_SQL_RE = "^[A-Za-z0-9_-]{22}$"
+_SAFE = "'AAAAAAAAAAAAAAAAAAAAAA'"      # a valid 22-char token, used as the else-branch placeholder
+
+
 def sql_token_to_uuid(col):
-    """SQL decoding a base64url token column to a canonical UUID. Mirrors token_to_uuid()."""
-    b = ("HEX(FROM_BASE64(REPLACE(REPLACE(CAST(%s AS VARCHAR),'-','+'),'_','/') || '=='))" % col)
-    return ("CASE WHEN LENGTH(CAST(%s AS VARCHAR)) = 22 THEN LOWER("
+    """SQL decoding a base64url token column to a canonical UUID. Mirrors token_to_uuid().
+
+    LENGTH ALONE IS NOT A GUARD, and a live run proved it: `Blackstone and Bullard` is exactly 22
+    characters, so a length check passed it straight into FROM_BASE64, which raised
+    "Could not decode string ... invalid byte value '32'" and killed the whole build. The alphabet
+    has to be checked too — that is what the Python side has always done via TOKEN_RE.
+
+    The pattern test is applied TWICE on purpose. DuckDB is vectorised and does not promise to
+    short-circuit a CASE, so a non-token must never reach FROM_BASE64 at all: the inner CASE feeds it
+    a valid placeholder, and the outer CASE throws that placeholder's result away."""
+    v = "CAST(%s AS VARCHAR)" % col
+    ok = "REGEXP_MATCHES(%s, '%s')" % (v, TOKEN_SQL_RE)
+    safe = "CASE WHEN %s THEN REPLACE(REPLACE(%s,'-','+'),'_','/') ELSE %s END" % (ok, v, _SAFE)
+    b = "HEX(FROM_BASE64(%s || '=='))" % safe
+    return ("CASE WHEN %s THEN LOWER("
             "SUBSTR(%s,1,8) || '-' || SUBSTR(%s,9,4) || '-' || SUBSTR(%s,13,4) || '-' || "
-            "SUBSTR(%s,17,4) || '-' || SUBSTR(%s,21,12)) END" % (col, b, b, b, b, b))
+            "SUBSTR(%s,17,4) || '-' || SUBSTR(%s,21,12)) END" % (ok, b, b, b, b, b))
 
 
 def sql_canonical(col):

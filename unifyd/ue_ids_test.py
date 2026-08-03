@@ -62,6 +62,34 @@ def test_canonical_accepts_either_spelling():
         eq("canonical(uuid)", ue_ids.canonical(uid), uid)
 
 
+# Real store names that are EXACTLY 22 characters — the length of a base64url token. A live run
+# died on the first of these: a length-only guard let it into FROM_BASE64, which raised
+# "Could not decode string ... invalid byte value '32'" and killed the build.
+LOOKALIKES_22 = ["Blackstone and Bullard", "Kroger On The Rhine!!!", "Store #12345 Downtown!"]
+
+
+def test_22_char_non_tokens_are_rejected():
+    for s in LOOKALIKES_22:
+        eq("len is exactly 22 (guard is not vacuous)", len(s), 22)
+        eq("token_to_uuid(%r) is None" % s, ue_ids.token_to_uuid(s), None)
+        eq("canonical(%r) is None" % s, ue_ids.canonical(s), None)
+
+    import duckdb
+    con = duckdb.connect()
+    for s in LOOKALIKES_22:
+        got = con.execute("SELECT %s" % ue_ids.sql_canonical("'%s'" % s.replace("'", "''"))).fetchone()[0]
+        eq("SQL canonical(%r) is NULL, not an error" % s, got, None)
+    # And in bulk, the shape the real join uses — this is what actually crashed.
+    con.execute("CREATE TABLE t AS SELECT * FROM (VALUES ('Blackstone and Bullard'),"
+                "('3GYoBDgAU6-me98dDz_kSw'),('Kroger On The Rhine!!!'),('1748913')) v(sid)")
+    rows = con.execute("SELECT sid, %s AS uid FROM t ORDER BY sid" % ue_ids.sql_canonical("sid")).fetchall()
+    got = {r[0]: r[1] for r in rows}
+    eq("the real token still decodes in bulk", got["3GYoBDgAU6-me98dDz_kSw"],
+       "dc662804-3800-53af-a67b-df1d0f3fe44b")
+    eq("the 22-char name yields NULL in bulk", got["Blackstone and Bullard"], None)
+    eq("a short non-token yields NULL in bulk", got["1748913"], None)
+
+
 def test_non_ids_are_not_mangled():
     for junk in ("", None, "1748913", "Birmingham 280 Corridor", "Online", "abc",
                  "not-a-uuid-at-all", "0123456789012345678901234"):
@@ -101,6 +129,7 @@ def test_version_nibble_is_the_tell():
 
 if __name__ == "__main__":
     for fn in (test_decode_real_values, test_round_trip, test_canonical_accepts_either_spelling,
+               test_22_char_non_tokens_are_rejected,
                test_non_ids_are_not_mangled, test_sql_matches_python,
                test_version_nibble_is_the_tell):
         print(fn.__name__)
