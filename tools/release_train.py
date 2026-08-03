@@ -203,6 +203,35 @@ def lock_path():
     return os.path.join(common_git_dir(), LOCK_NAME)
 
 
+def _holder_dead(held):
+    """True only when we can PROVE the recorded holder is gone: same host, real pid, no process.
+
+    Deliberately conservative — every uncertain case (missing/foreign host, missing pid, a pid we
+    are not permitted to signal) returns False and leaves the age rule in charge. Falsely calling a
+    live deploy dead would let two of them run at once, which is far worse than waiting an hour.
+    """
+    import socket
+    if held.get("host") and held["host"] != socket.gethostname():
+        return False                                  # another machine's pid means nothing here
+    if not held.get("host"):
+        return False                                  # pre-dates the host field — cannot judge
+    try:
+        pid = int(held.get("pid"))
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0 or pid == os.getpid():
+        return False
+    try:
+        os.kill(pid, 0)                               # signal 0 = existence check, no signal sent
+        return False                                  # it answered: alive
+    except ProcessLookupError:
+        return True                                   # no such process: provably gone
+    except PermissionError:
+        return False                                  # exists, owned by someone else
+    except OSError:
+        return False
+
+
 def acquire_lock(what):
     """Exclude the other sessions. Stale locks (crashed run) expire rather than wedging the repo."""
     p = lock_path()
@@ -212,14 +241,28 @@ def acquire_lock(what):
         except Exception:                                     # noqa: BLE001
             held = {}
         age = time.time() - float(held.get("at", 0))
-        if age < LOCK_STALE_SEC:
+        # A lock is stale when its holder is GONE, not merely when it is old. Expiring on age alone
+        # wedged the repo for a full hour after a crashed deploy — observed live: pid 6559 had been
+        # dead for 19 minutes and every deploy still refused, which reads as "someone else is
+        # shipping" when in fact nobody was.
+        #
+        # The pid is only meaningful on the machine that wrote it, so it is trusted ONLY when the
+        # host matches; a lock from another host, or one written before this field existed, falls
+        # back to the age rule exactly as before. Age still applies either way, so a recycled pid
+        # cannot keep a genuinely stale lock alive.
+        dead = _holder_dead(held)
+        if age < LOCK_STALE_SEC and not dead:
             return False, ("held by pid %s (%s) since %s — %ds ago"
                            % (held.get("pid"), held.get("what"),
                               held.get("when"), int(age)))
+        print("  [lock] reclaiming %s lock from pid %s — %s"
+              % (held.get("what") or "?", held.get("pid"),
+                 "that process is gone" if dead else "stale (%ds old)" % int(age)))
         os.unlink(p)                                          # stale, reclaim
     with open(p, "w") as f:
         json.dump({"pid": os.getpid(), "what": what, "at": time.time(),
-                   "when": time.strftime("%Y-%m-%d %H:%M:%S")}, f)
+                   "when": time.strftime("%Y-%m-%d %H:%M:%S"),
+                   "host": __import__("socket").gethostname()}, f)
     return True, None
 
 
