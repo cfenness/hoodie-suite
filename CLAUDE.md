@@ -260,6 +260,20 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   folders**. Coverage is *not* gated on the platform's `file_amount` counter, which is stale in both
   directions (Videos claims 2 serves 4; Media Files claims 0 serves 75) — it is gated on visiting
   every folder, and a shortfall is a warning, never a silent partial.
+- **`unifyd/dam_census.py`** (source `dam-census`, monthly) — the **vendor census** (P4): supplier →
+  media centre → DAM vendor → public? → a **provisional** permission class. It is what tells you which
+  platform to build the next connector for. **Discovery is link-following, not hostname guessing**:
+  the capability's method rule forbids subdomain enumeration while the design sketched
+  `media.<co>.com` patterns, and that tension is resolved in favour of the rule — we fetch the
+  supplier's own site and follow the media link THEY publish. Conventional hostnames are opt-in
+  (`DAM_CENSUS_PROBE=1`, off), and every row records `discovery_method`. Hints are two-tier: the tidy
+  phrasing alone found ONE centre across 24 suppliers, because what companies actually publish is
+  `/news`, `/media`, `news-and-media`. **Failures are named, never counted as absence** — age gate /
+  client-rendered shell / SSL mismatch / no link are four different findings, and only some mean stop
+  looking. `dam_census` is a RESEARCH table: nothing runs off it, and promoting a supplier means
+  authoring a reviewed rights record + a `TENANTS` row by hand.
+  `source_analyzer.analyze()` attaches `out["dam"] = {extraction, rights}` when a page fingerprints as
+  a media centre — design §4's two plans, marked provisional.
 - **What Bacardi's terms actually say, and why the CV gallery is empty for them.** Their ToS (which by
   its own §1 covers "any and all other online or digital platforms … which we maintain") grants **no
   reuse licence**: §3 "does not grant you any rights, title, interest or license to any Materials",

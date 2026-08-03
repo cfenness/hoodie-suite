@@ -555,6 +555,20 @@ SOURCES = [
               "requests for the whole drive. POINTERS + facts only: the rights record classifies "
               "image reuse `prohibited`, so no asset bytes, hashes or embeddings are ever produced."),
 
+    # The census is RESEARCH, not a feed: it maps supplier -> media centre -> DAM vendor -> public? ->
+    # a PROVISIONAL permission class, so connector work goes to the vendors that cover the most
+    # suppliers. Nothing runs off `dam_census` — promoting a supplier means authoring a reviewed
+    # rights record and a TENANTS row by hand. No rights_record of its own: it reads public corporate
+    # pages and terms, it never touches an asset.
+    dict(id="dam-census", label="DAM vendor census (supplier -> media centre -> vendor)",
+         source_class="dam-research",
+         code="import dam_census as m; m.run()",
+         tables=["dam_census"], klass="headless", cadence="monthly", enabled=True,
+         cost_class="free", interval_h=720, timeout=3600, mem=2048,
+         note="link discovery from each supplier's OWN published nav (no hostname guessing; "
+              "DAM_CENSUS_PROBE=1 opts into conventional media.*/press.* hosts). Names its failures "
+              "— age gate / JS shell / no link — rather than reporting them as 'no media centre'."),
+
     # ── Hemp ──────────────────────────────────────────────────────────────────────────────────────────────────
     dict(id="hemp-scan", label="Hemp products", code="import hemp_scan as m; m.main([])",
          tables=["hemp_products"], klass="headless", cadence="daily", enabled=True, note="hemp-bev feed"),
