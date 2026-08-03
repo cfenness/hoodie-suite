@@ -94,33 +94,45 @@ def preflight(require_rclone=True):
         raise SystemExit(2)
 
     if require_rclone and not _which("rclone"):
-        print("PREFLIGHT FAILED — rclone is not installed.\n"
-              "  macOS:  brew install rclone\n"
-              "  linux:  curl https://rclone.org/install.sh | sudo bash", file=sys.stderr)
-        raise SystemExit(2)
+        _install_rclone()
 
     remote = _env("GDRIVE_REMOTE", default="gdrive")
-    if require_rclone:
+    if require_rclone and not _env("GDRIVE_TOKEN"):
+        # No headless token — fall back to a remote already configured in rclone.conf.
         listing = _run(["rclone", "listremotes"], capture=True).stdout or ""
         if ("%s:" % remote) not in listing:
-            print("PREFLIGHT FAILED — no rclone remote named %r.\n\n"
-                  "Configure it (you do the OAuth in the browser):\n"
-                  "    rclone config\n"
-                  "      n) New remote\n"
-                  "      name> %s\n"
-                  "      Storage> drive\n"
-                  "      client_id / client_secret> (blank is fine)\n"
-                  "      scope> 1  (full access)\n"
-                  "      Edit advanced config> n\n"
-                  "      Use web browser to automatically authenticate> y\n"
-                  "    -> sign in with the HOODIE Google account, not a personal one\n\n"
-                  "Confirm with:  rclone about %s:" % (remote, remote, remote), file=sys.stderr)
+            print("PREFLIGHT FAILED — no Drive credential.\n\n"
+                  "Either set GDRIVE_TOKEN (headless — works on Fly, no browser on the box):\n"
+                  "    # on a machine WITH a browser, once:\n"
+                  "    rclone authorize \"drive\"\n"
+                  "    # sign in with the HOODIE Google account; copy the JSON token it prints\n"
+                  "    export GDRIVE_TOKEN='{\"access_token\":\"...\",\"refresh_token\":\"...\"}'\n\n"
+                  "…or configure a named remote interactively:\n"
+                  "    rclone config    # n) New remote, name> %s, Storage> drive, scope> 1\n\n"
+                  "Confirm which account you got:  rclone config userinfo %s:" % (remote, remote),
+                  file=sys.stderr)
             raise SystemExit(2)
 
-    print("preflight ok — endpoint=%s bucket=%s prefix=%s drive=%s:"
-          % (endpoint, bucket, _env("WAREHOUSE_PREFIX", default="warehouse"), remote))
+    print("preflight ok — endpoint=%s bucket=%s prefix=%s drive=%s: (%s)"
+          % (endpoint, bucket, _env("WAREHOUSE_PREFIX", default="warehouse"), remote,
+             "headless token" if _env("GDRIVE_TOKEN") else "rclone.conf"))
     return {"endpoint": endpoint, "bucket": bucket,
             "prefix": _env("WAREHOUSE_PREFIX", default="warehouse"), "remote": remote}
+
+
+def _install_rclone():
+    """Fly's ephemeral image has no rclone and open egress, so fetch it at run time rather than
+    forcing a Dockerfile change + full redeploy just to run an archive job."""
+    print("rclone not found — installing…")
+    for cmd in (["bash", "-c", "curl -fsSL https://rclone.org/install.sh | bash"],
+                ["bash", "-c", "apt-get update -qq && apt-get install -y -qq rclone"]):
+        if _run(cmd).returncode == 0 and _which("rclone"):
+            print("rclone installed: %s" % _which("rclone"))
+            return
+    print("PREFLIGHT FAILED — could not install rclone.\n"
+          "  macOS:  brew install rclone\n"
+          "  linux:  curl https://rclone.org/install.sh | sudo bash", file=sys.stderr)
+    raise SystemExit(2)
 
 
 def _which(exe):
@@ -136,8 +148,10 @@ def _run(cmd, capture=False, check=False, env=None):
 
 
 def _rclone_env(cfg):
-    """Tigris as an rclone remote, inline. No rclone.conf entry, no cred written to disk."""
-    return {
+    """Both remotes configured inline. No rclone.conf entry, no credential written to disk —
+    which is what lets this run on an ephemeral Fly machine that has no interactive session and
+    no persistent filesystem."""
+    e = {
         "RCLONE_CONFIG_TIGRIS_TYPE": "s3",
         "RCLONE_CONFIG_TIGRIS_PROVIDER": "Other",
         "RCLONE_CONFIG_TIGRIS_ENDPOINT": cfg["endpoint"],
@@ -145,6 +159,31 @@ def _rclone_env(cfg):
         "RCLONE_CONFIG_TIGRIS_SECRET_ACCESS_KEY": _env("AWS_SECRET_ACCESS_KEY"),
         "RCLONE_CONFIG_TIGRIS_REGION": _env("AWS_REGION", default="auto"),
     }
+    # Headless Drive: the token comes from a one-time `rclone authorize "drive"` run on a machine
+    # that HAS a browser. Without this the remote must already exist in rclone.conf.
+    tok = _env("GDRIVE_TOKEN")
+    if tok:
+        r = cfg["remote"].upper()
+        e["RCLONE_CONFIG_%s_TYPE" % r] = "drive"
+        e["RCLONE_CONFIG_%s_SCOPE" % r] = "drive"
+        e["RCLONE_CONFIG_%s_TOKEN" % r] = tok
+        if _env("GDRIVE_CLIENT_ID"):
+            e["RCLONE_CONFIG_%s_CLIENT_ID" % r] = _env("GDRIVE_CLIENT_ID")
+            e["RCLONE_CONFIG_%s_CLIENT_SECRET" % r] = _env("GDRIVE_CLIENT_SECRET")
+        if _env("GDRIVE_ROOT_FOLDER_ID"):
+            e["RCLONE_CONFIG_%s_ROOT_FOLDER_ID" % r] = _env("GDRIVE_ROOT_FOLDER_ID")
+    return e
+
+
+def whoami(cfg):
+    """Which Google account the token actually belongs to. Printed before any transfer, because
+    'the Hoodie Drive' and 'the account this token happens to be for' are not the same thing and
+    the archive landing in a personal Drive is a real outcome worth one round-trip to prevent."""
+    r = _run(["rclone", "config", "userinfo", "%s:" % cfg["remote"]],
+             capture=True, env=_rclone_env(cfg))
+    info = (r.stdout or "").strip()
+    print("\n── destination Drive account ──\n%s" % (info or "  (rclone reported no user info)"))
+    return info
 
 
 # ── inventory ──────────────────────────────────────────────────────────────────────────────
@@ -416,16 +455,22 @@ def verify(cfg, inv):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("cmd", choices=["preflight", "inventory", "copy", "verify", "all"])
+    p.add_argument("cmd", choices=["preflight", "whoami", "inventory", "copy", "verify", "all"])
     p.add_argument("--include-raw-payloads", action="store_true",
                    help="include the append-only raw JSON table (excluded by default)")
     p.add_argument("--reference-csv", action="store_true",
                    help="also emit CSV copies of the small reference tables to gdrive:<base>/reference-csv")
     a = p.parse_args()
 
-    cfg = preflight(require_rclone=a.cmd in ("copy", "verify", "all"))
+    cfg = preflight(require_rclone=a.cmd in ("whoami", "copy", "verify", "all"))
     if a.cmd == "preflight":
         return 0
+    if a.cmd == "whoami":
+        whoami(cfg)
+        return 0
+
+    if a.cmd in ("copy", "all"):
+        whoami(cfg)     # say where this is about to land, before it lands there
 
     inv = inventory(cfg)
     if a.cmd in ("inventory", "all"):

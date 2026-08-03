@@ -8,21 +8,57 @@ Tool: `tools/warehouse_egress.py`. **Read-only against Tigris** — the inventor
 footers and manifests, the transfer is one-way `rclone copy`, and there is no code path that
 calls `warehouse.write_*`.
 
-## Where this can run
+## Fastest path — run it on Fly (recommended)
 
-It needs the Tigris credential trio **and** network reach to `fly.storage.tigris.dev`. That
-means the Fly machine or a local shell with `fly storage` creds exported. It does **not** run
-in a Claude Code web session: those containers get placeholder `AWS_*` values and the egress
-policy 403s `fly.storage.tigris.dev`.
+Fly already has the Tigris creds in the app env and sits next to the bucket, so the transfer is
+Tigris → Drive and **the bytes never cross a laptop**. Two one-time steps, then one command.
 
-## 0 — preflight
+**1. Get a Drive token (once, on any machine with a browser):**
 
 ```bash
-export AWS_ENDPOINT_URL_S3=https://fly.storage.tigris.dev
-export BUCKET_NAME=<bucket>            # or WAREHOUSE_BUCKET
-export AWS_ACCESS_KEY_ID=...           # from `fly storage` / `flyctl secrets`
-export AWS_SECRET_ACCESS_KEY=...
-export AWS_REGION=auto
+rclone authorize "drive"
+```
+
+Sign in with the **Hoodie** Google account. It prints a JSON token — that's the whole credential.
+
+**2. Run the job:**
+
+```bash
+flyctl machine run --rm <image> -a hoodie-suite --vm-memory 2048 \
+  -e GDRIVE_TOKEN='<the JSON from step 1>' \
+  --command "bash /app/unifyd/run_egress.sh all --reference-csv"
+```
+
+Get `<image>` from `flyctl image show -a hoodie-suite`. The machine installs rclone, inventories,
+copies, verifies, and self-destroys. Watch it with `flyctl logs -a hoodie-suite`.
+
+The job **prints the destination Google account before it transfers anything** — check that line
+says the Hoodie account, not a personal one. `whoami` checks it on its own:
+
+```bash
+python3 tools/warehouse_egress.py whoami
+```
+
+If you'd rather not put the token on a command line, set it as a secret instead
+(`flyctl secrets set GDRIVE_TOKEN='…' -a hoodie-suite`) and drop the `-e` flag.
+
+## Where this can run
+
+It needs the Tigris credential trio **and** network reach to `fly.storage.tigris.dev` — the Fly
+machine, or a local shell with `warehouse.env` sourced. It does **not** run in a Claude Code web
+session: those containers get placeholder `AWS_*` values, and the egress policy 403s
+`fly.storage.tigris.dev`, `api.fly.io` and `rclone.org` alike.
+
+---
+
+## Running it locally instead
+
+Slower — the bytes go Tigris → your machine → Drive — but it needs no Fly access.
+
+### 0 — preflight
+
+```bash
+set -a; source warehouse.env; set +a     # gitignored; lives on your machine, not in the repo
 
 python3 tools/warehouse_egress.py preflight
 ```
@@ -32,7 +68,7 @@ warehouse local-disk mode — a silent local fallback would archive an empty dev
 report success. It also rejects placeholder values (e.g. a literal `proxy-injected`) rather than
 letting them surface as a confusing auth error three steps later.
 
-### rclone + the Drive remote
+#### rclone + the Drive remote
 
 ```bash
 brew install rclone                              # macOS
@@ -55,7 +91,7 @@ rclone config userinfo gdrive:     # prints the email the remote is bound to
 The Tigris side needs no `rclone config` entry: the tool injects it via `RCLONE_CONFIG_TIGRIS_*`
 env vars at call time, so no credential is written to `rclone.conf` or left on disk.
 
-## 1 — inventory
+### 1 — inventory
 
 ```bash
 python3 tools/warehouse_egress.py inventory
@@ -80,7 +116,7 @@ Note that v1 tables live *inside* `<prefix>/`, not at the bucket root — `WAREH
 defaults to `warehouse`. The inventory still sweeps the bucket root and reports anything found
 outside the prefix, since a table written while the prefix was blank would otherwise be missed.
 
-## 2 — copy
+### 2 — copy
 
 ```bash
 python3 tools/warehouse_egress.py copy [--include-raw-payloads] [--reference-csv]
@@ -104,7 +140,7 @@ rclone copy tigris:$BUCKET/warehouse "gdrive:Hoodie/warehouse" \
 - A per-table failure is collected and listed at the end, not fatal; one unreadable table must
   not abandon the other N.
 
-## 3 — verify
+### 3 — verify
 
 ```bash
 python3 tools/warehouse_egress.py verify
@@ -121,7 +157,7 @@ Get the shareable folder link with:
 rclone link gdrive:Hoodie/warehouse
 ```
 
-## All at once
+### All at once
 
 ```bash
 python3 tools/warehouse_egress.py all --reference-csv
