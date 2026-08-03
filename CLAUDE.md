@@ -180,6 +180,60 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   `johnsonbrothers` (25,590 items); grow the `STOREFRONTS` map. stdlib-only, headless. Together
   with `vip-brandbuilder` these two platform recipes are the fast path to the major distributors'
   catalogs (Reyes, Breakthru, RNDC, …) — one sourceCode / slug at a time.
+
+### DAM harvesting — `rights.py` + `dam.py` + `dam_<vendor>.py` (ToS is the contract)
+Harvesting supplier/brand **digital-asset libraries** (media centres) is the first capability where
+the payload is somebody else's **copyrighted work**, not a fact. Every other source here lands prices
+and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK is not a licence.
+
+- **`unifyd/rights.py` — the gate, enforced in code.** Every DAM source carries a
+  `rights_records/<id>.json`: a **verbatim ToS snapshot + sha256 + capture date**, the **verbatim
+  robots.txt** plus a per-URL decision for each path the connector fetches, and a parsed permission
+  classification (`image_use` = permitted/prohibited/silent, `scope` =
+  none/internal_only/editorial_press/commercial_redistribution, attribution/alteration/trade-only/
+  expiry/confidence/needs_counsel). `rights.load()` **raises if the record is missing** — there is no
+  harvest-now-sort-the-rights-out-later path. `may()/require()/emit()` are the only interpretation of
+  the model, every emission (allowed *and denied*) is logged to `dam_emissions`, and `dam_rights_test.py`
+  is the ratchet that fails a registry row lacking its record.
+  Three rules are load-bearing and tested: (1) **facts always flow** — `catalog_metadata`/
+  `catalog_pointer` are ungated; (2) **silence is not permission** — `silent` holds exactly like
+  `prohibited`, and an unknown action, an unrecognized scope, an expired grant or a **stale** record
+  (terms moved since review) all deny; (3) **`needs_counsel` guards the affirmative act** — a grant is
+  inert until `counsel_cleared`, while an enforced hold needs no lawyer. A grant phrase inside a
+  negation is not a grant ("does **not** grant you any … license" scored as a grant once — never again).
+- **`unifyd/dam.py` — the shared spine + THE CHOKEPOINT.** `asset_bytes()` is the only function that
+  may fetch an asset's bytes and it calls `require(rec, "fetch_asset")` first; a perceptual hash or
+  embedding is a derivative work and is gated at the same level. Connectors never open an asset URL —
+  `dam_bacardi_test.py` scans the package's source and fails if one does. Lands `dam_assets`
+  (pointer rows carrying `retention` / `phash` / `embedding_ref` / `withheld_reason` / `rights_ref`,
+  so the row shows what was withheld and why) and `brand_events` (the dated product-event feed).
+  Honesty contract: every derived field is labelled **DETERMINISTIC or INFERENCE** in
+  `field_provenance` — brand match is deterministic *unless* the alias is also a common word
+  (MARTINI, BOMBAY, PATRON → INFERENCE), event_type/market are always inference. **A DAM's
+  `created_on` is the UPLOAD stamp, not the event date** (Bacardi's whole 2018 folder reads
+  2018-04-11, the bulk-migration day), so dates come from **year folders** at `precision=year` and are
+  otherwise NULL — never back-filled.
+- **`unifyd/dam_bacardi.py`** (source `dam-bacardi`, weekly) — the first vendor and the platform
+  recipe. `media.bacardilimited.com` drive 42 ("Bacardi Public"): the page bootstraps
+  `window.DriveViewState` (brace-matched, not regex-terminated — descriptions contain `}`), and
+  `/drives/get-tree/<drive>?folder_id=<n>` is the SPA's own JSON API. Both live **outside** every
+  robots `Disallow` (`/api/` **is** disallowed — if the tree ever moves under it, this connector
+  stops). No auth, no cookie, no browser: **3 requests enumerate all 2,490 assets across 17/17
+  folders**. Coverage is *not* gated on the platform's `file_amount` counter, which is stale in both
+  directions (Videos claims 2 serves 4; Media Files claims 0 serves 75) — it is gated on visiting
+  every folder, and a shortfall is a warning, never a silent partial.
+- **What Bacardi's terms actually say, and why the CV gallery is empty for them.** Their ToS (which by
+  its own §1 covers "any and all other online or digital platforms … which we maintain") grants **no
+  reuse licence**: §3 "does not grant you any rights, title, interest or license to any Materials",
+  downloads are for "your lawful, personal, non-commercial use", "You must not use any part of the
+  Materials … for commercial purposes"; §4 "You are not permitted to use the Materials outside of the
+  Site". A scan of all 23.7k characters finds **no press/editorial carve-out** — no `press`,
+  `editorial`, `journalis`, `broadcast`, `royalty`, `attribution` or `credit` clause exists to rely on.
+  So the source runs at `prohibited`/`none`: 2,490 asset **pointers** + 343 brand events land, and
+  **zero bytes, hashes or embeddings** are produced. **That is the connector working, not failing** —
+  do NOT "fix" the empty gallery by widening scope in the registry or the record. Scope widens only
+  via a new record revision with `counsel_cleared`, backed by the written permission the record's
+  `escalation` field describes (ToS §13 → Bacardi's Digital Director).
 - `unifyd/salsify.py` — **Salsify Sites**: every public catalog on `sites.salsify.com`. **Registry id
   `salsify` (daily) is the ONE writer** — it refreshes the directory then pulls every seeded catalog
   (bbg, sazerac, heaven-hill) sequentially in one process. `bbg` exists as a disabled registry entry for

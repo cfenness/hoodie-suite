@@ -53,6 +53,12 @@ FIXTURE_CHECKS = [
     dict(id="vip-finder-miss", fixture="fixtures/vip_finder_miss.html", min_rows=1,
          run=("import vip_finder_census as v; "
               "result=(1 if v.parse_tenant('zzz', html) is None else 0, {'sentinel': v.MISS_SENTINEL})")),
+    # The DAM bootstrap is one brace-matched JSON blob inside a 2MB page — the single point where a
+    # platform template change turns the whole drive into 0 assets.
+    dict(id="dam-bacardi", fixture="fixtures/dam_bacardi_drive42.html", min_rows=100,
+         run=("import dam_bacardi as d; st, err = d.parse_bootstrap(html); "
+              "t = (st or {}).get('tree', {}); "
+              "result=(len(t.get('files') or []), {'err': err, 'folders': len(t.get('all_folders') or [])})")),
 ]
 
 DOC_FILES = ["CLAUDE.md", "README.md", "SPINE.md"]

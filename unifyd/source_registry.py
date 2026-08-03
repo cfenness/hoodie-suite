@@ -527,6 +527,33 @@ SOURCES = [
          tables=["ttb_master"], klass="headless", cadence="weekly", enabled=False,
          note="MASTER BUILD (reads ttb_cola → ttb_master); huge — refresh deliberately. Scrape is ttb-cola"),
 
+    # ── DAM / brand media centres (klass "dam" — every one REQUIRES a reviewed rights record) ─────────────────
+    # The `dam` class is not a transport detail, it is a CONTRACT: unlike every other source here, a
+    # DAM's payload is somebody else's copyrighted work, so the connector cannot run at all without
+    # `unifyd/rights_records/<id>.json` — a verbatim ToS snapshot + sha, the robots decision for each
+    # URL it fetches, and a parsed permission classification that `rights.py` enforces in code.
+    # `rights.load()` raises if the record is missing, which is the point: there is no
+    # harvest-now-sort-the-rights-out-later path. Add a DAM source = add the connector AND the record.
+    #
+    # Bacardi runs at image_use=prohibited / scope=none — their terms grant no reuse licence and carry
+    # no press or editorial carve-out — so it lands ~2,490 asset POINTERS + the brand_events feed and
+    # fetches ZERO bytes. That is the source working. Do NOT "fix" the empty CV gallery by widening
+    # scope here; scope widens only via a new record revision with counsel_cleared, backed by the
+    # written permission the record's escalation field describes.
+    # `klass` stays "headless" because klass is EXECUTION PLACEMENT, not taxonomy: run_sources selects
+    # the daily pass with `klass in ("headless","creds")` and dispatch_ephemeral sizes the machine from
+    # it, so a novel klass="dam" would quietly drop this source out of every scheduled run — a silent
+    # degrade wearing a tidy label. The DAM family is marked by `source_class` instead, which
+    # `dam_sources()` reads and `dam_rights_test.py` enforces a record for.
+    dict(id="dam-bacardi", label="Bacardi Media Centre (public drive)", source_class="dam",
+         code="import dam_bacardi as m; m.pull()",
+         tables=["dam_assets", "brand_events"], klass="headless", cadence="weekly", enabled=True,
+         cost_class="free", interval_h=168, timeout=1800, mem=2048,
+         rights_record="rights_records/dam-bacardi.json",
+         note="media.bacardilimited.com drive 42 — robots-permitted /drives/ JSON tree, no auth, 3 "
+              "requests for the whole drive. POINTERS + facts only: the rights record classifies "
+              "image reuse `prohibited`, so no asset bytes, hashes or embeddings are ever produced."),
+
     # ── Hemp ──────────────────────────────────────────────────────────────────────────────────────────────────
     dict(id="hemp-scan", label="Hemp products", code="import hemp_scan as m; m.main([])",
          tables=["hemp_products"], klass="headless", cadence="daily", enabled=True, note="hemp-bev feed"),
@@ -687,6 +714,13 @@ BUILDS = [
 
 def by_id(sid):
     return next((s for s in SOURCES if s["id"] == sid), None)
+
+
+def dam_sources():
+    """Every DAM (brand media-centre) source. Each one MUST carry `rights_record` — a DAM connector
+    harvests somebody else's copyrighted work, so the reviewed terms are a precondition for running
+    at all, not documentation. `dam_rights_test.py` is the ratchet that enforces it."""
+    return [s for s in SOURCES if s.get("source_class") == "dam"]
 
 
 def enabled(klass=None, cadence=None):
