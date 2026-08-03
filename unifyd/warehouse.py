@@ -344,10 +344,30 @@ def write_accumulate(name, records, key, fields=None, coverage=True):
                 "write_accumulate(%r) called from shard %s — concurrent merge would LOSE ROWS. "
                 "Shards must write append-only parts (write_partition) and a single writer must "
                 "consolidate." % (name, _shard))
+        # AN UNREADABLE TABLE IS NOT AN EMPTY ONE. This used to be a bare `except: existing = []`, which
+        # turns a transient read blip into permanent data loss: the merge below writes `existing +
+        # records`, so an empty `existing` OVERWRITES the whole table with just this batch. Measured
+        # live 2026-08-03 on the salsify BBG crawl — two of 139 chunks (p0005, p0068) lost their rows
+        # exactly this way, 800 products gone, while their append-only property partitions landed fine.
+        # The run reported `ok`: verify-landing compares row counts, and later chunks re-grew the table
+        # past its previous size, so nothing downstream could see the hole.
+        #
+        # `row_count_strict` already draws this line for counts (_is_absent = a real 0, anything else =
+        # unknown, raise). Same rule here, with more at stake: retry first, treat genuine absence as the
+        # empty table it is, and RAISE on anything else so the caller fails loudly instead of clobbering.
         try:
-            existing = query(name, "SELECT * FROM t")
-        except Exception:
-            existing = []
+            existing = _retry(lambda: query(name, "SELECT * FROM t"), "read-for-merge %s" % name)
+        except Exception as e:
+            # Absence speaks in two dialects here: the storage layer's (_is_absent — 404/NoSuchKey/…)
+            # and DuckDB's, which reports a missing Parquet as `IO Error: No files found that match the
+            # pattern` (_NO_FILES). Both mean "this table does not exist yet", i.e. a first write.
+            # Anything else is UNKNOWN and must not be merged against.
+            if not (_is_absent(e) or any(s in str(e) for s in _NO_FILES)):
+                raise RuntimeError(
+                    "write_accumulate(%s): cannot read the existing table (%s). Refusing to merge — "
+                    "treating an unreadable table as empty would overwrite it with this batch alone."
+                    % (name, str(e)[:140]))
+            existing = []                     # genuinely not there yet: first write of a new table
         ks = {key(r) for r in records}
         merged = [e for e in existing if key(e) not in ks] + records
         res = write_parquet(name, merged, fields=fields)

@@ -179,5 +179,29 @@ ok("a seeded catalog keeps its stable id in the directory",
 ok("property values are capped, never dropped",
    len(salsify.property_row("c", "p", ("g", "n", "l", 0, "x" * 9000, ""), "d", 0)["value"]) == 4000)
 
+# ── landing failures must never be silent (the 800-product hole) ──────────────────────────────────
+# Live 2026-08-03: two of BBG's 139 chunks failed to merge into salsify_products while their
+# append-only property partitions landed. 800 products vanished; the run reported `ok` with no
+# warnings, because row-count verify-landing is blind to a hole that later chunks grow past.
+print("\nLanding integrity")
+_src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "salsify.py")).read()
+ok("_land RETURNS its failures instead of only logging them",
+   "def _land(" in _src and "return fails" in _src)
+ok("…and the caller collects them", "land_fails.extend(_land(" in _src)
+ok("…and they become run warnings, so the run degrades", "warns.extend(land_fails" in _src)
+ok("a chunk merge is retried before being called a failure",
+   "for attempt in range(3):" in _src and "land failed after 3 tries" in _src)
+ok("the run cross-checks FETCHED against LANDED, not just row-count movement",
+   "rows did not survive the " in _src
+   and "SELECT count(*) AS n FROM t WHERE catalog_id = ?" in _src)
+
+_wh = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "warehouse.py")).read()
+ok("write_accumulate no longer treats an unreadable table as empty",
+   "Refusing to merge" in _wh and "if not _is_absent(e):" in _wh)
+ok("…genuine absence still starts a new table",
+   "existing = []                     # genuinely not there yet" in _wh)
+ok("…and the read is retried before it is believed",
+   'lambda: query(name, "SELECT * FROM t"), "read-for-merge' in _wh)
+
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
