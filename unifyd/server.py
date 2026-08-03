@@ -335,6 +335,34 @@ def _registry_conn_rows():
     return rows
 
 
+def _conn_board_reads():
+    """The two BATCH reads behind the connector board's last-run column, cached and refreshed off the
+    request thread.
+
+    Measured on the live app: `ledger_last()` is 24.5s (it groups over every `source_runs_log` partition)
+    and `list_datasets()` 1.3s — so building the board inline cost ~26s of wall clock BEFORE any row was
+    rendered, and under load `/api/connectors` was taking 137s. That is the Pulls console's whole page.
+
+    `_ttl` is stale-while-revalidate and never blocks: a cold call returns `({}, None)` — a board with no
+    last-run column, which the polling UI fills in on its next tick — and refreshes in the background.
+    A board that renders immediately and completes itself beats one that hangs."""
+    return _ttl("conn_board_reads", 300, _conn_board_reads_now, cold=({}, None)) or ({}, None)
+
+
+def _conn_board_reads_now():
+    counts = {}
+    try:
+        import warehouse
+        counts = {d["name"]: d.get("rows") for d in warehouse.list_datasets()}
+    except Exception:
+        counts = {}
+    try:
+        import run_sources as _rs
+        return counts, _rs.ledger_last()
+    except Exception:
+        return counts, None
+
+
 def _conn_enabled():
     return (load("connectors.json", {}) or {}).get("enabled", {})
 
@@ -3618,20 +3646,7 @@ def connectors_list():
     """ONE board for every source: what exists, whether it's enabled (on/off), and its true last run — merged
     across warehouse <x>_runs, the runs log, and live data counts. The Pulls console renders off this."""
     en = _conn_enabled()
-    # TWO batch reads for the WHOLE board instead of two per connector. list_datasets() reads Parquet
-    # footers in parallel (never the data); ledger_last() is one grouped read of the shared run ledger.
-    # Both are best-effort — a board that renders without last-run beats one that times out.
-    counts, ledger = {}, None
-    try:
-        import warehouse
-        counts = {d["name"]: d.get("rows") for d in warehouse.list_datasets()}
-    except Exception:
-        counts = {}
-    try:
-        import run_sources as _rs
-        ledger = _rs.ledger_last()
-    except Exception:
-        ledger = None
+    counts, ledger = _conn_board_reads()
     out = []
     for m in CONNECTORS_META + _registry_conn_rows():
         out.append({"id": m["id"], "label": m.get("label"), "group": m.get("group"),
