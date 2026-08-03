@@ -593,6 +593,32 @@ def has_column(name, col):
         return False
 
 
+def attach_view(con, name, view="t"):
+    """Create `view` on `con` over dataset `name`, applying the same manifest dual-read query()
+    uses. Returns False when a bucketed table has no active parts (= genuinely empty), True
+    otherwise. Retries transients — a dropped read is not an empty table.
+
+    Exists so a caller that needs to JOIN a warehouse table against something else on its OWN
+    connection (e.g. geo_resolve's spatial join against TIGER shapefiles) does not have to
+    re-implement the bucketed/v1 path resolution. query() is now a thin wrapper over it, so the
+    two can never drift."""
+    def _mkview():
+        man = read_manifest(name)
+        if man and man.get("layout") == "bucketed":
+            files = [f for p in (man.get("parts") or {}).values() for f in (p.get("files") or [])]
+            if not files:
+                return False
+            lst = ", ".join("'%s'" % _part_sql_path(f).replace("'", "") for f in files)
+            con.execute("CREATE OR REPLACE VIEW %s AS SELECT * FROM read_parquet([%s], union_by_name=true)"
+                        % (view, lst))
+        else:
+            src = uri(name).replace("'", "")
+            con.execute("CREATE OR REPLACE VIEW %s AS SELECT * FROM read_parquet('%s')" % (view, src))
+        return True
+
+    return _retry(_mkview, what="parquet view %s" % name)
+
+
 def query(name, sql=None, params=None):
     """Query dataset `name` in place. `sql` may reference the view `t` (the Parquet).
     Defaults to `SELECT * FROM t`. Returns a list of dicts.
@@ -610,21 +636,7 @@ def query(name, sql=None, params=None):
     which universe() then reported as "0 stores" and the whole shard exited as failed. Retrying
     here means a blip costs seconds, not a shard's whole run."""
     con = connect()
-    man = read_manifest(name)
-
-    def _mkview():
-        if man and man.get("layout") == "bucketed":
-            files = [f for p in (man.get("parts") or {}).values() for f in (p.get("files") or [])]
-            if not files:
-                return False
-            lst = ", ".join("'%s'" % _part_sql_path(f).replace("'", "") for f in files)
-            con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet([%s], union_by_name=true)" % lst)
-        else:
-            src = uri(name).replace("'", "")
-            con.execute("CREATE OR REPLACE VIEW t AS SELECT * FROM read_parquet('%s')" % src)
-        return True
-
-    if not _retry(_mkview, what="parquet view %s" % name):
+    if not attach_view(con, name):
         return []
     cur = _retry(lambda: con.execute(sql or "SELECT * FROM t", params or []), what="parquet scan %s" % name)
     cols = [d[0] for d in cur.description]
