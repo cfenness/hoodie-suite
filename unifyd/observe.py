@@ -57,7 +57,60 @@ NON_ALC_BRANDS = re.compile(
 # answers "everything this connector landed, across every chain it touched" in one query — no per-chain
 # special-casing needed by a generic reader.
 OBS_FIELDS = ["date", "observed_at", "source", "chain", "store", "store_id", "product_id", "upc", "gtin",
-              "brand", "name", "price", "promo", "on_promo", "in_stock", "qty", "stock_level", "is_hemp"]
+              "brand", "name", "price", "promo", "promo_text", "on_promo", "in_stock", "qty",
+              "stock_level", "is_hemp"]
+
+# PIN EVERY COLUMN'S TYPE. Without this, pa.Table.from_pylist infers each partition's schema from
+# THAT batch's values alone — so a column that happens to be all-None in one run lands as a `null`
+# column while another run lands it as int64/double/string, and the union_by_name read across all
+# partitions then has to reconcile incompatible types for one column. That does not fail cleanly: it
+# corrupts the read with an invalid-UTF8 decode error (write_partition's own docstring records this
+# exact failure on ubereats_products_parts, 2026-07-30 — the fix was added there and never applied
+# here). Measured on retail_observations 2026-08-03: 13 distinct per-file schemas across 3,622
+# partitions, and the whole 51.7M-row table was unreadable to any aggregate query.
+#
+# `promo` is DOUBLE because that is what consumers mean by it — locator_signal.shelf_and_promo()
+# reads it as the deal PRICE and compares it against `price`. Sources that publish an offer STRING
+# ("2 for $4.50", "Buy 2, Save $3" — 7NOW does) get `promo_text` instead of having a number invented
+# for them or their text silently cast to NULL.
+def _dtypes():
+    import pyarrow as pa
+    return {"date": pa.string(), "observed_at": pa.int64(), "source": pa.string(),
+            "chain": pa.string(), "store": pa.string(), "store_id": pa.string(),
+            "product_id": pa.string(), "upc": pa.string(), "gtin": pa.string(),
+            "brand": pa.string(), "name": pa.string(),
+            "price": pa.float64(), "promo": pa.float64(), "promo_text": pa.string(),
+            "on_promo": pa.bool_(), "in_stock": pa.bool_(),
+            "qty": pa.float64(), "stock_level": pa.string(), "is_hemp": pa.bool_()}
+
+
+def _f(v):
+    """A numeric column stays numeric. A source handing back '12.99' must not make the whole
+    partition's column infer as VARCHAR — that divergence is the bug this module now guards."""
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        return float(str(v).strip().replace("$", "").replace(",", ""))
+    except ValueError:
+        return None
+
+
+def split_promo(v):
+    """(numeric promo price, promo text). A source may publish either; the schema carries both so
+    neither is lost. A bare number in a string ('4.50') is still a price."""
+    if v is None or isinstance(v, bool):
+        return None, ""
+    if isinstance(v, (int, float)):
+        return float(v), ""
+    s = str(v).strip()
+    if not s:
+        return None, ""
+    try:
+        return float(s.replace("$", "").replace(",", "")), ""
+    except ValueError:
+        return None, s          # a real offer string — keep it verbatim, invent no number
 
 
 def is_hemp(*texts):
@@ -86,18 +139,22 @@ def record(source, rows, date=None, log=print, part=None):
     now = int(time.time())
     out = []
     for r in rows:
+        promo_num, promo_txt = split_promo(r.get("promo"))
+        if not promo_txt:
+            promo_txt = str(r.get("promo_text") or "")
         out.append({"date": date, "observed_at": int(r.get("observed_at") or now), "source": source,
                     "chain": r.get("chain", ""),
                     "store": r.get("store", ""), "store_id": str(r.get("store_id", "") or ""),
                     "product_id": str(r.get("product_id", "") or ""), "upc": str(r.get("upc", "") or ""),
                     "gtin": str(r.get("gtin", "") or ""),
                     "brand": r.get("brand", ""), "name": r.get("name", ""),
-                    "price": r.get("price"), "promo": r.get("promo"),
+                    "price": _f(r.get("price")), "promo": promo_num, "promo_text": promo_txt,
                     "on_promo": bool(r.get("on_promo")), "in_stock": bool(r.get("in_stock")),
-                    "qty": r.get("qty"), "stock_level": r.get("stock_level", ""),
+                    "qty": _f(r.get("qty")), "stock_level": r.get("stock_level", ""),
                     "is_hemp": bool(r.get("is_hemp"))})
     try:
-        warehouse.write_partition("retail_observations", part or ("%s_%s" % (date, source)), out, OBS_FIELDS)
+        warehouse.write_partition("retail_observations", part or ("%s_%s" % (date, source)), out,
+                                  OBS_FIELDS, dtypes=_dtypes())
         log("  [observe] +%d %s observations @ %s -> retail_observations" % (len(out), source, date))
     except Exception as e:
         log("  [observe] land failed: %s" % str(e)[:100])

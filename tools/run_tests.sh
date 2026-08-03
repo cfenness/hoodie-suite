@@ -53,6 +53,13 @@ TESTS=(
   velocity_signals_test
   master_quality_test
   representativeness_test
+  warehouse_dtype_test         # a partition's schema is DECLARED, never inferred from one batch
+  warehouse_falsezero_test     # a blipped read/listing RAISES; it never becomes zero rows
+  warehouse_query_falsezero_test
+  observe_schema_test          # retail_observations partitions cannot drift apart again
+  repair_partitions_test       # canonicalising a drifted table is lossless
+  geo_resolve_test             # lat/lng -> county/CBSA/ZCTA: border points, rural gaps, degrade floor
+  metro_analytics_test         # metro claims: unknown != independent, median not mean
 )
 
 FILTER="${1:-}"
