@@ -164,13 +164,40 @@ _GRANT = [
     ("royalty-free", r"royalty[-\s]free", 2),
     ("editorial-grant",
      r"(?:free|may be (?:used|reproduced|downloaded))[^.]{0,80}?for editorial (?:use|purposes)", 2),
+    # Tightened after a live false positive: the old pattern spanned 120 characters across sentence
+    # boundaries and matched "…your right to use the Sites will immediately cease and Heaven Hill
+    # Brands may, without…" as a press grant. A grant to the press must name what may be used.
     ("press-grant",
-     r"(?:press|media|journalists?)[^.]{0,80}?(?:may|are permitted to|are free to)[^.]{0,40}?"
-     r"(?:use|download|reproduce|publish)", 2),
+     r"(?:press|media|journalists?|accredited media)[^.]{0,60}?(?:may|are permitted to|are free to)"
+     r"[^.]{0,30}?(?:use|download|reproduce|publish)[^.]{0,40}?"
+     r"(?:image|photo|asset|material|content|logo|artwork)", 2),
     ("news-reporting-grant",
      r"may (?:be )?(?:use[d]?|reproduce[d]?|publish(?:ed)?)[^.]{0,80}?for (?:news|press) (?:reporting|use)", 2),
     ("permission-granted", r"(?:we )?(?:hereby )?grant (?:you )?a[^.]{0,60}?licen[cs]e", 1),
 ]
+
+# ── DIRECTIONALITY: whose licence is it? ──────────────────────────────────────────────────────────
+# The single most dangerous misread in this whole capability, found live on THREE suppliers at once.
+# Every corporate ToS contains a lavish, perpetual, ROYALTY-FREE licence — and it runs the wrong way:
+# it is the licence YOU grant THEM over anything you upload.
+#
+#   AB InBev      "(b) grant ABI an unlimited, perpetual, royalty-free … license to use, modify…"
+#   William Grant "…you grant the Company a perpetual, worldwide, royalty-free … right and license…"
+#   Heaven Hill   "…you irrevocably grant Heaven Hill Brands … a … royalty-free license to: (i) display…"
+#
+# All three classified `permitted / editorial_press` at HIGH confidence, which would have authorised
+# a CV gallery on assets nobody licensed to us. The negation guard could not catch it: there is no
+# negation, the direction is simply inbound. So grant matches are now checked for an INBOUND context
+# and, when found, recorded as evidence with ZERO weight — visible in the audit trail (a reviewer
+# should see that the clause exists and why it was rejected), counted for nothing.
+_INBOUND = re.compile(
+    r"\byou\b[^.]{0,60}\b(?:grant|give|assign|licen[cs]e)\b"
+    r"|\bgrant(?:s|ing)?\b[^.]{0,40}\b(?:us|we|our|the company|its affiliates)\b"
+    r"|\bgrant\b\s+[A-Z][A-Za-z&.\- ]{2,40}\s+(?:an?|its)\b"
+    r"|\b(?:your|user|consumer)\s+(?:content|submission|feedback|contribution|material)s?\b"
+    r"|\bsubmissions?\b|\byou\s+(?:submit|upload|post|contribute|provide)\b"
+    r"|\buser[-\s]generated\b", re.I)
+_INBOUND_WINDOW = 420
 
 # Scope hints — read only when a grant was found. Strongest hint wins.
 _SCOPE_HINTS = [
@@ -203,21 +230,40 @@ _NEG = re.compile(r"\b(?:not|never|no|nothing|except|without|neither|nor)\b", re
 _NEG_WINDOW = 70
 
 
-def _hits(text, rules, guard_negation=False):
-    """Run a rule table over the text → [(name, weight, verbatim quote)]. Quotes are trimmed to a
-    readable sentence-ish window so `evidence[]` is reviewable without re-reading the whole ToS.
+def _inbound(text, start):
+    """True when the licence around `start` runs FROM the reader TO the publisher (a UGC clause).
+    Looks BACKWARD only: "you grant …" always precedes the "royalty-free" it qualifies."""
+    return bool(_INBOUND.search(text[max(0, start - _INBOUND_WINDOW):start + 40]))
 
-    With `guard_negation`, a match whose immediately preceding window carries a negation is skipped
-    and the scan continues — so one negated occurrence cannot suppress a genuine grant elsewhere in
-    the document, and cannot count as one either."""
+
+def _hits(text, rules, guard_negation=False, guard_direction=False):
+    """Run a rule table over the text → [(name, weight, verbatim quote, side)]. Quotes are trimmed to
+    a readable sentence-ish window so `evidence[]` is reviewable without re-reading the whole ToS.
+
+    `guard_negation` skips a match sitting inside a negation and keeps scanning, so one negated
+    occurrence neither counts as a grant nor suppresses a real one elsewhere.
+
+    `guard_direction` skips a match whose licence runs INBOUND (the reader granting the publisher).
+    The skipped match is still returned, with weight 0 and side "grant-inbound", so the audit trail
+    shows the clause was seen and rejected — silently dropping it would leave a reviewer wondering
+    whether we noticed the enormous royalty-free licence in the document."""
     out = []
     for name, pat, weight in rules:
+        rejected = None
+        matched = False
         for m in re.finditer(pat, text, re.I | re.S):
             if guard_negation and _NEG.search(text[max(0, m.start() - _NEG_WINDOW):m.start()]):
                 continue
             s, e = max(0, m.start() - 60), min(len(text), m.end() + 60)
-            out.append((name, weight, re.sub(r"\s+", " ", text[s:e]).strip()))
+            quote = re.sub(r"\s+", " ", text[s:e]).strip()
+            if guard_direction and _inbound(text, m.start()):
+                rejected = rejected or (name, 0, quote, "grant-inbound")
+                continue
+            out.append((name, weight, quote, "grant" if guard_direction else "prohibit"))
+            matched = True
             break
+        if rejected and not matched:
+            out.append(rejected)
     return out
 
 
@@ -234,16 +280,18 @@ def classify(tos_text):
     with `confidence="medium"` and `needs_counsel=True` — the contradiction is the finding."""
     text = tos_text or ""
     pro = _hits(text, _PROHIBIT)
-    grant = _hits(text, _GRANT, guard_negation=True)
-    pro_w = sum(w for _n, w, _q in pro)
-    grant_w = sum(w for _n, w, _q in grant)
+    grant = _hits(text, _GRANT, guard_negation=True, guard_direction=True)
+    pro_w = sum(w for _n, w, _q, _s in pro)
+    grant_w = sum(w for _n, w, _q, _s in grant)
+    # Only OUTBOUND grants count; inbound ones ride along as zero-weight evidence.
+    real_grants = [g for g in grant if g[3] == "grant"]
 
     if not text.strip():
         image_use, confidence = "silent", "low"
     elif grant_w > pro_w:
         image_use, confidence = "permitted", ("high" if not pro else "medium")
     elif pro_w > 0:
-        image_use, confidence = "prohibited", ("high" if not grant else "medium")
+        image_use, confidence = "prohibited", ("high" if not real_grants else "medium")
     else:
         image_use, confidence = "silent", "low"
 
@@ -266,8 +314,8 @@ def classify(tos_text):
     # classification the parser could not make decisively.
     needs_counsel = bool(image_use == "permitted" or confidence != "high" or image_use == "silent")
 
-    evidence = [{"rule": n, "weight": w, "quote": q, "side": "prohibit"} for n, w, q in pro]
-    evidence += [{"rule": n, "weight": w, "quote": q, "side": "grant"} for n, w, q in grant]
+    evidence = [{"rule": n, "weight": w, "quote": q, "side": "prohibit"} for n, w, q, _s in pro]
+    evidence += [{"rule": n, "weight": w, "quote": q, "side": s} for n, w, q, s in grant]
     return {
         # `facts_use` is carried explicitly rather than left implicit. It is near-always "permitted"
         # (facts are uncopyrightable), and writing it down is the point: a reviewer reading a record
@@ -283,7 +331,9 @@ def classify(tos_text):
         "confidence": confidence,
         "needs_counsel": needs_counsel,
         "evidence": evidence,
-        "rules_matched": {"prohibit": [n for n, _w, _q in pro], "grant": [n for n, _w, _q in grant],
+        "rules_matched": {"prohibit": [n for n, _w, _q, _s in pro],
+                          "grant": [n for n, _w, _q, s in grant if s == "grant"],
+                          "grant_inbound": [n for n, _w, _q, s in grant if s == "grant-inbound"],
                           "prohibit_weight": pro_w, "grant_weight": grant_w},
     }
 

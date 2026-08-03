@@ -193,7 +193,14 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   none/internal_only/editorial_press/commercial_redistribution, attribution/alteration/trade-only/
   expiry/confidence/needs_counsel, plus `facts_use` written out explicitly so a `prohibited`
   record cannot be misread as "this source is off"). The design's three scope values gain a fourth,
-  `none`, because a hold needs a scope to *be*. `rights.load()` **raises if the record is missing** — there is no
+  `none`, because a hold needs a scope to *be*.
+  **A grant must run the right way.** Every corporate ToS contains a lavish perpetual ROYALTY-FREE
+  licence — and it is the one *you* grant *them* over anything you upload. Measured live on three
+  suppliers at once (AB InBev, William Grant, Heaven Hill), all three classified
+  `permitted/editorial_press` at HIGH confidence off their user-content clause, which would have
+  authorised a CV gallery on assets nobody licensed to us. Grant rules are therefore direction-
+  guarded; an inbound match is kept as ZERO-weight evidence (`grant-inbound`) so a reviewer can see
+  the clause was found and rejected. `rights.load()` **raises if the record is missing** — there is no
   harvest-now-sort-the-rights-out-later path. `may()/require()/emit()` are the only interpretation of
   the model, every emission (allowed *and denied*) is logged to `dam_emissions`, and `dam_rights_test.py`
   is the ratchet that fails a registry row lacking its record.
@@ -260,6 +267,19 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   folders**. Coverage is *not* gated on the platform's `file_amount` counter, which is stale in both
   directions (Videos claims 2 serves 4; Media Files claims 0 serves 75) — it is gated on visiting
   every folder, and a shortfall is a warning, never a silent partial.
+- **`unifyd/dam_gallery.py`** (source `dam-gallery`, weekly) — the **CV reference gallery** (P3):
+  pointer + licence + perceptual hash + embedding per official studio image, each derivation gated
+  **per asset** (never once at the top of a run, so a record going stale mid-run stops the rest).
+  A row always lands — a NULL `phash` with a `withheld_reason` is the honest shape; a missing row
+  would read as "the supplier had no imagery". The dHash is for **identity within the gallery**
+  (the same studio file uploaded five times collapses to one reference) and explicitly NOT the
+  studio→shelf matcher — perceptual hashes fail on bottles in the wild ([[image-match-signal]]),
+  where the embedding is the signal. The embedding backend is **pluggable and absent by default**:
+  CLIP needs torch, which this image does not ship, so `embedder()` resolves one if present and
+  otherwise reports `embedding_backend="unavailable"` rather than quietly shipping a vector-less
+  gallery.
+  **It is currently empty on purpose.** No surveyed supplier grants image reuse, so the pipeline runs,
+  lands pointers, and derives nothing. That is the gate working.
 - **`unifyd/dam_census.py`** (source `dam-census`, monthly) — the **vendor census** (P4): supplier →
   media centre → DAM vendor → public? → a **provisional** permission class. It is what tells you which
   platform to build the next connector for. **Discovery is link-following, not hostname guessing**:

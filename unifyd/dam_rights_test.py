@@ -25,6 +25,7 @@ def check(cond, msg):
         FAILS.append(msg)
 
 
+registered_ids = {x["id"] for x in sr.SOURCES}
 dams = sr.dam_sources()
 print("dam sources: %d" % len(dams))
 check(dams, "at least one DAM source is registered")
@@ -43,7 +44,14 @@ for s in dams:
     if not os.path.exists(path):
         continue
 
-    rec = rights.load(sid)
+    # Resolve the record by its DECLARED PATH, not by source id. A source may legitimately operate
+    # under another source's terms — `dam-gallery` derives from `dam-bacardi`'s assets and is bound
+    # by Bacardi's terms, so it must not need (or be allowed) a second record of its own that could
+    # drift from the one the assets were collected under.
+    rid = os.path.basename(path)[:-5]
+    check(rid in registered_ids,
+          "%s: its record (%s) belongs to a registered source" % (sid, rid))
+    rec = rights.load(rid)
     p = rec.get("permissions") or {}
     check(rec.get("tos_url"), "%s: record names the governing terms URL" % sid)
     check(len(rec.get("tos_snapshot") or "") >= rights.MIN_TOS_CHARS,
@@ -60,6 +68,11 @@ for s in dams:
     check(p.get("scope") in rights.SCOPES,
           "%s: scope is one of %s (got %r)" % (sid, rights.SCOPES, p.get("scope")))
     check(p.get("evidence"), "%s: the classification cites verbatim evidence" % sid)
+    # A grant that came from an INBOUND (user-content) clause is the misread that would authorise a
+    # gallery on unlicensed assets — assert no record was ever built on one.
+    check(not (p.get("image_use") == "permitted"
+               and not (p.get("rules_matched") or {}).get("grant")),
+          "%s: a `permitted` verdict rests on a real OUTBOUND grant rule" % sid)
     check(rec.get("reviewed_at"), "%s: the record records who/when it was reviewed" % sid)
 
     # The load-bearing invariant: anything short of an explicit, counsel-cleared grant must deny
@@ -80,7 +93,7 @@ for s in dams:
 # Every record on disk belongs to a registered source — an orphan record is a permission floating free
 # of anything that could enforce it.
 print("\norphan records:")
-registered = {s["id"] for s in sr.SOURCES}
+registered = registered_ids
 orphans = [r for r in rights.list_records() if r not in registered]
 check(not orphans, "no rights record without a registered source (%s)" % (orphans or "clean"))
 

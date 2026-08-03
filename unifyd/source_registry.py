@@ -555,6 +555,22 @@ SOURCES = [
               "requests for the whole drive. POINTERS + facts only: the rights record classifies "
               "image reuse `prohibited`, so no asset bytes, hashes or embeddings are ever produced."),
 
+    # The CV reference gallery (P3). Runs AFTER dam-bacardi has landed dam_assets, and derives only
+    # what that source's rights record permits — today, nothing: every supplier surveyed classifies
+    # prohibited or silent, so this lands POINTER rows carrying the withheld reason. Keeping it
+    # enabled is deliberate: the rows are the standing record of what a grant would unlock, and the
+    # run reports `derived: 0` honestly rather than the table simply not existing.
+    dict(id="dam-gallery", label="DAM CV reference gallery (scope-gated)", source_class="dam",
+         caps=['pillow'],   # optional lib this source silently degrades without (capability.py)
+         code="import dam_gallery as m; m.build('dam-bacardi')",
+         tables=["dam_gallery"], klass="headless", cadence="weekly", enabled=True,
+         cost_class="free", interval_h=168, timeout=3600, mem=4096,
+         rights_record="rights_records/dam-bacardi.json",
+         after=["dam-bacardi"],
+         note="pointer + licence + pHash + embedding per studio image, each derivation gated per "
+              "asset. Embedding backend is pluggable and ABSENT by default (torch is not in the "
+              "image) — rows land NULL vectors and name the backend rather than looking empty."),
+
     # The census is RESEARCH, not a feed: it maps supplier -> media centre -> DAM vendor -> public? ->
     # a PROVISIONAL permission class, so connector work goes to the vendors that cover the most
     # suppliers. Nothing runs off `dam_census` — promoting a supplier means authoring a reviewed
