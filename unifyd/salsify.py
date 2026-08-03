@@ -699,6 +699,14 @@ def crawl_catalog(catalog_id=None, org=None, site=None, pages=None, workers=12, 
             if holes:
                 log("[salsify] %d products have no property capture — re-fetching them" % len(holes))
                 done = done - holes
+                # AND FORGET THEIR FINGERPRINT. Re-fetching alone repairs nothing: the emit gate is
+                # `fps.get(pid) != properties_hash`, and the hash comes from the wide row, which was
+                # never lost — so a re-fetched hole matched its own fingerprint and emitted zero
+                # property rows. Observed: a repair run re-fetched all 3,143 holes and left
+                # salsify_properties byte-identical at 1,660,264. Dropping the fingerprint is what
+                # makes the product look new again, which is what a hole IS.
+                for pid in holes:
+                    fps.pop(pid, None)
         except Exception as e:
             warns.append("property-hole check skipped: %s" % str(e)[:90])
 
