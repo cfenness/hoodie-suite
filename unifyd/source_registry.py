@@ -605,7 +605,7 @@ BUILDS = [
     dict(id="build-dist-xwalk", label="Distributor item crosswalk (Overlay Tier-3 spine)",
          code="import dist_xwalk as m; m.build()",
          tables=["dist_item_xwalk"], klass="build", interval_h=24, enabled=True,
-         after=["build-item-identity"],
+         after=["vip-brandbuilder"],
          note="dist_item_code|retail_upc → canon_item_id from vip_brandbuilder_items + bbg_products"),
     dict(id="build-master-quality-canon", label="Master quality — served canon identity (head-to-head)",
          code="import master_quality as m; m.score_canon()",
