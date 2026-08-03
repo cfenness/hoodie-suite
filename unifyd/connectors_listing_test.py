@@ -70,7 +70,42 @@ ok("anti-bot browser sources are flagged heavy",
 ok("disabled registry sources are NOT auto-listed (manual-trigger-only stays manual)",
    not ({s["id"] for s in reg.SOURCES if not s.get("enabled")} & {r["id"] for r in fallthrough}))
 
+
+# ── the Scrape Run Tracker's source directory (/api/runs/docs) ───────────────────────────────────
+# Same rule, second surface: the tracker's dropdown was two hardcoded entries, so a new scrape was
+# untrackable until hand-added. It now derives from the registry, with the doc-backed long runs on top.
+print("\nScrape Run Tracker directory")
+docs_block = src[src.index("_RUN_DOCS = ["):]
+docs_block = docs_block[:docs_block.index("\n]\n")]
+run_docs = set(re.findall(r'\{"id": "([^"]+)"', docs_block))
+scrapes_block = src[src.index("_SCRAPES = ["):]
+scrapes_block = scrapes_block[:scrapes_block.index("\n]\n")]
+scrapes = set(re.findall(r'\{"id": "([^"]+)"', scrapes_block))
+tracker = run_docs | enabled_ids
+
+ok("the tracker directory endpoint exists", '@app.get("/api/runs/docs")' in src)
+ok("doc-backed long runs are still first-class", {"ubereats", "doordash"} <= run_docs)
+ok("every enabled registry source is selectable in the tracker", enabled_ids <= tracker)
+ok("bbg + salsify have a live-data table wired (_SCRAPES)", {"bbg", "salsify"} <= scrapes)
+ok("partitioned tables are never handed to the dataset reader",
+   'not t.endswith("_parts")' in src)
+ok("kebab-case registry ids are accepted by /api/scrape/dataset",
+   'site.replace("_", "").replace("-", "").isalnum()' in src,
+   "dashed ids like trader-joes / abc-fws would 400")
+
+tracker_html = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "apps", "scrape-run-tracker.html")
+if os.path.exists(tracker_html):
+    html = open(tracker_html).read()
+    ok("the tracker fetches the live directory", "/api/runs/docs" in html)
+    ok("…and still works with no backend (fallback list retained)",
+       "loadSourceDirectory" in html and 'id:"ubereats"' in html)
+    ok("a source with no tick doc is explained, not 404'd against undefined",
+       "if(!src.path) throw" in html)
+
 print("\n%d listed (%d curated + %d derived) of %d enabled registry sources"
       % (len(listed), len(curated), len(fallthrough), len(enabled_ids)))
+print("%d selectable in the Scrape Run Tracker (%d doc-backed + %d registry)"
+      % (len(tracker), len(run_docs), len(enabled_ids - run_docs)))
 print("%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

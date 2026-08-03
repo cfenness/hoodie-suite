@@ -193,23 +193,53 @@ table.dg-t{border-collapse:separate;border-spacing:0;font-family:ui-monospace,SF
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&lt;",">":"&gt;","&":"&amp;"}[c]||c));
 
-// Known run docs. Add an entry here for every new tracked source — this is the "select the scrape
-// source" seam that a future /api/runs/docs endpoint can replace with a live directory listing.
+// The source list is LIVE — /api/runs/docs returns the doc-backed long runs plus every enabled
+// source_registry entry, so a new scrape is selectable here the day it lands instead of waiting for
+// someone to hand-add it. The array below is the OFFLINE fallback only (a bare static file server
+// with no /api/*), which is why it stays in sync with the server's _RUN_DOCS.
 // dataTable is the WAREHOUSE table this source actually lands rows into — that's what the "Live
 // data" modal shows (via /api/source), as opposed to `path`, which is just the tick-progress log.
 // NOTE: must be a FLAT (non-partitioned) table — /api/source's `warehouse.query()` reads a single
 // `<name>.parquet` and can't see date-partitioned tables like `ubereats_products_parts` (confirmed
 // live: it 404s). Point at the consolidated table instead; it's the latest *folded-in* snapshot,
-// not up-to-the-second, but /api/source has no partitioned-table path today.
-const SOURCES=[
+// not up-to-the-second, but /api/source has no partitioned-table path today. The endpoint filters
+// `_parts` tables out for the same reason, so a derived source never hands the UI a table it fails on.
+let SOURCES=[
   {id:"ubereats", label:"UberEats — fresh-IP catalog run", path:"../docs/ubereats-fresh-ip-run-2026-07-30.md",
-   dataTable:"ubereats_products"},
+   dataTable:"ubereats_products", kind:"doc"},
   {id:"doordash", label:"DoorDash — full-catalog chain run", path:"../docs/doordash-full-run-2026-07-30.md",
-   dataTable:"doordash_stores"},
+   dataTable:"doordash_stores", kind:"doc"},
 ];
 
 const sel=$("#src");
-SOURCES.forEach(s=>{ const o=document.createElement("option"); o.value=s.id; o.textContent=s.label; sel.appendChild(o); });
+function fillSourceSelect(){
+  const keep=sel.value;
+  sel.innerHTML="";
+  let group=null, parent=sel;
+  for(const s of SOURCES){
+    // doc-backed runs first, then the registry — grouped so the tick-by-tick runs stay findable
+    // once the registry adds several dozen entries below them.
+    const g=s.kind==="doc"?"Live run docs":"Registry sources";
+    if(g!==group){ group=g; parent=document.createElement("optgroup"); parent.label=g; sel.appendChild(parent); }
+    const o=document.createElement("option");
+    o.value=s.id; o.textContent=s.label+(s.kind!=="doc"&&!s.hasDoc?" · rows only":"");
+    parent.appendChild(o);
+  }
+  if(keep && SOURCES.some(s=>s.id===keep)) sel.value=keep;
+}
+fillSourceSelect();
+
+// Swap in the live directory as soon as the backend answers. Failure is a no-op: the fallback list
+// above still works, so a missing/older backend degrades to exactly the previous behaviour.
+async function loadSourceDirectory(){
+  try{
+    const j=await (await fetch("/api/runs/docs",{cache:"no-store"})).json();
+    if(!j || !j.ok || !Array.isArray(j.sources) || !j.sources.length) return false;
+    SOURCES=j.sources;
+    fillSourceSelect();
+    return true;
+  }catch(e){ return false; }
+}
 
 // ── tiny markdown renderer — just enough for these docs: **bold**, `code`, and -bullets (one
 // level of nesting). Wrapped bullet text (a continuation line with no leading "-") gets folded
@@ -497,6 +527,10 @@ async function fetchDoc(src){
     const ct=r.headers.get("content-type")||"";
     if(r.ok && ct.includes("text/markdown")) return await r.text();
   }catch(e){ /* no backend at this origin at all — fall through to the raw path below */ }
+  // A registry-derived source has no hand-written doc under docs/ — say so plainly instead of
+  // fetching "undefined" and reporting a bogus 404 against a path that was never meant to exist.
+  if(!src.path) throw new Error("no tick-progress doc for this source — it reports through the "
+                               +"warehouse, so use Live Data below");
   const r2=await fetch(src.path+"?_="+Date.now(), {cache:"no-store"});
   if(!r2.ok) throw new Error("HTTP "+r2.status);
   return await r2.text();
@@ -771,8 +805,10 @@ sel.addEventListener("change", loadDataset);
 $("#refresh").addEventListener("click", load);
 $("#refresh").addEventListener("click", loadDataset);
 sel.value=SOURCES[0].id;
-load();
-loadDataset();
+// Pull the live directory FIRST so the dropdown is complete before the first render; if it fails we
+// just proceed on the fallback list. Either way the first load() runs.
+loadSourceDirectory().then(()=>{ if(!SOURCES.some(s=>s.id===sel.value)) sel.value=SOURCES[0].id;
+                                 load(); loadDataset(); });
 setInterval(load, POLL_MS);
 setInterval(loadDataset, DATASET_POLL_MS);
 </script>
