@@ -238,17 +238,17 @@ def build(cbsa, out_dir, log=print):
     <div class="s"><b>%(zips)d</b><span>ZIP codes</span></div>
    </div>
    <dl style="margin-top:14px">
-    <dt>Independent <span style="color:var(--faint)">(of classified)</span></dt><dd>%(indie)s (%(indiepct).0f%%)</dd>
-    <dt>Chain <span style="color:var(--faint)">(of classified)</span></dt><dd>%(chain)s</dd>
+    <dt>Matched to a known chain</dt><dd>%(chain)s</dd>
+    <dt>No chain match</dt><dd>%(indie)s (%(indiepct).0f%%)</dd>
     <dt>Not yet classified</dt><dd>%(unknown)s</dd>
     <dt>ZIPs with at least one account</dt><dd>%(covzips)d</dd>
    </dl>
    <div class="chips2">%(srcs)s</div>
    <div class="note"><b>This is a floor, not a census.</b> These are the accounts we hold and have
     resolved to this metro by point-in-polygon — coverage varies by source, so read it as observed
-    reach rather than every licensed door in the market. The chain/independent split is taken over
-    the <b>%(known)s accounts carrying a chain flag</b>, not over the whole book; the rest are
-    reported as unclassified rather than assumed.</div>
+    reach rather than every licensed door in the market. <b>"No chain match" is not the same as
+    "verified independent"</b>: chain status is decided by matching the account name against a known
+    chain list, so the figure is a reliable ceiling on independents rather than a count of them.</div>
   </div>
 
   <div class="panel wide">

@@ -56,6 +56,12 @@ def test_deck_percentages_use_known_denominator():
     ok("deck no longer divides the split by total accounts",
        's["independent"] / s["accounts"]' not in src)
 
+    # is_chain is set by matching the account name against a known-chain list, so a False is
+    # "no match", NOT "verified independent". The page must not upgrade a heuristic into a finding.
+    ok("deck labels the bucket as a chain MATCH, not a verdict", "Matched to a known chain" in src)
+    ok("deck states the limitation in words", 'not the same as' in src and 'verified independent' in src)
+    ok("deck no longer prints a bare 'Independent' claim", "<dt>Independent</dt>" not in src)
+
 
 def test_index_uses_median_not_mean():
     src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "metro_analytics.py")).read()

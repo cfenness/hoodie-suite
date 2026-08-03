@@ -138,8 +138,9 @@ def metro_summary(cbsa):
             "demand_per_hh": (tot / hh) if hh else 0.0,
             "demand_per_account": (tot / accounts) if accounts else 0.0,
             "sources": srcs,
-            "coverage_note": "account counts are OBSERVED coverage (a floor), not a licence census; "
-                             "chain/independent and alcohol flags are known for `attributed` only"}
+            "coverage_note": "account counts are OBSERVED coverage (a floor), not a licence census. "
+                             "`independent` means NO MATCH against the known-chain name list, not a "
+                             "verified independent — treat it as a ceiling on independents, not a count"}
 
 
 def neighborhoods(cbsa, min_accounts=None):
