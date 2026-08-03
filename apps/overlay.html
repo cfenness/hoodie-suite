@@ -10,72 +10,119 @@
   :root{ --font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace; }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--paper,#F4F6F5);color:var(--ink,#243330);font-family:var(--font);font-size:13.5px}
-  .wrap{max-width:1000px;margin:0 auto;padding:22px 22px 60px}
-  .head h1{font-size:24px;font-weight:800;letter-spacing:-.02em;margin:0}
-  .head .s{color:var(--ink-soft,#5E6B68);font-size:13.5px;margin-top:4px;max-width:72ch;line-height:1.5}
-  .drop{margin-top:18px;border:2px dashed var(--hair,#D7DDDB);border-radius:14px;background:#fff;padding:40px 24px;text-align:center;cursor:pointer;transition:.15s}
+  .wrap{max-width:1080px;margin:0 auto;padding:22px 22px 80px}
+  .head h1{font-size:25px;font-weight:800;letter-spacing:-.02em;margin:0}
+  .head .s{color:var(--ink-soft,#5E6B68);font-size:13.5px;margin-top:5px;max-width:76ch;line-height:1.55}
+  .head .s b{color:var(--ink,#243330);font-weight:700}
+
+  .drop{margin-top:18px;border:2px dashed var(--hair,#D7DDDB);border-radius:14px;background:#fff;padding:34px 24px;text-align:center;cursor:pointer;transition:.15s}
   .drop:hover,.drop.over{border-color:var(--amber,#4E79A7);background:var(--slate-tint,#DCE4EC)}
-  .drop .ic{font-size:30px}
+  .drop .ic{font-size:26px;opacity:.7}
   .drop .t{font-weight:700;font-size:15px;margin-top:8px}
-  .drop .sub{color:var(--ink-soft,#5E6B68);font-size:12.5px;margin-top:4px}
+  .drop .sub{color:var(--ink-soft,#5E6B68);font-size:12.5px;margin-top:5px}
   .paste{margin-top:10px;display:flex;gap:8px;align-items:flex-start}
-  .paste textarea{flex:1;min-height:44px;border:1px solid var(--hair,#D7DDDB);border-radius:9px;padding:9px 12px;font-family:var(--mono);font-size:12px;background:#fff;resize:vertical}
-  .btn{border:1px solid var(--hair,#D7DDDB);background:#fff;color:var(--amber-deep,#3D6089);border-radius:9px;padding:10px 16px;font:inherit;font-weight:700;cursor:pointer;white-space:nowrap}
+  .paste textarea{flex:1;min-height:42px;border:1px solid var(--hair,#D7DDDB);border-radius:9px;padding:9px 12px;font-family:var(--mono);font-size:12px;background:#fff;resize:vertical}
+  .btn{border:1px solid var(--hair,#D7DDDB);background:#fff;color:var(--amber-deep,#3D6089);border-radius:9px;padding:9px 15px;font:inherit;font-weight:700;cursor:pointer;white-space:nowrap}
+  .btn:disabled{opacity:.5;cursor:default}
   .btn.brand{background:var(--amber,#4E79A7);border-color:var(--amber,#4E79A7);color:#fff}
-  .card{background:#fff;border:1px solid var(--hair,#D7DDDB);border-radius:12px;padding:16px 18px;margin-top:16px}
-  .headline{font-size:20px;font-weight:800;letter-spacing:-.01em;line-height:1.25}
-  .whatis{color:var(--ink-soft,#5E6B68);font-size:13.5px;line-height:1.5;margin-top:6px}
-  .meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-  .pill{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.03em;border-radius:999px;padding:3px 9px;background:var(--panel,#EAEEED);color:var(--ink-soft,#5E6B68)}
-  .lab{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft,#5E6B68);font-weight:700;margin:16px 0 8px}
-  .finding{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:9px;margin-bottom:8px;border-left:3px solid var(--hair,#D7DDDB);background:#FAFCFB;font-size:13px;line-height:1.45}
-  .finding.opportunity{border-left-color:var(--good,#2E7D57);background:#EDF6F0}
-  .finding.caveat{border-left-color:var(--warn,#B8791F);background:#FBF4E6}
-  .finding.data_quality{border-left-color:var(--oxblood,#B8402B);background:#FBEDEB}
-  .finding .k{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft,#5E6B68);flex:0 0 78px;padding-top:2px}
-  .t2{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
-  .tcard{border:1px solid var(--hair,#D7DDDB);border-radius:10px;overflow:hidden;background:#fff}
-  .tcard .th{padding:10px 13px;background:var(--panel,#EAEEED);border-bottom:1px solid var(--hair,#D7DDDB)}
-  .tcard .th .tt{font-weight:800;font-size:13px}
-  .tcard .th .tw{font-size:11.5px;color:var(--ink-soft,#5E6B68);margin-top:2px}
+
+  .card{background:#fff;border:1px solid var(--hair,#D7DDDB);border-radius:12px;padding:16px 18px;margin-top:14px}
+  .card.tight{padding:0;overflow:hidden}
+  .lab{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft,#5E6B68);font-weight:700;margin:0 0 9px}
+  .lab.sp{margin-top:22px}
+  .pill{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.04em;border-radius:999px;padding:3px 8px;background:var(--panel,#EAEEED);color:var(--ink-soft,#5E6B68);white-space:nowrap}
+  .pill.det{background:#E4F0E8;color:#20603F}
+  .pill.inf{background:#FBF4E6;color:#8A5A12}
+  .pill.no{background:#F1EFEF;color:#6B6663}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+  .mrate{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-end}
+  .big{font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
+  .big .u{font-size:20px;font-weight:700;opacity:.55}
+  .mrate .w{font-size:12px;color:var(--ink-soft,#5E6B68);margin-top:6px;max-width:34ch;line-height:1.45}
+  .tiers{display:flex;gap:2px;height:9px;border-radius:5px;overflow:hidden;margin-top:14px;background:var(--panel,#EAEEED)}
+  .tiers i{display:block;height:100%}
+  .tkey{display:flex;gap:16px;flex-wrap:wrap;margin-top:9px;font-size:12px;color:var(--ink-soft,#5E6B68)}
+  .tkey b{color:var(--ink,#243330);font-variant-numeric:tabular-nums}
+  .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
+
+  .boundary{background:#FAFCFB;border-left:3px solid var(--amber,#4E79A7);padding:11px 14px;border-radius:0 8px 8px 0;font-size:13px;line-height:1.5;margin-top:14px}
+
   table{width:100%;border-collapse:collapse;font-size:12.5px}
-  td{padding:7px 13px;border-bottom:1px solid #EEF2F1}
+  th{text-align:left;font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-soft,#5E6B68);padding:9px 13px;border-bottom:1px solid var(--hair,#D7DDDB);background:var(--panel,#EAEEED);position:sticky;top:0}
+  td{padding:7px 13px;border-bottom:1px solid #EEF2F1;vertical-align:top}
   tr:last-child td{border-bottom:0}
-  td.v{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
-  .bar{display:block;height:4px;border-radius:2px;background:var(--amber,#4E79A7);margin-top:3px}
-  ul.q{margin:0;padding-left:18px} ul.q li{margin-bottom:6px;font-size:13px;line-height:1.45}
-  .em{padding:26px;text-align:center;color:var(--ink-soft,#5E6B68);font-size:13px}
-  .loading{display:flex;align-items:center;gap:12px;padding:26px;color:var(--ink-soft,#5E6B68);font-size:13.5px}
-  .spin{width:18px;height:18px;border:2px solid var(--hair,#D7DDDB);border-top-color:var(--amber,#4E79A7);border-radius:50%;animation:sp .8s linear infinite}
+  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+  .scroll{max-height:420px;overflow:auto}
+  .mono{font-family:var(--mono);font-size:11.5px}
+  .muted{color:var(--ink-soft,#5E6B68)}
+
+  .find{border:1px solid var(--hair,#D7DDDB);border-radius:10px;padding:13px 15px;margin-bottom:10px;background:#fff}
+  .find.blocks_match{border-left:3px solid var(--oxblood,#B8402B)}
+  .find.corrupts_analysis{border-left:3px solid var(--warn,#B8791F)}
+  .find.cosmetic{border-left:3px solid var(--hair,#D7DDDB)}
+  .find h4{margin:0;font-size:14px;font-weight:750;letter-spacing:-.01em}
+  .find .rc{margin-top:5px;font-size:13px;line-height:1.5}
+  .find .ar{margin-top:8px;font-family:var(--mono);font-size:11.5px;background:#FAFCFB;border:1px solid #EEF2F1;border-radius:7px;padding:8px 10px;line-height:1.55;white-space:pre-wrap}
+  .find .fx{margin-top:8px;font-size:12.5px;color:var(--ink-soft,#5E6B68)}
+  .find .fx b{color:var(--good,#2E7D57)}
+
+  .blk{border:1px solid var(--hair,#D7DDDB);border-radius:10px;padding:13px 15px;margin-bottom:10px;background:#fff}
+  .blk .cl{font-size:15px;font-weight:700;line-height:1.4;letter-spacing:-.01em}
+  .blk .st{margin-top:8px;font-size:11.5px;color:var(--ink-soft,#5E6B68);line-height:1.5}
+  .blk .dt{margin-top:9px;font-size:12px}
+
+  .locked{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .locked span{font-family:var(--mono);font-size:11px;background:repeating-linear-gradient(45deg,#F1F3F2,#F1F3F2 4px,#E8ECEB 4px,#E8ECEB 8px);border:1px solid var(--hair,#D7DDDB);border-radius:6px;padding:4px 9px;color:#7C8683}
+
+  .loading{display:flex;align-items:center;gap:12px;padding:6px 0 12px;color:var(--ink-soft,#5E6B68);font-size:13.5px}
+  .spin{width:17px;height:17px;border:2px solid var(--hair,#D7DDDB);border-top-color:var(--amber,#4E79A7);border-radius:50%;animation:sp .8s linear infinite;flex:0 0 auto}
   @keyframes sp{to{transform:rotate(360deg)}}
+  .step{font-size:12.5px;color:var(--ink-soft,#5E6B68);padding:3px 0}
+  .step.done{color:var(--ink,#243330)}
+  .step.done::before{content:"✓ ";color:var(--good,#2E7D57);font-weight:700}
+  .step.now::before{content:"› ";font-weight:700}
+  .step.wait{opacity:.42}
+  .err{padding:4px 0;font-size:13px;line-height:1.55}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="head">
     <h1>Overlay Your Data</h1>
-    <div class="s">Drop a CSV and Claude reads it on its own terms — what it is, what's worth seeing, a few cuts worth pulling, and the caveats. Public data only; nothing is stored.</div>
+    <div class="s">Drop any export of your items — <b>structure doesn't matter</b>, a simple sales report is fine.
+      You get it back matched to Hoodie identity, cleansed, and diagnosed with named root causes, plus what the
+      join to our master just made visible about your brands in the real market.
+      Every line in it is checkable. Nothing is stored.</div>
   </div>
+
   <div class="drop" id="drop">
     <div class="ic">⬍</div>
-    <div class="t">Drop a CSV here, or click to choose a file</div>
-    <div class="sub">first row = column headers · up to a few thousand rows</div>
-    <input type="file" id="file" accept=".csv,text/csv,.tsv,text/plain" style="display:none">
+    <div class="t">Drop a file here, or click to choose</div>
+    <div class="sub">CSV · TSV · XLSX — preamble rows and odd headers are fine, we find the table</div>
+    <input type="file" id="file" accept=".csv,.tsv,.txt,.xlsx,.xlsm,text/csv,text/plain" style="display:none">
   </div>
-  <div class="paste"><textarea id="pasted" placeholder="…or paste CSV text here"></textarea><button class="btn" id="readpaste">Read</button></div>
+  <div class="paste"><textarea id="pasted" placeholder="…or paste rows here"></textarea><button class="btn" id="readpaste">Read</button></div>
+
+  <div id="instant"></div>
   <div id="out"></div>
 </div>
 
-<script src="../datagrid.js"></script>
+<script src="../dq.js"></script>
 <script>
 (function(){
-  var API="", HEADER=[], ROWS=[];
-  function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
-  var out=document.getElementById("out");
+  var API="", FILE=null, PASTED=null, NAME="";
+  var out=document.getElementById("out"), instant=document.getElementById("instant");
 
+  function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+  function num(n){ return (n==null||n!==n)?"—":Number(n).toLocaleString(); }
+
+  /* ── S1: the instant profile. Runs in the BROWSER before anything is uploaded — the
+        "it's already working" moment, sub-second, and it costs the server nothing. ── */
   function parseCSV(text){
     text=(text||"").replace(/\r\n/g,"\n").replace(/\r/g,"\n");
-    var sep=text.indexOf("\t")>=0&&text.indexOf(",")<0?"\t":",";
+    var head=text.slice(0,4000);
+    var sep=(head.split("\t").length>head.split(",").length)?"\t":",";
     var rows=[],row=[],cur="",q=false;
     for(var i=0;i<text.length;i++){var c=text[i];
       if(q){ if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c; }
@@ -84,92 +131,234 @@
     if(cur.length||row.length){row.push(cur);rows.push(row);}
     return rows.filter(function(r){return r.length>1||(r.length===1&&(r[0]||"").trim());});
   }
-  function profileCols(header,rows){
-    var cols=header.map(function(h,ci){
-      var vals=[]; for(var i=0;i<rows.length;i++){var v=rows[i][ci]; if(v!=null&&v!=="")vals.push(v);}
-      var nums=vals.map(Number).filter(function(n){return isFinite(n);});
-      var isNum=vals.length>0&&nums.length>=vals.length*0.8;
-      var d={}; vals.forEach(function(v){d[v]=(d[v]||0)+1;});
-      var top=Object.keys(d).sort(function(a,b){return d[b]-d[a];}).slice(0,6).map(function(k){return {value:k,count:d[k]};});
-      var col={name:h,type:isNum?"number":"text",non_null:vals.length,distinct:Object.keys(d).length,top_values:top};
-      if(isNum&&nums.length){col.min=Math.min.apply(null,nums);col.max=Math.max.apply(null,nums);col.mean=nums.reduce(function(a,b){return a+b;},0)/nums.length;}
-      return col;
-    });
-    return {row_count:rows.length,column_count:header.length,columns:cols};
-  }
-  function computeTable(spec){
-    var di=HEADER.indexOf(spec.dimension), mi=HEADER.indexOf(spec.measure);
-    if(di<0)return null;
-    var g={};
-    ROWS.forEach(function(r){var k=(r[di]==null||r[di]==="")?"—":r[di]; g[k]=g[k]||{vals:[],count:0,set:{}}; g[k].count++;
-      var m=mi>=0?Number(r[mi]):1; if(isFinite(m))g[k].vals.push(m); if(mi>=0)g[k].set[r[mi]]=1;});
-    var a=(spec.agg||"sum").toLowerCase();
-    var rows=Object.keys(g).map(function(k){var x=g[k],v;
-      if(a==="count")v=x.count; else if(a==="distinct")v=Object.keys(x.set).length;
-      else if(a==="mean")v=x.vals.reduce(function(p,c){return p+c;},0)/(x.vals.length||1);
-      else if(a==="min")v=x.vals.length?Math.min.apply(null,x.vals):0;
-      else if(a==="max")v=x.vals.length?Math.max.apply(null,x.vals):0;
-      else v=x.vals.reduce(function(p,c){return p+c;},0);
-      return {key:k,value:v};});
-    rows.sort(function(p,c){return spec.sort==="asc"?p.value-c.value:c.value-p.value;});
-    return rows.slice(0,spec.limit||12);
-  }
-  function fmt(n){ if(n==null||!isFinite(n))return "—"; var abs=Math.abs(n);
-    if(abs>=1e9)return (n/1e9).toFixed(1)+"B"; if(abs>=1e6)return (n/1e6).toFixed(1)+"M"; if(abs>=1e3)return (n/1e3).toFixed(1)+"K";
-    return (n%1===0)?String(n):n.toFixed(2); }
 
-  function read(text,name){
+  function showInstant(text,name){
     var rows=parseCSV(text);
-    if(rows.length<2){ out.innerHTML='<div class="card"><div class="em">Couldn\'t find a header row + data. Paste real CSV (first line = column names).</div></div>'; return; }
-    HEADER=rows[0].map(function(h){return (h||"").trim();}); ROWS=rows.slice(1);
-    var profile=profileCols(HEADER,ROWS);
-    out.innerHTML='<div class="card"><div class="loading"><span class="spin"></span>Claude is reading <b>'+esc(name||"your data")+'</b> — '+ROWS.length.toLocaleString()+' rows × '+HEADER.length+' columns…</div></div>';
-    fetch(API+"/api/ai-read",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({profile:profile,header:HEADER,rows:ROWS.slice(0,600),filename:name||"dataset.csv"})})
-      .then(function(r){return r.json().then(function(j){return {status:r.status,j:j};});})
-      .then(function(res){ render(res.status,res.j,name,profile); })
-      .catch(function(){ out.innerHTML='<div class="card"><div class="em">Reader is offline — start the engine (./dev.sh) or open the deployed suite.</div></div>'; });
+    if(rows.length<2) return false;
+    var header=rows[0].map(function(h){return (h||"").trim();}), body=rows.slice(1);
+    var read=null;
+    try{ read = window.DQ ? DQ.assess(header, body, {rowCap:4000}) : null; }catch(e){ read=null; }
+    var roles=(read&&read.roles)||[];
+    var seen=Math.min(body.length,4000);
+    var h='<div class="card"><div class="lab">Read in your browser — nothing uploaded yet</div>'
+      +'<div class="row"><span class="pill">'+num(body.length)+' rows</span><span class="pill">'+header.length+' columns</span>'
+      +'<span class="pill">'+esc(name||"your file")+'</span>'
+      +(read&&read.profile&&read.profile.grain_statement?'<span class="pill">grain: '+esc(read.profile.grain_statement)+'</span>':'')+'</div>'
+      +'<div class="scroll" style="margin-top:12px;border:1px solid var(--hair,#D7DDDB);border-radius:9px"><table><thead><tr>'
+      +'<th>Your column</th><th>Our read</th><th class="n">Fill</th><th class="n">Distinct</th><th>First values</th></tr></thead><tbody>';
+    header.forEach(function(hh,i){
+      var r=roles[i]||{}, vals=[], seenv={}, d=0, nonblank=0;
+      for(var k=0;k<seen;k++){ var v=body[k][i];
+        if(v!=null&&String(v).trim()!==""){ nonblank++; if(!seenv[v]){seenv[v]=1;d++;} if(vals.length<3)vals.push(v); } }
+      h+='<tr><td class="mono">'+esc(hh||"(unnamed)")+'</td>'
+        +'<td>'+esc(r.role||"—")+(r.needs_review?' <span class="pill inf">confirm</span>':'')+'</td>'
+        +'<td class="n">'+Math.round(100*nonblank/Math.max(1,seen))+'%</td>'
+        +'<td class="n">'+num(d)+'</td>'
+        +'<td class="mono muted">'+esc(vals.join(" · ").slice(0,64))+'</td></tr>';
+    });
+    h+='</tbody></table></div>'
+      +'<div class="row" style="margin-top:13px"><button class="btn brand" id="go">Match it against our master →</button>'
+      +'<span class="muted" style="font-size:12px">A few seconds. Your file is processed in memory and deleted with the response.</span></div></div>';
+    instant.innerHTML=h;
+    document.getElementById("go").onclick=analyze;
+    return true;
   }
 
-  function render(status,d,name,profile){
-    if(d && d.error==="llm-disabled"){ out.innerHTML='<div class="card"><div class="em">This needs Claude — set <code>ANTHROPIC_API_KEY</code> on the engine (it\'s live on the deployed suite).</div></div>'; return; }
-    if(!d || d.error){ out.innerHTML='<div class="card"><div class="em">Couldn\'t read the data'+(d&&d.detail?(' — '+esc(d.detail)):'')+'.</div></div>'; return; }
-    var findings=d.findings||[], tables=d.tables||[], caveats=d.caveats||[], questions=d.questions||[];
-    var h='<div class="card"><div class="headline">'+esc(d.headline||"Your data")+'</div>'
-      +(d.what_is_this?'<div class="whatis">'+esc(d.what_is_this)+'</div>':'')
-      +'<div class="meta"><span class="pill">'+profile.row_count.toLocaleString()+' rows</span><span class="pill">'+profile.column_count+' columns</span><span class="pill">'+esc(name||"dataset")+'</span></div>'
-      +(findings.length?('<div class="lab">What\'s worth seeing</div>'+findings.map(function(f){var k=(f.kind||"association");
-          return '<div class="finding '+esc(k)+'"><span class="k">'+esc(k.replace("_"," "))+'</span><span>'+esc(f.text)+'</span></div>';}).join('')):'')
+  /* ── the server pass ── */
+  var STEPS=["Reading your columns","Resolving identity against the master","Cleansing",
+             "Deriving what we can add","Diagnosing","Joining to what we observe in market"];
+
+  function stepsHTML(active){
+    return STEPS.map(function(s,i){
+      return '<div class="step '+(i<active?"done":(i===active?"now":"wait"))+'">'+esc(s)+'</div>';
+    }).join('');
+  }
+
+  function body(){
+    var fd=new FormData();
+    if(FILE) fd.append("file",FILE); else fd.append("text",PASTED||"");
+    fd.append("filename",NAME||"pasted.csv");
+    return fd;
+  }
+
+  function analyze(){
+    out.innerHTML='<div class="card"><div class="loading"><span class="spin"></span>'
+      +'Running the pipeline over <b style="margin:0 4px">'+esc(NAME||"your file")+'</b></div>'
+      +'<div id="steps">'+stepsHTML(0)+'</div></div>';
+    var tick=0, timer=setInterval(function(){
+      tick=Math.min(tick+1,STEPS.length-1);
+      var el=document.getElementById("steps"); if(el) el.innerHTML=stepsHTML(tick);
+    },1200);
+    fetch(API+"/api/overlay/run",{method:"POST",body:body()})
+      .then(function(r){ return r.json().then(function(j){ return j; }); })
+      .then(function(j){ clearInterval(timer); render(j); })
+      .catch(function(){ clearInterval(timer);
+        out.innerHTML='<div class="card"><div class="err">The engine isn\'t reachable from here. '
+          +'Start it locally (<span class="mono">./dev.sh</span>) or open this on the deployed suite.</div></div>'; });
+  }
+
+  var TIER_COLOR={"1":"#2E7D57","2":"#4A9E74","3":"#4E79A7","4":"#B8791F","5":"#D7DDDB"};
+  function tierBar(m){
+    var t=m.tiers||{}, n=Math.max(1,m.rows);
+    return '<div class="tiers">'+["1","2","3","4","5"].map(function(k){
+      var w=100*(t[k]||0)/n; return w>0?'<i style="width:'+w+'%;background:'+TIER_COLOR[k]+'"></i>':'';
+    }).join('')+'</div>';
+  }
+  function key(k,label,v){
+    return '<span><i class="sw" style="background:'+TIER_COLOR[k]+'"></i>'+label+' <b>'+num(v)+'</b></span>';
+  }
+
+  function render(d){
+    if(!d||d.error){
+      out.innerHTML='<div class="card"><div class="err">'
+        +esc((d&&d.detail)||"We couldn't read that as a table. The first populated row should be your column names.")
+        +'</div></div>';
+      return;
+    }
+    var m=d.match||{}, t=m.tiers||{}, dg=d.diagnose||{}, fs=dg.findings||[], mk=d.market||{};
+    var h="";
+
+    /* the headline: the DETERMINISTIC share, never a blended number */
+    h+='<div class="card"><div class="mrate">'
+      +'<div><div class="big">'+m.deterministic_pct+'<span class="u">%</span></div>'
+      +'<div class="w">of your '+num(m.rows)+' rows resolved to a Hoodie item <b>deterministically</b> — by identifier, not by guess.</div></div>'
+      +'<div><div class="big" style="font-size:26px">'+num(m.identified)+'</div>'
+      +'<div class="w">rows now carry a Hoodie ID you can join on.</div></div>'
+      +'<div style="flex:1;min-width:250px">'+tierBar(m)+'<div class="tkey">'
+      +key("1","UPC exact",t["1"])+key("2","zero-strip healed",t["2"])+key("3","your item code",t["3"])
+      +key("4","signature",t["4"])+key("5","unmatched",t["5"])
+      +'</div></div></div>';
+    if(m.capped_note) h+='<div class="boundary">'+esc(m.capped_note)+'</div>';
+    h+='<div class="boundary">'+esc((d.boundary||{}).statement||"")+'</div>'
+      +'<div class="row" style="margin-top:14px"><button class="btn brand" id="dl">Download your file, annotated (.xlsx)</button>'
+      +'<button class="btn" id="again">Read another file</button>'
+      +'<span class="muted" style="font-size:12px">'+esc(d.run.at)+' · registry v'+d.run.registry_version+' · '+d.run.seconds+'s</span></div>'
       +'</div>';
-    // computed tables
-    if(tables.length){
-      h+='<div class="lab" style="margin-top:20px">Cuts worth pulling <span style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--ink-soft)">— computed from your rows</span></div><div class="t2">';
-      tables.forEach(function(sp){ var t=computeTable(sp); if(!t||!t.length)return;
-        var max=Math.max.apply(null,t.map(function(x){return Math.abs(x.value);}))||1;
-        h+='<div class="tcard"><div class="th"><div class="tt">'+esc(sp.title||(sp.agg+" "+sp.measure+" by "+sp.dimension))+'</div>'+(sp.why?'<div class="tw">'+esc(sp.why)+'</div>':'')+'</div><table><tbody>'
-          +t.map(function(x){return '<tr><td>'+esc(x.key)+'<span class="bar" style="width:'+Math.max(3,Math.round(100*Math.abs(x.value)/max))+'%"></span></td><td class="v">'+fmt(x.value)+'</td></tr>';}).join('')
-          +'</tbody></table></div>';
+
+    /* why the rest didn't match — never hidden */
+    if((m.why||[]).length){
+      h+='<div class="lab sp">Why the rest didn\'t match</div><div class="card tight"><table><thead><tr>'
+        +'<th>Reason</th><th class="n">Rows</th></tr></thead><tbody>'
+        +m.why.map(function(w){ return '<tr><td>'+esc(w.reason)+'</td><td class="n">'+num(w.rows)+'</td></tr>'; }).join('')
+        +'</tbody></table></div>';
+    }
+
+    /* findings — root cause + the arithmetic + the fix */
+    if(fs.length||(dg.suppressed||[]).length){
+      h+='<div class="lab sp">What we found — root causes, with the arithmetic</div>';
+      fs.forEach(function(f){
+        var ev=(f.evidence||[])[0]||{};
+        h+='<div class="find '+esc(f.severity)+'">'
+          +'<div class="row" style="justify-content:space-between"><h4>'+esc(f.title)+'</h4>'
+          +'<span class="pill '+(f.label==="DETERMINISTIC"?"det":"inf")+'">'+esc(f.label)
+          +(f.confidence?(" "+Number(f.confidence).toFixed(2)):"")+'</span></div>'
+          +'<div class="rc">'+esc(f.root_cause)+' <span class="muted">— '+num(f.count)
+          +(f.scope==="dataset"?"":" of "+num(f.eligible)+" rows")+'</span></div>'
+          +(ev.arithmetic?'<div class="ar">'+esc(ev.arithmetic)+'</div>':'')
+          +'<div class="fx"><b>Fix:</b> '+esc(f.fix)+'</div></div>';
       });
-      h+='</div>';
+      (dg.suppressed||[]).forEach(function(s){
+        h+='<div class="find cosmetic"><div class="row" style="justify-content:space-between"><h4>'+esc(s.title)+'</h4>'
+          +'<span class="pill no">WITHHELD</span></div><div class="rc">'+esc(s.root_cause)+'</div>'
+          +'<div class="fx">'+esc(s.fix)+'</div></div>';
+      });
+    } else {
+      h+='<div class="lab sp">What we found</div><div class="card"><div class="muted">'
+        +'Every detector that could run on this file\'s fields found nothing. That\'s a real result, not an empty one — '
+        +'the detectors that couldn\'t run, and why, are listed on the workbook\'s provenance sheet.</div></div>';
     }
-    if(caveats.length||questions.length){
-      h+='<div class="card">';
-      if(caveats.length)h+='<div class="lab" style="margin-top:0">Caveats</div><ul class="q">'+caveats.map(function(c){return '<li>'+esc(c)+'</li>';}).join('')+'</ul>';
-      if(questions.length)h+='<div class="lab">Questions to ask next</div><ul class="q">'+questions.map(function(q){return '<li>'+esc(q)+'</li>';}).join('')+'</ul>';
-      h+='</div>';
+
+    /* the join report */
+    if((mk.blocks||[]).length){
+      h+='<div class="lab sp">What the join to our master made visible</div>';
+      mk.blocks.forEach(function(b){
+        h+='<div class="blk"><div class="cl">'+esc(b.claim)+'</div>'
+          +'<div class="st">n = '+num(b.n)+' · '+esc(b.geography)+' · refreshed '+esc(b.freshness)+' · '+esc(b.method)+'</div>'
+          +((b.detail||[]).length?'<div class="dt">'+b.detail.slice(0,6).map(function(x){
+              return '<div class="muted">'+esc(Object.keys(x).map(function(k){return k+": "+x[k];}).join("  ·  "))+'</div>';
+            }).join('')+'</div>':'')+'</div>';
+      });
     }
-    h+='<div style="margin-top:14px"><button class="btn" id="another">Read another dataset</button></div>';
+    if((mk.withheld||[]).length){
+      h+='<div class="card"><div class="lab">Not shown, and why</div>'
+        +'<div class="muted" style="font-size:12.5px;line-height:1.55">A block below its bar is absent, never padded.</div>'
+        +mk.withheld.map(function(w){ return '<div style="margin-top:7px;font-size:12.5px">'+esc(w.why)+'</div>'; }).join('')
+        +'</div>';
+    }
+
+    /* the field map — the "of your 140 fields…" table, auditable */
+    h+='<div class="lab sp">How we read each of your columns</div><div class="card tight"><div class="scroll"><table><thead><tr>'
+      +'<th>Your column</th><th>We read it as</th><th>How</th><th class="n">Fill</th><th>Note</th></tr></thead><tbody>'
+      +(d.columns||[]).map(function(c){
+        var pill=c.label==="DETERMINISTIC"?'<span class="pill det">DETERMINISTIC</span>'
+               :c.label==="INFERENCE"?'<span class="pill inf">INFERENCE '+String(c.confidence||"").slice(0,4)+'</span>'
+               :'<span class="pill no">'+esc(c.bucket)+'</span>';
+        return '<tr><td class="mono">'+esc(c.name)+'</td><td>'+esc(c.field||"—")+'</td><td>'+pill+'</td>'
+          +'<td class="n">'+(c.fill_rate==null?"—":Math.round(100*c.fill_rate)+"%")+'</td>'
+          +'<td class="muted">'+esc(c.note||"")+'</td></tr>';
+      }).join('')+'</tbody></table></div></div>';
+
+    /* the locked columns: the upgrade CTA that isn't a banner — their own file, with columns
+       they can see exist */
+    var locked=((d.enrich||{}).columns||[]).filter(function(c){return c.locked;});
+    if(locked.length){
+      h+='<div class="card"><div class="lab">Columns we can fill, not shown on this tier</div>'
+        +'<div class="locked">'+locked.map(function(c){return '<span>'+esc(c.column)+'</span>';}).join('')+'</div>'
+        +'<div class="muted" style="margin-top:9px;font-size:12.5px">These are real columns in your returned workbook, '
+        +'with the values withheld. They fill from the master for every row that matched.</div></div>';
+    }
+
     out.innerHTML=h;
-    var an=document.getElementById("another"); if(an)an.onclick=function(){ out.innerHTML=""; document.getElementById("pasted").value=""; window.scrollTo(0,0); };
+    document.getElementById("again").onclick=function(){
+      out.innerHTML=""; instant.innerHTML=""; FILE=null; PASTED=null;
+      document.getElementById("pasted").value=""; window.scrollTo(0,0);
+    };
+    document.getElementById("dl").onclick=download;
+  }
+
+  function download(){
+    var b=document.getElementById("dl"), was=b.textContent;
+    b.disabled=true; b.textContent="Building your workbook…";
+    fetch(API+"/api/overlay/workbook",{method:"POST",body:body()})
+      .then(function(r){ if(!r.ok) throw new Error("workbook"); return r.blob(); })
+      .then(function(blob){
+        var url=URL.createObjectURL(blob), a=document.createElement("a");
+        a.href=url; a.download=(NAME||"overlay").replace(/\.[^.]+$/,"")+" — Hoodie overlay.xlsx";
+        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+        b.disabled=false; b.textContent=was;
+      })
+      .catch(function(){ b.disabled=false; b.textContent="Couldn't build it — try again"; });
+  }
+
+  /* ── input ── */
+  function take(f){
+    FILE=f; PASTED=null; NAME=f.name;
+    if(/\.(xlsx|xlsm)$/i.test(f.name)){
+      // Excel is a zip; the browser can't profile it without a parser, and the server already
+      // finds the sheet and the header row. Say so rather than showing an empty instant read.
+      instant.innerHTML='<div class="card"><div class="row"><span class="pill">'+esc(f.name)+'</span>'
+        +'<span class="muted" style="font-size:12.5px">Excel workbooks are read on the server — we find the sheet and the header row.</span></div>'
+        +'<div class="row" style="margin-top:12px"><button class="btn brand" id="go">Match it against our master →</button></div></div>';
+      document.getElementById("go").onclick=analyze;
+      return;
+    }
+    var rd=new FileReader();
+    rd.onload=function(){ if(!showInstant(rd.result,f.name)) analyze(); };
+    rd.readAsText(f);
   }
 
   var drop=document.getElementById("drop"), file=document.getElementById("file");
   drop.onclick=function(){file.click();};
-  file.onchange=function(){ var f=file.files[0]; if(!f)return; var rd=new FileReader(); rd.onload=function(){read(rd.result,f.name);}; rd.readAsText(f); };
+  file.onchange=function(){ if(file.files[0]) take(file.files[0]); };
   ["dragenter","dragover"].forEach(function(e){drop.addEventListener(e,function(ev){ev.preventDefault();drop.classList.add("over");});});
   ["dragleave","drop"].forEach(function(e){drop.addEventListener(e,function(ev){ev.preventDefault();drop.classList.remove("over");});});
-  drop.addEventListener("drop",function(ev){ var f=ev.dataTransfer.files[0]; if(!f)return; var rd=new FileReader(); rd.onload=function(){read(rd.result,f.name);}; rd.readAsText(f); });
-  document.getElementById("readpaste").onclick=function(){ var t=document.getElementById("pasted").value; if(t.trim())read(t,"pasted.csv"); };
+  drop.addEventListener("drop",function(ev){ if(ev.dataTransfer.files[0]) take(ev.dataTransfer.files[0]); });
+  document.getElementById("readpaste").onclick=function(){
+    var t=document.getElementById("pasted").value;
+    if(!t.trim())return;
+    FILE=null; PASTED=t; NAME="pasted.csv";
+    if(!showInstant(t,"pasted.csv")) analyze();
+  };
 })();
 </script>
 <script src="../suite-header.js" data-id="overlay" data-mark="OV" data-name="Overlay Your Data" data-status="beta"></script>
