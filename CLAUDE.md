@@ -173,6 +173,26 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   `johnsonbrothers` (25,590 items); grow the `STOREFRONTS` map. stdlib-only, headless. Together
   with `vip-brandbuilder` these two platform recipes are the fast path to the major distributors'
   catalogs (Reyes, Breakthru, RNDC, …) — one sourceCode / slug at a time.
+- `unifyd/salsify.py` — **Salsify Sites**: every public catalog on `sites.salsify.com` (registry ids
+  `bbg` = Breakthru's master catalog daily, `salsify` = the weekly platform sweep). The third platform
+  recipe, and **the URL loops it**: `sites.salsify.com/robots.txt` publishes `sitemap_index.xml`, a live
+  directory of every PUBLIC catalog on the platform (519 sites / 118 orgs at 2026-08-03) — `discover()`
+  walks it, probes each root, lands `salsify_catalogs`, and any row there is pullable by org/site uuid.
+  Route shape (same for every site): root `__NEXT_DATA__` → live `buildId` + name/size/facets;
+  `_next/data/<buildId>/index.json` = **list page 1** (`products/1.json` 403s — that bug silently dropped
+  the first 16 products of every catalog); `products/<N>.json` for N>1; `product/<id>/<slug>.json` for
+  detail; `sitemap_1.xml` for the whole id/slug universe in one fetch when published (Sazerac/Heaven Hill
+  yes, BBG no → paging fallback). **Capture is two-grained because the catalogs share no property
+  namespace** — BBG publishes SAP wholesaler attributes, Sazerac a full GS1/GDSN item master (GTIN, ABV,
+  proof, net content, weights, ingredients, nutrients, closure, TTB COLA id), Heaven Hill a third set:
+  `salsify_products` (accumulating, thin canonical columns incl. **`dist_item_code`** = Breakthru's SAP
+  Material ID and **`item_description`** = their own description) + `salsify_properties` (append-only,
+  date-partitioned — EVERY property of every property set, every facet, every asset, **every value of a
+  multi-value field**, whatever the catalog calls it; only products whose fingerprint MOVED are re-emitted,
+  so a daily cadence costs the diff, not the catalog). Canonical mapping is exact-alias first, then a
+  guarded pattern pass; unmapped properties are never dropped, only left out of a first-class column.
+  stdlib-only, headless, resumable. Tests: `salsify_test.py` (fixtures from two namespaces, no network).
+  Supersedes `bbg_salsify.py` (archived).
 - `unifyd/pull_sources.py` — agent-less batch pull (Florida is live/tested; COLA needs
   `requests`+`bs4`). Emits `out/datasets.js` + `out/runs.json`.
 - `unifyd/label_reader.py` — read ONE product-page/label URL into clean MDM fields,

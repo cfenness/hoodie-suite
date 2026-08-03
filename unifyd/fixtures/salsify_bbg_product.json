@@ -1,0 +1,219 @@
+{
+ "digitalAssets": {
+  "label": null,
+  "properties": [
+   {
+    "label": null,
+    "property": "Primary Image",
+    "values": [
+     {
+      "name": "jeoi0hzarmzqzhtyve9v.jpg",
+      "value": "https://images.salsify.com/image/upload/s--W1PaSK73--/c9bd326171cdb48d38d41e6c608d4b63e06bbf25.jpg"
+     }
+    ]
+   },
+   {
+    "label": null,
+    "property": "Brand Image",
+    "values": [
+     {
+      "name": "491a60cf7a03e3fd2009a1f9199ddf385dd78ebb.png",
+      "value": "https://images.salsify.com/image/upload/s--0N6WydkS--/cc21cb38d16694af1729c9cf3daf841b07283aaa.png"
+     }
+    ]
+   },
+   {
+    "label": null,
+    "property": "Secondary Image",
+    "values": [
+     {
+      "name": "it5kmjiekgetuwkqdb8q.jpg",
+      "value": "https://images.salsify.com/image/upload/s--LKI9oxBQ--/84bea06e85e4fca785837994b55391061084bb17.jpg"
+     }
+    ]
+   },
+   {
+    "label": null,
+    "property": "Tertiary Image",
+    "values": [
+     {
+      "name": "ndxgtxssj2uwjf8twfze.jpg",
+      "value": "https://images.salsify.com/image/upload/s--wt3xn7tJ--/80b748412fc4c4d3605b106e22cc7998c36433af.jpg"
+     }
+    ]
+   }
+  ]
+ },
+ "features": [],
+ "filterProperties": [
+  {
+   "property": "Dimensions",
+   "label": "Dimensions",
+   "values": [
+    "750ML"
+   ]
+  },
+  {
+   "property": "Supplier",
+   "label": "Supplier",
+   "values": [
+    "CONCHA Y TORO USA"
+   ]
+  },
+  {
+   "property": "Family",
+   "label": "Family",
+   "values": [
+    "1000 STORIES"
+   ]
+  },
+  {
+   "property": "Product Category",
+   "label": "Product Commodity Class",
+   "values": [
+    "Wine - Still Table"
+   ]
+  },
+  {
+   "property": "US Market Region",
+   "label": "US Market Region",
+   "values": [
+    "Virginia",
+    "Nevada"
+   ]
+  },
+  {
+   "property": "SAP Region Description",
+   "label": "SAP Region Description",
+   "values": [
+    "California"
+   ]
+  },
+  {
+   "property": "SAP Varietal Grape Type Description",
+   "label": "SAP Varietal Grape Type Description",
+   "values": [
+    "CHARDONNAY"
+   ]
+  },
+  {
+   "property": "SAP Flavor Profile",
+   "label": "SAP Flavor Profile",
+   "values": [
+    "UNFLAVORED"
+   ]
+  }
+ ],
+ "groupingKey": "9414646",
+ "id": "9414646",
+ "images": [
+  {
+   "name": "jeoi0hzarmzqzhtyve9v.jpg",
+   "value": "https://images.salsify.com/image/upload/s--W1PaSK73--/c9bd326171cdb48d38d41e6c608d4b63e06bbf25.jpg"
+  }
+ ],
+ "label": null,
+ "listImage": "https://images.salsify.com/image/upload/s--W1PaSK73--/c9bd326171cdb48d38d41e6c608d4b63e06bbf25.jpg",
+ "listSubtitle": "1000 Stories ABA Chardonnay",
+ "listTitle": "1000 Stories Chardonnay Bourbon Barrel Aged 750ML",
+ "locale": "en-US",
+ "propertySets": [
+  {
+   "digitalAssets": [],
+   "isReferencePropertySet": false,
+   "label": "Marketing Content",
+   "properties": [
+    {
+     "property": "Marketing Name",
+     "label": "Marketing Name",
+     "values": [
+      "1000 Stories ABA Chardonnay"
+     ]
+    },
+    {
+     "property": "Brand Description",
+     "label": "Brand Description",
+     "values": [
+      "Our bold California wines are a call to never stop roaming and never stop living for the stories you'll tell next. The tradition of boldly roaming runs deep in our veins and it\u2019s the same spirit that continues to guide us every day."
+     ]
+    },
+    {
+     "property": "Aroma",
+     "label": "Aroma",
+     "values": [
+      "This brilliant Pale yellow chardonnay has aromas of apple, pineapple, honeysuckle, marshmallow, coconut and vanilla."
+     ]
+    },
+    {
+     "property": "Taste",
+     "label": "Taste",
+     "values": [
+      "Round and full palate with excellent texture and a lengthy finish."
+     ]
+    },
+    {
+     "property": "SellingPoint1",
+     "label": "Selling Point 1",
+     "values": [
+      "This brilliant Pale yellow chardonnay has aromas of apple, pineapple, honeysuckle, marshmallow, coconut and vanilla."
+     ]
+    },
+    {
+     "property": "SellingPoint2",
+     "label": "Selling Point 2",
+     "values": [
+      "Round and full palate with excellent texture and a lengthy finish."
+     ]
+    }
+   ],
+   "referenceProperty": null,
+   "references": null
+  },
+  {
+   "digitalAssets": [],
+   "isReferencePropertySet": false,
+   "label": "Product Details",
+   "properties": [
+    {
+     "property": "Material ID",
+     "label": "Material ID",
+     "values": [
+      "9414646"
+     ]
+    },
+    {
+     "property": "Supplier",
+     "label": "Supplier",
+     "values": [
+      "CONCHA Y TORO USA"
+     ]
+    },
+    {
+     "property": "Bottles Per Case",
+     "label": "Bottles Per Case",
+     "values": [
+      "12"
+     ]
+    },
+    {
+     "property": "Spirit Proof",
+     "label": "ABV / Spirit Proof",
+     "values": [
+      "14.4"
+     ]
+    }
+   ],
+   "referenceProperty": null,
+   "references": null
+  }
+ ],
+ "qaContent": [],
+ "sortValue": "1000 STORIES",
+ "subtitle": "1000 Stories ABA Chardonnay",
+ "systemId": "s-3734d30a-374f-4b4d-bad7-6b89a6c41368",
+ "title": "1000 Stories Chardonnay Bourbon Barrel Aged 750ML",
+ "useCaseContent": [],
+ "variantAxisProperties": [],
+ "slugifiedId": "9414646",
+ "slugifiedTitle": "1000-Stories-Chardonnay-Bourbon-Barrel-Aged-750ML"
+}

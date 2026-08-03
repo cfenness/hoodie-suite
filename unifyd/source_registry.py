@@ -252,8 +252,22 @@ SOURCES = [
     dict(id="cityhive", label="City Hive network", code="import cityhive as m; m.national(max_stores=100)",
          caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["cityhive_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=61, note="Cloudflare — patchright"),
-    dict(id="bbg", label="BBG e-commerce", code="import bbg_salsify as m; m.pull()",
-         tables=["bbg_products"], klass="headless", cadence="daily", enabled=True, note="Salsify API"),
+    dict(id="bbg", label="Breakthru Beverage (Salsify catalog)",
+         code="import salsify as m; m.pull(catalog='bbg')",
+         tables=["salsify_products", "salsify_properties"], klass="headless", cadence="daily", enabled=True,
+         note="Salsify Sites platform recipe — BBG's public master catalog (~55.6k products) at "
+              "distributor-item-code grain (their SAP Material ID + their own item description). "
+              "Superseded bbg_salsify.py (archived): that read page 1 as products/1.json (403 — first 16 "
+              "products of every catalog silently dropped), kept only values[0] of each multi-value "
+              "property, and truncated the payload at 6k chars"),
+    dict(id="salsify", label="Salsify Sites (public catalog platform)",
+         code="import salsify as m; m.platform_pass()",
+         tables=["salsify_catalogs", "salsify_products", "salsify_properties"], klass="headless",
+         cadence="weekly", enabled=True,
+         note="the LOOP: sites.salsify.com/sitemap_index.xml is a live directory of every PUBLIC catalog "
+              "on the platform (519 sites / 118 orgs at 2026-08-03) — discover() lands the directory to "
+              "salsify_catalogs, then every seeded catalog other than bbg is pulled with the same code. "
+              "Promote a discovered site by adding it to salsify.CATALOGS"),
 
     # ── Distributors / state / reference ──────────────────────────────────────────────────────────────────────
     dict(id="winebow", label="Winebow (distributor)", code="import winebow as m; m.pull()",
