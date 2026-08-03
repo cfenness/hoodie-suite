@@ -302,7 +302,37 @@ CONNECTORS_META = [
     {"id": "total-wine", "label": "Total Wine", "group": "Retail chain", "runs": None, "data": "total_wine_products"},
     {"id": "vtinfo", "label": "VTInfo locator", "group": "Reference", "runs": None, "data": "vtinfo_titos"},
     {"id": "ab-inbev", "label": "AB InBev locator", "group": "Reference", "runs": None, "data": None},
+    {"id": "bbg", "label": "Breakthru Beverage (Salsify catalog)", "group": "Distributor", "runs": None,
+     "data": "salsify_products", "heavy": True},
+    {"id": "salsify", "label": "Salsify Sites (public catalog platform)", "group": "Distributor",
+     "runs": None, "data": "salsify_catalogs", "heavy": True},
 ]
+
+# CONNECTORS_META is a CURATED list — nice labels, real groups, hand-set heavy/creds flags. It is not the
+# source of truth for WHAT EXISTS, and treating it as one is the same drift that _dispatch_pull already
+# paid down on the run side: a source the registry owns was runnable via /api/run yet INVISIBLE in the
+# Pulls console until someone remembered to add a row here. Measured 2026-08-03: 40 of 54 enabled registry
+# sources were missing — including both distributor platform recipes (vip-brandbuilder, sevenfifty). So the
+# listing derives from the registry too, and the curated rows become overrides on top of that floor. A new
+# registry row is now runnable AND visible the day it lands.
+_KLASS_GROUP = {"mac": "Browser (anti-bot)", "creds": "Credentialed", "headless": "Registry source"}
+
+
+def _registry_conn_rows():
+    """Every enabled registry source the curated list doesn't already cover."""
+    have = {m["id"] for m in CONNECTORS_META}
+    rows = []
+    for s in source_registry.SOURCES:
+        if not s.get("enabled") or s["id"] in have:
+            continue
+        tables = s.get("tables") or []
+        rows.append({"id": s["id"], "label": s.get("label") or s["id"],
+                     "group": _KLASS_GROUP.get(s.get("klass"), "Registry source"),
+                     "runs": None, "data": tables[0] if tables else None,
+                     "heavy": s.get("klass") == "mac",
+                     "needs_creds": bool(s.get("requires"))})
+    return rows
+
 
 def _conn_enabled():
     return (load("connectors.json", {}) or {}).get("enabled", {})
@@ -3555,14 +3585,15 @@ def connectors_list():
     across warehouse <x>_runs, the runs log, and live data counts. The Pulls console renders off this."""
     en = _conn_enabled()
     out = []
-    for m in CONNECTORS_META:
+    for m in CONNECTORS_META + _registry_conn_rows():
         out.append({"id": m["id"], "label": m.get("label"), "group": m.get("group"),
                     "heavy": bool(m.get("heavy")), "needs_creds": bool(m.get("needs_creds")),
                     "toggle": bool(m.get("toggle")), "data": m.get("data"),
                     "enabled": en.get(m["id"], True),
                     "runnable": m["id"] in VALID_CONNS,
                     "last_run": _conn_last_run(m)})
-    return jsonify(ok=True, connectors=out, groups=sorted({m.get("group", "") for m in CONNECTORS_META}))
+    return jsonify(ok=True, connectors=out,
+                   groups=sorted({c.get("group") or "" for c in out}))
 
 
 @app.post("/api/connectors/toggle")
