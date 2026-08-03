@@ -222,5 +222,19 @@ ok("every occurrence is repaired, not just the first",
 ok("the repair only fires on a ROUTING rejection (403/404), not any error",
    "if e.code not in (403, 404):" in _ssrc)
 
+# ── same-day reruns must not overwrite each other's property partitions ──────────────────────────
+# write_partition is idempotent per (table, part) BY DESIGN. The part sequence is positional — it
+# counts chunks of THIS run's todo list — so a second run on the same day reused p0001, p0002... and
+# replaced the first run's parts with different products. Measured live: three runs in one day left
+# salsify_properties at 1,660,264 rows, DOWN from 1,700,185. An append-only table shrank.
+print("\nProperty partition naming")
+ok("the part name carries a per-run stamp, not just day+catalog",
+   '"%s_%s_%s_p%04d"' in _src and "run_stamp" in _src)
+ok("the stamp is fixed once per process", "_RUN_STAMP = time.strftime(" in _src)
+ok("a product with NO property capture is re-fetched, not skipped by resume",
+   "holes = done - have_props" in _src and "done = done - holes" in _src)
+ok("...and that repair read is opt-in, so the daily tick doesn't pay for it",
+   "if repair_properties and land:" in _src)
+
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
