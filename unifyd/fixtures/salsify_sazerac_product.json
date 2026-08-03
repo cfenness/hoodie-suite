@@ -1,0 +1,651 @@
+{
+ "digitalAssets": {
+  "label": null,
+  "properties": [
+   {
+    "label": null,
+    "property": "Product Front Facing Image",
+    "values": [
+     {
+      "name": "00088004082031_A1C1",
+      "value": "https://images.salsify.com/image/upload/s--rxY286ha--/65a02697fc73a064d4413579c9845401f1fcdc45.jpg"
+     }
+    ]
+   },
+   {
+    "label": null,
+    "property": "DSO_Hero",
+    "values": [
+     {
+      "name": "00195893031092_DSO_Hero.jpg",
+      "value": "https://images.salsify.com/image/upload/s--MeOn4KFi--/jenmab8ao0zqxuusbqbp.jpg"
+     }
+    ]
+   }
+  ]
+ },
+ "features": [
+  "Reposado"
+ ],
+ "filterProperties": [
+  {
+   "property": "Product Type Name",
+   "label": "Packaging Level Name",
+   "values": [
+    "Each"
+   ]
+  },
+  {
+   "property": "marketingStatus",
+   "label": "marketingStatus",
+   "values": [
+    "ACTIVELY_MARKETED"
+   ]
+  },
+  {
+   "property": "brandName",
+   "label": "brandName",
+   "values": [
+    "818"
+   ]
+  },
+  {
+   "property": "gpcCategoryCode",
+   "label": "gpcCategoryCode",
+   "values": [
+    "10000263 - Spirits"
+   ]
+  },
+  {
+   "property": "functionalName",
+   "label": "functionalName",
+   "values": [
+    "SPIRITS,TEQUILA & AGAVE SPIRITS"
+   ]
+  },
+  {
+   "property": "alcoholicProductBeverageType",
+   "label": "alcoholicProductBeverageType",
+   "values": [
+    "SPIRITS,TEQUILA & AGAVE SPIRITS,REPOSADO"
+   ]
+  },
+  {
+   "property": "tradeItemMeasurementsModuletradeItemMeasurementsnetContent",
+   "label": "tradeItemMeasurementsModuletradeItemMeasurementsnetContent",
+   "values": [
+    "750"
+   ]
+  }
+ ],
+ "groupingKey": "00195893031092",
+ "id": "00195893031092",
+ "images": [
+  {
+   "name": "00088004082031_A1C1",
+   "value": "https://images.salsify.com/image/upload/s--rxY286ha--/65a02697fc73a064d4413579c9845401f1fcdc45.jpg"
+  }
+ ],
+ "label": "195893031092",
+ "listImage": "https://images.salsify.com/image/upload/s--rxY286ha--/65a02697fc73a064d4413579c9845401f1fcdc45.jpg",
+ "listSubtitle": "818 Reposado Tequila 750ml 80 Proof | EA | 00195893031092",
+ "listTitle": "195893031092",
+ "locale": "en-US",
+ "propertySets": [
+  {
+   "digitalAssets": [],
+   "isReferencePropertySet": false,
+   "label": "Marketing Details",
+   "properties": [
+    {
+     "property": "01ENadditionalTradeItemDescription",
+     "label": "01ENadditionalTradeItemDescription",
+     "values": [
+      "818 Reposado Tequila 750ml 80 Proof"
+     ]
+    },
+    {
+     "property": "01ENpreparationInstructions",
+     "label": "01ENpreparationInstructions",
+     "values": [
+      "Ready to Drink"
+     ]
+    },
+    {
+     "property": "01ENtradeItemMarketingMessage",
+     "label": "01ENtradeItemMarketingMessage",
+     "values": [
+      "Best enjoyed however you enjoy it - perfect with a splash of this and a squeeze of that"
+     ]
+    },
+    {
+     "property": "01ENconsumerStorageInstructions",
+     "label": "01ENconsumerStorageInstructions",
+     "values": [
+      "Store in cool dry place or refrigerate after opening"
+     ]
+    },
+    {
+     "property": "01ENconsumerUsageInstructions",
+     "label": "01ENconsumerUsageInstructions",
+     "values": [
+      "Best enjoyed however you enjoy it - perfect with a splash of this and a squeeze of that"
+     ]
+    },
+    {
+     "property": "01ENpreparationTypeCode",
+     "label": "01ENpreparationTypeCode",
+     "values": [
+      "READY_TO_DRINK"
+     ]
+    },
+    {
+     "property": "01ENservingSuggestion",
+     "label": "01ENservingSuggestion",
+     "values": [
+      "Serve chilled, with water, over ice, straight or neat, mix with other beverages, or make a cocktail."
+     ]
+    },
+    {
+     "property": "01ENtradeItemDescription",
+     "label": "01ENtradeItemDescription",
+     "values": [
+      "818 Reposado Tequila, 750ml 80 Proof"
+     ]
+    }
+   ],
+   "referenceProperty": null,
+   "references": null
+  },
+  {
+   "digitalAssets": [],
+   "isReferencePropertySet": false,
+   "label": "Awards",
+   "properties": [],
+   "referenceProperty": null,
+   "references": null
+  },
+  {
+   "digitalAssets": [],
+   "isReferencePropertySet": false,
+   "label": "Item Setup Details",
+   "properties": [
+    {
+     "property": "tradeItemgtin",
+     "label": "tradeItemgtin",
+     "values": [
+      "00195893031092"
+     ]
+    },
+    {
+     "property": "gtinName",
+     "label": "gtinName",
+     "values": [
+      "818 Reposado Tequila 750ml 80 Proof"
+     ]
+    },
+    {
+     "property": "descriptionShort",
+     "label": "descriptionShort",
+     "values": [
+      "818 Reposado Tequila 750ml 80Pf"
+     ]
+    },
+    {
+     "property": "brandName",
+     "label": "brandName",
+     "values": [
+      "818"
+     ]
+    },
+    {
+     "property": "subBrand",
+     "label": "subBrand",
+     "values": [
+      "818 Reposado Tequila"
+     ]
+    },
+    {
+     "property": "gpcCategoryCode",
+     "label": "gpcCategoryCode",
+     "values": [
+      "10000263 - Spirits"
+     ]
+    },
+    {
+     "property": "functionalName",
+     "label": "functionalName",
+     "values": [
+      "SPIRITS,TEQUILA & AGAVE SPIRITS"
+     ]
+    },
+    {
+     "property": "Alcoholic Product Beverage Type (Proper)",
+     "label": "Alcoholic Product Beverage Type (Proper)",
+     "values": [
+      "Reposado"
+     ]
+    },
+    {
+     "property": "effectiveDateTime",
+     "label": "effectiveDateTime",
+     "values": [
+      "2026-05-12"
+     ]
+    },
+    {
+     "property": "marketingStatus",
+     "label": "marketingStatus",
+     "values": [
+      "ACTIVELY_MARKETED"
+     ]
+    },
+    {
+     "property": "01GTIN_12gs1TradeItemIdentificationKeyValue",
+     "label": "01GTIN_12gs1TradeItemIdentificationKeyValue",
+     "values": [
+      "195893031092"
+     ]
+    },
+    {
+     "property": "isTradeItemAConsumerUnit",
+     "label": "isTradeItemAConsumerUnit",
+     "values": [
+      "true"
+     ]
+    },
+    {
+     "property": "isPrivate",
+     "label": "isPrivate",
+     "values": [
+      "No"
+     ]
+    },
+    {
+     "property": "tradeItembrandOwnergln",
+     "label": "tradeItembrandOwnergln",
+     "values": [
+      "0080996000000"
+     ]
+    },
+    {
+     "property": "tradeItembrandOwnerpartyName",
+     "label": "tradeItembrandOwnerpartyName",
+     "values": [
+      "Sazerac Company Inc."
+     ]
+    },
+    {
+     "property": "isTradeItemABaseUnit",
+     "label": "isTradeItemABaseUnit",
+     "values": [
+      "true"
+     ]
+    },
+    {
+     "property": "manufacturerInternalReference",
+     "label": "manufacturerInternalReference",
+     "values": [
+      "Sazerac Company Inc"
+     ]
+    },
+    {
+     "property": "lastChangeDateTime",
+     "label": "lastChangeDateTime",
+     "values": [
+      "2026-05-12"
+     ]
+    },
+    {
+     "property": "productionType",
+     "label": "productionType",
+     "values": [
+      "MF"
+     ]
+    },
+    {
+     "property": "startAvailabilityDateTime",
+     "label": "startAvailabilityDateTime",
+     "values": [
+      "2026-04-29"
+     ]
+    },
+    {
+     "property": "01alternateItemIdentificationid",
+     "label": "01alternateItemIdentificationid",
+     "values": [
+      "195893031092"
+     ]
+    },
+    {
+     "property": "Concat - Alternate Item Identification - Supplier Assigned",
+     "label": "Concat - Alternate Item Identification - Supplier Assigned",
+     "values": [
+      "195893031092"
+     ]
+    }
+   ],
+   "referenceProperty": null,
+   "references": null
+  },
+  {
+   "digitalAssets": [],
+   "isReferencePropertySet": false,
+   "label": "Liquid Details",
+   "properties": [
+    {
+     "property": "alcoholProof",
+     "label": "alcoholProof",
+     "values": [
+      "80"
+     ]
+    },
+    {
+     "property": "percentageOfAlcoholByVolume",
+     "label": "percentageOfAlcoholByVolume",
+     "values": [
+      "40.000"
+     ]
+    },
+    {
+     "property": "alcoholicProductsTypeOfTaste",
+     "label": "alcoholicProductsTypeOfTaste",
+     "values": [
+      "Tequila"
+     ]
+    },
+    {
+     "property": "additionalFeaturesOrIncludedAccessories",
+     "label": "additionalFeaturesOrIncludedAccessories",
+     "values": [
+      "White/Clear"
+     ]
+    },
+    {
+     "property": "countryOfOriginStatement",
+     "label": "countryOfOriginStatement",
+     "values": [
+      "Mexico"
+     ]
+    },
+    {
+     "property": "countryOfOrigincountrySubdivisionCode",
+     "label": "countryOfOrigincountrySubdivisionCode",
+     "values": [
+      "DNA - Mexico"
+     ]
+    },
+    {
+     "property": "01ENingredientStatement",
+     "label": "01ENingredientStatement",
+     "values": [
+      "Agave"
+     ]
+    },
+    {
+     "property": "01ENingredientName",
+     "label": "01ENingredientName",
+     "values": [
+      "100% Blue Agave"
+     ]
+    }
+   ],
+   "referenceProperty": null,
+   "references": null
+  },
+  {
+   "digitalAssets": [],
+   "isReferencePropertySet": false,
+   "label": "Allergens Details",
+   "properties": [
+    {
+     "property": "X99levelOfContainmentCode",
+     "label": "X99levelOfContainmentCode",
+     "values": [
+      "FREE_FROM"
+     ]
+    }
+   ],
+   "referenceProperty": null,
+   "references": null
+  },
+  {
+   "digitalAssets": [],
+   "isReferencePropertySet": false,
+   "label": "Nutrients",
+   "properties": [
+    {
+     "property": "Concat Nutrient Data ",
+     "label": "Nutrient Data ",
+     "values": [
+      "Calories: 0.000",
+      "Total fat (g): 0.000",
+      "Saturated fat (g): 0.000",
+      "Trans Fat (g): 0.000",
+      "Cholesterol (mg): 0.000",
+      "Sodium (mg): 0.000",
+      "Sodium (g): 0.0",
+      "Total Carbohydrate (g): 0.000",
+      "Dietary Fiber (g): 0.000",
+      "Total Sugars (g): 0.000",
+      "Added Sugar (g): 0.000",
+      "Protein (g): 0.000"
+     ]
+    }
+   ],
+   "referenceProperty": null,
+   "references": null
+  },
+  {
+   "digitalAssets": [],
+   "isReferencePropertySet": false,
+   "label": "Pack/Handling-Weights/Dimensions Details",
+   "properties": [
+    {
+     "property": "tradeItemMeasurementsModuletradeItemMeasurementsnetContent",
+     "label": "tradeItemMeasurementsModuletradeItemMeasurementsnetContent",
+     "values": [
+      "750"
+     ]
+    },
+    {
+     "property": "tradeItemMeasurementsnetContentmeasurementUnitCode",
+     "label": "tradeItemMeasurementsnetContentmeasurementUnitCode",
+     "values": [
+      "MLT"
+     ]
+    },
+    {
+     "property": "tradeItemMeasurementsModuletradeItemMeasurementsheight",
+     "label": "tradeItemMeasurementsModuletradeItemMeasurementsheight",
+     "values": [
+      "10.560"
+     ]
+    },
+    {
+     "property": "tradeItemMeasurementsheightmeasurementUnitCode",
+     "label": "tradeItemMeasurementsheightmeasurementUnitCode",
+     "values": [
+      "INH"
+     ]
+    },
+    {
+     "property": "tradeItemMeasurementsModuletradeItemMeasurementsdepth",
+     "label": "tradeItemMeasurementsModuletradeItemMeasurementsdepth",
+     "values": [
+      "3.340"
+     ]
+    },
+    {
+     "property": "tradeItemMeasurementsdepthmeasurementUnitCode",
+     "label": "tradeItemMeasurementsdepthmeasurementUnitCode",
+     "values": [
+      "INH"
+     ]
+    },
+    {
+     "property": "tradeItemMeasurementsModuletradeItemMeasurementswidth",
+     "label": "tradeItemMeasurementsModuletradeItemMeasurementswidth",
+     "values": [
+      "3.340"
+     ]
+    },
+    {
+     "property": "tradeItemMeasurementswidthmeasurementUnitCode",
+     "label": "tradeItemMeasurementswidthmeasurementUnitCode",
+     "values": [
+      "INH"
+     ]
+    },
+    {
+     "property": "volume",
+     "label": "volume",
+     "values": [
+      "0.068"
+     ]
+    },
+    {
+     "property": "volumeuom",
+     "label": "volumeuom",
+     "values": [
+      "FTQ"
+     ]
+    },
+    {
+     "property": "netWeight",
+     "label": "netWeight",
+     "values": [
+      "1.653"
+     ]
+    },
+    {
+     "property": "netWeightmeasurementUnitCode",
+     "label": "netWeightmeasurementUnitCode",
+     "values": [
+      "LBR"
+     ]
+    },
+    {
+     "property": "tradeItemMeasurementstradeItemWeightgrossWeight",
+     "label": "tradeItemMeasurementstradeItemWeightgrossWeight",
+     "values": [
+      "3.663"
+     ]
+    },
+    {
+     "property": "tradeItemMeasurementstradeItemWeightgrossWeightmeasurementUnitCode",
+     "label": "tradeItemMeasurementstradeItemWeightgrossWeightmeasurementUnitCode",
+     "values": [
+      "LBR"
+     ]
+    }
+   ],
+   "referenceProperty": null,
+   "references": null
+  },
+  {
+   "digitalAssets": [],
+   "isReferencePropertySet": false,
+   "label": "Packaging and Handling Details",
+   "properties": [
+    {
+     "property": "alcoholProductsClosingTypeOfBottle",
+     "label": "alcoholProductsClosingTypeOfBottle",
+     "values": [
+      "OTHER"
+     ]
+    },
+    {
+     "property": "packagingTypeCode",
+     "label": "packagingTypeCode",
+     "values": [
+      "Glass"
+     ]
+    },
+    {
+     "property": "01ENwarningCopyDescription",
+     "label": "01ENwarningCopyDescription",
+     "values": [
+      "GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY, AND MAY CAUSE HEALTH PROBLEMS."
+     ]
+    },
+    {
+     "property": "Product Type Name",
+     "label": "Packaging Level Name",
+     "values": [
+      "Each"
+     ]
+    },
+    {
+     "property": "placeOfProductActivityproductActivityDetailsproductActivityTypeCode",
+     "label": "placeOfProductActivityproductActivityDetailsproductActivityTypeCode",
+     "values": [
+      "ASSEMBLY"
+     ]
+    },
+    {
+     "property": "Product Activity - ASSEMBLY - Country Name",
+     "label": "Product Activity - ASSEMBLY - Country Name",
+     "values": [
+      "Mexico"
+     ]
+    },
+    {
+     "property": "countryOfActivitycountryCode",
+     "label": "countryOfActivitycountryCode",
+     "values": [
+      "MX"
+     ]
+    },
+    {
+     "property": "dataCarrierTypeCode",
+     "label": "dataCarrierTypeCode",
+     "values": [
+      "UPC_A"
+     ]
+    },
+    {
+     "property": "minimumTradeItemLifespanFromTimeOfArrival",
+     "label": "minimumTradeItemLifespanFromTimeOfArrival",
+     "values": [
+      "365"
+     ]
+    },
+    {
+     "property": "numberOfServingsPerPackage",
+     "label": "numberOfServingsPerPackage",
+     "values": [
+      "16.907"
+     ]
+    }
+   ],
+   "referenceProperty": null,
+   "references": null
+  },
+  {
+   "digitalAssets": [],
+   "isReferencePropertySet": false,
+   "label": "TTB COLA Consumer Unit Level Only",
+   "properties": [
+    {
+     "property": "Concat Product TTB COLA Info",
+     "label": "Product TTB COLA Info",
+     "values": [
+      "TTB | ID: 21224001000783 | Serial # 21MM02 | Issued: 2021/08/13"
+     ]
+    }
+   ],
+   "referenceProperty": null,
+   "references": null
+  }
+ ],
+ "qaContent": [],
+ "sortValue": "818",
+ "subtitle": " | Tequila & Agave Spirits | Reposado",
+ "systemId": "s-53c834fe-6024-4d18-ab35-6d7c0fe7206c",
+ "title": "818 Reposado Tequila 750ml 80 Proof",
+ "useCaseContent": [],
+ "variantAxisProperties": [],
+ "slugifiedId": "00195893031092",
+ "slugifiedTitle": "818-Reposado-Tequila-750ml-80-Proof"
+}
