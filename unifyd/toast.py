@@ -172,13 +172,18 @@ def _pull_one(o, today):
     return bevs, acct
 
 
-def pull_menus(limit=None, log=print):
+def pull_menus(limit=None, log=print, outlets=None):
     """Fetch the next batch of Toast own-menus CONCURRENTLY → beverages into toast_beverages (source=toast).
     The page fetch (~30s through the ISP pool) dominates, so a thread pool over the ISP exits gives a big
-    throughput win — TOAST_WORKERS parallel fetches turn a 60/run trickle into hundreds/run."""
+    throughput win — TOAST_WORKERS parallel fetches turn a 60/run trickle into hundreds/run.
+
+    `outlets`, when given, is an explicit list of {guid,name,url} dicts to pull instead of the next
+    `limit`-sized slice of the whole national `_due_outlets()` queue — the same override pattern
+    doordash_naop.py's run(stores=...) already uses, so a metro-scoped pull (e.g. slug-matched Miami
+    outlets) doesn't have to wait for the national due-order to reach them."""
     limit = limit or int(os.environ.get("TOAST_LIMIT", "250"))
     workers = int(os.environ.get("TOAST_WORKERS", "10"))
-    outlets = _due_outlets(limit, log=log)
+    outlets = outlets if outlets is not None else _due_outlets(limit, log=log)
     if not outlets:
         log("[toast] no un-pulled outlets (harvest first?)")
         return 0
