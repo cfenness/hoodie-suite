@@ -266,7 +266,11 @@ SOURCES = [
               "sequentially, so exactly one process ever merges salsify_products. Manually runnable for a "
               "BBG-only pull, but never WHILE `salsify` is running"),
     dict(id="salsify", label="Salsify Sites (public catalog platform)",
-         code="import salsify as m; m.platform_pass()",
+         # SALSIFY_REPAIR=1 makes the run re-fetch products that have NO property capture (holes left by
+         # the same-day partition overwrite). Env-gated rather than always-on: the check is a
+         # count(DISTINCT product_id) over every partition — minutes of scan a daily tick shouldn't pay.
+         code=("import os, salsify as m; "
+               "m.platform_pass(repair_properties=os.environ.get('SALSIFY_REPAIR') == '1')"),
          tables=["salsify_catalogs", "salsify_products", "salsify_properties"], klass="headless",
          cadence="daily", enabled=True, timeout=21600, mem=8192,
          note="the LOOP: sites.salsify.com/sitemap_index.xml is a live directory of every PUBLIC catalog "
