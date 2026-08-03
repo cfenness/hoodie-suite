@@ -205,5 +205,22 @@ ok("…genuine absence still starts a new table",
 ok("…and the read is retried before it is believed",
    'lambda: query(name, "SELECT * FROM t"), "read-for-merge' in _wh)
 
+# ── the sitemap publishes a slug the data route rejects ──────────────────────────────────────────
+# Salsify slugifies the HTML-ESCAPED title into sitemap_1.xml, so "Lemonade & Lime" is written
+# `Lemonade-andamp-Lime`, while the data route resolves `Lemonade-and-Lime`. Measured on Sazerac:
+# 106 of 107 unfetchable products contained `andamp`; 0 of the 7,573 that fetched did.
+print("\nSitemap/route slug disagreement")
+_ssrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "salsify.py")).read()
+ok("a clean slug is used as-is, never rewritten",
+   salsify._slug_variants("Wave-Baja-750ml") == ["Wave-Baja-750ml"])
+ok("an `andamp` slug is tried as published FIRST, then repaired",
+   salsify._slug_variants("Southern-Comfort-Lemonade-andamp-Lime-330ml")
+   == ["Southern-Comfort-Lemonade-andamp-Lime-330ml",
+       "Southern-Comfort-Lemonade-and-Lime-330ml"])
+ok("every occurrence is repaired, not just the first",
+   salsify._slug_variants("A-andamp-B-andamp-C")[1] == "A-and-B-and-C")
+ok("the repair only fires on a ROUTING rejection (403/404), not any error",
+   "if e.code not in (403, 404):" in _ssrc)
+
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
