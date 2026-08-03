@@ -134,6 +134,49 @@ def main():
     check("shards reunite to the full keyspace",
           sum(len(m.keyspace(shard=s, nshard=4)) for s in range(4)) == 100000, None)
 
+    # ── the stranded-hit invariant ────────────────────────────────────────────────────────────
+    # Regression for the defect that lost 13 confirmed distributors. save_state() checkpoints hits
+    # to the warehouse every 20s, but land() only ran after sweep() RETURNED — so a bite killed
+    # mid-sweep (machine timeout, OOM, deploy) left its finds in `done`, where a resumed run never
+    # re-probes them, while they never reached the directory. Permanent loss, reported as 100%
+    # coverage. The sweep now lands what it LOADS, and again whenever the hit set grows.
+    #
+    # `keyspace` is stubbed to the two already-probed codes so `todo` is empty: this test asserts
+    # the LANDING behaviour and must never open a socket.
+    print("\ninterrupted bites never strand a hit")
+    landed = {}
+
+    def fake_land(state, log=print):
+        landed.clear()
+        landed.update(state["hits"])
+        return len(state["hits"])
+
+    real_land, real_keyspace = m.land, m.keyspace
+    m.land = fake_land
+    m.keyspace = lambda shard=None, nshard=None: ["00221", "01247"]
+    try:
+        m.save_state({"done": {"00221": 1, "01247": 1},
+                      "hits": {"00221": {"source_code": "00221", "status": "confirmed"},
+                               "01247": {"source_code": "01247", "status": "confirmed"}},
+                      "started": 0})
+        landed.clear()
+        state, _ = m.sweep(workers=1, log=lambda *a: None)
+        check("a resumed sweep lands hits stranded by a killed bite",
+              set(landed) == {"00221", "01247"}, sorted(landed))
+        check("…without re-probing anything already done", set(state["done"]) == {"00221", "01247"},
+              sorted(state["done"]))
+
+        # a deliberate wipe stays a wipe — --restart must not resurrect the checkpoint
+        landed.clear()
+        m.sweep(workers=1, restart=True, log=lambda *a: None)
+        check("--restart does not resurrect a wiped checkpoint", landed == {}, sorted(landed))
+    finally:
+        m.land, m.keyspace = real_land, real_keyspace
+        try:
+            os.remove(m.STATE_FILE)
+        except OSError:
+            pass
+
     print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
     return 1 if FAILED else 0
 

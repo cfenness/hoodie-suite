@@ -241,6 +241,13 @@ def _probe_one(code, counters, state, state_lock, log):
 def sweep(shard=None, nshard=None, limit=None, workers=30, deadline=None, restart=False,
           checkpoint_every=20.0, max_bad_rate=0.98, log=print):
     state = load_state() if not restart else _blank()
+    # A previous bite may have been killed after checkpointing hits but before landing them (the
+    # machine timing out, an OOM, a deploy). Those codes are already in `done`, so they will never
+    # be probed again — landing the loaded state FIRST is what stops that from being permanent.
+    # Measured: 13 confirmed distributors (Heidelberg, Gen Beverage, Admiral… ~43.7k products) sat
+    # stranded in the checkpoint for exactly this reason, while the census reported 100% coverage.
+    if not restart and state["hits"]:
+        _land_safe(state, log)
     todo = [c for c in keyspace(shard, nshard) if c not in state["done"]]
     if limit:
         todo = todo[:limit]
@@ -255,6 +262,7 @@ def sweep(shard=None, nshard=None, limit=None, workers=30, deadline=None, restar
     stop = threading.Event()
     i = 0
     last_checkpoint = t0
+    landed_n = [len(state["hits"])]        # list so the checkpoint block can mutate it in place
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = {}
         it = iter(todo)
@@ -286,6 +294,12 @@ def sweep(shard=None, nshard=None, limit=None, workers=30, deadline=None, restar
                 last_checkpoint = now
                 with state_lock:
                     save_state(state)
+                    # Land ONLY when the hit set grew. Hits are rare (365 in 100k probes), so this
+                    # costs ~one small merge per discovery instead of one per checkpoint, and it
+                    # bounds the loss from a killed bite to whatever arrived since the last hit.
+                    if len(state["hits"]) != landed_n[0]:
+                        landed_n[0] = len(state["hits"])
+                        _land_safe(state, log)
                 probed = counters.n_hit + counters.n_miss + counters.n_inconclusive
                 rate = probed / max(1e-6, now - t0)
                 log("  … %d probed (%d hits, %d misses, %d inconclusive) · %.1f id/s · %d queued"
@@ -314,6 +328,17 @@ def sweep(shard=None, nshard=None, limit=None, workers=30, deadline=None, restar
 
 
 # ── land ──────────────────────────────────────────────────────────────────────────────────────
+def _land_safe(state, log):
+    """Land whatever `state` holds, swallowing any failure. Same rule as save_state: persistence
+    trouble must never kill a 17-hour sweep — but unlike save_state, NOT landing is data loss, so
+    the failure is logged rather than passed silently."""
+    try:
+        return land(state, log=lambda *a: None)
+    except Exception as e:                                   # noqa: BLE001
+        log("  land failed (will retry at the next hit): %s" % str(e)[:100])
+        return 0
+
+
 def land(state, log=print):
     if warehouse is None:
         log("warehouse unavailable — not landing"); return 0
