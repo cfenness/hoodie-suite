@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "updated": "2026-08-03",
+  "_note": "Versioned DATA, not code (OVERLAY-DESIGN §4). Deterministic expected-ABV bands per category, and the state regulatory-quirk table. Edit here; overlay_detect.py reads this file and falls back to the inline defaults if it is missing or unparseable.",
+  "abv_bands": {
+    "beer":            [3.0, 14.0],
+    "cider":           [3.0, 12.0],
+    "seltzer":         [3.0, 9.0],
+    "rtd":             [3.0, 14.0],
+    "table wine":      [7.5, 17.0],
+    "sparkling wine":  [9.0, 14.0],
+    "dessert wine":    [14.0, 24.0],
+    "fortified wine":  [15.0, 24.0],
+    "sake":            [12.0, 22.0],
+    "liqueur":         [12.0, 45.0],
+    "vermouth":        [14.0, 24.0],
+    "brandy":          [35.0, 60.0],
+    "cognac":          [38.0, 50.0],
+    "gin":             [37.0, 60.0],
+    "rum":             [35.0, 76.0],
+    "tequila":         [35.0, 55.0],
+    "mezcal":          [35.0, 55.0],
+    "vodka":           [35.0, 60.0],
+    "whiskey":         [38.0, 70.0],
+    "bourbon":         [40.0, 70.0],
+    "rye":             [40.0, 70.0],
+    "scotch":          [40.0, 65.0],
+    "spirits":         [15.0, 76.0]
+  },
+  "state_quirks": [
+    {
+      "id": "ut_rtd_fmb",
+      "state": "UT",
+      "categories": ["rtd", "seltzer", "cider", "beer"],
+      "rule": "Utah's flavored-malt-beverage rules force a state-specific formulation and SKU for national RTDs; the national code is not the Utah code.",
+      "expect": "A separate Utah item, usually reformulated to the low-ABV grocery threshold. A national RTD code carried into Utah is either the wrong SKU or a conflated one."
+    },
+    {
+      "id": "control_size_restriction",
+      "state": "*CONTROL*",
+      "categories": ["spirits", "vodka", "whiskey", "bourbon", "gin", "rum", "tequila", "brandy"],
+      "rule": "Control states list a restricted size set; sizes outside the state's listed set are not sellable there.",
+      "expect": "A spirits size that is not in the control board's listing will not have a state code, and a row asserting it is a listing error."
+    },
+    {
+      "id": "franchise_dup",
+      "state": "*FRANCHISE*",
+      "categories": [],
+      "rule": "Franchise states bind a brand to one wholesaler; the same item is commonly duplicated across wholesaler-specific codes.",
+      "expect": "Two item codes for one identity in a franchise state is a wholesaler duplicate, not two products."
+    }
+  ],
+  "control_states": ["AL", "ID", "ME", "MS", "MT", "NC", "NH", "OH", "OR", "PA", "UT", "VA", "VT", "WV", "WY"],
+  "franchise_states": ["AZ", "CT", "DE", "GA", "ME", "MA", "MI", "MO", "NV", "NJ", "NM", "OH", "OK", "SC", "TN", "VT", "WA"]
+}

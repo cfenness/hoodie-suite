@@ -31,6 +31,7 @@ import binnys_scraper as binnys    # Binny's directional tracker (Algolia feed, 
 # no proxy (proven landing per instacart-free-verify CI). Imported lazily in instacart_pull so a slim
 # image without the browser lib doesn't break server import. The old BD dataset scraper is archived.
 import analyze                      # data-reader brain behind "Overlay your data"
+import overlay                      # the Overlay pipeline: upload → match → cleanse → diagnose → report
 import planogram                    # benchmark + shelf-vision + pitch behind the Planogram app
 import hi_analyst                   # the real Claude analyst behind Hoodie Intelligence Q&A
 import prism                        # data contract behind the Prism mobile app
@@ -302,7 +303,65 @@ CONNECTORS_META = [
     {"id": "total-wine", "label": "Total Wine", "group": "Retail chain", "runs": None, "data": "total_wine_products"},
     {"id": "vtinfo", "label": "VTInfo locator", "group": "Reference", "runs": None, "data": "vtinfo_titos"},
     {"id": "ab-inbev", "label": "AB InBev locator", "group": "Reference", "runs": None, "data": None},
+    {"id": "bbg", "label": "Breakthru Beverage (Salsify catalog)", "group": "Distributor", "runs": None,
+     "data": "salsify_products", "heavy": True},
+    {"id": "salsify", "label": "Salsify Sites (public catalog platform)", "group": "Distributor",
+     "runs": None, "data": "salsify_catalogs", "heavy": True},
 ]
+
+# CONNECTORS_META is a CURATED list — nice labels, real groups, hand-set heavy/creds flags. It is not the
+# source of truth for WHAT EXISTS, and treating it as one is the same drift that _dispatch_pull already
+# paid down on the run side: a source the registry owns was runnable via /api/run yet INVISIBLE in the
+# Pulls console until someone remembered to add a row here. Measured 2026-08-03: 40 of 54 enabled registry
+# sources were missing — including both distributor platform recipes (vip-brandbuilder, sevenfifty). So the
+# listing derives from the registry too, and the curated rows become overrides on top of that floor. A new
+# registry row is now runnable AND visible the day it lands.
+_KLASS_GROUP = {"mac": "Browser (anti-bot)", "creds": "Credentialed", "headless": "Registry source"}
+
+
+def _registry_conn_rows():
+    """Every enabled registry source the curated list doesn't already cover."""
+    have = {m["id"] for m in CONNECTORS_META}
+    rows = []
+    for s in source_registry.SOURCES:
+        if not s.get("enabled") or s["id"] in have:
+            continue
+        tables = s.get("tables") or []
+        rows.append({"id": s["id"], "label": s.get("label") or s["id"],
+                     "group": _KLASS_GROUP.get(s.get("klass"), "Registry source"),
+                     "runs": None, "data": tables[0] if tables else None,
+                     "heavy": s.get("klass") == "mac",
+                     "needs_creds": bool(s.get("requires"))})
+    return rows
+
+
+def _conn_board_reads():
+    """The two BATCH reads behind the connector board's last-run column, cached and refreshed off the
+    request thread.
+
+    Measured on the live app: `ledger_last()` is 24.5s (it groups over every `source_runs_log` partition)
+    and `list_datasets()` 1.3s — so building the board inline cost ~26s of wall clock BEFORE any row was
+    rendered, and under load `/api/connectors` was taking 137s. That is the Pulls console's whole page.
+
+    `_ttl` is stale-while-revalidate and never blocks: a cold call returns `({}, None)` — a board with no
+    last-run column, which the polling UI fills in on its next tick — and refreshes in the background.
+    A board that renders immediately and completes itself beats one that hangs."""
+    return _ttl("conn_board_reads", 300, _conn_board_reads_now, cold=({}, None)) or ({}, None)
+
+
+def _conn_board_reads_now():
+    counts = {}
+    try:
+        import warehouse
+        counts = {d["name"]: d.get("rows") for d in warehouse.list_datasets()}
+    except Exception:
+        counts = {}
+    try:
+        import run_sources as _rs
+        return counts, _rs.ledger_last()
+    except Exception:
+        return counts, None
+
 
 def _conn_enabled():
     return (load("connectors.json", {}) or {}).get("enabled", {})
@@ -1992,6 +2051,15 @@ def _walmart_concern_count():
             pass
     return n
 
+# The long runs that have a hand-written tick-progress doc under docs/ (rendered per-tick by the Scrape
+# Run Tracker). Everything else the tracker can show comes from the registry — see /api/runs/docs.
+_RUN_DOCS = [
+    {"id": "ubereats", "label": "UberEats — fresh-IP catalog run",
+     "path": "../docs/ubereats-fresh-ip-run-2026-07-30.md", "dataTable": "ubereats_products"},
+    {"id": "doordash", "label": "DoorDash — full-catalog chain run",
+     "path": "../docs/doordash-full-run-2026-07-30.md", "dataTable": "doordash_stores"},
+]
+
 # ── Scrape/crawl tracker — every active pull that lands in the warehouse, with freshness + concerns. ──
 _SCRAPES = [
     {"id": "ttb-crawl",  "name": "TTB COLA · crawl (index)",  "kind": "crawl",  "source": "ttbonline.gov",
@@ -2019,6 +2087,14 @@ _SCRAPES = [
      "table": "shopify_products", "feeds": "pricing + inventory", "detail": None},
     {"id": "publix",     "name": "Publix · weekly ad (BOGO)",   "kind": "promo",   "source": "publix.com (FL/GA/SC)",
      "table": "publix_products", "feeds": "pricing + promotions", "detail": None},
+    {"id": "bbg",        "name": "Breakthru Beverage · Salsify catalog", "kind": "product",
+     "source": "sites.salsify.com (BBG public master)", "table": "salsify_products",
+     "feeds": "distributor item master",
+     "detail": "dist item code (SAP Material ID), their own item description, supplier, size, ABV, UPC"},
+    {"id": "salsify",    "name": "Salsify Sites · public catalog directory", "kind": "crawl",
+     "source": "sites.salsify.com/sitemap_index.xml", "table": "salsify_catalogs",
+     "feeds": "which catalogs exist to pull",
+     "detail": "org/site ids, catalog name, product count, sitemap availability"},
     # NOTE: the bev-alc chains registry is a source *catalog*, not a scrape — it lives on its own
     # Bev-Alc Chains page, not here.
 ]
@@ -3052,7 +3128,10 @@ def scrape_dataset_ep():
     (reset on every process restart, so it understates a multi-day sweep's real cumulative size). Scoped by
     ?source= (a source_registry id, e.g. ubereats, walmart, target, publix)."""
     site = (request.args.get("source") or "ubereats").strip()
-    if not site.replace("_", "").isalnum():
+    # Registry ids are kebab-case (trader-joes, abc-fws, ca-abc, heaven-hill) — the old alnum+underscore
+    # check 400'd every one of them. Harmless while the tracker's list was two hardcoded entries; a real
+    # break now that the list is registry-derived.
+    if not site.replace("_", "").replace("-", "").isalnum():
         return jsonify(ok=False, error="invalid source"), 400
     return jsonify(_ttl("scrape_dataset_%s" % site, 180, lambda: _scrape_dataset_data(site)))
 
@@ -3522,10 +3601,16 @@ def connector_creds():
     return jsonify(ok=True, have=have)
 
 
-def _conn_last_run(meta):
+def _conn_last_run(meta, counts=None, ledger=None):
     """The last run for a connector, from the SINGLE most authoritative source available: the connector's own
-    <x>_runs warehouse table first, then the in-process RUNS log, then (last resort) a live data-table count
-    that proves we HAVE data even when run history is missing. This is what makes 'what's running' legible."""
+    <x>_runs warehouse table first, then the in-process RUNS log, then the shared registry ledger, then (last
+    resort) a live data-table count that proves we HAVE data even when run history is missing.
+
+    `counts` / `ledger` are the BATCH forms — one warehouse listing and one ledger read for the whole board,
+    passed in by the caller. Without them this falls back to per-connector queries, which is O(connectors)
+    remote round-trips: fine for a curated dozen, a page-load timeout once the board derives from the
+    registry (measured: /api/connectors hung past 30s at 62 rows). Kept as a fallback so a single-connector
+    caller still works."""
     rt = meta.get("runs")
     if rt:
         try:
@@ -3542,8 +3627,15 @@ def _conn_last_run(meta):
     if r:
         return {"run_id": r.get("id"), "at": r.get("finishedAt"), "status": r.get("status"),
                 "count": r.get("total"), "source": "runs.json"}
+    if ledger:
+        last, last_ok = ledger
+        ts = last.get(meta["id"])
+        if ts:
+            n = (counts or {}).get(meta.get("data")) if counts else None
+            return {"run_id": None, "at": int(ts * 1000), "source": "source_runs_log", "count": n,
+                    "status": "ok" if last_ok.get(meta["id"]) == ts else "ran"}
     if meta.get("data"):
-        n = _wh_count(meta["data"])
+        n = (counts or {}).get(meta["data"]) if counts is not None else _wh_count(meta["data"])
         if n:
             return {"run_id": None, "at": None, "status": "data-present", "count": n, "source": meta["data"]}
     return None
@@ -3554,15 +3646,17 @@ def connectors_list():
     """ONE board for every source: what exists, whether it's enabled (on/off), and its true last run — merged
     across warehouse <x>_runs, the runs log, and live data counts. The Pulls console renders off this."""
     en = _conn_enabled()
+    counts, ledger = _conn_board_reads()
     out = []
-    for m in CONNECTORS_META:
+    for m in CONNECTORS_META + _registry_conn_rows():
         out.append({"id": m["id"], "label": m.get("label"), "group": m.get("group"),
                     "heavy": bool(m.get("heavy")), "needs_creds": bool(m.get("needs_creds")),
                     "toggle": bool(m.get("toggle")), "data": m.get("data"),
                     "enabled": en.get(m["id"], True),
                     "runnable": m["id"] in VALID_CONNS,
-                    "last_run": _conn_last_run(m)})
-    return jsonify(ok=True, connectors=out, groups=sorted({m.get("group", "") for m in CONNECTORS_META}))
+                    "last_run": _conn_last_run(m, counts=counts, ledger=ledger)})
+    return jsonify(ok=True, connectors=out,
+                   groups=sorted({c.get("group") or "" for c in out}))
 
 
 @app.post("/api/connectors/toggle")
@@ -3595,6 +3689,77 @@ def ttb_label_ep(ttbid):
     if request.args.get("download"):
         headers["Content-Disposition"] = 'attachment; filename="ttb_%s.jpg"' % tid
     return Response(data, headers=headers)
+
+@app.get("/api/runs/live")
+def runs_live_ep():
+    """LIVE run progress, read from the shared warehouse — the Mac-free path the Scrape Run Tracker
+    should use for every source.
+
+    A pull runs on its own ephemeral Fly machine and heartbeats a journal to `_collect/runs/<id>.json`
+    (run_journal.py, fed by the scraper's own `HOODIE_PROGRESS` lines). That is already written for every
+    registry run, scheduled or manual — nothing was SERVING it, which is why the tracker still leaned on
+    markdown docs produced by a Mac-side poller tailing Fly over SSH. That poller is legacy: it dies with
+    the terminal, needs a tunnel per shard, and keeps state in a local file. This endpoint replaces it.
+
+    `?source=` scopes to one registry id; `?id=` reads one run; `?active=1` returns only runs in flight.
+    """
+    import run_journal
+    rid = (request.args.get("id") or "").strip()
+    if rid:
+        doc = run_journal.read(rid)
+        return (jsonify(ok=True, run=doc) if doc else (jsonify(ok=False, error="unknown run"), 404))
+    source = (request.args.get("source") or "").strip() or None
+    try:
+        limit = max(1, min(60, int(request.args.get("limit", "12"))))
+    except ValueError:
+        limit = 12
+    runs = run_journal.recent(limit=limit, source=source,
+                              active_only=request.args.get("active") in ("1", "true"))
+    return jsonify(ok=True, runs=runs)
+
+
+@app.get("/api/runs/docs")
+def runs_docs_ep():
+    """The Scrape Run Tracker's source directory — the live listing its hardcoded SOURCES array was
+    always a placeholder for ("a future /api/runs/docs endpoint can replace this").
+
+    Two kinds of entry, both real:
+      * doc-backed  — a long run with a tick-progress markdown doc (`docs/<id>-*.md`, or the
+                      warehouse mirror the Mac-side poller pushes). These get the per-tick table.
+      * registry    — every enabled source_registry entry. No tick doc, but a landing table, so the
+                      tracker's Live Data panel works and the run is at least SELECTABLE. Before
+                      this, a source was untrackable until someone hand-added it to three separate
+                      lists; a scrape you can't see is indistinguishable from one that isn't running.
+    `dataTable` is the FLAT table /api/scrape/dataset can read — date-partitioned tables are skipped
+    (the reader opens a single <name>.parquet and 404s on a partitioned one), so we never hand the UI
+    a table it will fail on."""
+    import glob
+    root = SUITE_ROOT or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    local_docs = {os.path.basename(p).split("-")[0] for p in glob.glob(os.path.join(root, "docs", "*.md"))}
+    scrape_tables = {s["id"]: s["table"] for s in _SCRAPES}
+    by_doc = {d["id"]: d for d in _RUN_DOCS}
+    out, seen = [], set()
+    # Registry sources FIRST: they heartbeat a journal to the warehouse from their own Fly machine,
+    # which is the target architecture. The doc-backed pair is legacy (a Mac-side poller) and sorts last.
+    for s in source_registry.SOURCES:
+        if not s.get("enabled") or s["id"] in seen:
+            continue
+        tables = [t for t in (s.get("tables") or []) if not t.endswith("_parts")]
+        # A registry source that ALSO has a legacy run doc (ubereats) keeps the doc as a fallback: the
+        # tracker reads the journal first and only falls through when a run predates journalling. Losing
+        # the view of an in-flight run to a migration would be a worse bug than the one being fixed.
+        doc = by_doc.get(s["id"]) or {}
+        out.append({"id": s["id"], "label": s.get("label") or s["id"], "kind": "registry",
+                    "dataTable": (doc.get("dataTable") or scrape_tables.get(s["id"])
+                                  or (tables[0] if tables else None)),
+                    "path": doc.get("path"), "hasDoc": bool(doc) or s["id"] in local_docs,
+                    "cadence": s.get("cadence"), "klass": s.get("klass")})
+        seen.add(s["id"])
+    for d in _RUN_DOCS:                                    # legacy, Mac-poller-backed long runs
+        if d["id"] not in seen:
+            out.append(dict(d, kind="doc", hasDoc=True))
+    return jsonify(ok=True, sources=out)
+
 
 @app.get("/api/scrape-progress/<sid>")
 def scrape_progress_ep(sid):
@@ -5620,6 +5785,139 @@ def ai_read_ep():
     if "error" not in result:
         return jsonify(result)
     return jsonify(result), (503 if result["error"] == "llm-disabled" else 502)
+
+
+# ── Overlay Your Data — upload → match → cleanse → derive → diagnose → report ─────────────
+# The pipeline lives in overlay.py; these endpoints are transport only. Two properties are
+# enforced HERE because they're properties of the request, not of the pipeline:
+#   · EPHEMERALITY. The uploaded bytes exist for the request and are not written anywhere. That
+#     is why the workbook endpoint takes the file again instead of us caching the run — a cache
+#     would make the promise on the page false, and the second pass costs about a second.
+#   · The heavy master/observation handles are built PER REQUEST so one slow table can't poison
+#     a later run, and their availability is reported in the response rather than swallowed.
+
+def _overlay_deps():
+    """(master, observations, crosswalk) for a run. Each is independently degradable."""
+    import overlay_market
+    import overlay_match
+    # UPC_XWALK is the prefix→brand-owner map built from COLA filings. Empty until one is
+    # uploaded, and that is fine: it activates the owner-agreement detector and nothing else.
+    return overlay_match.WarehouseMaster(), overlay_market.WarehouseObs(), (UPC_XWALK or None)
+
+
+def _overlay_input():
+    """The uploaded file, from multipart `file` or a JSON/form `text` paste. Returns (name, bytes)."""
+    f = request.files.get("file")
+    if f:
+        return (f.filename or "upload.csv"), f.read()
+    body = request.get_json(force=True, silent=True) or {}
+    text = body.get("text") or request.form.get("text") or ""
+    if str(text).strip():
+        return (body.get("filename") or request.form.get("filename") or "pasted.csv"), \
+               str(text).encode("utf-8")
+    return None, None
+
+
+@app.post("/api/overlay/run")
+def overlay_run_ep():
+    """Run the whole pipeline over an uploaded file and return the read.
+
+    `tier` = free | suite (caps + how much enrichment is unlocked); `mode` = consumer | brand
+    (brand mode strips every negative market claim, server-side). Row data is echoed back capped —
+    the full annotated file is the workbook, not this payload."""
+    name, raw = _overlay_input()
+    if raw is None:
+        return jsonify(error="no file", detail="send a `file` (multipart) or `text` (JSON)"), 400
+    tier = request.values.get("tier") or (request.get_json(silent=True) or {}).get("tier") or "free"
+    mode = request.values.get("mode") or (request.get_json(silent=True) or {}).get("mode") or "consumer"
+    master, obs, xw = _overlay_deps()
+    try:
+        res = overlay.run(name, raw, tier=tier if tier in overlay.CAPS else "free", mode=mode,
+                          master=master, obs=obs, crosswalk=xw, log=app.logger.info,
+                          distributor=request.values.get("distributor") or None)
+    except Exception as e:
+        app.logger.exception("overlay run failed")
+        return jsonify(error="overlay-failed", detail=str(e)[:200]), 500
+    if res.get("error"):
+        return jsonify(res), (413 if res.get("engagement") else 400)
+    preview = res.pop("_rows", [])[:200]
+    res["preview"] = {"rows": preview, "of": res["parse"]["row_count"]}
+    res["provenance"] = _overlay_provenance()
+    return jsonify(res)
+
+
+@app.post("/api/overlay/workbook")
+def overlay_workbook_ep():
+    """The returned workbook — their file back, annotated. Same input as /run; the pipeline is
+    re-run rather than cached, which is what keeps the ephemerality statement on the page true."""
+    name, raw = _overlay_input()
+    if raw is None:
+        return jsonify(error="no file"), 400
+    tier = request.values.get("tier") or "free"
+    mode = request.values.get("mode") or "consumer"
+    master, obs, xw = _overlay_deps()
+    try:
+        res = overlay.run(name, raw, tier=tier if tier in overlay.CAPS else "free", mode=mode,
+                          master=master, obs=obs, crosswalk=xw, log=app.logger.info,
+                          distributor=request.values.get("distributor") or None)
+        if res.get("error"):
+            return jsonify(res), 400
+        prov = _overlay_provenance()
+        data = overlay.workbook(res, master_build=prov.get("master_build"),
+                                quality=prov.get("match_quality"), xwalk=prov.get("tier3_crosswalk"))
+    except Exception as e:
+        app.logger.exception("overlay workbook failed")
+        return jsonify(error="workbook-failed", detail=str(e)[:200]), 500
+    out = re.sub(r"\.[A-Za-z0-9]+$", "", os.path.basename(name or "overlay")) + " — Hoodie overlay.xlsx"
+    return Response(data, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="%s"' % out})
+
+
+@app.get("/api/overlay/registry")
+def overlay_registry_ep():
+    """The detector registry as data — what we check, how we know, and which detectors are
+    currently SILENT because their precision isn't measured. Published on purpose: a catalog you
+    can read is the opposite of a black box."""
+    import overlay_detect
+    return jsonify(overlay_detect.catalog())
+
+
+def _overlay_provenance():
+    """Master build date, measured matcher P/R, and Tier-3 crosswalk coverage. Every one of these
+    is READ, never asserted — a number we can't read comes back absent, not guessed."""
+    out = {"pipeline_version": overlay.PIPELINE_VERSION}
+    try:
+        import overlay_detect
+        out["registry_version"] = overlay_detect.REGISTRY_VERSION
+        out["bands_version"] = overlay_detect.BANDS_VERSION
+    except Exception:
+        pass
+    try:
+        rows = warehouse.query("item_identity", "SELECT count(*) AS n, "
+                                                "count(DISTINCT canon_item_id) AS items FROM t")
+        out["item_identity"] = {"rows": int(rows[0]["n"]), "items": int(rows[0]["items"])} if rows else None
+    except Exception as e:
+        out["item_identity"] = {"unavailable": str(e)[:100]}
+    try:
+        q = warehouse.query("master_quality", "SELECT * FROM t ORDER BY run_at DESC LIMIT 1")
+        if q:
+            out["match_quality"] = {k: v for k, v in q[0].items()
+                                    if k in ("precision", "recall", "f1", "run_at", "gold_pairs")}
+    except Exception:
+        pass
+    try:
+        import dist_xwalk
+        cov = dist_xwalk.coverage()
+        if cov.get("available"):
+            out["tier3_crosswalk"] = {k: v for k, v in cov.items() if k != "available"}
+    except Exception:
+        pass
+    return out
+
+
+@app.get("/api/overlay/provenance")
+def overlay_provenance_ep():
+    return jsonify(_overlay_provenance())
 
 
 @app.post("/api/parse-upload")

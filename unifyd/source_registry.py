@@ -252,8 +252,28 @@ SOURCES = [
     dict(id="cityhive", label="City Hive network", code="import cityhive as m; m.national(max_stores=100)",
          caps=['curl_cffi', 'patchright'],   # optional libs this source silently degrades without (capability.py)
          tables=["cityhive_products"], klass="mac", cadence="daily", enabled=True, cost_class="mac", priority=61, note="Cloudflare — patchright"),
-    dict(id="bbg", label="BBG e-commerce", code="import bbg_salsify as m; m.pull()",
-         tables=["bbg_products"], klass="headless", cadence="daily", enabled=True, note="Salsify API"),
+    # ONE WRITER for salsify_products. It landed as two sources (`bbg` daily + `salsify` weekly) and both
+    # write_accumulate into the same table — which is READ-MODIFY-WRITE and single-writer only. The
+    # dispatcher spawns a machine per due source, so the two overlapped on 2026-08-03 and the merge lost
+    # the other's rows: the run journal recorded 8,200 landed, the table afterwards held 1,574 (exactly the
+    # failure warehouse.write_accumulate documents — an 8-shard UberEats fleet driving 33,250 rows down to
+    # 8,798). `bbg` is now a CATALOG of the one source, not a source of its own; it is kept here disabled so
+    # its ledger history stays attributable.
+    dict(id="bbg", label="Breakthru Beverage (Salsify catalog) — folded into `salsify`",
+         code="import salsify as m; m.pull(catalog='bbg')", enabled_note="one writer for salsify_products",
+         tables=["salsify_products", "salsify_properties"], klass="headless", cadence="daily", enabled=False,
+         note="SUPERSEDED as a separate source — `salsify` pulls every seeded catalog including BBG, "
+              "sequentially, so exactly one process ever merges salsify_products. Manually runnable for a "
+              "BBG-only pull, but never WHILE `salsify` is running"),
+    dict(id="salsify", label="Salsify Sites (public catalog platform)",
+         code="import salsify as m; m.platform_pass()",
+         tables=["salsify_catalogs", "salsify_products", "salsify_properties"], klass="headless",
+         cadence="daily", enabled=True, timeout=21600, mem=8192,
+         note="the LOOP: sites.salsify.com/sitemap_index.xml is a live directory of every PUBLIC catalog "
+              "on the platform (519 sites / 118 orgs at 2026-08-03) — discover() lands the directory to "
+              "salsify_catalogs, then EVERY seeded catalog (bbg, sazerac, heaven-hill) is pulled by this "
+              "one process. Promote a discovered site by adding it to salsify.CATALOGS. Daily + resumable: "
+              "each tick continues where the last stopped and only re-emits properties that MOVED"),
 
     # ── Distributors / state / reference ──────────────────────────────────────────────────────────────────────
     dict(id="winebow", label="Winebow (distributor)", code="import winebow as m; m.pull()",
@@ -560,6 +580,17 @@ BUILDS = [
     # …then score that SERVED canon identity against item_key on the SAME gold the item_key run built, so the
     # head-to-head that justifies the cutover is MEASURED in-app every cycle. Additive: lands master_quality_canon,
     # never touches the item_key ratchet. after build-master-quality (gold) + build-item-identity (fresh identity).
+    # The Overlay's Tier-3 match spine (OVERLAY-DESIGN §6). Uploaded files are DISTRIBUTOR-shaped —
+    # their own item numbers, not always a retail UPC — so `dist_item_code → canon_item_id` is the
+    # tier that lands hardest with a distributor buyer ("we matched on your own item numbers").
+    # Reads the landed distributor catalogs (VIP Brand Builder, Salsify tenants); adding a
+    # distributor is a scrape upstream, not a change here. after build-item-identity so the canon
+    # ids it resolves against are the fresh ones.
+    dict(id="build-dist-xwalk", label="Distributor item crosswalk (Overlay Tier-3 spine)",
+         code="import dist_xwalk as m; m.build()",
+         tables=["dist_item_xwalk"], klass="build", interval_h=24, enabled=True,
+         after=["build-item-identity"],
+         note="dist_item_code|retail_upc → canon_item_id from vip_brandbuilder_items + bbg_products"),
     dict(id="build-master-quality-canon", label="Master quality — served canon identity (head-to-head)",
          code="import master_quality as m; m.score_canon()",
          tables=["master_quality_canon"], klass="build", interval_h=24, enabled=True,

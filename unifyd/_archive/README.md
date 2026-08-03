@@ -56,7 +56,15 @@ Tracked here so they're not forgotten:
 | 7-Eleven | `sevennow_warm.py` | `sevennow.py` = library it wraps (keep) |
 | Instacart | `instacart.py` (free Playwright driver, aggregator base) | `instacart_scraper.py` = archived BD dataset (paid) |
 | Shopify | `off_premise.py` → `national_sweep("shopify")` / `shopify_catalog` (census-sweep recipe, registry id `shopify`) | `shopify_scraper.py` = standalone DTC scraper, folded into the census sweep 2026-07-24 (its brand seed → `off_premise.SHOPIFY_SEED`) |
+| Salsify catalogs (incl. Breakthru) | `salsify.py` (platform recipe — any public `sites.salsify.com` catalog; registry ids `bbg`, `salsify`) | `bbg_salsify.py` = archived one-site version, see below |
 
+- `bbg_salsify.py` — the BBG-only version of the Salsify recipe. Superseded 2026-08-03 by `salsify.py`,
+  which generalizes it to the whole platform (the sitemap index lists every public catalog) and fixes
+  three defects that were losing data on every run: page 1 was fetched as `products/1.json`, which 403s
+  on this platform, so the first 16 products of the catalog were silently dropped; only `values[0]` of
+  each multi-value property was kept (BBG's `US Market Region` is routinely two states); and the payload
+  column was truncated at 6,000 chars. It also flattened BBG's item description into `brand` and their
+  SAP Material ID into a bare `id` — both now land as `item_description` / `dist_item_code`.
 - `walmart_scraper.py` — superseded Bright Data `walmart_product` path. Replaced by `walmart_direct.py`
   (IPRoyal residential + curl_cffi Chrome-JA3, $0). Archived 2026-07 during the source sweep.
 - `hemp_chains.py` — orphan (never registered), read the phantom `orlando_hemp_products` table that no

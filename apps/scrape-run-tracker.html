@@ -62,6 +62,8 @@ table{border-collapse:separate;border-spacing:0;width:100%;font-variant-numeric:
 thead th{position:sticky;top:0;background:var(--panel-2);color:var(--muted);text-align:right;font-weight:650;
   padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap;z-index:1}
 thead th:first-child,thead th:nth-child(2){text-align:left}
+td.logline{text-align:left;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+  white-space:pre-wrap;word-break:break-word;color:var(--muted)}
 tbody td{padding:6px 12px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;color:var(--ink)}
 tbody td:first-child,tbody td:nth-child(2){text-align:left;color:var(--muted)}
 tbody tr:hover{background:var(--accent-soft)}
@@ -193,23 +195,54 @@ table.dg-t{border-collapse:separate;border-spacing:0;font-family:ui-monospace,SF
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&lt;",">":"&gt;","&":"&amp;"}[c]||c));
 
-// Known run docs. Add an entry here for every new tracked source — this is the "select the scrape
-// source" seam that a future /api/runs/docs endpoint can replace with a live directory listing.
+// The source list is LIVE — /api/runs/docs returns the doc-backed long runs plus every enabled
+// source_registry entry, so a new scrape is selectable here the day it lands instead of waiting for
+// someone to hand-add it. The array below is the OFFLINE fallback only (a bare static file server
+// with no /api/*), which is why it stays in sync with the server's _RUN_DOCS.
 // dataTable is the WAREHOUSE table this source actually lands rows into — that's what the "Live
 // data" modal shows (via /api/source), as opposed to `path`, which is just the tick-progress log.
 // NOTE: must be a FLAT (non-partitioned) table — /api/source's `warehouse.query()` reads a single
 // `<name>.parquet` and can't see date-partitioned tables like `ubereats_products_parts` (confirmed
 // live: it 404s). Point at the consolidated table instead; it's the latest *folded-in* snapshot,
-// not up-to-the-second, but /api/source has no partitioned-table path today.
-const SOURCES=[
+// not up-to-the-second, but /api/source has no partitioned-table path today. The endpoint filters
+// `_parts` tables out for the same reason, so a derived source never hands the UI a table it fails on.
+let SOURCES=[
   {id:"ubereats", label:"UberEats — fresh-IP catalog run", path:"../docs/ubereats-fresh-ip-run-2026-07-30.md",
-   dataTable:"ubereats_products"},
+   dataTable:"ubereats_products", kind:"doc"},
   {id:"doordash", label:"DoorDash — full-catalog chain run", path:"../docs/doordash-full-run-2026-07-30.md",
-   dataTable:"doordash_stores"},
+   dataTable:"doordash_stores", kind:"doc"},
 ];
 
 const sel=$("#src");
-SOURCES.forEach(s=>{ const o=document.createElement("option"); o.value=s.id; o.textContent=s.label; sel.appendChild(o); });
+function fillSourceSelect(){
+  const keep=sel.value;
+  sel.innerHTML="";
+  let group=null, parent=sel;
+  for(const s of SOURCES){
+    // Registry sources FIRST — they report through the warehouse journal, which is the target
+    // architecture. The two doc-backed runs are legacy (a Mac-side poller tails Fly over SSH and
+    // writes a markdown doc); they stay selectable but are labelled as what they are.
+    const g=s.kind==="doc"?"Legacy run docs (Mac poller)":"Sources — live from the warehouse";
+    if(g!==group){ group=g; parent=document.createElement("optgroup"); parent.label=g; sel.appendChild(parent); }
+    const o=document.createElement("option");
+    o.value=s.id; o.textContent=s.label+(s.kind!=="doc"&&!s.hasDoc?" · rows only":"");
+    parent.appendChild(o);
+  }
+  if(keep && SOURCES.some(s=>s.id===keep)) sel.value=keep;
+}
+fillSourceSelect();
+
+// Swap in the live directory as soon as the backend answers. Failure is a no-op: the fallback list
+// above still works, so a missing/older backend degrades to exactly the previous behaviour.
+async function loadSourceDirectory(){
+  try{
+    const j=await (await fetch("/api/runs/docs",{cache:"no-store"})).json();
+    if(!j || !j.ok || !Array.isArray(j.sources) || !j.sources.length) return false;
+    SOURCES=j.sources;
+    fillSourceSelect();
+    return true;
+  }catch(e){ return false; }
+}
 
 // ── tiny markdown renderer — just enough for these docs: **bold**, `code`, and -bullets (one
 // level of nesting). Wrapped bullet text (a continuation line with no leading "-") gets folded
@@ -497,15 +530,93 @@ async function fetchDoc(src){
     const ct=r.headers.get("content-type")||"";
     if(r.ok && ct.includes("text/markdown")) return await r.text();
   }catch(e){ /* no backend at this origin at all — fall through to the raw path below */ }
+  // A registry-derived source has no hand-written doc under docs/ — say so plainly instead of
+  // fetching "undefined" and reporting a bogus 404 against a path that was never meant to exist.
+  if(!src.path) throw new Error("no tick-progress doc for this source — it reports through the "
+                               +"warehouse, so use Live Data below");
   const r2=await fetch(src.path+"?_="+Date.now(), {cache:"no-store"});
   if(!r2.ok) throw new Error("HTTP "+r2.status);
   return await r2.text();
+}
+
+// ── live journal: the Mac-free progress path ────────────────────────────────────────────────────
+// A pull runs on its own ephemeral Fly machine and heartbeats a journal into the shared warehouse
+// (_collect/runs/<id>.json, fed by the scraper's own HOODIE_PROGRESS lines). /api/runs/live serves it.
+// This is what a new source should use — NOT a markdown doc written by a Mac-side poller tailing Fly
+// over SSH, which dies with the terminal and keeps state in a local file.
+const AGE=s=>{ const d=Math.max(0,Math.floor(Date.now()/1000)-s);
+  return d<60?d+"s":d<3600?Math.floor(d/60)+"m":d<86400?Math.floor(d/3600)+"h":Math.floor(d/86400)+"d"; };
+const NUM=n=>(n==null?"—":Number(n).toLocaleString());
+const TERMINAL=new Set(["ok","done","failed","timeout","empty","lost","no-change","current","incomplete","no-creds"]);
+
+async function fetchJournal(src){
+  const r=await fetch(`/api/runs/live?source=${encodeURIComponent(src.id)}&limit=1`,{cache:"no-store"});
+  const ct=r.headers.get("content-type")||"";
+  if(!ct.includes("application/json")) throw new Error("no /api at this origin");
+  const j=await r.json();
+  if(!j.ok || !j.runs || !j.runs.length) return null;
+  return j.runs[0];
+}
+
+function renderJournal(src, doc){
+  const live=!TERMINAL.has(doc.status);
+  const landed=Object.entries(doc.rows_landed||{});
+  $("#notesCard").style.display="none";
+  $("#metaLine").className="meta-line";
+  $("#metaLine").innerHTML=`<b>${esc(src.label)}</b> · <b>${esc(doc.status||"—")}</b>`
+    +(doc.stage?` · ${esc(doc.stage)}`:"")
+    +(doc.started_at?` · started ${esc(AGE(doc.started_at))} ago`:"")
+    +(doc.trigger?` · ${esc(doc.trigger)}`:"")
+    +(doc.machine_id?` · machine ${esc(doc.machine_id)}`:"");
+  // rows_seen is what the scraper CLAIMS; rows_landed is what the warehouse HOLDS. Different numbers —
+  // label them separately rather than merging them into one reassuring total.
+  const tiles=[{label:"Claimed rows (scraper)", value:NUM(doc.rows_seen)},
+               {label:"Progress", value:doc.pct==null?"—":doc.pct+"%"}];
+  for(const [t,n] of landed) tiles.push({label:"Landed · "+t, value:NUM(n)});
+  if((doc.warnings||[]).length) tiles.push({label:"Warnings", value:doc.warnings.length});
+  renderStatTiles(tiles);
+  const lines=(doc.log||[]).slice(-MAX_SHOWN);
+  $("#tbl thead").innerHTML="<tr><th>Run log — newest last</th></tr>";
+  $("#tbl tbody").innerHTML=lines.length
+    ? lines.map(l=>`<tr><td class="logline">${esc(l)}</td></tr>`).join("")
+    : '<tr><td class="empty">Run started — no output yet.</td></tr>';
+  const sc=document.querySelector(".tablewrap .scroller"); if(sc) sc.scrollTop=sc.scrollHeight;
+  $("#footText").textContent=`Showing latest ${lines.length.toLocaleString()} of `
+    +`${Number(doc.log_lines_total||lines.length).toLocaleString()} log lines · run ${doc.run_id}`;
+  $("#live").innerHTML=live
+    ? `<span class="dot"></span>${esc(src.label)} · live · updated ${esc(AGE(doc.updated_at||doc.started_at))} ago`
+    : `<span class="dot" style="background:var(--warn);animation:none"></span>`
+      +`${esc(src.label)} · last run ${esc(doc.status)} ${esc(AGE(doc.finished_at||doc.updated_at||doc.started_at))} ago`;
+  state={ srcId:src.id, chronoRows:[], header:[] };
 }
 
 async function load(){
   const src=SOURCES.find(s=>s.id===sel.value)||SOURCES[0];
   const switchingSource=state.srcId!==src.id;
   $("#live").innerHTML=`<span class="dot"></span>${switchingSource?"loading":"tracking"} ${esc(src.label)}…`;
+
+  // Registry sources report through the warehouse journal. Only the two legacy doc-backed runs fall
+  // through to the markdown path below.
+  if(src.kind!=="doc"){
+    let doc=null;
+    try{ doc=await fetchJournal(src); }catch(e){ doc=null; }
+    if(doc){ renderJournal(src, doc); return; }
+    // No journal yet. If this source still carries a legacy run doc (a run that predates journalling
+    // and may be in flight right now), fall through to it rather than blanking a live view.
+    if(src.path){ /* fall through to the markdown path below */ }
+    else {
+    $("#tbl thead").innerHTML=""; $("#statsGrid").innerHTML=""; $("#notesCard").style.display="none";
+    $("#tbl tbody").innerHTML=`<tr><td class="err">No run journal for ${esc(src.label)} yet — `
+      +`it hasn't run since journalling landed, or it isn't due. Progress appears here automatically `+
+      `the next time it runs (the scraper heartbeats to the warehouse from its own Fly machine). `+
+      `Live Data below reads what it has already landed.</td></tr>`;
+    $("#metaLine").textContent="—";
+    $("#live").innerHTML=`<span class="dot" style="background:var(--warn);animation:none"></span>no run yet`;
+    state={ srcId:src.id, chronoRows:[], header:[] };
+    return;
+    }
+  }
+
   let text;
   try{
     text=await fetchDoc(src);
@@ -771,8 +882,10 @@ sel.addEventListener("change", loadDataset);
 $("#refresh").addEventListener("click", load);
 $("#refresh").addEventListener("click", loadDataset);
 sel.value=SOURCES[0].id;
-load();
-loadDataset();
+// Pull the live directory FIRST so the dropdown is complete before the first render; if it fails we
+// just proceed on the fallback list. Either way the first load() runs.
+loadSourceDirectory().then(()=>{ if(!SOURCES.some(s=>s.id===sel.value)) sel.value=SOURCES[0].id;
+                                 load(); loadDataset(); });
 setInterval(load, POLL_MS);
 setInterval(loadDataset, DATASET_POLL_MS);
 </script>
