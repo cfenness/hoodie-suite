@@ -197,7 +197,9 @@ ok("the run cross-checks FETCHED against LANDED, not just row-count movement",
 
 _wh = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "warehouse.py")).read()
 ok("write_accumulate no longer treats an unreadable table as empty",
-   "Refusing to merge" in _wh and "if not _is_absent(e):" in _wh)
+   "Refusing to merge" in _wh and "_is_absent(e)" in _wh)
+ok("…and it knows BOTH dialects of absence (storage 404s and DuckDB's no-files)",
+   "_NO_FILES" in _wh.split("def write_accumulate")[1].split("def ")[0])
 ok("…genuine absence still starts a new table",
    "existing = []                     # genuinely not there yet" in _wh)
 ok("…and the read is retried before it is believed",
