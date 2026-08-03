@@ -229,6 +229,17 @@
       +key("4","signature",t["4"])+key("5","unmatched",t["5"])
       +'</div></div></div>';
     if(m.capped_note) h+='<div class="boundary">'+esc(m.capped_note)+'</div>';
+    /* An item code only identifies a product WITH its distributor, so say which book we scoped to
+       and how we decided — including when we couldn't, which is why some codes stay unmatched. */
+    if(m.distributor){
+      var dn=m.distributor;
+      h+='<div class="boundary">'+(dn.distributor_id
+          ? 'Item codes read against <b>'+esc(dn.distributor_id)+'</b>\u2019s book — '+esc(dn.basis)
+            +(dn.codes_explained?(' ('+num(dn.codes_explained)+' of '+num(dn.of_codes_matched)
+              +' codes, '+Math.round(100*dn.share)+'%).'):'.')
+          : esc(dn.basis)+'.')
+        +'</div>';
+    }
     h+='<div class="boundary">'+esc((d.boundary||{}).statement||"")+'</div>'
       +'<div class="row" style="margin-top:14px"><button class="btn brand" id="dl">Download your file, annotated (.xlsx)</button>'
       +'<button class="btn" id="again">Read another file</button>'

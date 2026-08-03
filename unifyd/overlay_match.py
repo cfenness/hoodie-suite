@@ -253,10 +253,11 @@ class WarehouseMaster(MasterIndex):
             ph = ", ".join(["?"] * len(chunk))
             rows = self._query(
                 "dist_item_xwalk",
-                "SELECT dist_item_key, canon_item_id, any_value(distributor_name) AS distributor_name, "
-                "any_value(brand) AS brand, any_value(product_name) AS product_name, "
-                "any_value(size_raw) AS size_raw "
-                "FROM t WHERE dist_item_key IN (%s) GROUP BY 1, 2" % ph, list(chunk), tier=3)
+                "SELECT dist_item_key, distributor_id, canon_item_id, "
+                "       any_value(distributor_name) AS distributor_name, "
+                "       any_value(brand) AS brand, any_value(product_name) AS product_name, "
+                "       any_value(size_raw) AS size_raw "
+                "FROM t WHERE dist_item_key IN (%s) GROUP BY 1, 2, 3" % ph, list(chunk), tier=3)
             if rows is None:
                 return {}
             for r in rows:
@@ -317,7 +318,7 @@ def _isnum(v):
         return False
 
 
-def resolve(rows, fields, master, log=None):
+def resolve(rows, fields, master, log=None, distributor=None):
     """Resolve every row. `rows` are the MAPPED dicts (master field → their raw value).
 
     Returns {matches, aggregate, why, tiers, master_status} where `matches[i]` is:
@@ -375,6 +376,7 @@ def resolve(rows, fields, master, log=None):
             matches[i] = _match(2, cid, rec, 1.0)
 
     # ── Tier 3: their own item numbers ──
+    dist_note = None
     if has_dist:
         import dist_xwalk
         need = {}
@@ -386,21 +388,24 @@ def resolve(rows, fields, master, log=None):
                 need.setdefault(k, []).append(i)
         if need:
             found = master.dist_lookup(sorted(need))
+            scope, dist_note = _scope_distributor(found, distributor)
             for k, idxs in need.items():
-                recs = found.get(k) or []
-                ids = {r.get("canon_item_id") for r in recs if r.get("canon_item_id") is not None}
-                if len(ids) > 1:
-                    continue                  # one code, several identities → ambiguous, stay honest
-                if not recs:
+                cands = found.get(k) or []
+                if scope:
+                    cands = [c for c in cands if str(c.get("distributor_id")) == scope]
+                if not cands:
                     continue
-                rec = recs[0]
-                cid = next(iter(ids)) if ids else None
                 for i in idxs:
-                    if matches[i] is None:
-                        matches[i] = _match(3, cid, rec, 1.0,
-                                            note=None if cid is not None else
-                                            "matched to the distributor's own item, whose retail UPC "
-                                            "we don't yet hold")
+                    if matches[i] is not None:
+                        continue
+                    pick = _disambiguate(cands, rows[i])
+                    if pick is None:
+                        continue            # still several identities → we do not pick one
+                    cid = pick.get("canon_item_id")
+                    matches[i] = _match(3, cid, pick, 1.0,
+                                        note=None if cid is not None else
+                                        "matched to the distributor's own item, whose retail UPC "
+                                        "we don't yet hold")
 
     # ── Tier 4: signature cluster ──
     sig_of = {}
@@ -442,6 +447,8 @@ def resolve(rows, fields, master, log=None):
     agg["why"] = sorted(({"reason": k, "rows": v} for k, v in why.items()),
                         key=lambda d: -d["rows"])
     agg["master_status"] = master.status()
+    if dist_note:
+        agg["distributor"] = dist_note
     agg["capped_at_inference"] = not has_code and not has_dist
     if agg["capped_at_inference"]:
         agg["capped_note"] = ("no UPC and no item-code column found → identity resolved by "
@@ -458,6 +465,60 @@ def resolve(rows, fields, master, log=None):
 # enrichment column can't silently resolve empty because the field wasn't carried across.
 MASTER_FIELDS = ("brand", "product_name", "category", "class_type", "varietal", "origin",
                  "supplier", "container", "size_ml", "pack", "abv", "image")
+
+
+# A `dist_item_code` is only an identity WITH its distributor. Measured on the live crosswalk:
+# 36% of item keys are ambiguous across distributors, and the common short numeric codes collide
+# 16–26 ways — so a bare code resolves to nothing at all unless the distributor is pinned first.
+# Two ways to pin it, in order of strength:
+#   1. the caller says so (a rep flow, or an engagement, knows whose book this is)
+#   2. INFER it from the file as a whole — with 339 books, a file of real item codes overwhelmingly
+#      lands in exactly one. The inference is over the WHOLE FILE, not per row, which is what makes
+#      it safe: one decision backed by hundreds of codes, reported so it can be overridden.
+_INFER_MIN_KEYS = 20          # below this the file doesn't carry enough codes to identify a book
+_INFER_MIN_SHARE = 0.60       # the winner must explain most of the codes that hit anything
+_INFER_MIN_MARGIN = 3.0       # …and beat the runner-up decisively
+
+
+def _scope_distributor(found, given=None):
+    """Return (distributor_id or None, note). `found` is {item_key: [candidate, …]}."""
+    if given:
+        return str(given), {"distributor_id": str(given), "basis": "supplied by the caller"}
+    per = {}
+    for k, cands in found.items():
+        for d in {str(c.get("distributor_id")) for c in cands if c.get("distributor_id")}:
+            per.setdefault(d, set()).add(k)
+    if len(per) <= 1:
+        d = next(iter(per), None)
+        return (d, {"distributor_id": d, "basis": "every matching item code belongs to one book"}) \
+            if d else (None, None)
+    ranked = sorted(per.items(), key=lambda kv: -len(kv[1]))
+    (top, top_keys), (_, second_keys) = ranked[0], ranked[1]
+    hit_keys = len({k for ks in per.values() for k in ks})
+    share = len(top_keys) / max(1, hit_keys)
+    margin = len(top_keys) / max(1, len(second_keys))
+    if len(top_keys) >= _INFER_MIN_KEYS and share >= _INFER_MIN_SHARE and margin >= _INFER_MIN_MARGIN:
+        return top, {"distributor_id": top, "basis": "inferred from the file",
+                     "codes_explained": len(top_keys), "of_codes_matched": hit_keys,
+                     "share": round(share, 3), "margin_over_runner_up": round(margin, 2)}
+    return None, {"distributor_id": None,
+                  "basis": "could not identify one distributor from these item codes — "
+                           "matching only where the brand corroborates the code",
+                  "candidates": len(per)}
+
+
+def _disambiguate(cands, row):
+    """One candidate, or None. Never a guess: several candidates collapse only when they agree on
+    ONE identity, or when the row's brand leaves exactly one identity standing."""
+    ids = {c.get("canon_item_id") for c in cands}
+    if len(ids) == 1:
+        return cands[0]
+    rb = brand_key(row.get("brand"))
+    if rb:
+        agree = [c for c in cands if brand_key(c.get("brand")) == rb]
+        if agree and len({c.get("canon_item_id") for c in agree}) == 1:
+            return agree[0]
+    return None
 
 
 def _match(tier, cid, rec, conf, note=None):
@@ -591,6 +652,57 @@ def _selftest():
     assert m[6]["hoodie_id"] is None
     ns2 = resolve([{"upc": "212345678909"}], ["upc"], master)["matches"][0]
     assert ns2["match_tier"] == 5 and "in-store" in ns2["why"], ns2
+
+    # ── Tier 3 and the distributor, measured against the real failure this fixes ──
+    # On the live crosswalk 36% of item keys collide across distributors (the short numeric ones
+    # 16-26 ways), so a bare code resolved to NOTHING until the distributor was pinned.
+    _BR = ["Tito's Handmade", "Jack Daniel's", "Herradura", "Kendall Jackson", "Veuve Clicquot"]
+    collide = {}
+    for d in range(1, 6):                       # code 00214 in five different books, five products
+        collide.setdefault("00214", []).append(
+            {"dist_item_key": "00214", "distributor_id": "D%d" % d, "canon_item_id": 1000 + d,
+             "brand": _BR[d - 1], "product_name": "P%d" % d, "distributor_name": "Dist %d" % d})
+    # D3 also carries 30 codes nobody else does — that is what identifies the book
+    for c in ["77%03d" % i for i in range(30)]:
+        collide[c] = [{"dist_item_key": c, "distributor_id": "D3", "canon_item_id": 2000 + int(c[2:]),
+                       "brand": _BR[2], "product_name": "P", "distributor_name": "Dist 3"}]
+    cm = MemoryMaster(dist=collide)
+
+    # 1. a colliding code ALONE is not resolvable, and we do not pick one
+    one = resolve([{"dist_item_code": "00214"}], ["dist_item_code"], cm)
+    assert one["matches"][0]["match_tier"] == 5, one["matches"][0]
+    assert one["aggregate"]["distributor"]["distributor_id"] is None
+    assert "could not identify one distributor" in one["aggregate"]["distributor"]["basis"]
+
+    # 2. the SAME code inside a file that identifies its book resolves — this is the fix
+    book = [{"dist_item_code": c} for c in ["77%03d" % i for i in range(30)]] + \
+           [{"dist_item_code": "00214"}]
+    many = resolve(book, ["dist_item_code"], cm)
+    note = many["aggregate"]["distributor"]
+    assert note["distributor_id"] == "D3" and note["basis"] == "inferred from the file", note
+    # 31 = its 30 unique codes plus the colliding one it also carries
+    assert note["codes_explained"] == 31 and note["share"] >= 0.6, note
+    assert many["matches"][-1]["match_tier"] == 3, many["matches"][-1]
+    assert many["matches"][-1]["hoodie_id"] == 1003, many["matches"][-1]   # D3's product, not D1's
+    assert many["aggregate"]["deterministic"] == 31, many["aggregate"]
+
+    # 3. an explicit distributor pins it with no inference at all
+    told = resolve([{"dist_item_code": "00214"}], ["dist_item_code"], cm, distributor="D5")
+    assert told["matches"][0]["hoodie_id"] == 1005, told["matches"][0]
+    assert told["aggregate"]["distributor"]["basis"] == "supplied by the caller"
+
+    # 4. unscoped, the row's BRAND can leave exactly one identity standing
+    corr = resolve([{"dist_item_code": "00214", "brand": "KENDALL JACKSON"}],
+                   ["dist_item_code", "brand"], cm)
+    assert corr["matches"][0]["match_tier"] == 3 and corr["matches"][0]["hoodie_id"] == 1004, corr["matches"][0]
+    # …but a brand that matches none of them still does not pick one
+    no = resolve([{"dist_item_code": "00214", "brand": "Unrelated"}], ["dist_item_code", "brand"], cm)
+    assert no["matches"][0]["match_tier"] == 5, no["matches"][0]
+
+    # 5. too few codes to identify a book ⇒ no inference, even if one distributor leads
+    thin = resolve([{"dist_item_code": c} for c in ["77000", "77001", "00214"]], ["dist_item_code"], cm)
+    assert thin["aggregate"]["distributor"]["distributor_id"] is None, thin["aggregate"]["distributor"]
+    assert thin["matches"][-1]["match_tier"] == 5      # the colliding code stays unmatched
 
     # ── honest degradation: no identifier columns at all ⇒ capped at INFERENCE, and it says so ──
     cap = resolve([{"brand": "Tito's Handmade", "product_name": "Texas Vodka", "size_raw": "750 ml"}],
