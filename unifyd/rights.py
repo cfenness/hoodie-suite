@@ -195,7 +195,8 @@ def _hits(text, rules, guard_negation=False):
 def classify(tos_text):
     """Parse a verbatim ToS into a permission classification. PURE — no network, no state.
 
-    Returns a dict: image_use / scope / attribution_required / alteration_allowed / trade_only /
+    Returns a dict: facts_use / image_use / scope / attribution_required / alteration_allowed /
+    trade_partner_only /
     expiry / confidence / needs_counsel / evidence[] / rules_matched.
 
     The parser is deliberately conservative in one direction only: it will happily conclude
@@ -239,11 +240,16 @@ def classify(tos_text):
     evidence = [{"rule": n, "weight": w, "quote": q, "side": "prohibit"} for n, w, q in pro]
     evidence += [{"rule": n, "weight": w, "quote": q, "side": "grant"} for n, w, q in grant]
     return {
+        # `facts_use` is carried explicitly rather than left implicit. It is near-always "permitted"
+        # (facts are uncopyrightable), and writing it down is the point: a reviewer reading a record
+        # that says `image_use: prohibited` should see, in the same object, that the fact feed is
+        # unaffected — otherwise "prohibited" reads as "this source is off", which it is not.
+        "facts_use": "permitted",
         "image_use": image_use,
         "scope": scope,
         "attribution_required": bool(re.search(_ATTRIBUTION, text, re.I)),
         "alteration_allowed": alter,
-        "trade_only": bool(re.search(_TRADE_ONLY, text, re.I)),
+        "trade_partner_only": bool(re.search(_TRADE_ONLY, text, re.I)),
         "expiry": m_exp.group(1) if m_exp else None,
         "confidence": confidence,
         "needs_counsel": needs_counsel,
@@ -422,7 +428,7 @@ EMISSION_FIELDS = ["ts", "source_id", "rights_ref", "action", "subject", "surfac
                    "allowed", "reason", "image_use", "scope"]
 RIGHTS_FIELDS = ["source_id", "vendor", "host", "tos_url", "tos_sha256", "tos_captured_at",
                  "tos_capture_method", "robots_sha256", "robots_checked_at", "robots_allows_harvest",
-                 "image_use", "scope", "attribution_required", "alteration_allowed", "trade_only",
+                 "facts_use", "image_use", "scope", "attribution_required", "alteration_allowed",
                  "expiry", "confidence", "needs_counsel", "counsel_cleared", "review_state",
                  "reviewed_by", "reviewed_at", "escalation", "evidence_json", "landed_at"]
 
@@ -452,9 +458,10 @@ def land_record(rec, robots_ok=None, log=print):
            "tos_capture_method": rec.get("tos_capture_method"),
            "robots_sha256": rec.get("robots_sha256"), "robots_checked_at": rec.get("robots_checked_at"),
            "robots_allows_harvest": robots_ok if robots_ok is not None else rec.get("robots_allows_harvest"),
-           "image_use": p.get("image_use"), "scope": p.get("scope"),
+           "facts_use": p.get("facts_use"), "image_use": p.get("image_use"), "scope": p.get("scope"),
            "attribution_required": p.get("attribution_required"),
-           "alteration_allowed": p.get("alteration_allowed"), "trade_only": p.get("trade_only"),
+           "alteration_allowed": p.get("alteration_allowed"),
+           "trade_partner_only": p.get("trade_partner_only"),
            "expiry": p.get("expiry"), "confidence": p.get("confidence"),
            "needs_counsel": p.get("needs_counsel"), "counsel_cleared": rec.get("counsel_cleared", False),
            "review_state": rec.get("review_state"), "reviewed_by": rec.get("reviewed_by"),
@@ -508,8 +515,8 @@ def main(argv=None):
     print("%s (%s)\n  terms: %s\n  sha:   %s (%s, %s)"
           % (rec["source_id"], rec["vendor"], rec["tos_url"], rec["tos_sha256"][:16],
              rec["tos_capture_method"], rec["tos_captured_at"]))
-    print("  image_use=%s scope=%s confidence=%s needs_counsel=%s trade_only=%s expiry=%s"
-          % (p["image_use"], p["scope"], p["confidence"], p["needs_counsel"], p["trade_only"], p["expiry"]))
+    print("  facts_use=%s image_use=%s scope=%s confidence=%s needs_counsel=%s trade_only=%s expiry=%s"
+          % (p["facts_use"], p["image_use"], p["scope"], p["confidence"], p["needs_counsel"], p["trade_partner_only"], p["expiry"]))
     for e in p.get("evidence", []):
         print("   [%s] %s: “%s”" % (e["side"], e["rule"], e["quote"][:150]))
     print("  gate:")

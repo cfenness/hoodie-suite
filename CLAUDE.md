@@ -191,7 +191,9 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   robots.txt** plus a per-URL decision for each path the connector fetches, and a parsed permission
   classification (`image_use` = permitted/prohibited/silent, `scope` =
   none/internal_only/editorial_press/commercial_redistribution, attribution/alteration/trade-only/
-  expiry/confidence/needs_counsel). `rights.load()` **raises if the record is missing** — there is no
+  expiry/confidence/needs_counsel, plus `facts_use` written out explicitly so a `prohibited`
+  record cannot be misread as "this source is off"). The design's three scope values gain a fourth,
+  `none`, because a hold needs a scope to *be*. `rights.load()` **raises if the record is missing** — there is no
   harvest-now-sort-the-rights-out-later path. `may()/require()/emit()` are the only interpretation of
   the model, every emission (allowed *and denied*) is logged to `dam_emissions`, and `dam_rights_test.py`
   is the ratchet that fails a registry row lacking its record.
@@ -204,7 +206,7 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
 - **`unifyd/dam.py` — the shared spine + THE CHOKEPOINT.** `asset_bytes()` is the only function that
   may fetch an asset's bytes and it calls `require(rec, "fetch_asset")` first; a perceptual hash or
   embedding is a derivative work and is gated at the same level. Connectors never open an asset URL —
-  `dam_bacardi_test.py` scans the package's source and fails if one does. Lands `dam_assets`
+  `dam_dna_test.py` scans the package's source and fails if one does. Lands `dam_assets`
   (pointer rows carrying `retention` / `phash` / `embedding_ref` / `withheld_reason` / `rights_ref`,
   so the row shows what was withheld and why) and `brand_events` (the dated product-event feed).
   Honesty contract: every derived field is labelled **DETERMINISTIC or INFERENCE** in
@@ -213,8 +215,16 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   `created_on` is the UPLOAD stamp, not the event date** (Bacardi's whole 2018 folder reads
   2018-04-11, the bulk-migration day), so dates come from **year folders** at `precision=year` and are
   otherwise NULL — never back-filled.
-- **`unifyd/dam_bacardi.py`** (source `dam-bacardi`, weekly) — the first vendor and the platform
-  recipe. `media.bacardilimited.com` drive 42 ("Bacardi Public"): the page bootstraps
+- **`unifyd/dam_dna.py`** — the **DNA** platform connector (`dna.online`). ONE CONNECTOR PER DAM
+  VENDOR, one rights record per SUPPLIER: transport is a property of the platform, permission is a
+  property of the supplier, so `TENANTS` holds host+drive+brands per supplier and each is its own
+  registry source with its own record. Bacardi's media centre is not bespoke — its footer is
+  "Powered by DNA" and the surface is DNA's stock shape (`company_id` tenant, numbered
+  `company_drive_id` drives, `/drives/view-new/`, `/drives/get-tree/`, `/company-files/`, an Algolia
+  index prefixed `DNA_`), so adding a supplier on DNA is a `TENANTS` row + a rights record, not new
+  code. `fingerprint(url)` is the discovery half (feeds the P4 vendor census): it reports whether a
+  candidate media centre is a DNA tenant and which drive. Source `dam-bacardi` (weekly) is the first
+  tenant: `media.bacardilimited.com` drive 42 ("Bacardi Public"): the page bootstraps
   `window.DriveViewState` (brace-matched, not regex-terminated — descriptions contain `}`), and
   `/drives/get-tree/<drive>?folder_id=<n>` is the SPA's own JSON API. Both live **outside** every
   robots `Disallow` (`/api/` **is** disallowed — if the tree ever moves under it, this connector

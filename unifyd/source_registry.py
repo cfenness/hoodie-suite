@@ -546,7 +546,7 @@ SOURCES = [
     # degrade wearing a tidy label. The DAM family is marked by `source_class` instead, which
     # `dam_sources()` reads and `dam_rights_test.py` enforces a record for.
     dict(id="dam-bacardi", label="Bacardi Media Centre (public drive)", source_class="dam",
-         code="import dam_bacardi as m; m.pull()",
+         code="import dam_dna as m; m.pull('bacardi')",
          tables=["dam_assets", "brand_events"], klass="headless", cadence="weekly", enabled=True,
          cost_class="free", interval_h=168, timeout=1800, mem=2048,
          rights_record="rights_records/dam-bacardi.json",

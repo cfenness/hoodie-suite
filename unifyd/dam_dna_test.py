@@ -1,4 +1,4 @@
-"""Exercise the Bacardi DAM connector end-to-end against the FROZEN fixture, with the network and
+"""Exercise the DNA DAM platform connector (Bacardi tenant) end-to-end against the FROZEN fixture, with the network and
 the warehouse mocked.
 
 The point of this suite is not "does it parse" — it is the claim the capability makes: a full run
@@ -13,12 +13,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import dam           # noqa: E402
-import dam_bacardi as db   # noqa: E402
+import dam_dna as db      # noqa: E402
 import rights        # noqa: E402
 
 FAILS = []
-FIXTURE = os.path.join(HERE, "fixtures", "dam_bacardi_drive42.html")
-GT_FIXTURE = os.path.join(HERE, "fixtures", "dam_bacardi_gettree_3906.json")
+FIXTURE = os.path.join(HERE, "fixtures", "dam_dna_bacardi_drive42.html")
+GT_FIXTURE = os.path.join(HERE, "fixtures", "dam_dna_gettree_3906.json")
 
 
 def check(cond, msg):

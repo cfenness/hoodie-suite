@@ -59,6 +59,7 @@ c = rights.classify(GRANT_TOS)
 check(c["image_use"] == "permitted", "an explicit royalty-free editorial grant classifies as permitted")
 check(c["scope"] == "editorial_press", "an editorial grant scopes to editorial_press, not commercial")
 check(c["attribution_required"] is True, "an attribution clause is picked up")
+check(c["facts_use"] == "permitted", "facts_use is carried explicitly on every classification")
 check(c["alteration_allowed"] is False, "a no-alteration clause is picked up")
 check(c["needs_counsel"], "a GRANT is flagged for counsel — counsel guards the affirmative act")
 
@@ -68,7 +69,7 @@ check(c["confidence"] == "medium" and c["needs_counsel"],
       "a document that both grants and forbids is medium-confidence and flagged")
 
 c = rights.classify("Assets are licensed for trade use only and this licence expires 2020-01-01.")
-check(c["trade_only"] is True, "trade-only restriction is picked up")
+check(c["trade_partner_only"] is True, "trade-partner-only restriction is picked up")
 check(c["expiry"] == "2020-01-01", "an expiry date is picked up")
 
 # ── the gate ──────────────────────────────────────────────────────────────────────────────────────
