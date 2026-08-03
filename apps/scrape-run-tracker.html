@@ -326,7 +326,22 @@ const META_COLS=new Set(["local time","run elapsed"]);
 
 const MAX_SHOWN=250;
 const POLL_MS=4000;
-let state={ srcId:null, chronoRows:[], header:[] };  // what's currently rendered, for diffing
+let state={ srcId:null, chronoRows:[], header:[], rendered:false };  // what's currently rendered, for diffing
+
+// A SINGLE bad tick must never blank a view that is ALREADY showing good data. A momentary Tigris
+// read blip, or a poll landing while the poller is mid-write, used to clobber the whole table —
+// real numbers in the stat tiles, a dead "no progress data" row underneath, from one failed
+// refresh. That reads as a broken page, not as a transient miss.
+//
+// `rendered` (not chronoRows.length) is the flag because the journal path deliberately keeps
+// chronoRows empty — it renders log lines, not a diffable table — so a rows-based check would
+// leave exactly the live-run view this protects unprotected.
+function keepLastKnown(switchingSource, why){
+  if(switchingSource || !state.rendered) return false;   // never hide a genuinely empty first load
+  $("#live").innerHTML=`<span class="dot" style="background:var(--warn);animation:none"></span>`+
+    `couldn't refresh (${esc(why)}) — showing last known data`;
+  return true;
+}
 
 function firstNum(cell){
   const m=(cell||"").match(/^-?\d[\d,]*/);
@@ -587,7 +602,7 @@ function renderJournal(src, doc){
     ? `<span class="dot"></span>${esc(src.label)} · live · updated ${esc(AGE(doc.updated_at||doc.started_at))} ago`
     : `<span class="dot" style="background:var(--warn);animation:none"></span>`
       +`${esc(src.label)} · last run ${esc(doc.status)} ${esc(AGE(doc.finished_at||doc.updated_at||doc.started_at))} ago`;
-  state={ srcId:src.id, chronoRows:[], header:[] };
+  state={ srcId:src.id, chronoRows:[], header:[], rendered:true };
 }
 
 async function load(){
@@ -605,6 +620,7 @@ async function load(){
     // and may be in flight right now), fall through to it rather than blanking a live view.
     if(src.path){ /* fall through to the markdown path below */ }
     else {
+    if(keepLastKnown(switchingSource, "no run journal this tick")) return;
     $("#tbl thead").innerHTML=""; $("#statsGrid").innerHTML=""; $("#notesCard").style.display="none";
     $("#tbl tbody").innerHTML=`<tr><td class="err">No run journal for ${esc(src.label)} yet — `
       +`it hasn't run since journalling landed, or it isn't due. Progress appears here automatically `+
@@ -612,7 +628,7 @@ async function load(){
       `Live Data below reads what it has already landed.</td></tr>`;
     $("#metaLine").textContent="—";
     $("#live").innerHTML=`<span class="dot" style="background:var(--warn);animation:none"></span>no run yet`;
-    state={ srcId:src.id, chronoRows:[], header:[] };
+    state={ srcId:src.id, chronoRows:[], header:[], rendered:false };
     return;
     }
   }
@@ -621,6 +637,7 @@ async function load(){
   try{
     text=await fetchDoc(src);
   }catch(e){
+    if(keepLastKnown(switchingSource, e.message)) return;
     // Neither the backend NOR the raw docs/ path had anything — most likely the Mac-side poller
     // (tools/poll_ue_progress.py) for this source isn't running right now, or hasn't ticked since
     // this app deployed. Not a page bug, so no red/"unreachable" badge.
@@ -639,9 +656,10 @@ async function load(){
 
   const parsed=parseTable(text);
   if(!parsed || !parsed.rows.length){
+    if(keepLastKnown(switchingSource, "no rows in this tick")) return;
     $("#tbl tbody").innerHTML='<tr><td class="empty">No progress rows yet.</td></tr>';
     $("#footText").textContent="";
-    state={ srcId:src.id, chronoRows:[], header:[] };
+    state={ srcId:src.id, chronoRows:[], header:[], rendered:false };
     return;
   }
   const {header, rows}=parsed;
@@ -661,7 +679,7 @@ async function load(){
     const newCount=rows.length-state.chronoRows.length;
     if(newCount>0) incrementalRenderTable(rows, newCount);
   }
-  state={ srcId:src.id, chronoRows:rows, header };
+  state={ srcId:src.id, chronoRows:rows, header, rendered:true };
 
   const shownCount=Math.min(rows.length, MAX_SHOWN);
   $("#footText").textContent=`Showing latest ${shownCount.toLocaleString()} of ${rows.length.toLocaleString()} logged ticks.`;
