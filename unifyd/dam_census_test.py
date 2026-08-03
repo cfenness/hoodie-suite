@@ -147,5 +147,35 @@ check(os.environ.get("DAM_CENSUS_PROBE") != "1", "the probe env flag is off in t
 check(dc.conventional_hosts("acme.com")[0] == "https://media.acme.com",
       "the conventional patterns exist but are only reachable through the opt-in flag")
 
+print("\nvendor SURFACE — portal vs CDN (the P5 denominator question):")
+CDN_PAGE = ('<html><body><h1>Brand Assets</h1>'
+            '<a href="https://acme.bynder.com/m/2ad290b6dd0a885e/original/Logo.eps">Download logo</a>'
+            '<a href="https://acme.bynder.com/m/3e757a628fb4ecf9/original/Bottle.png">Download bottle</a>'
+            '</body></html>')
+check(dc.portal_or_cdn(CDN_PAGE, "Bynder") == "cdn_only",
+      "a page whose only vendor links are /m/<hash>/original/ assets is cdn_only")
+ex = dc.extraction_plan("https://acme.com/brand-assets", html=CDN_PAGE, status=200)
+check(ex["dam_vendor"] is None,
+      "a CDN-only page is NOT reported as a DAM (it would inflate the reachability denominator)")
+check(ex["kind"] == "vendor_cdn_page", "...it is reported as a vendor CDN page, which is what it is")
+
+PORTAL = ('<html><body><a href="https://acme.bynder.com/portal/">Brand Portal</a>'
+          '<script>window.bynder = {};</script>Media Library</body></html>')
+check(dc.portal_or_cdn(PORTAL, "Bynder") == "portal", "a browsable portal link is a portal")
+check(dc.extraction_plan("https://acme.com/x", html=PORTAL, status=200)["dam_vendor"] == "Bynder",
+      "...and IS reported as a DAM")
+
+print("\ngated portals:")
+PRIVATE = '<html><body><h1>Acme Portal</h1><span class="badge">PRIVATE</span>12,610 Assets</body></html>'
+p = dc.extraction_plan("https://acme-portal.com/", html=PRIVATE, status=200)
+check(p["public"] is False, "a portal declaring PRIVATE is marked gated")
+check(p.get("gated_reason"), "...with the reason recorded")
+check(dc._PRIVATE_BADGE.search("Please sign in to view these assets"), "a sign-in wall reads as gated")
+
+print("\nsitemap discovery (the answer to the age gate):")
+check(callable(dc.sitemap_media_urls), "sitemap discovery exists")
+check(dc._SITEMAP_HINT.search("https://x.com/newsroom/media-releases"), "a media URL is recognised")
+check(not dc._SITEMAP_HINT.search("https://x.com/careers/apply"), "an unrelated URL is not")
+
 print("\n%s (%d failure%s)" % ("FAILED" if FAILS else "PASSED", len(FAILS), "" if len(FAILS) == 1 else "s"))
 sys.exit(1 if FAILS else 0)

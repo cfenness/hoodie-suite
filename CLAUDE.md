@@ -294,6 +294,20 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   authoring a reviewed rights record + a `TENANTS` row by hand.
   `source_analyzer.analyze()` attaches `out["dam"] = {extraction, rights}` when a page fingerprints as
   a media centre — design §4's two plans, marked provisional.
+  **What the census found, over 50 suppliers (P5).** Three DAM vendors: DNA (Bacardi, PUBLIC,
+  connector built), Brandfolder ×2 (Trinchero's portal prints "PRIVATE" over 12,610 assets and its
+  anonymous token 403s; Odell's is gated too), Bynder ×1 (Tito's — two `/m/<hash>/original/` links on
+  a marketing page, i.e. a CDN, not a library). **There is no second PUBLIC, browsable DAM in the top
+  50 to build a connector against** — reachability is 1 of 1. The multiplier the design assumed is
+  real as a mechanism (one DNA connector would cover every DNA tenant) but the population is not
+  there at the top of this trade: 27 of 50 suppliers publish a reachable PRESS ROOM and almost none
+  publish an open asset library. That makes `brand_events` the broad half of this capability and the
+  CV gallery the narrow one. Two classification rules exist because of this: a vendor host seen ONLY
+  as `/m/<hash>/` asset URLs is `vendor_cdn_page`, not a DAM (it would inflate the reachability
+  denominator with a supplier no connector could cover), and a portal declaring `PRIVATE` is
+  `public=False` with the reason recorded. `sitemap_media_urls()` recovers suppliers whose corporate
+  site is age-gated or JS-only — their own sitemap is a documented public index, so nothing is
+  circumvented; the age gate itself is a control we do not defeat.
 - **What Bacardi's terms actually say, and why the CV gallery is empty for them.** Their ToS (which by
   its own §1 covers "any and all other online or digital platforms … which we maintain") grants **no
   reuse licence**: §3 "does not grant you any rights, title, interest or license to any Materials",

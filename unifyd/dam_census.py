@@ -119,6 +119,13 @@ _LINK_WEAK = re.compile(
 _AGE_GATE = re.compile(r"age[-_ ]?gate|are you (of )?legal drinking age|verify your age"
                        r"|enter your (date of )?birth|drinking age|18\+|21\+", re.I)
 
+# A portal that declares itself gated. Checked BEFORE any other public/private heuristic, because a
+# vendor-hosted portal saying "PRIVATE" is the most reliable signal in the whole census.
+_PRIVATE_BADGE = re.compile(
+    r">\s*PRIVATE\s*<|\bprivate\s+(?:brandfolder|portal|workspace)\b"
+    r"|request access to (?:view|this)|sign in to (?:view|access)"
+    r"|you (?:do not|don't) have permission|access is restricted|invitation only", re.I)
+
 # Third-party services that reliably match the WEAK hints and are never a media centre. Each of
 # these cost a wasted fetch and a junk row before it was listed.
 _NOT_MEDIA = re.compile(
@@ -160,6 +167,40 @@ SUPPLIER_SEED = [
     ("Duckhorn Portfolio", "duckhorn.com"),
 ]
 
+# TIER 2 — mid-market and craft. Added because the first census over the top 24 found exactly ONE
+# identified DAM vendor: the giants build bespoke media centres (or publish only a press room), while
+# companies this size are the ones who BUY Bynder / Brandfolder / Frontify off the shelf. If the
+# vendor-recipe multiplier exists anywhere in this trade, it is here — so the census has to look here
+# before "build the second connector" can be answered with evidence instead of a guess.
+SUPPLIER_SEED_TIER2 = [
+    ("Sierra Nevada Brewing", "sierranevada.com"),
+    ("New Belgium Brewing", "newbelgium.com"),
+    ("Dogfish Head", "dogfish.com"),
+    ("Firestone Walker", "firestonebeer.com"),
+    ("Lagunitas", "lagunitas.com"),
+    ("Deschutes Brewery", "deschutesbrewery.com"),
+    ("Founders Brewing", "foundersbrewing.com"),
+    ("Stone Brewing", "stonebrewing.com"),
+    ("Odell Brewing", "odellbrewing.com"),
+    ("Tito's Handmade Vodka", "titosvodka.com"),
+    ("Buffalo Trace Distillery", "buffalotracedistillery.com"),
+    ("Four Roses Bourbon", "fourrosesbourbon.com"),
+    ("Michter's Distillery", "michters.com"),
+    ("Uncle Nearest", "unclenearest.com"),
+    ("High West Distillery", "highwest.com"),
+    ("Westward Whiskey", "westwardwhiskey.com"),
+    ("Ole Smoky Distillery", "olesmoky.com"),
+    ("Stoli Group", "stoli.com"),
+    ("Mark Anthony Brands", "markanthony.com"),
+    ("Jackson Family Wines", "jacksonfamilywines.com"),
+    ("Delicato Family Wines", "delicato.com"),
+    ("Trinchero Family Estates", "tfewines.com"),
+    ("Terlato Wines", "terlatowines.com"),
+    ("Banfi Vintners", "banfiwines.com"),
+    ("Palm Bay International", "palmbay.com"),
+    ("Vintage Wine Estates", "vintagewineestates.com"),
+]
+
 
 def _get(url, timeout=20):
     """(html, status, error). Never raises — a census must survive every dead host it meets."""
@@ -188,6 +229,29 @@ def _robots_ok(url):
 
 
 # ── vendor fingerprinting ─────────────────────────────────────────────────────────────────────────
+# A DAM vendor's domain appearing in a page proves nothing on its own — it may be a browsable
+# PORTAL or it may be a CDN serving two files linked from an ordinary marketing page. Tito's
+# `/brand-assets` is the latter: a hand-written page with exactly two `titosvodka.bynder.com/m/…`
+# links, no folder tree, no catalogue, nothing to enumerate. Counting it as a DAM would put a
+# supplier in the denominator that no vendor connector could ever cover, which is the same mistake
+# as the Cloudinary one, a level more precise.
+_ASSET_ONLY_PATH = re.compile(r"/m/[0-9a-f]{8,}/|/transform/|/original/|/download/", re.I)
+
+
+def portal_or_cdn(html, vendor):
+    """('portal' | 'cdn_only' | None) for a fingerprinted vendor. `cdn_only` means the vendor host
+    appears solely as asset URLs — assets to link, not a library to walk."""
+    if not vendor or not html:
+        return None
+    hosts = [m for _v, markers, _c in VENDOR_SIGS for m in markers if "." in m and "/" not in m]
+    refs = []
+    for h in hosts:
+        refs += re.findall(r"https?://[^\"'\s<>]*%s[^\"'\s<>]*" % re.escape(h), html, re.I)
+    if not refs:
+        return None
+    return "cdn_only" if all(_ASSET_ONLY_PATH.search(r) for r in refs) else "portal"
+
+
 def detect_vendor(html, url=""):
     """(vendor, signals, confidence). Deterministic marker matching; no guessing.
 
@@ -284,6 +348,57 @@ def conventional_hosts(domain):
     return ["https://" + pat % domain for pat in _CONVENTIONAL]
 
 
+# ── sitemap discovery: the answer to the age gate ─────────────────────────────────────────────────
+# Six of 24 suppliers published no findable link on the first census, and the largest cause was the
+# AGE GATE — bev-alc corporate sites serve an interstitial to a bare fetch, so the nav never renders.
+#
+# The wrong fix is to defeat the gate. It is a control the site chose to put up, and forging the
+# consent it asks for is not something this capability does, whatever the mechanism.
+#
+# The right fix costs nothing and circumvents nothing: an age-gated site still publishes
+# `sitemap.xml`, which is a DOCUMENTED PUBLIC INDEX of the very URLs it wants indexed — robots-
+# checked like everything else. If the media section is public enough to be in the sitemap, it is
+# public enough to look at.
+_SITEMAP_HINT = re.compile(r"(media|press|news|brand[-_]?asset|newsroom)", re.I)
+
+
+def sitemap_media_urls(domain, limit=8, log=print):
+    """Media/press URLs from a supplier's own sitemap. Follows one level of sitemap index."""
+    base = "https://" + domain
+    seen_maps, urls = set(), []
+
+    def _read(u, depth=0):
+        if u in seen_maps or depth > 1 or len(urls) >= limit:
+            return
+        seen_maps.add(u)
+        if not _robots_ok(u)[0]:
+            return
+        body, _st, err = _get(u, timeout=20)
+        if err or not body:
+            return
+        locs = re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", body, re.I)
+        # A sitemap INDEX lists more sitemaps; prefer the ones whose own name hints at media.
+        children = [l for l in locs if l.lower().endswith((".xml", ".xml.gz"))]
+        if children:
+            for c in sorted(children, key=lambda c: 0 if _SITEMAP_HINT.search(c) else 1)[:4]:
+                _read(c, depth + 1)
+            return
+        for loc in locs:
+            if _SITEMAP_HINT.search(loc) and not _NOT_MEDIA.search(loc) and loc not in urls:
+                urls.append(loc)
+                if len(urls) >= limit:
+                    return
+
+    for candidate in ("%s/sitemap.xml" % base, "%s/sitemap_index.xml" % base,
+                      "%s/sitemap-index.xml" % base):
+        _read(candidate)
+        if urls:
+            break
+    if urls:
+        log("    sitemap: %d media/press URL(s) on %s" % (len(urls), domain))
+    return urls
+
+
 # ── the two plans (design §4) ─────────────────────────────────────────────────────────────────────
 def extraction_plan(url, html=None, status=None):
     """How this media centre would be pulled: vendor, whether we already have a connector, and — for
@@ -291,9 +406,15 @@ def extraction_plan(url, html=None, status=None):
     if html is None:
         html, status, _err = _get(url)
     vendor, signals, conf, connector = detect_vendor(html, url)
-    plan = {"url": url, "http_status": status, "dam_vendor": vendor,
+    surface = portal_or_cdn(html, vendor)
+    if surface == "cdn_only":
+        # The vendor is real but there is no library here — record it as an asset page, not a DAM,
+        # so it never enters the reachability denominator.
+        vendor, connector = None, None
+    plan = {"url": url, "http_status": status, "dam_vendor": vendor, "vendor_surface": surface,
             "vendor_signals": signals, "vendor_confidence": conf, "connector": connector,
-            "kind": ("press_room" if vendor in _PRESS_ONLY else ("dam" if vendor else None)),
+            "kind": ("press_room" if vendor in _PRESS_ONLY
+                    else "dam" if vendor else ("vendor_cdn_page" if surface == "cdn_only" else None)),
             "is_media_centre": looks_like_media_centre(html), "public": None,
             "drive_id": None, "company_id": None, "asset_types": []}
     if connector == "dam_dna":
@@ -308,6 +429,15 @@ def extraction_plan(url, html=None, status=None):
                 plan["asset_types"] = sorted({f.get("type") for f in files if f.get("type")})
         except Exception:
             pass
+    # PUBLIC vs PRIVATE is the column that decides whether a connector is even buildable, and it was
+    # reading None for the case that matters most. Trinchero's Brandfolder prints "PRIVATE" next to
+    # "12,610 Assets" on its own landing page, and its anonymous API token returns 403 — a portal we
+    # must not, and cannot, enumerate. A vendor fingerprint with no public surface is a dead end, and
+    # the census has to say so or it sends connector work at a login wall.
+    if _PRIVATE_BADGE.search(html or ""):
+        plan["public"] = False
+        plan["gated_reason"] = "portal declares itself private / access-restricted"
+        return plan
     if plan["public"] is None and html and not connector:
         # A login wall is the honest "gated" signal; its absence is not proof of public, so this only
         # ever sets False.
@@ -410,6 +540,10 @@ def census_one(supplier, domain, probe=None, log=print):
                      discovery_method="none", notes="robots.txt disallows the corporate site")]
     html, status, err = _get(home)
     cands = find_media_links(html, home)[:3]
+    if not cands:
+        # The site published nothing a bare fetch could see — age gate, JS shell, or a block. Its own
+        # sitemap is a documented public index and circumvents nothing.
+        cands = [(u, "sitemap") for u in sitemap_media_urls(domain, log=log)[:3]]
     if not cands and probe:
         cands = [(u, "conventional-host") for u in conventional_hosts(domain)]
     if not cands:
@@ -417,7 +551,8 @@ def census_one(supplier, domain, probe=None, log=print):
         # and only one of them means a human should stop looking.
         why = err or "no media/press link published on %s" % domain
         if html and _AGE_GATE.search(html[:200000]):
-            why = "AGE GATE on the corporate site — a bare fetch never sees the nav"
+            why = ("AGE GATE on the corporate site and no media/press URL in its sitemap — needs a "
+                   "human to look (the gate is a control we do not defeat)")
         elif html is not None and 0 < len(html) < 4000:
             why = "corporate site is a client-rendered shell (%d bytes) — no links in the HTML" % len(html)
         return [dict(base, reachable=bool(html), http_status=status, robots_allows=True,
@@ -445,9 +580,12 @@ def census_one(supplier, domain, probe=None, log=print):
             tos_capture=rp["tos_capture"], image_use=rp["image_use"], scope=rp["scope"],
             confidence=rp["confidence"], needs_counsel=rp["needs_counsel"],
 
-            notes=("landing page — drives not enumerated; public-ness comes from the connector"
-                   if ex.get("landing_page_only") else
+            notes=(ex.get("gated_reason") or
+                   "landing page — drives not enumerated; public-ness comes from the connector"
+                   if (ex.get("gated_reason") or ex.get("landing_page_only")) else
                    ("" if ex["dam_vendor"] else
+                    "vendor CDN links only (%s) — assets to link, not a library to walk"
+                    % (",".join(ex["vendor_signals"] or []) or "?") if ex.get("vendor_surface") == "cdn_only" else
                     ("media centre, vendor unidentified" if ex["is_media_centre"]
                      else "not a media centre")))))
         time.sleep(0.8)
@@ -462,7 +600,7 @@ def census_one(supplier, domain, probe=None, log=print):
 
 def run(suppliers=None, land=True, probe=None, log=print):
     """The registry entrypoint. Walks the supplier list → `dam_census`."""
-    sup = suppliers or SUPPLIER_SEED
+    sup = suppliers or (SUPPLIER_SEED + SUPPLIER_SEED_TIER2)
     started = int(time.time() * 1000)
     rows, warns = [], []
     for name, domain in sup:
@@ -486,6 +624,19 @@ def run(suppliers=None, land=True, probe=None, log=print):
                          if r.get("kind") in ("press_room", "media_page")
                          or r.get("dam_vendor") in _PRESS_ONLY})
     with_grant = sorted({r["supplier"] for r in rows if r.get("image_use") == "permitted"})
+    # P5's actual score. "Identified DAM" is not the denominator — a PRIVATE portal cannot be
+    # reached by any connector we are willing to write, so counting it would make the ratio a
+    # measure of how much we are locked out of. The denominator is PUBLIC DAMs; the numerator is
+    # public DAMs a proven connector covers.
+    public_dams = sorted({r["supplier"] for r in rows
+                          if r.get("dam_vendor") and r["dam_vendor"] not in _PRESS_ONLY
+                          and r.get("public") is not False})
+    gated_dams = sorted({r["supplier"] for r in rows
+                         if r.get("dam_vendor") and r["dam_vendor"] not in _PRESS_ONLY
+                         and r.get("public") is False})
+    reachable = sorted({r["supplier"] for r in rows
+                        if r.get("connector") and r.get("public") is not False})
+    pct = round(100.0 * len(reachable) / len(public_dams), 1) if public_dams else None
     covered = sorted({r["supplier"] for r in rows if r.get("connector")})
     if not with_dam:
         warns.append("0 of %d suppliers resolved to a DAM vendor — link discovery may have drifted"
@@ -493,6 +644,9 @@ def run(suppliers=None, land=True, probe=None, log=print):
     log("census: %d suppliers, %d rows | %d on an identified DAM vendor (%d already covered by a "
         "connector) | %d with a reachable press room | %d whose terms provisionally PERMIT image use"
         % (len(sup), len(rows), len(with_dam), len(covered), len(with_press), len(with_grant)))
+    log("  DAM reachability: %d public / %d gated; %d covered by a proven connector%s"
+        % (len(public_dams), len(gated_dams), len(reachable),
+           " = %s%%" % pct if pct is not None else ""))
 
     if land and rows:
         try:
@@ -509,17 +663,23 @@ def run(suppliers=None, land=True, probe=None, log=print):
     print("HOODIE_RESULT " + json.dumps({
         "status": status, "items_done": len(rows), "items_total": len(rows),
         "suppliers": len(sup), "with_vendor": len(with_dam), "connector_covered": len(covered),
-        "press_rooms": len(with_press), "provisional_grants": len(with_grant)}))
+        "press_rooms": len(with_press), "provisional_grants": len(with_grant),
+        "public_dams": len(public_dams), "gated_dams": len(gated_dams),
+        "reachable_by_connector": len(reachable), "reachable_pct": pct}))
     return rows, {"status": status, "warnings": warns, "suppliers": len(sup),
                   "with_vendor": len(with_dam), "connector_covered": len(covered),
                   "press_rooms": len(with_press), "provisional_grants": len(with_grant),
-                  "grant_suppliers": with_grant}
+                  "grant_suppliers": with_grant, "public_dams": public_dams,
+                  "gated_dams": gated_dams, "reachable_by_connector": reachable,
+                  "reachable_pct": pct}
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Census of supplier media centres → DAM vendors.")
     ap.add_argument("--plan", metavar="URL", help="emit the two plans for one media-centre URL")
     ap.add_argument("--supplier", help="census one supplier by name (from the seed)")
+    ap.add_argument("--tier", choices=["1", "2", "all"], default="all",
+                    help="1 = the majors, 2 = mid-market/craft, all = both (default)")
     ap.add_argument("--probe", action="store_true",
                     help="also try conventional media.* / press.* hostnames (off by default)")
     ap.add_argument("--no-land", action="store_true")
@@ -527,9 +687,11 @@ def main(argv=None):
     if a.plan:
         print(json.dumps(plan(a.plan), indent=2, default=str))
         return
-    sup = SUPPLIER_SEED
+    sup = {"1": SUPPLIER_SEED, "2": SUPPLIER_SEED_TIER2,
+           "all": SUPPLIER_SEED + SUPPLIER_SEED_TIER2}[a.tier]
     if a.supplier:
-        sup = [s for s in SUPPLIER_SEED if s[0].lower().startswith(a.supplier.lower())]
+        sup = [s for s in (SUPPLIER_SEED + SUPPLIER_SEED_TIER2)
+               if s[0].lower().startswith(a.supplier.lower())]
         if not sup:
             print("no seeded supplier matching %r" % a.supplier)
             return
