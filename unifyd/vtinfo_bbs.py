@@ -45,12 +45,46 @@ TABLE = "vip_brandbuilder_items"
 # Snapshots are runtime state → default under the git-ignored agent_state/ (not the repo root).
 _STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent_state", "vip_brandbuilder")
 
-# Known distributor sourceCodes, harvested from each distributor's public Brand Builder page
-# (the `brandbuilder/<code>/` path, or an embedded products.vtinfo.com iframe — see discover()).
-# Grow this map; the daily pass runs whatever is enabled here.
+# SEED ONLY — not the pull list. `vip_brandbuilder_census.py` enumerated the whole 5-digit
+# sourceCode keyspace (00000-99999) and landed every real distributor in
+# `vip_brandbuilder_directory`, so the pull reads THAT (see `targets()`), not this dict.
+# This stays as the offline/no-warehouse fallback and as the documented example.
+#
+# Why it matters that the default changed: this dict had one entry while the directory held 338
+# confirmed catalogs, so the scheduled weekly pass was refreshing Columbia and nothing else —
+# 337 catalogs sat frozen at whatever a one-off manual sweep had landed, with no signal that they
+# were stale. A hand-maintained list next to a complete census is a list that is always wrong.
 DISTRIBUTORS = {
     "01191": "Columbia Distributing - WA",
 }
+
+DIRECTORY_TABLE = "vip_brandbuilder_directory"
+
+
+def targets(log=print):
+    """The sourceCodes to pull: every CONFIRMED distributor in the census directory.
+
+    `confirmed` means the census saw a populated /products response, not merely a VIP record —
+    an `info_only` code has no catalog to pull and would burn three requests to land zero rows.
+    Falls back to the DISTRIBUTORS seed when the directory can't be read, and SAYS SO: silently
+    falling back from 338 distributors to 1 is the kind of quiet degrade that reads as success.
+    """
+    try:
+        import warehouse
+        rows = warehouse.query(
+            DIRECTORY_TABLE,
+            "SELECT CAST(source_code AS VARCHAR) AS code, any_value(distributor_name) AS name "
+            "FROM t WHERE status = 'confirmed' GROUP BY 1 ORDER BY 1")
+        codes = {r["code"]: r.get("name") or "" for r in rows if r.get("code")}
+        if codes:
+            log("[vtinfo_bbs] %d confirmed distributors from %s" % (len(codes), DIRECTORY_TABLE))
+            return codes
+        log("[vtinfo_bbs] %s is readable but empty — falling back to the %d-entry seed; run "
+            "vip-brandbuilder-census to populate it" % (DIRECTORY_TABLE, len(DISTRIBUTORS)))
+    except Exception as e:
+        log("[vtinfo_bbs] %s unreadable (%s) — falling back to the %d-entry seed, so this pass "
+            "covers FAR less than the full book" % (DIRECTORY_TABLE, str(e)[:70], len(DISTRIBUTORS)))
+    return dict(DISTRIBUTORS)
 
 # Stable column set → stable Parquet schema across pulls (warehouse projects onto exactly these).
 FIELDS = ["distributor_id", "distributor_name", "vip_source_id", "vip_customer_id",
@@ -157,12 +191,13 @@ def _run(code, n, new, status, warnings, started, dropped=0):
 
 def pull(dist=None, dists=None, land=True, out=None, state_dir=None, log=print):
     """Pull one or more distributors' Brand Builder catalogs → rows, land to the warehouse.
-    `dist`/`dists` = sourceCode(s); default = every entry in DISTRIBUTORS."""
+    `dist`/`dists` = sourceCode(s); default = every CONFIRMED distributor in the census
+    directory (`targets()`), which is the whole Brand Builder universe, not a hand-kept subset."""
     state_dir = state_dir or out or _STATE
     os.makedirs(state_dir, exist_ok=True)
     started = int(time.time() * 1000)
     pulled_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    codes = ([dist] if dist else None) or dists or list(DISTRIBUTORS.keys())
+    codes = ([dist] if dist else None) or dists or list(targets(log).keys())
 
     all_rows, runs, tot_new, tot_drop = [], [], 0, 0
     for code in codes:

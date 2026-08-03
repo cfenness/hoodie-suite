@@ -345,11 +345,18 @@ SOURCES = [
          note="brand→retailer 'where to buy' (HTML-fragment POST, not GraphQL). m.run() LANDS it; m.pull() alone "
               "returned rows but never wrote (the never-persisted bug)"),
     # ── Distributor catalogs (open JSON APIs — one recipe per PLATFORM, keyed by distributor id/slug) ──
+    # Pulls EVERY confirmed distributor in `vip_brandbuilder_directory` (the census output), not a
+    # hand-kept dict — that dict had one entry while the directory held 338 catalogs, so the weekly
+    # pass was refreshing Columbia alone and 337 books sat frozen with nothing reporting it.
+    # mem: 630k+ rows accumulate into one table, and write_accumulate materializes the whole thing.
     dict(id="vip-brandbuilder", label="VIP Brand Builder (distributor catalogs)",
          code="import vtinfo_bbs as m; m.pull()", tables=["vip_brandbuilder_items"],
-         klass="headless", cadence="weekly", enabled=True,
-         note="products.vtinfo.com/bbs — distributor product+package catalog w/ retail UPCs, no auth; "
-              "parameterized by VIP sourceCode (Columbia 01191 seed). Add distributors to DISTRIBUTORS."),
+         klass="headless", cadence="weekly", enabled=True, mem=8192, timeout=5400,
+         after=["vip-brandbuilder-census"],
+         note="products.vtinfo.com/bbs — distributor product+package catalog w/ retail UPCs, no auth. "
+              "Distributor list = vip_brandbuilder_directory (status='confirmed'), populated by "
+              "vip-brandbuilder-census over the full 00000-99999 sourceCode keyspace. This is the "
+              "Overlay's Tier-3 spine: 630k items / 338 books, 97% carrying a retail UPC."),
     # sourceCode is a 5-digit numeric id (00000-99999) — the SAME identifier space as vtinfo.py's
     # finder-side distributor custID (verified live 2026-08-02: Florida Distributing's finder
     # custID 00177 is ALSO a valid Brand Builder sourceCode). That makes the whole 100k space

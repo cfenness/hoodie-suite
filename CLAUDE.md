@@ -151,6 +151,13 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   `degraded` if the store-option / `available_variant_values` selectors drift. Validated
   live (~13.9k products via sitemap). `unifyd/schedule_pull.py` runs any connId on a cadence
   locally (`python unifyd/schedule_pull.py abc-fws --every 24h`).
+- `unifyd/vip_brandbuilder_census.py` — the **complete** Brand Builder distributor directory.
+  The sourceCode is a 5-digit numeric id, so the keyspace (`00000`-`99999`) is ENUMERABLE — no
+  auth, no proxy, ~20 req/s server-side ceiling. Every `/info` hit is confirmed against
+  `/products` before it counts, so a VIP record with no catalog lands as `info_only`, not as a
+  find. Swept 2026-08-02: **99,997/100,000 codes probed → 338 confirmed catalogs + 14 info_only**
+  → `vip_brandbuilder_directory`. That 338 IS the Brand Builder universe; there is no
+  hand-harvesting left to do, and `vtinfo_bbs.targets()` reads this table as the pull list.
 - `unifyd/vtinfo_bbs.py` — VIP **Brand Builder** distributor catalog (connId `vip-brandbuilder`).
   Distinct from `vtinfo.py` (that's `finder.vtinfo.com` where-to-buy carriage); this is
   `products.vtinfo.com/bbs/v1/distributor/<sourceCode>/{info,brands,products}` — an **open JSON
