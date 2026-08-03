@@ -220,6 +220,11 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   read verbatim; an unmarked currency amount is not a price point (a $1M donation is not an SRP).
   PDF text needs the optional `pypdf` cap: without it PDF releases contribute no facts and the run
   SAYS so, because 0-of-91-PDFs-read must never look like a source with no PDFs.
+  **The LLM narrative pass** (design §3) is `DAM_LLM=1`, off by default, and structurally additive:
+  it is only asked about fields that neither the DOCUMENT stated nor the EVENT already carries, and
+  everything it returns is written `INFERENCE`. Checking the document alone was not enough — it let
+  the model replace a folder-derived (deterministic) date with a guess simply because the release
+  didn't repeat it. The exact read always wins; the model can add a fact, never replace one.
 
   Honesty contract: every derived field is labelled **DETERMINISTIC or INFERENCE** in
   `field_provenance` — brand match is deterministic *unless* the alias is also a common word
@@ -227,6 +232,17 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   `created_on` is the UPLOAD stamp, not the event date** (Bacardi's whole 2018 folder reads
   2018-04-11, the bulk-migration day), so dates come from **year folders** at `precision=year` and are
   otherwise NULL — never back-filled.
+- **`unifyd/dam_canon.py` — the canon key (P2).** Resolves a DAM brand literal to `dim_brand` via
+  `overlay_match.brand_key()` applied to BOTH sides, so `brand_events.hoodie_brand_id` is the master's
+  `hoodie_id` rather than a vendor slug. **One tier, exact key match, no fuzzy fallback** — a wrong
+  `hoodie_brand_id` silently attributes a competitor's launch to your brand in every roll-up and
+  nothing about the row looks wrong; fuzzy identity is hoodie-canon's cascade, not a regex here.
+  Unmatched → the vendor slug stays, `brand_resolution="unresolved"`, and the provenance claim for
+  `hoodie_brand_id` is REMOVED. There is deliberately **no local re-implementation of the key**: the
+  obvious lookalike misses `precleanse.nbrand`'s generic-token drop (real key for "Grey Goose Vodka"
+  is `grey goose`), so a fallback wouldn't degrade the match, it would silently produce a DIFFERENT
+  match set — the module refuses to resolve instead. An unreadable master is `master-unavailable`,
+  distinct from `unresolved`, and never costs the facts: the events land in full either way.
 - **`unifyd/dam_dna.py`** — the **DNA** platform connector (`dna.online`). ONE CONNECTOR PER DAM
   VENDOR, one rights record per SUPPLIER: transport is a property of the platform, permission is a
   property of the supplier, so `TENANTS` holds host+drive+brands per supplier and each is its own

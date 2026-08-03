@@ -57,10 +57,10 @@ ASSET_FIELDS = [
 ]
 
 EVENT_FIELDS = [
-    "event_id", "hoodie_brand_id", "brand", "sku_id", "event_type", "event_date",
-    "event_date_precision", "market", "price", "currency", "title", "asset_count",
-    "source", "source_id", "source_asset_ids", "source_url", "rights_ref",
-    "field_provenance", "fetched_at",
+    "event_id", "hoodie_brand_id", "brand_key", "canon_brand", "brand_resolution", "brand",
+    "sku_id", "event_type", "event_date", "event_date_precision", "market", "price", "currency",
+    "abv", "title", "asset_count", "source", "source_id", "source_asset_ids", "source_url",
+    "rights_ref", "field_provenance", "fetched_at",
 ]
 
 DETERMINISTIC = "DETERMINISTIC"
@@ -342,12 +342,67 @@ def extract_facts(text, markets=None):
     return out
 
 
-def enrich_events_from_documents(rec, events, assets, limit=None, log=print):
+# ── the LLM narrative pass (design §3: "deterministic … + LLM for the narrative") ─────────────────
+# OFF by default (DAM_LLM=1 to enable) and structurally incapable of overwriting a deterministic
+# value: it is only ever consulted for fields the deterministic pass left EMPTY, and everything it
+# returns is written as INFERENCE. Same posture as menu_ingest.parse_smart — the cheap exact path
+# runs first and the model only sees what it couldn't answer, so a clean document costs nothing.
+_LLM_TOOL = {
+    "name": "record_event_facts",
+    "description": "Record ONLY facts stated explicitly in the press release. Omit anything not stated.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "event_date": {"type": "string", "description": "ISO YYYY-MM-DD, only if the release states it"},
+            "market": {"type": "string", "description": "country or city the release says this is for"},
+            "price": {"type": "number", "description": "retail price, only if stated as a retail price"},
+            "currency": {"type": "string", "enum": ["USD", "GBP", "EUR"]},
+            "abv": {"type": "number"},
+            "product_name": {"type": "string", "description": "the specific product being announced"},
+        },
+        "additionalProperties": False,
+    },
+}
+
+
+def _llm_available():
+    if os.environ.get("DAM_LLM", "0") != "1" or not os.environ.get("ANTHROPIC_API_KEY"):
+        return False
+    try:
+        import anthropic  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def llm_facts(text, missing, log=print):
+    """Ask Claude only for `missing` fields, from the document text. Returns {} on any failure —
+    an unavailable model degrades the enrichment, never the run."""
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        msg = client.messages.create(
+            model="claude-sonnet-5", max_tokens=512,
+            tools=[_LLM_TOOL], tool_choice={"type": "tool", "name": "record_event_facts"},
+            messages=[{"role": "user", "content":
+                       "Press release below. Report ONLY these fields, and ONLY if the text states "
+                       "them explicitly: %s. Do not guess or infer from context.\n\n%s"
+                       % (", ".join(sorted(missing)), text[:12000])}])
+        for block in msg.content:
+            if getattr(block, "type", "") == "tool_use":
+                return {k: v for k, v in (block.input or {}).items() if k in missing}
+    except Exception as e:
+        log("  llm pass failed: %s" % str(e)[:110])
+    return {}
+
+
+def enrich_events_from_documents(rec, events, assets, limit=None, use_llm=None, log=print):
     """Upgrade events with the facts stated in their own press-release documents.
 
     Coverage is REPORTED, never silently truncated ([[no-silent-caps-in-full-pulls]]): the return
     value carries matched / covered / remaining, and `limit` (DAM_DOC_LIMIT) is an explicit operator
     bound whose leftovers are named in the log, not a cap baked into a 'full' run."""
+    use_llm = _llm_available() if use_llm is None else use_llm
     by_id = {a.get("asset_id"): a for a in assets}
     todo = []
     for e in events:
@@ -380,34 +435,53 @@ def enrich_events_from_documents(rec, events, assets, limit=None, log=print):
         if not (text or "").strip():
             unparsed += 1
         facts = extract_facts(text)
+        # The LLM sees ONLY genuine gaps: a field neither stated in the DOCUMENT nor already carried
+        # DETERMINISTICALLY on the EVENT. Both halves matter — checking the document alone let the
+        # model overwrite a folder-derived (deterministic) date with a guess, because the document
+        # happened not to repeat it. It can add a fact, never replace one.
+        missing = {f for f in ("event_date", "market", "price", "abv")
+                   if not facts.get(f) and e.get(f) in (None, "")}
+        if missing and use_llm:
+            for k, v in (llm_facts(text, missing, log=log) or {}).items():
+                if v not in (None, "") and k in missing and not facts.get(k):
+                    facts[k] = v
+                    facts.setdefault("_llm", set()).add(k)
+                    if k == "event_date":
+                        facts["event_date_precision"] = "day"
         del text
         if not facts:
             continue
         prov = json.loads(e["field_provenance"])
         changed = False
+        llm_fields = facts.get("_llm") or set()
         if facts.get("event_date"):
             e["event_date"] = facts["event_date"]
-            e["event_date_precision"] = facts["event_date_precision"]
-            prov["event_date"] = DETERMINISTIC
-            prov["event_date_source"] = facts.get("date_source")
+            e["event_date_precision"] = facts.get("event_date_precision") or "day"
+            prov["event_date"] = INFERENCE if "event_date" in llm_fields else DETERMINISTIC
+            prov["event_date_source"] = "llm" if "event_date" in llm_fields else facts.get("date_source")
             changed = True
         if facts.get("market"):
             e["market"] = facts["market"]
             # A DATELINE place is stated by the publisher — deterministic. A place name spotted
             # elsewhere in the body is still just a keyword hit, so it stays INFERENCE.
-            prov["market"] = DETERMINISTIC if facts.get("market_source") == "dateline" else INFERENCE
+            prov["market"] = (DETERMINISTIC if (facts.get("market_source") == "dateline"
+                                                and "market" not in llm_fields) else INFERENCE)
             changed = True
         if facts.get("price") is not None:
             e["price"] = facts["price"]
             e["currency"] = facts.get("currency")
-            prov["price"] = DETERMINISTIC
+            prov["price"] = INFERENCE if "price" in llm_fields else DETERMINISTIC
+            changed = True
+        if facts.get("abv") is not None:
+            e["abv"] = facts["abv"]
+            prov["abv"] = INFERENCE if "abv" in llm_fields else DETERMINISTIC
             changed = True
         if changed:
             e["field_provenance"] = json.dumps(prov)
             upgraded += 1
         time.sleep(0.4)                     # someone's server; pace it
 
-    cov = {"documents_matched": matched, "documents_read": covered,
+    cov = {"llm_pass": bool(use_llm), "documents_matched": matched, "documents_read": covered,
            "documents_remaining": remaining, "documents_unparsed": unparsed,
            "events_upgraded": upgraded, "read_failures": failures}
     log("  documents: read %d/%d, upgraded %d event(s)%s%s"
@@ -625,7 +699,11 @@ def derive_events(rec, assets, brands, folder_years=None, log=print):
             # hoodie_brand_id is the vendor-scoped brand slug until DAM brands are resolved against
             # dim_brand (P2). Naming it now and resolving later beats inventing a fake canon id.
             "hoodie_brand_id": "%s:%s" % (rec.get("source_id"), slug(brand)),
-            "brand": brand, "sku_id": None,
+            # Canon columns start UNRESOLVED and are stamped by dam_canon.apply_to_events. Carrying
+            # them from the start means an unresolved event is visibly unresolved, rather than a row
+            # that silently lacks the column its resolved neighbours have.
+            "brand_key": None, "canon_brand": None, "brand_resolution": "unresolved",
+            "brand": brand, "sku_id": None, "abv": None,
             "event_type": etype,
             "event_date": ("%s-01-01" % year) if year else None,
             "event_date_precision": "year" if year else "unknown",

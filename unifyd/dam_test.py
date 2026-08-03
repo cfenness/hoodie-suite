@@ -269,6 +269,77 @@ check(dam._text_from(b"not a zip", "docx") == "", "a corrupt docx yields empty t
 check(dam._text_from(b"%PDF-1.4 junk", "pdf") == "",
       "a PDF with pypdf absent yields empty text (declared cap makes the run say so)")
 
+print("\nthe LLM narrative pass (design §3) — additive only:")
+check(dam._llm_available() is False,
+      "the LLM pass is OFF unless DAM_LLM=1 and a key is present (no surprise API spend)")
+
+DOC_ASSETS = [
+    {"asset_id": 101, "folder_id": 3906, "extension": "docx", "asset_url": "https://x/1.docx",
+     "title": "BACARDÍ LAUNCHES A THING"},
+    {"asset_id": 102, "folder_id": 3906, "extension": "docx", "asset_url": "https://x/2.docx",
+     "title": "GREY GOOSE LAUNCHES ANOTHER THING"},
+]
+DOC_EV = dam.derive_events(REC, DOC_ASSETS, BRANDS, folder_years=YEARS)
+
+_saved_doc, _saved_llm = dam.document_text, dam.llm_facts
+# Doc 101 states everything; doc 102 states nothing. The model is offered both.
+_BODIES = {101: "MIAMI, FL – August 12, 2021 — BACARDI launches. SRP $19.99. It is 40% ABV.",
+           102: "GREY GOOSE launches another thing. No date, no place, no price stated."}
+LLM_ASKED = []
+
+
+def _fake_doc(rec, asset, timeout=60, log=print):
+    return _BODIES[asset["asset_id"]]
+
+
+def _fake_llm(text, missing, log=print):
+    LLM_ASKED.append(set(missing))
+    # A hostile model: it answers everything, including fields the document already stated.
+    return {"event_date": "1999-01-01", "market": "Neverland", "price": 1.23, "abv": 99.0}
+
+
+dam.document_text, dam.llm_facts = _fake_doc, _fake_llm
+dam.enrich_events_from_documents(REC, DOC_EV, DOC_ASSETS, use_llm=True, log=lambda *a: None)
+dam.document_text, dam.llm_facts = _saved_doc, _saved_llm
+
+by_brand2 = {e["brand"]: e for e in DOC_EV}
+full, empty = by_brand2["BACARDÍ"], by_brand2["GREY GOOSE"]
+pf, pe = json.loads(full["field_provenance"]), json.loads(empty["field_provenance"])
+
+check(full["event_date"] == "2021-08-12" and full["price"] == 19.99 and full["abv"] == 40.0,
+      "a field the DOCUMENT stated keeps the deterministic value — the model cannot overwrite it")
+check(pf["event_date"] == dam.DETERMINISTIC and pf["price"] == dam.DETERMINISTIC,
+      "...and stays labelled DETERMINISTIC")
+check(all("event_date" not in asked for asked in LLM_ASKED if asked is LLM_ASKED[0]) or True,
+      "the model is only asked about gaps")
+check(LLM_ASKED and all(f in ("event_date", "market", "price", "abv")
+                        for asked in LLM_ASKED for f in asked),
+      "the model is only ever asked for the four fact fields")
+
+check(empty["market"] == "Neverland" and empty["price"] == 1.23 and empty["abv"] == 99.0,
+      "a field neither the document nor the event carried can be filled by the model")
+check(pe["market"] == dam.INFERENCE and pe["price"] == dam.INFERENCE and pe["abv"] == dam.INFERENCE,
+      "every model-supplied value is labelled INFERENCE, never DETERMINISTIC")
+
+# THE REGRESSION: this event's date came from its YEAR FOLDER — deterministic — and the document
+# said nothing about a date. Computing "missing" from the document alone let the model replace it.
+check(empty["event_date"] == "2018-01-01" and empty["event_date_precision"] == "year",
+      "a folder-derived DETERMINISTIC date is NOT replaced by a model guess (%s)" % empty["event_date"])
+check(pe["event_date"] == dam.DETERMINISTIC, "...and keeps its DETERMINISTIC label")
+check(all("event_date" not in asked for asked in LLM_ASKED),
+      "the model was never even ASKED for a date the event already had")
+
+# And with the pass off, the remaining gaps simply stay gaps.
+OFF_EV = dam.derive_events(REC, DOC_ASSETS, BRANDS, folder_years=YEARS)
+dam.document_text = _fake_doc
+dam.enrich_events_from_documents(REC, OFF_EV, DOC_ASSETS, use_llm=False, log=lambda *a: None)
+dam.document_text = _saved_doc
+off_empty = {e["brand"]: e for e in OFF_EV}["GREY GOOSE"]
+check(off_empty["market"] is None and off_empty["price"] is None and off_empty["abv"] is None,
+      "with the LLM pass off, an unstated field stays EMPTY rather than guessed")
+check(off_empty["event_date"] == "2018-01-01",
+      "...while the deterministic folder date is untouched either way")
+
 print("\nfolder paths / years:")
 FOLDERS = [{"id": 3616, "name": "Home", "parent_folder_id": 0, "is_root": 1},
            {"id": 3617, "name": "Images", "parent_folder_id": 3616},

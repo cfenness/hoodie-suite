@@ -53,6 +53,7 @@ import time
 import urllib.request
 
 import dam
+import dam_canon
 import rights
 
 VENDOR_PLATFORM = "DNA (dna.online)"
@@ -325,6 +326,18 @@ def pull(tenant_name="bacardi", land=True, state_dir=None, log=print):
         if doc_cov.get("documents_matched") and not doc_cov.get("documents_read"):
             warns.append("%d documents matched but NONE could be read — press-release facts are "
                          "silently absent (pypdf missing? fetch blocked?)" % doc_cov["documents_matched"])
+
+    # Canon-key the events (P2's exit criterion). Runs AFTER the document pass so a brand corrected
+    # from a document body is the one resolved. An unreachable master leaves every event honestly
+    # unresolved rather than failing the run — the facts are the output, the join is an enrichment.
+    canon = dam_canon.apply_to_events(events, log=log)
+    coverage.update({"brands_seen": canon["brands_seen"], "brands_resolved": canon["brands_resolved"]})
+    if not canon["available"]:
+        warns.append("brand canon (dim_brand) unreadable — all %d events landed UNRESOLVED "
+                     "(hoodie_brand_id is a vendor slug, not a canon id)" % len(events))
+    elif events and not canon["brands_resolved"]:
+        warns.append("0 of %d brands resolved against dim_brand (%d master brands) — the match key "
+                     "may have drifted" % (canon["brands_seen"], canon["master_brands"]))
 
     # Honesty checks — a run that lands nothing usable must not read as success.
     if len(assets) < t["min_assets"]:
