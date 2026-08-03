@@ -988,9 +988,21 @@ def deploy(args):
                       "the next check reports 'no baseline' rather than passing quietly")
             else:
                 sha256, nfiles = m.group(1), m.group(2)
-                rc2, out2 = sh([fly, "ssh", "console", "-a", app, "-C",
+                # -g app PINS this to the process group we just deployed. Without it flyctl
+                # picks ANY machine in the app — including a long-lived ephemeral scrape machine
+                # still running a pre-deploy image, whose deploy_drift.py may predate record-fp.
+                # An older copy does not error on the unknown subcommand: main() falls through to
+                # `check`, which exits 2. So the baseline silently went unrecorded AND the deploy
+                # log showed a drift check's output, which reads like the record ran. Observed
+                # live on v743 — the next check then cried CRITICAL against a stale baseline while
+                # production was in fact exactly what we shipped.
+                rc2, out2 = sh([fly, "ssh", "console", "-a", app, "-g", "app", "-C",
                                 "python3 /app/unifyd/deploy_drift.py record-fp %s %s %s"
                                 % (head, sha256, nfiles)], timeout=300)
+                if rc2 == 0 and "recorded expected build" not in (out2 or ""):
+                    # Exit 0 alone is not proof: an old image's `check` can exit 0 when live
+                    # happens to match. Require the record's own confirmation line.
+                    rc2 = 1
                 for line in (out2 or "").splitlines()[-2:]:
                     print("  %s" % line.strip())
                 if rc2 != 0:
