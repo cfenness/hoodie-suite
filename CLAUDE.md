@@ -388,7 +388,17 @@ Two standing tools exist so failures are loud, not quiet. Keep them passing and 
 static suite **and** `/api` (see `DEPLOY-FLY.md`, `fly.toml`, `Dockerfile`). `main` is
 production; there is no staging branch.
 
-- **THERE IS NO AUTO-DEPLOY. Merging does NOT ship.** Every deploy is run deliberately.
+- **AUTO-DEPLOY IS THE CONDUCTOR'S, AND NOBODY ELSE'S.** `tools/conductor.py` merges gated PRs,
+  deploys, VERIFIES production against the intended build, and rolls back to the previous release
+  when verification fails. That is the only sanctioned automatic path, and it exists because
+  "merged" and "shipped" drifting apart is what caused a stale tree to reach production while
+  every release read `complete`. Outside the conductor the old rule stands: **merging does NOT
+  ship, and a hand-run deploy is deliberate.** Never re-add a CI/CD workflow — the conductor runs
+  locally on the operator's Mac (it needs git, gh and flyctl), not on metered infrastructure.
+  Its rails are not optional: dry-run by default, a hard merge cap, a kill switch
+  (`tools/CONDUCTOR_STOP`), and it REFUSES to merge a PR touching its own machinery
+  (`conductor.py`, `release_train.py`, `deploy_guard.py`, `smoke_check.py`) — an agent that can
+  widen its own gate has no gate.
   GitHub Actions is **not** used here (metered/variable cost — same reason scheduling
   already moved to the Fly dispatcher). The deploy/scrape workflows were deleted; do not
   re-add them, and do not treat Actions billing as a deploy blocker.
