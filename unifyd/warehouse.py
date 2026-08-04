@@ -809,6 +809,55 @@ def read_manifest(name):
     return man
 
 
+_DOC_DIR = "_doc"
+
+
+def _doc_rel(kind, name):
+    return "%s/%s/%s.json" % (_DOC_DIR, kind, name)
+
+
+def read_doc(kind, name, default=None):
+    """A small durable JSON doc beside the warehouse, e.g. a stage's WATERMARK.
+
+    Contract C3 ("every promotion has a watermark") needs somewhere durable and SHARED to record
+    what a stage has already consumed — ephemeral Fly machines have no local state, and two machines
+    must agree. This is the manifest mechanism generalised: same storage, same local/remote split,
+    no new dependency.
+
+    Returns `default` when the doc does not exist. It does NOT swallow transport errors: a dropped
+    connection must not read as "nothing consumed yet", which would re-fold the entire history.
+    """
+    try:
+        if remote():
+            with _s3fs().open_input_stream("%s/%s/%s" % (_bucket(), _prefix(), _doc_rel(kind, name))) as f:
+                return json.loads(f.read().decode("utf-8"))
+        p = os.path.join(_LOCAL_DIR, _DOC_DIR, kind, name + ".json")
+        return json.loads(open(p, "rb").read().decode("utf-8")) if os.path.exists(p) else default
+    except FileNotFoundError:
+        return default
+    except Exception as e:
+        if any(m in str(e) for m in _NO_FILES) or "NoSuchKey" in str(e) or "404" in str(e):
+            return default
+        raise                       # a transient read is NOT an empty watermark
+
+
+def write_doc(kind, name, obj):
+    data = json.dumps(obj, separators=(",", ":")).encode("utf-8")
+    if remote():
+        def _put():
+            with _s3fs().open_output_stream("%s/%s/%s" % (_bucket(), _prefix(), _doc_rel(kind, name))) as f:
+                f.write(data)
+        _retry(_put, "doc %s/%s" % (kind, name))
+    else:
+        p = os.path.join(_LOCAL_DIR, _DOC_DIR, kind, name + ".json")
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        tmp = p + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, p)
+    return obj
+
+
 _NO_CAS = object()          # sentinel: "no conflict check requested" (distinct from a real expect=(None, None))
 
 
