@@ -67,6 +67,28 @@
   .drop.on{border-color:var(--accent);color:var(--accent)}
   .empty{text-align:center;padding:40px 16px;color:var(--mut)}
   .pill{font:11px var(--mono);padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--mut)}
+  .modal{position:fixed;inset:0;background:rgba(6,10,16,.72);display:flex;align-items:flex-start;
+         justify-content:center;padding:28px 16px;overflow:auto;z-index:20}
+  .sheet{background:var(--panel);border:1px solid var(--line);border-radius:13px;width:min(880px,100%);
+         padding:18px 20px 16px}
+  .sheet h3{margin:0 0 3px;font-size:16px}
+  .sheet .hint{color:var(--mut);font-size:12px;margin:0 0 14px}
+  .dim{display:grid;grid-template-columns:112px 1fr 1fr 1.1fr;gap:9px;align-items:center;
+       padding:8px 0;border-bottom:1px solid var(--line)}
+  @media (max-width:760px){.dim{grid-template-columns:1fr;gap:5px;padding:11px 0}}
+  .dim>.lb{font:11px var(--mono);color:var(--mut);text-transform:uppercase;letter-spacing:.6px}
+  .opt{text-align:left;padding:8px 10px;border-radius:7px;font-size:13px;width:100%;
+       white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .opt .who{font:10px var(--mono);color:var(--accent);display:block;letter-spacing:.6px}
+  .opt.sel{border-color:var(--good);background:rgba(91,184,110,.14)}
+  .opt.empty2{color:var(--mut);font-style:italic}
+  .dim input,.dim select{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:7px;
+       color:var(--ink);padding:8px 9px;font:13px var(--sans)}
+  .dim input:focus,.dim select:focus{outline:0;border-color:var(--accent)}
+  .dim input.sel,.dim select.sel{border-color:var(--good)}
+  .unres{font:10px var(--mono);color:var(--mut);padding-left:2px}
+  .sheetfoot{display:flex;gap:10px;align-items:center;margin-top:15px;flex-wrap:wrap}
+  .sheetfoot .grow{flex:1}
 </style>
 </head>
 <body>
@@ -95,6 +117,10 @@
       <h2>What you've taught it</h2>
       <div id="stats"><div class="empty" style="padding:14px">Nothing yet.</div></div>
     </div>
+    <div class="card" style="margin-bottom:16px">
+      <h2>Dictionary <span class="sub" style="text-transform:none;letter-spacing:0">— what you've resolved</span></h2>
+      <div id="dict"><div class="empty" style="padding:14px;font-size:13px">Resolve a match and the values you pick land here.<br>They're reused automatically on later pairs.</div></div>
+    </div>
     <div class="card">
       <h2>Patterns found <span class="sub" style="text-transform:none;letter-spacing:0">— in your answers</span></h2>
       <div id="patterns"><div class="empty" style="padding:14px;font-size:13px">Label a few and rules will appear here.<br>Most decisions turn out to be one rule, not many judgements.</div></div>
@@ -121,7 +147,7 @@
    ────────────────────────────────────────────────────────────────────────────────────────────── */
 
 var KEY = "hoodie.matchTrainer.v1";
-var S = { rows: [], i: 0, answers: {} };
+var S = { rows: [], i: 0, answers: {}, dict: {} };
 
 /* ── the matcher's own normalisation, mirrored so the app can SHOW its reasoning ───────────────── */
 var NOISE = ["the","and","of","wine","wines","spirit","spirits","liqueur","bottle","btl","nr","pack",
@@ -274,11 +300,28 @@ function parseCSV(text){
 function esc(v){ v=String(v==null?"":v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
 
 /* ── state ─────────────────────────────────────────────────────────────────────────────────────── */
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify({rows:S.rows,i:S.i,answers:S.answers})); }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({rows:S.rows,i:S.i,answers:S.answers,dict:S.dict})); }catch(e){} }
 function load(){
   try{ var d=JSON.parse(localStorage.getItem(KEY)||"null");
-    if(d && d.rows && d.rows.length){ S=d; return true; } }catch(e){}
+    if(d && d.rows && d.rows.length){ S=d; S.dict=S.dict||{}; return true; } }catch(e){}
   return false;
+}
+
+/* TTB STANDARDS OF FILL (27 CFR 5.203 spirits / 4.72 wine). Listed here so pack size is CHOSEN from
+   the regulated set rather than retyped in whatever format a retailer used — the labeller's rule was
+   "pack size is governed by the TTB". Two honest caveats, both visible in the UI:
+     • this list should be verified against the current CFR before it is treated as authoritative;
+     • MALT BEVERAGES have no standards of fill, so beer/seltzer/RTD must stay free-text. The picker
+       therefore always allows a value outside the list rather than forcing one in. */
+var TTB_SPIRITS = [50,100,200,375,500,700,720,750,900,945,1000,1750,1800];
+var TTB_WINE    = [50,100,187,200,250,355,375,500,750,1000,1500,3000,4000,5000,6000,9000,12000,15000,18000];
+function ttbSizes(type){
+  var t = String(type||"").toLowerCase();
+  if(/wine|sparkling|champagne|vermouth|sake|cider/.test(t)) return TTB_WINE;
+  if(/beer|malt|seltzer|rtd|ready/.test(t)) return [];          // unregulated — free text only
+  if(/spirit|whisk|vodka|gin|rum|tequila|liqueur|brandy|cognac|mezcal/.test(t)) return TTB_SPIRITS;
+  return TTB_SPIRITS.concat(TTB_WINE.filter(function(v){ return TTB_SPIRITS.indexOf(v)<0; }))
+                    .sort(function(x,y){ return x-y; });
 }
 
 var CANON = [["canon_brand","Brand"],["canon_product","Product"],["canon_size","Pack size"],
@@ -308,11 +351,11 @@ function render(){
     '<div class="diffbar"><span class="difftag d-'+d+'">'+DIFF_LABEL[d]+'</span>'+
       '<span class="sub">is the only difference the app can see</span></div>'+
     '<div class="ans">'+
-      '<button class="yes" data-v="y">Same item <kbd>Y</kbd></button>'+
+      '<button class="yes" data-v="y">Same item — resolve <kbd>Y</kbd></button>'+
       '<button class="no" data-v="n">Different <kbd>N</kbd></button>'+
       '<button class="skip" data-v="?">Can\'t tell <kbd>?</kbd></button>'+
     '</div>'+
-    '<div class="canon">'+CANON.map(function(c){
+    '<div style="display:none">'+CANON.map(function(c){
       // Pack size arrives PRE-FILLED in canonical form when both sides agree on the value — the
       // labeller stated the standard, so the app should apply it rather than ask for it again.
       var pre = prev[c[0]];
@@ -341,22 +384,154 @@ function side(src,name,size,sg){
          '<div class="sz">'+String(size||"—")+(sg?"  ·  "+sg.sz+"ml":"")+'</div></div>';
 }
 
+/* ── the RESOLVER ──────────────────────────────────────────────────────────────────────────────
+   Confirming a match does not record a "yes" — it opens the record. Per dimension you take A's
+   value, take B's, or type a third, and what you take becomes a DICTIONARY entry: the canonical
+   value plus every source spelling that maps to it. That is why the app gets faster as you go —
+   the second time "750 mL" appears it is already resolved, so you are teaching a vocabulary rather
+   than answering the same question repeatedly ([[dictionary-layer]]).
+
+   A BLANK IS UNRESOLVED, not empty. Leaving a dimension alone says "I don't know", never "this
+   product has no brand", and the row records the difference.                                      */
+function normVar(v){ return String(v||"").trim().toLowerCase().replace(/\s+/g," "); }
+
+function dictGet(dim, variant){
+  var d = S.dict[dim]; var k = normVar(variant);
+  return (d && k && d[k]) ? d[k].value : "";
+}
+function dictPut(dim, canon, variants){
+  if(!canon) return;
+  var d = S.dict[dim] || (S.dict[dim] = {});
+  // The canonical value maps to ITSELF. Without this a value the labeller TYPED — a taxonomy term
+  // with no A or B spelling to map from — recorded nothing at all, so the dictionary silently
+  // learned only the values that were already on a source row.
+  variants = variants.concat([canon]);
+  variants.forEach(function(v){
+    var k = normVar(v); if(!k) return;
+    var e = d[k] || (d[k] = {value: canon, n: 0, seen: v});
+    e.value = canon; e.n++;
+  });
+}
+
+function openResolver(r){
+  var a = sig(r.a_brand, r.a_name, r.a_size), b = sig(r.b_brand, r.b_name, r.b_size);
+  var prev = S.answers[r.pair_id] || {};
+  var sizeMlA = sizeMl(r.a_size)||sizeMl(r.a_name), sizeMlB = sizeMl(r.b_size)||sizeMl(r.b_name);
+  var DIMS = [
+    {k:"canon_brand",    lb:"Brand",     A:r.a_brand, B:r.b_brand},
+    {k:"canon_product",  lb:"Product",   A:r.a_name,  B:r.b_name},
+    {k:"canon_size",     lb:"Pack size", A:r.a_size,  B:r.b_size, size:1},
+    {k:"canon_type",     lb:"Type",      A:"", B:""},
+    {k:"canon_class",    lb:"Class",     A:"", B:""},
+    {k:"canon_subclass", lb:"Sub class", A:"", B:""},
+    {k:"canon_varietal", lb:"Varietal",  A:"", B:""}
+  ];
+  var wrap = document.createElement("div");
+  wrap.className = "modal";
+  wrap.innerHTML =
+    '<div class="sheet"><h3>Resolve the record</h3>'+
+    '<p class="hint">Take A, take B, or type the right one. <b>Leave anything you are not sure about blank</b> — '+
+    'blank means unresolved, and what you take here becomes a dictionary entry reused on later pairs.</p>'+
+    DIMS.map(function(d){
+      var pre = prev[d.k] !== undefined ? prev[d.k]
+              : (dictGet(d.k, d.A) || dictGet(d.k, d.B) ||
+                 (d.size && sizeMlA && sizeMlA===sizeMlB ? canonSize(sizeMlA) : ""));
+      var field;
+      if(d.size){
+        var opts = ttbSizes(prev.canon_type || "");
+        field = '<select data-f="'+d.k+'">'+
+          '<option value="">— unresolved —</option>'+
+          opts.map(function(ml){ var t=canonSize(ml);
+            return '<option value="'+t+'"'+(t===pre?" selected":"")+'>'+t+'</option>'; }).join("")+
+          (pre && opts.map(canonSize).indexOf(pre)<0 ? '<option value="'+pre+'" selected>'+pre+' (not a TTB fill)</option>' : "")+
+          '<option value="__other">other / not TTB-governed…</option></select>';
+      } else {
+        field = '<input data-f="'+d.k+'" value="'+String(pre).replace(/"/g,"&quot;")+'" placeholder="type, or leave blank">';
+      }
+      return '<div class="dim"><span class="lb">'+d.lb+'</span>'+
+        opt(d.k,"A",d.A)+opt(d.k,"B",d.B)+field+'</div>';
+    }).join("")+
+    '<div class="sheetfoot"><span class="unres" id="unres"></span><span class="grow"></span>'+
+      '<button id="rcancel">Cancel <kbd>Esc</kbd></button>'+
+      '<button id="rsave" class="primary">Save &amp; next <kbd>⏎</kbd></button></div></div>';
+  document.body.appendChild(wrap);
+
+  function opt(k, who, val){
+    if(!val) return '<button class="opt empty2" disabled><span class="who">'+who+'</span>—</button>';
+    return '<button class="opt" data-k="'+k+'" data-v="'+String(val).replace(/"/g,"&quot;")+'">'+
+           '<span class="who">'+who+'</span>'+String(val).replace(/</g,"&lt;")+'</button>';
+  }
+  function fieldFor(k){ return wrap.querySelector('[data-f="'+k+'"]'); }
+  function syncMarks(){
+    DIMS.forEach(function(d){
+      var f=fieldFor(d.k); if(!f) return;
+      var v=(f.value||"").trim();
+      f.classList.toggle("sel", !!v);
+      Array.prototype.forEach.call(wrap.querySelectorAll('.opt[data-k="'+d.k+'"]'), function(btn){
+        btn.classList.toggle("sel", btn.getAttribute("data-v")===v);
+      });
+    });
+    var blank = DIMS.filter(function(d){ var f=fieldFor(d.k); return f && !(f.value||"").trim(); });
+    wrap.querySelector("#unres").textContent = blank.length
+      ? blank.length+" dimension"+(blank.length>1?"s":"")+" left unresolved" : "all dimensions resolved";
+  }
+  Array.prototype.forEach.call(wrap.querySelectorAll(".opt"), function(btn){
+    btn.onclick=function(){ var f=fieldFor(btn.getAttribute("data-k"));
+      if(f){ f.value=btn.getAttribute("data-v"); syncMarks(); } };
+  });
+  Array.prototype.forEach.call(wrap.querySelectorAll("[data-f]"), function(f){
+    f.oninput=syncMarks;
+    f.onchange=function(){
+      if(f.tagName==="SELECT" && f.value==="__other"){
+        var t=prompt("Pack size (this product is not TTB-governed, or the fill is outside the list):","");
+        var inp=document.createElement("input");
+        inp.setAttribute("data-f", f.getAttribute("data-f")); inp.value=t||"";
+        inp.placeholder="type, or leave blank"; inp.oninput=syncMarks;
+        f.parentNode.replaceChild(inp, f);
+      }
+      syncMarks();
+    };
+  });
+  syncMarks();
+
+  function close(){ document.removeEventListener("keydown", keys, true); wrap.remove(); }
+  function commit(){
+    var rec = S.answers[r.pair_id] || {};
+    rec.label="y"; rec.diff=difference(r); rec.stratum=r.stratum;
+    rec.rule = !!(a&&b&&a.bk===b.bk&&a.ns===b.ns&&a.sz===b.sz);
+    DIMS.forEach(function(d){
+      var f=fieldFor(d.k); var v=f?(f.value||"").trim():"";
+      if(v){ rec[d.k]=v; dictPut(d.k, v, [d.A, d.B].filter(Boolean)); }
+      else delete rec[d.k];                       // blank stays UNRESOLVED, never an empty claim
+    });
+    S.answers[r.pair_id]=rec; S.i++; close(); save(); render();
+  }
+  function keys(e){
+    if(e.key==="Escape"){ e.stopPropagation(); close(); }
+    else if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); e.stopPropagation(); commit(); }
+  }
+  document.addEventListener("keydown", keys, true);
+  wrap.querySelector("#rcancel").onclick=close;
+  wrap.querySelector("#rsave").onclick=commit;
+  wrap.onclick=function(e){ if(e.target===wrap) close(); };
+  var first=wrap.querySelector("[data-f]"); if(first) first.focus();
+}
+
 function answer(v){
   var r=S.rows[S.i]; if(!r) return;
+  // "Same" is not an answer, it is the START of resolving the record.
+  if(v==="y"){ openResolver(r); return; }
   var rec = S.answers[r.pair_id] || {};
-  rec.label = v; rec.diff = difference(r); rec.stratum = r.stratum;
+  rec.label=v; rec.diff=difference(r); rec.stratum=r.stratum;
   rec.rule = (function(){ var a=sig(r.a_brand,r.a_name,r.a_size), b=sig(r.b_brand,r.b_name,r.b_size);
     return !!(a&&b&&a.bk===b.bk&&a.ns===b.ns&&a.sz===b.sz); })();
-  Array.prototype.forEach.call(document.querySelectorAll(".canon input"), function(inp){
-    var val=inp.value.trim(); if(val) rec[inp.getAttribute("data-c")]=val;
-  });
   S.answers[r.pair_id]=rec; S.i++; save(); render();
 }
 
 function renderStats(){
   var ans = S.answers, ids = Object.keys(ans);
   var el = document.getElementById("stats");
-  if(!ids.length){ el.innerHTML='<div class="empty" style="padding:14px">Nothing yet.</div>'; renderPatterns(); return; }
+  if(!ids.length){ el.innerHTML='<div class="empty" style="padding:14px">Nothing yet.</div>'; renderPatterns(); renderDict(); return; }
   var decided = ids.filter(function(k){ return ans[k].label!=="?"; });
   var tp=0,fp=0,fn=0,tn=0, ctrl=0, ctrlBad=0;
   decided.forEach(function(k){
@@ -373,9 +548,36 @@ function renderStats(){
     stat("Matcher recall", pct(tp,tp+fn)+' <span class="sub">('+tp+"/"+(tp+fn)+")</span>")+
     stat("Merges it MISSED", String(fn))+
     (ctrl? stat("Control check", (ctrl-ctrlBad)+"/"+ctrl+(ctrlBad?' <span style="color:var(--bad)">check these</span>':"")) : "");
-  renderPatterns();
+  renderPatterns(); renderDict();
 }
 function stat(k,v){ return '<div class="stat"><span>'+k+'</span><b>'+v+'</b></div>'; }
+
+/* The dictionary is the compounding half: every value taken in the resolver maps a SOURCE spelling
+   to a canonical one, and the next pair carrying that spelling arrives already answered. */
+function renderDict(){
+  var el=document.getElementById("dict"); if(!el) return;
+  var out=[], LB={canon_brand:"Brand",canon_product:"Product",canon_size:"Pack size",
+                  canon_type:"Type",canon_class:"Class",canon_subclass:"Sub class",canon_varietal:"Varietal"};
+  Object.keys(S.dict||{}).forEach(function(dim){
+    var byCanon={};
+    Object.keys(S.dict[dim]).forEach(function(k){
+      var e=S.dict[dim][k]; (byCanon[e.value]=byCanon[e.value]||[]).push(e.seen); });
+    var rows=Object.keys(byCanon).sort();
+    if(!rows.length) return;
+    out.push('<div class="rule"><div class="hd"><span class="nm2">'+(LB[dim]||dim)+
+      '</span><span class="ct">'+rows.length+' value'+(rows.length>1?"s":"")+'</span></div>'+
+      rows.slice(0,6).map(function(c){
+        var vars=byCanon[c].filter(function(v,i,a){ return a.indexOf(v)===i && normVar(v)!==normVar(c); });
+        return '<div class="ev" style="margin-top:5px"><b style="color:var(--ink)">'+
+               String(c).replace(/</g,"&lt;")+'</b>'+
+               (vars.length? ' &larr; '+vars.slice(0,3).map(function(v){return String(v).replace(/</g,"&lt;");}).join(" · ") : "")+
+               '</div>'; }).join("")+
+      (rows.length>6?'<div class="sub" style="margin-top:5px">+'+(rows.length-6)+' more</div>':"")+
+    '</div>');
+  });
+  el.innerHTML = out.length? out.join("") :
+    '<div class="empty" style="padding:14px;font-size:13px">Resolve a match and the values you pick land here.</div>';
+}
 
 /* ── the payoff: your answers, grouped by CAUSE, become rules ──────────────────────────────────── */
 function renderPatterns(){
@@ -412,7 +614,7 @@ function renderPatterns(){
 function ingest(text){
   var rows=parseCSV(text);
   if(!rows.length){ alert("No rows found in that file."); return; }
-  S={rows:rows,i:0,answers:{}};
+  S={rows:rows,i:0,answers:{},dict:(S.dict||{})};
   // resume where a previous pass on the SAME set left off
   rows.forEach(function(r){ if(r.label && /^[yn]$/i.test(r.label)) S.answers[r.pair_id]={label:r.label.toLowerCase(),diff:difference(r),stratum:r.stratum,rule:false}; });
   while(S.rows[S.i] && S.answers[S.rows[S.i].pair_id]) S.i++;
@@ -439,6 +641,11 @@ document.addEventListener("keydown",function(e){
 document.getElementById("undo").onclick=function(){
   if(S.i>0){ S.i--; delete S.answers[(S.rows[S.i]||{}).pair_id]; save(); render(); }
 };
+function dl(text, mime, name){
+  var url=URL.createObjectURL(new Blob([text],{type:mime}));
+  var link=document.createElement("a"); link.href=url; link.download=name; link.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); },1500);
+}
 document.getElementById("export").onclick=function(){
   if(!S.rows.length) return;
   var extra=["label"].concat(CANON.map(function(c){return c[0];})).concat(["difference"]);
@@ -453,10 +660,15 @@ document.getElementById("export").onclick=function(){
       return esc(r[h]);
     }).join(","));
   });
-  var url=URL.createObjectURL(new Blob([lines.join("\n")],{type:"text/csv"}));
-  var link=document.createElement("a");
-  link.href=url; link.download="xsource-gold-labelled.csv"; link.click();
-  setTimeout(function(){ URL.revokeObjectURL(url); },1500);
+  dl(lines.join("\n"), "text/csv", "xsource-gold-labelled.csv");
+  // The dictionary is a separate artefact — value mappings, not pair judgements — so it ships as
+  // its own file the dictionary layer can ingest directly.
+  var drows=[["dimension","canonical","variant","times"].join(",")];
+  Object.keys(S.dict||{}).forEach(function(dim){
+    Object.keys(S.dict[dim]).forEach(function(k){
+      var e=S.dict[dim][k];
+      drows.push([dim,e.value,e.seen,e.n].map(esc).join(",")); }); });
+  if(drows.length>1) setTimeout(function(){ dl(drows.join("\n"),"text/csv","xsource-dictionary.csv"); }, 400);
 };
 
 if(load()) render(); else renderStats();
