@@ -259,6 +259,15 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   retail bakes the CLASS into the name while TTB states it in a field
   ([[ttb-retail-class-bridge]]) — `"Absolut Citron 750ml"` vs `"Absolut Citron Vodka 750 ml"`.
   A 300-pair sheet is at `docs/xsource-gold-300.csv`.
+  **The sheet is read tolerantly on purpose**, because a labeller improves it: headers match
+  case- and punctuation-insensitively (a capitalised `Label` from Excel would otherwise read as an
+  entirely EMPTY sheet), added columns are mapped by alias, and anything unrecognised is preserved
+  in `annotations` rather than dropped. The live sheet gained canonical brand / product / pack size
+  plus a four-level taxonomy (Product Type → Class → Sub Class → Varietal), which is worth more than
+  the y/n it was built for: a match label says whether the matcher was right, canonical values say
+  what right LOOKS like — human-stated truth for `category_tree` / `class_type`, not inferred from a
+  product name. Partial filling is the correct way to label, so a blank canonical field is silence,
+  never a claim that the value is empty.
 - **`unifyd/img_hash.py`** (source `img-hash`, weekly, **disabled** pending a sized first run) — the
   CHEAP twin of `img_embed`. `img_embed` needs torch, which the image does not ship, and it was never
   registered — so **`img_vec` has never been populated** and anything built on it reports degraded

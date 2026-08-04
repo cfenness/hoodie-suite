@@ -36,6 +36,7 @@ USAGE
 """
 import argparse
 import csv
+import re
 import json
 import os
 import random
@@ -50,7 +51,33 @@ TABLE = "xsource_gold"
 FIELDS = ["pair_id", "stratum", "a_id", "a_source", "a_brand", "a_name", "a_size", "a_upc",
           "b_id", "b_source", "b_brand", "b_name", "b_size", "b_upc",
           "rule_merges", "suggested", "suggest_reason", "label", "labelled_by", "labelled_at",
+          # A labeller who writes the CORRECT values is giving us more than a match verdict — that
+          # is canonical truth for normalization, not just gold for the matcher. Captured verbatim
+          # and kept, never discarded because it was not in the template.
+          "canon_brand", "canon_product", "canon_size", "canon_category",
+          "canon_type", "canon_class", "canon_subclass", "canon_varietal", "annotations",
           "sample_seed", "built_at"]
+
+# Extra columns a human may add. Matched case- and space-insensitively, and anything unrecognised is
+# preserved in `annotations` rather than dropped — a labeller adding a dimension we did not think of
+# is the most useful thing that can happen to a gold set.
+_CANON_ALIASES = {
+    "canon_brand":    ("chris brand name", "brand name", "correct brand", "canon brand", "true brand"),
+    "canon_product":  ("chris product name", "product name", "correct product", "canon product",
+                       "true product", "canonical name"),
+    "canon_size":     ("chris pack size", "pack size", "correct size", "canon size", "true size",
+                       "size"),
+    "canon_category": ("chris category", "category", "product category", "canon category"),
+    # The four-level hierarchy the labeller introduced: Type -> Class -> Sub Class -> Varietal
+    # (Spirits -> Tequila / Agave Spirits -> Tequila -> Reposado Tequila). This is the taxonomy
+    # `category_tree.py` / `class_type.py` model, arriving as HUMAN-STATED truth rather than
+    # inferred from a product name — which makes it usable as gold for those too, not just for the
+    # matcher this sheet was built for.
+    "canon_type":      ("product type", "type", "chris product type"),
+    "canon_class":     ("product class", "class", "chris product class"),
+    "canon_subclass":  ("product sub class", "product subclass", "sub class", "subclass"),
+    "canon_varietal":  ("product varietal", "varietal", "variety", "chris varietal"),
+}
 
 # Columns the human sees, in the order they help. `label` is last and EMPTY.
 SHEET_COLS = ["pair_id", "stratum", "a_source", "a_brand", "a_name", "a_size",
@@ -205,26 +232,71 @@ def export(pairs, path, log=print):
     return path
 
 
+def _norm_head(h):
+    return re.sub(r"[^a-z0-9]+", " ", str(h or "").lower()).strip()
+
+
+def _canon_map(header):
+    """{normalised header: our field}. Case- and punctuation-insensitive, because a human editing a
+    sheet in Excel writes "Label" and "Chris Brand Name", not `label` and `canon_brand` — and an
+    exact-match reader would silently read a fully-labelled sheet as empty."""
+    out = {}
+    for h in header:
+        n = _norm_head(h)
+        if n in ("label", "labels", "same", "verdict"):
+            out[h] = "label"
+        elif n == "pair id":
+            out[h] = "pair_id"
+        else:
+            for fld, aliases in _CANON_ALIASES.items():
+                if n in aliases:
+                    out[h] = fld
+                    break
+    return out
+
+
 def read_labels(path):
-    """Read a filled sheet back → {pair_id: bool-or-None}. Unrecognised values are None ('?'),
-    never coerced to a judgement."""
+    """Read a filled sheet back → {pair_id: {"label": bool-or-None, ...extras}}.
+
+    Tolerant by design: headers match case-insensitively, columns the labeller ADDED are kept, and
+    an unrecognised label value is None ('?') rather than being coerced into a judgement."""
     out = {}
     if path.endswith(".xlsx"):
         import openpyxl
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
         sh = wb[wb.sheetnames[0]]
-        rows = list(sh.iter_rows(values_only=True))
-        head = [str(c or "").strip() for c in rows[0]]
-        idx = {c: head.index(c) for c in SHEET_COLS if c in head}
-        for r in rows[1:]:
-            pid = str(r[idx["pair_id"]] or "").strip()
-            if pid:
-                out[pid] = VALID.get(str(r[idx["label"]] or "").strip().lower())
+        rows = [list(r) for r in sh.iter_rows(values_only=True)]
+        header = [str(c or "").strip() for c in rows[0]]
+        body = [dict(zip(header, r)) for r in rows[1:]]
     else:
         with open(path, encoding="utf-8") as f:
-            for r in csv.DictReader(f):
-                if r.get("pair_id"):
-                    out[r["pair_id"].strip()] = VALID.get((r.get("label") or "").strip().lower())
+            rd = csv.DictReader(f)
+            header, body = list(rd.fieldnames or []), list(rd)
+    cmap = _canon_map(header)
+    known = {_norm_head(c) for c in SHEET_COLS} | {_norm_head(k) for k in cmap}
+    for r in body:
+        pid = ""
+        for h, fld in cmap.items():
+            if fld == "pair_id":
+                pid = str(r.get(h) or "").strip()
+        pid = pid or str(r.get("pair_id") or "").strip()
+        if not pid:
+            continue
+        rec = {"label": None}
+        extras = {}
+        for h, v in r.items():
+            v = "" if v is None else str(v).strip()
+            fld = cmap.get(h)
+            if fld == "label":
+                rec["label"] = VALID.get(v.lower())
+            elif fld and fld != "pair_id":
+                if v:
+                    rec[fld] = v
+            elif v and _norm_head(h) not in known:
+                extras[str(h)] = v            # a dimension we did not ask for — keep it
+        if extras:
+            rec["annotations"] = json.dumps(extras)
+        out[pid] = rec
     return out
 
 
@@ -239,22 +311,33 @@ def ingest(path, pairs=None, labelled_by="", land=True, log=print):
             log("ingest: no candidate set to attach labels to (%s)" % str(e)[:80])
             return [], {"status": "degraded"}
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    n_lab = 0
+    n_lab, n_canon = 0, 0
     for p in pairs:
-        v = labels.get(p["pair_id"])
-        if v is None and p["pair_id"] not in labels:
+        rec = labels.get(p["pair_id"])
+        if rec is None:
             continue
+        v = rec.get("label")
         p["label"] = "" if v is None else ("y" if v else "n")
         p["labelled_by"], p["labelled_at"] = labelled_by, now
+        # Partial is expected and fine — "only the dimensions I'm confident on" is the RIGHT way to
+        # label, so a blank canonical field is silence, never a claim that the value is empty.
+        for fld in ("canon_brand", "canon_product", "canon_size", "canon_category",
+                    "canon_type", "canon_class", "canon_subclass", "canon_varietal", "annotations"):
+            if rec.get(fld):
+                p[fld] = rec[fld]
+        if any(rec.get(f) for f in ("canon_brand", "canon_product", "canon_size", "canon_category",
+                                    "canon_type", "canon_class", "canon_subclass", "canon_varietal")):
+            n_canon += 1
         n_lab += 1 if v is not None else 0
 
     ctrl = [p for p in pairs if p["stratum"] == "control" and p["label"]]
     ctrl_bad = [p for p in ctrl if p["label"] == "y"]
-    rep = {"labelled": n_lab, "unlabelled": sum(1 for p in pairs if not p["label"]),
+    rep = {"labelled": n_lab, "canonical_values": n_canon,
+           "unlabelled": sum(1 for p in pairs if not p["label"]),
            "controls": len(ctrl), "controls_wrong": len(ctrl_bad),
            "control_accuracy": round(1 - len(ctrl_bad) / len(ctrl), 3) if ctrl else None}
-    log("ingest: %d labelled, %d left blank | controls %d/%d correct"
-        % (n_lab, rep["unlabelled"], len(ctrl) - len(ctrl_bad), len(ctrl)))
+    log("ingest: %d labelled, %d with canonical values, %d left blank | controls %d/%d correct"
+        % (n_lab, n_canon, rep["unlabelled"], len(ctrl) - len(ctrl_bad), len(ctrl)))
     if ctrl_bad:
         log("  WARNING: %d control pairs (same brand, DIFFERENT size) were labelled SAME. Those "
             "have a known answer, so this sheet was filled in too quickly to trust." % len(ctrl_bad))

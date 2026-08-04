@@ -86,7 +86,8 @@ xg.export(c, tmp, log=lambda *a: None)
 check(os.path.exists(tmp), "the sheet writes")
 lab = xg.read_labels(tmp)
 check(len(lab) == len(c), "every pair reads back (%d)" % len(lab))
-check(all(v is None for v in lab.values()), "an unfilled sheet reads back as UNLABELLED, not as 'no'")
+check(all(v["label"] is None for v in lab.values()),
+      "an unfilled sheet reads back as UNLABELLED, not as 'no'")
 
 # fill it in, including one deliberately wrong control
 import csv as _csv
@@ -121,6 +122,46 @@ print("\nvalue parsing:")
 check(xg.VALID.get("y") is True and xg.VALID.get("n") is False, "y/n parse")
 check(xg.VALID.get("?") is None and xg.VALID.get("") is None,
       "'?' and blank are UNKNOWN — never coerced into a judgement")
+
+print("\na sheet a HUMAN actually edited (Excel headers, added columns, partial fills):")
+import csv as _c, os as _o, tempfile as _t, json as _j
+_p = _o.path.join(_t.mkdtemp(), "human.csv")
+# Exactly the shape observed live: capitalised "Label", extra canonical columns, and only SOME rows
+# carrying canonical values — "I'll only fill the dimensions I'm confident on".
+_hdr = ["pair_id","stratum","a_source","a_brand","a_name","a_size","b_source","b_brand","b_name",
+        "b_size","suggested","suggest_reason","Chris Brand Name","Chris Product Name",
+        "Chris Pack Size","Category","Label"]
+_ids = [p["pair_id"] for p in c[:3]]
+with open(_p,"w",newline="",encoding="utf-8") as f:
+    w = _c.writer(f); w.writerow(_hdr)
+    w.writerow([_ids[0],"merged","binnys","Baron Herzog","Baron Herzog Sauvignon Blanc","750ML",
+                "abc","Baron Herzog","Baron Herzog Sauvignon Blanc","750 mL","","",
+                "Baron Herzog","Baron Herzog Sauvignon Blanc","750ML","Wine","Y"])
+    w.writerow([_ids[1],"merged","binnys","Zuccardi","Zuccardi Serie A Torrontes","750ML",
+                "abc","Zuccardi","Zuccardi Serie A Torrontes","750 mL","","","","","","","Y"])
+    w.writerow([_ids[2],"merged","abc","X","X thing","750ML","binnys","Y","Y thing","750ML","","",
+                "","","","","n"])
+_lab = xg.read_labels(_p)
+check(len(_lab) == 3, "a human-edited sheet reads back (%d rows)" % len(_lab))
+check(_lab[_ids[0]]["label"] is True,
+      "a capitalised 'Label' column with 'Y' is read — an exact-match reader would have seen an "
+      "entirely EMPTY sheet")
+check(_lab[_ids[2]]["label"] is False, "'n' reads as False")
+check(_lab[_ids[0]].get("canon_brand") == "Baron Herzog",
+      "an added 'Chris Brand Name' column maps to canon_brand")
+check(_lab[_ids[0]].get("canon_product") == "Baron Herzog Sauvignon Blanc", "...and product")
+check(_lab[_ids[0]].get("canon_size") == "750ML", "...and pack size")
+check(_lab[_ids[0]].get("canon_category") == "Wine", "...and a category column he added later")
+check("canon_brand" not in _lab[_ids[1]],
+      "a row labelled but with NO canonical values stays silent — partial filling is expected, and "
+      "a blank is never read as 'the correct brand is empty'")
+
+_pairs2, _rep2 = xg.ingest(_p, pairs=[dict(p) for p in c], land=False, log=lambda *a: None)
+check(_rep2["labelled"] == 3, "all three labels attach (%d)" % _rep2["labelled"])
+check(_rep2["canonical_values"] == 1, "and the canonical-value count is reported separately (%d)"
+      % _rep2["canonical_values"])
+_got = {p["pair_id"]: p for p in _pairs2}
+check(_got[_ids[0]]["canon_brand"] == "Baron Herzog", "canonical values land on the row")
 
 print("\n%s (%d failure%s)" % ("FAILED" if FAILS else "PASSED", len(FAILS), "" if len(FAILS) == 1 else "s"))
 sys.exit(1 if FAILS else 0)
