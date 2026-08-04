@@ -37,6 +37,11 @@ openpyxl
 # Snowflake morning drop (registry build `snowflake-load` → snowflake/run_load.py): lazy-imported,
 # only used when the SNOWFLAKE_* secrets are set. Key-pair auth reuses `cryptography` above.
 snowflake-connector-python>=3.7
+# DAM press-release facts (dam.document_text -> brand_events): pure-Python PDF text extraction, no
+# compiled deps. OPTIONAL and capability-probed — without it PDF press releases contribute no facts
+# and the run says so (a source that reads 0 of 91 PDFs must not look like a source with no PDFs).
+# DOCX needs nothing: it is a zip of XML, handled with stdlib.
+pypdf>=4.0
 curl_cffi>=0.7        # Chrome-JA3 TLS impersonation for walmart_direct (PerimeterX reads urllib's TLS as a bot tell)
 
 # Instacart (free, no bd): a self-hosted Chromium drives Instacart's own SearchResultsPlacements GraphQL.

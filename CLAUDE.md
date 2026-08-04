@@ -180,6 +180,238 @@ and is **excluded from deploy** (along with `*.py`, `cloudfront/`, and the docs)
   `johnsonbrothers` (25,590 items); grow the `STOREFRONTS` map. stdlib-only, headless. Together
   with `vip-brandbuilder` these two platform recipes are the fast path to the major distributors'
   catalogs (Reyes, Breakthru, RNDC, …) — one sourceCode / slug at a time.
+
+### DAM harvesting — `rights.py` + `dam.py` + `dam_<vendor>.py` (ToS is the contract)
+Harvesting supplier/brand **digital-asset libraries** (media centres) is the first capability where
+the payload is somebody else's **copyrighted work**, not a fact. Every other source here lands prices
+and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK is not a licence.
+
+- **`unifyd/rights.py` — the gate, enforced in code.** Every DAM source carries a
+  `rights_records/<id>.json`: a **verbatim ToS snapshot + sha256 + capture date**, the **verbatim
+  robots.txt** plus a per-URL decision for each path the connector fetches, and a parsed permission
+  classification (`image_use` = permitted/prohibited/silent, `scope` =
+  none/internal_only/editorial_press/commercial_redistribution, attribution/alteration/trade-only/
+  expiry/confidence/needs_counsel, plus `facts_use` written out explicitly so a `prohibited`
+  record cannot be misread as "this source is off"). The design's three scope values gain a fourth,
+  `none`, because a hold needs a scope to *be*.
+  **A grant must run the right way.** Every corporate ToS contains a lavish perpetual ROYALTY-FREE
+  licence — and it is the one *you* grant *them* over anything you upload. Measured live on three
+  suppliers at once (AB InBev, William Grant, Heaven Hill), all three classified
+  `permitted/editorial_press` at HIGH confidence off their user-content clause, which would have
+  authorised a CV gallery on assets nobody licensed to us. Grant rules are therefore direction-
+  guarded; an inbound match is kept as ZERO-weight evidence (`grant-inbound`) so a reviewer can see
+  the clause was found and rejected. `rights.load()` **raises if the record is missing** — there is no
+  harvest-now-sort-the-rights-out-later path. `may()/require()/emit()` are the only interpretation of
+  the model, every emission (allowed *and denied*) is logged to `dam_emissions`, and `dam_rights_test.py`
+  is the ratchet that fails a registry row lacking its record.
+  Three rules are load-bearing and tested: (1) **facts always flow** — `catalog_metadata`/
+  `catalog_pointer` are ungated; (2) **silence is not permission** — `silent` holds exactly like
+  `prohibited`, and an unknown action, an unrecognized scope, an expired grant or a **stale** record
+  (terms moved since review) all deny; (3) **`needs_counsel` guards the affirmative act** — a grant is
+  inert until `counsel_cleared`, while an enforced hold needs no lawyer. A grant phrase inside a
+  negation is not a grant ("does **not** grant you any … license" scored as a grant once — never again).
+- **`unifyd/dam.py` — the shared spine + THE CHOKEPOINT.** `asset_bytes()` is the only function that
+  may fetch an asset's bytes and it calls `require(rec, "fetch_asset")` first; a perceptual hash or
+  embedding is a derivative work and is gated at the same level. Connectors never open an asset URL —
+  `dam_dna_test.py` scans the package's source and fails if one does. Lands `dam_assets`
+  (pointer rows carrying `retention` / `phash` / `embedding_ref` / `withheld_reason` / `rights_ref`,
+  so the row shows what was withheld and why) and `brand_events` (the dated product-event feed).
+  **Reading press releases for facts** is a SECOND, separate chokepoint — `dam.document_text()`,
+  gated on `fetch_document_facts`, which is ungated by scope because facts are uncopyrightable and a
+  press release exists to be read. Four things keep it from being a hole in `fetch_asset`, all
+  enforced: **text document types only** (an image is refused *before* the request), **bytes are
+  transient** (never written or cached), **the prose never lands** (`land()` refuses any event field
+  over 500 chars, so expression cannot ride into the warehouse inside a "fact" column), and it is
+  **logged separately**. It is staleness-sensitive — it touches their server — while cataloguing what
+  we already hold is not. Dates/markets/prices come from the **dateline and marked retail prices**,
+  read verbatim; an unmarked currency amount is not a price point (a $1M donation is not an SRP).
+  PDF text needs the optional `pypdf` cap: without it PDF releases contribute no facts and the run
+  SAYS so, because 0-of-91-PDFs-read must never look like a source with no PDFs.
+  **The LLM narrative pass** (design §3) is `DAM_LLM=1`, off by default, and structurally additive:
+  it is only asked about fields that neither the DOCUMENT stated nor the EVENT already carries, and
+  everything it returns is written `INFERENCE`. Checking the document alone was not enough — it let
+  the model replace a folder-derived (deterministic) date with a guess simply because the release
+  didn't repeat it. The exact read always wins; the model can add a fact, never replace one.
+
+  Honesty contract: every derived field is labelled **DETERMINISTIC or INFERENCE** in
+  `field_provenance` — brand match is deterministic *unless* the alias is also a common word
+  (MARTINI, BOMBAY, PATRON → INFERENCE), event_type/market are always inference. **A DAM's
+  `created_on` is the UPLOAD stamp, not the event date** (Bacardi's whole 2018 folder reads
+  2018-04-11, the bulk-migration day), so dates come from **year folders** at `precision=year` and are
+  otherwise NULL — never back-filled.
+- **`unifyd/xsource_match.py` + `unifyd/xsource_gold.py` — cross-source identity, and its gold.**
+  The divergence work measured that 98.5% of items with an image are seen by ONE source, and a probe
+  over five retail chains on fifteen ubiquitous brands found **73% of products appearing on ≥2
+  sources with the same name+size are split across multiple master identities**. `xsource_match`
+  proposes the merge as an OVERLAY (`xsource_identity`, never a master rewrite) on an exact
+  signature — brand_key + name_sig + size, all three required, UPC conflict always wins.
+  **It does not ship: measured precision 0.233 against a 0.98 bar, so `build()` refuses.** But that
+  number is not trustworthy either — 59,455 of 67,099 rows were unscoreable because binnys / abc /
+  total-wine carry no UPC, and those are exactly the sources needing the merge. So `xsource_gold`
+  builds the human set instead: stratified `merged` / `near_miss` / `control`, seeded and
+  reproducible, the `label` column shipping EMPTY (a pre-filled answer produces rubber-stamping, and
+  gold that agrees with the machine by construction measures nothing), and scored PER STRATUM.
+  The **control** rows are same-product-different-size (`Gran Centenario Plata 750ML` vs `1.75L`) —
+  a known answer that audits the labeller. An early version paired same-brand-different-PRODUCT,
+  which is obviously different and therefore tested nothing.
+  Two bugs the real data found in the signature, both fixed: `"750 ML"` tokenized to a bare `750`
+  that survived into the name signature (so the same product written two ways never merged), and
+  retail bakes the CLASS into the name while TTB states it in a field
+  ([[ttb-retail-class-bridge]]) — `"Absolut Citron 750ml"` vs `"Absolut Citron Vodka 750 ml"`.
+  A 300-pair sheet is at `docs/xsource-gold-300.csv`.
+  **The sheet is read tolerantly on purpose**, because a labeller improves it: headers match
+  case- and punctuation-insensitively (a capitalised `Label` from Excel would otherwise read as an
+  entirely EMPTY sheet), added columns are mapped by alias, and anything unrecognised is preserved
+  in `annotations` rather than dropped. The live sheet gained canonical brand / product / pack size
+  plus a four-level taxonomy (Product Type → Class → Sub Class → Varietal), which is worth more than
+  the y/n it was built for: a match label says whether the matcher was right, canonical values say
+  what right LOOKS like — human-stated truth for `category_tree` / `class_type`, not inferred from a
+  product name. Partial filling is the correct way to label, so a blank canonical field is silence,
+  never a claim that the value is empty.
+- **`unifyd/img_hash.py`** (source `img-hash`, weekly, **disabled** pending a sized first run) — the
+  CHEAP twin of `img_embed`. `img_embed` needs torch, which the image does not ship, and it was never
+  registered — so **`img_vec` has never been populated** and anything built on it reports degraded
+  forever. A dHash on pillow (already in the image) answers the majority question instead: *is this
+  the same syndicated FILE?* When two chains show a product they are usually both showing the
+  supplier's JPEG, re-encoded and resized, and a perceptual hash survives exactly that.
+  **The asymmetry is load-bearing:** a hash MATCH is strong evidence (same file); a hash SPLIT is
+  weak (the same pack photographed twice hashes far apart). The "every amber bottle hashes alike"
+  problem ([[image-match-signal]]) does not bite, because that is about telling DIFFERENT products
+  apart and everything compared here is already inside one UPC.
+- **`unifyd/asset_divergence.py`** (source `asset-divergence`, weekly, **disabled** until `img_vec`
+  has coverage) — **where chains disagree about what a product looks like.** Groups an item's images
+  across sources by the MASTER's identity, clusters them on the CLIP embeddings `img_embed` already
+  computes, and reports how many distinct looks are live, who shows which, and since when. This is
+  the one place both sides land: the supplier sees what they published, the retailer sees their own
+  set, and neither sees the delta.
+  **It refuses to say which look is stale.** At this threshold "two photos of one bottle" and "two
+  different packs" are not separable — `img_embed` measured same-product-different-photo at cosine
+  median ~0.76, which is the distribution a benign difference already occupies. So `stale_candidate`
+  is None until `backtest()` measures precision against a labelled set (same gate `overlay_detect`
+  applies: an unmeasured heuristic RUNS BUT STAYS SILENT), and `withheld_reason` says so on every row.
+  What IS deterministic and safe to show is the evidence around it — cluster counts, source breadth,
+  first/last seen. "Five chains show look A since 2024, one shows look B and hasn't been re-observed
+  since 2022" is built from counts and dates, and never claims which pack is correct — that is the
+  supplier's own data to supply. Fewer than 3 sources is `insufficient_data`, never `aligned`; a
+  near-even split is two live packs, not an error.
+  **Identity is `resolved_id`, and that was a correction.** Keying on the source row's UPC could not
+  see the catalogs that matter — `binnys_products`, `abc_products` and `total_wine_products` carry
+  ~35k images between them and have NO upc column, only a retailer sku. Identity now comes through
+  `xwalk_source_sku` → `dim_sku.resolved_id`. Measured live on the same data:
+  `item_key` 251,193 items → 515 on ≥3 sources / 3,366 images; **`resolved_id` 89,016 items → 1,104
+  on ≥3 sources / 18,302 images.** `resolved_id` wins because the md5 hard key OVER-SPLITS, and
+  divergence is a cross-source measure that lives on the collapse. Every row records
+  `identity_method`, so a upc-keyed finding is never pooled with a master-keyed one.
+  **What the sizing actually exposed:** 98.5% of items with an image are seen by ONE source. That is
+  not a fact about retail — it is the master's fan-out ([[master-fanout-brand-resolution]]). The
+  ceiling here is identity resolution, not images or embeddings or compute: the entire working set
+  hashes in under two hours, and torch is not the constraint.
+  **Two tiers.** It prefers CLIP where `img_vec` has vectors and falls back to dHash, which is what
+  makes it runnable today. A dHash split lands as `divergent_unconfirmed` and can NEVER become a
+  stale verdict, even once precision is measured — only CLIP can collapse a benign photography
+  difference, so a hash split is a candidate for the better tier or a human, never a finding.
+- **Counsel review (P6) — `docs/rights-counsel-review.md` + `rights.py --queue`.** The permission
+  MODEL is versioned (`SCHEMA_VERSION`) separately from any record, so changing it shows up as a
+  version skew on every record rather than silently reinterpreting records already written.
+  `SCHEMA_SIGNOFF` is deliberately unset in code — nobody marks the schema reviewed by editing a
+  constant; sign-off is recorded per record (`schema_signoff`), and a specific grant needs
+  `counsel_cleared` on top. `--queue` turns `needs_counsel` from a field nobody could act on into a
+  work list that names the question, the consequence, and the exact edit that resolves it — and
+  distinguishes items that **cost capability** (a grant we are holding) from a hold that is correctly
+  held, which is the system working, not a queue item. The packet is written for a lawyer who reads
+  no code: taxonomy, five decision rules, where each is enforced, and **eight open questions** —
+  including the highest-value one, whether a perceptual hash or a CV embedding is a derivative work.
+  **Trade grants are a distinct shape and the classifier now knows the vocabulary.** A consumer media
+  centre exists to PROTECT assets; a distributor/syndication platform exists to DISTRIBUTE them — a
+  sell sheet is published so the trade can sell the product. Nobody writes "royalty-free for editorial
+  use" on a distributor portal, they write "for use in connection with the sale of our products", so
+  the press rules could not see it. Surveyed live (VIP Brand Builder, SevenFifty/Provi, Salsify Sites,
+  1WorldSync, Syndigo): **none publishes such a grant as web terms** — the licence, if it exists, sits
+  in a distribution agreement we are not party to. The rules exist so a real trade grant is RECOGNISED
+  rather than read as silence. Critically, a trade grant is addressed to a **class**: `may()` denies it
+  until `trade_partner_verified` records that we are in that class, because "authorized retailers may
+  use these images" matched no "…only" wording and so arrived unconditioned the first time.
+- **`unifyd/dam_canon.py` — the canon key (P2).** Resolves a DAM brand literal to `dim_brand` via
+  `overlay_match.brand_key()` applied to BOTH sides, so `brand_events.hoodie_brand_id` is the master's
+  `hoodie_id` rather than a vendor slug. **One tier, exact key match, no fuzzy fallback** — a wrong
+  `hoodie_brand_id` silently attributes a competitor's launch to your brand in every roll-up and
+  nothing about the row looks wrong; fuzzy identity is hoodie-canon's cascade, not a regex here.
+  Unmatched → the vendor slug stays, `brand_resolution="unresolved"`, and the provenance claim for
+  `hoodie_brand_id` is REMOVED. There is deliberately **no local re-implementation of the key**: the
+  obvious lookalike misses `precleanse.nbrand`'s generic-token drop (real key for "Grey Goose Vodka"
+  is `grey goose`), so a fallback wouldn't degrade the match, it would silently produce a DIFFERENT
+  match set — the module refuses to resolve instead. An unreadable master is `master-unavailable`,
+  distinct from `unresolved`, and never costs the facts: the events land in full either way.
+- **`unifyd/dam_dna.py`** — the **DNA** platform connector (`dna.online`). ONE CONNECTOR PER DAM
+  VENDOR, one rights record per SUPPLIER: transport is a property of the platform, permission is a
+  property of the supplier, so `TENANTS` holds host+drive+brands per supplier and each is its own
+  registry source with its own record. Bacardi's media centre is not bespoke — its footer is
+  "Powered by DNA" and the surface is DNA's stock shape (`company_id` tenant, numbered
+  `company_drive_id` drives, `/drives/view-new/`, `/drives/get-tree/`, `/company-files/`, an Algolia
+  index prefixed `DNA_`), so adding a supplier on DNA is a `TENANTS` row + a rights record, not new
+  code. `fingerprint(url)` is the discovery half (feeds the P4 vendor census): it reports whether a
+  candidate media centre is a DNA tenant and which drive. Source `dam-bacardi` (weekly) is the first
+  tenant: `media.bacardilimited.com` drive 42 ("Bacardi Public"): the page bootstraps
+  `window.DriveViewState` (brace-matched, not regex-terminated — descriptions contain `}`), and
+  `/drives/get-tree/<drive>?folder_id=<n>` is the SPA's own JSON API. Both live **outside** every
+  robots `Disallow` (`/api/` **is** disallowed — if the tree ever moves under it, this connector
+  stops). No auth, no cookie, no browser: **3 requests enumerate all 2,490 assets across 17/17
+  folders**. Coverage is *not* gated on the platform's `file_amount` counter, which is stale in both
+  directions (Videos claims 2 serves 4; Media Files claims 0 serves 75) — it is gated on visiting
+  every folder, and a shortfall is a warning, never a silent partial.
+- **`unifyd/dam_gallery.py`** (source `dam-gallery`, weekly) — the **CV reference gallery** (P3):
+  pointer + licence + perceptual hash + embedding per official studio image, each derivation gated
+  **per asset** (never once at the top of a run, so a record going stale mid-run stops the rest).
+  A row always lands — a NULL `phash` with a `withheld_reason` is the honest shape; a missing row
+  would read as "the supplier had no imagery". The dHash is for **identity within the gallery**
+  (the same studio file uploaded five times collapses to one reference) and explicitly NOT the
+  studio→shelf matcher — perceptual hashes fail on bottles in the wild ([[image-match-signal]]),
+  where the embedding is the signal. The embedding backend is **pluggable and absent by default**:
+  CLIP needs torch, which this image does not ship, so `embedder()` resolves one if present and
+  otherwise reports `embedding_backend="unavailable"` rather than quietly shipping a vector-less
+  gallery.
+  **It is currently empty on purpose.** No surveyed supplier grants image reuse, so the pipeline runs,
+  lands pointers, and derives nothing. That is the gate working.
+- **`unifyd/dam_census.py`** (source `dam-census`, monthly) — the **vendor census** (P4): supplier →
+  media centre → DAM vendor → public? → a **provisional** permission class. It is what tells you which
+  platform to build the next connector for. **Discovery is link-following, not hostname guessing**:
+  the capability's method rule forbids subdomain enumeration while the design sketched
+  `media.<co>.com` patterns, and that tension is resolved in favour of the rule — we fetch the
+  supplier's own site and follow the media link THEY publish. Conventional hostnames are opt-in
+  (`DAM_CENSUS_PROBE=1`, off), and every row records `discovery_method`. Hints are two-tier: the tidy
+  phrasing alone found ONE centre across 24 suppliers, because what companies actually publish is
+  `/news`, `/media`, `news-and-media`. **Failures are named, never counted as absence** — age gate /
+  client-rendered shell / SSL mismatch / no link are four different findings, and only some mean stop
+  looking. `dam_census` is a RESEARCH table: nothing runs off it, and promoting a supplier means
+  authoring a reviewed rights record + a `TENANTS` row by hand.
+  `source_analyzer.analyze()` attaches `out["dam"] = {extraction, rights}` when a page fingerprints as
+  a media centre — design §4's two plans, marked provisional.
+  **What the census found, over 50 suppliers (P5).** Three DAM vendors: DNA (Bacardi, PUBLIC,
+  connector built), Brandfolder ×2 (Trinchero's portal prints "PRIVATE" over 12,610 assets and its
+  anonymous token 403s; Odell's is gated too), Bynder ×1 (Tito's — two `/m/<hash>/original/` links on
+  a marketing page, i.e. a CDN, not a library). **There is no second PUBLIC, browsable DAM in the top
+  50 to build a connector against** — reachability is 1 of 1. The multiplier the design assumed is
+  real as a mechanism (one DNA connector would cover every DNA tenant) but the population is not
+  there at the top of this trade: 27 of 50 suppliers publish a reachable PRESS ROOM and almost none
+  publish an open asset library. That makes `brand_events` the broad half of this capability and the
+  CV gallery the narrow one. Two classification rules exist because of this: a vendor host seen ONLY
+  as `/m/<hash>/` asset URLs is `vendor_cdn_page`, not a DAM (it would inflate the reachability
+  denominator with a supplier no connector could cover), and a portal declaring `PRIVATE` is
+  `public=False` with the reason recorded. `sitemap_media_urls()` recovers suppliers whose corporate
+  site is age-gated or JS-only — their own sitemap is a documented public index, so nothing is
+  circumvented; the age gate itself is a control we do not defeat.
+- **What Bacardi's terms actually say, and why the CV gallery is empty for them.** Their ToS (which by
+  its own §1 covers "any and all other online or digital platforms … which we maintain") grants **no
+  reuse licence**: §3 "does not grant you any rights, title, interest or license to any Materials",
+  downloads are for "your lawful, personal, non-commercial use", "You must not use any part of the
+  Materials … for commercial purposes"; §4 "You are not permitted to use the Materials outside of the
+  Site". A scan of all 23.7k characters finds **no press/editorial carve-out** — no `press`,
+  `editorial`, `journalis`, `broadcast`, `royalty`, `attribution` or `credit` clause exists to rely on.
+  So the source runs at `prohibited`/`none`: 2,490 asset **pointers** + 343 brand events land, and
+  **zero bytes, hashes or embeddings** are produced. **That is the connector working, not failing** —
+  do NOT "fix" the empty gallery by widening scope in the registry or the record. Scope widens only
+  via a new record revision with `counsel_cleared`, backed by the written permission the record's
+  `escalation` field describes (ToS §13 → Bacardi's Digital Director).
 - `unifyd/salsify.py` — **Salsify Sites**: every public catalog on `sites.salsify.com`. **Registry id
   `salsify` (daily) is the ONE writer** — it refreshes the directory then pulls every seeded catalog
   (bbg, sazerac, heaven-hill) sequentially in one process. `bbg` exists as a disabled registry entry for

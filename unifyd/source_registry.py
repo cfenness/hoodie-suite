@@ -436,6 +436,112 @@ SOURCES = [
          tables=["ttb_master"], klass="headless", cadence="weekly", enabled=False,
          note="MASTER BUILD (reads ttb_cola → ttb_master); huge — refresh deliberately. Scrape is ttb-cola"),
 
+    # ── DAM / brand media centres (klass "dam" — every one REQUIRES a reviewed rights record) ─────────────────
+    # The `dam` class is not a transport detail, it is a CONTRACT: unlike every other source here, a
+    # DAM's payload is somebody else's copyrighted work, so the connector cannot run at all without
+    # `unifyd/rights_records/<id>.json` — a verbatim ToS snapshot + sha, the robots decision for each
+    # URL it fetches, and a parsed permission classification that `rights.py` enforces in code.
+    # `rights.load()` raises if the record is missing, which is the point: there is no
+    # harvest-now-sort-the-rights-out-later path. Add a DAM source = add the connector AND the record.
+    #
+    # Bacardi runs at image_use=prohibited / scope=none — their terms grant no reuse licence and carry
+    # no press or editorial carve-out — so it lands ~2,490 asset POINTERS + the brand_events feed and
+    # fetches ZERO bytes. That is the source working. Do NOT "fix" the empty CV gallery by widening
+    # scope here; scope widens only via a new record revision with counsel_cleared, backed by the
+    # written permission the record's escalation field describes.
+    # `klass` stays "headless" because klass is EXECUTION PLACEMENT, not taxonomy: run_sources selects
+    # the daily pass with `klass in ("headless","creds")` and dispatch_ephemeral sizes the machine from
+    # it, so a novel klass="dam" would quietly drop this source out of every scheduled run — a silent
+    # degrade wearing a tidy label. The DAM family is marked by `source_class` instead, which
+    # `dam_sources()` reads and `dam_rights_test.py` enforces a record for.
+    dict(id="dam-bacardi", label="Bacardi Media Centre (public drive)", source_class="dam",
+         caps=['pypdf'],   # optional lib this source silently degrades without (capability.py)
+         code="import dam_dna as m; m.pull('bacardi')",
+         tables=["dam_assets", "brand_events"], klass="headless", cadence="weekly", enabled=True,
+         cost_class="free", interval_h=168, timeout=1800, mem=2048,
+         rights_record="rights_records/dam-bacardi.json",
+         note="media.bacardilimited.com drive 42 — robots-permitted /drives/ JSON tree, no auth, 3 "
+              "requests for the whole drive. POINTERS + facts only: the rights record classifies "
+              "image reuse `prohibited`, so no asset bytes, hashes or embeddings are ever produced."),
+
+    # The CV reference gallery (P3). Runs AFTER dam-bacardi has landed dam_assets, and derives only
+    # what that source's rights record permits — today, nothing: every supplier surveyed classifies
+    # prohibited or silent, so this lands POINTER rows carrying the withheld reason. Keeping it
+    # enabled is deliberate: the rows are the standing record of what a grant would unlock, and the
+    # run reports `derived: 0` honestly rather than the table simply not existing.
+    dict(id="dam-gallery", label="DAM CV reference gallery (scope-gated)", source_class="dam",
+         caps=['pillow'],   # optional lib this source silently degrades without (capability.py)
+         code="import dam_gallery as m; m.build('dam-bacardi')",
+         tables=["dam_gallery"], klass="headless", cadence="weekly", enabled=True,
+         cost_class="free", interval_h=168, timeout=3600, mem=4096,
+         rights_record="rights_records/dam-bacardi.json",
+         after=["dam-bacardi"],
+         note="pointer + licence + pHash + embedding per studio image, each derivation gated per "
+              "asset. Embedding backend is pluggable and ABSENT by default (torch is not in the "
+              "image) — rows land NULL vectors and name the backend rather than looking empty."),
+
+    # The census is RESEARCH, not a feed: it maps supplier -> media centre -> DAM vendor -> public? ->
+    # a PROVISIONAL permission class, so connector work goes to the vendors that cover the most
+    # suppliers. Nothing runs off `dam_census` — promoting a supplier means authoring a reviewed
+    # rights record and a TENANTS row by hand. No rights_record of its own: it reads public corporate
+    # pages and terms, it never touches an asset.
+    dict(id="dam-census", label="DAM vendor census (supplier -> media centre -> vendor)",
+         source_class="dam-research",
+         code="import dam_census as m; m.run()",
+         tables=["dam_census"], klass="headless", cadence="monthly", enabled=True,
+         cost_class="free", interval_h=720, timeout=3600, mem=2048,
+         note="link discovery from each supplier's OWN published nav (no hostname guessing; "
+              "DAM_CENSUS_PROBE=1 opts into conventional media.*/press.* hosts). Names its failures "
+              "— age gate / JS shell / no link — rather than reporting them as 'no media centre'."),
+
+    # The human gold set the merge needs before it can ship. Not a scrape — it exports a labelling
+    # sheet, ingests the filled one, and scores the matcher PER STRATUM. Manual by nature.
+    dict(id="xsource-gold", label="Cross-source gold set (human labelling)",
+         code="import xsource_gold as m; m.main(['export'])",
+         tables=["xsource_gold"], klass="build", interval_h=8760, enabled=False,
+         cost_class="free", mem=8192, timeout=3600,
+         note="export -> a human labels y/n/? -> ingest -> score. Stratified merged/near_miss/"
+              "control; the control rows are same-product-different-size and audit the labeller."),
+
+    # Cross-source identity merge, as an OVERLAY (never a master rewrite). DISABLED and landing
+    # nothing: measured against the real master it scores precision 0.233 against a 0.98 bar, so
+    # build() refuses. Kept registered because the measurement is the deliverable — the rule, its
+    # score, and its refusal are the record of what a naive signature merge is worth here.
+    dict(id="xsource-match", label="Cross-source identity merge (overlay, precision-gated)",
+         code="import xsource_match as m; m.build()",
+         tables=["xsource_identity"], klass="build", interval_h=168, enabled=False,
+         cost_class="free", mem=8192, timeout=7200, after=["build-product-master"],
+         note="signature = brand_key + name_sig + size, UPC conflict always wins. Does NOT clear "
+              "its 0.98 precision bar (0.233 measured) — needs a human-labelled gold set before "
+              "another attempt, since the sources that need merging carry no UPC."),
+
+    # The CHEAP image tier: perceptual hashes of product images, on pillow alone. This is what makes
+    # asset-divergence runnable at all — img_embed needs torch (not in the image) and has never been
+    # registered, so `img_vec` is empty. A dHash answers the majority question ("is this the same
+    # syndicated FILE?") for free; CLIP stays the upgrade for the residual.
+    dict(id="img-hash", label="Product image hashes (cheap divergence tier)",
+         caps=['pillow'],   # optional lib this source silently degrades without (capability.py)
+         code="import img_hash as m; m.build_all()",
+         tables=["img_hash"], klass="headless", cadence="weekly", enabled=False,
+         cost_class="free", interval_h=168, timeout=21600, mem=4096,
+         note="fetch+hash product images across the retail catalogs; resumable (skips sku already "
+              "hashed). DISABLED pending a first sized run — the image universe has not been "
+              "counted, and this fetches every one of them."),
+
+    # Cross-retailer product-image divergence: where chains disagree about what an item LOOKS like.
+    # Derived — reads img_vec (CLIP embeddings) + retail_observations, no fetching. Lands the
+    # divergence and its evidence; the STALENESS verdict stays withheld until
+    # asset_divergence_precision.json exists, because telling a brand their execution is broken on
+    # an unmeasured threshold is the expensive direction to be wrong in.
+    dict(id="asset-divergence", label="Asset divergence (cross-retailer pack disagreement)",
+         code="import asset_divergence as m; m.build()",
+         tables=["asset_divergence"], klass="build", interval_h=168, enabled=False,
+         cost_class="free", mem=8192, timeout=7200,
+         after=["img-hash"],
+         note="DISABLED until img-hash has run — it is a derived read over the image tiers and "
+              "produces nothing until one is populated. Runs on dHash (pillow) and upgrades to CLIP "
+              "wherever img_vec exists. Staleness withheld without measured precision (backtest())."),
+
     # ── Hemp ──────────────────────────────────────────────────────────────────────────────────────────────────
     dict(id="hemp-scan", label="Hemp products", code="import hemp_scan as m; m.main([])",
          tables=["hemp_products"], klass="headless", cadence="daily", enabled=True, note="hemp-bev feed"),
@@ -581,6 +687,13 @@ BUILDS = [
 
 def by_id(sid):
     return next((s for s in SOURCES if s["id"] == sid), None)
+
+
+def dam_sources():
+    """Every DAM (brand media-centre) source. Each one MUST carry `rights_record` — a DAM connector
+    harvests somebody else's copyrighted work, so the reviewed terms are a precondition for running
+    at all, not documentation. `dam_rights_test.py` is the ratchet that enforces it."""
+    return [s for s in SOURCES if s.get("source_class") == "dam"]
 
 
 def enabled(klass=None, cadence=None):

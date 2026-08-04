@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Match Trainer · Hoodie</title>
+<style>
+  :root{
+    --bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;
+    --accent:#4B9CD3;--good:#5bb86e;--warn:#d99a3f;--bad:#e5636b;--derived:#6f7d90;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--sans:Inter,system-ui,-apple-system,sans-serif;
+  }
+  @media (prefers-color-scheme:light){:root{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}}
+  :root[data-theme="light"]{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+  header{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+  h1{font-size:15px;margin:0;font-weight:650;letter-spacing:.2px}
+  .sub{color:var(--mut);font-size:12px}
+  .grow{flex:1}
+  button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:6px 11px;font:inherit;font-size:13px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#06101a;font-weight:600}
+  .wrap{display:grid;grid-template-columns:minmax(0,1fr) 372px;gap:16px;padding:16px;align-items:start}
+  @media (max-width:1080px){.wrap{grid-template-columns:minmax(0,1fr)}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:16px}
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:6px 0 4px}
+  @media (max-width:640px){.pair{grid-template-columns:1fr}}
+  .side{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:13px}
+  .src{font:11px/1 var(--mono);color:var(--accent);text-transform:uppercase;letter-spacing:.7px}
+  .nm{font-size:17px;font-weight:600;margin:7px 0 5px;word-break:break-word}
+  .sz{font:12px var(--mono);color:var(--mut)}
+  .diffbar{margin:12px 0 4px;padding:10px 12px;border-radius:8px;background:var(--panel2);border:1px solid var(--line)}
+  .difftag{display:inline-block;font:11px var(--mono);padding:2px 8px;border-radius:99px;border:1px solid var(--line);margin-right:6px}
+  .d-size_format{background:rgba(75,156,211,.16);border-color:var(--accent);color:var(--accent)}
+  .d-class_word{background:rgba(217,154,63,.14);border-color:var(--warn);color:var(--warn)}
+  .d-possessive,.d-punctuation,.d-word_order{background:rgba(111,125,144,.16);color:var(--derived)}
+  .d-extra_words{background:rgba(139,152,169,.14);color:var(--mut)}
+  .d-size_value,.d-different_tokens{background:rgba(229,99,107,.13);border-color:var(--bad);color:var(--bad)}
+  .ans{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+  .ans button{flex:1;min-width:120px;padding:15px 10px;font-size:15px;font-weight:600}
+  .yes{border-color:var(--good)} .yes:hover{background:rgba(91,184,110,.16)}
+  .no{border-color:var(--bad)}  .no:hover{background:rgba(229,99,107,.14)}
+  .skip{border-color:var(--line);color:var(--mut)}
+  kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:1px 5px;color:var(--mut)}
+  .why{margin-top:12px;font:12px/1.6 var(--mono);color:var(--mut);border-top:1px dashed var(--line);padding-top:10px}
+  .why b{color:var(--ink);font-weight:600}
+  .agree{color:var(--good)} .disagree{color:var(--bad)}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--mut);margin:0 0 10px;font-weight:650}
+  .stat{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .stat:last-child{border-bottom:0}
+  .stat b{font:13px var(--mono)}
+  .rule{border:1px solid var(--line);border-radius:9px;padding:11px;margin-bottom:9px;background:var(--panel2)}
+  .rule .hd{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+  .rule .nm2{font-size:13px;font-weight:650}
+  .rule .ct{font:11px var(--mono);color:var(--mut)}
+  .rule .ev{font:11px/1.5 var(--mono);color:var(--mut);margin-top:6px}
+  .bar{height:4px;border-radius:2px;background:var(--line);margin-top:7px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--good)}
+  .prop{margin-top:7px;font-size:12px;color:var(--good)}
+  .prop.mixed{color:var(--warn)}
+  .canon{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:12px}
+  .canon label{display:block;font:10px var(--mono);color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px}
+  .canon input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:6px 8px;font:13px var(--sans)}
+  .canon input:focus{outline:0;border-color:var(--accent)}
+  .drop{border:2px dashed var(--line);border-radius:11px;padding:34px;text-align:center;color:var(--mut)}
+  .drop.on{border-color:var(--accent);color:var(--accent)}
+  .empty{text-align:center;padding:40px 16px;color:var(--mut)}
+  .pill{font:11px var(--mono);padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--mut)}
+  .modal{position:fixed;inset:0;background:rgba(6,10,16,.72);display:flex;align-items:flex-start;
+         justify-content:center;padding:28px 16px;overflow:auto;z-index:20}
+  .sheet{background:var(--panel);border:1px solid var(--line);border-radius:13px;width:min(880px,100%);
+         padding:18px 20px 16px}
+  .sheet h3{margin:0 0 3px;font-size:16px}
+  .sheet .hint{color:var(--mut);font-size:12px;margin:0 0 14px}
+  .dim{display:grid;grid-template-columns:112px 1fr 1fr 1.1fr;gap:9px;align-items:center;
+       padding:8px 0;border-bottom:1px solid var(--line)}
+  @media (max-width:760px){.dim{grid-template-columns:1fr;gap:5px;padding:11px 0}}
+  .dim>.lb{font:11px var(--mono);color:var(--mut);text-transform:uppercase;letter-spacing:.6px}
+  .opt{text-align:left;padding:8px 10px;border-radius:7px;font-size:13px;width:100%;
+       white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .opt .who{font:10px var(--mono);color:var(--accent);display:block;letter-spacing:.6px}
+  .opt.sel{border-color:var(--good);background:rgba(91,184,110,.14)}
+  .opt.empty2{color:var(--mut);font-style:italic}
+  .dim input,.dim select{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:7px;
+       color:var(--ink);padding:8px 9px;font:13px var(--sans)}
+  .dim input:focus,.dim select:focus{outline:0;border-color:var(--accent)}
+  .dim input.sel,.dim select.sel{border-color:var(--good)}
+  .unres{font:10px var(--mono);color:var(--mut);padding-left:2px}
+  .sheetfoot{display:flex;gap:10px;align-items:center;margin-top:15px;flex-wrap:wrap}
+  .sheetfoot .grow{flex:1}
+</style>
+</head>
+<body>
+<header>
+  <h1>Match Trainer</h1>
+  <span class="sub" id="pos">no set loaded</span>
+  <span class="grow"></span>
+  <span class="pill" id="stratum"></span>
+  <button id="undo">Undo <kbd>U</kbd></button>
+  <button id="export" class="primary">Export</button>
+</header>
+
+<div class="wrap">
+  <div>
+    <div class="card" id="stage">
+      <div class="drop" id="drop">
+        <p style="margin:0 0 8px;font-size:15px;color:var(--ink)">Drop <b>xsource-gold-300.csv</b> here</p>
+        <p style="margin:0 0 14px">or <label style="color:var(--accent);cursor:pointer;text-decoration:underline">choose a file<input type="file" id="file" accept=".csv" hidden></label></p>
+        <p style="margin:0;font-size:12px">Your answers stay in this browser until you export. Refreshing won't lose them.</p>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card" style="margin-bottom:16px">
+      <h2>What you've taught it</h2>
+      <div id="stats"><div class="empty" style="padding:14px">Nothing yet.</div></div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <h2>Dictionary <span class="sub" style="text-transform:none;letter-spacing:0">— what you've resolved</span></h2>
+      <div id="dict"><div class="empty" style="padding:14px;font-size:13px">Resolve a match and the values you pick land here.<br>They're reused automatically on later pairs.</div></div>
+    </div>
+    <div class="card">
+      <h2>Patterns found <span class="sub" style="text-transform:none;letter-spacing:0">— in your answers</span></h2>
+      <div id="patterns"><div class="empty" style="padding:14px;font-size:13px">Label a few and rules will appear here.<br>Most decisions turn out to be one rule, not many judgements.</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ── Match Trainer ────────────────────────────────────────────────────────────────────────────────
+   A labelling queue that TEACHES rather than collects. Three things make it different from the
+   spreadsheet it replaces:
+
+   1. It shows the matcher's own reasoning next to each pair — the normalised signature it computed
+      and whether it would merge — so you are correcting a visible model, not filling a void.
+   2. It classifies WHY the two rows differ (size formatting, a class word, a possessive, genuinely
+      different words), and groups your answers by that cause.
+   3. When a cause is answered consistently it proposes a RULE. "You said SAME 23 of 23 times where
+      the only difference was pack-size format" is one normalisation rule with 23 pieces of evidence
+      behind it — far more leverage than 23 rows of gold.
+
+   Dependency-free and offline: progress lives in localStorage, so a refresh or a closed laptop
+   costs nothing, and nothing leaves the browser until you press Export.
+   ────────────────────────────────────────────────────────────────────────────────────────────── */
+
+var KEY = "hoodie.matchTrainer.v1";
+var S = { rows: [], i: 0, answers: {}, dict: {} };
+
+/* ── the matcher's own normalisation, mirrored so the app can SHOW its reasoning ───────────────── */
+var NOISE = ["the","and","of","wine","wines","spirit","spirits","liqueur","bottle","btl","nr","pack",
+             "case","single","each","ea","proof","old","yr","year","ml","l","liter","litre",
+             "bottled","distilled"];
+var CATEGORY = ["vodka","rum","gin","whiskey","whisky","tequila","bourbon","scotch","cognac",
+                "brandy","vermouth","mezcal","sake","cordial","schnapps","aperitif"];
+var SIZE_RE = /(\d+(?:\.\d+)?)\s*(ml|l|liter|litre|oz)\b/i;
+
+function deaccent(s){ return (s||"").normalize("NFKD").replace(/[̀-ͯ]/g,""); }
+function sizeMl(t){
+  var m = SIZE_RE.exec(String(t||"")); if(!m) return null;
+  var v = parseFloat(m[1]), u = m[2].toLowerCase();
+  if(u.charAt(0)==="l" && v<10) v*=1000; else if(u==="oz") v*=29.5735;
+  v = Math.round(v); return (v>=10 && v<=20000) ? v : null;
+}
+function tokens(s){
+  s = deaccent(String(s||"")).toLowerCase().replace(SIZE_RE," ");
+  return s.split(/[^a-z0-9]+/).filter(function(w){ return w && w.length>1; });
+}
+function brandKey(b){
+  var t = deaccent(String(b||"")).toLowerCase().replace(/'s\b/g,"").split(/[^a-z0-9]+/)
+          .filter(function(w){ return w && w.length>1; });
+  return t.map(function(w){ return (w.length>3 && w.slice(-1)==="s") ? w.slice(0,-1) : w; }).join(" ");
+}
+function nameSig(name, bk){
+  var bt = (bk||"").split(" ");
+  var out = tokens(name).filter(function(w){
+    if(NOISE.indexOf(w)>=0 || CATEGORY.indexOf(w)>=0) return false;
+    if(bt.indexOf(w)>=0) return false;
+    if(w.length>3 && w.slice(-1)==="s" && bt.indexOf(w.slice(0,-1))>=0) return false;
+    return true;
+  });
+  return out.sort().filter(function(v,i,a){ return a.indexOf(v)===i; }).join(" ");
+}
+/* CANONICAL PACK SIZE. Stated by the labeller, not inferred: lowercase m, capital L, NO space —
+   "750mL". Sub-litre volumes render in mL; a litre and above renders in L with the same capital L
+   ("1.75L", "3L"), which is the reading of the same rule and is flagged here so it can be corrected
+   in one place if it is wrong. This is what turns "same product, one says 750ML and the other
+   750 mL" from a judgement into a normalisation. */
+function canonSize(ml){
+  if(!ml && ml!==0) return "";
+  if(ml < 1000) return ml+"mL";
+  var l = ml/1000;
+  return (Math.round(l*100)/100).toString().replace(/\.0+$/,"")+"L";
+}
+
+function sig(brand, name, size){
+  var bk = brandKey(brand || name); if(!bk) return null;
+  var sz = sizeMl(size) || sizeMl(name); if(!sz) return null;
+  return { bk: bk, ns: nameSig(name, bk), sz: sz };
+}
+
+/* ── WHY do these two differ? The classifier that makes an answer generalise ────────────────────
+   Ordered most-specific first. The first cause that explains the difference wins, so "same product,
+   one writes 750ML and the other 750 mL" is reported as a formatting difference rather than being
+   lumped in with genuinely different words.                                                       */
+function difference(r){
+  var an = r.a_name||"", bn = r.b_name||"", az = r.a_size||"", bz = r.b_size||"";
+  var asz = sizeMl(az)||sizeMl(an), bsz = sizeMl(bz)||sizeMl(bn);
+  var abk = brandKey(r.a_brand||an), bbk = brandKey(r.b_brand||bn);
+  var ans = nameSig(an, abk), bns = nameSig(bn, bbk);
+
+  // A genuinely different size blocks everything else — item grain is product + size.
+  if(asz && bsz && asz !== bsz) return "size_value";
+
+  // NAMES FIRST, then size formatting as the RESIDUAL. Getting this order wrong was a real bug:
+  // the two rows come from different retailers, so their size STRINGS almost always differ
+  // ("750ML" vs "750 mL"), and checking size formatting first labelled every pair `size_format` —
+  // the possessive, class-word and extra-word causes all vanished into one bucket and the pattern
+  // panel had nothing to say. Size formatting is only the PRIMARY cause when the names agree.
+  var araw = deaccent(an).toLowerCase().replace(SIZE_RE," ").replace(/\s+/g," ").trim();
+  var braw = deaccent(bn).toLowerCase().replace(SIZE_RE," ").replace(/\s+/g," ").trim();
+  if(araw === braw){
+    var azRaw = String(az).trim().toLowerCase(), bzRaw = String(bz).trim().toLowerCase();
+    return (azRaw !== bzRaw) ? "size_format" : "identical";
+  }
+  // Possessive BEFORE general punctuation: an apostrophe is punctuation, but "Tito's vs Titos" is
+  // a named, fixable rule while "punctuation" is a shrug.
+  if(araw.replace(/'/g,"") === braw.replace(/'/g,"")) return "possessive";
+  if(araw.replace(/[^a-z0-9]/g,"") === braw.replace(/[^a-z0-9]/g,"")) return "punctuation";
+
+  var at = tokens(an), bt = tokens(bn);
+  var atS = at.slice().sort().join(" "), btS = bt.slice().sort().join(" ");
+  if(atS === btS && at.join(" ") !== bt.join(" ")) return "word_order";
+
+  // Everything below compares what the MATCHER sees, so a difference that its normalisation
+  // already absorbs is named for what it actually is rather than as "different words".
+  var aOnly = at.filter(function(w){ return bt.indexOf(w)<0; });
+  var bOnly = bt.filter(function(w){ return at.indexOf(w)<0; });
+  var extras = aOnly.concat(bOnly);
+  if(extras.length && extras.every(function(w){ return CATEGORY.indexOf(w)>=0; })) return "class_word";
+  if(extras.length && extras.every(function(w){ return CATEGORY.indexOf(w)>=0 || NOISE.indexOf(w)>=0; }))
+    return "noise_word";
+
+  if(abk !== bbk && ans === bns) return "brand_spelling";
+  if(ans === bns) return "punctuation";
+  if(!aOnly.length || !bOnly.length) return "extra_words";
+  return "different_tokens";
+}
+var DIFF_LABEL = {
+  identical:     "identical as written",
+  noise_word:    "a filler word only (Bottle / Pack / …)",
+  size_format:   "pack-size FORMAT only",
+  size_value:    "different SIZE",
+  class_word:    "category word only (Vodka / Tequila / …)",
+  possessive:    "possessive / apostrophe only",
+  word_order:    "word ORDER only",
+  punctuation:   "punctuation or spacing only",
+  brand_spelling:"brand spelled differently",
+  extra_words:   "one side has EXTRA words",
+  different_tokens:"genuinely different words"
+};
+var DIFF_RULE = {
+  size_format:   "Normalise pack-size formatting before comparing, and write it as 750mL "+
+                 "(lowercase m, capital L, no space); 1L and above as 1.75L.",
+  class_word:    "Drop the category noun before comparing — retail bakes the class into the name.",
+  possessive:    "Strip possessives before comparing (Tito's = Titos).",
+  word_order:    "Compare name tokens order-independently.",
+  punctuation:   "Normalise punctuation and spacing before comparing.",
+  brand_spelling:"Treat these brand spellings as one brand.",
+  extra_words:   "Allow one side to carry extra descriptive words.",
+  size_value:    "Never merge across sizes — item grain is product + size.",
+  different_tokens:"Do not merge on shared brand alone.",
+  identical:     "Identical strings — merge.",
+  noise_word:    "Drop filler words (Bottle, Pack) before comparing."
+};
+
+/* ── CSV ───────────────────────────────────────────────────────────────────────────────────────── */
+function parseCSV(text){
+  var rows=[], row=[], cur="", q=false;
+  for(var i=0;i<text.length;i++){
+    var c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c; }
+    else if(c==='"') q=true;
+    else if(c===','){ row.push(cur); cur=""; }
+    else if(c==='\n'){ row.push(cur); rows.push(row); row=[]; cur=""; }
+    else if(c!=='\r') cur+=c;
+  }
+  if(cur.length||row.length){ row.push(cur); rows.push(row); }
+  if(!rows.length) return [];
+  var head = rows[0].map(function(h){ return String(h||"").trim(); });
+  return rows.slice(1).filter(function(r){ return r.length>1; }).map(function(r){
+    var o={}; head.forEach(function(h,i){ o[h]=r[i]===undefined?"":String(r[i]).trim(); });
+    // tolerate a capitalised or renamed label column, exactly like the python reader
+    for(var k in o){ if(/^label$/i.test(k.replace(/[^a-z]/gi,""))) o.label = o[k]; }
+    return o;
+  });
+}
+function esc(v){ v=String(v==null?"":v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+
+/* ── state ─────────────────────────────────────────────────────────────────────────────────────── */
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({rows:S.rows,i:S.i,answers:S.answers,dict:S.dict})); }catch(e){} }
+function load(){
+  try{ var d=JSON.parse(localStorage.getItem(KEY)||"null");
+    if(d && d.rows && d.rows.length){ S=d; S.dict=S.dict||{}; return true; } }catch(e){}
+  return false;
+}
+
+/* TTB STANDARDS OF FILL (27 CFR 5.203 spirits / 4.72 wine). Listed here so pack size is CHOSEN from
+   the regulated set rather than retyped in whatever format a retailer used — the labeller's rule was
+   "pack size is governed by the TTB". Two honest caveats, both visible in the UI:
+     • this list should be verified against the current CFR before it is treated as authoritative;
+     • MALT BEVERAGES have no standards of fill, so beer/seltzer/RTD must stay free-text. The picker
+       therefore always allows a value outside the list rather than forcing one in. */
+var TTB_SPIRITS = [50,100,200,375,500,700,720,750,900,945,1000,1750,1800];
+var TTB_WINE    = [50,100,187,200,250,355,375,500,750,1000,1500,3000,4000,5000,6000,9000,12000,15000,18000];
+function ttbSizes(type){
+  var t = String(type||"").toLowerCase();
+  if(/wine|sparkling|champagne|vermouth|sake|cider/.test(t)) return TTB_WINE;
+  if(/beer|malt|seltzer|rtd|ready/.test(t)) return [];          // unregulated — free text only
+  if(/spirit|whisk|vodka|gin|rum|tequila|liqueur|brandy|cognac|mezcal/.test(t)) return TTB_SPIRITS;
+  return TTB_SPIRITS.concat(TTB_WINE.filter(function(v){ return TTB_SPIRITS.indexOf(v)<0; }))
+                    .sort(function(x,y){ return x-y; });
+}
+
+var CANON = [["canon_brand","Brand"],["canon_product","Product"],["canon_size","Pack size"],
+             ["canon_type","Type"],["canon_class","Class"],["canon_subclass","Sub class"],
+             ["canon_varietal","Varietal"]];
+
+function render(){
+  var stage=document.getElementById("stage");
+  if(!S.rows.length){ renderStats(); return; }
+  var r=S.rows[S.i];
+  if(!r){
+    stage.innerHTML='<div class="empty"><p style="font-size:17px;color:var(--ink)">That\'s the whole set.</p>'+
+      '<p>Press <b>Export</b> and hand the file back.</p></div>';
+    document.getElementById("pos").textContent = S.rows.length+" of "+S.rows.length+" — done";
+    document.getElementById("stratum").textContent="";
+    renderStats(); return;
+  }
+  var d=difference(r), a=sig(r.a_brand,r.a_name,r.a_size), b=sig(r.b_brand,r.b_name,r.b_size);
+  var ruleMerges = !!(a&&b&&a.bk===b.bk&&a.ns===b.ns&&a.sz===b.sz);
+  var prev = S.answers[r.pair_id]||{};
+
+  stage.innerHTML =
+    '<div class="pair">'+
+      side(r.a_source,r.a_name,r.a_size,a)+
+      side(r.b_source,r.b_name,r.b_size,b)+
+    '</div>'+
+    '<div class="diffbar"><span class="difftag d-'+d+'">'+DIFF_LABEL[d]+'</span>'+
+      '<span class="sub">is the only difference the app can see</span></div>'+
+    '<div class="ans">'+
+      '<button class="yes" data-v="y">Same item — resolve <kbd>Y</kbd></button>'+
+      '<button class="no" data-v="n">Different <kbd>N</kbd></button>'+
+      '<button class="skip" data-v="?">Can\'t tell <kbd>?</kbd></button>'+
+    '</div>'+
+    '<div style="display:none">'+CANON.map(function(c){
+      // Pack size arrives PRE-FILLED in canonical form when both sides agree on the value — the
+      // labeller stated the standard, so the app should apply it rather than ask for it again.
+      var pre = prev[c[0]];
+      if(pre===undefined && c[0]==="canon_size" && a && b && a.sz===b.sz) pre = canonSize(a.sz);
+      return '<div><label>'+c[1]+'</label><input data-c="'+c[0]+'" value="'+
+             String(pre||"").replace(/"/g,"&quot;")+'" placeholder="only if you\'re sure"></div>';
+    }).join("")+'</div>'+
+    '<div class="why"><b>The matcher says:</b> '+
+      (ruleMerges?'<span class="agree">merge</span>':'<span class="disagree">do not merge</span>')+
+      '<br>A · '+(a?(a.bk+" | "+(a.ns||"∅")+" | "+a.sz+"ml"):"no signature (missing size)")+
+      '<br>B · '+(b?(b.bk+" | "+(b.ns||"∅")+" | "+b.sz+"ml"):"no signature (missing size)")+
+      ((a&&b&&a.sz===b.sz)?'<br><b>canonical size:</b> '+canonSize(a.sz):"")+
+    '</div>';
+
+  document.getElementById("pos").textContent = (S.i+1)+" of "+S.rows.length+
+    " · "+Object.keys(S.answers).length+" answered";
+  document.getElementById("stratum").textContent = r.stratum||"";
+  Array.prototype.forEach.call(stage.querySelectorAll(".ans button"), function(btn){
+    btn.onclick=function(){ answer(btn.getAttribute("data-v")); };
+  });
+  renderStats();
+}
+function side(src,name,size,sg){
+  return '<div class="side"><div class="src">'+(src||"—")+'</div>'+
+         '<div class="nm">'+String(name||"—").replace(/</g,"&lt;")+'</div>'+
+         '<div class="sz">'+String(size||"—")+(sg?"  ·  "+sg.sz+"ml":"")+'</div></div>';
+}
+
+/* ── the RESOLVER ──────────────────────────────────────────────────────────────────────────────
+   Confirming a match does not record a "yes" — it opens the record. Per dimension you take A's
+   value, take B's, or type a third, and what you take becomes a DICTIONARY entry: the canonical
+   value plus every source spelling that maps to it. That is why the app gets faster as you go —
+   the second time "750 mL" appears it is already resolved, so you are teaching a vocabulary rather
+   than answering the same question repeatedly ([[dictionary-layer]]).
+
+   A BLANK IS UNRESOLVED, not empty. Leaving a dimension alone says "I don't know", never "this
+   product has no brand", and the row records the difference.                                      */
+function normVar(v){ return String(v||"").trim().toLowerCase().replace(/\s+/g," "); }
+
+function dictGet(dim, variant){
+  var d = S.dict[dim]; var k = normVar(variant);
+  return (d && k && d[k]) ? d[k].value : "";
+}
+function dictPut(dim, canon, variants){
+  if(!canon) return;
+  var d = S.dict[dim] || (S.dict[dim] = {});
+  // The canonical value maps to ITSELF. Without this a value the labeller TYPED — a taxonomy term
+  // with no A or B spelling to map from — recorded nothing at all, so the dictionary silently
+  // learned only the values that were already on a source row.
+  variants = variants.concat([canon]);
+  variants.forEach(function(v){
+    var k = normVar(v); if(!k) return;
+    var e = d[k] || (d[k] = {value: canon, n: 0, seen: v});
+    e.value = canon; e.n++;
+  });
+}
+
+function openResolver(r){
+  var a = sig(r.a_brand, r.a_name, r.a_size), b = sig(r.b_brand, r.b_name, r.b_size);
+  var prev = S.answers[r.pair_id] || {};
+  var sizeMlA = sizeMl(r.a_size)||sizeMl(r.a_name), sizeMlB = sizeMl(r.b_size)||sizeMl(r.b_name);
+  var DIMS = [
+    {k:"canon_brand",    lb:"Brand",     A:r.a_brand, B:r.b_brand},
+    {k:"canon_product",  lb:"Product",   A:r.a_name,  B:r.b_name},
+    {k:"canon_size",     lb:"Pack size", A:r.a_size,  B:r.b_size, size:1},
+    {k:"canon_type",     lb:"Type",      A:"", B:""},
+    {k:"canon_class",    lb:"Class",     A:"", B:""},
+    {k:"canon_subclass", lb:"Sub class", A:"", B:""},
+    {k:"canon_varietal", lb:"Varietal",  A:"", B:""}
+  ];
+  var wrap = document.createElement("div");
+  wrap.className = "modal";
+  wrap.innerHTML =
+    '<div class="sheet"><h3>Resolve the record</h3>'+
+    '<p class="hint">Take A, take B, or type the right one. <b>Leave anything you are not sure about blank</b> — '+
+    'blank means unresolved, and what you take here becomes a dictionary entry reused on later pairs.</p>'+
+    DIMS.map(function(d){
+      var pre = prev[d.k] !== undefined ? prev[d.k]
+              : (dictGet(d.k, d.A) || dictGet(d.k, d.B) ||
+                 (d.size && sizeMlA && sizeMlA===sizeMlB ? canonSize(sizeMlA) : ""));
+      var field;
+      if(d.size){
+        var opts = ttbSizes(prev.canon_type || "");
+        field = '<select data-f="'+d.k+'">'+
+          '<option value="">— unresolved —</option>'+
+          opts.map(function(ml){ var t=canonSize(ml);
+            return '<option value="'+t+'"'+(t===pre?" selected":"")+'>'+t+'</option>'; }).join("")+
+          (pre && opts.map(canonSize).indexOf(pre)<0 ? '<option value="'+pre+'" selected>'+pre+' (not a TTB fill)</option>' : "")+
+          '<option value="__other">other / not TTB-governed…</option></select>';
+      } else {
+        field = '<input data-f="'+d.k+'" value="'+String(pre).replace(/"/g,"&quot;")+'" placeholder="type, or leave blank">';
+      }
+      return '<div class="dim"><span class="lb">'+d.lb+'</span>'+
+        opt(d.k,"A",d.A)+opt(d.k,"B",d.B)+field+'</div>';
+    }).join("")+
+    '<div class="sheetfoot"><span class="unres" id="unres"></span><span class="grow"></span>'+
+      '<button id="rcancel">Cancel <kbd>Esc</kbd></button>'+
+      '<button id="rsave" class="primary">Save &amp; next <kbd>⏎</kbd></button></div></div>';
+  document.body.appendChild(wrap);
+
+  function opt(k, who, val){
+    if(!val) return '<button class="opt empty2" disabled><span class="who">'+who+'</span>—</button>';
+    return '<button class="opt" data-k="'+k+'" data-v="'+String(val).replace(/"/g,"&quot;")+'">'+
+           '<span class="who">'+who+'</span>'+String(val).replace(/</g,"&lt;")+'</button>';
+  }
+  function fieldFor(k){ return wrap.querySelector('[data-f="'+k+'"]'); }
+  function syncMarks(){
+    DIMS.forEach(function(d){
+      var f=fieldFor(d.k); if(!f) return;
+      var v=(f.value||"").trim();
+      f.classList.toggle("sel", !!v);
+      Array.prototype.forEach.call(wrap.querySelectorAll('.opt[data-k="'+d.k+'"]'), function(btn){
+        btn.classList.toggle("sel", btn.getAttribute("data-v")===v);
+      });
+    });
+    var blank = DIMS.filter(function(d){ var f=fieldFor(d.k); return f && !(f.value||"").trim(); });
+    wrap.querySelector("#unres").textContent = blank.length
+      ? blank.length+" dimension"+(blank.length>1?"s":"")+" left unresolved" : "all dimensions resolved";
+  }
+  Array.prototype.forEach.call(wrap.querySelectorAll(".opt"), function(btn){
+    btn.onclick=function(){ var f=fieldFor(btn.getAttribute("data-k"));
+      if(f){ f.value=btn.getAttribute("data-v"); syncMarks(); } };
+  });
+  Array.prototype.forEach.call(wrap.querySelectorAll("[data-f]"), function(f){
+    f.oninput=syncMarks;
+    f.onchange=function(){
+      if(f.tagName==="SELECT" && f.value==="__other"){
+        var t=prompt("Pack size (this product is not TTB-governed, or the fill is outside the list):","");
+        var inp=document.createElement("input");
+        inp.setAttribute("data-f", f.getAttribute("data-f")); inp.value=t||"";
+        inp.placeholder="type, or leave blank"; inp.oninput=syncMarks;
+        f.parentNode.replaceChild(inp, f);
+      }
+      syncMarks();
+    };
+  });
+  syncMarks();
+
+  function close(){ document.removeEventListener("keydown", keys, true); wrap.remove(); }
+  function commit(){
+    var rec = S.answers[r.pair_id] || {};
+    rec.label="y"; rec.diff=difference(r); rec.stratum=r.stratum;
+    rec.rule = !!(a&&b&&a.bk===b.bk&&a.ns===b.ns&&a.sz===b.sz);
+    DIMS.forEach(function(d){
+      var f=fieldFor(d.k); var v=f?(f.value||"").trim():"";
+      if(v){ rec[d.k]=v; dictPut(d.k, v, [d.A, d.B].filter(Boolean)); }
+      else delete rec[d.k];                       // blank stays UNRESOLVED, never an empty claim
+    });
+    S.answers[r.pair_id]=rec; S.i++; close(); save(); render();
+  }
+  function keys(e){
+    if(e.key==="Escape"){ e.stopPropagation(); close(); }
+    else if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); e.stopPropagation(); commit(); }
+  }
+  document.addEventListener("keydown", keys, true);
+  wrap.querySelector("#rcancel").onclick=close;
+  wrap.querySelector("#rsave").onclick=commit;
+  wrap.onclick=function(e){ if(e.target===wrap) close(); };
+  var first=wrap.querySelector("[data-f]"); if(first) first.focus();
+}
+
+function answer(v){
+  var r=S.rows[S.i]; if(!r) return;
+  // "Same" is not an answer, it is the START of resolving the record.
+  if(v==="y"){ openResolver(r); return; }
+  var rec = S.answers[r.pair_id] || {};
+  rec.label=v; rec.diff=difference(r); rec.stratum=r.stratum;
+  rec.rule = (function(){ var a=sig(r.a_brand,r.a_name,r.a_size), b=sig(r.b_brand,r.b_name,r.b_size);
+    return !!(a&&b&&a.bk===b.bk&&a.ns===b.ns&&a.sz===b.sz); })();
+  S.answers[r.pair_id]=rec; S.i++; save(); render();
+}
+
+function renderStats(){
+  var ans = S.answers, ids = Object.keys(ans);
+  var el = document.getElementById("stats");
+  if(!ids.length){ el.innerHTML='<div class="empty" style="padding:14px">Nothing yet.</div>'; renderPatterns(); renderDict(); return; }
+  var decided = ids.filter(function(k){ return ans[k].label!=="?"; });
+  var tp=0,fp=0,fn=0,tn=0, ctrl=0, ctrlBad=0;
+  decided.forEach(function(k){
+    var a=ans[k], yes=a.label==="y";
+    if(a.rule && yes) tp++; else if(a.rule && !yes) fp++;
+    else if(!a.rule && yes) fn++; else tn++;
+    if(a.stratum==="control"){ ctrl++; if(yes) ctrlBad++; }
+  });
+  function pct(n,d){ return d? (Math.round(1000*n/d)/10)+"%" : "—"; }
+  el.innerHTML =
+    stat("Answered", ids.length+" of "+S.rows.length)+
+    stat("Couldn't tell", String(ids.length-decided.length))+
+    stat("Matcher precision", pct(tp,tp+fp)+' <span class="sub">('+tp+"/"+(tp+fp)+")</span>")+
+    stat("Matcher recall", pct(tp,tp+fn)+' <span class="sub">('+tp+"/"+(tp+fn)+")</span>")+
+    stat("Merges it MISSED", String(fn))+
+    (ctrl? stat("Control check", (ctrl-ctrlBad)+"/"+ctrl+(ctrlBad?' <span style="color:var(--bad)">check these</span>':"")) : "");
+  renderPatterns(); renderDict();
+}
+function stat(k,v){ return '<div class="stat"><span>'+k+'</span><b>'+v+'</b></div>'; }
+
+/* The dictionary is the compounding half: every value taken in the resolver maps a SOURCE spelling
+   to a canonical one, and the next pair carrying that spelling arrives already answered. */
+function renderDict(){
+  var el=document.getElementById("dict"); if(!el) return;
+  var out=[], LB={canon_brand:"Brand",canon_product:"Product",canon_size:"Pack size",
+                  canon_type:"Type",canon_class:"Class",canon_subclass:"Sub class",canon_varietal:"Varietal"};
+  Object.keys(S.dict||{}).forEach(function(dim){
+    var byCanon={};
+    Object.keys(S.dict[dim]).forEach(function(k){
+      var e=S.dict[dim][k]; (byCanon[e.value]=byCanon[e.value]||[]).push(e.seen); });
+    var rows=Object.keys(byCanon).sort();
+    if(!rows.length) return;
+    out.push('<div class="rule"><div class="hd"><span class="nm2">'+(LB[dim]||dim)+
+      '</span><span class="ct">'+rows.length+' value'+(rows.length>1?"s":"")+'</span></div>'+
+      rows.slice(0,6).map(function(c){
+        var vars=byCanon[c].filter(function(v,i,a){ return a.indexOf(v)===i && normVar(v)!==normVar(c); });
+        return '<div class="ev" style="margin-top:5px"><b style="color:var(--ink)">'+
+               String(c).replace(/</g,"&lt;")+'</b>'+
+               (vars.length? ' &larr; '+vars.slice(0,3).map(function(v){return String(v).replace(/</g,"&lt;");}).join(" · ") : "")+
+               '</div>'; }).join("")+
+      (rows.length>6?'<div class="sub" style="margin-top:5px">+'+(rows.length-6)+' more</div>':"")+
+    '</div>');
+  });
+  el.innerHTML = out.length? out.join("") :
+    '<div class="empty" style="padding:14px;font-size:13px">Resolve a match and the values you pick land here.</div>';
+}
+
+/* ── the payoff: your answers, grouped by CAUSE, become rules ──────────────────────────────────── */
+function renderPatterns(){
+  var el=document.getElementById("patterns"), ans=S.answers, by={};
+  Object.keys(ans).forEach(function(k){
+    var a=ans[k]; if(a.label==="?") return;
+    var g = by[a.diff] || (by[a.diff]={y:0,n:0,missed:0,ex:[]});
+    if(a.label==="y") g.y++; else g.n++;
+    if(a.label==="y" && !a.rule) g.missed++;
+    if(g.ex.length<2){ var r=S.rows.filter(function(x){return x.pair_id===k;})[0];
+      if(r) g.ex.push((r.a_name||"")+"  ⟷  "+(r.b_name||"")); }
+  });
+  var keys=Object.keys(by).sort(function(x,y){ return (by[y].y+by[y].n)-(by[x].y+by[x].n); });
+  if(!keys.length){ el.innerHTML='<div class="empty" style="padding:14px;font-size:13px">Label a few and rules will appear here.</div>'; return; }
+  el.innerHTML = keys.map(function(k){
+    var g=by[k], n=g.y+g.n, agree=Math.max(g.y,g.n), consistent = n>=3 && agree===n;
+    var verdict = g.y>=g.n ? "SAME" : "DIFFERENT";
+    return '<div class="rule"><div class="hd"><span class="nm2">'+DIFF_LABEL[k]+'</span>'+
+      '<span class="ct">'+g.y+'y / '+g.n+'n</span></div>'+
+      '<div class="bar"><i style="width:'+Math.round(100*agree/n)+'%;background:'+
+        (consistent?"var(--good)":"var(--warn)")+'"></i></div>'+
+      (consistent
+        ? '<div class="prop">Rule: '+DIFF_RULE[k]+'<br><span class="sub">'+n+
+          ' of '+n+' answered '+verdict+(g.missed?' · would unlock '+g.missed+' merge'+(g.missed>1?"s":"")+' the matcher missed':"")+'</span></div>'
+        : (n>=3 ? '<div class="prop mixed">Not consistent yet — '+g.y+' same / '+g.n+
+                  ' different. Needs a sharper rule than "'+DIFF_LABEL[k]+'".</div>'
+                : '<div class="sub" style="margin-top:6px">'+(3-n)+' more to call this.</div>'))+
+      '<div class="ev">'+g.ex.map(function(e){ return e.replace(/</g,"&lt;"); }).join("<br>")+'</div>'+
+    '</div>';
+  }).join("");
+}
+
+/* ── wiring ────────────────────────────────────────────────────────────────────────────────────── */
+function ingest(text){
+  var rows=parseCSV(text);
+  if(!rows.length){ alert("No rows found in that file."); return; }
+  S={rows:rows,i:0,answers:{},dict:(S.dict||{})};
+  // resume where a previous pass on the SAME set left off
+  rows.forEach(function(r){ if(r.label && /^[yn]$/i.test(r.label)) S.answers[r.pair_id]={label:r.label.toLowerCase(),diff:difference(r),stratum:r.stratum,rule:false}; });
+  while(S.rows[S.i] && S.answers[S.rows[S.i].pair_id]) S.i++;
+  save(); render();
+}
+document.getElementById("file").onchange=function(e){
+  var f=e.target.files[0]; if(!f) return;
+  var fr=new FileReader(); fr.onload=function(){ ingest(fr.result); }; fr.readAsText(f);
+};
+var drop=document.getElementById("drop");
+["dragenter","dragover"].forEach(function(ev){ document.addEventListener(ev,function(e){ e.preventDefault(); if(drop) drop.classList.add("on"); }); });
+["dragleave","drop"].forEach(function(ev){ document.addEventListener(ev,function(e){ e.preventDefault(); if(drop) drop.classList.remove("on"); }); });
+document.addEventListener("drop",function(e){
+  var f=e.dataTransfer && e.dataTransfer.files[0]; if(!f) return;
+  var fr=new FileReader(); fr.onload=function(){ ingest(fr.result); }; fr.readAsText(f);
+});
+document.addEventListener("keydown",function(e){
+  if(/^(INPUT|TEXTAREA)$/.test((e.target.tagName||""))) return;
+  var k=e.key.toLowerCase();
+  if(k==="y") answer("y"); else if(k==="n") answer("n");
+  else if(k==="?"||k==="/"||k==="s") answer("?");
+  else if(k==="u"){ if(S.i>0){ S.i--; delete S.answers[(S.rows[S.i]||{}).pair_id]; save(); render(); } }
+});
+document.getElementById("undo").onclick=function(){
+  if(S.i>0){ S.i--; delete S.answers[(S.rows[S.i]||{}).pair_id]; save(); render(); }
+};
+function dl(text, mime, name){
+  var url=URL.createObjectURL(new Blob([text],{type:mime}));
+  var link=document.createElement("a"); link.href=url; link.download=name; link.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); },1500);
+}
+document.getElementById("export").onclick=function(){
+  if(!S.rows.length) return;
+  var extra=["label"].concat(CANON.map(function(c){return c[0];})).concat(["difference"]);
+  var head=Object.keys(S.rows[0]).filter(function(h){ return extra.indexOf(h)<0; }).concat(extra);
+  var lines=[head.map(esc).join(",")];
+  S.rows.forEach(function(r){
+    var a=S.answers[r.pair_id]||{};
+    lines.push(head.map(function(h){
+      if(h==="label") return esc(a.label&&a.label!=="?"?a.label:"");
+      if(h==="difference") return esc(a.diff||difference(r));
+      if(a[h]!==undefined) return esc(a[h]);
+      return esc(r[h]);
+    }).join(","));
+  });
+  dl(lines.join("\n"), "text/csv", "xsource-gold-labelled.csv");
+  // The dictionary is a separate artefact — value mappings, not pair judgements — so it ships as
+  // its own file the dictionary layer can ingest directly.
+  var drows=[["dimension","canonical","variant","times"].join(",")];
+  Object.keys(S.dict||{}).forEach(function(dim){
+    Object.keys(S.dict[dim]).forEach(function(k){
+      var e=S.dict[dim][k];
+      drows.push([dim,e.value,e.seen,e.n].map(esc).join(",")); }); });
+  if(drows.length>1) setTimeout(function(){ dl(drows.join("\n"),"text/csv","xsource-dictionary.csv"); }, 400);
+};
+
+if(load()) render(); else renderStats();
+</script>
+</body>
+</html>

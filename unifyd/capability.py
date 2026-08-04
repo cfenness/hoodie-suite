@@ -37,6 +37,9 @@ PROBES = {
                    "GS1 2D coverage silently drops to QR-ONLY"),
     "pytesseract": ("pytesseract", "OCR label text",
                     "no gov_warning / claims / ocr_chars — reads as 'the label had no text'"),
+    "pypdf":      ("pypdf", "extract text from PDF press releases (DAM facts)",
+                   "PDF press releases contribute NO facts — launch dates/prices/markets stay at "
+                   "folder-year precision and it reads as 'the release said nothing'"),
     "curl_cffi":  ("curl_cffi", "browser-TLS-fingerprint HTTP",
                    "anti-bot fetches fall back to plain urllib and get blocked or thin results"),
     "pyarrow":    ("pyarrow", "Parquet read/write + dataset listing",
