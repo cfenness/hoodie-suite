@@ -76,6 +76,9 @@
   .dim{display:grid;grid-template-columns:112px 1fr 1fr 1.1fr;gap:9px;align-items:center;
        padding:8px 0;border-bottom:1px solid var(--line)}
   @media (max-width:760px){.dim{grid-template-columns:1fr;gap:5px;padding:11px 0}}
+  /* No source carries a Type/Class/Sub class — they are ours to assign — so those rows have no A/B
+     to offer and rendering two empty placeholders each just pads the sheet with four rows of "—". */
+  .dim.noab{grid-template-columns:112px 1fr}
   .dim>.lb{font:11px var(--mono);color:var(--mut);text-transform:uppercase;letter-spacing:.6px}
   .opt{text-align:left;padding:8px 10px;border-radius:7px;font-size:13px;width:100%;
        white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -318,12 +321,41 @@ var TTB_SPIRITS = [50,100,200,375,500,700,720,750,900,945,1000,1750,1800];
 var TTB_WINE    = [50,100,187,200,250,355,375,500,750,1000,1500,3000,4000,5000,6000,9000,12000,15000,18000];
 function ttbSizes(type){
   var t = String(type||"").toLowerCase();
-  if(/wine|sparkling|champagne|vermouth|sake|cider/.test(t)) return TTB_WINE;
-  if(/beer|malt|seltzer|rtd|ready/.test(t)) return [];          // unregulated — free text only
-  if(/spirit|whisk|vodka|gin|rum|tequila|liqueur|brandy|cognac|mezcal/.test(t)) return TTB_SPIRITS;
+  // Nothing here is a standard of fill: no federal fill applies to malt beverages, and hemp,
+  // non-alcoholic and non-beverage rows are outside 27 CFR entirely. An empty list means free text,
+  // never "we could not work it out".
+  if(/beer|malt|seltzer|rtd|ready|hemp|cannabis|non.?alcohol|non.?beverage/.test(t)) return [];
+  if(/wine|sparkling|champagne|vermouth|sake|cider|perry|rice/.test(t)) return TTB_WINE;
+  if(/spirit|whisk|vodka|gin|rum|tequila|agave|liqueur|brandy|cognac|mezcal/.test(t)) return TTB_SPIRITS;
   return TTB_SPIRITS.concat(TTB_WINE.filter(function(v){ return TTB_SPIRITS.indexOf(v)<0; }))
                     .sort(function(x,y){ return x-y; });
 }
+
+/* ── the canonical hierarchy ────────────────────────────────────────────────────────────────────
+   Type -> Class -> Sub class -> Varietal is a TREE, so each level is filtered by the one above it:
+   a Class is only meaningful under its Type. Held as four free-text boxes the levels drift within a
+   session — "Bourbon" lands as a Type on one row and a Sub class on the next, and nothing in the
+   data says which is right.
+
+   The tree is SERVED (/api/xsource/taxonomy), never hardcoded here: a second copy in the page would
+   silently diverge from the one that validates and stores the answers. With no API — the offline CSV
+   path — these degrade to the free-text inputs they were, which is honest about having no tree.
+
+   Two rules the cascade must not break:
+     • A value you TYPED is never destroyed by changing the level above it. It is kept, and marked
+       off-tree, because "you picked a parent that doesn't contain your answer" is a thing to show
+       you, not a reason to silently blank the work.
+     • VARIETAL IS NOT UNIVERSAL. A varietal is a grape; under spirits it is meaningless and the
+       level says "not applicable" — which is a different statement from "no values yet".         */
+var TAX = {tree:null, basis:{}, varietal:[]};
+function taxTypes(){ return TAX.tree ? Object.keys(TAX.tree).sort() : null; }
+function taxClasses(t){ var b=TAX.tree&&TAX.tree[t]; return b?Object.keys(b).sort():null; }
+function taxSubs(t,c){ var b=TAX.tree&&TAX.tree[t]&&TAX.tree[t][c]; return b?Object.keys(b).sort():null; }
+function taxVarietals(t,c,s){
+  var b=TAX.tree&&TAX.tree[t]&&TAX.tree[t][c]&&TAX.tree[t][c][s];
+  return b?b.slice().sort():null;
+}
+function varietalApplies(t){ return !t || TAX.varietal.indexOf(t)>=0; }
 
 var CANON = [["canon_brand","Brand"],["canon_product","Product"],["canon_size","Pack size"],
              ["canon_type","Type"],["canon_class","Class"],["canon_subclass","Sub class"],
@@ -425,10 +457,10 @@ function openResolver(r){
     {k:"canon_brand",    lb:"Brand",     A:r.a_brand, B:r.b_brand},
     {k:"canon_product",  lb:"Product",   A:r.a_name,  B:r.b_name},
     {k:"canon_size",     lb:"Pack size", A:r.a_size,  B:r.b_size, size:1},
-    {k:"canon_type",     lb:"Type",      A:"", B:""},
-    {k:"canon_class",    lb:"Class",     A:"", B:""},
-    {k:"canon_subclass", lb:"Sub class", A:"", B:""},
-    {k:"canon_varietal", lb:"Varietal",  A:"", B:""}
+    {k:"canon_type",     lb:"Type",      A:"", B:"", tax:1},
+    {k:"canon_class",    lb:"Class",     A:"", B:"", tax:2},
+    {k:"canon_subclass", lb:"Sub class", A:"", B:"", tax:3},
+    {k:"canon_varietal", lb:"Varietal",  A:"", B:"", tax:4}
   ];
   var wrap = document.createElement("div");
   wrap.className = "modal";
@@ -449,11 +481,16 @@ function openResolver(r){
             return '<option value="'+t+'"'+(t===pre?" selected":"")+'>'+t+'</option>'; }).join("")+
           (pre && opts.map(canonSize).indexOf(pre)<0 ? '<option value="'+pre+'" selected>'+pre+' (not a TTB fill)</option>' : "")+
           '<option value="__other">other / not TTB-governed…</option></select>';
+      } else if(d.tax && TAX.tree){
+        // Rendered by rebuildTax() once the modal is in the DOM: each level's options depend on the
+        // level above, so they cannot be built in one pass over DIMS.
+        field = '<span class="taxslot" data-slot="'+d.k+'" data-pre="'+String(pre).replace(/"/g,"&quot;")+'"></span>';
       } else {
         field = '<input data-f="'+d.k+'" value="'+String(pre).replace(/"/g,"&quot;")+'" placeholder="type, or leave blank">';
       }
-      return '<div class="dim"><span class="lb">'+d.lb+'</span>'+
-        opt(d.k,"A",d.A)+opt(d.k,"B",d.B)+field+'</div>';
+      var noab = !d.A && !d.B;
+      return '<div class="dim'+(noab?" noab":"")+'"><span class="lb">'+d.lb+'</span>'+
+        (noab ? "" : opt(d.k,"A",d.A)+opt(d.k,"B",d.B))+field+'</div>';
     }).join("")+
     '<div class="sheetfoot"><span class="unres" id="unres"></span><span class="grow"></span>'+
       '<button id="rcancel">Cancel <kbd>Esc</kbd></button>'+
@@ -466,6 +503,82 @@ function openResolver(r){
            '<span class="who">'+who+'</span>'+String(val).replace(/</g,"&lt;")+'</button>';
   }
   function fieldFor(k){ return wrap.querySelector('[data-f="'+k+'"]'); }
+  function valOf(k){ var f=fieldFor(k); return f ? (f.value||"").trim() : ""; }
+
+  /* Redraw the four taxonomy levels. Each is a select over the children of the level above; the
+     value already in a level is PRESERVED even when the new parent does not contain it, and shown
+     as off-tree. Blanking it would throw away a considered answer to make the widget tidy.       */
+  function rebuildTax(){
+    if(!TAX.tree) return;
+    var cur = {canon_type:valOf("canon_type"), canon_class:valOf("canon_class"),
+               canon_subclass:valOf("canon_subclass"), canon_varietal:valOf("canon_varietal")};
+    Array.prototype.forEach.call(wrap.querySelectorAll(".taxslot"), function(slot){
+      var k = slot.getAttribute("data-slot");
+      var v = cur[k] !== undefined && cur[k] !== "" ? cur[k] : (slot.getAttribute("data-pre")||"");
+      var t = cur.canon_type, c = cur.canon_class, s = cur.canon_subclass;
+      // Three states, and they are genuinely different: a list to choose from, "the level above is
+      // not set yet" (blocked), and "the level above is a value you invented, so there is no branch
+      // to filter by" (free text). Collapsing the last two locks you out of your own new Type.
+      var opts = null, why = "", free = false;
+      if(k==="canon_type"){ opts = taxTypes(); }
+      else if(k==="canon_class"){
+        if(!t) why = "choose a Type first"; else { opts = taxClasses(t); free = opts===null; } }
+      else if(k==="canon_subclass"){
+        if(!t||!c) why = "choose a Class first"; else { opts = taxSubs(t,c); free = opts===null; } }
+      else {
+        if(t && !varietalApplies(t)) why = "not applicable for "+t;
+        else if(!t||!c||!s) why = "choose a Sub class first";
+        else { opts = taxVarietals(t,c,s); free = opts===null; }
+      }
+      var html;
+      if(free){
+        html = '<input data-f="'+k+'" value="'+esc(v)+'" placeholder="type — no branch under '+
+               esc(k==="canon_class"?t:(k==="canon_subclass"?c:s))+' yet">';
+      } else if(opts === null){
+        // Disabled with a REASON. An empty enabled dropdown reads as "we have no values", which is
+        // a different claim from "this level does not apply" or "pick the level above first".
+        // The disabled control carries NO data-f — the hidden input is the single place the value
+        // lives, so commit() and syncMarks() can never read the placeholder text as an answer.
+        html = '<select disabled><option>'+(v ? esc(v)+' · kept' : (why||"—"))+'</option></select>'+
+               '<input type="hidden" data-f="'+k+'" value="'+esc(v)+'">';
+      } else {
+        var off = v && opts.indexOf(v) < 0;
+        html = '<select data-f="'+k+'">'+
+          '<option value="">— unresolved —</option>'+
+          opts.map(function(o){
+            return '<option value="'+esc(o)+'"'+(o===v?" selected":"")+'>'+esc(o)+'</option>'; }).join("")+
+          (off ? '<option value="'+esc(v)+'" selected>'+esc(v)+' (off-tree)</option>' : "")+
+          '<option value="__other">other / not listed…</option></select>';
+      }
+      slot.innerHTML = html;
+    });
+    rebuildSize(cur.canon_type);
+    bindFields();
+  }
+
+  /* The TTB standards of fill depend on the Type — 27 CFR 5.203 for spirits, 4.72 for wine, and
+     nothing at all for malt beverages. Before the Type was a controlled value this list was fixed
+     at whatever the type field held when the modal OPENED, so choosing "Wine" after opening left
+     you picking from the spirits fills. */
+  function rebuildSize(type){
+    var sel = fieldFor("canon_size");
+    if(!sel || sel.tagName!=="SELECT") return;          // replaced by a typed value — leave it alone
+    var v = (sel.value||"").trim(), opts = ttbSizes(type||"");
+    if(!opts.length){
+      sel.innerHTML = '<option value="">— unresolved —</option>'+
+        (v ? '<option value="'+esc(v)+'" selected>'+esc(v)+'</option>' : "")+
+        '<option value="__other">type a size — '+esc(type||"this type")+' has no TTB fills…</option>';
+      return;
+    }
+    var known = opts.map(canonSize);
+    sel.innerHTML = '<option value="">— unresolved —</option>'+
+      known.map(function(t){
+        return '<option value="'+esc(t)+'"'+(t===v?" selected":"")+'>'+esc(t)+'</option>'; }).join("")+
+      (v && known.indexOf(v)<0 ? '<option value="'+esc(v)+'" selected>'+esc(v)+' (not a TTB fill)</option>' : "")+
+      '<option value="__other">other / not TTB-governed…</option>';
+  }
+  function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
+
   function syncMarks(){
     DIMS.forEach(function(d){
       var f=fieldFor(d.k); if(!f) return;
@@ -483,19 +596,34 @@ function openResolver(r){
     btn.onclick=function(){ var f=fieldFor(btn.getAttribute("data-k"));
       if(f){ f.value=btn.getAttribute("data-v"); syncMarks(); } };
   });
-  Array.prototype.forEach.call(wrap.querySelectorAll("[data-f]"), function(f){
-    f.oninput=syncMarks;
-    f.onchange=function(){
-      if(f.tagName==="SELECT" && f.value==="__other"){
-        var t=prompt("Pack size (this product is not TTB-governed, or the fill is outside the list):","");
-        var inp=document.createElement("input");
-        inp.setAttribute("data-f", f.getAttribute("data-f")); inp.value=t||"";
-        inp.placeholder="type, or leave blank"; inp.oninput=syncMarks;
-        f.parentNode.replaceChild(inp, f);
-      }
-      syncMarks();
-    };
-  });
+  // Re-run after every taxonomy redraw: the selects are replaced, so handlers bound at open would
+  // be attached to elements that no longer exist.
+  function bindFields(){
+    Array.prototype.forEach.call(wrap.querySelectorAll("[data-f]"), function(f){
+      if(f.type === "hidden" || f._bound) return;
+      f._bound = true;
+      f.oninput=syncMarks;
+      f.onchange=function(){
+        var k = f.getAttribute("data-f");
+        if(f.tagName==="SELECT" && f.value==="__other"){
+          var msg = k==="canon_size"
+            ? "Pack size (this product is not TTB-governed, or the fill is outside the list):"
+            : "Type the value. It is recorded WITH its parents, so it is on the list next time:";
+          var t=prompt(msg, "");
+          var inp=document.createElement("input");
+          inp.setAttribute("data-f", k); inp.value=(t||"").trim();
+          inp.placeholder="type, or leave blank";
+          f.parentNode.replaceChild(inp, f);
+          bindFields();
+        }
+        // Changing a level invalidates the options below it, never the ANSWERS below it.
+        if(k==="canon_type"||k==="canon_class"||k==="canon_subclass") rebuildTax();
+        syncMarks();
+      };
+    });
+  }
+  bindFields();
+  rebuildTax();
   syncMarks();
 
   function close(){ document.removeEventListener("keydown", keys, true); wrap.remove(); }
@@ -721,6 +849,13 @@ function postResolve(rec, r){
 
 function boot(){
   var msg=document.getElementById("bootmsg");
+  // The taxonomy is fetched alongside the queue and never blocks it: with no tree the four levels
+  // fall back to the free-text inputs they were, which is what the offline CSV path gets.
+  apiGet("/api/xsource/taxonomy").then(function(t){
+    if(t && t.ok && t.tree && Object.keys(t.tree).length){
+      TAX.tree = t.tree; TAX.basis = t.basis||{}; TAX.varietal = t.varietal_types||[];
+    }
+  }).catch(function(){});
   apiGet("/api/xsource/queue?n="+BATCH).then(function(d){
     if(!d || !d.ok || !d.pairs || !d.pairs.length){
       if(msg) msg.textContent = (d && d.pool_built === false)
