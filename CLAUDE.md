@@ -259,6 +259,24 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   retail bakes the CLASS into the name while TTB states it in a field
   ([[ttb-retail-class-bridge]]) — `"Absolut Citron 750ml"` vs `"Absolut Citron Vodka 750 ml"`.
   A 300-pair sheet is at `docs/xsource-gold-300.csv`.
+- **`unifyd/xsource_queue.py` + `apps/match-trainer.html` — the continuous queue.** The CSV caps the
+  work at whatever was exported and makes a second session start over, so the trainer is fed by the
+  API instead: `/api/xsource/{queue,dictionary,resolve}` over a pre-built pool (`xsource_queue`,
+  registry `xsource-queue`, weekly). **Generation is a BUILD, never a request** — the candidate join
+  spans every image-bearing catalog + `xwalk_source_sku` + `dim_sku`, which is fine weekly and
+  unacceptable per keystroke (done carelessly it OOM'd the serving box twice).
+  **The ranking is the point.** An UNSEEN difference-cause sorts first (that is where one answer
+  changes a rule), then rule/stratum disagreements (the decision boundary), then widely-carried
+  items. Answering the same size-format variant for the hundredth time teaches nothing, so a cause
+  already answered nine times stops sorting first.
+  Each resolution lands **twice**: the labelled pair into `xsource_gold`, so the precision
+  measurement the merge is gated on is fed by ordinary use rather than a separate labelling chore;
+  and the value mappings into `xsource_dictionary` — **both** source spellings map to the canonical
+  value, and a value the human TYPED with no matching source spelling maps to itself so it is still
+  learned. A "different" verdict teaches no vocabulary (there is no canonical value to learn), and a
+  blank dimension stays UNRESOLVED rather than landing empty. An empty queue and an **unbuilt pool**
+  are reported distinctly (`pool_built`) — one means "you're done", the other means "run the build".
+  The CSV drop survives as the offline path.
   **The sheet is read tolerantly on purpose**, because a labeller improves it: headers match
   case- and punctuation-insensitively (a capitalised `Label` from Excel would otherwise read as an
   entirely EMPTY sheet), added columns are mapped by alias, and anything unrecognised is preserved
