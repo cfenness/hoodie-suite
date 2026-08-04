@@ -112,9 +112,29 @@ _OBS = TableSpec(
 
 
 # ---------------------------------------------------------------------------------------------
+# Rights / DAM audit trail
+# ---------------------------------------------------------------------------------------------
+# The emission log is the evidence behind "we never emitted anything out of scope" — every emission,
+# ALLOWED AND DENIED, lands here. Declared rather than left to inference because its columns are
+# exactly the shape that corrupts a table: a run in which nothing was permitted lands `allowed` all
+# False and `image_use`/`scope` all None (a `prohibited` record carries neither), so a batch-inferred
+# schema is free to type those columns one way today and another way next week — and this is the one
+# table whose read has to hold up as an audit trail. rights.py derives its EMISSION_FIELDS from here,
+# so there is one declaration, not two that can drift.
+_EMISSIONS = TableSpec(
+    "dam_emissions", stage=1,
+    fields=["ts", "source_id", "rights_ref", "action", "subject", "surface",
+            "allowed", "reason", "image_use", "scope"],
+    dtypes={"allowed": BOOL},
+    note="Append-only EVENT log (one dated partition per run x source), not a catalog — no key_cols, "
+         "because a repeated emission of the same subject is a second event, never a restatement of "
+         "the first. Written by rights.land_emissions().")
+
+
+# ---------------------------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------------------------
-SPECS = {_OBS.name: _OBS}
+SPECS = {_OBS.name: _OBS, _EMISSIONS.name: _EMISSIONS}
 for _s in SITES:                                  # expand the platform families
     for _spec in (_uber_parts_spec(_s), _uber_catalog_spec(_s)):
         SPECS[_spec.name] = _spec

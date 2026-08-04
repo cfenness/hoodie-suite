@@ -60,6 +60,8 @@ import urllib.request
 import urllib.robotparser
 from urllib.parse import urlparse
 
+import table_spec          # stdlib-only; the schema declaration for the tables this module lands
+
 _DIR = os.path.dirname(os.path.abspath(__file__))
 RECORDS_DIR = os.path.join(_DIR, "rights_records")
 _EMIT_LOG = os.path.join(_DIR, "agent_state", "rights", "emissions.jsonl")
@@ -558,8 +560,10 @@ def _log_emission(rec, action, subject, allowed, reason, surface=""):
     return row
 
 
-EMISSION_FIELDS = ["ts", "source_id", "rights_ref", "action", "subject", "surface",
-                   "allowed", "reason", "image_use", "scope"]
+# The emission row's columns and their types are DECLARED IN table_spec (contract C2: schema belongs
+# to the table, not to whoever writes it) and read back here, so this module and the warehouse cannot
+# hold two versions of the same shape.
+EMISSION_FIELDS = table_spec.fields_for(EMISSIONS_TABLE)
 RIGHTS_FIELDS = ["source_id", "vendor", "host", "tos_url", "tos_sha256", "tos_captured_at",
                  "tos_capture_method", "robots_sha256", "robots_checked_at", "robots_allows_harvest",
                  "facts_use", "image_use", "scope", "attribution_required", "alteration_allowed",
@@ -575,8 +579,16 @@ def land_emissions(rows, log=print):
         return 0
     try:
         import warehouse
+        # PIN THE SCHEMA, don't let the batch infer it. A run where every emission was denied lands
+        # `allowed` all-False with `image_use`/`scope` all-None, and an inferred schema types those
+        # columns from that batch alone — which is how a table ends up with per-file schemas that
+        # union_by_name then corrupts on read. The types come from the declaration, never from here.
+        dtypes = table_spec.arrow_dtypes(EMISSIONS_TABLE)
+        if not EMISSION_FIELDS or dtypes is None:
+            raise RuntimeError("%s has no table_spec declaration — declare it before landing, "
+                               "an unpinned write is what makes the log unreadable" % EMISSIONS_TABLE)
         part = "%s_%s" % (time.strftime("%Y-%m-%d"), rows[0].get("source_id") or "dam")
-        warehouse.write_partition(EMISSIONS_TABLE, part, rows, fields=EMISSION_FIELDS)
+        warehouse.write_partition(EMISSIONS_TABLE, part, rows, fields=EMISSION_FIELDS, dtypes=dtypes)
         return len(rows)
     except Exception as e:
         log("%s land skipped: %s" % (EMISSIONS_TABLE, str(e)[:120]))
