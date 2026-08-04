@@ -88,7 +88,7 @@ check(pt.learn({"canon_subclass": "Orphan"}, log=lambda *a: None) == 0,
 check(pt.learn({"canon_type": "Spirits"}, log=lambda *a: None) == 0,
       "a Type on its own teaches no hierarchy")
 
-built = pt.tree(log=lambda *a: None)
+built = pt.tree(log=lambda *a: None, block=True)
 check("Kentucky Straight Rye" in built["tree"]["Spirits"]["Whiskey"],
       "a learned node is merged into the served tree at its own level")
 check("Kentucky Straight Rye" not in pt.SEED["Spirits"]["Whiskey"],
@@ -98,7 +98,7 @@ check(built["learned_paths"] == 1, "and the count of learned paths is reported (
 
 pt.learn({"canon_type": "Wine", "canon_class": "Still Wine", "canon_subclass": "Red Wine",
           "canon_varietal": "Blaufränkisch"}, log=lambda *a: None)
-built = pt.tree(log=lambda *a: None)
+built = pt.tree(log=lambda *a: None, block=True)
 check("Blaufränkisch" in built["tree"]["Wine"]["Still Wine"]["Red Wine"],
       "a learned varietal lands under its own sub class, not globally")
 check("Blaufränkisch" not in built["tree"]["Wine"]["Still Wine"]["White Wine"],
@@ -114,10 +114,50 @@ class Dead:
 
 
 sys.modules["warehouse"] = Dead
-d = pt.tree(log=lambda *a: None)
+pt._CACHE.update({"at": 0.0, "paths": [], "read": False, "loading": False})
+d = pt.tree(log=lambda *a: None, block=True)
 check(d["tree"] and d["learned_paths"] == 0,
       "the seed still serves when nothing has been learned yet — an empty tree would silently turn "
       "every dropdown into free text")
+
+print("\nthe seed is served at CONSTANT speed:")
+import time  # noqa: E402
+
+
+class Slow:
+    """The live shape: reading a table that has never been written costs a DuckDB connection plus a
+    failing S3 round trip — measured at 11-14 SECONDS against a payload that is 99% a literal."""
+
+    @staticmethod
+    def query(*a, **k):
+        time.sleep(2.0)
+        raise RuntimeError("no table")
+
+
+sys.modules["warehouse"] = Slow
+pt._CACHE.update({"at": 0.0, "paths": [], "read": False, "loading": False})
+t0 = time.time()
+fast = pt.tree(log=lambda *a: None)
+dt = time.time() - t0
+check(dt < 0.5, "a warehouse read NEVER blocks the response (%.3fs against a 2s read)" % dt)
+check(len(fast["tree"]) == len(pt.SEED),
+      "...and the full seed is served meanwhile, not a truncated tree")
+check(fast["learned_read"] is False,
+      "learned_read says the warehouse has NOT been read yet — which is a different claim from "
+      "'nothing has been learned', and only one of them means the tree is complete")
+
+pt._CACHE.update({"at": 0.0, "paths": [], "read": False, "loading": False})
+sys.modules["warehouse"] = FakeWarehouse
+blocked = pt.tree(log=lambda *a: None, block=True)
+check(blocked["learned_read"] is True, "block=True waits, for a CLI or a test — never a request")
+check(pt.tree(log=lambda *a: None)["learned_read"] is True,
+      "and the cache then serves the learned paths instantly")
+
+before = pt._CACHE["at"]
+pt.learn({"canon_type": "Beer", "canon_class": "Ale", "canon_subclass": "Grisette"},
+         log=lambda *a: None)
+check(pt._CACHE["at"] < before,
+      "teaching a value invalidates the cache — a new term must not wait out the TTL to be offered")
 
 print("\n%s (%d failure%s)" % ("FAILED" if FAILS else "PASSED", len(FAILS), "" if len(FAILS) == 1 else "s"))
 sys.exit(1 if FAILS else 0)
