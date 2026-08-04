@@ -239,5 +239,11 @@ ok("...and that repair read is opt-in, so the daily tick doesn't pay for it",
 ok("a repaired hole also FORGETS its fingerprint, or nothing is re-emitted",
    "for pid in holes:" in _src and "fps.pop(pid, None)" in _src)
 
+# A sitemap URL is percent-encoded. Decoding only the id left `%22` literal in the slug, which
+# detail()'s quote() then re-encoded to `%2522` — the route 403s on that. One Sazerac product has a
+# quote mark in its name (E.H. Taylor Amaranth "Grain of The Gods") and could never be fetched.
+ok("sitemap parsing unquotes the SLUG as well as the id",
+   "urllib.parse.unquote(slug)" in _src)
+
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

@@ -204,12 +204,27 @@ def _parse_isp_entry(s):
     return None
 
 
+def _excluded_hosts():
+    """ISP_PROXIES_EXCLUDE — comma/semicolon/newline-separated bare hosts/IPs to drop from the pool,
+    independent of whatever the provider's export currently says. Exists because a provider-side
+    reload doesn't necessarily mean every endpoint in the new batch is actually healthy — measured
+    live 2026-08-03: 2 of 100 freshly-reloaded Webshare IPs (192.241.92.34, 192.241.92.241) were
+    consistently 0% success (exit_pattern=burned_subset) across two independent shards while every
+    other IP in the same batch was ~100%, a provider-side dead-endpoint issue this process has no
+    other way to route around (round-robin still spends real requests on a dead IP before moving on).
+    Matches by HOST only (not port/creds), so one bad IP is excluded regardless of which port/session
+    the provider's export currently pairs it with."""
+    raw = os.environ.get("ISP_PROXIES_EXCLUDE", "")
+    return {h.strip() for h in raw.replace(";", "\n").replace(",", "\n").splitlines() if h.strip()}
+
+
 def isp_pool():
     """Normalized proxy URLs for the ISP pool. Sources, merged + de-duped:
       • ISP_PROXIES env — comma/semicolon/newline-separated endpoints (one line in a .env file);
       • a FILE with one endpoint per line — path from ISP_PROXIES_FILE, else the default isp_proxies.txt next to
         this module. Easiest for a 15-IP list: paste the IPRoyal export one-per-line into unifyd/isp_proxies.txt.
-    Each entry is a static, unlimited-bandwidth IP."""
+    Each entry is a static, unlimited-bandwidth IP. ISP_PROXIES_EXCLUDE (bare hosts/IPs) drops known-bad
+    endpoints from the pool regardless of which source they came from — see _excluded_hosts()."""
     if not isp_allowed():                              # FETCH_POLICY=free → no proxies at all (truly $0)
         return []
     entries = []
@@ -223,11 +238,15 @@ def isp_pool():
             line = line.strip()
             if line and not line.startswith("#"):
                 entries.append(line)
+    excluded = _excluded_hosts()
     out, seen = [], set()
     for e in entries:
         p = _parse_isp_entry(e)
-        if p and p not in seen:
-            seen.add(p); out.append(p)
+        if not p or p in seen:
+            continue
+        if excluded and urllib.parse.urlparse(p).hostname in excluded:
+            continue
+        seen.add(p); out.append(p)
     return out
 
 
