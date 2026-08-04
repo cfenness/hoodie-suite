@@ -230,17 +230,38 @@ def _sitemap_entry(site):
 
 
 def _fold_entry():
-    sites = ", ".join("m.consolidate('%s')" % s for s in SITES)
+    """The stage-1 -> stage-2 promotion, now the INCREMENTAL fold (docs/PIPELINE-DESIGN.md step 3).
+
+    Was `ue_catalog.consolidate`, which read the entire parts history into a Python dict on every
+    run and pruned nothing — cost grew with history rather than with new data. `fold.run` reads only
+    parts past the watermark, dedupes in DuckDB, and merges per COLUMN (most-recent non-empty) so
+    the catalog sweep's price and the enrich pass's UPC no longer overwrite each other.
+
+    NO `after=[...]`. That made the fold wait for an upstream to report `ok`, which failed four ways
+    (a failed fold never retried; a source landing under a non-`ok` status never triggered; the list
+    was hand-typed and omitted `ubereats-enrich`; builds shared MAX_SPAWN with sources). Contract C4
+    says a stage advances on its OWN backlog, and the watermark now makes that backlog a number — so
+    this runs on its interval and folds whatever is waiting. With nothing waiting it reports
+    `current` at near-zero cost, which is only affordable BECAUSE the fold is incremental.
+
+    NOTHING-TO-DO IS NOT A FAILURE, and neither is it success-with-work: `status` distinguishes
+    ok / current / degraded instead of collapsing them, and the run is graded on rows it actually
+    folded.
+    """
+    tables = ", ".join("'%s_products'" % s for s in SITES)
     return dict(id="build-ue-catalog",
-                label="UberEats catalog consolidate (shard parts → catalog)",
-                code=("import ue_catalog as m; n = %s; "
-                      "print('HOODIE_RESULT {\"status\": \"ok\", \"items_done\": %%d, "
-                      "\"items_total\": %%d}' %% (n, n))") % sites.replace(", ", " + "),
+                label="UberEats/Postmates catalog fold (parts → catalog, incremental)",
+                code=("import json, fold; "
+                      "rs=[fold.run(t) for t in (%s)]; "
+                      "n=sum(r['rows'] for r in rs); p=sum(r['parts'] for r in rs); "
+                      "st='degraded' if any(r['status']=='degraded' for r in rs) "
+                      "else ('current' if all(r['status']=='current' for r in rs) else 'ok'); "
+                      "print('HOODIE_RESULT '+json.dumps({'status':st,'items_done':n,"
+                      "'items_total':n,'note':'%%d parts folded' %% p}))") % tables,
                 tables=["%s_products" % s for s in SITES],
                 klass="build", interval_h=6, enabled=True, mem=8192,
-                after=["ubereats"],
-                note="single-writer fold of append-only shard parts; shards must never merge "
-                     "(lost updates)")
+                note="incremental single-writer fold (fold.py): watermarked, set-based, per-column "
+                     "merge. Shards append parts and must never merge (lost updates).")
 
 
 def expand():
