@@ -75,6 +75,20 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 MIN_TOS_CHARS = 800
 
 
+# ── the schema counsel signs off (P6) ─────────────────────────────────────────────────────────────
+# The permission MODEL — the vocabulary, the ladder, and the decision rules — is the thing a buyer's
+# counsel accepts or rejects, and it is versioned separately from any individual record. A record
+# carries the version it was authored under, so a later change to the model is visible as a version
+# skew on every record rather than a silent reinterpretation of records already written.
+#
+# `SCHEMA_SIGNOFF` is deliberately unset in code. Nobody can mark the schema reviewed by editing a
+# constant: sign-off is recorded per record (`schema_signoff`), by whoever actually reviewed it, and
+# `queue()` reports every record still waiting. `docs/rights-counsel-review.md` is the packet a
+# lawyer reads to make that decision.
+SCHEMA_VERSION = "1.0"
+SCHEMA_SIGNOFF = None          # set ONLY by a recorded human review, never in code
+
+
 class RightsViolation(Exception):
     """Raised when the pipeline attempts something the source's rights record does not permit.
     Never catch this to continue — an out-of-scope emission is the one failure that must stop work."""
@@ -516,7 +530,8 @@ RIGHTS_FIELDS = ["source_id", "vendor", "host", "tos_url", "tos_sha256", "tos_ca
                  "tos_capture_method", "robots_sha256", "robots_checked_at", "robots_allows_harvest",
                  "facts_use", "image_use", "scope", "attribution_required", "alteration_allowed",
                  "expiry", "confidence", "needs_counsel", "counsel_cleared", "review_state",
-                 "reviewed_by", "reviewed_at", "escalation", "evidence_json", "landed_at"]
+                 "schema_version", "schema_signoff", "reviewed_by", "reviewed_at", "escalation",
+                 "evidence_json", "landed_at"]
 
 
 def land_emissions(rows, log=print):
@@ -550,7 +565,9 @@ def land_record(rec, robots_ok=None, log=print):
            "trade_partner_only": p.get("trade_partner_only"),
            "expiry": p.get("expiry"), "confidence": p.get("confidence"),
            "needs_counsel": p.get("needs_counsel"), "counsel_cleared": rec.get("counsel_cleared", False),
-           "review_state": rec.get("review_state"), "reviewed_by": rec.get("reviewed_by"),
+           "review_state": rec.get("review_state"),
+           "schema_version": rec.get("schema_version"), "schema_signoff": rec.get("schema_signoff"),
+           "reviewed_by": rec.get("reviewed_by"),
            "reviewed_at": rec.get("reviewed_at"), "escalation": rec.get("escalation"),
            "evidence_json": json.dumps(p.get("evidence") or [])[:4000], "landed_at": _now()}
     try:
@@ -578,16 +595,86 @@ def build_record(source_id, vendor, host, tos_url, tos_text, tos_capture_method,
         "robots_allows_harvest": all(c["allowed"] for c in checks) if checks else None,
         "robots_checks": checks,
         "permissions": perms, "counsel_cleared": False, "review_state": "reviewed",
+        "schema_version": SCHEMA_VERSION, "schema_signoff": None,
         "reviewed_by": reviewed_by, "reviewed_at": _now(), "escalation": escalation,
     }
+
+
+# ── the counsel queue (P6) ────────────────────────────────────────────────────────────────────────
+def queue():
+    """Every record awaiting a human decision, and what each is BLOCKED ON.
+
+    `needs_counsel` was a field nobody could act on: it said a review was owed but not what the
+    reviewer had to decide or what would change if they decided it. This turns it into a work list —
+    one row per record, naming the question, the consequence of leaving it, and the exact edit that
+    resolves it. Blocked reasons, most consequential first:
+
+      grant-uncleared   the terms GRANT reuse and we are not acting on it. This is the only entry
+                        that costs capability — a decision here turns assets on.
+      schema-unsigned   the record predates (or postdates) a signed-off schema version.
+      undecided         the parser could not classify decisively; a human must read the terms.
+      stale             the terms moved since review; every asset action is denied until re-read.
+    """
+    out = []
+    for sid in list_records():
+        try:
+            rec = load(sid)
+        except Exception as e:
+            out.append({"source_id": sid, "blocked_on": "unreadable", "detail": str(e)[:120],
+                        "unblocks": "fix or remove the record file", "costs_capability": True})
+            continue
+        p = rec.get("permissions") or {}
+        reasons = []
+        if rec.get("review_state") == "stale" or rec.get("status") == "stale":
+            reasons.append(("stale", "terms moved since review — all asset actions denied",
+                            "re-read the terms, re-snapshot, re-classify"))
+        if p.get("image_use") == "permitted" and not rec.get("counsel_cleared"):
+            reasons.append(("grant-uncleared",
+                            "terms GRANT %s and the gate is holding it" % (p.get("scope") or "?"),
+                            "review the grant, then set counsel_cleared=true"))
+        if rec.get("schema_version") != SCHEMA_VERSION or not rec.get("schema_signoff"):
+            reasons.append(("schema-unsigned",
+                            "authored under schema %s; sign-off %s"
+                            % (rec.get("schema_version") or "unversioned",
+                               rec.get("schema_signoff") or "absent"),
+                            "counsel accepts docs/rights-counsel-review.md, then record "
+                            "schema_signoff on each record"))
+        if p.get("confidence") != "high":
+            reasons.append(("undecided",
+                            "classification confidence=%s" % (p.get("confidence") or "?"),
+                            "a human reads the terms and sets the classification by hand"))
+        for why, detail, fix in reasons:
+            out.append({"source_id": sid, "blocked_on": why, "detail": detail, "unblocks": fix,
+                        "image_use": p.get("image_use"), "scope": p.get("scope"),
+                        # Only an uncleared grant is costing us anything. A hold that is correctly
+                        # held is not a queue item to clear, it is the system working — and mixing
+                        # the two is how a review queue becomes noise nobody drains.
+                        "costs_capability": why in ("grant-uncleared", "unreadable")})
+    order = {"grant-uncleared": 0, "unreadable": 1, "stale": 2, "schema-unsigned": 3, "undecided": 4}
+    return sorted(out, key=lambda r: (order.get(r["blocked_on"], 9), r["source_id"]))
 
 
 def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(description="Inspect and re-check rights records.")
+    ap.add_argument("--queue", action="store_true",
+                    help="list every record awaiting a human decision (the P6 counsel queue)")
     ap.add_argument("source_id", nargs="?", help="record to show; omit to list all")
     ap.add_argument("--refresh", action="store_true", help="re-fetch terms + robots and report drift")
     a = ap.parse_args(argv)
+    if a.queue:
+        q = queue()
+        if not q:
+            print("counsel queue: empty — every record is decided and signed off.")
+            return
+        costly = [r for r in q if r["costs_capability"]]
+        print("counsel queue: %d item(s), %d costing capability\n" % (len(q), len(costly)))
+        for r in q:
+            print("  %-14s %-16s %s" % (r["source_id"], r["blocked_on"], r["detail"]))
+            print("  %-14s %-16s -> %s" % ("", "", r["unblocks"]))
+        print("\nOnly `grant-uncleared` and `unreadable` cost capability. A hold that is correctly "
+              "held is the system working, not a queue item to clear.")
+        return
     if not a.source_id:
         for sid in list_records():
             r = load(sid)

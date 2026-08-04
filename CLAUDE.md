@@ -239,6 +239,17 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   `created_on` is the UPLOAD stamp, not the event date** (Bacardi's whole 2018 folder reads
   2018-04-11, the bulk-migration day), so dates come from **year folders** at `precision=year` and are
   otherwise NULL — never back-filled.
+- **Counsel review (P6) — `docs/rights-counsel-review.md` + `rights.py --queue`.** The permission
+  MODEL is versioned (`SCHEMA_VERSION`) separately from any record, so changing it shows up as a
+  version skew on every record rather than silently reinterpreting records already written.
+  `SCHEMA_SIGNOFF` is deliberately unset in code — nobody marks the schema reviewed by editing a
+  constant; sign-off is recorded per record (`schema_signoff`), and a specific grant needs
+  `counsel_cleared` on top. `--queue` turns `needs_counsel` from a field nobody could act on into a
+  work list that names the question, the consequence, and the exact edit that resolves it — and
+  distinguishes items that **cost capability** (a grant we are holding) from a hold that is correctly
+  held, which is the system working, not a queue item. The packet is written for a lawyer who reads
+  no code: taxonomy, five decision rules, where each is enforced, and **eight open questions** —
+  including the highest-value one, whether a perceptual hash or a CV embedding is a derivative work.
 - **`unifyd/dam_canon.py` — the canon key (P2).** Resolves a DAM brand literal to `dim_brand` via
   `overlay_match.brand_key()` applied to BOTH sides, so `brand_events.hoodie_brand_id` is the master's
   `hoodie_id` rather than a vendor slug. **One tier, exact key match, no fuzzy fallback** — a wrong

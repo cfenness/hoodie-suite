@@ -148,5 +148,41 @@ if os.path.exists(rights.record_path("dam-bacardi")):
 else:
     check(False, "rights_records/dam-bacardi.json is missing")
 
+print("\ncounsel queue (P6):")
+q = rights.queue()
+check(isinstance(q, list), "queue() returns a work list")
+check(all({"source_id", "blocked_on", "detail", "unblocks", "costs_capability"} <= set(r) for r in q),
+      "every queue item names what it is blocked on AND what unblocks it")
+check(all(r["blocked_on"] in ("grant-uncleared", "unreadable", "stale", "schema-unsigned", "undecided")
+          for r in q), "blocked_on is a known reason")
+# A hold that is correctly held is not work — mixing it with real work is how a queue becomes noise.
+holds = [r for r in q if r["blocked_on"] not in ("grant-uncleared", "unreadable")]
+check(all(not r["costs_capability"] for r in holds),
+      "a correctly-held source does not read as costing capability")
+check(rights.SCHEMA_VERSION and rights.SCHEMA_SIGNOFF is None,
+      "the schema is versioned and NOT self-signed in code")
+
+# The ordering that matters: an uncleared grant is the only thing that costs us anything, so it sorts
+# first. Build one and check it leads.
+import tempfile, json as _json
+_tmp = tempfile.mkdtemp()
+_saved_dir = rights.RECORDS_DIR
+rights.RECORDS_DIR = _tmp
+_json.dump({"source_id": "z-grant", "tos_url": "x", "tos_snapshot": "y",
+            "schema_version": rights.SCHEMA_VERSION, "schema_signoff": "counsel 2026-01-01",
+            "permissions": dict(rights.classify(GRANT_TOS))},
+           open(os.path.join(_tmp, "z-grant.json"), "w"))
+_json.dump({"source_id": "a-hold", "tos_url": "x", "tos_snapshot": "y",
+            "schema_version": rights.SCHEMA_VERSION, "schema_signoff": "counsel 2026-01-01",
+            "permissions": dict(rights.classify(PROHIBIT_TOS))},
+           open(os.path.join(_tmp, "a-hold.json"), "w"))
+q2 = rights.queue()
+rights.RECORDS_DIR = _saved_dir
+check(q2 and q2[0]["source_id"] == "z-grant",
+      "an uncleared GRANT sorts first — it is the only entry that costs capability")
+check(q2[0]["costs_capability"] is True, "...and is marked as costing capability")
+check(not any(r["source_id"] == "a-hold" for r in q2),
+      "a decided, signed-off HOLD is not in the queue at all")
+
 print("\n%s (%d failure%s)" % ("FAILED" if FAILS else "PASSED", len(FAILS), "" if len(FAILS) == 1 else "s"))
 sys.exit(1 if FAILS else 0)
