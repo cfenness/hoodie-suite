@@ -585,6 +585,18 @@ SOURCES = [
               "DAM_CENSUS_PROBE=1 opts into conventional media.*/press.* hosts). Names its failures "
               "— age gate / JS shell / no link — rather than reporting them as 'no media centre'."),
 
+    # Cross-source identity merge, as an OVERLAY (never a master rewrite). DISABLED and landing
+    # nothing: measured against the real master it scores precision 0.233 against a 0.98 bar, so
+    # build() refuses. Kept registered because the measurement is the deliverable — the rule, its
+    # score, and its refusal are the record of what a naive signature merge is worth here.
+    dict(id="xsource-match", label="Cross-source identity merge (overlay, precision-gated)",
+         code="import xsource_match as m; m.build()",
+         tables=["xsource_identity"], klass="build", interval_h=168, enabled=False,
+         cost_class="free", mem=8192, timeout=7200, after=["build-product-master"],
+         note="signature = brand_key + name_sig + size, UPC conflict always wins. Does NOT clear "
+              "its 0.98 precision bar (0.233 measured) — needs a human-labelled gold set before "
+              "another attempt, since the sources that need merging carry no UPC."),
+
     # The CHEAP image tier: perceptual hashes of product images, on pillow alone. This is what makes
     # asset-divergence runnable at all — img_embed needs torch (not in the image) and has never been
     # registered, so `img_vec` is empty. A dHash answers the majority question ("is this the same
