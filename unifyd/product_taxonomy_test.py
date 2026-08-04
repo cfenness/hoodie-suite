@@ -27,10 +27,17 @@ check("Bourbon" in t["Spirits"]["Whiskey"],
       "Bourbon is a Sub Class under Whiskey — not a Type, which is how it drifts when the levels "
       "are free text")
 check("Whiskey" not in t, "...and Whiskey is not a Type")
-check("Cabernet Sauvignon" in t["Wine"]["Still Wine"]["Red Wine"],
+check("Cabernet Sauvignon" in t["Wine"]["Red Wine"]["Varietal Red"],
       "a grape is a VARIETAL, at the fourth level")
-check("Cabernet Sauvignon" not in t["Wine"]["Still Wine"],
+check("Cabernet Sauvignon" not in t["Wine"]["Red Wine"],
       "...and never a Sub Class")
+check("Tequila / Agave Spirits" in t["Spirits"] and "Agave Spirits" not in t["Spirits"],
+      "a Class leads with the FAMILIAR term — nobody browses by 'Agave Spirits'")
+check("Reposado Tequila" in t["Spirits"]["Tequila / Agave Spirits"],
+      "...and the expressions are Sub Classes beneath it")
+check("IPA" in t["Beer"],
+      "IPA is a beer CLASS, not a sub class of Ale — that is a brewer's distinction, not a "
+      "buyer's, and the shelf is organised the buyer's way")
 
 names = {}
 for ty, cls in t.items():
@@ -40,6 +47,24 @@ for ty, cls in t.items():
             names.setdefault(sc, set()).add(("sub", ty))
 dupes = {k: v for k, v in names.items() if len({lvl for lvl, _ in v}) > 1}
 check(not dupes, "no term sits at two different LEVELS (%s)" % (sorted(dupes) or "none"))
+
+shape = []
+for ty, cls in t.items():
+    if not isinstance(cls, dict):
+        shape.append(ty)
+    for cl, subs in cls.items():
+        if not isinstance(subs, dict):
+            shape.append("%s>%s" % (ty, cl))
+        else:
+            for sc, vs in subs.items():
+                if not isinstance(vs, list):
+                    shape.append("%s>%s>%s" % (ty, cl, sc))
+check(not shape, "every branch is exactly four levels deep (%s)" % (shape or "clean"))
+n_cls = sum(len(c) for c in t.values())
+n_sub = sum(len(s) for c in t.values() for s in c.values())
+check(n_cls >= 70, "the Class level is not thin — %d classes (it shipped at 34, which was way "
+      "short of what a bev-alc buyer browses)" % n_cls)
+check(n_sub >= 350, "...and %d sub classes beneath them" % n_sub)
 
 print("\nvarietal is not universal:")
 check("Wine" in pt.VARIETAL_TYPES, "wine has varietals")
@@ -96,12 +121,12 @@ check("Kentucky Straight Rye" not in pt.SEED["Spirits"]["Whiskey"],
 check(built["learned_paths"] == 1, "and the count of learned paths is reported (%s)"
       % built["learned_paths"])
 
-pt.learn({"canon_type": "Wine", "canon_class": "Still Wine", "canon_subclass": "Red Wine",
+pt.learn({"canon_type": "Wine", "canon_class": "Red Wine", "canon_subclass": "Varietal Red",
           "canon_varietal": "Blaufränkisch"}, log=lambda *a: None)
 built = pt.tree(log=lambda *a: None, block=True)
-check("Blaufränkisch" in built["tree"]["Wine"]["Still Wine"]["Red Wine"],
+check("Blaufränkisch" in built["tree"]["Wine"]["Red Wine"]["Varietal Red"],
       "a learned varietal lands under its own sub class, not globally")
-check("Blaufränkisch" not in built["tree"]["Wine"]["Still Wine"]["White Wine"],
+check("Blaufränkisch" not in built["tree"]["Wine"]["Red Wine"]["Red Blend"],
       "...and does NOT appear under a sibling")
 
 print("\nan unreadable table:")
