@@ -39,20 +39,93 @@ check(q.difference({"a_brand": "Mi Campo", "a_name": "Mi Campo Reposado Tequila"
       == "normalised_away",
       "a difference the matcher's normalisation absorbs is named, not called 'different words'")
 
+print("\ntext coercion (the bug that generated 4,000 pairs and landed none):")
+check(q._s(750.0) == "750", "a DuckDB float size loses the '.0' — 750.0 -> '750', not '750.0'")
+check(q._s(750) == "750" and q._s("750ML") == "750ML", "ints stringify, strings pass through")
+check(q._s(None) is None, "None stays None — a missing value is never the string 'None'")
+
 print("\nordering — the most informative pair first:")
-src = {"A": 3, "B": 3, "X": 1, "Y": 1}
+# DISTINCT SOURCES, not row counts: A and B are each carried by two chains.
+src = {"A": {"binnys", "abc"}, "B": {"total-wine", "specs"}, "X": {"binnys"}, "Y": {"abc"}}
 seen = {}
 check(q.priority(pair("p1", "brand_spelling"), seen, src) == 0,
       "an UNSEEN difference cause sorts first — that is where an answer changes a rule")
 seen = {"size_format": 9}
 check(q.priority(pair("p2", "size_format"), seen, src) > 0,
       "a cause already answered nine times does NOT sort first")
-check(q.priority(pair("p3", "size_format", stratum="near_miss", rule=True), {"size_format": 9}, src) == 1,
-      "a rule/stratum disagreement is the boundary, and sorts next")
-check(q.priority(pair("p4", "size_format", a="A", b="B"), {"size_format": 9}, src) == 2,
-      "a widely-carried item outranks a thinly-carried one (%d sources)" % (src["A"] + src["B"]))
-check(q.priority(pair("p5", "size_format", a="X", b="Y"), {"size_format": 9}, src) == 3,
+check(q.priority(pair("p3", "size_format", rule=True), {"size_format": 9}, src) == 1,
+      "the rule merged them DESPITE a visible difference — the boundary, and it sorts next")
+check(q.priority(pair("p4", "identical", rule=True), {"identical": 9}, src) != 1,
+      "an IDENTICAL pair the rule merges is not a boundary case — there is nothing to disagree about")
+check(q.priority(pair("p5", "size_format", a="A", b="B"), {"size_format": 9}, src) == 2,
+      "a widely-carried item outranks a thinly-carried one (4 distinct sources)")
+check(q.priority(pair("p6", "size_format", a="X", b="Y"), {"size_format": 9}, src) == 3,
       "a two-source item sorts last")
+check(q.priority(pair("p7", "size_format", a="Z", b="Z"), {"size_format": 9}, src) == 3,
+      "an id absent from the counts does not crash and does not get promoted")
+
+print("\na failed land is a DEGRADE, not a success:")
+GOLD_ROWS = [{"resolved_id": "A", "brand": "Tito's", "name": "Tito's Handmade Vodka 750ml",
+              "size": "750ML", "upc": "619947000020", "source": "binnys"},
+             {"resolved_id": "B", "brand": "Titos", "name": "Titos Handmade Vodka 750 ML",
+              "size": "750 ML", "upc": "619947000020", "source": "abc"}]
+
+
+class LandFails:
+    @staticmethod
+    def query(*a, **k):
+        return []
+
+    @staticmethod
+    def write_accumulate(*a, **k):
+        raise RuntimeError("Could not convert '750ML' with type str: tried to convert to int64")
+
+
+import io  # noqa: E402
+import contextlib  # noqa: E402
+
+sys.modules["warehouse"] = LandFails
+q._master_rows = lambda **k: GOLD_ROWS
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    pairs, cov = q.build(n=10, log=lambda *a: None)
+out = buf.getvalue()
+check('"status": "degraded"' in out,
+      "a build that generates pairs and lands NONE reports degraded (it reported success once)")
+check('"items_done": 0' in out, "items_done is the LANDED count, not the generated count")
+check("landed 0" in out or "warnings" in out, "and it says what happened in warnings[]")
+
+print("\na rebuild must not erase an answer:")
+KEPT = {}
+
+
+class Answered:
+    @staticmethod
+    def query(name, sql=None, params=None):
+        return [{"pair_id": pid} for pid in ANSWERED]
+
+    @staticmethod
+    def write_accumulate(name, rows, **k):
+        KEPT[name] = list(rows)
+        return {"rows": len(rows)}
+
+
+sys.modules["warehouse"] = Answered
+ANSWERED = []
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    all_pairs, _ = q.build(n=10, log=lambda *a: None)
+n_all = len(KEPT.get("xsource_queue", []))
+ANSWERED = [p["pair_id"] for p in all_pairs]
+KEPT.clear()
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    q.build(n=10, log=lambda *a: None)
+check(n_all > 0 and len(KEPT.get("xsource_queue", [])) == 0,
+      "a pair already answered is NOT re-landed — candidates() is seeded, so a weekly rebuild "
+      "regenerates the same pair_ids and would otherwise blank their labels")
+check('"status": "success"' in buf.getvalue(),
+      "...and landing 0 because everything is answered is a success, not a degrade")
 
 print("\nresolve:")
 LANDED = {}

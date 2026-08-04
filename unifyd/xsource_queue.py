@@ -54,6 +54,16 @@ SOURCES = {"binnys_products": ("binnys", "sku"), "abc_products": ("abc", "sku"),
            "offprem_products": ("offprem", "sku")}
 
 
+def _s(v):
+    """A warehouse value as text. None stays None so a missing value is never the string 'None';
+    a float that is really an integer size loses the '.0' DuckDB gives it."""
+    if v is None:
+        return None
+    if isinstance(v, float) and v == int(v):
+        return str(int(v))
+    return v if isinstance(v, str) else str(v)
+
+
 def _master_rows(limit_sources=None, log=print):
     """(resolved_id, brand, name, size, upc, source) across the retail catalogs, deduped IN DuckDB.
     Pulling raw joined rows OOM'd the serving box twice; only distinct item-level rows come back."""
@@ -83,8 +93,15 @@ def _master_rows(limit_sources=None, log=print):
                  % (("p." + bc) if bc else "NULL", nc, ("p." + zc) if zc else "NULL",
                     u, xw, src, key, ds))
             got = con.execute(q).fetchall()
-            rows += [{"resolved_id": r[0], "brand": r[1], "name": r[2], "size": r[3],
-                      "upc": r[4], "source": src} for r in got if r[0]]
+            # EVERY value is coerced to text. `size` is a VARCHAR in binny's ("750ML") and a NUMBER
+            # in offprem_products (750), and mixing them makes pyarrow infer int64 from the first
+            # catalog and then refuse the second ("could not convert '750ML' ... to int64") — which
+            # cost a whole build: 4,000 pairs generated, 0 landed, and the run reported success
+            # because the land failure was caught and logged rather than raised. It also matters
+            # upstream of the land: size_ml() and the name signature compare strings, so an int size
+            # would silently never match its own text spelling.
+            rows += [{"resolved_id": r[0], "brand": _s(r[1]), "name": _s(r[2]), "size": _s(r[3]),
+                      "upc": _s(r[4]), "source": src} for r in got if r[0]]
             log("  %-22s %d distinct" % (t, len(got)))
         except Exception as e:
             log("  %-22s skipped: %s" % (t, str(e).split("\n")[0][:70]))
@@ -94,11 +111,19 @@ def _master_rows(limit_sources=None, log=print):
 def priority(pair, seen_causes, src_counts):
     """Lower sorts first. Encodes the ordering argued in the module docstring."""
     diff = pair.get("difference") or ""
-    n_src = src_counts.get(pair.get("a_id"), 1) + src_counts.get(pair.get("b_id"), 1)
+    # DISTINCT SOURCES, not rows. Counting rows made this nearly meaningless: offprem_products alone
+    # contributes 415k rows, so an item with four listings at one retailer scored the same as one
+    # genuinely carried by four chains, and 94% of the pool landed in this bucket.
+    n_src = len(src_counts.get(pair.get("a_id")) or ()) + len(src_counts.get(pair.get("b_id")) or ())
     if diff and seen_causes.get(diff, 0) < 3:
         return 0                                   # an unseen or barely-seen cause
+    # The boundary — the rule and the surfaces disagree. Two shapes, and the near_miss half was
+    # dead on its own: near_miss pairs differ in one signature component BY CONSTRUCTION, so
+    # `rule_merges` is never true for them and this tier matched nothing at all.
+    if pair.get("rule_merges") and diff not in ("", "identical"):
+        return 1                                   # merged despite a visible difference
     if pair.get("stratum") == "near_miss" and pair.get("rule_merges"):
-        return 1                                   # rule and stratum disagree — the boundary
+        return 1
     if n_src >= 4:
         return 2                                   # resolving a widely-carried item is worth more
     return 3
@@ -134,7 +159,7 @@ def build(n=4000, land=True, log=print):
 
     src_counts = {}
     for r in rows:
-        src_counts[r["resolved_id"]] = src_counts.get(r["resolved_id"], 0) + 1
+        src_counts.setdefault(r["resolved_id"], set()).add(r["source"])
 
     pairs = xg.candidates(rows, n=n, seed=7, log=log)
     for p in pairs:
@@ -151,19 +176,46 @@ def build(n=4000, land=True, log=print):
         p["queued_at"] = now
     pairs.sort(key=lambda p: (p["priority"], p["pair_id"]))
 
+    landed, land_error = None, None
     if land:
         try:
             import warehouse
-            warehouse.write_accumulate(QUEUE_TABLE, pairs, key="pair_id",
+            # A REBUILD MUST NEVER ERASE AN ANSWER. candidates() is seeded, so a weekly rebuild
+            # regenerates the same pair_ids — and write_accumulate lets the newer row win, which
+            # would overwrite `resolved`/`label` with the blanks a fresh candidate carries. Pairs
+            # already answered are dropped from the land entirely.
+            done = set()
+            try:
+                for r in warehouse.query(QUEUE_TABLE,
+                                         "SELECT pair_id FROM t WHERE COALESCE(resolved,'') <> ''"):
+                    done.add(r["pair_id"] if isinstance(r, dict) else r[0])
+            except Exception:
+                pass                                  # no table yet — nothing to protect
+            fresh = [p for p in pairs if p["pair_id"] not in done]
+            if len(fresh) != len(pairs):
+                log("%s: %d of %d pairs already answered — left untouched"
+                    % (QUEUE_TABLE, len(pairs) - len(fresh), len(pairs)))
+            warehouse.write_accumulate(QUEUE_TABLE, fresh, key="pair_id",
                                        fields=QUEUE_FIELDS + ["difference"], coverage=False)
-            log("landed %s: %d pairs" % (QUEUE_TABLE, len(pairs)))
+            landed = len(fresh)
+            log("landed %s: %d pairs" % (QUEUE_TABLE, len(fresh)))
         except Exception as e:
-            log("%s land skipped: %s" % (QUEUE_TABLE, str(e)[:110]))
+            landed, land_error = 0, str(e)[:160]
+            log("%s LAND FAILED: %s" % (QUEUE_TABLE, land_error))
     cov = {"pairs": len(pairs), "causes": seen,
            "by_priority": {str(k): sum(1 for p in pairs if p["priority"] == k) for k in (0, 1, 2, 3)}}
     log("xsource_queue: %d pairs | priority mix %s" % (len(pairs), cov["by_priority"]))
-    print("HOODIE_RESULT " + json.dumps(dict({"status": "success", "items_done": len(pairs),
-                                              "items_total": len(pairs)}, **cov)))
+    # A build that GENERATED 4,000 pairs and landed none is a failure, and it reported `success`
+    # once because the land was in a try/except and the count came from `pairs`. items_done is the
+    # LANDED count, and a failed land degrades the run — the queue the UI reads is the table.
+    # A land of 0 because every pair was ALREADY ANSWERED is not a failure, which is why the
+    # degrade keys on the error and not on the count.
+    print("HOODIE_RESULT " + json.dumps(dict(
+        {"status": "degraded" if land_error else "success",
+         "items_done": len(pairs) if landed is None else landed,
+         "items_total": len(pairs),
+         "warnings": ["generated %d pairs but landed 0 — the queue is unchanged (%s)"
+                      % (len(pairs), land_error)] if land_error else []}, **cov)))
     return pairs, cov
 
 

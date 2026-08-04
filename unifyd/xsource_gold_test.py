@@ -47,6 +47,19 @@ check("merged" in strata, "a MERGED stratum exists (measures precision)")
 check("near_miss" in strata, "a NEAR_MISS stratum exists (measures recall — what the rule declined)")
 check("control" in strata, "a CONTROL stratum exists (audits the labeller)")
 
+print("\n  the pairs must be CROSS-source:")
+check(all(p["a_source"] != p["b_source"] for p in c),
+      "every pair spans two retailers — that is the question this whole capability asks")
+DOM = ROWS + [r("X%d" % i, "Tito's", "Tito's Handmade Vodka 750ml", "750ml", "offprem")
+              for i in range(6)]
+cd_ = xg.candidates(DOM, n=30, seed=7, log=lambda *a: None)
+check(all(p["a_source"] != p["b_source"] for p in cd_),
+      "one source contributing most of the rows cannot flood the pool with its own over-splits "
+      "(measured 94% same-source on the live master before this)")
+check(any(p["a_source"] == p["b_source"]
+          for p in xg.candidates(DOM, n=30, seed=7, log=lambda *a: None, cross_source=False)),
+      "cross_source=False still gives the original behaviour, so the shipped sheet is explicable")
+
 print("\n  the label column must ship EMPTY:")
 check(all(p["label"] == "" for p in c),
       "no pair arrives pre-labelled — a pre-filled answer produces rubber-stamping")

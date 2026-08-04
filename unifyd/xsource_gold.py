@@ -92,9 +92,25 @@ def _pid(a, b):
     return "P" + hashlib.sha1(("%s|%s" % tuple(sorted([str(a), str(b)]))).encode()).hexdigest()[:12]
 
 
-def candidates(rows, n=300, seed=7, log=print):
+def _cross(a_opts, b_opts):
+    """The first (a, b) drawn from DIFFERENT sources and different identities, else None."""
+    for a in a_opts:
+        for b in b_opts:
+            if a.get("source") != b.get("source") and a.get("resolved_id") != b.get("resolved_id"):
+                return a, b
+    return None, None
+
+
+def candidates(rows, n=300, seed=7, log=print, cross_source=True):
     """Stratified candidate pairs from master rows. Reproducible for a given seed, so a re-export
-    produces the SAME sheet — a labeller who has done half a sheet must not be handed a new one."""
+    produces the SAME sheet — a labeller who has done half a sheet must not be handed a new one.
+
+    `cross_source` requires the two sides to come from DIFFERENT retailers, which is the question
+    this whole capability asks. Without it the pool is dominated by within-source over-splits:
+    measured on the live master, 94% of 4,000 pairs had a_source == b_source, because
+    offprem_products alone contributes 415k of 483k rows and pairs form inside it. Those are real
+    master defects but they are a different problem, and they teach nothing about whether two
+    RETAILERS are showing the same product. Pass False for the original behaviour."""
     rnd = random.Random(seed)
     by_sig, by_brand_size = {}, {}
     for r in rows:
@@ -111,6 +127,15 @@ def candidates(rows, n=300, seed=7, log=print):
         if len(ids) < 2:
             continue
         ms = sorted(members, key=lambda m: str(m.get("resolved_id")))
+        if cross_source:
+            by_src = {}
+            for m in ms:                                  # one representative per retailer
+                by_src.setdefault(m.get("source"), m)
+            reps = [by_src[s] for s in sorted(by_src, key=str)]
+            for i in range(len(reps) - 1):
+                if reps[i].get("resolved_id") != reps[i + 1].get("resolved_id"):
+                    merged.append((reps[i], reps[i + 1], "merged"))
+            continue
         for i in range(len(ms) - 1):
             if ms[i].get("resolved_id") != ms[i + 1].get("resolved_id"):
                 merged.append((ms[i], ms[i + 1], "merged"))
@@ -123,7 +148,12 @@ def candidates(rows, n=300, seed=7, log=print):
         keys = sorted(sigs)
         for i in range(len(keys)):
             for j in range(i + 1, min(i + 3, len(keys))):
-                near.append((sigs[keys[i]][0], sigs[keys[j]][0], "near_miss"))
+                if cross_source:
+                    a, b = _cross(sigs[keys[i]], sigs[keys[j]])
+                    if a is not None:
+                        near.append((a, b, "near_miss"))
+                else:
+                    near.append((sigs[keys[i]][0], sigs[keys[j]][0], "near_miss"))
     # CONTROL — the SAME PRODUCT at a DIFFERENT SIZE. The answer is known (no: item grain is
     # product+size), and it is the subtle case: "Absolut Citron 750ml" vs "Absolut Citron 1750ml"
     # is where a careless labeller says "same".
@@ -134,11 +164,17 @@ def candidates(rows, n=300, seed=7, log=print):
     by_prod = {}
     for (bk, sz), items in by_brand_size.items():
         for ns, r in items:
-            by_prod.setdefault((bk, ns), {}).setdefault(sz, r)
+            by_prod.setdefault((bk, ns), {}).setdefault(sz, []).append(r)
     for (bk, ns), by_sz in by_prod.items():
         if len(by_sz) >= 2:
             szs = sorted(by_sz)
-            control.append((by_sz[szs[0]], by_sz[szs[-1]], "control"))
+            small, large = by_sz[szs[0]], by_sz[szs[-1]]
+            if cross_source:
+                a, b = _cross(small, large)
+                if a is not None:
+                    control.append((a, b, "control"))
+            else:
+                control.append((small[0], large[0], "control"))
 
     rnd.shuffle(merged); rnd.shuffle(near); rnd.shuffle(control)
     take = {"merged": int(n * 0.5), "near_miss": int(n * 0.35), "control": n - int(n * 0.5) - int(n * 0.35)}
