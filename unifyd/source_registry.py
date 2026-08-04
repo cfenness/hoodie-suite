@@ -585,6 +585,15 @@ SOURCES = [
               "DAM_CENSUS_PROBE=1 opts into conventional media.*/press.* hosts). Names its failures "
               "— age gate / JS shell / no link — rather than reporting them as 'no media centre'."),
 
+    # The human gold set the merge needs before it can ship. Not a scrape — it exports a labelling
+    # sheet, ingests the filled one, and scores the matcher PER STRATUM. Manual by nature.
+    dict(id="xsource-gold", label="Cross-source gold set (human labelling)",
+         code="import xsource_gold as m; m.main(['export'])",
+         tables=["xsource_gold"], klass="build", interval_h=8760, enabled=False,
+         cost_class="free", mem=8192, timeout=3600,
+         note="export -> a human labels y/n/? -> ingest -> score. Stratified merged/near_miss/"
+              "control; the control rows are same-product-different-size and audit the labeller."),
+
     # Cross-source identity merge, as an OVERLAY (never a master rewrite). DISABLED and landing
     # nothing: measured against the real master it scores precision 0.233 against a 0.98 bar, so
     # build() refuses. Kept registered because the measurement is the deliverable — the rule, its
