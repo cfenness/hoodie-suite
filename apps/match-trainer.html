@@ -105,9 +105,10 @@
   <div>
     <div class="card" id="stage">
       <div class="drop" id="drop">
-        <p style="margin:0 0 8px;font-size:15px;color:var(--ink)">Drop <b>xsource-gold-300.csv</b> here</p>
-        <p style="margin:0 0 14px">or <label style="color:var(--accent);cursor:pointer;text-decoration:underline">choose a file<input type="file" id="file" accept=".csv" hidden></label></p>
-        <p style="margin:0;font-size:12px">Your answers stay in this browser until you export. Refreshing won't lose them.</p>
+        <p style="margin:0 0 10px;font-size:15px;color:var(--ink)" id="bootmsg">Loading the queue…</p>
+        <p style="margin:0 0 14px;font-size:12px">There is no shortage of pairs — the queue tops itself up as you work.</p>
+        <p style="margin:0;font-size:12px;color:var(--mut)">Offline? Drop a CSV here, or
+          <label style="color:var(--accent);cursor:pointer;text-decoration:underline">choose a file<input type="file" id="file" accept=".csv" hidden></label>.</p>
       </div>
     </div>
   </div>
@@ -333,8 +334,11 @@ function render(){
   if(!S.rows.length){ renderStats(); return; }
   var r=S.rows[S.i];
   if(!r){
-    stage.innerHTML='<div class="empty"><p style="font-size:17px;color:var(--ink)">That\'s the whole set.</p>'+
-      '<p>Press <b>Export</b> and hand the file back.</p></div>';
+    stage.innerHTML='<div class="empty"><p style="font-size:17px;color:var(--ink)">'+
+      (API.on && !API.exhausted ? "Fetching more…" : "Nothing left in the queue.")+'</p>'+
+      '<p>'+(API.on && !API.exhausted ? "The queue tops itself up — this should be a moment."
+             : "Everything available is resolved. Press <b>Export</b> if you want a copy.")+'</p></div>';
+    if(API.on && !API.exhausted) topUp().then(function(n){ if(n) render(); });
     document.getElementById("pos").textContent = S.rows.length+" of "+S.rows.length+" — done";
     document.getElementById("stratum").textContent="";
     renderStats(); return;
@@ -505,6 +509,7 @@ function openResolver(r){
       else delete rec[d.k];                       // blank stays UNRESOLVED, never an empty claim
     });
     S.answers[r.pair_id]=rec; S.i++; close(); save(); render();
+    postResolve(rec, r); if(remaining() < TOPUP_AT) topUp().then(render);
   }
   function keys(e){
     if(e.key==="Escape"){ e.stopPropagation(); close(); }
@@ -526,6 +531,7 @@ function answer(v){
   rec.rule = (function(){ var a=sig(r.a_brand,r.a_name,r.a_size), b=sig(r.b_brand,r.b_name,r.b_size);
     return !!(a&&b&&a.bk===b.bk&&a.ns===b.ns&&a.sz===b.sz); })();
   S.answers[r.pair_id]=rec; S.i++; save(); render();
+  postResolve(rec, r); if(remaining() < TOPUP_AT) topUp().then(render);
 }
 
 function renderStats(){
@@ -671,7 +677,76 @@ document.getElementById("export").onclick=function(){
   if(drows.length>1) setTimeout(function(){ dl(drows.join("\n"),"text/csv","xsource-dictionary.csv"); }, 400);
 };
 
-if(load()) render(); else renderStats();
+/* ── the continuous queue ───────────────────────────────────────────────────────────────────────
+   The trainer is fed by the API, not a file. Two behaviours matter:
+     • TOP-UP. When fewer than TOPUP_AT unanswered pairs remain it fetches more in the background,
+       so the queue never visibly ends and nobody has to think about batches.
+     • THE DICTIONARY IS SERVER-SIDE. It loads on start, so a new session — or a different machine —
+       inherits every value already resolved instead of relearning it.
+   A CSV drop still works and takes over completely, which is the offline path.               */
+var API = { on: false, fetching: false, exhausted: false };
+var TOPUP_AT = 6, BATCH = 25;
+
+function apiGet(path){
+  return fetch(path, {headers:{"Accept":"application/json"}})
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); });
+}
+function remaining(){
+  return S.rows.filter(function(r){ return !S.answers[r.pair_id]; }).length;
+}
+function topUp(){
+  if(!API.on || API.fetching || API.exhausted) return Promise.resolve();
+  API.fetching = true;
+  return apiGet("/api/xsource/queue?n="+BATCH).then(function(d){
+    API.fetching = false;
+    var got = (d && d.pairs) || [];
+    var have = {}; S.rows.forEach(function(r){ have[r.pair_id]=1; });
+    var fresh = got.filter(function(r){ return r.pair_id && !have[r.pair_id]; });
+    if(!fresh.length){ API.exhausted = true; }
+    else { S.rows = S.rows.concat(fresh); save(); }
+    return fresh.length;
+  }).catch(function(){ API.fetching = false; return 0; });
+}
+function postResolve(rec, r){
+  if(!API.on) return;
+  var body = {pair_id: r.pair_id, label: rec.label};
+  ["canon_brand","canon_product","canon_size","canon_category",
+   "canon_type","canon_class","canon_subclass","canon_varietal"].forEach(function(k){
+     if(rec[k]) body[k]=rec[k]; });
+  // Fire and forget: a failed POST must never block the next pair. The answer is already in
+  // localStorage, so nothing is lost and Export still carries it.
+  fetch("/api/xsource/resolve", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(body)}).catch(function(){});
+}
+
+function boot(){
+  var msg=document.getElementById("bootmsg");
+  apiGet("/api/xsource/queue?n="+BATCH).then(function(d){
+    if(!d || !d.ok || !d.pairs || !d.pairs.length){
+      if(msg) msg.textContent = (d && d.pool_built === false)
+        ? "The queue pool has not been built yet — run the xsource-queue build."
+        : "The queue is empty. Drop a CSV to work offline.";
+      return;
+    }
+    API.on = true;
+    if(!S.rows.length) S = {rows: d.pairs, i: 0, answers: S.answers||{}, dict: S.dict||{}};
+    else { var have={}; S.rows.forEach(function(r){have[r.pair_id]=1;});
+           S.rows = S.rows.concat(d.pairs.filter(function(r){ return !have[r.pair_id]; })); }
+    while(S.rows[S.i] && S.answers[(S.rows[S.i]||{}).pair_id]) S.i++;
+    save(); render();
+    return apiGet("/api/xsource/dictionary").then(function(dd){
+      if(dd && dd.ok && dd.dict){                       // server vocabulary wins on a cold start
+        Object.keys(dd.dict).forEach(function(dim){
+          S.dict[dim] = Object.assign({}, dd.dict[dim], S.dict[dim]||{}); });
+        save(); renderStats();
+      }
+    });
+  }).catch(function(){
+    if(msg) msg.textContent = "Queue unavailable — drop a CSV to work offline.";
+  });
+}
+
+if(load()){ render(); boot(); } else { renderStats(); boot(); }
 </script>
 </body>
 </html>
