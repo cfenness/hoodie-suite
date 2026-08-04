@@ -34,8 +34,13 @@ REMOTE_LOOP = (
     "sleep 30; done'"
 )
 
+# Resolved, not hardcoded to one person's home directory. Same form as tools/repin_dispatcher.sh
+# ("${FLYCTL:-$HOME/.fly/bin/flyctl}") and tools/poll_dd_regional_progress.py, so every tool in
+# here finds flyctl the same way and an override works everywhere.
+FLYCTL = _os.environ.get("FLYCTL") or _os.path.expanduser("~/.fly/bin/flyctl")
+
 cmd = [
-    "/Users/chrisfennessey/.fly/bin/flyctl", "ssh", "console",
+    FLYCTL, "ssh", "console",
     "-a", "hoodie-suite", "--machine", MACHINE, "-C", REMOTE_LOOP,
 ]
 
