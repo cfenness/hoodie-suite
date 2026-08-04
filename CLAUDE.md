@@ -269,6 +269,13 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   changes a rule), then rule/stratum disagreements (the decision boundary), then widely-carried
   items. Answering the same size-format variant for the hundredth time teaches nothing, so a cause
   already answered nine times stops sorting first.
+  **The pairs must be CROSS-source, and that had to be enforced.** `candidates()` had no such
+  constraint, and the first live pool measured **94% same-source** (3,761 of 4,000) — `offprem_products`
+  alone is 415k of 483k master rows, so pairs formed inside it and the very first thing the trainer
+  showed was one offprem row against another. Those are real master over-splits but a different
+  problem, and they teach nothing about whether two RETAILERS show the same product.
+  `candidates(cross_source=True)` is now the default; the fixed pool is 0% same-source and its
+  difference mix went from 48% `identical` (a trivially-yes pair) to 3 rows out of 4,618.
   Each resolution lands **twice**: the labelled pair into `xsource_gold`, so the precision
   measurement the merge is gated on is fed by ordinary use rather than a separate labelling chore;
   and the value mappings into `xsource_dictionary` — **both** source spellings map to the canonical
@@ -277,6 +284,13 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   blank dimension stays UNRESOLVED rather than landing empty. An empty queue and an **unbuilt pool**
   are reported distinctly (`pool_built`) — one means "you're done", the other means "run the build".
   The CSV drop survives as the offline path.
+  Two rebuild rules, both learned from the first live run: **a rebuild never erases an answer**
+  (candidates() is seeded, so the weekly build regenerates the same `pair_id`s and `write_accumulate`
+  would let the blank new row win — already-answered pairs are dropped from the land), and **a land
+  that fails is a DEGRADE**, not a success. The first build generated 4,000 pairs, landed 0 because
+  pyarrow inferred `int64` from offprem's numeric `size` and then refused binny's `"750ML"`, and
+  reported `success` because the land sat in a `try/except` and `items_done` came from the generated
+  count. `_s()` coerces every warehouse value to text; `items_done` is now the LANDED count.
   **The sheet is read tolerantly on purpose**, because a labeller improves it: headers match
   case- and punctuation-insensitively (a capitalised `Label` from Excel would otherwise read as an
   entirely EMPTY sheet), added columns are mapped by alias, and anything unrecognised is preserved
