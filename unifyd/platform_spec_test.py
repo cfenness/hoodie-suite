@@ -34,7 +34,15 @@ import platform_spec  # noqa: E402
 GOLDEN = os.path.join(HERE, "fixtures", "uber_platform_registry.golden.json")
 
 # (entry_id, field) -> why this deviation is intended. Empty at migration time, deliberately.
-DELIBERATE_DEVIATIONS = {}
+DELIBERATE_DEVIATIONS = {
+    ("postmates", "shards"):
+        "FIX, not drift. The golden snapshot has NO `shards` key, which is the bug: the dispatcher "
+        "(dispatch_ephemeral.py:271) spawns a fleet only when shards > 1, so postmates ran ONE "
+        "machine with no UE_SHARD set, its code's os.environ.get('UE_SHARD','0/8') default applied, "
+        "and it covered shard 0 of 8 — ~12.5% of the store universe — daily while reporting success. "
+        "Now shards=8, matching ubereats and the '0/8' the code already assumes. Effect: 8 machines "
+        "per run instead of 1 (4GB each); MAX_SPAWN caps sources per tick, not machines.",
+}
 
 RAN, FAILED = [], []
 

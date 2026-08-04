@@ -22,11 +22,16 @@ Two live drifts prove the point. Both were invisible until the entries were laid
      (`ue_catalog.py:995`'s own default is `--shard 0/1` = the whole universe; the registry string
      overrides that sane default with a sharded one.)
 
-     ** THIS IS PRESERVED AS-IS BELOW, DELIBERATELY. ** This module's job is a provably
-     behaviour-neutral migration: `platform_spec_test.py` asserts the expansion reproduces today's
-     live entries EXACTLY. Fixing the cap here would make that proof impossible to state. It is
-     encoded as an explicit override, named as a bug, so it is now a visible decision instead of a
-     missing key. Removing that override IS the fix, and it is a one-line change.
+     ** FIXED: `postmates` now declares `shards=8`, matching ubereats and matching the '0/8' its
+     own code already assumes. ** The migration that introduced this module preserved the bug
+     deliberately so the collapse could be proved behaviour-neutral; the fix landed immediately
+     after as its own reviewable change. `platform_spec_test.DELIBERATE_DEVIATIONS` records it as
+     the one intended difference from the pre-migration golden snapshot — which is why a coverage
+     change of this size is a line someone had to write, not a silent diff.
+
+     Operational note: the dispatcher now spawns 8 machines for this source instead of 1 (4GB each,
+     daily cadence). `MAX_SPAWN` caps SOURCES per tick, not machines, so the per-tick source budget
+     is unchanged.
 
 WHAT THIS BUYS. A per-site difference must be written down as an override, so it can be reviewed.
 The dependency graph is derived rather than hand-typed. Adding a third Uber-family site is one
@@ -129,10 +134,10 @@ _CATALOG = {
         label="Postmates (catalog + UPC, sharded)",
         priority=11,
         inline_enrich=True,         # correct shape per PIPELINE-DESIGN §4 — no postmates-enrich exists
-        # shards INTENTIONALLY ABSENT — see the module docstring. Its code still defaults UE_SHARD to
-        # '0/8', so without `shards` the dispatcher runs ONE machine covering 1/8 of the universe.
-        # Preserved to keep this migration behaviour-neutral; adding `shards=8` here is the fix.
-        shards=None,
+        # FIXED (was absent). Without `shards` the dispatcher spawned ONE machine with no UE_SHARD, so
+        # the code's own '0/8' default applied and this source covered 1/8 of the universe daily while
+        # reporting success. 8 matches ubereats and matches the '0/8' the code already assumes.
+        shards=8,
         note="same cold Uber BFF recipe as ubereats, postmates.com domain"),
 }
 
