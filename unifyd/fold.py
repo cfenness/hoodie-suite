@@ -143,8 +143,20 @@ def pending(table):
 
 
 def _part_names(parts_table):
-    """Every part file for a time-series table, as storage-relative paths."""
+    """Every part file for a time-series table, fully qualified (bucket-included when remote)."""
     return sorted(warehouse._partition_files(parts_table) or [])
+
+
+def _part_sql(path):
+    """Render a partition-file path the way DuckDB wants it — mirroring `query_parts`.
+
+    NOT `warehouse._part_sql_path`. That helper takes a PREFIX-RELATIVE path and prepends
+    bucket+prefix; `_partition_files` already returns FULLY-QUALIFIED paths (bucket included
+    remotely, absolute locally). Composing the two doubles the prefix, and the resulting
+    `s3://bucket/warehouse/bucket/warehouse/...` 404s. Caught by the first dry run against real
+    storage, which is exactly what a dry run is for — no unit test with fake paths would have.
+    """
+    return ("s3://%s" % path) if warehouse.remote() else path
 
 
 def run(table, limit=None, dry_run=False, log=print):
@@ -174,7 +186,7 @@ def run(table, limit=None, dry_run=False, log=print):
         return {"table": table, "status": "current", "parts": 0, "rows": 0,
                 "consumed": wm.get("count") or 0}
 
-    files_sql = ", ".join("'%s'" % warehouse._part_sql_path(f).replace("'", "") for f in todo)
+    files_sql = ", ".join("'%s'" % _part_sql(f).replace("'", "") for f in todo)
     sql = coalesce_sql(spec, files_sql)
     con = warehouse.connect()
     cur = con.execute(sql)                      # ONE execution — .description and .fetchall() from
