@@ -21,12 +21,19 @@ DOC = sys.argv[1] if len(sys.argv) > 1 else "progress.md"
 MACHINE = sys.argv[2] if len(sys.argv) > 2 else "80205ef6412028"
 N_SHARDS = 8
 
-# The doc lives only on this Mac. SID (the first "-"-delimited token of the filename, e.g.
-# "ubereats" out of "ubereats-fresh-ip-run-2026-07-30.md") is the key the deployed app's
-# /api/scrape-progress/<sid> endpoint reads back — it's what carries this Mac's live progress log
-# to a Fly-served page, which otherwise has no way to see this machine's filesystem.
+# The doc lives only on this Mac. SID is the key the deployed app's /api/scrape-progress/<sid>
+# endpoint reads back — it carries this Mac's live progress log to a Fly-served page, which
+# otherwise has no way to see this machine's filesystem. It MUST equal this run's id in
+# server.py's _RUN_DOCS.
+#
+# DECLARED, not derived. This used to be the first "-"-delimited token of the filename, which gave
+# "ubereats" only because that id happens to contain no dash — and "progress" for the default DOC,
+# a key nothing reads. The same rule silently mirrored the DoorDash regional run over the
+# full-catalog run's key, because "doordash-regional" does contain one (#779). Deriving an
+# identifier from a filename is guessing; the id is a fact, so it is stated.
+# argv[1]=DOC, argv[2]=MACHINE, so an override goes in argv[3].
 import os as _os
-SID = _os.path.basename(DOC).split("-")[0].split(".")[0]
+SID = sys.argv[3] if len(sys.argv) > 3 else "ubereats"
 
 REMOTE_LOOP = (
     "sh -c 'while true; do echo __TICK__ $(date -u +%s); "
