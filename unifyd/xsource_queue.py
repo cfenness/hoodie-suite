@@ -298,6 +298,14 @@ def resolve(payload, log=print):
             key = " ".join(var.lower().split())
             drows.append({"dimension": f, "variant_key": key, "variant": var,
                           "canonical": v, "times": 1, "updated_at": now})
+    # The taxonomy path, recorded WHOLE. A term typed at any level is only reusable if its parents
+    # came with it — see product_taxonomy.learn.
+    try:
+        import product_taxonomy
+        landed["taxonomy"] = product_taxonomy.learn(row, log=log)
+    except Exception as e:                                        # noqa: BLE001
+        log("resolve: taxonomy skipped: %s" % str(e)[:90])
+
     if drows:
         try:
             warehouse.write_accumulate(DICT_TABLE, drows,

@@ -1866,6 +1866,18 @@ def api_xsource_dictionary():
         return jsonify({"ok": False, "error": str(e)[:200], "dict": {}}), 200
 
 
+@app.get("/api/xsource/taxonomy")
+def api_xsource_taxonomy():
+    """The Type -> Class -> Sub Class -> Varietal hierarchy the resolver's dropdowns cascade over.
+    Seed plus every path a labeller has taught. A failure returns an empty tree with the reason —
+    the surface then falls back to free text rather than silently offering a truncated taxonomy."""
+    try:
+        import product_taxonomy
+        return jsonify(dict({"ok": True}, **product_taxonomy.tree()))
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:200], "tree": {}}), 200
+
+
 @app.post("/api/xsource/resolve")
 def api_xsource_resolve():
     """Land one resolution: the labelled pair plus the value mappings it teaches."""

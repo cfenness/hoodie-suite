@@ -284,6 +284,23 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   blank dimension stays UNRESOLVED rather than landing empty. An empty queue and an **unbuilt pool**
   are reported distinctly (`pool_built`) — one means "you're done", the other means "run the build".
   The CSV drop survives as the offline path.
+  **`unifyd/product_taxonomy.py` — the canonical Type → Class → Sub Class → Varietal hierarchy**
+  (`/api/xsource/taxonomy`), which the resolver's four levels cascade over: each level is filtered by
+  the one above, because a Class is only meaningful under its Type. Held as four free-text boxes the
+  levels drift within a session — "Bourbon" lands as a Type on one row and a Sub Class on the next
+  and nothing in the data says which is right. The tree is **served, never hardcoded in the page**; a
+  second copy would diverge from the one that stores the answers, and with no API the levels fall
+  back to the free-text inputs they were (the offline CSV path). `basis` records **what each branch is
+  grounded in** — spirits track 27 CFR 5.22 and wine 4.21, but TTB defines no beer STYLES, so that
+  branch says "trade convention" rather than presenting a style argument as a federal class.
+  **Varietal is not universal**: a varietal is a grape, so under spirits the level reads *not
+  applicable*, which is a different statement from "no values yet" — confusing the two is how a
+  Varietal column fills up with ageing terms. Typed values are learned by `learn()`, which records the
+  **whole path**: a Sub Class landed without its parents cannot be filtered under any Class, so it
+  would surface under every Class forever. Two UI rules: changing a level invalidates the *options*
+  below it and never the *answers* (an off-tree value is kept and marked, not blanked), and a parent
+  that is itself off-tree gives a free-text child rather than a dead dropdown — otherwise typing a new
+  Type locks you out of its Class.
   Two rebuild rules, both learned from the first live run: **a rebuild never erases an answer**
   (candidates() is seeded, so the weekly build regenerates the same `pair_id`s and `write_accumulate`
   would let the blank new row win — already-answered pairs are dropped from the land), and **a land
