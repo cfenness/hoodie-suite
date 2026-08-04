@@ -118,5 +118,41 @@ check(ad.load_precision() is None or isinstance(ad.load_precision(), dict),
 check(not os.path.exists(ad.PRECISION_FILE),
       "no precision file is committed — the verdict ships OFF")
 
+print("\nthe HASH tier (runs on pillow; img_vec needs torch and has never been populated):")
+import img_hash
+H_A, H_A2, H_B = "ffff0000ffff0000", "ffff0000ffff0002", "00ff00ff00ff00ff"
+check(img_hash.hamming(H_A, H_A2) == 1, "a re-encode moves a bit or two (%s)" % img_hash.hamming(H_A, H_A2))
+check(img_hash.hamming(H_A, H_B) > ad.HASH_MAX_BITS, "a different file is far apart (%s)" % img_hash.hamming(H_A, H_B))
+check(img_hash.hamming(None, H_A) is None, "a MISSING hash is not distance 0")
+check(img_hash.dhash(b"not an image") is None, "undecodable bytes yield no hash, never a fake one")
+
+hc = ad.cluster_hashes([("a", H_A), ("b", H_A2), ("c", H_B)])
+check(hc["a"] == hc["b"] and hc["c"] != hc["a"], "hash clustering groups the same file, splits a different one")
+check(ad.cluster_hashes([("a", H_A), ("b", H_A2), ("c", H_B)]) == hc, "hash clustering is deterministic")
+
+HIMG = [{"source": s, "image": "h%d" % n, "dhash": d} for n, (s, d) in enumerate([
+    ("kroger", H_A), ("totalwine", H_A2), ("abc", H_A), ("binnys", H_B)])]
+hrows = ad.analyze_item("0555", HIMG, precision=None)
+check(hrows and hrows[0]["method"] == "dhash-hamming-greedy", "the hash tier is used when no vectors exist")
+check(hrows[0]["threshold"] == ad.HASH_MAX_BITS, "and the row reports the BIT threshold, not a cosine")
+check({r["verdict"] for r in hrows} == {"divergent_unconfirmed"},
+      "a hash split is divergent_UNCONFIRMED — same pack, different photo also hashes apart")
+
+# The asymmetry that matters: even WITH precision measured, a hash split never becomes a verdict.
+phrows = ad.analyze_item("0555", HIMG, precision={"precision": 0.95, "n": 100})
+check(all(r["stale_candidate"] is None for r in phrows),
+      "a hash-tier split NEVER yields a stale verdict, even with precision measured")
+check(all(r["withheld_reason"] and "hash tier" in r["withheld_reason"] for r in phrows),
+      "...and says the hash tier is why")
+
+print("\n  tier preference:")
+MIXED = [{"source": "kroger", "image": "m1", "vec": A1, "dhash": H_A},
+         {"source": "abc", "image": "m2", "vec": A1, "dhash": H_B},
+         {"source": "binnys", "image": "m3", "vec": A2, "dhash": H_B}]
+mrows = ad.analyze_item("0777", MIXED, precision=None)
+check(mrows[0]["method"] == "clip-cosine-greedy", "CLIP wins when vectors are present")
+check(mrows[0]["n_clusters"] == 1,
+      "and it collapses images the hash tier would have split — the whole reason CLIP is the upgrade")
+
 print("\n%s (%d failure%s)" % ("FAILED" if FAILS else "PASSED", len(FAILS), "" if len(FAILS) == 1 else "s"))
 sys.exit(1 if FAILS else 0)

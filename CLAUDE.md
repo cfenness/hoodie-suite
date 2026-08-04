@@ -239,6 +239,16 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   `created_on` is the UPLOAD stamp, not the event date** (Bacardi's whole 2018 folder reads
   2018-04-11, the bulk-migration day), so dates come from **year folders** at `precision=year` and are
   otherwise NULL — never back-filled.
+- **`unifyd/img_hash.py`** (source `img-hash`, weekly, **disabled** pending a sized first run) — the
+  CHEAP twin of `img_embed`. `img_embed` needs torch, which the image does not ship, and it was never
+  registered — so **`img_vec` has never been populated** and anything built on it reports degraded
+  forever. A dHash on pillow (already in the image) answers the majority question instead: *is this
+  the same syndicated FILE?* When two chains show a product they are usually both showing the
+  supplier's JPEG, re-encoded and resized, and a perceptual hash survives exactly that.
+  **The asymmetry is load-bearing:** a hash MATCH is strong evidence (same file); a hash SPLIT is
+  weak (the same pack photographed twice hashes far apart). The "every amber bottle hashes alike"
+  problem ([[image-match-signal]]) does not bite, because that is about telling DIFFERENT products
+  apart and everything compared here is already inside one UPC.
 - **`unifyd/asset_divergence.py`** (source `asset-divergence`, weekly, **disabled** until `img_vec`
   has coverage) — **where chains disagree about what a product looks like.** Groups an item's images
   across sources by UPC (deterministic identity only — fuzzy grouping would manufacture a
@@ -256,6 +266,10 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   since 2022" is built from counts and dates, and never claims which pack is correct — that is the
   supplier's own data to supply. Fewer than 3 sources is `insufficient_data`, never `aligned`; a
   near-even split is two live packs, not an error.
+  **Two tiers.** It prefers CLIP where `img_vec` has vectors and falls back to dHash, which is what
+  makes it runnable today. A dHash split lands as `divergent_unconfirmed` and can NEVER become a
+  stale verdict, even once precision is measured — only CLIP can collapse a benign photography
+  difference, so a hash split is a candidate for the better tier or a human, never a finding.
 - **Counsel review (P6) — `docs/rights-counsel-review.md` + `rights.py --queue`.** The permission
   MODEL is versioned (`SCHEMA_VERSION`) separately from any record, so changing it shows up as a
   version skew on every record rather than silently reinterpreting records already written.

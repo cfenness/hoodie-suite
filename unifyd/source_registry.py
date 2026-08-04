@@ -585,6 +585,19 @@ SOURCES = [
               "DAM_CENSUS_PROBE=1 opts into conventional media.*/press.* hosts). Names its failures "
               "— age gate / JS shell / no link — rather than reporting them as 'no media centre'."),
 
+    # The CHEAP image tier: perceptual hashes of product images, on pillow alone. This is what makes
+    # asset-divergence runnable at all — img_embed needs torch (not in the image) and has never been
+    # registered, so `img_vec` is empty. A dHash answers the majority question ("is this the same
+    # syndicated FILE?") for free; CLIP stays the upgrade for the residual.
+    dict(id="img-hash", label="Product image hashes (cheap divergence tier)",
+         caps=['pillow'],   # optional lib this source silently degrades without (capability.py)
+         code="import img_hash as m; m.build_all()",
+         tables=["img_hash"], klass="headless", cadence="weekly", enabled=False,
+         cost_class="free", interval_h=168, timeout=21600, mem=4096,
+         note="fetch+hash product images across the retail catalogs; resumable (skips sku already "
+              "hashed). DISABLED pending a first sized run — the image universe has not been "
+              "counted, and this fetches every one of them."),
+
     # Cross-retailer product-image divergence: where chains disagree about what an item LOOKS like.
     # Derived — reads img_vec (CLIP embeddings) + retail_observations, no fetching. Lands the
     # divergence and its evidence; the STALENESS verdict stays withheld until
@@ -594,10 +607,10 @@ SOURCES = [
          code="import asset_divergence as m; m.build()",
          tables=["asset_divergence"], klass="build", interval_h=168, enabled=False,
          cost_class="free", mem=8192, timeout=7200,
-         after=["build-item-identity"],
-         note="DISABLED until img_vec has real coverage — it is a derived read over embeddings, so "
-              "it produces nothing useful until img_embed has run across the retail sources. "
-              "Staleness is withheld without measured precision (backtest())."),
+         after=["img-hash"],
+         note="DISABLED until img-hash has run — it is a derived read over the image tiers and "
+              "produces nothing until one is populated. Runs on dHash (pillow) and upgrades to CLIP "
+              "wherever img_vec exists. Staleness withheld without measured precision (backtest())."),
 
     # ── Hemp ──────────────────────────────────────────────────────────────────────────────────────────────────
     dict(id="hemp-scan", label="Hemp products", code="import hemp_scan as m; m.main([])",

@@ -63,6 +63,12 @@ FIELDS = [
 # cost of splitting a benign pair is a false alarm, and that is the expensive direction here.
 DEFAULT_THRESHOLD = 0.76
 
+# The dHash tier. A hash within this many bits is the SAME FILE re-encoded/resized; beyond it the
+# images are different files, which is NOT the same claim as different packs (see `_tier`). 10 of 64
+# bits is generous on purpose — re-encoding and thumbnailing move a handful of bits, and splitting a
+# benign pair is the expensive direction.
+HASH_MAX_BITS = 10
+
 # An item seen by fewer sources than this cannot support a breadth argument: "1 chain disagrees with
 # 1 chain" is not evidence of anything. Reported as insufficient_data, never as aligned.
 MIN_SOURCES = 3
@@ -80,6 +86,26 @@ def cosine(a, b):
     if na == 0 or nb == 0:
         return None
     return dot / (na * nb)
+
+
+def cluster_hashes(items, max_bits=HASH_MAX_BITS):
+    """Greedy clustering by dHash bit distance. `items` = [(key, dhash)] → {key: cluster_id}.
+
+    Same greedy, order-stable shape as the vector clustering, for the same reason: a supplier may
+    act on this, so the partition must be reproducible."""
+    import img_hash
+    assigned, reps = {}, []
+    for key, h in items:
+        placed, best = None, 10 ** 9
+        for cid, rep in reps:
+            d = img_hash.hamming(h, rep)
+            if d is not None and d <= max_bits and d < best:
+                best, placed = d, cid
+        if placed is None:
+            placed = len(reps)
+            reps.append((placed, h))
+        assigned[key] = placed
+    return assigned
 
 
 def cluster(vectors, threshold=DEFAULT_THRESHOLD):
@@ -108,7 +134,18 @@ def analyze_item(upc, images, threshold=DEFAULT_THRESHOLD, precision=None):
 
     `images` = [{source, image, vec, first_seen, last_seen}]. Returns [] when the item cannot
     support a conclusion, rather than a row asserting agreement it has not earned."""
-    usable = [i for i in images if i.get("vec")]
+    # TIER SELECTION. Prefer CLIP where the vectors exist, because it is the only tier that can
+    # collapse a benign photography difference. Fall back to dHash, which needs nothing beyond
+    # pillow — that fallback is the whole reason this runs at all today, since `img_vec` requires
+    # torch and has never been populated.
+    has_vec = [i for i in images if i.get("vec")]
+    has_hash = [i for i in images if i.get("dhash")]
+    if has_vec and len(has_vec) >= len(has_hash):
+        usable, tier = has_vec, "clip"
+    elif has_hash:
+        usable, tier = has_hash, "dhash"
+    else:
+        usable, tier = has_vec, "clip"
     sources = {i["source"] for i in usable}
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -124,11 +161,14 @@ def analyze_item(upc, images, threshold=DEFAULT_THRESHOLD, precision=None):
             "verdict": "insufficient_data", "stale_candidate": None,
             "withheld_reason": "only %d source(s); a breadth argument needs %d"
                                % (len(sources), MIN_SOURCES),
-            "threshold": threshold, "method": "clip-cosine-greedy",
+            "threshold": threshold, "method": "clip-cosine-greedy" if tier == "clip" else "dhash-hamming-greedy",
             "precision_measured": bool(precision), "computed_at": now,
         }]
 
-    assign = cluster([(i["image"], i["vec"]) for i in usable], threshold=threshold)
+    if tier == "dhash":
+        assign = cluster_hashes([(i["image"], i["dhash"]) for i in usable])
+    else:
+        assign = cluster([(i["image"], i["vec"]) for i in usable], threshold=threshold)
     groups = {}
     for i in usable:
         groups.setdefault(assign[i["image"]], []).append(i)
@@ -153,25 +193,34 @@ def analyze_item(upc, images, threshold=DEFAULT_THRESHOLD, precision=None):
             "sources": ",".join(csrc), "representative_image": members[0].get("image"),
             "first_seen": min(firsts) if firsts else None,
             "last_seen": max(lasts) if lasts else None,
-            "verdict": "aligned" if n_clusters == 1 else "divergent",
+            # A hash MATCH is strong (same file); a hash SPLIT is weak (same pack, different photo
+            # hashes apart). So a dHash split is `divergent_unconfirmed` — a candidate for CLIP or a
+            # human, never presented as an established packaging difference.
+            "verdict": ("aligned" if n_clusters == 1
+                        else ("divergent" if tier == "clip" else "divergent_unconfirmed")),
             # THE WITHHELD VERDICT. Everything above is counted; this is the one field that would be
             # a claim about somebody's business, so it stays None until precision is measured.
-            "stale_candidate": _stale(rank, n_clusters, len(csrc), total_sources, precision),
-            "withheld_reason": None if precision else
+            "stale_candidate": _stale(rank, n_clusters, len(csrc), total_sources, precision, tier),
+            "withheld_reason": ("hash tier: a dHash split is not evidence of a packaging change "
+                                "(same pack, different photo hashes apart) — needs CLIP or a human"
+                                if tier != "clip" else None) if precision else
                                "staleness withheld: clustering precision not measured "
                                "(run backtest() against a labelled set)",
-            "threshold": threshold, "method": "clip-cosine-greedy",
+            "threshold": threshold if tier == "clip" else HASH_MAX_BITS,
+            "method": "clip-cosine-greedy" if tier == "clip" else "dhash-hamming-greedy",
             "precision_measured": bool(precision), "computed_at": now,
         })
     return rows
 
 
-def _stale(rank, n_clusters, n_src, total_src, precision):
+def _stale(rank, n_clusters, n_src, total_src, precision, tier="clip"):
     """The staleness call — None unless precision has been MEASURED, and then only on a real breadth
     asymmetry. A minority look on a minority of chains is the candidate; a near-even split is a
     genuine two-pack situation (regional SKUs, transition periods) and must not be called stale."""
     if not precision or n_clusters is None or n_clusters < 2:
         return None
+    if tier != "clip":
+        return None            # a hash split is unconfirmed by construction — never a stale verdict
     if rank == 0:
         return False
     return (n_src / total_src) <= 0.34
@@ -216,19 +265,45 @@ def backtest(labelled, threshold=DEFAULT_THRESHOLD):
 def build(limit=None, threshold=DEFAULT_THRESHOLD, land=True, log=print):
     """Read `img_vec`, group by UPC, land `asset_divergence`."""
     import warehouse
-    import img_embed
-    try:
-        rows = warehouse.query("img_vec",
-                               "SELECT source, sku, upc, image, vec FROM t WHERE upc IS NOT NULL AND upc<>''")
-    except Exception as e:
-        log("asset_divergence: img_vec unreadable (%s) — run `img_embed build` first" % str(e)[:90])
-        return [], {"status": "degraded", "reason": "img_vec unavailable"}
+    seen, tiers = {}, []
 
-    seen = {}
-    for r in rows:
-        seen.setdefault(r["upc"], []).append({
-            "source": r["source"], "image": r["image"],
-            "vec": list(img_embed.unpack(r["vec"])), "first_seen": None, "last_seen": None})
+    # CHEAP TIER FIRST — it is the one that actually has coverage. img_vec needs torch, which the
+    # image does not ship, so a build that only knew about CLIP would report "degraded" forever.
+    try:
+        for r in warehouse.query("img_hash", "SELECT source, sku, upc, image, dhash FROM t "
+                                             "WHERE upc IS NOT NULL AND upc<>'' AND dhash IS NOT NULL"):
+            seen.setdefault(r["upc"], []).append({
+                "source": r["source"], "image": r["image"], "dhash": r["dhash"],
+                "vec": None, "first_seen": None, "last_seen": None})
+        tiers.append("dhash")
+    except Exception as e:
+        log("asset_divergence: img_hash unavailable (%s)" % str(e)[:80])
+
+    # Upgrade with CLIP wherever it exists — matched onto the same (source, image) so an item can be
+    # part-hashed, part-embedded and still resolve on the better tier.
+    try:
+        import img_embed
+        idx = {}
+        for imgs in seen.values():
+            for i in imgs:
+                idx[(i["source"], i["image"])] = i
+        for r in warehouse.query("img_vec", "SELECT source, sku, upc, image, vec FROM t "
+                                            "WHERE upc IS NOT NULL AND upc<>''"):
+            v = list(img_embed.unpack(r["vec"]))
+            hit = idx.get((r["source"], r["image"]))
+            if hit:
+                hit["vec"] = v
+            else:
+                seen.setdefault(r["upc"], []).append({
+                    "source": r["source"], "image": r["image"], "dhash": None,
+                    "vec": v, "first_seen": None, "last_seen": None})
+        tiers.append("clip")
+    except Exception as e:
+        log("asset_divergence: img_vec unavailable (%s) — running on the hash tier only" % str(e)[:80])
+
+    if not seen:
+        log("asset_divergence: neither img_hash nor img_vec has data — run `img_hash build --all` first")
+        return [], {"status": "degraded", "reason": "no image tier populated", "tiers": tiers}
     _attach_dates(seen, log=log)
 
     precision = load_precision()
@@ -245,12 +320,18 @@ def build(limit=None, threshold=DEFAULT_THRESHOLD, land=True, log=print):
     div = {r["item_upc"] for r in out if r["verdict"] == "divergent"}
     thin = {r["item_upc"] for r in out if r["verdict"] == "insufficient_data"}
     aligned = {r["item_upc"] for r in out if r["verdict"] == "aligned"}
-    cov = {"items": len(items), "aligned": len(aligned), "divergent": len(div),
+    unconf = {r["item_upc"] for r in out if r["verdict"] == "divergent_unconfirmed"}
+    cov = {"tiers_available": tiers,
+           "by_method": {m: sum(1 for r in out if r["method"] == m)
+                         for m in sorted({r["method"] for r in out})},
+           "divergent_unconfirmed": len(unconf),
+           "items": len(items), "aligned": len(aligned), "divergent": len(div),
            "insufficient_data": len(thin), "rows": len(out),
            "precision_measured": bool(precision),
            "stale_candidates": sum(1 for r in out if r["stale_candidate"])}
-    log("asset_divergence: %d items — %d aligned, %d DIVERGENT, %d too thin to judge%s"
-        % (len(items), len(aligned), len(div), len(thin),
+    log("asset_divergence: %d items — %d aligned, %d DIVERGENT, %d divergent-unconfirmed (hash tier), "
+        "%d too thin to judge%s"
+        % (len(items), len(aligned), len(div), len(unconf), len(thin),
            "" if precision else " | staleness withheld (no measured precision)"))
 
     if land and out:
