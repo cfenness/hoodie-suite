@@ -14,6 +14,7 @@ object, same discipline as the rest of this suite.
 
     python3 unifyd/doordash_pace_test.py
 """
+import inspect
 import os
 import sys
 
@@ -36,6 +37,25 @@ def check(name, cond, detail=""):
     else:
         print("  FAIL %s %s" % (name, detail))
         FAILED.append(name)
+
+
+def stub(real, value):
+    """A test double that CANNOT drift from the function it stands in for.
+
+    The break this closes: `all_stores` grew a `metro=` kwarg (#744, metro-area radius scoping) and
+    this file's hand-written `lambda log=print: {}` did not, so a production change with nothing to
+    do with pacing turned this suite red and it stayed red. The lazy repair is `lambda *a, **k:` —
+    which is WORSE than the bug it fixes: it swallows the drift, and it equally swallows `run()`
+    passing a kwarg the real function never accepted, which is a genuine break this test should
+    catch. Binding the real signature keeps exactly one of those two red: the stub tracks whatever
+    production grows, and a call the real function would reject still raises TypeError here.
+    """
+    sig = inspect.signature(real)
+
+    def _stub(*a, **k):
+        sig.bind(*a, **k)            # raises precisely when the REAL function would
+        return value
+    return _stub
 
 
 class FakeResp:
@@ -80,9 +100,9 @@ def main():
     real_all_stores = ddc.all_stores
     real_landed = ddc._landed_stores
     real_dd_run = ddc.doordash_full.run
-    ddc.all_stores = lambda log=print: {}
-    ddc._landed_stores = lambda log=print: set()
-    ddc.doordash_full.run = lambda *a, **k: ("run", 0)
+    ddc.all_stores = stub(real_all_stores, {})
+    ddc._landed_stores = stub(real_landed, set())
+    ddc.doordash_full.run = stub(real_dd_run, ("run", 0))
     try:
         os.environ["DD_FLEET_RATE"] = "30"
         ddc.run(log=lambda *a: None)
