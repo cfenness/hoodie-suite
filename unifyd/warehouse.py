@@ -191,6 +191,17 @@ class RowCountUnavailable(Exception):
     """The row count could not be read (transient/unknown storage error) — NOT proof of an empty table."""
 
 
+class ManifestConflict(Exception):
+    """Another writer landed a manifest update for this table between our read and our write — the merge
+    we just computed is stale. Raised instead of overwriting, because overwriting would silently discard
+    the other writer's already-persisted work AND (worse) can reintroduce a reference to a bucket part
+    file the other writer has already deleted as superseded — exactly the src_outlets corruption found
+    2026-08-02 (manifest pointed at __b=*/data_0.parquet files that a concurrent migrate_to_bucketed had
+    already removed, because an accumulate call's manifest write landed on top of the migration's using a
+    stale in-memory snapshot). The caller should let this run fail loudly (it's retryable — the next run
+    re-reads the fresh manifest and merges correctly) rather than catch-and-continue."""
+
+
 def _is_absent(e):
     """True when the storage error means the object genuinely does not exist (a real 0), vs a
     transient/unknown failure (which must never be conflated with empty)."""
@@ -798,7 +809,27 @@ def read_manifest(name):
     return man
 
 
-def _write_manifest(name, man):
+_NO_CAS = object()          # sentinel: "no conflict check requested" (distinct from a real expect=(None, None))
+
+
+def _write_manifest(name, man, expect=_NO_CAS):
+    """Write the manifest, optionally CAS-protected: `expect` is the `(version, updated_at)` this call
+    started from (read via `read_manifest` earlier), or `(None, None)` for "must still be absent" (a
+    fresh create/migrate). Right before writing, re-read the CURRENT on-disk manifest (bypassing the
+    15s cache — a stale cache hit here would defeat the whole point) and compare. A mismatch means
+    someone else wrote first; raise ManifestConflict instead of clobbering their write.
+
+    Comparing `updated_at` in addition to `version` matters because `migrate_to_bucketed` always resets
+    `version` to 1 — two DIFFERENT migrations of the same table both produce "version=1", so version
+    alone can't tell "the same v1 I read" from "a different v1 someone else just wrote"."""
+    if expect is not _NO_CAS:
+        _MAN_CACHE.pop(name, None)
+        current = read_manifest(name)
+        got = (current.get("version"), current.get("updated_at")) if current else (None, None)
+        if got != tuple(expect):
+            raise ManifestConflict(
+                "write_manifest(%r) refused: manifest changed from %r to %r since this write started — "
+                "another writer landed first. Not overwriting." % (name, tuple(expect), got))
     data = json.dumps(man, separators=(",", ":")).encode("utf-8")
     if remote():
         def _put():
@@ -870,6 +901,9 @@ def _part_write(rel, table):
 
 
 def _part_delete(rel):
+    """Best-effort: a failed delete leaves a harmless orphan (nothing reads a file the manifest doesn't
+    list), so this must never raise into a write path. But silent-swallow-everything gives zero operator
+    signal when a delete keeps failing — print rather than `pass` so it at least surfaces in run logs."""
     try:
         if remote():
             _s3fs().delete_file("%s/%s/%s" % (_bucket(), _prefix(), rel))
@@ -877,8 +911,8 @@ def _part_delete(rel):
             p = os.path.join(_LOCAL_DIR, rel)
             if os.path.exists(p):
                 os.remove(p)
-    except Exception:
-        pass
+    except Exception as e:
+        print("[warehouse] _part_delete(%r) failed (leaving an orphan, non-fatal): %s" % (rel, str(e)[:150]))
 
 
 def _list_part_rels(name):
@@ -926,7 +960,7 @@ def create_bucketed(name, key_cols, fields, hex_len=2):
     man = dict(table=name, layout="bucketed", hex_len=int(hex_len), key_cols=list(key_cols),
                fields=list(fields), version=0, updated_at=int(time.time()), parts={},
                changelog=[dict(op="create", version=0, ts=int(time.time()), buckets=[], delta_rows=0)])
-    _write_manifest(name, man)
+    _write_manifest(name, man, expect=(None, None))
     return man
 
 
@@ -1022,15 +1056,29 @@ def migrate_to_bucketed(name, key_cols, hex_len=2):
                version=1, updated_at=int(time.time()), parts=parts,
                changelog=[dict(op="migrate", version=1, ts=int(time.time()), buckets=sorted(parts),
                                delta_rows=int(n_rows))])
-    _write_manifest(name, man)
+    # CAS-protected: the entry check above (`if read_manifest(name): raise`) is TOCTOU — another
+    # migrate_to_bucketed (or create_bucketed) could have landed between that check and here. Re-verify
+    # right before writing rather than trust a check made minutes ago (this migration can take a while
+    # on a multi-million-row table).
+    _write_manifest(name, man, expect=(None, None))
     return {"rows": int(n_rows), "buckets": len(parts), "uri": uri(name)}
 
 
 def _accumulate_bucketed(name, man, records):
     """v2 merge: group new records into their md5-prefix buckets, then rewrite ONLY the touched
     buckets — DuckDB anti-join (existing minus re-written keys) + the new rows, written as one
-    fresh part per bucket. Manifest last (the atomic swap), replaced files deleted after."""
+    fresh part per bucket. Manifest last (the atomic swap), replaced files deleted after.
+
+    CAS-protected: `man` is whatever `read_manifest` returned to the caller, which can be stale by the
+    time this finishes — a multi-bucket merge against a multi-million-row table is not instant, and this
+    table can have several independent writers (no single-writer guarantee here, unlike most tables).
+    `expect` pins the (version, updated_at) this call started from; if another writer's manifest landed
+    first, `_write_manifest` raises ManifestConflict instead of silently overwriting it — which is
+    exactly how src_outlets ended up with a manifest pointing at already-deleted files on 2026-07-31:
+    a stale accumulate's write landed on top of a fresher migration's manifest, reintroducing references
+    to files the migration had already superseded."""
     import pyarrow as pa
+    expect = (man.get("version"), man.get("updated_at"))
     cols = man["fields"]
     kc, hex_len = man["key_cols"], int(man["hex_len"])
     recs = [{k: r.get(k) for k in cols} for r in records]
@@ -1063,7 +1111,7 @@ def _accumulate_bucketed(name, man, records):
     man.setdefault("changelog", []).append(dict(op="accumulate", version=version, ts=int(time.time()),
                                                 buckets=sorted(buckets), delta_rows=len(recs)))
     man["changelog"] = man["changelog"][-200:]
-    _write_manifest(name, man)      # readers switch to the new parts HERE — never mid-write
+    _write_manifest(name, man, expect=expect)  # readers switch to the new parts HERE — never mid-write
     for f in stale:                 # only then drop replaced files (best-effort; orphans are inert)
         _part_delete(f)
     return {"rows": len(recs), "uri": uri(name)}
