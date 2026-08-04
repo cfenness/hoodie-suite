@@ -32,13 +32,29 @@ Each row records the METHOD that produced it and a confidence tier, because thes
 equally trustworthy and a caller must be able to demand the strong ones:
 
     direct   1.00  same source, same store_id. Not a guess.
+    encoding 1.00  the same id in two spellings (base64url vs hex-dashed). Lossless, see ue_ids.py.
     id_map   0.95  the source's OWN id->name table (doordash_stores) resolves the observation id to
                    the name geography is keyed by. Deterministic, but depends on that table.
     name     0.70  normalised store name within one source. A name is not an identity — two outlets
                    of one chain in a metro share it — so a name that resolves to MORE THAN ONE
-                   geocoded outlet is DROPPED rather than assigned arbitrarily.
+                   geocoded outlet is DROPPED rather than assigned arbitrarily. OFF by default;
+                   measured 0 yield (see NAME_STRATEGY).
 
 The run reports yield per method, so which bridges are worth keeping is a measurement, not a guess.
+First full build, 211,690 observation stores:
+
+    encoding   7,233   2,716 ZIPs   331 metros    confidence 1.00
+    direct     2,094     995 ZIPs   147 metros    confidence 1.00
+    id_map       240     103 ZIPs    19 metros    confidence 0.95
+    name           0   — scanned 213,179 candidate names, matched nothing; now opt-in
+    TOTAL      9,567 of 211,690 (4.5%) across 3,351 ZIPs — against 990 (cbsa,zcta) cells before
+
+97% of the mapping is confidence 1.00, i.e. exact rather than heuristic.
+
+WHAT 4.5% MEANS, because the number invites the wrong conclusion. It is NOT that 95% of stores are
+unidentifiable — 208,599 of 208,624 UberEats stores MATCH. They are unplaced because their outlet
+has no lat/lng yet. Matching is solved; placement is now an aggregator_geo backlog, and every store
+it geocodes converts straight into a placed store carrying price and assortment.
 
 ONE OBSERVATION STORE MAPS TO AT MOST ONE OUTLET. Every strategy is applied in confidence order and
 the first hit wins; ambiguous name matches are discarded entirely. Silently fanning one store across
@@ -77,6 +93,14 @@ ENCODED_ID_SOURCES = ("ubereats", "postmates")
 
 # A rebuild that maps far fewer stores than the last one is a broken read, not a shrinking universe.
 MIN_KEEP_FRAC = float(os.environ.get("XREF_MIN_KEEP", "0.80"))
+
+# THE NAME STRATEGY IS OFF BY MEASUREMENT, not by opinion. On the first full build it mapped exactly
+# ZERO stores while scanning all 3,867 observation partitions to stage 213,179 candidate names. The
+# reason is structural, not a tuning problem: a name can only match within its own source, every
+# source that HAS geography is already covered by a stronger method (doordash -> id_map,
+# ubereats/postmates -> encoding), and Target's observation "name" is just its store id ('2403').
+# The code stays because a future source may need it; the full-table scan does not run by default.
+NAME_STRATEGY = os.environ.get("XREF_NAME_STRATEGY", "0") == "1"
 
 
 class XrefDegraded(Exception):
@@ -151,20 +175,42 @@ def build(dry=False, log=print):
         except Exception as e:
             log("[xref]   id_map %s: %s unavailable (%s)" % (src, tbl, str(e)[:60]))
             continue
+        # STAGE, THEN JOIN — and only on UNAMBIGUOUS names. Written as one big join this OOM'd on a
+        # live run (6.9 GiB spilled): the directory and the geography both contain many stores
+        # called "Starbucks", so the normalised-name join is many-to-many and explodes before any
+        # filter applies. Narrowing to this source first (doordash: 433 observation stores, not
+        # 211,690) and collapsing each side to names that appear ONCE makes it a small equi-join.
+        #
+        # The ambiguity rule is not just a performance trick, it is the same correctness rule the
+        # `name` strategy already applies: if a name resolves to several outlets, picking one is a
+        # guess, and a guess that lands a store in the wrong neighbourhood still renders.
+        tag = src.replace("-", "_")
+        con.execute("""
+            CREATE OR REPLACE TEMP TABLE obs_%s AS
+            SELECT source, store_id FROM s WHERE source = '%s'""" % (tag, src))
+        con.execute("""
+            CREATE OR REPLACE TEMP TABLE dir_%s AS
+            SELECT CAST(%s AS VARCHAR) AS did, %s AS nm
+            FROM d WHERE %s IS NOT NULL
+            QUALIFY COUNT(*) OVER (PARTITION BY %s) = 1""" % (
+            tag, id_col, _norm_sql("d." + name_col), _norm_sql("d." + name_col),
+            _norm_sql("d." + name_col)))
+        con.execute("""
+            CREATE OR REPLACE TEMP TABLE geo_%s AS
+            SELECT %s AS nm, ANY_VALUE(store_id) AS store_id, ANY_VALUE(hoodie_outlet) AS hoodie_outlet,
+                   ANY_VALUE(cbsa_code) AS cbsa_code, ANY_VALUE(cbsa_name) AS cbsa_name,
+                   ANY_VALUE(zcta) AS zcta, ANY_VALUE(county_fips) AS county_fips
+            FROM g WHERE source = '%s' AND %s IS NOT NULL
+            GROUP BY 1 HAVING COUNT(*) = 1""" % (tag, _norm_sql("store_id"), src, _norm_sql("store_id")))
         con.execute("""
             CREATE OR REPLACE TEMP TABLE m_id_%s AS
-            SELECT s.source AS obs_source, s.store_id AS obs_store_id,
-                   g.source AS geo_source, g.store_id AS geo_store_id,
-                   ANY_VALUE(g.hoodie_outlet) AS hoodie_outlet,
-                   ANY_VALUE(g.cbsa_code) AS cbsa_code, ANY_VALUE(g.cbsa_name) AS cbsa_name,
-                   ANY_VALUE(g.zcta) AS zcta, ANY_VALUE(g.county_fips) AS county_fips,
+            SELECT o.source AS obs_source, o.store_id AS obs_store_id,
+                   '%s' AS geo_source, x.store_id AS geo_store_id,
+                   x.hoodie_outlet, x.cbsa_code, x.cbsa_name, x.zcta, x.county_fips,
                    'id_map' AS method
-            FROM s
-            JOIN d ON CAST(d.%s AS VARCHAR) = s.store_id
-            JOIN g ON g.source = s.source AND %s = %s
-            WHERE s.source = '%s'
-            GROUP BY 1,2,3,4""" % (src.replace("-", "_"), id_col,
-                                   _norm_sql("g.store_id"), _norm_sql("d." + name_col), src))
+            FROM obs_%s o
+            JOIN dir_%s dd ON dd.did = o.store_id
+            JOIN geo_%s x ON x.nm = dd.nm""" % (tag, src, tag, tag, tag))
         n = con.execute("SELECT COUNT(*) FROM m_id_%s" % src.replace("-", "_")).fetchone()[0]
         log("[xref]   id_map %-9s: %d" % (src, n))
         parts.append("m_id_%s" % src.replace("-", "_"))
@@ -185,7 +231,9 @@ def build(dry=False, log=print):
     amb = con.execute("SELECT COUNT(*) FROM gname WHERE n > 1").fetchone()[0]
     log("[xref]   (ambiguous geography names dropped: %d)" % amb)
 
-    have_names = _obs_names(con, log=log)
+    have_names = _obs_names(con, log=log) if NAME_STRATEGY else False
+    if not NAME_STRATEGY:
+        log("[xref]   name    : SKIPPED (measured 0 yield — set XREF_NAME_STRATEGY=1 to run)")
     if have_names:
         con.execute("""
             CREATE OR REPLACE TEMP TABLE m_name AS
@@ -268,15 +316,28 @@ def _obs_names(con, log=print):
     src = ["s3://%s" % f for f in files] if warehouse.remote() else files
     lst = ", ".join("'%s'" % p.replace("'", "") for p in src)
     con.execute("CREATE OR REPLACE VIEW o AS SELECT * FROM read_parquet([%s], union_by_name=true)" % lst)
+    # ONLY the sources that actually have geography — a name can only ever match within its own
+    # source, so scanning the other 14 sources' partitions is pure cost. This also keeps the scan
+    # off the deep retail catalogs (abc-fws alone is 13k items/store) that can never contribute.
+    geo_srcs = [r[0] for r in con.execute(
+        "SELECT DISTINCT source FROM g WHERE source IS NOT NULL").fetchall()]
+    if not geo_srcs:
+        return False
+    in_list = ", ".join("'%s'" % s.replace("'", "''") for s in geo_srcs)
+
+    # GROUP BY, then dedupe with MIN — not QUALIFY over a grouped select, which DuckDB rejects
+    # ("column store_id must appear in the GROUP BY clause") because it will not resolve positional
+    # group keys inside a window. MIN also makes the chosen name deterministic across rebuilds.
     con.execute("""
         CREATE OR REPLACE TEMP TABLE obsname AS
-        SELECT source, CAST(store_id AS VARCHAR) AS store_id,
-               %s AS nm
-        FROM o
-        WHERE store IS NOT NULL AND store <> '' AND store_id IS NOT NULL AND store_id <> ''
-        GROUP BY 1, 2, 3
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY source, store_id ORDER BY nm) = 1
-        """ % _norm_sql("store"))
+        SELECT source, store_id, MIN(nm) AS nm FROM (
+            SELECT source, CAST(store_id AS VARCHAR) AS store_id, %s AS nm
+            FROM o
+            WHERE store IS NOT NULL AND store <> ''
+              AND store_id IS NOT NULL AND store_id <> ''
+              AND source IN (%s))
+        WHERE nm IS NOT NULL
+        GROUP BY source, store_id""" % (_norm_sql("store"), in_list))
     n = con.execute("SELECT COUNT(*) FROM obsname WHERE nm IS NOT NULL").fetchone()[0]
     log("[xref]   observation stores carrying a name: %d" % n)
     return n > 0

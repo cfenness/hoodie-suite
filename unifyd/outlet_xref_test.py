@@ -111,6 +111,18 @@ def test_confidence_tiers_are_ordered():
     ok("method lands on every row", "method" in x.FIELDS)
 
 
+def test_name_strategy_is_off_by_measurement():
+    """It mapped exactly 0 stores on the first full build while scanning all 3,867 partitions to
+    stage 213,179 candidate names. Off by default; the capability stays for future sources."""
+    ok("name strategy defaults off", x.NAME_STRATEGY is False)
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "outlet_xref.py")).read()
+    ok("it is opt-in via env", "XREF_NAME_STRATEGY" in src)
+    ok("the skip is announced, not silent", "SKIPPED (measured 0 yield" in src)
+    ok("the expensive scan is gated", "if NAME_STRATEGY else False" in src)
+    ok("the measurement is recorded next to the switch", "mapped exactly\n# ZERO" in src or
+       "ZERO stores while scanning" in src)
+
+
 def test_guards():
     src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "outlet_xref.py")).read()
     ok("a duplicate mapping RAISES", "mapped to more than one outlet" in src)
@@ -133,6 +145,7 @@ def test_field_contract():
 
 if __name__ == "__main__":
     for fn in (test_name_normalisation_is_symmetric, test_ambiguous_name_is_dropped,
+               test_name_strategy_is_off_by_measurement,
                test_one_store_maps_to_one_outlet, test_confidence_tiers_are_ordered,
                test_guards, test_field_contract):
         print(fn.__name__)
