@@ -238,6 +238,85 @@ def warehouse_identity():
 
 
 _FOOTER_CACHE = {}                                            # name -> (mtime, rows, fields) — skip unchanged footers
+_FOOTER_CACHE_KEY = "_footer_cache.json.gz"
+_FOOTER_CACHE_MAX_MB = 64                                     # refuse to persist beyond this — a cache is not a catalog
+_footer_cache_state = {"loaded": False, "dirty": False}
+
+
+def _footer_cache_load():
+    """Hydrate _FOOTER_CACHE from the warehouse ONCE per process.
+
+    WHY THIS EXISTS. The incremental footer cache below was written for a long-lived process (the
+    console), where the second sweep is nearly free. Production's biggest caller is the opposite:
+    `dispatch_ephemeral` runs the health digest on an EPHEMERAL Fly machine that is created and
+    destroyed every hourly tick, so a module-level dict is ALWAYS COLD. The optimisation existed and
+    production never once reached it.
+
+    Measured on the serving box 2026-08-04, 41,559 parquet objects: cold `_list_datasets_fast` =
+    112.3s, warm = 4.9s (23x). On the dispatcher — then a shared-cpu-1x losing 77% of its CPU to
+    steal — that cold sweep stretched the digest past its hourly budget, and the 17:50 tick was
+    skipped outright because the 16:50 run was still going.
+
+    Persisting the cache turns 41,559 individual footer reads into ONE object read. The mtime check
+    in read_one is unchanged and remains the source of truth: a hydrated entry is used only while
+    the file's mtime still matches, so a stale or partial cache costs a re-read, never a wrong count.
+
+    CONCURRENCY: last-write-wins, deliberately. Several processes (dispatcher, server, console) can
+    save this blob and the loser's entries are simply re-derived on the next sweep. That is safe
+    here and ONLY here because this is a DERIVED cache, not a catalog — the anti-clobber rule that
+    governs warehouse tables does not apply to a file whose worst-case loss is 112 seconds."""
+    if _footer_cache_state["loaded"] or _FOOTER_CACHE:
+        return
+    _footer_cache_state["loaded"] = True
+    try:
+        import gzip
+        import warehouse
+        raw = warehouse.get_bytes(_FOOTER_CACHE_KEY)
+        if not raw:
+            return
+        blob = json.loads(gzip.decompress(raw).decode("utf-8"))
+        schemas = blob.get("schemas") or []
+        for rel, v in (blob.get("files") or {}).items():
+            mod, rows, si = v
+            _FOOTER_CACHE[rel] = (mod, rows, schemas[si] if 0 <= si < len(schemas) else [])
+    except Exception:
+        _FOOTER_CACHE.clear()          # a HALF-hydrated cache is worse than none: clear and sweep cold
+
+
+def _footer_cache_save(live_keys):
+    """Persist _FOOTER_CACHE, pruned to the files that still exist, schemas interned.
+
+    Interning is what keeps this small: every part of a partitioned table shares one schema, so
+    storing the field list per FILE repeats the same ~30 names tens of thousands of times. Stored
+    once and referenced by index, the blob is a few MB before gzip.
+
+    Pruning to `live_keys` is what stops it growing forever — without it, every part ever deleted or
+    rewritten would linger in the blob and it would outgrow the data it describes."""
+    if not _footer_cache_state["dirty"]:
+        return                          # nothing re-read this sweep — don't pay a write to store what's already there
+    try:
+        import gzip
+        import warehouse
+        idx, schemas = {}, []
+        files = {}
+        for rel in live_keys:
+            ent = _FOOTER_CACHE.get(rel)
+            if not ent:
+                continue
+            mod, rows, fields = ent
+            key = tuple(fields or ())
+            si = idx.get(key)
+            if si is None:
+                si = idx[key] = len(schemas)
+                schemas.append(list(key))
+            files[rel] = [mod, rows, si]
+        payload = gzip.compress(json.dumps({"v": 1, "schemas": schemas, "files": files}).encode("utf-8"), 6)
+        if len(payload) > _FOOTER_CACHE_MAX_MB * 1024 * 1024:
+            return                      # implausibly large — skip rather than push a huge blob every tick
+        warehouse.put_bytes(_FOOTER_CACHE_KEY, payload)
+        _footer_cache_state["dirty"] = False
+    except Exception:
+        pass                            # a cache that cannot be saved must never break the sweep that produced it
 
 
 def _list_datasets_fast(workers=80):
@@ -252,6 +331,7 @@ def _list_datasets_fast(workers=80):
     try:
         import pyarrow.parquet as pq
         from concurrent.futures import ThreadPoolExecutor
+        _footer_cache_load()           # ephemeral callers start warm; a no-op once the dict is populated
         if warehouse.remote():
             from pyarrow import fs as pafs
             s3 = pafs.S3FileSystem(endpoint_override=warehouse._endpoint(),
@@ -294,12 +374,14 @@ def _list_datasets_fast(workers=80):
             try:
                 md = pq.read_metadata(path, filesystem=s3) if s3 is not None else pq.read_metadata(path)
                 _FOOTER_CACHE[rel] = (mod, md.num_rows, list(md.schema.names))
+                _footer_cache_state["dirty"] = True     # something was actually re-read — worth persisting
                 return rel, mod, md.num_rows, list(md.schema.names)
             except Exception:
                 return rel, mod, (cached[1] if cached else 0), (cached[2] if cached else [])
 
         with ThreadPoolExecutor(max_workers=workers) as ex:
             footers = list(ex.map(read_one, infos))
+        _footer_cache_save({rel for rel, _p, _i in infos})   # prune to what the listing just proved exists
 
         out, parted = [], {}
         for rel, mod, rows, fields in footers:

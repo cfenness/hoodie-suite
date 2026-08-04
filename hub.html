@@ -371,6 +371,7 @@
     // Master Data
     {id:"mdm",        bucket:"master", star:1, nav:1, mark:"HM", name:"Hoodie MDM", desc:"The master console — sources, catalog, outlets, registrations, dictionary.", file:"apps/mdm.html"},
     {id:"match-review",bucket:"master", star:1, mark:"MR", name:"Match Review", desc:"The one place — automatched items and the human-in-the-loop queue for unknown matches.", file:"apps/match-review.html", reviewSource:1},
+    {id:"match-trainer",bucket:"master",     mark:"MT", name:"Match Trainer", desc:"Teach the matcher one pair at a time \u2014 it shows its reasoning, groups your answers by cause, and turns a run of consistent calls into a rule.", file:"apps/match-trainer.html"},
     {id:"workbench",  bucket:"master",         mark:"MW", name:"Matching Workbench", desc:"The deep multi-enterprise matching bench (merge groups, image matches, stewardship).", file:"apps/master-workbench.html"},
     {id:"upc",        bucket:"master",         mark:"UP", name:"UPC Check", desc:"Validate & classify UPC/EAN codes and check the prefix against the brand owner.", file:"apps/upc-check.html"},
 
@@ -390,7 +391,8 @@
     {id:"kb",         bucket:"utility", mark:"PA", name:"Principles & Architecture", desc:"The thinking behind the platform.", file:"apps/principles-hub.html"},
     {id:"device-preview",bucket:"utility",mark:"DP",name:"Device Preview", desc:"Render any app in phone/tablet frames.", file:"apps/device-preview.html"},
     {id:"admin",      bucket:"utility", mark:"AD", name:"Admin Console", desc:"Usage · app registry & flags · access · data-ops.", file:"apps/admin.html"},
-    {id:"cockpit",    bucket:"utility", mark:"CP", name:"Hoodie Cockpit", desc:"Route work to the right model, run role crews, track tickets & epics end to end.", file:"apps/cockpit.html"}
+    {id:"cockpit",    bucket:"utility", mark:"CP", name:"Hoodie Cockpit", desc:"Route work to the right model, run role crews, track tickets & epics end to end.", file:"apps/cockpit.html"},
+    {id:"relay",      bucket:"utility", mark:"RL", name:"Relay", desc:"Product-dev control plane — a Slack ask becomes an initiative that accretes requirements through staged gates.", file:"apps/dev-workflow.html"}
   ];
   var byId = {}; APPS.forEach(function(a){ byId[a.id]=a; });
   function bucketDef(id){ return BUCKETS.concat([UTIL]).find(function(b){return b.id===id;}); }

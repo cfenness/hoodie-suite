@@ -379,7 +379,7 @@ def analyze(url, goal=None):
         out = _heuristic(html); out["via"] = via
         out.setdefault("store_level", _store_hint(html))
         out["compliance"] = dict(compliance, robots_txt_note=out.get("robots_note", ""))
-        return out
+        return _attach_dam_plans(out, url, html)
     try:
         import anthropic
         client = anthropic.Anthropic()
@@ -440,11 +440,35 @@ def analyze(url, goal=None):
         _enrich_data_api(out, html)   # fold real Algolia app id / search key into data_api
         _enrich_locations(out, url, html)   # point store-locator directories at their sitemap
         out["compliance"] = dict(compliance, robots_txt_note=out.get("robots_note", ""))
-        return out
+        return _attach_dam_plans(out, url, html)
     except Exception as e:
         out = _heuristic(html); out["via"] = via
         out["summary"] = "LLM error (" + str(e)[:90] + ") — fell back to the structural heuristic."
-        return out
+        return _attach_dam_plans(out, url, html)
+
+
+
+def _attach_dam_plans(out, url, html):
+    """design §4: when a page fingerprints as a DAM or a media centre, the analyzer emits TWO plans —
+    the extraction plan AND the rights plan — because for this class of source "how would we pull it"
+    is only half the question. Best-effort: a failure here never costs the analysis.
+
+    Deliberately advisory. `out["dam"]["rights"]` is a machine read of a terms page, never a rights
+    record; no DAM ships to a surface until a reviewed `rights_records/<id>.json` exists."""
+    try:
+        import dam_census
+        vendor, signals, conf, connector = dam_census.detect_vendor(html, url)
+        if not vendor and not dam_census.looks_like_media_centre(html):
+            return out
+        out["dam"] = {
+            "extraction": dam_census.extraction_plan(url, html=html),
+            "rights": dam_census.rights_plan(url, log=lambda *a: None),
+            "note": ("PROVISIONAL — this is a machine read of the terms, not a rights record. "
+                     "Authoring unifyd/rights_records/<id>.json is the gate a DAM source must pass."),
+        }
+    except Exception:
+        pass
+    return out
 
 
 def _claude_rows(prompt, content, note=""):

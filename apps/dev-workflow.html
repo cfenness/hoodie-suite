@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relay — Product-Dev Control Plane</title>
+<style>
+  :root{
+    --bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;
+    --accent:#4E79A7;--good:#5bb86e;--warn:#d99a3f;--bad:#e5636b;--derived:#6f7d90;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--sans:Inter,system-ui,-apple-system,sans-serif;
+  }
+  @media (prefers-color-scheme:light){:root{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}}
+  :root[data-theme="light"]{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675;}
+  :root[data-theme="dark"]{--bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;-webkit-font-smoothing:antialiased}
+  /* ---- top bar ---- */
+  .bar{display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:6;flex-wrap:wrap}
+  h1{font-size:15px;margin:0;font-weight:650;letter-spacing:.2px;display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--good);animation:pulse 2.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(91,184,110,.5)}70%{box-shadow:0 0 0 6px rgba(91,184,110,0)}100%{box-shadow:0 0 0 0 rgba(91,184,110,0)}}
+  .tag{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:20px;padding:2px 9px}
+  .spacer{flex:1}
+  button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:7px 11px;font-family:var(--sans);font-size:13px;cursor:pointer;font-weight:550}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover{filter:brightness(1.08)}
+  button:disabled{opacity:.5;cursor:not-allowed}button:disabled:hover{border-color:var(--line)}
+  .help{font-size:12px;color:var(--mut);padding:7px 18px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .help b{color:var(--ink);font-weight:600}
+  .help .arrow{color:var(--accent);font-family:var(--mono)}
+  /* ---- layout ---- */
+  .wrap{display:grid;grid-template-columns:308px 1fr;height:calc(100vh - 84px)}
+  @media (max-width:820px){.wrap{grid-template-columns:1fr}.rail{display:none}.wrap.showrail .rail{display:block}.wrap.showrail .main{display:none}}
+  .rail{border-right:1px solid var(--line);overflow:auto;background:var(--panel)}
+  .rail .rh{display:flex;align-items:center;gap:8px;padding:11px 15px 6px;position:sticky;top:0;background:var(--panel);z-index:2}
+  .rail .rh button{padding:6px 10px;font-size:12px}
+  .legend{display:flex;gap:11px;flex-wrap:wrap;padding:0 15px 10px;font-size:10.5px;color:var(--mut)}
+  .legend span{display:flex;align-items:center;gap:5px}
+  .sdot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .sdot.q{background:var(--bad)}.sdot.val{background:var(--warn)}.sdot.build{background:var(--accent)}.sdot.ship{background:var(--good)}
+  .rg{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--mut);font-weight:700;padding:12px 15px 5px;display:flex;gap:7px;align-items:center}
+  .rg .sor{font-family:var(--mono);font-size:9.5px;color:var(--derived);font-weight:500;letter-spacing:0}
+  .ir{padding:9px 15px;border-left:2px solid transparent;cursor:pointer;border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent)}
+  .ir:hover{background:var(--panel2)}
+  .ir.on{border-left-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--panel))}
+  .ir .id{font-family:var(--mono);font-size:10.5px;color:var(--mut)}
+  .ir .t{font-size:13px;margin:2px 0 4px;line-height:1.3}
+  .ir .m{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--mut)}
+  .ir .m .who{font-weight:600;color:var(--ink)}
+  .ir .dots{display:flex;gap:4px;margin-left:auto}
+  /* ---- main / detail ---- */
+  .main{overflow:auto}
+  .detail{padding:18px 22px 60px;max-width:1180px}
+  .ihead{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .ihead .id{font-family:var(--mono);font-size:12px;color:var(--mut);padding-top:5px}
+  .ihead h2{font-size:20px;margin:0;font-weight:650;letter-spacing:-.2px;flex:1;min-width:240px}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin:9px 0 18px}
+  .chip{font-size:11px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);color:var(--mut);display:flex;align-items:center;gap:5px}
+  .chip b{color:var(--ink);font-weight:600}
+  .chip.team-Sales{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+  .chip.team-CS{border-color:color-mix(in srgb,var(--good) 45%,var(--line))}
+  .chip.team-Product{border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
+  .chip.team-Eng{border-color:color-mix(in srgb,var(--derived) 55%,var(--line))}
+  /* stage rail */
+  .stagerail{display:flex;gap:0;overflow-x:auto;padding:4px 0 18px;margin-bottom:6px}
+  .st{flex:1;min-width:96px;position:relative;padding:0 4px;text-align:center}
+  .st .node{width:15px;height:15px;border-radius:50%;background:var(--panel);border:2px solid var(--line);margin:0 auto 7px;position:relative;z-index:2}
+  .st::before{content:"";position:absolute;top:7px;left:-50%;width:100%;height:2px;background:var(--line);z-index:1}
+  .st:first-child::before{display:none}
+  .st.done .node{background:var(--good);border-color:var(--good)}
+  .st.done::before{background:var(--good)}
+  .st.on .node{background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 22%,transparent)}
+  .st.on::before{background:color-mix(in srgb,var(--good) 70%,var(--accent))}
+  .st .lb{font-size:10.5px;line-height:1.25;color:var(--mut);font-weight:600}
+  .st.on .lb,.st.done .lb{color:var(--ink)}
+  .st .sor{font-family:var(--mono);font-size:9px;color:var(--derived);display:block;margin-top:2px}
+  .st.build .node::after{content:"⚒";position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--warn)}
+  /* two columns */
+  .cols{display:grid;grid-template-columns:1.65fr 1fr;gap:18px;align-items:start}
+  @media (max-width:900px){.cols{grid-template-columns:1fr}}
+  .sec{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--ink);margin:0 0 10px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .sec::before{content:"";width:3px;height:12px;border-radius:2px;background:var(--accent)}
+  /* section (accreted stage) cards */
+  .scard{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin-bottom:12px}
+  .scard.active{border-color:color-mix(in srgb,var(--accent) 55%,var(--line));box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent)}
+  .scard.todo{opacity:.5}
+  .sc-head{display:flex;align-items:center;gap:9px;margin-bottom:10px;flex-wrap:wrap}
+  .sc-head .nm{font-weight:650;font-size:14px}
+  .sc-head .sor{font-family:var(--mono);font-size:10px;color:var(--derived);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+  .pill{font-family:var(--mono);font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.4px;margin-left:auto}
+  .pill.approved{background:color-mix(in srgb,var(--good) 16%,transparent);color:var(--good)}
+  .pill.active{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+  .pill.todo{background:var(--panel2);color:var(--mut)}
+  .pill.shipped{background:color-mix(in srgb,var(--good) 22%,transparent);color:var(--good)}
+  dl{margin:0;display:grid;grid-template-columns:130px 1fr;gap:5px 12px;font-size:13px}
+  dl dt{color:var(--mut);font-size:11.5px}
+  dl dd{margin:0}
+  .assume{margin-top:11px;border:1px solid color-mix(in srgb,var(--warn) 40%,var(--line));background:color-mix(in srgb,var(--warn) 8%,transparent);border-radius:8px;padding:8px 11px;font-size:12px}
+  .assume .lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--warn);font-weight:700;display:block;margin-bottom:3px}
+  .assume ul{margin:0;padding-left:16px}.assume li{margin:2px 0}
+  .prov{margin-top:11px;padding-top:9px;border-top:1px dashed color-mix(in srgb,var(--line) 70%,transparent);display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--mut)}
+  .prov .p{display:flex;align-items:center;gap:4px}
+  .prov .p b{color:var(--ink);font-weight:600}
+  .prov .when{margin-left:auto;font-family:var(--mono);font-size:10px}
+  /* gate */
+  .gate{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .gate .owner{font-size:12px;color:var(--mut);margin-bottom:9px}
+  .gate .owner b{color:var(--ink)}
+  .gate-btns{display:flex;gap:8px;flex-wrap:wrap}
+  .gate-block{font-size:12px;color:var(--bad);background:color-mix(in srgb,var(--bad) 8%,transparent);border:1px solid color-mix(in srgb,var(--bad) 30%,var(--line));border-radius:8px;padding:8px 11px;margin-bottom:9px}
+  .gate-block b{font-weight:600}
+  .build-note{font-size:11px;color:var(--mut);margin-top:8px}
+  /* side panels */
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin-bottom:14px}
+  .q{border-left:3px solid var(--warn);background:color-mix(in srgb,var(--warn) 6%,transparent);border-radius:0 8px 8px 0;padding:9px 12px;margin-bottom:9px;font-size:12.5px}
+  .q.answered{border-left-color:var(--good);background:color-mix(in srgb,var(--good) 6%,transparent)}
+  .q .qt{font-weight:550;line-height:1.35}
+  .q .qm{font-size:10.5px;color:var(--mut);margin-top:5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .q .route{font-family:var(--mono);color:var(--accent)}
+  .q .ans{margin-top:7px;padding-top:7px;border-top:1px dashed color-mix(in srgb,var(--line) 70%,transparent);font-size:12px}
+  .q .ans b{color:var(--good)}
+  .ev{display:flex;gap:9px;padding:7px 0;border-bottom:1px dashed color-mix(in srgb,var(--line) 60%,transparent);font-size:12px}
+  .ev:last-child{border-bottom:0}
+  .ev .ed{width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:4px;flex-shrink:0}
+  .ev.milestone .ed{background:var(--good)}
+  .ev .et{line-height:1.35}
+  .ev .ewhen{font-family:var(--mono);font-size:10px;color:var(--mut)}
+  .ev .frame{color:var(--good);font-weight:550}
+  .sub{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px}
+  .sub .av{width:22px;height:22px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+  .sub .sw{font-size:10.5px;color:var(--mut);margin-left:auto}
+  /* inline composer */
+  .composer{margin-top:9px}
+  .composer textarea{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-family:var(--sans);font-size:13px;resize:vertical;min-height:56px}
+  .composer .cbtns{display:flex;gap:7px;margin-top:7px}
+  .composer .cbtns button{padding:6px 12px;font-size:12px}
+  .muted{color:var(--mut)}
+  /* intake / slack sim */
+  .intake{padding:22px;max-width:720px}
+  .slackwin{border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--panel)}
+  .slackhead{background:color-mix(in srgb,var(--accent) 10%,var(--panel));border-bottom:1px solid var(--line);padding:9px 14px;font-weight:650;font-size:13px;display:flex;align-items:center;gap:7px}
+  .slackhead .hash{color:var(--mut);font-family:var(--mono)}
+  .slackmsg{display:flex;gap:10px;padding:13px 14px}
+  .slackmsg .av{width:34px;height:34px;border-radius:8px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}
+  .slackmsg .who{font-weight:650;font-size:13px}.slackmsg .who span{font-family:var(--mono);font-size:10px;color:var(--mut);font-weight:400;margin-left:6px}
+  .slackmsg textarea{width:100%;margin-top:5px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:9px 11px;font-family:var(--sans);font-size:13.5px;line-height:1.45;resize:vertical;min-height:70px}
+  .mention{color:var(--accent);font-weight:600}
+  .parsed{margin-top:16px;border:1px solid color-mix(in srgb,var(--accent) 45%,var(--line));border-radius:11px;padding:15px 17px;background:var(--panel)}
+  .parsed .ph{font-size:12px;color:var(--mut);margin-bottom:11px;display:flex;align-items:center;gap:8px}
+  .parsed .ph b{color:var(--accent);font-family:var(--mono);font-size:11px}
+  .gaps{margin-top:11px;border:1px dashed color-mix(in srgb,var(--bad) 40%,var(--line));border-radius:8px;padding:9px 12px;font-size:12px}
+  .gaps .lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--bad);font-weight:700;display:block;margin-bottom:4px}
+  .gaps ul{margin:0;padding-left:16px}
+  /* documentation view — segmented control + inline-editable doc sections */
+  .seg{display:inline-flex;gap:2px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:2px;margin:2px 0 16px}
+  .seg button{background:transparent;border:none;padding:6px 14px;font-size:12.5px;border-radius:6px;color:var(--mut);font-weight:600}
+  .seg button:hover{border:none;color:var(--ink)}
+  .seg button.on{background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+  .docmeta{font-size:12px;color:var(--mut);margin-bottom:14px;line-height:1.5}
+  .docsec{border:1px solid var(--line);border-radius:10px;margin-bottom:11px;overflow:hidden;background:var(--panel)}
+  .docsec.pending{opacity:.6;border-style:dashed}
+  .dsh{display:flex;align-items:center;gap:8px;padding:8px 13px;background:var(--panel2);border-bottom:1px solid var(--line)}
+  .dst{font-weight:650;font-size:13px}
+  .dsw{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--mut)}
+  .docbody{padding:11px 14px;font-size:13px;line-height:1.55;white-space:pre-wrap;outline:none}
+  .docbody[contenteditable="true"]{cursor:text;transition:background .12s,box-shadow .12s}
+  .docbody[contenteditable="true"]:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+  .docbody[contenteditable="true"]:focus{background:color-mix(in srgb,var(--accent) 8%,transparent);box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+  .docbody.empty{color:var(--mut);font-style:italic}
+  /* toast */
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--panel);border:1px solid var(--accent);border-radius:10px;padding:11px 16px;font-size:13px;box-shadow:0 8px 30px rgba(0,0,0,.3);opacity:0;transition:.25s;z-index:30;display:flex;align-items:center;gap:10px;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast .lk{color:var(--accent);font-family:var(--mono);font-size:12px}
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1><span class="dot"></span>Relay</h1>
+  <span class="tag">product-dev control plane</span>
+  <div class="spacer"></div>
+  <button id="newBtn" class="primary">＋ New from Slack</button>
+  <button id="themeBtn" title="Toggle theme">◑</button>
+</div>
+<div class="help">
+  <span><b>Slack</b> <span class="arrow">→</span> parsed into an <b>initiative</b> <span class="arrow">→</span> it accretes fields &amp; requirements at every stage <span class="arrow">→</span> you <b>approve / change / build</b> at each gate <span class="arrow">→</span> downstream <b>questions route back</b> to whoever owns the answer, and milestones <b>hand back</b> to whoever asked.</span>
+</div>
+<div class="wrap" id="wrap">
+  <aside class="rail" id="rail"></aside>
+  <main class="main" id="main"></main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------------------------------------------------------------------------
+   Relay — a prototype of the product-dev control plane.
+   The initiative is the spine object: it is APPEND-ONLY (each stage adds a
+   typed section, never overwrites), it carries PROVENANCE on every field
+   (which doubles as the routing table for questions), and its gates are where
+   human judgment enters. Build is the one guarded gate — you cannot cross into
+   code on a thin ticket. Milestones hand back to sales/CS. All seed data.
+--------------------------------------------------------------------------- */
+
+const STAGES = [
+  {key:'intake',        label:'Intake',            sor:'Relay',         role:'Originator'},
+  {key:'stakeholder',   label:'Stakeholder Reqs',  sor:'Confluence',    role:'PM',            milestone:'handshake', validate:'Confirm we heard you right'},
+  {key:'functional',    label:'Functional Reqs',   sor:'Confluence',    role:'PM · Eng Lead'},
+  {key:'architecture',  label:'Design & Arch',     sor:'Confluence',    role:'Eng Lead'},
+  {key:'prototype',     label:'Prototype',         sor:'Claude Design', role:'Claude Design', milestone:'handshake', validate:'Does this actually solve it?'},
+  {key:'tickets',       label:'Tickets',           sor:'Jira',          role:'Eng Lead',      build:true},
+  {key:'implementation',label:'Implementation',    sor:'Repo',          role:'Engineer · Claude'},
+  {key:'shipped',       label:'Shipped',           sor:'Repo',          role:'—',             milestone:'ship'},
+];
+const sidx = k => STAGES.findIndex(s=>s.key===k);
+const TEAM = {Sales:'accent',CS:'good',Product:'warn',Eng:'derived','Claude':'accent'};
+
+/* seed initiatives ------------------------------------------------------- */
+let DATA = [
+  {
+    id:'REL-104', title:'Rep can see promo calendar per banner in the account view',
+    originator:{name:'Stephanie', team:'Sales'}, accounts:['Publix','Kroger'], stage:'functional',
+    sections:{
+      intake:{fields:[['Problem','Reps walk into Publix blind to which promos flip that week; Publix resets Wednesdays'],['Requested by','Stephanie (Sales)'],['Type','Visibility / reporting']],
+              assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'approve',who:'Stephanie'}], when:'3d ago'},
+      stakeholder:{fields:[['Job to be done','Before a store visit, a rep knows which items are on/going-off promo for that banner'],['Success looks like','Rep stops getting surprised by a reset; walks in with the right ask'],['Out of scope','Building the promo scrape itself — that data exists']],
+              assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'edit',who:'Stephanie'},{k:'approve',who:'Bruno (PM)'}], when:'2d ago'},
+      functional:{fields:[['Trigger','Rep opens an account → Promo tab'],['Data','Banner promo calendar keyed to the account’s chain + region'],['States','Live now · flips this week · recently ended (30d)']],
+              assumptions:['Assumed "banner" = chain+region, not per-store — most promos are banner-wide. Confirm before functional sign-off.'],
+              prov:[{k:'draft',who:'Claude'}], when:'20m ago'},
+    },
+    questions:[], subscribers:[{name:'Stephanie',team:'Sales',why:'raised it'},{name:'Dana',team:'Sales',why:'owns Publix'},{name:'Marcus',team:'Sales',why:'owns Kroger'}],
+    events:[{when:'3d ago',t:'<b>Relay</b> parsed Stephanie’s request into REL-104 and posted the link back to <b>#product-requests</b>.'},
+            {when:'2d ago',milestone:1,frame:'We heard you — ',t:'Stephanie confirmed the stakeholder write-up matches what she meant.'}],
+  },
+  {
+    id:'REL-101', title:'Distributor menu upload → auto-generated PO',
+    originator:{name:'Fabio', team:'CS'}, accounts:['Curaleaf NY'], stage:'prototype', validate:'pending',
+    sections:{
+      intake:{fields:[['Problem','CS re-keys distributor menus into POs by hand; slow and error-prone'],['Requested by','Fabio (CS)'],['Type','Workflow automation']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'approve',who:'Fabio'}], when:'9d ago'},
+      stakeholder:{fields:[['Job to be done','Upload a distributor menu, get a clean PO to review — no re-keying'],['Success looks like','A menu becomes a reviewable PO in under a minute']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'approve',who:'Bruno (PM)'}], when:'8d ago'},
+      functional:{fields:[['Inputs','xlsx / csv menu (Curaleaf NY is the reference shape)'],['Output','Normalized order lines → per-distributor PO sheet'],['Rules','MSRP = 2× base (keystone); THC normalized; brand-section context']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'edit',who:'Tommy (Eng)'},{k:'approve',who:'Bruno (PM)'}], when:'6d ago'},
+      architecture:{fields:[['Parser','stdlib menu_ingest — xlsx = zipped XML, heuristic header detection'],['Store','distributor_menu_items → orders'],['Surface','ordering.html: all menus → one catalog → one order']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'approve',who:'Tommy (Eng)'}], when:'4d ago'},
+      prototype:{fields:[['Prototype','Interactive upload → catalog → PO flow'],['Link','claude.design/relay/rel-101 (mock)']], assumptions:['Prototype assumes one distributor per upload. Multi-distributor menus would need a split step — flag for CS.'], prov:[{k:'draft',who:'Claude Design'}], when:'1d ago'},
+    },
+    questions:[], subscribers:[{name:'Fabio',team:'CS',why:'raised it'},{name:'Priya',team:'CS',why:'runs Curaleaf orders'}],
+    events:[{when:'9d ago',t:'<b>Relay</b> parsed Fabio’s request into REL-101.'},
+            {when:'1d ago',milestone:1,frame:'Does this look right? — ',t:'Prototype ready. Sent to <b>Fabio</b> + Priya to validate <i>before</i> we commit engineering.'}],
+  },
+  {
+    id:'REL-098', title:'Bulk barcode scan in the field',
+    originator:{name:'Graham', team:'Product'}, accounts:[], stage:'implementation',
+    sections:{
+      intake:{fields:[['Problem','Reps scan one SKU at a time; a full shelf audit takes forever'],['Requested by','Graham (Product)'],['Type','Feature']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'approve',who:'Graham'}], when:'16d ago'},
+      stakeholder:{fields:[['Job to be done','Rep sweeps a shelf and captures every barcode in one pass']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'approve',who:'Graham'}], when:'14d ago'},
+      functional:{fields:[['Mode','Continuous camera scan; dedupes as it goes'],['Field use','Used walking a shelf — often poor connectivity']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'edit',who:'Graham'},{k:'approve',who:'Bruno (PM)'}], when:'11d ago'},
+      architecture:{fields:[['Decoder','On-device barcode decode; batch upload']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'approve',who:'Tommy (Eng)'}], when:'9d ago'},
+      prototype:{fields:[['Prototype','Live continuous-scan demo'],['Validated','Graham signed off on the flow']], assumptions:[], prov:[{k:'draft',who:'Claude Design'},{k:'approve',who:'Graham'}], when:'7d ago'},
+      tickets:{fields:[['Epic','HOOD-812 — Bulk field scan'],['Tickets','5 children in Jira']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'approve',who:'Tommy (Eng)'}], when:'5d ago'},
+      implementation:{fields:[['Branch','feat/bulk-scan'],['Status','Decoder + dedup landed; sync layer in progress']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'edit',who:'Fabio (Eng)'}], when:'6h ago'},
+    },
+    questions:[{id:'q1', text:'Should offline scans queue locally and sync later, or require connectivity to capture at all?', by:'Fabio (Eng)', atStage:'implementation', routedTo:'Graham', because:'wrote the "poor connectivity" functional requirement', status:'open'}],
+    subscribers:[{name:'Graham',team:'Product',why:'raised it'}],
+    events:[{when:'16d ago',t:'<b>Relay</b> parsed Graham’s request into REL-098.'},
+            {when:'6h ago',t:'<b>Question routed to Graham</b> — implementation hit an ambiguity the functional spec didn’t resolve. Gate to <i>Shipped</i> is blocked until answered.'}],
+  },
+  {
+    id:'REL-092', title:'New-territory create flow',
+    originator:{name:'Bruno', team:'Sales'}, accounts:[], stage:'shipped',
+    sections:{
+      intake:{fields:[['Problem','Managers can’t stand up a new territory without an engineer'],['Requested by','Bruno (Sales)'],['Type','Feature']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'approve',who:'Bruno'}], when:'5w ago'},
+      stakeholder:{fields:[['Job to be done','A manager creates a territory + assigns accounts, self-serve']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'approve',who:'Bruno'}], when:'5w ago'},
+      functional:{fields:[['Flow','Name → draw/assign accounts → assign rep → save']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'approve',who:'Bruno (PM)'}], when:'4w ago'},
+      architecture:{fields:[['Surface','territory.html create flow']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'approve',who:'Tommy (Eng)'}], when:'4w ago'},
+      prototype:{fields:[['Validated','Bruno signed off']], assumptions:[], prov:[{k:'approve',who:'Bruno'}], when:'3w ago'},
+      tickets:{fields:[['Epic','HOOD-740']], assumptions:[], prov:[{k:'approve',who:'Tommy (Eng)'}], when:'3w ago'},
+      implementation:{fields:[['PR','#488 merged'],['Dev docs','updated']], assumptions:[], prov:[{k:'draft',who:'Claude'},{k:'approve',who:'Tommy (Eng)'}], when:'2w ago'},
+      shipped:{fields:[['Release','Live in production'],['Demo','territory.html → New territory']], assumptions:[], prov:[{k:'approve',who:'Tommy (Eng)'}], when:'2w ago'},
+    },
+    questions:[], subscribers:[{name:'Bruno',team:'Sales',why:'raised it'},{name:'Field team',team:'Sales',why:'territory owners'}],
+    events:[{when:'5w ago',t:'<b>Relay</b> parsed Bruno’s request into REL-092.'},
+            {when:'2w ago',milestone:1,frame:'It’s live — ',t:'Managers can now create territories self-serve. <b>Bruno + field team notified</b> with a demo link and what to tell customers.'}],
+  },
+];
+
+/* ui state --------------------------------------------------------------- */
+const state = {selId:'REL-104', compose:null, intake:{parsed:null}, docView:'brief'};
+let SEQ = 105;
+
+const rail=document.getElementById('rail'), main=document.getElementById('main'), wrap=document.getElementById('wrap');
+const byId = id => DATA.find(x=>x.id===id);
+
+function openQs(init){ return init.questions.filter(q=>q.status==='open'); }
+function buildReady(init){
+  const reasons=[];
+  if(openQs(init).length) reasons.push(`${openQs(init).length} open question(s) unresolved`);
+  if(init.validate==='pending') reasons.push('Prototype not yet validated by the requester');
+  // every prior section must be approved
+  const cur=sidx(init.stage);
+  for(let i=0;i<=cur;i++){ const s=init.sections[STAGES[i].key]; if(s && !s.prov.some(p=>p.k==='approve')) reasons.push(`${STAGES[i].label} gate not signed`); }
+  return {ok:reasons.length===0, reasons};
+}
+
+/* ---- render: left rail ---- */
+function renderRail(){
+  const groups={};
+  DATA.forEach(i=>{ (groups[i.stage]=groups[i.stage]||[]).push(i); });
+  let h = `<div class="rh"><b style="font-size:12px">Pipeline</b><span class="muted" style="font-size:11px">${DATA.length} initiatives</span></div>
+    <div class="legend">
+      <span><i class="sdot q"></i>open question</span>
+      <span><i class="sdot val"></i>awaiting validation</span>
+      <span><i class="sdot build"></i>ready to build</span>
+      <span><i class="sdot ship"></i>shipped</span>
+    </div>`;
+  STAGES.forEach(s=>{
+    const list=groups[s.key]; if(!list) return;
+    h += `<div class="rg">${s.label}<span class="sor">${s.sor}</span></div>`;
+    list.forEach(i=>{
+      const dots=[];
+      if(openQs(i).length) dots.push('<i class="sdot q" title="open question"></i>');
+      if(i.validate==='pending') dots.push('<i class="sdot val" title="awaiting validation"></i>');
+      if(i.stage==='prototype' && i.validate!=='pending' && !openQs(i).length) dots.push('<i class="sdot build" title="ready to build"></i>');
+      if(i.stage==='shipped') dots.push('<i class="sdot ship" title="shipped"></i>');
+      h += `<div class="ir ${i.id===state.selId?'on':''}" data-act="sel" data-id="${i.id}">
+        <div class="id">${i.id}</div>
+        <div class="t">${i.title}</div>
+        <div class="m"><span class="who">${i.originator.name}</span> · ${i.originator.team}<span class="dots">${dots.join('')}</span></div>
+      </div>`;
+    });
+  });
+  rail.innerHTML=h;
+}
+
+/* ---- render: stage rail (progress) ---- */
+function stageRailHtml(init){
+  const cur=sidx(init.stage);
+  return `<div class="stagerail">`+STAGES.map((s,i)=>{
+    const cls = i<cur?'done': i===cur?'on':'todo';
+    return `<div class="st ${cls} ${s.build?'build':''}"><div class="node"></div><div class="lb">${s.label}<span class="sor">${s.sor}</span></div></div>`;
+  }).join('')+`</div>`;
+}
+
+/* ---- render: one accreted section card ---- */
+const PK = {draft:['✍','drafted by'],edit:['✎','edited by'],approve:['✓','approved by'],amend:['⇧','amended by']};
+function sectionHtml(init, key){
+  const cur=sidx(init.stage), i=sidx(key), s=init.sections[key], meta=STAGES[i];
+  if(i>cur || !s){ // not started
+    return `<div class="scard todo"><div class="sc-head"><span class="nm">${meta.label}</span><span class="sor">${meta.sor}</span><span class="pill todo">not started</span></div><div class="muted" style="font-size:12px">Reads: ${STAGES[i-1]?STAGES[i-1].label:'—'} · Writes: ${meta.label}</div></div>`;
+  }
+  const active = i===cur;
+  const status = key==='shipped' ? 'shipped' : (active?'active':'approved');
+  const statusLabel = key==='shipped'?'shipped':(active?'in progress':'approved');
+  let h = `<div class="scard ${active?'active':''}"><div class="sc-head"><span class="nm">${meta.label}</span><span class="sor">${meta.sor}</span><span class="pill ${status}">${statusLabel}</span></div>`;
+  h += `<dl>`+s.fields.map(f=>`<dt>${f[0]}</dt><dd>${f[1]}</dd>`).join('')+`</dl>`;
+  if(s.assumptions.length) h += `<div class="assume"><span class="lbl">⚠ Claude assumed — confirm or correct</span><ul>`+s.assumptions.map(a=>`<li>${a}</li>`).join('')+`</ul></div>`;
+  h += `<div class="prov">`+s.prov.map(p=>`<span class="p">${PK[p.k][0]} ${PK[p.k][1]} <b>${p.who}</b></span>`).join('')+`<span class="when">${s.when}</span></div>`;
+  if(active) h += gateHtml(init);
+  h += `</div>`;
+  return h;
+}
+
+/* ---- render: the gate (approve / change / build) ---- */
+function gateHtml(init){
+  const cur=sidx(init.stage), next=STAGES[cur+1];
+  if(!next) return ''; // shipped
+  const isBuild = next.build;
+  const oq = openQs(init);
+  let h = `<div class="gate">`;
+  h += `<div class="owner">Gate → <b>${next.label}</b> · owner: <b>${next.role}</b>`+(isBuild?` · <span style="color:var(--warn)">⚒ Build gate</span>`:``)+`</div>`;
+
+  // validation gate (reverse handshake) sits in front of advancing out of prototype
+  if(init.validate==='pending'){
+    h += `<div class="gate-block"><b>Reverse handshake:</b> awaiting <b>${init.originator.name} (${init.originator.team})</b> to validate the prototype — <i>"${STAGES[cur].validate}"</i></div>`;
+    h += `<div class="gate-btns"><button class="primary" data-act="validate" data-id="${init.id}">✓ Validate as ${init.originator.team}</button>
+      <button data-act="change" data-id="${init.id}">↩ Not right — send back</button></div>`;
+    return h+`</div>`;
+  }
+  if(oq.length){
+    h += `<div class="gate-block">Gate blocked — <b>${oq.length} open question(s)</b> must be answered before this stage can advance.</div>`;
+  }
+  if(isBuild){
+    const r=buildReady(init);
+    if(!r.ok){
+      h += `<div class="gate-block"><b>Build guarded.</b> Can’t commit to code until: ${r.reasons.join(' · ')}.</div>`;
+    }
+    h += `<div class="gate-btns">
+      <button class="primary" data-act="build" data-id="${init.id}" ${r.ok?'':'disabled'}>⚒ Build → generate Jira tickets</button>
+      <button data-act="change" data-id="${init.id}">✎ Change</button></div>`;
+    h += `<div class="build-note">Everything before Build is cheap to change. After Build there is code — so this is the one gate that won’t open on a thin ticket.</div>`;
+  } else {
+    h += `<div class="gate-btns">
+      <button class="primary" data-act="approve" data-id="${init.id}" ${oq.length?'disabled':''}>✓ Approve → ${next.label}</button>
+      <button data-act="change" data-id="${init.id}">✎ Change</button>
+      <button data-act="raiseq" data-id="${init.id}">? Ask a question</button></div>`;
+  }
+  // inline composer
+  if(state.compose && state.compose.id===init.id){
+    const c=state.compose;
+    const ph = c.kind==='change'?'What should change? (routes as an amendment to the field owner)':'Your question — it’ll route to whoever owns the answer';
+    h += `<div class="composer"><textarea id="composeText" placeholder="${ph}"></textarea>
+      <div class="cbtns"><button class="primary" data-act="compose-submit" data-id="${init.id}">${c.kind==='change'?'Send amendment':'Route question'}</button>
+      <button data-act="compose-cancel">Cancel</button></div></div>`;
+  }
+  return h+`</div>`;
+}
+
+/* ---- render: side panels (questions + reverse handshake) ---- */
+function sideHtml(init){
+  let h='';
+  // open questions / routing
+  h += `<div class="panel"><div class="sec">Questions &amp; routing</div>`;
+  if(!init.questions.length){ h += `<div class="muted" style="font-size:12px">No open questions. Downstream can raise one at any gate — it routes to whoever wrote the field it depends on.</div>`; }
+  init.questions.forEach(q=>{
+    h += `<div class="q ${q.status==='answered'?'answered':''}">
+      <div class="qt">${q.text}</div>
+      <div class="qm">raised by <b>${q.by}</b> at ${STAGES[sidx(q.atStage)].label} · routed to <span class="route">${q.routedTo}</span> <span class="muted">(${q.because})</span></div>`;
+    if(q.status==='answered'){ h += `<div class="ans"><b>${q.routedTo}:</b> ${q.answer}</div>`; }
+    else if(state.compose && state.compose.kind==='answer' && state.compose.qid===q.id){
+      h += `<div class="composer"><textarea id="composeText" placeholder="Answer as ${q.routedTo} — appends to the ticket and unblocks the gate"></textarea>
+        <div class="cbtns"><button class="primary" data-act="answer-submit" data-id="${init.id}" data-q="${q.id}">Answer &amp; unblock</button>
+        <button data-act="compose-cancel">Cancel</button></div></div>`;
+    } else {
+      h += `<div style="margin-top:7px"><button data-act="answer" data-id="${init.id}" data-q="${q.id}" style="padding:5px 10px;font-size:12px">Answer as ${q.routedTo}</button></div>`;
+    }
+    h += `</div>`;
+  });
+  h += `</div>`;
+  // reverse handshake feed + subscribers
+  h += `<div class="panel"><div class="sec">Reverse handshake</div>`;
+  h += init.events.map(e=>`<div class="ev ${e.milestone?'milestone':''}"><div class="ed"></div><div class="et">${e.frame?`<span class="frame">${e.frame}</span>`:''}${e.t}<div class="ewhen">${e.when}</div></div></div>`).join('');
+  h += `<div style="margin-top:11px" class="sec">Kept in the loop</div>`;
+  h += init.subscribers.map(s=>`<div class="sub"><div class="av">${s.name[0]}</div><div>${s.name} <span class="muted">· ${s.team}</span></div><span class="sw">${s.why}</span></div>`).join('');
+  h += `</div>`;
+  return h;
+}
+
+/* ---- documentation: dev + commercial tracks, built progressively, editable inline ----
+   Two audience-shaped projections of the same accreted brief. A doc section
+   becomes writable the moment its stage is reached, so the docs *finish as the
+   feature finishes*. The commercial track is the reverse handshake made durable:
+   by ship time, sales/CS have the release note + what-to-tell-the-customer ready. */
+const DOCSPEC = {
+  dev:{ label:'Dev documentation', audience:'Engineers', lands:'Repo · Dev Docs',
+    sections:[ {stage:'intake',title:'Problem statement'},{stage:'functional',title:'Behavior & contracts'},
+      {stage:'architecture',title:'Design & architecture'},{stage:'tickets',title:'Work breakdown'},
+      {stage:'implementation',title:'Implementation notes'} ] },
+  commercial:{ label:'Commercial documentation', audience:'Sales · CS · the customer', lands:'Sales / CS enablement',
+    sections:[ {stage:'intake',title:'The ask'},{stage:'stakeholder',title:'Customer value'},
+      {stage:'prototype',title:'What it looks like'},{stage:'shipped',title:'Release note — what to tell your customer'} ] },
+};
+function fld(init, stageKey, prefix){ const s=init.sections[stageKey]; if(!s) return null; const f=s.fields.find(x=>x[0].toLowerCase().startsWith(prefix.toLowerCase())); return f?f[1]:null; }
+function joinFields(init, stageKey){ const s=init.sections[stageKey]; return s?s.fields.map(f=>`${f[0]}: ${f[1]}`).join('\n'):''; }
+function genBody(init, track, stage){
+  const t=init.title, who=`${init.originator.name} (${init.originator.team})`;
+  if(track==='dev'){
+    if(stage==='intake') return fld(init,'intake','Problem')||t;
+    return joinFields(init, stage) || '—';
+  }
+  if(stage==='intake') return `${who} raised this:\n${fld(init,'intake','Problem')||t}`;
+  if(stage==='stakeholder') return `Value: ${fld(init,'stakeholder','Job')||'—'}\nWhat success looks like: ${fld(init,'stakeholder','Success')||'—'}`;
+  if(stage==='prototype') return `A working prototype is ready${fld(init,'prototype','Link')?` — ${fld(init,'prototype','Link')}`:''}.\nShare it with the account so their reaction shapes the build before engineering is committed.`;
+  if(stage==='shipped') return `${t} is live.\n\nWhat to tell your customer: ${fld(init,'stakeholder','Success')||fld(init,'stakeholder','Job')||'the capability they asked for now works'}.\nHow to demo: ${fld(init,'shipped','Demo')||'open the feature and walk the flow'}.`;
+  return '—';
+}
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function segHtml(){
+  return `<div class="seg">`+[['brief','Brief'],['dev','Dev doc'],['commercial','Commercial doc']]
+    .map(o=>`<button data-act="docview" data-view="${o[0]}" class="${state.docView===o[0]?'on':''}">${o[1]}</button>`).join('')+`</div>`;
+}
+function docHtml(init){
+  const track=state.docView, spec=DOCSPEC[track], cur=sidx(init.stage);
+  let h=`<div class="sec">${spec.label}</div>
+    <div class="docmeta">Audience: <b>${spec.audience}</b> · lands in <b>${spec.lands}</b> · builds as the initiative advances · <b>editable inline</b> — click any section, every edit is stamped.</div><div class="doc">`;
+  spec.sections.forEach(sec=>{
+    const si=sidx(sec.stage), reached=si<=cur, stageLabel=STAGES[si].label;
+    if(!reached){
+      h+=`<div class="docsec pending"><div class="dsh"><span class="dst">${sec.title}</span><span class="dsw">builds at ${stageLabel}</span></div><div class="docbody empty">Fills in when this initiative reaches the ${stageLabel} stage.</div></div>`;
+      return;
+    }
+    const stored=init.doc&&init.doc[track]&&init.doc[track][sec.stage];
+    const body=stored?stored.body:genBody(init,track,sec.stage);
+    h+=`<div class="docsec"><div class="dsh"><span class="dst">${sec.title}</span><span class="dsw">from ${stageLabel}${stored&&stored.editedBy?` · ✎ ${stored.editedBy} ${stored.when}`:''}</span></div>
+      <div class="docbody" contenteditable="true" spellcheck="false" data-track="${track}" data-stage="${sec.stage}">${escHtml(body)}</div></div>`;
+  });
+  return h+`</div>`;
+}
+
+/* ---- render: detail ---- */
+function renderDetail(){
+  const init=byId(state.selId); if(!init){ main.innerHTML=''; return; }
+  const cur=sidx(init.stage);
+  let h = `<div class="detail">
+    <div class="ihead"><span class="id">${init.id}</span><h2>${init.title}</h2></div>
+    <div class="chips">
+      <span class="chip team-${init.originator.team}">raised by <b>${init.originator.name}</b> · ${init.originator.team}</span>
+      ${init.accounts.map(a=>`<span class="chip">📍 <b>${a}</b></span>`).join('')}
+      <span class="chip">stage <b>${STAGES[cur].label}</b></span>
+    </div>`;
+  h += stageRailHtml(init);
+  h += segHtml();
+  h += `<div class="cols"><div class="colmain">`;
+  if(state.docView==='brief'){
+    h += `<div class="sec">Accreted brief — append-only, newest stage on top</div>`;
+    // show sections newest-first down to intake, then a couple of upcoming
+    for(let i=cur;i>=0;i--){ h += sectionHtml(init, STAGES[i].key); }
+    if(cur+1<STAGES.length) h += sectionHtml(init, STAGES[cur+1].key); // peek next
+  } else {
+    h += docHtml(init);
+  }
+  h += `</div><div class="colside">`+sideHtml(init)+`</div></div></div>`;
+  main.innerHTML=h;
+}
+
+/* ---- render: intake (slack sim) ---- */
+const SAMPLE = '@relay we need a way for reps to see which of our SKUs Total Wine has actually delisted in the last 30 days — they keep dropping our items and the team finds out too late, on the shelf. Affects Total Wine, maybe Specs too.';
+function renderIntake(){
+  const p=state.intake.parsed;
+  let h=`<div class="intake"><div class="sec">New from Slack — the intake boundary</div>
+    <div class="slackwin"><div class="slackhead"><span class="hash">#</span>product-requests</div>
+      <div class="slackmsg"><div class="av">S</div><div style="flex:1">
+        <div class="who">Steph Ruiz <span>10:42 AM</span></div>
+        <textarea id="slackText">${SAMPLE}</textarea>
+        <div style="margin-top:9px"><button class="primary" data-act="parse">Parse into initiative →</button>
+        <button data-act="back" style="margin-left:6px">Cancel</button></div>
+      </div></div></div>`;
+  if(p){
+    h+=`<div class="parsed"><div class="ph"><b>${p.id}</b> · Relay parsed this into a draft initiative. It extracts what it can and <b style="color:var(--bad)">flags gaps instead of guessing</b>.</div>
+      <dl>${p.fields.map(f=>`<dt>${f[0]}</dt><dd>${f[1]}</dd>`).join('')}</dl>`;
+    if(p.assumptions.length) h+=`<div class="assume"><span class="lbl">⚠ Assumed — confirm or correct</span><ul>${p.assumptions.map(a=>`<li>${a}</li>`).join('')}</ul></div>`;
+    h+=`<div class="gaps"><span class="lbl">✗ Missing — needed before stakeholder sign-off</span><ul>${p.gaps.map(g=>`<li>${g}</li>`).join('')}</ul></div>`;
+    h+=`<div style="margin-top:13px"><button class="primary" data-act="create">Create ${p.id} &amp; post link back to Slack</button></div></div>`;
+  }
+  h+=`</div>`;
+  main.innerHTML=h;
+}
+
+function parseSlack(text){
+  const known=['Total Wine','Specs','Publix','Kroger','Curaleaf','Walmart','ABC','Costco','Meijer'];
+  const found=known.filter(a=>text.toLowerCase().includes(a.toLowerCase()));
+  const problem=text.replace(/@relay/ig,'').trim();
+  const typeGuess=/report|see|view|dashboard|visib|which|track/i.test(text)?'Visibility / reporting':/upload|import|auto|generate/i.test(text)?'Workflow automation':'Feature';
+  return {
+    id:'REL-'+SEQ,
+    fields:[['Problem',problem],['Requested by','Steph Ruiz (Sales)'],['Accounts',found.length?found.join(', '):'— (none named)'],['Type (guess)',typeGuess]],
+    assumptions: /delist/i.test(text)?['Assumed "delisted" = removed from a store’s assortment, not merely out-of-stock. These are different signals — confirm.']:[],
+    gaps:['Target rep persona / which team uses this isn’t specified','Success metric — what does "caught in time" mean? — not given','Cadence — live alert vs. weekly digest? — not stated'],
+    accounts:found, problem, typeGuess,
+  };
+}
+
+/* ---- actions ---- */
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.innerHTML=msg; t.classList.add('show');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),3400);
+}
+function render(){ renderRail(); if(state.view==='intake') renderIntake(); else renderDetail(); }
+
+document.addEventListener('click', e=>{
+  const el=e.target.closest('[data-act]'); if(!el) return;
+  const act=el.dataset.act, id=el.dataset.id, init=id?byId(id):null;
+
+  if(act==='sel'){ state.selId=id; state.view='detail'; state.compose=null; render(); }
+  else if(act==='docview'){ state.docView=el.dataset.view; render(); }
+  else if(act==='back'){ state.view='detail'; state.intake.parsed=null; render(); }
+  else if(act==='parse'){ const txt=document.getElementById('slackText').value; state.intake.parsed=parseSlack(txt); renderIntake(); }
+  else if(act==='create'){
+    const p=state.intake.parsed;
+    DATA.unshift({ id:p.id, title:p.problem.length>66?p.problem.slice(0,64)+'…':p.problem,
+      originator:{name:'Steph Ruiz',team:'Sales'}, accounts:p.accounts, stage:'intake',
+      sections:{intake:{fields:p.fields, assumptions:p.assumptions, prov:[{k:'draft',who:'Claude'}], when:'just now'}},
+      questions:[], subscribers:[{name:'Steph Ruiz',team:'Sales',why:'raised it'}],
+      events:[{when:'just now',t:`<b>Relay</b> parsed the request into ${p.id} and posted the link back to <b>#product-requests</b>.`}] });
+    SEQ++; state.selId=p.id; state.view='detail'; state.intake.parsed=null;
+    toast(`Posted to Slack: Relay created <b>${p.id}</b> &nbsp;<span class="lk">→ open to approve / change</span>`);
+    render();
+  }
+  else if(act==='approve' && init){ advance(init, 'approve'); }
+  else if(act==='build' && init){ advance(init, 'build'); }
+  else if(act==='validate' && init){
+    init.validate=null;
+    init.sections[init.stage].prov.push({k:'approve',who:init.originator.name}); // the requester's validation IS the prototype sign-off
+    init.events.push({when:'just now',milestone:1,frame:'Validated — ',t:`${init.originator.name} confirmed the prototype solves it. Build is now unlocked.`});
+    toast(`<b>${init.originator.name}</b> validated the prototype — ⚒ Build unlocked`);
+    render();
+  }
+  else if(act==='change' && init){ state.compose={id, kind:'change'}; render(); focusCompose(); }
+  else if(act==='raiseq' && init){ state.compose={id, kind:'question'}; render(); focusCompose(); }
+  else if(act==='compose-cancel'){ state.compose=null; render(); }
+  else if(act==='compose-submit' && init){ submitCompose(init); }
+  else if(act==='answer' && init){ state.compose={id, kind:'answer', qid:el.dataset.q}; render(); focusCompose(); }
+  else if(act==='answer-submit' && init){ answerQ(init, el.dataset.q); }
+});
+/* inline doc editing — persist on blur, stamp provenance, append-only */
+document.addEventListener('focusout', e=>{
+  const d=e.target.closest && e.target.closest('.docbody[contenteditable]'); if(!d) return;
+  const init=byId(state.selId); if(!init) return;
+  const track=d.dataset.track, stage=d.dataset.stage;
+  const stored=init.doc&&init.doc[track]&&init.doc[track][stage];
+  const baseline=stored?stored.body:genBody(init,track,stage);
+  const val=d.innerText.replace(/ /g,' ').replace(/\s+$/,'');
+  if(val && val!==baseline){
+    init.doc=init.doc||{dev:{},commercial:{}};
+    init.doc[track]=init.doc[track]||{};
+    init.doc[track][stage]={body:val, editedBy:'You', when:'just now'};
+    toast(`Saved edit to the ${track==='dev'?'dev':'commercial'} doc · ${STAGES[sidx(stage)].label}`);
+    render();
+  }
+});
+document.getElementById('newBtn').onclick=()=>{ state.view='intake'; state.intake.parsed=null; render(); };
+document.getElementById('themeBtn').onclick=()=>{
+  const r=document.documentElement, cur=r.getAttribute('data-theme')|| (matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');
+  r.setAttribute('data-theme', cur==='dark'?'light':'dark');
+};
+function focusCompose(){ const t=document.getElementById('composeText'); if(t) t.focus(); }
+
+function submitCompose(init){
+  const txt=(document.getElementById('composeText')||{}).value||''; if(!txt.trim()){ state.compose=null; render(); return; }
+  const cur=STAGES[sidx(init.stage)];
+  if(state.compose.kind==='change'){
+    // amendment: append to provenance of the active section, don't overwrite
+    init.sections[init.stage].prov.push({k:'amend',who:'You'});
+    init.sections[init.stage].when='just now';
+    init.events.push({when:'just now',t:`<b>Amendment</b> on ${cur.label}: "${txt}" — appended (not overwritten) and routed to the field owner.`});
+    toast('Amendment appended — upstream owner notified');
+  } else { // question
+    init.questions.push({id:'q'+Date.now(), text:txt, by:'You', atStage:init.stage, routedTo:init.originator.name, because:'raised the initiative', status:'open'});
+    init.events.push({when:'just now',t:`<b>Question routed to ${init.originator.name}</b> — gate is blocked until it’s answered.`});
+    toast(`Question routed to <b>${init.originator.name}</b> · gate blocked`);
+  }
+  state.compose=null; render();
+}
+function answerQ(init, qid){
+  const txt=(document.getElementById('composeText')||{}).value||''; if(!txt.trim()){ state.compose=null; render(); return; }
+  const q=init.questions.find(x=>x.id===qid); q.status='answered'; q.answer=txt;
+  init.events.push({when:'just now',milestone:0,t:`<b>${q.routedTo} answered</b> — appended to the ticket. Gate unblocked.`});
+  state.compose=null;
+  toast('Answer appended · gate unblocked');
+  render();
+}
+
+/* advance a stage through its gate (append-only) */
+function advance(init, kind){
+  const cur=sidx(init.stage), next=STAGES[cur+1]; if(!next) return;
+  // sign the gate on the current section
+  init.sections[init.stage].prov.push({k:'approve',who:'You'});
+  // draft the next section (Claude) — seed a light field set + occasional assumption
+  init.sections[next.key]=nextDraft(init, next);
+  init.stage=next.key;
+  // milestone handshakes
+  if(next.milestone==='handshake' && next.key==='prototype'){ init.validate='pending';
+    init.events.push({when:'just now',milestone:1,frame:'Does this look right? — ',t:`Prototype ready. Sent to <b>${init.originator.name}</b> to validate before we commit engineering.`});
+  } else if(next.key==='shipped'){
+    init.events.push({when:'just now',milestone:1,frame:'It’s live — ',t:`Shipped. <b>${init.originator.name} + subscribers notified</b> with a demo link and what to tell customers.`});
+  } else if(kind==='build'){
+    init.events.push({when:'just now',t:`<b>Build.</b> ${init.originator.name}-validated prototype committed to engineering — Jira epic + tickets generated.`});
+  }
+  toast(kind==='build'?'⚒ Built — Jira tickets generated':`Approved → advanced to <b>${next.label}</b>`);
+  render();
+}
+function nextDraft(init, meta){
+  const drafts={
+    stakeholder:{fields:[['Job to be done','(Claude draft) Derived from intake — confirm the real job'],['Success looks like','(Claude draft) confirm with requester']],assumptions:['Drafted from a short intake — likely thin. Enrich before sign-off.']},
+    functional:{fields:[['Behavior','(Claude draft) functional behavior from the stakeholder reqs'],['Data','(Claude draft) sources involved']],assumptions:[]},
+    architecture:{fields:[['Approach','(Claude draft) architecture from the functional spec'],['Surface','(Claude draft) where it lives']],assumptions:[]},
+    prototype:{fields:[['Prototype','(Claude Design) interactive prototype from the architecture'],['Link','claude.design/relay/'+init.id.toLowerCase()+' (mock)']],assumptions:[]},
+    tickets:{fields:[['Epic','(generated) '+init.id+' epic'],['Tickets','(generated) work breakdown in Jira']],assumptions:[]},
+    implementation:{fields:[['Branch','feat/'+init.id.toLowerCase()],['Status','(Claude) implementing against the tickets']],assumptions:[]},
+    shipped:{fields:[['Release','Live in production'],['Demo','link posted back to Slack']],assumptions:[]},
+  };
+  const d=drafts[meta.key]||{fields:[['—','—']],assumptions:[]};
+  return {fields:d.fields, assumptions:d.assumptions, prov:[{k:meta.key==='prototype'?'draft':(meta.key==='tickets'||meta.key==='shipped'?'draft':'draft'),who:meta.key==='prototype'?'Claude Design':'Claude'}], when:'just now'};
+}
+
+render();
+</script>
+</body>
+</html>
