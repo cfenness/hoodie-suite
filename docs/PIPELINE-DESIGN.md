@@ -152,19 +152,48 @@ construction. It is blocked by what feeds it, not by itself.
 | 8 entries for one platform; hidden `--no-enrich` divergence | one parameterized program |
 | "I can't tell what we have" | stage inspection |
 
-## Open decisions — deliberately not made here
+## Decisions — SETTLED 2026-08-03
 
-1. **Are discovery and catalog one function or two?** Everything else hangs off this. Two
-   functions means `scope` is a discovery parameter and catalog always takes a store-set. One
-   means catalog takes `scope` directly and discovery is an internal detail.
-2. **Read-time merge, or fold?** A stage-2 view over parts (latest-per-key at query time)
-   removes the fold entirely and makes staleness zero, at query cost. A fold keeps reads cheap
-   and accepts one promotion of latency. The bucketed layout (`__b=<hex>`, already implemented)
-   supports either.
-3. **Is `retail_observations` stage 5 fed from stage 1, or its own stage-2 aggregate?** This
-   decides whether a source may declare it in `tables=[...]` at all.
-4. **Is Postmates' inline enrich intentional?** If yes it is an explicit override; if no it is a
-   live defect. The registry cannot currently tell you which.
+1. **Discovery and catalog are TWO functions.** Discovery owns `scope` and emits a store-set;
+   catalog always consumes a store-set. This matches what already exists — `ubereats-sitemap` /
+   `postmates-sitemap` are separate registry entries producing the universe — and keeps stage 0
+   distinct from stage 1. "Give me a Florida run" is a discovery scope handed to catalog.
+2. **Stage-2 aggregates are an incremental FOLD**, not a read-time view: per-bucket DuckDB merge,
+   watermarked, parts archived after folding, dedupe pushed into SQL
+   (`QUALIFY row_number() OVER (PARTITION BY key ORDER BY observed_at DESC) = 1`). Reads stay
+   cheap for the suite and `/api/source`; cost scales with new parts, not history. At the
+   502k-store × ~100-item target (~50M rows) a per-query merge on the box that also serves the
+   app is the wrong trade.
+3. **`retail_observations` is STAGE 5, fed from stage 1.** It already has exactly one production
+   writer (`observe.record`, `observe.py:156`); every other hit in the tree is a test. So the
+   funnel is correct and the only defect was *declaration* — a source listing it in `tables=[...]`
+   is graded on a table that moves whenever any source runs.
+   *Caveat found while applying this:* `abc-fws` (ABC FW&S per-store inventory) has no stage-1 table
+   of its own — `retail_observations` genuinely *is* where its rows land, per its own registry note.
+   Stripping the declaration would leave it with no landing signal at all, which is worse than an
+   imprecise one. It keeps the declaration until it gets a stage-1 parts table. **Open follow-up.**
+4. **Postmates' inline enrich is CORRECT; the UberEats split is the anomaly.** There is no
+   `postmates-enrich` entry, so inline enrich is the only path by which Postmates ever gets
+   UPC/GTIN (its label says "catalog + UPC"). Because `known_items()` already skips resolved
+   items, inline is also the cheaper topology. The UberEats split into a separate job is what
+   produced the broken landing signal in §2.2 — converge on the inline shape, don't propagate the
+   split.
+
+### Finding that reorders the priorities
+
+`ue_catalog.known_items()` builds the "items enrichment may skip" set by querying
+`"%s_products" % site` — **the stage-2 aggregate**, i.e. the table that loses rows to unlocked
+concurrent `write_accumulate` (33,250 → 8,798 observed). So C1 is not only an integrity contract,
+it is the **cost control**: rows lost from the aggregate shrink the skip set, and enrichment
+re-fetches what it already resolved — the ~30M-request blowup `known_items` exists to prevent.
+Fix C1 first, and for that reason.
+
+### Correction to the survey
+
+The `dtypes` exposure is wider than first reported: **43** `write_partition` call sites in
+`unifyd/`, only 11 pinning `dtypes` (not "12 of 16"). Also, `retail_observations`' sole production
+writer **already pins** its types — its 13 historical schemas are legacy files, so its remedy is
+`tools/repair_partitions.py` (rewrite history), not a write-path change.
 
 ## What this is not
 

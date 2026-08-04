@@ -270,7 +270,13 @@ def site_product_urls(org, site, timeout=60):
     except Exception:
         return None
     text = xml.decode("utf-8", "replace")
-    out = [(urllib.parse.unquote(pid), slug) for pid, slug in _PROD_URL_RE.findall(text)]
+    # UNQUOTE BOTH HALVES. A sitemap URL is percent-encoded, and this used to decode only the id — so a
+    # slug carrying an encoded character survived as literal text (`%22` for a quote mark in
+    # `E-H--Taylor-Amaranth-%22Grain-of-The-Gods%22-...`), and detail()'s own quote() then encoded the
+    # `%` again to `%2522`. The route 403s on the double-encoded slug. One product in Sazerac had a
+    # quote mark in its name and that asymmetry was the whole reason it could never be fetched.
+    out = [(urllib.parse.unquote(pid), urllib.parse.unquote(slug))
+           for pid, slug in _PROD_URL_RE.findall(text)]
     return out or None
 
 
