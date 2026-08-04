@@ -239,6 +239,23 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   `created_on` is the UPLOAD stamp, not the event date** (Bacardi's whole 2018 folder reads
   2018-04-11, the bulk-migration day), so dates come from **year folders** at `precision=year` and are
   otherwise NULL — never back-filled.
+- **`unifyd/asset_divergence.py`** (source `asset-divergence`, weekly, **disabled** until `img_vec`
+  has coverage) — **where chains disagree about what a product looks like.** Groups an item's images
+  across sources by UPC (deterministic identity only — fuzzy grouping would manufacture a
+  disagreement that doesn't exist), clusters them on the CLIP embeddings `img_embed` already
+  computes, and reports how many distinct looks are live, who shows which, and since when. This is
+  the one place both sides land: the supplier sees what they published, the retailer sees their own
+  set, and neither sees the delta.
+  **It refuses to say which look is stale.** At this threshold "two photos of one bottle" and "two
+  different packs" are not separable — `img_embed` measured same-product-different-photo at cosine
+  median ~0.76, which is the distribution a benign difference already occupies. So `stale_candidate`
+  is None until `backtest()` measures precision against a labelled set (same gate `overlay_detect`
+  applies: an unmeasured heuristic RUNS BUT STAYS SILENT), and `withheld_reason` says so on every row.
+  What IS deterministic and safe to show is the evidence around it — cluster counts, source breadth,
+  first/last seen. "Five chains show look A since 2024, one shows look B and hasn't been re-observed
+  since 2022" is built from counts and dates, and never claims which pack is correct — that is the
+  supplier's own data to supply. Fewer than 3 sources is `insufficient_data`, never `aligned`; a
+  near-even split is two live packs, not an error.
 - **Counsel review (P6) — `docs/rights-counsel-review.md` + `rights.py --queue`.** The permission
   MODEL is versioned (`SCHEMA_VERSION`) separately from any record, so changing it shows up as a
   version skew on every record rather than silently reinterpreting records already written.

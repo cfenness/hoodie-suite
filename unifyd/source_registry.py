@@ -585,6 +585,20 @@ SOURCES = [
               "DAM_CENSUS_PROBE=1 opts into conventional media.*/press.* hosts). Names its failures "
               "— age gate / JS shell / no link — rather than reporting them as 'no media centre'."),
 
+    # Cross-retailer product-image divergence: where chains disagree about what an item LOOKS like.
+    # Derived — reads img_vec (CLIP embeddings) + retail_observations, no fetching. Lands the
+    # divergence and its evidence; the STALENESS verdict stays withheld until
+    # asset_divergence_precision.json exists, because telling a brand their execution is broken on
+    # an unmeasured threshold is the expensive direction to be wrong in.
+    dict(id="asset-divergence", label="Asset divergence (cross-retailer pack disagreement)",
+         code="import asset_divergence as m; m.build()",
+         tables=["asset_divergence"], klass="build", interval_h=168, enabled=False,
+         cost_class="free", mem=8192, timeout=7200,
+         after=["build-item-identity"],
+         note="DISABLED until img_vec has real coverage — it is a derived read over embeddings, so "
+              "it produces nothing useful until img_embed has run across the retail sources. "
+              "Staleness is withheld without measured precision (backtest())."),
+
     # ── Hemp ──────────────────────────────────────────────────────────────────────────────────────────────────
     dict(id="hemp-scan", label="Hemp products", code="import hemp_scan as m; m.main([])",
          tables=["hemp_products"], klass="headless", cadence="daily", enabled=True, note="hemp-bev feed"),
