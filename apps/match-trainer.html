@@ -348,6 +348,7 @@ function ttbSizes(type){
      • VARIETAL IS NOT UNIVERSAL. A varietal is a grape; under spirits it is meaningless and the
        level says "not applicable" — which is a different statement from "no values yet".         */
 var TAX = {tree:null, basis:{}, varietal:[]};
+var TAX_REFRESH = null;          // set by an open resolver so a late-arriving tree upgrades it
 function taxTypes(){ return TAX.tree ? Object.keys(TAX.tree).sort() : null; }
 function taxClasses(t){ var b=TAX.tree&&TAX.tree[t]; return b?Object.keys(b).sort():null; }
 function taxSubs(t,c){ var b=TAX.tree&&TAX.tree[t]&&TAX.tree[t][c]; return b?Object.keys(b).sort():null; }
@@ -481,9 +482,11 @@ function openResolver(r){
             return '<option value="'+t+'"'+(t===pre?" selected":"")+'>'+t+'</option>'; }).join("")+
           (pre && opts.map(canonSize).indexOf(pre)<0 ? '<option value="'+pre+'" selected>'+pre+' (not a TTB fill)</option>' : "")+
           '<option value="__other">other / not TTB-governed…</option></select>';
-      } else if(d.tax && TAX.tree){
+      } else if(d.tax){
         // Rendered by rebuildTax() once the modal is in the DOM: each level's options depend on the
-        // level above, so they cannot be built in one pass over DIMS.
+        // level above, so they cannot be built in one pass over DIMS. The slot is used whether or
+        // not the tree has ARRIVED — gating on TAX.tree here meant a modal opened before the fetch
+        // resolved was stuck with text boxes for its whole life, with nothing to say why.
         field = '<span class="taxslot" data-slot="'+d.k+'" data-pre="'+String(pre).replace(/"/g,"&quot;")+'"></span>';
       } else {
         field = '<input data-f="'+d.k+'" value="'+String(pre).replace(/"/g,"&quot;")+'" placeholder="type, or leave blank">';
@@ -509,7 +512,18 @@ function openResolver(r){
      value already in a level is PRESERVED even when the new parent does not contain it, and shown
      as off-tree. Blanking it would throw away a considered answer to make the widget tidy.       */
   function rebuildTax(){
-    if(!TAX.tree) return;
+    if(!TAX.tree){
+      // No tree (offline CSV, or the fetch has not landed yet) — free text, which is what these
+      // fields always were. TAX_REFRESH below upgrades the modal in place if the tree arrives.
+      Array.prototype.forEach.call(wrap.querySelectorAll(".taxslot"), function(slot){
+        if(slot.querySelector("[data-f]")) return;              // already rendered — leave the value
+        var k = slot.getAttribute("data-slot");
+        slot.innerHTML = '<input data-f="'+k+'" value="'+esc(slot.getAttribute("data-pre")||"")+
+                         '" placeholder="type, or leave blank">';
+      });
+      bindFields();
+      return;
+    }
     var cur = {canon_type:valOf("canon_type"), canon_class:valOf("canon_class"),
                canon_subclass:valOf("canon_subclass"), canon_varietal:valOf("canon_varietal")};
     Array.prototype.forEach.call(wrap.querySelectorAll(".taxslot"), function(slot){
@@ -625,8 +639,11 @@ function openResolver(r){
   bindFields();
   rebuildTax();
   syncMarks();
+  // So a tree that lands while this modal is open upgrades it, instead of leaving the labeller
+  // typing into boxes that would have been dropdowns a second later.
+  TAX_REFRESH = function(){ rebuildTax(); syncMarks(); };
 
-  function close(){ document.removeEventListener("keydown", keys, true); wrap.remove(); }
+  function close(){ TAX_REFRESH=null; document.removeEventListener("keydown", keys, true); wrap.remove(); }
   function commit(){
     var rec = S.answers[r.pair_id] || {};
     rec.label="y"; rec.diff=difference(r); rec.stratum=r.stratum;
@@ -854,6 +871,7 @@ function boot(){
   apiGet("/api/xsource/taxonomy").then(function(t){
     if(t && t.ok && t.tree && Object.keys(t.tree).length){
       TAX.tree = t.tree; TAX.basis = t.basis||{}; TAX.varietal = t.varietal_types||[];
+      if(TAX_REFRESH) TAX_REFRESH();
     }
   }).catch(function(){});
   apiGet("/api/xsource/queue?n="+BATCH).then(function(d){
