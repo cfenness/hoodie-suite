@@ -193,16 +193,64 @@ def learned(log=print):
     return out
 
 
-def tree(include_learned=True, log=print):
+# ── serving the tree ──────────────────────────────────────────────────────────────────────────────
+# THE SEED IS A CONSTANT AND MUST BE SERVED AT CONSTANT SPEED. The learned paths live in the
+# warehouse, and reading a table that has never been written costs a DuckDB connection plus an S3
+# round trip that fails slowly: measured live at 11–14 SECONDS for a payload that is 99% a literal
+# in this file. The surface that consumes it renders dropdowns, so twelve seconds of text boxes is
+# indistinguishable from the feature not shipping — which is exactly how it was reported.
+#
+# So the warehouse read NEVER blocks the response. A miss serves the seed immediately and refreshes
+# in the background; `learned_read` says which you got, because "no learned paths" and "we have not
+# looked yet" are different claims and only one of them means the tree is complete.
+_CACHE = {"at": 0.0, "paths": [], "read": False, "loading": False}
+CACHE_TTL = 300.0
+
+
+def _refresh_cache(log=print):
+    try:
+        paths = learned(log=log)
+        _CACHE["paths"], _CACHE["read"], _CACHE["at"] = paths, True, time.time()
+    except Exception as e:                                     # noqa: BLE001
+        log("taxonomy: refresh failed: %s" % str(e)[:90])
+        _CACHE["at"] = time.time()                             # do not hot-loop on a broken table
+    finally:
+        _CACHE["loading"] = False
+
+
+def cached_paths(log=print, block=False):
+    """Learned paths from cache. Kicks off a background refresh when stale; never waits on one."""
+    fresh = (time.time() - _CACHE["at"]) < CACHE_TTL
+    if fresh and _CACHE["read"]:
+        return _CACHE["paths"], True
+    if block:
+        _CACHE["loading"] = True
+        _refresh_cache(log=log)
+        return _CACHE["paths"], _CACHE["read"]
+    if not _CACHE["loading"]:
+        _CACHE["loading"] = True
+        try:
+            import threading
+            threading.Thread(target=_refresh_cache, kwargs={"log": lambda *a: None},
+                             daemon=True).start()
+        except Exception:                                      # noqa: BLE001
+            _CACHE["loading"] = False
+    return _CACHE["paths"], _CACHE["read"]
+
+
+def tree(include_learned=True, log=print, block=False):
     """The served hierarchy: the seed, plus every learned path merged in at its own level.
 
     A learned node carries its PARENTS, so it filters like any seed node. Returned as nested dicts
-    of {value: {...}} rather than lists so a client can walk it without knowing the depth."""
+    of {value: {...}} rather than lists so a client can walk it without knowing the depth.
+
+    `block=True` waits for the warehouse read — for a CLI or a test, never for a request."""
     t = {ty: {cl: {sc: list(vs) for sc, vs in cls.items()} for cl, cls in classes.items()}
          for ty, classes in SEED.items()}
-    added = 0
+    added, read = 0, False
     if include_learned:
-        for ty, cl, sc, va in learned(log=log):
+        paths, read = cached_paths(log=log, block=block)
+        for ty, cl, sc, va in paths:
             if not ty:
                 continue                      # a node with no Type cannot be placed — skip, loudly
             branch = t.setdefault(ty, {})
@@ -216,7 +264,9 @@ def tree(include_learned=True, log=print):
                 vs.append(va)
             added += 1
     return {"tree": t, "basis": BASIS, "varietal_types": sorted(VARIETAL_TYPES),
-            "learned_paths": added}
+            "learned_paths": added,
+            # False means the warehouse has not been read YET, not that nothing has been learned.
+            "learned_read": bool(read)}
 
 
 def learn(canon, log=print):
@@ -238,6 +288,7 @@ def learn(canon, log=print):
     try:
         import warehouse
         warehouse.write_accumulate(TABLE, [row], key="path_key", fields=FIELDS, coverage=False)
+        _CACHE["at"] = 0.0          # a newly taught path must not wait out the TTL to be offered
         return 1
     except Exception as e:
         log("taxonomy: learn skipped: %s" % str(e)[:90])
@@ -249,7 +300,7 @@ def main(argv=None):
     if a and a[0] == "learned":
         print(json.dumps(learned(), indent=2))
     else:
-        t = tree()
+        t = tree(block=True)     # a CLI can afford the warehouse read; a request cannot
         print("%d types, %d classes, %d sub classes, %d learned paths" % (
             len(t["tree"]), sum(len(c) for c in t["tree"].values()),
             sum(len(s) for c in t["tree"].values() for s in c.values()), t["learned_paths"]))
