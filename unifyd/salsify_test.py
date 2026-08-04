@@ -205,5 +205,45 @@ ok("…genuine absence still starts a new table",
 ok("…and the read is retried before it is believed",
    'lambda: query(name, "SELECT * FROM t"), "read-for-merge' in _wh)
 
+# ── the sitemap publishes a slug the data route rejects ──────────────────────────────────────────
+# Salsify slugifies the HTML-ESCAPED title into sitemap_1.xml, so "Lemonade & Lime" is written
+# `Lemonade-andamp-Lime`, while the data route resolves `Lemonade-and-Lime`. Measured on Sazerac:
+# 106 of 107 unfetchable products contained `andamp`; 0 of the 7,573 that fetched did.
+print("\nSitemap/route slug disagreement")
+_ssrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "salsify.py")).read()
+ok("a clean slug is used as-is, never rewritten",
+   salsify._slug_variants("Wave-Baja-750ml") == ["Wave-Baja-750ml"])
+ok("an `andamp` slug is tried as published FIRST, then repaired",
+   salsify._slug_variants("Southern-Comfort-Lemonade-andamp-Lime-330ml")
+   == ["Southern-Comfort-Lemonade-andamp-Lime-330ml",
+       "Southern-Comfort-Lemonade-and-Lime-330ml"])
+ok("every occurrence is repaired, not just the first",
+   salsify._slug_variants("A-andamp-B-andamp-C")[1] == "A-and-B-and-C")
+ok("the repair only fires on a ROUTING rejection (403/404), not any error",
+   "if e.code not in (403, 404):" in _ssrc)
+
+# ── same-day reruns must not overwrite each other's property partitions ──────────────────────────
+# write_partition is idempotent per (table, part) BY DESIGN. The part sequence is positional — it
+# counts chunks of THIS run's todo list — so a second run on the same day reused p0001, p0002... and
+# replaced the first run's parts with different products. Measured live: three runs in one day left
+# salsify_properties at 1,660,264 rows, DOWN from 1,700,185. An append-only table shrank.
+print("\nProperty partition naming")
+ok("the part name carries a per-run stamp, not just day+catalog",
+   '"%s_%s_%s_p%04d"' in _src and "run_stamp" in _src)
+ok("the stamp is fixed once per process", "_RUN_STAMP = time.strftime(" in _src)
+ok("a product with NO property capture is re-fetched, not skipped by resume",
+   "holes = done - have_props" in _src and "done = done - holes" in _src)
+ok("...and that repair read is opt-in, so the daily tick doesn't pay for it",
+   "if repair_properties and land:" in _src)
+
+ok("a repaired hole also FORGETS its fingerprint, or nothing is re-emitted",
+   "for pid in holes:" in _src and "fps.pop(pid, None)" in _src)
+
+# A sitemap URL is percent-encoded. Decoding only the id left `%22` literal in the slug, which
+# detail()'s quote() then re-encoded to `%2522` — the route 403s on that. One Sazerac product has a
+# quote mark in its name (E.H. Taylor Amaranth "Grain of The Gods") and could never be fetched.
+ok("sitemap parsing unquotes the SLUG as well as the id",
+   "urllib.parse.unquote(slug)" in _src)
+
 print("\n%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
