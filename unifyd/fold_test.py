@@ -13,6 +13,7 @@ no DuckDB and no network).
 
     python3 unifyd/fold_test.py
 """
+import ast
 import os
 import sys
 
@@ -97,6 +98,35 @@ def main():
     except Exception:
         ok = False
     check("folding an undeclared table raises, rather than guessing a key", ok)
+
+    # --- 5. the fold STREAMS: peak memory must not scale with the result -------------------------
+    # The regression this locks down: fetchall() built one dict per output row before writing
+    # anything, so a first fold of 3,501 parts hit 6.5GB and was OOM-killed. A scheduled fold must
+    # never need a human to pick a batch size.
+    src = open(os.path.join(HERE, "fold.py"), encoding="utf-8").read()
+    # Check the CALLS, not the text — the comment explaining why fetchall() was removed contains
+    # the word, and a substring test would fail on its own documentation.
+    tree = ast.parse(src)
+    called = {n.func.attr for n in ast.walk(tree)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
+    check("run() does not materialise the whole result (fetchall never called)",
+          "fetchall" not in called, "calls: %s" % sorted(called))
+    check("run() pulls bounded chunks via fetchmany", "fetchmany" in called)
+    check("CHUNK_ROWS is a bounded literal", "CHUNK_ROWS = 50_000" in src)
+
+    # The watermark must be written ONCE, after every chunk — a per-chunk watermark would mark parts
+    # consumed that a later failing chunk never wrote.
+    body = src.split("def run(", 1)[1]
+    check("watermark is written once, after the chunk loop",
+          body.count("write_doc(WATERMARK_KIND") == 1)
+    check("the chunk loop writes through write_accumulate",
+          body.count("write_accumulate(") == 1)
+
+    # Chunking is only safe because the fold query is GROUP BY key: every key appears exactly once,
+    # so chunks are disjoint and no chunk can overwrite another's rows.
+    spec2 = table_spec.spec_for("ubereats_products")
+    check("chunks are disjoint by key (result is GROUP BY key)",
+          "GROUP BY" in fold.coalesce_sql(spec2, "'f.parquet'"))
 
     print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
     return 1 if FAILED else 0

@@ -11,8 +11,12 @@ WHAT THIS DOES DIFFERENTLY
     the new ones, so cost is proportional to new parts, not to history. The watermark also turns
     "how much is waiting" into a number you can display instead of guess, and makes folded parts
     prunable.
-  * SET-BASED. The dedupe happens in DuckDB over the new parts, not in a Python dict. Python only
-    ever holds the deduped NEW rows.
+  * SET-BASED AND STREAMED. The dedupe happens in DuckDB over the new parts, not in a Python dict,
+    and the result is pulled back in bounded chunks (CHUNK_ROWS) rather than materialised whole.
+    Peak memory is therefore flat in the size of the fold: a first fold of a full parts history
+    costs the same as a daily one. Materialising the whole result was what made the first real fold
+    unrunnable — 3,501 parts reached 6.5GB of an 8GB box and was OOM-killed, and the fix is why this
+    needs no `--limit` babysitting to be safe on a schedule.
   * REUSES THE SCALE-CORRECT MERGE. The deduped rows go through `warehouse.write_accumulate`, which
     for a bucketed (v2) table is `_accumulate_bucketed`: group by md5 bucket, rewrite only touched
     buckets via a DuckDB anti-join, manifest last as the atomic swap. That primitive already existed
@@ -60,6 +64,11 @@ import table_spec
 import warehouse
 
 WATERMARK_KIND = "fold"
+
+# Rows pulled into Python per write. Bounds peak memory independently of how big the fold is, so a
+# first fold of a full parts history costs the same as a daily one. 50k lean rows is ~100-200MB of
+# dicts; the old whole-result materialisation hit 6.5GB on 3,501 parts and was OOM-killed.
+CHUNK_ROWS = 50_000
 
 
 # ---------------------------------------------------------------------------------------------
@@ -189,11 +198,35 @@ def run(table, limit=None, dry_run=False, log=print):
     files_sql = ", ".join("'%s'" % _part_sql(f).replace("'", "") for f in todo)
     sql = coalesce_sql(spec, files_sql)
     con = warehouse.connect()
-    cur = con.execute(sql)                      # ONE execution — .description and .fetchall() from
+    cur = con.execute(sql)                      # ONE execution — .description and fetches come from
     cols = [d[0] for d in cur.description]      # the same cursor, or the whole fold runs twice
-    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
 
-    if not rows:
+    # STREAM THE RESULT. `fetchall()` built one Python dict per output row before writing anything,
+    # so peak memory scaled with the RESULT, not with the batch — a first fold of 3,501 parts hit
+    # 6.5GB of an 8GB box and was OOM-killed. DuckDB holds the result compactly; the cost was
+    # entirely the Python dicts. Fetching in bounded chunks and merging each keeps that cost flat,
+    # which is what makes an unattended fold safe: a scheduled job must not need a human to pick a
+    # batch size, and `--limit` existed to make the FIRST fold survivable rather than as a tuning knob.
+    #
+    # Correctness of chunked merging: the fold query is GROUP BY key, so every key appears exactly
+    # once across the whole result and the chunks are disjoint by key — no chunk can overwrite
+    # another's rows. The watermark is written ONCE, after every chunk lands: crash midway and the
+    # parts stay unconsumed, so the next run re-folds them and merges the same keys to the same
+    # values. Re-running is idempotent; a half-written watermark would not be.
+    total, chunks = 0, 0
+    while True:
+        batch = cur.fetchmany(CHUNK_ROWS)
+        if not batch:
+            break
+        chunks += 1
+        rows = [dict(zip(cols, r)) for r in batch]
+        total += len(rows)
+        if not dry_run:
+            warehouse.write_accumulate(table, rows, key=tuple(spec.key_cols),
+                                       fields=list(spec.fields), coverage=False)
+        del rows, batch                          # release before pulling the next chunk
+
+    if not total:
         # Parts existed but yielded nothing. That is NOT 'current' — it means the parts are
         # unreadable or empty, which is a real signal, so say so instead of reporting success.
         log("[fold] %s: %d new part(s) produced 0 rows — parts unreadable or empty" % (table, len(todo)))
@@ -201,18 +234,16 @@ def run(table, limit=None, dry_run=False, log=print):
                 "warning": "new parts folded to 0 rows"}
 
     if dry_run:
-        # Everything above is read-only, so a dry run exercises the REAL query against the REAL
-        # parts and reports what would land — without touching the aggregate or the watermark.
-        log("[fold] %s: DRY RUN — %d new part(s) would fold to %s rows (nothing written)"
-            % (table, len(todo), f"{len(rows):,}"))
-        return {"table": table, "status": "dry-run", "parts": len(todo), "rows": len(rows),
-                "consumed": wm.get("count") or 0}
+        # The query and the streaming both really ran; only the writes were skipped.
+        log("[fold] %s: DRY RUN — %d new part(s) would fold to %s rows in %d chunk(s) (nothing written)"
+            % (table, len(todo), f"{total:,}", chunks))
+        return {"table": table, "status": "dry-run", "parts": len(todo), "rows": total,
+                "chunks": chunks, "consumed": wm.get("count") or 0}
 
-    warehouse.write_accumulate(table, rows, key=tuple(spec.key_cols),
-                               fields=list(spec.fields), coverage=False)
     warehouse.write_doc(WATERMARK_KIND, table, watermark_after(wm.get("consumed"), todo))
-    log("[fold] %s: folded %d new part(s) -> %s rows merged" % (table, len(todo), f"{len(rows):,}"))
-    return {"table": table, "status": "ok", "parts": len(todo), "rows": len(rows),
+    log("[fold] %s: folded %d new part(s) -> %s rows merged in %d chunk(s)"
+        % (table, len(todo), f"{total:,}", chunks))
+    return {"table": table, "status": "ok", "parts": len(todo), "rows": total, "chunks": chunks,
             "consumed": (wm.get("count") or 0) + len(todo)}
 
 
@@ -229,7 +260,9 @@ def main(argv=None):
     ap.add_argument("--table", required=True, help="the stage-2 aggregate, e.g. ubereats_products")
     ap.add_argument("--pending", action="store_true", help="report the backlog and exit")
     ap.add_argument("--dry-run", action="store_true", help="run the fold query, write nothing")
-    ap.add_argument("--limit", type=int, default=None, help="fold at most N new parts")
+    ap.add_argument("--limit", type=int, default=None,
+                    help="fold at most N new parts (an operator escape hatch — NOT needed for "
+                         "memory; the fold streams in bounded chunks)")
     a = ap.parse_args(argv)
     if a.pending:
         p = pending(a.table)
