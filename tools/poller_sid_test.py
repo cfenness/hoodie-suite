@@ -28,9 +28,22 @@ m = re.search(r"_RUN_DOCS = \[(.*?)\n\]", server, re.S)
 IDS = set(re.findall(r'"id":\s*"([^"]+)"', m.group(1)))
 print("registered run-doc ids: %s" % sorted(IDS))
 
-POLLERS = sorted(f for f in os.listdir(os.path.join(ROOT, "tools"))
-                 if re.fullmatch(r"poll_.*\.py", f))
+# TRACKED files only. Enumerating the directory picked up local strays — an iCloud
+# "poll_ue_progress 2.py" duplicate carrying the pre-fix code failed this test on the operator's
+# Mac while a clean checkout passed. A guard whose result depends on someone's untracked litter is
+# a guard people learn to ignore. Strays are still surfaced, as a warning, below.
+import subprocess
+_tracked = subprocess.run(["git", "-C", ROOT, "ls-files", "tools/"],
+                          capture_output=True, text=True).stdout.split()
+POLLERS = sorted(os.path.basename(f) for f in _tracked
+                 if re.fullmatch(r"poll_.*\.py", os.path.basename(f)))
 check("the pollers are discovered", len(POLLERS) >= 2, POLLERS)
+
+_ondisk = {f for f in os.listdir(os.path.join(ROOT, "tools")) if re.fullmatch(r"poll_.*\.py", f)}
+_strays = sorted(_ondisk - set(POLLERS))
+if _strays:
+    print("  note: untracked poll_*.py present, NOT tested (iCloud duplicates?): %s"
+          % ", ".join(_strays))
 
 for f in POLLERS:
     src = open(os.path.join(ROOT, "tools", f)).read()
