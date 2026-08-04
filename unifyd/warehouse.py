@@ -441,6 +441,21 @@ def write_partition(name, part, records, fields=None, dtypes=None):
     have to guess it from whatever happened to be in one batch."""
     import pyarrow as pa
     import pyarrow.parquet as pq
+    # SCHEMA BELONGS TO THE TABLE, NOT THE CALL SITE (contract C2). If this table is declared in
+    # table_spec, a caller that omits fields/dtypes inherits them instead of falling through to
+    # per-batch inference — which is the corruption class that made ubereats_products_parts and
+    # retail_observations unreadable. An explicit argument still wins, so nothing existing changes
+    # behaviour; and an undeclared table behaves exactly as before. Imported lazily and defensively:
+    # warehouse.py is sys.path-imported cross-repo, and a schema lookup must never break a write.
+    if fields is None or dtypes is None:
+        try:
+            import table_spec
+            if fields is None:
+                fields = table_spec.fields_for(name)
+            if dtypes is None:
+                dtypes = table_spec.arrow_dtypes(name)
+        except Exception:
+            pass
     if fields:
         records = [{k: r.get(k) for k in fields} for r in records]
     schema = None

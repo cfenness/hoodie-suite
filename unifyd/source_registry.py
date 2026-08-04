@@ -72,6 +72,10 @@ SOURCES = [
          # 6h leaves headroom. The crawl now lands per batch and checkpoints, so even a kill keeps its work
          # and the next run resumes — the timeout is a backstop, no longer a data-loss event.
          timeout=21600, mem=8192,
+         # LEFT AS-IS DELIBERATELY. retail_observations is stage 5 and a source should not be graded on
+         # it (it moves whenever any source runs) — but unlike ubereats/postmates this source has no
+         # stage-1 parts table of its own, so removing it would leave it with NO landing signal at all,
+         # which is worse. Correct fix is an abc stage-1 table; tracked in docs/PIPELINE-DESIGN.md.
          tables=["retail_observations", "abc_catalog"], klass="headless", cadence="daily", enabled=True,
          cost_class="proxy",
          note="per-store inventory → lands retail_observations (NOT abc_products, which abc-facets owns/overwrites)",
@@ -164,7 +168,12 @@ SOURCES = [
          code="import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_enrich as m; "
               "m.main(['--site','ubereats','--shard',os.environ.get('UE_SHARD','0/8')])",
          caps=['curl_cffi'],
-         tables=["ubereats_products"], klass="headless", cadence="daily",
+         # DECLARE THE TABLE THIS RUN ACTUALLY WRITES. ue_enrich._flush writes
+         # "<site>_products_parts"; declaring the stage-2 aggregate made the landing delta always 0,
+         # which run_sources reports as `current` — so this daily 8-shard backfill reported the same
+         # benign status whether it landed 500k rows or none, and because due_builds only advances on
+         # `ok` it could never trigger the fold it feeds.
+         tables=["ubereats_products_parts"], klass="headless", cadence="daily",
          enabled=True, cost_class="free", timeout=21600, mem=4096, priority=11,
          note="separate clock from the sweep: static per-item attributes, fetched once ever"),
     # session_budget: requests one primed cookie may serve before re-priming. Measured ~50 on this
@@ -179,7 +188,11 @@ SOURCES = [
          code="import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_catalog as m; "
               "m.main(['--site','ubereats','--shard',os.environ.get('UE_SHARD','0/8'),'--no-enrich'])",
          caps=['curl_cffi'],
-         tables=["ubereats_products", "retail_observations"], klass="headless", cadence="daily",
+         # Stage discipline: this source APPENDS PARTS (ue_catalog._land writes "<site>_products_parts").
+         # The stage-2 aggregate is the fold's output and is declared by build-ue-catalog — declaring it
+         # here graded this run on a table it never writes. retail_observations is stage 5 and moves
+         # whenever ANY source runs, so it can never be a landing signal for one source.
+         tables=["ubereats_products_parts"], klass="headless", cadence="daily",
          enabled=True, cost_class="free", timeout=21600, mem=4096, priority=10,
          item_col="item_uuid", store_col="store_uuid",
          note="COLD getStoreV1 + getMenuItemV1 over the 502k-store sitemap universe; shardable "
@@ -190,7 +203,8 @@ SOURCES = [
          code="import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_catalog as m; "
               "m.main(['--site','postmates','--shard',os.environ.get('UE_SHARD','0/8')])",
          caps=['curl_cffi'],
-         tables=["postmates_products", "retail_observations"], klass="headless", cadence="daily",
+         # same stage discipline as ubereats above — this run appends parts, the fold owns the aggregate
+         tables=["postmates_products_parts"], klass="headless", cadence="daily",
          enabled=True, cost_class="free", timeout=21600, mem=4096, priority=11,
          item_col="item_uuid", store_col="store_uuid",
          note="same cold Uber BFF recipe as ubereats, postmates.com domain"),
