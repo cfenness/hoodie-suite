@@ -32,21 +32,24 @@ WHAT THE NUMBERS MEAN, precisely:
     That is missing instrumentation, NOT an absence of promotions — do not render it as "promo
     intensity" anywhere customer-facing until the scrapers set the flag.
 
-THE LINKAGE CAVEAT — read this before using obs_metro_rollup. The metro grain is thin (990 cells on
-the first build) and that is NOT a bug in this module: the observation layer and the account layer
-are keyed incompatibly, measured 2026-08-03.
+THE LINKAGE, and how far it now reaches. The metro grain joins THROUGH `outlet_xref`, not directly
+on source|store_id. The direct join only worked where both sides happened to spell the id the same
+way — 990 (cbsa, zcta) cells out of a 211,690-store rollup — because the observation layer and the
+account layer are keyed differently:
 
-    doordash    obs store_id = '1748913' (numeric)   vs  outlet_geography store_id = a NAME
-                ('blue jay coffees milwaukie'). A bridge through doordash_stores.name works
-                (424 of 433 stores, 115 ZIPs) but only 433 doordash stores have observations at all.
-    target      same shape — obs '1001' vs geography 'Birmingham 280 Corridor'.
-    ubereats    both sides are UUIDs, but different UUID SETS: 208,624 observed stores vs 29,845
-                geography rows, overlapping 2,069; observations ∩ ubereats_sitemap is 15.
-    18 of the 22 sources that land observations have NO rows in outlet_geography at all.
+    ubereats    the SAME id in two encodings — the sitemap holds it base64url
+                ('3GYoBDgAU6-me98dDz_kSw'), the catalog hex-dashed. 208,624 observed, 15 matched.
+    doordash    obs '1748913' (numeric) vs geography 'blue jay coffees milwaukie' (a NAME).
+    target      same shape — obs '1001' vs 'Birmingham 280 Corridor'.
 
-So price/assortment can be attributed to a neighbourhood only for the small overlap today. Closing
-that is an outlet-identity problem (outlet_ident / outlet_union territory), not a rollup problem, and
-it is the blocker to putting price depth in the metro reports.
+outlet_xref resolves those and takes the join to 3,351 ZIPs. Only mappings at MIN_CONFIDENCE or
+better are used, so a heuristic name match cannot quietly place a store in the wrong ZIP.
+
+WHAT STILL LIMITS COVERAGE is no longer identity — it is geocoding. 208,599 of 208,624 UberEats
+stores MATCH; they are absent from the metro grain only when their outlet has no lat/lng. Of the
+UberEats/Postmates universe, ~798k have been fetched and their store pages carry no coordinates at
+all (geo_precision='agg_miss', stamps verified as post-dating the getStoreV1 improvement), so that
+portion is a ceiling of the method rather than a queue.
 
     python3 unifyd/obs_rollup.py --sample 200      # time it on a few partitions first
     python3 unifyd/obs_rollup.py                   # full rebuild
@@ -60,6 +63,7 @@ import warehouse
 
 SRC = "retail_observations"
 GEO = "outlet_geography"
+XREF = "outlet_xref"
 STORE_TABLE = "obs_store_rollup"
 METRO_TABLE = "obs_metro_rollup"
 
@@ -77,6 +81,11 @@ METRO_FIELDS = ["cbsa_code", "cbsa_name", "zcta", "county_fips", "stores", "sour
 # same discipline as geo_resolve's hit floor. `write_parquet` already refuses a 0-row overwrite; this
 # catches the subtler collapse.
 MIN_KEEP_FRAC = float(os.environ.get("ROLLUP_MIN_KEEP", "0.80"))
+
+# Only mappings this confident place a store in a neighbourhood. outlet_xref's exact methods
+# (direct / encoding) are 1.00 and id_map is 0.95; the name heuristic is 0.70 and is excluded by
+# default, because a store put in the WRONG ZIP still renders as a confident-looking number.
+MIN_CONFIDENCE = float(os.environ.get("ROLLUP_MIN_CONFIDENCE", "0.90"))
 
 
 class RollupDegraded(Exception):
@@ -176,13 +185,35 @@ def build(sample=None, write=None, log=print):
 
     store_rows = _rows(con, "SELECT * FROM store", STORE_FIELDS, built_at)
 
-    # Metro grain: join the store rollup to geography. outlet_geography is keyed source|store_id, the
-    # same key, so this is a plain equi-join — no re-reading of the 53M-row source.
-    _attach(con, GEO, "g")
+    # Metro grain: join the store rollup to geography THROUGH outlet_xref.
+    #
+    # It used to join outlet_geography directly on source|store_id, which only worked where both
+    # sides happened to spell the id the same way — 990 (cbsa, zcta) cells out of a 211,690-store
+    # rollup. outlet_xref resolves the spellings that differ (chiefly UberEats, whose sitemap holds
+    # the id base64url-encoded), and takes the same join to 3,351 ZIPs. Falls back to the direct
+    # geography join when the crosswalk has not been built yet, so this module still stands alone.
+    xref_ok = False
+    try:
+        xref_ok = warehouse.attach_view(con, XREF, view="x")
+    except Exception:
+        xref_ok = False
+
+    if xref_ok:
+        src_join = ("FROM store s JOIN x ON x.obs_source = s.source AND x.obs_store_id = s.store_id "
+                    "WHERE x.cbsa_code IS NOT NULL AND x.confidence >= %f" % MIN_CONFIDENCE)
+        gcols = "x"
+        log("[rollup] metro grain via outlet_xref (confidence >= %.2f)" % MIN_CONFIDENCE)
+    else:
+        _attach(con, GEO, "g")
+        src_join = ("FROM store s JOIN g ON g.source = s.source AND g.store_id = s.store_id "
+                    "WHERE g.cbsa_code IS NOT NULL")
+        gcols = "g"
+        log("[rollup] metro grain via direct geography join (outlet_xref absent)")
+
     con.execute("""
         CREATE OR REPLACE TEMP TABLE metro AS
-        SELECT g.cbsa_code, ANY_VALUE(g.cbsa_name) AS cbsa_name, g.zcta,
-               ANY_VALUE(g.county_fips)            AS county_fips,
+        SELECT {g}.cbsa_code, ANY_VALUE({g}.cbsa_name) AS cbsa_name, {g}.zcta,
+               ANY_VALUE({g}.county_fips)          AS county_fips,
                COUNT(*)                            AS stores,
                COUNT(DISTINCT s.source)            AS sources,
                SUM(s.items)                        AS items_total,
@@ -194,10 +225,8 @@ def build(sample=None, write=None, log=print):
                AVG(s.price_avg)                    AS price_avg,
                AVG(s.promo_share)                  AS promo_share,
                AVG(s.in_stock_share)               AS in_stock_share
-        FROM store s
-        JOIN g ON g.source = s.source AND g.store_id = s.store_id
-        WHERE g.cbsa_code IS NOT NULL
-        GROUP BY g.cbsa_code, g.zcta""")
+        {join}
+        GROUP BY {g}.cbsa_code, {g}.zcta""".format(g=gcols, join=src_join))
     n_metro = con.execute("SELECT COUNT(*) FROM metro").fetchone()[0]
     log("[rollup] %s -> %d (cbsa, zcta) cells" % (METRO_TABLE, n_metro))
     metro_rows = _rows(con, "SELECT * FROM metro", METRO_FIELDS, built_at)
