@@ -92,6 +92,66 @@ def test_thin_neighborhoods_get_no_ratio():
     eq("a single-account ZIP yields no ratio", ratio, None)
 
 
+def test_price_is_observed_and_kept_apart_from_modelled_demand():
+    """Price/assortment come from obs_metro_rollup (OBSERVED). Demand is modelled. A page that blurs
+    the two is the failure this whole file exists to prevent."""
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "metro_analytics.py")).read()
+    ok("neighbourhoods read the rollup, not the 53M-row source", "OBS_METRO" in src)
+    ok("...scoped to the metro, not a full scan", 'WHERE cbsa_code = ?' in src)
+    ok("priced_stores is its own count", '"priced_stores"' in src)
+    ok("price fields carried", '"price_median"' in src and '"price_p25"' in src)
+
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools", "metro_deck.py")
+    deck = open(p).read()
+    # A missing observation must render as an em-dash. A zero would read as "cheap" or "no range" —
+    # a fabricated claim about a shelf we never saw.
+    ok("absent price renders an em-dash, never 0", "—</td>" in deck)
+    ok("the price panel is tagged LANDED, not derived",
+       'Shelf price &amp; assortment' in deck and 'tag landed' in deck)
+    ok("the panel states its own denominator", "stores priced" in deck)
+    ok("it says these are not shopper prices", "not what shoppers paid" in deck)
+    ok("assortment is explained as within-source", "within</b> a source" in deck)
+
+
+def test_shelf_price_is_rendered_to_the_cent():
+    """usd() abbreviates for market sizes ($5.64B). Using it for a shelf price would turn $12.99 into
+    $13 — a different claim about a shelf."""
+    import importlib.util
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools", "metro_deck.py")
+    spec = importlib.util.spec_from_file_location("metro_deck", p)
+    md = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(md)
+    eq("money keeps the cents", md.money(12.99), "$12.99")
+    eq("money keeps a round price honest", md.money(13), "$13.00")
+    eq("usd would have rounded it", md.usd(12.99), "$13")
+    ok("the two are different functions", md.money(12.99) != md.usd(12.99))
+
+
+def test_a_one_store_median_is_not_a_neighbourhood_price():
+    """The ranked price table filled with n=1 ZIPs on the first render — New York's "most expensive
+    neighbourhood" was a single store at $37.45. A median over one shelf is not a market."""
+    import importlib.util
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools", "metro_deck.py")
+    spec = importlib.util.spec_from_file_location("metro_deck2", p)
+    md = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(md)
+
+    ok("there IS a priced-store floor", md.MIN_PRICED_STORES >= 2)
+
+    src = open(p).read()
+    ok("the ranked table applies it", "priced_stores\") or 0) >= MIN_PRICED_STORES" in src)
+    ok("the per-ZIP cell applies it too", "< MIN_PRICED_STORES" in src)
+    ok("withheld ZIPs are counted, not silently dropped", "thin_priced" in src)
+    ok("the page states the floor in words", "priced stores</b> are shown" in src)
+    ok("...and says why", "not a\n    neighbourhood price" in src or "neighbourhood price" in src)
+
+    # Behavioural: a 1-store ZIP must not out-rank a well-observed one.
+    hoods = [{"zcta": "11530", "price_median": 37.45, "priced_stores": 1},
+             {"zcta": "10001", "price_median": 14.00, "priced_stores": 9}]
+    kept = [h for h in hoods if (h.get("priced_stores") or 0) >= md.MIN_PRICED_STORES]
+    eq("the one-store ZIP is excluded", [h["zcta"] for h in kept], ["10001"])
+
+
 def test_ranking_is_by_demand_not_our_own_coverage():
     src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "metro_analytics.py")).read()
     ok("top_metros sorts on demand", 'out.sort(key=lambda x: -x["demand_total"])' in src)
@@ -101,6 +161,9 @@ def test_ranking_is_by_demand_not_our_own_coverage():
 if __name__ == "__main__":
     for fn in (test_unknown_is_not_independent, test_deck_percentages_use_known_denominator,
                test_index_uses_median_not_mean, test_thin_neighborhoods_get_no_ratio,
+               test_price_is_observed_and_kept_apart_from_modelled_demand,
+               test_shelf_price_is_rendered_to_the_cent,
+               test_a_one_store_median_is_not_a_neighbourhood_price,
                test_ranking_is_by_demand_not_our_own_coverage):
         print(fn.__name__)
         fn()

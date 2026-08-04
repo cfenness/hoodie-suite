@@ -25,6 +25,10 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "unifyd"))
 import metro_analytics as ma
 
+# A ZIP median needs this many priced stores behind it before it is a neighbourhood price rather
+# than one shelf. Mirrors metro_analytics.MIN_ACCOUNTS_FOR_RATIO and locator_signal.MIN_REF.
+MIN_PRICED_STORES = int(os.environ.get("DECK_MIN_PRICED_STORES", "3"))
+
 CSS = """
 html,body{margin:0}
 :root{--paper:#F5F7FA;--card:#FFF;--ink:#1A2430;--muted:#5C6775;--faint:#8A94A2;--line:#E3E8EF;
@@ -133,6 +137,12 @@ def num(v):
     return "{:,}".format(int(v or 0))
 
 
+def money(v):
+    """A shelf price is rendered to the cent. usd() abbreviates for market sizes ($5.64B) and
+    would turn $12.99 into $13, which is a different claim about a shelf."""
+    return "$%.2f" % float(v or 0)
+
+
 def _idx_cell(v):
     if not v:
         return "<td>—</td>"
@@ -175,12 +185,40 @@ def build(cbsa, out_dir, log=print):
     srcs = "".join('<span class="c2"><b>%s</b> %s</span>' % (esc(k), num(v))
                    for k, v in list(s["sources"].items())[:8])
 
+    # OBSERVED price/assortment, kept strictly separate from the modelled demand columns. A ZIP with
+    # no observations renders an em-dash, never a zero — a zero would read as "cheap" or "no range".
+    # A ZIP needs several priced stores before its median describes a NEIGHBOURHOOD rather than a
+    # shelf. Without this the ranked table filled with n=1 ZIPs — New York's "most expensive
+    # neighbourhood" was one store at $37.45 — which is the same thin-denominator failure the
+    # demand-per-door floor and locator_signal's MIN_REF already exist to prevent.
+    priced = [h for h in hoods
+              if h.get("price_median") and (h.get("priced_stores") or 0) >= MIN_PRICED_STORES]
+    thin_priced = [h for h in hoods
+                   if h.get("price_median") and (h.get("priced_stores") or 0) < MIN_PRICED_STORES]
+    obs_stores = sum(h.get("priced_stores") or 0 for h in hoods)
+    med_prices = sorted(h["price_median"] for h in priced)
+    metro_med = med_prices[len(med_prices) // 2] if med_prices else None
+    items_vals = [h["items_per_store"] for h in hoods if h.get("items_per_store")]
+    metro_items = sorted(items_vals)[len(items_vals) // 2] if items_vals else None
+
+    def _price_cell(h):
+        # Same floor as the ranked table: below it we show nothing rather than a one-store median.
+        if not h.get("price_median") or (h.get("priced_stores") or 0) < MIN_PRICED_STORES:
+            return '<td style="color:var(--faint)">—</td><td style="color:var(--faint)">—</td>'
+        rng = ""
+        if h.get("price_p25") and h.get("price_p75"):
+            rng = '<span style="color:var(--faint);font-size:11px"> %s–%s</span>' % (
+                money(h["price_p25"]), money(h["price_p75"]))
+        return "<td>%s%s</td><td>%s</td>" % (
+            money(h["price_median"]), rng,
+            num(round(h["items_per_store"])) if h.get("items_per_store") else "—")
+
     top_rows = ""
     for h in hoods[:25]:
         top_rows += (
-            "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td>%s</tr>"
+            "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td>%s%s</tr>"
             % (esc(h["zcta"]), num(h["households"]), usd(h["demand_total"]),
-               usd(h["demand_at_home"]), num(h["accounts"]),
+               num(h["accounts"]), _price_cell(h),
                _idx_cell(h.get("index_vs_metro"))))
 
     def bars(rows, hi=True):
@@ -196,6 +234,45 @@ def build(cbsa, out_dir, log=print):
                     % (esc(r["zcta"]), w, ";background:var(--good)" if hi else "",
                        usd(r["demand_per_account"])))
         return out + "</div>"
+
+    # The price panel states its own denominator. "Median shelf price $12.99" with no indication of
+    # how many stores it came from is the kind of number that gets quoted back at you.
+    if priced:
+        pr = sorted(priced, key=lambda h: -(h["price_median"] or 0))
+        bars_rows = pr[:8] + ([None] + pr[-8:] if len(pr) > 16 else [])
+        rows_html = ""
+        for h in pr[:14]:
+            rows_html += ("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+                          % (esc(h["zcta"]), money(h["price_median"]),
+                             ("%s–%s" % (money(h["price_p25"]), money(h["price_p75"])))
+                             if h.get("price_p25") and h.get("price_p75") else "—",
+                             num(round(h["items_per_store"])) if h.get("items_per_store") else "—",
+                             num(h.get("priced_stores") or 0)))
+        pricepanel = """
+   <div class="stat">
+    <div class="s"><b>%s</b><span>metro median shelf price</span></div>
+    <div class="s"><b>%s</b><span>ZIPs with observed price</span></div>
+    <div class="s"><b>%s</b><span>stores priced</span></div>
+    <div class="s"><b>%s</b><span>median items / store</span></div>
+   </div>
+   <div class="scroll" style="margin-top:12px"><table class="demand">
+    <tr><th>ZIP</th><th>Median price</th><th>IQR (p25–p75)</th><th>Items / store</th><th>Stores priced</th></tr>
+    %s</table></div>
+   <div class="note"><b>Observed shelf prices</b>, from %s store%s we actively track in this metro —
+    not a market-wide average, and not what shoppers paid. Assortment (<code>items / store</code>)
+    compares stores <b>within</b> a source: a full retail catalogue carries thousands of items and a
+    delivery menu carries dozens, so the two are different things being counted, not a ranking.
+    Only ZIPs with <b>%s+ priced stores</b> are shown: a median over one shelf is not a
+    neighbourhood price. %s further ZIP%s had price data but too few stores to rank.</div>
+   """ % (money(metro_med) if metro_med else "—", num(len(priced)), num(obs_stores),
+          num(round(metro_items)) if metro_items else "—", rows_html,
+          num(obs_stores), "" if obs_stores == 1 else "s",
+          MIN_PRICED_STORES, num(len(thin_priced)), "" if len(thin_priced) == 1 else "s")
+    else:
+        pricepanel = ('<div class="note">No observed price data reaches this metro\'s ZIPs yet. '
+                      'Price is attributed through the outlet crosswalk, and a store only appears '
+                      'once its outlet carries a lat/lng — so this fills in as geocoding advances, '
+                      'with no further collection.</div>')
 
     ts = time.strftime("%Y-%m-%d", time.gmtime())
     doc = """<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -256,7 +333,9 @@ def build(cbsa, out_dir, log=print):
     <span class="bk">ZCTA grain</span>
     <span class="tag derived"><span class="d"></span>Demand derived · accounts landed</span></div>
    <div class="scroll"><table class="demand">
-    <tr><th>ZIP</th><th>Households</th><th>Demand / yr</th><th>Off-premise</th><th>Accounts</th>
+    <tr><th>ZIP</th><th>Households</th><th>Demand / yr</th><th>Accounts</th>
+     <th>Median shelf price<br><span style="font-weight:400;text-transform:none">observed · IQR</span></th>
+     <th>Items / store<br><span style="font-weight:400;text-transform:none">observed</span></th>
      <th>Demand per door<br>vs metro median</th></tr>
     %(toprows)s
    </table></div>
@@ -265,6 +344,12 @@ def build(cbsa, out_dir, log=print):
     a mean upward and make ordinary neighbourhoods look under-served. Above 100 = more resident
     dollars per door we can see than the typical neighbourhood here.</div>
    <div class="src">outlet_geography (TIGER 2023 point-in-polygon) ⋈ trade_area_demand · geo_level=zcta</div>
+  </div>
+
+  <div class="panel wide">
+   <div class="ph"><h3>Shelf price &amp; assortment</h3><span class="bk">observed, not modelled</span>
+    <span class="tag landed"><span class="d"></span>Landed</span></div>
+   %(pricepanel)s
   </div>
 
   <div class="panel">
@@ -300,7 +385,7 @@ def build(cbsa, out_dir, log=print):
         "accounts": num(s["accounts"]), "alc": num(s["alcohol_accounts"]), "zips": s["zips"],
         "indie": num(s["independent"]), "indiepct": indie_pct, "chain": num(s["chain"]),
         "unknown": num(unknown), "known": num(known_chain),
-        "covzips": len(covered), "srcs": srcs, "toprows": top_rows,
+        "covzips": len(covered), "srcs": srcs, "toprows": top_rows, "pricepanel": pricepanel,
         "white": bars(white, hi=True), "dense": bars(dense, hi=False), "ts": ts,
     }
 

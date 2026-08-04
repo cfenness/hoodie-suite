@@ -49,3 +49,17 @@ unifyd/full_pull_out/
 # committable: unifyd/binnys_snapshot.json alone is 11GB. One `git add -A` would have put it in the
 # history permanently. Mirror the dockerignore rule.
 unifyd/*_snapshot.json
+
+# iCloud copy-collision artefacts. This repo lives under the synced Desktop folder, and when iCloud
+# resolves a conflict it writes a sibling named "<name> 2.<ext>" (or "<name> 2" for a directory).
+# They are never source, and they have caused real damage — not hypothetically, all on 2026-08-03:
+#   · "salsify 2.py" was committed to main by a `git add -A` and had to be removed in #773
+#   · duplicated refs (".git/refs/heads/<branch> 2") broke `git fetch` outright, which silently
+#     made a deploy ship a STALE tree while every release still read `complete`
+#   · "poll_ue_progress 2.py" carried pre-fix code and failed a guard in the working directory
+#     while a clean checkout of the same commit passed
+# This stops them entering the history. It does NOT stop the .git/refs corruption — nothing in
+# .gitignore can, since git does not consult it for its own metadata. The only real fix for that
+# is keeping .git out of iCloud's reach.
+*\ 2
+*\ 2.*
