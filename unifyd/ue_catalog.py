@@ -380,9 +380,15 @@ def _progress(**kw):
         pass
 
 
-def universe(site="ubereats", log=print):
+def universe(site="ubereats", log=print, metro=None):
     """Every store in the sitemap book for `site` → [(url_id, name)]. This is the DENOMINATOR; state it
-    up front so completeness is answerable from the first log line."""
+    up front so completeness is answerable from the first log line.
+
+    `metro`, when given, is a set of (city_lower, STATE) pairs from city_centroid.metro_cities() — the
+    sitemap itself carries no city/state (see aggregator_geo.py's docstring), so this restricts to
+    stores whose src_outlets row already has geo-derived city/state landing inside that scope. A store
+    aggregator_geo hasn't reached yet has no city/state and is excluded until it does — this pass is
+    necessarily a subset of what's been geocoded so far, not the true metro universe."""
     try:
         rows = warehouse.query(
             "ubereats_sitemap",
@@ -397,6 +403,22 @@ def universe(site="ubereats", log=print):
         if u and u not in seen:
             seen.add(u)
             out.append((u, r.get("store_name") or ""))
+    if metro:
+        import city_centroid as cc
+        try:
+            geo_rows = warehouse.query(
+                "src_outlets",
+                "SELECT store_id, city, state FROM t WHERE source = ? AND city IS NOT NULL",
+                [site])
+            in_scope = {str(r["store_id"]) for r in geo_rows
+                        if (cc._norm(r.get("city") or ""), str(r.get("state") or "").strip().upper()) in metro}
+        except Exception as e:
+            log("[ue] metro filter unavailable (%s) — falling back to full universe" % str(e)[:100])
+            return out
+        before = len(out)
+        out = [(u, n) for (u, n) in out if u in in_scope]
+        log("[ue] metro scope: %d/%d stores have known geo in scope (%d city/state pairs)"
+            % (len(out), before, len(metro)))
     return out
 
 
@@ -592,8 +614,11 @@ def consolidate(site="ubereats", rebuild=False, log=print):
     return len(out)
 
 
-def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
-    """Sweep this shard of the universe. Returns a run record. NO cap: the only bound is the shard."""
+def run(site="ubereats", shard=0, nshard=1, workers=None, log=print, metro=None):
+    """Sweep this shard of the universe. Returns a run record. NO cap: the only bound is the shard.
+
+    `metro`, when given, restricts the universe to a geographic scope (see universe()) instead of
+    every sitemap store nationally — passed straight through."""
     # GIVE THIS SHARD ITS OWN EXIT SLICE before anything else runs. Measured 2026-07-29 (§1e): with
     # nshard independent processes all drawing from the same pool, identity_router's per-process
     # concentration-avoidance can't see across processes — shards silently collide on the same exits.
@@ -629,7 +654,7 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
     except Exception as e:
         log("[ue] reputation carry-over unavailable (%s) — starting cold" % str(e)[:60])
     day = time.strftime("%Y-%m-%d")
-    uni = universe(site, log=log)
+    uni = universe(site, log=log, metro=metro)
     if not uni:
         return {"status": "failed", "error": "store universe empty — is ubereats_sitemap populated?"}
     mine = [(u, n) for (u, n) in uni] if nshard == 1 else \
@@ -996,11 +1021,29 @@ def main(argv=None):
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--no-enrich", action="store_true",
                     help="catalog only — skip the per-item getMenuItemV1 UPC/detail pass")
+    ap.add_argument("--metro", default="",
+                    help="';'-separated 'City,ST' anchors, e.g. 'Orlando,FL;Miami,FL' — restricts the "
+                         "universe to a radius around each anchor (suburbs included) instead of national. "
+                         "Only stores aggregator_geo has already geocoded can match.")
+    ap.add_argument("--metro-radius-mi", type=float, default=30)
     a = ap.parse_args(argv)
     if a.no_enrich:
         globals()["ENRICH"] = False
+    metro = None
+    if a.metro:
+        import city_centroid as cc
+        anchors = []
+        for part in a.metro.split(";"):
+            part = part.strip()
+            if not part:
+                continue
+            city, _, state = part.rpartition(",")
+            anchors.append((city.strip(), state.strip()))
+        metro = cc.metro_cities(anchors, radius_mi=a.metro_radius_mi)
+        if not metro:
+            raise SystemExit("--metro matched no known cities — check the city,ST spelling: %r" % a.metro)
     i, n = (a.shard.split("/") + ["1"])[:2]
-    rec = run(site=a.site, shard=int(i), nshard=int(n), workers=a.workers)
+    rec = run(site=a.site, shard=int(i), nshard=int(n), workers=a.workers, metro=metro)
     print(json.dumps(rec, indent=2))
     return 0 if rec.get("status") == "success" else 1
 
