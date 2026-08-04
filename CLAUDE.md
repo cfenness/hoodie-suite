@@ -239,6 +239,26 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   `created_on` is the UPLOAD stamp, not the event date** (Bacardi's whole 2018 folder reads
   2018-04-11, the bulk-migration day), so dates come from **year folders** at `precision=year` and are
   otherwise NULL — never back-filled.
+- **`unifyd/xsource_match.py` + `unifyd/xsource_gold.py` — cross-source identity, and its gold.**
+  The divergence work measured that 98.5% of items with an image are seen by ONE source, and a probe
+  over five retail chains on fifteen ubiquitous brands found **73% of products appearing on ≥2
+  sources with the same name+size are split across multiple master identities**. `xsource_match`
+  proposes the merge as an OVERLAY (`xsource_identity`, never a master rewrite) on an exact
+  signature — brand_key + name_sig + size, all three required, UPC conflict always wins.
+  **It does not ship: measured precision 0.233 against a 0.98 bar, so `build()` refuses.** But that
+  number is not trustworthy either — 59,455 of 67,099 rows were unscoreable because binnys / abc /
+  total-wine carry no UPC, and those are exactly the sources needing the merge. So `xsource_gold`
+  builds the human set instead: stratified `merged` / `near_miss` / `control`, seeded and
+  reproducible, the `label` column shipping EMPTY (a pre-filled answer produces rubber-stamping, and
+  gold that agrees with the machine by construction measures nothing), and scored PER STRATUM.
+  The **control** rows are same-product-different-size (`Gran Centenario Plata 750ML` vs `1.75L`) —
+  a known answer that audits the labeller. An early version paired same-brand-different-PRODUCT,
+  which is obviously different and therefore tested nothing.
+  Two bugs the real data found in the signature, both fixed: `"750 ML"` tokenized to a bare `750`
+  that survived into the name signature (so the same product written two ways never merged), and
+  retail bakes the CLASS into the name while TTB states it in a field
+  ([[ttb-retail-class-bridge]]) — `"Absolut Citron 750ml"` vs `"Absolut Citron Vodka 750 ml"`.
+  A 300-pair sheet is at `docs/xsource-gold-300.csv`.
 - **`unifyd/img_hash.py`** (source `img-hash`, weekly, **disabled** pending a sized first run) — the
   CHEAP twin of `img_embed`. `img_embed` needs torch, which the image does not ship, and it was never
   registered — so **`img_vec` has never been populated** and anything built on it reports degraded
