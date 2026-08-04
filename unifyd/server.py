@@ -1830,6 +1830,52 @@ def dict_store_get():
     d = _dict_by_id((request.args.get("id") or "").strip())
     return jsonify(ok=bool(d), dictionary=d) if d else (jsonify(ok=False, error="not found"), 404)
 
+# ── the Match Trainer's continuous queue ─────────────────────────────────────────────────────────
+# The trainer used to need a CSV dropped on it, which caps the work at whatever was exported. These
+# serve an endless queue off a PRE-BUILT pool (`xsource_queue`), so the surface never runs dry and
+# the expensive candidate generation stays a nightly build rather than a per-keystroke join.
+@app.get("/api/xsource/queue")
+def api_xsource_queue():
+    try:
+        import xsource_queue as q
+        n = max(1, min(100, int(request.args.get("n", 25))))
+        rows = q.next_batch(n)
+        return jsonify({"ok": True, "pairs": rows, "n": len(rows),
+                        # An empty queue and an unbuilt pool look identical to the UI unless we say
+                        # which it is — one means "you're done", the other means "run the build".
+                        "pool_built": bool(rows) or _xsource_pool_exists()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:200], "pairs": []}), 200
+
+
+def _xsource_pool_exists():
+    try:
+        import warehouse
+        return (warehouse.row_count("xsource_queue") or 0) > 0
+    except Exception:
+        return False
+
+
+@app.get("/api/xsource/dictionary")
+def api_xsource_dictionary():
+    """The accumulated vocabulary, so a new session inherits everything already taught."""
+    try:
+        import xsource_queue as q
+        return jsonify({"ok": True, "dict": q.dictionary()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:200], "dict": {}}), 200
+
+
+@app.post("/api/xsource/resolve")
+def api_xsource_resolve():
+    """Land one resolution: the labelled pair plus the value mappings it teaches."""
+    try:
+        import xsource_queue as q
+        return jsonify(q.resolve(request.get_json(silent=True) or {}))
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:200]}), 200
+
+
 @app.post("/api/dict/store/save")
 def dict_store_save():
     """Upsert a dictionary. Body: {id?, name, source_dataset, source_field, target_field, mode,

@@ -494,6 +494,18 @@ SOURCES = [
               "DAM_CENSUS_PROBE=1 opts into conventional media.*/press.* hosts). Names its failures "
               "— age gate / JS shell / no link — rather than reporting them as 'no media centre'."),
 
+    # The candidate pool behind the Match Trainer's continuous queue. A BUILD, never something the
+    # UI triggers: generating candidates joins every image-bearing retail catalog to the crosswalk
+    # and dim_sku, which is fine nightly and unacceptable per keystroke (it OOM'd the serving box
+    # twice when done carelessly). The API then just reads the next unresolved slice.
+    dict(id="xsource-queue", label="Match Trainer queue (candidate pool)",
+         code="import xsource_queue as m; m.build()",
+         tables=["xsource_queue"], klass="build", interval_h=168, enabled=True,
+         cost_class="free", mem=8192, timeout=7200, after=["build-product-master"],
+         note="ranked pool of matching candidates — unseen difference-causes first, then "
+              "rule/stratum disagreements, then widely-carried items. Resolutions land in "
+              "xsource_gold + xsource_dictionary via /api/xsource/resolve."),
+
     # The human gold set the merge needs before it can ship. Not a scrape — it exports a labelling
     # sheet, ingests the filled one, and scores the matcher PER STRATUM. Manual by nature.
     dict(id="xsource-gold", label="Cross-source gold set (human labelling)",
