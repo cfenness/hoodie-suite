@@ -583,7 +583,20 @@ BUILDS = [
          note="src_outlets re-shred + cross-source geo-match consolidation (1.76M-row whole-table merge peaks >8GB)"),
     dict(id="build-product-master", label="Product master (dim_sku chain)",
          code="import build_product_master as m; m.build()",
-         tables=["dim_sku"], klass="build", interval_h=12, enabled=True, mem=8192,
+         # 8192 OOM-KILLED THIS BUILD ON 9 OF ITS LAST 13 RUNS — `killed by SIGKILL (9)` every time,
+         # after 26-42 minutes, having added 13-76 rows to a 1.18M-row table. build() slurps all 20
+         # source catalogs fully into Python (`SELECT * FROM t`) and accumulates them into one
+         # `staged` list before writing: 3,275,376 rows held at once (binnys_products 1,534,862 +
+         # ttb_products 998,742 + offprem_products 516,629 + 17 others), plus the dim_sku merge on
+         # the way out. The sibling `normalize` entry already carries 16384 with the note "1.76M-row
+         # whole-table merge peaks >8GB" — the same lesson, never applied here. 16384 also doubles
+         # the cpus (the dispatcher derives them from mem), which should cut the runtime.
+         #
+         # THIS IS A STOPGAP, NOT THE FIX. Same class as raw_capture.evacuate, which OOM'd an 8GB
+         # AND a 16GB machine and was only fixed by streaming instead of materializing. The inputs
+         # grow; the headroom does not. The real remedy is the incremental fold (watermarked, cost
+         # proportional to new parts) — this build re-derives 1.18M rows every 12h to add ~50.
+         tables=["dim_sku"], klass="build", interval_h=12, enabled=True, mem=16384,
          note="brand dict → stage → shred to dim_brand/product/item/sku + xwalk/coherence/identity clusters"),
     # MOAT-PLAN Workstream M — PROVE the master. Deterministic gold set (same-UPC positives / cross-
     # brand negatives) scored against the master's item_key decision → P/R/F1 + a regression baseline.
