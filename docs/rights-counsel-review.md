@@ -2,6 +2,8 @@
 
 **Schema version 1.0. Not yet signed off.**
 
+*Nine open questions at §6. Q5 (are hashes/embeddings derivative works?) and Q9 (does a trade grant reach us?) are the two that change what the system can do.*
+
 This is the document a lawyer reads to accept or reject the permission model we use when harvesting
 third-party media libraries. It is self-contained: you should not need to read any code. Where a rule
 is enforced in software, the file is named so it can be verified.
@@ -10,7 +12,7 @@ The ask is narrow. We are not asking counsel to approve a business plan. We are 
 
 1. Is the **taxonomy** (below, §2) the right set of distinctions?
 2. Are the **five decision rules** (§3) ones you would defend?
-3. Which of the **eight open questions** (§6) do we have wrong?
+3. Which of the **nine open questions** (§6) do we have wrong?
 
 ---
 
@@ -133,6 +135,15 @@ derived representation?
 **Q7 — Does an editorial/press grant reach us at all?** Press grants are typically addressed to
 "accredited media" or "journalists". We are neither. Should a press grant be treated as not applying
 to us unless it says otherwise?
+
+**Q9 — Does a TRADE grant reach us, and what makes us a trade partner?** A distributor or
+syndication platform publishes assets precisely so the trade can sell the product — "authorized
+retailers and distributors may use these images in connection with the sale of our products". That is
+a real licence, but it is addressed to a **class**, and it is not obvious we are in it. We treat such
+a grant as conditioned: it is denied until someone records `trade_partner_verified` establishing that
+we qualify. Two sub-questions: (a) what would actually establish it — a distribution agreement, a
+licence, a customer relationship with the supplier? (b) if our *customer* is an authorized retailer,
+does serving them the supplier's imagery fall inside the grant made to them?
 
 **Q8 — Is the schema versioning adequate for a buyer's diligence?** Each record states the schema
 version it was authored under and carries a `schema_signoff` field. A future model change shows up as

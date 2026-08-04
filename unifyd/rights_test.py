@@ -184,5 +184,36 @@ check(q2[0]["costs_capability"] is True, "...and is marked as costing capability
 check(not any(r["source_id"] == "a-hold" for r in q2),
       "a decided, signed-off HOLD is not in the queue at all")
 
+print("\ntrade grants (a trade platform exists to distribute assets, not protect them):")
+TRADE_TOS = ("Authorized retailers and distributors may download and use the product images and "
+             "sell sheets in connection with the sale of our products, including in e-commerce "
+             "listings.")
+t = rights.classify(TRADE_TOS)
+check(t["image_use"] == "permitted", "trade-use language is recognised as a grant")
+check(t["scope"] == "commercial_redistribution",
+      "a retail-listing grant scopes to commercial_redistribution (a listing IS commercial)")
+check("trade-partner-grant" in t["rules_matched"]["grant"], "the trade rule is what matched")
+
+# The dangerous shape: a grant addressed to a CLASS. It carried no "…only" wording, so the condition
+# never fired and the gate let a licence written for someone else flow to us.
+check(t["trade_partner_only"] is True,
+      "a grant ADDRESSED TO authorized trade partners is conditioned, with or without the word 'only'")
+trec = {"source_id": "t", "permissions": t, "counsel_cleared": True}
+ok, why = rights.may(trec, "serve_internal")
+check(not ok and "trade partner" in why,
+      "a trade-conditioned grant is DENIED until someone records that we qualify")
+check(rights.may(dict(trec, trade_partner_verified="reviewer 2026-01-01"), "serve_internal")[0],
+      "...and flows once trade_partner_verified is recorded")
+check(rights.may(trec, "catalog_metadata")[0], "facts flow regardless, as always")
+
+check(rights.classify("For use in connection with the sale of our products.")["image_use"] == "permitted",
+      "the sale-purpose phrasing is recognised on its own")
+# The press rules must not have been widened by adding trade vocabulary.
+pg = rights.classify("Images are made available royalty-free for editorial use by accredited media.")
+check(pg["scope"] == "editorial_press" and pg["trade_partner_only"] is False,
+      "an editorial grant is unaffected by the trade rules")
+check(rights.classify(PROHIBIT_TOS)["image_use"] == "prohibited",
+      "a prohibition is still a prohibition")
+
 print("\n%s (%d failure%s)" % ("FAILED" if FAILS else "PASSED", len(FAILS), "" if len(FAILS) == 1 else "s"))
 sys.exit(1 if FAILS else 0)

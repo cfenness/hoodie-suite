@@ -188,6 +188,25 @@ _GRANT = [
     ("news-reporting-grant",
      r"may (?:be )?(?:use[d]?|reproduce[d]?|publish(?:ed)?)[^.]{0,80}?for (?:news|press) (?:reporting|use)", 2),
     ("permission-granted", r"(?:we )?(?:hereby )?grant (?:you )?a[^.]{0,60}?licen[cs]e", 1),
+    # TRADE grants. A consumer media centre exists to protect brand assets; a TRADE platform exists to
+    # distribute them — a sell sheet and a pack shot are published precisely so a distributor or
+    # retailer can sell the product with them. That is a different licence in a different vocabulary,
+    # and the press/editorial rules above cannot see it: nobody writes "royalty-free for editorial
+    # use" on a distributor portal, they write "for use in connection with the sale of our products".
+    #
+    # Adding the vocabulary does NOT assert we have found such a grant — surveyed live across VIP
+    # Brand Builder, SevenFifty/Provi, Salsify Sites, 1WorldSync and Syndigo, none publishes one as
+    # web terms. It means the census will RECOGNISE one when it hits it, instead of reading a real
+    # trade licence as silence.
+    ("trade-partner-grant",
+     r"(?:authoriz(?:ed|ised)|approved)\s+(?:retailer|distributor|wholesaler|trade partner|customer)s?"
+     r"[^.]{0,80}?(?:may|are permitted to|are authoriz\w+ to)[^.]{0,40}?(?:use|download|display|reproduce)", 2),
+    ("sale-purpose-grant",
+     r"(?:may (?:be )?use[d]?|for use)[^.]{0,60}?in connection with the (?:sale|marketing|promotion|"
+     r"advertis\w+|resale)\s+of[^.]{0,30}?(?:our|the|these)\s+products?", 2),
+    ("retail-listing-grant",
+     r"(?:may (?:be )?use[d]?|permitted)[^.]{0,70}?(?:e-?commerce|online|retail|product)\s+"
+     r"(?:listing|catalog(?:ue)?|website|store)s?", 2),
 ]
 
 # ── DIRECTIONALITY: whose licence is it? ──────────────────────────────────────────────────────────
@@ -215,6 +234,9 @@ _INBOUND_WINDOW = 420
 
 # Scope hints — read only when a grant was found. Strongest hint wins.
 _SCOPE_HINTS = [
+    ("commercial_redistribution",
+     r"(?:authoriz\w+ (?:retailer|distributor|trade partner)|in connection with the (?:sale|resale)"
+     r"|e-?commerce listing|retail listing)"),
     ("commercial_redistribution",
      r"(?:commercial (?:use|purposes) (?:is|are) permitted|may be redistribut|for (?:any|all) purposes"
      r"|advertising and promotional use)"),
@@ -340,7 +362,12 @@ def classify(tos_text):
         "scope": scope,
         "attribution_required": bool(re.search(_ATTRIBUTION, text, re.I)),
         "alteration_allowed": alter,
-        "trade_partner_only": bool(re.search(_TRADE_ONLY, text, re.I)),
+        # A grant ADDRESSED TO a class is conditioned by construction, whether or not the word "only"
+        # appears. "Authorized retailers may use these images" matched no "…only" phrasing, so the
+        # most dangerous grant shape — one written for a class we may not belong to — arrived
+        # UNCONDITIONED and the gate let it through. The rule that found it now sets the condition.
+        "trade_partner_only": bool(re.search(_TRADE_ONLY, text, re.I))
+                              or "trade-partner-grant" in [n for n, _w, _q, sd in grant if sd == "grant"],
         "expiry": m_exp.group(1) if m_exp else None,
         "confidence": confidence,
         "needs_counsel": needs_counsel,
@@ -480,6 +507,13 @@ def may(rec, action):
         return False, "unrecognized scope %r (deny-by-default)" % granted
     if _SCOPE_RANK[granted] < _SCOPE_RANK[need]:
         return False, "action needs scope %s, record grants %s" % (need, granted)
+    # A TRADE-CONDITIONED grant is a grant to a class of people, not to whoever fetches the page.
+    # "Authorized retailers may use these images to sell our products" is a real licence with a real
+    # precondition, and reading it as ours would be the same error as reading a press grant addressed
+    # to accredited media as ours. Denied until `trade_partner_verified` records who established it.
+    if perms.get("trade_partner_only") and not rec.get("trade_partner_verified"):
+        return False, ("grant is limited to authorized trade partners and no trade_partner_verified "
+                       "sign-off records that we are one")
     exp = perms.get("expiry")
     if exp and str(exp) < time.strftime("%Y-%m-%d"):
         return False, "grant expired %s" % exp

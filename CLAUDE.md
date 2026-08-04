@@ -250,6 +250,16 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   held, which is the system working, not a queue item. The packet is written for a lawyer who reads
   no code: taxonomy, five decision rules, where each is enforced, and **eight open questions** —
   including the highest-value one, whether a perceptual hash or a CV embedding is a derivative work.
+  **Trade grants are a distinct shape and the classifier now knows the vocabulary.** A consumer media
+  centre exists to PROTECT assets; a distributor/syndication platform exists to DISTRIBUTE them — a
+  sell sheet is published so the trade can sell the product. Nobody writes "royalty-free for editorial
+  use" on a distributor portal, they write "for use in connection with the sale of our products", so
+  the press rules could not see it. Surveyed live (VIP Brand Builder, SevenFifty/Provi, Salsify Sites,
+  1WorldSync, Syndigo): **none publishes such a grant as web terms** — the licence, if it exists, sits
+  in a distribution agreement we are not party to. The rules exist so a real trade grant is RECOGNISED
+  rather than read as silence. Critically, a trade grant is addressed to a **class**: `may()` denies it
+  until `trade_partner_verified` records that we are in that class, because "authorized retailers may
+  use these images" matched no "…only" wording and so arrived unconditioned the first time.
 - **`unifyd/dam_canon.py` — the canon key (P2).** Resolves a DAM brand literal to `dim_brand` via
   `overlay_match.brand_key()` applied to BOTH sides, so `brand_events.hoodie_brand_id` is the master's
   `hoodie_id` rather than a vendor slug. **One tier, exact key match, no fuzzy fallback** — a wrong
