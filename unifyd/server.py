@@ -2952,20 +2952,37 @@ def coverage_ep():
     return jsonify(_ttl("coverage", 90, _coverage_data))
 
 
+def _src_outlets_broken(e):
+    """True when `e` is a manifest-references-a-missing-file error (the table EXISTS and has a bucketed
+    manifest, but a part file it lists 404s on storage — a real corruption, distinct from the table
+    genuinely not being built yet). Distinguishing this matters: reporting it as "not built yet" hid the
+    2026-07-31 manifest corruption for two days, because nothing else happened to read src_outlets."""
+    import warehouse
+    if not warehouse.read_manifest("src_outlets"):
+        return False                                    # no manifest at all -> genuinely not built
+    msg = str(e)
+    return any(s in msg for s in ("HTTP GET error", "404", "Not Found", "NoSuchKey"))
+
+
 def _coverage_data():
     import warehouse
     try:
         by_src = warehouse.query("src_outlets", "SELECT source, count(*) n, "
                                  "count(*) FILTER (WHERE lat IS NOT NULL) geo FROM t GROUP BY source ORDER BY n DESC")
-    except Exception:
+        by_state = warehouse.query("src_outlets", "SELECT upper(trim(state)) state, count(*) n, "
+                                   "count(*) FILTER (WHERE lat IS NOT NULL) geo FROM t "
+                                   "WHERE nullif(trim(state),'') IS NOT NULL GROUP BY state ORDER BY n DESC")
+        xs = warehouse.query("src_outlets", "SELECT upper(trim(state)) state, source, count(*) n FROM t "
+                             "WHERE nullif(trim(state),'') IS NOT NULL GROUP BY state, source")
+    except Exception as e:
+        if _src_outlets_broken(e):
+            return dict(ok=False, degraded=True, total=0, by_source=[], by_state=[], points=[],
+                        note="src_outlets has a bucketed manifest but a part file it references is "
+                             "missing from storage (corrupted manifest, not an empty table) — needs a "
+                             "warehouse repair, not a rebuild wait: %s" % str(e)[:200])
         return dict(ok=True, total=0, by_source=[], by_state=[], points=[],
                     note="src_outlets not built yet — runs on the next master rebuild")
-    by_state = warehouse.query("src_outlets", "SELECT upper(trim(state)) state, count(*) n, "
-                               "count(*) FILTER (WHERE lat IS NOT NULL) geo FROM t "
-                               "WHERE nullif(trim(state),'') IS NOT NULL GROUP BY state ORDER BY n DESC")
     total = sum(r["n"] for r in by_src)
-    xs = warehouse.query("src_outlets", "SELECT upper(trim(state)) state, source, count(*) n FROM t "
-                         "WHERE nullif(trim(state),'') IS NOT NULL GROUP BY state, source")
     try:
         by_chain = warehouse.query("src_outlets", "SELECT chain, count(*) n FROM t WHERE nullif(chain,'') "
                                    "IS NOT NULL GROUP BY chain ORDER BY n DESC LIMIT 60")
