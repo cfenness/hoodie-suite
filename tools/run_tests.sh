@@ -60,6 +60,7 @@ TESTS=(
   repair_partitions_test       # canonicalising a drifted table is lossless
   geo_resolve_test             # lat/lng -> county/CBSA/ZCTA: border points, rural gaps, degrade floor
   metro_analytics_test         # metro claims: unknown != independent, median not mean
+  obs_rollup_test              # 53M observations -> store grain, without re-reading the source
 )
 
 FILTER="${1:-}"
