@@ -1,0 +1,154 @@
+{
+  "builds": {
+    "build-ue-catalog": {
+      "after": [
+        "ubereats"
+      ],
+      "code": "import ue_catalog as m; n = m.consolidate('ubereats') + m.consolidate('postmates'); print('HOODIE_RESULT {\"status\": \"ok\", \"items_done\": %d, \"items_total\": %d}' % (n, n))",
+      "enabled": true,
+      "id": "build-ue-catalog",
+      "interval_h": 6,
+      "klass": "build",
+      "label": "UberEats catalog consolidate (shard parts \u2192 catalog)",
+      "mem": 8192,
+      "note": "single-writer fold of append-only shard parts; shards must never merge (lost updates)",
+      "tables": [
+        "ubereats_products",
+        "postmates_products"
+      ]
+    }
+  },
+  "sources": {
+    "postmates": {
+      "cadence": "daily",
+      "caps": [
+        "curl_cffi"
+      ],
+      "code": "import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_catalog as m; m.main(['--site','postmates','--shard',os.environ.get('UE_SHARD','0/8')])",
+      "cost_class": "free",
+      "enabled": true,
+      "id": "postmates",
+      "item_col": "item_uuid",
+      "klass": "headless",
+      "label": "Postmates (catalog + UPC, sharded)",
+      "mem": 4096,
+      "note": "same cold Uber BFF recipe as ubereats, postmates.com domain",
+      "priority": 11,
+      "store_col": "store_uuid",
+      "tables": [
+        "postmates_products_parts"
+      ],
+      "timeout": 21600
+    },
+    "postmates-full": {
+      "cadence": "daily",
+      "code": "import os; os.environ['RESI_ISP_ONLY']='1'; import ue_crawl as m; m.main(['--zones','New York, NY;Los Angeles, CA;Chicago, IL;Miami, FL;Houston, TX','--site','postmates','--max-stores','60','--max-items-enrich','40'])",
+      "cost_class": "free",
+      "enabled": false,
+      "id": "postmates-full",
+      "klass": "mac",
+      "label": "Postmates \u2014 bounded full-detail crawl",
+      "mem": 8192,
+      "note": "Postmates twin of ubereats-full \u2014 same bounds, same $0/no-proxy posture, manual trigger only.",
+      "tables": [
+        "postmates_products"
+      ],
+      "timeout": 10800
+    },
+    "postmates-sitemap": {
+      "cadence": "weekly",
+      "caps": [
+        "curl_cffi"
+      ],
+      "code": "import ue_sitemap as m; m.pull('postmates'); m.sitemap_to_src_outlets('postmates')",
+      "enabled": true,
+      "id": "postmates-sitemap",
+      "klass": "headless",
+      "label": "Postmates store universe",
+      "mem": 8192,
+      "note": "$0 US Postmates universe from its sitemaps \u2192 src_outlets (coverage book)",
+      "tables": [
+        "postmates_sitemap",
+        "src_outlets"
+      ],
+      "timeout": 10800
+    },
+    "ubereats": {
+      "cadence": "daily",
+      "caps": [
+        "curl_cffi"
+      ],
+      "code": "import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_catalog as m; m.main(['--site','ubereats','--shard',os.environ.get('UE_SHARD','0/8'),'--no-enrich'])",
+      "cost_class": "free",
+      "enabled": true,
+      "id": "ubereats",
+      "impersonate": "safari17_0",
+      "item_col": "item_uuid",
+      "klass": "headless",
+      "label": "Uber Eats store catalog (sharded)",
+      "mem": 4096,
+      "note": "COLD getStoreV1 + getMenuItemV1 over the 502k-store sitemap universe; shardable (UE_SHARD=i/N), resumable, no caps. Headful ubereats.py archived as the zone crawler.",
+      "priority": 10,
+      "session_budget": 40,
+      "shards": 8,
+      "store_col": "store_uuid",
+      "tables": [
+        "ubereats_products_parts"
+      ],
+      "timeout": 21600
+    },
+    "ubereats-enrich": {
+      "cadence": "daily",
+      "caps": [
+        "curl_cffi"
+      ],
+      "code": "import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_enrich as m; m.main(['--site','ubereats','--shard',os.environ.get('UE_SHARD','0/8')])",
+      "cost_class": "free",
+      "enabled": true,
+      "id": "ubereats-enrich",
+      "klass": "headless",
+      "label": "Uber Eats item UPC/GTIN backfill (sharded)",
+      "mem": 4096,
+      "note": "separate clock from the sweep: static per-item attributes, fetched once ever",
+      "priority": 11,
+      "shards": 8,
+      "tables": [
+        "ubereats_products_parts"
+      ],
+      "timeout": 21600
+    },
+    "ubereats-full": {
+      "cadence": "daily",
+      "code": "import os; os.environ['RESI_ISP_ONLY']='1'; import ue_crawl as m; m.main(['--zones','New York, NY;Los Angeles, CA;Chicago, IL;Miami, FL;Houston, TX','--site','ubereats','--max-stores','60','--max-items-enrich','40'])",
+      "cost_class": "free",
+      "enabled": false,
+      "id": "ubereats-full",
+      "klass": "mac",
+      "label": "Uber Eats \u2014 bounded full-detail crawl",
+      "mem": 8192,
+      "note": "ONE bounded run (5 metros, capped stores/items), NO proxy (RESI_ISP_ONLY=1 forbids metered spend) \u2014 validates the bare Fly IP before any wider run. Manual trigger only.",
+      "tables": [
+        "ubereats_products"
+      ],
+      "timeout": 10800
+    },
+    "ubereats-sitemap": {
+      "cadence": "weekly",
+      "caps": [
+        "curl_cffi"
+      ],
+      "code": "import ue_sitemap as m; m.pull('ubereats'); m.sitemap_to_src_outlets('ubereats')",
+      "enabled": true,
+      "id": "ubereats-sitemap",
+      "klass": "headless",
+      "label": "UberEats store universe",
+      "mem": 8192,
+      "note": "$0 US UberEats universe from its gzipped sitemaps (~285k) \u2192 src_outlets (the coverage book). Canonical UberEats harvester (ubereats_sitemap.py archived). accumulate into 995k src_outlets \u2192 8gb",
+      "tables": [
+        "ubereats_sitemap",
+        "src_outlets"
+      ],
+      "timeout": 10800
+    }
+  }
+}
