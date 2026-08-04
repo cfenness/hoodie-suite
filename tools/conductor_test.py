@@ -41,6 +41,7 @@ class FakeWorld(object):
                                          {"Version": 8, "Status": "complete", "ImageRef": "img:8"}])
         self._container = kw.get("container", (0, '{"ok": true}'))
         self._integrate_rc = kw.get("integrate_rc", 0)
+        self._integrate_out = kw.get("integrate_out", "integrate output")
         self._deploy_rc = kw.get("deploy_rc", 0)
         self._rollback_rc = kw.get("rollback_rc", 0)
         self.log = lambda *a: None
@@ -61,6 +62,10 @@ class FakeWorld(object):
         self.calls.append(("in_container", script[:40]))
         return self._container
 
+    def reset_integration_worktree(self):
+        self.calls.append(("reset_integration",))
+        return 0, "reset"
+
     def merge(self, n):
         self.calls.append(("merge", n))
         return 0, "merged"
@@ -68,7 +73,7 @@ class FakeWorld(object):
     def release_train(self, *args):
         self.calls.append(("release_train",) + args)
         if args[0] == "integrate":
-            return self._integrate_rc, "integrate output"
+            return self._integrate_rc, self._integrate_out
         return self._deploy_rc, "deploy output"
 
     def rollback(self, image):
@@ -210,6 +215,63 @@ check("the agent is actually invoked", any("claude" in c[1] for c in w.calls), w
 w = DispatchWorld()
 r = C.dispatch_fix(w, {"number": 44, "branch": "b44"}, "x", commit=False)
 check("dry run dispatches nothing", not w.calls and r["dry_run"], w.calls)
+
+# ── infra vs code: the failure the FIRST LIVE RUN produced ────────────────────────────────────
+# Verbatim from that cycle. release_train merged three PRs onto the integration branch, then died
+# on leftover worktree state — and said so. The conductor read it as "these PRs are broken" and
+# dispatched a coding agent at #764, which had merged cleanly, to fix something no PR change could.
+LIVE_FAILURE = """integration branch integration/20260804-115918 (from origin/main)
+
+  merged  #745   feat(scrape): metro-area scoping for ue_catalog.py
+  merged  #762   feat(scrape): explicit outlets= override for toast.py pull_menus()
+  merged  #764   feat(scrape): remove BrightData from menu_site.py
+
+!! MERGE FAILED integrating #765 (feat/naop-checkpoint-and-session) - this is NOT a content conflict
+   git said:
+     fatal: stash failed
+
+   No files are in conflict, so there is nothing to resolve by hand.
+   Nothing has touched main.
+"""
+
+print("\nan infrastructure failure escalates and dispatches NOBODY")
+kind, reason, implicated = C.classify_integrate_failure(LIVE_FAILURE)
+check("the live failure is classified as infra", kind == "infra", (kind, reason))
+check("…naming the actual cause", "stash failed" in reason, reason)
+check("…and it still identifies the PR git choked on", implicated == [765], implicated)
+
+w = FakeWorld(prs=[pr(764), pr(765)], integrate_rc=1)
+w._integrate_out = LIVE_FAILURE
+seen = []
+rep = C.cycle(w, commit=True, dispatch=lambda p, why: seen.append(p["number"]))
+check("an infra failure dispatches NOBODY", seen == [], seen)
+check("…merges nothing", not w.did("merge"), w.calls)
+check("…and escalates instead", rep.get("escalated") and "no PR change would fix" in
+      rep["escalated"]["reason"], rep.get("escalated"))
+
+print("\na real code failure dispatches ONLY the implicated PR")
+w = FakeWorld(prs=[pr(1), pr(2), pr(3)], integrate_rc=1)
+w._integrate_out = ("running suite…\n!! MERGE FAILED integrating #2 (b2)\n"
+                    "   2 tests failed in unifyd/thing_test.py\n")
+seen = []
+rep = C.cycle(w, commit=True, dispatch=lambda p, why: seen.append(p["number"]))
+check("only the named PR is dispatched", seen == [2], seen)
+check("…not the healthy ones in the batch", 1 not in seen and 3 not in seen, seen)
+
+print("\nwhen no PR is named, the whole batch is suspect — and it says so")
+w = FakeWorld(prs=[pr(1), pr(2)], integrate_rc=1)
+w._integrate_out = "the suite failed but nothing identified a PR"
+seen = []
+rep = C.cycle(w, commit=True, dispatch=lambda p, why: seen.append(p["number"]))
+check("an unattributed code failure dispatches the batch", sorted(seen) == [1, 2], seen)
+
+print("\nthe integration worktree is reset before every integrate")
+w = FakeWorld(prs=[pr(1)])
+C.cycle(w, commit=True)
+check("reset happens, and before the integrate", w.calls[0][0] == "reset_integration", w.calls[:2])
+w = FakeWorld(prs=[pr(1)])
+C.cycle(w, commit=False)
+check("…but never on a dry run", not w.did("reset_integration"), w.calls)
 
 print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
 sys.exit(1 if FAILED else 0)

@@ -62,10 +62,19 @@ def _fly():
     return p if os.path.exists(p) else "flyctl"
 
 
+def _say(*a):
+    """Print and FLUSH. A cycle runs for tens of minutes and its output is almost always
+    redirected to a file, where Python block-buffers it — the first live run produced not one
+    visible line in 23 minutes while it was busily merging and dispatching. An autonomous process
+    you cannot watch is one you cannot stop in time."""
+    print(*a)
+    sys.stdout.flush()
+
+
 class World(object):
     """Every side effect the conductor can have, in one place so tests can replace it."""
 
-    def __init__(self, root=ROOT, log=print):
+    def __init__(self, root=ROOT, log=_say):
         self.root = root
         self.log = log
 
@@ -138,6 +147,25 @@ class World(object):
         return rc, out
 
     # ── writes ──
+    def reset_integration_worktree(self):
+        """Clear leftover state in the shared _integration worktree before integrating.
+
+        release_train reuses ONE worktree for every integration. A crashed or killed run leaves it
+        dirty, and the next integrate dies on `fatal: stash failed` — which reads exactly like a
+        bad PR and is not one. Observed on the first live cycle: three PRs merged onto the
+        integration branch, the fourth died on stale state, and nothing was wrong with any of them.
+        """
+        wt = os.path.join(self.root, ".claude", "worktrees", "_integration")
+        if not os.path.isdir(wt):
+            return 0, "no integration worktree yet"
+        for cmd in (["git", "-C", wt, "merge", "--abort"],
+                    ["git", "-C", wt, "rebase", "--abort"],
+                    ["git", "-C", wt, "reset", "--hard"],
+                    ["git", "-C", wt, "clean", "-fdx"],
+                    ["git", "-C", wt, "stash", "clear"]):
+            self.sh(cmd, timeout=300)
+        return 0, "integration worktree reset"
+
     def merge(self, number):
         return self.sh(["gh", "pr", "merge", str(number), "--squash"], timeout=300)
 
@@ -310,6 +338,36 @@ def dispatch_fix(world, pr, why, commit=False):
             "detail": (out or "")[-400:] if rc != 0 else "agent completed"}
 
 
+# ── why did integration fail? ─────────────────────────────────────────────────────────────────
+# The first live cycle failed on `fatal: stash failed` — leftover state in the _integration
+# worktree, with release_train itself saying "No files are in conflict… Nothing has touched main."
+# The conductor read that as "these PRs are broken" and dispatched a coding agent at a PR that had
+# merged cleanly, to fix an infrastructure problem it could not possibly reproduce.
+#
+# Dispatching an agent at a healthy PR is worse than not dispatching at all: it burns a session and
+# invites a spurious change to code that was fine. So the failure is classified first, and only a
+# CODE failure is ever handed to an agent.
+_INFRA_SIGNS = ("stash failed", "could not create the deploy checkout", "not a git repository",
+                "unable to access", "could not read from remote", "Permission denied",
+                "worktree add", "index.lock", "cannot lock ref", "gh unavailable",
+                "timed out after", "no space left")
+
+
+def classify_integrate_failure(out):
+    """('infra' | 'code', reason, [implicated PR numbers]).
+
+    'infra' NEVER dispatches — it escalates, because no change to any PR would fix it.
+    """
+    text = out or ""
+    # release_train names the PR it choked on: "!! MERGE FAILED integrating #765 (branch)"
+    implicated = [int(n) for n in re.findall(r"MERGE FAILED integrating #(\d+)", text)]
+    for sign in _INFRA_SIGNS:
+        if sign in text:
+            return "infra", ("integration machinery failed (%r) — no PR change would fix this; "
+                             "nothing merged, nothing deployed" % sign), implicated
+    return "code", "integration failed on the merged result", implicated
+
+
 # ── the cycle ──────────────────────────────────────────────────────────────────────────────────
 
 def cycle(world, commit=False, dispatch=None, max_merges=MAX_MERGES_PER_CYCLE):
@@ -319,7 +377,7 @@ def cycle(world, commit=False, dispatch=None, max_merges=MAX_MERGES_PER_CYCLE):
 
     def step(name, ok, detail):
         report["steps"].append({"step": name, "ok": ok, "detail": detail})
-        world.log("  [%s] %s — %s" % ("ok " if ok else "!!", name, detail))
+        world.log("  [%s] %-22s %s" % ("ok" if ok else "!!", name, detail))
         return ok
 
     if os.path.exists(STOP_FILE):
@@ -351,13 +409,27 @@ def cycle(world, commit=False, dispatch=None, max_merges=MAX_MERGES_PER_CYCLE):
 
     # INTEGRATE FIRST — the full suite over the merged result, not each PR alone. This is what
     # catches the pair that is fine apart and broken together.
+    if commit:
+        # Stale state in the shared _integration worktree fails a perfectly healthy batch — which
+        # is exactly what happened on the first live cycle. Clear it before every integrate so a
+        # previous crash cannot be misread as a bad PR.
+        world.reset_integration_worktree()
     rc, out = (0, "(dry run)") if not commit else world.release_train(
         "integrate", "--only", ",".join(str(p["number"]) for p in todo))
     if rc != 0:
-        step("integrate", False, "integration FAILED — merging nothing; dispatching a fix")
-        for p in todo:
-            report["dispatched"].append(dict(p, reason="integration failed"))
-            if commit and dispatch:
+        kind, reason, implicated = classify_integrate_failure(out)
+        if kind == "infra":
+            step("integrate", False, "%s — ESCALATING, dispatching nobody" % reason)
+            report["escalated"] = {"reason": reason, "output": (out or "")[-2000:]}
+            return report
+        # A code failure goes to the PR release_train actually NAMED. Only when it names none is
+        # the whole batch suspect — and then the reason says so, rather than pretending to know.
+        blame = [p for p in todo if p["number"] in implicated] or todo
+        step("integrate", False, "%s — dispatching a fix for %s"
+             % (reason, ", ".join("#%s" % p["number"] for p in blame)))
+        for p in blame:
+            report["dispatched"].append(dict(p, reason=reason))
+            if dispatch:
                 dispatch(p, "integration failed:\n" + (out or "")[-3000:])
         return report
     step("integrate", True, "the merged result passes the full suite")
@@ -437,6 +509,8 @@ def main(argv=None):
             for p in tri[bucket]:
                 print("  #%-5s %-52s %s" % (p["number"], p["title"], p["why"][:80]))
         return 0
+    _say("conductor cycle %s — %s\n" % ("(dry run)" if not a.commit else "LIVE",
+                                        time.strftime("%Y-%m-%d %H:%M:%S")))
     rep = cycle(world, commit=a.commit, max_merges=a.max_merges,
                 dispatch=lambda pr, why: dispatch_fix(world, pr, why, commit=a.commit))
     print("\n%s" % json.dumps({k: v for k, v in rep.items() if k != "steps"}, indent=1)[:2000])
