@@ -11,10 +11,16 @@ deterministic parser. Instead:
   4. CLASSIFY via cocktail_taxonomy and LAND menu_beverages with price_basis='menu_list' (dine-in, NOT delivery-
      inflated). This is the restaurant's OWN content — persistable; Google is used only for discovery.
 
-Needs ANTHROPIC_API_KEY (extraction) + BD creds (fetch), so it runs where the key is (Fly).
+Needs ANTHROPIC_API_KEY (extraction) only — no paid proxy. These are small-business restaurant
+websites (WordPress/Squarespace/Wix/Toast-Square-Chownow embeds), not aggregator BFFs behind
+PerimeterX/Forter, so a direct curl_cffi fetch (the same free tier every other $0 connector in this
+repo uses) clears them — no BD Unlocker, no BD managed browser. This file used BD for both when it
+was first built; that was never re-examined against the free-first rule the rest of the repo now
+follows. Falls back to the flat-rate ISP pool (never per-GB) only if FETCH_POLICY allows it and a
+direct fetch is blocked.
     python menu_site.py --name "AC Sky Bar" --site http://www.acskybar.com/
 """
-import argparse, base64, hashlib, json, os, re, sys, time, urllib.parse, urllib.request
+import argparse, base64, hashlib, html as _html, json, os, re, sys, time, urllib.parse, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
@@ -25,43 +31,59 @@ _SOCIAL = re.compile(r"instagram|facebook|twitter|x\.com|tiktok|yelp|tripadvisor
 _MENU_HINTS = re.compile(r"menu|drink|cocktail|wine|beer|bar\b|beverage|libation|spirits", re.I)
 
 
-def _bd_key():
-    k = os.environ.get("BRIGHTDATA_API_KEY", "").strip()      # env first (Fly/CI), else the CLI creds file (Mac)
-    if k:
-        return k
-    return json.load(open(os.path.expanduser(
-        "~/Library/Application Support/brightdata-cli/credentials.json")))["api_key"]
+def _fetch_text(url, tries=3):
+    """$0 fetch — curl_cffi Chrome impersonation, direct first, ISP pool (flat-rate only) as fallback."""
+    import resi
+    from curl_cffi import requests as cr
+    for a in range(tries):
+        px = None
+        if a > 0 and resi.isp_enabled():
+            u = resi.isp_url()
+            px = {"http": u, "https": u} if u else None
+        try:
+            r = cr.get(url, impersonate="chrome", proxies=px, timeout=45)
+            if r.status_code == 200:
+                return r.text
+        except Exception:
+            pass
+        time.sleep(1 + a)
+    return ""
 
 
-def _unlock(url, key, dataf=None):
-    body = {"zone": "cli_unlocker", "url": url, "format": "raw"}
-    if dataf:
-        body["data_format"] = dataf
-    r = urllib.request.Request("https://api.brightdata.com/request", data=json.dumps(body).encode(),
-                               headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
-    return urllib.request.urlopen(r, timeout=75).read().decode("utf-8", "replace")
-
-
-def _fetch_bytes(url, key):
+def _fetch_bytes(url, tries=3):
     """Raw bytes (no decode) — for PDF menus, which Claude reads natively as a document block."""
-    body = {"zone": "cli_unlocker", "url": url, "format": "raw"}
-    r = urllib.request.Request("https://api.brightdata.com/request", data=json.dumps(body).encode(),
-                               headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
-    return urllib.request.urlopen(r, timeout=90).read()
+    import resi
+    from curl_cffi import requests as cr
+    for a in range(tries):
+        px = None
+        if a > 0 and resi.isp_enabled():
+            u = resi.isp_url()
+            px = {"http": u, "https": u} if u else None
+        try:
+            r = cr.get(url, impersonate="chrome", proxies=px, timeout=60)
+            if r.status_code == 200:
+                return r.content
+        except Exception:
+            pass
+        time.sleep(1 + a)
+    return b""
 
 
-def discover_site(name, near="Orlando FL", key=None):
-    """Google Maps (via BD) -> the restaurant's own website, skipping social / aggregator links."""
-    key = key or _bd_key()
-    q = urllib.parse.quote("%s %s" % (name, near))
+def discover_site(name, near="Orlando FL"):
+    """DuckDuckGo's HTML-only endpoint (html.duckduckgo.com/html/) -> the restaurant's own website,
+    skipping social / aggregator links. Server-rendered, no JS, stable result markup — reliably
+    scrapable with a plain regex (Google's own results page is JS-heavy and isn't)."""
+    q = urllib.parse.quote("%s %s restaurant" % (name, near))
     try:
-        j = json.loads(_unlock("https://www.google.com/maps/search/%s/?brd_json=1&hl=en&gl=us" % q, key))
+        html = _fetch_text("https://html.duckduckgo.com/html/?q=%s" % q)
+        for m in re.finditer(r'class="result__a"[^>]+href="([^"]+)"', html or ""):
+            href = _html.unescape(m.group(1))                    # &amp; -> & before parsing the querystring
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
+            link = (qs.get("uddg") or [href])[0]                 # DDG wraps results as /l/?uddg=<target>&rut=...
+            if link.startswith("http") and not _SOCIAL.search(link):
+                return link
     except Exception:
-        return None
-    for p in j.get("organic", []):
-        link = p.get("link") or ""
-        if link and not _SOCIAL.search(link):
-            return link
+        pass
     return None
 
 
@@ -96,14 +118,6 @@ def claude_extract(text, restaurant, model="claude-opus-4-8"):
         return []
 
 
-def _browser_auth():
-    key = _bd_key()
-    r = urllib.request.Request("https://api.brightdata.com/zone/passwords?zone=cli_browser",
-                               headers={"Authorization": "Bearer " + key})
-    return "brd-customer-hl_32bcfbaa-zone-cli_browser:%s" % json.loads(
-        urllib.request.urlopen(r, timeout=30).read())["passwords"][0]
-
-
 _MENU_PATHS = ["/menu", "/menus", "/drinks", "/drink-menu", "/cocktails", "/bar", "/bar-menu",
                "/wine", "/wine-list", "/beverages", "/food-and-drink"]
 
@@ -112,13 +126,15 @@ _DRINK_LINK = re.compile(r"cocktail|bottle|\bdrink|wine|beer|\bbar\b|beverage|li
                          r"\bmenu|\blist\b|tap\b|draft|by the glass", re.I)
 
 
-def render_menu_assets(site, key, log=print, max_items=8, max_pages=8):
-    """BD Browser walks the drink/menu nav TWO levels deep (menus nest: /menu -> COCKTAILS/BOTTLES ->
-    the list, often a PDF). HTML/JS pages -> viewport screenshots; PDF menus -> raw bytes (Claude reads PDFs
-    natively). -> [{'kind':'image'|'pdf','data':bytes,'url':str}] — the uniform substrate for any menu format."""
+def render_menu_assets(site, log=print, max_items=8, max_pages=8):
+    """A LOCAL headless browser walks the drink/menu nav TWO levels deep (menus nest: /menu ->
+    COCKTAILS/BOTTLES -> the list, often a PDF). HTML/JS pages -> viewport screenshots; PDF menus ->
+    raw bytes (Claude reads PDFs natively). -> [{'kind':'image'|'pdf','data':bytes,'url':str}] — the
+    uniform substrate for any menu format. A small-business restaurant site has no PerimeterX-grade
+    bot wall, so a local patchright browser clears it same as a BD-managed one would — $0 instead of
+    per-session BD browser billing."""
     import browser_warm
     sync_playwright = browser_warm.sync_playwright_api()   # patchright on the image; NEVER import playwright
-    auth = _browser_auth()
     base = re.match(r"https?://[^/]+", site).group(0)
     items, visited, pages = [], set(), 0
 
@@ -126,10 +142,10 @@ def render_menu_assets(site, key, log=print, max_items=8, max_pages=8):
         return u.lower().split("?")[0].endswith(".pdf")
 
     with sync_playwright() as p:
-        b = p.chromium.connect_over_cdp("wss://%s@brd.superproxy.io:9222" % auth, timeout=90000)
+        b = p.chromium.launch(channel="chrome", headless=True)   # real installed Chrome — no bundled binary shipped
         try:
-            ctx = b.contexts[0] if b.contexts else b.new_context()
-            pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+            ctx = b.new_context()
+            pg = ctx.new_page()
             pg.set_viewport_size({"width": 1280, "height": 1600})
 
             def drink_links():
@@ -154,7 +170,7 @@ def render_menu_assets(site, key, log=print, max_items=8, max_pages=8):
                 visited.add(url)
                 if is_pdf(url):                                # PDF menu -> fetch bytes, no render needed
                     try:
-                        items.append({"kind": "pdf", "data": _fetch_bytes(url, key), "url": url}); pages += 1
+                        items.append({"kind": "pdf", "data": _fetch_bytes(url), "url": url}); pages += 1
                     except Exception:
                         pass
                     continue
@@ -215,21 +231,19 @@ def claude_vision_extract(assets, name, model="claude-opus-4-8"):
         return []
 
 
-def _menu_text(url, key):
-    """Menu page as clean text — markdown first; if JS left it near-empty, strip tags off the raw render."""
-    md = _unlock(url, key, dataf="markdown")
-    if len(md) >= 500:
-        return md
-    raw = _unlock(url, key)
+def _menu_text(url):
+    """Menu page as clean text — strip script/style tags off the raw render.
+    note: image/PDF-only menus still yield little text this way — those need vision/OCR
+    (render_menu_assets + claude_vision_extract, the primary path pull() tries first)."""
+    raw = _fetch_text(url)
     return re.sub(r"\s+", " ", re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", raw, flags=re.S | re.I))
-    # note: image/PDF-only menus still yield little — those need vision/OCR (a follow-on layer)
 
 
 def _slug(name):
     return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", (name or "").lower())).strip("-")[:60] or "acct"
 
 
-def extract_logo(home_html, base, key):
+def extract_logo(home_html, base):
     """Grab the account's own logo from its site — og:image, apple-touch-icon, or a logo <img>. First-party
     (the account's brand asset), so it's ours to store. -> (url, bytes) or (None, None)."""
     cands = []
@@ -243,7 +257,7 @@ def extract_logo(home_html, base, key):
             cands.append(im); break
     for u in cands:
         try:
-            data = _fetch_bytes(urllib.parse.urljoin(base, u), key)
+            data = _fetch_bytes(urllib.parse.urljoin(base, u))
             if data and len(data) > 500:
                 return urllib.parse.urljoin(base, u), data
         except Exception:
@@ -287,18 +301,17 @@ def detect_menu(html):
 def menu_census(market="orlando", near="Orlando FL", limit=None, log=print):
     """Detect each on-premise restaurant's menu platform / pullability -> <market>_menu_census + the distribution
     (which menu recipes to build vs. what needs Claude vision)."""
-    key = _bd_key()
     rests = warehouse.query("%s_merchants" % market, "SELECT DISTINCT name FROM t WHERE type = 'restaurant'")
     if limit:
         rests = rests[:limit]
     rows, run_id = [], "menucensus-" + time.strftime("%Y%m%d-%H%M%S")
     for i, r in enumerate(rests):
-        site = discover_site(r["name"], near, key)
+        site = discover_site(r["name"], near)
         rec = dict(account=r["name"], website=site or "", market=market, run_id=run_id,
                    menu_platform="", has_schema_menu=False, html_menu=False, pullable=False, needs_vision=True)
         if site and not _SOCIAL.search(site):
             try:
-                rec.update(detect_menu(_unlock(site, key)))
+                rec.update(detect_menu(_fetch_text(site)))
             except Exception:
                 pass
         rows.append(rec)
@@ -319,16 +332,15 @@ def pull(name, site=None, near="Orlando FL", log=print):
     """Discover -> render (JS/image/PDF) -> Claude extract -> classify, AND capture the menu files (PDFs/
     screenshots) + the account logo for the menu-analytics corpus. Returns {beverages, files, logo} (no write)."""
     empty = {"beverages": [], "files": [], "logo": None}
-    key = _bd_key()
-    site = site or discover_site(name, near, key)
+    site = site or discover_site(name, near)
     if not site:
         log("  [menu] %-30s -> no website" % name[:30]); return empty
-    assets = render_menu_assets(site, key, log=lambda *a: None)
+    assets = render_menu_assets(site, log=lambda *a: None)
     items = claude_vision_extract(assets, name)
     menu_url = assets[0]["url"] if assets else site
     if not items:                                               # fallback: text extraction (plain-HTML menus)
         try:
-            items = claude_extract(_menu_text(find_menu_url(_unlock(site, key), site), key), name)
+            items = claude_extract(_menu_text(find_menu_url(_fetch_text(site), site)), name)
         except Exception:
             items = []
     run_id = "menu-" + time.strftime("%Y%m%d-%H%M%S")
@@ -360,8 +372,8 @@ def pull(name, site=None, near="Orlando FL", log=print):
     # account logo (first-party brand asset)
     logo = None
     try:
-        home = _unlock(site, key)
-        lurl, ldata = extract_logo(home, re.match(r"https?://[^/]+", site).group(0), key)
+        home = _fetch_text(site)
+        lurl, ldata = extract_logo(home, re.match(r"https?://[^/]+", site).group(0))
         if ldata:
             ext = (re.search(r"\.(png|jpe?g|webp|svg|gif)", lurl or "", re.I) or ["", "png"])[1].lower()
             skey = "logos/%s.%s" % (slug, ext)
