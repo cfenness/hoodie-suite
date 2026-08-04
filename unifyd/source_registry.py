@@ -72,6 +72,10 @@ SOURCES = [
          # 6h leaves headroom. The crawl now lands per batch and checkpoints, so even a kill keeps its work
          # and the next run resumes — the timeout is a backstop, no longer a data-loss event.
          timeout=21600, mem=8192,
+         # LEFT AS-IS DELIBERATELY. retail_observations is stage 5 and a source should not be graded on
+         # it (it moves whenever any source runs) — but unlike ubereats/postmates this source has no
+         # stage-1 parts table of its own, so removing it would leave it with NO landing signal at all,
+         # which is worse. Correct fix is an abc stage-1 table; tracked in docs/PIPELINE-DESIGN.md.
          tables=["retail_observations", "abc_catalog"], klass="headless", cadence="daily", enabled=True,
          cost_class="proxy",
          note="per-store inventory → lands retail_observations (NOT abc_products, which abc-facets owns/overwrites)",
@@ -127,97 +131,10 @@ SOURCES = [
          tables=["stop_and_shop_products"], klass="mac", cadence="daily", enabled=False, cost_class="mac", note="needs a warmed cookie — not headless"),
 
     # ── Aggregators / convenience (Mac headful — anti-bot) ────────────────────────────────────────────────────
-    # THE UBEREATS SOURCE. Headless, list-driven, sharded — replaces the headful zone crawler that ran
-    # max_stores=1000 against a 502,212-store universe (0.2%, with the cap hidden in the registry).
-    # Both the catalog (getStoreV1) and the per-item UPC/detail (getMenuItemV1) answer COLD to plain
-    # curl_cffi — proven live from a Fly datacenter IP — so no browser, no proxy, no Bright Data, $0.
-    # One pass does BOTH layers because the item's section context is only in hand while we hold the
-    # catalog; a second sweep for UPC would repeat the abc-catalog mistake.
-    # Sharding is the day budget: --shard i/N splits the universe by stable hash, one ephemeral machine
-    # per shard. Start at 8; the run logs the observed rate and the shard-hours the universe needs, so
-    # the count is set by measurement rather than guesswork.
-    # SWEEP AND ENRICH ARE DIFFERENT JOBS ON DIFFERENT CLOCKS.
-    # The sweep is ONE request per store: 502,212 requests, ~30 minutes across the fleet. Enrichment is
-    # one request per NEW item — measured at ~82 items/store, so inline it turns a 502k-request job into
-    # a ~41.7M-request job, and it ran SERIALLY inside each store's thread (~18.5s/store, matching the
-    # observed rate exactly). That is a 30-minute pull wearing a 46-hour coat.
-    #
-    # They are separable because they answer different questions: UPC/brand/size/ABV are STATIC per item
-    # (fetch once, ever), while price and stock are volatile and come from the catalog call we already
-    # make. So the sweep runs fast and complete on a daily clock, and enrichment drains the backlog of
-    # genuinely-new items continuously — converging, then costing almost nothing in steady state.
-    # `shards` makes the SCHEDULER dispatch the fleet too; without it an unattended run was one machine.
-    # The other half of the split: drains the STATIC-attribute backlog (UPC/GTIN/brand/size/ABV) that the
-    # sweep no longer carries. Sharded and append-only like the sweep. Day one is a real backfill; after
-    # that only genuinely-new items cost anything, because a resolved item is never re-fetched.
-    # LADDER_MAX_RUNG=impersonate: forbids ladder.py from auto-escalating this recipe to the `browser`
-    # rung. Grounded in the 2026-07-29 incident ladder.py's own docstring documents: UberEats escalated
-    # to `browser` on an isolated (datacenter) Fly machine — a rung only proven on a residential exit —
-    # and 6+ concurrent Chromium instances also exhausted the machine's memory, causing an SSH-unresponsive
-    # stall. Setting the env var here (not just on a hand-run machine) matters because ladder.current()
-    # PERSISTS its rung choice in the warehouse across processes: a fresh ephemeral dispatch that never
-    # sets this cap would read back a previously-persisted `browser` choice and boot straight into it,
-    # silently undoing the fix the moment a normal dispatcher tick spawns a headless (non-browser-capable)
-    # machine for this source. All three entries share the same cold getstore.py fetch path (getStoreV1 /
-    # getMenuItemV1), so all three need the cap.
-    dict(id="ubereats-enrich", label="Uber Eats item UPC/GTIN backfill (sharded)", shards=8,
-         code="import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_enrich as m; "
-              "m.main(['--site','ubereats','--shard',os.environ.get('UE_SHARD','0/8')])",
-         caps=['curl_cffi'],
-         tables=["ubereats_products"], klass="headless", cadence="daily",
-         enabled=True, cost_class="free", timeout=21600, mem=4096, priority=11,
-         note="separate clock from the sweep: static per-item attributes, fetched once ever"),
-    # session_budget: requests one primed cookie may serve before re-priming. Measured ~50 on this
-    # source (collapse tracked request COUNT, not time, across three runs); 40 leaves margin, and
-    # sessions.py corrects it from observed burns. Session lifecycle is a per-DOMAIN property like the
-    # parser and the rate policy, so it belongs in the playbook, not hard-coded in a fetcher.
-    # impersonate: measured 2026-07-29 — this target blocks the desktop-Chrome TLS family specifically
-    # (chrome/chrome124/chrome131 all challenged) while safari/firefox/edge/android all returned real
-    # catalogs on the same IPs at the same moment. The costume is a per-domain property, like the parser.
-    dict(id="ubereats", label="Uber Eats store catalog (sharded)", shards=8, session_budget=40,
-         impersonate="safari17_0",
-         code="import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_catalog as m; "
-              "m.main(['--site','ubereats','--shard',os.environ.get('UE_SHARD','0/8'),'--no-enrich'])",
-         caps=['curl_cffi'],
-         tables=["ubereats_products", "retail_observations"], klass="headless", cadence="daily",
-         enabled=True, cost_class="free", timeout=21600, mem=4096, priority=10,
-         item_col="item_uuid", store_col="store_uuid",
-         note="COLD getStoreV1 + getMenuItemV1 over the 502k-store sitemap universe; shardable "
-              "(UE_SHARD=i/N), resumable, no caps. Headful ubereats.py archived as the zone crawler."),
-    # Postmates is the SAME Uber BFF on a different domain, so it is the identical recipe — one code
-    # path, not a parallel copy that can drift.
-    dict(id="postmates", label="Postmates (catalog + UPC, sharded)",
-         code="import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_catalog as m; "
-              "m.main(['--site','postmates','--shard',os.environ.get('UE_SHARD','0/8')])",
-         caps=['curl_cffi'],
-         tables=["postmates_products", "retail_observations"], klass="headless", cadence="daily",
-         enabled=True, cost_class="free", timeout=21600, mem=4096, priority=11,
-         item_col="item_uuid", store_col="store_uuid",
-         note="same cold Uber BFF recipe as ubereats, postmates.com domain"),
-    # Deep full-detail crawl (ue_crawl.py: getStoreV1+getMenuItemV1, full per-item UPC/price/recipe) —
-    # bounded to 5 major metros + capped stores/items so ONE run finishes in hours, not the multi-day
-    # national sweep the crawler is capable of. NO proxy: ue_crawl.py was proven from the operator's
-    # HOME residential IP; its own UE_PROXY=1 option routes through resi._session_url — the METERED
-    # per-GB tier — so we never set it. RESI_ISP_ONLY=1 is belt-and-suspenders (hard-forbids per-GB
-    # globally even if something downstream reached for it) — worst case this runs on the bare Fly IP
-    # with zero proxy, which is exactly the open question this run is meant to answer. enabled=False:
-    # manual trigger only, never joins the automatic hourly scan, until a real run proves it's not
-    # degraded (near-zero merchants is the known failure signature of a flagged/foreign exit IP).
-    dict(id="ubereats-full", label="Uber Eats — bounded full-detail crawl",
-         code="import os; os.environ['RESI_ISP_ONLY']='1'; import ue_crawl as m; "
-              "m.main(['--zones','New York, NY;Los Angeles, CA;Chicago, IL;Miami, FL;Houston, TX',"
-              "'--site','ubereats','--max-stores','60','--max-items-enrich','40'])",
-         tables=["ubereats_products"], klass="mac", cadence="daily", enabled=False,
-         timeout=10800, mem=8192, cost_class="free",
-         note="ONE bounded run (5 metros, capped stores/items), NO proxy (RESI_ISP_ONLY=1 forbids "
-              "metered spend) — validates the bare Fly IP before any wider run. Manual trigger only."),
-    dict(id="postmates-full", label="Postmates — bounded full-detail crawl",
-         code="import os; os.environ['RESI_ISP_ONLY']='1'; import ue_crawl as m; "
-              "m.main(['--zones','New York, NY;Los Angeles, CA;Chicago, IL;Miami, FL;Houston, TX',"
-              "'--site','postmates','--max-stores','60','--max-items-enrich','40'])",
-         tables=["postmates_products"], klass="mac", cadence="daily", enabled=False,
-         timeout=10800, mem=8192, cost_class="free",
-         note="Postmates twin of ubereats-full — same bounds, same $0/no-proxy posture, manual trigger only."),
+    # The Uber family (UberEats + Postmates: catalog, enrich, full crawl, sitemap, fold) is NOT typed
+    # out here — it is one declaration in platform_spec.py, expanded at the bottom of this file. Its
+    # engineering rationale moved there with it.
+
     # Instacart bev-alc is gated behind a logged-in, age-verified account session — anonymous gets
     # "alcohol products aren't available." requires= keeps every tick an honest no-creds skip until
     # INSTACART_SESSION_COOKIES is set (Chris's own account, injected via instacart.py's _launch()).
@@ -406,18 +323,6 @@ SOURCES = [
          caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
          tables=["doordash_stores"], klass="headless", cadence="weekly", enabled=True, timeout=7200,
          note="$0 national store spine from DoorDash's own sitemaps (curl_cffi+ISP); feeds naop + retail"),
-    dict(id="ubereats-sitemap", label="UberEats store universe",
-         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
-         code="import ue_sitemap as m; m.pull('ubereats'); m.sitemap_to_src_outlets('ubereats')",
-         tables=["ubereats_sitemap", "src_outlets"], klass="headless", cadence="weekly", enabled=True,
-         timeout=10800, mem=8192,
-         note="$0 US UberEats universe from its gzipped sitemaps (~285k) → src_outlets (the coverage book). "
-              "Canonical UberEats harvester (ubereats_sitemap.py archived). accumulate into 995k src_outlets → 8gb"),
-    dict(id="postmates-sitemap", label="Postmates store universe",
-         caps=['curl_cffi'],   # optional libs this source silently degrades without (capability.py)
-         code="import ue_sitemap as m; m.pull('postmates'); m.sitemap_to_src_outlets('postmates')",
-         tables=["postmates_sitemap", "src_outlets"], klass="headless", cadence="weekly", enabled=True,
-         timeout=10800, mem=8192, note="$0 US Postmates universe from its sitemaps → src_outlets (coverage book)"),
     dict(id="geocode", label="Geocode (Census, $0)", code="import geocode as m; m.run()",
          tables=["src_outlets"], klass="headless", cadence="daily", enabled=False, timeout=5400, mem=16384,
          note="automate lat/lng: free US Census batch-geocodes addressed-but-ungeocoded src_outlets → maps on "
@@ -554,21 +459,6 @@ SOURCES = [
 # Builds run ONLY on the plain `--due` host (the Mac tick today) — the --headless-only cloud runner skips them —
 # so the single-writer rule holds for dim_* tables.
 BUILDS = [
-    # THE SHARDS CANNOT MERGE. write_accumulate is read-modify-write with no lock, so eight concurrent
-    # shards silently drop each other's rows (seen live: ubereats_products fluctuating wildly while the
-    # fleet ran). Shards therefore append parts, and this is the SINGLE writer that folds them into the
-    # canonical catalog — latest observation per (store_uuid, item_uuid) wins. Without it the parts
-    # accumulate and the catalog never updates, so it is a registered build, not a manual step.
-    dict(id="build-ue-catalog", label="UberEats catalog consolidate (shard parts → catalog)",
-         # NOTHING-TO-DO IS NOT A FAILURE. Folding ubereats' 451,821 part rows succeeded while postmates
-         # simply had no parts yet, and the build reported `incomplete` — a green job reading as broken
-         # teaches you to ignore the colour, which is the same trust defect as a broken job reading green.
-         # Report the total folded so the run is graded on what it actually did.
-         code=("import ue_catalog as m; n = m.consolidate('ubereats') + m.consolidate('postmates'); "
-               "print('HOODIE_RESULT {\"status\": \"ok\", \"items_done\": %d, \"items_total\": %d}' % (n, n))"),
-         tables=["ubereats_products", "postmates_products"], klass="build", interval_h=6, enabled=True,
-         mem=8192, after=["ubereats"],
-         note="single-writer fold of append-only shard parts; shards must never merge (lost updates)"),
     dict(id="build-outlets", label="Outlet shred → dim_outlet",
          code="import normalize as m; m.build(catalog=False, outlets=True, facts=False)",
          tables=["src_outlets", "dim_outlet"], klass="build", interval_h=6, enabled=True, mem=16384,
@@ -710,3 +600,16 @@ if __name__ == "__main__":
         for s in ss:
             print("  %-16s %-32s -> %s%s" % (
                 s["id"], s["label"], ",".join(s["tables"]), "" if s.get("enabled") else "  [disabled]"))
+
+
+# ── The Uber platform, DERIVED ────────────────────────────────────────────────────────────────────
+# UberEats + Postmates were 8 hand-typed entries wrapping 4 modules that already take `--site`. The
+# registry re-hardcoded that parameterisation as inline Python strings, so a genuine per-site
+# difference was indistinguishable from a typo — and two real drifts hid there (see platform_spec).
+# Now: one declaration, expanded here. platform_spec_test.py holds a frozen snapshot of the entries
+# as they stood before the collapse and asserts this expansion reproduces them EXACTLY.
+import platform_spec as _platform_spec           # noqa: E402  (registry lists must exist first)
+
+_uber = _platform_spec.expand()
+SOURCES += _uber["sources"]
+BUILDS += _uber["builds"]
