@@ -70,6 +70,8 @@ check(rows[0]["n_sources_in_cluster"] == 4 and rows[0]["cluster_rank"] == 0,
       "the majority look is ranked first, by source BREADTH (%s sources)" % rows[0]["n_sources_in_cluster"])
 check(rows[1]["n_sources_in_cluster"] == 1, "the minority look carries its own source count")
 check(rows[1]["sources"] == "haskells", "and names which retailer shows it")
+check(all(r["identity_method"] == "upc" for r in rows),
+      "every row records WHICH identity produced the grouping")
 check(rows[1]["last_seen"] == "2022-03-01",
       "recency evidence travels with the cluster (%s)" % rows[1]["last_seen"])
 check(abs(rows[0]["cluster_share"] - 0.8) < 1e-9, "cluster share is computed (%s)" % rows[0]["cluster_share"])
@@ -117,6 +119,16 @@ check(ad.load_precision() is None or isinstance(ad.load_precision(), dict),
       "precision is loaded from a file a human writes, never asserted in code")
 check(not os.path.exists(ad.PRECISION_FILE),
       "no precision file is committed — the verdict ships OFF")
+
+print("\nmaster identity:")
+check("item_id" in ad.FIELDS and "identity_method" in ad.FIELDS,
+      "rows are keyed on item_id with the identity method recorded, not a raw upc")
+check(ad._SRC_ALIAS.get("total-wine") == "total_wine_products",
+      "the crosswalk's short source names map to the image tables (total-wine is hyphenated)")
+mrows = ad.analyze_item("RID-123", IMGS, precision=None, identity="resolved_id")
+check(all(r["identity_method"] == "resolved_id" for r in mrows),
+      "a master-resolved grouping says so, so it is never pooled with a upc-keyed one")
+check(mrows[0]["item_id"] == "RID-123", "the row carries the master item id")
 
 print("\nthe HASH tier (runs on pillow; img_vec needs torch and has never been populated):")
 import img_hash

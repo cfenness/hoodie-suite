@@ -251,8 +251,7 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   apart and everything compared here is already inside one UPC.
 - **`unifyd/asset_divergence.py`** (source `asset-divergence`, weekly, **disabled** until `img_vec`
   has coverage) — **where chains disagree about what a product looks like.** Groups an item's images
-  across sources by UPC (deterministic identity only — fuzzy grouping would manufacture a
-  disagreement that doesn't exist), clusters them on the CLIP embeddings `img_embed` already
+  across sources by the MASTER's identity, clusters them on the CLIP embeddings `img_embed` already
   computes, and reports how many distinct looks are live, who shows which, and since when. This is
   the one place both sides land: the supplier sees what they published, the retailer sees their own
   set, and neither sees the delta.
@@ -266,6 +265,18 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   since 2022" is built from counts and dates, and never claims which pack is correct — that is the
   supplier's own data to supply. Fewer than 3 sources is `insufficient_data`, never `aligned`; a
   near-even split is two live packs, not an error.
+  **Identity is `resolved_id`, and that was a correction.** Keying on the source row's UPC could not
+  see the catalogs that matter — `binnys_products`, `abc_products` and `total_wine_products` carry
+  ~35k images between them and have NO upc column, only a retailer sku. Identity now comes through
+  `xwalk_source_sku` → `dim_sku.resolved_id`. Measured live on the same data:
+  `item_key` 251,193 items → 515 on ≥3 sources / 3,366 images; **`resolved_id` 89,016 items → 1,104
+  on ≥3 sources / 18,302 images.** `resolved_id` wins because the md5 hard key OVER-SPLITS, and
+  divergence is a cross-source measure that lives on the collapse. Every row records
+  `identity_method`, so a upc-keyed finding is never pooled with a master-keyed one.
+  **What the sizing actually exposed:** 98.5% of items with an image are seen by ONE source. That is
+  not a fact about retail — it is the master's fan-out ([[master-fanout-brand-resolution]]). The
+  ceiling here is identity resolution, not images or embeddings or compute: the entire working set
+  hashes in under two hours, and torch is not the constraint.
   **Two tiers.** It prefers CLIP where `img_vec` has vectors and falls back to dHash, which is what
   makes it runnable today. A dHash split lands as `divergent_unconfirmed` and can NEVER become a
   stale verdict, even once precision is measured — only CLIP can collapse a benign photography
