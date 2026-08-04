@@ -391,7 +391,8 @@
     {id:"kb",         bucket:"utility", mark:"PA", name:"Principles & Architecture", desc:"The thinking behind the platform.", file:"apps/principles-hub.html"},
     {id:"device-preview",bucket:"utility",mark:"DP",name:"Device Preview", desc:"Render any app in phone/tablet frames.", file:"apps/device-preview.html"},
     {id:"admin",      bucket:"utility", mark:"AD", name:"Admin Console", desc:"Usage · app registry & flags · access · data-ops.", file:"apps/admin.html"},
-    {id:"cockpit",    bucket:"utility", mark:"CP", name:"Hoodie Cockpit", desc:"Route work to the right model, run role crews, track tickets & epics end to end.", file:"apps/cockpit.html"}
+    {id:"cockpit",    bucket:"utility", mark:"CP", name:"Hoodie Cockpit", desc:"Route work to the right model, run role crews, track tickets & epics end to end.", file:"apps/cockpit.html"},
+    {id:"relay",      bucket:"utility", mark:"RL", name:"Relay", desc:"Product-dev control plane — a Slack ask becomes an initiative that accretes requirements through staged gates.", file:"apps/dev-workflow.html"}
   ];
   var byId = {}; APPS.forEach(function(a){ byId[a.id]=a; });
   function bucketDef(id){ return BUCKETS.concat([UTIL]).find(function(b){return b.id===id;}); }
