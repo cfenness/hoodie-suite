@@ -56,55 +56,119 @@ FIELDS = ["path_key", "canon_type", "canon_class", "canon_subclass", "canon_vari
 SEED = {
     "Spirits": {
         "Whiskey": {
-            "Bourbon": [], "Straight Bourbon": [], "Bottled-in-Bond": [], "Rye Whiskey": [],
-            "Tennessee Whiskey": [], "Single Malt Scotch": [], "Blended Scotch": [],
-            "Blended Malt Scotch": [], "Single Grain Scotch": [], "Irish Whiskey": [],
-            "Single Pot Still Irish": [], "Canadian Whisky": [], "Japanese Whisky": [],
-            "American Single Malt": [], "World Whisky": [], "Corn Whiskey": [],
-            "Wheat Whiskey": [], "Malt Whiskey": [], "Blended American Whiskey": [],
-            "Flavored Whiskey": [], "White / Unaged Whiskey": [], "Moonshine": [],
+            "Bourbon": ["Straight", "Bottled-in-Bond", "Single Barrel", "Small Batch",
+                        "Cask Strength", "Wheated", "High Rye", "Sour Mash"],
+            "Rye Whiskey": ["Straight", "Bottled-in-Bond", "Single Barrel", "Small Batch",
+                            "Cask Strength", "100% Rye"],
+            "Tennessee Whiskey": ["Straight", "Single Barrel", "Small Batch", "Bottled-in-Bond"],
+            "Scotch": ["Single Malt", "Blended", "Blended Malt", "Single Grain", "Cask Strength",
+                       "Peated", "Sherry Cask", "Age Statement", "No Age Statement"],
+            "Irish Whiskey": ["Single Malt", "Single Pot Still", "Single Grain", "Blended",
+                              "Cask Strength"],
+            "Canadian Whisky": ["Blended", "Rye", "Single Malt", "Cask Strength"],
+            "Japanese Whisky": ["Single Malt", "Blended", "Grain", "Cask Strength"],
+            "American Single Malt": ["Straight", "Cask Strength", "Single Barrel"],
+            "World Whisky": ["Single Malt", "Blended", "Grain"],
+            "Corn Whiskey": ["Straight", "Bottled-in-Bond"],
+            "Wheat Whiskey": ["Straight", "Bottled-in-Bond"],
+            "Malt Whiskey": ["Straight", "Single Barrel"],
+            "Blended American Whiskey": [],
+            "Flavored Whiskey": ["Honey", "Cinnamon", "Apple", "Peach", "Maple", "Cherry"],
+            "White / Unaged Whiskey": ["White Dog", "Moonshine"],
         },
-        "Vodka": {"Unflavored Vodka": [], "Flavored Vodka": [], "Grain Vodka": [],
-                  "Potato Vodka": [], "Corn Vodka": [], "Wheat Vodka": [], "Rye Vodka": [],
-                  "Organic Vodka": []},
-        "Gin": {"London Dry Gin": [], "Plymouth Gin": [], "Old Tom Gin": [], "Genever": [],
-                "Contemporary / New Western Gin": [], "Navy Strength Gin": [],
-                "Barrel-Aged Gin": [], "Sloe Gin": [], "Flavored Gin": []},
-        "Rum": {"White / Silver Rum": [], "Gold Rum": [], "Dark Rum": [], "Aged / Añejo Rum": [],
-                "Overproof Rum": [], "Spiced Rum": [], "Flavored Rum": [], "Rhum Agricole": [],
-                "Blackstrap Rum": [], "Navy Rum": [], "Rum Blend": []},
+        "Vodka": {
+            "Unflavored Vodka": ["Grain", "Potato", "Corn", "Wheat", "Rye", "Grape", "Organic"],
+            "Flavored Vodka": ["Citrus", "Berry", "Vanilla", "Pepper", "Cucumber", "Whipped",
+                               "Coffee"],
+        },
+        "Gin": {
+            "London Dry Gin": ["Navy Strength", "Barrel-Aged", "Standard Proof"],
+            "Plymouth Gin": [], "Old Tom Gin": [], "Genever": ["Oude", "Jonge"],
+            "Contemporary / New Western Gin": ["Citrus-Forward", "Floral", "Savoury"],
+            "Sloe Gin": [], "Flavored Gin": ["Pink / Berry", "Citrus", "Floral"],
+        },
+        "Rum": {
+            "White / Silver Rum": ["Standard Proof", "Overproof"],
+            "Gold Rum": [], "Dark Rum": [], "Blackstrap Rum": [],
+            "Aged Rum": ["Añejo", "Solera", "Age Statement", "Extra Añejo"],
+            "Rhum Agricole": ["Blanc", "Élevé Sous Bois", "Vieux VO", "Vieux VSOP", "Vieux XO"],
+            "Navy Rum": ["Overproof"],
+            "Spiced Rum": [], "Flavored Rum": ["Coconut", "Pineapple", "Banana", "Mango",
+                                               "Citrus"],
+            "Rum Blend": [],
+        },
         "Tequila / Agave Spirits": {
-            "Blanco / Silver Tequila": [], "Reposado Tequila": [], "Añejo Tequila": [],
-            "Extra Añejo Tequila": [], "Cristalino Tequila": [], "Joven / Gold Tequila": [],
-            "Flavored Tequila": [], "Mezcal": [], "Raicilla": [], "Sotol": [], "Bacanora": [],
-            "Agave Spirit (Non-Tequila)": [],
+            "Tequila": ["Blanco / Silver", "Joven / Gold", "Reposado", "Añejo", "Extra Añejo",
+                        "Cristalino", "Flavored", "Additive-Free"],
+            "Mezcal": ["Joven", "Reposado", "Añejo", "Ensamble", "Pechuga", "Espadín", "Tobalá"],
+            "Sotol": ["Blanco", "Reposado", "Añejo"],
+            "Bacanora": ["Blanco", "Reposado", "Añejo"],
+            "Raicilla": [],
+            "Agave Spirit (Non-Tequila)": ["Blanco", "Reposado", "Añejo"],
         },
         "Brandy / Cognac": {
-            "Cognac VS": [], "Cognac VSOP": [], "Cognac XO": [], "Armagnac": [],
-            "American Brandy": [], "Spanish Brandy": [], "Pisco": [], "Grappa": [],
-            "Calvados / Apple Brandy": [], "Applejack": [], "Eau de Vie": [], "Fruit Brandy": [],
+            "Cognac": ["VS", "VSOP", "Napoléon", "XO", "XXO", "Extra", "Hors d'Age"],
+            "Armagnac": ["VS", "VSOP", "Napoléon", "XO", "Hors d'Age", "Vintage"],
+            "Calvados / Apple Brandy": ["Fine", "Vieux / Réserve", "VSOP", "XO", "Hors d'Age"],
+            "Spanish Brandy": ["Solera", "Solera Reserva", "Solera Gran Reserva"],
+            "American Brandy": ["Age Statement", "No Age Statement"],
+            "Pisco": ["Puro", "Acholado", "Mosto Verde"],
+            "Grappa": ["Giovane", "Affinata", "Invecchiata", "Riserva"],
+            "Applejack": [],
+            "Eau de Vie": ["Pear / Poire", "Cherry / Kirsch", "Raspberry / Framboise",
+                           "Plum / Slivovitz", "Apricot"],
+            "Fruit Brandy": ["Apricot", "Blackberry", "Cherry", "Peach", "Ginger"],
             "Flavored Brandy": [],
         },
         "Liqueurs / Cordials": {
-            "Cream Liqueur": [], "Coffee Liqueur": [], "Fruit Liqueur": [], "Herbal Liqueur": [],
-            "Nut Liqueur": [], "Chocolate Liqueur": [], "Orange / Triple Sec": [],
-            "Amaretto": [], "Anise Liqueur": [], "Schnapps": [], "Whiskey Liqueur": [],
-            "Melon Liqueur": [], "Elderflower Liqueur": [], "Ginger Liqueur": [],
+            "Cream Liqueur": ["Irish Cream", "Chocolate Cream", "Coffee Cream"],
+            "Coffee Liqueur": [], "Chocolate Liqueur": [],
+            "Fruit Liqueur": ["Cherry", "Peach", "Raspberry", "Blackcurrant / Crème de Cassis",
+                              "Banana", "Apple"],
+            "Herbal Liqueur": ["Chartreuse-style", "Génépy", "Bénédictine-style"],
+            "Nut Liqueur": ["Hazelnut", "Walnut", "Almond"],
+            "Orange / Triple Sec": ["Curaçao", "Grand Marnier-style", "Cointreau-style"],
+            "Amaretto": [], "Anise Liqueur": [], "Melon Liqueur": [], "Elderflower Liqueur": [],
+            "Ginger Liqueur": [],
+            "Schnapps": ["Peach", "Peppermint", "Apple", "Butterscotch"],
+            "Whiskey Liqueur": ["Honey", "Cinnamon"],
         },
-        "Vermouth / Aperitif": {"Sweet Vermouth": [], "Dry Vermouth": [],
-                                "Blanc / Bianco Vermouth": [], "Rosé Vermouth": [],
-                                "Aperitivo": [], "Quinquina": [], "Americano": []},
-        "Amaro / Bitters": {"Amaro": [], "Fernet": [], "Digestivo": [], "Cocktail Bitters": [],
-                            "Herbal Bitters": []},
-        "Absinthe / Anise Spirits": {"Absinthe": [], "Ouzo": [], "Pastis": [], "Sambuca": [],
-                                     "Raki": [], "Arak": []},
-        "Cachaça / Sugarcane Spirits": {"Unaged Cachaça": [], "Aged Cachaça": [], "Clairin": []},
-        "Aquavit / Nordic Spirits": {"Aquavit": [], "Brennivín": []},
-        "Baijiu / Soju / Shochu": {"Baijiu": [], "Soju": [], "Shochu": [], "Awamori": []},
-        "Neutral & Grain Spirits": {"Neutral Grain Spirit": [], "Grain Alcohol": [],
+        "Vermouth / Aperitif": {
+            "Sweet Vermouth": ["Rosso", "Torino", "Riserva"],
+            "Dry Vermouth": [], "Blanc / Bianco Vermouth": [], "Rosé Vermouth": [],
+            "Aperitivo": ["Bitter Red", "Bitter Orange", "Low-ABV"],
+            "Quinquina": [], "Americano": [],
+        },
+        "Amaro / Bitters": {
+            "Amaro": ["Light / Aperitivo", "Medium", "Alpine", "Carciofo", "Rabarbaro"],
+            "Fernet": [], "Digestivo": [],
+            "Cocktail Bitters": ["Aromatic", "Orange", "Peychaud's-style", "Celery", "Chocolate"],
+            "Herbal Bitters": [],
+        },
+        "Absinthe / Anise Spirits": {
+            "Absinthe": ["Verte", "Blanche", "Bohemian"],
+            "Ouzo": [], "Pastis": [], "Sambuca": ["White", "Black"], "Raki": [], "Arak": [],
+        },
+        "Cachaça / Sugarcane Spirits": {
+            "Cachaça": ["Unaged / Prata", "Aged / Ouro", "Extra Premium"],
+            "Clairin": [],
+        },
+        "Aquavit / Nordic Spirits": {"Aquavit": ["Caraway", "Dill", "Barrel-Aged"],
+                                     "Brennivín": []},
+        "Baijiu / Soju / Shochu": {
+            "Baijiu": ["Strong Aroma", "Light Aroma", "Sauce Aroma", "Rice Aroma"],
+            "Soju": ["Diluted", "Distilled", "Flavored"],
+            "Shochu": ["Imo / Sweet Potato", "Mugi / Barley", "Kome / Rice", "Kokuto / Sugar"],
+            "Awamori": [],
+        },
+        "Neutral & Grain Spirits": {"Neutral Grain Spirit": [], "Grain Alcohol": ["190 Proof",
+                                                                                  "151 Proof"],
                                     "Rectified Spirit": []},
-        "Bottled Cocktails": {"Spirits-Based Bottled Cocktail": [], "Cocktail Base / Mix": [],
-                              "Party Pack": []},
+        "Bottled Cocktails": {
+            "Spirits-Based Bottled Cocktail": ["Old Fashioned", "Margarita", "Negroni",
+                                               "Manhattan", "Espresso Martini", "Mule"],
+            "Cocktail Base / Mix": [], "Party Pack": [],
+        },
     },
     "Wine": {
         "Red Wine": {
@@ -339,9 +403,30 @@ BASIS = {
     "Non-Beverage": "not a beverage class — retail catalogs carry these rows and they need a home",
 }
 
-# Varietal applies where a grape (or fruit) is the identity. Everywhere else the level is EMPTY on
-# purpose, and the surface must say "not applicable" rather than showing a blank list.
-VARIETAL_TYPES = {"Wine", "Cider & Perry"}
+# THE FOURTH LEVEL IS NOT ALWAYS A VARIETAL. It is the terminal designation — the last thing that
+# still changes what is in the bottle — and what that IS depends on the Type. Under wine it is the
+# grape. Under spirits it is the expression or grade: Spirits > Brandy / Cognac > Cognac > VSOP.
+# Calling it "Varietal" everywhere is what made me flatten the grade into the sub class name
+# ("Cognac VSOP") and then declare the level inapplicable to spirits, which lost a real level of the
+# hierarchy for the whole spirits half of the book.
+#
+# The stored FIELD stays `canon_varietal` — the sheet and the gold set are keyed on it — but the
+# LABEL comes from here, so the resolver asks for the thing that actually applies.
+LEVEL4_LABEL = {
+    "Wine": "Varietal",
+    "Cider & Perry": "Fruit",
+    "Spirits": "Expression",
+    "Beer": "Variant",
+    "RTD & Seltzer": "Flavor",
+    "Sake & Rice Wine": "Grade",
+    "Non-Alcoholic": "Variant",
+    "Hemp & Cannabis": "Variant",
+    "Non-Beverage": "",                 # "" == the level does not apply at all
+}
+DEFAULT_LEVEL4 = "Expression / Varietal"
+
+# Types where the fourth level applies. Derived, not hand-kept: a Type earns it by having a label.
+VARIETAL_TYPES = {k for k, v in LEVEL4_LABEL.items() if v}
 
 
 def _norm(s):
@@ -439,6 +524,7 @@ def tree(include_learned=True, log=print, block=False):
                 vs.append(va)
             added += 1
     return {"tree": t, "basis": BASIS, "varietal_types": sorted(VARIETAL_TYPES),
+            "level4_label": LEVEL4_LABEL, "level4_default": DEFAULT_LEVEL4,
             "learned_paths": added,
             # False means the warehouse has not been read YET, not that nothing has been learned.
             "learned_read": bool(read)}

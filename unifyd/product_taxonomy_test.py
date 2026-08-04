@@ -33,8 +33,9 @@ check("Cabernet Sauvignon" not in t["Wine"]["Red Wine"],
       "...and never a Sub Class")
 check("Tequila / Agave Spirits" in t["Spirits"] and "Agave Spirits" not in t["Spirits"],
       "a Class leads with the FAMILIAR term — nobody browses by 'Agave Spirits'")
-check("Reposado Tequila" in t["Spirits"]["Tequila / Agave Spirits"],
-      "...and the expressions are Sub Classes beneath it")
+check("Tequila" in t["Spirits"]["Tequila / Agave Spirits"] and
+      "Mezcal" in t["Spirits"]["Tequila / Agave Spirits"],
+      "...and the agave spirits themselves are the Sub Classes beneath it")
 check("IPA" in t["Beer"],
       "IPA is a beer CLASS, not a sub class of Ale — that is a brewer's distinction, not a "
       "buyer's, and the shelf is organised the buyer's way")
@@ -65,14 +66,30 @@ n_sub = sum(len(s) for c in t.values() for s in c.values())
 check(n_cls >= 70, "the Class level is not thin — %d classes (it shipped at 34, which was way "
       "short of what a bev-alc buyer browses)" % n_cls)
 check(n_sub >= 350, "...and %d sub classes beneath them" % n_sub)
+n_l4 = sum(len(v) for c in t.values() for s_ in c.values() for v in s_.values())
+check(n_l4 >= 450, "...and %d values at the fourth level" % n_l4)
 
-print("\nvarietal is not universal:")
-check("Wine" in pt.VARIETAL_TYPES, "wine has varietals")
-check("Spirits" not in pt.VARIETAL_TYPES,
-      "spirits do not — 'Reposado' is an age statement, not a grape")
-check(all(not v for subs in t["Spirits"].values() for v in subs.values()),
-      "and every spirits sub class carries an EMPTY varietal list, so the surface can say "
-      "'not applicable' rather than 'no values yet'")
+print("\nthe fourth level is NOT always a varietal:")
+check(t["Spirits"]["Brandy / Cognac"]["Cognac"] and
+      "VSOP" in t["Spirits"]["Brandy / Cognac"]["Cognac"],
+      "Spirits > Brandy / Cognac > Cognac > VSOP — the grade is its own level, not part of the "
+      "sub class name")
+check("Cognac VSOP" not in t["Spirits"]["Brandy / Cognac"],
+      "...so the flattened 'Cognac VSOP' sub class is gone")
+check("Reposado" in t["Spirits"]["Tequila / Agave Spirits"]["Tequila"],
+      "same shape for agave: Tequila is the Sub Class, Reposado the expression")
+check("Reposado Tequila" not in t["Spirits"]["Tequila / Agave Spirits"],
+      "...and the flattened form is gone there too")
+check(pt.LEVEL4_LABEL["Spirits"] == "Expression" and pt.LEVEL4_LABEL["Wine"] == "Varietal",
+      "the level is LABELLED per type — calling it Varietal everywhere is what made me flatten the "
+      "grade into the sub class and then declare the level inapplicable to spirits")
+check(pt.LEVEL4_LABEL["Non-Beverage"] == "",
+      "an empty label means the level genuinely does not apply (glassware has no expression)")
+check(pt.VARIETAL_TYPES == {k for k, v in pt.LEVEL4_LABEL.items() if v},
+      "which types have a fourth level is DERIVED from the labels, not hand-kept alongside them")
+check("Wine" in pt.VARIETAL_TYPES and "Spirits" in pt.VARIETAL_TYPES,
+      "both wine and spirits have a fourth level (spirits did not, and that lost a whole level "
+      "for half the book)")
 
 print("\nthe basis of each branch is stated:")
 check(set(pt.BASIS) == set(t), "every Type records what its levels are grounded in")

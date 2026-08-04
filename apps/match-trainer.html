@@ -347,7 +347,7 @@ function ttbSizes(type){
        you, not a reason to silently blank the work.
      • VARIETAL IS NOT UNIVERSAL. A varietal is a grape; under spirits it is meaningless and the
        level says "not applicable" — which is a different statement from "no values yet".         */
-var TAX = {tree:null, basis:{}, varietal:[]};
+var TAX = {tree:null, basis:{}, varietal:[], l4:{}, l4def:"Expression / Varietal"};
 var TAX_REFRESH = null;          // set by an open resolver so a late-arriving tree upgrades it
 function taxTypes(){ return TAX.tree ? Object.keys(TAX.tree).sort() : null; }
 function taxClasses(t){ var b=TAX.tree&&TAX.tree[t]; return b?Object.keys(b).sort():null; }
@@ -357,6 +357,18 @@ function taxVarietals(t,c,s){
   return b?b.slice().sort():null;
 }
 function varietalApplies(t){ return !t || TAX.varietal.indexOf(t)>=0; }
+/* THE FOURTH LEVEL IS NOT ALWAYS A VARIETAL. It is the terminal designation, and what that IS
+   depends on the Type: a grape under wine, an EXPRESSION under spirits (Brandy / Cognac > Cognac >
+   VSOP). Labelling it "Varietal" everywhere is what hid a whole level from the spirits half. */
+function level4Label(t){
+  if(!t) return "Varietal";
+  var v = TAX.l4 ? TAX.l4[t] : undefined;
+  // An EXPLICIT empty label means the level does not apply to this type at all (glassware has no
+  // expression). `||` swallowed that and fell through to the default, so it read "Expression /
+  // Varietal" next to a control saying the level is inapplicable.
+  if(v === "") return "—";
+  return v || TAX.l4def;
+}
 
 var CANON = [["canon_brand","Brand"],["canon_product","Product"],["canon_size","Pack size"],
              ["canon_type","Type"],["canon_class","Class"],["canon_subclass","Sub class"],
@@ -461,7 +473,7 @@ function openResolver(r){
     {k:"canon_type",     lb:"Type",      A:"", B:"", tax:1},
     {k:"canon_class",    lb:"Class",     A:"", B:"", tax:2},
     {k:"canon_subclass", lb:"Sub class", A:"", B:"", tax:3},
-    {k:"canon_varietal", lb:"Varietal",  A:"", B:"", tax:4}
+    {k:"canon_varietal", lb:level4Label(prev.canon_type||""), A:"", B:"", tax:4}
   ];
   var wrap = document.createElement("div");
   wrap.className = "modal";
@@ -492,7 +504,7 @@ function openResolver(r){
         field = '<input data-f="'+d.k+'" value="'+String(pre).replace(/"/g,"&quot;")+'" placeholder="type, or leave blank">';
       }
       var noab = !d.A && !d.B;
-      return '<div class="dim'+(noab?" noab":"")+'"><span class="lb">'+d.lb+'</span>'+
+      return '<div class="dim'+(noab?" noab":"")+'"><span class="lb" data-lb="'+d.k+'">'+d.lb+'</span>'+
         (noab ? "" : opt(d.k,"A",d.A)+opt(d.k,"B",d.B))+field+'</div>';
     }).join("")+
     '<div class="sheetfoot"><span class="unres" id="unres"></span><span class="grow"></span>'+
@@ -567,6 +579,8 @@ function openResolver(r){
       slot.innerHTML = html;
     });
     rebuildSize(cur.canon_type);
+    var lb = wrap.querySelector('.dim [data-lb="canon_varietal"]');
+    if(lb) lb.textContent = level4Label(cur.canon_type);
     bindFields();
   }
 
@@ -871,6 +885,7 @@ function boot(){
   apiGet("/api/xsource/taxonomy").then(function(t){
     if(t && t.ok && t.tree && Object.keys(t.tree).length){
       TAX.tree = t.tree; TAX.basis = t.basis||{}; TAX.varietal = t.varietal_types||[];
+      TAX.l4 = t.level4_label||{}; TAX.l4def = t.level4_default||TAX.l4def;
       if(TAX_REFRESH) TAX_REFRESH();
     }
   }).catch(function(){});

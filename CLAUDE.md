@@ -285,7 +285,7 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   are reported distinctly (`pool_built`) — one means "you're done", the other means "run the build".
   The CSV drop survives as the offline path.
   **`unifyd/product_taxonomy.py` — the canonical Type → Class → Sub Class → Varietal hierarchy**
-  (`/api/xsource/taxonomy`, 9 types / 73 classes / 415 sub classes / 271 varietals), which the
+  (`/api/xsource/taxonomy`, 9 types / 73 classes / 390 sub classes / 507 fourth-level values), which the
   resolver's four levels cascade over: each level is filtered by the one above, because a Class is
   only meaningful under its Type. **Class is the category someone BROWSES by, Sub Class the
   designation within it** — so `IPA` is a beer Class, not a sub class of Ale, because ale-vs-lager is
@@ -300,9 +300,17 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   back to the free-text inputs they were (the offline CSV path). `basis` records **what each branch is
   grounded in** — spirits track 27 CFR 5.22 and wine 4.21, but TTB defines no beer STYLES, so that
   branch says "trade convention" rather than presenting a style argument as a federal class.
-  **Varietal is not universal**: a varietal is a grape, so under spirits the level reads *not
-  applicable*, which is a different statement from "no values yet" — confusing the two is how a
-  Varietal column fills up with ageing terms. Typed values are learned by `learn()`, which records the
+  **The fourth level is not always a varietal.** It is the terminal designation — the last thing that
+  changes what is in the bottle — and what that IS depends on the Type: the grape under wine, the
+  **expression or grade** under spirits (`Spirits > Brandy / Cognac > Cognac > VSOP`). Calling it
+  "Varietal" everywhere is what made the first cut flatten the grade into the sub class name
+  ("Cognac VSOP", "Reposado Tequila") and then declare the level inapplicable to spirits, losing a
+  whole level of the hierarchy for half the book. `LEVEL4_LABEL` names it per type (Varietal /
+  Expression / Fruit / Grade / Flavor / Variant); the stored FIELD stays `canon_varietal` because the
+  sheet and the gold set are keyed on it. An **explicitly empty** label means the level genuinely does
+  not apply (glassware has no expression) — distinct from "no values yet", and distinct again from
+  the JS `||` that swallowed the empty string and printed the default beside a control saying the
+  level was inapplicable. Typed values are learned by `learn()`, which records the
   **whole path**: a Sub Class landed without its parents cannot be filtered under any Class, so it
   would surface under every Class forever. Two UI rules: changing a level invalidates the *options*
   below it and never the *answers* (an off-tree value is kept and marked, not blanked), and a parent
