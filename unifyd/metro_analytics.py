@@ -36,6 +36,7 @@ import warehouse
 
 GEO = "outlet_geography"
 DEMAND = "trade_area_demand"
+OBS_METRO = "obs_metro_rollup"
 
 # Below this many resolved accounts a neighbourhood's demand-per-door is noise, not a signal — one
 # account in a dense ZIP produces a spectacular-looking and meaningless ratio. Same discipline as
@@ -155,9 +156,18 @@ def neighborhoods(cbsa, min_accounts=None):
         return []
     zdem = {r["geo_fips"]: r for r in _q(DEMAND, "SELECT * FROM t WHERE geo_level = 'zcta'")}
 
+    # Observed price + assortment for this metro's ZIPs, if the rollup has been built. Read from
+    # obs_metro_rollup (already collapsed to (cbsa, zcta)) rather than the 53M-row observation table —
+    # a deck must not trigger a full scan. Absent rollup simply means no price columns, not an error.
+    obs = {}
+    for r in _q(OBS_METRO, "SELECT * FROM t WHERE cbsa_code = ?", [str(cbsa)]):
+        if r.get("zcta"):
+            obs[r["zcta"]] = r
+
     rows = []
     for g in geo:
         d = zdem.get(g["zcta"]) or {}
+        o = obs.get(g["zcta"]) or {}
         dem = float(d.get("demand_total_usd") or 0)
         rows.append({"zcta": g["zcta"], "accounts": g["accounts"], "sources": g["sources"],
                      "households": int(float(d.get("households") or 0)),
@@ -165,7 +175,16 @@ def neighborhoods(cbsa, min_accounts=None):
                      "demand_at_home": float(d.get("demand_at_home_usd") or 0),
                      "demand_per_hh": float(d.get("demand_per_hh_usd") or 0),
                      "demand_per_account": (dem / g["accounts"]) if (dem and g["accounts"] >= floor) else None,
-                     "thin": g["accounts"] < floor})
+                     "thin": g["accounts"] < floor,
+                     # OBSERVED, and separate from the account count above: `accounts` is every outlet
+                     # mapped to this ZIP, `priced_stores` is only those we also hold observations for.
+                     # Reporting one as the other would overstate how much of the ZIP we actually price.
+                     "priced_stores": int(o.get("stores") or 0),
+                     "price_median": float(o["price_median"]) if o.get("price_median") is not None else None,
+                     "price_p25": float(o["price_p25"]) if o.get("price_p25") is not None else None,
+                     "price_p75": float(o["price_p75"]) if o.get("price_p75") is not None else None,
+                     "items_per_store": float(o["items_per_store"]) if o.get("items_per_store") is not None else None,
+                     "in_stock_share": float(o["in_stock_share"]) if o.get("in_stock_share") is not None else None})
 
     # Index against the metro's own MEDIAN demand-per-door, not its mean: a handful of ZIPs with one
     # account and huge demand would drag a mean upward and make every normal neighbourhood look
