@@ -67,6 +67,40 @@
         border-bottom:2px solid transparent;white-space:nowrap}
   .rtab.on{color:var(--ink);border-bottom-color:var(--accent)}
   .rtab.bad{color:var(--bad)}
+  /* ── visual join builder ─────────────────────────────────────────── */
+  .mode{display:flex;gap:2px;margin-right:4px}
+  .mode button{border-radius:7px;padding:5px 11px;font-size:12px}
+  .mode button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:650}
+  .canvas{flex:1;overflow:auto;min-height:0;padding:16px;display:none;
+          background:radial-gradient(circle at 1px 1px,var(--line) 1px,transparent 0) 0 0/22px 22px}
+  .canvas.on{display:block}
+  .cards{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;width:236px;
+        max-height:340px;display:flex;flex-direction:column;overflow:hidden}
+  .card h3{margin:0;padding:8px 11px;font-family:var(--mono);font-size:11.5px;font-weight:650;
+           border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;background:var(--panel2)}
+  .card h3 .x{margin-left:auto;cursor:pointer;color:var(--mut);font-size:13px}
+  .card h3 .x:hover{color:var(--bad)}
+  .card .fl{overflow:auto;padding:3px 0}
+  .card label{display:flex;align-items:center;gap:6px;padding:2.5px 11px;font-family:var(--mono);
+              font-size:10.5px;cursor:pointer}
+  .card label:hover{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+  .card label input{width:auto;padding:0;margin:0}
+  .card label .k{color:var(--accent);font-size:8.5px;letter-spacing:.4px;margin-left:auto}
+  .join{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px 12px;
+        margin:10px 0;font-size:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .join code{font-family:var(--mono);font-size:11px;color:var(--ink)}
+  .join .basis{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;padding:2px 7px;border-radius:20px;font-weight:700}
+  .basis.declared{background:rgba(91,184,110,.16);color:var(--good)}
+  .basis.identity{background:rgba(78,121,167,.2);color:var(--accent)}
+  .basis.shared{background:rgba(217,154,63,.16);color:var(--warn)}
+  .join .why{flex-basis:100%;font-size:11px;color:var(--mut);line-height:1.45}
+  .join .measured{font-family:var(--mono);font-size:11px}
+  .drop{outline:2px dashed var(--accent);outline-offset:-6px}
+  .t.sel{background:color-mix(in srgb,var(--accent) 22%,transparent)}
+  .joinable{padding:5px 12px;font-size:10.5px;color:var(--accent);border-bottom:1px solid var(--line);
+            display:none;align-items:center;gap:6px;cursor:pointer}
+  .joinable.on{display:flex}
   .grid{flex:1;overflow:auto;min-height:0}
   table{border-collapse:collapse;font-family:var(--mono);font-size:12px}
   thead th{position:sticky;top:0;background:var(--panel2);color:var(--mut);text-align:left;padding:7px 11px;
@@ -96,6 +130,10 @@
   <h1>Hoodie SQL</h1>
   <span class="wh" id="wh">…</span>
   <span class="spacer"></span>
+  <span class="mode">
+    <button id="mSql" class="on">SQL</button>
+    <button id="mJoin">Visual join</button>
+  </span>
   <span class="stamp" id="stamp"></span>
   <button id="csv" disabled>Download CSV</button>
 </div>
@@ -103,6 +141,7 @@
 <div class="wrap">
   <aside>
     <div class="find"><input id="find" placeholder="find a table…" autocomplete="off"></div>
+    <div class="joinable" id="joinable"></div>
     <div class="tlist" id="tlist"><div class="empty" style="padding:18px 12px">loading tables…</div></div>
   </aside>
 
@@ -123,6 +162,11 @@
     </div>
     <div class="msg" id="msg"></div>
     <div class="tabs" id="tabs"></div>
+    <div class="canvas" id="canvas">
+      <div class="cards" id="cards"></div>
+      <div id="joins"></div>
+      <div id="gensql" style="margin-top:14px"></div>
+    </div>
     <div class="grid" id="grid">
       <div class="empty" id="welcome">
         <h2>The warehouse, unfiltered.</h2>
@@ -139,7 +183,7 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const num = n => n == null ? '—' : Number(n).toLocaleString();
-let TABLES = [], LAST = null, OPEN = null, RESULTS = [], SHOWN = 0;
+let TABLES = [], LAST = null, OPEN = null, RESULTS = [], SHOWN = 0, JOIN_FILTER = true;
 
 const RECIPES = [
   ['what is actually in a table', 'SELECT * FROM binnys_products LIMIT 25'],
@@ -168,7 +212,8 @@ const RECIPES = [
     $('#wh').className = 'wh ' + (prod ? 'prod' : 'local');
     $('#wh').textContent = w.bucket || w.uri || (prod ? 'warehouse' : 'local');
   } catch (e) { $('#wh').textContent = 'warehouse'; }
-  loadTables();
+  await loadTables();
+  refreshJoinable();
 })();
 
 async function loadTables(){
@@ -184,23 +229,49 @@ async function loadTables(){
 }
 
 function drawTables(){
-  const q = $('#find').value.trim().toLowerCase();
-  const rows = TABLES.filter(t => !q || t.name.toLowerCase().includes(q));
+  const rows = visible();
   $('#tlist').innerHTML = rows.length ? rows.map(t => `
-    <div class="t ${OPEN === t.name ? 'open' : ''}" data-n="${esc(t.name)}">
+    <div class="t ${OPEN === t.name ? 'open' : ''} ${SEL.includes(t.name) ? 'sel' : ''}"
+         draggable="true" data-n="${esc(t.name)}">
       <span class="n">${esc(t.name)}${t.partitioned ? '<span class="p">parts</span>' : ''}</span>
       <span class="r">${num(t.rows)} rows</span>
     </div>${OPEN === t.name ? '<div class="cols" id="cols"><div class="col">loading…</div></div>' : ''}`).join('')
-    : '<div class="empty" style="padding:18px 12px">no table matches</div>';
+    : `<div class="empty" style="padding:18px 12px">${JOINABLE ? 'nothing else joins to what you have — '
+        + 'click the bar above to show all tables' : 'no table matches'}</div>`;
 }
 
 $('#find').addEventListener('input', drawTables);
+
+[['#sql', names => dropOnEditor(names)], ['#canvas', names => addToCanvas(names)]].forEach(([sel, fn]) => {
+  const el = document.querySelector(sel);
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drop'); });
+  el.addEventListener('dragleave', () => el.classList.remove('drop'));
+  el.addEventListener('drop', e => {
+    e.preventDefault(); el.classList.remove('drop');
+    const raw = e.dataTransfer.getData('text/hoodie-tables');
+    if (raw) fn(JSON.parse(raw));
+  });
+});
+
+// the joinable filter follows what you have written, debounced so typing stays smooth
+let _jt;
+$('#sql').addEventListener('input', () => { clearTimeout(_jt); _jt = setTimeout(refreshJoinable, 500); });
+
+$('#tlist').addEventListener('dragstart', e => {
+  const t = e.target.closest('.t'); if (!t) return;
+  // Dragging an unselected row drags just that row — the selection is a convenience, never a trap
+  // that carries tables you forgot were highlighted.
+  const names = SEL.includes(t.dataset.n) ? SEL : [t.dataset.n];
+  e.dataTransfer.setData('text/hoodie-tables', JSON.stringify(names));
+  e.dataTransfer.setData('text/plain', names.join(', '));
+});
 
 $('#tlist').addEventListener('click', async e => {
   const col = e.target.closest('.col');
   if (col) { insert(col.dataset.c); return; }
   const t = e.target.closest('.t'); if (!t) return;
   const name = t.dataset.n;
+  pick(name, e);
   if (OPEN === name) { OPEN = null; drawTables(); return; }
   OPEN = name; drawTables();
   // Clicking a table is a QUESTION ("what's in here?"), so answer it: seed the editor with a read.
@@ -224,6 +295,202 @@ function insert(text){
   ta.value = ta.value.slice(0, s) + text + ta.value.slice(e);
   ta.focus(); ta.selectionStart = ta.selectionEnd = s + text.length;
 }
+
+
+/* ── the sidebar becomes a source, not just a list ─────────────────
+   Multi-select (click, ⇧ for a range, ⌘ to add) and drag. Dropped on the editor it writes SQL;
+   dropped on the canvas it becomes a card. Same gesture, two destinations.                        */
+let SEL = [], ANCHOR = null;
+
+function visible(){
+  const q = $('#find').value.trim().toLowerCase();
+  let rows = TABLES.filter(t => !q || t.name.toLowerCase().includes(q));
+  if (JOINABLE) rows = rows.filter(t => JOINABLE.has(t.name));
+  return rows;
+}
+
+function pick(name, e){
+  const rows = visible().map(t => t.name);
+  if (e.shiftKey && ANCHOR != null){
+    const a = rows.indexOf(ANCHOR), b = rows.indexOf(name);
+    if (a >= 0 && b >= 0) SEL = rows.slice(Math.min(a,b), Math.max(a,b) + 1);
+  } else if (e.metaKey || e.ctrlKey){
+    SEL = SEL.includes(name) ? SEL.filter(n => n !== name) : SEL.concat(name);
+    ANCHOR = name;
+  } else { SEL = [name]; ANCHOR = name; }
+  drawTables();
+}
+
+/* Dropping tables on the EDITOR writes SQL rather than pasting names: one table is a SELECT, several
+   are a join if we know how they relate. Anything we cannot link is left as a comment naming itself,
+   because a silent omission is how you end up querying two of the three tables you dragged. */
+async function dropOnEditor(names){
+  const ta = $('#sql');
+  let sql;
+  if (names.length === 1){
+    sql = `SELECT * FROM ${names[0]} LIMIT 25`;
+  } else {
+    const g = await graph(names);
+    const spec = {tables: names, joins: g.links, limit: 200,
+                  select: names.flatMap(n => ((g.tables.find(t => t.name === n) || {}).columns || [])
+                                              .slice(0, 4).map(c => ({table: n, column: c})))};
+    const r = await (await fetch('/api/sql/compose', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(spec)})).json();
+    sql = r.ok ? r.sql : `-- ${r.error}\nSELECT * FROM ${names[0]} LIMIT 25`;
+  }
+  const cur = ta.value.trim();
+  ta.value = cur ? cur.replace(/;?\s*$/, ';') + '\n\n' + sql : sql;
+  ta.selectionStart = ta.selectionEnd = ta.value.length;
+  ta.focus(); markCurrent();
+}
+
+/* ── joinable filter: the sidebar answers "what can I add next?" ───
+   Reading the tables already in your statement and hiding everything that cannot attach to them turns
+   292 tables into the handful that are actually reachable. It is a FILTER, never a fact — the chip
+   says how many were hidden and clicking it takes you back to all of them.                          */
+let JOINABLE = null;
+
+async function refreshJoinable(){
+  if (!JOIN_FILTER){ JOINABLE = null; $('#joinable').className = 'joinable'; drawTables(); return; }
+  const known = new Set(TABLES.map(t => t.name));
+  const inSql = [...new Set((($('#sql').value.match(/[a-zA-Z_][a-zA-Z_0-9]*/g)) || [])
+                  .filter(w => known.has(w)))];
+  if (!inSql.length){ JOINABLE = null; $('#joinable').className = 'joinable'; drawTables(); return; }
+  const cand = TABLES.map(t => t.name).filter(n => !inSql.includes(n));
+  // Ask in ONE call: the graph over (what you have + everything else) and keep whatever linked.
+  const g = await graph(inSql.concat(cand));
+  const ok = new Set(inSql);
+  (g.links || []).forEach(l => {
+    if (inSql.includes(l.left)) ok.add(l.right);
+    if (inSql.includes(l.right)) ok.add(l.left);
+  });
+  JOINABLE = ok;
+  $('#joinable').className = 'joinable on';
+  $('#joinable').innerHTML = `joins to ${esc(inSql.join(', '))} — ${TABLES.length - ok.size} hidden · show all ✕`;
+  drawTables();
+}
+$('#joinable').addEventListener('click', () => { JOIN_FILTER = false; refreshJoinable(); });
+
+/* ── the canvas ────────────────────────────────────────────────── */
+let CANVAS = [], FIELDS = {}, GRAPH = {tables: [], links: []}, LINKS = [], PROBES = {};
+
+async function graph(names){
+  try {
+    return await (await fetch('/api/sql/graph', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({tables: names})})).json();
+  } catch (e) { return {tables: [], links: []}; }
+}
+
+async function addToCanvas(names){
+  names.forEach(n => { if (!CANVAS.includes(n)) CANVAS.push(n); });
+  GRAPH = await graph(CANVAS);
+  LINKS = (GRAPH.links || []).map(l => ({...l, type: 'inner', on: l.on}));
+  drawCanvas();
+}
+
+function drawCanvas(){
+  $('#cards').innerHTML = CANVAS.map(n => {
+    const t = (GRAPH.tables || []).find(x => x.name === n) || {columns: [], keys: []};
+    const keys = new Set(t.keys || []);
+    return `<div class="card"><h3>${esc(n)}<span class="x" data-drop="${esc(n)}">✕</span></h3>
+      <div class="fl">${(t.columns || []).map(c =>
+        `<label><input type="checkbox" data-t="${esc(n)}" data-c="${esc(c)}"${
+          (FIELDS[n] || []).includes(c) ? ' checked' : ''}>${esc(c)}${
+          keys.has(c) ? '<span class="k">key</span>' : ''}</label>`).join('')}</div></div>`;
+  }).join('') || '<div class="empty">Drag tables here from the left. Select several with ⇧ or ⌘.</div>';
+
+  $('#joins').innerHTML = !LINKS.length ? (CANVAS.length > 1
+    ? '<div class="join"><span class="basis shared">no link</span><span class="why">These tables share no '
+      + 'column we can join on. Adding one that links them — or writing the ON clause yourself in SQL mode — '
+      + 'is the way forward; a join we cannot justify is one you should not run.</span></div>' : '')
+    : LINKS.map((l, i) => {
+      const p = PROBES[i];
+      return `<div class="join">
+        <span class="basis ${l.basis}">${l.basis}</span>
+        <code>${esc(l.left)} ${l.type.toUpperCase()} JOIN ${esc(l.right)} ON ${
+          l.on.map(o => `${l.left}.${o[0]} = ${l.right}.${o[1]}`).join(' AND ')}</code>
+        <select data-j="${i}" style="padding:3px 7px;font-size:11px">
+          <option value="inner"${l.type === 'inner' ? ' selected' : ''}>inner</option>
+          <option value="left"${l.type === 'left' ? ' selected' : ''}>left</option>
+        </select>
+        <button data-probe="${i}" style="padding:3px 9px;font-size:11px">Verify</button>
+        ${p ? `<span class="measured" style="color:${p.ok && p.match_pct >= 50 ? 'var(--good)' : 'var(--warn)'}">${
+          p.ok ? `${p.match_pct}% of sampled keys match (${num(p.matched)}/${num(p.left_keys)}, sample)`
+               : esc(p.error || 'probe failed')}</span>` : ''}
+        <span class="why">${esc(l.why)}</span></div>`;
+    }).join('');
+  compose();
+}
+
+$('#cards').addEventListener('change', e => {
+  const cb = e.target.closest('input[type=checkbox]'); if (!cb) return;
+  const t = cb.dataset.t, c = cb.dataset.c;
+  FIELDS[t] = FIELDS[t] || [];
+  FIELDS[t] = cb.checked ? FIELDS[t].concat(c) : FIELDS[t].filter(x => x !== c);
+  compose();
+});
+$('#cards').addEventListener('click', async e => {
+  const x = e.target.closest('.x'); if (!x) return;
+  CANVAS = CANVAS.filter(n => n !== x.dataset.drop);
+  delete FIELDS[x.dataset.drop]; PROBES = {};
+  GRAPH = await graph(CANVAS);
+  LINKS = (GRAPH.links || []).map(l => ({...l, type: 'inner'}));
+  drawCanvas();
+});
+$('#joins').addEventListener('change', e => {
+  const sel = e.target.closest('select[data-j]'); if (!sel) return;
+  LINKS[+sel.dataset.j].type = sel.value; drawCanvas();
+});
+$('#joins').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-probe]'); if (!b) return;
+  const i = +b.dataset.probe, l = LINKS[i];
+  b.disabled = true; b.textContent = 'Measuring…';
+  try {
+    PROBES[i] = await (await fetch('/api/sql/probe', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({left: l.left, right: l.right, on: l.on})})).json();
+  } catch (err) { PROBES[i] = {ok:false, error:'probe failed'}; }
+  drawCanvas();
+});
+
+async function compose(){
+  const select = Object.entries(FIELDS).flatMap(([t, cs]) => cs.map(c => ({table: t, column: c})));
+  if (!CANVAS.length || !select.length){
+    $('#gensql').innerHTML = CANVAS.length
+      ? '<div class="empty" style="padding:14px 0">Tick the fields you want and the SQL writes itself.</div>' : '';
+    return;
+  }
+  const r = await (await fetch('/api/sql/compose', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({tables: CANVAS, select, joins: LINKS, limit: 200})})).json();
+  $('#gensql').innerHTML = r.ok
+    ? `<div class="rec" style="cursor:default">${esc(r.sql)}</div>
+       <button class="go" id="useit">Run this</button>
+       <button id="toed">Send to SQL</button>`
+    : `<div class="join"><span class="basis shared">can't build</span><span class="why">${esc(r.error)}</span></div>`;
+  if (r.ok){
+    $('#useit').onclick = () => { toEditor(r.sql); mode('sql'); runCurrent(); };
+    $('#toed').onclick = () => { toEditor(r.sql); mode('sql'); };
+  }
+}
+
+function toEditor(sql){
+  const ta = $('#sql'), cur = ta.value.trim();
+  ta.value = cur ? cur.replace(/;?\s*$/, ';') + '\n\n' + sql : sql;
+  ta.selectionStart = ta.selectionEnd = ta.value.length; markCurrent();
+}
+
+/* ── mode ──────────────────────────────────────────────────────── */
+function mode(m){
+  const join = m === 'join';
+  $('#mJoin').className = join ? 'on' : '';
+  $('#mSql').className = join ? '' : 'on';
+  $('#canvas').className = join ? 'canvas on' : 'canvas';
+  $('#grid').style.display = join ? 'none' : '';
+  document.querySelector('.ed').style.display = join ? 'none' : '';
+  document.querySelector('.foot').style.display = join ? 'none' : '';
+}
+$('#mSql').addEventListener('click', () => mode('sql'));
+$('#mJoin').addEventListener('click', () => mode('join'));
 
 /* ── the workspace: many statements in one editor ──────────────────
    A scratchpad is how anyone actually uses SQL — you keep the last five things you asked next to the

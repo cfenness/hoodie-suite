@@ -68,6 +68,7 @@ TESTS=(
   sql_console_test             # an open SQL box must not be able to write to the warehouse
   sql_split_test               # ';' inside a literal is not a statement separator
   monitor_counts_test          # a row count nobody can reconcile makes every number arguable
+  sql_graph_test               # a join builder must refuse a cross-product, not emit one
 )
 
 FILTER="${1:-}"
