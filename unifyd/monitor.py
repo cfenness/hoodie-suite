@@ -435,7 +435,7 @@ def _list_datasets_fast(workers=80):
         except Exception:
             active = {}                                              # no manifests readable → old behaviour
 
-        out, parted, seen = [], {}, set()
+        out, parted, seen, dropped = [], {}, set(), {}
         for rel, mod, rows, fields in footers:
             if "/" not in rel:                                       # top-level <name>.parquet
                 nm = rel[:-8]
@@ -448,6 +448,7 @@ def _list_datasets_fast(workers=80):
             if top == "_manifest":                                   # v2 layout manifests, not data
                 continue
             if top in active and rel not in active[top]:
+                dropped.setdefault(top, []).append((rel, mod, rows, fields))
                 continue                                             # superseded bucket version
             d = parted.setdefault(top, {"name": top, "rows": 0, "fields": [], "modified": None,
                                         "partitioned": True, "parts": []})
@@ -456,6 +457,24 @@ def _list_datasets_fast(workers=80):
             if (mod or 0) >= (d.get("_ffrom") or 0) and fields:      # fields from the newest part
                 d["fields"], d["_ffrom"] = fields, (mod or 0)
             d["parts"].append({"part": rel.rsplit("/", 1)[-1][:-8], "rows": rows, "modified": mod})
+        # A TABLE MUST NEVER VANISH. If the manifest names parts the listing cannot see — it is being
+        # rewritten right now, or the manifest moved between the two reads — filtering by it would
+        # leave the table with ZERO parts and drop it from the console entirely. That is the false-zero
+        # failure this warehouse has a standing rule about, and it is worse than an over-count: an
+        # inflated number is arguable, an absent table reads as "we don't have that data".
+        # Observed on src_outlets (1.9M rows, six writers) minutes after the manifest filter shipped.
+        for top, rows_ in dropped.items():
+            if top in parted:
+                continue                                             # some part survived — nothing to rescue
+            d = parted.setdefault(top, {"name": top, "rows": 0, "fields": [], "modified": None,
+                                        "partitioned": True, "parts": [], "stale_manifest": True})
+            for rel, mod, rows, fields in rows_:
+                d["rows"] += rows
+                d["modified"] = max(d["modified"] or 0, mod or 0) or None
+                if (mod or 0) >= (d.get("_ffrom") or 0) and fields:
+                    d["fields"], d["_ffrom"] = fields, (mod or 0)
+                d["parts"].append({"part": rel.rsplit("/", 1)[-1][:-8], "rows": rows, "modified": mod})
+
         for d in parted.values():
             d.pop("_ffrom", None)
             if d["name"] in active:

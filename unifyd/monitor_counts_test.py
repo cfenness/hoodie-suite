@@ -29,7 +29,7 @@ def fold(footers, active):
     Mirrors _list_datasets_fast's branch structure exactly; the ratchet below asserts the real function
     still contains the same three decisions.
     """
-    out, parted, seen = [], {}, set()
+    out, parted, seen, dropped = [], {}, set(), {}
     for rel, mod, rows in footers:
         if "/" not in rel:
             nm = rel[:-8]
@@ -42,9 +42,14 @@ def fold(footers, active):
         if top == "_manifest":
             continue
         if top in active and rel not in active[top]:
+            dropped.setdefault(top, []).append(rows)
             continue
         d = parted.setdefault(top, {"name": top, "rows": 0, "partitioned": True})
         d["rows"] += rows
+    for top, rs in dropped.items():
+        if top in parted:
+            continue
+        parted[top] = {"name": top, "rows": sum(rs), "partitioned": True, "stale_manifest": True}
     for d in parted.values():
         if d["name"] in active:
             d["bucketed"] = True
@@ -95,6 +100,33 @@ class Counting(unittest.TestCase):
         self.assertEqual(len(byname), 2, "today both are emitted...")
         self.assertTrue(any(d.get("ambiguous") for d in byname), "...but the collision must be flagged")
 
+    def test_a_table_never_vanishes_when_the_manifest_is_stale(self):
+        """THE dangerous case, and it happened for real.
+
+        src_outlets has six writers. If the manifest names parts the listing cannot see — a rewrite in
+        flight, or the manifest moving between the two reads — filtering by it leaves ZERO parts and the
+        table disappears from the console entirely. An inflated count is arguable; an ABSENT table reads
+        as "we don't have that data". Observed live on src_outlets (1,916,357 rows) minutes after the
+        manifest filter shipped.
+        """
+        footers = [("src_outlets/__b=00/part-v9.parquet", 1, 900000),
+                   ("src_outlets/__b=01/part-v9.parquet", 1, 1016357)]
+        active = {"src_outlets": {"src_outlets/__b=00/part-v10.parquet",   # manifest moved on
+                                  "src_outlets/__b=01/part-v10.parquet"}}
+        got = fold(footers, active)
+        self.assertEqual(len(got), 1, "the table must still be listed")
+        self.assertEqual(got[0]["rows"], 1916357)
+        self.assertTrue(got[0]["stale_manifest"], "and it must SAY the count could not be reconciled")
+
+    def test_partial_stale_manifest_does_not_double_count(self):
+        # one part matches, one does not: count only what the manifest claims — the rescue is for a
+        # table that would otherwise be EMPTY, not a way to add superseded rows back in
+        footers = [("t/__b=00/part-v1.parquet", 1, 5), ("t/__b=01/part-v9.parquet", 1, 700)]
+        active = {"t": {"t/__b=00/part-v1.parquet"}}
+        got = fold(footers, active)
+        self.assertEqual(got[0]["rows"], 5)
+        self.assertNotIn("stale_manifest", got[0])
+
     def test_manifests_unreadable_falls_back_to_old_behaviour(self):
         # a listing failure must not silently zero a table; with no active-map we sum as before
         footers = [("src_outlets/__b=00/part-v2.parquet", 1, 5)]
@@ -116,6 +148,10 @@ class Ratchet(unittest.TestCase):
 
     def test_superseded_parts_are_skipped(self):
         self.assertIn("if top in active and rel not in active[top]:", self.body)
+
+    def test_the_lister_rescues_a_table_the_manifest_would_empty(self):
+        self.assertIn("stale_manifest", self.body,
+                      "a table that filters down to zero parts must be rescued and flagged, not dropped")
 
     def test_read_expr_resolves_bucketed_first(self):
         # the drawer and the workbench both go through read_expr; a bucketed table there must not fall
