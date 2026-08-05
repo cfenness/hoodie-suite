@@ -157,7 +157,6 @@ def _known():
 # in a banner. A cap you are not told about would make a 30-day answer look like an all-time one, which
 # is exactly the failure this console exists to prevent.
 FULL_BIND_MAX = int(os.environ.get("SQL_FULL_BIND_MAX", "400"))   # parts we'll unify without scoping
-RECENT_DAYS = int(os.environ.get("SQL_RECENT_DAYS", "30"))        # window when we do scope
 ALL_PARTS = os.environ.get("SQL_ALL_PARTS") == "1"                # opt in to the full (slow) bind
 
 
@@ -184,11 +183,25 @@ def _scoped_expr(name, all_parts=False):
         return monitor.read_expr(name), None      # listing failed → fall back; never fake a scope
     if len(files) <= FULL_BIND_MAX:
         return monitor.read_expr(name), None
-    dates = sorted({d for d in (_part_date(f) for f in files) if d})
-    keep = set(dates[-RECENT_DAYS:])
+    # Walk dates newest-first and stop when the NEXT day would push the bind over the limit. Scoping by
+    # a fixed number of DAYS does not work: retail_observations writes one part per date x source, so 30
+    # days across ~60 sources is still ~1,800 parts — under the 4,301 total but far over the 400 that
+    # defines "too many to open". The bound has to be in the same unit as the threshold.
+    by_date, undated = {}, []
+    for f in files:
+        d = _part_date(f)
+        if d:
+            by_date.setdefault(d, []).append(f)
+        else:
+            undated.append(f)
     # Parts with no date in the name can't be placed in the window, so they stay IN — dropping them
     # would be a silent loss on top of a scope.
-    sel = [f for f in files if (_part_date(f) in keep or not _part_date(f))]
+    sel, keep = list(undated), set()
+    for d in sorted(by_date, reverse=True):
+        if len(sel) + len(by_date[d]) > FULL_BIND_MAX and keep:
+            break
+        sel += by_date[d]
+        keep.add(d)
     pref = "s3://%s" if warehouse.remote() else "%s"
     lst = ", ".join("'%s'" % (pref % f).replace("'", "") for f in sel)
     return ("read_parquet([%s], union_by_name=true)" % lst), {
