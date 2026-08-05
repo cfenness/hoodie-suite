@@ -579,6 +579,27 @@ def consolidate(site="ubereats", rebuild=False, log=print):
     fields = [k for k in PRODUCT_FIELDS if k != "raw_json"]
     log("[ue] consolidate: %s part rows -> %s distinct items (%s)"
         % (f"{len(rows):,}", f"{len(out):,}", "REBUILD — catalog replaced by parts" if rebuild else "merge"))
+    # WHAT THE MERGE IS ABOUT TO DROP. A field parsed, landed in the parts, and absent from the merged
+    # table is data collected and thrown away — and until #820 that happened SILENTLY on every run,
+    # because the bucketed merge ignored `fields=` and could never add a column.
+    #
+    # Measured 2026-08-05: the code wrote 21 fields, ubereats_products held 16. The five missing ones
+    # were the retailer's own hierarchy — section 100%, subsection 100%, section_name 90%,
+    # category_path 98.9% populated in the parts — discarded at every merge for as long as the table
+    # had been bucketed. Nothing failed, nothing warned, and `category` simply read 0%.
+    #
+    # So: say it. The write still proceeds (refusing would be worse than a narrow table), but a drop
+    # is now a named line in the run output instead of a column that quietly reads empty forever.
+    try:
+        man = warehouse.read_manifest(tbl) or {}
+        have = set(man.get("fields") or [])
+        if have:
+            missing = [f for f in fields if f not in have]
+            if missing:
+                log("[ue] consolidate: WIDENING %s — %d field(s) the parts carry that the table does "
+                    "not: %s" % (tbl, len(missing), ", ".join(missing)))
+    except Exception:
+        pass
     if rebuild:
         # A rebuild REPLACES. Refuse to shrink the catalog without the caller having said so explicitly:
         # a rebuild from partial parts is exactly how a full catalog gets truncated to one pass's worth,
