@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pipeline Stages · Hoodie</title>
+<script src="../spine/session-guard.js"></script>
+<style>
+:root{--paper:#0d1117;--card:#161b22;--ink:#e6edf3;--muted:#8b949e;--faint:#6e7681;
+--line:#21262d;--accent:#4E79A7;--good:#5bb86e;--warn:#d99a3f;--bad:#e5636b;--unknown:#8b5cf6}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);
+font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:22px 20px 60px}
+h1{font-size:19px;margin:0 0 4px;font-weight:650}
+.sub{color:var(--muted);font-size:13px;margin:0 0 18px;max-width:70ch}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px;margin-bottom:20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:11px 13px}
+.card .n{font-size:22px;font-weight:640;font-variant-numeric:tabular-nums}
+.card .l{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+.flowing .n,.idle .n{color:var(--good)} .waiting .n{color:var(--warn)}
+.stalled .n,.never .n{color:var(--bad)} .unknown .n{color:var(--unknown)}
+.stage{margin:22px 0 8px;display:flex;align-items:baseline;gap:9px}
+.stage h2{font-size:14px;margin:0;font-weight:620}
+.stage .num{width:20px;height:20px;border-radius:5px;background:var(--accent);color:#fff;
+font-size:11px;display:grid;place-items:center;font-weight:640}
+.stage .cnt{color:var(--faint);font-size:12px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);
+border-radius:9px;overflow:hidden}
+th,td{padding:7px 11px;text-align:left;border-bottom:1px solid var(--line);font-size:13px}
+th{color:var(--muted);font-weight:560;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px}
+tr:last-child td{border-bottom:0}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11px;font-weight:600}
+.p-flowing,.p-idle{background:#5bb86e22;color:var(--good)}
+.p-waiting{background:#d99a3f22;color:var(--warn)}
+.p-stalled,.p-never{background:#e5636b22;color:var(--bad)}
+.p-unknown{background:#8b5cf622;color:var(--unknown)}
+.warnflag{color:var(--warn);font-size:11px}
+/* An unmeasurable number is a DASH, never a zero — see the note below the table. */
+.withheld{color:var(--unknown);font-weight:600}
+a.tbl{color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--faint)}
+a.tbl:hover{color:var(--accent);border-bottom-color:var(--accent)}
+.note{color:var(--faint);font-size:12px;margin:16px 0 0;max-width:78ch}
+.note b{color:var(--muted);font-weight:600}
+.err{background:#e5636b18;border:1px solid #e5636b44;color:var(--bad);padding:10px 13px;
+border-radius:8px;margin-bottom:16px;font-size:13px}
+.loading{color:var(--muted);padding:26px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Pipeline stages</h1>
+  <p class="sub">Where the data is, how much is waiting, and whether the number can be trusted.
+     Every figure is measured from the warehouse — nothing here is modelled.</p>
+  <div id="err"></div>
+  <div class="cards" id="cards"></div>
+  <div id="body"><div class="loading">Reading the warehouse…</div></div>
+  <p class="note">
+    <b>A dash is not a zero.</b> Where a count could not be computed the cell shows
+    <span class="withheld">—</span>, not 0. Row counts read Parquet footers, so an unreadable table
+    will happily report millions; showing it as zero would state a falsehood with total confidence.
+    <br><br>
+    <b>Idle is not stalled.</b> <span class="pill p-idle">idle</span> means nothing is waiting —
+    success with no work. <span class="pill p-waiting">waiting</span> is a real backlog,
+    <span class="pill p-stalled">stalled</span> is one that has stopped moving, and
+    <span class="pill p-never">never</span> means the table is declared but nothing ever landed.
+    Collapsing those is what let a daily source report benignly while landing nothing for weeks.
+    <br><br>
+    <b>⚠ multi-writer</b> marks a merged table with more than one writing module — the shape that
+    silently drops rows when two writers overlap. Click any table to see real rows at that stage.
+  </p>
+</div>
+<script>
+var STAGES = [];
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
+function num(n){return n==null?'<span class="withheld" title="could not be measured">—</span>'
+  :Number(n).toLocaleString();}
+function age(s){
+  if(s==null) return '<span class="withheld">—</span>';
+  var h=s/3600; if(h<1) return Math.round(s/60)+"m";
+  if(h<48) return Math.round(h)+"h"; return Math.round(h/24)+"d";}
+
+fetch("/api/stages").then(function(r){return r.json();}).then(function(d){
+  if(d.error){ document.getElementById("err").innerHTML =
+      '<div class="err">Could not build the stage inventory: '+esc(d.error)+
+      '. Nothing below is shown rather than showing zeros.</div>';
+    document.getElementById("body").innerHTML=""; return; }
+  STAGES = d.stages||[];
+  var s = d.summary||{}, by = s.by_state||{};
+  var order = ["flowing","idle","waiting","stalled","never","unknown"];
+  document.getElementById("cards").innerHTML = order.filter(function(k){return by[k];})
+    .map(function(k){return '<div class="card '+k+'"><div class="n">'+by[k]+'</div>'+
+      '<div class="l">'+k+'</div></div>';}).join("") +
+    '<div class="card"><div class="n">'+(s.multi_writer||0)+'</div>'+
+    '<div class="l">multi-writer</div></div>';
+
+  var names = d.stage_names||[];
+  var html = "", groups = {};
+  STAGES.forEach(function(r){ var k = (r.stage==null?"?":r.stage); (groups[k]=groups[k]||[]).push(r); });
+  Object.keys(groups).sort(function(a,b){
+    if(a==="?") return 1; if(b==="?") return -1; return a-b;}).forEach(function(k){
+    var rows = groups[k].sort(function(a,b){return (b.rows||0)-(a.rows||0);});
+    html += '<div class="stage"><span class="num">'+(k==="?"?"?":k)+'</span>'+
+            '<h2>'+esc(k==="?"?"unclassified":(names[k]||("stage "+k)))+'</h2>'+
+            '<span class="cnt">'+rows.length+' table'+(rows.length===1?"":"s")+'</span></div>';
+    html += '<table><thead><tr><th>table</th><th>state</th><th class="num">rows</th>'+
+            '<th class="num">waiting</th><th class="num">age</th><th>writers</th><th>source</th>'+
+            '</tr></thead><tbody>' + rows.map(function(r){
+      return '<tr><td><a class="tbl" href="/apps/data-console.html?name='+encodeURIComponent(r.table)+
+             '" title="see real rows at this stage">'+esc(r.table)+'</a>'+
+             (r.multi_writer?' <span class="warnflag" title="'+esc(r.writers.join(", "))+
+              '">⚠ multi-writer</span>':'')+'</td>'+
+             '<td><span class="pill p-'+r.state+'" '+
+              (r.rows_error?'title="'+esc(r.rows_error)+'"':'')+'>'+r.state+'</span></td>'+
+             '<td class="num">'+num(r.rows)+'</td>'+
+             '<td class="num">'+(r.pending==null?'<span class="withheld" title="no promotion step">—</span>'
+                                 :Number(r.pending).toLocaleString())+'</td>'+
+             '<td class="num">'+age(r.age_s)+'</td>'+
+             '<td class="num">'+(r.writer_count||0)+'</td>'+
+             '<td>'+esc((r.sources||[]).join(", "))+'</td></tr>';
+    }).join("") + '</tbody></table>';
+  });
+  document.getElementById("body").innerHTML = html || '<div class="loading">No tables found.</div>';
+}).catch(function(e){
+  document.getElementById("err").innerHTML =
+    '<div class="err">Could not reach /api/stages ('+esc(e)+'). Showing nothing rather than zeros.</div>';
+  document.getElementById("body").innerHTML="";
+});
+</script>
+</body>
+</html>

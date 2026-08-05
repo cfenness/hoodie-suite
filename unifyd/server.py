@@ -1195,6 +1195,27 @@ def api_source():
         return jsonify({"name": name, "error": str(e)[:200], "rows": [], "count": 0, "columns": []}), 200
 
 
+@app.get("/api/stages")
+def api_stages():
+    """Step 4 of docs/PIPELINE-DESIGN.md — where the data is and how much is waiting.
+
+    Answers the directive's first two questions for every table (rows + when, backlog as a number)
+    and points at /api/source?name=<table> for the third (what a row looks like here).
+
+    A table whose count could not be computed returns rows=null with rows_error set. The UI MUST
+    render that as "—", never as 0: row_count reads footers, so an unreadable table will happily
+    report millions, and a surface that shows an unmeasurable table as zero states a falsehood with
+    total confidence. That is the specific lie this endpoint exists to prevent.
+    """
+    import stages
+    try:
+        rows = _ttl("stage_inv", 60, lambda: stages.live(), cold=[])
+    except Exception as e:
+        return jsonify({"error": str(e)[:200], "stages": [], "summary": {}}), 200
+    return jsonify({"stages": rows, "summary": stages.summary(rows),
+                    "stage_names": stages.STAGE_NAMES})
+
+
 # ── Data Console: the one trustworthy monitoring surface (pull health · counts · errors · live data) ──────────
 @app.get("/api/monitor")
 def api_monitor():

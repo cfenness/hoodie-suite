@@ -202,6 +202,11 @@ def main():
         # rights.py deliberately ABSENT: dam_emissions is declared in table_spec, so its
         # write inherits the schema. This is what clearing a ratchet entry looks like.
         "ue_catalog.py": 1,       # secondary write; the primary land IS pinned
+        # warehouse.land() builds `<name>_parts` from a runtime argument, so the table cannot be
+        # resolved statically — but it RAISES unless table_spec declares the table, then relies on
+        # that spec for fields/dtypes. Its runtime guarantee is strictly stronger than this static
+        # check, so it is baselined rather than made to pass by weakening the ratchet.
+        "warehouse.py": 1,
     }
     by_file = {}
     for o in offenders:
