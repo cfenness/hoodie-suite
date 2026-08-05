@@ -146,6 +146,32 @@ class Compose(unittest.TestCase):
 
 
 class ProbeHonesty(unittest.TestCase):
+    def test_samples_randomly_not_by_limit(self):
+        """A bare LIMIT on Parquet returns the FIRST n rows = the first part = ONE source.
+
+        Observed live: the probe reported "0 of 20000 sampled src_outlets keys are present in
+        retail_observations" for a join that returns rows the moment you run it. The keys it sampled all
+        came from one scraper, measured against a recent slice of the other table that did not contain
+        that scraper. A number that confidently contradicts the thing it describes is worse than none.
+        """
+        import re as _re
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql_graph.py"),
+                   errors="ignore").read()
+        body = _re.sub(r'"""(?:.|\n)*?"""', "", src)
+        fn = body[body.index("def probe("):]
+        fn = fn[:fn.index("\ndef ", 1)]
+        self.assertIn("USING SAMPLE", fn)
+        self.assertNotIn("LIMIT %d", fn)
+
+    def test_a_scoped_side_is_disclosed(self):
+        # a low match against 60 of 4,319 parts is about the window, not the join
+        import re as _re
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql_graph.py"),
+                   errors="ignore").read()
+        self.assertIn("res.get(\"scopes\")", src)
+        self.assertIn("not about whether the join works", src)
+
+
     def test_probe_always_declares_itself_sampled(self):
         # a bare "94%" implies a census; every return path must carry sampled=True
         import re
