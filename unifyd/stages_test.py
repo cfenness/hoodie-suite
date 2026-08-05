@@ -119,6 +119,28 @@ def main():
     check("summary counts multi-writer tables", s["multi_writer"] == 1, str(s))
     check("summary total matches the rows built", s["tables"] == len(rows))
 
+    # --- the lister must be partition-aware, and a fallback must announce itself ----------------
+    # warehouse.list_datasets lists recursive=False, so a DIRECTORY of parts is absent entirely.
+    # Verified live: retail_observations (60.4M), raw_payloads (31.5M) and ubereats_products_parts
+    # (29.9M) were all missing from it, and scrape_runs reported 2 against an actual 260.
+    src = open(os.path.join(HERE, "stages.py"), encoding="utf-8").read()
+    lc = src.split("def live_counts(", 1)[1].split("\ndef ", 1)[0]
+    check("live_counts prefers the partition-aware lister",
+          "_list_datasets_fast" in lc and lc.index("_list_datasets_fast") < lc.index("list_datasets()"))
+    check("the flat fallback is LABELLED, never silent",
+          "FLAT" in lc and "_lister" in lc)
+
+    # a fallback reading must not masquerade as complete
+    cts = {"t1": {"rows": 5, "modified": NOW, "error": None},
+           "_lister": {"rows": None, "modified": None, "error": None,
+                       "lister": "warehouse.list_datasets (FLAT — partitioned tables are missing)"}}
+    r2 = stages.build(counts=cts, watermarks={}, inventory={}, now=NOW)
+    check("_lister marker is not emitted as a table",
+          not any(x["table"].startswith("_") for x in r2),
+          str([x["table"] for x in r2 if x["table"].startswith("_")]))
+    check("rows carry which lister produced them",
+          all("FLAT" in (x.get("_lister") or "") for x in r2))
+
     # --- the shape this module consumes must match the tool that produces it -------------------
     # data_inventory is ast-only (no creds, no network), so the REAL shape is checkable offline.
     try:

@@ -143,6 +143,8 @@ def build(counts=None, watermarks=None, inventory=None, now=None):
         for t in (s.get("tables") or []):
             declared_by.setdefault(t, []).append(sid)
 
+    lister = (counts.get("_lister") or {}).get("lister")
+    counts = {k: v for k, v in counts.items() if not k.startswith("_")}
     tables = set(counts) | set(tables_inv) | set(declared_by) | set(table_spec.SPECS)
     out = []
     for t in sorted(tables):
@@ -167,8 +169,13 @@ def build(counts=None, watermarks=None, inventory=None, now=None):
             # >1 unlocked writer on a merged table is the documented row-loss shape (src_outlets).
             "multi_writer": len(writers) > 1,
             "sources": sorted(declared_by.get(t) or []),
+            "partitioned": c.get("partitioned"),
+            "parts": c.get("parts"),
             "state": state_of(rows, pending, age, err, now),
         })
+    if lister:
+        for r in out:
+            r["_lister"] = lister
     return out
 
 
@@ -187,13 +194,43 @@ def summary(stages):
 # Live adapters — the only part that touches the warehouse
 # ---------------------------------------------------------------------------------------------
 def live_counts(names=None):
-    """table -> rows/modified/error, WITHHOLDING rather than zeroing on failure."""
-    import warehouse
+    """table -> rows/modified/error, WITHHOLDING rather than zeroing on failure.
+
+    USES THE PARTITION-AWARE LISTER, NOT `warehouse.list_datasets`. That one lists with
+    recursive=False, so a DIRECTORY of parts has no top-level file to find and the table is absent
+    entirely — not zero, not unknown, simply missing from the surface. Verified live 2026-08-05:
+
+        retail_observations       absent from list_datasets, actually 60,455,137 rows
+        raw_payloads              absent,                    actually 31,570,028
+        ubereats_products_parts   absent,                    actually 29,901,954
+        scrape_runs               present but reported 2,    actually 260
+
+    Those are among the largest tables in the warehouse, and `ubereats_products_parts` is the one
+    feeding the fold this surface reports on. A stage view whose own foundation silently omits the
+    biggest tables is exactly the defect it exists to catch, so it is worth stating plainly here.
+
+    `monitor._list_datasets_fast` reads footers concurrently, surfaces BOTH layouts, and is
+    manifest-aware — which also avoids the superseded-bucket over-count (a bucketed directory can
+    hold part-v4 and part-v7 at once; summing the directory double-counts, so the manifest is the
+    authority on which parts are live).
+
+    If that lister is unavailable we fall back to the flat one, but the fallback is REPORTED rather
+    than silent: `_lister` names which was used, so a degraded reading can never masquerade as a
+    complete one.
+    """
     out = {}
+    lister = "monitor._list_datasets_fast"
     try:
-        ds = warehouse.list_datasets() or []
-    except Exception as e:
-        return {"_error": {"rows": None, "modified": None, "error": str(e)[:200]}}
+        import monitor
+        ds = monitor._list_datasets_fast() or []
+    except Exception:
+        try:
+            import warehouse
+            ds = warehouse.list_datasets() or []
+            lister = "warehouse.list_datasets (FLAT — partitioned tables are missing)"
+        except Exception as e:
+            return {"_lister": {"rows": None, "modified": None,
+                                "error": "no lister available: %s" % str(e)[:160]}}
     for d in ds:
         n = d.get("name")
         if not n or n.startswith("_") or (names and n not in names):
@@ -201,7 +238,10 @@ def live_counts(names=None):
         rows, err = d.get("rows"), None
         if rows in (None, ""):
             rows, err = None, "row count unavailable"
-        out[n] = {"rows": rows, "modified": d.get("modified"), "error": err}
+        out[n] = {"rows": rows, "modified": d.get("modified"), "error": err,
+                  "partitioned": bool(d.get("partitioned")),
+                  "parts": len(d.get("parts") or []) or None}
+    out["_lister"] = {"rows": None, "modified": None, "error": None, "lister": lister}
     return out
 
 
