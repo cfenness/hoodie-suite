@@ -339,7 +339,7 @@ def write_accumulate(name, records, key, fields=None, coverage=True):
     key = _as_key_fn(key)
     man = read_manifest(name)
     if man and man.get("layout") == "bucketed":
-        res = _accumulate_bucketed(name, man, records)
+        res = _accumulate_bucketed(name, man, records, fields=fields)
     else:
         # READ-MODIFY-WRITE, AND THEREFORE SINGLE-WRITER ONLY. This reads the whole table, drops the
         # keys being replaced, and OVERWRITES. Two callers at once = a lost update: the second writer
@@ -1215,10 +1215,27 @@ def migrate_to_bucketed(name, key_cols, hex_len=2):
     return {"rows": int(n_rows), "buckets": len(parts), "uri": uri(name)}
 
 
-def _accumulate_bucketed(name, man, records):
+def _accumulate_bucketed(name, man, records, fields=None):
     """v2 merge: group new records into their md5-prefix buckets, then rewrite ONLY the touched
     buckets — DuckDB anti-join (existing minus re-written keys) + the new rows, written as one
     fresh part per bucket. Manifest last (the atomic swap), replaced files deleted after.
+
+    WIDENS THE SCHEMA when the caller declares columns the manifest does not have. This used to be
+    impossible: `cols` came only from `man["fields"]`, so `write_accumulate(fields=...)` was silently
+    IGNORED for any bucketed table and no merge could ever add a column. The v1 path honours `fields`
+    (it passes them to `write_parquet`), so the two layouts disagreed about whether a schema could
+    grow — and migrating a table to v2 quietly took the ability away.
+
+    That cost a real outage-shaped bug: `ubereats_products` lost `section`/`subsection` (added to the
+    write schema after the table was first written), `ue_enrich` reads that column to build its
+    getMenuItemV1 request, and with it absent every request returned `invalid_uuid` — the job landed
+    ZERO rows for weeks while reporting success. Migrating that table to bucketed to fix a memory
+    problem also removed the only path that could have restored the column.
+
+    Widening is union-only: a caller passing FEWER fields never narrows the table, because dropping a
+    column is destructive and must not happen as a side effect of one writer's field list.
+    Existing bucket files predate the new columns, so they are unioned BY NAME — DuckDB fills the
+    missing ones with NULL rather than failing to bind them.
 
     CAS-protected: `man` is whatever `read_manifest` returned to the caller, which can be stale by the
     time this finishes — a multi-bucket merge against a multi-million-row table is not instant, and this
@@ -1230,7 +1247,11 @@ def _accumulate_bucketed(name, man, records):
     to files the migration had already superseded."""
     import pyarrow as pa
     expect = (man.get("version"), man.get("updated_at"))
-    cols = man["fields"]
+    old_cols = list(man["fields"])
+    # UNION, never intersection: new columns are appended in the caller's order, existing ones keep
+    # their position, and nothing the table already has can be dropped by a caller that omits it.
+    cols = old_cols + [c for c in (fields or []) if c not in old_cols]
+    added = [c for c in cols if c not in old_cols]
     kc, hex_len = man["key_cols"], int(man["hex_len"])
     recs = [{k: r.get(k) for k in cols} for r in records]
     buckets = {}
@@ -1239,6 +1260,12 @@ def _accumulate_bucketed(name, man, records):
     version = int(man["version"]) + 1
     ks = _key_sql(kc)
     sel = ", ".join('"%s"' % c for c in cols)
+    # The EXISTING files predate any added column, so select only what they actually contain and let
+    # `UNION ALL BY NAME` line the two sides up — it fills the absent columns with NULL and takes
+    # their type from the new side. Selecting the added columns from those files instead would fail
+    # to bind (they are in no file's schema), which is why this needs BY NAME rather than positional.
+    sel_old = ", ".join('"%s"' % c for c in old_cols)
+    union_kw = "UNION ALL BY NAME" if added else "UNION ALL"
     stale = []
     con = connect()     # ONE connection for all buckets — connect() re-runs httpfs setup per call,
     for b in sorted(buckets):                        # which multiplies badly over 256 buckets.
@@ -1250,7 +1277,7 @@ def _accumulate_bucketed(name, man, records):
             merged = con.execute(
                 "SELECT %s FROM read_parquet([%s], union_by_name=true) "
                 "WHERE (%s) NOT IN (SELECT (%s) FROM newt) "
-                "UNION ALL SELECT %s FROM newt" % (sel, lst, ks, ks, sel)).fetch_arrow_table()
+                "%s SELECT %s FROM newt" % (sel_old, lst, ks, ks, union_kw, sel)).fetch_arrow_table()
         else:
             merged = con.execute("SELECT %s FROM newt" % sel).fetch_arrow_table()
         rel = _part_rel(name, b, version)
@@ -1259,8 +1286,15 @@ def _accumulate_bucketed(name, man, records):
         man.setdefault("parts", {})[b] = dict(files=[rel], rows=merged.num_rows, updated_at=int(time.time()))
     man["version"] = version
     man["updated_at"] = int(time.time())
+    if added:
+        # PERSIST THE WIDER SCHEMA. Without this the next merge reads the old `fields` back and
+        # narrows the table again, so the column would appear and vanish on alternate runs — a
+        # far worse failure than never widening at all. Recorded in the changelog because adding
+        # a column to a live catalog is a schema event someone will want to find later.
+        man["fields"] = cols
     man.setdefault("changelog", []).append(dict(op="accumulate", version=version, ts=int(time.time()),
-                                                buckets=sorted(buckets), delta_rows=len(recs)))
+                                                buckets=sorted(buckets), delta_rows=len(recs),
+                                                **({"added_fields": added} if added else {})))
     man["changelog"] = man["changelog"][-200:]
     _write_manifest(name, man, expect=expect)  # readers switch to the new parts HERE — never mid-write
     for f in stale:                 # only then drop replaced files (best-effort; orphans are inert)
