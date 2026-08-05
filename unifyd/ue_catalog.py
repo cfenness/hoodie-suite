@@ -383,13 +383,20 @@ def _progress(**kw):
 def universe(site="ubereats", log=print):
     """Every store in the sitemap book for `site` → [(url_id, name)]. This is the DENOMINATOR; state it
     up front so completeness is answerable from the first log line."""
+    # THE TABLE IS PER SITE. `ue_sitemap.pull()` writes `<site>_sitemap`, so postmates stores land in
+    # `postmates_sitemap` — reading a hardcoded `ubereats_sitemap` and then filtering
+    # `source = 'postmates'` matched NOTHING, because that table only ever contains ubereats rows.
+    # Measured: universe("postmates") returned 0 against 269,007 rows sitting in postmates_sitemap.
+    # The sweep therefore exited in ~10s with delta 0 on every run for months while reporting
+    # `incomplete` rather than `failed`, so nothing flagged it.
+    table = "%s_sitemap" % site
     try:
         rows = warehouse.query(
-            "ubereats_sitemap",
+            table,
             "SELECT store_uuid, store_name FROM t WHERE source = ? AND store_uuid IS NOT NULL",
             [site])
     except Exception as e:
-        log("[ue] universe read failed: %s" % str(e)[:140])
+        log("[ue] universe read failed (%s): %s" % (table, str(e)[:140]))
         return []
     out, seen = [], set()
     for r in rows:
@@ -631,7 +638,10 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
     day = time.strftime("%Y-%m-%d")
     uni = universe(site, log=log)
     if not uni:
-        return {"status": "failed", "error": "store universe empty — is ubereats_sitemap populated?"}
+        # An empty universe is a FAILED run, not a quiet one: this is the shape the postmates bug
+        # took, and `incomplete` was not loud enough for the health digest to catch it.
+        return {"status": "failed",
+                "error": "store universe empty — is %s_sitemap populated for source='%s'?" % (site, site)}
     mine = [(u, n) for (u, n) in uni] if nshard == 1 else \
            [(u, n) for (u, n) in uni if _shard_of(u, nshard) == shard]
     log("[ue] universe %s stores; shard %s/%s owns %s (the completeness denominator)"

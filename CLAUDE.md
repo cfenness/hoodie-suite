@@ -259,6 +259,16 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   retail bakes the CLASS into the name while TTB states it in a field
   ([[ttb-retail-class-bridge]]) — `"Absolut Citron 750ml"` vs `"Absolut Citron Vodka 750 ml"`.
   A 300-pair sheet is at `docs/xsource-gold-300.csv`.
+- **Uber Eats / Postmates share one sweep, and the sitemap table is PER SITE.** `ue_catalog.universe()`
+  read a hardcoded `"ubereats_sitemap"` and then filtered `source = <site>`, so for Postmates it
+  matched nothing — that table only ever contains ubereats rows, while the 269,007 Postmates stores sit
+  in `postmates_sitemap`. Measured: `universe("postmates")` returned **0**. The sweep therefore exited
+  in **7–11 seconds with `delta: 0` on six consecutive runs**, and reported `incomplete` rather than
+  `failed`, so nothing flagged it; `postmates_products` looked populated because 3,190 rows were left
+  over from the ARCHIVED zone crawler (47 columns, a different shape from the fold's 16). An empty
+  universe is now a `failed` run whose error names the table it read, and
+  `ue_catalog_universe_test.py` asserts the table NAME rather than that a read happened — the bug was
+  a wrong name, so the name is the only thing worth asserting.
 - **`unifyd/xsource_queue.py` + `apps/match-trainer.html` — the continuous queue.** The CSV caps the
   work at whatever was exported and makes a second session start over, so the trainer is fed by the
   API instead: `/api/xsource/{queue,dictionary,resolve}` over a pre-built pool (`xsource_queue`,
@@ -276,6 +286,22 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   problem, and they teach nothing about whether two RETAILERS show the same product.
   `candidates(cross_source=True)` is now the default; the fixed pool is 0% same-source and its
   difference mix went from 48% `identical` (a trivially-yes pair) to 3 rows out of 4,618.
+  **A half-landed resolution must not report success.** Each of the three writes (queue+gold,
+  taxonomy, dictionary) sat in its own `try/except` that logged and moved on while the endpoint
+  returned `ok:true`, and the client's `postResolve` swallowed the response entirely — so a resolution
+  could land its label and teach nothing, with the only trace in a server log. Found at 6 gold rows,
+  one carrying a full canonical set, and both `xsource_dictionary` and `xsource_taxonomy` at zero.
+  `resolve()` now returns `ok:false` with which writes failed, and the surface shows a dismissible
+  banner rather than a silent success.
+  **Suggestions save a step without becoming rubber-stamping.** The resolver prefills what can be
+  derived with high confidence — the cleaner brand/product spelling when the signatures agree, the
+  canonical pack size when both sides state the same volume, and the whole taxonomy path from the
+  product name. That last one is a LOOKUP, not a guess, because the tree enforces that no term sits at
+  two levels: a term found in the name maps to exactly one path (longest match wins, so
+  "Straight Bourbon" beats "Bourbon"). Two rules keep it honest: **the verdict is never suggested**
+  (y/n is the number the precision gate measures, and a pre-filled answer would measure the suggester),
+  and **a suggestion is marked** — dashed accent border, and the footer counts "N suggested, unedited"
+  so agreeing with seven values reads differently from stating seven.
   Each resolution lands **twice**: the labelled pair into `xsource_gold`, so the precision
   measurement the merge is gated on is fed by ordinary use rather than a separate labelling chore;
   and the value mappings into `xsource_dictionary` — **both** source spellings map to the canonical

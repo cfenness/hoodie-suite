@@ -89,6 +89,9 @@
        color:var(--ink);padding:8px 9px;font:13px var(--sans)}
   .dim input:focus,.dim select:focus{outline:0;border-color:var(--accent)}
   .dim input.sel,.dim select.sel{border-color:var(--good)}
+  /* A SUGGESTION LOOKS DIFFERENT FROM A STATEMENT. Agreeing with seven prefilled values and
+     stating seven values are not the same act, and the sheet should not read as though they are. */
+  .dim input.sug,.dim select.sug{border-color:var(--accent);border-style:dashed}
   header select{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
        border-radius:7px;padding:6px 9px;font:inherit;font-size:13px}
   .batch{display:flex;flex-direction:column;gap:0}
@@ -405,6 +408,54 @@ function level4Label(t){
   return v || TAX.l4def;
 }
 
+/* ── SUGGESTIONS ────────────────────────────────────────────────────────────────────────────────
+   Prefill the levels we can derive with high confidence, so a resolution is one keystroke rather
+   than seven. Two rules keep this from becoming rubber-stamping:
+
+     • THE VERDICT IS NEVER SUGGESTED. y/n stays entirely human — it is the number the merge's
+       precision gate is measured on, and a pre-filled answer measures the suggester, not the human.
+       Only the CANONICAL VALUES are proposed.
+     • A SUGGESTION IS MARKED. Prefilled fields render with a distinct border and the footer counts
+       them, so "I agreed with seven suggestions" is visibly different from "I stated seven values".
+
+   The taxonomy suggestion leans on an invariant the tree already enforces (and its test asserts):
+   NO TERM SITS AT TWO LEVELS. So a term found in the product name maps to exactly one path, and the
+   suggestion is a lookup rather than a guess. "Bulleit Bourbon" -> Spirits / Whiskey / Bourbon.
+   Longest match wins, because "Straight Bourbon" is more specific than "Bourbon".                */
+function taxSuggest(name){
+  if(!TAX.tree || !name) return null;
+  var hay = " " + String(name).toLowerCase().replace(/[^a-z0-9]+/g," ").trim() + " ";
+  var best = null;
+  Object.keys(TAX.tree).forEach(function(ty){
+    Object.keys(TAX.tree[ty]).forEach(function(cl){
+      Object.keys(TAX.tree[ty][cl]).forEach(function(sc){
+        var term = " " + sc.toLowerCase().replace(/[^a-z0-9]+/g," ").trim() + " ";
+        if(term.trim() && hay.indexOf(term) >= 0 && (!best || term.length > best.len))
+          best = {len: term.length, canon_type: ty, canon_class: cl, canon_subclass: sc};
+        (TAX.tree[ty][cl][sc]||[]).forEach(function(v4){
+          var t4 = " " + String(v4).toLowerCase().replace(/[^a-z0-9]+/g," ").trim() + " ";
+          if(t4.trim() && hay.indexOf(t4) >= 0 && hay.indexOf(term) >= 0)
+            best = {len: term.length + t4.length, canon_type: ty, canon_class: cl,
+                    canon_subclass: sc, canon_varietal: v4};
+        });
+      });
+    });
+  });
+  if(best) delete best.len;
+  return best;
+}
+
+/* The cleaner of two spellings, when both sides mean the same brand. Prefer the one that keeps a
+   possessive and is longer — "Tito's Handmade" over "Titos" — since retail strips punctuation more
+   often than it invents it. */
+function betterSpelling(a, b){
+  a = (a||"").trim(); b = (b||"").trim();
+  if(!a) return b; if(!b) return a;
+  var ap = /['’]/.test(a), bp = /['’]/.test(b);
+  if(ap !== bp) return ap ? a : b;
+  return a.length >= b.length ? a : b;
+}
+
 var CANON = [["canon_brand","Brand"],["canon_product","Product"],["canon_size","Pack size"],
              ["canon_type","Type"],["canon_class","Class"],["canon_subclass","Sub class"],
              ["canon_varietal","Varietal"]];
@@ -657,6 +708,14 @@ function openResolver(r){
     {k:"canon_subclass", lb:"Sub class", A:"", B:"", tax:3},
     {k:"canon_varietal", lb:level4Label(prev.canon_type||""), A:"", B:"", tax:4}
   ];
+  // Suggestions, computed once. The dictionary wins over a name-derived guess — a value a human
+  // already canonicalised is stronger evidence than a term match.
+  var SUG = taxSuggest(r.a_name) || taxSuggest(r.b_name) || {};
+  if(a && b && a.bk === b.bk) SUG.canon_brand = betterSpelling(r.a_brand, r.b_brand);
+  if(a && b && a.ns === b.ns) SUG.canon_product = betterSpelling(r.a_name, r.b_name);
+  if(sizeMlA && sizeMlA === sizeMlB) SUG.canon_size = canonSize(sizeMlA);
+  var SUGGESTED = {};                      // which fields arrived as a suggestion, for the footer
+
   var wrap = document.createElement("div");
   wrap.className = "modal";
   wrap.innerHTML =
@@ -664,9 +723,12 @@ function openResolver(r){
     '<p class="hint">Take A, take B, or type the right one. <b>Leave anything you are not sure about blank</b> — '+
     'blank means unresolved, and what you take here becomes a dictionary entry reused on later pairs.</p>'+
     DIMS.map(function(d){
-      var pre = prev[d.k] !== undefined ? prev[d.k]
-              : (dictGet(d.k, d.A) || dictGet(d.k, d.B) ||
-                 (d.size && sizeMlA && sizeMlA===sizeMlB ? canonSize(sizeMlA) : ""));
+      var pre = prev[d.k];
+      if(pre === undefined){
+        pre = dictGet(d.k, d.A) || dictGet(d.k, d.B) || "";
+        if(!pre && SUG[d.k]){ pre = SUG[d.k]; SUGGESTED[d.k] = 1; }
+      }
+      pre = pre || "";
       var field;
       if(d.size){
         var opts = ttbSizes(prev.canon_type || "");
@@ -691,7 +753,7 @@ function openResolver(r){
     }).join("")+
     '<div class="sheetfoot"><span class="unres" id="unres"></span><span class="grow"></span>'+
       '<button id="rcancel">Cancel <kbd>Esc</kbd></button>'+
-      '<button id="rsave" class="primary">Save &amp; next <kbd>⏎</kbd></button></div></div>';
+      '<button id="rsave" class="primary">Save &amp; next <kbd>⌘⏎</kbd></button></div></div>';
   document.body.appendChild(wrap);
 
   function opt(k, who, val){
@@ -798,9 +860,17 @@ function openResolver(r){
         btn.classList.toggle("sel", btn.getAttribute("data-v")===v);
       });
     });
+    DIMS.forEach(function(d){
+      var f=fieldFor(d.k); if(!f) return;
+      var still = SUGGESTED[d.k] && (f.value||"").trim() === String(SUG[d.k]||"").trim();
+      f.classList.toggle("sug", !!still);
+    });
     var blank = DIMS.filter(function(d){ var f=fieldFor(d.k); return f && !(f.value||"").trim(); });
-    wrap.querySelector("#unres").textContent = blank.length
-      ? blank.length+" dimension"+(blank.length>1?"s":"")+" left unresolved" : "all dimensions resolved";
+    var sug = DIMS.filter(function(d){ var f=fieldFor(d.k);
+      return f && SUGGESTED[d.k] && (f.value||"").trim() === String(SUG[d.k]||"").trim(); }).length;
+    wrap.querySelector("#unres").textContent =
+      (blank.length ? blank.length+" unresolved" : "all resolved") +
+      (sug ? " · "+sug+" suggested, unedited" : "");
   }
   Array.prototype.forEach.call(wrap.querySelectorAll(".opt"), function(btn){
     btn.onclick=function(){ var f=fieldFor(btn.getAttribute("data-k"));
@@ -855,11 +925,35 @@ function openResolver(r){
     close(); save(); render();
     postResolve(rec, r); if(remaining() < TOPUP_AT) topUp().then(render);
   }
+  /* ⌘/Ctrl+Enter saves from anywhere, and plain Enter saves outside a text field. I could not
+     reproduce the reported ⌘-Enter failure with a synthetic event — the handler fired — so this
+     does not claim a root cause; it removes the two things that plausibly swallow the keystroke:
+
+       • FOCUS. Opening the modal from a GRID row left focus on the row's "Same" button, which sits
+         behind the modal. A real Enter on a focused button re-activates that button rather than
+         reaching this handler, which re-opens the resolver instead of saving it. The modal now
+         takes focus itself, so the keystroke has nowhere else to go.
+       • A NATIVE SELECT POPUP eats keys entirely while it is open; the page never sees them. With
+         focus starting on a field rather than a control that has just been clicked, the popup is
+         closed by the time anyone reaches for Enter. */
   function keys(e){
-    if(e.key==="Escape"){ e.stopPropagation(); close(); }
-    else if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); e.stopPropagation(); commit(); }
+    if(e.key==="Escape"){ e.stopPropagation(); close(); return; }
+    if(e.key!=="Enter" || e.shiftKey) return;
+    var meta = e.metaKey || e.ctrlKey;
+    var el = document.activeElement, typing = el && el.tagName==="INPUT" && !meta;
+    if(typing) return;                 // let Enter be Enter while typing a value; ⌘⏎ still saves
+    e.preventDefault(); e.stopPropagation(); commit();
   }
   document.addEventListener("keydown", keys, true);
+  // Take the keyboard. Focus the first UNRESOLVED field so the modal is immediately answerable.
+  setTimeout(function(){
+    var first = null;
+    for(var i=0;i<DIMS.length;i++){
+      var f = fieldFor(DIMS[i].k);
+      if(f && f.type!=="hidden" && !f.disabled && !(f.value||"").trim()){ first = f; break; }
+    }
+    (first || wrap.querySelector("#rsave")).focus();
+  }, 0);
   wrap.querySelector("#rcancel").onclick=close;
   wrap.querySelector("#rsave").onclick=commit;
   wrap.onclick=function(e){ if(e.target===wrap) close(); };
@@ -1066,10 +1160,36 @@ function postResolve(rec, r){
   ["canon_brand","canon_product","canon_size","canon_category",
    "canon_type","canon_class","canon_subclass","canon_varietal"].forEach(function(k){
      if(rec[k]) body[k]=rec[k]; });
-  // Fire and forget: a failed POST must never block the next pair. The answer is already in
-  // localStorage, so nothing is lost and Export still carries it.
+  // Fire and forget: a failed POST must never BLOCK the next pair — the answer is already in
+  // localStorage and Export still carries it. But it must not be SILENT either. `.catch(function(){})`
+  // meant a resolution could land its label and teach nothing, with the only trace in a server log:
+  // measured live at 6 gold rows, one carrying a full canonical set, and both the dictionary and the
+  // taxonomy at zero.
   fetch("/api/xsource/resolve", {method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify(body)}).catch(function(){});
+        body: JSON.stringify(body)})
+    .then(function(res){ return res.json().catch(function(){ return {ok:false, error:"HTTP "+res.status}; }); })
+    .then(function(d){ if(!d || d.ok === false) warnResolve(d); })
+    .catch(function(e){ warnResolve({error: e && e.message}); });
+}
+
+/* A persistent, dismissible banner. Not an alert() — it must not interrupt a run of answers — and
+   not a console line, which nobody watching a queue is reading. */
+function warnResolve(d){
+  var why = (d && (d.failed ? d.failed.join("; ") : d.error)) || "unknown";
+  var el = document.getElementById("resolvewarn");
+  if(!el){
+    el = document.createElement("div");
+    el.id = "resolvewarn";
+    el.style.cssText = "position:fixed;left:16px;right:16px;bottom:16px;z-index:40;padding:10px 14px;"+
+      "border:1px solid var(--bad);border-radius:9px;background:var(--panel);color:var(--ink);"+
+      "font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.35)";
+    document.body.appendChild(el);
+  }
+  el.innerHTML = "<b>The last answer did not fully save on the server.</b> " +
+    String(why).replace(/</g,"&lt;") +
+    " — your answers are still held in this browser and <b>Export</b> carries them. " +
+    "<span style=\"color:var(--mut)\">(click to dismiss)</span>";
+  el.onclick = function(){ el.remove(); };
 }
 
 function boot(){
