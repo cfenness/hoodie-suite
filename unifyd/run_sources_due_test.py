@@ -135,10 +135,20 @@ ok("per-build min gaps respected",
    {b["id"] for b in run_sources.due_builds(now=NOW)}
    == {b["id"] for b in DEFBUILDS if float(b.get("interval_h") or 6) <= 7})
 
-# after=[...] narrows the trigger
+# after=[...] narrows the trigger: build-outlets now fires only off a ca-abc landing, which this
+# ledger does not contain — so it drops out of the due set and NOTHING ELSE MOVES.
+#
+# This read `== []` until now, which was the same statement only while build-outlets was the ONLY
+# default-triggered build inside the 7h gap. #785 dropped build-ue-catalog's `after=["ubereats"]`,
+# promoting it from chained to default-triggered, so it is legitimately due in this scenario and the
+# bare `== []` went red against a scheduler that was behaving correctly — the one assertion in this
+# block that wasn't registry-derived, in a block whose whole point is that adding a build must not
+# re-break it. Subtracting the narrowed build states what is actually under test.
 b_out = next(b for b in reg.BUILDS if b["id"] == "build-outlets")
 b_out["after"] = ["ca-abc"]
-ok("after-list ignores unrelated landings", run_sources.due_builds(now=NOW) == [])
+ok("after-list ignores unrelated landings",
+   {b["id"] for b in run_sources.due_builds(now=NOW)}
+   == {b["id"] for b in DEFBUILDS if float(b.get("interval_h") or 6) <= 7} - {"build-outlets"})
 del b_out["after"]
 
 # 7) mac quiet-hours window (default 20-8, env-tunable, wrap + non-wrap)
