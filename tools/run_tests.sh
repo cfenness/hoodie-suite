@@ -54,6 +54,8 @@ TESTS=(
   master_quality_test
   representativeness_test
   warehouse_dtype_test         # a partition's schema is DECLARED, never inferred from one batch
+  table_spec_test              # THE RATCHET: no new unpinned write_partition, and land() proved on disk
+  fold_test                    # the fold is the aggregate's only writer; parts merge in filename order
   warehouse_falsezero_test     # a blipped read/listing RAISES; it never becomes zero rows
   warehouse_query_falsezero_test
   observe_schema_test          # retail_observations partitions cannot drift apart again
