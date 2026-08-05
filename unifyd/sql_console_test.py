@@ -117,6 +117,46 @@ class Resolve(unittest.TestCase):
         self.assertIn("price", [w for w in words if w in known])
 
 
+class QuotedIdentifiers(unittest.TestCase):
+    """A double-quoted token in SQL is an IDENTIFIER, not a literal.
+
+    guard() blanks both kinds, which is right for the keyword check — a quoted token can never be a
+    banned verb. But using that same blanked text to FIND table names means a quoted name never binds.
+    Every statement the visual join builder writes quotes its tables, so this made the whole builder
+    fail with "Table with name src_outlets does not exist" against a table holding 1,916,357 rows.
+    Found by running the builder's own generated SQL on the live warehouse.
+    """
+
+    def names(self, sql):
+        import re
+        return [w for w in re.findall(r"[a-zA-Z_][a-zA-Z_0-9]*", sc._strip_idents(sql))]
+
+    def test_quoted_table_is_visible_to_the_binder(self):
+        self.assertIn("src_outlets", self.names('SELECT * FROM "src_outlets" l'))
+
+    def test_unquoted_still_works(self):
+        self.assertIn("src_outlets", self.names("SELECT * FROM src_outlets"))
+
+    def test_a_string_literal_is_still_not_a_table(self):
+        self.assertNotIn("src_outlets", self.names("SELECT * FROM t WHERE x = 'src_outlets'"))
+
+    def test_comments_still_hidden(self):
+        self.assertNotIn("src_outlets", self.names("SELECT 1 -- src_outlets\nFROM t"))
+        self.assertNotIn("src_outlets", self.names("SELECT /* src_outlets */ 1 FROM t"))
+
+    def test_guard_still_blanks_quoted_tokens(self):
+        # a column legitimately named "drop" must not trip the keyword denylist
+        self.assertTrue(sc.guard('SELECT "drop" FROM t'))
+
+    def test_binder_and_guard_use_different_strippers(self):
+        import re as _re
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql_console.py"),
+                   errors="ignore").read()
+        body = _re.sub(r'"""(?:.|\n)*?"""', "", src)
+        res = body[body.index("def resolve("):]
+        self.assertIn("_strip_idents(sql)", res[:res.index("\ndef ", 1)])
+
+
 class TimeoutCoversBinding(unittest.TestCase):
     """A structural check, because the failure it guards has no local reproduction.
 
