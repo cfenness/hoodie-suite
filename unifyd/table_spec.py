@@ -112,9 +112,26 @@ _OBS = TableSpec(
 
 
 # ---------------------------------------------------------------------------------------------
+# Rights / DAM
+# ---------------------------------------------------------------------------------------------
+# Append-only EVENT log (rights.land_emissions). Declared here so the writer inherits its types
+# rather than inferring them per batch: `allowed` is the field that would bite — a batch where it
+# happens to be all-null infers as a null column while another infers BOOLEAN, and union_by_name
+# then reconciles the two by corrupting the read.
+_DAM_EMISSIONS = TableSpec(
+    "dam_emissions", stage=5,
+    fields=["ts", "source_id", "rights_ref", "action", "subject", "surface",
+            "allowed", "reason", "image_use", "scope"],
+    dtypes={"allowed": BOOL},          # ts is an ISO-8601 STRING (rights._now), not an epoch int
+    key_cols=("ts", "source_id", "action"),
+    note="append-only emission log — an event stream, never merged. See [[payloads-are-events]]: "
+         "events append, catalogs merge.")
+
+
+# ---------------------------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------------------------
-SPECS = {_OBS.name: _OBS}
+SPECS = {_OBS.name: _OBS, _DAM_EMISSIONS.name: _DAM_EMISSIONS}
 for _s in SITES:                                  # expand the platform families
     for _spec in (_uber_parts_spec(_s), _uber_catalog_spec(_s)):
         SPECS[_spec.name] = _spec
