@@ -40,15 +40,21 @@ def _fv(con):
     # per-week OBSERVATION coverage (distinct calendar dates seen that week). Matched-cell WoW is
     # coverage-proof to cells appearing/disappearing, but NOT to a week observed for fewer DAYS than
     # its neighbor (a current/in-progress week undercounts sales → fake declines). We flag, not drop.
-    obs = (("s3://%s/%s/retail_observations/*.parquet" % (warehouse._bucket(), warehouse._prefix()))
-           if warehouse.remote() else os.path.join(warehouse._LOCAL_DIR, "retail_observations", "*.parquet"))
+    # ONE ACCESSOR. retail_observations is a DIRECTORY of parts, and handing DuckDB
+    # `<dir>/*.parquet` corrupts the read at this scale — measured on this exact table, 3,824
+    # partitions / 51.7M rows, reproduced 4/4 (see warehouse.query_parts). attach_view resolves the
+    # file list and passes it explicitly, for every layout.
+    #
+    # This site mattered most of the four: the read below sits inside a try/except, so a corrupt read
+    # here degraded QUIETLY — wcov simply missing, coverage unflagged — rather than failing loudly
+    # like the other three.
+    warehouse.attach_view(con, "retail_observations", view="_ro")
     try:
         # coverage measured ONLY over the sources that FEED velocity (count-tier) — a non-velocity source
         # scraping on a given day must not inflate that week's apparent completeness for the movers.
         con.execute("CREATE OR REPLACE VIEW wcov AS SELECT date_trunc('week', TRY_CAST(date AS DATE)) AS week, "
-                    "COUNT(DISTINCT date) AS obs_days FROM read_parquet('%s', union_by_name=true) "
-                    "WHERE source IN (SELECT DISTINCT source FROM fv) GROUP BY 1"
-                    % obs.replace("'", ""))
+                    "COUNT(DISTINCT date) AS obs_days FROM _ro "
+                    "WHERE source IN (SELECT DISTINCT source FROM fv) GROUP BY 1")
     except Exception:
         con.execute("CREATE OR REPLACE VIEW wcov AS SELECT CAST(NULL AS DATE) AS week, 0 AS obs_days WHERE false")
 

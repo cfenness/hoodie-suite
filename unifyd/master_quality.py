@@ -48,10 +48,9 @@ def _brand(col):
 
 def _mount(con):
     import warehouse
-    ro = (("s3://%s/%s/retail_observations/*.parquet" % (warehouse._bucket(), warehouse._prefix()))
-          if warehouse.remote() else os.path.join(warehouse._LOCAL_DIR, "retail_observations", "*.parquet"))
-    con.execute("CREATE OR REPLACE VIEW ro AS SELECT * FROM read_parquet('%s', union_by_name=true)"
-                % ro.replace("'", ""))
+    # ONE ACCESSOR — never `<dir>/*.parquet`. The glob corrupts the read at this scale (measured on
+    # this exact table: 3,824 partitions / 51.7M rows, reproduced 4/4 — see warehouse.query_parts).
+    warehouse.attach_view(con, "retail_observations", view="ro")
     xu = warehouse.uri("xwalk_source_sku").replace("'", "")
     con.execute("CREATE OR REPLACE VIEW xw AS SELECT * FROM read_parquet('%s')" % xu)
     # resolvable source records: distinct (source, product_id) with a valid UPC + brand + an item_key
@@ -171,12 +170,13 @@ def score_canon(log=print):
     P/R are computed over the covered pairs (same honest posture as the item_key path)."""
     import warehouse
     con = warehouse.connect()
-    gg = ("s3://%s/%s/gold_matches/*.parquet" % (warehouse._bucket(), warehouse._prefix())) \
-        if warehouse.remote() else os.path.join(warehouse._LOCAL_DIR, "gold_matches", "*.parquet")
     iu = warehouse.uri("item_identity").replace("'", "")
     try:
-        con.execute("CREATE OR REPLACE VIEW g AS SELECT * FROM read_parquet('%s', union_by_name=true)"
-                    % gg.replace("'", ""))
+        # ONE ACCESSOR — never `<dir>/*.parquet`. This one sits inside the try/except below, so a
+        # corrupt read here would degrade QUIETLY to "gold_matches unavailable" and the canon engine
+        # would simply not be scored. Found by the read_accessor ratchet, not by anyone reading it.
+        if not warehouse.attach_view(con, "gold_matches", view="g"):
+            raise RuntimeError("gold_matches has no parts")
         con.execute("CREATE OR REPLACE VIEW ii AS SELECT * FROM read_parquet('%s')" % iu)
         ver = con.execute("SELECT max(version) FROM g").fetchone()[0]
     except Exception as e:
