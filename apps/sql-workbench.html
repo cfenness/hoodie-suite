@@ -61,6 +61,12 @@
   .msg.err{background:rgba(229,99,107,.12);color:var(--bad);border-bottom:1px solid rgba(229,99,107,.35)}
   .msg.warn{background:rgba(217,154,63,.12);color:var(--warn);border-bottom:1px solid rgba(217,154,63,.35)}
 
+  .tabs{display:none;gap:2px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--line);
+        overflow-x:auto;flex:0 0 auto}
+  .rtab{padding:7px 12px;font-family:var(--mono);font-size:11px;color:var(--mut);cursor:pointer;
+        border-bottom:2px solid transparent;white-space:nowrap}
+  .rtab.on{color:var(--ink);border-bottom-color:var(--accent)}
+  .rtab.bad{color:var(--bad)}
   .grid{flex:1;overflow:auto;min-height:0}
   table{border-collapse:collapse;font-family:var(--mono);font-size:12px}
   thead th{position:sticky;top:0;background:var(--panel2);color:var(--mut);text-align:left;padding:7px 11px;
@@ -105,7 +111,9 @@
       <textarea id="sql" spellcheck="false" placeholder="SELECT * FROM binnys_products LIMIT 20"></textarea>
       <div class="run">
         <button class="go" id="go">Run</button>
-        <span class="hint"><kbd>⌘</kbd>+<kbd>↵</kbd> to run · read-only · <span id="cap"></span></span>
+        <button id="runall">Run all</button>
+        <span class="hint"><kbd>⌘</kbd>+<kbd>↵</kbd> this one · <kbd>⌘</kbd>+<kbd>⇧</kbd>+<kbd>↵</kbd> all · read-only</span>
+        <span class="hint" id="which" style="color:var(--accent)"></span>
         <label class="hint" style="display:flex;align-items:center;gap:5px;cursor:pointer">
           <input type="checkbox" id="allparts" style="width:auto;padding:0"> all parts
         </label>
@@ -114,6 +122,7 @@
       </div>
     </div>
     <div class="msg" id="msg"></div>
+    <div class="tabs" id="tabs"></div>
     <div class="grid" id="grid">
       <div class="empty" id="welcome">
         <h2>The warehouse, unfiltered.</h2>
@@ -130,7 +139,7 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const num = n => n == null ? '—' : Number(n).toLocaleString();
-let TABLES = [], LAST = null, OPEN = null;
+let TABLES = [], LAST = null, OPEN = null, RESULTS = [], SHOWN = 0;
 
 const RECIPES = [
   ['what is actually in a table', 'SELECT * FROM binnys_products LIMIT 25'],
@@ -146,7 +155,10 @@ const RECIPES = [
     `<button class="rec" data-q="${esc(q)}"><b>${esc(t)}</b>${esc(q)}</button>`).join('');
   $('#recs').addEventListener('click', e => {
     const b = e.target.closest('.rec'); if (!b) return;
-    $('#sql').value = b.dataset.q; run();
+    const ta = $('#sql'), cur = ta.value.trim();
+    ta.value = cur ? cur.replace(/;?\s*$/, ';') + '\n\n' + b.dataset.q : b.dataset.q;
+    ta.selectionStart = ta.selectionEnd = ta.value.length;
+    markCurrent(); runCurrent();
   });
   renderHistory();
   try {
@@ -192,7 +204,12 @@ $('#tlist').addEventListener('click', async e => {
   if (OPEN === name) { OPEN = null; drawTables(); return; }
   OPEN = name; drawTables();
   // Clicking a table is a QUESTION ("what's in here?"), so answer it: seed the editor with a read.
-  if (!$('#sql').value.trim()) $('#sql').value = `SELECT * FROM ${name} LIMIT 25`;
+  // Clicking a table appends rather than overwrites — the scratchpad is the point, and losing what you
+  // already wrote to look at a column list would make the sidebar hostile.
+  const ta = $('#sql'), cur = ta.value.trim();
+  ta.value = cur ? cur.replace(/;?\s*$/, ';') + `\n\nSELECT * FROM ${name} LIMIT 25` : `SELECT * FROM ${name} LIMIT 25`;
+  ta.selectionStart = ta.selectionEnd = ta.value.length;
+  markCurrent();
   try {
     const r = await (await fetch('/api/sql/columns?name=' + encodeURIComponent(name))).json();
     const box = $('#cols'); if (!box) return;
@@ -208,35 +225,128 @@ function insert(text){
   ta.focus(); ta.selectionStart = ta.selectionEnd = s + text.length;
 }
 
-/* ── run ──────────────────────────────────────────────────────────── */
-$('#go').addEventListener('click', run);
+/* ── the workspace: many statements in one editor ──────────────────
+   A scratchpad is how anyone actually uses SQL — you keep the last five things you asked next to the
+   one you're asking now. So the editor holds as many statements as you like and ⌘+↵ runs THE ONE YOUR
+   CURSOR IS IN, leaving the rest untouched. Run all executes them top to bottom, one result per tab.
+
+   The SERVER still accepts exactly one statement per request — that guard is what stops a read from
+   carrying a write, and it does not get relaxed for convenience. Splitting happens here, and each
+   statement goes over the wire on its own.                                                          */
+function statements(sql){
+  // Same literal/comment handling as the server's _strip: a ';' inside a string or a comment is not a
+  // separator. Getting this wrong would split `WHERE note = 'a; b'` into two broken statements.
+  const out = []; let start = 0, i = 0;
+  while (i < sql.length){
+    const c = sql[i];
+    if (c === '-' && sql.slice(i, i+2) === '--'){ const j = sql.indexOf('\n', i); i = j < 0 ? sql.length : j; }
+    else if (c === '/' && sql.slice(i, i+2) === '/*'){ const j = sql.indexOf('*/', i+2); i = j < 0 ? sql.length : j+2; }
+    else if (c === "'" || c === '"'){
+      const q = c; i++;
+      while (i < sql.length){
+        if (sql[i] === q){ if (sql[i+1] === q){ i += 2; continue; } i++; break; }
+        if (sql[i] === '\\' && q === "'"){ i += 2; continue; }
+        i++;
+      }
+    }
+    else if (c === ';'){ out.push({start, end: i, sql: sql.slice(start, i)}); i++; start = i; }
+    else i++;
+  }
+  if (sql.slice(start).trim()) out.push({start, end: sql.length, sql: sql.slice(start)});
+  return out.filter(s => s.sql.trim());
+}
+
+function current(){
+  const ta = $('#sql'), pos = ta.selectionStart, all = statements(ta.value);
+  if (!all.length) return null;
+  // The cursor sitting just past a ';' belongs to the statement you just finished typing, not the
+  // empty space after it — so bias to the last statement that starts at or before the caret.
+  for (let i = all.length - 1; i >= 0; i--) if (all[i].start <= pos) return all[i];
+  return all[0];
+}
+
+$('#go').addEventListener('click', () => runCurrent());
+$('#runall').addEventListener('click', () => runAll());
 $('#sql').addEventListener('keydown', e => {
-  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); run(); }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter'){
+    e.preventDefault();
+    e.shiftKey ? runAll() : runCurrent();
+  }
+});
+$('#sql').addEventListener('keyup', markCurrent);
+$('#sql').addEventListener('click', markCurrent);
+
+function markCurrent(){
+  const all = statements($('#sql').value);
+  const cur = current();
+  $('#which').textContent = all.length > 1 && cur
+    ? `statement ${all.indexOf(all.find(s => s.start === cur.start)) + 1} of ${all.length}` : '';
+}
+
+async function one(sql){
+  try {
+    return await (await fetch('/api/sql', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({sql, all_parts: $('#allparts').checked})})).json();
+  } catch (e) { return {ok:false, error:'request failed: ' + e}; }
+}
+
+async function runCurrent(){
+  const c = current(); if (!c) return;
+  await execute([c.sql]);
+}
+
+async function runAll(){
+  const all = statements($('#sql').value);
+  if (!all.length) return;
+  await execute(all.map(s => s.sql));
+}
+
+async function execute(list){
+  $('#go').disabled = $('#runall').disabled = true;
+  $('#go').textContent = 'Running…';
+  $('#msg').className = 'msg'; $('#bound').textContent = ''; RESULTS = [];
+  for (let i = 0; i < list.length; i++){
+    $('#foot').textContent = list.length > 1
+      ? `running ${i + 1} of ${list.length}…` : 'running…';
+    const r = await one(list[i]);
+    RESULTS.push({sql: list[i], r});
+    if (r.ok) remember(list[i]);
+    drawTabs(); show(i);
+    // Stop on the first failure rather than plough on: statement 3 usually depends on statement 2,
+    // and a wall of errors caused by one broken statement tells you nothing about which broke.
+    if (!r.ok && list.length > 1){
+      $('#foot').textContent = `stopped at statement ${i + 1} of ${list.length} — it failed`;
+      break;
+    }
+  }
+  $('#go').disabled = $('#runall').disabled = false;
+  $('#go').textContent = 'Run';
+}
+
+function drawTabs(){
+  const bar = $('#tabs');
+  if (RESULTS.length < 2){ bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  bar.innerHTML = RESULTS.map((x, i) =>
+    `<div class="rtab ${i === SHOWN ? 'on' : ''} ${x.r.ok ? '' : 'bad'}" data-i="${i}">${i + 1}. ${
+      esc(x.sql.replace(/\s+/g, ' ').trim().slice(0, 34))}${x.sql.length > 34 ? '…' : ''}</div>`).join('');
+}
+$('#tabs').addEventListener('click', e => {
+  const t = e.target.closest('.rtab'); if (t) show(+t.dataset.i);
 });
 
-async function run(){
-  const sql = $('#sql').value.trim(); if (!sql) return;
-  $('#go').disabled = true; $('#go').textContent = 'Running…';
-  $('#msg').className = 'msg'; $('#foot').textContent = 'running…'; $('#bound').textContent = '';
-  const t0 = performance.now();
-  let r;
-  try {
-    r = await (await fetch('/api/sql', {method:'POST', headers:{'Content-Type':'application/json'},
-                                        body: JSON.stringify({sql, all_parts: $('#allparts').checked})})).json();
-  } catch (e) { r = {ok:false, error:'request failed: ' + e}; }
-  $('#go').disabled = false; $('#go').textContent = 'Run';
-
-  if (!r.ok) {
+function show(i){
+  SHOWN = i; drawTabs();
+  const {sql, r} = RESULTS[i];
+  if (!r.ok){
     $('#msg').className = 'msg show err';
     $('#msg').textContent = (r.refused ? '' : 'error: ') + r.error;
-    $('#foot').textContent = 'failed in ' + ((performance.now() - t0) / 1000).toFixed(1) + 's';
+    $('#grid').innerHTML = '<div class="empty">no result — the statement above failed.</div>';
+    $('#foot').textContent = 'failed';
     $('#csv').disabled = true;
     return;
   }
-  remember(sql);
   LAST = r;
-  // Truncation is stated, never implied — a capped result that looks complete is the whole reason
-  // people stop trusting a console.
   const notes = [];
   // A SCOPED bind is the most misleading thing this console can do — a 30-day answer that looks
   // all-time. It gets said first, in full, every time, with the way to turn it off.
@@ -244,12 +354,12 @@ async function run(){
     `${s.table} is partitioned into ${num(s.total_parts)} parts — too many to open at once, so this ` +
     `query read the most recent ${s.days} day(s) only (${s.from} → ${s.to}, ${num(s.bound_parts)} parts). ` +
     `Every number below covers that window, not all time. Tick "all parts" to scan everything (slow).`));
+  // Truncation is stated, never implied — a capped result that looks complete is the whole reason
+  // people stop trusting a console.
   if (r.truncated) notes.push(
     `showing the first ${num(r.row_count)} rows — there are more. Add a LIMIT, an aggregate, or a tighter WHERE to see the whole answer.`);
-  if (notes.length) {
-    $('#msg').className = 'msg show warn';
-    $('#msg').textContent = notes.join('\n\n');
-  }
+  $('#msg').className = notes.length ? 'msg show warn' : 'msg';
+  $('#msg').textContent = notes.join('\n\n');
   draw(r);
   $('#foot').textContent = `${num(r.row_count)}${r.truncated ? '+' : ''} rows · ${r.elapsed_s}s`;
   const sc = (r.scopes || []).map(s => `${s.table}: last ${s.days}d of ${num(s.total_parts)} parts`);
@@ -303,5 +413,5 @@ function renderHistory(){
 }
 $('#sql').addEventListener('input', () => sessionStorage.setItem('hoodie.sql.draft', $('#sql').value));
 $('#sql').value = sessionStorage.getItem('hoodie.sql.draft') || '';
-$('#cap').textContent = '';
+markCurrent();
 </script>
