@@ -833,6 +833,16 @@ def attach_view(con, name, view="t"):
             con.execute("CREATE OR REPLACE VIEW %s AS SELECT * FROM read_parquet([%s], union_by_name=true)"
                         % (view, lst))
         else:
+            # DATE-PARTITIONED: a directory of parts, so `uri(name)` resolves to a single file that does
+            # not exist. Resolve the file list and pass it EXPLICITLY — never `<dir>/*.parquet`, for the
+            # reason measured above on this exact table: the glob corrupts the read at scale.
+            parts = _partition_files_strict(name)
+            if parts:
+                src = ["s3://%s" % f for f in parts] if remote() else list(parts)
+                lst = ", ".join("'%s'" % p.replace("'", "") for p in src)
+                con.execute("CREATE OR REPLACE VIEW %s AS SELECT * FROM "
+                            "read_parquet([%s], union_by_name=true)" % (view, lst))
+                return True
             src = uri(name).replace("'", "")
             con.execute("CREATE OR REPLACE VIEW %s AS SELECT * FROM read_parquet('%s')" % (view, src))
         return True

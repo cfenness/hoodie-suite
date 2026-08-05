@@ -43,10 +43,9 @@ def build(log=print):
     import warehouse
     con = warehouse.connect()
     # mount the whole time-series once; both aggregations read this view
-    glob = (("s3://%s/%s/retail_observations/*.parquet" % (warehouse._bucket(), warehouse._prefix()))
-            if warehouse.remote() else os.path.join(warehouse._LOCAL_DIR, "retail_observations", "*.parquet"))
-    con.execute("CREATE OR REPLACE VIEW obs AS SELECT * FROM read_parquet('%s', union_by_name=true)"
-                % glob.replace("'", ""))
+    # ONE ACCESSOR — never `<dir>/*.parquet`. The glob corrupts the read at this scale (measured on
+    # this exact table: 3,824 partitions / 51.7M rows, reproduced 4/4 — see warehouse.query_parts).
+    warehouse.attach_view(con, "retail_observations", view="obs")
 
     # ── per-(source, store, sku) CELL quality ────────────────────────────────────────────────────
     # product_id is the source's own key (matches observe.record); store_id the store. A cell is one

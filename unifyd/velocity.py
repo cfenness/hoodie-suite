@@ -40,10 +40,11 @@ CONF_FLOOR = float(os.environ.get("VEL_CONF_FLOOR", "0.2"))    # cells below thi
 
 def _mount(con):
     import warehouse
-    obs_glob = (("s3://%s/%s/retail_observations/*.parquet" % (warehouse._bucket(), warehouse._prefix()))
-                if warehouse.remote() else os.path.join(warehouse._LOCAL_DIR, "retail_observations", "*.parquet"))
-    con.execute("CREATE OR REPLACE VIEW obs AS SELECT * FROM read_parquet('%s', union_by_name=true)"
-                % obs_glob.replace("'", ""))
+    # ONE ACCESSOR. retail_observations is a DIRECTORY of parts, and handing DuckDB `<dir>/*.parquet`
+    # corrupts the read at this scale — measured on this exact table, 3,824 partitions / 51.7M rows,
+    # reproduced 4/4 (see the note in warehouse.query_parts). attach_view resolves the file list and
+    # passes it EXPLICITLY, for every layout, so no caller re-derives the path.
+    warehouse.attach_view(con, "retail_observations", view="obs")
     # source instrument card (V1) — tier + jitter + cadence drive the estimator & confidence
     src = warehouse.uri("obs_quality_source").replace("'", "")
     con.execute("CREATE OR REPLACE VIEW srccard AS SELECT * FROM read_parquet('%s')" % src)
