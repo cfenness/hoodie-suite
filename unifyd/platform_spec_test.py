@@ -53,6 +53,24 @@ DELIBERATE_DEVIATIONS = {
         "the list was hand-typed and omitted ubereats-enrich, and builds share MAX_SPAWN with "
         "sources. C4: a stage advances on its OWN backlog — which the watermark now makes a number. "
         "Affordable only because the fold is incremental: nothing waiting = `current`, near-zero cost.",
+    ("ubereats-enrich", "shards"):
+        "SIZED FROM MEASUREMENT (8 -> 32). Peak RSS of one shard's work-list on the Fly image: "
+        "0/8 = 2,366,292 rows -> 6,047 MB; 0/32 = 592,042 rows -> 3,349 MB. Those fit ~2,449 MB "
+        "FIXED (the DuckDB scan of all 3,832 parts, paid by EVERY shard however narrow its slice) "
+        "+ ~1.52 KB/row. At 8 shards it cannot run in 4 GB at all.",
+    ("ubereats-enrich", "mem"):
+        "4096 -> 8192. At 32 shards the measured peak is 3,349 MB = 82% of a 4 GB machine, too "
+        "tight to schedule; 8192 is Fly's hard ceiling and 3,349 against it is 41%. The fixed floor "
+        "GROWS with part count, so this is a stopgap — the fix is fewer parts (stamp landed_at/"
+        "run_id, then compact).",
+    ("ubereats-enrich", "code"):
+        "the UE_SHARD fallback is now DERIVED from the declared shard count ('0/32', not a "
+        "hardcoded '0/8'). A default that disagrees with the declaration is exactly the postmates "
+        "bug: its string said 0/8 while the entry declared no shards, so one machine covered 1/8 "
+        "of the universe daily and reported success.",
+    ("ubereats-enrich", "note"):
+        "records the measured sizing so the next person does not re-derive it.",
+
     ("build-ue-catalog", "label"):
         "renamed — it folds both sites, and 'consolidate' was the old function's name.",
     ("build-ue-catalog", "note"):

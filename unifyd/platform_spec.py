@@ -143,11 +143,29 @@ _CATALOG = {
 
 # Enrich exists for UberEats ONLY. Declared as a mapping rather than a per-site loop so the absence
 # is explicit: Postmates does this inline (see _CATALOG), it is not an oversight.
+# SIZED FROM MEASUREMENT, NOT INSTINCT. Peak RSS of one shard's work-list, measured on the Fly image
+# 2026-08-05 (fresh process per reading — ru_maxrss is a process-lifetime high-water mark, so two
+# readings in one process report the same number and the second is meaningless):
+#
+#     shard 0/8   2,366,292 rows -> 6,047 MB
+#     shard 0/32    592,042 rows -> 3,349 MB
+#
+# Those two points fit ~2,449 MB FIXED + ~1.52 KB/row. The fixed part is the DuckDB scan of all
+# 3,832 parts, and EVERY shard pays it in full however narrow its slice — so sharding buys the
+# per-row term only, and there is a floor no shard count goes below. At 32 shards that is 3,349 MB,
+# which is 82% of a 4,096 MB machine: too tight to schedule. 8,192 MB is Fly's hard ceiling
+# ("cannot exceed 8192 MiB"), and 3,349 against it is 41% — real headroom.
+#
+# THE FLOOR GROWS WITH PART COUNT, so this is a stopgap, not a fix. The durable answer is fewer
+# parts to scan: stamp rows with landed_at/run_id (see fold.py — the parts carry no timestamp, which
+# is also why compaction is currently lossy) and then compact. Until then, do not reduce `mem` here
+# without re-measuring; the number that matters is the part count, not the row count.
 _ENRICH = {
     "ubereats": dict(
         label="Uber Eats item UPC/GTIN backfill (sharded)",
-        priority=11, shards=8,
-        note="separate clock from the sweep: static per-item attributes, fetched once ever"),
+        priority=11, shards=32, mem=8192,
+        note="separate clock from the sweep: static per-item attributes, fetched once ever. "
+             "32 shards x 8gb sized from measured peak RSS (~2.4gb fixed scan + ~1.5kb/row)"),
 }
 
 _FULL = {
@@ -198,13 +216,20 @@ def _catalog_entry(site):
 
 def _enrich_entry(site):
     o = _ENRICH[site]
+    # DERIVE the fallback shard from the declared count. Hardcoding it is what broke postmates: its
+    # string said '0/8' while the entry declared no `shards`, so the scheduler ran ONE machine that
+    # believed it was shard 0 of 8 and covered 1/8 of the universe, daily, reporting success. The
+    # dispatcher sets UE_SHARD for every fleet member, so this default only applies to a hand-run —
+    # but a default that disagrees with the declaration is a lie waiting for the next reader.
+    n = int(o["shards"])
     return dict(_COMMON, cost_class="free",
                 id="%s-enrich" % site, label=o["label"], cadence="daily", enabled=True,
                 code="import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_enrich as m; "
-                     "m.main(['--site','%s','--shard',os.environ.get('UE_SHARD','0/8')])" % site,
+                     "m.main(['--site','%s','--shard',os.environ.get('UE_SHARD','0/%d')])" % (site, n),
                 tables=["%s_products_parts" % site],   # writes PARTS — declaring the aggregate is
-                shards=o["shards"],                    # what made its landing delta always 0
-                mem=4096, timeout=21600, priority=o["priority"], note=o["note"])
+                shards=n,                              # what made its landing delta always 0
+                mem=int(o.get("mem", 4096)), timeout=21600,
+                priority=o["priority"], note=o["note"])
 
 
 def _full_entry(site):
