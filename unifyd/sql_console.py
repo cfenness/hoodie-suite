@@ -180,7 +180,6 @@ def run(sql, limit=None, timeout_s=None):
     cap = min(int(limit or ROW_CAP), ROW_CAP)
     with _LOCK:
         con = _con()
-        bound, failed = resolve(stmt)
         timed = {"v": False}
 
         def kill():
@@ -190,9 +189,20 @@ def run(sql, limit=None, timeout_s=None):
             except Exception:
                 pass
 
+        # The timer covers BINDING as well as the query. Creating the view for a partitioned table is
+        # not free: `read_parquet(glob, union_by_name=true)` has to open the footer of EVERY part to
+        # unify the schema, and a table with thousands of date×source parts on object storage can sit
+        # there a long time. With the timer started after resolve() (as it was first written) that bind
+        # had NO bound at all — an unbounded wait, which is worse than a refusal because nothing tells
+        # you why. The ordering is the defect; how slow a given table's bind actually is has not been
+        # measured here.
         timer = threading.Timer(float(timeout_s or TIMEOUT_S), kill)
         timer.start()
+        bound, failed = [], {}
         try:
+            bound, failed = resolve(stmt)
+            if timed["v"]:
+                raise RuntimeError("interrupted while binding")
             cur = con.execute(stmt)
             cols = [d[0] for d in cur.description]
             # fetchmany(cap + 1) — one row past the cap is how we know the result was TRUNCATED rather
@@ -203,14 +213,27 @@ def run(sql, limit=None, timeout_s=None):
         except Exception as e:
             msg = str(e)
             if timed["v"]:
-                msg = "timed out after %.0fs — narrow the scan (add a WHERE, or a LIMIT on a subquery)" % (
-                    float(timeout_s or TIMEOUT_S))
+                # Say WHICH phase ran out, because the fix differs: a slow bind means the table has too
+                # many parts to unify (nothing in the SQL will help), a slow scan means narrow the query.
+                msg = ("timed out after %.0fs while OPENING %s — that table is partitioned into enough "
+                       "parts that unifying their schemas exceeds the limit. Query one part, or raise "
+                       "SQL_TIMEOUT_S." % (float(timeout_s or TIMEOUT_S), ", ".join(_pending(stmt, bound)))
+                       if not bound or _pending(stmt, bound) else
+                       "timed out after %.0fs — narrow the scan (add a WHERE, or a LIMIT on a subquery)"
+                       % float(timeout_s or TIMEOUT_S))
             return {"ok": False, "error": msg[:600], "bound": bound, "unbound": failed,
                     "elapsed_s": round(time.time() - t0, 2), "sql": stmt}
         finally:
             timer.cancel()
     return {"ok": True, "columns": cols, "rows": rows, "row_count": len(rows), "truncated": truncated,
             "bound": bound, "unbound": failed, "elapsed_s": round(time.time() - t0, 2), "sql": stmt}
+
+
+def _pending(sql, bound):
+    """Tables the statement names that never finished binding — the ones a bind timeout is about."""
+    known = _known()
+    words = re.findall(r"[a-zA-Z_][a-zA-Z_0-9]*", _strip(sql))
+    return [w for w in dict.fromkeys(words) if w in known and w not in set(bound)]
 
 
 def _cell(v):
