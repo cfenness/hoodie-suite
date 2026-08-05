@@ -67,8 +67,11 @@ if [ "$DISPATCHER_TAG" = "$APP_TAG" ]; then
 fi
 
 echo "re-pinning dispatcher $DISPATCHER"
-echo "  from: ${DISPATCHER_IMAGE##*:}"
-echo "  to:   ${APP_IMAGE##*:}"
+# Use the NORMALIZED tags read above. `$DISPATCHER_IMAGE` was never assigned (the read pulls
+# DISPATCHER_TAG), so this line printed an empty "from:" — losing the one fact the re-pin exists to
+# record: which image the scheduler had been stuck on.
+echo "  from: ${DISPATCHER_TAG}"
+echo "  to:   ${APP_TAG}"
 
 # --schedule/--restart are re-asserted because `machine update` rewrites the whole config.
 "$FLYCTL" machine update "$DISPATCHER" -a "$APP" \
