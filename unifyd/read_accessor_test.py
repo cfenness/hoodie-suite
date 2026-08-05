@@ -39,14 +39,20 @@ ROOT = os.path.dirname(HERE)
 BASELINE = {
     # warehouse.py IS the accessor — it owns path resolution, and its own glob use is the fallback
     # inside _partition_files, which lists files rather than passing the pattern to DuckDB.
-    "unifyd/warehouse.py": (99, "the accessor itself; verified by warehouse_compat_test + "
-                                "warehouse_falsezero_test which read every layout through it"),
+    # PINNED TO THE MEASURED COUNT, not a ceiling. `99` was here first and it made this ratchet
+    # unfailable for the two files most likely to grow a new glob — you cannot shrink a number that
+    # was never the real count, and you cannot notice a regression against a limit nobody is near.
+    # That is the same defect this file exists to catch, one level up. (These are AST string
+    # constants with docstrings excluded; a grep counts more because it also sees the prose.)
+    "unifyd/warehouse.py": (3, "the accessor itself; verified by warehouse_compat_test + "
+                               "warehouse_falsezero_test, which read every layout through it"),
     # monitor.read_expr still builds a glob for date-partitioned tables. It is bounded in practice —
     # sql_console caps a bind at 60 parts and the console drawer at 40 — but it is NOT proven safe at
     # 3,824, so it is baselined as KNOWN-UNFIXED rather than as safe. Fix by routing through
     # attach_view; then drop this entry.
-    "unifyd/monitor.py": (99, "KNOWN-UNFIXED, not proven safe: read_expr globs a partitioned table. "
-                              "Callers bound the part count today; the glob itself is unmeasured."),
+    "unifyd/monitor.py": (3, "KNOWN-UNFIXED, not proven safe: read_expr globs a partitioned table. "
+                             "Callers bound the part count today (sql_console 60, drawer 40); the "
+                             "glob itself is unmeasured at 3,824. Fix by routing through attach_view."),
     # NOT our warehouse: Foursquare's public open-data bucket (fsq-os-places-us-east-1), a vendor
     # release path we do not own and cannot resolve to a file list. The measured corruption is about
     # OUR partition counts; this is a fixed vendor release read once.
@@ -56,9 +62,19 @@ BASELINE = {
     # KNOWN-UNFIXED rather than converted, because the nested layout it reads is not one attach_view
     # covers and I have not measured its part count. Converting it blind would be the same unverified
     # confidence that caused today's other four. Fix = establish the layout, then route it.
-    "unifyd/sipsource_ingest.py": (2, "KNOWN-UNFIXED, not proven safe: _raw_glob builds "
-                                      "<bucket>/<prefix>/<name>/**/*.parquet over OUR warehouse; "
-                                      "nested layout unmeasured, attach_view does not cover it"),
+    # KNOWN-UNFIXED and MEASURED, which is the difference between a landmine and a note.
+    #   the defect:      _raw_glob builds <bucket>/<prefix>/<name>/**/*.parquet over OUR warehouse —
+    #                    same call form as the five fixed here, and `**/` is WORSE than the flat glob
+    #                    the corruption was measured on, since it can match arbitrarily more files.
+    #   reachability:    `build-sipsource-marts` is enabled=False and waits on a `sipsource-feed`
+    #                    source that does not exist (verified in source_registry.py).
+    #   exposure:        0. Measured on Fly 2026-08-05 — the sip_raw / sipsource_raw / sipsource
+    #                    prefixes do not exist in the warehouse, so there is nothing for the glob to
+    #                    match and no live path reaches it.
+    # Fix = route through the accessor when the real feed lands; do NOT convert it blind before then.
+    "unifyd/sipsource_ingest.py": (2, "KNOWN-UNFIXED but unreachable: enabled=False, upstream source "
+                                      "absent, and 0 objects under its prefixes (measured on Fly "
+                                      "2026-08-05). Same defect class as the five fixed here."),
 }
 
 
@@ -144,6 +160,21 @@ class NoHandRolledGlobs(unittest.TestCase):
                 for line, snip in sample:
                     msg.append("      %s:%d  %s" % (rel, line, snip))
             self.fail("\n".join(msg))
+
+    def test_baseline_is_the_measured_count_not_a_ceiling(self):
+        """A baseline set above the real count is a guard that cannot fail.
+
+        The first version of this file used 99 for warehouse.py and monitor.py — which is not a count,
+        it is "unlimited", and it made the ratchet unfailable for the two files most likely to grow a
+        new glob. It also breaks the property the whole design rests on: you cannot SHRINK a number
+        that was never the real count. Caught in review, and it is the same defect this file exists to
+        catch, one level up.
+        """
+        for rel, (allowed, _why) in BASELINE.items():
+            n = len(_star_strings(os.path.join(ROOT, rel)))
+            self.assertEqual(n, allowed,
+                             "%s: baseline %d but %d measured — pin it to the count, and shrink it as "
+                             "sites are fixed" % (rel, allowed, n))
 
     def test_baseline_only_shrinks(self):
         """Every baselined module must still exist and still be at or under its entry.
