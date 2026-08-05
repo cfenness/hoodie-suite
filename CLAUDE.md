@@ -284,6 +284,17 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   blank dimension stays UNRESOLVED rather than landing empty. An empty queue and an **unbuilt pool**
   are reported distinctly (`pool_built`) — one means "you're done", the other means "run the build".
   The CSV drop survives as the offline path.
+  **The surface opens on a 25-row BATCH, easiest first.** One pair at a time is the right shape for a
+  hard call and the wrong shape for the first thousand — most of the queue is obvious on sight, and a
+  card each is the slow way to answer questions nobody needs a card for. The two orderings point
+  OPPOSITE ways and both are kept: `priority` puts the most informative pair first (right once a
+  vocabulary exists), `EASE` puts the obvious ones first (right on day one, when the goal is volume).
+  The visible page is **PINNED** — recomputing it from "everything unanswered" on each click made
+  answered rows vanish and the rest jump up a slot, so the button under the cursor belonged to a
+  different pair by the second click. Moving to the next page leaves blanks UNANSWERED rather than
+  auto-skipping them, because a page you moved past is not a judgement. A bulk verdict records the
+  LABEL (what the precision gate measures) and teaches no vocabulary — that still comes from the
+  resolver, so every row keeps a Resolve button.
   **`unifyd/product_taxonomy.py` — the canonical Type → Class → Sub Class → Varietal hierarchy**
   (`/api/xsource/taxonomy`, 9 types / 73 classes / 390 sub classes / 507 fourth-level values), which the
   resolver's four levels cascade over: each level is filtered by the one above, because a Class is
