@@ -65,7 +65,18 @@ def main():
           stages.stage_of("zzz_mystery_thing") is None)
 
     # --- build(): the join, fully injected ------------------------------------------------------
-    inv = {"writes": {"src_outlets": ["a.py", "b.py", "c.py"], "binnys_products": ["binnys.py"]},
+    # SHAPE MATCHES data_inventory.build() EXACTLY. The first version of this test invented a
+    # {table: [modules]} mapping; the real thing is {"tables": {t: {"writers": [call-site dicts]}}}.
+    # The test passed and the endpoint raised TypeError against the live warehouse — a test that
+    # asserts an invented shape proves nothing. `test_writer.py` is present on purpose: a fixture
+    # seeding a table is NOT a production writer and must not count toward multi-writer.
+    def _w(mod, is_test=False):
+        return {"table": None, "writer": "write_accumulate", "layout": "merge",
+                "module": mod, "line": 1, "is_test": is_test,
+                "pins_dtypes": None, "declares_fields": True}
+    inv = {"tables": {"src_outlets": {"writers": [_w("a.py"), _w("b.py"), _w("c.py"),
+                                                  _w("outlet_test.py", is_test=True)]},
+                      "binnys_products": {"writers": [_w("binnys.py")]}},
            "registry": {"binnys": {"id": "binnys", "tables": ["binnys_products"]}}}
     counts = {
         "binnys_products": {"rows": 1000, "modified": NOW - 60, "error": None},
@@ -107,6 +118,24 @@ def main():
           s["unmeasured"] == expect_unknown, "%s vs expected %d" % (s, expect_unknown))
     check("summary counts multi-writer tables", s["multi_writer"] == 1, str(s))
     check("summary total matches the rows built", s["tables"] == len(rows))
+
+    # --- the shape this module consumes must match the tool that produces it -------------------
+    # data_inventory is ast-only (no creds, no network), so the REAL shape is checkable offline.
+    try:
+        sys.path.insert(0, os.path.join(HERE, "..", "tools"))
+        import data_inventory
+        real = data_inventory.build()
+        check("data_inventory still exposes tables{} -> writers[]",
+              isinstance(real.get("tables"), dict)
+              and all(isinstance(v.get("writers"), list) for v in list(real["tables"].values())[:5]))
+        sample = next(iter(real["tables"].values()))["writers"][0]
+        check("writer records still carry module + is_test",
+              "module" in sample and "is_test" in sample, str(sorted(sample)))
+        built = stages.build(counts={}, watermarks={}, inventory=real, now=NOW)
+        check("build() survives the REAL inventory (the bug this test missed)",
+              isinstance(built, list) and len(built) > 0)
+    except ImportError:
+        print("  SKIP data_inventory shape check (tool not importable here)")
 
     print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
     return 1 if FAILED else 0
