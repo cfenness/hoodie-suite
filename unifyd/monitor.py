@@ -237,7 +237,7 @@ def warehouse_identity():
             "bucket": None}
 
 
-_FOOTER_CACHE = {}                                            # name -> (mtime, rows, fields) — skip unchanged footers
+_FOOTER_CACHE = {}                                            # rel -> (mtime, rows, fields, size) — skip unchanged footers
 _FOOTER_CACHE_KEY = "_footer_cache.json.gz"
 _FOOTER_CACHE_MAX_MB = 64                                     # refuse to persist beyond this — a cache is not a catalog
 _footer_cache_state = {"loaded": False, "dirty": False}
@@ -277,8 +277,12 @@ def _footer_cache_load():
         blob = json.loads(gzip.decompress(raw).decode("utf-8"))
         schemas = blob.get("schemas") or []
         for rel, v in (blob.get("files") or {}).items():
-            mod, rows, si = v
-            _FOOTER_CACHE[rel] = (mod, rows, schemas[si] if 0 <= si < len(schemas) else [])
+            # v1 entries are [mod, rows, si] — no size, so they were never size-checked. Hydrate them
+            # with size=None, which never matches a real listing size and therefore forces one honest
+            # re-read. A stale count is the bug being fixed; carrying it forward would preserve it.
+            mod, rows, si = v[0], v[1], v[2]
+            siz = v[3] if len(v) > 3 else None
+            _FOOTER_CACHE[rel] = (mod, rows, schemas[si] if 0 <= si < len(schemas) else [], siz)
     except Exception:
         _FOOTER_CACHE.clear()          # a HALF-hydrated cache is worse than none: clear and sweep cold
 
@@ -303,14 +307,15 @@ def _footer_cache_save(live_keys):
             ent = _FOOTER_CACHE.get(rel)
             if not ent:
                 continue
-            mod, rows, fields = ent
+            mod, rows, fields = ent[0], ent[1], ent[2]
+            siz = ent[3] if len(ent) > 3 else None
             key = tuple(fields or ())
             si = idx.get(key)
             if si is None:
                 si = idx[key] = len(schemas)
                 schemas.append(list(key))
-            files[rel] = [mod, rows, si]
-        payload = gzip.compress(json.dumps({"v": 1, "schemas": schemas, "files": files}).encode("utf-8"), 6)
+            files[rel] = [mod, rows, si, siz]
+        payload = gzip.compress(json.dumps({"v": 2, "schemas": schemas, "files": files}).encode("utf-8"), 6)
         if len(payload) > _FOOTER_CACHE_MAX_MB * 1024 * 1024:
             return                      # implausibly large — skip rather than push a huge blob every tick
         warehouse.put_bytes(_FOOTER_CACHE_KEY, payload)
@@ -351,6 +356,18 @@ def _list_datasets_fast(workers=80):
                 rel = os.path.relpath(p, root)
                 infos.append((rel.replace(os.sep, "/"), p, None))
 
+        def _size(info, path):
+            """Byte size from the listing — free, and the half of the cache key that mtime misses."""
+            if info is not None:
+                try:
+                    return info.size
+                except Exception:
+                    return None
+            try:
+                return os.path.getsize(path)
+            except Exception:
+                return None
+
         def _mtime(path, info):
             if info is not None:
                 try:
@@ -365,15 +382,21 @@ def _list_datasets_fast(workers=80):
         def read_one(item):
             rel, path, info = item
             mod = _mtime(path, info)
+            siz = _size(info, path)
             # INCREMENTAL: a footer (rows/schema) only changes when the file is rewritten. The listing gives
             # mtime cheaply — re-read the footer ONLY when mtime moved; reuse the cache otherwise. Turns a
             # ~40s full sweep into ~2s once warm, so the console's counts refresh near-live as pulls land.
+            # Keyed on (mtime, SIZE), not mtime alone: a part rewritten in place can come back with an
+            # unchanged mtime from object storage, and the cache then serves the OLD row count forever —
+            # a wrong number that never self-corrects. Size comes free from the listing and moves whenever
+            # the content does.
             cached = _FOOTER_CACHE.get(rel)
-            if cached and cached[0] == mod and mod is not None:
+            if cached and cached[0] == mod and mod is not None and (
+                    cached[3] if len(cached) > 3 else None) == siz:
                 return rel, mod, cached[1], cached[2]
             try:
                 md = pq.read_metadata(path, filesystem=s3) if s3 is not None else pq.read_metadata(path)
-                _FOOTER_CACHE[rel] = (mod, md.num_rows, list(md.schema.names))
+                _FOOTER_CACHE[rel] = (mod, md.num_rows, list(md.schema.names), siz)
                 _footer_cache_state["dirty"] = True     # something was actually re-read — worth persisting
                 return rel, mod, md.num_rows, list(md.schema.names)
             except Exception:
@@ -383,14 +406,49 @@ def _list_datasets_fast(workers=80):
             footers = list(ex.map(read_one, infos))
         _footer_cache_save({rel for rel, _p, _i in infos})   # prune to what the listing just proved exists
 
-        out, parted = [], {}
+        # WHICH FILES ACTUALLY COUNT. A BUCKETED (v2) table is defined by its manifest, not by what is
+        # lying in its directory, and two things live there that must NOT be summed:
+        #   - SUPERSEDED buckets. _accumulate_bucketed writes part-v<n>.parquet and points the manifest
+        #     at the new one; the previous version stays on disk. binnys_products: 21 files, 16 active.
+        #   - the pre-migration ROLLBACK COPY at top-level <name>.parquet, which migrate_to_bucketed
+        #     deliberately leaves behind.
+        # Summing the directory blind, and then ALSO emitting the top-level file under the SAME NAME,
+        # is why four tables appeared twice in the console with two different row counts each and the
+        # warehouse total read ~4.8M rows high. Measured 2026-08-05:
+        #   src_outlets        listed 1,768,869 AND 2,852,159   manifest truth 1,916,357
+        #   ubereats_products  listed   597,308 AND 2,160,806   manifest truth 2,160,806
+        #   binnys_products    listed 1,534,862 AND 1,534,938   manifest truth 1,534,862
+        #   scrape_runs        listed         2 AND       265
+        # A count nobody can reconcile is worse than no count: it makes every number on the page
+        # arguable. So a bucketed table is counted from its manifest's ACTIVE parts and emitted ONCE.
+        active = {}                                                  # table -> set(relative part path)
+        try:
+            import warehouse as _wh
+            for man in _wh._list_manifests():
+                if man.get("layout") != "bucketed":
+                    continue
+                nm = man.get("name") or man.get("table")
+                if not nm:
+                    continue
+                active[nm] = {f.split("/%s/" % _wh._prefix(), 1)[-1].lstrip("/")
+                              for p in (man.get("parts") or {}).values() for f in (p.get("files") or [])}
+        except Exception:
+            active = {}                                              # no manifests readable → old behaviour
+
+        out, parted, seen = [], {}, set()
         for rel, mod, rows, fields in footers:
-            if "/" not in rel:                                       # top-level <name>.parquet — as before
-                out.append({"name": rel[:-8], "rows": rows, "fields": fields, "modified": mod})
+            if "/" not in rel:                                       # top-level <name>.parquet
+                nm = rel[:-8]
+                if nm in active:
+                    continue                                         # the migration's rollback copy — not the table
+                out.append({"name": nm, "rows": rows, "fields": fields, "modified": mod})
+                seen.add(nm)
                 continue
             top = rel.split("/", 1)[0]
             if top == "_manifest":                                   # v2 layout manifests, not data
                 continue
+            if top in active and rel not in active[top]:
+                continue                                             # superseded bucket version
             d = parted.setdefault(top, {"name": top, "rows": 0, "fields": [], "modified": None,
                                         "partitioned": True, "parts": []})
             d["rows"] += rows
@@ -400,6 +458,12 @@ def _list_datasets_fast(workers=80):
             d["parts"].append({"part": rel.rsplit("/", 1)[-1][:-8], "rows": rows, "modified": mod})
         for d in parted.values():
             d.pop("_ffrom", None)
+            if d["name"] in active:
+                d["bucketed"] = True                                 # a manifest table, not a date-partitioned one
+            if d["name"] in seen:
+                # A directory AND a top-level file under one name, with no manifest to arbitrate. Emit the
+                # directory and SAY the name is ambiguous rather than silently picking one.
+                d["ambiguous"] = True
             out.append(d)
         return out
     except Exception:
@@ -820,6 +884,17 @@ def read_expr(name):
     (preview / sample / search) goes through this so partitioned tables (retail_observations) are readable
     like any other dataset instead of 404ing on a nonexistent single file."""
     import warehouse
+    # BUCKETED (v2) first: rows live at <name>/__b=<hex>/part-v<n>.parquet, so BOTH other branches are
+    # wrong for it — the partitioned glob <name>/*.parquet is a directory level too shallow and matches
+    # nothing, and uri(name) resolves to the pre-migration rollback copy, which is stale data wearing the
+    # table's name. That is why the console's data drawer showed nothing for binnys_products,
+    # src_outlets and ubereats_products (5.6M rows) while listing them with row counts.
+    man = warehouse.read_manifest(name)
+    if man and man.get("layout") == "bucketed":
+        files = [f for p in (man.get("parts") or {}).values() for f in (p.get("files") or [])]
+        if files:
+            lst = ", ".join("'%s'" % warehouse._part_sql_path(f).replace("'", "") for f in files)
+            return "read_parquet([%s], union_by_name=true)" % lst
     s = next((x for x in (_CACHE["data"] or {}).get("sources", []) if x["name"] == name), None)
     if s and s.get("partitioned"):
         glob = ("s3://%s/%s/%s/*.parquet" % (warehouse._bucket(), warehouse._prefix(), name)) \
