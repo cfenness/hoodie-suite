@@ -16,16 +16,17 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `sell_sheet_url` | `VARCHAR` |
-| `package_name` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `distributor_ids` | `VARCHAR` |
-| `product_ids` | `VARCHAR` |
-| `n_source_rows` | `BIGINT` |
-| `extracted_at` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `sell_sheet_url` | `VARCHAR` | 100.0% |
+| `package_name` | `VARCHAR` | 100.0% |
+| `upc` | `VARCHAR` | 61.8% |
+| `distributor_ids` | `VARCHAR` | 100.0% |
+| `product_ids` | `VARCHAR` | 100.0% |
+| `n_source_rows` | `BIGINT` | 100.0% |
+| `extracted_at` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (7,609 rows).
 
 ## Writers
 

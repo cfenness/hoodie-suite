@@ -2,10 +2,10 @@
 
 |  |  |
 |---|---|
-| Status | **never landed** |
-| Rows | — |
-| Columns | — |
-| Storage | — |
+| Status | landed |
+| Rows | 2 |
+| Columns | 8 |
+| Storage | single file |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated) |
@@ -14,8 +14,20 @@
 | URI | `s3://hoodie-suite-warehouse/warehouse/xsource_taxonomy.parquet` |
 
 
-> The table does not exist in the warehouse: `HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/xsource_taxonomy.parquet' in region 'auto' (HTTP 404 Not Found)`
+## Columns
 
+| column | type | filled |
+|---|---|---|
+| `path_key` | `VARCHAR` | 100.0% |
+| `canon_type` | `VARCHAR` | 100.0% |
+| `canon_class` | `VARCHAR` | 100.0% |
+| `canon_subclass` | `VARCHAR` | 100.0% |
+| `canon_varietal` | `VARCHAR` | 100.0% |
+| `times` | `BIGINT` | 100.0% |
+| `first_seen` | `VARCHAR` | 100.0% |
+| `last_seen` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (2 rows).
 
 ## Writers
 

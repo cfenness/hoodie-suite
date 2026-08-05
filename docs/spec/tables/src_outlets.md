@@ -16,36 +16,38 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `store_name` | `VARCHAR` |
-| `chain` | `VARCHAR` |
-| `is_chain` | `BOOLEAN` |
-| `f_beer` | `BOOLEAN` |
-| `f_wine` | `BOOLEAN` |
-| `f_spirits` | `BOOLEAN` |
-| `f_hemp` | `BOOLEAN` |
-| `f_cannabis` | `BOOLEAN` |
-| `f_rtd_spirits` | `BOOLEAN` |
-| `flag_basis` | `VARCHAR` |
-| `license_conflict` | `BOOLEAN` |
-| `address` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `zip` | `VARCHAR` |
-| `lat` | `DOUBLE` |
-| `lng` | `DOUBLE` |
-| `phone` | `VARCHAR` |
-| `addr_valid` | `BOOLEAN` |
-| `hoodie_outlet` | `VARCHAR` |
-| `name_key` | `VARCHAR` |
-| `phone_norm` | `VARCHAR` |
-| `addr_key` | `VARCHAR` |
-| `geo_cell` | `VARCHAR` |
-| `county_fips` | `VARCHAR` |
-| `geo_precision` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | — |
+| `store_id` | `VARCHAR` | — |
+| `store_name` | `VARCHAR` | — |
+| `chain` | `VARCHAR` | — |
+| `is_chain` | `BOOLEAN` | — |
+| `f_beer` | `BOOLEAN` | — |
+| `f_wine` | `BOOLEAN` | — |
+| `f_spirits` | `BOOLEAN` | — |
+| `f_hemp` | `BOOLEAN` | — |
+| `f_cannabis` | `BOOLEAN` | — |
+| `f_rtd_spirits` | `BOOLEAN` | — |
+| `flag_basis` | `VARCHAR` | — |
+| `license_conflict` | `BOOLEAN` | — |
+| `address` | `VARCHAR` | — |
+| `city` | `VARCHAR` | — |
+| `state` | `VARCHAR` | — |
+| `zip` | `VARCHAR` | — |
+| `lat` | `DOUBLE` | — |
+| `lng` | `DOUBLE` | — |
+| `phone` | `VARCHAR` | — |
+| `addr_valid` | `BOOLEAN` | — |
+| `hoodie_outlet` | `VARCHAR` | — |
+| `name_key` | `VARCHAR` | — |
+| `phone_norm` | `VARCHAR` | — |
+| `addr_key` | `VARCHAR` | — |
+| `geo_cell` | `VARCHAR` | — |
+| `county_fips` | `VARCHAR` | — |
+| `geo_precision` | `VARCHAR` | — |
+
+_Fill rates not measured — rerun `spec_capture.py --fill`. Without them this is a list of columns, not a statement of what is captured._
 
 
 ## Writers

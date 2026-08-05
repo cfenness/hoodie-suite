@@ -16,11 +16,13 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `store_uuid` | `VARCHAR` |
-| `store_name` | `VARCHAR` |
-| `slug` | `VARCHAR` |
-| `url` | `VARCHAR` |
-| `source` | `VARCHAR` |
-| `captured_at` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `store_uuid` | `VARCHAR` | 100.0% |
+| `store_name` | `VARCHAR` | 100.0% |
+| `slug` | `VARCHAR` | 100.0% |
+| `url` | `VARCHAR` | 100.0% |
+| `source` | `VARCHAR` | 100.0% |
+| `captured_at` | `BIGINT` | 100.0% |
+
+Fill measured over **full table** (269,007 rows).

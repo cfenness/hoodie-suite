@@ -16,26 +16,32 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `cluster_id` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `fanciful` | `VARCHAR` |
-| `class_type` | `VARCHAR` |
-| `size_ml` | `VARCHAR` |
-| `supplier` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `corroborated_by` | `VARCHAR` |
-| `confidence` | `DOUBLE` |
-| `match_kind` | `VARCHAR` |
-| `size_matched` | `BOOLEAN` |
-| `candidate_name` | `VARCHAR` |
-| `matched_by` | `VARCHAR` |
-| `member_count` | `BIGINT` |
-| `members` | `VARCHAR` |
-| `first_day` | `BIGINT` |
-| `last_day` | `BIGINT` |
-| `tier` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `cluster_id` | `VARCHAR` | 100.0% |
+| `brand` | `VARCHAR` | 100.0% |
+| `fanciful` | `VARCHAR` | **0%** ‹never populated› |
+| `class_type` | `VARCHAR` | 100.0% |
+| `size_ml` | `VARCHAR` | **0%** ‹never populated› |
+| `supplier` | `VARCHAR` | 100.0% |
+| `upc` | `VARCHAR` | 42.4% |
+| `corroborated_by` | `VARCHAR` | 100.0% |
+| `confidence` | `DOUBLE` | 100.0% |
+| `match_kind` | `VARCHAR` | 100.0% |
+| `size_matched` | `BOOLEAN` | 100.0% |
+| `candidate_name` | `VARCHAR` | 100.0% |
+| `matched_by` | `VARCHAR` | 100.0% |
+| `member_count` | `BIGINT` | 100.0% |
+| `members` | `VARCHAR` | 100.0% |
+| `first_day` | `BIGINT` | 100.0% |
+| `last_day` | `BIGINT` | 100.0% |
+| `tier` | `BIGINT` | 100.0% |
+
+Fill measured over **full table** (1,462 rows).
+
+> **2 columns never populated:** `fanciful`, `size_ml`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ## Writers

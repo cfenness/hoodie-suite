@@ -8,7 +8,7 @@
 |---|---|
 | Registry id | `build-product-master` |
 | Runs | `import build_product_master as m; m.build()` |
-| Module | `unifyd/build_product_master.py` — 868 lines |
+| Module | `unifyd/build_product_master.py` — 923 lines |
 | Cadence | every 12h |
 | Enabled | **yes** |
 | Executor class | `build` |
@@ -28,7 +28,7 @@
 _No literal endpoint constant in `build_product_master.py`._ The transport is either inherited from a shared fetcher or built at run time — read the module.
 
 
-**Depends on** `category_tree`, `class_type`, `dict_apply`, `hoodie_ids`, `identity_resolve`, `master_apply`, `normalize`, `placeholders`, `precleanse`, `price_signal`, `sku_match`, `upc`, `warehouse`, `wb_views`
+**Depends on** `category_tree`, `class_type`, `dict_apply`, `hoodie_ids`, `identity_resolve`, `master_apply`, `normalize`, `placeholders`, `precleanse`, `price_signal`, `provenance`, `sku_match`, `upc`, `warehouse`, `wb_views`
 
 
 ## 3. What it lands
@@ -39,22 +39,28 @@ _No literal endpoint constant in `build_product_master.py`._ The transport is ei
 1,180,839 rows · 14 columns
 
 
-| column | type |
-|---|---|
-| `sku_key` | `VARCHAR` |
-| `item_key` | `VARCHAR` |
-| `pack` | `BIGINT` |
-| `upc` | `VARCHAR` |
-| `gtin` | `INTEGER` |
-| `vintage` | `VARCHAR` |
-| `edition` | `INTEGER` |
-| `resolved_id` | `VARCHAR` |
-| `source_rows` | `BIGINT` |
-| `sources` | `BIGINT` |
-| `source_list` | `VARCHAR[]` |
-| `master_created_at` | `INTEGER` |
-| `master_updated_at` | `INTEGER` |
-| `updated_by` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `sku_key` | `VARCHAR` | 100.0% |
+| `item_key` | `VARCHAR` | 100.0% |
+| `pack` | `BIGINT` | **1.7%** |
+| `upc` | `VARCHAR` | 9.8% |
+| `gtin` | `INTEGER` | **0%** ‹never populated› |
+| `vintage` | `VARCHAR` | 20.4% |
+| `edition` | `INTEGER` | **0%** ‹never populated› |
+| `resolved_id` | `VARCHAR` | 100.0% |
+| `source_rows` | `BIGINT` | 100.0% |
+| `sources` | `BIGINT` | 100.0% |
+| `source_list` | `VARCHAR[]` | 100.0% |
+| `master_created_at` | `INTEGER` | 100.0% |
+| `master_updated_at` | `INTEGER` | 100.0% |
+| `updated_by` | `VARCHAR` | 100.0% |
+
+Fill measured over **first 400,000 rows** (400,000 rows).
+
+> **2 columns never populated:** `gtin`, `edition`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ## 4. `build_product_master.py` — the module's own account

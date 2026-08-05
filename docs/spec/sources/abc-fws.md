@@ -38,30 +38,36 @@
 
 ### `retail_observations`
 
-59,077,605 rows · 19 columns · 4,296 partitions · **3 different schemas in a 6-partition sample — this table has drifted**
+60,510,145 rows · 19 columns · 4,327 partitions · **2 different schemas in a 6-partition sample — this table has drifted**
 
 
-| column | type |
-|---|---|
-| `date` | `VARCHAR` |
-| `observed_at` | `BIGINT` |
-| `source` | `VARCHAR` |
-| `chain` | `VARCHAR` |
-| `store` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `product_id` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `gtin` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `price` | `DOUBLE` |
-| `promo` | `DOUBLE` |
-| `promo_text` | `VARCHAR` |
-| `on_promo` | `BOOLEAN` |
-| `in_stock` | `BOOLEAN` |
-| `qty` | `DOUBLE` |
-| `stock_level` | `VARCHAR` |
-| `is_hemp` | `BOOLEAN` |
+| column | type | filled |
+|---|---|---|
+| `date` | `VARCHAR` | 100.0% |
+| `observed_at` | `BIGINT` | 100.0% |
+| `source` | `VARCHAR` | 100.0% |
+| `chain` | `VARCHAR` | **0%** ‹never populated› |
+| `store` | `VARCHAR` | 100.0% |
+| `store_id` | `VARCHAR` | 100.0% |
+| `product_id` | `VARCHAR` | 100.0% |
+| `upc` | `VARCHAR` | **0%** ‹never populated› |
+| `gtin` | `VARCHAR` | **0%** ‹never populated› |
+| `brand` | `VARCHAR` | 80.7% |
+| `name` | `VARCHAR` | 100.0% |
+| `price` | `DOUBLE` | 99.7% |
+| `promo` | `DOUBLE` | **0%** ‹never populated› |
+| `promo_text` | `VARCHAR` | **0%** ‹never populated› |
+| `on_promo` | `BOOLEAN` | 100.0% |
+| `in_stock` | `BOOLEAN` | 100.0% |
+| `qty` | `DOUBLE` | 81.1% |
+| `stock_level` | `VARCHAR` | **0.2%** |
+| `is_hemp` | `BOOLEAN` | 100.0% |
+
+Fill measured over **newest 40 of 4327 partitions** (1,756,522 rows).
+
+> **5 columns never populated:** `chain`, `upc`, `gtin`, `promo`, `promo_text`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 **Written by** `observe.py:156` (write_partition)
@@ -72,15 +78,21 @@
 14,098 rows · 7 columns
 
 
-| column | type |
-|---|---|
-| `sku` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `size` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `price` | `DOUBLE` |
-| `url` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `sku` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `brand` | `VARCHAR` | **0%** ‹never populated› |
+| `size` | `VARCHAR` | 70.2% |
+| `upc` | `VARCHAR` | 20.1% |
+| `price` | `DOUBLE` | 100.0% |
+| `url` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (14,098 rows).
+
+> **1 column never populated:** `brand`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 **Written by** `abc_catalog.py:77` (write_accumulate), `abc_catalog.py:68` (write_accumulate), `abc_fws_scraper.py:435` (write_accumulate)

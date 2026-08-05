@@ -39,14 +39,15 @@ _No literal endpoint constant in `city_centroid.py`._ The transport is either in
 68,747 rows · 5 columns
 
 
-| column | type |
-|---|---|
-| `state` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `lat` | `DOUBLE` |
-| `lng` | `DOUBLE` |
-| `kind` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `state` | `VARCHAR` | 100.0% |
+| `city` | `VARCHAR` | 100.0% |
+| `lat` | `DOUBLE` | 100.0% |
+| `lng` | `DOUBLE` | 100.0% |
+| `kind` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (68,747 rows).
 
 **Written by** `city_centroid.py:93` (write_parquet)
 

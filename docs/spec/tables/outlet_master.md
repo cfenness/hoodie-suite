@@ -16,26 +16,32 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `outlet_id` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `street` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `phone` | `VARCHAR` |
-| `lat` | `DOUBLE` |
-| `lng` | `DOUBLE` |
-| `sources` | `VARCHAR` |
-| `source_count` | `BIGINT` |
-| `doordash_id` | `VARCHAR` |
-| `toast_guid` | `VARCHAR` |
-| `ubereats_id` | `VARCHAR` |
-| `doordash_menu_date` | `VARCHAR` |
-| `toast_menu_date` | `VARCHAR` |
-| `ubereats_menu_date` | `VARCHAR` |
-| `freshest_source` | `VARCHAR` |
-| `freshest_date` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `outlet_id` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `street` | `VARCHAR` | **0.2%** |
+| `city` | `VARCHAR` | 100.0% |
+| `state` | `VARCHAR` | 99.9% |
+| `phone` | `VARCHAR` | **0%** ‹never populated› |
+| `lat` | `DOUBLE` | **0%** ‹never populated› |
+| `lng` | `DOUBLE` | **0%** ‹never populated› |
+| `sources` | `VARCHAR` | 100.0% |
+| `source_count` | `BIGINT` | 100.0% |
+| `doordash_id` | `VARCHAR` | 100.0% |
+| `toast_guid` | `VARCHAR` | **0%** ‹never populated› |
+| `ubereats_id` | `VARCHAR` | **0%** ‹never populated› |
+| `doordash_menu_date` | `VARCHAR` | **0.3%** |
+| `toast_menu_date` | `VARCHAR` | **0%** ‹never populated› |
+| `ubereats_menu_date` | `VARCHAR` | **0%** ‹never populated› |
+| `freshest_source` | `VARCHAR` | **0.3%** |
+| `freshest_date` | `VARCHAR` | **0.3%** |
+
+Fill measured over **first 400,000 rows** (400,000 rows).
+
+> **7 columns never populated:** `phone`, `lat`, `lng`, `toast_guid`, `ubereats_id`, `toast_menu_date`, `ubereats_menu_date`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ## Writers

@@ -3,10 +3,10 @@
 |  |  |
 |---|---|
 | Status | landed |
-| Rows | 31,562,723 |
+| Rows | 31,570,028 |
 | Columns | 8 |
 | Storage | partitioned |
-| Partitions | 3,882 |
+| Partitions | 3,887 |
 | Schema drift | uniform in sample |
 | Write mode | partitioned (append-only parts) |
 | Declared in `table_spec.py` | no — schema is whatever the writer emits |
@@ -16,17 +16,18 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `day` | `VARCHAR` |
-| `captured_at` | `BIGINT` |
-| `kind` | `VARCHAR` |
-| `entity_id` | `VARCHAR` |
-| `parent_id` | `VARCHAR` |
-| `url` | `VARCHAR` |
-| `raw_json` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `day` | `VARCHAR` | 100.0% |
+| `captured_at` | `BIGINT` | 100.0% |
+| `kind` | `VARCHAR` | 100.0% |
+| `entity_id` | `VARCHAR` | 100.0% |
+| `parent_id` | `VARCHAR` | 99.9% |
+| `url` | `VARCHAR` | **0.1%** |
+| `raw_json` | `VARCHAR` | 100.0% |
 
+Fill measured over **newest 40 of 3887 partitions** (290,664 rows).
 
 ## Writers
 

@@ -16,19 +16,20 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `catalog_id` | `VARCHAR` |
-| `product_id` | `VARCHAR` |
-| `group` | `VARCHAR` |
-| `property` | `VARCHAR` |
-| `label` | `VARCHAR` |
-| `value_index` | `BIGINT` |
-| `value` | `VARCHAR` |
-| `asset_name` | `VARCHAR` |
-| `day` | `VARCHAR` |
-| `captured_at` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `catalog_id` | `VARCHAR` | 100.0% |
+| `product_id` | `VARCHAR` | 100.0% |
+| `group` | `VARCHAR` | 100.0% |
+| `property` | `VARCHAR` | 100.0% |
+| `label` | `VARCHAR` | 100.0% |
+| `value_index` | `BIGINT` | 100.0% |
+| `value` | `VARCHAR` | 100.0% |
+| `asset_name` | `VARCHAR` | 6.4% |
+| `day` | `VARCHAR` | 100.0% |
+| `captured_at` | `BIGINT` | 100.0% |
 
+Fill measured over **newest 40 of 314 partitions** (925,273 rows).
 
 ## Writers
 

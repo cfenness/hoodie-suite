@@ -16,18 +16,24 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `run_id` | `VARCHAR` |
-| `connId` | `VARCHAR` |
-| `status` | `VARCHAR` |
-| `host` | `VARCHAR` |
-| `startedAt` | `BIGINT` |
-| `updatedAt` | `BIGINT` |
-| `finishedAt` | `INTEGER` |
-| `n` | `BIGINT` |
-| `total` | `INTEGER` |
-| `note` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `run_id` | `VARCHAR` | 100.0% |
+| `connId` | `VARCHAR` | 100.0% |
+| `status` | `VARCHAR` | 100.0% |
+| `host` | `VARCHAR` | 100.0% |
+| `startedAt` | `BIGINT` | 100.0% |
+| `updatedAt` | `BIGINT` | 100.0% |
+| `finishedAt` | `INTEGER` | **0%** ‹never populated› |
+| `n` | `BIGINT` | 100.0% |
+| `total` | `INTEGER` | **0%** ‹never populated› |
+| `note` | `VARCHAR` | **0%** ‹never populated› |
+
+Fill measured over **full table** (2 rows).
+
+> **3 columns never populated:** `finishedAt`, `total`, `note`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ## Writers

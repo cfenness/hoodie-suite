@@ -8,7 +8,7 @@
 |---|---|
 | Registry id | `postmates` |
 | Runs | `import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_catalog as m; m.main(['--site','postmates','--shard',os.environ.get('UE_SHARD','0/8')])` |
-| Module | `unifyd/ue_catalog.py` — 1009 lines |
+| Module | `unifyd/ue_catalog.py` — 1019 lines |
 | Cadence | daily |
 | Enabled | **yes** |
 | Executor class | `headless` |
@@ -38,32 +38,38 @@
 
 ### `postmates_products_parts`
 
-6,040 rows · 21 columns · 1 partitions
+15,227 rows · 21 columns · 6 partitions
 
 
-| column | type |
-|---|---|
-| `store_uuid` | `VARCHAR` |
-| `store_name` | `VARCHAR` |
-| `source` | `VARCHAR` |
-| `item_uuid` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `gtin` | `VARCHAR` |
-| `price` | `DOUBLE` |
-| `list_price` | `DOUBLE` |
-| `promo` | `VARCHAR` |
-| `size` | `VARCHAR` |
-| `abv` | `DOUBLE` |
-| `in_stock` | `BOOLEAN` |
-| `stock_label` | `VARCHAR` |
-| `category` | `VARCHAR` |
-| `section` | `VARCHAR` |
-| `subsection` | `VARCHAR` |
-| `section_name` | `VARCHAR` |
-| `subsection_name` | `VARCHAR` |
-| `category_path` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `store_uuid` | `VARCHAR` | 100.0% |
+| `store_name` | `VARCHAR` | 100.0% |
+| `source` | `VARCHAR` | **0%** ‹never populated› |
+| `item_uuid` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `brand` | `VARCHAR` | **0%** ‹never populated› |
+| `upc` | `VARCHAR` | 5.3% |
+| `gtin` | `VARCHAR` | **0%** ‹never populated› |
+| `price` | `DOUBLE` | 100.0% |
+| `list_price` | `DOUBLE` | **2.2%** |
+| `promo` | `VARCHAR` | **0%** ‹never populated› |
+| `size` | `VARCHAR` | **0%** ‹never populated› |
+| `abv` | `DOUBLE` | **1.5%** |
+| `in_stock` | `BOOLEAN` | 100.0% |
+| `stock_label` | `VARCHAR` | 13.4% |
+| `category` | `VARCHAR` | **0%** ‹never populated› |
+| `section` | `VARCHAR` | 100.0% |
+| `subsection` | `VARCHAR` | 100.0% |
+| `section_name` | `VARCHAR` | 92.7% |
+| `subsection_name` | `VARCHAR` | 6.3% |
+| `category_path` | `VARCHAR` | 98.8% |
+
+Fill measured over **newest 6 of 6 partitions** (15,227 rows).
+
+> **6 columns never populated:** `source`, `brand`, `gtin`, `promo`, `size`, `category`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ## 4. `ue_catalog.py` — the module's own account

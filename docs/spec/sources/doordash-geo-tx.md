@@ -39,16 +39,17 @@ _No literal endpoint constant in `doordash_geo.py`._ The transport is either inh
 773,357 rows · 7 columns
 
 
-| column | type |
-|---|---|
-| `store_id` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `url` | `VARCHAR` |
-| `type` | `VARCHAR` |
-| `source` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `store_id` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `city` | `VARCHAR` | 100.0% |
+| `state` | `VARCHAR` | 99.9% |
+| `url` | `VARCHAR` | 100.0% |
+| `type` | `VARCHAR` | 100.0% |
+| `source` | `VARCHAR` | 100.0% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 **Written by** `doordash_discover.py:133` (write_accumulate), `doordash_sitemap.py:142` (write_accumulate)
 

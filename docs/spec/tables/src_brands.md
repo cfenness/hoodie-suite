@@ -16,14 +16,15 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `source_id` | `VARCHAR` |
-| `hoodie_brand` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `name_key` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `source_id` | `VARCHAR` | 89.8% |
+| `hoodie_brand` | `VARCHAR` | 100.0% |
+| `brand` | `VARCHAR` | 100.0% |
+| `name_key` | `VARCHAR` | 99.8% |
 
+Fill measured over **full table** (262,191 rows).
 
 ## Writers
 

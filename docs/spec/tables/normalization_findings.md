@@ -16,20 +16,21 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `table` | `VARCHAR` |
-| `field` | `VARCHAR` |
-| `check` | `VARCHAR` |
-| `kind` | `VARCHAR` |
-| `cohort_n` | `BIGINT` |
-| `total_n` | `BIGINT` |
-| `share` | `DOUBLE` |
-| `evidence` | `VARCHAR` |
-| `proposal` | `VARCHAR` |
-| `samples` | `VARCHAR` |
-| `found_at` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `table` | `VARCHAR` | 100.0% |
+| `field` | `VARCHAR` | 100.0% |
+| `check` | `VARCHAR` | 100.0% |
+| `kind` | `VARCHAR` | 100.0% |
+| `cohort_n` | `BIGINT` | 100.0% |
+| `total_n` | `BIGINT` | 100.0% |
+| `share` | `DOUBLE` | 100.0% |
+| `evidence` | `VARCHAR` | 100.0% |
+| `proposal` | `VARCHAR` | 100.0% |
+| `samples` | `VARCHAR` | 100.0% |
+| `found_at` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (234 rows).
 
 ## Writers
 

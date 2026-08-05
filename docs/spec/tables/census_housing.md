@@ -16,14 +16,16 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `name` | `VARCHAR` |
-| `median_home_value` | `VARCHAR` |
-| `median_gross_rent` | `VARCHAR` |
-| `housing_units` | `VARCHAR` |
-| `owner_occupied` | `VARCHAR` |
-| `renter_occupied` | `VARCHAR` |
-| `state_fips` | `VARCHAR` |
-| `county_fips` | `VARCHAR` |
-| `geoid` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `name` | `VARCHAR` | 100.0% |
+| `median_home_value` | `VARCHAR` | 99.1% |
+| `median_gross_rent` | `VARCHAR` | 98.1% |
+| `housing_units` | `VARCHAR` | 100.0% |
+| `owner_occupied` | `VARCHAR` | 100.0% |
+| `renter_occupied` | `VARCHAR` | 100.0% |
+| `state_fips` | `VARCHAR` | 100.0% |
+| `county_fips` | `VARCHAR` | 100.0% |
+| `geoid` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (423 rows).

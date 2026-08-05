@@ -39,36 +39,38 @@ _No literal endpoint constant in `normalize.py`._ The transport is either inheri
 1,916,357 rows · 28 columns
 
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `store_name` | `VARCHAR` |
-| `chain` | `VARCHAR` |
-| `is_chain` | `BOOLEAN` |
-| `f_beer` | `BOOLEAN` |
-| `f_wine` | `BOOLEAN` |
-| `f_spirits` | `BOOLEAN` |
-| `f_hemp` | `BOOLEAN` |
-| `f_cannabis` | `BOOLEAN` |
-| `f_rtd_spirits` | `BOOLEAN` |
-| `flag_basis` | `VARCHAR` |
-| `license_conflict` | `BOOLEAN` |
-| `address` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `zip` | `VARCHAR` |
-| `lat` | `DOUBLE` |
-| `lng` | `DOUBLE` |
-| `phone` | `VARCHAR` |
-| `addr_valid` | `BOOLEAN` |
-| `hoodie_outlet` | `VARCHAR` |
-| `name_key` | `VARCHAR` |
-| `phone_norm` | `VARCHAR` |
-| `addr_key` | `VARCHAR` |
-| `geo_cell` | `VARCHAR` |
-| `county_fips` | `VARCHAR` |
-| `geo_precision` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | — |
+| `store_id` | `VARCHAR` | — |
+| `store_name` | `VARCHAR` | — |
+| `chain` | `VARCHAR` | — |
+| `is_chain` | `BOOLEAN` | — |
+| `f_beer` | `BOOLEAN` | — |
+| `f_wine` | `BOOLEAN` | — |
+| `f_spirits` | `BOOLEAN` | — |
+| `f_hemp` | `BOOLEAN` | — |
+| `f_cannabis` | `BOOLEAN` | — |
+| `f_rtd_spirits` | `BOOLEAN` | — |
+| `flag_basis` | `VARCHAR` | — |
+| `license_conflict` | `BOOLEAN` | — |
+| `address` | `VARCHAR` | — |
+| `city` | `VARCHAR` | — |
+| `state` | `VARCHAR` | — |
+| `zip` | `VARCHAR` | — |
+| `lat` | `DOUBLE` | — |
+| `lng` | `DOUBLE` | — |
+| `phone` | `VARCHAR` | — |
+| `addr_valid` | `BOOLEAN` | — |
+| `hoodie_outlet` | `VARCHAR` | — |
+| `name_key` | `VARCHAR` | — |
+| `phone_norm` | `VARCHAR` | — |
+| `addr_key` | `VARCHAR` | — |
+| `geo_cell` | `VARCHAR` | — |
+| `county_fips` | `VARCHAR` | — |
+| `geo_precision` | `VARCHAR` | — |
+
+_Fill rates not measured — rerun `spec_capture.py --fill`. Without them this is a list of columns, not a statement of what is captured._
 
 
 **Written by** `aggregator_geo.py:93` (write_accumulate), `city_centroid.py:268` (write_accumulate), `geocode.py:134` (write_accumulate), `mappability.py:163` (write_accumulate), `normalize.py:651` (write_full_rebuild), `reconcile_ue_ids.py:45` (write_full_rebuild), `refresh_fast.py:60` (write_accumulate), `ue_sitemap.py:97` (write_accumulate)
@@ -79,31 +81,32 @@ _No literal endpoint constant in `normalize.py`._ The transport is either inheri
 2,560,546 rows · 22 columns
 
 
-| column | type |
-|---|---|
-| `hoodie_outlet_id` | `VARCHAR` |
-| `outlet_name` | `VARCHAR` |
-| `address` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `zip` | `VARCHAR` |
-| `lat` | `DOUBLE` |
-| `lng` | `DOUBLE` |
-| `county_fips` | `VARCHAR` |
-| `phone` | `VARCHAR` |
-| `chain` | `VARCHAR` |
-| `is_chain` | `BOOLEAN` |
-| `f_beer` | `BOOLEAN` |
-| `f_wine` | `BOOLEAN` |
-| `f_spirits` | `BOOLEAN` |
-| `f_hemp` | `BOOLEAN` |
-| `f_cannabis` | `BOOLEAN` |
-| `f_rtd_spirits` | `BOOLEAN` |
-| `sources` | `VARCHAR[]` |
-| `source_count` | `BIGINT` |
-| `record_count` | `BIGINT` |
-| `vpid` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `hoodie_outlet_id` | `VARCHAR` | 100.0% |
+| `outlet_name` | `VARCHAR` | 100.0% |
+| `address` | `VARCHAR` | 18.3% |
+| `city` | `VARCHAR` | 45.0% |
+| `state` | `VARCHAR` | 43.0% |
+| `zip` | `VARCHAR` | 17.2% |
+| `lat` | `DOUBLE` | 43.0% |
+| `lng` | `DOUBLE` | 43.0% |
+| `county_fips` | `VARCHAR` | **3.0%** |
+| `phone` | `VARCHAR` | **0.1%** |
+| `chain` | `VARCHAR` | 8.3% |
+| `is_chain` | `BOOLEAN` | 100.0% |
+| `f_beer` | `BOOLEAN` | 100.0% |
+| `f_wine` | `BOOLEAN` | 100.0% |
+| `f_spirits` | `BOOLEAN` | 100.0% |
+| `f_hemp` | `BOOLEAN` | 100.0% |
+| `f_cannabis` | `BOOLEAN` | 100.0% |
+| `f_rtd_spirits` | `BOOLEAN` | 100.0% |
+| `sources` | `VARCHAR[]` | 100.0% |
+| `source_count` | `BIGINT` | 100.0% |
+| `record_count` | `BIGINT` | 100.0% |
+| `vpid` | `VARCHAR` | 13.9% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 **Written by** `dim_outlet.py:124` (write_parquet)
 

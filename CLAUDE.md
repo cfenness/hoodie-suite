@@ -703,6 +703,17 @@ which would have reported four of the largest tables in the system (`ubereats_pr
 schemas** it saw, because per-partition drift is the known corruption mode (`retail_observations`:
 3 schemas across 4,296 partitions).
 
+**Fill rates are the point of the whole exercise.** `spec_capture.py --fill` measures, per column,
+the share of rows that are neither NULL nor `''` — empty string counts as NOT filled, because a
+scraper writing `""` for a field it could not find is reporting absence and treating that as data is
+how a 0% capture reads as 100%. Across the warehouse: **191 of 2,034 measured columns (9.4%) are
+never populated**. A column list without fill rates is how a 21-column table reads as a rich capture
+while seven of its fields are empty. The measurement is BOUNDED and the basis is printed on every
+page (`newest 40 of 3,832 partitions`, `first 400,000 rows`, `full table`) so a sample can never be
+read as a census. An all-empty column is a capture GAP when the source returns the field and the
+parse drops it, and CORRECT when the column awaits input (an unanswered label, a field a later build
+fills) — the measurement cannot tell those apart and says so; it tells you where to look.
+
 **The index leads with what is NOT documented** — declared schemas 6/177, raw-field inventories
 13/74, never-landed tables 34/177, unit tests 21/88 — because a spec that only shows what is covered
 reads as complete.

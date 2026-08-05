@@ -21,4 +21,4 @@
 
 | module:line | call | layout | pins dtypes |
 |---|---|---|---|
-| `server.py:3560` | `write_parquet` | flat (full overwrite) | no |
+| `server.py:3600` | `write_parquet` | flat (full overwrite) | no |

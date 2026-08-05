@@ -16,17 +16,18 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `total` | `BIGINT` |
-| `multi` | `BIGINT` |
-| `source_rows` | `BIGINT` |
-| `by_source` | `VARCHAR` |
-| `prod_total` | `BIGINT` |
-| `prod_corr` | `BIGINT` |
-| `ttb_corr` | `BIGINT` |
-| `ttb_total` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `total` | `BIGINT` | 100.0% |
+| `multi` | `BIGINT` | 100.0% |
+| `source_rows` | `BIGINT` | 100.0% |
+| `by_source` | `VARCHAR` | 100.0% |
+| `prod_total` | `BIGINT` | 100.0% |
+| `prod_corr` | `BIGINT` | 100.0% |
+| `ttb_corr` | `BIGINT` | 100.0% |
+| `ttb_total` | `BIGINT` | 100.0% |
 
+Fill measured over **full table** (1 rows).
 
 ## Writers
 

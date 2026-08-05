@@ -16,37 +16,38 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `storefront` | `VARCHAR` |
-| `distributor` | `VARCHAR` |
-| `sku` | `VARCHAR` |
-| `sevenfifty_id` | `BIGINT` |
-| `token` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `name_full` | `VARCHAR` |
-| `producer` | `VARCHAR` |
-| `supplier` | `VARCHAR` |
-| `product_type` | `VARCHAR` |
-| `style` | `VARCHAR` |
-| `style_line` | `VARCHAR` |
-| `subtype` | `VARCHAR` |
-| `appellation` | `VARCHAR` |
-| `country` | `VARCHAR` |
-| `region` | `VARCHAR` |
-| `subregion` | `VARCHAR` |
-| `size` | `DOUBLE` |
-| `size_formatted` | `VARCHAR` |
-| `case_size` | `BIGINT` |
-| `container_type` | `VARCHAR` |
-| `raw_materials` | `VARCHAR` |
-| `status` | `VARCHAR` |
-| `vendor_id` | `BIGINT` |
-| `image_url` | `VARCHAR` |
-| `thumbnail_url` | `VARCHAR` |
-| `display_url` | `VARCHAR` |
-| `pulled_at` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `storefront` | `VARCHAR` | 100.0% |
+| `distributor` | `VARCHAR` | 100.0% |
+| `sku` | `VARCHAR` | 100.0% |
+| `sevenfifty_id` | `BIGINT` | 100.0% |
+| `token` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `name_full` | `VARCHAR` | 100.0% |
+| `producer` | `VARCHAR` | 100.0% |
+| `supplier` | `VARCHAR` | 100.0% |
+| `product_type` | `VARCHAR` | 100.0% |
+| `style` | `VARCHAR` | 100.0% |
+| `style_line` | `VARCHAR` | 100.0% |
+| `subtype` | `VARCHAR` | 100.0% |
+| `appellation` | `VARCHAR` | 28.6% |
+| `country` | `VARCHAR` | 100.0% |
+| `region` | `VARCHAR` | 78.6% |
+| `subregion` | `VARCHAR` | 15.1% |
+| `size` | `DOUBLE` | 100.0% |
+| `size_formatted` | `VARCHAR` | 100.0% |
+| `case_size` | `BIGINT` | 100.0% |
+| `container_type` | `VARCHAR` | 100.0% |
+| `raw_materials` | `VARCHAR` | 43.7% |
+| `status` | `VARCHAR` | 100.0% |
+| `vendor_id` | `BIGINT` | 100.0% |
+| `image_url` | `VARCHAR` | 99.6% |
+| `thumbnail_url` | `VARCHAR` | 99.6% |
+| `display_url` | `VARCHAR` | 100.0% |
+| `pulled_at` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (25,785 rows).
 
 ## Writers
 

@@ -16,19 +16,20 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `VPID` | `VARCHAR` |
-| `Name` | `VARCHAR` |
-| `Address` | `VARCHAR` |
-| `City` | `VARCHAR` |
-| `State` | `VARCHAR` |
-| `Zip` | `VARCHAR` |
-| `Lat` | `DOUBLE` |
-| `Lng` | `DOUBLE` |
-| `AB_Brands` | `VARCHAR` |
-| `Zips_Hit` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `VPID` | `VARCHAR` | 100.0% |
+| `Name` | `VARCHAR` | 100.0% |
+| `Address` | `VARCHAR` | 100.0% |
+| `City` | `VARCHAR` | 100.0% |
+| `State` | `VARCHAR` | 100.0% |
+| `Zip` | `VARCHAR` | 100.0% |
+| `Lat` | `DOUBLE` | 100.0% |
+| `Lng` | `DOUBLE` | 100.0% |
+| `AB_Brands` | `VARCHAR` | 100.0% |
+| `Zips_Hit` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (278,510 rows).
 
 ## Writers
 

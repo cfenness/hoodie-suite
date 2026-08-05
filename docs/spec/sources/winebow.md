@@ -41,15 +41,21 @@
 1,396 rows · 7 columns
 
 
-| column | type |
-|---|---|
-| `brand` | `VARCHAR` |
-| `website` | `VARCHAR` |
-| `logo` | `VARCHAR` |
-| `importer` | `VARCHAR` |
-| `country` | `VARCHAR` |
-| `product_type` | `VARCHAR` |
-| `source` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `brand` | `VARCHAR` | 100.0% |
+| `website` | `VARCHAR` | 66.8% |
+| `logo` | `VARCHAR` | 100.0% |
+| `importer` | `VARCHAR` | 100.0% |
+| `country` | `VARCHAR` | **0%** ‹never populated› |
+| `product_type` | `VARCHAR` | **0%** ‹never populated› |
+| `source` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (1,396 rows).
+
+> **2 columns never populated:** `country`, `product_type`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 **Written by** `winebow.py:86` (write_parquet)

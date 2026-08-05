@@ -41,44 +41,45 @@
 63,889 rows · 35 columns
 
 
-| column | type |
-|---|---|
-| `catalog_id` | `VARCHAR` |
-| `catalog_name` | `VARCHAR` |
-| `org_id` | `VARCHAR` |
-| `site_id` | `VARCHAR` |
-| `owner` | `VARCHAR` |
-| `tier` | `VARCHAR` |
-| `product_id` | `VARCHAR` |
-| `dist_item_code` | `VARCHAR` |
-| `system_id` | `VARCHAR` |
-| `grouping_key` | `VARCHAR` |
-| `sku_upc` | `VARCHAR` |
-| `title` | `VARCHAR` |
-| `item_description` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `sort_value` | `VARCHAR` |
-| `supplier` | `VARCHAR` |
-| `brand_owner` | `VARCHAR` |
-| `category` | `VARCHAR` |
-| `sub_category` | `VARCHAR` |
-| `size_text` | `VARCHAR` |
-| `size_ml` | `BIGINT` |
-| `abv` | `DOUBLE` |
-| `proof` | `DOUBLE` |
-| `units_per_case` | `VARCHAR` |
-| `country` | `VARCHAR` |
-| `region` | `VARCHAR` |
-| `varietal` | `VARCHAR` |
-| `flavor` | `VARCHAR` |
-| `market_region` | `VARCHAR` |
-| `image` | `VARCHAR` |
-| `image_count` | `BIGINT` |
-| `property_count` | `BIGINT` |
-| `properties_hash` | `VARCHAR` |
-| `product_url` | `VARCHAR` |
-| `pulled_at` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `catalog_id` | `VARCHAR` | 100.0% |
+| `catalog_name` | `VARCHAR` | 100.0% |
+| `org_id` | `VARCHAR` | 100.0% |
+| `site_id` | `VARCHAR` | 100.0% |
+| `owner` | `VARCHAR` | 100.0% |
+| `tier` | `VARCHAR` | 100.0% |
+| `product_id` | `VARCHAR` | 100.0% |
+| `dist_item_code` | `VARCHAR` | 100.0% |
+| `system_id` | `VARCHAR` | 100.0% |
+| `grouping_key` | `VARCHAR` | 100.0% |
+| `sku_upc` | `VARCHAR` | 16.6% |
+| `title` | `VARCHAR` | 100.0% |
+| `item_description` | `VARCHAR` | 50.8% |
+| `brand` | `VARCHAR` | 100.0% |
+| `sort_value` | `VARCHAR` | 100.0% |
+| `supplier` | `VARCHAR` | 87.0% |
+| `brand_owner` | `VARCHAR` | 12.0% |
+| `category` | `VARCHAR` | 100.0% |
+| `sub_category` | `VARCHAR` | 12.0% |
+| `size_text` | `VARCHAR` | 100.0% |
+| `size_ml` | `BIGINT` | 91.7% |
+| `abv` | `DOUBLE` | 100.0% |
+| `proof` | `DOUBLE` | 33.3% |
+| `units_per_case` | `VARCHAR` | 87.0% |
+| `country` | `VARCHAR` | 12.0% |
+| `region` | `VARCHAR` | 67.4% |
+| `varietal` | `VARCHAR` | 48.5% |
+| `flavor` | `VARCHAR` | 87.0% |
+| `market_region` | `VARCHAR` | 86.2% |
+| `image` | `VARCHAR` | 83.8% |
+| `image_count` | `BIGINT` | 100.0% |
+| `property_count` | `BIGINT` | 100.0% |
+| `properties_hash` | `VARCHAR` | 100.0% |
+| `product_url` | `VARCHAR` | 100.0% |
+| `pulled_at` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (63,889 rows).
 
 **Written by** `salsify.py:858` (write_accumulate)
 
@@ -88,19 +89,20 @@
 2,870,998 rows · 10 columns · 314 partitions
 
 
-| column | type |
-|---|---|
-| `catalog_id` | `VARCHAR` |
-| `product_id` | `VARCHAR` |
-| `group` | `VARCHAR` |
-| `property` | `VARCHAR` |
-| `label` | `VARCHAR` |
-| `value_index` | `BIGINT` |
-| `value` | `VARCHAR` |
-| `asset_name` | `VARCHAR` |
-| `day` | `VARCHAR` |
-| `captured_at` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `catalog_id` | `VARCHAR` | 100.0% |
+| `product_id` | `VARCHAR` | 100.0% |
+| `group` | `VARCHAR` | 100.0% |
+| `property` | `VARCHAR` | 100.0% |
+| `label` | `VARCHAR` | 100.0% |
+| `value_index` | `BIGINT` | 100.0% |
+| `value` | `VARCHAR` | 100.0% |
+| `asset_name` | `VARCHAR` | 6.4% |
+| `day` | `VARCHAR` | 100.0% |
+| `captured_at` | `BIGINT` | 100.0% |
 
+Fill measured over **newest 40 of 314 partitions** (925,273 rows).
 
 **Written by** `salsify.py:873` (write_partition)
 

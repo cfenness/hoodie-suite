@@ -16,18 +16,20 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `obs` | `DECIMAL(38,0)` |
-| `cells` | `BIGINT` |
-| `stores` | `BIGINT` |
-| `first_date` | `VARCHAR` |
-| `last_date` | `VARCHAR` |
-| `qty_coverage` | `DOUBLE` |
-| `distinct_qty_global` | `BIGINT` |
-| `diffable_frac` | `DOUBLE` |
-| `jitter_frac` | `DOUBLE` |
-| `median_cadence_days` | `DOUBLE` |
-| `has_counts` | `BOOLEAN` |
-| `qual_tier` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `obs` | `DECIMAL(38,0)` | 100.0% |
+| `cells` | `BIGINT` | 100.0% |
+| `stores` | `BIGINT` | 100.0% |
+| `first_date` | `VARCHAR` | 100.0% |
+| `last_date` | `VARCHAR` | 100.0% |
+| `qty_coverage` | `DOUBLE` | 100.0% |
+| `distinct_qty_global` | `BIGINT` | 100.0% |
+| `diffable_frac` | `DOUBLE` | 100.0% |
+| `jitter_frac` | `DOUBLE` | 36.4% |
+| `median_cadence_days` | `DOUBLE` | 77.3% |
+| `has_counts` | `BOOLEAN` | 100.0% |
+| `qual_tier` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (22 rows).

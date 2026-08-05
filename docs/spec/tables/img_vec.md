@@ -16,14 +16,15 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `sku` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `image` | `VARCHAR` |
-| `vec` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `sku` | `VARCHAR` | 99.7% |
+| `upc` | `VARCHAR` | 16.4% |
+| `image` | `VARCHAR` | 100.0% |
+| `vec` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (29,297 rows).
 
 ## Writers
 

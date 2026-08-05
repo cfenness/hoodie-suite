@@ -16,12 +16,13 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `axis` | `VARCHAR` |
-| `value` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `axis` | `VARCHAR` | 100.0% |
+| `value` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (10,825 rows).
 
 ## Writers
 

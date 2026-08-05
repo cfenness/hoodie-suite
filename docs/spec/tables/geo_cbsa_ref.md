@@ -16,12 +16,13 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `cbsa_code` | `VARCHAR` |
-| `cbsa_name` | `VARCHAR` |
-| `cbsa_type` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `cbsa_code` | `VARCHAR` | 100.0% |
+| `cbsa_name` | `VARCHAR` | 100.0% |
+| `cbsa_type` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (935 rows).
 
 ## Writers
 

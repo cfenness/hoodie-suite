@@ -16,36 +16,42 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source_id` | `VARCHAR` |
-| `vendor` | `VARCHAR` |
-| `drive_id` | `BIGINT` |
-| `drive_name` | `VARCHAR` |
-| `folder_id` | `BIGINT` |
-| `folder_path` | `VARCHAR` |
-| `asset_id` | `BIGINT` |
-| `asset_token` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `title` | `VARCHAR` |
-| `description` | `VARCHAR` |
-| `asset_type` | `VARCHAR` |
-| `extension` | `VARCHAR` |
-| `mime_type` | `VARCHAR` |
-| `size_bytes` | `BIGINT` |
-| `asset_url` | `VARCHAR` |
-| `thumb_url` | `VARCHAR` |
-| `download_url` | `VARCHAR` |
-| `created_on` | `VARCHAR` |
-| `updated_on` | `VARCHAR` |
-| `rights_ref` | `VARCHAR` |
-| `image_use` | `VARCHAR` |
-| `image_scope` | `VARCHAR` |
-| `retention` | `VARCHAR` |
-| `phash` | `INTEGER` |
-| `embedding_ref` | `INTEGER` |
-| `withheld_reason` | `VARCHAR` |
-| `pulled_at` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source_id` | `VARCHAR` | 100.0% |
+| `vendor` | `VARCHAR` | 100.0% |
+| `drive_id` | `BIGINT` | 100.0% |
+| `drive_name` | `VARCHAR` | 100.0% |
+| `folder_id` | `BIGINT` | 100.0% |
+| `folder_path` | `VARCHAR` | 100.0% |
+| `asset_id` | `BIGINT` | 100.0% |
+| `asset_token` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `title` | `VARCHAR` | 100.0% |
+| `description` | `VARCHAR` | 100.0% |
+| `asset_type` | `VARCHAR` | 100.0% |
+| `extension` | `VARCHAR` | 99.5% |
+| `mime_type` | `VARCHAR` | **1.0%** |
+| `size_bytes` | `BIGINT` | 100.0% |
+| `asset_url` | `VARCHAR` | 100.0% |
+| `thumb_url` | `VARCHAR` | 99.0% |
+| `download_url` | `VARCHAR` | 100.0% |
+| `created_on` | `VARCHAR` | 100.0% |
+| `updated_on` | `VARCHAR` | 100.0% |
+| `rights_ref` | `VARCHAR` | 100.0% |
+| `image_use` | `VARCHAR` | 100.0% |
+| `image_scope` | `VARCHAR` | 100.0% |
+| `retention` | `VARCHAR` | 100.0% |
+| `phash` | `INTEGER` | **0%** ‹never populated› |
+| `embedding_ref` | `INTEGER` | **0%** ‹never populated› |
+| `withheld_reason` | `VARCHAR` | 100.0% |
+| `pulled_at` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (2,490 rows).
+
+> **2 columns never populated:** `phash`, `embedding_ref`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ## Writers

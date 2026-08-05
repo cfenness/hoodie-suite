@@ -16,18 +16,19 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `run_id` | `VARCHAR` |
-| `at` | `BIGINT` |
-| `products` | `BIGINT` |
-| `in_stock` | `BIGINT` |
-| `concerns` | `BIGINT` |
-| `high_concerns` | `BIGINT` |
-| `status` | `VARCHAR` |
-| `note` | `VARCHAR` |
-| `warnings` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `run_id` | `VARCHAR` | 100.0% |
+| `at` | `BIGINT` | 100.0% |
+| `products` | `BIGINT` | 100.0% |
+| `in_stock` | `BIGINT` | 100.0% |
+| `concerns` | `BIGINT` | 100.0% |
+| `high_concerns` | `BIGINT` | 100.0% |
+| `status` | `VARCHAR` | 100.0% |
+| `note` | `VARCHAR` | 93.3% |
+| `warnings` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (15 rows).
 
 ## Writers
 

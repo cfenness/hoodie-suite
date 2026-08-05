@@ -39,17 +39,18 @@ _No literal endpoint constant in `census_ref.py`._ The transport is either inher
 126,011 rows · 8 columns
 
 
-| column | type |
-|---|---|
-| `vintage_year` | `BIGINT` |
-| `geo_fips` | `VARCHAR` |
-| `geo_name` | `VARCHAR` |
-| `other_fips` | `VARCHAR` |
-| `other_name` | `VARCHAR` |
-| `metric_name` | `VARCHAR` |
-| `metric_value` | `DOUBLE` |
-| `source_pulled_at` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `vintage_year` | `BIGINT` | 100.0% |
+| `geo_fips` | `VARCHAR` | 100.0% |
+| `geo_name` | `VARCHAR` | 100.0% |
+| `other_fips` | `VARCHAR` | 100.0% |
+| `other_name` | `VARCHAR` | 100.0% |
+| `metric_name` | `VARCHAR` | 100.0% |
+| `metric_value` | `DOUBLE` | 100.0% |
+| `source_pulled_at` | `BIGINT` | 100.0% |
 
+Fill measured over **full table** (126,011 rows).
 
 **Written by** `census_ref.py:395` (write_parquet)
 

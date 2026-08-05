@@ -20,9 +20,11 @@ Live schema captured **2026-08-05T12:49:49Z**.
 | ...enabled on a cadence | 58 |
 | Builds (derive from what we hold) | 14 |
 | Tables the code writes | 177 |
-| ...that have actually landed | 143 |
-| Columns described | 2,057 |
-| Rows landed | 196,886,674 |
+| ...that have actually landed | 145 |
+| Columns described | 2,071 |
+| Rows landed | 198,439,987 |
+| Columns measured for fill | 2,034 |
+| ...that are NEVER populated | **191** |
 
 
 ## Where the documentation is thin
@@ -34,7 +36,7 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 |---|---|---|
 | Declared schemas | 6 of 177 tables in `table_spec.py` | for the rest the schema is whatever the last writer emitted, and two tables have already been corrupted by per-partition schema drift |
 | Raw-field inventories | 13 of 74 sources in `source_spec.py` | for the rest we know what we KEEP but have not recorded what the source offers and we drop |
-| Never-landed tables | 34 of 177 | the code writes them; the warehouse has no such object |
+| Never-landed tables | 32 of 177 | the code writes them; the warehouse has no such object |
 | Module docstrings | 85 of 88 sources | the rebuild narrative is absent for the remainder |
 | Unit tests | 21 of 88 sources | a parser change in the rest is caught only in production |
 
@@ -149,7 +151,7 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 | [`abc_catalog`](tables/abc_catalog.md) | 14,098 | 7 | yes | `abc-catalog`, `abc-fws` |
 | [`abc_products`](tables/abc_products.md) | 9,399 | 21 | yes | `abc-facets` |
 | [`account_logos`](tables/account_logos.md) | 78 | 5 | yes | — |
-| [`agg_geo_stage`](tables/agg_geo_stage.md) | 305,643 | 29 | yes | — |
+| [`agg_geo_stage`](tables/agg_geo_stage.md) | 409,882 | 29 | yes | — |
 | [`asset_divergence`](tables/asset_divergence.md) | — | — | **never landed** | `asset-divergence` |
 | [`bea_reference`](tables/bea_reference.md) | 96,450 | 10 | yes | `bea` |
 | [`bevalc_chains`](tables/bevalc_chains.md) | 127 | 14 | yes | — |
@@ -171,7 +173,7 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 | [`cola_cluster`](tables/cola_cluster.md) | — | — | **never landed** | — |
 | [`cola_cluster_membership`](tables/cola_cluster_membership.md) | — | — | **never landed** | — |
 | [`coverage_cells`](tables/coverage_cells.md) | 1 | 5 | yes | `build-representativeness` |
-| [`coverage_log`](tables/coverage_log.md) | 2,000 | 7 | yes | — |
+| [`coverage_log`](tables/coverage_log.md) | 2,003 | 7 | yes | — |
 | [`cpi_reference`](tables/cpi_reference.md) | 1,830 | 10 | yes | `cpi` |
 | [`cv_reads`](tables/cv_reads.md) | — | — | **never landed** | — |
 | [`dam_assets`](tables/dam_assets.md) | 2,490 | 28 | yes | `dam-bacardi` |
@@ -192,7 +194,7 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 | [`fact_inventory`](tables/fact_inventory.md) | 7,288,934 | 12 | yes | — |
 | [`fact_price`](tables/fact_price.md) | 7,149,063 | 12 | yes | — |
 | [`fact_velocity`](tables/fact_velocity.md) | 3,319,500 | 17 | yes | `build-velocity` |
-| [`field_stats`](tables/field_stats.md) | 156 | 7 | yes | — |
+| [`field_stats`](tables/field_stats.md) | 178 | 7 | yes | — |
 | [`fred_reference`](tables/fred_reference.md) | 550 | 9 | yes | `fred` |
 | [`geo_cbsa_ref`](tables/geo_cbsa_ref.md) | 935 | 3 | yes | — |
 | [`haskells_products`](tables/haskells_products.md) | 10,535 | 19 | yes | `haskells` |
@@ -241,12 +243,12 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 | [`outlet_xref`](tables/outlet_xref.md) | 9,567 | 12 | yes | — |
 | [`planogram_placements`](tables/planogram_placements.md) | — | — | **never landed** | — |
 | [`postmates_products`](tables/postmates_products.md) | 3,190 | 47 | yes | `postmates-full`, `build-ue-catalog` |
-| [`postmates_products_parts`](tables/postmates_products_parts.md) | 6,040 | 21 | yes | `postmates` |
+| [`postmates_products_parts`](tables/postmates_products_parts.md) | 15,227 | 21 | yes | `postmates` |
 | [`postmates_sitemap`](tables/postmates_sitemap.md) | 269,007 | 6 | yes | `postmates-sitemap` |
 | [`price_coherence`](tables/price_coherence.md) | 19,855 | 10 | yes | — |
 | [`publix_products`](tables/publix_products.md) | 5,477 | 9 | yes | `publix` |
-| [`raw_payloads`](tables/raw_payloads.md) | 31,562,723 | 8 | yes | — |
-| [`retail_observations`](tables/retail_observations.md) | 59,077,605 | 19 | yes | `abc-fws` |
+| [`raw_payloads`](tables/raw_payloads.md) | 31,570,028 | 8 | yes | — |
+| [`retail_observations`](tables/retail_observations.md) | 60,510,145 | 19 | yes | `abc-fws` |
 | [`salsify_catalogs`](tables/salsify_catalogs.md) | 520 | 16 | yes | `salsify` |
 | [`salsify_products`](tables/salsify_products.md) | 63,889 | 35 | yes | `bbg`, `salsify` |
 | [`salsify_properties`](tables/salsify_properties.md) | 2,870,998 | 10 | yes | `bbg`, `salsify` |
@@ -256,7 +258,7 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 | [`signal_movers`](tables/signal_movers.md) | 1,015 | 12 | yes | `build-velocity-signals` |
 | [`signal_voids`](tables/signal_voids.md) | 2,235 | 8 | yes | `build-velocity-signals` |
 | [`snowflake_load_runs`](tables/snowflake_load_runs.md) | 4 | 10 | yes | `snowflake-load` |
-| [`source_runs_log`](tables/source_runs_log.md) | 848 | 23 | yes | — |
+| [`source_runs_log`](tables/source_runs_log.md) | 857 | 23 | yes | — |
 | [`source_taxonomy`](tables/source_taxonomy.md) | 10,825 | 3 | yes | `abc-facets` |
 | [`specs_products`](tables/specs_products.md) | 1,029 | 23 | yes | `specs` |
 | [`src_brands`](tables/src_brands.md) | 262,191 | 5 | yes | — |
@@ -301,11 +303,11 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 | [`wb_queue`](tables/wb_queue.md) | 4,000 | 23 | yes | — |
 | [`wb_summary`](tables/wb_summary.md) | 1 | 8 | yes | — |
 | [`winebow_brands`](tables/winebow_brands.md) | 1,396 | 7 | yes | `winebow` |
-| [`xsource_dictionary`](tables/xsource_dictionary.md) | — | — | **never landed** | — |
+| [`xsource_dictionary`](tables/xsource_dictionary.md) | 6 | 6 | yes | — |
 | [`xsource_gold`](tables/xsource_gold.md) | 6 | 31 | yes | `xsource-gold` |
 | [`xsource_identity`](tables/xsource_identity.md) | — | — | **never landed** | `xsource-match` |
 | [`xsource_queue`](tables/xsource_queue.md) | 4,617 | 35 | yes | `xsource-queue` |
-| [`xsource_taxonomy`](tables/xsource_taxonomy.md) | — | — | **never landed** | — |
+| [`xsource_taxonomy`](tables/xsource_taxonomy.md) | 2 | 8 | yes | — |
 | [`xwalk_item_identity`](tables/xwalk_item_identity.md) | 1,168,694 | 5 | yes | — |
 | [`xwalk_source_sku`](tables/xwalk_source_sku.md) | 1,338,594 | 5 | yes | — |
 | [`zcta_centroids`](tables/zcta_centroids.md) | 33,791 | 3 | yes | — |

@@ -41,31 +41,37 @@
 1,029 rows · 23 columns
 
 
-| column | type |
-|---|---|
-| `sku` | `VARCHAR` |
-| `slug` | `VARCHAR` |
-| `url` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `type` | `VARCHAR` |
-| `varietal` | `VARCHAR` |
-| `abv` | `VARCHAR` |
-| `origin` | `VARCHAR` |
-| `region` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `vintage` | `VARCHAR` |
-| `tasting_notes` | `VARCHAR` |
-| `pairs_with` | `VARCHAR` |
-| `description` | `VARCHAR` |
-| `price` | `DOUBLE` |
-| `upc` | `VARCHAR` |
-| `image` | `VARCHAR` |
-| `in_stock_stores` | `BIGINT` |
-| `store_count` | `BIGINT` |
-| `units_total` | `BIGINT` |
-| `stores_tracked` | `BIGINT` |
-| `raw_json` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `sku` | `VARCHAR` | 100.0% |
+| `slug` | `VARCHAR` | 100.0% |
+| `url` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `brand` | `VARCHAR` | 71.1% |
+| `type` | `VARCHAR` | 92.4% |
+| `varietal` | `VARCHAR` | **0.2%** |
+| `abv` | `VARCHAR` | **1.7%** |
+| `origin` | `VARCHAR` | 86.2% |
+| `region` | `VARCHAR` | 28.9% |
+| `state` | `VARCHAR` | **0.3%** |
+| `vintage` | `VARCHAR` | **3.5%** |
+| `tasting_notes` | `VARCHAR` | **1.7%** |
+| `pairs_with` | `VARCHAR` | **0%** ‹never populated› |
+| `description` | `VARCHAR` | 51.2% |
+| `price` | `DOUBLE` | 100.0% |
+| `upc` | `VARCHAR` | 72.2% |
+| `image` | `VARCHAR` | 100.0% |
+| `in_stock_stores` | `BIGINT` | 100.0% |
+| `store_count` | `BIGINT` | 100.0% |
+| `units_total` | `BIGINT` | 12.7% |
+| `stores_tracked` | `BIGINT` | 12.7% |
+| `raw_json` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (1,029 rows).
+
+> **1 column never populated:** `pairs_with`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 **Written by** `specs_scraper.py:419` (write_accumulate), `specs_scraper.py:410` (write_accumulate), `specs_scraper.py:415` (write_parquet)

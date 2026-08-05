@@ -16,14 +16,15 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `grain` | `VARCHAR` |
-| `table` | `VARCHAR` |
-| `records` | `BIGINT` |
-| `entities` | `BIGINT` |
-| `corroborated` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `grain` | `VARCHAR` | 100.0% |
+| `table` | `VARCHAR` | 100.0% |
+| `records` | `BIGINT` | 100.0% |
+| `entities` | `BIGINT` | 100.0% |
+| `corroborated` | `BIGINT` | 100.0% |
 
+Fill measured over **full table** (5 rows).
 
 ## Writers
 

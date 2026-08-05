@@ -16,31 +16,32 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `hoodie_outlet_id` | `VARCHAR` |
-| `outlet_name` | `VARCHAR` |
-| `address` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `zip` | `VARCHAR` |
-| `lat` | `DOUBLE` |
-| `lng` | `DOUBLE` |
-| `county_fips` | `VARCHAR` |
-| `phone` | `VARCHAR` |
-| `chain` | `VARCHAR` |
-| `is_chain` | `BOOLEAN` |
-| `f_beer` | `BOOLEAN` |
-| `f_wine` | `BOOLEAN` |
-| `f_spirits` | `BOOLEAN` |
-| `f_hemp` | `BOOLEAN` |
-| `f_cannabis` | `BOOLEAN` |
-| `f_rtd_spirits` | `BOOLEAN` |
-| `sources` | `VARCHAR[]` |
-| `source_count` | `BIGINT` |
-| `record_count` | `BIGINT` |
-| `vpid` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `hoodie_outlet_id` | `VARCHAR` | 100.0% |
+| `outlet_name` | `VARCHAR` | 100.0% |
+| `address` | `VARCHAR` | 18.3% |
+| `city` | `VARCHAR` | 45.0% |
+| `state` | `VARCHAR` | 43.0% |
+| `zip` | `VARCHAR` | 17.2% |
+| `lat` | `DOUBLE` | 43.0% |
+| `lng` | `DOUBLE` | 43.0% |
+| `county_fips` | `VARCHAR` | **3.0%** |
+| `phone` | `VARCHAR` | **0.1%** |
+| `chain` | `VARCHAR` | 8.3% |
+| `is_chain` | `BOOLEAN` | 100.0% |
+| `f_beer` | `BOOLEAN` | 100.0% |
+| `f_wine` | `BOOLEAN` | 100.0% |
+| `f_spirits` | `BOOLEAN` | 100.0% |
+| `f_hemp` | `BOOLEAN` | 100.0% |
+| `f_cannabis` | `BOOLEAN` | 100.0% |
+| `f_rtd_spirits` | `BOOLEAN` | 100.0% |
+| `sources` | `VARCHAR[]` | 100.0% |
+| `source_count` | `BIGINT` | 100.0% |
+| `record_count` | `BIGINT` | 100.0% |
+| `vpid` | `VARCHAR` | 13.9% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ## Writers
 
