@@ -168,6 +168,44 @@ def main():
                 ok, d = False, str(e)[:80]
             check("arrow_dtypes(%s) materialises every declared field" % name, ok)
 
+        # --- 2b. what land() actually PUTS ON DISK ------------------------------------------------
+        # The one check that would have caught the `<name>_parts` hole on its own. land() validates
+        # `name` and raises for an undeclared table, which reads as strict — but it writes
+        # `<name>_parts`, declared for 2 of the 6 tables declared when this landed, so for the rest
+        # the write fell through to per-batch inference. Every static signal agreed it was fine: the
+        # ratchet's warehouse.py entry had been baselined as "runtime guarantee strictly stronger",
+        # and land_test asserted the call passed no dtypes as PROOF of correctness. Only the bytes
+        # disagreed. So assert the bytes: a column that is all-None in this batch must still land
+        # with its declared type, because the batch where it is populated will land that type and a
+        # union_by_name read across the two corrupts rather than fails.
+        import glob
+        import tempfile
+        import pyarrow.parquet as pq
+        # Never let a schema check touch a real bucket: strip the S3 env the same way every other
+        # offline test here does, THEN point the warehouse at a throwaway directory.
+        for _v in ("AWS_ENDPOINT_URL_S3", "TIGRIS_ENDPOINT", "BUCKET_NAME", "WAREHOUSE_BUCKET",
+                   "PLACES_BUCKET"):
+            os.environ.pop(_v, None)
+        import warehouse
+        _saved = warehouse._LOCAL_DIR
+        try:
+            warehouse._LOCAL_DIR = tempfile.mkdtemp(prefix="ts_land_")
+            warehouse.land("retail_observations",
+                           [{"date": "2026-08-04", "source": "t", "store_id": "s", "product_id": "p",
+                             "price": None, "qty": None}], day="2026-08-04")
+            files = glob.glob(os.path.join(warehouse._LOCAL_DIR, "retail_observations_parts", "*.parquet"))
+            got = pq.read_schema(files[0]) if files else None
+            want = table_spec.arrow_dtypes("retail_observations")
+            check("land() writes the parts file with the DECLARED types, not this batch's",
+                  got is not None and all(got.field(c).type == want[c] for c in ("price", "qty", "on_promo")),
+                  "wrote %s" % ({c: str(got.field(c).type) for c in ("price", "qty", "on_promo")} if got
+                                else "no file"))
+        except Exception as e:
+            check("land() writes the parts file with the DECLARED types, not this batch's", False,
+                  "%s: %s" % (type(e).__name__, str(e)[:120]))
+        finally:
+            warehouse._LOCAL_DIR = _saved
+
     # --- 3. THE RATCHET: no unpinned, undeclared write_partition ---------------------------------
     # A call is acceptable if it passes dtypes explicitly OR every table it could name is declared.
     # Tests seed fixtures deliberately and are exempt.
@@ -202,11 +240,13 @@ def main():
         # rights.py deliberately ABSENT: dam_emissions is declared in table_spec, so its
         # write inherits the schema. This is what clearing a ratchet entry looks like.
         "ue_catalog.py": 1,       # secondary write; the primary land IS pinned
-        # warehouse.land() builds `<name>_parts` from a runtime argument, so the table cannot be
-        # resolved statically — but it RAISES unless table_spec declares the table, then relies on
-        # that spec for fields/dtypes. Its runtime guarantee is strictly stronger than this static
-        # check, so it is baselined rather than made to pass by weakening the ratchet.
-        "warehouse.py": 1,
+        # warehouse.py was here for one commit, on the reasoning that land()'s runtime guarantee is
+        # "strictly stronger than this static check". It was not: land() raises unless table_spec
+        # declares `name`, but the table it WRITES is `<name>_parts`, declared for only 2 of the 6
+        # tables declared at the time. Measured on the real declarations, landing retail_observations
+        # rows with all-None price wrote `null` against a declared `double` — the ratchet was right
+        # and the entry was the ONE thing standing between that and a corrupt read. land() now pins
+        # the parts write explicitly, so the entry is gone. Baselines shrink; they do not widen.
     }
     by_file = {}
     for o in offenders:

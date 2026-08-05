@@ -535,7 +535,23 @@ def land(name, records, day=None, shard=None, seq=None, scope=None, log=None):
     part = _part_name(day=day, scope=scope, shard=shard, seq=seq)
     parts_table = name + "_parts"
     rows = [{f: r.get(f) for f in spec.fields} for r in (records or [])]
-    res = write_partition(parts_table, part, rows)      # fields/dtypes inherited from the spec
+    # PIN THE TABLE THIS ACTUALLY WRITES. The spec check above validates `name`; what gets written is
+    # `<name>_parts` — a DIFFERENT table, declared for only 2 of the 6 declared today. For the other
+    # four the strictness above was illusory: land() raised for an undeclared parent and then handed
+    # the parts write straight to per-batch inference. Measured before this line existed, landing
+    # retail_observations rows whose price/qty happen to be all-None:
+    #     price  written=null  declared=double        qty  written=null  declared=double
+    # A later batch carrying real prices writes double, and that is the second schema that makes a
+    # union_by_name read CORRUPT rather than fail — the exact defect this whole path exists to end.
+    # Rows are projected through the PARENT's fields, so the parent's schema is the correct pin.
+    parts_spec = table_spec.spec_for(parts_table)
+    if parts_spec is not None and parts_spec.fields != spec.fields:
+        raise ValueError(
+            "land(%r): %s declares different fields than its parent, but rows are projected through "
+            "the parent's. One of the two declarations is wrong — reconcile them rather than letting "
+            "the write drop or blank the difference." % (name, parts_table))
+    res = write_partition(parts_table, part, rows, fields=spec.fields,
+                          dtypes=table_spec.arrow_dtypes(spec))
 
     out = {"rows": len(rows), "part": part, "table": parts_table, "pending": None}
     try:                                               # visibility only — never fail a good write
