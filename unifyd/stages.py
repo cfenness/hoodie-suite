@@ -125,8 +125,17 @@ def build(counts=None, watermarks=None, inventory=None, now=None):
     inv = inventory or {}
     counts = counts or {}
     watermarks = watermarks or {}
-    writes = inv.get("writes") or {}
+    # data_inventory's shape: inv["tables"][t]["writers"] is a LIST of call-site dicts
+    # ({module, line, writer, is_test, ...}); inv["writes"] is the same records flat. Read the
+    # per-table map, and EXCLUDE test writers — a fixture seeding a table in a *_test.py is not a
+    # production writer, and counting it would flag half the warehouse as multi-writer.
+    tables_inv = inv.get("tables") or {}
     registry = inv.get("registry") or {}
+
+    def _modules(t):
+        recs = (tables_inv.get(t) or {}).get("writers") or []
+        return sorted({r.get("module") for r in recs
+                       if isinstance(r, dict) and not r.get("is_test") and r.get("module")})
 
     # table -> the sources that DECLARE it, so a table can be traced back to what is meant to fill it
     declared_by = {}
@@ -134,15 +143,14 @@ def build(counts=None, watermarks=None, inventory=None, now=None):
         for t in (s.get("tables") or []):
             declared_by.setdefault(t, []).append(sid)
 
-    tables = set(counts) | set(writes) | set(declared_by) | set(table_spec.SPECS)
+    tables = set(counts) | set(tables_inv) | set(declared_by) | set(table_spec.SPECS)
     out = []
     for t in sorted(tables):
         c = counts.get(t) or {}
         rows, err = c.get("rows"), c.get("error")
         pending = watermarks.get(t)
         age = _age_s(c.get("modified"), now)
-        writers = sorted((writes.get(t) or {}).get("modules") or []) if isinstance(writes.get(t), dict) \
-            else sorted(writes.get(t) or [])
+        writers = _modules(t)
         st = stage_of(t)
         out.append({
             "table": t,
