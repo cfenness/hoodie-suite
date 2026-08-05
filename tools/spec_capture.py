@@ -59,6 +59,49 @@ def capture(names, counts=False, fill=False, log=print):
     out, t0 = {}, time.time()
     for i, name in enumerate(names, 1):
         rec = {"table": name}
+        # BUCKETED (v2) FIRST. Rows live at <name>/__b=<hex>/part-v<n>.parquet, so BOTH branches below
+        # are wrong for it: the single-file read resolves to the pre-migration ROLLBACK COPY (stale
+        # schema wearing the live table's name), and _partition_files_strict lists one level up and
+        # finds directories, not parquet, so it reports "no partitions" = never landed.
+        # This was invisible until the src_outlets rollback copy was deleted (2026-08-05): before that
+        # the capture quietly documented the stale copy and looked fine. binnys_products is still doing
+        # exactly that — it captured as "single file" off its rollback copy.
+        # Third place this layout has been re-derived by hand and got it wrong (see monitor.read_expr,
+        # sql_console._scoped_expr) — read the manifest, never the path.
+        try:
+            man = warehouse.read_manifest(name)
+        except Exception:
+            man = None
+        if man and man.get("layout") == "bucketed":
+            files = [f for pt in (man.get("parts") or {}).values() for f in (pt.get("files") or [])]
+            if files:
+                try:
+                    lst = ", ".join("'%s'" % warehouse._part_sql_path(f).replace("'", "") for f in files)
+                    cols = con.execute("DESCRIBE SELECT * FROM read_parquet([%s], union_by_name=true) "
+                                       "LIMIT 0" % lst).fetchall()
+                    rec["columns"] = [{"name": c[0], "type": c[1]} for c in cols]
+                    rec["landed"] = True
+                    rec["layout"] = "bucketed"
+                    rec["partitions"] = len(files)
+                    rec["uri"] = "manifest: _manifest/%s.json" % name
+                    rec["read_expr"] = "read_parquet([%s], union_by_name=true)" % lst
+                    if counts:
+                        try:
+                            rec["rows"] = int(warehouse.row_count(name) or 0)
+                        except Exception as e:
+                            rec["rows_error"] = str(e)[:120]
+                    # This branch returns early, so it has to do everything the shared tail does —
+                    # otherwise bucketed tables land with no fill rates and the page shows a blank
+                    # column where every other table shows a number, which reads as "no data" rather
+                    # than "not measured". Same shape as the bug this branch exists to fix.
+                    if fill:
+                        fill_rates(rec, con, warehouse, log=log)
+                    out[name] = rec
+                    if i % 20 == 0:
+                        log("  %d/%d (%ds)" % (i, len(names), int(time.time() - t0)))
+                    continue
+                except Exception:
+                    pass
         try:
             uri = warehouse.uri(name).strip("'")
             rec["uri"] = uri
@@ -161,7 +204,11 @@ def fill_rates(rec, con, warehouse, budget_rows=400000, log=print):
             frm = "read_parquet([%s], union_by_name=true)" % lst
             basis = "newest %d of %d partitions" % (len(take), len(files))
         else:
-            frm = "read_parquet('%s', union_by_name=true)" % rec["uri"]
+            # A BUCKETED table's `uri` is a human-readable "manifest: …" label, not a path — reading
+            # it would produce read_parquet('manifest: …') and fail, so fill would silently come back
+            # empty and the page would show blanks that look like "column never populated". The real
+            # source rides alongside in `read_expr`.
+            frm = rec.get("read_expr") or ("read_parquet('%s', union_by_name=true)" % rec["uri"])
             basis = "full table"
             if (rec.get("rows") or 0) > budget_rows:
                 frm = "(SELECT * FROM %s LIMIT %d)" % (frm, budget_rows)

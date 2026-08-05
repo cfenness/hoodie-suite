@@ -67,7 +67,7 @@ Fill measured over **full table** (1,732 rows).
 > Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
-**Written by** `master_ttb.py:133` (write_parquet), `server.py:3517` (write_parquet)
+**Written by** `master_ttb.py:133` (write_parquet), `server.py:3574` (write_parquet)
 
 
 ## 4. `master_ttb.py` — the module's own account

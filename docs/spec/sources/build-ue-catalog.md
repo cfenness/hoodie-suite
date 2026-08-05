@@ -33,7 +33,7 @@ _No literal endpoint constant in `json.py`._ The transport is either inherited f
 
 ### `ubereats_products`
 
-2,160,806 rows · 16 columns
+2,160,806 rows · 17 columns
 
 
 | column | type | filled |
@@ -44,16 +44,17 @@ _No literal endpoint constant in `json.py`._ The transport is either inherited f
 | `item_uuid` | `VARCHAR` | 100.0% |
 | `name` | `VARCHAR` | 100.0% |
 | `brand` | `INTEGER` | **0%** ‹never populated› |
-| `upc` | `VARCHAR` | 8.1% |
+| `upc` | `VARCHAR` | **3.1%** |
 | `gtin` | `INTEGER` | **0%** ‹never populated› |
 | `price` | `DOUBLE` | 100.0% |
-| `list_price` | `DOUBLE` | **4.3%** |
+| `list_price` | `DOUBLE` | **2.5%** |
 | `promo` | `INTEGER` | **0%** ‹never populated› |
 | `size` | `INTEGER` | **0%** ‹never populated› |
-| `abv` | `DOUBLE` | **1.3%** |
+| `abv` | `DOUBLE` | **0.8%** |
 | `in_stock` | `BOOLEAN` | 100.0% |
-| `stock_label` | `VARCHAR` | 16.4% |
+| `stock_label` | `VARCHAR` | 8.9% |
 | `category` | `INTEGER` | **0%** ‹never populated› |
+| `__b` | `VARCHAR` | 100.0% |
 
 Fill measured over **first 400,000 rows** (400,000 rows).
 

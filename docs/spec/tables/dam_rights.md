@@ -57,4 +57,4 @@ Fill measured over **full table** (1 rows).
 
 | module:line | call | layout | pins dtypes |
 |---|---|---|---|
-| `rights.py:609` | `write_accumulate` | accumulating (merge; bucketed if migrated) | no |
+| `rights.py:620` | `write_accumulate` | accumulating (merge; bucketed if migrated) | no |

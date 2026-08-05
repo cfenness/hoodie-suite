@@ -21,9 +21,9 @@ Live schema captured **2026-08-05T12:49:49Z**.
 | Builds (derive from what we hold) | 14 |
 | Tables the code writes | 177 |
 | ...that have actually landed | 145 |
-| Columns described | 2,071 |
+| Columns described | 2,074 |
 | Rows landed | 198,439,987 |
-| Columns measured for fill | 2,034 |
+| Columns measured for fill | 2,065 |
 | ...that are NEVER populated | **191** |
 
 
@@ -155,7 +155,7 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 | [`asset_divergence`](tables/asset_divergence.md) | — | — | **never landed** | `asset-divergence` |
 | [`bea_reference`](tables/bea_reference.md) | 96,450 | 10 | yes | `bea` |
 | [`bevalc_chains`](tables/bevalc_chains.md) | 127 | 14 | yes | — |
-| [`binnys_products`](tables/binnys_products.md) | 1,534,862 | 29 | yes | `binnys` |
+| [`binnys_products`](tables/binnys_products.md) | 1,534,862 | 30 | yes | `binnys` |
 | [`bottlecapps_products`](tables/bottlecapps_products.md) | 227 | 19 | yes | `bottlecapps` |
 | [`brand_events`](tables/brand_events.md) | 329 | 23 | yes | `dam-bacardi` |
 | [`ca_outlets`](tables/ca_outlets.md) | 128,950 | 26 | yes | `ca-abc` |
@@ -263,7 +263,7 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 | [`specs_products`](tables/specs_products.md) | 1,029 | 23 | yes | `specs` |
 | [`src_brands`](tables/src_brands.md) | 262,191 | 5 | yes | — |
 | [`src_items`](tables/src_items.md) | 1,059,584 | 11 | yes | — |
-| [`src_outlets`](tables/src_outlets.md) | 1,916,357 | 28 | yes | `geocode`, `aggregator-geo`, `fast-geo`, `geo`, `ubereats-sitemap`, `postmates-sitemap`, `build-outlets` |
+| [`src_outlets`](tables/src_outlets.md) | 1,916,357 | 29 | yes | `geocode`, `aggregator-geo`, `fast-geo`, `geo`, `ubereats-sitemap`, `postmates-sitemap`, `build-outlets` |
 | [`src_products`](tables/src_products.md) | 1,001,832 | 22 | yes | — |
 | [`src_skus`](tables/src_skus.md) | 1,084,333 | 15 | yes | — |
 | [`src_summary`](tables/src_summary.md) | 5 | 5 | yes | — |
@@ -284,7 +284,7 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 | [`ttb_master`](tables/ttb_master.md) | 1,732 | 18 | yes | `ttb` |
 | [`ttb_quarantine_summary`](tables/ttb_quarantine_summary.md) | 200 | 4 | yes | — |
 | [`ttb_review`](tables/ttb_review.md) | 1,462 | 18 | yes | — |
-| [`ubereats_products`](tables/ubereats_products.md) | 2,160,806 | 16 | yes | `ubereats-full`, `build-ue-catalog` |
+| [`ubereats_products`](tables/ubereats_products.md) | 2,160,806 | 17 | yes | `ubereats-full`, `build-ue-catalog` |
 | [`ubereats_products_parts`](tables/ubereats_products_parts.md) | 29,901,954 | 21 | yes | `ubereats`, `ubereats-enrich` |
 | [`ubereats_sitemap`](tables/ubereats_sitemap.md) | 755,032 | 6 | yes | `ubereats-sitemap` |
 | [`ut_pricing`](tables/ut_pricing.md) | 10,239 | 14 | yes | `control-states` |

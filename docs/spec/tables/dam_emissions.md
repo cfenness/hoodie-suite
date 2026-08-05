@@ -35,4 +35,4 @@ Fill measured over **newest 1 of 1 partitions** (1 rows).
 
 | module:line | call | layout | pins dtypes |
 |---|---|---|---|
-| `rights.py:579` | `write_partition` | partitioned (append-only parts) | no |
+| `rights.py:590` | `write_partition` | partitioned (append-only parts) | no |

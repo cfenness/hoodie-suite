@@ -4,51 +4,51 @@
 |---|---|
 | Status | landed |
 | Rows | 1,916,357 |
-| Columns | 28 |
-| Storage | — |
-| Partitions | — |
-| Schema drift | — |
+| Columns | 29 |
+| Storage | bucketed |
+| Partitions | 16 |
+| Schema drift | uniform in sample |
 | Write mode | accumulating (merge; bucketed if migrated), flat (full rebuild, layout-preserving) |
 | Declared in `table_spec.py` | no — schema is whatever the writer emits |
 | Written by sources | `geocode`, `aggregator-geo`, `fast-geo`, `geo`, `ubereats-sitemap`, `postmates-sitemap`, `build-outlets` |
-| URI | `s3://hoodie-suite-warehouse/warehouse/src_outlets.parquet` |
+| URI | `manifest: _manifest/src_outlets.json` |
 
 
 ## Columns
 
 | column | type | filled |
 |---|---|---|
-| `source` | `VARCHAR` | — |
-| `store_id` | `VARCHAR` | — |
-| `store_name` | `VARCHAR` | — |
-| `chain` | `VARCHAR` | — |
-| `is_chain` | `BOOLEAN` | — |
-| `f_beer` | `BOOLEAN` | — |
-| `f_wine` | `BOOLEAN` | — |
-| `f_spirits` | `BOOLEAN` | — |
-| `f_hemp` | `BOOLEAN` | — |
-| `f_cannabis` | `BOOLEAN` | — |
-| `f_rtd_spirits` | `BOOLEAN` | — |
-| `flag_basis` | `VARCHAR` | — |
-| `license_conflict` | `BOOLEAN` | — |
-| `address` | `VARCHAR` | — |
-| `city` | `VARCHAR` | — |
-| `state` | `VARCHAR` | — |
-| `zip` | `VARCHAR` | — |
-| `lat` | `DOUBLE` | — |
-| `lng` | `DOUBLE` | — |
-| `phone` | `VARCHAR` | — |
-| `addr_valid` | `BOOLEAN` | — |
-| `hoodie_outlet` | `VARCHAR` | — |
-| `name_key` | `VARCHAR` | — |
-| `phone_norm` | `VARCHAR` | — |
-| `addr_key` | `VARCHAR` | — |
-| `geo_cell` | `VARCHAR` | — |
-| `county_fips` | `VARCHAR` | — |
-| `geo_precision` | `VARCHAR` | — |
+| `source` | `VARCHAR` | 100.0% |
+| `store_id` | `VARCHAR` | 100.0% |
+| `store_name` | `VARCHAR` | 100.0% |
+| `chain` | `VARCHAR` | 8.6% |
+| `is_chain` | `BOOLEAN` | 100.0% |
+| `f_beer` | `BOOLEAN` | 100.0% |
+| `f_wine` | `BOOLEAN` | 100.0% |
+| `f_spirits` | `BOOLEAN` | 100.0% |
+| `f_hemp` | `BOOLEAN` | 100.0% |
+| `f_cannabis` | `BOOLEAN` | 100.0% |
+| `f_rtd_spirits` | `BOOLEAN` | 100.0% |
+| `flag_basis` | `VARCHAR` | 100.0% |
+| `license_conflict` | `BOOLEAN` | 100.0% |
+| `address` | `VARCHAR` | 29.0% |
+| `city` | `VARCHAR` | 59.3% |
+| `state` | `VARCHAR` | 57.0% |
+| `zip` | `VARCHAR` | 27.6% |
+| `lat` | `DOUBLE` | 55.8% |
+| `lng` | `DOUBLE` | 55.8% |
+| `phone` | `VARCHAR` | **0.1%** |
+| `addr_valid` | `BOOLEAN` | 100.0% |
+| `hoodie_outlet` | `VARCHAR` | 100.0% |
+| `name_key` | `VARCHAR` | 99.9% |
+| `phone_norm` | `VARCHAR` | **0.1%** |
+| `addr_key` | `VARCHAR` | 24.8% |
+| `geo_cell` | `VARCHAR` | 25.0% |
+| `county_fips` | `VARCHAR` | **4.5%** |
+| `geo_precision` | `VARCHAR` | 100.0% |
+| `__b` | `VARCHAR` | 100.0% |
 
-_Fill rates not measured — rerun `spec_capture.py --fill`. Without them this is a list of columns, not a statement of what is captured._
-
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ## Writers
 
