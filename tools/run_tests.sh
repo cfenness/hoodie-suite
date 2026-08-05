@@ -60,6 +60,7 @@ TESTS=(
   repair_partitions_test       # canonicalising a drifted table is lossless
   geo_resolve_test             # lat/lng -> county/CBSA/ZCTA: border points, rural gaps, degrade floor
   metro_analytics_test         # metro claims: unknown != independent, median not mean
+  land_test                    # ONE accumulation style: append a part, let the fold merge
   obs_rollup_test              # 53M observations -> store grain, without re-reading the source
   outlet_xref_test             # one observation store maps to at most ONE outlet
   ue_ids_test                  # UberEats ids come in two encodings of the same value

@@ -489,6 +489,94 @@ def write_partition(name, part, records, fields=None, dtypes=None):
     return {"rows": len(records), "part": part}
 
 
+def land(name, records, day=None, shard=None, seq=None, scope=None, log=None):
+    """THE call a scraper makes. Append a stage-1 part for `name`; the fold does the rest.
+
+    This is the one accumulation style (PIPELINE-DESIGN.md C1: everything upstream appends a part,
+    only the fold writes the aggregate). It exists because `write_accumulate` — 258 call sites
+    against 2 tables that can do it incrementally — reads the WHOLE table into Python, merges, and
+    rewrites, which is one failure wearing several hats: build-product-master OOM-killed on 9 of 13
+    runs holding 3.3M rows to add ~50, `normalize` needing 16GB for a 1.76M-row merge, and
+    raw_capture.evacuate OOM-ing at 8GB AND 16GB. Appending a part is flat in memory, shard-safe
+    (disjoint paths, no read-modify-write) and idempotent, at any table size.
+
+    THE PART NAME IS LOAD-BEARING, WHICH IS THE REAL REASON THIS FUNCTION EXISTS. fold.py has no
+    timestamp column to order by, so it establishes recency by SORTING PART FILENAMES — ISO dates
+    sort lexically, so `2026-07-30_s02_b0004` is a real recency order. A caller that formats a name
+    without a leading ISO date does not fail; it silently gives the fold the wrong merge order, and
+    the aggregate becomes an arbitrary mix of old and new values. Today every call site formats that
+    string by hand. Here it is composed, and asserted.
+
+    Naming:
+        day only              '2026-08-04'                    one part per day — a re-run REPLACES it
+        + scope               '2026-08-04_florida'            one per day per scope
+        + shard/seq           '2026-08-04_s02_b0004'          a fleet: disjoint parts, no merge
+
+    The default is deliberately idempotent: a single-shot source that re-runs overwrites its own
+    part rather than double-landing. A fleet passes shard/seq and owns disjoint slices.
+
+    Schema comes from table_spec (C2) — the caller passes no fields and no dtypes. An undeclared
+    table RAISES rather than falling back to per-batch inference: that inference is what made
+    ubereats_products_parts and retail_observations unreadable, and this is the new path, so it
+    starts strict. `write_partition` remains for legacy/undeclared callers.
+
+    Returns {'rows', 'part', 'table', 'pending'} — `pending` is the fold backlog after this write,
+    so "how much is waiting" is a number at the point of landing (C3).
+    """
+    import table_spec
+    spec = table_spec.spec_for(name)
+    if spec is None:
+        raise ValueError(
+            "land(%r): no table_spec declaration. Declare the table in table_spec.py — its fields, "
+            "types and key_cols are what the fold merges on, and an undeclared table would fall "
+            "back to per-batch schema inference, which is the corruption that made "
+            "ubereats_products_parts and retail_observations unreadable." % name)
+
+    part = _part_name(day=day, scope=scope, shard=shard, seq=seq)
+    parts_table = name + "_parts"
+    rows = [{f: r.get(f) for f in spec.fields} for r in (records or [])]
+    res = write_partition(parts_table, part, rows)      # fields/dtypes inherited from the spec
+
+    out = {"rows": len(rows), "part": part, "table": parts_table, "pending": None}
+    try:                                               # visibility only — never fail a good write
+        import fold
+        out["pending"] = fold.pending(name).get("pending")
+    except Exception:
+        pass
+    if log:
+        log("[land] %s <- %d rows as %s (fold backlog: %s)"
+            % (parts_table, len(rows), part, out["pending"] if out["pending"] is not None else "?"))
+    return dict(res, **out) if isinstance(res, dict) else out
+
+
+_ISO_DAY = "%Y-%m-%d"
+
+
+def _part_name(day=None, scope=None, shard=None, seq=None):
+    """Compose a part name that the fold can order by. ISO date FIRST, always.
+
+    Asserted rather than assumed: fold.py's entire recency model is `sorted(part_files)`, so if a
+    future edit ever moved the date off the front this would return names that sort by scope or
+    shard instead — and the fold would keep running, quietly merging in the wrong order."""
+    d = day or time.strftime(_ISO_DAY, time.gmtime())
+    parts = [str(d)]
+    if scope:
+        parts.append(_slug(scope))
+    if shard is not None:
+        parts.append("s%02d" % int(shard))
+    if seq is not None:
+        parts.append("b%04d" % int(seq))
+    name = "_".join(parts)
+    assert name[:10] == str(d)[:10] and str(d)[4] == "-", (
+        "part name must start with an ISO date — fold.py orders parts by filename to establish "
+        "recency, and a name that does not sort by date silently corrupts the merge order")
+    return name
+
+
+def _slug(s):
+    return "".join(c if (c.isalnum() or c == "-") else "-" for c in str(s).lower()).strip("-")
+
+
 _NO_FILES = ("No files found matching", "no files found matching", "IO Error: No files",
              "does not exist")
 
