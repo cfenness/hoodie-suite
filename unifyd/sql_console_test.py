@@ -179,9 +179,30 @@ class PartitionScope(unittest.TestCase):
         self.assertIn("/w/t/legacy.parquet", sel)
         self.assertEqual(len(sel), 2)
 
-    def test_thresholds_are_sane(self):
+    def test_threshold_is_sane(self):
         self.assertGreater(sc.FULL_BIND_MAX, 0)
-        self.assertGreater(sc.RECENT_DAYS, 0)
+
+    def test_scope_is_bounded_in_PARTS_not_days(self):
+        # The miss that shipped first: scoping to 30 DAYS left ~1,800 parts, because
+        # retail_observations writes one part per date x source across ~60 sources. Under the 4,301
+        # total, far over the 400 that defines "too many to open" — so the bind still hung. The window
+        # has to be measured in the same unit as the threshold.
+        files = ["/w/t/%s_src%02d.parquet" % (d, i)
+                 for d in ["2026-%02d-%02d" % (m, day) for m in (6, 7, 8) for day in range(1, 29)]
+                 for i in range(60)] + ["/w/t/legacy.parquet"]
+        by_date, undated = {}, []
+        for f in files:
+            d = sc._part_date(f)
+            (by_date.setdefault(d, []).append(f) if d else undated.append(f))
+        sel, keep = list(undated), set()
+        for d in sorted(by_date, reverse=True):
+            if len(sel) + len(by_date[d]) > sc.FULL_BIND_MAX and keep:
+                break
+            sel += by_date[d]
+            keep.add(d)
+        self.assertLessEqual(len(sel), sc.FULL_BIND_MAX, "bind must be bounded by the PART cap")
+        self.assertGreater(len(keep), 0, "at least one day must always bind")
+        self.assertIn("/w/t/legacy.parquet", sel, "undated parts stay in")
 
     def test_run_always_reports_scopes(self):
         # the key is present on BOTH paths — a UI that reads result.scopes must never see undefined

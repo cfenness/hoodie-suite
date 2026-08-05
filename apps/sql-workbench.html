@@ -242,7 +242,7 @@ async function run(){
   // all-time. It gets said first, in full, every time, with the way to turn it off.
   (r.scopes || []).forEach(s => notes.push(
     `${s.table} is partitioned into ${num(s.total_parts)} parts — too many to open at once, so this ` +
-    `query read the most recent ${s.days} days only (${s.from} → ${s.to}, ${num(s.bound_parts)} parts). ` +
+    `query read the most recent ${s.days} day(s) only (${s.from} → ${s.to}, ${num(s.bound_parts)} parts). ` +
     `Every number below covers that window, not all time. Tick "all parts" to scan everything (slow).`));
   if (r.truncated) notes.push(
     `showing the first ${num(r.row_count)} rows — there are more. Add a LIMIT, an aggregate, or a tighter WHERE to see the whole answer.`);
