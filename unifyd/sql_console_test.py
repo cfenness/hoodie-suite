@@ -212,6 +212,40 @@ class PartitionScope(unittest.TestCase):
         self.assertEqual(run.count('"scopes": scopes'), 2, "scopes must ride the ok AND the error return")
 
 
+class BucketedTables(unittest.TestCase):
+    """The v2 (bucketed) layout is a manifest, not a directory of parquet files.
+
+    Rows live at <name>/__b=<hex>/part-v<n>.parquet, so the partitioned glob <name>/*.parquet matches
+    NOTHING. Binding that glob made the three largest catalogs in the warehouse unreachable by name —
+    binnys_products 1,534,862 + src_outlets 1,916,357 + ubereats_products 2,160,806 = 5.6M rows — while
+    the monitor still LISTED them, so they looked present and answered "table does not exist". Verified
+    live on all three before the fix.
+    """
+
+    def setUp(self):
+        import re as _re
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql_console.py"),
+                   errors="ignore").read()
+        src = _re.sub(r'"""(?:.|\n)*?"""', "", src)
+        self.body = "\n".join(l for l in src.split("\n") if not l.strip().startswith("#"))
+
+    def test_bucketed_goes_through_the_manifest_binder(self):
+        # warehouse.attach_view already resolves BOTH layouts off the manifest. Re-deriving the path
+        # here is exactly how the two drift apart again.
+        self.assertIn("warehouse.read_manifest(name)", self.body)
+        self.assertIn("warehouse.attach_view(con, name", self.body)
+
+    def test_columns_resolves_the_same_way_as_a_query(self):
+        # a sidebar that shows a table's columns while a query against it says "does not exist" is
+        # worse than showing nothing
+        cols = self.body[self.body.index("def columns("):]
+        self.assertIn("_scoped_expr(name)", cols)
+        self.assertIn("attach_view", cols)
+
+    def test_empty_bucketed_is_reported_not_silently_dropped(self):
+        self.assertIn("genuinely empty", self.body)
+
+
 class Cells(unittest.TestCase):
     def test_json_safe(self):
         self.assertEqual(sc._cell(None), None)

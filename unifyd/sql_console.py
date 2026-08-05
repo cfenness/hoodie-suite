@@ -167,12 +167,23 @@ def _part_date(path):
 
 
 def _scoped_expr(name, all_parts=False):
-    """(duckdb source expression, scope|None) for a table.
+    """(duckdb source expression | None, scope|None) for a table.
 
+    `None` for the expression means "this table needs warehouse.attach_view" — see resolve().
     scope is None when everything is bound. When it isn't None the caller MUST surface it.
     """
     import monitor
     import warehouse
+    # BUCKETED (v2) tables are a manifest, not a directory of parquet files: the rows live at
+    # <name>/__b=<hex>/part-v<n>.parquet, so the partitioned glob <name>/*.parquet matches NOTHING.
+    # Binding that glob makes the three largest catalogs in the warehouse unreachable by name —
+    # binnys_products (1,534,862), src_outlets (1,916,357), ubereats_products (2,160,806), 5.6M rows —
+    # while monitor still LISTS them, so they look present and answer "table does not exist".
+    # warehouse.attach_view already resolves both layouts off the manifest; use it rather than
+    # re-deriving the path here, which is exactly how the two would drift apart again.
+    man = warehouse.read_manifest(name)
+    if man and man.get("layout") == "bucketed":
+        return None, None
     snap = (monitor._CACHE["data"] or {}).get("sources", [])
     s = next((x for x in snap if x["name"] == name), None)
     if not (s and s.get("partitioned")) or all_parts or ALL_PARTS:
@@ -224,11 +235,17 @@ def resolve(sql, names=None, all_parts=False):
         known = _known()
     words = re.findall(r"[a-zA-Z_][a-zA-Z_0-9]*", _strip(sql))
     want = [w for w in dict.fromkeys(words) if w in known]
+    import warehouse
     con, bound, failed, scopes = _con(), [], {}, []
     for name in want:
         try:
             expr, scope = _scoped_expr(name, all_parts=all_parts)
-            con.execute('CREATE OR REPLACE TEMP VIEW "%s" AS SELECT * FROM %s' % (name, expr))
+            if expr is None:                             # bucketed → the manifest-aware binder owns it
+                if not warehouse.attach_view(con, name, view='"%s"' % name):
+                    failed[name] = "bucketed table has no active parts (genuinely empty)"
+                    continue
+            else:
+                con.execute('CREATE OR REPLACE TEMP VIEW "%s" AS SELECT * FROM %s' % (name, expr))
             bound.append(name)
             if scope:
                 scopes.append(scope)
@@ -318,8 +335,19 @@ def _cell(v):
 
 
 def columns(name):
-    """A table's column names + types, without reading rows (Parquet footer via DESCRIBE)."""
-    import monitor
+    """A table's column names + types, without reading rows (Parquet footer via DESCRIBE).
+
+    Goes through the same resolution as a query — a sidebar that can show a table's columns while a
+    query against it says "does not exist" is worse than showing nothing.
+    """
     with _LOCK:
-        cur = _con().execute("DESCRIBE SELECT * FROM %s" % monitor.read_expr(name))
+        con = _con()
+        expr, _scope = _scoped_expr(name)
+        if expr is None:
+            import warehouse
+            if not warehouse.attach_view(con, name, view='"_desc"'):
+                return []
+            cur = con.execute('DESCRIBE SELECT * FROM "_desc"')
+        else:
+            cur = con.execute("DESCRIBE SELECT * FROM %s" % expr)
         return [{"name": r[0], "type": r[1]} for r in cur.fetchall()]
