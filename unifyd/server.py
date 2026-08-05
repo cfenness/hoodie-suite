@@ -1241,6 +1241,46 @@ def api_monitor_health():
                         age_s=round(time.time() - (digest.get("as_of") or 0))))
 
 
+# ── SQL workbench: read-only SQL over the whole warehouse (apps/sql-workbench.html) ───────────────────
+# Every other surface here shows a CURATED view of the data. This one shows the data. The guard lives in
+# sql_console.guard (single statement, read-only openers, write/filesystem verbs refused anywhere) and is
+# tested in sql_console_test.py — the endpoint deliberately adds no rules of its own, so there is exactly
+# one place where "what may run" is decided.
+@app.post("/api/sql")
+def api_sql():
+    import sql_console
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify(sql_console.run(body.get("sql") or "", limit=body.get("limit"),
+                                       timeout_s=body.get("timeout_s")))
+    except sql_console.SqlRefused as e:
+        return jsonify({"ok": False, "refused": True, "error": str(e)}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:400]}), 200
+
+
+@app.get("/api/sql/tables")
+def api_sql_tables():
+    """The sidebar: every readable table with its row count. Served off the monitor snapshot, so it is
+    the SAME inventory the Data Console shows — two surfaces disagreeing about what exists is its own bug."""
+    import sql_console
+    try:
+        return jsonify({"tables": sql_console.tables()})
+    except Exception as e:
+        return jsonify({"tables": [], "error": str(e)[:200]}), 200
+
+
+@app.get("/api/sql/columns")
+def api_sql_columns():
+    """A table's columns + types, from the Parquet footer — no rows read."""
+    import sql_console
+    name = request.args.get("name") or ""
+    try:
+        return jsonify({"name": name, "columns": sql_console.columns(name)})
+    except Exception as e:
+        return jsonify({"name": name, "columns": [], "error": str(e)[:200]}), 200
+
+
 _DATA_SAMPLE_CACHE = {}                       # name -> (built_at, payload); makes re-opening a source instant
 _MON_CON = {"con": None}                       # ONE warm DuckDB connection reused for drawer reads
 _MON_LOCK = threading.Lock()

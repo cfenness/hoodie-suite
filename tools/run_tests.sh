@@ -63,6 +63,7 @@ TESTS=(
   obs_rollup_test              # 53M observations -> store grain, without re-reading the source
   outlet_xref_test             # one observation store maps to at most ONE outlet
   ue_ids_test                  # UberEats ids come in two encodings of the same value
+  sql_console_test             # an open SQL box must not be able to write to the warehouse
 )
 
 FILTER="${1:-}"
