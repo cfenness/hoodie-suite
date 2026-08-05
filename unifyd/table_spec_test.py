@@ -44,15 +44,33 @@ def check(label, ok, detail=""):
     print("  %s %s%s" % ("PASS" if ok else "FAIL", label, ("  -- " + detail) if detail and not ok else ""))
 
 
-def _resolve_names(node):
+def _module_consts(tree):
+    """Module-level `NAME = "literal"` bindings, so a call that passes a constant instead of a
+    literal is still resolvable. Many writers do exactly that (rights.py: EMISSIONS_TABLE), and
+    treating those as 'unresolvable' made the ratchet demand dtypes from call sites whose table IS
+    declared — noise that trains people to add baseline entries instead of specs."""
+    out = {}
+    for n in tree.body:
+        if isinstance(n, ast.Assign) and isinstance(n.value, ast.Constant) \
+           and isinstance(n.value.value, str):
+            for t in n.targets:
+                if isinstance(t, ast.Name):
+                    out[t.id] = n.value.value
+    return out
+
+
+def _resolve_names(node, consts=None):
     """Every table name a `write_partition` first-argument could denote.
 
     Literal -> itself. `"%s_products_parts" % site` -> the name for each known site, because 30% of
     write call sites build their name at run time and a literal-only check would miss exactly the
     ones that broke. Unresolvable -> empty, which the caller treats as "must pass dtypes explicitly".
     """
+    consts = consts or {}
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return [node.value]
+    if isinstance(node, ast.Name) and node.id in consts:
+        return [consts[node.id]]
     # "<fmt>" % x  /  "<fmt>" % (x, y)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod) \
        and isinstance(node.left, ast.Constant) and isinstance(node.left.value, str):
@@ -67,7 +85,7 @@ def _resolve_names(node):
         return out
     # <name> + "_parts"
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        left, right = _resolve_names(node.left), _resolve_names(node.right)
+        left, right = _resolve_names(node.left, consts), _resolve_names(node.right, consts)
         if isinstance(node.right, ast.Constant) and isinstance(node.right.value, str) and left:
             return [l + node.right.value for l in left]
         if left and right:
@@ -81,6 +99,7 @@ def _write_partition_calls(path):
         tree = ast.parse(open(path, encoding="utf-8").read())
     except SyntaxError:
         return []
+    consts = _module_consts(tree)
     out = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -90,7 +109,7 @@ def _write_partition_calls(path):
         if name != "write_partition" or not node.args:
             continue
         has_dtypes = any(k.arg == "dtypes" for k in node.keywords) or len(node.args) >= 5
-        out.append((node.lineno, node.args[0], has_dtypes))
+        out.append((node.lineno, node.args[0], has_dtypes, consts))
     return out
 
 
@@ -118,6 +137,16 @@ def main():
               "spec %d vs observe %d" % (len(spec.fields), len(observe.OBS_FIELDS)))
     except Exception as e:
         check("observe importable for drift check", False, str(e)[:120])
+
+    # rights.py holds the other canonical copy of the emissions schema — same reasoning.
+    try:
+        import rights
+        spec = table_spec.spec_for("dam_emissions")
+        check("table_spec dam_emissions fields == rights.EMISSION_FIELDS",
+              list(rights.EMISSION_FIELDS) == spec.fields,
+              "spec %d vs rights %d" % (len(spec.fields), len(rights.EMISSION_FIELDS)))
+    except Exception as e:
+        check("rights importable for drift check", False, str(e)[:120])
 
     # --- 2. declared types must materialise ------------------------------------------------------
     # Needs pyarrow, which is a Fly-image dependency and is legitimately absent on a dev box. SKIP
@@ -147,10 +176,10 @@ def main():
         if not fn.endswith(".py") or fn.endswith("_test.py"):
             continue
         path = os.path.join(HERE, fn)
-        for lineno, arg, has_dtypes in _write_partition_calls(path):
+        for lineno, arg, has_dtypes, consts in _write_partition_calls(path):
             if has_dtypes:
                 continue
-            names = _resolve_names(arg)
+            names = _resolve_names(arg, consts)
             if names and all(table_spec.spec_for(n) for n in names):
                 continue                  # inherits its schema from the declaration
             offenders.append("%s:%d %s" % (fn, lineno, ("-> " + ", ".join(names)) if names
@@ -170,6 +199,8 @@ def main():
         "run_sources.py": 1,      # source_runs_log
         "runlog.py": 1,           # scrape_runs
         "salsify.py": 1,          # per-site catalog name
+        # rights.py deliberately ABSENT: dam_emissions is declared in table_spec, so its
+        # write inherits the schema. This is what clearing a ratchet entry looks like.
         "ue_catalog.py": 1,       # secondary write; the primary land IS pinned
     }
     by_file = {}
