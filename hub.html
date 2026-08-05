@@ -360,6 +360,7 @@
     // Hoodie Collect — the scrape workbench (deprecates the older per-source tracking surfaces)
     {id:"collect",    bucket:"collect", star:1, nav:1, mark:"HC", name:"Hoodie Collect", desc:"Inspect every source, run it on demand, and watch the console, record counts & percent-collected as it lands.", file:"apps/collect.html", healthSource:1},
 
+    {id:"pipeline-stages",bucket:"ops", mark:"PS", name:"Pipeline Stages", desc:"Where the data is, how much is waiting, and whether the number can be trusted — measured, never modelled.", file:"apps/pipeline-stages.html"},
     {id:"data-console",bucket:"ops",  star:1,  mark:"DC", name:"Data Console", desc:"Every source, account & master dim with real counts, freshness & health — live from the warehouse.", file:"apps/data-console.html", healthSource:1},
     {id:"sql-workbench",bucket:"ops", star:1,  mark:"SQL",name:"Hoodie SQL", desc:"Read-only SQL straight at the warehouse Parquet — every table binds by name, no setup. For checking the data yourself instead of taking a screen's word for it.", file:"apps/sql-workbench.html"},
     {id:"connectors", bucket:"ops",            mark:"PU", name:"Pulls", desc:"Every source that feeds the master — running, last-run, on/off, pull now.", file:"apps/connectors.html"},
