@@ -91,13 +91,22 @@ def test_undeclared_table_raises():
 
 
 def test_schema_comes_from_the_table():
-    """The caller passes no fields and no dtypes; land() projects to the declared field set."""
+    """The schema is the DECLARED one — land() resolves it and pins the write with it."""
     import inspect
     src = inspect.getsource(warehouse.land)
     ok("resolves the spec", "table_spec.spec_for(name)" in src)
     ok("projects rows to the declared fields", "for f in spec.fields" in src)
-    ok("passes NO fields/dtypes to write_partition",
-       "write_partition(parts_table, part, rows)" in src)
+    # This check used to read `write_partition(parts_table, part, rows)` — no fields, no dtypes —
+    # taking a bare call as proof that schema came from the table. It passed for the entire life of
+    # the bug it existed to prevent: the inherited lookup keys on the table actually WRITTEN,
+    # `<name>_parts`, which was declared for 2 of the 6 tables declared at the time. For the other
+    # four the write fell through to per-batch inference (measured: landing retail_observations rows
+    # with an all-None price wrote `null` against a declared `double`). What matters is not that the
+    # call is bare but that the types are the declared ones — so assert the pin, and that it is
+    # derived from the spec rather than restated at the call site. The schema ON DISK is asserted in
+    # table_spec_test, which already gates its pyarrow-dependent checks; this file stays offline.
+    ok("pins the parts write from the declaration", "dtypes=table_spec.arrow_dtypes(spec)" in src)
+    ok("...using the parent fields the rows were projected through", "fields=spec.fields" in src)
 
     spec = table_spec.spec_for("retail_observations")
     ok("a real spec resolves", spec is not None)
