@@ -93,7 +93,16 @@ def test_undeclared_table_raises():
 def test_schema_comes_from_the_table():
     """The schema is the DECLARED one — land() resolves it and pins the write with it."""
     import inspect
+    # MATCH THE EXECUTABLE BODY, NOT THE PROSE — the remedy the next test down already applies, which
+    # these checks failed to copy. Measured: delete the pin from the call, leave a comment that
+    # mentions it, and this suite reported 26 passed / 0 failed while the parts file went back to
+    # per-batch inference (table_spec_test's on-disk check caught it: price=null vs a declared
+    # double). land()'s body is heavily commented BECAUSE of that bug, so its own rationale contains
+    # every string these checks look for — a text match here reads the explanation and calls it the
+    # implementation. Fifth instance of prose-mistaken-for-code found in this repo on 2026-08-05.
     src = inspect.getsource(warehouse.land)
+    body = src.replace(warehouse.land.__doc__ or "", "")
+    src = "\n".join(l for l in body.splitlines() if not l.strip().startswith("#"))
     ok("resolves the spec", "table_spec.spec_for(name)" in src)
     ok("projects rows to the declared fields", "for f in spec.fields" in src)
     # This check used to read `write_partition(parts_table, part, rows)` — no fields, no dtypes —
