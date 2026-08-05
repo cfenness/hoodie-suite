@@ -39,35 +39,84 @@ import ue_catalog                     # noqa: E402
 import ubereats                       # noqa: E402
 
 
+def backlog_sql(shard=0, nshard=1):
+    """The work-list query, as a string. Pure, so it is testable without a warehouse or DuckDB.
+
+    SHARD IN SQL, NOT IN PYTHON. The old code materialised the ENTIRE backlog in every shard and
+    then discarded 7/8 of it — tolerable at 549k rows from the aggregate, not at parts scale (the
+    same over-materialisation that OOM-killed the first fold). DuckDB's hash() is stable and
+    partitions the space disjointly, which is all sharding needs; it deliberately does NOT match
+    ue_catalog._shard_of's md5 assignment, because these are different work-lists and nothing
+    requires them to agree.
+
+    One row per (store, item): the most recent non-empty section context, and ONLY items that no
+    part has ever resolved. HAVING rather than WHERE, so a key resolved by ANY part — postmates'
+    inline enrich, or a previous enrich run — drops out entirely instead of being re-fetched forever.
+    """
+    where_shard = ("AND hash(item_uuid) %% %d = %d" % (nshard, shard)) if nshard > 1 else ""
+    return (
+        "SELECT store_uuid, item_uuid, "
+        "  arg_max(store_name, __part) FILTER (WHERE NULLIF(store_name,'') IS NOT NULL) AS store_name, "
+        "  COALESCE(arg_max(section,    __part) FILTER (WHERE NULLIF(section,'')    IS NOT NULL), '') AS section, "
+        "  COALESCE(arg_max(subsection, __part) FILTER (WHERE NULLIF(subsection,'') IS NOT NULL), '') AS subsection "
+        "FROM t "
+        "WHERE item_uuid IS NOT NULL AND store_uuid IS NOT NULL %s "
+        "GROUP BY store_uuid, item_uuid "
+        "HAVING count(*) FILTER (WHERE NULLIF(upc,'') IS NOT NULL "
+        "                           OR NULLIF(gtin,'') IS NOT NULL) = 0" % where_shard)
+
+
 def backlog(site="ubereats", shard=0, nshard=1, log=print):
-    """Items still missing an identifier. The work-list is derived, never capped — if it is large, that
-    is the honest size of the job, and the answer is more shards, not a smaller query."""
-    tbl = "%s_products" % site
-    # SELECT WHAT THE TABLE ACTUALLY HAS. section/subsection were added to the write schema after this
-    # catalog was first written, and a hard reference to them fails the whole job with a BinderException
-    # (caught in pre-flight before it could crash all 8 shards). Missing context is survivable —
-    # getMenuItemV1 accepts empty section ids — so degrade to '' instead of refusing to run.
-    have = set()
-    for c in ("section", "subsection"):
-        try:
-            if warehouse.has_column(tbl, c):
-                have.add(c)
-        except Exception:
-            pass
-    sec = "section" if "section" in have else "'' AS section"
-    sub = "subsection" if "subsection" in have else "'' AS subsection"
-    if len(have) < 2:
-        log("[enrich] catalog predates %s — enriching without section context"
-            % ", ".join(sorted({"section", "subsection"} - have)))
-    rows = warehouse.query(
-        tbl,
-        "SELECT store_uuid, item_uuid, store_name, %s, %s FROM t "
-        "WHERE COALESCE(upc,'') = '' AND COALESCE(gtin,'') = '' "
-        "AND item_uuid IS NOT NULL AND store_uuid IS NOT NULL" % (sec, sub))
-    rows = [r for r in (rows or []) if ue_catalog._shard_of(r["item_uuid"], nshard) == shard] \
-        if nshard > 1 else list(rows or [])
-    log("[enrich] %s unresolved items in shard %d/%d (the completeness denominator)"
-        % (f"{len(rows):,}", shard, nshard))
+    """Items still missing an identifier, WITH the section context getMenuItemV1 requires.
+
+    READS THE PARTS, NOT THE AGGREGATE — and that is the whole point.
+
+    This job had landed ZERO rows since it was created. Proven live on 2026-08-04, same item, same
+    session, same machine:
+
+        WITH real section ctx   HTTP 200 {"status":"success", ...}   -> real item detail
+        EMPTY ctx               HTTP 200 {"status":"failure","message":"invalid_uuid","code":"404"}
+
+    The chain: `<site>_products` (the stage-2 aggregate) has no section/subsection columns — they
+    were added to the write schema after that table was first written, and `write_accumulate`
+    carries the old column set forward forever. The old code detected that and degraded to '' on the
+    documented belief that "getMenuItemV1 accepts empty section ids". That belief is now false, so
+    every item 404'd, every failure hit a bare `continue`, and the run still exited successfully:
+    8 shards/day against ~549k queued items, zero output, zero run records.
+
+    The PARTS carry section/subsection on 100% of rows (measured: 40,629/40,629 across the newest
+    six). So the work-list comes from there. This also means enrichment no longer depends on the
+    aggregate's schema at all — the failure above can't recur through a column the fold happens not
+    to carry.
+
+    Still derived, never capped: if the list is large that is the honest size of the job, and the
+    answer is more shards.
+    """
+    parts = "%s_products_parts" % site
+    sql = backlog_sql(shard, nshard)
+    # `warehouse.query_parts` builds its view without DuckDB's filename column, and the recency
+    # order here IS the part filename (the parts carry no timestamp — see fold.py). So read the file
+    # list through fold's helpers rather than growing a second parts-reading path.
+    import fold
+    files = fold._part_names(parts)
+    if not files:
+        log("[enrich] no parts for %s yet — nothing to enrich" % parts)
+        return []
+    files_sql = ", ".join("'%s'" % fold._part_sql(f).replace("'", "") for f in files)
+    con = warehouse.connect()
+    cur = con.execute(sql.replace(
+        "FROM t ",
+        "FROM read_parquet([%s], union_by_name=true, filename='__part') " % files_sql))
+    cols = [d[0] for d in cur.description]
+    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    with_ctx = sum(1 for r in rows if (r.get("section") or ""))
+    log("[enrich] %s unresolved items in shard %d/%d (the completeness denominator); "
+        "%s carry section context"
+        % (f"{len(rows):,}", shard, nshard, f"{with_ctx:,}"))
+    if rows and not with_ctx:
+        # Every call would 404. Say so instead of burning a shard's worth of requests to learn it.
+        log("[enrich] WARNING: no item carries section context — getMenuItemV1 will reject every "
+            "request (invalid_uuid). Check that the parts still write section/subsection.")
     return rows
 
 
@@ -76,9 +125,17 @@ def run(site="ubereats", shard=0, nshard=1, workers=None, log=print):
     day = time.strftime("%Y-%m-%d")
     work = backlog(site, shard, nshard, log=log)
     if not work:
-        return {"status": "ok", "site": site, "shard": "%d/%d" % (shard, nshard),
+        # AN EMPTY WORK-LIST IS NOT PROOF THE BACKLOG IS DRAINED. It is equally what you get from a
+        # parts table that has not landed yet, so distinguish the two instead of claiming success —
+        # the whole reason this job's silence went unnoticed for weeks is that it never said which
+        # of the two had happened.
+        import fold
+        has_parts = bool(fold._part_names("%s_products_parts" % site))
+        return {"status": "ok" if has_parts else "degraded",
+                "site": site, "shard": "%d/%d" % (shard, nshard),
                 "items_total": 0, "items_done": 0, "remaining": 0,
-                "note": "no unresolved items — backlog is drained"}
+                "note": ("no unresolved items — backlog is drained" if has_parts else
+                         "NO PARTS to derive a work-list from — this is not a drained backlog")}
 
     by_store = {}
     for r in work:
