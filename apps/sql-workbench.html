@@ -1,0 +1,292 @@
+<script src="../spine/session-guard.js"></script>
+<style>
+  :root{
+    --bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9;
+    --accent:#4E79A7;--good:#5bb86e;--warn:#d99a3f;--bad:#e5636b;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--sans:Inter,system-ui,-apple-system,sans-serif;
+  }
+  @media (prefers-color-scheme:light){:root{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675}}
+  :root[data-theme="light"]{--bg:#f4f6f9;--panel:#fff;--panel2:#eef2f7;--line:#dfe5ec;--ink:#161b22;--mut:#5b6675}
+  :root[data-theme="dark"]{--bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#252c38;--ink:#e6edf3;--mut:#8b98a9}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;
+       display:flex;flex-direction:column;overflow:hidden}
+  button,select,input{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;
+       padding:6px 10px;font-family:var(--sans);font-size:13px}
+  button{cursor:pointer}button:hover{border-color:var(--accent)}
+  button.go{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:650}
+  button.go:hover{filter:brightness(1.12)}
+  button:disabled{opacity:.5;cursor:default}
+
+  .bar{display:flex;align-items:center;gap:12px;padding:9px 16px;border-bottom:1px solid var(--line);
+       background:var(--panel);flex:0 0 auto}
+  h1{font-size:15px;margin:0;font-weight:650;letter-spacing:.2px}
+  .spacer{flex:1}
+  .stamp{font-family:var(--mono);font-size:11px;color:var(--mut)}
+  .wh{font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:6px;font-weight:600}
+  .wh.prod{background:rgba(91,184,110,.14);color:var(--good);border:1px solid rgba(91,184,110,.4)}
+  .wh.local{background:rgba(229,99,107,.14);color:var(--bad);border:1px solid rgba(229,99,107,.5)}
+
+  .wrap{flex:1;display:flex;min-height:0}
+  /* ── left: the table book ─────────────────────────────────────────── */
+  aside{width:264px;flex:0 0 264px;border-right:1px solid var(--line);background:var(--panel);
+        display:flex;flex-direction:column;min-height:0}
+  aside .find{padding:9px 10px;border-bottom:1px solid var(--line)}
+  aside .find input{width:100%}
+  .tlist{flex:1;overflow:auto;padding:4px 0}
+  .t{padding:6px 12px;cursor:pointer;border-left:2px solid transparent}
+  .t:hover{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+  .t.open{border-left-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+  .t .n{font-family:var(--mono);font-size:11.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .t .r{font-family:var(--mono);font-size:10px;color:var(--mut);font-variant-numeric:tabular-nums}
+  .t .p{font-size:9px;color:var(--accent);margin-left:5px;letter-spacing:.4px}
+  .cols{padding:2px 0 8px 14px;border-left:2px solid var(--accent);margin-left:10px}
+  .col{display:flex;gap:8px;padding:2.5px 8px;font-family:var(--mono);font-size:10.5px;cursor:pointer;border-radius:4px}
+  .col:hover{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+  .col .ty{color:var(--mut);margin-left:auto;font-size:9.5px}
+
+  /* ── right: editor over results ───────────────────────────────────── */
+  main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+  .ed{flex:0 0 auto;position:relative;border-bottom:1px solid var(--line);background:var(--panel)}
+  textarea{width:100%;height:150px;resize:vertical;display:block;background:transparent;color:var(--ink);
+       border:0;outline:none;padding:12px 14px;font-family:var(--mono);font-size:13px;line-height:1.55;tab-size:2}
+  .run{display:flex;align-items:center;gap:10px;padding:7px 14px;border-top:1px solid var(--line);background:var(--panel2)}
+  .hint{font-size:11px;color:var(--mut)}
+  kbd{font-family:var(--mono);font-size:10px;background:var(--panel);border:1px solid var(--line);
+      border-bottom-width:2px;border-radius:4px;padding:1px 5px}
+
+  .msg{padding:10px 14px;font-family:var(--mono);font-size:12px;white-space:pre-wrap;display:none;line-height:1.5}
+  .msg.show{display:block}
+  .msg.err{background:rgba(229,99,107,.12);color:var(--bad);border-bottom:1px solid rgba(229,99,107,.35)}
+  .msg.warn{background:rgba(217,154,63,.12);color:var(--warn);border-bottom:1px solid rgba(217,154,63,.35)}
+
+  .grid{flex:1;overflow:auto;min-height:0}
+  table{border-collapse:collapse;font-family:var(--mono);font-size:12px}
+  thead th{position:sticky;top:0;background:var(--panel2);color:var(--mut);text-align:left;padding:7px 11px;
+       border-bottom:1px solid var(--line);border-right:1px solid var(--line);white-space:nowrap;font-weight:600;
+       font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;z-index:2}
+  tbody td{padding:5px 11px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);
+       white-space:pre;font-variant-numeric:tabular-nums;max-width:460px;overflow:hidden;text-overflow:ellipsis}
+  tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--panel2) 42%,transparent)}
+  tbody tr:hover td{background:color-mix(in srgb,var(--accent) 9%,var(--panel))}
+  td.null{color:var(--mut);font-style:italic}
+  td.num{text-align:right}
+  .rn{color:var(--mut);text-align:right;font-size:10.5px;user-select:none;background:var(--panel)!important}
+
+  .foot{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:6px 14px;border-top:1px solid var(--line);
+        background:var(--panel);font-family:var(--mono);font-size:11px;color:var(--mut)}
+  .empty{padding:40px 22px;color:var(--mut);max-width:720px;line-height:1.65}
+  .empty h2{font-size:13px;color:var(--ink);margin:0 0 8px;font-weight:650}
+  .rec{display:block;width:100%;text-align:left;font-family:var(--mono);font-size:11.5px;margin:5px 0;
+       padding:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:7px;color:var(--ink);
+       white-space:pre-wrap;line-height:1.5}
+  .rec:hover{border-color:var(--accent)}
+  .rec b{color:var(--mut);font-weight:500;display:block;font-family:var(--sans);font-size:10.5px;margin-bottom:3px}
+  .hist{max-height:260px;overflow:auto}
+</style>
+
+<div class="bar">
+  <h1>Hoodie SQL</h1>
+  <span class="wh" id="wh">…</span>
+  <span class="spacer"></span>
+  <span class="stamp" id="stamp"></span>
+  <button id="csv" disabled>Download CSV</button>
+</div>
+
+<div class="wrap">
+  <aside>
+    <div class="find"><input id="find" placeholder="find a table…" autocomplete="off"></div>
+    <div class="tlist" id="tlist"><div class="empty" style="padding:18px 12px">loading tables…</div></div>
+  </aside>
+
+  <main>
+    <div class="ed">
+      <textarea id="sql" spellcheck="false" placeholder="SELECT * FROM binnys_products LIMIT 20"></textarea>
+      <div class="run">
+        <button class="go" id="go">Run</button>
+        <span class="hint"><kbd>⌘</kbd>+<kbd>↵</kbd> to run · read-only · <span id="cap"></span></span>
+        <span class="spacer"></span>
+        <select id="hist"><option value="">history…</option></select>
+      </div>
+    </div>
+    <div class="msg" id="msg"></div>
+    <div class="grid" id="grid">
+      <div class="empty" id="welcome">
+        <h2>The warehouse, unfiltered.</h2>
+        Every table on the left is real Parquet — the same files the pipeline writes and the decks read.
+        Name one in a query and it binds itself; no setup, no attach. Reads only.
+        <div style="margin-top:16px" id="recs"></div>
+      </div>
+    </div>
+    <div class="foot"><span id="foot">ready</span><span class="spacer"></span><span id="bound"></span></div>
+  </main>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const num = n => n == null ? '—' : Number(n).toLocaleString();
+let TABLES = [], LAST = null, OPEN = null;
+
+const RECIPES = [
+  ['what is actually in a table', 'SELECT * FROM binnys_products LIMIT 25'],
+  ['how full is every column (nulls are the story)', 'SUMMARIZE SELECT * FROM binnys_products'],
+  ['rows per source, biggest first', "SELECT source, count(*) n FROM retail_observations\nGROUP BY 1 ORDER BY n DESC"],
+  ['what we derived vs what the source stated', "SELECT _derived, count(*) n FROM _stage_product\nGROUP BY 1 ORDER BY n DESC LIMIT 20"],
+  ['find a product across every source', "SELECT _source, brand, product_name, size_ml, price\nFROM _stage_product WHERE product_name ILIKE '%buffalo trace%'\nLIMIT 50"]
+];
+
+/* ── boot ─────────────────────────────────────────────────────────── */
+(async function boot(){
+  $('#recs').innerHTML = RECIPES.map(([t, q]) =>
+    `<button class="rec" data-q="${esc(q)}"><b>${esc(t)}</b>${esc(q)}</button>`).join('');
+  $('#recs').addEventListener('click', e => {
+    const b = e.target.closest('.rec'); if (!b) return;
+    $('#sql').value = b.dataset.q; run();
+  });
+  renderHistory();
+  try {
+    const m = await (await fetch('/api/monitor')).json();
+    const w = m.warehouse || {};
+    const prod = /hoodie-suite-wareho/.test(w.uri || w.bucket || '') || w.remote;
+    $('#wh').className = 'wh ' + (prod ? 'prod' : 'local');
+    $('#wh').textContent = w.bucket || w.uri || (prod ? 'warehouse' : 'local');
+  } catch (e) { $('#wh').textContent = 'warehouse'; }
+  loadTables();
+})();
+
+async function loadTables(){
+  try {
+    const r = await (await fetch('/api/sql/tables')).json();
+    TABLES = r.tables || [];
+    $('#stamp').textContent = TABLES.length + ' tables · ' +
+      num(TABLES.reduce((a, t) => a + (t.rows || 0), 0)) + ' rows';
+    drawTables();
+  } catch (e) {
+    $('#tlist').innerHTML = '<div class="empty" style="padding:18px 12px">could not list tables — is the agent running?</div>';
+  }
+}
+
+function drawTables(){
+  const q = $('#find').value.trim().toLowerCase();
+  const rows = TABLES.filter(t => !q || t.name.toLowerCase().includes(q));
+  $('#tlist').innerHTML = rows.length ? rows.map(t => `
+    <div class="t ${OPEN === t.name ? 'open' : ''}" data-n="${esc(t.name)}">
+      <span class="n">${esc(t.name)}${t.partitioned ? '<span class="p">parts</span>' : ''}</span>
+      <span class="r">${num(t.rows)} rows</span>
+    </div>${OPEN === t.name ? '<div class="cols" id="cols"><div class="col">loading…</div></div>' : ''}`).join('')
+    : '<div class="empty" style="padding:18px 12px">no table matches</div>';
+}
+
+$('#find').addEventListener('input', drawTables);
+
+$('#tlist').addEventListener('click', async e => {
+  const col = e.target.closest('.col');
+  if (col) { insert(col.dataset.c); return; }
+  const t = e.target.closest('.t'); if (!t) return;
+  const name = t.dataset.n;
+  if (OPEN === name) { OPEN = null; drawTables(); return; }
+  OPEN = name; drawTables();
+  // Clicking a table is a QUESTION ("what's in here?"), so answer it: seed the editor with a read.
+  if (!$('#sql').value.trim()) $('#sql').value = `SELECT * FROM ${name} LIMIT 25`;
+  try {
+    const r = await (await fetch('/api/sql/columns?name=' + encodeURIComponent(name))).json();
+    const box = $('#cols'); if (!box) return;
+    box.innerHTML = (r.columns || []).length
+      ? r.columns.map(c => `<div class="col" data-c="${esc(c.name)}">${esc(c.name)}<span class="ty">${esc(c.type)}</span></div>`).join('')
+      : `<div class="col">${esc(r.error || 'no columns')}</div>`;
+  } catch (err) {}
+});
+
+function insert(text){
+  const ta = $('#sql'), s = ta.selectionStart, e = ta.selectionEnd;
+  ta.value = ta.value.slice(0, s) + text + ta.value.slice(e);
+  ta.focus(); ta.selectionStart = ta.selectionEnd = s + text.length;
+}
+
+/* ── run ──────────────────────────────────────────────────────────── */
+$('#go').addEventListener('click', run);
+$('#sql').addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); run(); }
+});
+
+async function run(){
+  const sql = $('#sql').value.trim(); if (!sql) return;
+  $('#go').disabled = true; $('#go').textContent = 'Running…';
+  $('#msg').className = 'msg'; $('#foot').textContent = 'running…'; $('#bound').textContent = '';
+  const t0 = performance.now();
+  let r;
+  try {
+    r = await (await fetch('/api/sql', {method:'POST', headers:{'Content-Type':'application/json'},
+                                        body: JSON.stringify({sql})})).json();
+  } catch (e) { r = {ok:false, error:'request failed: ' + e}; }
+  $('#go').disabled = false; $('#go').textContent = 'Run';
+
+  if (!r.ok) {
+    $('#msg').className = 'msg show err';
+    $('#msg').textContent = (r.refused ? '' : 'error: ') + r.error;
+    $('#foot').textContent = 'failed in ' + ((performance.now() - t0) / 1000).toFixed(1) + 's';
+    $('#csv').disabled = true;
+    return;
+  }
+  remember(sql);
+  LAST = r;
+  // Truncation is stated, never implied — a capped result that looks complete is the whole reason
+  // people stop trusting a console.
+  if (r.truncated) {
+    $('#msg').className = 'msg show warn';
+    $('#msg').textContent = `showing the first ${num(r.row_count)} rows — there are more. Add a LIMIT, an aggregate, or a tighter WHERE to see the whole answer.`;
+  }
+  draw(r);
+  $('#foot').textContent = `${num(r.row_count)}${r.truncated ? '+' : ''} rows · ${r.elapsed_s}s`;
+  $('#bound').textContent = r.bound && r.bound.length ? 'bound: ' + r.bound.join(', ') : '';
+  $('#csv').disabled = false;
+}
+
+function draw(r){
+  const w = $('#welcome'); if (w) w.remove();
+  if (!r.rows.length) {
+    $('#grid').innerHTML = '<div class="empty">0 rows. The query ran — the warehouse has nothing matching it.</div>';
+    return;
+  }
+  const isNum = r.columns.map((_, i) => r.rows.every(row => row[i] == null || typeof row[i] === 'number'));
+  const head = '<tr><th class="rn"></th>' + r.columns.map(c => `<th>${esc(c)}</th>`).join('') + '</tr>';
+  const body = r.rows.map((row, i) => '<tr><td class="rn">' + (i + 1) + '</td>' + row.map((v, j) =>
+    v == null ? '<td class="null">null</td>'
+              : `<td class="${isNum[j] ? 'num' : ''}">${esc(v)}</td>`).join('') + '</tr>').join('');
+  $('#grid').innerHTML = `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+/* ── CSV: the result leaves as data, not as a screenshot ──────────── */
+$('#csv').addEventListener('click', () => {
+  if (!LAST) return;
+  const q = v => v == null ? '' : /[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+  const csv = [LAST.columns.map(q).join(',')].concat(LAST.rows.map(r => r.map(q).join(','))).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'}));
+  a.download = 'hoodie-sql-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '') + '.csv';
+  a.click(); URL.revokeObjectURL(a.href);
+});
+
+/* ── history: local only, so a half-written query survives a reload ─ */
+const HKEY = 'hoodie.sql.history';
+function remember(sql){
+  let h = []; try { h = JSON.parse(localStorage.getItem(HKEY)) || []; } catch (e) {}
+  h = [sql].concat(h.filter(x => x !== sql)).slice(0, 40);
+  localStorage.setItem(HKEY, JSON.stringify(h));
+  renderHistory();
+}
+function renderHistory(){
+  let h = []; try { h = JSON.parse(localStorage.getItem(HKEY)) || []; } catch (e) {}
+  $('#hist').innerHTML = '<option value="">history…</option>' +
+    h.map((s, i) => `<option value="${i}">${esc(s.replace(/\s+/g, ' ').slice(0, 70))}</option>`).join('');
+  $('#hist').onchange = e => {
+    if (e.target.value === '') return;
+    $('#sql').value = h[+e.target.value]; e.target.value = ''; $('#sql').focus();
+  };
+}
+$('#sql').addEventListener('input', () => sessionStorage.setItem('hoodie.sql.draft', $('#sql').value));
+$('#sql').value = sessionStorage.getItem('hoodie.sql.draft') || '';
+$('#cap').textContent = '';
+</script>
