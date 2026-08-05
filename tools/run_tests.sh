@@ -66,6 +66,7 @@ TESTS=(
   ue_ids_test                  # UberEats ids come in two encodings of the same value
   provenance_test              # a value WE computed must never look like the source stated it
   sql_console_test             # an open SQL box must not be able to write to the warehouse
+  sql_split_test               # ';' inside a literal is not a statement separator
 )
 
 FILTER="${1:-}"
