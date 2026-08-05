@@ -117,6 +117,42 @@ class Resolve(unittest.TestCase):
         self.assertIn("price", [w for w in words if w in known])
 
 
+class TimeoutCoversBinding(unittest.TestCase):
+    """A structural check, because the failure it guards has no local reproduction.
+
+    Binding a PARTITIONED table is not free: `read_parquet(glob, union_by_name=true)` opens the footer
+    of every part to unify schemas, and a table with thousands of date×source parts on object storage
+    can be slow. With the timer started AFTER resolve() — how this was first written — that bind had NO
+    bound at all: an unbounded wait, which is worse than a refusal because nothing tells you why. The
+    ordering is the defect and it is checkable from the source; the bind cost of any particular table is
+    a separate question this test makes no claim about.
+    """
+
+    def setUp(self):
+        import re as _re
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql_console.py"),
+                   errors="ignore").read()
+        src = _re.sub(r'"""(?:.|\n)*?"""', "", src)                       # docstrings are not code
+        self.body = "\n".join(l for l in src.split("\n") if not l.strip().startswith("#"))
+
+    def test_timer_starts_before_resolve(self):
+        run = self.body[self.body.index("def run("):]
+        start, res = run.index("timer.start()"), run.index("resolve(stmt)")
+        self.assertLess(start, res, "timer.start() must precede resolve() — an unbounded bind hangs")
+
+    def test_bind_interrupt_is_noticed(self):
+        # interrupt() unblocks the bind but does not necessarily raise, so run() has to check between
+        # the bind and the execute — otherwise a killed bind falls through into a query on half-bound views
+        run = self.body[self.body.index("def run("):]
+        self.assertIn('if timed["v"]:', run.split("cur = con.execute")[0])
+
+    def test_bound_is_defined_even_if_resolve_dies(self):
+        # the error return reports `bound`; if resolve() raises before assigning it, the handler
+        # NameErrors and the user gets a stack trace instead of "timed out"
+        run = self.body[self.body.index("def run("):]
+        self.assertLess(run.index("bound, failed = [], {}"), run.index("bound, failed = resolve(stmt)"))
+
+
 class Cells(unittest.TestCase):
     def test_json_safe(self):
         self.assertEqual(sc._cell(None), None)
