@@ -16,7 +16,6 @@ This proves two things against a REAL DuckDB + pyarrow warehouse (not stubbed):
     python3 unifyd/raw_capture_evacuate_test.py
 """
 import os
-import resource
 import shutil
 import sys
 import tempfile
@@ -50,10 +49,6 @@ def mkrows(n, payload_bytes=3000):
     blob = "x" * payload_bytes
     return [{"sku": "SKU-%d" % i, "store": "s%d" % (i % 5), "name": "Product %d" % i,
              "raw_json": '{"id":%d,"blob":"%s"}' % (i, blob)} for i in range(n)]
-
-
-def peak_mb():
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024 * 1024)
 
 
 def main():
@@ -96,12 +91,31 @@ def main():
     # run alone. If evacuate still materialized the whole table, peak would climb roughly linearly with
     # row count x payload size; a chunked/streamed implementation stays flat because no more than
     # `chunk_rows` rows are ever in Python memory at once.
+    # PEAK IS MEASURED IN ONE PLACE — here, in the probe. `resource.ru_maxrss` is BYTES on macOS and
+    # KILOBYTES on Linux, and the original divided by 1024**2 unconditionally: correct on a Mac,
+    # GB-labelled-MB on Fly (measured there: a 500MB allocation reported ru_maxrss=520612 against
+    # VmHWM=521008 kB, i.e. kB, and the n=200000 probe printed "1MB" for a real ~1GB peak). That is
+    # not cosmetic — it fed the ratio check below, whose `max(peak, 1.0)` floor then clamped a true
+    # 0.2 to 1.0 and understated the ratio ~5x, blunting the one assertion this file exists for on
+    # the ONLY platform it is meant to protect. /proc/self/status VmHWM is the unambiguous reading
+    # where it exists; the ru_maxrss branch is the macOS path, where bytes is correct.
     import subprocess
     probe = os.path.join(TMP, "probe.py")
     with open(probe, "w") as f:
         f.write("""
 import os, sys, resource
 sys.path.insert(0, %r)
+
+def peak_mb():
+    try:
+        for line in open("/proc/self/status"):        # Linux: kB, and exact
+            if line.startswith("VmHWM"):
+                return int(line.split()[1]) / 1024.0
+    except OSError:
+        pass
+    ru = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return ru / (1024.0 * 1024.0) if sys.platform == "darwin" else ru / 1024.0
+
 os.environ.pop('AWS_ENDPOINT_URL_S3', None)
 import warehouse
 warehouse._LOCAL_DIR = sys.argv[2]     # isolated per probe — a shared dir would let counts bleed together
@@ -113,7 +127,7 @@ rows = [{"sku": "SKU-%%d" %% i, "store": "s%%d" %% (i %% 5), "name": "P%%d" %% i
 warehouse.write_parquet("scale_%%d" %% n, rows, fields=["sku","store","name","raw_json"])
 rc = raw_capture.evacuate("scale_%%d" %% n, "testsrc", "sku", "store", day="2026-07-30", chunk_rows=20000,
                           log=lambda *a, **k: None)
-peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024*1024)
+peak = peak_mb()
 landed = warehouse.query_parts("raw_payloads", "SELECT COUNT(*) c FROM t")[0]["c"]
 print("RESULT %%d %%d %%.1f %%d" %% (n, rc, peak, landed))
 """ % (os.path.dirname(os.path.abspath(__file__)),))
@@ -121,8 +135,14 @@ print("RESULT %%d %%d %%.1f %%d" %% (n, rc, peak, landed))
     peaks = {}
     for n in (20000, 200000):
         probe_dir = tempfile.mkdtemp(prefix="evac_scale_%d_" % n)
+        # A BACKSTOP AGAINST A HANG, NOT A PERFORMANCE ASSERTION — this test measures memory, and a
+        # cap tight enough to trip on a busy machine reports a false red for the one thing it is not
+        # checking. 300s was such a cap: measured on Fly (shared-cpu-4x, load 16), the n=200000 probe
+        # needs ~476s — 143s to build and write the fixture, 333s to evacuate it — so the suite failed
+        # there on the clock while `evacuate` itself was landing 200,000 of 200,000 payloads correctly.
+        # Note the cap has to cover the fixture write too, not just the call under test.
         out = subprocess.run([sys.executable, probe, str(n), probe_dir], capture_output=True, text=True,
-                             timeout=300)
+                             timeout=float(os.environ.get("EVAC_PROBE_TIMEOUT", "1800")))
         shutil.rmtree(probe_dir, ignore_errors=True)
         check("scale probe n=%d ran clean" % n, out.returncode == 0, out.stderr[-500:])
         line = next((l for l in out.stdout.splitlines() if l.startswith("RESULT ")), "")
@@ -147,9 +167,19 @@ print("RESULT %%d %%d %%.1f %%d" %% (n, rc, peak, landed))
         # not a return to O(n) materialization. 7x leaves headroom for that noise while still catching
         # a real regression (which would land far closer to 10x, since materialized bytes scale with N
         # AND double from the tuple-then-dict pass the old code did).
-        ratio = peaks[n2] / max(peaks[n1], 1.0)
-        check("peak memory scales sub-linearly, not with total row count (got %.2fx for 10x rows, ceiling 7x)"
-              % ratio, ratio < 7.0, "peaks: %s" % peaks)
+        # Divide by the measured baseline, with NO floor. The old `max(peaks[n1], 1.0)` silently
+        # rewrote any baseline under 1 unit to 1 — harmless while the unit was MB, and on Linux (where
+        # the same expression yielded GB) it turned a real 0.2 into 1.0 and understated every ratio
+        # ~5x. A floor that only matters when the measurement is wrong is not a safety net; it hides
+        # the fact that it was wrong. A non-positive baseline is now a FAILED measurement, reported as
+        # such, rather than a division quietly rescued into a pass.
+        if peaks[n1] <= 0:
+            check("scale probe n=%d reported a usable peak" % n1, False, "peaks: %s" % peaks)
+        else:
+            ratio = peaks[n2] / peaks[n1]
+            check("peak memory scales sub-linearly, not with total row count "
+                  "(got %.2fx for 10x rows, ceiling 7x)" % ratio, ratio < 7.0,
+                  "peaks (MB): %s" % {k: round(v, 1) for k, v in peaks.items()})
 
     print("\n%d checks, %d failed" % (len(RAN), len(FAILED)))
     return 1 if FAILED else 0
