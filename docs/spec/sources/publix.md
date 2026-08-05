@@ -41,18 +41,19 @@
 5,477 rows · 9 columns
 
 
-| column | type |
-|---|---|
-| `name` | `VARCHAR` |
-| `promo_type` | `VARCHAR` |
-| `is_bogo` | `BOOLEAN` |
-| `savings` | `DOUBLE` |
-| `deal_text` | `VARCHAR` |
-| `is_hemp` | `BOOLEAN` |
-| `store` | `VARCHAR` |
-| `market` | `VARCHAR` |
-| `source` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `name` | `VARCHAR` | 100.0% |
+| `promo_type` | `VARCHAR` | 100.0% |
+| `is_bogo` | `BOOLEAN` | 100.0% |
+| `savings` | `DOUBLE` | 85.4% |
+| `deal_text` | `VARCHAR` | 100.0% |
+| `is_hemp` | `BOOLEAN` | 100.0% |
+| `store` | `VARCHAR` | 100.0% |
+| `market` | `VARCHAR` | 100.0% |
+| `source` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (5,477 rows).
 
 **Written by** `publix.py:140` (write_accumulate)
 

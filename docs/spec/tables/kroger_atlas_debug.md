@@ -16,16 +16,17 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `http` | `BIGINT` |
-| `products` | `BIGINT` |
-| `store` | `VARCHAR` |
-| `fac` | `VARCHAR` |
-| `cookie_len` | `BIGINT` |
-| `err` | `VARCHAR` |
-| `snippet` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `http` | `BIGINT` | 100.0% |
+| `products` | `BIGINT` | 100.0% |
+| `store` | `VARCHAR` | 100.0% |
+| `fac` | `VARCHAR` | 100.0% |
+| `cookie_len` | `BIGINT` | 100.0% |
+| `err` | `VARCHAR` | 100.0% |
+| `snippet` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (1 rows).
 
 ## Writers
 

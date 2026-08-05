@@ -16,47 +16,53 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `url` | `VARCHAR` |
-| `source` | `VARCHAR` |
-| `host` | `VARCHAR` |
-| `method` | `VARCHAR` |
-| `vision` | `BOOLEAN` |
-| `raw_json` | `VARCHAR` |
-| `provenance_json` | `VARCHAR` |
-| `ts` | `BIGINT` |
-| `brand` | `VARCHAR` |
-| `product_name` | `VARCHAR` |
-| `size` | `VARCHAR` |
-| `size_options` | `VARCHAR` |
-| `price` | `VARCHAR` |
-| `category` | `VARCHAR` |
-| `description` | `VARCHAR` |
-| `image` | `VARCHAR` |
-| `varietal` | `VARCHAR` |
-| `wine_type` | `VARCHAR` |
-| `style` | `VARCHAR` |
-| `body` | `VARCHAR` |
-| `abv` | `VARCHAR` |
-| `proof` | `VARCHAR` |
-| `vintage` | `VARCHAR` |
-| `closure` | `VARCHAR` |
-| `country` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `region` | `VARCHAR` |
-| `sub_region` | `VARCHAR` |
-| `appellation` | `VARCHAR` |
-| `origin` | `VARCHAR` |
-| `bottled_in` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `finish` | `VARCHAR` |
-| `taste` | `VARCHAR` |
-| `food_pairing` | `VARCHAR` |
-| `expert_rating` | `VARCHAR` |
-| `customer_rating` | `VARCHAR` |
-| `rating_count` | `VARCHAR` |
-| `gov_warning` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `url` | `VARCHAR` | 100.0% |
+| `source` | `VARCHAR` | 100.0% |
+| `host` | `VARCHAR` | 100.0% |
+| `method` | `VARCHAR` | 100.0% |
+| `vision` | `BOOLEAN` | 100.0% |
+| `raw_json` | `VARCHAR` | 100.0% |
+| `provenance_json` | `VARCHAR` | 100.0% |
+| `ts` | `BIGINT` | 100.0% |
+| `brand` | `VARCHAR` | 50.0% |
+| `product_name` | `VARCHAR` | 75.0% |
+| `size` | `VARCHAR` | **0%** ‹never populated› |
+| `size_options` | `VARCHAR` | **0%** ‹never populated› |
+| `price` | `VARCHAR` | 50.0% |
+| `category` | `VARCHAR` | **0%** ‹never populated› |
+| `description` | `VARCHAR` | 50.0% |
+| `image` | `VARCHAR` | 50.0% |
+| `varietal` | `VARCHAR` | 25.0% |
+| `wine_type` | `VARCHAR` | **0%** ‹never populated› |
+| `style` | `VARCHAR` | **0%** ‹never populated› |
+| `body` | `VARCHAR` | **0%** ‹never populated› |
+| `abv` | `VARCHAR` | 50.0% |
+| `proof` | `VARCHAR` | **0%** ‹never populated› |
+| `vintage` | `VARCHAR` | **0%** ‹never populated› |
+| `closure` | `VARCHAR` | 25.0% |
+| `country` | `VARCHAR` | 50.0% |
+| `state` | `VARCHAR` | 25.0% |
+| `region` | `VARCHAR` | 25.0% |
+| `sub_region` | `VARCHAR` | **0%** ‹never populated› |
+| `appellation` | `VARCHAR` | **0%** ‹never populated› |
+| `origin` | `VARCHAR` | 25.0% |
+| `bottled_in` | `VARCHAR` | **0%** ‹never populated› |
+| `upc` | `VARCHAR` | 50.0% |
+| `finish` | `VARCHAR` | **0%** ‹never populated› |
+| `taste` | `VARCHAR` | **0%** ‹never populated› |
+| `food_pairing` | `VARCHAR` | **0%** ‹never populated› |
+| `expert_rating` | `VARCHAR` | **0%** ‹never populated› |
+| `customer_rating` | `VARCHAR` | **0%** ‹never populated› |
+| `rating_count` | `VARCHAR` | **0%** ‹never populated› |
+| `gov_warning` | `VARCHAR` | **0%** ‹never populated› |
+
+Fill measured over **full table** (4 rows).
+
+> **18 columns never populated:** `size`, `size_options`, `category`, `wine_type`, `style`, `body`, `proof`, `vintage`, `sub_region`, `appellation`, `bottled_in`, `finish`, `taste`, `food_pairing`, `expert_rating`, `customer_rating`, `rating_count`, `gov_warning`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ## Writers

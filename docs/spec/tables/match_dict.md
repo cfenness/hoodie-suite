@@ -16,13 +16,14 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `kind` | `VARCHAR` |
-| `match` | `VARCHAR` |
-| `value` | `VARCHAR` |
-| `mode` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `kind` | `VARCHAR` | 100.0% |
+| `match` | `VARCHAR` | 100.0% |
+| `value` | `VARCHAR` | 84.2% |
+| `mode` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (400 rows).
 
 ## Writers
 

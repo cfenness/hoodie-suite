@@ -16,19 +16,20 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `distributor_id` | `VARCHAR` |
-| `distributor_name` | `VARCHAR` |
-| `dist_item_code` | `VARCHAR` |
-| `dist_item_key` | `VARCHAR` |
-| `retail_upc` | `VARCHAR` |
-| `canon_item_id` | `BIGINT` |
-| `brand` | `VARCHAR` |
-| `product_name` | `VARCHAR` |
-| `size_raw` | `VARCHAR` |
-| `source` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `distributor_id` | `VARCHAR` | 100.0% |
+| `distributor_name` | `VARCHAR` | 100.0% |
+| `dist_item_code` | `VARCHAR` | 100.0% |
+| `dist_item_key` | `VARCHAR` | 100.0% |
+| `retail_upc` | `VARCHAR` | 97.2% |
+| `canon_item_id` | `BIGINT` | 97.2% |
+| `brand` | `VARCHAR` | 100.0% |
+| `product_name` | `VARCHAR` | 100.0% |
+| `size_raw` | `VARCHAR` | 100.0% |
+| `source` | `VARCHAR` | 100.0% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ## Writers
 

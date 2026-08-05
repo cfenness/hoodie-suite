@@ -16,14 +16,15 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `state` | `VARCHAR` |
-| `universe_outlets` | `BIGINT` |
-| `observed_outlets` | `BIGINT` |
-| `coverage` | `DOUBLE` |
-| `brands_observed` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `state` | `VARCHAR` | 100.0% |
+| `universe_outlets` | `BIGINT` | 100.0% |
+| `observed_outlets` | `BIGINT` | 100.0% |
+| `coverage` | `DOUBLE` | 100.0% |
+| `brands_observed` | `BIGINT` | 100.0% |
 
+Fill measured over **full table** (1 rows).
 
 ## Writers
 

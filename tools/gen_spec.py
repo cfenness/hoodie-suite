@@ -183,6 +183,45 @@ def n(x):
     return format(int(x), ",") if isinstance(x, (int, float)) else str(x)
 
 
+def fillcell(c):
+    """A fill rate, or an explicit dash when it was not measured. `0.0%` and "not measured" are
+    different claims and must not render the same."""
+    if c.get("fill_pct") is None:
+        return "—"
+    pct = c["fill_pct"]
+    txt = "%.1f%%" % pct
+    if pct == 0:
+        return "**0%** ‹never populated›"
+    if pct < 5:
+        return "**%s**" % txt
+    return txt
+
+
+def coltable(rec):
+    """Columns with their real type AND their fill. A column list without fill rates is how a
+    21-column table reads as a rich capture while five of its fields are empty."""
+    rows = [("`%s`" % c["name"], "`%s`" % c["type"], fillcell(c)) for c in rec["columns"]]
+    out = md_table(["column", "type", "filled"], rows)
+    if rec.get("fill_basis"):
+        out += "\nFill measured over **%s** (%s rows)." % (
+            rec["fill_basis"], n(rec.get("fill_rows", 0)))
+        empty = [c["name"] for c in rec["columns"] if c.get("fill_pct") == 0]
+        if empty:
+            out += ("\n\n> **%d column%s never populated:** %s.\n>\n> Declared by a writer and "
+                    "always NULL or empty. That is a capture GAP when the source returns the field "
+                    "and the parse drops it, and it is CORRECT when the column is awaiting input "
+                    "(a label nobody has answered, a derived field a later build fills). The "
+                    "measurement cannot tell those apart — it tells you where to look.\n"
+                    % (len(empty), "" if len(empty) == 1 else "s",
+                       ", ".join("`%s`" % e for e in empty)))
+    elif rec.get("fill_error"):
+        out += "\nFill rates unavailable: `%s`\n" % rec["fill_error"]
+    else:
+        out += ("\n_Fill rates not measured — rerun `spec_capture.py --fill`. Without them this is a "
+                "list of columns, not a statement of what is captured._\n")
+    return out
+
+
 def source_page(src, L, INV, RAW, is_build=False):
     sid = src["id"]
     mod = module_of(src)
@@ -250,8 +289,7 @@ def source_page(src, L, INV, RAW, is_build=False):
                 bits.append("**%d different schemas in a 6-partition sample — this table has drifted**"
                             % rec["schemas_sampled"])
         a(" · ".join(bits) + "\n")
-        a("\n" + md_table(["column", "type"],
-                          [("`%s`" % c["name"], "`%s`" % c["type"]) for c in rec["columns"]]))
+        a("\n" + coltable(rec))
         w = (INV.get("tables", {}).get(t) or {}).get("writers") or []
         if w:
             a("\n**Written by** " + ", ".join(
@@ -313,8 +351,7 @@ def table_page(t, L, INV, DECL, owners):
         a("\n> The table does not exist in the warehouse: `%s`\n" % rec["error"][:200])
     if landed:
         a("\n## Columns\n")
-        a(md_table(["column", "type"],
-                   [("`%s`" % c["name"], "`%s`" % c["type"]) for c in rec["columns"]]))
+        a(coltable(rec))
     w = inv.get("writers") or []
     if w:
         a("\n## Writers\n")
@@ -354,6 +391,12 @@ def main(argv=None):
         "raw_field_specs": len(RAW),
         "columns": sum(len((L["tables"].get(t) or {}).get("columns") or []) for t in landed),
         "rows": sum(int((L["tables"].get(t) or {}).get("rows") or 0) for t in landed),
+        "cols_measured": sum(1 for t in landed
+                             for c in ((L["tables"].get(t) or {}).get("columns") or [])
+                             if c.get("fill_pct") is not None),
+        "cols_empty": sum(1 for t in landed
+                          for c in ((L["tables"].get(t) or {}).get("columns") or [])
+                          if c.get("fill_pct") == 0),
         "modules_resolved": sum(1 for s in SOURCES + BUILDS if module_of(s)),
         "with_docstring": sum(1 for s in SOURCES + BUILDS if docstring(module_of(s))),
         "with_test": sum(1 for s in SOURCES + BUILDS if module_of(s) and has_test(module_of(s))),
@@ -401,6 +444,8 @@ def write_index(SOURCES, BUILDS, all_tables, L, INV, RAW, DECL, owners, cov):
         ("...that have actually landed", cov["tables_landed"]),
         ("Columns described", n(cov["columns"])),
         ("Rows landed", n(cov["rows"])),
+        ("Columns measured for fill", n(cov.get("cols_measured", 0))),
+        ("...that are NEVER populated", "**%s**" % n(cov.get("cols_empty", 0))),
     ]))
 
     a("\n## Where the documentation is thin\n")

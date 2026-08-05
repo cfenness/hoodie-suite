@@ -16,21 +16,27 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `Brand` | `VARCHAR` |
-| `Account` | `VARCHAR` |
-| `Street` | `VARCHAR` |
-| `City` | `VARCHAR` |
-| `State` | `VARCHAR` |
-| `Zip` | `VARCHAR` |
-| `Phone` | `VARCHAR` |
-| `Miles` | `VARCHAR` |
-| `Lat` | `VARCHAR` |
-| `Lng` | `VARCHAR` |
-| `StoreType` | `VARCHAR` |
-| `Source` | `VARCHAR` |
-| `Zip_Searched` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `Brand` | `VARCHAR` | 100.0% |
+| `Account` | `VARCHAR` | 100.0% |
+| `Street` | `VARCHAR` | 100.0% |
+| `City` | `VARCHAR` | 99.7% |
+| `State` | `VARCHAR` | 99.7% |
+| `Zip` | `VARCHAR` | **0%** ‹never populated› |
+| `Phone` | `VARCHAR` | 100.0% |
+| `Miles` | `VARCHAR` | 100.0% |
+| `Lat` | `VARCHAR` | 100.0% |
+| `Lng` | `VARCHAR` | 100.0% |
+| `StoreType` | `VARCHAR` | **0%** ‹never populated› |
+| `Source` | `VARCHAR` | 100.0% |
+| `Zip_Searched` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (399 rows).
+
+> **2 columns never populated:** `Zip`, `StoreType`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ## Writers

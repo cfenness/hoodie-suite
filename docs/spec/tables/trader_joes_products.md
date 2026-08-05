@@ -16,19 +16,20 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `store_id` | `VARCHAR` |
-| `sku` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `price` | `DOUBLE` |
-| `retail_price` | `DOUBLE` |
-| `size` | `DOUBLE` |
-| `uom` | `VARCHAR` |
-| `country_of_origin` | `VARCHAR` |
-| `in_stock` | `BOOLEAN` |
-| `source` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `store_id` | `VARCHAR` | 100.0% |
+| `sku` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `price` | `DOUBLE` | 100.0% |
+| `retail_price` | `DOUBLE` | 100.0% |
+| `size` | `DOUBLE` | 100.0% |
+| `uom` | `VARCHAR` | 100.0% |
+| `country_of_origin` | `VARCHAR` | 93.0% |
+| `in_stock` | `BOOLEAN` | 100.0% |
+| `source` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (4,024 rows).
 
 ## Writers
 

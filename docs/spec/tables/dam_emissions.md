@@ -16,19 +16,20 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `ts` | `VARCHAR` |
-| `source_id` | `VARCHAR` |
-| `rights_ref` | `VARCHAR` |
-| `action` | `VARCHAR` |
-| `subject` | `VARCHAR` |
-| `surface` | `VARCHAR` |
-| `allowed` | `BOOLEAN` |
-| `reason` | `VARCHAR` |
-| `image_use` | `VARCHAR` |
-| `scope` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `ts` | `VARCHAR` | 100.0% |
+| `source_id` | `VARCHAR` | 100.0% |
+| `rights_ref` | `VARCHAR` | 100.0% |
+| `action` | `VARCHAR` | 100.0% |
+| `subject` | `VARCHAR` | 100.0% |
+| `surface` | `VARCHAR` | 100.0% |
+| `allowed` | `BOOLEAN` | 100.0% |
+| `reason` | `VARCHAR` | 100.0% |
+| `image_use` | `VARCHAR` | 100.0% |
+| `scope` | `VARCHAR` | 100.0% |
 
+Fill measured over **newest 1 of 1 partitions** (1 rows).
 
 ## Writers
 

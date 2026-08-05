@@ -21,4 +21,4 @@
 
 | module:line | call | layout | pins dtypes |
 |---|---|---|---|
-| `ue_catalog.py:869` | `write_partition` | partitioned (append-only parts) | no |
+| `ue_catalog.py:879` | `write_partition` | partitioned (append-only parts) | no |

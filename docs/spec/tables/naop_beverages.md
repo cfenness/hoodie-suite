@@ -16,25 +16,26 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `store` | `VARCHAR` |
-| `account` | `VARCHAR` |
-| `cuisine` | `VARCHAR` |
-| `cuisines` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `description` | `VARCHAR` |
-| `price` | `DOUBLE` |
-| `price_basis` | `VARCHAR` |
-| `category` | `VARCHAR` |
-| `is_alcoholic` | `BOOLEAN` |
-| `root` | `VARCHAR` |
-| `sub` | `VARCHAR` |
-| `base_spirit` | `VARCHAR` |
-| `beer_style` | `VARCHAR` |
-| `is_hemp` | `BOOLEAN` |
-| `run_id` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `store` | `VARCHAR` | 100.0% |
+| `account` | `VARCHAR` | 100.0% |
+| `cuisine` | `VARCHAR` | 70.8% |
+| `cuisines` | `VARCHAR` | 67.4% |
+| `name` | `VARCHAR` | 100.0% |
+| `description` | `VARCHAR` | 88.6% |
+| `price` | `DOUBLE` | 96.6% |
+| `price_basis` | `VARCHAR` | 100.0% |
+| `category` | `VARCHAR` | 100.0% |
+| `is_alcoholic` | `BOOLEAN` | 100.0% |
+| `root` | `VARCHAR` | 26.2% |
+| `sub` | `VARCHAR` | 44.2% |
+| `base_spirit` | `VARCHAR` | 25.3% |
+| `beer_style` | `VARCHAR` | 5.2% |
+| `is_hemp` | `BOOLEAN` | 100.0% |
+| `run_id` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (7,139 rows).
 
 ## Writers
 

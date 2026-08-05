@@ -16,21 +16,22 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `geo_level` | `VARCHAR` |
-| `geo_fips` | `VARCHAR` |
-| `acs_vintage` | `BIGINT` |
-| `cex_vintage` | `BIGINT` |
-| `households` | `BIGINT` |
-| `demand_total_usd` | `BIGINT` |
-| `demand_at_home_usd` | `BIGINT` |
-| `demand_away_usd` | `BIGINT` |
-| `demand_per_hh_usd` | `DOUBLE` |
-| `demand_index_vs_us` | `DOUBLE` |
-| `method` | `VARCHAR` |
-| `computed_at` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `geo_level` | `VARCHAR` | 100.0% |
+| `geo_fips` | `VARCHAR` | 100.0% |
+| `acs_vintage` | `BIGINT` | 100.0% |
+| `cex_vintage` | `BIGINT` | 100.0% |
+| `households` | `BIGINT` | 100.0% |
+| `demand_total_usd` | `BIGINT` | 100.0% |
+| `demand_at_home_usd` | `BIGINT` | 100.0% |
+| `demand_away_usd` | `BIGINT` | 100.0% |
+| `demand_per_hh_usd` | `DOUBLE` | 100.0% |
+| `demand_index_vs_us` | `DOUBLE` | 100.0% |
+| `method` | `VARCHAR` | 100.0% |
+| `computed_at` | `BIGINT` | 100.0% |
 
+Fill measured over **full table** (36,092 rows).
 
 ## Writers
 

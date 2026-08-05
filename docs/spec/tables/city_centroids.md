@@ -16,14 +16,15 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `state` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `lat` | `DOUBLE` |
-| `lng` | `DOUBLE` |
-| `kind` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `state` | `VARCHAR` | 100.0% |
+| `city` | `VARCHAR` | 100.0% |
+| `lat` | `DOUBLE` | 100.0% |
+| `lng` | `DOUBLE` | 100.0% |
+| `kind` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (68,747 rows).
 
 ## Writers
 

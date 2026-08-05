@@ -16,28 +16,34 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `chain` | `VARCHAR` |
-| `items` | `BIGINT` |
-| `brands` | `BIGINT` |
-| `obs_rows` | `BIGINT` |
-| `stores_seen_days` | `BIGINT` |
-| `first_date` | `VARCHAR` |
-| `last_date` | `VARCHAR` |
-| `price_min` | `DOUBLE` |
-| `price_p25` | `DOUBLE` |
-| `price_median` | `DOUBLE` |
-| `price_p75` | `DOUBLE` |
-| `price_max` | `DOUBLE` |
-| `price_avg` | `DOUBLE` |
-| `promo_rows` | `BIGINT` |
-| `promo_share` | `DOUBLE` |
-| `in_stock_share` | `DOUBLE` |
-| `hemp_items` | `BIGINT` |
-| `built_at` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `store_id` | `VARCHAR` | 100.0% |
+| `chain` | `VARCHAR` | **0%** ‹never populated› |
+| `items` | `BIGINT` | 100.0% |
+| `brands` | `BIGINT` | 100.0% |
+| `obs_rows` | `BIGINT` | 100.0% |
+| `stores_seen_days` | `BIGINT` | 100.0% |
+| `first_date` | `VARCHAR` | 100.0% |
+| `last_date` | `VARCHAR` | 100.0% |
+| `price_min` | `DOUBLE` | 100.0% |
+| `price_p25` | `DOUBLE` | 100.0% |
+| `price_median` | `DOUBLE` | 100.0% |
+| `price_p75` | `DOUBLE` | 100.0% |
+| `price_max` | `DOUBLE` | 100.0% |
+| `price_avg` | `DOUBLE` | 100.0% |
+| `promo_rows` | `BIGINT` | 100.0% |
+| `promo_share` | `DOUBLE` | 100.0% |
+| `in_stock_share` | `DOUBLE` | 100.0% |
+| `hemp_items` | `BIGINT` | 100.0% |
+| `built_at` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (215,203 rows).
+
+> **1 column never populated:** `chain`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ## Writers

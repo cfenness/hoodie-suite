@@ -39,44 +39,46 @@ _No literal endpoint constant in `velocity.py`._ The transport is either inherit
 3,319,500 rows · 17 columns
 
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `product_id` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `week` | `TIMESTAMP` |
-| `implied_units` | `DOUBLE` |
-| `sale_events` | `DECIMAL(38,0)` |
-| `restock_events` | `DECIMAL(38,0)` |
-| `restock_units` | `DOUBLE` |
-| `noise_damped_units` | `DOUBLE` |
-| `censored_pairs` | `DECIMAL(38,0)` |
-| `oos_events` | `DECIMAL(38,0)` |
-| `pairs` | `DECIMAL(38,0)` |
-| `jitter_frac` | `DOUBLE` |
-| `cadence` | `DOUBLE` |
-| `confidence` | `DOUBLE` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `store_id` | `VARCHAR` | 100.0% |
+| `product_id` | `VARCHAR` | 100.0% |
+| `upc` | `VARCHAR` | **0.5%** |
+| `brand` | `VARCHAR` | 92.3% |
+| `week` | `TIMESTAMP` | 100.0% |
+| `implied_units` | `DOUBLE` | 100.0% |
+| `sale_events` | `DECIMAL(38,0)` | 100.0% |
+| `restock_events` | `DECIMAL(38,0)` | 100.0% |
+| `restock_units` | `DOUBLE` | 100.0% |
+| `noise_damped_units` | `DOUBLE` | 100.0% |
+| `censored_pairs` | `DECIMAL(38,0)` | 100.0% |
+| `oos_events` | `DECIMAL(38,0)` | 100.0% |
+| `pairs` | `DECIMAL(38,0)` | 100.0% |
+| `jitter_frac` | `DOUBLE` | 100.0% |
+| `cadence` | `DOUBLE` | 100.0% |
+| `confidence` | `DOUBLE` | 100.0% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ### `mart_velocity_brand_week`
 
 13,282 rows · 9 columns
 
 
-| column | type |
-|---|---|
-| `brand` | `VARCHAR` |
-| `week` | `TIMESTAMP` |
-| `implied_units` | `DOUBLE` |
-| `conf_wt_units_per_store` | `DOUBLE` |
-| `cells` | `BIGINT` |
-| `stores` | `BIGINT` |
-| `restock_events` | `DECIMAL(38,0)` |
-| `oos_events` | `DECIMAL(38,0)` |
-| `avg_confidence` | `DOUBLE` |
+| column | type | filled |
+|---|---|---|
+| `brand` | `VARCHAR` | 100.0% |
+| `week` | `TIMESTAMP` | 100.0% |
+| `implied_units` | `DOUBLE` | 100.0% |
+| `conf_wt_units_per_store` | `DOUBLE` | 100.0% |
+| `cells` | `BIGINT` | 100.0% |
+| `stores` | `BIGINT` | 100.0% |
+| `restock_events` | `DECIMAL(38,0)` | 100.0% |
+| `oos_events` | `DECIMAL(38,0)` | 100.0% |
+| `avg_confidence` | `DOUBLE` | 100.0% |
 
+Fill measured over **full table** (13,282 rows).
 
 ## 4. `velocity.py` — the module's own account
 

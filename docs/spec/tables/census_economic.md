@@ -16,14 +16,16 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `name` | `VARCHAR` |
-| `median_household_income` | `VARCHAR` |
-| `per_capita_income` | `VARCHAR` |
-| `poverty_pop` | `VARCHAR` |
-| `labor_force` | `VARCHAR` |
-| `unemployed` | `VARCHAR` |
-| `state_fips` | `VARCHAR` |
-| `county_fips` | `VARCHAR` |
-| `geoid` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `name` | `VARCHAR` | 100.0% |
+| `median_household_income` | `VARCHAR` | 99.8% |
+| `per_capita_income` | `VARCHAR` | 100.0% |
+| `poverty_pop` | `VARCHAR` | 100.0% |
+| `labor_force` | `VARCHAR` | 100.0% |
+| `unemployed` | `VARCHAR` | 100.0% |
+| `state_fips` | `VARCHAR` | 100.0% |
+| `county_fips` | `VARCHAR` | 100.0% |
+| `geoid` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (423 rows).

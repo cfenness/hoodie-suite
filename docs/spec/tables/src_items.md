@@ -16,20 +16,21 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `source_id` | `VARCHAR` |
-| `hoodie_item` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `product_name` | `VARCHAR` |
-| `name_key` | `VARCHAR` |
-| `product_type_id` | `BIGINT` |
-| `product_type` | `VARCHAR` |
-| `size_ml` | `BIGINT` |
-| `container` | `VARCHAR` |
-| `volume_tier` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `source_id` | `VARCHAR` | 78.4% |
+| `hoodie_item` | `VARCHAR` | 100.0% |
+| `brand` | `VARCHAR` | 100.0% |
+| `product_name` | `VARCHAR` | 100.0% |
+| `name_key` | `VARCHAR` | 100.0% |
+| `product_type_id` | `BIGINT` | 100.0% |
+| `product_type` | `VARCHAR` | 61.7% |
+| `size_ml` | `BIGINT` | 32.5% |
+| `container` | `VARCHAR` | **3.4%** |
+| `volume_tier` | `VARCHAR` | 32.5% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ## Writers
 

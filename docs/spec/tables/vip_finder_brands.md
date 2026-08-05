@@ -16,13 +16,14 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `cust_id` | `VARCHAR` |
-| `brand_value` | `VARCHAR` |
-| `brand_label` | `VARCHAR` |
-| `last_seen` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `cust_id` | `VARCHAR` | 100.0% |
+| `brand_value` | `VARCHAR` | 100.0% |
+| `brand_label` | `VARCHAR` | 100.0% |
+| `last_seen` | `BIGINT` | 100.0% |
 
+Fill measured over **full table** (33,196 rows).
 
 ## Writers
 

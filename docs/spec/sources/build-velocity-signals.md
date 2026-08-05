@@ -39,20 +39,26 @@ _No literal endpoint constant in `velocity_signals.py`._ The transport is either
 1,015 rows · 12 columns
 
 
-| column | type |
-|---|---|
-| `brand` | `VARCHAR` |
-| `week` | `TIMESTAMP` |
-| `prev_week` | `TIMESTAMP` |
-| `matched_cells` | `BIGINT` |
-| `units` | `DOUBLE` |
-| `prev_units` | `DOUBLE` |
-| `delta_units` | `DOUBLE` |
-| `pct_change` | `DOUBLE` |
-| `confidence` | `DOUBLE` |
-| `partial` | `BOOLEAN` |
-| `cur_obs_days` | `INTEGER` |
-| `prev_obs_days` | `INTEGER` |
+| column | type | filled |
+|---|---|---|
+| `brand` | `VARCHAR` | 100.0% |
+| `week` | `TIMESTAMP` | 100.0% |
+| `prev_week` | `TIMESTAMP` | 100.0% |
+| `matched_cells` | `BIGINT` | 100.0% |
+| `units` | `DOUBLE` | 100.0% |
+| `prev_units` | `DOUBLE` | 100.0% |
+| `delta_units` | `DOUBLE` | 100.0% |
+| `pct_change` | `DOUBLE` | 100.0% |
+| `confidence` | `DOUBLE` | 100.0% |
+| `partial` | `BOOLEAN` | **0%** ‹never populated› |
+| `cur_obs_days` | `INTEGER` | 100.0% |
+| `prev_obs_days` | `INTEGER` | 100.0% |
+
+Fill measured over **full table** (1,015 rows).
+
+> **1 column never populated:** `partial`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ### `signal_voids`
@@ -60,17 +66,18 @@ _No literal endpoint constant in `velocity_signals.py`._ The transport is either
 2,235 rows · 8 columns
 
 
-| column | type |
-|---|---|
-| `brand` | `VARCHAR` |
-| `oos_stores` | `BIGINT` |
-| `stores_seen` | `BIGINT` |
-| `oos_events` | `DECIMAL(38,0)` |
-| `typ_units_per_store_wk` | `DOUBLE` |
-| `est_recoverable_units_wk` | `DOUBLE` |
-| `pct_stores_out` | `DOUBLE` |
-| `confidence` | `DOUBLE` |
+| column | type | filled |
+|---|---|---|
+| `brand` | `VARCHAR` | 100.0% |
+| `oos_stores` | `BIGINT` | 100.0% |
+| `stores_seen` | `BIGINT` | 100.0% |
+| `oos_events` | `DECIMAL(38,0)` | 100.0% |
+| `typ_units_per_store_wk` | `DOUBLE` | 100.0% |
+| `est_recoverable_units_wk` | `DOUBLE` | 100.0% |
+| `pct_stores_out` | `DOUBLE` | 100.0% |
+| `confidence` | `DOUBLE` | 100.0% |
 
+Fill measured over **full table** (2,235 rows).
 
 ## 4. `velocity_signals.py` — the module's own account
 

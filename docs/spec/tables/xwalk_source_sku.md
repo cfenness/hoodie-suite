@@ -16,17 +16,18 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `product_id` | `VARCHAR` |
-| `product_key` | `VARCHAR` |
-| `item_key` | `VARCHAR` |
-| `sku_key` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `product_id` | `VARCHAR` | 100.0% |
+| `product_key` | `VARCHAR` | 100.0% |
+| `item_key` | `VARCHAR` | 100.0% |
+| `sku_key` | `VARCHAR` | 100.0% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ## Writers
 
 | module:line | call | layout | pins dtypes |
 |---|---|---|---|
-| `build_product_master.py:481` | `write_parquet` | flat (full overwrite) | no |
+| `build_product_master.py:498` | `write_parquet` | flat (full overwrite) | no |

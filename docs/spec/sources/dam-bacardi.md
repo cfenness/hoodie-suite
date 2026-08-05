@@ -39,36 +39,42 @@ _No literal endpoint constant in `dam_dna.py`._ The transport is either inherite
 2,490 rows · 28 columns
 
 
-| column | type |
-|---|---|
-| `source_id` | `VARCHAR` |
-| `vendor` | `VARCHAR` |
-| `drive_id` | `BIGINT` |
-| `drive_name` | `VARCHAR` |
-| `folder_id` | `BIGINT` |
-| `folder_path` | `VARCHAR` |
-| `asset_id` | `BIGINT` |
-| `asset_token` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `title` | `VARCHAR` |
-| `description` | `VARCHAR` |
-| `asset_type` | `VARCHAR` |
-| `extension` | `VARCHAR` |
-| `mime_type` | `VARCHAR` |
-| `size_bytes` | `BIGINT` |
-| `asset_url` | `VARCHAR` |
-| `thumb_url` | `VARCHAR` |
-| `download_url` | `VARCHAR` |
-| `created_on` | `VARCHAR` |
-| `updated_on` | `VARCHAR` |
-| `rights_ref` | `VARCHAR` |
-| `image_use` | `VARCHAR` |
-| `image_scope` | `VARCHAR` |
-| `retention` | `VARCHAR` |
-| `phash` | `INTEGER` |
-| `embedding_ref` | `INTEGER` |
-| `withheld_reason` | `VARCHAR` |
-| `pulled_at` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source_id` | `VARCHAR` | 100.0% |
+| `vendor` | `VARCHAR` | 100.0% |
+| `drive_id` | `BIGINT` | 100.0% |
+| `drive_name` | `VARCHAR` | 100.0% |
+| `folder_id` | `BIGINT` | 100.0% |
+| `folder_path` | `VARCHAR` | 100.0% |
+| `asset_id` | `BIGINT` | 100.0% |
+| `asset_token` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `title` | `VARCHAR` | 100.0% |
+| `description` | `VARCHAR` | 100.0% |
+| `asset_type` | `VARCHAR` | 100.0% |
+| `extension` | `VARCHAR` | 99.5% |
+| `mime_type` | `VARCHAR` | **1.0%** |
+| `size_bytes` | `BIGINT` | 100.0% |
+| `asset_url` | `VARCHAR` | 100.0% |
+| `thumb_url` | `VARCHAR` | 99.0% |
+| `download_url` | `VARCHAR` | 100.0% |
+| `created_on` | `VARCHAR` | 100.0% |
+| `updated_on` | `VARCHAR` | 100.0% |
+| `rights_ref` | `VARCHAR` | 100.0% |
+| `image_use` | `VARCHAR` | 100.0% |
+| `image_scope` | `VARCHAR` | 100.0% |
+| `retention` | `VARCHAR` | 100.0% |
+| `phash` | `INTEGER` | **0%** ‹never populated› |
+| `embedding_ref` | `INTEGER` | **0%** ‹never populated› |
+| `withheld_reason` | `VARCHAR` | 100.0% |
+| `pulled_at` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (2,490 rows).
+
+> **2 columns never populated:** `phash`, `embedding_ref`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 **Written by** `dam.py:770` (write_accumulate)
@@ -79,31 +85,37 @@ _No literal endpoint constant in `dam_dna.py`._ The transport is either inherite
 329 rows · 23 columns
 
 
-| column | type |
-|---|---|
-| `event_id` | `VARCHAR` |
-| `hoodie_brand_id` | `VARCHAR` |
-| `brand_key` | `INTEGER` |
-| `canon_brand` | `INTEGER` |
-| `brand_resolution` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `sku_id` | `INTEGER` |
-| `event_type` | `VARCHAR` |
-| `event_date` | `VARCHAR` |
-| `event_date_precision` | `VARCHAR` |
-| `market` | `VARCHAR` |
-| `price` | `DOUBLE` |
-| `currency` | `VARCHAR` |
-| `abv` | `DOUBLE` |
-| `title` | `VARCHAR` |
-| `asset_count` | `BIGINT` |
-| `source` | `VARCHAR` |
-| `source_id` | `VARCHAR` |
-| `source_asset_ids` | `VARCHAR` |
-| `source_url` | `VARCHAR` |
-| `rights_ref` | `VARCHAR` |
-| `field_provenance` | `VARCHAR` |
-| `fetched_at` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `event_id` | `VARCHAR` | 100.0% |
+| `hoodie_brand_id` | `VARCHAR` | 100.0% |
+| `brand_key` | `INTEGER` | **0%** ‹never populated› |
+| `canon_brand` | `INTEGER` | **0%** ‹never populated› |
+| `brand_resolution` | `VARCHAR` | 100.0% |
+| `brand` | `VARCHAR` | 100.0% |
+| `sku_id` | `INTEGER` | **0%** ‹never populated› |
+| `event_type` | `VARCHAR` | 100.0% |
+| `event_date` | `VARCHAR` | 87.8% |
+| `event_date_precision` | `VARCHAR` | 100.0% |
+| `market` | `VARCHAR` | 27.7% |
+| `price` | `DOUBLE` | **3.3%** |
+| `currency` | `VARCHAR` | **3.3%** |
+| `abv` | `DOUBLE` | **3.3%** |
+| `title` | `VARCHAR` | 100.0% |
+| `asset_count` | `BIGINT` | 100.0% |
+| `source` | `VARCHAR` | 100.0% |
+| `source_id` | `VARCHAR` | 100.0% |
+| `source_asset_ids` | `VARCHAR` | 100.0% |
+| `source_url` | `VARCHAR` | 100.0% |
+| `rights_ref` | `VARCHAR` | 100.0% |
+| `field_provenance` | `VARCHAR` | 100.0% |
+| `fetched_at` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (329 rows).
+
+> **3 columns never populated:** `brand_key`, `canon_brand`, `sku_id`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 **Written by** `dam.py:776` (write_accumulate)

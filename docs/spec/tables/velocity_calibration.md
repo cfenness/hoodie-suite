@@ -16,15 +16,16 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `kind` | `VARCHAR` |
-| `anchor` | `VARCHAR` |
-| `source` | `VARCHAR` |
-| `coverage` | `BIGINT` |
-| `metric` | `VARCHAR` |
-| `value` | `DOUBLE` |
+| column | type | filled |
+|---|---|---|
+| `kind` | `VARCHAR` | 100.0% |
+| `anchor` | `VARCHAR` | 20.0% |
+| `source` | `VARCHAR` | 80.0% |
+| `coverage` | `BIGINT` | 100.0% |
+| `metric` | `VARCHAR` | 100.0% |
+| `value` | `DOUBLE` | 40.0% |
 
+Fill measured over **full table** (5 rows).
 
 ## Writers
 

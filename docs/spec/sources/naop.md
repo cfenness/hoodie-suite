@@ -39,21 +39,27 @@ _No literal endpoint constant in `doordash_naop.py`._ The transport is either in
 4,794 rows · 13 columns
 
 
-| column | type |
-|---|---|
-| `store` | `VARCHAR` |
-| `account` | `VARCHAR` |
-| `clean_name` | `VARCHAR` |
-| `street` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `phone` | `VARCHAR` |
-| `cuisine` | `VARCHAR` |
-| `cuisines` | `VARCHAR` |
-| `cuisine_source` | `VARCHAR` |
-| `serves_alcohol` | `BOOLEAN` |
-| `n_beverages` | `BIGINT` |
-| `run_id` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `store` | `VARCHAR` | 100.0% |
+| `account` | `VARCHAR` | 100.0% |
+| `clean_name` | `VARCHAR` | 96.0% |
+| `street` | `VARCHAR` | 95.9% |
+| `city` | `VARCHAR` | 96.0% |
+| `state` | `VARCHAR` | 96.0% |
+| `phone` | `VARCHAR` | **0%** ‹never populated› |
+| `cuisine` | `VARCHAR` | 73.7% |
+| `cuisines` | `VARCHAR` | 65.4% |
+| `cuisine_source` | `VARCHAR` | 100.0% |
+| `serves_alcohol` | `BOOLEAN` | 100.0% |
+| `n_beverages` | `BIGINT` | 100.0% |
+| `run_id` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (4,794 rows).
+
+> **1 column never populated:** `phone`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 **Written by** `doordash_naop.py:195` (write_parquet)
@@ -64,25 +70,26 @@ _No literal endpoint constant in `doordash_naop.py`._ The transport is either in
 7,139 rows · 16 columns
 
 
-| column | type |
-|---|---|
-| `store` | `VARCHAR` |
-| `account` | `VARCHAR` |
-| `cuisine` | `VARCHAR` |
-| `cuisines` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `description` | `VARCHAR` |
-| `price` | `DOUBLE` |
-| `price_basis` | `VARCHAR` |
-| `category` | `VARCHAR` |
-| `is_alcoholic` | `BOOLEAN` |
-| `root` | `VARCHAR` |
-| `sub` | `VARCHAR` |
-| `base_spirit` | `VARCHAR` |
-| `beer_style` | `VARCHAR` |
-| `is_hemp` | `BOOLEAN` |
-| `run_id` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `store` | `VARCHAR` | 100.0% |
+| `account` | `VARCHAR` | 100.0% |
+| `cuisine` | `VARCHAR` | 70.8% |
+| `cuisines` | `VARCHAR` | 67.4% |
+| `name` | `VARCHAR` | 100.0% |
+| `description` | `VARCHAR` | 88.6% |
+| `price` | `DOUBLE` | 96.6% |
+| `price_basis` | `VARCHAR` | 100.0% |
+| `category` | `VARCHAR` | 100.0% |
+| `is_alcoholic` | `BOOLEAN` | 100.0% |
+| `root` | `VARCHAR` | 26.2% |
+| `sub` | `VARCHAR` | 44.2% |
+| `base_spirit` | `VARCHAR` | 25.3% |
+| `beer_style` | `VARCHAR` | 5.2% |
+| `is_hemp` | `BOOLEAN` | 100.0% |
+| `run_id` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (7,139 rows).
 
 **Written by** `doordash_naop.py:193` (write_parquet)
 

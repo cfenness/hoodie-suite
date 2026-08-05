@@ -39,17 +39,18 @@ _No literal endpoint constant in `doordash_chains.py`._ The transport is either 
 6 rows · 8 columns
 
 
-| column | type |
-|---|---|
-| `run_id` | `VARCHAR` |
-| `ts` | `BIGINT` |
-| `universe_total` | `BIGINT` |
-| `covered_total` | `BIGINT` |
-| `remaining_total` | `BIGINT` |
-| `stores_landed_this_run` | `BIGINT` |
-| `items_landed_this_run` | `BIGINT` |
-| `duration_s` | `DOUBLE` |
+| column | type | filled |
+|---|---|---|
+| `run_id` | `VARCHAR` | 100.0% |
+| `ts` | `BIGINT` | 100.0% |
+| `universe_total` | `BIGINT` | 100.0% |
+| `covered_total` | `BIGINT` | 100.0% |
+| `remaining_total` | `BIGINT` | 100.0% |
+| `stores_landed_this_run` | `BIGINT` | 100.0% |
+| `items_landed_this_run` | `BIGINT` | 100.0% |
+| `duration_s` | `DOUBLE` | 100.0% |
 
+Fill measured over **full table** (6 rows).
 
 **Written by** `doordash_chains.py:185` (write_accumulate)
 
@@ -59,28 +60,29 @@ _No literal endpoint constant in `doordash_chains.py`._ The transport is either 
 2,304,054 rows · 19 columns
 
 
-| column | type |
-|---|---|
-| `name` | `VARCHAR` |
-| `price` | `VARCHAR` |
-| `image_url` | `VARCHAR` |
-| `container` | `VARCHAR` |
-| `unit_size` | `DOUBLE` |
-| `size_uom` | `VARCHAR` |
-| `pack_count` | `DOUBLE` |
-| `total_size` | `DOUBLE` |
-| `store` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `product_id` | `VARCHAR` |
-| `price_value` | `DOUBLE` |
-| `source` | `VARCHAR` |
-| `department` | `VARCHAR` |
-| `is_alcoholic` | `BOOLEAN` |
-| `bev_category` | `VARCHAR` |
-| `beer_style` | `VARCHAR` |
-| `is_hemp` | `BOOLEAN` |
-| `run_id` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `name` | `VARCHAR` | 100.0% |
+| `price` | `VARCHAR` | 100.0% |
+| `image_url` | `VARCHAR` | 100.0% |
+| `container` | `VARCHAR` | 11.9% |
+| `unit_size` | `DOUBLE` | 27.8% |
+| `size_uom` | `VARCHAR` | 27.8% |
+| `pack_count` | `DOUBLE` | 100.0% |
+| `total_size` | `DOUBLE` | 27.8% |
+| `store` | `VARCHAR` | 100.0% |
+| `store_id` | `VARCHAR` | 100.0% |
+| `product_id` | `VARCHAR` | 100.0% |
+| `price_value` | `DOUBLE` | 93.2% |
+| `source` | `VARCHAR` | 100.0% |
+| `department` | `VARCHAR` | 100.0% |
+| `is_alcoholic` | `BOOLEAN` | 100.0% |
+| `bev_category` | `VARCHAR` | 100.0% |
+| `beer_style` | `VARCHAR` | **2.6%** |
+| `is_hemp` | `BOOLEAN` | 100.0% |
+| `run_id` | `VARCHAR` | 100.0% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ### `doordash_outlets_full`
 

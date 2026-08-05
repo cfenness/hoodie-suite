@@ -39,29 +39,35 @@ _No literal endpoint constant in `ttb_pull.py`._ The transport is either inherit
 1,858,375 rows · 21 columns
 
 
-| column | type |
-|---|---|
-| `ttb_id` | `VARCHAR` |
-| `status` | `VARCHAR` |
-| `vendor_code` | `VARCHAR` |
-| `serial_number` | `VARCHAR` |
-| `class_type_code` | `VARCHAR` |
-| `class_type_desc` | `VARCHAR` |
-| `origin_code` | `VARCHAR` |
-| `brand_name` | `VARCHAR` |
-| `fanciful_name` | `VARCHAR` |
-| `application_type` | `VARCHAR` |
-| `for_sale_in` | `VARCHAR` |
-| `net_contents` | `VARCHAR` |
-| `wine_vintage` | `VARCHAR` |
-| `grape_varietal` | `VARCHAR` |
-| `alcohol_content` | `VARCHAR` |
-| `formula` | `VARCHAR` |
-| `approval_date` | `VARCHAR` |
-| `qualifications` | `VARCHAR` |
-| `plant_permit` | `VARCHAR` |
-| `label_image_url` | `VARCHAR` |
-| `other_json` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `ttb_id` | `VARCHAR` | 100.0% |
+| `status` | `VARCHAR` | 100.0% |
+| `vendor_code` | `VARCHAR` | 87.1% |
+| `serial_number` | `VARCHAR` | 100.0% |
+| `class_type_code` | `VARCHAR` | **0%** ‹never populated› |
+| `class_type_desc` | `VARCHAR` | 100.0% |
+| `origin_code` | `VARCHAR` | 100.0% |
+| `brand_name` | `VARCHAR` | 100.0% |
+| `fanciful_name` | `VARCHAR` | 33.6% |
+| `application_type` | `VARCHAR` | 95.4% |
+| `for_sale_in` | `VARCHAR` | **0.2%** |
+| `net_contents` | `VARCHAR` | 28.4% |
+| `wine_vintage` | `VARCHAR` | 69.2% |
+| `grape_varietal` | `VARCHAR` | 85.3% |
+| `alcohol_content` | `VARCHAR` | **0%** ‹never populated› |
+| `formula` | `VARCHAR` | **2.7%** |
+| `approval_date` | `VARCHAR` | 98.9% |
+| `qualifications` | `VARCHAR` | **0%** ‹never populated› |
+| `plant_permit` | `VARCHAR` | **0%** ‹never populated› |
+| `label_image_url` | `VARCHAR` | 98.4% |
+| `other_json` | `VARCHAR` | 100.0% |
+
+Fill measured over **first 400,000 rows** (400,000 rows).
+
+> **4 columns never populated:** `class_type_code`, `alcohol_content`, `qualifications`, `plant_permit`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 **Written by** `ttb_pull.py:220` (write_accumulate)
@@ -72,20 +78,21 @@ _No literal endpoint constant in `ttb_pull.py`._ The transport is either inherit
 23,874 rows · 11 columns
 
 
-| column | type |
-|---|---|
-| `ttb_id` | `VARCHAR` |
-| `image_file` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `abv` | `VARCHAR` |
-| `net_contents` | `VARCHAR` |
-| `claims` | `VARCHAR` |
-| `gov_warning` | `VARCHAR` |
-| `ocr_chars` | `VARCHAR` |
-| `front_label_url` | `VARCHAR` |
-| `back_label_url` | `VARCHAR` |
-| `label_urls` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `ttb_id` | `VARCHAR` | 100.0% |
+| `image_file` | `VARCHAR` | 99.7% |
+| `upc` | `VARCHAR` | 34.9% |
+| `abv` | `VARCHAR` | 24.2% |
+| `net_contents` | `VARCHAR` | 55.1% |
+| `claims` | `VARCHAR` | 19.6% |
+| `gov_warning` | `VARCHAR` | 98.7% |
+| `ocr_chars` | `VARCHAR` | 99.0% |
+| `front_label_url` | `VARCHAR` | 99.7% |
+| `back_label_url` | `VARCHAR` | 40.9% |
+| `label_urls` | `VARCHAR` | 99.7% |
 
+Fill measured over **full table** (23,874 rows).
 
 **Written by** `ttb_pull.py:222` (write_accumulate)
 

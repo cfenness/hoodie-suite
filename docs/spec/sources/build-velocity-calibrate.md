@@ -39,15 +39,16 @@ _No literal endpoint constant in `velocity_calibrate.py`._ The transport is eith
 5 rows · 6 columns
 
 
-| column | type |
-|---|---|
-| `kind` | `VARCHAR` |
-| `anchor` | `VARCHAR` |
-| `source` | `VARCHAR` |
-| `coverage` | `BIGINT` |
-| `metric` | `VARCHAR` |
-| `value` | `DOUBLE` |
+| column | type | filled |
+|---|---|---|
+| `kind` | `VARCHAR` | 100.0% |
+| `anchor` | `VARCHAR` | 20.0% |
+| `source` | `VARCHAR` | 80.0% |
+| `coverage` | `BIGINT` | 100.0% |
+| `metric` | `VARCHAR` | 100.0% |
+| `value` | `DOUBLE` | 40.0% |
 
+Fill measured over **full table** (5 rows).
 
 **Written by** `velocity_calibrate.py:142` (write_parquet)
 
