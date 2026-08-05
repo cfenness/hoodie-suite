@@ -658,6 +658,37 @@ reads the warehouse to include every present table and resolve bucketed (v2) tab
 active parts. `snowflake/` is engine/infra — never web-served (not in `_SUITE_OK_TOP`), like `unifyd/`.
 See `snowflake/README.md`.
 
+## The engineering spec (`docs/spec/`)
+
+One page per source and one per table, **generated** — `python3 tools/gen_spec.py`. Hand-written
+source docs drift the moment a scraper changes, and a drifted spec is worse than none because it gets
+quoted with confidence, so every fact is read at generation time from the registry, the module
+docstrings (reproduced VERBATIM — in this engine the docstring is the design note, carrying the
+measurements behind the constants), `tools/data_inventory.py`'s static write map, and a **live read of
+the warehouse**.
+
+`tools/spec_capture.py` (runs on Fly) reads the real column names and types out of the Parquet
+footers into `docs/spec/_live.json`. That read is the point: 177 tables are written by the code and
+only **6** declare a schema in `table_spec.py`, so for the other 171 the schema is whatever the last
+writer emitted — a spec built from declarations alone would document 6 tables and imply the rest do
+not exist. It is **partition-aware**: a `_parts` table has no single `.parquet` and a naive read 404s,
+which would have reported four of the largest tables in the system (`ubereats_products_parts`,
+29.9M rows) as *never landed*. It samples 6 partitions per table and reports **how many distinct
+schemas** it saw, because per-partition drift is the known corruption mode (`retail_observations`:
+3 schemas across 4,296 partitions).
+
+**The index leads with what is NOT documented** — declared schemas 6/177, raw-field inventories
+13/74, never-landed tables 34/177, unit tests 21/88 — because a spec that only shows what is covered
+reads as complete.
+
+`docs/spec/sources/ubereats-DEEP.md` is the worked example and the only hand-written page: the
+identifier trick that makes the universe addressable (a store's url id IS base64url of its UUID
+bytes), the exact seven headers, the measured concurrency ceiling (>32 workers returns EMPTY, so
+throughput appears to rise as coverage collapses), every landed field **with its fill rate**, and the
+coverage arithmetic. Writing it is what surfaced that Uber Eats covers **3.3%** of its 755k-store
+universe, that `brand`/`size`/`category`/`gtin` are declared and **0%** populated, and that the fold
+types those all-null columns as `INTEGER` where the parts table has them as `VARCHAR`.
+
 ## Health & smoke (keeping the served data trustworthy)
 
 Two standing tools exist so failures are loud, not quiet. Keep them passing and keep them honest.

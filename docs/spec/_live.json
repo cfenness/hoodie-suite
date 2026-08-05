@@ -1,0 +1,9654 @@
+{
+ "captured_at": "2026-08-05T12:49:49Z",
+ "counts_included": true,
+ "n_landed": 143,
+ "n_tables": 177,
+ "tables": {
+  "<dynamic>": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/<dynamic>.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "<dynamic>",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/<dynamic>.parquet"
+  },
+  "_stage_product": {
+   "columns": [
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand_group",
+     "type": "INTEGER"
+    },
+    {
+     "name": "product_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "class_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "core_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "flavor",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "abv",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "style",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "origin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "country",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "bottled_in",
+     "type": "INTEGER"
+    },
+    {
+     "name": "region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sub_region",
+     "type": "INTEGER"
+    },
+    {
+     "name": "appellation",
+     "type": "INTEGER"
+    },
+    {
+     "name": "varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "taste",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "body",
+     "type": "INTEGER"
+    },
+    {
+     "name": "food_pairing",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "expert_rating",
+     "type": "INTEGER"
+    },
+    {
+     "name": "finish",
+     "type": "INTEGER"
+    },
+    {
+     "name": "size_ml",
+     "type": "BIGINT"
+    },
+    {
+     "name": "packsize",
+     "type": "INTEGER"
+    },
+    {
+     "name": "container",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pack",
+     "type": "BIGINT"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "gtin",
+     "type": "INTEGER"
+    },
+    {
+     "name": "vintage",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "edition",
+     "type": "INTEGER"
+    },
+    {
+     "name": "supplier",
+     "type": "INTEGER"
+    },
+    {
+     "name": "gtin14",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "gs1_digital_link",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "code_type",
+     "type": "INTEGER"
+    },
+    {
+     "name": "gs1_link_source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "_source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "_source_id",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1609448,
+   "table": "_stage_product",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/_stage_product.parquet"
+  },
+  "ab_outlets": {
+   "columns": [
+    {
+     "name": "VPID",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Address",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "City",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "State",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Zip",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Lat",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "Lng",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "AB_Brands",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Zips_Hit",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 278510,
+   "table": "ab_outlets",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/ab_outlets.parquet"
+  },
+  "abc_catalog": {
+   "columns": [
+    {
+     "name": "sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 14098,
+   "table": "abc_catalog",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/abc_catalog.parquet"
+  },
+  "abc_products": {
+   "columns": [
+    {
+     "name": "sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "uid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "country",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "class",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "msrp",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rating",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rating_count",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "in_stock",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "on_sale",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_certified",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "raw_json",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 9399,
+   "table": "abc_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/abc_products.parquet"
+  },
+  "account_logos": {
+   "columns": [
+    {
+     "name": "account",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "storage_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "bytes",
+     "type": "BIGINT"
+    },
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 78,
+   "table": "account_logos",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/account_logos.parquet"
+  },
+  "agg_geo_stage": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "chain",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_chain",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_beer",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_wine",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_spirits",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_cannabis",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_rtd_spirits",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "flag_basis",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "license_conflict",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "address",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "city",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "zip",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "lat",
+     "type": "INTEGER"
+    },
+    {
+     "name": "lng",
+     "type": "INTEGER"
+    },
+    {
+     "name": "phone",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "addr_valid",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "hoodie_outlet",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "phone_norm",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "addr_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geo_cell",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "county_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geo_precision",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "staged_at",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "layout": "partitioned",
+   "partitions": 12,
+   "rows": 305643,
+   "schemas_sampled": 1,
+   "table": "agg_geo_stage",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/agg_geo_stage/s05_b0001.parquet"
+  },
+  "asset_divergence": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/asset_divergence.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "asset_divergence",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/asset_divergence.parquet"
+  },
+  "bea_reference": {
+   "columns": [
+    {
+     "name": "dataset",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "table_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "line_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "metric_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geo_level",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geo_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vintage_year",
+     "type": "BIGINT"
+    },
+    {
+     "name": "metric_value",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "unit",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_pulled_at",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 96450,
+   "table": "bea_reference",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/bea_reference.parquet"
+  },
+  "bevalc_chains": {
+   "columns": [
+    {
+     "name": "chain",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "premise",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "channel",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "banners",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "est_locations",
+     "type": "BIGINT"
+    },
+    {
+     "name": "website",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pricing",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "inventory",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "method",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "auth",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "note",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_source",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "yields",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "family",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 127,
+   "table": "bevalc_chains",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/bevalc_chains.parquet"
+  },
+  "binnys_products": {
+   "columns": [
+    {
+     "name": "sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "origin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "department",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "unit_label",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "case_pack",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "proof",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "abv",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "thc_mg",
+     "type": "INTEGER"
+    },
+    {
+     "name": "cbd_mg",
+     "type": "INTEGER"
+    },
+    {
+     "name": "rating",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "reviews",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "discount_pct",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "deal_of_week",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "is_sold_out",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "in_store_only",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "is_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "short_desc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "qty",
+     "type": "BIGINT"
+    },
+    {
+     "name": "raw_json",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1534862,
+   "table": "binnys_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/binnys_products.parquet"
+  },
+  "bottlecapps_products": {
+   "columns": [
+    {
+     "name": "store",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "gtin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "currency",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "availability",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rating",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rating_count",
+     "type": "BIGINT"
+    },
+    {
+     "name": "captured_at",
+     "type": "BIGINT"
+    },
+    {
+     "name": "raw_json",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 227,
+   "table": "bottlecapps_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/bottlecapps_products.parquet"
+  },
+  "brand_events": {
+   "columns": [
+    {
+     "name": "event_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "hoodie_brand_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand_key",
+     "type": "INTEGER"
+    },
+    {
+     "name": "canon_brand",
+     "type": "INTEGER"
+    },
+    {
+     "name": "brand_resolution",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sku_id",
+     "type": "INTEGER"
+    },
+    {
+     "name": "event_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "event_date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "event_date_precision",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "market",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "currency",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "abv",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "title",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "asset_count",
+     "type": "BIGINT"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_asset_ids",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rights_ref",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "field_provenance",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "fetched_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 329,
+   "table": "brand_events",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/brand_events.parquet"
+  },
+  "ca_outlets": {
+   "columns": [
+    {
+     "name": "License Type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "File Number",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Lic or App",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Type Status",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Type Orig Iss Date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Expir Date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Fee Codes",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Dup Counts",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Master Ind",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Term in # of Months",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Geo Code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "District",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Primary Name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Prem Addr 1",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Prem Addr 2",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Prem City",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Prem State",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Prem Zip",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "DBA Name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Mail Addr 1",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Mail Addr 2",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Mail City",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Mail State",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Mail Zip",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Prem County",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Prem Census Tract #",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 128950,
+   "table": "ca_outlets",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/ca_outlets.parquet"
+  },
+  "category_cluster": {
+   "columns": [
+    {
+     "name": "category_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "members",
+     "type": "BIGINT"
+    },
+    {
+     "name": "n_sources",
+     "type": "BIGINT"
+    },
+    {
+     "name": "sources",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sample_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "corroborated",
+     "type": "BOOLEAN"
+    }
+   ],
+   "landed": true,
+   "rows": 782928,
+   "table": "category_cluster",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/category_cluster.parquet"
+  },
+  "census_acs": {
+   "columns": [
+    {
+     "name": "dataset",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vintage_year",
+     "type": "BIGINT"
+    },
+    {
+     "name": "table_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "variable",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "label",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geo_level",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geo_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "estimate",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "suppressed",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "source_pulled_at",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 1498570,
+   "table": "census_acs",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/census_acs.parquet"
+  },
+  "census_demographic": {
+   "columns": [
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "population",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "median_age",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "households",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "hispanic_pop",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "white_pop",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "black_pop",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "asian_pop",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "county_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geoid",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 423,
+   "table": "census_demographic",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/census_demographic.parquet"
+  },
+  "census_economic": {
+   "columns": [
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "median_household_income",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "per_capita_income",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "poverty_pop",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "labor_force",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "unemployed",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "county_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geoid",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 423,
+   "table": "census_economic",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/census_economic.parquet"
+  },
+  "census_housing": {
+   "columns": [
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "median_home_value",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "median_gross_rent",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "housing_units",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "owner_occupied",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "renter_occupied",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "county_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geoid",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 423,
+   "table": "census_housing",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/census_housing.parquet"
+  },
+  "census_migration": {
+   "columns": [
+    {
+     "name": "vintage_year",
+     "type": "BIGINT"
+    },
+    {
+     "name": "geo_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geo_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "other_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "other_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "metric_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "metric_value",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "source_pulled_at",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 126011,
+   "table": "census_migration",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/census_migration.parquet"
+  },
+  "census_reference": {
+   "columns": [
+    {
+     "name": "dataset",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vintage_year",
+     "type": "BIGINT"
+    },
+    {
+     "name": "naics_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geo_level",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geo_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "metric_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "metric_value",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "suppressed",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "source_pulled_at",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 876266,
+   "table": "census_reference",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/census_reference.parquet"
+  },
+  "cex_reference": {
+   "columns": [
+    {
+     "name": "dataset",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vintage_year",
+     "type": "BIGINT"
+    },
+    {
+     "name": "item_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "demographic",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "bracket_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "bracket_label",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "bracket_lo",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "bracket_hi",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "metric_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "metric_value",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "suppressed",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "source_pulled_at",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 450,
+   "table": "cex_reference",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/cex_reference.parquet"
+  },
+  "city_centroids": {
+   "columns": [
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "city",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "lat",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "lng",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "kind",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 68747,
+   "table": "city_centroids",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/city_centroids.parquet"
+  },
+  "cityhive_chain_products": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/cityhive_chain_products.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "cityhive_chain_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/cityhive_chain_products.parquet"
+  },
+  "cityhive_products": {
+   "columns": [
+    {
+     "name": "store",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "base",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "platform",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price_value",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_ml",
+     "type": "BIGINT"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "option_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "bev_category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 799,
+   "table": "cityhive_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/cityhive_products.parquet"
+  },
+  "cola_cluster": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/cola_cluster.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "cola_cluster",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/cola_cluster.parquet"
+  },
+  "cola_cluster_membership": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/cola_cluster_membership.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "cola_cluster_membership",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/cola_cluster_membership.parquet"
+  },
+  "coverage_cells": {
+   "columns": [
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "universe_outlets",
+     "type": "BIGINT"
+    },
+    {
+     "name": "observed_outlets",
+     "type": "BIGINT"
+    },
+    {
+     "name": "coverage",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "brands_observed",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 1,
+   "table": "coverage_cells",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/coverage_cells.parquet"
+  },
+  "coverage_log": {
+   "columns": [
+    {
+     "name": "table",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "ts",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "run",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "wrote_rows",
+     "type": "BIGINT"
+    },
+    {
+     "name": "wrote_items",
+     "type": "BIGINT"
+    },
+    {
+     "name": "wrote_stores",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "layout": "partitioned",
+   "partitions": 2000,
+   "rows": 2000,
+   "schemas_sampled": 1,
+   "table": "coverage_log",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/coverage_log/1785922914231349176_762_102.parquet"
+  },
+  "cpi_reference": {
+   "columns": [
+    {
+     "name": "dataset",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "series_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "area_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "area_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vintage_year",
+     "type": "BIGINT"
+    },
+    {
+     "name": "period",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "metric_value",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "source_pulled_at",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 1830,
+   "table": "cpi_reference",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/cpi_reference.parquet"
+  },
+  "cv_reads": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/cv_reads.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "cv_reads",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/cv_reads.parquet"
+  },
+  "dam_assets": {
+   "columns": [
+    {
+     "name": "source_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vendor",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "drive_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "drive_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "folder_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "folder_path",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "asset_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "asset_token",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "title",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "asset_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "extension",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "mime_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_bytes",
+     "type": "BIGINT"
+    },
+    {
+     "name": "asset_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "thumb_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "download_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "created_on",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "updated_on",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rights_ref",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image_use",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image_scope",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "retention",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "phash",
+     "type": "INTEGER"
+    },
+    {
+     "name": "embedding_ref",
+     "type": "INTEGER"
+    },
+    {
+     "name": "withheld_reason",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pulled_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 2490,
+   "table": "dam_assets",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/dam_assets.parquet"
+  },
+  "dam_census": {
+   "columns": [
+    {
+     "name": "supplier",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "corporate_domain",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "media_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "media_host",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "dam_vendor",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vendor_signals",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vendor_confidence",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "kind",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "public",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "drive_id",
+     "type": "INTEGER"
+    },
+    {
+     "name": "company_id",
+     "type": "INTEGER"
+    },
+    {
+     "name": "reachable",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "http_status",
+     "type": "BIGINT"
+    },
+    {
+     "name": "robots_allows",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "tos_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "tos_chars",
+     "type": "BIGINT"
+    },
+    {
+     "name": "tos_capture",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image_use",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "scope",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "confidence",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "needs_counsel",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "provisional",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "discovery_method",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "connector",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "notes",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "checked_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 67,
+   "table": "dam_census",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/dam_census.parquet"
+  },
+  "dam_emissions": {
+   "columns": [
+    {
+     "name": "ts",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rights_ref",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "action",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "subject",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "surface",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "allowed",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "reason",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image_use",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "scope",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "layout": "partitioned",
+   "partitions": 1,
+   "rows": 1,
+   "schemas_sampled": 1,
+   "table": "dam_emissions",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/dam_emissions/2026-08-04_dam-bacardi.parquet"
+  },
+  "dam_gallery": {
+   "columns": [
+    {
+     "name": "gallery_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "asset_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "asset_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vendor",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "hoodie_brand_id",
+     "type": "INTEGER"
+    },
+    {
+     "name": "brand",
+     "type": "INTEGER"
+    },
+    {
+     "name": "brand_key",
+     "type": "INTEGER"
+    },
+    {
+     "name": "sku_id",
+     "type": "INTEGER"
+    },
+    {
+     "name": "sku_match_method",
+     "type": "INTEGER"
+    },
+    {
+     "name": "image_kind",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "width",
+     "type": "INTEGER"
+    },
+    {
+     "name": "height",
+     "type": "INTEGER"
+    },
+    {
+     "name": "size_bytes",
+     "type": "BIGINT"
+    },
+    {
+     "name": "phash",
+     "type": "INTEGER"
+    },
+    {
+     "name": "phash_algo",
+     "type": "INTEGER"
+    },
+    {
+     "name": "embedding",
+     "type": "INTEGER"
+    },
+    {
+     "name": "embedding_backend",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "embedding_dim",
+     "type": "BIGINT"
+    },
+    {
+     "name": "retention",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rights_ref",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image_use",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image_scope",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "withheld_reason",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "built_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 66,
+   "table": "dam_gallery",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/dam_gallery.parquet"
+  },
+  "dam_rights": {
+   "columns": [
+    {
+     "name": "source_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vendor",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "host",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "tos_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "tos_sha256",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "tos_captured_at",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "tos_capture_method",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "robots_sha256",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "robots_checked_at",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "robots_allows_harvest",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "facts_use",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image_use",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "scope",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "attribution_required",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "alteration_allowed",
+     "type": "INTEGER"
+    },
+    {
+     "name": "expiry",
+     "type": "INTEGER"
+    },
+    {
+     "name": "confidence",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "needs_counsel",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "counsel_cleared",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "review_state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "schema_version",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "schema_signoff",
+     "type": "INTEGER"
+    },
+    {
+     "name": "reviewed_by",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "reviewed_at",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "escalation",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "evidence_json",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "landed_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1,
+   "table": "dam_rights",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/dam_rights.parquet"
+  },
+  "dim_outlet": {
+   "columns": [
+    {
+     "name": "hoodie_outlet_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "outlet_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "address",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "city",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "zip",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "lat",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "lng",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "county_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "phone",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "chain",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_chain",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_beer",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_wine",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_spirits",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_cannabis",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_rtd_spirits",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "sources",
+     "type": "VARCHAR[]"
+    },
+    {
+     "name": "source_count",
+     "type": "BIGINT"
+    },
+    {
+     "name": "record_count",
+     "type": "BIGINT"
+    },
+    {
+     "name": "vpid",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 2560546,
+   "table": "dim_outlet",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/dim_outlet.parquet"
+  },
+  "dim_product_type": {
+   "columns": [
+    {
+     "name": "product_type_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "product_type",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 5,
+   "table": "dim_product_type",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/dim_product_type.parquet"
+  },
+  "dim_sku": {
+   "columns": [
+    {
+     "name": "sku_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pack",
+     "type": "BIGINT"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "gtin",
+     "type": "INTEGER"
+    },
+    {
+     "name": "vintage",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "edition",
+     "type": "INTEGER"
+    },
+    {
+     "name": "resolved_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_rows",
+     "type": "BIGINT"
+    },
+    {
+     "name": "sources",
+     "type": "BIGINT"
+    },
+    {
+     "name": "source_list",
+     "type": "VARCHAR[]"
+    },
+    {
+     "name": "master_created_at",
+     "type": "INTEGER"
+    },
+    {
+     "name": "master_updated_at",
+     "type": "INTEGER"
+    },
+    {
+     "name": "updated_by",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1180839,
+   "table": "dim_sku",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/dim_sku.parquet"
+  },
+  "dim_store": {
+   "columns": [
+    {
+     "name": "store_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "hoodie_store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "chain",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "city",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "zip",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "lat",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "lng",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1573,
+   "table": "dim_store",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/dim_store.parquet"
+  },
+  "dist_item_xwalk": {
+   "columns": [
+    {
+     "name": "distributor_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "distributor_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "dist_item_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "dist_item_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "retail_upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_item_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_raw",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 755221,
+   "table": "dist_item_xwalk",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/dist_item_xwalk.parquet"
+  },
+  "distributor_menu_items": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/distributor_menu_items.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "distributor_menu_items",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/distributor_menu_items.parquet"
+  },
+  "doordash_full_runs": {
+   "columns": [
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "ts",
+     "type": "BIGINT"
+    },
+    {
+     "name": "universe_total",
+     "type": "BIGINT"
+    },
+    {
+     "name": "covered_total",
+     "type": "BIGINT"
+    },
+    {
+     "name": "remaining_total",
+     "type": "BIGINT"
+    },
+    {
+     "name": "stores_landed_this_run",
+     "type": "BIGINT"
+    },
+    {
+     "name": "items_landed_this_run",
+     "type": "BIGINT"
+    },
+    {
+     "name": "duration_s",
+     "type": "DOUBLE"
+    }
+   ],
+   "landed": true,
+   "rows": 6,
+   "table": "doordash_full_runs",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/doordash_full_runs.parquet"
+  },
+  "doordash_outlets_full": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/doordash_outlets_full.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "doordash_outlets_full",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/doordash_outlets_full.parquet"
+  },
+  "doordash_products_full": {
+   "columns": [
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "container",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "unit_size",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "size_uom",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pack_count",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "total_size",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "store",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price_value",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "department",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_alcoholic",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "bev_category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "beer_style",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 2304054,
+   "table": "doordash_products_full",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/doordash_products_full.parquet"
+  },
+  "doordash_stores": {
+   "columns": [
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "city",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 773357,
+   "table": "doordash_stores",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/doordash_stores.parquet"
+  },
+  "fact_inventory": {
+   "columns": [
+    {
+     "name": "date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "hoodie_store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sku_key",
+     "type": "INTEGER"
+    },
+    {
+     "name": "hoodie_sku_id",
+     "type": "INTEGER"
+    },
+    {
+     "name": "qty",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "in_stock",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "stock_level",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "layout": "partitioned",
+   "partitions": 18,
+   "rows": 7288934,
+   "schemas_sampled": 1,
+   "table": "fact_inventory",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/fact_inventory/2026-07-13_total-wine.parquet"
+  },
+  "fact_price": {
+   "columns": [
+    {
+     "name": "date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "hoodie_store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sku_key",
+     "type": "INTEGER"
+    },
+    {
+     "name": "hoodie_sku_id",
+     "type": "INTEGER"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "on_promo",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "promo",
+     "type": "INTEGER"
+    }
+   ],
+   "landed": true,
+   "layout": "partitioned",
+   "partitions": 18,
+   "rows": 7149063,
+   "schemas_sampled": 1,
+   "table": "fact_price",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/fact_price/2026-07-13_total-wine.parquet"
+  },
+  "fact_velocity": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "week",
+     "type": "TIMESTAMP"
+    },
+    {
+     "name": "implied_units",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "sale_events",
+     "type": "DECIMAL(38,0)"
+    },
+    {
+     "name": "restock_events",
+     "type": "DECIMAL(38,0)"
+    },
+    {
+     "name": "restock_units",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "noise_damped_units",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "censored_pairs",
+     "type": "DECIMAL(38,0)"
+    },
+    {
+     "name": "oos_events",
+     "type": "DECIMAL(38,0)"
+    },
+    {
+     "name": "pairs",
+     "type": "DECIMAL(38,0)"
+    },
+    {
+     "name": "jitter_frac",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "cadence",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "confidence",
+     "type": "DOUBLE"
+    }
+   ],
+   "landed": true,
+   "rows": 3319500,
+   "table": "fact_velocity",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/fact_velocity.parquet"
+  },
+  "field_stats": {
+   "columns": [
+    {
+     "name": "day",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "table_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "field",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rows",
+     "type": "BIGINT"
+    },
+    {
+     "name": "filled",
+     "type": "BIGINT"
+    },
+    {
+     "name": "fill_pct",
+     "type": "DOUBLE"
+    }
+   ],
+   "landed": true,
+   "layout": "partitioned",
+   "partitions": 14,
+   "rows": 156,
+   "schemas_sampled": 1,
+   "table": "field_stats",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/field_stats/2026-08-03_ubereats_ubereats_valuerules.parquet"
+  },
+  "fred_reference": {
+   "columns": [
+    {
+     "name": "dataset",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "series_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "series_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vintage_year",
+     "type": "BIGINT"
+    },
+    {
+     "name": "period",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "metric_value",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "unit",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_pulled_at",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 550,
+   "table": "fred_reference",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/fred_reference.parquet"
+  },
+  "geo_cbsa_ref": {
+   "columns": [
+    {
+     "name": "cbsa_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cbsa_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cbsa_type",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 935,
+   "table": "geo_cbsa_ref",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/geo_cbsa_ref.parquet"
+  },
+  "haskells_products": {
+   "columns": [
+    {
+     "name": "store",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "retail_price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "on_sale",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "in_stock",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "qty",
+     "type": "BIGINT"
+    },
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "hemp_signal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "captured_at",
+     "type": "BIGINT"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "raw_json",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 10535,
+   "table": "haskells_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/haskells_products.parquet"
+  },
+  "hemp_inventory": {
+   "columns": [
+    {
+     "name": "retailer",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "base",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "variant_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "available",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "qty",
+     "type": "BIGINT"
+    },
+    {
+     "name": "method",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "signal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "captured_at",
+     "type": "BIGINT"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 475,
+   "table": "hemp_inventory",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/hemp_inventory.parquet"
+  },
+  "hemp_products": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_ml",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "signal",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 4040,
+   "table": "hemp_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/hemp_products.parquet"
+  },
+  "hemp_retailers": {
+   "columns": [
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "account",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "chain",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "street",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "city",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "zip",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "phone",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "lat",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "lng",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "zip_searched",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 2144,
+   "table": "hemp_retailers",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/hemp_retailers.parquet"
+  },
+  "hoodie_ids": {
+   "columns": [
+    {
+     "name": "entity_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "master_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "parent_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "hoodie_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "first_seen",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "last_seen",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 11864042,
+   "table": "hoodie_ids",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/hoodie_ids.parquet"
+  },
+  "identity_cluster": {
+   "columns": [
+    {
+     "name": "cluster_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "members",
+     "type": "BIGINT"
+    },
+    {
+     "name": "n_sources",
+     "type": "BIGINT"
+    },
+    {
+     "name": "commercial_sources",
+     "type": "BIGINT"
+    },
+    {
+     "name": "has_ttb",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "tier",
+     "type": "BIGINT"
+    },
+    {
+     "name": "sources",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sample_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "corroborated",
+     "type": "BOOLEAN"
+    }
+   ],
+   "landed": true,
+   "rows": 776316,
+   "table": "identity_cluster",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/identity_cluster.parquet"
+  },
+  "img_hash": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/img_hash.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "img_hash",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/img_hash.parquet"
+  },
+  "img_matches": {
+   "columns": [
+    {
+     "name": "a_source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "a_sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "a_upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cosine",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "name_sim",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "class_agree",
+     "type": "BIGINT"
+    },
+    {
+     "name": "varietal_agree",
+     "type": "BIGINT"
+    },
+    {
+     "name": "flavor_agree",
+     "type": "BIGINT"
+    },
+    {
+     "name": "size_agree",
+     "type": "BIGINT"
+    },
+    {
+     "name": "confidence",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "verdict",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 8737,
+   "table": "img_matches",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/img_matches.parquet"
+  },
+  "img_vec": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vec",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 29297,
+   "table": "img_vec",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/img_vec.parquet"
+  },
+  "instacart_products": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/instacart_products.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "instacart_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/instacart_products.parquet"
+  },
+  "item_identity": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_item_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_ml",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "size_raw",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upcs",
+     "type": "VARCHAR[]"
+    },
+    {
+     "name": "identity_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "status",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "merged_into",
+     "type": "INTEGER"
+    },
+    {
+     "name": "match_tier",
+     "type": "BIGINT"
+    },
+    {
+     "name": "method_version",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 147235,
+   "table": "item_identity",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/item_identity.parquet"
+  },
+  "kroger_atlas_debug": {
+   "columns": [
+    {
+     "name": "http",
+     "type": "BIGINT"
+    },
+    {
+     "name": "products",
+     "type": "BIGINT"
+    },
+    {
+     "name": "store",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "fac",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cookie_len",
+     "type": "BIGINT"
+    },
+    {
+     "name": "err",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "snippet",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1,
+   "table": "kroger_atlas_debug",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/kroger_atlas_debug.parquet"
+  },
+  "kroger_atlas_products": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/kroger_atlas_products.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "kroger_atlas_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/kroger_atlas_products.parquet"
+  },
+  "kroger_products": {
+   "columns": [
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "promo",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "on_promo",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "stock_level",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "in_stock",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "image_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "raw_json",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "location_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "term",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "city",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 36812,
+   "table": "kroger_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/kroger_products.parquet"
+  },
+  "kroger_runs": {
+   "columns": [
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "at",
+     "type": "BIGINT"
+    },
+    {
+     "name": "products",
+     "type": "BIGINT"
+    },
+    {
+     "name": "stores",
+     "type": "BIGINT"
+    },
+    {
+     "name": "in_stock",
+     "type": "BIGINT"
+    },
+    {
+     "name": "on_promo",
+     "type": "BIGINT"
+    },
+    {
+     "name": "status",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "note",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 6,
+   "table": "kroger_runs",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/kroger_runs.parquet"
+  },
+  "label_extract": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/label_extract.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "label_extract",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/label_extract.parquet"
+  },
+  "label_reads": {
+   "columns": [
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "host",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "method",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vision",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "raw_json",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "provenance_json",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "ts",
+     "type": "BIGINT"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_options",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "wine_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "style",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "body",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "abv",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "proof",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vintage",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "closure",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "country",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sub_region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "appellation",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "origin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "bottled_in",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "finish",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "taste",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "food_pairing",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "expert_rating",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "customer_rating",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rating_count",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "gov_warning",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 4,
+   "table": "label_reads",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/label_reads.parquet"
+  },
+  "ladder_state": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/ladder_state.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "ladder_state",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/ladder_state.parquet"
+  },
+  "market_projection": {
+   "columns": [
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "universe_outlets",
+     "type": "BIGINT"
+    },
+    {
+     "name": "obs_stores",
+     "type": "BIGINT"
+    },
+    {
+     "name": "coverage",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "observed_units",
+     "type": "BIGINT"
+    },
+    {
+     "name": "projected_units",
+     "type": "INTEGER"
+    },
+    {
+     "name": "ci_low",
+     "type": "INTEGER"
+    },
+    {
+     "name": "ci_high",
+     "type": "INTEGER"
+    },
+    {
+     "name": "ci_pct",
+     "type": "INTEGER"
+    },
+    {
+     "name": "projected_status",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 5921,
+   "table": "market_projection",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/market_projection.parquet"
+  },
+  "mart_sip_brand_market_month": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/mart_sip_brand_market_month.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "mart_sip_brand_market_month",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/mart_sip_brand_market_month.parquet"
+  },
+  "mart_velocity_brand_week": {
+   "columns": [
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "week",
+     "type": "TIMESTAMP"
+    },
+    {
+     "name": "implied_units",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "conf_wt_units_per_store",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "cells",
+     "type": "BIGINT"
+    },
+    {
+     "name": "stores",
+     "type": "BIGINT"
+    },
+    {
+     "name": "restock_events",
+     "type": "DECIMAL(38,0)"
+    },
+    {
+     "name": "oos_events",
+     "type": "DECIMAL(38,0)"
+    },
+    {
+     "name": "avg_confidence",
+     "type": "DOUBLE"
+    }
+   ],
+   "landed": true,
+   "rows": 13282,
+   "table": "mart_velocity_brand_week",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/mart_velocity_brand_week.parquet"
+  },
+  "master_decisions": {
+   "columns": [
+    {
+     "name": "cluster_id",
+     "type": "INTEGER"
+    },
+    {
+     "name": "action",
+     "type": "INTEGER"
+    },
+    {
+     "name": "tier",
+     "type": "INTEGER"
+    },
+    {
+     "name": "note",
+     "type": "INTEGER"
+    },
+    {
+     "name": "matched_name",
+     "type": "INTEGER"
+    },
+    {
+     "name": "steward",
+     "type": "INTEGER"
+    },
+    {
+     "name": "members",
+     "type": "INTEGER"
+    },
+    {
+     "name": "removed",
+     "type": "INTEGER"
+    },
+    {
+     "name": "ts",
+     "type": "INTEGER"
+    }
+   ],
+   "landed": true,
+   "rows": 0,
+   "table": "master_decisions",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/master_decisions.parquet"
+  },
+  "master_overrides": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/master_overrides.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "master_overrides",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/master_overrides.parquet"
+  },
+  "master_quality": {
+   "columns": [
+    {
+     "name": "version",
+     "type": "BIGINT"
+    },
+    {
+     "name": "ts",
+     "type": "BIGINT"
+    },
+    {
+     "name": "n_pairs",
+     "type": "BIGINT"
+    },
+    {
+     "name": "n_pos",
+     "type": "BIGINT"
+    },
+    {
+     "name": "n_neg",
+     "type": "BIGINT"
+    },
+    {
+     "name": "n_resolvable",
+     "type": "BIGINT"
+    },
+    {
+     "name": "tp",
+     "type": "BIGINT"
+    },
+    {
+     "name": "fp",
+     "type": "BIGINT"
+    },
+    {
+     "name": "fn",
+     "type": "BIGINT"
+    },
+    {
+     "name": "tn",
+     "type": "BIGINT"
+    },
+    {
+     "name": "precision",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "recall",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "f1",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "regressions",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 3,
+   "table": "master_quality",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/master_quality.parquet"
+  },
+  "master_quality_canon": {
+   "columns": [
+    {
+     "name": "version",
+     "type": "BIGINT"
+    },
+    {
+     "name": "ts",
+     "type": "BIGINT"
+    },
+    {
+     "name": "identity",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "gold_version",
+     "type": "BIGINT"
+    },
+    {
+     "name": "n_pairs",
+     "type": "BIGINT"
+    },
+    {
+     "name": "n_all",
+     "type": "BIGINT"
+    },
+    {
+     "name": "tp",
+     "type": "BIGINT"
+    },
+    {
+     "name": "fp",
+     "type": "BIGINT"
+    },
+    {
+     "name": "fn",
+     "type": "BIGINT"
+    },
+    {
+     "name": "tn",
+     "type": "BIGINT"
+    },
+    {
+     "name": "precision",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "recall",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "f1",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "coverage",
+     "type": "DOUBLE"
+    }
+   ],
+   "landed": true,
+   "rows": 3,
+   "table": "master_quality_canon",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/master_quality_canon.parquet"
+  },
+  "match_dict": {
+   "columns": [
+    {
+     "name": "kind",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "match",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "value",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "mode",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 400,
+   "table": "match_dict",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/match_dict.parquet"
+  },
+  "meijer_products": {
+   "columns": [
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "uom",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "base_price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "promo_price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "on_sale",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "price_text",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "savings",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "promo",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "stock_status",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "in_stock",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 2144,
+   "table": "meijer_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/meijer_products.parquet"
+  },
+  "menu_beverages": {
+   "columns": [
+    {
+     "name": "account",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "price_basis",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_alcoholic",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "root",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sub",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "base_spirit",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "beer_style",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 468,
+   "table": "menu_beverages",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/menu_beverages.parquet"
+  },
+  "menu_files": {
+   "columns": [
+    {
+     "name": "account",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "kind",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "storage_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "bytes",
+     "type": "BIGINT"
+    },
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 316,
+   "table": "menu_files",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/menu_files.parquet"
+  },
+  "mont_sales": {
+   "columns": [
+    {
+     "name": "calendar_year",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cal_month_num",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "supplier",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rtl_sales",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rtl_transfers",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "whs_sales",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 319028,
+   "table": "mont_sales",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/mont_sales.parquet"
+  },
+  "naop_accounts": {
+   "columns": [
+    {
+     "name": "store",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "account",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "clean_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "street",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "city",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "phone",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cuisine",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cuisines",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cuisine_source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "serves_alcohol",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "n_beverages",
+     "type": "BIGINT"
+    },
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 4794,
+   "table": "naop_accounts",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/naop_accounts.parquet"
+  },
+  "naop_beverages": {
+   "columns": [
+    {
+     "name": "store",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "account",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cuisine",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cuisines",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "price_basis",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_alcoholic",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "root",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sub",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "base_spirit",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "beer_style",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 7139,
+   "table": "naop_beverages",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/naop_beverages.parquet"
+  },
+  "national_shopify_products": {
+   "columns": [
+    {
+     "name": "store",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "platform",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price_value",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_opt",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "bev_category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "container",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "unit_size",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "size_uom",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pack_count",
+     "type": "BIGINT"
+    },
+    {
+     "name": "total_size",
+     "type": "DOUBLE"
+    }
+   ],
+   "landed": true,
+   "rows": 1141,
+   "table": "national_shopify_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/national_shopify_products.parquet"
+  },
+  "national_{}_products": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/national_{}_products.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "national_{}_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/national_{}_products.parquet"
+  },
+  "normalization_findings": {
+   "columns": [
+    {
+     "name": "table",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "field",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "check",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "kind",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cohort_n",
+     "type": "BIGINT"
+    },
+    {
+     "name": "total_n",
+     "type": "BIGINT"
+    },
+    {
+     "name": "share",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "evidence",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "proposal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "samples",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "found_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 234,
+   "table": "normalization_findings",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/normalization_findings.parquet"
+  },
+  "obs_metro_rollup": {
+   "columns": [
+    {
+     "name": "cbsa_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cbsa_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "zcta",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "county_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "stores",
+     "type": "BIGINT"
+    },
+    {
+     "name": "sources",
+     "type": "BIGINT"
+    },
+    {
+     "name": "items_total",
+     "type": "BIGINT"
+    },
+    {
+     "name": "items_per_store",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "obs_rows",
+     "type": "BIGINT"
+    },
+    {
+     "name": "price_p25",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "price_median",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "price_p75",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "price_avg",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "promo_share",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "in_stock_share",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "built_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 3323,
+   "table": "obs_metro_rollup",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/obs_metro_rollup.parquet"
+  },
+  "obs_quality_cell": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "n_obs",
+     "type": "BIGINT"
+    },
+    {
+     "name": "n_days",
+     "type": "BIGINT"
+    },
+    {
+     "name": "first_date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "last_date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "n_qty",
+     "type": "BIGINT"
+    },
+    {
+     "name": "distinct_qty",
+     "type": "BIGINT"
+    },
+    {
+     "name": "qty_moves",
+     "type": "DECIMAL(38,0)"
+    },
+    {
+     "name": "price_moves",
+     "type": "DECIMAL(38,0)"
+    },
+    {
+     "name": "jitter_moves",
+     "type": "DECIMAL(38,0)"
+    },
+    {
+     "name": "cadence_days",
+     "type": "DOUBLE"
+    }
+   ],
+   "landed": true,
+   "rows": 8999359,
+   "table": "obs_quality_cell",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/obs_quality_cell.parquet"
+  },
+  "obs_quality_source": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "obs",
+     "type": "DECIMAL(38,0)"
+    },
+    {
+     "name": "cells",
+     "type": "BIGINT"
+    },
+    {
+     "name": "stores",
+     "type": "BIGINT"
+    },
+    {
+     "name": "first_date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "last_date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "qty_coverage",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "distinct_qty_global",
+     "type": "BIGINT"
+    },
+    {
+     "name": "diffable_frac",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "jitter_frac",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "median_cadence_days",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "has_counts",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "qual_tier",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 22,
+   "table": "obs_quality_source",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/obs_quality_source.parquet"
+  },
+  "obs_store_rollup": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "chain",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "items",
+     "type": "BIGINT"
+    },
+    {
+     "name": "brands",
+     "type": "BIGINT"
+    },
+    {
+     "name": "obs_rows",
+     "type": "BIGINT"
+    },
+    {
+     "name": "stores_seen_days",
+     "type": "BIGINT"
+    },
+    {
+     "name": "first_date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "last_date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price_min",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "price_p25",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "price_median",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "price_p75",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "price_max",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "price_avg",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "promo_rows",
+     "type": "BIGINT"
+    },
+    {
+     "name": "promo_share",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "in_stock_share",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "hemp_items",
+     "type": "BIGINT"
+    },
+    {
+     "name": "built_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 215203,
+   "table": "obs_store_rollup",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/obs_store_rollup.parquet"
+  },
+  "offprem_products": {
+   "columns": [
+    {
+     "name": "store",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "base",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "platform",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price_value",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_ml",
+     "type": "BIGINT"
+    },
+    {
+     "name": "bev_category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "container",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "unit_size",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "size_uom",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pack_count",
+     "type": "BIGINT"
+    },
+    {
+     "name": "total_size",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "tags",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "compare_at_price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "grams",
+     "type": "BIGINT"
+    },
+    {
+     "name": "in_stock",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_opt",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vintage_opt",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "abv",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vintage",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "origin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "bottled_in",
+     "type": "INTEGER"
+    },
+    {
+     "name": "region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sub_region",
+     "type": "INTEGER"
+    },
+    {
+     "name": "appellation",
+     "type": "INTEGER"
+    },
+    {
+     "name": "varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "raw_json",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 516629,
+   "table": "offprem_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/offprem_products.parquet"
+  },
+  "or_pricing": {
+   "columns": [
+    {
+     "name": "asofdate",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "itemcode",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "extendeditemcode",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "oregonproduct",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "itemstatus",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "itemstatuscode",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "newitem",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "specialpricing",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "proof",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "priceperunit",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "unitspercase",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pricepercase",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pricechange",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "containertype",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "containercount",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "countryoforigin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "priceperoz",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "age",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 3844,
+   "table": "or_pricing",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/or_pricing.parquet"
+  },
+  "outlet_geography": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "hoodie_outlet",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "lat",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "lng",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "county_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "county_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state_fp",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cbsa_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cbsa_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cbsa_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "zcta",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "method",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "resolved_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 888469,
+   "table": "outlet_geography",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/outlet_geography.parquet"
+  },
+  "outlet_master": {
+   "columns": [
+    {
+     "name": "outlet_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "street",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "city",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "phone",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "lat",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "lng",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "sources",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_count",
+     "type": "BIGINT"
+    },
+    {
+     "name": "doordash_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "toast_guid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "ubereats_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "doordash_menu_date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "toast_menu_date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "ubereats_menu_date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "freshest_source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "freshest_date",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1818275,
+   "table": "outlet_master",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/outlet_master.parquet"
+  },
+  "outlet_xref": {
+   "columns": [
+    {
+     "name": "obs_source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "obs_store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geo_source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geo_store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "hoodie_outlet",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cbsa_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cbsa_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "zcta",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "county_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "method",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "confidence",
+     "type": "DECIMAL(3,2)"
+    },
+    {
+     "name": "built_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 9567,
+   "table": "outlet_xref",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/outlet_xref.parquet"
+  },
+  "planogram_placements": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/planogram_placements.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "planogram_placements",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/planogram_placements.parquet"
+  },
+  "postmates_products": {
+   "columns": [
+    {
+     "name": "item_uuid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_uuid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_uuid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "section",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "subsection",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "gtins",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "list_price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "on_promo",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "discount",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "promo_text",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "promo_tag",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "promo_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "promo_pct",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "promo_flat",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "promo_uuid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "in_stock",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "is_sold_out",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "suspend_reason",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "suspend_until",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "low_availability",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "avail_state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "stock_label",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "max_qty",
+     "type": "BIGINT"
+    },
+    {
+     "name": "min_qty",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "increment_qty",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "default_qty",
+     "type": "BIGINT"
+    },
+    {
+     "name": "sold_by",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "priced_by",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_alcohol",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "num_alcoholic",
+     "type": "BIGINT"
+    },
+    {
+     "name": "age_rule",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "abv",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "pack",
+     "type": "BIGINT"
+    },
+    {
+     "name": "item_size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "nutritional_info",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "classifications",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "dietary_labels",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "endorsements",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image_count",
+     "type": "BIGINT"
+    },
+    {
+     "name": "zone",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "raw_json",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 3190,
+   "table": "postmates_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/postmates_products.parquet"
+  },
+  "postmates_products_parts": {
+   "columns": [
+    {
+     "name": "store_uuid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_uuid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "gtin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "list_price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "promo",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "abv",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "in_stock",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "stock_label",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "section",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "subsection",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "section_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "subsection_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category_path",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "layout": "partitioned",
+   "partitions": 1,
+   "rows": 6040,
+   "schemas_sampled": 1,
+   "table": "postmates_products_parts",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/postmates_products_parts/2026-08-03_s00_b0001.parquet"
+  },
+  "postmates_sitemap": {
+   "columns": [
+    {
+     "name": "store_uuid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "slug",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "captured_at",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 269007,
+   "table": "postmates_sitemap",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/postmates_sitemap.parquet"
+  },
+  "price_coherence": {
+   "columns": [
+    {
+     "name": "product_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "n_priced",
+     "type": "BIGINT"
+    },
+    {
+     "name": "n_sources",
+     "type": "BIGINT"
+    },
+    {
+     "name": "median_unit_price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "min_unit_price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "max_unit_price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "spread_ratio",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "agree_within_band",
+     "type": "BIGINT"
+    },
+    {
+     "name": "price_corroborated",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "divergent",
+     "type": "BOOLEAN"
+    }
+   ],
+   "landed": true,
+   "rows": 19855,
+   "table": "price_coherence",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/price_coherence.parquet"
+  },
+  "publix_products": {
+   "columns": [
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "promo_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_bogo",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "savings",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "deal_text",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "store",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "market",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 5477,
+   "table": "publix_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/publix_products.parquet"
+  },
+  "raw_payloads": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "day",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "captured_at",
+     "type": "BIGINT"
+    },
+    {
+     "name": "kind",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "entity_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "parent_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "raw_json",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "layout": "partitioned",
+   "partitions": 3882,
+   "rows": 31562723,
+   "schemas_sampled": 1,
+   "table": "raw_payloads",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/raw_payloads/2026-08-04_ubereats_s07_b0041.parquet"
+  },
+  "retail_observations": {
+   "columns": [
+    {
+     "name": "date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "observed_at",
+     "type": "BIGINT"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "chain",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "gtin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "promo",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "promo_text",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "on_promo",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "in_stock",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "qty",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "stock_level",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_hemp",
+     "type": "BOOLEAN"
+    }
+   ],
+   "landed": true,
+   "layout": "partitioned",
+   "partitions": 4296,
+   "rows": 59077605,
+   "schemas_sampled": 3,
+   "table": "retail_observations",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/retail_observations/2026-08-05_publix.parquet"
+  },
+  "salsify_catalogs": {
+   "columns": [
+    {
+     "name": "catalog_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "org_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "site_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "catalog_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "seeded",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "status",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "total_products",
+     "type": "BIGINT"
+    },
+    {
+     "name": "total_pages",
+     "type": "BIGINT"
+    },
+    {
+     "name": "page_size",
+     "type": "BIGINT"
+    },
+    {
+     "name": "has_sitemap",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "allow_export",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "facet_properties",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "publication_date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "build_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "checked_at",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 520,
+   "table": "salsify_catalogs",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/salsify_catalogs.parquet"
+  },
+  "salsify_products": {
+   "columns": [
+    {
+     "name": "catalog_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "catalog_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "org_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "site_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "owner",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "tier",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "dist_item_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "system_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "grouping_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sku_upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "title",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sort_value",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "supplier",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand_owner",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sub_category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_text",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_ml",
+     "type": "BIGINT"
+    },
+    {
+     "name": "abv",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "proof",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "units_per_case",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "country",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "flavor",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "market_region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image_count",
+     "type": "BIGINT"
+    },
+    {
+     "name": "property_count",
+     "type": "BIGINT"
+    },
+    {
+     "name": "properties_hash",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pulled_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 63889,
+   "table": "salsify_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/salsify_products.parquet"
+  },
+  "salsify_properties": {
+   "columns": [
+    {
+     "name": "catalog_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "group",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "property",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "label",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "value_index",
+     "type": "BIGINT"
+    },
+    {
+     "name": "value",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "asset_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "day",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "captured_at",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "layout": "partitioned",
+   "partitions": 314,
+   "rows": 2870998,
+   "schemas_sampled": 1,
+   "table": "salsify_properties",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/salsify_properties/2026-08-05_sazerac_035413_p0001.parquet"
+  },
+  "scrape_runs": {
+   "columns": [
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "connId",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "status",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "host",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "startedAt",
+     "type": "BIGINT"
+    },
+    {
+     "name": "updatedAt",
+     "type": "BIGINT"
+    },
+    {
+     "name": "finishedAt",
+     "type": "INTEGER"
+    },
+    {
+     "name": "n",
+     "type": "BIGINT"
+    },
+    {
+     "name": "total",
+     "type": "INTEGER"
+    },
+    {
+     "name": "note",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 260,
+   "table": "scrape_runs",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/scrape_runs.parquet"
+  },
+  "sevenfifty_items": {
+   "columns": [
+    {
+     "name": "storefront",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "distributor",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sevenfifty_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "token",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name_full",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "producer",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "supplier",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "style",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "style_line",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "subtype",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "appellation",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "country",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "subregion",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "size_formatted",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "case_size",
+     "type": "BIGINT"
+    },
+    {
+     "name": "container_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "raw_materials",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "status",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vendor_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "image_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "thumbnail_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "display_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pulled_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 25785,
+   "table": "sevenfifty_items",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/sevenfifty_items.parquet"
+  },
+  "sevennow_products": {
+   "columns": [
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_city",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "department",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "department_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "subcategory",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "slin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "original_price",
+     "type": "INTEGER"
+    },
+    {
+     "name": "available",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "available_quantity",
+     "type": "BIGINT"
+    },
+    {
+     "name": "store_quantity",
+     "type": "BIGINT"
+    },
+    {
+     "name": "age_restricted",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "is_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "hemp_signal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "on_promo",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "promo",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "promo_desc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "promo_ends",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "long_desc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "captured_at",
+     "type": "BIGINT"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "raw_json",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 5304,
+   "table": "sevennow_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/sevennow_products.parquet"
+  },
+  "signal_movers": {
+   "columns": [
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "week",
+     "type": "TIMESTAMP"
+    },
+    {
+     "name": "prev_week",
+     "type": "TIMESTAMP"
+    },
+    {
+     "name": "matched_cells",
+     "type": "BIGINT"
+    },
+    {
+     "name": "units",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "prev_units",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "delta_units",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "pct_change",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "confidence",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "partial",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "cur_obs_days",
+     "type": "INTEGER"
+    },
+    {
+     "name": "prev_obs_days",
+     "type": "INTEGER"
+    }
+   ],
+   "landed": true,
+   "rows": 1015,
+   "table": "signal_movers",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/signal_movers.parquet"
+  },
+  "signal_voids": {
+   "columns": [
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "oos_stores",
+     "type": "BIGINT"
+    },
+    {
+     "name": "stores_seen",
+     "type": "BIGINT"
+    },
+    {
+     "name": "oos_events",
+     "type": "DECIMAL(38,0)"
+    },
+    {
+     "name": "typ_units_per_store_wk",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "est_recoverable_units_wk",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "pct_stores_out",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "confidence",
+     "type": "DOUBLE"
+    }
+   ],
+   "landed": true,
+   "rows": 2235,
+   "table": "signal_voids",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/signal_voids.parquet"
+  },
+  "snowflake_load_runs": {
+   "columns": [
+    {
+     "name": "ts",
+     "type": "BIGINT"
+    },
+    {
+     "name": "duration_s",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "rows_total",
+     "type": "BIGINT"
+    },
+    {
+     "name": "tables",
+     "type": "BIGINT"
+    },
+    {
+     "name": "raw_tables",
+     "type": "BIGINT"
+    },
+    {
+     "name": "raw_rows",
+     "type": "BIGINT"
+    },
+    {
+     "name": "master_tables",
+     "type": "BIGINT"
+    },
+    {
+     "name": "master_rows",
+     "type": "BIGINT"
+    },
+    {
+     "name": "scope",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "host",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 4,
+   "table": "snowflake_load_runs",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/snowflake_load_runs.parquet"
+  },
+  "source_runs_log": {
+   "columns": [
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "label",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "klass",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "ts_start",
+     "type": "BIGINT"
+    },
+    {
+     "name": "ts_end",
+     "type": "BIGINT"
+    },
+    {
+     "name": "duration_s",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "status",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rows_before",
+     "type": "BIGINT"
+    },
+    {
+     "name": "rows_after",
+     "type": "BIGINT"
+    },
+    {
+     "name": "delta",
+     "type": "BIGINT"
+    },
+    {
+     "name": "tables",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "error",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "host",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "cov_basis",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "landed_items",
+     "type": "BIGINT"
+    },
+    {
+     "name": "expected_items",
+     "type": "BIGINT"
+    },
+    {
+     "name": "cov_items_pct",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "cov_items",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "landed_stores",
+     "type": "INTEGER"
+    },
+    {
+     "name": "expected_stores",
+     "type": "INTEGER"
+    },
+    {
+     "name": "cov_stores_pct",
+     "type": "INTEGER"
+    },
+    {
+     "name": "cov_stores",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "layout": "partitioned",
+   "partitions": 848,
+   "rows": 848,
+   "schemas_sampled": 2,
+   "table": "source_runs_log",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/source_runs_log/1785925532741_1854540b1edd28_689.parquet"
+  },
+  "source_taxonomy": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "axis",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "value",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 10825,
+   "table": "source_taxonomy",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/source_taxonomy.parquet"
+  },
+  "specs_products": {
+   "columns": [
+    {
+     "name": "sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "slug",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "abv",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "origin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vintage",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "tasting_notes",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pairs_with",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "in_stock_stores",
+     "type": "BIGINT"
+    },
+    {
+     "name": "store_count",
+     "type": "BIGINT"
+    },
+    {
+     "name": "units_total",
+     "type": "BIGINT"
+    },
+    {
+     "name": "stores_tracked",
+     "type": "BIGINT"
+    },
+    {
+     "name": "raw_json",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1029,
+   "table": "specs_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/specs_products.parquet"
+  },
+  "src_brands": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "hoodie_brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name_key",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 262191,
+   "table": "src_brands",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/src_brands.parquet"
+  },
+  "src_items": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "hoodie_item",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_type_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "product_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_ml",
+     "type": "BIGINT"
+    },
+    {
+     "name": "container",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "volume_tier",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1059584,
+   "table": "src_items",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/src_items.parquet"
+  },
+  "src_outlets": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "chain",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_chain",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_beer",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_wine",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_spirits",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_cannabis",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "f_rtd_spirits",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "flag_basis",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "license_conflict",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "address",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "city",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "zip",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "lat",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "lng",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "phone",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "addr_valid",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "hoodie_outlet",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "phone_norm",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "addr_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geo_cell",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "county_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geo_precision",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1916357,
+   "table": "src_outlets",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/src_outlets.parquet"
+  },
+  "src_products": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "hoodie_product",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "flavor",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_type_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "product_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "class_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "abv",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "proof",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "origin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "origin_class",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "age_years",
+     "type": "BIGINT"
+    },
+    {
+     "name": "volume_tier",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "organic",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "non_alc",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1001832,
+   "table": "src_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/src_products.parquet"
+  },
+  "src_skus": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc_norm",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "hoodie_sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_type_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "product_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_ml",
+     "type": "BIGINT"
+    },
+    {
+     "name": "container",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pack",
+     "type": "BIGINT"
+    },
+    {
+     "name": "pack_size",
+     "type": "BIGINT"
+    },
+    {
+     "name": "pack_type",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1084333,
+   "table": "src_skus",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/src_skus.parquet"
+  },
+  "src_summary": {
+   "columns": [
+    {
+     "name": "grain",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "table",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "records",
+     "type": "BIGINT"
+    },
+    {
+     "name": "entities",
+     "type": "BIGINT"
+    },
+    {
+     "name": "corroborated",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 5,
+   "table": "src_summary",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/src_summary.parquet"
+  },
+  "stop_and_shop_products": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/stop_and_shop_products.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "stop_and_shop_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/stop_and_shop_products.parquet"
+  },
+  "target_products": {
+   "columns": [
+    {
+     "name": "tcin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "promo",
+     "type": "INTEGER"
+    },
+    {
+     "name": "image_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1584,
+   "table": "target_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/target_products.parquet"
+  },
+  "target_stores": {
+   "columns": [
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "city",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "zip",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "address",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "phone",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "lat",
+     "type": "INTEGER"
+    },
+    {
+     "name": "lon",
+     "type": "INTEGER"
+    }
+   ],
+   "landed": true,
+   "rows": 1189,
+   "table": "target_stores",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/target_stores.parquet"
+  },
+  "tax_rates": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/tax_rates.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "tax_rates",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/tax_rates.parquet"
+  },
+  "tax_revenue": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/tax_revenue.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "tax_revenue",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/tax_revenue.parquet"
+  },
+  "toast_beverages": {
+   "columns": [
+    {
+     "name": "store",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "account",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_alcoholic",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "root",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sub",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "base_spirit",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "beer_style",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_hemp",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price_basis",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "captured",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 27269,
+   "table": "toast_beverages",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/toast_beverages.parquet"
+  },
+  "toast_menu_accounts": {
+   "columns": [
+    {
+     "name": "guid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "account",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "clean_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "street",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "city",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "phone",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "lat",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "lng",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "serves_alcohol",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "n_beverages",
+     "type": "BIGINT"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "captured",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 2059,
+   "table": "toast_menu_accounts",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/toast_menu_accounts.parquet"
+  },
+  "toast_outlets": {
+   "columns": [
+    {
+     "name": "guid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "slug",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 85284,
+   "table": "toast_outlets",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/toast_outlets.parquet"
+  },
+  "total_wine_products": {
+   "columns": [
+    {
+     "name": "sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "origin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sub_region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "appellation",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "style",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "abv",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 9113,
+   "table": "total_wine_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/total_wine_products.parquet"
+  },
+  "trade_area_demand": {
+   "columns": [
+    {
+     "name": "geo_level",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "geo_fips",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "acs_vintage",
+     "type": "BIGINT"
+    },
+    {
+     "name": "cex_vintage",
+     "type": "BIGINT"
+    },
+    {
+     "name": "households",
+     "type": "BIGINT"
+    },
+    {
+     "name": "demand_total_usd",
+     "type": "BIGINT"
+    },
+    {
+     "name": "demand_at_home_usd",
+     "type": "BIGINT"
+    },
+    {
+     "name": "demand_away_usd",
+     "type": "BIGINT"
+    },
+    {
+     "name": "demand_per_hh_usd",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "demand_index_vs_us",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "method",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "computed_at",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 36092,
+   "table": "trade_area_demand",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/trade_area_demand.parquet"
+  },
+  "trader_joes_products": {
+   "columns": [
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sku",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "retail_price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "size",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "uom",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "country_of_origin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "in_stock",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 4024,
+   "table": "trader_joes_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/trader_joes_products.parquet"
+  },
+  "ttb_cola": {
+   "columns": [
+    {
+     "name": "TTB ID",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Permit Number",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Serial Number",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Brand Name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Fanciful Name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Class/Type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Origin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Applicant",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Status",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Completed Date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Approval Date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Net Contents",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "UPC",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1071850,
+   "table": "ttb_cola",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/ttb_cola.parquet"
+  },
+  "ttb_cola_detail": {
+   "columns": [
+    {
+     "name": "ttb_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "status",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vendor_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "serial_number",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "class_type_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "class_type_desc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "origin_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "fanciful_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "application_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "for_sale_in",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "net_contents",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "wine_vintage",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "grape_varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "alcohol_content",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "formula",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "approval_date",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "qualifications",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "plant_permit",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "label_image_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "other_json",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1858375,
+   "table": "ttb_cola_detail",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/ttb_cola_detail.parquet"
+  },
+  "ttb_cola_labels": {
+   "columns": [
+    {
+     "name": "ttb_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image_file",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "abv",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "net_contents",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "claims",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "gov_warning",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "ocr_chars",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "front_label_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "back_label_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "label_urls",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 23874,
+   "table": "ttb_cola_labels",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/ttb_cola_labels.parquet"
+  },
+  "ttb_master": {
+   "columns": [
+    {
+     "name": "cluster_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "fanciful",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "class_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_ml",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "supplier",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "corroborated_by",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "confidence",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "match_kind",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_matched",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "candidate_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "matched_by",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "member_count",
+     "type": "BIGINT"
+    },
+    {
+     "name": "members",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "first_day",
+     "type": "BIGINT"
+    },
+    {
+     "name": "last_day",
+     "type": "BIGINT"
+    },
+    {
+     "name": "tier",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 1732,
+   "table": "ttb_master",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/ttb_master.parquet"
+  },
+  "ttb_quarantine_summary": {
+   "columns": [
+    {
+     "name": "supplier",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "candidates",
+     "type": "BIGINT"
+    },
+    {
+     "name": "brands",
+     "type": "VARCHAR[]"
+    },
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 200,
+   "table": "ttb_quarantine_summary",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/ttb_quarantine_summary.parquet"
+  },
+  "ttb_review": {
+   "columns": [
+    {
+     "name": "cluster_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "fanciful",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "class_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_ml",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "supplier",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "corroborated_by",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "confidence",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "match_kind",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_matched",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "candidate_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "matched_by",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "member_count",
+     "type": "BIGINT"
+    },
+    {
+     "name": "members",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "first_day",
+     "type": "BIGINT"
+    },
+    {
+     "name": "last_day",
+     "type": "BIGINT"
+    },
+    {
+     "name": "tier",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 1462,
+   "table": "ttb_review",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/ttb_review.parquet"
+  },
+  "ubereats_products": {
+   "columns": [
+    {
+     "name": "store_uuid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "INTEGER"
+    },
+    {
+     "name": "item_uuid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "INTEGER"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "gtin",
+     "type": "INTEGER"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "list_price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "promo",
+     "type": "INTEGER"
+    },
+    {
+     "name": "size",
+     "type": "INTEGER"
+    },
+    {
+     "name": "abv",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "in_stock",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "stock_label",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "INTEGER"
+    }
+   ],
+   "landed": true,
+   "rows": 2160806,
+   "table": "ubereats_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/ubereats_products.parquet"
+  },
+  "ubereats_products_parts": {
+   "columns": [
+    {
+     "name": "store_uuid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_uuid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "gtin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "list_price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "promo",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "abv",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "in_stock",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "stock_label",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "section",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "subsection",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "section_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "subsection_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category_path",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "layout": "partitioned",
+   "partitions": 3832,
+   "rows": 29901954,
+   "schemas_sampled": 1,
+   "table": "ubereats_products_parts",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/ubereats_products_parts/2026-08-04_s07_b0041.parquet"
+  },
+  "ubereats_sitemap": {
+   "columns": [
+    {
+     "name": "store_uuid",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "slug",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "captured_at",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 755032,
+   "table": "ubereats_sitemap",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/ubereats_sitemap.parquet"
+  },
+  "ut_pricing": {
+   "columns": [
+    {
+     "name": "CSC",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Div",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Dept",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Class",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Retail Price",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Item Status",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "On Spa",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Vendor Name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Vendor Cd",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Div Name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Dept Name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Class name",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 10239,
+   "table": "ut_pricing",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/ut_pricing.parquet"
+  },
+  "velocity_calibration": {
+   "columns": [
+    {
+     "name": "kind",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "anchor",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "coverage",
+     "type": "BIGINT"
+    },
+    {
+     "name": "metric",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "value",
+     "type": "DOUBLE"
+    }
+   ],
+   "landed": true,
+   "rows": 5,
+   "table": "velocity_calibration",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/velocity_calibration.parquet"
+  },
+  "vip_brandbuilder_directory": {
+   "columns": [
+    {
+     "name": "source_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "status",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "distributor_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vip_source_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "vip_customer_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "n_products",
+     "type": "BIGINT"
+    },
+    {
+     "name": "first_seen",
+     "type": "BIGINT"
+    },
+    {
+     "name": "last_seen",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 365,
+   "table": "vip_brandbuilder_directory",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/vip_brandbuilder_directory.parquet"
+  },
+  "vip_brandbuilder_items": {
+   "columns": [
+    {
+     "name": "distributor_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "distributor_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vip_source_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "vip_customer_id",
+     "type": "BIGINT"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "style_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "style_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sub_style_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "abv",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "ibu",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "ratebeer_score",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "ratebeer_style",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "dist_item_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "retail_upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "retail_upc_raw",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "package_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "beverage_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sell_sheet",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pulled_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 698807,
+   "table": "vip_brandbuilder_items",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/vip_brandbuilder_items.parquet"
+  },
+  "vip_brandbuilder_sellsheet_packages": {
+   "columns": [
+    {
+     "name": "sell_sheet_url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "package_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "distributor_ids",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_ids",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "n_source_rows",
+     "type": "BIGINT"
+    },
+    {
+     "name": "extracted_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 7609,
+   "table": "vip_brandbuilder_sellsheet_packages",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/vip_brandbuilder_sellsheet_packages.parquet"
+  },
+  "vip_finder_brands": {
+   "columns": [
+    {
+     "name": "cust_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand_value",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand_label",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "last_seen",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 33196,
+   "table": "vip_finder_brands",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/vip_finder_brands.parquet"
+  },
+  "vip_finder_tenants": {
+   "columns": [
+    {
+     "name": "cust_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "theme_version",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "show_captcha",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand_description",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "menu_fields",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "n_brands",
+     "type": "BIGINT"
+    },
+    {
+     "name": "default_zip",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "default_address",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "default_miles",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "analytics",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "map_style_code",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "use_online_vendor",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "n_bytes",
+     "type": "BIGINT"
+    },
+    {
+     "name": "first_seen",
+     "type": "BIGINT"
+    },
+    {
+     "name": "last_seen",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 1242,
+   "table": "vip_finder_tenants",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/vip_finder_tenants.parquet"
+  },
+  "vtinfo_titos": {
+   "columns": [
+    {
+     "name": "Brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Account",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Street",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "City",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "State",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Zip",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Phone",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Miles",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Lat",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Lng",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "StoreType",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "Zip_Searched",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 399,
+   "table": "vtinfo_titos",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/vtinfo_titos.parquet"
+  },
+  "walmart_products": {
+   "columns": [
+    {
+     "name": "product_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "offer_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "price",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "size_ml",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "url",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category_path",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rh_path",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_type_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "primary_shelf_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "ironbank_category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "is_alcohol",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "vintage",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "abv",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "container",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "flavor",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pairing",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "wine_score",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "aisle",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "order_limit",
+     "type": "BIGINT"
+    },
+    {
+     "name": "store_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_state",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "store_city",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "avg_rating",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "num_reviews",
+     "type": "BIGINT"
+    },
+    {
+     "name": "rollback",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "seller",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "in_stock",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "raw_json",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 7324,
+   "table": "walmart_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/walmart_products.parquet"
+  },
+  "walmart_runs": {
+   "columns": [
+    {
+     "name": "run_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "at",
+     "type": "BIGINT"
+    },
+    {
+     "name": "products",
+     "type": "BIGINT"
+    },
+    {
+     "name": "in_stock",
+     "type": "BIGINT"
+    },
+    {
+     "name": "concerns",
+     "type": "BIGINT"
+    },
+    {
+     "name": "high_concerns",
+     "type": "BIGINT"
+    },
+    {
+     "name": "status",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "note",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "warnings",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 15,
+   "table": "walmart_runs",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/walmart_runs.parquet"
+  },
+  "wb_master": {
+   "columns": [
+    {
+     "name": "sku_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_ml",
+     "type": "BIGINT"
+    },
+    {
+     "name": "container",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pack",
+     "type": "BIGINT"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sources",
+     "type": "BIGINT"
+    },
+    {
+     "name": "source_list",
+     "type": "VARCHAR[]"
+    },
+    {
+     "name": "source_rows",
+     "type": "BIGINT"
+    },
+    {
+     "name": "gtin",
+     "type": "INTEGER"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sub_region",
+     "type": "INTEGER"
+    },
+    {
+     "name": "appellation",
+     "type": "INTEGER"
+    },
+    {
+     "name": "origin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "bottled_in",
+     "type": "INTEGER"
+    },
+    {
+     "name": "abv",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "style",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 4000,
+   "table": "wb_master",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/wb_master.parquet"
+  },
+  "wb_matches": {
+   "columns": [
+    {
+     "name": "grain",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "merge_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "block",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canonical",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "n",
+     "type": "BIGINT"
+    },
+    {
+     "name": "total_rows",
+     "type": "BIGINT"
+    },
+    {
+     "name": "confidence",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "reason",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "members",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 12000,
+   "table": "wb_matches",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/wb_matches.parquet"
+  },
+  "wb_merges": {
+   "columns": [
+    {
+     "name": "merge_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pack",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_ml",
+     "type": "BIGINT"
+    },
+    {
+     "name": "n_skus",
+     "type": "BIGINT"
+    },
+    {
+     "name": "total_rows",
+     "type": "BIGINT"
+    },
+    {
+     "name": "distinct_upc",
+     "type": "BIGINT"
+    },
+    {
+     "name": "confidence",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "reason",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "members",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "attrs",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 4000,
+   "table": "wb_merges",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/wb_merges.parquet"
+  },
+  "wb_queue": {
+   "columns": [
+    {
+     "name": "sku_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "size_ml",
+     "type": "BIGINT"
+    },
+    {
+     "name": "container",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "pack",
+     "type": "BIGINT"
+    },
+    {
+     "name": "upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sources",
+     "type": "BIGINT"
+    },
+    {
+     "name": "source_list",
+     "type": "VARCHAR[]"
+    },
+    {
+     "name": "source_rows",
+     "type": "BIGINT"
+    },
+    {
+     "name": "gtin",
+     "type": "INTEGER"
+    },
+    {
+     "name": "image",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "region",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sub_region",
+     "type": "INTEGER"
+    },
+    {
+     "name": "appellation",
+     "type": "INTEGER"
+    },
+    {
+     "name": "origin",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "bottled_in",
+     "type": "INTEGER"
+    },
+    {
+     "name": "abv",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "style",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 4000,
+   "table": "wb_queue",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/wb_queue.parquet"
+  },
+  "wb_summary": {
+   "columns": [
+    {
+     "name": "total",
+     "type": "BIGINT"
+    },
+    {
+     "name": "multi",
+     "type": "BIGINT"
+    },
+    {
+     "name": "source_rows",
+     "type": "BIGINT"
+    },
+    {
+     "name": "by_source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "prod_total",
+     "type": "BIGINT"
+    },
+    {
+     "name": "prod_corr",
+     "type": "BIGINT"
+    },
+    {
+     "name": "ttb_corr",
+     "type": "BIGINT"
+    },
+    {
+     "name": "ttb_total",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 1,
+   "table": "wb_summary",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/wb_summary.parquet"
+  },
+  "winebow_brands": {
+   "columns": [
+    {
+     "name": "brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "website",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "logo",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "importer",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "country",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1396,
+   "table": "winebow_brands",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/winebow_brands.parquet"
+  },
+  "xsource_dictionary": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/xsource_dictionary.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "xsource_dictionary",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/xsource_dictionary.parquet"
+  },
+  "xsource_gold": {
+   "columns": [
+    {
+     "name": "pair_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "stratum",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "a_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "a_source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "a_brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "a_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "a_size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "a_upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rule_merges",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "suggested",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "suggest_reason",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "label",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "labelled_by",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "labelled_at",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_product",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_category",
+     "type": "INTEGER"
+    },
+    {
+     "name": "canon_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_class",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_subclass",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "annotations",
+     "type": "INTEGER"
+    },
+    {
+     "name": "sample_seed",
+     "type": "BIGINT"
+    },
+    {
+     "name": "built_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 6,
+   "table": "xsource_gold",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/xsource_gold.parquet"
+  },
+  "xsource_identity": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/xsource_identity.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "xsource_identity",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/xsource_identity.parquet"
+  },
+  "xsource_queue": {
+   "columns": [
+    {
+     "name": "pair_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "stratum",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "a_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "a_source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "a_brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "a_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "a_size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "a_upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_name",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "b_upc",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "rule_merges",
+     "type": "BOOLEAN"
+    },
+    {
+     "name": "suggested",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "suggest_reason",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "label",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "labelled_by",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "labelled_at",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_brand",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_product",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_size",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_category",
+     "type": "INTEGER"
+    },
+    {
+     "name": "canon_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_class",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_subclass",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "annotations",
+     "type": "INTEGER"
+    },
+    {
+     "name": "sample_seed",
+     "type": "BIGINT"
+    },
+    {
+     "name": "built_at",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "priority",
+     "type": "BIGINT"
+    },
+    {
+     "name": "resolved",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "queued_at",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "difference",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 4617,
+   "table": "xsource_queue",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/xsource_queue.parquet"
+  },
+  "xsource_taxonomy": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/xsource_taxonomy.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "xsource_taxonomy",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/xsource_taxonomy.parquet"
+  },
+  "xwalk_item_identity": {
+   "columns": [
+    {
+     "name": "item_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "resolved_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "n_sources",
+     "type": "BIGINT"
+    },
+    {
+     "name": "commercial_sources",
+     "type": "BIGINT"
+    },
+    {
+     "name": "tier",
+     "type": "BIGINT"
+    }
+   ],
+   "landed": true,
+   "rows": 1168694,
+   "table": "xwalk_item_identity",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/xwalk_item_identity.parquet"
+  },
+  "xwalk_source_sku": {
+   "columns": [
+    {
+     "name": "source",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "product_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "item_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "sku_key",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "rows": 1338594,
+   "table": "xwalk_source_sku",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/xwalk_source_sku.parquet"
+  },
+  "zcta_centroids": {
+   "columns": [
+    {
+     "name": "zip",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "lat",
+     "type": "DOUBLE"
+    },
+    {
+     "name": "lng",
+     "type": "DOUBLE"
+    }
+   ],
+   "landed": true,
+   "rows": 33791,
+   "table": "zcta_centroids",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/zcta_centroids.parquet"
+  },
+  "{}_coverage": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/{}_coverage.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "{}_coverage",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/{}_coverage.parquet"
+  },
+  "{}_geo": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/{}_geo.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "{}_geo",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/{}_geo.parquet"
+  },
+  "{}_menu_census": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/{}_menu_census.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "{}_menu_census",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/{}_menu_census.parquet"
+  },
+  "{}_merchants": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/{}_merchants.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "{}_merchants",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/{}_merchants.parquet"
+  },
+  "{}_offprem_census": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/{}_offprem_census.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "{}_offprem_census",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/{}_offprem_census.parquet"
+  },
+  "{}_outlet_hours": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/{}_outlet_hours.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "{}_outlet_hours",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/{}_outlet_hours.parquet"
+  },
+  "{}_products": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/{}_products.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "{}_products",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/{}_products.parquet"
+  },
+  "{}_products_parts": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/{}_products_parts.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "{}_products_parts",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/{}_products_parts.parquet"
+  },
+  "{}_sitemap": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/{}_sitemap.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "{}_sitemap",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/{}_sitemap.parquet"
+  },
+  "{}_store_misses": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/{}_store_misses.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "{}_store_misses",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/{}_store_misses.parquet"
+  },
+  "{}_stores": {
+   "columns": [],
+   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/{}_stores.parquet' in region 'auto' (HTTP 404 Not Found)",
+   "landed": false,
+   "table": "{}_stores",
+   "uri": "s3://hoodie-suite-warehouse/warehouse/{}_stores.parquet"
+  }
+ }
+}
