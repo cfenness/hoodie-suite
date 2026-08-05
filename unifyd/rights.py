@@ -60,6 +60,8 @@ import urllib.request
 import urllib.robotparser
 from urllib.parse import urlparse
 
+import table_spec          # stdlib-only; holds the declaration for the tables this module lands
+
 _DIR = os.path.dirname(os.path.abspath(__file__))
 RECORDS_DIR = os.path.join(_DIR, "rights_records")
 _EMIT_LOG = os.path.join(_DIR, "agent_state", "rights", "emissions.jsonl")
@@ -558,8 +560,17 @@ def _log_emission(rec, action, subject, allowed, reason, surface=""):
     return row
 
 
-EMISSION_FIELDS = ["ts", "source_id", "rights_ref", "action", "subject", "surface",
-                   "allowed", "reason", "image_use", "scope"]
+# READ BACK from the declaration, never restated here. #816 declared dam_emissions in table_spec,
+# which is what pins the write — but it left this literal standing, so the same ten column names
+# lived in two files with nothing comparing them. ue_catalog and observe keep their own copies for a
+# reason (they own the parse, and table_spec_test drift-checks them); nothing here needs the names
+# before table_spec is importable, so the second copy buys nothing and can only drift.
+EMISSION_FIELDS = table_spec.fields_for(EMISSIONS_TABLE)
+if EMISSION_FIELDS is None:      # losing the declaration must fail HERE, loudly, rather than quietly
+    raise RuntimeError(          # unpinning the write and corrupting the log a partition at a time
+        "table_spec has no declaration for %s — restore it. An undeclared table means "
+        "write_partition infers its schema from whatever is in each batch, which is exactly "
+        "what made ubereats_products_parts and retail_observations unreadable." % EMISSIONS_TABLE)
 RIGHTS_FIELDS = ["source_id", "vendor", "host", "tos_url", "tos_sha256", "tos_captured_at",
                  "tos_capture_method", "robots_sha256", "robots_checked_at", "robots_allows_harvest",
                  "facts_use", "image_use", "scope", "attribution_required", "alteration_allowed",
