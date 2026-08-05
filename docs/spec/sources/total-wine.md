@@ -36,25 +36,31 @@ _No literal endpoint constant in `os.py`._ The transport is either inherited fro
 9,113 rows · 17 columns
 
 
-| column | type |
-|---|---|
-| `sku` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `size` | `VARCHAR` |
-| `price` | `DOUBLE` |
-| `category` | `VARCHAR` |
-| `description` | `VARCHAR` |
-| `image` | `VARCHAR` |
-| `url` | `VARCHAR` |
-| `varietal` | `VARCHAR` |
-| `origin` | `VARCHAR` |
-| `region` | `VARCHAR` |
-| `sub_region` | `VARCHAR` |
-| `appellation` | `VARCHAR` |
-| `style` | `VARCHAR` |
-| `abv` | `VARCHAR` |
-| `run_id` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `sku` | `VARCHAR` | 100.0% |
+| `brand` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `size` | `VARCHAR` | 99.8% |
+| `price` | `DOUBLE` | 7.0% |
+| `category` | `VARCHAR` | 99.9% |
+| `description` | `VARCHAR` | **0.1%** |
+| `image` | `VARCHAR` | 79.6% |
+| `url` | `VARCHAR` | 79.6% |
+| `varietal` | `VARCHAR` | 99.9% |
+| `origin` | `VARCHAR` | 100.0% |
+| `region` | `VARCHAR` | 72.4% |
+| `sub_region` | `VARCHAR` | **0%** ‹never populated› |
+| `appellation` | `VARCHAR` | **0%** ‹never populated› |
+| `style` | `VARCHAR` | 100.0% |
+| `abv` | `VARCHAR` | 18.9% |
+| `run_id` | `VARCHAR` | **0.1%** |
+
+Fill measured over **full table** (9,113 rows).
+
+> **2 columns never populated:** `sub_region`, `appellation`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 **Written by** `total_wine.py:202` (write_accumulate), `total_wine_full.py:44` (write_accumulate), `total_wine_inventory.py:269` (write_accumulate)

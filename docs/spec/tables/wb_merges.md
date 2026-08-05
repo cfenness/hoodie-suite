@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 4,000 |
 | Columns | 13 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,22 +16,23 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `merge_id` | `VARCHAR` |
-| `item_key` | `VARCHAR` |
-| `pack` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `size_ml` | `BIGINT` |
-| `n_skus` | `BIGINT` |
-| `total_rows` | `BIGINT` |
-| `distinct_upc` | `BIGINT` |
-| `confidence` | `DOUBLE` |
-| `reason` | `VARCHAR` |
-| `members` | `VARCHAR` |
-| `attrs` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `merge_id` | `VARCHAR` | 100.0% |
+| `item_key` | `VARCHAR` | 100.0% |
+| `pack` | `VARCHAR` | **0.6%** |
+| `brand` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `size_ml` | `BIGINT` | 50.6% |
+| `n_skus` | `BIGINT` | 100.0% |
+| `total_rows` | `BIGINT` | 100.0% |
+| `distinct_upc` | `BIGINT` | 100.0% |
+| `confidence` | `DOUBLE` | 100.0% |
+| `reason` | `VARCHAR` | 100.0% |
+| `members` | `VARCHAR` | 100.0% |
+| `attrs` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (4,000 rows).
 
 ## Writers
 

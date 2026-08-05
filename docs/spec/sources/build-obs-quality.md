@@ -39,46 +39,48 @@ _No literal endpoint constant in `obs_quality.py`._ The transport is either inhe
 22 rows · 13 columns
 
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `obs` | `DECIMAL(38,0)` |
-| `cells` | `BIGINT` |
-| `stores` | `BIGINT` |
-| `first_date` | `VARCHAR` |
-| `last_date` | `VARCHAR` |
-| `qty_coverage` | `DOUBLE` |
-| `distinct_qty_global` | `BIGINT` |
-| `diffable_frac` | `DOUBLE` |
-| `jitter_frac` | `DOUBLE` |
-| `median_cadence_days` | `DOUBLE` |
-| `has_counts` | `BOOLEAN` |
-| `qual_tier` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `obs` | `DECIMAL(38,0)` | 100.0% |
+| `cells` | `BIGINT` | 100.0% |
+| `stores` | `BIGINT` | 100.0% |
+| `first_date` | `VARCHAR` | 100.0% |
+| `last_date` | `VARCHAR` | 100.0% |
+| `qty_coverage` | `DOUBLE` | 100.0% |
+| `distinct_qty_global` | `BIGINT` | 100.0% |
+| `diffable_frac` | `DOUBLE` | 100.0% |
+| `jitter_frac` | `DOUBLE` | 36.4% |
+| `median_cadence_days` | `DOUBLE` | 77.3% |
+| `has_counts` | `BOOLEAN` | 100.0% |
+| `qual_tier` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (22 rows).
 
 ### `obs_quality_cell`
 
 8,999,359 rows · 15 columns
 
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `product_id` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `n_obs` | `BIGINT` |
-| `n_days` | `BIGINT` |
-| `first_date` | `VARCHAR` |
-| `last_date` | `VARCHAR` |
-| `n_qty` | `BIGINT` |
-| `distinct_qty` | `BIGINT` |
-| `qty_moves` | `DECIMAL(38,0)` |
-| `price_moves` | `DECIMAL(38,0)` |
-| `jitter_moves` | `DECIMAL(38,0)` |
-| `cadence_days` | `DOUBLE` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `store_id` | `VARCHAR` | 100.0% |
+| `product_id` | `VARCHAR` | 100.0% |
+| `upc` | `VARCHAR` | **3.0%** |
+| `brand` | `VARCHAR` | 17.4% |
+| `n_obs` | `BIGINT` | 100.0% |
+| `n_days` | `BIGINT` | 100.0% |
+| `first_date` | `VARCHAR` | 100.0% |
+| `last_date` | `VARCHAR` | 100.0% |
+| `n_qty` | `BIGINT` | 100.0% |
+| `distinct_qty` | `BIGINT` | 100.0% |
+| `qty_moves` | `DECIMAL(38,0)` | 100.0% |
+| `price_moves` | `DECIMAL(38,0)` | 100.0% |
+| `jitter_moves` | `DECIMAL(38,0)` | 100.0% |
+| `cadence_days` | `DOUBLE` | 22.8% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ## 4. `obs_quality.py` — the module's own account
 

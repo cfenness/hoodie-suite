@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 11,864,042 |
 | Columns | 6 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,15 +16,16 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `entity_type` | `VARCHAR` |
-| `master_key` | `VARCHAR` |
-| `parent_key` | `VARCHAR` |
-| `hoodie_id` | `VARCHAR` |
-| `first_seen` | `VARCHAR` |
-| `last_seen` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `entity_type` | `VARCHAR` | 100.0% |
+| `master_key` | `VARCHAR` | 100.0% |
+| `parent_key` | `VARCHAR` | 21.4% |
+| `hoodie_id` | `VARCHAR` | 100.0% |
+| `first_seen` | `VARCHAR` | 100.0% |
+| `last_seen` | `VARCHAR` | 100.0% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ## Writers
 

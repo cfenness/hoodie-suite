@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 1,168,694 |
 | Columns | 5 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,14 +16,15 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `item_key` | `VARCHAR` |
-| `resolved_id` | `VARCHAR` |
-| `n_sources` | `BIGINT` |
-| `commercial_sources` | `BIGINT` |
-| `tier` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `item_key` | `VARCHAR` | 100.0% |
+| `resolved_id` | `VARCHAR` | 100.0% |
+| `n_sources` | `BIGINT` | 100.0% |
+| `commercial_sources` | `BIGINT` | 100.0% |
+| `tier` | `BIGINT` | 100.0% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ## Writers
 

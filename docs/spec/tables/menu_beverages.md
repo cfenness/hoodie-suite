@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 468 |
 | Columns | 14 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated) |
@@ -16,23 +16,24 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `account` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `description` | `VARCHAR` |
-| `price` | `DOUBLE` |
-| `price_basis` | `VARCHAR` |
-| `category` | `VARCHAR` |
-| `is_alcoholic` | `BOOLEAN` |
-| `root` | `VARCHAR` |
-| `sub` | `VARCHAR` |
-| `base_spirit` | `VARCHAR` |
-| `beer_style` | `VARCHAR` |
-| `source` | `VARCHAR` |
-| `source_url` | `VARCHAR` |
-| `run_id` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `account` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `description` | `VARCHAR` | 94.0% |
+| `price` | `DOUBLE` | 69.9% |
+| `price_basis` | `VARCHAR` | 100.0% |
+| `category` | `VARCHAR` | 100.0% |
+| `is_alcoholic` | `BOOLEAN` | 100.0% |
+| `root` | `VARCHAR` | 21.4% |
+| `sub` | `VARCHAR` | 53.6% |
+| `base_spirit` | `VARCHAR` | 20.5% |
+| `beer_style` | `VARCHAR` | 11.5% |
+| `source` | `VARCHAR` | 100.0% |
+| `source_url` | `VARCHAR` | 100.0% |
+| `run_id` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (468 rows).
 
 ## Writers
 

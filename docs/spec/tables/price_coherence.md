@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 19,855 |
 | Columns | 10 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,19 +16,20 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `product_key` | `VARCHAR` |
-| `n_priced` | `BIGINT` |
-| `n_sources` | `BIGINT` |
-| `median_unit_price` | `DOUBLE` |
-| `min_unit_price` | `DOUBLE` |
-| `max_unit_price` | `DOUBLE` |
-| `spread_ratio` | `DOUBLE` |
-| `agree_within_band` | `BIGINT` |
-| `price_corroborated` | `BOOLEAN` |
-| `divergent` | `BOOLEAN` |
+| column | type | filled |
+|---|---|---|
+| `product_key` | `VARCHAR` | 100.0% |
+| `n_priced` | `BIGINT` | 100.0% |
+| `n_sources` | `BIGINT` | 100.0% |
+| `median_unit_price` | `DOUBLE` | 100.0% |
+| `min_unit_price` | `DOUBLE` | 100.0% |
+| `max_unit_price` | `DOUBLE` | 100.0% |
+| `spread_ratio` | `DOUBLE` | 100.0% |
+| `agree_within_band` | `BIGINT` | 100.0% |
+| `price_corroborated` | `BOOLEAN` | 100.0% |
+| `divergent` | `BOOLEAN` | 100.0% |
 
+Fill measured over **full table** (19,855 rows).
 
 ## Writers
 

@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 3,323 |
 | Columns | 16 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full rebuild, layout-preserving) |
@@ -16,25 +16,26 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `cbsa_code` | `VARCHAR` |
-| `cbsa_name` | `VARCHAR` |
-| `zcta` | `VARCHAR` |
-| `county_fips` | `VARCHAR` |
-| `stores` | `BIGINT` |
-| `sources` | `BIGINT` |
-| `items_total` | `BIGINT` |
-| `items_per_store` | `DOUBLE` |
-| `obs_rows` | `BIGINT` |
-| `price_p25` | `DOUBLE` |
-| `price_median` | `DOUBLE` |
-| `price_p75` | `DOUBLE` |
-| `price_avg` | `DOUBLE` |
-| `promo_share` | `DOUBLE` |
-| `in_stock_share` | `DOUBLE` |
-| `built_at` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `cbsa_code` | `VARCHAR` | 100.0% |
+| `cbsa_name` | `VARCHAR` | 100.0% |
+| `zcta` | `VARCHAR` | 100.0% |
+| `county_fips` | `VARCHAR` | 100.0% |
+| `stores` | `BIGINT` | 100.0% |
+| `sources` | `BIGINT` | 100.0% |
+| `items_total` | `BIGINT` | 100.0% |
+| `items_per_store` | `DOUBLE` | 100.0% |
+| `obs_rows` | `BIGINT` | 100.0% |
+| `price_p25` | `DOUBLE` | 100.0% |
+| `price_median` | `DOUBLE` | 100.0% |
+| `price_p75` | `DOUBLE` | 100.0% |
+| `price_avg` | `DOUBLE` | 100.0% |
+| `promo_share` | `DOUBLE` | 100.0% |
+| `in_stock_share` | `DOUBLE` | 100.0% |
+| `built_at` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (3,323 rows).
 
 ## Writers
 

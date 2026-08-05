@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 782,928 |
 | Columns | 7 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,16 +16,17 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `category_key` | `VARCHAR` |
-| `canon` | `VARCHAR` |
-| `members` | `BIGINT` |
-| `n_sources` | `BIGINT` |
-| `sources` | `VARCHAR` |
-| `sample_name` | `VARCHAR` |
-| `corroborated` | `BOOLEAN` |
+| column | type | filled |
+|---|---|---|
+| `category_key` | `VARCHAR` | 100.0% |
+| `canon` | `VARCHAR` | 100.0% |
+| `members` | `BIGINT` | 100.0% |
+| `n_sources` | `BIGINT` | 100.0% |
+| `sources` | `VARCHAR` | 100.0% |
+| `sample_name` | `VARCHAR` | 100.0% |
+| `corroborated` | `BOOLEAN` | 100.0% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ## Writers
 

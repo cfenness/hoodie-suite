@@ -16,37 +16,43 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `store_name` | `VARCHAR` |
-| `chain` | `VARCHAR` |
-| `is_chain` | `BOOLEAN` |
-| `f_beer` | `BOOLEAN` |
-| `f_wine` | `BOOLEAN` |
-| `f_spirits` | `BOOLEAN` |
-| `f_hemp` | `BOOLEAN` |
-| `f_cannabis` | `BOOLEAN` |
-| `f_rtd_spirits` | `BOOLEAN` |
-| `flag_basis` | `VARCHAR` |
-| `license_conflict` | `BOOLEAN` |
-| `address` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `zip` | `VARCHAR` |
-| `lat` | `INTEGER` |
-| `lng` | `INTEGER` |
-| `phone` | `VARCHAR` |
-| `addr_valid` | `BOOLEAN` |
-| `hoodie_outlet` | `VARCHAR` |
-| `name_key` | `VARCHAR` |
-| `phone_norm` | `VARCHAR` |
-| `addr_key` | `VARCHAR` |
-| `geo_cell` | `VARCHAR` |
-| `county_fips` | `VARCHAR` |
-| `geo_precision` | `VARCHAR` |
-| `staged_at` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `store_id` | `VARCHAR` | 100.0% |
+| `store_name` | `VARCHAR` | 100.0% |
+| `chain` | `VARCHAR` | 7.6% |
+| `is_chain` | `BOOLEAN` | 100.0% |
+| `f_beer` | `BOOLEAN` | 100.0% |
+| `f_wine` | `BOOLEAN` | 100.0% |
+| `f_spirits` | `BOOLEAN` | 100.0% |
+| `f_hemp` | `BOOLEAN` | 100.0% |
+| `f_cannabis` | `BOOLEAN` | 100.0% |
+| `f_rtd_spirits` | `BOOLEAN` | 100.0% |
+| `flag_basis` | `VARCHAR` | 100.0% |
+| `license_conflict` | `BOOLEAN` | 100.0% |
+| `address` | `VARCHAR` | **4.2%** |
+| `city` | `VARCHAR` | **4.1%** |
+| `state` | `VARCHAR` | **4.1%** |
+| `zip` | `VARCHAR` | **4.1%** |
+| `lat` | `INTEGER` | **4.2%** |
+| `lng` | `INTEGER` | **4.2%** |
+| `phone` | `VARCHAR` | **0%** ‹never populated› |
+| `addr_valid` | `BOOLEAN` | 100.0% |
+| `hoodie_outlet` | `VARCHAR` | 100.0% |
+| `name_key` | `VARCHAR` | 99.9% |
+| `phone_norm` | `VARCHAR` | **0%** ‹never populated› |
+| `addr_key` | `VARCHAR` | **0%** ‹never populated› |
+| `geo_cell` | `VARCHAR` | **0%** ‹never populated› |
+| `county_fips` | `VARCHAR` | **0%** ‹never populated› |
+| `geo_precision` | `VARCHAR` | 100.0% |
+| `staged_at` | `BIGINT` | 100.0% |
+
+Fill measured over **newest 12 of 12 partitions** (409,882 rows).
+
+> **5 columns never populated:** `phone`, `phone_norm`, `addr_key`, `geo_cell`, `county_fips`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ## Writers

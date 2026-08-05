@@ -44,71 +44,74 @@
 3,844 rows · 21 columns
 
 
-| column | type |
-|---|---|
-| `asofdate` | `VARCHAR` |
-| `itemcode` | `VARCHAR` |
-| `extendeditemcode` | `VARCHAR` |
-| `description` | `VARCHAR` |
-| `oregonproduct` | `BOOLEAN` |
-| `itemstatus` | `VARCHAR` |
-| `itemstatuscode` | `VARCHAR` |
-| `category` | `VARCHAR` |
-| `newitem` | `BOOLEAN` |
-| `specialpricing` | `BOOLEAN` |
-| `size` | `VARCHAR` |
-| `proof` | `VARCHAR` |
-| `priceperunit` | `VARCHAR` |
-| `unitspercase` | `VARCHAR` |
-| `pricepercase` | `VARCHAR` |
-| `pricechange` | `VARCHAR` |
-| `containertype` | `VARCHAR` |
-| `containercount` | `VARCHAR` |
-| `countryoforigin` | `VARCHAR` |
-| `priceperoz` | `VARCHAR` |
-| `age` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `asofdate` | `VARCHAR` | 100.0% |
+| `itemcode` | `VARCHAR` | 100.0% |
+| `extendeditemcode` | `VARCHAR` | 100.0% |
+| `description` | `VARCHAR` | 100.0% |
+| `oregonproduct` | `BOOLEAN` | 100.0% |
+| `itemstatus` | `VARCHAR` | 100.0% |
+| `itemstatuscode` | `VARCHAR` | 100.0% |
+| `category` | `VARCHAR` | 100.0% |
+| `newitem` | `BOOLEAN` | 100.0% |
+| `specialpricing` | `BOOLEAN` | 100.0% |
+| `size` | `VARCHAR` | 100.0% |
+| `proof` | `VARCHAR` | 100.0% |
+| `priceperunit` | `VARCHAR` | 100.0% |
+| `unitspercase` | `VARCHAR` | 100.0% |
+| `pricepercase` | `VARCHAR` | 100.0% |
+| `pricechange` | `VARCHAR` | 100.0% |
+| `containertype` | `VARCHAR` | 99.9% |
+| `containercount` | `VARCHAR` | 100.0% |
+| `countryoforigin` | `VARCHAR` | 87.2% |
+| `priceperoz` | `VARCHAR` | 100.0% |
+| `age` | `VARCHAR` | 8.1% |
 
+Fill measured over **full table** (3,844 rows).
 
 ### `ut_pricing`
 
 10,239 rows · 14 columns
 
 
-| column | type |
-|---|---|
-| `CSC` | `VARCHAR` |
-| `Description` | `VARCHAR` |
-| `Div` | `VARCHAR` |
-| `Dept` | `VARCHAR` |
-| `Class` | `VARCHAR` |
-| `Size` | `VARCHAR` |
-| `Retail Price` | `VARCHAR` |
-| `Item Status` | `VARCHAR` |
-| `On Spa` | `VARCHAR` |
-| `Vendor Name` | `VARCHAR` |
-| `Vendor Cd` | `VARCHAR` |
-| `Div Name` | `VARCHAR` |
-| `Dept Name` | `VARCHAR` |
-| `Class name` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `CSC` | `VARCHAR` | 100.0% |
+| `Description` | `VARCHAR` | 100.0% |
+| `Div` | `VARCHAR` | 100.0% |
+| `Dept` | `VARCHAR` | 100.0% |
+| `Class` | `VARCHAR` | 100.0% |
+| `Size` | `VARCHAR` | 100.0% |
+| `Retail Price` | `VARCHAR` | 100.0% |
+| `Item Status` | `VARCHAR` | 100.0% |
+| `On Spa` | `VARCHAR` | 100.0% |
+| `Vendor Name` | `VARCHAR` | 100.0% |
+| `Vendor Cd` | `VARCHAR` | 100.0% |
+| `Div Name` | `VARCHAR` | 100.0% |
+| `Dept Name` | `VARCHAR` | 100.0% |
+| `Class name` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (10,239 rows).
 
 ### `mont_sales`
 
 319,028 rows · 9 columns
 
 
-| column | type |
-|---|---|
-| `calendar_year` | `VARCHAR` |
-| `cal_month_num` | `VARCHAR` |
-| `supplier` | `VARCHAR` |
-| `item_code` | `VARCHAR` |
-| `item_description` | `VARCHAR` |
-| `item_type` | `VARCHAR` |
-| `rtl_sales` | `VARCHAR` |
-| `rtl_transfers` | `VARCHAR` |
-| `whs_sales` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `calendar_year` | `VARCHAR` | 100.0% |
+| `cal_month_num` | `VARCHAR` | 100.0% |
+| `supplier` | `VARCHAR` | 99.9% |
+| `item_code` | `VARCHAR` | 100.0% |
+| `item_description` | `VARCHAR` | 100.0% |
+| `item_type` | `VARCHAR` | 100.0% |
+| `rtl_sales` | `VARCHAR` | 100.0% |
+| `rtl_transfers` | `VARCHAR` | 100.0% |
+| `whs_sales` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (319,028 rows).
 
 ## 4. `control_state.py` — the module's own account
 

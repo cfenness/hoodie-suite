@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 316 |
 | Columns | 6 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated) |
@@ -16,15 +16,16 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `account` | `VARCHAR` |
-| `kind` | `VARCHAR` |
-| `source_url` | `VARCHAR` |
-| `storage_key` | `VARCHAR` |
-| `bytes` | `BIGINT` |
-| `run_id` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `account` | `VARCHAR` | 100.0% |
+| `kind` | `VARCHAR` | 100.0% |
+| `source_url` | `VARCHAR` | 100.0% |
+| `storage_key` | `VARCHAR` | 100.0% |
+| `bytes` | `BIGINT` | 100.0% |
+| `run_id` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (316 rows).
 
 ## Writers
 

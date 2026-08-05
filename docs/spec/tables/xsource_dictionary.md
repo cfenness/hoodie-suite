@@ -16,15 +16,16 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `dimension` | `VARCHAR` |
-| `variant_key` | `VARCHAR` |
-| `variant` | `VARCHAR` |
-| `canonical` | `VARCHAR` |
-| `times` | `BIGINT` |
-| `updated_at` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `dimension` | `VARCHAR` | 100.0% |
+| `variant_key` | `VARCHAR` | 100.0% |
+| `variant` | `VARCHAR` | 100.0% |
+| `canonical` | `VARCHAR` | 100.0% |
+| `times` | `BIGINT` | 100.0% |
+| `updated_at` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (6 rows).
 
 ## Writers
 

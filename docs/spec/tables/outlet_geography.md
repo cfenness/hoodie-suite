@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 888,469 |
 | Columns | 14 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full rebuild, layout-preserving) |
@@ -16,23 +16,24 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `hoodie_outlet` | `VARCHAR` |
-| `lat` | `DOUBLE` |
-| `lng` | `DOUBLE` |
-| `county_fips` | `VARCHAR` |
-| `county_name` | `VARCHAR` |
-| `state_fp` | `VARCHAR` |
-| `cbsa_code` | `VARCHAR` |
-| `cbsa_name` | `VARCHAR` |
-| `cbsa_type` | `VARCHAR` |
-| `zcta` | `VARCHAR` |
-| `method` | `VARCHAR` |
-| `resolved_at` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `store_id` | `VARCHAR` | 100.0% |
+| `hoodie_outlet` | `VARCHAR` | 100.0% |
+| `lat` | `DOUBLE` | 100.0% |
+| `lng` | `DOUBLE` | 100.0% |
+| `county_fips` | `VARCHAR` | 100.0% |
+| `county_name` | `VARCHAR` | 100.0% |
+| `state_fp` | `VARCHAR` | 100.0% |
+| `cbsa_code` | `VARCHAR` | 96.1% |
+| `cbsa_name` | `VARCHAR` | 96.1% |
+| `cbsa_type` | `VARCHAR` | 96.1% |
+| `zcta` | `VARCHAR` | 99.6% |
+| `method` | `VARCHAR` | 100.0% |
+| `resolved_at` | `VARCHAR` | 100.0% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ## Writers
 

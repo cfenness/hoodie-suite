@@ -33,33 +33,95 @@ _No literal endpoint constant in `json.py`._ The transport is either inherited f
 
 ### `ubereats_products`
 
-2,160,806 rows · 17 columns
+2,160,806 rows · 16 columns
 
 
-| column | type |
-|---|---|
-| `store_uuid` | `VARCHAR` |
-| `store_name` | `VARCHAR` |
-| `source` | `INTEGER` |
-| `item_uuid` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `brand` | `INTEGER` |
-| `upc` | `VARCHAR` |
-| `gtin` | `INTEGER` |
-| `price` | `DOUBLE` |
-| `list_price` | `DOUBLE` |
-| `promo` | `INTEGER` |
-| `size` | `INTEGER` |
-| `abv` | `DOUBLE` |
-| `in_stock` | `BOOLEAN` |
-| `stock_label` | `VARCHAR` |
-| `category` | `INTEGER` |
-| `__b` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `store_uuid` | `VARCHAR` | 100.0% |
+| `store_name` | `VARCHAR` | 100.0% |
+| `source` | `INTEGER` | **0%** ‹never populated› |
+| `item_uuid` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `brand` | `INTEGER` | **0%** ‹never populated› |
+| `upc` | `VARCHAR` | 8.1% |
+| `gtin` | `INTEGER` | **0%** ‹never populated› |
+| `price` | `DOUBLE` | 100.0% |
+| `list_price` | `DOUBLE` | **4.3%** |
+| `promo` | `INTEGER` | **0%** ‹never populated› |
+| `size` | `INTEGER` | **0%** ‹never populated› |
+| `abv` | `DOUBLE` | **1.3%** |
+| `in_stock` | `BOOLEAN` | 100.0% |
+| `stock_label` | `VARCHAR` | 16.4% |
+| `category` | `INTEGER` | **0%** ‹never populated› |
+
+Fill measured over **first 400,000 rows** (400,000 rows).
+
+> **6 columns never populated:** `source`, `brand`, `gtin`, `promo`, `size`, `category`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ### `postmates_products`
 
-_Not in the live capture — the code writes it but the table was not scanned._
+3,190 rows · 47 columns
+
+
+| column | type | filled |
+|---|---|---|
+| `item_uuid` | `VARCHAR` | 100.0% |
+| `product_uuid` | `VARCHAR` | 74.7% |
+| `store_uuid` | `VARCHAR` | 100.0% |
+| `store_name` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `section` | `VARCHAR` | 100.0% |
+| `subsection` | `VARCHAR` | 100.0% |
+| `upc` | `VARCHAR` | 23.4% |
+| `gtins` | `VARCHAR` | 23.4% |
+| `price` | `DOUBLE` | 100.0% |
+| `list_price` | `DOUBLE` | 36.4% |
+| `on_promo` | `BOOLEAN` | 100.0% |
+| `discount` | `DOUBLE` | 100.0% |
+| `promo_text` | `VARCHAR` | 17.3% |
+| `promo_tag` | `VARCHAR` | 17.3% |
+| `promo_type` | `VARCHAR` | 17.6% |
+| `promo_pct` | `DOUBLE` | **4.1%** |
+| `promo_flat` | `DOUBLE` | **4.1%** |
+| `promo_uuid` | `VARCHAR` | 17.6% |
+| `in_stock` | `BOOLEAN` | 100.0% |
+| `is_sold_out` | `BOOLEAN` | 100.0% |
+| `suspend_reason` | `VARCHAR` | 25.3% |
+| `suspend_until` | `VARCHAR` | **0%** ‹never populated› |
+| `low_availability` | `VARCHAR` | **0%** ‹never populated› |
+| `avail_state` | `VARCHAR` | 74.7% |
+| `stock_label` | `VARCHAR` | **2.2%** |
+| `max_qty` | `BIGINT` | 100.0% |
+| `min_qty` | `DOUBLE` | 100.0% |
+| `increment_qty` | `DOUBLE` | 100.0% |
+| `default_qty` | `BIGINT` | 100.0% |
+| `sold_by` | `VARCHAR` | 100.0% |
+| `priced_by` | `VARCHAR` | 100.0% |
+| `is_alcohol` | `BOOLEAN` | 100.0% |
+| `num_alcoholic` | `BIGINT` | 9.6% |
+| `age_rule` | `VARCHAR` | **1.6%** |
+| `abv` | `DOUBLE` | 6.8% |
+| `pack` | `BIGINT` | 14.8% |
+| `item_size` | `VARCHAR` | 72.4% |
+| `nutritional_info` | `VARCHAR` | 33.7% |
+| `classifications` | `VARCHAR` | **0%** ‹never populated› |
+| `dietary_labels` | `VARCHAR` | 21.8% |
+| `endorsements` | `VARCHAR` | 35.0% |
+| `description` | `VARCHAR` | 25.3% |
+| `image` | `VARCHAR` | 100.0% |
+| `image_count` | `BIGINT` | 100.0% |
+| `zone` | `VARCHAR` | 100.0% |
+| `raw_json` | `VARCHAR` | **0%** ‹never populated› |
+
+Fill measured over **full table** (3,190 rows).
+
+> **4 columns never populated:** `suspend_until`, `low_availability`, `classifications`, `raw_json`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ## 4. Module documentation

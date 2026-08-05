@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 1,071,850 |
 | Columns | 13 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated) |
@@ -16,21 +16,27 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `TTB ID` | `VARCHAR` |
-| `Permit Number` | `VARCHAR` |
-| `Serial Number` | `VARCHAR` |
-| `Brand Name` | `VARCHAR` |
-| `Fanciful Name` | `VARCHAR` |
-| `Class/Type` | `VARCHAR` |
-| `Origin` | `VARCHAR` |
-| `Applicant` | `VARCHAR` |
-| `Status` | `VARCHAR` |
-| `Completed Date` | `VARCHAR` |
-| `Approval Date` | `VARCHAR` |
-| `Net Contents` | `VARCHAR` |
-| `UPC` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `TTB ID` | `VARCHAR` | 100.0% |
+| `Permit Number` | `VARCHAR` | 100.0% |
+| `Serial Number` | `VARCHAR` | 100.0% |
+| `Brand Name` | `VARCHAR` | 100.0% |
+| `Fanciful Name` | `VARCHAR` | **0%** ‹never populated› |
+| `Class/Type` | `VARCHAR` | 100.0% |
+| `Origin` | `VARCHAR` | 100.0% |
+| `Applicant` | `VARCHAR` | **0%** ‹never populated› |
+| `Status` | `VARCHAR` | **0%** ‹never populated› |
+| `Completed Date` | `VARCHAR` | 100.0% |
+| `Approval Date` | `VARCHAR` | **0%** ‹never populated› |
+| `Net Contents` | `VARCHAR` | **0%** ‹never populated› |
+| `UPC` | `VARCHAR` | **0%** ‹never populated› |
+
+Fill measured over **first 400,000 rows** (400,000 rows).
+
+> **6 columns never populated:** `Fanciful Name`, `Applicant`, `Status`, `Approval Date`, `Net Contents`, `UPC`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ## Writers

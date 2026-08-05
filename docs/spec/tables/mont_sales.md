@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 319,028 |
 | Columns | 9 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | — |
@@ -16,14 +16,16 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `calendar_year` | `VARCHAR` |
-| `cal_month_num` | `VARCHAR` |
-| `supplier` | `VARCHAR` |
-| `item_code` | `VARCHAR` |
-| `item_description` | `VARCHAR` |
-| `item_type` | `VARCHAR` |
-| `rtl_sales` | `VARCHAR` |
-| `rtl_transfers` | `VARCHAR` |
-| `whs_sales` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `calendar_year` | `VARCHAR` | 100.0% |
+| `cal_month_num` | `VARCHAR` | 100.0% |
+| `supplier` | `VARCHAR` | 99.9% |
+| `item_code` | `VARCHAR` | 100.0% |
+| `item_description` | `VARCHAR` | 100.0% |
+| `item_type` | `VARCHAR` | 100.0% |
+| `rtl_sales` | `VARCHAR` | 100.0% |
+| `rtl_transfers` | `VARCHAR` | 100.0% |
+| `whs_sales` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (319,028 rows).

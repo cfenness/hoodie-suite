@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 2,059 |
 | Columns | 13 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated) |
@@ -16,22 +16,23 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `guid` | `VARCHAR` |
-| `account` | `VARCHAR` |
-| `clean_name` | `VARCHAR` |
-| `street` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `phone` | `VARCHAR` |
-| `lat` | `DOUBLE` |
-| `lng` | `DOUBLE` |
-| `serves_alcohol` | `BOOLEAN` |
-| `n_beverages` | `BIGINT` |
-| `source` | `VARCHAR` |
-| `captured` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `guid` | `VARCHAR` | 100.0% |
+| `account` | `VARCHAR` | 100.0% |
+| `clean_name` | `VARCHAR` | 99.6% |
+| `street` | `VARCHAR` | 99.0% |
+| `city` | `VARCHAR` | 99.0% |
+| `state` | `VARCHAR` | 99.4% |
+| `phone` | `VARCHAR` | 99.0% |
+| `lat` | `DOUBLE` | 99.0% |
+| `lng` | `DOUBLE` | 99.0% |
+| `serves_alcohol` | `BOOLEAN` | 100.0% |
+| `n_beverages` | `BIGINT` | 100.0% |
+| `source` | `VARCHAR` | 100.0% |
+| `captured` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (2,059 rows).
 
 ## Writers
 

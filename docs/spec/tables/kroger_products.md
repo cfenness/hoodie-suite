@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 36,812 |
 | Columns | 20 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,29 +16,30 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `product_id` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `product_name` | `VARCHAR` |
-| `category` | `VARCHAR` |
-| `size` | `VARCHAR` |
-| `price` | `DOUBLE` |
-| `promo` | `DOUBLE` |
-| `on_promo` | `BOOLEAN` |
-| `stock_level` | `VARCHAR` |
-| `in_stock` | `BOOLEAN` |
-| `image_url` | `VARCHAR` |
-| `is_hemp` | `BOOLEAN` |
-| `raw_json` | `VARCHAR` |
-| `location_id` | `VARCHAR` |
-| `term` | `VARCHAR` |
-| `run_id` | `VARCHAR` |
-| `store` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `state` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `product_id` | `VARCHAR` | 100.0% |
+| `upc` | `VARCHAR` | 100.0% |
+| `brand` | `VARCHAR` | 99.8% |
+| `product_name` | `VARCHAR` | 100.0% |
+| `category` | `VARCHAR` | 100.0% |
+| `size` | `VARCHAR` | 100.0% |
+| `price` | `DOUBLE` | 90.0% |
+| `promo` | `DOUBLE` | 60.2% |
+| `on_promo` | `BOOLEAN` | 100.0% |
+| `stock_level` | `VARCHAR` | 18.9% |
+| `in_stock` | `BOOLEAN` | 100.0% |
+| `image_url` | `VARCHAR` | 100.0% |
+| `is_hemp` | `BOOLEAN` | 100.0% |
+| `raw_json` | `VARCHAR` | 100.0% |
+| `location_id` | `VARCHAR` | 100.0% |
+| `term` | `VARCHAR` | 100.0% |
+| `run_id` | `VARCHAR` | 100.0% |
+| `store` | `VARCHAR` | 100.0% |
+| `city` | `VARCHAR` | 100.0% |
+| `state` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (36,812 rows).
 
 ## Writers
 

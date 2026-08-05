@@ -9,7 +9,7 @@ python3 tools/gen_spec.py                # regenerate every page
 ```
 
 
-Live schema captured **2026-08-05T15:32:17Z**.
+Live schema captured **2026-08-05T12:49:49Z**.
 
 
 ## What exists
@@ -20,9 +20,11 @@ Live schema captured **2026-08-05T15:32:17Z**.
 | ...enabled on a cadence | 58 |
 | Builds (derive from what we hold) | 14 |
 | Tables the code writes | 177 |
-| ...that have actually landed | 140 |
-| Columns described | 1,973 |
-| Rows landed | 167,608,574 |
+| ...that have actually landed | 145 |
+| Columns described | 2,071 |
+| Rows landed | 198,439,987 |
+| Columns measured for fill | 2,034 |
+| ...that are NEVER populated | **191** |
 
 
 ## Where the documentation is thin
@@ -34,7 +36,7 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 |---|---|---|
 | Declared schemas | 6 of 177 tables in `table_spec.py` | for the rest the schema is whatever the last writer emitted, and two tables have already been corrupted by per-partition schema drift |
 | Raw-field inventories | 13 of 74 sources in `source_spec.py` | for the rest we know what we KEEP but have not recorded what the source offers and we drop |
-| Never-landed tables | 37 of 177 | the code writes them; the warehouse has no such object |
+| Never-landed tables | 32 of 177 | the code writes them; the warehouse has no such object |
 | Module docstrings | 85 of 88 sources | the rebuild narrative is absent for the remainder |
 | Unit tests | 21 of 88 sources | a parser change in the rest is caught only in production |
 
@@ -153,7 +155,7 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 | [`asset_divergence`](tables/asset_divergence.md) | — | — | **never landed** | `asset-divergence` |
 | [`bea_reference`](tables/bea_reference.md) | 96,450 | 10 | yes | `bea` |
 | [`bevalc_chains`](tables/bevalc_chains.md) | 127 | 14 | yes | — |
-| [`binnys_products`](tables/binnys_products.md) | 1,534,862 | 30 | yes | `binnys` |
+| [`binnys_products`](tables/binnys_products.md) | 1,534,862 | 29 | yes | `binnys` |
 | [`bottlecapps_products`](tables/bottlecapps_products.md) | 227 | 19 | yes | `bottlecapps` |
 | [`brand_events`](tables/brand_events.md) | 329 | 23 | yes | `dam-bacardi` |
 | [`ca_outlets`](tables/ca_outlets.md) | 128,950 | 26 | yes | `ca-abc` |
@@ -192,7 +194,7 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 | [`fact_inventory`](tables/fact_inventory.md) | 7,288,934 | 12 | yes | — |
 | [`fact_price`](tables/fact_price.md) | 7,149,063 | 12 | yes | — |
 | [`fact_velocity`](tables/fact_velocity.md) | 3,319,500 | 17 | yes | `build-velocity` |
-| [`field_stats`](tables/field_stats.md) | 179 | 7 | yes | — |
+| [`field_stats`](tables/field_stats.md) | 178 | 7 | yes | — |
 | [`fred_reference`](tables/fred_reference.md) | 550 | 9 | yes | `fred` |
 | [`geo_cbsa_ref`](tables/geo_cbsa_ref.md) | 935 | 3 | yes | — |
 | [`haskells_products`](tables/haskells_products.md) | 10,535 | 19 | yes | `haskells` |
@@ -240,13 +242,13 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 | [`outlet_master`](tables/outlet_master.md) | 1,818,275 | 18 | yes | `outlet-union` |
 | [`outlet_xref`](tables/outlet_xref.md) | 9,567 | 12 | yes | — |
 | [`planogram_placements`](tables/planogram_placements.md) | — | — | **never landed** | — |
-| [`postmates_products`](tables/postmates_products.md) | — | — | **never landed** | `postmates-full`, `build-ue-catalog` |
-| [`postmates_products_parts`](tables/postmates_products_parts.md) | — | — | **never landed** | `postmates` |
-| [`postmates_sitemap`](tables/postmates_sitemap.md) | — | — | **never landed** | `postmates-sitemap` |
+| [`postmates_products`](tables/postmates_products.md) | 3,190 | 47 | yes | `postmates-full`, `build-ue-catalog` |
+| [`postmates_products_parts`](tables/postmates_products_parts.md) | 15,227 | 21 | yes | `postmates` |
+| [`postmates_sitemap`](tables/postmates_sitemap.md) | 269,007 | 6 | yes | `postmates-sitemap` |
 | [`price_coherence`](tables/price_coherence.md) | 19,855 | 10 | yes | — |
 | [`publix_products`](tables/publix_products.md) | 5,477 | 9 | yes | `publix` |
-| [`raw_payloads`](tables/raw_payloads.md) | 31,573,796 | 8 | yes | — |
-| [`retail_observations`](tables/retail_observations.md) | 60,619,371 | 19 | yes | `abc-fws` |
+| [`raw_payloads`](tables/raw_payloads.md) | 31,570,028 | 8 | yes | — |
+| [`retail_observations`](tables/retail_observations.md) | 60,510,145 | 19 | yes | `abc-fws` |
 | [`salsify_catalogs`](tables/salsify_catalogs.md) | 520 | 16 | yes | `salsify` |
 | [`salsify_products`](tables/salsify_products.md) | 63,889 | 35 | yes | `bbg`, `salsify` |
 | [`salsify_properties`](tables/salsify_properties.md) | 2,870,998 | 10 | yes | `bbg`, `salsify` |
@@ -256,12 +258,12 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 | [`signal_movers`](tables/signal_movers.md) | 1,015 | 12 | yes | `build-velocity-signals` |
 | [`signal_voids`](tables/signal_voids.md) | 2,235 | 8 | yes | `build-velocity-signals` |
 | [`snowflake_load_runs`](tables/snowflake_load_runs.md) | 4 | 10 | yes | `snowflake-load` |
-| [`source_runs_log`](tables/source_runs_log.md) | 859 | 23 | yes | — |
+| [`source_runs_log`](tables/source_runs_log.md) | 857 | 23 | yes | — |
 | [`source_taxonomy`](tables/source_taxonomy.md) | 10,825 | 3 | yes | `abc-facets` |
 | [`specs_products`](tables/specs_products.md) | 1,029 | 23 | yes | `specs` |
 | [`src_brands`](tables/src_brands.md) | 262,191 | 5 | yes | — |
 | [`src_items`](tables/src_items.md) | 1,059,584 | 11 | yes | — |
-| [`src_outlets`](tables/src_outlets.md) | 1,916,357 | 29 | yes | `geocode`, `aggregator-geo`, `fast-geo`, `geo`, `ubereats-sitemap`, `postmates-sitemap`, `build-outlets` |
+| [`src_outlets`](tables/src_outlets.md) | 1,916,357 | 28 | yes | `geocode`, `aggregator-geo`, `fast-geo`, `geo`, `ubereats-sitemap`, `postmates-sitemap`, `build-outlets` |
 | [`src_products`](tables/src_products.md) | 1,001,832 | 22 | yes | — |
 | [`src_skus`](tables/src_skus.md) | 1,084,333 | 15 | yes | — |
 | [`src_summary`](tables/src_summary.md) | 5 | 5 | yes | — |
@@ -282,9 +284,9 @@ Stated rather than hidden, because a spec that only shows what is covered reads 
 | [`ttb_master`](tables/ttb_master.md) | 1,732 | 18 | yes | `ttb` |
 | [`ttb_quarantine_summary`](tables/ttb_quarantine_summary.md) | 200 | 4 | yes | — |
 | [`ttb_review`](tables/ttb_review.md) | 1,462 | 18 | yes | — |
-| [`ubereats_products`](tables/ubereats_products.md) | 2,160,806 | 17 | yes | `ubereats-full`, `build-ue-catalog` |
-| [`ubereats_products_parts`](tables/ubereats_products_parts.md) | — | — | **never landed** | `ubereats`, `ubereats-enrich` |
-| [`ubereats_sitemap`](tables/ubereats_sitemap.md) | — | — | **never landed** | `ubereats-sitemap` |
+| [`ubereats_products`](tables/ubereats_products.md) | 2,160,806 | 16 | yes | `ubereats-full`, `build-ue-catalog` |
+| [`ubereats_products_parts`](tables/ubereats_products_parts.md) | 29,901,954 | 21 | yes | `ubereats`, `ubereats-enrich` |
+| [`ubereats_sitemap`](tables/ubereats_sitemap.md) | 755,032 | 6 | yes | `ubereats-sitemap` |
 | [`ut_pricing`](tables/ut_pricing.md) | 10,239 | 14 | yes | `control-states` |
 | [`velocity_calibration`](tables/velocity_calibration.md) | 5 | 6 | yes | `build-velocity-calibrate` |
 | [`vip_brandbuilder_directory`](tables/vip_brandbuilder_directory.md) | 365 | 8 | yes | `vip-brandbuilder-census` |

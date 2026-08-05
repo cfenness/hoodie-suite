@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 6 |
 | Columns | 8 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,17 +16,18 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `run_id` | `VARCHAR` |
-| `at` | `BIGINT` |
-| `products` | `BIGINT` |
-| `stores` | `BIGINT` |
-| `in_stock` | `BIGINT` |
-| `on_promo` | `BIGINT` |
-| `status` | `VARCHAR` |
-| `note` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `run_id` | `VARCHAR` | 100.0% |
+| `at` | `BIGINT` | 100.0% |
+| `products` | `BIGINT` | 100.0% |
+| `stores` | `BIGINT` | 100.0% |
+| `in_stock` | `BIGINT` | 100.0% |
+| `on_promo` | `BIGINT` | 100.0% |
+| `status` | `VARCHAR` | 100.0% |
+| `note` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (6 rows).
 
 ## Writers
 

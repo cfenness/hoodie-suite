@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 23,874 |
 | Columns | 11 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated) |
@@ -16,20 +16,21 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `ttb_id` | `VARCHAR` |
-| `image_file` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `abv` | `VARCHAR` |
-| `net_contents` | `VARCHAR` |
-| `claims` | `VARCHAR` |
-| `gov_warning` | `VARCHAR` |
-| `ocr_chars` | `VARCHAR` |
-| `front_label_url` | `VARCHAR` |
-| `back_label_url` | `VARCHAR` |
-| `label_urls` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `ttb_id` | `VARCHAR` | 100.0% |
+| `image_file` | `VARCHAR` | 99.7% |
+| `upc` | `VARCHAR` | 34.9% |
+| `abv` | `VARCHAR` | 24.2% |
+| `net_contents` | `VARCHAR` | 55.1% |
+| `claims` | `VARCHAR` | 19.6% |
+| `gov_warning` | `VARCHAR` | 98.7% |
+| `ocr_chars` | `VARCHAR` | 99.0% |
+| `front_label_url` | `VARCHAR` | 99.7% |
+| `back_label_url` | `VARCHAR` | 40.9% |
+| `label_urls` | `VARCHAR` | 99.7% |
 
+Fill measured over **full table** (23,874 rows).
 
 ## Writers
 

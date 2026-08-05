@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 147,235 |
 | Columns | 14 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,22 +16,28 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `product_id` | `VARCHAR` |
-| `canon_item_id` | `BIGINT` |
-| `brand` | `VARCHAR` |
-| `product_name` | `VARCHAR` |
-| `category` | `VARCHAR` |
-| `size_ml` | `DOUBLE` |
-| `size_raw` | `VARCHAR` |
-| `upcs` | `VARCHAR[]` |
-| `identity_key` | `VARCHAR` |
-| `status` | `VARCHAR` |
-| `merged_into` | `INTEGER` |
-| `match_tier` | `BIGINT` |
-| `method_version` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `product_id` | `VARCHAR` | 100.0% |
+| `canon_item_id` | `BIGINT` | 100.0% |
+| `brand` | `VARCHAR` | 58.9% |
+| `product_name` | `VARCHAR` | 99.7% |
+| `category` | `VARCHAR` | 26.1% |
+| `size_ml` | `DOUBLE` | 9.9% |
+| `size_raw` | `VARCHAR` | **0.7%** |
+| `upcs` | `VARCHAR[]` | 100.0% |
+| `identity_key` | `VARCHAR` | 100.0% |
+| `status` | `VARCHAR` | 100.0% |
+| `merged_into` | `INTEGER` | **0%** ‹never populated› |
+| `match_tier` | `BIGINT` | 100.0% |
+| `method_version` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (147,235 rows).
+
+> **1 column never populated:** `merged_into`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ## Writers

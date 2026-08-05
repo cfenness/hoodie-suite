@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 365 |
 | Columns | 8 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated) |
@@ -16,17 +16,18 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source_code` | `VARCHAR` |
-| `status` | `VARCHAR` |
-| `distributor_name` | `VARCHAR` |
-| `vip_source_id` | `BIGINT` |
-| `vip_customer_id` | `BIGINT` |
-| `n_products` | `BIGINT` |
-| `first_seen` | `BIGINT` |
-| `last_seen` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `source_code` | `VARCHAR` | 100.0% |
+| `status` | `VARCHAR` | 100.0% |
+| `distributor_name` | `VARCHAR` | 100.0% |
+| `vip_source_id` | `BIGINT` | 100.0% |
+| `vip_customer_id` | `BIGINT` | 100.0% |
+| `n_products` | `BIGINT` | 100.0% |
+| `first_seen` | `BIGINT` | 100.0% |
+| `last_seen` | `BIGINT` | 100.0% |
 
+Fill measured over **full table** (365 rows).
 
 ## Writers
 

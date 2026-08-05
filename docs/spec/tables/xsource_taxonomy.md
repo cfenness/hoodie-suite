@@ -16,17 +16,18 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `path_key` | `VARCHAR` |
-| `canon_type` | `VARCHAR` |
-| `canon_class` | `VARCHAR` |
-| `canon_subclass` | `VARCHAR` |
-| `canon_varietal` | `VARCHAR` |
-| `times` | `BIGINT` |
-| `first_seen` | `VARCHAR` |
-| `last_seen` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `path_key` | `VARCHAR` | 100.0% |
+| `canon_type` | `VARCHAR` | 100.0% |
+| `canon_class` | `VARCHAR` | 100.0% |
+| `canon_subclass` | `VARCHAR` | 100.0% |
+| `canon_varietal` | `VARCHAR` | 100.0% |
+| `times` | `BIGINT` | 100.0% |
+| `first_seen` | `VARCHAR` | 100.0% |
+| `last_seen` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (2 rows).
 
 ## Writers
 

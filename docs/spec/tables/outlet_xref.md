@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 9,567 |
 | Columns | 12 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full rebuild, layout-preserving) |
@@ -16,21 +16,22 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `obs_source` | `VARCHAR` |
-| `obs_store_id` | `VARCHAR` |
-| `geo_source` | `VARCHAR` |
-| `geo_store_id` | `VARCHAR` |
-| `hoodie_outlet` | `VARCHAR` |
-| `cbsa_code` | `VARCHAR` |
-| `cbsa_name` | `VARCHAR` |
-| `zcta` | `VARCHAR` |
-| `county_fips` | `VARCHAR` |
-| `method` | `VARCHAR` |
-| `confidence` | `DECIMAL(3,2)` |
-| `built_at` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `obs_source` | `VARCHAR` | 100.0% |
+| `obs_store_id` | `VARCHAR` | 100.0% |
+| `geo_source` | `VARCHAR` | 100.0% |
+| `geo_store_id` | `VARCHAR` | 100.0% |
+| `hoodie_outlet` | `VARCHAR` | 100.0% |
+| `cbsa_code` | `VARCHAR` | 99.7% |
+| `cbsa_name` | `VARCHAR` | 99.7% |
+| `zcta` | `VARCHAR` | 100.0% |
+| `county_fips` | `VARCHAR` | 100.0% |
+| `method` | `VARCHAR` | 100.0% |
+| `confidence` | `DECIMAL(3,2)` | 100.0% |
+| `built_at` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (9,567 rows).
 
 ## Writers
 

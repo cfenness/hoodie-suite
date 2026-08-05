@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 200 |
 | Columns | 4 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,13 +16,14 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `supplier` | `VARCHAR` |
-| `candidates` | `BIGINT` |
-| `brands` | `VARCHAR[]` |
-| `run_id` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `supplier` | `VARCHAR` | 100.0% |
+| `candidates` | `BIGINT` | 100.0% |
+| `brands` | `VARCHAR[]` | 100.0% |
+| `run_id` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (200 rows).
 
 ## Writers
 

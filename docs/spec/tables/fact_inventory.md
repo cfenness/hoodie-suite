@@ -16,21 +16,22 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `date` | `VARCHAR` |
-| `source` | `VARCHAR` |
-| `store_key` | `VARCHAR` |
-| `hoodie_store_id` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `product_id` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `sku_key` | `INTEGER` |
-| `hoodie_sku_id` | `INTEGER` |
-| `qty` | `DOUBLE` |
-| `in_stock` | `BOOLEAN` |
-| `stock_level` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `date` | `VARCHAR` | 100.0% |
+| `source` | `VARCHAR` | 100.0% |
+| `store_key` | `VARCHAR` | 100.0% |
+| `hoodie_store_id` | `VARCHAR` | 100.0% |
+| `store_id` | `VARCHAR` | 100.0% |
+| `product_id` | `VARCHAR` | 100.0% |
+| `upc` | `VARCHAR` | **0.7%** |
+| `sku_key` | `INTEGER` | 97.7% |
+| `hoodie_sku_id` | `INTEGER` | 97.7% |
+| `qty` | `DOUBLE` | 82.2% |
+| `in_stock` | `BOOLEAN` | 100.0% |
+| `stock_level` | `VARCHAR` | **0.2%** |
 
+Fill measured over **newest 18 of 18 partitions** (7,288,934 rows).
 
 ## Writers
 

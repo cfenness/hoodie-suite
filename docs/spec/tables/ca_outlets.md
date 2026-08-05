@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 128,950 |
 | Columns | 26 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,35 +16,36 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `License Type` | `VARCHAR` |
-| `File Number` | `VARCHAR` |
-| `Lic or App` | `VARCHAR` |
-| `Type Status` | `VARCHAR` |
-| `Type Orig Iss Date` | `VARCHAR` |
-| `Expir Date` | `VARCHAR` |
-| `Fee Codes` | `VARCHAR` |
-| `Dup Counts` | `VARCHAR` |
-| `Master Ind` | `VARCHAR` |
-| `Term in # of Months` | `VARCHAR` |
-| `Geo Code` | `VARCHAR` |
-| `District` | `VARCHAR` |
-| `Primary Name` | `VARCHAR` |
-| `Prem Addr 1` | `VARCHAR` |
-| `Prem Addr 2` | `VARCHAR` |
-| `Prem City` | `VARCHAR` |
-| `Prem State` | `VARCHAR` |
-| `Prem Zip` | `VARCHAR` |
-| `DBA Name` | `VARCHAR` |
-| `Mail Addr 1` | `VARCHAR` |
-| `Mail Addr 2` | `VARCHAR` |
-| `Mail City` | `VARCHAR` |
-| `Mail State` | `VARCHAR` |
-| `Mail Zip` | `VARCHAR` |
-| `Prem County` | `VARCHAR` |
-| `Prem Census Tract #` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `License Type` | `VARCHAR` | 100.0% |
+| `File Number` | `VARCHAR` | 100.0% |
+| `Lic or App` | `VARCHAR` | 100.0% |
+| `Type Status` | `VARCHAR` | 100.0% |
+| `Type Orig Iss Date` | `VARCHAR` | 84.4% |
+| `Expir Date` | `VARCHAR` | 84.4% |
+| `Fee Codes` | `VARCHAR` | 99.9% |
+| `Dup Counts` | `VARCHAR` | 14.7% |
+| `Master Ind` | `VARCHAR` | 100.0% |
+| `Term in # of Months` | `VARCHAR` | 100.0% |
+| `Geo Code` | `VARCHAR` | 99.9% |
+| `District` | `VARCHAR` | 100.0% |
+| `Primary Name` | `VARCHAR` | 99.7% |
+| `Prem Addr 1` | `VARCHAR` | 99.9% |
+| `Prem Addr 2` | `VARCHAR` | 20.3% |
+| `Prem City` | `VARCHAR` | 99.8% |
+| `Prem State` | `VARCHAR` | 99.8% |
+| `Prem Zip` | `VARCHAR` | 99.8% |
+| `DBA Name` | `VARCHAR` | 94.0% |
+| `Mail Addr 1` | `VARCHAR` | 59.7% |
+| `Mail Addr 2` | `VARCHAR` | 22.3% |
+| `Mail City` | `VARCHAR` | 59.7% |
+| `Mail State` | `VARCHAR` | 59.7% |
+| `Mail Zip` | `VARCHAR` | 59.7% |
+| `Prem County` | `VARCHAR` | 98.2% |
+| `Prem Census Tract #` | `VARCHAR` | 97.4% |
 
+Fill measured over **full table** (128,950 rows).
 
 ## Writers
 

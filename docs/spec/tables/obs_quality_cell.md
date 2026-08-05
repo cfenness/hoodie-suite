@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 8,999,359 |
 | Columns | 15 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | — |
@@ -16,20 +16,22 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `product_id` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `n_obs` | `BIGINT` |
-| `n_days` | `BIGINT` |
-| `first_date` | `VARCHAR` |
-| `last_date` | `VARCHAR` |
-| `n_qty` | `BIGINT` |
-| `distinct_qty` | `BIGINT` |
-| `qty_moves` | `DECIMAL(38,0)` |
-| `price_moves` | `DECIMAL(38,0)` |
-| `jitter_moves` | `DECIMAL(38,0)` |
-| `cadence_days` | `DOUBLE` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `store_id` | `VARCHAR` | 100.0% |
+| `product_id` | `VARCHAR` | 100.0% |
+| `upc` | `VARCHAR` | **3.0%** |
+| `brand` | `VARCHAR` | 17.4% |
+| `n_obs` | `BIGINT` | 100.0% |
+| `n_days` | `BIGINT` | 100.0% |
+| `first_date` | `VARCHAR` | 100.0% |
+| `last_date` | `VARCHAR` | 100.0% |
+| `n_qty` | `BIGINT` | 100.0% |
+| `distinct_qty` | `BIGINT` | 100.0% |
+| `qty_moves` | `DECIMAL(38,0)` | 100.0% |
+| `price_moves` | `DECIMAL(38,0)` | 100.0% |
+| `jitter_moves` | `DECIMAL(38,0)` | 100.0% |
+| `cadence_days` | `DOUBLE` | 22.8% |
+
+Fill measured over **first 400,000 rows** (400,000 rows).

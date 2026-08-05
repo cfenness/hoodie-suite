@@ -39,19 +39,20 @@ _No literal endpoint constant in `snowflake_load.py`._ The transport is either i
 4 rows · 10 columns
 
 
-| column | type |
-|---|---|
-| `ts` | `BIGINT` |
-| `duration_s` | `DOUBLE` |
-| `rows_total` | `BIGINT` |
-| `tables` | `BIGINT` |
-| `raw_tables` | `BIGINT` |
-| `raw_rows` | `BIGINT` |
-| `master_tables` | `BIGINT` |
-| `master_rows` | `BIGINT` |
-| `scope` | `VARCHAR` |
-| `host` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `ts` | `BIGINT` | 100.0% |
+| `duration_s` | `DOUBLE` | 100.0% |
+| `rows_total` | `BIGINT` | 100.0% |
+| `tables` | `BIGINT` | 100.0% |
+| `raw_tables` | `BIGINT` | 100.0% |
+| `raw_rows` | `BIGINT` | 100.0% |
+| `master_tables` | `BIGINT` | 100.0% |
+| `master_rows` | `BIGINT` | 100.0% |
+| `scope` | `VARCHAR` | 100.0% |
+| `host` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (4 rows).
 
 **Written by** `snowflake_load.py:53` (write_accumulate)
 

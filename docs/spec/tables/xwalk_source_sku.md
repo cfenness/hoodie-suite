@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 1,338,594 |
 | Columns | 5 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,14 +16,15 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `product_id` | `VARCHAR` |
-| `product_key` | `VARCHAR` |
-| `item_key` | `VARCHAR` |
-| `sku_key` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `product_id` | `VARCHAR` | 100.0% |
+| `product_key` | `VARCHAR` | 100.0% |
+| `item_key` | `VARCHAR` | 100.0% |
+| `sku_key` | `VARCHAR` | 100.0% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ## Writers
 

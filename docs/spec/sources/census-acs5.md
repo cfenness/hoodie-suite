@@ -39,19 +39,20 @@ _No literal endpoint constant in `census_ref.py`._ The transport is either inher
 1,498,570 rows · 10 columns
 
 
-| column | type |
-|---|---|
-| `dataset` | `VARCHAR` |
-| `vintage_year` | `BIGINT` |
-| `table_id` | `VARCHAR` |
-| `variable` | `VARCHAR` |
-| `label` | `VARCHAR` |
-| `geo_level` | `VARCHAR` |
-| `geo_fips` | `VARCHAR` |
-| `estimate` | `DOUBLE` |
-| `suppressed` | `BOOLEAN` |
-| `source_pulled_at` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `dataset` | `VARCHAR` | 100.0% |
+| `vintage_year` | `BIGINT` | 100.0% |
+| `table_id` | `VARCHAR` | 100.0% |
+| `variable` | `VARCHAR` | 100.0% |
+| `label` | `VARCHAR` | 100.0% |
+| `geo_level` | `VARCHAR` | 100.0% |
+| `geo_fips` | `VARCHAR` | 100.0% |
+| `estimate` | `DOUBLE` | 83.9% |
+| `suppressed` | `BOOLEAN` | 100.0% |
+| `source_pulled_at` | `BIGINT` | 100.0% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 **Written by** `census_ref.py:384` (write_parquet)
 

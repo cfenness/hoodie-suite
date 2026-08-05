@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 5 |
 | Columns | 2 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,11 +16,12 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `product_type_id` | `BIGINT` |
-| `product_type` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `product_type_id` | `BIGINT` | 100.0% |
+| `product_type` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (5 rows).
 
 ## Writers
 

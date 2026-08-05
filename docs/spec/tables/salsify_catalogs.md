@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 520 |
 | Columns | 16 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated) |
@@ -16,25 +16,26 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `catalog_id` | `VARCHAR` |
-| `org_id` | `VARCHAR` |
-| `site_id` | `VARCHAR` |
-| `catalog_name` | `VARCHAR` |
-| `seeded` | `BOOLEAN` |
-| `status` | `VARCHAR` |
-| `total_products` | `BIGINT` |
-| `total_pages` | `BIGINT` |
-| `page_size` | `BIGINT` |
-| `has_sitemap` | `BOOLEAN` |
-| `allow_export` | `BOOLEAN` |
-| `facet_properties` | `VARCHAR` |
-| `publication_date` | `VARCHAR` |
-| `build_id` | `VARCHAR` |
-| `url` | `VARCHAR` |
-| `checked_at` | `BIGINT` |
+| column | type | filled |
+|---|---|---|
+| `catalog_id` | `VARCHAR` | 100.0% |
+| `org_id` | `VARCHAR` | 100.0% |
+| `site_id` | `VARCHAR` | 100.0% |
+| `catalog_name` | `VARCHAR` | 97.7% |
+| `seeded` | `BOOLEAN` | 100.0% |
+| `status` | `VARCHAR` | 100.0% |
+| `total_products` | `BIGINT` | 97.7% |
+| `total_pages` | `BIGINT` | 97.7% |
+| `page_size` | `BIGINT` | 97.7% |
+| `has_sitemap` | `BOOLEAN` | **0.6%** |
+| `allow_export` | `BOOLEAN` | 97.7% |
+| `facet_properties` | `VARCHAR` | 86.2% |
+| `publication_date` | `VARCHAR` | 33.3% |
+| `build_id` | `VARCHAR` | 97.7% |
+| `url` | `VARCHAR` | 100.0% |
+| `checked_at` | `BIGINT` | 100.0% |
 
+Fill measured over **full table** (520 rows).
 
 ## Writers
 

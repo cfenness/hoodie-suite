@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 85,284 |
 | Columns | 6 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated) |
@@ -16,14 +16,20 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `guid` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `slug` | `VARCHAR` |
-| `url` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `source` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `guid` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `slug` | `VARCHAR` | 100.0% |
+| `url` | `VARCHAR` | 100.0% |
+| `state` | `VARCHAR` | **0%** ‹never populated› |
+| `source` | `VARCHAR` | 100.0% |
+
+Fill measured over **full table** (85,284 rows).
+
+> **1 column never populated:** `state`.
+>
+> Declared by a writer and always NULL or empty. That is a capture GAP when the source returns the field and the parse drops it, and it is CORRECT when the column is awaiting input (a label nobody has answered, a derived field a later build fills). The measurement cannot tell those apart — it tells you where to look.
 
 
 ## Writers

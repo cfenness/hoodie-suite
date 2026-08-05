@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 1,084,333 |
 | Columns | 15 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,24 +16,25 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `source_id` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `upc_norm` | `VARCHAR` |
-| `hoodie_sku` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `product_name` | `VARCHAR` |
-| `name_key` | `VARCHAR` |
-| `product_type_id` | `BIGINT` |
-| `product_type` | `VARCHAR` |
-| `size_ml` | `BIGINT` |
-| `container` | `VARCHAR` |
-| `pack` | `BIGINT` |
-| `pack_size` | `BIGINT` |
-| `pack_type` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | 100.0% |
+| `source_id` | `VARCHAR` | 78.0% |
+| `upc` | `VARCHAR` | 24.5% |
+| `upc_norm` | `VARCHAR` | 24.4% |
+| `hoodie_sku` | `VARCHAR` | 100.0% |
+| `brand` | `VARCHAR` | 100.0% |
+| `product_name` | `VARCHAR` | 100.0% |
+| `name_key` | `VARCHAR` | 100.0% |
+| `product_type_id` | `BIGINT` | 100.0% |
+| `product_type` | `VARCHAR` | 58.1% |
+| `size_ml` | `BIGINT` | 33.2% |
+| `container` | `VARCHAR` | **3.7%** |
+| `pack` | `BIGINT` | **4.3%** |
+| `pack_size` | `BIGINT` | 100.0% |
+| `pack_type` | `VARCHAR` | 100.0% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ## Writers
 

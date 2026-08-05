@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 2,304,054 |
 | Columns | 19 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | — |
@@ -16,24 +16,26 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `name` | `VARCHAR` |
-| `price` | `VARCHAR` |
-| `image_url` | `VARCHAR` |
-| `container` | `VARCHAR` |
-| `unit_size` | `DOUBLE` |
-| `size_uom` | `VARCHAR` |
-| `pack_count` | `DOUBLE` |
-| `total_size` | `DOUBLE` |
-| `store` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `product_id` | `VARCHAR` |
-| `price_value` | `DOUBLE` |
-| `source` | `VARCHAR` |
-| `department` | `VARCHAR` |
-| `is_alcoholic` | `BOOLEAN` |
-| `bev_category` | `VARCHAR` |
-| `beer_style` | `VARCHAR` |
-| `is_hemp` | `BOOLEAN` |
-| `run_id` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `name` | `VARCHAR` | 100.0% |
+| `price` | `VARCHAR` | 100.0% |
+| `image_url` | `VARCHAR` | 100.0% |
+| `container` | `VARCHAR` | 11.9% |
+| `unit_size` | `DOUBLE` | 27.8% |
+| `size_uom` | `VARCHAR` | 27.8% |
+| `pack_count` | `DOUBLE` | 100.0% |
+| `total_size` | `DOUBLE` | 27.8% |
+| `store` | `VARCHAR` | 100.0% |
+| `store_id` | `VARCHAR` | 100.0% |
+| `product_id` | `VARCHAR` | 100.0% |
+| `price_value` | `DOUBLE` | 93.2% |
+| `source` | `VARCHAR` | 100.0% |
+| `department` | `VARCHAR` | 100.0% |
+| `is_alcoholic` | `BOOLEAN` | 100.0% |
+| `bev_category` | `VARCHAR` | 100.0% |
+| `beer_style` | `VARCHAR` | **2.6%** |
+| `is_hemp` | `BOOLEAN` | 100.0% |
+| `run_id` | `VARCHAR` | 100.0% |
+
+Fill measured over **first 400,000 rows** (400,000 rows).

@@ -41,56 +41,59 @@
 423 rows · 11 columns
 
 
-| column | type |
-|---|---|
-| `name` | `VARCHAR` |
-| `population` | `VARCHAR` |
-| `median_age` | `VARCHAR` |
-| `households` | `VARCHAR` |
-| `hispanic_pop` | `VARCHAR` |
-| `white_pop` | `VARCHAR` |
-| `black_pop` | `VARCHAR` |
-| `asian_pop` | `VARCHAR` |
-| `state_fips` | `VARCHAR` |
-| `county_fips` | `VARCHAR` |
-| `geoid` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `name` | `VARCHAR` | 100.0% |
+| `population` | `VARCHAR` | 100.0% |
+| `median_age` | `VARCHAR` | 100.0% |
+| `households` | `VARCHAR` | 100.0% |
+| `hispanic_pop` | `VARCHAR` | 100.0% |
+| `white_pop` | `VARCHAR` | 100.0% |
+| `black_pop` | `VARCHAR` | 100.0% |
+| `asian_pop` | `VARCHAR` | 100.0% |
+| `state_fips` | `VARCHAR` | 100.0% |
+| `county_fips` | `VARCHAR` | 100.0% |
+| `geoid` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (423 rows).
 
 ### `census_economic`
 
 423 rows · 9 columns
 
 
-| column | type |
-|---|---|
-| `name` | `VARCHAR` |
-| `median_household_income` | `VARCHAR` |
-| `per_capita_income` | `VARCHAR` |
-| `poverty_pop` | `VARCHAR` |
-| `labor_force` | `VARCHAR` |
-| `unemployed` | `VARCHAR` |
-| `state_fips` | `VARCHAR` |
-| `county_fips` | `VARCHAR` |
-| `geoid` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `name` | `VARCHAR` | 100.0% |
+| `median_household_income` | `VARCHAR` | 99.8% |
+| `per_capita_income` | `VARCHAR` | 100.0% |
+| `poverty_pop` | `VARCHAR` | 100.0% |
+| `labor_force` | `VARCHAR` | 100.0% |
+| `unemployed` | `VARCHAR` | 100.0% |
+| `state_fips` | `VARCHAR` | 100.0% |
+| `county_fips` | `VARCHAR` | 100.0% |
+| `geoid` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (423 rows).
 
 ### `census_housing`
 
 423 rows · 9 columns
 
 
-| column | type |
-|---|---|
-| `name` | `VARCHAR` |
-| `median_home_value` | `VARCHAR` |
-| `median_gross_rent` | `VARCHAR` |
-| `housing_units` | `VARCHAR` |
-| `owner_occupied` | `VARCHAR` |
-| `renter_occupied` | `VARCHAR` |
-| `state_fips` | `VARCHAR` |
-| `county_fips` | `VARCHAR` |
-| `geoid` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `name` | `VARCHAR` | 100.0% |
+| `median_home_value` | `VARCHAR` | 99.1% |
+| `median_gross_rent` | `VARCHAR` | 98.1% |
+| `housing_units` | `VARCHAR` | 100.0% |
+| `owner_occupied` | `VARCHAR` | 100.0% |
+| `renter_occupied` | `VARCHAR` | 100.0% |
+| `state_fips` | `VARCHAR` | 100.0% |
+| `county_fips` | `VARCHAR` | 100.0% |
+| `geoid` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (423 rows).
 
 ## 4. `census.py` — the module's own account
 

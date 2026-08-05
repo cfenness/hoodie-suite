@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 13,282 |
 | Columns | 9 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | — |
@@ -16,14 +16,16 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `brand` | `VARCHAR` |
-| `week` | `TIMESTAMP` |
-| `implied_units` | `DOUBLE` |
-| `conf_wt_units_per_store` | `DOUBLE` |
-| `cells` | `BIGINT` |
-| `stores` | `BIGINT` |
-| `restock_events` | `DECIMAL(38,0)` |
-| `oos_events` | `DECIMAL(38,0)` |
-| `avg_confidence` | `DOUBLE` |
+| column | type | filled |
+|---|---|---|
+| `brand` | `VARCHAR` | 100.0% |
+| `week` | `TIMESTAMP` | 100.0% |
+| `implied_units` | `DOUBLE` | 100.0% |
+| `conf_wt_units_per_store` | `DOUBLE` | 100.0% |
+| `cells` | `BIGINT` | 100.0% |
+| `stores` | `BIGINT` | 100.0% |
+| `restock_events` | `DECIMAL(38,0)` | 100.0% |
+| `oos_events` | `DECIMAL(38,0)` | 100.0% |
+| `avg_confidence` | `DOUBLE` | 100.0% |
+
+Fill measured over **full table** (13,282 rows).

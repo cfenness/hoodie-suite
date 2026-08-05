@@ -4,49 +4,50 @@
 |---|---|
 | Status | landed |
 | Rows | 1,916,357 |
-| Columns | 29 |
-| Storage | bucketed |
-| Partitions | 16 |
-| Schema drift | uniform in sample |
+| Columns | 28 |
+| Storage | — |
+| Partitions | — |
+| Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated), flat (full rebuild, layout-preserving) |
 | Declared in `table_spec.py` | no — schema is whatever the writer emits |
 | Written by sources | `geocode`, `aggregator-geo`, `fast-geo`, `geo`, `ubereats-sitemap`, `postmates-sitemap`, `build-outlets` |
-| URI | `manifest: _manifest/src_outlets.json` |
+| URI | `s3://hoodie-suite-warehouse/warehouse/src_outlets.parquet` |
 
 
 ## Columns
 
-| column | type |
-|---|---|
-| `source` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `store_name` | `VARCHAR` |
-| `chain` | `VARCHAR` |
-| `is_chain` | `BOOLEAN` |
-| `f_beer` | `BOOLEAN` |
-| `f_wine` | `BOOLEAN` |
-| `f_spirits` | `BOOLEAN` |
-| `f_hemp` | `BOOLEAN` |
-| `f_cannabis` | `BOOLEAN` |
-| `f_rtd_spirits` | `BOOLEAN` |
-| `flag_basis` | `VARCHAR` |
-| `license_conflict` | `BOOLEAN` |
-| `address` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `zip` | `VARCHAR` |
-| `lat` | `DOUBLE` |
-| `lng` | `DOUBLE` |
-| `phone` | `VARCHAR` |
-| `addr_valid` | `BOOLEAN` |
-| `hoodie_outlet` | `VARCHAR` |
-| `name_key` | `VARCHAR` |
-| `phone_norm` | `VARCHAR` |
-| `addr_key` | `VARCHAR` |
-| `geo_cell` | `VARCHAR` |
-| `county_fips` | `VARCHAR` |
-| `geo_precision` | `VARCHAR` |
-| `__b` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `source` | `VARCHAR` | — |
+| `store_id` | `VARCHAR` | — |
+| `store_name` | `VARCHAR` | — |
+| `chain` | `VARCHAR` | — |
+| `is_chain` | `BOOLEAN` | — |
+| `f_beer` | `BOOLEAN` | — |
+| `f_wine` | `BOOLEAN` | — |
+| `f_spirits` | `BOOLEAN` | — |
+| `f_hemp` | `BOOLEAN` | — |
+| `f_cannabis` | `BOOLEAN` | — |
+| `f_rtd_spirits` | `BOOLEAN` | — |
+| `flag_basis` | `VARCHAR` | — |
+| `license_conflict` | `BOOLEAN` | — |
+| `address` | `VARCHAR` | — |
+| `city` | `VARCHAR` | — |
+| `state` | `VARCHAR` | — |
+| `zip` | `VARCHAR` | — |
+| `lat` | `DOUBLE` | — |
+| `lng` | `DOUBLE` | — |
+| `phone` | `VARCHAR` | — |
+| `addr_valid` | `BOOLEAN` | — |
+| `hoodie_outlet` | `VARCHAR` | — |
+| `name_key` | `VARCHAR` | — |
+| `phone_norm` | `VARCHAR` | — |
+| `addr_key` | `VARCHAR` | — |
+| `geo_cell` | `VARCHAR` | — |
+| `county_fips` | `VARCHAR` | — |
+| `geo_precision` | `VARCHAR` | — |
+
+_Fill rates not measured — rerun `spec_capture.py --fill`. Without them this is a list of columns, not a statement of what is captured._
 
 
 ## Writers

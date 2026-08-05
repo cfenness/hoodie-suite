@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 227 |
 | Columns | 19 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated) |
@@ -16,28 +16,29 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `store` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `pid` | `VARCHAR` |
-| `url` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `sku` | `VARCHAR` |
-| `gtin` | `VARCHAR` |
-| `price` | `DOUBLE` |
-| `currency` | `VARCHAR` |
-| `size` | `VARCHAR` |
-| `availability` | `VARCHAR` |
-| `description` | `VARCHAR` |
-| `image` | `VARCHAR` |
-| `rating` | `VARCHAR` |
-| `rating_count` | `BIGINT` |
-| `captured_at` | `BIGINT` |
-| `raw_json` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `store` | `VARCHAR` | 100.0% |
+| `store_id` | `VARCHAR` | 100.0% |
+| `pid` | `VARCHAR` | 100.0% |
+| `url` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `brand` | `VARCHAR` | 100.0% |
+| `upc` | `VARCHAR` | 100.0% |
+| `sku` | `VARCHAR` | 100.0% |
+| `gtin` | `VARCHAR` | 26.4% |
+| `price` | `DOUBLE` | 100.0% |
+| `currency` | `VARCHAR` | 100.0% |
+| `size` | `VARCHAR` | 30.4% |
+| `availability` | `VARCHAR` | 100.0% |
+| `description` | `VARCHAR` | 92.5% |
+| `image` | `VARCHAR` | 100.0% |
+| `rating` | `VARCHAR` | 100.0% |
+| `rating_count` | `BIGINT` | 100.0% |
+| `captured_at` | `BIGINT` | 100.0% |
+| `raw_json` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (227 rows).
 
 ## Writers
 

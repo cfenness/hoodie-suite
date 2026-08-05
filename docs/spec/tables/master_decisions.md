@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 0 |
 | Columns | 9 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,22 +16,23 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `cluster_id` | `INTEGER` |
-| `action` | `INTEGER` |
-| `tier` | `INTEGER` |
-| `note` | `INTEGER` |
-| `matched_name` | `INTEGER` |
-| `steward` | `INTEGER` |
-| `members` | `INTEGER` |
-| `removed` | `INTEGER` |
-| `ts` | `INTEGER` |
+| column | type | filled |
+|---|---|---|
+| `cluster_id` | `INTEGER` | — |
+| `action` | `INTEGER` | — |
+| `tier` | `INTEGER` | — |
+| `note` | `INTEGER` | — |
+| `matched_name` | `INTEGER` | — |
+| `steward` | `INTEGER` | — |
+| `members` | `INTEGER` | — |
+| `removed` | `INTEGER` | — |
+| `ts` | `INTEGER` | — |
 
+Fill measured over **full table** (0 rows).
 
 ## Writers
 
 | module:line | call | layout | pins dtypes |
 |---|---|---|---|
-| `server.py:3543` | `write_parquet` | flat (full overwrite) | no |
-| `server.py:3566` | `write_parquet` | flat (full overwrite) | no |
+| `server.py:3486` | `write_parquet` | flat (full overwrite) | no |
+| `server.py:3509` | `write_parquet` | flat (full overwrite) | no |

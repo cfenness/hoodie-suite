@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 33,791 |
 | Columns | 3 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,12 +16,13 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `zip` | `VARCHAR` |
-| `lat` | `DOUBLE` |
-| `lng` | `DOUBLE` |
+| column | type | filled |
+|---|---|---|
+| `zip` | `VARCHAR` | 100.0% |
+| `lat` | `DOUBLE` | 100.0% |
+| `lng` | `DOUBLE` | 100.0% |
 
+Fill measured over **full table** (33,791 rows).
 
 ## Writers
 

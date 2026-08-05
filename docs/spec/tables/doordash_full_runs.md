@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 6 |
 | Columns | 8 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated) |
@@ -16,17 +16,18 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `run_id` | `VARCHAR` |
-| `ts` | `BIGINT` |
-| `universe_total` | `BIGINT` |
-| `covered_total` | `BIGINT` |
-| `remaining_total` | `BIGINT` |
-| `stores_landed_this_run` | `BIGINT` |
-| `items_landed_this_run` | `BIGINT` |
-| `duration_s` | `DOUBLE` |
+| column | type | filled |
+|---|---|---|
+| `run_id` | `VARCHAR` | 100.0% |
+| `ts` | `BIGINT` | 100.0% |
+| `universe_total` | `BIGINT` | 100.0% |
+| `covered_total` | `BIGINT` | 100.0% |
+| `remaining_total` | `BIGINT` | 100.0% |
+| `stores_landed_this_run` | `BIGINT` | 100.0% |
+| `items_landed_this_run` | `BIGINT` | 100.0% |
+| `duration_s` | `DOUBLE` | 100.0% |
 
+Fill measured over **full table** (6 rows).
 
 ## Writers
 

@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 1,573 |
 | Columns | 11 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated) |
@@ -16,20 +16,21 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `store_key` | `VARCHAR` |
-| `hoodie_store_id` | `VARCHAR` |
-| `source` | `VARCHAR` |
-| `store_id` | `VARCHAR` |
-| `store_name` | `VARCHAR` |
-| `chain` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `zip` | `VARCHAR` |
-| `lat` | `VARCHAR` |
-| `lng` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `store_key` | `VARCHAR` | 100.0% |
+| `hoodie_store_id` | `VARCHAR` | 100.0% |
+| `source` | `VARCHAR` | 100.0% |
+| `store_id` | `VARCHAR` | 99.9% |
+| `store_name` | `VARCHAR` | 100.0% |
+| `chain` | `VARCHAR` | 74.1% |
+| `city` | `VARCHAR` | 74.2% |
+| `state` | `VARCHAR` | 74.2% |
+| `zip` | `VARCHAR` | 73.9% |
+| `lat` | `VARCHAR` | **0.3%** |
+| `lng` | `VARCHAR` | **0.3%** |
 
+Fill measured over **full table** (1,573 rows).
 
 ## Writers
 

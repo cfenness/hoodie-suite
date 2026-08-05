@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 8,737 |
 | Columns | 14 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,23 +16,24 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `a_source` | `VARCHAR` |
-| `a_sku` | `VARCHAR` |
-| `a_upc` | `VARCHAR` |
-| `b_source` | `VARCHAR` |
-| `b_sku` | `VARCHAR` |
-| `b_upc` | `VARCHAR` |
-| `cosine` | `DOUBLE` |
-| `name_sim` | `DOUBLE` |
-| `class_agree` | `BIGINT` |
-| `varietal_agree` | `BIGINT` |
-| `flavor_agree` | `BIGINT` |
-| `size_agree` | `BIGINT` |
-| `confidence` | `DOUBLE` |
-| `verdict` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `a_source` | `VARCHAR` | 100.0% |
+| `a_sku` | `VARCHAR` | 99.3% |
+| `a_upc` | `VARCHAR` | 21.3% |
+| `b_source` | `VARCHAR` | 100.0% |
+| `b_sku` | `VARCHAR` | 100.0% |
+| `b_upc` | `VARCHAR` | 6.4% |
+| `cosine` | `DOUBLE` | 100.0% |
+| `name_sim` | `DOUBLE` | 100.0% |
+| `class_agree` | `BIGINT` | 100.0% |
+| `varietal_agree` | `BIGINT` | 100.0% |
+| `flavor_agree` | `BIGINT` | 100.0% |
+| `size_agree` | `BIGINT` | 100.0% |
+| `confidence` | `DOUBLE` | 100.0% |
+| `verdict` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (8,737 rows).
 
 ## Writers
 

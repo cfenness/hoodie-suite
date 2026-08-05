@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 773,357 |
 | Columns | 7 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated) |
@@ -16,16 +16,17 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `store_id` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `city` | `VARCHAR` |
-| `state` | `VARCHAR` |
-| `url` | `VARCHAR` |
-| `type` | `VARCHAR` |
-| `source` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `store_id` | `VARCHAR` | 100.0% |
+| `name` | `VARCHAR` | 100.0% |
+| `city` | `VARCHAR` | 100.0% |
+| `state` | `VARCHAR` | 99.9% |
+| `url` | `VARCHAR` | 100.0% |
+| `type` | `VARCHAR` | 100.0% |
+| `source` | `VARCHAR` | 100.0% |
 
+Fill measured over **first 400,000 rows** (400,000 rows).
 
 ## Writers
 

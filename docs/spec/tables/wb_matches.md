@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 12,000 |
 | Columns | 9 |
-| Storage | single file |
+| Storage | — |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -16,18 +16,19 @@
 
 ## Columns
 
-| column | type |
-|---|---|
-| `grain` | `VARCHAR` |
-| `merge_id` | `VARCHAR` |
-| `block` | `VARCHAR` |
-| `canonical` | `VARCHAR` |
-| `n` | `BIGINT` |
-| `total_rows` | `BIGINT` |
-| `confidence` | `DOUBLE` |
-| `reason` | `VARCHAR` |
-| `members` | `VARCHAR` |
+| column | type | filled |
+|---|---|---|
+| `grain` | `VARCHAR` | 100.0% |
+| `merge_id` | `VARCHAR` | 100.0% |
+| `block` | `VARCHAR` | 100.0% |
+| `canonical` | `VARCHAR` | 100.0% |
+| `n` | `BIGINT` | 100.0% |
+| `total_rows` | `BIGINT` | 100.0% |
+| `confidence` | `DOUBLE` | 100.0% |
+| `reason` | `VARCHAR` | 100.0% |
+| `members` | `VARCHAR` | 100.0% |
 
+Fill measured over **full table** (12,000 rows).
 
 ## Writers
 
