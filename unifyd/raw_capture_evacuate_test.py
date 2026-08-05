@@ -26,6 +26,29 @@ for v in ("AWS_ENDPOINT_URL_S3", "TIGRIS_ENDPOINT", "BUCKET_NAME", "WAREHOUSE_BU
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import warehouse
 
+# SKIP HONESTLY IF THE INTERPRETER CANNOT RUN THIS AT ALL. evacuate() streams via DuckDB's
+# `.to_arrow_reader()`, which does not exist before duckdb 1.5 (1.4.5 has only fetch_record_batch).
+# tools/run_tests.sh prefers the hoodie-backend venv, which is currently 1.4.5, so this suite died
+# with `AttributeError: to_arrow_reader` — indistinguishable from evacuate() being broken, in the one
+# suite whose whole value is that a red result means broken CODE. Same rule table_spec_test applies
+# to absent pyarrow: a check that CANNOT RUN must not read as a failure, and must not read as a pass
+# either — say which, and say what would make it run. It executes for real on the Fly image (1.5.5),
+# which is where this code actually runs.
+try:
+    import duckdb
+    _HAVE_READER = hasattr(duckdb.connect().execute("select 1"), "to_arrow_reader")
+    _DUCKDB_V = duckdb.__version__
+except Exception as _e:                       # duckdb absent entirely is the same class of skip
+    _HAVE_READER, _DUCKDB_V = False, "not installed (%s)" % str(_e)[:60]
+if not _HAVE_READER:
+    print("raw_capture.evacuate — streamed, not materialized")
+    print("  SKIP  this interpreter's duckdb is %s; evacuate() needs >=1.5 for .to_arrow_reader()."
+          % _DUCKDB_V)
+    print("        NOTHING WAS VERIFIED — not a pass. Runs for real on the Fly image (1.5.5), or")
+    print("        locally via PYBIN=/path/to/python-with-duckdb-1.5 tools/run_tests.sh")
+    print("\n0 checks, 0 failed (skipped)")
+    sys.exit(0)
+
 TMP = tempfile.mkdtemp(prefix="evac_test_")
 warehouse._LOCAL_DIR = TMP
 import raw_capture
