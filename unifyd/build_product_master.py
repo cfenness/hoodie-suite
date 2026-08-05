@@ -21,6 +21,7 @@ import precleanse as _precleanse
 import sku_match as _sku_match
 import placeholders as _placeholders
 import upc as _upc
+import provenance as _prov
 
 # origin = SOURCE of the juice (COO — where the liquid is from); bottled_in = where it was bottled (kept
 # SEPARATE — a Barbados rum bottled in the US is origin=Barbados, bottled_in=US).
@@ -80,9 +81,25 @@ _CFG = {
                                 appellation="appellation", country="country", state="state", style="style",
                                 taste="taste", body="body", food_pairing="food_pairing",
                                 expert_rating="expert_rating", finish="finish", dedup=["sku"]),
+    # size="item_size" — 100% populated on 1,534,862 rows and previously UNREAD, so the master was
+    # regex-parsing size out of the product name for its largest source while a structured column sat
+    # there. Measured on a 4,000-row sample: 66% of item_size values parse to a real size, and the
+    # NAME parse returns None for those same rows ("Duckhorn Vineyards Sauvignon Blanc North" -> None
+    # from the name, 750 from item_size). size_ml is part of the ITEM grain, so this is identity, not
+    # decoration. Strictly additive: the name-parse still runs as the fallback when item_size does not
+    # resolve (the remaining 34% are multipack forms like "4 x 11.2Z" that _to_ml cannot read yet).
+    #
+    # DELIBERATELY NOT MAPPED, both verified rather than assumed:
+    #   proof      — populated on exactly the same 2,422 rows as abv in the sample; rows where it
+    #                would fill an abv gap: 0. Mapping it would add nothing.
+    #   case_pack  — values are 12.0 / 6.0 / 25.0: units per CASE, not consumer pack. `pack` means
+    #                the consumer multipack, so mapping it would label a single 750ml wine a 12-pack.
+    #                It is captured and still needs a correct home (case quantity is its own grain).
+    #   unit_label — "6 Pack of 12 oz Can" carries container + pack + unit size in one string; it
+    #                needs a parser, not a direct column map.
     "binnys_products": dict(name="name", brand="brand", dedup=["sku"], varietal="varietal", image="image",  # store×product →
                             region="region", sub_region="sub_region", appellation="appellation",             # distinct products
-                            abv="abv", origin="origin", cat="category"),
+                            abv="abv", origin="origin", cat="category", size="item_size"),
     "target_products": dict(name="name", brand="brand", cat="category", image="image_url", dedup=["tcin"]),
     "specs_products": dict(name="name", brand="brand", dedup=["sku"], varietal="varietal", region="region",
                            country="origin", state="state", cat="type", abv="abv", image="image",
@@ -716,7 +733,8 @@ def build(log=print):
             nm = r.get(c["name"])
             if _placeholders.is_placeholder_name(nm):     # drop template/demo products ("I'm a product")
                 continue
-            brand = resolve_brand(nm, by1, r.get(c["brand"]) if c.get("brand") else None)
+            _stated_brand = r.get(c["brand"]) if c.get("brand") else None
+            brand = resolve_brand(nm, by1, _stated_brand)
             if not brand:
                 continue
             if "size_ml" in c:
@@ -726,11 +744,29 @@ def build(log=print):
             else:
                 sz = _to_ml(r.get(c.get("size"))) if c.get("size") else None
             sz = _sane_ml(sz)                            # drop insane parses (75000/375000 ml) so name re-parse wins
+            # WHOSE NUMBER IS THIS? Until a row reaches the master it is still the SOURCE's data, so a
+            # value WE computed must never be indistinguishable from one the retailer stated — a rep
+            # quoting a derived number back as the retailer's is how bad data reaches a customer.
+            # `_derived` names every field on this row that we calculated rather than transcribed.
+            # Deriving is fine, and necessary for matching (precleanse, the brand dictionary, the
+            # value dictionaries all exist for that); claiming it as the source's is not.
+            _der = {}
             if not sz:                                   # source left size blank → parse it from the product NAME
                 sz = _sane_ml(_to_ml(nm))                # (e.g. "New Amsterdam Vodka 1750ml" → 1750)
+                if sz:
+                    _der["size_ml"] = "name-parse"
+            if not (_stated_brand and str(_stated_brand).strip()):
+                _der["brand"] = "dict" if _scan_brand(nm, by1) else "first-tokens"
             pk = _pack_of(nm)                            # pack count from the name ("6-pack"/"12pk"/"4 x 355ml")
-            abv = _fnum(r.get(c["abv"])) if c.get("abv") else \
-                ((_fnum(r.get(c["proof"])) / 2) if c.get("proof") and _fnum(r.get(c["proof"])) else None)
+            if pk and not (c.get("pack") and r.get(c["pack"])):
+                _der["pack"] = "name-parse"
+            if c.get("abv"):
+                abv = _fnum(r.get(c["abv"]))
+            elif c.get("proof") and _fnum(r.get(c["proof"])):
+                abv = _fnum(r.get(c["proof"])) / 2       # proof/2 is OUR arithmetic, not the source's stated ABV
+                _der["abv"] = "proof/2"
+            else:
+                abv = None
             staged.append(dict(brand=brand, brand_group=None, product_name=clean_name(nm),
                 flavor=(str(r.get(c["flavor"])).strip() or None) if c.get("flavor") and r.get(c["flavor"]) else None, abv=abv,
                 style=(str(r.get(c["style"])).strip() or None) if c.get("style") and r.get(c["style"]) else None,
@@ -743,6 +779,7 @@ def build(log=print):
                 upc=(re.sub(r"\D", "", str(r.get(c["upc"]))) or None) if c.get("upc") and r.get(c["upc"]) else None,
                 gtin=(re.sub(r"\D", "", str(r.get(c["gtin"]))) or None) if c.get("gtin") and r.get(c["gtin"]) else None,
                 edition=None, supplier=None, _source=ds,
+                _derived=",".join(sorted("%s:%s" % kv for kv in _der.items())) or None,
                 # shelf price → soft clustering signal (price_signal.py). Read the source's price col (per-source
                 # override via _CFG "price", else a plain "price" column); None where the source carries none.
                 price=_fnum(r.get(c["price"])) if c.get("price") else _fnum(r.get("price")),
@@ -778,16 +815,24 @@ def build(log=print):
         ct, _cc, core = _classt.classify(src, s.get("varietal") or s.get("category") or "")
         # fill what the regex classifier misses via the CLASS dictionary (brand->class: "Budweiser" -> beer,
         # "Montecristo" -> cigar). Editable data, so the null class_types keep shrinking without touching code.
-        s["class_type"] = ct or _dict_apply.classify(s.get("product_name") or "", "class") or None
+        if ct:
+            _prov.derive(s, "class_type", ct, "name-classify")
+        else:
+            _prov.derive(s, "class_type", _dict_apply.classify(s.get("product_name") or "", "class"), "dict")
+            s.setdefault("class_type", None)
         # varietal + flavor are among the CLEANEST fields but most retailers don't supply them — derive from the
         # NAME where the source didn't ("… Cabernet Sauvignon" -> varietal; "Margarita Pineapple" -> flavor).
         if not s.get("varietal"):
-            s["varietal"] = _dict_apply.classify(s.get("product_name") or "", "varietal") or None
+            _prov.derive(s, "varietal", _dict_apply.classify(s.get("product_name") or "", "varietal"), "dict")
+            s.setdefault("varietal", None)
         if not s.get("flavor"):
-            s["flavor"] = _dict_apply.classify(s.get("product_name") or "", "flavor") or None
+            _prov.derive(s, "flavor", _dict_apply.classify(s.get("product_name") or "", "flavor"), "dict")
+            s.setdefault("flavor", None)
         # core_name gets the SAME dictionary treatment as _core_key: strip pack-counts ("Mango 4-pack" -> "Mango"),
         # drop noise/size tokens, collapse descriptor synonyms — so the product KEY aligns across sources.
-        s["core_name"] = _clean_core(core, s) or None    # empty for a flagship (product == brand) — that's fine
+        # core_name is ALWAYS ours — no source ships a class/size/brand-stripped distinguisher.
+        _prov.derive(s, "core_name", _clean_core(core, s), "name-strip")
+        s.setdefault("core_name", None)                  # empty for a flagship (product == brand) — that's fine
     # class_type CONSISTENCY: class is now part of the product key, so a row where the class wasn't detected
     # ("Bacardi Superior" with no rum word) would split from its siblings ("... Rum" -> rum). Within each
     # (brand, core) group, adopt the MAJORITY class for the blanks + clear misdetection outliers (a class seen
@@ -806,11 +851,21 @@ def build(log=print):
             cur = s.get("class_type")
             if (not cur) or (cur != modal and cts[cur] * 3 < mcount):
                 if cur != modal:
-                    s["class_type"] = modal
+                    _prov.derive(s, "class_type", modal, "brand-core-majority")
                     _fixed += 1
     log("[master] class_type consistency: %d rows aligned to their brand+core majority" % _fixed)
     log("[master] staged %d rows → _stage_product" % len(staged))
-    warehouse.write_parquet("_stage_product", staged, fields=FIELDS + ["_source", "_source_id"])
+    # `_`-prefixed columns are PROVENANCE, not master fields — they ride alongside the row and are not
+    # part of FIELDS, so resolve_hierarchy never treats them as attributes to shred. `_derived` names
+    # every field on the row we CALCULATED rather than transcribed, and the rule that produced it
+    # (see provenance.py). Without it a derived number is indistinguishable from the retailer's own
+    # and can be quoted back to a customer as theirs.
+    for s in staged:
+        _prov.freeze(s)                                  # intern: ~1.6M rows collapse to a few hundred strings
+    log("[master] derived fields: %s" % ", ".join(
+        "%s=%d" % kv for kv in sorted(_prov.summarize(staged).items(), key=lambda kv: -kv[1])) or "none")
+    warehouse.write_parquet("_stage_product", staged,
+                            fields=FIELDS + ["_source", "_source_id", _prov.COL])
     con = warehouse.connect()
     # RESOLVED identity FIRST (union-find over category clusters) → xwalk_item_identity, so the shred can carry
     # resolved_id onto dim_item/dim_sku. Best-effort: if it fails, the shred runs unresolved (md5 keys only).
