@@ -266,7 +266,7 @@ def resolve(payload, log=print):
         if v:
             row[f] = v
 
-    landed = {"gold": 0, "dictionary": 0}
+    landed, failed = {"gold": 0, "dictionary": 0}, []
     try:
         cur = warehouse.query(QUEUE_TABLE, "SELECT * FROM t WHERE pair_id = ?", [pid])
         base = dict(cur[0]) if cur else {"pair_id": pid}
@@ -281,6 +281,7 @@ def resolve(payload, log=print):
                                    key="pair_id", fields=xg.FIELDS, coverage=False)
         landed["gold"] = 1
     except Exception as e:
+        failed.append("gold: %s" % str(e)[:120])
         log("resolve: gold land failed: %s" % str(e)[:90])
 
     # Dictionary entries: the canonical value plus the source spellings it replaces, and the value
@@ -304,6 +305,7 @@ def resolve(payload, log=print):
         import product_taxonomy
         landed["taxonomy"] = product_taxonomy.learn(row, log=log)
     except Exception as e:                                        # noqa: BLE001
+        failed.append("taxonomy: %s" % str(e)[:120])
         log("resolve: taxonomy skipped: %s" % str(e)[:90])
 
     if drows:
@@ -313,8 +315,15 @@ def resolve(payload, log=print):
                                        fields=DICT_FIELDS, coverage=False)
             landed["dictionary"] = len(drows)
         except Exception as e:
+            failed.append("dictionary: %s" % str(e)[:120])
             log("resolve: dictionary land failed: %s" % str(e)[:90])
-    return {"ok": True, "pair_id": pid, "landed": landed}
+    # A HALF-LANDED RESOLUTION MUST NOT REPORT SUCCESS. Each of the three writes sat in its own
+    # try/except that logged and moved on, and the endpoint returned ok:True regardless — so a
+    # resolution could land its label and silently teach nothing, with the failure visible only in a
+    # server log nobody reads. Found the hard way: 6 gold rows, one of them carrying a full canonical
+    # set, and `xsource_dictionary` and `xsource_taxonomy` both at 0.
+    return {"ok": not failed, "pair_id": pid, "landed": landed,
+            "failed": failed} if failed else {"ok": True, "pair_id": pid, "landed": landed}
 
 
 def main(argv=None):
