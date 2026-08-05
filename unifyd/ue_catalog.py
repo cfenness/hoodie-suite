@@ -185,11 +185,36 @@ def known_items(site="ubereats", log=print):
     So: day one is a backfill, and steady state is (every store's catalog) + (only genuinely NEW
     items). A store adding a product is cheap; a store that has not changed costs one call.
     """
+    # THE TWO CATALOGS DO NOT SHARE A GTIN COLUMN NAME. `ubereats_products` is written by the fold and
+    # has `gtin`; `postmates_products` still carries the ARCHIVED zone crawler's 47-column shape, where
+    # it is `gtins` (plural). Naming one of them made the query a Binder Error on the other, caught and
+    # logged as "no prior item book" — so Postmates rebuilt its whole enrichment backlog on every run,
+    # re-spending requests on immutable facts it had already resolved. Observed live:
+    #   [ue] no prior item book (Binder Error: Referenced column "gtin" not found in FROM clause!
+    # Resolve the column against the table instead of assuming; neither present is a cold start.
+    table = "%s_products" % site
     try:
+        cols = set()
+        try:
+            con = warehouse.connect()
+            uri = warehouse.uri(table).strip("'")
+            cols = {c[0] for c in con.execute(
+                "DESCRIBE SELECT * FROM read_parquet('%s') LIMIT 0" % uri).fetchall()}
+        except Exception:
+            pass
+        gcol = "gtin" if "gtin" in cols else ("gtins" if "gtins" in cols else None)
+        have = ["COALESCE(upc,'') <> ''"] if ("upc" in cols or not cols) else []
+        if gcol:
+            have.append("COALESCE(CAST(%s AS VARCHAR),'') <> ''" % gcol)
+        if not have:
+            # Same convention as the except branch below: an empty skip-list means enrich everything,
+            # which fails OPEN (costs requests) rather than silently skipping enrichment.
+            log("[ue] %s carries neither upc nor gtin/gtins — cold enrichment start" % table)
+            return set()
         rows = warehouse.query(
-            "%s_products" % site,
-            "SELECT DISTINCT item_uuid FROM t WHERE item_uuid IS NOT NULL "
-            "AND (COALESCE(upc,'') <> '' OR COALESCE(gtin,'') <> '')")
+            table,
+            "SELECT DISTINCT item_uuid FROM t WHERE item_uuid IS NOT NULL AND (%s)"
+            % " OR ".join(have))
         # A COMPACT set, not a Python one. At full coverage this corpus is ~9.5M ids, which costs 1,078MB
         # as a set of strings on a 4GB box that has already given DuckDB half its memory — the same
         # "memory scales with the corpus" failure that killed three fleets, just one order of magnitude
