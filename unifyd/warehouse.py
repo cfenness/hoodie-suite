@@ -1079,8 +1079,22 @@ def migrate_to_bucketed(name, key_cols, hex_len=2):
     # are lean, memory is no longer the binding constraint, and a low cap just makes the write slow for
     # nothing. Scale it to the actual row weight instead of pinning it to the worst case that used to be.
     _open_files = 8 if _avg_row_bytes(src) > 2048 else 64
+    # FLUSH THRESHOLD IS GLOBAL, NOT PER-PARTITION — and at 4096 it SHREDS the output. Every flush emits
+    # one file per OPEN partition, so a 597k-row table flushes ~146 times and lands tens of thousands of
+    # ~40-row files instead of one per bucket. Measured on this exact shape (600k rows -> 256 buckets):
+    #     open=8   flush=4096      -> 36,609 files
+    #     open=64  flush=4096      -> 28,433 files      <- widening the CAP makes it WORSE
+    #     open=64  flush=1_000_000 ->    256 files      <- one per bucket, as intended
+    #     open=256 flush=1_000_000 ->    256 files
+    # The open-files cap barely matters; the threshold is the whole story. It cost two failed migrations
+    # of ubereats_products (14k then 28k files, each needing a bulk delete before retry) to find that,
+    # because a fragmented migration still *verifies* — row and key counts match — so nothing fails, the
+    # table just becomes tens of thousands of objects that every later read pays for.
+    # Buffering a bucket whole is what bounds memory here: hex_len=2 means ~n_rows/256 rows per bucket,
+    # so the buffer is the SHARD, not the table, and `_open_files` still bounds how many are held at once.
+    _flush = 1_000_000
     for pragma in ("SET partitioned_write_max_open_files=%d" % _open_files,
-                   "SET partitioned_write_flush_threshold=4096"):
+                   "SET partitioned_write_flush_threshold=%d" % _flush):
         try:
             con.execute(pragma)
         except Exception:
