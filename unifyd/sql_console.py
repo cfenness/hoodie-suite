@@ -194,7 +194,15 @@ def _known():
 # everything; over it we bind the most recent window and SAY SO — in the API response, in the footer, and
 # in a banner. A cap you are not told about would make a 30-day answer look like an all-time one, which
 # is exactly the failure this console exists to prevent.
-FULL_BIND_MAX = int(os.environ.get("SQL_FULL_BIND_MAX", "400"))   # parts we'll unify without scoping
+# 400 was a guess and it was wrong. MEASURED on the serving box against retail_observations (4,319
+# parts), bind + count:
+#     10 parts   4.9s        100 parts   31.9s
+#     25 parts   9.9s        200 parts  134.4s
+#     50 parts  17.1s
+# Linear at ~0.33s/part to 100, then it falls off a cliff. 60 costs ~20s and leaves the rest of the
+# 120s budget for the query the person actually asked. Opening ALL 4,319 would be ~24 MINUTES, which
+# is the real story: the cost is the file COUNT, not the data.
+FULL_BIND_MAX = int(os.environ.get("SQL_FULL_BIND_MAX", "60"))    # parts we'll unify without scoping
 ALL_PARTS = os.environ.get("SQL_ALL_PARTS") == "1"                # opt in to the full (slow) bind
 
 
