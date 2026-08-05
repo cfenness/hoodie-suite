@@ -137,7 +137,7 @@ class TimeoutCoversBinding(unittest.TestCase):
 
     def test_timer_starts_before_resolve(self):
         run = self.body[self.body.index("def run("):]
-        start, res = run.index("timer.start()"), run.index("resolve(stmt)")
+        start, res = run.index("timer.start()"), run.index("resolve(stmt")
         self.assertLess(start, res, "timer.start() must precede resolve() — an unbounded bind hangs")
 
     def test_bind_interrupt_is_noticed(self):
@@ -150,7 +150,45 @@ class TimeoutCoversBinding(unittest.TestCase):
         # the error return reports `bound`; if resolve() raises before assigning it, the handler
         # NameErrors and the user gets a stack trace instead of "timed out"
         run = self.body[self.body.index("def run("):]
-        self.assertLess(run.index("bound, failed = [], {}"), run.index("bound, failed = resolve(stmt)"))
+        self.assertLess(run.index("bound, failed, scopes = [], {}, []"),
+                        run.index("bound, failed, scopes = resolve(stmt"))
+
+
+class PartitionScope(unittest.TestCase):
+    """The bind is bounded by SIZE, not by a timer — and a bounded bind must announce itself.
+
+    Measured on the live warehouse: retail_observations is 4,301 parts. Listing them takes 4s; unifying
+    their footers under union_by_name did not finish in over six minutes, and con.interrupt() did NOT
+    stop it (the C-level read holds the GIL, so the timer thread never runs). A timeout therefore cannot
+    be the protection here. Capping the bind is — provided the cap is stated, because an unannounced
+    30-day window makes a scoped answer look like an all-time one.
+    """
+
+    def test_part_date_reads_the_filename(self):
+        self.assertEqual(sc._part_date("s3://b/w/retail_observations/2026-08-01_binnys_a1.parquet"),
+                         "2026-08-01")
+        self.assertEqual(sc._part_date("/w/retail_observations/legacy_chunk_7.parquet"), "")
+
+    def test_undated_parts_are_kept_not_dropped(self):
+        # a part we cannot place in the window stays IN — losing rows silently on top of a scope would
+        # be two undisclosed reductions stacked
+        files = ["/w/t/%s_src.parquet" % d for d in
+                 ["2026-01-01", "2026-06-01", "2026-08-01"]] + ["/w/t/legacy.parquet"]
+        keep = {"2026-08-01"}
+        sel = [f for f in files if (sc._part_date(f) in keep or not sc._part_date(f))]
+        self.assertIn("/w/t/legacy.parquet", sel)
+        self.assertEqual(len(sel), 2)
+
+    def test_thresholds_are_sane(self):
+        self.assertGreater(sc.FULL_BIND_MAX, 0)
+        self.assertGreater(sc.RECENT_DAYS, 0)
+
+    def test_run_always_reports_scopes(self):
+        # the key is present on BOTH paths — a UI that reads result.scopes must never see undefined
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql_console.py"),
+                   errors="ignore").read()
+        run = src[src.index("def run("):]
+        self.assertEqual(run.count('"scopes": scopes'), 2, "scopes must ride the ok AND the error return")
 
 
 class Cells(unittest.TestCase):

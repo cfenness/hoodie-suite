@@ -1252,7 +1252,8 @@ def api_sql():
     body = request.get_json(silent=True) or {}
     try:
         return jsonify(sql_console.run(body.get("sql") or "", limit=body.get("limit"),
-                                       timeout_s=body.get("timeout_s")))
+                                       timeout_s=body.get("timeout_s"),
+                                       all_parts=bool(body.get("all_parts"))))
     except sql_console.SqlRefused as e:
         return jsonify({"ok": False, "refused": True, "error": str(e)}), 200
     except Exception as e:

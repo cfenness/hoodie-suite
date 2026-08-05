@@ -146,7 +146,57 @@ def _known():
     return {s["name"] for s in (monitor._CACHE["data"] or {}).get("sources", [])}
 
 
-def resolve(sql, names=None):
+# A partitioned table is a DIRECTORY of parts, and `read_parquet(glob, union_by_name=true)` opens the
+# footer of EVERY ONE of them to unify their schemas before a single row is read. Measured on the live
+# warehouse: retail_observations is 4,301 parts. Listing them takes 4s; unifying their footers did not
+# finish in over six minutes, and — this is the part that matters — `con.interrupt()` did not stop it,
+# because the C-level read holds the GIL and the timer thread never gets to run.
+#
+# So the protection cannot be a timeout. It has to be the SIZE of the bind. Under the threshold we bind
+# everything; over it we bind the most recent window and SAY SO — in the API response, in the footer, and
+# in a banner. A cap you are not told about would make a 30-day answer look like an all-time one, which
+# is exactly the failure this console exists to prevent.
+FULL_BIND_MAX = int(os.environ.get("SQL_FULL_BIND_MAX", "400"))   # parts we'll unify without scoping
+RECENT_DAYS = int(os.environ.get("SQL_RECENT_DAYS", "30"))        # window when we do scope
+ALL_PARTS = os.environ.get("SQL_ALL_PARTS") == "1"                # opt in to the full (slow) bind
+
+
+def _part_date(path):
+    """The ISO date a part filename leads with (parts are `<date>_<source>…`), or "" if unnamed."""
+    m = re.search(r"(\d{4}-\d{2}-\d{2})", os.path.basename(path))
+    return m.group(1) if m else ""
+
+
+def _scoped_expr(name, all_parts=False):
+    """(duckdb source expression, scope|None) for a table.
+
+    scope is None when everything is bound. When it isn't None the caller MUST surface it.
+    """
+    import monitor
+    import warehouse
+    snap = (monitor._CACHE["data"] or {}).get("sources", [])
+    s = next((x for x in snap if x["name"] == name), None)
+    if not (s and s.get("partitioned")) or all_parts or ALL_PARTS:
+        return monitor.read_expr(name), None
+    try:
+        files = warehouse._partition_files_strict(name)
+    except Exception:
+        return monitor.read_expr(name), None      # listing failed → fall back; never fake a scope
+    if len(files) <= FULL_BIND_MAX:
+        return monitor.read_expr(name), None
+    dates = sorted({d for d in (_part_date(f) for f in files) if d})
+    keep = set(dates[-RECENT_DAYS:])
+    # Parts with no date in the name can't be placed in the window, so they stay IN — dropping them
+    # would be a silent loss on top of a scope.
+    sel = [f for f in files if (_part_date(f) in keep or not _part_date(f))]
+    pref = "s3://%s" if warehouse.remote() else "%s"
+    lst = ", ".join("'%s'" % (pref % f).replace("'", "") for f in sel)
+    return ("read_parquet([%s], union_by_name=true)" % lst), {
+        "table": name, "bound_parts": len(sel), "total_parts": len(files),
+        "days": len(keep), "from": min(keep) if keep else None, "to": max(keep) if keep else None}
+
+
+def resolve(sql, names=None, all_parts=False):
     """Create a view for every warehouse table the statement names, and return the ones it bound.
 
     Identifier scan, not a parser: we take every bare word in the statement, intersect it with the set
@@ -161,18 +211,20 @@ def resolve(sql, names=None):
         known = _known()
     words = re.findall(r"[a-zA-Z_][a-zA-Z_0-9]*", _strip(sql))
     want = [w for w in dict.fromkeys(words) if w in known]
-    con, bound, failed = _con(), [], {}
+    con, bound, failed, scopes = _con(), [], {}, []
     for name in want:
         try:
-            con.execute('CREATE OR REPLACE TEMP VIEW "%s" AS SELECT * FROM %s'
-                        % (name, monitor.read_expr(name)))
+            expr, scope = _scoped_expr(name, all_parts=all_parts)
+            con.execute('CREATE OR REPLACE TEMP VIEW "%s" AS SELECT * FROM %s' % (name, expr))
             bound.append(name)
+            if scope:
+                scopes.append(scope)
         except Exception as e:
             failed[name] = str(e)[:160]
-    return bound, failed
+    return bound, failed, scopes
 
 
-def run(sql, limit=None, timeout_s=None):
+def run(sql, limit=None, timeout_s=None, all_parts=False):
     """Run one read. Returns a dict the console renders directly — always including WHAT it bound and
     HOW LONG it took, so a surprising result can be explained without a second round trip."""
     t0 = time.time()
@@ -198,9 +250,9 @@ def run(sql, limit=None, timeout_s=None):
         # measured here.
         timer = threading.Timer(float(timeout_s or TIMEOUT_S), kill)
         timer.start()
-        bound, failed = [], {}
+        bound, failed, scopes = [], {}, []
         try:
-            bound, failed = resolve(stmt)
+            bound, failed, scopes = resolve(stmt, all_parts=all_parts)
             if timed["v"]:
                 raise RuntimeError("interrupted while binding")
             cur = con.execute(stmt)
@@ -222,11 +274,12 @@ def run(sql, limit=None, timeout_s=None):
                        "timed out after %.0fs — narrow the scan (add a WHERE, or a LIMIT on a subquery)"
                        % float(timeout_s or TIMEOUT_S))
             return {"ok": False, "error": msg[:600], "bound": bound, "unbound": failed,
-                    "elapsed_s": round(time.time() - t0, 2), "sql": stmt}
+                    "scopes": scopes, "elapsed_s": round(time.time() - t0, 2), "sql": stmt}
         finally:
             timer.cancel()
     return {"ok": True, "columns": cols, "rows": rows, "row_count": len(rows), "truncated": truncated,
-            "bound": bound, "unbound": failed, "elapsed_s": round(time.time() - t0, 2), "sql": stmt}
+            "bound": bound, "unbound": failed, "scopes": scopes,
+            "elapsed_s": round(time.time() - t0, 2), "sql": stmt}
 
 
 def _pending(sql, bound):

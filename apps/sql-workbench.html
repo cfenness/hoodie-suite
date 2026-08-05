@@ -106,6 +106,9 @@
       <div class="run">
         <button class="go" id="go">Run</button>
         <span class="hint"><kbd>⌘</kbd>+<kbd>↵</kbd> to run · read-only · <span id="cap"></span></span>
+        <label class="hint" style="display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input type="checkbox" id="allparts" style="width:auto;padding:0"> all parts
+        </label>
         <span class="spacer"></span>
         <select id="hist"><option value="">history…</option></select>
       </div>
@@ -219,7 +222,7 @@ async function run(){
   let r;
   try {
     r = await (await fetch('/api/sql', {method:'POST', headers:{'Content-Type':'application/json'},
-                                        body: JSON.stringify({sql})})).json();
+                                        body: JSON.stringify({sql, all_parts: $('#allparts').checked})})).json();
   } catch (e) { r = {ok:false, error:'request failed: ' + e}; }
   $('#go').disabled = false; $('#go').textContent = 'Run';
 
@@ -234,13 +237,25 @@ async function run(){
   LAST = r;
   // Truncation is stated, never implied — a capped result that looks complete is the whole reason
   // people stop trusting a console.
-  if (r.truncated) {
+  const notes = [];
+  // A SCOPED bind is the most misleading thing this console can do — a 30-day answer that looks
+  // all-time. It gets said first, in full, every time, with the way to turn it off.
+  (r.scopes || []).forEach(s => notes.push(
+    `${s.table} is partitioned into ${num(s.total_parts)} parts — too many to open at once, so this ` +
+    `query read the most recent ${s.days} days only (${s.from} → ${s.to}, ${num(s.bound_parts)} parts). ` +
+    `Every number below covers that window, not all time. Tick "all parts" to scan everything (slow).`));
+  if (r.truncated) notes.push(
+    `showing the first ${num(r.row_count)} rows — there are more. Add a LIMIT, an aggregate, or a tighter WHERE to see the whole answer.`);
+  if (notes.length) {
     $('#msg').className = 'msg show warn';
-    $('#msg').textContent = `showing the first ${num(r.row_count)} rows — there are more. Add a LIMIT, an aggregate, or a tighter WHERE to see the whole answer.`;
+    $('#msg').textContent = notes.join('\n\n');
   }
   draw(r);
   $('#foot').textContent = `${num(r.row_count)}${r.truncated ? '+' : ''} rows · ${r.elapsed_s}s`;
-  $('#bound').textContent = r.bound && r.bound.length ? 'bound: ' + r.bound.join(', ') : '';
+  const sc = (r.scopes || []).map(s => `${s.table}: last ${s.days}d of ${num(s.total_parts)} parts`);
+  $('#bound').textContent = sc.length ? '⚠ ' + sc.join(' · ')
+    : (r.bound && r.bound.length ? 'bound: ' + r.bound.join(', ') : '');
+  $('#bound').style.color = sc.length ? 'var(--warn)' : '';
   $('#csv').disabled = false;
 }
 
